@@ -20,9 +20,10 @@ import {
   buggyCG, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightSlip, buggyIdleHold,
   buggyPower, buggyShocks, buggySpeed, buggyTraction,
 } from './buggyParams'
+import { applyLava, floatPoints } from './lava'
 import type { BuggySkin } from './skins/BuggySkin'
 import { DEG, UnityBody, lerp, signedAngle, unityEulerAngles } from './unityBody'
-import { Vehicle } from './Vehicle'
+import { Vehicle, type WheelEffect, createWheelEffects } from './Vehicle'
 
 // ---- prefab (terra.buggy.prefab) and VhiclBuggy.cs constants ----------------------------
 
@@ -63,6 +64,8 @@ const SKID_HALF = { x: 1.25, y: 0.225, z: 1.740579 }
 const SKID_CENTER = { x: 0, y: 0.13976786, z: -0.090771556 }
 
 const UP = new THREE.Vector3(0, 1, 0)
+/** Float points over the Syn3h hull footprint (half width 1.37, half length 2.1). */
+const FLOAT_POINTS = floatPoints(1.37, 2.1, 0, 0.5)
 /** Wheel rays hit TerrainMask 257 only (Vhicl 21: layers Default and 8): never vehicles. */
 const RAY_GROUPS = groups(GROUP_ALL, GROUP_TERRAIN)
 
@@ -94,6 +97,8 @@ export class Syn3hBuggy extends Vehicle {
   areWingsOpen = false
   isInverted = false
   totalSuspensionCompression = 0
+  /** In lava or water this step. */
+  inLiquid = false
   /** Vhicl.InputSmoothed and the mapped raw Input (Me 9-20). */
   readonly inputSmoothed = new THREE.Vector4()
   readonly inputRaw = new THREE.Vector4()
@@ -105,6 +110,13 @@ export class Syn3hBuggy extends Vehicle {
   readonly hitVelocity = [0, 1, 2, 3].map(() => new THREE.Vector3())
   /** Steering yaw per wheel, radians about our +Y. */
   readonly steer = [0, 0, 0, 0]
+
+
+  /** Vehicle.getWheelEffects: persistent FL, FR, RL, RR entries from the last fixed step. */
+  readonly wheelEffects: readonly WheelEffect[] = createWheelEffects(4)
+  getWheelEffects(): readonly WheelEffect[] {
+    return this.wheelEffects
+  }
 
   private readonly origins = [0, 1, 2, 3].map(rayOrigin)
   private readonly inertia: RAPIER.Vector
@@ -131,11 +143,13 @@ export class Syn3hBuggy extends Vehicle {
     super(game, terrain, position, heading)
     this.kind = kind
     const world = game.world
-    // Physic material "Vehicle Body": friction 1, bounce 0.5, both Average.
+    // Physic material "Vehicle Body": friction 1, bounce 0.5, both Average. In Unity that
+    // averaged with the default terrain material (0.6) to 0.8; our terrain has friction 1, so a
+    // hull friction of 0.6 gives the same 0.8 when it scrapes the ground.
     this.hull = world.createCollider(
       RAPIER.ColliderDesc.convexHull(new Float32Array(HULL))!
         .setDensity(1)
-        .setFriction(1)
+        .setFriction(0.6)
         .setRestitution(0.5)
         .setCollisionGroups(Vehicle.chassisGroups()),
       this.body,
@@ -210,10 +224,10 @@ export class Syn3hBuggy extends Vehicle {
   }
 
   private readonly ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 })
-  private raycast(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number): RAPIER.RayColliderHit | null {
+  private raycast(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number): RAPIER.RayColliderIntersection | null {
     this.ray.origin = origin
     this.ray.dir = dir
-    return this.game.world.castRay(
+    return this.game.world.castRayAndGetNormal(
       this.ray, maxDist, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, RAY_GROUPS, undefined, this.body,
     )
   }
@@ -293,9 +307,14 @@ export class Syn3hBuggy extends Vehicle {
       for (let i = 0; i < 4; i++) {
         this.origin.copy(this.origins[i]).applyQuaternion(q).add(pos)
         const hit = this.raycast(this.origin, this.down, rayLength)
+        const eff = this.wheelEffects[i]
+        eff.grounded = !!hit
+        eff.slip = hit ? Math.abs(this.hitVelocity[i].x) : 0
         if (hit) {
           this.motorSpeed = this.hitVelocity[i].z
           this.hitDistance[i] = hit.timeOfImpact
+          eff.point.copy(this.down).multiplyScalar(hit.timeOfImpact).add(this.origin)
+          eff.normal.set(hit.normal.x, hit.normal.y, hit.normal.z)
           grounded++
         } else this.hitDistance[i] = -1
       }
@@ -328,13 +347,17 @@ export class Syn3hBuggy extends Vehicle {
     this.motorSpeed += (-this.motorSpeed * (this.brakes ? 50 : MOTOR_DRAG)) / this.motorTorque * dt
 
     // Wheels, VB 288-332.
+    const wasAirborne = this.wheelsGrounded === 0
     let grounded = 0
     const hv = this.v1
     for (let i = 0; i < 4; i++) {
       this.origin.copy(this.origins[i]).applyQuaternion(q).add(pos)
       const hit = this.raycast(this.origin, this.down, rayLength)
+      const eff = this.wheelEffects[i]
       if (!hit) {
         this.hitDistance[i] = -1
+        eff.grounded = false
+        eff.slip = 0
         continue
       }
       wheelsAreTouchingGround = true
@@ -350,6 +373,10 @@ export class Syn3hBuggy extends Vehicle {
       const pv = b.velocityAtPoint(this.origin)
       hv.set(pv.x, pv.y, pv.z).applyQuaternion(this.qWheelInv)
       const hitVel = this.hitVelocity[i].set(hv.x, hv.y, -hv.z)
+      eff.grounded = true
+      eff.point.copy(this.hitPoint)
+      eff.normal.set(hit.normal.x, hit.normal.y, hit.normal.z)
+      eff.slip = Math.abs(hitVel.x)
 
       // VB 299-306, riding on rigid bodies. Only dynamic bodies in the terrain group can be hit
       // (wheel rays ignore vehicles), and the sign is the corrected one from the classic port:
@@ -371,6 +398,8 @@ export class Syn3hBuggy extends Vehicle {
       this.motorSpeed += ((hitVel.z - this.motorSpeed) * friction * dt) / this.motorTorque
     }
     this.wheelsGrounded = grounded
+    this.landedThisStep = wasAirborne && grounded > 0
+    if (this.landedThisStep) this.landingImpact = Math.max(0, -lv.y)
 
     // Suspension, VB 336-344: skipped while inverted, shocks at 0.8.
     const mass = b.mass()
@@ -402,6 +431,11 @@ export class Syn3hBuggy extends Vehicle {
         ub.drag = 0.01
       }
     }
+
+    // Lava and water (Mars Explorer Buggy.js 435-475, see lava.ts), after drag like the original.
+    this.inLiquid = applyLava(ub, FLOAT_POINTS, (x, z) => this.liquidAt(x, z), {
+      x: smoothed.x, y: smoothed.y, wingsOpen: this.areWingsOpen,
+    })
 
     ub.flush(dt)
   }

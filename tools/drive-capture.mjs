@@ -11,6 +11,7 @@
  * Teleport y defaults to terrain height plus clearance. landmark:"dune" finds a
  * deterministic local crest and places the car on its approach; inspect the trace to
  * confirm this vehicle actually leaves the ground. This is not a guaranteed jump.
+ * roadFollow:true drives a bounded road-following controller for volcano chase QA.
  * Input events use browser timers independent of screenshot latency. Trace timestamps
  * record actual time and simulation tick; late captures are labelled, not disguised.
  * Comparison runs are sequential in fresh contexts, with identical timelines; the
@@ -43,6 +44,7 @@ try {
     if (options.network !== 'true') await context.routeWebSocket(/\/ws(?:\?|$)/, socket => socket.close())
     const page = await context.newPage(), errors = []
     page.on('pageerror', e => errors.push(e.message))
+    page.on('console', message => { if (message.type() === 'error') errors.push(message.text()) })
     const url = new URL(options.url ?? 'http://localhost:5186/')
     url.searchParams.set('autoplay', '1')
     // Isolate captures from live players and shared world-parameter changes.
@@ -50,6 +52,8 @@ try {
     if (kind !== 'current') url.searchParams.set('vehicle', kind)
     await page.goto(url.href)
     await page.waitForFunction(() => window.syn3h?.game?.tick > 10, null, { timeout: 90000 })
+    await page.evaluate(() => { window.syn3h.shell?.play(); document.activeElement?.blur?.() })
+    if (options.network !== 'true') await page.evaluate(() => { window.syn3h.bots.remote = false })
     await page.waitForTimeout(scenario.settleMs ?? 1000)
     await page.evaluate(scenario => {
       const s = window.syn3h
@@ -77,6 +81,26 @@ try {
         if (!best) throw new Error('No suitable dune approach for this terrain seed')
         return best
       }
+      let roadTimer = null
+      if (scenario.roadFollow) {
+        const paths = s.terrain.roadPaths?.() ?? s.terrain.data?.roads ?? []
+        const road = paths.find(r => r.kind === 'volcano') ?? paths[0]
+        const points = road?.points ?? road
+        if (!points?.length) throw new Error('Road capture needs a terrain road centreline')
+        const initialIndex = Math.min(points.length - 2, Math.floor((scenario.roadStart ?? 0) * points.length))
+        const first = points[initialIndex], next = points[Math.min(initialIndex + 3, points.length - 1)]
+        s.player.teleport({ x: first.x, y: s.terrain.heightAt(first.x, first.z) + 2, z: first.z }, Math.atan2(first.x-next.x, first.z-next.z))
+        let index = initialIndex
+        roadTimer = setInterval(() => {
+          const pos = s.player.body.translation(), q = s.player.body.rotation()
+          while (index < points.length - 1 && Math.hypot(points[index].x-pos.x, points[index].z-pos.z) < 10) index++
+          const aim = points[index], dx = aim.x-pos.x, dz = aim.z-pos.z
+          const fx = -2*(q.x*q.z+q.y*q.w), fz = -(1-2*(q.x*q.x+q.y*q.y))
+          const error = Math.atan2(fx*dz-fz*dx, fx*dx+fz*dz)
+          s.game.input.external.x = Math.max(-1, Math.min(1, error / 0.35))
+          s.game.input.external.y = Math.abs(error) > 0.5 ? 0.25 : 0.7
+        }, 50)
+      }
       const start = performance.now()
       const apply = event => {
         for (const [id, value] of Object.entries(event.params ?? {})) {
@@ -94,7 +118,7 @@ try {
         applied.push({ ...event, actualMs: performance.now() - start, tick: s.game.tick })
       }
       const timers = scenario.events.map(event => event.atMs === 0 ? (apply(event), null) : setTimeout(() => apply(event), event.atMs))
-      window.driveCapture = { start, applied, stop() { for (const timer of timers) clearTimeout(timer); for (const code of pressed) key(code, false) } }
+      window.driveCapture = { start, applied, stop() { clearInterval(roadTimer); s.game.input.external.x = 0; s.game.input.external.y = 0; for (const timer of timers) clearTimeout(timer); for (const code of pressed) key(code, false) } }
     }, scenario)
     const frames = [], images = []
     for (let requestedMs = 0; requestedMs <= scenario.durationMs; requestedMs += interval) {
@@ -109,7 +133,7 @@ try {
         const pitch = Math.asin(-Math.max(-1, Math.min(1, m23)))
         const yaw = Math.abs(m23) < 0.9999999 ? Math.atan2(m13, m33) : Math.atan2(-m31, m11)
         const roll = Math.abs(m23) < 0.9999999 ? Math.atan2(m21, m22) : 0
-        return { actualMs: performance.now() - window.driveCapture.start, tick: s.game.tick, simulatedSeconds: s.game.time, position: { ...p }, speedMps: Math.hypot(v.x, v.y, v.z), quaternion: { ...q }, orientationDegrees: { pitch: pitch * 180 / Math.PI, yaw: yaw * 180 / Math.PI, roll: roll * 180 / Math.PI }, heightAboveTerrain: p.y - s.terrain.heightAt(p.x, p.z), wheelsGrounded: s.player.wheelsGrounded ?? null, camera: { position: s.game.camera.position.toArray(), clearance: s.game.camera.position.y - s.terrain.heightAt(s.game.camera.position.x, s.game.camera.position.z), distance: s.game.camera.position.distanceTo(s.player.object.position), fov: s.game.camera.fov }, backend: s.game.backend }
+        return { actualMs: performance.now() - window.driveCapture.start, tick: s.game.tick, simulatedSeconds: s.game.time, position: { ...p }, speedMps: Math.hypot(v.x, v.y, v.z), quaternion: { ...q }, orientationDegrees: { pitch: pitch * 180 / Math.PI, yaw: yaw * 180 / Math.PI, roll: roll * 180 / Math.PI }, heightAboveTerrain: p.y - s.terrain.heightAt(p.x, p.z), wheelsGrounded: s.player.wheelsGrounded ?? null, camera: { position: s.game.camera.position.toArray(), clearance: s.game.camera.position.y - s.terrain.heightAt(s.game.camera.position.x, s.game.camera.position.z), distance: s.game.camera.position.distanceTo(s.player.object.position), fov: s.game.camera.fov }, backend: s.game.backend, bots: s.bots?.vehicles.map(bot => { const b = bot.body.translation(), v = bot.body.linvel(); return { id: bot.id, position: { ...b }, speedMps: Math.hypot(v.x, v.y, v.z), distance: Math.hypot(b.x-p.x, b.y-p.y, b.z-p.z), wheelsGrounded: bot.wheelsGrounded } }) ?? [] }
       })
       const name = `${kind}-${String(frames.length).padStart(3, '0')}.png`
       const png = await page.screenshot({ path: join(output, name) })

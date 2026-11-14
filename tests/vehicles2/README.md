@@ -112,3 +112,42 @@ additional capture after changing the hour. The first measured CPU submission to
 31 ms, the warmed refresh 4 ms; these are CPU costs, not GPU timer measurements.
 The same target is reused. Both vehicles apply replicated body/accent colours,
 and the jet updates gear animation even when a remote proxy becomes kinematic.
+
+## Legacy tank fallback
+
+`Tank.ts` ports Mars Explorer `Tank.js`, `TankTrack.js` and `TankMe.js`. No Syn3h
+tank was found. It uses the converted original Tank.blend/TankTread.blend geometry
+and original TankTrack.png, with six independent tread offsets. The gallery labels
+it as legacy. It is not added to the lobby by this work.
+
+Three cuboid shape casts per side replace the six jointed track bodies. Segment
+centres remain X +/-2 and Z -2.5, 0, 2.5. Each contact retains the source lateral
+150 drag, rolling 50 drag, constant 10 lift, motor speed formula, persistent
+SmoothDamp state, inside-track cutoff and half-power counterrotation for pivoting.
+Forces act above the contact by tankGrip. Settings retain the source defaults and
+ranges. Parked braking and overturn recovery are included.
+
+Deliberate changes for the single-body design: 241 kg combines the runtime default
+1 kg hull and six serialized 40 kg tracks. Approximate distributed inertia replaces
+jointed inertia. A 4000 N/m spring and 450 Ns/m damper per cast provide support;
+recovery torque is limited to 20000 Nm rather than the original enormous acceleration
+mode torque. Track geometry is normalized to 1 x 0.9 x 2.2 m. These approximations
+are not claimed as serialized Syn3h values.
+
+Five headless checks cover mass/contact count, stable resting support, forward and
+reverse drive, pivot direction, no airborne traction, braking, teleport reset and
+recovery from an exactly inverted pose. Browser front/rear screenshots are
+`/tmp/syn3h-vehicles2/tank-legacy-front.png` and `tank-legacy-rear.png`.
+
+## Multiplayer evidence
+
+Run an isolated room with `PORT=8788 npx tsx server/dev.ts` and launch the test
+Vite config with `SYN3H_ROOM_PORT=8788`, then run `multiplayer-smoke.mjs`.
+Two pages verified remote jet and hovercraft kinds, distinct body/accent paint,
+loaded original meshes, and visible hover gear on the distant kinematic jet.
+Across eight motion samples, maximum body-to-interpolated-target error was
+0.000008 m. The moving owner-to-remote comparison was about 9 m under two-page
+headless load; after settling into hover it converged to 0.12 m. Browser errors: zero.
+The script photographs each remote vehicle from the other page's camera and writes
+`multiplayer-remote-jet.png`, `multiplayer-remote-hovercraft.png`, and
+`multiplayer.json` under `/tmp/syn3h-vehicles2/`.

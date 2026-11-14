@@ -9,6 +9,7 @@ import type { Terrain } from '../world/Terrain'
 import { ClassicBuggy } from './ClassicBuggy'
 import { Hovercraft } from './Hovercraft'
 import { Jet } from './Jet'
+import { Tank } from './Tank'
 import { ClassicBuggySkin, Syn3hBuggySkin } from './skins'
 import { Syn3hBuggy } from './Syn3hBuggy'
 import type { Vehicle } from './Vehicle'
@@ -34,6 +35,9 @@ export function createVehicle(
       return new ClassicBuggy(game, terrain, position, heading, hasDom ? () => new ClassicBuggySkin() : undefined)
     case 'jet':
       return new Jet(game, terrain, position, heading)
+    // The Mars Explorer tank. Syn3h had none, so it is reachable by ?vehicle=tank only.
+    case 'tank':
+      return new Tank(game, terrain, position, heading)
     case 'hovercraft':
       return new Hovercraft(game, terrain, position, heading)
     case 'buggy':

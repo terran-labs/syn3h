@@ -24,10 +24,14 @@ import type { Game } from '../core/Game'
 import { GROUP_ALL, GROUP_TERRAIN, GROUP_VEHICLE, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import {
-  buggyCG, buggyPower, buggyShocks, buggySmartSuspension, buggySpeed, buggyTraction,
+  buggyCG, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightSlip, buggyPower, buggyShocks,
+  buggySmartSuspension, buggySpeed, buggyTraction,
 } from './buggyParams'
+import { worldLavaAltitude } from '../../shared/params'
 import type { BuggySkin } from './skins/BuggySkin'
-import { Vehicle } from './Vehicle'
+import { applyLava, floatPoints } from './lava'
+import { DEG, UnityBody, signedAngle, unityEulerAngles } from './unityBody'
+import { Vehicle, type WheelEffect, createWheelEffects } from './Vehicle'
 
 // ---------------------------------------------------------------------------------------
 // Constants from the original prefab and script.
@@ -41,13 +45,13 @@ const WHEEL_RADIUS = 0.3
 const MOTOR_MASS = 1
 const MOTOR_DRAG = 1
 const MAX_ACCELERATION = 60
-/** Unity's default Rigidbody.maxAngularVelocity. */
-const MAX_ANGULAR_VELOCITY = 7
 /** Buggy.prefab `wheelPos` and `axelPos` (Unity local, read from the fork's text prefab). */
 const WHEEL_POS = { x: 0.7, y: 0, z: 0.8 }
 const AXEL_POS = { x: 0.375, y: -0.1, z: 0.75 }
 /** "Vehicle Slick" physic material on the chassis collider. */
 const CHASSIS_FRICTION = 0.1
+/** Friction of Unity's default physic material, which the original terrain used. */
+const UNITY_TERRAIN_FRICTION = 0.6
 const CHASSIS_RESTITUTION = 0.1
 
 /**
@@ -70,7 +74,8 @@ function lerp(a: number, b: number, t: number): number {
 }
 
 const UP = new THREE.Vector3(0, 1, 0)
-const DEG = 180 / Math.PI
+/** Buggy.prefab Floats (12 points at scale 0.25) over the classic footprint. */
+const FLOAT_POINTS = floatPoints(1, 1, -0.15, 0.15)
 
 /** Wheel mount i in our local frame. Buggy.js 67: i%2 is right, i<2 is front. */
 function wheelMount(i: number): THREE.Vector3 {
@@ -88,6 +93,13 @@ export class ClassicBuggy extends Vehicle {
   motorTorque = 0
   motorAccel = MAX_ACCELERATION
   wingOpen = false
+  /** Buggy.js wingState: 1 to 2 opening, -1 to 0 closing, 0 at rest. */
+  wingState = 0
+  private lastSpecial = false
+  motorInputSmoothed = 0
+  brakePower = 0
+  /** In lava or water this step. */
+  inLiquid = false
   isInverted = false
   readonly hitDistance = [-1, -1, -1, -1]
   readonly hitCompress = [0, 0, 0, 0]
@@ -95,23 +107,27 @@ export class ClassicBuggy extends Vehicle {
   readonly hitVelocity = [0, 1, 2, 3].map(() => new THREE.Vector3())
   /** Steering yaw of each wheel in our frame, radians about +Y. */
   readonly steer = [0, 0, 0, 0]
-  /** Unity rigidbody.drag and angularDrag. Persist between steps like the Unity properties. */
-  drag = 0.01
-  angularDrag = 2
+  /** Unity rigidbody semantics: forces, drag, ForceMode (unityBody.ts). Prefab drag 0.01, angular 2. */
+  readonly ub: UnityBody
+  get drag(): number { return this.ub.drag }
+  set drag(v: number) { this.ub.drag = v }
+  get angularDrag(): number { return this.ub.angularDrag }
+  set angularDrag(v: number) { this.ub.angularDrag = v }
   /** True while the chassis uses Maximum friction combine (crashing). Buggy.js 477-483. */
   crashing = false
+
+
+  /** Vehicle.getWheelEffects: persistent FL, FR, RL, RR entries from the last fixed step. */
+  readonly wheelEffects: readonly WheelEffect[] = createWheelEffects(4)
+  getWheelEffects(): readonly WheelEffect[] {
+    return this.wheelEffects
+  }
 
   private readonly wheelPositn = [0, 1, 2, 3].map(wheelMount)
   private comY = Number.NaN
   private readonly inertia: RAPIER.Vector
   private readonly inertiaFrame: RAPIER.Rotation
   private readonly comLocal = new THREE.Vector3(0, 0, -0.2)
-
-  // Force accumulators for this step (world frame, torque about the centre of mass).
-  private readonly accF = new THREE.Vector3()
-  private readonly accT = new THREE.Vector3()
-  private readonly accDV = new THREE.Vector3()
-  private readonly accDW = new THREE.Vector3()
 
   // Visuals.
   private readonly wheelGroups: THREE.Group[] = []
@@ -122,10 +138,12 @@ export class ClassicBuggy extends Vehicle {
   private readonly fallback = new THREE.Group()
   private readonly bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x7a1838, roughness: 0.45, metalness: 0.3 })
   private spin = 0
-  private wingOpenAmount = 0
+  private readonly lastWings = [-1, 0, 0]
+  private readonly euler = new THREE.Vector3()
 
   constructor(game: Game, terrain: Terrain, position: THREE.Vector3, heading = 0, skinFactory?: () => BuggySkin) {
     super(game, terrain, position, heading)
+    this.ub = new UnityBody(this.body, game.world, 0.01, 2)
     this.object.add(this.fallback)
     const desc = RAPIER.ColliderDesc.convexHull(new Float32Array(HULL))!
       .setMass(MASS)
@@ -188,74 +206,22 @@ export class ClassicBuggy extends Vehicle {
     this.body.recomputeMassPropertiesFromColliders()
   }
 
-  // ---- Unity style force helpers -----------------------------------------------------
+  // ---- Unity style force helpers (see unityBody.ts) -------------------------------------
 
-  private readonly tmpR = new THREE.Vector3()
-  private readonly tmpC = new THREE.Vector3()
-
-  private worldCom(out: THREE.Vector3): THREE.Vector3 {
-    const c = this.body.worldCom()
-    return out.set(c.x, c.y, c.z)
-  }
-
-  /** Rigidbody.AddForceAtPosition, ForceMode.Force. */
   private addForceAtPosition(f: THREE.Vector3, p: THREE.Vector3): void {
-    this.accF.add(f)
-    this.tmpR.subVectors(p, this.worldCom(this.tmpC))
-    this.accT.add(this.tmpR.cross(f))
+    this.ub.addForceAtPosition(f, p)
   }
 
-  /**
-   * Rigidbody.AddForceAtPosition, ForceMode.VelocityChange. PhysX adds the vector straight to
-   * the linear velocity and `r x v` straight to the angular velocity, ignoring mass and inertia.
-   */
   private addVelocityChangeAtPosition(dv: THREE.Vector3, p: THREE.Vector3): void {
-    this.accDV.add(dv)
-    this.tmpR.subVectors(p, this.worldCom(this.tmpC))
-    this.accDW.add(this.tmpR.cross(dv))
+    this.ub.addVelocityChangeAtPosition(dv, p)
   }
 
-  /** Rigidbody.AddTorque, ForceMode.Force, world frame. */
   private addTorque(t: THREE.Vector3): void {
-    this.accT.add(t)
+    this.ub.addTorque(t)
   }
 
-  /**
-   * Hand the step's forces to Rapier with Unity's drag folded in.
-   *
-   * PhysX does `v' = (v + a * dt) * (1 - drag * dt)`, gravity included in `a`. Expanding that:
-   * scale the current velocity by k = 1 - drag * dt now, and scale every force by k, adding
-   * `m * g * (k - 1)` so Rapier's own gravity ends up scaled too. Forces must stay forces:
-   * Rapier substeps its solver, so an impulse applied before the step is not equivalent to a
-   * force and leaves a bias against gravity.
-   */
   private flushForces(dt: number): void {
-    const b = this.body
-    const kv = Math.max(0, 1 - this.drag * dt)
-    const kw = Math.max(0, 1 - this.angularDrag * dt)
-    const v = b.linvel()
-    const w = b.angvel()
-    const av = { x: (w.x + this.accDW.x) * kw, y: (w.y + this.accDW.y) * kw, z: (w.z + this.accDW.z) * kw }
-    // Unity's maxAngularVelocity cap, applied to the velocity we hand over.
-    const wl = Math.hypot(av.x, av.y, av.z)
-    if (wl > MAX_ANGULAR_VELOCITY) {
-      const s = MAX_ANGULAR_VELOCITY / wl
-      av.x *= s; av.y *= s; av.z *= s
-    }
-    b.setLinvel({ x: (v.x + this.accDV.x) * kv, y: (v.y + this.accDV.y) * kv, z: (v.z + this.accDV.z) * kv }, true)
-    b.setAngvel(av, true)
-    const g = this.game.world.gravity
-    const m = b.mass()
-    b.addForce({
-      x: this.accF.x * kv + m * g.x * (kv - 1),
-      y: this.accF.y * kv + m * g.y * (kv - 1),
-      z: this.accF.z * kv + m * g.z * (kv - 1),
-    }, true)
-    b.addTorque({ x: this.accT.x * kw, y: this.accT.y * kw, z: this.accT.z * kw }, true)
-    this.accF.set(0, 0, 0)
-    this.accT.set(0, 0, 0)
-    this.accDV.set(0, 0, 0)
-    this.accDW.set(0, 0, 0)
+    this.ub.flush(dt)
   }
 
   // ---- Raycasts ------------------------------------------------------------------------
@@ -264,10 +230,10 @@ export class ClassicBuggy extends Vehicle {
   private static readonly RAY_GROUPS = groups(GROUP_ALL, GROUP_TERRAIN | GROUP_VEHICLE)
   private readonly ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 })
 
-  private raycast(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number): RAPIER.RayColliderHit | null {
+  private raycast(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number): RAPIER.RayColliderIntersection | null {
     this.ray.origin = origin
     this.ray.dir = dir
-    return this.game.world.castRay(
+    return this.game.world.castRayAndGetNormal(
       this.ray, maxDist, true, undefined, ClassicBuggy.RAY_GROUPS, undefined, this.body,
     )
   }
@@ -293,6 +259,7 @@ export class ClassicBuggy extends Vehicle {
     const t = b.translation()
     this.q.set(r.x, r.y, r.z, r.w)
     this.pos.set(t.x, t.y, t.z)
+    this.ub.begin()
     this.up.copy(UP).applyQuaternion(this.q)
     this.down.copy(this.up).negate()
     const lv = b.linvel()
@@ -303,6 +270,24 @@ export class ClassicBuggy extends Vehicle {
     this.selfRight()
 
     let wheelsAreTouchingGround = false
+
+    // Wings, Buggy.js Update 105-122 and OnSetSpecialInput 501-513, run per fixed step so remote
+    // copies agree. wingState runs 1 to 2 while opening and -1 to 0 while closing.
+    if (input.special !== this.lastSpecial) {
+      this.lastSpecial = input.special
+      this.wingState = input.special ? 1 : -1
+    }
+    if (this.wingState !== 0) {
+      this.wingState += dt * 2
+      if (this.wingState >= 1) {
+        this.wingOpen = true
+        if (this.wingState > 2) this.wingState = 0
+      } else if (this.wingState > 0) {
+        this.wingOpen = false
+        this.wingState = 0
+      }
+    }
+    this.wingsOpen = this.wingOpen
 
     // Smart suspension, Buggy.js 180-192.
     if (buggySmartSuspension.value) {
@@ -329,16 +314,23 @@ export class ClassicBuggy extends Vehicle {
       for (let i = 0; i < 4; i++) {
         this.origin.copy(this.wheelPositn[i]).applyQuaternion(this.q).add(this.pos)
         const hit = this.raycast(this.origin, this.down, rayLength)
+        const eff = this.wheelEffects[i]
+        eff.grounded = !!hit
+        eff.slip = hit ? Math.abs(this.hitVelocity[i].x) : 0
         if (hit) {
           this.motorSpeed = this.hitVelocity[i].z
           this.hitDistance[i] = hit.timeOfImpact
+          eff.point.copy(this.down).multiplyScalar(hit.timeOfImpact).add(this.origin)
+          eff.normal.set(hit.normal.x, hit.normal.y, hit.normal.z)
         } else this.hitDistance[i] = -1
       }
+      this.wheelsGrounded = this.hitDistance.filter((d) => d !== -1).length
       return
     }
 
+    if (this.wingOpen) this.fly(dt, speed)
     // Drag and brake states, Buggy.js 287-299 (the not flying branch).
-    if (input.brakes && speed < 1.5) {
+    else if (input.brakes && speed < 1.5) {
       this.drag = input.y ? 2 : 50
       this.angularDrag = 1
     } else if (input.brakes && speed < 10) {
@@ -370,8 +362,11 @@ export class ClassicBuggy extends Vehicle {
     for (let i = 0; i < 4; i++) {
       this.origin.copy(this.wheelPositn[i]).applyQuaternion(this.q).add(this.pos)
       const hit = this.raycast(this.origin, this.down, rayLength)
-      if (!hit) {
+      const eff = this.wheelEffects[i]
+      if (!hit || this.isPassingVehicle(hit, this.origin)) {
         this.hitDistance[i] = -1
+        eff.grounded = false
+        eff.slip = 0
         continue
       }
       wheelsAreTouchingGround = true
@@ -390,6 +385,10 @@ export class ClassicBuggy extends Vehicle {
       hv.set(pv.x, pv.y, pv.z).applyQuaternion(this.qWheelInv)
       this.hitVelocity[i].set(hv.x, hv.y, -hv.z)
       const hitVel = this.hitVelocity[i]
+      eff.grounded = true
+      eff.point.copy(this.hitPoint)
+      eff.normal.set(hit.normal.x, hit.normal.y, hit.normal.z)
+      eff.slip = Math.abs(hitVel.x)
 
       // Riding on other rigid bodies, Buggy.js 404-409. DEVIATION: the original passes
       // `(hitVelocity - otherVelocity) / 4`, both in wheel space, to AddForceAtPosition with
@@ -419,7 +418,10 @@ export class ClassicBuggy extends Vehicle {
       this.motorSpeed += ((hitVel.z - this.motorSpeed) * friction * dt) / this.motorTorque
     }
 
+    const wasAirborne = this.wheelsGrounded === 0
     this.wheelsGrounded = this.hitDistance.filter((d) => d !== -1).length
+    this.landedThisStep = wasAirborne && this.wheelsGrounded > 0
+    if (this.landedThisStep) this.landingImpact = Math.max(0, -lv.y)
 
     // Suspension, Buggy.js 428-433. Wheel space y is chassis up, so hitVelocity.y is the
     // velocity along chassis up at the mount.
@@ -436,12 +438,95 @@ export class ClassicBuggy extends Vehicle {
     const crashing = !(this.wingOpen || wheelsAreTouchingGround || this.raycast(this.pos, this.down, 3))
     if (crashing !== this.crashing) {
       this.crashing = crashing
-      this.collider.setFrictionCombineRule(
-        crashing ? RAPIER.CoefficientCombineRule.Max : RAPIER.CoefficientCombineRule.Min,
-      )
+      // Unity: Maximum combine against Unity's default terrain material (friction 0.6). Our
+      // terrain has friction 1, so Max would grip 1.7 times harder while the body scrapes and
+      // trip a buggy into a roll more easily. Min against 0.6 reproduces Unity's result.
+      this.collider.setFriction(crashing ? UNITY_TERRAIN_FRICTION : CHASSIS_FRICTION)
     }
 
+    // Lava and water, Buggy.js 435-475 (lava.ts).
+    this.inLiquid = applyLava(this.ub, FLOAT_POINTS, (x, z) => this.terrain.liquidHeightAt?.(x, z) ?? worldLavaAltitude.value, {
+      x: input.x, y: input.y, wingsOpen: this.wingOpen,
+    })
+
     this.flushForces(dt)
+  }
+
+  /** Wing flight, Buggy.js 210-281. */
+  private fly(dt: number, speed: number): void {
+    const ub = this.ub
+    const input = this.input
+    this.motorInputSmoothed = lerp(input.y, this.motorInputSmoothed + (input.brakes ? -1 : 0), 0.8)
+    const mis = this.motorInputSmoothed
+    const stallSpeed = 16
+    const vel = ub.velocity
+    const locVel = ub.inverseTransformDirectionUnity(vel, this.vec)
+    const e = unityEulerAngles(ub.q, this.euler)
+    const roll = signedAngle(e.z)
+    const pitch = signedAngle(e.x)
+    const agility = buggyFlightAgility.value
+    if (locVel.lengthSq() > stallSpeed) {
+      this.drag = (speed / buggyFlightDrag.value) * 0.3
+      if (input.brakes) {
+        // Airbrakes, 221-226.
+        if (this.brakePower < 1) this.brakePower += dt * 0.15
+        const m = -this.brakePower * 2
+        ub.addRelativeForce(locVel.x * m * 5, locVel.y * m * 100, locVel.z * 150 * m)
+        ub.addRelativeTorque((pitch + input.y * -100) * -2, input.x * 280, roll * -1)
+      } else {
+        // Standard flight, 229-241: velocity follows the nose.
+        this.brakePower = 0
+        const fwd = ub.transformDirectionUnity(0, 0, 1, this.vec2)
+        const angDelta = vel.angleTo(fwd) * DEG
+        if (angDelta > 10 && buggyFlightSlip.value) {
+          ub.setVelocity(ub.transformDirectionUnity(
+            locVel.x * 0.95, locVel.y * 0.95,
+            locVel.z + (Math.abs(locVel.x) + Math.abs(locVel.y)) * 0.1 * (angDelta / 360),
+            this.vec2,
+          ))
+        } else {
+          const boost = buggyFlightLooPower.value
+            ? Math.abs(mis) / 10
+            : mis < 0.999 && mis > -0.999 ? Math.abs(mis) / 10 : 0
+          ub.setVelocity(ub.transformDirectionUnity(0, 0, locVel.length() + dt * 50 * boost, this.vec2))
+        }
+        ub.addRelativeTorque(mis * 100 * agility, 0, input.x * -100 * agility)
+      }
+      // Dihedral, 243-256.
+      if (!input.x && (e.z < 90 || e.z > 270)) {
+        ub.addRelativeTorque(0, roll * -0.6, e.z < 20 || e.z > 340 ? roll * -0.5 : 0)
+      } else if (!input.x) {
+        ub.addRelativeTorque(0, (e.z - 180) * 0.4, 0)
+      }
+      // Lava thermals, 264-267. When the first test passes Unity never casts, and the stale hit
+      // distance is 0, so the lift is a flat 400 N; otherwise (10 - distance) * 40.
+      const liquid = this.terrain.liquidHeightAt?.(ub.pos.x, ub.pos.z) ?? worldLavaAltitude.value
+      const d = ub.pos.y - liquid
+      if (ub.pos.y < worldLavaAltitude.value + 10) ub.addForce(this.vec2.set(0, 400, 0))
+      else if (d >= 0 && d <= 10) ub.addForce(this.vec2.set(0, (10 - d) * 40, 0))
+      this.angularDrag = 5
+    } else {
+      // Stalling, 274-279. `input.y + 0.5 * 100` is the source's precedence: y + 50.
+      this.angularDrag = 1
+      this.drag = (speed / buggyFlightDrag.value) * 9
+      ub.addRelativeTorque(input.y + 0.5 * 100, 0, input.x * -30)
+    }
+  }
+
+  /**
+   * DEVIATION (head-on launch fix). The original's wheel rays hit other vehicles so you can ride
+   * on them, but in a head-on crash a ray lands on the other buggy's bonnet at 20+ m/s closing
+   * speed: full suspension compression plus the riding velocity change spun buggies at 10 rad/s.
+   * A wheel only stands on another vehicle when the two move together, so a vehicle hit counts
+   * only below 3 m/s relative speed at the contact; otherwise the chassis colliders handle it.
+   */
+  private isPassingVehicle(hit: RAPIER.RayColliderIntersection, origin: THREE.Vector3): boolean {
+    const other = hit.collider.parent()
+    if (!other || other.isFixed() || !(hit.collider.collisionGroups() >>> 16 & GROUP_VEHICLE)) return false
+    const p = this.hitPoint.copy(this.down).multiplyScalar(hit.timeOfImpact).add(origin)
+    const ov = other.velocityAtPoint(p)
+    const sv = this.body.velocityAtPoint(origin)
+    return Math.hypot(ov.x - sv.x, ov.y - sv.y, ov.z - sv.z) > 3
   }
 
   /** Buggy.js 487-495, run over the chassis contacts Rapier found last step. */
@@ -557,6 +642,14 @@ export class ClassicBuggy extends Vehicle {
       this.axelDir.subVectors(g.position, a.position)
       a.scale.y = this.axelDir.length()
       a.quaternion.setFromUnitVectors(UP, this.axelDir.normalize())
+    }
+    // Buggy.js 126-163: the wing scales open 1 to 2 and shut -1 to 0, then flexes with input.
+    const ws = this.wingState
+    const open = ws >= 1 ? ws - 1 : ws < 0 ? -ws : this.wingOpen ? 1 : 0
+    const w = this.lastWings, wx = this.input.x, wp = this.motorInputSmoothed
+    if (this.skin && (Math.abs(open - w[0]) > 1e-3 || (open > 0 && (Math.abs(wx - w[1]) > 1e-3 || Math.abs(wp - w[2]) > 1e-3)))) {
+      this.skin.setWings(open, wx, wp)
+      w[0] = open; w[1] = wx; w[2] = wp
     }
   }
 }

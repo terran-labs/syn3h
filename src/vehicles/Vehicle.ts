@@ -12,7 +12,7 @@
 import * as THREE from 'three/webgpu'
 import type { Game, System } from '../core/Game'
 import { type InputState, emptyInput } from '../core/Input'
-import { GROUP_ALL, GROUP_VEHICLE, RAPIER, groups } from '../core/physics'
+import { FIXED_DT, GROUP_ALL, GROUP_TERRAIN, GROUP_VEHICLE, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import type { VehicleKind } from './index'
 
@@ -25,6 +25,24 @@ export interface VehicleState {
   /** Angular velocity. */
   w: [number, number, number]
   input: InputState
+}
+
+/** Per wheel contact state for skidmarks and dust. See `Vehicle.getWheelEffects`. */
+export interface WheelEffect {
+  /** The wheel's suspension ray hit something this step. */
+  grounded: boolean
+  /** World space contact point (last hit; stale while not grounded). */
+  readonly point: THREE.Vector3
+  /** World space surface normal at the contact (last hit; stale while not grounded). */
+  readonly normal: THREE.Vector3
+  /** Sideways speed of the wheel over the ground in m/s, absolute. 0 while not grounded. */
+  slip: number
+}
+
+export function createWheelEffects(count = 4): WheelEffect[] {
+  return Array.from({ length: count }, () => ({
+    grounded: false, point: new THREE.Vector3(), normal: new THREE.Vector3(0, 1, 0), slip: 0,
+  }))
 }
 
 export abstract class Vehicle implements System {
@@ -43,6 +61,17 @@ export abstract class Vehicle implements System {
   wheelsGrounded = 0
   /** True while wings (or a flight mode) are deployed. For audio and effects. */
   wingsOpen = false
+  /** True on the fixed step the wheels touched down after being fully airborne. For effects. */
+  landedThisStep = false
+  /** Downward speed in m/s at the last touchdown (valid when `landedThisStep`). For effects. */
+  landingImpact = 0
+
+  /**
+   * Optional: per wheel contact state from the last fixed step, for skidmarks and dust. Returns
+   * the same persistent objects every call (no allocation); wheel vehicles list front left,
+   * front right, rear left, rear right.
+   */
+  getWheelEffects?(): readonly WheelEffect[]
   /** Body and accent colours, kept here so networking can replicate them. */
   readonly colors = { body: '#1768b4', accent: '#49e6ff' }
 
@@ -92,10 +121,91 @@ export abstract class Vehicle implements System {
   protected abstract applyForces(dt: number): void
 
   fixedUpdate(dt: number): void {
-    if (this.isLocal) Object.assign(this.input, this.game.input.state)
+    if (this.isLocal) {
+      Object.assign(this.input, this.game.input.state)
+      this.localSafety()
+    }
     this.body.resetForces(true)
     this.body.resetTorques(true)
     this.applyForces(dt)
+  }
+
+  /**
+   * Spawn slot used by `localSafety` when the vehicle falls off the world: it respawns at
+   * `terrain.spawnPoint(spawnSlot)`. Networking: set this whenever the server assigns the
+   * player a slot (the same index you pass to `terrain.spawnPoint` when teleporting the player
+   * there), so a fall-off respawn lands on the player's own pad. Defaults to 0.
+   */
+  spawnSlot = 0
+  private readonly safetyRay = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 })
+
+  /**
+   * Owner-side safety nets, run only for the vehicle this client simulates:
+   *  - Fell off the world (Syn3h VhiclMe.cs 41-47, Mars Explorer VehicleMe.js 70-76): below
+   *    y -300, keep only the direction of travel and return to a spawn point. The originals
+   *    used a fixed point; a spawn point works on any seed.
+   *  - Underground rescue (Syn3h VhiclLocal.cs, MapMagic block): under the ground surface with
+   *    no terrain beneath, put it back on the surface 3 m up (the prefab CamOffset).
+   *  - Speed clamp (Mars Explorer VehicleMe.js 77): above 500 m/s, halve the velocity.
+   */
+  protected localSafety(): void {
+    const b = this.body
+    const t = b.translation()
+    if (t.y < -300) {
+      const v = b.linvel()
+      const len = Math.hypot(v.x, v.y, v.z) || 1
+      const s = this.terrain.spawnPoint(this.spawnSlot)
+      this.teleport(s.position, s.heading)
+      b.setLinvel({ x: v.x / len, y: v.y / len, z: v.z / len }, true)
+      return
+    }
+    const half = this.terrain.size / 2
+    if (Math.abs(t.x) < half && Math.abs(t.z) < half) {
+      const ground = this.terrain.heightAt(t.x, t.z)
+      if (t.y < ground - 0.5) {
+        this.safetyRay.origin = t
+        const below = this.game.world.castRay(
+          this.safetyRay, 1e4, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+          groups(GROUP_ALL, GROUP_TERRAIN), undefined, b,
+        )
+        if (!below) b.setTranslation({ x: t.x, y: ground + 3, z: t.z }, true)
+      }
+    }
+    const v = b.linvel()
+    if (v.x * v.x + v.y * v.y + v.z * v.z > 500 * 500) b.setLinvel({ x: v.x * 0.5, y: v.y * 0.5, z: v.z * 0.5 }, true)
+    this.uprightRescue()
+  }
+
+  /** Fixed steps spent stuck on the roof or side; see `uprightRescue`. */
+  stuckSteps = 0
+  /** Seconds a vehicle may lie on its roof or side before it is set upright. */
+  static readonly STUCK_SECONDS = 3
+
+  /**
+   * Timed fallback for a vehicle that cannot right itself (not in either original). Lying flat
+   * on its roof the original self righting torque, cross(up, Y) * angle, is near zero and
+   * gravity holds the flat roof down, so the player is stuck. Tilted past about 72 degrees,
+   * slower than 3 m/s and within 3 m of the ground for 3 s: set it upright in place, keeping
+   * its heading, lifted clear of the ground.
+   */
+  protected uprightRescue(): void {
+    const b = this.body
+    const r = b.rotation()
+    const upY = 1 - 2 * (r.x * r.x + r.z * r.z)
+    const t = b.translation()
+    const v = b.linvel()
+    const ground = this.terrain.heightAt(t.x, t.z)
+    const stuck = upY < 0.3 && v.x * v.x + v.y * v.y + v.z * v.z < 9 && t.y - ground < 3
+    this.stuckSteps = stuck ? this.stuckSteps + 1 : 0
+    if (this.stuckSteps * FIXED_DT < Vehicle.STUCK_SECONDS) return
+    this.stuckSteps = 0
+    // Heading from the forward axis projected on the ground; fall back to the up axis when the
+    // nose points straight up or down.
+    const q = new THREE.Quaternion(r.x, r.y, r.z, r.w)
+    const f = new THREE.Vector3(0, 0, -1).applyQuaternion(q)
+    if (f.x * f.x + f.z * f.z < 0.01) f.set(0, 1, 0).applyQuaternion(q).negate()
+    const heading = Math.atan2(-f.x, -f.z)
+    this.teleport(new THREE.Vector3(t.x, Math.max(t.y, ground) + 1.5, t.z), heading)
   }
 
   postPhysics(_dt: number): void {

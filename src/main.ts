@@ -8,9 +8,11 @@ import { ChaseCamera } from './core/ChaseCamera'
 import { Game } from './core/Game'
 import { startNetworking } from './net'
 import { ParamPanel } from './ui/ParamPanel'
+import { generateName } from './ui/data/names'
 import { initGameShell } from './ui/Shell'
 import { readVehicleChoice } from './ui/VehicleChoice'
 import { type VehicleKind, createVehicle } from './vehicles'
+import { attachVehicleEffects } from './vehicles/effects'
 import { createEnvironment } from './world/Environment'
 import { createTerrain } from './world'
 
@@ -36,6 +38,8 @@ async function main(): Promise<void> {
   player.isLocal = true
   player.setColors?.(choice.bodyColor, choice.accentColor)
   game.add(player)
+  // Tracks, dust, thrusters and lights. Only the local vehicle gets a real headlight.
+  attachVehicleEffects(game, terrain, player, { local: true })
   // A new seed or terrain parameter rebuilds the ground in place: put the player back on it.
   terrain.onRegenerate?.(() => {
     const s = terrain.spawnPoint(0)
@@ -74,6 +78,9 @@ async function main(): Promise<void> {
       name: shell.playerName,
       room: shell.room || query.get('room') || 'lobby',
       setStatus: (lines) => { netStatus = lines; shell.setStatus(lines) },
+      setMapEntities: (e) => shell.setMapEntities(e),
+      setMatchState: (m) => shell.setMatchState(m),
+      names: (seed, kind) => generateName(seed, kind),
     })
   }
   shell.onPlay = join

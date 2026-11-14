@@ -88,3 +88,11 @@ Y=-0.1 offset. See the conversion script and `tests/vehicles2/README.md` for sou
 `convert-syn3h-hovercraft.py`. It replaces the earlier .3ds conversion, which was the
 same older asset in both repositories. All five original named surfaces and UVs are
 recovered. See `tests/vehicles2/README.md` for the script GUID trace and scale evidence.
+
+## Mars Explorer tank fallback
+
+`Tank.ts` uses the already converted `tank.glb` and `tanktread.glb`. It rotates the
+hull into Y-up, hides the duplicated hull mesh, and normalizes each of six tread
+segments to 1 x 0.9 x 2.2 m. `textures/tank-track.png` is the original
+`Vehicles/Tank/Components/Materials/TankTrack.png`; its UV offset follows contact
+speed. This is the legacy Mars Explorer tank, not a recovered Syn3h vehicle.

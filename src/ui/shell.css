@@ -27,7 +27,7 @@
 .syn3h-shell h1:focus, .syn3h-shell h2:focus { outline: none; }
 .syn3h-shell .lobby-links button { background: transparent; border: 0; padding: 0; min-height: 40px; font-size: 16px; }
 .lobby-destinations { display: grid; gap: 10px; }
-.lobby-destinations button { min-height: 70px; }
+.syn3h-shell .lobby-destinations button { min-height: 70px; }
 .syn3h-shell .panel-back { display: block; min-width: 200px; margin: 24px auto 0; }
 .lobby-footer { position: relative; display: flex; justify-content: space-between; align-items: center; width: min(800px,100%); gap: 20px; flex: 0 0 35px; font-size: 13px; color: #9ca5b4; }
 .shell-message { overflow-wrap: anywhere; font-size: 13px; }
@@ -91,10 +91,80 @@
 .touch-actions button { border: 1px solid #9ebee37a; border-radius: 50%; height: 62px; color: #e5f0ff; background: #182c47bd; font: 100 15px 'Syn3h Roboto',sans-serif; pointer-events: auto; touch-action: none; }
 .touch-actions .touch-fire { grid-column: 2; background: #43668dc9; }
 .touch-actions button.held, .touch-actions button[aria-pressed=true] { background: #8bbff2dd; color: #10243b; }
-@media (max-width: 700px) { .shell-overlay { padding: max(8px,env(safe-area-inset-top)) 16px max(8px,env(safe-area-inset-bottom)); } .lobby-brand { flex-basis: 140px; } .shell-logo { max-height: 150px; width: 290px; } .lobby-panels { max-height: none; width: 100%; } .lobby-panels > section { padding: 8px 4px 16px; } .lobby-panels > .lobby-index { display: flex; flex-direction: column; justify-content: center; gap: 12px; padding-bottom: 12px; } .lobby-message { padding: 0; text-align: center; max-width: 330px; } .lobby-message h1 { font-size: 28px; margin-bottom: 12px; } .lobby-message p { font-size: 16px; margin: 8px 0; } .lobby-links { margin: 6px 0; justify-content: center; } .lobby-destinations { width: 100%; max-width: 350px; gap: 8px; } .lobby-destinations button { min-height: 55px; } .lobby-footer { font-size: 11px; flex-basis: 30px; gap: 8px; } .shell-hud { left: 12px; top: 12px; width: 180px; padding: 8px; } .shell-speed strong { font-size: 34px; } .hud-scoreboard { max-height: 95px; } .hud-scoreboard .score-detail { display: none; } .hud-navigation { right: 12px; top: 12px; flex-direction: column; gap: 5px; } .hud-navigation button { padding: 8px 12px; font-size: 14px; } .touch-stick { width: 124px; height: 124px; left: 18px; } .touch-knob { left: 35px; top: 35px; } .touch-actions { right: 18px; } .shell-vehicle-preview { height: 170px; } .shell-colors { gap: 20px; } }
-@media (max-height: 550px) { .lobby-brand { flex-basis: 75px; } .shell-logo { max-height: 90px; width: 180px; } .lobby-panels > .lobby-index { justify-content: start; align-items: center; } .lobby-destinations button { min-height: 44px; } }
+@media (max-width: 700px) { .shell-overlay { padding: max(8px,env(safe-area-inset-top)) 16px max(8px,env(safe-area-inset-bottom)); } .lobby-brand { flex-basis: 140px; } .shell-logo { max-height: 150px; width: 290px; } .lobby-panels { max-height: none; width: 100%; } .lobby-panels > section { padding: 8px 4px 16px; } .lobby-panels > .lobby-index { display: flex; flex-direction: column; justify-content: center; gap: 12px; padding-bottom: 12px; } .lobby-message { padding: 0; text-align: center; max-width: 330px; } .lobby-message h1 { font-size: 28px; margin-bottom: 12px; } .lobby-message p { font-size: 16px; margin: 8px 0; } .lobby-links { margin: 6px 0; justify-content: center; } .lobby-destinations { width: 100%; max-width: 350px; gap: 8px; } .syn3h-shell .lobby-destinations button { min-height: 55px; } .lobby-footer { font-size: 11px; flex-basis: 30px; gap: 8px; } .shell-hud { left: 12px; top: 12px; width: 180px; padding: 8px; } .shell-speed strong { font-size: 34px; } .hud-scoreboard { max-height: 95px; } .hud-scoreboard .score-detail { display: none; } .hud-navigation { right: 12px; top: 12px; flex-direction: column; gap: 5px; } .hud-navigation button { padding: 8px 12px; font-size: 14px; } .touch-stick { width: 124px; height: 124px; left: 18px; } .touch-knob { left: 35px; top: 35px; } .touch-actions { right: 18px; } .shell-vehicle-preview { height: 170px; } .shell-colors { gap: 20px; } }
+@media (max-height: 550px) { .lobby-brand { flex-basis: 75px; } .shell-logo { max-height: 90px; width: 180px; } .lobby-panels > .lobby-index { justify-content: start; align-items: center; } .syn3h-shell .lobby-destinations button { min-height: 44px; } }
 @media (prefers-reduced-motion: reduce) { .shell-logo { animation: none; } }
 
 @keyframes panel-arrival { from { opacity: 0; transform: translateZ(-30px); } to { opacity: 1; transform: translateZ(0); } }
 .lobby-panels { animation: panel-arrival 1s cubic-bezier(.333,.667,.667,1) 1s backwards; }
 @media (prefers-reduced-motion: reduce) { .lobby-panels { animation: none; } }
+
+.syn3h-shell:not(.is-playing) .shell-toast { display: none; }
+.shell-message { max-height: 40px; overflow: hidden; text-align: center; }
+@media (max-width: 700px) { .syn3h-shell.is-playing .shell-toast { top: 190px; width: calc(100% - 40px); max-width: none; } }
+
+.touch-controls [hidden] { display: none !important; }
+.shell-vehicle-options { flex-wrap: wrap; gap: 10px 18px; }
+.vehicle-help { text-align: left; font-size: 14px; line-height: 1.7; color: #c8d9ef; }
+.spawn-help { position: fixed; z-index: 14; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 12px 18px; max-width: 520px; background: #152337eb; border: 1px solid #536b8a; font-size: 14px; pointer-events: none; }
+.spawn-help strong { font-weight: 100; color: white; }
+.spawn-help small { color: #9bb8db; }
+.syn3h-shell:not(.is-playing) .spawn-help { display: none; }
+@media (max-width: 700px) { .spawn-help { left: 12px; right: 12px; bottom: 260px; transform: none; font-size: 13px; } }
+
+.syn3h-loading { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: radial-gradient(ellipse at top,#172540,#03060c 75%); color: #cacaca; font: 100 18px 'Syn3h Roboto',sans-serif; padding: 24px; text-align: center; }
+.syn3h-loading[hidden] { display: none; }
+.syn3h-loading img { width: min(400px,80vw); filter: drop-shadow(0 0 15px #1b5ea6); }
+.syn3h-loading h1 { font: 100 30px 'Syn3h Lato',sans-serif; margin: 0; color: white; }
+.syn3h-loading p { margin: 0; }
+.syn3h-loading progress { width: min(320px,80vw); height: 4px; accent-color: #7abaff; }
+.syn3h-loading small { color: #8da0bb; }
+#fatal { z-index: 100; }
+
+.shell-minimap { position: fixed; right: 20px; bottom: 20px; z-index: 12; width: 162px; height: 162px; border: 1px solid #7992b2; background: #101826; pointer-events: none; }
+.shell-minimap canvas { display: block; width: 100%; height: 100%; opacity: .88; }
+.shell-minimap span { position: absolute; top: 0; left: 5px; color: white; font-size: 12px; text-shadow: 0 1px 2px black; }
+.syn3h-shell:not(.is-playing) .shell-minimap { display: none; }
+@media (max-width: 700px) { .shell-minimap { right: 12px; top: 190px; bottom: auto; width: 110px; height: 110px; } .syn3h-shell.is-playing .shell-toast { top: 310px; font-size: 14px; } }
+.syn3h-loading progress { appearance: none; border: 0; background: #28374d; border-radius: 0; }
+.syn3h-loading progress::-webkit-progress-bar { background: #28374d; }
+.syn3h-loading progress::-webkit-progress-value { background: #7abaff; }
+.syn3h-loading progress::-moz-progress-bar { background: #7abaff; }
+.syn3h-loading progress:indeterminate { background: linear-gradient(90deg,#28374d 20%,#7abaff 50%,#28374d 80%); background-size: 200% 100%; animation: loading-sweep 1.8s linear infinite; }
+.syn3h-loading progress:indeterminate::-webkit-progress-bar { background: transparent; }
+@keyframes loading-sweep { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .syn3h-loading progress:indeterminate { animation: none; } }
+
+.shell-credits { text-align: left; font-size: 15px; line-height: 1.6; }
+.shell-credits summary { cursor: pointer; color: #dceaff; padding: 12px; border: 1px solid #536b8a; }
+.shell-credits ul { padding-left: 22px; }
+.shell-credits a { color: #9ccaff; text-underline-offset: 3px; }
+
+.match-hud { position: fixed; z-index: 13; top: 85px; left: 50%; transform: translateX(-50%); width: 330px; padding: 12px; background: #152337ee; border: 1px solid #7188a7; pointer-events: none; }
+.match-hud > strong { font: 100 24px 'Syn3h Lato',sans-serif; color: white; }
+.syn3h-shell .hill-holder { margin: 4px 0; overflow-wrap: anywhere; line-height: 1.3; }
+.match-hud > small { color: #a7c8ef; }
+.match-hud.is-yours { border-color: #78c9da; }
+.match-hud.is-contested { border-color: #e4b078; }
+.match-hud.is-contested .hill-holder { color: #ffd19e; }
+.match-race { margin-top: 9px; display: grid; gap: 8px; }
+.match-score { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 2px 6px; font-size: 13px; }
+.match-score span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.match-score.is-you { color: #b0eaff; }
+.match-score progress { grid-column: 1 / -1; width: 100%; height: 4px; appearance: none; border: 0; background: #34445a; }
+.match-score progress::-webkit-progress-bar { background: #34445a; }
+.match-score progress::-webkit-progress-value { background: #87b5e5; }
+.match-score.is-you progress::-webkit-progress-value { background: #8bd6d9; }
+.match-score progress::-moz-progress-bar { background: #87b5e5; }
+.match-announcement { position: fixed; z-index: 16; left: 50%; top: 43%; transform: translateX(-50%); width: min(600px,85vw); padding: 16px; text-align: center; background: #152337ec; border: 1px solid #8dbce5; color: white; font: 100 36px/1.2 'Syn3h Lato',sans-serif; pointer-events: none; overflow-wrap: anywhere; }
+.syn3h-shell:not(.is-playing) .match-hud, .syn3h-shell:not(.is-playing) .match-announcement { display: none; }
+@media (max-width: 700px) {
+  .match-hud { left: 12px; top: 190px; width: calc(100% - 146px); max-height: 205px; overflow: hidden; transform: none; padding: 8px; font-size: 13px; }
+  .match-hud > strong { font-size: 19px; }
+  .match-hud > small { font-size: 11px; }
+  .match-race { gap: 6px; margin-top: 6px; }
+  .match-score { font-size: 11px; }
+  .match-announcement { top: 405px; left: 12px; width: calc(100% - 24px); transform: none; font-size: 24px; padding: 10px; }
+  .syn3h-shell.has-match .shell-toast { top: 405px; }
+  .syn3h-shell.match-announcing .shell-toast { display: none; }
+}

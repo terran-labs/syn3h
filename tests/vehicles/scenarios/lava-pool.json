@@ -1,0 +1,1 @@
+{"name":"Drive into the lava pool at speed, then idle and paddle","durationMs":12000,"captureEveryMs":750,"settleMs":1500,"events":[{"atMs":0,"params":{"bots.count":0,"sun.timeOfDay":12}},{"atMs":100,"teleport":{"x":-118,"z":-126,"clearance":1.5,"heading":0.755}},{"atMs":1200,"down":["KeyW"]},{"atMs":5500,"up":["KeyW"]},{"atMs":9000,"down":["KeyW"]},{"atMs":12000,"up":["KeyW"]}]}

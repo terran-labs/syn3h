@@ -5,8 +5,7 @@
  *   npx vite --port 5183 --strictPort
  *   node tools/net-smoke.mjs [http://localhost:5183/]
  *
- * Also works against a production build (`npx wrangler dev`); checks that need Vite's
- * module server (bots) are skipped there.
+ * Also works against a production build (`npx wrangler dev`), including real bot-manager checks.
  *
  * Opens two headless Chrome pages in one fresh room and checks, in order:
  *  1. both connect and see each other
@@ -20,6 +19,9 @@
  *  9. bots: A (host) owns a bot, B sees it and B's laser hit on it is judged by A
  * 10. world seed: A changes it, B regenerates and stays on the ground; a late joiner with a
  *     different ?seed= gets the room's seed
+ * 11. King of the Hill: A switches the mode, the host's zone reaches everyone, A alone on the
+ *     rim scores, B joins it and the hill is contested, B drives into the lava lake and is out,
+ *     then respawns
  * Exits non zero on any failure or page error.
  */
 import { chromium } from 'playwright-core'
@@ -204,23 +206,17 @@ try {
   const back = await a.evaluate((id) => window.syn3hNet.remotes.get(id).paused, idB)
   check('returning tab resumes', back === false, { paused: back })
 
-  // 9. Bots, owned by the host (A). Needs Vite's module server to build a vehicle in page.
-  const botMade = await a.evaluate(async () => {
-    try {
-      const { createVehicle } = await import('/src/vehicles/index.ts')
-      const THREE = await import('three/webgpu').catch(() => null)
-      const s = window.syn3h.terrain.spawnPoint(5)
-      const pos = THREE ? new THREE.Vector3(s.position.x, s.position.y, s.position.z) : s.position
-      const v = createVehicle(window.syn3h.game, window.syn3h.terrain, 'buggy', pos, 0)
-      v.isLocal = false
-      window.syn3h.game.add(v)
-      window.__bots = { vehicles: [v] }
-      window.syn3hNet.attachBots(window.__bots)
-      return true
-    } catch (e) {
-      return String(e)
-    }
+  // 9. Exercise the actual manager in both Vite and production, without module imports.
+  await a.evaluate(() => {
+    const s = window.syn3h
+    s.params.set('bots.canDrive', false); s.params.set('bots.canFire', false)
+    s.params.set('bots.count', 1)
+    window.__bots = s.bots
   })
+  const botMade = await a.waitForFunction(() => window.syn3h.bots.vehicles.length === 1, null, { timeout: 8000 }).then(() => true, () => false)
+  check('host manager spawns a bot', botMade, {})
+  const ownership = await both(() => window.syn3h.bots.remote)
+  check('only the host bot manager drives', ownership[0] === false && ownership[1] === true, { ownership })
   if (botMade === true) {
     const BOT = 0xff00
     await b.waitForFunction((id) => window.syn3hNet.remotes.has(id), BOT, { timeout: 8000 }).catch(() => {})
@@ -244,11 +240,8 @@ try {
     const hitSeen = await b.evaluate(() => window.__audioCalls.filter((c) => c === 'laserHit').length)
     const diag = { a: await a.evaluate(() => ({ lasers: window.syn3hNet.lasers.count, host: window.syn3hNet.isHost })), bFired: await b.evaluate(() => window.syn3hNet.stats.shotsFired) }
     check('host judges a laser hit on its bot', judged > judgedBefore && hitSeen >= 2, { judgedBefore, judged, hitSoundsOnB: hitSeen, ...diag })
-  } else {
-    console.log(`SKIP bots: ${botMade}`)
-    // That probe for Vite's /src modules is the only expected 404 in a production build.
-    for (let i = errors.length - 1; i >= 0; i--) if (/^Alice console: .*status of 404/.test(errors[i])) errors.splice(i, 1)
   }
+  await a.evaluate(() => window.syn3h.params.set('bots.count', 0))
 
   // 10. World seed, and a late joiner who arrives with a different one.
   await a.evaluate(() => window.syn3h.params.set('world.seed', 4242))
@@ -264,6 +257,76 @@ try {
   await wait(2500)
   const seedC = await onGround(c)
   check('late joiner gets the room seed and lands on that ground', seedC.seed === 4242 && seedC.y > seedC.ground - 1 && seedC.y < seedC.ground + 6, seedC)
+
+  // 11. King of the Hill. Spy on the shell's match display and inject a seeded bot namer, as
+  // main.ts would pass them.
+  await b.evaluate(() => {
+    window.__match = []
+    window.syn3hNet.ctx.setMatchState = (m) => window.__match.push(m)
+    window.syn3hNet.ctx.names = (seed, kind) => `${kind}-${seed}`
+  })
+  await a.evaluate(() => window.syn3h.params.set('game.mode', 1))
+  await b.waitForFunction(() => window.syn3hNet.game.mode === 1 && window.syn3hNet.game.koth.zone, null, { timeout: 8000 }).catch(() => {})
+  const zone = await b.evaluate(() => window.syn3hNet.game.koth.zone)
+  const markerShown = await b.evaluate(() => window.syn3hNet.hill.visible)
+  check('mode switch reaches B with the host\'s zone', zone && markerShown, { zone, markerShown })
+  if (zone) {
+    /** Park a page's vehicle on the zone's mid line at an angle, on the ground. */
+    const park = (page, angle) => page.evaluate(({ zone, angle }) => {
+      const r = (zone.inner + zone.outer) / 2
+      const x = zone.x + Math.cos(angle) * r
+      const z = zone.z + Math.sin(angle) * r
+      const THREE_V = window.syn3h.player.object.position.clone()
+      THREE_V.set(x, window.syn3h.terrain.heightAt(x, z) + 1.2, z)
+      window.syn3h.player.teleport(THREE_V, 0)
+      const p = window.syn3h.player.body.translation()
+      return { p: [p.x, p.y, p.z], lava: window.syn3h.terrain.liquidHeightAt?.(x, z) }
+    }, { zone, angle })
+    const score = (id) => a.evaluate((id) => window.syn3hNet.game.scores[id] ?? 0, id)
+    const parkedA = await park(a, 0.3)
+    await b.evaluate(() => { const s = window.syn3h.terrain.spawnPoint(1); window.syn3h.player.teleport(s.position, 0) })
+    await wait(4000)
+    const [holder, scoreA] = [await a.evaluate(() => window.syn3hNet.game.koth.holder), await score(idA)]
+    check('A alone on the hill holds it and scores', holder === idA && scoreA >= 2, { holder, scoreA, parkedA })
+    const held = await b.evaluate(() => window.__match.at(-1))
+    check('match display: A holds, scores in seconds, target 60', held?.mode === 'koth' && held.holderName === 'Alice' && !held.holderIsYou && held.target === 60 && held.scores.find((x) => x.name === 'Alice')?.score >= 2 && held.scores.some((x) => x.you), held)
+    await b.screenshot({ path: '/tmp/syn3h-koth-far.png' })
+
+    await park(b, 0.3 + 0.15)
+    await wait(1500)
+    const s1 = await score(idA)
+    await wait(2500)
+    const s2 = await score(idA)
+    const contested = await b.evaluate(() => window.syn3hNet.game.koth.contested)
+    const hudB = await b.evaluate(() => document.getElementById('hud').textContent)
+    check('B joins and the hill is contested, nobody scores', contested && s2 === s1 && hudB.includes('CONTESTED'), { contested, s1, s2 })
+    const cont = await b.evaluate(() => ({ last: window.__match.at(-1), updates: window.__match.length, botName: window.syn3hNet.displayName(0xff00) }))
+    check('match display: contested, few updates, seeded bot name', cont.last?.contested === true && cont.last.holderName === null && cont.updates < 40 && cont.botName.startsWith('bot-4242:65280'), cont)
+    await b.screenshot({ path: '/tmp/syn3h-koth.png' })
+
+    // Into the lava lake, if this terrain has one under the zone's centre.
+    const lavaAt = await b.evaluate((zone) => window.syn3h.terrain.liquidHeightAt?.(zone.x, zone.z) ?? -Infinity, zone)
+    if (Number.isFinite(lavaAt)) {
+      await b.evaluate(({ zone, lavaAt }) => {
+        const v = window.syn3h.player.object.position.clone()
+        v.set(zone.x, lavaAt - 0.5, zone.z)
+        window.syn3h.player.teleport(v, 0)
+      }, { zone, lavaAt })
+      await wait(800)
+      const outB = await a.evaluate((id) => window.syn3hNet.game.koth.out[id] ?? 0, idB)
+      const deaths = await b.evaluate(() => window.syn3hNet.stats.deaths)
+      const hiddenOnA = await a.evaluate((id) => window.syn3hNet.remotes.get(id)?.vehicle.object.visible === false, idB)
+      check('lava puts B out, and A sees it gone', deaths === 1 && outB > 0 && hiddenOnA, { deaths, outB, hiddenOnA })
+      await wait(3500)
+      const back = await b.evaluate(() => {
+        const p = window.syn3h.player.body.translation()
+        return { visible: window.syn3h.player.object.visible, y: +p.y.toFixed(1), ground: +window.syn3h.terrain.heightAt(p.x, p.z).toFixed(1) }
+      })
+      check('B respawns on the ground after the delay', back.visible && back.y > back.ground - 1 && back.y < back.ground + 6, back)
+    } else {
+      console.log('SKIP lava: no lava under the zone centre on this terrain')
+    }
+  }
 
   const hud = await b.evaluate(() => document.getElementById('hud').textContent)
   console.log('B HUD:\n' + hud)

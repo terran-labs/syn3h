@@ -1,0 +1,15 @@
+{
+  "name": "Six bots chasing stationary player",
+  "durationMs": 20000,
+  "captureEveryMs": 4000,
+  "events": [
+    {
+      "atMs": 0,
+      "params": {
+        "bots.count": 6,
+        "gfx.level": 2,
+        "bots.canFire": false
+      }
+    }
+  ]
+}

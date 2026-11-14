@@ -18,6 +18,10 @@ import {
   type TagEvent,
   BOT_ID_BASE,
   DEFAULT_COLORS,
+  type HillZone,
+  type KothState,
+  MODE_KOTH,
+  MODE_TAG,
   MAX_NAME_LENGTH,
   MAX_PLAYER_ID,
   PROTOCOL_VERSION,
@@ -25,6 +29,8 @@ import {
   type WireState,
   cleanColor,
   cleanKind,
+  cleanZone,
+  inZone,
   decodeState,
   isBotId,
   encodeState,
@@ -36,7 +42,9 @@ import {
 // ranges. Modules that define parameters next to Three.js code cannot be imported here; their
 // ids pass through with a basic type check instead.
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
-import { tagCooldown, tagRamReach } from '../src/modes/params'
+import {
+  KNOCK_WINDOW, WIN_PAUSE, gameMode, kothKnockBonus, kothRespawnDelay, kothTargetScore, tagCooldown, tagRamReach,
+} from '../src/modes/params'
 
 /** One connection, as the room sees it. */
 export interface Peer {
@@ -60,6 +68,7 @@ export interface RoomSnapshot {
   nextId: number
   host: number
   locked: boolean
+  zone?: HillZone | null
 }
 
 interface Player {
@@ -102,6 +111,13 @@ export class Room {
   private it = 0
   private host = 0
   private locked = false
+  private mode = MODE_TAG
+  private koth: KothState = emptyKoth()
+  /** Fractions of a point earned on the hill, per player. */
+  private readonly holdFrac = new Map<number, number>()
+  /** Who last touched each vehicle, and when (server ms), for knock-in credit. */
+  private readonly lastContact = new Map<number, { by: number; at: number }>()
+  private lastTick = 0
   private scores: Record<number, number> = {}
   private nextId = 1
 
@@ -111,6 +127,12 @@ export class Room {
     this.maxPlayers = opts.maxPlayers ?? 16
     this.onPersist = opts.onPersist
     for (const p of registry.all()) if (p.def.scope === 'world') this.values.set(p.def.id, p.def.default)
+    this.mode = this.paramNumber(gameMode.def)
+  }
+
+  /** Advance time based rules. Called on every message; transports may also call it on a timer. */
+  tick(): void {
+    this.tickKoth(this.now())
   }
 
   get playerCount(): number {
@@ -132,6 +154,7 @@ export class Room {
 
   receive(peer: Peer, data: string | ArrayBuffer | Uint8Array): void {
     this.expireBots()
+    this.tickKoth(this.now())
     if (typeof data !== 'string') {
       const bytes = data instanceof Uint8Array ? data : new Uint8Array(data)
       const player = this.players.get(peer)
@@ -168,6 +191,12 @@ export class Room {
       case 'lock':
         this.onLock(player, msg.locked)
         break
+      case 'zone':
+        this.onZone(player, msg.zone)
+        break
+      case 'died':
+        this.onDied(player)
+        break
     }
   }
 
@@ -199,7 +228,7 @@ export class Room {
   snapshot(): RoomSnapshot {
     return {
       params: Object.fromEntries(this.values), it: this.it, scores: { ...this.scores }, nextId: this.nextId,
-      host: this.host, locked: this.locked,
+      host: this.host, locked: this.locked, zone: this.koth.zone,
     }
   }
 
@@ -213,6 +242,8 @@ export class Room {
     this.nextId = Math.max(this.nextId, s.nextId)
     this.host = s.host ?? 0
     this.locked = Boolean(s.locked)
+    this.mode = this.paramNumber(gameMode.def)
+    this.koth.zone = s.zone ? cleanZone(s.zone) : null
   }
 
   /** Re-attach a peer that was already joined before the process hibernated. No broadcast. */
@@ -250,6 +281,11 @@ export class Room {
     // The first player into an empty room brings the world, as the host did in the original.
     if (this.players.size === 0 && msg.params && typeof msg.params === 'object') {
       for (const id in msg.params) this.storeParam(id, msg.params[id])
+      const mode = this.paramNumber(gameMode.def)
+      if (mode !== this.mode) {
+        this.mode = mode
+        this.resetRound()
+      }
     }
 
     const used = new Set([...this.players.values()].map((p) => p.info.slot))
@@ -364,6 +400,109 @@ export class Room {
     // sender's slider snaps to what the room actually uses.
     this.broadcast({ type: 'param', id, value, from: player.info.id })
     this.persist()
+    if (id === gameMode.def.id && value !== this.mode) {
+      this.mode = value as number
+      this.resetRound()
+      this.broadcastGame('mode', player.info.id)
+    }
+  }
+
+  /** New mode or new round: everyone back to zero. */
+  private resetRound(): void {
+    for (const id in this.scores) this.scores[id] = 0
+    for (const p of [...this.players.values(), ...this.bots.values()]) p.info.score = 0
+    this.holdFrac.clear()
+    this.lastContact.clear()
+    const zone = this.koth.zone
+    this.koth = emptyKoth()
+    this.koth.zone = zone
+  }
+
+  private onZone(player: Player, raw: unknown): void {
+    if (player.info.id !== this.host) return
+    const zone = cleanZone(raw)
+    if (!zone) return
+    const old = this.koth.zone
+    if (old && Object.keys(zone).every((k) => Math.abs(zone[k as keyof HillZone] - old[k as keyof HillZone]) < 0.01)) return
+    this.koth.zone = zone
+    this.broadcastGame(undefined)
+  }
+
+  /** A client says its vehicle fell in. Credit whoever touched it last, within the window. */
+  private onDied(player: Player): void {
+    if (this.mode !== MODE_KOTH) return
+    const id = player.info.id
+    const now = this.now()
+    if (this.koth.out[id] && this.koth.out[id] * 1000 > now) return
+    this.koth.out[id] = (now + this.paramNumber(kothRespawnDelay.def) * 1000) / 1000
+    const contact = this.lastContact.get(id)
+    this.lastContact.delete(id)
+    const by = contact && now - contact.at <= KNOCK_WINDOW * 1000 ? this.byId(contact.by) : undefined
+    if (by && !by.info.bot && by.info.id !== id) {
+      this.addScore(by.info.id, this.paramNumber(kothKnockBonus.def))
+      this.broadcastGame('knock', by.info.id, id)
+      this.checkWin(by.info.id, now)
+    } else {
+      this.broadcastGame('died', id)
+    }
+  }
+
+  private addScore(id: number, points: number): void {
+    this.scores[id] = (this.scores[id] ?? 0) + points
+    const p = this.byId(id)
+    if (p) p.info.score = this.scores[id]
+  }
+
+  private checkWin(id: number, now: number): boolean {
+    if (this.koth.resetAt || (this.scores[id] ?? 0) < this.paramNumber(kothTargetScore.def)) return false
+    this.koth.winner = id
+    this.koth.resetAt = now / 1000 + WIN_PAUSE
+    this.koth.holder = 0
+    this.koth.contested = false
+    this.broadcastGame('win', id)
+    return true
+  }
+
+  private tickKoth(now: number): void {
+    const dt = Math.min(1, Math.max(0, (now - (this.lastTick || now)) / 1000))
+    this.lastTick = now
+    if (this.mode !== MODE_KOTH) return
+    const k = this.koth
+    for (const id in k.out) if (k.out[id] * 1000 <= now) delete k.out[id]
+    if (k.resetAt) {
+      if (now / 1000 < k.resetAt) return
+      const winner = k.winner
+      this.resetRound()
+      this.broadcastGame('reset', winner)
+      return
+    }
+    if (!k.zone) return
+    const zone = k.zone
+    const inside: Player[] = []
+    for (const p of [...this.players.values(), ...this.bots.values()]) {
+      const st = p.lastState
+      const fresh = now - p.lastStateAt <= (p.info.bot ? BOT_EXPIRY_MS : RESPONDING_MS)
+      if (st && fresh && !st.paused && !k.out[p.info.id] && inZone(zone, st.p)) inside.push(p)
+    }
+    const holder = inside.length === 1 && !inside[0].info.bot ? inside[0].info.id : 0
+    const contested = inside.length >= 2
+    let event: TagEvent | undefined
+    if (holder !== k.holder) event = holder ? 'capture' : contested ? 'contest' : 'free'
+    else if (contested !== k.contested) event = contested ? 'contest' : 'free'
+    k.holder = holder
+    k.contested = contested
+    let scored = false
+    if (holder) {
+      let frac = (this.holdFrac.get(holder) ?? 0) + dt
+      while (frac >= 1) {
+        frac -= 1
+        this.addScore(holder, 1)
+        scored = true
+      }
+      this.holdFrac.set(holder, frac)
+      if (scored && this.checkWin(holder, now)) return
+    }
+    if (event || scored) this.broadcastGame(event, holder || undefined)
   }
 
   private onFire(peer: Peer, player: Player, shot: unknown): void {
@@ -406,6 +545,11 @@ export class Room {
     if (now - firedAt > (laserLifetime(this.paramNumber(laserSpeed.def)) + 1) * 1000) return
     shooter.shots.delete(shotId)
     this.broadcast({ type: 'hit', shooter: shooter.info.id, victim: victim.info.id, shot: shotId })
+    if (this.mode !== MODE_TAG) {
+      // On the hill a laser is a shove, and counts as contact for knock-ins.
+      this.lastContact.set(victim.info.id, { by: shooter.info.id, at: now })
+      return
+    }
 
     // Tag rules from Rocket.js 91-96.
     const cooldown = this.paramNumber(tagCooldown.def) * 1000
@@ -428,7 +572,6 @@ export class Room {
     if (typeof otherId !== 'number') return
     const other = this.byId(otherId)
     if (!other || other === reporter) return
-    if (this.it !== reporter.info.id && this.it !== other.info.id) return
     const now = this.now()
     const a = reporter.lastState
     const b = other.lastState
@@ -436,6 +579,11 @@ export class Room {
     // Both states are slightly old, so allow for how far fast vehicles travel meanwhile.
     const reach = this.paramNumber(tagRamReach.def) + (Math.hypot(...a.v) + Math.hypot(...b.v)) * 0.3
     if (dist(a.p, b.p) > reach) return
+    // Remember the contact both ways: whoever falls in next may have been pushed.
+    this.lastContact.set(other.info.id, { by: reporter.info.id, at: now })
+    this.lastContact.set(reporter.info.id, { by: other.info.id, at: now })
+    if (this.mode !== MODE_TAG) return
+    if (this.it !== reporter.info.id && this.it !== other.info.id) return
     const cooldown = this.paramNumber(tagCooldown.def) * 1000
     if (now - reporter.lastTag < cooldown || now - other.lastTag < cooldown) return
     reporter.lastTag = other.lastTag = now
@@ -459,7 +607,7 @@ export class Room {
     this.broadcastGame(event, id, target)
   }
 
-  private broadcastGame(event: TagEvent, actor?: number, target?: number): void {
+  private broadcastGame(event: TagEvent | undefined, actor?: number, target?: number): void {
     this.broadcast({ type: 'game', game: this.gameState(), event, actor, target })
     this.persist()
   }
@@ -536,7 +684,10 @@ export class Room {
   }
 
   private gameState(): GameState {
-    return { it: this.it, scores: { ...this.scores }, host: this.host, locked: this.locked }
+    return {
+      it: this.it, scores: { ...this.scores }, host: this.host, locked: this.locked,
+      mode: this.mode, koth: { ...this.koth, out: { ...this.koth.out } },
+    }
   }
 
   private sendTo(peer: Peer, msg: ServerMessage): void {
@@ -551,6 +702,10 @@ export class Room {
   private persist(): void {
     this.onPersist?.(this.snapshot())
   }
+}
+
+function emptyKoth(): KothState {
+  return { zone: null, holder: 0, contested: false, winner: 0, resetAt: 0, out: {} }
 }
 
 function encodeStored(p: Player): Uint8Array {

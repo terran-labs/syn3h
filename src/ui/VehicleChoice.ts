@@ -1,17 +1,18 @@
 import * as THREE from 'three/webgpu'
 import { ClassicBuggySkin, Syn3hBuggySkin } from '../vehicles/skins'
 import type { BuggySkin } from '../vehicles/skins/BuggySkin'
+import { VehicleModel } from '../vehicles/skins/VehicleModel'
 import type { VehicleKind } from '../vehicles'
 
 export interface VehicleChoice {
-  vehicleKind: Extract<VehicleKind, 'buggy-classic' | 'buggy-syn3h'>
+  vehicleKind: VehicleKind
   bodyColor: string
   accentColor: string
 }
 const defaults: VehicleChoice = { vehicleKind: 'buggy-syn3h', bodyColor: '#1768b4', accentColor: '#49e6ff' }
 export function sanitizeVehicleChoice(value: Partial<VehicleChoice> | null): VehicleChoice {
   const color = (value: unknown, fallback: string) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback
-  return { vehicleKind: value?.vehicleKind === 'buggy-classic' ? 'buggy-classic' : 'buggy-syn3h', bodyColor: color(value?.bodyColor, defaults.bodyColor), accentColor: color(value?.accentColor, defaults.accentColor) }
+  return { vehicleKind: (['buggy', 'buggy-classic', 'buggy-syn3h', 'jet', 'hovercraft'] as unknown[]).includes(value?.vehicleKind) ? value!.vehicleKind! : 'buggy-syn3h', bodyColor: color(value?.bodyColor, defaults.bodyColor), accentColor: color(value?.accentColor, defaults.accentColor) }
 }
 export function readVehicleChoice(): VehicleChoice {
   try { return sanitizeVehicleChoice(JSON.parse(localStorage.getItem('syn3h.vehicle') || 'null')) } catch { return { ...defaults } }
@@ -27,6 +28,8 @@ export class VehiclePreview {
   private readonly camera = new THREE.PerspectiveCamera(38, 2, 0.1, 100)
   private readonly observer: ResizeObserver
   private skin?: BuggySkin
+  private model?: VehicleModel
+  private modelRoot = new THREE.Group()
   private kind?: VehicleChoice['vehicleKind']
   private choice: VehicleChoice = readVehicleChoice()
   private initialized = false
@@ -36,7 +39,7 @@ export class VehiclePreview {
   constructor(private readonly host: HTMLElement) {
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5))
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
-    this.renderer.domElement.setAttribute('aria-label', 'Selected buggy colour preview')
+    this.renderer.domElement.setAttribute('aria-label', 'Selected vehicle preview')
     this.renderer.domElement.setAttribute('role', 'img')
     this.host.append(this.renderer.domElement)
     this.scene.add(new THREE.HemisphereLight(0xb8dcff, 0x6f3321, 2.2))
@@ -53,7 +56,21 @@ export class VehiclePreview {
     if (!this.initialized || this.disposed) return
     if (choice.vehicleKind !== this.kind) {
       if (this.skin) { this.scene.remove(this.skin.object); this.skin.dispose() }
+      this.model?.dispose(); this.scene.remove(this.modelRoot); this.model = undefined; this.skin = undefined
       this.kind = choice.vehicleKind
+      if (choice.vehicleKind === 'jet' || choice.vehicleKind === 'hovercraft') {
+        this.modelRoot = new THREE.Group(); this.scene.add(this.modelRoot)
+        const model = this.model = new VehicleModel(this.modelRoot, `/models/${choice.vehicleKind}.glb`)
+        this.host.dataset.ready = 'false'
+        void model.ready.then(() => {
+          if (this.disposed || this.model !== model) return
+          const box = new THREE.Box3().setFromObject(this.modelRoot), size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3())
+          const scale = 3.5 / Math.max(size.x, size.y, size.z, 1)
+          this.modelRoot.scale.setScalar(scale); this.modelRoot.position.copy(center).multiplyScalar(-scale)
+          this.host.dataset.ready = 'true'; void this.draw()
+        })
+        return
+      }
       const skin = this.skin = choice.vehicleKind === 'buggy-classic' ? new ClassicBuggySkin() : new Syn3hBuggySkin()
       this.scene.add(skin.object)
       this.host.dataset.ready = 'false'
@@ -77,13 +94,13 @@ export class VehiclePreview {
     if (!this.initialized || this.disposed || this.drawing) return
     this.drawing = true
     try {
-      while (this.dirty && !this.disposed) { this.dirty = false; await this.renderer.renderAsync(this.scene, this.camera) }
+      while (this.dirty && !this.disposed) { this.dirty = false; this.renderer.render(this.scene, this.camera) }
     } catch { if (!this.disposed) this.host.dataset.error = 'Preview unavailable. Your selection is saved.' }
     finally { this.drawing = false; if (this.disposed && this.initialized) this.renderer.dispose() }
   }
   dispose(): void {
     if (this.disposed) return
-    this.disposed = true; this.observer.disconnect(); this.skin?.dispose()
+    this.disposed = true; this.observer.disconnect(); this.skin?.dispose(); this.model?.dispose()
     if (this.initialized && !this.drawing) this.renderer.dispose()
   }
 }
