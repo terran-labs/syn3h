@@ -27,7 +27,7 @@
 .syn3h-shell h1:focus, .syn3h-shell h2:focus { outline: none; }
 .syn3h-shell .lobby-links button { background: transparent; border: 0; padding: 0; min-height: 40px; font-size: 16px; }
 .lobby-destinations { display: grid; gap: 10px; }
-.lobby-destinations button { min-height: 70px; }
+.syn3h-shell .lobby-destinations button { min-height: 70px; }
 .syn3h-shell .panel-back { display: block; min-width: 200px; margin: 24px auto 0; }
 .lobby-footer { position: relative; display: flex; justify-content: space-between; align-items: center; width: min(800px,100%); gap: 20px; flex: 0 0 35px; font-size: 13px; color: #9ca5b4; }
 .shell-message { overflow-wrap: anywhere; font-size: 13px; }
@@ -91,10 +91,14 @@
 .touch-actions button { border: 1px solid #9ebee37a; border-radius: 50%; height: 62px; color: #e5f0ff; background: #182c47bd; font: 100 15px 'Syn3h Roboto',sans-serif; pointer-events: auto; touch-action: none; }
 .touch-actions .touch-fire { grid-column: 2; background: #43668dc9; }
 .touch-actions button.held, .touch-actions button[aria-pressed=true] { background: #8bbff2dd; color: #10243b; }
-@media (max-width: 700px) { .shell-overlay { padding: max(8px,env(safe-area-inset-top)) 16px max(8px,env(safe-area-inset-bottom)); } .lobby-brand { flex-basis: 140px; } .shell-logo { max-height: 150px; width: 290px; } .lobby-panels { max-height: none; width: 100%; } .lobby-panels > section { padding: 8px 4px 16px; } .lobby-panels > .lobby-index { display: flex; flex-direction: column; justify-content: center; gap: 12px; padding-bottom: 12px; } .lobby-message { padding: 0; text-align: center; max-width: 330px; } .lobby-message h1 { font-size: 28px; margin-bottom: 12px; } .lobby-message p { font-size: 16px; margin: 8px 0; } .lobby-links { margin: 6px 0; justify-content: center; } .lobby-destinations { width: 100%; max-width: 350px; gap: 8px; } .lobby-destinations button { min-height: 55px; } .lobby-footer { font-size: 11px; flex-basis: 30px; gap: 8px; } .shell-hud { left: 12px; top: 12px; width: 180px; padding: 8px; } .shell-speed strong { font-size: 34px; } .hud-scoreboard { max-height: 95px; } .hud-scoreboard .score-detail { display: none; } .hud-navigation { right: 12px; top: 12px; flex-direction: column; gap: 5px; } .hud-navigation button { padding: 8px 12px; font-size: 14px; } .touch-stick { width: 124px; height: 124px; left: 18px; } .touch-knob { left: 35px; top: 35px; } .touch-actions { right: 18px; } .shell-vehicle-preview { height: 170px; } .shell-colors { gap: 20px; } }
-@media (max-height: 550px) { .lobby-brand { flex-basis: 75px; } .shell-logo { max-height: 90px; width: 180px; } .lobby-panels > .lobby-index { justify-content: start; align-items: center; } .lobby-destinations button { min-height: 44px; } }
+@media (max-width: 700px) { .shell-overlay { padding: max(8px,env(safe-area-inset-top)) 16px max(8px,env(safe-area-inset-bottom)); } .lobby-brand { flex-basis: 140px; } .shell-logo { max-height: 150px; width: 290px; } .lobby-panels { max-height: none; width: 100%; } .lobby-panels > section { padding: 8px 4px 16px; } .lobby-panels > .lobby-index { display: flex; flex-direction: column; justify-content: center; gap: 12px; padding-bottom: 12px; } .lobby-message { padding: 0; text-align: center; max-width: 330px; } .lobby-message h1 { font-size: 28px; margin-bottom: 12px; } .lobby-message p { font-size: 16px; margin: 8px 0; } .lobby-links { margin: 6px 0; justify-content: center; } .lobby-destinations { width: 100%; max-width: 350px; gap: 8px; } .syn3h-shell .lobby-destinations button { min-height: 55px; } .lobby-footer { font-size: 11px; flex-basis: 30px; gap: 8px; } .shell-hud { left: 12px; top: 12px; width: 180px; padding: 8px; } .shell-speed strong { font-size: 34px; } .hud-scoreboard { max-height: 95px; } .hud-scoreboard .score-detail { display: none; } .hud-navigation { right: 12px; top: 12px; flex-direction: column; gap: 5px; } .hud-navigation button { padding: 8px 12px; font-size: 14px; } .touch-stick { width: 124px; height: 124px; left: 18px; } .touch-knob { left: 35px; top: 35px; } .touch-actions { right: 18px; } .shell-vehicle-preview { height: 170px; } .shell-colors { gap: 20px; } }
+@media (max-height: 550px) { .lobby-brand { flex-basis: 75px; } .shell-logo { max-height: 90px; width: 180px; } .lobby-panels > .lobby-index { justify-content: start; align-items: center; } .syn3h-shell .lobby-destinations button { min-height: 44px; } }
 @media (prefers-reduced-motion: reduce) { .shell-logo { animation: none; } }
 
 @keyframes panel-arrival { from { opacity: 0; transform: translateZ(-30px); } to { opacity: 1; transform: translateZ(0); } }
 .lobby-panels { animation: panel-arrival 1s cubic-bezier(.333,.667,.667,1) 1s backwards; }
 @media (prefers-reduced-motion: reduce) { .lobby-panels { animation: none; } }
+
+.syn3h-shell:not(.is-playing) .shell-toast { display: none; }
+.shell-message { max-height: 40px; overflow: hidden; text-align: center; }
+@media (max-width: 700px) { .syn3h-shell.is-playing .shell-toast { top: 190px; width: calc(100% - 40px); max-width: none; } }

@@ -67,7 +67,7 @@ export class Shell implements System {
         <section data-panel="music">${heading('Music & Sound')}<label for="shell-track">Music</label><select id="shell-track">${Object.entries(MUSIC_TRACKS).map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select><label for="music-volume">Music volume <output id="music-volume-value"></output></label><input id="music-volume" type="range" min="0" max="1" step="0.01"><button class="shell-mute" aria-pressed="false">Mute all audio</button><p class="panel-note">Music starts with your first click or key press.</p>${back}</section>
         <section data-panel="multiplayer">${heading('Multiplayer')}<p class="multiplayer-room"></p><button class="shell-invite">Copy invite link</button><div class="shell-scoreboard" aria-label="Player scores"></div>${back}</section>
         <section data-panel="advanced">${heading('Advanced Settings')}<p class="world-lock-note" hidden>Sliders locked by host.</p><div class="advanced-host"></div>${back}</section>
-        <section data-panel="about">${heading('About Syn3h')}<p>From the creator of Mars Explorer.</p><p>Drive, fly and explore together.</p><p class="panel-note">This browser edition restores Syn3h’s lobby and panel flow from its Unity source. The current world is a procedural volcano.</p>${back}</section>
+        <section data-panel="about">${heading('About Syn3h')}<p>From the creator of Mars Explorer.</p><p>Drive, fly and explore together.</p><p class="panel-note">The current world is a procedural volcano. Use Create to change the seed, sky and time of day.</p>${back}</section>
       </div>
       <footer class="lobby-footer"><span>Syn3h</span><span class="shell-message" role="status" aria-live="polite"></span><span>Browser edition</span></footer>
     </section>
@@ -193,7 +193,8 @@ export class Shell implements System {
   private toast(text: string): void {
     const element = this.element.querySelector<HTMLElement>('.shell-toast')!
     element.textContent = text; element.hidden = false; clearTimeout(this.toastTimer)
-    this.toastTimer = setTimeout(() => { element.hidden = true }, 4500)
+    this.element.querySelector('.shell-message')!.textContent = text
+    this.toastTimer = setTimeout(() => { element.hidden = true; this.element.querySelector('.shell-message')!.textContent = '' }, 4500)
   }
   private async copyInvite(): Promise<void> {
     const url = new URL(location.href); url.searchParams.set('room', this.room); url.searchParams.delete('autoplay')

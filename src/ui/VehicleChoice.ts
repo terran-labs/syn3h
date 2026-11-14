@@ -77,7 +77,7 @@ export class VehiclePreview {
     if (!this.initialized || this.disposed || this.drawing) return
     this.drawing = true
     try {
-      while (this.dirty && !this.disposed) { this.dirty = false; await this.renderer.renderAsync(this.scene, this.camera) }
+      while (this.dirty && !this.disposed) { this.dirty = false; this.renderer.render(this.scene, this.camera) }
     } catch { if (!this.disposed) this.host.dataset.error = 'Preview unavailable. Your selection is saved.' }
     finally { this.drawing = false; if (this.disposed && this.initialized) this.renderer.dispose() }
   }
