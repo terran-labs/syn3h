@@ -1,8 +1,8 @@
 {
   "tagline": "Syn3h, rebuilt native in the browser: its vehicles, its physics, its lobby and its look.",
   "deadline": "Demo: Sunday noon, Coeur d'Alene",
-  "updated": "Saturday 5:15pm PT",
-  "headline": "The build now opens on a Syn3h lobby, with the Syn3h buggy, jet and hovercraft selectable, the Syn3h chase camera, name tags, and bots that everyone in a room can see.",
+  "updated": "Saturday 6:05pm PT",
+  "headline": "Seven builders have delivered a full first pass: Syn3h lobby, buggy with glowing wings, jet, hovercraft, camera, roads, bots, multiplayer. Next up: the island world with lava, King of the Hill, vehicle effects, and your test drive.",
   "previews": [
     {
       "title": "Play the current build",
@@ -12,7 +12,12 @@
     {
       "title": "Fly the Syn3h jet",
       "url": "https://vorton-previews.tail285f88.ts.net:32782/?vehicle=jet",
-      "detail": "Early: R and F throttle, Space switches hover and flight. Not tuned yet."
+      "detail": "R thrust, Space switches hover and flight, S pulls up, A and D bank."
+    },
+    {
+      "title": "Terrain Lab gallery",
+      "url": "https://vorton-previews.tail285f88.ts.net:32783/terrainlab-gallery.html",
+      "detail": "Island world prototypes from the Terrain Lab."
     },
     {
       "title": "Classic Mars Explorer buggy",
@@ -102,24 +107,49 @@
       "detail": "Vehicle kind, colours and name tags replicate. The host's bots appear for all players and can be rammed and shot."
     },
     {
-      "state": "active",
+      "state": "done",
       "title": "Syn3h jet and hovercraft: tuned in game",
-      "detail": "Both are selectable from the lobby with your models. Being flown and tuned on the real world now."
+      "detail": "Merged and flown in game. Sky reflections on the chrome. Jet control response softened for keyboards."
     },
     {
-      "state": "active",
-      "title": "Wing polish, lava buoyancy, safety resets",
-      "detail": "After the Syn3h buggy drives well."
+      "state": "done",
+      "title": "Wing glow, lava floating, rescue resets",
+      "detail": "Merged. Wings glow in the accent colour. The buggy floats and paddles out of lava. Falling off the world returns you to spawn."
     },
     {
-      "state": "active",
-      "title": "Lava and fire on the volcano",
-      "detail": "Terrain Lab is attaching the lava lake, rivers and flame vents to the generated layout."
-    },
-    {
-      "state": "active",
+      "state": "done",
       "title": "Phone performance and load time",
-      "detail": "Graphics levels by device, crash recovery, frame timing overlay (F3), bundle splitting."
+      "detail": "Merged: graphics levels, crash recovery, F3 overlay. Load time unchanged at about half a second on desktop. Real phones untested."
+    },
+    {
+      "state": "done",
+      "title": "Minimap, loading screen, control help",
+      "detail": "Merged. Help shows per vehicle; H reopens it."
+    },
+    {
+      "state": "done",
+      "title": "Mars Explorer tank",
+      "detail": "Merged as a legacy vehicle, by URL only: ?vehicle=tank."
+    },
+    {
+      "state": "active",
+      "title": "Island world with lava and fire",
+      "detail": "Terrain Lab, at your direction: volcano at the centre, liquid to the horizon, spawns on the coast. Lava is still not drawn in the game."
+    },
+    {
+      "state": "active",
+      "title": "King of the Hill",
+      "detail": "Hold the volcano rim alone to score. Knock rivals into the lava."
+    },
+    {
+      "state": "active",
+      "title": "Vehicle effects",
+      "detail": "Skidmarks, dust, wing and jet trails, thrusters, headlights, from the Syn3h prefab values."
+    },
+    {
+      "state": "active",
+      "title": "Bots tuned for the Syn3h buggy, QA sweep, deploy rehearsal",
+      "detail": "Bots follow roads and recover from lava. Every vehicle, seed and graphics level checked."
     },
     {
       "state": "next",
@@ -135,33 +165,33 @@
   "workers": [
     {
       "state": "active",
-      "name": "Buggy finishing (Claude 1)",
-      "detail": "Wing glow, lava behaviour, rescue resets, classic buggy wings."
-    },
-    {
-      "state": "done",
-      "name": "Multiplayer (Claude 1)",
-      "detail": "All follow-ups merged. Waiting on Cloudflare access to deploy."
+      "name": "King of the Hill (Claude 1)",
+      "detail": "Server scoring, hill zone on the rim, lava eliminations."
     },
     {
       "state": "active",
       "name": "Terrain Lab (Claude 1, your direct line)",
-      "detail": "Owns the generator. Lava and fire on the volcano, shadows, then your direction."
+      "detail": "Island generator, lava and fire, fog."
     },
     {
       "state": "active",
-      "name": "Codex 1: jet and hovercraft in game",
-      "detail": "Flying and tuning both on the real world, sky reflections for the chrome, colours."
+      "name": "Codex 1: vehicle effects",
+      "detail": "Skidmarks, dust, trails, thrusters, lights."
     },
     {
       "state": "active",
-      "name": "Codex 2: phones and load time",
-      "detail": "Camera delivered. Graphics levels, crash recovery, bundle size."
+      "name": "Codex 2: bots, QA sweep, deploy rehearsal",
+      "detail": "Bots against the Syn3h buggy; test matrix; local Cloudflare run."
     },
     {
-      "state": "active",
-      "name": "Codex 3: Syn3h interface",
-      "detail": "Lobby delivered. Final screenshot review; minimap and phone polish next."
+      "state": "waiting",
+      "name": "Codex 3",
+      "detail": "Interface delivered. Free for the next task."
+    },
+    {
+      "state": "done",
+      "name": "Buggy (Claude 1)",
+      "detail": "Delivered: Syn3h and classic buggies, wings, lava, rescue."
     },
     {
       "state": "active",
