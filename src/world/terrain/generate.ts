@@ -6,13 +6,15 @@
  *
  *   layout  pick feature positions from the seed (volcano, cones, mesas, wind)
  *   shape   sample the analytic height field onto the grid
- *   ...     future passes edit `heights` and the per-sample masks in place
+ *   roads   plan graded roads and level the ground under them (roads.ts)
+ *   lava    caldera lake, rivers with carved channels, pools (lava.ts)
+ *   vents   flame, ember and smoke emitter anchors (lava.ts)
  *
  * Nothing here touches three.js, Rapier or the DOM, so it runs in tests, a worker or a
  * server unchanged. See noise.ts for the determinism rules this file must follow.
  */
 import { fbm, hash2, perlin, ridged, rng, smoothstep, subSeed } from './noise'
-import type { LavaFeatures, Vent } from './lava'
+import { type LavaFeatures, type Vent, lavaPass, ventsPass } from './lava'
 import { type Road, roadsPass } from './roads'
 import type { TerrainSettings } from './settings'
 
@@ -114,7 +116,7 @@ export interface GenerateOptions {
 // ---------------------------------------------------------------------------------------
 
 /** Deterministic unit vector without trig: rejection sample the unit disk. */
-function randomDirection(next: () => number): [number, number] {
+export function randomDirection(next: () => number): [number, number] {
   for (let i = 0; i < 64; i++) {
     const x = next() * 2 - 1
     const z = next() * 2 - 1
@@ -404,7 +406,7 @@ export const shapePass: TerrainPass = {
  * import this one: resolving at call time keeps the import cycle harmless.
  */
 export function defaultPasses(): TerrainPass[] {
-  return [shapePass, roadsPass]
+  return [shapePass, roadsPass, lavaPass, ventsPass]
 }
 
 /** Only for profiling: never feeds into heights. */

@@ -8,6 +8,7 @@ import type { Game } from '../../core/Game'
 import type { RAPIER } from '../../core/physics'
 import type { SpawnPoint, Terrain } from '../Terrain'
 import { createTerrainCollider } from './collider'
+import { lavaSurfaceAt } from './lava'
 import { type TerrainData, coneProfile, generateTerrain } from './generate'
 import { type TerrainMaterial, createTerrainMaterial } from './material'
 import { type TerrainMeshes, createTerrainMeshes } from './mesh'
@@ -86,9 +87,9 @@ export class ProceduralTerrain implements Terrain {
     return this.sampler.normalAt(x, z, out)
   }
 
-  liquidHeightAt(_x: number, _z: number): number {
-    // Stage A: one global lava plane, as in the original. Lava flows will make this local.
-    return worldLavaAltitude.value
+  /** Caldera lake, pools and rivers where present, else the global lava plane. */
+  liquidHeightAt(x: number, z: number): number {
+    return lavaSurfaceAt(this.data.lava, x, z, worldLavaAltitude.value)
   }
 
   spawnPoint(index: number): SpawnPoint {
