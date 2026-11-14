@@ -15,6 +15,8 @@
  * record actual time and simulation tick; late captures are labelled, not disguised.
  * Comparison runs are sequential in fresh contexts, with identical timelines; the
  * contact sheet pairs matching requested times. main.ts must honor ?vehicle=kind.
+ * Room sockets are disabled by default to keep other vehicles out of captures;
+ * use --network true to capture multiplayer.
  * No image libraries required: Chrome canvas builds the timestamped contact sheet.
  */
 import { chromium } from 'playwright-core'
@@ -38,6 +40,7 @@ const runs = []
 try {
   for (const kind of kinds) {
     const context = await browser.newContext({ viewport: { width: 960, height: 540 } })
+    if (options.network !== 'true') await context.routeWebSocket(/\/ws(?:\?|$)/, socket => socket.close())
     const page = await context.newPage(), errors = []
     page.on('pageerror', e => errors.push(e.message))
     const url = new URL(options.url ?? 'http://localhost:5186/')
@@ -106,7 +109,7 @@ try {
         const pitch = Math.asin(-Math.max(-1, Math.min(1, m23)))
         const yaw = Math.abs(m23) < 0.9999999 ? Math.atan2(m13, m33) : Math.atan2(-m31, m11)
         const roll = Math.abs(m23) < 0.9999999 ? Math.atan2(m21, m22) : 0
-        return { actualMs: performance.now() - window.driveCapture.start, tick: s.game.tick, simulatedSeconds: s.game.time, position: { ...p }, speedMps: Math.hypot(v.x, v.y, v.z), quaternion: { ...q }, orientationDegrees: { pitch: pitch * 180 / Math.PI, yaw: yaw * 180 / Math.PI, roll: roll * 180 / Math.PI }, heightAboveTerrain: p.y - s.terrain.heightAt(p.x, p.z), wheelsGrounded: s.player.wheelsGrounded ?? null, backend: s.game.backend }
+        return { actualMs: performance.now() - window.driveCapture.start, tick: s.game.tick, simulatedSeconds: s.game.time, position: { ...p }, speedMps: Math.hypot(v.x, v.y, v.z), quaternion: { ...q }, orientationDegrees: { pitch: pitch * 180 / Math.PI, yaw: yaw * 180 / Math.PI, roll: roll * 180 / Math.PI }, heightAboveTerrain: p.y - s.terrain.heightAt(p.x, p.z), wheelsGrounded: s.player.wheelsGrounded ?? null, camera: { position: s.game.camera.position.toArray(), clearance: s.game.camera.position.y - s.terrain.heightAt(s.game.camera.position.x, s.game.camera.position.z), distance: s.game.camera.position.distanceTo(s.player.object.position), fov: s.game.camera.fov }, backend: s.game.backend }
       })
       const name = `${kind}-${String(frames.length).padStart(3, '0')}.png`
       const png = await page.screenshot({ path: join(output, name) })
