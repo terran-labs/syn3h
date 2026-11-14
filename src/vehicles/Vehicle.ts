@@ -27,6 +27,24 @@ export interface VehicleState {
   input: InputState
 }
 
+/** Per wheel contact state for skidmarks and dust. See `Vehicle.getWheelEffects`. */
+export interface WheelEffect {
+  /** The wheel's suspension ray hit something this step. */
+  grounded: boolean
+  /** World space contact point (last hit; stale while not grounded). */
+  readonly point: THREE.Vector3
+  /** World space surface normal at the contact (last hit; stale while not grounded). */
+  readonly normal: THREE.Vector3
+  /** Sideways speed of the wheel over the ground in m/s, absolute. 0 while not grounded. */
+  slip: number
+}
+
+export function createWheelEffects(count = 4): WheelEffect[] {
+  return Array.from({ length: count }, () => ({
+    grounded: false, point: new THREE.Vector3(), normal: new THREE.Vector3(0, 1, 0), slip: 0,
+  }))
+}
+
 export abstract class Vehicle implements System {
   readonly object = new THREE.Group()
   readonly body: RAPIER.RigidBody
@@ -43,6 +61,17 @@ export abstract class Vehicle implements System {
   wheelsGrounded = 0
   /** True while wings (or a flight mode) are deployed. For audio and effects. */
   wingsOpen = false
+  /** True on the fixed step the wheels touched down after being fully airborne. For effects. */
+  landedThisStep = false
+  /** Downward speed in m/s at the last touchdown (valid when `landedThisStep`). For effects. */
+  landingImpact = 0
+
+  /**
+   * Optional: per wheel contact state from the last fixed step, for skidmarks and dust. Returns
+   * the same persistent objects every call (no allocation); wheel vehicles list front left,
+   * front right, rear left, rear right.
+   */
+  getWheelEffects?(): readonly WheelEffect[]
   /** Body and accent colours, kept here so networking can replicate them. */
   readonly colors = { body: '#1768b4', accent: '#49e6ff' }
 
@@ -101,7 +130,12 @@ export abstract class Vehicle implements System {
     this.applyForces(dt)
   }
 
-  /** Spawn slot to return to after falling off the world. Networking sets it with the slot. */
+  /**
+   * Spawn slot used by `localSafety` when the vehicle falls off the world: it respawns at
+   * `terrain.spawnPoint(spawnSlot)`. Networking: set this whenever the server assigns the
+   * player a slot (the same index you pass to `terrain.spawnPoint` when teleporting the player
+   * there), so a fall-off respawn lands on the player's own pad. Defaults to 0.
+   */
   spawnSlot = 0
   private readonly safetyRay = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 })
 

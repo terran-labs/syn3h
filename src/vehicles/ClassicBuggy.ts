@@ -31,7 +31,7 @@ import { worldLavaAltitude } from '../../shared/params'
 import type { BuggySkin } from './skins/BuggySkin'
 import { applyLava, floatPoints } from './lava'
 import { DEG, UnityBody, signedAngle, unityEulerAngles } from './unityBody'
-import { Vehicle } from './Vehicle'
+import { Vehicle, type WheelEffect, createWheelEffects } from './Vehicle'
 
 // ---------------------------------------------------------------------------------------
 // Constants from the original prefab and script.
@@ -113,6 +113,13 @@ export class ClassicBuggy extends Vehicle {
   set angularDrag(v: number) { this.ub.angularDrag = v }
   /** True while the chassis uses Maximum friction combine (crashing). Buggy.js 477-483. */
   crashing = false
+
+
+  /** Vehicle.getWheelEffects: persistent FL, FR, RL, RR entries from the last fixed step. */
+  readonly wheelEffects: readonly WheelEffect[] = createWheelEffects(4)
+  getWheelEffects(): readonly WheelEffect[] {
+    return this.wheelEffects
+  }
 
   private readonly wheelPositn = [0, 1, 2, 3].map(wheelMount)
   private comY = Number.NaN
@@ -221,10 +228,10 @@ export class ClassicBuggy extends Vehicle {
   private static readonly RAY_GROUPS = groups(GROUP_ALL, GROUP_TERRAIN | GROUP_VEHICLE)
   private readonly ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 })
 
-  private raycast(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number): RAPIER.RayColliderHit | null {
+  private raycast(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number): RAPIER.RayColliderIntersection | null {
     this.ray.origin = origin
     this.ray.dir = dir
-    return this.game.world.castRay(
+    return this.game.world.castRayAndGetNormal(
       this.ray, maxDist, true, undefined, ClassicBuggy.RAY_GROUPS, undefined, this.body,
     )
   }
@@ -305,11 +312,17 @@ export class ClassicBuggy extends Vehicle {
       for (let i = 0; i < 4; i++) {
         this.origin.copy(this.wheelPositn[i]).applyQuaternion(this.q).add(this.pos)
         const hit = this.raycast(this.origin, this.down, rayLength)
+        const eff = this.wheelEffects[i]
+        eff.grounded = !!hit
+        eff.slip = hit ? Math.abs(this.hitVelocity[i].x) : 0
         if (hit) {
           this.motorSpeed = this.hitVelocity[i].z
           this.hitDistance[i] = hit.timeOfImpact
+          eff.point.copy(this.down).multiplyScalar(hit.timeOfImpact).add(this.origin)
+          eff.normal.set(hit.normal.x, hit.normal.y, hit.normal.z)
         } else this.hitDistance[i] = -1
       }
+      this.wheelsGrounded = this.hitDistance.filter((d) => d !== -1).length
       return
     }
 
@@ -347,8 +360,11 @@ export class ClassicBuggy extends Vehicle {
     for (let i = 0; i < 4; i++) {
       this.origin.copy(this.wheelPositn[i]).applyQuaternion(this.q).add(this.pos)
       const hit = this.raycast(this.origin, this.down, rayLength)
+      const eff = this.wheelEffects[i]
       if (!hit || this.isPassingVehicle(hit, this.origin)) {
         this.hitDistance[i] = -1
+        eff.grounded = false
+        eff.slip = 0
         continue
       }
       wheelsAreTouchingGround = true
@@ -367,6 +383,10 @@ export class ClassicBuggy extends Vehicle {
       hv.set(pv.x, pv.y, pv.z).applyQuaternion(this.qWheelInv)
       this.hitVelocity[i].set(hv.x, hv.y, -hv.z)
       const hitVel = this.hitVelocity[i]
+      eff.grounded = true
+      eff.point.copy(this.hitPoint)
+      eff.normal.set(hit.normal.x, hit.normal.y, hit.normal.z)
+      eff.slip = Math.abs(hitVel.x)
 
       // Riding on other rigid bodies, Buggy.js 404-409. DEVIATION: the original passes
       // `(hitVelocity - otherVelocity) / 4`, both in wheel space, to AddForceAtPosition with
@@ -396,7 +416,10 @@ export class ClassicBuggy extends Vehicle {
       this.motorSpeed += ((hitVel.z - this.motorSpeed) * friction * dt) / this.motorTorque
     }
 
+    const wasAirborne = this.wheelsGrounded === 0
     this.wheelsGrounded = this.hitDistance.filter((d) => d !== -1).length
+    this.landedThisStep = wasAirborne && this.wheelsGrounded > 0
+    if (this.landedThisStep) this.landingImpact = Math.max(0, -lv.y)
 
     // Suspension, Buggy.js 428-433. Wheel space y is chassis up, so hitVelocity.y is the
     // velocity along chassis up at the mount.
@@ -494,7 +517,7 @@ export class ClassicBuggy extends Vehicle {
    * A wheel only stands on another vehicle when the two move together, so a vehicle hit counts
    * only below 3 m/s relative speed at the contact; otherwise the chassis colliders handle it.
    */
-  private isPassingVehicle(hit: RAPIER.RayColliderHit, origin: THREE.Vector3): boolean {
+  private isPassingVehicle(hit: RAPIER.RayColliderIntersection, origin: THREE.Vector3): boolean {
     const other = hit.collider.parent()
     if (!other || other.isFixed() || !(hit.collider.collisionGroups() >>> 16 & GROUP_VEHICLE)) return false
     const p = this.hitPoint.copy(this.down).multiplyScalar(hit.timeOfImpact).add(origin)

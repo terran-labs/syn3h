@@ -23,7 +23,7 @@ import {
 import { applyLava, floatPoints } from './lava'
 import type { BuggySkin } from './skins/BuggySkin'
 import { DEG, UnityBody, lerp, signedAngle, unityEulerAngles } from './unityBody'
-import { Vehicle } from './Vehicle'
+import { Vehicle, type WheelEffect, createWheelEffects } from './Vehicle'
 
 // ---- prefab (terra.buggy.prefab) and VhiclBuggy.cs constants ----------------------------
 
@@ -110,6 +110,13 @@ export class Syn3hBuggy extends Vehicle {
   readonly hitVelocity = [0, 1, 2, 3].map(() => new THREE.Vector3())
   /** Steering yaw per wheel, radians about our +Y. */
   readonly steer = [0, 0, 0, 0]
+
+
+  /** Vehicle.getWheelEffects: persistent FL, FR, RL, RR entries from the last fixed step. */
+  readonly wheelEffects: readonly WheelEffect[] = createWheelEffects(4)
+  getWheelEffects(): readonly WheelEffect[] {
+    return this.wheelEffects
+  }
 
   private readonly origins = [0, 1, 2, 3].map(rayOrigin)
   private readonly inertia: RAPIER.Vector
@@ -215,10 +222,10 @@ export class Syn3hBuggy extends Vehicle {
   }
 
   private readonly ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 })
-  private raycast(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number): RAPIER.RayColliderHit | null {
+  private raycast(origin: THREE.Vector3, dir: THREE.Vector3, maxDist: number): RAPIER.RayColliderIntersection | null {
     this.ray.origin = origin
     this.ray.dir = dir
-    return this.game.world.castRay(
+    return this.game.world.castRayAndGetNormal(
       this.ray, maxDist, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, RAY_GROUPS, undefined, this.body,
     )
   }
@@ -298,9 +305,14 @@ export class Syn3hBuggy extends Vehicle {
       for (let i = 0; i < 4; i++) {
         this.origin.copy(this.origins[i]).applyQuaternion(q).add(pos)
         const hit = this.raycast(this.origin, this.down, rayLength)
+        const eff = this.wheelEffects[i]
+        eff.grounded = !!hit
+        eff.slip = hit ? Math.abs(this.hitVelocity[i].x) : 0
         if (hit) {
           this.motorSpeed = this.hitVelocity[i].z
           this.hitDistance[i] = hit.timeOfImpact
+          eff.point.copy(this.down).multiplyScalar(hit.timeOfImpact).add(this.origin)
+          eff.normal.set(hit.normal.x, hit.normal.y, hit.normal.z)
           grounded++
         } else this.hitDistance[i] = -1
       }
@@ -333,13 +345,17 @@ export class Syn3hBuggy extends Vehicle {
     this.motorSpeed += (-this.motorSpeed * (this.brakes ? 50 : MOTOR_DRAG)) / this.motorTorque * dt
 
     // Wheels, VB 288-332.
+    const wasAirborne = this.wheelsGrounded === 0
     let grounded = 0
     const hv = this.v1
     for (let i = 0; i < 4; i++) {
       this.origin.copy(this.origins[i]).applyQuaternion(q).add(pos)
       const hit = this.raycast(this.origin, this.down, rayLength)
+      const eff = this.wheelEffects[i]
       if (!hit) {
         this.hitDistance[i] = -1
+        eff.grounded = false
+        eff.slip = 0
         continue
       }
       wheelsAreTouchingGround = true
@@ -355,6 +371,10 @@ export class Syn3hBuggy extends Vehicle {
       const pv = b.velocityAtPoint(this.origin)
       hv.set(pv.x, pv.y, pv.z).applyQuaternion(this.qWheelInv)
       const hitVel = this.hitVelocity[i].set(hv.x, hv.y, -hv.z)
+      eff.grounded = true
+      eff.point.copy(this.hitPoint)
+      eff.normal.set(hit.normal.x, hit.normal.y, hit.normal.z)
+      eff.slip = Math.abs(hitVel.x)
 
       // VB 299-306, riding on rigid bodies. Only dynamic bodies in the terrain group can be hit
       // (wheel rays ignore vehicles), and the sign is the corrected one from the classic port:
@@ -376,6 +396,8 @@ export class Syn3hBuggy extends Vehicle {
       this.motorSpeed += ((hitVel.z - this.motorSpeed) * friction * dt) / this.motorTorque
     }
     this.wheelsGrounded = grounded
+    this.landedThisStep = wasAirborne && grounded > 0
+    if (this.landedThisStep) this.landingImpact = Math.max(0, -lv.y)
 
     // Suspension, VB 336-344: skipped while inverted, shocks at 0.8.
     const mass = b.mass()
