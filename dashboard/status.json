@@ -1,13 +1,13 @@
 {
   "tagline": "Syn3h, rebuilt native in the browser: its vehicles, its physics, its lobby and its look.",
   "deadline": "Demo: Sunday noon, Coeur d'Alene",
-  "updated": "Saturday 4:35pm PT",
-  "headline": "The Syn3h buggy is in: your model at full size on Syn3h physics, with force field wings that fly. The world now has roads up the volcano and a lava layout. The Syn3h jet is ported.",
+  "updated": "Saturday 5:15pm PT",
+  "headline": "The build now opens on a Syn3h lobby, with the Syn3h buggy, jet and hovercraft selectable, the Syn3h chase camera, name tags, and bots that everyone in a room can see.",
   "previews": [
     {
-      "title": "Play the current build: Syn3h buggy",
+      "title": "Play the current build",
       "url": "https://vorton-previews.tail285f88.ts.net:32782/",
-      "detail": "WASD or arrows drive, Space opens the wings, Shift brakes, L or click fires. Raise Bots in World settings to be chased."
+      "detail": "Opens on the Syn3h lobby. Pick Buggy, Hovercraft or Jet under Vehicle. WASD drives, Space opens wings, Shift brakes, L fires, C changes camera."
     },
     {
       "title": "Fly the Syn3h jet",
@@ -87,14 +87,24 @@
       "detail": "Merged. Drives, jumps, glides on its wings and lands. Needs your verdict on feel."
     },
     {
-      "state": "active",
+      "state": "done",
       "title": "Syn3h interface: lobby, sliding panels, logo, music",
-      "detail": "Recreated from the Unity UI source. Mars Explorer music is no longer the default."
+      "detail": "Merged: lobby, depth-slide panels, logo, fonts, menu, host lock, Space Station music. In-game HUD panels are a best guess without reference shots."
+    },
+    {
+      "state": "done",
+      "title": "Syn3h camera",
+      "detail": "Merged with your shipped defaults. C cycles modes, wheel zooms, Z scopes."
+    },
+    {
+      "state": "done",
+      "title": "Multiplayer identity and bots for everyone",
+      "detail": "Vehicle kind, colours and name tags replicate. The host's bots appear for all players and can be rammed and shot."
     },
     {
       "state": "active",
-      "title": "Syn3h jet and hovercraft",
-      "detail": "Jet merged from the Syn3h source and model. Hovercraft in progress. Try ?vehicle=jet."
+      "title": "Syn3h jet and hovercraft: tuned in game",
+      "detail": "Both are selectable from the lobby with your models. Being flown and tuned on the real world now."
     },
     {
       "state": "active",
@@ -108,8 +118,8 @@
     },
     {
       "state": "active",
-      "title": "Syn3h camera",
-      "detail": "Port of the Syn3h chase camera and its modes."
+      "title": "Phone performance and load time",
+      "detail": "Graphics levels by device, crash recovery, frame timing overlay (F3), bundle splitting."
     },
     {
       "state": "next",
@@ -126,32 +136,32 @@
     {
       "state": "active",
       "name": "Buggy finishing (Claude 1)",
-      "detail": "Wing look, buoyancy, fall and underground rescue, classic buggy wings."
+      "detail": "Wing glow, lava behaviour, rescue resets, classic buggy wings."
     },
     {
-      "state": "active",
-      "name": "Multiplayer follow-ups (Claude 1)",
-      "detail": "Vehicle choice, colours and name tags over the network, bots for everyone, sound hooks."
+      "state": "done",
+      "name": "Multiplayer (Claude 1)",
+      "detail": "All follow-ups merged. Waiting on Cloudflare access to deploy."
     },
     {
       "state": "active",
       "name": "Terrain Lab (Claude 1, your direct line)",
-      "detail": "Owns the generator. Lava and fire on the volcano, shadows, then whatever you direct."
+      "detail": "Owns the generator. Lava and fire on the volcano, shadows, then your direction."
     },
     {
       "state": "active",
-      "name": "Codex 1: Syn3h hovercraft",
-      "detail": "Jet delivered. Tracing the Syn3h hovercraft and listing every Syn3h vehicle."
+      "name": "Codex 1: jet and hovercraft in game",
+      "detail": "Flying and tuning both on the real world, sky reflections for the chrome, colours."
     },
     {
       "state": "active",
-      "name": "Codex 2: Syn3h camera, then phones",
-      "detail": "Capture tool delivered. Porting the camera, then performance and load time."
+      "name": "Codex 2: phones and load time",
+      "detail": "Camera delivered. Graphics levels, crash recovery, bundle size."
     },
     {
       "state": "active",
       "name": "Codex 3: Syn3h interface",
-      "detail": "Lobby reconstruction documented. Building it; asked for three reference screenshots."
+      "detail": "Lobby delivered. Final screenshot review; minimap and phone polish next."
     },
     {
       "state": "active",
