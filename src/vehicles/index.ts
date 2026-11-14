@@ -9,7 +9,8 @@ import type { Terrain } from '../world/Terrain'
 import { Buggy } from './Buggy'
 import type { Vehicle } from './Vehicle'
 
-export type VehicleKind = 'buggy'
+/** 'buggy' is an alias for the classic Mars Explorer buggy. */
+export type VehicleKind = 'buggy' | 'buggy-classic' | 'buggy-syn3h'
 
 export function createVehicle(
   game: Game,

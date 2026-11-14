@@ -36,6 +36,8 @@ export interface NetContext {
   terrain: Terrain
   /** The local player's vehicle. */
   player: Vehicle
+  /** Player name from the start screen. Falls back to ?name= or a generated one. */
+  name?: string
   /** Room name from the URL (?room=name), or 'lobby'. */
   room: string
   /** Text lines for the HUD (player list, scores, connection state). */
@@ -406,7 +408,11 @@ export class NetClient implements System {
   }
 }
 
+/** Name chosen on the start screen, when there is one. */
+let preferredName = ''
+
 function playerName(): string {
+  if (preferredName) return preferredName.slice(0, 24)
   const q = new URLSearchParams(location.search).get('name')
   if (q) return q.slice(0, 24)
   const key = 'syn3h.name'
@@ -427,6 +433,7 @@ function playerName(): string {
 export let net: NetClient | null = null
 
 export function startNetworking(ctx: NetContext): void {
+  preferredName = ctx.name?.trim() ?? ''
   net = new NetClient(ctx)
   net.start()
   const w = window as unknown as { syn3hNet?: NetClient }

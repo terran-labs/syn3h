@@ -33,10 +33,13 @@ const read = () => page.evaluate(() => {
     pos: [p.x, p.y, p.z].map((n) => +n.toFixed(2)),
     ground: +s.terrain.heightAt(p.x, p.z).toFixed(2),
     params: s.params.all().length,
-    hud: document.getElementById('hud').textContent,
+    hud: (document.querySelector('.shell-hud') ?? document.getElementById('hud')).textContent,
   }
 })
 
+// Dismiss the start screen if there is one.
+await page.locator('.shell-play').click({ timeout: 3000 }).catch(() => {})
+await page.waitForTimeout(500)
 const before = await read()
 await page.keyboard.down('KeyW')
 await page.waitForTimeout(3000)

@@ -7,6 +7,7 @@ import { ChaseCamera } from './core/ChaseCamera'
 import { Game } from './core/Game'
 import { startNetworking } from './net'
 import { ParamPanel } from './ui/ParamPanel'
+import { initGameShell } from './ui/Shell'
 import { createVehicle } from './vehicles'
 import { createEnvironment } from './world/Environment'
 import { createTerrain } from './world'
@@ -36,12 +37,24 @@ async function main(): Promise<void> {
   const camera = game.add(new ChaseCamera(game, terrain))
   camera.target = player.object
 
+  // The start screen collects the name and unlocks audio. Networking joins on Play so the
+  // room sees the chosen name. ?autoplay=1 skips the screen for automated checks.
+  const { shell, audio } = initGameShell(game, player, terrain)
   let netStatus: string[] = []
-  startNetworking({
-    game, terrain, player,
-    room: query.get('room') ?? 'lobby',
-    setStatus: (lines) => { netStatus = lines },
-  })
+  let joined = false
+  const join = () => {
+    if (joined) return
+    joined = true
+    player.name = shell.playerName
+    startNetworking({
+      game, terrain, player,
+      name: shell.playerName,
+      room: shell.room || query.get('room') || 'lobby',
+      setStatus: (lines) => { netStatus = lines; shell.setStatus(lines) },
+    })
+  }
+  shell.onPlay = join
+  if (query.has('autoplay')) join()
 
   const panel = new ParamPanel()
   game.add({
@@ -53,7 +66,7 @@ async function main(): Promise<void> {
   })
 
   // Handles for debugging and automated checks.
-  Object.assign(window, { syn3h: { game, terrain, player, params, panel } })
+  Object.assign(window, { syn3h: { game, terrain, player, params, panel, shell, audio } })
   game.start()
 }
 
