@@ -288,7 +288,7 @@ describe('Room identity', () => {
     expect(players[1]).toMatchObject({ kind: 'buggy', colors: DEFAULT_COLORS })
     send(b.peer, { type: 'profile', kind: 'buggy-classic', colors: ['#123456', '#abcdef'] })
     expect(a.peer.last('profile')!.player).toMatchObject({ id: b.id, kind: 'buggy-classic', colors: ['#123456', '#abcdef'] })
-    send(b.peer, { type: 'profile', kind: 'hovercraft' })
+    send(b.peer, { type: 'profile', kind: 'submarine' })
     expect(a.peer.all('profile').length).toBe(1)
   })
 
@@ -373,5 +373,126 @@ describe('Room paused players', () => {
     expect(decodeState(b.peer.bin.at(-1)!)!.paused).toBe(true)
     send(b.peer, { type: 'ram', other: a.id })
     expect(b.peer.last('game')!.game.it).toBe(a.id)
+  })
+})
+
+describe('Room King of the Hill', () => {
+  const zone = { x: 100, z: 0, inner: 20, outer: 40, yMin: 40, yMax: 80 }
+  const inside: [number, number, number] = [130, 50, 0]
+  const elsewhere: [number, number, number] = [0, 0, 0]
+  const botState = (n: number, p: [number, number, number]) => state(p, [0, 0, 0], { id: BOT_ID_BASE + n, bot: true })
+
+  /** Host and B in a KotH room with a zone; returns them after the mode switch. */
+  function setup() {
+    const host = join('Host')
+    const b = join('B')
+    send(host.peer, { type: 'param', id: 'game.mode', value: 1 })
+    send(host.peer, { type: 'zone', zone })
+    return { host, b }
+  }
+  /** Advance the clock in 250 ms steps, with everyone repeating their positions. */
+  function run(seconds: number, positions: [FakePeer, Uint8Array][]) {
+    for (let t = 0; t < seconds * 4; t++) {
+      clock += 250
+      for (const [peer, s] of positions) room.receive(peer, s)
+    }
+  }
+
+  it('switches rule sets on game.mode and resets scores', () => {
+    const host = join('Host')
+    const b = join('B')
+    clock += 3100
+    room.receive(host.peer, state([0, 0, 0]))
+    room.receive(b.peer, state([0, 0, -50]))
+    send(host.peer, { type: 'fire', shot: { id: 1, o: [0, 0.5, -2], d: [0, 0, -1], boost: 0, t: clock / 1000 } })
+    send(b.peer, { type: 'hit', shooter: host.id, shot: 1 })
+    expect(b.peer.last('game')!.game.scores[host.id]).toBe(1)
+    send(b.peer, { type: 'param', id: 'game.mode', value: 1 })
+    expect(host.peer.last('game')).toMatchObject({ event: 'mode', game: { mode: 1, scores: { [host.id]: 0 } } })
+  })
+
+  it('only the host may set the zone, and it is sanity checked', () => {
+    const { host, b } = setup()
+    expect(b.peer.last('game')!.game.koth.zone).toEqual(zone)
+    send(b.peer, { type: 'zone', zone: { ...zone, x: 0 } })
+    send(host.peer, { type: 'zone', zone: { ...zone, outer: 1e9 } })
+    expect(b.peer.last('game')!.game.koth.zone).toEqual(zone)
+  })
+
+  it('scores a point a second for a player alone in the zone', () => {
+    const { host, b } = setup()
+    run(3, [[host.peer, state(inside)], [b.peer, state(elsewhere)]])
+    const g = b.peer.last('game')!.game
+    expect(g.koth.holder).toBe(host.id)
+    expect(g.scores[host.id]).toBeGreaterThanOrEqual(2)
+    expect(g.scores[host.id]).toBeLessThanOrEqual(3)
+    expect(b.peer.all('game').some((m) => m.event === 'capture')).toBe(true)
+  })
+
+  it('does not score when contested, and respects the height band', () => {
+    const { host, b } = setup()
+    run(3, [[host.peer, state(inside)], [b.peer, state([100, 50, 30])]])
+    let g = host.peer.last('game')!.game
+    expect(g.koth.contested).toBe(true)
+    expect(g.koth.holder).toBe(0)
+    expect(g.scores[host.id]).toBe(0)
+    // B under the zone (below yMin) does not count.
+    run(2, [[host.peer, state(inside)], [b.peer, state([100, 0, 30])]])
+    g = host.peer.last('game')!.game
+    expect(g.koth.holder).toBe(host.id)
+  })
+
+  it('bots contest but never score', () => {
+    const { host, b } = setup()
+    run(2, [[host.peer, botState(0, inside)], [b.peer, state(elsewhere)]])
+    let g = b.peer.last('game')!.game
+    expect(g.koth.holder).toBe(0)
+    expect(g.scores[BOT_ID_BASE] ?? 0).toBe(0)
+    run(3, [[host.peer, botState(0, inside)], [host.peer, state(elsewhere)], [b.peer, state(inside)]])
+    g = b.peer.last('game')!.game
+    expect(g.koth.contested).toBe(true)
+    expect(g.scores[b.id]).toBe(0)
+  })
+
+  it('credits a knock-in to the last player to touch, within the window only', () => {
+    const { host, b } = setup()
+    run(4, [[host.peer, state([0, 0, 0])], [b.peer, state([3, 0, 0])]])
+    send(host.peer, { type: 'ram', other: b.id })
+    clock += 2000
+    send(b.peer, { type: 'died', cause: 'lava' })
+    expect(b.peer.last('game')).toMatchObject({ event: 'knock', actor: host.id, target: b.id, game: { scores: { [host.id]: 10 } } })
+    expect(b.peer.last('game')!.game.koth.out[b.id]).toBeGreaterThan(clock / 1000)
+    // A second death while out is ignored.
+    send(b.peer, { type: 'died', cause: 'lava' })
+    expect(b.peer.all('game').filter((m) => m.event === 'knock' || m.event === 'died').length).toBe(1)
+    // Out players do not hold the hill until they respawn.
+    run(1, [[b.peer, state(inside)], [host.peer, state(elsewhere)]])
+    expect(host.peer.last('game')!.game.koth.holder).not.toBe(b.id)
+    run(3, [[b.peer, state(inside)], [host.peer, state(elsewhere)]])
+    expect(host.peer.last('game')!.game.koth.holder).toBe(b.id)
+
+    // Too long after the contact: just a death, no credit.
+    run(1, [[host.peer, state([0, 0, 0])], [b.peer, state([3, 0, 0])]])
+    send(host.peer, { type: 'ram', other: b.id })
+    run(6, [[host.peer, state([0, 0, 0])], [b.peer, state([300, 0, 0])]])
+    send(b.peer, { type: 'died', cause: 'fell' })
+    expect(b.peer.last('game')).toMatchObject({ event: 'died', actor: b.id })
+    expect(b.peer.last('game')!.game.scores[host.id]).toBe(10)
+  })
+
+  it('announces a winner at the target, pauses, then resets', () => {
+    const { host, b } = setup()
+    send(host.peer, { type: 'param', id: 'koth.targetScore', value: 5 })
+    run(6, [[host.peer, state(inside)], [b.peer, state(elsewhere)]])
+    const win = b.peer.all('game').find((m) => m.event === 'win')!
+    expect(win).toMatchObject({ actor: host.id, game: { koth: { winner: host.id } } })
+    expect(win.game.scores[host.id]).toBe(5)
+    // No scoring during the pause.
+    run(3, [[host.peer, state(inside)], [b.peer, state(elsewhere)]])
+    expect(b.peer.last('game')!.game.scores[host.id]).toBe(5)
+    run(4, [[host.peer, state(inside)], [b.peer, state(elsewhere)]])
+    const reset = b.peer.all('game').find((m) => m.event === 'reset')!
+    expect(reset.game.scores[host.id]).toBe(0)
+    expect(reset.game.koth.winner).toBe(0)
   })
 })
