@@ -20,6 +20,9 @@
  *  9. bots: A (host) owns a bot, B sees it and B's laser hit on it is judged by A
  * 10. world seed: A changes it, B regenerates and stays on the ground; a late joiner with a
  *     different ?seed= gets the room's seed
+ * 11. King of the Hill: A switches the mode, the host's zone reaches everyone, A alone on the
+ *     rim scores, B joins it and the hill is contested, B drives into the lava lake and is out,
+ *     then respawns
  * Exits non zero on any failure or page error.
  */
 import { chromium } from 'playwright-core'
@@ -264,6 +267,66 @@ try {
   await wait(2500)
   const seedC = await onGround(c)
   check('late joiner gets the room seed and lands on that ground', seedC.seed === 4242 && seedC.y > seedC.ground - 1 && seedC.y < seedC.ground + 6, seedC)
+
+  // 11. King of the Hill.
+  await a.evaluate(() => window.syn3h.params.set('game.mode', 1))
+  await b.waitForFunction(() => window.syn3hNet.game.mode === 1 && window.syn3hNet.game.koth.zone, null, { timeout: 8000 }).catch(() => {})
+  const zone = await b.evaluate(() => window.syn3hNet.game.koth.zone)
+  const markerShown = await b.evaluate(() => window.syn3hNet.hill.visible)
+  check('mode switch reaches B with the host\'s zone', zone && markerShown, { zone, markerShown })
+  if (zone) {
+    /** Park a page's vehicle on the zone's mid line at an angle, on the ground. */
+    const park = (page, angle) => page.evaluate(({ zone, angle }) => {
+      const r = (zone.inner + zone.outer) / 2
+      const x = zone.x + Math.cos(angle) * r
+      const z = zone.z + Math.sin(angle) * r
+      const THREE_V = window.syn3h.player.object.position.clone()
+      THREE_V.set(x, window.syn3h.terrain.heightAt(x, z) + 1.2, z)
+      window.syn3h.player.teleport(THREE_V, 0)
+      const p = window.syn3h.player.body.translation()
+      return { p: [p.x, p.y, p.z], lava: window.syn3h.terrain.liquidHeightAt?.(x, z) }
+    }, { zone, angle })
+    const score = (id) => a.evaluate((id) => window.syn3hNet.game.scores[id] ?? 0, id)
+    const parkedA = await park(a, 0.3)
+    await b.evaluate(() => { const s = window.syn3h.terrain.spawnPoint(1); window.syn3h.player.teleport(s.position, 0) })
+    await wait(4000)
+    const [holder, scoreA] = [await a.evaluate(() => window.syn3hNet.game.koth.holder), await score(idA)]
+    check('A alone on the hill holds it and scores', holder === idA && scoreA >= 2, { holder, scoreA, parkedA })
+    await b.screenshot({ path: '/tmp/syn3h-koth-far.png' })
+
+    await park(b, 0.3 + 0.15)
+    await wait(1500)
+    const s1 = await score(idA)
+    await wait(2500)
+    const s2 = await score(idA)
+    const contested = await b.evaluate(() => window.syn3hNet.game.koth.contested)
+    const hudB = await b.evaluate(() => document.getElementById('hud').textContent)
+    check('B joins and the hill is contested, nobody scores', contested && s2 === s1 && hudB.includes('CONTESTED'), { contested, s1, s2 })
+    await b.screenshot({ path: '/tmp/syn3h-koth.png' })
+
+    // Into the lava lake, if this terrain has one under the zone's centre.
+    const lavaAt = await b.evaluate((zone) => window.syn3h.terrain.liquidHeightAt?.(zone.x, zone.z) ?? -Infinity, zone)
+    if (Number.isFinite(lavaAt)) {
+      await b.evaluate(({ zone, lavaAt }) => {
+        const v = window.syn3h.player.object.position.clone()
+        v.set(zone.x, lavaAt - 0.5, zone.z)
+        window.syn3h.player.teleport(v, 0)
+      }, { zone, lavaAt })
+      await wait(800)
+      const outB = await a.evaluate((id) => window.syn3hNet.game.koth.out[id] ?? 0, idB)
+      const deaths = await b.evaluate(() => window.syn3hNet.stats.deaths)
+      const hiddenOnA = await a.evaluate((id) => window.syn3hNet.remotes.get(id)?.vehicle.object.visible === false, idB)
+      check('lava puts B out, and A sees it gone', deaths === 1 && outB > 0 && hiddenOnA, { deaths, outB, hiddenOnA })
+      await wait(3500)
+      const back = await b.evaluate(() => {
+        const p = window.syn3h.player.body.translation()
+        return { visible: window.syn3h.player.object.visible, y: +p.y.toFixed(1), ground: +window.syn3h.terrain.heightAt(p.x, p.z).toFixed(1) }
+      })
+      check('B respawns on the ground after the delay', back.visible && back.y > back.ground - 1 && back.y < back.ground + 6, back)
+    } else {
+      console.log('SKIP lava: no lava under the zone centre on this terrain')
+    }
+  }
 
   const hud = await b.evaluate(() => document.getElementById('hud').textContent)
   console.log('B HUD:\n' + hud)

@@ -615,7 +615,7 @@ export class NetClient implements System {
         this.clock.seed(msg.serverTime)
         this.players.clear()
         for (const p of msg.players) this.players.set(p.id, p)
-        this.game = msg.game
+        this.game = normalizeGame(msg.game)
         // The room's world (seed included) first: the terrain regenerates before anything
         // spawns, and onTerrainRegenerated seats us on the new ground.
         params.applySnapshot(msg.params, 'remote')
@@ -678,7 +678,8 @@ export class NetClient implements System {
 
   private onGame(msg: Extract<ServerMessage, { type: 'game' }>): void {
     const before = this.game
-    this.game = msg.game
+    this.game = normalizeGame(msg.game)
+    msg.game = this.game
     for (const [id, score] of Object.entries(msg.game.scores)) {
       const p = this.players.get(Number(id))
       if (p) p.score = score
@@ -787,6 +788,14 @@ export class NetClient implements System {
     const now = performance.now()
     for (const e of this.events.slice(-3)) if (now - e.at < 5000) lines.push(e.text)
     return lines
+  }
+}
+
+/** Fill fields an older room server does not send, so a mismatch degrades instead of throwing. */
+function normalizeGame(g: Partial<GameState>): GameState {
+  return {
+    it: g.it ?? 0, scores: g.scores ?? {}, host: g.host ?? 0, locked: Boolean(g.locked), mode: g.mode ?? MODE_TAG,
+    koth: { zone: null, holder: 0, contested: false, winner: 0, resetAt: 0, out: {}, ...g.koth },
   }
 }
 
