@@ -1,0 +1,36 @@
+{
+  "name": "jet effects night",
+  "durationMs": 10000,
+  "captureEveryMs": 1500,
+  "settleMs": 1000,
+  "events": [
+    {
+      "atMs": 0,
+      "params": {
+        "sun.timeOfDay": 0,
+        "bots.count": 0
+      },
+      "teleport": {
+        "x": 280,
+        "z": 280,
+        "heading": 3.14,
+        "clearance": 2
+      },
+      "down": [
+        "KeyR"
+      ]
+    },
+    {
+      "atMs": 3500,
+      "down": [
+        "Space"
+      ]
+    },
+    {
+      "atMs": 3600,
+      "up": [
+        "Space"
+      ]
+    }
+  ]
+}

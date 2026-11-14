@@ -1,0 +1,42 @@
+{
+  "name": "hovercraft effects noon",
+  "durationMs": 10000,
+  "captureEveryMs": 1500,
+  "settleMs": 1000,
+  "events": [
+    {
+      "atMs": 0,
+      "params": {
+        "sun.timeOfDay": 12,
+        "bots.count": 0
+      },
+      "teleport": {
+        "landmark": "dune"
+      },
+      "down": [
+        "KeyW"
+      ]
+    },
+    {
+      "atMs": 4000,
+      "down": [
+        "KeyD"
+      ]
+    },
+    {
+      "atMs": 5000,
+      "up": [
+        "KeyD"
+      ]
+    },
+    {
+      "atMs": 6500,
+      "up": [
+        "KeyW"
+      ],
+      "down": [
+        "ShiftLeft"
+      ]
+    }
+  ]
+}
