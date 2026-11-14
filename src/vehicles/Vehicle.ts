@@ -12,7 +12,7 @@
 import * as THREE from 'three/webgpu'
 import type { Game, System } from '../core/Game'
 import { type InputState, emptyInput } from '../core/Input'
-import { GROUP_ALL, GROUP_TERRAIN, GROUP_VEHICLE, RAPIER, groups } from '../core/physics'
+import { FIXED_DT, GROUP_ALL, GROUP_TERRAIN, GROUP_VEHICLE, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import type { VehicleKind } from './index'
 
@@ -173,6 +173,39 @@ export abstract class Vehicle implements System {
     }
     const v = b.linvel()
     if (v.x * v.x + v.y * v.y + v.z * v.z > 500 * 500) b.setLinvel({ x: v.x * 0.5, y: v.y * 0.5, z: v.z * 0.5 }, true)
+    this.uprightRescue()
+  }
+
+  /** Fixed steps spent stuck on the roof or side; see `uprightRescue`. */
+  stuckSteps = 0
+  /** Seconds a vehicle may lie on its roof or side before it is set upright. */
+  static readonly STUCK_SECONDS = 3
+
+  /**
+   * Timed fallback for a vehicle that cannot right itself (not in either original). Lying flat
+   * on its roof the original self righting torque, cross(up, Y) * angle, is near zero and
+   * gravity holds the flat roof down, so the player is stuck. Tilted past about 72 degrees,
+   * slower than 3 m/s and within 3 m of the ground for 3 s: set it upright in place, keeping
+   * its heading, lifted clear of the ground.
+   */
+  protected uprightRescue(): void {
+    const b = this.body
+    const r = b.rotation()
+    const upY = 1 - 2 * (r.x * r.x + r.z * r.z)
+    const t = b.translation()
+    const v = b.linvel()
+    const ground = this.terrain.heightAt(t.x, t.z)
+    const stuck = upY < 0.3 && v.x * v.x + v.y * v.y + v.z * v.z < 9 && t.y - ground < 3
+    this.stuckSteps = stuck ? this.stuckSteps + 1 : 0
+    if (this.stuckSteps * FIXED_DT < Vehicle.STUCK_SECONDS) return
+    this.stuckSteps = 0
+    // Heading from the forward axis projected on the ground; fall back to the up axis when the
+    // nose points straight up or down.
+    const q = new THREE.Quaternion(r.x, r.y, r.z, r.w)
+    const f = new THREE.Vector3(0, 0, -1).applyQuaternion(q)
+    if (f.x * f.x + f.z * f.z < 0.01) f.set(0, 1, 0).applyQuaternion(q).negate()
+    const heading = Math.atan2(-f.x, -f.z)
+    this.teleport(new THREE.Vector3(t.x, Math.max(t.y, ground) + 1.5, t.z), heading)
   }
 
   postPhysics(_dt: number): void {

@@ -50,6 +50,8 @@ const WHEEL_POS = { x: 0.7, y: 0, z: 0.8 }
 const AXEL_POS = { x: 0.375, y: -0.1, z: 0.75 }
 /** "Vehicle Slick" physic material on the chassis collider. */
 const CHASSIS_FRICTION = 0.1
+/** Friction of Unity's default physic material, which the original terrain used. */
+const UNITY_TERRAIN_FRICTION = 0.6
 const CHASSIS_RESTITUTION = 0.1
 
 /**
@@ -436,9 +438,10 @@ export class ClassicBuggy extends Vehicle {
     const crashing = !(this.wingOpen || wheelsAreTouchingGround || this.raycast(this.pos, this.down, 3))
     if (crashing !== this.crashing) {
       this.crashing = crashing
-      this.collider.setFrictionCombineRule(
-        crashing ? RAPIER.CoefficientCombineRule.Max : RAPIER.CoefficientCombineRule.Min,
-      )
+      // Unity: Maximum combine against Unity's default terrain material (friction 0.6). Our
+      // terrain has friction 1, so Max would grip 1.7 times harder while the body scrapes and
+      // trip a buggy into a roll more easily. Min against 0.6 reproduces Unity's result.
+      this.collider.setFriction(crashing ? UNITY_TERRAIN_FRICTION : CHASSIS_FRICTION)
     }
 
     // Lava and water, Buggy.js 435-475 (lava.ts).

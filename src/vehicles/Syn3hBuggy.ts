@@ -143,11 +143,13 @@ export class Syn3hBuggy extends Vehicle {
     super(game, terrain, position, heading)
     this.kind = kind
     const world = game.world
-    // Physic material "Vehicle Body": friction 1, bounce 0.5, both Average.
+    // Physic material "Vehicle Body": friction 1, bounce 0.5, both Average. In Unity that
+    // averaged with the default terrain material (0.6) to 0.8; our terrain has friction 1, so a
+    // hull friction of 0.6 gives the same 0.8 when it scrapes the ground.
     this.hull = world.createCollider(
       RAPIER.ColliderDesc.convexHull(new Float32Array(HULL))!
         .setDensity(1)
-        .setFriction(1)
+        .setFriction(0.6)
         .setRestitution(0.5)
         .setCollisionGroups(Vehicle.chassisGroups()),
       this.body,

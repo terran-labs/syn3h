@@ -1,0 +1,1 @@
+{"name":"QA: W for 20 s, A 7-8.5 s, D 12-13.5 s (use with ?seed=42)","durationMs":21000,"captureEveryMs":1000,"settleMs":1500,"events":[{"atMs":0,"params":{"bots.count":0},"down":["KeyW"]},{"atMs":7000,"down":["KeyA"]},{"atMs":8500,"up":["KeyA"]},{"atMs":12000,"down":["KeyD"]},{"atMs":13500,"up":["KeyD"]},{"atMs":20000,"up":["KeyW"]}]}
