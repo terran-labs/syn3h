@@ -25,8 +25,8 @@ export interface LaserHooks {
   judgedId(handle: number): number | null
   /** True if the body belongs to some vehicle simulated elsewhere. */
   isVehicleBody(handle: number): boolean
-  /** A shot hit a vehicle this client judges. */
-  onHit(shooter: number, shot: number, victim: number, at: THREE.Vector3): void
+  /** A shot hit a vehicle this client judges. `dir` is the shot's unit direction. */
+  onHit(shooter: number, shot: number, victim: number, at: THREE.Vector3, dir: THREE.Vector3): void
 }
 
 interface Projectile {
@@ -198,7 +198,7 @@ export class Lasers implements System {
     const parent = hit.collider.parent()
     const victim = parent ? this.hooks.judgedId(parent.handle) : null
     if (victim !== null) {
-      this.hooks.onHit(p.shooter, p.id, victim, point)
+      this.hooks.onHit(p.shooter, p.id, victim, point, dir.clone())
       this.flash(point)
       this.kill(this.shots.indexOf(p))
       return
