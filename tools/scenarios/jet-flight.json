@@ -1,0 +1,113 @@
+{
+  "name": "Jet hover takeoff, transition, bank, stall and hover recovery",
+  "durationMs": 30000,
+  "captureEveryMs": 2000,
+  "settleMs": 1500,
+  "events": [
+    {
+      "atMs": 0,
+      "params": {
+        "bots.count": 0
+      },
+      "teleport": {
+        "x": 280,
+        "z": 280,
+        "heading": 3.14159265,
+        "clearance": 2
+      },
+      "down": [
+        "KeyR"
+      ]
+    },
+    {
+      "atMs": 6000,
+      "down": [
+        "Space"
+      ]
+    },
+    {
+      "atMs": 6100,
+      "up": [
+        "Space"
+      ]
+    },
+    {
+      "atMs": 7500,
+      "down": [
+        "KeyS"
+      ]
+    },
+    {
+      "atMs": 8000,
+      "up": [
+        "KeyS"
+      ]
+    },
+    {
+      "atMs": 11500,
+      "down": [
+        "KeyD"
+      ]
+    },
+    {
+      "atMs": 12000,
+      "up": [
+        "KeyD"
+      ]
+    },
+    {
+      "atMs": 14000,
+      "down": [
+        "KeyA"
+      ]
+    },
+    {
+      "atMs": 14500,
+      "up": [
+        "KeyA"
+      ]
+    },
+    {
+      "atMs": 16500,
+      "up": [
+        "KeyR"
+      ],
+      "down": [
+        "ShiftLeft",
+        "KeyS"
+      ]
+    },
+    {
+      "atMs": 17800,
+      "up": [
+        "KeyS",
+        "ShiftLeft"
+      ],
+      "down": [
+        "Space",
+        "KeyR"
+      ]
+    },
+    {
+      "atMs": 17900,
+      "up": [
+        "Space"
+      ]
+    },
+    {
+      "atMs": 22500,
+      "up": [
+        "KeyR"
+      ],
+      "down": [
+        "ShiftLeft"
+      ]
+    },
+    {
+      "atMs": 29000,
+      "up": [
+        "ShiftLeft"
+      ]
+    }
+  ]
+}

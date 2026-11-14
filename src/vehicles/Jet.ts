@@ -11,6 +11,8 @@ export const jetDrag = defineParam({id:'jet.drag',label:'Flight drag',group:'Jet
 export const jetSteer = defineParam({id:'jet.steer',label:'Steering',group:'Jet',scope:'world',default:20,min:5,max:35,step:1})
 export const jetLift = defineParam({id:'jet.lift',label:'Lift',group:'Jet',scope:'world',default:.5,min:.1,max:.9,step:.01})
 export const jetStall = defineParam({id:'jet.stall',label:'Stall speed',group:'Jet',scope:'world',default:20,min:1,max:39,step:1})
+// Digital keys otherwise demand a near-loop from a half-second tap in the full-size port.
+export const jetControlResponse = defineParam({id:'jet.controlResponse',label:'Control response',group:'Jet',scope:'world',default:.3,min:.1,max:1,step:.05})
 const clamp = THREE.MathUtils.clamp
 const lerp = (a:number,b:number,t:number)=>THREE.MathUtils.lerp(a,b,clamp(t,0,1))
 const hullVertices = new Float32Array([-1.086619, -0.316382, -1.978747, 0.0, 0.543169, -2.110775, 0.0, -0.324233, -3.398361, 0.0, 0.482615, 1.50864, -3.851598, 0.125607, 1.143191, 0.0, -0.589476, -2.522558, 0.0, -0.636839, 0.479384, 0.0, -0.166176, 2.98234, -2.551439, 0.855675, 3.431675, 1.086619, -0.316382, -1.978747, 3.851598, 0.125607, 1.143191, 2.551439, 0.855675, 3.431675])
@@ -19,6 +21,8 @@ const nozzlePosition = new THREE.Vector3(0,0,2.971839)
 /** Syn3h VhiclJet.cs 84-211, terra.jet.prefab and CoreSettings.cs 52-56. */
 export class Jet extends Vehicle {
   readonly kind = 'jet' as const
+  readonly camOffset = 5
+  readonly ridePosition = new THREE.Object3D()
   private readonly model: VehicleModel
   private gear?: THREE.Object3D
   private gearAmount = 0
@@ -40,6 +44,8 @@ export class Jet extends Vehicle {
 
   constructor(game:Game,terrain:Terrain,position:THREE.Vector3,heading=0) {
     super(game,terrain,position,heading)
+    // terra.jet.prefab RideCamera, reflected from Unity +Z forward.
+    this.ridePosition.position.set(0,.383,-2.085);this.object.add(this.ridePosition)
     // Prefab MeshCollider uses the original convex Collider mesh at Y=-.1.
     const hull=RAPIER.ColliderDesc.convexHull(hullVertices)
     if(!hull) throw new Error('Invalid Syn3h jet collider')
@@ -85,10 +91,14 @@ export class Jet extends Vehicle {
   }
 
   protected applyForces(dt:number):void {
-    if(this.body.isKinematic()) return
+    this.wingsOpen=!this.hoverMode
     // Vhicl.cs 269 smooths all four axes at fixedDeltaTime * 10.
     this.smoothed.lerp(new THREE.Vector4(this.input.x,this.input.y,this.input.z,this.input.w),Math.min(1,dt*10))
-    const input=this.smoothed
+    const input=this.smoothed.clone()
+    // Keep source force equations; scale digital control authority for demo keyboard use.
+    if(!this.hoverMode){input.x*=jetControlResponse.value;input.y*=jetControlResponse.value;input.w*=jetControlResponse.value}
+    this.gearAmount=clamp(this.gearAmount+(this.hoverMode?dt:-dt),0,1)
+    if(this.body.isKinematic()) return
     const q=new THREE.Quaternion().copy(this.body.rotation()), inv=q.clone().invert()
     const velocity=new THREE.Vector3().copy(this.body.linvel()), speed=velocity.length()
     const local=velocity.clone().applyQuaternion(inv), up=new THREE.Vector3(0,1,0).applyQuaternion(q)
@@ -96,7 +106,6 @@ export class Jet extends Vehicle {
     const weight=Math.max(0,-this.game.world.gravity.y)*mass
     const torque=(x:number,y:number,z:number)=>this.body.addTorque(new THREE.Vector3().copy(unityTorque(x,y,z)).applyQuaternion(q),true)
     let drag=0,angularDrag=3
-    this.gearAmount=clamp(this.gearAmount+(this.hoverMode?dt:-dt),0,1)
     this.gearCollider.setEnabled(this.gearAmount>0)
     if(this.gearAmount>0){
       this.gearCollider.setShape(new RAPIER.Cuboid(1.75*this.gearAmount,.5*this.gearAmount,1.75))
@@ -150,6 +159,10 @@ export class Jet extends Vehicle {
     this.thruster.scale.set(1,1,this.hoverMode?.18:Math.max(.15,this.smoothed.z))
     this.glowMaterial.opacity=this.hoverMode?.35:Math.max(.15,this.smoothed.z)*.7
     this.hoverGlows.forEach(g=>{g.visible=this.hoverMode;g.scale.y=Math.max(.08,this.smoothed.z)})
+  }
+  protected override applyColors():void {
+    this.paint.color.set(this.colors.body);this.accent.color.set(this.colors.accent)
+    this.glowMaterial.color.set(this.colors.accent).multiplyScalar(3)
   }
   override teleport(position:THREE.Vector3,heading=0):void {super.teleport(position,heading);this.smoothed.set(0,0,0,0)}
   override dispose():void {
