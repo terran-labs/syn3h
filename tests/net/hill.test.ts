@@ -2,23 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { cleanZone, inZone } from '../../shared/protocol'
 import { computeHillZone } from '../../src/modes/hill'
 
-const ring = (cx: number, cz: number, r: number, y: number) =>
-  Array.from({ length: 32 }, (_, i) => ({ x: cx + Math.cos(i / 5.09) * r, y, z: cz + Math.sin(i / 5.09) * r }))
+const spawn = (x: number, z: number) => () => ({ position: { x, z } })
 
 describe('computeHillZone', () => {
   it('makes a ring around the rim road, clear of the lava lake', () => {
     const zone = computeHillZone({
       heightAt: () => 0,
-      data: {
-        lava: { lake: { x: 500, z: -200, radius: 40, surface: 180 } },
-        roads: [{ kind: 'volcano', closed: false, points: [] }, { kind: 'rim', closed: true, points: ring(500, -200, 60, 200) }],
-      },
+      spawnPoint: spawn(900, 900),
+      summit: () => ({ x: 500, z: -200, rimRadius: 60, rimHeight: 200, lake: { radius: 40, surface: 180 } }),
     })
-    expect(zone.x).toBe(500)
-    expect(zone.z).toBe(-200)
-    expect(zone.inner).toBe(46) // 60 - 14
-    expect(zone.outer).toBe(74)
-    expect(zone.yMin).toBe(196)
+    expect(zone).toEqual({ x: 500, z: -200, inner: 46, outer: 74, yMin: 185, yMax: 225 })
     expect(cleanZone(zone)).toEqual(zone)
     expect(inZone(zone, [560, 201, -200])).toBe(true)
     expect(inZone(zone, [500, 181, -200])).toBe(false) // in the lake
@@ -28,16 +21,16 @@ describe('computeHillZone', () => {
   it('keeps the inner edge out of a lake wider than the road ring allows', () => {
     const zone = computeHillZone({
       heightAt: () => 0,
-      data: { lava: { lake: { x: 0, z: 0, radius: 55, surface: 0 } }, roads: [{ kind: 'rim', closed: true, points: ring(0, 0, 60, 10) }] },
+      spawnPoint: spawn(0, 0),
+      summit: () => ({ x: 0, z: 0, rimRadius: 60, rimHeight: 10, lake: { radius: 55, surface: 0 } }),
     }, 2)
     expect(zone.inner).toBe(57)
     expect(zone.outer).toBe(88)
   })
 
-  it('falls back to the caldera, then to a disc at the origin', () => {
-    const v = computeHillZone({ heightAt: () => 300, data: { layout: { volcano: { x: 10, z: 20, calderaRadius: 50 } } } })
-    expect(v).toMatchObject({ x: 10, z: 20, yMin: 294 })
-    const flat = computeHillZone({ heightAt: () => 5 })
-    expect(flat).toMatchObject({ x: 0, z: 0, inner: 0, outer: 25 })
+  it('without a summit, uses a disc at spawn point 0, wherever that is', () => {
+    const flat = computeHillZone({ heightAt: () => 5, spawnPoint: spawn(-700, 320), summit: () => null })
+    expect(flat).toMatchObject({ x: -700, z: 320, inner: 0, outer: 25, yMin: -1 })
+    expect(computeHillZone({ heightAt: () => 5, spawnPoint: spawn(1, 2) })).toMatchObject({ x: 1, z: 2 })
   })
 })

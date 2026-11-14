@@ -46,6 +46,7 @@ import { Connection, serverUrl } from './Connection'
 import { NameTags } from './NameTags'
 import { netExtrapolate, netInterpDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
+import { bodyAlive, liveBots } from './bots'
 
 /** The slice of GameAudio (src/audio) networking uses. */
 export interface NetAudio {
@@ -55,9 +56,10 @@ export interface NetAudio {
 
 /**
  * The slice of the bot manager (src/bots) networking uses. Every client may have one, since
- * `bots.count` is a shared parameter; only the host's simulates. Networking sets `remote`:
- * when true the manager must not drive its vehicles (no AI input, no teleports), because
- * networking steers them from the host's states.
+ * `bots.count` is a shared parameter; only the host's simulates and is replicated.
+ * Networking sets `remote`. While it is true this client is not host: the manager should hold
+ * no vehicles (its local quality cap must not decide the bot set); networking spawns its own
+ * replicas from the host's roster and never touches the manager's vehicles.
  */
 export interface NetBots {
   readonly vehicles: readonly Vehicle[]
@@ -86,8 +88,19 @@ export interface NetContext {
   audio?: NetAudio
   /** Bot manager; optional, may also be attached later with `net.attachBots`. */
   bots?: NetBots
+  /** Minimap markers for remote players, bots and the hill, a few times a second. */
+  setMapEntities?(entities: MapMarker[]): void
   /** Text lines for the HUD (player list, scores, connection state). */
   setStatus(lines: string[]): void
+}
+
+/** Same shape as the shell minimap's MapEntity. Heading is radians about +Y, 0 facing -Z. */
+export interface MapMarker {
+  x: number
+  z: number
+  heading: number
+  color: string
+  self?: boolean
 }
 
 /** Something that happened, for the HUD and for automated checks. */
@@ -148,6 +161,7 @@ export class NetClient implements System {
   private readonly hill: HillMarker
   private readonly life: LocalLife
   private zoneTimer = 0
+  private mapTimer = 0
   private localZone: HillZone | null = null
   private localZoneKey = ''
 
@@ -292,8 +306,8 @@ export class NetClient implements System {
     const blend = netProxyBlend.value
     const maxEx = netExtrapolate.value
     for (const [id, r] of this.remotes) {
-      // The bot manager may have removed a vehicle we were steering (bot count lowered).
-      if (!r.owned && !this.bots?.vehicles.includes(r.vehicle)) {
+      // Defensive: a replica whose body left the world (it should not happen: we own them).
+      if (!bodyAlive(this.ctx.game.world, r.vehicle)) {
         this.remotes.delete(id)
         continue
       }
@@ -363,7 +377,33 @@ export class NetClient implements System {
       it: id === it || id === holder,
       note: [id === it ? 'IT' : '', id === holder ? 'KING' : '', r.paused ? 'paused' : !r.responding ? 'not responding' : ''].filter(Boolean).join(' '),
     })))
+    this.mapTimer -= dt
+    if (this.ctx.setMapEntities && this.mapTimer <= 0) {
+      this.mapTimer = 0.2
+      this.ctx.setMapEntities(this.mapMarkers(out))
+    }
     this.ctx.setStatus(this.status())
+  }
+
+  private mapMarkers(out: Record<number, number>): MapMarker[] {
+    const list: MapMarker[] = []
+    for (const [id, r] of this.remotes) {
+      if (out[id]) continue
+      const p = r.vehicle.object.position
+      const q = r.vehicle.object.quaternion
+      // Heading from the forward (-Z) axis: atan2(-fx, -fz).
+      const fx = -2 * (q.x * q.z + q.w * q.y)
+      const fz = -(1 - 2 * (q.x * q.x + q.y * q.y))
+      const color = isBotId(id) ? botColors(id - BOT_ID_BASE)[0] : r.info.colors[0]
+      list.push({ x: p.x, z: p.z, heading: Math.atan2(-fx, -fz), color })
+    }
+    const zone = this.mode === MODE_KOTH ? this.zone : null
+    if (zone) {
+      const k = this.game.koth
+      const color = k.contested ? '#bf26ff' : k.holder === this.id ? '#1aff40' : k.holder ? '#ff1f0d' : '#ffb814'
+      list.push({ x: zone.x, z: zone.z, heading: 0, color })
+    }
+    return list
   }
 
   /** Compute the zone from the terrain; the host tells the room; everyone draws it. */
@@ -401,15 +441,17 @@ export class NetClient implements System {
     if (id === this.id) return this.ctx.player
     const r = this.remotes.get(id)
     if (r) return r.vehicle
-    if (isBotId(id) && this.isHost) return this.bots?.vehicles[id - BOT_ID_BASE]
+    if (isBotId(id) && this.isHost) {
+      const bot = this.bots?.vehicles[id - BOT_ID_BASE]
+      return bot && bodyAlive(this.ctx.game.world, bot) ? bot : undefined
+    }
     return undefined
   }
 
   private judgedId(handle: number): number | null {
     if (handle === this.ctx.player.body.handle) return this.id
     if (this.isHost && this.bots) {
-      const i = this.bots.vehicles.findIndex((v) => v.body.handle === handle)
-      if (i >= 0 && i < MAX_BOTS) return BOT_ID_BASE + i
+      for (const [id, bot] of liveBots(this.bots.vehicles, this.ctx.game.world)) if (bot.body.handle === handle) return id
     }
     return null
   }
@@ -421,13 +463,8 @@ export class NetClient implements System {
     this.wasHost = host
     if (this.bots) this.bots.remote = !host
     if (!host) return
-    // Take over: our copies of the bots stop following the old host and simulate from here.
-    for (const [id, r] of [...this.remotes]) {
-      if (!isBotId(id)) continue
-      this.remotes.delete(id)
-      if (r.owned) this.ctx.game.remove(r.vehicle)
-      else r.setPhysical(true)
-    }
+    // Take over: drop our replicas of the old host's bots; our own manager simulates them now.
+    for (const [id] of [...this.remotes]) if (isBotId(id)) this.removeRemote(id)
     if (this.bots?.vehicles.length) this.event('You are host: simulating bots')
   }
 
@@ -438,11 +475,9 @@ export class NetClient implements System {
   }
 
   private sendBots(): void {
-    const list = this.bots?.vehicles ?? []
     const t = this.clock.now()
-    for (let i = 0; i < list.length && i < MAX_BOTS; i++) {
-      const s = list[i].getState()
-      this.conn.send(encodeState({ id: BOT_ID_BASE + i, t, ...s, bot: true }) as Uint8Array<ArrayBuffer>)
+    for (const [id, bot] of liveBots(this.bots?.vehicles ?? [], this.ctx.game.world)) {
+      this.conn.send(encodeState({ id, t, ...bot.getState(), bot: true }) as Uint8Array<ArrayBuffer>)
       this.stats.botStatesSent++
     }
   }
@@ -464,9 +499,7 @@ export class NetClient implements System {
     }
     // On the host, our own player against our own bots: both are simulated here.
     if (this.isHost && this.bots) {
-      this.bots.vehicles.forEach((bot, i) => {
-        if (i >= MAX_BOTS) return
-        const id = BOT_ID_BASE + i
+      liveBots(this.bots.vehicles, this.ctx.game.world).forEach(([id, bot]) => {
         const touching = this.touching(this.ctx.player, bot)
         const key = bot as Vehicle & { __netTouching?: boolean; __netRamAt?: number }
         if (touching && !key.__netTouching && now - (key.__netRamAt ?? -Infinity) > RAM_REPEAT) {
@@ -504,19 +537,15 @@ export class NetClient implements System {
   }
 
   private spawnRemote(info: PlayerInfo, s: WireState): RemotePlayer {
-    // A remote bot reuses our own bot manager's vehicle when there is one: same count everywhere.
-    const managed = isBotId(info.id) ? this.bots?.vehicles[info.id - BOT_ID_BASE] : undefined
-    let vehicle: Vehicle
-    if (managed) {
-      vehicle = managed
-    } else {
-      vehicle = createVehicle(this.ctx.game, this.ctx.terrain, info.kind as VehicleKind, new THREE.Vector3(...s.p), 0)
-      vehicle.isLocal = false
-      vehicle.body.setRotation({ x: s.q[0], y: s.q[1], z: s.q[2], w: s.q[3] }, true)
-      this.ctx.game.add(vehicle)
-      ;(vehicle as VehicleExtras).setColors?.(info.colors[0], info.colors[1])
-    }
-    const r = new RemotePlayer(info, vehicle, !managed)
+    // Bots too get a replica of our own, so the set follows the host's roster exactly and is
+    // never touched by our bot manager or its local quality cap.
+    const vehicle = createVehicle(this.ctx.game, this.ctx.terrain, info.kind as VehicleKind, new THREE.Vector3(...s.p), 0)
+    vehicle.isLocal = false
+    vehicle.body.setRotation({ x: s.q[0], y: s.q[1], z: s.q[2], w: s.q[3] }, true)
+    this.ctx.game.add(vehicle)
+    const [body, accent] = isBotId(info.id) ? botColors(info.id - BOT_ID_BASE) : info.colors
+    ;(vehicle as VehicleExtras).setColors?.(body, accent)
+    const r = new RemotePlayer(info, vehicle)
     this.remotes.set(info.id, r)
     this.ctx.audio?.play('materialize', { x: s.p[0], y: s.p[1], z: s.p[2] })
     return r
@@ -552,6 +581,8 @@ export class NetClient implements System {
   }
 
   private onTerrainRegenerated(): void {
+    // The summit moved with the world: recompute the hill now, and the host resends it.
+    this.zoneTimer = 0
     if (this.everWelcomed) {
       const s = this.ctx.terrain.spawnPoint(this.slot)
       this.ctx.player.teleport(s.position, s.heading)
@@ -612,6 +643,8 @@ export class NetClient implements System {
       case 'welcome': {
         this.id = msg.id
         this.slot = msg.slot
+        // The vehicle's own fall and underground rescue puts it back at this slot.
+        this.ctx.player.spawnSlot = msg.slot
         this.clock.seed(msg.serverTime)
         this.players.clear()
         for (const p of msg.players) this.players.set(p.id, p)
@@ -672,6 +705,7 @@ export class NetClient implements System {
         break
       case 'error':
         this.event(`Server: ${msg.message}`)
+        if (msg.message.includes('protocol')) reloadForNewProtocol()
         break
     }
   }
@@ -789,6 +823,27 @@ export class NetClient implements System {
     for (const e of this.events.slice(-3)) if (now - e.at < 5000) lines.push(e.text)
     return lines
   }
+}
+
+/** The bot manager's colours (BotManager.spawn), so a replica looks like the host's bot. */
+function botColors(index: number): [string, string] {
+  return [`hsl(${(index * 137.508 + 15) % 360}, 85%, 55%)`, '#ffffff']
+}
+
+/**
+ * The server speaks another protocol version. Usually this tab holds a stale bundle and the
+ * server was updated: reload once to fetch the new client. A session flag stops a loop when
+ * the server is the stale one.
+ */
+function reloadForNewProtocol(): void {
+  const key = 'syn3h.protocolReload'
+  try {
+    if (sessionStorage.getItem(key) === String(PROTOCOL_VERSION)) return
+    sessionStorage.setItem(key, String(PROTOCOL_VERSION))
+  } catch {
+    return
+  }
+  location.reload()
 }
 
 /** Fill fields an older room server does not send, so a mismatch degrades instead of throwing. */
