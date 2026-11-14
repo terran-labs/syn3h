@@ -125,7 +125,29 @@ export class ChaseCamera implements System {
 
   setVehicle(vehicle: CameraVehicle | null): void { this.vehicle = vehicle; this.target = vehicle?.object ?? null }
 
+  /**
+   * External pose override for cinematic shots (attract mode). While set, the camera eases
+   * to this pose instead of following the vehicle; parameters and modes are left untouched.
+   */
+  setCinematicPose(position: THREE.Vector3, target: THREE.Vector3): void {
+    if (!this.cinematic) this.cinematic = { position: new THREE.Vector3(), target: new THREE.Vector3(), look: target.clone() }
+    this.cinematic.position.copy(position); this.cinematic.target.copy(target)
+  }
+  clearCinematicPose(): void { this.cinematic = null; this.previousTarget = null }
+  private cinematic: { position: THREE.Vector3; target: THREE.Vector3; look: THREE.Vector3 } | null = null
+
   update(dt: number): void {
+    if (this.cinematic) {
+      const camera = this.game.camera, c = this.cinematic, k = ease(clamp(dt, 0, 0.25), 2)
+      this.restoreVisibility()
+      // Keep the shot above the ground even if the script asks for a point inside a hill.
+      const y = Math.max(c.position.y, this.terrain.heightAt(c.position.x, c.position.z) + camClearance.value + 1)
+      camera.position.lerp(this.desired.set(c.position.x, y, c.position.z), k)
+      c.look.lerp(c.target, k)
+      camera.up.set(0, 1, 0); camera.lookAt(c.look)
+      camera.fov = THREE.MathUtils.lerp(camera.fov, 55, k); camera.updateProjectionMatrix()
+      return
+    }
     const target = this.target
     if (!target) { this.restoreVisibility(); return }
     dt = clamp(dt, 0, 0.25); this.elapsed += dt
