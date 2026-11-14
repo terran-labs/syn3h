@@ -74,6 +74,9 @@ async function main(): Promise<void> {
       name: shell.playerName,
       room: shell.room || query.get('room') || 'lobby',
       setStatus: (lines) => { netStatus = lines; shell.setStatus(lines) },
+      setMapEntities: (e) => shell.setMapEntities(e),
+      // The match display lands with the next UI merge; until then this is a no-op.
+      setMatchState: (m) => (shell as { setMatchState?: (state: typeof m) => void }).setMatchState?.(m),
     })
   }
   shell.onPlay = join
