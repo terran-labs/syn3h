@@ -65,7 +65,10 @@ export function createTerrainMaterial(): TerrainMaterial {
   // edges stay crisp even though the grid is 4 m.
   const roadDist = attribute<'float'>('road', 'float')
   const edge = ROAD_WIDTH / 2
-  const paved = smoothstep(edge + 0.35, edge - 0.35, roadDist)
+  // Faded out by 500 m: coarser levels of detail sample the distance too sparsely to draw
+  // an 11 m road, and at that range it is a few pixels wide anyway.
+  const roadFade = smoothstep(500, 280, p.sub(cameraPosition).length())
+  const paved = smoothstep(edge + 0.35, edge - 0.35, roadDist).mul(roadFade)
   const packed = mix(color(0x5e2d1d), color(0x74402b), smoothstep(-0.6, 0.6, mid.add(fine.mul(0.3))))
   col = mix(col, packed, paved.mul(0.92))
   const line = smoothstep(0.32, 0.08, roadDist.sub(edge - 0.9).abs())
