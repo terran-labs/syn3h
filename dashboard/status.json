@@ -1,0 +1,44 @@
+{
+  "tagline": "Mars Explorer's buggy, a procedural volcano world and multiplayer laser tag, native in the browser.",
+  "deadline": "Demo: Sunday noon, Coeur d'Alene",
+  "updated": "Saturday 2:45pm PT",
+  "headline": "Foundation is running on WebGPU. Four builders are working in parallel on the buggy, the terrain, multiplayer and the sky.",
+  "previews": [],
+  "milestones": [
+    { "state": "done", "title": "Research and proposal", "detail": "Original source studied, reference games dissected, stack chosen." },
+    { "state": "done", "title": "Foundation", "detail": "Three.js on WebGPU, Rapier at a fixed 50 Hz, shared slider registry, headless smoke test." },
+    { "state": "active", "title": "Milestone 1: buggy physics on Martian terrain", "detail": "The original buggy handling, ported from source, driving on a procedural landscape. First preview link." },
+    { "state": "active", "title": "Procedural volcano world from a shared seed", "detail": "Dunes, mesas and a climbable volcano generated locally in under 150 ms. Lava, roads and flames follow." },
+    { "state": "active", "title": "Multiplayer with ramming", "detail": "Room server, remote players, physical proxies so vehicles can shove each other, shared sliders." },
+    { "state": "active", "title": "Alien sky, sun and shadows", "detail": "Live time of day and scattering sliders. Nothing baked." },
+    { "state": "next", "title": "Force field wings and lava buoyancy", "detail": "The buggy's glide mode and skipping across lava." },
+    { "state": "next", "title": "Laser tag", "detail": "Lasers, tagging by ram or shot, scores." },
+    { "state": "next", "title": "Lava flows, roads and flame particles", "detail": "Second terrain pass." },
+    { "state": "next", "title": "Public hosting on Cloudflare", "detail": "One Durable Object per room, so friends can join from anywhere." },
+    { "state": "next", "title": "Original sound and vehicle models", "detail": "Mars Explorer soundtrack, engine audio, converted models." },
+    { "state": "next", "title": "Demo rehearsal", "detail": "Full run through on the demo hardware and network, with a fallback plan." }
+  ],
+  "workers": [
+    { "state": "active", "name": "Buggy physics", "detail": "Porting Buggy.js suspension, motor, friction and steering onto Rapier." },
+    { "state": "active", "name": "Procedural terrain", "detail": "Seeded heightfield, Rapier collider, slope and altitude shading." },
+    { "state": "active", "name": "Multiplayer", "detail": "Protocol, room server, remote vehicles, ramming, then laser tag." },
+    { "state": "active", "name": "Sky and lighting", "detail": "Parametric scattering sky, sun, shadows, fog, presets." },
+    { "state": "active", "name": "Orchestrator", "detail": "Integration, review, previews, this dashboard." }
+  ],
+  "decisions": [
+    { "state": "blocked", "title": "Codex accounts cannot be used from this thread yet", "detail": "This thread's worker preset is pinned to Opus on Claude 2. Change the Fable profile's worker preset to a Codex profile to unlock Codex 1, 2 and 3." },
+    { "state": "waiting", "title": "Cloudflare access for public multiplayer", "detail": "Needed before friends outside your tailnet can join. A wrangler login or an API token." }
+  ],
+  "strategy": [
+    { "title": "Port, do not reinvent", "detail": "The original vehicles are one rigid body, raycasts and hand applied forces. That code ports to Rapier nearly line for line, so the handling comes with it." },
+    { "title": "Four seams, four builders", "detail": "Terrain, vehicles, networking and environment each sit behind one small interface, so they are built in parallel worktrees and merged without collisions." },
+    { "title": "A world is a seed plus sliders", "detail": "Every player generates the same terrain locally from one number. Nothing to download, so it loads fast, and every parameter is shared live." },
+    { "title": "Playable at every step", "detail": "Each milestone ends in a preview link. If time runs out, what is left over is polish." },
+    { "title": "Mars Explorer's own netcode", "detail": "Each player simulates their own vehicle. Nearby remote vehicles stay physical, which is what makes ramming work." }
+  ],
+  "accounts": [
+    { "state": "active", "name": "Claude 1", "detail": "Runs the orchestrator and all four builders. This is the one to reset first if it runs low." },
+    { "state": "blocked", "name": "Claude 2", "detail": "Off limits by your instruction. Hit its weekly limit earlier today." },
+    { "state": "waiting", "name": "Codex 1, 2 and 3", "detail": "Authorized, but this thread is not permitted to launch them until its worker preset changes." }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "scripts": {
+    "dashboard": {
+      "type": "service",
+      "command": "node dashboard/server.mjs --port $PASEO_PORT"
+    },
+    "game": {
+      "type": "service",
+      "command": "npx vite --host 127.0.0.1 --port $PASEO_PORT --strictPort"
+    }
+  }
+}

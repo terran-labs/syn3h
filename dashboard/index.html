@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en" data-theme="ember">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Syn3h build dashboard</title>
+<link rel="icon" href="assets/terran-labs-logo.png" />
+<style>
+  @font-face { font-family: "Barlow"; font-weight: 400; src: url(assets/fonts/barlow-400-latin.woff2) format("woff2"); font-display: swap; }
+  @font-face { font-family: "Barlow"; font-weight: 600; src: url(assets/fonts/barlow-600-latin.woff2) format("woff2"); font-display: swap; }
+  @font-face { font-family: "Barlow Condensed"; font-weight: 300; src: url(assets/fonts/barlow-condensed-300-latin.woff2) format("woff2"); font-display: swap; }
+  @font-face { font-family: "Barlow Condensed"; font-weight: 500; src: url(assets/fonts/barlow-condensed-500-latin.woff2) format("woff2"); font-display: swap; }
+
+  /* Ember: the red theme from terranlabs.com (site-space and atmosphere gradients). */
+  :root {
+    --space: #0a0302; --ink: #fbeee6; --ink-2: #d9b9a6; --ink-3: #9a7a68;
+    --accent: 255 110 40; --accent-2: 255 60 30; --line: rgb(255 150 100 / 0.16);
+    --ok: 120 220 150; --run: 255 190 80; --wait: 150 130 120; --bad: 255 80 70;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--space); }
+  body { margin: 0; min-height: 100vh; color: var(--ink); font: 400 15px/1.55 "Barlow", system-ui, sans-serif;
+    background-color: var(--space);
+    background-image:
+      radial-gradient(ellipse 95% 60% at 50% 0%, rgb(255 110 40 / 0.28), rgb(255 110 40 / 0.09) 45%, transparent 75%),
+      radial-gradient(ellipse 60% 45% at 0% 60%, rgb(180 60 20 / 0.1), transparent 70%),
+      radial-gradient(1.5px 1.5px at 22% 64%, rgb(255 170 90 / 0.4) 50%, transparent 51%),
+      radial-gradient(1px 1px at 79% 27%, rgb(255 200 140 / 0.3) 50%, transparent 51%),
+      radial-gradient(1px 1px at 41% 12%, rgb(255 220 180 / 0.35) 50%, transparent 51%),
+      radial-gradient(1px 1px at 63% 81%, rgb(255 200 140 / 0.25) 50%, transparent 51%);
+    background-attachment: fixed; }
+  /* Slow orbiting embers, after the site's tl-orbit effect. */
+  .orbit { position: fixed; inset: -20vmax; pointer-events: none; z-index: 0; opacity: .55;
+    background: radial-gradient(circle at 30% 30%, rgb(255 90 30 / .10), transparent 28%), radial-gradient(circle at 72% 64%, rgb(255 160 60 / .07), transparent 26%);
+    animation: orbit 90s linear infinite; }
+  @keyframes orbit { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .orbit { animation: none; } }
+
+  .wrap { position: relative; z-index: 1; max-width: 1240px; margin: 0 auto; padding: 28px 22px 80px; }
+  header { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-bottom: 26px; }
+  header img.tl { height: 54px; width: 54px; }
+  header img.syn { height: 54px; }
+  header .titles { flex: 1; min-width: 220px; }
+  h1 { font: 300 clamp(30px, 5vw, 52px)/1 "Barlow Condensed", sans-serif; letter-spacing: .04em; text-transform: uppercase; margin: 0; }
+  h1 b { font-weight: 500; color: rgb(var(--accent)); }
+  .sub { color: var(--ink-2); margin-top: 6px; }
+  .live { font: 500 13px "Barlow Condensed"; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); text-align: right; }
+  .live i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: rgb(var(--ok)); margin-right: 6px; box-shadow: 0 0 10px rgb(var(--ok)); animation: pulse 2s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  h2 { font: 500 15px "Barlow Condensed", sans-serif; letter-spacing: .2em; text-transform: uppercase; color: rgb(var(--accent)); margin: 0 0 12px; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(12, 1fr); }
+  .card { grid-column: span 12; border-radius: 18px; padding: 18px 20px; border: 1px solid var(--line);
+    background: linear-gradient(180deg, rgb(255 255 255 / .07), rgb(255 255 255 / .025) 55%, rgb(255 255 255 / .05));
+    -webkit-backdrop-filter: blur(24px) saturate(170%); backdrop-filter: blur(24px) saturate(170%);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / .12), 0 18px 50px rgb(0 0 0 / .35); }
+  @media (min-width: 900px) { .c4 { grid-column: span 4; } .c5 { grid-column: span 5; } .c6 { grid-column: span 6; } .c7 { grid-column: span 7; } .c8 { grid-column: span 8; } }
+
+  .headline { font: 300 clamp(20px, 2.6vw, 28px)/1.25 "Barlow Condensed"; letter-spacing: .01em; }
+  .bar { height: 8px; border-radius: 99px; background: rgb(255 255 255 / .08); overflow: hidden; margin: 14px 0 6px; }
+  .bar > span { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, rgb(var(--accent-2)), rgb(var(--accent)), rgb(255 200 110)); transition: width .6s; }
+  .muted { color: var(--ink-3); font-size: 13px; }
+
+  .row { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); }
+  .row:first-of-type { border-top: 0; }
+  .row .t { font-weight: 600; }
+  .row .d { color: var(--ink-2); font-size: 14px; }
+  .tag { flex: none; margin-top: 2px; font: 500 11px "Barlow Condensed"; letter-spacing: .14em; text-transform: uppercase; padding: 3px 9px; border-radius: 99px; border: 1px solid; min-width: 78px; text-align: center; }
+  .done { color: rgb(var(--ok)); border-color: rgb(var(--ok) / .4); background: rgb(var(--ok) / .1); }
+  .active { color: rgb(var(--run)); border-color: rgb(var(--run) / .45); background: rgb(var(--run) / .1); }
+  .next, .waiting { color: rgb(var(--wait)); border-color: rgb(var(--wait) / .4); }
+  .blocked { color: rgb(var(--bad)); border-color: rgb(var(--bad) / .5); background: rgb(var(--bad) / .1); }
+
+  a { color: rgb(255 170 110); text-decoration: none; } a:hover { text-decoration: underline; }
+  .previews a.p { display: block; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); margin-top: 10px; background: rgb(255 110 40 / .07); color: var(--ink); }
+  .previews a.p:hover { background: rgb(255 110 40 / .16); text-decoration: none; }
+  .previews a.p b { display: block; font: 500 18px "Barlow Condensed"; letter-spacing: .04em; }
+  .previews .none { color: var(--ink-3); padding: 8px 0; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th { text-align: left; font: 500 12px "Barlow Condensed"; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); padding: 6px 8px; }
+  td { padding: 7px 8px; border-top: 1px solid var(--line); vertical-align: top; }
+  code, .mono { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace; color: #ffd0b0; }
+
+  .tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .tabs button { font: 500 13px "Barlow Condensed"; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); background: rgb(255 255 255 / .05); border: 1px solid var(--line); border-radius: 99px; padding: 7px 14px; cursor: pointer; }
+  .tabs button.on { color: #1a0a04; background: rgb(var(--accent)); border-color: transparent; }
+  .doc { max-height: 70vh; overflow: auto; padding-right: 8px; }
+  .doc h1 { font-size: 30px; margin: 4px 0 14px; } .doc h2 { margin: 26px 0 10px; } .doc h3 { font: 600 16px "Barlow"; margin: 18px 0 6px; }
+  .doc pre { background: rgb(0 0 0 / .35); padding: 12px; border-radius: 10px; overflow: auto; }
+  .doc p, .doc li { color: var(--ink-2); } .doc strong { color: var(--ink); }
+  footer { margin-top: 30px; display: flex; gap: 18px; align-items: center; color: var(--ink-3); font-size: 13px; flex-wrap: wrap; }
+  footer img { height: 34px; opacity: .85; }
+</style>
+</head>
+<body>
+<div class="orbit"></div>
+<div class="wrap">
+  <header>
+    <img class="tl" src="assets/terran-labs-logo.png" alt="Terran Labs" />
+    <div class="titles">
+      <h1><b>Syn3h</b> build dashboard</h1>
+      <div class="sub" id="tagline"></div>
+    </div>
+    <img class="syn" src="assets/syn3h-logo-sun-1024x512.png" alt="Syn3h" />
+    <div class="live"><i></i><span id="updated">connecting</span><br /><span id="deadline"></span></div>
+  </header>
+
+  <div class="grid">
+    <section class="card c7">
+      <h2>Where we are</h2>
+      <div class="headline" id="headline"></div>
+      <div class="bar"><span id="progress" style="width:0"></span></div>
+      <div class="muted" id="progressText"></div>
+    </section>
+    <section class="card c5 previews">
+      <h2>Previews</h2>
+      <div id="previews"></div>
+    </section>
+
+    <section class="card c7">
+      <h2>Milestones</h2>
+      <div id="milestones"></div>
+    </section>
+    <section class="card c5">
+      <h2>Builders</h2>
+      <div id="workers"></div>
+      <h2 style="margin-top:22px">Needs you</h2>
+      <div id="decisions"></div>
+    </section>
+
+    <section class="card c6">
+      <h2>Strategy</h2>
+      <div id="strategy"></div>
+    </section>
+    <section class="card c6">
+      <h2>Accounts and resets</h2>
+      <div id="accounts"></div>
+    </section>
+
+    <section class="card c5">
+      <h2>Branches</h2>
+      <table><thead><tr><th>Branch</th><th>Ahead</th><th>Last change</th></tr></thead><tbody id="branches"></tbody></table>
+    </section>
+    <section class="card c7">
+      <h2>Recent commits</h2>
+      <table><tbody id="commits"></tbody></table>
+    </section>
+
+    <section class="card">
+      <h2>Documentation</h2>
+      <div class="tabs" id="tabs"></div>
+      <div class="doc" id="doc"></div>
+    </section>
+  </div>
+
+  <footer>
+    <img src="assets/marsxplr-logo.png" alt="Mars Explorer" />
+    <img src="assets/terran-labs-wordmark.png" alt="Terran Labs" />
+    <span>Mars Explorer, 2008. Syn3h, rebuilt for the browser.</span>
+  </footer>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id)
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+const row = (state, title, detail) => `<div class="row"><span class="tag ${esc(state)}">${esc(state)}</span><div><div class="t">${esc(title)}</div><div class="d">${esc(detail)}</div></div></div>`
+let currentDoc = null
+
+async function refresh() {
+  try {
+    const s = await (await fetch('api/status', { cache: 'no-store' })).json()
+    $('tagline').textContent = s.tagline ?? ''
+    $('headline').textContent = s.headline ?? ''
+    $('deadline').textContent = s.deadline ?? ''
+    $('updated').textContent = 'live, ' + new Date(s.now).toLocaleTimeString()
+    const ms = s.milestones ?? []
+    const done = ms.filter((m) => m.state === 'done').length
+    $('progress').style.width = (ms.length ? (100 * done) / ms.length : 0) + '%'
+    $('progressText').textContent = `${done} of ${ms.length} milestones done` + (s.updated ? `. Plan updated ${s.updated}.` : '')
+    $('milestones').innerHTML = ms.map((m) => row(m.state, m.title, m.detail)).join('')
+    $('workers').innerHTML = (s.workers ?? []).map((w) => row(w.state, w.name, w.detail)).join('') || '<div class="muted">None running.</div>'
+    $('decisions').innerHTML = (s.decisions ?? []).map((d) => row(d.state ?? 'waiting', d.title, d.detail)).join('') || '<div class="muted">Nothing right now.</div>'
+    $('strategy').innerHTML = (s.strategy ?? []).map((p) => `<div class="row"><div><div class="t">${esc(p.title)}</div><div class="d">${esc(p.detail)}</div></div></div>`).join('')
+    $('accounts').innerHTML = (s.accounts ?? []).map((a) => row(a.state, a.name, a.detail)).join('')
+    $('previews').innerHTML = (s.previews ?? []).map((p) => `<a class="p" href="${esc(p.url)}" target="_blank" rel="noopener"><b>${esc(p.title)}</b>${esc(p.detail)}</a>`).join('') || '<div class="none">No previews yet. The first one will be the buggy on Martian terrain.</div>'
+    $('branches').innerHTML = (s.git?.branches ?? []).map((b) => `<tr><td class="mono">${esc(b.name)}</td><td>${b.ahead || ''}</td><td>${esc(b.subject)}<div class="muted">${esc(b.when)}</div></td></tr>`).join('')
+    $('commits').innerHTML = (s.git?.commits ?? []).map((c) => `<tr><td class="mono">${esc(c.hash)}</td><td>${esc(c.subject)}<div class="muted">${esc(c.when)}${c.refs ? ' · ' + esc(c.refs) : ''}</div></td></tr>`).join('')
+    if (!$('tabs').children.length) {
+      $('tabs').innerHTML = (s.docs ?? []).map((d) => `<button data-id="${esc(d.id)}">${esc(d.title)}</button>`).join('')
+      $('tabs').onclick = (e) => { if (e.target.dataset.id) loadDoc(e.target.dataset.id) }
+      if (s.docs?.length) loadDoc(s.docs[0].id)
+    }
+  } catch (e) { $('updated').textContent = 'offline, retrying' }
+}
+async function loadDoc(id) {
+  currentDoc = id
+  for (const b of $('tabs').children) b.classList.toggle('on', b.dataset.id === id)
+  $('doc').innerHTML = await (await fetch('api/doc/' + id, { cache: 'no-store' })).text()
+  $('doc').scrollTop = 0
+}
+refresh(); setInterval(refresh, 5000)
+</script>
+</body>
+</html>

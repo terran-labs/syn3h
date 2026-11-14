@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",
+    "marked": "^18.2.0",
     "three": "^0.187.0",
     "tweakpane": "^4.0.5"
   },
