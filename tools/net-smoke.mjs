@@ -268,7 +268,13 @@ try {
   const seedC = await onGround(c)
   check('late joiner gets the room seed and lands on that ground', seedC.seed === 4242 && seedC.y > seedC.ground - 1 && seedC.y < seedC.ground + 6, seedC)
 
-  // 11. King of the Hill.
+  // 11. King of the Hill. Spy on the shell's match display and inject a seeded bot namer, as
+  // main.ts would pass them.
+  await b.evaluate(() => {
+    window.__match = []
+    window.syn3hNet.ctx.setMatchState = (m) => window.__match.push(m)
+    window.syn3hNet.ctx.names = (seed, kind) => `${kind}-${seed}`
+  })
   await a.evaluate(() => window.syn3h.params.set('game.mode', 1))
   await b.waitForFunction(() => window.syn3hNet.game.mode === 1 && window.syn3hNet.game.koth.zone, null, { timeout: 8000 }).catch(() => {})
   const zone = await b.evaluate(() => window.syn3hNet.game.koth.zone)
@@ -292,6 +298,8 @@ try {
     await wait(4000)
     const [holder, scoreA] = [await a.evaluate(() => window.syn3hNet.game.koth.holder), await score(idA)]
     check('A alone on the hill holds it and scores', holder === idA && scoreA >= 2, { holder, scoreA, parkedA })
+    const held = await b.evaluate(() => window.__match.at(-1))
+    check('match display: A holds, scores in seconds, target 60', held?.mode === 'koth' && held.holderName === 'Alice' && !held.holderIsYou && held.target === 60 && held.scores.find((x) => x.name === 'Alice')?.score >= 2 && held.scores.some((x) => x.you), held)
     await b.screenshot({ path: '/tmp/syn3h-koth-far.png' })
 
     await park(b, 0.3 + 0.15)
@@ -302,6 +310,8 @@ try {
     const contested = await b.evaluate(() => window.syn3hNet.game.koth.contested)
     const hudB = await b.evaluate(() => document.getElementById('hud').textContent)
     check('B joins and the hill is contested, nobody scores', contested && s2 === s1 && hudB.includes('CONTESTED'), { contested, s1, s2 })
+    const cont = await b.evaluate(() => ({ last: window.__match.at(-1), updates: window.__match.length, botName: window.syn3hNet.displayName(0xff00) }))
+    check('match display: contested, few updates, seeded bot name', cont.last?.contested === true && cont.last.holderName === null && cont.updates < 40 && cont.botName.startsWith('bot-4242:65280'), cont)
     await b.screenshot({ path: '/tmp/syn3h-koth.png' })
 
     // Into the lava lake, if this terrain has one under the zone's centre.

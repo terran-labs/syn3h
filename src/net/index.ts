@@ -8,7 +8,7 @@
  * See docs/architecture/mars-explorer.md, Networking.
  */
 import * as THREE from 'three/webgpu'
-import { type ParamValue, params } from '../../shared/params'
+import { type ParamValue, params, worldSeed } from '../../shared/params'
 import {
   BOT_ID_BASE,
   type ClientMessage,
@@ -88,10 +88,25 @@ export interface NetContext {
   audio?: NetAudio
   /** Bot manager; optional, may also be attached later with `net.attachBots`. */
   bots?: NetBots
+  /** The match display (shell.setMatchState): called on every game state change; null clears. */
+  setMatchState?(state: MatchState | null): void
+  /** Seeded name generator (src/ui/data/names.ts), injected so networking imports no UI. */
+  names?(seed: string, kind: 'bot' | 'player' | 'world'): string
   /** Minimap markers for remote players, bots and the hill, a few times a second. */
   setMapEntities?(entities: MapMarker[]): void
   /** Text lines for the HUD (player list, scores, connection state). */
   setStatus(lines: string[]): void
+}
+
+/** The shell's match display contract. Scores and target are points (seconds held on the hill). */
+export interface MatchState {
+  mode: 'tag' | 'koth'
+  holderName: string | null
+  holderIsYou: boolean
+  contested: boolean
+  scores: { name: string; score: number; you?: boolean }[]
+  target: number
+  winner: string | null
 }
 
 /** Same shape as the shell minimap's MapEntity. Heading is radians about +Y, 0 facing -Z. */
@@ -373,7 +388,7 @@ export class NetClient implements System {
     for (const [id, r] of this.remotes) r.vehicle.object.visible = !out[id]
     this.tags.update([...this.remotes.entries()].filter(([id]) => !out[id]).map(([id, r]) => ({
       vehicle: r.vehicle,
-      name: r.info.name,
+      name: this.displayName(id),
       it: id === it || id === holder,
       note: [id === it ? 'IT' : '', id === holder ? 'KING' : '', r.paused ? 'paused' : !r.responding ? 'not responding' : ''].filter(Boolean).join(' '),
     })))
@@ -383,6 +398,7 @@ export class NetClient implements System {
       this.ctx.setMapEntities(this.mapMarkers(out))
     }
     this.ctx.setStatus(this.status())
+    this.pushMatch()
   }
 
   private mapMarkers(out: Record<number, number>): MapMarker[] {
@@ -760,7 +776,51 @@ export class NetClient implements System {
   }
 
   private nameOf(id: number): string {
-    return id === this.id ? 'You' : (this.players.get(id)?.name ?? `Player ${id}`)
+    return id === this.id ? 'You' : this.displayName(id)
+  }
+
+  /** A player's chosen name; bots get a seeded name every client agrees on. */
+  displayName(id: number): string {
+    const info = this.players.get(id)
+    if (isBotId(id) && this.ctx.names) {
+      try {
+        return this.ctx.names(`${worldSeed.value}:${id}`, 'bot')
+      } catch {
+        // Fall back to the server's name.
+      }
+    }
+    return info?.name ?? `Player ${id}`
+  }
+
+  private lastMatchKey = ''
+
+  /** Tell the shell's match display, only when something it shows changed. */
+  private pushMatch(): void {
+    const set = this.ctx.setMatchState
+    if (!set) return
+    const state = this.connected ? this.matchState() : null
+    const key = JSON.stringify(state)
+    if (key === this.lastMatchKey) return
+    this.lastMatchKey = key
+    set(state)
+  }
+
+  private matchState(): MatchState {
+    const g = this.game
+    const koth = g.mode === MODE_KOTH
+    const lead = koth ? g.koth.holder : g.it
+    const scores = [...this.players.values()]
+      .map((p) => ({ name: this.displayName(p.id), score: g.scores[p.id] ?? 0, ...(p.id === this.id ? { you: true } : {}) }))
+      .sort((a, b) => b.score - a.score)
+    return {
+      mode: koth ? 'koth' : 'tag',
+      holderName: lead ? this.displayName(lead) : null,
+      holderIsYou: lead !== 0 && lead === this.id,
+      contested: koth && g.koth.contested,
+      scores,
+      target: koth ? kothTargetScore.value : 0,
+      winner: koth && g.koth.resetAt && g.koth.winner ? this.displayName(g.koth.winner) : null,
+    }
   }
 
   private event(text: string): void {
@@ -816,7 +876,7 @@ export class NetClient implements System {
           r?.paused ? '(paused)' : r && !r.responding ? '(not responding)' : '',
         ].filter(Boolean).join(' ')
         const lead = this.game.mode === MODE_KOTH ? this.game.koth.holder === p.id : p.id === this.game.it
-        lines.push(`${lead ? '>' : ' '} ${p.name.padEnd(14)} ${String(this.game.scores[p.id] ?? 0).padStart(3)}  ${flags}`)
+        lines.push(`${lead ? '>' : ' '} ${this.displayName(p.id).padEnd(14)} ${String(this.game.scores[p.id] ?? 0).padStart(3)}  ${flags}`)
       }
     }
     const now = performance.now()
