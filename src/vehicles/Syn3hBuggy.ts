@@ -20,6 +20,7 @@ import {
   buggyCG, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightSlip, buggyIdleHold,
   buggyPower, buggyShocks, buggySpeed, buggyTraction,
 } from './buggyParams'
+import { applyLava, floatPoints } from './lava'
 import type { BuggySkin } from './skins/BuggySkin'
 import { DEG, UnityBody, lerp, signedAngle, unityEulerAngles } from './unityBody'
 import { Vehicle } from './Vehicle'
@@ -63,6 +64,8 @@ const SKID_HALF = { x: 1.25, y: 0.225, z: 1.740579 }
 const SKID_CENTER = { x: 0, y: 0.13976786, z: -0.090771556 }
 
 const UP = new THREE.Vector3(0, 1, 0)
+/** Float points over the Syn3h hull footprint (half width 1.37, half length 2.1). */
+const FLOAT_POINTS = floatPoints(1.37, 2.1, 0, 0.5)
 /** Wheel rays hit TerrainMask 257 only (Vhicl 21: layers Default and 8): never vehicles. */
 const RAY_GROUPS = groups(GROUP_ALL, GROUP_TERRAIN)
 
@@ -94,6 +97,8 @@ export class Syn3hBuggy extends Vehicle {
   areWingsOpen = false
   isInverted = false
   totalSuspensionCompression = 0
+  /** In lava or water this step. */
+  inLiquid = false
   /** Vhicl.InputSmoothed and the mapped raw Input (Me 9-20). */
   readonly inputSmoothed = new THREE.Vector4()
   readonly inputRaw = new THREE.Vector4()
@@ -402,6 +407,11 @@ export class Syn3hBuggy extends Vehicle {
         ub.drag = 0.01
       }
     }
+
+    // Lava and water (Mars Explorer Buggy.js 435-475, see lava.ts), after drag like the original.
+    this.inLiquid = applyLava(ub, FLOAT_POINTS, (x, z) => this.liquidAt(x, z), {
+      x: smoothed.x, y: smoothed.y, wingsOpen: this.areWingsOpen,
+    })
 
     ub.flush(dt)
   }
