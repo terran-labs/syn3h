@@ -72,3 +72,12 @@ project code. Its axes are corrected to Y up and -Z forward, and scale is 0.05
 (about 3.2 m long). Materials are PBR replacements. The hovercraft's collision box
 uses the readable prefab's 2 x 1 x 3 dimensions; its mass, center of mass and inertia
 come from Hovercraft.js. The model loads asynchronously with a primitive fallback.
+
+## Syn3h jet correction
+
+`jet.glb` is now exported in vehicle coordinates directly from the original Blender
+mesh data, with the `terra.jet.prefab` offsets. It is full size (about 7.7 m wide and
+6.94 m long), centered at the original vehicle origin, and faces -Z. Do not apply the
+older import's authoring-scene offset or a second rotation. Landing gear is a separate
+node. `jet-collider.json` contains the original convex hull points with the prefab's
+Y=-0.1 offset. See the conversion script and `tests/vehicles2/README.md` for sources.
