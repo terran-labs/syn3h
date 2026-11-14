@@ -1,0 +1,77 @@
+{
+  "name": "Slalom at speed",
+  "durationMs": 10000,
+  "captureEveryMs": 1000,
+  "settleMs": 1200,
+  "events": [
+    {
+      "atMs": 0,
+      "params": {
+        "bots.count": 0
+      }
+    },
+    {
+      "atMs": 100,
+      "teleport": {
+        "x": 0,
+        "z": 0,
+        "heading": 0
+      }
+    },
+    {
+      "atMs": 1000,
+      "down": [
+        "KeyW"
+      ]
+    },
+    {
+      "atMs": 3500,
+      "down": [
+        "KeyA"
+      ]
+    },
+    {
+      "atMs": 4500,
+      "up": [
+        "KeyA"
+      ],
+      "down": [
+        "KeyD"
+      ]
+    },
+    {
+      "atMs": 6000,
+      "up": [
+        "KeyD"
+      ],
+      "down": [
+        "KeyA"
+      ]
+    },
+    {
+      "atMs": 7500,
+      "up": [
+        "KeyA"
+      ],
+      "down": [
+        "KeyD"
+      ]
+    },
+    {
+      "atMs": 8500,
+      "up": [
+        "KeyD",
+        "KeyW"
+      ],
+      "down": [
+        "ShiftLeft"
+      ]
+    },
+    {
+      "atMs": 9500,
+      "up": [
+        "ShiftLeft"
+      ]
+    }
+  ]
+}
