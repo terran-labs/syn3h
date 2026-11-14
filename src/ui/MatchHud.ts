@@ -8,6 +8,9 @@ export interface MatchState {
   scores: readonly MatchScore[]
   target: number
   winner: string | null
+  winnerColor?: string
+  /** Remaining seconds from the authoritative round reset. */
+  nextRoundIn?: number
 }
 export function matchAnnouncement(previous: MatchState | null, next: MatchState): string | null {
   if (next.mode !== 'koth') return null
@@ -29,6 +32,8 @@ export class MatchHud {
   private previous: MatchState | null = null
   private timer?: ReturnType<typeof setTimeout>
   private signature = ''
+  private roundEnds = 0
+  private roundTimer?: ReturnType<typeof setInterval>
   constructor(private readonly parent: HTMLElement) {
     this.element.className = 'match-hud'; this.element.hidden = true
     this.element.setAttribute('aria-label', 'King of the Hill match')
@@ -39,10 +44,14 @@ export class MatchHud {
   setState(state: MatchState | null): void {
     if (!state || state.mode !== 'koth') {
       this.previous = null; this.signature = ''; this.element.hidden = true; this.announcement.hidden = true
-      clearTimeout(this.timer); this.parent.classList.remove('has-match', 'match-announcing'); return
+      clearTimeout(this.timer); clearInterval(this.roundTimer); this.announcement.classList.remove('round-end'); this.parent.classList.remove('has-match', 'match-announcing'); return
     }
     // Copy snapshots because callers may reuse their score arrays between frames.
     const next: MatchState = { ...state, target: Math.max(1, Number.isFinite(state.target) ? state.target : 60), scores: state.scores.map(row => ({ ...row })) }
+    if (next.winner) {
+      if (next.winner !== this.previous?.winner) this.roundEnds = performance.now() + 6000
+      if (typeof next.nextRoundIn === 'number' && Number.isFinite(next.nextRoundIn)) this.roundEnds = performance.now() + Math.max(0, next.nextRoundIn) * 1000
+    } else { if (this.previous?.winner) { this.announcement.hidden = true; this.parent.classList.remove('match-announcing') } clearInterval(this.roundTimer); this.announcement.classList.remove('round-end'); this.announcement.style.removeProperty('--winner-color') }
     const signature = JSON.stringify(next)
     if (signature === this.signature) return
     this.signature = signature; this.parent.classList.add('has-match'); this.element.hidden = false
@@ -63,11 +72,18 @@ export class MatchHud {
     }
     this.element.replaceChildren(title, holder, timer, race)
     const message = matchAnnouncement(this.previous, next)
-    if (message) {
+    if (next.winner) {
+      clearTimeout(this.timer); this.announcement.classList.add('round-end'); this.announcement.hidden = false; this.parent.classList.add('match-announcing')
+      this.announcement.style.setProperty('--winner-color', /^#[0-9a-f]{6}$/i.test(next.winnerColor ?? '') ? next.winnerColor! : '#8dbce5')
+      const title = document.createElement('strong'); title.textContent = `${next.winner} wins!`
+      const count = document.createElement('small'); this.announcement.replaceChildren(title, count)
+      const tick = () => { const seconds = Math.max(0, Math.ceil((this.roundEnds - performance.now()) / 1000)); count.textContent = seconds ? `Next round in ${seconds}` : 'Waiting for the next round' }
+      clearInterval(this.roundTimer); tick(); this.roundTimer = setInterval(tick, 100)
+    } else if (message) {
       this.announcement.textContent = message; this.announcement.hidden = false; this.parent.classList.add('match-announcing')
       clearTimeout(this.timer); this.timer = setTimeout(() => { this.announcement.hidden = true; this.parent.classList.remove('match-announcing') }, next.winner ? 5000 : 2800)
     }
     this.previous = next
   }
-  dispose(): void { clearTimeout(this.timer); this.element.remove(); this.announcement.remove(); this.parent.classList.remove('has-match', 'match-announcing') }
+  dispose(): void { clearTimeout(this.timer); clearInterval(this.roundTimer); this.element.remove(); this.announcement.remove(); this.parent.classList.remove('has-match', 'match-announcing') }
 }
