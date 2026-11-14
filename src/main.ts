@@ -9,7 +9,7 @@ import { Game } from './core/Game'
 import { startNetworking } from './net'
 import { ParamPanel } from './ui/ParamPanel'
 import { initGameShell } from './ui/Shell'
-import { createVehicle } from './vehicles'
+import { type VehicleKind, createVehicle } from './vehicles'
 import { createEnvironment } from './world/Environment'
 import { createTerrain } from './world'
 
@@ -26,7 +26,9 @@ async function main(): Promise<void> {
   game.add(createEnvironment(game, terrain))
 
   const spawn = terrain.spawnPoint(0)
-  const player = createVehicle(game, terrain, 'buggy', spawn.position, spawn.heading)
+  // ?vehicle=buggy-syn3h or buggy-classic picks the vehicle (the start screen will set this too).
+  const kind = (query.get('vehicle') ?? 'buggy') as VehicleKind
+  const player = createVehicle(game, terrain, kind, spawn.position, spawn.heading)
   player.isLocal = true
   game.add(player)
   // A new seed or terrain parameter rebuilds the ground in place: put the player back on it.
