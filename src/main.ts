@@ -54,7 +54,8 @@ async function main(): Promise<void> {
     joined = true
     player.name = shell.playerName
     startNetworking({
-      game, terrain, player,
+      game, terrain, player, audio, bots,
+      kind: player.kind,
       name: shell.playerName,
       room: shell.room || query.get('room') || 'lobby',
       setStatus: (lines) => { netStatus = lines; shell.setStatus(lines) },
