@@ -67,6 +67,7 @@ try {
     assert.equal(await page.locator('.syn3h-advanced').isVisible(), true)
     await shot('advanced')
     await page.locator('.syn3h-advanced').getByText('Audio', { exact: true }).click()
+    await page.waitForTimeout(500)
     await shot('advanced-audio')
     await panel('about'); await shot('about')
     const scores = ['net: room demo   ping 12 ms   delay 20 ms', 'host: you   shared sliders open to all', '> UI Explorer    12  [IT] (you) (host)', '  Guest            3  ', 'Guest joined']
@@ -90,6 +91,7 @@ try {
     await panel('explore'); await page.locator('.shell-play').click()
     await page.waitForFunction(() => syn3h.shell.playing && !syn3h.shell.menuOpen)
     assert.equal(await page.evaluate(() => syn3h.game.input.suspended), false)
+    await page.waitForFunction(() => window.syn3hNet?.connected === true)
     await page.evaluate(lines => syn3h.shell.setStatus(lines), scores)
     await shot('hud')
     if (phone) {
