@@ -65,3 +65,10 @@ Verification: `npx tsc --noEmit`, `npx vitest run`, then run Vite with
 `node tests/vehicles2/skins-smoke.mjs`. The test config isolates Vite's cache because
 concurrent worktrees share node_modules. Screenshots are written under
 `/tmp/syn3h-vehicles2/` and the smoke check reports the rendering backend and errors.
+
+`hovercraft.glb` is converted from the original `Hovercraft.3ds` using the installed
+Three.js TDSLoader. `convert-hovercraft.mjs` reproduces it without executing source
+project code. Its axes are corrected to Y up and -Z forward, and scale is 0.05
+(about 3.2 m long). Materials are PBR replacements. The hovercraft's collision box
+uses the readable prefab's 2 x 1 x 3 dimensions; its mass, center of mass and inertia
+come from Hovercraft.js. The model loads asynchronously with a primitive fallback.
