@@ -11,6 +11,7 @@ import { ParamPanel } from './ui/ParamPanel'
 import { initGameShell } from './ui/Shell'
 import { readVehicleChoice } from './ui/VehicleChoice'
 import { type VehicleKind, createVehicle } from './vehicles'
+import { attachVehicleEffects } from './vehicles/effects'
 import { createEnvironment } from './world/Environment'
 import { createTerrain } from './world'
 
@@ -36,6 +37,8 @@ async function main(): Promise<void> {
   player.isLocal = true
   player.setColors?.(choice.bodyColor, choice.accentColor)
   game.add(player)
+  // Tracks, dust, thrusters and lights. Only the local vehicle gets a real headlight.
+  attachVehicleEffects(game, terrain, player, { local: true })
   // A new seed or terrain parameter rebuilds the ground in place: put the player back on it.
   terrain.onRegenerate?.(() => {
     const s = terrain.spawnPoint(0)
