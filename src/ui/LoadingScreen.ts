@@ -1,4 +1,5 @@
 import { loadingMessages } from './data/loadingMessages'
+const phaseLabels: Record<string, string> = { device: 'Checking your device', physics: 'Preparing motion', renderer: 'Preparing the view', world: 'Building your world', ready: 'Ready to explore' }
 export interface LoadingDetail { phase?: string; progress?: number; elapsedMs?: number }
 
 export class LoadingScreen {
@@ -29,7 +30,7 @@ export class LoadingScreen {
   }
   update(detail?: LoadingDetail): void {
     if (!detail || typeof detail !== 'object') return
-    if (typeof detail.phase === 'string') this.element.querySelector('.loading-phase')!.textContent = detail.phase
+    if (typeof detail.phase === 'string') this.element.querySelector('.loading-phase')!.textContent = phaseLabels[detail.phase] ?? detail.phase
     const progress = this.element.querySelector('progress')!
     if (typeof detail.progress === 'number' && Number.isFinite(detail.progress)) { progress.max = 1; progress.value = Math.min(1, Math.max(0, detail.progress)) }
     else progress.removeAttribute('value')

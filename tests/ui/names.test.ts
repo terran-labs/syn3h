@@ -2,6 +2,8 @@ import { expect, it } from 'vitest'
 import { generateName } from '../../src/ui/data/names'
 import { loadingMessages } from '../../src/ui/data/loadingMessages'
 it('repeats seeded labels and keeps kinds separate', () => {
+  expect(generateName('room:12:7', 'bot')).toBe('Borirek Hull Intern')
+  expect(generateName(123, 'player')).toBe('Kativek')
   const names = new Set<string>()
   for (let i = 0; i < 1000; i++) {
     const name = generateName(`room:12:${i}`, 'bot')
