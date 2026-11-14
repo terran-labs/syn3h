@@ -8,13 +8,16 @@
  * See docs/architecture/mars-explorer.md, Networking.
  */
 import * as THREE from 'three/webgpu'
-import { type ParamValue, params } from '../../shared/params'
+import { type ParamValue, params, worldSeed } from '../../shared/params'
 import {
   BOT_ID_BASE,
   type ClientMessage,
   DEFAULT_COLORS,
   type GameState,
+  type HillZone,
   MAX_BOTS,
+  MODE_KOTH,
+  MODE_TAG,
   type PlayerInfo,
   PROTOCOL_VERSION,
   type ServerMessage,
@@ -34,12 +37,16 @@ import type { Terrain } from '../world/Terrain'
 import { Lasers } from '../weapons/Lasers'
 import { laserInterval, lasersAllowed } from '../weapons/params'
 import { BoundsGuard, TagMarker } from '../modes/Tag'
-import '../modes/params'
+import { gameMode, kothKnockBonus, kothLaserPush, kothTargetScore, kothZoneRadius } from '../modes/params'
+import { type HillTerrain, computeHillZone } from '../modes/hill'
+import { HillMarker } from '../modes/HillMarker'
+import { LocalLife } from '../modes/Koth'
 import { ServerClock } from './Clock'
 import { Connection, serverUrl } from './Connection'
 import { NameTags } from './NameTags'
 import { netExtrapolate, netInterpDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
+import { bodyAlive, liveBots } from './bots'
 
 /** The slice of GameAudio (src/audio) networking uses. */
 export interface NetAudio {
@@ -49,9 +56,10 @@ export interface NetAudio {
 
 /**
  * The slice of the bot manager (src/bots) networking uses. Every client may have one, since
- * `bots.count` is a shared parameter; only the host's simulates. Networking sets `remote`:
- * when true the manager must not drive its vehicles (no AI input, no teleports), because
- * networking steers them from the host's states.
+ * `bots.count` is a shared parameter; only the host's simulates and is replicated.
+ * Networking sets `remote`. While it is true this client is not host: the manager should hold
+ * no vehicles (its local quality cap must not decide the bot set); networking spawns its own
+ * replicas from the host's roster and never touches the manager's vehicles.
  */
 export interface NetBots {
   readonly vehicles: readonly Vehicle[]
@@ -80,8 +88,34 @@ export interface NetContext {
   audio?: NetAudio
   /** Bot manager; optional, may also be attached later with `net.attachBots`. */
   bots?: NetBots
+  /** The match display (shell.setMatchState): called on every game state change; null clears. */
+  setMatchState?(state: MatchState | null): void
+  /** Seeded name generator (src/ui/data/names.ts), injected so networking imports no UI. */
+  names?(seed: string, kind: 'bot' | 'player' | 'world'): string
+  /** Minimap markers for remote players, bots and the hill, a few times a second. */
+  setMapEntities?(entities: MapMarker[]): void
   /** Text lines for the HUD (player list, scores, connection state). */
   setStatus(lines: string[]): void
+}
+
+/** The shell's match display contract. Scores and target are points (seconds held on the hill). */
+export interface MatchState {
+  mode: 'tag' | 'koth'
+  holderName: string | null
+  holderIsYou: boolean
+  contested: boolean
+  scores: { name: string; score: number; you?: boolean }[]
+  target: number
+  winner: string | null
+}
+
+/** Same shape as the shell minimap's MapEntity. Heading is radians about +Y, 0 facing -Z. */
+export interface MapMarker {
+  x: number
+  z: number
+  heading: number
+  color: string
+  self?: boolean
 }
 
 /** Something that happened, for the HUD and for automated checks. */
@@ -96,6 +130,11 @@ const CONTACT_DIST = 0.05
 const RAM_REPEAT = 0.5
 /** Heartbeat interval for a hidden tab, ms. Browsers allow about one timer a second there. */
 const HEARTBEAT_MS = 1000
+
+// Every vehicle kind the game can build must be one the server accepts.
+type KindsCovered = VehicleKind extends WireVehicleKind ? true : false
+const kindsCovered: KindsCovered = true
+void kindsCovered
 
 /** Optional vehicle features another module is adding; called only if present. */
 interface VehicleExtras {
@@ -113,9 +152,12 @@ export class NetClient implements System {
   readonly events: NetEvent[] = []
   id = 0
   slot = 0
-  game: GameState = { it: 0, scores: {}, host: 0, locked: false }
+  game: GameState = {
+    it: 0, scores: {}, host: 0, locked: false, mode: MODE_TAG,
+    koth: { zone: null, holder: 0, contested: false, winner: 0, resetAt: 0, out: {} },
+  }
   /** Counts for automated checks. */
-  stats = { statesSent: 0, statesReceived: 0, rams: 0, hitsTaken: 0, hitsJudged: 0, shotsFired: 0, heartbeats: 0, botStatesSent: 0 }
+  stats = { deaths: 0, statesSent: 0, statesReceived: 0, rams: 0, hitsTaken: 0, hitsJudged: 0, shotsFired: 0, heartbeats: 0, botStatesSent: 0 }
 
   private kind: WireVehicleKind
   private colors: [string, string]
@@ -131,6 +173,12 @@ export class NetClient implements System {
   private readonly marker: TagMarker
   private readonly bounds: BoundsGuard
   private readonly tags: NameTags
+  private readonly hill: HillMarker
+  private readonly life: LocalLife
+  private zoneTimer = 0
+  private mapTimer = 0
+  private localZone: HillZone | null = null
+  private localZoneKey = ''
 
   constructor(private readonly ctx: NetContext) {
     const { game, player } = ctx
@@ -143,8 +191,16 @@ export class NetClient implements System {
       bodyOf: (id) => this.vehicleOf(id)?.body,
       judgedId: (h) => this.judgedId(h),
       isVehicleBody: (h) => [...this.remotes.values()].some((r) => r.vehicle.body.handle === h),
-      onHit: (shooter, shot, victim, at) => {
+      onHit: (shooter, shot, victim, at, dir) => {
         if (victim === this.id) this.stats.hitsTaken++
+        // On the hill a laser shoves. The judging client owns the victim, so it applies it.
+        if (this.mode === MODE_KOTH && kothLaserPush.value > 0) {
+          const body = this.vehicleOf(victim)?.body
+          if (body) {
+            const m = body.mass() * kothLaserPush.value
+            body.applyImpulse({ x: dir.x * m, y: dir.y * m + m * 0.2, z: dir.z * m }, true)
+          }
+        }
         this.stats.hitsJudged++
         this.ctx.audio?.play('laserHit', at)
         if (!this.connected) return
@@ -156,6 +212,17 @@ export class NetClient implements System {
     this.bounds = new BoundsGuard(player, ctx.terrain)
     this.bounds.onReset = () => this.event('You fell off the planet')
     this.tags = new NameTags(game.camera)
+    this.hill = new HillMarker(game)
+    this.life = new LocalLife(game, ctx.terrain, player)
+    this.life.onDied = (cause) => {
+      this.stats.deaths++
+      this.event(cause === 'lava' ? 'You fell in the lava' : 'You fell off the world')
+      if (this.connected) this.send({ type: 'died', cause })
+    }
+    this.life.onRespawn = () => {
+      const p = this.ctx.player.body.translation()
+      this.ctx.audio?.play('materialize', p)
+    }
 
     this.conn.onOpen = () => {
       this.send({
@@ -188,6 +255,7 @@ export class NetClient implements System {
     g.add(this.lasers)
     g.add(this.marker)
     g.add(this.bounds)
+    g.add(this.hill)
     this.conn.open()
   }
 
@@ -208,6 +276,16 @@ export class NetClient implements System {
     if (!this.isHost) return false
     this.send({ type: 'lock', locked })
     return true
+  }
+
+  /** The rule set in force: the room's when connected, the local slider otherwise. */
+  get mode(): number {
+    return this.connected ? this.game.mode : gameMode.value
+  }
+
+  /** The hill zone in force: the room's (from the host) when known, else our own. */
+  get zone(): HillZone | null {
+    return (this.connected && this.game.koth.zone) || this.localZone
   }
 
   /** True if this client may change 'world' parameters right now. */
@@ -243,8 +321,8 @@ export class NetClient implements System {
     const blend = netProxyBlend.value
     const maxEx = netExtrapolate.value
     for (const [id, r] of this.remotes) {
-      // The bot manager may have removed a vehicle we were steering (bot count lowered).
-      if (!r.owned && !this.bots?.vehicles.includes(r.vehicle)) {
+      // Defensive: a replica whose body left the world (it should not happen: we own them).
+      if (!bodyAlive(this.ctx.game.world, r.vehicle)) {
         this.remotes.delete(id)
         continue
       }
@@ -278,6 +356,9 @@ export class NetClient implements System {
   }
 
   postPhysics(dt: number): void {
+    if (this.mode === MODE_KOTH) this.life.check()
+    else this.life.revive()
+    this.life.slot = this.slot
     if (!this.connected) return
     this.detectRams()
     this.sendTimer += dt
@@ -298,15 +379,66 @@ export class NetClient implements System {
       this.send({ type: 'ping', t: performance.now() })
     }
     this.updateBotRole()
-    const it = this.game.it
+    const koth = this.mode === MODE_KOTH
+    this.updateHill(dt, koth)
+    const it = koth ? 0 : this.game.it
     this.marker.target = it ? (this.vehicleOf(it) ?? null) : null
-    this.tags.update([...this.remotes.entries()].map(([id, r]) => ({
+    const out = koth && this.connected ? this.game.koth.out : {}
+    const holder = koth ? this.game.koth.holder : 0
+    for (const [id, r] of this.remotes) r.vehicle.object.visible = !out[id]
+    this.tags.update([...this.remotes.entries()].filter(([id]) => !out[id]).map(([id, r]) => ({
       vehicle: r.vehicle,
-      name: r.info.name,
-      it: id === it,
-      note: [id === it ? 'IT' : '', r.paused ? 'paused' : !r.responding ? 'not responding' : ''].filter(Boolean).join(' '),
+      name: this.displayName(id),
+      it: id === it || id === holder,
+      note: [id === it ? 'IT' : '', id === holder ? 'KING' : '', r.paused ? 'paused' : !r.responding ? 'not responding' : ''].filter(Boolean).join(' '),
     })))
+    this.mapTimer -= dt
+    if (this.ctx.setMapEntities && this.mapTimer <= 0) {
+      this.mapTimer = 0.2
+      this.ctx.setMapEntities(this.mapMarkers(out))
+    }
     this.ctx.setStatus(this.status())
+    this.pushMatch()
+  }
+
+  private mapMarkers(out: Record<number, number>): MapMarker[] {
+    const list: MapMarker[] = []
+    for (const [id, r] of this.remotes) {
+      if (out[id]) continue
+      const p = r.vehicle.object.position
+      const q = r.vehicle.object.quaternion
+      // Heading from the forward (-Z) axis: atan2(-fx, -fz).
+      const fx = -2 * (q.x * q.z + q.w * q.y)
+      const fz = -(1 - 2 * (q.x * q.x + q.y * q.y))
+      const color = isBotId(id) ? botColors(id - BOT_ID_BASE)[0] : r.info.colors[0]
+      list.push({ x: p.x, z: p.z, heading: Math.atan2(-fx, -fz), color })
+    }
+    const zone = this.mode === MODE_KOTH ? this.zone : null
+    if (zone) {
+      const k = this.game.koth
+      const color = k.contested ? '#bf26ff' : k.holder === this.id ? '#1aff40' : k.holder ? '#ff1f0d' : '#ffb814'
+      list.push({ x: zone.x, z: zone.z, heading: 0, color })
+    }
+    return list
+  }
+
+  /** Compute the zone from the terrain; the host tells the room; everyone draws it. */
+  private updateHill(dt: number, koth: boolean): void {
+    this.zoneTimer -= dt
+    if (koth && this.zoneTimer <= 0) {
+      this.zoneTimer = 1
+      this.localZone = computeHillZone(this.ctx.terrain as unknown as HillTerrain, kothZoneRadius.value)
+      const key = JSON.stringify(this.localZone)
+      const roomKey = JSON.stringify(this.game.koth.zone)
+      if (this.isHost && key !== roomKey && key !== this.localZoneKey) {
+        this.localZoneKey = key
+        this.send({ type: 'zone', zone: this.localZone })
+      }
+      if (key === roomKey) this.localZoneKey = ''
+    }
+    this.hill.setZone(koth ? this.zone : null)
+    const k = this.game.koth
+    this.hill.tint = !this.connected ? 'free' : k.contested ? 'contested' : k.holder === this.id ? 'mine' : k.holder ? 'theirs' : 'free'
   }
 
   dispose(): void {
@@ -325,15 +457,17 @@ export class NetClient implements System {
     if (id === this.id) return this.ctx.player
     const r = this.remotes.get(id)
     if (r) return r.vehicle
-    if (isBotId(id) && this.isHost) return this.bots?.vehicles[id - BOT_ID_BASE]
+    if (isBotId(id) && this.isHost) {
+      const bot = this.bots?.vehicles[id - BOT_ID_BASE]
+      return bot && bodyAlive(this.ctx.game.world, bot) ? bot : undefined
+    }
     return undefined
   }
 
   private judgedId(handle: number): number | null {
     if (handle === this.ctx.player.body.handle) return this.id
     if (this.isHost && this.bots) {
-      const i = this.bots.vehicles.findIndex((v) => v.body.handle === handle)
-      if (i >= 0 && i < MAX_BOTS) return BOT_ID_BASE + i
+      for (const [id, bot] of liveBots(this.bots.vehicles, this.ctx.game.world)) if (bot.body.handle === handle) return id
     }
     return null
   }
@@ -345,13 +479,8 @@ export class NetClient implements System {
     this.wasHost = host
     if (this.bots) this.bots.remote = !host
     if (!host) return
-    // Take over: our copies of the bots stop following the old host and simulate from here.
-    for (const [id, r] of [...this.remotes]) {
-      if (!isBotId(id)) continue
-      this.remotes.delete(id)
-      if (r.owned) this.ctx.game.remove(r.vehicle)
-      else r.setPhysical(true)
-    }
+    // Take over: drop our replicas of the old host's bots; our own manager simulates them now.
+    for (const [id] of [...this.remotes]) if (isBotId(id)) this.removeRemote(id)
     if (this.bots?.vehicles.length) this.event('You are host: simulating bots')
   }
 
@@ -362,11 +491,9 @@ export class NetClient implements System {
   }
 
   private sendBots(): void {
-    const list = this.bots?.vehicles ?? []
     const t = this.clock.now()
-    for (let i = 0; i < list.length && i < MAX_BOTS; i++) {
-      const s = list[i].getState()
-      this.conn.send(encodeState({ id: BOT_ID_BASE + i, t, ...s, bot: true }) as Uint8Array<ArrayBuffer>)
+    for (const [id, bot] of liveBots(this.bots?.vehicles ?? [], this.ctx.game.world)) {
+      this.conn.send(encodeState({ id, t, ...bot.getState(), bot: true }) as Uint8Array<ArrayBuffer>)
       this.stats.botStatesSent++
     }
   }
@@ -388,9 +515,7 @@ export class NetClient implements System {
     }
     // On the host, our own player against our own bots: both are simulated here.
     if (this.isHost && this.bots) {
-      this.bots.vehicles.forEach((bot, i) => {
-        if (i >= MAX_BOTS) return
-        const id = BOT_ID_BASE + i
+      liveBots(this.bots.vehicles, this.ctx.game.world).forEach(([id, bot]) => {
         const touching = this.touching(this.ctx.player, bot)
         const key = bot as Vehicle & { __netTouching?: boolean; __netRamAt?: number }
         if (touching && !key.__netTouching && now - (key.__netRamAt ?? -Infinity) > RAM_REPEAT) {
@@ -422,24 +547,21 @@ export class NetClient implements System {
     const p = this.ctx.player.body.translation()
     this.ctx.audio?.impact(Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z), p)
     this.event(`Ram: you and ${this.nameOf(id)}`)
-    // Only contact involving "it" means anything; the server checks again anyway.
-    if (this.game.it === this.id || this.game.it === id) this.send({ type: 'ram', other: id })
+    // In tag only contact involving "it" means anything; on the hill every touch may be the
+    // push that knocks someone in. The server checks again anyway.
+    if (this.game.mode === MODE_KOTH || this.game.it === this.id || this.game.it === id) this.send({ type: 'ram', other: id })
   }
 
   private spawnRemote(info: PlayerInfo, s: WireState): RemotePlayer {
-    // A remote bot reuses our own bot manager's vehicle when there is one: same count everywhere.
-    const managed = isBotId(info.id) ? this.bots?.vehicles[info.id - BOT_ID_BASE] : undefined
-    let vehicle: Vehicle
-    if (managed) {
-      vehicle = managed
-    } else {
-      vehicle = createVehicle(this.ctx.game, this.ctx.terrain, info.kind as VehicleKind, new THREE.Vector3(...s.p), 0)
-      vehicle.isLocal = false
-      vehicle.body.setRotation({ x: s.q[0], y: s.q[1], z: s.q[2], w: s.q[3] }, true)
-      this.ctx.game.add(vehicle)
-      ;(vehicle as VehicleExtras).setColors?.(info.colors[0], info.colors[1])
-    }
-    const r = new RemotePlayer(info, vehicle, !managed)
+    // Bots too get a replica of our own, so the set follows the host's roster exactly and is
+    // never touched by our bot manager or its local quality cap.
+    const vehicle = createVehicle(this.ctx.game, this.ctx.terrain, info.kind as VehicleKind, new THREE.Vector3(...s.p), 0)
+    vehicle.isLocal = false
+    vehicle.body.setRotation({ x: s.q[0], y: s.q[1], z: s.q[2], w: s.q[3] }, true)
+    this.ctx.game.add(vehicle)
+    const [body, accent] = isBotId(info.id) ? botColors(info.id - BOT_ID_BASE) : info.colors
+    ;(vehicle as VehicleExtras).setColors?.(body, accent)
+    const r = new RemotePlayer(info, vehicle)
     this.remotes.set(info.id, r)
     this.ctx.audio?.play('materialize', { x: s.p[0], y: s.p[1], z: s.p[2] })
     return r
@@ -475,6 +597,8 @@ export class NetClient implements System {
   }
 
   private onTerrainRegenerated(): void {
+    // The summit moved with the world: recompute the hill now, and the host resends it.
+    this.zoneTimer = 0
     if (this.everWelcomed) {
       const s = this.ctx.terrain.spawnPoint(this.slot)
       this.ctx.player.teleport(s.position, s.heading)
@@ -535,10 +659,12 @@ export class NetClient implements System {
       case 'welcome': {
         this.id = msg.id
         this.slot = msg.slot
+        // The vehicle's own fall and underground rescue puts it back at this slot.
+        this.ctx.player.spawnSlot = msg.slot
         this.clock.seed(msg.serverTime)
         this.players.clear()
         for (const p of msg.players) this.players.set(p.id, p)
-        this.game = msg.game
+        this.game = normalizeGame(msg.game)
         // The room's world (seed included) first: the terrain regenerates before anything
         // spawns, and onTerrainRegenerated seats us on the new ground.
         params.applySnapshot(msg.params, 'remote')
@@ -595,13 +721,15 @@ export class NetClient implements System {
         break
       case 'error':
         this.event(`Server: ${msg.message}`)
+        if (msg.message.includes('protocol')) reloadForNewProtocol()
         break
     }
   }
 
   private onGame(msg: Extract<ServerMessage, { type: 'game' }>): void {
     const before = this.game
-    this.game = msg.game
+    this.game = normalizeGame(msg.game)
+    msg.game = this.game
     for (const [id, score] of Object.entries(msg.game.scores)) {
       const p = this.players.get(Number(id))
       if (p) p.score = score
@@ -617,6 +745,16 @@ export class NetClient implements System {
       case 'leave': if (msg.game.it && msg.game.it !== this.id) this.event(`${this.nameOf(msg.game.it)} is it`); break
       case 'lock': this.event(msg.game.locked ? 'Host locked shared sliders' : 'Host unlocked shared sliders'); break
       case 'host': this.event(msg.actor === this.id ? 'You are now host' : `${a} is now host`); break
+      case 'mode': this.event(msg.game.mode === MODE_KOTH ? 'King of the Hill: get to the rim and hold it' : 'Tag: ram or shoot whoever is it'); break
+      case 'capture': this.event(`${a} ${msg.actor === this.id ? 'hold' : 'holds'} the hill`); break
+      case 'contest': this.event('The hill is contested'); break
+      case 'died': this.event(`${a} fell in`); break
+      case 'knock': this.event(`${a} knocked ${b} in: +${kothKnockBonus.value}`); break
+      case 'win':
+        this.event(`${a} ${msg.actor === this.id ? 'win' : 'wins'} the hill!`)
+        this.ctx.audio?.play('materialize', this.vehicleOf(msg.actor ?? 0)?.object.position)
+        break
+      case 'reset': this.event('New round'); break
     }
     if (before.it !== msg.game.it && msg.game.it === this.id) this.event('You are it')
   }
@@ -638,12 +776,80 @@ export class NetClient implements System {
   }
 
   private nameOf(id: number): string {
-    return id === this.id ? 'You' : (this.players.get(id)?.name ?? `Player ${id}`)
+    return id === this.id ? 'You' : this.displayName(id)
+  }
+
+  /** A player's chosen name; bots get a seeded name every client agrees on. */
+  displayName(id: number): string {
+    const info = this.players.get(id)
+    if (isBotId(id) && this.ctx.names) {
+      try {
+        return this.ctx.names(`${worldSeed.value}:${id}`, 'bot')
+      } catch {
+        // Fall back to the server's name.
+      }
+    }
+    return info?.name ?? `Player ${id}`
+  }
+
+  private lastMatchKey = ''
+
+  /** Tell the shell's match display, only when something it shows changed. */
+  private pushMatch(): void {
+    const set = this.ctx.setMatchState
+    if (!set) return
+    const state = this.connected ? this.matchState() : null
+    const key = JSON.stringify(state)
+    if (key === this.lastMatchKey) return
+    this.lastMatchKey = key
+    set(state)
+  }
+
+  private matchState(): MatchState {
+    const g = this.game
+    const koth = g.mode === MODE_KOTH
+    const lead = koth ? g.koth.holder : g.it
+    const scores = [...this.players.values()]
+      .map((p) => ({ name: this.displayName(p.id), score: g.scores[p.id] ?? 0, ...(p.id === this.id ? { you: true } : {}) }))
+      .sort((a, b) => b.score - a.score)
+    return {
+      mode: koth ? 'koth' : 'tag',
+      holderName: lead ? this.displayName(lead) : null,
+      holderIsYou: lead !== 0 && lead === this.id,
+      contested: koth && g.koth.contested,
+      scores,
+      target: koth ? kothTargetScore.value : 0,
+      winner: koth && g.koth.resetAt && g.koth.winner ? this.displayName(g.koth.winner) : null,
+    }
   }
 
   private event(text: string): void {
     this.events.push({ at: performance.now(), text })
     if (this.events.length > 20) this.events.shift()
+  }
+
+  private modeLines(): string[] {
+    const g = this.game
+    if (g.mode !== MODE_KOTH) return ['mode: Tag   ram or shoot whoever is it']
+    const k = g.koth
+    const target = kothTargetScore.value
+    const lines = [`mode: King of the Hill   first to ${target}`]
+    const now = this.clock.now()
+    if (k.resetAt) {
+      lines.push(`${this.nameOf(k.winner).toUpperCase()} ${k.winner === this.id ? 'WIN' : 'WINS'}!   next round in ${Math.max(0, Math.ceil(k.resetAt - now))} s`)
+    } else if (!k.zone) {
+      lines.push('hill: waiting for the host to place it')
+    } else if (k.contested) {
+      lines.push('hill: CONTESTED')
+    } else if (k.holder) {
+      const left = Math.max(0, target - (g.scores[k.holder] ?? 0))
+      lines.push(`hill: held by ${k.holder === this.id ? 'you' : this.nameOf(k.holder)}   ${left} s to win`)
+    } else {
+      lines.push('hill: free')
+    }
+    const out = k.out[this.id]
+    if (out) lines.push(`you are out: respawn in ${Math.max(0, Math.ceil(out - now))} s`)
+    return lines
   }
 
   private status(): string[] {
@@ -657,21 +863,54 @@ export class NetClient implements System {
       lines.push(`net: room ${this.ctx.room}   ping ${Math.round(this.clock.rtt * 1000)} ms   delay ${Math.round(delay * 1000)} ms`)
       const host = this.game.host === this.id ? 'you' : this.nameOf(this.game.host)
       lines.push(`host: ${host}   shared sliders ${this.game.locked ? 'LOCKED (host only)' : 'open to all'}`)
+      lines.push(...this.modeLines())
       const list = [...this.players.values()].sort((a, b) => Number(Boolean(a.bot)) - Number(Boolean(b.bot)) || a.slot - b.slot || a.id - b.id)
       for (const p of list) {
         const r = this.remotes.get(p.id)
         const flags = [
-          p.id === this.game.it ? '[IT]' : '',
+          this.game.mode === MODE_TAG && p.id === this.game.it ? '[IT]' : '',
           p.id === this.id ? '(you)' : '',
           p.id === this.game.host ? '(host)' : '',
+          this.game.mode === MODE_KOTH && this.game.koth.out[p.id] ? '(out)' : '',
+          this.game.mode === MODE_KOTH && this.game.koth.holder === p.id ? '[KING]' : '',
           r?.paused ? '(paused)' : r && !r.responding ? '(not responding)' : '',
         ].filter(Boolean).join(' ')
-        lines.push(`${p.id === this.game.it ? '>' : ' '} ${p.name.padEnd(14)} ${String(this.game.scores[p.id] ?? 0).padStart(3)}  ${flags}`)
+        const lead = this.game.mode === MODE_KOTH ? this.game.koth.holder === p.id : p.id === this.game.it
+        lines.push(`${lead ? '>' : ' '} ${this.displayName(p.id).padEnd(14)} ${String(this.game.scores[p.id] ?? 0).padStart(3)}  ${flags}`)
       }
     }
     const now = performance.now()
     for (const e of this.events.slice(-3)) if (now - e.at < 5000) lines.push(e.text)
     return lines
+  }
+}
+
+/** The bot manager's colours (BotManager.spawn), so a replica looks like the host's bot. */
+function botColors(index: number): [string, string] {
+  return [`hsl(${(index * 137.508 + 15) % 360}, 85%, 55%)`, '#ffffff']
+}
+
+/**
+ * The server speaks another protocol version. Usually this tab holds a stale bundle and the
+ * server was updated: reload once to fetch the new client. A session flag stops a loop when
+ * the server is the stale one.
+ */
+function reloadForNewProtocol(): void {
+  const key = 'syn3h.protocolReload'
+  try {
+    if (sessionStorage.getItem(key) === String(PROTOCOL_VERSION)) return
+    sessionStorage.setItem(key, String(PROTOCOL_VERSION))
+  } catch {
+    return
+  }
+  location.reload()
+}
+
+/** Fill fields an older room server does not send, so a mismatch degrades instead of throwing. */
+function normalizeGame(g: Partial<GameState>): GameState {
+  return {
+    it: g.it ?? 0, scores: g.scores ?? {}, host: g.host ?? 0, locked: Boolean(g.locked), mode: g.mode ?? MODE_TAG,
+    koth: { zone: null, holder: 0, contested: false, winner: 0, resetAt: 0, out: {}, ...g.koth },
   }
 }
 

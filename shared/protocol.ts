@@ -170,8 +170,61 @@ export interface PlayerInfo {
   bot?: boolean
 }
 
+/** Game modes, the value of the shared parameter `game.mode`. */
+export const MODE_TAG = 0
+export const MODE_KOTH = 1
+
+/**
+ * The King of the Hill zone: a ring (or, with inner 0, a disc) around a centre, between two
+ * heights. Computed from the terrain by the host and sent to the server, which does not
+ * generate terrain.
+ */
+export interface HillZone {
+  x: number
+  z: number
+  inner: number
+  outer: number
+  yMin: number
+  yMax: number
+}
+
+/** Sanity limits for a zone sent by a client. Returns a clean copy, or null. */
+export function cleanZone(raw: unknown): HillZone | null {
+  if (!raw || typeof raw !== 'object') return null
+  const z = raw as HillZone
+  const nums = [z.x, z.z, z.inner, z.outer, z.yMin, z.yMax]
+  if (!nums.every((n) => typeof n === 'number' && Number.isFinite(n))) return null
+  if (Math.abs(z.x) > 20000 || Math.abs(z.z) > 20000) return null
+  if (z.inner < 0 || z.outer > 2000 || z.outer - z.inner < 4) return null
+  if (z.yMax - z.yMin < 2 || z.yMax - z.yMin > 2000 || Math.abs(z.yMin) > 10000) return null
+  return { x: z.x, z: z.z, inner: z.inner, outer: z.outer, yMin: z.yMin, yMax: z.yMax }
+}
+
+export function inZone(zone: HillZone, p: readonly number[]): boolean {
+  const d = Math.hypot(p[0] - zone.x, p[2] - zone.z)
+  return d >= zone.inner && d <= zone.outer && p[1] >= zone.yMin && p[1] <= zone.yMax
+}
+
+/** King of the Hill state. */
+export interface KothState {
+  zone: HillZone | null
+  /** Player alone in the zone and scoring, or 0. */
+  holder: number
+  /** Two or more vehicles in the zone: nobody scores. */
+  contested: boolean
+  /** Who won the last round, shown until `resetAt`. */
+  winner: number
+  /** Server seconds when the round resets after a win, or 0. */
+  resetAt: number
+  /** Players currently out (fell in lava or off the world), with server seconds of respawn. */
+  out: Record<number, number>
+}
+
 /** Shared game state the server owns. */
 export interface GameState {
+  /** MODE_TAG or MODE_KOTH. */
+  mode: number
+  koth: KothState
   /** Player id of whoever is "it", or 0 for nobody. */
   it: number
   scores: Record<number, number>
@@ -211,8 +264,15 @@ export type ClientMessage =
   | { type: 'ram'; other: number }
   /** Host only: lock or unlock shared parameters for everyone else. */
   | { type: 'lock'; locked: boolean }
+  /** Host only: the King of the Hill zone it computed from the terrain. */
+  | { type: 'zone'; zone: HillZone }
+  /** My vehicle touched lava or fell off the world. */
+  | { type: 'died'; cause: 'lava' | 'fell' }
 
-export type TagEvent = 'default' | 'ram' | 'laser' | 'score' | 'leave' | 'lock' | 'host'
+export type TagEvent =
+  | 'default' | 'ram' | 'laser' | 'score' | 'leave' | 'lock' | 'host'
+  // King of the Hill
+  | 'mode' | 'capture' | 'contest' | 'free' | 'died' | 'knock' | 'win' | 'reset'
 
 export type ServerMessage =
   | {
