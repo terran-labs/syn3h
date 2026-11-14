@@ -1,3 +1,4 @@
+import type { VehicleKind } from '../vehicles'
 import type { Input } from '../core/Input'
 
 /** Each control owns its pointer so driving and firing can happen simultaneously. */
@@ -13,7 +14,7 @@ export class TouchControls {
     this.element.setAttribute('aria-label', 'Touch driving controls')
     this.element.hidden = true
     if (!this.available) return
-    this.element.innerHTML = `<div class="touch-stick" role="group" aria-label="Drag to steer and drive"><span class="touch-knob"></span><span class="touch-stick-label">DRIVE</span></div><div class="touch-actions"><button type="button" data-action="special" aria-pressed="false">WINGS</button><button type="button" data-action="brakes">BRAKE</button><button type="button" class="touch-fire" data-action="fire">FIRE</button></div>`
+    this.element.innerHTML = `<div class="touch-stick" role="group" aria-label="Drag to steer and drive"><span class="touch-knob"></span><span class="touch-stick-label">DRIVE</span></div><div class="touch-actions"><button type="button" data-action="throttleUp" hidden>THR +</button><button type="button" data-action="throttleDown" hidden>THR −</button><button type="button" data-action="special" aria-pressed="false">WINGS</button><button type="button" data-action="brakes">BRAKE</button><button type="button" class="touch-fire" data-action="fire">FIRE</button></div>`
     parent.append(this.element)
     const signal = this.abort.signal
     const stick = this.element.querySelector<HTMLElement>('.touch-stick')!
@@ -39,14 +40,16 @@ export class TouchControls {
       stick.addEventListener(name, (event) => { if (event.pointerId === pointer) reset() }, { signal })
     }
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('button')) {
-      const action = button.dataset.action as 'brakes' | 'special' | 'fire'
+      const action = button.dataset.action as 'brakes' | 'special' | 'fire' | 'throttleUp' | 'throttleDown'
       const pointers = new Set<number>()
-      const release = () => { pointers.clear(); if (action !== 'special') input.external[action] = false; button.classList.remove('held') }
+      const throttle = action === 'throttleUp' || action === 'throttleDown'
+      const release = () => { pointers.clear(); if (throttle) { this.thrust.delete(action); this.syncThrust() } else if (action !== 'special') input.external[action] = false; button.classList.remove('held') }
       this.resetters.push(release)
       button.addEventListener('pointerdown', (event) => {
         if (!this.active || input.suspended) return
         event.preventDefault(); button.setPointerCapture(event.pointerId); pointers.add(event.pointerId)
         if (action === 'special') input.state.special = !input.state.special
+        else if (throttle) { this.thrust.add(action); this.syncThrust() }
         else input.external[action] = true
         button.classList.add('held'); this.update()
       }, { signal })
@@ -57,6 +60,16 @@ export class TouchControls {
     window.addEventListener('blur', () => this.reset(), { signal })
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.reset() }, { signal })
     this.element.addEventListener('contextmenu', (event) => event.preventDefault(), { signal })
+  }
+  private readonly thrust = new Set<string>()
+  private syncThrust(): void { this.input.external.z = Number(this.thrust.has('throttleUp')) - Number(this.thrust.has('throttleDown')) }
+  setVehicleKind(kind: VehicleKind): void {
+    this.reset()
+    for (const button of this.element.querySelectorAll<HTMLElement>('[data-action^="throttle"]')) button.hidden = kind !== 'jet'
+    const special = this.element.querySelector<HTMLButtonElement>('[data-action="special"]')
+    if (special) { special.textContent = kind === 'jet' ? 'MODE' : 'WINGS'; special.hidden = kind === 'hovercraft' }
+    const label = this.element.querySelector('.touch-stick-label')
+    if (label) label.textContent = kind === 'jet' ? 'FLIGHT' : 'DRIVE'
   }
   set enabled(value: boolean) {
     this.active = value; this.element.hidden = !value || !this.available

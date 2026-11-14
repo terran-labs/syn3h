@@ -1,0 +1,115 @@
+# Syn3h UI integration
+
+The reconstruction and its historical limits are documented in
+`docs/architecture/syn3h-ui.md`. The default lobby uses the verified Syn3h logo,
+Lato Thin and Roboto Thin, a slow starfield and the recovered two-second depth/fade
+screen transition. The empty historical idle clip is represented by a settled logo
+glow, not an invented pulse. Space Station replaces the unlicensed-in-this-checkout
+Kai Engel track; legacy music is optional. Title music fades over ten seconds when
+entering the world and returns when opening the menu.
+
+## Composition root
+
+Keep the existing `initGameShell(game, player, terrain)` call and `shell.onPlay = join`.
+After constructing the existing `ParamPanel`, add:
+
+```ts
+shell.setParamPanel(panel)
+```
+
+For automated startup, replace `if (query.has('autoplay')) join()` with:
+
+```ts
+if (query.has('autoplay')) shell.play()
+```
+
+The browser will still require a real user gesture for audible playback. Calling
+`join()` alone leaves the start screen and suspended driving input in place.
+
+The shell API now includes `vehicleKind`, `bodyColor`, `accentColor`, `openMenu()`,
+`closeMenu()`, `showPanel(id)`, `activePanel`, `menuOpen` and `setParamPanel(panel)`.
+It preserves `playerName`, `room`, `onPlay`, `play()`, `setStatus(lines)` and `setSpeed`.
+Room and name lock on entering the world so editing the form cannot silently diverge
+from the connected room. Selection defaults to the Syn3h buggy; Classic remains available.
+
+The coordinator has wired saved kinds and colours into the vehicle factory and networking.
+The chooser supports Syn3h Buggy, Classic, Hovercraft and Jet. `?vehicle=...` overrides
+the spawned vehicle; help and touch controls follow the actual spawned kind.
+
+Vehicle controls appear in the lobby and for 8.5 seconds on spawn, H or ?. Jet touch
+controls add independent thrust up and down buttons; opposite holds cancel and releasing
+one preserves the other. The vehicle GLB previews for Jet and Hovercraft show original
+materials; the colour controls still save the colours applied by the actual vehicles.
+
+The loading cover mounts during module evaluation, before engine initialization. It
+listens for `syn3h:loading` with `{ phase, progress, elapsedMs }`, where progress is 0 to 1.
+Missing progress displays an indeterminate bar. The Shell constructor ends startup
+loading. `shell.setLoadingMessages(string[])` replaces the explicitly placeholder list;
+for messages before Shell exists, use `bootLoading?.setMessages(messages)` from
+`./ui/LoadingScreen`. Synchronous terrain generation still blocks animation while it
+runs; the UI cannot render intermediate progress until that code yields.
+
+The minimap installs automatically from the existing initializer and tracks the local
+player. For remote vehicles or bots, supply world coordinates and radians about +Y:
+
+```ts
+shell.setMapEntities([{ x, z, heading, color: '#49e6ff', self: false }])
+```
+
+Call this from the existing networking/scene update with the current entity list.
+It copies supplied records and adds the local marker unless a supplied record has
+`self: true`. Terrain pixels regenerate through `terrain.onRegenerate`; marker updates
+are limited to ten per second. No external entity list has been wired here.
+
+A reload-free respawn is deliberately left to the composition root. The UI now exposes:
+
+```ts
+const { shell, audio, setPlayer } = initGameShell(game, player, terrain)
+// After the composition root has created the replacement vehicle:
+setPlayer(nextPlayer)
+```
+
+This rebinds the audio bridge, local map marker and vehicle help. A safe pre-join
+`respawn(kind)` also needs a mutable `player`, removal/disposal of the old player,
+construction and colouring of the replacement, `camera.setVehicle(nextPlayer)`, and
+recreation of BotManager because it and its brains retain the old player. Terrain
+regeneration and debug HUD closures must refer to the mutable binding. Start networking
+only after that swap. An in-session swap additionally needs networking support for its
+bounds guard, tag marker, laser owner and replicated kind; changing only `ctx.player`
+is insufficient. This branch leaves the coordinator's reload fallback intact.
+
+`Shell` reads host state from `window.syn3hNet`, guards world edits at the event handler,
+and disables advanced world bindings while locked. The bots control appears only when
+`params.get('bots.count')` exists. No networking or parameter data format changed.
+The host lock control changes server state only for a host. Score rows are parsed from
+the existing text format; other lines remain text. Repeated status updates do not
+repeat join/tag toasts.
+
+## Validation
+
+Run from this worktree:
+
+```sh
+npx tsc --noEmit
+SYN3H_NO_ROOM_SERVER=1 npx vitest run
+SYN3H_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://127.0.0.1:8797 npx vite --port 5187 --strictPort
+```
+
+Start an isolated room server with `PORT=8797 npx tsx server/dev.ts`, then run
+`node tests/ui/browser.mjs`. The skip flag prevents the Vite plugin from trying
+to start a second room server on the shared host. The browser uses an isolated room
+per run against that isolated development room server. Stop both processes
+when done. `node tests/audio/browser.mjs` forwards to this current shell smoke test.
+
+The smoke captures every panel at desktop and 390 by 844 phone sizes, both vehicle
+skins, host and guest lock states, the HUD and the in-game menu. It exercises saved
+choices, live preview colours, music/mute/volume, seed regeneration, sky controls,
+late-registered bots, score styling, invitation copying, Escape, multi-touch and
+input suspension. Generated evidence lives under `tests/ui/artifacts/` and is ignored
+by git. Historical reference screenshots are still needed for an exact visual match;
+physical Safari playback and hardware listening are not established by headless Chrome.
+
+The additional `node tests/ui/flight-loading-map.mjs` check holds GPU startup to
+capture both loading states, dispatches progress events, checks H and ? help, verifies
+terrain map regeneration and exercises simultaneous jet banking and both thrust buttons.
+Its screenshots include desktop and phone loading covers and jet HUD layouts.
