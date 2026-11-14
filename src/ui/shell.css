@@ -126,3 +126,11 @@
 .shell-minimap span { position: absolute; top: 0; left: 5px; color: white; font-size: 12px; text-shadow: 0 1px 2px black; }
 .syn3h-shell:not(.is-playing) .shell-minimap { display: none; }
 @media (max-width: 700px) { .shell-minimap { right: 12px; top: 190px; bottom: auto; width: 110px; height: 110px; } .syn3h-shell.is-playing .shell-toast { top: 310px; font-size: 14px; } }
+.syn3h-loading progress { appearance: none; border: 0; background: #28374d; border-radius: 0; }
+.syn3h-loading progress::-webkit-progress-bar { background: #28374d; }
+.syn3h-loading progress::-webkit-progress-value { background: #7abaff; }
+.syn3h-loading progress::-moz-progress-bar { background: #7abaff; }
+.syn3h-loading progress:indeterminate { background: linear-gradient(90deg,#28374d 20%,#7abaff 50%,#28374d 80%); background-size: 200% 100%; animation: loading-sweep 1.8s linear infinite; }
+.syn3h-loading progress:indeterminate::-webkit-progress-bar { background: transparent; }
+@keyframes loading-sweep { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .syn3h-loading progress:indeterminate { animation: none; } }
