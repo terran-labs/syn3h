@@ -26,6 +26,8 @@ export function emptyInput(): InputState {
 
 export class Input {
   readonly state: InputState = emptyInput()
+  /** Additive UI controls. Special remains a toggle on state.special. */
+  readonly external: Partial<Omit<InputState, 'special'>> = {}
   private readonly keys = new Set<string>()
   /** Set true by UI code (chat, text fields) to stop driving while typing. */
   suspended = false
@@ -54,6 +56,11 @@ export class Input {
   /** Call once per rendered frame, before the fixed steps. */
   poll(): InputState {
     const s = this.state
+    if (this.suspended) {
+      this.keys.clear()
+      Object.assign(s, emptyInput(), { special: s.special })
+      return s
+    }
     s.x = this.axis(['KeyA', 'ArrowLeft'], ['KeyD', 'ArrowRight'])
     s.y = this.axis(['KeyS', 'ArrowDown'], ['KeyW', 'ArrowUp'])
     s.z = this.axis(['KeyF'], ['KeyR'])
@@ -76,6 +83,11 @@ export class Input {
       if (specialDown && !this.padSpecialWasDown) s.special = !s.special
       this.padSpecialWasDown = specialDown
     }
+    for (const axis of ['x', 'y', 'z', 'w'] as const) {
+      s[axis] = Math.max(-1, Math.min(1, s[axis] + (this.external[axis] ?? 0)))
+    }
+    s.brakes ||= this.external.brakes ?? false
+    s.fire ||= this.external.fire ?? false
     return s
   }
 
