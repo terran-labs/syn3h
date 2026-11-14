@@ -34,9 +34,7 @@ export const camRoamSpeed = number('roamSpeed', 'Roam speed', 2, 0.25, 25)
 export const camRideHeight = number('rideHeight', 'Fallback ride height', 0.95, 0, 5)
 
 export interface CameraVehicle extends Vehicle {
-  wingsOpen?: boolean
   wingOpen?: boolean
-  kind?: string
   camSmooth?: boolean
   camOffset?: number
   ridePosition?: THREE.Object3D
