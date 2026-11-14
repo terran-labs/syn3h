@@ -1,0 +1,1 @@
+{"name":"Wings at noon: drop from 60 m, deploy, glide, bank","durationMs":6000,"captureEveryMs":750,"settleMs":1500,"events":[{"atMs":0,"params":{"bots.count":0,"sun.timeOfDay":12}},{"atMs":100,"teleport":{"x":60,"z":60,"clearance":60,"heading":0.8}},{"atMs":200,"down":["Space"]},{"atMs":300,"up":["Space"]},{"atMs":3500,"down":["KeyD"]},{"atMs":4000,"up":["KeyD"]}]}
