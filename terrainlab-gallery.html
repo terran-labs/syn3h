@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" href="data:,"/><title>Syn3h Terrain Lab gallery</title>
+<style>body{margin:0;background:#120807;color:#f3ded6;font:15px/1.45 system-ui;padding:20px;max-width:1500px;margin:auto}h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 8px;color:#ff9a6a}p{margin:4px 0 12px;opacity:.85}a{color:#ffb38a}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:10px}figure{margin:0}img{width:100%;display:block;border-radius:6px}figcaption{font-size:12.5px;opacity:.75;padding:4px 2px}</style></head><body>
+<h1>Syn3h Terrain Lab: island prototype</h1>
+<p>Every world is one island. A breached volcano with a lava lake stands at the centre, a lava river runs from the breach to the sea, players spawn on a ring near the coast facing inward, and lava runs to the horizon. Prototype only: this is not in the game yet.</p>
+<p><a href="/terrainlab.html?seed=7&view=coast">Open the live lab</a> (drag to orbit, scroll to zoom, type a seed and press Build). Add <code>&night=1</code> or <code>&liquid=water</code> to the address.</p>
+<div id="out"></div>
+<script>
+const sections = [
+  ['Where we were and what it is based on', [['before-spawn.png','Before: the game today, from spawn'],['before-aerial.png','Before: the game today, from the air'],['ref-syn3h-tholus.jpg','Reference: Syn3h Tholus (syn3h.com)'],['ref-marsxplr-volcano.jpg','Reference: Mars Explorer']]],
+  ['Seed 7', ['coast','aerial','crater','breach','low'].map(v=>[`seed7-${v}.png`,`seed 7, ${v}`])],
+  ['Seed 7 at night', ['coast','aerial','crater'].map(v=>[`night7-${v}.png`,`seed 7 night, ${v}`])],
+  ['Seed 1', ['coast','aerial','crater','breach','low'].map(v=>[`seed1-${v}.png`,`seed 1, ${v}`])],
+  ['Seed 42', ['coast','aerial','crater','breach','low'].map(v=>[`seed42-${v}.png`,`seed 42, ${v}`])],
+]
+const out = document.getElementById('out')
+for (const [title, items] of sections) {
+  const h = document.createElement('h2'); h.textContent = title; out.append(h)
+  const g = document.createElement('div'); g.className = 'grid'; out.append(g)
+  for (const [file, cap] of items) {
+    const f = document.createElement('figure')
+    f.innerHTML = `<a href="/terrainlab-shots/${file}"><img loading="lazy" src="/terrainlab-shots/${file}"></a><figcaption>${cap}</figcaption>`
+    g.append(f)
+  }
+}
+</script></body></html>
