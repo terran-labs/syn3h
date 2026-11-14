@@ -9,13 +9,14 @@ import type { RAPIER } from '../../core/physics'
 import type { SpawnPoint, Terrain, TerrainRenderQuality, TerrainRoadPath, TerrainSummit } from '../Terrain'
 import { createTerrainCollider } from './collider'
 import { lavaSurfaceAt } from './lava'
-import { type TerrainData, coneProfile, generateTerrain } from './generate'
+import { type TerrainData, generateTerrain } from './generate'
 import { type TerrainMaterial, createTerrainMaterial } from './material'
 import { LOD_FAR, LOD_NEAR, type TerrainMeshes, type TriangleStats, createTerrainMeshes } from './mesh'
 import { rimRoadRadius } from './roads'
 import { HeightSampler } from './sampler'
 import { TERRAIN_PARAM_IDS, currentTerrainSettings } from './settings'
 import { spawnPointAt } from './spawn'
+import { Volcanics } from './volcanics'
 
 export class ProceduralTerrain implements Terrain {
   readonly size: number
@@ -32,6 +33,8 @@ export class ProceduralTerrain implements Terrain {
   private readonly unsubscribe: () => void
   private pending = false
   private readonly lodSystem: System
+  /** The sea, lava lake, rivers and vents drawn from the generated data. */
+  private readonly volcanics: Volcanics
 
   constructor(private readonly game: Game, private seed: number) {
     this.data = this.generate()
@@ -43,7 +46,13 @@ export class ProceduralTerrain implements Terrain {
     game.scene.add(this.meshes.group)
     this.collider = createTerrainCollider(game.world, this.data)
     // Level of detail follows the camera once per frame, after the camera has moved.
-    this.lodSystem = game.add({ update: () => this.meshes.updateLod(game.camera.position) })
+    this.lodSystem = game.add({
+      update: () => {
+        this.meshes.updateLod(game.camera.position)
+        this.look.setSea(worldLavaAltitude.value)
+      },
+    })
+    this.volcanics = game.add(new Volcanics(game.scene, this.sampler))
 
     this.unsubscribe = params.onChange((id) => {
       if (!TERRAIN_PARAM_IDS.has(id)) return
@@ -66,8 +75,7 @@ export class ProceduralTerrain implements Terrain {
   }
 
   private summitHeight(): number {
-    const v = this.data.layout.volcano
-    return v.height * coneProfile(v.calderaRadius / v.radius)
+    return this.data.layout.summitHeight
   }
 
   /** Rebuild heights, mesh and collider in place, then notify listeners. */
@@ -78,6 +86,7 @@ export class ProceduralTerrain implements Terrain {
     this.look.setSummit(this.summitHeight())
     this.game.world.removeCollider(this.collider, true)
     this.collider = createTerrainCollider(this.game.world, this.data)
+    this.volcanics.rebuild()
     this.version++
     console.info(`terrain regenerated: seed ${this.seed}, ${this.lastGenerateMs.toFixed(0)} ms`)
     for (const l of this.listeners) l()
@@ -94,6 +103,14 @@ export class ProceduralTerrain implements Terrain {
   /** Caldera lake, pools and rivers where present, else the global lava plane. */
   liquidHeightAt(x: number, z: number): number {
     return lavaSurfaceAt(this.data.lava, x, z, worldLavaAltitude.value)
+  }
+
+  /**
+   * What the liquid at (x, z) is, or null where the ground is dry. The sea and everything
+   * that flows from the volcano are lava on this world.
+   */
+  liquidKindAt(x: number, z: number): 'lava' | 'water' | null {
+    return this.liquidHeightAt(x, z) > this.sampler.heightAt(x, z) ? 'lava' : null
   }
 
   spawnPoint(index: number): SpawnPoint {
@@ -150,6 +167,7 @@ export class ProceduralTerrain implements Terrain {
   dispose(): void {
     this.unsubscribe()
     this.game.remove(this.lodSystem)
+    this.game.remove(this.volcanics)
     this.listeners.clear()
     this.game.scene.remove(this.meshes.group)
     this.meshes.dispose()

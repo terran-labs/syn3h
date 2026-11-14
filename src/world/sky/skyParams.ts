@@ -39,7 +39,7 @@ export const cloudDensity = defineParam({ id: 'weather.cloudDensity', label: 'Cl
 export const cloudScale = defineParam({ id: 'weather.cloudScale', label: 'Cloud scale', group: 'Weather', scope: w, default: 0.0002, min: 0.00002, max: 0.001, step: 0.00001 })
 export const cloudSpeed = defineParam({ id: 'weather.cloudSpeed', label: 'Cloud speed', group: 'Weather', scope: w, default: 0.00002, min: 0, max: 0.0002, step: 0.000001 })
 export const cloudElevation = defineParam({ id: 'weather.cloudElevation', label: 'Cloud elevation', group: 'Weather', scope: w, default: 0.5, min: 0, max: 1, step: 0.01 })
-export const fogDensity = defineParam({ id: 'weather.fogDensity', label: 'Fog density', group: 'Weather', scope: w, default: 0.0006, min: 0, max: 0.005, step: 0.00001 })
+export const fogDensity = defineParam({ id: 'weather.fogDensity', label: 'Fog density', group: 'Weather', scope: w, default: 0.0002, min: 0, max: 0.005, step: 0.00001 })
 
 // Client -------------------------------------------------------------------------------
 const touch = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)

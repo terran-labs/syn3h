@@ -13,7 +13,7 @@
 import * as THREE from 'three/webgpu'
 import {
   Fn, attribute, cameraPosition, color, float, max, mix, mx_noise_float, normalGeometry, normalView,
-  positionView, positionWorld, sin, smoothstep, uniform, vec2,
+  positionView, positionWorld, sin, smoothstep, uniform, vec2, vec3,
 } from 'three/tsl'
 import { ROAD_WIDTH } from './roads'
 
@@ -21,10 +21,13 @@ export interface TerrainMaterial {
   material: THREE.MeshStandardNodeMaterial
   /** Altitude of the volcano rim; the ash band is placed relative to it. */
   setSummit(height: number): void
+  /** Height of the sea surface: the shore is scorched and glows just above it. */
+  setSea(level: number): void
 }
 
 export function createTerrainMaterial(): TerrainMaterial {
   const summit = uniform(200)
+  const sea = uniform(0)
   const p = positionWorld
   const volcanic = attribute<'float'>('volcanic', 'float')
 
@@ -36,29 +39,27 @@ export function createTerrainMaterial(): TerrainMaterial {
   // Steepness from the geometry normal: 0 flat, 1 vertical.
   const slope = float(1).sub(normalGeometry.y)
 
-  const dustDark = color(0xa9471f)
-  const dustLight = color(0xd5814a)
+  // Saturated rust, the colour of Tholus and of the Mars Explorer worlds.
+  const dustDark = color(0xa5351a)
+  const dustLight = color(0xd9602c)
   // Mostly large soft regions; the 80 m patches alone read as leopard spots from the air.
   let col = mix(dustDark, dustLight, smoothstep(-1.1, 1.1, huge.mul(0.9).add(big.mul(0.45)).add(mid.mul(0.25))))
 
   // Layered sandstone on cliffs: bands in altitude, wobbled so they are not ruler straight.
-  const strata = sin(p.y.mul(0.9).add(big.mul(4))).mul(0.5).add(0.5)
-  const rock = mix(color(0x6e2c18), color(0xa4502c), strata)
-  const cliff = smoothstep(0.22, 0.42, slope.add(mid.mul(0.06)))
+  // Kept faint and broken up by noise: strong regular bands read as turned wood.
+  const strata = sin(p.y.mul(0.3).add(big.mul(7)).add(mid.mul(2.5))).mul(0.5).add(0.5)
+  const rock = mix(color(0x7a2a14), color(0xa8431f), strata.mul(0.22).add(mid.mul(0.45)).add(0.35))
+  const cliff = smoothstep(0.16, 0.38, slope.add(mid.mul(0.05)))
   col = mix(col, rock, cliff)
 
   // Basalt on volcanoes: darkest where steep, dusted where flat.
-  const basalt = mix(color(0x2c201d), color(0x4a2d24), smoothstep(-0.5, 0.5, mid))
-  const basaltAmount = volcanic.mul(float(0.55).add(smoothstep(0.03, 0.2, slope).mul(0.45)))
+  const basalt = mix(color(0x241715), color(0x3f241c), smoothstep(-0.8, 0.8, big.mul(0.7).add(mid.mul(0.3))))
+  const basaltAmount = volcanic.mul(float(0.5).add(smoothstep(0.03, 0.2, slope).mul(0.4)))
   col = mix(col, basalt, basaltAmount.clamp(0, 1))
 
-  // Pale ash near the summit.
-  // Only the top of the cone, streaked downhill by the mid noise rather than speckled.
-  const ash = mix(color(0x9a887c), color(0xb09c8e), smoothstep(-0.6, 0.6, mid))
-  const ashAmount = smoothstep(summit.mul(0.8), summit.mul(0.98), p.y.add(big.mul(25)))
-    .mul(volcanic)
-    .mul(0.85)
-  col = mix(col, ash, ashAmount)
+  // Scorched shore: ground just above the liquid is burnt black, and the last metre glows.
+  const aboveSea = p.y.sub(sea)
+  col = mix(col, color(0x140a08), smoothstep(8, 2, aboveSea).mul(0.9))
 
   // Roads: packed darker surface with faint lighter edge lines, from the per-vertex distance
   // to the nearest centreline. Distance interpolates almost linearly across a cell, so the
@@ -79,6 +80,8 @@ export function createTerrainMaterial(): TerrainMaterial {
 
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.95, metalness: 0 })
   material.colorNode = col
+  // Heat from the sea lights the waterline, so the coast reads at night and from the air.
+  material.emissiveNode = vec3(1.0, 0.2, 0.02).mul(smoothstep(1.4, -1.5, aboveSea)).mul(0.7)
   material.roughnessNode = max(float(0.78), float(0.97).sub(cliff.mul(0.1)).sub(paved.mul(0.15)))
   // Bump from the same world noise: metre-scale relief the 4 m grid cannot hold. Three's
   // bumpMap() only perturbs textures (it re-samples at offset UVs), so this is Mikkelsen's
@@ -103,6 +106,9 @@ export function createTerrainMaterial(): TerrainMaterial {
     material,
     setSummit(height) {
       summit.value = Math.max(20, height)
+    },
+    setSea(level) {
+      sea.value = level
     },
   }
 }

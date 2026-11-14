@@ -43,12 +43,15 @@ await page.evaluate(() => {
 const info = () => page.evaluate(() => {
   const s = window.syn3h
   const t = s.terrain
-  const v = t.data.layout.volcano
+  const L = t.data.layout
+  const v = L.volcano
+  const road = t.data.roads.find((r) => r.kind === 'volcano')
+  const mid = road.points[Math.floor(road.points.length * 0.55)]
   return {
-    backend: s.game.backend, fps: Math.round(s.game.fps), genMs: +t.lastGenerateMs.toFixed(1),
-    seed: t.data.seed, volcano: { x: v.x, z: v.z, h: v.height, r: v.radius, rc: v.calderaRadius, floor: v.floorHeight },
-    cones: t.data.layout.cones.map((c) => [c.x | 0, c.z | 0, c.height | 0]),
-    mesas: t.data.layout.mesas.map((m) => [m.x | 0, m.z | 0, m.height | 0]),
+    backend: s.game.backend, fps: Math.round(s.game.fps), genMs: +t.lastGenerateMs.toFixed(1), seed: t.data.seed,
+    volcano: { h: v.height, r: v.radius, rc: v.calderaRadius, floor: v.floorHeight, gx: v.gentleX, gz: v.gentleZ },
+    summit: t.summit(), pads: L.spawns.map((p) => [p.x, p.z]), mid: [mid.x, mid.y, mid.z],
+    rivers: t.data.lava.rivers.map((r) => r.points[Math.floor(r.points.length / 2)]),
   }
 })
 
@@ -60,21 +63,25 @@ async function shoot(name, eye, at) {
 
 async function views(tag) {
   const i = await info()
-  const { x, z, h, r, rc, floor } = i.volcano
   const gy = (px, pz) => page.evaluate(([a, b]) => window.syn3h.terrain.heightAt(a, b), [px, pz])
-  const len = Math.hypot(x, z) || 1
-  const ux = x / len, uz = z / len // spawn toward volcano
-  await shoot(`${tag}-1-top`, [0, 2600, 1], [0, 0, 0])
-  await shoot(`${tag}-2-oblique`, [-ux * 900, 520, -uz * 900], [x, h * 0.3, z])
-  await shoot(`${tag}-3-spawn-eye`, [0, (await gy(0, 0)) + 3, 0], [x, h * 0.5, z])
-  const fx = x - ux * (r * 1.15), fz = z - uz * (r * 1.15)
-  await shoot(`${tag}-4-foot-eye`, [fx, (await gy(fx, fz)) + 3, fz], [x, h * 0.8, z])
-  const rx = x - ux * rc, rz = z - uz * rc
-  await shoot(`${tag}-5-rim-into-crater`, [rx, (await gy(rx, rz)) + 6, rz], [x, floor, z])
-  await shoot(`${tag}-6-rim-outward`, [rx, (await gy(rx, rz)) + 6, rz], [0, 0, 0])
-  await shoot(`${tag}-7-crater-air`, [x - ux * rc * 2.2, h + 120, z - uz * rc * 2.2], [x, floor, z])
-  const m = i.mesas[0]
-  if (m) await shoot(`${tag}-8-mesa-eye`, [m[0] + 260, (await gy(m[0] + 260, m[1])) + 4, m[1]], [m[0], m[2] * 0.5, m[1]])
+  const { gx, gz } = i.volcano
+  const S = i.summit
+  const eyeAt = async (x, z, up) => [x, (await gy(x, z)) + up, z]
+  // From the air, looking across the whole island.
+  await shoot(`${tag}-1-aerial`, [gx * 1150 + gz * 500, 620, gz * 1150 - gx * 500], [0, 90, 0])
+  // Driver's eye on spawn pad 0 and pad 3, facing the volcano.
+  await shoot(`${tag}-2-pad0-eye`, await eyeAt(i.pads[0][0] * 1.02, i.pads[0][1] * 1.02, 3), [0, 170, 0])
+  await shoot(`${tag}-3-pad3-eye`, await eyeAt(i.pads[3][0] * 1.02, i.pads[3][1] * 1.02, 3), [0, 170, 0])
+  // The volcano road half way up, looking along it toward the summit.
+  await shoot(`${tag}-4-road-mid`, [i.mid[0] + gx * 30, i.mid[1] + 12, i.mid[2] + gz * 30], [0, S.rimHeight, 0])
+  // On the summit ring road looking across the crater.
+  await shoot(`${tag}-5-summit-eye`, await eyeAt(-gx * S.rimRadius, -gz * S.rimRadius, 4), [gx * S.rimRadius, S.rimHeight - 10, gz * S.rimRadius])
+  // The summit arena from above.
+  await shoot(`${tag}-6-summit-air`, [-gx * 230, S.rimHeight + 150, -gz * 230], [0, S.rimHeight - 20, 0])
+  // The steep side with the lava rivers, from the coast.
+  await shoot(`${tag}-7-steep-side`, await eyeAt(i.pads[4][0] * 1.02, i.pads[4][1] * 1.02, 3), [0, 170, 0])
+  // Top down.
+  await shoot(`${tag}-8-top`, [0, 2100, 1], [0, 0, 0])
   return i
 }
 

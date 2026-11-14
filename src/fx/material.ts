@@ -1,6 +1,6 @@
 import type { Node } from 'three/webgpu'
 import { Color, DoubleSide, MeshBasicNodeMaterial, Vector2 } from 'three/webgpu'
-import { attribute, float, floor, fract, mix, sin, smoothstep, uniform, uv, vec2 } from 'three/tsl'
+import { attribute, cameraPosition, float, floor, fract, mix, positionWorld, sin, smoothstep, uniform, uv, vec2 } from 'three/tsl'
 import * as p from './params'
 
 /** Smooth value noise keeps both backends on ordinary arithmetic and interpolation. */
@@ -9,7 +9,11 @@ const noise = (v: Node<'vec2'>) => {
   const i = floor(v), f = fract(v), u = f.mul(f).mul(float(3).sub(f.mul(2)))
   return mix(mix(hash(i), hash(i.add(vec2(1, 0))), u.x), mix(hash(i.add(vec2(0, 1))), hash(i.add(vec2(1, 1))), u.x), u.y)
 }
-export function createLavaMaterial(river = false, shoreline = false) {
+/**
+ * `far` is for a surface that runs to the horizon: beyond a few hundred metres the crack
+ * pattern is smaller than a pixel and shimmers, so it fades into its own average glow.
+ */
+export function createLavaMaterial(river = false, shoreline = false, far = false) {
   const clock = uniform(0), speed = uniform(0), scale = uniform(0), crust = uniform(0), glow = uniform(0)
   const direction = uniform(new Vector2()), molten = uniform(new Color()), altitude = uniform(0)
   const coordinates = uv().mul(scale)
@@ -18,7 +22,8 @@ export function createLavaMaterial(river = false, shoreline = false) {
   const field = a.mul(0.72).add(b.mul(0.28))
   const cracks = float(1).sub(smoothstep(float(0.02), float(0.22).sub(crust.mul(0.18)), field.sub(0.5).abs()))
   const edge = shoreline ? float(1).sub(smoothstep(0, 1.8, altitude.sub(attribute('groundHeight', 'float')).abs())).mul(0.4) : float(0)
-  const heat = cracks.max(edge)
+  const distance = positionWorld.sub(cameraPosition).length()
+  const heat = far ? mix(cracks, float(0.2), smoothstep(250, 1400, distance)).max(edge) : cracks.max(edge)
   const material = new MeshBasicNodeMaterial({ side: DoubleSide })
   // Unlit HDR colour is emissive without adding any real lights or requiring sunlight.
   material.colorNode = mix(uniform(new Color(0x170d0c)), molten.mul(glow), heat)

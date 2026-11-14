@@ -109,7 +109,7 @@ function planRivers(data: TerrainData, s: HeightSampler): Planned[] {
 
   const roadClear = (x: number, z: number) => {
     for (const r of data.roads) if (distanceToPolyline(r.points, r.closed, x, z) < ROAD_CLEARANCE) return false
-    return sq(x) + sq(z) > sq(SPAWN_BLEND_RADIUS + 30)
+    return L.spawns.every((p) => sq(x - p.x) + sq(z - p.z) > sq(SPAWN_BLEND_RADIUS + 30))
   }
   const accepted: Planned[] = []
   const riverClear = (x: number, z: number) =>
@@ -160,6 +160,8 @@ function planRivers(data: TerrainData, s: HeightSampler): Planned[] {
       const edge = half - Math.max(Math.abs(nx), Math.abs(nz))
       if (edge < 200 || !roadClear(nx, nz) || !riverClear(nx, nz) || !featureClear(nx, nz)) break
       if (s.heightAt(nx, nz) > s.heightAt(x, z) + 0.5) break
+      // Reached the sea: the river ends at the shore.
+      if (s.heightAt(nx, nz) < 2) break
       x = nx
       z = nz
       length += RIVER_STEP
