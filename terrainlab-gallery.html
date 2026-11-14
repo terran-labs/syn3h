@@ -9,7 +9,7 @@
 const views = [['2-pad0-eye','from spawn pad 0'],['1-aerial','from the air'],['6-summit-air','the summit arena'],['7-steep-side','from pad 4, the lava side'],['5-summit-eye','on the summit ring road']]
 const set = (tag, name) => views.map(([v, c]) => [`game-${tag}-${v}.png`, `${name}, ${c}`])
 const sections = [
-  ['Driving in', [['game-drive.png','Default seed: three seconds after spawning, on the road to the volcano']]],
+  ['Driving in', [['game-drive.png','Default seed: three seconds after spawning, on the road to the volcano'],['game-drive-road.png','Half way up the volcano road, driven by an autopilot'],['game-drive-summit.png','Arriving on the summit, the crown of fangs ahead']]],
   ['Default seed', set('default', 'seed 1')],
   ['Seed 7', set('seed7', 'seed 7')],
   ['Seed 42', set('seed42', 'seed 42')],
