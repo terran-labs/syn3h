@@ -138,3 +138,16 @@ Five headless checks cover mass/contact count, stable resting support, forward a
 reverse drive, pivot direction, no airborne traction, braking, teleport reset and
 recovery from an exactly inverted pose. Browser front/rear screenshots are
 `/tmp/syn3h-vehicles2/tank-legacy-front.png` and `tank-legacy-rear.png`.
+
+## Multiplayer evidence
+
+Run an isolated room with `PORT=8788 npx tsx server/dev.ts` and launch the test
+Vite config with `SYN3H_ROOM_PORT=8788`, then run `multiplayer-smoke.mjs`.
+Two pages verified remote jet and hovercraft kinds, distinct body/accent paint,
+loaded original meshes, and visible hover gear on the distant kinematic jet.
+Across eight motion samples, maximum body-to-interpolated-target error was
+0.000008 m. The moving owner-to-remote comparison was about 9 m under two-page
+headless load; after settling into hover it converged to 0.12 m. Browser errors: zero.
+The script photographs each remote vehicle from the other page's camera and writes
+`multiplayer-remote-jet.png`, `multiplayer-remote-hovercraft.png`, and
+`multiplayer.json` under `/tmp/syn3h-vehicles2/`.
