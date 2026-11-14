@@ -81,3 +81,34 @@ Run the gallery smoke with `hovercraft` to capture front and rear close-ups. Bot
 renders use the recovered model, PBR material approximations and the original glow
 texture. There was no vehicle promo screenshot in the searched Syn3h source trees;
 geometry and serialized material references were the visual comparison sources.
+
+## In-game Syn3h validation
+
+The jet exposes the prefab's 5 m camera clearance and RideCamera position
+(0, 0.383, -2.085) in browser coordinates. The hovercraft exposes its RideCamera
+(0.000051, 0.56284, -0.497794); its 2 m clearance uses the Syn3h base default,
+not a serialized override.
+
+Keyboard flight authority is deliberately reduced by `jet.controlResponse=0.3`.
+The original force equations are unchanged, and setting this slider to 1 restores
+source authority. A half-second S tap at source authority pitched through roughly
+100 degrees; the reduced setting produced a controlled 28 degree climb. R supplies
+thrust, F reverses it, W pitches down, S pitches up, A/D bank, Q/E yaw, Shift brakes,
+and Space switches hover/flight. Hover thrust still follows the original source.
+
+`tools/scenarios/jet-flight.json` covers hover takeoff, transition, climb, bank and
+hover recovery. `jet-stall-landing.json` starts below stall speed at 45 m, recovers
+in hover, then lands on the gear. `hovercraft-terrain.json` follows a deterministic
+dune approach, crosses slopes, leaves its support height, turns and brakes.
+Run these with `tools/drive-capture.mjs --url ... --vehicle jet|hovercraft`.
+Contact sheets and telemetry are under `/tmp/syn3h-vehicles2/`.
+
+The shared scene now uses a 64 px sky-only PMREM with the live sky material.
+It captures no terrain, vehicle or shadow passes. It refreshes after sky edits
+(debounced to at most twice per second), or six simulated minutes of day progression.
+Environment intensity is 0.15 because the existing hemisphere light already supplies
+sky ambient. `environment-smoke.mjs` verifies one capture while unchanged and one
+additional capture after changing the hour. The first measured CPU submission took
+31 ms, the warmed refresh 4 ms; these are CPU costs, not GPU timer measurements.
+The same target is reused. Both vehicles apply replicated body/accent colours,
+and the jet updates gear animation even when a remote proxy becomes kinematic.
