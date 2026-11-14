@@ -1,0 +1,30 @@
+{
+  "name": "syn3h",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "server": "tsx server/dev.ts"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.21.0",
+    "three": "^0.187.0",
+    "tweakpane": "^4.0.5"
+  },
+  "devDependencies": {
+    "@tweakpane/core": "^2.0.5",
+    "@types/node": "^26.6.6",
+    "@types/three": "^0.187.0",
+    "@types/ws": "^8.18.2",
+    "playwright-core": "^1.65.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.0",
+    "ws": "^8.23.0"
+  }
+}

@@ -1,0 +1,163 @@
+/**
+ * Vehicle base class.
+ *
+ * A vehicle is one Rapier rigid body plus a Three.js object. Subclasses implement
+ * `applyForces`, which is the port of the original script's FixedUpdate: read `this.input`
+ * and the shared parameters, cast rays, add forces. Nothing else moves the body.
+ *
+ * Local and remote vehicles are the same class. A local vehicle copies the player's input
+ * each step. A remote one has its `input` and target state written by the network layer,
+ * which is why all control state lives in `input` and `getState`/`setState` here.
+ */
+import * as THREE from 'three/webgpu'
+import type { Game, System } from '../core/Game'
+import { type InputState, emptyInput } from '../core/Input'
+import { GROUP_ALL, GROUP_VEHICLE, RAPIER, groups } from '../core/physics'
+import type { Terrain } from '../world/Terrain'
+
+/** Everything needed to reproduce a vehicle on another client. Plain numbers for the wire. */
+export interface VehicleState {
+  p: [number, number, number]
+  q: [number, number, number, number]
+  /** Linear velocity. */
+  v: [number, number, number]
+  /** Angular velocity. */
+  w: [number, number, number]
+  input: InputState
+}
+
+export abstract class Vehicle implements System {
+  readonly object = new THREE.Group()
+  readonly body: RAPIER.RigidBody
+  /** Control state for this step. Written by the player or by the network layer. */
+  readonly input: InputState = emptyInput()
+  /** True when this client simulates and owns the vehicle. */
+  isLocal = true
+  /** Display name and stable id, set by whoever spawns it. */
+  id = ''
+  name = ''
+
+  private readonly prevPos = new THREE.Vector3()
+  private readonly prevQuat = new THREE.Quaternion()
+  private readonly currPos = new THREE.Vector3()
+  private readonly currQuat = new THREE.Quaternion()
+
+  constructor(
+    protected readonly game: Game,
+    protected readonly terrain: Terrain,
+    position: THREE.Vector3,
+    heading = 0,
+  ) {
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), heading)
+    this.body = game.world.createRigidBody(
+      RAPIER.RigidBodyDesc.dynamic()
+        .setTranslation(position.x, position.y, position.z)
+        .setRotation(q)
+        .setCanSleep(false)
+        .setCcdEnabled(true),
+    )
+    this.currPos.copy(position)
+    this.prevPos.copy(position)
+    this.currQuat.copy(q)
+    this.prevQuat.copy(q)
+    this.object.position.copy(position)
+    this.object.quaternion.copy(q)
+    game.scene.add(this.object)
+  }
+
+  /** Collision groups for chassis colliders. */
+  protected static chassisGroups(): number {
+    return groups(GROUP_VEHICLE, GROUP_ALL)
+  }
+
+  /** The port of the original FixedUpdate. Called once per fixed step for every vehicle. */
+  protected abstract applyForces(dt: number): void
+
+  fixedUpdate(dt: number): void {
+    if (this.isLocal) Object.assign(this.input, this.game.input.state)
+    this.body.resetForces(true)
+    this.body.resetTorques(true)
+    this.applyForces(dt)
+  }
+
+  postPhysics(_dt: number): void {
+    this.prevPos.copy(this.currPos)
+    this.prevQuat.copy(this.currQuat)
+    const t = this.body.translation()
+    const r = this.body.rotation()
+    this.currPos.set(t.x, t.y, t.z)
+    this.currQuat.set(r.x, r.y, r.z, r.w)
+  }
+
+  update(_dt: number, alpha: number): void {
+    this.object.position.lerpVectors(this.prevPos, this.currPos, alpha)
+    this.object.quaternion.slerpQuaternions(this.prevQuat, this.currQuat, alpha)
+  }
+
+  /** Teleport, clearing motion and interpolation history. */
+  teleport(position: THREE.Vector3, heading = 0): void {
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), heading)
+    this.body.setTranslation(position, true)
+    this.body.setRotation(q, true)
+    this.body.setLinvel({ x: 0, y: 0, z: 0 }, true)
+    this.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
+    this.currPos.copy(position)
+    this.prevPos.copy(position)
+    this.currQuat.copy(q)
+    this.prevQuat.copy(q)
+  }
+
+  getState(): VehicleState {
+    const p = this.body.translation()
+    const q = this.body.rotation()
+    const v = this.body.linvel()
+    const w = this.body.angvel()
+    return {
+      p: [p.x, p.y, p.z],
+      q: [q.x, q.y, q.z, q.w],
+      v: [v.x, v.y, v.z],
+      w: [w.x, w.y, w.z],
+      input: { ...this.input },
+    }
+  }
+
+  dispose(): void {
+    this.game.scene.remove(this.object)
+    this.game.world.removeRigidBody(this.body)
+  }
+}
+
+/**
+ * A box that drives. Exists only so the foundation runs before the real buggy lands.
+ * Not a model for vehicle code: the buggy is a port of the original raycast suspension.
+ */
+export class PlaceholderVehicle extends Vehicle {
+  constructor(game: Game, terrain: Terrain, position: THREE.Vector3, heading = 0) {
+    super(game, terrain, position, heading)
+    this.game.world.createCollider(
+      RAPIER.ColliderDesc.cuboid(0.9, 0.4, 1.6)
+        .setMass(30)
+        .setFriction(0.2)
+        .setCollisionGroups(Vehicle.chassisGroups()),
+      this.body,
+    )
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(1.8, 0.8, 3.2),
+      new THREE.MeshStandardMaterial({ color: 0x35c2ff, roughness: 0.4 }),
+    )
+    mesh.castShadow = true
+    this.object.add(mesh)
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.3, 0.6), new THREE.MeshStandardMaterial({ color: 0xffd23f }))
+    nose.position.set(0, 0.3, -1.6)
+    this.object.add(nose)
+  }
+
+  protected applyForces(_dt: number): void {
+    const q = this.body.rotation()
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w))
+    this.body.addForce({ x: forward.x * this.input.y * 600, y: 0, z: forward.z * this.input.y * 600 }, true)
+    this.body.addTorque({ x: 0, y: -this.input.x * 250, z: 0 }, true)
+    this.body.setAngularDamping(3)
+    this.body.setLinearDamping(this.input.brakes ? 3 : 0.3)
+  }
+}
