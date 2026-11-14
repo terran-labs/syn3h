@@ -1,13 +1,18 @@
 {
   "tagline": "Syn3h, rebuilt native in the browser: its vehicles, its physics, its lobby and its look.",
   "deadline": "Demo: Sunday noon, Coeur d'Alene",
-  "updated": "Saturday 7:20pm PT",
-  "headline": "King of the Hill is playable on the volcano rim. Bots mob you in their own colours, vehicles leave tracks and dust, and a local Cloudflare rehearsal passed. Frame rate on real hardware is the open question.",
+  "updated": "Saturday 8:05pm PT",
+  "headline": "The island is in: a volcano at the centre of a lava sea, with lava rivers, flame vents and a road to the summit. In a real Chrome on this Mac the game renders in about 8 ms a frame; the slow readings came from headless test browsers.",
   "previews": [
     {
       "title": "Play the current build",
       "url": "https://vorton-previews.tail285f88.ts.net:32782/",
       "detail": "Opens on the Syn3h lobby. Pick Buggy, Hovercraft or Jet under Vehicle. WASD drives, Space opens wings, Shift brakes, L fires, C changes camera."
+    },
+    {
+      "title": "King of the Hill with bots",
+      "url": "https://vorton-previews.tail285f88.ts.net:32782/",
+      "detail": "In the lobby choose Multiplayer, set the mode to King of the Hill, then raise Bots under Worlds. Drive the road from your pad to the summit."
     },
     {
       "title": "Fly the Syn3h jet",
@@ -152,14 +157,14 @@
       "detail": "New seeded names and 40 loading messages (originals were not recoverable). Share image and icons ready; need the public address."
     },
     {
-      "state": "active",
+      "state": "done",
       "title": "Island world with lava and fire",
-      "detail": "Terrain Lab, at your direction: volcano at the centre, liquid to the horizon, spawns on the coast. Lava is still not drawn in the game."
+      "detail": "Merged. Volcano at the origin, lava to the horizon, eight coastal spawn pads, rock fangs round the summit, lava and vents drawn. 75 ms to generate."
     },
     {
       "state": "active",
       "title": "Frame rate on real hardware",
-      "detail": "Headless tests on a loaded machine suggest it is heavy. Being profiled system by system."
+      "detail": "Headed Chrome on this M2 Max: about 8 ms a frame at 1280 x 720. Headless numbers were misleading. Quiet-machine and phone readings still to come."
     },
     {
       "state": "active",
