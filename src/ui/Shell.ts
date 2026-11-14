@@ -12,6 +12,7 @@ import { Starfield } from './Starfield'
 import { Scoreboard } from './Scoreboard'
 import { canEditWorld, hostControls } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
+import { Minimap, type MapEntity } from './Minimap'
 import { bootLoading } from './LoadingScreen'
 import { renderHelp, touchHelp } from './VehicleHelp'
 import type { VehicleKind } from '../vehicles'
@@ -29,6 +30,7 @@ export class Shell implements System {
   private readonly overlay: HTMLElement
   private readonly speed: HTMLElement
   private readonly choice: VehicleChoice = readVehicleChoice()
+  private minimap?: Minimap
   private preview?: VehiclePreview
   private readonly panels: SlidingPanels
   private readonly starfield: Starfield
@@ -148,6 +150,9 @@ export class Shell implements System {
   get playing(): boolean { return this.started }
   get menuOpen(): boolean { return this.menuVisible }
   get activePanel(): string { return this.panels.active }
+  setTerrain(terrain: Terrain): void { this.minimap?.dispose(); this.minimap = new Minimap(terrain, this.element) }
+  setMapEntities(entities: readonly MapEntity[]): void { this.minimap?.setEntities(entities) }
+  setMapSelf(entity: MapEntity): void { this.minimap?.setSelf(entity) }
   setLoadingMessages(messages: string[]): void { bootLoading?.setMessages(messages) }
   setParamPanel(panel: ParamPanel): void { this.paramPanel = panel }
   showPanel(id: string): void {
@@ -225,7 +230,7 @@ export class Shell implements System {
   setStatus(lines: readonly string[]): void { this.board.setStatus(lines); this.hudBoard.setStatus(lines) }
   setSpeed(metresPerSecond: number): void { this.speed.textContent = String(Math.round(Math.abs(metresPerSecond) * 2.23694)) }
   update(): void {
-    this.touch.update()
+    this.touch.update(); if (!this.menuVisible) this.minimap?.update()
     if (!this.menuVisible) return
     const mute = this.element.querySelector<HTMLButtonElement>('.shell-mute')!
     mute.textContent = this.audio.isMuted ? 'Unmute audio' : 'Mute all audio'; mute.setAttribute('aria-pressed', String(this.audio.isMuted))
@@ -250,7 +255,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.preview?.dispose(); this.panels.dispose(); this.starfield.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.preview?.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.starfield.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }
@@ -258,11 +263,14 @@ export class Shell implements System {
 /** Call after creating the player, before constructing ParamPanel. */
 export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { shell: Shell; audio: GameAudio; setPlayer: (player: Vehicle) => void; dispose: () => void } {
   const audio = new GameAudio(game.camera), shell = game.add(new Shell(game, audio))
-  shell.setVehicleKind(player.kind)
+  shell.setVehicleKind(player.kind); shell.setTerrain(terrain)
   let activePlayer = player
   const bridge = game.add({ update() {
     const v = activePlayer.body.linvel(), p = activePlayer.body.translation(), speed = Math.hypot(v.x, v.y, v.z)
     shell.setSpeed(speed)
+    const q = activePlayer.body.rotation()
+    const heading = Math.atan2(2 * (q.x * q.z + q.w * q.y), 1 - 2 * (q.x * q.x + q.y * q.y))
+    shell.setMapSelf({ x: p.x, z: p.z, heading, color: activePlayer.colors.body, self: true })
     audio.motion = { speed, throttle: activePlayer.kind === 'jet' ? activePlayer.input.z : activePlayer.input.y, airborne: p.y - terrain.heightAt(p.x, p.z) > 2 }
   } })
   game.add(audio)

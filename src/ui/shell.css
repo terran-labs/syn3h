@@ -120,3 +120,9 @@
 .syn3h-loading progress { width: min(320px,80vw); height: 4px; accent-color: #7abaff; }
 .syn3h-loading small { color: #8da0bb; }
 #fatal { z-index: 100; }
+
+.shell-minimap { position: fixed; right: 20px; bottom: 20px; z-index: 12; width: 162px; height: 162px; border: 1px solid #7992b2; background: #101826; pointer-events: none; }
+.shell-minimap canvas { display: block; width: 100%; height: 100%; opacity: .88; }
+.shell-minimap span { position: absolute; top: 0; left: 5px; color: white; font-size: 12px; text-shadow: 0 1px 2px black; }
+.syn3h-shell:not(.is-playing) .shell-minimap { display: none; }
+@media (max-width: 700px) { .shell-minimap { right: 12px; top: 190px; bottom: auto; width: 110px; height: 110px; } .syn3h-shell.is-playing .shell-toast { top: 310px; font-size: 14px; } }
