@@ -17,7 +17,7 @@ import type { Vehicle } from './Vehicle'
  * 'buggy' and 'buggy-syn3h' are the Syn3h buggy, the default. 'buggy-classic' is the Mars
  * Explorer buggy with its own physics and model.
  */
-export type VehicleKind = 'buggy' | 'buggy-classic' | 'buggy-syn3h' | 'jet' | 'hovercraft'
+export type VehicleKind = 'buggy' | 'buggy-classic' | 'buggy-syn3h' | 'jet' | 'hovercraft' | 'tank'
 
 /** Models load over HTTP, so only in a browser. Headless tests keep the primitive visuals. */
 const hasDom = typeof document !== 'undefined'
