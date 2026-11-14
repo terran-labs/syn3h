@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+import { Tank } from '../../src/vehicles/Tank'
 import { Jet } from '../../src/vehicles/Jet'
 import { Hovercraft } from '../../src/vehicles/Hovercraft'
 import { initPhysics } from '../../src/core/physics'
@@ -22,9 +23,10 @@ async function main(){
  Object.assign(sun.shadow.camera,{left:-12,right:12,top:12,bottom:-12});scene.add(sun)
  const fill=new THREE.DirectionalLight(0x8ccaff,2);fill.position.set(-6,4,3);scene.add(fill)
  const ground=new THREE.Mesh(new THREE.PlaneGeometry(200,200),new THREE.MeshStandardMaterial({color:0x38414b,roughness:.65}));ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground)
- const hover=new URLSearchParams(location.search).get('vehicle')==='hovercraft'
- document.querySelector('#title')!.textContent=hover?'Syn3h Hovercraft':'Syn3h Jet'
- const vehicle=hover?new Hovercraft(h.game,h.terrain,new THREE.Vector3(0,1.65,0)):new Jet(h.game,h.terrain,new THREE.Vector3(0,1.65,0));vehicle.isLocal=false;vehicle.input.z=.7
+ const kind=new URLSearchParams(location.search).get('vehicle'),hover=kind==='hovercraft',tank=kind==='tank'
+ document.querySelector('#title')!.textContent=tank?'Mars Explorer Tank':hover?'Syn3h Hovercraft':'Syn3h Jet'
+ if(tank)document.querySelector('#subtitle')?.replaceChildren(document.createTextNode('Original geometry · Legacy physics fallback'))
+ const vehicle=tank?new Tank(h.game,h.terrain,new THREE.Vector3(0,1.65,0)):hover?new Hovercraft(h.game,h.terrain,new THREE.Vector3(0,1.65,0)):new Jet(h.game,h.terrain,new THREE.Vector3(0,1.65,0));vehicle.isLocal=false;vehicle.input.z=.7
  await vehicle.modelReady
  const camera=new THREE.PerspectiveCamera(38,innerWidth/innerHeight,.1,200)
  camera.position.set(hover?4:9,hover?3.2:4,hover?-5:-11)

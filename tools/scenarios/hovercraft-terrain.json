@@ -1,0 +1,1 @@
+{"name":"Hovercraft dune cruise, slope, jump and braking","durationMs":18000,"captureEveryMs":1500,"settleMs":1500,"events":[{"atMs":0,"params":{"bots.count":0},"teleport":{"landmark":"dune","clearance":2}},{"atMs":1500,"down":["KeyW"]},{"atMs":8000,"down":["KeyD"]},{"atMs":9000,"up":["KeyD"]},{"atMs":12000,"up":["KeyW"],"down":["ShiftLeft"]},{"atMs":16500,"up":["ShiftLeft"]}]}

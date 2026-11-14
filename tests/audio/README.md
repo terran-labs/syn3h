@@ -1,3 +1,5 @@
+Current shell integration and browser checks are documented in [the UI handoff](../ui/README.md). The notes below describe the initial audio delivery.
+
 # Audio and shell handoff
 
 The modules work with the placeholder vehicle and terrain. Nothing changes in `src/main.ts` until the coordinator integrates them.

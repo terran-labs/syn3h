@@ -35,6 +35,13 @@ try {
     await page.waitForTimeout(500)
     assert.deepEqual(await page.evaluate(() => ({ kind: syn3h.shell.vehicleKind, body: syn3h.shell.bodyColor, accent: syn3h.shell.accentColor })), { kind: 'buggy-syn3h', body: '#ee7722', accent: '#33aaff' })
     await shot('vehicle-syn3h')
+    for (const kind of ['jet', 'hovercraft']) {
+      await page.locator(`[name=vehicle][value=${kind}]`).check()
+      await page.waitForFunction(() => document.querySelector('.shell-vehicle-preview').dataset.ready === 'true')
+      await shot(`vehicle-${kind}`)
+      await page.locator('.vehicle-help').scrollIntoViewIfNeeded(); await shot(`help-${kind}`)
+    }
+    await page.locator('[name=vehicle][value=buggy-syn3h]').check()
     await panel('explore')
     await page.locator('#shell-name').fill('UI Explorer')
     await page.locator('[data-panel=explore] .shell-invite').click()
@@ -55,7 +62,7 @@ try {
     await page.locator('#sky-time').fill('12.5')
     await page.locator('#world-seed').fill('77'); await page.locator('#new-world').click()
     assert.equal(await page.evaluate(() => syn3h.params.get('world.seed').value), 77)
-    await page.evaluate(async () => { const { defineParam } = await import('/shared/params.ts'); defineParam({ id: 'bots.count', label: 'Bots', group: 'Bots', scope: 'world', default: 0, min: 0, max: 8, step: 1 }) })
+    await page.evaluate(async () => { const { defineParam, params } = await import('/shared/params.ts'); if (!params.get('bots.count')) defineParam({ id: 'bots.count', label: 'Bots', group: 'Bots', scope: 'world', default: 0, min: 0, max: 8, step: 1 }) })
     await page.waitForFunction(() => !document.querySelector('.bots-control').hidden)
     await page.locator('#bots-count').fill('3')
     assert.equal(await page.evaluate(() => syn3h.params.get('bots.count').value), 3)
@@ -67,6 +74,7 @@ try {
     assert.equal(await page.locator('.syn3h-advanced').isVisible(), true)
     await shot('advanced')
     await page.locator('.syn3h-advanced').getByText('Audio', { exact: true }).click()
+    await page.waitForTimeout(500)
     await shot('advanced-audio')
     await panel('about'); await shot('about')
     const scores = ['net: room demo   ping 12 ms   delay 20 ms', 'host: you   shared sliders open to all', '> UI Explorer    12  [IT] (you) (host)', '  Guest            3  ', 'Guest joined']
@@ -90,6 +98,7 @@ try {
     await panel('explore'); await page.locator('.shell-play').click()
     await page.waitForFunction(() => syn3h.shell.playing && !syn3h.shell.menuOpen)
     assert.equal(await page.evaluate(() => syn3h.game.input.suspended), false)
+    await page.waitForFunction(() => window.syn3hNet?.connected === true)
     await page.evaluate(lines => syn3h.shell.setStatus(lines), scores)
     await shot('hud')
     if (phone) {

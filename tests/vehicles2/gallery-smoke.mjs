@@ -1,6 +1,6 @@
 import {chromium} from 'playwright-core'
 import fs from 'node:fs'
-const name=process.argv[2]??'jet',out='/tmp/syn3h-vehicles2'
+const name=process.argv[2]??'jet',out='/tmp/syn3h-vehicles2',reference=name==='tank'?'legacy':'syn3h'
 fs.mkdirSync(out,{recursive:true})
 const browser=await chromium.launch({channel:'chrome',headless:true,args:['--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=metal','--ignore-gpu-blocklist']})
 try{
@@ -10,10 +10,10 @@ try{
  await page.goto('http://localhost:5185/tests/vehicles2/gallery.html?vehicle='+name)
  await page.waitForFunction(()=>window.vehicleGallery?.ready,null,{timeout:30000})
  await page.waitForTimeout(2000)
- await page.screenshot({path:`${out}/${name}-syn3h-front.png`})
+ await page.screenshot({path:`${out}/${name}-${reference}-front.png`})
  await page.evaluate(()=>{window.vehicleGallery.flight();window.vehicleGallery.rear()})
  await page.waitForTimeout(2000)
- await page.screenshot({path:`${out}/${name}-syn3h-rear.png`})
+ await page.screenshot({path:`${out}/${name}-${reference}-rear.png`})
  const result=await page.evaluate(()=>({gearVisible:window.vehicleGallery.vehicle.gear?.visible,gearScale:window.vehicleGallery.vehicle.gear?.scale.toArray(),meshes:window.vehicleGallery.vehicle.object.children.length,backend:window.vehicleGallery.renderer.backend.isWebGPUBackend?'WebGPU':'WebGL'}))
  console.log(JSON.stringify({name,errors,...result}))
  if(errors.length)process.exitCode=1

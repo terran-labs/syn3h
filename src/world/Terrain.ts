@@ -17,6 +17,39 @@ export interface SpawnPoint {
   heading: number
 }
 
+/** One road centreline. Points are about 4 m apart; y is the road surface height. */
+export interface TerrainRoadPath {
+  /** 'volcano' climbs to the rim, 'rim' circles the caldera, 'plain' crosses open ground. */
+  kind: string
+  /** True when the last point connects back to the first. */
+  closed: boolean
+  /** Paved width in metres. */
+  width: number
+  points: readonly { x: number; y: number; z: number }[]
+}
+
+/** The top of the main volcano: where King of the Hill is fought. */
+export interface TerrainSummit {
+  /** Centre of the caldera. */
+  x: number
+  z: number
+  /** Radius and mean height of the ring road around the caldera rim. */
+  rimRadius: number
+  rimHeight: number
+  /** The lava lake inside the caldera, if there is one. */
+  lake: { radius: number; surface: number } | null
+}
+
+/** Render detail request from the graphics level system. Never changes heights or physics. */
+export interface TerrainRenderQuality {
+  /** 0 weakest phone, 1 mobile, 2 desktop. */
+  level: number
+  /** Metres the level wants drawn at all. */
+  drawDistance: number
+  /** 0..1 share of full detail. */
+  detail: number
+}
+
 export interface Terrain {
   /** Side length in metres. The terrain is centred on the origin. */
   readonly size: number
@@ -36,6 +69,15 @@ export interface Terrain {
    * once the new mesh and collider exist. Use it to re-seat vehicles. Returns unsubscribe.
    */
   onRegenerate?(listener: () => void): () => void
+  /**
+   * Road centrelines of the current world, identical on every client. The arrays are
+   * replaced on regeneration, so read them again in an `onRegenerate` listener.
+   */
+  roadPaths?(): readonly TerrainRoadPath[]
+  /** The main volcano's summit, identical on every client. Null if the world has none. */
+  summit?(): TerrainSummit | null
+  /** Reduce or restore render detail (level of detail distances). Visual only. */
+  setRenderQuality?(quality: TerrainRenderQuality): void
   dispose(): void
 }
 

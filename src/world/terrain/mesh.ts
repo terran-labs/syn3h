@@ -40,6 +40,8 @@ export interface TerrainMeshes {
   update(data: TerrainData): void
   /** Pick each chunk's level of detail for a camera position. */
   updateLod(camera: THREE.Vector3): void
+  /** Distances at which chunks drop to half and quarter detail. Defaults LOD_NEAR, LOD_FAR. */
+  setLodDistances(near: number, far: number): void
   stats(camera?: THREE.Camera): TriangleStats
   dispose(): void
 }
@@ -190,6 +192,8 @@ export function createTerrainMeshes(data: TerrainData, material: THREE.Material)
     }
   }
 
+  let lodNear = LOD_NEAR
+  let lodFar = LOD_FAR
   const setLevel = (ch: Chunk, level: number) => {
     if (ch.level === level) return
     ch.levels[ch.level].visible = false
@@ -212,8 +216,12 @@ export function createTerrainMeshes(data: TerrainData, material: THREE.Material)
     updateLod(camera) {
       for (const ch of chunks) {
         const d = ch.box.distanceToPoint(camera)
-        setLevel(ch, d < LOD_NEAR ? 0 : d < LOD_FAR ? 1 : 2)
+        setLevel(ch, d < lodNear ? 0 : d < lodFar ? 1 : 2)
       }
+    },
+    setLodDistances(near, far) {
+      lodNear = Math.max(0, near)
+      lodFar = Math.max(lodNear, far)
     },
     stats(camera) {
       let frustum: THREE.Frustum | null = null
