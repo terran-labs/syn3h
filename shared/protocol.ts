@@ -26,7 +26,7 @@ export const isBotId = (id: number) => id >= BOT_ID_BASE && id < BOT_ID_BASE + M
 export const MAX_PLAYER_ID = BOT_ID_BASE - 1
 
 /** Vehicle kinds a player may announce. Must match VehicleKind in src/vehicles/index.ts. */
-export const VEHICLE_KINDS = ['buggy', 'buggy-classic', 'buggy-syn3h'] as const
+export const VEHICLE_KINDS = ['buggy', 'buggy-classic', 'buggy-syn3h', 'jet', 'hovercraft'] as const
 export type WireVehicleKind = (typeof VEHICLE_KINDS)[number]
 export const DEFAULT_COLORS: [string, string] = ['#7a1838', '#e9a6e0']
 const COLOR_PATTERN = /^#[0-9a-f]{6}$/
