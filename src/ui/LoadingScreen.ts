@@ -1,10 +1,10 @@
-/** Placeholder copy until the original rotating messages are recovered. */
-export const PLACEHOLDER_LOADING_MESSAGES = ['Preparing your world.', 'Getting ready to explore.', 'Loading Syn3h.']
+import { loadingMessages } from './data/loadingMessages'
+const phaseLabels: Record<string, string> = { device: 'Checking your device', physics: 'Preparing motion', renderer: 'Preparing the view', world: 'Building your world', ready: 'Ready to explore' }
 export interface LoadingDetail { phase?: string; progress?: number; elapsedMs?: number }
 
 export class LoadingScreen {
   readonly element = document.createElement('section')
-  private messages = [...PLACEHOLDER_LOADING_MESSAGES]
+  private messages: string[] = [...loadingMessages]
   private index = 0
   private readonly started = performance.now()
   private readonly timer: ReturnType<typeof setInterval>
@@ -19,18 +19,18 @@ export class LoadingScreen {
     this.timer = setInterval(() => {
       this.index++; this.element.querySelector('.loading-message')!.textContent = this.messages[this.index % this.messages.length]
       this.updateTime(performance.now() - this.started)
-    }, 3500)
+    }, 5000)
     // A fatal startup failure must remain visible above this cover.
     window.addEventListener('error', () => this.finish(), { signal: this.abort.signal })
   }
   setMessages(messages: readonly string[]): void {
     this.messages = messages.filter(value => typeof value === 'string' && value.trim()).slice(0, 100)
-    if (!this.messages.length) this.messages = [...PLACEHOLDER_LOADING_MESSAGES]
+    if (!this.messages.length) this.messages = [...loadingMessages]
     this.index = 0; this.element.querySelector('.loading-message')!.textContent = this.messages[0]
   }
   update(detail?: LoadingDetail): void {
     if (!detail || typeof detail !== 'object') return
-    if (typeof detail.phase === 'string') this.element.querySelector('.loading-phase')!.textContent = detail.phase
+    if (typeof detail.phase === 'string') this.element.querySelector('.loading-phase')!.textContent = phaseLabels[detail.phase] ?? detail.phase
     const progress = this.element.querySelector('progress')!
     if (typeof detail.progress === 'number' && Number.isFinite(detail.progress)) { progress.max = 1; progress.value = Math.min(1, Math.max(0, detail.progress)) }
     else progress.removeAttribute('value')

@@ -44,7 +44,7 @@ materials; the colour controls still save the colours applied by the actual vehi
 The loading cover mounts during module evaluation, before engine initialization. It
 listens for `syn3h:loading` with `{ phase, progress, elapsedMs }`, where progress is 0 to 1.
 Missing progress displays an indeterminate bar. The Shell constructor ends startup
-loading. `shell.setLoadingMessages(string[])` replaces the explicitly placeholder list;
+loading. `shell.setLoadingMessages(string[])` replaces the new browser-edition message list;
 for messages before Shell exists, use `bootLoading?.setMessages(messages)` from
 `./ui/LoadingScreen`. Synchronous terrain generation still blocks animation while it
 runs; the UI cannot render intermediate progress until that code yields.
@@ -113,3 +113,66 @@ The additional `node tests/ui/flight-loading-map.mjs` check holds GPU startup to
 capture both loading states, dispatches progress events, checks H and ? help, verifies
 terrain map regeneration and exercises simultaneous jet banking and both thrust buttons.
 Its screenshots include desktop and phone loading covers and jet HUD layouts.
+
+## Names, sharing and hill mode
+
+Recovery paths and the historical search are in `name-recovery.md`. The replacement
+vocabulary and 40 short loading messages are new writing, not recovered text.
+Names are deterministic for a seed and kind. They are display labels, not unique IDs.
+Use a stable bot identity shared by clients, rather than a client's array position:
+
+```ts
+import { generateName } from './ui/data/names' // main.ts; use ../ui/data/names from bots
+bot.name = generateName(`${worldSeed.value}:${botId}`, 'bot')
+const worldName = generateName(worldSeed.value, 'world')
+```
+
+The lobby installs a generated player name when no saved name exists and persists its
+random seed locally. Existing saved names win. LoadingScreen uses the new data file
+with the recovered five-second rotation; `shell.setLoadingMessages` still overrides it.
+
+The match display accepts authoritative state independently of `setStatus(lines)`:
+
+```ts
+shell.setMatchState({
+  mode: 'koth', // 'tag' hides the hill presentation; null clears it too
+  holderName: 'Nolitek', // string | null
+  holderIsYou: false,
+  contested: false,
+  scores: [{ name: 'Nolitek', score: 24, you: false }],
+  target: 60,
+  winner: null, // winning display name; clear on a new round
+})
+```
+
+`score` and `target` are seconds held. The UI derives time remaining, never runs match
+logic or advances scores itself. It shows the top three and your row if outside those
+three. Capture, contest and win announcements trigger on state transitions, not every
+snapshot. Send the new round's cleared state before scores begin again. Names are
+inserted as text. `MatchState` is exported from `src/ui/MatchHud.ts`.
+
+The Multiplayer panel discovers `game.mode` at runtime. Until registered it hides the
+selector. The UI encoding is numeric `0 = Tag`, `1 = King of the Hill`, matching
+the current numeric parameter registry. Changes honor `canEditWorld` and host locks.
+The mode builder must register and sync that parameter; this UI does not create it.
+
+`index.html` includes metadata and points to `/brand/share.png` (1200 by 630), favicon,
+touch icons and `/brand/manifest.webmanifest`. No public deployment origin was supplied,
+so share image paths are root-relative. Before public announcement, replace both image
+meta values with the deployed absolute HTTPS URL and add `og:url` for that origin.
+Do this in served HTML, not a JavaScript update, because card crawlers may not run JS.
+No preview hostname is hardcoded. The manifest does not claim offline support.
+
+`tests/ui/share-assets.mjs` reproduces the starfield artwork and icons with the supplied
+logo in a browser canvas. Credits use installed Three.js, Rapier, Marked and ws licence
+files. Tweakpane's distributed header states MIT and its full notice is from
+https://github.com/cocopon/tweakpane/blob/main/LICENSE.txt. Lato and Roboto attribution
+was read directly from the shipped fonts' name tables. OFL copies came from
+https://github.com/google/fonts/blob/main/ofl/lato/OFL.txt and
+https://github.com/google/fonts/blob/main/ofl/barlow/OFL.txt. The About panel links the
+local notices; audio provenance remains in `public/audio/README.md`.
+
+Run `node tests/ui/fans-hill.mjs` for generated and saved names, loading rotation,
+metadata/assets, credits, late mode registration, host lock and all four hill states
+at desktop and 390 by 844 phone sizes. Screenshots and its JSON report are under
+`tests/ui/artifacts/`.

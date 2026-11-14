@@ -12,6 +12,9 @@ import { Starfield } from './Starfield'
 import { Scoreboard } from './Scoreboard'
 import { canEditWorld, hostControls } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
+import { MatchHud, type MatchState } from './MatchHud'
+import { creditsHtml } from './data/credits'
+import { generateName } from './data/names'
 import { Minimap, type MapEntity } from './Minimap'
 import { bootLoading } from './LoadingScreen'
 import { renderHelp, touchHelp } from './VehicleHelp'
@@ -30,6 +33,7 @@ export class Shell implements System {
   private readonly overlay: HTMLElement
   private readonly speed: HTMLElement
   private readonly choice: VehicleChoice = readVehicleChoice()
+  private readonly matchHud: MatchHud
   private minimap?: Minimap
   private preview?: VehiclePreview
   private readonly panels: SlidingPanels
@@ -72,9 +76,9 @@ export class Shell implements System {
         </section>
         <section data-panel="settings">${heading('Settings')}<div class="settings-links"><button data-goto="music">Music & sound</button><button data-goto="worlds">World & sky</button><button data-goto="advanced">Advanced sliders</button></div><fieldset class="host-controls"><legend>Host</legend><label class="host-lock" hidden><input type="checkbox" id="host-lock"> Lock shared sliders</label><p class="host-note"></p></fieldset>${back}</section>
         <section data-panel="music">${heading('Music & Sound')}<label for="shell-track">Music</label><select id="shell-track">${Object.entries(MUSIC_TRACKS).map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select><label for="music-volume">Music volume <output id="music-volume-value"></output></label><input id="music-volume" type="range" min="0" max="1" step="0.01"><button class="shell-mute" aria-pressed="false">Mute all audio</button><p class="panel-note">Music starts with your first click or key press.</p>${back}</section>
-        <section data-panel="multiplayer">${heading('Multiplayer')}<p class="multiplayer-room"></p><button class="shell-invite">Copy invite link</button><div class="shell-scoreboard" aria-label="Player scores"></div>${back}</section>
+        <section data-panel="multiplayer">${heading('Multiplayer')}<label class="mode-control" hidden>Game mode<select id="game-mode"><option value="0">Tag</option><option value="1">King of the Hill</option></select></label><p class="multiplayer-room"></p><button class="shell-invite">Copy invite link</button><div class="shell-scoreboard" aria-label="Player scores"></div>${back}</section>
         <section data-panel="advanced">${heading('Advanced Settings')}<p class="world-lock-note" hidden>Sliders locked by host.</p><div class="advanced-host"></div>${back}</section>
-        <section data-panel="about">${heading('About Syn3h')}<p>From the creator of Mars Explorer.</p><p>Drive, fly and explore together.</p><p class="panel-note">The current world is a procedural volcano. Use Create to change the seed, sky and time of day.</p>${back}</section>
+        <section data-panel="about">${heading('About Syn3h')}${creditsHtml}${back}</section>
       </div>
       <footer class="lobby-footer"><span>Syn3h</span><span class="shell-message" role="status" aria-live="polite"></span><span>Browser edition</span></footer>
     </section>
@@ -83,6 +87,7 @@ export class Shell implements System {
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small>H or ? to show again</small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
     document.body.append(this.element); document.body.classList.add('has-game-shell')
+    this.matchHud = new MatchHud(this.element)
     this.overlay = this.element.querySelector('.shell-overlay')!
     this.nameInput = this.element.querySelector('#shell-name')!; this.roomInput = this.element.querySelector('#shell-room')!
     this.speed = this.element.querySelector('.shell-speed strong')!
@@ -93,6 +98,12 @@ export class Shell implements System {
     this.touch = new TouchControls(game.input); this.element.classList.toggle('has-touch', this.touch.available)
     const signal = this.abort.signal
     try { this.nameInput.value = localStorage.getItem('syn3h.playerName') || '' } catch { /* Storage is optional. */ }
+    if (!this.nameInput.value.trim()) {
+      let seed = ''
+      try { seed = localStorage.getItem('syn3h.nameSeed') || '' } catch { /* Storage is optional. */ }
+      if (!seed) { seed = String(crypto.getRandomValues(new Uint32Array(1))[0]); try { localStorage.setItem('syn3h.nameSeed', seed) } catch { /* Storage is optional. */ } }
+      this.nameInput.value = generateName(seed, 'player')
+    }
     this.roomInput.value = new URL(location.href).searchParams.get('room')?.trim().slice(0, 64) || 'lobby'
     this.roomInput.addEventListener('input', () => this.updateRoomLabels(), { signal }); this.updateRoomLabels()
     for (const radio of this.element.querySelectorAll<HTMLInputElement>('[name="vehicle"]')) {
@@ -126,6 +137,7 @@ export class Shell implements System {
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-sky]')) button.addEventListener('click', () => { if (canEditWorld()) applySkyPreset(button.dataset.sky as SkyPresetName) }, { signal })
     this.element.querySelector('#sky-time')!.addEventListener('input', event => { if (canEditWorld()) params.set('sun.timeOfDay', (event.target as HTMLInputElement).value) }, { signal })
     this.element.querySelector('#bots-count')!.addEventListener('input', event => { if (canEditWorld()) params.set('bots.count', (event.target as HTMLInputElement).value) }, { signal })
+    this.element.querySelector('#game-mode')!.addEventListener('change', event => { if (canEditWorld() && params.get('game.mode')) params.set('game.mode', Number((event.target as HTMLSelectElement).value)) }, { signal })
     this.element.querySelector('#host-lock')!.addEventListener('change', event => { const net = hostControls(); if (net?.isHost) net.setLocked((event.target as HTMLInputElement).checked) }, { signal })
     window.addEventListener('keydown', event => this.keydown(event), { capture: true, signal })
     game.canvas.addEventListener('pointerdown', event => {
@@ -150,6 +162,7 @@ export class Shell implements System {
   get playing(): boolean { return this.started }
   get menuOpen(): boolean { return this.menuVisible }
   get activePanel(): string { return this.panels.active }
+  setMatchState(state: MatchState | null): void { this.matchHud.setState(state) }
   setTerrain(terrain: Terrain): void { this.minimap?.dispose(); this.minimap = new Minimap(terrain, this.element) }
   setMapEntities(entities: readonly MapEntity[]): void { this.minimap?.setEntities(entities) }
   setMapSelf(entity: MapEntity): void { this.minimap?.setSelf(entity) }
@@ -198,7 +211,7 @@ export class Shell implements System {
       if (this.menuVisible && this.panels.active !== 'index') this.showPanel('index')
       else if (this.started) this.menuVisible ? this.closeMenu() : this.openMenu()
     } else if (this.menuVisible && event.key === 'Tab') {
-      const targets = [...this.overlay.querySelectorAll<HTMLElement>('button, input, select, [tabindex="0"]')].filter(el => !el.closest('[hidden], [inert]') && !(el as HTMLInputElement).disabled)
+      const targets = [...this.overlay.querySelectorAll<HTMLElement>('button, input, select, summary, a[href], [tabindex="0"]')].filter(el => !el.closest('[hidden], [inert]') && !(el as HTMLInputElement).disabled)
       const first = targets[0], last = targets[targets.length - 1]
       if (event.shiftKey && (document.activeElement === first || !targets.includes(document.activeElement as HTMLElement))) { event.preventDefault(); last?.focus() }
       else if (!event.shiftKey && (document.activeElement === last || !targets.includes(document.activeElement as HTMLElement))) { event.preventDefault(); first?.focus() }
@@ -250,12 +263,15 @@ export class Shell implements System {
     const lock = this.element.querySelector<HTMLInputElement>('#host-lock')!; lock.checked = net?.locked ?? false
     this.element.querySelector<HTMLElement>('.host-lock')!.hidden = !net?.isHost
     this.element.querySelector('.host-note')!.textContent = !net ? 'Join a room to manage shared settings.' : !editable ? 'Sliders locked by host.' : net.isHost ? 'You are the host.' : 'Shared sliders are open.'
+    const mode = params.get('game.mode'), modeSelect = this.element.querySelector<HTMLSelectElement>('#game-mode')!
+    this.element.querySelector<HTMLElement>('.mode-control')!.hidden = !mode
+    modeSelect.disabled = !editable; if (mode) modeSelect.value = String(mode.value)
     const bots = params.get('bots.count'), botsRow = this.element.querySelector<HTMLElement>('.bots-control')!
     botsRow.hidden = !bots
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.preview?.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.starfield.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.preview?.dispose(); this.matchHud.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.starfield.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }
