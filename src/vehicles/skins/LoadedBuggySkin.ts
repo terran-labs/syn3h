@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { abs, dot, float, normalView, positionLocal, positionViewDirection, sin, time, uniform } from 'three/tsl'
+import { abs, attribute, clamp, dot, float, length, min, normalView, positionViewDirection, sin, smoothstep, time, uniform, vec2 } from 'three/tsl'
 import type { BuggySkin } from './BuggySkin'
 
 const loader = new GLTFLoader()
@@ -63,6 +63,22 @@ export function wingVertexSyn3h(x: number, y: number, z: number, open: number, s
   t += ux * (pitch * .01)
   const nx = y * Math.sin(t) + ux * Math.cos(t)
   return [-nx, y * Math.cos(t) - nx * Math.sin(t), z]
+}
+
+/** Convex outline of the wing planform in (|x|, z), so both mirrored halves share it. */
+function planformOutline(meshes: THREE.Mesh[]): THREE.Vector2[] {
+  const pts: THREE.Vector2[] = []
+  for (const o of meshes) {
+    const pos = o.geometry.attributes.position
+    for (let i = 0; i < pos.count; i++) pts.push(new THREE.Vector2(Math.abs(pos.getX(i)), pos.getZ(i)))
+  }
+  // Andrew's monotone chain.
+  pts.sort((a, b) => a.x - b.x || a.y - b.y)
+  const cross = (o: THREE.Vector2, a: THREE.Vector2, b: THREE.Vector2) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x)
+  const lower: THREE.Vector2[] = [], upper: THREE.Vector2[] = []
+  for (const p of pts) { while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop(); lower.push(p) }
+  for (let i = pts.length - 1; i >= 0; i--) { const p = pts[i]; while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop(); upper.push(p) }
+  return lower.slice(0, -1).concat(upper.slice(0, -1))
 }
 
 export class LoadedBuggySkin implements BuggySkin {
@@ -155,16 +171,56 @@ export class LoadedBuggySkin implements BuggySkin {
         wingGroup.add(reflected)
       }
     }
+    // Force field material after Syn3h "Vehicle Wings" (an edge detecting, fresnel, panning
+    // texture shader: brightness 7, pan speed -0.5, texture V scale 0.1, solid colour tinted by
+    // the vehicle). Our wing meshes are coarse shells with arbitrary UVs, so the edge glow is
+    // computed per fragment as the distance to the wing's planform outline, measured on the
+    // undeformed wing so it stays on the rim while the wing flexes.
+    const meshes: THREE.Mesh[] = []
+    wingGroup.traverse(o => { if (o instanceof THREE.Mesh) meshes.push(o) })
+    const outline = planformOutline(meshes)
+    for (const o of meshes) {
+      const pos = o.geometry.attributes.position, plan = new Float32Array(pos.count * 2)
+      for (let i = 0; i < pos.count; i++) { plan[i * 2] = Math.abs(pos.getX(i)); plan[i * 2 + 1] = pos.getZ(i) }
+      o.geometry.setAttribute('wingPlan', new THREE.BufferAttribute(plan, 2))
+    }
+    const p = attribute<'vec2'>('wingPlan', 'vec2')
+    // TSL node types do not compose through a running min, so keep the accumulator loose.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let dist: any = float(1e4)
+    for (let i = 0; i < outline.length; i++) {
+      const a = outline[i], b = outline[(i + 1) % outline.length]
+      // The two halves join on the centre line: no rim there.
+      if (a.x < .05 && b.x < .05) continue
+      const ab = vec2(b.x - a.x, b.y - a.y), ap = p.sub(vec2(a.x, a.y))
+      const t = clamp(dot(ap, ab).div(Math.max(1e-6, (b.x - a.x) ** 2 + (b.y - a.y) ** 2)), 0, 1)
+      dist = min(dist, length(ap.sub(ab.mul(t))))
+    }
+    const edge = float(1).sub(smoothstep(0, .45, dist))
+    const rim = float(1).sub(smoothstep(0, .08, dist))
+    // Seen edge on, the sheet itself brightens (the original's fresnel term).
+    const fresnel = float(1).sub(abs(dot(normalView, positionViewDirection))).pow(3)
+    // Panning bands across the chord.
+    const flow = sin(p.y.mul(2.2).add(p.x.mul(.35)).add(time.mul(3))).mul(.5).add(.5).pow(6)
+    const glow = edge.mul(1.2).add(rim.mul(2.2)).add(flow.mul(.3)).add(fresnel.mul(.5)).add(.03)
     const energy = new THREE.MeshBasicNodeMaterial({transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false})
-    const fresnel = float(1).sub(abs(dot(normalView, positionViewDirection))).pow(2)
-    const flow = sin(positionLocal.z.mul(12).sub(time.mul(5))).mul(.5).add(.5).pow(16)
-    energy.colorNode = this.energyColor.mul(fresnel.mul(1.8).add(flow.mul(.65)).add(.2))
-    energy.opacityNode = fresnel.mul(.55).add(flow.mul(.25)).add(.13)
-    wingGroup.traverse(o => { if (o instanceof THREE.Mesh) {
+    energy.fog = false
+    energy.colorNode = this.energyColor.mul(glow)
+    energy.opacityNode = clamp(glow, 0, 1)
+    // Additive light washes out to white over a sunlit desert, so a normally blended tint layer
+    // underneath keeps the accent hue readable at noon; at night the additive glow dominates.
+    const tint = new THREE.MeshBasicNodeMaterial({transparent: true, side: THREE.DoubleSide, depthWrite: false})
+    tint.fog = false
+    tint.colorNode = this.energyColor.mul(.55)
+    tint.opacityNode = clamp(edge.mul(.45).add(rim.mul(.35)).add(flow.mul(.08)).add(.1), 0, .8)
+    for (const o of meshes) {
       for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose()
-      o.material = energy; o.castShadow = false
+      o.material = energy; o.castShadow = false; o.receiveShadow = false
+      const under = new THREE.Mesh(o.geometry, tint)
+      under.renderOrder = -1
+      o.add(under)
       this.wings.push({mesh: o, base: new Float32Array(o.geometry.attributes.position.array)})
-    } })
+    }
     this.object.add(wingGroup)
     loaded.forEach(g => release(g.scene))
     this.setColors(this.bodyColor, this.accentColor)

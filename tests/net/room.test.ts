@@ -288,6 +288,7 @@ describe('Room identity', () => {
     expect(players[1]).toMatchObject({ kind: 'buggy', colors: DEFAULT_COLORS })
     send(b.peer, { type: 'profile', kind: 'buggy-classic', colors: ['#123456', '#abcdef'] })
     expect(a.peer.last('profile')!.player).toMatchObject({ id: b.id, kind: 'buggy-classic', colors: ['#123456', '#abcdef'] })
+    // An unknown kind is rejected; jet, hovercraft and tank are real kinds now.
     send(b.peer, { type: 'profile', kind: 'submarine' })
     expect(a.peer.all('profile').length).toBe(1)
   })

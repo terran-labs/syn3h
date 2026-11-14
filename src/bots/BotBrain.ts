@@ -5,7 +5,8 @@ import { GROUP_PROJECTILE, GROUP_TERRAIN, RAPIER, groups } from '../core/physics
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
 import * as p from './params'
-export type BotTerrain = Terrain & { liquidHeightAt?(x: number, z: number): number | null | undefined }
+import { roadWaypoint, type RoadTerrain } from './navigation'
+export type BotTerrain = Terrain & RoadTerrain & { liquidHeightAt?(x: number, z: number): number | null | undefined }
 const clamp = (x: number, max = 1) => Math.max(-max, Math.min(max, x))
 /** Positive means turn right. Our forward is -Z; positive Y rotation turns left. */
 export function steeringError(forward: { x: number; z: number }, delta: { x: number; z: number }): number {
@@ -17,6 +18,7 @@ export function isSafeGround(terrain: BotTerrain, x: number, z: number): boolean
   return Number.isFinite(ground) && (liquid == null || !Number.isFinite(liquid) || ground > liquid + 0.5)
 }
 export class BotBrain implements System {
+  remote = false
   target: Vehicle | null = null
   reversing = false
   rescues = 0
@@ -30,6 +32,8 @@ export class BotBrain implements System {
   private readonly up = new Vector3()
   private readonly quaternion = new Quaternion()
   private targets: readonly Vehicle[] = []
+  private peers: readonly Vehicle[] = []
+  setPeers(vehicles: readonly Vehicle[]) { this.peers = vehicles }
   constructor(private readonly game: Game, private readonly terrain: BotTerrain, readonly vehicle: Vehicle, private readonly localPlayer: Vehicle, readonly index = 0) {
     vehicle.isLocal = false
     this.lastPosition.copy(vehicle.body.translation())
@@ -59,6 +63,8 @@ export class BotBrain implements System {
     }
   }
   fixedUpdate(dt: number) {
+    // Do not even clear input: network playback owns this state.
+    if (this.remote) return
     const input = this.vehicle.input
     Object.assign(input, emptyInput())
     this.targetTime += dt; this.fireTime += dt
@@ -70,7 +76,40 @@ export class BotBrain implements System {
     this.forward.set(0, 0, -1).applyQuaternion(this.quaternion)
     this.up.set(0, 1, 0).applyQuaternion(this.quaternion)
     const dx = there.x - here.x, dz = there.z - here.z, distance = Math.hypot(dx, dz)
-    const error = steeringError(this.forward, { x: dx, z: dz })
+    const velocity = this.vehicle.body.linvel(), speed = Math.hypot(velocity.x, velocity.z)
+    const targetVelocity = this.target.body.linvel()
+    const lead = Math.min(0.8, distance / 45) * p.aggression.value
+    let aimX = there.x + targetVelocity.x * lead, aimZ = there.z + targetVelocity.z * lead
+    const elevation = Math.abs(this.terrain.heightAt(here.x, here.z) - this.terrain.heightAt(there.x, there.z))
+    const liquid = this.terrain.liquidHeightAt?.(here.x, here.z)
+    const afloat = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(here.x, here.z) <= liquid + 0.5
+    if (afloat) {
+      // Floating buggies paddle forward toward a dry shore instead of reversing forever.
+      let shore: { x: number; z: number } | null = null
+      for (const radius of [8, 16, 32, 64, 128, 256]) {
+        let best = Infinity
+        for (let i = 0; i < 16; i++) {
+          const angle = i * Math.PI / 8, x = here.x + Math.cos(angle) * radius, z = here.z + Math.sin(angle) * radius
+          if (!isSafeGround(this.terrain, x, z)) continue
+          const d = Math.hypot(x - there.x, z - there.z)
+          if (d < best) { best = d; shore = { x, z } }
+        }
+        if (shore) break
+      }
+      if (shore) { aimX = shore.x; aimZ = shore.z }
+    }
+    const waypoint = !afloat && distance > 25 && elevation > 8 ? roadWaypoint(this.terrain, here, there, Math.max(8, speed * 0.6)) : null
+    if (waypoint) { aimX = waypoint.x; aimZ = waypoint.z }
+    // Stable per-bot lateral offsets fade out near contact so every bot can still ram.
+    const spread = ((this.index * 0.61803398875 % 1) - 0.5) * p.approachSpread.value * Math.min(1, Math.max(0, distance - 8) / 20)
+    if (!afloat && distance > 0.1) { aimX += dz / distance * spread; aimZ -= dx / distance * spread }
+    // Repel nearby allies, never the selected target. This prevents a single-file pileup.
+    for (const peer of this.peers) {
+      if (peer === this.vehicle || peer === this.target || !peer.body.isValid()) continue
+      const pos = peer.body.translation(), px = here.x - pos.x, pz = here.z - pos.z, separation = Math.hypot(px, pz)
+      if (separation > 0.1 && separation < 7) { aimX += px / separation * (7 - separation) * 2; aimZ += pz / separation * (7 - separation) * 2 }
+    }
+    const error = steeringError(this.forward, { x: aimX - here.x, z: aimZ - here.z })
     // VhiclBot.cs:35-55 and VehicleBot.js:79-91: wrap yaw, divide by 20 degrees,
     // 2 degree dead zone, full steering within 15 metres, 0.6 clamp farther away.
     const rotation = error / (20 * Math.PI / 180)
@@ -84,12 +123,17 @@ export class BotBrain implements System {
         this.immobileTime = this.reversing ? this.immobileTime + this.strategyTime : 0
         this.strategyTime = 0; this.lastPosition.copy(here)
       }
+      if (afloat) this.reversing = false
       input.x = this.reversing ? clamp(-rotation) : Math.abs(rotation) < 0.1 ? 0 : clamp(rotation * p.aggression.value, distance < 15 ? 1 : 0.6)
       input.y = Math.min(1, p.aggression.value) * p.topThrottle.value * (this.reversing ? -1 : 1)
+      // Keep enough throttle to turn, but shed speed before a tight corner.
+      if (!this.reversing && Math.abs(error) > 0.6 && speed > p.cornerSpeed.value) {
+        input.y *= 0.25; input.brakes = speed > p.cornerSpeed.value * 1.5
+      }
       // Probe the intended travel direction. Reverse and steer away from water or world edges.
       const direction = this.reversing ? -1 : 1
-      const speed = this.vehicle.body.linvel(), lookAhead = Math.max(4, Math.min(16, Math.hypot(speed.x, speed.z) * 0.7))
-      if (!isSafeGround(this.terrain, here.x + this.forward.x * direction * lookAhead, here.z + this.forward.z * direction * lookAhead)) {
+      const lookAhead = Math.max(4, Math.min(16, speed * 0.7))
+      if (!afloat && !isSafeGround(this.terrain, here.x + this.forward.x * direction * lookAhead, here.z + this.forward.z * direction * lookAhead)) {
         input.y = -direction * p.topThrottle.value * 0.5
         input.x = (this.index % 2 ? -1 : 1) * -direction
       }

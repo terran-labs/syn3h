@@ -13,6 +13,7 @@ import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js'
 import { params } from '../../shared/params'
 import type { Game, System } from '../core/Game'
 import type { Terrain } from './Terrain'
+import { SkyEnvironmentMap } from './sky/SkyEnvironmentMap'
 import { AlienSkyMesh } from './sky/AlienSkyMesh'
 import { SKY_PRESET_NAMES, applySkyPreset } from './sky/presets'
 import {
@@ -51,6 +52,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   // The box corners must stay inside the camera far plane (20 km).
   sky.scale.setScalar(10000)
   scene.add(sky)
+  const reflections = new SkyEnvironmentMap(scene, game.renderer, sky)
 
   // Sun or moon: one directional light with cascaded shadows -----------------------------
   let light!: THREE.DirectionalLight
@@ -151,6 +153,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   applyUniforms()
 
   const unlisten = params.onChange((id, value) => {
+    if (/^(sky|sun|weather)\./.test(id)) reflections.invalidate()
     if (id === P.sunTimeOfDay.def.id) hour = wrapHour(value as number)
     else if (id === P.shadowQuality.def.id) buildLight(value as number)
     else if (id === P.skyPresetPicker.def.id) {
@@ -234,6 +237,8 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
     const hl = Math.hypot(sun[0], sun[2])
     if (hl > 1e-6) fogState.sunXZ.set(sun[0] / hl, sun[2] / hl)
 
+    reflections.update(dt, hour)
+
     // Cascades are computed from the camera projection; redo them when it changes.
     const cam = game.camera
     if (csm && csm.camera && (cam.aspect !== csmAspect || cam.fov !== csmFov)) {
@@ -259,6 +264,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
     update,
     dispose() {
       unlisten()
+      reflections.dispose()
       scene.remove(sky, light, light.target, hemi)
       csm?.dispose()
       light.dispose()
