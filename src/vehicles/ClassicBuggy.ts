@@ -1,5 +1,5 @@
 /**
- * The Mars Explorer buggy, ported from
+ * The classic Mars Explorer buggy (kind 'buggy-classic'), ported from
  * `Martian Assets/Vehicles/Buggy/Components/Scripts/Buggy.js` (cited below as "Buggy.js NNN").
  *
  * The original never used WheelCollider. It is one rigid body, four raycasts and forces added
@@ -20,51 +20,14 @@
  */
 import * as THREE from 'three/webgpu'
 import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js'
-import { defineParam } from '../../shared/params'
 import type { Game } from '../core/Game'
 import { GROUP_ALL, GROUP_TERRAIN, GROUP_VEHICLE, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
+import {
+  buggyCG, buggyPower, buggyShocks, buggySmartSuspension, buggySpeed, buggyTraction,
+} from './buggyParams'
+import type { BuggySkin } from './skins/BuggySkin'
 import { Vehicle } from './Vehicle'
-
-// ---------------------------------------------------------------------------------------
-// Parameters. Defaults Settings.js 92-105, slider ranges Settings.js 944-991.
-// ---------------------------------------------------------------------------------------
-
-export const buggyPower = defineParam({
-  id: 'buggy.power', label: 'Power', group: 'Buggy', scope: 'world',
-  default: 1, min: 0.5, max: 1.5, step: 0.01,
-})
-export const buggySpeed = defineParam({
-  id: 'buggy.speed', label: 'Speed', group: 'Buggy', scope: 'world',
-  default: 30, min: 5, max: 55, step: 0.5,
-})
-export const buggyTraction = defineParam({
-  id: 'buggy.traction', label: 'Traction', group: 'Buggy', scope: 'world',
-  default: 1, min: 0.1, max: 1.9, step: 0.01,
-})
-export const buggyShocks = defineParam({
-  id: 'buggy.shocks', label: 'Shocks', group: 'Buggy', scope: 'world',
-  default: 70, min: 20, max: 120, step: 1,
-})
-/** Defined and synced like the original, but its slider was commented out and nothing reads it. */
-export const buggySlip = defineParam({
-  id: 'buggy.slip', label: 'Slip', group: 'Buggy', scope: 'world',
-  default: 50, min: 20, max: 80, step: 1,
-})
-/** Labelled "Stability" in the original. The slider runs high to low (Settings.js 944). */
-export const buggyCG = defineParam({
-  id: 'buggy.cg', label: 'Stability (CG)', group: 'Buggy', scope: 'world',
-  default: -0.4, min: -0.1, max: -0.7, step: 0.01,
-})
-/** Only the unused "new physics" path reads this (Buggy.js 337). Kept for parity. */
-export const buggyAWD = defineParam({
-  id: 'buggy.awd', label: 'All wheel drive', group: 'Buggy', scope: 'world',
-  default: true,
-})
-export const buggySmartSuspension = defineParam({
-  id: 'buggy.smartSuspension', label: 'Smart suspension', group: 'Buggy', scope: 'world',
-  default: true,
-})
 
 // ---------------------------------------------------------------------------------------
 // Constants from the original prefab and script.
@@ -114,7 +77,8 @@ function wheelMount(i: number): THREE.Vector3 {
   return new THREE.Vector3(WHEEL_POS.x * (i % 2 ? 1 : -1), WHEEL_POS.y, -WHEEL_POS.z * (i < 2 ? 1 : -1))
 }
 
-export class Buggy extends Vehicle {
+export class ClassicBuggy extends Vehicle {
+  readonly kind = 'buggy-classic' as const
   readonly collider: RAPIER.Collider
 
   // Internal registers, Buggy.js 18-54. Arrays are per wheel: 0 FL, 1 FR, 2 RL, 3 RR.
@@ -154,8 +118,15 @@ export class Buggy extends Vehicle {
   private readonly wheelSpinners: THREE.Object3D[] = []
   private readonly axels: THREE.Mesh[] = []
 
-  constructor(game: Game, terrain: Terrain, position: THREE.Vector3, heading = 0) {
+  private skin: BuggySkin | null = null
+  private readonly fallback = new THREE.Group()
+  private readonly bodyMaterial = new THREE.MeshStandardMaterial({ color: 0x7a1838, roughness: 0.45, metalness: 0.3 })
+  private spin = 0
+  private wingOpenAmount = 0
+
+  constructor(game: Game, terrain: Terrain, position: THREE.Vector3, heading = 0, skinFactory?: () => BuggySkin) {
     super(game, terrain, position, heading)
+    this.object.add(this.fallback)
     const desc = RAPIER.ColliderDesc.convexHull(new Float32Array(HULL))!
       .setMass(MASS)
       .setFriction(CHASSIS_FRICTION)
@@ -177,6 +148,33 @@ export class Buggy extends Vehicle {
     this.updateMassProperties()
 
     this.buildVisuals()
+    if (skinFactory) {
+      try {
+        const skin = skinFactory()
+        this.skin = skin
+        this.object.add(skin.object)
+        skin.setColors(this.colors.body, this.colors.accent)
+        skin.ready.then(
+          () => { if (this.skin === skin) this.fallback.visible = false },
+          (err) => {
+            console.warn('Classic buggy model failed to load, keeping primitives', err)
+            if (this.skin === skin) { skin.dispose(); this.skin = null }
+          },
+        )
+      } catch (err) {
+        console.warn('Classic buggy skin failed, keeping primitives', err)
+      }
+    }
+  }
+
+  protected override applyColors(): void {
+    this.bodyMaterial.color.set(this.colors.body)
+    this.skin?.setColors(this.colors.body, this.colors.accent)
+  }
+
+  override dispose(): void {
+    this.skin?.dispose()
+    super.dispose()
   }
 
   /** Buggy.js 193-195. Only touches Rapier when the centre of mass actually moved. */
@@ -270,7 +268,7 @@ export class Buggy extends Vehicle {
     this.ray.origin = origin
     this.ray.dir = dir
     return this.game.world.castRay(
-      this.ray, maxDist, true, undefined, Buggy.RAY_GROUPS, undefined, this.body,
+      this.ray, maxDist, true, undefined, ClassicBuggy.RAY_GROUPS, undefined, this.body,
     )
   }
 
@@ -421,6 +419,8 @@ export class Buggy extends Vehicle {
       this.motorSpeed += ((hitVel.z - this.motorSpeed) * friction * dt) / this.motorTorque
     }
 
+    this.wheelsGrounded = this.hitDistance.filter((d) => d !== -1).length
+
     // Suspension, Buggy.js 428-433. Wheel space y is chassis up, so hitVelocity.y is the
     // velocity along chassis up at the mount.
     for (let i = 0; i < 4; i++) {
@@ -451,14 +451,16 @@ export class Buggy extends Vehicle {
     const w = this.body.angvel()
     const angSq = w.x * w.x + w.y * w.y + w.z * w.z
     world.contactPairsWith(this.collider, (other) => {
-      world.contactPair(this.collider, other, (manifold, flipped) => {
+      world.contactPair(this.collider, other, (manifold) => {
         const count = manifold.numSolverContacts()
         if (count === 0) return
-        // Unity's contact normal points from the other collider into this one. Rapier's points
-        // out of the manifold's first collider, which is us unless `flipped`.
+        // Unity's contact normal points into this body. Rapier's sign depends on the pair's
+        // internal order, so orient it from the contact point toward our centre of mass.
         const mn = manifold.normal()
         n.set(mn.x, mn.y, mn.z)
-        if (!flipped) n.negate()
+        const cp = manifold.solverContactPoint(0)
+        const com = this.body.worldCom()
+        if (cp && n.x * (com.x - cp.x) + n.y * (com.y - cp.y) + n.z * (com.z - cp.z) < 0) n.negate()
         const angleToNormal = this.up.angleTo(n) * DEG
         for (let c = 0; c < count; c++) {
           if (this.isInverted && angleToNormal < 50) this.isInverted = false
@@ -477,7 +479,7 @@ export class Buggy extends Vehicle {
   // ---- Visuals ------------------------------------------------------------------------
 
   private buildVisuals(): void {
-    const body = new THREE.MeshStandardMaterial({ color: 0x7a1838, roughness: 0.45, metalness: 0.3 })
+    const body = this.bodyMaterial
     const glass = new THREE.MeshStandardMaterial({ color: 0xe9a6e0, roughness: 0.15, metalness: 0.2 })
     const dark = new THREE.MeshStandardMaterial({ color: 0x1b1b1d, roughness: 0.9 })
     const rimMat = new THREE.MeshStandardMaterial({ color: 0xb0b4bc, roughness: 0.35, metalness: 0.8 })
@@ -487,26 +489,26 @@ export class Buggy extends Vehicle {
     for (let i = 0; i < HULL.length; i += 3) pts.push(new THREE.Vector3(HULL[i], HULL[i + 1], HULL[i + 2]))
     const hull = new THREE.Mesh(new ConvexGeometry(pts), body)
     hull.castShadow = true
-    this.object.add(hull)
+    this.fallback.add(hull)
 
     const cockpit = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), glass)
     cockpit.scale.set(0.4, 0.24, 0.55)
     cockpit.position.set(0, 0.36, -0.05)
     cockpit.castShadow = true
-    this.object.add(cockpit)
+    this.fallback.add(cockpit)
 
     const spoiler = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.05, 0.38), body)
     spoiler.position.set(0, 0.6, 0.85)
     spoiler.rotation.x = -0.12
     spoiler.castShadow = true
-    this.object.add(spoiler)
+    this.fallback.add(spoiler)
     for (const x of [-0.55, 0.55]) {
       const strut = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.22, 0.12), body)
       strut.position.set(x, 0.47, 0.82)
-      this.object.add(strut)
+      this.fallback.add(strut)
       const light = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.07, 0.03), lamp)
       light.position.set(x * 0.65, 0, -0.93)
-      this.object.add(light)
+      this.fallback.add(light)
     }
 
     const tyreGeo = new THREE.CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, 0.36, 18)
@@ -525,13 +527,13 @@ export class Buggy extends Vehicle {
       tyre.castShadow = true
       spinner.add(tyre, new THREE.Mesh(rimGeo, rimMat), new THREE.Mesh(spokeGeo, rimMat))
       group.add(spinner)
-      this.object.add(group)
+      this.fallback.add(group)
       this.wheelGroups.push(group)
       this.wheelSpinners.push(spinner)
 
       const axel = new THREE.Mesh(axelGeo, rimMat)
       axel.position.set(AXEL_POS.x * (i % 2 ? 1 : -1), AXEL_POS.y, -AXEL_POS.z * (i < 2 ? 1 : -1))
-      this.object.add(axel)
+      this.fallback.add(axel)
       this.axels.push(axel)
     }
   }
@@ -550,6 +552,7 @@ export class Buggy extends Vehicle {
       g.rotation.y = this.steer[i]
       // Rolling toward -Z means the top of the wheel moves to -Z: negative rotation about +X.
       this.wheelSpinners[i].rotation.x -= spin
+      this.skin?.setWheel(i, g.position, this.steer[i], this.wheelSpinners[i].rotation.x)
       const a = this.axels[i]
       this.axelDir.subVectors(g.position, a.position)
       a.scale.y = this.axelDir.length()
