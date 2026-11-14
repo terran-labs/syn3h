@@ -16,7 +16,7 @@ try{
  const inspect=()=>{
   const r=[...window.syn3hNet.remotes.values()][0],meshes=[]
   r.vehicle.object.traverse(o=>{if(o.isMesh&&o.visible)meshes.push({name:o.name,color:o.material.color?.getHexString()})})
-  return {kind:r.vehicle.kind,colors:r.vehicle.colors,meshes,position:{...r.vehicle.body.translation()},mode:r.sample.mode,physical:r.physical,gear:r.vehicle.gear?.visible}
+  return {kind:r.vehicle.kind,colors:r.vehicle.colors,meshes,position:{...r.vehicle.body.translation()},mode:r.sample.mode,physical:r.physical,gear:r.vehicle.gear?.visible,sampleError:Math.hypot(r.vehicle.body.translation().x-r.sample.p[0],r.vehicle.body.translation().y-r.sample.p[1],r.vehicle.body.translation().z-r.sample.p[2])}
  }
  await a.evaluate(()=>{const s=window.syn3h;s.player.teleport({x:280,y:s.terrain.heightAt(280,280)+120,z:280});s.game.input.external.z=1})
  await b.evaluate(()=>{const s=window.syn3h;s.player.teleport({x:0,y:s.terrain.heightAt(0,0)+10,z:0});s.game.input.external.y=1})
@@ -33,8 +33,17 @@ try{
  if(!remoteA.meshes.some(m=>m.name==='Body_Main'&&m.color==='d83c29'))throw Error('Jet paint did not update')
  if(!snapshots[0][0].meshes.some(m=>m.name==='Main'&&m.color==='315fff'))throw Error('Hovercraft paint did not update')
  if(!remoteA.gear)throw Error('Kinematic remote hover gear missing')
- if(error>10)throw Error('Remote interpolation error '+error)
- await a.screenshot({path:'/tmp/syn3h-vehicles2/multiplayer-jet.png'});await b.screenshot({path:'/tmp/syn3h-vehicles2/multiplayer-hovercraft.png'})
- const report={error,errors,snapshots};fs.writeFileSync('/tmp/syn3h-vehicles2/multiplayer.json',JSON.stringify(report,null,2));console.log(JSON.stringify({error,errors,remoteKinds:snapshots[0].map(s=>s.kind),gear:remoteA.gear,physical:remoteA.physical}))
+ const sampleError=Math.max(...snapshots.flat().map(s=>s.sampleError))
+ if(sampleError>2)throw Error('Remote proxy drifted from interpolated sample '+sampleError)
+ if(error>15)throw Error('Remote interpolation lag '+error)
+ await a.evaluate(()=>{window.syn3h.game.input.external.z=.5;window.syn3h.player.body.setLinvel({x:0,y:0,z:0},true)})
+ await a.waitForTimeout(2500)
+ const [settledOwner,settledRemote]=await Promise.all([a.evaluate(()=>({...window.syn3h.player.body.translation()})),b.evaluate(inspect)])
+ const settledError=Math.hypot(settledOwner.x-settledRemote.position.x,settledOwner.y-settledRemote.position.y,settledOwner.z-settledRemote.position.z)
+ if(settledError>1)throw Error('Remote did not converge in hover '+settledError)
+ await Promise.all(pages.map(p=>p.evaluate(()=>window.syn3h.camera.setVehicle([...window.syn3hNet.remotes.values()][0].vehicle))))
+ await a.waitForTimeout(1000)
+ await a.screenshot({path:'/tmp/syn3h-vehicles2/multiplayer-remote-hovercraft.png'});await b.screenshot({path:'/tmp/syn3h-vehicles2/multiplayer-remote-jet.png'})
+ const report={error,sampleError,settledError,errors,snapshots};fs.writeFileSync('/tmp/syn3h-vehicles2/multiplayer.json',JSON.stringify(report,null,2));console.log(JSON.stringify({error,sampleError,settledError,errors,remoteKinds:snapshots[0].map(s=>s.kind),gear:remoteA.gear,physical:remoteA.physical}))
  if(errors.length)throw Error('Browser errors')
 }finally{await browser.close()}
