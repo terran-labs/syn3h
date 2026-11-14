@@ -12,6 +12,7 @@
 import * as THREE from 'three/webgpu'
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
+import { QualityController, reportLoading, type FrameMetrics } from './quality'
 import { FIXED_DT, RAPIER, createWorld, initPhysics } from './physics'
 
 export interface System {
@@ -41,23 +42,30 @@ export class Game {
   /** Smoothed frames per second, for the HUD. */
   fps = 0
 
+  readonly quality = new QualityController()
+  readonly performance: FrameMetrics = { fps: 0, frameMs: 0, physicsMs: 0, drawCalls: 0, triangles: 0, firstFrameMs: null }
+
   private readonly systems: System[] = []
   private accumulator = 0
   private last = 0
+  private averageFrameMs = 1000 / 60
 
   constructor(readonly canvas: HTMLCanvasElement) {}
 
   async init(): Promise<void> {
+    await this.quality.initialize()
+    reportLoading('physics', 0.15)
     await initPhysics()
     this.world = createWorld(worldGravity.value)
     params.onChange((id, value) => {
       if (id === worldGravity.def.id) this.world.gravity = { x: 0, y: -(value as number), z: 0 }
     })
 
+    reportLoading('renderer', 0.4)
     this.renderer = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: true })
     await this.renderer.init()
     this.backend = (this.renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'webgpu' : 'webgl'
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+    this.quality.attachRenderer(this.renderer)
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.shadowMap.enabled = true
 
@@ -70,6 +78,7 @@ export class Game {
     }
     window.addEventListener('resize', resize)
     resize()
+    reportLoading('world', 0.7)
   }
 
   add<T extends System>(system: T): T {
@@ -90,12 +99,17 @@ export class Game {
 
   private frame(): void {
     const now = performance.now()
-    const frameDt = Math.min(0.25, (now - this.last) / 1000)
+    const frameMs = now - this.last
+    const frameDt = Math.min(0.25, frameMs / 1000)
     this.last = now
-    if (frameDt > 0) this.fps += (1 / frameDt - this.fps) * 0.05
+    if (frameMs > 0) {
+      this.averageFrameMs += (frameMs - this.averageFrameMs) * 0.1
+      this.fps = 1000 / this.averageFrameMs
+    }
 
     this.input.poll()
 
+    const physicsStart = performance.now()
     this.accumulator += frameDt
     let steps = 0
     while (this.accumulator >= FIXED_DT && steps < MAX_STEPS_PER_FRAME) {
@@ -110,8 +124,16 @@ export class Game {
     // Drop time we could not simulate, so a slow frame does not cause a spiral.
     if (steps === MAX_STEPS_PER_FRAME) this.accumulator = 0
 
+    this.performance.physicsMs = performance.now() - physicsStart
     const alpha = this.accumulator / FIXED_DT
     for (const s of this.systems) s.update?.(frameDt, alpha)
     this.renderer.render(this.scene, this.camera)
+    const metrics = this.performance
+    metrics.fps = this.fps
+    metrics.frameMs = frameMs
+    metrics.drawCalls = this.renderer.info.render.drawCalls
+    metrics.triangles = this.renderer.info.render.triangles
+    if (metrics.firstFrameMs === null && metrics.drawCalls > 0) metrics.firstFrameMs = performance.now()
+    this.quality.frame(metrics)
   }
 }
