@@ -5,8 +5,7 @@
  *   npx vite --port 5183 --strictPort
  *   node tools/net-smoke.mjs [http://localhost:5183/]
  *
- * Also works against a production build (`npx wrangler dev`); checks that need Vite's
- * module server (bots) are skipped there.
+ * Also works against a production build (`npx wrangler dev`), including real bot-manager checks.
  *
  * Opens two headless Chrome pages in one fresh room and checks, in order:
  *  1. both connect and see each other
@@ -204,23 +203,17 @@ try {
   const back = await a.evaluate((id) => window.syn3hNet.remotes.get(id).paused, idB)
   check('returning tab resumes', back === false, { paused: back })
 
-  // 9. Bots, owned by the host (A). Needs Vite's module server to build a vehicle in page.
-  const botMade = await a.evaluate(async () => {
-    try {
-      const { createVehicle } = await import('/src/vehicles/index.ts')
-      const THREE = await import('three/webgpu').catch(() => null)
-      const s = window.syn3h.terrain.spawnPoint(5)
-      const pos = THREE ? new THREE.Vector3(s.position.x, s.position.y, s.position.z) : s.position
-      const v = createVehicle(window.syn3h.game, window.syn3h.terrain, 'buggy', pos, 0)
-      v.isLocal = false
-      window.syn3h.game.add(v)
-      window.__bots = { vehicles: [v] }
-      window.syn3hNet.attachBots(window.__bots)
-      return true
-    } catch (e) {
-      return String(e)
-    }
+  // 9. Exercise the actual manager in both Vite and production, without module imports.
+  await a.evaluate(() => {
+    const s = window.syn3h
+    s.params.set('bots.canDrive', false); s.params.set('bots.canFire', false)
+    s.params.set('bots.count', 1)
+    window.__bots = s.bots
   })
+  const botMade = await a.waitForFunction(() => window.syn3h.bots.vehicles.length === 1, null, { timeout: 8000 }).then(() => true, () => false)
+  check('host manager spawns a bot', botMade, {})
+  const ownership = await both(() => window.syn3h.bots.remote)
+  check('only the host bot manager drives', ownership[0] === false && ownership[1] === true, { ownership })
   if (botMade === true) {
     const BOT = 0xff00
     await b.waitForFunction((id) => window.syn3hNet.remotes.has(id), BOT, { timeout: 8000 }).catch(() => {})
@@ -244,11 +237,8 @@ try {
     const hitSeen = await b.evaluate(() => window.__audioCalls.filter((c) => c === 'laserHit').length)
     const diag = { a: await a.evaluate(() => ({ lasers: window.syn3hNet.lasers.count, host: window.syn3hNet.isHost })), bFired: await b.evaluate(() => window.syn3hNet.stats.shotsFired) }
     check('host judges a laser hit on its bot', judged > judgedBefore && hitSeen >= 2, { judgedBefore, judged, hitSoundsOnB: hitSeen, ...diag })
-  } else {
-    console.log(`SKIP bots: ${botMade}`)
-    // That probe for Vite's /src modules is the only expected 404 in a production build.
-    for (let i = errors.length - 1; i >= 0; i--) if (/^Alice console: .*status of 404/.test(errors[i])) errors.splice(i, 1)
   }
+  await a.evaluate(() => window.syn3h.params.set('bots.count', 0))
 
   // 10. World seed, and a late joiner who arrives with a different one.
   await a.evaluate(() => window.syn3h.params.set('world.seed', 4242))
