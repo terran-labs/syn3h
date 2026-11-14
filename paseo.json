@@ -6,7 +6,7 @@
     },
     "game": {
       "type": "service",
-      "command": "npx tsx server/dev.ts & exec npx vite --host 127.0.0.1 --port $PASEO_PORT --strictPort"
+      "command": "npx vite --host 127.0.0.1 --port $PASEO_PORT --strictPort"
     }
   }
 }
