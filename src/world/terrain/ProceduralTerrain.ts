@@ -4,13 +4,14 @@
  */
 import * as THREE from 'three/webgpu'
 import { params, worldLavaAltitude, worldSeed } from '../../../shared/params'
-import type { Game } from '../../core/Game'
+import type { Game, System } from '../../core/Game'
 import type { RAPIER } from '../../core/physics'
 import type { SpawnPoint, Terrain } from '../Terrain'
 import { createTerrainCollider } from './collider'
+import { lavaSurfaceAt } from './lava'
 import { type TerrainData, coneProfile, generateTerrain } from './generate'
 import { type TerrainMaterial, createTerrainMaterial } from './material'
-import { type TerrainMeshes, createTerrainMeshes } from './mesh'
+import { type TerrainMeshes, type TriangleStats, createTerrainMeshes } from './mesh'
 import { HeightSampler } from './sampler'
 import { TERRAIN_PARAM_IDS, currentTerrainSettings } from './settings'
 import { spawnPointAt } from './spawn'
@@ -29,6 +30,7 @@ export class ProceduralTerrain implements Terrain {
   private readonly listeners = new Set<() => void>()
   private readonly unsubscribe: () => void
   private pending = false
+  private readonly lodSystem: System
 
   constructor(private readonly game: Game, private seed: number) {
     this.data = this.generate()
@@ -39,6 +41,8 @@ export class ProceduralTerrain implements Terrain {
     this.meshes = createTerrainMeshes(this.data, this.look.material)
     game.scene.add(this.meshes.group)
     this.collider = createTerrainCollider(game.world, this.data)
+    // Level of detail follows the camera once per frame, after the camera has moved.
+    this.lodSystem = game.add({ update: () => this.meshes.updateLod(game.camera.position) })
 
     this.unsubscribe = params.onChange((id) => {
       if (!TERRAIN_PARAM_IDS.has(id)) return
@@ -86,14 +90,20 @@ export class ProceduralTerrain implements Terrain {
     return this.sampler.normalAt(x, z, out)
   }
 
-  liquidHeightAt(_x: number, _z: number): number {
-    // Stage A: one global lava plane, as in the original. Lava flows will make this local.
-    return worldLavaAltitude.value
+  /** Caldera lake, pools and rivers where present, else the global lava plane. */
+  liquidHeightAt(x: number, z: number): number {
+    return lavaSurfaceAt(this.data.lava, x, z, worldLavaAltitude.value)
   }
 
   spawnPoint(index: number): SpawnPoint {
     const s = spawnPointAt(this.sampler, index)
     return { position: new THREE.Vector3(s.x, s.y, s.z), heading: s.heading }
+  }
+
+  /** Terrain triangles in view at the current levels of detail, versus at full detail. */
+  triangleStats(): TriangleStats {
+    this.meshes.updateLod(this.game.camera.position)
+    return this.meshes.stats(this.game.camera)
   }
 
   onRegenerate(listener: () => void): () => void {
@@ -103,6 +113,7 @@ export class ProceduralTerrain implements Terrain {
 
   dispose(): void {
     this.unsubscribe()
+    this.game.remove(this.lodSystem)
     this.listeners.clear()
     this.game.scene.remove(this.meshes.group)
     this.meshes.dispose()

@@ -6,7 +6,8 @@ import { afterEach, describe, expect, test } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { params } from '../../shared/params'
 import { GROUP_ALL, GROUP_VEHICLE, RAPIER, groups } from '../../src/core/physics'
-import { Buggy, buggySmartSuspension, buggySpeed } from '../../src/vehicles/Buggy'
+import { ClassicBuggy as Buggy } from '../../src/vehicles/ClassicBuggy'
+import { buggySmartSuspension, buggySpeed } from '../../src/vehicles/buggyParams'
 import { createVehicle } from '../../src/vehicles'
 import { type Bed, makeBed } from './harness'
 
@@ -36,10 +37,10 @@ afterEach(() => {
   for (const p of params.all()) params.set(p.def.id, p.def.default)
 })
 
-describe('Buggy', () => {
+describe('ClassicBuggy', () => {
   test('factory returns a Buggy with the original mass and centre of mass', async () => {
     const bed = await makeBed()
-    const v = createVehicle(bed.game, bed.terrain, 'buggy', new THREE.Vector3(0, 1, 0))
+    const v = createVehicle(bed.game, bed.terrain, 'buggy-classic', new THREE.Vector3(0, 1, 0))
     expect(v).toBeInstanceOf(Buggy)
     expect(v.body.mass()).toBeCloseTo(30, 3)
     // Unity centerOfMass.z = +0.2 is forward, so ours is -0.2.

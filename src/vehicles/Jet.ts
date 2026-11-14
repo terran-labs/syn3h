@@ -18,6 +18,7 @@ const nozzlePosition = new THREE.Vector3(0,0,2.971839)
 
 /** Syn3h VhiclJet.cs 84-211, terra.jet.prefab and CoreSettings.cs 52-56. */
 export class Jet extends Vehicle {
+  readonly kind = 'jet' as const
   private readonly model: VehicleModel
   private gear?: THREE.Object3D
   private gearAmount = 0

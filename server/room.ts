@@ -16,11 +16,17 @@ import {
   type ServerMessage,
   type ShotInfo,
   type TagEvent,
+  BOT_ID_BASE,
+  DEFAULT_COLORS,
   MAX_NAME_LENGTH,
+  MAX_PLAYER_ID,
   PROTOCOL_VERSION,
   STATE_BYTES,
   type WireState,
+  cleanColor,
+  cleanKind,
   decodeState,
+  isBotId,
   encodeState,
   isVec3,
   parseJson,
@@ -78,6 +84,8 @@ const MAX_STATES_PER_SECOND = 70
 const MAX_JSON_PER_SECOND = 40
 /** A player whose state is older than this cannot ram or be rammed (the original's isResponding). */
 const RESPONDING_MS = 1500
+/** A bot the host has not updated for this long is gone (bot count lowered, or no host). */
+const BOT_EXPIRY_MS = 5000
 
 export class Room {
   readonly name: string
@@ -87,6 +95,8 @@ export class Room {
   /** Connected peers that have not said hello yet. */
   private readonly pending = new Set<Peer>()
   private readonly players = new Map<Peer, Player>()
+  /** Vehicles the host simulates, by bot id. */
+  private readonly bots = new Map<number, Player>()
   private readonly values = new Map<string, ParamWireValue>()
   private unknownCount = 0
   private it = 0
@@ -121,6 +131,7 @@ export class Room {
   }
 
   receive(peer: Peer, data: string | ArrayBuffer | Uint8Array): void {
+    this.expireBots()
     if (typeof data !== 'string') {
       const bytes = data instanceof Uint8Array ? data : new Uint8Array(data)
       const player = this.players.get(peer)
@@ -146,7 +157,10 @@ export class Room {
         this.onFire(peer, player, msg.shot)
         break
       case 'hit':
-        this.onHit(player, msg.shooter, msg.shot)
+        this.onHit(player, msg.shooter, msg.shot, msg.victim)
+        break
+      case 'profile':
+        this.onProfile(player, msg.kind, msg.colors)
         break
       case 'ram':
         this.onRam(player, msg.other)
@@ -203,7 +217,11 @@ export class Room {
 
   /** Re-attach a peer that was already joined before the process hibernated. No broadcast. */
   adopt(peer: Peer, info: PlayerInfo): void {
-    this.players.set(peer, this.newPlayer({ ...info, score: this.scores[info.id] ?? info.score }))
+    const full: PlayerInfo = {
+      ...info, score: this.scores[info.id] ?? info.score ?? 0,
+      kind: cleanKind(info.kind) ?? 'buggy', colors: cleanColors(info.colors) ?? [...DEFAULT_COLORS],
+    }
+    this.players.set(peer, this.newPlayer(full))
     this.nextId = Math.max(this.nextId, info.id + 1)
   }
 
@@ -237,8 +255,13 @@ export class Room {
     const used = new Set([...this.players.values()].map((p) => p.info.slot))
     let slot = 0
     while (used.has(slot)) slot++
-    const info: PlayerInfo = { id: this.nextId++, name: cleanName(msg.name, this.nextId - 1), slot, score: 0 }
-    if (this.nextId > 0xffff) this.nextId = 1
+    const id = this.nextId++
+    if (this.nextId > MAX_PLAYER_ID) this.nextId = 1
+    const info: PlayerInfo = {
+      id, name: cleanName(msg.name, id), slot, score: 0,
+      kind: cleanKind(msg.kind) ?? 'buggy',
+      colors: cleanColors(msg.colors) ?? [...DEFAULT_COLORS],
+    }
     const player = this.newPlayer(info)
     this.players.set(peer, player)
     this.scores[info.id] = 0
@@ -270,6 +293,10 @@ export class Room {
     if (bytes.byteLength !== STATE_BYTES || !this.budget(player, 'state')) return
     const state = decodeState(bytes)
     if (!state) return
+    if (state.bot) {
+      this.onBotState(player, state, bytes)
+      return
+    }
     state.id = player.info.id
     player.lastState = state
     player.lastStateAt = this.now()
@@ -277,6 +304,49 @@ export class Room {
     const out = bytes.slice()
     stampStateId(out, player.info.id)
     for (const [peer, other] of this.players) if (other !== player) peer.send(out)
+  }
+
+  /** Only the host simulates bots, so only the host may speak for them. */
+  private onBotState(sender: Player, state: WireState, bytes: Uint8Array): void {
+    if (sender.info.id !== this.host || !isBotId(state.id)) return
+    let bot = this.bots.get(state.id)
+    if (!bot) {
+      const n = state.id - BOT_ID_BASE
+      bot = this.newPlayer({ id: state.id, name: `Bot ${n + 1}`, slot: -1, score: 0, kind: 'buggy', colors: ['#3a3f47', '#ffb000'], bot: true })
+      // Bots appear and vanish with a slider; they do not get a newcomer's grace period.
+      bot.lastTag = -Infinity
+      this.bots.set(state.id, bot)
+      this.scores[state.id] ??= 0
+      this.broadcast({ type: 'join', player: bot.info })
+    }
+    bot.lastState = state
+    bot.lastStateAt = this.now()
+    const out = bytes.slice()
+    for (const [peer, other] of this.players) if (other !== sender) peer.send(out)
+  }
+
+  private expireBots(): void {
+    const now = this.now()
+    for (const [id, bot] of this.bots) {
+      if (now - bot.lastStateAt < BOT_EXPIRY_MS) continue
+      this.bots.delete(id)
+      delete this.scores[id]
+      this.broadcast({ type: 'leave', id })
+      if (this.it === id) {
+        const next = this.players.values().next().value as Player | undefined
+        this.setIt(next ? next.info.id : 0, 'leave')
+      }
+    }
+  }
+
+  private onProfile(player: Player, kind: unknown, colors: unknown): void {
+    const k = kind === undefined ? player.info.kind : cleanKind(kind)
+    const c = colors === undefined ? player.info.colors : cleanColors(colors)
+    if (!k || !c) return
+    if (k === player.info.kind && c[0] === player.info.colors[0] && c[1] === player.info.colors[1]) return
+    player.info.kind = k
+    player.info.colors = c
+    this.broadcast({ type: 'profile', player: player.info })
   }
 
   private onParam(player: Player, id: unknown, raw: unknown): void {
@@ -304,7 +374,7 @@ export class Room {
     const interval = this.paramNumber(laserInterval.def) * 1000 * 0.8
     if (now - player.lastFireAt < interval) return
     const st = player.lastState
-    if (!st || now - player.lastStateAt > RESPONDING_MS) return
+    if (!st || st.paused || now - player.lastStateAt > RESPONDING_MS) return
     const speed = Math.hypot(...st.v)
     if (dist(shot.o, st.p) > 8 + speed * 0.5) return
     if (shot.boost < 0 || shot.boost > Math.max(5, speed * 1.5)) return
@@ -319,8 +389,15 @@ export class Room {
   }
 
   /** The victim reports a hit on itself. The room checks the shot really happened. */
-  private onHit(victim: Player, shooterId: unknown, shotId: unknown): void {
+  private onHit(reporter: Player, shooterId: unknown, shotId: unknown, victimId?: unknown): void {
     if (typeof shooterId !== 'number' || typeof shotId !== 'number') return
+    let victim = reporter
+    if (typeof victimId === 'number' && victimId !== reporter.info.id) {
+      // Only the host judges hits on bots, as it is the one simulating them.
+      const bot = this.bots.get(victimId)
+      if (!bot || reporter.info.id !== this.host) return
+      victim = bot
+    }
     const shooter = this.byId(shooterId)
     if (!shooter || shooter === victim) return
     const firedAt = shooter.shots.get(shotId)
@@ -355,7 +432,7 @@ export class Room {
     const now = this.now()
     const a = reporter.lastState
     const b = other.lastState
-    if (!a || !b || now - reporter.lastStateAt > RESPONDING_MS || now - other.lastStateAt > RESPONDING_MS) return
+    if (!a || !b || a.paused || b.paused || now - reporter.lastStateAt > RESPONDING_MS || now - other.lastStateAt > RESPONDING_MS) return
     // Both states are slightly old, so allow for how far fast vehicles travel meanwhile.
     const reach = this.paramNumber(tagRamReach.def) + (Math.hypot(...a.v) + Math.hypot(...b.v)) * 0.3
     if (dist(a.p, b.p) > reach) return
@@ -448,12 +525,14 @@ export class Room {
   }
 
   private byId(id: number): Player | undefined {
+    const bot = this.bots.get(id)
+    if (bot) return bot
     for (const p of this.players.values()) if (p.info.id === id) return p
     return undefined
   }
 
   private playerList(): PlayerInfo[] {
-    return [...this.players.values()].map((p) => ({ ...p.info, score: this.scores[p.info.id] ?? 0 }))
+    return [...this.players.values(), ...this.bots.values()].map((p) => ({ ...p.info, score: this.scores[p.info.id] ?? 0 }))
   }
 
   private gameState(): GameState {
@@ -481,6 +560,13 @@ function encodeStored(p: Player): Uint8Array {
 function cleanName(raw: unknown, id: number): string {
   const s = typeof raw === 'string' ? raw.replace(/[\u0000-\u001f\u007f<>]/g, '').trim().slice(0, MAX_NAME_LENGTH) : ''
   return s || `Player ${id}`
+}
+
+function cleanColors(raw: unknown): [string, string] | null {
+  if (!Array.isArray(raw) || raw.length !== 2) return null
+  const a = cleanColor(raw[0])
+  const b = cleanColor(raw[1])
+  return a && b ? [a, b] : null
 }
 
 function dist(a: readonly number[], b: readonly number[]): number {

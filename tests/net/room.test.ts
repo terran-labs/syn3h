@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { type Peer, Room } from '../../server/room'
-import { PROTOCOL_VERSION, type ServerMessage, type WireState, decodeState, encodeState } from '../../shared/protocol'
+import { BOT_ID_BASE, DEFAULT_COLORS, PROTOCOL_VERSION, type ServerMessage, type WireState, decodeState, encodeState } from '../../shared/protocol'
+import { roomName } from '../../server/util'
 import { emptyInputLike } from './helpers'
 
 class FakePeer implements Peer {
@@ -26,16 +27,16 @@ class FakePeer implements Peer {
 let clock = 0
 let room: Room
 
-function join(name: string, params: Record<string, number | boolean> = {}): { peer: FakePeer; id: number } {
+function join(name: string, params: Record<string, number | boolean> = {}, extra: object = {}): { peer: FakePeer; id: number } {
   const peer = new FakePeer()
   room.connect(peer)
-  room.receive(peer, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, name, params }))
+  room.receive(peer, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, name, params, ...extra }))
   const welcome = peer.last('welcome')!
   return { peer, id: welcome.id }
 }
 
-function state(p: [number, number, number], v: [number, number, number] = [0, 0, 0]): Uint8Array {
-  const s: WireState = { id: 0, t: clock / 1000, p, q: [0, 0, 0, 1], v, w: [0, 0, 0], input: emptyInputLike() }
+function state(p: [number, number, number], v: [number, number, number] = [0, 0, 0], extra: Partial<WireState> = {}): Uint8Array {
+  const s: WireState = { id: 0, t: clock / 1000, p, q: [0, 0, 0, 1], v, w: [0, 0, 0], input: emptyInputLike(), ...extra }
   return encodeState(s)
 }
 
@@ -275,5 +276,102 @@ describe('Room host lock', () => {
     expect(c.peer.last('param')!.from).toBe(0)
     send(b.peer, { type: 'lock', locked: false })
     expect(c.peer.last('game')!.game.locked).toBe(false)
+  })
+})
+
+describe('Room identity', () => {
+  it('validates vehicle kind and colours at join and on change', () => {
+    const a = join('A', {}, { kind: 'buggy-syn3h', colors: ['#FF0000', '#00ff00'] })
+    const b = join('B', {}, { kind: 'tank<script>', colors: ['red', 'blue'] })
+    const players = b.peer.last('welcome')!.players
+    expect(players[0]).toMatchObject({ kind: 'buggy-syn3h', colors: ['#ff0000', '#00ff00'] })
+    expect(players[1]).toMatchObject({ kind: 'buggy', colors: DEFAULT_COLORS })
+    send(b.peer, { type: 'profile', kind: 'buggy-classic', colors: ['#123456', '#abcdef'] })
+    expect(a.peer.last('profile')!.player).toMatchObject({ id: b.id, kind: 'buggy-classic', colors: ['#123456', '#abcdef'] })
+    send(b.peer, { type: 'profile', kind: 'hovercraft' })
+    expect(a.peer.all('profile').length).toBe(1)
+  })
+
+  it('turns room names into safe slugs', () => {
+    expect(roomName('My Room!')).toBe('my-room')
+    expect(roomName('')).toBe('lobby')
+    expect(roomName('x'.repeat(80)).length).toBe(32)
+  })
+})
+
+describe('Room bots', () => {
+  const botState = (n: number, p: [number, number, number]) => state(p, [0, 0, 0], { id: BOT_ID_BASE + n, bot: true })
+
+  it('relays bot states only from the host and announces new bots', () => {
+    const host = join('Host')
+    const b = join('B')
+    room.receive(b.peer, botState(0, [1, 0, 0]))
+    expect(host.peer.bin.length).toBe(0)
+    room.receive(host.peer, botState(0, [1, 0, 0]))
+    expect(b.peer.last('join')!.player).toMatchObject({ id: BOT_ID_BASE, bot: true })
+    const got = decodeState(b.peer.bin.at(-1)!)!
+    expect(got).toMatchObject({ id: BOT_ID_BASE, bot: true })
+    // A late joiner learns about the bot.
+    expect(join('Late').peer.last('welcome')!.players.some((p) => p.bot)).toBe(true)
+  })
+
+  it('counts rams and laser hits against bots, judged by the host', () => {
+    const host = join('Host') // it
+    const b = join('B')
+    clock += 3100
+    room.receive(host.peer, state([0, 0, 0]))
+    room.receive(host.peer, botState(0, [0, 0, -30]))
+    room.receive(b.peer, state([50, 0, 0]))
+    // Host ("it") shoots the bot: only the host may report it.
+    send(host.peer, { type: 'fire', shot: { id: 1, o: [0, 0.5, -2], d: [0, 0, -1], boost: 0, t: clock / 1000 } })
+    send(b.peer, { type: 'hit', shooter: host.id, shot: 1, victim: BOT_ID_BASE })
+    expect(b.peer.last('hit')).toBeUndefined()
+    send(host.peer, { type: 'hit', shooter: host.id, shot: 1, victim: BOT_ID_BASE })
+    expect(b.peer.last('hit')).toMatchObject({ victim: BOT_ID_BASE })
+    expect(b.peer.last('game')!.game.scores[host.id]).toBe(1)
+
+    // Bot touches the host: "it" passes to the bot after the cooldown.
+    clock += 3100
+    room.receive(host.peer, state([0, 0, 0]))
+    room.receive(host.peer, botState(0, [0, 0, -3]))
+    send(host.peer, { type: 'ram', other: BOT_ID_BASE })
+    expect(b.peer.last('game')).toMatchObject({ event: 'ram', game: { it: BOT_ID_BASE } })
+  })
+
+  it('expires bots the host stops sending and passes "it" back to a person', () => {
+    const host = join('Host')
+    const b = join('B')
+    clock += 3100
+    room.receive(host.peer, state([0, 0, 0]))
+    room.receive(host.peer, botState(0, [0, 0, -3]))
+    send(host.peer, { type: 'ram', other: BOT_ID_BASE })
+    expect(b.peer.last('game')!.game.it).toBe(BOT_ID_BASE)
+    clock += 6000
+    send(b.peer, { type: 'ping', t: 1 })
+    expect(b.peer.last('leave')).toEqual({ type: 'leave', id: BOT_ID_BASE })
+    expect(b.peer.last('game')!.game.it).toBe(host.id)
+  })
+
+  it('lets the new host take over bots', () => {
+    const host = join('Host')
+    const b = join('B')
+    room.receive(host.peer, botState(0, [0, 0, 0]))
+    room.disconnect(host.peer)
+    const c = join('C')
+    room.receive(b.peer, botState(0, [5, 0, 0]))
+    expect(decodeState(c.peer.bin.at(-1)!)!.p[0]).toBeCloseTo(5)
+  })
+})
+
+describe('Room paused players', () => {
+  it('relays heartbeats but a paused player cannot ram or be rammed', () => {
+    const a = join('A')
+    const b = join('B')
+    clock += 3100
+    room.receive(a.peer, state([0, 0, 0], [0, 0, 0], { paused: true }))
+    room.receive(b.peer, state([2, 0, 0]))
+    expect(decodeState(b.peer.bin.at(-1)!)!.paused).toBe(true)
+    send(b.peer, { type: 'ram', other: a.id })
+    expect(b.peer.last('game')!.game.it).toBe(a.id)
   })
 })
