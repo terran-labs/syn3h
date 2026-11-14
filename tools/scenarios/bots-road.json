@@ -1,0 +1,17 @@
+{
+  "name": "Six bots chasing uphill on the volcano road",
+  "roadFollow": true,
+  "durationMs": 20000,
+  "captureEveryMs": 4000,
+  "events": [
+    {
+      "atMs": 0,
+      "params": {
+        "bots.count": 6,
+        "gfx.level": 2,
+        "bots.canFire": false
+      }
+    }
+  ],
+  "roadStart": 0.55
+}
