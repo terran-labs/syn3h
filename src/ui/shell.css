@@ -134,3 +134,8 @@
 .syn3h-loading progress:indeterminate::-webkit-progress-bar { background: transparent; }
 @keyframes loading-sweep { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .syn3h-loading progress:indeterminate { animation: none; } }
+
+.shell-credits { text-align: left; font-size: 15px; line-height: 1.6; }
+.shell-credits summary { cursor: pointer; color: #dceaff; padding: 12px; border: 1px solid #536b8a; }
+.shell-credits ul { padding-left: 22px; }
+.shell-credits a { color: #9ccaff; text-underline-offset: 3px; }

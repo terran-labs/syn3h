@@ -12,6 +12,7 @@ import { Starfield } from './Starfield'
 import { Scoreboard } from './Scoreboard'
 import { canEditWorld, hostControls } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
+import { creditsHtml } from './data/credits'
 import { generateName } from './data/names'
 import { Minimap, type MapEntity } from './Minimap'
 import { bootLoading } from './LoadingScreen'
@@ -75,7 +76,7 @@ export class Shell implements System {
         <section data-panel="music">${heading('Music & Sound')}<label for="shell-track">Music</label><select id="shell-track">${Object.entries(MUSIC_TRACKS).map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select><label for="music-volume">Music volume <output id="music-volume-value"></output></label><input id="music-volume" type="range" min="0" max="1" step="0.01"><button class="shell-mute" aria-pressed="false">Mute all audio</button><p class="panel-note">Music starts with your first click or key press.</p>${back}</section>
         <section data-panel="multiplayer">${heading('Multiplayer')}<p class="multiplayer-room"></p><button class="shell-invite">Copy invite link</button><div class="shell-scoreboard" aria-label="Player scores"></div>${back}</section>
         <section data-panel="advanced">${heading('Advanced Settings')}<p class="world-lock-note" hidden>Sliders locked by host.</p><div class="advanced-host"></div>${back}</section>
-        <section data-panel="about">${heading('About Syn3h')}<p>From the creator of Mars Explorer.</p><p>Drive, fly and explore together.</p><p class="panel-note">The current world is a procedural volcano. Use Create to change the seed, sky and time of day.</p>${back}</section>
+        <section data-panel="about">${heading('About Syn3h')}${creditsHtml}${back}</section>
       </div>
       <footer class="lobby-footer"><span>Syn3h</span><span class="shell-message" role="status" aria-live="polite"></span><span>Browser edition</span></footer>
     </section>
@@ -205,7 +206,7 @@ export class Shell implements System {
       if (this.menuVisible && this.panels.active !== 'index') this.showPanel('index')
       else if (this.started) this.menuVisible ? this.closeMenu() : this.openMenu()
     } else if (this.menuVisible && event.key === 'Tab') {
-      const targets = [...this.overlay.querySelectorAll<HTMLElement>('button, input, select, [tabindex="0"]')].filter(el => !el.closest('[hidden], [inert]') && !(el as HTMLInputElement).disabled)
+      const targets = [...this.overlay.querySelectorAll<HTMLElement>('button, input, select, summary, a[href], [tabindex="0"]')].filter(el => !el.closest('[hidden], [inert]') && !(el as HTMLInputElement).disabled)
       const first = targets[0], last = targets[targets.length - 1]
       if (event.shiftKey && (document.activeElement === first || !targets.includes(document.activeElement as HTMLElement))) { event.preventDefault(); last?.focus() }
       else if (!event.shiftKey && (document.activeElement === last || !targets.includes(document.activeElement as HTMLElement))) { event.preventDefault(); first?.focus() }
