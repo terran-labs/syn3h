@@ -36,7 +36,7 @@ export class Shell implements System {
       <p class="shell-message" role="status" aria-live="polite"></p>
     </div></section>
     <div class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="shell-status" role="status"></div></div>
-    <div class="shell-audio"><label for="shell-track">MUSIC</label><select id="shell-track" aria-label="Music track"><option>Classic</option><option>Ambient</option><option>Carefree</option></select><button type="button" class="shell-mute" aria-pressed="false">Mute</button></div>`
+    <div class="shell-audio"><label for="shell-track">MUSIC</label><select id="shell-track" aria-label="Music track"><option value="SpaceStation">Space Station</option><option>Classic</option><option>Ambient</option><option>Carefree</option></select><button type="button" class="shell-mute" aria-pressed="false">Mute</button></div>`
     document.body.append(this.element)
     document.body.classList.add('has-game-shell')
     this.overlay = this.element.querySelector('.shell-start')!

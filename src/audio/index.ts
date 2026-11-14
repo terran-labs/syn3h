@@ -5,7 +5,7 @@ import { Engine, type MotionAudio } from './Engine'
 import { crossfade, effectsVolume, masterVolume, musicVolume, muted } from './params'
 
 export type Sound = 'laserShot' | 'laserHit' | 'materialize'
-export type MusicTrack = 'Classic' | 'Carefree' | 'Ambient'
+export type MusicTrack = 'SpaceStation' | 'Classic' | 'Carefree' | 'Ambient'
 export interface Position { x: number; y: number; z: number }
 const files: Record<Sound | 'wind', string> = { laserShot: 'LaserShot.mp3', laserHit: 'LaserHit.mp3', materialize: 'Materialize.mp3', wind: 'Wind.wav' }
 interface Deck { element: HTMLAudioElement; source: MediaElementAudioSourceNode; gain: GainNode; stopTimer?: ReturnType<typeof setTimeout> }
@@ -23,7 +23,7 @@ export class GameAudio implements System {
   private readonly up = new THREE.Vector3()
   private readonly position = new THREE.Vector3()
   private readonly rotation = new THREE.Quaternion()
-  private selected: MusicTrack = 'Classic'
+  private selected: MusicTrack = 'SpaceStation'
   private disposed = false
   private loads?: Promise<void>
   private readonly gestures = new AbortController()

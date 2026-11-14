@@ -1,8 +1,8 @@
 {
-  "tagline": "Mars Explorer's buggy, a procedural volcano world and multiplayer laser tag, native in the browser.",
+  "tagline": "Syn3h, rebuilt native in the browser: its vehicles, its physics, its lobby and its look.",
   "deadline": "Demo: Sunday noon, Coeur d'Alene",
-  "updated": "Saturday 3:25pm PT",
-  "headline": "Milestone 1 is playable: the original buggy physics on a procedural Martian volcano world, under a live alien sky, with multiplayer connected.",
+  "updated": "Saturday 3:50pm PT",
+  "headline": "Course correction from the owner: Syn3h is the reference for everything. The first buggy pass was judged not good enough, so the Syn3h buggy, physics, interface and music are now the priority.",
   "previews": [
     {
       "title": "Play the current build",
@@ -52,24 +52,19 @@
       "detail": "Lasers, tagging by ram or shot, scores."
     },
     {
-      "state": "active",
-      "title": "Two buggies: classic Mars Explorer and Syn3h",
-      "detail": "Both selectable. The Syn3h model is converted; the classic body is being recovered from the Unity project."
+      "state": "done",
+      "title": "Bots that chase and ram you",
+      "detail": "Merged. Set the bots slider to drop them in."
     },
     {
-      "state": "active",
-      "title": "Lava, flames, embers and smoke",
-      "detail": "Flowing lava lake and rivers, GPU particles at volcanic vents."
+      "state": "done",
+      "title": "Lava, flames, embers and smoke effects",
+      "detail": "Merged as modules. Placement on the volcano comes with the second terrain pass."
     },
     {
-      "state": "active",
-      "title": "Sound, phone controls and start screen",
-      "detail": "Original soundtrack and effects, engine audio, touch controls, name and invite link."
-    },
-    {
-      "state": "active",
-      "title": "Force field wings and lava buoyancy",
-      "detail": "The buggy's glide mode and skipping across lava."
+      "state": "done",
+      "title": "Sound engine, phone controls, first start screen",
+      "detail": "Merged. The start screen is being replaced by the Syn3h lobby."
     },
     {
       "state": "active",
@@ -77,9 +72,19 @@
       "detail": "Second terrain pass, using the lava and particle modules."
     },
     {
-      "state": "next",
-      "title": "Bots that chase and ram you",
-      "detail": "The original bot system, with a slider for how many."
+      "state": "active",
+      "title": "Syn3h buggy on Syn3h physics, at full size",
+      "detail": "Ported from VhiclBuggy.cs and the Syn3h prefab, with the real model. Judged by how it drives, not only by tests."
+    },
+    {
+      "state": "active",
+      "title": "Syn3h interface: lobby, sliding panels, logo, music",
+      "detail": "Recreated from the Unity UI source. Mars Explorer music is no longer the default."
+    },
+    {
+      "state": "active",
+      "title": "Syn3h jet and hovercraft",
+      "detail": "From the Syn3h source, prefab values and models."
     },
     {
       "state": "next",
@@ -88,20 +93,20 @@
     },
     {
       "state": "next",
-      "title": "Hovercraft, jet and tank",
-      "detail": "Ported from the original scripts after the buggy skins."
+      "title": "Demo rehearsal",
+      "detail": "Full run through on the demo hardware and network, with a fallback plan."
     },
     {
       "state": "next",
-      "title": "Demo rehearsal",
-      "detail": "Full run through on the demo hardware and network, with a fallback plan."
+      "title": "Force field wings and lava buoyancy",
+      "detail": "After the Syn3h buggy drives well."
     }
   ],
   "workers": [
     {
       "state": "active",
-      "name": "Buggy, second pass (Claude 1)",
-      "detail": "Force field wing flight, lava buoyancy, both buggy models wired in."
+      "name": "Syn3h buggy (Claude 1)",
+      "detail": "Porting VhiclBuggy.cs with the Syn3h prefab values and full size model; tuning by driving it."
     },
     {
       "state": "active",
@@ -111,27 +116,22 @@
     {
       "state": "active",
       "name": "Multiplayer follow-ups (Claude 1)",
-      "detail": "Player names, vehicle choice and colours over the network, bots for everyone."
-    },
-    {
-      "state": "done",
-      "name": "Sky and lighting (Claude 1)",
-      "detail": "Merged. Four sky presets, cascaded shadows, live time of day."
+      "detail": "Vehicle choice, colours and name tags over the network, bots for everyone, sound hooks."
     },
     {
       "state": "active",
-      "name": "Codex 1: other vehicles",
-      "detail": "Both buggy skins are merged. Now hovercraft, then jet and tank."
+      "name": "Codex 1: Syn3h jet and hovercraft",
+      "detail": "Re-porting from the Syn3h source and listing every Syn3h vehicle."
+    },
+    {
+      "state": "waiting",
+      "name": "Codex 2",
+      "detail": "Bots and effects delivered. Next: wiring lava and flames onto the volcano, then performance on phones."
     },
     {
       "state": "active",
-      "name": "Codex 2: bots",
-      "detail": "Lava and particle effects are merged. Now the chasing bots."
-    },
-    {
-      "state": "active",
-      "name": "Codex 3: sound, touch, start screen",
-      "detail": "Committed, in final browser checks."
+      "name": "Codex 3: Syn3h interface",
+      "detail": "Reconstructing the lobby, sliding panels, logo animation and music from the Unity source."
     },
     {
       "state": "active",
@@ -172,7 +172,7 @@
     {
       "state": "active",
       "name": "Claude 1",
-      "detail": "Orchestrator plus four builders. Reset this one first if it runs low; if it runs dry the coordination stops."
+      "detail": "Weekly limit reset by the owner Saturday afternoon. Runs the orchestrator and three builders."
     },
     {
       "state": "blocked",
