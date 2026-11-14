@@ -27,6 +27,11 @@ async function main(): Promise<void> {
   const player = createVehicle(game, terrain, 'buggy', spawn.position, spawn.heading)
   player.isLocal = true
   game.add(player)
+  // A new seed or terrain parameter rebuilds the ground in place: put the player back on it.
+  terrain.onRegenerate?.(() => {
+    const s = terrain.spawnPoint(0)
+    player.teleport(s.position, s.heading)
+  })
 
   const camera = game.add(new ChaseCamera(game, terrain))
   camera.target = player.object
