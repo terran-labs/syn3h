@@ -1,8 +1,8 @@
 /**
- * One remote player: their vehicle, their snapshot buffer, and the proxy rule from
- * VehicleNet.js. Near the local player the vehicle stays a dynamic body, nudged toward the
- * snapshot pose and given the snapshot's velocities, so collisions with us are real physics.
- * Farther away it is kinematic and placed exactly.
+ * One remote vehicle (a player, or a bot the host simulates): the vehicle, its snapshot
+ * buffer, and the proxy rule from VehicleNet.js. Near the local player the vehicle stays a
+ * dynamic body, nudged toward the snapshot pose and given the snapshot's velocities, so
+ * collisions with us are real physics. Farther away it is kinematic and placed exactly.
  */
 import * as THREE from 'three/webgpu'
 import type { PlayerInfo, WireState } from '../../shared/protocol'
@@ -18,6 +18,7 @@ export class RemotePlayer {
   readonly sample: Sample = emptySample()
   physical = true
   responding = true
+  paused = false
   /** Currently in contact with the local vehicle. */
   touching = false
   lastRamSent = -Infinity
@@ -25,14 +26,19 @@ export class RemotePlayer {
   private readonly q = new THREE.Quaternion()
   private readonly qt = new THREE.Quaternion()
 
-  constructor(public info: PlayerInfo, readonly vehicle: Vehicle) {
+  /**
+   * `owned` is false when the vehicle belongs to someone else (a bot manager's vehicle that
+   * this client merely steers); then releasing it must not dispose it.
+   */
+  constructor(public info: PlayerInfo, public vehicle: Vehicle, readonly owned = true) {
     vehicle.isLocal = false
     vehicle.id = String(info.id)
     vehicle.name = info.name
+    this.physical = vehicle.body.bodyType() === RAPIER.RigidBodyType.Dynamic
   }
 
   push(s: WireState, now: number, sendRate: number): void {
-    this.buffer.push({ t: s.t, p: s.p, q: s.q, v: s.v, w: s.w, input: s.input }, now, sendRate)
+    this.buffer.push({ t: s.t, p: s.p, q: s.q, v: s.v, w: s.w, input: s.input, paused: s.paused }, now, sendRate)
   }
 
   /** Run before the vehicle's own fixed step. */
@@ -40,19 +46,17 @@ export class RemotePlayer {
     const s = this.buffer.sample(renderTime, maxExtrapolate, this.sample)
     if (s.mode === 'empty') return
     this.responding = s.mode !== 'stale'
+    this.paused = s.paused
     Object.assign(this.vehicle.input, s.input)
 
     const body = this.vehicle.body
     const cur = body.translation()
     const near = Math.hypot(cur.x - localPos.x, cur.y - localPos.y, cur.z - localPos.z) < radius
-    const physical = near && this.responding
-    if (physical !== this.physical) {
-      body.setBodyType(physical ? RAPIER.RigidBodyType.Dynamic : RAPIER.RigidBodyType.KinematicPositionBased, true)
-      this.physical = physical
-    }
+    // A parked (hidden tab) vehicle is frozen on its owner's screen, so it is a wall here too.
+    this.setPhysical(near && this.responding && !this.paused)
 
     const [px, py, pz] = s.p
-    if (!physical) {
+    if (!this.physical) {
       body.setNextKinematicTranslation({ x: px, y: py, z: pz })
       body.setNextKinematicRotation({ x: s.q[0], y: s.q[1], z: s.q[2], w: s.q[3] })
       return
@@ -65,5 +69,21 @@ export class RemotePlayer {
     body.setRotation(this.q, true)
     body.setLinvel({ x: s.v[0], y: s.v[1], z: s.v[2] }, true)
     body.setAngvel({ x: s.w[0], y: s.w[1], z: s.w[2] }, true)
+  }
+
+  setPhysical(physical: boolean): void {
+    if (physical === this.physical) return
+    this.vehicle.body.setBodyType(physical ? RAPIER.RigidBodyType.Dynamic : RAPIER.RigidBodyType.KinematicPositionBased, true)
+    this.physical = physical
+  }
+
+  /** The terrain changed under us: park on the new ground until fresh states arrive. */
+  reseat(heightAt: (x: number, z: number) => number): void {
+    this.buffer.clear()
+    this.setPhysical(false)
+    const t = this.vehicle.body.translation()
+    const y = heightAt(t.x, t.z) + 1.5
+    this.vehicle.body.setTranslation({ x: t.x, y, z: t.z }, true)
+    this.vehicle.body.setNextKinematicTranslation({ x: t.x, y, z: t.z })
   }
 }

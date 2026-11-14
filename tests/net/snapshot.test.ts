@@ -70,6 +70,16 @@ describe('SnapshotBuffer', () => {
     expect(b.delay(0.02, 0.25)).toBe(0.25)
   })
 
+  it('holds a paused vehicle still and keeps it responding through slow heartbeats', () => {
+    const b = new SnapshotBuffer()
+    b.push({ ...snap(0, 3, 10), paused: true }, 0)
+    const s = b.sample(30, 1)
+    expect(s.mode).toBe('extrapolate')
+    expect(s.paused).toBe(true)
+    expect(s.p[0]).toBe(3)
+    expect(b.sample(200, 1).mode).toBe('stale')
+  })
+
   it('picks the shortest arc between quaternions', () => {
     const b = new SnapshotBuffer()
     b.push({ ...snap(0, 0), q: [0, 0, 0, 1] }, 0)

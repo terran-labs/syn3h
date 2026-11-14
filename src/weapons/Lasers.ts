@@ -16,16 +16,17 @@ import { FIXED_DT, GROUP_ALL, GROUP_LIQUID, GROUP_PROJECTILE, RAPIER, groups } f
 import { laserGravity, laserLifetime, laserRicochet, laserSpeed } from './params'
 
 export interface LaserHooks {
-  /** Rigid body handle of the local player's vehicle. */
-  localBody(): RAPIER.RigidBody
-  /** Local player id, or 0 offline. */
-  localId(): number
-  /** Body of a player's vehicle, local or remote, if it exists here. */
+  /** Body of a player's (or bot's) vehicle, local or remote, if it exists here. */
   bodyOf(playerId: number): RAPIER.RigidBody | undefined
-  /** True if the body belongs to some player's vehicle. */
+  /**
+   * If this client judges hits on the vehicle with this body handle (its own player, and the
+   * bots when it is host), that vehicle's id; otherwise null.
+   */
+  judgedId(handle: number): number | null
+  /** True if the body belongs to some vehicle simulated elsewhere. */
   isVehicleBody(handle: number): boolean
-  /** A shot from someone else hit the local vehicle. */
-  onLocalHit(shooter: number, shot: number): void
+  /** A shot hit a vehicle this client judges. */
+  onHit(shooter: number, shot: number, victim: number, at: THREE.Vector3): void
 }
 
 interface Projectile {
@@ -174,10 +175,7 @@ export class Lasers implements System {
     this.ray.origin = { x: p.pos.x, y: p.pos.y, z: p.pos.z }
     this.ray.dir = { x: dir.x, y: dir.y, z: dir.z }
 
-    const local = this.hooks.localBody()
-    const localId = this.hooks.localId()
     const shooterBody = this.hooks.bodyOf(p.shooter)
-    const ownShot = p.shooter === localId
     const hit = this.game.world.castRayAndGetNormal(
       this.ray, dist, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, groups(GROUP_PROJECTILE, GROUP_ALL & ~GROUP_LIQUID),
       undefined, shooterBody,
@@ -186,7 +184,8 @@ export class Lasers implements System {
         if (!parent) return true
         // The launcher is immune (Rocket.js 79).
         if (shooterBody && parent.handle === shooterBody.handle) return false
-        if (parent.handle === local.handle) return !ownShot
+        const judged = this.hooks.judgedId(parent.handle)
+        if (judged !== null) return judged !== p.shooter
         // Remote vehicles are judged by their own clients.
         return !this.hooks.isVehicleBody(parent.handle)
       },
@@ -197,8 +196,9 @@ export class Lasers implements System {
     }
     const point = new THREE.Vector3(p.pos.x + dir.x * hit.timeOfImpact, p.pos.y + dir.y * hit.timeOfImpact, p.pos.z + dir.z * hit.timeOfImpact)
     const parent = hit.collider.parent()
-    if (parent && parent.handle === local.handle) {
-      this.hooks.onLocalHit(p.shooter, p.id)
+    const victim = parent ? this.hooks.judgedId(parent.handle) : null
+    if (victim !== null) {
+      this.hooks.onHit(p.shooter, p.id, victim, point)
       this.flash(point)
       this.kill(this.shots.indexOf(p))
       return
