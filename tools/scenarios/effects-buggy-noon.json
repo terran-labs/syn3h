@@ -1,0 +1,67 @@
+{
+  "name": "buggy effects noon",
+  "durationMs": 10000,
+  "captureEveryMs": 1500,
+  "settleMs": 1000,
+  "events": [
+    {
+      "atMs": 0,
+      "params": {
+        "sun.timeOfDay": 12,
+        "bots.count": 0
+      },
+      "teleport": {
+        "x": 280,
+        "z": 280,
+        "heading": 3.14,
+        "clearance": 1
+      },
+      "down": [
+        "KeyW"
+      ]
+    },
+    {
+      "atMs": 3000,
+      "down": [
+        "KeyD"
+      ]
+    },
+    {
+      "atMs": 4000,
+      "up": [
+        "KeyD"
+      ]
+    },
+    {
+      "atMs": 5000,
+      "up": [
+        "KeyW"
+      ],
+      "down": [
+        "ShiftLeft"
+      ]
+    },
+    {
+      "atMs": 6500,
+      "up": [
+        "ShiftLeft"
+      ],
+      "teleport": {
+        "x": 280,
+        "z": 280,
+        "heading": 3.14,
+        "clearance": 30
+      },
+      "down": [
+        "Space",
+        "KeyW"
+      ]
+    },
+    {
+      "atMs": 6600,
+      "up": [
+        "Space"
+      ]
+    }
+  ]
+}
