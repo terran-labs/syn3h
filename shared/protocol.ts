@@ -266,8 +266,8 @@ export type ClientMessage =
   | { type: 'lock'; locked: boolean }
   /** Host only: the King of the Hill zone it computed from the terrain. */
   | { type: 'zone'; zone: HillZone }
-  /** My vehicle touched lava or fell off the world. */
-  | { type: 'died'; cause: 'lava' | 'fell' }
+  /** My vehicle (or, from the host, bot `bot`) touched lava or fell off the world. */
+  | { type: 'died'; cause: 'lava' | 'fell'; bot?: number }
 
 export type TagEvent =
   | 'default' | 'ram' | 'laser' | 'score' | 'leave' | 'lock' | 'host'

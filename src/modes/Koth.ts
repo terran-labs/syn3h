@@ -14,6 +14,22 @@ export type DeathCause = 'lava' | 'fell'
 /** Touching counts a little above the surface: wheels dip in before the body does. */
 const LAVA_MARGIN = 0.3
 
+/** The terrain methods this reads. `liquidKindAt` is optional and newer than the rest. */
+type LiquidTerrain = Pick<Terrain, 'liquidHeightAt'> & {
+  liquidKindAt?(x: number, z: number): 'lava' | 'water' | null
+}
+
+/**
+ * True if a vehicle at `p` is in a liquid that eliminates. Where the terrain can tell lava
+ * from water, only lava does (water floats); where it cannot, any liquid does.
+ */
+export function inDeadlyLiquid(terrain: LiquidTerrain, p: { x: number; y: number; z: number }): boolean {
+  const surface = terrain.liquidHeightAt?.(p.x, p.z) ?? -Infinity
+  if (!Number.isFinite(surface) || p.y >= surface + LAVA_MARGIN) return false
+  if (!terrain.liquidKindAt) return true
+  return terrain.liquidKindAt(p.x, p.z) === 'lava'
+}
+
 export class LocalLife {
   /** Game time when the vehicle comes back, or 0 while alive. */
   private outUntil = 0
@@ -34,9 +50,8 @@ export class LocalLife {
       return
     }
     const p = this.player.body.translation()
-    const lava = this.terrain.liquidHeightAt?.(p.x, p.z) ?? -Infinity
     const half = this.terrain.size * 0.5
-    if (Number.isFinite(lava) && p.y < lava + LAVA_MARGIN) this.die('lava')
+    if (inDeadlyLiquid(this.terrain, p)) this.die('lava')
     else if (p.y < -250 || Math.abs(p.x) > half * 1.5 || Math.abs(p.z) > half * 1.5) this.die('fell')
   }
 

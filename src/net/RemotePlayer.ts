@@ -23,6 +23,8 @@ export class RemotePlayer {
   touching = false
   lastRamSent = -Infinity
   delay = 0.1
+  /** Removes this vehicle's effects; call before removing the vehicle. */
+  disposeEffects: () => void = () => {}
   private readonly q = new THREE.Quaternion()
   private readonly qt = new THREE.Quaternion()
 

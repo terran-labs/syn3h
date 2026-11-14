@@ -93,6 +93,11 @@ const MAX_STATES_PER_SECOND = 70
 const MAX_JSON_PER_SECOND = 40
 /** A player whose state is older than this cannot ram or be rammed (the original's isResponding). */
 const RESPONDING_MS = 1500
+/**
+ * A bot holds or contests the hill only while moving faster than this (m/s): a parked or
+ * stuck bot must not block the hill forever. People count whether moving or not.
+ */
+const BOT_CONTEST_SPEED = 2
 /** A bot the host has not updated for this long is gone (bot count lowered, or no host). */
 const BOT_EXPIRY_MS = 5000
 
@@ -195,7 +200,13 @@ export class Room {
         this.onZone(player, msg.zone)
         break
       case 'died':
-        this.onDied(player)
+        if (typeof msg.bot === 'number') {
+          // Only the host simulates bots, so only the host can say one fell in.
+          const bot = this.bots.get(msg.bot)
+          if (bot && player.info.id === this.host) this.onDied(bot)
+        } else {
+          this.onDied(player)
+        }
         break
     }
   }
@@ -482,7 +493,8 @@ export class Room {
     for (const p of [...this.players.values(), ...this.bots.values()]) {
       const st = p.lastState
       const fresh = now - p.lastStateAt <= (p.info.bot ? BOT_EXPIRY_MS : RESPONDING_MS)
-      if (st && fresh && !st.paused && !k.out[p.info.id] && inZone(zone, st.p)) inside.push(p)
+      const counts = !p.info.bot || (st !== null && Math.hypot(...st.v) > BOT_CONTEST_SPEED)
+      if (st && fresh && !st.paused && !k.out[p.info.id] && inZone(zone, st.p) && counts) inside.push(p)
     }
     const holder = inside.length === 1 && !inside[0].info.bot ? inside[0].info.id : 0
     const contested = inside.length >= 2
