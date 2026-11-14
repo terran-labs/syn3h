@@ -3,6 +3,7 @@ import { Quaternion, Scene, Vector3 } from 'three/webgpu'
 import type { Game, System } from '../../src/core/Game'
 import { emptyInput } from '../../src/core/Input'
 import { createWorld, initPhysics, RAPIER } from '../../src/core/physics'
+import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
 import { PlaceholderVehicle } from '../../src/vehicles/Vehicle'
 import type { Terrain } from '../../src/world/Terrain'
 import { BotBrain } from '../../src/bots/BotBrain'
@@ -37,9 +38,9 @@ function stationaryTarget(game: Game, position = new Vector3(0, 0.5, 0)) {
   return target
 }
 describe('bot pursuit', () => {
-  it('closes distance and makes real Rapier contact with a stationary target', () => {
+  it.each(['placeholder', 'syn3h'])('%s closes distance and makes real Rapier contact with a stationary target', kind => {
     const { game, step } = harness(), target = stationaryTarget(game)
-    const bot = new PlaceholderVehicle(game, terrain, new Vector3(0, 0.5, 25))
+    const bot = kind === 'syn3h' ? new Syn3hBuggy(game, terrain, new Vector3(0, 1, 25)) : new PlaceholderVehicle(game, terrain, new Vector3(0, 0.5, 25))
     const brain = game.add(new BotBrain(game, terrain, bot, target)); game.add(bot)
     let contact = false, nearest = Infinity
     for (let i = 0; i < 750 && !contact; i++) {
@@ -94,6 +95,23 @@ describe('bot pursuit', () => {
   })
 })
 describe('bot population', () => {
+  it('preserves network input and position when ownership switches to remote', () => {
+    const { game, systems } = harness(), player = stationaryTarget(game)
+    const manager = new BotManager(game, terrain, player)
+    params.set('bots.count', 2); manager.update(); manager.remote = true
+    const bot = manager.vehicles[0], initial = { ...bot.body.translation() }
+    bot.input.x = 0.37; bot.input.y = -0.4
+    for (const brain of systems.filter(s => s instanceof BotBrain)) {
+      for (let i = 0; i < 100; i++) brain.fixedUpdate?.(0.2)
+    }
+    expect(bot.input.x).toBe(0.37); expect(bot.input.y).toBe(-0.4)
+    expect(bot.body.translation()).toEqual(initial)
+    expect(new Set(manager.vehicles.map(v => v.colors.body)).size).toBe(2)
+    manager.remote = false
+    systems[0].fixedUpdate?.(0.02)
+    expect(bot.input.y).toBeGreaterThan(0)
+    manager.dispose()
+  })
   it('spawns and removes bodies and systems when count changes', () => {
     const { game, systems } = harness(), player = stationaryTarget(game)
     const manager = new BotManager(game, terrain, player)

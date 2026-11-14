@@ -10,6 +10,13 @@ export class BotManager implements System {
   private readonly brains: BotBrain[] = []
   private targets: readonly Vehicle[]
   private disposed = false
+  private isRemote = false
+  /** Networking owns inputs and rescue decisions on non-host clients. */
+  get remote() { return this.isRemote }
+  set remote(value: boolean) {
+    this.isRemote = value
+    for (const brain of this.brains) brain.remote = value
+  }
   get vehicles(): readonly Vehicle[] { return this.bots }
   constructor(private readonly game: Game, private readonly terrain: BotTerrain, private readonly player: Vehicle) { this.targets = [player] }
   setTargets(vehicles: readonly Vehicle[]) {
@@ -28,10 +35,13 @@ export class BotManager implements System {
       const heading = Math.atan2(x - center.x, z - center.z)
       const bot = createVehicle(this.game, this.terrain, 'buggy', new Vector3(x, this.terrain.heightAt(x, z) + 2, z), heading)
       bot.isLocal = false; bot.id = `bot-${index}`; bot.name = `Bot ${index + 1}`
+      bot.setColors(`hsl(${(index * 137.508 + 15) % 360}, 85%, 55%)`, '#ffffff')
       const brain = new BotBrain(this.game, this.terrain, bot, this.player, index)
+      brain.remote = this.remote
       brain.setTargets(this.targets)
       // Register brain first so its input reaches the vehicle in the same physics step.
       this.game.add(brain); this.game.add(bot); this.brains.push(brain); this.bots.push(bot)
+      for (const controller of this.brains) controller.setPeers(this.bots)
       return true
     }
     return false

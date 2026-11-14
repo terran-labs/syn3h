@@ -1,0 +1,16 @@
+import { describe, expect, it } from 'vitest'
+import { roadWaypoint } from '../../src/bots/navigation'
+describe('optional road navigation', () => {
+  const points = [{x:0,z:0}, {x:0,z:10}, {x:10,z:10}, {x:20,z:10}]
+  it('accepts public plain paths and legacy road objects with identical results', () => {
+    const args = [{x:0,z:0}, {x:20,z:10}, 12] as const
+    const expected = {x:10,z:10}
+    expect(roadWaypoint({roadPaths:()=>[points]}, ...args)).toEqual(expected)
+    expect(roadWaypoint({data:{roads:[{points}]}}, ...args)).toEqual(expected)
+    expect(roadWaypoint({}, ...args)).toBeNull()
+  })
+  it('follows the reverse direction and refuses a distant road', () => {
+    expect(roadWaypoint({roadPaths:()=>[points]}, points[3], points[0], 12)).toEqual(points[1])
+    expect(roadWaypoint({roadPaths:()=>[points]}, {x:300,z:300}, points[0], 12)).toBeNull()
+  })
+})

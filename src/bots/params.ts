@@ -12,3 +12,6 @@ export const stuckDistance = number('stuckDistance', 'Stuck minimum movement', 1
 export const recoveryTime = number('recoveryTime', 'Rescue after seconds', 8, 3, 30)
 export const fireInterval = number('fireInterval', 'Fire interval', 1, 0.1, 5)
 export const spawnRadius = number('spawnRadius', 'Spawn radius', 24, 10, 100)
+
+export const approachSpread = number('approachSpread', 'Approach spread', 8, 0, 20)
+export const cornerSpeed = number('cornerSpeed', 'Corner speed', 12, 4, 30)
