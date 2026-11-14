@@ -168,3 +168,18 @@
   .syn3h-shell.has-match .shell-toast { top: 405px; }
   .syn3h-shell.match-announcing .shell-toast { display: none; }
 }
+
+.invite-qr { width: min(240px,100%); margin: 12px auto; }
+.invite-qr svg { display: block; width: 100%; height: auto; }
+.menu-qr { width: 120px; margin-left: 0; }
+.invite-link, .join-room { overflow-wrap: anywhere; font-size: 14px; }
+.join-view { position: fixed; inset: 0; z-index: 80; background: radial-gradient(ellipse at top,#172540,#03060c 75%); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px; overflow: auto; text-align: center; }
+.join-view > img { width: 240px; max-height: 100px; object-fit: contain; }
+.syn3h-shell .join-view h1 { margin: 0; font-size: 42px; }
+.syn3h-shell .join-view p { margin: 5px 0; max-width: 90vw; }
+.join-view .join-room { font-size: 26px; }
+.join-view .invite-qr { width: min(60vh,600px,85vw); margin: 12px 0; }
+.join-view .invite-link { font-size: 18px; }
+.join-view .join-count { font-size: 20px; }
+.join-view > div:last-child { display: flex; gap: 12px; margin-top: 12px; }
+@media(max-width:700px) { .menu-qr { width: 96px; margin: 8px auto; } .lobby-panels > .lobby-index { justify-content: flex-start; } .join-view > img { width: 190px; } .syn3h-shell .join-view h1 { font-size: 30px; } .join-view .join-room { font-size: 20px; } .join-view .invite-link { font-size: 13px; } .join-view .invite-qr { width: min(42vh,85vw); } }

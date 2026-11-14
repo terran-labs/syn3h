@@ -9,7 +9,8 @@ import { TouchControls } from './TouchControls'
 import { readVehicleChoice, saveVehicleChoice, VehiclePreview, type VehicleChoice } from './VehicleChoice'
 import { SlidingPanels } from './SlidingPanels'
 import { Starfield } from './Starfield'
-import { Scoreboard } from './Scoreboard'
+import { InviteView, inviteUrl, renderQr } from './InviteView'
+import { Scoreboard, parseScoreRow } from './Scoreboard'
 import { canEditWorld, hostControls } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
 import { MatchHud, type MatchState } from './MatchHud'
@@ -33,6 +34,11 @@ export class Shell implements System {
   private readonly overlay: HTMLElement
   private readonly speed: HTMLElement
   private readonly choice: VehicleChoice = readVehicleChoice()
+  private readonly invite: InviteView
+  private inviteOpen = false
+  private inviteFromGame = false
+  private playerCount = 0
+  private lastInviteUrl = ''
   private readonly matchHud: MatchHud
   private minimap?: Minimap
   private preview?: VehiclePreview
@@ -56,8 +62,8 @@ export class Shell implements System {
       <header class="lobby-brand"><img class="shell-logo" src="/brand/syn3h.png" alt="Syn3h" width="512" height="256"></header>
       <div class="lobby-panels">
         <section data-panel="index" class="lobby-index">
-          <div class="lobby-message"><h1 tabindex="-1">Explore. Create. Connect.</h1><p>Choose your vehicle and explore a world together.</p><p class="lobby-room-label"></p><div class="lobby-links"><button data-goto="about">About</button><button data-goto="settings">Settings</button><button data-goto="multiplayer">Community</button></div></div>
-          <nav class="lobby-destinations" aria-label="Lobby"><button data-goto="explore">Explore</button><button data-goto="vehicle">Vehicle</button><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button class="return-game" data-resume hidden>Return to Game</button></nav>
+          <div class="lobby-message"><h1 tabindex="-1">Explore. Create. Connect.</h1><p>Choose your vehicle and explore a world together.</p><p class="lobby-room-label"></p><div class="invite-qr menu-qr"></div><div class="lobby-links"><button data-goto="about">About</button><button data-goto="settings">Settings</button><button data-goto="multiplayer">Community</button></div></div>
+          <nav class="lobby-destinations" aria-label="Lobby"><button data-goto="explore">Explore</button><button data-goto="vehicle">Vehicle</button><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR · J</button><button class="return-game" data-resume hidden>Return to Game</button></nav>
         </section>
         <section data-panel="explore">${heading('Prepare to Explore')}
           <form class="shell-form"><label for="shell-name">Player name</label><input id="shell-name" name="playerName" maxlength="24" autocomplete="nickname" placeholder="Explorer">
@@ -76,7 +82,7 @@ export class Shell implements System {
         </section>
         <section data-panel="settings">${heading('Settings')}<div class="settings-links"><button data-goto="music">Music & sound</button><button data-goto="worlds">World & sky</button><button data-goto="advanced">Advanced sliders</button></div><fieldset class="host-controls"><legend>Host</legend><label class="host-lock" hidden><input type="checkbox" id="host-lock"> Lock shared sliders</label><p class="host-note"></p></fieldset>${back}</section>
         <section data-panel="music">${heading('Music & Sound')}<label for="shell-track">Music</label><select id="shell-track">${Object.entries(MUSIC_TRACKS).map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select><label for="music-volume">Music volume <output id="music-volume-value"></output></label><input id="music-volume" type="range" min="0" max="1" step="0.01"><button class="shell-mute" aria-pressed="false">Mute all audio</button><p class="panel-note">Music starts with your first click or key press.</p>${back}</section>
-        <section data-panel="multiplayer">${heading('Multiplayer')}<label class="mode-control" hidden>Game mode<select id="game-mode"><option value="0">Tag</option><option value="1">King of the Hill</option></select></label><p class="multiplayer-room"></p><button class="shell-invite">Copy invite link</button><div class="shell-scoreboard" aria-label="Player scores"></div>${back}</section>
+        <section data-panel="multiplayer">${heading('Multiplayer')}<label class="mode-control" hidden>Game mode<select id="game-mode"><option value="0">Tag</option><option value="1">King of the Hill</option></select></label><p class="multiplayer-room"></p><div class="invite-qr"></div><p class="invite-link"></p><button class="shell-invite">Copy invite link</button><button data-join>Show on screen · J</button><div class="shell-scoreboard" aria-label="Player scores"></div>${back}</section>
         <section data-panel="advanced">${heading('Advanced Settings')}<p class="world-lock-note" hidden>Sliders locked by host.</p><div class="advanced-host"></div>${back}</section>
         <section data-panel="about">${heading('About Syn3h')}${creditsHtml}${back}</section>
       </div>
@@ -87,6 +93,7 @@ export class Shell implements System {
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small>H or ? to show again</small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
     document.body.append(this.element); document.body.classList.add('has-game-shell')
+    this.invite = new InviteView(this.element, () => this.closeJoin(), () => { void this.copyInvite() })
     this.matchHud = new MatchHud(this.element)
     this.overlay = this.element.querySelector('.shell-overlay')!
     this.nameInput = this.element.querySelector('#shell-name')!; this.roomInput = this.element.querySelector('#shell-room')!
@@ -116,6 +123,7 @@ export class Shell implements System {
     }
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-goto]')) button.addEventListener('click', () => this.showPanel(button.dataset.goto!), { signal })
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-open]')) button.addEventListener('click', () => this.openMenu(button.dataset.open!), { signal })
+    for (const button of this.element.querySelectorAll('[data-join]')) button.addEventListener('click', () => this.openJoin(), { signal })
     this.element.querySelector('.shell-menu-button')!.addEventListener('click', () => this.openMenu(), { signal })
     this.element.querySelector('[data-resume]')!.addEventListener('click', () => this.closeMenu(), { signal })
     this.element.querySelector('form')!.addEventListener('submit', event => { event.preventDefault(); this.play() }, { signal })
@@ -152,6 +160,28 @@ export class Shell implements System {
   private updateRoomLabels(): void {
     this.element.querySelector('.lobby-room-label')!.textContent = `Room: ${this.room}`
     this.element.querySelector('.multiplayer-room')!.textContent = `Room: ${this.room}`
+    this.updateInvite()
+  }
+  private updateInvite(): void {
+    const url = inviteUrl(location.origin, this.room)
+    if (url !== this.lastInviteUrl) {
+      this.lastInviteUrl = url
+      for (const host of this.overlay.querySelectorAll('.invite-qr')) renderQr(host, url)
+      for (const text of this.overlay.querySelectorAll('.invite-link')) text.textContent = url
+    }
+    this.invite.update(url, this.room, this.playerCount)
+  }
+  openJoin(): void {
+    if (this.inviteOpen) return
+    this.inviteFromGame = this.started && !this.menuVisible
+    if (this.inviteFromGame) this.openMenu()
+    this.inviteOpen = true; this.overlay.inert = true; this.invite.show(); this.updateInvite()
+  }
+  closeJoin(): void {
+    if (!this.inviteOpen) return
+    this.inviteOpen = false; this.invite.hide(); this.overlay.inert = false
+    if (this.inviteFromGame) this.closeMenu()
+    else this.element.querySelector<HTMLButtonElement>('[data-join]')!.focus()
   }
   private saveChoice(): void { saveVehicleChoice(this.choice); this.preview?.setChoice(this.choice); this.updateHelp() }
   get vehicleKind(): VehicleChoice['vehicleKind'] { return this.choice.vehicleKind }
@@ -205,6 +235,13 @@ export class Shell implements System {
     this.element.querySelector<HTMLButtonElement>('.shell-menu-button')!.focus({ preventScroll: true })
   }
   private keydown(event: KeyboardEvent): void {
+    const editing = event.target instanceof HTMLElement && (event.target.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName))
+    if (!editing && !event.repeat && event.code === 'KeyJ') { event.preventDefault(); event.stopImmediatePropagation(); this.inviteOpen ? this.closeJoin() : this.openJoin(); return }
+    if (this.inviteOpen) {
+      if (event.code === 'Escape') { event.preventDefault(); this.closeJoin() }
+      if (event.key === 'Tab') { event.preventDefault(); const buttons = [...this.invite.element.querySelectorAll<HTMLButtonElement>('button')]; buttons[document.activeElement === buttons[0] ? 1 : 0].focus() }
+      return
+    }
     if (this.started && !this.menuVisible && !event.repeat && (event.code === 'KeyH' || event.key === '?')) { event.preventDefault(); this.showHelp(); return }
     if (event.code === 'Escape') {
       event.preventDefault(); event.stopImmediatePropagation()
@@ -224,8 +261,8 @@ export class Shell implements System {
     this.toastTimer = setTimeout(() => { element.hidden = true; this.element.querySelector('.shell-message')!.textContent = '' }, 4500)
   }
   private async copyInvite(): Promise<void> {
-    const url = new URL(location.href); url.searchParams.set('room', this.room); url.searchParams.delete('autoplay')
-    try { await navigator.clipboard.writeText(url.href); this.toast('Invite link copied.') }
+    const url = new URL(inviteUrl(location.origin, this.room))
+    try { await navigator.clipboard.writeText(url.href); this.toast('Invite link copied.'); this.invite.element.querySelector('.join-copy')!.textContent = 'Copied' }
     catch { this.element.querySelector('.shell-message')!.textContent = `Invite link: ${url.href}` }
   }
   private updateHelp(): void {
@@ -240,7 +277,7 @@ export class Shell implements System {
     renderHelp(hint.querySelector('div')!, this.activeVehicleKind, this.touch.available)
     hint.hidden = false; clearTimeout(this.helpTimer); this.helpTimer = setTimeout(() => { hint.hidden = true }, 8500)
   }
-  setStatus(lines: readonly string[]): void { this.board.setStatus(lines); this.hudBoard.setStatus(lines) }
+  setStatus(lines: readonly string[]): void { this.board.setStatus(lines); this.hudBoard.setStatus(lines); this.playerCount = lines.filter(line => parseScoreRow(line)).length; this.updateInvite() }
   setSpeed(metresPerSecond: number): void { this.speed.textContent = String(Math.round(Math.abs(metresPerSecond) * 2.23694)) }
   update(): void {
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
@@ -271,7 +308,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.preview?.dispose(); this.matchHud.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.starfield.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.preview?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.starfield.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }
