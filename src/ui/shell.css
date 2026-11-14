@@ -183,3 +183,11 @@
 .join-view .join-count { font-size: 20px; }
 .join-view > div:last-child { display: flex; gap: 12px; margin-top: 12px; }
 @media(max-width:700px) { .menu-qr { width: 96px; margin: 8px auto; } .lobby-panels > .lobby-index { justify-content: flex-start; } .join-view > img { width: 190px; } .syn3h-shell .join-view h1 { font-size: 30px; } .join-view .join-room { font-size: 20px; } .join-view .invite-link { font-size: 13px; } .join-view .invite-qr { width: min(42vh,85vw); } }
+
+.is-attract .shell-overlay { visibility: hidden; }
+.attract-overlay { position: fixed; inset: 0; z-index: 40; color: white; background: linear-gradient(transparent 65%,#03060cbb); display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; padding: 24px; cursor: pointer; }
+.attract-overlay img { width: 230px; filter: drop-shadow(0 0 8px #143e78); }
+.attract-overlay > div { align-self: center; text-align: center; text-shadow: 0 1px 3px black; }
+.attract-overlay p { font-size: 26px; }
+.attract-overlay small { font-size: 16px; }
+@media(max-width:700px) { .attract-overlay { padding: 14px; } .attract-overlay img { width: 160px; } .attract-overlay p { font-size: 20px; } }

@@ -9,6 +9,7 @@ import { TouchControls } from './TouchControls'
 import { readVehicleChoice, saveVehicleChoice, VehiclePreview, type VehicleChoice } from './VehicleChoice'
 import { SlidingPanels } from './SlidingPanels'
 import { Starfield } from './Starfield'
+import { AttractMode, type CinematicCamera } from './AttractMode'
 import { InviteView, inviteUrl, renderQr } from './InviteView'
 import { Scoreboard, parseScoreRow } from './Scoreboard'
 import { canEditWorld, hostControls } from './worldPermissions'
@@ -34,6 +35,9 @@ export class Shell implements System {
   private readonly overlay: HTMLElement
   private readonly speed: HTMLElement
   private readonly choice: VehicleChoice = readVehicleChoice()
+  private attract?: AttractMode
+  private lastActivity = performance.now()
+  private requestedAttract = new URL(location.href).searchParams.get('attract') === '1'
   private readonly invite: InviteView
   private inviteOpen = false
   private inviteFromGame = false
@@ -147,6 +151,11 @@ export class Shell implements System {
     this.element.querySelector('#bots-count')!.addEventListener('input', event => { if (canEditWorld()) params.set('bots.count', (event.target as HTMLInputElement).value) }, { signal })
     this.element.querySelector('#game-mode')!.addEventListener('change', event => { if (canEditWorld() && params.get('game.mode')) params.set('game.mode', Number((event.target as HTMLSelectElement).value)) }, { signal })
     this.element.querySelector('#host-lock')!.addEventListener('change', event => { const net = hostControls(); if (net?.isHost) net.setLocked((event.target as HTMLInputElement).checked) }, { signal })
+    const activity = (event: Event) => {
+      this.lastActivity = performance.now()
+      if (this.attract?.active && event.type !== 'pointermove') { this.stopAttract(); event.preventDefault(); event.stopImmediatePropagation() }
+    }
+    for (const type of ['keydown', 'pointerdown', 'wheel', 'pointermove']) window.addEventListener(type, activity, { capture: true, signal, passive: false })
     window.addEventListener('keydown', event => this.keydown(event), { capture: true, signal })
     game.canvas.addEventListener('pointerdown', event => {
       if (!this.started || this.menuVisible || event.pointerType === 'touch' || event.button !== 0) return
@@ -172,6 +181,7 @@ export class Shell implements System {
     this.invite.update(url, this.room, this.playerCount)
   }
   openJoin(): void {
+    this.stopAttract()
     if (this.inviteOpen) return
     this.inviteFromGame = this.started && !this.menuVisible
     if (this.inviteFromGame) this.openMenu()
@@ -193,7 +203,11 @@ export class Shell implements System {
   get menuOpen(): boolean { return this.menuVisible }
   get activePanel(): string { return this.panels.active }
   setMatchState(state: MatchState | null): void { this.matchHud.setState(state) }
-  setTerrain(terrain: Terrain): void { this.minimap?.dispose(); this.minimap = new Minimap(terrain, this.element) }
+  setTerrain(terrain: Terrain): void { this.minimap?.dispose(); this.minimap = new Minimap(terrain, this.element); this.attract?.dispose(); this.attract = new AttractMode(terrain, this.element) }
+  setAttractCamera(camera: CinematicCamera, bots: () => readonly Vehicle[] = () => []): void { this.attract?.setCamera(camera, bots) }
+  startAttract(): void { if (!this.started && !this.inviteOpen) this.attract?.start() }
+  stopAttract(): void { this.attract?.stop(); this.lastActivity = performance.now(); this.requestedAttract = false }
+  get attracting(): boolean { return this.attract?.active ?? false }
   setMapEntities(entities: readonly MapEntity[]): void { this.minimap?.setEntities(entities) }
   setMapSelf(entity: MapEntity): void { this.minimap?.setSelf(entity) }
   setLoadingMessages(messages: string[]): void { bootLoading?.setMessages(messages) }
@@ -209,6 +223,7 @@ export class Shell implements System {
     void this.panels.show(id)
   }
   play(): void {
+    this.stopAttract()
     if (this.started) { this.closeMenu(); return }
     void this.audio.unlock().then(async () => { await this.audio.ready(); this.audio.play('materialize') }).catch(() => this.toast('Audio is unavailable. You can still play.'))
     try { localStorage.setItem('syn3h.playerName', this.playerName) } catch { /* Playing does not require storage. */ }
@@ -279,7 +294,13 @@ export class Shell implements System {
   }
   setStatus(lines: readonly string[]): void { this.board.setStatus(lines); this.hudBoard.setStatus(lines); this.playerCount = lines.filter(line => parseScoreRow(line)).length; this.updateInvite() }
   setSpeed(metresPerSecond: number): void { this.speed.textContent = String(Math.round(Math.abs(metresPerSecond) * 2.23694)) }
-  update(): void {
+  update(dt = 0): void {
+    if (this.attract && !this.attract.ready) {
+      const debug = (window as unknown as { syn3h?: { camera?: CinematicCamera; bots?: { vehicles: readonly Vehicle[] } } }).syn3h
+      if (debug?.camera?.setCinematicPose) this.setAttractCamera(debug.camera, () => debug.bots?.vehicles ?? [])
+    }
+    if (!this.started && !this.inviteOpen && !this.attract?.active && (this.requestedAttract || performance.now() - this.lastActivity > 20000)) this.startAttract()
+    this.attract?.update(dt)
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
     if (!this.menuVisible) return
     const mute = this.element.querySelector<HTMLButtonElement>('.shell-mute')!
@@ -308,7 +329,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.preview?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.starfield.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.starfield.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }
