@@ -81,11 +81,28 @@ export class BotBrain implements System {
     const lead = Math.min(0.8, distance / 45) * p.aggression.value
     let aimX = there.x + targetVelocity.x * lead, aimZ = there.z + targetVelocity.z * lead
     const elevation = Math.abs(this.terrain.heightAt(here.x, here.z) - this.terrain.heightAt(there.x, there.z))
-    const waypoint = distance > 25 && elevation > 8 ? roadWaypoint(this.terrain, here, there, Math.max(8, speed * 0.6)) : null
+    const liquid = this.terrain.liquidHeightAt?.(here.x, here.z)
+    const afloat = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(here.x, here.z) <= liquid + 0.5
+    if (afloat) {
+      // Floating buggies paddle forward toward a dry shore instead of reversing forever.
+      let shore: { x: number; z: number } | null = null
+      for (const radius of [8, 16, 32, 64, 128, 256]) {
+        let best = Infinity
+        for (let i = 0; i < 16; i++) {
+          const angle = i * Math.PI / 8, x = here.x + Math.cos(angle) * radius, z = here.z + Math.sin(angle) * radius
+          if (!isSafeGround(this.terrain, x, z)) continue
+          const d = Math.hypot(x - there.x, z - there.z)
+          if (d < best) { best = d; shore = { x, z } }
+        }
+        if (shore) break
+      }
+      if (shore) { aimX = shore.x; aimZ = shore.z }
+    }
+    const waypoint = !afloat && distance > 25 && elevation > 8 ? roadWaypoint(this.terrain, here, there, Math.max(8, speed * 0.6)) : null
     if (waypoint) { aimX = waypoint.x; aimZ = waypoint.z }
     // Stable per-bot lateral offsets fade out near contact so every bot can still ram.
     const spread = ((this.index * 0.61803398875 % 1) - 0.5) * p.approachSpread.value * Math.min(1, Math.max(0, distance - 8) / 20)
-    if (distance > 0.1) { aimX += dz / distance * spread; aimZ -= dx / distance * spread }
+    if (!afloat && distance > 0.1) { aimX += dz / distance * spread; aimZ -= dx / distance * spread }
     // Repel nearby allies, never the selected target. This prevents a single-file pileup.
     for (const peer of this.peers) {
       if (peer === this.vehicle || peer === this.target || !peer.body.isValid()) continue
@@ -106,6 +123,7 @@ export class BotBrain implements System {
         this.immobileTime = this.reversing ? this.immobileTime + this.strategyTime : 0
         this.strategyTime = 0; this.lastPosition.copy(here)
       }
+      if (afloat) this.reversing = false
       input.x = this.reversing ? clamp(-rotation) : Math.abs(rotation) < 0.1 ? 0 : clamp(rotation * p.aggression.value, distance < 15 ? 1 : 0.6)
       input.y = Math.min(1, p.aggression.value) * p.topThrottle.value * (this.reversing ? -1 : 1)
       // Keep enough throttle to turn, but shed speed before a tight corner.
@@ -115,7 +133,7 @@ export class BotBrain implements System {
       // Probe the intended travel direction. Reverse and steer away from water or world edges.
       const direction = this.reversing ? -1 : 1
       const lookAhead = Math.max(4, Math.min(16, speed * 0.7))
-      if (!isSafeGround(this.terrain, here.x + this.forward.x * direction * lookAhead, here.z + this.forward.z * direction * lookAhead)) {
+      if (!afloat && !isSafeGround(this.terrain, here.x + this.forward.x * direction * lookAhead, here.z + this.forward.z * direction * lookAhead)) {
         input.y = -direction * p.topThrottle.value * 0.5
         input.x = (this.index % 2 ? -1 : 1) * -direction
       }

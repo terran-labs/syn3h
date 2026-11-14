@@ -83,6 +83,18 @@ describe('bot pursuit', () => {
     for (let i = 0; i < 400; i++) brain.fixedUpdate(0.02)
     expect(brain.rescues).toBe(1)
   })
+  it('paddles toward dry ground when already floating and rescues a flipped bot', () => {
+    const { game } = harness(), target = stationaryTarget(game, new Vector3(0, 0.5, -20))
+    const wet = { ...terrain, liquidHeightAt: (_x: number, z: number) => z > -10 ? 2 : -2 }
+    const bot = new Syn3hBuggy(game, wet, new Vector3(0, 2, 0))
+    const brain = new BotBrain(game, wet, bot, target); brain.fixedUpdate(0.02)
+    expect(bot.input.y).toBeGreaterThan(0)
+    expect(Math.abs(bot.input.x)).toBeLessThan(0.2)
+    bot.body.setRotation(new Quaternion().setFromAxisAngle(new Vector3(0,0,1), Math.PI), true)
+    const dryBrain = new BotBrain(game, terrain, bot, target)
+    for (let i = 0; i < 210; i++) dryBrain.fixedUpdate(0.02)
+    expect(dryBrain.rescues).toBe(1)
+  })
   it('reverses before reaching optional lava and refuses underwater spawn positions', () => {
     const { game } = harness(), target = stationaryTarget(game, new Vector3(0, 0.5, -20))
     const wet = { ...terrain, liquidHeightAt: (_x: number, z: number) => z < -2 ? 2 : -2 }
