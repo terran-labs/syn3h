@@ -14,6 +14,7 @@ export const hoverThrust = defineParam({id:'hover.thrust',label:'Thrust',group:'
 
 /** Hovercraft.js 12-61, with world-down probing and Unity's explicit damping rule. */
 export class Hovercraft extends Vehicle {
+  readonly kind = 'hovercraft' as const
   private readonly model: VehicleModel
   private lastDistance = 0
   private targetHeight = 0
