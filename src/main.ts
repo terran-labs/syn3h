@@ -3,6 +3,7 @@
  * Keep this file small: features belong behind the seams, not here.
  */
 import { params, worldSeed } from '../shared/params'
+import { BotManager } from './bots/BotManager'
 import { ChaseCamera } from './core/ChaseCamera'
 import { Game } from './core/Game'
 import { startNetworking } from './net'
@@ -34,6 +35,10 @@ async function main(): Promise<void> {
     player.teleport(s.position, s.heading)
   })
 
+  // Bots chase and ram the player. The 'bots.count' slider sets how many (0 by default).
+  const bots = game.add(new BotManager(game, terrain, player))
+  bots.setTargets([player])
+
   const camera = game.add(new ChaseCamera(game, terrain))
   camera.target = player.object
 
@@ -54,7 +59,7 @@ async function main(): Promise<void> {
     })
   }
   shell.onPlay = join
-  if (query.has('autoplay')) join()
+  if (query.has('autoplay')) shell.play()
 
   const panel = new ParamPanel()
   game.add({
@@ -66,7 +71,7 @@ async function main(): Promise<void> {
   })
 
   // Handles for debugging and automated checks.
-  Object.assign(window, { syn3h: { game, terrain, player, params, panel, shell, audio } })
+  Object.assign(window, { syn3h: { game, terrain, player, params, panel, shell, audio, bots } })
   game.start()
 }
 
