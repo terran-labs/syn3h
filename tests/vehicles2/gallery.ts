@@ -25,11 +25,11 @@ async function main(){
  const hover=new URLSearchParams(location.search).get('vehicle')==='hovercraft'
  document.querySelector('#title')!.textContent=hover?'Syn3h Hovercraft':'Syn3h Jet'
  const vehicle=hover?new Hovercraft(h.game,h.terrain,new THREE.Vector3(0,1.65,0)):new Jet(h.game,h.terrain,new THREE.Vector3(0,1.65,0));vehicle.isLocal=false;vehicle.input.z=.7
- if(vehicle instanceof Jet) await vehicle.modelReady
+ await vehicle.modelReady
  const camera=new THREE.PerspectiveCamera(38,innerWidth/innerHeight,.1,200)
- camera.position.set(9,4,-11)
+ camera.position.set(hover?4:9,hover?3.2:4,hover?-5:-11)
  const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,1.6,0);controls.update()
- const api={vehicle,renderer,ready:true,flight(){vehicle.input.special=true},hover(){vehicle.input.special=false},rear(){camera.position.set(-8,5,10);controls.update()},front(){camera.position.set(9,4,-11);controls.update()}}
+ const api={vehicle,renderer,ready:true,flight(){vehicle.input.special=true},hover(){vehicle.input.special=false},rear(){camera.position.set(hover?-4:-8,hover?3.2:5,hover?5:10);controls.update()},front(){camera.position.set(hover?4:9,hover?3.2:4,hover?-5:-11);controls.update()}}
  Object.assign(window,{vehicleGallery:api});document.querySelector('#status')!.textContent='Drag to orbit · Scroll to zoom'
  let previous=performance.now()
  renderer.setAnimationLoop(()=>{const now=performance.now(),dt=Math.min(.1,(now-previous)/1000);previous=now;for(let t=0;t<dt;t+=.02)vehicle.fixedUpdate(Math.min(.02,dt-t));vehicle.update(dt,1);controls.update();renderer.render(scene,camera)})
