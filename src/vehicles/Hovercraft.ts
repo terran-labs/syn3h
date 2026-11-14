@@ -16,6 +16,9 @@ export const hoverThrust = defineParam({id:'hover.thrust',label:'Thrust',group:'
 export class Hovercraft extends Vehicle {
   readonly kind = 'hovercraft' as const
   private readonly model: VehicleModel
+  get modelReady(): Promise<void> {return this.model.ready}
+  private readonly textures: THREE.Texture[] = []
+  private readonly visualMaterials: THREE.Material[] = []
   private lastDistance = 0
   private targetHeight = 0
   private readonly material = new THREE.MeshStandardMaterial({color:0xd2a142,roughness:.45,metalness:.35})
@@ -23,7 +26,7 @@ export class Hovercraft extends Vehicle {
 
   constructor(game: Game, terrain: Terrain, position: THREE.Vector3, heading = 0) {
     super(game,terrain,position,heading)
-    this.game.world.createCollider(RAPIER.ColliderDesc.cuboid(1,.5,1.5).setDensity(0).setCollisionGroups(Vehicle.chassisGroups()),this.body)
+    this.game.world.createCollider(RAPIER.ColliderDesc.cuboid(1,.5,1.5).setTranslation(0,.4,0).setDensity(0).setCollisionGroups(Vehicle.chassisGroups()),this.body)
     // Hovercraft.js 14-18 explicitly overrides collider-derived inertia.
     this.body.setAdditionalMassProperties(50,{x:0,y:-.3,z:0},{x:15,y:15,z:15},{x:0,y:0,z:0,w:1},true)
     this.body.recomputeMassPropertiesFromColliders()
@@ -32,7 +35,27 @@ export class Hovercraft extends Vehicle {
     this.object.add(hull)
     const cockpit = new THREE.Mesh(new THREE.BoxGeometry(.8,.4,1.2),new THREE.MeshStandardMaterial({color:0x203745,metalness:.5,roughness:.2}))
     cockpit.position.set(0,.4,-.3); cockpit.castShadow = true; this.object.add(cockpit)
-    this.model = new VehicleModel(this.object,'/models/hovercraft.glb')
+    this.model = new VehicleModel(this.object,'/models/hovercraft.glb',scene=>{
+      // Syn3h Hovercraft.prefab LOD0: chrome spoilers, purple cockpit and textured paint.
+      const paint=new THREE.MeshPhysicalMaterial({color:0x315d99,metalness:.85,roughness:.2,clearcoat:1,clearcoatRoughness:.15})
+      const chrome=new THREE.MeshPhysicalMaterial({color:0xcccccc,metalness:1,roughness:.178})
+      const glass=new THREE.MeshPhysicalMaterial({color:0x892ba7,metalness:.35,roughness:.12,clearcoat:1,iridescence:.3})
+      const accent=new THREE.MeshStandardMaterial({color:0x515151,metalness:0,roughness:.48})
+      this.visualMaterials.push(paint,chrome,glass,accent)
+      const texture=new THREE.TextureLoader().load('/models/textures/armor-scales.jpg')
+      texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.repeat.set(15,15)
+      paint.bumpMap=texture;paint.bumpScale=.008;this.textures.push(texture)
+      scene.traverse(o=>{if(o instanceof THREE.Mesh){
+        (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose())
+        o.material=o.name==='Cockpit'?glass:/Chrome|Spoilers/.test(o.name)?chrome:o.name==='Accent'?accent:paint
+      }})
+      // Prefab rear glow at (0,.692654,-1.218035), reflected into our frame.
+      const glowMap=new THREE.TextureLoader().load('/models/textures/thruster-glow.png');this.textures.push(glowMap)
+      const glowMaterial=new THREE.MeshBasicMaterial({color:new THREE.Color(3,2,4),map:glowMap,transparent:true,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide})
+      this.visualMaterials.push(glowMaterial)
+      const glow=new THREE.Mesh(new THREE.PlaneGeometry(.5,.5),glowMaterial)
+      glow.position.set(0,.692654,1.218035);scene.add(glow)
+    })
   }
 
   protected applyForces(dt: number): void {
@@ -76,7 +99,7 @@ export class Hovercraft extends Vehicle {
     super.teleport(position,heading); this.lastDistance = 0; this.targetHeight = 0
   }
   override dispose(): void {
-    this.model.dispose()
+    this.model.dispose();this.textures.forEach(t=>t.dispose());this.visualMaterials.forEach(m=>m.dispose())
     super.dispose()
   }
 }

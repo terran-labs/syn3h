@@ -10,6 +10,7 @@ describe('Hovercraft original forces',()=>{
   const h=harness(); const v=new Hovercraft(h.game,h.terrain,new THREE.Vector3(0,10,0))
   expect(v.body.mass()).toBeCloseTo(50); expect(v.body.localCom().y).toBeCloseTo(-.3)
   expect(v.body.principalInertia().x).toBeCloseTo(15)
+  expect(v.body.collider(0).translation().y-v.body.translation().y).toBeCloseTo(.4)
   v.dispose(); h.world.free()
  })
  it('drives toward -Z and steers right with negative Y torque',()=>{

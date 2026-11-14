@@ -81,3 +81,10 @@ mesh data, with the `terra.jet.prefab` offsets. It is full size (about 7.7 m wid
 older import's authoring-scene offset or a second rotation. Landing gear is a separate
 node. `jet-collider.json` contains the original convex hull points with the prefab's
 Y=-0.1 offset. See the conversion script and `tests/vehicles2/README.md` for sources.
+
+## Syn3h hovercraft correction
+
+`hovercraft.glb` now comes from Syn3h's prefab-selected `Hovercraft.jas`, decoded by
+`convert-syn3h-hovercraft.py`. It replaces the earlier .3ds conversion, which was the
+same older asset in both repositories. All five original named surfaces and UVs are
+recovered. See `tests/vehicles2/README.md` for the script GUID trace and scale evidence.

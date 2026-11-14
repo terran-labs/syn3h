@@ -51,3 +51,33 @@ The gallery is `tests/vehicles2/gallery.html`; screenshots are written to
 `/tmp/syn3h-vehicles2/jet-syn3h-front.png` and `jet-syn3h-rear.png`.
 The smoke test checks WebGPU rendering errors and captures deployed and retracted gear.
 This is a local validation page, not a published preview.
+
+## Hovercraft
+
+The Syn3h Hovercraft.prefab refers to script GUID
+`f6aa30511de264fde964ac9c24f8b0b9`. It resolves to Mars Explorer's Hovercraft.js in both
+legacy upstream trees. There is no matching script metadata in syn3h-client,
+syn3h-player-proprietary or syn3h-client-proprietary-libraries. Searches for hover
+force code in those repositories also found only commented jet ground-effect code.
+The Mars Explorer force port is therefore retained as the requested fallback.
+
+The visual now comes from the exact Syn3h prefab mesh reference:
+`_Actors/Packages/Hovercraft/Components/Model/Hovercraft.jas`, GUID
+`a9894bbcc44bb4703a846a51e26241ba`. Its five named surfaces are Main, Cockpit, Accent,
+Chrome and Spoilers. The old .3ds is byte-identical to the Mars Explorer copy and is
+not the prefab's selected model. The .skp alternatives also are not referenced by this
+prefab. `convert-syn3h-hovercraft.py` decodes the binary property list's vertices,
+polygons and UVs directly, fixes clockwise winding and preserves hard edges.
+
+The 3.15 geometry multiplier interprets the .0315 importer scale with Cheetah's
+centimetre conversion. This produces a 3.145 m body length and aligns the rear nozzle
+with the prefab's 1.218 m rear glow position. Collision dimensions are 2 x 1 x 3,
+with the prefab's previously omitted collider transform at Y=0.4 now applied.
+The LOD0 body material GUID is missing from the checked repositories; Vehicle Main
+paint is used as a documented substitute. Other material GUIDs resolve to the same
+chrome, accent and purple cockpit materials used by the Syn3h jet.
+
+Run the gallery smoke with `hovercraft` to capture front and rear close-ups. Both
+renders use the recovered model, PBR material approximations and the original glow
+texture. There was no vehicle promo screenshot in the searched Syn3h source trees;
+geometry and serialized material references were the visual comparison sources.
