@@ -1,0 +1,45 @@
+/** Placeholder copy until the original rotating messages are recovered. */
+export const PLACEHOLDER_LOADING_MESSAGES = ['Preparing your world.', 'Getting ready to explore.', 'Loading Syn3h.']
+export interface LoadingDetail { phase?: string; progress?: number; elapsedMs?: number }
+
+export class LoadingScreen {
+  readonly element = document.createElement('section')
+  private messages = [...PLACEHOLDER_LOADING_MESSAGES]
+  private index = 0
+  private readonly started = performance.now()
+  private readonly timer: ReturnType<typeof setInterval>
+  private readonly abort = new AbortController()
+  constructor() {
+    this.element.className = 'syn3h-loading'
+    this.element.setAttribute('role', 'status'); this.element.setAttribute('aria-live', 'polite')
+    this.element.innerHTML = '<img src="/brand/syn3h.png" alt="Syn3h"><h1>Preparing to Explore</h1><p class="loading-phase">Starting Syn3h</p><progress aria-label="Loading progress"></progress><p class="loading-message"></p><small class="loading-time"></small>'
+    document.body.append(this.element)
+    this.setMessages(this.messages)
+    window.addEventListener('syn3h:loading', event => this.update((event as CustomEvent<LoadingDetail>).detail), { signal: this.abort.signal })
+    this.timer = setInterval(() => {
+      this.index++; this.element.querySelector('.loading-message')!.textContent = this.messages[this.index % this.messages.length]
+      this.updateTime(performance.now() - this.started)
+    }, 3500)
+    // A fatal startup failure must remain visible above this cover.
+    window.addEventListener('error', () => this.finish(), { signal: this.abort.signal })
+  }
+  setMessages(messages: readonly string[]): void {
+    this.messages = messages.filter(value => typeof value === 'string' && value.trim()).slice(0, 100)
+    if (!this.messages.length) this.messages = [...PLACEHOLDER_LOADING_MESSAGES]
+    this.index = 0; this.element.querySelector('.loading-message')!.textContent = this.messages[0]
+  }
+  update(detail?: LoadingDetail): void {
+    if (!detail || typeof detail !== 'object') return
+    if (typeof detail.phase === 'string') this.element.querySelector('.loading-phase')!.textContent = detail.phase
+    const progress = this.element.querySelector('progress')!
+    if (typeof detail.progress === 'number' && Number.isFinite(detail.progress)) { progress.max = 1; progress.value = Math.min(1, Math.max(0, detail.progress)) }
+    else progress.removeAttribute('value')
+    if (typeof detail.elapsedMs === 'number' && Number.isFinite(detail.elapsedMs)) this.updateTime(detail.elapsedMs)
+  }
+  private updateTime(ms: number): void { this.element.querySelector('.loading-time')!.textContent = `${Math.max(0, Math.floor(ms / 1000))} seconds` }
+  finish(): void { this.element.hidden = true; clearInterval(this.timer) }
+  dispose(): void { this.finish(); this.abort.abort(); this.element.remove() }
+}
+
+// Module imports run before main awaits renderer and physics initialization.
+export const bootLoading = typeof document !== 'undefined' ? new LoadingScreen() : undefined

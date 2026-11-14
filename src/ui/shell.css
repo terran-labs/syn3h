@@ -111,3 +111,12 @@
 .spawn-help small { color: #9bb8db; }
 .syn3h-shell:not(.is-playing) .spawn-help { display: none; }
 @media (max-width: 700px) { .spawn-help { left: 12px; right: 12px; bottom: 260px; transform: none; font-size: 13px; } }
+
+.syn3h-loading { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: radial-gradient(ellipse at top,#172540,#03060c 75%); color: #cacaca; font: 100 18px 'Syn3h Roboto',sans-serif; padding: 24px; text-align: center; }
+.syn3h-loading[hidden] { display: none; }
+.syn3h-loading img { width: min(400px,80vw); filter: drop-shadow(0 0 15px #1b5ea6); }
+.syn3h-loading h1 { font: 100 30px 'Syn3h Lato',sans-serif; margin: 0; color: white; }
+.syn3h-loading p { margin: 0; }
+.syn3h-loading progress { width: min(320px,80vw); height: 4px; accent-color: #7abaff; }
+.syn3h-loading small { color: #8da0bb; }
+#fatal { z-index: 100; }

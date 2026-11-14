@@ -12,6 +12,7 @@ import { Starfield } from './Starfield'
 import { Scoreboard } from './Scoreboard'
 import { canEditWorld, hostControls } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
+import { bootLoading } from './LoadingScreen'
 import { renderHelp, touchHelp } from './VehicleHelp'
 import type { VehicleKind } from '../vehicles'
 import './shell.css'
@@ -131,7 +132,7 @@ export class Shell implements System {
     }, { signal })
     for (const name of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) game.canvas.addEventListener(name, () => { game.input.mouseFire = false }, { signal })
     window.addEventListener('blur', () => { game.input.mouseFire = false }, { signal })
-    this.updateHelp()
+    this.updateHelp(); bootLoading?.finish()
     void this.panels.show('index', true); this.update()
   }
   private updateRoomLabels(): void {
@@ -147,6 +148,7 @@ export class Shell implements System {
   get playing(): boolean { return this.started }
   get menuOpen(): boolean { return this.menuVisible }
   get activePanel(): string { return this.panels.active }
+  setLoadingMessages(messages: string[]): void { bootLoading?.setMessages(messages) }
   setParamPanel(panel: ParamPanel): void { this.paramPanel = panel }
   showPanel(id: string): void {
     if (id === 'vehicle' && !this.preview) {
@@ -254,14 +256,15 @@ export class Shell implements System {
 }
 
 /** Call after creating the player, before constructing ParamPanel. */
-export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { shell: Shell; audio: GameAudio; dispose: () => void } {
+export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { shell: Shell; audio: GameAudio; setPlayer: (player: Vehicle) => void; dispose: () => void } {
   const audio = new GameAudio(game.camera), shell = game.add(new Shell(game, audio))
   shell.setVehicleKind(player.kind)
+  let activePlayer = player
   const bridge = game.add({ update() {
-    const v = player.body.linvel(), p = player.body.translation(), speed = Math.hypot(v.x, v.y, v.z)
+    const v = activePlayer.body.linvel(), p = activePlayer.body.translation(), speed = Math.hypot(v.x, v.y, v.z)
     shell.setSpeed(speed)
-    audio.motion = { speed, throttle: player.input.y, airborne: p.y - terrain.heightAt(p.x, p.z) > 2 }
+    audio.motion = { speed, throttle: activePlayer.kind === 'jet' ? activePlayer.input.z : activePlayer.input.y, airborne: p.y - terrain.heightAt(p.x, p.z) > 2 }
   } })
   game.add(audio)
-  return { shell, audio, dispose() { game.remove(bridge); game.remove(shell); game.remove(audio) } }
+  return { shell, audio, setPlayer(next) { activePlayer = next; shell.setVehicleKind(next.kind) }, dispose() { game.remove(bridge); game.remove(shell); game.remove(audio) } }
 }
