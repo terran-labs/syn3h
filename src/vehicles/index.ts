@@ -19,8 +19,11 @@ export function createVehicle(
   position: THREE.Vector3,
   heading = 0,
 ): Vehicle {
+  // Both buggies share the original physics; the kind only selects the skin (wired next).
   switch (kind) {
     case 'buggy':
+    case 'buggy-classic':
+    case 'buggy-syn3h':
       return new Buggy(game, terrain, position, heading)
   }
 }
