@@ -131,8 +131,8 @@ There is no server side physics.
 
 - The owner sends position and rotation by RPC `sP` at `Network.sendRate`
   (`VehicleLocal.js` 17-20). Inputs go as RPC `s4`, quantised to tenths, at most once a
-  second (22-26). No code sets `Network.sendRate`, so Unity's default of 15 per second
-  applies. **[inference]**
+  second (22-26). The send rate is 15 per second, or 10 when the `networkPhysics` setting
+  is 2, the mode that turns proxy physics off (`Settings.js` 1589-1594). **[code]**
 - Receivers keep a 15 slot buffer of timestamped states (`VehicleNet.js` 16) and render the
   vehicle in the past by an interpolation delay of `max(0.1, ping * 1.5 + jitter * 8)`
   seconds (79). When the buffer runs dry they extrapolate for up to one second and then mark
