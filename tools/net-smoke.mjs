@@ -246,6 +246,8 @@ try {
     check('host judges a laser hit on its bot', judged > judgedBefore && hitSeen >= 2, { judgedBefore, judged, hitSoundsOnB: hitSeen, ...diag })
   } else {
     console.log(`SKIP bots: ${botMade}`)
+    // That probe for Vite's /src modules is the only expected 404 in a production build.
+    for (let i = errors.length - 1; i >= 0; i--) if (/^Alice console: .*status of 404/.test(errors[i])) errors.splice(i, 1)
   }
 
   // 10. World seed, and a late joiner who arrives with a different one.
