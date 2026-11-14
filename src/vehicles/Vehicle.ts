@@ -12,7 +12,7 @@
 import * as THREE from 'three/webgpu'
 import type { Game, System } from '../core/Game'
 import { type InputState, emptyInput } from '../core/Input'
-import { GROUP_ALL, GROUP_VEHICLE, RAPIER, groups } from '../core/physics'
+import { GROUP_ALL, GROUP_TERRAIN, GROUP_VEHICLE, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import type { VehicleKind } from './index'
 
@@ -92,10 +92,53 @@ export abstract class Vehicle implements System {
   protected abstract applyForces(dt: number): void
 
   fixedUpdate(dt: number): void {
-    if (this.isLocal) Object.assign(this.input, this.game.input.state)
+    if (this.isLocal) {
+      Object.assign(this.input, this.game.input.state)
+      this.localSafety()
+    }
     this.body.resetForces(true)
     this.body.resetTorques(true)
     this.applyForces(dt)
+  }
+
+  /** Spawn slot to return to after falling off the world. Networking sets it with the slot. */
+  spawnSlot = 0
+  private readonly safetyRay = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 })
+
+  /**
+   * Owner-side safety nets, run only for the vehicle this client simulates:
+   *  - Fell off the world (Syn3h VhiclMe.cs 41-47, Mars Explorer VehicleMe.js 70-76): below
+   *    y -300, keep only the direction of travel and return to a spawn point. The originals
+   *    used a fixed point; a spawn point works on any seed.
+   *  - Underground rescue (Syn3h VhiclLocal.cs, MapMagic block): under the ground surface with
+   *    no terrain beneath, put it back on the surface 3 m up (the prefab CamOffset).
+   *  - Speed clamp (Mars Explorer VehicleMe.js 77): above 500 m/s, halve the velocity.
+   */
+  protected localSafety(): void {
+    const b = this.body
+    const t = b.translation()
+    if (t.y < -300) {
+      const v = b.linvel()
+      const len = Math.hypot(v.x, v.y, v.z) || 1
+      const s = this.terrain.spawnPoint(this.spawnSlot)
+      this.teleport(s.position, s.heading)
+      b.setLinvel({ x: v.x / len, y: v.y / len, z: v.z / len }, true)
+      return
+    }
+    const half = this.terrain.size / 2
+    if (Math.abs(t.x) < half && Math.abs(t.z) < half) {
+      const ground = this.terrain.heightAt(t.x, t.z)
+      if (t.y < ground - 0.5) {
+        this.safetyRay.origin = t
+        const below = this.game.world.castRay(
+          this.safetyRay, 1e4, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+          groups(GROUP_ALL, GROUP_TERRAIN), undefined, b,
+        )
+        if (!below) b.setTranslation({ x: t.x, y: ground + 3, z: t.z }, true)
+      }
+    }
+    const v = b.linvel()
+    if (v.x * v.x + v.y * v.y + v.z * v.z > 500 * 500) b.setLinvel({ x: v.x * 0.5, y: v.y * 0.5, z: v.z * 0.5 }, true)
   }
 
   postPhysics(_dt: number): void {
