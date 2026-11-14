@@ -24,6 +24,8 @@ async function main(): Promise<void> {
   await game.init()
 
   const terrain = createTerrain(game, worldSeed.value)
+  // Graphics levels thin out distant terrain on weaker devices.
+  game.quality.attachTerrain(terrain)
   game.add(createEnvironment(game, terrain))
 
   const spawn = terrain.spawnPoint(0)

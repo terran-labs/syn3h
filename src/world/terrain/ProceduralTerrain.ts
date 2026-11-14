@@ -6,12 +6,13 @@ import * as THREE from 'three/webgpu'
 import { params, worldLavaAltitude, worldSeed } from '../../../shared/params'
 import type { Game, System } from '../../core/Game'
 import type { RAPIER } from '../../core/physics'
-import type { SpawnPoint, Terrain } from '../Terrain'
+import type { SpawnPoint, Terrain, TerrainRenderQuality, TerrainRoadPath, TerrainSummit } from '../Terrain'
 import { createTerrainCollider } from './collider'
 import { lavaSurfaceAt } from './lava'
 import { type TerrainData, coneProfile, generateTerrain } from './generate'
 import { type TerrainMaterial, createTerrainMaterial } from './material'
-import { type TerrainMeshes, type TriangleStats, createTerrainMeshes } from './mesh'
+import { LOD_FAR, LOD_NEAR, type TerrainMeshes, type TriangleStats, createTerrainMeshes } from './mesh'
+import { rimRoadRadius } from './roads'
 import { HeightSampler } from './sampler'
 import { TERRAIN_PARAM_IDS, currentTerrainSettings } from './settings'
 import { spawnPointAt } from './spawn'
@@ -98,6 +99,41 @@ export class ProceduralTerrain implements Terrain {
   spawnPoint(index: number): SpawnPoint {
     const s = spawnPointAt(this.sampler, index)
     return { position: new THREE.Vector3(s.x, s.y, s.z), heading: s.heading }
+  }
+
+  /** Road centrelines from the roads pass: the volcano road, the rim ring, plain roads. */
+  roadPaths(): readonly TerrainRoadPath[] {
+    return this.data.roads
+  }
+
+  /** Caldera centre, the rim ring road (radius and mean height) and the lava lake. */
+  summit(): TerrainSummit | null {
+    const v = this.data.layout.volcano
+    const rim = this.data.roads.find((r) => r.kind === 'rim')
+    let rimHeight = 0
+    if (rim && rim.points.length > 0) {
+      for (const p of rim.points) rimHeight += p.y
+      rimHeight /= rim.points.length
+    } else {
+      rimHeight = this.sampler.heightAt(v.x + rimRoadRadius(this.data), v.z)
+    }
+    const lake = this.data.lava.lake
+    return {
+      x: v.x, z: v.z, rimRadius: rimRoadRadius(this.data), rimHeight,
+      lake: lake ? { radius: lake.radius, surface: lake.surface } : null,
+    }
+  }
+
+  /**
+   * Graphics level hook: weaker devices switch to coarser chunks sooner. Nothing is hidden,
+   * because the volcano has to stay visible from everywhere, and physics is untouched.
+   */
+  setRenderQuality(quality: TerrainRenderQuality): void {
+    const detail = Math.max(0.25, Math.min(1, quality.detail))
+    // Full detail shrinks with the square of the detail share: 250 m, 140 m, 62 m.
+    const near = LOD_NEAR * detail * detail
+    const far = Math.max(near, Math.min(LOD_FAR * detail, quality.drawDistance * 0.6))
+    this.meshes.setLodDistances(near, far)
   }
 
   /** Terrain triangles in view at the current levels of detail, versus at full detail. */
