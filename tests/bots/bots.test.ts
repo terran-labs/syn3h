@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Quaternion, Scene, Vector3 } from 'three/webgpu'
 import type { Game, System } from '../../src/core/Game'
 import { emptyInput } from '../../src/core/Input'
@@ -10,6 +10,12 @@ import { BotBrain } from '../../src/bots/BotBrain'
 import { BotManager } from '../../src/bots/BotManager'
 import { params } from '../../shared/params'
 import '../../src/bots/params'
+import { generateName } from '../../src/ui/data/names'
+const effects = vi.hoisted(() => ({ attached: [] as { vehicle: { body: { isValid(): boolean } }; local: boolean; disposed: boolean }[] }))
+vi.mock('../../src/vehicles/effects', () => ({ attachVehicleEffects: (_game: unknown, _terrain: unknown, vehicle: { body: { isValid(): boolean } }, options: {local: boolean}) => {
+  const entry = { vehicle, local: options.local, disposed: false }; effects.attached.push(entry)
+  return () => { expect(vehicle.body.isValid()).toBe(true); entry.disposed = true }
+} }))
 const terrain: Terrain = {
   size: 200, heightAt: () => 0, normalAt: (_x, _z, out) => out.set(0, 1, 0),
   spawnPoint: (i) => ({ position: new Vector3(i * 4, 2, 0), heading: 0 }), dispose() {},
@@ -18,6 +24,7 @@ let world: RAPIER.World
 beforeAll(initPhysics)
 beforeEach(() => {
   for (const p of params.all().filter(p => p.def.group === 'Bots')) params.set(p.def.id, p.def.default)
+  effects.attached.length = 0
   world = createWorld(9.81)
   world.createCollider(RAPIER.ColliderDesc.cuboid(100, 0.5, 100).setTranslation(0, -0.5, 0))
 })
@@ -107,22 +114,26 @@ describe('bot pursuit', () => {
   })
 })
 describe('bot population', () => {
-  it('preserves network input and position when ownership switches to remote', () => {
+  it('owns no vehicles remotely and creates fresh named bots on takeover', () => {
     const { game, systems } = harness(), player = stationaryTarget(game)
     const manager = new BotManager(game, terrain, player)
-    params.set('bots.count', 2); manager.update(); manager.remote = true
-    const bot = manager.vehicles[0], initial = { ...bot.body.translation() }
-    bot.input.x = 0.37; bot.input.y = -0.4
-    for (const brain of systems.filter(s => s instanceof BotBrain)) {
-      for (let i = 0; i < 100; i++) brain.fixedUpdate?.(0.2)
-    }
-    expect(bot.input.x).toBe(0.37); expect(bot.input.y).toBe(-0.4)
-    expect(bot.body.translation()).toEqual(initial)
-    expect(new Set(manager.vehicles.map(v => v.colors.body)).size).toBe(2)
-    manager.remote = false
-    systems[0].fixedUpdate?.(0.02)
-    expect(bot.input.y).toBeGreaterThan(0)
-    manager.dispose()
+    params.set('bots.count', 2); manager.remote = true; manager.update()
+    expect(manager.vehicles).toHaveLength(0); expect(systems).toHaveLength(0)
+    manager.remote = false; manager.update()
+    const old = [...manager.vehicles], ids = old.map(v => v.id)
+    expect(new Set(ids).size).toBe(2)
+    expect(old[0].name).toBe(generateName(`${params.get('world.seed')!.value}:${old[0].id}`, 'bot'))
+    expect(effects.attached.every(e => !e.local)).toBe(true)
+    manager.remote = true
+    expect(manager.vehicles).toHaveLength(0); expect(systems).toHaveLength(0)
+    expect(old.every(v => !v.body.isValid())).toBe(true)
+    expect(effects.attached.every(e => e.disposed)).toBe(true)
+    manager.update(); expect(manager.vehicles).toHaveLength(0)
+    manager.remote = false; manager.update()
+    expect(manager.vehicles).toHaveLength(2)
+    expect(manager.vehicles.every(v => !ids.includes(v.id))).toBe(true)
+    expect(manager.vehicles.every(v => !old.includes(v))).toBe(true)
+    manager.dispose(); expect(effects.attached.every(e => e.disposed)).toBe(true)
   })
   it('spawns and removes bodies and systems when count changes', () => {
     const { game, systems } = harness(), player = stationaryTarget(game)
