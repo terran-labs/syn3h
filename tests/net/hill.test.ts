@@ -34,3 +34,19 @@ describe('computeHillZone', () => {
     expect(computeHillZone({ heightAt: () => 5, spawnPoint: spawn(1, 2) })).toMatchObject({ x: 1, z: 2 })
   })
 })
+
+import { inDeadlyLiquid } from '../../src/modes/Koth'
+
+describe('inDeadlyLiquid', () => {
+  const at = { x: 0, y: 4.9, z: 0 }
+  it('counts any liquid when the terrain cannot tell lava from water', () => {
+    expect(inDeadlyLiquid({ liquidHeightAt: () => 5 }, at)).toBe(true)
+    expect(inDeadlyLiquid({ liquidHeightAt: () => 4 }, at)).toBe(false)
+    expect(inDeadlyLiquid({ liquidHeightAt: () => -Infinity }, at)).toBe(false)
+    expect(inDeadlyLiquid({}, at)).toBe(false)
+  })
+  it('counts only lava when it can: water floats', () => {
+    expect(inDeadlyLiquid({ liquidHeightAt: () => 5, liquidKindAt: () => 'lava' }, at)).toBe(true)
+    expect(inDeadlyLiquid({ liquidHeightAt: () => 5, liquidKindAt: () => 'water' }, at)).toBe(false)
+  })
+})
