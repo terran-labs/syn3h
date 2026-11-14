@@ -8,6 +8,7 @@ import { ChaseCamera } from './core/ChaseCamera'
 import { Game } from './core/Game'
 import { startNetworking } from './net'
 import { ParamPanel } from './ui/ParamPanel'
+import { generateName } from './ui/data/names'
 import { initGameShell } from './ui/Shell'
 import { readVehicleChoice } from './ui/VehicleChoice'
 import { type VehicleKind, createVehicle } from './vehicles'
@@ -78,8 +79,8 @@ async function main(): Promise<void> {
       room: shell.room || query.get('room') || 'lobby',
       setStatus: (lines) => { netStatus = lines; shell.setStatus(lines) },
       setMapEntities: (e) => shell.setMapEntities(e),
-      // The match display lands with the next UI merge; until then this is a no-op.
-      setMatchState: (m) => (shell as { setMatchState?: (state: typeof m) => void }).setMatchState?.(m),
+      setMatchState: (m) => shell.setMatchState(m),
+      names: (seed, kind) => generateName(seed, kind),
     })
   }
   shell.onPlay = join
