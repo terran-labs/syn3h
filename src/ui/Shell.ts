@@ -12,6 +12,8 @@ import { Starfield } from './Starfield'
 import { Scoreboard } from './Scoreboard'
 import { canEditWorld, hostControls } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
+import { renderHelp, touchHelp } from './VehicleHelp'
+import type { VehicleKind } from '../vehicles'
 import './shell.css'
 
 const back = '<button type="button" class="panel-back" data-goto="index">‹ Back</button>'
@@ -35,6 +37,8 @@ export class Shell implements System {
   private started = false
   private menuVisible = true
   private readonly previousSuspended: boolean
+  private helpTimer?: ReturnType<typeof setTimeout>
+  private activeVehicleKind: VehicleKind = this.choice.vehicleKind
   private toastTimer?: ReturnType<typeof setTimeout>
   readonly touch: TouchControls
 
@@ -45,7 +49,7 @@ export class Shell implements System {
       <header class="lobby-brand"><img class="shell-logo" src="/brand/syn3h.png" alt="Syn3h" width="512" height="256"></header>
       <div class="lobby-panels">
         <section data-panel="index" class="lobby-index">
-          <div class="lobby-message"><h1 tabindex="-1">Explore. Create. Connect.</h1><p>Choose your buggy and explore a world together.</p><p class="lobby-room-label"></p><div class="lobby-links"><button data-goto="about">About</button><button data-goto="settings">Settings</button><button data-goto="multiplayer">Community</button></div></div>
+          <div class="lobby-message"><h1 tabindex="-1">Explore. Create. Connect.</h1><p>Choose your vehicle and explore a world together.</p><p class="lobby-room-label"></p><div class="lobby-links"><button data-goto="about">About</button><button data-goto="settings">Settings</button><button data-goto="multiplayer">Community</button></div></div>
           <nav class="lobby-destinations" aria-label="Lobby"><button data-goto="explore">Explore</button><button data-goto="vehicle">Vehicle</button><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button class="return-game" data-resume hidden>Return to Game</button></nav>
         </section>
         <section data-panel="explore">${heading('Prepare to Explore')}
@@ -55,8 +59,8 @@ export class Shell implements System {
           <button class="shell-play" type="submit">Enter World ›</button></form>${back}
         </section>
         <section data-panel="vehicle">${heading('Your Vehicle')}
-          <fieldset class="shell-vehicle"><legend>Buggy</legend><div class="shell-vehicle-options"><label><input type="radio" name="vehicle" value="buggy-classic"> Classic</label><label><input type="radio" name="vehicle" value="buggy-syn3h"> Syn3h</label></div><div class="shell-vehicle-preview"></div><div class="shell-colors"><label>Body <input type="color" name="bodyColor" aria-label="Body colour"></label><label>Accent <input type="color" name="accentColor" aria-label="Accent colour"></label></div></fieldset>
-          <p class="vehicle-note">Your vehicle and colours are saved on this device.</p><button data-goto="explore">Continue ›</button>${back}
+          <fieldset class="shell-vehicle"><legend>Vehicle</legend><div class="shell-vehicle-options"><label><input type="radio" name="vehicle" value="buggy-classic"> Classic</label><label><input type="radio" name="vehicle" value="buggy-syn3h"> Syn3h Buggy</label><label><input type="radio" name="vehicle" value="hovercraft"> Hovercraft</label><label><input type="radio" name="vehicle" value="jet"> Jet</label></div><div class="shell-vehicle-preview"></div><div class="shell-colors"><label>Body <input type="color" name="bodyColor" aria-label="Body colour"></label><label>Accent <input type="color" name="accentColor" aria-label="Accent colour"></label></div></fieldset>
+          <div class="vehicle-help"></div><p class="vehicle-note">Your vehicle and colours are saved on this device.</p><button data-goto="explore">Continue ›</button>${back}
         </section>
         <section data-panel="worlds">${heading('Worlds to Explore')}
           <p>Procedural volcano</p><fieldset class="world-controls"><legend>World</legend><label for="world-seed">Seed</label><div class="input-action"><input id="world-seed" type="number" min="1" max="999999" step="1"><button id="new-world" type="button">New world</button></div><label class="bots-control" hidden>Bots <output></output><input id="bots-count" type="range" step="1"></label></fieldset>
@@ -73,6 +77,7 @@ export class Shell implements System {
     </section>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button" aria-label="Open menu">☰ Menu</button><button data-open="multiplayer">Players</button><button data-open="worlds">Create</button></nav>
+    <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small>H or ? to show again</small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
     document.body.append(this.element); document.body.classList.add('has-game-shell')
     this.overlay = this.element.querySelector('.shell-overlay')!
@@ -126,13 +131,14 @@ export class Shell implements System {
     }, { signal })
     for (const name of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) game.canvas.addEventListener(name, () => { game.input.mouseFire = false }, { signal })
     window.addEventListener('blur', () => { game.input.mouseFire = false }, { signal })
+    this.updateHelp()
     void this.panels.show('index', true); this.update()
   }
   private updateRoomLabels(): void {
     this.element.querySelector('.lobby-room-label')!.textContent = `Room: ${this.room}`
     this.element.querySelector('.multiplayer-room')!.textContent = `Room: ${this.room}`
   }
-  private saveChoice(): void { saveVehicleChoice(this.choice); this.preview?.setChoice(this.choice) }
+  private saveChoice(): void { saveVehicleChoice(this.choice); this.preview?.setChoice(this.choice); this.updateHelp() }
   get vehicleKind(): VehicleChoice['vehicleKind'] { return this.choice.vehicleKind }
   get bodyColor(): string { return this.choice.bodyColor }
   get accentColor(): string { return this.choice.accentColor }
@@ -161,7 +167,7 @@ export class Shell implements System {
     this.element.querySelector<HTMLElement>('[data-resume]')!.hidden = false
     for (const input of this.element.querySelectorAll<HTMLInputElement>('.shell-vehicle input')) input.disabled = true
     this.element.querySelector('.vehicle-note')!.textContent = 'Vehicle selection is fixed for this session.'
-    this.closeMenu(); this.onPlay?.()
+    this.closeMenu(); this.showHelp(); this.onPlay?.()
   }
   openMenu(panel = 'index'): void {
     if (!this.started) return
@@ -179,6 +185,7 @@ export class Shell implements System {
     this.element.querySelector<HTMLButtonElement>('.shell-menu-button')!.focus({ preventScroll: true })
   }
   private keydown(event: KeyboardEvent): void {
+    if (this.started && !this.menuVisible && !event.repeat && (event.code === 'KeyH' || event.key === '?')) { event.preventDefault(); this.showHelp(); return }
     if (event.code === 'Escape') {
       event.preventDefault(); event.stopImmediatePropagation()
       if (this.menuVisible && this.panels.active !== 'index') this.showPanel('index')
@@ -200,6 +207,18 @@ export class Shell implements System {
     const url = new URL(location.href); url.searchParams.set('room', this.room); url.searchParams.delete('autoplay')
     try { await navigator.clipboard.writeText(url.href); this.toast('Invite link copied.') }
     catch { this.element.querySelector('.shell-message')!.textContent = `Invite link: ${url.href}` }
+  }
+  private updateHelp(): void {
+    renderHelp(this.element.querySelector('.vehicle-help')!, this.choice.vehicleKind)
+    this.element.querySelector('.shell-touch-hint')!.textContent = touchHelp(this.choice.vehicleKind)
+    renderHelp(this.element.querySelector('.shell-controls')!, this.choice.vehicleKind)
+  }
+  /** Call after an actual spawn so query overrides and future respawns show the right controls. */
+  setVehicleKind(kind: VehicleKind): void { this.activeVehicleKind = kind; this.touch.setVehicleKind(kind); if (this.started) this.showHelp() }
+  showHelp(): void {
+    const hint = this.element.querySelector<HTMLElement>('.spawn-help')!
+    renderHelp(hint.querySelector('div')!, this.activeVehicleKind, this.touch.available)
+    hint.hidden = false; clearTimeout(this.helpTimer); this.helpTimer = setTimeout(() => { hint.hidden = true }, 8500)
   }
   setStatus(lines: readonly string[]): void { this.board.setStatus(lines); this.hudBoard.setStatus(lines) }
   setSpeed(metresPerSecond: number): void { this.speed.textContent = String(Math.round(Math.abs(metresPerSecond) * 2.23694)) }
@@ -229,7 +248,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); clearTimeout(this.toastTimer); this.preview?.dispose(); this.panels.dispose(); this.starfield.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.preview?.dispose(); this.panels.dispose(); this.starfield.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }
@@ -237,6 +256,7 @@ export class Shell implements System {
 /** Call after creating the player, before constructing ParamPanel. */
 export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { shell: Shell; audio: GameAudio; dispose: () => void } {
   const audio = new GameAudio(game.camera), shell = game.add(new Shell(game, audio))
+  shell.setVehicleKind(player.kind)
   const bridge = game.add({ update() {
     const v = player.body.linvel(), p = player.body.translation(), speed = Math.hypot(v.x, v.y, v.z)
     shell.setSpeed(speed)
