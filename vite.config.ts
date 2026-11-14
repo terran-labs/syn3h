@@ -15,7 +15,8 @@ function roomServer(): Plugin {
     name: 'syn3h-room-server',
     apply: 'serve',
     configureServer(server) {
-      if (process.env.SYN3H_NO_ROOM_SERVER) return
+      // Vitest starts a Vite server too; tests must not spawn (and fight over) a room server.
+      if (process.env.SYN3H_NO_ROOM_SERVER || process.env.VITEST) return
       child = spawn('npx', ['tsx', 'server/dev.ts'], { stdio: 'inherit', env: { ...process.env, PORT: '8787' } })
       const stop = () => child?.kill()
       server.httpServer?.once('close', stop)
