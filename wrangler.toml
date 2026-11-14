@@ -1,0 +1,21 @@
+# Cloudflare deployment: one Worker serves the built client (dist/) and routes /ws to a
+# Durable Object per room. Build first with `npm run build`, then `npx wrangler deploy`.
+name = "syn3h"
+main = "server/worker.ts"
+compatibility_date = "2026-11-01"
+
+[assets]
+directory = "./dist"
+binding = "ASSETS"
+# /ws never matches a file, so it always reaches the Worker; listing it keeps that true even
+# if SPA style not found handling is enabled later.
+run_worker_first = ["/ws"]
+
+[[durable_objects.bindings]]
+name = "ROOMS"
+class_name = "RoomDO"
+
+# SQLite backed Durable Objects are available on the Workers free plan.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RoomDO"]

@@ -1,9 +1,20 @@
 {
   "tagline": "Mars Explorer's buggy, a procedural volcano world and multiplayer laser tag, native in the browser.",
   "deadline": "Demo: Sunday noon, Coeur d'Alene",
-  "updated": "Saturday 2:50pm PT",
-  "headline": "Foundation is running on WebGPU. Four builders are working in parallel on the buggy, the terrain, multiplayer and the sky.",
-  "previews": [],
+  "updated": "Saturday 3:25pm PT",
+  "headline": "Milestone 1 is playable: the original buggy physics on a procedural Martian volcano world, under a live alien sky, with multiplayer connected.",
+  "previews": [
+    {
+      "title": "Play the current build",
+      "url": "https://vorton-previews.tail285f88.ts.net:32782/",
+      "detail": "Live game. WASD or arrows to drive, Shift brakes, L or click fires. Open it in two tabs or on two devices to see multiplayer. Add ?room=name for a private room."
+    },
+    {
+      "title": "Same build, different world",
+      "url": "https://vorton-previews.tail285f88.ts.net:32782/?seed=777",
+      "detail": "Every seed generates a different volcano world in about a tenth of a second."
+    }
+  ],
   "milestones": [
     {
       "state": "done",
@@ -16,39 +27,59 @@
       "detail": "Three.js on WebGPU, Rapier at a fixed 50 Hz, shared slider registry, headless smoke test."
     },
     {
-      "state": "active",
+      "state": "done",
       "title": "Milestone 1: buggy physics on Martian terrain",
       "detail": "The original buggy handling, ported from source, driving on a procedural landscape. First preview link."
     },
     {
-      "state": "active",
+      "state": "done",
       "title": "Procedural volcano world from a shared seed",
       "detail": "Dunes, mesas and a climbable volcano generated locally in under 150 ms. Lava, roads and flames follow."
     },
     {
-      "state": "active",
+      "state": "done",
       "title": "Multiplayer with ramming",
       "detail": "Room server, remote players, physical proxies so vehicles can shove each other, shared sliders."
     },
     {
-      "state": "active",
+      "state": "done",
       "title": "Alien sky, sun and shadows",
       "detail": "Live time of day and scattering sliders. Nothing baked."
     },
     {
-      "state": "next",
-      "title": "Force field wings and lava buoyancy",
-      "detail": "The buggy's glide mode and skipping across lava."
-    },
-    {
-      "state": "next",
+      "state": "done",
       "title": "Laser tag",
       "detail": "Lasers, tagging by ram or shot, scores."
     },
     {
+      "state": "active",
+      "title": "Two buggies: classic Mars Explorer and Syn3h",
+      "detail": "Both selectable. The Syn3h model is converted; the classic body is being recovered from the Unity project."
+    },
+    {
+      "state": "active",
+      "title": "Lava, flames, embers and smoke",
+      "detail": "Flowing lava lake and rivers, GPU particles at volcanic vents."
+    },
+    {
+      "state": "active",
+      "title": "Sound, phone controls and start screen",
+      "detail": "Original soundtrack and effects, engine audio, touch controls, name and invite link."
+    },
+    {
+      "state": "active",
+      "title": "Force field wings and lava buoyancy",
+      "detail": "The buggy's glide mode and skipping across lava."
+    },
+    {
+      "state": "active",
+      "title": "Drivable roads and lava rivers placed by the generator",
+      "detail": "Second terrain pass, using the lava and particle modules."
+    },
+    {
       "state": "next",
-      "title": "Lava flows, roads and flame particles",
-      "detail": "Second terrain pass."
+      "title": "Bots that chase and ram you",
+      "detail": "The original bot system, with a slider for how many."
     },
     {
       "state": "next",
@@ -57,8 +88,8 @@
     },
     {
       "state": "next",
-      "title": "Original sound and vehicle models",
-      "detail": "Mars Explorer soundtrack, engine audio, converted models."
+      "title": "Hovercraft, jet and tank",
+      "detail": "Ported from the original scripts after the buggy skins."
     },
     {
       "state": "next",
@@ -69,40 +100,50 @@
   "workers": [
     {
       "state": "active",
-      "name": "Buggy physics",
-      "detail": "Porting Buggy.js suspension, motor, friction and steering onto Rapier."
+      "name": "Buggy, second pass (Claude 1)",
+      "detail": "Force field wing flight, lava buoyancy, both buggy models wired in."
     },
     {
       "state": "active",
-      "name": "Procedural terrain",
-      "detail": "Seeded heightfield, Rapier collider, slope and altitude shading."
+      "name": "Terrain, second pass (Claude 1)",
+      "detail": "Drivable roads up the volcano, lava lake and river layout, vent positions."
     },
     {
       "state": "active",
-      "name": "Multiplayer",
-      "detail": "Protocol, room server, remote vehicles, ramming, then laser tag."
+      "name": "Multiplayer follow-ups (Claude 1)",
+      "detail": "Player names, vehicle choice and colours over the network, bots for everyone."
+    },
+    {
+      "state": "done",
+      "name": "Sky and lighting (Claude 1)",
+      "detail": "Merged. Four sky presets, cascaded shadows, live time of day."
     },
     {
       "state": "active",
-      "name": "Sky and lighting",
-      "detail": "Parametric scattering sky, sun, shadows, fog, presets."
+      "name": "Codex 1: other vehicles",
+      "detail": "Both buggy skins are merged. Now hovercraft, then jet and tank."
     },
     {
       "state": "active",
-      "name": "Orchestrator",
-      "detail": "Integration, review, previews, this dashboard."
+      "name": "Codex 2: bots",
+      "detail": "Lava and particle effects are merged. Now the chasing bots."
+    },
+    {
+      "state": "active",
+      "name": "Codex 3: sound, touch, start screen",
+      "detail": "Committed, in final browser checks."
+    },
+    {
+      "state": "active",
+      "name": "Orchestrator (Claude 1)",
+      "detail": "Merging, testing, previews, this dashboard."
     }
   ],
   "decisions": [
     {
       "state": "waiting",
-      "title": "Start three Codex threads in this workspace",
-      "detail": "One each on Codex 1, 2 and 3. Any first message works, for example: Stand by for a task from the orchestrator. Then tell the orchestrator they exist."
-    },
-    {
-      "state": "waiting",
       "title": "Cloudflare access for public multiplayer",
-      "detail": "Needed before friends outside your tailnet can join. A wrangler login or an API token."
+      "detail": "Needed before friends outside your tailnet can join. A wrangler login on this machine or an API token."
     }
   ],
   "strategy": [
@@ -131,17 +172,17 @@
     {
       "state": "active",
       "name": "Claude 1",
-      "detail": "Runs the orchestrator and all four builders. This is the one to reset first if it runs low."
+      "detail": "Orchestrator plus four builders. Reset this one first if it runs low; if it runs dry the coordination stops."
     },
     {
       "state": "blocked",
       "name": "Claude 2",
-      "detail": "Off limits by your instruction. Hit its weekly limit earlier today."
+      "detail": "Off limits by your instruction."
     },
     {
-      "state": "waiting",
+      "state": "active",
       "name": "Codex 1, 2 and 3",
-      "detail": "Queued work: hovercraft, tank and jet; lava, roads and flames; sound, touch controls and models. Starts as soon as their threads exist."
+      "detail": "One builder each, directed by the orchestrator."
     }
   ]
 }

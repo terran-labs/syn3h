@@ -26,6 +26,16 @@ export interface Terrain {
   normalAt(x: number, z: number, out: THREE.Vector3): THREE.Vector3
   /** A safe place to spawn player `index`. Deterministic for a given seed. */
   spawnPoint(index: number): SpawnPoint
+  /**
+   * Height of the lava (or sea) surface at a world position, or -Infinity where there is
+   * none. Vehicles use it for buoyancy.
+   */
+  liquidHeightAt?(x: number, z: number): number
+  /**
+   * Called after the terrain regenerated in place (seed or a terrain parameter changed),
+   * once the new mesh and collider exist. Use it to re-seat vehicles. Returns unsubscribe.
+   */
+  onRegenerate?(listener: () => void): () => void
   dispose(): void
 }
 

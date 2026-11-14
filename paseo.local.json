@@ -1,7 +1,0 @@
-{
-  "scripts": {
-    "dashboard": {
-      "command": "'/Users/vtn/.nvm/versions/node/v24.14.1/bin/node' '/Users/vtn/.local/share/vorteo-native-preview/paseo-preview.mjs' env 'dashboard' --workspace 'wks_cfcb37521a420b78' -- /bin/sh -lc 'node dashboard/server.mjs --port $PASEO_PORT'"
-    }
-  }
-}

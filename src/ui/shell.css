@@ -1,0 +1,49 @@
+@font-face { font-family: Barlow; src: url('/brand/barlow-400-latin.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Barlow Condensed'; src: url('/brand/barlow-condensed-500-latin.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+.syn3h-shell { --ember: rgb(255 110 40); color: #f4e6dc; font: 16px/1.4 Barlow, sans-serif; }
+.syn3h-shell *, .touch-controls * { box-sizing: border-box; }
+.syn3h-shell [hidden], .touch-controls[hidden] { display: none !important; }
+.has-game-shell { overscroll-behavior: none; touch-action: none; }
+.has-game-shell #hud { display: none; }
+.shell-start { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; overflow: auto; padding: 22px; background: radial-gradient(ellipse at 50% 30%, #351008dc, #0a0302f2 80%); }
+.shell-card { width: min(100%, 480px); text-align: center; }
+.shell-logo { width: min(100%, 380px); height: auto; display: block; margin: -20px auto -26px; }
+.shell-origin { display: flex; align-items: center; justify-content: center; gap: 14px; font: 500 12px 'Barlow Condensed', sans-serif; letter-spacing: 3px; color: #d4a38c; }
+.shell-origin img { width: 95px; height: auto; }
+.shell-card h1 { font: 500 clamp(30px, 5vw, 42px)/1.1 'Barlow Condensed', sans-serif; margin: 24px 0 8px; }
+.shell-intro { color: #c6a89a; margin: 0 0 22px; }
+.shell-form { text-align: left; }
+.shell-form label { display: block; letter-spacing: 2px; font-size: 11px; margin-bottom: 7px; color: #d4a38c; }
+.syn3h-shell input { width: 100%; padding: 12px 14px; background: #120806; border: 1px solid #713a28; border-radius: 5px; font: inherit; color: #fff1e8; }
+.syn3h-shell button, .syn3h-shell select { font: inherit; color: #f4e6dc; cursor: pointer; border: 1px solid #713a28; border-radius: 5px; background: #24100b; padding: 8px 12px; touch-action: manipulation; }
+.syn3h-shell :focus-visible { outline: 2px solid var(--ember); outline-offset: 3px; }
+.syn3h-shell button:hover { border-color: var(--ember); }
+.shell-room { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin: 13px 0 20px; font-size: 13px; }
+.shell-room > span { min-width: 0; overflow-wrap: anywhere; color: #b78e7a; }
+.shell-room strong { color: #ffe5d5; font-weight: 400; margin-left: 8px; }
+.shell-room button { flex-shrink: 0; font-size: 12px; }
+.shell-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 14px; color: #c6a89a; font-size: 12px; margin-bottom: 22px; }
+.shell-controls b { font: 500 14px 'Barlow Condensed', sans-serif; color: #ffe5d5; margin-right: 7px; }
+.shell-touch-hint { display: none; color: #c6a89a; font-size: 13px; }
+.has-touch .shell-touch-hint { display: block; }
+.has-touch .shell-controls { display: none; }
+.syn3h-shell .shell-play { width: 100%; display: flex; justify-content: space-between; align-items: center; border: none; background: var(--ember); color: #180801; font: 500 24px 'Barlow Condensed', sans-serif; letter-spacing: 2px; padding: 13px 20px; }
+.shell-message { min-height: 18px; margin: 9px 0 0; font-size: 12px; color: #ffd1b6; overflow-wrap: anywhere; }
+.shell-audio { position: fixed; bottom: max(16px, env(safe-area-inset-bottom)); right: max(16px, env(safe-area-inset-right)); z-index: 35; display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.shell-audio label { letter-spacing: 2px; color: #d4a38c; font-size: 10px; }
+.shell-hud { position: fixed; left: max(20px, env(safe-area-inset-left)); top: max(16px, env(safe-area-inset-top)); pointer-events: none; z-index: 12; text-shadow: 0 2px 5px #000; }
+.shell-speed { display: flex; align-items: baseline; gap: 8px; }
+.shell-speed strong { font: 500 52px/1 'Barlow Condensed', sans-serif; }
+.shell-speed span { font: 500 14px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: #ffae7d; }
+.shell-status { white-space: pre-line; font-size: 13px; margin-top: 8px; }
+.touch-controls { position: fixed; inset: 0; z-index: 20; pointer-events: none; user-select: none; -webkit-user-select: none; touch-action: none; }
+.touch-stick { position: absolute; left: max(24px, env(safe-area-inset-left)); bottom: max(28px, env(safe-area-inset-bottom)); width: 140px; height: 140px; border: 1px solid #ff995c75; border-radius: 50%; background: #1b09065e; pointer-events: auto; touch-action: none; }
+.touch-knob { position: absolute; width: 52px; height: 52px; top: 43px; left: 43px; border-radius: 50%; background: #ff6e2860; border: 1px solid #ffae7db0; }
+.touch-stick-label { position: absolute; bottom: 10px; width: 100%; text-align: center; font: 500 11px 'Barlow Condensed', sans-serif; letter-spacing: 2px; color: #ffcca5; }
+.touch-actions { position: absolute; right: max(24px, env(safe-area-inset-right)); bottom: max(30px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: 62px 62px; gap: 12px; }
+.touch-actions button { border: 1px solid #ff995c75; border-radius: 50%; height: 62px; color: #ffe1cd; background: #25100ba8; font: 500 15px 'Barlow Condensed', sans-serif; pointer-events: auto; touch-action: none; }
+.touch-actions .touch-fire { grid-column: 2; background: #8b361cbf; }
+.touch-actions button.held, .touch-actions button[aria-pressed=true] { background: #ff6e28c9; color: #180801; }
+@media (pointer: coarse) { .shell-audio { top: max(64px, env(safe-area-inset-top)); bottom: auto; right: 12px; } .shell-audio label { display: none; } }
+@media (max-width: 600px) { .shell-start { padding: 75px 24px 24px; } .shell-logo { width: 260px; margin-top: -12px; margin-bottom: -20px; } .shell-card h1 { margin-top: 18px; } .shell-intro { font-size: 14px; margin-bottom: 18px; } .shell-audio { top: max(50px, env(safe-area-inset-top)); bottom: auto; } .shell-hud { top: 58px; } .touch-stick { width: 124px; height: 124px; left: 18px; } .touch-knob { left: 35px; top: 35px; } .touch-actions { right: 18px; } }
+@media (max-height: 520px) and (min-width: 601px) { .shell-start { padding: 16px; } .shell-card { width: 640px; } .shell-logo { width: 180px; margin: -15px auto -18px; } .shell-origin { display: none; } .shell-card h1 { margin: 8px 0; font-size: 30px; } .shell-intro { display: none; } .shell-form { max-width: 400px; margin: auto; } .shell-room { margin: 8px 0; } .shell-controls { margin-bottom: 10px; } }

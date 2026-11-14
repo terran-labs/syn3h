@@ -1,14 +1,37 @@
-import { defineConfig } from 'vite'
+import { spawn, type ChildProcess } from 'node:child_process'
+import { defineConfig, type Plugin } from 'vite'
 
 // When launched by the preview broker, PASEO_PREVIEW_ORIGIN is the HTTPS origin the owner
 // opens. Hot reload has to connect back through it over WSS.
 const origin = process.env.PASEO_PREVIEW_ORIGIN ? new URL(process.env.PASEO_PREVIEW_ORIGIN) : null
 
+/**
+ * Starts the multiplayer room server beside the dev server, so one command gives a working
+ * multiplayer game. Skipped when SYN3H_NO_ROOM_SERVER is set (tests that run their own).
+ */
+function roomServer(): Plugin {
+  let child: ChildProcess | null = null
+  return {
+    name: 'syn3h-room-server',
+    apply: 'serve',
+    configureServer(server) {
+      if (process.env.SYN3H_NO_ROOM_SERVER) return
+      child = spawn('npx', ['tsx', 'server/dev.ts'], { stdio: 'inherit', env: { ...process.env, PORT: '8787' } })
+      const stop = () => child?.kill()
+      server.httpServer?.once('close', stop)
+      process.once('exit', stop)
+    },
+  }
+}
+
 export default defineConfig({
+  plugins: [roomServer()],
   server: {
     host: '127.0.0.1',
     port: 5173,
     allowedHosts: origin ? [origin.hostname] : true,
+    // Same-origin /ws keeps HTTPS previews working: a secure page cannot open ws://.
+    proxy: { '/ws': { target: 'ws://127.0.0.1:8787', ws: true } },
     hmr: origin ? { protocol: 'wss', host: origin.hostname, clientPort: Number(origin.port || 443) } : undefined,
   },
   build: { target: 'es2022', sourcemap: true },
