@@ -8,10 +8,10 @@ export interface VehicleChoice {
   bodyColor: string
   accentColor: string
 }
-const defaults: VehicleChoice = { vehicleKind: 'buggy-classic', bodyColor: '#1768b4', accentColor: '#49e6ff' }
+const defaults: VehicleChoice = { vehicleKind: 'buggy-syn3h', bodyColor: '#1768b4', accentColor: '#49e6ff' }
 export function sanitizeVehicleChoice(value: Partial<VehicleChoice> | null): VehicleChoice {
   const color = (value: unknown, fallback: string) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback
-  return { vehicleKind: value?.vehicleKind === 'buggy-syn3h' ? 'buggy-syn3h' : 'buggy-classic', bodyColor: color(value?.bodyColor, defaults.bodyColor), accentColor: color(value?.accentColor, defaults.accentColor) }
+  return { vehicleKind: value?.vehicleKind === 'buggy-classic' ? 'buggy-classic' : 'buggy-syn3h', bodyColor: color(value?.bodyColor, defaults.bodyColor), accentColor: color(value?.accentColor, defaults.accentColor) }
 }
 export function readVehicleChoice(): VehicleChoice {
   try { return sanitizeVehicleChoice(JSON.parse(localStorage.getItem('syn3h.vehicle') || 'null')) } catch { return { ...defaults } }

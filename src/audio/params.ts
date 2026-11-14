@@ -13,3 +13,5 @@ export const muted = defineParam({ id: 'audio.muted', label: 'Mute audio', group
 export const crossfade = defineParam({ id: 'audio.crossfade', label: 'Music crossfade (s)', group: 'Audio', scope: 'client', default: 2, min: 0.1, max: 8, step: 0.1 })
 export const engineIdle = defineParam({ id: 'audio.engineIdle', label: 'Engine idle (Hz)', group: 'Audio', scope: 'client', default: 36, min: 20, max: 70, step: 1 })
 export const engineRange = defineParam({ id: 'audio.engineRange', label: 'Engine pitch range', group: 'Audio', scope: 'client', default: 95, min: 20, max: 180, step: 1 })
+
+export const lobbyFade = defineParam({ id: 'audio.lobbyFade', label: 'Lobby fade (s)', group: 'Audio', scope: 'client', default: 10, min: 0.1, max: 20, step: 0.1 })

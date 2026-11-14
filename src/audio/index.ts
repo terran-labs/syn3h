@@ -2,10 +2,11 @@ import * as THREE from 'three/webgpu'
 import type { System } from '../core/Game'
 import { params } from '../../shared/params'
 import { Engine, type MotionAudio } from './Engine'
-import { crossfade, effectsVolume, masterVolume, musicVolume, muted } from './params'
+import { crossfade, lobbyFade, effectsVolume, masterVolume, musicVolume, muted } from './params'
 
 export type Sound = 'laserShot' | 'laserHit' | 'materialize'
-export type MusicTrack = 'Classic' | 'Carefree' | 'Ambient'
+export const MUSIC_TRACKS = { SpaceStation: 'Space Station', Classic: 'Classic (Mars Explorer)', Carefree: 'Carefree (Mars Explorer)', Ambient: 'Ambient (legacy)' } as const
+export type MusicTrack = keyof typeof MUSIC_TRACKS
 export interface Position { x: number; y: number; z: number }
 const files: Record<Sound | 'wind', string> = { laserShot: 'LaserShot.mp3', laserHit: 'LaserHit.mp3', materialize: 'Materialize.mp3', wind: 'Wind.wav' }
 interface Deck { element: HTMLAudioElement; source: MediaElementAudioSourceNode; gain: GainNode; stopTimer?: ReturnType<typeof setTimeout> }
@@ -23,7 +24,8 @@ export class GameAudio implements System {
   private readonly up = new THREE.Vector3()
   private readonly position = new THREE.Vector3()
   private readonly rotation = new THREE.Quaternion()
-  private selected: MusicTrack = 'Classic'
+  private selected: MusicTrack = 'SpaceStation'
+  private lobbyVisible = true
   private disposed = false
   private loads?: Promise<void>
   private readonly gestures = new AbortController()
@@ -79,6 +81,7 @@ export class GameAudio implements System {
   }
   async setTrack(track: MusicTrack): Promise<void> {
     this.selected = track
+    this.syncMix()
     if (this.context) await this.startTrack(track)
   }
   private async startTrack(track: MusicTrack): Promise<void> {
@@ -101,11 +104,20 @@ export class GameAudio implements System {
       if (name !== track) other.stopTimer = setTimeout(() => other.element.pause(), crossfade.value * 1000 + 100)
     }
   }
+  /** CoreAudio fades title music at 0.1 volume units per second outside fullscreen UI. */
+  setLobbyVisible(visible: boolean): void {
+    this.lobbyVisible = visible
+    if (!this.context || !this.music || this.selected !== 'SpaceStation') return
+    const now = this.context.currentTime
+    this.music.gain.cancelAndHoldAtTime(now)
+    this.music.gain.linearRampToValueAtTime(visible ? musicVolume.value : 0, now + lobbyFade.value)
+  }
   private syncMix(): void {
     if (!this.context) return
     const now = this.context.currentTime
     this.master!.gain.setTargetAtTime(muted.value ? 0 : masterVolume.value, now, 0.03)
-    this.music!.gain.setTargetAtTime(musicVolume.value, now, 0.03)
+    this.music!.gain.cancelAndHoldAtTime(now)
+    this.music!.gain.setTargetAtTime(this.selected === 'SpaceStation' && !this.lobbyVisible ? 0 : musicVolume.value, now, 0.03)
     this.effects!.gain.setTargetAtTime(effectsVolume.value, now, 0.03)
   }
   private output(position?: Position): { node: AudioNode; dispose: () => void } {
