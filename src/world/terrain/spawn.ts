@@ -1,15 +1,15 @@
 /**
- * Spawn positions on the flat pad at the origin.
+ * Spawn positions on the pads around the island.
  *
- * A Vogel (golden angle) spiral spreads any number of players evenly without a table, and
- * consecutive indices land far apart, so the first 8 players are at least 12 m from each
- * other. Everyone faces the volcano, which also makes a good first view.
+ * Players are dealt round the pads in turn, so the first eight each get their own pad and
+ * start spread around the coast, all facing the volcano at the centre. Later players share
+ * pads on a small Vogel (golden angle) spiral, which spreads any number without a table.
  */
 import { SPAWN_FLAT_RADIUS } from './generate'
 import type { HeightSampler } from './sampler'
 
 const GOLDEN_ANGLE = 2.399963229728653
-const SPACING = 8.5
+const SPACING = 7
 /** Spawn this far above the ground so wheels settle instead of starting interpenetrated. */
 export const SPAWN_CLEARANCE = 2
 
@@ -22,11 +22,15 @@ export interface SpawnSpot {
 
 export function spawnPointAt(sampler: HeightSampler, index: number): SpawnSpot {
   const i = Math.max(0, Math.floor(index))
-  const r = Math.min(SPAWN_FLAT_RADIUS - 6, SPACING * Math.sqrt(i + 0.5))
-  const a = i * GOLDEN_ANGLE
-  const x = Math.cos(a) * r
-  const z = Math.sin(a) * r
-  const v = sampler.data.layout.volcano
+  const L = sampler.data.layout
+  const pad = L.spawns[i % L.spawns.length]
+  // Position within the pad: the first player at its centre, later ones spiralling out.
+  const k = Math.floor(i / L.spawns.length)
+  const r = Math.min(SPAWN_FLAT_RADIUS - 6, SPACING * Math.sqrt(k))
+  const a = k * GOLDEN_ANGLE
+  const x = pad.x + Math.cos(a) * r
+  const z = pad.z + Math.sin(a) * r
+  const v = L.volcano
   // Heading 0 faces -Z; rotating by h about +Y faces (-sin h, -cos h).
   const heading = Math.atan2(-(v.x - x), -(v.z - z))
   return { x, y: sampler.heightAt(x, z) + SPAWN_CLEARANCE, z, heading }

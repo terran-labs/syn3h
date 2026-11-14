@@ -110,8 +110,8 @@ export const worldGravity = defineParam({
 
 /** Altitude of the lava or sea surface in metres. */
 export const worldLavaAltitude = defineParam({
-  id: 'world.lavaAltitude', label: 'Lava altitude', group: 'World', scope: 'world',
-  default: -20, min: -100, max: 100, step: 0.5,
+  id: 'world.lavaAltitude', label: 'Sea level', group: 'World', scope: 'world',
+  default: 0, min: -40, max: 60, step: 0.5,
 })
 
 /** Shared terrain seed. A world is a seed plus a parameter set. */

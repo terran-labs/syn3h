@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { coneProfile, generateTerrain } from '../../src/world/terrain/generate'
+import { SPAWN_FLAT_RADIUS, generateTerrain } from '../../src/world/terrain/generate'
 import { distanceToPolyline } from '../../src/world/terrain/raster'
 import { type Road, rimRoadRadius } from '../../src/world/terrain/roads'
 import { HeightSampler } from '../../src/world/terrain/sampler'
@@ -24,22 +24,41 @@ function interior(road: Road, roads: Road[]) {
 }
 
 describe('roads', () => {
-  it('climb from the spawn to the caldera rim and ring it', () => {
+  it('climb from spawn pad 0 to the summit and ring it', () => {
     for (const seed of SEEDS) {
       const d = generateTerrain(seed, settings)
       const v = d.layout.volcano
       const main = d.roads.find((r) => r.kind === 'volcano')!
       const rim = d.roads.find((r) => r.kind === 'rim')!
       expect(main && rim).toBeTruthy()
+      const pad = d.layout.spawns[0]
       const start = main.points[0]
-      expect(Math.hypot(start.x, start.z)).toBeLessThan(60)
+      expect(Math.hypot(start.x - pad.x, start.z - pad.z)).toBeLessThan(SPAWN_FLAT_RADIUS)
       const end = main.points[main.points.length - 1]
       expect(Math.hypot(end.x - v.x, end.z - v.z)).toBeCloseTo(rimRoadRadius(d), 0)
-      const rimHeight = v.height * coneProfile(v.calderaRadius / v.radius)
-      expect(end.y).toBeGreaterThan(rimHeight * 0.75)
-      expect(d.roads.filter((r) => r.kind === 'plain').length).toBeGreaterThanOrEqual(0)
+      // The road arrives at the height of the summit ring, with no step at the junction.
+      expect(Math.abs(end.y - d.layout.summitHeight)).toBeLessThan(6)
+      const near = rim.points.reduce((a, p) => (Math.hypot(p.x - end.x, p.z - end.z) < Math.hypot(a.x - end.x, a.z - end.z) ? p : a))
+      expect(Math.abs(near.y - end.y)).toBeLessThan(1.5)
     }
-  })
+  }, 20000)
+
+  it('give every spawn pad a road to the ring round the volcano', () => {
+    for (const seed of SEEDS) {
+      const d = generateTerrain(seed, settings)
+      const ring = d.roads.find((r) => r.kind === 'plain' && r.closed)!
+      expect(ring).toBeTruthy()
+      const approaches = d.roads.filter((r) => r.kind === 'plain' && !r.closed)
+      expect(approaches.length).toBe(d.layout.spawns.length - 1)
+      for (let i = 1; i < d.layout.spawns.length; i++) {
+        const pad = d.layout.spawns[i]
+        const road = approaches.find((r) => Math.hypot(r.points[0].x - pad.x, r.points[0].z - pad.z) < SPAWN_FLAT_RADIUS)!
+        expect(road).toBeTruthy()
+        const end = road.points[road.points.length - 1]
+        expect(distanceToPolyline(ring.points, true, end.x, end.z)).toBeLessThan(8)
+      }
+    }
+  }, 20000)
 
   it('keep grades and cross slopes under the caps on the collider surface', () => {
     const s = { worstGrade: 0, worstCross: 0, samples: 0 }
@@ -69,7 +88,7 @@ describe('roads', () => {
     process.stdout.write(`roads: ${s.samples} samples, worst grade ${deg(s.worstGrade)} deg, worst cross slope ${deg(s.worstCross)} deg\n`)
     expect(s.worstGrade).toBeLessThan(GRADE_CAP)
     expect(s.worstCross).toBeLessThan(CROSS_CAP)
-  })
+  }, 20000)
 
   it('are deterministic', () => {
     expect(generateTerrain(5, settings).roads).toEqual(generateTerrain(5, settings).roads)

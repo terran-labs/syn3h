@@ -1,18 +1,19 @@
 /**
  * Roads pass: plans graded roads from the seed and flattens the heightfield under them.
  *
- *  - volcano: from the spawn pad to the gentle foot of the volcano, then switchbacks up the
- *    gentle flank whose heading keeps the uphill grade near TRACE_GRADE, to the rim road.
- *    Switchbacks stay within SWITCHBACK_SECTOR of the gentle axis, leaving the other flanks
- *    free for lava rivers (a spiral would wrap the whole cone).
+ *  - volcano: from spawn pad 0 onto the gentle flank of the volcano, then long switchbacks
+ *    whose heading keeps the uphill grade near TRACE_GRADE, to the rim road. Switchbacks
+ *    stay within SWITCHBACK_SECTOR of the gentle axis, leaving the far flank free for lava
+ *    rivers (a full spiral would wrap the whole cone and have to cross them).
  *  - rim:     a closed ring just outside the caldera lip
- *  - plain:   one or two roads from the spawn pad to small cones or mesas
+ *  - plain:   a closed ring round the volcano's foot, and one approach road from every
+ *    other spawn pad inward to that ring, so every player has a road toward the centre
  *
  * Data shape (`data.roads`):
  *
  *   interface Road {
  *     kind: 'volcano' | 'rim' | 'plain'
- *     closed: boolean        // rim road: the last point connects back to the first
+ *     closed: boolean        // ring roads: the last point connects back to the first
  *     width: number          // paved width in metres (ROAD_WIDTH)
  *     points: RoadPoint[]    // centreline about 4 m apart; y is the road surface height
  *   }
@@ -22,8 +23,10 @@
  * the terrain. `data.roadDist` holds each sample's distance to the nearest centreline for
  * the material's road paint.
  */
-import { SPAWN_FLAT_RADIUS, SPAWN_LEVEL, type TerrainData, type TerrainPass, volcanoT } from './generate'
-import { hash2, perlin, smoothstep, subSeed } from './noise'
+import {
+  FOOT_RING, SPAWN_FLAT_RADIUS, SPAWN_LEVEL, type TerrainData, type TerrainPass, approachMeander, rimRadius,
+} from './generate'
+import { hash2, smoothstep } from './noise'
 import { TURN_GENTLE, TURN_HAIRPIN, normalize2, sq, steer, visitNearPolyline } from './raster'
 import { HeightSampler } from './sampler'
 
@@ -53,15 +56,15 @@ export const ROAD_FLAT_HALF = 9.5
 export const ROAD_SHOULDER = 12
 /** Longitudinal grade cap of the road profile: 0.2 is about 11.3 degrees. */
 export const MAX_GRADE = 0.2
-/** Grade the volcano tracer aims for, leaving room for the cap to smooth bumps. */
-const TRACE_GRADE = 0.15
+/** Grades the volcano tracer aims for, tried in order, leaving room for the cap to smooth bumps. */
+const TRACE_GRADES = [0.15, 0.13, 0.11, 0.09, 0.075]
 const STEP = 4
-/** cos of the half angle of the sector the switchbacks stay in: 40 degrees. */
-const SWITCHBACK_SECTOR_COS = 0.766044443118978
+/** cos of the half angle of the sector the switchbacks stay in: 100 degrees. */
+const SWITCHBACK_SECTOR_COS = -0.17364817766693033
 
 /** Radius of the rim road around the volcano centre. */
 export function rimRoadRadius(data: TerrainData): number {
-  return data.layout.volcano.calderaRadius * 1.45 + 4
+  return rimRadius(data.layout.volcano)
 }
 
 /** Smooth the sampled heights along a road, then enforce the grade cap. */
@@ -123,7 +126,7 @@ function rimRoad(data: TerrainData, s: HeightSampler): Road {
   return { kind: 'rim', closed: true, width: ROAD_WIDTH, points }
 }
 
-function volcanoRoad(data: TerrainData, s: HeightSampler, rim: Road): Road {
+function traceVolcanoRoad(data: TerrainData, s: HeightSampler, rim: Road, traceGrade: number): { road: Road; fits: boolean } {
   const v = data.layout.volcano
   const reach = v.radius * (1 + v.gentleStretch)
   const ringR = rimRoadRadius(data)
@@ -132,12 +135,14 @@ function volcanoRoad(data: TerrainData, s: HeightSampler, rim: Road): Road {
   let rot = (hash2(data.seed, 31, 7) & 1) === 0 ? 1 : -1
   let hairpin = false
 
-  let [hx, hz] = normalize2(ex, ez)
-  let px = hx * (SPAWN_FLAT_RADIUS - 15)
-  let pz = hz * (SPAWN_FLAT_RADIUS - 15)
+  // Start on the inward edge of spawn pad 0, which sits on the gentle axis.
+  const pad = data.layout.spawns[0]
+  let [hx, hz] = normalize2(ex - pad.x, ez - pad.z)
+  let px = pad.x + hx * (SPAWN_FLAT_RADIUS - 15)
+  let pz = pad.z + hz * (SPAWN_FLAT_RADIUS - 15)
   const points: RoadPoint[] = [{ x: px, y: SPAWN_LEVEL, z: pz }]
   let climbing = false
-  for (let step = 0; step < 1500; step++) {
+  for (let step = 0; step < 2500; step++) {
     let dx: number
     let dz: number
     if (!climbing) {
@@ -173,7 +178,7 @@ function volcanoRoad(data: TerrainData, s: HeightSampler, rim: Road): Road {
         hairpin = true
       }
       const slope = (s.heightAt(px + ux * 10, pz + uz * 10) - s.heightAt(px - ux * 10, pz - uz * 10)) / 20
-      const sinA = slope > TRACE_GRADE ? TRACE_GRADE / slope : 1
+      const sinA = slope > traceGrade ? traceGrade / slope : 1
       const cosA = Math.sqrt(1 - sinA * sinA)
       dx = -uz * rot * cosA + ux * sinA
       dz = ux * rot * cosA + uz * sinA
@@ -192,62 +197,80 @@ function volcanoRoad(data: TerrainData, s: HeightSampler, rim: Road): Road {
     const d = sq(p.x - end.x) + sq(p.z - end.z)
     if (d < best) { best = d; endY = p.y }
   }
+  let length = 0
+  for (let i = 1; i < points.length; i++) length += Math.sqrt(sq(points[i].x - points[i - 1].x) + sq(points[i].z - points[i - 1].z))
   profile(points, false, SPAWN_LEVEL, endY)
-  return { kind: 'volcano', closed: false, width: ROAD_WIDTH, points }
+  // The road fits if it is long enough to make the climb inside the grade cap, with a
+  // little spare so the profile is not one unbroken ramp at the limit.
+  const fits = (endY - SPAWN_LEVEL) <= MAX_GRADE * 0.8 * length
+  return { road: { kind: 'volcano', closed: false, width: ROAD_WIDTH, points }, fits }
 }
 
-function plainRoads(data: TerrainData, s: HeightSampler, main: Road): Road[] {
+/**
+ * Trace the volcano road, relaxing the target grade until the road is long enough to reach
+ * the rim inside the grade cap. A steeper or rougher cone simply gets a longer road.
+ */
+function volcanoRoad(data: TerrainData, s: HeightSampler, rim: Road): Road {
+  let last: Road | null = null
+  for (const grade of TRACE_GRADES) {
+    const { road, fits } = traceVolcanoRoad(data, s, rim, grade)
+    last = road
+    if (fits) break
+  }
+  return last!
+}
+
+/** Radius of the foot ring road in the direction of unit vector (ux, uz). */
+function footRadius(data: TerrainData, ux: number, uz: number): number {
+  const v = data.layout.volcano
+  let g = ux * v.gentleX + uz * v.gentleZ
+  g = g > 0 ? g * g : 0
+  return v.radius * (1 + v.gentleStretch * g) * FOOT_RING + 14
+}
+
+/** A closed road round the foot of the volcano, joining every approach. */
+function footRoad(data: TerrainData, s: HeightSampler): Road {
+  const v = data.layout.volcano
+  // 256 points by rotating a vector with exact literal cos and sin, so no Math.cos.
+  const C = 0.9996988186962042
+  const S = 0.02454122852291229
+  let ux = 1
+  let uz = 0
+  const points: RoadPoint[] = []
+  for (let i = 0; i < 256; i++) {
+    const R = footRadius(data, ux, uz)
+    const x = v.x + ux * R
+    const z = v.z + uz * R
+    points.push({ x, y: s.heightAt(x, z), z })
+    const nx = ux * C - uz * S
+    uz = ux * S + uz * C
+    ux = nx
+  }
+  profile(points, true)
+  return { kind: 'plain', closed: true, width: ROAD_WIDTH, points }
+}
+
+/** One road from each spawn pad (except pad 0, which has the volcano road) to the foot ring. */
+function approachRoads(data: TerrainData, s: HeightSampler): Road[] {
   const L = data.layout
-  const v = L.volcano
-  // Direction the main road leaves the pad, so plain roads fan out away from it.
-  const m = main.points[Math.min(30, main.points.length - 1)]
-  const [mx, mz] = normalize2(m.x, m.z)
-
-  type Target = { x: number; z: number; stop: number; dist: number }
-  const targets: Target[] = []
-  for (const c of L.cones) targets.push({ x: c.x, z: c.z, stop: c.radius * 0.8, dist: 0 })
-  for (const me of L.mesas) targets.push({ x: me.x, z: me.z, stop: me.radius * 1.55, dist: 0 })
-  for (const t of targets) t.dist = Math.sqrt(t.x * t.x + t.z * t.z)
-  targets.sort((a, b) => a.dist - b.dist)
-
-  const want = 1 + (hash2(data.seed, 41, 3) & 1)
+  const padR = L.spawnRadius
   const roads: Road[] = []
-  const used: [number, number][] = [[mx, mz]]
-  const seed = subSeed(data.seed, 40)
-  for (const t of targets) {
-    if (roads.length >= want) break
-    const [dx, dz] = normalize2(t.x, t.z)
-    // Fan out: at least ~40 degrees from the main road and from each other.
-    if (used.some(([ux, uz]) => ux * dx + uz * dz > 0.76)) continue
-    const len = t.dist - t.stop
-    if (len < 150) continue
-    // Stay off the volcano and away from other features.
-    const clear = (x: number, z: number) => {
-      if (volcanoT(v, x, z) < 1.08) return false
-      for (const o of targets) {
-        if (o === t) continue
-        if (sq(x - o.x) + sq(z - o.z) < sq(o.stop + 25)) return false
-      }
-      return true
-    }
+  for (let i = 1; i < L.spawns.length; i++) {
+    const p = L.spawns[i]
     const points: RoadPoint[] = []
-    const start = SPAWN_FLAT_RADIUS - 15
-    let ok = true
-    const count = Math.ceil((len - start) / STEP)
-    for (let i = 0; i <= count; i++) {
-      const f = i / count
-      const along = start + (len - start) * f
-      // A gentle meander, zero at both ends.
-      const off = 45 * perlin(f * 2.2, 0.5, seed + roads.length) * 4 * f * (1 - f)
-      const x = dx * along - dz * off
-      const z = dz * along + dx * off
-      if (!clear(x, z)) { ok = false; break }
+    // `a` is the distance inward from the pad centre. The centreline follows the same
+    // meander the shape pass keeps clear of mountains.
+    for (let a = SPAWN_FLAT_RADIUS - 15; a < padR; a += STEP) {
+      const off = approachMeander(a, L.seeds.approach + 31 * i)
+      const x = p.dirX * (padR - a) - p.dirZ * off
+      const z = p.dirZ * (padR - a) + p.dirX * off
+      const r = Math.sqrt(x * x + z * z)
+      if (r <= footRadius(data, x / r, z / r)) break
       points.push({ x, y: s.heightAt(x, z), z })
     }
-    if (!ok) continue
+    if (points.length < 8) continue
     profile(points, false, SPAWN_LEVEL)
     roads.push({ kind: 'plain', closed: false, width: ROAD_WIDTH, points })
-    used.push([dx, dz])
   }
   return roads
 }
@@ -282,7 +305,7 @@ export const roadsPass: TerrainPass = {
     const s = new HeightSampler(data)
     const rim = rimRoad(data, s)
     const main = volcanoRoad(data, s, rim)
-    data.roads = [main, rim, ...plainRoads(data, s, main)]
+    data.roads = [main, rim, footRoad(data, s), ...approachRoads(data, s)]
     flattenRoads(data, data.roads)
   },
 }

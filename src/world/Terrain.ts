@@ -65,6 +65,11 @@ export interface Terrain {
    */
   liquidHeightAt?(x: number, z: number): number
   /**
+   * What the liquid at a world position is: 'lava' is deadly, 'water' is not. Null where the
+   * ground stands above the liquid.
+   */
+  liquidKindAt?(x: number, z: number): 'lava' | 'water' | null
+  /**
    * Called after the terrain regenerated in place (seed or a terrain parameter changed),
    * once the new mesh and collider exist. Use it to re-seat vehicles. Returns unsubscribe.
    */

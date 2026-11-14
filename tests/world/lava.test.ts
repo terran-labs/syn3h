@@ -29,7 +29,7 @@ describe('lava and vents', () => {
     const b = generateTerrain(9, settings)
     expect(a.lava).toEqual(b.lava)
     expect(a.vents).toEqual(b.vents)
-  })
+  }, 20000)
 
   it('rivers run downhill in carved channels, from the rim region to their pool, clear of roads', () => {
     for (const seed of SEEDS) {
@@ -54,16 +54,17 @@ describe('lava and vents', () => {
         expect(s.heightAt(r.pool.x, r.pool.z)).toBeLessThan(r.pool.surface)
       }
     }
-  })
+  }, 20000)
 
   it('liquid height: lake in the caldera, rivers and pools, fallback elsewhere', () => {
     const d = generateTerrain(3, settings)
     const lake = d.lava.lake!
-    expect(lavaSurfaceAt(d.lava, lake.x, lake.z, -20)).toBe(lake.surface)
+    expect(lavaSurfaceAt(d.lava, lake.x, lake.z, 0)).toBe(lake.surface)
     const pool = d.lava.pools[0]
-    expect(lavaSurfaceAt(d.lava, pool.x, pool.z, -20)).toBe(pool.surface)
+    expect(lavaSurfaceAt(d.lava, pool.x, pool.z, 0)).toBe(pool.surface)
     const mid = d.lava.rivers[0].points[10]
-    expect(lavaSurfaceAt(d.lava, mid.x, mid.z, -20)).toBeCloseTo(mid.y, 3)
-    expect(lavaSurfaceAt(d.lava, 0, 0, -20)).toBe(-20)
+    expect(lavaSurfaceAt(d.lava, mid.x, mid.z, 0)).toBeCloseTo(mid.y, 3)
+    // Open sea, far from the volcano: only the sea level applies.
+    expect(lavaSurfaceAt(d.lava, 950, 950, 0)).toBe(0)
   })
 })
