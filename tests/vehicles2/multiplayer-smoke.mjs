@@ -44,6 +44,8 @@ try{
  await Promise.all(pages.map(p=>p.evaluate(()=>window.syn3h.camera.setVehicle([...window.syn3hNet.remotes.values()][0].vehicle))))
  await a.waitForTimeout(1000)
  await a.screenshot({path:'/tmp/syn3h-vehicles2/multiplayer-remote-hovercraft.png'});await b.screenshot({path:'/tmp/syn3h-vehicles2/multiplayer-remote-jet.png'})
+ // Restore local targets before contexts close and remove their remote rigid bodies.
+ await Promise.all(pages.map(p=>p.evaluate(()=>window.syn3h.camera.setVehicle(window.syn3h.player))))
  const report={error,sampleError,settledError,errors,snapshots};fs.writeFileSync('/tmp/syn3h-vehicles2/multiplayer.json',JSON.stringify(report,null,2));console.log(JSON.stringify({error,sampleError,settledError,errors,remoteKinds:snapshots[0].map(s=>s.kind),gear:remoteA.gear,physical:remoteA.physical}))
  if(errors.length)throw Error('Browser errors')
 }finally{await browser.close()}
