@@ -250,4 +250,90 @@ describe('ClassicBuggy', () => {
     }
     expect(await run()).toEqual(await run())
   })
+
+  describe('wings (Buggy.js 210-281)', () => {
+    const axis = (b: Buggy, x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyQuaternion(rot(b))
+    async function flying(altitude = 60, v = 35) {
+      const s = await spawn(0, altitude)
+      s.b.input.special = true
+      s.bed.run(0.6) // wings open fully after half a second
+      s.b.body.setLinvel({ x: 0, y: 0, z: -v }, true)
+      s.b.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
+      s.b.body.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true)
+      return s
+    }
+
+    test('open on special, report wingsOpen, and close after half a second', async () => {
+      const { bed, b } = await spawn()
+      bed.run(1)
+      b.input.special = true
+      bed.run(0.02)
+      expect(b.wingsOpen).toBe(true)
+      bed.run(0.6)
+      expect(b.wingState).toBe(0)
+      b.input.special = false
+      bed.run(0.2)
+      expect(b.wingsOpen).toBe(true)
+      bed.run(0.4)
+      expect(b.wingsOpen).toBe(false)
+    })
+
+    test('sustain flight with velocity along the nose', async () => {
+      const { bed, b } = await flying()
+      const y0 = pos(b).y
+      bed.run(3)
+      expect(speed(b)).toBeGreaterThan(25)
+      expect(pos(b).y).toBeGreaterThan(y0 - 15)
+      expect(axis(b, 0, 0, -1).dot(b.body.linvel() as THREE.Vector3) / speed(b)).toBeGreaterThan(0.99)
+    })
+
+    test.each([
+      [1, -1],
+      [-1, 1],
+    ])('input.y %i moves the nose %i (down, up)', async (y, sign) => {
+      const { bed, b } = await flying()
+      const before = axis(b, 0, 0, -1).y
+      b.input.y = y
+      bed.run(0.5)
+      expect(Math.sign(axis(b, 0, 0, -1).y - before)).toBe(sign)
+      expect(Math.abs(axis(b, 0, 0, -1).y - before)).toBeGreaterThan(0.1)
+    })
+
+    test.each([
+      [1, -1],
+      [-1, 1],
+    ])('input.x %i rolls so the right side goes %i', async (x, sign) => {
+      const { bed, b } = await flying()
+      b.input.x = x
+      bed.run(0.4)
+      expect(Math.sign(axis(b, 1, 0, 0).y)).toBe(sign)
+      expect(Math.abs(axis(b, 1, 0, 0).y)).toBeGreaterThan(0.2)
+    })
+
+    test('stalls nose down when slow', async () => {
+      const { bed, b } = await flying(80, 1)
+      bed.run(0.6)
+      expect(axis(b, 0, 0, -1).y).toBeLessThan(-0.1)
+    })
+  })
+
+  test('a slow buggy floats on lava', async () => {
+    const { bed, b } = await spawn(0, 5)
+    bed.terrain.liquidHeightAt = () => 4
+    bed.run(6)
+    expect(b.inLiquid).toBe(true)
+    expect(b.body.translation().y).toBeGreaterThan(2.5)
+    expect(Math.abs(b.body.linvel().y)).toBeLessThan(0.3)
+  })
+
+  test('wheel rays ignore a vehicle passing at speed (head-on fix)', async () => {
+    const { bed, b } = await spawn()
+    bed.run(2)
+    const other = bed.add(new Buggy(bed.game, bed.terrain, pos(b).add(new THREE.Vector3(0, 0.75, 0))))
+    other.isLocal = false
+    other.suspensionRange = 0.4
+    other.body.setLinvel({ x: 0, y: 0, z: 20 }, true)
+    bed.run(0.02)
+    expect(other.hitDistance).toEqual([-1, -1, -1, -1])
+  })
 })
