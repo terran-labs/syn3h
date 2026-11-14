@@ -5,7 +5,19 @@ import type { BuggySkin } from './BuggySkin'
 
 const loader = new GLTFLoader()
 const up = new THREE.Vector3(0, 1, 0)
-const mounts = [new THREE.Vector3(-.375, -.1, -.75), new THREE.Vector3(.375, -.1, -.75), new THREE.Vector3(-.375, -.1, .75), new THREE.Vector3(.375, -.1, .75)]
+/** Axle mounts: Unity `axelPos`/`AxelPos` mirrored per wheel, z flipped to our -Z forward. */
+const axleMounts = (x: number, y: number, z: number) =>
+  [new THREE.Vector3(-x, y, -z), new THREE.Vector3(x, y, -z), new THREE.Vector3(-x, y, z), new THREE.Vector3(x, y, z)]
+
+/**
+ * Per kind layout. Classic: Mars Explorer Buggy.prefab (Lod scale 2.15, axelPos (.375, -.1, .75),
+ * 0.6 m wheels). Syn3h: terra.buggy.prefab (Lod scale 1, so the glb is used at its true size,
+ * AxelPos (.55, .15, 1.2), wheel template at its native 1.04 m diameter).
+ */
+const layouts = {
+  classic: { scale: 2.15, mounts: axleMounts(.375, -.1, .75), wheelDiameter: .6 as number | null, wheelWidth: 1.2, rest: new THREE.Vector3(.7, -.3, .8) },
+  syn3h: { scale: 1, mounts: axleMounts(.55, .15, 1.2), wheelDiameter: null as number | null, wheelWidth: 1, rest: new THREE.Vector3(1.1, -.2, 1.3) },
+}
 
 /** Bake import transforms so suspension and deformation use the vehicle frame. */
 function extract(root: THREE.Object3D, transform = new THREE.Matrix4()): THREE.Group {
@@ -40,6 +52,19 @@ export function wingVertex(x: number, y: number, z: number, open: number, steer:
   return [nx, y * Math.cos(t) - nx * Math.sin(t), z]
 }
 
+/** Syn3h VhiclBuggy.cs 112-128: same deployment scale, different flex and no forward cutoff. */
+export function wingVertexSyn3h(x: number, y: number, z: number, open: number, steer: number, pitch: number): [number, number, number] {
+  open = THREE.MathUtils.clamp(open, 0, 1)
+  if (open < 1) return [x * open, y * open, z]
+  // Evaluate in Unity components (z forward, x mirrored by our 180 degree turn), as the original.
+  const ux = -x, uz = -z
+  let t = uz * ((steer * .05) + (pitch * .05 * (ux > 0 ? -1 : 1)))
+  t *= Math.abs(ux) / 10
+  t += ux * (pitch * .01)
+  const nx = y * Math.sin(t) + ux * Math.cos(t)
+  return [-nx, y * Math.cos(t) - nx * Math.sin(t), z]
+}
+
 export class LoadedBuggySkin implements BuggySkin {
   readonly object = new THREE.Group()
   readonly ready: Promise<void>
@@ -53,8 +78,12 @@ export class LoadedBuggySkin implements BuggySkin {
   private readonly axles: THREE.Mesh[] = []
   private wings: { mesh: THREE.Mesh; base: Float32Array }[] = []
   private wingInput = [0, 0, 0]
+  private readonly layout: (typeof layouts)['classic']
+  private readonly wingFn: typeof wingVertex
 
   constructor(kind: 'classic' | 'syn3h') {
+    this.layout = layouts[kind]
+    this.wingFn = kind === 'classic' ? wingVertex : wingVertexSyn3h
     this.object.name = `${kind} buggy skin`
     this.wheels.forEach((w, i) => {
       this.object.add(w)
@@ -62,7 +91,8 @@ export class LoadedBuggySkin implements BuggySkin {
       axle.castShadow = true
       this.axles.push(axle)
       this.object.add(axle)
-      this.setWheel(i, new THREE.Vector3(i % 2 ? .7 : -.7, -.3, i < 2 ? -.8 : .8), 0, 0)
+      const r = this.layout.rest
+      this.setWheel(i, new THREE.Vector3(i % 2 ? r.x : -r.x, r.y, i < 2 ? -r.z : r.z), 0, 0)
     })
     this.object.visible = false
     this.ready = this.load(kind)
@@ -75,7 +105,8 @@ export class LoadedBuggySkin implements BuggySkin {
     if (this.disposed) { loaded.forEach(g => release(g.scene)); return }
     const scene = loaded[0].scene
     const classic = kind === 'classic'
-    const transform = new THREE.Matrix4().makeScale(classic ? 2.15 : .5, classic ? 2.15 : .5, classic ? 2.15 : .5)
+    const k = this.layout.scale
+    const transform = new THREE.Matrix4().makeScale(k, k, k)
     // Both sources put their headlight meshes on +Z; our nose points toward -Z.
     transform.multiply(new THREE.Matrix4().makeRotationY(Math.PI))
     const body = extract(scene.getObjectByName('Body')!, transform)
@@ -105,9 +136,10 @@ export class LoadedBuggySkin implements BuggySkin {
     const wheelRoot = classic ? loaded[1]!.scene : scene.getObjectByName('Wheel_Template')!
     const wheel = extract(wheelRoot)
     const bounds = new THREE.Box3().setFromObject(wheel), center = bounds.getCenter(new THREE.Vector3())
-    const scale = .6 / (bounds.max.y - bounds.min.y)
+    const d = this.layout.wheelDiameter
+    const scale = d === null ? 1 : d / (bounds.max.y - bounds.min.y)
     wheel.traverse(o => { if (o instanceof THREE.Mesh) {
-      o.geometry.translate(-center.x, -center.y, -center.z).scale(scale * (classic ? 1.2 : 1), scale, scale)
+      o.geometry.translate(-center.x, -center.y, -center.z).scale(scale * this.layout.wheelWidth, scale, scale)
       const accent = /beadlock|plane_2/i.test(o.name)
       for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose(); o.material = new THREE.MeshStandardMaterial({color: accent ? this.accentColor : /rubber|^plane$/i.test(o.name) ? 0x171b20 : 0x89949f, roughness: accent ? .35 : .7, metalness: accent ? .55 : .15})
       if (accent) this.accentMaterials.push(o.material)
@@ -145,8 +177,9 @@ export class LoadedBuggySkin implements BuggySkin {
     if (!wheel) throw new RangeError('Wheel index must be 0 to 3')
     wheel.position.copy(localPosition)
     wheel.rotation.set(spinAngle, steerAngle, 0, 'YXZ')
-    const axle = this.axles[index], delta = localPosition.clone().sub(mounts[index])
-    axle.position.copy(mounts[index]).addScaledVector(delta, .5)
+    const mount = this.layout.mounts[index]
+    const axle = this.axles[index], delta = localPosition.clone().sub(mount)
+    axle.position.copy(mount).addScaledVector(delta, .5)
     axle.scale.y = delta.length()
     if (delta.lengthSq() > 1e-10) axle.quaternion.setFromUnitVectors(up, delta.normalize())
   }
@@ -156,7 +189,7 @@ export class LoadedBuggySkin implements BuggySkin {
     for (const {mesh, base} of this.wings) {
       mesh.visible = openAmount > 0
       const position = mesh.geometry.attributes.position
-      for (let i = 0; i < position.count; i++) position.setXYZ(i, ...wingVertex(base[i*3], base[i*3+1], base[i*3+2], openAmount, steer, pitch))
+      for (let i = 0; i < position.count; i++) position.setXYZ(i, ...this.wingFn(base[i*3], base[i*3+1], base[i*3+2], openAmount, steer, pitch))
       position.needsUpdate = true
       mesh.geometry.computeVertexNormals()
       mesh.geometry.computeBoundingSphere()
