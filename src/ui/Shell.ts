@@ -3,6 +3,7 @@ import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
 import { GameAudio, type MusicTrack } from '../audio'
 import { TouchControls } from './TouchControls'
+import { readVehicleChoice, saveVehicleChoice, VehiclePreview, type VehicleChoice } from './VehicleChoice'
 import './shell.css'
 
 export class Shell implements System {
@@ -15,6 +16,8 @@ export class Shell implements System {
   private readonly speed: HTMLElement
   private readonly status: HTMLElement
   private readonly mute: HTMLButtonElement
+  private readonly choice: VehicleChoice = readVehicleChoice()
+  private readonly preview: VehiclePreview
   private started = false
   private readonly previousSuspended: boolean
   readonly touch: TouchControls
@@ -30,6 +33,7 @@ export class Shell implements System {
       <p class="shell-intro">A familiar world. A fresh set of tracks.</p>
       <form class="shell-form"><label for="shell-name">PLAYER NAME</label><input id="shell-name" name="playerName" maxlength="24" autocomplete="nickname" placeholder="Explorer">
       <div class="shell-room"><span>ROOM <strong></strong></span><button class="shell-invite" type="button">Copy invite link</button></div>
+      <fieldset class="shell-vehicle"><legend>YOUR BUGGY</legend><div class="shell-vehicle-options"><label><input type="radio" name="vehicle" value="buggy-classic"> Mars Explorer</label><label><input type="radio" name="vehicle" value="buggy-syn3h"> Syn3h</label></div><div class="shell-vehicle-preview"></div><div class="shell-colors"><label>BODY <input type="color" name="bodyColor" aria-label="Body colour"></label><label>ACCENT <input type="color" name="accentColor" aria-label="Accent colour"></label></div></fieldset>
       <div class="shell-controls"><span><b>WASD / ↑↓←→</b> Drive</span><span><b>SPACE</b> Wings</span><span><b>SHIFT</b> Brake</span><span><b>L / CLICK</b> Fire</span></div>
       <p class="shell-touch-hint">Left thumb to drive. Right thumb for wings, brake and fire.</p>
       <button class="shell-play" type="submit">PLAY <span aria-hidden="true">↗</span></button></form>
@@ -40,11 +44,24 @@ export class Shell implements System {
     document.body.append(this.element)
     document.body.classList.add('has-game-shell')
     this.overlay = this.element.querySelector('.shell-start')!
-    this.nameInput = this.element.querySelector('input')!
+    this.nameInput = this.element.querySelector('#shell-name')!
     this.speed = this.element.querySelector('.shell-speed strong')!
     this.status = this.element.querySelector('.shell-status')!
     this.mute = this.element.querySelector('.shell-mute')!
     const signal = this.abort.signal
+    this.preview = new VehiclePreview(this.element.querySelector('.shell-vehicle-preview')!)
+    this.preview.setChoice(this.choice)
+    for (const radio of this.element.querySelectorAll<HTMLInputElement>('[name="vehicle"]')) {
+      radio.checked = radio.value === this.choice.vehicleKind
+      radio.addEventListener('change', () => {
+        this.choice.vehicleKind = radio.value as VehicleChoice['vehicleKind']; this.saveChoice()
+      }, { signal })
+    }
+    for (const key of ['bodyColor', 'accentColor'] as const) {
+      const input = this.element.querySelector<HTMLInputElement>(`[name="${key}"]`)!
+      input.value = this.choice[key]
+      input.addEventListener('input', () => { this.choice[key] = input.value; this.saveChoice() }, { signal })
+    }
     try { this.nameInput.value = localStorage.getItem('syn3h.playerName') || '' } catch { /* Storage can be disabled in private browsing. */ }
     this.element.querySelector('.shell-room strong')!.textContent = this.room
     this.element.querySelector('form')!.addEventListener('submit', (event) => { event.preventDefault(); this.play() }, { signal })
@@ -64,6 +81,10 @@ export class Shell implements System {
     }
     window.addEventListener('blur', () => { game.input.mouseFire = false }, { signal })
   }
+  private saveChoice(): void { saveVehicleChoice(this.choice); this.preview.setChoice(this.choice) }
+  get vehicleKind(): VehicleChoice['vehicleKind'] { return this.choice.vehicleKind }
+  get bodyColor(): string { return this.choice.bodyColor }
+  get accentColor(): string { return this.choice.accentColor }
   get playerName(): string { return this.nameInput.value.trim().slice(0, 24) || 'Explorer' }
   get playing(): boolean { return this.started }
   play(): void {
@@ -73,7 +94,7 @@ export class Shell implements System {
       await this.audio.ready(); this.audio.play('materialize')
     }).catch(() => this.message('Audio is unavailable. You can still play.'))
     try { localStorage.setItem('syn3h.playerName', this.playerName) } catch { /* Playing does not require storage. */ }
-    this.started = true; this.overlay.hidden = true
+    this.started = true; this.overlay.hidden = true; this.preview.dispose()
     this.element.querySelector<HTMLElement>('.shell-hud')!.hidden = false
     this.game.input.suspended = false; this.touch.enabled = true; this.audio.enabled = true
     this.onPlay?.()
@@ -95,7 +116,7 @@ export class Shell implements System {
     this.mute.setAttribute('aria-pressed', String(this.audio.isMuted))
   }
   dispose(): void {
-    this.abort.abort(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); this.preview.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }

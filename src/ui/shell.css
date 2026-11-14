@@ -47,3 +47,20 @@
 @media (pointer: coarse) { .shell-audio { top: max(64px, env(safe-area-inset-top)); bottom: auto; right: 12px; } .shell-audio label { display: none; } }
 @media (max-width: 600px) { .shell-start { padding: 75px 24px 24px; } .shell-logo { width: 260px; margin-top: -12px; margin-bottom: -20px; } .shell-card h1 { margin-top: 18px; } .shell-intro { font-size: 14px; margin-bottom: 18px; } .shell-audio { top: max(50px, env(safe-area-inset-top)); bottom: auto; } .shell-hud { top: 58px; } .touch-stick { width: 124px; height: 124px; left: 18px; } .touch-knob { left: 35px; top: 35px; } .touch-actions { right: 18px; } }
 @media (max-height: 520px) and (min-width: 601px) { .shell-start { padding: 16px; } .shell-card { width: 640px; } .shell-logo { width: 180px; margin: -15px auto -18px; } .shell-origin { display: none; } .shell-card h1 { margin: 8px 0; font-size: 30px; } .shell-intro { display: none; } .shell-form { max-width: 400px; margin: auto; } .shell-room { margin: 8px 0; } .shell-controls { margin-bottom: 10px; } }
+.shell-vehicle { border: 1px solid #713a285e; border-radius: 6px; padding: 10px 12px; margin: 0 0 16px; }
+.shell-vehicle legend { color: #d4a38c; font-size: 11px; letter-spacing: 2px; padding: 0 6px; }
+.shell-vehicle-options { display: flex; gap: 16px; justify-content: center; }
+.shell-vehicle-options label { display: flex; gap: 7px; align-items: center; font-size: 14px; letter-spacing: 0; color: #f4e6dc; cursor: pointer; }
+.syn3h-shell input[type=radio] { width: 18px; height: 18px; accent-color: #ff6e28; margin: 0; }
+.shell-vehicle-preview { height: 150px; position: relative; }
+.shell-vehicle-preview canvas { display: block; width: 100%; height: 100%; }
+.shell-vehicle-preview[data-error]::after { content: attr(data-error); position: absolute; inset: 0; display: grid; place-items: center; text-align: center; font-size: 12px; }
+.shell-colors { display: flex; gap: 16px; justify-content: center; }
+.shell-colors label { display: flex; align-items: center; gap: 12px; margin: 0; }
+.syn3h-shell input[type=color] { padding: 3px; width: 64px; height: 34px; cursor: pointer; }
+.shell-start { align-items: safe center; }
+.shell-logo { width: 250px; margin-bottom: -18px; }
+.shell-origin img { width: 40px; }
+.shell-card h1 { font-size: 30px; margin-top: 12px; }
+.shell-intro { margin-bottom: 14px; }
+@media (max-width: 600px) { .shell-start { padding: 65px 20px 24px; } .shell-logo { width: 200px; } .shell-vehicle-preview { height: 125px; } .shell-card h1 { font-size: 26px; } .shell-room { margin: 10px 0 12px; } }
