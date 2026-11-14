@@ -1,0 +1,1 @@
+{"name":"Dune approach, jump and landing","durationMs":10000,"captureEveryMs":500,"settleMs":1200,"events":[{"atMs":0,"params":{"bots.count":0}},{"atMs":100,"teleport":{"landmark":"dune"}},{"atMs":1100,"down":["KeyW"]},{"atMs":7500,"up":["KeyW"]},{"atMs":8500,"down":["ShiftLeft"]},{"atMs":9500,"up":["ShiftLeft"]}]}

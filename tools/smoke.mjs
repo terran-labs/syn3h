@@ -8,7 +8,9 @@
  */
 import { chromium } from 'playwright-core'
 
-const url = process.argv[2] ?? 'http://localhost:5173/'
+// ?autoplay=1 skips the lobby so the test drives straight away.
+const base = process.argv[2] ?? 'http://localhost:5173/'
+const url = base + (base.includes('?') ? '&' : '?') + 'autoplay=1'
 const shot = process.argv[3] ?? '/tmp/syn3h-smoke.png'
 
 const browser = await chromium.launch({

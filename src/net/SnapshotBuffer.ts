@@ -17,7 +17,13 @@ export interface Snapshot {
   v: V3
   w: V3
   input: WireInput
+  /** Heartbeat from a hidden tab: the vehicle is parked, not lost. */
+  paused?: boolean
 }
+
+/** How long a paused player may go between heartbeats before counting as gone. Chrome
+ * throttles timers in long hidden tabs to once a minute, so this is generous. */
+export const PAUSE_TOLERANCE = 75
 
 export type SampleMode = 'empty' | 'interpolate' | 'extrapolate' | 'stale'
 
@@ -30,13 +36,15 @@ export interface Sample {
   mode: SampleMode
   /** How far past the newest state playback is, in seconds; 0 when interpolating. */
   overrun: number
+  /** The newest state says the player's tab is hidden. */
+  paused: boolean
 }
 
 export function emptySample(): Sample {
   return {
     p: [0, 0, 0], q: [0, 0, 0, 1], v: [0, 0, 0], w: [0, 0, 0],
     input: { x: 0, y: 0, z: 0, w: 0, brakes: false, special: false, fire: false },
-    mode: 'empty', overrun: 0,
+    mode: 'empty', overrun: 0, paused: false,
   }
 }
 
@@ -96,6 +104,7 @@ export class SnapshotBuffer {
       return out
     }
     const head = s[0]
+    out.paused = Boolean(head.paused)
     if (t <= head.t) {
       // Find the newest state at or before t. Older than everything: hold the oldest.
       let i = 1
@@ -119,10 +128,16 @@ export class SnapshotBuffer {
     }
     // Past the newest state: carry on along its velocity, which we have from the sender.
     const over = t - head.t
-    const dt = Math.min(over, maxExtrapolate)
     copy(out, head)
-    for (let k = 0; k < 3; k++) out.p[k] = head.p[k] + head.v[k] * dt
     out.overrun = over
+    if (head.paused) {
+      // A parked vehicle stays exactly where it was until the tab comes back.
+      for (let k = 0; k < 3; k++) out.v[k] = out.w[k] = 0
+      out.mode = over <= PAUSE_TOLERANCE ? 'extrapolate' : 'stale'
+      return out
+    }
+    const dt = Math.min(over, maxExtrapolate)
+    for (let k = 0; k < 3; k++) out.p[k] = head.p[k] + head.v[k] * dt
     out.mode = over <= maxExtrapolate ? 'extrapolate' : 'stale'
     return out
   }

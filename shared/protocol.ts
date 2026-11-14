@@ -11,10 +11,36 @@
  * No browser or Node dependencies: the client, the Node server and the Worker share it.
  */
 
-export const PROTOCOL_VERSION = 1
+export const PROTOCOL_VERSION = 2
 
 /** Binary message kinds (first byte). */
 export const BIN_STATE = 1
+/** A bot's state, sent only by the host. The id slot holds the bot id, not the sender's. */
+export const BIN_BOT_STATE = 2
+
+/** Bots get ids from this base up, so they share the player id space without colliding. */
+export const BOT_ID_BASE = 0xff00
+export const MAX_BOTS = 64
+export const isBotId = (id: number) => id >= BOT_ID_BASE && id < BOT_ID_BASE + MAX_BOTS
+/** Highest id the server hands to a real player. */
+export const MAX_PLAYER_ID = BOT_ID_BASE - 1
+
+/** Vehicle kinds a player may announce. Must match VehicleKind in src/vehicles/index.ts. */
+export const VEHICLE_KINDS = ['buggy', 'buggy-classic', 'buggy-syn3h', 'jet', 'hovercraft', 'tank'] as const
+export type WireVehicleKind = (typeof VEHICLE_KINDS)[number]
+export const DEFAULT_COLORS: [string, string] = ['#7a1838', '#e9a6e0']
+const COLOR_PATTERN = /^#[0-9a-f]{6}$/
+
+/** Lower case #rrggbb, or null. */
+export function cleanColor(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const s = raw.trim().toLowerCase()
+  return COLOR_PATTERN.test(s) ? s : null
+}
+
+export function cleanKind(raw: unknown): WireVehicleKind | null {
+  return typeof raw === 'string' && (VEHICLE_KINDS as readonly string[]).includes(raw) ? (raw as WireVehicleKind) : null
+}
 
 /** Input axes are quantised to signed bytes. */
 const AXIS_SCALE = 127
@@ -22,6 +48,8 @@ const AXIS_SCALE = 127
 export const FLAG_BRAKES = 1
 export const FLAG_SPECIAL = 2
 export const FLAG_FIRE = 4
+/** The sender's tab is hidden: this is a heartbeat repeating its last pose. */
+export const FLAG_PAUSED = 8
 
 /**
  * Layout of a state record. The player id slot is written as 0 by the sender and
@@ -59,6 +87,10 @@ export interface WireState {
   v: [number, number, number]
   w: [number, number, number]
   input: WireInput
+  /** Heartbeat from a hidden tab: hold still, do not extrapolate. */
+  paused?: boolean
+  /** True for a bot state (kind BIN_BOT_STATE). */
+  bot?: boolean
 }
 
 const clampAxis = (n: number) => Math.max(-AXIS_SCALE, Math.min(AXIS_SCALE, Math.round((Number.isFinite(n) ? n : 0) * AXIS_SCALE)))
@@ -66,7 +98,7 @@ const clampAxis = (n: number) => Math.max(-AXIS_SCALE, Math.min(AXIS_SCALE, Math
 export function encodeState(s: WireState, out?: Uint8Array): Uint8Array {
   const buf = out ?? new Uint8Array(STATE_BYTES)
   const dv = new DataView(buf.buffer, buf.byteOffset, STATE_BYTES)
-  dv.setUint8(O_KIND, BIN_STATE)
+  dv.setUint8(O_KIND, s.bot ? BIN_BOT_STATE : BIN_STATE)
   dv.setUint16(O_ID, s.id, true)
   dv.setFloat64(O_T, s.t, true)
   for (let i = 0; i < 3; i++) dv.setFloat32(O_P + i * 4, s.p[i], true)
@@ -77,7 +109,7 @@ export function encodeState(s: WireState, out?: Uint8Array): Uint8Array {
   dv.setInt8(O_IN + 1, clampAxis(s.input.y))
   dv.setInt8(O_IN + 2, clampAxis(s.input.z))
   dv.setInt8(O_IN + 3, clampAxis(s.input.w))
-  dv.setUint8(O_FLAGS, (s.input.brakes ? FLAG_BRAKES : 0) | (s.input.special ? FLAG_SPECIAL : 0) | (s.input.fire ? FLAG_FIRE : 0))
+  dv.setUint8(O_FLAGS, (s.input.brakes ? FLAG_BRAKES : 0) | (s.input.special ? FLAG_SPECIAL : 0) | (s.input.fire ? FLAG_FIRE : 0) | (s.paused ? FLAG_PAUSED : 0))
   return buf
 }
 
@@ -86,7 +118,8 @@ export function decodeState(data: ArrayBuffer | Uint8Array): WireState | null {
   const bytes = data instanceof Uint8Array ? data : new Uint8Array(data)
   if (bytes.byteLength !== STATE_BYTES) return null
   const dv = new DataView(bytes.buffer, bytes.byteOffset, STATE_BYTES)
-  if (dv.getUint8(O_KIND) !== BIN_STATE) return null
+  const kind = dv.getUint8(O_KIND)
+  if (kind !== BIN_STATE && kind !== BIN_BOT_STATE) return null
   const f = (o: number) => dv.getFloat32(o, true)
   const p: [number, number, number] = [f(O_P), f(O_P + 4), f(O_P + 8)]
   const q: [number, number, number, number] = [f(O_Q), f(O_Q + 4), f(O_Q + 8), f(O_Q + 12)]
@@ -107,6 +140,8 @@ export function decodeState(data: ArrayBuffer | Uint8Array): WireState | null {
       special: (flags & FLAG_SPECIAL) !== 0,
       fire: (flags & FLAG_FIRE) !== 0,
     },
+    paused: (flags & FLAG_PAUSED) !== 0,
+    bot: kind === BIN_BOT_STATE,
   }
 }
 
@@ -128,6 +163,11 @@ export interface PlayerInfo {
   /** Spawn slot, the lowest free index when the player joined. */
   slot: number
   score: number
+  kind: WireVehicleKind
+  /** Body and accent colours, #rrggbb. */
+  colors: [string, string]
+  /** A vehicle simulated by the host rather than a person. */
+  bot?: boolean
 }
 
 /** Shared game state the server owns. */
@@ -156,12 +196,17 @@ export interface ShotInfo {
 }
 
 export type ClientMessage =
-  | { type: 'hello'; v: number; name: string; params: Record<string, ParamWireValue> }
+  | { type: 'hello'; v: number; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string] }
+  /** Change vehicle kind or colours after joining. */
+  | { type: 'profile'; kind?: string; colors?: [string, string] }
   | { type: 'ping'; t: number }
   | { type: 'param'; id: string; value: ParamWireValue }
   | { type: 'fire'; shot: ShotInfo }
-  /** Sent by the victim's own client: "shot `shot` from `shooter` hit me". */
-  | { type: 'hit'; shooter: number; shot: number }
+  /**
+   * Sent by the victim's own client: "shot `shot` from `shooter` hit me". The host also
+   * reports hits on bots, naming the bot as `victim`.
+   */
+  | { type: 'hit'; shooter: number; shot: number; victim?: number }
   /** Sent by a client whose vehicle touched another player's vehicle. */
   | { type: 'ram'; other: number }
   /** Host only: lock or unlock shared parameters for everyone else. */
@@ -183,6 +228,7 @@ export type ServerMessage =
     }
   | { type: 'pong'; t: number; serverTime: number }
   | { type: 'join'; player: PlayerInfo }
+  | { type: 'profile'; player: PlayerInfo }
   | { type: 'leave'; id: number }
   /** `from` is 0 when the server is correcting a rejected change back to the room's value. */
   | { type: 'param'; id: string; value: ParamWireValue; from: number }

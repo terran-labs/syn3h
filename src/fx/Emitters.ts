@@ -1,6 +1,7 @@
 import { AdditiveBlending, Color, InstancedBufferAttribute, InstancedBufferGeometry, Mesh, NormalBlending, PlaneGeometry, Scene, SpriteNodeMaterial, Vector2 } from 'three/webgpu'
 import { attribute, float, fract, mix, sin, smoothstep, uniform, uv, vec2, vec3 } from 'three/tsl'
 import type { System } from '../core/Game'
+import { qualityBudget } from '../core/quality'
 import { particleBudget, windX, windZ } from './params'
 export type VentKind = 'flame' | 'embers' | 'smoke'
 export interface VentOptions { kind: VentKind; radius: number; height: number; intensity: number }
@@ -30,7 +31,7 @@ export class Emitters implements System {
   clear() { this.vents.length = 0; this.release(); this.dirty = false }
   private rebuild() {
     this.release()
-    this.budget = Math.max(0, Math.floor(particleBudget.value))
+    this.budget = Math.max(0, Math.floor(Math.min(particleBudget.value, qualityBudget().particles)))
     // Equal allocation avoids starving late vents when the budget is reduced on phones.
     const perVent = Math.min(48, Math.floor(this.budget / Math.max(1, this.vents.length)))
     for (const kind of ['flame', 'embers', 'smoke'] as const) {
@@ -75,7 +76,7 @@ export class Emitters implements System {
   }
   update(dt: number) {
     this.clock.value += dt; this.wind.value.set(windX.value, windZ.value)
-    if (this.dirty || Math.floor(particleBudget.value) !== this.budget) this.rebuild()
+    if (this.dirty || Math.floor(Math.min(particleBudget.value, qualityBudget().particles)) !== this.budget) this.rebuild()
   }
   dispose() { this.clear() }
 }

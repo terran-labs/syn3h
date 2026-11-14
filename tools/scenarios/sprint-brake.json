@@ -1,0 +1,45 @@
+{
+  "name": "Flat-out sprint and brake",
+  "durationMs": 8000,
+  "captureEveryMs": 1000,
+  "settleMs": 1200,
+  "events": [
+    {
+      "atMs": 0,
+      "params": {
+        "bots.count": 0,
+        "terrain.duneHeight": 0,
+        "terrain.roughness": 0
+      }
+    },
+    {
+      "atMs": 100,
+      "teleport": {
+        "x": 0,
+        "z": 0,
+        "heading": 0
+      }
+    },
+    {
+      "atMs": 1000,
+      "down": [
+        "KeyW"
+      ]
+    },
+    {
+      "atMs": 5500,
+      "up": [
+        "KeyW"
+      ],
+      "down": [
+        "ShiftLeft"
+      ]
+    },
+    {
+      "atMs": 7500,
+      "up": [
+        "ShiftLeft"
+      ]
+    }
+  ]
+}

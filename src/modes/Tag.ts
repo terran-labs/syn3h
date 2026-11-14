@@ -10,7 +10,10 @@ import type { Terrain } from '../world/Terrain'
 export class TagMarker implements System {
   /** The vehicle that is "it", or null. */
   target: Vehicle | null = null
-  /** The local vehicle: its own marker is drawn small so it does not block the view. */
+  /**
+   * The local vehicle. Its own marker is hidden: from the chase camera a point above your own
+   * car lands on whoever is ahead of you, which reads as them being "it". The HUD says it instead.
+   */
   local: Vehicle | null = null
   private readonly marker = new THREE.Group()
   private t = 0
@@ -38,12 +41,11 @@ export class TagMarker implements System {
   update(dt: number): void {
     this.t += dt
     const v = this.target
-    this.marker.visible = Boolean(v)
+    this.marker.visible = Boolean(v) && v !== this.local
     if (!v) return
     this.marker.position.copy(v.object.position)
     this.marker.position.y += 3.2 + Math.sin(this.t * 3) * 0.25
     this.marker.rotation.y = this.t * 2
-    this.marker.scale.setScalar(v === this.local ? 0.45 : 1)
   }
 
   dispose(): void {

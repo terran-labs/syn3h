@@ -6,12 +6,16 @@
  *
  *   layout  pick feature positions from the seed (volcano, cones, mesas, wind)
  *   shape   sample the analytic height field onto the grid
- *   ...     future passes edit `heights` and the per-sample masks in place
+ *   roads   plan graded roads and level the ground under them (roads.ts)
+ *   lava    caldera lake, rivers with carved channels, pools (lava.ts)
+ *   vents   flame, ember and smoke emitter anchors (lava.ts)
  *
  * Nothing here touches three.js, Rapier or the DOM, so it runs in tests, a worker or a
  * server unchanged. See noise.ts for the determinism rules this file must follow.
  */
 import { fbm, hash2, perlin, ridged, rng, smoothstep, subSeed } from './noise'
+import { type LavaFeatures, type Vent, lavaPass, ventsPass } from './lava'
+import { type Road, roadsPass } from './roads'
 import type { TerrainSettings } from './settings'
 
 export const DEFAULT_WORLD_SIZE = 2048
@@ -22,6 +26,8 @@ export const SPAWN_LEVEL = 2
 /** Radius of the perfectly flat spawn pad, and where it has fully blended back to terrain. */
 export const SPAWN_FLAT_RADIUS = 55
 export const SPAWN_BLEND_RADIUS = 160
+/** roadDist value meaning "no road nearby". */
+export const ROAD_DIST_CAP = 64
 
 export interface Volcano {
   x: number
@@ -81,6 +87,14 @@ export interface TerrainData {
   /** 0..1 per sample, how volcanic the ground is. Drives basalt shading. */
   volcanic: Float32Array
   layout: TerrainLayout
+  /** Distance in metres from each sample to the nearest road centreline, capped at 64. */
+  roadDist: Float32Array
+  /** Road centrelines, filled by the roads pass. See roads.ts for the shape. */
+  roads: Road[]
+  /** Lava lake, rivers and pools, filled by the lava pass. See lava.ts for the shape. */
+  lava: LavaFeatures
+  /** Fire, ember and smoke emitter positions, filled by the vents pass. See lava.ts. */
+  vents: Vent[]
   /** Milliseconds spent in each pass, for profiling. */
   timings: Record<string, number>
 }
@@ -93,7 +107,7 @@ export interface TerrainPass {
 export interface GenerateOptions {
   size?: number
   resolution?: number
-  /** Replace the pass list (tests, future features). Defaults to DEFAULT_PASSES. */
+  /** Replace the pass list (tests, future features). Defaults to defaultPasses(). */
   passes?: TerrainPass[]
 }
 
@@ -102,7 +116,7 @@ export interface GenerateOptions {
 // ---------------------------------------------------------------------------------------
 
 /** Deterministic unit vector without trig: rejection sample the unit disk. */
-function randomDirection(next: () => number): [number, number] {
+export function randomDirection(next: () => number): [number, number] {
   for (let i = 0; i < 64; i++) {
     const x = next() * 2 - 1
     const z = next() * 2 - 1
@@ -122,17 +136,21 @@ export function computeLayout(seed: number, s: TerrainSettings, size: number): T
   // Main volcano: far enough out that the spawn at the origin sits beyond its gentle foot.
   const [vx, vz] = randomDirection(next)
   const R = s.volcanoRadius
-  const dist = Math.max(0, Math.min(600, half - 24 - R))
+  const dist = Math.max(0, Math.min(610 - next() * 110, half - 24 - R))
   const H = s.volcanoHeight
   const rc = Math.min(s.calderaSize, R * 0.45)
-  // The long gentle flank points 60 degrees off the line to the spawn. Pointed straight at
-  // the spawn, its foot would run into the flattened pad and be squeezed into a wall.
-  const turn = next() < 0.5 ? 1 : -1
-  const C60 = 0.5
-  const S60 = 0.8660254037844386 * turn
+  // The long gentle flank points 45 to 75 degrees off the line to the spawn. Pointed
+  // straight at the spawn, its foot would run into the flattened pad and be squeezed into a
+  // wall. A table of exact cosines avoids trig, whose last bits differ between engines.
+  const ANGLES: [number, number][] = [
+    [0.7071067811865476, 0.7071067811865476], [0.5735764363510462, 0.8191520442889918],
+    [0.5, 0.8660254037844386], [0.42261826174069944, 0.9063077870366499], [0.25881904510252074, 0.9659258262890683],
+  ]
+  const [ca, sa0] = ANGLES[Math.floor(next() * ANGLES.length)]
+  const sa = next() < 0.5 ? sa0 : -sa0
   const volcano: Volcano = {
     x: vx * dist, z: vz * dist, height: H, radius: R,
-    gentleX: -vx * C60 + vz * S60, gentleZ: -vz * C60 - vx * S60, gentleStretch: 0.65,
+    gentleX: -vx * ca + vz * sa, gentleZ: -vz * ca - vx * sa, gentleStretch: 0.65,
     calderaRadius: rc, lipHeight: Math.min(10, rc * 0.12), floorHeight: 0,
   }
   volcano.floorHeight = H * coneProfile(rc / R) - Math.min(rc * 0.45, H * 0.3)
@@ -162,8 +180,9 @@ export function computeLayout(seed: number, s: TerrainSettings, size: number): T
   }
 
   const cones: Volcano[] = []
-  for (let i = 0; i < 2; i++) {
-    const radius = 130 + next() * 70
+  const coneCount = 1 + Math.floor(next() * 3)
+  for (let i = 0; i < coneCount; i++) {
+    const radius = 120 + next() * 80
     const height = 55 + next() * 55
     const pos = tryPlace(radius * 1.05)
     if (!pos) continue
@@ -175,7 +194,7 @@ export function computeLayout(seed: number, s: TerrainSettings, size: number): T
   }
 
   const mesas: Mesa[] = []
-  const mesaCount = 3 + Math.floor(next() * 2)
+  const mesaCount = 2 + Math.floor(next() * 5)
   for (let i = 0; i < mesaCount; i++) {
     const radius = 55 + next() * 70
     const height = s.mesaHeight * (0.7 + next() * 0.6)
@@ -211,6 +230,20 @@ export function coneProfile(t: number): number {
     return (u * u) / 0.6 / 0.85
   }
   return (0.85 - t) / 0.85
+}
+
+/**
+ * Normalised radius of (x, z) on a volcano or cone: 0 at the centre, 1 at its foot in that
+ * direction (the gentle flank reaches further). Used to keep roads and rivers off cones.
+ */
+export function volcanoT(v: Volcano, x: number, z: number): number {
+  const dx = x - v.x
+  const dz = z - v.z
+  const r = Math.sqrt(dx * dx + dz * dz)
+  if (r < 1e-6) return 0
+  let g = (dx * v.gentleX + dz * v.gentleZ) / r
+  g = g > 0 ? g * g : 0
+  return r / (v.radius * (1 + v.gentleStretch * g))
 }
 
 /** Set by `volcanoHeight` as extra return values, to avoid allocating per sample. */
@@ -313,8 +346,10 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
 
   // Ridged badlands in some regions, dune fields in others.
   const ridgeMask = smoothstep(-0.15, 0.45, perlin(x * 0.0011, z * 0.0011, S.ridgeMask))
-  const ridges = s.roughness * 24 * (ridged(wx * 0.0042, wz * 0.0042, S.ridge, 3) - 0.3) * ridgeMask
-  h += ridges * (0.3 + 0.7 * calm)
+  if (ridgeMask > 0 && s.roughness > 0) {
+    const ridges = s.roughness * 24 * (ridged(wx * 0.0042, wz * 0.0042, S.ridge, 3) - 0.3) * ridgeMask
+    h += ridges * (0.3 + 0.7 * calm)
+  }
 
   if (s.duneHeight > 0) {
     // Crests run across the wind: stretch the noise along the crest direction.
@@ -366,7 +401,13 @@ export const shapePass: TerrainPass = {
   },
 }
 
-export const DEFAULT_PASSES: readonly TerrainPass[] = [shapePass]
+/**
+ * The standard pass order. A function rather than a constant because the pass modules
+ * import this one: resolving at call time keeps the import cycle harmless.
+ */
+export function defaultPasses(): TerrainPass[] {
+  return [shapePass, roadsPass, lavaPass, ventsPass]
+}
 
 /** Only for profiling: never feeds into heights. */
 function now(): number {
@@ -384,9 +425,11 @@ export function generateTerrain(seed: number, settings: TerrainSettings, options
     seed: seed | 0, settings: { ...settings }, size, resolution, cell: size / (resolution - 1),
     heights: new Float32Array(resolution * resolution),
     volcanic: new Float32Array(resolution * resolution),
+    roadDist: new Float32Array(resolution * resolution).fill(ROAD_DIST_CAP),
+    roads: [], lava: { lake: null, rivers: [], pools: [] }, vents: [],
     layout, timings,
   }
-  for (const pass of options.passes ?? DEFAULT_PASSES) {
+  for (const pass of options.passes ?? defaultPasses()) {
     t = now()
     pass.run(data)
     timings[pass.name] = now() - t

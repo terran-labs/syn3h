@@ -1,5 +1,6 @@
 import { Vector3 } from 'three/webgpu'
 import type { Game, System } from '../core/Game'
+import { qualityBudget } from '../core/quality'
 import { createVehicle } from '../vehicles'
 import type { Vehicle } from '../vehicles/Vehicle'
 import { BotBrain, isSafeGround, type BotTerrain } from './BotBrain'
@@ -38,7 +39,7 @@ export class BotManager implements System {
   /** Reconcile outside the physics iterator so removing bots cannot skip another body's step. */
   update() {
     if (this.disposed) return
-    const count = Math.max(0, Math.min(16, Math.floor(botCount.value)))
+    const count = Math.max(0, Math.min(qualityBudget().bots, Math.floor(botCount.value)))
     while (this.bots.length > count) { this.game.remove(this.brains.pop()!); this.game.remove(this.bots.pop()!) }
     while (this.bots.length < count) if (!this.spawn(this.bots.length)) break
   }
