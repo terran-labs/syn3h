@@ -107,6 +107,11 @@ export class Room {
     return this.players.size
   }
 
+  /** Players plus connections that have not said hello yet. */
+  get connectionCount(): number {
+    return this.players.size + this.pending.size
+  }
+
   // -------------------------------------------------------------------------------------
   // Transport hooks
   // -------------------------------------------------------------------------------------
