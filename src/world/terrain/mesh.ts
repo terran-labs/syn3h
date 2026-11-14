@@ -42,6 +42,8 @@ function fillChunk(geometry: THREE.BufferGeometry, data: TerrainData, x0: number
   const pos = geometry.getAttribute('position') as THREE.BufferAttribute
   const nor = geometry.getAttribute('normal') as THREE.BufferAttribute
   const vol = geometry.getAttribute('volcanic') as THREE.BufferAttribute
+  const road = geometry.getAttribute('road') as THREE.BufferAttribute
+  const RD = road.array as Float32Array
   const P = pos.array as Float32Array
   const N = nor.array as Float32Array
   const V = vol.array as Float32Array
@@ -67,11 +69,13 @@ function fillChunk(geometry: THREE.BufferGeometry, data: TerrainData, x0: number
       N[k * 3 + 1] = inv
       N[k * 3 + 2] = -dz * inv
       V[k] = data.volcanic[i]
+      RD[k] = data.roadDist[i]
     }
   }
   pos.needsUpdate = true
   nor.needsUpdate = true
   vol.needsUpdate = true
+  road.needsUpdate = true
   geometry.computeBoundingBox()
   geometry.computeBoundingSphere()
 }
@@ -96,6 +100,7 @@ export function createTerrainMeshes(data: TerrainData, material: THREE.Material)
       geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(verts * 3), 3))
       geometry.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(verts * 3), 3))
       geometry.setAttribute('volcanic', new THREE.BufferAttribute(new Float32Array(verts), 1))
+      geometry.setAttribute('road', new THREE.BufferAttribute(new Float32Array(verts), 1))
       let index = indexCache.get(w)
       if (!index) {
         index = new THREE.BufferAttribute(chunkIndices(w), 1)

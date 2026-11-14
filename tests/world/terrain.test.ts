@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import { RAPIER, initPhysics } from '../../src/core/physics'
 import { createTerrainCollider } from '../../src/world/terrain/collider'
-import { coneProfile, generateTerrain, terrainChecksum, type TerrainData } from '../../src/world/terrain/generate'
+import { coneProfile, generateTerrain, shapePass, terrainChecksum, type TerrainData } from '../../src/world/terrain/generate'
 import { rng } from '../../src/world/terrain/noise'
 import { HeightSampler } from '../../src/world/terrain/sampler'
 import { defaultTerrainSettings } from '../../src/world/terrain/settings'
@@ -43,10 +43,11 @@ describe('terrain generation', () => {
     }
   })
 
-  it('keeps the gentle flank drivable (mostly under 30 degrees)', () => {
+  it('keeps the natural gentle flank drivable (mostly under 30 degrees)', () => {
     const limit = Math.tan((30 * Math.PI) / 180)
     for (const seed of [1, 2, 3, 99, 12345]) {
-      const d = generateTerrain(seed, settings)
+      // Shape only: road cut banks cross this straight line and are steep by design.
+      const d = generateTerrain(seed, settings, { passes: [shapePass] })
       const s = new HeightSampler(d)
       const v = d.layout.volcano
       // Walk from the gentle foot up to the caldera lip, along the approach that faces spawn.

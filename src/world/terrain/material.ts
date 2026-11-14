@@ -15,6 +15,7 @@ import {
   Fn, attribute, cameraPosition, color, float, max, mix, mx_noise_float, normalGeometry, normalView,
   positionView, positionWorld, sin, smoothstep, uniform, vec2,
 } from 'three/tsl'
+import { ROAD_WIDTH } from './roads'
 
 export interface TerrainMaterial {
   material: THREE.MeshStandardNodeMaterial
@@ -59,12 +60,23 @@ export function createTerrainMaterial(): TerrainMaterial {
     .mul(0.85)
   col = mix(col, ash, ashAmount)
 
+  // Roads: packed darker surface with faint lighter edge lines, from the per-vertex distance
+  // to the nearest centreline. Distance interpolates almost linearly across a cell, so the
+  // edges stay crisp even though the grid is 4 m.
+  const roadDist = attribute<'float'>('road', 'float')
+  const edge = ROAD_WIDTH / 2
+  const paved = smoothstep(edge + 0.35, edge - 0.35, roadDist)
+  const packed = mix(color(0x5e2d1d), color(0x74402b), smoothstep(-0.6, 0.6, mid.add(fine.mul(0.3))))
+  col = mix(col, packed, paved.mul(0.92))
+  const line = smoothstep(0.32, 0.08, roadDist.sub(edge - 0.9).abs())
+  col = mix(col, color(0xc79670), line.mul(paved).mul(0.45))
+
   // Grain, so close ground never looks like flat paint.
   col = col.mul(fine.mul(0.08).add(0.96))
 
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.95, metalness: 0 })
   material.colorNode = col
-  material.roughnessNode = max(float(0.82), float(0.97).sub(cliff.mul(0.1)))
+  material.roughnessNode = max(float(0.78), float(0.97).sub(cliff.mul(0.1)).sub(paved.mul(0.15)))
   // Bump from the same world noise: metre-scale relief the 4 m grid cannot hold. Three's
   // bumpMap() only perturbs textures (it re-samples at offset UVs), so this is Mikkelsen's
   // surface gradient method written out, with unnormalised screen derivatives so the
