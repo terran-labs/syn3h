@@ -1,6 +1,7 @@
 /** Owner-side safety nets in the Vehicle base, exercised on the Syn3h buggy. */
 import { describe, expect, test } from 'vitest'
 import * as THREE from 'three/webgpu'
+import { ClassicBuggy } from '../../src/vehicles/ClassicBuggy'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
 import { makeBed } from './harness'
 
@@ -47,5 +48,57 @@ describe('vehicle safety', () => {
     b.body.setTranslation({ x: 3, y: -5, z: 3 }, true)
     bed.run(0.02)
     expect(b.body.translation().y).toBeLessThan(-4)
+  })
+})
+
+describe('upright rescue', () => {
+  const makers = [
+    ['Syn3h', (bed: Awaited<ReturnType<typeof makeBed>>) => new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 1.2, 0))],
+    ['classic', (bed: Awaited<ReturnType<typeof makeBed>>) => new ClassicBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 1.2, 0))],
+  ] as const
+
+  test.each(makers)('%s buggy stuck on its roof for 3 s is set upright in place, keeping its heading', async (_n, make) => {
+    const bed = await makeBed()
+    const b = bed.add(make(bed))
+    b.isLocal = true
+    const heading = 0.9
+    const yaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), heading)
+    const roof = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI * 0.97)
+    b.body.setRotation(yaw.multiply(roof), true)
+    b.body.setTranslation({ x: 0, y: 0.6, z: 0 }, true)
+    // Lying still on its roof for just under 3 s (the native self righting may also act, so
+    // drive the timer directly to test the fallback itself).
+    b.stuckSteps = 149
+    bed.run(0.02)
+    const q = b.body.rotation()
+    const quat = new THREE.Quaternion(q.x, q.y, q.z, q.w)
+    expect(new THREE.Vector3(0, 1, 0).applyQuaternion(quat).y).toBeGreaterThan(0.99)
+    const f = new THREE.Vector3(0, 0, -1).applyQuaternion(quat)
+    expect(Math.abs(Math.atan2(-f.x, -f.z) - heading)).toBeLessThan(0.05)
+    expect(Math.hypot(b.body.translation().x, b.body.translation().z)).toBeLessThan(0.5)
+    bed.run(3)
+    expect(b.wheelsGrounded).toBe(4)
+  })
+
+  test.each(makers)('%s buggy dropped on its roof is upright within 5 s either way', async (_n, make) => {
+    const bed = await makeBed()
+    const b = bed.add(make(bed))
+    b.isLocal = true
+    b.body.setRotation(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI), true)
+    bed.run(5)
+    const r = b.body.rotation()
+    expect(1 - 2 * (r.x * r.x + r.z * r.z)).toBeGreaterThan(0.95)
+  })
+
+  test('a buggy sliding fast on its roof is not reset yet', async () => {
+    const bed = await makeBed()
+    const b = bed.add(new ClassicBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 1.2, 0)))
+    b.isLocal = true
+    b.body.setRotation(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI), true)
+    bed.run(0.5)
+    expect(b.stuckSteps).toBeGreaterThan(0)
+    b.body.setLinvel({ x: 0, y: 0, z: -20 }, true)
+    bed.run(0.02)
+    expect(b.stuckSteps).toBe(0)
   })
 })
