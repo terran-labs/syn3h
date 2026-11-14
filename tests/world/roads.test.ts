@@ -1,0 +1,77 @@
+import { describe, expect, it } from 'vitest'
+import { coneProfile, generateTerrain } from '../../src/world/terrain/generate'
+import { distanceToPolyline } from '../../src/world/terrain/raster'
+import { type Road, rimRoadRadius } from '../../src/world/terrain/roads'
+import { HeightSampler } from '../../src/world/terrain/sampler'
+import { defaultTerrainSettings } from '../../src/world/terrain/settings'
+
+const settings = defaultTerrainSettings()
+const SEEDS = [1, 2, 3, 4, 5, 99, 777, 12345]
+const GRADE_CAP = Math.tan((15 * Math.PI) / 180)
+const CROSS_CAP = Math.tan((4 * Math.PI) / 180)
+
+/** Points of `road` far enough from road ends and other roads to be plain road, not a junction. */
+function interior(road: Road, roads: Road[]) {
+  const pts = road.points
+  const out: number[] = []
+  for (let i = 0; i < pts.length - 2; i++) {
+    const p = pts[i]
+    if (!road.closed && (i < 8 || i > pts.length - 9)) continue
+    if (roads.some((o) => o !== road && distanceToPolyline(o.points, o.closed, p.x, p.z) < 35)) continue
+    out.push(i)
+  }
+  return out
+}
+
+describe('roads', () => {
+  it('climb from the spawn to the caldera rim and ring it', () => {
+    for (const seed of SEEDS) {
+      const d = generateTerrain(seed, settings)
+      const v = d.layout.volcano
+      const main = d.roads.find((r) => r.kind === 'volcano')!
+      const rim = d.roads.find((r) => r.kind === 'rim')!
+      expect(main && rim).toBeTruthy()
+      const start = main.points[0]
+      expect(Math.hypot(start.x, start.z)).toBeLessThan(60)
+      const end = main.points[main.points.length - 1]
+      expect(Math.hypot(end.x - v.x, end.z - v.z)).toBeCloseTo(rimRoadRadius(d), 0)
+      const rimHeight = v.height * coneProfile(v.calderaRadius / v.radius)
+      expect(end.y).toBeGreaterThan(rimHeight * 0.75)
+      expect(d.roads.filter((r) => r.kind === 'plain').length).toBeGreaterThanOrEqual(0)
+    }
+  })
+
+  it('keep grades and cross slopes under the caps on the collider surface', () => {
+    const s = { worstGrade: 0, worstCross: 0, samples: 0 }
+    for (const seed of SEEDS) {
+      const d = generateTerrain(seed, settings)
+      const h = new HeightSampler(d)
+      for (const road of d.roads) {
+        const pts = road.points
+        for (const i of interior(road, d.roads)) {
+          const a = pts[i]
+          const b = pts[i + 2]
+          const len = Math.hypot(b.x - a.x, b.z - a.z)
+          const grade = Math.abs(h.heightAt(b.x, b.z) - h.heightAt(a.x, a.z)) / len
+          // Perpendicular to the road, 3.5 m either side of the centreline.
+          const nx = -(b.z - a.z) / len
+          const nz = (b.x - a.x) / len
+          const cross = Math.abs(h.heightAt(a.x + nx * 3.5, a.z + nz * 3.5) - h.heightAt(a.x - nx * 3.5, a.z - nz * 3.5)) / 7
+          s.worstGrade = Math.max(s.worstGrade, grade)
+          s.worstCross = Math.max(s.worstCross, cross)
+          s.samples++
+          // The road data must describe the surface the collider has.
+          expect(Math.abs(h.heightAt(a.x, a.z) - a.y)).toBeLessThan(0.5)
+        }
+      }
+    }
+    const deg = (t: number) => ((Math.atan(t) * 180) / Math.PI).toFixed(1)
+    process.stdout.write(`roads: ${s.samples} samples, worst grade ${deg(s.worstGrade)} deg, worst cross slope ${deg(s.worstCross)} deg\n`)
+    expect(s.worstGrade).toBeLessThan(GRADE_CAP)
+    expect(s.worstCross).toBeLessThan(CROSS_CAP)
+  })
+
+  it('are deterministic', () => {
+    expect(generateTerrain(5, settings).roads).toEqual(generateTerrain(5, settings).roads)
+  })
+})

@@ -14,6 +14,7 @@ import type { Game, System } from '../core/Game'
 import { type InputState, emptyInput } from '../core/Input'
 import { GROUP_ALL, GROUP_VEHICLE, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
+import type { VehicleKind } from './index'
 
 /** Everything needed to reproduce a vehicle on another client. Plain numbers for the wire. */
 export interface VehicleState {
@@ -36,6 +37,23 @@ export abstract class Vehicle implements System {
   /** Display name and stable id, set by whoever spawns it. */
   id = ''
   name = ''
+  /** Which vehicle this is, so networking can create the same kind on other clients. */
+  abstract readonly kind: VehicleKind
+  /** Wheels (or tracks) touching the ground this step. For audio and effects. */
+  wheelsGrounded = 0
+  /** True while wings (or a flight mode) are deployed. For audio and effects. */
+  wingsOpen = false
+  /** Body and accent colours, kept here so networking can replicate them. */
+  readonly colors = { body: '#1768b4', accent: '#49e6ff' }
+
+  /** Tint the vehicle. Subclasses apply it to their visuals in `applyColors`. */
+  setColors(body: THREE.ColorRepresentation, accent: THREE.ColorRepresentation): void {
+    this.colors.body = `#${new THREE.Color(body).getHexString()}`
+    this.colors.accent = `#${new THREE.Color(accent).getHexString()}`
+    this.applyColors()
+  }
+
+  protected applyColors(): void {}
 
   private readonly prevPos = new THREE.Vector3()
   private readonly prevQuat = new THREE.Quaternion()
@@ -132,6 +150,7 @@ export abstract class Vehicle implements System {
  * Not a model for vehicle code: the buggy is a port of the original raycast suspension.
  */
 export class PlaceholderVehicle extends Vehicle {
+  readonly kind = 'buggy' as const
   constructor(game: Game, terrain: Terrain, position: THREE.Vector3, heading = 0) {
     super(game, terrain, position, heading)
     this.game.world.createCollider(

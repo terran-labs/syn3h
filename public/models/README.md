@@ -65,3 +65,26 @@ Verification: `npx tsc --noEmit`, `npx vitest run`, then run Vite with
 `node tests/vehicles2/skins-smoke.mjs`. The test config isolates Vite's cache because
 concurrent worktrees share node_modules. Screenshots are written under
 `/tmp/syn3h-vehicles2/` and the smoke check reports the rendering backend and errors.
+
+`hovercraft.glb` is converted from the original `Hovercraft.3ds` using the installed
+Three.js TDSLoader. `convert-hovercraft.mjs` reproduces it without executing source
+project code. Its axes are corrected to Y up and -Z forward, and scale is 0.05
+(about 3.2 m long). Materials are PBR replacements. The hovercraft's collision box
+uses the readable prefab's 2 x 1 x 3 dimensions; its mass, center of mass and inertia
+come from Hovercraft.js. The model loads asynchronously with a primitive fallback.
+
+## Syn3h jet correction
+
+`jet.glb` is now exported in vehicle coordinates directly from the original Blender
+mesh data, with the `terra.jet.prefab` offsets. It is full size (about 7.7 m wide and
+6.94 m long), centered at the original vehicle origin, and faces -Z. Do not apply the
+older import's authoring-scene offset or a second rotation. Landing gear is a separate
+node. `jet-collider.json` contains the original convex hull points with the prefab's
+Y=-0.1 offset. See the conversion script and `tests/vehicles2/README.md` for sources.
+
+## Syn3h hovercraft correction
+
+`hovercraft.glb` now comes from Syn3h's prefab-selected `Hovercraft.jas`, decoded by
+`convert-syn3h-hovercraft.py`. It replaces the earlier .3ds conversion, which was the
+same older asset in both repositories. All five original named surfaces and UVs are
+recovered. See `tests/vehicles2/README.md` for the script GUID trace and scale evidence.
