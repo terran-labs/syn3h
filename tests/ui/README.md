@@ -363,3 +363,29 @@ to lift off"). After two seconds of pushing W or the stick on a parked jet with 
 throttle, the hint says so again, at most three times, twelve seconds apart, and never
 once the throttle has been used. `tools/heavy.sh node tests/ui/jet-hint.mjs` plays it on a
 desktop and a landscape phone and checks that following the hint lifts the jet.
+
+## The loading veil
+
+The loading screen is the one from terranlabs.com, brought over verbatim at the owner's
+request: a dark world seen edge on, light travelling round its limb behind a small sun as
+things arrive, a moon in a slow outer orbit. Its markup, styles and the script that eases
+`--boot-progress` are in `index.html`, not the bundle, so it is up from the first paint.
+The source is that site's `BootGate.tsx`, `lib/boot.ts`, the `.boot-*` rules in
+`src/index.css` and the bootstrap script in its layout. It reads three variables,
+`--theme-bg-root`, `--theme-text-primary` and `--theme-heading-accent`, set to Syn3h's
+space colour, ink and blue.
+
+`LoadingScreen.ts` is Syn3h's version of that site's BootGate: the bundle arriving takes
+the light to 45 percent, the game's loading phases take it to 92, and when the world is
+ready the lap completes and the veil lifts. Differences from the original, all for a game
+that takes longer to start than a web page: the veil may stay up to 45 seconds (not 8),
+the no-script failsafe waits 60 (not 12), the lap is completed at the moment of lifting
+because a busy phone draws too few frames for the easing to get there, and the veil lifts
+at once on a script error, a rejected promise or the page's failure message.
+
+Nothing is written on the veil, so the phase and the loading messages are now only in a
+status region for screen readers. `tools/heavy.sh node tests/ui/boot-veil.mjs` checks the
+veil from first paint to lift, and that a startup failure is never hidden behind it.
+
+`fans-hill.mjs` and `flight-loading-map.mjs` are older checks that have gone stale in
+their later sections against other lanes' changes (they failed before the veil too).
