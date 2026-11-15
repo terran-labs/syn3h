@@ -25,10 +25,17 @@
  *     stuck (still visible to A), then is lifted back to its pad
  * Exits non zero on any failure or page error.
  */
+import { randomBytes } from 'node:crypto'
+import { writeFileSync } from 'node:fs'
 import { chromium } from 'playwright-core'
 
 const base = process.argv[2] ?? 'http://localhost:5183/'
-const room = `smoke${Date.now() % 100000}`
+// Full timestamp plus random suffix avoids revisiting a persisted fixture room.
+const room = `smoke${Date.now()}-${randomBytes(6).toString('hex')}`
+if (room.length > 32 || !/^[a-z0-9_-]+$/.test(room)) throw new Error('Invalid smoke room identity')
+console.log('NET SMOKE RUN', JSON.stringify({ base, room }))
+const diagnosticPath = `/tmp/syn3h-net-smoke-${room}.json`
+const clients = []
 const shot = '/tmp/syn3h-net-smoke.png'
 
 const browser = await chromium.launch({
@@ -42,6 +49,7 @@ const errors = []
 async function open(name, extra = '') {
   const ctx = await browser.newContext({ viewport: { width: 960, height: 540 } })
   const page = await ctx.newPage()
+  clients.push({ name, page })
   page.on('pageerror', (e) => errors.push(`${name} pageerror: ${e.message}`))
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`${name} console: ${m.text()} at ${m.location().url}`) })
   page.on('response', (r) => { if (r.status() >= 400) console.log(`HTTP ${r.status()} ${r.url()}`) })
@@ -52,6 +60,45 @@ async function open(name, extra = '') {
   await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 30000 })
   await page.evaluate(() => { window.syn3h.shell.play(); document.activeElement?.blur?.() })
   return page
+}
+
+/** Failure-only, bounded snapshots. Never override bots or extend an assertion's wait. */
+async function captureFailure() {
+  const snapshots = await Promise.all(clients.map(async ({ name, page }) => {
+    let timer
+    try {
+      const snapshot = await Promise.race([
+        page.evaluate(() => {
+          const s = window.syn3h, n = window.syn3hNet
+          const param = id => s?.params?.get(id)?.value ?? null
+          const roster = n?.players ? [...n.players.values()].map(p => ({ id: p.id, name: p.name, kind: p.kind, bot: Boolean(p.bot) })) : []
+          return {
+            at: Date.now(), url: location.href, readyState: document.readyState, hidden: document.hidden,
+            requestedBots: param('bots.count'), effectiveBots: s?.bots?.vehicles?.length ?? null,
+            botRosterCount: roster.filter(p => p.bot).length,
+            id: n?.id ?? null, isHost: n?.isHost ?? null, host: n?.game?.host ?? null, roster,
+            playing: s?.shell?.playing ?? null, suspended: s?.game?.input?.suspended ?? null,
+            tick: s?.game?.tick ?? null, gameTime: s?.game?.time ?? null, fps: s?.game?.fps ?? null,
+            gfx: param('gfx.level'), backend: s?.game?.backend ?? null, performance: s?.game?.performance ?? null,
+            worldSeed: param('world.seed'), mode: n?.game?.mode ?? null,
+            network: { connected: n?.connected ?? null, welcomed: n?.welcomed ?? null,
+              state: n?.conn?.state ?? null, socketState: n?.conn?.ws?.readyState ?? null,
+              bufferedBytes: n?.conn?.ws?.bufferedAmount ?? null, retryAt: n?.conn?.retryAt ?? null,
+              clockSynced: n?.clock?.synced ?? null, rtt: n?.clock?.rtt ?? null, stats: n?.stats ?? null,
+              remotes: n?.remotes ? [...n.remotes.entries()].map(([id, r]) => ({ id, responding: r.responding, paused: r.paused, mode: r.sample?.mode, newest: r.buffer?.newest?.t })) : [] },
+            startup: window.syn3hStartup ?? null,
+          }
+        }),
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Diagnostic snapshot timed out after 5s')), 5000) }),
+      ])
+      return { name, ...snapshot }
+    } catch (e) { return { name, error: String(e?.message ?? e) } }
+    finally { clearTimeout(timer) }
+  }))
+  const report = { base, room, results, errors, clients: snapshots }
+  console.log('NET SMOKE FAILURE DIAGNOSTICS', JSON.stringify(report))
+  try { writeFileSync(diagnosticPath, JSON.stringify(report, null, 2)); console.log('Diagnostic file', diagnosticPath) }
+  catch (e) { console.error('Could not save diagnostic file', String(e)) }
 }
 
 /** Record calls to the networking audio hooks (main.ts may not pass real audio yet). */
@@ -404,6 +451,7 @@ try {
 } catch (e) {
   check('no exception', false, { message: String(e?.message ?? e), stack: e?.stack })
 } finally {
+  if (errors.length || results.some(r => !r.ok)) await captureFailure().catch(e => console.error('Diagnostic capture failed', String(e)))
   await browser.close()
 }
 
