@@ -8,6 +8,7 @@ import { createVehicle } from '../vehicles'
 import type { Vehicle } from '../vehicles/Vehicle'
 import { BotBrain, isSafeGround, type BotTerrain } from './BotBrain'
 import { botCount, spawnRadius } from './params'
+import { Daydream } from './Daydream'
 export class BotManager implements System {
   private readonly bots: Vehicle[] = []
   private readonly brains: BotBrain[] = []
@@ -23,7 +24,15 @@ export class BotManager implements System {
     if (value) this.clearBots()
   }
   get vehicles(): readonly Vehicle[] { return this.bots }
-  constructor(private readonly game: Game, private readonly terrain: BotTerrain, private readonly player: Vehicle) { this.targets = [player] }
+  /** The player's own vehicle driving itself after a spell of no input. See Daydream.ts. */
+  readonly daydream: Daydream
+  constructor(private readonly game: Game, private readonly terrain: BotTerrain, private readonly player: Vehicle) {
+    this.targets = [player]
+    // Owned here so the composition root needs no extra wiring: this manager already holds
+    // the player, the terrain and every vehicle a daydreaming driver might tail.
+    this.daydream = new Daydream(game, terrain, player, { others: () => [...this.targets, ...this.bots] })
+  }
+  fixedUpdate(dt: number) { this.daydream.fixedUpdate(dt) }
   setTargets(vehicles: readonly Vehicle[]) {
     this.targets = [...vehicles]
     for (const brain of this.brains) brain.setTargets(this.targets)
@@ -68,14 +77,17 @@ export class BotManager implements System {
     return false
   }
   /** Reconcile outside the physics iterator so removing bots cannot skip another body's step. */
-  update() {
-    if (this.disposed || this.remote) return
+  update(dt = 0) {
+    if (this.disposed) return
+    this.daydream.update(dt)
+    if (this.remote) return
     const count = Math.max(0, Math.min(qualityBudget().bots, Math.floor(botCount.value)))
     while (this.bots.length > count) this.removeLast()
     while (this.bots.length < count) if (!this.spawn(this.bots.length)) break
   }
   dispose() {
     this.disposed = true
+    this.daydream.dispose()
     this.clearBots()
   }
 }
