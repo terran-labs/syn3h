@@ -159,6 +159,12 @@ const BOT_CONTEST_SPEED = 2
 /** A bot the host has not updated for this long is gone (bot count lowered, or no host). */
 const BOT_EXPIRY_MS = 5000
 /**
+ * A host parked (hidden tab, paused game) or silent this long passes host to a guest who is
+ * playing: the host simulates the bots, which would otherwise freeze and expire for everyone.
+ * Shorter than BOT_EXPIRY_MS, so the bots are handed over before guests watch them vanish.
+ */
+const HOST_AWAY_MS = 3000
+/**
  * In tag, "it" moves on when its holder has been away this long (phone locked, tab hidden,
  * connection gone quiet). Otherwise one person putting their phone down stops the game for
  * the whole room: a parked player cannot be rammed, and never reports being tagged.
@@ -271,6 +277,7 @@ export class Room {
     this.tickHeld(this.now())
     this.tickIdle(this.now())
     this.tickTag(this.now())
+    this.tickHost(this.now())
     this.tickKoth(this.now())
     this.tickRace()
   }
@@ -1368,6 +1375,40 @@ export class Room {
 
   /** Server ms since which the player who is "it" has been away, or 0 while present. */
   private itAwaySince = 0
+
+  /** Server ms since which the host's states have been flagged paused, or 0 while not. */
+  private hostPausedSince = 0
+
+  /**
+   * Pass host on from a host who has been away for HOST_AWAY_MS: parked since then, or no
+   * state at all for that long. A held host is hold()'s business, and with nobody playing to
+   * take over the host stays host, also once it is back. The new host is chosen and treated
+   * as when a host leaves (see leave()): the first playing player in join order, the old
+   * host's bots go, and everyone hears the 'host' event. The old host stays as a guest.
+   */
+  private tickHost(now: number): void {
+    const host = this.host ? this.byId(this.host) : undefined
+    const st = host?.lastState
+    if (!host || !st || host.heldUntil) { this.hostPausedSince = 0; return }
+    // Parked: measured from the first paused state seen, so states that keep arriving parked
+    // do not restart the clock. Otherwise only silence counts, from the last state or from
+    // this connection's start: a host back from a held place has not sent one yet.
+    let since: number
+    if (st.paused) since = this.hostPausedSince ||= now
+    else { this.hostPausedSince = 0; since = Math.max(host.lastStateAt, host.joinedAt) }
+    if (now - since <= HOST_AWAY_MS) return
+    let next: Player | undefined
+    for (const p of this.players.values()) {
+      if (p !== host && !p.heldUntil && p.lastState && !p.lastState.paused && now - p.lastStateAt <= RESPONDING_MS) { next = p; break }
+    }
+    if (!next) return
+    this.hostPausedSince = 0
+    // As on leave: a race needs its host's simulation, and the bots belong to the old host.
+    this.cancelRace('Host away')
+    this.host = next.info.id
+    this.clearBots()
+    this.broadcastGame('host', next.info.id)
+  }
 
   /** In tag, pass "it" on from a holder who has been away too long; see IT_ABSENT_MS. */
   private tickTag(now: number): void {
