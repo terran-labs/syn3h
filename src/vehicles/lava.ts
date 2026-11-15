@@ -407,7 +407,7 @@ function applyVehicleLiquidDirected(body:RAPIER.RigidBody,world:RAPIER.World,ter
 }
 
 /** Select a complete response; the default route retains approved handling and test bounds. */
-export function applyVehicleLiquid(...args: Parameters<typeof applyVehicleLiquidLegacy>): void {
- if (liquidLegacyEscape.value) applyVehicleLiquidLegacy(...args)
- else applyVehicleLiquidDirected(...args)
+export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terrain:Terrain,input:{x:number;y:number;z:number},kind:string,state:LiquidState,dt:number,wingsOpen=false):void {
+ if (liquidLegacyEscape.value) applyVehicleLiquidLegacy(body,world,terrain,input,kind,state,dt,wingsOpen)
+ else applyVehicleLiquidDirected(body,world,terrain,input,kind,state,dt,wingsOpen)
 }

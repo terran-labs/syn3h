@@ -1,7 +1,7 @@
 /** Wadeable lava, speed-dependent water floating and wings that push along the nose in liquid. */
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
-import { initPhysics, RAPIER, groups, GROUP_TERRAIN, GROUP_ALL } from '../../src/core/physics'
+import { initPhysics, RAPIER, FIXED_DT, FIXED_HZ, groups, GROUP_TERRAIN, GROUP_ALL } from '../../src/core/physics'
 import { params } from '../../shared/params'
 import { createVehicle } from '../../src/vehicles'
 import { applyWaterForces, planingShare } from '../../src/vehicles/buoyancy'
@@ -44,7 +44,7 @@ describe('wings in liquid', () => {
       const h = harness(); h.terrain.liquidHeightAt = () => surface; h.terrain.liquidKindAt = () => liquid
       const v = createVehicle(h.game, h.terrain, kind, new THREE.Vector3(0, surface - (liquid === 'water' ? 1 : .45), 0)); v.isLocal = false
       try {
-        v.input.special = true; h.step(v, 120)
+        v.input.special = true; h.step(v, 2 * FIXED_HZ)
         const p = v.body.translation()
         expect(p.z).toBeLessThan(-4)
         expect(p.y).toBeLessThan(surface + 1)
@@ -76,19 +76,19 @@ describe('wing attitude in liquid', () => {
     it(`${kind}: 20 degrees nose up climbs out of ${liquid} within ${limit} s, without a jolt`, () => {
       const { h, v, surface } = start(kind, liquid, 20)
       try {
-        let clear = -1, last = v.body.linvel(), lastA = new THREE.Vector3(), end = limit * 60
+        let clear = -1, last = v.body.linvel(), lastA = new THREE.Vector3(), end = limit * FIXED_HZ
         const change: number[] = []
         for (let i = 1; i <= end; i++) {
-          h.step(v); const l = v.body.linvel(), a = new THREE.Vector3(l.x - last.x, l.y - last.y, l.z - last.z).multiplyScalar(60); last = l
+          h.step(v); const l = v.body.linvel(), a = new THREE.Vector3(l.x - last.x, l.y - last.y, l.z - last.z).multiplyScalar(1 / FIXED_DT); last = l
           change.push(a.distanceTo(lastA)); lastA.copy(a)
-          if (clear < 0 && v.body.translation().y > surface + .25) { clear = i; end = Math.min(end, i + 30) }
+          if (clear < 0 && v.body.translation().y > surface + .25) { clear = i; end = Math.min(end, i + Math.ceil(.5 / FIXED_DT)) }
         }
         expect(clear).toBeGreaterThan(0)
         // The handover: from a quarter second before the hull leaves to half a second after.
         // A jolt is a jump in acceleration between steps. (The flight controller's own snap of
         // velocity onto the nose at 4 m/s, earlier in the climb, is outside this pass.)
-        const jolt = Math.max(...change.slice(Math.max(0, clear - 16), clear + 30))
-        console.log(kind, liquid, 'clear', clear / 60, 'handover jolt', jolt)
+        const jolt = Math.max(...change.slice(Math.max(0, clear - Math.ceil(.25 / FIXED_DT)), clear + Math.ceil(.5 / FIXED_DT)))
+        console.log(kind, liquid, 'clear', clear * FIXED_DT, 'handover jolt', jolt)
         expect(jolt).toBeLessThan(20)
         // It went along the nose, not straight up.
         expect(-v.body.translation().z).toBeGreaterThan(v.body.translation().y - surface)
@@ -97,7 +97,7 @@ describe('wing attitude in liquid', () => {
     it(`${kind}: nose down drives deeper into ${liquid}`, () => {
       const { h, v, surface } = start(kind, liquid, -20)
       const y0 = v.body.translation().y
-      try { h.step(v, 120); expect(v.body.translation().y).toBeLessThan(y0 - .3); expect(v.body.translation().y).toBeLessThan(surface) } finally { v.dispose(); h.world.free() }
+      try { h.step(v, 2 * FIXED_HZ); expect(v.body.translation().y).toBeLessThan(y0 - .3); expect(v.body.translation().y).toBeLessThan(surface) } finally { v.dispose(); h.world.free() }
     })
   }
 })
@@ -153,9 +153,9 @@ describe('water floats only fast arrivals', () => {
       const h = harness(); h.terrain.liquidHeightAt = () => 8; h.terrain.liquidKindAt = () => 'water'
       const v = createVehicle(h.game, h.terrain, kind, new THREE.Vector3(0, 8.6, 0)); v.isLocal = false
       try {
-        v.body.setLinvel({ x: 0, y: 0, z: -2 }, true); h.step(v, 480)
+        v.body.setLinvel({ x: 0, y: 0, z: -2 }, true); h.step(v, 8 * FIXED_HZ)
         expect(v.body.translation().y).toBeLessThan(2)
-        const z = v.body.translation().z; v.input.y = 1; h.step(v, 300)
+        const z = v.body.translation().z; v.input.y = 1; h.step(v, 5 * FIXED_HZ)
         expect(v.body.translation().z).toBeLessThan(z - 2)
       } finally { v.dispose(); h.world.free() }
     })
@@ -165,10 +165,10 @@ describe('water floats only fast arrivals', () => {
       try {
         v.body.setLinvel({ x: 0, y: 0, z: -25 }, true)
         let low = Infinity
-        for (let i = 0; i < 120; i++) { h.step(v); low = Math.min(low, v.body.translation().y) }
+        for (let i = 0; i < 2 * FIXED_HZ; i++) { h.step(v); low = Math.min(low, v.body.translation().y) }
         expect(low).toBeGreaterThan(7.3)
         expect(v.body.translation().z).toBeLessThan(-35)
-        h.step(v, 600)
+        h.step(v, 10 * FIXED_HZ)
         expect(v.body.translation().y).toBeLessThan(3)
       } finally { v.dispose(); h.world.free() }
     })
@@ -197,9 +197,9 @@ describe('lava is wadeable', () => {
       // 30 m out the bed is 4.75 m down: the vehicle rests at its sink depth, wheels far off the bed.
       const v = createVehicle(h.game, h.terrain, kind, new THREE.Vector3(0, -.45, 30)); v.isLocal = false
       try {
-        h.step(v, 60); v.input.y = 1; v.input.z = 1
+        h.step(v, 1 * FIXED_HZ); v.input.y = 1; v.input.z = 1
         let maxDepth = 0, out = -1
-        for (let i = 0; i < 60 * 40 && out < 0; i++) { h.step(v); maxDepth = Math.max(maxDepth, v.lavaDepth); if (v.body.translation().z < -6) out = i / 60 }
+        for (let i = 0; i < FIXED_HZ * 40 && out < 0; i++) { h.step(v); maxDepth = Math.max(maxDepth, v.lavaDepth); if (v.body.translation().z < -6) out = (i + 1) * FIXED_DT }
         expect(out).toBeGreaterThan(0)
         expect(v.lavaDepth).toBe(0); expect(v.stuck).toBe(false)
         if (kind !== 'hovercraft') expect(maxDepth).toBeGreaterThan(.3)
@@ -229,7 +229,7 @@ describe('liquid mode compatibility', () => {
       const state = createLiquidState()
       const before = { position: { ...b.translation() }, velocity: { ...b.linvel() }, rotation: { ...b.rotation() } }
       try {
-        applyVehicleLiquid(b, h.world, h.terrain, { x: 1, y: 1, z: 1 }, 'buggy', state, 1 / 60, true)
+        applyVehicleLiquid(b, h.world, h.terrain, { x: 1, y: 1, z: 1 }, 'buggy', state, FIXED_DT, true)
         expect({ position: { ...b.translation() }, velocity: { ...b.linvel() }, rotation: { ...b.rotation() } }).toEqual(before)
         expect(b.isEnabled()).toBe(held !== 'disabled')
         const force = b.userForce(new THREE.Vector3()), torque = b.userTorque(new THREE.Vector3())
