@@ -112,6 +112,8 @@ const REGEN_TORQUE_MARGIN = 1.25
 const CONTACT_TOUCH = 0.01
 /** How fast (1/s) water drags the wheels toward the body's speed while floating. */
 const WATER_MOTOR_DRAG = 6
+/** Fastest a kinematic copy is carried (m/s); see carriedVelocity(). */
+const CARRIED_MAX = 200
 /**
  * Next-gen bump stop (see suspensionForce()). The skid plate meets flat ground when a wheel ray
  * is about 0.185 m long, so the stop works over ray lengths BUMP_START down to BUMP_END, and
@@ -362,7 +364,9 @@ export class Syn3hBuggy extends Vehicle {
     const pos = ub.pos
     this.up.copy(UP).applyQuaternion(q)
     this.down.copy(this.up).negate()
-    const lv = b.linvel()
+    const kinematic = b.isKinematic()
+    const lv = kinematic ? this.carriedVelocity(pos, dt) : b.linvel()
+    if (!kinematic) this.carriedValid = false
     const speedSq = lv.x * lv.x + lv.y * lv.y + lv.z * lv.z
     const myVelocity = Math.sqrt(speedSq)
     const S = buggySpeed.value
@@ -386,27 +390,6 @@ export class Syn3hBuggy extends Vehicle {
     this.suspensionRange = lerp(this.suspensionRange, desired, dt * 1)
     this.updateMassProperties()
     const rayLength = this.suspensionRange + WHEEL_RADIUS
-
-    // VB 185-197: kinematic copies only place their wheels.
-    if (b.isKinematic()) {
-      let grounded = 0
-      for (let i = 0; i < 4; i++) {
-        this.origin.copy(this.origins[i]).applyQuaternion(q).add(pos)
-        const hit = this.raycast(this.origin, this.down, rayLength)
-        const eff = this.wheelEffects[i]
-        eff.grounded = !!hit
-        eff.slip = hit ? Math.abs(this.hitVelocity[i].x) : 0
-        if (hit) {
-          this.motorSpeed = this.hitVelocity[i].z
-          this.hitDistance[i] = hit.timeOfImpact
-          eff.point.copy(this.down).multiplyScalar(hit.timeOfImpact).add(this.origin)
-          eff.normal.set(hit.normal.x, hit.normal.y, hit.normal.z)
-          grounded++
-        } else this.hitDistance[i] = -1
-      }
-      this.wheelsGrounded = grounded
-      return
-    }
 
     // Wing state, VB 199-213.
     if (this.shouldWingsBeOpen && this.wingState > 0.95) this.wingState = 1
@@ -437,6 +420,43 @@ export class Syn3hBuggy extends Vehicle {
         const f = cap / sum
         for (let w = 0; w < 4; w++) this.steer[w] = Math.atan(Math.tan(this.steer[w]) * f)
       }
+    }
+
+    // VB 185-197: kinematic copies only place their wheels. Ours are remote players beyond
+    // net.proxyRadius, carried along their owner's snapshots with the owner's input (see
+    // RemotePlayer.steer). They take no forces, but the wings and steering above follow that
+    // input, and the wheels here roll and slip with the body's motion over the ground, so a
+    // distant buggy flies with its wings out and corners with its wheels turned.
+    if (kinematic) {
+      let grounded = 0, rolling = 0
+      for (let i = 0; i < 4; i++) {
+        this.origin.copy(this.origins[i]).applyQuaternion(q).add(pos)
+        const hit = this.raycast(this.origin, this.down, rayLength)
+        const eff = this.wheelEffects[i]
+        eff.grounded = !!hit
+        this.windX[i] = this.windZ[i] = 0
+        this.sliding[i] = false
+        if (!hit) {
+          this.hitDistance[i] = -1
+          eff.slip = 0
+          continue
+        }
+        this.mountVelocity(i, q, lv)
+        this.hitDistance[i] = hit.timeOfImpact
+        this.hitCompress[i] = -(hit.timeOfImpact / rayLength) + 1
+        eff.point.copy(this.down).multiplyScalar(hit.timeOfImpact).add(this.origin)
+        eff.normal.set(hit.normal.x, hit.normal.y, hit.normal.z)
+        eff.slip = Math.abs(this.hitVelocity[i].x)
+        rolling += this.hitVelocity[i].z
+        grounded++
+      }
+      // Grounded wheels turn with the ground; in the air they spin down like a free motor.
+      if (grounded) this.motorSpeed = rolling / grounded
+      else this.motorSpeed -= this.motorSpeed * MOTOR_DRAG * dt
+      this.wheelsGrounded = grounded
+      // For the brake lamps, which light for regeneration (see update()).
+      this.drive = buggyNextGen.value ? this.driveMode(smoothed.y, this.motorSpeed) : 'hold'
+      return
     }
 
     // Motor, VB 280-285.
@@ -471,7 +491,6 @@ export class Syn3hBuggy extends Vehicle {
     // Wheels, VB 288-332.
     const wasAirborne = this.wheelsGrounded === 0
     let grounded = 0
-    const hv = this.v1
     for (let i = 0; i < 4; i++) {
       this.origin.copy(this.origins[i]).applyQuaternion(q).add(pos)
       const hit = this.raycast(this.origin, this.down, rayLength)
@@ -491,12 +510,8 @@ export class Syn3hBuggy extends Vehicle {
       this.totalSuspensionCompression += this.hitCompress[i]
       this.hitPoint.copy(this.down).multiplyScalar(hit.timeOfImpact).add(this.origin)
 
-      this.qSteer.setFromAxisAngle(UP, this.steer[i])
-      this.qWheel.multiplyQuaternions(q, this.qSteer)
-      this.qWheelInv.copy(this.qWheel).invert()
-      const pv = b.velocityAtPoint(this.origin)
-      hv.set(pv.x, pv.y, pv.z).applyQuaternion(this.qWheelInv)
-      const hitVel = this.hitVelocity[i].set(hv.x, hv.y, -hv.z)
+      const pv = this.mountVelocity(i, q, b.velocityAtPoint(this.origin))
+      const hitVel = this.hitVelocity[i]
       eff.grounded = true
       eff.point.copy(this.hitPoint)
       eff.normal.set(hit.normal.x, hit.normal.y, hit.normal.z)
@@ -571,6 +586,39 @@ export class Syn3hBuggy extends Vehicle {
     })
 
     ub.flush(dt)
+  }
+
+  private readonly carriedLast = new THREE.Vector3()
+  private readonly carried = new THREE.Vector3()
+  private carriedValid = false
+  /**
+   * Velocity of a kinematic copy, from how far it was carried since the last step. Rapier
+   * reports none for a remote copy in the game (the same reason Vehicle.postPhysics measures
+   * a kinematic zorb this way). A move faster than CARRIED_MAX is a teleport or a whole tile
+   * shift at the world seam, not motion.
+   */
+  private carriedVelocity(pos: THREE.Vector3, dt: number): THREE.Vector3 {
+    const v = this.carried
+    if (this.carriedValid) v.subVectors(pos, this.carriedLast).divideScalar(dt)
+    else v.set(0, 0, 0)
+    if (v.lengthSq() > CARRIED_MAX * CARRIED_MAX) v.set(0, 0, 0)
+    this.carriedLast.copy(pos)
+    this.carriedValid = true
+    return v
+  }
+
+  /**
+   * Wheel i's frame (qWheel: the body turned by its steering angle) and its mount's world
+   * velocity `pv` in that frame as Unity components (x lateral, z forward), into
+   * hitVelocity[i]. Returns `pv`.
+   */
+  private mountVelocity<V extends RAPIER.Vector>(i: number, q: THREE.Quaternion, pv: V): V {
+    this.qSteer.setFromAxisAngle(UP, this.steer[i])
+    this.qWheel.multiplyQuaternions(q, this.qSteer)
+    this.qWheelInv.copy(this.qWheel).invert()
+    const hv = this.v1.set(pv.x, pv.y, pv.z).applyQuaternion(this.qWheelInv)
+    this.hitVelocity[i].set(hv.x, hv.y, -hv.z)
+    return pv
   }
 
   /**
@@ -676,19 +724,11 @@ export class Syn3hBuggy extends Vehicle {
    */
   private drivetrain(dt: number, y: number): void {
     const vf = this.ub.inverseTransformDirectionUnity(this.ub.velocity, this.v1).z
-    const throttle = Math.abs(y) > THROTTLE_DEADZONE
+    this.drive = this.driveMode(y, vf)
     if (this.brakes) {
-      this.drive = 'hold'
       this.motorSpeed = 0
       return
     }
-    if (!throttle) {
-      this.drive = buggyIdleHold.value && Math.abs(vf) < HOLD_SPEED && this.wheelsGrounded > 0 ? 'hold' : 'coast'
-    } else if (y < 0 && vf > REVERSE_SPEED) {
-      // Only the reverse key regenerates. The forward key always drives: rolling back down a
-      // hill with it held is the moment the motor must pull hardest, not brake gently.
-      this.drive = 'regen'
-    } else this.drive = 'drive'
 
     if (this.drive === 'hold') {
       this.motorSpeed = moveToward(this.motorSpeed, 0, HOLD_DECEL * dt)
@@ -707,6 +747,17 @@ export class Syn3hBuggy extends Vehicle {
       this.motorSpeed -= (this.motorSpeed * MOTOR_DRAG) / this.motorTorque * dt
       this.driveFloor(y)
     }
+  }
+
+  /** Which drivetrain state throttle `y` asks for at forward speed `vf` (see drivetrain()). */
+  private driveMode(y: number, vf: number): Syn3hBuggy['drive'] {
+    if (this.brakes) return 'hold'
+    if (Math.abs(y) <= THROTTLE_DEADZONE) {
+      return buggyIdleHold.value && Math.abs(vf) < HOLD_SPEED && this.wheelsGrounded > 0 ? 'hold' : 'coast'
+    }
+    // Only the reverse key regenerates. The forward key always drives: rolling back down a
+    // hill with it held is the moment the motor must pull hardest, not brake gently.
+    return y < 0 && vf > REVERSE_SPEED ? 'regen' : 'drive'
   }
 
   /**
@@ -849,6 +900,7 @@ export class Syn3hBuggy extends Vehicle {
     this.suspensionRange = 0.4
     this.updateMassProperties()
     this.wheelsGrounded = 0
+    this.carriedValid = false
     for (let i = 0; i < 4; i++) {
       this.windX[i] = this.windZ[i] = 0
       this.sliding[i] = false
