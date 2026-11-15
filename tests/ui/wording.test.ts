@@ -5,7 +5,8 @@
  *
  * This scans the UX lane's player-visible text: every human-readable string and every
  * HTML text node and label attribute in src/ui and src/audio, the generated names, the
- * loading messages, index.html and the web manifest. Internal identifiers, file names,
+ * loading messages, index.html and the web manifest, and every slider label and group in
+ * every lane (they all show in the Advanced panel). Internal identifiers, file names,
  * parameter ids and protocol markers are not text a player reads and are left alone.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs'
@@ -45,6 +46,17 @@ describe('player-visible wording', () => {
       expect(hits).toEqual([])
     })
   }
+  it('every slider label and group in every lane is clean', () => {
+    // Read from source, so this needs no renderer: any file that defines a parameter.
+    const sources = [...files('src'), ...files('shared'), ...files('server')].map(path => ({ path, text: readFileSync(path, 'utf8') })).filter(file => file.text.includes('defineParam('))
+    const hits: { path: string; text: string; word: string }[] = []
+    for (const { path, text } of sources) for (const match of text.matchAll(/\b(?:label|group)\s*:\s*(?:'((?:[^'\\\n]|\\.)*)'|"((?:[^"\\\n]|\\.)*)"|`((?:[^`\\]|\\.)*)`)/g)) {
+      const label = match[1] ?? match[2] ?? match[3] ?? '', word = banned(label)
+      if (word) hits.push({ path, text: label, word })
+    }
+    expect(sources.length).toBeGreaterThan(10)
+    expect(hits).toEqual([])
+  })
   it('index.html and the manifest are clean', () => {
     for (const path of ['index.html', 'public/brand/manifest.webmanifest']) {
       const text = readFileSync(path, 'utf8')

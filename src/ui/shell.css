@@ -334,3 +334,33 @@
 /* Reset world: a second press confirms, and the label says who it affects. */
 .syn3h-shell .world-reset { display: block; width: 100%; margin-top: 12px; font-size: 17px; }
 .syn3h-shell .world-reset.is-confirming { color: #ffd19e; border-color: rgb(255 190 120 / .5); }
+
+/* Planets: one card per kind of world. The orb is drawn by PlanetOrbs; the card is a button. */
+.planet-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.syn3h-shell .planet-card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 10px 12px; text-align: center; min-height: 0; }
+.planet-orb { width: 96px; aspect-ratio: 1; flex: none; display: block; transition: scale .25s cubic-bezier(.2,.7,.2,1); }
+.planet-card:is(:hover, :focus-visible):not(:disabled) .planet-orb { scale: 1.08; }
+.planet-text { display: grid; gap: 2px; min-width: 0; }
+.planet-text strong { font: 100 21px/1.2 'Syn3h Lato', sans-serif; }
+.planet-text small { font-size: 13px; line-height: 1.35; color: var(--s3-dim); text-wrap: balance; }
+.planet-card.is-primary .planet-text small { color: var(--s3-ink); }
+/* Lobby index: orb beside the name, two to a row, as the 2017 lobby listed its worlds. */
+.planet-picker.is-compact { grid-template-columns: 1fr 1fr; }
+.syn3h-shell .is-compact .planet-card { flex-direction: row; justify-content: flex-start; gap: 12px; padding: 8px 14px 8px 10px; text-align: left; min-height: clamp(58px, 9.5vh, 86px); }
+.is-compact .planet-orb { width: clamp(44px, 7vh, 62px); }
+.is-compact .planet-text small:empty { display: none; }
+.lobby-destinations { grid-template-columns: 1fr; }
+.planet-current { color: var(--s3-dim); font-size: 15px; }
+@media (max-width: 700px) {
+  .planet-picker { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .planet-orb { width: 72px; }
+  .syn3h-shell .is-compact .planet-card { padding: 6px 8px; gap: 8px; min-height: 58px; }
+  .is-compact .planet-orb { width: 42px; }
+  .is-compact .planet-text strong { font-size: 18px; }
+  .lobby-links { gap: 4px 22px; }
+}
+@media (max-height: 550px) {
+  .syn3h-shell .is-compact .planet-card { min-height: 46px; padding: 4px 10px; }
+  .is-compact .planet-orb { width: 36px; }
+  .lobby-links { gap: 0 26px; }
+}

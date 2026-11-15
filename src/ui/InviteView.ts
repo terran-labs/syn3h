@@ -1,7 +1,8 @@
 import { wordmarkSvg } from './brand/logo'
 import { qrSvg } from './QrCode'
-export function inviteUrl(origin:string, room:string):string {
-  const url=new URL('/',origin);url.searchParams.set('room',room);return url.href
+/** A link into a room. With `world`, the link also carries the world, so an empty room rebuilds it. */
+export function inviteUrl(origin:string, room:string, world?:string):string {
+  const url=new URL('/',origin);url.searchParams.set('room',room);if(world)url.searchParams.set('world',world);return url.href
 }
 export class InviteView {
   readonly element=document.createElement('section')

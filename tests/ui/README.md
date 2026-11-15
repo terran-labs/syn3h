@@ -301,3 +301,22 @@ Going into lava plays a low gulp with one rising bubble; going into water plays 
 Settings has "Reset world to defaults": the first press asks, a second within four seconds
 does it, for everyone in the room when connected.
 
+## Planets
+
+The lobby index offers the worlds as destinations, as the 2017 lobby did: one card per
+recipe in `src/world/planets.ts` plus Custom. The Worlds panel shows the same cards with
+their descriptions. Adding a recipe there adds a card; nothing here changes.
+
+- `planets/PlanetOrbs.ts` draws every card's sphere with one shared WebGL 2 context:
+  lighting, limb haze, drifting generated cloud, lava that glows on the night side. A
+  sphere uses its real map from `paintPlanetMap` once painted (in an idle moment, 512 by
+  256, one kept per kind) and the recipe's swatch colours until then.
+- Picking another kind calls `applyPlanet(id)`, so the shared sliders carry it to the room.
+  The kind in play is not re-rolled. From the index a pick leads to the name form.
+- Custom opens the Advanced panel limited to World, Sky, Sun, Weather, Terrain and Lava.
+- The card in play shows `planetName(seed)`. Invite links and QR codes carry
+  `world=<encodeWorld()>` as well as the room.
+- When the host has locked the world, the other kinds are disabled for guests.
+
+`tools/heavy.sh node tests/ui/planets.mjs` checks all of that in a browser.
+
