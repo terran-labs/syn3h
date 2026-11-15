@@ -92,8 +92,8 @@ async function main() {
     timer.update(); const dt = Math.min(timer.getDelta(), .05); elapsed += dt
     if (autoGear) { gearTarget = Math.floor(elapsed / 5) % 2; hoverLift = 1 }
     gear += Math.sign(gearTarget - gear) * Math.min(Math.abs(gearTarget - gear), dt * .7)
-    // Sweep the main nozzle through its travel so the thrust vectoring is visible.
-    const v = api.vector ?? [Math.sin(elapsed * 1.6) * .35, Math.cos(elapsed * 1.6) * .35]
+    // Work the vectoring vanes gently: pitch, with a slower yaw over it.
+    const v = api.vector ?? [Math.sin(elapsed * .9) * .22, Math.sin(elapsed * .45) * .22]
     jets.forEach(j => { j.setGear(gear); j.setThrottle(1 - gear * .7); j.setVector(v[0], v[1]); if (autoGear || gearTarget !== gear) j.object.position.y = hoverLift * (1 - gear) * 1.6 })
     controls.update(); renderer.render(scene, camera)
   })
