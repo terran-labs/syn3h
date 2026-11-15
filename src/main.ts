@@ -16,7 +16,8 @@ import { initGameShell } from './ui/Shell'
 import { readVehicleChoice, saveVehicleChoice } from './ui/VehicleChoice'
 import { type VehicleKind, createVehicle } from './vehicles'
 import { PlayerSlot } from './vehicles/PlayerSlot'
-import { attachVehicleEffects } from './vehicles/effects'
+import { createVehicleSwapper } from './vehicles/swap'
+import type { Vehicle } from './vehicles/Vehicle'
 import { createEnvironment } from './world/Environment'
 import { createPostChain } from './fx/post/PostChain'
 import { createTerrain } from './world'
@@ -66,7 +67,8 @@ async function main(): Promise<void> {
   // in place later without rebuilding those systems. `player` is only the vehicle spawned first.
   const slot = new PlayerSlot(player)
   // Tracks, dust, thrusters and lights. Only the local vehicle gets a real headlight.
-  attachVehicleEffects(game, terrain, player, { local: true })
+  // The swapper owns the player's effects from here on: it moves them when the vehicle changes.
+  const swapper = createVehicleSwapper(game, terrain, slot)
   // A new seed or terrain parameter rebuilds the ground in place: put the player back on it.
   terrain.onRegenerate?.(() => {
     const s = terrain.spawnPoint(0)
@@ -107,6 +109,31 @@ async function main(): Promise<void> {
   audio.setVehicles(() => bots.vehicles)
   let netStatus: string[] = []
   let joined = false
+  /** Set once the room is joined. Its `setProfile` tells the other players the new kind. */
+  let room: (NetHandle & { setProfile(p: { kind?: VehicleKind }): void }) | null = null
+  type NetHandle = { setPlayer?: (vehicle: Vehicle) => void }
+  /**
+   * Change the player's vehicle where they are, without a reload: the one entry point for the
+   * in-play vehicle selector. Returns the vehicle now being driven.
+   *
+   * Bots and networking each keep a few things bound to the player (the bots' chase target and
+   * daydream pilot; the tag marker, bounds guard and lava rescue). Until both offer `setPlayer`,
+   * a swap would leave them holding a disposed vehicle, so this refuses and returns the
+   * current vehicle unchanged. It needs no flag: it starts working when those two land.
+   */
+  const swapVehicle = (kind: VehicleKind): Vehicle => {
+    const botsHandle = bots as unknown as NetHandle
+    if (!botsHandle.setPlayer || (room && !room.setPlayer)) {
+      console.warn('swapVehicle: bots or networking cannot follow a new vehicle yet; nothing changed')
+      return slot.current
+    }
+    const previous = slot.current, next = swapper.swap(kind)
+    if (next === previous) return next
+    botsHandle.setPlayer(next)
+    room?.setPlayer?.(next)
+    room?.setProfile({ kind: next.kind })
+    return next
+  }
   const join = () => {
     if (joined) return
     const player = slot.current
@@ -135,7 +162,8 @@ async function main(): Promise<void> {
     joinedUrl.searchParams.set('room', joinedRoom)
     history.replaceState(null, '', joinedUrl)
     const connection = startNetworking({
-      game, terrain, player, audio, bots,
+      // Read through the slot, so everything networking looks up later follows a vehicle swap.
+      game, terrain, get player() { return slot.current }, audio, bots,
       kind: player.kind,
       colors: { body: shell.bodyColor, accent: shell.accentColor },
       name: shell.playerName,
@@ -145,6 +173,7 @@ async function main(): Promise<void> {
       setMatchState: (m) => shell.setMatchState(m),
       names: (seed, kind) => generateName(seed, kind),
     })
+    room = connection as typeof room
     connection.configureRaces({
       isDriving: () => shell.playing,
       setRace: (snapshot, roomNow, role) => shell.setRace(snapshot, roomNow, role),
@@ -159,6 +188,8 @@ async function main(): Promise<void> {
     game.add(new ResumeSession({ game, terrain, get player() { return slot.current }, room: shell.room || query.get('room') || 'lobby', saved, network: connection }))
   }
   shell.onPlay = join
+  // The in-play vehicle selector calls this; the shell takes it if it has the hook.
+  ;(shell as unknown as { setVehicleSwap?: (swap: (kind: VehicleKind) => Vehicle) => void }).setVehicleSwap?.(swapVehicle)
   if (query.has('autoplay')) shell.play()
 
   const panel = new ParamPanel()
@@ -186,7 +217,7 @@ async function main(): Promise<void> {
   if (lifecycle.hidden) pause.pause('hidden')
   // The shell owns the Escape trigger, the overlay and the audio fade, all from this control.
   ;(shell as unknown as { setPauseControl?: (control: PauseControl) => void }).setPauseControl?.(pause)
-  Object.assign(window, { syn3h: { planets, game, terrain, get player() { return slot.current }, slot, params, panel, shell, audio, bots, camera, lifecycle, pause } })
+  Object.assign(window, { syn3h: { planets, game, terrain, get player() { return slot.current }, slot, swapVehicle, params, panel, shell, audio, bots, camera, lifecycle, pause } })
   game.start()
 }
 
