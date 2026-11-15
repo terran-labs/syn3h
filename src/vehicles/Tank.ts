@@ -46,7 +46,7 @@ export class Tank extends Vehicle {
     game.world.createCollider(RAPIER.ColliderDesc.cuboid(1.25,.75,2.5).setTranslation(0,1,0).setDensity(0).setCollisionGroups(Vehicle.chassisGroups()),this.body)
     this.setMass()
     const hull=new THREE.Group();this.object.add(hull)
-    this.models.push(new VehicleModel(hull,'/models/tank.glb',scene=>{
+    this.models.push(new VehicleModel(hull,'models/tank.glb',scene=>{
       scene.rotation.x=Math.PI/2;scene.position.y=.8
       scene.traverse(o=>{if(o instanceof THREE.Mesh){
         if(o.name==='Mesh003'){o.visible=false;return} // Duplicate hull export.
@@ -57,7 +57,7 @@ export class Tank extends Vehicle {
     for(let i=0;i<6;i++){
       const track=new THREE.Group();track.position.set(i%2?2:-2,0,(Math.floor(i/2)-1)*2.5)
       this.object.add(track);this.tracks.push(track)
-      this.models.push(new VehicleModel(track,'/models/tanktread.glb',scene=>{
+      this.models.push(new VehicleModel(track,'models/tanktread.glb',scene=>{
         scene.rotation.x=Math.PI/2;scene.updateMatrixWorld(true)
         const box=new THREE.Box3().setFromObject(scene),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3())
         const wrapper=new THREE.Group();while(scene.children.length)wrapper.add(scene.children[0])

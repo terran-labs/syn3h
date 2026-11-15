@@ -321,7 +321,7 @@ export class Shell implements System {
     this.updateInvite()
   }
   private updateInvite(): void {
-    const url = inviteUrl(location.origin, this.room, encodeWorld())
+    const url = inviteUrl((import.meta.env.VITE_INVITE_ORIGIN as string | undefined) ?? location.origin, this.room, encodeWorld())
     if (url !== this.lastInviteUrl) {
       this.lastInviteUrl = url
       for (const host of this.overlay.querySelectorAll('.invite-qr')) renderQr(host, url)
@@ -757,7 +757,7 @@ export class Shell implements System {
     this.toastTimer = setTimeout(() => { element.hidden = true; this.element.querySelector('.shell-message')!.textContent = '' }, 4500)
   }
   private async copyInvite(): Promise<void> {
-    const url = new URL(inviteUrl(location.origin, this.room, encodeWorld()))
+    const url = new URL(inviteUrl((import.meta.env.VITE_INVITE_ORIGIN as string | undefined) ?? location.origin, this.room, encodeWorld()))
     try { await navigator.clipboard.writeText(url.href); this.toast('Invite link copied.'); this.invite.element.querySelector('.join-copy')!.textContent = 'Copied' }
     catch { this.element.querySelector('.shell-message')!.textContent = `Invite link: ${url.href}` }
   }

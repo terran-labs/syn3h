@@ -78,6 +78,9 @@ export class Connection {
 /** Where the room server is: same host in production, VITE_SERVER_URL in development. */
 export function serverUrl(room: string): string {
   const q = `/ws?room=${encodeURIComponent(room)}`
+  // A copy hosted away from the room server (the itch.io build) names the server at build time.
+  const fixed = import.meta.env.VITE_SERVER_URL as string | undefined
+  if (import.meta.env.PROD && fixed) return fixed.replace(/\/+$/, '').replace(/\/ws$/, '') + q
   // An HTTPS page (production, or a dev server behind the preview broker) can only open
   // secure sockets, so it uses its own origin; the dev server proxies /ws to the room server.
   if (import.meta.env.PROD || location.protocol === 'https:') {

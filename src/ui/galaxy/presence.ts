@@ -68,6 +68,8 @@ export class PresenceFeed {
 
   private async poll(): Promise<void> {
     if (!this.active || this.request) return
+    // A copy hosted away from the room server has no /presence to ask.
+    if (import.meta.env.VITE_NO_PRESENCE) return
     const generation = this.generation, request = this.request = new AbortController()
     this.timeout = setTimeout(() => request.abort(), 10_000)
     try {
