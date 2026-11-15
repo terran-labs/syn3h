@@ -545,3 +545,9 @@ Cues `bungeeLaunch`, `bungeeAttach` and `bungeeRelease` exist in `src/audio/Cues
 Bungee's `cue` hook in `src/net/index.ts` still has to call `audio.cue(name, at)`.
 
 Check: `node tests/ui/gear.mjs` (Chrome desktop and WebKit iPhone landscape).
+
+`galaxy-controls.mjs` checks arrow-key rotation, plus/minus zoom, standard gamepad
+stick movement, D-pad world selection and A-button entry. It also verifies that an
+open panel blocks these controls. The gamepad is simulated through `getGamepads`;
+physical controller mapping still needs a device check. Tab and Enter use the world's
+normal button focus and activation.
