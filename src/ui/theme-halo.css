@@ -52,10 +52,12 @@ html[data-gfx] .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector 
 .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players:not([open]) > summary { border-radius: var(--halo-r); background: none; }
 
 /* ---------- Generic buttons: hairline pills, no fill, no glowing text ---------- */
-.syn3h-shell.exploration-ui :is(button, .liquid-glass) { background: none; border: 1px solid var(--s3-line-quiet); border-radius: 999px; box-shadow: none; text-shadow: var(--halo-under); font-weight: 400; letter-spacing: .04em; -webkit-backdrop-filter: none; backdrop-filter: none; }
-.syn3h-shell.exploration-ui button:hover { background: rgb(143 227 255 / .07); border-color: var(--s3-line); box-shadow: var(--halo-glow); }
+/* Scoped to the in-game panels, so the lobby keeps its own buttons. Card headers and the
+   editable numbers have their own rules below. */
+.syn3h-shell.exploration-ui :is(.world-inspector, .race-hud, .match-hud, .performance-recommendation) button:not(.wi-head, .wi-num) { background: none; border: 1px solid var(--s3-line-quiet); border-radius: 999px; box-shadow: none; text-shadow: var(--halo-under); font-weight: 400; letter-spacing: .04em; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.syn3h-shell.exploration-ui :is(.world-inspector, .race-hud, .match-hud, .performance-recommendation) button:not(.wi-head, .wi-num):hover { background: rgb(143 227 255 / .07); border-color: var(--s3-line); box-shadow: var(--halo-glow); }
 .syn3h-shell.exploration-ui button:focus-visible, .syn3h-shell.exploration-ui input:focus-visible, .syn3h-shell.exploration-ui select:focus-visible { outline: 1px solid var(--s3-accent-2); outline-offset: 3px; }
-.syn3h-shell.exploration-ui :is(input:not([type=range]):not([type=checkbox]):not([type=color]), select, textarea) { color: var(--s3-ink); background: none; border: 0; border-bottom: 1px solid var(--s3-line-quiet); border-radius: 0; box-shadow: none; }
+.syn3h-shell.exploration-ui .world-inspector :is(input:not([type=range]):not([type=checkbox]):not([type=color]), select, textarea) { color: var(--s3-ink); background: none; border: 0; border-bottom: 1px solid var(--s3-line-quiet); border-radius: 0; box-shadow: none; }
 .syn3h-shell.exploration-ui select option { background: #06121c; color: #e8f6fd; }
 
 /* ---------- Top block: navigation, search, actions ---------- */
