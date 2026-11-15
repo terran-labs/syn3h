@@ -48,7 +48,7 @@ export class ProceduralTerrain implements Terrain {
   private readonly unsubscribe: () => void
   private pending = false
   private readonly lodSystem: System
-  private curveTick = 0
+  private wasRound = false
   /** The sea, lava lake, rivers and vents drawn from the generated data. */
   private readonly volcanics: Volcanics
   private readonly trees: Trees
@@ -65,20 +65,30 @@ export class ProceduralTerrain implements Terrain {
     // Level of detail follows the camera once per frame, after the camera has moved.
     this.lodSystem = game.add({
       update: () => {
-        this.meshes.updateLod(game.camera.position)
-        this.look.setSea(worldLavaAltitude.value)
         // Curved horizon. Every material in the scene must take the same bend or its objects
-        // float against the ground, so while the curve is on, the scene is walked a few times
-        // a second and anything new (a joined vehicle, rebuilt particles, a loaded model) is
+        // float against the ground, so while the curve is on, the scene is walked every frame
+        // (a few hundred objects) and anything new (a joined vehicle, rebuilt particles) is
         // bent too. The sky is left alone. Nothing is touched while the curve is 0.
         updateCurve(game.camera.position, this.size)
-        if (curveParam.value > 0 && this.curveTick++ % 20 === 0) {
+        // After the curve: level of detail also hides chunks that are over the horizon.
+        this.meshes.updateLod(game.camera.position)
+        this.look.setSea(worldLavaAltitude.value)
+        const round = curveParam.value > 0
+        if (round || this.wasRound) {
           game.scene.traverse((o) => {
             const m = (o as THREE.Mesh).material
             if (!m || o instanceof AlienSkyMesh) return
-            if (Array.isArray(m)) for (const x of m) applyCurve(x)
-            else applyCurve(m)
+            if (round) {
+              if (Array.isArray(m)) for (const x of m) applyCurve(x)
+              else applyCurve(m)
+            }
+            // On a sphere, ground that is off screen on the flat world can be in view (the
+            // far limb from high up), so the flat world's culling boxes are wrong.
+            const u = o.userData as { flatCulled?: boolean }
+            if (round && o.frustumCulled) { u.flatCulled = true; o.frustumCulled = false }
+            else if (!round && u.flatCulled) { u.flatCulled = false; o.frustumCulled = true }
           })
+          this.wasRound = round
         }
       },
     })

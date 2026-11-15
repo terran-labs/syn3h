@@ -16,6 +16,7 @@ import * as THREE from 'three/webgpu'
 import { attribute, cameraPosition, cameraViewMatrix, normalize, color, float, mix, mx_noise_float, positionWorld, smoothstep, time, uniform, vec3 } from 'three/tsl'
 import { worldLavaAltitude } from '../../../shared/params'
 import { nearestImage } from '../../../shared/wrap'
+import { overHorizon } from '../curve'
 import type { System } from '../../core/Game'
 import { Emitters } from '../../fx/Emitters'
 import { buildRibbonGeometry } from '../../fx/LavaFlow'
@@ -265,10 +266,16 @@ export class Volcanics implements System {
       const ox = near(x0 + chunk / 2, camX)
       const oz = near(z0 + chunk / 2, camZ)
       shiftTo(s.mesh, ox, oz, true)
+      // The sea is flat, so on a round world it is the first thing to drop behind the horizon.
+      s.mesh.visible = !overHorizon(x0 + ox + chunk / 2, z0 + oz + chunk / 2, chunk * 0.7072, 0)
       lowX = Math.min(lowX, x0 + ox)
       lowZ = Math.min(lowZ, z0 + oz)
     }
-    if (this.apron) shiftTo(this.apron, lowX + half, lowZ + half, true)
+    if (this.apron) {
+      shiftTo(this.apron, lowX + half, lowZ + half, true)
+      // The apron starts half a world away: the far side of a round planet.
+      this.apron.visible = !overHorizon(camX + half, camZ, 0, 0)
+    }
     for (const m of this.meshes) shiftTo(m.mesh, near(m.x, camX), near(m.z, camZ), m.worldUv)
     // Re-adding restarts every vent's particles, so only do it once some vent is an eighth
     // of a tile past its nearest image: the restart then happens rarely and the vent that

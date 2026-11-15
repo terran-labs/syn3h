@@ -10,6 +10,7 @@
  *   drone (two beating subs)                  ├─ pump (ducked by the kick) ─┐
  *   bass (saw, drive)                         ┘                             ├─ output
  *   sequencer, theremin, choir, low drums, wind, telemetry, riser, impact ──┤
+ *   plucked strings (physical model), brass, bell (modal) ──────────────────┤
  *   sends: tempo-synced ping-pong delay, convolution hall ──────────────────┘
  *
  * At a release an additive pipe organ, a high choir and an octave halo join the pads.
@@ -56,14 +57,16 @@ export function applySubmerge(filter: BiquadFilterNode, depth: number, time: num
   filter.Q.setTargetAtTime(0.7 + 3.2 * d, time, 0.08)
 }
 
-export const LAYERS = ['pad', 'drone', 'choir', 'organ', 'sequencer', 'bass', 'drums', 'theremin', 'air'] as const
+export const LAYERS = ['pad', 'drone', 'choir', 'organ', 'sequencer', 'pluck', 'bass', 'drums', 'theremin', 'brass', 'bells', 'air'] as const
 export type Layer = (typeof LAYERS)[number]
 /** Where the composition is in its arc, as the synthesiser needs it. Both 0..1. */
 export interface Arc { tension: number; release: number }
 
 export class ScoreSynth {
   /** Per-layer level trims, 0 to mute. The lab uses these to solo and mute layers. */
-  readonly trim: Record<Layer, number> = { pad: 1, drone: 1, choir: 1, organ: 1, sequencer: 1, bass: 1, drums: 1, theremin: 1, air: 1 }
+  readonly trim: Record<Layer, number> = { pad: 1, drone: 1, choir: 1, organ: 1, sequencer: 1, pluck: 1, bass: 1, drums: 1, theremin: 1, brass: 1, bells: 1, air: 1 }
+  /** Resolves when the plucked-string worklet has loaded, or failed to; the score plays without it meanwhile. */
+  readonly ready: Promise<void>
   private readonly nodes: AudioNode[] = []
   private readonly sources: AudioScheduledSourceNode[] = []
   private readonly out: GainNode
@@ -110,6 +113,15 @@ export class ScoreSynth {
   private readonly beep: OscillatorNode
   private readonly beepVca: GainNode
   private readonly airBus: GainNode
+  private readonly pluckBus: GainNode
+  private pluck?: AudioWorkletNode
+  private readonly brassOscs: OscillatorNode[] = []
+  private readonly brassFilter: BiquadFilterNode
+  private readonly brassVca: GainNode
+  private readonly brassWaver: GainNode
+  private readonly brassBus: GainNode
+  private readonly bellPartials: { osc: OscillatorNode; vca: GainNode; ratio: number; level: number; ring: number }[] = []
+  private readonly bellBus: GainNode
   private readonly delays: DelayNode[] = []
   private readonly reverbSend: GainNode
   private brightness = 0.4
@@ -248,6 +260,29 @@ export class ScoreSynth {
     for (const [type, level] of [['sine', 0.5], ['triangle', 0.2]] as const) { const o = osc(type, 440); waver.connect(o.detune); o.connect(gain(level, this.leadVca)); this.leadOscs.push(o) }
     // Telemetry beep: a plain sine a long way off.
     this.beep = osc('sine', 1000); this.beepVca = gain(0, gain(0.25, pan(0.4, sum)), gain(0.5, delayIn), reverb); this.beep.connect(this.beepVca)
+
+    // Brass: two saws whose filter opens as the note swells, a pitch that scoops up into the
+    // note, and vibrato that only arrives once the note is held. The horn of a 1970s polysynth.
+    this.brassBus = gain(0, sum, gain(0.25, delayIn), gain(0.7, reverb))
+    this.brassFilter = filter('lowpass', 300, 1.3); this.brassVca = gain(0, this.brassBus); this.brassFilter.connect(this.brassVca)
+    this.brassWaver = gain(0); osc('sine', 5.2).connect(this.brassWaver)
+    for (const detune of [-9, 9]) { const o = osc('sawtooth', 220); o.detune.value = detune; this.brassWaver.connect(o.detune); o.connect(gain(0.4, this.brassFilter)); this.brassOscs.push(o) }
+
+    // Bell: modal synthesis. A bell is a handful of pure tones at fixed, inharmonic ratios (hum,
+    // prime, the minor-third tierce, quint, nominal and up), each dying at its own rate.
+    this.bellBus = gain(0, gain(0.5, sum), reverb)
+    for (const [ratio, level, ring] of [[0.5, 0.25, 6], [1, 0.5, 4.5], [1.2, 0.35, 3.2], [1.5, 0.2, 2.4], [2.003, 0.45, 2], [2.5, 0.15, 1.2], [3, 0.2, 1], [4.01, 0.12, 0.6]] as const) {
+      const o = osc('sine', 220 * ratio), vca = gain(0, this.bellBus); o.connect(vca)
+      this.bellPartials.push({ osc: o, vca, ratio, level, ring })
+    }
+
+    // Plucked strings, physically modelled in an audio worklet (pluck.worklet.js).
+    this.pluckBus = gain(0, sum, gain(0.3, delayIn), gain(0.55, reverb))
+    this.ready = context.audioWorklet.addModule(new URL('./pluck.worklet.js', import.meta.url)).then(() => {
+      if (this.disposed) return
+      this.pluck = own(new AudioWorkletNode(context, 'pluck', { numberOfInputs: 0, outputChannelCount: [2] }))
+      this.pluck.connect(this.pluckBus)
+    }).catch(() => { /* No worklet support: the score plays without the plucked strings. */ })
     for (const source of this.sources) source.start()
   }
 
@@ -281,6 +316,9 @@ export class ScoreSynth {
     to(this.drumBus.gain, level.drums * 0.8 * trim.drums)
     to(this.leadBus.gain, Math.max(level.lead, arc.release) * 0.2 * trim.theremin, 1)
     to(this.airBus.gain, level.air * 0.1 * trim.air, 2)
+    to(this.pluckBus.gain, 0.5 * trim.pluck)
+    to(this.brassBus.gain, 0.45 * trim.brass)
+    to(this.bellBus.gain, 0.6 * trim.bells)
     // Under water the hall grows, as if the sound had nowhere to go.
     to(this.reverbSend.gain, reverb * (0.8 + 0.5 * unit(depth)))
   }
@@ -322,6 +360,21 @@ export class ScoreSynth {
       for (const o of this.leadOscs) o.frequency.setTargetAtTime(hz, t, 0.06)
       this.leadVca.gain.setTargetAtTime(step.lead.velocity, t, 0.09)
       this.leadVca.gain.setTargetAtTime(0, t + hold * 0.9, 0.3)
+    }
+    if (step.pluck) this.pluck?.port.postMessage({ t, hz: midiHz(step.pluck.midi), velocity: step.pluck.velocity, sustain: 1.5 + duration * step.pluck.steps })
+    if (step.brass) {
+      const hz = midiHz(step.brass.midi), hold = duration * step.brass.steps, v = step.brass.velocity
+      for (const o of this.brassOscs) { o.frequency.setValueAtTime(hz * 0.983, t); o.frequency.exponentialRampToValueAtTime(hz, t + 0.12) }
+      this.brassFilter.frequency.setValueAtTime(260, t); this.brassFilter.frequency.linearRampToValueAtTime(700 + 2600 * v, t + 0.28); this.brassFilter.frequency.setTargetAtTime(900, t + 0.28, hold * 0.7)
+      this.brassVca.gain.setTargetAtTime(0.5 * v, t, 0.07); this.brassVca.gain.setTargetAtTime(0, t + hold * 0.92, 0.2)
+      this.brassWaver.gain.setValueAtTime(0, t); this.brassWaver.gain.linearRampToValueAtTime(13, t + 1)
+    }
+    if (step.bell) {
+      const hz = midiHz(step.bell.midi)
+      for (const p of this.bellPartials) {
+        p.osc.frequency.setValueAtTime(hz * p.ratio, t)
+        p.vca.gain.setTargetAtTime(p.level * 0.45 * step.bell.velocity, t, 0.002); p.vca.gain.setTargetAtTime(0, t + 0.01, p.ring * 0.45)
+      }
     }
     if (step.beep) {
       this.beep.frequency.setValueAtTime(midiHz(step.beep), t)
