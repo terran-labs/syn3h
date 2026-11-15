@@ -17,9 +17,12 @@ window.addEventListener('syn3h:new-build', () => {
   if (document.getElementById('syn3h-build-notice')) return;
   const button = document.createElement('button');
   button.id = 'syn3h-build-notice';
+  // A floating banner at the bottom centre of the page. The shell styles .build-banner; it must
+  // not adopt this button into a panel.
+  button.className = 'build-banner';
   button.type = 'button';
   button.textContent = 'New build available. Press to reload';
-  button.style.cssText = 'position:fixed;bottom:max(12px,env(safe-area-inset-bottom));right:12px;max-width:calc(100vw - 24px);z-index:10000;background:#172633;color:#fff;border:1px solid #49e6ff;border-radius:8px;padding:10px 16px;font:14px system-ui;cursor:pointer';
+  button.style.cssText = 'position:fixed;bottom:max(12px,env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);max-width:calc(100vw - 24px);z-index:10000;background:#172633;color:#fff;border:1px solid #49e6ff;border-radius:8px;padding:10px 16px;font:14px system-ui;cursor:pointer';
   button.addEventListener('click', () => location.reload());
   document.body.append(button);
 });`;
