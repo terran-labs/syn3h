@@ -141,6 +141,12 @@ export class ProceduralTerrain implements Terrain {
       () => game.renderer.toneMappingExposure / Math.max(1e-3, Number(params.get('sky.exposure')?.value ?? game.renderer.toneMappingExposure)),
       this.look,
     ))
+    // Every vehicle in the scene (the player, bots and other players) marks its object
+    // with its heat state; the grass bends under those.
+    const scene = game.scene
+    this.cover.setVehicles(function* () {
+      for (const o of scene.children) if (o.userData.vehicleHeat) yield o
+    })
 
     this.unsubscribe = params.onChange((id) => {
       // The sea kind only recolours: no regeneration.
@@ -378,7 +384,11 @@ export class ProceduralTerrain implements Terrain {
     this.trees.setDrawDistance(Math.min(1800, quality.drawDistance))
     // Grass and flowers: everything on desktop, a thinner and nearer cover on phones and
     // tablets, nothing at the safe level.
-    this.cover.setLevel(quality.level)
+    // `quality` is the six-step level where the caller has one; `level` the older three.
+    // Once the level's own preset table lists the cover.* settings, this call can go.
+    const six = (quality as { quality?: number }).quality
+    if (six === undefined) this.cover.setLevel(quality.level)
+    else this.cover.setLevel(six, 6)
   }
 
   /** Terrain triangles in view at the current levels of detail, versus at full detail. */
