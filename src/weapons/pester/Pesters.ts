@@ -173,7 +173,7 @@ export class Pesters implements System {
 
   /** Remove every Pester in flight, popping or not, at once: for a world change or leaving it. */
   reset(): void {
-    for (const o of this.orbs) this.game.scene.remove(o.mesh)
+    for (const o of this.orbs) this.cloud.free(o.slot)
     this.orbs.length = 0
     this.fireWas = false
   }
