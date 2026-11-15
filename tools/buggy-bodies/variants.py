@@ -90,6 +90,45 @@ VARIANTS += [
          {'width': 0.05, 'fender_front': {'out': 0.26, 'up': 0.26}, 'fender_rear': {'out': 0.26, 'up': 0.25, 'length': 0.24}, 'hood_valley': 0.1},
          {'long': 2.6, 'tall': 2.6}, spoiler={'height': 1.15, 'span': 1.25}),
 ]
+
+# ---- Round 3: the owner kept Wide body and asked for refined suspension linkages, a body
+# that looks structurally connected to them, more striking tail lights, and previews at the
+# polygon counts that would ship. So these are not subdivided: 'game' builds the original
+# game-resolution mesh. Tail light outlines are (x, z) in the rear view, in metres.
+CX, CZ = 0.371, 0.421   # centre of the original tail light
+
+
+def slats():
+    """Three slanted bars, longest at the bottom, like claw marks."""
+    out = []
+    for i in range(3):
+        z0, tip = CZ - 0.085 + i * 0.07, CX + 0.44 - i * 0.09
+        out.append({'poly': [(CX - 0.07, z0), (tip, z0 + 0.035), (tip - 0.02, z0 + 0.075), (CX - 0.07, z0 + 0.042)], 'material': 'TailLights'})
+    return out
+
+
+SWEPT = [(CX - 0.08, CZ - 0.035), (CX + 0.2, CZ - 0.06), (CX + 0.62, CZ + 0.03), (CX + 0.2, CZ + 0.085), (CX - 0.08, CZ + 0.06)]
+
+
+def round3(id, name, notes, strut, socket, tail):
+    from build import kite, grown  # the builder's outline helpers
+    return {'id': id, 'name': name, 'notes': notes + ['Lower body drawn in beside each wheel so the linkage is in the open'], 'round': 3, 'game': True, 'shape': {**WIDE, 'scallop': 0.3},
+            'spoiler': {'height': 1.1, 'span': 1.14}, 'trim': {'scoop': 'Dark'}, 'paint': WIDE_PAINT,
+            'strut': strut, 'socket': socket, 'tail': {'shapes': tail(kite, grown)}, 'views': ['front', 'tail', 'link', 'linktop']}
+
+
+VARIANTS += [
+    round3('r1-blade', 'Blade', ['Linkage: one slim aerofoil blade, swelling where it meets the body', 'Body: a chrome collar the blade passes through', 'Tail lights: the original kite, half as large again, set in a chrome surround'],
+           'blade', 'collar', lambda kite, grown: [{'poly': grown(kite(1.5, 1.5), 1.22), 'material': 'Chrome'}, {'poly': kite(1.5, 1.5), 'material': 'TailLights'}]),
+    round3('r2-wishbone', 'Wishbone', ['Linkage: twin arms spread at the body and joined at the hub, with a cross bar', 'Body: a dark recess with a chrome rim that takes both arms', 'Tail lights: three slanted bars each side'],
+           'wishbone', 'slot', lambda kite, grown: slats()),
+    round3('r3-coilover', 'Coilover', ['Linkage: a slim lower blade with a spring and damper standing above it', 'Body: chrome cone pods reaching toward the wheels, as in your studio renders', 'Tail lights: a long swept blade in a chrome surround'],
+           'coilover', 'pod', lambda kite, grown: [{'poly': grown(SWEPT, 1.2), 'material': 'Chrome'}, {'poly': SWEPT, 'material': 'TailLights'}]),
+    round3('r4-frame', 'Space frame', ['Linkage: an open frame of two spars with cross bracing', 'Body: deep dark pockets with a slim chrome edge', 'Tail lights: a large kite with a smaller one inboard'],
+           'frame', 'pocket', lambda kite, grown: [{'poly': kite(1.7, 1.7, 0.1), 'material': 'TailLights'}, {'poly': kite(0.5, 0.9, -0.105), 'material': 'TailLights'}]),
+    round3('r5-delta', 'Delta', ['Linkage: a stub delta wing, narrow at the wheel and broad at the body, with an accent spine', 'Body: paint coloured fairings that swell out to meet the wing roots', 'Tail lights: a full width bar joining two kites'],
+           'delta', 'fairing', lambda kite, grown: [{'poly': [(-0.62, CZ - 0.012), (0.62, CZ - 0.012), (0.62, CZ + 0.03), (-0.62, CZ + 0.03)], 'material': 'TailLights', 'centre': True}, {'poly': kite(1.5, 1.6, 0.12), 'material': 'TailLights'}]),
+]
 for v in VARIANTS:
     v.setdefault('views', ['front', 'rear', 'side'])
     if v.get('round') == 2: v['views'] = ['front', 'nose', 'top']

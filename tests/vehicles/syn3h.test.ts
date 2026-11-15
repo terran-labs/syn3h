@@ -524,6 +524,45 @@ describe('Syn3hBuggy', () => {
     expect(next.upright).toBeGreaterThan(0.95)
   })
 
+  test.each([30, 40])('next-gen climbs a %i degree slope from rest under throttle', async (deg) => {
+    const { bed, b } = await spawn()
+    bed.run(1)
+    slope(bed, deg)
+    b.input.y = 1
+    const z0 = pos(b).z
+    let motorMin = Infinity
+    bed.run(4, () => { motorMin = Math.min(motorMin, b.motorSpeed) })
+    expect(z0 - pos(b).z).toBeGreaterThan(4)
+    expect(motorMin).toBeGreaterThan(0)
+  })
+
+  test('next-gen wheels keep spinning forward when it rolls back down a hill under throttle', async () => {
+    const { bed, b } = await spawn()
+    bed.run(1)
+    // Already rolling backward at 6 m/s on a 30 degree slope when the driver floors it.
+    slope(bed, 30)
+    b.body.setLinvel({ x: 0, y: 0, z: 6 }, true)
+    b.input.y = 1
+    let motorMin = Infinity, t = 0
+    bed.run(4, () => { t += 0.02; if (t > 0.3) motorMin = Math.min(motorMin, b.motorSpeed) })
+    expect(b.drive).toBe('drive')
+    expect(motorMin).toBeGreaterThan(0)
+    // It stops the slide and climbs.
+    expect(b.body.linvel().z).toBeLessThan(-1)
+  })
+
+  test('next-gen spins its wheels forward on a slope too steep to grip', async () => {
+    const { bed, b } = await spawn()
+    bed.run(1)
+    slope(bed, 62)
+    b.input.y = 1
+    let motorMin = Infinity, t = 0
+    bed.run(3, () => { t += 0.02; if (t > 0.3) motorMin = Math.min(motorMin, b.motorSpeed) })
+    // Sliding back, but never with the wheels wound backward.
+    expect(b.body.linvel().z).toBeGreaterThan(0)
+    expect(motorMin).toBeGreaterThan(0)
+  })
+
   test('wheel rays ignore other vehicles', async () => {
     const { bed, b } = await spawn()
     bed.run(3)
