@@ -18,6 +18,7 @@ import { createEnvironment } from './world/Environment'
 import { createTerrain } from './world'
 import * as planets from './world/planets'
 import { applyPlanet, decodeWorld } from './world/planets'
+import { WeatherSystem, applyWeatherQuery, setWeatherClock } from './world/weather'
 
 async function main(): Promise<void> {
   const canvas = document.getElementById('game') as HTMLCanvasElement
@@ -70,6 +71,10 @@ async function main(): Promise<void> {
   camera.setVehicle(player)
   // A wrapping world carries the player, the camera and the bots across its seam.
   ;(terrain as { followSeam?: (f: unknown) => void }).followSeam?.({ player, camera, others: () => bots.vehicles })
+  // Wind: a force on the vehicles this client owns (the player and its bots), never on remote
+  // copies, whose owners apply it themselves. `?weather=0.5` sets the storminess for a look.
+  game.add(new WeatherSystem(() => terrain, () => [player, ...bots.vehicles]))
+  applyWeatherQuery(location.search)
   // The round planet is drawn relative to the camera: place it after the camera has moved.
   game.add({ update: () => (terrain as { afterCamera?: () => void }).afterCamera?.() })
 
@@ -112,6 +117,9 @@ async function main(): Promise<void> {
       setMatchState: (m) => shell.setMatchState(m),
       names: (seed, kind) => generateName(seed, kind),
     })
+    // Every client reads the wind from the room's clock, so gusts agree between players.
+    const roomClock = (connection as { clock?: { now(): number } }).clock
+    if (roomClock) setWeatherClock(() => roomClock.now())
     // Remote players and bots are audible, positioned in space.
     audio.setVehicles(() => connection.audibleVehicles())
     game.add(new ResumeSession({ game, terrain, player, room: shell.room || query.get('room') || 'lobby', saved, network: connection }))
