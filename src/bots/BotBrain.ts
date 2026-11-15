@@ -15,6 +15,10 @@ import { hashString, seededRandom } from './random'
 import { nearestImage, wrapCoord, wrapDistance } from '../../shared/wrap'
 export type BotTerrain = Terrain & RoadTerrain & { liquidHeightAt?(x: number, z: number): number | null | undefined }
 const clamp = (x: number, max = 1) => Math.max(-max, Math.min(max, x))
+/** Centre to centre distance a playful bot keeps from the vehicle it chases: about two metres of air between bumpers. */
+const KEEP_GAP = 7
+/** Fastest a bot that is "it" in tag closes the last metres: a touch, not a ram. m/s. */
+const TAP_SPEED = 1
 /** Positive means turn right. Our forward is -Z; positive Y rotation turns left. */
 export function steeringError(forward: { x: number; z: number }, delta: { x: number; z: number }): number {
   return Math.atan2(forward.x * delta.z - forward.z * delta.x, forward.x * delta.x + forward.z * delta.z)
@@ -313,6 +317,18 @@ export class BotBrain implements System {
       if (ahead <= 3 || ahead > 25 || side > 4 || Math.abs(pos.y - here.y) > 6) continue
       const v = peer.body.linvel(), along = Math.max(0, v.x * this.forward.x + v.z * this.forward.z)
       trafficLimit = Math.min(trafficLimit, Math.max(0, along + (ahead - 6 - speed * 0.7) * 0.8))
+    }
+    // Playful by default: below RAM_AGGRESSION the chase ends a little way short of the
+    // target, closing no faster than it pulls away plus a margin that shrinks to nothing at
+    // KEEP_GAP, so a bot catches up, matches speed and waits rather than ramming. In tag a
+    // bot that is "it" must touch to pass it on: it may close all the way, but only at a
+    // tap's speed. The limit rides on the traffic brake below, which also stops a bot
+    // waiting politely from counting as stuck.
+    if (p.aggression.value <= p.RAM_AGGRESSION && distance > 0.1) {
+      const tagging = this.match?.mode === 'tag' && this.match.it === this.vehicle
+      const away = (targetVelocity.x * dx + targetVelocity.z * dz) / distance
+      const allowed = tagging ? away + Math.max(TAP_SPEED, (distance - KEEP_GAP) * 0.8) : away + (distance - KEEP_GAP) * 0.8
+      trafficLimit = Math.min(trafficLimit, Math.max(0, allowed))
     }
     const error = steeringError(this.forward, { x: aimX - here.x, z: aimZ - here.z })
     // VhiclBot.cs:35-55 and VehicleBot.js:79-91: wrap yaw, divide by 20 degrees,

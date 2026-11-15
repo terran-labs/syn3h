@@ -45,7 +45,8 @@ function stationaryTarget(game: Game, position = new Vector3(0, 0.5, 0)) {
   return target
 }
 describe('bot pursuit', () => {
-  it.each(['placeholder', 'syn3h'])('%s closes distance and makes real Rapier contact with a stationary target', kind => {
+  it.each(['placeholder', 'syn3h'])('%s closes distance and makes real Rapier contact with a stationary target when aggression allows ramming', kind => {
+    params.set('bots.aggression', 2)
     const { game, step } = harness(), target = stationaryTarget(game)
     const bot = kind === 'syn3h' ? new Syn3hBuggy(game, terrain, new Vector3(0, 1, 25)) : new PlaceholderVehicle(game, terrain, new Vector3(0, 0.5, 25))
     const brain = game.add(new BotBrain(game, terrain, bot, target)); game.add(bot)

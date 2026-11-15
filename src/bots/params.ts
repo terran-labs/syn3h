@@ -1,7 +1,14 @@
 import { defineParam } from '../../shared/params'
 const number = (id: string, label: string, value: number, min: number, max: number, step = 0.1) => defineParam({ id: `bots.${id}`, label, group: 'Bots', scope: 'world', default: value, min, max, step })
 export const botCount = number('count', 'Bot count', 4, 0, 16, 1)
+/**
+ * How hard a chasing bot drives at its target: steering gain, throttle and how far it leads
+ * a moving target. At or below RAM_AGGRESSION a bot never drives into anyone on purpose: it
+ * catches up, matches speed and keeps a small gap. Above it, the original pursuit rams.
+ */
 export const aggression = number('aggression', 'Aggression', 1, 0, 2)
+/** Aggression above this, and only above it, lets a chasing bot ram. Default 1 is below it. */
+export const RAM_AGGRESSION = 1.5
 export const topThrottle = number('topThrottle', 'Top throttle', 1, 0, 1)
 /**
  * Whether bots use their gear on other vehicles: tag beams, and the bungee, yoink and big red
