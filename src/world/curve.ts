@@ -124,14 +124,22 @@ export function curveFactor(): number {
   return state.z
 }
 
+/** Snapshot the bend anchor and curvature before the next frame moves the camera. */
+export function copyCurveState(out: Vector3): Vector3 { return out.copy(state) }
+
 /**
  * Where a world point is drawn, relative to where it really is: the same mapping the
  * shader applies. For anything placed by hand in world space (labels, markers).
  */
 export function curveOffset(x: number, y: number, z: number, out: { x: number; y: number; z: number }): { x: number; y: number; z: number } {
-  const invR = state.z
-  const dx = x - state.x
-  const dz = z - state.y
+  return curveOffsetAt(state, x, y, z, out)
+}
+
+/** CPU mapping with an explicit current or historical bend state. */
+export function curveOffsetAt(bend: Vector3, x: number, y: number, z: number, out: { x: number; y: number; z: number }): { x: number; y: number; z: number } {
+  const invR = bend.z
+  const dx = x - bend.x
+  const dz = z - bend.y
   const d = Math.sqrt(dx * dx + dz * dz)
   if (!(invR > 0) || d < 1e-6) { out.x = 0; out.y = 0; out.z = 0; return out }
   const t = Math.min(d * invR, Math.PI)
@@ -154,10 +162,16 @@ export function curveDrop(x: number, z: number): number {
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function viewDrop(worldPoint: any) {
-  const invR = curveState.z
+  return cameraViewMatrix.mul(vec4(curveWorldOffset(worldPoint, curveState), 0)).xyz
+}
+
+/** Shared GPU mapping for visible geometry and its previous-frame projection. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function curveWorldOffset(worldPoint: any, bend: typeof curveState) {
+  const invR = bend.z
   const flat = invR.lessThanEqual(0)
   const safeInv = invR.max(1e-9)
-  const delta = vec2(worldPoint.x, worldPoint.z).sub(curveState.xy)
+  const delta = vec2(worldPoint.x, worldPoint.z).sub(bend.xy)
   const d = delta.length()
   const dir = delta.div(d.max(1e-4))
   // Angle round the planet, stopped at the far pole.
@@ -165,9 +179,7 @@ function viewDrop(worldPoint: any) {
   const r = float(1).div(safeInv).add(worldPoint.y)
   const along = select(flat, d, r.mul(sin(t)))
   const up = select(flat, worldPoint.y, r.mul(cos(t)).sub(float(1).div(safeInv)))
-  const move = vec3(dir.x.mul(along.sub(d)), up.sub(worldPoint.y), dir.y.mul(along.sub(d)))
-  // A direction (w = 0), so only the camera's rotation applies.
-  return cameraViewMatrix.mul(vec4(move, 0)).xyz
+  return vec3(dir.x.mul(along.sub(d)), up.sub(worldPoint.y), dir.y.mul(along.sub(d)))
 }
 
 type Hooked = Material & {

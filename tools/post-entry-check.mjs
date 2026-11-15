@@ -23,11 +23,12 @@ try {
   await page.waitForFunction(tick => window.syn3h.game.tick > tick + 120, enteredAt, { timeout: 120000 })
   const entry = await page.evaluate(() => {
     const s = window.syn3h, g = s.game
-    const ids = ['post.on','post.tablets','post.gi','post.clouds','light.bounce','light.shadowSoftness','light.shadowStrength','terrain.relief','terrain.detailNormal','terrain.surfaceResponse','terrain.macroColour','terrain.accent','weather.aerial']
+    const ids = ['post.on','post.tablets','post.gi','post.clouds','post.temporal','light.bounce','light.shadowSoftness','light.shadowStrength','terrain.relief','terrain.detailNormal','terrain.surfaceResponse','terrain.macroColour','terrain.accent','weather.aerial']
     return { name:'normal-entry', backend:g.backend, tier:g.postChain.tier, values:Object.fromEntries(ids.map(id=>[id,s.params.get(id)?.value])) }
   })
   assert.equal(entry.values['post.gi'], 1); assert.equal(entry.values['post.on'], true); assert.equal(entry.values['post.tablets'], true)
   assert.equal(entry.values['post.clouds'], 1)
+  assert.equal(entry.values['post.temporal'], true)
   assert.equal(entry.values['light.bounce'], 1); assert.equal(entry.values['terrain.relief'], .2)
   assert.equal(entry.values['weather.aerial'], 1)
   for (const id of ['terrain.detailNormal','terrain.surfaceResponse','terrain.macroColour','terrain.accent']) assert.equal(entry.values[id], 1)
@@ -63,10 +64,11 @@ try {
       }
       const lights=[];g.scene.traverse(o=>{if(o.isDirectionalLight&&o.castShadow)lights.push({radius:o.shadow.radius,intensity:o.shadow.intensity})})
       const env=window.entryEnvironment, sky=g.scene.children.find(o=>'cloudLayerVisible' in o)
-      return {name:c.name,tier:g.postChain.tier,level:p.get('gfx.level').value,budget:g.quality.postBudget,lights,clouds:!!g.postChain.built?.clouds,fallback:sky?.cloudLayerVisible,cloudInputs:{coverage:env.clouds.coverage,density:env.clouds.density,air:env.clouds.atmosphere}}
+      return {name:c.name,tier:g.postChain.tier,level:p.get('gfx.level').value,budget:g.quality.postBudget,lights,temporal:!!g.postChain.built?.temporalNode,clouds:!!g.postChain.built?.clouds,fallback:sky?.cloudLayerVisible,cloudInputs:{coverage:env.clouds.coverage,density:env.clouds.density,air:env.clouds.atmosphere}}
     },c)
     const expected=c.on===false||c.level===0?'off':result.budget<=0?'base':c.level===1?'lite':'full'
     assert.equal(result.tier,expected)
+    assert.equal(result.temporal,expected==='full')
     const cloudExpected=expected==='full'&&result.cloudInputs.coverage>0&&result.cloudInputs.density>0&&result.cloudInputs.air>0
     assert.equal(result.clouds,cloudExpected);assert.equal(result.fallback,!cloudExpected)
     for(const l of result.lights){assert.equal(l.radius,2);assert.equal(l.intensity,.85)}

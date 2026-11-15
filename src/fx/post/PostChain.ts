@@ -27,13 +27,15 @@
 import * as THREE from 'three/webgpu'
 import {
   Fn, If, Loop, abs, screenSize, sin, clamp, dot, exp, float, interleavedGradientNoise, length, max, min, mix, pass,
-  builtinAOContext, builtinGIContext, builtinShadowContext, context, mrt, normalView, output, screenUV, renderOutput, rtt, screenCoordinate, smoothstep, step,  uniform, uv, vec2, vec3, vec4,
+  builtinAOContext, builtinGIContext, builtinShadowContext, context, mrt, nodeObject, normalView, output, screenUV, renderOutput, rtt, screenCoordinate, smoothstep, step,  uniform, uv, vec2, vec3, vec4,
 } from 'three/tsl'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { ao } from 'three/addons/tsl/display/GTAONode.js'
 import { sss } from 'three/addons/tsl/display/SSSNode.js'
 import { ssgi } from 'three/addons/tsl/display/SSGINode.js'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
+import { traa } from 'three/addons/tsl/display/TRAANode.js'
+import { CurvedVelocity } from './CurvedVelocity'
 import { cloudVolume, compositeClouds } from './clouds'
 import type { CloudInputs } from '../../world/Environment'
 import { motionBlurred } from './motion'
@@ -88,6 +90,7 @@ interface Built {
   aoNode: N | null
   sssNode: N | null
   giNode: N | null
+  temporalNode: N | null
   clouds: boolean
   pipeline: THREE.RenderPipeline
   disposables: Array<{ dispose?(): void; renderTarget?: { dispose(): void } }>
@@ -97,6 +100,8 @@ export class PostChain {
   private built: Built | null = null
   /** Times a pipeline has been built, for checks. */
   builds = 0
+  /** Camera discontinuities that discarded temporal history, for diagnostics. */
+  historyResets = 0
   /** The tier the last frame used, for checks and the lab. */
   tier: PostTier = 'off'
 
@@ -137,6 +142,7 @@ export class PostChain {
   private readonly prevView = new THREE.Matrix4()
   private readonly prevProj = new THREE.Matrix4()
   private readonly prevPos = new THREE.Vector3()
+  private readonly prevOrientation = new THREE.Quaternion()
   private hasPrev = false
   /** 0 to 1, jumps to 1 when the watched vehicle goes under and decays over about 0.7 s. */
   private plunge = 0
@@ -154,7 +160,7 @@ export class PostChain {
     let tier = postTier({ on: P.postOn.value, level: graphicsLevel.value, deviceLevel: this.host.quality.deviceLevel, tablets: P.postTablets.value, shed })
     this.tier = tier
     // Anything the governor could shed: everything but the colour look itself.
-    this.reportActive(tier !== 'off' && [P.postBloom, P.postShafts, P.postFlare, P.postAO, P.postContact, P.postMotionBlur, P.postGI, P.postClouds].some(p => p.value > 0))
+    this.reportActive(tier !== 'off' && (P.postTemporal.value || [P.postBloom, P.postShafts, P.postFlare, P.postAO, P.postContact, P.postMotionBlur, P.postGI, P.postClouds].some(p => p.value > 0)))
     if (tier === 'off') {
       this.release()
       renderer.render(scene, camera)
@@ -172,8 +178,10 @@ export class PostChain {
     const light = tier === 'full' && P.postContact.value > 0 ? findSun(scene) : null
     const toneMap = TONE_MAPS[Math.round(P.postToneMap.value)] ?? renderer.toneMapping
     const debug = Math.round(P.postDebug.value)
-    const key = `${debug}|${tier}|${glowOn}|${shaftsOn}|${flareOn}|${aoOn}|${giOn}|${cloudsOn}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
-    if (this.built?.key !== key) this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn, cloudsOn)
+    const temporalOn = tier === 'full' && P.postTemporal.value && debug === 0
+    const historyKey = temporalOn ? ['world.curve', 'world.seed', 'terrain.kind', 'terrain.planetSize', 'camera.mode'].map(id => params.get(id)?.value).join('|') : ''
+    const key = `${debug}|${tier}|${glowOn}|${shaftsOn}|${flareOn}|${aoOn}|${giOn}|${cloudsOn}|${temporalOn}|${historyKey}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
+    if (this.built?.key !== key) this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn, cloudsOn, temporalOn)
 
     const u = this.u
     u.exposure.value = Math.max(1e-4, renderer.toneMappingExposure)
@@ -252,7 +260,9 @@ export class PostChain {
     const now = performance.now()
     const dt = (now - this.lastAt) / 1000
     this.lastAt = now
-    const jumped = !this.hasPrev || dt > 0.25 || this.prevPos.distanceTo(camera.position) > 40
+    const jumped = !this.hasPrev || dt > 0.25 || this.prevPos.distanceTo(camera.position) > 40 || Math.abs(this.prevOrientation.dot(camera.quaternion)) < 0.9
+    if (jumped && this.built?.temporalNode) { this.built.temporalNode.setSize(1, 1); this.historyResets++ }
+    this.prevOrientation.copy(camera.quaternion)
     if (jumped) { this.prevView.copy(camera.matrixWorldInverse); this.prevProj.copy(camera.projectionMatrix) }
     ;(u.prevView.value as THREE.Matrix4).copy(this.prevView)
     ;(u.prevProj.value as THREE.Matrix4).copy(this.prevProj)
@@ -302,16 +312,24 @@ export class PostChain {
     return sunScreenFade(su, sv, inFront) * sunHeightFactor(sun.y, P.postLowSun.value)
   }
 
-  private build(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, key: string, tier: PostTier, glowOn: boolean, shaftsOn: boolean, flareOn: boolean, aoOn: boolean, light: THREE.DirectionalLight | null, toneMap: THREE.ToneMapping, debug = 0, giOn = false, cloudsOn = false): void {
+  private build(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, key: string, tier: PostTier, glowOn: boolean, shaftsOn: boolean, flareOn: boolean, aoOn: boolean, light: THREE.DirectionalLight | null, toneMap: THREE.ToneMapping, debug = 0, giOn = false, cloudsOn = false, temporalOn = false): void {
     this.release()
     const u = this.u as Record<keyof PostChain['u'], N>
     const disposables: Built['disposables'] = []
     let maskRef: N = null
     let raysRef: N = null
-    const scenePass = pass(scene, camera)
+    const scenePass = pass(scene, camera, temporalOn ? { samples: 0 } : {})
+    const velocity = temporalOn ? new CurvedVelocity() : null
+    if (velocity) scenePass.setMRT(mrt({ output, velocity: nodeObject(velocity) }))
     disposables.push(scenePass as never)
     let color: N = scenePass.getTextureNode('output')
     const depth: N = scenePass.getTextureNode('depth')
+    let temporalNode: N = null
+    if (temporalOn) {
+      temporalNode = traa(color, depth, scenePass.getTextureNode('velocity'), camera)
+      color = temporalNode.getTextureNode()
+      disposables.push(temporalNode)
+    }
     const hot: N = u.bloomThreshold.mul(HOT_CLAMP)
 
     // AO belongs in indirect lighting, before direct light, emissive and fog are added.
@@ -323,7 +341,7 @@ export class PostChain {
     let contactTex: N = null
     let prePass: ReturnType<typeof pass> | null = null
     if (aoOn || light || giOn) {
-      prePass = pass(scene, camera)
+      prePass = pass(scene, camera, temporalOn ? { samples: 0 } : {})
       prePass.name = giOn ? 'Indirect light source' : 'Occlusion normals and depth'
       prePass.transparent = false
       prePass.setMRT(giOn ? mrt({ output, normal: normalView }) : mrt({ output: normalView }))
@@ -530,9 +548,9 @@ export class PostChain {
     // Debug views: the raw occlusion or contact shadow buffers, white is unoccluded.
     if (debug === 1 && aoNode) out = vec4(vec3(aoNode.getTextureNode().sample(uv()).r), 1)
     if (debug === 2 && contactTex) out = vec4(vec3(contactTex), 1)
-    const pipeline = new THREE.RenderPipeline(renderer, out)
+    const pipeline = new THREE.RenderPipeline(renderer, velocity ? out.context({ velocity }) : out)
     pipeline.outputColorTransform = false
-    this.built = { key, pipeline, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, clouds: cloudsOn }
+    this.built = { key, pipeline, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }
     this.builds++
   }
 }
