@@ -135,6 +135,8 @@ const CONTACT_DIST = 0.05
 const RAM_REPEAT = 0.5
 /** Heartbeat interval for a hidden tab, ms. Browsers allow about one timer a second there. */
 const HEARTBEAT_MS = 1000
+/** A gap this long since our last frame means our main thread, not the network, was slow. */
+const LOCAL_STALL_MS = 250
 
 // Every vehicle kind the game can build must be one the server accepts.
 type KindsCovered = VehicleKind extends WireVehicleKind ? true : false
@@ -174,6 +176,8 @@ export class NetClient implements System {
   private pingTimer = 0
   private pingsSent = 0
   private lastFire = -Infinity
+  /** performance.now() at the start of the latest frame, to spot local main thread stalls. */
+  private frameAt = 0
   private heartbeat: ReturnType<typeof setInterval> | null = null
   private readonly marker: TagMarker
   private readonly bounds: BoundsGuard
@@ -377,6 +381,7 @@ export class NetClient implements System {
   }
 
   update(dt: number): void {
+    this.frameAt = performance.now()
     this.pingTimer -= dt
     if (this.conn.state === 'open' && this.pingTimer <= 0) {
       // Quick pings at first to sync the clock, then a slow heartbeat.
@@ -682,7 +687,10 @@ export class NetClient implements System {
     const info = this.players.get(s.id)
     if (!info) return
     const r = this.remotes.get(s.id) ?? this.spawnRemote(info, s)
-    r.push(s, this.clock.now(), netSendRate.value)
+    // A state handled long after our last frame waited behind a local stall (terrain rebuild,
+    // shader compile, a hidden tab): its age says nothing about the network.
+    const measure = performance.now() - this.frameAt < LOCAL_STALL_MS
+    r.push(s, this.clock.now(), netSendRate.value, measure)
     this.stats.statesReceived++
   }
 

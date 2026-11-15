@@ -70,6 +70,35 @@ describe('SnapshotBuffer', () => {
     expect(b.delay(0.02, 0.25)).toBe(0.25)
   })
 
+  it('keeps the automatic delay near its floor through one late burst', () => {
+    // 1.5 s of states queued behind a stall, then handled at once: the 342 ms HUD report.
+    const run = (measure: (late: boolean) => boolean) => {
+      const b = new SnapshotBuffer()
+      let t = 0
+      const steady = (n: number) => { for (let i = 0; i < n; i++, t += 0.05) b.push(snap(t, t * 10), t + 0.01, 20, measure(false)) }
+      steady(200)
+      const handledAt = t + 1.5
+      for (let i = 0; i < 30; i++, t += 0.05) b.push(snap(t, t * 10), handledAt, 20, measure(true))
+      let worst = 0
+      for (let i = 0; i < 200; i++) { steady(1); for (let k = 0; k < 3; k++) worst = Math.max(worst, b.delay(1 / 60)) }
+      return worst
+    }
+    // Flagged as a local stall: no effect at all.
+    expect(run((late) => !late)).toBeCloseTo(0.1, 3)
+    // Even unflagged (a real network burst), one burst moves the delay only modestly.
+    // Unflagged (a real network burst) it peaks near 0.24 s; before the jitter cap it reached 0.79 s.
+    expect(run(() => true)).toBeLessThan(0.3)
+  })
+
+  it('still follows sustained jitter', () => {
+    const b = new SnapshotBuffer()
+    for (let i = 0; i < 400; i++) b.push(snap(i * 0.05, i), i * 0.05 + 0.05 + (i % 2 ? 0.04 : 0))
+    expect(b.jitter).toBeGreaterThan(0.02)
+    let d = 0
+    for (let i = 0; i < 3000; i++) d = b.delay(1 / 60)
+    expect(d).toBeGreaterThan(0.2)
+  })
+
   it('holds a paused vehicle still and keeps it responding through slow heartbeats', () => {
     const b = new SnapshotBuffer()
     b.push({ ...snap(0, 3, 10), paused: true }, 0)
