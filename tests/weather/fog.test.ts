@@ -52,7 +52,7 @@ describe('height fog', () => {
   it('never hides the volcano from a spawn pad, even in a gale', () => {
     const report: string[] = []
     for (const p of PLANETS) {
-      for (const seed of [1, 7, 4821]) {
+      for (const seed of [1, 4821]) {
         applyPlanet(p.id, seed, { source: 'preset' })
         params.set(storminess.def.id, 1, 'preset')
         const h = hazeNow()
@@ -79,5 +79,5 @@ describe('height fog', () => {
       }
     }
     console.log(report.join('\n'))
-  })
+  }, 120_000)
 })

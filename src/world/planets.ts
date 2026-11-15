@@ -83,6 +83,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
     blurb: 'A small world of sandy islands in turquoise shallows. Bring a hovercraft or a jet.',
     swatch: [0xa6c95e, 0x58ecd8],
     values: {
+      ...planetWeather('archipelago'),
       ...SKY_PRESETS['Earthlike'], 'weather.cloudCoverage': 0.3, 'weather.fogDensity': 0.00016,
       'terrain.kind': 1, 'terrain.look': 3, 'world.seaKind': 1, 'world.lavaAltitude': 0,
       'terrain.planetSize': 0, 'terrain.landShare': 0.3,
@@ -97,6 +98,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
     blurb: 'Blue-white ice plains and pale cliffs over a dark, cold sea, under a violet dusk.',
     swatch: [0xd6e8f4, 0x1f5f8a],
     values: {
+      ...planetWeather('ice'),
       ...SKY_PRESETS['Violet dusk'], 'weather.cloudCoverage': 0.2, 'sun.timeOfDay': 16.6,
       'terrain.kind': 2, 'terrain.look': 4, 'terrain.snowLine': 0.03, 'world.seaKind': 1, 'world.lavaAltitude': 0,
       'terrain.islandRadius': 800, 'terrain.coastWobble': 0.24,
@@ -111,6 +113,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
     blurb: 'Black glass and needle spires veined with magenta, standing in a sea of lava.',
     swatch: [0x262130, 0xff5a1a],
     values: {
+      ...planetWeather('obsidian'),
       ...SKY_PRESETS['Violet dusk'], 'weather.cloudCoverage': 0.12, 'sun.timeOfDay': 16.3,
       'terrain.kind': 0, 'terrain.look': 5, 'world.seaKind': 0, 'world.lavaAltitude': 0,
       'terrain.islandRadius': 800, 'terrain.coastWobble': 0.28,
@@ -124,6 +127,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
     blurb: 'Almost all land: a maze of banded red buttes and canyons, with rivers at the bottom.',
     swatch: [0xd27a4a, 0x3fb0a0],
     values: {
+      ...planetWeather('badlands'),
       ...SKY_PRESETS['Mars day'], 'sky.turbidity': 4, 'weather.cloudCoverage': 0.2, 'sun.timeOfDay': 15.5,
       'terrain.kind': 1, 'terrain.look': 6, 'world.seaKind': 1, 'world.lavaAltitude': 0,
       'terrain.landShare': 0.85, 'terrain.fords': 1,
@@ -138,6 +142,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
     blurb: 'Grey dust and craters under a black sky, in one sixth of the gravity. Jump.',
     swatch: [0xa6a6a8, 0x3a3a3e],
     values: {
+      ...planetWeather('moon'),
       'sky.rayleighR': 5.8, 'sky.rayleighG': 13.5, 'sky.rayleighB': 30, 'sky.rayleigh': 0,
       'sky.turbidity': 0, 'sky.mieCoefficient': 0, 'sky.mieDirectionalG': 0.8,
       'sky.nightBrightness': 3, 'weather.cloudCoverage': 0, 'weather.fogDensity': 0,
@@ -160,6 +165,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
     blurb: 'Olive mud flats and low mesas drowned in green haze, round a teal sea.',
     swatch: [0x8c8a3a, 0x2fa890],
     values: {
+      ...planetWeather('swamp'),
       ...SKY_PRESETS['Methane green'], 'weather.cloudCoverage': 0.7, 'weather.fogDensity': 0.0011,
       'terrain.kind': 1, 'terrain.look': 8, 'world.seaKind': 1, 'world.lavaAltitude': 0,
       'terrain.landShare': 0.6,
