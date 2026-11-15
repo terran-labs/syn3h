@@ -68,6 +68,8 @@ interface VanguardOptions {
   spine?: boolean
 }
 
+/** The pilot's eye in the Vanguard family: low in the pod, a third of the way along the canopy. */
+export const VANGUARD_EYE: [number, number, number] = [0, .28, -1.6]
 const QUAD_INTAKES = [45, 135, 225, 315].map(a => [a, -.35, 1.25, .2, .13])
 
 /**
@@ -126,7 +128,8 @@ function vanguard(b: Builder, o: VanguardOptions = {}): void {
     ? [[2.0, .56, .36, .3, .05, 2.2], [2.6, .54, .28, .26, .05, 3], [2.95, .52, .24, .24, .05, 3.6], [3.08, .48, .21, .21, .05, 3.6]]
     : [[2.0, .52, .38, .32, .05, 1.9], [2.6, .42, .37, .35, .05, 2.1], [2.95, .39, .37, .37, .05, 2.2], [3.08, .35, .34, .34, .05, 2.2]]
   b.fuselage([...POD_HULL.slice(0, 5), ...tail], { intakes: o.intakes ?? QUAD_INTAKES, exhaust: true })
-  b.canopy(-2.9, -.7, .6, .06)
+  // A real cockpit: an opening in the hull, an interior tub and a bubble canopy over the pilot.
+  b.cockpit(-2.9, -.7, .6, VANGUARD_EYE, { bulge: .2 })
   const boomTail = [[2.2, .26, .24, .2, -.03, 1.6], [2.9, .2, .2, .19, 0, 2], [3.2, .17, .17, .17, 0, 2.2]]
   const boomNose = o.booms === 'prong' ? [[-3.5, .02, .02, .02, -.07, 1.4], [-2.3, .16, .15, .12, -.07, 1.5], [-.6, .26, .25, .2, -.05, 1.5], [.4, .28, .26, .22, -.05, 1.5]] : BOOM_HULL.slice(0, 3)
   b.body('paint', [...boomNose, ...boomTail], { x: bx, mirror: true, around: 20, exhaust: true })

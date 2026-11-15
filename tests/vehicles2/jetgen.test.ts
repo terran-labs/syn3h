@@ -42,6 +42,12 @@ describe('generated next-generation jets', () => {
       expect(low.triangles()).toBeLessThan(jet.triangles() * (design.hard ? .8 : .5))
       expect(low.hover).toHaveLength(3); expect(low.thruster.children).toHaveLength(4)
       low.dispose()
+      // Designs with a real cockpit keep the pilot's eye clear of every surface (PATTERN.md rule 3).
+      if (jet.ridePosition) {
+        expect(jet.clearance).toBeGreaterThanOrEqual(.25)
+        expect(jet.object.getObjectByName('jet-trim')).toBeTruthy()
+        expect(low.ridePosition).toBeTruthy()
+      }
       jet.setGear(0)
       expect(jet.gear.visible).toBe(false)
       for (const y of jet.footHeights()) expect(y).toBeGreaterThan(GROUND_Y + .5)

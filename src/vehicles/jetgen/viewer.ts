@@ -79,6 +79,11 @@ async function main() {
   let elapsed = 0; const timer = new THREE.Timer()
   const api = {
     ready: false, jets, show, renderer,
+    /** For captures: put the camera at a point in the current jet's frame, looking at another. */
+    lookFrom(from: [number, number, number], to: [number, number, number]) {
+      const origin = jets[current].object.position
+      camera.position.set(...from).add(origin); controls.target.set(...to).add(origin); controls.update()
+    },
     /** For captures: full (1) or reduced (.5) polygons. */
     setDetail(value: number) { detail = value; build(); show(all ? -1 : current) },
     /** For captures: hold the main nozzle at a fixed deflection, or pass null to resume the sweep. */

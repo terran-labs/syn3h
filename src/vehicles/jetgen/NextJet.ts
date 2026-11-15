@@ -30,6 +30,10 @@ export class NextJet {
   private readonly legs: BuiltLeg[] = []
   private readonly geometries: THREE.BufferGeometry[] = []
   gearAmount = 0
+  /** The pilot's eye, for the ride camera. Present when the design has a real cockpit. */
+  ridePosition?: THREE.Object3D
+  /** Metres from the eye to the nearest canopy or tub surface. */
+  clearance = Infinity
   /** Sits at the main thruster's exit and holds its four vectoring vanes. */
   readonly thruster = new THREE.Group()
   /** Current deflection: x is pitch, y is yaw, in radians. */
@@ -60,11 +64,15 @@ export class NextJet {
       // Matte dark surfaces: intake mouths, nozzle walls, gear skids. Trim keeps its own numbers.
       dark: setRole(new THREE.MeshStandardMaterial({ color: 0x0b0c0f, metalness: .4, roughness: .55 }), 'trim'),
       glow: this.glow,
+      // Cockpit interior: matte, dark, its own numbers as the trim role allows.
+      trim: setRole(new THREE.MeshStandardMaterial({ color: 0x1b1e24, metalness: .15, roughness: .8 }), 'trim'),
     }
     const b = new Builder(detail, design.hard ?? false); design.build(b)
+    const pieces = b.pieces
     this.nozzles = b.nozzles; this.hover = b.hover
+    if (b.eye) { this.ridePosition = new THREE.Object3D(); this.ridePosition.position.set(...b.eye); this.object.add(this.ridePosition); this.clearance = b.cockpitClearance() }
     for (const mat of Object.keys(this.materials) as Mat[]) {
-      const parts = b.pieces.filter(p => p.mat === mat).map(p => p.geometry); if (!parts.length) continue
+      const parts = pieces.filter(p => p.mat === mat).map(p => p.geometry); if (!parts.length) continue
       const merged = this.merge(parts)
       const mesh = new THREE.Mesh(merged, this.materials[mat]); mesh.name = `jet-${mat}`; mesh.castShadow = mat !== 'glow'; mesh.receiveShadow = mat !== 'glow'
       this.object.add(mesh)

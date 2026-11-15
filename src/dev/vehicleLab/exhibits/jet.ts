@@ -45,6 +45,7 @@ export const jet: LabExhibit = {
           j.setVector(state.animate ? Math.sin(state.time * .9) * .22 : 0, state.steer * .27)
         }
       },
+      cockpit: levels[0].ridePosition ? { eye: levels[0].ridePosition.position.clone() } : undefined,
       controls: [{ kind: 'toggle', id: 'jet.gear', label: 'Landing gear', value: true, onChange: on => { gearDown = on } }],
       dispose() { levels.forEach(j => j.dispose()) },
     }
