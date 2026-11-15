@@ -72,3 +72,12 @@ Relative position is orb minus own position, and relative velocity is orb minus 
 Signed orb lateral separation uses the own vehicle's instantaneous horizontal travel-right axis, (-vz, 0, vx) normalized. Zero horizontal speed makes that axis undefined; after shot removal, relative separation remains unavailable through route return. A separate retrospective paired-lateral-response series measures arc vehicle minus no-op vehicle on the fixed no-op travel-right axis captured at the shared decision. That series continues through the full return window. It uses baseline outcome data and must never be a policy input. Scenario names, actions, catch outcomes and this paired series remain outside observation records.
 
 The proposed single run writes only to a new directory, default `/tmp/syn3h-pester-observations-v1`. Creation fails if that directory already exists, preserving both original evidence and previous follow-up attempts. After review clearance, one typecheck plus fixed measurement job is authorized through the absolute heavy runner, with two test workers. A failure is reported without an automatic rerun. Production aircraft evasion remains unaccepted; any later design still needs fresh held-out cases and perturbation margins.
+
+
+## Observation follow-up execution result
+
+The single authorized job on `13f2d071778aadf5fc0c3a9b8fbe81080d49ba4e` exited 1 during type checking. TypeScript reported `TS2339` at test line 187: property `ownVelocity` does not exist on type `never`. The decision variable is assigned inside the pilot callback; its inferred returned type does not retain that callback assignment. This is a harness typing failure, not a physics or outcome result.
+
+The measurement command was conditional on successful type checking and never started. No new output directory or results file was created, so no comparison of old outcome fields or observation analysis is possible. The original 99-run evidence remains preserved. No harness correction, tuning or retry was performed. A typing correction and another run require renewed authorization.
+
+Command: `/Users/vtn/dev/Syn3h/tools/heavy.sh sh -c 'npm run typecheck && npx vitest run tests/bots/pester-response.test.ts --maxWorkers=2'`. Log: `/tmp/syn3h-pester-observations-v1.log`. Intended output: `/tmp/syn3h-pester-observations-v1/results.json` (not created).
