@@ -45,9 +45,10 @@ describe('generated next-generation jets', () => {
       // Designs with a real cockpit keep the pilot's eye clear of every surface (PATTERN.md rule 3).
       if (jet.ridePosition) {
         expect(jet.clearance).toBeGreaterThanOrEqual(.25)
+        expect(jet.object.userData.cockpit).toBe(true)
         expect(jet.object.getObjectByName('jet-trim')).toBeTruthy()
         expect(low.ridePosition).toBeTruthy()
-      }
+      } else expect(jet.object.userData.cockpit).toBeUndefined()
       jet.setGear(0)
       expect(jet.gear.visible).toBe(false)
       for (const y of jet.footHeights()) expect(y).toBeGreaterThan(GROUND_Y + .5)
