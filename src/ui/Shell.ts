@@ -833,6 +833,8 @@ export class Shell implements System {
     if (!this.started && !this.inviteOpen && !this.attract?.active && (this.requestedAttract || performance.now() - this.lastActivity > 20000)) this.startAttract()
     this.attract?.update(dt)
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
+    // A captured cursor alone is insufficient while a menu or another flow suspends input.
+    this.element.classList.toggle('is-focus', this.started && !this.menuVisible && !this.game.input.suspended && document.pointerLockElement === this.game.canvas)
     this.updateGear()
     if (this.started && !this.menuVisible) {
       const focus = this.element.classList.contains('is-focus')

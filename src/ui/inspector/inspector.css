@@ -6,10 +6,10 @@
    what is behind is blurred and lifted, a hairline rim catches light at the top left and
    bottom right, and one soft highlight sits near the top edge. */
 .syn3h-shell .wi-glass {
-  --frost: 26px; --body: rgb(18 20 27 / .5);
+  --frost: 26px; --body: rgb(19 30 46 / .58);
   position: relative; border-radius: 16px; isolation: isolate;
-  background: linear-gradient(180deg, rgb(255 255 255 / .09), rgb(255 255 255 / .025) 38%, rgb(255 255 255 / .05)), var(--body);
-  -webkit-backdrop-filter: blur(var(--frost)) saturate(180%) brightness(1.08); backdrop-filter: blur(var(--frost)) saturate(180%) brightness(1.08);
+  background: linear-gradient(180deg, rgb(221 239 255 / .16), rgb(198 222 255 / .035) 38%, rgb(198 222 255 / .07)), var(--body);
+  -webkit-backdrop-filter: blur(var(--frost)) saturate(115%) brightness(1.08); backdrop-filter: blur(var(--frost)) saturate(115%) brightness(1.08);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / .16), inset 0 12px 20px -14px rgb(255 255 255 / .28), inset 0 -10px 16px -12px rgb(0 0 0 / .35), 0 14px 36px rgb(0 0 0 / .34);
 }
 .syn3h-shell .wi-glass::before {
@@ -17,12 +17,12 @@
   background: conic-gradient(from 205deg, rgb(255 255 255 / .5), rgb(255 255 255 / .08) 18%, rgb(255 255 255 / .04) 38%, rgb(255 255 255 / .32) 52%, rgb(255 255 255 / .07) 70%, rgb(255 255 255 / .04) 88%, rgb(255 255 255 / .5));
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude;
 }
-.syn3h-shell[data-glass="0"] .wi-glass { --frost: 8px; --body: rgb(18 20 27 / .28); }
-.syn3h-shell[data-glass="2"] .wi-glass { --frost: 44px; --body: rgb(10 12 18 / .66); }
+.syn3h-shell[data-glass="0"] .wi-glass { --frost: 8px; --body: rgb(19 30 46 / .32); }
+.syn3h-shell[data-glass="2"] .wi-glass { --frost: 44px; --body: rgb(12 23 38 / .76); }
 /* Safari frosts weakly over a canvas, and the ladder or the lowest graphics level turns
    frost off: in both cases the glass carries a darker body so text stays readable. */
-@supports (font: -apple-system-body) and (-webkit-appearance: none) { .wi-glass { --body: rgb(14 15 20 / .8); } }
-html[data-gfx="0"] .wi-glass { -webkit-backdrop-filter: none; backdrop-filter: none; --body: rgb(14 15 20 / .88); }
+@supports (font: -apple-system-body) and (-webkit-appearance: none) { .syn3h-shell[data-glass] .wi-glass { --body: rgb(16 27 42 / .86); } }
+html[data-gfx="0"] .syn3h-shell[data-glass] .wi-glass { -webkit-backdrop-filter: none; backdrop-filter: none; --body: rgb(14 15 20 / .88); }
 
 .syn3h-shell .world-inspector { position: fixed; z-index: 13; top: 76px; right: max(20px, env(safe-area-inset-right)); width: min(350px, calc(100vw - 40px)); max-height: calc(100vh - 96px); display: flex; flex-direction: column; gap: 8px; color: var(--s3-ink); font: 400 14px/1.45 'Barlow', sans-serif; transition: opacity .45s ease, translate .45s cubic-bezier(.2,.7,.2,1); }
 .syn3h-shell .world-inspector[hidden] { display: none; }
