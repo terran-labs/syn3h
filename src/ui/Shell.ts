@@ -12,6 +12,8 @@ import { Starfield } from './Starfield'
 import { wordmarkSvg } from './brand/logo'
 import { PlanetPicker } from './planets/PlanetPicker'
 import { planetOrbs } from './planets/PlanetOrbs'
+import { Galaxy } from './galaxy/Galaxy'
+import { PLANETS } from '../world/planets'
 import { graphicsLevel, levelNumber } from '../core/quality'
 import { applyPlanet, currentPlanet, encodeWorld, planetName } from '../world/planets'
 import { AttractMode, type CinematicCamera } from './AttractMode'
@@ -64,6 +66,8 @@ export class Shell implements System {
   /** Slider groups the advanced panel is limited to, when it was opened from the custom planet. */
   private advancedGroups?: readonly string[]
   private worldDirty = true
+  /** The 3D galaxy lobby, a prototype shown only with ?galaxy=1 in the link. */
+  private galaxy?: Galaxy
   /** Arrived by an invite link that names a world: that world is the one to enter. */
   private readonly invited = (() => { const query = new URLSearchParams(location.search); return query.has('room') && query.has('world') })()
   private started = false
@@ -112,6 +116,7 @@ export class Shell implements System {
       </div>
       <footer class="lobby-footer"><span class="shell-message" role="status" aria-live="polite"></span><span class="build-line">${buildLine}</span></footer>
       </div>
+      <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby"><button data-goto="vehicle">Vehicle</button><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR</button><button data-goto="settings">Settings</button><button data-goto="about">About</button></nav></div>
     </section>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button" aria-label="Open menu">☰<span class="nav-label"> Menu</span></button><button data-open="multiplayer">Players</button><button data-open="worlds">Create</button></nav>
@@ -136,6 +141,7 @@ export class Shell implements System {
       this.pickers.push(new PlanetPicker(slot, { compact, onPick: id => this.pickPlanet(id, compact), onCustom: () => this.openCustomPlanet() }))
     }
     this.glass(signal)
+    this.startGalaxy()
     const unsubscribeWorld = params.onChange(id => { if (params.get(id)?.def.scope === 'world') this.worldDirty = true })
     signal.addEventListener('abort', unsubscribeWorld)
     try { this.nameInput.value = localStorage.getItem('syn3h.playerName') || '' } catch { /* Storage is optional. */ }
@@ -278,6 +284,7 @@ export class Shell implements System {
   showPanel(id: string): void {
     if(id!==this.panels.active)this.audio.cue('click')
     this.lastActivity = performance.now()
+    this.galaxyFor(id)
     if (id === 'vehicle' && !this.preview) {
       this.preview = new VehiclePreview(this.element.querySelector('.shell-vehicle-preview')!); this.preview.setChoice(this.choice)
     }
@@ -302,13 +309,13 @@ export class Shell implements System {
   }
   openMenu(panel = 'index'): void {
     if (!this.started) return
-    this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; this.starfield.enabled = true
+    this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; this.starfield.enabled = !this.galaxy; if (this.galaxy) this.galaxy.enabled = true
     this.game.input.suspended = true; this.game.input.mouseFire = false; this.game.input.poll(); this.touch.enabled = false
     this.audio.enabled = false; this.audio.setLobbyVisible(true); this.element.classList.remove('is-playing'); this.showPanel(panel)
   }
   closeMenu(): void {
     if (!this.started) return
-    this.menuVisible = false; this.overlay.hidden = true; this.overlay.inert = true; this.starfield.enabled = false
+    this.menuVisible = false; this.overlay.hidden = true; this.overlay.inert = true; this.starfield.enabled = false; if (this.galaxy) this.galaxy.enabled = false
     // The game is about to be on screen: give the lobby's graphics contexts back at once.
     planetOrbs.release()
     this.game.input.suspended = false; this.touch.enabled = true; this.audio.enabled = true; this.audio.setLobbyVisible(false); this.paramPanel?.hide()
@@ -387,6 +394,43 @@ export class Shell implements System {
   }
   /** A short notice that shows in the lobby and, while playing, as a toast. */
   private say(text: string): void { this.toast(text) }
+  /**
+   * The galaxy lobby (prototype, ?galaxy=1): in place of the index panel, the worlds orbit a
+   * sun in 3D. Drag to look around, tap a world to fly to it, and the name form follows. The
+   * other panels open over it as before. Needs WebGL 2 and more than the lowest graphics
+   * level; otherwise the ordinary lobby stays.
+   */
+  private startGalaxy(): void {
+    if (!new URLSearchParams(location.search).has('galaxy') || levelNumber(graphicsLevel.value) === 0 || !Galaxy.supported()) return
+    const current = currentPlanet().id, labels = this.element.querySelector<HTMLElement>('.galaxy-labels')!
+    const worlds = PLANETS.map((recipe, i) => ({ id: recipe.id, label: recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current ? worldSeed.value : i + 1 }))
+    const chips = new Map<string, HTMLButtonElement>()
+    for (const world of worlds) {
+      const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
+      chip.innerHTML = '<strong></strong><small></small>'; chip.querySelector('strong')!.textContent = world.label
+      chip.querySelector('small')!.textContent = world.id === current ? planetName(world.seed) : ''
+      chip.addEventListener('click', () => this.galaxy?.choose(world.id))
+      labels.append(chip); chips.set(world.id, chip)
+    }
+    this.galaxy = new Galaxy(this.overlay, {
+      worlds,
+      onArrive: id => {
+        if (this.invited && !this.started && id !== currentPlanet().id) { this.say('You were invited to another world. You can change it once you are in, if the host allows.'); this.galaxy?.home(); return }
+        this.pickPlanet(id, true)
+      },
+      onLayout: places => { for (const place of places) { const chip = chips.get(place.id)!; chip.hidden = !place.visible; chip.style.translate = `${place.x.toFixed(1)}px ${(place.y + place.radius + 10).toFixed(1)}px` } },
+    })
+    this.element.classList.add('is-galaxy'); this.starfield.enabled = false; this.galaxy.enabled = true
+    this.galaxyFor(this.panels.active || 'index')
+  }
+  /** The galaxy is the index; any other panel opens over it. */
+  private galaxyFor(panel: string): void {
+    if (!this.galaxy) return
+    const open = panel === 'index'
+    this.element.classList.toggle('galaxy-open', open)
+    this.element.querySelector<HTMLElement>('.galaxy-ui')!.hidden = !open
+    if (open) this.galaxy.home()
+  }
   /** What the lobby's own graphics are doing, for the phone checks. */
   get graphics(): { starfieldFrames: number; starfieldLive: boolean; planetsLive: boolean; planetMaps: number } {
     return { starfieldFrames: this.starfield.frames, starfieldLive: this.starfield.generated, planetsLive: planetOrbs.active, planetMaps: planetOrbs.painted }
@@ -524,7 +568,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); for (const picker of this.pickers) picker.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.starfield.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); for (const picker of this.pickers) picker.dispose(); this.galaxy?.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.starfield.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }
