@@ -555,3 +555,9 @@ checks those styles in Chrome and WebKit without loading a world.
 The existing center dot remains available for all gear. Suspended input hides the focus
 display even if pointer capture remains active; `inspector.mjs` checks that transition.
 Brand export commands, output sizes and failure behavior are in `tools/brand/README.md`.
+
+`galaxy-controls.mjs` checks arrow-key rotation, plus/minus zoom, standard gamepad
+stick movement, D-pad world selection and A-button entry. It also verifies that an
+open panel blocks these controls. The gamepad is simulated through `getGamepads`;
+physical controller mapping still needs a device check. Tab and Enter use the world's
+normal button focus and activation.

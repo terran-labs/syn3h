@@ -631,6 +631,7 @@ export class Shell implements System {
       worlds,
       still: () => levelNumber(graphicsLevel.value) === 0,
       onTap: chosen => this.tapWorld(chosen),
+      onFocus: id => chips.get(id)?.focus({ preventScroll: true }),
       onArrive: chosen => {
         const id = chosen.split('~')[0]
         if (id === 'custom') {
