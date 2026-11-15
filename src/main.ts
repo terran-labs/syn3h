@@ -122,8 +122,8 @@ async function main(): Promise<void> {
       names: (seed, kind) => generateName(seed, kind),
     })
     // Every client reads the wind from the room's clock, so gusts agree between players.
-    const roomClock = (connection as { clock?: { now(): number } }).clock
-    if (roomClock) setWeatherClock(() => roomClock.now())
+    // Handed over by networking once that clock has synced (the sea gets it the same way).
+    connection.onRoomClock((now) => setWeatherClock(now))
     // Remote players and bots are audible, positioned in space.
     audio.setVehicles(() => connection.audibleVehicles())
     game.add(new ResumeSession({ game, terrain, player, room: shell.room || query.get('room') || 'lobby', saved, network: connection }))
