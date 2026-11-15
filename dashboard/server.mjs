@@ -1,6 +1,9 @@
 /**
- * Executive dashboard server. Read only: it shows the docs, the build plan in
- * dashboard/status.json, and live git state. It never changes the repository.
+ * Executive dashboard server. Read only: it shows the docs, the hand kept status in
+ * dashboard/status.json, the generated numbers in dashboard/stats.json (rerun
+ * tools/dashboard-stats.mjs to refresh them), the releases recorded in
+ * release-notes/history.tsv, the frozen builds the public site lists, and recent commits.
+ * It never changes the repository.
  *
  *   node dashboard/server.mjs --port 4400
  */
@@ -29,13 +32,43 @@ function git(args, cwd = root) {
 }
 
 function gitState() {
-  const branches = git(['for-each-ref', '--sort=-committerdate', '--format=%(refname:short)|%(committerdate:relative)|%(subject)', 'refs/heads'])
-    .split('\n').filter(Boolean).map((l) => { const [name, when, ...s] = l.split('|'); return { name, when, subject: s.join('|') } })
-  const base = 'build/weekend'
-  for (const b of branches) b.ahead = Number(git(['rev-list', '--count', `${base}..${b.name}`]) || 0)
   const commits = git(['log', '--all', '-14', '--date=relative', '--format=%h|%cd|%D|%s'])
     .split('\n').filter(Boolean).map((l) => { const [hash, when, refs, ...s] = l.split('|'); return { hash, when, refs, subject: s.join('|') } })
-  return { branches, commits }
+  return { commits }
+}
+
+const SITE = 'https://www.syn3h.com/'
+const REPO = 'https://github.com/terran-labs/syn3h'
+/** Today's release train starts here: v26.11.1503 is the build frozen before the noon deadline. */
+const FIRST_LISTED = 'v26.11.1503'
+
+/** The one line summary under a release note's heading, or '' while the note is a draft. */
+function releaseLine(version) {
+  const file = join(root, 'release-notes', 'releases', `${version}.md`)
+  if (!existsSync(file)) return ''
+  const line = readFileSync(file, 'utf8').split('\n').map((l) => l.trim()).find((l) => l && !l.startsWith('#') && !l.startsWith('<!--')) ?? ''
+  return line.startsWith('TODO') ? '' : line
+}
+
+/** Production and withdrawn releases from history.tsv, newest first, from FIRST_LISTED on. */
+function releases(frozen) {
+  let rows = []
+  try {
+    rows = readFileSync(join(root, 'release-notes', 'history.tsv'), 'utf8').split('\n').filter((l) => l && !l.startsWith('#'))
+      .map((l) => { const [version, tag, commit, time, channel] = l.split('\t'); return { version, commit, time, channel } })
+  } catch { return [] }
+  return rows.filter((r) => (r.channel === 'production' || r.channel === 'withdrawn') && r.version >= FIRST_LISTED).reverse()
+    .map((r) => ({ ...r, line: releaseLine(r.version), notes: `${REPO}/releases/tag/${r.version}`, frozen: frozen.includes(r.version.slice(1)) ? `${SITE}?v=${r.version.slice(1)}` : '' }))
+}
+
+// The frozen builds the public site serves, read from its own list at most once a minute.
+let frozenCache = { at: 0, list: null }
+async function frozenVersions() {
+  if (Date.now() - frozenCache.at < 60000) return frozenCache.list
+  let list = null
+  try { list = (await (await fetch(`${SITE}v/versions.json`, { signal: AbortSignal.timeout(4000) })).json()).versions } catch {}
+  frozenCache = { at: Date.now(), list: Array.isArray(list) ? list : null }
+  return frozenCache.list
 }
 
 function send(res, code, type, body) {
@@ -44,7 +77,7 @@ function send(res, code, type, body) {
 }
 
 // Link liveness for the block at the top of the dashboard. Each link is probed at most once
-// every 30 s; a link that does not answer is shown as down, never left as a dead link.
+// every 30 s; the page hides a link that does not answer rather than show a dead link.
 const probes = new Map()
 async function probe(url) {
   const hit = probes.get(url)
@@ -67,10 +100,18 @@ createServer(async (req, res) => {
       // Never trust a hand written time: stamp from the file's own modification time, in Pacific.
       const stamp = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', weekday: 'long', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(statSync(join(here, 'status.json')).mtime)
       status.updated = stamp
-      if (status.vehicles) status.vehiclesUpdated = stamp
     } catch (e) { status = { error: String(e) } }
-    if (status.links) status.links = await withLiveness(status.links)
-    return send(res, 200, TYPES['.json'], JSON.stringify({ ...status, git: gitState(), docs: DOCS.map(([id, , title]) => ({ id, title })), now: new Date().toISOString() }))
+    let stats = null
+    try { stats = JSON.parse(readFileSync(join(here, 'stats.json'), 'utf8')) } catch {}
+    const frozen = await frozenVersions()
+    const shipped = releases(frozen ?? [])
+    // Frozen builds, newest first. If the site's list is unreachable, link the newest release
+    // and the build frozen before the noon deadline.
+    const versions = frozen ? [...frozen].reverse() : [...new Set([shipped.find((r) => r.channel === 'production')?.version.slice(1), FIRST_LISTED.slice(1)].filter(Boolean))]
+    const links = [...(status.links ?? [])]
+    if (versions.length) links.splice(1, 0, { group: 'Frozen builds', note: 'Every build stays playable at its own address.', items: versions.map((v) => ({ title: `v${v}`, url: `${SITE}?v=${v}` })) })
+    status.links = await withLiveness(links)
+    return send(res, 200, TYPES['.json'], JSON.stringify({ ...status, stats, releases: shipped, git: gitState(), docs: DOCS.map(([id, , title]) => ({ id, title })), now: new Date().toISOString() }))
   }
   if (url.pathname.startsWith('/api/doc/')) {
     const doc = DOCS.find(([id]) => id === url.pathname.slice(9))

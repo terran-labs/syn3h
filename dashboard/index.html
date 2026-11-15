@@ -57,8 +57,6 @@
   @media (min-width: 900px) { .c4 { grid-column: span 4; } .c5 { grid-column: span 5; } .c6 { grid-column: span 6; } .c7 { grid-column: span 7; } .c8 { grid-column: span 8; } }
 
   .headline { font: 300 clamp(20px, 2.6vw, 28px)/1.25 "Barlow Condensed"; letter-spacing: .01em; }
-  .bar { height: 8px; border-radius: 99px; background: rgb(255 255 255 / .08); overflow: hidden; margin: 14px 0 6px; }
-  .bar > span { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, rgb(var(--accent-2)), rgb(var(--accent)), rgb(255 200 110)); transition: width .6s; }
   .muted { color: var(--ink-3); font-size: 13px; }
 
   .row { display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); }
@@ -72,10 +70,6 @@
   .blocked { color: rgb(var(--bad)); border-color: rgb(var(--bad) / .5); background: rgb(var(--bad) / .1); }
 
   a { color: rgb(255 170 110); text-decoration: none; } a:hover { text-decoration: underline; }
-  .previews a.p { display: block; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); margin-top: 10px; background: rgb(255 110 40 / .07); color: var(--ink); }
-  .previews a.p:hover { background: rgb(255 110 40 / .16); text-decoration: none; }
-  .previews a.p b { display: block; font: 500 18px "Barlow Condensed"; letter-spacing: .04em; }
-  .previews .none { color: var(--ink-3); padding: 8px 0; }
 
   table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   th { text-align: left; font: 500 12px "Barlow Condensed"; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); padding: 6px 8px; }
@@ -89,21 +83,6 @@
   .doc h1 { font-size: 30px; margin: 4px 0 14px; } .doc h2 { margin: 26px 0 10px; } .doc h3 { font: 600 16px "Barlow"; margin: 18px 0 6px; }
   .doc pre { background: rgb(0 0 0 / .35); padding: 12px; border-radius: 10px; overflow: auto; }
   .doc p, .doc li { color: var(--ink-2); } .doc strong { color: var(--ink); }
-  .vgrid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); }
-  .veh { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; background: rgb(0 0 0 / .22); }
-  .veh h3 { font: 500 22px "Barlow Condensed"; letter-spacing: .03em; margin: 0; display: flex; align-items: center; gap: 10px; justify-content: space-between; }
-  .veh .role { color: var(--ink-3); font-size: 12.5px; text-transform: uppercase; letter-spacing: .1em; font-family: "Barlow Condensed"; margin: 2px 0 8px; }
-  .veh .sum { color: var(--ink-2); font-size: 14px; margin-bottom: 10px; }
-  .veh .meter { display: flex; gap: 3px; margin: 8px 0 10px; }
-  .veh .meter i { flex: 1; height: 6px; border-radius: 3px; background: rgb(255 255 255 / .1); }
-  .veh .meter i.done { background: rgb(var(--ok)); } .veh .meter i.active { background: rgb(var(--run)); } .veh .meter i.waiting { background: rgb(var(--wait)); } .veh .meter i.blocked { background: rgb(var(--bad)); }
-  .asp { display: grid; grid-template-columns: 10px 1fr; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
-  .asp .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; background: rgb(var(--wait)); }
-  .asp .dot.done { background: rgb(var(--ok)); } .asp .dot.active { background: rgb(var(--run)); } .asp .dot.blocked { background: rgb(var(--bad)); } .asp .dot.next { background: transparent; border: 1px solid rgb(var(--wait)); }
-  .asp b { font-weight: 600; } .asp span { color: var(--ink-2); }
-  .veh a.try { display: inline-block; margin-top: 10px; font: 500 13px "Barlow Condensed"; letter-spacing: .12em; text-transform: uppercase; }
-  .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 14px; font-size: 12.5px; color: var(--ink-3); }
-  .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
   .links { margin-bottom: 16px; }
   .links .g { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--line); }
   .links .g:first-child { border-top: 0; padding-top: 0; }
@@ -111,8 +90,26 @@
   .links .g h3 span { text-transform: none; letter-spacing: 0; color: var(--ink-3); font: 400 12.5px inherit; margin-left: 8px; }
   .links a { padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line); background: rgb(255 110 40 / .07); color: var(--ink); font-size: 13.5px; }
   .links a:hover { background: rgb(255 110 40 / .16); text-decoration: none; }
-  .links a.down { opacity: .5; text-decoration: line-through; background: transparent; }
-  .links a.down::after { content: " (down)"; }
+
+  /* Statistics: large number tiles, two across on a phone, five or six across on a wide screen. */
+  .stats-card { margin-bottom: 16px; }
+  .stats { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  @media (min-width: 900px) { .stats { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); } }
+  .tile { min-width: 0; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px 10px; background: rgb(0 0 0 / .22); display: flex; flex-direction: column; gap: 2px; }
+  .tile.wide { grid-column: span 2; }
+  .tile .k { font: 500 12px "Barlow Condensed"; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-3); }
+  .tile .v { font: 300 clamp(26px, 3vw, 36px)/1.05 "Barlow Condensed"; color: var(--ink); overflow-wrap: anywhere; }
+  .tile .s { color: var(--ink-2); font-size: 13px; }
+  .tile .w { margin-top: auto; padding-top: 6px; color: var(--ink-3); font-size: 11.5px; }
+  .tile.stale .w { color: rgb(var(--run)); }
+  .tile .parts { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 6px 12px; margin: 6px 0 2px; }
+  .tile .parts b { display: block; font: 500 19px/1.1 "Barlow Condensed"; color: rgb(var(--accent)); }
+  .tile .parts span { color: var(--ink-3); font-size: 12px; }
+  /* Below about 356 px the grid is one column, where a two column span would add a phantom column. */
+  @media (max-width: 355px) { .tile.wide { grid-column: auto; } }
+  .rel .rl { display: flex; gap: 14px; margin-top: 3px; font-size: 13px; }
+  #releases .row { border-top: 1px solid var(--line); }
+  #headline { margin-bottom: 8px; }
   footer { margin-top: 30px; display: flex; gap: 18px; align-items: center; color: var(--ink-3); font-size: 13px; flex-wrap: wrap; }
   footer img { height: 34px; opacity: .85; }
 </style>
@@ -132,25 +129,21 @@
 
   <section class="card links"><div id="links"></div></section>
 
+  <section class="card stats-card">
+    <h2>By the numbers</h2>
+    <div class="stats" id="stats"></div>
+    <div class="muted" id="statsNote"></div>
+  </section>
+
   <div class="grid">
     <section class="card c7">
-      <h2>Where we are</h2>
+      <h2>Shipped today</h2>
       <div class="headline" id="headline"></div>
-      <div class="bar"><span id="progress" style="width:0"></span></div>
-      <div class="muted" id="progressText"></div>
-    </section>
-    <section class="card c5 previews">
-      <h2>Previews</h2>
-      <div id="previews"></div>
-    </section>
-
-    <section class="card c7">
-      <h2>Milestones</h2>
-      <div id="milestones"></div>
+      <div id="releases"></div>
     </section>
     <section class="card c5">
-      <h2>Builders</h2>
-      <div id="workers"></div>
+      <h2>In progress</h2>
+      <div id="inprogress"></div>
       <h2 style="margin-top:22px">Needs you</h2>
       <div id="decisions"></div>
       <h2 style="margin-top:22px">Known issues</h2>
@@ -158,25 +151,6 @@
     </section>
 
     <section class="card">
-      <h2>Vehicles</h2>
-      <div class="muted" id="vehiclesNote" style="margin-bottom:14px"></div>
-      <div class="vgrid" id="vehicles"></div>
-    </section>
-
-    <section class="card c6">
-      <h2>Strategy</h2>
-      <div id="strategy"></div>
-    </section>
-    <section class="card c6">
-      <h2>Accounts and resets</h2>
-      <div id="accounts"></div>
-    </section>
-
-    <section class="card c5">
-      <h2>Branches</h2>
-      <table><thead><tr><th>Branch</th><th>Ahead</th><th>Last change</th></tr></thead><tbody id="branches"></tbody></table>
-    </section>
-    <section class="card c7">
       <h2>Recent commits</h2>
       <table><tbody id="commits"></tbody></table>
     </section>
@@ -199,29 +173,71 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 const row = (state, title, detail) => `<div class="row"><span class="tag ${esc(state)}">${esc(state)}</span><div><div class="t">${esc(title)}</div><div class="d">${esc(detail)}</div></div></div>`
 let currentDoc = null
 
+// Numbers: full value on hover, short form on the tile.
+const full = (n) => Number(n).toLocaleString('en-US')
+function short(n) {
+  if (n == null || !Number.isFinite(Number(n))) return '?'
+  const a = Math.abs(n)
+  for (const [d, u] of [[1e9, 'B'], [1e6, 'M'], [1e3, 'K']]) if (a >= d * (u === 'K' ? 10 : 1)) return (n / d).toFixed(n / d >= 100 ? 0 : n / d >= 10 ? 1 : 2) + ' ' + u
+  return full(n)
+}
+const pacific = (iso) => iso ? new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(new Date(iso)) : 'unknown'
+
+/** One tile: a label, a big number, and small lines under it. wide tiles span two columns. */
+function tile(label, value, subs, { title = '', wide = false, stale = false, when = '' } = {}) {
+  return `<div class="tile${wide ? ' wide' : ''}${stale ? ' stale' : ''}"><div class="k">${esc(label)}</div><div class="v" title="${esc(title)}">${esc(value)}</div>${subs.filter(Boolean).map((x) => `<div class="s">${esc(x)}</div>`).join('')}<div class="w">${esc(when)}${stale ? ' · stale' : ''}</div></div>`
+}
+function split(label, parts, opts) {
+  const total = parts.reduce((a, [, n]) => a + (n ?? 0), 0)
+  return `<div class="tile wide${opts.stale ? ' stale' : ''}"><div class="k">${esc(label)}</div><div class="v" title="${esc(full(total))}">${esc(short(total))}</div><div class="parts">${parts.map(([k, n]) => `<div><b title="${esc(full(n ?? 0))}">${esc(short(n ?? 0))}</b><span>${esc(k)}</span></div>`).join('')}</div>${opts.note ? `<div class="s">${esc(opts.note)}</div>` : ''}<div class="w">${esc(opts.when)}${opts.stale ? ' · stale' : ''}</div></div>`
+}
+
+function renderStats(st) {
+  if (!st) { $('stats').innerHTML = '<div class="muted">No statistics yet. Run tools/dashboard-stats.mjs.</div>'; return }
+  const when = 'as of ' + pacific(st.generatedAt)
+  const tk = st.tokens, pr = st.price, c = st.commits, r = st.releases, code = st.code, p = st.pullRequests
+  const tw = tk ? 'counted ' + pacific(tk.countedAt) : when
+  const out = [
+    tile('Newest release', r.newest ?? '?', [r.newestAt ? 'released ' + r.newestAt : ''], { wide: true, when }),
+    tile('Releases shipped', full(r.production), [`${r.today} today`, r.withdrawn ? `${r.withdrawn} withdrawn` : ''], { when }),
+    tile('Commits on main', short(c.total), [`${full(c.last48h)} in the last 48 hours`], { title: full(c.total), when }),
+    // Lanes merge their branches into main directly, so merges say more than pull requests.
+    p.count ? tile('Pull requests', full(p.count), [`${full(p.mergedDirectly)} branches merged directly`], { when })
+      : tile('Branches merged directly', full(c.merges), [p.count === 0 ? 'no pull requests: lanes merge straight to main' : 'pull requests not counted'], { when }),
+    tile('Lines of TypeScript', short(code.lines), [`${full(code.sourceFiles)} source files`], { title: full(code.lines), when }),
+    tile('Test files', full(code.testFiles), [], { when }),
+    tile('Tunable parameters', full(code.params), ['declared with defineParam'], { when }),
+  ]
+  if (tk) {
+    out.push(
+      tile('Tokens used', short(tk.total), [`Claude ${short(tk.claude.total)} · Codex ${short(tk.codex.total)}`], { title: full(tk.total), stale: tk.stale, when: tw }),
+      tile('Consumption rate', short(tk.perHour) + ' / h', [`over ${tk.hours} hours since the first session`], { title: full(tk.perHour) + ' tokens per hour', stale: tk.stale, when: tw }),
+      split('Claude tokens', [['cache reads', tk.claude.cacheRead], ['cache writes', tk.claude.cacheWrite], ['uncached input', tk.claude.input], ['output', tk.claude.output]], { stale: tk.stale, when: tw, note: `${full(tk.claude.sessions)} session logs` }),
+      split('Codex tokens', [['cache reads', tk.codex.cacheRead], ['cache writes', tk.codex.cacheWrite], ['uncached input', tk.codex.input], ['output', tk.codex.output]], { stale: tk.stale, when: tw, note: `${full(tk.codex.sessions)} sessions · not priced` }),
+    )
+  }
+  if (pr) out.push(tile('Estimated list price, Claude', `$${full(pr.low)} to $${full(pr.high)}`, [pr.note], { wide: true, stale: tk?.stale, when: tw }))
+  $('stats').innerHTML = out.join('')
+  $('statsNote').textContent = pr ? `Rates per million tokens, ${pr.ratesDate}: ` + pr.rates.map((x) => `${x.model} input $${x.input.toFixed(2)}, output $${x.output.toFixed(2)}, cache read $${x.cacheRead.toFixed(2)}, cache write $${x.cacheWriteLow.toFixed(2)} to $${x.cacheWriteHigh.toFixed(2)}`).join('; ') + '.' : ''
+}
+
 async function refresh() {
   try {
     const s = await (await fetch('api/status', { cache: 'no-store' })).json()
     $('tagline').textContent = s.tagline ?? ''
-    $('headline').textContent = s.headline ?? ''
-    $('deadline').textContent = s.deadline ?? ''
     $('updated').textContent = 'live, ' + new Date(s.now).toLocaleTimeString()
-    const ms = s.milestones ?? []
-    const done = ms.filter((m) => m.state === 'done').length
-    $('progress').style.width = (ms.length ? (100 * done) / ms.length : 0) + '%'
-    $('progressText').textContent = `${done} of ${ms.length} milestones done` + (s.updated ? `. Plan updated ${s.updated}.` : '')
-    $('milestones').innerHTML = ms.map((m) => row(m.state, m.title, m.detail)).join('')
-    $('workers').innerHTML = (s.workers ?? []).map((w) => row(w.state, w.name, w.detail)).join('') || '<div class="muted">None running.</div>'
+    $('deadline').textContent = s.updated ? 'status ' + s.updated : ''
+    renderStats(s.stats)
+    const rel = s.releases ?? []
+    const live = rel.find((r) => r.channel === 'production')
+    $('headline').textContent = live ? `${live.version} is live at www.syn3h.com, released ${live.time}. ${rel.filter((r) => r.channel === 'production').length} public releases from ${rel.at(-1)?.version} on.` : ''
+    $('releases').innerHTML = rel.map((r) => `<div class="row rel"><span class="tag ${r.channel === 'production' ? (r === live ? 'active' : 'done') : 'blocked'}">${esc(r === live ? 'live' : r.channel === 'production' ? 'shipped' : r.channel)}</span><div><div class="t">${esc(r.version)} <span class="muted">${esc(r.time.replace(/^\d{4}-\d\d-\d\d /, ''))}</span></div><div class="d">${esc(r.line)}</div><div class="rl"><a href="${esc(r.notes)}" target="_blank" rel="noopener">Notes</a>${r.frozen ? `<a href="${esc(r.frozen)}" target="_blank" rel="noopener">Play this build</a>` : ''}</div></div></div>`).join('') || '<div class="muted">No releases recorded.</div>'
+    $('inprogress').innerHTML = (s.inProgress ?? []).map((w) => row(w.state, w.title, w.detail)).join('') || '<div class="muted">Nothing recorded.</div>'
     $('decisions').innerHTML = (s.decisions ?? []).map((d) => row(d.state ?? 'waiting', d.title, d.detail)).join('') || '<div class="muted">Nothing right now.</div>'
-    const issues = (list) => (list ?? []).map((k) => `<div class="row"><div><div class="t">${esc(k.title)}</div><div class="d">${esc(k.detail)}</div></div></div>`).join('') || '<div class="muted">None recorded.</div>'
-    $('known').innerHTML = `<div class="muted">On www.syn3h.com (release 1)</div>${issues(s.knownIssues)}<div class="muted" style="margin-top:14px">On the preview (trunk, becomes release 2)</div>${issues(s.knownIssuesTrunk)}`
-    $('strategy').innerHTML = (s.strategy ?? []).map((p) => `<div class="row"><div><div class="t">${esc(p.title)}</div><div class="d">${esc(p.detail)}</div></div></div>`).join('')
-    $('accounts').innerHTML = (s.accounts ?? []).map((a) => row(a.state, a.name, a.detail)).join('')
-    $('vehiclesNote').textContent = (s.vehiclesNote ?? '') + (s.vehiclesUpdated ? ' Updated ' + s.vehiclesUpdated + '.' : '')
-    $('vehicles').innerHTML = (s.vehicles ?? []).map((v) => `<div class="veh"><h3>${esc(v.name)}<span class="tag ${esc(v.overall)}">${esc({ done: 'playable', active: 'in progress', waiting: 'partial', next: 'not built' }[v.overall] ?? v.overall)}</span></h3><div class="role">${esc(v.role)}</div><div class="sum">${esc(v.summary)}</div><div class="meter">${v.aspects.map((x) => `<i class="${esc(x.state)}" title="${esc(x.name)}"></i>`).join('')}</div>${v.aspects.map((x) => `<div class="asp"><div class="dot ${esc(x.state)}"></div><div><b>${esc(x.name)}.</b> <span>${esc(x.detail)}</span></div></div>`).join('')}${v.url ? `<a class="try" href="${esc(v.url)}" target="_blank" rel="noopener">Drive it ›</a>` : ''}</div>`).join('') + '<div class="legend" style="grid-column:1/-1"><span><i style="background:rgb(var(--ok))"></i>Done and checked</span><span><i style="background:rgb(var(--run))"></i>In progress</span><span><i style="background:rgb(var(--wait))"></i>Caveat or approximation</span><span><i style="border:1px solid rgb(var(--wait))"></i>Not started</span></div>'
-    $('links').innerHTML = (s.links ?? []).map((g) => `<div class="g"><h3>${esc(g.group)}<span>${esc(g.note ?? '')}</span></h3>${g.items.map((i) => `<a class="${i.up === false ? 'down' : ''}" href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a>`).join('')}</div>`).join('')
-    $('previews').innerHTML = (s.previews ?? []).map((p) => `<a class="p" href="${esc(p.url)}" target="_blank" rel="noopener"><b>${esc(p.title)}</b>${esc(p.detail)}</a>`).join('') || '<div class="none">No previews yet. The first one will be the buggy on Martian terrain.</div>'
-    $('branches').innerHTML = (s.git?.branches ?? []).map((b) => `<tr><td class="mono">${esc(b.name)}</td><td>${b.ahead || ''}</td><td>${esc(b.subject)}<div class="muted">${esc(b.when)}</div></td></tr>`).join('')
+    $('known').innerHTML = (s.knownIssues ?? []).map((k) => `<div class="row"><div><div class="t">${esc(k.title)}</div><div class="d">${esc(k.detail)}</div></div></div>`).join('') || '<div class="muted">None recorded.</div>'
+    // A link that does not answer is hidden, and so is a group left empty.
+    $('links').innerHTML = (s.links ?? []).map((g) => ({ ...g, items: g.items.filter((i) => i.up !== false) })).filter((g) => g.items.length)
+      .map((g) => `<div class="g"><h3>${esc(g.group)}<span>${esc(g.note ?? '')}</span></h3>${g.items.map((i) => `<a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a>`).join('')}</div>`).join('')
     $('commits').innerHTML = (s.git?.commits ?? []).map((c) => `<tr><td class="mono">${esc(c.hash)}</td><td>${esc(c.subject)}<div class="muted">${esc(c.when)}${c.refs ? ' · ' + esc(c.refs) : ''}</div></td></tr>`).join('')
     if (!$('tabs').children.length) {
       $('tabs').innerHTML = (s.docs ?? []).map((d) => `<button data-id="${esc(d.id)}">${esc(d.title)}</button>`).join('')
