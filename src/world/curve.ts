@@ -1,49 +1,60 @@
 /**
- * Planet curve: make the flat, wrapping world look like a small round planet (The Little
- * Prince) without touching physics.
+ * Round planet: draws the flat, wrapping world as the sphere it would be, without touching
+ * physics.
  *
- * Every bent vertex drops by `d² / 2R`, where d is its horizontal distance from the camera
- * and R the planet radius. That is the curved-world vertex bend: a parabola that matches a
- * sphere of radius R near the camera, so the horizon falls away and distant land sinks
- * behind it.
+ * The world is a square tile `size` metres across that wraps, so travelling `size` metres
+ * in a straight line brings you home. A planet you can circle in `size` metres has radius
+ * R = size / 2 pi, and that is the radius used: nothing is tuned by eye.
  *
- * Where the bend happens: in the material's `setupPositionView`, after the world position
- * is known, and only for the position that is projected to the screen. `positionWorld` is
- * NOT bent, so everything that colours by world position (terrain palette, snow, shore,
- * roads) and the shadow-map lookup stay put as the camera moves. Shadows are
- * rendered by three's shadow pass material, which does not call this hook, so casters and
- * receivers both stay flat in the shadow map and the shadow lands where it would on flat
- * ground, then is drawn bent with the ground. Hooking `setupPositionView` rather than
+ * Every vertex is placed where it would be on that sphere, seen from the camera. For a
+ * point at ground distance d from the camera's ground point and height h above the sea:
+ *
+ *   angle round the planet   t = d / R
+ *   along the ground         (R + h) * sin t
+ *   up                       (R + h) * cos t - R
+ *
+ * So the horizon is where a real one would be (about sqrt(2 R eye) away), mountains rise
+ * over it as you approach, and from high up the world is a ball. Points further than half
+ * way round (t > pi) are gathered at the far pole, behind the planet. The wrapping tile
+ * is a torus, not a sphere, so the far side cannot match exactly; it is always hidden by
+ * the planet itself.
+ *
+ * Where it happens: in the material's `setupPositionView`, after the world position is
+ * known, and only for the position that is projected to the screen. `positionWorld` is NOT
+ * moved, so everything that colours by world position (terrain palette, snow, shore, roads)
+ * and the shadow lookup stay put as the camera moves. Lighting is the flat world's: the
+ * sun is in the same direction everywhere. Hooking `setupPositionView` rather than
  * `positionNode` means one call works for ordinary meshes, instanced meshes, skinned
  * meshes, sprites and materials that already have a `positionNode`.
  *
- * Every drawn object must be bent or it will float above the sinking ground. The sky must
- * not be bent.
+ * Every drawn object must be bent or it will float off the ground. The sky must not be.
  */
 import { Vector3, type Material } from 'three/webgpu'
-import { cameraViewMatrix, float, modelWorldMatrix, positionLocal, renderGroup, uniform, vec2, vec3, vec4 } from 'three/tsl'
+import { cameraViewMatrix, cos, float, modelWorldMatrix, positionLocal, renderGroup, select, sin, uniform, vec2, vec3, vec4 } from 'three/tsl'
 import { defineParam } from '../../shared/params'
 
+/**
+ * 1 is the true planet: the sphere whose circumference is the world tile. Lower values draw
+ * a larger, flatter planet than the world really is (0.5 is twice the true radius), and 0
+ * is flat. Only 1 is geometrically honest; the rest are for taste and for comparison.
+ */
 export const curveParam = defineParam<number>({
-  id: 'world.curve', label: 'Planet curve', group: 'World', scope: 'world',
-  default: 0, min: 0, max: 1, step: 0.01,
+  id: 'world.curve', label: 'Planet roundness (1 true, 0 flat)', group: 'World', scope: 'world',
+  default: 1, min: 0, max: 1, step: 0.01,
 })
 
-/**
- * Map the slider to a planet radius in metres for a world tile `size` metres across.
- *
- * Curvature (1/R) grows with the square of the slider: R = R1 / curve², where
- * R1 = size / 2π is the radius whose circumference is the tile itself. So 0 is flat
- * (Infinity), 1 is a true Little Prince ball (about 326 m for 2048 m), 0.3 is a gentle
- * planet about 11 times that (about 3.6 km) and 0.6 is about 2.8 times. Strictly
- * decreasing in `curve` on (0, 1].
- */
-export function curveRadius(size: number, curve: number): number {
-  if (!(curve > 0)) return Infinity
-  return size / (2 * Math.PI) / (curve * curve)
+/** The radius of the planet whose circumference is a tile `size` metres across. */
+export function planetRadius(size: number): number {
+  return size / (2 * Math.PI)
 }
 
-/** Camera x, camera z and 1 / 2R (0 when flat). Written by updateCurve. */
+/** The radius drawn for a roundness setting: the true radius at 1, larger below, Infinity at 0. */
+export function curveRadius(size: number, curve: number): number {
+  if (!(curve > 0)) return Infinity
+  return planetRadius(size) / (curve > 1 ? 1 : curve)
+}
+
+/** Camera x, camera z and 1 / R (0 when flat). Written by updateCurve. */
 const state = new Vector3(0, 0, 0)
 /**
  * The same, as one uniform shared by every bent material. A plain object-group uniform
@@ -56,32 +67,58 @@ const curveState = uniform(new Vector3(0, 0, 0)).setGroup(renderGroup).onRenderU
 /** Call once per frame before rendering, with the camera's world position. */
 export function updateCurve(cameraPosition: Vector3, size: number): void {
   const R = curveRadius(size, curveParam.value)
-  state.set(cameraPosition.x, cameraPosition.z, Number.isFinite(R) ? 1 / (2 * R) : 0)
+  state.set(cameraPosition.x, cameraPosition.z, Number.isFinite(R) ? 1 / R : 0)
 }
 
-/** The current bend factor, 1 / 2R, for tests and tools. */
+/** 1 / R in use, 0 when flat. For tests and tools. */
 export function curveFactor(): number {
   return state.z
 }
 
-/** How far a point at world (x, z) is drawn below where it really is, in metres. */
+/**
+ * Where a world point is drawn, relative to where it really is: the same mapping the
+ * shader applies. For anything placed by hand in world space (labels, markers).
+ */
+export function curveOffset(x: number, y: number, z: number, out: { x: number; y: number; z: number }): { x: number; y: number; z: number } {
+  const invR = state.z
+  const dx = x - state.x
+  const dz = z - state.y
+  const d = Math.sqrt(dx * dx + dz * dz)
+  if (!(invR > 0) || d < 1e-6) { out.x = 0; out.y = 0; out.z = 0; return out }
+  const t = Math.min(d * invR, Math.PI)
+  const along = (1 / invR + y) * Math.sin(t)
+  const k = along / d - 1
+  out.x = dx * k
+  out.z = dz * k
+  out.y = (1 / invR + y) * Math.cos(t) - 1 / invR - y
+  return out
+}
+
+/** How far below its true height a point on the sea surface at (x, z) is drawn, in metres. */
 export function curveDrop(x: number, z: number): number {
-  const s = state
-  const dx = x - s.x
-  const dz = z - s.y
-  return (dx * dx + dz * dz) * s.z
+  return -curveOffset(x, 0, z, { x: 0, y: 0, z: 0 }).y
 }
 
 /**
- * The bend as a view-space offset: the world-space drop (0, -drop, 0) turned into the
- * camera's frame. `worldPoint` decides where the drop is measured.
+ * The move from the flat position to the position on the sphere, as a view-space offset.
+ * `worldPoint` is the flat world position the mapping is measured from.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function viewDrop(worldPoint: any) {
-  const d = vec2(worldPoint.x, worldPoint.z).sub(curveState.xy)
-  const drop = d.dot(d).mul(curveState.z)
+  const invR = curveState.z
+  const flat = invR.lessThanEqual(0)
+  const safeInv = invR.max(1e-9)
+  const delta = vec2(worldPoint.x, worldPoint.z).sub(curveState.xy)
+  const d = delta.length()
+  const dir = delta.div(d.max(1e-4))
+  // Angle round the planet, stopped at the far pole.
+  const t = d.mul(invR).min(Math.PI)
+  const r = float(1).div(safeInv).add(worldPoint.y)
+  const along = select(flat, d, r.mul(sin(t)))
+  const up = select(flat, worldPoint.y, r.mul(cos(t)).sub(float(1).div(safeInv)))
+  const move = vec3(dir.x.mul(along.sub(d)), up.sub(worldPoint.y), dir.y.mul(along.sub(d)))
   // A direction (w = 0), so only the camera's rotation applies.
-  return cameraViewMatrix.mul(vec4(0, drop.negate(), 0, 0)).xyz
+  return cameraViewMatrix.mul(vec4(move, 0)).xyz
 }
 
 type Hooked = Material & {
@@ -120,7 +157,7 @@ export function applyCurve(material: Material): void {
 // Debug handle for tools/terrainlab/curve-shots.mjs: bend materials owned by other lanes at
 // run time without editing them.
 if (typeof window !== 'undefined') {
-  Object.assign(window, { __syn3hCurve: { applyCurve, updateCurve, curveRadius, curveFactor, curveDrop, param: curveParam } })
+  Object.assign(window, { __syn3hCurve: { applyCurve, updateCurve, curveRadius, planetRadius, curveFactor, curveDrop, curveOffset, param: curveParam } })
 }
 
 /** The `world.curve` slider under the name the interface stub used. */
