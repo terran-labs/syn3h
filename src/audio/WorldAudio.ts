@@ -1,6 +1,6 @@
 import type { Terrain } from '../world/Terrain'
 import { unit } from './Engine'
-export interface AudioTerrain extends Terrain { vents?():readonly {x:number;y:number;z:number;kind?:string;size?:number}[] }
+export type AudioTerrain = Terrain & { vents?():readonly {x:number;y:number;z:number}[] }
 export function lavaProximity(terrain:AudioTerrain,p:{x:number;y:number;z:number}):number {
   let near=0
   // Sparse rings find nearby rivers and coastlines without scanning the terrain mesh.

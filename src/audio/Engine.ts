@@ -86,8 +86,9 @@ export class Engine {
     smooth(this.squeal.gain,slip*engineVolume.value*.16*level,.08);smooth(this.squealOsc.frequency,700+slip*450,.15)
   }
   /** Fade before stopping sources; all intermediate nodes are explicitly disconnected. */
-  dispose(): void {
+  dispose(immediate = false): void {
     if(this.disposed)return;this.disposed=true
+    if(immediate){for(const source of this.sources){source.onended=null;source.stop()}for(const node of this.nodes)node.disconnect();this.sources.length=0;this.nodes.length=0;return}
     const now=this.context.currentTime
     for(const g of [this.tone,this.roar,this.dirt,this.wind,this.field,this.squeal,this.pulseDepth]){g.gain.cancelAndHoldAtTime(now);g.gain.linearRampToValueAtTime(0,now+.04)}
     for(const source of this.sources)source.stop(now+.05)

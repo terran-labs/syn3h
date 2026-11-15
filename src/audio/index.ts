@@ -221,8 +221,12 @@ export class GameAudio implements System {
     for (const deck of this.decks.values()) { clearTimeout(deck.stopTimer); deck.element.pause(); deck.element.removeAttribute('src'); deck.element.load(); deck.source.disconnect(); deck.gain.disconnect() }
     for (const source of this.voices) source.stop()
     for(const stop of [...this.cueStops])stop()
-    for(const voice of this.remote.values()){voice.engine.dispose();voice.panner.disconnect()}
+    for(const voice of this.remote.values()){voice.engine.dispose(true);voice.panner.disconnect()}
     this.remote.clear();this.events.clear();this.world?.dispose()
-    this.engine?.dispose(); this.buffers.clear(); this.decks.clear(); this.voices.clear(); void this.context?.close()
+    this.engine?.dispose(true); this.engine=undefined; this.world=undefined
+    for(const bus of [this.master,this.music,this.effects,this.cueBus,this.worldBus,this.remoteBus])bus?.disconnect()
+    this.master=this.music=this.effects=this.cueBus=this.worldBus=this.remoteBus=undefined
+    this.local=undefined;this.terrain=undefined;this.vehicleSource=()=>[]
+    this.buffers.clear(); this.decks.clear(); this.voices.clear(); void this.context?.close()
   }
 }
