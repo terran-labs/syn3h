@@ -15,8 +15,8 @@ export function underwaterLook(depth:number){
 export function verticalHalfExtent(h:{x:number;y:number;z:number},q:{x:number;y:number;z:number;w:number}):number {
   return Math.abs(2*(q.x*q.y+q.w*q.z))*h.x+Math.abs(1-2*(q.x*q.x+q.z*q.z))*h.y+Math.abs(2*(q.y*q.z-q.w*q.x))*h.z
 }
-/** Underwater look against lens depth: eased over the first 0.7 m so it arrives with the camera. */
+/** Underwater look against lens depth: eased over the first 0.45 m so it arrives with the camera. */
 export function underwaterRamp(depth:number):number {
-  const t=Math.max(0,Math.min(1,depth/.7))
+  const t=Math.max(0,Math.min(1,depth/.45))
   return t*t*(3-2*t)
 }

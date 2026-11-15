@@ -55,7 +55,7 @@ it('allows ripple nodes and updates before renderer attachment',()=>{
 import { underwaterRamp } from '../../src/world/water/waterEffectsMath'
 describe('underwater look arrives with the lens',()=>{
  it('ramps over depth and time, not in one frame',()=>{
-  expect(underwaterRamp(0)).toBe(0);expect(underwaterRamp(.35)).toBeCloseTo(.5);expect(underwaterRamp(2)).toBe(1)
+  expect(underwaterRamp(0)).toBe(0);expect(underwaterRamp(.225)).toBeCloseTo(.5);expect(underwaterRamp(2)).toBe(1)
   const scene=new Scene(),camera=new PerspectiveCamera();camera.position.y=-3
   const effect=new Underwater({scene,camera} as Game,{liquidKindAt:()=> 'water',liquidHeightAt:()=>0} as unknown as Terrain)
   waterUnderwater.value=true

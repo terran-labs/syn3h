@@ -61,10 +61,10 @@ export class Underwater {
     const surface=waterUnderwater.value&&this.terrain.liquidKindAt?.(p.x,p.z)==='water'
       ?this.terrain.liquidHeightAt?.(p.x,p.z)??-Infinity:-Infinity
     const depth=surface-p.y,wet=Number.isFinite(depth)&&depth>0
-    // The look deepens over the first 0.7 m below the lens, eased, and follows at a bounded
+    // The look deepens over the first 0.45 m below the lens, eased, and follows at a bounded
     // rate, so it arrives with the camera during the one-second crossing.
     const target=Math.max(wet?underwaterRamp(depth):0,Number.isFinite(depth)?wash*.6:0)
-    const step=Math.max(0,Math.min(.25,dt))/.35
+    const step=Math.max(0,Math.min(.25,dt))/.25
     this.blend.value+=Math.max(-step,Math.min(step,target-this.blend.value))
     const look=underwaterLook(Math.max(0,Number.isFinite(depth)?depth:0))
     if(wet||wash>0){
