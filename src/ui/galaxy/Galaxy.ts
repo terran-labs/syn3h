@@ -44,6 +44,8 @@ export interface GalaxyOptions {
  */
 export const GALAXY_MAX = 12
 const MAX = GALAXY_MAX
+/** Each world's axis leans this far. */
+const TILT = 0.38
 /** Orbits round the sun; more worlds than this share them. */
 const RINGS = 4
 /**
@@ -160,7 +162,7 @@ void main() {
     vec3 light = normalize(-centre);                         // the sun is at the origin
     float lit = clamp(dot(normal, light), 0.0, 1.0);
     // Turn the world on its tilted axis.
-    float tilt = 0.38, ct = cos(tilt), st = sin(tilt); vec3 g = vec3(normal.x, ct * normal.y - st * normal.z, st * normal.y + ct * normal.z);
+    float tilt = ${TILT}, ct = cos(tilt), st = sin(tilt); vec3 g = vec3(normal.x, ct * normal.y - st * normal.z, st * normal.y + ct * normal.z);
     float spin = uKind[found].z; g = vec3(cos(spin) * g.x + sin(spin) * g.z, g.y, -sin(spin) * g.x + cos(spin) * g.z);
     vec3 surface; float land; float molten = 0.0; float dry = 1.0;   // dry: ground a settlement could stand on
     if (uKind[found].x > 1.5) {
@@ -219,6 +221,8 @@ const dot = (a: Vec, b: Vec) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 const cross = (a: Vec, b: Vec): Vec => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
 const unit = (a: Vec): Vec => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l] }
 const mix = (a: number, b: number, t: number) => a + (b - a) * t
+/** The shortest signed turn from angle a to angle b. */
+const turn = (a: number, b: number) => { const d = (b - a) % (Math.PI * 2); return d > Math.PI ? d - Math.PI * 2 : d < -Math.PI ? d + Math.PI * 2 : d }
 
 export class Galaxy {
   canvas = document.createElement('canvas')
@@ -412,6 +416,7 @@ export class Galaxy {
     // frame left on screen is where the camera was going.
     this.settled = Math.abs(this.reach - wantDistance) < 0.01 * wantDistance && Math.hypot(...sub(this.target, goal)) < 0.01 * wantDistance
     if (this.settled && this.holding) { this.target = goal; this.reach = wantDistance }
+    this.face()
     // The dive runs about a second and a half.
     this.dive = this.diving ? Math.min(1, this.dive + 0.022) : Math.max(0, this.dive - 0.05)
     const cp = Math.cos(this.pitch), eye: Vec = [this.target[0] + Math.sin(this.yaw) * cp * this.reach, this.target[1] + Math.sin(this.pitch) * this.reach, this.target[2] + Math.cos(this.yaw) * cp * this.reach]
@@ -421,6 +426,29 @@ export class Galaxy {
     tan: 0.62 }
   }
   private reach = 13
+  /** Extra turn of each world on its axis: how a chosen world brings its island round. */
+  private readonly spinOffset: number[] = []
+  /** Where the camera settles round a chosen world: an angle, a quarter turn off the sun. */
+  private facing = 0
+  private facingSettled = true
+  private spin(i: number, time: number): number { return time * 0.05 + i * 2.1 + (this.spinOffset[i] ?? 0) }
+  /**
+   * Flying to a world, the camera swings round to its lit side, a little off the sun so the
+   * shafts still stand behind it, and the world turns on its axis to bring its island (the
+   * map's longitude 0, latitude 0, where the game spawns) to face the camera. The dive then
+   * falls onto the island, so orbit and ground line up.
+   */
+  private face(): void {
+    this.facingSettled = true
+    if (this.chosen < 0 || this.options.worlds[this.chosen].forming) return
+    const i = this.chosen, ct = Math.cos(TILT), st = Math.sin(TILT)
+    // The island's direction from the world's centre for a spin s is (-sin s, st cos s, ct cos s).
+    const want = Math.atan2(-ct * Math.sin(this.facing), Math.cos(this.facing)), now = this.spin(i, this.clock)
+    const spinStep = turn(now, want), latitude = Math.asin(st * Math.cos(want))
+    this.spinOffset[i] = (this.spinOffset[i] ?? 0) + spinStep * 0.07
+    if (!this.drag) { const y = turn(this.yaw, this.facing), p = latitude - this.pitch; this.yaw += y * 0.07; this.pitch += p * 0.07; this.facingSettled = Math.abs(y) < 0.003 && Math.abs(p) < 0.003 && Math.abs(spinStep) < 0.003 }
+    else this.facingSettled = Math.abs(spinStep) < 0.003
+  }
   private loop = (now: number): void => {
     if (!this.active || document.hidden) return
     this.frame = requestAnimationFrame(this.loop)
@@ -440,7 +468,7 @@ export class Galaxy {
     if (!this.drag) { this.yaw += this.spinVelocity; this.spinVelocity *= 0.93; if (Math.abs(this.spinVelocity) < 1e-5) this.spinVelocity = 0; if (this.chosen < 0 && !still) this.yaw += 0.0006 }
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
     // Held still, draw only while something is moving; the last frame stays on the canvas.
-    const moving = this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || this.spinVelocity !== 0 || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
+    const moving = !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || this.spinVelocity !== 0 || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
     if (still && !moving && this.wake <= 0) { this.idle++; return }
     this.wake = Math.max(0, this.wake - 1)
     this.upload(gl); gl.uniform1i(u.uCloseIndex, this.closeIndex)
@@ -451,7 +479,7 @@ export class Galaxy {
     gl.uniform1i(u.uCount, Math.min(MAX, worlds.length))
     gl.uniform4fv(u.uWorld, places.flatMap(p => [...p.position, p.radius]))
     gl.uniform3fv(u.uLand, worlds.slice(0, MAX).flatMap(w => rgb(w.land))); gl.uniform3fv(u.uSea, worlds.slice(0, MAX).flatMap(w => rgb(w.sea)))
-    gl.uniform4fv(u.uKind, worlds.slice(0, MAX).flatMap((w, i) => [w.forming ? 2 : w.glow ? 1 : 0, this.layers[i] || i === this.closeIndex ? 1 : 0, time * 0.05 + i * 2.1, (w.seed % 97) + i * 3.1]))
+    gl.uniform4fv(u.uKind, worlds.slice(0, MAX).flatMap((w, i) => [w.forming ? 2 : w.glow ? 1 : 0, this.layers[i] || i === this.closeIndex ? 1 : 0, this.spin(i, time), (w.seed % 97) + i * 3.1]))
     gl.drawArrays(gl.TRIANGLES, 0, 3); this.frames++
     // Tell the labels where the worlds are, and notice arrival.
     const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height)
@@ -470,6 +498,9 @@ export class Galaxy {
     // Without a context there is no flight to wait for: arrive at once.
     if (!this.gl) { this.options.onArrive(id); return }
     this.chosen = index; this.arriving = 0; this.arrived = false
+    // Settle on the lit side, a quarter turn off the sun, on whichever side the view is now.
+    const at = this.places(this.clock)[index].position, sun = Math.atan2(-at[0], -at[2])
+    this.facing = sun + 0.6 * (turn(sun, this.yaw) >= 0 ? 1 : -1)
     // Its full-size map, ahead of anything else waiting, for the close view and the dive.
     const world = this.options.worlds[index]
     if (!world.forming) this.request(world, CLOSE, true)
