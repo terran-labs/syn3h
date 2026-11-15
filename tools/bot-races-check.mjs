@@ -60,6 +60,7 @@ try{
  await vite.listen()
  const key=`raceqa${Date.now()}`
  const a=await open('Host',key),b=await open('Guest',key)
+ await a.evaluate(()=>window.syn3h.params.set('race.auto',true))
  check('lobby spectators do not start a race',await a.evaluate(()=>!window.syn3hNet?.race)&&await b.evaluate(()=>!window.syn3hNet?.race))
  await play(a);await play(b)
  await a.locator('.inspector-toggle').click();await a.locator('.exit-world').click();check('return to menu excludes host',!(await state(a)).playing);await a.keyboard.press('Escape');await a.waitForFunction(()=>window.syn3h.shell.playing);

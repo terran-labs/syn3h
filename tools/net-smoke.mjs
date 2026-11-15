@@ -122,6 +122,8 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 try {
   const a = await open('Alice')
   await a.waitForFunction(() => window.syn3hNet?.connected, null, { timeout: 30000 })
+  check('new room defaults to Explore', await a.evaluate(() => window.syn3hNet.game.mode === 2 && window.syn3hNet.game.it === 0))
+  await a.evaluate(() => window.syn3h.params.set('game.mode', 0))
   await spyAudio(a)
   const b = await open('Bob')
   const both = (fn, arg) => Promise.all([a.evaluate(fn, arg), b.evaluate(fn, arg)])
