@@ -299,8 +299,10 @@ export class Builder {
    */
   private rimLoop(at: (z: number) => { angle: number; env: number; cw: number }, zStart: number, zEnd0: number, radius: number): THREE.BufferGeometry {
     // The outline closes to a point at each end, tighter than a tube can turn. Start and stop
-    // where the opening is two tube widths across and close each end with a half circle there.
-    const wide = (from: number, to: number) => { let lo = 0, hi = .5; for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; if (at(from + (to - from) * m).cw < radius * 2) lo = m; else hi = m } return from + (to - from) * hi }
+    // where the opening is a little wider than the tube and close each end with a half circle
+    // there. The tube thins to a third toward both ends, so the turn ahead of the pilot is a
+    // fine line and not a knob.
+    const wide = (from: number, to: number) => { let lo = 0, hi = .5; for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; if (at(from + (to - from) * m).cw < radius * 1.2) lo = m; else hi = m } return from + (to - from) * hi }
     const z0 = wide(zStart, zEnd0), z1 = wide(zEnd0, zStart)
     const half = Math.max(10, Math.round(40 * this.detail)), around = Math.max(6, 2 * Math.round(5 * this.detail))
     const path: { p: THREE.Vector3; n: THREE.Vector3; r: number }[] = []
@@ -308,7 +310,8 @@ export class Builder {
       for (let i = 0; i <= half; i++) {
         const s = (1 - Math.cos(Math.PI * i / half)) / 2, z = z0 + (z1 - z0) * (side > 0 ? s : 1 - s), e = at(z)
         const angle = side > 0 ? e.angle : Math.PI - e.angle
-        path.push({ p: this.skinPoint(z, angle), n: this.skinNormal(z, angle), r: radius * (.5 + .5 * Math.min(1, e.env * 2.2)) })
+        const fromEnd = Math.min(1, Math.min(s, 1 - s) / .1), taper = fromEnd * fromEnd * (3 - 2 * fromEnd)
+        path.push({ p: this.skinPoint(z, angle), n: this.skinNormal(z, angle), r: radius * (.33 + .67 * taper) })
       }
       // Turn across the centre line in a half circle on the skin, not in one hairpin step.
       const end = path[path.length - 1], zEnd = end.p.z, turn = Math.abs(end.p.x), out = side > 0 ? 1 : -1
@@ -324,7 +327,9 @@ export class Builder {
       const across = new V().crossVectors(tangent, n).normalize(), up = new V().crossVectors(across, tangent)
       rings.push(Array.from({ length: around }, (_, i) => {
         const a = i / around * Math.PI * 2
-        return p.clone().addScaledVector(across, r * Math.cos(a)).addScaledVector(up, r * .8 * Math.sin(a) + r * .2)
+        // Taller than wide and set low: it reaches down past the edge of the skin to the tub, so
+        // no light shows between them from the seat.
+        return p.clone().addScaledVector(across, r * Math.cos(a)).addScaledVector(up, r * 1.5 * Math.sin(a) - r * .6)
       }))
     }
     const g = loft(rings, false, false)
