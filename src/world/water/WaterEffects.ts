@@ -8,7 +8,8 @@ import { net } from '../../net'
 import { nearestImage } from '../../../shared/wrap'
 import { Ripples, rippleField, waterRipples } from './ripples'
 import { Spray, waterSpray } from './spray'
-import { Underwater } from './underwater'
+import { Underwater, waterUnderwater } from './underwater'
+import { UnderwaterBubbles } from './bubbles'
 import { submergedFraction, verticalHalfExtent } from './waterEffectsMath'
 
 /** Register after Environment and ChaseCamera. The live net binding includes later joins. */
@@ -16,13 +17,14 @@ export class WaterEffects implements System {
   readonly ripples:Ripples
   readonly spray:Spray
   readonly underwater:Underwater
+  readonly bubbles:UnderwaterBubbles
   private size=-1
   private ids=new WeakMap<Vehicle,string>()
   private serial=0
   private point=new Vector3()
   private velocity=new Vector3()
   constructor(private game:Game,private terrain:Terrain,private player:Vehicle,private bots:{readonly vehicles:readonly Vehicle[]}){
-    this.ripples=rippleField;this.ripples.attach(game.renderer);this.spray=new Spray(game.scene,this.ripples);this.underwater=new Underwater(game,terrain)
+    this.ripples=rippleField;this.ripples.attach(game.renderer);this.spray=new Spray(game.scene,this.ripples);this.underwater=new Underwater(game,terrain);this.bubbles=new UnderwaterBubbles(game.scene,terrain,game.camera)
     // A world seam moves the player a whole tile and the world is redrawn round it: spray left
     // behind moves the same way. (The ripple field wraps at the tile, so it needs nothing.)
     ;(player.object as THREE.Object3D<VehicleObjectEvents>).addEventListener('tileshift',this.onTileShift)
@@ -66,6 +68,7 @@ export class WaterEffects implements System {
     }
     this.ripples.update(dt,game.camera.position.x,game.camera.position.z)
     this.underwater.update(dt)
+    this.bubbles.update(dt,waterUnderwater.value)
   }
-  dispose(){(this.player.object as THREE.Object3D<VehicleObjectEvents>).removeEventListener('tileshift',this.onTileShift);this.underwater.dispose();this.spray.dispose();this.ripples.dispose()}
+  dispose(){(this.player.object as THREE.Object3D<VehicleObjectEvents>).removeEventListener('tileshift',this.onTileShift);this.underwater.dispose();this.bubbles.dispose();this.spray.dispose();this.ripples.dispose()}
 }
