@@ -25,4 +25,12 @@ ID="$(printf '%s' "$LINE" | cut -f7)"
 echo "Rolling back to $REL (Worker version $VERSION, frozen copy $ID)..."
 (cd "../Syn3h-stable/$ID" && node "$(cd "$OLDPWD" && pwd)/node_modules/wrangler/bin/wrangler.js" rollback "$VERSION" --message "rollback to $REL" --yes </dev/null)
 echo "Smoke testing $URL ..."
-node tools/net-smoke.mjs "$URL" 2>&1 | grep -E "^(FAIL|NET SMOKE)"
+# Preserve the check's exit status: grep also succeeds when it finds a FAIL line.
+LOG="$(mktemp /tmp/syn3h-rollback-check.XXXXXX)"
+if node tools/net-smoke.mjs "$URL" >"$LOG" 2>&1; then
+  grep -E "^(FAIL|NET SMOKE)" "$LOG" || true
+else
+  cat "$LOG"
+  echo "Rollback deployed, but verification failed. Full log: $LOG" >&2
+  exit 1
+fi
