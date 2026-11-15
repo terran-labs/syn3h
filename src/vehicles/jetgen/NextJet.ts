@@ -4,6 +4,7 @@ import { Builder, GROUND_Y, type Leg, type Mat } from './shapes'
 import type { JetDesign } from './designs'
 import { applyShowroom, setRole } from '../skins/showroom'
 import { addNightReadability } from '../skins/nightReadability'
+import { mergeStatic } from '../skins/mergeStatic'
 import { addLavaGlow } from '../skins/lavaGlow'
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
@@ -26,9 +27,16 @@ export class NextJet {
   private readonly canopy: THREE.MeshStandardMaterial
   private readonly accent: THREE.MeshStandardMaterial
   private detachShowroom?: () => void
-  private readonly glow: THREE.MeshBasicMaterial
+  private readonly glow: THREE.MeshStandardMaterial
+  private glowMesh?: THREE.Mesh
   private readonly legs: BuiltLeg[] = []
   private readonly geometries: THREE.BufferGeometry[] = []
+  private readonly gearBatches: { mesh: THREE.Mesh; parts: { source: THREE.Mesh; offset: number }[] }[] = []
+  private lastBatchedGear = -1
+  private readonly gearInverse = new THREE.Matrix4()
+  private readonly gearMatrix = new THREE.Matrix4()
+  private readonly gearNormal = new THREE.Matrix3()
+  private readonly gearVertex = new THREE.Vector3()
   gearAmount = 0
   /** The pilot's eye, for the ride camera. Present when the design has a real cockpit. */
   ridePosition?: THREE.Object3D
@@ -55,11 +63,12 @@ export class NextJet {
     // below are only what shading tier 0 shows.
     this.paint = setRole(new THREE.MeshStandardMaterial({ color: design.paint, metalness: .8, roughness: .3 }), 'paint')
     this.accent = setRole(new THREE.MeshStandardMaterial({ color: design.accent, metalness: .85, roughness: .26 }), 'accent')
-    // 'glass' until the shared 'canopy' role reaches trunk; the force field takes the accent colour.
-    this.canopy = setRole(new THREE.MeshStandardMaterial({ color: design.accent, metalness: .65, roughness: .18 }), 'glass')
+    // The shared force field stays nearly clear from the pilot's seat.
+    this.canopy = setRole(new THREE.MeshStandardMaterial({ color: design.accent, metalness: .65, roughness: .18 }), 'canopy')
     this.canopy.name = 'Cockpit'; this.canopy.userData.separate = true
-    // Additive glow for the nozzle throats and hover ports; becomes the shared 'glow' role when it lands.
-    this.glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(design.accent).multiplyScalar(1.3), transparent: true, opacity: .8, blending: THREE.AdditiveBlending, depthWrite: false })
+    // Keep glow separate so the shared shader can read throttle per mesh.
+    this.glow = setRole(new THREE.MeshStandardMaterial({ color: design.accent }), 'glow')
+    this.glow.userData.separate = true
     this.materials = {
       paint: this.paint,
       // Faceted wings and fins carry flat normals in their geometry, so they share the paint.
@@ -73,7 +82,7 @@ export class NextJet {
       // Cockpit interior: matte, dark, its own numbers as the trim role allows.
       trim: setRole(new THREE.MeshStandardMaterial({ color: 0x1b1e24, metalness: .15, roughness: .8 }), 'trim'),
     }
-    const b = new Builder(detail, design.hard ?? false); design.build(b)
+    const b = new Builder(detail, design.hard ?? false, design.smooth ?? false); design.build(b)
     const pieces = b.pieces
     this.nozzles = b.nozzles; this.hover = b.hover
     if (b.eye) { this.ridePosition = new THREE.Object3D(); this.ridePosition.position.set(...b.eye); this.object.add(this.ridePosition); this.clearance = b.cockpitClearance(); this.cockpit = true }
@@ -82,6 +91,7 @@ export class NextJet {
       const merged = this.merge(parts)
       const mesh = new THREE.Mesh(merged, this.materials[mat]); mesh.name = `jet-${mat}`; mesh.castShadow = mat !== 'glow'; mesh.receiveShadow = mat !== 'glow'
       this.object.add(mesh)
+      if (mat === 'glow') { this.glowMesh = mesh; mesh.userData.glow = .8 }
     }
     if (b.gimbal) {
       // Thrust vectoring: the barrel is fixed. Four curved petals continue its lip and narrow
@@ -116,6 +126,62 @@ export class NextJet {
     return this.own(merged)
   }
 
+  /** Merge the fixed body and draw the articulated gear in three material batches. */
+  optimize(): void {
+    if (this.gearBatches.length) return
+    // The source meshes remain as invisible transform handles for the existing mechanism.
+    // Updating a few hundred vertices avoids a draw for every small fitting.
+    const sources: THREE.Mesh[] = []
+    this.gear.traverse(o => { if (o instanceof THREE.Mesh) sources.push(o) })
+    for (const material of new Set(sources.map(o => o.material))) {
+      const parts: { source: THREE.Mesh; offset: number }[] = [], geometries: THREE.BufferGeometry[] = []
+      let offset = 0
+      for (const source of sources.filter(o => o.material === material)) {
+        const g = source.geometry.index ? source.geometry.toNonIndexed() : source.geometry.clone()
+        parts.push({ source, offset }); offset += g.attributes.position.count
+        geometries.push(g); source.visible = false
+      }
+      const geometry = this.own(mergeGeometries(geometries))
+      geometries.forEach(g => g.dispose())
+      const positions = geometry.attributes.position as THREE.BufferAttribute
+      const normals = geometry.attributes.normal as THREE.BufferAttribute
+      positions.setUsage(THREE.DynamicDrawUsage); normals.setUsage(THREE.DynamicDrawUsage)
+      const mesh = new THREE.Mesh(geometry, material); mesh.name = 'jet-gear-batch'
+      mesh.castShadow = true; mesh.frustumCulled = false; this.gear.add(mesh)
+      this.gearBatches.push({ mesh, parts })
+    }
+    this.updateGearBatches()
+    // Gear batches must keep their handles; only merge the fixed direct body leaves.
+    const body = new THREE.Group()
+    for (const o of [...this.object.children]) if (o instanceof THREE.Mesh) body.add(o)
+    mergeStatic(body)
+    for (const o of [...body.children]) this.object.add(o)
+  }
+
+  private updateGearBatches(): void {
+    if (!this.gearBatches.length || this.lastBatchedGear === this.gearAmount) return
+    this.lastBatchedGear = this.gearAmount
+    this.gear.updateWorldMatrix(true, true)
+    this.gearInverse.copy(this.gear.matrixWorld).invert()
+    for (const { mesh, parts } of this.gearBatches) {
+      const positions = mesh.geometry.attributes.position, normals = mesh.geometry.attributes.normal
+      for (const { source, offset } of parts) {
+        this.gearMatrix.multiplyMatrices(this.gearInverse, source.matrixWorld)
+        this.gearNormal.getNormalMatrix(this.gearMatrix)
+        const g = source.geometry, p = g.attributes.position, n = g.attributes.normal
+        const count = g.index?.count ?? p.count
+        for (let i = 0; i < count; i++) {
+          const index = g.index ? g.index.getX(i) : i
+          this.gearVertex.fromBufferAttribute(p, index).applyMatrix4(this.gearMatrix)
+          positions.setXYZ(offset + i, this.gearVertex.x, this.gearVertex.y, this.gearVertex.z)
+          this.gearVertex.fromBufferAttribute(n, index).applyNormalMatrix(this.gearNormal)
+          normals.setXYZ(offset + i, this.gearVertex.x, this.gearVertex.y, this.gearVertex.z)
+        }
+      }
+      positions.needsUpdate = true; normals.needsUpdate = true
+    }
+  }
+
   /**
    * Hand the materials to the shared showroom shading. Call once the jet is in a scene. Until
    * then, and at shading tier 0, the plain tagged materials show.
@@ -129,18 +195,21 @@ export class NextJet {
     const { paint, chrome, dark } = this.materials
     const pivot = new THREE.Group(); pivot.position.set(hx, hy, hz); this.gear.add(pivot)
     const mesh = (g: THREE.BufferGeometry, m: THREE.Material, parent: THREE.Object3D) => { const o = new THREE.Mesh(this.own(g), m); o.castShadow = true; parent.add(o); return o }
+    // Small fittings need few sides even in the close view; keep their articulation.
+    const radial = Math.max(4, Math.round(8 * Math.min(1, this.detail)))
+    const latitude = Math.max(2, Math.round(4 * Math.min(1, this.detail)))
     // Faired upper strut, a knuckle at the hinge and a drag brace.
-    mesh(new THREE.CylinderGeometry(.07, .055, upper, 14).translate(0, -upper / 2, 0), paint, pivot).scale.set(1, 1, 1.5)
-    mesh(new THREE.SphereGeometry(.085, 14, 10), chrome, pivot)
-    const brace = mesh(new THREE.CylinderGeometry(.018, .018, upper * .8, 8).translate(0, -upper * .4, 0), chrome, pivot)
+    mesh(new THREE.CylinderGeometry(.07, .055, upper, radial).translate(0, -upper / 2, 0), paint, pivot).scale.set(1, 1, 1.5)
+    mesh(new THREE.SphereGeometry(.085, radial, latitude), chrome, pivot)
+    const brace = mesh(new THREE.CylinderGeometry(.018, .018, upper * .8, radial).translate(0, -upper * .4, 0), chrome, pivot)
     const along = spec.fold === 'in' ? 'x' : 'z', back = spec.fold === 'fore' ? -1 : spec.fold === 'aft' ? 1 : -Math.sign(hx)
     brace.position[along] = back * upper * .42; brace.rotation[along === 'x' ? 'z' : 'x'] = (along === 'x' ? -1 : 1) * back * .55
     // Chrome oleo that telescopes out of the strut, carrying a skid that stays level.
     const piston = new THREE.Group(); pivot.add(piston)
-    mesh(new THREE.CylinderGeometry(.03, .03, travel + .06, 12).translate(0, -(travel - .06) / 2, 0), chrome, piston)
+    mesh(new THREE.CylinderGeometry(.03, .03, travel + .06, radial).translate(0, -(travel - .06) / 2, 0), chrome, piston)
     const foot = new THREE.Group(); foot.position.y = -travel; piston.add(foot)
-    const skid = mesh(new THREE.CapsuleGeometry(.06, .34, 6, 14).rotateX(Math.PI / 2), dark, foot); skid.scale.set(1.7, .7, 1)
-    mesh(new THREE.SphereGeometry(.05, 12, 8), chrome, foot).position.y = .03
+    const skid = mesh(new THREE.CapsuleGeometry(.06, .34, latitude, radial).rotateX(Math.PI / 2), dark, foot); skid.scale.set(1.7, .7, 1)
+    mesh(new THREE.SphereGeometry(.05, radial, latitude), chrome, foot).position.y = .03
     // Two doors that open like a clamshell along the stowed strut.
     const doors: BuiltLeg['doors'] = [], length = upper + .3, half = .15
     for (const side of [1, -1]) {
@@ -171,6 +240,7 @@ export class NextJet {
       l.piston.position.y = -l.upper + (1 - extend) * l.travel
       for (const d of l.doors) d.group.rotation[d.axis] = d.sign * 1.5 * open
     }
+    this.updateGearBatches()
   }
 
   /** Lowest point of each foot in the jet's frame, for tests and for placing a collider. */
@@ -202,14 +272,15 @@ export class NextJet {
   }
 
   /** Glow strength for the nozzles and hover ports, 0..1. */
-  setThrottle(amount: number): void { this.glow.opacity = .2 + .6 * clamp01(amount) }
+  setThrottle(amount: number): void { if (this.glowMesh) this.glowMesh.userData.glow = .2 + .6 * clamp01(amount) }
 
   setColors(paint: THREE.ColorRepresentation, accent: THREE.ColorRepresentation): void {
-    this.paint.color.set(paint); this.accent.color.set(accent); this.canopy.color.set(accent); this.glow.color.set(accent).multiplyScalar(1.3)
+    this.paint.color.set(paint); this.accent.color.set(accent); this.canopy.color.set(accent); this.glow.color.set(accent)
   }
 
   dispose(): void {
     this.detachShowroom?.()
+    this.object.traverse(o => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose() } })
     this.geometries.forEach(g => g.dispose())
     new Set(Object.values(this.materials)).forEach(m => m.dispose()); this.petal?.dispose()
   }

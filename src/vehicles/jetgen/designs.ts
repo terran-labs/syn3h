@@ -17,6 +17,8 @@ export interface JetDesign {
   id: string; name: string; blurb: string; paint: number; accent: number
   /** Straight-edged, faceted geometry instead of flowing curves. */
   hard?: boolean
+  /** Smooth normals without changing the angular planform. */
+  smooth?: boolean
   /** Kept for reference only: every design now renders through the shared vehicle shading. */
   finish?: 'candy' | 'military'
   build(b: Builder): void
@@ -423,7 +425,7 @@ export const JET_DESIGNS: JetDesign[] = [
     ['spine', 'Spine', 'A larger ring braced to the hull by a dorsal and a ventral strut that meet its top and bottom joints.', { ring: 'hex', wing: 'droop', spine: true, ringSize: 1.08 }],
     ['heavy', 'Heavy', 'A wide flat main thruster, prong booms and plain swept tips: the heaviest looking of the five.', { ring: 'hex', wing: 'swept', booms: 'prong', nozzle: 'flat', canards: 'none' }],
   ] as [string, string, string, VanguardOptions][]).map(([id, name, blurb, options]): JetDesign => ({
-    id: `hex-${id}`, name: `Hexring ${name}`, paint: 0x565c66, accent: 0xff3d5a, hard: true, finish: 'military', blurb,
+    smooth: true, id: `hex-${id}`, name: `Hexring ${name}`, paint: 0x565c66, accent: 0xff3d5a, hard: true, finish: 'military', blurb,
     build(b) { vanguard(b, options) },
   })),
 ]
