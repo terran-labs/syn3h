@@ -9,7 +9,7 @@ try {
   await page.goto(`${process.env.SYN3H_URL}?room=ux-train-${Date.now()}`)
   await page.waitForFunction(() => window.syn3h?.audio, null, { timeout: 120000 })
   await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
-  assert.deepEqual(await page.locator('#game-mode option').allTextContents(), ['Tag game', 'King of the Hill'])
+  assert.deepEqual(await page.locator('#game-mode option').allTextContents(), ['Tag game', 'King of the Hill', 'Explore'])
   assert.equal(await page.locator('.wi-vehicle-select').getAttribute('aria-label'), 'Vehicle')
   await page.screenshot({ path: `${out}/lobby-desktop.png` })
   const result = await page.evaluate(async () => {
