@@ -1,6 +1,13 @@
 /**
  * Every sky, sun and weather constant, declared once. No renderer imports, so the server can
  * import this to validate values. Defaults are the 'Mars day' preset.
+ *
+ * The default hour and azimuth are the first thing a new player sees, so they are chosen
+ * from spawn pad 0, which looks along +Z at the volcano: a late afternoon sun low on the
+ * right and slightly behind the camera. That lights the near flank from the side, throws
+ * long shadows across the road and keeps the sun's glare out of frame. With the azimuth at
+ * 20 the same hour put the sun behind the volcano and the face toward the pad went dark.
+ * The clock is paused by default so a demo looks the same every time it loads.
  */
 import { defineParam } from '../../../shared/params'
 import type { SkyParams } from './skyMath'
@@ -23,12 +30,12 @@ export const skyNightBrightness = defineParam({ id: 'sky.nightBrightness', label
 export const skyStars = defineParam({ id: 'sky.stars', label: 'Stars', group: 'Sky', scope: w, default: 1, min: 0, max: 3, step: 0.01 })
 
 // Sun ----------------------------------------------------------------------------------
-export const sunTimeOfDay = defineParam({ id: 'sun.timeOfDay', label: 'Time of day (h)', group: 'Sun', scope: w, default: 10.5, min: 0, max: 24, step: 0.01 })
+export const sunTimeOfDay = defineParam({ id: 'sun.timeOfDay', label: 'Time of day (h)', group: 'Sun', scope: w, default: 16.5, min: 0, max: 24, step: 0.01 })
 /** Real seconds per full day. 0 pauses the clock. */
 export const sunDayLength = defineParam({ id: 'sun.dayLength', label: 'Day length (s)', group: 'Sun', scope: w, default: 0, min: 0, max: 3600, step: 1 })
 /** Latitude style tilt: the noon sun stands at 90 minus this many degrees. */
 export const sunTilt = defineParam({ id: 'sun.tilt', label: 'Tilt (latitude)', group: 'Sun', scope: w, default: 30, min: 0, max: 80, step: 0.5 })
-export const sunAzimuth = defineParam({ id: 'sun.azimuth', label: 'Azimuth', group: 'Sun', scope: w, default: 20, min: 0, max: 360, step: 1 })
+export const sunAzimuth = defineParam({ id: 'sun.azimuth', label: 'Azimuth', group: 'Sun', scope: w, default: 335, min: 0, max: 360, step: 1 })
 export const sunIntensity = defineParam({ id: 'sun.intensity', label: 'Sunlight', group: 'Sun', scope: w, default: 12, min: 0, max: 20, step: 0.05 })
 export const sunAmbient = defineParam({ id: 'sun.ambient', label: 'Sky ambient', group: 'Sun', scope: w, default: 0.6, min: 0, max: 4, step: 0.01 })
 export const sunMoonIntensity = defineParam({ id: 'sun.moonIntensity', label: 'Moonlight', group: 'Sun', scope: w, default: 0.6, min: 0, max: 3, step: 0.01 })

@@ -1,7 +1,6 @@
 {
   "tagline": "Syn3h, rebuilt native in the browser: its vehicles, its physics, its lobby and its look.",
-  "deadline": "Demo: Sunday noon, Coeur d'Alene",
-  "updated": "Saturday 10:05pm PT",
+  "deadline": "Demo: Sunday noon Pacific, Coeur d'Alene",
   "headline": "Sound is in for every vehicle, the summit road is now one rising spiral, and the code is public on GitHub. Each vehicle and the Foreman have their own workspace, waiting for you to start a thread.",
   "previews": [
     {
@@ -187,6 +186,11 @@
       "detail": "github.com/terran-labs/syn3h is public with eight milestone tags. The nine old Syn3h repos are renamed legacy-unity-*."
     },
     {
+      "state": "done",
+      "title": "Live preview no longer resets under you",
+      "detail": "A merge now shows a 'new build available' notice, and a reload puts you back where you were with the same vehicle, wings, camera and room."
+    },
+    {
       "state": "active",
       "title": "Frame rate on real hardware",
       "detail": "Headed Chrome on this M2 Max: about 8 ms a frame at 1280 x 720. Headless numbers were misleading. Quiet-machine and phone readings still to come."
@@ -315,7 +319,6 @@
       "detail": "One builder each, directed by the orchestrator."
     }
   ],
-  "vehiclesUpdated": "Saturday 10:05pm PT",
   "vehiclesNote": "Every vehicle has been checked by automated tests, scripted drives and screenshots. None has been driven by hand yet. Sound is merged for all five but has not been heard by anyone. Each vehicle has its own workspace for conversations about look and feel.",
   "vehicles": [
     {

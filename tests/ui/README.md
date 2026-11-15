@@ -219,3 +219,27 @@ to `tests/ui/artifacts/`. On macOS, independently decode the rendered screenshot
 swift tests/ui/decode-qr.swift tests/ui/artifacts/projector-qr.png
 swift tests/ui/decode-qr.swift tests/ui/artifacts/narrow-qr.png
 ```
+
+## First impression
+
+The first five seconds after Play are checked by `node tests/ui/first-impression.mjs <label>`
+against the lane dev server. It asserts, at 1280 by 720, 1920 by 1080 and a 390 by 844
+touch screen, that the controls card shows, never overlaps the vehicle in the chase camera,
+leaves on first input (or after five seconds), and that H reopens and closes the full list.
+It then photographs pad 0 and the summit rim at the hours given, for choosing lighting.
+`--az=335` tries a sun azimuth; `--record` captures a build that fails the assertions.
+
+Defaults chosen with it: 16:30 with the sun azimuth at 335 degrees, clock paused. From pad
+0 the sun is low on the right and slightly behind the camera, so the near flank is lit from
+the side and the glare is out of frame. At azimuth 20 the same hour left that face in
+shadow under a white sky. The 'Mars day' preset uses the same hour.
+
+A room's shared sliders belong to whoever is in it. A fresh room takes the first player's
+values; a room that already has someone in it hands its own values to everyone who joins.
+The dev room server forgets a room only when its last connection closes, so one forgotten
+tab holding `lobby` at night makes every later visitor start at night whatever the defaults
+say. New defaults reach a room only once it has emptied or its host moves the slider.
+
+The short card is `quickHelp` in `VehicleHelp.ts`. `shell.showHelp()` still opens the full
+list; `shell.showHelp(false)` is the short card used after Play and after a vehicle change.
+
