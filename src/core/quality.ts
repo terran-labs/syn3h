@@ -517,6 +517,8 @@ export class QualityController {
     if (level !== this.governor.level) { this.write(graphicsLevel.def.id, level); this.governor.reset(level, 'level-drop') }
     this.apply()
   }
+  /** The level this device was classified as, adapter included once initialised; 2 is desktop class. */
+  get deviceLevel(): GraphicsLevel { return this.detected }
   attachRenderer(renderer: WebGPURenderer) { this.renderer = renderer; this.apply() }
   /** Optional hook for terrain builders; no regeneration or physics changes are implied. */
   attachTerrain(terrain: QualityTerrain) { this.terrain = terrain; this.written.terrain = false; this.onTerrain?.(); this.apply() }

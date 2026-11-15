@@ -11,10 +11,11 @@
  */
 import * as THREE from 'three/webgpu'
 import { installRenderDiagnostics, recordStartupPhase, showRendererLost, startupTiming, timeStartup } from './diagnostics'
-import { gpuDeadlineMs, startRenderer } from './renderOptions'
+import { bloomActive, gpuDeadlineMs, startRenderer } from './renderOptions'
+import { Bloom, bloomStrength } from './bloom'
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
-import { QualityController, reportLoading, type FrameMetrics } from './quality'
+import { QualityController, graphicsLevel, reportLoading, type FrameMetrics } from './quality'
 import { FIXED_DT, RAPIER, createWorld, initPhysics } from './physics'
 
 export interface System {
@@ -186,7 +187,7 @@ export class Game {
     const updateStart = performance.now()
     for (const s of this.systems) s.update?.(frameDt, alpha)
     const renderStart = performance.now()
-    this.renderer.render(this.scene, this.camera)
+    this.draw()
     if (this.startupFrames < 3) this.recordStartupFrame(updateStart, renderStart)
     const metrics = this.performance
     metrics.fps = this.fps
@@ -195,6 +196,25 @@ export class Game {
     metrics.triangles = this.renderer.info.render.triangles
     if (metrics.firstFrameMs === null && metrics.drawCalls > 0) metrics.firstFrameMs = performance.now()
     this.quality.frame(metrics)
+  }
+
+  /** Created on first use; null until bloom has ever been switched on. */
+  private bloom: Bloom | null = null
+
+  /**
+   * Draw the frame. With gfx.bloom at 0 (the default) this is `renderer.render` and nothing
+   * else: the strength test comes first and no Bloom object exists. Bloom also needs graphics
+   * level 2, a desktop class device and a verified backend; when the governor lowers the level
+   * it is released at once, targets and all, and rebuilt when the level returns.
+   */
+  private draw(): void {
+    if (bloomStrength.value > 0 && bloomActive({ strength: bloomStrength.value, level: graphicsLevel.value, deviceLevel: this.quality.deviceLevel, backend: this.backend })) {
+      this.bloom ??= new Bloom(this.renderer, this.scene, this.camera)
+      this.bloom.render()
+      return
+    }
+    if (this.bloom?.active) this.bloom.release()
+    this.renderer.render(this.scene, this.camera)
   }
 
   /**
