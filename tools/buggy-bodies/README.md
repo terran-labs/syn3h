@@ -9,6 +9,10 @@ do not ship with the game.
     tools/heavy.sh blender -b --python tools/buggy-bodies/build.py -- \
         <path to Buggy.blend> "$PWD/labs/buggy-bodies" [<preview dir>|-] [variant ids...]
 
+To rebuild only the body the game ships, leaving the review rounds as they are:
+
+    SHIP=1 tools/heavy.sh blender -b --python tools/buggy-bodies/build.py -- <path to Buggy.blend> /tmp/buggy-build - c2-box
+
 Needs Blender 5 (`/opt/homebrew/bin/blender`). Each body starts from the original Body and
 Cockpit meshes: proportions change through smooth deformations, the spoiler and canopy are
 restyled, and the surface is subdivided once. The original headlight and tail light faces are
