@@ -22,9 +22,13 @@ In practice:
   textures, sprites, image files and recordings.
 - Expose what you generate through the parameter registry (`shared/params.ts`) or plain
   options with a seed, so it can be tuned and shared.
-- A generated thing must earn its place: if a small asset genuinely looks or sounds better
-  and the generated version cannot match it, say so and keep the asset. Recorded originals
-  the owner supplied (music, the laser and wind clips) stay.
+- Ship no pre-generated textures, audio files or other large binary data. The owner
+  withdrew the earlier exception for his recorded originals on 15 November 2026: music,
+  cues and wind are all synthesised, and the generated score is the only music, in the
+  lobby and in play. If a generated version cannot yet match an asset, say so to the
+  owner and get his decision; do not quietly keep the asset.
+- The only bitmaps that stay are those a platform demands: install icons and the social
+  share card. Vehicle meshes are an open question for the owner, not a standing exception.
 - Do not be constrained by how the 2010 and 2017 Unity builds were made. Use current web
   platform features (WebGPU, WebGL 2, modern CSS, Web Audio) to cut load time and raise
   the visual effect. The originals are art direction, not a specification.

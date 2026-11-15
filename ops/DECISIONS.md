@@ -26,6 +26,24 @@ The owner answered the wind question: generated wind only. UX owns removing the 
 wind layer. This supersedes the recording-retention rule for wind only; original music
 and laser recordings remain.
 
+## Sunday 15 November, 8:20am Pacific: no recorded audio or baked textures ship
+
+**Decided** by the owner: "There shouldn't be any pre-generated textures, audio files, or
+any other large binary data." He asked why the release 5 lobby plays the recorded music
+and not the synthesised score.
+
+**Why it happened.** The audio code defaults to the Space Station recording; the generated
+score was an opt-in choice in the music selector. That followed the earlier rule that his
+recorded originals stay, which this decision withdraws.
+
+**What it changes.** The generated score becomes the default and only music, lobby
+included. The four recorded tracks, the three recorded cues, the unused wind recording and
+the two vehicle textures leave the build; cues are synthesised. A release check will fail
+on any shipped audio file or non-required image. Install icons and the share card stay
+because platforms require bitmaps. Vehicle meshes (about 1.9 MB) are kept for the noon demo
+and put to the owner as a separate question. `AGENTS.md` is updated to match. Not live:
+release 5 still plays the recording until a successor passes its checks.
+
 ## Sunday 15 November, overnight: coordinated validation queue
 
 After host load exceeded 40 and preview validation stalled, the Orchestrator removed
