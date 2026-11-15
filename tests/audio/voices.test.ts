@@ -13,5 +13,5 @@ it('finds lava coastlines and optional vents but excludes water and distant alti
  expect(lavaProximity(t,{x:0,y:2,z:0})).toBeGreaterThan(.5)
  expect(lavaProximity(t,{x:0,y:200,z:0})).toBe(0)
  t.liquidKindAt=()=> 'water';expect(lavaProximity(t,{x:0,y:2,z:0})).toBe(0)
- t.vents=()=>[{x:3,y:2,z:0}];expect(lavaProximity(t,{x:0,y:2,z:0})).toBeGreaterThan(.9)
+ t.vents=()=>[{x:3,y:2,z:0,kind:'flame' as const,size:4}];expect(lavaProximity(t,{x:0,y:2,z:0})).toBeGreaterThan(.9)
 })
