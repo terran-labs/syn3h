@@ -24,7 +24,7 @@ export const chaserBlastLift = defineParam({ id: 'blast.chaser.lift', label: 'Ch
 
 export const thunderBlastRadius = defineParam({ id: 'blast.thunder.radius', label: 'Plasma Thunder push radius', group, scope, default: 14, min: 0, max: 30, step: 1 })
 export const thunderBlastPush = defineParam({ id: 'blast.thunder.push', label: 'Plasma Thunder push', group, scope, default: 16, min: 0, max: 20, step: 0.5 })
-export const thunderBlastLift = defineParam({ id: 'blast.thunder.lift', label: 'Plasma Thunder lift', group, scope, default: 0.45, min: 0, max: 1, step: 0.05 })
+export const thunderBlastLift = defineParam({ id: 'blast.thunder.lift', label: 'Plasma Thunder lift', group, scope, default: 0.8, min: 0, max: 1, step: 0.05 })
 
 export type BlastKind = 'tag' | 'chaser' | 'thunder'
 
