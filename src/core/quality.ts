@@ -1,5 +1,5 @@
 /** Local rendering budgets. World parameters and physics resolution are never changed here. */
-import { graphicsOverride } from './renderOptions'
+import { type AdapterProbe, gpuDeadlineMs, graphicsOverride, probeAdapter } from './renderOptions'
 import { defineParam, params } from '../../shared/params'
 import type { WebGPURenderer } from 'three/webgpu'
 export type GraphicsLevel = 0 | 1 | 2
@@ -111,19 +111,22 @@ export class QualityController {
       this.apply()
     })
   }
+  /** What the WebGPU adapter probe found; a stalled probe sends the renderer straight to WebGL 2. */
+  adapterProbe: AdapterProbe = 'unsupported'
   async initialize() {
     const nav = navigator as Navigator & { deviceMemory?: number; gpu?: { requestAdapter(options?: { powerPreference: string }): Promise<{ isFallbackAdapter?: boolean; limits: { maxTextureDimension2D: number } } | null> } }
-    let adapter: Awaited<ReturnType<NonNullable<typeof nav.gpu>['requestAdapter']>> = null
-    try {
-      if (nav.gpu) adapter = await nav.gpu.requestAdapter({ powerPreference: this.detected < 2 ? 'low-power' : 'high-performance' })
-    } catch { /* WebGL fallback remains usable when adapter discovery fails. */ }
-    const detected = classifyDevice({ userAgent: nav.userAgent, touchPoints: nav.maxTouchPoints, memoryGB: nav.deviceMemory, adapter: adapter ? adapter.isFallbackAdapter ? 'fallback' : 'available' : 'missing', maxTextureDimension2D: adapter?.limits.maxTextureDimension2D })
+    // Bounded: a stalled requestAdapter used to hang the whole startup here.
+    const { probe, adapter } = await probeAdapter(nav.gpu, { powerPreference: this.detected < 2 ? 'low-power' : 'high-performance' }, gpuDeadlineMs(location.search))
+    this.adapterProbe = probe
+    const detected = classifyDevice({ userAgent: nav.userAgent, touchPoints: nav.maxTouchPoints, memoryGB: nav.deviceMemory, adapter: probe === 'available' || probe === 'fallback' ? probe : 'missing', maxTextureDimension2D: adapter?.limits.maxTextureDimension2D })
     params.set(graphicsLevel.def.id, Math.min(graphicsLevel.value, detected))
     this.apply()
   }
   attachRenderer(renderer: WebGPURenderer) { this.renderer = renderer; this.apply() }
   /** Optional hook for terrain builders; no regeneration or physics changes are implied. */
-  attachTerrain(terrain: QualityTerrain) { this.terrain = terrain; this.apply() }
+  attachTerrain(terrain: QualityTerrain) { this.terrain = terrain; this.onTerrain?.(); this.apply() }
+  /** Startup timing hook: main calls attachTerrain right after building the terrain. */
+  onTerrain: (() => void) | null = null
   private apply() {
     const budget = qualityBudget()
     this.renderer?.setPixelRatio(Math.min(window.devicePixelRatio || 1, budget.pixelRatio))
