@@ -32,6 +32,18 @@ function snapshot(v:Vehicle){
 }
 
 describe.each(KINDS)('%s materializes',kind=>{
+  it('ignores local axes, fire, rescue and toggle changes during the hold',()=>{
+    const {h,v,m,step}=bed(kind)
+    v.isLocal=true
+    const before={zorb:v.input.zorb,special:v.input.special}
+    Object.assign(h.game.input.state,{x:1,y:1,z:1,w:1,fire:true,zorb:!before.zorb,special:!before.special})
+    m.begin(v,{holdSeconds:HOLD})
+    step(10)
+    expect([v.input.x,v.input.y,v.input.z,v.input.w,v.input.fire]).toEqual([0,0,0,0,false])
+    expect({zorb:v.input.zorb,special:v.input.special}).toEqual(before)
+    m.cancel(v);m.dispose();v.dispose();h.world.free()
+  })
+
   it('is held level at hover height and at rest, then released on the step the hold ends and drops',async()=>{
     const {h,v,m,cues,step}=bed(kind)
     step(30)

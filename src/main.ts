@@ -139,11 +139,14 @@ async function main(): Promise<void> {
   const swapVehicle = (kind: VehicleKind): Vehicle | null => {
     const previous = slot.current
     try {
-      // An old vehicle switched away from mid-materialization must be let go before it is disposed.
-      materialize.cancel(previous)
       const next = swapper.swap(kind)
       // The new one holds its heading only: the hold zeroes its speed, then it drops and drives.
-      if (next !== previous) void materialize.begin(next)
+      if (next !== previous) {
+        // Restore the parked body's dynamic type before it is reused. Selecting the same
+        // kind leaves its existing hold alone.
+        materialize.cancel(previous)
+        void materialize.begin(next)
+      }
       return next
     } catch (error) {
       console.error('swapVehicle', error)
