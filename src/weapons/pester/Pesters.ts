@@ -166,6 +166,18 @@ export class Pesters implements System {
     for (const o of this.orbs) if (o.shooter === id && o.popped < 0) this.pop(o)
   }
 
+  /** Pesters here, in flight or popping, for automated checks. */
+  get count(): number {
+    return this.orbs.length
+  }
+
+  /** Remove every Pester in flight, popping or not, at once: for a world change or leaving it. */
+  reset(): void {
+    for (const o of this.orbs) this.game.scene.remove(o.mesh)
+    this.orbs.length = 0
+    this.fireWas = false
+  }
+
   fixedUpdate(dt: number): void {
     if (!pesterAllowed.value) {
       for (const o of this.orbs) if (o.popped < 0) this.pop(o)
