@@ -28,6 +28,7 @@ const BRANCHES = /^veh\//
 const SKIP = new Set(['veh/vehicle-lab', 'veh/buggy-wheels'])
 const live = resolve(here, '..', 'lab-live')
 const POLL_MS = 15000
+const OLD_EXHIBIT_LIST = 'src/dev/vehicleLab/exhibits/index.ts'
 
 const git = (cwd, ...a) => execFileSync('git', a, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 const tryGit = (cwd, ...a) => { try { return { ok: true, out: git(cwd, ...a) } } catch (e) { return { ok: false, out: String(e.stderr || e.message).trim() } } }
@@ -61,8 +62,17 @@ function sync() {
     const [subject, when] = git(here, 'log', '-1', '--format=%s%x09%cr', b.head).split('\t')
     const entry = { name: b.name, head: b.head.slice(0, 7), subject, when, merged: true }
     const merge = tryGit(live, '-c', 'user.name=Vehicle lab', '-c', 'user.email=lab@localhost', 'merge', '-q', '--no-edit', '--no-ff', b.head)
+    let files = merge.ok ? [] : tryGit(live, 'diff', '--name-only', '--diff-filter=U').out.split('\n').filter(Boolean)
+    // The lab once kept a hand-written list of exhibits, which every lane edited. It is gone
+    // (exhibits register themselves), so a lane that still edits it conflicts only there:
+    // drop the list and keep the lane's work.
+    if (!merge.ok && files.length && files.every(f => f === OLD_EXHIBIT_LIST)) {
+      tryGit(live, 'rm', '-q', '-f', OLD_EXHIBIT_LIST)
+      const done = tryGit(live, '-c', 'user.name=Vehicle lab', '-c', 'user.email=lab@localhost', 'commit', '-q', '--no-edit')
+      if (done.ok) { status.push(entry); continue }
+      files = [OLD_EXHIBIT_LIST]
+    }
     if (!merge.ok) {
-      const files = tryGit(live, 'diff', '--name-only', '--diff-filter=U').out.split('\n').filter(Boolean)
       tryGit(live, 'merge', '--abort')
       entry.merged = false
       entry.error = files.length ? `conflicts with trunk or another lane in ${files.slice(0, 3).join(', ')}` : merge.out.split('\n')[0].slice(0, 160)
