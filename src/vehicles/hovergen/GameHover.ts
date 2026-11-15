@@ -1,10 +1,11 @@
 import * as THREE from 'three/webgpu'
 import { detailLevel, registerVehicleDetail } from '../skins/mergeStatic'
-import { HeritageHover } from './HeritageHover'
-import { HERITAGE_EYE, type HeritageDesign } from './heritage'
+import { HERITAGE_EYE } from './heritage'
+import { Round3Hover } from './Round3Hover'
+import type { Round3Design } from './round3'
 
 /**
- * A round two hovercraft study as the game drives it: the close model with its cockpit, a
+ * A round three hovercraft design as the game drives it: the close model with its cockpit, a
  * reduced one from 30 m and a one-draw silhouette from 120 m (PATTERN.md rule 4).
  *
  * All three are built up front. They are generated in a few milliseconds and share nothing
@@ -12,7 +13,7 @@ import { HERITAGE_EYE, type HeritageDesign } from './heritage'
  */
 export class GameHover {
   readonly object = new THREE.Group()
-  readonly levels: [HeritageHover, HeritageHover, HeritageHover]
+  readonly levels: [Round3Hover, Round3Hover, Round3Hover]
   /** The driver's eye in the craft's frame. */
   readonly eye = new THREE.Vector3(...HERITAGE_EYE)
   /** Bounds of the close model in the craft's frame, for the collision hull and clearance guard. */
@@ -21,8 +22,8 @@ export class GameHover {
   private detachDetail = () => {}
   private attached = false
 
-  constructor(readonly design: HeritageDesign) {
-    this.levels = [new HeritageHover(design, 0, true), new HeritageHover(design, 1, true), new HeritageHover(design, 2, true)]
+  constructor(readonly design: Round3Design) {
+    this.levels = [new Round3Hover(design, 0, true), new Round3Hover(design, 1, true), new Round3Hover(design, 2, true)]
     this.object.add(...this.levels.map(h => h.object))
     this.object.updateMatrixWorld(true)
     this.bounds.setFromObject(this.levels[0].object)

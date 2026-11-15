@@ -5,10 +5,8 @@ import { RAPIER, unityTorque } from '../core/physics'
 import { defineParam, worldLavaAltitude } from '../../shared/params'
 import { Vehicle } from './Vehicle'
 import { UnityBody } from './unityBody'
-import { VehicleModel } from './skins/VehicleModel'
-import { setRole } from './skins/showroom'
 import { GameHover } from './hovergen/GameHover'
-import { HERITAGE_DESIGNS } from './hovergen/heritage'
+import { R3_DESIGNS } from './hovergen/round3'
 
 // Settings.js slider defaults, documented in docs/architecture/mars-explorer.md. Thrust is the
 // exception: Settings.js has 220, raised to 320 with the livelier glide (see below). Set it back
@@ -37,18 +35,14 @@ export const hoverDrag = defineParam({id:'hover.drag',label:'Glide air drag',gro
 export const hoverBank = defineParam({id:'hover.bank',label:'Glide bank angle (deg)',group:'Hovercraft',scope:'world',default:12,min:0,max:35,step:1})
 
 /**
- * Which body the hovercraft wears. 0 is the original mesh. 1 to 5 are the round two studies
- * (Original, Flare, Box, Arch, Sweep; src/vehicles/hovergen), generated with a cockpit and
- * three detail levels. The owner has not picked one, so the original stays the default and
- * this exists to drive the candidates in the game. Shared by the room because the collision
- * hull follows the body. Handling (mass, inertia, glide) is the same for every body.
+ * The hovercraft's body: one generated design from round three (src/vehicles/hovergen), with
+ * its cockpit and three detail levels. Nothing is loaded; the body is built from parameters
+ * when the vehicle is created. The owner picks the design; the game ships exactly one.
  */
-export const hoverBody = defineParam({id:'hover.body',label:'Body (0 original, 1-5 round two)',group:'Hovercraft',scope:'world',default:0,min:0,max:HERITAGE_DESIGNS.length,step:1})
+export const HOVER_DESIGN = R3_DESIGNS.find(d => d.id === 'h3-gt')!
 
 /** Hull envelope in the craft's frame: x and z start and extent, floor and roof height, in metres. */
 interface Envelope {x:number;w:number;y0:number;y1:number;z:number;l:number}
-// Syn3h GLB bounds x +/-1.2593, y .0167..1.0196, z -1.6346..1.5155, rounded outward.
-const ORIGINAL_ENVELOPE:Envelope={x:-1.27,w:2.54,y0:0,y1:1.03,z:-1.65,l:3.18}
 
 /** The assisted glide keeps every point of the hull envelope at least this far above the surface, in metres. */
 const HULL_GUARD=.4
@@ -58,17 +52,9 @@ export class Hovercraft extends Vehicle {
   readonly kind = 'hovercraft' as const
   readonly camOffset = 2
   readonly ridePosition = new THREE.Object3D()
-  private paint?: THREE.MeshStandardMaterial
-  private accent?: THREE.MeshStandardMaterial
-  private glowMaterial?: THREE.MeshStandardMaterial
-  private model?: VehicleModel
-  private modelRoot?: THREE.Group
-  /** The generated body when hover.body selects a round two study. */
-  private study?: GameHover
-  private bodyIndex = -1
-  private envelope = ORIGINAL_ENVELOPE
-  get modelReady(): Promise<void> {return this.model?.ready??Promise.resolve()}
-  private readonly visualMaterials: THREE.Material[] = []
+  private readonly study: GameHover
+  private readonly envelope: Envelope
+  readonly modelReady = Promise.resolve()
   private readonly unity: UnityBody
   private readonly chassis: RAPIER.Collider
   private assisted = -1
@@ -85,68 +71,16 @@ export class Hovercraft extends Vehicle {
     this.body.setAdditionalMassProperties(50,{x:0,y:-.3,z:0},{x:15,y:15,z:15},{x:0,y:0,z:0,w:1},true)
     this.body.recomputeMassPropertiesFromColliders()
     this.unity=new UnityBody(this.body,game.world,0,4)
-    this.setBody(hoverBody.value)
+    const study=this.study=new GameHover(HOVER_DESIGN)
+    this.object.add(study.object);study.attach()
+    this.ridePosition.position.copy(study.eye)
+    // The driver sits in a real cockpit, so the ride camera hides nothing (PATTERN.md rule 3).
+    this.object.userData.cockpit=true
+    // The collision hull and the clearance guard cover the body's whole outline.
+    const b=study.bounds
+    this.envelope={x:b.min.x,w:b.max.x-b.min.x,y0:Math.max(0,b.min.y),y1:b.max.y,z:b.min.z,l:b.max.z-b.min.z}
     this.configureChassis()
-  }
-
-  /** Swap the visible body. Safe to call live: the previous body's geometry and materials are released. */
-  private setBody(index:number):void {
-    index=Math.max(0,Math.min(HERITAGE_DESIGNS.length,Math.round(index)))
-    if(index===this.bodyIndex)return
-    this.bodyIndex=index
-    this.model?.dispose();this.model=undefined
-    this.modelRoot?.removeFromParent();this.modelRoot=undefined
-    this.study?.dispose();this.study=undefined
-    this.visualMaterials.splice(0).forEach(m=>m.dispose())
-    this.paint=this.accent=this.glowMaterial=undefined
-    if(index===0)this.buildOriginal()
-    else{
-      const study=this.study=new GameHover(HERITAGE_DESIGNS[index-1])
-      this.object.add(study.object);study.attach()
-      this.ridePosition.position.copy(study.eye)
-      const b=study.bounds
-      this.envelope={x:b.min.x,w:b.max.x-b.min.x,y0:Math.max(0,b.min.y),y1:b.max.y,z:b.min.z,l:b.max.z-b.min.z}
-    }
-    // The ride camera hides a vehicle without a cockpit from its own seat (PATTERN.md rule 3).
-    this.object.userData.cockpit=index>0
-    this.assisted=-1
     this.applyColors()
-  }
-
-  private buildOriginal():void {
-    // Hovercraft.prefab RideCamera local transform.
-    this.ridePosition.position.set(.000051,.56284,-.497794)
-    this.envelope=ORIGINAL_ENVELOPE
-    // Stand-in hull until the mesh arrives; the model releases it.
-    const hull = new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.8,.6,8),new THREE.MeshStandardMaterial({color:0xd2a142,roughness:.45,metalness:.35}))
-    hull.scale.z = 1.35; hull.castShadow = hull.receiveShadow = true
-    const cockpit = new THREE.Mesh(new THREE.BoxGeometry(.8,.4,1.2),new THREE.MeshStandardMaterial({color:0x203745,metalness:.5,roughness:.2}))
-    cockpit.position.set(0,.4,-.3); cockpit.castShadow = true
-    const modelRoot=this.modelRoot=new THREE.Group();modelRoot.add(hull,cockpit);this.object.add(modelRoot)
-    const model = this.model = new VehicleModel(modelRoot,'/models/hovercraft.glb',scene=>{
-      // Keep the prefab silhouette; shared roles supply procedural paint and live colours.
-      const paint=setRole(new THREE.MeshStandardMaterial({color:0x315d99,metalness:.85,roughness:.2}), 'paint')
-      const chrome=setRole(new THREE.MeshStandardMaterial({color:0xcccccc,metalness:1,roughness:.178}), 'chrome')
-      const glass=setRole(new THREE.MeshStandardMaterial({color:0x892ba7,metalness:.35,roughness:.12}), 'glass')
-      const accent=setRole(new THREE.MeshStandardMaterial({color:0x515151,metalness:0,roughness:.48}), 'accent')
-      // Keep the cockpit separate so higher tiers can render transparent glass.
-      glass.userData.separate=true
-      // Prefab rear glow at (0,.692654,-1.218035), reflected into our frame.
-      // The shared glow role supplies procedural light; emissive also lights the base tier.
-      const glowMaterial=setRole(new THREE.MeshStandardMaterial({transparent:true,depthWrite:false,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,emissive:0xffffff,emissiveIntensity:3}), 'glow')
-      // The body may have been switched while the mesh was loading; then these are the model's to release.
-      if(this.model===model){
-        this.paint=paint;this.accent=accent;this.glowMaterial=glowMaterial
-        this.visualMaterials.push(paint,chrome,glass,accent,glowMaterial)
-      }
-      scene.traverse(o=>{if(o instanceof THREE.Mesh){
-        (Array.isArray(o.material)?o.material:[o.material]).forEach(m=>m.dispose())
-        o.material=o.name==='Cockpit'?glass:/Chrome|Spoilers/.test(o.name)?chrome:o.name==='Accent'?accent:paint
-      }})
-      if(this.model===model)this.applyColors()
-      const glow=new THREE.Mesh(new THREE.CircleGeometry(.25,24),glowMaterial)
-      glow.position.set(0,.692654,1.218035);scene.add(glow)
-    })
   }
 
   protected applyForces(dt: number): void {
@@ -193,14 +127,14 @@ export class Hovercraft extends Vehicle {
   private configureChassis():void {
     const mode=Number(hoverAssist.value>0);if(mode===this.assisted)return
     this.assisted=mode
-    // The original prefab cuboid 2x1x3 leaves the spoilers and nose outside collision, so the
-    // assisted glide collides with the whole envelope of whichever body is worn.
+    // The original prefab cuboid 2x1x3 would leave the spoiler and nose outside collision, so
+    // the assisted glide collides with the body's whole envelope.
     const e=this.envelope
     this.chassis.setShape(mode?new RAPIER.Cuboid(e.w/2,(e.y1-e.y0)/2,e.l/2):new RAPIER.Cuboid(1,.5,1.5))
     this.chassis.setTranslationWrtParent(mode?{x:e.x+e.w/2,y:(e.y0+e.y1)/2,z:e.z+e.l/2}:{x:0,y:.4,z:0})
     this.chassis.setFriction(mode?.1:.5)
-    // Mass, centre and inertia stay those of the original hull for every body, so a study
-    // drives exactly as the original does and only what it touches differs.
+    // Mass, centre and inertia stay those of the original hull, so the generated body drives
+    // exactly as the original did and only what it touches differs.
     this.body.setAdditionalMassProperties(50,{x:0,y:mode?.25:-.3,z:mode?-.06:0},
       mode?{x:50*(1.03**2+3.18**2)/12,y:50*(2.54**2+3.18**2)/12,z:50*(2.54**2+1.03**2)/12}:{x:15,y:15,z:15},
       {x:0,y:0,z:0,w:1},true)
@@ -317,25 +251,21 @@ export class Hovercraft extends Vehicle {
     super.postPhysics(dt)
   }
   override update(dt:number,alpha:number):void {
-    // The body is a shared setting; follow it live. The collision hull follows on the next step.
-    if(hoverBody.value!==this.bodyIndex)this.setBody(hoverBody.value)
     super.update(dt,alpha)
-    this.study?.update(this.input.x,Math.max(0,this.input.y),this.input.brakes)
+    this.study.update(this.input.x,Math.max(0,this.input.y),this.input.brakes)
     // Interpolating two valid poses can cut through a sharp crest; keep the rendered hull clear too.
     if(hoverAssist.value){const c=this.hullClearance(this.object.position,this.object.quaternion);if(c<HULL_GUARD)this.object.position.y+=HULL_GUARD-c}
   }
 
   protected override applyColors():void {
-    this.paint?.color.set(this.colors.body);this.accent?.color.set(this.colors.accent)
-    this.glowMaterial?.color.set(this.colors.accent)
-    this.glowMaterial?.emissive.set(this.colors.accent)
+    // The base constructor tints before the body exists.
     this.study?.setColors(this.colors.body,this.colors.accent)
   }
   override teleport(position: THREE.Vector3, heading = 0): void {
     super.teleport(position,heading); this.lastDistance = 0; this.targetHeight = 0
   }
   override dispose(): void {
-    this.model?.dispose();this.study?.dispose();this.visualMaterials.forEach(m=>m.dispose())
+    this.study.dispose()
     super.dispose()
   }
 }
