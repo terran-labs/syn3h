@@ -42,6 +42,8 @@ export interface BungeeVehicle {
 
 export interface BungeeHooks {
   control?(): GearControl
+  /** Bots can send fewer reel updates while local cord physics still runs every step. */
+  reportInterval?: number
 
   /** The local player's id. */
   self(): number
@@ -559,7 +561,7 @@ export class Bungee implements System {
     const c = this.mine
     if (!c || c.hook) return
     const now = this.game.time
-    if (Math.abs(c.rest - this.sentRest) > 0.05 && now - this.sentAt > SEND_GAP) this.send(c, false)
+    if (Math.abs(c.rest - this.sentRest) > 0.05 && now - this.sentAt > (this.hooks.reportInterval ?? SEND_GAP)) this.send(c, false)
     else if (now - this.sentAt > RESEND) this.send(c, false)
   }
 

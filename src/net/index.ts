@@ -655,7 +655,13 @@ export class NetClient implements System {
 
   /** Bot decisions use the same gear implementation and limits as a human driver. */
   private readonly botDecisionHooks: BotDecisionHooks = {
-    available: () => this.isHost ? botGearOptions() : [],
+    available: vehicle => {
+      if (!this.isHost) return []
+      // Two simultaneous users leave room for human messages in the shared connection budget.
+      const controllers = [...this.botGear.values()]
+      const mine = controllers.find(c => c.vehicle === vehicle)
+      return mine?.active || controllers.filter(c => c.active).length < 2 ? botGearOptions() : []
+    },
     threats: vehicle => {
       const id = this.vehicleIdOfBody(vehicle.body.handle)
       const p = vehicle.body.translation()
@@ -673,7 +679,7 @@ export class NetClient implements System {
       if (!controller) {
         if (action.phase === 'cancel' || !botGearOptions().some(o => o.id === action.gear)) return
         // Announce the bot and its fresh state before its first gear message.
-        this.sendBots()
+        this.sendBot(id, vehicle)
         controller = this.makeBotGear(id, vehicle)
         this.botGear.set(id, controller)
       }
@@ -866,18 +872,22 @@ export class NetClient implements System {
   }
 
   private sendBots(): void {
-    const t = this.clock.now()
     for (const [id, bot] of liveBots(this.bots?.vehicles ?? [], this.ctx.game.world)) {
-      // Say which vehicle it is before its first state, and again if the slot changes kind
-      // (a mixed fleet), so guests build the same one.
-      if (this.botKinds.get(id) !== bot.kind) {
-        this.botKinds.set(id, bot.kind)
-        this.send({ type: 'bot', id, kind: bot.kind })
-      }
-      const s = bot.getState()
-      this.conn.send(encodeState({ id, t, ...s, p: this.canonical(s.p), bot: true }) as Uint8Array<ArrayBuffer>)
-      this.stats.botStatesSent++
+      this.sendBot(id, bot)
     }
+  }
+
+  private sendBot(id: number, bot: Vehicle): void {
+    const t = this.clock.now()
+    // Say which vehicle it is before its first state, and again if the slot changes kind
+    // (a mixed fleet), so guests build the same one.
+    if (this.botKinds.get(id) !== bot.kind) {
+      this.botKinds.set(id, bot.kind)
+      this.send({ type: 'bot', id, kind: bot.kind })
+    }
+    const s = bot.getState()
+    this.conn.send(encodeState({ id, t, ...s, p: this.canonical(s.p), bot: true }) as Uint8Array<ArrayBuffer>)
+    this.stats.botStatesSent++
   }
 
   /**

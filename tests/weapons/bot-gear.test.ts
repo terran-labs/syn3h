@@ -7,6 +7,8 @@ import type { Vehicle } from '../../src/vehicles/Vehicle'
 import { RAPIER, createWorld, initPhysics } from '../../src/core/physics'
 import { BotGear } from '../../src/weapons/BotGear'
 import { bigRedCharge } from '../../src/weapons/bigRedParams'
+import { bungeeCooldown } from '../../src/weapons/bungee/params'
+import { yoinkCooldown } from '../../src/weapons/yoink/params'
 
 beforeAll(initPhysics)
 afterEach(() => {
@@ -41,7 +43,7 @@ function setup() {
     fireRed: (_id, d) => shots.push(d), launchPester: () => true,
   })
   const step = (n = 1) => { for (let i = 0; i < n; i++) { game.time += 0.02; controller.fixedUpdate(0.02); world.step() } }
-  return { controller, target, world, cords, yoinks, shots, step, close: () => { controller.dispose(); world.free() } }
+  return { controller, target, world, game, cords, yoinks, shots, step, close: () => { controller.dispose(); world.free() } }
 }
 
 describe('bot gear execution', () => {
@@ -111,6 +113,56 @@ describe('bot gear execution', () => {
       s.controller.bungee.applyRemote(1000, { s: 'off' })
       expect(s.controller.bungee.mine).toBeUndefined()
       expect(s.cords).toHaveLength(1)
+    } finally { s.close() }
+  })
+
+  it.each(['press', 'hold', 'release'] as const)('rejects %s against a removed target before aiming', phase => {
+    params.set('pester.allowed', true)
+    const s = setup()
+    try {
+      s.world.removeRigidBody(s.target.body)
+      expect(() => s.controller.act({ gear: 'pester', target: s.target, phase })).not.toThrow()
+      expect(s.controller.active).toBe(false)
+    } finally { s.close() }
+  })
+
+  it('preserves a new press after cancellation between physics steps', () => {
+    params.set('bungee.allowed', true)
+    const s = setup()
+    try {
+      s.controller.act({ gear: 'bungee', target: s.target, phase: 'press' }); s.step()
+      s.controller.act({ gear: 'bungee', target: s.target, phase: 'cancel' })
+      s.game.time += bungeeCooldown.value + 1
+      s.controller.act({ gear: 'bungee', target: s.target, phase: 'press' }); s.step()
+      expect(s.cords.filter(c => c.s === 'hook')).toHaveLength(2)
+    } finally { s.close() }
+  })
+
+  it('disposes a live gust material once on teardown', () => {
+    params.set('yoink.allowed', true)
+    const s = setup()
+    try {
+      s.target.body.setTranslation({ x: 100, y: 5, z: 0 }, true)
+      const before = new Set(s.game.scene.children)
+      expect(s.controller.yoink.press()).toBe('gust')
+      const wave = s.game.scene.children.find(o => !before.has(o)) as THREE.Mesh
+      const dispose = vi.spyOn(wave.material as THREE.Material, 'dispose')
+      s.controller.yoink.dispose()
+      expect(dispose).toHaveBeenCalledTimes(1)
+      s.controller.yoink.dispose()
+      expect(dispose).toHaveBeenCalledTimes(1)
+    } finally { s.close() }
+  })
+
+  it('preserves a Yoink press after cancellation between physics steps', () => {
+    params.set('yoink.allowed', true)
+    const s = setup()
+    try {
+      s.controller.act({ gear: 'yoink', target: s.target, phase: 'press' }); s.step()
+      s.controller.act({ gear: 'yoink', target: s.target, phase: 'cancel' })
+      s.game.time += yoinkCooldown.value + 1
+      s.controller.act({ gear: 'yoink', target: s.target, phase: 'press' }); s.step()
+      expect(s.yoinks.filter(y => y.s === 'grab')).toHaveLength(2)
     } finally { s.close() }
   })
 })

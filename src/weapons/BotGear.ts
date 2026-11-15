@@ -48,6 +48,7 @@ export class BotGear {
     }
     this.bungee = new Bungee(game, {
       ...common, idOfBody: hooks.idOfBody, now: hooks.now,
+      reportInterval: 0.5,
       inHand: () => this.selected === 'bungee', send: cord => hooks.sendCord(id, cord), cue: hooks.cue,
     })
     this.yoink = new Yoink(game, {
@@ -73,6 +74,10 @@ export class BotGear {
     if (action.gear === 'pester' && action.phase === 'press' && this.game.time >= this.nextPester) {
       if (this.hooks.launchPester(this.id, action.target, this.control.direction)) this.nextPester = this.game.time + pesterCooldown.value
     }
+  }
+
+  get active(): boolean {
+    return this.control.fire || Boolean(this.bungee.mine) || this.yoink.holding !== null || this.red.charge >= 0
   }
 
   private aim(): void {
