@@ -36,6 +36,16 @@ export function makeMats(color: number, accent = 0xff5a12): Mats {
   }
 }
 
+/**
+ * Mesh density for everything built while it is set. 1 is the full study. `withDetail(.35, build)`
+ * rebuilds a design near the game's triangle budget (src/vehicles/PATTERN.md rule 4), so a shape can
+ * be judged at the detail it would ship with. Below 1 the tread lugs and wheel holes are left out,
+ * because in the game those become shading.
+ */
+let detail = 1
+export function withDetail<T>(level: number, build: () => T): T { const was = detail; detail = level; try { return build() } finally { detail = was } }
+const dense = (n: number, least: number) => detail >= 1 ? n : Math.max(least, Math.round(n * detail))
+
 /** One cross-section of a loft: [z, halfWidth, top, bottom, centreY, exponent = 2.4, centreX = 0]. */
 export type Station = number[]
 
@@ -61,7 +71,8 @@ export const waist = (cz: number, rz: number, k: number): Sculpt => (x, y, z) =>
 /** Lean the sides inward above a belt line. */
 export const tumble = (belt: number, k: number): Sculpt => (x, y) => [y > belt ? x * (1 - k * Math.min(1, (y - belt) / .4)) : x, y]
 
-export function loftGeometry(stations: Station[], spans = 9, segs = 44, sculpt?: Sculpt): THREE.BufferGeometry {
+export function loftGeometry(stations: Station[], spans0 = 9, segs0 = 44, sculpt?: Sculpt): THREE.BufferGeometry {
+  const spans = dense(spans0, 2), segs = dense(segs0, 10)
   const full = stations.map(s => [s[0], s[1], s[2], s[3], s[4] ?? 0, s[5] ?? 2.4, s[6] ?? 0])
   const rings: number[][] = []
   for (let i = 0; i < full.length - 1; i++) {
@@ -182,9 +193,9 @@ export function wheel(m: Mats, r: number, hw: number) {
   const g = new THREE.Group(), v = (x: number, y: number) => new THREE.Vector2(x, y)
   const half = [v(0, hw + .04), v(r * .2, hw + .04), v(r * .3, hw - .02), v(r * .7, hw - .07), v(r * .86, hw - .01), v(r, hw - .03)]
   const profile = [...half, ...half.map(p => v(p.x, -p.y)).reverse()]
-  const body = new THREE.Mesh(new THREE.LatheGeometry(profile, 36), m.chrome); body.rotation.z = Math.PI / 2; g.add(body)
+  const body = new THREE.Mesh(new THREE.LatheGeometry(profile, dense(36, 12)), m.chrome); body.rotation.z = Math.PI / 2; g.add(body)
   const hole = new THREE.CylinderGeometry(r * .115, r * .115, .02, 16); hole.rotateZ(Math.PI / 2)
-  for (const side of [-1, 1]) for (let i = 0; i < 5; i++) {
+  if (detail >= 1) for (const side of [-1, 1]) for (let i = 0; i < 5; i++) {
     const a = i / 5 * Math.PI * 2, mesh = new THREE.Mesh(hole, m.rubber)
     mesh.position.set(side * (hw - .045), Math.sin(a) * r * .5, Math.cos(a) * r * .5); g.add(mesh)
   }
@@ -200,7 +211,7 @@ export function trackPod(m: Mats, circles: Circle[], width: number, lugEvery = 3
   let perimeter = 0
   const probe = beltOutline(circles, 240)
   for (let i = 0; i < probe.length; i++) { const a = probe[i], b = probe[(i + 1) % probe.length]; perimeter += Math.hypot(b.z - a.z, b.y - a.y) }
-  const n = Math.max(48, Math.round(perimeter / .07 / lugEvery) * lugEvery), pts = beltOutline(circles, n)
+  const n = Math.max(48, Math.round(perimeter / (detail >= 1 ? .07 : .14) / lugEvery) * lugEvery), pts = beltOutline(circles, n)
   const P = (x: number, off: number) => pts.map(p => new THREE.Vector3(x, p.y - p.ny * off, p.z - p.nz * off))
   const oL = P(-hw, 0), oR = P(hw, 0), iL = P(-hw, thick), iR = P(hw, thick)
   g.add(new THREE.Mesh(mergeGeometries([strip(oL, oR), strip(iL, iR), strip(oL, iL), strip(oR, iR)])!, m.rubber))
@@ -215,7 +226,7 @@ export function trackPod(m: Mats, circles: Circle[], width: number, lugEvery = 3
       lugs.setMatrixAt(i * 2 + (side > 0 ? 1 : 0), M)
     }
   }
-  lugs.instanceMatrix.needsUpdate = true; g.add(lugs)
+  lugs.instanceMatrix.needsUpdate = true; if (detail >= 1) g.add(lugs)
   // Dark core so the pod is solid between the wheels.
   const shape = new THREE.Shape(); pts.forEach((p, i) => { const z = p.z - p.nz * (thick + .05), y = p.y - p.ny * (thick + .05); if (i) shape.lineTo(z, y); else shape.moveTo(z, y) })
   const coreDepth = width * .62, core = new THREE.ExtrudeGeometry(shape, { depth: coreDepth, bevelEnabled: false }); core.translate(0, 0, -coreDepth / 2); core.rotateY(-Math.PI / 2)
@@ -253,7 +264,7 @@ export const plan = (u: number, q = 4) => Math.max(0, 1 - Math.min(1, Math.abs(u
 export interface BodySpec { z0: number; z1: number; W(z: number): number; C(x: number, z: number): number; T(x: number, z: number): number; B(x: number, z: number): number; rim?: number; rings?: number; segs?: number }
 
 export function bodyGeometry(b: BodySpec): THREE.BufferGeometry {
-  const rings = b.rings ?? 120, segs = b.segs ?? 160, p = b.rim ?? 5, pos: number[] = [], idx: number[] = []
+  const rings = dense(b.rings ?? 120, 24), segs = dense(b.segs ?? 160, 40), p = b.rim ?? 5, pos: number[] = [], idx: number[] = []
   for (let i = 0; i <= rings; i++) {
     // Cosine spacing puts more rings where the nose and tail curve in.
     const z = b.z0 + (b.z1 - b.z0) * (.5 - .5 * Math.cos(Math.PI * i / rings)), W = Math.max(.004, b.W(z))

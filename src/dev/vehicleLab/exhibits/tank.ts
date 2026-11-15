@@ -5,7 +5,7 @@
 import * as THREE from 'three/webgpu'
 import { designs as round4 } from '../../../vehicles/tankDesigns/designs'
 import { round5 } from '../../../vehicles/tankDesigns/round5'
-import { makeMats } from '../../../vehicles/tankDesigns/kit'
+import { makeMats, withDetail } from '../../../vehicles/tankDesigns/kit'
 import type { LabExhibit } from '../types'
 
 const ROUNDS = [{ group: '4', designs: round4, hinge: 'Six treads, each on one trailing arm from a single boss on the body' }, { group: '5', designs: round5, hinge: 'Tall cockpit, six big headlamps, a solid rear bumper beam' }]
@@ -20,7 +20,11 @@ export const tank: LabExhibit = {
     return ROUNDS.flatMap(r => r.designs.map(d => ({ id: d.id, name: d.name, notes: [d.tagline, r.hinge], group: r.group })))
   },
   async build(info) {
-    const d = all.find(x => x.id === info.id)!, m = makeMats(d.color), object = d.build(m)
+    const d = all.find(x => x.id === info.id)!, m = makeMats(d.color), object = new THREE.Group()
+    // 'Study' is the full design model. 'Budget' is the same generator near the game's triangle
+    // budget, so a shape can be judged at the detail it would ship with (PATTERN.md rule 4).
+    const levels = [d.build(m), withDetail(.34, () => d.build(m))]
+    levels[1].visible = false; object.add(...levels)
     // Each arm swings on its boss; the pod on its end counter-rotates to stay flat (designs.ts tread()).
     const arms: THREE.Object3D[] = [], pods: THREE.Object3D[] = []
     object.traverse(o => { if (o.userData.arm) { arms.push(o); pods.push(o.children.find(c => c.userData.pod)!) } })
@@ -28,6 +32,9 @@ export const tank: LabExhibit = {
       object,
       // Tread lugs stand 0.05 m below the model's y = 0.
       groundY: -.05,
+      lods: ['Study', 'Budget'],
+      lodDistances: [1e6],
+      setLod: index => levels.forEach((l, i) => { l.visible = i === index }),
       setColors: body => { m.paintU.value.set(body) },
       resetColors: () => { m.paintU.value.setHex(d.color) },
       update(_dt, state) {
