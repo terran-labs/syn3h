@@ -53,6 +53,8 @@ export class BotBrain implements System {
    */
   mind: Mind | null = null
   /** What it is doing now: 'chase' is the original pursuit, 'roam' is the mind's choice. */
+  raceGoal: { countdown: boolean; destination: { x: number; y: number; z: number; radius: number } } | null = null
+  private racing = false
   mood: 'chase' | 'roam' = 'chase'
   private moodTime = 0
   private steer = 0
@@ -197,6 +199,12 @@ export class BotBrain implements System {
     this.targetTime += dt; this.fireTime += dt
     // VehicleBot.js:11 refreshes enemies every two seconds; invalid targets refresh immediately.
     if (this.targetTime >= 2 || !this.target?.body.isValid()) { this.selectTarget(); this.targetTime = 0 }
+    if (this.raceGoal && this.mind && p.canDrive.value && p.topThrottle.value > 0) {
+      if (this.raceGoal.countdown) { input.brakes = true; return }
+      if (!this.racing) { this.mind.hold(this.raceGoal.destination, Math.max(1, this.raceGoal.destination.radius / 2), 125); this.racing = true }
+      this.roam(dt, input, this.vehicle.body.translation()); return
+    }
+    if (this.racing) { this.mind?.reset(); this.racing = false; this.moodTime = 0 }
     if (this.mind && p.canDrive.value && p.topThrottle.value > 0) {
       const here = this.vehicle.body.translation(), there = this.target ? this.imageOf(this.target.body.translation(), here) : undefined
       const match = this.match
