@@ -32,6 +32,18 @@ function snapshot(v:Vehicle){
 }
 
 describe.each(KINDS)('%s materializes',kind=>{
+  it('ignores local axes, fire, rescue and toggle changes during the hold',()=>{
+    const {h,v,m,step}=bed(kind)
+    v.isLocal=true
+    const before={zorb:v.input.zorb,special:v.input.special}
+    Object.assign(h.game.input.state,{x:1,y:1,z:1,w:1,fire:true,zorb:!before.zorb,special:!before.special})
+    m.begin(v,{holdSeconds:HOLD})
+    step(10)
+    expect([v.input.x,v.input.y,v.input.z,v.input.w,v.input.fire]).toEqual([0,0,0,0,false])
+    expect({zorb:v.input.zorb,special:v.input.special}).toEqual(before)
+    m.cancel(v);m.dispose();v.dispose();h.world.free()
+  })
+
   it('is held level at hover height and at rest, then released on the step the hold ends and drops',async()=>{
     const {h,v,m,cues,step}=bed(kind)
     step(30)
@@ -66,11 +78,8 @@ describe.each(KINDS)('%s materializes',kind=>{
     // Under ordinary physics again: it comes down from the hold.
     const top=v.body.translation().y
     step(120)
-    // The jet's own hover hold (Jet.ts, jet.hoverHold) keeps its height above 2.6 m with no
-    // input, so it stays where it materialized instead of dropping: steady, neither climbing nor
-    // falling. Every other kind comes down from the hold.
-    if(kind==='jet')expect(Math.abs(v.body.translation().y-top),'hovers steady').toBeLessThan(.3)
-    else expect(v.body.translation().y,'dropped').toBeLessThan(top-.3)
+    // The jet releases automatic altitude hold too, so every kind drops after the cloud.
+    expect(v.body.translation().y,'dropped').toBeLessThan(top-.3)
     v.dispose();h.world.free()
   })
 

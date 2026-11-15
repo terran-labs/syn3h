@@ -44,6 +44,22 @@ export class Jet extends Vehicle {
   private gearAmount = 0
   /** The gear amount the collider was last shaped for; -1 forces the first update. */
   private colliderGear = -1
+  /** Keep altitude hold off after materialization until gear contact or positive lift input. */
+  private holdReleased = false
+  private freshHoldRelease = false
+  releaseHoverHold():void {this.holdReleased=true;this.freshHoldRelease=true}
+  private gearHasContact():boolean {
+    let touching=false
+    this.game.world.contactPairsWith(this.gearCollider,other=>{
+      this.game.world.contactPair(this.gearCollider,other,manifold=>{
+        if(Math.abs(manifold.normal().y)<.5)return
+        for(let i=0;i<manifold.numSolverContacts();i++){
+          if(manifold.solverContactDist(i)<=.02)touching=true
+        }
+      })
+    })
+    return touching
+  }
   private readonly gearCollider: RAPIER.Collider
   private readonly smoothed = new THREE.Vector4()
   private vectorPitch = 0
@@ -108,6 +124,8 @@ export class Jet extends Vehicle {
     // Keep source force equations; scale digital control authority for demo keyboard use.
     if(!this.hoverMode){input.x*=jetControlResponse.value;input.y*=jetControlResponse.value;input.w*=jetControlResponse.value}
     this.gearAmount=clamp(this.gearAmount+(this.hoverMode&&!this.zorbed?dt:-dt),0,1)
+    // The materializer holds the body kinematically; observe its flag before returning.
+    if(this.object.userData.materializing)this.releaseHoverHold()
     if(this.body.isKinematic()) return
     const q=new THREE.Quaternion().copy(this.body.rotation()), inv=q.clone().invert()
     const velocity=new THREE.Vector3().copy(this.body.linvel()), speed=velocity.length()
@@ -130,7 +148,10 @@ export class Jet extends Vehicle {
       this.vectorPitch = this.vectorYaw = 0
       // Not inside a zorb ball: the hold would thrust along the tumbling jet's up axis and carry
       // the ball off sideways or into the air. Manual throttle still works there.
-      if(this.input.z===0&&jetHoverHold.value>0&&!this.zorbed){
+      // Rapier contacts still describe the previous position on the first step after a teleport.
+      if(this.holdReleased&&!this.object.userData.materializing&&(this.input.z>0||(!this.freshHoldRelease&&this.gearHasContact())))this.holdReleased=false
+      this.freshHoldRelease=false
+      if(this.input.z===0&&jetHoverHold.value>0&&!this.zorbed&&!this.holdReleased){
         // Half throttle balances weight (hoverThrustFactor 2); tilt and vertical speed correct it.
         const hold=clamp(.5/Math.max(.3,up.y)-velocity.y*.15,0,1)
         // Fade the hold out near the ground. A jet resting on its gear (hull about 1.3 m up)
