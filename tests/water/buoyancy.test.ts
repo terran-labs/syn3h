@@ -3,6 +3,9 @@ import * as THREE from 'three/webgpu'
 import { initPhysics, RAPIER } from '../../src/core/physics'
 import { ClassicBuggy } from '../../src/vehicles/ClassicBuggy'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { Tank } from '../../src/vehicles/Tank'
+import { Hovercraft } from '../../src/vehicles/Hovercraft'
+import { Jet } from '../../src/vehicles/Jet'
 import { harness } from '../vehicles2/harness'
 import { waterSinking, applyWaterForces } from '../../src/vehicles/buoyancy'
 beforeAll(initPhysics)
@@ -54,6 +57,17 @@ it('sealed ball floats',()=>{expect(bodyTrial('zorb',5,20,0,0,2).p.y).toBeCloseT
 it('river current carries a submerged hull downstream',()=>{
  const result=bodyTrial('buggy',5,6,0,3)
  expect(result.p.x).toBeGreaterThan(5);expect(result.v.x).toBeGreaterThan(1)
+})
+
+it.each([['tank',Tank],['hovercraft',Hovercraft],['jet',Jet]] as const)('%s controller stays finite in deep water',(kind,Kind)=>{
+ const h=setup(),v=new Kind(h.game,h.terrain,new THREE.Vector3(0,9,0));v.isLocal=false
+ try{
+  h.step(v,900)
+  const p=v.body.translation(),speed=v.body.linvel()
+  expect([p.x,p.y,p.z,speed.x,speed.y,speed.z].every(Number.isFinite)).toBe(true)
+  if(kind==='tank')expect(p.y).toBeLessThan(3)
+  if(kind==='hovercraft')expect(p.y).toBeGreaterThan(8)
+ }finally{v.dispose();h.world.free()}
 })
 
 it('actual zorbed buggy floats in the shared model and follows current',()=>{
