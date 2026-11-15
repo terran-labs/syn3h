@@ -100,9 +100,9 @@ So:
 1. **Do not release during a demo or a round that matters.** Release before people arrive,
    or between sessions when rooms are empty.
 2. If a release must go out with people playing, choose the moment: deploy with
+   `tools/release.sh <n> "note" --immediate`, which passes
    `--durable-objects-code-update-mode immediate`, so every room blinks once, now, instead
-   of five minutes later without warning. `tools/release.sh` does not pass this flag; add it
-   to the deploy line for that one release. Say "the game will blink for a second" first.
+   of five minutes later without warning. Say "the game will blink for a second" first.
 3. After any release with people connected, start a fresh round: scores were reset.
 4. A release that changes the wire protocol (`PROTOCOL_VERSION`) must not go out with people
    playing at all: old pages and new rooms refuse each other until the page reloads.

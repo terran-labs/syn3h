@@ -5,6 +5,7 @@
 #   tools/release.sh <n> "note" --dry-run   the same, but serve the frozen copy with
 #                                           `wrangler dev --local` instead of deploying, and also
 #                                           smoke test it through a 150 ms latency proxy
+#   tools/release.sh <n> "note" --immediate reset every occupied room at once (see below)
 #
 # Run from the integration checkout with a clean tree whose HEAD carries a tag. Steps:
 #  1. tools/promote-stable.sh freezes the build into ../Syn3h-stable/<id> (dist, server,
@@ -16,6 +17,14 @@
 #  5. The release is recorded in ../Syn3h-stable/releases.tsv, the line for ops/RELEASES.md is
 #     printed, and the local git tag release-<n> is created (not pushed).
 # Roll back with tools/rollback.sh.
+#
+# --immediate. By default Cloudflare defers the new room code for a room with players in it:
+# the room runs the old code for up to five minutes, then is reset and everyone in it
+# reconnects (docs/CUTOVER.md, "Releasing while people are playing"). --immediate passes
+# `--durable-objects-code-update-mode immediate` to the deploy, so every occupied room is
+# reset now, at a moment you chose, not five minutes later. Players reconnect within a second
+# and keep the world; scores and the round start again. Leave it off for a normal release
+# made while nobody is playing.
 set -eu
 cd "$(dirname "$0")/.."
 # A release builds, runs wrangler and two Chromes: hold one machine-wide heavy slot throughout.
@@ -26,10 +35,12 @@ REPO="$(pwd)"
 N="${1:-}"
 NOTE="${2:-}"
 MODE="${3:-}"
-case "$N" in ''|*[!0-9]*) echo "usage: tools/release.sh <n> \"note\" [--dry-run]" >&2; exit 2 ;; esac
+case "$N" in ''|*[!0-9]*) echo "usage: tools/release.sh <n> \"note\" [--dry-run | --immediate]" >&2; exit 2 ;; esac
 [ -n "$NOTE" ] || { echo "release.sh: give a note" >&2; exit 2; }
-[ -z "$MODE" ] || [ "$MODE" = "--dry-run" ] || { echo "release.sh: unknown option $MODE" >&2; exit 2; }
+[ -z "$MODE" ] || [ "$MODE" = "--dry-run" ] || [ "$MODE" = "--immediate" ] || { echo "release.sh: unknown option $MODE" >&2; exit 2; }
 DRY=""; [ "$MODE" = "--dry-run" ] && DRY=1
+# Extra deploy arguments: empty for a normal release.
+UPDATE_MODE=""; [ "$MODE" = "--immediate" ] && UPDATE_MODE="--durable-objects-code-update-mode immediate"
 
 fail() { printf '\nRELEASE FAILED: %s\n' "$*" >&2; exit 1; }
 
@@ -96,7 +107,7 @@ else
   echo "Deploying from the frozen copy..."
   # Not interactive: if the account has no workers.dev subdomain yet, wrangler stops here with
   # a link to register one in the dashboard rather than choosing a public name for us.
-  if ! (cd "$DEST" && node "$WRANGLER" deploy --tag "release-$N" --message "$MILESTONE $COMMIT: $NOTE" </dev/null) >"$LOG-deploy.log" 2>&1; then
+  if ! (cd "$DEST" && node "$WRANGLER" deploy $UPDATE_MODE --tag "release-$N" --message "$MILESTONE $COMMIT: $NOTE" </dev/null) >"$LOG-deploy.log" 2>&1; then
     cat "$LOG-deploy.log"; fail "wrangler deploy (see $LOG-deploy.log)"
   fi
   cat "$LOG-deploy.log"
