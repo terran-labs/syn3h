@@ -16,6 +16,34 @@ export function summarizeFrames(frames) {
     noFrameOver2x:frames.length>0&&valid.length===frames.length&&frames.every(f=>!f.hidden&&Number.isFinite(f.targetBudgetMs)&&f.targetBudgetMs>0)&&over2x===0 }
 }
 
+export const CONTROL_MS = 3000
+/** Runs inside a blank page: raw requestAnimationFrame gaps with no game work at all. */
+export function measureRafGaps(durationMs) {
+  return new Promise(resolve=>{const gaps=[];let last=performance.now();const end=last+durationMs
+    const tick=now=>{gaps.push(now-last);last=now;if(now<end)requestAnimationFrame(tick);else resolve(gaps.slice(1))}
+    requestAnimationFrame(tick)})
+}
+
+/**
+ * Pacing validity of one blank-page control. A browser that cannot deliver blank frames near the
+ * display refresh cannot say anything about game frame intervals, so those intervals are unqualified.
+ * Valid: median within 20% of the expected interval, p95 at most 1.5 times it, and at least 80% of
+ * the frames the window should hold.
+ */
+export function judgePacing(gaps, expectedMs, durationMs = CONTROL_MS) {
+  const sorted=gaps.filter(g=>Number.isFinite(g)&&g>0).sort((a,b)=>a-b)
+  const at=q=>sorted[Math.min(sorted.length-1,Math.floor(sorted.length*q))]??null
+  const p50=at(.5),p95=at(.95),reasons=[]
+  if(!(expectedMs>0))reasons.push('no expected refresh interval')
+  if(sorted.length!==gaps.length||sorted.length===0)reasons.push('empty or invalid gaps')
+  else{
+    if(sorted.length<.8*durationMs/expectedMs)reasons.push(`only ${sorted.length} frames in ${durationMs} ms`)
+    if(Math.abs(p50-expectedMs)>.2*expectedMs)reasons.push(`median ${p50.toFixed(1)} ms is not within 20% of ${expectedMs.toFixed(1)} ms`)
+    if(p95>1.5*expectedMs)reasons.push(`p95 ${p95.toFixed(1)} ms exceeds 1.5 times ${expectedMs.toFixed(1)} ms`)
+  }
+  return {frames:sorted.length,p50,p95,max:sorted.at(-1)??null,expectedMs,valid:reasons.length===0,reasons,gaps}
+}
+
 /** Injected before application modules; Object.assign(window,{syn3h}) occurs before game.start. */
 export function installRawCollector() {
   const raw={frames:[],phase:'startup',events:[],initial:null,overflow:false}
@@ -65,6 +93,8 @@ async function main() {
   const source=execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim()
   const scenes=process.env.PERFORMANCE_SCENES?.split(',')??MATRIX_SCENES,tiers=process.env.PERFORMANCE_TIERS?.split(',').map(Number)??MATRIX_TIERS
   assert.ok(scenes.every(s=>MATRIX_SCENES.includes(s))&&tiers.every(t=>MATRIX_TIERS.includes(t)))
+  // Headless Chrome paces at 60 Hz. A headed run on another display must state its refresh rate.
+  const expectedMs=1000/Number(process.env.PERFORMANCE_REFRESH_HZ??60);assert.ok(expectedMs>0&&Number.isFinite(expectedMs),'PERFORMANCE_REFRESH_HZ')
   const freePort=()=>new Promise((resolve,reject)=>{const s=createServer();s.on('error',reject);s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p))})})
   const roomPort=await freePort(),port=await freePort(),origin=`http://127.0.0.1:${port}`
   process.env.SYN3H_NO_ROOM_SERVER='1';process.env.VITE_SERVER_URL=`ws://127.0.0.1:${port}`
@@ -78,6 +108,10 @@ async function main() {
     browser=await chromium.launch({channel:'chrome',headless:true,args:['--enable-unsafe-webgpu','--use-angle=metal','--ignore-gpu-blocklist']})
     for(const tier of tiers)for(const scene of scenes){
       const id=`${scene}-tier${tier}`,context=await browser.newContext({viewport:{width:1280,height:720},deviceScaleFactor:1}),roomName=`perf${Date.now()}`
+      // Blank-page control in this same browser session, alone in front, with tracing off.
+      const control=async()=>{let blank;try{blank=await context.newPage();await blank.setContent('<body style="background:#123"><h1>blank</h1></body>');await blank.bringToFront()
+        return judgePacing(await blank.evaluate(measureRafGaps,CONTROL_MS),expectedMs)}catch(error){return {valid:false,reasons:[`control failed: ${error}`],expectedMs,gaps:[]}}finally{await blank?.close().catch(()=>{})}}
+      const pacingBefore=await control()
       const host=await context.newPage(),cdp=await context.newCDPSession(host),cellErrors=[]
       let tracing=false,guest=null
       try{
@@ -144,21 +178,29 @@ async function main() {
           let bytes=0
           try{while(true){const part=await cdp.send('IO.read',{handle:stream,size:1048576});const buffer=Buffer.from(part.data,part.base64Encoded?'base64':'utf8');bytes+=buffer.length;await appendFile(`${out}/${id}.trace.json`,buffer);if(bytes>512*1024*1024)throw Error('Trace exceeds512MiB; matrix aborted');if(part.eof)break}}finally{await cdp.send('IO.close',{handle:stream})}
         }
+        // The after control needs the game pages gone, as the before control had them not yet open.
+        await guest?.close().catch(()=>{});await host.close().catch(()=>{})
+        const pacingAfter=await control(),pacing={expectedMs,before:pacingBefore,after:pacingAfter,valid:pacingBefore.valid&&pacingAfter.valid}
         const phases={};for(const phase of ['startup','transition','warmup','measurement','crossings','after'])phases[phase]=summarizeFrames(raw?.frames.filter(f=>f.phase===phase)??[])
         const crossingSigns=(raw?.frames??[]).filter(f=>f.phase==='crossings'&&Number.isFinite(f.waterDepth)&&Math.abs(f.waterDepth)>.5).map(f=>Math.sign(f.waterDepth))
         const crossingChanges=crossingSigns.reduce((n,s,i)=>n+(i>0&&s!==crossingSigns[i-1]?1:0),0)
         const crossingCoverage=scene!=='water'||(crossingSigns.includes(1)&&crossingSigns.includes(-1)&&crossingChanges>=5)
-        const row={id,scene,tier,source,raw,guestRaw,phases,crossingChanges,crossingCoverage,errors:cellErrors,load:loadavg(),gate:!!raw&&!raw.overflow&&crossingCoverage&&cellErrors.length===0&&phases.measurement.noFrameOver2x&&(scene!=='water'||phases.crossings.noFrameOver2x)}
-        results.push({...row,raw:undefined,guestRaw:undefined});await writeFile(`${out}/${id}.json`,JSON.stringify(row,null,2));console.log(JSON.stringify({...row,raw:undefined,guestRaw:undefined}))
+        // Without two valid controls the interval summaries leave the acceptance field entirely: they
+        // stay in the artifact as unqualified evidence and can never be read into a report table.
+        const row={id,scene,tier,source,raw,guestRaw,pacing,intervalsQualified:pacing.valid,phases:pacing.valid?phases:null,unqualifiedPhases:pacing.valid?null:phases,crossingChanges,crossingCoverage,errors:cellErrors,load:loadavg(),gate:pacing.valid&&!!raw&&!raw.overflow&&crossingCoverage&&cellErrors.length===0&&phases.measurement.noFrameOver2x&&(scene!=='water'||phases.crossings.noFrameOver2x)}
+        const brief={...row,raw:undefined,guestRaw:undefined,pacing:{...pacing,before:{...pacingBefore,gaps:undefined},after:{...pacingAfter,gaps:undefined}}}
+        results.push(brief);await writeFile(`${out}/${id}.json`,JSON.stringify(row,null,2));console.log(JSON.stringify(brief))
         errors.push(...cellErrors);await context.close()
       }
       if(cellErrors.length)throw Error(`Rendering/setup failure in ${id}; remaining cells not run`)
     }
   }finally{
-    await writeFile(`${out}/results.json`,JSON.stringify({source,scenes,tiers,driveSeconds:DRIVE_SECONDS,results,errors,roomLog,limitations:'Instrumented shared-host desktop; CPU submission is not GPU execution; manual tier cells do not validate weak hardware.'},null,2))
+    await writeFile(`${out}/results.json`,JSON.stringify({source,scenes,tiers,driveSeconds:DRIVE_SECONDS,results,errors,roomLog,expectedRefreshMs:expectedMs,limitations:'Frame intervals count only in cells whose blank-page controls before and after both paced near the expected refresh. Instrumented shared-host desktop; CPU submission is not GPU execution; manual tier cells do not validate weak hardware.'},null,2))
     await browser?.close();await vite?.close();room.kill('SIGTERM')
   }
   // Keep the full matrix even when a frame budget fails. Exit distinguishes evidence from acceptance.
-  if(results.some(r=>!r.gate))process.exitCode=2
+  // Exit 3: at least one cell had invalid pacing controls, so the run cannot support pacing acceptance.
+  if(results.some(r=>!r.intervalsQualified))process.exitCode=3
+  else if(results.some(r=>!r.gate))process.exitCode=2
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)await main()

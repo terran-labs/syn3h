@@ -35,3 +35,19 @@ it('captures the first callback and all stalls even when recommendation eligibil
  expect(window.performanceMatrix.frames).toHaveLength(1)
  expect(window.performanceMatrix.frames[0]).toMatchObject({frameMs:1700,judge:false,hidden:true,phase:'startup'})
 })
+
+import { judgePacing } from '../../tools/performance-check.mjs'
+it('accepts a blank control only when it paces near the expected refresh',()=>{
+ const steady=Array.from({length:180},()=>16.7)
+ expect(judgePacing(steady,1000/60)).toMatchObject({valid:true,frames:180,reasons:[]})
+ // The lobby control that withdrew the headless conclusions: p50 67 ms on a blank page.
+ const slow=judgePacing(Array.from({length:45},(_,i)=>i>42?133:67),1000/60)
+ expect(slow.valid).toBe(false);expect(slow.p50).toBe(67);expect(slow.reasons.length).toBeGreaterThan(0)
+ // A good median cannot hide a ragged tail, and empty or broken evidence never passes.
+ expect(judgePacing([...steady.slice(0,160),...Array(20).fill(40)],1000/60).valid).toBe(false)
+ expect(judgePacing([],1000/60).valid).toBe(false)
+ expect(judgePacing([...steady,NaN],1000/60).valid).toBe(false)
+ expect(judgePacing(steady,NaN).valid).toBe(false)
+ // A 120 Hz display has its own expectation; 60 Hz pacing there is not valid.
+ expect(judgePacing(steady,1000/120).valid).toBe(false)
+})
