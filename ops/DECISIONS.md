@@ -26,6 +26,23 @@ The owner answered the wind question: generated wind only. UX owns removing the 
 wind layer. This supersedes the recording-retention rule for wind only; original music
 and laser recordings remain.
 
+## Sunday 15 November, 9:05am to 9:40am Pacific: pause, panels and touch stick
+
+**Decided** by the owner, in four messages.
+
+- The game does not run in a background tab: audio fades out and pauses, and nothing
+  consumes CPU.
+- Escape with the cursor already free pauses, with a floating "Paused. Click to resume"
+  message and all audio fading to zero over about 500 ms.
+- Panels being open or closed is a function of cursor locking alone; there is no separate
+  panel state. Locked means driving with panels closed; free means panels open.
+- The touch joystick floats: it appears where the first drag begins, with no permanent
+  stick in the lower left.
+
+**What it changes.** One pause controller serves both the hidden tab and Escape. UX removes
+the stored panel state and defines the single equivalent state for touch. What other
+players see when a guest or the host is paused is still to be decided by the Orchestrator.
+
 ## Sunday 15 November, 9:15am Pacific: one approved design per vehicle in the noon release
 
 **Decided** by the owner: "In the version we're shipping at noon today, there should only be
