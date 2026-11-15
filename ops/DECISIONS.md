@@ -26,6 +26,19 @@ The owner answered the wind question: generated wind only. UX owns removing the 
 wind layer. This supersedes the recording-retention rule for wind only; original music
 and laser recordings remain.
 
+## Sunday 15 November, 11:33am Pacific: full version numbers, and a frozen build for judges
+
+**Decided** by the owner. Builds are named by their full version (v26.11.1503), not by an
+integer release number. Judges must be able to load the build frozen before noon by a
+version parameter on www.syn3h.com, so he can keep building and shipping after noon while
+the project is judged fairly against others finished at noon. The functionality ships
+before noon.
+
+**What it changes.** v26.11.1503 (live since 11:20am) is the build frozen before noon. The
+Orchestrator adds version-addressed serving to the site, with a direct frozen link as the
+fallback, and does not ship a protocol change that would force a frozen build to reload.
+Later releases must keep earlier frozen versions loadable.
+
 ## Sunday 15 November, 11:24am Pacific: licensed under PolyForm Noncommercial 1.0.0
 
 **Decided** by the owner: "Update our Git repo with the PolyForm Noncommercial." He wants
