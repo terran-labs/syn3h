@@ -121,6 +121,9 @@ export abstract class Vehicle implements System {
   wheelsGrounded = 0
   /** True while wings (or a flight mode) are deployed. For audio and effects. */
   wingsOpen = false
+  /** Current visible wing tip in vehicle-local coordinates; writes into caller-owned storage.
+   * False means no anchor is available, so effects must discard the previous trail point. */
+  getWingTip(_side: -1 | 1, _out: THREE.Vector3): boolean { return false }
   /** True on the fixed step the wheels touched down after being fully airborne. For effects. */
   landedThisStep = false
   /** Downward speed in m/s at the last touchdown (valid when `landedThisStep`). For effects. */

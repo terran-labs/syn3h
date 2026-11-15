@@ -258,8 +258,13 @@ class VehicleEffects {
     if(trails&&this.trailTimer>=.04/rateScale){
       this.trailTimer=0
       for(let i=0;i<2;i++){
-        // These snapshots lack vehicle TrailRenderers. Reconstructed tips, width .1, lifetime .8.
-        const prev=this.previousTips[i];this.point((i?1:-1)*(this.buggy?4.2:3.85),this.buggy?.1:.13,this.buggy?1.2:1.14,tip)
+        const prev=this.previousTips[i]
+        if(this.buggy){
+          // Follow the skin's current deformed wing, including its active detail level.
+          // Never bridge a missing/closed wing to its next available trail point.
+          if(!v.getWingTip(i?1:-1,tip)){this.hasTip[i]=false;continue}
+          this.point(tip.x,tip.y,tip.z,tip)
+        }else this.point((i?1:-1)*3.85,.13,1.14,tip)
         if(this.hasTip[i]){side.copy(tip).sub(prev).cross(toCamera.copy(w.game.camera.position).sub(tip)).normalize();w.trails.add(prev,tip,side,.1,.8,.22,trailColor.copy(this.color).multiplyScalar(2))}
         prev.copy(tip);this.hasTip[i]=true
       }
