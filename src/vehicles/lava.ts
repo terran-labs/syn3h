@@ -1,25 +1,12 @@
-/**
- * Lava and water handling for the buggies, from Mars Explorer Buggy.js 435-475 ("Floating" and
- * "Diving"). Syn3h commented this out (VhiclBuggy.cs 346-387), but this world has a lava lake,
- * rivers and pools, and pushing each other into them is the game.
- *
- * Kept from the original: the float band (body origin from 3 m under the surface to 0.1 m
- * above), per point skip force that grows 15x with speed and 100x above 15 m/s, the -200 * v
- * per point drag, the lava steering and levelling torques, the 1200 N paddle thrust, the wing
- * lift near the surface, angular drag 2.
- *
- * Changed, and why: the original's buoyancy term is a constant 1.8 * 100 N spread over all
- * points (its depth term always clamps), 180 N against the 294 N weight of a 30 kg buggy, so a
- * slow buggy slowly sank and then drove along the lava bed. Here the static term scales with
- * each point's depth and lifts about 1.6 times the weight when fully under, so a slow buggy
- * floats half submerged; diving pushes up by 1.5 times the weight so a plunge resurfaces.
- */
+/** Indestructible vehicles: viscous lava, cooling paint and legacy water buoyancy. */
 import * as THREE from 'three/webgpu'
 import { defineParam } from '../../shared/params'
+import type { RAPIER } from '../core/physics'
+import type { Terrain } from '../world/Terrain'
 import { type UnityBody, signedAngle, unityEulerAngles } from './unityBody'
 
 export const buggyLavaFloat = defineParam({
-  id: 'buggy.lavaFloat', label: 'Float on lava', group: 'Buggy', scope: 'world',
+  id: 'buggy.lavaFloat', label: 'Float on water', group: 'Buggy', scope: 'world',
   default: true,
 })
 
@@ -43,6 +30,8 @@ export function applyLava(
   liquidAt: (x: number, z: number) => number,
   input: LavaInput,
 ): boolean {
+  const terrain=liquidTerrains.get(ub.body)
+  if (terrain && liquidKind(terrain,ub.pos.x,ub.pos.z)!=='water') return false
   if (!buggyLavaFloat.value) return false
   const b = ub.body
   const pos = ub.pos
@@ -109,4 +98,68 @@ export function floatPoints(halfWidth: number, halfLength: number, yLow: number,
     pts.push(new THREE.Vector3(sx * halfWidth, yLow - 0.2, sz * halfLength))
   }
   return pts
+}
+
+
+export const lavaViscosity=defineParam({id:'lava.viscosity',label:'Viscosity',group:'Lava',scope:'world',default:6,min:0,max:20,step:.1})
+export const lavaSinkDepth=defineParam({id:'lava.sinkDepth',label:'Sink depth (m)',group:'Lava',scope:'world',default:.45,min:.1,max:2,step:.05})
+export const lavaCrawlPower=defineParam({id:'lava.crawlPower',label:'Crawl power (m/s²)',group:'Lava',scope:'world',default:3,min:0,max:15,step:.1})
+export const lavaCoolingTime=defineParam({id:'lava.coolingTime',label:'Cooling time (s)',group:'Lava',scope:'world',default:20,min:1,max:120,step:1})
+const liquidTerrains=new WeakMap<RAPIER.RigidBody,Terrain>()
+export function registerLiquidTerrain(body:RAPIER.RigidBody,terrain:Terrain):void {liquidTerrains.set(body,terrain)}
+export function liquidKind(terrain:Terrain,x:number,z:number):'lava'|'water'|null {
+ return terrain.liquidKindAt?terrain.liquidKindAt(x,z):'lava'
+}
+export interface LiquidState {
+ lavaDepth:number
+ stuck:boolean
+ heat:number
+ /** Wet surface plane in the vehicle frame; follows the paint when the car turns. */
+ heatNormal:THREE.Vector3
+ heatHeight:number
+}
+export function createLiquidState():LiquidState {return {lavaDepth:0,stuck:false,heat:0,heatNormal:new THREE.Vector3(0,1,0),heatHeight:-100}}
+const liquidQ=new THREE.Quaternion(),inverseQ=new THREE.Quaternion(),forward=new THREE.Vector3(),angular=new THREE.Vector3(),upAxis=new THREE.Vector3(),wetNormal=new THREE.Vector3(),globalUp=new THREE.Vector3(0,1,0)
+
+/** Runs after each vehicle controller, so wheel, wing and jet forces cannot skim through lava. */
+export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terrain:Terrain,input:{x:number;y:number;z:number},kind:string,state:LiquidState,dt:number):void {
+ const p=body.translation(),surface=terrain.liquidHeightAt?.(p.x,p.z)??-Infinity
+ const type=liquidKind(terrain,p.x,p.z)
+ state.lavaDepth=type==='lava'&&Number.isFinite(surface)?Math.max(0,surface-p.y):0
+ state.stuck=false
+ state.heat=Math.max(0,state.heat-dt/lavaCoolingTime.value)
+ // Contact begins when the lower chassis enters, not while a hover vehicle rides above it.
+ const immersion=Number.isFinite(surface)&&type?Math.max(0,surface-p.y+.25):0
+ if(!immersion)return
+ if(type==='water'){state.heat=0;state.heatHeight=-100}
+ if(type==='water'&&(kind==='buggy'||kind==='buggy-syn3h'||kind==='buggy-classic'))return
+ const lava=type==='lava',fraction=Math.min(1,immersion/.5)
+ const v=body.linvel(),w=body.angvel(),r=body.rotation();liquidQ.set(r.x,r.y,r.z,r.w)
+ if(lava){
+  const wasCold=state.heat===0
+  state.heat=1
+  wetNormal.set(0,1,0).applyQuaternion(inverseQ.copy(liquidQ).invert())
+  // Keep the deepest wetted band while hot. A new cold entry starts a fresh band.
+  if(state.heatHeight===-100||surface-p.y>state.heatHeight||wasCold){state.heatNormal.copy(wetNormal);state.heatHeight=surface-p.y}
+ }
+ state.stuck=lava&&state.lavaDepth>=lavaSinkDepth.value*.65&&Math.hypot(v.x,v.z)<1.5
+ if(body.isKinematic())return
+ // Replace native drive forces only while immersed. Gravity still belongs to Rapier.
+ body.resetForces(true);body.resetTorques(true)
+ const drag=(lava?lavaViscosity.value:1.2)*fraction*(1+Math.min(2,state.lavaDepth))
+ const decay=Math.exp(-drag*dt),verticalBlend=1-Math.exp(-Math.max(3,drag*2)*dt)
+ // In shallows, support the chassis above the bed instead of commanding it into the shore.
+ const target=Math.max(surface-(lava?lavaSinkDepth.value:0),Math.min(surface+.3,terrain.heightAt(p.x,p.z)+.7))
+ const verticalTarget=THREE.MathUtils.clamp((target-p.y)*2,-1.5,2)
+ forward.set(0,0,-1).applyQuaternion(liquidQ);forward.y=0
+ if(forward.lengthSq()<.01)forward.set(0,0,-1);else forward.normalize()
+ const throttle=THREE.MathUtils.clamp(kind==='jet'?input.z:input.y,-1,1)
+ const acceleration=(lava?lavaCrawlPower.value:4)*throttle
+ body.setLinvel({x:v.x*decay+forward.x*acceleration*dt,y:THREE.MathUtils.lerp(v.y,verticalTarget,verticalBlend),z:v.z*decay+forward.z*acceleration*dt},true)
+ body.addForce({x:0,y:-world.gravity.y*body.mass(),z:0},true)
+ // A damped leveller and slow yaw permit deliberate crawling out even after a tumble.
+ upAxis.set(0,1,0).applyQuaternion(liquidQ);angular.copy(upAxis).cross(globalUp)
+ const turn=-input.x*(lava?.35:.7)*Math.max(.25,Math.abs(throttle))
+ const angularBlend=1-Math.exp(-Math.max(2,drag)*dt)
+ body.setAngvel({x:THREE.MathUtils.lerp(w.x,angular.x,angularBlend),y:THREE.MathUtils.lerp(w.y,turn,angularBlend),z:THREE.MathUtils.lerp(w.z,angular.z,angularBlend)},true)
 }
