@@ -17,11 +17,31 @@ export const SEA_GRID = 192
  * shows the same crest at the same moment (`setWaterClock`).
  */
 let clock: () => number = () => 0
+let previous: (() => number) | null = null
+let switchedAt = -Infinity
+/** Seconds to calm the sea before a clock change and to raise it after: half each. */
+export const CLOCK_SWITCH_SECONDS = 1.2
+const wall = () => (typeof performance === 'undefined' ? Date.now() : performance.now()) / 1000
+
+/**
+ * Change the clock the sea follows. The two clocks disagree by however long this client has
+ * been running, so switching outright would jump every crest at once and jolt anything afloat.
+ * Instead the swell calms to nothing on the old clock, the clock changes while the sea is
+ * flat, and the swell rises again on the new one (`waveScale`).
+ */
 export function setWaterClock(fn: () => number): void {
+  previous = clock
   clock = fn
+  switchedAt = wall()
 }
 export function waterTime(): number {
-  return clock()
+  const since = wall() - switchedAt
+  return previous && since < CLOCK_SWITCH_SECONDS / 2 ? previous() : clock()
+}
+/** 1 normally; eases to 0 and back to 1 across a clock change. Smoothstep each way. */
+export function waveScale(): number {
+  const x = Math.min(1, Math.abs(wall() - switchedAt - CLOCK_SWITCH_SECONDS / 2) / (CLOCK_SWITCH_SECONDS / 2))
+  return x * x * (3 - 2 * x)
 }
 
 class SeaWaves {
@@ -84,14 +104,14 @@ class SeaWaves {
     if (!waterWaves.value) return 0
     const set = this.waves
     if (set.amplitude <= 0) return 0
-    return shoalFactor(level - ground, set.dominantLength) * waveOffset(set, this.phasesNow(), x, z)
+    return waveScale() * shoalFactor(level - ground, set.dominantLength) * waveOffset(set, this.phasesNow(), x, z)
   }
 
   /** Vertical speed of the surface at (x, z), m/s, shoaled like the height. */
   verticalSpeedAt(x: number, z: number, ground: number, level: number): number {
     if (!waterWaves.value) return 0
     const set = this.waves
-    return shoalFactor(level - ground, set.dominantLength) * waveVerticalSpeed(set, this.phasesNow(), x, z)
+    return waveScale() * shoalFactor(level - ground, set.dominantLength) * waveVerticalSpeed(set, this.phasesNow(), x, z)
   }
 
   /** Surface slope in deep water (dh/dx, dh/dz), every component. */
@@ -101,7 +121,11 @@ class SeaWaves {
       out.z = 0
       return out
     }
-    return waveSlope(this.waves, this.phasesNow(), x, z, out)
+    waveSlope(this.waves, this.phasesNow(), x, z, out)
+    const k = waveScale()
+    out.x *= k
+    out.z *= k
+    return out
   }
 }
 
