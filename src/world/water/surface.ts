@@ -264,6 +264,9 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   // A thin broken edge that laps in and out, not a white apron: depth is now true per pixel.
   const lap = sin(time.mul(0.8).add(breakup.mul(9))).mul(0.08)
   let foam = smoothstep(0.42, 0.06, depth.add(rx.mul(0.18)).add(lap)).mul(smoothstep(-0.25, 0.02, depth)).mul(breakup.mul(0.6).add(0.4))
+  // Pools and river banks shelve gently, so the same depth band is metres wide there: a
+  // faint wet edge, not a white collar.
+  if (mode !== 'sea') foam = foam.mul(mode === 'still' ? 0.35 : 0.5)
   if (mode === 'sea') {
     // Rolling lines running in to the shore: phase rises with depth so the bands travel toward
     // the coast, and they fade with depth and wherever the noise breaks them up.

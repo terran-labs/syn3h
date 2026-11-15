@@ -23,7 +23,7 @@ export const waterReflection = defineParam({
 })
 /** Crest to trough height of the biggest possible swell, metres. */
 export const waterWaveHeight = defineParam({
-  ...P, id: 'water.waveHeight', label: 'Wave height (m)', default: 0.8, min: 0, max: WAVE_MAX_HEIGHT, step: 0.05,
+  ...P, id: 'water.waveHeight', label: 'Wave height (m)', default: 1.4, min: 0, max: WAVE_MAX_HEIGHT, step: 0.05,
 })
 /** Dominant wavelength, metres. Speed follows from it (deep water dispersion). */
 export const waterWaveLength = defineParam({
