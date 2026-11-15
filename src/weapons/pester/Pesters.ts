@@ -1,5 +1,5 @@
 /**
- * Pesters: slow glowing clouds of light that chase another player and tag them if they
+ * Chasers (Pesters in the code): slow glowing clouds of light that chase another player and tag them if they
  * catch up. They fade after `pester.life` seconds. How they look is in cloud.ts.
  *
  * Networking rides on the tag beam's messages: a Pester is a shot of kind 'pester' naming its

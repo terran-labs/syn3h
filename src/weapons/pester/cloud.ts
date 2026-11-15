@@ -42,9 +42,9 @@ function hash(i: number, k: number): number {
 export class PesterCloud {
   readonly light: THREE.Mesh<THREE.InstancedBufferGeometry, THREE.SpriteNodeMaterial>
   readonly haze: THREE.Mesh<THREE.InstancedBufferGeometry, THREE.SpriteNodeMaterial>
-  private readonly clock = uniform(0)
+  private readonly clock: N = uniform(0)
   private readonly color: N = uniform(new THREE.Color())
-  private readonly size = uniform(1)
+  private readonly size: N = uniform(1)
   /** Per Pester: centre and brightness; velocity and how far it has scattered (0 to 1). */
   private readonly centre = new Float32Array(CLOUD_ORBS * 4)
   private readonly motion = new Float32Array(CLOUD_ORBS * 4)
