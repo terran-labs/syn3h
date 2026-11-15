@@ -125,4 +125,9 @@ describe('Jet hover and flight',()=>{
   expect(Math.abs(bot.body.angvel().y)).toBeGreaterThan(.05);expect(bot.input.w).toBe(1)
   bot.dispose();h.world.free()
  })
+ it('opts out of shared lamp blobs because the Mk2 has no lamp fittings',()=>{
+  const h=harness();const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,30,0));v.isLocal=false
+  expect(v.object.userData.ownLamps).toBe(true)
+  v.dispose();h.world.free()
+ })
 })
