@@ -32,6 +32,7 @@ export class PerformancePanel {
   private snapshot?: PerformanceSnapshot
   private playing = false
   private captured = false
+  private panelsOpen = false
   private wasVisible = false
   /** The "changed" mark beside each fine-tune row, by property id. */
   private readonly marks = new Map<string, HTMLButtonElement>()
@@ -42,7 +43,7 @@ export class PerformancePanel {
   private readonly select: HTMLSelectElement
   private readonly diagnostics: HTMLDetailsElement
 
-  constructor(_parent: HTMLElement, private readonly openRail: () => void, quality?: QualitySource, private readonly inspector?: Inspector) {
+  constructor(private readonly parent: HTMLElement, private readonly openRail: () => void, quality?: QualitySource, private readonly inspector?: Inspector) {
     const signal = this.abort.signal
     this.element.className = 'performance-card'
     this.element.innerHTML = `<div class="wi-level" role="group" aria-label="Quality level">
@@ -61,8 +62,8 @@ export class PerformancePanel {
     this.diagnostics = this.element.querySelector('details')!
     this.recommendation.className = 'performance-recommendation'; this.recommendation.hidden = true
     this.recommendation.setAttribute('role', 'status')
-    this.recommendation.innerHTML = '<p></p><button type="button" data-performance="ignore">Ignore</button><button type="button" data-performance="lower">Lower level</button>'
-    this.element.querySelector('.performance-quality')!.after(this.recommendation)
+    this.recommendation.innerHTML = '<p></p><button type="button" data-performance="ignore">Ignore</button><button type="button" data-performance="lower">Lower level</button><small class="performance-unlock" hidden>Esc for options</small>'
+    parent.append(this.recommendation)
     this.select.addEventListener('change', () => this.quality?.setLevel(Number(this.select.value)), { signal })
     this.element.querySelector('.wi-auto input')!.addEventListener('change', event => this.quality?.setAuto((event.target as HTMLInputElement).checked), { signal })
     this.element.querySelector('[data-quality=down]')!.addEventListener('click', () => this.quality?.stepDown(), { signal })
@@ -97,7 +98,9 @@ export class PerformancePanel {
 
   /** Called from Shell's existing update, only to gate presentation. No sampling or timing. */
   setContext(playing: boolean, captured: boolean): void {
-    if (playing === this.playing && captured === this.captured) return
+    const panelsOpen = this.inspector?.open ?? false
+    if (playing === this.playing && captured === this.captured && panelsOpen === this.panelsOpen) return
+    this.panelsOpen = panelsOpen
     this.playing = playing; this.captured = captured; this.showRecommendation()
   }
 
@@ -173,13 +176,21 @@ export class PerformancePanel {
     const pinned = state?.pinned ?? snapshot?.levelPinned
     const easing = state?.easing ?? (snapshot && snapshot.quality.rung > 0 ? snapshot.quality.kind : null)
     const reduction = easing === 'post' ? 'Post effects reduced automatically' : easing === 'resolution' ? 'Resolution reduced automatically' : 'Full resolution and post budget'
-    this.element.querySelector('.performance-quality')!.textContent = [name, auto === undefined ? '' : `Auto ${auto ? 'on' : 'off'}`, pinned === undefined ? '' : pinned ? 'Pinned' : 'Not pinned', reduction, snapshot ? `${snapshot.quality.targetFps} fps target` : ''].filter(Boolean).join(' · ')
+    this.element.querySelector('.performance-quality')!.textContent = [name, auto === undefined ? '' : `Auto ${auto ? 'on' : 'off'}`, pinned === undefined ? '' : pinned ? 'Pinned' : 'Not pinned', reduction, snapshot ? `Pixel ratio ${number(snapshot.quality.pixelRatio, 2)} · Post budget ${number(snapshot.quality.post * 100, 0)}% · ${snapshot.quality.targetFps} fps target` : ''].filter(Boolean).join(' · ')
 
   }
 
   private showRecommendation(): void {
-    // Clickable actions belong to the unlocked interface, never underneath captured input.
-    this.recommendation.hidden = !this.snapshot?.recommendation || !this.playing || this.captured
+    this.recommendation.hidden = !this.snapshot?.recommendation || !this.playing
+    const footer = this.panelsOpen ? this.inspector?.element.querySelector('.rail-foot') : null
+    const host = footer ?? this.parent
+    if (this.recommendation.parentElement !== host) {
+      if (footer) footer.prepend(this.recommendation); else this.parent.append(this.recommendation)
+    }
+    this.recommendation.toggleAttribute('data-docked', !!footer)
+    // The notice remains visible while driving. Escape exposes its choices without firing.
+    for (const button of this.recommendation.querySelectorAll<HTMLButtonElement>('button')) button.hidden = this.captured
+    this.recommendation.querySelector<HTMLElement>('.performance-unlock')!.hidden = !this.captured
   }
 
   private render(snapshot: PerformanceSnapshot): void {

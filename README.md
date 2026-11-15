@@ -142,7 +142,12 @@ input the vehicle takes itself for a drive. Touch any control and it is yours ag
 
 **It is running slowly.** Open Performance in the side panel and pick a lower quality
 level. There are six, from Minimal to Cinematic. With Auto on, the game lowers the level
-itself when frames drop, unless you have pinned one by hand.
+itself when frames drop, unless you have pinned one by hand. Fresh capable devices
+start at High; returning players keep their stored choice subject to startup safety caps.
+Auto reduces post effects and resolution first. If a pinned level stays slow after those
+reductions, a notice offers the next lower level. Choose **Keep** to dismiss it for the
+session. With the cursor captured, press Escape to reach the choices. The Performance
+card shows Auto, pinning and current automatic reductions.
 
 **How do I change the world?** Open World or Sky in the side panel. Gravity, time of day,
 weather, water and a few hundred other settings are live sliders, and in a shared room

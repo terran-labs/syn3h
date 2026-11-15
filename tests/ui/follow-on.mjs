@@ -69,12 +69,29 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
     const recommendationCard=page.locator('.wi-card[data-section=performance]')
     if(!await recommendationCard.evaluate(el=>el.classList.contains('is-open')))await recommendationCard.locator('.wi-head').click()
     await page.locator('.performance-recommendation').scrollIntoViewIfNeeded()
-    assert.equal(await page.locator('.performance-recommendation').evaluate(el=>getComputedStyle(el).position),'static','recommendation occupies its own space inside the card')
+    assert.equal(await page.locator('.performance-recommendation').evaluate(el=>getComputedStyle(el).position),'static','recommendation occupies its own space in the pinned footer')
     await page.screenshot({path:`tests/ui/artifacts/follow-on/${mode}-recommendation.png`})
     assert.match(await page.locator('.performance-recommendation').innerText(),/Running slow at Medium \(20 fps\). Switch to Low\?/)
     assert.match(await page.locator('[data-performance=lower]').innerText(),/^Switch to Low$/)
     // Retired vocabulary never reaches the player.
     for(const selector of ['.performance-card','.performance-recommendation'])assert.doesNotMatch(await page.locator(selector).innerText(),/\b(tiers?|safe|mobile|desktop|unmeasured)\b/i,selector)
+    // The same notice remains in play, clear of controls and the mode HUD.
+    if(mode==='desktop')await page.mouse.click(100,150)
+    else await page.locator('.inspector-toggle').tap()
+    await page.locator('.world-inspector').waitFor({state:'hidden'})
+    assert.ok(await page.locator('.performance-recommendation').isVisible(),'notice remains visible while driving')
+    const overlap=await page.locator('.performance-recommendation').evaluate(el=>{
+      const r=el.getBoundingClientRect()
+      return [...document.querySelectorAll('.match-hud,.race-hud,.gear-selector,.gear-actions,.shell-minimap,.touch-actions,.touch-stick')].filter(other=>{
+        const style=getComputedStyle(other),b=other.getBoundingClientRect()
+        return style.display!=='none'&&style.visibility!=='hidden'&&b.width>0&&b.height>0&&r.left<b.right&&r.right>b.left&&r.top<b.bottom&&r.bottom>b.top
+      }).map(el=>el.className)
+    })
+    assert.deepEqual(overlap,[],'recommendation has its own space')
+    await page.screenshot({path:`tests/ui/artifacts/follow-on/${mode}-recommendation-driving.png`})
+    if(mode==='desktop')await page.keyboard.press('Escape')
+    else await page.locator('.inspector-toggle').tap()
+    await page.locator('.world-inspector').waitFor({state:'visible'})
     await page.locator('[data-performance=ignore]').click()
     assert.equal(await page.evaluate(()=>fixture.calls.ignore),1)
     assert.equal(await page.locator('.performance-recommendation').isVisible(),false)
