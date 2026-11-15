@@ -32,6 +32,9 @@ export const groundCover = defineParam({
   id: 'terrain.groundCover', label: 'Grass and flowers', group: 'Terrain', scope: 'world', default: 1, min: 0, max: 1, step: 0.05,
 })
 
+/** Nothing grows within this height of the sea level: the largest wave crest plus 0.3 m. */
+const SHORE_MARGIN = 1.8
+
 const UP = new THREE.Vector3()
 
 interface Plant {
@@ -366,7 +369,9 @@ class Layer {
     O[s * 3 + 1] = y
     // Dry, gentle ground, off the roads.
     const wx = wrapCoord(x, data.size), wz = wrapCoord(z, data.size)
-    if (y < worldLavaAltitude.value + 0.7 || lavaSurfaceAt(data.lava, wx, wz, -1e9) > y - 0.3) return
+    // Clear of the sea by the tallest wave the Water Lab's waves can raise (1.5 m, its
+    // WAVE_MAX_AMPLITUDE in shared/water/waves.ts) plus a little.
+    if (y < worldLavaAltitude.value + SHORE_MARGIN || lavaSurfaceAt(data.lava, wx, wz, -1e9) > y - 0.3) return
     if (this.sampler.normalAt(x, z, UP).y < 0.84) return
     const half = data.size / 2
     const gi = Math.min(data.resolution - 1, Math.round((wz + half) / data.cell)) * data.resolution +

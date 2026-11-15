@@ -64,6 +64,11 @@ export interface RiverDrop {
   start: number
   end: number
   height: number
+  /**
+   * The steepest DROP_RUN of travel inside the drop: where a free-falling sheet belongs, with
+   * the rest of the drop a cascade. Indices into `points`, and the fall between them.
+   */
+  steepest: { start: number; end: number; height: number }
 }
 
 /** A run counts as a drop when the bed falls more than this many metres ... */
@@ -86,7 +91,11 @@ export function findDrops(points: readonly LavaRiverPoint[]): RiverDrop[] {
     if (points[i].y - points[j].y <= DROP_FALL) continue
     const last = drops[drops.length - 1]
     if (last && i <= last.end) last.end = Math.max(last.end, j)
-    else drops.push({ start: i, end: j, height: 0 })
+    else drops.push({ start: i, end: j, height: 0, steepest: { start: i, end: j, height: 0 } })
+    // Keep the steepest window seen so far within this drop.
+    const d = drops[drops.length - 1]
+    const fall = points[i].y - points[j].y
+    if (fall > d.steepest.height) d.steepest = { start: i, end: j, height: fall }
   }
   for (const d of drops) d.height = points[d.start].y - points[d.end].y
   return drops
