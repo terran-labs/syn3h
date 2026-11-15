@@ -37,8 +37,10 @@ describe('bot gear decisions', () => {
     const phases = s.actions.map(a => a.phase)
     expect(phases[0]).toBe('press')
     expect(phases).toContain('hold')
-    expect(phases.at(-1)).toBe(kind === 'bungee' ? 'cancel' : 'release')
-    if (kind === 'red') expect(phases.filter(p => p === 'hold').length).toBeGreaterThanOrEqual(52)
+    const end = phases.indexOf(kind === 'bungee' ? 'cancel' : 'release')
+    expect(end).toBeGreaterThan(1)
+    expect(phases.slice(1, end).every(p => p === 'hold')).toBe(true)
+    if (kind === 'red') expect(end - 1).toBeGreaterThanOrEqual(52)
   })
   it.each(['disabled', 'invalid', 'removed', 'fire-off', 'blocked'] as const)('cancels an active hold when %s', reason => {
     const s = setup('red'); s.controller.setHooks(s.hooks)
