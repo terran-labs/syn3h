@@ -1,8 +1,13 @@
 import {hotExposureNode} from '../skins/hotExposure'
 import * as T from 'three/webgpu'
-import {attribute,float,smoothstep,texture,uniform,uv} from 'three/tsl'
+import {attribute,float,smoothstep,uniform,uv} from 'three/tsl'
+import type {MarkAlpha} from './sprites'
 
-/** One global capped quad ring, after VhiclSkidmarks.cs 20-24, 96-195. */
+/**
+ * One global capped quad ring, after VhiclSkidmarks.cs 20-24, 96-195. `mark` gives the alpha
+ * across a quad from its u coordinate (see `tyreMarkAlpha` in sprites.ts); without it the ribbon
+ * is a soft trail.
+ */
 export class RibbonBatch {
   readonly mesh:T.Mesh<T.BufferGeometry,T.MeshBasicNodeMaterial>
   readonly clock=uniform(0)
@@ -12,7 +17,7 @@ export class RibbonBatch {
   private readonly data:T.BufferAttribute
   private readonly tint:T.BufferAttribute
   get used(){return this.count}
-  constructor(readonly capacity:number,map?:T.Texture,additive=false){
+  constructor(readonly capacity:number,mark?:MarkAlpha,additive=false){
     const g=new T.BufferGeometry(),positions=new Float32Array(capacity*12),uvs=new Float32Array(capacity*8),indices=new Uint32Array(capacity*6)
     for(let i=0;i<capacity;i++){uvs.set([0,0,1,0,0,1,1,1],i*8);indices.set([i*4,i*4+2,i*4+1,i*4+1,i*4+2,i*4+3],i*6)}
     this.position=new T.BufferAttribute(positions,3).setUsage(T.DynamicDrawUsage)
@@ -24,7 +29,8 @@ export class RibbonBatch {
     m.colorNode=attribute('fxColor','vec3')
     if(additive)m.colorNode=m.colorNode.mul(hotExposureNode())
     let opacity=d.z.mul(float(1).sub(smoothstep(additive?0:.65,1,age))).mul(age.lessThan(1).select(1,0))
-    opacity=opacity.mul(map?texture(map,uv()).a:float(1).sub(uv().x.sub(.5).abs().mul(2)).pow(2))
+    const across:typeof opacity=mark?mark(uv().x):float(1).sub(uv().x.sub(.5).abs().mul(2)).pow(2)
+    opacity=opacity.mul(across)
     m.opacityNode=opacity
     this.mesh=new T.Mesh(g,m);this.mesh.frustumCulled=false;this.mesh.renderOrder=additive?2:1
   }
