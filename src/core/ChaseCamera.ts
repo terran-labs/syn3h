@@ -157,6 +157,12 @@ export class ChaseCamera implements System {
   clearCinematicPose(): void { this.cinematic = null; this.previousTarget = null }
   private cinematic: { position: THREE.Vector3; target: THREE.Vector3; look: THREE.Vector3 } | null = null
 
+  /** Follow the target across the seam of a wrapping world: move everything by a whole tile. */
+  shift(dx: number, dz: number): void {
+    for (const v of [this.previousPosition, this.pivot, this.desired, this.game.camera.position]) { v.x += dx; v.z += dz }
+    if (this.cinematic) for (const v of [this.cinematic.position, this.cinematic.target, this.cinematic.look]) { v.x += dx; v.z += dz }
+  }
+
   update(dt: number): void {
     if (this.cinematic) {
       const camera = this.game.camera, c = this.cinematic, k = ease(clamp(dt, 0, 0.25), 2)
