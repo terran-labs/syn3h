@@ -1,12 +1,16 @@
 # Gear selector
 
-`GearSelector.ts` draws the gear in hand as a crescent on the left of the view. Its hairline
-arc shares the screen centre with the focus display's speed arc, and the items sit along it
-as spokes aimed at that centre, the active one at the middle, the neighbours fading toward
-both ends. Changing gear turns them about the centre, so they sweep along the curve. Beside
-the active item are its description, status, level bar and the control hints for its current
-state. On touch it adds buttons for the extra actions. `gear.css`
-is imported by the module; nothing else to load.
+`GearSelector.ts` draws the gear in hand as a vertical drum floating near the centre-left
+edge: the active gear in a hairline pill window in the middle, neighbours above and below
+fading out through a mask, and beside it the description, status, level line and control
+hints for the current state. On touch it adds buttons for the extra actions. `gear.css` is
+imported by the module; nothing else to load.
+
+It is styled in the Halo look (src/ui/theme-halo.css on feat/ux-theme): 1 px hairlines with
+a tight faint halo, no fills or blur, pills fully round, Barlow with 11 px spaced capitals,
+selected as a brighter rim, a soft dark falloff behind text. Colours are the `--s3-*` tokens;
+`--halo-glow` and `--halo-under` are used when the theme defines them, with token-based
+fallbacks otherwise. Mount it inside `.syn3h-shell` so it inherits those properties.
 
 ## Wiring in Shell.ts
 
@@ -43,7 +47,7 @@ it is read every frame and written only when it moves by half a percent. Note th
 own `list()` builds a new array on every call.
 
 Hide it outside play by hiding a parent, or toggle `gearSelector.element.hidden` yourself only
-if you never let `update()` run while hidden (update owns that attribute: it hides the crescent when
+if you never let `update()` run while hidden (update owns that attribute: it hides the drum when
 the rack is missing or has fewer than two items).
 
 ## CSS custom properties
@@ -52,10 +56,10 @@ Set on `.syn3h-shell` (or any ancestor) to fit the shell's layout:
 
 | Property | Default | Meaning |
 | --- | --- | --- |
-| `--gear-arc-radius` | `calc(50vw - 56px)`; `380px` on phones and under 500 px tall | Crescent radius about the view's centre. The default puts the arc 56 px from the left edge, concentric with the speed arc |
-| `--gear-top` | `50%` (`40%` under 500 px tall) | Vertical centre of the crescent. Keep `50%` for it to stay concentric |
-| `--gear-z` | `12` | Crescent stacking; the settings rail is 13 |
-| `--gear-detail-width` | `236px` (`190px` touch, `176px` phone) | Column beside the crescent |
+| `--gear-left` | `max(20px, safe-area + 14px)`; phone `max(12px, safe-area + 10px)` | Margin from the left edge |
+| `--gear-top` | `50%` (`40%` under 500 px tall) | Vertical centre of the drum |
+| `--gear-z` | `12` | Drum stacking; the settings rail is 13 |
+| `--gear-detail-width` | `220px` (`190px` touch, `170px` phone) | Column beside the drum |
 | `--gear-actions-right` | `calc(max(24px, safe-area) + 148px)`; phone `calc(max(18px, safe-area) + 150px)` | Touch action column, from the right |
 | `--gear-actions-bottom` | `max(30px, safe-area)`; phone `max(18px, safe-area)` | Touch action column, from the bottom |
 | `--gear-actions-z` | `12` | Touch action stacking |
@@ -74,15 +78,13 @@ actions; remove them once `controls()` lands.
 
 ## Known layout limits
 
-- Phones: the speed arc runs off the left edge, so the crescent takes its own 380 px radius
-  (centre right of the view's centre) rather than being concentric.
 - Phone portrait (iPhone 14, 664 px tall viewport): the minimap starts about 338 px down in the
-  left column and the speed readout sits at 30%; the crescent's faded lower end reaches the
+  left column and the speed readout sits at 30%; the drum's faded lower end reaches the
   minimap. Move the minimap or set `--gear-top`.
 - Short landscape phones (under 500 px tall): the minimap is in the left column (about 138 to
-  234 px from the top) where the crescent sits. Same choice.
-- Desktop: the arc sits 56 px from the left edge, the labels run to about 246 px and the detail
-  column (236 px) to about 482 px. The focus display's speed readout (`.fh-left`) is
-  right-aligned to 250 px left of centre at mid-height: 470 px on a 1440 px screen, 390 px on
-  1280. So the detail column meets the speed readout on most desktop widths while the focus
-  display shows. Narrow `--gear-detail-width`, move the readout, or hide one of them in focus.
+  234 px from the top) where the drum sits. Same choice.
+- Desktop: the drum runs from 20 px to about 208 px and the detail column to about 428 px.
+  The focus display's speed readout (`.fh-left`) is right-aligned to 250 px left of centre at
+  mid-height: 470 px on a 1440 px screen, 390 px on 1280. On screens narrower than about
+  1360 px the detail column meets the readout while the focus display shows. Narrow
+  `--gear-detail-width`, move the readout, or hide one of them in focus.

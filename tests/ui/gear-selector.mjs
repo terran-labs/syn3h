@@ -44,13 +44,12 @@ const centred = (page) => page.evaluate(() => {
     assert.equal(await page.getByRole('option', { name: 'Plasma Tag' }).getAttribute('aria-selected'), 'true')
     for (const box of await page.locator('.gs-item').evaluateAll(els => els.map(e => e.getBoundingClientRect().height))) assert.ok(box >= 44, `item ${box} px tall`)
     const drum = await page.locator('.gs-drum').boundingBox()
-    assert.ok(Math.abs(drum.x - 56) <= 1 && Math.abs(drum.y + drum.height / 2 - 450) < 4, `crescent on the left, at mid-height: ${JSON.stringify(drum)}`)
-    // The arc is concentric with the focus display's speed arc: its circle is centred on the view.
-    const ring = await page.locator('.gs-arc').first().boundingBox()
-    assert.ok(Math.abs(ring.x + ring.width / 2 - 720) < 2 && Math.abs(ring.y + ring.height / 2 - 450) < 2, `arc centred on the view: ${JSON.stringify(ring)}`)
-    // Neighbours sit along the curve: the ones above and below are turned toward the centre.
-    const turned = await page.locator('.gs-item[data-id=red]').evaluate(el => new DOMMatrix(getComputedStyle(el).transform).b)
-    assert.ok(turned < -0.01, `item below is turned along the arc (${turned})`)
+    // Floats near the centre-left edge with an even margin, not touching it.
+    const root = await page.locator('.gear-selector').boundingBox()
+    assert.ok(root.x >= 12 && root.x <= 32 && Math.abs(drum.y + drum.height / 2 - 450) < 4, `drum near the centre-left edge: ${JSON.stringify(root)}`)
+    // The selected slot is a brighter rim: a hairline pill around the middle.
+    const rim = await page.locator('.gs-window').evaluate(el => { const c = getComputedStyle(el); return { width: c.borderTopWidth, radius: parseFloat(c.borderTopLeftRadius) } })
+    assert.ok(rim.width === '1px' && rim.radius >= 16, `window rim ${JSON.stringify(rim)}`)
     assert.ok(await centred(page) < 1)
     assert.match(await page.locator('.gs-drum').evaluate(el => getComputedStyle(el).maskImage || getComputedStyle(el).webkitMaskImage), /linear-gradient/)
     await page.screenshot({ path: `${out}/desktop-unlocked-bright.png` })
@@ -284,7 +283,7 @@ const centred = (page) => page.evaluate(() => {
           drumMapOverlap: Math.max(0, Math.min(r('.gs-drum').bottom, r('.shell-minimap').bottom) - Math.max(r('.gs-drum').top, r('.shell-minimap').top)),
         }
       })
-      console.log(`phone ${bg}: crescent and minimap overlap ${Math.round(fit.drumMapOverlap)} px vertically`)
+      console.log(`phone ${bg}: drum and minimap overlap ${Math.round(fit.drumMapOverlap)} px vertically`)
       delete fit.drumMapOverlap
       assert.deepEqual(fit, { sizes: true, onScreen: true, clearStick: true, clearMap: true, clearButtons: true, drumClearStick: true })
       await page.screenshot({ path: `${out}/phone-grapple-${bg}.png` })

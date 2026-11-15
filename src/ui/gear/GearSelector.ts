@@ -1,7 +1,7 @@
 /**
- * The gear selector: a crescent on the left of the view, concentric with the focus display's
- * speed arc, that shows the gear in hand at its middle and its neighbours fading along the
- * curve above and below, and the controls that apply to it right now.
+ * The gear selector: a vertical drum floating near the centre-left edge that shows the gear in
+ * hand in its middle, its neighbours above and below fading out through a mask, and beside
+ * it the controls that apply right now.
  *
  * It reads a gear rack through a small duck-typed source (the rack on window.syn3hNet.gear
  * fits it) and, when the rack offers controls(), the gear's state, status and actions. It
@@ -65,10 +65,7 @@ export function ringOffset(index: number, current: number, count: number): numbe
   return d > count / 2 ? d - count : d
 }
 
-/**
- * How a slot looks by its distance from the centre: size and opacity. Its place on the
- * crescent (a rotation about the screen centre) is drawn by CSS from the offset alone.
- */
+/** How a slot looks by its distance from the centre. Its position is CSS: offset times pitch. */
 export function slotPose(offset: number): { scale: number; opacity: number } {
   const a = Math.abs(offset)
   if (a >= 3) return { scale: 0.6, opacity: 0 }
@@ -172,14 +169,14 @@ export class GearSelector {
     this.drum.setAttribute('aria-label', 'Gear')
     this.drum.setAttribute('aria-orientation', 'vertical')
 
-    // The crescent: a hairline arc about the screen centre, concentric with the focus
-    // display's speed arc, and a short lit stretch of it at the active slot.
-    const arc = document.createElement('span')
-    arc.className = 'gs-arc'
-    arc.setAttribute('aria-hidden', 'true')
-    const lit = document.createElement('span')
-    lit.className = 'gs-arc gs-arc-lit'
-    lit.setAttribute('aria-hidden', 'true')
+    // A hairline spine down the drum's left side, and the pill-shaped window whose brighter
+    // rim marks the active slot. The items scroll through it.
+    const spine = document.createElement('span')
+    spine.className = 'gs-spine'
+    spine.setAttribute('aria-hidden', 'true')
+    const window_ = document.createElement('span')
+    window_.className = 'gs-window'
+    window_.setAttribute('aria-hidden', 'true')
 
     this.detail.className = 'gs-detail'
     this.descEl.className = 'gs-desc'
@@ -195,7 +192,7 @@ export class GearSelector {
     this.keyHintEl.setAttribute('aria-hidden', 'true')
     this.detail.append(this.descEl, this.statusEl, this.levelEl, this.hintsEl, this.keyHintEl)
 
-    root.append(arc, lit, this.drum, this.detail)
+    root.append(spine, window_, this.drum, this.detail)
     parent.append(root)
 
     // A sibling, not a child: the selector is transformed, which would trap position: fixed.
