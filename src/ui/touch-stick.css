@@ -1,0 +1,63 @@
+/* The floating thumb stick and its first-run hint (src/ui/TouchControls.ts).
+   The stick has no home: it appears where a drag starts on the left of the screen, so these
+   rules undo the fixed lower-left placement that shell.css and exploration.css give
+   .touch-stick, and keep its per-layout size (the size sets the stick's travel).
+   Everything is drawn with gradients from the theme tokens at the top of exploration.css,
+   so a theme restyles it. No bitmaps. */
+
+.touch-controls .touch-stick.touch-float {
+  left: 0; top: 0; right: auto; bottom: auto;
+  pointer-events: none; touch-action: none;
+  /* A faint dark well under a lit rim, so it reads over a bright sky as well as dark ground. */
+  border: 1.5px solid color-mix(in srgb, var(--s3-accent-2) 55%, transparent);
+  background:
+    radial-gradient(circle, transparent 54%, color-mix(in srgb, var(--s3-accent) 22%, transparent) 69%, transparent 72%),
+    radial-gradient(circle, color-mix(in srgb, var(--s3-panel) 30%, transparent), color-mix(in srgb, var(--s3-panel) 12%, transparent) 70%);
+  box-shadow: 0 0 22px color-mix(in srgb, var(--s3-accent) 22%, transparent), inset 0 0 18px color-mix(in srgb, var(--s3-accent-2) 12%, transparent);
+  opacity: 0; visibility: hidden; will-change: transform, opacity;
+  /* Fades out on release; hidden once faded so layout checks see nothing there. */
+  transition: opacity .15s ease-out, visibility 0s linear .15s;
+}
+.touch-controls .touch-stick.touch-float.is-active { opacity: 1; visibility: visible; transition: opacity .06s ease-out, visibility 0s; }
+.touch-controls .touch-float .touch-knob {
+  border: 1px solid color-mix(in srgb, var(--s3-accent-2) 85%, transparent);
+  background: radial-gradient(circle at 42% 38%, color-mix(in srgb, var(--s3-ink) 80%, transparent), color-mix(in srgb, var(--s3-accent) 45%, transparent) 50%, color-mix(in srgb, var(--s3-panel) 30%, transparent) 100%);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--s3-accent) 45%, transparent), 0 0 4px color-mix(in srgb, var(--s3-accent-2) 60%, transparent);
+  will-change: transform;
+}
+
+/* First run: a faint ghost of the stick and one line, in the lower left below the minimap,
+   until this device has driven once. */
+.touch-controls .touch-stick-hint {
+  position: absolute; left: max(24px, env(safe-area-inset-left)); bottom: max(28px, env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none;
+  transition: opacity .3s ease-out, visibility 0s;
+}
+/* The shell's spawn card says how to drive and shares this corner on landscape phones and
+   tablets: the hint steps aside while the card is up and comes back when it goes. */
+body:has(.syn3h-shell.is-playing .spawn-help:not([hidden])) .touch-controls .touch-stick-hint { opacity: 0; visibility: hidden; transition: opacity .3s ease-out, visibility 0s linear .3s; }
+.touch-controls .touch-stick-hint[hidden] { display: none; }
+.touch-controls .touch-stick-ghost {
+  position: relative; width: 84px; height: 84px; border-radius: 50%;
+  border: 1px dashed color-mix(in srgb, var(--s3-accent) 35%, transparent);
+  background: radial-gradient(circle, transparent 55%, color-mix(in srgb, var(--s3-accent) 7%, transparent) 70%, transparent 72%);
+  opacity: .8;
+}
+.touch-controls .touch-stick-ghost > span {
+  position: absolute; left: 50%; top: 50%; width: 30px; height: 30px; margin: -15px 0 0 -15px; border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--s3-accent-2) 45%, transparent);
+  background: radial-gradient(circle at 42% 38%, color-mix(in srgb, var(--s3-ink) 30%, transparent), color-mix(in srgb, var(--s3-accent) 10%, transparent) 70%);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--s3-accent) 25%, transparent);
+  animation: touch-stick-ghost 2.4s ease-in-out infinite;
+}
+@keyframes touch-stick-ghost { 0%, 15%, 100% { transform: none; } 45%, 65% { transform: translate(14px, -16px); } }
+.touch-controls .touch-stick-hint .touch-stick-label {
+  position: static; width: auto; text-align: left; white-space: nowrap;
+  font: 400 13px/1.2 'Barlow', 'Avenir Next', sans-serif; letter-spacing: .06em;
+  color: color-mix(in srgb, var(--s3-ink) 78%, transparent); text-shadow: 0 1px 3px rgb(0 0 0 / .6);
+}
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .touch-controls .touch-stick-hint { left: max(18px, env(safe-area-inset-left)); bottom: max(18px, env(safe-area-inset-bottom)); }
+  .touch-controls .touch-stick-ghost { width: 72px; height: 72px; }
+}
+@media (prefers-reduced-motion: reduce) { .touch-controls .touch-stick-ghost > span { animation: none; transform: translate(10px, -12px); } }

@@ -21,8 +21,12 @@ for (const mode of modes) {
     const map = await page.locator('.shell-minimap').boundingBox()
     assert.ok(map.x < 25 && map.y > page.viewportSize().height * .2, 'map lives in lower left')
     if (touch) {
-      const stick = await page.locator('.touch-stick').boundingBox()
-      assert.ok(stick && map.y + map.height + 12 <= stick.y, 'touch minimap clears joystick and label')
+      // The stick floats under the thumb, so nothing sits there until a drag; the first-run
+      // hint has the lower left instead and must clear the minimap.
+      assert.equal(await page.locator('.touch-stick').evaluate(el => getComputedStyle(el).visibility), 'hidden', 'no permanent joystick')
+      // Measured even while the spawn card hides it for a few seconds.
+      const hint = await page.locator('.touch-stick-hint').evaluate(el => { const r = el.getBoundingClientRect(); return r.height ? { y: r.top } : null })
+      assert.ok(hint && map.y + map.height + 12 <= hint.y, 'touch minimap clears the drive hint')
     }
     assert.match(await page.locator('.shell-minimap canvas').evaluate(el => getComputedStyle(el).maskImage || getComputedStyle(el).webkitMaskImage), /radial-gradient/)
     await page.screenshot({ path: `tests/ui/artifacts/exploration/${mode}-drive.png` })
