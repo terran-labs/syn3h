@@ -345,6 +345,7 @@ export class NetClient implements System {
         this.send(victim === this.id ? { type: 'hit', shooter, shot } : { type: 'hit', shooter, shot, victim })
       },
     })
+    this.gear.bind({ bungee: this.bungee, yoink: this.yoink, bigRed: this.bigRed, pesters: this.pesters, nameOf: (id) => this.displayName(id) })
     this.bots?.setGear?.(this.botDecisionHooks)
     this.marker = new TagMarker(game)
     this.marker.local = player
