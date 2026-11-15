@@ -92,6 +92,9 @@ Retired in-process subagents (work merged): buggy `af96d3463a8b76592`, multiplay
   match the export; (5) send the Foreman the address, tag, each check result, export path
   and rollback command. Stop and report on any failed check, on non-web records at www, or
   on anything outside the runbook. If the plan is still free, say so but do not block.
+  Ship m13 as release 1 and cut over without waiting for m14 (Foreman, 6:57pm). m14 goes
+  out as release 2 once green and dry run: tell the Foreman before shipping it. After a
+  verified cutover the share tags move to https://www.syn3h.com in the next release.
 - syn3h.com: `tools/domain.sh` and `docs/CUTOVER.md`. Never part of a normal release.
 - Local verification while previews are down: `npx vite --host 127.0.0.1 --port 5173 --strictPort`
   in the integration checkout (it spawns the room server on 8787), then
