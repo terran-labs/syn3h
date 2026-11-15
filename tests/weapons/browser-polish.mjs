@@ -15,6 +15,9 @@ try {
   await page.evaluate(room => { const input = document.querySelector('#shell-room'); input.value = room; input.dispatchEvent(new Event('input', { bubbles: true })) }, `polish-${Date.now()}`)
   await page.locator('.galaxy-label[data-world="volcanic"]').dispatchEvent('click')
   await page.waitForFunction(() => window.syn3h?.shell.playing && !window.syn3h.game.input.suspended && window.syn3hNet?.connected, null, { timeout: 60000 })
+  // This fixture arranges vehicles along their heading; use the matching unlocked aim.
+  await page.evaluate(() => document.exitPointerLock())
+  await page.waitForFunction(() => !document.pointerLockElement)
   await page.evaluate(() => {
     const s = window.syn3h, n = window.syn3hNet, p = s.params
     p.set('gfx.auto', false); p.set('bots.canDrive', false); p.set('bots.canFire', false); p.set('bots.count', 1)
