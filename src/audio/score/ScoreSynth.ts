@@ -99,8 +99,11 @@ export class ScoreSynth {
   private brightness = 0.4
   private drums = 0
   private disposed = false
+  /** True while the graph is unplugged from the output. Unplugged, it is not computed at all. */
+  private parked = true
+  private parkAt = Infinity
 
-  constructor(private readonly context: BaseAudioContext, output: AudioNode) {
+  constructor(private readonly context: BaseAudioContext, private readonly output: AudioNode) {
     const c = context
     const own = <T extends AudioNode>(node: T): T => { this.nodes.push(node); return node }
     const gain = (value: number, ...to: (AudioNode | AudioParam)[]) => { const g = own(c.createGain()); g.gain.value = value; for (const node of to) g.connect(node as AudioNode); return g }
@@ -109,7 +112,10 @@ export class ScoreSynth {
     const pan = (value: number, to: AudioNode) => { const p = own(c.createStereoPanner()); p.pan.value = value; p.connect(to); return p }
     const loop = (buffer: AudioBuffer) => { const s = own(c.createBufferSource()); s.buffer = buffer; s.loop = true; this.sources.push(s); return s }
 
-    this.out = gain(0, output)
+    // Not connected yet: the whole graph stays unplugged, and so uncomputed, until the score is
+    // asked to sound, and is unplugged again once it has faded out. A player listening to a
+    // recording pays nothing for the score.
+    this.out = gain(0)
     // A gentle bus compressor glues the layers and keeps a full passage from towering over a quiet one.
     const glue = own(c.createDynamicsCompressor()); glue.threshold.value = -20; glue.knee.value = 14; glue.ratio.value = 3; glue.attack.value = 0.02; glue.release.value = 0.25
     glue.connect(this.out)
@@ -216,6 +222,8 @@ export class ScoreSynth {
   /** Overall level of the score, for fading it in and out. */
   setLevel(level: number, seconds = 1.5): void {
     const now = this.context.currentTime
+    if (level > 0 && this.parked && !this.disposed) { this.out.connect(this.output); this.parked = false }
+    this.parkAt = level > 0 ? Infinity : now + seconds * 2 + 0.5
     this.out.gain.cancelScheduledValues(now)
     this.out.gain.setTargetAtTime(level, now, seconds / 3)
   }
@@ -224,6 +232,9 @@ export class ScoreSynth {
   setLevels(level: Levels, depth: number, reverb: number): void {
     const now = this.context.currentTime, to = (param: AudioParam, value: number, tau = 0.5) => param.setTargetAtTime(value, now, tau)
     this.brightness = level.brightness; this.drums = level.drums
+    if (!this.parked && now > this.parkAt) { this.out.disconnect(); this.parked = true }
+    // Nothing reads automation on an unplugged graph, so writing it every frame would only pile up.
+    if (this.parked) return
     to(this.padBus.gain, level.pad * 0.9)
     to(this.padFilter.frequency, 320 + level.brightness ** 1.5 * 4200)
     to(this.droneGain.gain, level.drone * 0.4)
