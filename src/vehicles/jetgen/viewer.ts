@@ -8,8 +8,9 @@ import { vehicleShading } from '../../core/quality'
 
 /** A grey studio sphere, generated: the backdrop and, blurred, the reflections on the metal. */
 function studio(withLights: boolean): THREE.Scene {
-  const scene = new THREE.Scene(), g = new THREE.SphereGeometry(60, 48, 24), p = g.getAttribute('position'), colors: number[] = []
-  for (let i = 0; i < p.count; i++) { const h = p.getY(i) / 60, v = withLights ? (h > 0 ? .16 + .1 * h : .16 + .55 * -h) : (h > 0 ? .34 - .16 * h : .34 + .4 * -h); colors.push(v, v, v * 1.01) }
+  // The backdrop must enclose every row of jets; the reflection room stays small.
+  const radius = withLights ? 60 : 400, scene = new THREE.Scene(), g = new THREE.SphereGeometry(radius, 48, 24), p = g.getAttribute('position'), colors: number[] = []
+  for (let i = 0; i < p.count; i++) { const h = p.getY(i) / radius, v = withLights ? (h > 0 ? .16 + .1 * h : .16 + .55 * -h) : (h > 0 ? .34 - .16 * h : .34 + .4 * -h); colors.push(v, v, v * 1.01) }
   g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
   scene.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false })))
   if (withLights) {
@@ -32,12 +33,12 @@ async function main() {
   const scene = studio(false)
   const pmrem = new THREE.PMREMGenerator(renderer)
   scene.environment = pmrem.fromScene(studio(true), .03).texture
-  const camera = new THREE.PerspectiveCamera(34, innerWidth / innerHeight, .1, 200)
+  const camera = new THREE.PerspectiveCamera(34, innerWidth / innerHeight, .1, 1000)
   const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true
   const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(-5, 12, -4); sun.castShadow = true
   sun.shadow.mapSize.set(4096, 4096); sun.shadow.normalBias = .03; sun.shadow.bias = -.0003
-  Object.assign(sun.shadow.camera, { left: -36, right: 36, top: 26, bottom: -26 }); scene.add(sun)
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(40, 64), new THREE.ShadowNodeMaterial({ opacity: .38 }))
+  Object.assign(sun.shadow.camera, { left: -40, right: 40, top: 80, bottom: -30 }); scene.add(sun)
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(160, 64), new THREE.ShadowNodeMaterial({ opacity: .38 }))
   floor.rotation.x = -Math.PI / 2; floor.position.y = GROUND_Y; floor.receiveShadow = true; scene.add(floor)
 
   const spacing = 9.5, query = new URLSearchParams(location.search)
