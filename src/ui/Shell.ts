@@ -34,6 +34,7 @@ import { Vector3 } from 'three/webgpu'
 import { PLANETS } from '../world/planets'
 import { graphicsLevel, levelNumber } from '../core/quality'
 import { camDistance, camFov, camHeight, camOffset } from '../core/ChaseCamera'
+import { arrivalPath } from '../core/arrival'
 import { applyPlanet, currentPlanet, encodeWorld, planetName } from '../world/planets'
 import { AttractMode, type CinematicCamera } from './AttractMode'
 import { InviteView, inviteUrl, renderQr } from './InviteView'
@@ -539,24 +540,31 @@ export class Shell implements System {
     this.dropping = true; root.classList.add('is-descending'); this.overlay.inert = true
     const skipping = new AbortController()
     let landed = false
+    let stopFollowingWorld: (() => void) | undefined
     try {
       let seen = 0
       try { seen = Number(localStorage.getItem('syn3h.descents')) || 0; localStorage.setItem('syn3h.descents', String(seen + 1)) } catch { /* Storage is optional. */ }
       let skip = false
       // Listen from the next frame, so the tap that started the drop does not also end it.
       requestAnimationFrame(() => { for (const type of ['pointerdown', 'keydown'] as const) addEventListener(type, () => { skip = true }, { signal: skipping.signal, capture: true }) })
-      const until = async (done: () => boolean, ms: number) => { const end = performance.now() + ms; while (!done() && !skip && performance.now() < end) await frame() }
-      // While the lobby still covers it, put the game's camera high over the spawn point.
+      // While the lobby still covers it, hold the game's camera high over the player, every
+      // frame of the wait. The world can be rebuilt at any moment of it (the tapped planet,
+      // or the room's own world arriving), which moves the spawn point by up to a kilometre,
+      // and the galaxy's light has faded before the wait ends: a camera left over the old
+      // spawn point shows the new world from wherever that happens to be, then jumps.
       const view = (this.game as unknown as { camera?: { position: Vector3 } }).camera
-      const lift = () => { pose(0); if (view && this.descentTop) view.position.copy(this.descentTop) }
+      const lift = () => { pose = this.descentPose(); pose(0); if (view && this.descentTop) view.position.copy(this.descentTop) }
+      const until = async (done: () => boolean, ms: number, holding = false) => { const end = performance.now() + ms; while (!done() && !skip && performance.now() < end) { if (holding) lift(); await frame() } }
       let pose = this.descentPose(); lift()
+      // The main world listener has already moved the vehicle. Update in that same
+      // turn, before the renderer can expose a frame over the previous spawn.
+      stopFollowingWorld = this.ground?.onRegenerate?.(lift)
       let dived = false
       void this.galaxy!.descend(galaxyId, seen > 0).then(() => { dived = true })
-      await until(() => dived, 4000)
-      underLight?.()
-      await until(() => Boolean((window as { syn3hNet?: { connected?: boolean } }).syn3hNet?.connected), 5000)
-      // The spawn point may have moved with the room's world: start from over where the player is now.
-      pose = this.descentPose(); lift()
+      await until(() => dived, 4000, true)
+      underLight?.(); lift()
+      await until(() => Boolean((window as { syn3hNet?: { connected?: boolean } }).syn3hNet?.connected), 5000, true)
+      lift(); stopFollowingWorld?.(); stopFollowingWorld = undefined
       // Through the air: the lobby fades off the top of the game, which arrives blurred and clears.
       const length = skip ? 0 : seen > 0 ? 1700 : 2400
       if (game) { game.style.transition = 'none'; game.style.filter = skip ? 'none' : 'blur(12px) brightness(1.3)' }
@@ -564,7 +572,7 @@ export class Shell implements System {
       await frame()
       if (game && !skip) { game.style.transition = `filter ${(length * 0.7 / 1000).toFixed(2)}s cubic-bezier(.1,.6,.3,1)`; game.style.filter = 'none' }
       const started = performance.now()
-      await new Promise<void>((resolve, reject) => { const step = () => { try { const t = skip || length === 0 ? 1 : Math.min(1, (performance.now() - started) / length); pose(t); if (t < 1) requestAnimationFrame(step); else resolve() } catch (error) { reject(error) } }; step() })
+      await new Promise<void>((resolve, reject) => { const step = () => { try { const t = skip || length === 0 ? 1 : Math.min(1, (performance.now() - started) / length); (pose = this.descentPose())(t); if (t < 1) requestAnimationFrame(step); else resolve() } catch (error) { reject(error) } }; step() })
       // The camera eases along the path a little behind it: let it settle into the follow
       // camera's place, then hand over with a blend (an instant cut where that is not offered).
       const end = this.descentEnd
@@ -577,7 +585,7 @@ export class Shell implements System {
     } finally {
       // Whatever happened on the way (a world that failed to build, say), never leave the
       // lobby inert, blurred or half faded: put everything back and let the player in.
-      skipping.abort()
+      stopFollowingWorld?.(); skipping.abort()
       if (!landed) camera?.clearCinematicPose()
       this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity'); root.classList.remove('is-descending')
       if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter') }
@@ -586,6 +594,7 @@ export class Shell implements System {
     }
   }
   /** The first and last points of the descent's camera path, for waiting on the camera. */
+  arrivalVehicle?: () => { x: number; z: number; heading: number; altitude: number }
   private descentTop?: Vector3
   private descentEnd?: Vector3
   /**
@@ -595,23 +604,18 @@ export class Shell implements System {
    * first, carrying on the dive's speed, and slows into place.
    */
   private descentPose(): (t: number) => void {
-    const self = this.self, ground = this.ground, camera = this.cinematic
+    const live = this.arrivalVehicle?.(), ground = this.ground, camera = this.cinematic
+    const self = live ?? this.self
     if (!self || !camera) { this.descentTop = this.descentEnd = undefined; return () => {} }
-    const floor = ground?.heightAt(self.x, self.z) ?? 0, at = new Vector3(self.x, floor, self.z)
-    const ahead = new Vector3(-Math.sin(self.heading), 0, -Math.cos(self.heading))
-    const arm = camOffset.value + camDistance.value, body = floor + Math.max(0.5, this.telemetry.altitude)
-    const end = new Vector3(at.x - ahead.x * arm, body + arm * camHeight.value, at.z - ahead.z * arm)
-    const endLook = end.clone().addScaledVector(ahead, 60)
-    const startHeight = 520, endHeight = Math.max(1.5, end.y - floor)
-    this.descentTop = new Vector3(at.x - ahead.x * 40, floor + startHeight, at.z - ahead.z * 40); this.descentEnd = end
+    // The path itself is src/core/arrival.ts, built from where the vehicle is now.
+    const path = arrivalPath({ x: self.x, z: self.z, heading: self.heading, floor: ground?.heightAt(self.x, self.z) ?? 0, altitude: live?.altitude ?? this.telemetry.altitude,
+      arm: camOffset.value + camDistance.value, heightRatio: camHeight.value, fov: camFov.value })
+    this.descentTop = path.top; this.descentEnd = path.end
     const position = new Vector3(), look = new Vector3()
     return t => {
-      const fall = 1 - (1 - t) ** 2.4, turnTo = t * t * t * (t * (t * 6 - 15) + 10)
-      const height = Math.exp(Math.log(startHeight) + (Math.log(endHeight) - Math.log(startHeight)) * fall), back = 40 + (arm - 40) * fall
-      position.set(at.x - ahead.x * back, floor + height, at.z - ahead.z * back)
-      look.copy(at).lerp(endLook, turnTo)
       // The field of view goes from about the galaxy's (64 degrees) to the follow camera's own.
-      ;(camera.setCinematicPose as (position: Vector3, target: Vector3, fov?: number) => void).call(camera, position.clone(), look.clone(), 64 + (camFov.value - 64) * fall)
+      const fov = path.pose(t, position, look)
+      ;(camera.setCinematicPose as (position: Vector3, target: Vector3, fov?: number) => void).call(camera, position.clone(), look.clone(), fov)
     }
   }
   private ground?: Terrain
@@ -1321,6 +1325,12 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
   const audio = new GameAudio(game.camera), shell = game.add(new Shell(game, audio))
   shell.setVehicleKind(player.kind); shell.setTerrain(terrain); audio.setPlayer(player,terrain)
   let activePlayer = player
+  // Read the body directly: the HUD snapshot can still describe the previous world
+  // when a room rebuild moves the spawn between animation frames.
+  shell.arrivalVehicle = () => {
+    const p = activePlayer.body.translation(), q = activePlayer.body.rotation()
+    return { x: p.x, z: p.z, heading: Math.atan2(2 * (q.x * q.z + q.w * q.y), 1 - 2 * (q.x * q.x + q.y * q.y)), altitude: p.y - terrain.heightAt(p.x, p.z) }
+  }
   const hints = new PlayHints(); let height = new HeightAboveGround()
   // A colour picked in play repaints the local vehicle at once and, once settled, tells the room.
   shell.onTint = (body, accent, commit) => {
