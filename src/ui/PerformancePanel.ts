@@ -1,23 +1,31 @@
-import { params } from '../../shared/params'
-import { autoQuality, graphicsLevel, QUALITY } from '../core/quality'
+import { QUALITY, type QualitySource, type QualityState } from '../core/quality'
 import type { PerformanceSnapshot, PerformanceSource } from '../core/performance'
 
 const number = (value: number | undefined, digits = 1) => value !== undefined && Number.isFinite(value) ? value.toFixed(digits) : 'Unavailable'
 
-/** Presentation only. The existing quality controller supplies samples and recommendations. */
+/** What the governor is easing inside a level, in the player's words. */
+const EASING = { post: 'easing post effects', resolution: 'easing resolution' } as const
+
+/**
+ * Presentation only. The performance source supplies samples and recommendations; the quality
+ * source (game.quality) owns the six levels, Auto and the player's fine-tuning.
+ */
 export class PerformancePanel {
   readonly element = document.createElement('section')
   readonly toggle = document.createElement('button')
   readonly recommendation = document.createElement('aside')
   private source?: PerformanceSource
   private unsubscribe?: () => void
+  private quality?: QualitySource
+  private qualityUnsubscribe?: () => void
+  private state?: QualityState
   private readonly abort = new AbortController()
   private snapshot?: PerformanceSnapshot
   private playing = false
   private captured = false
   private wasVisible = false
 
-  constructor(parent: HTMLElement, private readonly openRail: () => void) {
+  constructor(parent: HTMLElement, private readonly openRail: () => void, quality?: QualitySource) {
     const signal = this.abort.signal
     this.toggle.type = 'button'; this.toggle.className = 'performance-toggle'
     this.toggle.textContent = 'Performance'; this.toggle.setAttribute('aria-expanded', 'false'); this.toggle.disabled = true
@@ -25,21 +33,52 @@ export class PerformancePanel {
     this.element.setAttribute('aria-label', 'Performance diagnostics')
     this.element.innerHTML = `<header><strong>Performance</strong><button type="button" data-performance="close" aria-label="Close performance diagnostics">×</button></header>
       <div class="performance-body"><p class="performance-quality"></p>
-      <div class="performance-controls"><label>Render tier<select aria-label="Render tier">${QUALITY.map((q, i) => `<option value="${i}">${q.name}</option>`).join('')}</select></label><label><input type="checkbox"> Automatic</label></div>
+      <div class="performance-controls"><label>Quality level<select aria-label="Quality level" disabled></select></label><label><input type="checkbox" disabled> Automatic</label></div>
       <svg class="performance-chart" viewBox="0 0 288 64" role="img" aria-label="Frame time history"><path d="M0 63H288"/><polyline fill="none"/></svg>
       <p class="performance-history"></p><dl></dl><p class="performance-recovery" role="status"></p>
       <button type="button" data-performance="reload" hidden>Reload to recover</button></div>`
     this.recommendation.className = 'performance-recommendation'; this.recommendation.hidden = true
     this.recommendation.setAttribute('role', 'status')
-    this.recommendation.innerHTML = '<p></p><button type="button" data-performance="ignore">Ignore</button><button type="button" data-performance="lower">Lower tier</button>'
+    this.recommendation.innerHTML = '<p></p><button type="button" data-performance="ignore">Ignore</button><button type="button" data-performance="lower">Lower level</button>'
     parent.append(this.recommendation)
     this.toggle.addEventListener('click', () => this.source?.setDiagnosticsVisible(!this.snapshot?.visible), { signal })
     this.element.querySelector('[data-performance=close]')!.addEventListener('click', () => this.source?.setDiagnosticsVisible(false), { signal })
-    this.element.querySelector('select')!.addEventListener('change', event => params.set(graphicsLevel.def.id, Number((event.target as HTMLSelectElement).value)), { signal })
-    this.element.querySelector('input')!.addEventListener('change', event => params.set(autoQuality.def.id, (event.target as HTMLInputElement).checked), { signal })
+    this.element.querySelector('select')!.addEventListener('change', event => this.quality?.setLevel(Number((event.target as HTMLSelectElement).value)), { signal })
+    this.element.querySelector('input')!.addEventListener('change', event => this.quality?.setAuto((event.target as HTMLInputElement).checked), { signal })
     this.recommendation.querySelector('[data-performance=ignore]')!.addEventListener('click', () => this.source?.ignoreRecommendation(), { signal })
     this.recommendation.querySelector('[data-performance=lower]')!.addEventListener('click', () => this.source?.lowerRecommendedTier(), { signal })
     this.element.querySelector('[data-performance=reload]')!.addEventListener('click', () => location.reload(), { signal })
+    if (quality) this.configureQuality(quality)
+  }
+
+  /** Bind the level controls to the quality controller. Replaces any earlier binding. */
+  configureQuality(quality: QualitySource): void {
+    this.qualityUnsubscribe?.(); this.quality = quality
+    const select = this.element.querySelector('select')!
+    select.replaceChildren(...quality.qualityLevels.map(level => { const option = document.createElement('option'); option.value = String(level.index); option.textContent = level.name; return option }))
+    select.disabled = false; this.element.querySelector('input')!.disabled = false
+    this.qualityUnsubscribe = quality.subscribeQuality(state => this.renderQuality(state))
+  }
+
+  private renderQuality(state: QualityState): void {
+    this.state = state
+    const select = this.element.querySelector('select')!
+    if (document.activeElement !== select) select.value = String(state.level)
+    this.element.querySelector('input')!.checked = state.auto
+    this.renderStatus()
+  }
+
+  private levelName(index: number): string {
+    return this.quality?.qualityLevels.find(level => level.index === index)?.name ?? QUALITY[index]?.name ?? `Level ${index + 1}`
+  }
+
+  /** "Ultra, easing resolution · 60 fps target · chosen level". */
+  private renderStatus(): void {
+    const state = this.state, target = this.snapshot?.quality.targetFps
+    const name = state ? `${state.name}${state.easing ? `, ${EASING[state.easing]}` : ''}` : this.snapshot ? this.levelName(this.snapshot.quality.level) : ''
+    // A chosen level is pinned: the governor eases inside it but never leaves it.
+    const how = state ? state.pinned ? 'chosen level' : state.auto ? 'automatic' : '' : this.snapshot?.levelPinned ? 'chosen level' : ''
+    this.element.querySelector('.performance-quality')!.textContent = [name, target ? `${target} fps target` : '', how].filter(Boolean).join(' · ')
   }
 
   configure(source: PerformanceSource): void {
@@ -66,13 +105,10 @@ export class PerformancePanel {
     this.wasVisible = snapshot.visible
     this.showRecommendation()
     const offer = snapshot.recommendation
-    if (offer) this.recommendation.querySelector('p')!.textContent = `Rendering is slow (${number(offer.observedFps, 0)} fps). Try the ${QUALITY[offer.targetLevel].name} tier?`
+    if (offer) this.recommendation.querySelector('p')!.textContent = `Rendering is slow (${number(offer.observedFps, 0)} fps). Try the ${this.levelName(offer.targetLevel)} level?`
     if (!snapshot.visible) return
-    const { quality, environment } = snapshot
-    this.element.querySelector('.performance-quality')!.textContent = `${QUALITY[quality.level].name} · rung ${quality.rung + 1}/${quality.rungs} · ${quality.targetFps} fps target${snapshot.levelPinned ? ' · selected tier' : ''}`
-    const select = this.element.querySelector('select')!
-    if (document.activeElement !== select) select.value = String(quality.level)
-    this.element.querySelector('input')!.checked = quality.auto
+    const { environment } = snapshot
+    this.renderStatus()
     const history = snapshot.history.slice(-120), latest = history.at(-1)
     const ceiling = Math.max(34, ...history.map(point => Number.isFinite(point.p95Ms) ? point.p95Ms : 0))
     const points = history.map((point, i) => `${history.length === 1 ? 0 : i / (history.length - 1) * 288},${63 - Math.min(1, Math.max(0, point.frameMs / ceiling)) * 61}`).join(' ')
@@ -95,5 +131,5 @@ export class PerformancePanel {
     this.element.querySelector<HTMLButtonElement>('[data-performance=reload]')!.hidden = !environment.deviceLost
   }
 
-  dispose(): void { this.unsubscribe?.(); this.unsubscribe = undefined; this.source = undefined; this.abort.abort(); this.element.remove(); this.toggle.remove(); this.recommendation.remove() }
+  dispose(): void { this.unsubscribe?.(); this.unsubscribe = undefined; this.source = undefined; this.qualityUnsubscribe?.(); this.qualityUnsubscribe = undefined; this.quality = undefined; this.abort.abort(); this.element.remove(); this.toggle.remove(); this.recommendation.remove() }
 }
