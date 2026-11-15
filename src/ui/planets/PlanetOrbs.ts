@@ -1,4 +1,5 @@
 import { graphicsLevel, levelNumber } from '../../core/quality'
+import { qualityFrame, qualityShed } from '../quality/ladder'
 
 /**
  * Draws the lobby's planets. One hidden WebGL 2 canvas shades a lit, slowly turning sphere
@@ -37,7 +38,7 @@ const VERTEX = `#version 300 es
 void main() { vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`
 const FRAGMENT = `#version 300 es
 precision highp float;
-uniform float uSize, uSeed, uSpin, uGlow, uGrid, uHasMap, uCloud, uTime;
+uniform float uSize, uSeed, uSpin, uGlow, uGrid, uHasMap, uCloud, uTime, uShed;
 uniform vec3 uLand, uSea;
 uniform sampler2D uMap;
 out vec4 color;
@@ -61,22 +62,26 @@ void main() {
   // Tilt the axis, then spin about it.
   float t = 0.38, c = cos(t), s = sin(t); vec3 q = vec3(n.x, c * n.y - s * n.z, s * n.y + c * n.z);
   c = cos(uSpin); s = sin(uSpin); q = vec3(c * q.x + s * q.z, q.y, -s * q.x + c * q.z);
-  vec3 surface; float land;
+  vec3 surface; float land; float dry = 1.0;
   if (uHasMap > 0.5) {
     vec4 m = texture(uMap, vec2(atan(q.x, q.z) / 6.2831853 + 0.5, 0.5 - asin(clamp(q.y, -1.0, 1.0)) / 3.1415927)); // row 0 is the north pole
     surface = m.rgb;
     // The painted map is opaque, so find the glowing lava by its colour.
     land = 1.0 - clamp((m.r - m.b * 1.6 - 0.25) * 2.2, 0.0, 1.0);
+    dry = 1.0 - smoothstep(0.02, 0.14, m.b - max(m.r, m.g));   // open water is where blue leads
   } else {
     float h = fbm(q * 2.1), detail = fbm(q * 7.0);
     land = smoothstep(0.5, 0.54, h + (detail - 0.5) * 0.12);
-    surface = mix(uSea * (0.8 + 0.4 * detail), uLand * (0.62 + 0.75 * detail) * mix(1.0, 1.25, smoothstep(0.6, 0.75, h)), land);
+    surface = mix(uSea * (0.8 + 0.4 * detail), uLand * (0.62 + 0.75 * detail) * mix(1.0, 1.25, smoothstep(0.6, 0.75, h)), land); dry = land;
   }
   float lit = clamp(dot(n, light), 0.0, 1.0);
   // Weather: cloud drifts over the surface at its own pace and takes the light.
   float cloud = uCloud * smoothstep(0.5, 0.72, fbm(q * 3.2 + vec3(uTime * 0.02, 0.0, uTime * 0.013) + 9.0));
   surface = mix(surface, vec3(0.93, 0.96, 1.0), cloud * 0.85);
-  vec3 col = surface * (0.035 + 1.1 * pow(lit, 0.85));
+  // The same light as the worlds in the galaxy: a soft terminator, a little fill on the
+  // night side, and there the lights of settlements on dry ground.
+  vec3 col = surface * (0.07 + 1.1 * pow(lit, 0.85));
+  if (uGlow < 0.5 && uGrid < 0.5 && uShed < 1.0) col += vec3(1.0, 0.75, 0.42) * step(0.93, hash(floor(q * 46.0))) * smoothstep(0.35, 0.0, lit) * dry * 0.6 * (1.0 - uShed);
   col += mix(uSea, surface, uHasMap) * uGlow * (1.0 - land) * 0.6; // lava glows in the dark
   if (uGrid > 0.5) {
     vec2 g = abs(fract(vec2(atan(q.x, q.z) / 6.2831853 * 16.0, asin(q.y) / 3.1415927 * 9.0)) - 0.5);
@@ -170,13 +175,14 @@ class PlanetOrbs {
     gl.linkProgram(program)
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { console.warn('Syn3h planet shader failed; cards show plain discs.', gl.getProgramInfoLog(program)); this.failed = true; return false }
     gl.useProgram(program); gl.bindVertexArray(gl.createVertexArray())
-    for (const name of ['uSize', 'uSeed', 'uSpin', 'uGlow', 'uGrid', 'uHasMap', 'uCloud', 'uTime', 'uLand', 'uSea', 'uMap']) this.uniforms[name] = gl.getUniformLocation(program, name)
+    for (const name of ['uSize', 'uSeed', 'uSpin', 'uGlow', 'uGrid', 'uHasMap', 'uCloud', 'uTime', 'uShed', 'uLand', 'uSea', 'uMap']) this.uniforms[name] = gl.getUniformLocation(program, name)
     canvas.addEventListener('webglcontextlost', () => { if (this.canvas === canvas) { this.gl = null; this.canvas = null; this.maps.clear() } })
     this.gl = gl; this.canvas = canvas
     return true
   }
   private loop = (now: number): void => {
     this.frame = this.orbs.size ? requestAnimationFrame(this.loop) : 0
+    qualityFrame(now)
     // Fifteen frames a second is plenty for a slow turn.
     if (now - this.last < 66) return
     this.last = now
@@ -213,7 +219,7 @@ class PlanetOrbs {
       // view. A generated one turns all the way round.
       const t = still ? 0 : now / 1000
       gl.uniform1f(u.uSpin, map ? 0.95 * Math.sin(t * 0.22 + orb.look.seed) : t * 0.12 + orb.look.seed)
-      gl.uniform1f(u.uTime, t); gl.uniform1f(u.uCloud, orb.look.cloud ?? 0)
+      gl.uniform1f(u.uTime, t); gl.uniform1f(u.uCloud, (orb.look.cloud ?? 0) * (1 - qualityShed(1))); gl.uniform1f(u.uShed, qualityShed(3))
       gl.uniform1f(u.uGlow, orb.look.glow ? 1 : 0); gl.uniform1f(u.uGrid, orb.look.grid ? 1 : 0); gl.uniform1f(u.uHasMap, map ? 1 : 0)
       gl.uniform3f(u.uLand, ...rgb(orb.look.land)); gl.uniform3f(u.uSea, ...rgb(orb.look.sea))
       if (map) { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, map); gl.uniform1i(u.uMap, 0) }

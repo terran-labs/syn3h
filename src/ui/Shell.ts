@@ -38,6 +38,17 @@ const back = '<button type="button" class="panel-back link-button" data-goto="in
 declare const __SYN3H_BUILD__: string | undefined
 const buildLine = typeof __SYN3H_BUILD__ === 'string' && __SYN3H_BUILD__ ? `build version : ${__SYN3H_BUILD__}` : 'browser edition'
 const heading = (text: string) => `<h2 tabindex="-1">${text}</h2>`
+/**
+ * The vehicle paint sliders (src/vehicles/skins/showroom.ts), offered where a vehicle is
+ * chosen. They are personal settings and live shader values, safe to drag. Built from the
+ * registry, so a slider that is not defined is simply not shown.
+ */
+const PAINT_SLIDERS = ['paint.scaleSize', 'paint.scaleDepth', 'paint.seams', 'paint.flakes', 'paint.gloss']
+const paintControls = (): string => {
+  const sliders = PAINT_SLIDERS.map(id => params.get(id)).filter(p => p && typeof p.value === 'number')
+  if (!sliders.length) return ''
+  return `<fieldset class="paint-controls"><legend>Paint</legend>${sliders.map(p => `<label>${p!.def.label}<input data-param="${p!.def.id}" type="range" min="${p!.def.min ?? 0}" max="${p!.def.max ?? 1}" step="${p!.def.step ?? 0.01}" value="${p!.value}"></label>`).join('')}<p class="panel-note">Paint detail shows at higher vehicle shading, in Graphics. <button type="button" class="link-button" data-goto="advanced">All sliders</button></p></fieldset>`
+}
 
 export class Shell implements System {
   readonly element = document.createElement('div')
@@ -102,7 +113,7 @@ export class Shell implements System {
           <button class="shell-play is-primary" type="submit">Enter World ›</button></form>${back}
         </section>
         <section data-panel="vehicle">${heading('Your Vehicle')}
-          <fieldset class="shell-vehicle"><legend>Vehicle</legend><div class="shell-vehicle-options"><label><input type="radio" name="vehicle" value="buggy-classic"> Classic</label><label><input type="radio" name="vehicle" value="buggy-syn3h"> Syn3h Buggy</label><label><input type="radio" name="vehicle" value="hovercraft"> Hovercraft</label><label><input type="radio" name="vehicle" value="jet"> Jet</label></div><div class="shell-vehicle-preview"></div><div class="shell-colors"><label>Body <input type="color" name="bodyColor" aria-label="Body colour"></label><label>Accent <input type="color" name="accentColor" aria-label="Accent colour"></label></div></fieldset>
+          <fieldset class="shell-vehicle"><legend>Vehicle</legend><div class="shell-vehicle-options"><label><input type="radio" name="vehicle" value="buggy-classic"> Classic</label><label><input type="radio" name="vehicle" value="buggy-syn3h"> Syn3h Buggy</label><label><input type="radio" name="vehicle" value="hovercraft"> Hovercraft</label><label><input type="radio" name="vehicle" value="jet"> Jet</label></div><div class="shell-vehicle-preview"></div><div class="shell-colors"><label>Body <input type="color" name="bodyColor" aria-label="Body colour"></label><label>Accent <input type="color" name="accentColor" aria-label="Accent colour"></label></div></fieldset>${paintControls()}
           <div class="vehicle-help"></div><p class="vehicle-note">Your vehicle and colours are saved on this device.</p><button data-goto="explore">Continue ›</button>${back}
         </section>
         <section data-panel="worlds">${heading('Worlds to Explore')}
@@ -143,6 +154,7 @@ export class Shell implements System {
       this.pickers.push(new PlanetPicker(slot, { compact, onPick: id => this.pickPlanet(id, compact), onCustom: () => this.openCustomPlanet() }))
     }
     this.glass(signal)
+    for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) slider.addEventListener('input', () => params.set(slider.dataset.param!, Number(slider.value)), { signal })
     this.startGalaxy()
     const unsubscribeWorld = params.onChange(id => { if (params.get(id)?.def.scope === 'world') this.worldDirty = true })
     signal.addEventListener('abort', unsubscribeWorld)
@@ -171,6 +183,7 @@ export class Shell implements System {
     this.element.querySelector('form')!.addEventListener('submit', event => { event.preventDefault(); this.play(true) }, { signal })
     for (const button of this.element.querySelectorAll('.shell-invite')) button.addEventListener('click', () => { void this.copyInvite() }, { signal })
     this.element.querySelector('.presentation-toggle')!.addEventListener('click', () => this.setPresentation(!this.presentation), { signal })
+    for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) if (document.activeElement !== slider) slider.value = String(params.get(slider.dataset.param!)?.value ?? 0)
     for(const slider of this.element.querySelectorAll<HTMLInputElement>('[data-audio-param]'))slider.addEventListener('input',()=>params.set(slider.dataset.audioParam!,Number(slider.value)),{signal})
     this.element.querySelector('.shell-mute')!.addEventListener('click', () => { audio.setMuted(!audio.isMuted); this.update() }, { signal })
     this.element.querySelector('#shell-track')!.addEventListener('change', event => {
