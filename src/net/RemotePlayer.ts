@@ -8,6 +8,7 @@ import * as THREE from 'three/webgpu'
 import type { PlayerInfo, WireState } from '../../shared/protocol'
 import { RAPIER } from '../core/physics'
 import type { Vehicle } from '../vehicles/Vehicle'
+import { nearestImage } from '../../shared/wrap'
 import { emptySample, type Sample, SnapshotBuffer } from './SnapshotBuffer'
 
 /** A dynamic proxy farther than this from its target is snapped, not blended. */
@@ -25,6 +26,20 @@ export class RemotePlayer {
   /** Game time the local vehicle last touched this one, for relayed shoves (shove.ts). */
   lastContactAt = -Infinity
   delay = 0.1
+  /**
+   * Side of the wrapping world in metres, 0 when it does not wrap. On a wrapping world a
+   * position is one of many images a whole tile apart, and three rules keep a remote vehicle
+   * whole across the seam:
+   *  1. Its snapshots are stored as one continuous track: each new state is taken at the image
+   *     nearest the one before, so interpolation and extrapolation never blend across a tile.
+   *     A sender's own whole-tile shift arrives as a jump of exactly one tile and vanishes here.
+   *  2. It is placed at the image nearest the local player.
+   *  3. When that image changes (we or they crossed the seam), the body is moved by the whole
+   *     tile at once, not blended or snapped: its motion relative to us is unbroken.
+   */
+  wrapSize = 0
+  /** The body was moved by a whole tile this step: its drawn position must not interpolate. */
+  jumped = false
   /** Removes this vehicle's effects; call before removing the vehicle. */
   disposeEffects: () => void = () => {}
   private readonly q = new THREE.Quaternion()
@@ -42,7 +57,10 @@ export class RemotePlayer {
   }
 
   push(s: WireState, now: number, sendRate: number, measure = true): void {
-    this.buffer.push({ t: s.t, p: s.p, q: s.q, v: s.v, w: s.w, input: s.input, paused: s.paused }, now, sendRate, measure)
+    let p = s.p
+    const head = this.buffer.newest
+    if (this.wrapSize > 0 && head) p = [nearestImage(p[0], head.p[0], this.wrapSize), p[1], nearestImage(p[2], head.p[2], this.wrapSize)]
+    this.buffer.push({ t: s.t, p, q: s.q, v: s.v, w: s.w, input: s.input, paused: s.paused }, now, sendRate, measure)
   }
 
   /** Run before the vehicle's own fixed step. */
@@ -54,12 +72,25 @@ export class RemotePlayer {
     Object.assign(this.vehicle.input, s.input)
 
     const body = this.vehicle.body
-    const cur = body.translation()
+    const at = body.translation()
+    let [px, py, pz] = s.p
+    let cur = { x: at.x, y: at.y, z: at.z }
+    this.jumped = false
+    if (this.wrapSize > 0) {
+      // The target at the image nearest us, and the body at the image nearest that target.
+      px = nearestImage(px, localPos.x, this.wrapSize)
+      pz = nearestImage(pz, localPos.z, this.wrapSize)
+      cur = { x: nearestImage(at.x, px, this.wrapSize), y: at.y, z: nearestImage(at.z, pz, this.wrapSize) }
+      if (cur.x !== at.x || cur.z !== at.z) {
+        // A whole tile, in one move, with no velocity implied and nothing blended.
+        body.setTranslation(cur, true)
+        this.jumped = true
+      }
+    }
     const near = Math.hypot(cur.x - localPos.x, cur.y - localPos.y, cur.z - localPos.z) < radius
     // A parked (hidden tab) vehicle is frozen on its owner's screen, so it is a wall here too.
     this.setPhysical(near && this.responding && !this.paused)
 
-    const [px, py, pz] = s.p
     if (!this.physical) {
       body.setNextKinematicTranslation({ x: px, y: py, z: pz })
       body.setNextKinematicRotation({ x: s.q[0], y: s.q[1], z: s.q[2], w: s.q[3] })

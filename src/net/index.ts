@@ -49,6 +49,7 @@ import { applyRoomWorld, netExtrapolate, netInterpDelay, netMaxDelay, netProxyBl
 import { RemotePlayer } from './RemotePlayer'
 import { audibleVehicles, bodyAlive, liveBots } from './bots'
 import { ShoveQueue, cleanShove, shoveFor } from './shove'
+import { nearestImage, wrapCoord, wrapDistance } from '../../shared/wrap'
 
 /** The slice of GameAudio (src/audio) networking uses. */
 export interface NetAudio {
@@ -374,6 +375,7 @@ export class NetClient implements System {
         continue
       }
       r.delay = r.buffer.delay(dt, netInterpDelay.value, netMaxDelay.value)
+      r.wrapSize = this.wrapSize
       r.steer(now - r.delay, maxEx, lp, radius, blend)
     }
     this.applyShoves()
@@ -404,7 +406,7 @@ export class NetClient implements System {
     this.lasers.spawn(this.id, shot)
     this.ctx.audio?.play('laserShot', { x: shot.o[0], y: shot.o[1], z: shot.o[2] })
     this.stats.shotsFired++
-    if (this.connected) this.send({ type: 'fire', shot })
+    if (this.connected) this.send({ type: 'fire', shot: { ...shot, o: this.canonical(shot.o) } })
   }
 
   postPhysics(dt: number): void {
@@ -444,6 +446,10 @@ export class NetClient implements System {
     const stuck = koth && this.connected ? this.game.koth.out : {}
     const holder = koth ? this.game.koth.holder : 0
     // A stuck vehicle stays in the world, visible and solid: nothing here is ever removed.
+    // Hidden only for the one step in which its body moved by a whole tile of a wrapping
+    // world: the drawn position is interpolated between steps and would streak across it.
+    for (const r of this.remotes.values()) r.vehicle.object.visible = !r.jumped
+    this.placeHill()
     this.tags.update([...this.remotes.entries()].map(([id, r]) => ({
       vehicle: r.vehicle,
       name: this.displayName(id),
@@ -556,14 +562,15 @@ export class NetClient implements System {
 
   private sendState(): void {
     const s = this.ctx.player.getState()
-    this.conn.send(encodeState({ id: 0, t: this.clock.now(), ...s }) as Uint8Array<ArrayBuffer>)
+    this.conn.send(encodeState({ id: 0, t: this.clock.now(), ...s, p: this.canonical(s.p) }) as Uint8Array<ArrayBuffer>)
     this.stats.statesSent++
   }
 
   private sendBots(): void {
     const t = this.clock.now()
     for (const [id, bot] of liveBots(this.bots?.vehicles ?? [], this.ctx.game.world)) {
-      this.conn.send(encodeState({ id, t, ...bot.getState(), bot: true }) as Uint8Array<ArrayBuffer>)
+      const s = bot.getState()
+      this.conn.send(encodeState({ id, t, ...s, p: this.canonical(s.p), bot: true }) as Uint8Array<ArrayBuffer>)
       this.stats.botStatesSent++
     }
   }
@@ -631,6 +638,37 @@ export class NetClient implements System {
     return touching
   }
 
+  /** On a wrapping world the hill is drawn at the image nearest us, like everything else. */
+  private placeHill(): void {
+    const zone = this.zone
+    const size = this.wrapSize
+    if (!zone || !(size > 0)) {
+      this.hill.setImage(0, 0)
+      return
+    }
+    const me = this.ctx.player.body.translation()
+    this.hill.setImage(nearestImage(zone.x, me.x, size) - zone.x, nearestImage(zone.z, me.z, size) - zone.z)
+  }
+
+  /** A beam sent from across the seam starts at the image of its origin nearest us. */
+  private nearShot<T extends { o: [number, number, number] }>(shot: T): T {
+    const size = this.wrapSize
+    if (!(size > 0)) return shot
+    const me = this.ctx.player.body.translation()
+    return { ...shot, o: [nearestImage(shot.o[0], me.x, size), shot.o[1], nearestImage(shot.o[2], me.z, size)] }
+  }
+
+  /** Side of the wrapping world in metres, or 0 when the world does not wrap. */
+  private get wrapSize(): number {
+    return this.ctx.terrain.wrapSize ?? 0
+  }
+
+  /** A position as it goes on the wire: inside the one tile everyone agrees on. */
+  private canonical(p: readonly [number, number, number] | number[]): [number, number, number] {
+    const size = this.wrapSize
+    return size > 0 ? [wrapCoord(p[0], size), p[1], wrapCoord(p[2], size)] : [p[0], p[1], p[2]]
+  }
+
   /** Apply relayed pushes whose ram our own physics did not feel; see shove.ts. */
   private applyShoves(): void {
     const now = this.ctx.player.body.linvel()
@@ -642,7 +680,8 @@ export class NetClient implements System {
       if (!remote || !remote.responding) continue
       const me = body.translation()
       const it = remote.vehicle.body.translation()
-      if (Math.hypot(it.x - me.x, it.y - me.y, it.z - me.z) > SHOVE_REACH) continue
+      const flat = this.wrapSize > 0 ? wrapDistance(me.x, me.z, it.x, it.z, this.wrapSize) : Math.hypot(it.x - me.x, it.z - me.z)
+      if (Math.hypot(flat, it.y - me.y) > SHOVE_REACH) continue
       const v = body.linvel()
       body.setLinvel({ x: v.x + push[0], y: v.y + push[1], z: v.z + push[2] }, true)
       this.stats.shoves++
@@ -758,7 +797,7 @@ export class NetClient implements System {
   private sendHeartbeat(): void {
     if (!this.connected) return
     const s = this.ctx.player.getState()
-    this.conn.send(encodeState({ id: 0, t: this.clock.now(), ...s, v: [0, 0, 0], w: [0, 0, 0], paused: true }) as Uint8Array<ArrayBuffer>)
+    this.conn.send(encodeState({ id: 0, t: this.clock.now(), ...s, p: this.canonical(s.p), v: [0, 0, 0], w: [0, 0, 0], paused: true }) as Uint8Array<ArrayBuffer>)
     this.stats.heartbeats++
   }
 
@@ -840,7 +879,7 @@ export class NetClient implements System {
         break
       case 'fire':
         if (this.players.has(msg.from)) {
-          this.lasers.spawn(msg.from, msg.shot, this.clock.now() - msg.shot.t)
+          this.lasers.spawn(msg.from, this.nearShot(msg.shot), this.clock.now() - msg.shot.t)
           const [x, y, z] = msg.shot.o
           this.ctx.audio?.play('laserShot', { x, y, z })
         }
