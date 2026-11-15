@@ -421,7 +421,9 @@ def build(v):
     if v.get('tail'):
         grow_tail_lights(body_me, v['tail'], slot(trim.get('tail', 'TailLights')) if 'tail' in trim else tail_i)
     apply_shape(body_me, v)
-    refine(body_me, v.get('refine', {}))
+    # GAME=1 skips the subdivision: the shape changes are smooth deformations of the original
+    # game-resolution mesh, so the body keeps its form at the original triangle count.
+    if not os.environ.get('GAME'): refine(body_me, v.get('refine', {}))
     body = bpy.data.objects.new('Body', body_me); scene.collection.objects.link(body)
     for p in body_me.polygons: p.use_smooth = True
     mirror_x(canopy_me)
