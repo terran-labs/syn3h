@@ -389,3 +389,11 @@ veil from first paint to lift, and that a startup failure is never hidden behind
 
 `fans-hill.mjs` and `flight-loading-map.mjs` are older checks that have gone stale in
 their later sections against other lanes' changes (they failed before the veil too).
+
+## Touch tablets
+
+An iPad on its side (1194 by 834) has the thumb controls on a desktop-sized screen. There
+the minimap sits top right under the menu, clear of the action buttons, and announcements
+sit between the hill panel and the vehicle. `phone-layout.mjs` now walks the same layout
+states on an "iPad Pro 11 landscape" in WebKit (build 2388), where the game takes its
+WebGL path.
