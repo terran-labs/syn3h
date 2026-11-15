@@ -77,6 +77,11 @@ export class Inspector {
   private armed?: ReturnType<typeof setTimeout>
   private pasteTarget: string | null = null
   private beforeSearch?: { cards: boolean[]; folds: boolean[] }
+  /** Per-frame caches for update() and setGIStatus(): what was last written, and where. */
+  private cardSums: { section: string; node: Element; fallback: string; shown: string | undefined }[] | null = null
+  private vehicleSelect?: HTMLSelectElement
+  private vehicleShown: string | undefined
+  private giShown?: { row: HTMLElement; message: string; eligible: boolean }
   /** The number being typed into, if any, and how to finish it. */
   private editing: { field: HTMLInputElement; finish(commit: boolean, refocus: boolean): void } | null = null
   /** Card height animations in flight. A new toggle starts from wherever these have got to. */
@@ -126,13 +131,19 @@ export class Inspector {
     if (params.all().length !== this.known) this.build()
     const editable = canEditWorld()
     if (editable !== this.editable) { this.editable = editable; for (const { row, def } of this.rows.values()) if (def.scope === 'world') for (const control of row.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) control.disabled = !editable; this.element.classList.toggle('is-locked', !editable) }
-    for (const card of this.element.querySelectorAll<HTMLElement>('.wi-card')) card.querySelector('.wi-sum')!.textContent = this.options.summary(card.dataset.section!) || `${this.tree.find(s => s.id === card.dataset.section)?.count ?? 0} properties`
-    const vehicles = this.options.vehicles()
-    const select = this.element.querySelector<HTMLSelectElement>('.wi-vehicle-select')!
-    if (document.activeElement !== select) select.value = vehicles.current
+    // Called every frame while the panels are open: find the summary nodes once per build and
+    // write a summary only when its text changes.
+    const sums = this.cardSums ??= [...this.element.querySelectorAll<HTMLElement>('.wi-card')].map(card => ({ section: card.dataset.section!, node: card.querySelector('.wi-sum')!, fallback: `${this.tree.find(s => s.id === card.dataset.section)?.count ?? 0} properties`, shown: undefined as string | undefined }))
+    for (const sum of sums) { const text = this.options.summary(sum.section) || sum.fallback; if (text !== sum.shown) { sum.shown = text; sum.node.textContent = text } }
+    const current = this.options.vehicles().current
+    if (current !== this.vehicleShown) {
+      const select = this.vehicleSelect ??= this.element.querySelector<HTMLSelectElement>('.wi-vehicle-select')!
+      if (document.activeElement !== select) { this.vehicleShown = current; select.value = current }
+    }
   }
   private build(): void {
     const all = params.all(); this.known = all.length
+    this.cardSums = null; this.giShown = undefined
     const open = new Set([...this.element.querySelectorAll<HTMLElement>('.wi-card.is-open')].map(card => card.dataset.section))
     this.tree = buildTree(all.map(p => p.def as PropertyDef))
     this.rows.clear(); this.editing = null; this.settle()
@@ -169,7 +180,8 @@ export class Inspector {
     const label = document.createElement('label'); label.textContent = 'Vehicle · reloads & respawns'
     const select = document.createElement('select'); select.className = 'wi-vehicle-select'; select.setAttribute('aria-label', 'Vehicle (reloads and respawns)')
     for (const option of this.options.vehicles().options) { const item = document.createElement('option'); item.value = option.id; item.textContent = option.label; select.append(item) }
-    select.addEventListener('change', () => this.options.onVehicle(select.value), { signal: this.abort.signal })
+    // A choice that does not take effect must be put back on the next update, so forget what was shown.
+    select.addEventListener('change', () => { this.vehicleShown = undefined; this.options.onVehicle(select.value) }, { signal: this.abort.signal })
     label.append(select); return label
   }
   /** Opens the existing registered GI slider, rather than creating a second control. */
@@ -188,6 +200,10 @@ export class Inspector {
   setGIStatus(message: string, eligible: boolean): void {
     const row = this.rows.get('post.gi')?.row
     if (!row) return
+    // Called every frame while the panels are open; nothing to do unless the status or the row changed.
+    const shown = this.giShown
+    if (shown && shown.row === row && shown.message === message && shown.eligible === eligible) return
+    this.giShown = { row, message, eligible }
     let note = row.querySelector<HTMLElement>('.wi-gi-status')
     if (!note) { note = document.createElement('small'); note.className = 'wi-gi-status'; note.id = 'gi-status'; row.append(note) }
     if (note.textContent !== message) note.textContent = message

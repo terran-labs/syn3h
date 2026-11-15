@@ -22,7 +22,7 @@ import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
 import { placeLabels } from './galaxy/labels'
 import { createDaydreamControl } from '../bots/daydreamControl'
 import { Inspector } from './inspector/Inspector'
-import { FocusHud } from './inspector/FocusHud'
+import { FocusHud, type Telemetry } from './inspector/FocusHud'
 import { RaceHud, type RaceRole } from './RaceHud'
 import type { RaceState } from '../../shared/protocol'
 import { glassStyle, diagnostics } from './inspector/params'
@@ -575,6 +575,16 @@ export class Shell implements System {
   }
   private performancePanel!: PerformancePanel
   configurePerformance(source: PerformanceSource): void { this.performancePanel.configure(source) }
+  // What update() last wrote to the page. It runs every frame of play, so it compares against
+  // these plain values and leaves the page alone, unread and unwritten, when nothing changed.
+  private focusShown = false
+  private diagnosticsShown: boolean | undefined
+  private diagnosticsBox?: HTMLInputElement
+  private glassShown: number | undefined
+  private gfxShown: number | undefined
+  private hudPlanet = ''
+  private hudSeed = NaN
+  private readonly hudTelemetry: Telemetry = { speed: 0, altitude: 0, heading: 0, world: '', hour: 0 }
   /** Touch only: the panels are showing rather than the driving view. Never stored. */
   private touchPanels = false
   /** Panels are wanted exactly when the cursor is free (or, on touch, when the menu state is on). */
@@ -589,7 +599,7 @@ export class Shell implements System {
       this.element.querySelector('.inspector-toggle')!.setAttribute('aria-pressed', String(wanted))
     }
     const locked = this.started && !this.menuVisible && !this.game.input.suspended && document.pointerLockElement === this.game.canvas
-    if (this.element.classList.contains('is-focus') !== locked) this.element.classList.toggle('is-focus', locked)
+    if (locked !== this.focusShown) { this.focusShown = locked; this.element.classList.toggle('is-focus', locked) }
   }
   /** Show the panels: on a desktop that is letting the cursor go. */
   private showPanels(): void { if (this.capturesCursor) this.releaseCursor(); else this.touchPanels = true; this.syncPanels() }
@@ -1113,24 +1123,32 @@ export class Shell implements System {
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
     // A captured cursor alone is insufficient while a menu or another flow suspends input.
     this.syncPanels()
-    this.performancePanel.setContext(this.started && !this.menuVisible && !this.game.input.suspended, this.element.classList.contains('is-focus'))
-    this.raceHud.update(this.started && !this.menuVisible && !this.game.input.suspended, this.element.classList.contains('is-focus'), this.self, this.ground?.size)
-    this.element.classList.toggle('show-diagnostics', diagnostics.value)
-    this.element.querySelector<HTMLInputElement>('.rail-diagnostics input')!.checked = diagnostics.value
+    const playing = this.started && !this.menuVisible && !this.game.input.suspended
+    this.performancePanel.setContext(playing, this.focusShown)
+    this.raceHud.update(playing, this.focusShown, this.self, this.ground?.size)
+    if (diagnostics.value !== this.diagnosticsShown) {
+      this.diagnosticsShown = diagnostics.value
+      this.element.classList.toggle('show-diagnostics', diagnostics.value)
+      ;(this.diagnosticsBox ??= this.element.querySelector<HTMLInputElement>('.rail-diagnostics input')!).checked = diagnostics.value
+    }
     // Per-frame: touch the DOM only when the label changes.
     if (this.audio.isMuted !== this.muteShown) { this.muteShown = this.audio.isMuted; this.element.querySelector('.rail-mute')!.textContent = this.muteShown ? 'Unmute' : 'Mute' }
     this.updateGear()
     if (this.inspector.open) this.updateGI()
     if (this.started && !this.menuVisible) {
-      const focus = this.element.classList.contains('is-focus')
+      const focus = this.focusShown
       if (!focus && this.inspector.open) this.inspector.update()
-      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, heading: this.self?.heading ?? 0, world: `${currentPlanet().label} · ${planetName(worldSeed.value)}`, hour: Number(params.get('sun.timeOfDay')?.value ?? 0) })
-      const glass = String(Math.round(glassStyle.value)); if (this.element.dataset.glass !== glass) this.element.dataset.glass = glass
+      // The world's name is generated from its seed: work it out again only when the world changes.
+      const hud = this.hudTelemetry, planet = currentPlanet().label
+      if (planet !== this.hudPlanet || worldSeed.value !== this.hudSeed) { this.hudPlanet = planet; this.hudSeed = worldSeed.value; hud.world = `${planet} · ${planetName(worldSeed.value)}` }
+      hud.speed = this.telemetry.speed; hud.altitude = this.telemetry.altitude; hud.heading = this.self?.heading ?? 0; hud.hour = Number(params.get('sun.timeOfDay')?.value ?? 0)
+      this.focusHud.update(true, hud)
+      const glass = Math.round(glassStyle.value); if (glass !== this.glassShown) { this.glassShown = glass; this.element.dataset.glass = String(glass) }
     }
     // The stylesheet drops frost at the lowest graphics level.
     // Frost goes at the lowest graphics level, and when the quality ladder is shedding post effects.
-    const gfx = qualityLevel() >= 2 ? '0' : String(levelNumber(graphicsLevel.value))
-    if (document.documentElement.dataset.gfx !== gfx) document.documentElement.dataset.gfx = gfx
+    const gfx = qualityLevel() >= 2 ? 0 : levelNumber(graphicsLevel.value)
+    if (gfx !== this.gfxShown) { this.gfxShown = gfx; document.documentElement.dataset.gfx = String(gfx) }
     if (!this.menuVisible) return
     const mute = this.element.querySelector<HTMLButtonElement>('.shell-mute')!
     mute.textContent = this.audio.isMuted ? 'Unmute audio' : 'Mute all audio'; mute.setAttribute('aria-pressed', String(this.audio.isMuted))
