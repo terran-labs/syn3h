@@ -86,7 +86,6 @@ export class Tank extends Vehicle {
   private readonly wear=()=>this.rebuild()
   private level:0|1|2=0
   private castsShadows=true
-  private tinted=false
   private cg=NaN
   private bellyUp=false
   groundedTracks=0
@@ -116,7 +115,8 @@ export class Tank extends Vehicle {
     if(!design||!hull){this.legacy();return}
     const tank=new ExpeditionTank(hull,design.color,design.accent)
     tank.object.position.y=-GROUND;this.object.add(tank.object);this.generated=tank
-    if(this.tinted)tank.setColors(this.colors.body,this.colors.accent)
+    // Apply the shared player palette on first construction too, as Jet and Hovercraft do.
+    tank.setColors(this.colors.body,this.colors.accent)
     this.ridePosition.position.set(tank.eye[0],tank.eye[1]-GROUND,tank.eye[2])
     // The cabin is modelled to be sat in, and the lamps are faces of the hull.
     this.object.userData.cockpit=true;this.object.userData.ownLamps=true
@@ -158,7 +158,7 @@ export class Tank extends Vehicle {
     }
     this.modelReady=Promise.all(this.models.map(m=>m.ready)).then(()=>{})
   }
-  protected override applyColors(){this.tinted=true;this.generated?.setColors(this.colors.body,this.colors.accent)}
+  protected override applyColors(){this.generated?.setColors(this.colors.body,this.colors.accent)}
   private setMass(){
     this.cg=tankCG.value
     // Vehicle.js 110 adds the default 1 kg Rigidbody; TankTrack.prefab adds six 40 kg bodies.

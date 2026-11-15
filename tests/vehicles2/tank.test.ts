@@ -3,11 +3,37 @@ import * as THREE from 'three/webgpu'
 import {initPhysics} from '../../src/core/physics'
 import {Tank} from '../../src/vehicles/Tank'
 import {previewTankBody} from '../../src/vehicles/tankDesigns/preview'
+import {mergedSurfaces} from '../../src/vehicles/skins/mergeStatic'
 import {harness} from './harness'
 import {params} from '../../shared/params'
 import {RAPIER,groups,GROUP_TERRAIN,GROUP_ALL} from '../../src/core/physics'
 beforeAll(initPhysics)
 describe('Sherpa tank with six shape casts',()=>{
+ it('starts in the shared player palette and repaints existing surfaces without rebuilding',()=>{
+  const h=harness(),v=new Tank(h.game,h.terrain,new THREE.Vector3(0,2,0))
+  try {
+   const hull=v.object.getObjectByName('Hull and cabin') as THREE.Mesh
+   const packed=hull.material as THREE.Material
+   const surfaces=mergedSurfaces.get(packed)!
+   const paint=surfaces.find(m=>m.userData.showroom==='paint') as THREE.MeshStandardMaterial
+   const accent=surfaces.find(m=>m.userData.showroom==='accent') as THREE.MeshStandardMaterial
+   const canopy=(v.object.getObjectByName('Cabin windows') as THREE.Mesh).material as THREE.MeshStandardMaterial
+   expect(paint.color.getHexString()).toBe(v.colors.body.slice(1))
+   expect(accent.color.getHexString()).toBe(v.colors.accent.slice(1))
+   const geometry=hull.geometry
+   for(const [body,trim] of [['#b42632','#49e6ff'],['#1768b4','#e9f4ff']]) {
+    v.setColors(body,trim)
+    expect(paint.color.getHexString()).toBe(body.slice(1))
+    expect(accent.color.getHexString()).toBe(trim.slice(1))
+    expect(accent.emissive.getHexString()).toBe(trim.slice(1))
+    expect(canopy.color.getHexString()).toBe(trim.slice(1))
+    expect(hull.geometry).toBe(geometry);expect(hull.material).toBe(packed)
+    expect(v.object.userData.ownLamps).toBe(true)
+   }
+   expect(canopy.userData.showroom).toBe('canopy')
+   expect(canopy.forceSinglePass).toBe(true)
+  } finally {v.dispose();h.world.free()}
+ })
  it('folds six track masses into one body and rests on all contacts',()=>{
   const h=harness(),v=new Tank(h.game,h.terrain,new THREE.Vector3(0,2,0));v.isLocal=false
   expect(v.body.mass()).toBeCloseTo(241);expect(h.world.bodies.len()).toBe(1)

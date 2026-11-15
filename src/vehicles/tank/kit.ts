@@ -319,7 +319,7 @@ function hull(batch: Batch, spec: ExpeditionSpec, level: 0 | 1): [number, number
     const sideWindow = feature && i > front && i <= last && [1, 7].includes(j)
     if (windscreen || sideWindow) {
       const round = !!spec.portholes && sideWindow, segments = level ? 10 : 24
-      opening(shell, sheet, out, { round, steps, segments, border: 'paint', rim: level ? null : 'chrome', fill: 'canopy', tight: !!soft })
+      opening(shell, sheet, out, { round, steps, segments, border: 'paint', rim: level ? null : 'accent', fill: 'canopy', tight: !!soft })
       opening(liner, sheet, inward, { round, steps, segments, border: 'trim', rim: null, fill: null, tight: !!soft })
       continue
     }
@@ -451,16 +451,16 @@ function track(batch: Batch, width: number, level: 0 | 1) {
     if (!level) batch.rod('frame', v(-face, y - .76, z), v(face, y - .76, z), r, 10, true)
     for (const sx of [-1, 1]) {
       const at = v(sx * face, y - .76, z)
-      if (level) { batch.disc('chrome', at, 'x', sx, 0, r * .78, 6); continue }
+      if (level) { batch.disc('frame', at, 'x', sx, 0, r * .78, 6); continue }
       // One flat wheel face in zones, so nothing overlaps and nothing is hidden. The top wheel
-      // drives the belt: its rim is cut into sprocket teeth, bright against dark.
+      // drives the belt: its rim is cut into sprocket teeth.
       if (y > 1) for (let k = 0; k < 20; k++) {
         const a0 = k / 20 * Math.PI * 2, a1 = (k + 1) / 20 * Math.PI * 2
         const p = (angle: number, radius: number) => v(at.x, at.y + Math.sin(angle) * radius, at.z + Math.cos(angle) * radius)
-        batch.quad(k % 2 ? 'frame' : 'chrome', [p(a0, r * .78), p(a0, r), p(a1, r), p(a1, r * .78)], side(sx))
+        batch.quad(k % 2 ? 'frame' : 'frame', [p(a0, r * .78), p(a0, r), p(a1, r), p(a1, r * .78)], side(sx))
       } else batch.disc('frame', at, 'x', sx, r * .78, r, 10)
-      batch.disc('chrome', at, 'x', sx, r * .42, r * .78, 10)
-      batch.disc('accent', at, 'x', sx, 0, r * .42, 10)
+      batch.disc('frame', at, 'x', sx, r * .42, r * .78, 10)
+      batch.disc('frame', at, 'x', sx, 0, r * .42, 10)
     }
   }
   // Three road wheels carry the ground run between the two idlers.
@@ -468,8 +468,8 @@ function track(batch: Batch, width: number, level: 0 | 1) {
     const r = .15, y = .055 + .075 + r - .76, face = hw - .02
     batch.rod('frame', v(-face, y, z), v(face, y, z), r, 8, true)
     for (const sx of [-1, 1]) {
-      batch.disc('chrome', v(sx * face, y, z), 'x', sx, r * .45, r, 8)
-      batch.disc('accent', v(sx * face, y, z), 'x', sx, 0, r * .45, 8)
+      batch.disc('frame', v(sx * face, y, z), 'x', sx, r * .45, r, 8)
+      batch.disc('frame', v(sx * face, y, z), 'x', sx, 0, r * .45, 8)
     }
   }
 }
@@ -504,12 +504,12 @@ function haunch(batch: Batch, kind: ExpeditionSpec['fender'], axle: number, widt
   }
   for (let i = 0; i < n; i++) {
     for (let k = 0; k < cols; k++) {
-      part.quad('paint', [point(i, k, false), point(i + 1, k, false), point(i + 1, k + 1, false), point(i, k + 1, false)], UP)
+      part.quad('frame', [point(i, k, false), point(i + 1, k, false), point(i + 1, k + 1, false), point(i, k + 1, false)], UP)
       part.quad('frame', [point(i, k, true), point(i + 1, k, true), point(i + 1, k + 1, true), point(i, k + 1, true)], DOWN)
     }
     for (const k of [0, cols]) part.quad('accent', [point(i, k, false), point(i + 1, k, false), point(i + 1, k, true), point(i, k, true)], side(k ? 1 : -1))
   }
-  for (const i of [0, n]) for (let k = 0; k < cols; k++) part.quad('paint', [point(i, k, false), point(i, k + 1, false), point(i, k + 1, true), point(i, k, true)], i ? AFT : FORE)
+  for (const i of [0, n]) for (let k = 0; k < cols; k++) part.quad('frame', [point(i, k, false), point(i, k + 1, false), point(i, k + 1, true), point(i, k, true)], i ? AFT : FORE)
   part.soften(.9)
   batch.append(part)
   for (const sx of [-1, 1]) batch.box('frame', [.09, .26, .26], [sx * (half - .2), crest - .2, 0])
@@ -542,7 +542,7 @@ function flare(batch: Batch, kind: ExpeditionSpec['fender'], axle: number, width
   const column = (p: T.Vector3, k: number, drop: number) => { const u = k / 2 - 1; return v(u * half, p.y + .05 * (1 - u * u) - .05 * u * u - drop, p.z) }
   for (let i = 0; i < path.length - 1; i++) {
     for (let k = 0; k < 4; k++) {
-      part.quad('paint', [column(path[i], k, 0), column(path[i + 1], k, 0), column(path[i + 1], k + 1, 0), column(path[i], k + 1, 0)], UP)
+      part.quad('frame', [column(path[i], k, 0), column(path[i + 1], k, 0), column(path[i + 1], k + 1, 0), column(path[i], k + 1, 0)], UP)
       part.quad('frame', [column(path[i], k, thick), column(path[i + 1], k, thick), column(path[i + 1], k + 1, thick), column(path[i], k + 1, thick)], DOWN)
     }
     for (const k of [0, 4]) part.quad('accent', [column(path[i], k, 0), column(path[i + 1], k, 0), column(path[i + 1], k, thick), column(path[i], k, thick)], side(k ? 1 : -1))
@@ -576,9 +576,9 @@ function fender(batch: Batch, kind: ExpeditionSpec['fender'], axle: number, widt
   for (let i = 0; i < profile.length - 1; i++) {
     if (rounded) {
       const a = p(i, 0).add(v(0, .09, 0)), b = p(i + 1, 0).add(v(0, .09, 0))
-      part.quad('paint', [p(i, -half), p(i + 1, -half), b, a], UP)
-      part.quad('paint', [a, b, p(i + 1, half), p(i, half)], UP)
-    } else part.quad('paint', [p(i, -half), p(i + 1, -half), p(i + 1, half), p(i, half)], UP)
+      part.quad('frame', [p(i, -half), p(i + 1, -half), b, a], UP)
+      part.quad('frame', [a, b, p(i + 1, half), p(i, half)], UP)
+    } else part.quad('frame', [p(i, -half), p(i + 1, -half), p(i + 1, half), p(i, half)], UP)
     part.quad('frame', [p(i, half, thickness), p(i + 1, half, thickness), p(i + 1, -half, thickness), p(i, -half, thickness)], DOWN)
     for (const sx of [-1, 1]) part.quad('accent', [p(i, sx * half), p(i + 1, sx * half), p(i + 1, sx * half, thickness), p(i, sx * half, thickness)], side(sx))
   }
@@ -586,9 +586,9 @@ function fender(batch: Batch, kind: ExpeditionSpec['fender'], axle: number, widt
     const out = i ? AFT : FORE
     if (rounded) {
       const crest = p(i, 0).add(v(0, .09, 0)), base = p(i, 0, thickness)
-      part.quad('paint', [p(i, -half), crest, base, p(i, -half, thickness)], out)
-      part.quad('paint', [crest, p(i, half), p(i, half, thickness), base], out)
-    } else part.quad('paint', [p(i, -half), p(i, half), p(i, half, thickness), p(i, -half, thickness)], out)
+      part.quad('frame', [p(i, -half), crest, base, p(i, -half, thickness)], out)
+      part.quad('frame', [crest, p(i, half), p(i, half, thickness), base], out)
+    } else part.quad('frame', [p(i, -half), p(i, half), p(i, half, thickness), p(i, -half, thickness)], out)
   }
   if (rounded) part.soften()
   batch.append(part)
@@ -600,8 +600,8 @@ function fender(batch: Batch, kind: ExpeditionSpec['fender'], axle: number, widt
 function arm(batch: Batch, sx: number) {
   const end = v(sx * ARM.x, ARM.y, ARM.z)
   batch.rod('frame', v(0, 0, 0), end, .15, 10)
-  // A bright collar where the pod turns on the arm.
-  batch.rod('chrome', end.clone().multiplyScalar(.8), end.clone().multiplyScalar(.93), .172, 10, true)
+  // A dark metal collar where the pod turns on the arm.
+  batch.rod('frame', end.clone().multiplyScalar(.8), end.clone().multiplyScalar(.93), .172, 10, true)
 }
 
 /** The far silhouette's pods: a prism and a fender plate each, fixed at rest. */
@@ -615,7 +615,7 @@ function farPods(batch: Batch, width: number, pivotX: number) {
       batch.quad('rubber', [at(a[0], a[1], -hw), at(b[0], b[1], -hw), at(b[0], b[1], hw), at(a[0], a[1], hw)], v(0, (a[1] + b[1]) * .5 - .6, (a[0] + b[0]) * .5))
       for (const s of [-1, 1]) batch.tri('rubber', at(0, .6, s * hw), at(a[0], a[1], s * hw), at(b[0], b[1], s * hw), side(s))
     }
-    for (let i = 0; i < 3; i++) batch.quad('paint', [at(top[i][0], top[i][1], -half), at(top[i + 1][0], top[i + 1][1], -half), at(top[i + 1][0], top[i + 1][1], half), at(top[i][0], top[i][1], half)], UP)
+    for (let i = 0; i < 3; i++) batch.quad('frame', [at(top[i][0], top[i][1], -half), at(top[i + 1][0], top[i + 1][1], -half), at(top[i + 1][0], top[i + 1][1], half), at(top[i][0], top[i][1], half)], UP)
   }
 }
 
@@ -632,10 +632,10 @@ interface Surfaces { by: Record<Solid, T.MeshStandardMaterial>; packed: T.MeshSt
 function surfaces(color: T.ColorRepresentation, accent: T.ColorRepresentation, trackWidth: number): Surfaces {
   const std = (role: Parameters<typeof setRole>[1], p: T.MeshStandardMaterialParameters) => setRole(new T.MeshStandardMaterial(p), role)
   const by: Record<Solid, T.MeshStandardMaterial> = {
-    paint: std('paint', { color, metalness: .8, roughness: .3 }),
-    accent: std('accent', { color: accent, metalness: .85, roughness: .26 }),
+    paint: std('paint', { color, metalness: .8, roughness: .24 }),
+    accent: std('accent', { color: accent, emissive: accent, emissiveIntensity: .25, roughness: .4 }),
     chrome: std('chrome', { color: 0xe9edf2, metalness: 1, roughness: .14 }),
-    frame: std('frame', { color: 0x1a1c20, metalness: .85, roughness: .38 }),
+    frame: std('frame', { color: 0x171c24, metalness: .3, roughness: .6 }),
     // Cabin lining and seats: the one role where a vehicle gives its own numbers.
     trim: std('trim', { color: 0x1b1e24, metalness: .1, roughness: .8 }),
     rubber: std('trim', { color: 0x0b0b0c, metalness: 0, roughness: .86 }),
@@ -657,8 +657,9 @@ function surfaces(color: T.ColorRepresentation, accent: T.ColorRepresentation, t
   packed.colorNode = colour; packed.emissiveNode = emission; packed.roughnessNode = roughness; packed.metalnessNode = metalness
   mergedSurfaces.set(packed, list)
   // Shown as it is only where the shared force field is not applied (the distance levels).
-  const canopy = setRole(new T.MeshStandardMaterial({ color: accent, emissive: accent, emissiveIntensity: .25, transparent: true, opacity: .16, depthWrite: false, side: T.DoubleSide, metalness: 0, roughness: .2 }), 'canopy')
+  const canopy = setRole(new T.MeshStandardMaterial({ color: accent, transparent: true, opacity: .18, depthWrite: false, side: T.DoubleSide }), 'canopy')
   canopy.name = 'Tank canopy'
+  canopy.forceSinglePass = true
   return { by, packed, canopy }
 }
 
@@ -725,6 +726,8 @@ export class ExpeditionTank {
   constructor(readonly hull: TankHull, color: T.ColorRepresentation, accent: T.ColorRepresentation) {
     this.object.name = 'Exploration tank'
     this.mats = surfaces(color, accent, hull.trackWidth)
+    // Shared canopy shading reads the same live accent as the packed paint sources.
+    this.object.userData.vehicleColors = { body: this.mats.by.paint.color, accent: this.mats.by.accent.color }
     const near = this.build(0)
     this.eye = near.root.userData.eye as [number, number, number]
     this.pose()
@@ -817,8 +820,8 @@ export class ExpeditionTank {
   }
 
   setColors(body: T.ColorRepresentation, accent: T.ColorRepresentation) {
-    this.mats.by.paint.color.set(body); this.mats.by.accent.color.set(accent)
-    this.mats.canopy.color.set(accent); this.mats.canopy.emissive.set(accent)
+    this.mats.by.paint.color.set(body); this.mats.by.accent.color.set(accent); this.mats.by.accent.emissive.set(accent)
+    this.mats.canopy.color.set(accent)
   }
   /** Tail lamps brighten under braking; `headlights` false dims the headlamps for a studio. */
   setLights(braking: boolean, headlights = true) {
