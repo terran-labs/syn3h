@@ -55,7 +55,8 @@ Foreman when it asks.
 **Decided** by the owner. Player-facing names: Plasma Tag (was tag beam), Plasma Thunder
 (was Big Red), Chaser (was Pesters), Grapple (was Bungee), Yoink. He approved the Weapons
 lane's first recommendation for each item's look and synthesized sound. Internal
-identifiers and wire messages stay as they are.
+identifiers and wire messages stay as they are. At 9:22am he added: the Syn3h Buggy is
+called simply the Buggy, now that the classic buggy is gone.
 
 ## Sunday 15 November, 9:00am Pacific: the rule is what the running game loads
 
