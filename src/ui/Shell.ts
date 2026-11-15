@@ -291,8 +291,13 @@ export class Shell implements System {
     window.addEventListener('keydown', event => this.keydown(event), { capture: true, signal })
     // Native controls keep their defaults and local handlers, but must not drive or fire.
     // Let keyup reach Input even when focus moved while a driving key was held.
+    // A focused button or summary only owns its activation keys (Space and Enter). Every other
+    // key still drives: focus rests on a button after an automatic start and after any click
+    // on the rail, and the drive keys must not go dead until the player clicks elsewhere.
     this.element.addEventListener('keydown', event => {
-      if (event.target instanceof Element && event.target.closest('button, input, select, textarea, summary, [contenteditable=true]')) event.stopPropagation()
+      if (!(event.target instanceof Element)) return
+      if (event.target.closest('input, select, textarea, [contenteditable=true]')) event.stopPropagation()
+      else if (event.target.closest('button, summary') && (event.code === 'Space' || event.code === 'Enter' || event.code === 'NumpadEnter')) event.stopPropagation()
     }, { signal })
     game.canvas.addEventListener('pointerdown', event => {
       if (!this.started || this.menuVisible || game.input.suspended || event.pointerType === 'touch' || event.button !== 0) return
