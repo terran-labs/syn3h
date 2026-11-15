@@ -1,3 +1,4 @@
+import {hotExposureNode} from './hotExposure'
 import {addLavaGlow} from './lavaGlow'
 import {addNightReadability} from './nightReadability'
 import * as THREE from 'three/webgpu'
@@ -231,13 +232,13 @@ export class LoadedBuggySkin implements BuggySkin {
     const glow = edge.mul(1.2).add(rim.mul(2.2)).add(flow.mul(.3)).add(fresnel.mul(.5)).add(.03)
     const energy = new THREE.MeshBasicNodeMaterial({transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false})
     energy.fog = false
-    energy.colorNode = this.energyColor.mul(glow)
+    energy.colorNode = this.energyColor.mul(glow).mul(hotExposureNode())
     energy.opacityNode = clamp(glow, 0, 1)
     // Additive light washes out to white over a sunlit desert, so a normally blended tint layer
     // underneath keeps the accent hue readable at noon; at night the additive glow dominates.
     const tint = new THREE.MeshBasicNodeMaterial({transparent: true, side: THREE.DoubleSide, depthWrite: false})
     tint.fog = false
-    tint.colorNode = this.energyColor.mul(.55)
+    tint.colorNode = this.energyColor.mul(.55).mul(hotExposureNode())
     tint.opacityNode = clamp(edge.mul(.45).add(rim.mul(.35)).add(flow.mul(.08)).add(.1), 0, .8)
     for (const o of meshes) {
       for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose()

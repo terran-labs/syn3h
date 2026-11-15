@@ -326,7 +326,9 @@ export function coneProfile(t: number): number {
 export function centreProfile(kind: number, t: number): number {
   if (kind !== KIND_DESERT) return coneProfile(t)
   if (t >= 1) return 0
-  return 0.2 * (1 - t) + 0.8 * smoothstep(0.94, 0.52, t)
+  // Two cliff bands with a bench between them, so it reads as stacked sandstone and the
+  // spiral road gets a ledge to run along.
+  return 0.16 * (1 - t) + 0.4 * smoothstep(0.93, 0.74, t) + 0.44 * smoothstep(0.62, 0.45, t)
 }
 
 /**

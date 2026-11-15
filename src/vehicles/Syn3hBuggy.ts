@@ -21,7 +21,7 @@ import {
   buggyGripFade, buggyIdleHold, buggyNextGen, buggyPower, buggyRebound, buggyRegen, buggyRideHeight, buggyShocks, buggySlide, buggySpeed, buggySteerLimit,
   buggyTraction,
 } from './buggyParams'
-import { applyLava, floatPoints } from './lava'
+import { applyLava, floatPoints, lavaViscosity } from './lava'
 import type { BuggySkin } from './skins/BuggySkin'
 import { DEG, UnityBody, lerp, signedAngle, unityEulerAngles } from './unityBody'
 import { Vehicle, type WheelEffect, createWheelEffects } from './Vehicle'
@@ -69,17 +69,21 @@ const SKID_CENTER = { x: 0, y: 0.13976786, z: -0.090771556 }
 /**
  * Next-gen tyre contact (not from Syn3h). Each wheel is a brush: while it holds, slip winds up a
  * stiff spring-damper in the wheel plane, so the buggy truly parks on a slope and corners
- * without sideslip. The force is capped at mu x load, where mu falls from buggy.grip to
- * buggy.slide as the slip speed rises (SLIP_GRIP to SLIP_SLIDE) and as the buggy goes faster. TYRE_MASS is the share of the body one wheel
+ * without sideslip. The force is capped at mu x load, where mu goes from buggy.grip at rest to
+ * buggy.slide (grip at speed) by the grip fade speed, and drops to SLIDE_RATIO of that as the
+ * slip speed rises (SLIP_GRIP to SLIP_SLIDE). TYRE_MASS is the share of the body one wheel
  * acts on; TYRE_DAMP cancels half the slip per 50 Hz step; TYRE_OMEGA (rad/s) sets the
  * spring, which holds a 30 degree slope with about 2 cm of wind up.
  */
 const TYRE_MASS = MASS / 4
 const TYRE_DAMP = 0.5
 const TYRE_OMEGA = 15
-/** Slip speeds (m/s) over which friction falls from grip to slide. */
+/** Slip speeds (m/s) over which friction falls from its peak to SLIDE_RATIO of it. */
 const SLIP_GRIP = 1
 const SLIP_SLIDE = 4
+const SLIDE_RATIO = 0.8
+/** Next-gen steering limit at rest, as a multiple of grip; see buggy.steerLimit. */
+const STEER_LIMIT_SLOW = 1.1
 /** Next-gen drivetrain (see drivetrain()): below HOLD_SPEED (m/s) with no throttle it parks. */
 const HOLD_SPEED = 1.5
 /** How fast (m/s^2) the hold eases the wheels to a stop, so it settles instead of snapping. */
@@ -91,6 +95,8 @@ const THROTTLE_DEADZONE = 0.05
 const REGEN_TORQUE_MARGIN = 1.25
 /** A contact point closer than this (m) is touching; further ones are only predicted. */
 const CONTACT_TOUCH = 0.01
+/** How fast (1/s) water drags the wheels toward the body's speed while floating. */
+const WATER_MOTOR_DRAG = 6
 /**
  * Next-gen bump stop (see suspensionForce()). The skid plate meets flat ground when a wheel ray
  * is about 0.185 m long, so the stop works over ray lengths BUMP_START down to BUMP_END, and
@@ -138,7 +144,7 @@ export class Syn3hBuggy extends Vehicle {
   areWingsOpen = false
   isInverted = false
   totalSuspensionCompression = 0
-  /** In lava or water this step. */
+  /** Floating in water this step, or immersed in lava (set by the base class). */
   inLiquid = false
   /** Vhicl.InputSmoothed and the mapped raw Input (Me 9-20). */
   readonly inputSmoothed = new THREE.Vector4()
@@ -282,7 +288,7 @@ export class Syn3hBuggy extends Vehicle {
     )
   }
 
-  /** Height of lava or sea under a point (Unity layer 4 raycasts). */
+  /** Surface height of the lava or water at a point (Unity layer 4 raycasts). */
   private liquidAt(x: number, z: number): number {
     return this.terrain.liquidHeightAt?.(x, z) ?? worldLavaAltitude.value
   }
@@ -390,8 +396,13 @@ export class Syn3hBuggy extends Vehicle {
       // Opposite front and rear angles turn on a radius of about WHEELBASE / (tan f + tan r).
       // Cap that sum so full lock asks for buggy.steerLimit times the grip the tyres have.
       const v2 = Math.max(myVelocity * myVelocity, 1)
-      const grip = lerp(buggyGrip.value, buggySlide.value, Math.min(1, myVelocity / buggyGripFade.value))
-      const cap = (WHEELBASE * grip * buggyTraction.value * 9.81 * buggySteerLimit.value) / v2
+      // Precise up to half the grip fade speed (STEER_LIMIT_SLOW times the grip), loosening to
+      // buggy.steerLimit by the fade speed so full lock at speed breaks into a drift.
+      const fast = myVelocity / buggyGripFade.value
+      const grip = lerp(buggyGrip.value, buggySlide.value, Math.min(1, fast))
+      const loose = THREE.MathUtils.clamp(fast * 2 - 1, 0, 1)
+      const limit = lerp(Math.min(STEER_LIMIT_SLOW, buggySteerLimit.value), buggySteerLimit.value, loose)
+      const cap = (WHEELBASE * grip * buggyTraction.value * 9.81 * limit) / v2
       const sum = Math.abs(Math.tan(this.steer[0])) + Math.abs(Math.tan(this.steer[2]))
       if (sum > cap) {
         const f = cap / sum
@@ -412,6 +423,17 @@ export class Syn3hBuggy extends Vehicle {
     else {
       this.motorSpeed += (smoothed.y * this.motorAccel) / MOTOR_MASS * dt
       this.motorSpeed += (-this.motorSpeed * (this.brakes ? 50 : MOTOR_DRAG)) / this.motorTorque * dt
+    }
+    // Sticky lava (see applyVehicleLiquid in lava.ts) takes over the body while it is immersed
+    // and moves it at the lava crawl power, so no wheel force reaches it. The wheels churn in
+    // the same goo: drag the motor toward the body's speed so it cannot spin up unloaded and
+    // lurch when the tyres bite again at the shore.
+    // Water does the same more gently, so the wheels are not at full speed when they touch
+    // the beach. inLiquid is last step's value here.
+    if (this.lavaDepth > 0 || this.inLiquid) {
+      const vf = ub.inverseTransformDirectionUnity(ub.velocity, this.v1).z
+      const drag = this.lavaDepth > 0 ? lavaViscosity.value : WATER_MOTOR_DRAG
+      this.motorSpeed = vf + (this.motorSpeed - vf) * Math.exp(-drag * dt)
     }
     // Next-gen updates the motor from all four wheels at once (Jacobi). Updating it wheel by
     // wheel, as VB 323 does, favours the left wheels and pulls the buggy right.
@@ -511,7 +533,9 @@ export class Syn3hBuggy extends Vehicle {
       }
     }
 
-    // Lava and water (Mars Explorer Buggy.js 435-475, see lava.ts), after drag like the original.
+    // Water: float and paddle (Mars Explorer Buggy.js 435-475, see lava.ts), after drag like the
+    // original. applyLava does nothing in lava, which is sticky instead: the base class applies
+    // that after this controller and sets inLiquid, lavaDepth and stuck.
     this.inLiquid = applyLava(ub, FLOAT_POINTS, (x, z) => this.liquidAt(x, z), {
       x: smoothed.x, y: smoothed.y, wingsOpen: this.areWingsOpen,
     })
@@ -553,8 +577,8 @@ export class Syn3hBuggy extends Vehicle {
     // Load is the force the suspension pass applies at this wheel.
     const load = this.isInverted ? 0 : this.suspensionForce(i, mass, true)
     const traction = buggyTraction.value
-    const slide = buggySlide.value
-    const grip = lerp(buggyGrip.value, slide, Math.min(1, speed / buggyGripFade.value))
+    // Peak friction: buggy.grip at rest, buggy.slide (grip at speed) by the grip fade speed.
+    const grip = lerp(buggyGrip.value, buggySlide.value, Math.min(1, speed / buggyGripFade.value))
     // Longitudinal slip acts on the body and the motor together; locked brakes make the motor
     // immovable. Mass terms follow the classic motor reaction (VB 323): dv = F dt / torque.
     const slipX = hv.x
@@ -569,11 +593,11 @@ export class Syn3hBuggy extends Vehicle {
     this.windZ[i] += slipZ * dt
     let fx = -TYRE_MASS * (slipX * damp + this.windX[i] * k)
     let fz = -longMass * (slipZ * damp + this.windZ[i] * k)
-    // Friction falls from grip to slide as the contact patch slips faster (a Stribeck curve),
+    // Friction falls to SLIDE_RATIO of its peak as the contact patch slips faster (a Stribeck curve),
     // so a tyre that has let go keeps most of its bite while it is only just sliding. ABS
     // keeps braking at the peak.
     const slip = Math.hypot(slipX, slipZ)
-    const mu = locked ? grip : lerp(grip, slide, THREE.MathUtils.smoothstep(slip, SLIP_GRIP, SLIP_SLIDE))
+    const mu = locked ? grip : grip * lerp(1, SLIDE_RATIO, THREE.MathUtils.smoothstep(slip, SLIP_GRIP, SLIP_SLIDE))
     const cap = mu * traction * load
     const n = Math.hypot(fx, fz)
     this.sliding[i] = n > cap
@@ -715,6 +739,10 @@ export class Syn3hBuggy extends Vehicle {
    * and tells us when that order is swapped. Only contacts that actually touch count: the
    * manifold also lists points still inside the prediction margin. numSolverContacts() reads 0
    * against a triangle mesh, which is what the terrain is, so count the geometric contacts.
+   *
+   * Not in the source: the flag only sets while the body is actually past 90 degrees from world
+   * up. A contact on the roof side of an upright buggy (another vehicle ramming or landing on
+   * it) would otherwise switch the suspension and tyres off until a ground contact cleared it.
    */
   private selfRight(dt: number, speedSq: number): void {
     const world = this.game.world
@@ -733,7 +761,7 @@ export class Syn3hBuggy extends Vehicle {
           const angle = this.up.angleTo(n) * DEG
           for (let c = 0; c < count; c++) {
             if (this.isInverted && angle < 50) this.isInverted = false
-            else if (!this.isInverted && angle > 90) this.isInverted = true
+            else if (!this.isInverted && angle > 90 && this.up.y < 0) this.isInverted = true
             if (this.isInverted && angSq < 2 && speedSq < 8) {
               this.v2.crossVectors(this.up, UP).multiplyScalar(this.up.angleTo(UP) * DEG * 0.5)
               this.ub.addTorqueAcceleration(this.v2, dt)

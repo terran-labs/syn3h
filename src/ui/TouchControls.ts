@@ -78,6 +78,10 @@ export class TouchControls {
   update(): void {
     this.element.querySelector('[data-action="special"]')?.setAttribute('aria-pressed', String(this.input.state.special))
   }
+  /** Pulse one button, to go with a hint that names it. Null clears it. */
+  highlight(action: string | null): void {
+    for (const button of this.element.querySelectorAll<HTMLElement>('button')) button.classList.toggle('is-hinted', button.dataset.action === action)
+  }
   private reset(): void { for (const reset of this.resetters) reset() }
   dispose(): void { this.reset(); this.abort.abort(); this.element.remove() }
 }

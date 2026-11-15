@@ -59,3 +59,52 @@ describe('protocol', () => {
     expect(parseJson('x'.repeat(10000))).toBeNull()
   })
 })
+
+import { params } from '../../shared/params'
+import { applyRoomWorld, netSendRate } from '../../src/net/params'
+import { kothTargetScore, tagCooldown } from '../../src/modes/params'
+import { laserSpeed } from '../../src/weapons/params'
+
+describe('applyRoomWorld', () => {
+  /** A room stored before `tag.cooldown` existed: it has every other world value. */
+  const oldRoom = () => {
+    const values: Record<string, unknown> = { ...params.snapshot('world'), 'laser.speed': 250, 'koth.targetScore': 30 }
+    delete values['tag.cooldown']
+    return values
+  }
+  const defaults = () => { for (const p of params.all()) params.set(p.def.id, p.def.default, 'remote') }
+
+  it('puts a world parameter the room lacks back to its default, and keeps personal ones', () => {
+    defaults()
+    // What a joiner brings from its URL or from sliders moved before joining.
+    params.set('tag.cooldown', 7)
+    params.set('laser.speed', 40)
+    params.set('net.sendRate', 30)
+    const changes: string[] = []
+    const off = params.onChange((id, _value, source) => changes.push(`${id}:${source}`))
+    applyRoomWorld(oldRoom())
+    off()
+    expect(tagCooldown.value).toBe(tagCooldown.def.default)
+    expect(laserSpeed.value).toBe(250)
+    expect(kothTargetScore.value).toBe(30)
+    expect(netSendRate.value).toBe(30)
+    // Told to listeners as the room's doing, so nothing is echoed back to the server.
+    expect(changes).toContain('tag.cooldown:remote')
+    expect(changes.every((c) => c.endsWith(':remote'))).toBe(true)
+    defaults()
+  })
+
+  it('leaves two clients that held different values with the same world', () => {
+    defaults()
+    params.set('tag.cooldown', 7)
+    params.set('koth.targetScore', 100)
+    applyRoomWorld(oldRoom())
+    const first = params.snapshot('world')
+    defaults()
+    params.set('tag.cooldown', 1.5)
+    params.set('laser.speed', 300)
+    applyRoomWorld(oldRoom())
+    expect(params.snapshot('world')).toEqual(first)
+    defaults()
+  })
+})

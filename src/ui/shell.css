@@ -364,3 +364,28 @@
   .is-compact .planet-orb { width: 36px; }
   .lobby-links { gap: 0 26px; }
 }
+/* Join view on a short, wide screen: the QR code takes the full height on the left and the
+   words sit beside it, so the code is as large as the phone allows and nothing scrolls. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .join-view { display: grid; grid-template-columns: auto minmax(0, 360px); justify-content: center; align-content: center; column-gap: 28px; text-align: left; padding: 10px 16px; }
+  .join-view > * { grid-column: 2; }
+  .join-view .invite-qr { grid-column: 1; grid-row: 1 / span 6; width: min(82vh, 340px); margin: 0; align-self: center; }
+  .join-view > .wordmark { width: 150px; margin-bottom: 6px; }
+  .syn3h-shell .join-view h1 { font-size: 26px; }
+  .join-view .join-room { font-size: 18px; }
+  .join-view .invite-link { font-size: 12px; }
+  .join-view .join-count { font-size: 15px; }
+}
+/* Lobby index on a short screen: the planets and the links fit without scrolling. */
+@media (max-height: 550px) {
+  .lobby-index .invite-link { display: none; }
+  .lobby-index > h1 { font-size: 22px; }
+  .syn3h-shell .lobby-index .lobby-room-label { margin: 0 0 4px; }
+  .syn3h-shell .lobby-links button { min-height: 32px; }
+}
+/* A hint for a player who seems stuck: the controls card with a lit edge, and on touch the
+   button it names pulses. */
+.spawn-help.is-hint { border-color: var(--s3-accent); color: white; font-size: clamp(15px,1vw,19px); box-shadow: 0 0 22px rgb(20 100 255 / .3); }
+.touch-actions button.is-hinted { animation: touch-hint 1s ease-in-out infinite; border-color: #cfe6ff; }
+@keyframes touch-hint { 50% { box-shadow: 0 0 0 9px rgb(120 190 255 / .28); background: #8bbff2c0; color: #10243b; } }
+@media (prefers-reduced-motion: reduce) { .touch-actions button.is-hinted { animation: none; box-shadow: 0 0 0 5px rgb(120 190 255 / .4); } }

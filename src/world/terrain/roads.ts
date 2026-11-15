@@ -174,8 +174,10 @@ function volcanoRoad(data: TerrainData, s: HeightSampler, rim: Road): Road {
         break
       }
       const ground = s.heightAt(px, pz)
-      if (ground > summit - 1.5 && r < ringR + 40) {
-        // On the flat summit: straight in to the ring road.
+      if ((ground > summit - 1.5 && r < ringR + 40) || planned >= summit - 0.01) {
+        // On the flat summit, or with the whole climb already paid for: straight in to the
+        // ring road. Without the second test a wide flat top just below summit height could
+        // keep the road circling.
         dx = ux
         dz = uz
       } else {

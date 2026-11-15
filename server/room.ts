@@ -80,6 +80,8 @@ interface Player {
   lastState: WireState | null
   /** Server ms when lastState arrived. */
   lastStateAt: number
+  /** Server ms when anything at all last arrived from this player. */
+  lastHeardAt: number
   lastFireAt: number
   /** Shots fired recently, by shot id, with server ms of firing. */
   shots: Map<number, number>
@@ -106,6 +108,19 @@ const RESPONDING_MS = 1500
 const BOT_CONTEST_SPEED = 2
 /** A bot the host has not updated for this long is gone (bot count lowered, or no host). */
 const BOT_EXPIRY_MS = 5000
+/**
+ * In tag, "it" moves on when its holder has been away this long (phone locked, tab hidden,
+ * connection gone quiet). Otherwise one person putting their phone down stops the game for
+ * the whole room: a parked player cannot be rammed, and never reports being tagged.
+ */
+const IT_ABSENT_MS = 8000
+/**
+ * A connection that has sent nothing at all for this long is closed. A hidden tab still sends
+ * a heartbeat (Chrome slows timers in long hidden tabs to once a minute), so only a client
+ * that is truly gone, without its socket ever closing, goes this quiet. It would otherwise
+ * hold a place in the room and a line in everyone's player list. If it comes back, it rejoins.
+ */
+const SILENT_MS = 180_000
 /**
  * A room nobody is actually playing in forgets its world, so the next visitor does not inherit
  * a stale night sky or someone's gravity. "Active" means connected and sending live (not
@@ -164,7 +179,9 @@ export class Room {
 
   /** Advance time based rules. Called on every message; transports may also call it on a timer. */
   tick(): void {
+    this.tickSilent(this.now())
     this.tickIdle(this.now())
+    this.tickTag(this.now())
     this.tickKoth(this.now())
   }
 
@@ -186,6 +203,9 @@ export class Room {
   }
 
   receive(peer: Peer, data: string | ArrayBuffer | Uint8Array): void {
+    // Before the tick, which closes connections that have gone silent: this one just spoke.
+    const heard = this.players.get(peer)
+    if (heard) heard.lastHeardAt = this.now()
     this.expireBots()
     this.tick()
     if (typeof data !== 'string') {
@@ -265,9 +285,13 @@ export class Room {
       this.host = nextId
       if (!next) this.locked = false
     }
-    if (this.it === id) this.setIt(nextId, 'leave')
-    else if (hostLeft && next) this.broadcastGame('host', nextId)
-    else this.persist()
+    // "It" is a tag role: announce its move only in tag. A leaver who was host as well gets
+    // both announcements, so the room always hears who the new host is.
+    const wasIt = this.it === id
+    if (wasIt) this.it = nextId
+    if (wasIt && this.mode === MODE_TAG) this.setIt(nextId, 'leave')
+    if (hostLeft && next) this.broadcastGame('host', nextId)
+    else if (!wasIt || this.mode !== MODE_TAG) this.persist()
   }
 
   // -------------------------------------------------------------------------------------
@@ -353,7 +377,7 @@ export class Room {
     const id = this.nextId++
     if (this.nextId > MAX_PLAYER_ID) this.nextId = 1
     const info: PlayerInfo = {
-      id, name: cleanName(msg.name, id), slot, score: 0,
+      id, name: this.uniqueName(cleanName(msg.name, id)), slot, score: 0,
       kind: cleanKind(msg.kind) ?? 'buggy',
       colors: cleanColors(msg.colors) ?? [...DEFAULT_COLORS],
     }
@@ -720,7 +744,7 @@ export class Room {
     // Joining counts as a tag so a newcomer cannot be tagged in their first seconds.
     const now = this.now()
     return {
-      info, lastState: null, lastStateAt: 0, lastFireAt: -Infinity, shots: new Map(), lastTag: now,
+      info, lastState: null, lastStateAt: 0, lastHeardAt: now, lastFireAt: -Infinity, shots: new Map(), lastTag: now,
       windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now,
     }
   }
@@ -737,6 +761,49 @@ export class Room {
   private anyActive(now: number): boolean {
     for (const p of this.players.values()) if (this.isActive(p, now)) return true
     return false
+  }
+
+  /** Two players may pick the same name; the later one gets a number so lists and events can
+   * tell them apart: "Sam", "Sam 2", "Sam 3". */
+  private uniqueName(name: string): string {
+    const taken = new Set([...this.players.values()].map((p) => p.info.name.toLowerCase()))
+    if (!taken.has(name.toLowerCase())) return name
+    for (let n = 2; ; n++) {
+      const suffix = ` ${n}`
+      const candidate = name.slice(0, MAX_NAME_LENGTH - suffix.length).trimEnd() + suffix
+      if (!taken.has(candidate.toLowerCase())) return candidate
+    }
+  }
+
+  /** Close connections that have gone completely quiet; see SILENT_MS. */
+  private tickSilent(now: number): void {
+    for (const [peer, p] of [...this.players]) {
+      if (now - p.lastHeardAt <= SILENT_MS) continue
+      peer.close(4002, 'silent')
+      this.disconnect(peer)
+    }
+  }
+
+  /** Server ms since which the player who is "it" has been away, or 0 while present. */
+  private itAwaySince = 0
+
+  /** In tag, pass "it" on from a holder who has been away too long; see IT_ABSENT_MS. */
+  private tickTag(now: number): void {
+    const holder = this.mode === MODE_TAG && this.it ? this.byId(this.it) : undefined
+    if (!holder || holder.info.bot || this.isActive(holder, now)) {
+      this.itAwaySince = 0
+      return
+    }
+    if (!this.itAwaySince) this.itAwaySince = now
+    if (now - this.itAwaySince < IT_ABSENT_MS) return
+    // Players are kept in join order: the longest present active player takes over.
+    for (const p of this.players.values()) {
+      if (p === holder || !this.isActive(p, now)) continue
+      this.itAwaySince = 0
+      p.lastTag = now
+      this.setIt(p.info.id, 'leave')
+      return
+    }
   }
 
   private tickIdle(now: number): void {

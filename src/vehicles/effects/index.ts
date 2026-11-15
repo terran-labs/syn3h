@@ -1,3 +1,4 @@
+import {hotExposureDim} from '../skins/hotExposure'
 import * as T from 'three/webgpu'
 import type {Game,System} from '../../core/Game'
 import {qualityBudget,graphicsLevel} from '../../core/quality'
@@ -39,7 +40,7 @@ class EffectWorld implements System {
     this.dustMap=load('/models/effects/dust.png');this.exhaustMap=load('/models/textures/thruster-glow.png');this.plasmaMap=load('/models/effects/plasma-green.png');this.redPlasmaMap=load('/models/effects/plasma-red.png')
     this.marks=new RibbonBatch(1024,load('/models/effects/skidmark.png'));this.trails=new RibbonBatch(256,undefined,true)
     this.lamps.frustumCulled=false;this.lamps.count=0
-    this.lamps.onBeforeRender=()=>{let index=0;for(const e of this.vehicles.values())index=e.writeLamps(this.lamps,index);this.lamps.instanceMatrix.needsUpdate=true;if(this.lamps.instanceColor)this.lamps.instanceColor.needsUpdate=true}
+    this.lamps.onBeforeRender=()=>{this.lamps.material.color.setScalar(hotExposureDim(game.renderer.toneMappingExposure));let index=0;for(const e of this.vehicles.values())index=e.writeLamps(this.lamps,index);this.lamps.instanceMatrix.needsUpdate=true;if(this.lamps.instanceColor)this.lamps.instanceColor.needsUpdate=true}
     game.scene.add(this.lamps,this.marks.mesh,this.trails.mesh);this.rebudget();game.scene.userData.vehicleEffects=this.stats
   }
   retain(){this.references++}

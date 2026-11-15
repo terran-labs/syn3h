@@ -148,7 +148,7 @@ describe('Syn3hBuggy', () => {
     expect(speed(b)).toBeLessThan(0.01)
   })
 
-  test('next-gen brakes stop it on the tyres at about 1 g, then it holds', async () => {
+  test('next-gen brakes stop it on the tyres at well over 1 g, then it holds', async () => {
     const { bed, b } = await spawn()
     bed.run(1)
     b.input.y = 1
@@ -162,9 +162,10 @@ describe('Syn3hBuggy', () => {
       bed.run(0.02)
       t += 0.02
     }
-    // Faster than sliding friction alone (0.75 g) and no faster than grip allows (1.2 g).
-    expect(v0 / t).toBeGreaterThan(0.75 * 9.81)
-    expect(v0 / t).toBeLessThan(1.25 * 9.81)
+    // Harder than low speed grip alone (1.2 g), since grip rises with speed, and no harder
+    // than the high speed grip allows (3 g).
+    expect(v0 / t).toBeGreaterThan(1.2 * 9.81)
+    expect(v0 / t).toBeLessThan(3 * 9.81)
     bed.run(2)
     const p0 = pos(b)
     bed.run(1)
@@ -414,6 +415,113 @@ describe('Syn3hBuggy', () => {
     b.input.y = 1
     bed.run(3)
     expect(planar(pos(b), p0)).toBeGreaterThan(20)
+  })
+
+  /** A lava pool `depth` m deep over the flat bed for |z| < 30, dry beyond. */
+  const lavaPool = async (depth: number) => {
+    const bed = await makeBed()
+    bed.terrain.liquidHeightAt = (_x, z) => (Math.abs(z) < 30 ? depth : -Infinity)
+    bed.terrain.liquidKindAt = () => 'lava'
+    const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, depth + 1.5, 0), 0))
+    b.isLocal = false
+    bed.run(4)
+    return { bed, b }
+  }
+
+  test('crawls out of shallow lava under power and drives away', async () => {
+    const { bed, b } = await lavaPool(0.6)
+    b.input.y = 1
+    let t = 0
+    while (pos(b).z > -31 && t < 40) {
+      bed.run(0.5)
+      t += 0.5
+    }
+    expect(t).toBeLessThan(30)
+    bed.run(3)
+    expect(speed(b)).toBeGreaterThan(15)
+  })
+
+  test('the hold does not pin it in deeper lava: it crawls whenever the throttle is pressed', async () => {
+    const { bed, b } = await lavaPool(1)
+    expect(b.lavaDepth).toBeGreaterThan(0)
+    expect(b.stuck).toBe(true)
+    expect(b.drive).toBe('hold')
+    for (let i = 0; i < 2; i++) {
+      const z0 = pos(b).z
+      b.input.y = 1
+      bed.run(5)
+      expect(z0 - pos(b).z).toBeGreaterThan(1)
+      b.input.y = 0
+      bed.run(3)
+      expect(speed(b)).toBeLessThan(0.05)
+    }
+  })
+
+  test('the motor does not spin up unloaded while floating in deep lava', async () => {
+    const { bed, b } = await lavaPool(2)
+    expect(b.wheelsGrounded).toBe(0)
+    b.input.y = 1
+    let motorMax = 0
+    bed.run(20, () => { motorMax = Math.max(motorMax, Math.abs(b.motorSpeed)) })
+    expect(motorMax).toBeLessThan(15)
+    expect(-pos(b).z).toBeGreaterThan(3)
+  })
+
+  test('the motor stays near the body speed while paddling in water', async () => {
+    const bed = await makeBed()
+    bed.terrain.liquidHeightAt = () => 4
+    bed.terrain.liquidKindAt = () => 'water'
+    const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 5, 0), 0))
+    b.isLocal = false
+    bed.run(3)
+    expect(b.inLiquid).toBe(true)
+    b.input.y = 1
+    let motorMax = 0
+    bed.run(10, () => { motorMax = Math.max(motorMax, Math.abs(b.motorSpeed)) })
+    // Paddling still works, and the wheels are not racing when they reach a beach.
+    expect(-pos(b).z).toBeGreaterThan(40)
+    // Unloaded it used to reach 114 m/s.
+    expect(motorMax).toBeLessThan(40)
+  })
+
+  test('a vehicle landing on its roof side does not flag an upright buggy as inverted', async () => {
+    const { bed, b } = await onMesh()
+    const top = bed.add(new Syn3hBuggy(bed.game, bed.terrain, pos(b).add(new THREE.Vector3(0.4, 1.6, 0.3)), 0.5))
+    top.isLocal = false
+    let flagged = 0, touched = false
+    const w = bed.game.world
+    bed.run(3, () => {
+      if (b.isInverted) flagged++
+      w.contactPair(b.hull, top.hull, () => { touched = true })
+      w.contactPair(b.hull, top.skid, () => { touched = true })
+    })
+    expect(touched).toBe(true)
+    expect(flagged).toBe(0)
+    // Still on its suspension under the load, and able to drive out from under it.
+    expect(b.wheelsGrounded).toBe(4)
+    const p0 = pos(b)
+    b.input.y = 1
+    bed.run(3)
+    expect(planar(pos(b), p0)).toBeGreaterThan(10)
+  })
+
+  test.each([25, 35, 45])('next-gen changes course at %i m/s at least as fast as classic in the first second', async (v) => {
+    const turn = async (nextGen: boolean) => {
+      params.set(buggyNextGen.def.id, nextGen)
+      const { bed, b } = await cruise(v)
+      const course = () => Math.atan2(b.body.linvel().x, -b.body.linvel().z)
+      const c0 = course()
+      b.input.x = 1
+      bed.run(1)
+      const after1 = Math.abs(course() - c0) * THREE.MathUtils.RAD2DEG
+      bed.run(1)
+      return { after1, upright: axis(b, 0, 1, 0).y }
+    }
+    const classic = await turn(false)
+    const next = await turn(true)
+    expect(next.after1).toBeGreaterThan(classic.after1 * 0.9)
+    expect(next.after1).toBeGreaterThan(20)
+    expect(next.upright).toBeGreaterThan(0.95)
   })
 
   test('wheel rays ignore other vehicles', async () => {

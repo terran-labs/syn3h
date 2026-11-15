@@ -1,7 +1,7 @@
 {
   "tagline": "Syn3h, rebuilt native in the browser: its vehicles, its physics, its lobby and its look.",
   "deadline": "Demo: Sunday noon Pacific, Coeur d'Alene",
-  "headline": "Release candidate m12 is frozen and passes its deploy dry run: sticky lava, three planets, King of the Hill without eliminations, tag beams, the buggy teleport fix and the 2017 lobby. It ships as release 1 the moment Cloudflare sign-in exists. Previews are down pending a Tailscale access review.",
+  "headline": "Release candidate m13 is frozen and passes its deploy dry run: night glow that keeps its colour, a camera that stays above lava and sea, and a ram fix verified by 30 of 30 two-player rams. Trunk adds wings that lift a buggy out of lava and water. Release 1 and the syn3h.com switch run the moment the Cloudflare token arrives. Previews are back.",
   "previews": [
     {
       "title": "Play the current build",
@@ -628,24 +628,32 @@
   ],
   "knownIssues": [
     {
-      "title": "The lava sea is too bright at night",
-      "detail": "At 11pm it can wash out the scene. The game opens at 4:30pm with the clock paused, so this only shows if someone drags the time slider."
+      "title": "Wings lift needs two fixes",
+      "detail": "Open wings now lift a buggy out of lava and off any shore. Two problems remain: a fast wings-open touch on water is grabbed instead of skipping, and after lifting out the buggy only hovers slowly instead of flying away. Fixes are in progress."
     },
     {
-      "title": "Getting out of water is not verified",
-      "detail": "On the desert and alpine worlds a floating vehicle turned back into open water in one capture. The default world is volcanic."
+      "title": "Rear-ending a moving car gives no shove",
+      "detail": "The tag passes, but the car in front feels nothing on its own screen. Rams into parked or oncoming cars do shove. Queued for release 2."
     },
     {
-      "title": "The alpine summit road",
-      "detail": "An autopilot flipped on it once and passed once. Being checked."
+      "title": "The jet does nothing on W alone",
+      "detail": "R is throttle and lifts off; W is pitch. The controls card does not make that obvious yet."
     },
     {
-      "title": "The chase camera clips under the shoreline",
-      "detail": "In some frames while crawling out of lava."
+      "title": "Bots crowd the summit",
+      "detail": "Bots reach the top on every world, then ram each other and some drive off the edge. On the alpine world one of four left the road at the last bend."
+    },
+    {
+      "title": "Changing vehicle in the lobby reloads the page",
+      "detail": "A shortcut taken to keep the demo safe."
     },
     {
       "title": "Not yet done by a person",
       "detail": "Nobody has driven the game by hand, heard the sound, or tried it on a real phone."
+    },
+    {
+      "title": "Network study is thin",
+      "detail": "Loss and stall results come from one run per condition on a loaded Mac. Nothing was measured on a phone, venue wifi or mobile data."
     }
   ]
 }

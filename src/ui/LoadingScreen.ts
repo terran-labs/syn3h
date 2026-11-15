@@ -1,5 +1,6 @@
 import { wordmarkSvg } from './brand/logo'
 import { Starfield } from './Starfield'
+import { graphicsLevel, levelNumber } from '../core/quality'
 import { loadingMessages } from './data/loadingMessages'
 const phaseLabels: Record<string, string> = { device: 'Checking your device', physics: 'Preparing motion', renderer: 'Preparing the view', world: 'Building your world', ready: 'Ready to explore' }
 export interface LoadingDetail { phase?: string; progress?: number; elapsedMs?: number }
@@ -18,7 +19,7 @@ export class LoadingScreen {
     this.element.innerHTML = wordmarkSvg()+'<h1>Preparing to Explore</h1><p class="loading-phase">Starting Syn3h</p><progress aria-label="Loading progress"></progress><p class="loading-message"></p><small class="loading-time"></small>'
     document.body.append(this.element)
     // The same generated sky as the lobby, so the first thing on screen needs no image.
-    this.sky = new Starfield(this.element)
+    this.sky = new Starfield(this.element, {}, () => levelNumber(graphicsLevel.value) === 0)
     this.setMessages(this.messages)
     window.addEventListener('syn3h:loading', event => this.update((event as CustomEvent<LoadingDetail>).detail), { signal: this.abort.signal })
     this.timer = setInterval(() => {

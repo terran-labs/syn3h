@@ -11,6 +11,8 @@ import { SlidingPanels } from './SlidingPanels'
 import { Starfield } from './Starfield'
 import { wordmarkSvg } from './brand/logo'
 import { PlanetPicker } from './planets/PlanetPicker'
+import { planetOrbs } from './planets/PlanetOrbs'
+import { graphicsLevel, levelNumber } from '../core/quality'
 import { applyPlanet, currentPlanet, encodeWorld, planetName } from '../world/planets'
 import { AttractMode, type CinematicCamera } from './AttractMode'
 import { InviteView, inviteUrl, renderQr } from './InviteView'
@@ -23,6 +25,7 @@ import { generateName } from './data/names'
 import { Minimap, type MapEntity } from './Minimap'
 import { bootLoading } from './LoadingScreen'
 import { renderHelp, touchHelp } from './VehicleHelp'
+import { PlayHints, type Hint } from './PlayHints'
 import type { VehicleKind } from '../vehicles'
 import './shell.css'
 
@@ -61,6 +64,8 @@ export class Shell implements System {
   /** Slider groups the advanced panel is limited to, when it was opened from the custom planet. */
   private advancedGroups?: readonly string[]
   private worldDirty = true
+  /** Arrived by an invite link that names a world: that world is the one to enter. */
+  private readonly invited = (() => { const query = new URLSearchParams(location.search); return query.has('room') && query.has('world') })()
   private started = false
   private menuVisible = true
   private readonly previousSuspended: boolean
@@ -119,7 +124,7 @@ export class Shell implements System {
     this.nameInput = this.element.querySelector('#shell-name')!; this.roomInput = this.element.querySelector('#shell-room')!
     this.speed = this.element.querySelector('.shell-speed strong')!
     this.panels = new SlidingPanels(this.element.querySelector('.lobby-panels')!)
-    this.starfield = new Starfield(this.overlay, { seed: worldSeed.value })
+    this.starfield = new Starfield(this.overlay, { seed: worldSeed.value }, () => levelNumber(graphicsLevel.value) === 0)
     this.board = new Scoreboard(this.element.querySelector('.shell-scoreboard')!, text => {this.toast(text);if(/joined/i.test(text))audio.cue('join');else if(/left/i.test(text))audio.cue('leave');else if(/tagged| is it/i.test(text))audio.cue('tag')})
     this.hudBoard = new Scoreboard(this.element.querySelector('.hud-scoreboard')!, () => {})
     this.touch = new TouchControls(game.input); this.element.classList.toggle('has-touch', this.touch.available)
@@ -254,6 +259,9 @@ export class Shell implements System {
       else if(prev?.holderIsYou&&!state.holderIsYou)this.audio.cue('lost')
       else if(state.holderName&&state.holderName!==prev?.holderName&&!state.contested)this.audio.cue('capture')
     }
+    // The adaptive score follows the match: your share of the target, and whether you hold the hill.
+    const mine=state?.scores.find(score=>score.you)
+    this.audio.setMatch(state&&!state.winner?{holding:state.holderIsYou&&!state.contested,contested:state.contested&&state.holderIsYou,progress:mine&&state.target>0?mine.score/state.target:0}:null)
     this.lastMatch=state?{...state}:null
     this.matchHud.setState(state)
   }
@@ -284,7 +292,7 @@ export class Shell implements System {
     if (this.started) { this.closeMenu(); return }
     void this.audio.unlock().then(async () => { await this.audio.ready(); this.audio.play('materialize') }).catch(() => this.toast('Audio is unavailable. You can still play.'))
     try { localStorage.setItem('syn3h.playerName', this.playerName) } catch { /* Playing does not require storage. */ }
-    this.started = true; this.nameInput.disabled = true; this.roomInput.disabled = true
+    this.started = true; this.worldDirty = true; this.nameInput.disabled = true; this.roomInput.disabled = true
     this.element.querySelector<HTMLButtonElement>('.shell-play')!.textContent = 'Return to Game ›'
     this.element.querySelector<HTMLElement>('[data-resume]')!.hidden = false
     for (const input of this.element.querySelectorAll<HTMLInputElement>('.shell-vehicle input')) input.disabled = true
@@ -300,6 +308,8 @@ export class Shell implements System {
   closeMenu(): void {
     if (!this.started) return
     this.menuVisible = false; this.overlay.hidden = true; this.overlay.inert = true; this.starfield.enabled = false
+    // The game is about to be on screen: give the lobby's graphics contexts back at once.
+    planetOrbs.release()
     this.game.input.suspended = false; this.touch.enabled = true; this.audio.enabled = true; this.audio.setLobbyVisible(false); this.paramPanel?.hide()
     this.element.classList.add('is-playing')
     this.element.querySelector<HTMLElement>('.shell-hud')!.hidden = false
@@ -376,6 +386,10 @@ export class Shell implements System {
   }
   /** A short notice that shows in the lobby and, while playing, as a toast. */
   private say(text: string): void { this.toast(text) }
+  /** What the lobby's own graphics are doing, for the phone checks. */
+  get graphics(): { starfieldFrames: number; starfieldLive: boolean; planetsLive: boolean; planetMaps: number } {
+    return { starfieldFrames: this.starfield.frames, starfieldLive: this.starfield.generated, planetsLive: planetOrbs.active, planetMaps: planetOrbs.painted }
+  }
   private updateHelp(): void {
     renderHelp(this.element.querySelector('.vehicle-help')!, this.choice.vehicleKind)
     this.element.querySelector('.shell-touch-hint')!.textContent = touchHelp(this.choice.vehicleKind)
@@ -392,7 +406,7 @@ export class Shell implements System {
   showHelp(full = true): void {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!, touch = this.touch.available
     renderHelp(hint.querySelector('div')!, this.activeVehicleKind, touch, !full)
-    hint.classList.toggle('is-full', full)
+    hint.classList.toggle('is-full', full); hint.classList.remove('is-hint'); this.touch.highlight(null)
     hint.querySelector('small')!.textContent = touch ? '' : full ? 'H or ? to hide' : 'H: all controls'
     hint.hidden = false; clearTimeout(this.helpTimer); this.helpInput?.abort(); this.helpInput = undefined
     const hide = () => this.hideHelp()
@@ -408,7 +422,22 @@ export class Shell implements System {
   }
   private hideHelp(): void {
     clearTimeout(this.helpTimer); this.helpInput?.abort(); this.helpInput = undefined
+    this.touch.highlight(null)
     this.element.querySelector<HTMLElement>('.spawn-help')!.hidden = true
+  }
+  /**
+   * One line in the controls card for a player who seems stuck, for example pushing W on a
+   * parked jet. On touch the button it names pulses. Stays out of the way of the full list.
+   */
+  showHint(hint: Hint): void {
+    const card = this.element.querySelector<HTMLElement>('.spawn-help')!
+    if (!this.started || this.menuVisible || (!card.hidden && card.classList.contains('is-full'))) return
+    const line = document.createElement('div'); line.textContent = hint.text
+    card.querySelector('div')!.replaceChildren(line); card.querySelector('small')!.textContent = ''
+    card.classList.remove('is-full'); card.classList.add('is-hint'); card.hidden = false
+    this.touch.highlight(hint.touchAction ?? null)
+    clearTimeout(this.helpTimer); this.helpInput?.abort(); this.helpInput = undefined
+    this.helpTimer = setTimeout(() => this.hideHelp(), 5000)
   }
   private toggleHelp(): void {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!
@@ -439,13 +468,16 @@ export class Shell implements System {
     this.element.querySelector('#sky-time-value')!.textContent = `${String(Math.floor(time) % 24).padStart(2, '0')}:${String(Math.floor((time % 1) * 60)).padStart(2, '0')}`
     const editable = canEditWorld(), net = hostControls()
     const planet = currentPlanet()
-    for (const picker of this.pickers) picker.refresh(planet, worldSeed.value, editable)
+    // A guest who came by an invite link is shown that world and no other until they are in
+    // the room, where the host's lock decides.
+    const invitedOnly = this.invited && !this.started
+    for (const picker of this.pickers) picker.refresh(planet, worldSeed.value, editable && !invitedOnly)
     if (this.worldDirty) {
       this.worldDirty = false
-      this.element.querySelector('.planet-current')!.textContent = `${planet.label} world ${planetName(worldSeed.value)}. ${planet.centre}.`
+      this.element.querySelector('.planet-current')!.textContent = `${planet.label} world ${planetName(worldSeed.value)}. ${planet.centre}.${invitedOnly ? ' You were invited to this world.' : ''}`
       this.updateInvite()
     }
-    for (const input of this.element.querySelectorAll<HTMLInputElement | HTMLButtonElement>('.world-controls input, .world-controls button')) input.disabled = !editable
+    for (const input of this.element.querySelectorAll<HTMLInputElement | HTMLButtonElement>('.world-controls input, .world-controls button')) input.disabled = !editable || invitedOnly
     for (const note of this.element.querySelectorAll<HTMLElement>('.world-lock-note')) note.hidden = editable
     this.paramPanel?.setWorldEditable(editable)
     this.element.querySelector<HTMLButtonElement>('.world-reset')!.disabled = !editable
@@ -470,14 +502,18 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
   const audio = new GameAudio(game.camera), shell = game.add(new Shell(game, audio))
   shell.setVehicleKind(player.kind); shell.setTerrain(terrain); audio.setPlayer(player,terrain)
   let activePlayer = player
-  const bridge = game.add({ update() {
+  const hints = new PlayHints()
+  const bridge = game.add({ update(dt = 0) {
     const v = activePlayer.body.linvel(), p = activePlayer.body.translation(), speed = Math.hypot(v.x, v.y, v.z)
     shell.setSpeed(speed)
     const q = activePlayer.body.rotation()
     const heading = Math.atan2(2 * (q.x * q.z + q.w * q.y), 1 - 2 * (q.x * q.x + q.y * q.y))
     shell.setMapSelf({ x: p.x, z: p.z, heading, color: activePlayer.colors.body, self: true })
     audio.motion = { speed, throttle: activePlayer.kind === 'jet' ? activePlayer.input.z : activePlayer.input.y, airborne: p.y - terrain.heightAt(p.x, p.z) > 2 }
+    const input = activePlayer.input
+    const hint = hints.update(dt, { kind: activePlayer.kind, touch: shell.touch.available, altitude: p.y - terrain.heightAt(p.x, p.z), speed, steer: input.x, pitch: input.y, throttle: input.z, hoverMode: !input.special })
+    if (hint) shell.showHint(hint)
   } })
   game.add(audio)
-  return { shell, audio, setPlayer(next) { activePlayer = next; audio.setPlayer(next,terrain); shell.setVehicleKind(next.kind) }, dispose() { game.remove(bridge); game.remove(shell); game.remove(audio) } }
+  return { shell, audio, setPlayer(next) { activePlayer = next; hints.reset(); audio.setPlayer(next,terrain); shell.setVehicleKind(next.kind) }, dispose() { game.remove(bridge); game.remove(shell); game.remove(audio) } }
 }

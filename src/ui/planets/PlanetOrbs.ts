@@ -1,3 +1,5 @@
+import { graphicsLevel, levelNumber } from '../../core/quality'
+
 /**
  * Draws the lobby's planets. One hidden WebGL 2 canvas shades a lit, slowly turning sphere
  * with an atmosphere; each card's small 2D canvas takes a copy. Any number of cards share
@@ -6,6 +8,12 @@
  * A planet is drawn from its real map when one has been supplied with `setMap` (an RGBA
  * equirectangular image painted from the terrain generator). Until then it is drawn from
  * the recipe's two swatch colours over generated continents, so a card never waits.
+ *
+ * Kind to phones: maps are painted in a worker, one at a time, and only for cards that are
+ * on screen. The WebGL context and the worker are released as soon as no card is visible,
+ * which is the moment Play is pressed, so they never compete with the game's own canvas
+ * (iOS keeps only a few live contexts). At the lowest graphics level there is no shader and
+ * no painting at all: each card shows a plain disc in its two colours.
  */
 export interface OrbLook {
   /** Linear-ish sRGB colours as 0xRRGGBB. */
@@ -18,8 +26,10 @@ export interface OrbLook {
   cloud?: number
   /** A lit grid over the surface: the "shape your own" planet. */
   grid?: boolean
-  /** Key for a supplied map, normally the recipe id. */
+  /** Key for this planet's map. */
   map?: string
+  /** What to paint for that key, if nobody has supplied it: a recipe id and a seed. */
+  source?: { id: string; seed: number }
 }
 interface Orb { canvas: HTMLCanvasElement; look: OrbLook }
 
@@ -81,7 +91,16 @@ const rgb = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 25
 class PlanetOrbs {
   private readonly orbs = new Set<Orb>()
   private readonly maps = new Map<string, WebGLTexture>()
-  private readonly pending = new Map<string, { data: Uint8ClampedArray | Uint8Array; width: number; height: number }>()
+  /** Painted maps, kept on the CPU side so a released context can be refilled. */
+  private readonly data = new Map<string, { data: Uint8ClampedArray | Uint8Array; width: number; height: number }>()
+  private readonly queue: { key: string; id: string; seed: number }[] = []
+  private painting = ''
+  private worker: Worker | null = null
+  private workerBroken = false
+  private idleSince = 0
+  /** Diagnostics for the phone checks. */
+  get active(): boolean { return this.gl !== null || this.worker !== null }
+  get painted(): number { return this.data.size }
   private gl: WebGL2RenderingContext | null = null
   private canvas: HTMLCanvasElement | null = null
   private uniforms: Record<string, WebGLUniformLocation | null> = {}
@@ -92,10 +111,51 @@ class PlanetOrbs {
   add(canvas: HTMLCanvasElement, look: OrbLook): Orb { const orb = { canvas, look }; this.orbs.add(orb); this.start(); return orb }
   remove(orb: Orb): void { this.orbs.delete(orb); if (!this.orbs.size) { cancelAnimationFrame(this.frame); this.frame = 0 } }
   /** Supply a planet's real map: RGBA, equirectangular, alpha 1 on land and 0 on sea. */
-  setMap(key: string, data: Uint8ClampedArray | Uint8Array, width: number, height: number): void { this.pending.set(key, { data, width, height }); this.start() }
+  setMap(key: string, data: Uint8ClampedArray | Uint8Array, width: number, height: number): void {
+    this.data.set(key, { data, width, height })
+    const stale = this.maps.get(key); if (stale) { this.gl?.deleteTexture(stale); this.maps.delete(key) }
+    this.start()
+  }
+  /** Ask for a planet's real map. Painted in the worker, one at a time, in the order asked. */
+  private request(key: string, id: string, seed: number): void {
+    if (this.data.has(key) || this.painting === key || this.queue.some(job => job.key === key)) return
+    this.queue.push({ key, id, seed }); this.pump()
+  }
+  private pump(): void {
+    if (this.painting || !this.queue.length) return
+    const job = this.queue.shift()!
+    this.painting = job.key
+    const done = (map?: { data: Uint8ClampedArray; width: number; height: number }) => {
+      if (this.painting !== job.key) return
+      this.painting = ''
+      if (map && this.wanted.has(job.key)) this.setMap(job.key, map.data, map.width, map.height)
+      // Leave a breath between maps so a busy phone can run a frame.
+      setTimeout(() => this.pump(), 120)
+    }
+    const request = { ...job, width: 512, height: 256 }
+    if (!this.workerBroken && typeof Worker === 'function') {
+      try {
+        this.worker ??= new Worker(new URL('./planetMapWorker.ts', import.meta.url), { type: 'module' })
+        this.worker.onmessage = event => done(event.data)
+        this.worker.onerror = () => { this.workerBroken = true; this.worker?.terminate(); this.worker = null; this.painting = ''; this.queue.unshift(job); this.pump() }
+        this.worker.postMessage(request)
+        return
+      } catch { this.workerBroken = true }
+    }
+    // No worker: paint on this thread, but only in an idle moment.
+    const paint = () => { void import('../../world/planetMap').then(module => done(module.paintPlanetMap(job.id, job.seed, 512, 256))).catch(() => done()) }
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(paint, { timeout: 2500 }); else setTimeout(paint, 200)
+  }
+  /** Keys some card still wants; a map painted for a seed that has since changed is dropped. */
+  private readonly wanted = new Set<string>()
+  /** Give back the WebGL context and the worker. Painted maps are kept for next time. */
+  release(): void {
+    this.worker?.terminate(); this.worker = null; this.painting = ''; this.queue.length = 0
+    this.gl?.getExtension('WEBGL_lose_context')?.loseContext(); this.gl = null; this.canvas = null; this.maps.clear()
+  }
 
   /** Forget a map that is no longer shown, for example the previous seed's. */
-  dropMap(key: string): void { this.pending.delete(key); const texture = this.maps.get(key); if (texture) { this.gl?.deleteTexture(texture); this.maps.delete(key) } }
+  dropMap(key: string): void { this.data.delete(key); this.wanted.delete(key); const texture = this.maps.get(key); if (texture) { this.gl?.deleteTexture(texture); this.maps.delete(key) } }
   private start(): void { if (!this.frame && this.orbs.size) this.frame = requestAnimationFrame(this.loop) }
   private setup(): boolean {
     if (this.gl) return true
@@ -111,7 +171,7 @@ class PlanetOrbs {
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { console.warn('Syn3h planet shader failed; cards show plain discs.', gl.getProgramInfoLog(program)); this.failed = true; return false }
     gl.useProgram(program); gl.bindVertexArray(gl.createVertexArray())
     for (const name of ['uSize', 'uSeed', 'uSpin', 'uGlow', 'uGrid', 'uHasMap', 'uCloud', 'uTime', 'uLand', 'uSea', 'uMap']) this.uniforms[name] = gl.getUniformLocation(program, name)
-    canvas.addEventListener('webglcontextlost', () => { this.gl = null; this.maps.clear() })
+    canvas.addEventListener('webglcontextlost', () => { if (this.canvas === canvas) { this.gl = null; this.canvas = null; this.maps.clear() } })
     this.gl = gl; this.canvas = canvas
     return true
   }
@@ -121,21 +181,30 @@ class PlanetOrbs {
     if (now - this.last < 66) return
     this.last = now
     const visible = [...this.orbs].filter(orb => orb.canvas.isConnected && orb.canvas.offsetParent !== null && orb.canvas.clientWidth > 0)
-    if (!visible.length) return
-    if (!this.setup()) { for (const orb of visible) this.flat(orb); return }
+    if (!visible.length) {
+      // Nothing on screen (the game is being played, or another panel is open): after a
+      // moment, hand the context and the worker back.
+      if (this.active && now - this.idleSince > 1500) this.release()
+      return
+    }
+    this.idleSince = now
+    // Lowest graphics level: no shader and no painting, just the two colours.
+    if (levelNumber(graphicsLevel.value) === 0 || !this.setup()) { if (this.active) this.release(); for (const orb of visible) this.flat(orb); return }
     const gl = this.gl!, u = this.uniforms, source = this.canvas!
-    for (const [key, map] of this.pending) {
-      const texture = this.maps.get(key) ?? gl.createTexture()!
+    for (const orb of visible) if (orb.look.map && orb.look.source) { this.wanted.add(orb.look.map); this.request(orb.look.map, orb.look.source.id, orb.look.source.seed) }
+    for (const [key, map] of this.data) {
+      if (this.maps.has(key)) continue
+      const texture = gl.createTexture()!
       gl.bindTexture(gl.TEXTURE_2D, texture)
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, map.width, map.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, map.data instanceof Uint8Array ? map.data : new Uint8Array(map.data.buffer, map.data.byteOffset, map.data.byteLength))
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
       this.maps.set(key, texture)
     }
-    this.pending.clear()
     const still = matchMedia('(prefers-reduced-motion: reduce)').matches
     for (const orb of visible) {
       const size = Math.round(orb.canvas.clientWidth * Math.min(devicePixelRatio || 1, 2))
       if (orb.canvas.width !== size) { orb.canvas.width = size; orb.canvas.height = size }
+      delete orb.canvas.dataset.flat
       if (source.width !== size) { source.width = size; source.height = size }
       const map = orb.look.map ? this.maps.get(orb.look.map) : undefined
       gl.viewport(0, 0, size, size); gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT)
@@ -155,7 +224,9 @@ class PlanetOrbs {
   }
   /** Without WebGL 2: a plain shaded disc in the planet's colours. */
   private flat(orb: Orb): void {
-    const size = orb.canvas.width = orb.canvas.height = Math.round(orb.canvas.clientWidth * Math.min(devicePixelRatio || 1, 2))
+    const size = Math.round(orb.canvas.clientWidth * Math.min(devicePixelRatio || 1, 2))
+    if (orb.canvas.width === size && orb.canvas.dataset.flat === String(orb.look.land)) return
+    orb.canvas.width = orb.canvas.height = size; orb.canvas.dataset.flat = String(orb.look.land)
     const ctx = orb.canvas.getContext('2d')!, hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`
     const fill = ctx.createRadialGradient(size * 0.36, size * 0.34, size * 0.05, size / 2, size / 2, size * 0.42)
     fill.addColorStop(0, hex(orb.look.land)); fill.addColorStop(0.7, hex(orb.look.sea)); fill.addColorStop(1, '#02040a')
