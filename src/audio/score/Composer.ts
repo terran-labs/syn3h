@@ -102,6 +102,8 @@ export interface Step {
   strings?: { midi: number[]; velocity: number }
   /** The theme on brass, under the theremin. Only in a release. */
   brass?: Note
+  /** A tag beam turned into a note. Added by the conductor, not written by the composer. */
+  tag?: Note
   /** A distant telemetry beep at this MIDI pitch. Only in quiet passages. */
   beep?: number
   /** A noise swell lasting this many sixteenths, leading into the release. */
@@ -184,6 +186,8 @@ export class Composer {
   private jump: { role: Role; at: number } | null = null
   private progression: readonly number[] = PROGRESSIONS.dorian[0]
   private arp: readonly number[] = ARPS[0]
+  private contour: readonly number[] | null = null
+  private degree = 0
   private accents: readonly number[] = BASS_ACCENTS[0]
   private risen = false
 
@@ -213,6 +217,22 @@ export class Composer {
    * two bars of a climb, so a release lands a few seconds later. For big moments in play.
    */
   cue(role: Role | 'surge'): void { this.jump = role === 'surge' ? { role: 'climb', at: 6 * STEPS_PER_BAR } : { role, at: 0 } }
+
+  /**
+   * Terrain as melody. Give sixteen ground heights along the way ahead and the sequencer and
+   * the plucked strings trace that skyline: low ground plays the bottom of the chord, a peak
+   * the top. Flat ground, or null, gives the line back to the composer.
+   */
+  setContour(heights: readonly number[] | null): void {
+    if (!heights || heights.length < 16) { this.contour = null; return }
+    const low = Math.min(...heights), range = Math.max(...heights) - low
+    this.contour = range < 1.5 ? null : heights.slice(0, 16).map(h => Math.round(5 * (h - low) / range))
+  }
+  /** The nth tone of the chord now sounding, counted upward from `low`. For notes play adds on top, such as tag beams. */
+  tone(n: number, low: number): number {
+    const base = fold(this.pitch(this.degree), low) - this.pitch(this.degree)
+    return this.pitch(this.degree + ARP_TONES[((n % ARP_TONES.length) + ARP_TONES.length) % ARP_TONES.length]) + base
+  }
 
   private pick<T>(list: readonly T[]): T { return list[Math.floor(this.random() * list.length)] }
   /** MIDI pitch of a scale degree in the current mode, counted up from the tonic at octave 0. */
@@ -283,7 +303,7 @@ export class Composer {
     const pos = this.position++, role = this.role
     const bar = Math.floor(pos / STEPS_PER_BAR), s = pos % STEPS_PER_BAR
     const chordIndex = Math.floor(pos / STEPS_PER_CHORD), inChord = pos % STEPS_PER_CHORD
-    const degree = this.progression[chordIndex]
+    const degree = this.degree = this.progression[chordIndex], line = this.contour ?? this.arp
     const rising = role === 'build' || role === 'climb'
     // While the music rises the bass refuses to move: it holds the dominant as the chords change above it.
     const root = fold(this.pitch(rising ? 4 : degree), 31)
@@ -308,13 +328,13 @@ export class Composer {
     const every = i < 0.3 ? 4 : i < 0.6 ? 2 : 1
     if (level.arp > 0 && s % every === 0 && !breath) {
       const base = fold(this.pitch(degree), 36) - this.pitch(degree)
-      const midi = this.pitch(degree + ARP_TONES[this.arp[s]]) + base + (mood.lift > 0.6 || role === 'release' ? 12 : 0)
+      const midi = this.pitch(degree + ARP_TONES[line[s]]) + base + (mood.lift > 0.6 || role === 'release' ? 12 : 0)
       out.arp = { midi, velocity: s % 4 === 0 ? 1 : 0.7, steps: every }
       if (s % 2 === 0) out.pluck = { midi: midi + 12, velocity: out.arp.velocity * 0.8, steps: 8 }
     } else if (level.arp === 0 && s % 4 === 0 && !breath) {
       // Too calm for the sequencer: a string picks out the chord, one note to a beat.
       const base = fold(this.pitch(degree), 48) - this.pitch(degree)
-      out.pluck = { midi: this.pitch(degree + ARP_TONES[this.arp[s]]) + base, velocity: s === 0 ? 0.7 : 0.45, steps: 16 }
+      out.pluck = { midi: this.pitch(degree + ARP_TONES[line[s]]) + base, velocity: s === 0 ? 0.7 : 0.45, steps: 16 }
     }
     if (pos === 0 && (role === 'release' || role === 'still')) out.bell = { midi: fold(this.pitch(0), 48), velocity: role === 'release' ? 1 : 0.45, steps: 32 }
 

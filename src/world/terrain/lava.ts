@@ -60,10 +60,58 @@ export interface LavaRiverPoint {
   z: number
 }
 
+export interface RiverDrop {
+  start: number
+  end: number
+  height: number
+  /**
+   * The steepest DROP_RUN of travel inside the drop: where a free-falling sheet belongs, with
+   * the rest of the drop a cascade. Indices into `points`, and the fall between them.
+   */
+  steepest: { start: number; end: number; height: number }
+}
+
+/** A run counts as a drop when the bed falls more than this many metres ... */
+export const DROP_FALL = 4
+/** ... over this many metres of travel. */
+export const DROP_RUN = 12
+
+/** Steep runs along a river's points (see LavaRiver.drops). */
+export function findDrops(points: readonly LavaRiverPoint[]): RiverDrop[] {
+  const drops: RiverDrop[] = []
+  for (let i = 0; i < points.length - 1; i++) {
+    // Walk forward until DROP_RUN of travel is covered.
+    let run = 0
+    let j = i
+    while (j < points.length - 1 && run < DROP_RUN - 1e-6) {
+      run += Math.sqrt(sq(points[j + 1].x - points[j].x) + sq(points[j + 1].z - points[j].z))
+      j++
+    }
+    if (run < DROP_RUN - 1e-6) break
+    if (points[i].y - points[j].y <= DROP_FALL) continue
+    const last = drops[drops.length - 1]
+    if (last && i <= last.end) last.end = Math.max(last.end, j)
+    else drops.push({ start: i, end: j, height: 0, steepest: { start: i, end: j, height: 0 } })
+    // Keep the steepest window seen so far within this drop.
+    const d = drops[drops.length - 1]
+    const fall = points[i].y - points[j].y
+    if (fall > d.steepest.height) d.steepest = { start: i, end: j, height: fall }
+  }
+  for (const d of drops) d.height = points[d.start].y - points[d.end].y
+  return drops
+}
+
 export interface LavaRiver {
   points: LavaRiverPoint[]
   width: number
   pool: LavaPool
+  /**
+   * Steep runs of the river: places for a waterfall. `start` and `end` are indices into
+   * `points` and `height` is how far the bed falls between them, in metres. A run is steep
+   * where the bed falls more than DROP_FALL over DROP_RUN of travel; overlapping runs are
+   * merged. Often empty: most rivers descend smoothly.
+   */
+  drops: RiverDrop[]
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number }
 }
 
@@ -270,6 +318,7 @@ export const lavaPass: TerrainPass = {
         // Where the parabolic channel crosses the lava surface.
         width: 2 * CHANNEL_HALF * Math.sqrt(RIVER_LAVA_DEPTH / CHANNEL_DEPTH),
         pool,
+        drops: findDrops(points),
         bounds: { minX, maxX, minZ, maxZ },
       })
       pools.push(pool)

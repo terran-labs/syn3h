@@ -8,11 +8,20 @@
  *   PORT=8791 npm run server
  *   SYN3H_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://localhost:8794 npx vite --port 5183 --strictPort
  *   node tools/reconnect-check.mjs
+ *   node tools/reconnect-check.mjs --rejoin 8     the soak for `game.rejoin`
+ *
+ * With --rejoin N the room has `game.rejoin` on and the connection is dropped N times, for 1
+ * to 6 seconds each. After every drop both players must be the same players as before: same
+ * ids, same host, same slider lock, the same score, and no "left" or "joined" lines on either
+ * screen. A last drop of 35 s, longer than the 30 s a place is held, must end the other way:
+ * both come back as new players.
  */
 import { spawn } from 'node:child_process'
 import { chromium } from 'playwright-core'
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+const rejoinAt = process.argv.indexOf('--rejoin')
+const cycles = rejoinAt >= 0 ? Number(process.argv[rejoinAt + 1] ?? 6) : 0
 // Run the proxy as a direct child (no npx in between), so stopping it stops the listener.
 const startProxy = () => spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'server/latency-proxy.ts', '--listen', '8794', '--target', 'http://127.0.0.1:8791', '--rtt', '40'], { stdio: 'ignore' })
 let proxy = startProxy()
@@ -32,7 +41,11 @@ async function open(name) {
 }
 const view = (page) => page.evaluate(() => {
   const n = window.syn3hNet
-  return { connected: n.connected, id: n.id, players: [...n.players.values()].map((p) => p.name).sort(), remotes: n.remotes.size, net: document.getElementById('hud')?.textContent.match(/net:[^\n]*/)?.[0] ?? null }
+  return {
+    connected: n.connected, id: n.id, players: [...n.players.values()].map((p) => p.name).sort(), ids: [...n.players.keys()].sort(), remotes: n.remotes.size,
+    host: n.game.host, locked: n.game.locked, scores: n.game.scores, comings: window.__comings ?? 0,
+    net: document.getElementById('hud')?.textContent.match(/net:[^\n]*/)?.[0] ?? null,
+  }
 })
 const results = []
 const check = (name, ok, detail) => { results.push(ok); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${JSON.stringify(detail)}`) }
@@ -66,11 +79,60 @@ try {
   await a.evaluate(() => { window.syn3h.game.input.external.y = 0 })
   const c1 = await copy()
   check('after reconnecting, one sees the other drive', c0 && c1 && Math.hypot(c1[0] - c0[0], c1[1] - c0[1]) > 3, { c0, c1 })
+  if (cycles > 0) {
+    // The soak. Turn the rule on, lock the sliders and give the host a score to keep.
+    // Count every "left" and "joined" line from here on (the event list itself is capped).
+    for (const p of [a, b]) await p.evaluate(() => {
+      const n = window.syn3hNet, event = n.event.bind(n)
+      window.__comings = 0
+      n.event = (text) => { if (/ left$| joined/.test(text)) window.__comings++; event(text) }
+    })
+    await a.evaluate(() => { window.syn3h.params.set('game.rejoin', true); window.syn3hNet.send({ type: 'lock', locked: true }); window.syn3h.params.set('game.mode', 1) })
+    await b.waitForFunction(() => window.syn3h.params.get('game.rejoin').value === true && window.syn3hNet.game.locked && window.syn3hNet.game.koth.zone, null, { timeout: 10000 })
+    await a.evaluate(() => {
+      const zone = window.syn3hNet.game.koth.zone, { terrain, player } = window.syn3h, r = (zone.inner + zone.outer) / 2
+      for (let k = 0; k < 64; k++) {
+        const x = zone.x + Math.cos(k * 0.1) * r, z = zone.z + Math.sin(k * 0.1) * r, y = terrain.heightAt(x, z)
+        if (y < zone.yMin + 1 || y > zone.yMax - 2 || (terrain.liquidHeightAt?.(x, z) ?? -Infinity) > y - 1) continue
+        player.teleport(player.object.position.clone().set(x, y + 1.2, z), 0)
+        return
+      }
+    })
+    await b.evaluate(() => { const s = window.syn3h.terrain.spawnPoint(1); window.syn3h.player.teleport(s.position, s.heading) })
+    await a.waitForFunction((id) => (window.syn3hNet.game.scores[id] ?? 0) >= 3, idA, { timeout: 20000 })
+    const start = [await view(a), await view(b)]
+    let good = 0
+    const rows = []
+    for (let i = 0; i < cycles; i++) {
+      const down = 1000 + Math.floor(Math.random() * 5000)
+      proxy.kill()
+      await wait(down)
+      proxy = startProxy()
+      const t = Date.now()
+      const up = await Promise.all([a, b].map((p) => p.waitForFunction(() => window.syn3hNet.connected && window.syn3hNet.players.size === 2 && window.syn3hNet.remotes.size === 1, null, { timeout: 30000 }).then(() => true, () => false)))
+      await wait(1500)
+      const now = [await view(a), await view(b)]
+      const same = up.every(Boolean) && now.every((v, k) => v.id === start[k].id && v.host === start[0].id && v.locked === true && v.comings === start[k].comings && JSON.stringify(v.ids) === JSON.stringify(start[k].ids))
+      const kept = (now[1].scores[idA] ?? 0) >= (rows.at(-1)?.hostScore ?? start[1].scores[idA])
+      if (same && kept) good++
+      rows.push({ downMs: down, backInMs: Date.now() - t - 1500, same, hostScore: now[1].scores[idA] ?? 0, ids: now[0].ids })
+    }
+    check(`rejoin soak: after each of ${cycles} dropouts both are the same players, host and lock stand, the score only grows, nobody "left"`, good === cycles, rows)
+
+    // Longer than a place is held: they come back as new players, and the room says so.
+    proxy.kill()
+    await wait(35000)
+    proxy = startProxy()
+    await Promise.all([a, b].map((p) => p.waitForFunction(() => window.syn3hNet.connected && window.syn3hNet.players.size === 2, null, { timeout: 30000 }).catch(() => {})))
+    await wait(1500)
+    const late = [await view(a), await view(b)]
+    check('rejoin soak: a dropout longer than the hold comes back as new players', late.every((v, k) => v.connected && v.id !== start[k].id), { before: start.map((v) => v.id), after: late.map((v) => v.id) })
+  }
   check('no page errors', errors.length === 0, errors)
 } finally {
   await Promise.all(browsers.map((b) => b.close()))
   proxy.kill()
 }
-const ok = results.length >= 6 && results.every(Boolean)
+const ok = results.length >= (cycles > 0 ? 8 : 6) && results.every(Boolean)
 console.log(ok ? 'RECONNECT CHECK OK' : 'RECONNECT CHECK FAILED')
 process.exit(ok ? 0 : 1)

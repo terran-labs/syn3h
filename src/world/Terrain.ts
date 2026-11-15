@@ -102,8 +102,9 @@ export interface Terrain {
   /** Reduce or restore render detail (level of detail distances). Visual only. */
   setRenderQuality?(quality: TerrainRenderQuality): void
   /**
-   * Side of the wrapping tile in metres, when the world wraps: leaving by one edge arrives at
-   * the opposite one. Undefined means the world does not wrap. Positions are canonical in
+   * Side of the wrapping tile in metres: leaving by one edge arrives at the opposite one.
+   * Every procedural world wraps; there is no switch. Only a stand-in terrain (tests, demo
+   * pages) leaves this undefined. Positions are canonical in
    * [-wrapSize / 2, wrapSize / 2); compare positions with shared/wrap.ts.
    */
   readonly wrapSize?: number

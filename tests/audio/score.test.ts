@@ -118,6 +118,22 @@ describe('adaptive score composer', () => {
     expect(c.role).toBe('release')
   })
 
+  it('lets the terrain ahead draw the sequencer line', () => {
+    const notes = (c: Composer) => Array.from({ length: 16 }, () => c.step(cruise)).filter(s => s.arp).map(s => s.arp!.midi)
+    const plain = new Composer(9), climbing = new Composer(9), flat = new Composer(9)
+    climbing.setContour(Array.from({ length: 16 }, (_, i) => i * 5))
+    flat.setContour(Array(16).fill(20))
+    const rising = notes(climbing)
+    // A steady climb ahead is a line that never falls.
+    for (let i = 1; i < rising.length; i++) expect(rising[i]).toBeGreaterThanOrEqual(rising[i - 1])
+    expect(rising[rising.length - 1]).toBeGreaterThan(rising[0])
+    // Flat ground gives the line back to the composer.
+    expect(notes(flat)).toEqual(notes(plain))
+    climbing.setContour(null)
+    expect(climbing.tone(0, 72)).toBeGreaterThanOrEqual(72); expect(climbing.tone(0, 72)).toBeLessThan(84)
+    expect(climbing.tone(3, 72)).toBe(climbing.tone(0, 72) + 12)
+  })
+
   it('suspends the third of every second chord and resolves it a bar later', () => {
     const { steps } = run(5, cruise, STEPS_PER_SECTION)
     for (const at of [32, 96]) {

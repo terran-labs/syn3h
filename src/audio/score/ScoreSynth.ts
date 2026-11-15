@@ -59,14 +59,23 @@ export function applySubmerge(filter: BiquadFilterNode, depth: number, time: num
   filter.Q.setTargetAtTime(0.7 + 3.2 * d, time, 0.08)
 }
 
-export const LAYERS = ['pad', 'drone', 'choir', 'organ', 'sequencer', 'pluck', 'strings', 'bass', 'drums', 'theremin', 'brass', 'bells', 'shimmer', 'air'] as const
+export const LAYERS = ['pad', 'drone', 'choir', 'organ', 'sequencer', 'pluck', 'strings', 'bass', 'drums', 'theremin', 'brass', 'bells', 'shimmer', 'air', 'tags', 'weather'] as const
 export type Layer = (typeof LAYERS)[number]
 /** Where the composition is in its arc, as the synthesiser needs it. Both 0..1. */
 export interface Arc { tension: number; release: number }
 
 export class ScoreSynth {
   /** Per-layer level trims, 0 to mute. The lab uses these to solo and mute layers. */
-  readonly trim: Record<Layer, number> = { pad: 1, drone: 1, choir: 1, organ: 1, sequencer: 1, pluck: 1, strings: 1, bass: 1, drums: 1, theremin: 1, brass: 1, bells: 1, shimmer: 1, air: 1 }
+  readonly trim: Record<Layer, number> = { pad: 1, drone: 1, choir: 1, organ: 1, sequencer: 1, pluck: 1, strings: 1, bass: 1, drums: 1, theremin: 1, brass: 1, bells: 1, shimmer: 1, air: 1, tags: 1, weather: 1 }
+  /**
+   * Convoy harmony. Null is the ordinary score. Otherwise up to three nearby vehicles each
+   * carry part of the arrangement, heard from their side and only as loud as they are near:
+   * the first the strings, the second the brass and the women of the choir, the third the
+   * organ and the bell. Alone, those parts are silent.
+   */
+  convoy: readonly { level: number; pan: number }[] | null = null
+  /** Pitch ratio applied to the telemetry beep: above 1 when something is closing on the listener. */
+  doppler = 1
   /** Resolves when the worklets (plucked strings, sung choir, shimmer) have loaded or failed to; the score plays without them meanwhile. */
   readonly ready: Promise<void>
   private readonly nodes: AudioNode[] = []
@@ -131,6 +140,17 @@ export class ScoreSynth {
   private readonly bellPartials: { osc: OscillatorNode; vca: GainNode; ratio: number; level: number; ring: number }[] = []
   private readonly bellBus: GainNode
   private choir?: AudioWorkletNode
+  private readonly organPan: StereoPannerNode
+  private readonly brassPan: StereoPannerNode
+  private readonly bellPan: StereoPannerNode
+  private readonly stringPan: StereoPannerNode
+  private readonly tags: { carrier: OscillatorNode; modulator: OscillatorNode; index: GainNode; vca: GainNode }[] = []
+  private readonly tagBus: GainNode
+  private nextTag = 0
+  private readonly sweep: OscillatorNode
+  private readonly sweepVca: GainNode
+  private readonly sweepPan: StereoPannerNode
+  private readonly weatherBus: GainNode
   private hall?: AudioWorkletNode
   private riseOn = false
   private braamUntil = -1
@@ -258,7 +278,8 @@ export class ScoreSynth {
     // Pipe organ: one oscillator per chord voice, its waveform built from drawbar harmonics
     // (8', 4', 2 2/3', 2', 1 1/3', 1'). Sines summed this way are what an organ actually is.
     const drawbars = new Float32Array([0, 1, 0.7, 0.45, 0.35, 0, 0.18, 0, 0.12]), pipes = c.createPeriodicWave(new Float32Array(drawbars.length), drawbars)
-    this.organGain = gain(0, gain(0.5, sum), reverb)
+    this.organPan = pan(0, gain(0.5, sum))
+    this.organGain = gain(0, this.organPan, reverb)
     for (let voice = 0; voice < 4; voice++) { const o = osc('sine', 220); o.setPeriodicWave(pipes); o.connect(pan((voice - 1.5) * 0.4, gain(0.16, this.organGain))); this.organOscs.push(o) }
 
     // Halo: the chord two octaves up as bare sines, heard only through the hall. It grows with
@@ -310,14 +331,16 @@ export class ScoreSynth {
 
     // Brass: two saws whose filter opens as the note swells, a pitch that scoops up into the
     // note, and vibrato that only arrives once the note is held. The horn of a 1970s polysynth.
-    this.brassBus = gain(0, sum, gain(0.25, delayIn), gain(0.7, reverb))
+    this.brassPan = pan(0, sum)
+    this.brassBus = gain(0, this.brassPan, gain(0.25, delayIn), gain(0.7, reverb))
     this.brassFilter = filter('lowpass', 300, 1.3); this.brassVca = gain(0, this.brassBus); this.brassFilter.connect(this.brassVca)
     this.brassWaver = gain(0); osc('sine', 5.2).connect(this.brassWaver)
     for (const detune of [-9, 9]) { const o = osc('sawtooth', 220); o.detune.value = detune; this.brassWaver.connect(o.detune); o.connect(gain(0.4, this.brassFilter)); this.brassOscs.push(o) }
 
     // Bell: modal synthesis. A bell is a handful of pure tones at fixed, inharmonic ratios (hum,
     // prime, the minor-third tierce, quint, nominal and up), each dying at its own rate.
-    this.bellBus = gain(0, gain(0.5, sum), reverb)
+    this.bellPan = pan(0, gain(0.5, sum))
+    this.bellBus = gain(0, this.bellPan, reverb)
     const partials = [[0.5, 0.25, 6], [1, 0.5, 4.5], [1.2, 0.35, 3.2], [1.5, 0.2, 2.4], [2.003, 0.45, 2], [2.5, 0.15, 1.2], [3, 0.2, 1], [4.01, 0.12, 0.6]] as const
     for (const [ratio, level, ring] of lite ? partials.slice(0, 5) : partials) {
       const o = osc('sine', 220 * ratio), vca = gain(0, this.bellBus); o.connect(vca)
@@ -326,9 +349,24 @@ export class ScoreSynth {
 
     this.pluckBus = gain(0, sum, gain(0.3, delayIn), gain(0.55, reverb))
 
+    // Tag notes: a bright two-operator ping, for tag beams that have been turned into music.
+    this.tagBus = gain(0, sum, gain(0.35, delayIn), gain(0.5, reverb))
+    for (let i = 0; i < 3; i++) {
+      const carrier = osc('sine', 880), modulator = osc('sine', 1760), index = gain(0, carrier.frequency), vca = gain(0, pan((i - 1) * 0.5, this.tagBus))
+      modulator.connect(index); carrier.connect(vca)
+      this.tags.push({ carrier, modulator, index, vca })
+    }
+
+    // Space weather: one sine that sweeps. Falling, it is a whistler, the radio trace of distant
+    // lightning; rising in short chirps, it is the dawn chorus of the magnetosphere.
+    this.weatherBus = gain(0, gain(0.35, sum), reverb)
+    this.sweep = osc('sine', 3000); this.sweepVca = gain(0); this.sweepPan = pan(0, this.weatherBus)
+    this.sweep.connect(this.sweepVca).connect(this.sweepPan)
+
     // String section: three notes of the chord, each two saws, through the resonances of a
     // wooden body (the three peaking filters), bowed short. It drives the build and the climb.
-    this.stringBus = gain(0, sum, gain(0.5, reverb))
+    this.stringPan = pan(0, sum)
+    this.stringBus = gain(0, this.stringPan, gain(0.5, reverb))
     this.stringVca = gain(0, this.stringBus)
     const body = [filter('lowpass', 3400, 0.7), filter('peaking', 290, 1.5), filter('peaking', 700, 2), filter('peaking', 2600, 2)]
     body.slice(1).forEach((f, n) => { f.gain.value = [4, 3, 5][n] })
@@ -401,6 +439,9 @@ export class ScoreSynth {
   setLevels(level: Levels, depth: number, reverb: number, arc: Arc = { tension: 0, release: 0 }): void {
     const now = this.context.currentTime, to = (param: AudioParam, value: number, tau = 0.5) => param.setTargetAtTime(value, now, tau)
     if (!this.parked && now > this.parkAt) { this.out.disconnect(); this.parked = true }
+    // While unplugged nothing reads these parameters, so nothing clears what is scheduled on them.
+    // Scheduling every frame regardless would pile up events for as long as the score stayed silent.
+    if (this.parked) return
     const trim = this.trim, bright = unit(level.brightness + 0.3 * arc.tension + 0.2 * arc.release)
     this.brightness = bright; this.drums = level.drums
     to(this.swell.gain, 0.72 + 0.1 * arc.tension + 0.33 * arc.release, 0.3)
@@ -411,7 +452,10 @@ export class ScoreSynth {
     // The men are always near; the women are held back for a release or for high open air, so
     // their entry means something. The mouths open as the music climbs. The oscillator choirs
     // are the fallback and fall silent once the sung choir has loaded.
-    const men = unit(Math.max(level.choir, arc.release * 0.9, 0.2)) * trim.choir, women = unit(Math.max(arc.release, (level.choir - 0.5) * 2)) * trim.choir
+    // In a convoy the neighbours carry these parts: each is as loud as its vehicle is near, and sits on its side.
+    const carried = (slot: number) => this.convoy ? this.convoy[slot]?.level ?? 0 : 1, side = (slot: number) => this.convoy?.[slot]?.pan ?? 0
+    to(this.stringPan.pan, side(0), 0.3); to(this.brassPan.pan, side(1), 0.3); to(this.organPan.pan, side(2), 0.3); to(this.bellPan.pan, side(2), 0.3)
+    const men = unit(Math.max(level.choir, arc.release * 0.9, 0.2)) * trim.choir, women = unit(Math.max(arc.release, (level.choir - 0.5) * 2)) * trim.choir * carried(1)
     to(this.choirGain.gain, this.choir ? 0 : men * 0.5, 1.2)
     to(this.highChoirGain.gain, this.choir ? 0 : women * 0.45, 0.8)
     if (this.choir) {
@@ -420,9 +464,11 @@ export class ScoreSynth {
       to(this.choir.parameters.get('open')!, unit(0.15 + 0.6 * arc.tension + 0.25 * level.choir), 1)
     }
     to(this.shimmerOut.gain, unit(0.15 + 0.5 * arc.tension + 0.35 * level.choir + 0.3 * arc.release) * 0.7 * trim.shimmer, 1.5)
-    to(this.stringBus.gain, 0.55 * trim.strings)
+    to(this.stringBus.gain, 0.55 * trim.strings * carried(0))
+    to(this.tagBus.gain, 0.5 * trim.tags)
+    to(this.weatherBus.gain, 0.5 * trim.weather)
     this.climb(arc, now)
-    to(this.organGain.gain, unit(Math.max(arc.release, level.choir * 0.5)) * 0.5 * trim.organ, 0.8)
+    to(this.organGain.gain, unit(Math.max(arc.release, level.choir * 0.5)) * 0.5 * trim.organ * carried(2), 0.8)
     to(this.haloGain.gain, unit(arc.tension * 0.7 + level.choir * 0.4) * 0.12 * trim.pad, 1.5)
     to(this.arpBus.gain, level.arp * 0.6 * trim.sequencer)
     to(this.bassBus.gain, level.bass * 0.5 * trim.bass)
@@ -433,8 +479,8 @@ export class ScoreSynth {
     to(this.leadBus.gain, Math.max(level.lead, arc.release) * 0.2 * trim.theremin, 1)
     to(this.airBus.gain, level.air * 0.1 * trim.air, 2)
     to(this.pluckBus.gain, 0.5 * trim.pluck)
-    to(this.brassBus.gain, 0.45 * trim.brass)
-    to(this.bellBus.gain, 0.6 * trim.bells)
+    to(this.brassBus.gain, 0.45 * trim.brass * carried(1))
+    to(this.bellBus.gain, 0.6 * trim.bells * carried(2))
     // Under water the hall grows, as if the sound had nowhere to go.
     to(this.reverbSend.gain, reverb * (0.8 + 0.5 * unit(depth)))
     // The algorithmic hall can do what a recorded impulse cannot: its tail lengthens at a release and under water.
@@ -498,8 +544,14 @@ export class ScoreSynth {
         p.vca.gain.setTargetAtTime(p.level * 0.45 * step.bell.velocity, t, 0.002); p.vca.gain.setTargetAtTime(0, t + 0.01, p.ring * 0.45)
       }
     }
+    if (step.tag) {
+      const tag = this.tags[this.nextTag++ % this.tags.length], hz = midiHz(step.tag.midi), v = step.tag.velocity
+      tag.carrier.frequency.setValueAtTime(hz, t); tag.modulator.frequency.setValueAtTime(hz * 2, t)
+      tag.index.gain.setValueAtTime(hz * 2.2 * v, t); tag.index.gain.setTargetAtTime(hz * 0.1, t, 0.05)
+      tag.vca.gain.setTargetAtTime(0.4 * v, t, 0.002); tag.vca.gain.setTargetAtTime(0, t + 0.02, 0.12)
+    }
     if (step.beep) {
-      this.beep.frequency.setValueAtTime(midiHz(step.beep), t)
+      this.beep.frequency.setValueAtTime(midiHz(step.beep) * this.doppler, t)
       this.beepVca.gain.setTargetAtTime(0.1, t, 0.004); this.beepVca.gain.setTargetAtTime(0, t + duration * 1.2, 0.008)
     }
     if (step.kick) {
@@ -562,6 +614,24 @@ export class ScoreSynth {
       o.frequency.setTargetAtTime(27.5 * 2 ** (place * this.rise.length), now, place < 0.02 ? 0.001 : 0.05)
       vca.gain.setTargetAtTime(0.5 * Math.sin(Math.PI * place) ** 2, now, 0.05)
     })
+  }
+
+  /**
+   * Space weather. A whistler falls from `from` to `to` Hz over about a second; a chorus is a
+   * handful of quick rising chirps. `place` is -1..1 across the stereo field.
+   */
+  whistler(time: number, from: number, to: number, seconds: number, place: number, level = 1): void {
+    this.sweepPan.pan.setValueAtTime(place, time)
+    this.sweep.frequency.setValueAtTime(from, time); this.sweep.frequency.exponentialRampToValueAtTime(to, time + seconds)
+    this.sweepVca.gain.setTargetAtTime(0.4 * level, time, seconds * 0.12); this.sweepVca.gain.setTargetAtTime(0, time + seconds * 0.6, seconds * 0.15)
+  }
+  chorus(time: number, chirps: number, place: number): void {
+    for (let n = 0; n < chirps; n++) {
+      const at = time + n * 0.19, from = 1400 + 300 * (n % 3)
+      this.sweepPan.pan.setValueAtTime(place, at)
+      this.sweep.frequency.setValueAtTime(from, at); this.sweep.frequency.exponentialRampToValueAtTime(from * 2.1, at + 0.14)
+      this.sweepVca.gain.setTargetAtTime(0.28, at, 0.015); this.sweepVca.gain.setTargetAtTime(0, at + 0.09, 0.02)
+    }
   }
 
   /** A low brass hit on the current bass note. */

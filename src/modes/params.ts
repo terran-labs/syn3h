@@ -54,6 +54,18 @@ export const kothLaserPush = defineParam({
   default: 4, min: 0, max: 20, step: 0.5,
 })
 
+/**
+ * Whether a player who drops out (wifi, a locked phone, a release resetting the room) and
+ * comes back within REJOIN_GRACE seconds carries on as the same player: same place in the
+ * list, score, host role. Off by default: with it off a dropout is a leave and a new join.
+ */
+export const gameRejoin = defineParam({
+  id: 'game.rejoin', label: 'Rejoin as the same player after a dropout', group: 'Game', scope: 'world',
+  default: false,
+})
+
+/** Seconds a dropped player's place is held when `game.rejoin` is on. */
+export const REJOIN_GRACE = 30
 /** Seconds after the last contact during which getting stuck still counts as a dunk. */
 export const KNOCK_WINDOW = 5
 /** Seconds the winner is shown before the next round starts. */
