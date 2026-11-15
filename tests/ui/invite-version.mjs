@@ -25,5 +25,12 @@ try {
   assert.equal(await page.evaluate(() => window.__copiedInvite), shown)
   await mkdir('tests/ui/artifacts/invite-version', { recursive: true })
   await page.screenshot({ path: 'tests/ui/artifacts/invite-version/versioned-qr.png' })
-  console.log('Versioned invite, clipboard and QR payload passed')
+  const guest = await browser.newPage()
+  const join = new URL(shown); join.searchParams.set('autoplay', '1')
+  await guest.goto(join.href)
+  await guest.waitForFunction(() => window.syn3h?.game.tick > 30 && syn3h.shell.playerCount >= 2, null, { timeout: 120000 })
+  assert.equal(new URL(guest.url()).searchParams.get('v'), 'v26.11.1506')
+  assert.equal(new URL(guest.url()).searchParams.get('room'), invite.searchParams.get('room'))
+  await guest.close()
+  console.log('Versioned invite, clipboard, QR payload and same-room join passed')
 } finally { await browser.close() }
