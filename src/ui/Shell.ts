@@ -385,34 +385,57 @@ export class Shell implements System {
     this.game.input.suspended = true; this.game.input.mouseFire = false; this.game.input.poll(); this.touch.enabled = false
     this.audio.enabled = false; this.audio.setLobbyVisible(true); this.element.classList.remove('is-playing'); this.showPanel(panel)
   }
+  /**
+   * The descent. The galaxy dives onto the island, holds in the light until the room has
+   * answered (a slow join can rebuild the world and move the spawn point), then the game
+   * arrives blurred, its camera falling from 520 m to its place behind the vehicle. A player
+   * who has seen it before gets a shorter fall; a tap, click or key at any point lands at once.
+   */
   private async descent(): Promise<void> {
     const wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
-    const game = document.getElementById('game'), root = this.element
+    const game = document.getElementById('game'), root = this.element, camera = this.cinematic
     root.classList.add('is-descending'); this.overlay.inert = true
+    let seen = 0
+    try { seen = Number(localStorage.getItem('syn3h.descents')) || 0; localStorage.setItem('syn3h.descents', String(seen + 1)) } catch { /* Storage is optional. */ }
+    let skip = false
+    const skipping = new AbortController()
+    for (const type of ['pointerdown', 'keydown'] as const) addEventListener(type, () => { skip = true }, { signal: skipping.signal, capture: true })
+    const until = async (done: () => boolean, ms: number) => { const end = performance.now() + ms; while (!done() && !skip && performance.now() < end) await wait(50) }
     // While the lobby still covers it, lift the game's camera high over the spawn point.
+    let pose = this.descentPose(); pose(0)
+    let dived = false
+    void this.galaxy!.descend(currentPlanet().id, seen > 0).then(() => { dived = true })
+    await until(() => dived, 2600)
+    await until(() => Boolean((window as { syn3hNet?: { connected?: boolean } }).syn3hNet?.connected), 5000)
+    // The spawn point may have moved with the room's world: aim at where the player is now.
+    pose = this.descentPose(); pose(0)
+    // Through the air: the lobby fades off the top of the game, which arrives blurred and clears.
+    const length = skip ? 0 : seen > 0 ? 1400 : 2400
+    if (game) { game.style.transition = 'none'; game.style.filter = skip ? 'none' : 'blur(18px) brightness(1.5)' }
+    this.overlay.style.transition = `opacity ${skip ? 0.2 : 0.9}s ease`; this.overlay.style.opacity = '0'
+    await wait(60)
+    if (game && !skip) { game.style.transition = `filter ${(length * 0.9 / 1000).toFixed(2)}s cubic-bezier(.2,.6,.2,1)`; game.style.filter = 'none' }
+    const started = performance.now()
+    await new Promise<void>(resolve => { const step = () => { const t = skip || length === 0 ? 1 : Math.min(1, (performance.now() - started) / length); pose(t); if (t < 1) requestAnimationFrame(step); else resolve() }; step() })
+    if (skip) { await wait(200); if (game) game.style.filter = 'none' }
+    skipping.abort()
+    camera?.clearCinematicPose()
+    this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity'); root.classList.remove('is-descending')
+    if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter') }
+    this.closeMenu(); this.showHelp(false)
+  }
+  /** The descent's camera path over where the player is now: t from 0 (520 m up) to 1 (behind the vehicle). */
+  private descentPose(): (t: number) => void {
     const self = this.self, ground = this.ground, camera = this.cinematic
-    const at = self ? new Vector3(self.x, ground?.heightAt(self.x, self.z) ?? 0, self.z) : null
-    const ahead = self ? new Vector3(-Math.sin(self.heading), 0, -Math.cos(self.heading)) : null
-    const pose = (t: number) => {
-      if (!at || !ahead || !camera) return
+    if (!self || !camera) return () => {}
+    const at = new Vector3(self.x, ground?.heightAt(self.x, self.z) ?? 0, self.z)
+    const ahead = new Vector3(-Math.sin(self.heading), 0, -Math.cos(self.heading))
+    return t => {
       // From 520 m up and a little behind, looking down, to the chase position.
       const e = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
       const height = 520 * (1 - e) + 4.5 * e, back = 60 * (1 - e) + 10 * e
       camera.setCinematicPose(new Vector3(at.x - ahead.x * back, at.y + height, at.z - ahead.z * back), new Vector3(at.x + ahead.x * 8 * e, at.y + 1.5, at.z + ahead.z * 8 * e))
     }
-    pose(0)
-    await Promise.race([this.galaxy!.descend(currentPlanet().id), wait(2600)])
-    // Through the air: the lobby fades off the top of the game, which arrives blurred and clears.
-    if (game) { game.style.transition = 'none'; game.style.filter = 'blur(18px) brightness(1.5)' }
-    this.overlay.style.transition = 'opacity 0.9s ease'; this.overlay.style.opacity = '0'
-    await wait(60)
-    if (game) { game.style.transition = 'filter 2.2s cubic-bezier(.2,.6,.2,1)'; game.style.filter = 'none' }
-    const started = performance.now(), length = 2400
-    await new Promise<void>(resolve => { const step = () => { const t = Math.min(1, (performance.now() - started) / length); pose(t); if (t < 1) requestAnimationFrame(step); else resolve() }; step() })
-    camera?.clearCinematicPose()
-    this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity'); root.classList.remove('is-descending')
-    if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter') }
-    this.closeMenu(); this.showHelp(false)
   }
   private ground?: Terrain
   private cinematic?: CinematicCamera

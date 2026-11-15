@@ -270,6 +270,8 @@ export class Galaxy {
   private chosen = -1
   private diving = false
   private dive = 0
+  /** How much of the dive each frame covers: a returning player's is quicker. */
+  private diveRate = 0.022
   private shownScale = 0
   private arriving = 0
   private arrived = false
@@ -296,9 +298,9 @@ export class Galaxy {
   }
   /** Back out to the whole system, for example after returning from a world's panel. */
   home(): void { this.wake = 2; this.chosen = -1; this.arriving = 0; this.arrived = false; this.diving = false; this.dive = 0 }
-  /** The descent: fall toward a world until its air fills the view. Resolves when it has. */
-  descend(id: string): Promise<void> {
-    this.choose(id); this.arrived = true; this.diving = true; this.wake = 2
+  /** The descent: fall toward a world until its air fills the view. Resolves when it has. `quick` for a player who has seen it. */
+  descend(id: string, quick = false): Promise<void> {
+    this.choose(id); this.arrived = true; this.diving = true; this.wake = 2; this.diveRate = quick ? 0.04 : 0.022
     return new Promise(resolve => { const wait = () => { if (!this.active || this.dive >= 0.995) resolve(); else setTimeout(wait, 50) }; wait() })
   }
 
@@ -418,7 +420,7 @@ export class Galaxy {
     if (this.settled && this.holding) { this.target = goal; this.reach = wantDistance }
     this.face()
     // The dive runs about a second and a half.
-    this.dive = this.diving ? Math.min(1, this.dive + 0.022) : Math.max(0, this.dive - 0.05)
+    this.dive = this.diving ? Math.min(1, this.dive + this.diveRate) : Math.max(0, this.dive - 0.05)
     const cp = Math.cos(this.pitch), eye: Vec = [this.target[0] + Math.sin(this.yaw) * cp * this.reach, this.target[1] + Math.sin(this.pitch) * this.reach, this.target[2] + Math.cos(this.yaw) * cp * this.reach]
     const forward = unit(sub(this.target, eye)), right = unit(cross(forward, [0, 1, 0])), up = cross(right, forward)
     return { eye, forward, right, up, // The short side of the screen always spans the same slice of space, so the system fills
