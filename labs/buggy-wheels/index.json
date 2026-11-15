@@ -10,12 +10,13 @@
   "triangles": 600
  },
  {
-  "id": "texture",
-  "name": "Tread texture",
-  "file": "texture.glb",
+  "id": "smooth",
+  "name": "Shader tread",
+  "file": "smooth.glb",
   "notes": [
-   "Smooth carcass; the tread is a small normal map, so it costs no triangles",
-   "One 256 pixel texture shared by every wheel in the game"
+   "Smooth carcass at the lowest triangle count",
+   "In the game the shared tyre shading draws the tread and sidewall ribs, so none is modelled",
+   "No image files: vehicles carry no bitmaps"
   ],
   "triangles": 320
  },

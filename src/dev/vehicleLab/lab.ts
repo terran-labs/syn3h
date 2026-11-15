@@ -1,22 +1,27 @@
 /**
- * The vehicle lab (vehicle-lab.html): one studio page every vehicle lane uses to preview and
- * judge its models. The vehicle comes from ?vehicle=<id>, looked up in exhibits/index.ts; the
- * exhibit supplies designs and models through the LabExhibit interface (types.ts) and the lab
- * supplies everything else: studio and floors, camera and cockpit view, lamps, detail levels,
- * stats and stress copies, paint, motion and the capture parameters and API.
+ * The vehicle lab (vehicle-lab.html): one studio page for previewing and judging every vehicle.
+ *
+ * A sidebar lists every exhibit (registry.ts finds them in exhibits/: the design studies and
+ * every vehicle the game can build), with its groups and designs. Selecting a design shows it;
+ * Compare shows a group side by side. Under the tree, the Options tree holds everything the lab
+ * can do to the selection: view, lights, detail levels and stats, stress copies, paint, motion,
+ * the exhibit's own controls and the game parameters that belong to the vehicle.
+ *
+ * Switching vehicle does not reload the page: the old models are disposed, the new ones built,
+ * and the URL is rewritten so a link reproduces the view.
  *
  * Developer tool only: the production build has a single entry (index.html), so none of this
  * ships in the game. See docs/vehicle-lab.md for every control, parameter and API call.
  */
 import * as THREE from 'three/webgpu'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { exhibits } from './exhibits'
-import {
-  countStats, filterDesigns, FLOOR_NAMES, groupsOf, parseLabParams, pickAutoLod, resolveDesign, resolveLod,
-  RollingAverage, STRESS_COUNTS, stressGrid, VIEW_NAMES, type ViewName,
-} from './logic'
+import { params as gameParams, type ParamDef } from '../../../shared/params'
+import { countStats, FLOOR_NAMES, parseLabParams, pickAutoLod, resolveLod, RollingAverage, STRESS_COUNTS, stressGrid, VIEW_NAMES, visibleBounds, type FloorName, type ViewName } from './logic'
+import { exhibits } from './registry'
 import { Studio } from './studio'
-import type { LabControl, LabDesignInfo, LabModel, LabState, LabStats } from './types'
+import { buildTree, resolveSelection, selectionFromSearch, selectionToSearch, vehicleParams, type ListedExhibit, type Selection, type TreeSection, type Wanted } from './tree'
+import type { LabControl, LabDesignInfo, LabExhibit, LabModel, LabState, LabStats } from './types'
+import * as ui from './ui'
 
 const params = parseLabParams(location.search)
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
@@ -38,6 +43,10 @@ const PAINTS: [string, number, number][] = [
   ['Navy', 0x0b1560, 0x101014], ['Blue', 0x1553c8, 0xd01818], ['Red', 0xb3140f, 0x101014], ['Orange', 0xd4560f, 0x15171a],
   ['Violet', 0x45209a, 0x49e6ff], ['Green', 0x08783f, 0x15171a], ['Graphite', 0x2a2d33, 0xff7a14], ['White', 0xe8ecf0, 0x1553c8], ['Black', 0x0c0d10, 0xff7a14],
 ]
+const hex = (n: number) => `#${n.toString(16).padStart(6, '0')}`
+
+/** Narrow or portrait screens get a bottom sheet instead of the sidebar. Keep in step with the CSS. */
+const SHEET = matchMedia('(max-width: 699px), (orientation: portrait) and (max-width: 1100px)')
 
 /** One design on the stage. `root` places it; the model's own object hangs inside, lifted onto the floor. */
 interface Entry {
@@ -53,32 +62,12 @@ interface Entry {
   stats: LabStats
 }
 
-/** Bounds of the visible meshes only: hidden detail levels and idle effects do not count. */
-function visibleBounds(root: THREE.Object3D): THREE.Box3 {
-  const box = new THREE.Box3(), part = new THREE.Box3()
-  root.updateWorldMatrix(true, true)
-  root.traverseVisible(o => {
-    const mesh = o as THREE.Mesh
-    if (!mesh.isMesh) return
-    if ((mesh as THREE.InstancedMesh).isInstancedMesh) (mesh as THREE.InstancedMesh).computeBoundingBox()
-    else mesh.geometry.computeBoundingBox()
-    const local = (mesh as THREE.InstancedMesh).isInstancedMesh ? (mesh as THREE.InstancedMesh).boundingBox! : mesh.geometry.boundingBox!
-    box.union(part.copy(local).applyMatrix4(mesh.matrixWorld))
-  })
-  // Into the root's parent frame, where the lab places it.
-  if (root.parent) box.applyMatrix4(root.parent.matrixWorld.clone().invert())
-  return box
-}
+/** What is loaded: one exhibit's group of designs. Replaced whole when the vehicle or group changes. */
+interface Session { exhibit: LabExhibit; group?: string; designs: LabDesignInfo[]; entries: Entry[]; dead: boolean }
 
 async function main(): Promise<void> {
   const status = $('status')
-  const exhibit = exhibits[params.vehicle]
-  if (!exhibit) {
-    status.textContent = `No vehicle "${params.vehicle}". Try: ${Object.keys(exhibits).join(', ')}`
-    return
-  }
   document.body.classList.toggle('still', params.still)
-  document.title = `${exhibit.title}: vehicle lab`
 
   // ?webgl=1 forces three's WebGL 2 backend, as the game does (src/core/Game.ts).
   const renderer = new THREE.WebGPURenderer({ antialias: true, forceWebGL: params.webgl })
@@ -87,7 +76,7 @@ async function main(): Promise<void> {
   renderer.shadowMap.enabled = true
   renderer.toneMapping = THREE.ACESFilmicToneMapping
   renderer.toneMappingExposure = 1.05
-  document.body.prepend(renderer.domElement)
+  $('view').append(renderer.domElement)
   await renderer.init()
 
   const scene = new THREE.Scene()
@@ -112,17 +101,32 @@ async function main(): Promise<void> {
   stage.add(copies)
   scene.add(stage)
 
-  // Designs and groups.
-  const allDesigns = await exhibit.designs()
-  const { group, designs } = filterDesigns(allDesigns, params.group)
-  const groups = groupsOf(allDesigns)
-  $('title').textContent = exhibit.heading?.(group) ?? exhibit.title
-  const entries: Entry[] = designs.map(info => ({ info, root: new THREE.Group(), size: new THREE.Vector3(1, 1, 1), centre: new THREE.Vector3(), level: 0, stats: { triangles: 0, drawCalls: 0 } }))
-  for (const e of entries) { e.root.name = e.info.id; e.root.visible = false; stage.add(e.root) }
-  const ctx = { status: (text: string) => { status.textContent = text } }
+  // Every exhibit's designs, for the tree. One failing exhibit is listed with its error.
+  status.textContent = 'Listing vehicles…'
+  const listed: ListedExhibit[] = await Promise.all(exhibits.map(async exhibit => {
+    try { return { exhibit, designs: await exhibit.designs() } } catch (error) { console.error(error); return { exhibit, designs: [], error: String(error) } }
+  }))
+  const tree: TreeSection[] = buildTree(listed)
+  const ctx = { status: (text: string) => { status.textContent = text }, renderer, camera }
 
-  const ensure = (e: Entry): Promise<LabModel> => {
-    e.building ??= exhibit.build(e.info, ctx).then(model => {
+  // Lab state. `state` is what models see each frame.
+  const state: LabState = { time: 0, night: false, headlights: false, braking: params.brake, throttle: 0, steer: 0, animate: params.motion ?? false }
+  let session: Session | null = null
+  let selection: Selection | null = null
+  let entries: Entry[] = []
+  let current = 0
+  let side = false
+  let lodChoice = -1
+  let turntable = false
+  let stress = 1
+  let paint: [number, number] | null = params.color ? [params.color.body, params.color.accent ?? 0x15171a] : null
+  let currentView: ViewName = params.view ?? 'Front'
+  const visible = () => side ? entries : entries[current] ? [entries[current]] : []
+
+  const ensure = (s: Session, e: Entry): Promise<LabModel> => {
+    e.building ??= s.exhibit.build(e.info, ctx).then(model => {
+      // Built after the vehicle was switched away: nobody wants it.
+      if (s.dead) { model.dispose?.(); return model }
       e.model = model
       e.root.add(model.object)
       // Lift the vehicle so its ground contact sits on the floor (y = 0).
@@ -136,184 +140,372 @@ async function main(): Promise<void> {
     return e.building
   }
 
-  // Lab state. `state` is what models see each frame.
-  const state: LabState = { time: 0, night: false, headlights: false, braking: params.brake, throttle: 0, steer: 0, animate: params.motion ?? false }
-  let current = Math.max(0, resolveDesign(params.design, designs, Math.max(0, designs.findIndex(d => d.id === exhibit.defaultDesign?.(group)))))
-  let side = params.design === 'all'
-  let lodChoice = -1
-  let turntable = false
-  let stress = 1
-  let paint: [number, number] | null = params.color ? [params.color.body, params.color.accent ?? 0x15171a] : null
-  let currentView: ViewName = params.view ?? 'Front'
-  const visible = () => side ? entries : [entries[current]]
-
-  // Interface. Buttons are created once; `refresh` sets their pressed state and labels.
-  const bar = $('bar')
-  const panels = new Map<string, HTMLElement>()
-  const tabs = $('tabs')
-  const panel = (name: string) => {
-    let p = panels.get(name)
-    if (!p) {
-      p = document.createElement('div'); p.className = 'panel'; p.dataset.name = name; bar.append(p); panels.set(name, p)
-      const tab = button(name, () => openPanel(name), tabs); tab.dataset.tab = name
+  function teardown() {
+    if (!session) return
+    session.dead = true
+    copies.clear()
+    for (const e of session.entries) {
+      e.root.removeFromParent()
+      e.model?.object.removeFromParent()
+      e.model?.dispose?.()
     }
-    return p
+    session = null
+    entries = []
   }
-  const openPanel = (name: string) => {
-    for (const [n, p] of panels) p.classList.toggle('open', n === name)
-    for (const t of tabs.querySelectorAll<HTMLButtonElement>('button')) t.setAttribute('aria-pressed', String(t.dataset.tab === name))
-  }
-  function button(label: string, onClick: () => void, parent: HTMLElement): HTMLButtonElement {
-    const b = document.createElement('button'); b.type = 'button'; b.textContent = label; b.onclick = onClick; parent.append(b); return b
-  }
-  const press = (b: HTMLButtonElement, on: boolean) => b.setAttribute('aria-pressed', String(on))
 
-  const designButtons = designs.length > 1 ? designs.map((d, i) => button(`${i + 1}. ${d.name}`, () => show(i), panel('Designs'))) : []
-  const sideButton = designs.length > 1 ? button('Side by side', () => setSide(!side), panel('Designs')) : null
-  if (groups.length > 1) {
-    const label = exhibit.groupLabel ?? 'Group'
-    for (const g of groups) {
-      const b = button(`${label} ${g}`, () => { const q = new URLSearchParams(location.search); q.set('group', g); q.delete('design'); location.search = q.toString() }, panel('Designs'))
-      press(b, g === group)
+  // ---------------------------------------------------------------------------------------
+  // Selection
+  // ---------------------------------------------------------------------------------------
+
+  /** Shows what `wanted` asks for, building a new session when the vehicle or group changes. */
+  async function select(wanted: Wanted): Promise<void> {
+    const next = resolveSelection(tree, exhibits, wanted)
+    if (!next) { status.textContent = 'No vehicles found in src/dev/vehicleLab/exhibits.'; return }
+    if (cockpit.on) await setCockpit(false)
+    if (!session || session.exhibit.id !== next.vehicle || session.group !== next.group) {
+      teardown()
+      const exhibit = exhibits.find(e => e.id === next.vehicle)!
+      const vehicle = tree.flatMap(s => s.vehicles).find(v => v.id === next.vehicle)!
+      const designs = vehicle.groups.find(g => g.name === next.group)?.designs ?? vehicle.designs
+      const s: Session = { exhibit, group: next.group, designs, entries: [], dead: false }
+      s.entries = designs.map(info => ({ info, root: new THREE.Group(), size: new THREE.Vector3(1, 1, 1), centre: new THREE.Vector3(), level: 0, stats: { triangles: 0, drawCalls: 0 } }))
+      for (const e of s.entries) { e.root.name = e.info.id; e.root.visible = false; stage.add(e.root) }
+      session = s
+      entries = s.entries
+      stress = 1
     }
+    selection = next
+    const s = session!
+    history.replaceState(null, '', selectionToSearch(next, location.search))
+    renderTree()
+    if (next.design === 'all') {
+      side = true
+      for (const e of entries) await ensure(s, e)
+    } else {
+      side = false
+      current = Math.max(0, entries.findIndex(e => e.info.id === next.design))
+      if (entries[current]) await ensure(s, entries[current])
+    }
+    if (s.dead) return
+    status.textContent = ''
+    layout(); frame(); renderOptions()
   }
-  const viewButtons = VIEW_NAMES.map(name => button(name, () => api.view(name), panel('Camera')))
-  const turnButton = button('Turntable', () => { turntable = !turntable; refresh() }, panel('Camera'))
-  const cockpitButton = button('Cockpit', () => void setCockpit(!cockpit.on), panel('Camera'))
-  const nightButton = button('Night', () => api.setNight(!state.night), panel('Lights'))
-  const headButton = button('Headlights', () => api.setHeadlights(!state.headlights), panel('Lights'))
-  const brakeButton = button('Brake', () => api.setBraking(!state.braking), panel('Lights'))
-  const floorButton = button('Floor', () => api.setFloor(FLOOR_NAMES[(FLOOR_NAMES.indexOf(studio.floor) + 1) % FLOOR_NAMES.length]), panel('Lights'))
-  const motionButton = button('Motion', () => { state.animate = !state.animate; refresh() }, panel('Motion'))
-  const detailButton = button('Detail', () => {
-    const levels = entries[current].model?.lods ?? []
-    void api.setLod(lodChoice + 1 >= levels.length ? -1 : lodChoice + 1)
-  }, panel('Motion'))
-  const stressButton = button('×1', () => void api.stress(STRESS_COUNTS[(STRESS_COUNTS.indexOf(stress) + 1) % STRESS_COUNTS.length]), panel('Motion'))
-  stressButton.title = 'Copies of this design on a grid, to judge many on screen at once'
-  const controlsBox = document.createElement('span'); controlsBox.style.display = 'contents'; panel('Motion').append(controlsBox)
-  const ownButton = button('Own colours', () => { paint = null; for (const e of entries) e.model?.resetColors?.(); refresh() }, panel('Paint'))
-  const swatchButtons = PAINTS.map(([label, body, accent]) => {
-    const b = button('', () => api.paint(body, accent), panel('Paint'))
-    b.className = 'swatch'; b.title = label; b.setAttribute('aria-label', label); b.style.background = `#${body.toString(16).padStart(6, '0')}`
-    return b
-  })
-  const picker = document.createElement('label'); picker.className = 'picker'; picker.textContent = 'Pick '
-  const pickerInput = document.createElement('input'); pickerInput.type = 'color'; pickerInput.value = '#1553c8'
-  pickerInput.oninput = () => api.paint(parseInt(pickerInput.value.slice(1), 16), paint?.[1] ?? 0x15171a)
-  picker.append(pickerInput); panel('Paint').append(picker)
-  openPanel(panels.has('Designs') ? 'Designs' : 'Camera')
-  // Phones put the notes card just above the bar, whose height depends on the open panel.
-  new ResizeObserver(() => { document.body.style.setProperty('--bar', `${bar.offsetHeight}px`); viewport() }).observe(bar)
+  const show = (i: number) => select({ vehicle: selection?.vehicle, group: selection?.group, design: entries[i]?.info.id })
+  const setSide = (on: boolean) => select({ vehicle: selection?.vehicle, group: selection?.group, design: on ? 'all' : entries[current]?.info.id })
 
-  /** Exhibit controls for the current model. A change applies to every built model with that control id. */
-  let shownControls: LabControl[] | undefined
-  const renderControls = () => {
-    const list = entries[current].model?.controls
-    if (list === shownControls) return
-    shownControls = list
-    controlsBox.replaceChildren()
-    for (const c of list ?? []) {
-      const all = () => entries.flatMap(e => e.model?.controls?.filter(x => x.id === c.id) ?? [])
-      if (c.kind === 'toggle') {
-        const b = button(c.label, () => { const v = !c.value; for (const x of all()) if (x.kind === 'toggle') { x.value = v; x.onChange(v) } press(b, v) }, controlsBox)
-        press(b, c.value)
-      } else if (c.kind === 'cycle') {
-        const label = () => `${c.label}: ${c.options[c.index]}`
-        const b = button(label(), () => { const i = (c.index + 1) % c.options.length; for (const x of all()) if (x.kind === 'cycle') { x.index = i; x.onChange(i) } b.textContent = label() }, controlsBox)
-      } else {
-        const l = document.createElement('label'); l.className = 'slider'; l.textContent = `${c.label} `
-        const input = document.createElement('input'); input.type = 'range'
-        Object.assign(input, { min: String(c.min), max: String(c.max), step: String(c.step), value: String(c.value) })
-        input.oninput = () => { const v = Number(input.value); for (const x of all()) if (x.kind === 'slider') { x.value = v; x.onChange(v) } }
-        l.append(input); controlsBox.append(l)
+  // ---------------------------------------------------------------------------------------
+  // Sidebar: the vehicle tree
+  // ---------------------------------------------------------------------------------------
+
+  const sidebar = $('side')
+  const scroller = $('side-scroll')
+  const vehiclesSection = ui.section('opt:vehicles', 'Vehicles', true, 'sec tree-sec')
+  const treeBox = $('tree')
+  treeBox.before(vehiclesSection.root)
+  vehiclesSection.body.append(treeBox)
+  function renderTree() {
+    const keep = scroller.scrollTop
+    treeBox.replaceChildren()
+    for (const sec of tree) {
+      treeBox.append(ui.el('h3', 'tree-section', sec.name))
+      for (const v of sec.vehicles) {
+        const chosen = selection?.vehicle === v.id
+        if (v.error) { treeBox.append(ui.el('div', 'tree-error', `${v.title}: could not list designs`)); continue }
+        // A vehicle with one design is a leaf: selecting it shows that design.
+        if (!v.groups.length && v.designs.length <= 1) {
+          const b = ui.button(v.title, () => void select({ vehicle: v.id }), 'tree-item tree-leaf')
+          if (chosen) b.setAttribute('aria-current', 'true')
+          treeBox.append(b)
+          continue
+        }
+        const veh = ui.section(`tree:${v.id}`, v.title, chosen, 'tree-veh')
+        if (chosen) veh.root.open = true
+        const list = (designs: LabDesignInfo[], group?: string) => {
+          const box = ui.el('div', 'tree-list')
+          const here = chosen && selection?.group === group
+          if (designs.length > 1) {
+            const c = ui.button(`Compare all ${designs.length}`, () => void select({ vehicle: v.id, group, design: 'all' }), 'tree-item tree-compare')
+            if (here && selection?.design === 'all') c.setAttribute('aria-current', 'true')
+            box.append(c)
+          }
+          for (const d of designs) {
+            const b = ui.button(d.name, () => void select({ vehicle: v.id, group, design: d.id }), 'tree-item')
+            if (d.group !== group && group !== undefined) b.append(ui.el('span', 'tag', 'pick'))
+            if (here && selection?.design === d.id) b.setAttribute('aria-current', 'true')
+            box.append(b)
+          }
+          return box
+        }
+        if (v.groups.length) {
+          for (const g of [...v.groups].reverse()) {
+            const grp = ui.section(`tree:${v.id}:${g.name}`, g.label, g.latest, 'tree-grp')
+            if (chosen && selection?.group === g.name) grp.root.open = true
+            if (!g.latest) grp.summary.append(ui.el('span', 'tag older', 'older'))
+            grp.body.append(list(g.designs, g.name))
+            veh.body.append(grp.root)
+          }
+        } else veh.body.append(list(v.designs))
+        treeBox.append(veh.root)
       }
     }
+    scroller.scrollTop = keep
   }
+
+  // ---------------------------------------------------------------------------------------
+  // Sidebar: info panel and Options tree
+  // ---------------------------------------------------------------------------------------
+
+  const optionsBox = $('options')
+  /** Handles `refresh` updates when state changes from a button, the API or the URL. */
+  const handles = {
+    views: [] as HTMLButtonElement[],
+    turntable: null as ReturnType<typeof ui.toggle> | null,
+    cockpit: null as ReturnType<typeof ui.toggle> | null,
+    floor: null as ReturnType<typeof ui.segmented> | null,
+    night: null as ReturnType<typeof ui.toggle> | null,
+    headlights: null as ReturnType<typeof ui.toggle> | null,
+    brake: null as ReturnType<typeof ui.toggle> | null,
+    detail: null as ReturnType<typeof ui.segmented> | null,
+    stress: null as ReturnType<typeof ui.segmented> | null,
+    motion: null as ReturnType<typeof ui.toggle> | null,
+    swatches: [] as HTMLButtonElement[],
+    own: null as HTMLButtonElement | null,
+    body: null as ReturnType<typeof ui.colour> | null,
+    accent: null as ReturnType<typeof ui.colour> | null,
+    params: new Map<string, { set(v: number | boolean): void; row: HTMLElement }>(),
+    stats: [] as HTMLElement[],
+    timing: null as HTMLElement | null,
+  }
+
+  function renderOptions() {
+    const keep = scroller.scrollTop
+    optionsBox.replaceChildren()
+    handles.params.clear()
+    handles.stats = []
+    const s = session!
+    const e = entries[current]
+    const model = e?.model
+
+    // Info panel.
+    const info = ui.el('div', 'info')
+    // A one design vehicle would repeat its name, so its section heads the panel instead.
+    const single = entries.length === 1 && !s.group
+    info.append(ui.el('div', 'info-title', single ? s.exhibit.section ?? 'Vehicles' : s.exhibit.heading?.(s.group) ?? s.exhibit.title))
+    info.append(ui.el('div', 'info-name', side ? `Compare: ${entries.length} designs` : single ? s.exhibit.title : e?.info.name ?? ''))
+    const notes = ui.el('ul', 'info-notes')
+    for (const t of side ? entries.map((x, i) => `${i + 1}. ${x.info.name}`) : e?.info.notes ?? []) notes.append(ui.el('li', '', t))
+    if (notes.childElementCount) info.append(notes)
+    const stats = ui.el('div', 'stats')
+    handles.stats.push(stats)
+    info.append(stats)
+    optionsBox.append(info)
+    // On a phone the sheet's header names what is shown, so it reads even when closed.
+    $('brand').textContent = SHEET.matches ? `${s.exhibit.title}${side ? ': compare' : entries.length > 1 && e ? `: ${e.info.name}` : ''}` : 'Syn3h vehicle lab'
+
+    // View.
+    const view = ui.section('opt:view', 'View')
+    const presets = ui.el('div', 'row buttons')
+    handles.views = VIEW_NAMES.map(name => { const b = ui.button(name, () => api.view(name), 'btn small'); presets.append(b); return b })
+    handles.turntable = ui.toggle('Turntable', turntable, on => { turntable = on; refresh() })
+    handles.cockpit = ui.toggle('Cockpit', cockpit.on, on => void setCockpit(on))
+    handles.cockpit.root.hidden = side || stress > 1 || !model?.cockpit
+    handles.floor = ui.segmented('Floor', FLOOR_NAMES, FLOOR_NAMES.indexOf(studio.floor), i => api.setFloor(FLOOR_NAMES[i]))
+    view.body.append(presets, handles.turntable.root, handles.cockpit.root, handles.floor.root)
+    optionsBox.append(view.root)
+
+    // Lights.
+    const lights = ui.section('opt:lights', 'Lights')
+    handles.night = ui.toggle('Night', state.night, on => api.setNight(on))
+    handles.headlights = ui.toggle('Headlights', state.headlights, on => api.setHeadlights(on))
+    handles.brake = ui.toggle('Brake', state.braking, on => api.setBraking(on))
+    lights.body.append(handles.night.root, handles.headlights.root, handles.brake.root)
+    optionsBox.append(lights.root)
+
+    // Detail: levels, live counts, stress copies.
+    const detail = ui.section('opt:detail', 'Detail')
+    const levels = model?.lods ?? []
+    if (levels.length > 1) {
+      handles.detail = ui.segmented('Level', ['Auto', ...levels], lodChoice + 1, i => void api.setLod(i - 1))
+      detail.body.append(handles.detail.root)
+    } else handles.detail = null
+    const counts = ui.el('div', 'stats')
+    handles.stats.push(counts)
+    handles.stress = ui.segmented('Stress copies', STRESS_COUNTS.map(n => `×${n}`), STRESS_COUNTS.indexOf(stress), i => void api.stress(STRESS_COUNTS[i]))
+    handles.timing = ui.el('div', 'note')
+    detail.body.append(counts, handles.stress.root, handles.timing)
+    optionsBox.append(detail.root)
+
+    // Paint.
+    const paintSec = ui.section('opt:paint', 'Paint')
+    const swatches = ui.el('div', 'row swatches')
+    handles.own = ui.button('Own colours', () => { paint = null; for (const x of entries) x.model?.resetColors?.(); refresh() }, 'btn small')
+    swatches.append(handles.own)
+    handles.swatches = PAINTS.map(([label, body, accent]) => {
+      const b = ui.button('', () => api.paint(body, accent), 'swatch')
+      b.title = label; b.setAttribute('aria-label', label); b.style.background = hex(body)
+      swatches.append(b)
+      return b
+    })
+    handles.body = ui.colour('Body', hex(paint?.[0] ?? 0x1553c8), v => api.paint(parseInt(v.slice(1), 16), paint?.[1] ?? 0x15171a))
+    handles.accent = ui.colour('Accent', hex(paint?.[1] ?? 0x15171a), v => api.paint(paint?.[0] ?? 0x1553c8, parseInt(v.slice(1), 16)))
+    paintSec.body.append(swatches, handles.body.root, handles.accent.root)
+    optionsBox.append(paintSec.root)
+
+    // Motion.
+    const motion = ui.section('opt:motion', 'Motion')
+    handles.motion = ui.toggle('Motion', state.animate, on => api.setMotion(on))
+    motion.body.append(handles.motion.root, ui.el('div', 'note', 'Throttle and steering cycle gently; the vehicle animates what it can.'))
+    optionsBox.append(motion.root)
+
+    // The exhibit's own controls, under the headings it names.
+    const byGroup = new Map<string, LabControl[]>()
+    for (const c of model?.controls ?? []) { const g = c.group ?? 'Vehicle'; byGroup.set(g, [...byGroup.get(g) ?? [], c]) }
+    for (const [group, list] of byGroup) {
+      const sec = ui.section(`ctl:${s.exhibit.id}:${group}`, group)
+      for (const c of list) sec.body.append(controlRow(c))
+      optionsBox.append(sec.root)
+    }
+
+    // Game parameters for this vehicle.
+    const groups = vehicleParams(gameParams.all().map(p => p.def), s.exhibit.family ?? s.exhibit.id, s.exhibit.paramGroups)
+    if (groups.length) {
+      const sec = ui.section(`opt:params:${s.exhibit.id}`, 'Parameters', false)
+      const all = groups.flatMap(g => g.defs)
+      const resetAll = ui.button('Reset all', () => { for (const d of all) gameParams.set(d.id, d.default) }, 'btn small')
+      const head = ui.el('div', 'row buttons')
+      head.append(resetAll, ui.el('span', 'note', 'Live for this page only; most act on driving, not looks.'))
+      sec.body.append(head)
+      for (const g of groups) {
+        if (groups.length > 1) sec.body.append(ui.el('h4', 'sub', g.group))
+        for (const d of g.defs) sec.body.append(paramRow(d))
+      }
+      optionsBox.append(sec.root)
+    }
+    scroller.scrollTop = keep
+    refresh()
+    writeStats()
+  }
+
+  /** One exhibit control. A change applies to every built model with a control of that id. */
+  function controlRow(c: LabControl): HTMLElement {
+    const all = () => entries.flatMap(x => x.model?.controls?.filter(y => y.id === c.id && y.kind === c.kind) ?? [])
+    if (c.kind === 'toggle') return ui.toggle(c.label, c.value, v => { for (const x of all()) if (x.kind === 'toggle') { x.value = v; x.onChange(v) } }).root
+    if (c.kind === 'cycle') return ui.pick(c.label, c.options, c.index, i => { for (const x of all()) if (x.kind === 'cycle') { x.index = i; x.onChange(i) } }).root
+    return ui.slider(c.label, c, v => { for (const x of all()) if (x.kind === 'slider') { x.value = v; x.onChange(v) } }).root
+  }
+
+  /** One game parameter with its reset; kept in step with the registry by the onChange below. */
+  function paramRow(def: ParamDef): HTMLElement {
+    const value = gameParams.get(def.id)!.value
+    const reset = () => gameParams.set(def.id, def.default)
+    let row: HTMLElement, set: (v: number | boolean) => void
+    if (typeof def.default === 'boolean') {
+      const t = ui.toggle(def.label, value as boolean, v => gameParams.set(def.id, v))
+      // The reset sits before the switch, so switches line up with the sliders' right edge.
+      t.input.before(ui.resetButton(def.label, reset))
+      row = t.root; set = v => t.set(v as boolean)
+    } else {
+      const sl = ui.slider(def.label, { min: def.min ?? 0, max: def.max ?? 1, step: def.step ?? .01, value: value as number, reset }, v => gameParams.set(def.id, v))
+      row = sl.root; set = v => sl.set(v as number)
+    }
+    row.classList.toggle('changed', value !== def.default)
+    handles.params.set(def.id, { set, row })
+    return row
+  }
+  const unsubscribe = gameParams.onChange((id, value) => {
+    const h = handles.params.get(id)
+    if (!h) return
+    h.set(value)
+    h.row.classList.toggle('changed', value !== gameParams.get(id)!.def.default)
+  })
 
   const refresh = () => {
-    designButtons.forEach((b, i) => press(b, !side && stress === 1 && i === current))
-    if (sideButton) press(sideButton, side)
-    viewButtons.forEach((b, i) => press(b, !cockpit.on && VIEW_NAMES[i] === currentView))
-    press(turnButton, turntable)
     const e = entries[current]
-    cockpitButton.hidden = side || stress > 1 || !e.model?.cockpit
-    press(cockpitButton, cockpit.on)
-    press(nightButton, state.night); press(headButton, state.headlights); press(brakeButton, state.braking)
-    floorButton.textContent = `Floor: ${studio.floor}`
-    press(motionButton, state.animate)
-    const levels = e.model?.lods ?? []
-    detailButton.hidden = levels.length < 2
-    detailButton.textContent = `Detail: ${lodChoice < 0 ? `Auto (${levels[e.level] ?? ''})` : levels[lodChoice]}`
-    stressButton.textContent = `×${stress}`
-    press(stressButton, stress > 1)
-    press(ownButton, !paint)
-    swatchButtons.forEach((b, i) => press(b, !!paint && PAINTS[i][1] === paint[0]))
-    renderControls()
-    writeCard()
+    handles.views.forEach((b, i) => b.setAttribute('aria-pressed', String(!cockpit.on && VIEW_NAMES[i] === currentView)))
+    handles.turntable?.set(turntable)
+    if (handles.cockpit) { handles.cockpit.set(cockpit.on); handles.cockpit.root.hidden = side || stress > 1 || !e?.model?.cockpit }
+    handles.floor?.set(FLOOR_NAMES.indexOf(studio.floor))
+    handles.night?.set(state.night); handles.headlights?.set(state.headlights); handles.brake?.set(state.braking)
+    handles.detail?.set(lodChoice + 1)
+    handles.stress?.set(STRESS_COUNTS.indexOf(stress))
+    handles.motion?.set(state.animate)
+    handles.own?.setAttribute('aria-pressed', String(!paint))
+    handles.swatches.forEach((b, i) => b.setAttribute('aria-pressed', String(!!paint && PAINTS[i][1] === paint[0] && PAINTS[i][2] === paint[1])))
+    if (paint) { handles.body?.set(hex(paint[0])); handles.accent?.set(hex(paint[1])) }
+    writeStats()
   }
 
-  // The notes card. Stats are rewritten a few times a second from the frame loop.
-  $('card').onclick = () => $('card').classList.toggle('expanded')
-  const nameEl = $('name'), groupEl = $('group'), notesEl = $('notes'), statsEl = $('stats')
+  // Stats, rewritten a few times a second from the frame loop.
   const frameTime = new RollingAverage(60), cpuTime = new RollingAverage(60)
   const total: LabStats = { triangles: 0, drawCalls: 0 }
   const n = (x: number) => x.toLocaleString('en-GB')
-  let cardKey = ''
-  function writeCard() {
-    const e = entries[current]
-    const key = `${side}|${current}|${stress}`
-    if (key !== cardKey) {
-      cardKey = key
-      nameEl.textContent = stress > 1 ? `${e.info.name} ×${stress}` : side ? 'Side by side' : `${designs.length > 1 ? `${current + 1}. ` : ''}${e.info.name}`
-      groupEl.textContent = group === undefined ? '' : `${exhibit!.groupLabel ?? 'Group'} ${group}${e.info.group !== group && !side ? ` (from ${exhibit!.groupLabel ?? 'group'} ${e.info.group})` : ''}`
-      const lines = side ? entries.map((x, i) => `${i + 1}. ${x.info.name}`) : e.info.notes
-      notesEl.replaceChildren(...lines.map(t => { const li = document.createElement('li'); li.textContent = t; return li }))
-    }
-    writeStats()
-  }
+  let lastStats = ''
   function writeStats() {
     const e = entries[current]
+    if (!e) return
     const levels = e.model?.lods
-    const lines: string[] = []
+    let text: string
     if (stress > 1) {
       countStats(stage, total)
-      lines.push(`${n(total.triangles)} triangles, ${n(total.drawCalls)} draws for ${stress} copies`)
-      lines.push(`Frame ${frameTime.average.toFixed(1)} ms, render call ${cpuTime.average.toFixed(1)} ms (average of 60)`)
-      lines.push('Rough local measurement on this machine; frame time is capped by the display rate.')
+      text = `${n(total.triangles)} triangles, ${n(total.drawCalls)} draws (${stress} copies)`
     } else if (side) {
       total.triangles = total.drawCalls = 0
-      entries.forEach((x, i) => { total.triangles += x.stats.triangles; total.drawCalls += x.stats.drawCalls; lines.push(`${i + 1}. ${n(x.stats.triangles)} triangles, ${x.stats.drawCalls} draws`) })
-      lines.push(`All: ${n(total.triangles)} triangles, ${n(total.drawCalls)} draws`)
-    } else {
-      lines.push(`${levels?.length ? `${levels[e.level]}: ` : ''}${n(e.stats.triangles)} triangles, ${e.stats.drawCalls} draws`)
+      for (const x of entries) { total.triangles += x.stats.triangles; total.drawCalls += x.stats.drawCalls }
+      text = `All ${entries.length}: ${n(total.triangles)} triangles, ${n(total.drawCalls)} draws`
+    } else text = `${levels?.length ? `${levels[e.level]}: ` : ''}${n(e.stats.triangles)} triangles, ${n(e.stats.drawCalls)} draws`
+    if (text !== lastStats) { lastStats = text; for (const el of handles.stats) el.textContent = text }
+    if (handles.timing) {
+      const timing = stress > 1 ? `Frame ${frameTime.average.toFixed(1)} ms, render call ${cpuTime.average.toFixed(1)} ms, average of 60. A rough local measurement; frames are capped by the display rate.` : 'Copies of this design on a grid, to judge many at once.'
+      if (handles.timing.textContent !== timing) handles.timing.textContent = timing
     }
-    const text = lines.join('\n')
-    if (statsEl.textContent !== text) statsEl.textContent = text
   }
 
-  // Camera.
-  const scratch = { a: new THREE.Vector3(), b: new THREE.Vector3(), c: new THREE.Vector3(), dir: new THREE.Vector3(), q: new THREE.Quaternion(), box: new THREE.Box3() }
+  // ---------------------------------------------------------------------------------------
+  // Sidebar collapse, bottom sheet, and framing in the free area
+  // ---------------------------------------------------------------------------------------
+
+  const collapse = $<HTMLButtonElement>('collapse')
+  const setCollapsed = (on: boolean) => {
+    document.body.classList.toggle('collapsed', on)
+    collapse.setAttribute('aria-expanded', String(!on))
+    collapse.setAttribute('aria-label', on ? 'Show the sidebar' : 'Hide the sidebar')
+    collapse.title = collapse.getAttribute('aria-label')!
+    viewport()
+    refit()
+  }
+  collapse.onclick = () => setCollapsed(!document.body.classList.contains('collapsed'))
+
   /**
-   * The bar covers the bottom of the screen, so the projection centre moves up to the middle of
-   * the free area: render a window of a virtual image that is `covered` pixels taller. Stills
-   * have no bar.
+   * The sidebar (or sheet) covers part of the screen, so the projection centre moves to the
+   * middle of the free area: render a window of a virtual image that is wider by the sidebar and
+   * taller by the sheet. Stills have no interface.
    */
-  let covered = 0
+  let coverLeft = 0, coverBottom = 0
   function viewport() {
-    // The cockpit view stays centred: the driver looks straight ahead, not over the bar.
-    covered = params.still || cockpit.on ? 0 : Math.min(bar.offsetHeight, innerHeight * .45)
-    camera.aspect = innerWidth / innerHeight
-    if (covered) camera.setViewOffset(innerWidth, innerHeight + covered, 0, covered, innerWidth, innerHeight)
+    const r = sidebar.getBoundingClientRect()
+    coverLeft = params.still || SHEET.matches ? 0 : Math.min(r.right, innerWidth * .5)
+    coverBottom = params.still || !SHEET.matches ? 0 : Math.min(Math.max(0, innerHeight - r.top), innerHeight * .6)
+    const fullW = innerWidth + coverLeft, fullH = innerHeight + coverBottom
+    camera.aspect = fullW / fullH
+    if (coverLeft || coverBottom) camera.setViewOffset(fullW, fullH, 0, coverBottom, innerWidth, innerHeight)
     else camera.clearViewOffset()
     camera.updateProjectionMatrix()
   }
+  new ResizeObserver(() => viewport()).observe(sidebar)
+  SHEET.addEventListener('change', () => viewport())
+  // Phones start with the sheet closed so the vehicle shows first.
+  setCollapsed(SHEET.matches)
+
+  // ---------------------------------------------------------------------------------------
+  // Camera
+  // ---------------------------------------------------------------------------------------
+
+  const scratch = { a: new THREE.Vector3(), b: new THREE.Vector3(), c: new THREE.Vector3(), dir: new THREE.Vector3(), q: new THREE.Quaternion(), box: new THREE.Box3() }
   /** Distance at which a sphere of this radius fills the narrower side of the free area. */
   const fitDistance = (radius: number) => {
-    const tan = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))
-    const full = innerHeight + covered
-    const vertical = tan * (innerHeight - covered) / full, horizontal = tan * innerWidth / full
-    return radius / Math.sin(Math.atan(Math.min(vertical, horizontal))) * .95
+    const perPixel = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / (innerHeight + coverBottom)
+    const half = Math.min(innerHeight - coverBottom, innerWidth - coverLeft) / 2 * perPixel
+    return radius / Math.sin(Math.atan(half)) * .95
   }
   /** Centre and radius of what is on stage, in world space. */
   const stageBounds = (centre: THREE.Vector3) => {
@@ -324,8 +516,15 @@ async function main(): Promise<void> {
       box.expandByPoint(scratch.c.copy(c).sub(half)).expandByPoint(scratch.c.copy(c).add(half))
     }
     if (stress > 1) for (const c of copies.children) box.expandByPoint(c.position)
+    if (box.isEmpty()) box.setFromCenterAndSize(scratch.a.set(0, 1, 0), scratch.b.set(4, 2, 4))
     box.getCenter(centre)
     return box.getSize(scratch.a).length() / 2
+  }
+  /** Keeps the view direction and fits the distance again, after the free area changed size. */
+  const refitDir = new THREE.Vector3()
+  function refit() {
+    if (!session || cockpit.on || !entries[current]?.model) return
+    frame(refitDir.subVectors(camera.position, controls.target))
   }
   function frame(dir = VIEWS[currentView], distance?: number) {
     stage.rotation.y = 0
@@ -358,28 +557,26 @@ async function main(): Promise<void> {
     on: false, t: 1, duration: .7,
     fromPos: new THREE.Vector3(), fromTarget: new THREE.Vector3(),
     savedPos: new THREE.Vector3(), savedTarget: new THREE.Vector3(), savedTurntable: false,
-    hidden: [] as THREE.Object3D[], done: null as null | (() => void),
+    hidden: [] as THREE.Object3D[], done: null as null | (() => void), model: null as LabModel | null,
   }
   const eyeWorld = (out: THREE.Vector3) => {
-    const m = entries[current].model!
+    const m = cockpit.model!
     return m.object.localToWorld(out.copy(m.cockpit!.eye))
   }
   const lookWorld = (out: THREE.Vector3) => {
-    const m = entries[current].model!
-    m.object.getWorldQuaternion(scratch.q)
+    cockpit.model!.object.getWorldQuaternion(scratch.q)
     // Forward and a little down, so the nose shows as a driver sees it.
     return eyeWorld(out).add(scratch.c.set(0, -.0015, -.01).applyQuaternion(scratch.q))
   }
   function setCockpit(on: boolean): Promise<void> {
-    const model = entries[current].model
+    const model = entries[current]?.model
     if (on === cockpit.on || (on && (!model?.cockpit || side || stress > 1))) return Promise.resolve()
     cockpit.on = on
-    document.body.classList.toggle('inside', on)
-    viewport()
     cockpit.fromPos.copy(camera.position); cockpit.fromTarget.copy(controls.target)
     cockpit.t = 0
     controls.enabled = false
     if (on) {
+      cockpit.model = model!
       cockpit.savedPos.copy(camera.position); cockpit.savedTarget.copy(controls.target)
       cockpit.savedTurntable = turntable
       turntable = false
@@ -404,7 +601,7 @@ async function main(): Promise<void> {
     camera.lookAt(controls.target)
     // Hide the canopy once the camera is nearly through it.
     if (cockpit.on && k > .7 && !cockpit.hidden.length) {
-      for (const o of entries[current].model?.cockpit?.hide ?? []) if (o.visible) { o.visible = false; cockpit.hidden.push(o) }
+      for (const o of cockpit.model?.cockpit?.hide ?? []) if (o.visible) { o.visible = false; cockpit.hidden.push(o) }
     }
     if (cockpit.t >= 1) {
       if (cockpit.on) {
@@ -413,17 +610,21 @@ async function main(): Promise<void> {
         controls.enableZoom = controls.enablePan = false
         controls.rotateSpeed = -.35
         camera.near = .02; camera.updateProjectionMatrix()
-      }
+      } else cockpit.model = null
       controls.enabled = true
       controls.update()
       cockpit.done?.(); cockpit.done = null
     }
   }
 
-  // Layout: one design, side by side, or stress copies of one design.
+  // ---------------------------------------------------------------------------------------
+  // Layout: one design, side by side, or stress copies of one design
+  // ---------------------------------------------------------------------------------------
+
   function layout() {
     copies.clear()
     const e = entries[current]
+    if (!e) return
     const spacing = Math.max(...visible().map(x => x.size.x)) + 1.4
     entries.forEach((x, i) => {
       x.root.visible = side ? true : i === current
@@ -447,22 +648,6 @@ async function main(): Promise<void> {
     frameTime.reset(); cpuTime.reset()
   }
 
-  async function show(i: number) {
-    if (cockpit.on) await setCockpit(false)
-    current = THREE.MathUtils.clamp(i, 0, entries.length - 1)
-    side = false
-    await ensure(entries[current])
-    status.textContent = ''
-    layout(); frame(); refresh()
-  }
-  async function setSide(on: boolean) {
-    if (cockpit.on) await setCockpit(false)
-    side = on
-    if (on) { stress = 1; for (const e of entries) await ensure(e) }
-    status.textContent = ''
-    layout(); frame(); refresh()
-  }
-
   /** Applies the Detail choice to every built model; Auto picks per model from camera distance. */
   function applyLod(force = false) {
     let changed = false
@@ -479,13 +664,22 @@ async function main(): Promise<void> {
     if (changed) refresh()
   }
 
-  // The scripted capture API. Everything the buttons do, plus stats and a frame wait.
+  // ---------------------------------------------------------------------------------------
+  // The scripted capture API: everything the sidebar does, plus stats and a frame wait
+  // ---------------------------------------------------------------------------------------
+
   let frames = 0
   const waiters: { frame: number; resolve: () => void }[] = []
   const api = {
     ready: false,
-    exhibit: exhibit.id,
-    designs: designs.map(d => d.id),
+    get exhibit() { return session?.exhibit.id },
+    get designs() { return entries.map(e => e.info.id) },
+    /** Every vehicle in the sidebar with its groups and designs. */
+    vehicles() {
+      return tree.flatMap(s => s.vehicles.map(v => ({ id: v.id, title: v.title, section: s.name, groups: v.groups.map(g => g.name), designs: v.designs.map(d => d.id) })))
+    },
+    /** Selects a vehicle and optionally a design (an id, a 1 based position or 'all') and group. */
+    select(vehicle: string, design?: string, group?: string) { return select({ vehicle, design, group }) },
     show,
     sideBySide: setSide,
     view(name: ViewName) { if (cockpit.on) void setCockpit(false); currentView = name; frame(VIEWS[name]); refresh() },
@@ -496,27 +690,32 @@ async function main(): Promise<void> {
     setHeadlights(on: boolean) { state.headlights = on; refresh() },
     setBraking(on: boolean) { state.braking = on; refresh() },
     setMotion(on: boolean) { state.animate = on; refresh() },
-    setFloor(name: (typeof FLOOR_NAMES)[number]) { studio.setFloor(name); refresh() },
+    setFloor(name: FloorName) { studio.setFloor(name); refresh() },
     setTurntable(on: boolean) { turntable = on; refresh() },
+    /** Shows or hides the sidebar (on a phone, opens or closes the sheet). */
+    sidebar(open: boolean) { setCollapsed(!open) },
+    /** Sets a game parameter by id, or resets it with no value. */
+    param(id: string, value?: number | boolean) { const p = gameParams.get(id); if (p) gameParams.set(id, value ?? p.def.default) },
     /** -1 for Auto, else a level index. */
-    async setLod(index: number) { lodChoice = index; applyLod(true) },
+    async setLod(index: number) { lodChoice = index; applyLod(true); refresh() },
     paint(body: number, accent: number) { paint = [body, accent]; for (const e of entries) e.model?.setColors?.(body, accent); refresh() },
     cockpit: setCockpit,
     async stress(count: number) {
       if (cockpit.on) await setCockpit(false)
       stress = STRESS_COUNTS.includes(count) ? count : 1
-      if (stress > 1) side = false
-      await ensure(entries[current])
+      if (stress > 1 && side) await setSide(false)
+      if (session && entries[current]) await ensure(session, entries[current])
       layout(); frame(); refresh()
     },
     stats() {
       const e = entries[current]
       if (stress > 1) countStats(stage, total)
       return {
-        design: side ? 'all' : e.info.id, detail: e.model?.lods?.[e.level] ?? null, detailChoice: lodChoice < 0 ? 'Auto' : e.model?.lods?.[lodChoice],
-        triangles: e.stats.triangles, drawCalls: e.stats.drawCalls,
+        vehicle: session?.exhibit.id, group: session?.group,
+        design: side ? 'all' : e?.info.id, detail: e?.model?.lods?.[e.level] ?? null, detailChoice: lodChoice < 0 ? 'Auto' : e?.model?.lods?.[lodChoice],
+        triangles: e?.stats.triangles ?? 0, drawCalls: e?.stats.drawCalls ?? 0,
         designs: entries.map(x => ({ id: x.info.id, ...x.stats })),
-        stress, stressTriangles: stress > 1 ? total.triangles : e.stats.triangles, stressDrawCalls: stress > 1 ? total.drawCalls : e.stats.drawCalls,
+        stress, stressTriangles: stress > 1 ? total.triangles : e?.stats.triangles, stressDrawCalls: stress > 1 ? total.drawCalls : e?.stats.drawCalls,
         frameMs: frameTime.average, renderCallMs: cpuTime.average, backend: (renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'webgpu' : 'webgl',
       }
     },
@@ -526,13 +725,13 @@ async function main(): Promise<void> {
   }
   Object.assign(window, { vehicleLab: api })
 
-  // First design, then the URL's initial state.
+  // First selection, then the URL's initial state.
   viewport()
-  await (side ? setSide(true) : show(current))
+  await select(selectionFromSearch(location.search))
   if (params.night) api.setNight(true)
   if (params.headlights !== undefined) api.setHeadlights(params.headlights)
   if (params.floor) api.setFloor(params.floor)
-  if (params.lod !== undefined) await api.setLod(resolveLod(params.lod, entries[current].model?.lods ?? []))
+  if (params.lod !== undefined) await api.setLod(resolveLod(params.lod, entries[current]?.model?.lods ?? []))
   if (params.stress && params.stress > 1) await api.stress(params.stress)
   if (params.az !== undefined || params.el !== undefined || params.dist !== undefined) api.orbit(params.az ?? 36, params.el ?? 16, params.dist)
   else if (params.view) api.view(params.view)
@@ -565,14 +764,14 @@ async function main(): Promise<void> {
     renderer.render(scene, camera)
     cpuTime.push(performance.now() - t0)
     frames++
-    if (frames > 3) api.ready = true
+    if (frames > 3 && session && entries[current]?.model) api.ready = true
     for (let i = waiters.length - 1; i >= 0; i--) if (frames >= waiters[i].frame) { waiters[i].resolve(); waiters.splice(i, 1) }
   })
-  addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); viewport() })
+  addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); viewport(); refit() })
   addEventListener('pagehide', () => {
     renderer.setAnimationLoop(null)
-    copies.clear()
-    for (const e of entries) { e.model?.object.removeFromParent(); e.model?.dispose?.() }
+    unsubscribe()
+    teardown()
     studio.dispose(); controls.dispose(); renderer.dispose()
   }, { once: true })
 }

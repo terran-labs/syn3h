@@ -36,11 +36,17 @@ import { defineParam } from '../../shared/params'
 /**
  * 1 is the true planet: the sphere whose circumference is the world tile. Lower values draw
  * a larger, flatter planet than the world really is (0.5 is twice the true radius), and 0
- * is flat. Only 1 is geometrically honest; the rest are for taste and for comparison.
+ * is flat.
+ *
+ * The default is 0.4, the owner's choice: the planet is drawn two and a half times its true
+ * radius. At the true radius the spawn pads are about a quarter of the way round the planet
+ * from the centre, so its mountain is below the horizon from every pad on every size of
+ * world (tools/terrainlab/pad-view.ts has the geometry). At 0.4 it stands clear of the
+ * horizon from all of them, and the world still plainly curves away.
  */
 export const curveParam = defineParam<number>({
   id: 'world.curve', label: 'Planet roundness (1 true, 0 flat)', group: 'World', scope: 'world',
-  default: 1, min: 0, max: 1, step: 0.01,
+  default: 0.4, min: 0, max: 1, step: 0.01,
 })
 
 /** The radius of the planet whose circumference is a tile `size` metres across. */
