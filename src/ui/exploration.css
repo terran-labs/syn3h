@@ -325,3 +325,6 @@ body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-noti
   .syn3h-shell.exploration-ui:has(.world-inspector:not([hidden])):not(.is-focus) .gear-selector,
   .syn3h-shell.exploration-ui:has(.world-inspector:not([hidden])):not(.is-focus) .gear-actions { display: none !important; }
 }
+
+/* Recommendations belong to the card's document flow, never above a mode HUD or header. */
+.syn3h-shell.exploration-ui .performance-card .performance-recommendation { position: static; inset: auto; transform: none; max-width: none; margin: 8px 0; }
