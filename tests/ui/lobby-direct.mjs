@@ -19,6 +19,25 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
       continue
     }
     assert.equal(await page.locator('.lobby-index, .lobby-message').count(), 0)
+    // Waiting in the lobby must never start a tour or enter a world.
+    await page.waitForTimeout(22000)
+    assert.equal(await page.evaluate(() => syn3h.shell.activePanel), 'index')
+    assert.equal(await page.evaluate(() => syn3h.shell.playing), false)
+    assert.equal(await page.locator('.attract-overlay').count(), 0)
+    await page.screenshot({ path: `${out}/${mode}-resting.png` })
+    // Minimal holds the generated galaxy still after its layout and maps settle.
+    const originalLevel = await page.evaluate(() => syn3h.game.quality.getQualityState().level)
+    await page.evaluate(() => syn3h.game.quality.setLevel(0))
+    let resting = false
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const frames = await page.evaluate(() => syn3h.shell.graphics.galaxyFrames)
+      await page.waitForTimeout(2000)
+      if (frames === await page.evaluate(() => syn3h.shell.graphics.galaxyFrames)) { resting = true; break }
+    }
+    assert.ok(resting, 'Minimal galaxy settles with zero idle redraws')
+    assert.ok(await page.evaluate(() => syn3h.shell.graphics.galaxyLive), 'resting galaxy remains visible')
+    await page.evaluate(level => syn3h.game.quality.setLevel(level), originalLevel)
+
     await page.waitForTimeout(600)
     const spacing = await page.evaluate(() => {
       const hint = document.querySelector('.galaxy-hint').getBoundingClientRect(), nav = document.querySelector('.galaxy-links').getBoundingClientRect()
