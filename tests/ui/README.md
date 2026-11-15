@@ -466,3 +466,13 @@ for a game whose controls are fixed to the screen edges.
 
 The Vehicle panel carries the paint sliders (`paint.*`, client scope) built from the
 registry, with a link to all sliders for vehicle shading.
+
+## Cursor capture
+
+On a desktop the first click in play captures the cursor (pointer lock) and sends no beam.
+From then on moving the mouse swings the camera round the vehicle (`ChaseCamera` already
+reads a locked pointer), a click sends a tag beam, and right-click still switches cockpit
+and chase. Escape releases the cursor, which the browser does itself, so the first Escape
+releases and the next opens the menu; opening the menu any other way releases it too.
+Touch devices never capture. `tools/heavy.sh node tests/ui/cursor.mjs` checks all of it.
+Aiming a beam where the camera looks is the Weapons lane's.
