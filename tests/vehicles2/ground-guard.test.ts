@@ -43,7 +43,7 @@ function launch(l:Land,kind:VehicleKind,speed:number,dive:number){
  const v=createVehicle(l.game,l.terrain,kind,new T.Vector3(3,l.heightAt(3,100)+(dive?25:1.2),100),0);v.isLocal=false
  const a=dive*Math.PI/180;v.body.setLinvel({x:0,y:-Math.sin(a)*speed,z:-Math.cos(a)*speed},true);return v
 }
-const KINDS=['buggy','buggy-classic','jet','hovercraft','tank'] as const
+const KINDS=['buggy','jet','hovercraft','tank'] as const
 
 describe('vehicles and the ground at speed',()=>{
  it('every vehicle stays above ground from 80 to 300 m/s, and the guard never has to act in ordinary flight',()=>{

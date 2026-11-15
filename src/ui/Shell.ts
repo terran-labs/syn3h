@@ -1,10 +1,14 @@
+import { GEAR_LABELS, type GearRack, type GearId } from '../weapons/Gear'
+import { postTier } from '../fx/post/gate'
+import { PerformancePanel } from './PerformancePanel'
+import type { PerformanceSource } from '../core/performance'
 import { SavedWorldStore, SAVED_WORLDS_KEY, savedWorldPlan, worldIdentity, type SavedWorld } from './galaxy/savedWorlds'
 import { SavedMoons } from './galaxy/SavedMoons'
 import type { Game, System } from '../core/Game'
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
 import { params, worldSeed } from '../../shared/params'
-import { GameAudio, MUSIC_TRACKS, type MusicTrack } from '../audio'
+import { GameAudio } from '../audio'
 import { masterVolume, effectsVolume, engineVolume, windVolume, dirtVolume, worldVolume, cuesVolume, remoteVolume, musicVolume } from '../audio/params'
 import { applySkyPreset, SKY_PRESET_NAMES, type SkyPresetName } from '../world/sky/presets'
 import { TouchControls } from './TouchControls'
@@ -127,7 +131,7 @@ export class Shell implements System {
           <button class="shell-play is-primary" type="submit">Enter World ›</button></form>${back}
         </section>
         <section data-panel="vehicle">${heading('Your Vehicle')}
-          <fieldset class="shell-vehicle"><legend>Vehicle</legend><div class="shell-vehicle-options"><label><input type="radio" name="vehicle" value="buggy-classic"> Classic</label><label><input type="radio" name="vehicle" value="buggy-syn3h"> Syn3h Buggy</label><label><input type="radio" name="vehicle" value="hovercraft"> Hovercraft</label><label><input type="radio" name="vehicle" value="jet"> Jet</label></div><div class="shell-vehicle-preview"></div><div class="shell-colors"><label>Body <input type="color" name="bodyColor" aria-label="Body colour"></label><label>Accent <input type="color" name="accentColor" aria-label="Accent colour"></label></div></fieldset>${paintControls()}
+          <fieldset class="shell-vehicle"><legend>Vehicle</legend><div class="shell-vehicle-options"><label><input type="radio" name="vehicle" value="buggy-syn3h"> Syn3h Buggy</label><label><input type="radio" name="vehicle" value="hovercraft"> Hovercraft</label><label><input type="radio" name="vehicle" value="jet"> Jet</label></div><div class="shell-vehicle-preview"></div><div class="shell-colors"><label>Body <input type="color" name="bodyColor" aria-label="Body colour"></label><label>Accent <input type="color" name="accentColor" aria-label="Accent colour"></label></div></fieldset>${paintControls()}
           <div class="vehicle-help"></div><p class="vehicle-note">Your vehicle and colours are saved on this device.</p><button data-goto="explore">Continue ›</button>${back}
         </section>
         <section data-panel="worlds">${heading('Worlds to Explore')}
@@ -136,7 +140,7 @@ export class Shell implements System {
           <p class="world-lock-note" hidden>Sliders locked by host.</p><button data-goto="explore">Explore this world ›</button>${back}
         </section>
         <section data-panel="settings">${heading('Settings')}<div class="settings-links"><button data-goto="music">Music & sound</button><button data-goto="worlds">World & sky</button><button data-goto="advanced">Advanced sliders</button><button class="presentation-toggle" aria-pressed="false">Presentation · P</button></div><fieldset class="host-controls"><legend>Host</legend><label class="host-lock" hidden><input type="checkbox" id="host-lock"> Lock shared sliders</label><p class="host-note"></p><button class="world-reset" type="button">Reset world to defaults</button></fieldset>${back}</section>
-        <section data-panel="music">${heading('Music & Sound')}<label for="shell-track">Music</label><select id="shell-track">${Object.entries(MUSIC_TRACKS).map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select><label for="music-volume">Music volume <output id="music-volume-value"></output></label><input id="music-volume" type="range" min="0" max="1" step="0.01">${[masterVolume,effectsVolume,engineVolume,dirtVolume,windVolume,worldVolume,remoteVolume,cuesVolume].map(p=>`<label>${p.def.label}<input data-audio-param="${p.def.id}" type="range" min="0" max="1" step="0.01" value="${p.value}"></label>`).join('')}<button class="shell-mute" aria-pressed="false">Mute all audio</button><p class="panel-note">Music starts with your first click or key press.</p>${back}</section>
+        <section data-panel="music">${heading('Music & Sound')}<label for="music-volume">Music volume <output id="music-volume-value"></output></label><input id="music-volume" type="range" min="0" max="1" step="0.01">${[masterVolume,effectsVolume,engineVolume,dirtVolume,windVolume,worldVolume,remoteVolume,cuesVolume].map(p=>`<label>${p.def.label}<input data-audio-param="${p.def.id}" type="range" min="0" max="1" step="0.01" value="${p.value}"></label>`).join('')}<button class="shell-mute" aria-pressed="false">Mute all audio</button><p class="panel-note">The music is generated as you play and follows what you do. It starts with your first click or key press.</p>${back}</section>
         <section data-panel="multiplayer">${heading('Multiplayer')}<label class="mode-control" hidden>Game mode<select id="game-mode"><option value="0">Tag</option><option value="1">King of the Hill</option></select></label><p class="multiplayer-room"></p><div class="invite-qr"></div><p class="invite-link"></p><button class="shell-invite">Copy invite link</button><button data-join>Show on screen · J</button><div class="shell-scoreboard" aria-label="Player scores"></div>${back}</section>
         <section data-panel="advanced">${heading('Advanced Settings')}<p class="world-lock-note" hidden>Sliders locked by host.</p><div class="advanced-host"></div>${back}</section>
         <section data-panel="about">${heading('About Syn3h')}${creditsHtml}${back}</section>
@@ -145,7 +149,7 @@ export class Shell implements System {
       </div>
       <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby"><button data-goto="vehicle">Vehicle</button><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR</button><button data-goto="settings">Settings</button><button data-goto="about">About</button></nav></div>
     </section>
-    <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><button type="button" class="gear-chip" hidden></button><div class="hud-scoreboard"></div></aside>
+    <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open configuration rail" aria-pressed="false"><span aria-hidden="true">≡</span><span class="nav-label"> Interface</span></button></nav>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
@@ -187,17 +191,21 @@ export class Shell implements System {
     players.innerHTML = '<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><label class="rail-diagnostics"><input type="checkbox"> Connection diagnostics</label></div>'
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
     railTop.after(players)
-    const gear = this.element.querySelector('.gear-chip')!; players.querySelector('.rail-player-body')!.append(gear)
+    this.performancePanel = new PerformancePanel(this.element, () => { this.releaseCursor(); this.setInspectorOpen(true) })
+    railTop.querySelector('.wi-actions')!.append(this.performancePanel.toggle)
+    players.after(this.performancePanel.element)
+    const gear = document.createElement('select'); gear.className = 'gear-select'; gear.setAttribute('aria-label', 'Gear'); gear.disabled = true
+    this.inspector.element.querySelector('.wi-gear-slot')!.append(gear)
+    gear.addEventListener('change', () => {
+      const rack = (window as unknown as { syn3hNet?: { gear?: GearRack } }).syn3hNet?.gear
+      if (rack?.list().includes(gear.value as GearId)) { rack.select(gear.value as GearId); this.audio.cue('click') }
+    }, { signal })
     navigation.querySelector('.exit-world')!.addEventListener('click', () => this.openMenu(), { signal })
     players.querySelector('.rail-invite')!.addEventListener('click', () => this.openJoin(), { signal })
     players.querySelector('input')!.addEventListener('change', event => params.set(diagnostics.def.id, (event.target as HTMLInputElement).checked), { signal })
     const music = document.createElement('div'); music.className = 'rail-music'
-    music.innerHTML = `<label>Music<select aria-label="Music track">${Object.entries(MUSIC_TRACKS).map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select></label><button type="button" class="rail-mute">Mute</button>`
+    music.innerHTML = `<span>Sound</span><button type="button" class="rail-mute">Mute</button>`
     players.querySelector('.rail-player-body')!.append(music)
-    // Preserve native select keys while keeping them out of gameplay. Keyup must still
-    // reach Input so a driving key released after focus changes cannot get stuck.
-    music.querySelector('select')!.addEventListener('keydown', event => event.stopPropagation(), { signal })
-    music.querySelector('select')!.addEventListener('change', event => { void this.audio.setTrack((event.target as HTMLSelectElement).value as MusicTrack) }, { signal })
     music.querySelector('button')!.addEventListener('click', () => this.audio.setMuted(!this.audio.isMuted), { signal })
     this.focusHud = new FocusHud(this.element)
     this.raceHud = new RaceHud(this.element, { leave: () => this.onRaceLeave?.(), cancel: () => this.onRaceCancel?.() })
@@ -247,9 +255,6 @@ export class Shell implements System {
     for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) if (document.activeElement !== slider) slider.value = String(params.get(slider.dataset.param!)?.value ?? 0)
     for(const slider of this.element.querySelectorAll<HTMLInputElement>('[data-audio-param]'))slider.addEventListener('input',()=>params.set(slider.dataset.audioParam!,Number(slider.value)),{signal})
     this.element.querySelector('.shell-mute')!.addEventListener('click', () => { audio.setMuted(!audio.isMuted); this.update() }, { signal })
-    this.element.querySelector('#shell-track')!.addEventListener('change', event => {
-      void audio.setTrack((event.target as HTMLSelectElement).value as MusicTrack).catch(() => this.toast('Music could not start. Try selecting the track again.'))
-    }, { signal })
     this.element.querySelector('#music-volume')!.addEventListener('input', event => params.set(musicVolume.def.id, (event.target as HTMLInputElement).value), { signal })
     this.element.querySelector('#world-seed')!.setAttribute('value', String(worldSeed.value))
     this.element.querySelector('#world-seed')!.addEventListener('input', event => { (event.target as HTMLInputElement).dataset.dirty = 'true' }, { signal })
@@ -284,13 +289,23 @@ export class Shell implements System {
     }
     for (const type of ['keydown', 'pointerdown', 'wheel', 'pointermove']) window.addEventListener(type, activity, { capture: true, signal, passive: false })
     window.addEventListener('keydown', event => this.keydown(event), { capture: true, signal })
+    // Native controls keep their defaults and local handlers, but must not drive or fire.
+    // Let keyup reach Input even when focus moved while a driving key was held.
+    // A focused button or summary only owns its activation keys (Space and Enter). Every other
+    // key still drives: focus rests on a button after an automatic start and after any click
+    // on the rail, and the drive keys must not go dead until the player clicks elsewhere.
+    this.element.addEventListener('keydown', event => {
+      if (!(event.target instanceof Element)) return
+      if (event.target.closest('input, select, textarea, [contenteditable=true]')) event.stopPropagation()
+      else if (event.target.closest('button, summary') && (event.code === 'Space' || event.code === 'Enter' || event.code === 'NumpadEnter')) event.stopPropagation()
+    }, { signal })
     game.canvas.addEventListener('pointerdown', event => {
-      if (!this.started || this.menuVisible || event.pointerType === 'touch' || event.button !== 0) return
+      if (!this.started || this.menuVisible || game.input.suspended || event.pointerType === 'touch' || event.button !== 0) return
       // The first click in play captures the cursor: from then on moving the mouse swings the
       // camera round the vehicle (ChaseCamera reads the locked pointer), and Escape lets the
       // cursor go again, which the browser does itself. That first click only captures.
       // (Networking also listens for clicks here, after this listener; stop it hearing this one.)
-      if (this.capturesCursor && document.pointerLockElement !== game.canvas) { this.captureCursor(); event.stopImmediatePropagation(); return }
+      if (this.capturesCursor && document.pointerLockElement !== game.canvas) { void this.captureCursor(); event.stopImmediatePropagation(); return }
       game.input.mouseFire = true
       if (document.pointerLockElement !== game.canvas) game.canvas.setPointerCapture(event.pointerId)
     }, { signal })
@@ -384,6 +399,12 @@ export class Shell implements System {
     if (kind === this.activeVehicleKind || (kind === 'buggy-syn3h' && this.activeVehicleKind === 'buggy')) return
     saveVehicleChoice({ ...this.choice, vehicleKind: kind })
     try { sessionStorage.removeItem(RESUME_KEY) } catch { /* Storage is optional. */ }
+    // The resume session saves the old vehicle again while the page unloads (pagehide, then
+    // visibilitychange), which would undo this choice. These listeners are registered after
+    // its own, so each runs after that save and clears it. The URL stays free of ?vehicle=,
+    // which would otherwise override later lobby choices.
+    const forget = () => { try { sessionStorage.removeItem(RESUME_KEY) } catch { /* Storage is optional. */ } }
+    window.addEventListener('pagehide', forget); document.addEventListener('visibilitychange', forget)
     const url = new URL(location.href); url.searchParams.delete('vehicle'); url.searchParams.set('autoplay', '1')
     location.replace(url)
   }
@@ -567,6 +588,8 @@ export class Shell implements System {
     this.element.querySelector<HTMLElement>('.hud-navigation')!.hidden = false
     this.element.querySelector<HTMLButtonElement>('.shell-menu-button')!.focus({ preventScroll: true })
   }
+  private performancePanel!: PerformancePanel
+  configurePerformance(source: PerformanceSource): void { this.performancePanel.configure(source) }
   private inspectorChosen: boolean | undefined
   private setInspectorOpen(open: boolean, intentional = false): void {
     if (intentional) this.inspectorChosen = open
@@ -575,7 +598,7 @@ export class Shell implements System {
     this.element.querySelector('.inspector-toggle')!.setAttribute('aria-pressed', String(open))
   }
   private keydown(event: KeyboardEvent): void {
-    const editing = event.target instanceof HTMLElement && (event.target.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName))
+    const editing = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON|SUMMARY)$/.test(event.target.tagName))
     if (!editing && !event.repeat && event.code === 'KeyP') { event.preventDefault(); event.stopImmediatePropagation(); this.setPresentation(!this.presentation); return }
     if (!editing && !event.repeat && event.code === 'KeyJ') { event.preventDefault(); event.stopImmediatePropagation(); this.inviteOpen ? this.closeJoin() : this.openJoin(); return }
     if (this.inviteOpen) {
@@ -587,6 +610,7 @@ export class Shell implements System {
     if (event.code === 'Escape') {
       if (event.target instanceof HTMLSelectElement) return
       event.preventDefault(); event.stopImmediatePropagation()
+      if (document.pointerLockElement === this.game.canvas) { this.releaseCursor(); return }
       if (this.menuVisible && this.panels.active !== 'index') this.showPanel('index')
       else if (this.started) {
         if (this.menuVisible) this.closeMenu()
@@ -904,38 +928,74 @@ export class Shell implements System {
   }
   /** Desktop with a mouse only: phones and tablets have their thumb controls. */
   private get capturesCursor(): boolean { return !this.touch.available && typeof this.game.canvas.requestPointerLock === 'function' }
-  private captureCursor(): void {
-    // Unadjusted movement where the browser offers it, so the swing is the same on every OS.
+  private cursorRequest = 0
+  private cursorPending = false
+  private async captureCursor(): Promise<void> {
+    if (this.cursorPending) return
+    this.cursorPending = true
+    const requestId = ++this.cursorRequest
+    const active = () => requestId === this.cursorRequest && !this.abort.signal.aborted && this.started && !this.menuVisible && !this.game.input.suspended
     try {
-      const request = (this.game.canvas.requestPointerLock as (options?: { unadjustedMovement?: boolean }) => Promise<void> | void).call(this.game.canvas, { unadjustedMovement: true })
-      if (request && typeof (request as Promise<void>).catch === 'function') (request as Promise<void>).catch(() => { try { void this.game.canvas.requestPointerLock() } catch { /* The cursor stays free; play carries on. */ } })
-    } catch { /* The cursor stays free; play carries on. */ }
+      try {
+        await (this.game.canvas.requestPointerLock as (options?: { unadjustedMovement?: boolean }) => Promise<void> | void).call(this.game.canvas, { unadjustedMovement: true })
+      } catch {
+        // Some browsers reject raw motion. A denied fallback must not reject unhandled.
+        if (active()) await this.game.canvas.requestPointerLock()
+      }
+    } catch { /* A denied capture leaves the native cursor available. */ }
+    finally {
+      this.cursorPending = false
+      if (!active() && document.pointerLockElement === this.game.canvas) document.exitPointerLock()
+    }
   }
-  private releaseCursor(): void { if (document.pointerLockElement === this.game.canvas) document.exitPointerLock() }
+  private releaseCursor(): void {
+    ++this.cursorRequest
+    this.game.input.mouseFire = false
+    if (document.pointerLockElement === this.game.canvas) document.exitPointerLock()
+  }
   private updateHelp(): void {
     renderHelp(this.element.querySelector('.vehicle-help')!, this.choice.vehicleKind)
     this.element.querySelector('.shell-touch-hint')!.textContent = touchHelp(this.choice.vehicleKind)
     renderHelp(this.element.querySelector('.shell-controls')!, this.choice.vehicleKind)
   }
   /** Call after an actual spawn so query overrides and future respawns show the right controls. */
+  private muteShown: boolean | undefined
+  private gearSelect?: HTMLSelectElement
   private gearWired = false
   private gearShown = ''
   /**
-   * The gear chip: which gear is in hand, shown only while the host allows more than one.
+   * The rail selector shows the available gear and the current choice.
    * Tapping it (or T) moves to the next. The rack and the Bungee are the Weapons lane's.
    */
   private updateGear(): void {
-    const net = (window as unknown as { syn3hNet?: { gear?: { list(): string[]; label: string; next(): void }; bungee?: { attached: boolean; letGo(): void } } }).syn3hNet
-    const chip = this.element.querySelector<HTMLButtonElement>('.gear-chip')!
-    if (!net?.gear) { if (!chip.hidden) chip.hidden = true; return }
-    if (!this.gearWired) {
+    const net = (window as unknown as { syn3hNet?: { gear?: GearRack; bungee?: { attached: boolean; letGo(): void } } }).syn3hNet
+    const select = this.gearSelect ??= this.element.querySelector<HTMLSelectElement>('.gear-select')!
+    if (!net?.gear) { if (!select.disabled) select.disabled = true; return }
+    if (!this.gearWired && net.bungee) {
       this.gearWired = true
-      chip.addEventListener('click', () => { net.gear!.next(); this.audio.cue('click'); chip.blur() }, { signal: this.abort.signal })
-      if (net.bungee) this.touch.setGear({ attached: () => net.bungee!.attached, letGo: () => net.bungee!.letGo() })
+      this.touch.setGear({ attached: () => net.bungee!.attached, letGo: () => net.bungee!.letGo() })
     }
-    const several = net.gear.list().length > 1, text = several ? `Gear: ${net.gear.label}` : ''
-    if (text === this.gearShown) return
-    this.gearShown = text; chip.hidden = !several; chip.textContent = text; this.hasSeveralGear = several
+    const list = net.gear.list(), signature = list.join(',')
+    if (signature !== this.gearShown) {
+      this.gearShown = signature; select.replaceChildren()
+      for (const id of list) { const option = document.createElement('option'); option.value = id; option.textContent = GEAR_LABELS[id]; select.append(option) }
+    }
+    if (select.value !== net.gear.current && document.activeElement !== select) select.value = net.gear.current
+    this.hasSeveralGear = list.length > 1; if (select.disabled === this.hasSeveralGear) select.disabled = !this.hasSeveralGear
+  }
+  private updateGI(): void {
+    const value = Number(params.get('post.gi')?.value ?? 0)
+    const on = Boolean(params.get('post.on')?.value), tablets = Boolean(params.get('post.tablets')?.value)
+    const budget = Math.min(1, Math.max(0, this.game.quality.postBudget))
+    const tier = postTier({ on, level: graphicsLevel.value, deviceLevel: this.game.quality.deviceLevel, tablets, shed: 1 - budget })
+    let status: string
+    if (!on) status = 'GI inactive: post effects are off. Enable Post effects in You > Post.'
+    else if (this.game.quality.deviceLevel < 2 && !tablets) status = 'GI inactive: post effects are disabled for this device.'
+    else if (graphicsLevel.value < 2) status = 'GI inactive: requires Desktop render tier. Change Graphics in You or Performance.'
+    else if (tier !== 'full') status = 'GI temporarily inactive: automatic quality has reduced the post-effects budget.'
+    else if (value === 0) status = 'GI is off. Raise this strength to enable indirect light from visible surfaces.'
+    else status = budget < .99 ? 'GI active at reduced strength while automatic quality adjusts.' : 'GI active: indirect light from visible surfaces.'
+    this.inspector.setGIStatus(status, tier === 'full')
   }
   private hasSeveralGear = false
   setVehicleKind(kind: VehicleKind): void { this.activeVehicleKind = kind; this.touch.setVehicleKind(kind); if (this.started) this.showHelp(false) }
@@ -985,7 +1045,9 @@ export class Shell implements System {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!
     if (!hint.hidden && hint.classList.contains('is-full')) this.hideHelp(); else this.showHelp()
   }
-  setStatus(lines: readonly string[]): void { this.board.setStatus(lines); this.hudBoard.setStatus(lines); const players = (window as unknown as {syn3hNet?:{players?:Map<number,{bot?:boolean}>}}).syn3hNet?.players; this.playerCount = players ? [...players.values()].filter(player => !player.bot).length : lines.filter(line => parseScoreRow(line)).length; this.updateInvite() }
+  setStatus(lines: readonly string[]): void { this.board.setStatus(lines); this.hudBoard.setStatus(lines); const players = (window as unknown as {syn3hNet?:{players?:Map<number,{bot?:boolean}>}}).syn3hNet?.players; const count = players ? [...players.values()].filter(player => !player.bot).length : lines.filter(line => parseScoreRow(line)).length
+    // The status arrives every frame; the invite only depends on it through the player count.
+    if (count !== this.playerCount) { this.playerCount = count; this.updateInvite() } }
   setSpeed(metresPerSecond: number): void { this.speed.textContent = String(Math.round(Math.abs(metresPerSecond) * 2.23694)) }
   update(dt = 0): void {
     if (this.attract && !this.attract.ready) {
@@ -997,15 +1059,16 @@ export class Shell implements System {
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
     // A captured cursor alone is insufficient while a menu or another flow suspends input.
     this.element.classList.toggle('is-focus', this.started && !this.menuVisible && !this.game.input.suspended && document.pointerLockElement === this.game.canvas)
+    this.performancePanel.setContext(this.started && !this.menuVisible && !this.game.input.suspended, this.element.classList.contains('is-focus'))
     this.raceHud.update(this.started && !this.menuVisible && !this.game.input.suspended, this.element.classList.contains('is-focus'), this.self, this.ground?.size)
     const buildNotice = document.getElementById('syn3h-build-notice')
     if (buildNotice && !this.inspector.element.contains(buildNotice)) this.inspector.element.querySelector('.wi-top')!.append(buildNotice)
     this.element.classList.toggle('show-diagnostics', diagnostics.value)
     this.element.querySelector<HTMLInputElement>('.rail-diagnostics input')!.checked = diagnostics.value
-    const musicChoice = this.element.querySelector<HTMLSelectElement>('.rail-music select')!
-    if (document.activeElement !== musicChoice) musicChoice.value = this.audio.track
-    this.element.querySelector('.rail-mute')!.textContent = this.audio.isMuted ? 'Unmute' : 'Mute'
+    // Per-frame: touch the DOM only when the label changes.
+    if (this.audio.isMuted !== this.muteShown) { this.muteShown = this.audio.isMuted; this.element.querySelector('.rail-mute')!.textContent = this.muteShown ? 'Unmute' : 'Mute' }
     this.updateGear()
+    if (this.inspector.open) this.updateGI()
     if (this.started && !this.menuVisible) {
       const focus = this.element.classList.contains('is-focus')
       if (!focus && this.inspector.open) this.inspector.update()
@@ -1022,8 +1085,6 @@ export class Shell implements System {
     for(const slider of this.element.querySelectorAll<HTMLInputElement>('[data-audio-param]'))if(document.activeElement!==slider)slider.value=String(params.get(slider.dataset.audioParam!)?.value??0)
     const volume = this.element.querySelector<HTMLInputElement>('#music-volume')!; volume.value = String(musicVolume.value)
     this.element.querySelector('#music-volume-value')!.textContent = `${Math.round(musicVolume.value * 100)}%`
-    const track = this.element.querySelector<HTMLSelectElement>('#shell-track')!
-    if (document.activeElement !== track) track.value = this.audio.track
     const seed = this.element.querySelector<HTMLInputElement>('#world-seed')!
     if (document.activeElement !== seed && seed.dataset.dirty !== 'true') seed.value = String(worldSeed.value)
     const time = Number(params.get('sun.timeOfDay')?.value ?? 16.5)
@@ -1055,7 +1116,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); this.releaseCursor(); this.performancePanel.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }

@@ -9,9 +9,21 @@ const P = { group: 'Water', scope: 'world' as const }
 
 /** Master switch for the new sea surface: waves, shoreline foam lines, the new water look. */
 export const waterWaves = defineParam({ ...P, id: 'water.waves', label: 'Sea waves', default: true })
+/** Approximate light attenuation distance through the water column, in metres. */
+export const waterClarity = defineParam({
+  ...P, id: 'water.clarity', label: 'Water clarity (m)', default: 10, min: 1, max: 50, step: 1,
+})
+/** Short wind waves that tilt the light: how rough the surface reads. Lighting only. */
+export const waterChop = defineParam({
+  ...P, id: 'water.chop', label: 'Surface chop', default: 1, min: 0, max: 3, step: 0.05,
+})
+/** How strongly the water mirrors the sky. 1 is a true mirror at grazing angles. */
+export const waterReflection = defineParam({
+  ...P, id: 'water.reflection', label: 'Sky reflection', default: 1, min: 0, max: 2, step: 0.05,
+})
 /** Crest to trough height of the biggest possible swell, metres. */
 export const waterWaveHeight = defineParam({
-  ...P, id: 'water.waveHeight', label: 'Wave height (m)', default: 0.8, min: 0, max: WAVE_MAX_HEIGHT, step: 0.05,
+  ...P, id: 'water.waveHeight', label: 'Wave height (m)', default: 1.4, min: 0, max: WAVE_MAX_HEIGHT, step: 0.05,
 })
 /** Dominant wavelength, metres. Speed follows from it (deep water dispersion). */
 export const waterWaveLength = defineParam({

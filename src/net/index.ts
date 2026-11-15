@@ -31,6 +31,7 @@ import {
   parseJson,
 } from '../../shared/protocol'
 import type { Game, System } from '../core/Game'
+import { FIXED_DT } from '../core/physics'
 import { createVehicle, type VehicleKind } from '../vehicles'
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
@@ -54,9 +55,13 @@ import { LocalRescue, StuckTimer, inStickyLiquid } from '../modes/Koth'
 import { attachVehicleEffects } from '../vehicles/effects'
 import { ServerClock } from './Clock'
 import { Connection, serverUrl } from './Connection'
-import { NameTags } from './NameTags'
+import { NameTags, type TagInfo } from './NameTags'
 import { applyRoomWorld, netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
+import { pressHoldsFire } from './pointerFire'
+import { PausedHeartbeat } from './PausedHeartbeat'
+import { announcedKind, needsRebuild } from './kinds'
+import { SendPacer, SimClock } from './SimClock'
 import { type BotMatchInfo, audibleVehicles, bodyAlive, hillHold, liveBots } from './bots'
 import { ShoveQueue, cleanShove, shoveFor } from './shove'
 import { nearestImage, wrapCoord, wrapDistance } from '../../shared/wrap'
@@ -166,6 +171,9 @@ const HEARTBEAT_MS = 1000
 /** A gap this long since our last frame means our main thread, not the network, was slow. */
 const LOCAL_STALL_MS = 250
 
+/** Seconds between rebuilds of the status lines, match state and name tag text. */
+const UI_INTERVAL = 0.2
+
 // Every vehicle kind the game can build must be one the server accepts.
 type KindsCovered = VehicleKind extends WireVehicleKind ? true : false
 const kindsCovered: KindsCovered = true
@@ -210,7 +218,10 @@ export class NetClient implements System {
   private wasDriving = false
   private welcomed = false
   private everWelcomed = false
-  private sendTimer = 0
+  /** Which fixed steps send a state; see SimClock.ts. */
+  private readonly pacer = new SendPacer()
+  /** Room time in step with the physics simulation, for stamping and playing back states. */
+  private readonly simClock = new SimClock()
   private pingTimer = 0
   private pingsSent = 0
   private lastFire = -Infinity
@@ -219,7 +230,13 @@ export class NetClient implements System {
   private frameAt = 0
   /** Until this performance.now(), states are still the backlog of a stall the frame loop saw. */
   private stallUntil = 0
-  private heartbeat: ReturnType<typeof setInterval> | null = null
+  /** Speaks for us while the game is paused or the page hidden; see PausedHeartbeat.ts. */
+  private readonly heartbeat = new PausedHeartbeat({
+    interval: HEARTBEAT_MS,
+    send: () => this.sendHeartbeat(),
+    // Whatever we measured while paused (or before) says nothing about now: start over.
+    resumed: () => { for (const r of this.remotes.values()) r.buffer.restartEstimate() },
+  })
   private readonly marker: TagMarker
   private readonly bounds: BoundsGuard
   private readonly tags: NameTags
@@ -235,12 +252,18 @@ export class NetClient implements System {
   private readonly velHistory: [number, number, number][] = []
   private zoneTimer = 0
   private mapTimer = 0
+  /** Seconds until the status lines, match state and name tag text are next rebuilt. */
+  private uiTimer = 0
+  /** Something those show has changed (a room message, an event): rebuild on the next frame. */
+  private uiDirty = true
+  /** The name tags' list, reused between frames; its text is rebuilt with the status. */
+  private readonly tagList: TagInfo[] = []
   private localZone: HillZone | null = null
   private localZoneKey = ''
 
   constructor(private readonly ctx: NetContext) {
     const { game, player } = ctx
-    this.kind = cleanKind(ctx.kind) ?? cleanKind((player as VehicleExtras).kind) ?? 'buggy'
+    this.kind = cleanKind(announcedKind(ctx.kind)) ?? cleanKind((player as VehicleExtras).kind) ?? 'buggy'
     this.colors = [cleanColor(ctx.colors?.body) ?? DEFAULT_COLORS[0], cleanColor(ctx.colors?.accent) ?? DEFAULT_COLORS[1]]
     this.bots = ctx.bots ?? null
     if (this.bots) this.bots.remote = true
@@ -394,7 +417,7 @@ export class NetClient implements System {
 
     // The original fired with the mouse; nothing else uses a canvas click yet.
     const canvas = game.renderer.domElement
-    canvas.addEventListener('pointerdown', (e) => { if (e.button === 0) game.input.mouseFire = true })
+    canvas.addEventListener('pointerdown', (e) => { if (pressHoldsFire(e)) game.input.mouseFire = true })
     window.addEventListener('pointerup', () => { game.input.mouseFire = false })
     window.addEventListener('blur', () => { game.input.mouseFire = false })
   }
@@ -493,8 +516,9 @@ export class NetClient implements System {
 
   /** Announce a new vehicle kind or colours (the local vehicle itself is main.ts's to swap). */
   setProfile(p: { kind?: VehicleKind; colors?: PlayerColors }): void {
-    if (p.kind && cleanKind(p.kind) && cleanKind(p.kind) !== this.kind) this.resetGear('own')
-    if (p.kind) this.kind = cleanKind(p.kind) ?? this.kind
+    const kind = p.kind ? cleanKind(announcedKind(p.kind)) : null
+    if (kind && kind !== this.kind) this.resetGear('own')
+    if (kind) this.kind = kind
     if (p.colors) {
       this.colors = [cleanColor(p.colors.body) ?? this.colors[0], cleanColor(p.colors.accent) ?? this.colors[1]]
     }
@@ -524,7 +548,9 @@ export class NetClient implements System {
     this.syncBotGear()
     for (const controller of this.botGear.values()) controller.fixedUpdate(dt)
     const player = this.ctx.player
-    const now = this.clock.now()
+    // The time this step's result stands for, not the wall clock: steps are then sampled an
+    // even step apart whatever the display rate (SimClock.ts).
+    const now = this.simClock.at(this.ctx.game.time + dt, dt, this.clock.now())
     const lp = player.body.translation()
     const radius = netProxyRadius.value
     const blend = netProxyBlend.value
@@ -533,6 +559,7 @@ export class NetClient implements System {
       // Defensive: a replica whose body left the world (it should not happen: we own them).
       if (!bodyAlive(this.ctx.game.world, r.vehicle)) {
         this.remotes.delete(id)
+        this.uiDirty = true
         continue
       }
       r.delay = r.buffer.delay(dt, netInterpDelay.value, netMaxDelay.value)
@@ -601,16 +628,21 @@ export class NetClient implements System {
     if (!this.connected) return
     if (this.isHost && this.mode === MODE_KOTH) this.checkBotsStuck()
     this.detectRams()
-    this.sendTimer += dt
-    // While hidden the heartbeat timer speaks for us (rendering may still tick in some cases).
-    if (this.sendTimer >= 1 / netSendRate.value && !document.hidden) {
-      this.sendTimer = 0
-      this.sendState()
-      if (this.isHost) this.sendBots()
+    // While paused or hidden the heartbeat timer speaks for us (rendering may still tick in some cases).
+    if (this.heartbeat.paused || document.hidden) {
+      this.pacer.hold(dt, netSendRate.value)
+    } else if (this.pacer.step(dt, netSendRate.value)) {
+      // The pose is the one this step just produced: stamp it with that step's time. The
+      // game's own time is advanced after this hook, hence the + dt.
+      const t = this.simClock.at(this.ctx.game.time + dt, dt, this.clock.now())
+      this.sendState(t)
+      if (this.isHost) this.sendBots(t)
     }
   }
 
-  update(dt: number): void {
+  update(dt: number, alpha = 0): void {
+    // Where the simulation has got to, against the room clock, once a frame (SimClock.ts).
+    this.simClock.observe(this.clock.now(), this.ctx.game.time + alpha * FIXED_DT, dt)
     this.raceBridge.update()
     // Exit world opens the lobby over a still running game: let go of everything on the way out.
     const driving = this.raceBridge.driving
@@ -644,19 +676,47 @@ export class NetClient implements System {
     this.placeHill()
     this.syncBotMatch()
     this.shareClock()
-    this.tags.update([...this.remotes.entries()].map(([id, r]) => ({
-      vehicle: r.vehicle,
-      name: this.displayName(id),
-      it: id === it || id === holder,
-      note: [id === it ? 'IT' : '', id === holder ? 'KING' : '', stuck[id] ? 'stuck' : '', r.paused ? 'paused' : !r.responding ? 'not responding' : ''].filter(Boolean).join(' '),
-    })))
+    // Text changes a few times a second at most, or when the room says something: building
+    // every status line, the match state and each tag's words on every frame, and making the
+    // shell compare them, was steady work and garbage for nothing anyone could read that fast.
+    this.uiTimer -= dt
+    const refresh = this.uiDirty || this.uiTimer <= 0
+    if (refresh) {
+      this.uiTimer = UI_INTERVAL
+      this.uiDirty = false
+      this.refreshTags(it, holder, stuck)
+    }
+    // Tags still follow their vehicles every frame; only their words wait.
+    this.tags.update(this.tagList)
     this.mapTimer -= dt
     if (this.ctx.setMapEntities && this.mapTimer <= 0) {
       this.mapTimer = 0.2
       this.ctx.setMapEntities(this.mapMarkers())
     }
-    this.ctx.setStatus(this.status())
-    this.pushMatch()
+    if (refresh) {
+      this.ctx.setStatus(this.status())
+      this.pushMatch()
+    }
+  }
+
+  /** Rebuild the name tag list in place: one entry per remote vehicle, with its words. */
+  private refreshTags(it: number, holder: number, stuck: Record<number, unknown>): void {
+    const list = this.tagList
+    let n = 0
+    for (const [id, r] of this.remotes) {
+      const tag = list[n] ?? (list[n] = { vehicle: r.vehicle, name: '', note: '', it: false })
+      n++
+      tag.vehicle = r.vehicle
+      tag.name = this.displayName(id)
+      tag.it = id === it || id === holder
+      let note = id === it ? 'IT' : ''
+      if (id === holder) note += note ? ' KING' : 'KING'
+      if (stuck[id]) note += note ? ' stuck' : 'stuck'
+      const state = r.paused ? 'paused' : !r.responding ? 'not responding' : ''
+      if (state) note += note ? ` ${state}` : state
+      tag.note = note
+    }
+    list.length = n
   }
 
   private mapMarkers(): MapMarker[] {
@@ -705,7 +765,7 @@ export class NetClient implements System {
     for (const controller of this.botGear.values()) controller.dispose()
     this.botGear.clear()
     this.conn.close()
-    this.stopHeartbeat()
+    this.heartbeat.stop()
     for (const id of [...this.remotes.keys()]) this.removeRemote(id)
     this.tags.dispose()
   }
@@ -740,7 +800,8 @@ export class NetClient implements System {
       if (!controller) {
         if (action.phase === 'cancel' || !botGearOptions().some(o => o.id === action.gear)) return
         // Announce the bot and its fresh state before its first gear message.
-        this.sendBot(id, vehicle)
+        // Outside the send hook the bot's pose is the last finished step's: the game's time now.
+        this.sendBot(id, vehicle, this.simClock.at(this.ctx.game.time, FIXED_DT, this.clock.now()))
         controller = this.makeBotGear(id, vehicle)
         this.botGear.set(id, controller)
       }
@@ -926,20 +987,19 @@ export class NetClient implements System {
   /** The vehicle kind last announced to the room for each of our bots, by bot id. */
   private readonly botKinds = new Map<number, string>()
 
-  private sendState(): void {
+  private sendState(t: number): void {
     const s = this.ctx.player.getState()
-    this.conn.send(encodeState({ id: 0, t: this.clock.now(), ...s, p: this.canonical(s.p) }) as Uint8Array<ArrayBuffer>)
+    this.conn.send(encodeState({ id: 0, t, ...s, p: this.canonical(s.p) }) as Uint8Array<ArrayBuffer>)
     this.stats.statesSent++
   }
 
-  private sendBots(): void {
+  private sendBots(t: number): void {
     for (const [id, bot] of liveBots(this.bots?.vehicles ?? [], this.ctx.game.world)) {
-      this.sendBot(id, bot)
+      this.sendBot(id, bot, t)
     }
   }
 
-  private sendBot(id: number, bot: Vehicle): void {
-    const t = this.clock.now()
+  private sendBot(id: number, bot: Vehicle, t: number): void {
     // Say which vehicle it is before its first state, and again if the slot changes kind
     // (a mixed fleet), so guests build the same one.
     if (this.botKinds.get(id) !== bot.kind) {
@@ -1099,6 +1159,7 @@ export class NetClient implements System {
     r.groundAt = this.groundAt
     r.disposeEffects = this.attachEffects(vehicle)
     this.remotes.set(info.id, r)
+    this.uiDirty = true
     this.ctx.audio?.play('materialize', { x: s.p[0], y: s.p[1], z: s.p[2] })
     return r
   }
@@ -1107,6 +1168,7 @@ export class NetClient implements System {
     const r = this.remotes.get(id)
     if (!r) return
     this.remotes.delete(id)
+    this.uiDirty = true
     this.bungee.forget(id)
     this.yoink.forget(id)
     this.pesters.forget(id)
@@ -1131,7 +1193,7 @@ export class NetClient implements System {
     if (!r) return
     r.info = info
     const extras = r.vehicle as VehicleExtras
-    if (r.owned && extras.kind !== undefined && extras.kind !== info.kind) {
+    if (r.owned && needsRebuild(extras.kind, info.kind)) {
       const t = r.vehicle.body.translation()
       const q = r.vehicle.body.rotation()
       r.disposeEffects()
@@ -1171,17 +1233,20 @@ export class NetClient implements System {
   // Hidden tabs
   // -------------------------------------------------------------------------------------
 
+  /**
+   * The game paused or resumed, for either reason (the player's own pause, or a hidden
+   * page). Call from the one pause subscription (src/core/pause.ts). While paused a
+   * once-a-second heartbeat tells the room we are parked, not lost; on resuming the latency
+   * estimates start afresh. Once this has been called, the page's visibility alone no
+   * longer starts or stops the heartbeat.
+   */
+  setPaused(paused: boolean): void {
+    this.heartbeat.setPaused(paused)
+  }
+
+  /** Fallback for a page that never calls setPaused: a hidden page counts as paused. */
   private onVisibility(): void {
-    if (document.hidden) {
-      if (this.heartbeat) return
-      // The render loop stops in a hidden tab; a timer still runs about once a second.
-      this.heartbeat = setInterval(() => this.sendHeartbeat(), HEARTBEAT_MS)
-      this.sendHeartbeat()
-    } else {
-      this.stopHeartbeat()
-      // Whatever we measured while hidden (or before) says nothing about now: start over.
-      for (const r of this.remotes.values()) r.buffer.restartEstimate()
-    }
+    this.heartbeat.visibility(document.hidden)
   }
 
   private sendHeartbeat(): void {
@@ -1189,11 +1254,6 @@ export class NetClient implements System {
     const s = this.ctx.player.getState()
     this.conn.send(encodeState({ id: 0, t: this.clock.now(), ...s, p: this.canonical(s.p), v: [0, 0, 0], w: [0, 0, 0], paused: true }) as Uint8Array<ArrayBuffer>)
     this.stats.heartbeats++
-  }
-
-  private stopHeartbeat(): void {
-    if (this.heartbeat) clearInterval(this.heartbeat)
-    this.heartbeat = null
   }
 
   // -------------------------------------------------------------------------------------
@@ -1221,6 +1281,8 @@ export class NetClient implements System {
   }
 
   private onMessage(msg: ServerMessage): void {
+    // Anything the room says may change what the status, scores or tags show.
+    this.uiDirty = true
     switch (msg.type) {
       case 'race':
         this.raceBridge.receive(msg.race)
@@ -1383,16 +1445,30 @@ export class NetClient implements System {
 
   /** A player's chosen name; bots get a seeded name every client agrees on. */
   displayName(id: number): string {
-    const info = this.players.get(id)
     if (isBotId(id) && this.ctx.names) {
+      // Seeded, so it only changes with the world's seed: generate each once.
+      // The cache is only as good as what made it: a new seed or a replaced namer starts over.
+      if (this.botNamesSeed !== worldSeed.value || this.botNamer !== this.ctx.names) {
+        this.botNamesSeed = worldSeed.value
+        this.botNamer = this.ctx.names
+        this.botNames.clear()
+      }
+      const known = this.botNames.get(id)
+      if (known !== undefined) return known
       try {
-        return this.ctx.names(`${worldSeed.value}:${id}`, 'bot')
+        const name = this.ctx.names(`${worldSeed.value}:${id}`, 'bot')
+        this.botNames.set(id, name)
+        return name
       } catch {
         // Fall back to the server's name.
       }
     }
-    return info?.name ?? `Player ${id}`
+    return this.players.get(id)?.name ?? `Player ${id}`
   }
+
+  private readonly botNames = new Map<number, string>()
+  private botNamesSeed: unknown = undefined
+  private botNamer: unknown = undefined
 
   private lastMatchKey = ''
 
@@ -1435,6 +1511,7 @@ export class NetClient implements System {
   }
 
   private event(text: string): void {
+    this.uiDirty = true
     this.events.push({ at: performance.now(), text })
     if (this.events.length > 20) this.events.shift()
   }

@@ -105,9 +105,10 @@ function fakeGl(options: { link?: boolean } = {}) {
   const gl: Record<string | symbol, unknown> = {
     drawingBufferWidth: 640, drawingBufferHeight: 480,
     getExtension: (name: string) => name === 'WEBGL_lose_context' ? { loseContext } : null,
-    getParameter: (name: string) => state[name] ?? 'ONE',
-    isEnabled: (cap: string) => enabled.has(cap), enable: (cap: string) => { enabled.add(cap); calls.push(`enable ${cap}`) }, disable: (cap: string) => { enabled.delete(cap); calls.push(`disable ${cap}`) },
-    getProgramParameter: () => options.link ?? true, getProgramInfoLog: () => 'fake', getAttribLocation: () => 0, isContextLost: () => false,
+    getParameter: (name: string) => { calls.push('query getParameter'); return state[name] ?? 'ONE' },
+    isEnabled: (cap: string) => { calls.push('query isEnabled'); return enabled.has(cap) }, enable: (cap: string) => { enabled.add(cap); calls.push(`enable ${cap}`) }, disable: (cap: string) => { enabled.delete(cap); calls.push(`disable ${cap}`) },
+    getProgramParameter: () => { calls.push('query getProgramParameter'); return options.link ?? true }, getProgramInfoLog: () => 'fake',
+    getAttribLocation: () => { calls.push('query getAttribLocation'); return 0 }, isContextLost: () => false,
     useProgram: (p: unknown) => { state.CURRENT_PROGRAM = p; calls.push('useProgram') },
     bindVertexArray: (v: unknown) => { state.VERTEX_ARRAY_BINDING = v }, bindBuffer: (_: unknown, b: unknown) => { state.ARRAY_BUFFER_BINDING = b },
     viewport: (...v: number[]) => { state.VIEWPORT = new Int32Array(v) }, scissor: (...v: number[]) => { state.SCISSOR_BOX = new Int32Array(v) },
@@ -171,6 +172,20 @@ describe('LogoMark lifecycle', () => {
     expect([...fake.enabled]).toEqual(['SCISSOR_TEST'])
     renderer.dispose()
     expect(fake.loseContext).not.toHaveBeenCalled()
+  })
+  it('queries no GL state while drawing: each query stalls the host until the GPU drains', () => {
+    const fake = fakeGl(), renderer = new LogoRenderer(fake.gl, { particles: 200 })
+    fake.calls.length = 0
+    for (let i = 0; i < 3; i++) renderer.draw(5 + i, { x: 100, y: 100, width: 426, height: 100 })
+    // Growing the particle buffer mid-flight must not query either.
+    renderer.setLook({ particles: 900 }); renderer.draw(9, { x: 100, y: 100, width: 426, height: 100 })
+    expect(fake.calls.filter(c => c.startsWith('query'))).toEqual([])
+    expect(fake.calls.filter(c => c.startsWith('draw')).length).toBeGreaterThan(0)
+    // The host's program, vertex array and scissor are still put back, from the copy read at creation.
+    expect(fake.state.CURRENT_PROGRAM).toBe('host-program')
+    expect(fake.state.VERTEX_ARRAY_BINDING).toBe('host-vao')
+    expect([...fake.enabled]).toEqual(['SCISSOR_TEST'])
+    renderer.dispose()
   })
 })
 

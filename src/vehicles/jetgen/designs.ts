@@ -1,4 +1,9 @@
 import { Builder } from './shapes'
+import { SHIPPED_JET, VANGUARD_EYE, type JetDesign } from './shipped'
+
+// The lab's catalogue of study designs. The game ships only SHIPPED_JET (shipped.ts) and must
+// not import this file.
+export { VANGUARD_EYE, type JetDesign }
 
 /**
  * Five next-generation jet designs after the owner's red reference renders: a long nose with
@@ -13,16 +18,6 @@ import { Builder } from './shapes'
  * Body rows:    [z, halfWidth, top, bottom, centreY, exponent]
  * Surface rows: [x, y, zLeadingEdge, chord, thickness], root to tip.
  */
-export interface JetDesign {
-  id: string; name: string; blurb: string; paint: number; accent: number
-  /** Straight-edged, faceted geometry instead of flowing curves. */
-  hard?: boolean
-  /** Smooth normals without changing the angular planform. */
-  smooth?: boolean
-  /** Kept for reference only: every design now renders through the shared vehicle shading. */
-  finish?: 'candy' | 'military'
-  build(b: Builder): void
-}
 
 /**
  * Surface rows along an elliptical arc in the X-Y plane, for hoop and arch tails.
@@ -70,8 +65,6 @@ interface VanguardOptions {
   spine?: boolean
 }
 
-/** The pilot's eye in the Vanguard family: low in the pod, a third of the way along the canopy. */
-export const VANGUARD_EYE: [number, number, number] = [0, .28, -1.6]
 const QUAD_INTAKES = [45, 135, 225, 315].map(a => [a, -.35, 1.25, .2, .13])
 
 /**
@@ -96,8 +89,11 @@ function tailRing(b: Builder, o: VanguardOptions, boomX: number, boomY: number):
     joint(0, cy + r, z1, chord); joint(0, cy - rLow, z1, chord)
   } else if (shape === 'hex') {
     const up = side(30, r), down = side(-30, rLow)
-    b.surf(meetAtCentre([row(up[0], up[1], z0), row(0, cy + r, z1)]), paint); b.surf(meetAtCentre([row(down[0], down[1], z0), row(0, cy - rLow, z1)]), paint)
-    b.surf([row(down[0], down[1], z0), row(up[0], up[1], z0)], paint)
+    // Each of the six panels carries a control surface on its trailing edge. The upper and lower
+    // pairs work as elevators and ailerons, the flanks as rudders (see NextJet.setControls).
+    const control = { ...paint, flap: .38 }
+    b.surf(meetAtCentre([row(up[0], up[1], z0), row(0, cy + r, z1)]), control); b.surf(meetAtCentre([row(down[0], down[1], z0), row(0, cy - rLow, z1)]), control)
+    b.surf([row(down[0], down[1], z0), row(up[0], up[1], z0)], control)
     corners = [row(up[0], up[1], z0), row(down[0], down[1], z0)]
     // The two halves join at the top and bottom points: those get a joint as well.
     joint(0, cy + r, z1, chord); joint(0, cy - rLow, z1, chord)
@@ -418,8 +414,9 @@ export const JET_DESIGNS: JetDesign[] = [
     build(b) { vanguard(b, options) },
   })),
   // Sixth round: the Quad Hexring as one lofted body, with pointed joints all round the ring.
+  // Its first design, the Mk2, is the jet the game ships.
+  SHIPPED_JET,
   ...([
-    ['mk2', 'Mk2', 'The Hexring cleaned up: intakes and thrusters lofted into their bodies, six ring joints, shallower wingtips.', { ring: 'hex', wing: 'droop' }],
     ['prong', 'Prong', 'The same with the booms run forward as prongs and the canards on the cockpit pod.', { ring: 'hex', wing: 'droop', booms: 'prong', canards: 'pod' }],
     ['span', 'Span', 'The ring widened until its flanks are the booms themselves: a diamond roof and keel, no struts, no canards.', { ring: 'hex', wing: 'droop', ringOnBooms: true, canards: 'none' }],
     ['spine', 'Spine', 'A larger ring braced to the hull by a dorsal and a ventral strut that meet its top and bottom joints.', { ring: 'hex', wing: 'droop', spine: true, ringSize: 1.08 }],

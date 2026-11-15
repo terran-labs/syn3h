@@ -10,6 +10,7 @@
 import * as THREE from 'three/webgpu'
 import type { Game } from '../core/Game'
 import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../core/physics'
+import type { SurfaceKind } from './terrain/surface'
 
 export interface SpawnPoint {
   position: THREE.Vector3
@@ -90,6 +91,12 @@ export interface Terrain {
    * ground stands above the liquid.
    */
   liquidKindAt?(x: number, z: number): 'lava' | 'water' | null
+  /**
+   * What the ground is made of at a world position (see terrain/surface.ts): mud, sand, snow,
+   * rock, a road and so on. Tyre marks choose their look from it. Cheap enough to call per
+   * wheel per mark; a stand-in terrain may leave it undefined.
+   */
+  surfaceAt?(x: number, z: number): SurfaceKind
   /**
    * Called after the terrain regenerated in place (seed or a terrain parameter changed),
    * once the new mesh and collider exist. Use it to re-seat vehicles. Returns unsubscribe.

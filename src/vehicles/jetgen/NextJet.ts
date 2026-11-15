@@ -1,11 +1,12 @@
 import * as THREE from 'three/webgpu'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { Builder, GROUND_Y, type Leg, type Mat } from './shapes'
-import type { JetDesign } from './designs'
+import type { JetDesign } from './shipped'
 import { applyShowroom, setRole } from '../skins/showroom'
 import { addNightReadability } from '../skins/nightReadability'
 import { mergeStatic } from '../skins/mergeStatic'
 import { addLavaGlow } from '../skins/lavaGlow'
+import { MovingBatch } from './MovingBatch'
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
 const ease = (v: number) => { const t = clamp01(v); return t * t * (3 - 2 * t) }
@@ -31,12 +32,14 @@ export class NextJet {
   private glowMesh?: THREE.Mesh
   private readonly legs: BuiltLeg[] = []
   private readonly geometries: THREE.BufferGeometry[] = []
-  private readonly gearBatches: { mesh: THREE.Mesh; parts: { source: THREE.Mesh; offset: number }[] }[] = []
+  private gearBatches: MovingBatch[] = []
+  private petalBatch?: MovingBatch
+  private flapBatches: MovingBatch[] = []
   private lastBatchedGear = -1
-  private readonly gearInverse = new THREE.Matrix4()
-  private readonly gearMatrix = new THREE.Matrix4()
-  private readonly gearNormal = new THREE.Matrix3()
-  private readonly gearVertex = new THREE.Vector3()
+  /** Control surfaces: a handle at the hinge, the hinge axis, and which way the trailing edge moves. */
+  private readonly flaps: { group: THREE.Group; axis: THREE.Vector3; normal: THREE.Vector3; side: number }[] = []
+  /** Current control deflection, each -1..1: x is pitch, y is roll, z is yaw. */
+  readonly controls = new THREE.Vector3()
   gearAmount = 0
   /** The pilot's eye, for the ride camera. Present when the design has a real cockpit. */
   ridePosition?: THREE.Object3D
@@ -54,6 +57,7 @@ export class NextJet {
   readonly vector = new THREE.Vector2()
   private petal?: THREE.MeshStandardMaterial
   private readonly vanes: { group: THREE.Group; axis: 'x' | 'y'; sign: number }[] = []
+  private vectorSet = false
 
   /** @param detail 1 is full detail, lower values cut the triangle count (see Builder). */
   constructor(readonly design: JetDesign, readonly detail = 1) {
@@ -110,6 +114,14 @@ export class NextJet {
       petal(Math.PI, 0, halfHeight, 'x'); petal(0, 0, -halfHeight, 'x'); petal(Math.PI / 2, halfWidth, 0, 'y'); petal(Math.PI * 1.5, -halfWidth, 0, 'y')
       this.setVector(0, 0)
     }
+    for (const f of b.flaps) {
+      const a = new THREE.Vector3(...f.a), axis = new THREE.Vector3(...f.b).sub(a).normalize()
+      const group = new THREE.Group(); group.position.copy(a); this.object.add(group)
+      f.geometry.translate(-a.x, -a.y, -a.z)
+      const mesh = new THREE.Mesh(this.own(f.geometry), this.materials[f.mat]); mesh.castShadow = true; group.add(mesh)
+      // The trailing edge lies toward +Z of the hinge, so turning about the hinge moves it along this.
+      this.flaps.push({ group, axis, normal: new THREE.Vector3().crossVectors(axis, new THREE.Vector3(0, 0, 1)).normalize(), side: Math.sign((f.a[0] + f.b[0]) / 2) })
+    }
     if (this.cockpit) this.object.userData.cockpit = true
     this.object.add(this.gear)
     b.legs.forEach(l => this.legs.push(this.buildLeg(l)))
@@ -126,34 +138,24 @@ export class NextJet {
     return this.own(merged)
   }
 
-  /** Merge the fixed body and draw the articulated gear in three material batches. */
+  /**
+   * Merge the fixed body and draw every moving assembly in batches: the gear in one per material,
+   * the four vectoring petals in one and the control surfaces in one per material.
+   */
   optimize(): void {
     if (this.gearBatches.length) return
-    // The source meshes remain as invisible transform handles for the existing mechanism.
-    // Updating a few hundred vertices avoids a draw for every small fitting.
-    const sources: THREE.Mesh[] = []
-    this.gear.traverse(o => { if (o instanceof THREE.Mesh) sources.push(o) })
-    for (const material of new Set(sources.map(o => o.material))) {
-      const parts: { source: THREE.Mesh; offset: number }[] = [], geometries: THREE.BufferGeometry[] = []
-      let offset = 0
-      for (const source of sources.filter(o => o.material === material)) {
-        const g = source.geometry.index ? source.geometry.toNonIndexed() : source.geometry.clone()
-        parts.push({ source, offset }); offset += g.attributes.position.count
-        geometries.push(g); source.visible = false
-      }
-      const geometry = this.own(mergeGeometries(geometries))
-      geometries.forEach(g => g.dispose())
-      const positions = geometry.attributes.position as THREE.BufferAttribute
-      const normals = geometry.attributes.normal as THREE.BufferAttribute
-      positions.setUsage(THREE.DynamicDrawUsage); normals.setUsage(THREE.DynamicDrawUsage)
-      const mesh = new THREE.Mesh(geometry, material); mesh.name = 'jet-gear-batch'
-      mesh.castShadow = true; mesh.frustumCulled = false; this.gear.add(mesh)
-      this.gearBatches.push({ mesh, parts })
-    }
-    this.updateGearBatches()
-    // Gear batches must keep their handles; only merge the fixed direct body leaves.
+    const meshes = (root: THREE.Object3D) => { const list: THREE.Mesh[] = []; root.traverse(o => { if (o instanceof THREE.Mesh) list.push(o) }); return list }
+    const byMaterial = (root: THREE.Object3D, sources: THREE.Mesh[], name: string) =>
+      [...new Set(sources.map(o => o.material))].map(material => new MovingBatch(root, sources.filter(o => o.material === material), name))
+    this.gearBatches = byMaterial(this.gear, meshes(this.gear), 'jet-gear-batch')
+    this.lastBatchedGear = this.gearAmount
+    const petals = meshes(this.thruster)
+    if (petals.length) this.petalBatch = new MovingBatch(this.thruster, petals, 'jet-petal-batch')
+    this.flapBatches = byMaterial(this.object, this.flaps.flatMap(f => meshes(f.group)), 'jet-flap-batch')
+    // Batches keep their handles; only merge the fixed direct body leaves.
+    const moving = new Set([...this.flapBatches.map(b => b.mesh)])
     const body = new THREE.Group()
-    for (const o of [...this.object.children]) if (o instanceof THREE.Mesh) body.add(o)
+    for (const o of [...this.object.children]) if (o instanceof THREE.Mesh && !moving.has(o)) body.add(o)
     mergeStatic(body)
     for (const o of [...body.children]) this.object.add(o)
   }
@@ -161,25 +163,7 @@ export class NextJet {
   private updateGearBatches(): void {
     if (!this.gearBatches.length || this.lastBatchedGear === this.gearAmount) return
     this.lastBatchedGear = this.gearAmount
-    this.gear.updateWorldMatrix(true, true)
-    this.gearInverse.copy(this.gear.matrixWorld).invert()
-    for (const { mesh, parts } of this.gearBatches) {
-      const positions = mesh.geometry.attributes.position, normals = mesh.geometry.attributes.normal
-      for (const { source, offset } of parts) {
-        this.gearMatrix.multiplyMatrices(this.gearInverse, source.matrixWorld)
-        this.gearNormal.getNormalMatrix(this.gearMatrix)
-        const g = source.geometry, p = g.attributes.position, n = g.attributes.normal
-        const count = g.index?.count ?? p.count
-        for (let i = 0; i < count; i++) {
-          const index = g.index ? g.index.getX(i) : i
-          this.gearVertex.fromBufferAttribute(p, index).applyMatrix4(this.gearMatrix)
-          positions.setXYZ(offset + i, this.gearVertex.x, this.gearVertex.y, this.gearVertex.z)
-          this.gearVertex.fromBufferAttribute(n, index).applyNormalMatrix(this.gearNormal)
-          normals.setXYZ(offset + i, this.gearVertex.x, this.gearVertex.y, this.gearVertex.z)
-        }
-      }
-      positions.needsUpdate = true; normals.needsUpdate = true
-    }
+    for (const batch of this.gearBatches) batch.update()
   }
 
   /**
@@ -256,12 +240,33 @@ export class NextJet {
    * The top and bottom petals move together for pitch and the side petals for yaw.
    */
   setVector(pitch: number, yaw: number): void {
-    const limit = .35, toe = 0
-    this.vector.x = Math.min(limit, Math.max(-limit, pitch)); this.vector.y = Math.min(limit, Math.max(-limit, yaw))
+    const limit = .35, x = Math.min(limit, Math.max(-limit, pitch)), y = Math.min(limit, Math.max(-limit, yaw))
+    if (x === this.vector.x && y === this.vector.y && this.vectorSet) return
+    this.vectorSet = true
+    this.vector.set(x, y)
     for (const v of this.vanes) {
-      if (v.axis === 'x') v.group.rotation.x = -this.vector.x + v.sign * toe
-      else v.group.rotation.y = this.vector.y + v.sign * toe
+      if (v.axis === 'x') v.group.rotation.x = -x
+      else v.group.rotation.y = y
     }
+    this.petalBatch?.update()
+  }
+
+  /**
+   * Deflect the control surfaces, each input -1..1. Positive pitch is nose up, positive roll is
+   * right wing down and positive yaw is nose right. Every surface turns about its own hinge by
+   * how far that would move its trailing edge the way an aeroplane's would go: up for nose up,
+   * up on the right and down on the left for a roll to the right, and to the right for nose
+   * right. A sloping panel therefore answers all three, a vertical one only yaw. Up to 20 degrees.
+   */
+  setControls(pitch: number, roll: number, yaw: number): void {
+    const c = (v: number) => Math.min(1, Math.max(-1, v)), p = c(pitch), r = c(roll), y = c(yaw)
+    if (p === this.controls.x && r === this.controls.y && y === this.controls.z) return
+    this.controls.set(p, r, y)
+    for (const f of this.flaps) {
+      const wanted = f.normal.y * (p + r * f.side) + f.normal.x * y
+      f.group.quaternion.setFromAxisAngle(f.axis, .35 * c(wanted))
+    }
+    for (const batch of this.flapBatches) batch.update()
   }
 
   /** Triangles in the whole model, landing gear included. */

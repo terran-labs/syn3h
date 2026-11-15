@@ -68,6 +68,11 @@ export interface LayerSpec {
   /** Metres between cells. Must divide every tile size. */
   spacing: number
   geometry: THREE.BufferGeometry
+  /**
+   * A cheaper shape of the same plant, drawn in place of `geometry` beyond about 24 m
+   * (LOD_NEAR in groundcover.ts). Worth giving only to layers with thousands of plants.
+   */
+  far?: THREE.BufferGeometry
   /** What grows in a cell, given the ground there and a hash of the cell. */
   grow(c: Ground, h: number, out: Plant): void
   /** This layer's plants darken the ground beneath them (see SHADE_N in groundcover.ts). */
@@ -158,6 +163,39 @@ export function tuft(blades: number, height: number, root: number, tip: number, 
     b.tri(m0, m1, t, [cm, cm, ct], [0.45, 0.45, 1], 1, [0, 0, glow])
   }
   return b.build()
+}
+
+/**
+ * The same tuft for the distance: about half the blades, one triangle each and about twice
+ * as wide, so a far meadow keeps its height, colour and cover at a seventh of the
+ * triangles. At 24 m a blade is a few pixels wide and its bend cannot be seen.
+ */
+export function farTuft(blades: number, height: number, root: number, tip: number, opts: { glow?: number; curl?: number; width?: number } = {}): THREE.BufferGeometry {
+  const { glow = 0, curl = 0, width = 0.028 } = opts
+  const b = new Builder(height * 0.45)
+  const cr = C(root), ct = C(tip)
+  const n = Math.max(3, Math.round(blades / 2))
+  const w = width * 0.9 * blades / n
+  // As tall as the full tuft, whose tallest blade may be one this shape leaves out.
+  const tallest = (count: number) => Math.max(...Array.from({ length: count }, (_, i) => 0.6 + 0.4 * r01(i, 53)))
+  const stretch = tallest(blades) / tallest(n)
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + i * 0.7
+    const out = 0.04 + 0.14 * r01(i, 37)
+    const h = height * (0.6 + 0.4 * r01(i, 53)) * stretch
+    const ox = Math.cos(a), oz = Math.sin(a)
+    const cx = ox * out, cz = oz * out
+    const wx = -oz * w, wz = ox * w
+    const lean = 0.18 + curl + 0.12 * r01(i, 71)
+    const t = [cx + ox * h * lean * 1.4, h, cz + oz * h * lean * 1.4]
+    b.tri([cx - wx, 0, cz - wz], [cx + wx, 0, cz + wz], t, [cr, cr, ct], [0, 0, 1], 1, [0, 0, glow])
+  }
+  return b.build()
+}
+
+/** The main grass of a world: the full tuft, and its cheaper shape for the distance. */
+function grass(blades: number, height: number, root: number, tip: number, opts: { glow?: number; curl?: number; width?: number } = {}) {
+  return { geometry: tuft(blades, height, root, tip, opts), far: farTuft(blades, height, root, tip, opts) }
 }
 
 /** A thin ribbon from p0 to p1, two triangles, its width across its own lean. */
@@ -578,7 +616,7 @@ function alpineLayers(treeLine: number): LayerSpec[] {
     {
       // Meadow grass in clumps: tall and lush in some regions, short turf in others, with
       // sun-dried gold patches and bare earth showing between clumps.
-      n: 176, spacing: 0.8, shade: true, geometry: tuft(7, 0.42, 0x2a5418, 0xa6d060, { width: 0.03 }),
+      n: 176, spacing: 0.8, shade: true, ...grass(7, 0.42, 0x2a5418, 0xa6d060, { width: 0.03 }),
       grow(c, h, out) {
         if (c.y > treeLine) return
         const thin = 0.5 * smooth(treeLine * 0.6, treeLine, c.y)
@@ -657,7 +695,7 @@ function desertLayers(): LayerSpec[] {
   return [
     {
       // Dry grass in clumps with bare sand between, greener by the water.
-      n: 176, spacing: 0.8, shade: true, geometry: tuft(7, 0.5, 0x8a6a2a, 0xf0dc9a),
+      n: 176, spacing: 0.8, shade: true, ...grass(7, 0.5, 0x8a6a2a, 0xf0dc9a),
       grow(c, h, out) {
         if (c.rock > 0.5) return
         if (unit(h, 2) > 0.25 + 0.75 * Math.max(smooth(0.5, 0.72, c.patch), c.flow)) return
@@ -722,7 +760,7 @@ function volcanicLayers(palette: number[]): LayerSpec[] {
   return [
     {
       // Dark blades with ember tips, in clumps, curling over. Thickest near the lava.
-      n: 176, spacing: 0.8, shade: true, geometry: tuft(6, 0.5, 0x1a0e10, 0xd0402a, { glow: 0.45, curl: 0.25, width: 0.036 }),
+      n: 176, spacing: 0.8, shade: true, ...grass(6, 0.5, 0x1a0e10, 0xd0402a, { glow: 0.45, curl: 0.25, width: 0.036 }),
       grow(c, h, out) {
         if (c.rock > 0.85 && c.flow < 0.3) return
         const fed = Math.max(smooth(0.5, 0.75, c.patch) * 0.7, c.flow)
@@ -766,7 +804,7 @@ function archipelagoLayers(): LayerSpec[] {
   return [
     {
       // Short lush turf in clumps, greenest inland, sparse and salt-bleached at the shore.
-      n: 176, spacing: 0.8, shade: true, geometry: tuft(7, 0.4, 0x2e6a1c, 0xb8e070, { width: 0.034 }),
+      n: 176, spacing: 0.8, shade: true, ...grass(7, 0.4, 0x2e6a1c, 0xb8e070, { width: 0.034 }),
       grow(c, h, out) {
         const k = clumped(c, h, out, 2.4)
         if (!k) return
@@ -802,7 +840,7 @@ function swampLayers(): LayerSpec[] {
   return [
     {
       // Low olive sedge in clumps over the mud.
-      n: 176, spacing: 0.8, shade: true, geometry: tuft(6, 0.36, 0x262a10, 0x8a9440, { width: 0.026, curl: 0.1 }),
+      n: 176, spacing: 0.8, shade: true, ...grass(6, 0.36, 0x262a10, 0x8a9440, { width: 0.026, curl: 0.1 }),
       grow(c, h, out) {
         if (unit(h, 2) > 0.6 + 0.4 * Math.max(smooth(0.4, 0.7, c.patch), c.flow)) return
         const k = clumped(c, h, out, 2.2)

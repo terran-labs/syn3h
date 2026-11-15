@@ -10,8 +10,12 @@
  *
  * which is exp(-a_c) when the heights are equal. The scene's existing uniform fog
  * (`weather.fogDensity`, squared exponential) is kept and added to it, and the pixel is mixed
- * toward the fog colour by 1 - exp(-tau). One extra exp per pixel in the fog pass already
- * running: nothing measurable on a phone.
+ * toward the fog colour by 1 - exp(-tau).
+ *
+ * Cost per pixel, both layers together: one atan and two square roots to undo the planet
+ * curve, two exps for the pixel's height, one vec3 exp for the factor, and a few multiplies
+ * for the sun lobe. Everything that depends only on the camera (its scaled height in each
+ * layer and the exp of it) is worked out once per render on the CPU and sent as a uniform.
  *
  * The round planet bends what is drawn (src/world/curve.ts), and in the fragment stage
  * `positionWorld` arrives already bent: at the default roundness a volcano 500 m away is
@@ -26,7 +30,7 @@
  * Storminess thickens it a little and lifts it a little.
  */
 import * as THREE from 'three/webgpu'
-import { Fn, abs, atan, cameraPosition, dot, exp, float, length, max, mix, normalize, output, positionWorld, pow, renderGroup, select, sqrt, uniform, vec2, vec3, vec4 } from 'three/tsl'
+import { Fn, abs, atan, cameraPosition, dot, exp, float, length, max, mix, normalize, output, positionWorld, renderGroup, select, sqrt, uniform, vec2, vec3, vec4 } from 'three/tsl'
 import { defineParam, params, worldLavaAltitude } from '../../../shared/params'
 import { curveFactor } from '../curve'
 import { atmosphereValue, storminess } from './params'
@@ -110,10 +114,12 @@ export interface FogSun {
   color: () => THREE.Color
 }
 
-/** Mean of exp(-a) between two scaled heights, the closed form shared by both layers. */
-function meanExp(ac: N, ap: N): N {
+/**
+ * Mean of exp(-a) between two scaled heights, the closed form shared by both layers. `ec` is
+ * exp(-ac): the camera's term, the same for every pixel, so it arrives as a uniform.
+ */
+function meanExp(ac: N, ec: N, ap: N): N {
   const d = ap.sub(ac) as N
-  const ec = exp(ac.negate()) as N
   return select(abs(d).lessThan(1e-3), ec.mul(float(1).sub(d.mul(0.5))), ec.sub(exp(ap.negate())).div(d))
 }
 
@@ -133,7 +139,7 @@ export function heightFog(color: N, uniformDensity: N, sun?: FogSun): { color: N
   const state = hazeNow()
   const tint = new THREE.Vector3(1, 1, 1)
   let tintAmount = 0
-  const live = <T,>(initial: T, read: () => T) => (uniform(initial as never) as N).setGroup(renderGroup).onRenderUpdate(read)
+  const live = <T,>(initial: T, read: (frame?: { camera?: THREE.Camera | null }) => T) => (uniform(initial as never) as N).setGroup(renderGroup).onRenderUpdate(read)
   const density = live(state.density, () => { hazeNow(state); return state.density })
   const height = live(state.height, () => state.height)
   const sea = live(state.sea, () => state.sea)
@@ -151,16 +157,26 @@ export function heightFog(color: N, uniformDensity: N, sun?: FogSun): { color: N
   const y = select(round, sqrt(along.mul(along).add(R.add(bent.y).mul(R.add(bent.y)))).sub(R), bent.y) as N
   const rise = y.sub(cam.y) as N
   const L = sqrt(ground.mul(ground).add(rise.mul(rise))) as N
-  const ac = max(cam.y.sub(sea), -5.0).div(height) as N
-  const ap = max(y.sub(sea), -5.0).div(height) as N
+  // The camera's scaled height in each layer and its exp, once per render rather than per
+  // pixel: (haze a_c, exp(-a_c), aerial a_c, exp(-a_c)). Same camera as `cameraPosition`.
+  const camTerms = new THREE.Vector4(0, 1, 0, 1)
+  const camWorld = new THREE.Vector3()
+  const camU = live(camTerms, (frame?: { camera?: THREE.Camera | null }) => {
+    const h = hazeNow(camState)
+    const above = Math.max((frame?.camera ? camWorld.setFromMatrixPosition(frame.camera.matrixWorld).y : 0) - h.sea, -5)
+    const a = above / h.height, b = above / AERIAL_HEIGHT
+    return camTerms.set(a, Math.exp(-a), b, Math.exp(-b))
+  })
+  const above = max(y.sub(sea), -5.0) as N
+  const ap = above.div(height) as N
   const dist = L.mul(uniformDensity) as N
-  const tau = (density as N).mul(L).mul(meanExp(ac, ap)).add(dist.mul(dist)) as N
+  const tau = (density as N).mul(L).mul(meanExp(camU.x, camU.y, ap)).add(dist.mul(dist)) as N
 
   // The aerial layer, per channel. Zero when weather.aerial is 0 or there is no air.
   const aerialDensity = live(0, () => AERIAL_DENSITY * aerial.value * Math.max(0, Math.min(1, atmosphereValue())))
   const weights = live(new THREE.Vector3(1, 1, 1), () => aerialWeights(weightsValue))
   const ah = float(1 / AERIAL_HEIGHT)
-  const tauA = (aerialDensity as N).mul(L).mul(meanExp(max(cam.y.sub(sea), -5.0).mul(ah), max(y.sub(sea), -5.0).mul(ah))) as N
+  const tauA = (aerialDensity as N).mul(L).mul(meanExp(camU.z, camU.w, above.mul(ah))) as N
   const tauRGB = vec3(tau, tau, tau).add((weights as N).mul(tauA)) as N
   const factor = vec3(1, 1, 1).sub(exp(tauRGB.negate()))
 
@@ -174,10 +190,15 @@ export function heightFog(color: N, uniformDensity: N, sun?: FogSun): { color: N
     const sunDir = live(new THREE.Vector3(0, 1, 0), sun.direction)
     const sunColor = live(new THREE.Color(), sun.color)
     const view = normalize(bent.sub(cam)) as N
-    const lobe = pow(max(dot(view, sunDir), 0.0), 8.0) as N
+    // The eighth power as three squarings: pow costs a log and an exp per pixel.
+    const c1 = max(dot(view, sunDir), 0.0) as N
+    const c2 = c1.mul(c1) as N
+    const c4 = c2.mul(c2) as N
+    const lobe = c4.mul(c4) as N
     const share = tauA.div(tau.add(tauA).add(1e-6)) as N
     fogged = fogged.add(vec3(sunColor as N).mul(lobe.mul(share).mul(AERIAL_SUN_GLOW)))
   }
   return { color: fogged, factor }
 }
 const weightsValue = new THREE.Vector3()
+const camState = { density: 0, height: 70, sea: 0 }
