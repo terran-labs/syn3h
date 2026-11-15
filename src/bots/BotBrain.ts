@@ -54,6 +54,18 @@ export class BotBrain implements System {
   requestRecovery?: () => boolean
   target: Vehicle | null = null
   /**
+   * The player changed vehicle in place: chase the new one where the old one was the target.
+   * A duckling's line moves with it on its next step (DuckFollower.follow starts a fresh
+   * track for a new leader), and a mind tailing the old vehicle is pointed at the new one.
+   */
+  setLocalPlayer(next: Vehicle): void {
+    const previous = this.localPlayer
+    if (next === previous) return
+    if (this.target === previous) this.target = next
+    this.localPlayer = next
+    if (this.mind?.activity.leader === previous) this.mind.activity.leader = next
+  }
+  /**
    * The bot's own mind, when it has one. With it the bot alternates between chasing and
    * roaming on its own agenda, in the share set by `bots.freeSpirit`. Without it, it chases.
    */
@@ -98,7 +110,7 @@ export class BotBrain implements System {
   /** Backing away from the target: out of its way as it reverses, or out of its lap when it stops. */
   private backing = false
   setPeers(vehicles: readonly Vehicle[]) { this.peers = vehicles }
-  constructor(private readonly game: Game, private readonly terrain: BotTerrain, readonly vehicle: Vehicle, private readonly localPlayer: Vehicle, readonly index = 0) {
+  constructor(private readonly game: Game, private readonly terrain: BotTerrain, readonly vehicle: Vehicle, private localPlayer: Vehicle, readonly index = 0) {
     vehicle.isLocal = false
     this.lastPosition.copy(vehicle.body.translation())
     // Original VhiclBot.cs:25 staggered checks randomly. Index gives repeatable staggering.
