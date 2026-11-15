@@ -3,22 +3,24 @@
  * still the Mars Explorer port in src/vehicles/Tank.ts. Earlier rounds are in git history.
  */
 import * as THREE from 'three/webgpu'
-import { designs } from '../../../vehicles/tankDesigns/designs'
+import { designs as round4 } from '../../../vehicles/tankDesigns/designs'
+import { round5 } from '../../../vehicles/tankDesigns/round5'
 import { makeMats } from '../../../vehicles/tankDesigns/kit'
 import type { LabExhibit } from '../types'
 
-const ROUND = '4'
+const ROUNDS = [{ group: '4', designs: round4, hinge: 'Six treads, each on one trailing arm from a single boss on the body' }, { group: '5', designs: round5, hinge: 'Tall cockpit, six big headlamps, a solid rear bumper beam' }]
+const all = ROUNDS.flatMap(r => r.designs)
 
 export const tank: LabExhibit = {
   id: 'tank',
   title: 'Syn3h next-gen tank',
   groupLabel: 'Round',
-  heading: () => 'Syn3h next-gen tank: round 4, aerospace bodies on trailing arm treads',
+  heading: group => group === '4' ? 'Syn3h next-gen tank: round 4, aerospace bodies on trailing arm treads' : 'Syn3h next-gen tank: round 5, tall cockpits, big lamps, solid bumpers',
   async designs() {
-    return designs.map(d => ({ id: d.id, name: d.name, notes: [d.tagline, 'Six treads, each on one trailing arm from a single boss on the body'], group: ROUND }))
+    return ROUNDS.flatMap(r => r.designs.map(d => ({ id: d.id, name: d.name, notes: [d.tagline, r.hinge], group: r.group })))
   },
   async build(info) {
-    const d = designs.find(x => x.id === info.id)!, m = makeMats(d.color), object = d.build(m)
+    const d = all.find(x => x.id === info.id)!, m = makeMats(d.color), object = d.build(m)
     // Each arm swings on its boss; the pod on its end counter-rotates to stay flat (designs.ts tread()).
     const arms: THREE.Object3D[] = [], pods: THREE.Object3D[] = []
     object.traverse(o => { if (o.userData.arm) { arms.push(o); pods.push(o.children.find(c => c.userData.pod)!) } })
@@ -29,6 +31,7 @@ export const tank: LabExhibit = {
       setColors: body => { m.paintU.value.set(body) },
       resetColors: () => { m.paintU.value.setHex(d.color) },
       update(_dt, state) {
+        m.lampU.value = state.headlights ? 1 : .3
         for (let i = 0; i < arms.length; i++) {
           const arm = arms[i], phase = arm.userData.phase as number
           const swing = (arm.userData.arm as number) + (state.animate ? Math.sin(state.time * 1.5 + phase) * .13 : 0)

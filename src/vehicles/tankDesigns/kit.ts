@@ -10,16 +10,24 @@ import * as THREE from 'three/webgpu'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { abs, float, fract, length, max, min, mix, normalLocal, oneMinus, positionLocal, smoothstep, uniform, vec3 } from 'three/tsl'
 
-export interface Mats { paint: THREE.Material; accent: THREE.Material; chrome: THREE.Material; tail: THREE.Material; glass: THREE.Material; rubber: THREE.Material; dark: THREE.Material; glow: THREE.Material; /** Body colour, shared by every skin() of one design so a swatch can repaint it. */ paintU: { value: THREE.Color } }
+export interface Mats { paint: THREE.Material; accent: THREE.Material; chrome: THREE.Material; tail: THREE.Material; glass: THREE.Material; rubber: THREE.Material; dark: THREE.Material; glow: THREE.Material; /** Body colour, shared by every skin() of one design so a swatch can repaint it. */ paintU: { value: THREE.Color }; /** Headlamp brightness: 1 lit, about 0.3 for an unlit lens. */ lampU: { value: number } }
+
+/** Body paint for parts that are not part of a blended body (separate fenders), on the shared colour. */
+function loosePaint(paintU: unknown) {
+  const mat = new THREE.MeshPhysicalNodeMaterial({ side: THREE.DoubleSide, roughness: .36, metalness: .15, clearcoat: .5, clearcoatRoughness: .15 })
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  mat.colorNode = paintU as any
+  return mat
+}
 
 export function makeMats(color: number, accent = 0xff5a12): Mats {
-  const side = THREE.DoubleSide
+  const side = THREE.DoubleSide, paintU = uniform(new THREE.Color(color))
   return {
-    paint: new THREE.MeshPhysicalMaterial({ color, metalness: .8, roughness: .3, clearcoat: 1, clearcoatRoughness: .03, side }),
+    paint: loosePaint(paintU),
     accent: new THREE.MeshPhysicalMaterial({ color: accent, metalness: .6, roughness: .4, clearcoat: 1, clearcoatRoughness: .1, side }),
     // Satin alloy, not mirror chrome: the owner asked for NASA hardware, not jewellery.
     chrome: new THREE.MeshStandardMaterial({ color: 0xc4c8ce, metalness: 1, roughness: .3, side }),
-    paintU: uniform(new THREE.Color(color)),
+    paintU, lampU: uniform(1),
     glass: new THREE.MeshPhysicalMaterial({ color: 0x020305, metalness: .3, roughness: .04, clearcoat: 1, clearcoatRoughness: 0, side }),
     rubber: new THREE.MeshStandardMaterial({ color: 0x0b0b0c, metalness: 0, roughness: .82, side }),
     dark: new THREE.MeshStandardMaterial({ color: 0x1a1c20, metalness: .8, roughness: .42, side }),
@@ -272,7 +280,12 @@ export interface Pane { kind: 'glass' | 'solar'; z: [number, number]; y: [number
 export interface Spot { kind: 'glass' | 'glow' | 'tail' | 'dark'; at: [number, number, number]; r: number }
 /** A hoop round the body at z, half width w. */
 export interface Stripe { z: number; w: number; color: number }
-export interface Livery { lower: number; lowerMetal?: number; lowerRough?: number; glass?: number; panes?: Pane[]; spots?: Spot[]; stripes?: Stripe[] }
+/**
+ * A round lamp seen along the vehicle's length: a disc at [|x|, y] projected onto whatever skin
+ * lies between z[0] and z[1], so it lands on the nose or tail wall without knowing its exact shape.
+ */
+export interface Lamp { kind: 'head' | 'tail'; x: number; y: number; r: number; z: [number, number] }
+export interface Livery { lamps?: Lamp[]; lower: number; lowerMetal?: number; lowerRough?: number; glass?: number; panes?: Pane[]; spots?: Spot[]; stripes?: Stripe[] }
 
 /**
  * Material for a blended body. Everything is decided per pixel from position and normal, so
@@ -303,6 +316,14 @@ export function skin(m: Mats, l: Livery) {
     if (s.kind === 'glass') put(k, l.glass ?? 0x05070a, .05, .6)
     else if (s.kind === 'dark') put(k, 0x0c0d10, .6, .3)
     else { put(k, 0x111111, .3, 0); glow = max(glow, rgb(s.kind === 'glow' ? 0xfff2d2 : 0xff2414).mul(k)) }
+  }
+  for (const s of l.lamps ?? []) {
+    const d: N = length(vec3(ax.sub(s.x), p.y.sub(s.y), 0)), on: N = inside(p.z, s.z[0], s.z[1])
+    // Dark bezel, then the lit lens inside it.
+    put(oneMinus(smoothstep(s.r - e, s.r + e, d)).mul(on), 0x0c0d10, .35, .6)
+    const lens: N = oneMinus(smoothstep(s.r * .8 - e, s.r * .8 + e, d)).mul(on)
+    put(lens, s.kind === 'head' ? 0xd8dde2 : 0x4a0a06, .12, .2)
+    glow = max(glow, s.kind === 'head' ? rgb(0xfff2d2).mul(lens).mul(m.lampU as N).mul(1.6) : rgb(0xff2414).mul(lens))
   }
   const mat = new THREE.MeshPhysicalNodeMaterial({ side: THREE.DoubleSide, clearcoat: .5, clearcoatRoughness: .15 })
   mat.colorNode = color; mat.roughnessNode = min(rough, float(1)); mat.metalnessNode = metal; mat.emissiveNode = glow

@@ -5,7 +5,7 @@
  */
 import * as THREE from 'three/webgpu'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { designs } from './designs'
+import { round5 as designs } from './round5'
 import { makeMats, type Mats } from './kit'
 
 const query = new URLSearchParams(location.search)

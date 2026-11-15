@@ -26,39 +26,43 @@
 import * as THREE from 'three/webgpu'
 import { at, bell, blob, body, hump, mirrored, plan, rod, sm, trackPod, V, type Livery, type Mats } from './kit'
 
+/** One round of studies. The lab shows rounds as groups. */
 export interface TankDesign { id: string; name: string; tagline: string; color: number; build(m: Mats): THREE.Group }
 
-const PODZ = [-2.45, 0, 2.45], PX = 2.05, BASE = 1.34
-const ARM_X = 1.5, ARM = .78, REST = Math.asin(.3 / ARM), ORANGE = 0xff5a12
+export const PODZ = [-2.45, 0, 2.45], PX = 2.05, BASE = 1.34
+export const ARM_X = 1.5, ARM = .78, REST = Math.asin(.3 / ARM), ORANGE = 0xff5a12
 
 /** One corner of the running gear: fixed boss, trailing arm, pod. See the file header. */
-function tread(m: Mats, z: number) {
+export function tread(m: Mats, z: number, fender?: THREE.Object3D) {
   const g = new THREE.Group(), pivotY = 1.08 + ARM * Math.sin(REST), pivotZ = z - ARM * Math.cos(REST)
-  g.add(rod(m.dark, V(1.18, pivotY, pivotZ), V(1.68, pivotY, pivotZ), .14))
+  g.add(rod(m.dark, V(1.18, pivotY, pivotZ), V(1.6, pivotY, pivotZ), .14))
   const arm = new THREE.Group(); arm.userData.arm = REST; arm.userData.phase = z * 1.3
   arm.add(blob(m.chrome, [[-.18, .03, .03, .03, 0, 3], [-.13, .09, .13, .13, 0, 3], [0, .11, .17, .17, 0, 3], [ARM, .1, .14, .14, 0, 3], [ARM + .11, .08, .1, .1, 0, 3], [ARM + .15, .03, .03, .03, 0, 3]], 4, 20))
   arm.add(rod(m.dark, V(0, 0, ARM), V(PX - ARM_X - .4, 0, ARM), .11))
   const pod = new THREE.Group(); pod.userData.pod = true
   pod.add(at(trackPod(m, [{ z: -.7, y: .36, r: .36 }, { z: .7, y: .36, r: .36 }, { z: 0, y: 1.08, r: .34 }], .85), 0, -1.08, 0))
   arm.add(at(pod, PX - ARM_X, 0, ARM, -REST))
+  // A fender carried on the arm's end rides up and down with its tread. Unlike the pod it does
+  // not turn on the axle, so it tips slightly as the arm swings.
+  if (fender) { const carrier = new THREE.Group(); carrier.add(fender); arm.add(at(carrier, PX - ARM_X, 0, ARM, -REST)) }
   g.add(at(arm, ARM_X, pivotY, pivotZ, REST))
   return g
 }
-const running = (g: THREE.Group, m: Mats) => { for (const z of PODZ) mirrored(g, tread(m, z)) }
+export const running = (g: THREE.Group, m: Mats) => { for (const z of PODZ) mirrored(g, tread(m, z)) }
 
 /**
  * Height of the body's rim. Inboard it is flat. Outboard it arches over each pod and dips between
  * them, which is the fender. Behind the rear pod it sweeps back and down; ahead of the front pod
  * it drops less, so the three arches differ.
  */
-function shelf(x: number, z: number, arch = .46, tailDrop = .8, noseDrop = .32) {
+export function shelf(x: number, z: number, arch = .46, tailDrop = .8, noseDrop = .32) {
   const out = sm(Math.abs(x), 1.25, 1.95)
   let a = 0; for (const p of PODZ) a += bell((z - p) / .95)
   return BASE + out * (arch * Math.min(1.05, a) - tailDrop * sm(z, 3.1, 3.95) - noseDrop * sm(-z, 3.25, 3.95))
 }
-const W = (z: number, q = 5, w = 2.56) => w * plan(z / 4, q)
+export const W = (z: number, q = 5, w = 2.56) => w * plan(z / 4, q)
 /** The body swells into a knuckle round each arm's boss, so the one attach point reads as structure. */
-function knuckle(x: number, z: number) {
+export function knuckle(x: number, z: number) {
   let k = 0; for (const p of PODZ) k += bell((z - (p - ARM * Math.cos(REST))) / .32)
   return k * bell((Math.abs(x) - 1.45) / .3)
 }
