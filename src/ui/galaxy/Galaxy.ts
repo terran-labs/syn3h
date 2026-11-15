@@ -62,6 +62,8 @@ export const GALAXY_MAX = 12
 const MAX = GALAXY_MAX
 /** Each world's axis leans this far. */
 const TILT = 0.38
+/** How far the view can tilt: a little under the orbital plane, most of the way over the top. */
+const PITCH_LOW = -0.2, PITCH_HIGH = 1.25
 /** Orbits round the sun; more worlds than this share them. */
 const RINGS = 3
 /** The innermost orbit, and the clear space kept between any two worlds' surfaces. */
@@ -90,6 +92,82 @@ export function orbitLayout(count: number, time: number): { position: [number, n
     return { position: [Math.cos(angle) * orbit, 0, Math.sin(angle) * orbit], radius: i % 2 ? LARGE_WORLD : SMALL_WORLD }
   })
 }
+/**
+ * The feel of the view under a finger. The finger moves an aim; what is shown follows the aim
+ * on a critically damped spring, quick enough to stay under the finger (a frame or two) but
+ * weighted. Let go and the aim coasts on, slowing the way a flicked list does on a phone. The
+ * view's tilt has soft limits: past them a drag meets rising resistance, as iOS scrolling does
+ * at the end of a page, and on release the aim springs back onto the limit without bouncing.
+ * Everything is in closed form against real elapsed time, so 30 frames a second, 120, or one
+ * long frame after a stall all end in the same place, and nothing can blow up.
+ */
+export const SWING = {
+  /** How tightly the view follows the aim, radians per second: critically damped. */
+  follow: 45,
+  /** How fast a tilt past its limit springs back. */
+  back: 11,
+  /** Seconds for a coast to slow by e, about iOS's normal deceleration. */
+  coast: 0.45,
+  /** Most a tilt can be pulled past its limit (10 degrees), and iOS's resistance. */
+  stretch: 10 * Math.PI / 180, resistance: 0.55,
+  /** Below these the motion is over, and the lobby may go idle again. */
+  rest: 1e-4, still: 1e-3,
+} as const
+/**
+ * One step of a critically damped spring toward a target that starts at `target` and moves
+ * at `speed` through the step. Exact for any dt, so a view following a coasting aim lags it
+ * the same at 30 frames a second as at 120. Following a steady target it trails by 2 speed / omega.
+ */
+export function springStep(x: number, v: number, target: number, omega: number, dt: number, speed = 0): [number, number] {
+  const trail = -2 * speed / omega, offset = x - target - trail, fade = Math.exp(-omega * dt), lead = v - speed + omega * offset
+  return [target + speed * dt + trail + (offset + lead * dt) * fade, speed + (v - speed - omega * lead * dt) * fade]
+}
+/** How far past a limit a pull of `over` shows: iOS's rubber band, rising toward but never reaching `most`. */
+export function rubberBand(over: number, most = SWING.stretch, resistance = SWING.resistance): number {
+  return Math.sign(over) * (1 - 1 / (Math.abs(over) * resistance / most + 1)) * most
+}
+/** The pull that shows as `shown` past the limit: the band's inverse, for picking up a stretched view. */
+export function rubberPull(shown: number, most = SWING.stretch, resistance = SWING.resistance): number {
+  const t = Math.min(Math.abs(shown) / most, 0.999)
+  return Math.sign(shown) * (most / resistance) * (1 / (1 - t) - 1)
+}
+/** A finger's position on an axis with soft limits: inside them as it is, past them stretched. */
+export function softLimit(pull: number, low: number, high: number): number {
+  return pull > high ? high + rubberBand(pull - high) : pull < low ? low + rubberBand(pull - low) : pull
+}
+/**
+ * One axis of the view: aim and shown position, each with a velocity. While held, the finger
+ * sets the aim and its speed; let go, the aim coasts, or springs back onto a limit it is past.
+ */
+export interface SwingAxis { aim: number; aimSpeed: number; view: number; viewSpeed: number }
+export function swingStep(axis: SwingAxis, dt: number, held: boolean, low = -Infinity, high = Infinity): SwingAxis {
+  let { aim, aimSpeed, view, viewSpeed } = axis
+  const from = aim
+  if (!held) {
+    const limit = aim > high ? high : aim < low ? low : null
+    if (limit !== null) {
+      // Past a limit: back onto it. Critically damped, so it eases in and never crosses.
+      ;[aim, aimSpeed] = springStep(aim, aimSpeed, limit, SWING.back, dt)
+      if ((aim - limit) * (axis.aim - limit) <= 0 || (Math.abs(aim - limit) < SWING.rest && Math.abs(aimSpeed) < SWING.still)) { aim = limit; aimSpeed = 0 }
+    } else if (aimSpeed !== 0) {
+      // Coasting, slowing smoothly. Carried past a limit, it keeps only the speed the
+      // spring back can absorb within the stretch, and turns back from there next step.
+      const fade = Math.exp(-dt / SWING.coast)
+      aim += aimSpeed * SWING.coast * (1 - fade); aimSpeed *= fade
+      if (aim > high || aim < low) {
+        const edge = aim > high ? high : low, most = SWING.stretch * SWING.back * Math.E
+        aim = edge + rubberBand(aim - edge); aimSpeed = Math.max(-most, Math.min(most, aimSpeed))
+      }
+      if (Math.abs(aimSpeed) < SWING.still) aimSpeed = 0
+    }
+  }
+  // The view chases the aim as it moved through this step, not where it ended.
+  ;[view, viewSpeed] = springStep(view, viewSpeed, from, SWING.follow, dt, dt > 0 ? (aim - from) / dt : 0)
+  if (Math.abs(view - aim) < SWING.rest * 0.1 && Math.abs(viewSpeed) < SWING.still) { view = aim; viewSpeed = 0 }
+  return { aim, aimSpeed, view, viewSpeed }
+}
+/** Nothing left moving on this axis. */
+export const swingResting = (axis: SwingAxis) => axis.aimSpeed === 0 && axis.viewSpeed === 0 && axis.view === axis.aim
 /**
  * Level of detail for the maps: every world wears a small one (512 by 256, about 40 ms to
  * paint on a desktop, half a megabyte on the GPU) from one texture array; the world being
@@ -373,7 +451,11 @@ export class Galaxy {
   private dim = 1
   private distance = 13
   private target: Vec = [0, 0, 0]
-  private spinVelocity = 0
+  /** The view's turn and tilt under the finger: see SWING. this.yaw and this.pitch are what is shown. */
+  private swingYaw: SwingAxis = { aim: 0.6, aimSpeed: 0, view: 0.6, viewSpeed: 0 }
+  private swingPitch: SwingAxis = { aim: 0.5, aimSpeed: 0, view: 0.5, viewSpeed: 0 }
+  /** The finger's unstretched tilt during a drag, and how fast it and the turn are moving. */
+  private pull = { pitch: 0, yawSpeed: 0, pitchSpeed: 0, at: 0 }
   private chosen = -1
   private diving = false
   private dive = 0
@@ -681,13 +763,13 @@ export class Galaxy {
     if (still !== this.holding) this.wake = 2
     const time = this.clock; this.holding = still
     // The view keeps a little of the last drag's swing, and drifts very slowly when left alone.
-    if (!this.drag) { this.yaw += this.spinVelocity; this.spinVelocity *= 0.93; if (Math.abs(this.spinVelocity) < 1e-5) this.spinVelocity = 0; if (this.chosen < 0 && !still) this.yaw += 0.0006 }
+    this.swing(elapsed, !this.drag && this.chosen < 0 && !still)
     const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : [0.5, 0.5, 1]
     const framingMoves = this.framing.some((v, i) => Math.abs(v - frameGoal[i]) > 0.001)
     this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], 0.18) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
     // Held still, draw only while something is moving; the last frame stays on the canvas.
-    const moving = framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || this.spinVelocity !== 0 || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
+    const moving = framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
     if (still && !moving && this.wake <= 0) { this.idle++; return }
     this.wake = Math.max(0, this.wake - 1)
     gl.useProgram(this.program); this.upload(gl); gl.uniform1i(u.uCloseIndex, this.closeIndex)
@@ -737,7 +819,7 @@ export class Galaxy {
     if (index < 0 || index >= MAX) return
     // Without a context there is no flight to wait for: arrive at once.
     if (!this.gl) { this.options.onArrive(id); return }
-    this.chosen = index; this.arriving = 0; this.arrived = false
+    this.chosen = index; this.arriving = 0; this.arrived = false; this.settleTilt()
     // Settle on the lit side, a quarter turn off the sun, on whichever side the view is now.
     const at = this.places(this.clock)[index].position, sun = Math.atan2(-at[0], -at[2])
     this.facing = sun + 0.6 * (turn(sun, this.yaw) >= 0 ? 1 : -1)
@@ -750,10 +832,47 @@ export class Galaxy {
   /** The view controls are active only on the unobstructed galaxy. */
   private get controllable(): boolean { return this.active && this.backdrop === 1 && !this.flight && this.chosen < 0 }
   private orbit(x: number, y: number, zoom: number): void {
-    this.wake = 2; this.spinVelocity = 0
-    this.yaw += x
-    this.pitch = Math.min(1.25, Math.max(-0.2, this.pitch + y))
+    // Keys and sticks move the aim; the view eases after it as it does after a finger.
+    this.wake = 2; this.adopt()
+    const yaw = this.swingYaw, pitch = this.swingPitch
+    yaw.aim += x; yaw.aimSpeed = 0
+    pitch.aim = Math.min(PITCH_HIGH, Math.max(PITCH_LOW, pitch.aim + y)); pitch.aimSpeed = 0
     this.distance = Math.min(26, Math.max(6, this.distance * Math.exp(zoom)))
+  }
+  /** Shown turn and tilt as last stepped: anything else that writes them is in control. */
+  private shown = { yaw: NaN, pitch: NaN }
+  /**
+   * Take over the view as it is if something else moved it since the last step: a flight, the
+   * settle round a chosen world, the first framing. Whatever was coasting stops, so the spring
+   * never fights the camera's own moves.
+   */
+  private adopt(): void {
+    if (this.yaw === this.shown.yaw && this.pitch === this.shown.pitch) return
+    this.swingYaw = { aim: this.yaw, aimSpeed: 0, view: this.yaw, viewSpeed: 0 }
+    this.swingPitch = { aim: this.pitch, aimSpeed: 0, view: this.pitch, viewSpeed: 0 }
+    this.shown = { yaw: this.yaw, pitch: this.pitch }
+  }
+  /** Stop any coast; a tilt left past its limit still springs back onto it. */
+  private settleTilt(): void { this.swingYaw.aimSpeed = 0; this.swingPitch.aimSpeed = 0 }
+  private get swingResting(): boolean { return swingResting(this.swingYaw) && swingResting(this.swingPitch) }
+  /** Step the view's spring and coast by the real time since the last frame. */
+  private swing(elapsed: number, drift: boolean): void {
+    // A flight or the settle round a chosen world writes the view itself; adopt() hands it over.
+    this.adopt()
+    // Left alone, the view drifts very slowly round, aim and view together.
+    if (drift) { this.swingYaw.aim += 0.0006; this.swingYaw.view += 0.0006 }
+    const dt = Math.min(0.25, elapsed), held = this.drag !== null
+    if (this.reduced.matches) {
+      // No spring, coast or stretch: the view is where the finger or key put it, within limits.
+      const pitch = Math.min(PITCH_HIGH, Math.max(PITCH_LOW, this.swingPitch.aim))
+      this.swingYaw = { aim: this.swingYaw.aim, aimSpeed: 0, view: this.swingYaw.aim, viewSpeed: 0 }
+      this.swingPitch = { aim: pitch, aimSpeed: 0, view: pitch, viewSpeed: 0 }
+    } else if (!this.swingResting) {
+      this.swingYaw = swingStep(this.swingYaw, dt, held)
+      this.swingPitch = swingStep(this.swingPitch, dt, held, PITCH_LOW, PITCH_HIGH)
+    }
+    this.yaw = this.swingYaw.view; this.pitch = this.swingPitch.view
+    this.shown = { yaw: this.yaw, pitch: this.pitch }
   }
   private key(event: KeyboardEvent): void {
     if (!this.controllable || event.altKey || event.ctrlKey || event.metaKey) return
@@ -792,8 +911,14 @@ export class Galaxy {
   }
   private down(event: PointerEvent): void {
     this.canvas.setPointerCapture(event.pointerId); this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
-    if (this.pointers.size === 1) { this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false }; this.spinVelocity = 0 }
-    else if (this.pointers.size === 2) { const [a, b] = [...this.pointers.values()]; this.pinch = Math.hypot(a.x - b.x, a.y - b.y); this.drag = null }
+    if (this.pointers.size === 1) {
+      // A finger stops a coast where it is, and picks up a stretched tilt where it shows.
+      this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false }; this.adopt()
+      const pitch = this.swingPitch; pitch.aim = pitch.view; pitch.aimSpeed = 0; this.swingYaw.aim = this.swingYaw.view; this.swingYaw.aimSpeed = 0
+      const edge = pitch.aim > PITCH_HIGH ? PITCH_HIGH : pitch.aim < PITCH_LOW ? PITCH_LOW : pitch.aim
+      this.pull = { pitch: edge + rubberPull(pitch.aim - edge), yawSpeed: 0, pitchSpeed: 0, at: event.timeStamp }
+    }
+    else if (this.pointers.size === 2) { const [a, b] = [...this.pointers.values()]; this.pinch = Math.hypot(a.x - b.x, a.y - b.y); this.drag = null; this.settleTilt() }
   }
   private move(event: PointerEvent): void {
     const point = this.pointers.get(event.pointerId); if (!point) return
@@ -807,13 +932,27 @@ export class Galaxy {
     if (!this.drag || this.drag.id !== event.pointerId) return
     if (Math.hypot(event.clientX - this.drag.x, event.clientY - this.drag.y) > 7) this.drag.moved = true
     if (!this.drag.moved) return
-    this.yaw -= dx * 0.006; this.spinVelocity = -dx * 0.006 * 0.6
-    this.pitch = Math.min(1.25, Math.max(-0.2, this.pitch + dy * 0.005))
+    this.adopt()
+    const yaw = this.swingYaw, pitch = this.swingPitch, turn = -dx * 0.006, tilt = dy * 0.005
+    // The finger's speed, smoothed over the last few tens of milliseconds, for the coast.
+    const gap = Math.max(0.004, (event.timeStamp - this.pull.at) / 1000), keep = Math.exp(-gap / 0.04)
+    this.pull.yawSpeed = this.pull.yawSpeed * keep + turn / gap * (1 - keep); this.pull.pitchSpeed = this.pull.pitchSpeed * keep + tilt / gap * (1 - keep); this.pull.at = event.timeStamp
+    this.pull.pitch += tilt; yaw.aim += turn
+    if (this.reduced.matches) this.pull.pitch = Math.min(PITCH_HIGH, Math.max(PITCH_LOW, this.pull.pitch))
+    pitch.aim = softLimit(this.pull.pitch, PITCH_LOW, PITCH_HIGH)
   }
   private up(event: PointerEvent, tap: boolean): void {
     this.pointers.delete(event.pointerId)
     const drag = this.drag; if (!drag || drag.id !== event.pointerId) return
     this.drag = null
+    // Let go: the aim coasts at the finger's speed, faded if the finger had paused. Past a
+    // tilt limit it springs back instead. Reduced motion has no coast.
+    if (drag.moved && !this.reduced.matches) {
+      const pause = Math.exp(-Math.max(0, event.timeStamp - this.pull.at) / 50), pitch = this.swingPitch
+      this.swingYaw.aimSpeed = Math.max(-8, Math.min(8, this.pull.yawSpeed * pause * 0.7))
+      const inside = pitch.aim <= PITCH_HIGH && pitch.aim >= PITCH_LOW
+      pitch.aimSpeed = inside ? Math.max(-4, Math.min(4, this.pull.pitchSpeed * pause * 0.7)) : 0
+    }
     if (drag.moved || !tap) return
     // A tap: the nearest world under the finger, with a generous margin on small screens.
     const box = this.canvas.getBoundingClientRect(), x = event.clientX - box.left, y = event.clientY - box.top
