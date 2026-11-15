@@ -166,6 +166,8 @@ async function main(): Promise<void> {
     void sound.context.resume()
     return sound
   }
+  /** The game vehicle whose voice and hull the exhibit on show uses. */
+  const hullKind = () => motorKind(session?.exhibit.family ?? session?.exhibit.id ?? '')
   function setMotor(on: boolean): void {
     if (on && !motor) motor = { engine: new Engine(speaker().context, speaker().out) }
     else if (!on && motor) { motor.engine.dispose(true); motor = null }
@@ -173,7 +175,7 @@ async function main(): Promise<void> {
   /** Bump sounds (src/audio/Impacts.ts): this vehicle running into another vehicle or into a kind of ground. */
   function bump(kind: ImpactKind): void {
     const { context, out } = speaker()
-    synthImpact(context, out, { kind, strength: force, hull: motorKind(session?.exhibit.family ?? session?.exhibit.id ?? ''), seed: ++bumps })
+    synthImpact(context, out, { kind, strength: force, hull: hullKind(), seed: ++bumps })
   }
   let selection: Selection | null = null
   let entries: Entry[] = []
@@ -773,7 +775,7 @@ async function main(): Promise<void> {
     /** Engine revs for Motor sound: 0 idle to 1 flat out. Ignored while Motion is on. */
     setRevs(value: number) { revs = Math.min(1, Math.max(0, value)); refresh() },
     /** For checks: whether the motor is sounding, as what kind, and at what revs. */
-    get motor() { return motor && sound ? { state: sound.context.state, kind: motorMotion.kind, revs: motorMotion.throttle } : null },
+    get motor() { return motor && sound ? { state: sound.context.state, kind: hullKind(), revs: motorMotion.throttle } : null },
     /** Plays a bump sound: 'vehicle' or a surface from src/audio/Impacts.ts. */
     bump(kind: ImpactKind) { bump(kind) },
     /** Force of the bump sounds: 0 a touch to 1 a wreck. */
@@ -847,7 +849,7 @@ async function main(): Promise<void> {
     for (const e of entries) if (e.model && e.root.visible) e.model.update?.(dt, state)
     if (motor) {
       const r = state.animate ? Math.abs(state.throttle) : revs
-      motorMotion.kind = motorKind(session?.exhibit.family ?? session?.exhibit.id ?? '')
+      motorMotion.kind = hullKind()
       motorMotion.speed = r * 55; motorMotion.throttle = r
       motor.engine.update(motorMotion)
     }

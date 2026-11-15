@@ -58,8 +58,8 @@ const HULLS: Record<string, { hz: number; ring: number; thump: number }> = {
   'buggy-classic': { hz: 300, ring: 0.9, thump: 0.9 },
   jet: { hz: 390, ring: 1.3, thump: 0.7 },
   // A hovercraft is a skirt and a shell: more thump, little ring.
-  hovercraft: { hz: 180, ring: 0.45, thump: 1.4 },
-  tank: { hz: 135, ring: 1.5, thump: 1.6 },
+  hovercraft: { hz: 180, ring: 0.45, thump: 1.25 },
+  tank: { hz: 135, ring: 1.5, thump: 1.35 },
 }
 /** Partials of a struck plate, as ratios of the lowest. Not a harmonic series, which is why it sounds like metal. */
 const PLATE = [1, 1.47, 2.09, 2.56, 3.71, 5.13]
@@ -116,36 +116,38 @@ export function synthImpact(context: BaseAudioContext, output: AudioNode, impact
   switch (impact.kind) {
     case 'vehicle': {
       const hull = HULLS[impact.hull ?? 'buggy'] ?? HULLS.buggy
-      tone(95, 0.6 * hull.thump, 0.2 * long, { to: 42 })
-      burst('bandpass', 2600, 1, 0.5, 0.001, 0.05 * long)
+      tone(95, 0.42 * hull.thump, 0.3 * long, { to: 42 })
+      burst('bandpass', 2600, 1, 0.45, 0.001, 0.07 * long)
       // A soft touch barely excites the upper partials; a hard one rings the whole plate.
       const partials = 2 + Math.round(4 * s)
-      for (let i = 0; i < partials; i++) tone(hull.hz * PLATE[i] * tune * (1 + (random() - 0.5) * 0.02), 0.16 / (1 + i * 0.45), 0.42 * hull.ring * long / (1 + i * 0.5))
+      for (let i = 0; i < partials; i++) tone(hull.hz * PLATE[i] * tune * (1 + (random() - 0.5) * 0.02), 0.13 / (1 + i * 0.45), 1.1 * hull.ring * long / (1 + i * 0.5))
       // Something loose rattles a moment later.
       if (s > 0.35) burst('bandpass', 3400, 4, 0.14, 0.001, 0.03, { delay: 0.07 + random() * 0.05 })
       break
     }
     case 'rock':
-      tone(80, 0.5, 0.16 * long, { to: 40 })
-      burst('bandpass', 1700 * tune, 1.2, 0.5, 0.001, 0.035)
-      burst('lowpass', 300, 0.7, 0.5, 0.002, 0.12 * long)
-      for (let i = 0; i < 2 + Math.round(3 * s); i++) burst('bandpass', 2400 + random() * 1800, 3, 0.13, 0.001, 0.014, { delay: 0.05 + random() * 0.22 })
+      tone(80, 0.35, 0.2 * long, { to: 40 })
+      // The crack is the point of rock: two hard, bright knocks a few milliseconds apart.
+      burst('bandpass', 1900 * tune, 1.2, 0.75, 0.001, 0.07)
+      burst('bandpass', 950 * tune, 1.5, 0.5, 0.001, 0.09, { delay: 0.012 })
+      burst('lowpass', 300, 0.7, 0.35, 0.002, 0.2 * long)
+      for (let i = 0; i < 2 + Math.round(3 * s); i++) burst('bandpass', 2400 + random() * 1800, 3, 0.16, 0.001, 0.03, { delay: 0.07 + random() * 0.3 })
       break
     case 'sand':
-      tone(70, 0.4, 0.18 * long, { to: 38 })
-      burst('lowpass', 480, 0.7, 0.6, 0.012, 0.22 * long)
-      burst('highpass', 3500, 0.7, 0.1, 0.02, 0.3 * long)
+      tone(70, 0.4, 0.25 * long, { to: 38 })
+      burst('lowpass', 480, 0.7, 0.6, 0.012, 0.35 * long)
+      burst('bandpass', 1800, 0.5, 0.06, 0.03, 0.5 * long)
       break
     case 'snow':
-      tone(65, 0.35, 0.14 * long, { to: 40 })
-      burst('bandpass', 900 * tune, 0.8, 0.5, 0.006, 0.14 * long)
+      tone(65, 0.35, 0.2 * long, { to: 40 })
+      burst('bandpass', 900 * tune, 0.8, 0.5, 0.006, 0.26 * long)
       // The crunch: grains of noise packed close together.
-      for (let i = 0; i < 5; i++) burst('bandpass', 1300 + random() * 500, 2, 0.16, 0.002, 0.02, { delay: 0.008 + i * 0.018 + random() * 0.008 })
+      for (let i = 0; i < 8; i++) burst('bandpass', 1300 + random() * 500, 2, 0.18, 0.002, 0.035, { delay: 0.008 + i * 0.028 + random() * 0.012 })
       break
     case 'ice':
-      tone(85, 0.3, 0.1 * long, { to: 50 })
-      burst('bandpass', 3800 * tune, 2, 0.45, 0.001, 0.022)
-      for (const [ratio, decay] of [[1, 0.2], [1.55, 0.15], [2.26, 0.11]] as const) tone(1900 * ratio * tune, 0.11, decay * long)
+      tone(85, 0.3, 0.16 * long, { to: 50 })
+      burst('bandpass', 3800 * tune, 2, 0.5, 0.001, 0.04)
+      for (const [ratio, decay] of [[1, 0.55], [1.55, 0.4], [2.26, 0.3]] as const) tone(1900 * ratio * tune, 0.11, decay * long)
       break
     case 'glass':
       tone(90, 0.25, 0.1 * long, { to: 55 })
@@ -155,19 +157,19 @@ export function synthImpact(context: BaseAudioContext, output: AudioNode, impact
       for (let i = 0; i < 2 + Math.round(4 * s); i++) tone(3000 + random() * 5000, 0.05, 0.06 + random() * 0.08, { delay: 0.06 + random() * 0.4 })
       break
     case 'dust':
-      tone(58, 0.65, 0.26 * long, { to: 30 })
-      burst('lowpass', 160, 0.7, 0.5, 0.01, 0.3 * long)
+      tone(58, 0.6, 0.4 * long, { to: 30 })
+      burst('lowpass', 160, 0.7, 0.5, 0.01, 0.45 * long)
       break
     case 'mud':
-      tone(75, 0.4, 0.15 * long, { to: 38 })
-      burst('lowpass', 600, 0.7, 0.5, 0.008, 0.18 * long)
-      burst('bandpass', 700, 4, 0.4, 0.01, 0.22 * long, { sweep: 160 })
-      tone(180, 0.1, 0.06, { to: 420, delay: 0.12 + random() * 0.05 })
+      tone(75, 0.4, 0.22 * long, { to: 38 })
+      burst('lowpass', 600, 0.7, 0.5, 0.008, 0.28 * long)
+      burst('bandpass', 700, 4, 0.45, 0.01, 0.4 * long, { sweep: 160 })
+      tone(180, 0.14, 0.09, { to: 420, delay: 0.2 + random() * 0.08 })
       break
     case 'soil':
-      tone(75, 0.55, 0.17 * long, { to: 38 })
-      burst('lowpass', 380, 0.7, 0.55, 0.006, 0.16 * long)
-      burst('bandpass', 2200, 0.7, 0.07, 0.004, 0.05)
+      tone(75, 0.5, 0.26 * long, { to: 38 })
+      burst('lowpass', 380, 0.7, 0.55, 0.006, 0.3 * long)
+      burst('bandpass', 2200, 0.7, 0.08, 0.004, 0.09)
       break
   }
 

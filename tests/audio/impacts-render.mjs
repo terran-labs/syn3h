@@ -16,7 +16,7 @@ try {
 
   const result = await page.evaluate(async () => {
     const { SURFACES, synthImpact } = await import('/src/audio/Impacts.ts')
-    const rate = 44100, seconds = 1.2
+    const rate = 44100, seconds = 2
     const render = async impact => {
       const context = new OfflineAudioContext(1, rate * seconds, rate)
       synthImpact(context, context.destination, impact)
@@ -54,7 +54,7 @@ try {
   const bright = kind => r[`${kind} 0.9`].bright
   assert.ok(bright('glass') > bright('rock') && bright('ice') > bright('rock'), 'glass and ice should be the brightest')
   assert.ok(bright('dust') < bright('soil') && bright('dust') < bright('sand'), 'moon dust should be the dullest')
-  assert.ok(bright('rock') > bright('sand') && bright('rock') > bright('mud'), 'rock should crack where sand and mud thud')
+  assert.ok(bright('rock') > bright('mud') * 2 && bright('rock') > bright('soil') * 2, 'rock should crack where mud and soil thud')
   assert.ok(r['vehicle 0.9'].length > r['rock 0.9'].length, 'metal should ring longer than rock')
   assert.ok(r['vehicle tank'].bright < r['vehicle 0.9'].bright && r['vehicle jet'].bright > r['vehicle tank'].bright, 'a tank should clang lower than a buggy or a jet')
 
