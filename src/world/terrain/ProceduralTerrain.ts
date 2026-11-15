@@ -17,7 +17,7 @@ import { type TerrainMaterial, createTerrainMaterial } from './material'
 import { LOD_FAR, LOD_NEAR, type TerrainMeshes, type TriangleStats, createTerrainMeshes } from './mesh'
 import { rimRoadRadius } from './roads'
 import { HeightSampler, sealSeam } from './sampler'
-import { KIND_ALPINE, KIND_VOLCANIC, TERRAIN_PARAM_IDS, currentTerrainSettings, worldSeaKind, worldWrap } from './settings'
+import { KIND_ALPINE, KIND_VOLCANIC, TERRAIN_PARAM_IDS, currentTerrainSettings, worldSeaKind } from './settings'
 import { spawnPointAt } from './spawn'
 import { Trees } from './trees'
 import { Volcanics } from './volcanics'
@@ -40,8 +40,8 @@ export class ProceduralTerrain implements Terrain {
     return this.data.size
   }
   /** The world is one tile of a torus this many metres on a side: the current size. */
-  get wrapSize(): number | undefined {
-    return worldWrap.value ? this.data.size : undefined
+  get wrapSize(): number {
+    return this.data.size
   }
   /** Largest height change (m) sealing the tile's seam made on the last generation. */
   lastSeamCorrection = 0
@@ -187,10 +187,7 @@ export class ProceduralTerrain implements Terrain {
   private keepSeam(): void {
     const f = this.seam
     const size = this.data.size
-    if (!f || !worldWrap.value) {
-      if (this.colliderX !== 0 || this.colliderZ !== 0) this.moveCollider(0, 0)
-      return
-    }
+    if (!f) return
     const half = size / 2
     const p = f.player.body.translation()
     // Hysteresis: 4 m past the edge, so a vehicle driving along the seam is not flipped

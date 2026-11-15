@@ -58,15 +58,6 @@ export const terrainKind = defineParam({
 export const worldSeaKind = defineParam({
   id: 'world.seaKind', label: 'Sea: 0 lava, 1 water', group: 'World', scope: 'world', default: 0, min: 0, max: 1, step: 1,
 })
-/**
- * The world wraps: travel far enough in a straight line and you come home. On by default,
- * because it is what makes a planet a planet. The switch remains so a problem at the seam
- * can be ruled in or out; with it off, the ground is still drawn across the seam but
- * vehicles, cameras, bots and remote players are not carried over it.
- */
-export const worldWrap = defineParam({
-  id: 'world.wrap', label: 'Wrapping world', group: 'World', scope: 'world', default: true,
-})
 export const KIND_VOLCANIC = 0
 export const KIND_DESERT = 1
 export const KIND_ALPINE = 2

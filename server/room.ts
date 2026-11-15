@@ -713,13 +713,12 @@ export class Room {
   }
 
   /**
-   * Side of the world's tile in metres when the room's world wraps, else 0. Positions arrive
+   * Side of the world's tile in metres. Every world wraps; there is no switch. Positions arrive
    * canonical, inside one tile, so two vehicles a few metres apart across the seam are a
    * whole tile apart in plain coordinates: every range check here measures around the wrap.
    * The room does not register the terrain's parameters; it reads the stored values.
    */
   private wrapSize(): number {
-    if (this.values.get('world.wrap') !== true) return 0
     const tier = Number(this.values.get('terrain.planetSize') ?? 1)
     return WRAP_SIZES[tier <= 0 ? 0 : tier >= 2 ? 2 : 1]
   }
