@@ -419,6 +419,17 @@ asked for this to replace the panel lobby on 14 November 2026.
   images. Each world is lit from where the sun is, wears its real map from
   `paintPlanetMap`, shows settlement lights on its night side, and cuts a shadow through
   the sun's shafts. The sun, shafts, flare and stars are terranlabs.com's.
+- Many worlds: every planet recipe appears, up to `GALAXY_MAX` (12) bodies with Custom. Up
+  to four orbits at the original spacing; more worlds share them, spread evenly round each,
+  so ten keep the size four had. Each world wears a small map (512 by 256, about 40 ms to
+  paint on this Mac) from one texture array; the world being flown to is repainted at
+  1024 by 512 (about 130 ms) for the close view and the dive. Held upright, a phone looks
+  down more steeply so the orbits use its height.
+- Labels (`galaxy/labels.ts`) try under, over, right and left of their world and take the
+  first spot clear of other labels, other worlds, the wordmark and the links; the world in
+  play is placed first and always named. One with no room fades (its world still answers a
+  tap); labels of worlds off the screen are not pinned to its edge; while flying to a world
+  only its label stays.
 - The custom planet is a world still forming: plates of crust drifting on magma. Arriving
   at it opens the sliders that shape a world.
 - The descent: Enter World from the name form dives toward the chosen world until its air
@@ -443,7 +454,11 @@ keyboard); frame cost unmeasured on real devices; the game measures its own fram
 while the lobby is on screen, so a slow lobby can lower `gfx.level` before play starts.
 `tools/heavy.sh node tests/ui/galaxy.mjs` checks the galaxy, the custom world and the
 descent on desktop and phone, the still mode, the row of names and the missing-WebGL 2
-notice; `planets.mjs` checks choosing worlds through it. Both take `SYN3H_URL`.
+notice; `planets.mjs` checks choosing worlds through it; `galaxy-crowd.mjs` rehearses ten
+worlds (`?worlds=10`, development builds only) at desktop, phone portrait and landscape and
+in WebKit at iPad size. All take `SYN3H_URL`. Its GPU timings on this Mac (median ms per
+frame, four worlds then ten): desktop 2.7 and 3.0, portrait 1.9 and 2.6, landscape 1.9 and
+2.0; labels shown with ten worlds: 10, 6 and 7. Comparisons, not a phone's figures.
 
 ## The page never zooms
 

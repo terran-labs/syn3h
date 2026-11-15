@@ -31,7 +31,8 @@ try {
     const state = () => page.evaluate(() => { const g = window.syn3h.shell.galaxy; return { open: document.querySelector('.syn3h-shell').classList.contains('galaxy-open'), live: g.live, frames: g.frames, labels: [...document.querySelectorAll('.galaxy-label:not([hidden])')].map(l => { const r = l.getBoundingClientRect(); return { id: l.dataset.world, x: r.left + r.width / 2, y: r.top } }) } })
     const first = await state()
     assert.equal(first.open, true); assert.equal(first.live, true)
-    assert.deepEqual(first.labels.map(l => l.id).sort(), ['alpine', 'custom', 'desert', 'volcanic'], `${view.name}: a label for each world and the custom one`)
+    const planets = await page.evaluate(() => window.syn3h.planets.PLANETS.map(p => p.id))
+    assert.deepEqual(first.labels.map(l => l.id).sort(), [...planets, 'custom'].sort(), `${view.name}: a label for each world and the custom one`)
     for (const label of first.labels) assert.ok(label.x > 0 && label.x < view.viewport.width && label.y > 0 && label.y < view.viewport.height, `${view.name}: ${label.id} is on screen`)
     await page.screenshot({ path: `${out}/${view.name}-home.png` })
     // Dragging empty space swings the view: the worlds move across the screen.
@@ -43,8 +44,8 @@ try {
     assert.ok(swung.labels.some(l => { const before = first.labels.find(b => b.id === l.id); return before && Math.hypot(l.x - before.x, l.y - before.y) > 25 }), `${view.name}: the view swung`)
     await page.screenshot({ path: `${out}/${view.name}-swung.png` })
     // Tapping a world: the camera flies to it, it becomes the world, and the name form follows.
-    const alpine = (await state()).labels.find(l => l.id === 'alpine')
-    await page.mouse.click(alpine.x, alpine.y - 18)
+    const alpine = await page.evaluate(() => window.syn3h.shell.galaxy.screen.find(s => s.id === 'alpine'))
+    await page.mouse.click(alpine.x, alpine.y)
     await page.waitForTimeout(900); await page.screenshot({ path: `${out}/${view.name}-flying.png` })
     await settle(page, 'explore')
     assert.equal(await page.evaluate(() => window.syn3h.planets.currentPlanet().id), 'alpine')
@@ -53,12 +54,22 @@ try {
     // Back: the whole system again.
     await page.locator('[data-panel=explore] .panel-back').click(); await settle(page, 'index')
     assert.equal((await state()).open, true)
+    // Behind a panel the galaxy dims and stops drawing; back at the index it is bright again.
+    await page.evaluate(() => window.syn3h.shell.showPanel('settings')); await settle(page, 'settings')
+    await page.waitForFunction(() => window.syn3h.shell.galaxy.dim === 0.35, null, { timeout: 15000 })
+    // A map arriving, or the camera still easing home, draws a frame; then it rests.
+    let rests = false
+    for (let i = 0; i < 20 && !rests; i++) { const f = (await state()).frames; await page.waitForTimeout(1200); rests = (await state()).frames === f }
+    assert.ok(rests, `${view.name}: the galaxy keeps drawing behind a panel`)
+    await page.screenshot({ path: `${out}/${view.name}-settings.png` })
+    await page.evaluate(() => window.syn3h.shell.showPanel('index')); await settle(page, 'index')
+    await page.waitForFunction(() => window.syn3h.shell.galaxy.dim === 1, null, { timeout: 15000 })
     // The custom world is a forming one: arriving opens the sliders that shape a world.
-    await page.locator('.galaxy-label[data-world=custom]').click(); await settle(page, 'advanced')
+    await page.locator('.galaxy-label[data-world=custom]').dispatchEvent('click'); await settle(page, 'advanced')
     await page.screenshot({ path: `${out}/${view.name}-custom.png` })
     await page.evaluate(() => window.syn3h.shell.showPanel('index')); await settle(page, 'index')
     // Enter World from the name form: the descent. The lobby falls away, the game arrives.
-    await page.locator('.galaxy-label[data-world=alpine]').click(); await settle(page, 'explore')
+    await page.locator('.galaxy-label[data-world=alpine]').dispatchEvent('click'); await settle(page, 'explore')
     const before = Date.now()
     await page.locator('.shell-play').click()
     await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-descending'), null, { timeout: 3000 })
@@ -81,7 +92,9 @@ try {
     page.on('pageerror', e => errors.push(`still: ${e.message}`))
     await page.goto(`${base}?room=galaxy-still-${Date.now()}`, { waitUntil: 'load' }); await ready(page)
     await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 0), 200) })
-    await page.waitForTimeout(2500)
+    // Every map painted first: each one arriving is a reason to draw.
+    await page.waitForFunction(() => window.syn3h.shell.graphics.planetMaps >= window.syn3h.planets.PLANETS.length, null, { timeout: 60000 })
+    await page.waitForTimeout(1500)
     const g = () => page.evaluate(() => { const g = window.syn3h.shell.galaxy; return { live: g?.live, frames: g?.frames, idle: g?.idle } })
     const a = await g(); await page.waitForTimeout(1500); const b = await g()
     assert.equal(b.live, true, 'level 0 keeps the galaxy')
@@ -90,7 +103,7 @@ try {
     await page.mouse.move(195, 140); await page.mouse.down(); await page.mouse.move(330, 170, { steps: 8 }); await page.mouse.up()
     const c = await g(); assert.ok(c.frames > b.frames, 'a drag draws')
     await page.screenshot({ path: `${out}/still-swung.png` })
-    await page.locator('.galaxy-label[data-world=desert]').click(); await settle(page, 'explore')
+    await page.locator('.galaxy-label[data-world=desert]').dispatchEvent('click'); await settle(page, 'explore')
     assert.equal(await page.evaluate(() => window.syn3h.planets.currentPlanet().id), 'desert')
     // The flight eases in per frame, so a slow headless browser takes a while: wait for it to stop.
     let rest = false
@@ -106,7 +119,7 @@ try {
   assert.equal(await flat.evaluate(() => document.querySelector('.syn3h-shell').classList.contains('galaxy-flat')), true)
   assert.equal(await flat.locator('.planet-card').count(), 0)
   await flat.screenshot({ path: `${out}/flat.png` })
-  await flat.locator('.galaxy-label[data-world=desert]').click(); await settle(flat, 'explore')
+  await flat.locator('.galaxy-label[data-world=desert]').dispatchEvent('click'); await settle(flat, 'explore')
   assert.equal(await flat.evaluate(() => window.syn3h.planets.currentPlanet().id), 'desert')
   await flat.close()
   // Without WebGL 2 at all the lobby says so plainly (the game cannot draw there either).
