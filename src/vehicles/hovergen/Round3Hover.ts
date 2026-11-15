@@ -3,6 +3,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import type { Mat } from '../jetgen/shapes'
 import { mergeStatic } from '../skins/mergeStatic'
 import { applyShowroom, setRole } from '../skins/showroom'
+import { addLavaGlow } from '../skins/lavaGlow'
+import { addNightReadability } from '../skins/nightReadability'
 import { buildRound3, round3Far, type Round3Build, type Round3Design } from './round3'
 
 /** Triangle budgets per detail level (PATTERN.md rule 4). */
@@ -32,7 +34,11 @@ export class Round3Hover {
   private readonly glowMeshes: T.Mesh[] = []
   private detach = () => {}
 
-  constructor(readonly design: Round3Design | HoverSpec, readonly level: 0 | 1 | 2) {
+  /**
+   * `game` defers the shared shading until `showroom()`: the tiers and the night and lava
+   * passes register with the owning vehicle, which only exists once the craft is attached.
+   */
+  constructor(readonly design: Round3Design | HoverSpec, readonly level: 0 | 1 | 2, private readonly game = false) {
     const spec = specOf(design)
     this.paint = setRole(new T.MeshStandardMaterial({ color: design.paint, metalness: .8, roughness: .24 }), 'paint')
     this.accent = setRole(new T.MeshStandardMaterial({ color: design.accent, roughness: .4 }), 'accent')
@@ -86,9 +92,17 @@ export class Round3Hover {
     }
     mergeStatic(this.object)
     this.object.traverse(o => { if (o instanceof T.Mesh && o.material === this.glow) this.glowMeshes.push(o) })
-    this.detach = applyShowroom(this.object, () => {})
+    if (!game) this.detach = applyShowroom(this.object, () => {})
     this.setLights(false, false)
   }
+
+  /** Game use: call once the craft is attached to its vehicle. The far silhouette has no tiers. */
+  showroom(): void {
+    if (!this.game || this.level === 2 || this.shaded) return
+    this.shaded = true
+    this.detach = applyShowroom(this.object, root => { addNightReadability(root); addLavaGlow(root) })
+  }
+  private shaded = false
 
   setColors(body: T.ColorRepresentation, accent: T.ColorRepresentation): void {
     this.paint.color.set(body); this.accent.color.set(accent)
