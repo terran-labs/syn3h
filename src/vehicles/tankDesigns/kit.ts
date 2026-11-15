@@ -9,9 +9,9 @@
 import * as THREE from 'three/webgpu'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 
-export interface Mats { paint: THREE.Material; accent: THREE.Material; chrome: THREE.Material; glass: THREE.Material; rubber: THREE.Material; dark: THREE.Material; glow: THREE.Material }
+export interface Mats { paint: THREE.Material; accent: THREE.Material; chrome: THREE.Material; tail: THREE.Material; glass: THREE.Material; rubber: THREE.Material; dark: THREE.Material; glow: THREE.Material }
 
-export function makeMats(color: number, accent = 0x15171a): Mats {
+export function makeMats(color: number, accent = 0xff5a12): Mats {
   const side = THREE.DoubleSide
   return {
     paint: new THREE.MeshPhysicalMaterial({ color, metalness: .8, roughness: .3, clearcoat: 1, clearcoatRoughness: .03, side }),
@@ -21,6 +21,7 @@ export function makeMats(color: number, accent = 0x15171a): Mats {
     rubber: new THREE.MeshStandardMaterial({ color: 0x0b0b0c, metalness: 0, roughness: .82, side }),
     dark: new THREE.MeshStandardMaterial({ color: 0x1a1c20, metalness: .8, roughness: .42, side }),
     glow: new THREE.MeshBasicMaterial({ color: 0xfff4d6 }),
+    tail: new THREE.MeshBasicMaterial({ color: 0xff2a1a }),
   }
 }
 
@@ -34,7 +35,23 @@ const cr = (a: number, b: number, c: number, d: number, t: number) =>
  * A smooth body lofted through superellipse cross-sections along Z. A higher exponent gives a
  * squarer section. Stations are joined with Catmull-Rom curves, so a handful describes a hull.
  */
-export function loftGeometry(stations: Station[], spans = 9, segs = 44): THREE.BufferGeometry {
+/** Reshapes a loft point: takes (x, y, z) and returns the moved [x, y]. */
+export type Sculpt = (x: number, y: number, z: number) => [number, number]
+const bell = (u: number) => Math.exp(-u * u)
+/** Apply several sculpts in order. */
+export const sculpts = (...fs: Sculpt[]): Sculpt => (x, y, z) => { for (const f of fs) [x, y] = f(x, y, z); return [x, y] }
+/** Press a scoop into both flanks, like the buggy's side intakes. */
+export const scoop = (cz: number, cy: number, rz: number, ry: number, depth: number): Sculpt => (x, y, z) =>
+  [x - Math.sign(x) * depth * bell((z - cz) / rz) * bell((y - cy) / ry) * THREE.MathUtils.clamp((Math.abs(x) - .5) / .5, 0, 1), y]
+/** Raise a dome on the upper surface: a hood bulge or a roof blister. */
+export const dome = (cz: number, rz: number, rx: number, h: number, above: number, cx = 0): Sculpt => (x, y, z) =>
+  [x, y > above ? y + h * bell((z - cz) / rz) * bell((x - cx) / rx) : y]
+/** Pinch the body in plan, for a waist between the pods. */
+export const waist = (cz: number, rz: number, k: number): Sculpt => (x, y, z) => [x * (1 - k * bell((z - cz) / rz)), y]
+/** Lean the sides inward above a belt line. */
+export const tumble = (belt: number, k: number): Sculpt => (x, y) => [y > belt ? x * (1 - k * Math.min(1, (y - belt) / .4)) : x, y]
+
+export function loftGeometry(stations: Station[], spans = 9, segs = 44, sculpt?: Sculpt): THREE.BufferGeometry {
   const full = stations.map(s => [s[0], s[1], s[2], s[3], s[4] ?? 0, s[5] ?? 2.4, s[6] ?? 0])
   const rings: number[][] = []
   for (let i = 0; i < full.length - 1; i++) {
@@ -47,7 +64,9 @@ export function loftGeometry(stations: Station[], spans = 9, segs = 44): THREE.B
     const w = Math.max(w0, .002), top = Math.max(t0, .002), bot = Math.max(b0, 0), e = 2 / Math.max(n, 1.2)
     for (let j = 0; j < segs; j++) {
       const a = j / segs * Math.PI * 2, c = Math.cos(a), s = Math.sin(a)
-      pos.push(cx + w * Math.sign(c) * Math.abs(c) ** e, cy + (s >= 0 ? top : bot) * Math.sign(s) * Math.abs(s) ** e, z)
+      let x = cx + w * Math.sign(c) * Math.abs(c) ** e, y = cy + (s >= 0 ? top : bot) * Math.sign(s) * Math.abs(s) ** e
+      if (sculpt) [x, y] = sculpt(x, y, z)
+      pos.push(x, y, z)
     }
   }
   for (let i = 0; i < rings.length - 1; i++) for (let j = 0; j < segs; j++) {
@@ -67,7 +86,16 @@ export function loftGeometry(stations: Station[], spans = 9, segs = 44): THREE.B
 
 const shadow = <T extends THREE.Object3D>(o: T) => { o.traverse(c => { c.castShadow = true; c.receiveShadow = true }); return o }
 
-export const blob = (mat: THREE.Material, stations: Station[], spans = 9, segs = 44) => shadow(new THREE.Mesh(loftGeometry(stations, spans, segs), mat))
+export const blob = (mat: THREE.Material, stations: Station[], spans = 9, segs = 44, sculpt?: Sculpt) => shadow(new THREE.Mesh(loftGeometry(stations, spans, segs, sculpt), mat))
+
+/** Rounded block centred on the origin: bumpers, skid plates, racks, crates. */
+export const slab = (mat: THREE.Material, w: number, h: number, d: number, n = 6) => blob(mat, [[-d / 2, w / 2, h / 2, h / 2, 0, n], [d / 2, w / 2, h / 2, h / 2, 0, n]], 1, 36)
+
+/** Bent tube through a list of [x, y, z] points: roll bars, bull bars, rails. */
+export function tube(mat: THREE.Material, points: number[][], r: number) {
+  const curve = new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(p[0], p[1], p[2])), false, 'catmullrom', .12)
+  return shadow(new THREE.Mesh(new THREE.TubeGeometry(curve, points.length * 10, r, 12), mat))
+}
 
 /** Black glass canopy with the thin chrome surround both reference vehicles have. */
 export function canopy(m: Mats, stations: Station[], rim = .06) {
@@ -140,7 +168,7 @@ function strip(a: THREE.Vector3[], b: THREE.Vector3[]) {
 }
 
 /** Dished chrome wheel with the buggy rim's ring of dark holes. Axle along X. */
-function wheel(m: Mats, r: number, hw: number) {
+export function wheel(m: Mats, r: number, hw: number) {
   const g = new THREE.Group(), v = (x: number, y: number) => new THREE.Vector2(x, y)
   const half = [v(0, hw + .04), v(r * .2, hw + .04), v(r * .3, hw - .02), v(r * .7, hw - .07), v(r * .86, hw - .01), v(r, hw - .03)]
   const profile = [...half, ...half.map(p => v(p.x, -p.y)).reverse()]
