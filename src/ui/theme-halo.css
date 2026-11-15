@@ -1,5 +1,188 @@
 /*
  * The Halo theme (owner's pick, 15 November 2026): separate floating rounded panels drawn by
  * light, hairline strokes, very little glow, thin type. Loaded last so it restyles every
- * panel and control without touching their layout rules. Filled in by the theme pass.
+ * panel and control without touching their layout rules.
+ *
+ * The rules, so later edits keep to them:
+ *   - One 1 px hairline per panel and a tight, faint halo (6 px or less). No stacked blooms.
+ *   - No backdrop-filter and no fills beyond a soft dark falloff behind text, which is what
+ *     keeps white type readable over the bright day sky without drawing a box.
+ *   - One radius for every panel (--halo-r), pills fully round.
+ *   - Line weight and colour match the speed and altitude crescents (.focus-hud), which this
+ *     file leaves alone.
+ *   - Surfaces, strokes, type and colour only. Positions, sizes and the 44 px (48 px on touch)
+ *     hit areas set by motion.css stay as they are; the visible ink inside them is finer.
+ * Selectors start .syn3h-shell.exploration-ui and carry enough classes to beat the three
+ * glass weights (data-glass 0, 1, 2) and html[data-gfx="0"] without !important.
  */
+
+.syn3h-shell.exploration-ui {
+  --s3-ink: #f3fbff; --s3-dim: #d8eaf3; --s3-soft: #b4d0dd; --s3-accent: #8fe3ff; --s3-accent-2: #c6f1ff;
+  --s3-line: rgb(205 240 255 / .5); --s3-line-quiet: rgb(205 240 255 / .2); --s3-panel: rgb(3 11 18 / .3);
+  --s3-radius: 16px; --s3-radius-small: 10px; --s3-warn: #ffb08a;
+  --halo-r: 16px;
+  /* A tight halo on strokes; a dark under-shadow on text. */
+  --halo-glow: 0 0 6px rgb(143 227 255 / .14);
+  --halo-under: 0 0 2px rgb(0 6 12 / .85), 0 1px 7px rgb(0 6 12 / .7), 0 0 18px rgb(0 6 12 / .45);
+  /* The falloff: darkest in the middle of a panel, lighter at its rim, and a soft dark
+     spread outside it, so the panel reads as light over a dimmed patch of world. */
+  --halo-fill: radial-gradient(120% 100% at 50% 50%, rgb(2 9 15 / .44), rgb(2 9 15 / .3) 70%, rgb(2 9 15 / .22));
+  --halo-spread: 0 0 34px rgb(0 6 12 / .22);
+}
+
+/* ---------- Panels ---------- */
+.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass,
+.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector :is(.wi-quick, .rail-players, .performance-panel),
+.syn3h-shell.exploration-ui:is([data-glass], *) :is(.shell-toast, .match-hud, .race-hud, .join-card),
+.syn3h-shell.exploration-ui:is([data-glass], *) .performance-recommendation {
+  border: 1px solid var(--s3-line); border-radius: var(--halo-r);
+  background: var(--halo-fill); background-image: var(--halo-fill);
+  box-shadow: var(--halo-glow), var(--halo-spread);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  color: var(--s3-ink); text-shadow: var(--halo-under);
+}
+html[data-gfx] .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--halo-fill); }
+.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass::before { display: none; }
+.syn3h-shell.exploration-ui .world-inspector { font: 400 13.5px/1.4 'Barlow', sans-serif; color: var(--s3-ink); text-shadow: var(--halo-under); }
+.syn3h-shell.exploration-ui .world-inspector *, .syn3h-shell.exploration-ui .world-inspector :is(button, input, select) { -webkit-backdrop-filter: none; backdrop-filter: none; }
+/* The quick selectors and the players list float as panels of their own. */
+.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-quick { border-bottom: 1px solid var(--s3-line); }
+.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players { border-bottom: 1px solid var(--s3-line); }
+.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players > summary { background: rgb(3 11 18 / .72); border-radius: var(--halo-r) var(--halo-r) 0 0; }
+.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players:not([open]) > summary { border-radius: var(--halo-r); background: none; }
+
+/* ---------- Generic buttons: hairline pills, no fill, no glowing text ---------- */
+.syn3h-shell.exploration-ui :is(button, .liquid-glass) { background: none; border: 1px solid var(--s3-line-quiet); border-radius: 999px; box-shadow: none; text-shadow: var(--halo-under); font-weight: 400; letter-spacing: .04em; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.syn3h-shell.exploration-ui button:hover { background: rgb(143 227 255 / .07); border-color: var(--s3-line); box-shadow: var(--halo-glow); }
+.syn3h-shell.exploration-ui button:focus-visible, .syn3h-shell.exploration-ui input:focus-visible, .syn3h-shell.exploration-ui select:focus-visible { outline: 1px solid var(--s3-accent-2); outline-offset: 3px; }
+.syn3h-shell.exploration-ui :is(input:not([type=range]):not([type=checkbox]):not([type=color]), select, textarea) { color: var(--s3-ink); background: none; border: 0; border-bottom: 1px solid var(--s3-line-quiet); border-radius: 0; box-shadow: none; }
+.syn3h-shell.exploration-ui select option { background: #06121c; color: #e8f6fd; }
+
+/* ---------- Top block: navigation, search, actions ---------- */
+.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-top { border-bottom: 1px solid var(--s3-line); }
+.syn3h-shell.exploration-ui .rail-navigation button { font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); }
+.syn3h-shell.exploration-ui .rail-navigation :is(.exit-world, .rail-pause, .rail-close) { border-color: transparent; background: none; }
+.syn3h-shell.exploration-ui .rail-navigation .rail-close { font: 300 22px/1 'Barlow', sans-serif; letter-spacing: 0; color: var(--s3-dim); }
+.syn3h-shell.exploration-ui .rail-navigation button:hover { border-color: var(--s3-line-quiet); }
+.syn3h-shell.exploration-ui .world-inspector .wi-top .wi-search { font: 400 13px/1.2 'Barlow', sans-serif; letter-spacing: .04em; color: var(--s3-ink); border-bottom: 1px solid var(--s3-line-quiet); background: none; }
+.syn3h-shell.exploration-ui .world-inspector .wi-top .wi-search:focus { border-bottom-color: var(--s3-accent-2); box-shadow: 0 1px 0 rgb(143 227 255 / .35); }
+.syn3h-shell.exploration-ui .world-inspector .wi-search::placeholder { color: var(--s3-soft); }
+.syn3h-shell.exploration-ui .world-inspector .wi-actions button, .syn3h-shell.exploration-ui .world-inspector .wi-switch button { border: 1px solid var(--s3-line-quiet); border-radius: 999px; background: none; color: var(--s3-dim); font: 400 12px/1.3 'Barlow', sans-serif; letter-spacing: .03em; text-shadow: var(--halo-under); }
+.syn3h-shell.exploration-ui .world-inspector .wi-actions button:hover, .syn3h-shell.exploration-ui .world-inspector .wi-switch button:hover { border-color: var(--s3-line); color: var(--s3-ink); background: rgb(143 227 255 / .06); }
+/* Selected is light, not a filled blob: a bright rim, a faint inner glow, white text. */
+.syn3h-shell.exploration-ui .world-inspector .is-on, .syn3h-shell.exploration-ui .world-inspector .wi-actions [data-wi=copy-world] { color: #fff; background: rgb(143 227 255 / .08); border-color: rgb(198 241 255 / .85); box-shadow: inset 0 0 8px rgb(143 227 255 / .18), var(--halo-glow); }
+.syn3h-shell.exploration-ui .world-inspector .wi-actions [data-wi=copy-world]:not(.is-on) { color: var(--s3-dim); background: none; border-color: var(--s3-line-quiet); box-shadow: none; }
+.syn3h-shell.exploration-ui .world-inspector .is-warning { color: var(--s3-warn); background: none; border-color: rgb(255 176 138 / .6); }
+.syn3h-shell.exploration-ui .wi-top #syn3h-build-notice { border: 1px solid var(--s3-line) !important; border-radius: 999px !important; background: none !important; box-shadow: var(--halo-glow) !important; color: var(--s3-ink); text-shadow: var(--halo-under); }
+
+/* Quick selectors */
+.syn3h-shell.exploration-ui .wi-quick label { font: 500 11px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--s3-soft); }
+.syn3h-shell.exploration-ui .world-inspector .wi-quick select { background: none; border-bottom: 1px solid var(--s3-line-quiet); color: var(--s3-ink); }
+.syn3h-shell.exploration-ui .world-inspector .wi-quick button { font-size: 12px; color: var(--s3-dim); }
+.syn3h-shell.exploration-ui .wi-gi-status { color: var(--s3-dim); }
+
+/* ---------- Cards ---------- */
+.syn3h-shell.exploration-ui .world-inspector .wi-head h3 { font: 500 11.5px/1 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); text-shadow: var(--halo-under); }
+.syn3h-shell.exploration-ui .world-inspector .wi-card.is-open > .wi-head h3 { color: #fff; text-shadow: var(--halo-under), 0 0 8px rgb(143 227 255 / .22); }
+.syn3h-shell.exploration-ui .world-inspector .wi-sum { font-size: 13px; color: var(--s3-dim); letter-spacing: 0; }
+.syn3h-shell.exploration-ui .world-inspector .wi-chev { width: 6px; height: 6px; border-right: 1px solid var(--s3-soft); border-bottom: 1px solid var(--s3-soft); }
+.syn3h-shell.exploration-ui .world-inspector .wi-card > .wi-head:hover { background: none; box-shadow: none; }
+.syn3h-shell.exploration-ui .world-inspector .wi-card > .wi-head:hover h3 { color: #fff; }
+/* A divider that fades at both ends instead of a full-width rule. */
+.syn3h-shell.exploration-ui .world-inspector .wi-body { border-top: 1px solid transparent; border-image: linear-gradient(90deg, transparent, var(--s3-line-quiet) 20%, var(--s3-line-quiet) 80%, transparent) 1; scrollbar-color: rgb(205 240 255 / .25) transparent; }
+.syn3h-shell.exploration-ui .world-inspector .wi-blurb { font-size: 13px; color: var(--s3-dim); }
+.syn3h-shell.exploration-ui .world-inspector .wi-group { border-top: 0; }
+.syn3h-shell.exploration-ui .world-inspector .wi-group + .wi-group { border-top: 1px solid transparent; border-image: linear-gradient(90deg, transparent, rgb(205 240 255 / .12) 25%, rgb(205 240 255 / .12) 75%, transparent) 1; }
+.syn3h-shell.exploration-ui .world-inspector .wi-group summary { font: 500 11px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--s3-dim); }
+.syn3h-shell.exploration-ui .world-inspector .wi-group[open] summary { color: var(--s3-ink); }
+.syn3h-shell.exploration-ui .world-inspector .wi-group summary::before { border-left-color: var(--s3-soft); }
+.syn3h-shell.exploration-ui .world-inspector .wi-group summary small { font: 400 12px 'Barlow', sans-serif; letter-spacing: 0; text-transform: none; color: var(--s3-soft); }
+.syn3h-shell.exploration-ui .world-inspector .wi-label { font-size: 13px; color: var(--s3-ink); }
+.syn3h-shell.exploration-ui .world-inspector .wi-row { border-radius: var(--s3-radius-small); }
+.syn3h-shell.exploration-ui .world-inspector .wi-row.is-selected { background: rgb(143 227 255 / .06); box-shadow: inset 0 0 0 1px rgb(198 241 255 / .38); }
+.syn3h-shell.exploration-ui .world-inspector .wi-row output { color: var(--s3-accent-2); }
+
+/* Sliders: a 2 px track and a small bright thumb, drawn in the middle of the 44 px input. */
+.syn3h-shell.exploration-ui .world-inspector input[type=range]::-webkit-slider-runnable-track { height: 2px; border-radius: 1px; background: rgb(205 240 255 / .32); }
+.syn3h-shell.exploration-ui .world-inspector input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; margin-top: -5px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgb(0 8 14 / .35), 0 0 5px rgb(143 227 255 / .6); }
+.syn3h-shell.exploration-ui .world-inspector input[type=range]::-moz-range-track { height: 2px; border-radius: 1px; background: rgb(205 240 255 / .32); }
+.syn3h-shell.exploration-ui .world-inspector input[type=range]::-moz-range-progress { height: 2px; border-radius: 1px; background: var(--s3-accent-2); }
+.syn3h-shell.exploration-ui .world-inspector input[type=range]::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 50%; background: #fff; box-shadow: 0 0 0 3px rgb(0 8 14 / .35), 0 0 5px rgb(143 227 255 / .6); }
+
+/* Checkboxes become slim toggles: a hairline pill with a dot. The 44 px label stays the target. */
+.syn3h-shell.exploration-ui .world-inspector input[type=checkbox] { -webkit-appearance: none; appearance: none; width: 30px; height: 16px; margin: 0; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--s3-line); background: radial-gradient(circle at 7.5px 50%, var(--s3-soft) 0 3.5px, transparent 4.5px); }
+.syn3h-shell.exploration-ui .world-inspector input[type=checkbox]:checked { border-color: rgb(198 241 255 / .9); background: radial-gradient(circle at calc(100% - 7.5px) 50%, #fff 0 4px, transparent 5px), rgb(143 227 255 / .1); box-shadow: var(--halo-glow); }
+.syn3h-shell.exploration-ui .world-inspector input[type=checkbox]:disabled { opacity: .45; }
+
+/* Segmented choices: quiet text until chosen, then a bright rim. */
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-seg button { border: 1px solid transparent; border-radius: 999px; background: none; color: var(--s3-dim); font: 400 12.5px/1.3 'Barlow', sans-serif; letter-spacing: .02em; box-shadow: none; text-shadow: var(--halo-under); }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-seg button:hover { border-color: var(--s3-line-quiet); color: var(--s3-ink); background: none; }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-seg button.is-on { color: #fff; border-color: rgb(198 241 255 / .85); background: rgb(143 227 255 / .08); box-shadow: inset 0 0 8px rgb(143 227 255 / .18), var(--halo-glow); }
+
+/* Editable numbers: a faint dotted underline always says "you can type here". */
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num { color: var(--s3-accent-2); font: 500 13.5px 'Barlow', sans-serif; font-variant-numeric: tabular-nums; text-decoration-color: rgb(198 241 255 / .4); text-shadow: var(--halo-under); }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num:is(:hover, :focus-visible) { text-decoration-color: var(--s3-accent-2); }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit { border: 1px solid rgb(198 241 255 / .9); border-radius: 8px; background: rgb(2 9 15 / .55); color: #fff; box-shadow: 0 0 0 3px rgb(143 227 255 / .14), var(--halo-glow); }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit:focus { outline: none; }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit.is-invalid { border-color: var(--s3-warn); box-shadow: 0 0 0 3px rgb(255 176 138 / .16); }
+
+/* ---------- Tooltip, detail and sheet ---------- */
+.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-tooltip { --body: none; border: 1px solid var(--s3-line); border-left-color: var(--s3-line); border-radius: var(--halo-r); background: radial-gradient(120% 100% at 50% 50%, rgb(2 9 15 / .8), rgb(2 9 15 / .66)); padding: 12px 14px; font: 400 13px/1.45 'Barlow', sans-serif; }
+.syn3h-shell.exploration-ui .world-inspector .wi-tooltip strong, .syn3h-shell.exploration-ui .world-inspector .wi-detail strong { font: 500 11.5px/1.3 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: #fff; }
+.syn3h-shell.exploration-ui .world-inspector .wi-detail p { color: var(--s3-dim); font-size: 13px; }
+.syn3h-shell.exploration-ui .world-inspector .wi-detail small { color: var(--s3-soft); }
+.syn3h-shell.exploration-ui .world-inspector .wi-chip { border: 1px solid var(--s3-line-quiet); color: var(--s3-dim); }
+.syn3h-shell.exploration-ui .world-inspector .wi-chip.is-shared { border-color: var(--s3-line); color: var(--s3-accent-2); }
+.syn3h-shell.exploration-ui .world-inspector .wi-guard { height: 2px; border-radius: 1px; background: rgb(205 240 255 / .2); }
+.syn3h-shell.exploration-ui .world-inspector .wi-guard i { border-radius: 1px; background: linear-gradient(90deg, rgb(143 227 255 / .3), var(--s3-accent-2)); }
+.syn3h-shell.exploration-ui .world-inspector .wi-guard b { top: -3px; height: 8px; width: 2px; border-radius: 1px; background: #fff; }
+.syn3h-shell.exploration-ui .world-inspector .wi-sheet textarea { border: 1px solid var(--s3-line-quiet); border-radius: var(--s3-radius-small); background: rgb(2 9 15 / .5); color: var(--s3-ink); }
+.syn3h-shell.exploration-ui .world-inspector .wi-status { color: var(--s3-accent-2); text-shadow: var(--halo-under); }
+
+/* ---------- Players, music, diagnostics ---------- */
+.syn3h-shell.exploration-ui .rail-players > summary { font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); }
+.syn3h-shell.exploration-ui .rail-players summary span { color: var(--s3-soft); }
+.syn3h-shell.exploration-ui .rail-player-body .score-row { font-size: 13px; border-bottom: 1px solid transparent; border-image: linear-gradient(90deg, transparent, var(--s3-line-quiet) 20%, var(--s3-line-quiet) 80%, transparent) 1; }
+.syn3h-shell.exploration-ui :is(.rail-diagnostics, .rail-music) { font-size: 12px; color: var(--s3-dim); }
+
+/* ---------- Performance ---------- */
+.syn3h-shell.exploration-ui .performance-panel header strong { font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; }
+.syn3h-shell.exploration-ui .performance-panel header button { border-color: transparent; }
+.syn3h-shell.exploration-ui .performance-body { font-size: 12.5px; color: var(--s3-ink); }
+.syn3h-shell.exploration-ui .performance-body dt, .syn3h-shell.exploration-ui .performance-history { color: var(--s3-soft); }
+.syn3h-shell.exploration-ui .performance-chart path { stroke: rgb(226 240 255 / .3); stroke-dasharray: 2 4; }
+.syn3h-shell.exploration-ui .performance-chart polyline { stroke: var(--s3-accent-2); stroke-width: 1.25; filter: drop-shadow(0 0 3px rgb(143 227 255 / .35)); }
+.syn3h-shell.exploration-ui:is([data-glass], *) .performance-recommendation { border-radius: var(--halo-r); background: radial-gradient(120% 100% at 50% 50%, rgb(2 9 15 / .78), rgb(2 9 15 / .62)); font-size: 13px; }
+
+/* ---------- HUD pieces ---------- */
+.syn3h-shell.exploration-ui:is([data-glass], *) :is(.shell-toast, .match-hud, .race-hud, .join-card) { background: radial-gradient(120% 100% at 50% 50%, rgb(2 9 15 / .6), rgb(2 9 15 / .42)); font-weight: 400; }
+.syn3h-shell.exploration-ui .spawn-help { font-size: 12.5px; color: var(--s3-ink); text-shadow: var(--halo-under); }
+.syn3h-shell.exploration-ui .spawn-help strong { font: 500 11px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; }
+/* The minimap ring matches the crescents: one hairline and a tight halo. */
+.syn3h-shell.exploration-ui .shell-minimap::after { border: 1px solid rgb(226 238 255 / .45); box-shadow: var(--halo-glow); }
+.syn3h-shell.exploration-ui .shell-minimap span { font: 500 11px 'Barlow Condensed', sans-serif; letter-spacing: .14em; color: var(--s3-accent-2); text-shadow: var(--halo-under); }
+/* The touch panels switch: a floating pill, clear of the screen edge. */
+.syn3h-shell.exploration-ui .hud-navigation { right: max(12px, env(safe-area-inset-right)); }
+.syn3h-shell.exploration-ui .hud-navigation .inspector-toggle { border: 1px solid var(--s3-line); border-radius: 999px; background: var(--halo-fill); box-shadow: var(--halo-glow), var(--halo-spread); font: 500 11px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; }
+
+/* Touch controls: hairline rings, no fills to speak of, small letter-spaced captions. */
+.syn3h-shell.exploration-ui .touch-controls button, .touch-controls button { border: 1px solid var(--s3-line, rgb(205 240 255 / .5)); border-radius: 50%; background: radial-gradient(closest-side, rgb(2 9 15 / .34), rgb(2 9 15 / .16)); box-shadow: 0 0 6px rgb(143 227 255 / .12); color: #f3fbff; font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; text-shadow: 0 0 2px rgb(0 6 12 / .85), 0 1px 7px rgb(0 6 12 / .6); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.touch-controls button:active { background: rgb(143 227 255 / .1); border-color: rgb(198 241 255 / .9); box-shadow: inset 0 0 8px rgb(143 227 255 / .2), 0 0 6px rgb(143 227 255 / .2); }
+.touch-controls .touch-stick { border: 1px solid rgb(226 238 255 / .4); background: radial-gradient(circle, transparent 66%, rgb(143 227 255 / .06)); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.touch-controls .touch-knob { border: 1px solid rgb(255 255 255 / .85); background: radial-gradient(closest-side, rgb(255 255 255 / .14), rgb(255 255 255 / .03)); box-shadow: 0 0 6px rgb(143 227 255 / .25); }
+
+/* ---------- Pause ---------- */
+.syn3h-shell.exploration-ui .pause-veil { background: rgb(2 8 14 / .5); -webkit-backdrop-filter: none; backdrop-filter: none; border: 0; border-radius: 0; text-shadow: var(--halo-under); }
+.syn3h-shell.exploration-ui .pause-veil:hover { background: rgb(2 8 14 / .5); border: 0; box-shadow: none; }
+.syn3h-shell.exploration-ui .pause-veil strong { font-weight: 500; text-shadow: var(--halo-under), 0 0 10px rgb(143 227 255 / .25); }
+.syn3h-shell.exploration-ui .pause-veil .pause-how { font: 500 12px 'Barlow', sans-serif; letter-spacing: .2em; color: var(--s3-accent-2); }
+.syn3h-shell.exploration-ui .pause-veil small { font-size: 13px; color: var(--s3-dim); }
+
+/* ---------- The reload notice: a slim capsule at the bottom centre ---------- */
+body #syn3h-build-notice, body .build-banner { border: 1px solid rgb(205 240 255 / .55); border-radius: 999px; background: radial-gradient(120% 160% at 50% 50%, rgb(2 9 15 / .62), rgb(2 9 15 / .44)); box-shadow: 0 0 6px rgb(143 227 255 / .14), 0 0 34px rgb(0 6 12 / .22); color: #f3fbff; font: 400 13.5px/1.2 'Barlow', system-ui, sans-serif; letter-spacing: .03em; text-shadow: 0 0 2px rgb(0 6 12 / .85), 0 1px 7px rgb(0 6 12 / .6); -webkit-backdrop-filter: none; backdrop-filter: none; }
+body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(198 241 255 / .9); }
+
+@media (prefers-reduced-motion: reduce) {
+  .syn3h-shell.exploration-ui .world-inspector *, body #syn3h-build-notice { transition: none; }
+}
