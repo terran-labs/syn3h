@@ -457,6 +457,17 @@ export class Room {
 
   /** Re-attach a peer that was already joined before the process hibernated. No broadcast. */
   adopt(peer: Peer, info: PlayerInfo, token?: string | null): void {
+    // After hibernation the room is restored from storage first, which holds a place for
+    // everyone on its roster, and then the sockets that are still connected are adopted. A
+    // connected player is not absent: it takes its held place, it is not added beside it.
+    for (const [key, held] of this.players) {
+      if (!held.heldUntil || held.info.id !== info.id) continue
+      this.rekey(key, peer, held)
+      held.heldUntil = 0
+      held.lastHeardAt = this.now()
+      if (isToken(token)) held.token = token
+      return
+    }
     const full: PlayerInfo = {
       ...info, score: this.scores[info.id] ?? info.score ?? 0,
       kind: cleanKind(info.kind) ?? 'buggy', colors: cleanColors(info.colors) ?? [...DEFAULT_COLORS],

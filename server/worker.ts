@@ -130,8 +130,17 @@ export class RoomDO {
     }
   }
 
-  /** The holds have run out: if nobody came back, the room is empty and forgets its world. */
+  /**
+   * The holds have run out: if nobody came back, the room is empty and forgets its world.
+   *
+   * An alarm wakes the object like any event, and after hibernation it wakes with no room in
+   * memory although players are still connected (the room is rebuilt from their sockets on
+   * the next message). "No room" must therefore never be read as "nobody here": that wiped
+   * the storage under two connected players, and the room came back with default settings.
+   * Any connected socket means the room is in use, and it is left alone.
+   */
   async alarm(): Promise<void> {
+    if (this.state.getWebSockets().length > 0) return
     const room = this.room
     room?.tick()
     if (!room || room.connectionCount === 0) {
