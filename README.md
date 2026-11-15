@@ -76,7 +76,7 @@ Press **H** in the game at any time for the controls of the vehicle you are in.
 |---|---|
 | W | Thrust forward |
 | A and D | Turn |
-| S | Pitch |
+| S | Pitch when Glide assistance is off; with the default assistance, it provides no reverse thrust |
 
 **Gear**
 
