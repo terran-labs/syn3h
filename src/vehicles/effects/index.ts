@@ -3,7 +3,7 @@ import * as T from 'three/webgpu'
 import type {Game,System} from '../../core/Game'
 import {qualityBudget,graphicsLevel} from '../../core/quality'
 import type {Terrain} from '../../world/Terrain'
-import type {Vehicle} from '../Vehicle'
+import type {TileShiftEvent,Vehicle,VehicleObjectEvents} from '../Vehicle'
 import {ParticleBatch} from './ParticleBatch'
 import {RibbonBatch} from './RibbonBatch'
 import {dustSprite,glowSprite,plasmaSprite,tyreMarkAlpha} from './sprites'
@@ -58,6 +58,8 @@ class EffectWorld implements System {
     const n=Math.round((Number(graphicsLevel.value)===0?3:8)*strength)
     for(let i=0;i<n;i++){const a=this.noise()*Math.PI*2;velocity.set(Math.cos(a)*strength,1+this.noise(),Math.sin(a)*strength);this.dust.emit(p,velocity,1,.4+this.noise()*.4,2,color)}
   }
+  /** Carry everything already drawn across a world seam with the local player (see VehicleEffects.onTileShift). */
+  shift(dx:number,dz:number){for(const b of [this.dust,this.energy,this.sparks,this.redSparks,this.marks,this.trails])b.shift(dx,dz)}
   postPhysics(){for(const e of this.vehicles.values())e.captureLanding()}
   update(dt:number){
     const start=performance.now();dt=Math.min(.1,dt);this.clock+=dt
@@ -94,6 +96,7 @@ class VehicleEffects {
   private lastVertical=0
   private throttle=0
   private readonly unlisten?:()=>void
+  private readonly onTileShift:(e:TileShiftEvent)=>void
   private readonly buggy:boolean
   private readonly classic:boolean
   constructor(private readonly world:EffectWorld,private readonly terrain:Terrain,private readonly vehicle:EffectsVehicle,local:boolean){
@@ -112,7 +115,21 @@ class VehicleEffects {
       this.root.add(this.spot,this.spot.target)
     }
     this.unlisten=terrain.onRegenerate?.(()=>{this.reset();world.marks.clear();world.trails.clear()})
+    // A world seam. The terrain moves the local player a whole tile and redraws the world around
+    // it, so everything already drawn moves the same way, and so does this vehicle's history, so
+    // its marks and trails carry on unbroken. Any other vehicle shifted here is being re-imaged
+    // near the player: what it left behind stays put and its history resets, as it would after
+    // any long move. Nothing runs on frames without a shift.
+    this.onTileShift=({dx,dz})=>{
+      if(local){
+        world.shift(dx,dz)
+        for(const q of [...this.previousMarks,...this.previousTips])if(q){q.x+=dx;q.z+=dz}
+        this.lastPosition.x+=dx;this.lastPosition.z+=dz
+      }else{this.reset();this.lastPosition.copy(vehicle.object.position)}
+    }
+    this.events.addEventListener('tileshift',this.onTileShift)
   }
+  private get events(){return this.vehicle.object as T.Object3D<VehicleObjectEvents>}
   writeLamps(batch:T.InstancedMesh,index:number):number {
     this.root.updateWorldMatrix(true,true)
     return writeVehicleLamps(batch,index,this.vehicle.object,this.lampPoints,this.headMaterial.color,this.tailMaterial.color,this.lampMatrix)
@@ -203,7 +220,7 @@ class VehicleEffects {
       }
     }else if(!trails)this.previousTips.fill(null)
   }
-  dispose(){this.unlisten?.();this.root.removeFromParent();this.headMaterial.dispose();this.tailMaterial.dispose();this.spot?.dispose()}
+  dispose(){this.unlisten?.();this.events.removeEventListener('tileshift',this.onTileShift);this.root.removeFromParent();this.headMaterial.dispose();this.tailMaterial.dispose();this.spot?.dispose()}
 }
 
 /**

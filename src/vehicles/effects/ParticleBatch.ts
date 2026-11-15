@@ -43,5 +43,20 @@ export class ParticleBatch {
     this.settings.setXYZW(i,this.clock.value,life,size,grow);this.tint.setXYZ(i,color.r,color.g,color.b)
     for(const [a,n] of [[this.origin,3],[this.velocity,3],[this.settings,4],[this.tint,3]] as const){a.addUpdateRange(i*n,n);a.needsUpdate=true}
   }
+  /**
+   * Move every stored birth position by (dx, dz), for a world seam: the world is redrawn one
+   * tile over around the player, and particles already in the air must come too. The origins
+   * are rewritten in place and the whole buffer uploads once; only the origin moves, since
+   * velocities and timings do not depend on where the tile is. This was chosen over a single
+   * offset uniform because a uniform would cost a vertex add on every frame forever and every
+   * later emit would have to subtract the running offset; a shift is a rare event.
+   */
+  shift(dx:number,dz:number){
+    const a=this.origin.array as Float32Array
+    for(let i=0;i<a.length;i+=3){a[i]+=dx;a[i+2]+=dz}
+    // One range over the whole buffer. Emits later this frame add their own small ranges, which
+    // overlap it harmlessly; replacing it would upload only those and lose the shift.
+    this.origin.clearUpdateRanges();this.origin.addUpdateRange(0,a.length);this.origin.needsUpdate=true
+  }
   dispose(){this.mesh.removeFromParent();this.mesh.geometry.dispose();this.mesh.material.dispose()}
 }

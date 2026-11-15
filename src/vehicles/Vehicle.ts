@@ -21,6 +21,14 @@ import type { VehicleKind } from './index'
 import { ZORB_CHEAP_DISTANCE, ZORB_DEFAULT_CAM_OFFSET, ZorbBall, ZorbShield, zorbSpeed } from './zorb'
 
 /** Everything needed to reproduce a vehicle on another client. Plain numbers for the wire. */
+/**
+ * Dispatched on `vehicle.object` after `shiftBy` has moved the vehicle, so things drawn in
+ * world space that belong with it (tyre marks, dust, trails) can move too. Listeners must not
+ * move the vehicle.
+ */
+export interface TileShiftEvent { type: 'tileshift'; dx: number; dz: number }
+export type VehicleObjectEvents = THREE.Object3DEventMap & { tileshift: TileShiftEvent }
+
 export interface VehicleState {
   p: [number, number, number]
   q: [number, number, number, number]
@@ -281,6 +289,7 @@ export abstract class Vehicle implements System {
   /**
    * Move by a whole world tile across the seam of a wrapping world. Velocity and rotation
    * are kept and the drawn position moves with the body, so nothing is seen to jump.
+   * Announces the move afterwards as a `tileshift` event on `object` (see TileShiftEvent).
    */
   shiftBy(dx: number, dz: number): void {
     const t = this.body.translation()
@@ -288,6 +297,7 @@ export abstract class Vehicle implements System {
     this.prevPos.x += dx; this.prevPos.z += dz
     this.currPos.x += dx; this.currPos.z += dz
     this.object.position.x += dx; this.object.position.z += dz
+    ;(this.object as THREE.Object3D<VehicleObjectEvents>).dispatchEvent({ type: 'tileshift', dx, dz })
   }
 
   /** Off only in tests, to show what happens without the guard. */

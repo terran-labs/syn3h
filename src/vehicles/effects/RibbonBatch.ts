@@ -43,6 +43,18 @@ export class RibbonBatch {
     for(const attr of [this.position,this.data,this.tint]){attr.addUpdateRange(i*12,12);attr.needsUpdate=true}
     this.mesh.geometry.setDrawRange(0,this.count*6)
   }
+  /**
+   * Move every stored quad by (dx, dz), for a world seam (see ParticleBatch.shift for why the
+   * buffer is rewritten rather than offset by a uniform). Rewrites positions in place and
+   * uploads the buffer once.
+   */
+  shift(dx:number,dz:number){
+    const a=this.position.array as Float32Array
+    for(let i=0;i<a.length;i+=3){a[i]+=dx;a[i+2]+=dz}
+    // One range over the whole buffer. Emits later this frame add their own small ranges, which
+    // overlap it harmlessly; replacing it would upload only those and lose the shift.
+    this.position.clearUpdateRanges();this.position.addUpdateRange(0,a.length);this.position.needsUpdate=true
+  }
   clear(){this.count=this.cursor=0;this.mesh.geometry.setDrawRange(0,0)}
   dispose(){this.mesh.removeFromParent();this.mesh.geometry.dispose();this.mesh.material.dispose()}
 }
