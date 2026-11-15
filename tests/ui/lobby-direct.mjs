@@ -19,6 +19,7 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
       continue
     }
     assert.equal(await page.locator('.lobby-index, .lobby-message').count(), 0)
+    if (process.env.UX_LAYOUT_ONLY !== '1') {
     // Waiting in the lobby must never start a tour or enter a world.
     await page.waitForTimeout(22000)
     assert.equal(await page.evaluate(() => syn3h.shell.activePanel), 'index')
@@ -38,6 +39,7 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     assert.ok(await page.evaluate(() => syn3h.shell.graphics.galaxyLive), 'resting galaxy remains visible')
     await page.evaluate(level => syn3h.game.quality.setLevel(level), originalLevel)
 
+    }
     await page.waitForTimeout(600)
     const spacing = await page.evaluate(() => {
       const hint = document.querySelector('.galaxy-hint').getBoundingClientRect(), nav = document.querySelector('.galaxy-links').getBoundingClientRect()
@@ -54,6 +56,13 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
         // The requested panel is the only visible section from the first paint onward.
         assert.deepEqual(await page.locator('.lobby-panels > section:visible').evaluateAll(es => es.map(el => el.dataset.panel)), [name])
         await page.waitForFunction(() => document.querySelector('.lobby-panels').dataset.busy === 'false')
+        const separated = await page.evaluate(() => {
+          const panel = document.querySelector('.lobby-panels').getBoundingClientRect()
+          const footer = document.querySelector('.lobby-footer').getBoundingClientRect()
+          const links = document.querySelector('.galaxy-links').getBoundingClientRect()
+          return { panelBottom: panel.bottom, footerTop: footer.top, footerBottom: footer.bottom, linksTop: links.top }
+        })
+        assert.ok(separated.panelBottom <= separated.footerTop && separated.footerBottom < separated.linksTop, `panel, status and navigation stay separate: ${JSON.stringify(separated)}`)
         await page.screenshot({ path: `${out}/${mode}-${name}-${reducedMotion}.png` })
       }
       await page.keyboard.press('Escape')
