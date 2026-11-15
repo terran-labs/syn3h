@@ -76,25 +76,37 @@ try {
   // both lanes and braking room, sampling both clients rather than trusting a shared seed.
   const corridor = async (page, zOnly = null) => page.evaluate(({ half, zOnly }) => {
     const t = window.syn3h.terrain
-    const candidates = []
+    const candidates = [], rejected = []
     for (let z = zOnly ?? -half + 40; z < (zOnly === null ? half - 40 : zOnly + 1); z += 16) {
-      let lo = Infinity, hi = -Infinity, wet = false, slope = 0
+      let lo = Infinity, hi = -Infinity, wet = false, slope = 0, maxLiquid = -Infinity, nonfinite = 0, minClearance = Infinity
       const heights = []
       for (let x = half - 90; x <= half + 240; x += 3) for (const dz of [-10, -5, 0, 6, 11, 16]) {
         const y = t.heightAt(x, z + dz), liquid = t.liquidHeightAt(x, z + dz)
         heights.push(y)
+        maxLiquid = Math.max(maxLiquid, liquid)
+        minClearance = Math.min(minClearance, y - liquid)
+        if (!Number.isFinite(y) || !Number.isFinite(liquid)) nonfinite++
         if (!Number.isFinite(y) || !Number.isFinite(liquid) || y < liquid + 1) wet = true
         slope = Math.max(slope, Math.abs(t.heightAt(x + 1, z + dz) - y), Math.abs(t.heightAt(x, z + dz + 1) - y))
         lo = Math.min(lo, y); hi = Math.max(hi, y)
       }
       if (!wet && slope <= 0.3) candidates.push({ z, range: hi - lo, slope, heights })
+      else rejected.push({ z, minGround: lo, maxGround: hi, maxLiquid, minClearance, maxSlope: slope, wet, nonfinite, steep: slope > 0.3 })
     }
     candidates.sort((a, b) => a.range - b.range)
-    return { lane: candidates[0] ?? null, params: window.syn3h.params.snapshot('world'), size: t.wrapSize }
+    return { lane: candidates[0] ?? null, validCount: candidates.length, rejected, params: window.syn3h.params.snapshot('world'), size: t.wrapSize }
   }, { half, zOnly })
   const first = await corridor(a)
+  raw.corridor = { first }
+  const second = await corridor(b, first.lane?.z ?? null)
+  raw.corridor.second = second
+  if (process.argv.includes('--sample-only')) {
+    check('sampling found a supported dry route on both clients', Boolean(first.lane && second.lane),
+      { candidatesA: first.validCount, candidatesB: second.validCount, rejectedA: first.rejected.length, rejectedB: second.rejected.length })
+    // Sampling is diagnostic only. It cannot print WRAP CHECK OK or satisfy the full gate.
+    throw new Error('Sampling-only diagnostic complete; full gate not run')
+  }
   if (!first.lane) throw new Error('No verified dry gentle seam corridor; fixture unavailable')
-  const second = await corridor(b, first.lane.z)
   const equalParams = Object.keys({ ...first.params, ...second.params }).every(k => first.params[k] === second.params[k])
   if (!second.lane || !equalParams || first.size !== second.size || first.lane.heights.some((h, i) => Math.abs(h - second.lane.heights[i]) > 0.01)) throw new Error('Clients disagree on dry corridor/world')
   const lane = first.lane
