@@ -8,7 +8,13 @@
  *
  * One pipeline, rebuilt only when its shape changes (tier, or an effect taken to or from 0):
  *
- *   scene pass      colour (half float, the canvas's MSAA) and depth.
+ *   scene pass      colour (half float, the canvas's MSAA) and depth, plus view normals and
+ *                   motion vectors when an effect needs them. The scene is drawn once.
+ *   screen light    ambient occlusion, contact shadows and indirect light are computed from
+ *                   that pass after it finishes, and the next frame's materials read them
+ *                   back at each surface's previous screen position. They are therefore one
+ *                   frame old; a camera cut, a resize or a rebuild discards them for a frame
+ *                   and that frame renders unoccluded.
  *   glow            three's BloomNode on the exposed colour, clamped, as tuned on feat/fx-bloom.
  *   sun shafts      quarter resolution, two passes. The mask keeps open sky (depth at the far
  *                   plane) near the sun, in the sky's own colour, so terrain, vehicles and
@@ -27,7 +33,7 @@
 import * as THREE from 'three/webgpu'
 import {
   Fn, If, Loop, abs, screenSize, sin, clamp, dot, exp, float, interleavedGradientNoise, length, max, min, mix, pass,
-  builtinAOContext, builtinGIContext, builtinShadowContext, context, mrt, nodeObject, normalView, output, screenUV, renderOutput, renderGroup, rtt, screenCoordinate, smoothstep, step,  uniform, uv, vec2, vec3, vec4,
+  builtinAOContext, builtinGIContext, builtinShadowContext, context, mrt, nodeObject, output, screenUV, renderOutput, renderGroup, rtt, screenCoordinate, smoothstep, step, texture, uniform, uv, vec2, vec3, vec4,
 } from 'three/tsl'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { ao } from 'three/addons/tsl/display/GTAONode.js'
@@ -35,7 +41,7 @@ import { sss } from 'three/addons/tsl/display/SSSNode.js'
 import { ssgi } from 'three/addons/tsl/display/SSGINode.js'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { traa } from 'three/addons/tsl/display/TRAANode.js'
-import { CurvedVelocity } from './CurvedVelocity'
+import { CurvedVelocity, SURFACE_NORMAL_BLEND, SurfaceNormal, previousScreenUV } from './CurvedVelocity'
 import { cloudVolume, compositeClouds } from './clouds'
 import { underwaterAmountForCamera } from '../../world/water/underwater'
 import type { CloudInputs } from '../../world/Environment'
@@ -139,12 +145,23 @@ export class PostChain {
     motionAmount: uniform(0),
     motionNear: uniform(14),
     motionMax: uniform(0.04),
+    // 1 while last frame's occlusion, contact shadow and indirect light targets describe
+    // this view; 0 for the frame after a build, a resize or a camera discontinuity.
+    screenHistory: uniform(0),
   }
   private readonly prevView = new THREE.Matrix4()
   private readonly prevProj = new THREE.Matrix4()
   private readonly prevPos = new THREE.Vector3()
   private readonly prevOrientation = new THREE.Quaternion()
   private hasPrev = false
+  /** The camera jumped this frame: last frame's screen-space results describe another view. */
+  private cut = true
+  /** Frames drawn by the current pipeline, and the buffer size its history was made at. */
+  private framesBuilt = 0
+  private readonly historySize = new THREE.Vector2()
+  private readonly size = new THREE.Vector2()
+  /** Frames whose screen-space history was discarded, for checks. */
+  screenHistoryResets = 0
   /** 0 to 1, jumps to 1 when the watched vehicle goes under and decays over about 0.7 s. */
   private plunge = 0
   private wasUnder = false
@@ -228,6 +245,12 @@ export class PostChain {
     if (built.maskTex) built.maskTex.autoUpdate = sunLit
     if (built.raysTex) built.raysTex.autoUpdate = sunLit && P.postShafts.value > 0
     this.sun.setVolumetricCloudsActive?.(built.clouds)
+    renderer.getDrawingBufferSize(this.size)
+    const historyValid = this.framesBuilt > 0 && !this.cut && this.size.equals(this.historySize)
+    if (!historyValid && (built.aoNode || built.sssNode || built.giNode)) this.screenHistoryResets++
+    u.screenHistory.value = historyValid ? 1 : 0
+    this.historySize.copy(this.size)
+    this.framesBuilt++
     try {
       built.pipeline.render()
     } catch (error) {
@@ -269,6 +292,7 @@ export class PostChain {
     this.lastAt = now
     const jumped = !this.hasPrev || dt > 0.25 || this.prevPos.distanceTo(camera.position) > 40 || Math.abs(this.prevOrientation.dot(camera.quaternion)) < 0.9
     if (jumped && this.built?.temporalNode) { this.built.temporalNode.setSize(1, 1); this.historyResets++ }
+    this.cut = jumped
     this.prevOrientation.copy(camera.quaternion)
     if (jumped) { this.prevView.copy(camera.matrixWorldInverse); this.prevProj.copy(camera.projectionMatrix) }
     ;(u.prevView.value as THREE.Matrix4).copy(this.prevView)
@@ -326,8 +350,18 @@ export class PostChain {
     let maskRef: N = null
     let raysRef: N = null
     const scenePass = pass(scene, camera, temporalOn ? { samples: 0 } : {})
-    const velocity = temporalOn ? new CurvedVelocity() : null
-    if (velocity) scenePass.setMRT(mrt({ output, velocity: nodeObject(velocity) }))
+    // Occlusion, contact shadows and indirect light are read back one frame late, at
+    // where each surface was on screen then: that needs the same motion vectors.
+    const screenLight = aoOn || giOn || !!light
+    const velocity = temporalOn || screenLight ? new CurvedVelocity() : null
+    const targets: Record<string, N> = { output }
+    if (temporalOn) targets.velocity = nodeObject(velocity)
+    if (aoOn || giOn) targets.normal = nodeObject(new SurfaceNormal())
+    if (temporalOn || aoOn || giOn) {
+      const layout = mrt(targets)
+      if (targets.normal) layout.setBlendMode('normal', SURFACE_NORMAL_BLEND)
+      scenePass.setMRT(layout)
+    }
     disposables.push(scenePass as never)
     let color: N = scenePass.getTextureNode('output')
     const depth: N = scenePass.getTextureNode('depth')
@@ -340,73 +374,70 @@ export class PostChain {
     const hot: N = u.bloomThreshold.mul(HOT_CLAMP)
 
     // AO belongs in indirect lighting, before direct light, emissive and fog are added.
-    // Keep prepass lighting separate and disabled: otherwise the normals pass updates the
-    // sun's shadow maps before the beauty pass and can poison the nearest cascade.
+    // These effects need the scene's depth and normals, which used to cost a second drawing
+    // of the whole scene ahead of the beauty pass (and that earlier pass could update the
+    // sun's shadow maps first and poison the nearest cascade). They now run after the one
+    // scene pass, from its own targets, and the next frame's materials sample the results
+    // as plain textures. A plain texture carries no update of its own, so nothing renders
+    // nested inside the scene pass and the pass never reads a target it is drawing into.
     let aoNode: N = null
     let sssNode: N = null
     let giNode: N = null
-    let contactTex: N = null
-    let prePass: ReturnType<typeof pass> | null = null
-    if (aoOn || light || giOn) {
-      prePass = pass(scene, camera, temporalOn ? { samples: 0 } : {})
-      prePass.name = giOn ? 'Indirect light source' : 'Occlusion normals and depth'
-      prePass.transparent = false
-      prePass.setMRT(giOn ? mrt({ output, normal: normalView }) : mrt({ output: normalView }))
-      // The source pass must never inherit the final pass's screen-space lighting:
-      // that would feed its own GI/contact textures back into their input.
-      prePass.contextNode = context({ getAO: () => null, getGI: () => null, getShadow: ({ shadowColorNode }: N) => shadowColorNode })
-      if (!giOn) {
-        const unlit = new THREE.Lighting()
-        unlit.enabled = false
-        prePass.lighting = unlit
-        disposables.push(unlit)
-      }
-      disposables.push(prePass as never)
-    }
-    const normals: N = prePass?.getTextureNode(giOn ? 'normal' : 'output')
+    let contactAt: ((p: N) => N) | null = null
+    // Nodes the output graph must reach so they update each frame, after the scene pass.
+    const keepAlive: N[] = []
+    const history = (p: N) => previousScreenUV(nodeObject(velocity), p)
+    const normals: N = aoOn || giOn ? scenePass.getTextureNode('normal') : null
+    let occlusion: N = float(1)
     if (aoOn) {
-      aoNode = ao(prePass!.getTextureNode('depth'), normals, camera)
+      aoNode = ao(depth, normals, camera)
       aoNode.resolutionScale = 0.5
       aoNode.samples.value = 12
       disposables.push(aoNode)
-      scenePass.contextNode = builtinAOContext(aoNode.getTextureNode().sample(screenUV).r)
+      keepAlive.push(aoNode.getTextureNode())
+      const last: N = texture(aoNode.getTextureNode().value)
+      const at: N = history(screenUV)
+      occlusion = mix(float(1), last.sample(at.xy).r, at.z.mul(u.screenHistory))
+      scenePass.contextNode = builtinAOContext(occlusion)
     }
     if (giOn) {
-      const sourceDepth: N = prePass!.getTextureNode('depth')
-      giNode = ssgi(prePass!.getTextureNode('output'), sourceDepth, normals, camera as THREE.PerspectiveCamera)
+      giNode = ssgi(scenePass.getTextureNode('output'), depth, normals, camera as THREE.PerspectiveCamera)
       // Fixed sampling and a depth/normal-aware spatial filter work without temporal
       // history. Only visible surfaces contribute; the existing sky/ground fill remains.
+      // The source is last frame's finished colour, so bounced light feeds the next bounce.
       giNode.useTemporalFiltering = false
       giNode.resolutionScale = 0.5
       giNode.sliceCount.value = 2
       giNode.stepCount.value = 6
-      const filter = denoise(giNode.getGINode(), sourceDepth, normals, camera)
+      const filter = denoise(giNode.getGINode(), depth, normals, camera)
       filter.radius.value = 3
       const filtered: N = rtt(filter)
       disposables.push(giNode, filter, filtered)
-      const occlusion: N = aoNode ? aoNode.getTextureNode().sample(screenUV).r : float(1)
-      scenePass.contextNode = builtinGIContext(occlusion, filtered.sample(screenUV).rgb)
+      keepAlive.push(filtered)
+      const last: N = texture(filtered.renderTarget.texture)
+      const at: N = history(screenUV)
+      scenePass.contextNode = builtinGIContext(occlusion, last.sample(at.xy).rgb.mul(at.z).mul(u.screenHistory))
     }
     if (light) {
-      sssNode = sss(prePass!.getTextureNode('depth'), camera, light)
+      sssNode = sss(depth, camera, light)
       sssNode.resolutionScale = 0.5
       sssNode.maxDistance.value = 0.5
       sssNode.thickness.value = 0.12
       sssNode.quality.value = 0.5
       disposables.push(sssNode)
+      keepAlive.push(sssNode.getTextureNode())
       // The raw march speckles open ground (depth precision where each ray starts). A 3x3
       // blur three pixels apart, then a remap: scattered specks average near white and
       // go back to 1; a real contact shadow, solid under a tyre, stays dark.
-      const raw: N = sssNode.getTextureNode()
-      const blurAt = Fn(() => {
-        const p = screenUV
+      const raw: N = texture(sssNode.getTextureNode().value)
+      contactAt = (p: N) => {
         const px = vec2(3, 3).div(screenSize)
-        const sum = float(0).toVar()
-        for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) sum.addAssign(raw.sample(p.add(px.mul(vec2(x, y)))).r)
+        let sum: N = float(0)
+        for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) sum = sum.add(raw.sample(p.add(px.mul(vec2(x, y)))).r)
         return smoothstep(0.45, 0.85, sum.div(9))
-      })
-      const contact = blurAt()
-      contactTex = contact
+      }
+      const at: N = history(screenUV)
+      const contact: N = mix(float(1), contactAt(at.xy), at.z.mul(u.screenHistory))
       // Apply contact occlusion only to this light. Ambient fill, headlights, emissive
       // lava and atmospheric fog must not be darkened by the sun's contact shadows.
       scenePass.contextNode = context({
@@ -557,11 +588,15 @@ export class PostChain {
     let out: N = graded()
     // Debug views: the raw occlusion or contact shadow buffers, white is unoccluded.
     if (debug === 1 && aoNode) out = vec4(vec3(aoNode.getTextureNode().sample(uv()).r), 1)
-    if (debug === 2 && contactTex) out = vec4(vec3(contactTex), 1)
+    if (debug === 2 && contactAt) out = vec4(vec3(contactAt(uv())), 1)
+    // Reaching each screen-light node from the output is what runs it, once per frame and
+    // after the scene pass it reads. The zero weight keeps it out of the picture.
+    for (const node of keepAlive) out = out.add(vec4(node.sample(uv()).rgb.mul(0), 0))
     const pipeline = new THREE.RenderPipeline(renderer, velocity ? out.context({ velocity }) : out)
     pipeline.outputColorTransform = false
     this.built = { key, pipeline, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, temporalNode, clouds: cloudsOn }
     this.builds++
+    this.framesBuilt = 0
   }
 }
 
