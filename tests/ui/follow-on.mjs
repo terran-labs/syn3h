@@ -48,6 +48,11 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
       const search=page.locator('.wi-search')
       await page.evaluate(()=>{document.activeElement?.blur();window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyW'}))})
       assert.equal(await page.evaluate(()=>syn3h.game.input.poll().y),1)
+      // W outside any field means "drive": it captures the cursor and the panels close. Wait for
+      // that to settle either way, free the cursor again, then move focus into a field.
+      await page.waitForFunction(()=>document.pointerLockElement===syn3h.game.canvas,null,{timeout:3000}).catch(()=>{})
+      if(await page.evaluate(()=>!!document.pointerLockElement))await page.keyboard.press('Escape')
+      await page.locator('.world-inspector').waitFor({state:'visible'})
       await search.focus(); await page.keyboard.up('KeyW')
       assert.equal(await page.evaluate(()=>syn3h.game.input.poll().y),0,'keyup after field focus clears held drive')
       for(const locator of [search,page.locator('.wi-head').first(),page.locator('.rail-close')]) {

@@ -34,7 +34,10 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     // Newer shells open the rail whenever the cursor is free and drop the desktop toggle.
-    if (!await page.locator('.world-inspector').isVisible()) await page.getByRole('button', { name: 'Open configuration rail' }).click()
+    // Panels show when the cursor is free; touch has one switch for them.
+    if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
+    if (!await page.locator('.world-inspector').isVisible()) await page.locator('.inspector-toggle').click()
+    await page.locator('.world-inspector').waitFor({ state: 'visible' })
     await page.locator('.world-inspector').waitFor({ state: 'visible' })
     const press = async locator => touch ? locator.tap() : locator.click()
 
@@ -129,6 +132,10 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     await field.evaluate(el => el.dispatchEvent(new KeyboardEvent('keyup', { code: 'ArrowUp', bubbles: true })))
     assert.equal(await page.evaluate(() => syn3h.game.input.poll().y), 0, 'keyup reaches Input from the field')
     await page.keyboard.press('Escape')
+    // The arrow key above went to the window, outside any field, which means "drive": it may
+    // have captured the cursor. Make sure the panels are showing again before going on.
+    await page.waitForTimeout(300)
+    if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape'); await page.locator('.world-inspector').waitFor({ state: 'visible' })
 
     // ---- A deferred row commits once, snapped to its step. ----
     const budget = await reveal(page, 'lava.particleBudget')
