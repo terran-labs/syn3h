@@ -120,14 +120,15 @@ export function createJetPilot(vehicle: Vehicle, terrain: Terrain): Pilot {
    * where the ground further along the velocity would otherwise come within `floor` metres
    * before the jet could climb over it at its climb limit.
    */
-  function targetHeight(altitude: number): { target: number; rate: number } {
+  let surfaceRate = 0
+  function targetHeight(altitude: number): number {
     const tune = jetPilotTuning
     const here = surface(pos.x, pos.z)
     const lead = tune.leadTime
     const near = surface(pos.x + vel.x * lead, pos.z + vel.z * lead)
     let target = Math.max(here, near) + altitude
     // Surface rate of change under the jet, for feed forward on the climb.
-    const rate = (near - here) / lead
+    surfaceRate = (near - here) / lead
     const floor = altitude * .6
     for (let i = 1; i <= 10; i++) {
       const t = tune.lookAheadTime * i / 10
@@ -136,7 +137,7 @@ export function createJetPilot(vehicle: Vehicle, terrain: Terrain): Pilot {
       // Height needed now so that climbing at 70 percent of the limit still clears h + floor at time t.
       target = Math.max(target, h + floor - tune.maxClimb * .7 * t)
     }
-    return { target, rate }
+    return target
   }
 
   function drive(goal: DriveGoal, input: InputState, dt: number): PilotStatus {
@@ -219,8 +220,8 @@ export function createJetPilot(vehicle: Vehicle, terrain: Terrain): Pilot {
 
     // Vertical plan: hold altitude above the highest surface ahead.
     const altitude = goal.altitude ?? tune.cruiseAltitude
-    const plan = targetHeight(altitude)
-    let vyWant = clamp((plan.target - pos.y) * tune.heightGain + clamp(plan.rate, -tune.maxSink, tune.maxClimb), -tune.maxSink, tune.maxClimb)
+    const target = targetHeight(altitude)
+    let vyWant = clamp((target - pos.y) * tune.heightGain + clamp(surfaceRate, -tune.maxSink, tune.maxClimb), -tune.maxSink, tune.maxClimb)
     // Never sink fast near the surface.
     if (height < 5) vyWant = Math.max(vyWant, -1)
     const ay = clamp((vyWant - vel.y) * 2.5, -6, 9)
