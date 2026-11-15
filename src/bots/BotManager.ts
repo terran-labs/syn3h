@@ -7,7 +7,15 @@ import { qualityBudget } from '../core/quality'
 import { createVehicle } from '../vehicles'
 import type { Vehicle } from '../vehicles/Vehicle'
 import { BotBrain, isSafeGround, type BotTerrain } from './BotBrain'
-import { botCount, spawnRadius } from './params'
+import { botCount, fleet, spawnRadius } from './params'
+import { Daydream } from './Daydream'
+import { overHorizon } from '../world/curve'
+import { Mind } from './mind/Mind'
+import { createPilot } from './pilot'
+import { createNavigator, pointsOfInterest, type PointOfInterest } from './nav'
+import type { Navigator } from './pilot/types'
+/** Slot by slot: half buggies, a quarter hovercraft, a quarter jets. */
+const MIXED_FLEET = ['buggy', 'hovercraft', 'buggy', 'jet'] as const
 export class BotManager implements System {
   private readonly bots: Vehicle[] = []
   private readonly brains: BotBrain[] = []
@@ -23,7 +31,22 @@ export class BotManager implements System {
     if (value) this.clearBots()
   }
   get vehicles(): readonly Vehicle[] { return this.bots }
-  constructor(private readonly game: Game, private readonly terrain: BotTerrain, private readonly player: Vehicle) { this.targets = [player] }
+  /** The player's own vehicle driving itself after a spell of no input. See Daydream.ts. */
+  readonly daydream: Daydream
+  readonly navigator: Navigator & { dispose?(): void }
+  /** Places worth driving to, found once per world and shared by every mind. */
+  private sights: PointOfInterest[] | null = null
+  private readonly places = () => this.sights ??= pointsOfInterest(this.terrain)
+  constructor(private readonly game: Game, private readonly terrain: BotTerrain, private readonly player: Vehicle) {
+    this.targets = [player]
+    // Owned here so the composition root needs no extra wiring: this manager already holds
+    // the player, the terrain and every vehicle a daydreaming driver might tail.
+    // One route planner per terrain, shared by every mind: its caches are megabytes.
+    this.navigator = createNavigator(terrain)
+    terrain.onRegenerate?.(() => { this.sights = null })
+    this.daydream = new Daydream(game, terrain, player, { navigator: this.navigator, places: this.places, others: () => [...this.targets, ...this.bots] })
+  }
+  fixedUpdate(dt: number) { this.daydream.fixedUpdate(dt) }
   setTargets(vehicles: readonly Vehicle[]) {
     this.targets = [...vehicles]
     for (const brain of this.brains) brain.setTargets(this.targets)
@@ -44,7 +67,7 @@ export class BotManager implements System {
       if (!isSafeGround(this.terrain, x, z) || this.terrain.normalAt(x, z, new Vector3()).y < 0.65) continue
       if (this.bots.some(bot => { const p = bot.body.translation(); return Math.hypot(p.x - x, p.z - z) < 5 })) continue
       const heading = Math.atan2(x - center.x, z - center.z)
-      const bot = createVehicle(this.game, this.terrain, 'buggy', new Vector3(x, this.terrain.heightAt(x, z) + 2, z), heading)
+      const bot = createVehicle(this.game, this.terrain, Math.round(fleet.value) === 1 ? MIXED_FLEET[index % MIXED_FLEET.length] : 'buggy', new Vector3(x, this.terrain.heightAt(x, z) + 2, z), heading)
       bot.isLocal = false; bot.id = `bot-${this.nextBotId++}`; bot.name = generateName(`${worldSeed.value}:${bot.id}`, 'bot')
       bot.setColors(`hsl(${(index * 137.508 + 15) % 360}, 85%, 55%)`, '#ffffff')
       const brain = new BotBrain(this.game, this.terrain, bot, this.player, index)
@@ -57,6 +80,10 @@ export class BotManager implements System {
         }
         return false
       }
+      // Each bot gets a character from the world seed and its own id, and a mind to act on it.
+      const pilot = createPilot(bot, this.terrain)
+      if (pilot) brain.mind = new Mind(bot, this.terrain, pilot, { seed: `${worldSeed.value}:${bot.id}`, navigator: this.navigator, places: this.places, others: () => [...this.targets, ...this.bots] })
+      brain.navigator = this.navigator
       brain.remote = this.remote
       brain.setTargets(this.targets)
       // Register brain first so its input reaches the vehicle in the same physics step.
@@ -68,14 +95,20 @@ export class BotManager implements System {
     return false
   }
   /** Reconcile outside the physics iterator so removing bots cannot skip another body's step. */
-  update() {
-    if (this.disposed || this.remote) return
+  update(dt = 0) {
+    if (this.disposed) return
+    this.daydream.update(dt)
+    if (this.remote) return
     const count = Math.max(0, Math.min(qualityBudget().bots, Math.floor(botCount.value)))
     while (this.bots.length > count) this.removeLast()
     while (this.bots.length < count) if (!this.spawn(this.bots.length)) break
+    // On a round world most of the map is behind the planet. A bot there still drives (its
+    // physics is the host's to run) but there is nothing of it to draw.
+    for (const bot of this.bots) { const p = bot.body.translation(); bot.object.visible = !overHorizon(p.x, p.z, 4, p.y + 3) }
   }
   dispose() {
     this.disposed = true
+    this.daydream.dispose(); this.navigator.dispose?.()
     this.clearBots()
   }
 }

@@ -28,17 +28,55 @@ change with a sub drop.
 
 ## The arc
 
-A steady texture never raises a hair, so sections of eight bars follow a four-part cycle:
+A steady texture never raises a hair, so sections of eight bars follow a six-part cycle:
 
 | Section | What happens |
 |---|---|
-| theme | The theremin states a melody: a pickup, a leap to a long held note, a stepwise fall. |
+| theme | The world's theme is stated on the theremin. Each seed has one theme of four phrases and it never changes, so its return is recognised. |
 | still | The melody rests. Pads, drone and pulse only. |
-| build | The bass holds the dominant under moving chords, the filters open, a halo and a noise swell grow, then half a bar of near silence. |
-| release | The key lifts a minor third. The theme returns an octave up; pipe organ and high choir enter; the level rises about 5 dB. |
+| build | The bass holds the dominant under moving chords. A string section enters on the beat. |
+| climb | The strings double their pace, the theme's rising phrase repeats, an endless-rise tone and a noise swell grow, the choir opens its mouth, a drum roll, then half a bar where only the hall's tail is left. |
+| release | The key lifts a minor third and turns to the major (the relative major of a natural minor key). The full theme returns an octave up on brass and theremin, with organ, bell and the women of the choir, about 4 dB above the climb. A dark mood keeps its release in the minor. |
+| afterglow | The major lingers; only the theme's closing phrase is heard. |
 
-Every second chord arrives with its third suspended and resolves a bar later. `Score.cue('build')`
-starts a build on demand; the lab has a button for it.
+Every second chord arrives with its third suspended and resolves a bar later.
+
+Play can jump the arc. `Score.cue('surge')` starts the last two bars of a climb, so a release
+lands a few seconds later. Taking off does this by itself (after 1.2 s of real flight), a
+capture does it through `accent`, and a win brings the release at once. Surges are at least
+40 seconds apart: a release that comes too often stops meaning anything.
+
+## Instruments that are more than oscillators
+
+| Instrument | Technique | File |
+|---|---|---|
+| Plucked strings | Physical modelling (Karplus-Strong) | `pluck.worklet.js` |
+| Choir | Twenty glottal-pulse singers through five formants that move from "oo" to "ah" | `choir.worklet.js` |
+| Shimmer | Granular octave-up cascade into the hall | `shimmer.worklet.js` |
+| Bell | Modal synthesis: eight inharmonic partials | `ScoreSynth.ts` |
+| Pipe organ | Additive: drawbar harmonics in one periodic wave | `ScoreSynth.ts` |
+| Endless rise | Shepard and Risset: eight octave-spaced sines under a fixed envelope | `ScoreSynth.ts` |
+
+The worklets are plain JavaScript because the browser loads them as modules. Each loads on
+its own; if one fails the score plays on without it (the choir falls back to filtered saws).
+
+## Cost, and the lighter tier
+
+`audio.score.lite` ("Lighter score (for phones)") builds a cheaper set of instruments: no sung
+choir (filtered saws stand in), no shimmer, halo or endless rise, fewer oscillators, and a
+1.6 second hall in place of 5.5. The music is the same. The quality system may set it, and
+the score sets it itself after two strained readings from the browser's audio counters
+(`renderCapacity` or `playbackStats`), where a browser has them.
+
+Measured with `node tests/audio/score-load.mjs`, busiest passage (a release in a full chase),
+on a loaded M-series Mac: full about 15% of one core, lighter about 8%. Scaled to a CPU four
+times slower that is 58% and 32%; six times slower, 87% and 48%. Those scalings are
+arithmetic, not measurements: nothing here has been run on a phone. Chrome's CPU throttle
+does not slow the audio thread, so its zero underruns prove nothing.
+
+Where the cost sits (percent of one core): the 5.5 s hall 5.0, the 1.6 s hall about 1.6,
+sixty oscillators 1.5, the choir worklet 1.2, thirty filters 1.0, pluck and shimmer worklets
+0.4 and 0.3.
 
 ## Tuning
 

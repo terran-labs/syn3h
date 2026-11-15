@@ -408,3 +408,23 @@ The same hints carry the wings: while a buggy sits in lava or water with its win
 touch with that button pulsing; again every nine seconds, five times at most. Zorb mode
 (X) has a ZORB thumb button that calls `input.toggleZorb()` and a line in every controls
 text. `jet-hint.mjs` checks the wings hint in the volcano's lava lake and the ZORB button.
+
+## The galaxy lobby (prototype, hidden)
+
+Add `?galaxy=1` to the link. In place of the index panel the worlds orbit a sun in 3D
+(`galaxy/Galaxy.ts`): drag empty space to swing the view, pinch or scroll to move in and
+out, tap a world or its label to fly to it. Arriving makes it the world (through
+`pickPlanet`, so the host lock and the invited-guest rule hold) and opens the name form;
+Back returns to the whole system. Every other panel opens over it as before.
+
+One fragment shader traces the sun and up to four spheres: no meshes, libraries or images.
+Each world is lit from where the sun is, wears its real map from `paintPlanetMap` (1024 by
+512, painted in the worker one after another) and cuts a shadow through the sun's shafts.
+The sun, shafts, flare and stars are terranlabs.com's, as in `Starfield.ts`, which is
+switched off while the galaxy is on so there is one sky and one context. It needs WebGL 2
+and a graphics level above 0; otherwise, and without the option, the ordinary lobby is
+unchanged. Play gives its context back.
+
+Not yet: the flight down into the atmosphere handing over to the game, other players and
+saved seeds as lights and moons, a keyboard way to swing the view, and any check on a real
+phone. `tools/heavy.sh node tests/ui/galaxy.mjs` checks what is there on desktop and phone.

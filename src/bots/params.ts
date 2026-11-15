@@ -19,3 +19,29 @@ export const cornerSpeed = number('cornerSpeed', 'Corner speed', 12, 4, 30)
 export const roadSpeed = number('roadSpeed', 'Road speed (m/s)', 10, 6, 25)
 export const reverseBrakeTime = number('reverseBrakeTime', 'Brake before reverse (s)', 0.35, 0, 2, 0.05)
 export const roadCornerSpeed = number('roadCornerSpeed', 'Road corner speed (m/s)', 6, 2, 20)
+
+/**
+ * How much of the time a bot follows its own agenda (exploring, cruising roads, climbing,
+ * tailing, showing off) instead of chasing. 0 is the original relentless pursuit.
+ */
+export const freeSpirit = number('freeSpirit', 'Own agenda (0 always chases)', 0.6, 0, 1, 0.05)
+
+/**
+ * Which vehicles bots drive. 0: buggies only. 1: mixed, every fourth bot a hovercraft and
+ * every fourth a jet. Off by default until guests are told each bot's vehicle (networking).
+ */
+export const fleet = number('fleet', 'Fleet: 0 buggies, 1 mixed', 0, 0, 1, 1)
+
+/**
+ * Let a self-flying jet open its wings on long straight legs. Off by default: forward flight
+ * is quicker but has only been proven on two courses, and hover mode is the safe way to
+ * cross a mountain.
+ */
+export const jetForwardFlight = defineParam({ id: 'bots.jetForwardFlight', label: 'Self-flying jets use forward flight', group: 'Bots', scope: 'world', default: false })
+
+/**
+ * Daydream: seconds without touching the controls before the player's own vehicle starts
+ * driving itself. 0 turns it off. Personal, never sent to the room. The settings slider maps
+ * its travel onto 10 seconds to 5 minutes with "off" at the far right (see daydreamControl.ts).
+ */
+export const daydreamSeconds = defineParam({ id: 'daydream.seconds', label: 'Daydream after idle (s, 0 is off)', group: 'Daydream', scope: 'client', default: 30, min: 0, max: 300, step: 1 })

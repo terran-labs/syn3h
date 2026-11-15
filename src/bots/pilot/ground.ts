@@ -1,0 +1,88 @@
+/**
+ * Pilot for anything that steers with x and drives with y on the ground: both buggies and
+ * the tank. It holds a speed, slows into corners, comes to rest when asked, and backs out
+ * when it stops making progress. It never touches the rigid body; it only writes controls.
+ */
+import { Quaternion, Vector3 } from 'three/webgpu'
+import type { InputState } from '../../core/Input'
+import type { Vehicle } from '../../vehicles/Vehicle'
+import type { DriveGoal, NavProfile, Pilot, PilotStatus } from './types'
+
+export const GROUND_PROFILE: NavProfile = { maxGrade: 0.45, liquid: 'blocked', flies: false, roadCost: 0.35, cruiseAltitude: 0 }
+
+const clamp = (x: number, max = 1) => Math.max(-max, Math.min(max, x))
+/** Heading error that asks for full lock, radians (the originals used 20 degrees). */
+const FULL_LOCK = 0.35
+/** Seconds between progress checks, and metres that count as progress (VhiclBot.cs 63-74). */
+const CHECK = 1.5
+const PROGRESS = 1
+
+/** Positive means the target is to the right. Forward is -Z; positive input.x turns right. */
+export function headingError(forward: { x: number; z: number }, delta: { x: number; z: number }): number {
+  return Math.atan2(forward.x * delta.z - forward.z * delta.x, forward.x * delta.x + forward.z * delta.z)
+}
+
+export function createGroundPilot(vehicle: Vehicle): Pilot {
+  const q = new Quaternion(), forward = new Vector3(), up = new Vector3()
+  const status: PilotStatus = { stuckFor: 0, airborne: false, flipped: false }
+  let checkTime = 0, reverseTime = 0, brakeTime = 0, lastX = NaN, lastZ = NaN
+  return {
+    profile: GROUND_PROFILE,
+    reset() { status.stuckFor = 0; checkTime = reverseTime = brakeTime = 0; lastX = lastZ = NaN },
+    drive(goal: DriveGoal, input: InputState, dt: number): PilotStatus {
+      const here = vehicle.body.translation(), v = vehicle.body.linvel()
+      q.copy(vehicle.body.rotation())
+      forward.set(0, 0, -1).applyQuaternion(q); up.set(0, 1, 0).applyQuaternion(q)
+      const flat = Math.hypot(forward.x, forward.z) || 1
+      const forwardSpeed = (v.x * forward.x + v.z * forward.z) / flat, speed = Math.hypot(v.x, v.z)
+      const dx = goal.x - here.x, dz = goal.z - here.z, distance = Math.hypot(dx, dz)
+      const error = headingError(forward, { x: dx, z: dz })
+      status.flipped = up.y < 0.2
+      status.airborne = vehicle.wheelsGrounded === 0
+      input.x = input.y = input.z = input.w = 0
+      input.brakes = input.fire = false
+      input.special = Boolean(goal.special)
+      if (Number.isNaN(lastX)) { lastX = here.x; lastZ = here.z }
+
+      if (goal.stopWithin !== undefined && distance <= goal.stopWithin) {
+        // Arrived: hold still. Standing here on purpose is not being stuck.
+        input.brakes = true
+        status.stuckFor = 0; checkTime = 0; reverseTime = 0; lastX = here.x; lastZ = here.z
+        return status
+      }
+
+      // Corners cost speed, but keep steerage way: a crawling buggy cannot turn at all.
+      let target = Math.max(0, goal.speed) * (1 - 0.6 * Math.min(1, Math.abs(error)))
+      target = Math.max(target, Math.min(goal.speed, 4))
+      // Shed speed early enough to stop inside the radius (about 3 m/s^2 of braking).
+      if (goal.stopWithin !== undefined) target = Math.min(target, Math.sqrt(6 * Math.max(0.5, distance - goal.stopWithin * 0.5)))
+
+      checkTime += dt
+      if (checkTime >= CHECK) {
+        const moved = Math.hypot(here.x - lastX, here.z - lastZ)
+        if (moved < PROGRESS && !status.flipped) {
+          status.stuckFor += checkTime
+          // Back out with the wheels turned the other way, braking first so the drivetrain
+          // is not asked to reverse against spinning wheels.
+          if (reverseTime <= 0) { reverseTime = CHECK; brakeTime = 0.35 }
+        } else if (reverseTime <= 0) status.stuckFor = 0
+        checkTime = 0; lastX = here.x; lastZ = here.z
+      }
+      if (reverseTime > 0) {
+        reverseTime -= dt
+        input.y = -0.8; input.x = clamp(-error / FULL_LOCK)
+        if (brakeTime > 0) { brakeTime -= dt; input.brakes = true }
+        return status
+      }
+
+      if (status.airborne) { input.y = 0.3; return status }
+      // Less lock at speed: full lock at 20 m/s spins the buggy.
+      const lock = speed < 8 ? 1 : Math.max(0.35, 8 / speed)
+      input.x = Math.abs(error) < 0.035 ? 0 : Math.abs(error) > Math.PI / 2 ? Math.sign(error) * lock : clamp(error / FULL_LOCK, lock)
+      const delta = target - forwardSpeed
+      if (delta > 0) input.y = Math.min(1, 0.15 + delta * 0.4)
+      else if (delta < -2) input.brakes = true
+      return status
+    },
+  }
+}

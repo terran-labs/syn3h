@@ -253,6 +253,18 @@ export abstract class Vehicle implements System {
     this.teleport(new THREE.Vector3(t.x, Math.max(t.y, ground) + 1.5, t.z), heading)
   }
 
+  /**
+   * Move by a whole world tile across the seam of a wrapping world. Velocity and rotation
+   * are kept and the drawn position moves with the body, so nothing is seen to jump.
+   */
+  shiftBy(dx: number, dz: number): void {
+    const t = this.body.translation()
+    this.body.setTranslation({ x: t.x + dx, y: t.y, z: t.z + dz }, true)
+    this.prevPos.x += dx; this.prevPos.z += dz
+    this.currPos.x += dx; this.currPos.z += dz
+    this.object.position.x += dx; this.object.position.z += dz
+  }
+
   postPhysics(dt: number): void {
     this.prevPos.copy(this.currPos)
     this.prevQuat.copy(this.currQuat)

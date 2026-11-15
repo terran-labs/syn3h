@@ -1,20 +1,9 @@
 <!doctype html>
-<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Syn3h buggy body variations</title><link rel="icon" href="data:,"><style>
-html,body{height:100%}body{margin:0;background:#0d1219;color:#eef4fa;font:15px/1.35 system-ui,sans-serif;overflow:hidden;touch-action:none}
-canvas{display:block}
-#top{position:absolute;top:0;left:0;right:0;padding:14px 16px 0;pointer-events:none}
-#top{text-shadow:0 1px 3px #000,0 0 8px #000}h1{font-size:19px;margin:0 0 2px}#hint{margin:0;color:#d5e0ea;font-size:13px}
-#card{position:absolute;left:16px;top:70px;max-width:320px;background:rgba(13,18,25,.72);border:1px solid #2b3b4c;border-radius:8px;padding:10px 14px;pointer-events:none}
-#card strong{font-size:17px}#card ul{margin:6px 0 0;padding-left:18px;color:#c4d2df;font-size:13.5px}
-#bar{position:absolute;left:0;right:0;bottom:0;padding:10px 12px calc(10px + env(safe-area-inset-bottom));display:flex;flex-wrap:wrap;gap:8px;justify-content:center;background:linear-gradient(transparent,rgba(13,18,25,.9) 40%)}
-button{padding:9px 14px;color:#eef4fa;background:#1c2a38;border:1px solid #3d566d;border-radius:6px;font:inherit;cursor:pointer}
-button[aria-pressed=true]{background:#2f6fb0;border-color:#7fb6ea}
-.swatch{width:34px;padding:9px 0}.gap{flex-basis:100%;height:0}
-#status{position:absolute;left:16px;bottom:120px;color:#ffb37a}
-@media (max-width:640px){#card{top:auto;bottom:118px;max-width:none;right:16px}#card ul{columns:1}}
-</style></head><body>
-<div id="top"><h1 id="title">Syn3h buggy body variations</h1><p id="hint">Drag to orbit, pinch or scroll to zoom. Tell me what you like and dislike in each.</p></div>
-<div id="card"><strong id="name"></strong><ul id="notes"></ul></div>
-<div id="status">Loading…</div>
-<div id="bar"><span id="variants" style="display:contents"></span><button id="lineup" aria-pressed="false">Side by side</button><span class="gap"></span><span id="views" style="display:contents"></span><span id="paints" style="display:contents"></span><button id="lights" aria-pressed="false">Night</button></div>
-<script type="module" src="/src/vehicles/skins/bodiesViewer.ts"></script></body></html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Syn3h buggy body variations</title><link rel="icon" href="data:,">
+<!-- The buggy body gallery moved into the vehicle lab. This keeps old links working: ?round=N becomes ?group=N. -->
+<script>
+const q = new URLSearchParams(location.search)
+q.set('vehicle', 'buggy')
+if (q.has('round')) { q.set('group', q.get('round')); q.delete('round') }
+location.replace('/vehicle-lab.html?' + q.toString())
+</script></head><body><a href="/vehicle-lab.html?vehicle=buggy">Open the buggy bodies in the vehicle lab</a></body></html>
