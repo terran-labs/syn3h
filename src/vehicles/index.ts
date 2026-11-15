@@ -25,7 +25,7 @@ export type VehicleKind = 'buggy' | 'buggy-classic' | 'buggy-syn3h' | 'jet' | 'h
  * out. Add a new kind here and to the switch below.
  */
 export const VEHICLE_KINDS: readonly { kind: VehicleKind; name: string }[] = [
-  { kind: 'buggy', name: 'Syn3h buggy' },
+  { kind: 'buggy', name: 'Buggy' },
   { kind: 'jet', name: 'Jet' },
   { kind: 'hovercraft', name: 'Hovercraft' },
   { kind: 'tank', name: 'Tank' },
