@@ -35,7 +35,8 @@ const results = []
 const record = () => {
   const w = window, s = w.syn3h, T = []; w.__trace = T; w.__stop = false
   const dir = s.game.camera.position.clone()
-  const tick = now => {
+  const sampler = { update() {
+    const now = performance.now()
     const cam = s.game.camera, c = s.camera, p = s.player.object.position, shell = document.querySelector('.syn3h-shell').classList
     cam.getWorldDirection(dir)
     const f = s.player.object.getWorldDirection(dir.clone())
@@ -43,9 +44,9 @@ const record = () => {
       ground: s.terrain.heightAt(cam.position.x, cam.position.z), director: c.director.active, shot: c.director.shot, directed: c.directed, cinematic: !!c.cinematic, blend: !!c.blend,
       attract: s.shell.attracting, descending: shell.contains('is-descending'), playing: shell.contains('is-playing'), overlay: Number(getComputedStyle(document.querySelector('.lobby-overlay, .shell-overlay') ?? document.body).opacity),
       suspended: s.game.input.suspended, planet: s.planets.currentPlanet().id })
-    if (!w.__stop) requestAnimationFrame(tick)
-  }
-  requestAnimationFrame(tick)
+    if (w.__stop) s.game.remove(sampler)
+  } }
+  s.game.add(sampler)
 }
 try {
   const planets = process.argv[3]?.split(',') ?? ['desert', 'alpine', 'volcanic', 'archipelago', 'ice']
@@ -90,13 +91,13 @@ try {
     for (const shot of ['orbit', 'flyby', 'crane', 'low']) {
       const reached = await page.waitForFunction(s => window.syn3h.camera.director.active && window.syn3h.camera.director.shot === s && window.syn3h.camera.directed, shot, { timeout: 90000 }).then(() => true, () => false)
       if (!reached) { results.push({ id: `handback-${shot}`, skipped: 'the director did not reach this shot in 90 s (a fly-by needs speed)' }); await page.keyboard.press('KeyC'); await page.waitForTimeout(500); continue }
-      await page.waitForTimeout(2500)
       await page.evaluate(record)
-      await page.waitForTimeout(300)
+      await page.waitForFunction(() => window.__trace.length > 0)
       const keyAt = await page.evaluate(() => performance.now())
-      await page.keyboard.press('ShiftLeft')
+      await page.keyboard.down('ShiftLeft')
       await page.waitForTimeout(2500)
       const trace = await page.evaluate(() => { window.__stop = true; return window.__trace })
+      await page.keyboard.up('ShiftLeft')
       await writeFile(`${out}/handback-${shot}.trace.json`, JSON.stringify({ keyAt, trace }))
       results.push({ id: `handback-${shot}`, errors: [...errors], shotAtKey: trace.filter(f => f.at < keyAt).at(-1)?.shot, ...judgeHandback(trace, keyAt) })
     }
@@ -148,7 +149,7 @@ export function judgeHandback(trace, keyAt) {
   }
   const end = after.at(-1), back = [end.cam[0] - end.veh[0], end.cam[2] - end.veh[2]]
   const behind = -(back[0] * end.fwd[0] + back[1] * end.fwd[2]) / Math.max(1e-6, Math.hypot(...back))
-  return { frames: after.length, worstStep: worst, worstTurn, end: { behind: +behind.toFixed(2), cinematic: end.cinematic, director: end.director }, pass: worst.metres === 0 && worstTurn.degrees === 0 && !end.cinematic }
+  return { frames: after.length, worstStep: worst, worstTurn, end: { behind: +behind.toFixed(2), cinematic: end.cinematic, director: end.director }, pass: worst.metres === 0 && worstTurn.degrees === 0 && !end.cinematic && !end.director }
 }
 await writeFile(`${out}/results.json`, JSON.stringify(results, null, 2))
 for (const r of results) console.log(JSON.stringify(r))
