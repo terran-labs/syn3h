@@ -39,8 +39,8 @@ export const GEAR_DESCRIPTIONS: Record<GearId, string> = {
   beam: 'Touch another vehicle with a streak of plasma to tag it.',
   bungee: 'Hook the ground or another vehicle and reel yourself in.',
   yoink: 'Lift another vehicle, carry it about, and let go to fling it.',
-  red: 'Hold to build up a big plasma bolt, let go to send it and shove what it touches.',
-  pester: 'Send a slow, googly-eyed orb to chase another vehicle and tag it.',
+  red: 'Hold to gather light, then let go to send a wide pulse that shoves what it touches.',
+  pester: 'Send a glowing cloud of light to chase another vehicle and tag it.',
 }
 
 /**
