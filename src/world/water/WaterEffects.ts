@@ -1,6 +1,7 @@
 import { Vector3 } from 'three/webgpu'
 import type { Game, System } from '../../core/Game'
 import type { Terrain } from '../Terrain'
+import { applyWaterQuery } from './params'
 import type { Vehicle } from '../../vehicles/Vehicle'
 import { net } from '../../net'
 import { nearestImage } from '../../../shared/wrap'
@@ -22,7 +23,10 @@ export class WaterEffects implements System {
   constructor(private game:Game,private terrain:Terrain,private player:Vehicle,private bots:{readonly vehicles:readonly Vehicle[]}){
     this.ripples=rippleField;this.ripples.attach(game.renderer);this.spray=new Spray(game.scene,this.ripples);this.underwater=new Underwater(game,terrain)
   }
+  /** `?water=1` preview switch: applied once play has begun, after any room state lands. */
+  private queryApplied=false
   update(dt:number){
+    if(!this.queryApplied&&this.game.time>2){this.queryApplied=true;applyWaterQuery()}
     const {game,terrain}=this,size=terrain.wrapSize??terrain.size
     if(size!==this.size){this.size=size;this.ripples.configure(size)}
     this.spray.update(dt)

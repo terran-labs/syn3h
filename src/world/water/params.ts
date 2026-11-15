@@ -2,7 +2,7 @@
  * Water Lab sliders. Every switch that changes behaviour defaults off, so with them off the
  * game is exactly as it was (ops/PROTOCOL.md rule 5).
  */
-import { defineParam } from '../../../shared/params'
+import { defineParam, params } from '../../../shared/params'
 import { WAVE_MAX_HEIGHT } from '../../../shared/water/waves'
 
 const P = { group: 'Water', scope: 'world' as const }
@@ -25,3 +25,15 @@ export const waterWaveTurn = defineParam({
 export const waterRiverMaxSpeed = defineParam({
   ...P, id: 'water.riverMaxSpeed', label: 'River speed cap (m/s)', default: 6, min: 0, max: 15, step: 0.1,
 })
+
+/**
+ * `?water=1` in the page address turns on everything the Water Lab built, for previews:
+ * a water sea, waves, sinking, the underwater camera, ripples and spray. Set as local
+ * slider changes, so a host shares them with the room as any slider change would.
+ */
+export function applyWaterQuery(search: string = typeof location === 'undefined' ? '' : location.search): void {
+  if (new URLSearchParams(search).get('water') !== '1') return
+  for (const [id, value] of Object.entries({
+    'world.seaKind': 1, 'water.waves': true, 'water.sinking': true, 'water.underwater': true, 'water.ripples': true, 'water.spray': true,
+  })) params.set(id, value, 'local')
+}
