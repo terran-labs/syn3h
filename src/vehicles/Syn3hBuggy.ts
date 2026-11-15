@@ -256,6 +256,8 @@ export class Syn3hBuggy extends Vehicle {
     this.ub = new UnityBody(this.body, world, PREFAB_DRAG, PREFAB_ANGULAR_DRAG)
     this.ridePosition.position.set(0, RIDE_HEIGHT, 0)
     this.object.add(this.ridePosition)
+    // A vehicle with a cockpit: the ride camera sits in it and hides nothing (PATTERN.md rule 3).
+    this.object.userData.cockpit = true
 
     this.fbBody = new THREE.MeshStandardMaterial({ color: this.colors.body, roughness: 0.4, metalness: 0.3 })
     this.buildFallback()
