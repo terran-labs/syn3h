@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import { Builder, type Mat } from '../jetgen/shapes'
+import { Builder } from '../jetgen/shapes'
 import type { HoverDesign } from './designs'
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
@@ -18,9 +18,13 @@ export class NextHover {
   /** Rear nozzle positions and lift port positions, for exhaust and dust effects. */
   readonly nozzles: Builder['nozzles']
   readonly ports: Builder['hover']
-  /** The main thruster. It swivels about its pivot to steer. */
+  /** The main thruster's steering part: the swivelling nozzle, or the rudder vanes in its exhaust. */
   readonly thruster = new THREE.Group()
-  readonly materials: Record<Mat, THREE.Material>
+  /**
+   * Keyed by the shape kit's Mat. Typed by string so this builds against the kit both before and
+   * after it gains the cockpit's 'trim' and the faceted surfaces' 'panel' slots.
+   */
+  readonly materials: Record<string, THREE.Material>
   private readonly paint: THREE.MeshPhysicalMaterial
   private readonly accent: THREE.MeshStandardMaterial
   private readonly glow: THREE.MeshBasicMaterial
@@ -47,6 +51,9 @@ export class NextHover {
       dark: new THREE.MeshStandardMaterial({ color: 0x0b0c0f, metalness: .4, roughness: .55, flatShading: military }),
       glow: this.glow,
       accent: this.accent,
+      // Faceted wings and fins take the body paint; the cockpit tub is a matte dark trim.
+      panel: this.paint,
+      trim: new THREE.MeshStandardMaterial({ color: 0x15171b, metalness: .1, roughness: .8 }),
     }
     this.head = new THREE.MeshStandardMaterial({ color: 0xd8dde4, emissive: 0xf2f6ff, emissiveIntensity: LAMP.headOff, metalness: 0, roughness: .15 })
     this.tail = new THREE.MeshStandardMaterial({ color: 0x400000, emissive: 0xff0000, emissiveIntensity: LAMP.tailOff, metalness: 0, roughness: .15 })
@@ -54,7 +61,7 @@ export class NextHover {
     const b = new Builder(detail, design.hard ?? false); design.build(b)
     this.nozzles = b.nozzles; this.ports = b.hover
     const merge = (pieces: Builder['pieces'], parent: THREE.Object3D, prefix: string) => {
-      for (const mat of Object.keys(this.materials) as Mat[]) {
+      for (const mat of Object.keys(this.materials)) {
         const parts = pieces.filter(p => p.mat === mat).map(p => p.geometry); if (!parts.length) continue
         const merged = mergeGeometries(parts); parts.forEach(g => g.dispose()); this.geometries.push(merged)
         const mesh = new THREE.Mesh(merged, this.materials[mat]); mesh.name = `${prefix}-${mat}`; mesh.castShadow = mesh.receiveShadow = mat !== 'glow'
@@ -62,7 +69,20 @@ export class NextHover {
       }
     }
     merge(b.pieces, this.object, 'hover')
-    if (b.gimbal) { this.thruster.position.set(0, b.gimbal.y, b.gimbal.z); this.object.add(this.thruster); merge(b.gimbalPieces, this.thruster, 'hover-thruster') }
+    if (b.gimbal) {
+      this.thruster.position.set(0, b.gimbal.y, b.gimbal.z); this.object.add(this.thruster)
+      // The shape kit's first version swivels the whole nozzle and hands its parts over. The
+      // version with the cockpit fixes the nozzle and reports its exit instead; there the craft
+      // steers with two rudder vanes hinged in the exhaust, as a real hovercraft does.
+      const kit = b as unknown as { gimbalPieces?: Builder['pieces']; gimbal: { halfWidth?: number; halfHeight?: number } }
+      if (kit.gimbalPieces) merge(kit.gimbalPieces, this.thruster, 'hover-thruster')
+      else {
+        const w = kit.gimbal.halfWidth ?? .18, h = kit.gimbal.halfHeight ?? .18, chord = .15
+        const vanes = mergeGeometries([-.45, .45].map(f => new THREE.BoxGeometry(.018, h * 1.7, chord).translate(f * w, 0, chord / 2 - .02)))
+        this.geometries.push(vanes)
+        const mesh = new THREE.Mesh(vanes, this.materials.chrome); mesh.name = 'hover-thruster-vanes'; mesh.castShadow = true; this.thruster.add(mesh)
+      }
+    }
 
     // Lamps: flattened spheres set into the skin, one merged mesh for each kind.
     const lamps = (at: [number, number, number][], material: THREE.Material, name: string) => {
@@ -73,7 +93,7 @@ export class NextHover {
     lamps(design.lamps.head, this.head, 'hover-headlights'); lamps(design.lamps.tail, this.tail, 'hover-taillights')
   }
 
-  /** Swivel the main thruster to steer, in radians: positive turns the exhaust to the right, seen from behind. */
+  /** Steer the thrust, in radians: positive turns the exhaust to the right, seen from behind. */
   setVector(yaw: number): void { this.thruster.rotation.y = -yaw }
 
   /** Glow strength for the thruster and lift ports, 0..1. */
