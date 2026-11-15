@@ -19,6 +19,7 @@ import { createPostChain } from './fx/post/PostChain'
 import { createTerrain } from './world'
 import * as planets from './world/planets'
 import { applyPlanet, decodeWorld } from './world/planets'
+import { WaterEffects } from './world/water/WaterEffects'
 import { WeatherSystem, applyWeatherQuery, setWeatherClock } from './world/weather'
 
 async function main(): Promise<void> {
@@ -139,6 +140,9 @@ async function main(): Promise<void> {
       hud.textContent = [`${mph} MPH   ${game.backend}   ${Math.round(game.fps)} fps`, ...netStatus].join('\n')
     },
   })
+
+  // Water Lab: ripples, spray and the underwater look. Each is off until its slider is on.
+  game.add(new WaterEffects(game, terrain, player, bots))
 
   // Handles for debugging and automated checks.
   Object.assign(window, { syn3h: { planets, game, terrain, player, params, panel, shell, audio, bots, camera } })

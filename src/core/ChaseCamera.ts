@@ -6,6 +6,7 @@ import type { Vehicle } from '../vehicles/Vehicle'
 import type { Game, System } from './Game'
 import { CameraDirector } from './CameraDirector'
 import { curveOffset } from '../world/curve'
+import { waterUnderwater } from '../world/water/underwater'
 const number = (id: string, label: string, value: number, min: number, max: number, step = 0.1) => defineParam({ id: `camera.${id}`, label, group: 'Camera', scope: 'client', default: value, min, max, step })
 const boolean = (id: string, label: string, value: boolean) => defineParam({ id: `camera.${id}`, label, group: 'Camera', scope: 'client', default: value })
 // _Runtime.prefab:8755-8795, terra.buggy.prefab:586, CoreCamera.cs:177.
@@ -51,8 +52,10 @@ export interface CameraVehicle extends Vehicle {
 const ease = (dt: number, rate: number) => 1 - Math.exp(-Math.max(0, dt) * rate)
 const clamp = THREE.MathUtils.clamp
 
-type CameraTerrain = Pick<Terrain, 'heightAt' | 'liquidHeightAt'>
+type CameraTerrain = Pick<Terrain, 'heightAt' | 'liquidHeightAt'> & Partial<Pick<Terrain, 'liquidKindAt'>>
 function liquidHeight(terrain: CameraTerrain, x: number, z: number): number {
+  // Water Lab: with the underwater camera on, the camera may follow a vehicle under water.
+  if (waterUnderwater.value && terrain.liquidKindAt?.(x, z) === 'water') return -Infinity
   const height = terrain.liquidHeightAt?.(x, z)
   return height != null && Number.isFinite(height) ? height : -Infinity
 }

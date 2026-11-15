@@ -102,6 +102,7 @@ def make_materials(v):
         'TailLights': material('TailLights', (0.9, 0.02, 0.02), 0.2, 0.3, emission=((1, 0.03, 0.02), 2.5)),
         'Dark': material('Dark', (0.012, 0.014, 0.018), 0.3, 0.6),
         'StrutMetal': material('StrutMetal', (0.1, 0.11, 0.125), 0.9, 0.28),
+        'Interior': material('Interior', (0.035, 0.038, 0.045), 0.1, 0.75),
     }
 
 
@@ -424,6 +425,107 @@ def fix_outward(obj, body_obj):
     bm.to_mesh(me); bm.free(); bm_body.free()
 
 
+# ---- cockpit ---------------------------------------------------------------------------------
+#
+# The canopy is a force field, nearly clear, and the camera sits inside it, so what lies under
+# it is on show from both sides. The original body has only a flat deck there. This opens the
+# deck and sinks a tub into the body: sills, a floor, a dash cowl ahead and a seat back behind,
+# as inward-facing geometry of its own ('Interior', the shared system's trim role).
+
+TUB = {'y': 0.02, 'half_len': 0.66, 'half_wid': 0.4, 'floor': 0.3, 'eye': 0.8}
+
+
+def tub_outline(n=20, grow=1.0):
+    """The cockpit opening in plan: a rounded rectangle (superellipse), nose at -Y."""
+    pts = []
+    for k in range(n):
+        a = 2 * math.pi * k / n
+        c, sn = math.cos(a), math.sin(a)
+        pts.append((TUB['half_wid'] * grow * (abs(c) ** 0.6) * (1 if c >= 0 else -1), TUB['y'] + TUB['half_len'] * grow * (abs(sn) ** 0.6) * (1 if sn >= 0 else -1)))
+    return pts
+
+
+def cut_cockpit(me):
+    """Open the deck under the canopy along the tub outline. Returns the rim, on the body surface."""
+    poly = tub_outline()
+    bm = bmesh.new(); bm.from_mesh(me)
+    deck = lambda f: f.calc_center_median().z > 0.5 and f.normal.z > 0.25 and abs(f.calc_center_median().x) < 0.6 and abs(f.calc_center_median().y - TUB['y']) < 0.85
+    lo_x, hi_x = -TUB['half_wid'] - 0.01, TUB['half_wid'] + 0.01
+    lo_y, hi_y = TUB['y'] - TUB['half_len'] - 0.01, TUB['y'] + TUB['half_len'] + 0.01
+    def under(f):
+        xs = [v.co.x for v in f.verts]; ys = [v.co.y for v in f.verts]
+        return max(xs) > lo_x and min(xs) < hi_x and max(ys) > lo_y and min(ys) < hi_y
+    for (x1, y1), (x2, y2) in zip(poly, poly[1:] + poly[:1]):
+        faces = [f for f in bm.faces if deck(f) and under(f)]
+        geom = list({v for f in faces for v in f.verts}) + list({e for f in faces for e in f.edges}) + faces
+        along = Vector((x2 - x1, y2 - y1, 0))
+        bmesh.ops.bisect_plane(bm, geom=geom, dist=1e-5, plane_co=Vector((x1, y1, 0)), plane_no=Vector((0, 0, 1)).cross(along).normalized(), clear_inner=False, clear_outer=False)
+    bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if deck(f) and under(f) and len(f.verts) > 3])
+    gone = [f for f in bm.faces if deck(f) and inside(poly, (f.calc_center_median().x, f.calc_center_median().y))]
+    bmesh.ops.delete(bm, geom=gone, context='FACES')
+    bm.to_mesh(me); bm.free()
+
+
+def make_tub(body_obj, mats):
+    """The cockpit interior, built to the opening cut_cockpit made. Faces point into the cabin."""
+    tree, bm_body = bvh_of(body_obj)
+    me = bpy.data.meshes.new('Interior')
+    names = ['Interior', 'Accent', 'Chrome']
+    for n in names: me.materials.append(mats[n])
+    bm = bmesh.new()
+    n = 20
+    def ring(grow, z=None, drop=0.0):
+        vs = []
+        for x, y in tub_outline(n, grow):
+            if z is None:
+                # On the deck: cast down from above the canopy.
+                hit, _, _, _ = tree.ray_cast(Vector((x * 1.04, TUB['y'] + (y - TUB['y']) * 1.04, 3)), Vector((0, 0, -1)))
+                vs.append(bm.verts.new((x, y, (hit.z if hit is not None else 0.7) - drop)))
+            else:
+                vs.append(bm.verts.new((x, y, z)))
+        return vs
+    def skin(a, b, material):
+        for k in range(n):
+            f = bm.faces.new((a[k], b[k], b[(k + 1) % n], a[(k + 1) % n])); f.material_index = names.index(material)
+    rim, lip = ring(1.0, drop=-0.004), ring(0.96, drop=0.03)
+    sill, foot = ring(0.9, z=TUB['floor'] + 0.16), ring(0.8, z=TUB['floor'])
+    skin(rim, lip, 'Chrome'); skin(lip, sill, 'Interior'); skin(sill, foot, 'Interior')
+    f = bm.faces.new(foot[::-1]); f.material_index = 0
+    # Seat: a reclined back against the rear of the tub and a squab on the floor.
+    def box(c, sx, sy, sz, material, lean=0.0):
+        vs = []
+        for dz in (-1, 1):
+            for dx, dy in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
+                vs.append(bm.verts.new((c[0] + dx * sx, c[1] + dy * sy + lean * (dz + 1) / 2, c[2] + dz * sz)))
+        for idx in ((0, 1, 2, 3), (7, 6, 5, 4), (0, 4, 5, 1), (1, 5, 6, 2), (2, 6, 7, 3), (3, 7, 4, 0)):
+            face = bm.faces.new([vs[i] for i in idx]); face.material_index = names.index(material)
+    back_y = TUB['y'] + TUB['half_len'] * 0.62
+    box((0, back_y, TUB['floor'] + 0.27), 0.24, 0.05, 0.25, 'Interior', lean=0.12)
+    box((0, back_y - 0.26, TUB['floor'] + 0.05), 0.24, 0.22, 0.05, 'Interior')
+    box((0, back_y + 0.06, TUB['floor'] + 0.5), 0.1, 0.03, 0.04, 'Accent', lean=0.02)
+    # Dash cowl: a low shelf across the front with an accent strip, below the sight line.
+    front_y = TUB['y'] - TUB['half_len'] * 0.8
+    box((0, front_y, TUB['floor'] + 0.2), 0.3, 0.07, 0.035, 'Interior')
+    box((0, front_y + 0.075, TUB['floor'] + 0.2), 0.26, 0.008, 0.012, 'Accent')
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    # recalc makes closed shells face outward; the tub wall and floor must face the cabin (up/in).
+    for f in bm.faces:
+        c = f.calc_center_median()
+        if f.material_index != names.index('Accent') and len(f.verts) != 4: continue
+    floor_faces = [f for f in bm.faces if all(abs(v.co.z - TUB['floor']) < 1e-4 for v in f.verts) and len(f.verts) > 4]
+    for f in floor_faces:
+        if f.normal.z < 0: f.normal_flip()
+    centre = Vector((0, TUB['y'], TUB['floor'] + 0.3))
+    for f in bm.faces:
+        vs_ = set(f.verts)
+        if vs_ & set(rim + lip + sill + foot) and f not in floor_faces:
+            if f.normal.dot(centre - f.calc_center_median()) < 0: f.normal_flip()
+    bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
+    bm.to_mesh(me); bm.free(); bm_body.free()
+    for p in me.polygons: p.use_smooth = len(p.vertices) == 3 or True
+    return me
+
+
 # ---- suspension linkages -------------------------------------------------------------------
 #
 # The game places one strut per wheel with a single matrix: its origin on the wheel hub, its
@@ -738,6 +840,7 @@ VIEWS = {
     'nose': ((0.0, -1.0, 0.22), (0, 0, 0.3), 3.0),
     'link': ((0.0, -1.0, 0.1), (0.72, -1.3, 0.02), 0.55),
     'corner': ((0.75, -1.0, 0.5), (0.8, -1.3, 0.1), 0.95),
+    'cabin': ((0.5, -0.9, 1.0), (0.0, 0.0, 0.6), 0.95),
     'face': ((0.25, -1.0, 0.25), (0.0, -1.7, 0.3), 1.5),
     'linktop': ((0.5, -0.5, 1.0), (0.85, -1.3, 0.0), 0.8),
 }
@@ -806,6 +909,7 @@ def build(v):
     # GAME=1 skips the subdivision: the shape changes are smooth deformations of the original
     # game-resolution mesh, so the body keeps its form at the original triangle count.
     if not (os.environ.get('GAME') or v.get('game')): refine(body_me, v.get('refine', {}))
+    if v.get('tub'): cut_cockpit(body_me)
     if v.get('clean'): clean(body_me, v['clean'])
     body = bpy.data.objects.new('Body', body_me); scene.collection.objects.link(body)
     for p in body_me.polygons: p.use_smooth = True
@@ -815,6 +919,8 @@ def build(v):
     for p in canopy_me.polygons: p.use_smooth = True
     canopy = bpy.data.objects.new('Canopy', canopy_me); scene.collection.objects.link(canopy)
     parts = [body, canopy]
+    if v.get('tub'):
+        tub = bpy.data.objects.new('Interior', make_tub(body, mats)); scene.collection.objects.link(tub); parts.append(tub)
     # The strut first: its shock tops decide where the body's towers go.
     strut = None
     if v.get('strut'):
