@@ -46,7 +46,10 @@ try {
     } })
   })
   await page.waitForFunction(() => window.syn3h.bots.vehicles.length === 1)
-  const warm = () => page.waitForFunction(async () => (await import('/src/weapons/warm.ts')).warmStats(window.syn3h.game)?.left === 0, null, { timeout: 120000, polling: 500 })
+  const warm = () => page.waitForFunction(() => {
+    const system = window.syn3h.game.systems.find(s => s.stats && 'armed' in s.stats && 'left' in s)
+    return Boolean(system && system.left === 0)
+  }, null, { timeout: 120000, polling: 500 })
   const place = () => page.evaluate(() => {
     const s = window.syn3h, n = window.syn3hNet, a = s.player.body.translation()
     n.yoink.reset(); n.bigRed.reset(); n.lasers.reset()
@@ -76,7 +79,7 @@ try {
     // Let asynchronous render-chain replacement settle before measuring first use.
     await page.waitForTimeout(3000)
     await warm()
-    console.log(JSON.stringify({ tag, warm: await page.evaluate(async () => (await import('/src/weapons/warm.ts')).warmStats(window.syn3h.game)), warmPipelines: await page.evaluate(() => window.__labels) }))
+    console.log(JSON.stringify({ tag, warm: await page.evaluate(() => { const s = window.syn3h.game.systems.find(s => s.stats && 'armed' in s.stats && 'left' in s); return { ...s.stats, left: s.left } }), warmPipelines: await page.evaluate(() => window.__labels) }))
     await page.evaluate(() => { window.__labels = [] })
     const centre = await place()
     await page.waitForTimeout(1000)
