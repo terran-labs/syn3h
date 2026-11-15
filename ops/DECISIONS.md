@@ -2,6 +2,28 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Saturday 14 November, about 5:15pm Pacific: no death or violence in any world
+
+**Decided** (in the Terrain Lab thread, relayed by the Orchestrator). No death or violence
+in any world. Lava is sticky and makes things glow. Vehicles are indestructible.
+
+**What it changes.** King of the Hill no longer eliminates: a vehicle in lava is stuck and
+glowing, then returns to its pad or drives out slowly. The Orchestrator is routing this to
+Multiplayer, Vehicles, UX and Bots. Open under this rule: whether laser tag stays, is
+renamed, or goes. Asked of the owner at 5:20pm.
+
+## Saturday 14 November, about 5:15pm Pacific: classic buggy is off the MVP
+
+**Decided** (in the classic buggy thread, relayed by the Orchestrator). The classic buggy
+lane is closed and the vehicle is off the MVP. Its post-MVP list is `TODO.md` at the repo
+root. Open: whether it stays selectable in the lobby.
+
+## Saturday 14 November, about 5:15pm Pacific: threads the owner switches may run on Claude 2
+
+**Observed, not yet confirmed by the owner.** The UX, jet and hovercraft threads report
+that the owner moved them to Claude 2 himself. The Orchestrator and Foreman treat that as
+his choice for those threads. Neither starts anything on Claude 2.
+
 ## Saturday 14 November, 5:00pm Pacific: production replaces the current syn3h.com tonight
 
 **Decided.** The production release of the new game replaces the site now at syn3h.com,
