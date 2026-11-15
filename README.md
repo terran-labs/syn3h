@@ -85,7 +85,7 @@ exactly, however many follow it.
 
 - **It generates much of its world at run time.** Terrain, sky, water, clouds, plants,
   sound and music come from code. The game still downloads its scripts, physics WebAssembly,
-  interface font and some vehicle models; procedural generation reduces the asset library.
+  interface font and the Buggy's models; the jet, hovercraft and tank are generated in code.
 - **One definition, three readers.** Waves, wrapping, sky maths and the parameter registry
   use shared definitions and tests to keep rendering, physics and multiplayer consistent.
 - **Everything is a parameter.** Worlds, vehicles and effects are tuned from a registry
