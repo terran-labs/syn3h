@@ -10,6 +10,8 @@ import type { LabExhibit } from '../types'
 const ROUND = '4'
 
 export const tank: LabExhibit = {
+  // Listed with the other design studies in the lab's sidebar.
+  section: 'Design studies',
   id: 'tank',
   title: 'Syn3h next-gen tank',
   groupLabel: 'Round',

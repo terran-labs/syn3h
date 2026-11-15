@@ -13,6 +13,8 @@ const ROUNDS = ['1', '2', '3', '4']
 const ROUND_TITLES = ['first designs after the red reference', 'forward-swept wings with arch tails', 'military hybrids of Scimitar and Halo', 'Vanguard with intakes around the fuselage']
 
 export const jet: LabExhibit = {
+  // Listed with the other design studies in the lab's sidebar.
+  section: 'Design studies',
   id: 'jet',
   title: 'Syn3h jet',
   groupLabel: 'Round',
