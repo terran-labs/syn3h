@@ -17,6 +17,7 @@ import { jetForwardFlight, roadSpeed } from '../params'
 import type { DriveGoal, Navigator, NavPoint, Pilot, PilotStatus, Route } from '../pilot/types'
 import { hashString, seededRandom } from '../random'
 import { nearestImage, wrapDistance } from '../../../shared/wrap'
+import { PilotEvasion, type ThreatSource } from './evasion'
 import { type Personality, personalityFor } from './personality'
 
 export type ActivityKind = 'road' | 'summit' | 'explore' | 'follow' | 'donut' | 'weave' | 'pause' | 'retreat' | 'visit' | 'flee' | 'hold'
@@ -72,6 +73,8 @@ export class Mind {
   troubleFor = 0
   /** Places abandoned as unreachable since the last reset, for tests and tuning. */
   abandoned = 0
+  private readonly evasion: PilotEvasion
+  setThreats(source: ThreatSource | null) { this.evasion.setSource(source) }
   private time = 0
   private readonly random: () => number
   private readonly visits = new Map<number, number>()
@@ -105,6 +108,7 @@ export class Mind {
     private readonly pilot: Pilot,
     private readonly options: MindOptions,
   ) {
+    this.evasion = new PilotEvasion(vehicle, terrain, pilot.profile, options.navigator, options.others)
     this.personality = options.personality ?? personalityFor(options.seed)
     this.random = seededRandom(hashString(`mind:${options.seed}`))
   }
@@ -141,13 +145,13 @@ export class Mind {
   reset(): void {
     this.activity = { kind: 'pause', destination: null, leader: null, until: 0 }
     this.route = null; this.waypoint = null; this.troubleFor = 0; this.bestDistance = Infinity
-    this.pilot.reset()
+    this.evasion.reset(); this.pilot.reset()
   }
 
   /** One physics step: decide, then write the controls into `input`. */
   step(dt: number, input: InputState): PilotStatus {
     const body = this.vehicle.body
-    if (!body.isValid()) return this.idle
+    if (!body.isValid()) { this.evasion.reset(); return this.idle }
     this.time += dt
     const here = body.translation(), v = body.linvel(), speed = Math.hypot(v.x, v.z)
     this.q.copy(body.rotation()); this.forward.set(0, 0, -1).applyQuaternion(this.q)
@@ -155,6 +159,7 @@ export class Mind {
     // tile, and the plan is still good once it is moved the same way; otherwise start afresh.
     const jx = here.x - this.lastX, jz = here.z - this.lastZ
     if (Number.isFinite(jx) && Math.hypot(jx, jz) > 30) {
+      this.evasion.reset()
       const wrap = this.terrain.wrapSize
       const sx = wrap ? Math.round(jx / wrap) * wrap : 0, sz = wrap ? Math.round(jz / wrap) * wrap : 0
       if ((sx || sz) && Math.hypot(jx - sx, jz - sz) < 30) this.shiftPlan(sx, sz)
@@ -259,7 +264,9 @@ export class Mind {
       if (act.kind === 'hold' && distance < this.holdRadius * 0.6) { goal.stopWithin = this.holdRadius * 0.6; goal.x = target.x; goal.z = target.z }
       if (act.kind === 'flee') goal.speed = Math.max(goal.speed, 16)
     }
-    if (this.pilot.profile.flies && act.kind !== 'pause') {
+    const evading = this.evasion.apply(dt, goal)
+    const evasionAltitude = evading ? goal.altitude : undefined
+    if (this.pilot.profile.flies && (act.kind !== 'pause' || evading)) {
       // An aircraft must be above the ground ahead before it gets there. Look along the way
       // it is going: hold a height that clears the highest ground within reach, and slow
       // down in proportion to how fast that ground rises, because it can only climb so quickly.
@@ -273,8 +280,10 @@ export class Mind {
       goal.altitude = this.pilot.profile.cruiseAltitude + Math.min(60, top - base)
       if (grade > 0.2) goal.speed = Math.max(3, Math.min(goal.speed, 3 / grade))
     }
+    // Combine the fixed dodge height with terrain clearance; ordinary policy resumes on expiry.
+    if (evading && this.pilot.profile.flies) goal.altitude = Math.max(goal.altitude ?? 0, evasionAltitude ?? 0)
     // Wings for a long straight leg, where the pilot has them and the owner allows it.
-    if (this.pilot.profile.flies && jetForwardFlight.value && destination && distance > 400 && act.kind !== 'follow' && act.kind !== 'pause') {
+    if (!evading && this.pilot.profile.flies && jetForwardFlight.value && destination && distance > 400 && act.kind !== 'follow' && act.kind !== 'pause') {
       // The ordinary route aim is only 10 to 30 metres away. Passing that to the jet
       // permanently selected its arrival/hover mode, even with forward flight enabled.
       // Offer a long aim only when the whole corridor is clear and the nose is aligned.

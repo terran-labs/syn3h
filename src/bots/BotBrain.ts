@@ -35,6 +35,8 @@ export interface BotMatch {
 export class BotBrain implements System {
   remote = false
   private gear: BotGearController | null = null
+  private gearHooks: BotGearHooks | null = null
+  private threats: (() => ReturnType<BotGearHooks['threats']>) | null = null
   setGear(hooks: BotGearHooks | null) {
     if (hooks && !this.gear) this.gear = new BotGearController(this.vehicle, () => this.terrain.wrapSize, target => {
       const here = this.vehicle.body.translation(), there = this.imageOf(target.body.translation(), here)
@@ -44,8 +46,13 @@ export class BotBrain implements System {
       return !this.game.world.castRay(new RAPIER.Ray(here, delta), length, true, undefined, groups(GROUP_PROJECTILE, GROUP_TERRAIN))
     }, (x, z) => isSafeGround(this.terrain, x, z) && (this.navigator?.passable(x, z, GROUND_PROFILE) ?? this.terrain.normalAt(x, z, new Vector3()).y > 0.85))
     this.gear?.setHooks(hooks)
+    if (hooks !== this.gearHooks) {
+      this.gearHooks = hooks
+      this.threats = hooks && (this.vehicle.kind === 'jet' || this.vehicle.kind === 'hovercraft') ? () => hooks.threats(this.vehicle) : null
+    }
+    this.mind?.setThreats(this.threats)
   }
-  dispose() { this.gear?.setHooks(null) }
+  dispose() { this.gear?.setHooks(null); this.threats = null; this.mind?.setThreats(null) }
   requestRecovery?: () => boolean
   target: Vehicle | null = null
   /**
@@ -188,6 +195,7 @@ export class BotBrain implements System {
     }
   }
   fixedUpdate(dt: number) {
+    this.mind?.setThreats(!this.remote && p.canDrive.value && p.topThrottle.value > 0 ? this.threats : null)
     if (this.remote) { this.gear?.cancel(); return }
     this.drive(dt)
     this.gear?.step(dt, this.target, this.vehicle.input, p.canFire.value, p.canDrive.value)
