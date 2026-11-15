@@ -2,20 +2,21 @@
 
 Prepared during the 15 November overnight run. This is a working draft, not the 8am
 report. Recheck production, integration and lane evidence before delivering it.
-Evidence snapshot: 3:03am Pacific. A public retry is running; it is not yet an
-accepted release. Recheck its outcome before presenting production status.
+Evidence snapshot: 3:05am Pacific. Release 4 is accepted publicly; the separate
+visual batch and aircraft evasion remain unfinished.
 
 ## Public build
 
-Release 2, `bc8cb48`, was restored and verified after the first default-on release
-attempt failed its primary-site bot-roster check. The cause remains unproven. Unique
-room names replace a repeating test identity, and the corrected fixture passed all
-34 checks on the unchanged frozen candidate.
+Release 4 is live at https://www.syn3h.com/ as `da5a89c`, version `v26.11.1500`,
+Worker `ef3e2f23-e868-41d6-9894-4b09e9b57db2`. Independent log review confirms
+exact entry assets, worker and primary-domain multiplayer, and all eight public
+Chrome/WebKit vehicle checks with no page errors. The acceptance marker matches.
+Notes are generated; showcase capture is still running and is nonfatal.
 
-The second attempt has deployed Worker `ef3e2f23-e868-41d6-9894-4b09e9b57db2`.
-Its worker assets match the frozen candidate; public gameplay acceptance is still
-running with automatic rollback armed. Do not describe this attempt as accepted.
-Earlier release 3 score-display and resource-loading failures also remain unexplained.
+The first attempt failed its primary-site bot-roster check and restored verified
+release 2. Unique-room diagnostics passed on the unchanged frozen build before this
+successful retry. That success does not prove the cause of the previous failure.
+Earlier release 3 score-display and resource-loading failures remain unexplained.
 
 The next release must verify exact frozen HTML and entry assets, normal gameplay on
 the primary public domain, and the combined browser cases. Exact asset and primary-domain
@@ -93,8 +94,11 @@ picks passed independent review without replaying older interface changes.
 ## Work still underway
 - Hovercraft and jet Pester evasion remain unfinished. The bounded overlay experiment
   converted none of eight caught cases into escapes; its draft is excluded from integration
-  and needs a different reviewed design. Measurement-only pilot response work has
-  resumed without production edits. Wheeled bots already evade Pesters; all four gear
+  and needs a different reviewed design. The completed response-envelope report covers
+  99 runs and found two escapes but also two harmful conversions. Independent Weapons
+  review accepts the research only; no aircraft avoidance implementation is accepted.
+  One escape cleared the catch radius by only 7.8 centimetres. Fresh held-out cases,
+  robust margins and a safe selection rule are required for any next design. Wheeled bots already evade Pesters; all four gear
   tools have combined browser evidence.
 - **Water transparency from above is unimplemented:** the sea/river material is opaque.
   Shallow colouring does not reveal submerged objects or ground. Transparent falling
