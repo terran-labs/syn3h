@@ -1,3 +1,4 @@
+import { wordmarkSvg } from './brand/logo'
 import { Vector3 } from 'three/webgpu'
 import type { Terrain } from '../world/Terrain'
 import type { Vehicle } from '../vehicles/Vehicle'
@@ -16,7 +17,7 @@ export class AttractMode {
   private readonly target = new Vector3()
   constructor(private readonly terrain: Terrain, private readonly parent: HTMLElement) {
     this.element.className = 'attract-overlay'; this.element.hidden = true
-    this.element.innerHTML = '<img src="/brand/syn3h.png" alt="Syn3h"><div><p></p><small>Press any key or touch to explore</small></div>'
+    this.element.innerHTML = `${wordmarkSvg()}<div><p></p><small>Press any key or touch to explore</small></div>`
     parent.append(this.element)
   }
   get ready(): boolean { return Boolean(this.camera) }

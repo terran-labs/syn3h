@@ -1,3 +1,5 @@
+import { wordmarkSvg } from './brand/logo'
+import { Starfield } from './Starfield'
 import { loadingMessages } from './data/loadingMessages'
 const phaseLabels: Record<string, string> = { device: 'Checking your device', physics: 'Preparing motion', renderer: 'Preparing the view', world: 'Building your world', ready: 'Ready to explore' }
 export interface LoadingDetail { phase?: string; progress?: number; elapsedMs?: number }
@@ -9,11 +11,14 @@ export class LoadingScreen {
   private readonly started = performance.now()
   private readonly timer: ReturnType<typeof setInterval>
   private readonly abort = new AbortController()
+  private readonly sky: Starfield
   constructor() {
     this.element.className = 'syn3h-loading'
     this.element.setAttribute('role', 'status'); this.element.setAttribute('aria-live', 'polite')
-    this.element.innerHTML = '<img src="/brand/syn3h.png" alt="Syn3h"><h1>Preparing to Explore</h1><p class="loading-phase">Starting Syn3h</p><progress aria-label="Loading progress"></progress><p class="loading-message"></p><small class="loading-time"></small>'
+    this.element.innerHTML = wordmarkSvg()+'<h1>Preparing to Explore</h1><p class="loading-phase">Starting Syn3h</p><progress aria-label="Loading progress"></progress><p class="loading-message"></p><small class="loading-time"></small>'
     document.body.append(this.element)
+    // The same generated sky as the lobby, so the first thing on screen needs no image.
+    this.sky = new Starfield(this.element)
     this.setMessages(this.messages)
     window.addEventListener('syn3h:loading', event => this.update((event as CustomEvent<LoadingDetail>).detail), { signal: this.abort.signal })
     this.timer = setInterval(() => {
@@ -37,7 +42,7 @@ export class LoadingScreen {
     if (typeof detail.elapsedMs === 'number' && Number.isFinite(detail.elapsedMs)) this.updateTime(detail.elapsedMs)
   }
   private updateTime(ms: number): void { this.element.querySelector('.loading-time')!.textContent = `${Math.max(0, Math.floor(ms / 1000))} seconds` }
-  finish(): void { this.element.hidden = true; clearInterval(this.timer) }
+  finish(): void { this.element.hidden = true; clearInterval(this.timer); this.sky.dispose() }
   dispose(): void { this.finish(); this.abort.abort(); this.element.remove() }
 }
 
