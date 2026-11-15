@@ -70,6 +70,29 @@ describe('SnapshotBuffer', () => {
     expect(b.delay(0.02, 0.25)).toBe(0.25)
   })
 
+  it('caps the automatic delay, and eases down to a cap that is lowered', () => {
+    const b = filled()
+    b.ping = 0.2
+    b.jitter = 0.01
+    let d = 0
+    for (let i = 0; i < 5000; i++) d = b.delay(0.02, 0, 0.15)
+    expect(d).toBeCloseTo(0.15, 3)
+    // A good connection is unaffected: its delay sits at the floor, under the cap.
+    const good = filled()
+    for (let i = 0; i < 2000; i++) d = good.delay(0.02, 0, 0.15)
+    expect(d).toBeCloseTo(0.1, 3)
+    // A cap below the floor does not go under the floor.
+    for (let i = 0; i < 2000; i++) d = b.delay(0.02, 0, 0.05)
+    expect(d).toBeCloseTo(0.1, 3)
+    // An explicit delay still overrides everything.
+    expect(b.delay(0.02, 0.4, 0.15)).toBe(0.4)
+    // Raised from a low delay the cap is approached, never passed.
+    let worst = 0
+    for (let i = 0; i < 5000; i++) worst = Math.max(worst, b.delay(0.02, 0, 0.2))
+    expect(worst).toBeLessThanOrEqual(0.2)
+    expect(worst).toBeCloseTo(0.2, 2)
+  })
+
   it('keeps the automatic delay near its floor through one late burst', () => {
     // 1.5 s of states queued behind a stall, then handled at once: the 342 ms HUD report.
     const run = (measure: (late: boolean) => boolean) => {

@@ -123,6 +123,9 @@ the redirect is to go.
      follow the Open Graph spec need an absolute URL, so the UX lane should make both absolute
      (`https://www.syn3h.com/...`) before the cutover.
    - mail: `dig MX syn3h.com` and `dig TXT syn3h.com` match the export
+   - afterwards: in the first release after a verified cutover, switch `og:url`, `og:image`
+     and `twitter:image` in `index.html` from the workers.dev address to
+     `https://www.syn3h.com` (UX lane; `tests/ui/share.test.ts` keeps them on one origin)
 
 ## Rollback of the cutover
 

@@ -69,17 +69,21 @@ const SKID_CENTER = { x: 0, y: 0.13976786, z: -0.090771556 }
 /**
  * Next-gen tyre contact (not from Syn3h). Each wheel is a brush: while it holds, slip winds up a
  * stiff spring-damper in the wheel plane, so the buggy truly parks on a slope and corners
- * without sideslip. The force is capped at mu x load, where mu falls from buggy.grip to
- * buggy.slide as the slip speed rises (SLIP_GRIP to SLIP_SLIDE) and as the buggy goes faster. TYRE_MASS is the share of the body one wheel
+ * without sideslip. The force is capped at mu x load, where mu goes from buggy.grip at rest to
+ * buggy.slide (grip at speed) by the grip fade speed, and drops to SLIDE_RATIO of that as the
+ * slip speed rises (SLIP_GRIP to SLIP_SLIDE). TYRE_MASS is the share of the body one wheel
  * acts on; TYRE_DAMP cancels half the slip per 50 Hz step; TYRE_OMEGA (rad/s) sets the
  * spring, which holds a 30 degree slope with about 2 cm of wind up.
  */
 const TYRE_MASS = MASS / 4
 const TYRE_DAMP = 0.5
 const TYRE_OMEGA = 15
-/** Slip speeds (m/s) over which friction falls from grip to slide. */
+/** Slip speeds (m/s) over which friction falls from its peak to SLIDE_RATIO of it. */
 const SLIP_GRIP = 1
 const SLIP_SLIDE = 4
+const SLIDE_RATIO = 0.8
+/** Next-gen steering limit at rest, as a multiple of grip; see buggy.steerLimit. */
+const STEER_LIMIT_SLOW = 1.1
 /** Next-gen drivetrain (see drivetrain()): below HOLD_SPEED (m/s) with no throttle it parks. */
 const HOLD_SPEED = 1.5
 /** How fast (m/s^2) the hold eases the wheels to a stop, so it settles instead of snapping. */
@@ -392,8 +396,13 @@ export class Syn3hBuggy extends Vehicle {
       // Opposite front and rear angles turn on a radius of about WHEELBASE / (tan f + tan r).
       // Cap that sum so full lock asks for buggy.steerLimit times the grip the tyres have.
       const v2 = Math.max(myVelocity * myVelocity, 1)
-      const grip = lerp(buggyGrip.value, buggySlide.value, Math.min(1, myVelocity / buggyGripFade.value))
-      const cap = (WHEELBASE * grip * buggyTraction.value * 9.81 * buggySteerLimit.value) / v2
+      // Precise up to half the grip fade speed (STEER_LIMIT_SLOW times the grip), loosening to
+      // buggy.steerLimit by the fade speed so full lock at speed breaks into a drift.
+      const fast = myVelocity / buggyGripFade.value
+      const grip = lerp(buggyGrip.value, buggySlide.value, Math.min(1, fast))
+      const loose = THREE.MathUtils.clamp(fast * 2 - 1, 0, 1)
+      const limit = lerp(Math.min(STEER_LIMIT_SLOW, buggySteerLimit.value), buggySteerLimit.value, loose)
+      const cap = (WHEELBASE * grip * buggyTraction.value * 9.81 * limit) / v2
       const sum = Math.abs(Math.tan(this.steer[0])) + Math.abs(Math.tan(this.steer[2]))
       if (sum > cap) {
         const f = cap / sum
@@ -568,8 +577,8 @@ export class Syn3hBuggy extends Vehicle {
     // Load is the force the suspension pass applies at this wheel.
     const load = this.isInverted ? 0 : this.suspensionForce(i, mass, true)
     const traction = buggyTraction.value
-    const slide = buggySlide.value
-    const grip = lerp(buggyGrip.value, slide, Math.min(1, speed / buggyGripFade.value))
+    // Peak friction: buggy.grip at rest, buggy.slide (grip at speed) by the grip fade speed.
+    const grip = lerp(buggyGrip.value, buggySlide.value, Math.min(1, speed / buggyGripFade.value))
     // Longitudinal slip acts on the body and the motor together; locked brakes make the motor
     // immovable. Mass terms follow the classic motor reaction (VB 323): dv = F dt / torque.
     const slipX = hv.x
@@ -584,11 +593,11 @@ export class Syn3hBuggy extends Vehicle {
     this.windZ[i] += slipZ * dt
     let fx = -TYRE_MASS * (slipX * damp + this.windX[i] * k)
     let fz = -longMass * (slipZ * damp + this.windZ[i] * k)
-    // Friction falls from grip to slide as the contact patch slips faster (a Stribeck curve),
+    // Friction falls to SLIDE_RATIO of its peak as the contact patch slips faster (a Stribeck curve),
     // so a tyre that has let go keeps most of its bite while it is only just sliding. ABS
     // keeps braking at the peak.
     const slip = Math.hypot(slipX, slipZ)
-    const mu = locked ? grip : lerp(grip, slide, THREE.MathUtils.smoothstep(slip, SLIP_GRIP, SLIP_SLIDE))
+    const mu = locked ? grip : grip * lerp(1, SLIDE_RATIO, THREE.MathUtils.smoothstep(slip, SLIP_GRIP, SLIP_SLIDE))
     const cap = mu * traction * load
     const n = Math.hypot(fx, fz)
     this.sliding[i] = n > cap
