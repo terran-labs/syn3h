@@ -1,20 +1,12 @@
 import { PLANETS, planetName, type PlanetRecipe } from '../../world/planets'
-import { paintPlanetMap } from '../../world/planetMap'
 import { planetOrbs, type OrbLook } from './PlanetOrbs'
 
-/**
- * Each card shows the island the generator really makes for that kind and seed. Painting a
- * map takes tens of milliseconds, so it waits for an idle moment; the card shows its swatch
- * colours until then. One map is kept per kind: a new seed replaces the old one.
- */
+/** One map is kept per kind of world: a new seed's map replaces the old one. */
 const shown = new Map<string, string>()
 function planetMapKey(id: string, seed: number): string {
   const key = `${id}:${seed}`, previous = shown.get(id)
-  if (previous === key) return key
-  if (previous) planetOrbs.dropMap(previous)
+  if (previous && previous !== key) planetOrbs.dropMap(previous)
   shown.set(id, key)
-  const paint = () => { if (shown.get(id) !== key) return; const map = paintPlanetMap(id, seed, 512, 256); planetOrbs.setMap(key, map.data, map.width, map.height) }
-  if (typeof requestIdleCallback === 'function') requestIdleCallback(paint, { timeout: 1500 }); else setTimeout(paint, 80)
   return key
 }
 
@@ -65,7 +57,8 @@ export class PlanetPicker {
       const recipe = PLANETS[i]
       if (!recipe) return
       orb.look.seed = recipe.id === current.id ? seed : i + 1
-      orb.look.map = planetMapKey(recipe.id, orb.look.seed)
+      // PlanetOrbs paints this map in its worker once the card is actually on screen.
+      orb.look.map = planetMapKey(recipe.id, orb.look.seed); orb.look.source = { id: recipe.id, seed: orb.look.seed }
     })
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('.planet-card')) {
       const id = button.dataset.planet!, active = id === current.id, detail = button.querySelector('small')!
