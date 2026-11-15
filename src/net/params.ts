@@ -16,6 +16,16 @@ export const netInterpDelay = defineParam({
   default: 0, min: 0, max: 1, step: 0.01,
 })
 
+/**
+ * The most the automatic delay may grow to, seconds. Past this, remote vehicles are carried
+ * forward along their last known velocity instead of being shown later still. See
+ * SnapshotBuffer.delay for the measurements behind the default.
+ */
+export const netMaxDelay = defineParam({
+  id: 'net.maxDelay', label: 'Max auto delay', group: 'Network', scope: 'client',
+  default: 0.15, min: 0.1, max: 1, step: 0.01,
+})
+
 /** Remote vehicles closer than this stay physical so ramming works (VehicleNet.js 59). */
 export const netProxyRadius = defineParam({
   id: 'net.proxyRadius', label: 'Physical radius', group: 'Network', scope: 'client',

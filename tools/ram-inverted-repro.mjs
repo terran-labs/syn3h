@@ -52,7 +52,7 @@ try {
   const a = await open('A')
   const b = await open('B')
   await a.waitForFunction(() => window.syn3hNet.remotes.size === 1, null, { timeout: 20000 })
-  // The flattest dry 150 m line near the origin: 30 m/s needs a long run up.
+  // The flattest dry 125 m line near the origin: 30 m/s needs a long run up.
   const runway = await a.evaluate(() => {
     const t = window.syn3h.terrain
     let best = null
@@ -60,7 +60,7 @@ try {
       const h = (k / 16) * Math.PI * 2
       const f = [-Math.sin(h), -Math.cos(h)]
       let lo = Infinity, hi = -Infinity, wet = false
-      for (let s = -6; s <= 190; s += 3) for (const l of [-6, 0, 6]) {
+      for (let s = -6; s <= 130; s += 3) for (const l of [-6, 0, 6]) {
         const x = ox + f[0] * s + f[1] * l, z = oz + f[1] * s - f[0] * l
         const y = t.heightAt(x, z)
         lo = Math.min(lo, y); hi = Math.max(hi, y)
@@ -76,14 +76,24 @@ try {
     const x = runway.ox + f[0] * s, z = runway.oz + f[1] * s
     player.teleport(player.object.position.clone().set(x, terrain.heightAt(x, z) + 1.2, z), runway.h + heading)
   }, { runway, s, heading })
-  /** Hold A at `target` m/s (0 lets go). */
-  const cruise = (target) => a.evaluate((target) => {
+  /** Hold A at `target` m/s, steering at the point `s` metres down the runway (0 lets go). */
+  const cruise = (target, s = 0) => a.evaluate(({ target, s, runway }) => {
     clearInterval(window.__cruise)
     const e = window.syn3h.game.input.external
-    e.y = 0
+    e.y = 0; e.x = 0
     if (!target) return
-    window.__cruise = setInterval(() => { const v = window.syn3h.player.body.linvel(); e.y = Math.hypot(v.x, v.z) < target ? 1 : 0 }, 20)
-  }, target)
+    const bx = runway.ox - Math.sin(runway.h) * s, bz = runway.oz - Math.cos(runway.h) * s
+    window.__cruise = setInterval(() => {
+      const body = window.syn3h.player.body
+      const v = body.linvel(), p = body.translation(), q = body.rotation()
+      e.y = Math.hypot(v.x, v.z) < target ? 1 : 0
+      // Forward is -Z. Steer by the cross product of forward and the bearing to the target;
+      // let go of the wheel for the last few metres so the hit is square.
+      const fx = -2 * (q.x * q.z + q.w * q.y), fz = -(1 - 2 * (q.x * q.x + q.y * q.y))
+      const dx = bx - p.x, dz = bz - p.z, d = Math.hypot(dx, dz)
+      e.x = d > 8 ? Math.max(-0.5, Math.min(0.5, 3 * (fx * dz - fz * dx) / d)) : 0
+    }, 20)
+  }, { target, s, runway })
   const state = () => a.evaluate(() => {
     const { player, terrain } = window.syn3h
     const p = player.body.translation(), v = player.body.linvel(), q = player.body.rotation()
@@ -99,11 +109,12 @@ try {
   const reps = Number(process.env.REPS ?? 2)
   for (const speed of speeds) for (const side of [false, true]) for (let rep = 0; rep < reps; rep++) {
     await cruise(0)
-    await place(a, 0, 0); await b.evaluate(() => { window.syn3h.game.input.external.y = 0 }); await place(b, 150, side ? Math.PI / 2 : 0)
+    const gap = speed > 22 ? 115 : 50
+    await place(a, 0, 0); await b.evaluate(() => { window.syn3h.game.input.external.y = 0 }); await place(b, gap, side ? Math.PI / 2 : 0)
     await wait(3500)
     const rest = await state()
     const before = await a.evaluate(() => window.syn3hNet.stats.rams)
-    await cruise(speed)
+    await cruise(speed, gap)
     let impact = 0
     const deadline = Date.now() + 20000
     let rammed = false

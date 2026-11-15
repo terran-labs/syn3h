@@ -325,7 +325,9 @@ try {
       return { tagged, beamsSent: sent, ms: tagged ? Date.now() - t0 : null }
     },
     async hill() {
-      await place(b, 0, 0, 0)
+      // B waits at its spawn pad, well away from the hill: the runway itself may lie inside
+      // the zone, and two vehicles in it are a contest, not a capture.
+      await b.evaluate(() => { const s = window.syn3h.terrain.spawnPoint(1); window.syn3h.player.teleport(s.position, s.heading) })
       await a.evaluate(() => window.syn3h.params.set('game.mode', 1))
       const t0 = Date.now()
       const gotZone = await b.waitForFunction(() => window.syn3hNet.game.mode === 1 && window.syn3hNet.game.koth.zone, null, { timeout: 10000 }).then(() => true, () => false)

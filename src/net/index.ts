@@ -45,7 +45,7 @@ import { attachVehicleEffects } from '../vehicles/effects'
 import { ServerClock } from './Clock'
 import { Connection, serverUrl } from './Connection'
 import { NameTags } from './NameTags'
-import { netExtrapolate, netInterpDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
+import { netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
 import { audibleVehicles, bodyAlive, liveBots } from './bots'
 
@@ -357,7 +357,7 @@ export class NetClient implements System {
         this.remotes.delete(id)
         continue
       }
-      r.delay = r.buffer.delay(dt, netInterpDelay.value)
+      r.delay = r.buffer.delay(dt, netInterpDelay.value, netMaxDelay.value)
       r.steer(now - r.delay, maxEx, lp, radius, blend)
     }
 

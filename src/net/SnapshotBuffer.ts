@@ -126,11 +126,18 @@ export class SnapshotBuffer {
    * max(0.1, ping * 1.5 + jitter * 8) as in VehicleNet.js 79. It rises slowly, as in the
    * original, but falls with a two second time constant so a passing disturbance does not
    * leave every vehicle lagging for half a minute.
+   *
+   * `cap` bounds the automatic delay. On a lossy connection the formula asks for 350 to
+   * 400 ms (measured at 100 ms round trip with 3% loss), which buys smooth interpolation by
+   * showing every vehicle a third of a second late: 9 m behind at speed, and 6 m from where
+   * the other driver sees a head on ram. Capped, the copy runs past its newest state along
+   * the sender's velocity instead, which measured as accurate along the path and half as far
+   * behind. The floor still wins over a cap set below it.
    */
-  delay(dt: number, override = 0): number {
+  delay(dt: number, override = 0, cap = Infinity): number {
     if (override > 0) return override
     if (this.measured < 2) return this.autoDelay
-    const target = Math.max(DELAY_FLOOR, this.ping * 1.5 + this.jitter * 8)
+    const target = Math.max(DELAY_FLOOR, Math.min(cap, this.ping * 1.5 + this.jitter * 8))
     const rate = target < this.autoDelay ? 0.5 : 0.15
     this.autoDelay = Math.max(DELAY_FLOOR, this.autoDelay + (target - this.autoDelay) * Math.min(1, dt * rate))
     return this.autoDelay
