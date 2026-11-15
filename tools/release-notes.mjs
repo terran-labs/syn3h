@@ -186,6 +186,7 @@ async function publish(tag, { assetsDir, dryRun, yes }) {
   // Every image the notes link must be uploaded, or the release page shows broken images.
   const missing = referencedAssets(body, tag).filter((name) => !assets.includes(name))
   const problems = missing.map((name) => `the notes link ${name}, which is not in ${dir}`)
+  for (const name of assets) if (statSync(join(dir, name)).size === 0) problems.push(`${name} is empty`)
 
   // The commit: the version tag if it exists here, else the release-N commit from releases.tsv.
   const record = recordedReleases().find((r) => r.version === tag)
