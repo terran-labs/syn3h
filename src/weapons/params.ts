@@ -7,30 +7,30 @@
 import { defineParam } from '../../shared/params'
 
 export const laserSpeed = defineParam({
-  id: 'laser.speed', label: 'Beam speed', group: 'Tag beams', scope: 'world',
+  id: 'laser.speed', label: 'Plasma Tag speed', group: 'Tag beams', scope: 'world',
   default: 180, min: 20, max: 340, step: 1,
 })
 
 /** Original applied `laserGrav * 20` m/s^2 of drop, so 1 is a steep lob. */
 export const laserGravity = defineParam({
-  id: 'laser.gravity', label: 'Beam arc', group: 'Tag beams', scope: 'world',
+  id: 'laser.gravity', label: 'Plasma Tag arc', group: 'Tag beams', scope: 'world',
   default: 0, min: 0, max: 1, step: 0.01,
 })
 
 /** 0 dies on impact, 1 bounces off the ground at full speed. */
 export const laserRicochet = defineParam({
-  id: 'laser.ricochet', label: 'Beam bounce', group: 'Tag beams', scope: 'world',
+  id: 'laser.ricochet', label: 'Plasma Tag bounce', group: 'Tag beams', scope: 'world',
   default: 0, min: 0, max: 1, step: 0.01,
 })
 
 /** Seconds between shots. The original laser fired every 0.25 s (VehicleMe.js 66). */
 export const laserInterval = defineParam({
-  id: 'laser.interval', label: 'Beam interval', group: 'Tag beams', scope: 'world',
+  id: 'laser.interval', label: 'Plasma Tag interval', group: 'Tag beams', scope: 'world',
   default: 0.25, min: 0.1, max: 2, step: 0.05,
 })
 
 export const lasersAllowed = defineParam({
-  id: 'laser.allowed', label: 'Tag beams allowed', group: 'Tag beams', scope: 'world',
+  id: 'laser.allowed', label: 'Plasma Tag allowed', group: 'Tag beams', scope: 'world',
   default: true,
 })
 

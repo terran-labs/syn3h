@@ -242,6 +242,8 @@ export class Bungee implements System {
   private padWas = { release: false }
   private sentAt = -Infinity
   private sentRest = 0
+  /** Reel held from a button (see setReel): -1 reels in, 1 lets out, 0 does neither. */
+  reel: -1 | 0 | 1 = 0
   /** Counts for automated checks. */
   stats = { launched: 0, attachedGround: 0, attachedVehicle: 0, released: 0, snapped: 0, timedOut: 0 }
 
@@ -286,6 +288,20 @@ export class Bungee implements System {
   /** Metres of cord out on the local player's cord, or 0. */
   get cordLength(): number {
     return this.attached ? this.mine!.rest : 0
+  }
+
+  /** 0 to 1: how hard the local player's attached cord pulls. For sound and the HUD. */
+  get tension(): number {
+    const c = this.mine
+    return c && !c.hook ? cordGlow(c.pull, c.mass, this.tuning()) : 0
+  }
+
+  /**
+   * Hold the reel from a button: -1 reels in, 1 lets out, 0 stops. Never touches the tag
+   * control, so a touch button can never launch a new hook. Cleared when the cord goes.
+   */
+  setReel(direction: -1 | 0 | 1): void {
+    this.reel = direction
   }
 
   private tuning(): CordTuning {
@@ -415,6 +431,7 @@ export class Bungee implements System {
     const c = this.mine
     if (!c) {
       this.wheel = 0
+      this.reel = 0
       if (pressed) { this.launch(control?.direction); this.lastPress = this.game.time }
       return
     }
@@ -430,8 +447,8 @@ export class Bungee implements System {
     // against a stuck load waits instead of storing an ever larger spring.
     const deepest = Math.max(bungeeMinLength.value, length - (t.maxAccel / (t.omega * t.omega)) * 1.1)
     let rest = c.rest
-    if (fire) rest = Math.max(deepest, rest - bungeeReelSpeed.value * dt)
-    if (inHand && (this.keys.has('KeyV') || padOut)) rest += bungeeReelSpeed.value * dt
+    if (fire || (inHand && this.reel < 0)) rest = Math.max(deepest, rest - bungeeReelSpeed.value * dt)
+    if (inHand && (this.keys.has('KeyV') || padOut || this.reel > 0)) rest += bungeeReelSpeed.value * dt
     if (this.wheel) {
       rest = this.wheel > 0 ? rest + this.wheel * WHEEL_STEP : Math.max(deepest, rest + this.wheel * WHEEL_STEP)
       this.wheel = 0
