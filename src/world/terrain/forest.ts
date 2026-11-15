@@ -88,7 +88,7 @@ export const forestPass: TerrainPass = {
     const maskSeed = subSeed(data.seed, 71)
     const half = data.size / 2
     // Trees thin out toward the tree line, well below the snow.
-    const treeLine = L.summitHeight * 0.42
+    const treeLine = L.summitHeight * 0.3
     const lake = data.lava.lake
     const n = { x: 0, y: 0, z: 0 }
     const out: number[] = []

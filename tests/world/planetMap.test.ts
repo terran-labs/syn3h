@@ -14,7 +14,7 @@ describe('planet maps', () => {
     const s = settingsForRecipe(PLANETS.find((p) => p.id === 'alpine')!)
     expect(s.kind).toBe(2)
     expect(s.volcanoHeight).toBe(600)
-    expect(s.treeCover).toBe(0.75)
+    expect(s.treeCover).toBe(PLANETS.find((p) => p.id === 'alpine')!.values['terrain.treeCover'])
   })
 
   it('is deterministic and depends on seed and recipe', () => {

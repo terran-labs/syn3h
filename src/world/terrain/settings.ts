@@ -22,7 +22,7 @@ export const terrainRoughness = defineParam({
   ...P, id: 'terrain.roughness', label: 'Roughness', default: 0.5, min: 0, max: 1, step: 0.01,
 })
 export const terrainMesaHeight = defineParam({
-  ...P, id: 'terrain.mesaHeight', label: 'Mountain height', default: 120, min: 0, max: 220, step: 2,
+  ...P, id: 'terrain.mesaHeight', label: 'Mountain height', default: 120, min: 0, max: 360, step: 2,
 })
 export const terrainIslandRadius = defineParam({
   ...P, id: 'terrain.islandRadius', label: 'Island size (radius)', default: 800, min: 480, max: 824, step: 4,

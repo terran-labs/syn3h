@@ -90,6 +90,8 @@ export function createTerrainMaterial(): TerrainMaterial {
   const glow = uniform(1)
   // Snow lies above this height on ground that is not too steep. Far above the world: off.
   const snowLine = uniform(1e6)
+  // 1 on alpine worlds, 0 elsewhere.
+  const alpine = uniform(0)
   const dustDark = pal.groundDark
   const dustLight = pal.groundLight
   // Mostly large soft regions; the 80 m patches alone read as leopard spots from the air.
@@ -110,6 +112,17 @@ export function createTerrainMaterial(): TerrainMaterial {
   // Scorched shore: ground just above the liquid is burnt black, and the last metre glows.
   const aboveSea = p.y.sub(sea)
   col = mix(col, pal.shore, smoothstep(8, 2, aboveSea).mul(0.9))
+
+  // Alpine ground changes with height: meadow, with drifts of wild flowers, then thin tan
+  // tundra and scree as the trees give out, well below the snow. Off on other worlds.
+  const zone = smoothstep(snowLine.mul(0.45), snowLine.mul(0.9), p.y.add(big.mul(18)))
+  const tundra = mix(color(0x8a8452), color(0x6f6a5c), smoothstep(-0.4, 0.6, mid))
+  col = mix(col, tundra, zone.mul(float(1).sub(cliff)).mul(alpine))
+  const patch = smoothstep(0.25, 0.6, mx_noise_float(p.mul(0.021).add(40)))
+  const petal = smoothstep(0.35, 0.75, mx_noise_float(p.mul(1.9)))
+  const bloom = mix(color(0xe8c93a), color(0xb06ad0), smoothstep(-0.2, 0.2, mx_noise_float(p.mul(0.008).add(90))))
+  const nearGround = smoothstep(160, 30, p.sub(cameraPosition).length())
+  col = mix(col, bloom, patch.mul(petal).mul(nearGround).mul(float(1).sub(zone)).mul(float(1).sub(cliff)).mul(alpine).mul(0.7))
 
   // Snow: above the snow line, thinning on steep faces, with a ragged lower edge.
   const snow = smoothstep(snowLine, snowLine.add(45), p.y.add(big.mul(22)).add(mid.mul(6)))
@@ -179,6 +192,7 @@ export function createTerrainMaterial(): TerrainMaterial {
       if (lavaSea) pal.shore.value.setHex(0x140a08)
       glow.value = lavaSea || lavaLake ? 1 : 0
       snowLine.value = snowHeight
+      alpine.value = kind === 2 ? 1 : 0
     },
     setLake(x, z, radius, surface) {
       lake.value.set(x, z, radius, surface)
