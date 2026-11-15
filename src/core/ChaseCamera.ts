@@ -127,6 +127,19 @@ export class ChaseCamera implements System {
   private readonly steady = new THREE.Vector3()
   /** How far the arm is currently raised over ground in its way. Rises fast, settles slowly. */
   private lift = 0
+  private backingFor = 0
+  /** Yaw and pitch rates of the travel-following spring, radians per second. */
+  private readonly turn = [0, 0]
+  /** Unity's SmoothDamp: a critically damped spring toward `target`, velocity kept in `rates[index]`. */
+  private damp(current: number, target: number, rates: number[], index: number, time: number, dt: number, angle: boolean): number {
+    let change = current - target
+    if (angle) change = Math.atan2(Math.sin(change), Math.cos(change))
+    const goal = current - change, omega = 2 / Math.max(1e-3, time), x = omega * dt
+    const decay = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x)
+    const temp = (rates[index] + omega * change) * dt
+    rates[index] = (rates[index] - omega * temp) * decay
+    return goal + (change + temp) * decay
+  }
   private readonly aheadPivot = new THREE.Vector3()
   private readonly aheadDesired = new THREE.Vector3()
   /** Share of the full arm length in use, 1 unless something forced the camera in. */
@@ -262,7 +275,7 @@ export class ChaseCamera implements System {
     // Aim by a steadier velocity than the body's own: a wheel over a rock kicks the true one
     // about, and the view should not twitch with it. At walking pace the car's own nose is
     // a better guide than a velocity that is mostly noise.
-    if (reset) { this.steady.copy(this.velocity); this.pivotY = NaN; this.lift = 0 }
+    if (reset) { this.steady.copy(this.velocity); this.pivotY = NaN; this.lift = 0; this.turn[0] = this.turn[1] = 0 }
     else this.steady.lerp(this.velocity, ease(dt, 5))
     this.previousTarget = target; this.previousPosition.copy(target.position)
     const speed = this.velocity.length(), mode = Math.round(camMode.value), first = mode === 1 || this.scopeHeld
@@ -291,17 +304,42 @@ export class ChaseCamera implements System {
     if ((mode === 0 || first) && this.elapsed - this.lastManual > camAutoDelay.value && speed > 1 && (first || flight || Math.hypot(this.velocity.x, this.velocity.z) > 1)) {
       if (first || flight) this.direction.set(0, 0, -1).applyQuaternion(target.quaternion)
       else {
-        const slow = clamp(1 - (Math.hypot(this.steady.x, this.steady.z) - 1) / 4, 0, 1)
+        const pace = Math.hypot(this.steady.x, this.steady.z), slow = clamp(1 - (pace - 1) / 4, 0, 1)
+        this.nose.set(0, 0, -1).applyQuaternion(target.quaternion)
         this.direction.copy(this.steady).normalize()
-        if (slow > 0) this.direction.lerp(this.nose.set(0, 0, -1).applyQuaternion(target.quaternion), slow * 0.6)
+        // Backing up is not a change of direction: stay behind the car and look past its
+        // nose instead of swinging the whole view round for a three point turn. The weight
+        // toward the nose grows smoothly as travel opposes it, so a slide or a donut (travel
+        // across the nose, not against it) never makes the aim jump. Only for a short
+        // while: a car that keeps reversing really is going that way.
+        const against = clamp(-(this.direction.x * this.nose.x + this.direction.z * this.nose.z) / 0.5, 0, 1)
+        this.backingFor = against > 0.5 && pace < 12 ? this.backingFor + dt : Math.max(0, this.backingFor - dt * 2)
+        const hold = against * clamp(3.5 - this.backingFor, 0, 1) * clamp((12 - pace) / 4, 0, 1)
+        this.direction.lerp(this.nose, Math.max(hold, slow * 0.6))
       }
       this.direction.normalize()
       const wantedYaw = Math.atan2(-this.direction.x, -this.direction.z)
-      const wantedPitch = Math.asin(clamp(this.direction.y, -1, 1)) * (first || flight ? 1 : camPitchDamping.value)
-      this.autoTarget.setFromEuler(this.euler.set(wantedPitch, wantedYaw, 0))
-      this.automatic.copy(this.rotation).slerp(this.autoTarget, ease(dt, first ? camRideRotation.value : camAutoRotation.value))
-      this.euler.setFromQuaternion(this.automatic, 'YXZ'); this.yaw = this.euler.y; this.pitch = this.euler.x
-    }
+      let wantedPitch = Math.asin(clamp(this.direction.y, -1, 1))
+      if (!first && !flight) {
+        // On the ground, pitch with the hill, read from the terrain along the way the car is
+        // going, not from the car's vertical speed: that is mostly suspension and bumps, and
+        // following it makes the horizon nod. In the air (a jump, a drop) the car's own
+        // path is the only guide, so blend back to it with height.
+        const flat = Math.hypot(this.direction.x, this.direction.z) || 1, ux = this.direction.x / flat, uz = this.direction.z / flat
+        const p = target.position
+        const slope = Math.atan2(surfaceHeight(this.terrain, p.x + ux * 7, p.z + uz * 7) - surfaceHeight(this.terrain, p.x - ux * 4, p.z - uz * 4), 11)
+        const air = clamp((p.y - surfaceHeight(this.terrain, p.x, p.z) - 2) / 4, 0, 1)
+        wantedPitch = THREE.MathUtils.lerp(slope, wantedPitch, air) * camPitchDamping.value
+      }
+      // Turn toward the direction of travel through a critically damped spring on each angle.
+      // A plain exponential ease starts turning at full rate the instant the target moves,
+      // which reads as a twitch; a spring eases in as well as out, like a hand on a tripod.
+      // About 0.45 s at the default: on real drives the view then trails the direction of
+      // travel by about six degrees on average, close enough to see where you are going.
+      const time = 1.35 / (first ? camRideRotation.value : camAutoRotation.value)
+      this.yaw = this.damp(this.yaw, wantedYaw, this.turn, 0, time, dt, true)
+      this.pitch = this.damp(this.pitch, wantedPitch, this.turn, 1, first || flight ? time : time * 2, dt, false)
+    } else this.turn[0] = this.turn[1] = 0
     const wantedRoll = camGyro.value && (flight || first) ? this.euler.setFromQuaternion(target.quaternion, 'YXZ').z : 0
     this.euler.setFromQuaternion(this.rotation, 'YXZ')
     const roll = THREE.MathUtils.lerp(this.euler.z, wantedRoll, ease(dt, camHorizonSmoothing.value))

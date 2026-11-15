@@ -30,7 +30,7 @@ export function ride(seed: string, seconds: number, kind = 0) {
   const chase = new ChaseCamera(game, terrain); chase.setVehicle(buggy)
   const surface = (x: number, z: number) => Math.max(terrain.heightAt(x, z), terrain.liquidHeightAt?.(x, z) ?? -Infinity)
   const forward = new Vector3(), last = new Vector3(), corner = new Vector3(), q = new Quaternion(), toCar = new Vector3()
-  let frames = 0, minClear = Infinity, clipped = 0, hidden = 0, sumJerk = 0, maxTurn = 0, lastTurn = 0, lastY = NaN, lastVy = 0, sumLift = 0, maxPop = 0, lastDistance = NaN
+  let maxKick = 0, lagSum = 0, lagFrames = 0, frames = 0, minClear = Infinity, clipped = 0, hidden = 0, sumJerk = 0, maxTurn = 0, lastTurn = 0, lastY = NaN, lastVy = 0, sumLift = 0, maxPop = 0, lastDistance = NaN
   const turns: number[] = []
   for (let i = 0; i < seconds / DT; i++) {
     mind.step(DT, buggy.input); buggy.fixedUpdate(DT); world.step(); buggy.postPhysics(DT); buggy.update(DT, 1)
@@ -56,11 +56,15 @@ export function ride(seed: string, seconds: number, kind = 0) {
     let blocked = false
     for (let t = 0.15; t < 0.9 && !blocked; t += 0.15) blocked = c.y + toCar.y * t < surface(c.x + toCar.x * t, c.z + toCar.z * t) - 0.3
     if (blocked) hidden++
-    // How steadily the view turns: turn rate, and its change from frame to frame.
+    // How steadily the view turns: turn rate, its change from frame to frame, and the
+    // largest single-frame change, which is what a twitch is.
     camera.getWorldDirection(forward)
     const turn = Math.acos(Math.min(1, forward.dot(last))) * 180 / Math.PI / DT
     turns.push(turn); maxTurn = Math.max(maxTurn, turn)
-    sumJerk += ((turn - lastTurn) / DT) ** 2; lastTurn = turn; last.copy(forward)
+    maxKick = Math.max(maxKick, Math.abs(turn - lastTurn)); sumJerk += ((turn - lastTurn) / DT) ** 2; lastTurn = turn; last.copy(forward)
+    // How far the view trails the direction of travel, when travelling: degrees off, in plan.
+    const bv = buggy.body.linvel(), pace = Math.hypot(bv.x, bv.z)
+    if (pace > 5) { const flat = Math.hypot(forward.x, forward.z) || 1; lagSum += Math.acos(Math.max(-1, Math.min(1, (forward.x * bv.x + forward.z * bv.z) / (flat * pace)))) * 180 / Math.PI; lagFrames++ }
     // How steadily it rises and falls.
     const vy = (c.y - lastY) / DT
     sumLift += ((vy - lastVy) / DT) ** 2; lastVy = vy; lastY = c.y
@@ -72,10 +76,14 @@ export function ride(seed: string, seconds: number, kind = 0) {
   turns.sort((a, b) => a - b)
   chase.dispose(); world.free()
   return {
+    /** Mean angle between the view and the direction of travel above 5 m/s, degrees. */
+    lag: lagSum / Math.max(1, lagFrames),
     minClear, clippedShare: clipped / frames, hiddenShare: hidden / frames,
     turnP50: turns[Math.floor(turns.length * 0.5)], turnP99: turns[Math.floor(turns.length * 0.99)], maxTurn,
-    /** RMS change in turn rate, degrees per second squared: the shake you feel. */
-    turnJerk: Math.sqrt(sumJerk / frames),
+    /** Largest change in turn rate between two frames, degrees per second: a twitch. */
+    maxKick,
+    /** RMS angular acceleration of the view, degrees per second squared. */
+    turnAccel: Math.sqrt(sumJerk / frames),
     /** RMS vertical acceleration of the lens, m/s^2: the bounce. */
     bounce: Math.sqrt(sumLift / frames),
     /** Largest single-frame change in distance to the car, metres: the pop when the arm shortens. */
