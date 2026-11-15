@@ -308,7 +308,7 @@ body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-noti
 .syn3h-shell.exploration-ui .performance-recommendation button { min-height: 44px; padding: 5px 8px; font-size: 12px; }
 .syn3h-shell.exploration-ui .performance-unlock { display: block; margin-top: 4px; color: var(--s3-dim); }
 @media (max-width: 700px) and (min-height: 501px) {
-  .syn3h-shell.exploration-ui .performance-recommendation { left: auto; right: 12px; bottom: 206px; width: calc(100vw - 164px); max-width: 230px; transform: none; padding: 8px; font-size: 12px; }
+  .syn3h-shell.exploration-ui .performance-recommendation { left: auto; right: 46px; bottom: 206px; width: calc(100vw - 198px); max-width: 230px; transform: none; padding: 8px; font-size: 12px; }
   .syn3h-shell.exploration-ui .performance-recommendation button { display: block; width: 100%; margin: 4px 0 0; }
 }
 .syn3h-shell.exploration-ui .world-inspector .performance-recommendation[data-docked] { position: static; inset: auto; transform: none; width: auto; max-width: none; margin: 0; padding: 6px; }
