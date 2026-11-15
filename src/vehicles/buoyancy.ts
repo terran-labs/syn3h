@@ -5,7 +5,7 @@ import type { RAPIER } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import { seaWaves } from '../world/water/seaWaves'
 
-export const waterSinking = defineParam<boolean>({ id:'water.sinking', label:'Sinking physics', group:'Water', scope:'world', default:false })
+export const waterSinking = defineParam<boolean>({ id:'water.sinking', label:'Sinking physics', group:'Water', scope:'world', default:true })
 export const waterLinearDrag=defineParam({id:'water.linearDrag',label:'Linear drag (1/s)',group:'Water',scope:'world',default:.35,min:0,max:3,step:.05})
 export const waterQuadraticDrag=defineParam({id:'water.quadraticDrag',label:'Quadratic drag (1/m)',group:'Water',scope:'world',default:.06,min:0,max:.5,step:.01})
 function tuning(kind:string, buoyancy:number, planing:number) {

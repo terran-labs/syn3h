@@ -3,7 +3,7 @@ import { float, texture, uniform, uv, vec2, vec3, vec4, smoothstep } from 'three
 import { defineParam } from '../../../shared/params'
 import { DisturbanceQueue, snappedOrigin } from './rippleMath'
 
-export const waterRipples = defineParam<boolean>({id:'water.ripples',label:'Simulated ripples',group:'Water',scope:'client',default:false})
+export const waterRipples = defineParam<boolean>({id:'water.ripples',label:'Simulated ripples',group:'Water',scope:'client',default:true})
 export const waterRippleSize = defineParam({id:'water.rippleSize',label:'Ripple window (m)',group:'Water',scope:'client',default:128,min:32,max:256,step:16})
 
 /** RG stores current and previous height. Fixed 120 Hz, c=12 m/s, CFL <= .5. */
