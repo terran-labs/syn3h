@@ -14,8 +14,9 @@ import { type TerrainMaterial, createTerrainMaterial } from './material'
 import { LOD_FAR, LOD_NEAR, type TerrainMeshes, type TriangleStats, createTerrainMeshes } from './mesh'
 import { rimRoadRadius } from './roads'
 import { HeightSampler } from './sampler'
-import { TERRAIN_PARAM_IDS, currentTerrainSettings } from './settings'
+import { KIND_ALPINE, KIND_VOLCANIC, TERRAIN_PARAM_IDS, currentTerrainSettings, worldSeaKind } from './settings'
 import { spawnPointAt } from './spawn'
+import { Trees } from './trees'
 import { Volcanics } from './volcanics'
 
 export class ProceduralTerrain implements Terrain {
@@ -35,6 +36,7 @@ export class ProceduralTerrain implements Terrain {
   private readonly lodSystem: System
   /** The sea, lava lake, rivers and vents drawn from the generated data. */
   private readonly volcanics: Volcanics
+  private readonly trees: Trees
 
   constructor(private readonly game: Game, private seed: number) {
     this.data = this.generate()
@@ -54,8 +56,11 @@ export class ProceduralTerrain implements Terrain {
       },
     })
     this.volcanics = game.add(new Volcanics(game.scene, this.sampler))
+    this.trees = game.add(new Trees(game.scene, this.sampler, game.camera))
 
     this.unsubscribe = params.onChange((id) => {
+      // The sea kind only recolours: no regeneration.
+      if (id === worldSeaKind.def.id) this.lightLake()
       if (!TERRAIN_PARAM_IDS.has(id)) return
       if (id === worldSeed.def.id) this.seed = worldSeed.value
       // A preset or a late-join snapshot sets several values at once: regenerate once.
@@ -79,10 +84,16 @@ export class ProceduralTerrain implements Terrain {
     return this.data.layout.summitHeight
   }
 
+  /** Colours, snow and glow for this kind of world and its sea. */
   private lightLake(): void {
     const lake = this.data.lava.lake
-    if (lake) this.look.setLake(lake.x, lake.z, lake.radius, lake.surface)
+    const kind = this.data.settings.kind
+    const hot = kind === KIND_VOLCANIC
+    if (lake && hot) this.look.setLake(lake.x, lake.z, lake.radius, lake.surface)
     else this.look.setLake(0, 0, 0, -1000)
+    // Alpine worlds carry snow on the upper half of the peak.
+    const snow = kind === KIND_ALPINE ? this.data.layout.summitHeight * 0.5 : 1e6
+    this.look.setLook(kind, worldSeaKind.value === 0, hot, snow)
   }
 
   /** Rebuild heights, mesh and collider in place, then notify listeners. */
@@ -95,6 +106,7 @@ export class ProceduralTerrain implements Terrain {
     this.game.world.removeCollider(this.collider, true)
     this.collider = createTerrainCollider(this.game.world, this.data)
     this.volcanics.rebuild()
+    this.trees.rebuild()
     this.version++
     console.info(`terrain regenerated: seed ${this.seed}, ${this.lastGenerateMs.toFixed(0)} ms`)
     for (const l of this.listeners) l()
@@ -118,7 +130,12 @@ export class ProceduralTerrain implements Terrain {
    * that flows from the volcano are lava on this world.
    */
   liquidKindAt(x: number, z: number): 'lava' | 'water' | null {
-    return this.liquidHeightAt(x, z) > this.sampler.heightAt(x, z) ? 'lava' : null
+    const sea = worldLavaAltitude.value
+    const surface = lavaSurfaceAt(this.data.lava, x, z, sea)
+    if (surface <= this.sampler.heightAt(x, z)) return null
+    // Above the sea level it is the lake, a river or a pool; otherwise it is the sea.
+    const lava = surface > sea ? this.data.settings.kind === KIND_VOLCANIC : worldSeaKind.value === 0
+    return lava ? 'lava' : 'water'
   }
 
   spawnPoint(index: number): SpawnPoint {
@@ -164,6 +181,8 @@ export class ProceduralTerrain implements Terrain {
     const near = LOD_NEAR * detail * detail
     const far = Math.max(near, Math.min(LOD_FAR * detail, quality.drawDistance * 0.6))
     this.meshes.setLodDistances(near, far)
+    // Forest out to the level's draw distance: 700 m on the weakest phones.
+    this.trees.setDrawDistance(Math.min(1800, quality.drawDistance))
   }
 
   /** Terrain triangles in view at the current levels of detail, versus at full detail. */
@@ -181,6 +200,7 @@ export class ProceduralTerrain implements Terrain {
     this.unsubscribe()
     this.game.remove(this.lodSystem)
     this.game.remove(this.volcanics)
+    this.game.remove(this.trees)
     this.listeners.clear()
     this.game.scene.remove(this.meshes.group)
     this.meshes.dispose()

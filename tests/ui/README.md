@@ -265,3 +265,25 @@ action button, minimap, HUD, strip, menu row, controls card, toast, announcement
 vehicle's place on screen, and fails if any two overlap. Match states are fixtures, so it
 needs only the lane dev server.
 
+## Lobby art direction
+
+The lobby follows the owner's 2017 Syn3h build as art direction, not as a specification:
+near-black space, one saturated blue, thin type, a dark slab panel, slab buttons that light
+blue. Colours are the `--s3-*` tokens at the top of `shell.css`.
+
+- Sky: `Starfield.ts` draws the nebula and three depths of stars in one WebGL 2 fragment
+  shader, seeded from the world seed, at most thirty frames a second and not at all while
+  the game is on screen. No images. Without WebGL 2 the CSS gradient behind it shows.
+- Logo: one vector path (`brand/wordmarkPath.ts`, about 3 KB) traced from the legacy
+  bitmap by `tools/brand/trace-logo.mjs` and lit in CSS. The lobby, loading, invite and
+  attract screens no longer request the 1.5 MB `public/brand/syn3h.png`; that file now
+  only feeds the share card generator.
+- The stage leans up to 1.6 degrees toward a mouse pointer and the star depths slide
+  against each other. Touch and reduced-motion users get a still stage.
+- `__SYN3H_BUILD__`, if the bundler defines it, appears as "build version : ..." under
+  the panel; otherwise the line reads "browser edition".
+
+`tools/heavy.sh node tests/ui/lobby-reference.mjs <label>` captures every lobby screen at
+the reference's shape and on a phone. The owner's reference captures show his desktop, so
+they stay in the git-ignored `tests/ui/artifacts/reference/`.
+

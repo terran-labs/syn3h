@@ -10,7 +10,8 @@ import { defaultTerrainSettings } from '../../src/world/terrain/settings'
 import { spawnPointAt } from '../../src/world/terrain/spawn'
 
 const seeds = (process.argv[2] ?? '1,7,42').split(',').map(Number)
-const settings = defaultTerrainSettings()
+// KIND=1 for desert, 2 for alpine; other settings can be given as JSON in SETTINGS.
+const settings = { ...defaultTerrainSettings(), kind: Number(process.env.KIND ?? 0), ...JSON.parse(process.env.SETTINGS ?? '{}') }
 generateTerrain(5, settings)
 generateTerrain(6, settings)
 for (const seed of seeds) {

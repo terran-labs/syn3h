@@ -2,7 +2,8 @@
 
 How the Syn3h lanes work together during the Saturday night push (4:30pm to 9:30pm Pacific)
 and through to the demo on Sunday at noon Pacific. Written by the Foreman on Saturday 14
-November. Proposed to the Orchestrator; items marked **adopted** have been confirmed by it.
+November. The Orchestrator adopted all ten rules at 4:40pm. Rule 6 was rewritten at 4:45pm after the owner chose
+Cloudflare as the stable channel; it is blocked on Cloudflare access. Rule 10 awaits the owner.
 
 ## 1. One trunk, one merger
 
@@ -43,11 +44,14 @@ Anything not ready for an audience merges behind a URL parameter or a slider tha
 off, the way the tank already does. This keeps branches short lived without putting half
 built features in front of the room.
 
-## 6. Two channels: live and stable
+## 6. Two channels: live and production
 
-The live preview follows every merge. The stable channel changes only when the Orchestrator
-promotes a tagged, green milestone. The demo runs on stable. Promote at least once before
-the night ends so a known good build exists before anyone sleeps.
+The live preview follows every merge. Production is served from Cloudflare and changes only
+when the Orchestrator ships a production release: a tagged, green milestone, frozen with
+`tools/promote-stable.sh`, deployed from the frozen copy, then verified with
+`tools/net-smoke.mjs` against the public address. Each release gets a `release-N` tag and a
+line in the digest. The demo runs on production. Ship the first release as soon as
+Cloudflare access exists, and one more at tonight's freeze.
 
 ## 7. Handoffs and digests have a fixed shape
 
@@ -88,4 +92,13 @@ Foreman reads lead threads on each sweep and records owner decisions in `ops/DEC
 
 Proposed, awaiting the owner: new features stop when tonight's push ends. Sunday morning is
 fixes, a hand driven rehearsal on the demo hardware and network, and one final promotion to
-stable. Nothing merges after 10am Sunday without the owner saying so.
+stable. Nothing merges after 10am Sunday without the owner saying so. After the freeze, lanes may
+still merge work that is off by default (rule 5).
+
+## 11. Never kill processes by name
+
+`pkill`, `killall` and any kill that matches on a name or command line are forbidden for
+every lane, with no exceptions. Stop only processes you started, by the PID you recorded
+when you started them. At 5:30pm on Saturday a malformed `pkill` terminated every lane's
+servers, Chrome, the Claude app and the Vorteo host daemons. It was the second name based
+kill to cause damage that day.

@@ -1,4 +1,4 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import { execSync, spawn, type ChildProcess } from 'node:child_process'
 import { type Plugin } from 'vite'
 import { defineConfig } from 'vitest/config'
 import { manualReload } from './tools/manual-reload.mjs'
@@ -27,7 +27,13 @@ function roomServer(): Plugin {
   }
 }
 
+/** Shown in the lobby as the build version: the nearest tag and commit, read at build time. */
+function buildLabel(): string {
+  try { return execSync('git describe --tags --always', { encoding: 'utf8' }).trim() } catch { return 'dev' }
+}
+
 export default defineConfig({
+  define: { __SYN3H_BUILD__: JSON.stringify(buildLabel()) },
   // manualReload: a merge shows a "new build available" notice instead of resetting the page.
   plugins: [roomServer(), manualReload()],
   server: {
