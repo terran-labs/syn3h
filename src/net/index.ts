@@ -282,6 +282,7 @@ export class NetClient implements System {
       lagOf: (id) => this.remotes.get(id)?.delay ?? 0,
       wrapSize: () => this.wrapSize,
       inHand: () => this.gear.current === 'yoink',
+      responding: (id) => this.remotes.get(id)?.responding ?? true,
       send: (y) => { if (this.connected) this.send({ type: 'yoink', y }) },
     })
     this.bigRed = new BigRed(game, {
