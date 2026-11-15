@@ -84,3 +84,38 @@ describe('the generated hovercraft body', () => {
     v.dispose(); h.world.free()
   }, 20000)
 })
+
+describe('shared hovercraft geometry', () => {
+  it('builds each level once and shares it between craft, with separate materials', async () => {
+    const { hoverBuilds } = await import('../../src/vehicles/hovergen/Round3Hover')
+    const first = new GameHover(HOVER_DESIGN), before = hoverBuilds.count
+    const second = new GameHover(HOVER_DESIGN), third = new GameHover(HOVER_DESIGN)
+    // Later craft generate nothing.
+    expect(hoverBuilds.count).toBe(before)
+    const meshes = (g: GameHover, level: number) => { const list: T.Mesh[] = []; g.levels[level].object.traverse(o => { if (o instanceof T.Mesh) list.push(o) }); return list }
+    for (const level of [0, 1, 2]) {
+      const a = meshes(first, level), b = meshes(second, level)
+      expect(b.length).toBe(a.length)
+      expect(b.length).toBeGreaterThan(0)
+      // Same geometry objects, in some order; no material shared.
+      expect(new Set(b.map(m => m.geometry))).toEqual(new Set(a.map(m => m.geometry)))
+      for (const m of b) expect(a.map(x => x.material)).not.toContain(m.material)
+      expect(second.levels[level].triangles()).toBe(first.levels[level].triangles())
+    }
+    expect(second.bounds.equals(first.bounds)).toBe(true)
+    expect(second.levels[0].cockpitClearance).toBe(first.levels[0].cockpitClearance)
+    expect(second.levels[0].thruster.position.equals(first.levels[0].thruster.position)).toBe(true)
+    expect(second.levels[0].thruster.children.length).toBe(first.levels[0].thruster.children.length)
+    // Colours stay per craft.
+    second.setColors('#ff0000', '#00ff00'); third.setColors('#0000ff', '#ffffff')
+    const body = (g: GameHover) => (g.levels[0].object.userData.vehicleColors.body as T.Color).getHexString()
+    expect([body(second), body(third)]).toEqual(['ff0000', '0000ff'])
+    expect(body(first)).not.toBe('ff0000')
+    // Disposing one craft leaves the shared geometry alive for the others.
+    let disposed = 0
+    for (const m of meshes(second, 0)) m.geometry.addEventListener('dispose', () => { disposed++ })
+    first.dispose(); third.dispose()
+    expect(disposed).toBe(0)
+    second.dispose()
+  })
+})

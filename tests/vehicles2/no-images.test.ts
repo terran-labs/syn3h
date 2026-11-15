@@ -3,8 +3,9 @@
 // returns to the vehicle model folders, or if a generated map stops matching what its material
 // expects.
 //
-// One allowance, by name: the jet and hovercraft paint still use armor-scales.jpg and
-// thruster-glow.png (Jet.ts, Hovercraft.ts, and skins/textureViews.ts, which loads for Jet.ts).
+// One allowance, by name: the jet paint still uses armor-scales.jpg and thruster-glow.png
+// (Jet.ts, and skins/textureViews.ts, which loads for Jet.ts). The hovercraft left the list
+// on 15 November 2026, when its body became generated.
 // The owner set those aside on 14 November 2026; they go when those vehicles move to the shared
 // vehicle materials system. Remove the allowance then. Anything else fails. The browser half of the check, that no request for /models/textures/ or
 // /models/effects/ is made while each vehicle kind drives, is tests/vehicles2/nobitmaps-capture.mjs.
@@ -20,7 +21,7 @@ import {RibbonBatch} from '../../src/vehicles/effects/RibbonBatch'
 const root=new URL('../../',import.meta.url).pathname
 const files=(dir:string):string[]=>readdirSync(dir).flatMap(name=>{const p=join(dir,name);return statSync(p).isDirectory()?files(p):[p]})
 const IMAGE=/\.(png|jpe?g|webp|gif|bmp|avif|ktx2?|basis|dds|tga|exr|hdr)\b/i
-const ALLOWED_FILES=new Set(['src/vehicles/Jet.ts','src/vehicles/Hovercraft.ts','src/vehicles/skins/textureViews.ts'])
+const ALLOWED_FILES=new Set(['src/vehicles/Jet.ts','src/vehicles/skins/textureViews.ts'])
 const ALLOWED_IMAGES=['textures/armor-scales.jpg','textures/thruster-glow.png']
 const LOADER=/\b(TextureLoader|ImageLoader|ImageBitmapLoader|CubeTextureLoader|KTX2Loader|RGBELoader|EXRLoader|createImageBitmap)\b|new\s+Image\s*\(/
 
