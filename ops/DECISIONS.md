@@ -2,6 +2,23 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Saturday 14 November, evening: four decisions made in lead threads
+
+Relayed by the Orchestrator at 9:30pm with the owner's words as the leads quoted them.
+
+1. **No large vegetation on any world** (Terrain Lab thread). "The alpine trees look
+   absolutely ridiculous, and they're destroying it for me. Eliminate all large vegetation
+   such as trees from all worlds, eliminate cacti, etc."
+2. **Planets are drawn larger than true** (Terrain Lab thread). "Yes, definitely draw
+   planets larger than true." Roundness defaults to 0.4, so the summit shows from every
+   spawn pad. This settles the opening view gate, pending his look at the comparison page.
+3. **Wrapping is always on** (Terrain Lab thread). "Wrapping should not be optional.
+   Wrapping is a core feature." The wrap switch is deleted. Consequence: round planets
+   cannot ship without the wrap, so the full trunk option depends on the seam checks.
+4. **The galaxy lobby replaces the panel lobby** (UX thread). "Replace the lobby ASAP",
+   "Don't hold back. Try shipping the full Galaxy Lobby now". It is the default on trunk,
+   with the panel lobby as fallback.
+
 ## Saturday 14 November, 9:10pm Pacific: calendar versions, release notes and GitHub releases, as in Freed and Vorteo
 
 **Decided.** Syn3h adopts the versioning, release notes and GitHub tagging used by Freed
