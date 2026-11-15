@@ -5,11 +5,11 @@
  * name in the sidebar to look at it alone.
  *
  * The tank has a Body slider while its design is undecided: 0 is the original model, 1 to 10
- * the round eight bodies (src/vehicles/tankDesigns/round8.ts). It sets `tank.design`, and the
- * tank rebuilds in place.
+ * the round eight bodies (src/vehicles/tankDesigns/round8.ts). It dresses the tank through
+ * `previewTankBody`, in this page only, and the tank rebuilds in place.
  */
-import { params } from '../../../../shared/params'
-import { tankDesign } from '../../../vehicles/Tank'
+import { previewTankBody } from '../../../vehicles/Tank'
+import { round8 } from '../../../vehicles/tankDesigns/round8'
 import { gameVehicles } from './gameVehicles'
 import type { LabExhibit } from '../types'
 
@@ -36,7 +36,7 @@ export const lineup: LabExhibit = {
       ...model,
       controls: [...model.controls ?? [], {
         kind: 'slider', id: 'lineup.tankBody', label: 'Tank body (0 original, 1 to 10 round eight)', group: 'Tank',
-        min: 0, max: tankDesign.def.max ?? 10, step: 1, value: tankDesign.value, onChange: value => { params.set(tankDesign.def.id, value) },
+        min: 0, max: round8.length, step: 1, value: 0, onChange: value => previewTankBody(round8[Math.round(value) - 1]?.id ?? null),
       }],
     }
   },

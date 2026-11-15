@@ -1,7 +1,7 @@
 import {beforeAll,describe,it,expect} from 'vitest'
 import * as THREE from 'three/webgpu'
 import {initPhysics} from '../../src/core/physics'
-import {Tank} from '../../src/vehicles/Tank'
+import {Tank,previewTankBody} from '../../src/vehicles/Tank'
 import {harness} from './harness'
 import {params} from '../../shared/params'
 import {RAPIER,groups,GROUP_TERRAIN,GROUP_ALL} from '../../src/core/physics'
@@ -51,7 +51,7 @@ describe('legacy tank with six shape casts',()=>{
   const h=harness(),v=new Tank(h.game,h.terrain,new THREE.Vector3(0,2,0));v.isLocal=false;h.step(v,300)
   const meshes=()=>{const out:THREE.Mesh[]=[];v.object.traverse(o=>{if(o instanceof THREE.Mesh)out.push(o)});return out}
   try{
-   params.set('tank.design',1)
+   previewTankBody('r8-dart')
    // A generated design: its own lamps, a cabin to sit in, the eye inside the hull.
    expect(v.object.userData.cockpit).toBe(true);expect(v.object.userData.ownLamps).toBe(true)
    expect(v.ridePosition.position.y).toBeGreaterThan(.6);expect(Math.abs(v.ridePosition.position.z)).toBeLessThan(2)
@@ -61,12 +61,12 @@ describe('legacy tank with six shape casts',()=>{
    const hull=meshes().find(m=>m.name==='Hull and cabin')!,box=new THREE.Box3().setFromObject(hull)
    expect(box.min.y).toBeGreaterThan(.3);expect(box.max.z-box.min.z).toBeGreaterThan(5)
    const height=v.body.translation().y
-   params.set('tank.design',8);expect(meshes().length).toBe(first);expect(v.body.translation().y).toBe(height)
+   previewTankBody('r8-wasp');expect(meshes().length).toBe(first);expect(v.body.translation().y).toBe(height)
    h.step(v,100);expect(v.groundedTracks).toBe(6);expect(v.body.mass()).toBeCloseTo(241)
    // 0 is the Mars Explorer model, which loads in a browser only: nothing generated remains.
-   params.set('tank.design',0);expect(meshes().length).toBe(0);expect(v.object.userData.cockpit).toBe(false)
+   previewTankBody(null);expect(meshes().length).toBe(0);expect(v.object.userData.cockpit).toBe(false)
    h.step(v,100);expect(v.groundedTracks).toBe(6)
-  }finally{params.set('tank.design',0)}
+  }finally{previewTankBody()}
   v.dispose();h.world.free()
  })
  it('tilts each pod to the ground under it and runs its belt with the ground',()=>{

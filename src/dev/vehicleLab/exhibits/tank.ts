@@ -1,7 +1,7 @@
 /**
- * Next-gen tank design studies (src/vehicles/tankDesigns). Round seven is the generator the game
- * tank uses (src/vehicles/Tank.ts, `tank.design`), shown here with the shared showroom shading
- * and its three detail levels. Rounds four to six are appearance studies kept as history.
+ * Next-gen tank design studies (src/vehicles/tankDesigns). Rounds seven and eight are built by
+ * the generator the game tank uses (ExpeditionTank), shown here with the shared showroom
+ * shading and its three detail levels. Rounds four to six are appearance studies kept as history.
  */
 import * as THREE from 'three/webgpu'
 import { designs as round4 } from '../../../vehicles/tankDesigns/designs'

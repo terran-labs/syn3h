@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu'
 import type { Game } from '../core/Game'
 import type { Terrain } from '../world/Terrain'
 import { RAPIER } from '../core/physics'
-import { defineParam, params } from '../../shared/params'
+import { defineParam } from '../../shared/params'
 import { Vehicle } from './Vehicle'
 import { VehicleModel } from './skins/VehicleModel'
 import { createTreadMap } from './effects/maps'
@@ -10,7 +10,7 @@ import { addLavaGlow } from './skins/lavaGlow'
 import { addNightReadability } from './skins/nightReadability'
 import { detailLevel, registerVehicleDetail } from './skins/mergeStatic'
 import { ExpeditionTank } from './tankDesigns/expeditionKit'
-import { round8 } from './tankDesigns/round8'
+import { round8, type TankBody } from './tankDesigns/round8'
 
 export const tankPower=defineParam({id:'tank.power',label:'Power',group:'Tank',scope:'world',default:2000,min:500,max:3500,step:10})
 export const tankSpeed=defineParam({id:'tank.speed',label:'Speed',group:'Tank',scope:'world',default:25,min:10,max:40,step:.1})
@@ -23,12 +23,21 @@ export const tankGrip=defineParam({id:'tank.grip',label:'Grip',group:'Tank',scop
 const CLIMB_FADE=10
 export const tankClimb=defineParam({id:'tank.climb',label:'Steepest climb, degrees (90 = original)',group:'Tank',scope:'world',default:45,min:20,max:90,step:1})
 /**
- * Which body the tank wears. 1 to 10 are the generated designs (tankDesigns/round8.ts, in the
- * order the vehicle lab lists them); 0 is the Mars Explorer model, and the default until the
- * owner picks a design. The physics is the same
- * under all of them: six tracks on the original footprint. Changing it rebuilds the tank in place.
+ * The body the tank wears: the id of one design in tankDesigns/round8.ts, or null for the Mars
+ * Explorer model. The game ships one approved design and offers no choice, so this is a
+ * constant and not a parameter. It stays null until the owner approves a design.
  */
-export const tankDesign=defineParam({id:'tank.design',label:'Body design (1 to 10, 0 = original)',group:'Tank',scope:'world',default:0,min:0,max:round8.length,step:1})
+const APPROVED_BODY:string|null=null
+let body=round8.find(d=>d.id===APPROVED_BODY)??null
+const wearers=new Set<()=>void>()
+/**
+ * For the vehicle lab and tests only: dress every tank in another design (an id from round8.ts,
+ * or null for the original model). Tanks rebuild in place. `undefined` restores the approved one.
+ */
+export function previewTankBody(id?:string|null):void{
+  body=round8.find(d=>d.id===(id===undefined?APPROVED_BODY:id))??null
+  for(const rebuild of wearers)rebuild()
+}
 export const tankCG=defineParam({id:'tank.cg',label:'Centre of gravity',group:'Tank',scope:'world',default:-.2,min:-1.4,max:1,step:.01})
 
 // TankTrack.prefab: the Detailed mesh sits at (0.5,-0.75,-1.05) with X scale 0.82, so a pod is 1.0 wide
@@ -68,10 +77,10 @@ export class Tank extends Vehicle {
   private readonly lastRock=new Float32Array(6)
   private readonly lastRun=new Float64Array(6)
   private generated?:ExpeditionTank
-  private design=-1
+  private design:TankBody|null|undefined
   private chassis?:RAPIER.Collider
   private detachDetail=()=>{}
-  private readonly unsubscribe:()=>void
+  private readonly wear=()=>this.rebuild()
   private level:0|1|2=0
   private castsShadows=true
   private tinted=false
@@ -82,13 +91,12 @@ export class Tank extends Vehicle {
     super(game,terrain,position,heading)
     this.object.add(this.ridePosition)
     this.rebuild()
-    this.unsubscribe=params.onChange(id=>{if(id===tankDesign.def.id)this.rebuild()})
+    wearers.add(this.wear)
   }
-  /** Build the body `tank.design` asks for, replacing whatever is there. Physics state is kept. */
+  /** Build the current body, replacing whatever is there. Physics state is kept. */
   private rebuild(){
-    const want=Math.round(tankDesign.value)
-    if(want===this.design)return
-    this.design=want
+    if(body===this.design)return
+    const design=this.design=body
     this.detachDetail();this.detachDetail=()=>{}
     this.generated?.dispose();this.generated=undefined
     this.models.forEach(m=>m.dispose());this.models.length=0
@@ -96,7 +104,6 @@ export class Tank extends Vehicle {
     this.tracks.forEach(t=>t.removeFromParent());this.tracks.length=0
     this.legacyHull?.removeFromParent();this.legacyHull=undefined
     if(this.chassis)this.game.world.removeCollider(this.chassis,true)
-    const design=round8[want-1]
     // Tank.prefab Cube: size 2.5x1.5x5, centre Y=1. Track masses are folded into the hull. A
     // generated body longer than that gets a box as long as it is: a nose that passes through
     // a wall would take the driver's eye with it. Width, height and clearance are the original's.
@@ -241,5 +248,5 @@ export class Tank extends Vehicle {
     tank.pose()
   }
   override teleport(position:THREE.Vector3,heading=0){super.teleport(position,heading);this.motors.forEach(m=>{m.speed=m.velocity=0});this.bellyUp=false}
-  override dispose(){this.unsubscribe();this.detachDetail();this.generated?.dispose();this.treadMaps.forEach(t=>t.dispose());this.models.forEach(m=>m.dispose());super.dispose()}
+  override dispose(){wearers.delete(this.wear);this.detachDetail();this.generated?.dispose();this.treadMaps.forEach(t=>t.dispose());this.models.forEach(m=>m.dispose());super.dispose()}
 }
