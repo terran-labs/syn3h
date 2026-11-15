@@ -1,8 +1,11 @@
 import { wordmarkSvg } from './brand/logo'
 import { qrSvg } from './QrCode'
 /** A link into a room. With `world`, the link also carries the world, so an empty room rebuilds it. */
-export function inviteUrl(origin:string, room:string, world?:string):string {
-  const url=new URL('/',origin);url.searchParams.set('room',room);if(world)url.searchParams.set('world',world);return url.href
+export function inviteUrl(pageUrl:string, room:string, world?:string):string {
+  const page=new URL(pageUrl),url=new URL('/',page)
+  // Keep the frozen build, but do not share autoplay, debug or vehicle overrides.
+  const version=page.searchParams.get('v');if(version)url.searchParams.set('v',version)
+  url.searchParams.set('room',room);if(world)url.searchParams.set('world',world);return url.href
 }
 export class InviteView {
   readonly element=document.createElement('section')
