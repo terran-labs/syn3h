@@ -127,7 +127,7 @@ export class SpraySim {
       for (let k = 0; k < count; k++) {
         const o = (arm * P + (start + k) % P) * W
         p[o + WAGE] += dt
-        const slow = Math.exp(-1.1 * dt)
+        const slow = Math.exp(-.45 * dt)
         p[o + WVX] *= slow; p[o + WVZ] *= slow
         p[o + WX] += p[o + WVX] * dt; p[o + WZ] += p[o + WVZ] * dt
         p[o + WY] = this.surface(p[o + WX], p[o + WZ], p[o + WY] - WAKE_LIFT) + WAKE_LIFT
@@ -179,28 +179,29 @@ export class SpraySim {
     const speed = Math.hypot(vx, vz)
     if (speed > .3) { s.dirX = vx / speed; s.dirZ = vz / speed }
     const fx = s.dirX, fz = s.dirZ, sx = -fz, sz = fx
-    const entering = sub - s.submerged > .15 && vy < -1.5
+    // From dry or nearly dry only, so a hull bobbing back down after a landing does not splash again.
+    const entering = s.submerged < .1 && sub - s.submerged > .15 && vy < -1.5
     s.seen = this.time; s.speed = speed
     s.touching = sub > 0
     if (sub > 0 && dt > 0) {
       // Bow spray: rate grows with speed; a slow wade sheds only the odd drop.
-      const bowRate = Math.min(this.cap.droplets * 1.2, speed * speed * 1.4 + speed * 6) * sub * (speed > .8 ? 1 : 0)
+      const bowRate = Math.min(this.cap.droplets * 1.5, speed * speed * 2 + speed * 8) * sub * (speed > .8 ? 1 : 0)
       let n = due(bowRate, dt, s.bow); s.bow = carried
       for (let i = 0; i < n; i++) {
         const sign = i % 2 ? 1 : -1, out = .4 + this.random() * 1.2, up = .5 + this.random() * 1.5
         const ox = fx * (1.3 + this.random() * .4) + sx * sign * (.6 + this.random() * .35), oz = fz * (1.3 + this.random() * .4) + sz * sign * (.6 + this.random() * .35)
         const k = Math.min(1.6, .15 + speed * .07)
-        this.drop(x + ox, y + .05, z + oz, vx * .55 + sx * sign * out * k * 2.2, up * k * 2.4, vz * .55 + sz * sign * out * k * 2.2, .02 + this.random() * .025, y, 0, scale)
+        this.drop(x + ox, y + .05, z + oz, vx * .6 + sx * sign * out * k * 1.7, up * k * 2.2, vz * .6 + sz * sign * out * k * 1.7, .007 + this.random() * .012, y, 0, scale)
       }
       // Rooster tail: a column thrown up behind a fast hull, falling back into its own wake.
       const tailRate = speed > 7 ? Math.min(this.cap.droplets, (speed - 7) * 18) * sub : 0
       n = due(tailRate, dt, s.tail); s.tail = carried
       for (let i = 0; i < n; i++) {
         const k = speed * (.22 + this.random() * .2), j = (this.random() - .5) * .9
-        this.drop(x - fx * 1.6 + sx * j * .4, y + .1, z - fz * 1.6 + sz * j * .4, vx * .35 + sx * j * 1.2, k, vz * .35 + sz * j * 1.2, .025 + this.random() * .03, y, 0, scale)
+        this.drop(x - fx * 1.6 + sx * j * .4, y + .1, z - fz * 1.6 + sz * j * .4, vx * .35 + sx * j * 1.2, k, vz * .35 + sz * j * 1.2, .015 + this.random() * .02, y, 0, scale)
       }
       // A low, soft sheet of mist along the hull at speed.
-      const mistRate = speed > 5 ? Math.min(40, (speed - 5) * 2.2) * sub : 0
+      const mistRate = speed > 5 ? Math.min(50, (speed - 5) * 3) * sub : 0
       n = due(mistRate, dt, s.mist); s.mist = carried
       for (let i = 0; i < n; i++) {
         const sign = i % 2 ? 1 : -1, along = (this.random() - .5) * 2.4
@@ -228,7 +229,7 @@ export class SpraySim {
     const n = Math.min(Math.floor(this.cap.droplets * .5), Math.round((20 + impact * 14) * scale))
     for (let i = 0; i < n; i++) {
       const a = i / n * Math.PI * 2 + this.random() * .3, r = 1 + this.random() * .5, out = (1 + this.random() * 1.2) * Math.min(6, impact * .3)
-      this.drop(x + Math.cos(a) * r, y + .05, z + Math.sin(a) * r, Math.cos(a) * out, (.6 + this.random() * .6) * Math.min(9, impact * .7), Math.sin(a) * out, .025 + this.random() * .035, y, 0, scale)
+      this.drop(x + Math.cos(a) * r, y + .05, z + Math.sin(a) * r, Math.cos(a) * out, (.6 + this.random() * .6) * Math.min(9, impact * .7), Math.sin(a) * out, .015 + this.random() * .025, y, 0, scale)
     }
     const i = this.ringCount < this.cap.rings ? this.ringCount++ : 0, o = i * R, r = this.rings
     r[o + RX] = x; r[o + RY] = y + WAKE_LIFT; r[o + RZ] = z; r[o + RAGE] = 0; r[o + RLIFE] = 1.6 + Math.min(1.4, impact * .08)
@@ -244,8 +245,8 @@ export class SpraySim {
     const spacing = Math.max(.6, speed * WAKE_LIFE / (P - 2))
     for (let a = 0; a < ARMS; a++) {
       const arm = s.slot * ARMS + a, side = a === 0 ? -1 : a === 1 ? 1 : 0
-      const ax = x - fx * 1.5 + sx * side * .8, az = z - fz * 1.5 + sz * side * .8
-      const halfWidth = (side ? .22 + speed * .018 : .5 + speed * .03) * scale
+      const back = side ? .4 : 1.6, ax = x - fx * back + sx * side * .85, az = z - fz * back + sz * side * .85
+      const halfWidth = (side ? .16 + speed * .011 : .3 + speed * .014) * scale
       const head = arm * 5
       if (!moving) { this.armHeadActive[arm] = 0; continue }
       const h = this.armHead
@@ -260,10 +261,10 @@ export class SpraySim {
       const o = (arm * P + (this.armStart[arm] + count) % P) * W
       p[o + WX] = ax; p[o + WY] = h[head + 1]; p[o + WZ] = az
       // Arms spread outward at roughly the Kelvin angle; the centre wash stays put and widens.
-      const drift = side * speed * .2
+      const drift = side * speed * .3
       p[o + WVX] = sx * drift; p[o + WVZ] = sz * drift
-      p[o + WAGE] = 0; p[o + WLIFE] = side ? WAKE_LIFE : WAKE_LIFE * .6
-      p[o + WWIDTH] = halfWidth; p[o + WSTRENGTH] = side ? strength : strength * .8
+      p[o + WAGE] = 0; p[o + WLIFE] = side ? WAKE_LIFE : WAKE_LIFE * .45
+      p[o + WWIDTH] = halfWidth; p[o + WSTRENGTH] = side ? strength : strength * .6
       p[o + WLINK] = count > 0 && !teleported ? 1 : 0
       this.armCount[arm] = count + 1
     }
@@ -342,7 +343,7 @@ export class SpraySim {
     const p = this.points, o = (arm * this.cap.points + (this.armStart[arm] + k) % this.cap.points) * W
     const t = p[o + WAGE] / p[o + WLIFE]
     out[at] = p[o + WX]; out[at + 1] = p[o + WY]; out[at + 2] = p[o + WZ]
-    out[at + 3] = p[o + WWIDTH] * (1 + p[o + WAGE] * .9)
+    out[at + 3] = p[o + WWIDTH] * (1 + p[o + WAGE] * .7)
     out[at + 4] = p[o + WSTRENGTH] * Math.max(0, 1 - t) ** 1.4
     out[at + 5] = t
   }

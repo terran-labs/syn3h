@@ -2,6 +2,7 @@ import * as T from 'three/webgpu'
 import { attribute, cameraPosition, cross, dot, float, mix, mx_fractal_noise_float, normalize, positionWorld, renderGroup, select, smoothstep, uniform, uv, vec3 } from 'three/tsl'
 import { defineParam } from '../../../shared/params'
 import { graphicsLevel } from '../../core/quality'
+import { hotExposureDim } from '../../vehicles/skins/hotExposure'
 import { vehicleNightAmount } from '../../vehicles/skins/nightReadability'
 import { applyCurve } from '../curve'
 import type { Ripples } from './ripples'
@@ -22,7 +23,9 @@ function sprayLight(): N {
   return uniform(new T.Color(1, 1, 1)).setGroup(renderGroup).onRenderUpdate(frame => {
     const scene = frame.scene as T.Scene
     if ((!sun || sun.parent === null) && search-- <= 0) { sun = null; search = 120; scene.traverse(o => { if (!sun && (o as T.DirectionalLight).isDirectionalLight) sun = o as T.DirectionalLight }) }
-    const night = vehicleNightAmount(scene), level = 1 - .85 * night
+    // The night sky raises exposure; undo that like the lava does, or white foam glows.
+    const night = vehicleNightAmount(scene), hasSky = scene.children.some(o => 'sunDirection' in o)
+    const level = (1 - .72 * night) * (hasSky ? hotExposureDim(frame.renderer?.toneMappingExposure ?? 1) : 1)
     colour.setRGB(1, 1, 1)
     if (sun) {
       const c = (sun as T.DirectionalLight).color, peak = Math.max(c.r, c.g, c.b, 1e-3)
@@ -47,14 +50,17 @@ function batch(capacity: number, names: string[]) {
  */
 function dropletMaterial(light: N) {
   const a = attribute('sprayA', 'vec4'), b = attribute('sprayB', 'vec4')
-  const centre = a.xyz, radius = a.w, velocity = b.xyz, mist = b.w.greaterThan(1.5)
-  const view = normalize(cameraPosition.sub(centre))
+  const centre = a.xyz, size = a.w, velocity = b.xyz, mist = b.w.greaterThan(1.5)
+  const toCamera = cameraPosition.sub(centre), distance = toCamera.length(), view = toCamera.div(distance.max(1e-4))
+  // Never thinner than about a pixel and a half at 720p; a widened drop is fainter in proportion,
+  // so distant spray adds up to a haze instead of vanishing or turning into chalk.
+  const radius = size.max(distance.mul(.0016)), cover = size.div(radius)
   const across = velocity.sub(view.mul(dot(velocity, view)))
   const speed = across.length()
   // Motion blur of about a sixtieth of a second, plus the drop itself.
   const axis = select(speed.greaterThan(.05), across.div(speed.max(1e-4)), normalize(cross(view, vec3(1, 0, 0)).add(vec3(0, 1e-4, 0))))
   const side = normalize(cross(axis, view))
-  const half = select(mist, radius, radius.add(speed.mul(.02)))
+  const half = select(mist, radius, radius.add(speed.mul(.016)))
   const q = uv().mul(2).sub(1)
   const m = new T.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: T.DoubleSide })
   m.positionNode = centre.add(side.mul(q.x.mul(radius))).add(axis.mul(q.y.mul(half)))
@@ -63,8 +69,10 @@ function dropletMaterial(light: N) {
   const bead = float(1).sub(smoothstep(.55, 1, r)).mul(smoothstep(0, .9, r).mul(.35).add(.65))
   const n = mx_fractal_noise_float(vec3(q.mul(1.7).add(centre.xz.mul(.37)), 0), 2, 2, .5).mul(.5).add(.5)
   const puff = float(1).sub(smoothstep(.15, 1, r.add(n.mul(.35)))).mul(n.mul(.6).add(.4))
-  const alpha = select(mist, b.w.sub(2), b.w)
-  m.opacityNode = select(mist, puff.mul(alpha).mul(.35), bead.mul(alpha).mul(.8))
+  // Drops passing right by the lens would fill the screen with blobs: fade them out up close.
+  const near = smoothstep(1.5, 6, distance)
+  const alpha = select(mist, b.w.sub(2), b.w).mul(near)
+  m.opacityNode = select(mist, puff.mul(alpha).mul(.7), bead.mul(alpha).mul(cover.mul(.75).add(.25)).mul(.55))
   m.colorNode = select(mist, vec3(.82, .88, .93), vec3(.9, .96, 1.05)).mul(light).mul(1.25)
   return m
 }
@@ -91,9 +99,9 @@ function foamMaterial(light: N) {
   // Feathered edges across the strip; a soft band for the ring.
   const shape = select(ring, float(1).sub(smoothstep(0, .2, q.length().sub(.78).abs())), float(1).sub(smoothstep(.25, 1, q.x.abs())))
   // Young foam is a near-solid blanket; old foam keeps only its brightest lace.
-  const threshold = age.mul(.45).add(.18)
+  const threshold = age.mul(.5).add(.24)
   const foam = smoothstep(threshold, threshold.add(.22), texture.mul(shape.mul(.5).add(.6)))
-  m.opacityNode = foam.mul(shape).mul(fade).mul(.85)
+  m.opacityNode = foam.mul(shape).mul(fade).mul(.8)
   m.colorNode = vec3(.86, .93, .98).mul(light).mul(fine.mul(.2).add(1.05))
   return m
 }

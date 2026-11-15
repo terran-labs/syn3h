@@ -15,7 +15,7 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true,
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
 page.on('pageerror', e => report.errors.push(e.message))
 try {
-  const url = new URL(base); url.searchParams.set('room', `spray-${Date.now()}`); url.searchParams.set('name', 'S')
+  const url = new URL(base); url.searchParams.set('room', `spray-${Date.now()}`); url.searchParams.set('name', 'S'); url.searchParams.set('vehicle', process.env.SPRAY_VEHICLE ?? 'buggy')
   await page.goto(url.href, { waitUntil: 'load', timeout: 120000 })
   await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 120000 })
   await page.evaluate(() => window.syn3h.shell.play())
@@ -56,7 +56,10 @@ try {
       const b = s.player.body
       if (q.mode === 'drive') {
         b.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true); b.setAngvel({ x: 0, y: 0, z: 0 }, true)
-        const v = b.linvel(); b.setLinvel({ x: 0, y: v.y, z: -q.speed }, true)
+        // Hold the hull at the waterline with a vertical servo, like a planing hull, so a slow
+        // wade does not sink: still velocity, never a teleport.
+        const p = b.translation(), surface = s.terrain.liquidHeightAt(p.x, p.z)
+        b.setLinvel({ x: 0, y: Math.max(-6, Math.min(6, (surface + (q.lift ?? .05) - p.y) * 6)), z: -q.speed }, true)
       } else if (q.mode === 'drop') { const v = b.linvel(); b.setLinvel({ x: 0, y: v.y, z: 0 }, true); b.setAngvel({ x: 0, y: 0, z: 0 }, true) }
     } }
     s.game.systems.splice(s.game.systems.indexOf(e), 0, camera)
@@ -93,8 +96,8 @@ try {
         s.player.body.setTranslation({ x: run.x, y: run.sea + 9, z: run.z - 60 }, true); s.player.body.setLinvel({ x: 0, y: 0, z: 0 }, true)
       })
       await page.waitForFunction(() => { const p = window.syn3h.player.body.translation(); return p.y < window.sprayRun.sea + .8 }, null, { timeout: 10000, polling: 'raf' })
-      await page.waitForTimeout(250); await shot(`${tag}-splash`)
-      await page.waitForTimeout(700); await shot(`${tag}-splash-late`)
+      await page.waitForTimeout(60); await shot(`${tag}-splash`)
+      await page.waitForTimeout(450); await shot(`${tag}-splash-late`)
     }
   }
   if (mode === 'cost') {
