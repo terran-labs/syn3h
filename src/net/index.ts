@@ -116,6 +116,8 @@ export interface NetContext {
   colors?: PlayerColors
   /** Sound effects; optional so networking runs without audio. */
   audio?: NetAudio
+  /** Cosmetic arrival effect after a remote kind change; never holds replica physics. */
+  onRemoteVehicleChanged?(vehicle: Vehicle): void
   /** Bot manager; optional, may also be attached later with `net.attachBots`. */
   bots?: NetBots
   /** The match display (shell.setMatchState): called on every game state change; null clears. */
@@ -1281,6 +1283,12 @@ export class NetClient implements System {
       this.remotes.set(info.id, next)
       const [body, accent] = isBotId(info.id) ? botColors(info.id - BOT_ID_BASE) : info.colors
       ;(v as VehicleExtras).setColors?.(body, accent)
+      try {
+        this.ctx.onRemoteVehicleChanged?.(v)
+      } catch (err) {
+        // A cosmetic effect must not interrupt profile or subsequent snapshot handling.
+        console.warn('remote arrival effect failed', err)
+      }
       return
     }
     if (!isBotId(info.id)) extras.setColors?.(info.colors[0], info.colors[1])
