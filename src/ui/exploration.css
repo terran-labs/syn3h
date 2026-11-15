@@ -78,13 +78,16 @@
 
 /* A map fading into the world, centred on the player, with no rectangular backing. */
 .syn3h-shell.exploration-ui .shell-minimap, .syn3h-shell.exploration-ui:not(.has-touch):has(.world-inspector:not([hidden])) .shell-minimap { left: max(16px,env(safe-area-inset-left)); bottom: max(16px,env(safe-area-inset-bottom)); top: auto; right: auto; width: 210px; height: 210px; border: 0; background: none; box-shadow: none; pointer-events: none; }
-.syn3h-shell.exploration-ui .shell-minimap canvas { width: 100%; height: 100%; opacity: .78; -webkit-mask-image: radial-gradient(ellipse closest-side,#000 42%,rgb(0 0 0 / .8) 62%,transparent 100%); mask-image: radial-gradient(ellipse closest-side,#000 42%,rgb(0 0 0 / .8) 62%,transparent 100%); }
+/* The owner wants the map at least 80% opaque in the centre. Opacity, this feathering mask
+   and the focus fade below multiply, so the product is what counts: .94 here, .94 x .92 = .86
+   with the cursor captured. tests/ui/minimap-opacity.mjs measures it from pixels. */
+.syn3h-shell.exploration-ui .shell-minimap canvas { width: 100%; height: 100%; opacity: .94; -webkit-mask-image: radial-gradient(ellipse closest-side,#000 52%,rgb(0 0 0 / .8) 70%,transparent 100%); mask-image: radial-gradient(ellipse closest-side,#000 52%,rgb(0 0 0 / .8) 70%,transparent 100%); }
 .syn3h-shell.exploration-ui .shell-minimap::after { content: ''; position: absolute; inset: 24px; border: 1px solid rgb(175 225 250 / .2); border-radius: 50%; box-shadow: 0 0 14px rgb(100 200 250 / .06); }
 .syn3h-shell.exploration-ui .shell-minimap span { top: 13px; left: 50%; right: auto; color: #b1eaff; font: 10px 'Barlow',sans-serif; letter-spacing: .15em; text-shadow: 0 0 8px #6bc5f1; }
 .syn3h-shell.exploration-ui.is-playing .focus-hud { opacity: .7; }
 .syn3h-shell.exploration-ui.is-focus .focus-hud { opacity: 1; }
 .syn3h-shell.exploration-ui:not(.is-focus) .focus-hud [data-reticle] { display: none; }
-.syn3h-shell.exploration-ui.is-focus .shell-minimap { opacity: .6; }
+.syn3h-shell.exploration-ui.is-focus .shell-minimap { opacity: .92; }
 .syn3h-shell.exploration-ui .spawn-help { left: 240px; bottom: 20px; background: none; border: 0; font-size: 12px; text-shadow: 0 1px 5px #001019; }
 .syn3h-shell.exploration-ui :is(.shell-toast, .match-hud, .race-hud, .join-card) { border-radius: 3px; background: rgb(5 20 32 / .8); border: 1px solid var(--s3-line); box-shadow: 0 0 18px rgb(100 200 250 / .05); font-weight: 400; }
 .touch-controls .touch-stick { background: radial-gradient(circle,transparent 58%,rgb(145 220 250 / .09) 69%,transparent 71%); border: 1px solid rgb(175 225 250 / .25); box-shadow: none; }
