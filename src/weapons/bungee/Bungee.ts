@@ -19,6 +19,7 @@
  * player pulls only you, like a winch on a moving post.
  */
 import * as THREE from 'three/webgpu'
+import type { CordWire } from '../../../shared/protocol'
 import { nearestImage, wrapDelta } from '../../../shared/wrap'
 import type { Game, System } from '../../core/Game'
 import { GROUP_ALL, GROUP_LIQUID, GROUP_PROJECTILE, RAPIER, groups } from '../../core/physics'
@@ -32,11 +33,7 @@ import { cordGlow, cordPull, cordSag, predict, reducedMass, type CordTuning } fr
 
 type Vec3 = [number, number, number]
 
-/** One player's cord as it goes on the wire. Positions are canonical (inside the tile). */
-export type CordWire =
-  | { s: 'hook'; o: Vec3; d: Vec3; t: number }
-  | { s: 'on'; to?: number; at?: Vec3; n?: Vec3; r: number }
-  | { s: 'off' }
+export type { CordWire }
 
 export interface BungeeVehicle {
   body: RAPIER.RigidBody

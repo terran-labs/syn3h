@@ -253,6 +253,7 @@ export class NetClient implements System {
       wrapSize: () => this.wrapSize,
       now: () => this.clock.now(),
       inHand: () => this.gear.current === 'bungee',
+      send: (cord) => { if (this.connected) this.send({ type: 'cord', cord }) },
     })
     this.marker = new TagMarker(game)
     this.marker.local = player
@@ -962,6 +963,9 @@ export class NetClient implements System {
           const [x, y, z] = msg.shot.o
           this.ctx.audio?.play('laserShot', { x, y, z })
         }
+        break
+      case 'cord':
+        if (this.players.has(msg.from)) this.bungee.applyRemote(msg.from, msg.cord, this.clock.now() - msg.t)
         break
       case 'shove': {
         const push = cleanShove(msg.push)

@@ -44,10 +44,14 @@ export const bungeeDamping = defineParam({
   default: 0.7, min: 0.3, max: 2, step: 0.05,
 })
 
-/** Most pull the cord gives, in multiples of Earth gravity. Above 1 a cord can lift a vehicle. */
+/**
+ * Most pull the cord gives, in multiples of Earth gravity. Above 1 a cord can lift a vehicle.
+ * Between two vehicles each end gets about half (the pair's reduced mass), so the default is
+ * high enough that a tow still beats a parked vehicle's tyre grip.
+ */
 export const bungeeMaxPull = defineParam({
   id: 'bungee.maxPull', label: 'Cord strength', group, scope: 'world',
-  default: 2.5, min: 0.5, max: 6, step: 0.1,
+  default: 4, min: 0.5, max: 6, step: 0.1,
 })
 
 export const bungeeReelSpeed = defineParam({
