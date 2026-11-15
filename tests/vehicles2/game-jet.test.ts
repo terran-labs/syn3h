@@ -182,3 +182,13 @@ describe('Mk2 moving parts and thrusters', () => {
     b.pieces.forEach(q => q.geometry.dispose()); b.flaps.forEach(f => f.geometry.dispose())
   })
 })
+
+it('ships only the approved Mk2: nothing the game jet loads imports the study designs', async () => {
+  const { readFileSync } = await import('node:fs')
+  // Everything Jet.ts pulls in from the jet generator. designs.ts is the lab's catalogue.
+  for (const file of ['Jet.ts', 'jetgen/GameJet.ts', 'jetgen/NextJet.ts', 'jetgen/JetSilhouette.ts', 'jetgen/MovingBatch.ts', 'jetgen/shapes.ts', 'jetgen/shipped.ts']) {
+    const source = readFileSync(new URL(`../../src/vehicles/${file}`, import.meta.url), 'utf8')
+    expect(source, file).not.toMatch(/from '\.\/(jetgen\/)?designs'/)
+  }
+  expect(new GameJet().design.id).toBe('hex-mk2')
+})
