@@ -39,6 +39,8 @@ export const camSensitivity = number('sensitivity', 'Mouse rotation multiplier',
 export const camScope = number('scope', 'Scope magnification', 3.25, 1.5, 5, 0.25)
 export const camRoamSpeed = number('roamSpeed', 'Roam speed', 2, 0.25, 25)
 export const camRideHeight = number('rideHeight', 'Fallback ride height', 0.95, 0, 5)
+/** Seconds to ease from a director shot into the chase view when the player takes the controls back. */
+export const DIRECTOR_HANDBACK_SECONDS = 0.8
 /** Cut between cinematic shots while the vehicle drives itself (Daydream). */
 export const camDaydreamShots = boolean('daydreamShots', 'Cinematic shots while daydreaming', true)
 
@@ -218,10 +220,19 @@ export class ChaseCamera implements System {
   private readonly shotTarget = new THREE.Vector3()
   private direct(dt: number): void {
     const vehicle = this.vehicle
-    const wanted = this.director.active && camDaydreamShots.value && vehicle?.body.isValid() && (this.directed || !this.cinematic)
+    // A pose set from outside (the descent into a world, the lobby's tour) outranks the
+    // director: it takes none of those frames and starts no shot under them.
+    const free = !this.cinematic || this.directed
+    const wanted = free && this.director.active && camDaydreamShots.value && vehicle?.body.isValid()
       && this.director.update(clamp(dt, 0, 0.25), vehicle.object.position, vehicle.body.linvel(), this.terrain, this.shotPosition, this.shotTarget)
-    if (wanted) { this.setCinematicPose(this.shotPosition, this.shotTarget); this.directed = true }
-    else if (this.directed) { this.clearCinematicPose(); this.directed = false }
+    if (wanted) { this.writeCinematicPose(this.shotPosition, this.shotTarget); this.directed = true }
+    else if (this.directed) {
+      this.directed = false
+      // Between its own shots the director cuts back to the chase view, as a film does. When
+      // it stops because the player took the controls, the view is theirs again and must not
+      // jump: ease from the shot into the chase pose.
+      this.clearCinematicPose(this.director.active ? 0 : DIRECTOR_HANDBACK_SECONDS)
+    }
   }
 
   setVehicle(vehicle: CameraVehicle | null): void { this.restoreVisibility(); this.vehicle = vehicle; this.target = vehicle?.object ?? null }
@@ -231,6 +242,11 @@ export class ChaseCamera implements System {
    * to this pose instead of following the vehicle; parameters and modes are left untouched.
    */
   setCinematicPose(position: THREE.Vector3, target: THREE.Vector3, fov?: number): void {
+    // Whatever shot the director was on, the camera now eases from there to this pose.
+    this.directed = false
+    this.writeCinematicPose(position, target, fov)
+  }
+  private writeCinematicPose(position: THREE.Vector3, target: THREE.Vector3, fov?: number): void {
     if (!this.cinematic) this.cinematic = { position: new THREE.Vector3(), target: new THREE.Vector3(), look: target.clone() }
     this.cinematic.position.copy(position); this.cinematic.target.copy(target); this.cinematic.fov = fov
     this.blend = null
@@ -263,11 +279,15 @@ export class ChaseCamera implements System {
   }
 
   update(dt: number): void {
-    const blend = this.blend, camera = this.game.camera
+    const camera = this.game.camera, before = this.blend
     // Give the chase camera back its own last pose before it updates.
-    if (blend?.own) { camera.position.copy(blend.own.position); camera.quaternion.copy(blend.own.turn); camera.fov = blend.own.fov }
+    if (before?.own) { camera.position.copy(before.own.position); camera.quaternion.copy(before.own.turn); camera.fov = before.own.fov }
     this.follow(dt)
-    if (!blend || this.blend !== blend) return
+    // Read the blend again: following can end one (a new shot) or begin one (the director
+    // handing back), and a blend begun this frame must shape this frame too, or the view
+    // would show the bare chase pose for one frame before easing toward it.
+    const blend = this.blend
+    if (!blend) return
     if (this.cinematic) { this.blend = null; return }
     blend.own = { position: camera.position.clone(), turn: camera.quaternion.clone(), fov: camera.fov }
     blend.time += clamp(dt, 0, 0.25)
