@@ -179,7 +179,7 @@ try {
   await page.waitForTimeout(4000)
   await gearDuring('firstUse', () => set('post-on'))
   await page.evaluate(() => window.syn3h.params.set('post.on', false))
-  await page.waitForTimeout(3000)
+  await page.waitForFunction(async () => (await import('/src/weapons/warm.ts')).warmStats(window.syn3h.game)?.left === 0, null, { timeout: 120000, polling: 500 })
   await gearDuring('postOff', () => set('post-off'))
   await page.evaluate(() => { window.syn3h.params.set('post.on', true); window.syn3h.params.set('gfx.level', 0) })
   await page.waitForFunction(async () => (await import('/src/weapons/warm.ts')).warmStats(window.syn3h.game)?.left === 0, null, { timeout: 120000, polling: 500 })
@@ -192,8 +192,7 @@ try {
   assert.ok(report.stats.attachedGround >= 3 && report.stats.attachedVehicle >= 3, 'cords attached to ground and bot')
   assert.deepEqual(report.firstUse.gear, [], 'first use of the Grapple builds no gear pipeline')
   assert.deepEqual(report.level0.gear, [], 'the Grapple builds no gear pipeline after a level change')
-  // Post effects off changes the render targets and the warm-up does not re-arm for it, so
-  // this one is reported, not asserted: it is warm.ts's business, not the look's.
+  assert.deepEqual(report.postOff.gear, [], 'the Grapple builds no gear pipeline after post effects change')
   assert.deepEqual(errors, [])
   console.log('GRAPPLE CAPTURE OK')
 } finally { await browser.close() }
