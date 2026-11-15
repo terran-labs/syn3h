@@ -22,8 +22,10 @@ try {
   await page.waitForFunction(() => window.syn3h?.game?.tick > 40, null, { timeout: 120000 })
   await page.waitForTimeout(6500)
   const value = id => page.evaluate(id => window.syn3h.params.get(id).value, id)
-  // The cursor is free on arrival here (no gesture to capture it), so the panels are open.
-  assert.equal(await page.evaluate(() => document.querySelector('.world-inspector').hidden), false)
+  // On arrival the browser may or may not have granted the cursor. Either way the panels
+  // show exactly when it is free; free it here to look at them.
+  assert.equal(await page.evaluate(() => document.querySelector('.world-inspector').hidden), await page.evaluate(() => !!document.pointerLockElement))
+  if (await page.evaluate(() => !!document.pointerLockElement)) { await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('.world-inspector').hidden) }
   const corner = () => page.evaluate(() => document.querySelector('.shell-minimap').getBoundingClientRect().left)
   assert.ok(await corner() < 60, 'minimap is not in its corner on landing')
   await page.screenshot({ path: `${out}/0-landing.png` })

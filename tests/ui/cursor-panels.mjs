@@ -48,6 +48,12 @@ const locked = page => page.evaluate(() => document.pointerLockElement === syn3h
     await page.keyboard.press('KeyW')
     await page.waitForFunction(() => document.pointerLockElement === syn3h.game.canvas)
     assert.equal(await visible(page), false)
+    // Escape in a text field only leaves the field; it does not pause.
+    await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.pointerLockElement)
+    await page.locator('.wi-search').click(); await page.keyboard.press('Escape')
+    assert.equal(await page.locator('.pause-veil').isHidden(), true, 'Escape in a field does not pause')
+    assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('wi-search')), false, 'Escape leaves the field')
+    await page.mouse.click(500, 420); await page.waitForFunction(() => document.pointerLockElement === syn3h.game.canvas)
     // Escape, then Escape again: paused. Audio fades to nothing and its clock stops.
     await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.pointerLockElement)
     assert.equal(await page.evaluate(() => syn3h.audio.state), 'running')

@@ -23,7 +23,9 @@ for (const mode of modes) {
     assert.match(await page.locator('.shell-minimap canvas').evaluate(el => getComputedStyle(el).maskImage || getComputedStyle(el).webkitMaskImage), /radial-gradient/)
     await page.screenshot({ path: `tests/ui/artifacts/exploration/${mode}-drive.png` })
     // Panels are open exactly when the cursor is free. A touch device has one switch instead.
+    // After an automatic start a desktop browser may or may not have granted the cursor.
     if (touch && await page.locator('.world-inspector').isHidden()) await page.locator('.inspector-toggle').tap()
+    else if (!touch && await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
     await page.locator('.world-inspector').waitFor({ state: 'visible' })
     for (const head of await page.locator('.wi-head').all()) await head.click()
     await page.waitForFunction(() => !document.querySelector('.wi-cards').getAnimations({ subtree: true }).some(a => a.playState === 'running'))
@@ -78,6 +80,10 @@ for (const mode of modes) {
       assert.equal(await page.evaluate(() => syn3h.game.input.poll().y), 1)
       await select.evaluate(el => el.dispatchEvent(new KeyboardEvent('keyup', {code:'ArrowUp',bubbles:true})))
       assert.equal(await page.evaluate(() => syn3h.game.input.poll().y), 0)
+      // That arrow key was pressed outside any field, which now means "drive": it may have
+      // captured the cursor and closed the panels. Free it again before going on.
+      if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
+      await page.locator('.world-inspector').waitFor({ state: 'visible' })
     }
     if (touch) {
       await page.locator('.rail-close').tap()

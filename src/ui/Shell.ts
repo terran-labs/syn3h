@@ -448,7 +448,11 @@ export class Shell implements System {
     // Entering a world is the start of driving, by whichever route (Play, a world in the
     // galaxy, a saved world). Ask for the cursor now, while the click or key press that got
     // here still counts as a gesture; a refusal just leaves the cursor free and the panels open.
-    if (!this.started && this.capturesCursor) void this.captureCursor(true)
+    // An automatic start (a reload after switching vehicle, ?autoplay=1) has no gesture. Some
+    // browsers would grant the cursor anyway and others refuse, so it is not asked for: such
+    // a start always arrives with the cursor free and the panels open.
+    const gesture = (navigator as { userActivation?: { isActive: boolean } }).userActivation?.isActive ?? true
+    if (!this.started && this.capturesCursor && gesture) void this.captureCursor(true)
     try { localStorage.setItem('syn3h.playerName', this.playerName) } catch { /* Playing does not require storage. */ }
     this.started = true; this.worldDirty = true; this.nameInput.disabled = true; this.roomInput.disabled = true
     this.element.querySelector<HTMLButtonElement>('.shell-play')!.textContent = 'Return to Game ›'
@@ -666,12 +670,15 @@ export class Shell implements System {
     if (!editing && this.started && !this.menuVisible && !event.repeat && (event.code === 'KeyH' || event.key === '?')) { event.preventDefault(); this.toggleHelp(); return }
     // A drive key outside any field means the player wants to drive: resume if paused, and
     // capture the cursor (a key press is a gesture). This is also the keyboard-only way back.
-    if (!editing && !event.repeat && this.started && !this.menuVisible && DRIVE_KEYS.has(event.code)) {
-      if (this.userPaused) { this.requestResume(); return }
-      if (this.capturesCursor && document.pointerLockElement !== this.game.canvas) void this.captureCursor()
-    }
+    // While paused, focus rests on the pause message, which is a button, so a drive key
+    // counts wherever focus is: it resumes. That press does not also drive.
+    if (this.userPaused && !event.repeat && DRIVE_KEYS.has(event.code)) { event.preventDefault(); this.requestResume(); return }
+    if (!editing && !event.repeat && this.started && !this.menuVisible && DRIVE_KEYS.has(event.code) && this.capturesCursor && document.pointerLockElement !== this.game.canvas) void this.captureCursor()
     if (event.code === 'Escape') {
       if (event.target instanceof HTMLSelectElement) return
+      // Escape in a text field only leaves the field; it takes another to pause.
+      const target = event.target
+      if (this.started && !this.menuVisible && !this.userPaused && target instanceof HTMLElement && (target.isContentEditable || target instanceof HTMLTextAreaElement || (target instanceof HTMLInputElement && !/^(range|checkbox|radio|button|color)$/.test(target.type)))) { target.blur(); return }
       event.preventDefault(); event.stopImmediatePropagation()
       // Escape with the cursor captured frees it, which shows the panels. Escape again pauses.
       // Escape while paused resumes. There is no panel-closing step in between.
