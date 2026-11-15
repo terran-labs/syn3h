@@ -9,7 +9,22 @@ import { VehicleModel } from './skins/VehicleModel'
 export const tankPower=defineParam({id:'tank.power',label:'Power',group:'Tank',scope:'world',default:2000,min:500,max:3500,step:10})
 export const tankSpeed=defineParam({id:'tank.speed',label:'Speed',group:'Tank',scope:'world',default:25,min:10,max:40,step:.1})
 export const tankGrip=defineParam({id:'tank.grip',label:'Grip',group:'Tank',scope:'world',default:.1,min:0,max:.2,step:.01})
+// Not in the source. TankTrack.js 102-109 pushes along whatever surface the track touches, so six
+// tracks at 2000 N carry a 241 kg tank up a near vertical face. The drive now fades out over
+// CLIMB_FADE degrees past this slope. At 90 the limit is off and the original behaviour returns.
+// A cap tied to the load on each track was tried first: it bogged the tank to 4.5 m/s whenever it
+// steered uphill, because the source cuts one side's motor to steer and that side then drags.
+const CLIMB_FADE=10
+export const tankClimb=defineParam({id:'tank.climb',label:'Steepest climb, degrees (90 = original)',group:'Tank',scope:'world',default:45,min:20,max:90,step:1})
 export const tankCG=defineParam({id:'tank.cg',label:'Centre of gravity',group:'Tank',scope:'world',default:-.2,min:-1.4,max:1,step:.01})
+
+// TankTrack.prefab: the Detailed mesh sits at (0.5,-0.75,-1.05) with X scale 0.82, so a pod is 1.0 wide
+// and 2.1 long, centred on the track body. The tread mesh's own proportions make it 1.37 tall.
+const POD_LENGTH=2.1,POD_HEIGHT=1.37
+// The source hangs each track on a soft joint at hull height (Tank.js 20, joint limit 0), and the hull
+// weighs 1 kg, so the pods ride level with the hull origin. The cast starts at CAST_Y and the support
+// spring is SPRING_LENGTH long, which rests the pod centre at hull-local 0 under the tank's weight.
+const CAST_Y=.115,SPRING_LENGTH=.6,SPRING=4000,DAMPER=450,POD_DROOP=.25
 
 /** Mars Explorer fallback. No tank exists in the supplied Syn3h snapshots. */
 export class Tank extends Vehicle {
@@ -20,6 +35,7 @@ export class Tank extends Vehicle {
   private readonly motors=Array.from({length:6},()=>({speed:0,velocity:0}))
   private readonly tracks:THREE.Group[]=[]
   private readonly shape=new RAPIER.Cuboid(.45,.3,1)
+  private readonly podY=new Float32Array(6)
   private cg=NaN
   private bellyUp=false
   groundedTracks=0
@@ -45,8 +61,8 @@ export class Tank extends Vehicle {
         const box=new THREE.Box3().setFromObject(scene),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3())
         const wrapper=new THREE.Group();while(scene.children.length)wrapper.add(scene.children[0])
         wrapper.rotation.copy(scene.rotation);scene.rotation.set(0,0,0);scene.add(wrapper)
-        wrapper.scale.set(1/size.x,2.2/size.z,.9/size.y)
-        wrapper.position.set(-center.x/size.x,-center.y*.9/size.y,-center.z*2.2/size.z)
+        wrapper.scale.set(1/size.x,POD_LENGTH/size.z,POD_HEIGHT/size.y)
+        wrapper.position.set(-center.x/size.x,-center.y*POD_HEIGHT/size.y,-center.z*POD_LENGTH/size.z)
         wrapper.traverse(o=>{if(o instanceof THREE.Mesh){o.material.dispose();const mat=new THREE.MeshStandardMaterial({color:0x343940,metalness:.6,roughness:.55});o.material=mat
           if(o.name==='Mesh001'){const map=new THREE.TextureLoader().load('/models/textures/tank-track.png');map.wrapS=map.wrapT=THREE.RepeatWrapping;map.colorSpace=THREE.SRGBColorSpace;mat.map=map;this.treadMaps[i]=map}}})
       }))
@@ -85,21 +101,24 @@ export class Tank extends Vehicle {
     else{this.body.setLinvel(velocity.multiplyScalar(Math.max(0,1-.01*dt)),true);this.body.setAngvel(new THREE.Vector3().copy(this.body.angvel()).multiplyScalar(Math.max(0,1-2*dt)),true)}
     this.groundedTracks=0
     for(let i=0;i<6;i++){
-      const local=new THREE.Vector3(i%2?2:-2,.5,(Math.floor(i/2)-1)*2.5),origin=local.clone().applyQuaternion(q).add(position)
-      const hit=this.game.world.castShape(origin,q,down,this.shape,0,1.2,true,RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,undefined,undefined,this.body)
-      if(!hit){this.tracks[i].position.y=-.4;continue}
-      const normal=new THREE.Vector3().copy(hit.normal1).normalize()
-      if(normal.dot(up)<.1)continue
+      const local=new THREE.Vector3(i%2?2:-2,CAST_Y,(Math.floor(i/2)-1)*2.5),origin=local.clone().applyQuaternion(q).add(position)
+      const hit=this.game.world.castShape(origin,q,down,this.shape,0,SPRING_LENGTH,true,RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,undefined,undefined,this.body)
+      const normal=hit?new THREE.Vector3().copy(hit.normal1).normalize():up
+      // A pod off the ground droops a little and eases there, instead of snapping to a fixed offset.
+      const podTarget=hit&&normal.dot(up)>=.1?.5-hit.time_of_impact:-POD_DROOP
+      this.podY[i]+=(podTarget-this.podY[i])*Math.min(1,dt*(podTarget<this.podY[i]?6:25));this.tracks[i].position.y=this.podY[i]
+      if(!hit||normal.dot(up)<.1)continue
       this.groundedTracks++
       const point=new THREE.Vector3().copy(hit.witness1),pointVelocity=new THREE.Vector3().copy(this.body.velocityAtPoint(point)),v=pointVelocity.clone().applyQuaternion(inv).clampLength(0,1000)
-      this.tracks[i].position.y=.5-hit.time_of_impact
       // TankTrack.js 57-60 scrolls the original tread texture with local ground speed.
       if(this.treadMaps[i])this.treadMaps[i].offset.y=(this.treadMaps[i].offset.y+dt*v.z*1.2)%1
       // Replaces joint/contact support with a damped spring. Force formula below stays original.
-      const support=Math.max(0,(1.2-hit.time_of_impact)*4000-pointVelocity.dot(normal)*450)
+      const support=Math.max(0,(SPRING_LENGTH-hit.time_of_impact)*SPRING-pointVelocity.dot(normal)*DAMPER)
       this.body.addForceAtPoint(normal.clone().multiplyScalar(support),point,true)
       if(parked&&!this.input.y)continue
-      const motor=this.motor(i,-v.z,dt),forward=normal.clone().cross(right).normalize(),side=forward.clone().cross(normal).normalize()
+      const slope=Math.acos(THREE.MathUtils.clamp(normal.y,-1,1))*180/Math.PI
+      const climb=tankClimb.value>=90?1:THREE.MathUtils.clamp(1-(slope-tankClimb.value)/CLIMB_FADE,0,1)
+      const motor=this.motor(i,-v.z,dt)*climb,forward=normal.clone().cross(right).normalize(),side=forward.clone().cross(normal).normalize()
       // TankTrack.js 102-109: sideways150, rolling50, lift10, raised application point.
       const force=side.multiplyScalar(-v.x*150).addScaledVector(normal,10).addScaledVector(forward,Math.abs(motor)>.1?motor:v.z*50)
       const application=point.clone().addScaledVector(up,tankGrip.value)
