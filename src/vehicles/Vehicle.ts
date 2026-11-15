@@ -223,7 +223,9 @@ export abstract class Vehicle implements System {
     // into the flight pitch filter would leave a nose-down command at handover.
     const escapeThrottle=this.input.y
     if(Number.isFinite(this.liquidState.wingLiftSurface))this.input.y=0
-    try {this.applyForces(dt)} finally {this.input.y=escapeThrottle}
+    // Zorb mode: the controller sees its mechanisms at rest and Space becomes a hop (zorb.ts hold).
+    this.zorb.hold(this.input, this.isLocal ? this.game.input.state : null, dt)
+    try {this.applyForces(dt)} finally {this.zorb.release(this.input);this.input.y=escapeThrottle}
     if (this.zorbView) this.zorb.drive(this.input, this.zorbView, dt)
     // A zorb ball floats on liquid as a whole; the vehicle inside is shielded (zorb.ts float).
     if(this.zorbed)this.zorb.float(this.terrain,this.liquidState,dt)

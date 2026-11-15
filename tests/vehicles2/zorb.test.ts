@@ -202,7 +202,7 @@ describe('zorb ball physics', () => {
       expect(h.world.colliders.len()).toBe(baseline + 1)
       v.zorbView = camera(1.1)
       v.input.y = 1; h.step(v, 100)
-      // Special too: buggy wings and jet flight mode run inside the ball.
+      // Special too: inside the ball it hops instead of opening wings or flight mode (zorb-quiet.test.ts).
       v.input.y = 0; v.input.x = -1; v.input.special = true; h.step(v, 100)
       expect(vec(v.body.linvel()).setY(0).length()).toBeGreaterThan(5)
       expect(finite(v)).toBe(true)

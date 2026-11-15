@@ -46,6 +46,7 @@ import {
   positionViewDirection, pow, sin, smoothstep, time, uniform, vec3, clamp } from 'three/tsl'
 import { defineParam } from '../../shared/params'
 import { GROUP_ALL, GROUP_VEHICLE, RAPIER, groups } from '../core/physics'
+import { type InputState, emptyInput } from '../core/Input'
 import type { Terrain } from '../world/Terrain'
 import { applyWaterForces, waterSinking } from './buoyancy'
 import { type LiquidState, lavaCoolingTime, lavaViscosity, liquidKind } from './lava'
@@ -58,6 +59,13 @@ export const zorbSize = defineParam({ id: 'zorb.size', label: 'Ball size', group
 export const zorbSpeed = defineParam({ id: 'zorb.speed', label: 'Roll speed (m/s²)', group: 'Zorb', scope: 'world', default: 7, min: 0, max: 14, step: 0.1 })
 export const zorbAgility = defineParam({ id: 'zorb.agility', label: 'Sideways agility (m/s²)', group: 'Zorb', scope: 'world', default: 0, min: -7, max: 7, step: 0.1 })
 export const zorbBounce = defineParam({ id: 'zorb.bounce', label: 'Bounciness', group: 'Zorb', scope: 'world', default: 0.5, min: 0, max: 1, step: 0.01 })
+// Not in the original. Space inside the ball: a hop and a pulse of the shield (see `hold`).
+/** Height a hop lifts the ball under normal gravity. A velocity change, so every vehicle mass hops the same. */
+export const zorbHopHeight = defineParam({ id: 'zorb.hopHeight', label: 'Hop height (m)', group: 'Zorb', scope: 'world', default: 1.5, min: 0, max: 6, step: 0.1 })
+export const zorbHopCooldown = defineParam({ id: 'zorb.hopCooldown', label: 'Time between hops (s)', group: 'Zorb', scope: 'world', default: 0.5, min: 0, max: 3, step: 0.05 })
+export const zorbAirHops = defineParam({ id: 'zorb.airHops', label: 'Hop in mid-air', group: 'Zorb', scope: 'world', default: false })
+/** Extra shield brightness at the peak of a hop's pulse; it eases back like an impact flare. */
+export const zorbPulseBrightness = defineParam({ id: 'zorb.pulseBrightness', label: 'Hop pulse brightness', group: 'Zorb', scope: 'world', default: 0.8, min: 0, max: 3, step: 0.05 })
 
 /** XorbBall.physicmaterial dynamic and static friction. */
 export const ZORB_FRICTION = 0.1
@@ -77,6 +85,24 @@ const SHRINK_RAMP = 6
 export const ZORB_RELEASE_RADIUS = 1
 /** Smallest collider radius while growing; Rapier needs a non-degenerate ball. */
 const MIN_RADIUS = 0.05
+/** A hop counts the ball as on a liquid while its base is within this many metres of the surface. */
+const HOP_LIQUID_REACH = 0.5
+/** How far the shield swells at the peak of a hop's pulse, as a fraction of the radius. */
+const PULSE_SWELL = 0.12
+/** Rate per second the swell eases back. */
+const PULSE_EASE = 7
+
+type PulseListener = (ball: ZorbBall, centre: THREE.Vector3) => void
+const pulseListeners = new Set<PulseListener>()
+/**
+ * Called on every hop's pulse, on every client that sees it (the owner, remote copies and
+ * bots alike), with the ball and its world centre. For a future pulse sound; nothing listens
+ * yet. Returns the unsubscribe function.
+ */
+export function onZorbPulse(listener: PulseListener): () => void {
+  pulseListeners.add(listener)
+  return () => pulseListeners.delete(listener)
+}
 
 /**
  * Ball radius for a size setting and a vehicle clearance. Vehicle.js 225: the ORB's scale is
@@ -125,6 +151,20 @@ export class ZorbBall {
   private restitution = -1
   /** Ball centre in the vehicle's local frame, fixed when the ball is built. */
   readonly offset = new THREE.Vector3()
+  /** The input as given, kept by `hold` while the controller sees the masked one. */
+  readonly raw: InputState = emptyInput()
+  /** True between `hold` and `release`: the vehicle's `input` is masked. */
+  masked = false
+  /** Hops made, for tests and debugging. */
+  hops = 0
+  /** Strength (0..1) of a pulse not yet shown by the shield. */
+  pulse = 0
+  /** The ball's base is on or just over a liquid surface (set by `float`). */
+  onLiquid = false
+  private lastSpecial = false
+  private armed = false
+  private hopCooldown = 0
+  private hopPending = false
 
   constructor(
     private readonly world: RAPIER.World,
@@ -191,6 +231,74 @@ export class ZorbBall {
   }
 
   /**
+   * Called by the vehicle just before its controller, with `release` just after. Not in the
+   * original. While the ball exists the controller sees its mechanisms at rest: `input` is
+   * masked (axes zero, brakes off, `special` off), so the buggy's wings, the jet's flight
+   * mode and thrust, motors and tracks stay put. (The jet lowers its gear in hover mode, which
+   * a masked `special` means; Jet.ts checks `zorbed` for that.) `release` puts the raw input back, so the ball's drive, the
+   * network state and anything reading `input` between steps see what was pressed; readers
+   * that should go quiet too (audio, effects) check `vehicle.zorbed`. Plasma Tag's `fire`
+   * and the `zorb` flag pass through.
+   *
+   * `special` is a toggle (Space). While zorb mode is on, every change of it is one press, and
+   * one press is one hop: an edge test, so remote copies see the owner's hops from the
+   * replicated bit with no protocol change. Anything Space deploys is stowed for the whole
+   * zorb ride and stays stowed after it (the owner's decision of 15 November 2026): on
+   * switching off, `owner` (the local player's input state, null for remote copies and bots)
+   * has its `special` cleared, which reaches other clients in the same state message that
+   * clears `zorb`.
+   */
+  hold(input: InputState, owner: InputState | null, dt: number): void {
+    this.hopCooldown = Math.max(0, this.hopCooldown - dt)
+    if (!this.collider) { this.armed = false; this.hopPending = false; return }
+    if (!this.on && this.armed && owner) { owner.special = false; input.special = false }
+    // An edge only counts once a step has already run with zorb on, so the step that switches
+    // it on is never read as a press.
+    if (this.on && this.armed && input.special !== this.lastSpecial) this.tryHop()
+    this.lastSpecial = input.special
+    this.armed = this.on
+    Object.assign(this.raw, input)
+    input.x = 0; input.y = 0; input.z = 0; input.w = 0
+    input.brakes = false; input.special = false
+    this.masked = true
+  }
+
+  /** Undo `hold`'s mask once the controller has run. */
+  release(input: InputState): void {
+    if (!this.masked) return
+    this.masked = false
+    Object.assign(input, this.raw)
+  }
+
+  /** A press inside the ball: hop if on (or near) the ground or a liquid and off cooldown. */
+  private tryHop(): void {
+    if (this.hopCooldown > 0 || this.radius < this.target * 0.5) return
+    if (!zorbAirHops.value && this.contact <= 0 && !this.onLiquid) return
+    this.hopCooldown = zorbHopCooldown.value
+    this.hopPending = true
+    this.hops++
+    this.pulse = 1
+    if (pulseListeners.size) { const c = this.centre(new THREE.Vector3()); for (const fn of pulseListeners) fn(this, c) }
+  }
+
+  /**
+   * The hop's lift, after the controller (so a controller that integrates its own velocity
+   * does not overwrite it). A velocity change of sqrt(2 g h) on top of any upward motion, so
+   * every vehicle mass rises about `zorb.hopHeight`. Only bodies simulated here.
+   */
+  private applyHop(): void {
+    if (!this.hopPending) return
+    this.hopPending = false
+    if (!this.collider || this.body.isKinematic()) return
+    const g = Math.max(0.1, -this.world.gravity.y)
+    const v = this.body.linvel()
+    const up = Math.max(0, v.y) + Math.sqrt(2 * g * zorbHopHeight.value) - v.y
+    this.body.applyImpulse({ x: 0, y: up * this.body.mass(), z: 0 }, true)
+    // Not a collision: keep the hop out of the impact flare (`observe`).
+    this.lastVelocity.y += up
+  }
+
+  /**
    * VehicleMe.js 80-87, owner only: while any steering input is held, push the ball along the
    * camera's horizontal axes and spin it the way it should roll.
    *
@@ -222,8 +330,10 @@ export class ZorbBall {
    * floats instead: a damped support keeps its base about ZORB_FLOAT_DEPTH under the surface,
    * and a drag (thicker in lava) still lets the drive push it across and out. The vehicle inside
    * is shielded, so it neither heats nor counts as stuck. Kinematic copies only reset state.
+   * Runs after the controller on every zorbed step, so it also gives a pending hop its lift.
    */
   float(terrain: ZorbLiquidTerrain, state: LiquidState, dt: number): void {
+    this.applyHop()
     state.lavaDepth = 0
     state.stuck = false
     state.heat = Math.max(0, state.heat - dt / lavaCoolingTime.value)
@@ -233,9 +343,11 @@ export class ZorbBall {
     state.wingLaunchSpeed = 0
     state.fastWingContact = false
     state.wasImmersed = false
-    if (!this.collider || this.body.isKinematic()) return
+    if (!this.collider) { this.onLiquid = false; return }
     const p = this.centre(tmpC)
     const surface = terrain.liquidHeightAt?.(p.x, p.z) ?? -Infinity
+    this.onLiquid = surface - (p.y - Math.max(MIN_RADIUS, this.radius)) > -HOP_LIQUID_REACH
+    if (this.body.isKinematic()) return
     const kind = Number.isFinite(surface) ? liquidKind(terrain as Terrain, p.x, p.z) : null
     if (!kind) return
     if(kind === 'water' && waterSinking.value){
@@ -282,6 +394,13 @@ export class ZorbBall {
     return out.copy(this.offset).applyQuaternion(tmpQ.set(r.x, r.y, r.z, r.w)).add(this.body.translation())
   }
 
+  /** Read and clear the strength of a hop's pulse not yet shown. */
+  takePulse(): number {
+    const p = this.pulse
+    this.pulse = 0
+    return p
+  }
+
   /** Read and clear the strongest impact since the last call. */
   takeImpact(): number {
     const i = this.impact
@@ -299,6 +418,10 @@ export class ZorbBall {
     this.radius = 0
     this.on = false
     this.hasVelocity = false
+    this.masked = false
+    this.armed = false
+    this.hopPending = false
+    this.onLiquid = false
   }
 }
 
@@ -398,6 +521,8 @@ export class ZorbShield implements ShieldData {
   alpha = 0
   contact = 0
   readonly contactDir = new THREE.Vector3(0, -1, 0)
+  /** A hop's swell, as a fraction of the radius, easing back to 0. */
+  swell = 0
   private readonly materials = acquireShared()
   private disposed = false
 
@@ -420,8 +545,13 @@ export class ZorbShield implements ShieldData {
     const on = ball.on
     const impact = ball.takeImpact()
     if (impact > 3) this.alpha = Math.max(this.alpha, ZORB_REST_ALPHA + impact * 0.1)
+    // A hop's pulse: the same flare as an impact, set by `zorb.pulseBrightness`, and a swell.
+    // Both ease back on the shield's own rates, so it needs no new uniform or material.
+    const pulse = ball.takePulse()
+    if (pulse > 0) { this.alpha = Math.max(this.alpha, ZORB_REST_ALPHA + zorbPulseBrightness.value * pulse); this.swell = PULSE_SWELL * pulse }
+    this.swell *= Math.exp(-PULSE_EASE * dt)
     this.alpha = THREE.MathUtils.lerp(this.alpha, on ? ZORB_REST_ALPHA : 0, Math.min(1, dt * 3))
-    if (ball.active) this.mesh.scale.setScalar(Math.max(MIN_RADIUS, ball.radius))
+    if (ball.active) this.mesh.scale.setScalar(Math.max(MIN_RADIUS, ball.radius) * (1 + this.swell))
     this.mesh.position.copy(ball.offset).applyQuaternion(vehicle.quaternion).add(vehicle.position)
     this.mesh.quaternion.copy(tmpQ.identity())
     this.contact = THREE.MathUtils.lerp(this.contact, ball.active ? ball.contact : 0, Math.min(1, dt * 8))
