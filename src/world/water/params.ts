@@ -21,3 +21,7 @@ export const waterWaveLength = defineParam({
 export const waterWaveTurn = defineParam({
   ...P, id: 'water.waveTurn', label: 'Wave direction vs wind', default: 0, min: -Math.PI, max: Math.PI, step: 0.01,
 })
+/** Fastest a river may run, m/s. Manning's formula sets the speed below this. */
+export const waterRiverMaxSpeed = defineParam({
+  ...P, id: 'water.riverMaxSpeed', label: 'River speed cap (m/s)', default: 6, min: 0, max: 15, step: 0.1,
+})

@@ -413,3 +413,60 @@ export function lavaSurfaceAt(lava: LavaFeatures, x: number, z: number, fallback
   }
   return y
 }
+
+/**
+ * Manning's roughness for a rocky mountain stream bed, s/m^(1/3). With the river's 1.4 m
+ * depth as the hydraulic radius, Manning's formula v = R^(2/3) sqrt(S) / n gives the mean
+ * speed of open channel flow down a bed of slope S.
+ */
+export const RIVER_MANNING_N = 0.035
+/** Hydraulic radius of the carved channels: the surface sits 1.4 m above the bed. */
+const RIVER_HYDRAULIC_RADIUS = 1.4
+
+/**
+ * Velocity of the liquid at (x, z) in metres per second, written to `out`: along the river
+ * where (x, z) is on one, from Manning's formula and the local slope of the surface; zero in
+ * the sea, the lake and the pools. Uses the same segment test as `lavaSurfaceAt`, taking the
+ * segment whose surface is highest (the one `lavaSurfaceAt` reports). Speed is capped at
+ * `maxSpeed`. Canonical tile coordinates.
+ */
+export function liquidFlowAt(
+  lava: LavaFeatures, x: number, z: number, maxSpeed: number, out: { x: number; z: number },
+): { x: number; z: number } {
+  out.x = 0
+  out.z = 0
+  let best = -Infinity
+  for (const r of lava.rivers) {
+    const b = r.bounds
+    const w = r.width / 2
+    if (x < b.minX - w || x > b.maxX + w || z < b.minZ - w || z > b.maxZ + w) continue
+    const pts = r.points
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i]
+      const c = pts[i + 1]
+      const dx = c.x - a.x
+      const dz = c.z - a.z
+      const len2 = dx * dx + dz * dz
+      if (len2 <= 0) continue
+      let t = ((x - a.x) * dx + (z - a.z) * dz) / len2
+      t = t < 0 ? 0 : t > 1 ? 1 : t
+      if (sq(a.x + dx * t - x) + sq(a.z + dz * t - z) >= w * w) continue
+      const sy = a.y + (c.y - a.y) * t
+      if (sy <= best) continue
+      best = sy
+      const len = Math.sqrt(len2)
+      const slope = Math.max(0, a.y - c.y) / len
+      // A trickle even where the bed is level, so a river never stands still.
+      const speed = Math.min(maxSpeed, Math.max(0.3, (RIVER_HYDRAULIC_RADIUS ** (2 / 3) * Math.sqrt(slope)) / RIVER_MANNING_N))
+      out.x = (dx / len) * speed
+      out.z = (dz / len) * speed
+    }
+  }
+  // Lake and pools are still: a higher still surface there overrides the river.
+  if (best > -Infinity) {
+    const lake = lava.lake
+    if (lake && sq(x - lake.x) + sq(z - lake.z) < sq(lake.radius) && lake.surface > best) { out.x = 0; out.z = 0 }
+    for (const p of lava.pools) if (sq(x - p.x) + sq(z - p.z) < sq(p.radius) && p.surface > best) { out.x = 0; out.z = 0 }
+  }
+  return out
+}
