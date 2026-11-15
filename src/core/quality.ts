@@ -146,8 +146,9 @@ export interface CapabilityHints { memoryGB?: number; adapter?: 'available' | 'm
 export interface Capability { /** First-visit level. */ start: QualityLevel; /** Highest level automatic climbs may reach. */ ceiling: QualityLevel }
 /**
  * What the graphics stack can do, never what kind of device it is: no user agent or touch
- * test. A software adapter or no WebGPU adapter (the WebGL 2 path) stays at Medium or below,
- * where no deferred post passes exist. Everything else may reach Cinematic; the first visit
+ * test. A software adapter or the WebGL 2 path starts at Medium or below and automatic
+ * climbs stop at Medium; players may choose higher levels manually. Startup revalidation
+ * may lower a saved choice again. Everything else may reach Cinematic; the first visit
  * starts at High, or Medium on a small texture limit or two gigabytes of memory, and the
  * governor moves from there on measured frames.
  */

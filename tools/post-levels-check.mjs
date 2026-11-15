@@ -5,7 +5,7 @@
  *   tools/heavy.sh node tools/post-levels-check.mjs URL OUTPUT_DIR [--webgl]
  *
  * The quality level owns the tier and, through each strength, which effects exist; the post
- * chain follows. For every level the device may reach this sets the level as a player
+ * chain follows. For every level this sets the level as a player
  * would, lets the chain settle and asserts:
  *
  *   tier      the chain's tier equals the level's (off, base, lite, lite, full, full).
@@ -15,7 +15,7 @@
  *   budget    with the governor's post budget spent the chain falls to the look alone, and
  *             returns when the budget does.
  *
- * A level above the device's ceiling is recorded as skipped (the WebGL fallback stops at 2).
+ * WebGL starts at Medium and limits automatic climbs to it; manual choices still test all six.
  */
 import { chromium } from 'playwright-core'
 import { mkdirSync, writeFileSync } from 'node:fs'
@@ -49,7 +49,7 @@ try {
     return { backend: s.game.backend, ceiling: q.getQualityState().ceiling }
   })
   Object.assign(report, start)
-  if (webgl) assert.equal(report.backend, 'webgl')
+  if (webgl) { assert.equal(report.backend, 'webgl'); assert.equal(report.ceiling, 2, 'WebGL automatic ceiling is Medium') }
   const read = () => page.evaluate(() => {
     const s = window.syn3h, g = s.game, c = g.postChain, b = c.built
     const v = id => s.params.get(id)?.value
@@ -64,7 +64,6 @@ try {
     }
   })
   for (let level = 0; level <= 5; level++) {
-    if (level > report.ceiling) { report.levels.push({ level, skipped: 'above this device\'s ceiling' }); continue }
     const before = await read()
     await page.evaluate(level => window.syn3h.game.quality.setLevel(level), level)
     await page.waitForTimeout(2500)
