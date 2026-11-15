@@ -304,6 +304,22 @@ export class NetClient implements System {
     return !this.connected || !this.game.locked || this.isHost
   }
 
+  /**
+   * "Reset world to defaults" for the menu: every shared (world) parameter back to its default,
+   * for everyone in the room, and a fresh round. Allowed when `canEditWorld` is (host, or
+   * anyone while sliders are unlocked). Offline it resets this client's own world.
+   * Returns false when not allowed.
+   */
+  resetWorld(): boolean {
+    if (!this.canEditWorld) return false
+    if (this.connected) {
+      this.send({ type: 'reset' })
+    } else {
+      for (const p of params.all()) if (p.def.scope === 'world') params.set(p.def.id, p.def.default, 'local')
+    }
+    return true
+  }
+
   /** Announce a new vehicle kind or colours (the local vehicle itself is main.ts's to swap). */
   setProfile(p: { kind?: VehicleKind; colors?: PlayerColors }): void {
     if (p.kind) this.kind = cleanKind(p.kind) ?? this.kind
@@ -782,6 +798,16 @@ export class NetClient implements System {
       case 'game':
         this.onGame(msg)
         break
+      case 'reset': {
+        // Defaults first, so parameters the server does not know also go back; then the room's.
+        for (const p of params.all()) if (p.def.scope === 'world') params.set(p.def.id, p.def.default, 'remote')
+        params.applySnapshot(msg.params, 'remote')
+        this.zoneTimer = 0
+        this.onGame({ type: 'game', game: msg.game })
+        this.event(msg.reason === 'host' ? `${this.nameOf(msg.from)} reset the world to defaults`
+          : msg.reason === 'join' ? 'A new player brought their world' : 'The room was idle: world reset to defaults')
+        break
+      }
       case 'error':
         this.event(`Server: ${msg.message}`)
         if (msg.message.includes('protocol')) reloadForNewProtocol()

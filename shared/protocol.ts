@@ -268,6 +268,8 @@ export type ClientMessage =
   | { type: 'zone'; zone: HillZone }
   /** My vehicle (or, from the host, bot `bot`) touched lava or fell off the world. */
   | { type: 'died'; cause: 'lava' | 'fell'; bot?: number }
+  /** Put the shared world back to defaults (allowed whenever moving a shared slider is). */
+  | { type: 'reset' }
 
 export type TagEvent =
   | 'default' | 'ram' | 'laser' | 'score' | 'leave' | 'lock' | 'host'
@@ -295,6 +297,12 @@ export type ServerMessage =
   | { type: 'fire'; from: number; shot: ShotInfo }
   | { type: 'hit'; shooter: number; victim: number; shot: number }
   | { type: 'game'; game: GameState; event?: TagEvent; actor?: number; target?: number }
+  /**
+   * The room's world was replaced: set every world parameter to its default, then apply
+   * `params`. `idle`: nobody was playing; `host`: player `from` asked for defaults; `join`:
+   * the first player into an idle reset room brought their world.
+   */
+  | { type: 'reset'; reason: 'idle' | 'host' | 'join'; from: number; params: Record<string, ParamWireValue>; game: GameState }
   | { type: 'error'; message: string }
 
 export const MAX_JSON_BYTES = 8192
