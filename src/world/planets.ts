@@ -107,7 +107,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
     blurb: 'Black glass and needle spires veined with magenta, standing in a sea of lava.',
     swatch: [0x262130, 0xff5a1a],
     values: {
-      ...SKY_PRESETS['Violet dusk'], 'weather.cloudCoverage': 0.12, 'sun.timeOfDay': 17.1,
+      ...SKY_PRESETS['Violet dusk'], 'weather.cloudCoverage': 0.12, 'sun.timeOfDay': 16.3,
       'terrain.kind': 0, 'terrain.look': 5, 'world.seaKind': 0, 'world.lavaAltitude': 0,
       'terrain.islandRadius': 800, 'terrain.coastWobble': 0.28,
       'terrain.volcanoHeight': 600, 'terrain.volcanoRadius': 330, 'terrain.calderaSize': 62,
@@ -138,6 +138,8 @@ export const PLANETS: readonly PlanetRecipe[] = [
       'sky.turbidity': 0, 'sky.mieCoefficient': 0, 'sky.mieDirectionalG': 0.8,
       'sky.nightBrightness': 3, 'weather.cloudCoverage': 0, 'weather.fogDensity': 0,
       'sun.timeOfDay': 15.2,
+      // No sky to meter from: a black sky would push the auto exposure until the dust burns white.
+      'sky.autoExposure': 0, 'sky.exposure': 0.28,
       'world.gravity': 1.62, 'world.atmosphere': 0,
       'terrain.kind': 0, 'terrain.look': 7, 'terrain.dry': 1, 'terrain.craters': 0.7,
       'world.seaKind': 1, 'world.lavaAltitude': -80,

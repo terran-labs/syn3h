@@ -55,14 +55,14 @@ export const PALETTES: readonly Palette[] = [
     groundDark: 0x8fb4d0, groundLight: 0xd6e8f4, rockDark: 0x5f86a8, rockLight: 0xa9cbe0,
     darkRockA: 0x3d5f80, darkRockB: 0x6f96b8, shore: 0xbfe0ee,
     roadDark: 0x4a6a86, roadLight: 0x5f809c, roadLine: 0xe8f6ff,
-    snow: 0xf4f8ff, gloss: 0.3, seam: 0, seaDeep: 0x061a33, seaShallow: 0x1f5f8a,
+    snow: 0xf4f8ff, gloss: 0.18, seam: 0, seaDeep: 0x061a33, seaShallow: 0x1f5f8a,
   },
   // 5 Obsidian: black volcanic glass with faint magenta seams.
   {
     groundDark: 0x0e0c12, groundLight: 0x262130, rockDark: 0x08070b, rockLight: 0x2c2636,
     darkRockA: 0x050507, darkRockB: 0x1c1826, shore: 0x140a08,
     roadDark: 0x2c2630, roadLight: 0x3a3340, roadLine: 0x9a4a8a,
-    snow: 0xeef2f6, gloss: 0.42, seam: 0xff2a9a, ...WATER,
+    snow: 0xeef2f6, gloss: 0.2, seam: 0xff2a9a, ...WATER,
   },
   // 6 Badlands: red clay and strongly banded cream and oxblood buttes.
   {

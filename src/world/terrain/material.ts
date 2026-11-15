@@ -177,10 +177,10 @@ export function createTerrainMaterial(): TerrainMaterial {
   const lakeGlow = reach.mul(rise).mul(facing.mul(0.85).add(0.15)).mul(0.55)
   // Seams: thin bright veins along a contour of the patch noise, broken up by a second
   // contour so they come and go instead of drawing closed loops.
-  const vein = smoothstep(0.035, 0.0, big.add(mid.mul(0.12)).abs())
+  const vein = smoothstep(0.014, 0.0, big.add(mid.mul(0.12)).abs())
     .mul(smoothstep(-0.25, 0.35, mx_noise_float(p.mul(0.004).add(17))))
     .mul(float(1).sub(paved))
-  material.emissiveNode = vec3(1.0, 0.2, 0.02).mul(shoreGlow.add(lakeGlow)).mul(glow).add(seam.mul(vein).mul(0.9))
+  material.emissiveNode = vec3(1.0, 0.2, 0.02).mul(shoreGlow.add(lakeGlow)).mul(glow).add(seam.mul(vein).mul(0.55))
   material.roughnessNode = max(float(0.78), float(0.97).sub(cliff.mul(0.1)).sub(paved.mul(0.15))).sub(gloss)
   // Bump from the same world noise: metre-scale relief the 4 m grid cannot hold. Three's
   // bumpMap() only perturbs textures (it re-samples at offset UVs), so this is Mikkelsen's
