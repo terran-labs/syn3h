@@ -267,27 +267,32 @@ action button, minimap, HUD, strip, menu row, controls card, toast, announcement
 vehicle's place on screen, and fails if any two overlap. Match states are fixtures, so it
 needs only the lane dev server.
 
-## Lobby art direction
+## Art direction: Dark Star
 
-The lobby follows the owner's 2017 Syn3h build as art direction, not as a specification:
-near-black space, one saturated blue, thin type, a dark slab panel, slab buttons that light
-blue. Colours are the `--s3-*` tokens at the top of `shell.css`.
+On 14 November 2026 the owner replaced the 2017 Syn3h look with the Dark Star theme of the
+new terranlabs.com ("it honestly just looks better than the design we lifted from a decade
+ago"). Source: /Users/vtn/dev/terranlabs.com at 68c1e06.
 
-- Sky: `Starfield.ts` draws the nebula and three depths of stars in one WebGL 2 fragment
-  shader, seeded from the world seed, at most thirty frames a second and not at all while
-  the game is on screen. No images. Without WebGL 2 the CSS gradient behind it shows.
-- Logo: one vector path (`brand/wordmarkPath.ts`, about 3 KB) traced from the legacy
-  bitmap by `tools/brand/trace-logo.mjs` and lit in CSS. The lobby, loading, invite and
-  attract screens no longer request the 1.5 MB `public/brand/syn3h.png`; that file now
-  only feeds the share card generator.
-- The stage leans up to 1.6 degrees toward a mouse pointer and the star depths slide
-  against each other. Touch and reduced-motion users get a still stage.
-- `__SYN3H_BUILD__`, if the bundler defines it, appears as "build version : ..." under
-  the panel; otherwise the line reads "browser edition".
+- Colours and type: Dark Star's tokens (`--s3-*` and the few `--theme-*` names that site's
+  CSS reads) and its two families, Barlow and Barlow Condensed, served from `public/fonts`
+  under the SIL Open Font License.
+- Buttons: that site's glass button, `.liquid-glass`, copied verbatim into `shell.css`
+  between two marker comments, with its pointer-facing rim (`Shell.glass`, a port of
+  GlassShine.tsx). `Shell.glass` gives every button the class; the quiet text links are
+  not glass. `.is-primary` is the accent-filled variant. Frost is dropped on the in-play
+  menu row and thumb buttons and at graphics level 0, because it re-blurs the moving world
+  every frame.
+- Sky: `Starfield.ts` is that site's Planetfall opening as a lobby background: deep
+  space, wheeling stars, a world's limb with its atmosphere along the bottom, and the sun
+  clearing the limb with shifting shafts, a lens streak and ghosts. The sun, shaft, flare
+  and star formulas are PlanetGL.tsx's, unchanged. A faint nebula remains as an option.
+- Panel: a sheet of frosted glass with Dark Star's 18 px radius and hairline border.
+- Loading: that site's veil, see "The loading veil".
+- Logo: still the Syn3h wordmark as one vector path, lit in Dark Star's blue.
 
-`tools/heavy.sh node tests/ui/lobby-reference.mjs <label>` captures every lobby screen at
-the reference's shape and on a phone. The owner's reference captures show his desktop, so
-they stay in the git-ignored `tests/ui/artifacts/reference/`.
+`tools/heavy.sh node tests/ui/lobby-reference.mjs <label>` captures every lobby screen on
+a desktop and a phone. The owner's 2017 reference captures stay in the git-ignored
+`tests/ui/artifacts/reference/`.
 
 ## Wording
 

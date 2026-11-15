@@ -85,6 +85,12 @@ export interface Step {
   snare?: number
   hat?: number
   openHat?: number
+  /** A plucked string (koto, harp): doubles the sequencer an octave up, or picks out the chord alone when calm. */
+  pluck?: Note
+  /** A struck bell on the home note: full at a release, soft at the start of a still section. */
+  bell?: Note
+  /** The theme on brass, under the theremin. Only in a release. */
+  brass?: Note
   /** A distant telemetry beep at this MIDI pitch. Only in quiet passages. */
   beep?: number
   /** A noise swell lasting this many sixteenths, leading into the release. */
@@ -257,7 +263,13 @@ export class Composer {
       const base = fold(this.pitch(degree), 36) - this.pitch(degree)
       const midi = this.pitch(degree + ARP_TONES[this.arp[s]]) + base + (mood.lift > 0.6 || role === 'release' ? 12 : 0)
       out.arp = { midi, velocity: s % 4 === 0 ? 1 : 0.7, steps: every }
+      if (s % 2 === 0) out.pluck = { midi: midi + 12, velocity: out.arp.velocity * 0.8, steps: 8 }
+    } else if (level.arp === 0 && s % 4 === 0 && !breath) {
+      // Too calm for the sequencer: a string picks out the chord, one note to a beat.
+      const base = fold(this.pitch(degree), 48) - this.pitch(degree)
+      out.pluck = { midi: this.pitch(degree + ARP_TONES[this.arp[s]]) + base, velocity: s === 0 ? 0.7 : 0.45, steps: 16 }
     }
+    if (pos === 0 && (role === 'release' || role === 'still')) out.bell = { midi: fold(this.pitch(0), 48), velocity: role === 'release' ? 1 : 0.45, steps: 32 }
 
     if (level.bass > 0 && !breath) {
       if (i < 0.6) {
@@ -281,6 +293,7 @@ export class Composer {
         const offset = lastChord ? this.motif[this.motif.length - 1 - n].offset : note.offset
         const base = fold(this.pitch(degree), 65) - this.pitch(degree) + (role === 'release' ? 12 : 0)
         out.lead = { midi: this.pitch(degree + offset) + base, velocity: sings, steps: note.steps }
+        if (role === 'release') out.brass = { midi: out.lead.midi - 12, velocity: 1, steps: note.steps }
       }
     }
 

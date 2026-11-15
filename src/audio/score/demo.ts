@@ -33,6 +33,7 @@ export async function renderScene(name: string, seconds = 16, seed = 1234, rate 
   const context = new OfflineAudioContext(2, rate * seconds, rate), scene = SCENES[name]
   const filter = context.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 20000; filter.connect(context.destination)
   const score = new Score(context, filter, seed)
+  await score.synth.ready
   score.setActive(true, 0.3)
   if (cue) score.cue(cue)
   const roles: Role[] = []
@@ -56,6 +57,25 @@ export async function renderScene(name: string, seconds = 16, seed = 1234, rate 
   // Loudness second by second, to see a build, a breath and a release.
   const envelope = Array.from({ length: seconds }, (_, second) => { let sum = 0; for (let i = second * rate; i < (second + 1) * rate; i++) sum += ((left[i] + right[i]) / 2) ** 2; return Math.sqrt(sum / rate) })
   return { name, envelope, roles, peak, rms: Math.sqrt(square / count), width: Math.sqrt(side / count), bad, /** Hz. RMS of the slope over RMS of the signal: where the energy sits in the spectrum. */ brightness: Math.sqrt(slope / square) * rate / (2 * Math.PI), mode: score.mode, tempo: score.tempo, mood: { ...score.mood }, nodes: score.synth.nodeCount, left, right, rate }
+}
+
+/** Pluck one modelled string offline and measure the pitch it actually sounds, in Hz. */
+export async function pluckPitch(hz: number, rate = 44100): Promise<{ hz: number; level: number }> {
+  const context = new OfflineAudioContext(2, rate, rate)
+  await context.audioWorklet.addModule(new URL('./pluck.worklet.js', import.meta.url))
+  const node = new AudioWorkletNode(context, 'pluck', { numberOfInputs: 0, outputChannelCount: [2] }); node.connect(context.destination)
+  node.port.postMessage({ t: 0, hz, velocity: 1, sustain: 4 })
+  // Let the message reach the audio thread before rendering starts.
+  await new Promise(resolve => setTimeout(resolve, 50))
+  const buffer = await context.startRendering(), left = buffer.getChannelData(0), right = buffer.getChannelData(1)
+  const x = Float32Array.from(left, (v, i) => v + right[i]).subarray(rate / 4, rate / 4 + 16384)
+  // Autocorrelation peak near the expected period, refined between samples with a parabola.
+  const lag = (k: number) => { let sum = 0; for (let i = 0; i + k < x.length; i++) sum += x[i] * x[i + k]; return sum }
+  const expected = rate / hz
+  let best = Math.round(expected), top = -Infinity
+  for (let k = Math.floor(expected * 0.9); k <= Math.ceil(expected * 1.1); k++) { const v = lag(k); if (v > top) { top = v; best = k } }
+  const a = lag(best - 1), b = lag(best), c = lag(best + 1)
+  return { hz: rate / (best + 0.5 * (a - c) / (a - 2 * b + c)), level: Math.sqrt(lag(0) / x.length) }
 }
 
 /** 16-bit stereo WAV, for saving a render to listen to. */
