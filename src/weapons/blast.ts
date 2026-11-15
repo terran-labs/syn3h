@@ -55,6 +55,8 @@ export interface BlastHooks {
 
 /** How far from its centre, toward the blast, a vehicle is pushed: off centre, so it spins. */
 const ARM = 0.6
+/** Turn given with the push, radians a second for each metre a second of push. */
+const SPIN = 0.2
 
 export class Blast {
   /** Push already given to each vehicle inside the current window, m/s. */
@@ -89,6 +91,13 @@ export class Blast {
         { x: push[0] * m, y: push[1] * m, z: push[2] * m },
         { x: p.x - off[0] * arm, y: p.y - off[1] * arm, z: p.z - off[2] * arm }, true,
       )
+      // And a turn of its own, top away from the blast, so even a vehicle that holds itself
+      // level (the hovercraft) tumbles, whatever the lift is set to.
+      const flat = Math.hypot(off[0], off[2])
+      const ax = flat > 1e-3 ? off[2] / flat : 1, az = flat > 1e-3 ? -off[0] / flat : 0
+      const turn = Math.hypot(push[0], push[1], push[2]) * k * SPIN
+      const w = body.angvel()
+      body.setAngvel({ x: w.x + ax * turn, y: w.y, z: w.z + az * turn }, true)
       this.stats.pushed++
     }
   }
