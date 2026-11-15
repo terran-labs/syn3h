@@ -62,7 +62,7 @@ try{
  const a=await open('Host',key),b=await open('Guest',key)
  check('lobby spectators do not start a race',await a.evaluate(()=>!window.syn3hNet?.race)&&await b.evaluate(()=>!window.syn3hNet?.race))
  await play(a);await play(b)
- await a.locator('.shell-menu-button').click();check('return to menu excludes host',!(await state(a)).playing);await a.keyboard.press('Escape');await a.waitForFunction(()=>window.syn3h.shell.playing);
+ await a.locator('.inspector-toggle').click();await a.locator('.exit-world').click();check('return to menu excludes host',!(await state(a)).playing);await a.keyboard.press('Escape');await a.waitForFunction(()=>window.syn3h.shell.playing);
  const defaults=await state(a);check('ordinary entry enables mixed bots and gear',defaults.defaults['bots.count']===4&&defaults.defaults['bots.fleet']===1&&defaults.defaults['daydream.seconds']===300&&['bungee.allowed','yoink.allowed','pester.allowed'].every(id=>defaults.defaults[id]===true),defaults.defaults)
 
  await stageEncounter(a);await waitRace(a)
