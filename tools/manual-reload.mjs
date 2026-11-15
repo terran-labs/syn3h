@@ -19,7 +19,7 @@ window.addEventListener('syn3h:new-build', () => {
   button.id = 'syn3h-build-notice';
   button.type = 'button';
   button.textContent = 'New build available. Press to reload';
-  button.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:10000;background:#172633;color:#fff;border:1px solid #49e6ff;border-radius:8px;padding:10px 16px;font:14px system-ui;cursor:pointer';
+  button.style.cssText = 'position:fixed;bottom:max(12px,env(safe-area-inset-bottom));right:12px;max-width:calc(100vw - 24px);z-index:10000;background:#172633;color:#fff;border:1px solid #49e6ff;border-radius:8px;padding:10px 16px;font:14px system-ui;cursor:pointer';
   button.addEventListener('click', () => location.reload());
   document.body.append(button);
 });`;

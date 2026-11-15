@@ -26,6 +26,9 @@ try {
   await writeFile(join(root,'accepted.js'),js(3)+"\n// from 'three/tsl'");
   await page.waitForSelector('#syn3h-build-notice');
   assert.equal(await page.evaluate(()=>window.hmrValue),2);
+  const bounds=await page.locator('#syn3h-build-notice').boundingBox();
+  assert.ok(bounds.y > 600 && bounds.x > 600, 'Notice stays in the bottom-right corner');
+  await page.screenshot({path:'/tmp/syn3h-reload-bottom-corner.png'});
   console.log('PASS material source change requests manual reload');
   await page.evaluate(()=>document.getElementById('syn3h-build-notice').remove());
   await server.close();server=await start();
