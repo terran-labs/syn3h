@@ -79,10 +79,10 @@ async function main() {
     /** For captures: hold the main nozzle at a fixed deflection, or pass null to resume the sweep. */
     vector: null as [number, number] | null,
     /** For captures: fix the gear, the height above the floor and the camera. */
-    pose(g: number, lift: number, dir: [number, number, number], distance: number) {
+    pose(g: number, lift: number, dir: [number, number, number], distance: number, offset: [number, number, number] = [0, 0, 0]) {
       autoGear = false; gear = gearTarget = g; hoverLift = lift
       const target = all ? new THREE.Vector3(0, lift * .5, 5) : jets[current].object.position.clone().setY(lift - .1)
-      jets.forEach(j => { j.object.position.y = lift }); view(new THREE.Vector3(...dir), distance, target)
+      jets.forEach(j => { j.object.position.y = lift }); view(new THREE.Vector3(...dir), distance, target.add(new THREE.Vector3(...offset)))
     },
   }
   build(); document.querySelector('#status')!.textContent = ''

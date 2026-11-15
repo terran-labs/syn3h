@@ -11,7 +11,7 @@
  *  - submersion              is exposed as `depth` for the master lowpass
  *  - the match               holding the hill is triumph, a contested hill is tension
  */
-import { defineParam } from '../../../shared/params'
+import { defineParam, params } from '../../../shared/params'
 import { Composer, levels, unit, type Mood, type Role } from './Composer'
 import { ScoreSynth } from './ScoreSynth'
 
@@ -20,6 +20,13 @@ const tune = (id: string, label: string, value: number, min: number, max: number
 export const scoreEnergy = tune('energy', 'Score intensity', 1, 0, 2)
 export const scoreTempo = tune('tempo', 'Tempo scale', 1, 0.6, 1.4)
 export const scoreReverb = tune('reverb', 'Hall size', 0.9, 0, 1.5)
+/**
+ * The cheaper instrument set, for phones. The quality system may set it; the score also sets
+ * it itself when the browser reports the audio thread falling behind.
+ */
+export const scoreLite = defineParam({ id: 'audio.score.lite', label: 'Lighter score (for phones)', group: 'Adaptive score', scope: 'client', default: false })
+/** The feedback-delay-network hall in place of the convolution: about a quarter of the cost. The lighter tier always uses it. */
+export const scoreNetworkHall = defineParam({ id: 'audio.score.networkHall', label: 'Algorithmic hall (cheaper)', group: 'Adaptive score', scope: 'client', default: false })
 /** 0 follows the world seed, so each world has its own key and themes. */
 export const scoreSeed = tune('seed', 'Theme seed (0 = world)', 0, 0, 999999, 1)
 
@@ -49,7 +56,11 @@ const SURGE_COOLDOWN = 40
 const follow = (value: number, target: number, tau: number, dt: number) => value + (target - value) * (1 - Math.exp(-dt / tau))
 
 export class Score {
-  readonly synth: ScoreSynth
+  /** The instruments. Replaced when the lighter tier is switched on or off, so read it afresh each time. */
+  synth: ScoreSynth
+  private strain = 0
+  private nextPoll = 0
+  private underrunEvents = -1
   /** The smoothed mood the music is following, for the lab and for tests. */
   readonly mood: Mood & { depth: number; heat: number; energy: number } = { intensity: 0, lift: 0, darkness: 0.3, triumph: 0, depth: 0, heat: 0, energy: 0 }
   private composer: Composer
@@ -64,11 +75,25 @@ export class Score {
   private airTime = 0
   private lastCue = -Infinity
 
-  constructor(private readonly context: BaseAudioContext, output: AudioNode, seed: number) {
+  constructor(private readonly context: BaseAudioContext, private readonly output: AudioNode, seed: number) {
     this.seed = seed
     this.composer = new Composer(seed)
-    this.synth = new ScoreSynth(context, output)
+    this.synth = new ScoreSynth(context, output, scoreLite.value, scoreLite.value || scoreNetworkHall.value)
+    // Where the browser can tell us how hard the audio thread is working, watch it. Two bad
+    // readings in a row and the score steps down to its lighter instruments, for good.
+    const capacity = (context as { renderCapacity?: { start(options: { updateInterval: number }): void; addEventListener(type: 'update', listener: (event: { averageLoad: number; underrunRatio: number }) => void): void } }).renderCapacity
+    if (capacity) {
+      try {
+        capacity.addEventListener('update', event => {
+          this.load = { average: event.averageLoad, underruns: event.underrunRatio }
+          this.strained(event.underrunRatio > 0.01 || event.averageLoad > 0.75)
+        })
+        capacity.start({ updateInterval: 2 })
+      } catch { /* Not measurable here; the quality system can still set the tier. */ }
+    }
   }
+  /** The audio thread's last reported load (share of real time spent rendering) and underrun ratio, where the browser reports them. */
+  load: { average: number; underruns: number } | null = null
   get playing(): boolean { return this.active }
   get tempo(): number { return this.bpm }
   get mode(): string { return this.composer.mode }
@@ -104,7 +129,30 @@ export class Score {
     else this.synth.impact(undefined, strength)
   }
 
+  /** Step down to the lighter instruments after two strained readings in a row. */
+  private strained(bad: boolean): void {
+    this.strain = this.active && bad ? this.strain + 1 : 0
+    if (this.strain >= 2 && !scoreLite.value) params.set(scoreLite.def.id, true)
+  }
+  /** Chrome's other counter: output frames the device was left without. Polled every two seconds. */
+  private pollUnderruns(now: number): void {
+    const stats = (this.context as { playbackStats?: { underrunEvents?: number; fallbackFramesEvents?: number } }).playbackStats
+    if (!stats || now < this.nextPoll) return
+    this.nextPoll = now + 2
+    const events = stats.underrunEvents ?? stats.fallbackFramesEvents ?? 0
+    if (this.underrunEvents >= 0) this.strained(events - this.underrunEvents >= 2)
+    this.underrunEvents = events
+  }
+
   update(input: ScoreInput): void {
+    this.pollUnderruns(this.context.currentTime)
+    if (scoreLite.value !== this.synth.lite || (scoreLite.value || scoreNetworkHall.value) !== this.synth.network) {
+      // Swap the instruments: fade the old set out and let the new one take the next sixteenth.
+      const old = this.synth
+      old.setLevel(0, 0.4); setTimeout(() => old.dispose(), 1500)
+      this.synth = new ScoreSynth(this.context, this.output, scoreLite.value, scoreLite.value || scoreNetworkHall.value)
+      this.synth.setLevel(this.active ? 1 : 0, 0.6)
+    }
     const now = this.context.currentTime, dt = Math.min(0.25, Math.max(0, now - this.last))
     this.last = now
     const m = this.mood, scale = scoreEnergy.value

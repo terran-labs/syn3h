@@ -42,6 +42,38 @@ const STILETTO_HULL = [[-3.6, .05, .03, .03, 0, 2], [-3.2, .2, .12, .1, 0, 2.2],
 const POD_HULL = [[-3.5, .04, .02, .02, -.02, 1.3], [-2.6, .34, .16, .12, 0, 1.35], [-1.6, .52, .34, .2, .02, 1.4], [-.4, .68, .44, .28, .03, 1.5], [.9, .7, .44, .3, .04, 1.6], [2.0, .52, .36, .3, .05, 1.8], [2.7, .42, .32, .3, .05, 2]]
 const BOOM_HULL = [[-1.9, .03, .03, .03, -.05, 1.4], [-1.0, .2, .2, .16, -.05, 1.5], [.4, .28, .26, .22, -.05, 1.5], [2.2, .26, .24, .2, -.03, 1.5], [3.1, .18, .18, .16, 0, 1.6]]
 
+/**
+ * A polygonal ring tail hung on X struts. The struts run from each boom to the ring's 45 degree
+ * corners and take their end position, leading edge and chord from the ring's own rows, so the
+ * two always meet exactly; a slim chrome longeron runs through each joint.
+ */
+function ringOnStruts(b: Builder, cy: number, r: number, rLow: number, z0: number, z1: number, chord: number, boomX: number, boomY: number): void {
+  const top = arc(0, cy, r, r, 0, 90, z0, z1, chord, chord, .06, 3), bottom = arc(0, cy, r, rLow, 0, -90, z0, z1, chord, chord, .06, 3)
+  b.surf(top, { round: false, mat: 'accent' }); b.surf(bottom, { round: false, mat: 'accent' })
+  for (const [x, y, z, c, t] of [top[1], bottom[1]]) {
+    // Carry the strut a little past the corner, along its own line, so it ends inside the ring.
+    const dx = x - boomX, dy = y - boomY, k = .03 / Math.hypot(dx, dy)
+    b.surf([[boomX, boomY, z - .15, c + .15, t], [x + dx * k, y + dy * k, z, c, t]], { round: false })
+    b.body('chrome', [[z - .07, .015, .015, .015, y, 1.6], [z + .04, .07, .07, .07, y, 1.6], [z + c - .04, .07, .07, .07, y, 1.6], [z + c + .07, .015, .015, .015, y, 1.6]], { x, mirror: true, seg: 2, around: 8 })
+  }
+}
+
+/** The Vanguard, with any set of intakes: rows of [angle, z0, z1, halfWidth, height]. */
+function vanguard(b: Builder, intakes: number[][]): void {
+  b.fuselage(POD_HULL)
+  b.canopy(-2.9, -.7, .6, .06)
+  for (const [angle, z0, z1, halfWidth, height] of intakes) b.intake(z0, z1, angle, halfWidth, height)
+  b.body('paint', BOOM_HULL, { x: 1.5, mirror: true, around: 20 })
+  b.surf([[.5, 0, -.4, 2.2, .08], [1.5, -.02, -.2, 2.0, .08]], { round: false })
+  b.surf([[1.5, -.02, .9, 1.5, .07], [2.2, .08, .5, 1.3, .065], [2.25, .09, .2, 1.4, .065], [3.2, .24, -.3, .8, .055], [3.65, .32, -.5, .5, .05]], { tipFrom: .75, tip: 'accent' })
+  b.surf([[1.6, -.05, -1.1, .7, .06], [2.5, .05, -.7, .3, .05]], { tipFrom: .5, tip: 'accent' })
+  ringOnStruts(b, .05, .95, .9, 2.25, 2.45, .75, 1.5, -.03)
+  b.nozzle(2.7, .05, .34, .34, 0, 2.2)
+  b.nozzle(3.1, 0, .17, .17, 1.5, 3)
+  b.port(0, -1.74, .24, .4); b.port(1.5, 1.16, .16, .38, -.27)
+  b.leg([0, -.12, -1.15], 'aft'); b.leg([1.5, -.12, 1.75], 'aft')
+}
+
 export const JET_DESIGNS: JetDesign[] = [
   {
     id: 'vermilion', name: 'Vermilion', paint: 0x9c0a14, accent: 0x49e6ff,
@@ -288,22 +320,17 @@ export const JET_DESIGNS: JetDesign[] = [
   {
     id: 'vanguard', name: 'Vanguard', paint: 0x565c66, accent: 0xff3d5a, hard: true, finish: 'military',
     blurb: 'Twin booms carry a free octagonal ring on four X struts around the main thruster, with dogtooth forward-swept wings and boom canards.',
-    build(b) {
-      b.fuselage(POD_HULL)
-      b.canopy(-2.9, -.7, .6, .06)
-      b.scoop(-.3, 1.2, .26, .18)
-      b.body('paint', BOOM_HULL, { x: 1.5, mirror: true, around: 20 })
-      b.surf([[.5, 0, -.4, 2.2, .08], [1.5, -.02, -.2, 2.0, .08]], { round: false })
-      b.surf([[1.5, -.02, .9, 1.5, .07], [2.2, .08, .5, 1.3, .065], [2.25, .09, .2, 1.4, .065], [3.2, .24, -.3, .8, .055], [3.65, .32, -.5, .5, .05]], { tipFrom: .75, tip: 'accent' })
-      b.surf([[1.6, -.05, -1.1, .7, .06], [2.5, .05, -.7, .3, .05]], { tipFrom: .5, tip: 'accent' })
-      b.surf(arc(0, .05, .95, .95, 0, 90, 2.25, 2.45, .75, .75, .06, 3), { round: false, mat: 'accent' })
-      b.surf(arc(0, .05, .95, .9, 0, -90, 2.25, 2.45, .75, .75, .06, 3), { round: false, mat: 'accent' })
-      b.surf([[1.5, 0, 2.1, .9, .06], [.68, .72, 2.3, .75, .06]], { round: false })
-      b.surf([[1.5, -.05, 2.1, .9, .06], [.68, -.6, 2.3, .75, .06]], { round: false })
-      b.nozzle(2.7, .05, .34, .34, 0, 2.2)
-      b.nozzle(3.1, 0, .17, .17, 1.5, 3)
-      b.port(0, -1.74, .24, .4); b.port(1.5, 1.16, .16, .38, -.27)
-      b.leg([0, -.12, -1.15], 'aft'); b.leg([1.5, -.12, 1.75], 'aft')
-    },
+    build(b) { vanguard(b, [[90, -.3, 1.2, .26, .18]]) },
   },
+  // Fourth round: the Vanguard with several intakes spaced evenly around the fuselage.
+  ...([
+    ['tri', 'Tri', 'Three intakes at 120 degrees: one on the spine and one low on each flank.', [90, 210, 330].map(a => [a, -.3, 1.2, .22, .17])],
+    ['quad', 'Quad', 'Four intakes in an X at 90 degrees, echoing the X struts of the tail ring.', [45, 135, 225, 315].map(a => [a, -.3, 1.1, .18, .15])],
+    ['hex', 'Hex', 'Six intakes at 60 degrees right round the hull, belly included.', [30, 90, 150, 210, 270, 330].map(a => [a, -.2, 1.0, .15, .13])],
+    ['collar', 'Collar', 'Eight short intakes in a tight collar behind the cockpit.', [0, 1, 2, 3, 4, 5, 6, 7].map(k => [22.5 + 45 * k, .1, .9, .11, .1])],
+    ['stagger', 'Stagger', 'Two rows of three, the rear row turned 60 degrees so the six never line up.', [...[90, 210, 330].map(a => [a, -.6, .3, .17, .14]), ...[30, 150, 270].map(a => [a, .5, 1.4, .17, .14])]],
+  ] as [string, string, string, number[][]][]).map(([id, name, blurb, intakes]): JetDesign => ({
+    id: `vanguard-${id}`, name: `Vanguard ${name}`, paint: 0x565c66, accent: 0xff3d5a, hard: true, finish: 'military', blurb,
+    build(b) { vanguard(b, intakes) },
+  })),
 ]

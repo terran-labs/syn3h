@@ -30,6 +30,7 @@ export class NextJet {
   private readonly flake: THREE.DataTexture
   readonly materials: Record<Mat, THREE.Material>
   private readonly paint: THREE.MeshPhysicalMaterial
+  private readonly panel: THREE.MeshPhysicalMaterial
   private readonly glow: THREE.MeshBasicMaterial
   private readonly legs: BuiltLeg[] = []
   private readonly geometries: THREE.BufferGeometry[] = []
@@ -42,15 +43,18 @@ export class NextJet {
     const military = design.finish === 'military'
     this.flake = flakeTexture(design.paint)
     this.paint = military
-      ? new THREE.MeshPhysicalMaterial({ color: design.paint, metalness: .55, roughness: .5, clearcoat: .25, clearcoatRoughness: .4, flatShading: true })
+      ? new THREE.MeshPhysicalMaterial({ color: design.paint, metalness: .55, roughness: .5, clearcoat: .25, clearcoatRoughness: .4 })
       : new THREE.MeshPhysicalMaterial({ color: design.paint, metalness: .78, roughness: .28, clearcoat: 1, clearcoatRoughness: .04, bumpMap: this.flake, bumpScale: .35 })
+    // Same paint, faceted: wings and fins of the angular designs keep their hard planes.
+    this.panel = this.paint.clone(); this.panel.flatShading = true
     this.glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(design.accent).multiplyScalar(1.3), transparent: true, opacity: .8, blending: THREE.AdditiveBlending, depthWrite: false })
     this.materials = {
       paint: this.paint,
-      chrome: military ? new THREE.MeshPhysicalMaterial({ color: 0x7d858f, metalness: 1, roughness: .32, flatShading: true }) : new THREE.MeshPhysicalMaterial({ color: 0xe9edf2, metalness: 1, roughness: .07 }),
+      chrome: military ? new THREE.MeshPhysicalMaterial({ color: 0x7d858f, metalness: 1, roughness: .32 }) : new THREE.MeshPhysicalMaterial({ color: 0xe9edf2, metalness: 1, roughness: .07 }),
       glass: new THREE.MeshPhysicalMaterial({ color: 0x050608, metalness: .7, roughness: .04, clearcoat: 1, clearcoatRoughness: .02 }),
       dark: new THREE.MeshStandardMaterial({ color: 0x0b0c0f, metalness: .4, roughness: .55 }),
       glow: this.glow,
+      panel: this.panel,
       // Squadron colour on tips and fins, where the candy designs carry chrome.
       accent: new THREE.MeshStandardMaterial({ color: design.accent, metalness: .2, roughness: .55, flatShading: military }),
     }
@@ -151,7 +155,7 @@ export class NextJet {
   setThrottle(amount: number): void { this.glow.opacity = .2 + .6 * clamp01(amount) }
 
   setColors(paint: THREE.ColorRepresentation, accent: THREE.ColorRepresentation): void {
-    this.paint.color.set(paint); this.glow.color.set(accent).multiplyScalar(1.3)
+    this.paint.color.set(paint); this.panel.color.set(paint); this.glow.color.set(accent).multiplyScalar(1.3)
   }
 
   dispose(): void {

@@ -124,6 +124,8 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
   const usable = () => page.waitForFunction(() => window.syn3h?.shell && !document.querySelector('.syn3h-loading:not([hidden])') && document.querySelector('.lobby-panels')?.dataset.busy === 'false', null, { timeout: 180000 })
   await usable()
   const usableMs = Date.now() - started
+  // Hold the graphics level: a slow headless browser would otherwise step it down and retire the galaxy.
+  await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
   const g = () => page.evaluate(() => window.syn3h.shell.graphics)
   const world = () => page.evaluate(() => ({ planet: window.syn3h.planets.currentPlanet().id, seed: window.syn3h.params.get('world.seed').value }))
   const settle = id => page.waitForFunction(id => { const p = document.querySelector('.lobby-panels'); return p.dataset.activePanel === id && p.dataset.busy === 'false' }, id, { timeout: 30000 })
@@ -138,18 +140,18 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
   // The world in the link is the world in the lobby, and no other is offered before joining.
   const landed = await world()
   check(landed.planet === 'alpine' && landed.seed === 90210, `${view.name}: landed on ${landed.planet}.${landed.seed}, not alpine.90210`)
-  const offered = await page.locator('.lobby-index .planet-card:not([data-planet=custom]):enabled').evaluateAll(list => list.map(card => card.dataset.planet))
+  const offered = await page.locator('[data-panel=worlds] .planet-card:not([data-planet=custom]):enabled').evaluateAll(list => list.map(card => card.dataset.planet))
   check(offered.join() === 'alpine', `${view.name}: an invited guest is offered ${offered.join()}`)
   // While the three maps are painted: the starfield keeps drawing and a tap is answered.
-  const before = await g(), t0 = Date.now()
-  await page.locator('.lobby-links [data-goto=worlds]').tap()
+  const before = await page.evaluate(() => ({ starfieldFrames: (window.syn3h.shell.galaxy?.frames ?? 0) })), t0 = Date.now()
+  await page.locator('.galaxy-links [data-goto=worlds]').tap()
   await page.waitForFunction(() => { const p = document.querySelector('.lobby-panels'); return p.dataset.busy === 'true' || p.dataset.activePanel === 'worlds' })
   const tapMs = Date.now() - t0
   await settle('worlds'); await page.waitForTimeout(5000)
   const during = await g(), seconds = (Date.now() - t0) / 1000
-  const starFps = (during.starfieldFrames - before.starfieldFrames) / seconds
+  const starFps = (await page.evaluate(() => (window.syn3h.shell.galaxy?.frames ?? 0)) - before.starfieldFrames) / seconds
   check(tapMs < 1000, `${view.name}: a tap took ${tapMs} ms to be answered while planets were painting`)
-  check(starFps >= 8, `${view.name}: the starfield fell to ${starFps.toFixed(1)} frames a second`)
+  check(starFps >= 8, `${view.name}: the galaxy fell to ${starFps.toFixed(1)} frames a second`)
   check(during.planetMaps >= 3, `${view.name}: only ${during.planetMaps} planet maps were painted`)
   await fits('worlds')
   check(await page.locator('#new-world').isDisabled(), `${view.name}: an invited guest can re-roll the world before joining`)
@@ -160,14 +162,16 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
   await fits('join-qr'); await page.evaluate(() => window.syn3h.shell.closeJoin())
   // On to driving: the planet card, the name form, Enter World.
   await page.evaluate(() => window.syn3h.shell.showPanel('index')); await settle('index'); await fits('index')
-  const heading = await page.evaluate(() => { const h = document.querySelector('.lobby-index > h1').getBoundingClientRect(), p = document.querySelector('.lobby-panels').getBoundingClientRect(); return { top: h.top, panel: p.top } })
-  check(heading.top >= heading.panel - 1, `${view.name}: the index heading is cut off above the panel`)
-  await page.locator('.lobby-index [data-planet=alpine]').tap(); await settle('explore')
+  // The index is the galaxy: every world's label and the links are on the screen.
+  await page.waitForTimeout(1500)
+  const off = await page.evaluate(() => [...document.querySelectorAll('.galaxy-label:not([hidden]), .galaxy-links button')].filter(el => { const r = el.getBoundingClientRect(); return r.left < 0 || r.right > innerWidth || r.top < 0 || r.bottom > innerHeight }).map(el => el.textContent.trim()))
+  check(off.length === 0, `${view.name}: off the screen in the galaxy: ${off.join(', ')}`)
+  await page.locator('.galaxy-label[data-world=alpine]').tap(); await settle('explore')
   await page.locator('.shell-play').tap()
   await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-playing') && window.syn3hNet?.connected, null, { timeout: 60000 })
   await page.waitForTimeout(2500)
   const playing = await g(), driving = await world()
-  check(!playing.starfieldLive && !playing.planetsLive, `${view.name}: lobby graphics contexts still live while playing: ${JSON.stringify(playing)}`)
+  check(!playing.starfieldLive && !playing.planetsLive && !(await page.evaluate(() => window.syn3h.shell.galaxy?.live)), `${view.name}: lobby graphics contexts still live while playing: ${JSON.stringify(playing)}`)
   check(driving.planet === 'alpine' && driving.seed === 90210, `${view.name}: driving on ${driving.planet}.${driving.seed}`)
   await page.screenshot({ path: `${out}/${label}-guest-${view.name}-driving.png` })
   // Back in the menu the sky returns; a hidden tab stops it; the lowest graphics level holds it still.
@@ -176,11 +180,12 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
   // In the room, alone and so its host, the guest may shape the world: the Custom sliders fit.
   await page.evaluate(() => window.syn3h.shell.showPanel('worlds')); await settle('worlds')
   await page.locator('[data-panel=worlds] [data-planet=custom]').tap(); await settle('advanced'); await fits('custom')
-  check(menu.starfieldLive, `${view.name}: the starfield did not come back with the menu`)
+  check(await page.evaluate(() => { const s = window.syn3h.shell; return s.galaxy ? s.galaxy.live === true : s.graphics.starfieldLive }), `${view.name}: the lobby sky did not come back with the menu`)
   await page.evaluate(() => { Object.defineProperty(document, 'hidden', { value: true, configurable: true }); document.dispatchEvent(new Event('visibilitychange')) })
-  const hidden0 = await g(); await page.waitForTimeout(1500); const hidden1 = await g()
-  check(hidden1.starfieldFrames === hidden0.starfieldFrames, `${view.name}: the starfield drew ${hidden1.starfieldFrames - hidden0.starfieldFrames} frames in a hidden tab`)
-  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { value: false, configurable: true }); document.dispatchEvent(new Event('visibilitychange')); window.syn3h.params.set('gfx.level', 0); window.syn3h.shell.showPanel('worlds') })
+  const frames = () => page.evaluate(() => (window.syn3h.shell.galaxy?.frames ?? 0))
+  const hidden0 = await frames(); await page.waitForTimeout(1500); const hidden1 = await frames()
+  check(hidden1 === hidden0, `${view.name}: the galaxy drew ${hidden1 - hidden0} frames in a hidden tab`)
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { value: false, configurable: true }); document.dispatchEvent(new Event('visibilitychange')); clearInterval(window.__pin); window.syn3h.params.set('gfx.level', 0); window.syn3h.shell.showPanel('worlds') })
   await settle('worlds'); await page.waitForTimeout(3000)
   const low0 = await g(); await page.waitForTimeout(2000); const low1 = await g()
   const flat = await page.locator('[data-panel=worlds] .planet-orb').evaluateAll(list => list.every(c => c.dataset.flat !== undefined))

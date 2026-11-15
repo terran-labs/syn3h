@@ -23,6 +23,13 @@ export function isSafeGround(terrain: BotTerrain, x: number, z: number): boolean
   const ground = terrain.heightAt(x, z), liquid = terrain.liquidHeightAt?.(x, z)
   return Number.isFinite(ground) && (liquid == null || !Number.isFinite(liquid) || ground > liquid + 0.5)
 }
+export interface BotMatch {
+  mode: 'tag' | 'hill'
+  /** Tag: the vehicle that is "it", if any. */
+  it?: Vehicle | null
+  /** King of the Hill: the zone to hold. */
+  zone?: { x: number; z: number; radius: number } | null
+}
 export class BotBrain implements System {
   remote = false
   requestRecovery?: () => boolean
@@ -35,6 +42,12 @@ export class BotBrain implements System {
   /** What it is doing now: 'chase' is the original pursuit, 'roam' is the mind's choice. */
   mood: 'chase' | 'roam' = 'chase'
   private moodTime = 0
+  /**
+   * The game being played, when networking tells the manager. In tag, the bot that is "it"
+   * hunts the nearest vehicle and the others run from it when it is close; on the hill, most
+   * bots go and hold the zone. Null leaves a bot to its own moods.
+   */
+  match: BotMatch | null = null
   /** Route planner for open ground, shared by every bot. Without it the chase is by sight. */
   navigator: Navigator | null = null
   private lineClear = true
@@ -77,6 +90,16 @@ export class BotBrain implements System {
     this.moodTime = this.mood === 'chase' ? 15 + this.random() * 20 : 30 + this.random() * 40
     this.mind!.reset(); this.reversing = false; this.immobileTime = 0; this.strategyTime = 0
     this.lastPosition.copy(this.vehicle.body.translation())
+  }
+  private nearestOther(here: { x: number; z: number }): Vehicle | null {
+    let best: Vehicle | null = null, bestDistance = Infinity
+    for (const candidate of [...this.targets, ...this.peers]) {
+      if (candidate === this.vehicle || !candidate.body.isValid()) continue
+      const q = candidate.body.translation(), wrap = this.terrain.wrapSize
+      const d = wrap ? wrapDistance(here.x, here.z, q.x, q.z, wrap) : Math.hypot(q.x - here.x, q.z - here.z)
+      if (d < bestDistance) { bestDistance = d; best = candidate }
+    }
+    return best
   }
   private readonly targetImage = { x: 0, y: 0, z: 0 }
   private readonly peerImage = { x: 0, y: 0, z: 0 }
@@ -157,6 +180,25 @@ export class BotBrain implements System {
     if (this.targetTime >= 2 || !this.target?.body.isValid()) { this.selectTarget(); this.targetTime = 0 }
     if (this.mind && p.canDrive.value && p.topThrottle.value > 0) {
       const here = this.vehicle.body.translation(), there = this.target ? this.imageOf(this.target.body.translation(), here) : undefined
+      const match = this.match
+      if (match?.mode === 'hill' && match.zone && (this.index % 3 !== 2 || p.freeSpirit.value <= 0)) {
+        // Two bots in three contest the hill; the third keeps to its own agenda.
+        if (this.mind.activity.kind !== 'hold') this.mind.hold(match.zone, match.zone.radius, 120)
+        this.mood = 'roam'; this.roam(dt, input, here); return
+      }
+      if (match?.mode === 'tag' && match.it?.body.isValid()) {
+        if (match.it === this.vehicle) {
+          // It: hunt whoever is nearest, relentlessly, until someone else is it.
+          this.mood = 'chase'; this.moodTime = Math.max(this.moodTime, 1); this.target = this.nearestOther(here) ?? this.target
+        } else {
+          const t = match.it.body.translation(), wrap = this.terrain.wrapSize
+          const gap = wrap ? wrapDistance(here.x, here.z, t.x, t.z, wrap) : Math.hypot(t.x - here.x, t.z - here.z)
+          if (gap < 70 || this.mind.activity.kind === 'flee') {
+            if (this.mind.activity.kind !== 'flee') this.mind.flee(match.it, 10)
+            this.mood = 'roam'; this.roam(dt, input, here); return
+          }
+        }
+      }
       this.moodTime -= dt
       if (this.moodTime <= 0) this.chooseMood(there ? Math.hypot(there.x - here.x, there.z - here.z) : Infinity)
       // The original pursuit below steers wheels. A hovercraft or a jet chases through its
