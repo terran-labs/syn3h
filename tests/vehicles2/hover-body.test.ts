@@ -67,6 +67,66 @@ describe('the generated hovercraft body', () => {
     expect(s.object.parent).toBeNull(); expect(children).toBe(2)
   })
 
+  it('rests its vanes and extinguishes drive glow in a zorb, then resumes on exit', () => {
+    const h = harness(), v = new Hovercraft(h.game, h.terrain, new T.Vector3(0, 3, 0))
+    v.isLocal = false
+    const s = study(v)
+    const glow = () => {
+      const values: number[] = []
+      s.levels[s.detail].object.traverse(o => { if (typeof o.userData.glow === 'number') values.push(o.userData.glow) })
+      return values
+    }
+    v.input.x = 1; v.input.y = 1; v.input.brakes = true
+    v.update(.02, 1)
+    expect(s.levels[0].thruster.rotation.y).toBeCloseTo(-.35)
+    expect(glow().length).toBeGreaterThan(0)
+    expect(glow().every(n => n > 0)).toBe(true)
+    v.input.zorb = true; h.step(v, 100); v.update(.02, 1)
+    expect(v.zorbed).toBe(true)
+    expect(s.levels[0].thruster.rotation.y).toBeCloseTo(0)
+    expect(glow().every(n => n === 0)).toBe(true)
+    // A detail switch must not bring the idle glow back inside the ball.
+    s.setLevel(1); s.update(0, 0, false, false)
+    expect(glow().length).toBeGreaterThan(0)
+    expect(glow().every(n => n === 0)).toBe(true)
+    v.input.zorb = false; h.step(v, 100); v.update(.02, 1)
+    expect(v.zorbed).toBe(false)
+    expect(glow().every(n => n > 0)).toBe(true)
+    v.dispose(); h.world.free()
+  })
+
+  it('keeps two moving duct fans inside the nozzle and stops them in the zorb', () => {
+    const s = new GameHover(HOVER_DESIGN), fan = s.levels[0].fan!
+    expect(fan.object.count).toBe(2)
+    expect(s.levels[1].fan).toBeUndefined()
+    const pose = () => Array.from(fan.object.instanceMatrix.array)
+    const first = pose()
+    s.update(0, 1, false, true, .02)
+    expect(pose()).not.toEqual(first)
+    const turning = pose()
+    s.update(1, 1, true, false, .1)
+    expect(pose()).toEqual(turning)
+    s.update(0, 0, false, true, .02)
+    expect(pose()).not.toEqual(turning)
+    // Check the swept geometry, not just the starting pose, against the duct lip.
+    const matrix = new T.Matrix4(), point = new T.Vector3(), p = fan.object.geometry.getAttribute('position')
+    for (let frame = 0; frame < 100; frame++) {
+      s.update(0, 1, false, true, .02)
+      for (let instance = 0; instance < 2; instance++) {
+        fan.object.getMatrixAt(instance, matrix)
+        for (let j = 0; j < p.count; j++) {
+          point.fromBufferAttribute(p, j).applyMatrix4(matrix).add(fan.object.position)
+          expect(Math.abs(point.x)).toBeLessThan(.38)
+          expect(Math.abs(point.y - fan.object.position.y)).toBeLessThan(.12)
+          expect(point.z).toBeGreaterThan(1.90)
+          expect(point.z).toBeLessThan(1.95)
+        }
+      }
+    }
+    expect(s.levels[0].triangles()).toBeLessThanOrEqual(12000)
+    s.dispose()
+  })
+
   it('keeps its whole hull clear of the ground through the island route', () => {
     const h = harness(9.81, false), data = generateTerrain(1, defaultTerrainSettings()), sampler = new HeightSampler(data)
     h.terrain.heightAt = (x, z) => sampler.heightAt(x, z); h.terrain.normalAt = (x, z, out) => sampler.normalAt(x, z, out)

@@ -294,3 +294,34 @@ body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-noti
 /* Explore has no game, so the player list shows who is here and no score column. */
 .syn3h-shell.is-explore .score-row { grid-template-columns: minmax(0,1fr) auto; }
 .syn3h-shell.is-explore .score-row strong { display: none; }
+
+/* The header line must never be wider than its panel: fixed tracks, and the search gives way. */
+.syn3h-shell.exploration-ui .world-inspector .wi-top { min-width: 0; }
+.syn3h-shell.exploration-ui .world-inspector .wi-top .rail-navigation { display: grid; grid-template-columns: minmax(0, max-content) minmax(36px, 1fr) max-content max-content; align-items: center; gap: 8px; width: 100%; min-width: 0; box-sizing: border-box; }
+.syn3h-shell.exploration-ui .world-inspector .wi-top .rail-navigation .rail-world { max-width: none; min-width: 0; }
+.syn3h-shell.exploration-ui .world-inspector .wi-top .rail-navigation .wi-search { width: 100% !important; min-width: 0 !important; box-sizing: border-box; }
+.syn3h-shell.exploration-ui .world-inspector .rail-foot { min-width: 0; box-sizing: border-box; }
+.syn3h-shell.exploration-ui .world-inspector .rail-foot .wi-actions { flex: 1 1 auto; }
+@media (max-height: 500px) {
+  /* The quick controls take the first line; Pause and the way back sit at its right end, and the search has the second line. */
+  .syn3h-shell.exploration-ui .world-inspector .wi-top .rail-navigation { grid-template-columns: minmax(0, 1fr) max-content max-content; }
+  .syn3h-shell.exploration-ui .world-inspector .wi-top .rail-navigation .wi-search { grid-column: 1 / -1; grid-row: 2; }
+  .syn3h-shell.exploration-ui .world-inspector .wi-top .rail-navigation .rail-pause { grid-column: 2; grid-row: 1; }
+  .syn3h-shell.exploration-ui .world-inspector .wi-top .rail-navigation .rail-close { grid-column: 3; grid-row: 1; }
+}
+/* Touch screens: the drum moves to the top left, above the speed readout and clear of the
+   minimap and the drive stick, three slots tall with thumb-sized slots. The description is
+   dropped; the gear's name, status and level stay. */
+@media (max-width: 700px) {
+  .syn3h-shell .gear-selector[data-touch] { --gs-slots: 3; --gs-pitch: 44px; top: var(--gear-top, calc(env(safe-area-inset-top) + 98px)); }
+  .syn3h-shell .gear-selector[data-touch] .gs-desc { display: none; }
+}
+@media (max-height: 500px) {
+  .syn3h-shell .gear-selector[data-touch] { --gs-slots: 1.5; --gs-pitch: 44px; top: var(--gear-top, calc(env(safe-area-inset-top) + 44px)); }
+  .syn3h-shell .gear-selector[data-touch] .gs-desc { display: none; }
+}
+/* On a small screen the open panels cover the drum's place: one or the other. */
+@media (max-width: 700px), (max-height: 500px) {
+  .syn3h-shell.exploration-ui:has(.world-inspector:not([hidden])):not(.is-focus) .gear-selector,
+  .syn3h-shell.exploration-ui:has(.world-inspector:not([hidden])):not(.is-focus) .gear-actions { display: none !important; }
+}
