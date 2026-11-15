@@ -107,7 +107,8 @@ Press **C** to step through the five camera modes, in this order:
 |---|---|
 | C | Next camera mode |
 | Right click | Jump to the cockpit, and back to chase |
-| Mouse wheel, or + and - | Move the camera closer or farther. In roam, change the roam speed |
+| Mouse wheel | Move the camera closer or farther; in roam, change the roam speed |
+| + and - | Move the chase camera closer or farther |
 | Z, held | Scope: zoom in. Turn the wheel while holding Z to change the magnification |
 | Middle mouse drag, or Alt and left drag | Look around without capturing the mouse |
 | Mouse, once captured | Look around |
@@ -123,14 +124,14 @@ button to open and close the side panel.
 
 **Do I need to install anything or sign in?** No. It runs in the browser from one address.
 
-**Which browsers work?** It is tested in Chrome and in Safari's engine, on computers, iPads
-and phones. It uses WebGPU where the browser has it and falls back to WebGL where it does
-not, so other recent browsers should work too.
+**Which browsers work?** Automated checks run in Chrome and WebKit, including iPad and
+phone-sized layouts. Those checks do not replace testing on physical devices. The game
+uses WebGPU where available and falls back to WebGL.
 
-**How do I play with other people?** Everyone who opens the plain address joins the room
-called `lobby`, up to sixteen players, in the world the first of them chose. For a room of
-your own, press J and share the invite link or the QR code: it carries the room's name
-and the world.
+**How do I play with other people?** A fresh visit to the plain address defaults to the
+room `lobby`, with up to sixteen players. A saved session can restore your previous room.
+For a room of your own, open the game with `?room=your-room-name`. Press J to share the
+current room through an invite link or QR code; the invite carries its name and world.
 
 **My vehicle started driving by itself.** That is Daydream. After fifteen seconds without
 input the vehicle takes itself for a drive. Touch any control and it is yours again.
@@ -146,7 +147,7 @@ everyone feels the change.
 **What are the bots doing?** They follow you around by default and do not use gear. Each
 has its own personality and picks its own route.
 
-**Can I play an older version?** Yes. Every release is kept: add `?v=` and the version to
+**Can I play an older version?** Accepted releases are kept; withdrawn builds may be unavailable. Add `?v=` and the version to
 the address, for example
 [www.syn3h.com/?v=26.11.1503](https://www.syn3h.com/?v=26.11.1503). The
 [releases page](https://github.com/terran-labs/syn3h/releases) lists them, each with its
