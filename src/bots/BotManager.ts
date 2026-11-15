@@ -48,7 +48,7 @@ export class BotManager implements System {
   /** Places worth driving to, found once per world and shared by every mind. */
   private sights: PointOfInterest[] | null = null
   private readonly places = () => this.sights ??= pointsOfInterest(this.terrain)
-  constructor(private readonly game: Game, private readonly terrain: BotTerrain, private readonly player: Vehicle) {
+  constructor(private readonly game: Game, private readonly terrain: BotTerrain, private player: Vehicle) {
     this.targets = [player]
     // Owned here so the composition root needs no extra wiring: this manager already holds
     // the player, the terrain and every vehicle a daydreaming driver might tail.
@@ -64,6 +64,18 @@ export class BotManager implements System {
       this.races.update()
       for (const brain of this.brains) brain.raceGoal = this.races.goal(brain.vehicle)
     }
+  }
+  /**
+   * The player changed vehicle in place (main.ts swapVehicle). Everything that held the old
+   * one follows: the spawn centre, every bot's chase target, and the daydream's pilot.
+   */
+  setPlayer(next: Vehicle) {
+    const previous = this.player
+    if (next === previous) return
+    this.player = next
+    for (const brain of this.brains) brain.setLocalPlayer(next)
+    this.setTargets(this.targets.map(t => t === previous ? next : t))
+    this.daydream.setPlayer(next)
   }
   setTargets(vehicles: readonly Vehicle[]) {
     this.targets = [...vehicles]
