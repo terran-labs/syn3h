@@ -152,6 +152,22 @@ if [ -n "$DRY" ]; then
   exit 0
 fi
 
+# --- Primary public acceptance ---------------------------------------------------------------
+# A workers.dev pass does not establish that the owner-facing domain serves the same assets.
+PRIMARY_URL="https://www.syn3h.com/"
+tries=0
+until node tools/check-public-build.mjs "$PRIMARY_URL" "$DEST" >>"$LOG-primary-assets.log" 2>&1; do
+  tries=$((tries + 1))
+  [ "$tries" -lt 30 ] || { cat "$LOG-primary-assets.log"; fail "primary entry bundle did not match frozen build"; }
+  sleep 2
+done
+tail -1 "$LOG-primary-assets.log"
+if ! tools/domain.sh check www.syn3h.com >"$LOG-primary.log" 2>&1; then
+  cat "$LOG-primary.log"
+  fail "primary domain acceptance failed; roll back the deployment"
+fi
+cat "$LOG-primary.log"
+
 # --- Record ---------------------------------------------------------------------------------
 WHEN="$(TZ=America/Los_Angeles date '+%Y-%m-%d %H:%M %Z')"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "release-$N" "$WHEN" "$URL" "$MILESTONE" "$COMMIT" "$VERSION" "$ID" >> ../Syn3h-stable/releases.tsv
