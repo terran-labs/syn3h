@@ -34,8 +34,8 @@ loaded into the running game are unacceptable."
 **What it changes.** The release check is defined by the requests a scripted play session
 makes, not by what the repository holds. Install icons and the share card stay as checked
 in, because the game never loads them; no build-time generation is needed. Fonts are
-loaded at run time, so Barlow fails the rule; his answer on it is pending, recommended as
-the device font. The vehicle models kept for noon are the one dated exception. The physics
+loaded at run time; he then chose to keep Barlow, trimmed to the weights used, as a
+standing exception. The vehicle models kept for noon are the one dated exception. The physics
 engine's compiled code is classed as code, not an asset, and is reported to him with its
 size so he can object. `AGENTS.md` is updated.
 
