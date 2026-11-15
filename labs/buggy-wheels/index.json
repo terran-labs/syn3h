@@ -1,0 +1,32 @@
+[
+ {
+  "id": "lug",
+  "name": "Chunky lugs",
+  "file": "lug.glb",
+  "notes": [
+   "14 big chevron blocks on a plain carcass",
+   "Reads as an off-road tyre at any distance"
+  ],
+  "triangles": 600
+ },
+ {
+  "id": "texture",
+  "name": "Tread texture",
+  "file": "texture.glb",
+  "notes": [
+   "Smooth carcass; the tread is a small normal map, so it costs no triangles",
+   "One 256 pixel texture shared by every wheel in the game"
+  ],
+  "triangles": 320
+ },
+ {
+  "id": "band",
+  "name": "Accent band",
+  "file": "band.glb",
+  "notes": [
+   "Smooth tyre with a recessed band in your accent colour",
+   "Could glow with the motor like the stator tips"
+  ],
+  "triangles": 448
+ }
+]

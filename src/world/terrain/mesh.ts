@@ -16,6 +16,7 @@
  *    invisible: the heights are periodic and the seam row is shared (see `sealSeam`).
  */
 import * as THREE from 'three/webgpu'
+import { overHorizon } from '../curve'
 import type { TerrainData } from './generate'
 
 /** Cells per chunk side. 512 cells / 64 = 8 x 8 chunks. */
@@ -247,6 +248,11 @@ export function createTerrainMeshes(data: TerrainData, material: THREE.Material)
         place(ch, camera.x, camera.z)
         const d = ch.box.distanceToPoint(camera)
         setLevel(ch, d < lodNear ? 0 : d < lodFar ? 1 : 2)
+        // On a round world, most chunks are behind the planet: do not draw those.
+        const b = ch.box
+        const hx = (b.max.x - b.min.x) / 2
+        const hz = (b.max.z - b.min.z) / 2
+        ch.levels[ch.level].visible = !overHorizon(b.min.x + hx, b.min.z + hz, Math.sqrt(hx * hx + hz * hz), b.max.y)
       }
     },
     setLodDistances(near, far) {
