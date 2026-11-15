@@ -2,16 +2,20 @@
 
 Prepared during the 15 November overnight run. This is a working draft, not the 8am
 report. Recheck production, integration and lane evidence before delivering it.
-Evidence snapshot: 3:05am Pacific. Release 4 is accepted publicly; the separate
-visual batch and aircraft evasion remain unfinished.
+Evidence snapshot: 3:37am Pacific. Release 4 is the last accepted release. Release 5
+is deployed with public acceptance still running; aircraft evasion remains unfinished.
 
 ## Public build
 
-Release 4 is live at https://www.syn3h.com/ as `da5a89c`, version `v26.11.1500`,
+The last accepted build is release 4 at https://www.syn3h.com/ as `da5a89c`, version `v26.11.1500`,
 Worker `ef3e2f23-e868-41d6-9894-4b09e9b57db2`. Independent log review confirms
 exact entry assets, worker and primary-domain multiplayer, and all eight public
 Chrome/WebKit vehicle checks with no page errors. The acceptance marker matches.
-Notes are generated; showcase capture is still running and is nonfatal.
+Its notes and curated three-image showcase are published on GitHub. All four attachment
+URLs and the README GIF link verify. The current release 5 attempt has uploaded
+`5e38ef6`, version `v26.11.1501`, Worker `e9f20f19-4194-40c2-8e6b-a8becb6190a0`.
+Worker gameplay and exact primary-site assets pass; primary gameplay and vehicle
+acceptance remain pending. Automatic rollback selects accepted release 4.
 
 The first attempt failed its primary-site bot-roster check and restored verified
 release 2. Unique-room diagnostics passed on the unchanged frozen build before this
@@ -27,7 +31,7 @@ Occupied lobbies no longer block deployment. Failed public checks still require 
 
 The integrator reports trunk and main pushed at `da5a89c`, tagged `m16-default-on`.
 The exact combined suite log confirms typecheck and all 1,143 tests across 146 files pass.
-This candidate is closed to new features while release checks run.
+These release 4 checks are historical evidence for that exact build.
 
 - Terrain detail, river fords, aerial perspective and ground cover run on normal entry.
 - Custom maps refresh from slider snapshots; player lights show aggregate presence.
@@ -67,13 +71,19 @@ and deployment. Public acceptance is not established by source tests or a dry ru
 The kernel-lock limiter uses three shared slots, one job per lane and at most two test
 workers. The sentinel has resumed from the passing candidate baseline, per the integrator.
 
-## Ready for the next batch
+## Release 5 visual batch
 
-These handoffs are excluded from the closed release candidate and are not public.
-They are combined separately at `943d716`: typecheck and 146 focused tests pass, as
-do saved-world cases in Chrome and WebKit. Rendering, touch-layout and a possible
-incomplete logo reveal still need combined review. The eight minimal dependency
-picks passed independent review without replaying older interface changes.
+The eight reviewed dependency picks are integrated at `5e38ef6`, tagged
+`m17-clouds-moons`, and frozen as `20261115-032406-5e38ef6`. Typecheck, all 1,156 tests
+in 150 files and the production build pass. Combined saved-world, rendering and
+four-viewport layout checks pass. The initially partial logo was captured too early;
+the settled capture shows the complete wordmark. An earlier browser-wrapper cleanup
+permission error is retained in the record; its temporary services were confirmed gone.
+
+The frozen release gate exited successfully after three multiplayer runs, simulated
+latency, eight vehicle/browser checks, both renderers, solo and two-player seams, and
+matching all 338 manifest files. Seven interruption tests pass on the final deployment
+supervisor. These checks permit the public attempt, but do not replace its acceptance.
 
 - Procedural cloud volumes `35c0167`: lane reports typecheck, 16 tests, both-backend
   cloud cases, wrap/weather/reflection invariants, normal entry and HTTPS smoke passing.
@@ -104,8 +114,10 @@ picks passed independent review without replaying older interface changes.
   Shallow colouring does not reveal submerged objects or ground. Transparent falling
   sheets do not satisfy this requirement. Two-client wave visuals and real-mobile cost
   remain unverified.
-- Showcase capture remains owed. Release notes and capture failures must not turn a
-  successful gameplay deployment into a failed release.
+- Release 5 notes and full showcase await public acceptance. The obsolete lobby
+  readiness check is fixed, and a single capture from the exact frozen build passes
+  with the complete logo and planets visible. Artifact failures remain nonfatal after
+  gameplay acceptance; publication still requires content and image review.
 
 The later performance, diagnostics and cursor-UX queue remains pending until current
 assignments finish. It includes the FPS history panel, hardware and rendering failure
