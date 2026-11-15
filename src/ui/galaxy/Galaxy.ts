@@ -9,6 +9,7 @@
  * lobby graphics it draws at most thirty times a second, stops in a hidden tab, and gives
  * its WebGL context back when disabled.
  */
+import type { ParamValue } from '../../../shared/params'
 import { qualityFrame, qualityScale, qualityShed } from '../quality/ladder'
 
 export interface GalaxyWorld {
@@ -24,6 +25,9 @@ export interface GalaxyWorld {
   forming?: boolean
   /** The planet recipe its map is painted from, when that is not its id. */
   recipe?: string
+  /** Sanitized registry snapshot for the live Custom map. */
+  overrides?: Record<string, ParamValue>
+  mapVariant?: string
 }
 export interface GalaxyOptions {
   worlds: readonly GalaxyWorld[]
@@ -253,7 +257,7 @@ export class Galaxy {
   frames = 0
   private gl: WebGL2RenderingContext | null = null
   private uniforms: Record<string, WebGLUniformLocation | null> = {}
-  /** Painted maps by `recipe:seed:size`, kept across context loss so they upload again. */
+  /** Painted maps keyed by world, recipe, seed, snapshot and size; kept across context loss. */
   private readonly maps = new Map<string, { data: Uint8ClampedArray; width: number; height: number }>()
   /** Which small map each texture array layer holds, and which map the close texture holds. */
   private layers: (string | undefined)[] = []
@@ -268,7 +272,7 @@ export class Galaxy {
   private target2: WebGLTexture | null = null
   private close: WebGLTexture | null = null
   private worker: Worker | null = null
-  private readonly queue: { key: string; id: string; seed: number; width: number; height: number }[] = []
+  private readonly queue: { key: string; worldId: string; id: string; seed: number; width: number; height: number; overrides?: Record<string, ParamValue> }[] = []
   private painting = false
   private frame = 0
   private last = 0
@@ -318,7 +322,25 @@ export class Galaxy {
   get live(): boolean { return this.gl !== null }
   /** Worlds whose painted maps have arrived. */
   get painted(): number { return this.options.worlds.filter(world => this.maps.has(this.mapKey(world, SMALL))).length }
-  private mapKey(world: GalaxyWorld, size: readonly [number, number]): string { return `${world.recipe ?? world.id}:${world.seed}:${size[0]}` }
+  private mapKey(world: GalaxyWorld, size: readonly [number, number]): string { return `${world.id}:${world.recipe ?? world.id}:${world.seed}:${world.mapVariant ?? ''}:${size[0]}` }
+  /** Snapshot values have already passed the parameter registry's sanitizers. */
+  updateCustom(recipe: string, seed: number, values: Record<string, ParamValue>): void {
+    const world = this.options.worlds.find(w => w.id === 'custom')
+    if (!world) return
+    const overrides = Object.fromEntries(Object.entries(values).sort(([a], [b]) => a.localeCompare(b)))
+    const variant = JSON.stringify(overrides)
+    if (!world.forming && world.recipe === recipe && world.seed === seed && world.mapVariant === variant) return
+    world.recipe = recipe; world.seed = seed; world.overrides = overrides; world.mapVariant = variant
+    world.forming = false; world.glow = overrides['world.seaKind'] === 0
+    // Keep only the latest pending slider snapshot. An older in-flight result is rejected below.
+    for (let i = this.queue.length - 1; i >= 0; i--) if (this.queue[i].worldId === world.id) this.queue.splice(i, 1)
+    for (const key of this.maps.keys()) if (key.startsWith('custom:')) this.maps.delete(key)
+    this.wake = 2
+    if (this.active) {
+      this.request(world, SMALL, true)
+      if (this.options.worlds[this.chosen] === world) this.request(world, CLOSE, true)
+    }
+  }
   set enabled(value: boolean) {
     if (value === this.active) return
     this.active = value
@@ -400,7 +422,7 @@ export class Galaxy {
   private request(world: GalaxyWorld, size: readonly [number, number], first = false): void {
     const key = this.mapKey(world, size)
     if (this.maps.has(key) || this.queue.some(job => job.key === key)) return
-    const job = { key, id: world.recipe ?? world.id, seed: world.seed, width: size[0], height: size[1] }
+    const job = { key, worldId: world.id, id: world.recipe ?? world.id, seed: world.seed, width: size[0], height: size[1], overrides: world.overrides }
     if (first) this.queue.unshift(job); else this.queue.push(job)
     this.next()
   }
@@ -411,8 +433,13 @@ export class Galaxy {
     try {
       if (!this.worker) {
         const worker = this.worker = new Worker(new URL('../planets/planetMapWorker.ts', import.meta.url), { type: 'module' })
-        worker.onmessage = event => { const { key, data, width, height } = event.data; this.maps.set(key, { data, width, height }); this.painting = false; this.wake = 2; this.next() }
-        worker.onerror = () => { worker.terminate(); this.worker = null; this.painting = false; this.queue.length = 0 }
+        worker.onmessage = event => {
+          if (this.worker !== worker) return
+          const { key, data, width, height } = event.data
+          if (this.options.worlds.some(world => !world.forming && this.mapKey(world, [width, height]) === key)) this.maps.set(key, { data, width, height })
+          this.painting = false; this.wake = 2; this.next()
+        }
+        worker.onerror = () => { if (this.worker !== worker) return; worker.terminate(); this.worker = null; this.painting = false; this.queue.length = 0 }
       }
       this.painting = true; this.worker.postMessage(job)
     } catch { this.worker = null; this.painting = false }
