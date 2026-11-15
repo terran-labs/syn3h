@@ -184,6 +184,8 @@ async function main(): Promise<void> {
     history.replaceState(null, '', joinedUrl)
     const connection = startNetworking({
       game, terrain, player, audio, bots,
+      // The sender owns the hold; snapshots carry its motion. This is cosmetic only.
+      onRemoteVehicleChanged: vehicle => { void materialize.begin(vehicle, { hold: false }) },
       kind: player.kind,
       colors: { body: shell.bodyColor, accent: shell.accentColor },
       name: shell.playerName,
