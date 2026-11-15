@@ -18,6 +18,7 @@ import { createEnvironment } from './world/Environment'
 import { createTerrain } from './world'
 import * as planets from './world/planets'
 import { applyPlanet, decodeWorld } from './world/planets'
+import { WaterEffects } from './world/water/WaterEffects'
 
 async function main(): Promise<void> {
   const canvas = document.getElementById('game') as HTMLCanvasElement
@@ -128,6 +129,9 @@ async function main(): Promise<void> {
       hud.textContent = [`${mph} MPH   ${game.backend}   ${Math.round(game.fps)} fps`, ...netStatus].join('\n')
     },
   })
+
+  // Water Lab: ripples, spray and the underwater look. Each is off until its slider is on.
+  game.add(new WaterEffects(game, terrain, player, bots))
 
   // Handles for debugging and automated checks.
   Object.assign(window, { syn3h: { planets, game, terrain, player, params, panel, shell, audio, bots, camera } })

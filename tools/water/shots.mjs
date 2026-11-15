@@ -79,13 +79,25 @@ const shots = [
   ['river-new', spots.river, { 'water.waves': true }],
   ['deep-new', spots.deep, { 'water.waves': true, 'water.waveHeight': 2.4 }],
   ['deep-sink', spots.deep, { 'water.waves': true, 'water.sinking': true }],
+  ['under-all', spots.deep, { 'water.waves': true, 'water.sinking': true, 'water.underwater': true, 'water.ripples': true, 'water.spray': true }],
+  ['skim-all', spots.deep, { 'water.waves': true, 'water.sinking': true, 'water.underwater': true, 'water.ripples': true, 'water.spray': true }, 16],
 ]
-for (const [name, spot, values] of shots) {
+for (const [name, spot, values, speed] of shots) {
   if (only && !only.includes(name)) continue
   if (!spot) continue
   await setParams(values)
   await place(spot)
-  await page.waitForTimeout(name === 'deep-sink' ? 9000 : 3500)
+  if (speed) {
+    // Hold a speed along the heading for a few seconds: a skimming run.
+    const end = Date.now() + 3000
+    while (Date.now() < end) {
+      await page.evaluate(([v, h]) => {
+        const b = window.syn3h.player.body, l = b.linvel()
+        b.setLinvel({ x: -Math.sin(h) * v, y: l.y, z: -Math.cos(h) * v }, true)
+      }, [speed, spot.heading])
+      await page.waitForTimeout(100)
+    }
+  } else await page.waitForTimeout(name.startsWith('deep-sink') || name === 'under-all' ? 9000 : 3500)
   const state = await page.evaluate(() => {
     const b = window.syn3h.player.body.translation(), t = window.syn3h.terrain
     return { y: b.y, surface: t.liquidHeightAt(b.x, b.z), ground: t.heightAt(b.x, b.z) }

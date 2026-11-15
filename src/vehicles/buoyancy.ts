@@ -49,7 +49,13 @@ export function applyWaterForces(body:RAPIER.RigidBody,world:RAPIER.World,terrai
   const drag=Math.min(.8/Math.max(dt,.001),waterLinearDrag.value+waterQuadraticDrag.value*speed)*fraction*mass/n
   const buoy=profile.buoyancy.value*mass*g*fraction/n
   // Planing is a surface effect, fading within a metre below the hull. No tank planing.
-  const plane=kind==='tank'||radius?0:mass*g/n*Math.max(0,(horizontal/profile.planing.value)**2-1)*fraction*Math.max(0,1-Math.max(0,depth))
-  body.addForceAtPoint({x:-vx*drag-buoy*slope.x,y:buoy+plane-vy*drag,z:-vz*drag-buoy*slope.z},point,true)
+  // Dynamic lift can carry the hull's weight with a little to spare, never more: past that a
+  // real hull rises, wets less and loses lift, which the wetted fraction already models, but
+  // an uncapped v^2 term in a 60 Hz step overshoots and throws the car into the air.
+  const plane=kind==='tank'||radius?0:mass*g/n*Math.min(1.2,Math.max(0,(horizontal/profile.planing.value)**2-1))*fraction*Math.max(0,1-Math.max(0,depth))
+  // Heave damping: water resists a hull bobbing up and down far more than drag along it.
+  // About critical for the buoyancy spring (omega = sqrt(lift per metre / mass) ~ 4.5 /s).
+  const heave=6*fraction*mass/n
+  body.addForceAtPoint({x:-vx*drag-buoy*slope.x,y:buoy+plane-vy*drag-vy*heave,z:-vz*drag-buoy*slope.z},point,true)
  }
 }

@@ -24,6 +24,7 @@ import {
 } from 'three/tsl'
 import { WAVE_COUNT } from '../../../shared/water/waves'
 import { seaWaves } from './seaWaves'
+import { rippleField } from './ripples'
 
 /** A float node that sums are folded into. TSL's operator typings do not narrow through a loop. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -108,6 +109,13 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
     const q = vec3(p.x.mul(0.3), p.z.mul(0.3), drift)
     rx = mx_noise_float(q)
     rz = mx_noise_float(q.add(vec3(17.3, 5.1, 0)))
+  }
+  // The simulated ripples round the camera (water.ripples): vehicle wakes and splashes. Zero
+  // outside their window and while they are off. Seen in the lighting, on still water too.
+  if (mode !== 'river') {
+    const ripple = rippleField.rippleNormal(p.xz)
+    sx = sx.sub(ripple.x.div(ripple.y))
+    sz = sz.sub(ripple.z.div(ripple.y))
   }
   const rippleGain = mode === 'river' ? float(0.18).add(steep.mul(0.6)) : float(0.07)
   sx = sx.add(rx.mul(rippleGain).mul(near))
