@@ -302,10 +302,9 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   const glassy = float(0.05).add(foam.mul(0.6)).add(abs(rx).mul(0.03)).add(smoothstep(80, 900, dist).mul(0.16))
   material.roughnessNode = mix(float(1), glassy, faceDirection.mul(0.5).add(0.5))
   // Roughness alone still lets the capture light the underside as a blurred blue sky. Under
-  // water the surface outside Snell's window reflects the dark water below, so occlude
+  // water the surface outside Snell's window reflects the dark water below, so occlude nearly
   // all ambient and reflected light there and leave the top exactly as it is.
-  // Even ten percent of the HDR sky washes out the underside after tone mapping.
-  material.aoNode = mix(float(0), float(1), faceDirection.mul(0.5).add(0.5))
+  material.aoNode = mix(float(0.1), float(1), faceDirection.mul(0.5).add(0.5))
 
   return {
     material,
