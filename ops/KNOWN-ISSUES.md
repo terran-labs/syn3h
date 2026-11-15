@@ -13,6 +13,8 @@ speed (reported by the owner, fixed on trunk after m13, so not in release 1).
 
 | Issue | Where it shows | Owner |
 |---|---|---|
+| Black screen on the owner's real iPad Pro in Safari; not reproducible in Playwright WebKit on this Mac. `?webgl=1` forces WebGL | iPadOS Safari, possibly all iOS | QA, top priority |
+| The synthesised score is the default music on trunk and nobody has listened to it; it ships as default in release 2 only on the owner's word after hearing it | Music | Soundscape thread, owner |
 | Wings lift: a fast wings-open touch on water is grabbed instead of skipping; after lifting out the buggy hovers at 6 m/s and cannot fly away | Any liquid, trunk after m13 | Vehicles lane, fixes uncommitted in its worktree |
 | Bots reach every summit, then ram each other and some drive off the edge; one of four left the alpine road at the last bend | Summits, alpine road | Bots and QA |
 | Rear-ending a moving car passes the tag but gives the car in front no shove on its own screen (5 of 5) | Multiplayer | Multiplayer, release 2 |
