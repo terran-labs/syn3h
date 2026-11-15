@@ -16,6 +16,7 @@ import { roadPaths, roadWaypoint } from '../navigation'
 import { jetForwardFlight, roadSpeed } from '../params'
 import type { DriveGoal, Navigator, NavPoint, Pilot, PilotStatus, Route } from '../pilot/types'
 import { hashString, seededRandom } from '../random'
+import { nearestImage, wrapDistance } from '../../../shared/wrap'
 import { type Personality, personalityFor } from './personality'
 
 export type ActivityKind = 'road' | 'summit' | 'explore' | 'follow' | 'donut' | 'weave' | 'pause' | 'retreat' | 'visit'
@@ -143,7 +144,10 @@ export class Mind {
     if (a.kind === 'follow' && !a.leader?.body.isValid()) a.until = 0
     if (a.kind === 'follow' && a.leader) {
       // Sit a few lengths behind the leader, on a side that is stable for this driver.
-      const p = a.leader.body.translation(), lv = a.leader.body.linvel(), ls = Math.hypot(lv.x, lv.z) || 1
+      // On a wrapping world, tail the nearest image of the leader: it may be just over the seam.
+      const raw = a.leader.body.translation(), wrap = this.terrain.wrapSize
+      const p = wrap ? { x: nearestImage(raw.x, here.x, wrap), z: nearestImage(raw.z, here.z, wrap) } : raw
+      const lv = a.leader.body.linvel(), ls = Math.hypot(lv.x, lv.z) || 1
       const side = this.personality.mischief > 0.5 ? 4 : -4
       a.destination = { x: p.x - lv.x / ls * 9 + lv.z / ls * side, z: p.z - lv.z / ls * 9 - lv.x / ls * side }
       // A leader that has stopped is no longer leading anywhere.
@@ -353,7 +357,8 @@ export class Mind {
     let best: Vehicle | null = null, bestDistance = 400
     for (const other of this.options.others?.() ?? []) {
       if (other === this.vehicle || !other.body.isValid()) continue
-      const p = other.body.translation(), v = other.body.linvel(), d = Math.hypot(p.x - here.x, p.z - here.z)
+      const p = other.body.translation(), v = other.body.linvel(), wrap = this.terrain.wrapSize
+      const d = wrap ? wrapDistance(here.x, here.z, p.x, p.z, wrap) : Math.hypot(p.x - here.x, p.z - here.z)
       // Someone going somewhere, not someone parked or already on our bumper: tailing a
       // vehicle that is itself chasing us turns into two cars circling each other.
       if (d < 20 || Math.hypot(v.x, v.z) < 3) continue

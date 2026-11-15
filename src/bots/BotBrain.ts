@@ -10,6 +10,7 @@ import type { Mind } from './mind/Mind'
 import { GROUND_PROFILE } from './pilot/ground'
 import type { Navigator } from './pilot/types'
 import { hashString, seededRandom } from './random'
+import { nearestImage, wrapDistance } from '../../shared/wrap'
 export type BotTerrain = Terrain & RoadTerrain & { liquidHeightAt?(x: number, z: number): number | null | undefined }
 const clamp = (x: number, max = 1) => Math.max(-max, Math.min(max, x))
 /** Positive means turn right. Our forward is -Z; positive Y rotation turns left. */
@@ -17,7 +18,8 @@ export function steeringError(forward: { x: number; z: number }, delta: { x: num
   return Math.atan2(forward.x * delta.z - forward.z * delta.x, forward.x * delta.x + forward.z * delta.z)
 }
 export function isSafeGround(terrain: BotTerrain, x: number, z: number): boolean {
-  if (Math.abs(x) > terrain.size / 2 - 3 || Math.abs(z) > terrain.size / 2 - 3) return false
+  // A wrapping world has no edge to fall off: the far side of the seam is more ground.
+  if (!terrain.wrapSize && (Math.abs(x) > terrain.size / 2 - 3 || Math.abs(z) > terrain.size / 2 - 3)) return false
   const ground = terrain.heightAt(x, z), liquid = terrain.liquidHeightAt?.(x, z)
   return Number.isFinite(ground) && (liquid == null || !Number.isFinite(liquid) || ground > liquid + 0.5)
 }
@@ -76,6 +78,20 @@ export class BotBrain implements System {
     this.mind!.reset(); this.reversing = false; this.immobileTime = 0; this.strategyTime = 0
     this.lastPosition.copy(this.vehicle.body.translation())
   }
+  private readonly targetImage = { x: 0, y: 0, z: 0 }
+  private readonly peerImage = { x: 0, y: 0, z: 0 }
+  /**
+   * Where `p` is as seen from `ref`. On a wrapping world that is the nearest of its images,
+   * so a target just across the seam is a few metres ahead, not a whole world behind.
+   * Elsewhere it is `p` itself.
+   */
+  private imageOf<T extends { x: number; y: number; z: number }>(p: T, ref: { x: number; z: number }, out = this.targetImage): { x: number; y: number; z: number } {
+    const wrap = this.terrain.wrapSize
+    if (!wrap) return p
+    out.x = nearestImage(p.x, ref.x, wrap); out.y = p.y; out.z = nearestImage(p.z, ref.z, wrap)
+    return out
+  }
+
   /** True when a vehicle can drive straight from a to b with two metres to spare each side. */
   private clearLine(a: { x: number; z: number }, b: { x: number; z: number }): boolean {
     const dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz)
@@ -109,7 +125,9 @@ export class BotBrain implements System {
     this.target = null
     for (const candidate of this.targets) {
       if (candidate === this.vehicle || !candidate.body.isValid()) continue
-      const q = candidate.body.translation(), d = (q.x - here.x) ** 2 + (q.y - here.y) ** 2 + (q.z - here.z) ** 2
+      const q = candidate.body.translation(), wrap = this.terrain.wrapSize
+      const flat = wrap ? wrapDistance(here.x, here.z, q.x, q.z, wrap) : Math.hypot(q.x - here.x, q.z - here.z)
+      const d = flat ** 2 + (q.y - here.y) ** 2
       if (d < distance) { distance = d; this.target = candidate }
     }
   }
@@ -138,7 +156,7 @@ export class BotBrain implements System {
     // VehicleBot.js:11 refreshes enemies every two seconds; invalid targets refresh immediately.
     if (this.targetTime >= 2 || !this.target?.body.isValid()) { this.selectTarget(); this.targetTime = 0 }
     if (this.mind && p.canDrive.value && p.topThrottle.value > 0) {
-      const here = this.vehicle.body.translation(), there = this.target?.body.translation()
+      const here = this.vehicle.body.translation(), there = this.target ? this.imageOf(this.target.body.translation(), here) : undefined
       this.moodTime -= dt
       if (this.moodTime <= 0) this.chooseMood(there ? Math.hypot(there.x - here.x, there.z - here.z) : Infinity)
       // The original pursuit below steers wheels. A hovercraft or a jet chases through its
@@ -148,7 +166,7 @@ export class BotBrain implements System {
       if (this.mood === 'roam' || !this.target || !wheeled) { this.roam(dt, input, here); return }
     }
     if (!this.target) return
-    const here = this.vehicle.body.translation(), there = this.target.body.translation()
+    const here = this.vehicle.body.translation(), there = this.imageOf(this.target.body.translation(), here)
     this.quaternion.copy(this.vehicle.body.rotation())
     this.forward.set(0, 0, -1).applyQuaternion(this.quaternion)
     this.up.set(0, 1, 0).applyQuaternion(this.quaternion)
@@ -192,7 +210,11 @@ export class BotBrain implements System {
       this.routeTime = 0.4
     }
     const waypoint = !afloat && distance > 18 ? this.waypoint : null
-    if (waypoint) { aimX = waypoint.x; aimZ = waypoint.z }
+    if (waypoint) {
+      // The next road point too may lie across the seam of a wrapping world.
+      const wrap = this.terrain.wrapSize
+      aimX = wrap ? nearestImage(waypoint.x, here.x, wrap) : waypoint.x; aimZ = wrap ? nearestImage(waypoint.z, here.z, wrap) : waypoint.z
+    }
     // Stable per-bot lateral offsets fade out near contact so every bot can still ram.
     const spread = ((this.index * 0.61803398875 % 1) - 0.5) * p.approachSpread.value * Math.min(1, Math.max(0, distance - 8) / 20)
     if (!afloat && distance > 0.1) {
@@ -203,7 +225,7 @@ export class BotBrain implements System {
     // Repel nearby allies, never the selected target. This prevents a single-file pileup.
     for (const peer of this.peers) {
       if (peer === this.vehicle || peer === this.target || !peer.body.isValid()) continue
-      const pos = peer.body.translation(), px = here.x - pos.x, pz = here.z - pos.z, separation = Math.hypot(px, pz)
+      const pos = this.imageOf(peer.body.translation(), here, this.peerImage), px = here.x - pos.x, pz = here.z - pos.z, separation = Math.hypot(px, pz)
       if (separation > 0.1 && separation < 7) { aimX += px / separation * (7 - separation) * (waypoint ? 0.25 : 2); aimZ += pz / separation * (7 - separation) * (waypoint ? 0.25 : 2) }
     }
     const error = steeringError(this.forward, { x: aimX - here.x, z: aimZ - here.z })
