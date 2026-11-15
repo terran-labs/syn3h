@@ -160,7 +160,8 @@ void main() {
       float miss = sqrt(max(0.0, cc + r * r - b * b)) - r;          // how far the ray passes outside the limb
       vec3 air = mix(uSea[i], vec3(0.35, 0.6, 1.0), 0.45);
       float toward = 0.3 + 0.7 * clamp(dot(normalize(-uWorld[i].xyz), normalize(oc + ray * (-b))) * 0.5 + 0.5, 0.0, 1.0);
-      halo += pow(clamp(1.0 - miss / (r * 0.14), 0.0, 1.0), 2.5) * toward * 0.6; haloTint = air;
+      // Tint and strength add up, so where two halos overlap the colour blends, not switches.
+      float h = pow(clamp(1.0 - miss / (r * 0.14), 0.0, 1.0), 2.5) * toward * 0.6; halo += h; haloTint += air * h;
     }
   }
   // The sun at the centre, as a light in the sky: core, bloom and haze by angle from it.
@@ -177,19 +178,34 @@ void main() {
     pow(noise(vec3(sunDirection * 17.0 + 9.0, uTime * 0.24)), 4.0) * 0.6;
   float reach = exp(-sunDistance * 1.7) * smoothstep(0.015, 0.14, sunDistance);
   // Each world stands in the light: behind it, as seen from the sun, the shafts are cut.
+  // Every edge of the cut is a ramp, never a switch: it starts across the world's limb along
+  // the ray, its sides soften with distance, and it fades out as the world slides over the
+  // sun, where the direction from the sun to the world means nothing and would flip.
   float shade = 1.0;
   for (int i = 0; i < ${MAX}; i++) {
     if (i >= uCount || uShed.x >= 1.0) break;
     vec3 w = toScreen(uWorld[i].xyz);
     if (w.z <= 0.0) continue;
     vec2 centre = w.xy * 0.5 - sunP.xy * 0.5;                // from the sun, on screen
-    float along = dot(centre, sunDirection), size = uWorld[i].w / (w.z * uTan) * 0.5;
-    if (along > 0.0 && length(toSun) > along) {
-      float off = length(centre - sunDirection * along);
-      // The shadow widens a little and softens with distance behind the world.
-      float spread = size * (1.0 + (length(toSun) - along) * 0.6);
-      shade *= 1.0 - (1.0 - smoothstep(spread * 0.7, spread * 1.25, off)) * 0.85 * (1.0 - uShed.x);
-    }
+    float along = dot(centre, sunDirection), size = uWorld[i].w / (w.z * uTan) * 0.5, past = length(toSun) - along;
+    // Most pixels lie where every ramp below is exactly zero: skip them, as cheaply as the old
+    // hard gate did, without making an edge (the skipped value is the computed one).
+    bool far = dot(centre, centre) >= size * size * 2.56;
+    if (far && (along <= 0.0 || past <= -size)) continue;
+    // Distance from this pixel's ray (from the sun outward) to the world: the ray starts at
+    // the sun, so on the far side of the sun it is the distance to the sun itself.
+    float off = length(centre - sunDirection * max(along, 0.0));
+    float behind = max(past, 0.0), soft = clamp(behind * 1.5, 0.0, 1.0);
+    // The shadow widens a little with distance behind the world, and its sides soften.
+    float spread = size * (1.0 + behind * 0.6);
+    if (far && off >= spread * mix(1.25, 1.7, soft)) continue;
+    float cut = (1.0 - smoothstep(spread * mix(0.7, 0.35, soft), spread * mix(1.25, 1.7, soft), off))
+      * smoothstep(-size, size, past)                        // in across the limb, not at its centre line
+      * smoothstep(0.0, size, along);                         // only on the world's side of the sun
+    // Over the sun the cut gives way to an even dimming of every shaft, for a world in front.
+    float clear = smoothstep(size * 0.5, size * 1.6, length(centre));
+    cut = mix(0.45 * clamp((sunP.z - w.z) / uWorld[i].w * 0.5 + 0.5, 0.0, 1.0), cut, clear);
+    shade *= 1.0 - cut * 0.85 * (1.0 - uShed.x);
   }
   sunLight += mix(vec3(1.0, 0.86, 0.66), WARM, 0.3) * shafts * reach * 0.95 * shade;
   // Lens: a horizontal streak and three ghosts toward the centre. Post effects, shed first.
@@ -241,7 +257,7 @@ void main() {
     // The sun is hidden behind a world that stands in front of it.
     if (sunP.z > nearest) sunLight *= 0.06;
   } else {
-    c += sky * smoothstep(0.08, 0.5, sunDistance) + haloTint * halo;
+    c += sky * smoothstep(0.08, 0.5, sunDistance) + haloTint;
   }
   c += sunLight + flare * (found >= 0 ? 0.2 : 1.0);
   // The dive: streaks rushing outward, then the brightness of air as the world fills the view.
