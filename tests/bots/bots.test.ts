@@ -183,7 +183,7 @@ describe('bot population', () => {
       for (let i = 0; i < 4; i++) manager.update(0.5)
       expect(manager.daydream.active).toBe(true)
       expect(manager.daydream.mind?.vehicle).toBe(next)
-    } finally { manager.dispose(); params.set('daydream.seconds', 300) }
+    } finally { manager.dispose(); params.set('daydream.seconds', params.get('daydream.seconds')!.def.default) }
   })
 
   it('owns no vehicles remotely and creates fresh named bots on takeover', () => {

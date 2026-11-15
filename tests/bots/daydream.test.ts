@@ -142,13 +142,50 @@ describe('mind', () => {
 })
 
 describe('Daydream', () => {
-  it('takes over after the idle time, drives, and hands back on input with the wings as they were', () => {
+  it.each(['keydown', 'pointerdown', 'pointermove', 'touchstart', 'touchmove', 'wheel'])('releases immediately on %s without waiting for a frame', type => {
+    const events = new EventTarget()
+    Object.assign(events, { location: { search: '' } })
+    vi.stubGlobal('window', events)
+    const { game } = harness(), terrain = flat(800)
+    const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0))
+    const daydream = new Daydream(game, terrain, player)
+    try {
+      daydream.update(15)
+      expect(daydream.active).toBe(true)
+      const event = new Event(type)
+      if (type === 'pointermove') Object.assign(event, { movementX: 1, movementY: 0 })
+      events.dispatchEvent(event)
+      expect(daydream.active).toBe(false)
+      expect(daydream.idleFor).toBe(0)
+    } finally { daydream.dispose(); vi.unstubAllGlobals() }
+  })
+  it('waits fifteen fresh seconds after UI closes and releases before physics when UI opens', () => {
+    const { game, input } = harness(), terrain = flat(800)
+    const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0))
+    let blocked = true
+    const daydream = new Daydream(game, terrain, player, { blocked: () => blocked })
+    for (let i = 0; i < 1000; i++) daydream.update(DT)
+    expect(daydream.active).toBe(false); expect(daydream.idleFor).toBe(0)
+    blocked = false
+    for (let i = 0; i < 700; i++) daydream.update(DT)
+    expect(daydream.active).toBe(false)
+    for (let i = 0; i < 60; i++) daydream.update(DT)
+    expect(daydream.active).toBe(true)
+    daydream.fixedUpdate(DT)
+    blocked = true
+    daydream.fixedUpdate(DT)
+    expect(daydream.active).toBe(false)
+    expect(daydream.idleFor).toBe(0)
+    expect([input.state.x, input.state.y, input.state.z, input.state.w]).toEqual([0, 0, 0, 0])
+    daydream.dispose()
+  })
+  it('defaults to fifteen idle seconds, drives, and hands back on input with the wings as they were', () => {
     const { game, input, step } = harness(), terrain = flat(800)
     const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0))
     const daydream = game.add(new Daydream(game, terrain, player)); game.add(player)
-    params.set('daydream.seconds', 10)
+    expect(params.get('daydream.seconds')!.value).toBe(15)
     const frame = () => { step(); daydream.update(DT) }
-    for (let i = 0; i < 450; i++) frame()
+    for (let i = 0; i < 700; i++) frame()
     expect(daydream.active).toBe(false)
     for (let i = 0; i < 100; i++) frame()
     expect(daydream.active).toBe(true)
@@ -157,7 +194,9 @@ describe('Daydream', () => {
     for (let i = 0; i < 1500; i++) { frame(); const p = player.body.translation(); path += Math.hypot(p.x - last.x, p.z - last.z); last.copy(p) }
     expect(path).toBeGreaterThan(100)
     expect(input.state.fire).toBe(false)
-    daydream.noteActivity(); frame()
+    daydream.noteActivity()
+    expect(daydream.active).toBe(false)
+    frame()
     expect(daydream.active).toBe(false); expect(daydream.idleFor).toBe(0)
     expect([input.state.x, input.state.y, input.state.z, input.state.w, input.state.brakes, input.state.special]).toEqual([0, 0, 0, 0, false, false])
     expect([input.external.x, input.external.y, input.external.brakes]).toEqual([0, 0, false])

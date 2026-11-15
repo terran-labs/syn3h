@@ -12,7 +12,7 @@ The contracts are in `pilot/types.ts`.
 
 ## Daydream
 
-`Daydream.ts`. After `daydream.seconds` (default 30, 0 is off) with no key, touch, click,
+`Daydream.ts`. After `daydream.seconds` (default 15, 0 is off) with no key, touch, click,
 wheel or gamepad input while playing, a Mind takes the player's controls. Any input hands
 them straight back, with the wings or hover mode as the player left them. It writes to
 `game.input` where the keyboard and touch stick write, so physics, networking and replay

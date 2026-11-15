@@ -76,4 +76,4 @@ export const jetForwardFlight = defineParam({ id: 'bots.jetForwardFlight', label
  * driving itself. 0 turns it off. Personal, never sent to the room. The settings slider maps
  * its travel onto 10 seconds to 5 minutes with "off" at the far right (see daydreamControl.ts).
  */
-export const daydreamSeconds = defineParam({ id: 'daydream.seconds', label: 'Daydream after idle (s, 0 is off)', group: 'Daydream', scope: 'client', default: 300, min: 0, max: 300, step: 1 })
+export const daydreamSeconds = defineParam({ id: 'daydream.seconds', label: 'Daydream after idle (s, 0 is off)', group: 'Daydream', scope: 'client', default: 15, min: 0, max: 300, step: 1 })

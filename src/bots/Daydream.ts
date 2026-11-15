@@ -27,6 +27,8 @@ export const DAYDREAM_PERSONALITY: Personality = { boldness: 0.7, curiosity: 0.8
 const AXES = ['x', 'y', 'z', 'w'] as const
 
 export interface DaydreamOptions {
+  /** UI state that must not allow automatic driving, including settings and text entry. */
+  blocked?: () => boolean
   /** Other vehicles it may tail. */
   others?: () => readonly Vehicle[]
   navigator?: Navigator
@@ -50,6 +52,7 @@ export class Daydream implements System {
   private pill?: HTMLDivElement
   private readonly abort = typeof AbortController === 'undefined' ? undefined : new AbortController()
   private readonly unsubscribe?: () => void
+  private blocked?: () => boolean
 
   constructor(
     private readonly game: Game,
@@ -57,12 +60,14 @@ export class Daydream implements System {
     private player: Vehicle,
     private readonly options: DaydreamOptions = {},
   ) {
+    this.blocked = options.blocked
     this.pilot = options.pilot !== undefined ? options.pilot : createPilot(player, terrain)
     if (typeof window !== 'undefined' && this.abort) {
-      const touch = () => { this.touched = true }
+      const touch = () => this.noteActivity()
       const signal = this.abort.signal
       // Capture phase: a control that stops propagation still counts as the player being there.
-      for (const type of ['keydown', 'pointerdown', 'touchstart', 'wheel'] as const) window.addEventListener(type, touch, { capture: true, passive: true, signal })
+      for (const type of ['keydown', 'pointerdown', 'touchstart', 'touchmove', 'wheel'] as const) window.addEventListener(type, touch, { capture: true, passive: true, signal })
+      window.addEventListener('pointermove', event => { if (event.movementX || event.movementY) touch() }, { capture: true, passive: true, signal })
       // ?daydream=5 sets the idle time for a quick look or an automated check; 0 turns it off.
       const override = new URLSearchParams(window.location.search).get('daydream')
       if (override !== null && override !== '') params.set(daydreamSeconds.def.id, Number(override) || 0, 'preset')
@@ -71,7 +76,14 @@ export class Daydream implements System {
   }
 
   /** Call when a human did something this class cannot see for itself. */
-  noteActivity(): void { this.touched = true }
+  noteActivity(): void {
+    this.touched = true; this.idleFor = 0
+    // Release during the input event, before the next physics step can write auto controls.
+    if (this.active) this.release()
+  }
+
+  /** The shell is created after the bot manager; bind its UI state once it exists. */
+  setBlocker(blocked: () => boolean): void { this.blocked = blocked; if (blocked()) this.noteActivity() }
 
   /**
    * The player changed vehicle in place. A daydream in progress ends, as if a control had been
@@ -89,7 +101,7 @@ export class Daydream implements System {
 
   update(dt: number): void {
     const input = this.game.input
-    const playing = !input.suspended && (typeof document === 'undefined' || !document.hidden)
+    const playing = !input.suspended && !this.blocked?.() && (typeof document === 'undefined' || !document.hidden)
     if (!playing || !this.pilot || !(daydreamSeconds.value > 0) || !this.player.body.isValid()) {
       this.idleFor = 0; this.touched = false
       if (this.active) this.release()
@@ -115,6 +127,8 @@ export class Daydream implements System {
 
   fixedUpdate(dt: number): void {
     if (!this.active || !this.mind) return
+    // Physics runs before update. A pause or gamepad input must win on this step too.
+    if (this.game.input.suspended || this.blocked?.() || (typeof document !== 'undefined' && document.hidden) || this.gamepadBusy()) { this.noteActivity(); return }
     this.mind.step(dt, this.auto)
     this.write(this.auto.x, this.auto.y, this.auto.z, this.auto.w, this.auto.brakes, this.auto.special)
   }
