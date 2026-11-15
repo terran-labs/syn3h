@@ -26,6 +26,21 @@ The owner answered the wind question: generated wind only. UX owns removing the 
 wind layer. This supersedes the recording-retention rule for wind only; original music
 and laser recordings remain.
 
+## Sunday 15 November, 9:32am to 9:45am Pacific: physics engine loading, and a lobby of planets only
+
+**Decided** by the owner.
+
+- The physics engine loads alongside the lobby and ships as a separate compiled file, in
+  today's demo release if it can be done safely.
+- No fallback if it fails to load: the player is told the game could not load and to reload.
+- The lobby offers no vehicles, only planets to click. Vehicle choice lives in play.
+
+**What it changes.** Performance builds one loading path for the engine and a reload
+message for failure. The tank is not added to the lobby; the in-play selector lists all
+four vehicles. A lobby that is interactive before the engine arrives needs a startup
+restructure and follows the demo. Release 6 was cut early, at about 9:40am, to take the
+recorded audio off the live site sooner.
+
 ## Sunday 15 November, 9:05am to 9:40am Pacific: pause, panels and touch stick
 
 **Decided** by the owner, in four messages.
