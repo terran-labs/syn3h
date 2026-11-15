@@ -441,47 +441,56 @@ export class Shell implements System {
    * player who has seen it before gets a quicker drop; a tap, click or key lands at once.
    */
   private async descent(galaxyId: string, underLight?: () => void): Promise<void> {
-    const wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
     const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     const game = document.getElementById('game'), root = this.element, camera = this.cinematic
     this.dropping = true; root.classList.add('is-descending'); this.overlay.inert = true
-    let seen = 0
-    try { seen = Number(localStorage.getItem('syn3h.descents')) || 0; localStorage.setItem('syn3h.descents', String(seen + 1)) } catch { /* Storage is optional. */ }
-    let skip = false
     const skipping = new AbortController()
-    // Listen from the next frame, so the tap that started the drop does not also end it.
-    requestAnimationFrame(() => { for (const type of ['pointerdown', 'keydown'] as const) addEventListener(type, () => { skip = true }, { signal: skipping.signal, capture: true }) })
-    const until = async (done: () => boolean, ms: number) => { const end = performance.now() + ms; while (!done() && !skip && performance.now() < end) await frame() }
-    // While the lobby still covers it, put the game's camera high over the spawn point.
-    const view = (this.game as unknown as { camera?: { position: Vector3 } }).camera
-    const lift = () => { pose(0); if (view && this.descentTop) view.position.copy(this.descentTop) }
-    let pose = this.descentPose(); lift()
-    let dived = false
-    void this.galaxy!.descend(galaxyId, seen > 0).then(() => { dived = true })
-    await until(() => dived, 4000)
-    underLight?.()
-    await until(() => Boolean((window as { syn3hNet?: { connected?: boolean } }).syn3hNet?.connected), 5000)
-    // The spawn point may have moved with the room's world: start from over where the player is now.
-    pose = this.descentPose(); lift()
-    // Through the air: the lobby fades off the top of the game, which arrives blurred and clears.
-    const length = skip ? 0 : seen > 0 ? 1700 : 2400
-    if (game) { game.style.transition = 'none'; game.style.filter = skip ? 'none' : 'blur(12px) brightness(1.3)' }
-    this.overlay.style.transition = `opacity ${skip ? 0.2 : 0.6}s ease-out`; this.overlay.style.opacity = '0'
-    await frame()
-    if (game && !skip) { game.style.transition = `filter ${(length * 0.7 / 1000).toFixed(2)}s cubic-bezier(.1,.6,.3,1)`; game.style.filter = 'none' }
-    const started = performance.now()
-    await new Promise<void>(resolve => { const step = () => { const t = skip || length === 0 ? 1 : Math.min(1, (performance.now() - started) / length); pose(t); if (t < 1) requestAnimationFrame(step); else resolve() }; step() })
-    // The camera eases along the path a little behind it: let it settle into the follow
-    // camera's place, then hand over with a blend (an instant cut where that is not offered).
-    const end = this.descentEnd
-    if (view && end && !skip) await until(() => view.position.distanceTo(end) < 0.15, 1200)
-    if (skip && game) game.style.filter = 'none'
-    skipping.abort()
-    if (camera) (camera.clearCinematicPose as (blendSeconds?: number) => void).call(camera, skip ? 0 : 0.8)
-    this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity'); root.classList.remove('is-descending')
-    if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter') }
-    this.dropping = false
-    this.closeMenu(); this.showHelp(false)
+    let landed = false
+    try {
+      let seen = 0
+      try { seen = Number(localStorage.getItem('syn3h.descents')) || 0; localStorage.setItem('syn3h.descents', String(seen + 1)) } catch { /* Storage is optional. */ }
+      let skip = false
+      // Listen from the next frame, so the tap that started the drop does not also end it.
+      requestAnimationFrame(() => { for (const type of ['pointerdown', 'keydown'] as const) addEventListener(type, () => { skip = true }, { signal: skipping.signal, capture: true }) })
+      const until = async (done: () => boolean, ms: number) => { const end = performance.now() + ms; while (!done() && !skip && performance.now() < end) await frame() }
+      // While the lobby still covers it, put the game's camera high over the spawn point.
+      const view = (this.game as unknown as { camera?: { position: Vector3 } }).camera
+      const lift = () => { pose(0); if (view && this.descentTop) view.position.copy(this.descentTop) }
+      let pose = this.descentPose(); lift()
+      let dived = false
+      void this.galaxy!.descend(galaxyId, seen > 0).then(() => { dived = true })
+      await until(() => dived, 4000)
+      underLight?.()
+      await until(() => Boolean((window as { syn3hNet?: { connected?: boolean } }).syn3hNet?.connected), 5000)
+      // The spawn point may have moved with the room's world: start from over where the player is now.
+      pose = this.descentPose(); lift()
+      // Through the air: the lobby fades off the top of the game, which arrives blurred and clears.
+      const length = skip ? 0 : seen > 0 ? 1700 : 2400
+      if (game) { game.style.transition = 'none'; game.style.filter = skip ? 'none' : 'blur(12px) brightness(1.3)' }
+      this.overlay.style.transition = `opacity ${skip ? 0.2 : 0.6}s ease-out`; this.overlay.style.opacity = '0'
+      await frame()
+      if (game && !skip) { game.style.transition = `filter ${(length * 0.7 / 1000).toFixed(2)}s cubic-bezier(.1,.6,.3,1)`; game.style.filter = 'none' }
+      const started = performance.now()
+      await new Promise<void>((resolve, reject) => { const step = () => { try { const t = skip || length === 0 ? 1 : Math.min(1, (performance.now() - started) / length); pose(t); if (t < 1) requestAnimationFrame(step); else resolve() } catch (error) { reject(error) } }; step() })
+      // The camera eases along the path a little behind it: let it settle into the follow
+      // camera's place, then hand over with a blend (an instant cut where that is not offered).
+      const end = this.descentEnd
+      if (view && end && !skip) await until(() => view.position.distanceTo(end) < 0.15, 1200)
+      if (camera) (camera.clearCinematicPose as (blendSeconds?: number) => void).call(camera, skip ? 0 : 0.8)
+      landed = true
+    } catch (error) {
+      console.warn('World descent failed', error)
+      this.say('The flight was interrupted. You can continue playing or choose a world again.')
+    } finally {
+      // Whatever happened on the way (a world that failed to build, say), never leave the
+      // lobby inert, blurred or half faded: put everything back and let the player in.
+      skipping.abort()
+      if (!landed) camera?.clearCinematicPose()
+      this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity'); root.classList.remove('is-descending')
+      if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter') }
+      this.dropping = false
+      if (this.started) { this.closeMenu(); this.showHelp(false) } else { this.overlay.inert = false; this.galaxy?.home() }
+    }
   }
   /** The first and last points of the descent's camera path, for waiting on the camera. */
   private descentTop?: Vector3

@@ -329,6 +329,7 @@ export class Galaxy {
     this.choose(id); this.arrived = true; this.diving = true; this.wake = 2
     // One timed path from wherever the view is now, so a slow frame never makes it lurch:
     // across the system to the world, round to its lit side, and down into its air.
+    this.flightDone = false
     this.flight = { start: performance.now(), duration: quick ? 1700 : 2400, from: [...this.target], reach: this.reach, yaw: this.yaw, pitch: this.pitch, last: this.reach, at: performance.now() }
     return new Promise(resolve => { const wait = () => { if (!this.active || !this.flight || this.flightDone) resolve(); else setTimeout(wait, 30) }; wait() })
   }
@@ -382,6 +383,8 @@ export class Galaxy {
     this.paintMaps(); this.resize(); this.loop(0)
   }
   private release(): void {
+    // A finished or abandoned drop does not outlive the context: the next showing starts clean.
+    this.home()
     cancelAnimationFrame(this.frame); this.worker?.terminate(); this.worker = null; this.queue.length = 0; this.painting = false
     this.array = this.close = null; this.fbo = null; this.target2 = null; this.program = null; this.blurProgram = null
     this.gl?.getExtension('WEBGL_lose_context')?.loseContext(); this.gl = null; this.canvas.remove(); this.pointers.clear(); this.drag = null
