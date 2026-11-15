@@ -78,9 +78,23 @@ try {
   await spyAudio(a)
   const b = await open('Bob')
   const both = (fn, arg) => Promise.all([a.evaluate(fn, arg), b.evaluate(fn, arg)])
-  await Promise.all([a, b].map((p) => p.waitForFunction(() => window.syn3hNet?.connected && window.syn3hNet.players.size === 2, null, { timeout: 30000 })))
+  await Promise.all([a, b].map((p) => p.waitForFunction(() => window.syn3hNet?.connected && [...window.syn3hNet.players.values()].filter(p => !p.bot).length === 2, null, { timeout: 30000 })))
   const [idA, idB] = await both(() => window.syn3hNet.id)
-  check('both connected and see each other', idA && idB && idA !== idB, { idA, idB })
+  const humanViews = await both(() => [...window.syn3hNet.players.values()].filter(p => !p.bot))
+  check('both connected and see each other', idA && idB && idA !== idB && humanViews.every(ps => ps.length === 2 && ps.some(p => p.id === idA && p.name === 'Alice') && ps.some(p => p.id === idB && p.name === 'Bob')), { idA, idB, humanViews })
+  await Promise.all([a, b].map(p => p.waitForFunction(() => [...window.syn3hNet.players.values()].some(p => p.bot), null, { timeout: 10000 })))
+  const readBots = () => both(() => ({ requested: window.syn3h.params.get('bots.count').value, ids: [...window.syn3hNet.players.values()].filter(p => p.bot).map(p => p.id).sort(), effective: window.syn3h.bots.vehicles.length }))
+  let defaultBots = await readBots()
+  for (let i = 0; i < 50 && !(defaultBots[0].ids.length === defaultBots[0].effective && defaultBots[0].effective > 0 && JSON.stringify(defaultBots[0].ids) === JSON.stringify(defaultBots[1].ids)); i++) {
+    await wait(200)
+    defaultBots = await readBots()
+  }
+  check('default bots join and replicate', defaultBots.every(v => v.requested === 4 && v.ids.length > 0) && defaultBots[0].ids.length === defaultBots[0].effective && JSON.stringify(defaultBots[0].ids) === JSON.stringify(defaultBots[1].ids), defaultBots)
+  // Preserve normal-default coverage above, then isolate the two-human scoring fixture.
+  // Section 9 separately exercises the real manager and bot hit authority.
+  await a.evaluate(() => window.syn3h.params.set('bots.count', 0))
+  await Promise.all([a, b].map(p => p.waitForFunction(() => ![...window.syn3hNet.players.values()].some(p => p.bot), null, { timeout: 10000 })))
+
 
   // B needs a few snapshots of A before A's remote vehicle exists there.
   await b.waitForFunction((id) => window.syn3hNet.remotes.has(id), idA, { timeout: 10000 })
@@ -156,6 +170,11 @@ try {
   check('server clamps a shared slider for everyone', gravB === 18.81 && gravA === 18.81, { gravA, gravB })
   await a.evaluate(() => window.syn3h.params.set('world.gravity', 9.81))
 
+  // Reset scores after removing default bots, then verify Alice still holds it before the ram fixture.
+  await a.evaluate(() => window.syn3h.params.set('game.mode', 1))
+  await b.waitForFunction(() => window.syn3hNet.game.mode === 1)
+  await a.evaluate(() => window.syn3h.params.set('game.mode', 0))
+  await Promise.all([a, b].map(p => p.waitForFunction(id => window.syn3hNet.game.mode === 0 && window.syn3hNet.game.it === id, idA)))
   // 4. Ram. A starts as "it". Park B just ahead of A, then drive A into it.
   const itBefore = await a.evaluate(() => window.syn3hNet.game.it)
   await a.evaluate(() => {
@@ -382,7 +401,7 @@ try {
   const hud = await b.evaluate(() => document.getElementById('hud').textContent)
   console.log('B HUD:\n' + hud)
 } catch (e) {
-  check('no exception', false, { message: String(e?.message ?? e) })
+  check('no exception', false, { message: String(e?.message ?? e), stack: e?.stack })
 } finally {
   await browser.close()
 }
