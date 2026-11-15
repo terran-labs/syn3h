@@ -45,7 +45,7 @@ import { attachVehicleEffects } from '../vehicles/effects'
 import { ServerClock } from './Clock'
 import { Connection, serverUrl } from './Connection'
 import { NameTags } from './NameTags'
-import { netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
+import { applyRoomWorld, netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
 import { audibleVehicles, bodyAlive, liveBots } from './bots'
 
@@ -757,7 +757,8 @@ export class NetClient implements System {
         this.game = normalizeGame(msg.game)
         // The room's world (seed included) first: the terrain regenerates before anything
         // spawns, and onTerrainRegenerated seats us on the new ground.
-        params.applySnapshot(msg.params, 'remote')
+        // The room's world replaces ours entirely, gaps included; see applyRoomWorld.
+        applyRoomWorld(msg.params)
         this.welcomed = true
         this.bounds.slot = msg.slot
         if (!this.everWelcomed) {
@@ -810,9 +811,8 @@ export class NetClient implements System {
         this.onGame(msg)
         break
       case 'reset': {
-        // Defaults first, so parameters the server does not know also go back; then the room's.
-        for (const p of params.all()) if (p.def.scope === 'world') params.set(p.def.id, p.def.default, 'remote')
-        params.applySnapshot(msg.params, 'remote')
+        // Defaults for whatever the server does not know, then the room's values.
+        applyRoomWorld(msg.params)
         this.zoneTimer = 0
         this.onGame({ type: 'game', game: msg.game })
         this.event(msg.reason === 'host' ? `${this.nameOf(msg.from)} reset the world to defaults`

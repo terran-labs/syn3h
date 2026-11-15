@@ -29,6 +29,8 @@ import { chromium } from 'playwright-core'
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 const proxy = spawn('npx', ['tsx', 'server/latency-proxy.ts', '--listen', '8794', '--target', 'http://127.0.0.1:8791'], { stdio: 'ignore' })
+let finished = false
+proxy.on('exit', (code) => { if (!finished) { console.error(`latency proxy exited early (code ${code}); is port 8794 in use?`); process.exit(3) } })
 await wait(2500)
 const args = ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist']
 const browsers = []
@@ -156,6 +158,7 @@ try {
   }
   console.log(`errors ${JSON.stringify(errors.slice(0, 5))}`)
 } finally {
+  finished = true
   await Promise.all(browsers.map((b) => b.close()))
   proxy.kill()
 }

@@ -64,6 +64,10 @@ const sets = argv.flatMap((a, i) => (a === '--set' ? [argv[i + 1].split('=')] : 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const proxy = spawn('npx', ['tsx', 'server/latency-proxy.ts', '--listen', listen, '--target', target, ...Object.entries(net).flatMap(([k, v]) => [`--${k}`, v])], { stdio: ['ignore', 'ignore', 'inherit'] })
+// Without its own proxy this would measure whatever else answers on the port (it happened:
+// a leftover proxy with other settings), so a proxy that fails to start ends the run.
+let finished = false
+proxy.on('exit', (code) => { if (!finished) { console.error(`latency proxy exited early (code ${code}); is port ${listen} in use?`); process.exit(3) } })
 await wait(2500)
 
 // One browser process per player. Two pages in one headless Chrome take turns at being the
@@ -373,6 +377,7 @@ try {
   report.errors = errors
   report.replaced = replaced
 } finally {
+  finished = true
   await Promise.all(browsers.map((b) => b.close()))
   proxy.kill()
 }
