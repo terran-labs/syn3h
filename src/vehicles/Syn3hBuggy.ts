@@ -17,8 +17,9 @@ import type { Game } from '../core/Game'
 import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import {
-  buggyCG, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightSlip, buggyIdleHold,
-  buggyPower, buggyShocks, buggySpeed, buggyTraction,
+  buggyCG, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightSlip, buggyGrip,
+  buggyGripFade, buggyIdleHold, buggyNextGen, buggyPower, buggyShocks, buggySlide, buggySpeed, buggySteerLimit,
+  buggyTraction,
 } from './buggyParams'
 import { applyLava, floatPoints } from './lava'
 import type { BuggySkin } from './skins/BuggySkin'
@@ -39,6 +40,8 @@ const MAX_ACCELERATION = 60
 /** Prefab WheelPos and AxelPos (Unity local). VB 73 moves the ray origin 0.22 further out. */
 const WHEEL_POS = { x: 1.1, y: 0.1, z: 1.3 }
 const RAY_OUTSET = 0.22
+/** Front to rear axle distance from WheelPos, for the next-gen steering limit. */
+const WHEELBASE = WHEEL_POS.z * 2
 export const AXEL_POS = { x: 0.55, y: 0.15, z: 1.2 }
 /** Prefab WingOpenSpeed. */
 const WING_OPEN_SPEED = 12
@@ -62,6 +65,21 @@ const HULL = [
 /** Skid plate BoxCollider: size (2.5, 0.45, 3.481158), centre (0, 0.13976786, 0.090771556). */
 const SKID_HALF = { x: 1.25, y: 0.225, z: 1.740579 }
 const SKID_CENTER = { x: 0, y: 0.13976786, z: -0.090771556 }
+
+/**
+ * Next-gen tyre contact (not from Syn3h). Each wheel is a brush: while it holds, slip winds up a
+ * stiff spring-damper in the wheel plane, so the buggy truly parks on a slope and corners
+ * without sideslip. The force is capped at mu x load, where mu falls from buggy.grip to
+ * buggy.slide as the slip speed rises (SLIP_GRIP to SLIP_SLIDE) and as the buggy goes faster. TYRE_MASS is the share of the body one wheel
+ * acts on; TYRE_DAMP cancels half the slip per 50 Hz step; TYRE_OMEGA (rad/s) sets the
+ * spring, which holds a 30 degree slope with about 2 cm of wind up.
+ */
+const TYRE_MASS = MASS / 4
+const TYRE_DAMP = 0.5
+const TYRE_OMEGA = 15
+/** Slip speeds (m/s) over which friction falls from grip to slide. */
+const SLIP_GRIP = 1
+const SLIP_SLIDE = 4
 
 const UP = new THREE.Vector3(0, 1, 0)
 /** Float points over the Syn3h hull footprint (half width 1.37, half length 2.1). */
@@ -110,6 +128,12 @@ export class Syn3hBuggy extends Vehicle {
   readonly hitVelocity = [0, 1, 2, 3].map(() => new THREE.Vector3())
   /** Steering yaw per wheel, radians about our +Y. */
   readonly steer = [0, 0, 0, 0]
+  /** Next-gen tyres: sliding flag and brush wind up (wheel frame, Unity x lateral, z forward). */
+  readonly sliding = [false, false, false, false]
+  private readonly windX = [0, 0, 0, 0]
+  private readonly windZ = [0, 0, 0, 0]
+  /** Motor speed at the start of this step's wheel pass (next-gen). */
+  private motorStep = 0
 
 
   /** Vehicle.getWheelEffects: persistent FL, FR, RL, RR entries from the last fixed step. */
@@ -335,6 +359,18 @@ export class Syn3hBuggy extends Vehicle {
     this.steer[0] = this.steer[1] = -Math.atan2(s, 1 - Math.abs(s))
     s = -smoothed.x * (lerp(30, 10, myVelocity / S) / 90)
     this.steer[2] = this.steer[3] = -Math.atan2(s, 1 - Math.abs(s))
+    if (buggyNextGen.value) {
+      // Opposite front and rear angles turn on a radius of about WHEELBASE / (tan f + tan r).
+      // Cap that sum so full lock asks for buggy.steerLimit times the grip the tyres have.
+      const v2 = Math.max(myVelocity * myVelocity, 1)
+      const grip = lerp(buggyGrip.value, buggySlide.value, Math.min(1, myVelocity / buggyGripFade.value))
+      const cap = (WHEELBASE * grip * buggyTraction.value * 9.81 * buggySteerLimit.value) / v2
+      const sum = Math.abs(Math.tan(this.steer[0])) + Math.abs(Math.tan(this.steer[2]))
+      if (sum > cap) {
+        const f = cap / sum
+        for (let w = 0; w < 4; w++) this.steer[w] = Math.atan(Math.tan(this.steer[w]) * f)
+      }
+    }
 
     // Motor, VB 280-285.
     const top = S * 10
@@ -345,6 +381,14 @@ export class Syn3hBuggy extends Vehicle {
     this.motorAccel = lerp(MAX_ACCELERATION, 0, this.motorSpeed / top)
     this.motorSpeed += (smoothed.y * this.motorAccel) / MOTOR_MASS * dt
     this.motorSpeed += (-this.motorSpeed * (this.brakes ? 50 : MOTOR_DRAG)) / this.motorTorque * dt
+
+    // Next-gen brakes lock the wheels and let the tyres stop the car (no drag states below).
+    const nextGen = buggyNextGen.value
+    const mass = b.mass()
+    if (nextGen && this.brakes) this.motorSpeed = 0
+    // Next-gen updates the motor from all four wheels at once (Jacobi). Updating it wheel by
+    // wheel, as VB 323 does, favours the left wheels and pulls the buggy right.
+    this.motorStep = this.motorSpeed
 
     // Wheels, VB 288-332.
     const wasAirborne = this.wheelsGrounded === 0
@@ -358,6 +402,8 @@ export class Syn3hBuggy extends Vehicle {
         this.hitDistance[i] = -1
         eff.grounded = false
         eff.slip = 0
+        this.windX[i] = this.windZ[i] = 0
+        this.sliding[i] = false
         continue
       }
       wheelsAreTouchingGround = true
@@ -388,6 +434,10 @@ export class Syn3hBuggy extends Vehicle {
         ub.addVelocityChangeAtPosition(this.v2, this.hitPoint)
       }
 
+      if (nextGen) {
+        this.tyre(i, dt, myVelocity, mass)
+        continue
+      }
       const friction =
         buggyTraction.value * 13 * lerp(0.5, 1, this.hitCompress[i]) * Math.max(1, (20 - hitVel.length()) / 4)
       // Vector3.Min against (1000, 1000, 1000): an upper clamp only, as in the source.
@@ -402,7 +452,6 @@ export class Syn3hBuggy extends Vehicle {
     if (this.landedThisStep) this.landingImpact = Math.max(0, -lv.y)
 
     // Suspension, VB 336-344: skipped while inverted, shocks at 0.8.
-    const mass = b.mass()
     for (let i = 0; i < 4; i++) {
       if (this.hitDistance[i] === -1 || this.isInverted) continue
       const f =
@@ -413,7 +462,12 @@ export class Syn3hBuggy extends Vehicle {
     }
 
     if (this.shouldWingsBeOpen) this.fly(dt, myVelocity, smoothed)
-    else {
+    else if (nextGen) {
+      // The tyres do the braking and the parking, so only the free rolling drag remains.
+      ub.maxAngularVelocity = 7
+      ub.angularDrag = 0.2
+      ub.drag = 0.01
+    } else {
       // Brakes and drag, VB 483-520. Brakes only bite with the wheels down and not bottomed out.
       const eligible = wheelsAreTouchingGround && this.totalSuspensionCompression <= 1
       ub.maxAngularVelocity = 7
@@ -438,6 +492,53 @@ export class Syn3hBuggy extends Vehicle {
     })
 
     ub.flush(dt)
+  }
+
+  /**
+   * Next-gen tyre force for grounded wheel i (see TYRE_MASS). Uses this step's ray hit:
+   * hitVelocity (mount velocity in wheel space), hitCompress, hitPoint and qWheel.
+   */
+  private tyre(i: number, dt: number, speed: number, mass: number): void {
+    const hv = this.hitVelocity[i]
+    const eff = this.wheelEffects[i]
+    // Load from the classic spring and damper (VB 340), which the suspension pass applies.
+    const load = this.isInverted ? 0 : Math.max(0, -hv.y * buggyShocks.value * 0.8 + this.hitCompress[i] * 20 * mass)
+    const traction = buggyTraction.value
+    const slide = buggySlide.value
+    const grip = lerp(buggyGrip.value, slide, Math.min(1, speed / buggyGripFade.value))
+    // Longitudinal slip acts on the body and the motor together; locked brakes make the motor
+    // immovable. Mass terms follow the classic motor reaction (VB 323): dv = F dt / torque.
+    const slipX = hv.x
+    const slipZ = hv.z - this.motorStep
+    // Each wheel drives a quarter of the motor; all four see the same motor speed this step.
+    const motorMass = this.brakes ? Infinity : this.motorTorque / 4
+    const longMass = 1 / (1 / TYRE_MASS + 1 / motorMass)
+    const damp = TYRE_DAMP / dt
+    const k = TYRE_OMEGA * TYRE_OMEGA
+    this.windX[i] += slipX * dt
+    this.windZ[i] += slipZ * dt
+    let fx = -TYRE_MASS * (slipX * damp + this.windX[i] * k)
+    let fz = -longMass * (slipZ * damp + this.windZ[i] * k)
+    // Friction falls from grip to slide as the contact patch slips faster (a Stribeck curve),
+    // so a tyre that has let go keeps most of its bite while it is only just sliding. ABS
+    // keeps braking at the peak.
+    const slip = Math.hypot(slipX, slipZ)
+    const mu = this.brakes ? grip : lerp(grip, slide, THREE.MathUtils.smoothstep(slip, SLIP_GRIP, SLIP_SLIDE))
+    const cap = mu * traction * load
+    const n = Math.hypot(fx, fz)
+    this.sliding[i] = n > cap
+    if (this.sliding[i]) {
+      // Saturated: the brush cannot wind up any further than the friction it can carry.
+      const f = cap / n
+      fx *= f
+      fz *= f
+      this.windX[i] *= f
+      this.windZ[i] *= f
+    }
+    this.v2.set(fx, 0, -fz).applyQuaternion(this.qWheel)
+    this.ub.addForceAtPosition(this.v2, this.hitPoint)
+    if (!this.brakes) this.motorSpeed -= (fz * dt) / this.motorTorque
+    eff.slip = this.sliding[i] ? slip : 0
   }
 
   /** Flight, VB 389-480. Runs on the wish to fly (`_shouldWingsBeOpen`), as in the source. */

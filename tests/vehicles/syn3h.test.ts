@@ -6,7 +6,7 @@ import { afterEach, describe, expect, test } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { params } from '../../shared/params'
 import { createVehicle } from '../../src/vehicles'
-import { buggyIdleHold } from '../../src/vehicles/buggyParams'
+import { buggyIdleHold, buggyNextGen } from '../../src/vehicles/buggyParams'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
 import { type Bed, makeBed } from './harness'
 
@@ -121,7 +121,8 @@ describe('Syn3hBuggy', () => {
     expect(Math.sign(axis(b, 0, 0, -1).x)).toBe(-sign)
   })
 
-  test('brakes stop it from speed', async () => {
+  test('classic brakes freeze it from speed (drag states, VB 498-515)', async () => {
+    params.set(buggyNextGen.def.id, false)
     const { bed, b } = await spawn()
     bed.run(1)
     b.input.y = 1
@@ -131,6 +132,72 @@ describe('Syn3hBuggy', () => {
     b.input.brakes = true
     bed.run(3)
     expect(speed(b)).toBeLessThan(0.01)
+  })
+
+  test('next-gen brakes stop it on the tyres at about 1 g, then it holds', async () => {
+    const { bed, b } = await spawn()
+    bed.run(1)
+    b.input.y = 1
+    bed.run(3)
+    const v0 = speed(b)
+    expect(v0).toBeGreaterThan(15)
+    b.input.y = 0
+    b.input.brakes = true
+    let t = 0
+    while (speed(b) > 0.5 && t < 5) {
+      bed.run(0.02)
+      t += 0.02
+    }
+    // Faster than sliding friction alone (0.75 g) and no faster than grip allows (1.2 g).
+    expect(v0 / t).toBeGreaterThan(0.75 * 9.81)
+    expect(v0 / t).toBeLessThan(1.25 * 9.81)
+    bed.run(2)
+    const p0 = pos(b)
+    bed.run(1)
+    expect(pos(b).distanceTo(p0)).toBeLessThan(0.05)
+  })
+
+  /** Tilt gravity to stand the flat test bed in for a slope rising toward local -Z. */
+  const slope = (bed: Bed, deg: number) => {
+    const a = deg * THREE.MathUtils.DEG2RAD
+    bed.game.world.gravity = { x: 0, y: -9.81 * Math.cos(a), z: 9.81 * Math.sin(a) }
+  }
+
+  test('next-gen parks on a 25 degree slope on its tyres', async () => {
+    const { bed, b } = await spawn()
+    bed.run(1)
+    // Brakes held, as the idle hold does at rest. No drag freeze: the tyres' static friction holds.
+    b.input.brakes = true
+    slope(bed, 25)
+    bed.run(0.5)
+    const z0 = pos(b).z
+    bed.run(3)
+    expect(Math.abs(pos(b).z - z0)).toBeLessThan(0.05)
+  })
+
+  test('next-gen runs straight under full throttle (no rightward pull)', async () => {
+    const { bed, b } = await spawn()
+    bed.run(1)
+    b.input.y = 1
+    bed.run(6)
+    const p = pos(b)
+    expect(-p.z).toBeGreaterThan(100)
+    expect(Math.abs(p.x)).toBeLessThan(-p.z * 0.02)
+  })
+
+  test('next-gen corners at full lock without sideslip at 15 m/s', async () => {
+    const { bed, b } = await spawn()
+    bed.run(1)
+    b.input.y = 1
+    while (speed(b) < 15) bed.run(0.02)
+    b.input.y = 0.3
+    b.input.x = 1
+    bed.run(2)
+    const v = b.body.linvel() as unknown as THREE.Vector3
+    const slip = new THREE.Vector3(v.x, 0, v.z).angleTo(axis(b, 0, 0, -1).setY(0)) * THREE.MathUtils.RAD2DEG
+    expect(slip).toBeLessThan(3)
+    // Lateral acceleration v * yaw rate: at least half a g.
+    expect(speed(b) * Math.abs(b.body.angvel().y)).toBeGreaterThan(0.5 * 9.81)
   })
 
   test('wheel rays ignore other vehicles', async () => {
