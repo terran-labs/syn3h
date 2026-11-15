@@ -7,8 +7,14 @@
  *
  *   npx tsx server/latency-proxy.ts --listen 8794 --target http://127.0.0.1:8787 --rtt 150 --jitter 30
  *
- * `--loss` is not offered: WebSockets ride TCP, so loss shows up as extra delay, which jitter
- * already models.
+ * Loss and stalls, the way a TCP connection shows them. A WebSocket never drops a message:
+ * a lost packet is retransmitted, and everything behind it waits (head of line blocking).
+ *
+ *   --loss 0.03 --rto 200     each message has a 3% chance of being "lost": it and all
+ *                             behind it are held 200 ms, doubling each time the resend is
+ *                             lost too (at the same odds, at most three doublings)
+ *   --stall 500 --stall-every 10   every 10 s nothing passes for 500 ms, both ways (a Wi-Fi
+ *                             roam, a phone switching cells), then the backlog arrives at once
  */
 import { createServer, request } from 'node:http'
 import { WebSocket, WebSocketServer, type RawData } from 'ws'
@@ -25,11 +31,34 @@ const rtt = Number(arg('rtt', '100'))
 /** Extra delay per message, uniformly random in [0, jitter] ms, each direction. */
 const jitter = Number(arg('jitter', '0'))
 
+/** Chance that a message is lost and must be resent, 0 to 1, each direction. */
+const loss = Number(arg('loss', '0'))
+/** Retransmission delay after a loss, ms. */
+const rto = Number(arg('rto', '200'))
+/** Length of the periodic full stall, ms (0 for none), and seconds between stalls. */
+const stall = Number(arg('stall', '0'))
+const stallEvery = Number(arg('stall-every', '10')) * 1000
+const started = Date.now()
+
+/** If `t` falls inside a stall window, the end of that window; otherwise `t`. */
+function afterStall(t: number): number {
+  if (stall <= 0) return t
+  const into = (t - started) % stallEvery
+  // The first window opens one period after start, so joining is never stalled.
+  return t - started >= stallEvery && into < stall ? t - into + stall : t
+}
+
 /** Delivers messages after the configured delay without ever reordering them. */
 function delayedSender(send: (data: RawData, binary: boolean) => void) {
   let last = 0
   return (data: RawData, binary: boolean) => {
-    const due = Math.max(last, Date.now() + rtt / 2 + Math.random() * jitter)
+    let hold = 0
+    if (loss > 0 && Math.random() < loss) {
+      hold = rto
+      for (let n = 0; n < 3 && Math.random() < loss; n++) hold *= 2
+    }
+    // `last` keeps the order: whatever is behind a held message waits for it.
+    const due = afterStall(Math.max(last, Date.now() + rtt / 2 + Math.random() * jitter + hold))
     last = due
     setTimeout(() => send(data, binary), due - Date.now())
   }
@@ -71,5 +100,5 @@ http.on('upgrade', (req, socket, head) => {
 })
 
 http.listen(listen, '127.0.0.1', () => {
-  console.log(`latency proxy :${listen} -> ${target.origin}, rtt ${rtt} ms, jitter 0..${jitter} ms each way`)
+  console.log(`latency proxy :${listen} -> ${target.origin}, rtt ${rtt} ms, jitter 0..${jitter} ms each way, loss ${loss} (rto ${rto} ms), stall ${stall} ms every ${stallEvery / 1000} s`)
 })
