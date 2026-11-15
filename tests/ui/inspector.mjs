@@ -77,7 +77,7 @@ try {
   await page.locator('.wi-row[data-id="hud.glass"] button', { hasText: 'Frosted' }).click()
   // The Vehicles card offers the vehicles and marks the one in use.
   await page.locator('.wi-card[data-section=vehicles] .wi-head').click()
-  assert.ok(await page.locator('[data-vehicle]').count() >= 4); assert.equal(await page.locator('[data-vehicle].is-on').count(), 1)
+  assert.ok(await page.locator('.wi-vehicle-select option').count() >= 4); assert.ok(await page.locator('.wi-vehicle-select').inputValue())
   // Capture the cursor: the cards fade away and the focus display fades in, in three looks.
   await page.mouse.click(500, 420)
   await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-focus'), null, { timeout: 5000 })

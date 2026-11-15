@@ -8,7 +8,7 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
   try {
     const page = await browser.newPage(mode === 'desktop' ? {viewport:{width:1440,height:1000}} : devices[mode === 'ipad' ? 'iPad (gen 7)' : mode === 'landscape' ? 'iPhone 14 landscape' : 'iPhone 14'])
     const errors=[], sockets=[]
-    page.on('pageerror',e=>errors.push(e.message)); page.on('websocket',ws=>sockets.push(ws.url()))
+    page.on('pageerror',e=>errors.push(e.message)); page.on('console',m=>{if(m.type()==='error')errors.push(m.text())}); page.on('websocket',ws=>sockets.push(ws.url()))
     const room=`ux-follow-${mode}-${Date.now()}`
     await page.goto(`${base}?room=${room}`)
     await page.locator('.boot-veil').waitFor({state:'hidden',timeout:120000})

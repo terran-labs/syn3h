@@ -1,3 +1,5 @@
+import { GEAR_LABELS, type GearRack, type GearId } from '../weapons/Gear'
+import { postTier } from '../fx/post/gate'
 import { PerformancePanel } from './PerformancePanel'
 import type { PerformanceSource } from '../core/performance'
 import { SavedWorldStore, SAVED_WORLDS_KEY, savedWorldPlan, worldIdentity, type SavedWorld } from './galaxy/savedWorlds'
@@ -147,7 +149,7 @@ export class Shell implements System {
       </div>
       <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby"><button data-goto="vehicle">Vehicle</button><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR</button><button data-goto="settings">Settings</button><button data-goto="about">About</button></nav></div>
     </section>
-    <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><button type="button" class="gear-chip" hidden></button><div class="hud-scoreboard"></div></aside>
+    <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open configuration rail" aria-pressed="false"><span aria-hidden="true">≡</span><span class="nav-label"> Interface</span></button></nav>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
@@ -192,7 +194,12 @@ export class Shell implements System {
     this.performancePanel = new PerformancePanel(this.element, () => { this.releaseCursor(); this.setInspectorOpen(true) })
     railTop.querySelector('.wi-actions')!.append(this.performancePanel.toggle)
     players.after(this.performancePanel.element)
-    const gear = this.element.querySelector('.gear-chip')!; players.querySelector('.rail-player-body')!.append(gear)
+    const gear = document.createElement('select'); gear.className = 'gear-select'; gear.setAttribute('aria-label', 'Gear'); gear.disabled = true
+    this.inspector.element.querySelector('.wi-gear-slot')!.append(gear)
+    gear.addEventListener('change', () => {
+      const rack = (window as unknown as { syn3hNet?: { gear?: GearRack } }).syn3hNet?.gear
+      if (rack?.list().includes(gear.value as GearId)) { rack.select(gear.value as GearId); this.audio.cue('click') }
+    }, { signal })
     navigation.querySelector('.exit-world')!.addEventListener('click', () => this.openMenu(), { signal })
     players.querySelector('.rail-invite')!.addEventListener('click', () => this.openJoin(), { signal })
     players.querySelector('input')!.addEventListener('change', event => params.set(diagnostics.def.id, (event.target as HTMLInputElement).checked), { signal })
@@ -394,6 +401,12 @@ export class Shell implements System {
     if (kind === this.activeVehicleKind || (kind === 'buggy-syn3h' && this.activeVehicleKind === 'buggy')) return
     saveVehicleChoice({ ...this.choice, vehicleKind: kind })
     try { sessionStorage.removeItem(RESUME_KEY) } catch { /* Storage is optional. */ }
+    // The resume session saves the old vehicle again while the page unloads (pagehide, then
+    // visibilitychange), which would undo this choice. These listeners are registered after
+    // its own, so each runs after that save and clears it. The URL stays free of ?vehicle=,
+    // which would otherwise override later lobby choices.
+    const forget = () => { try { sessionStorage.removeItem(RESUME_KEY) } catch { /* Storage is optional. */ } }
+    window.addEventListener('pagehide', forget); document.addEventListener('visibilitychange', forget)
     const url = new URL(location.href); url.searchParams.delete('vehicle'); url.searchParams.set('autoplay', '1')
     location.replace(url)
   }
@@ -951,21 +964,38 @@ export class Shell implements System {
   private gearWired = false
   private gearShown = ''
   /**
-   * The gear chip: which gear is in hand, shown only while the host allows more than one.
+   * The rail selector shows the available gear and the current choice.
    * Tapping it (or T) moves to the next. The rack and the Bungee are the Weapons lane's.
    */
   private updateGear(): void {
-    const net = (window as unknown as { syn3hNet?: { gear?: { list(): string[]; label: string; next(): void }; bungee?: { attached: boolean; letGo(): void } } }).syn3hNet
-    const chip = this.element.querySelector<HTMLButtonElement>('.gear-chip')!
-    if (!net?.gear) { if (!chip.hidden) chip.hidden = true; return }
-    if (!this.gearWired) {
+    const net = (window as unknown as { syn3hNet?: { gear?: GearRack; bungee?: { attached: boolean; letGo(): void } } }).syn3hNet
+    const select = this.element.querySelector<HTMLSelectElement>('.gear-select')!
+    if (!net?.gear) { select.disabled = true; return }
+    if (!this.gearWired && net.bungee) {
       this.gearWired = true
-      chip.addEventListener('click', () => { net.gear!.next(); this.audio.cue('click'); chip.blur() }, { signal: this.abort.signal })
-      if (net.bungee) this.touch.setGear({ attached: () => net.bungee!.attached, letGo: () => net.bungee!.letGo() })
+      this.touch.setGear({ attached: () => net.bungee!.attached, letGo: () => net.bungee!.letGo() })
     }
-    const several = net.gear.list().length > 1, text = several ? `Gear: ${net.gear.label}` : ''
-    if (text === this.gearShown) return
-    this.gearShown = text; chip.hidden = !several; chip.textContent = text; this.hasSeveralGear = several
+    const list = net.gear.list(), signature = list.join(',')
+    if (signature !== this.gearShown) {
+      this.gearShown = signature; select.replaceChildren()
+      for (const id of list) { const option = document.createElement('option'); option.value = id; option.textContent = GEAR_LABELS[id]; select.append(option) }
+    }
+    if (document.activeElement !== select) select.value = net.gear.current
+    this.hasSeveralGear = list.length > 1; select.disabled = !this.hasSeveralGear
+  }
+  private updateGI(): void {
+    const value = Number(params.get('post.gi')?.value ?? 0)
+    const on = Boolean(params.get('post.on')?.value), tablets = Boolean(params.get('post.tablets')?.value)
+    const budget = Math.min(1, Math.max(0, this.game.quality.postBudget))
+    const tier = postTier({ on, level: graphicsLevel.value, deviceLevel: this.game.quality.deviceLevel, tablets, shed: 1 - budget })
+    let status: string
+    if (!on) status = 'GI inactive: post effects are off. Enable Post effects in You > Post.'
+    else if (this.game.quality.deviceLevel < 2 && !tablets) status = 'GI inactive: post effects are disabled for this device.'
+    else if (graphicsLevel.value < 2) status = 'GI inactive: requires Desktop render tier. Change Graphics in You or Performance.'
+    else if (tier !== 'full') status = 'GI temporarily inactive: automatic quality has reduced the post-effects budget.'
+    else if (value === 0) status = 'GI is off. Raise this strength to enable indirect light from visible surfaces.'
+    else status = budget < .99 ? 'GI active at reduced strength while automatic quality adjusts.' : 'GI active: indirect light from visible surfaces.'
+    this.inspector.setGIStatus(status, tier === 'full')
   }
   private hasSeveralGear = false
   setVehicleKind(kind: VehicleKind): void { this.activeVehicleKind = kind; this.touch.setVehicleKind(kind); if (this.started) this.showHelp(false) }
@@ -1037,6 +1067,7 @@ export class Shell implements System {
     if (document.activeElement !== musicChoice) musicChoice.value = this.audio.track
     this.element.querySelector('.rail-mute')!.textContent = this.audio.isMuted ? 'Unmute' : 'Mute'
     this.updateGear()
+    if (this.inspector.open) this.updateGI()
     if (this.started && !this.menuVisible) {
       const focus = this.element.classList.contains('is-focus')
       if (!focus && this.inspector.open) this.inspector.update()
