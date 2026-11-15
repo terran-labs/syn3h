@@ -13,6 +13,7 @@ import { PresenceFeed, type Populations } from './presence'
 import { LogoRenderer, type PixelRect } from '../brand/logoRenderer'
 import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
 import type { ParamValue } from '../../../shared/params'
+import { ORDINARY_BODY, planetById, type PlanetBody } from '../../world/planets'
 import { qualityFrame, qualityScale, qualityShed } from '../quality/ladder'
 
 export interface GalaxyWorld {
@@ -64,33 +65,52 @@ const MAX = GALAXY_MAX
 const TILT = 0.38
 /** How far the view can tilt: a little under the orbital plane, most of the way over the top. */
 const PITCH_LOW = -0.2, PITCH_HIGH = 1.25
-/** Orbits round the sun; more worlds than this share them. */
-const RINGS = 3
-/** The innermost orbit, and the clear space kept between any two worlds' surfaces. */
-const INNER = 2.9, CLEAR = 0.3
-/** The two sizes of world. */
-const SMALL_WORLD = 0.7, LARGE_WORLD = 0.82
 /**
- * Neighbouring orbits sit two of the largest worlds apart plus the clear space, so worlds
- * on different orbits cannot touch however their angles line up: their centres are never
- * nearer than the difference of the orbits. Worlds sharing an orbit move together, spread
- * evenly, and the inner orbit is wide enough for four (a chord of 4.1 against 1.94 needed).
+ * The system's scale. An ordinary planet's radius; the innermost orbit; the clear space kept
+ * between the surfaces of worlds on neighbouring orbits; the innermost world's turn per second.
  */
-const SPACING = LARGE_WORLD * 2 + CLEAR
+const PLANET = 0.5, INNER = 2.2, CLEAR = 0.14, RATE = 0.07
+/** The view's half angle on the short side of the screen, as a tangent. */
+const VIEW_TAN = 0.62
 /**
- * Where the worlds are at a time: slow circular orbits, each at its own pace. Up to three
- * orbits; more worlds share them, spread evenly round each and moving together. Twelve
- * worlds fit inside the outer orbit four had at the old, too tight spacing (6.78 against
- * 7.25), so the first view's distance still frames the system on a phone held upright.
+ * A world's radius in the lobby from its size. Slightly compressed, so the ratios read true
+ * (a moon is plainly a moon) while the smallest world is still something to tap on a phone.
  */
-export function orbitLayout(count: number, time: number): { position: [number, number, number]; radius: number }[] {
-  count = Math.min(MAX, count)
-  const rings = Math.min(RINGS, count)
-  return Array.from({ length: count }, (_, i) => {
-    const ring = i % rings, slot = Math.floor(i / rings), sharing = Math.ceil((count - ring) / rings)
-    const orbit = INNER + ring * SPACING, angle = 0.9 + ring * 1.9 + slot * Math.PI * 2 / sharing + time * 0.045 / Math.sqrt(orbit / INNER)
-    return { position: [Math.cos(angle) * orbit, 0, Math.sin(angle) * orbit], radius: i % 2 ? LARGE_WORLD : SMALL_WORLD }
+export const worldRadius = (size: number) => PLANET * Math.pow(Math.min(1.6, Math.max(0.3, size)), 0.85)
+export interface OrbitPlace { position: [number, number, number]; radius: number; orbit: number }
+/**
+ * Where the worlds are at a time. Every world has an orbit of its own, a circle round the sun
+ * in one plane. The orbits are ordered by heat, the hottest world nearest the sun and the
+ * frozen ones farthest out, and each lies beyond the last by both worlds' radii plus a clear
+ * space. Two worlds' centres are never nearer than the difference of their orbits, so no two
+ * can touch wherever they are in their years: it holds by construction, not by timing.
+ *
+ * The years are Kepler's: a world's turn per second falls as its orbit to the power 3/2, so
+ * the inner worlds visibly overtake the outer ones. Each starts a golden angle on from the
+ * last, which never lines the system up. Places are returned in the order the bodies came.
+ */
+export function orbitLayout(bodies: readonly PlanetBody[], time: number): OrbitPlace[] {
+  const count = Math.min(MAX, bodies.length), places: OrbitPlace[] = new Array(count)
+  const order = Array.from({ length: count }, (_, i) => i).sort((a, b) => bodies[b].heat - bodies[a].heat || a - b)
+  let orbit = INNER, last = 0
+  order.forEach((index, lane) => {
+    const radius = worldRadius(bodies[index].size)
+    if (lane > 0) orbit += last + radius + CLEAR
+    last = radius
+    const angle = 0.9 + lane * 2.399963 + time * RATE * Math.pow(INNER / orbit, 1.5)
+    places[index] = { position: [Math.cos(angle) * orbit, 0, Math.sin(angle) * orbit], radius, orbit }
   })
+  return places
+}
+/** The camera distance at which the whole system fits the short side of the screen, with a margin. */
+export function fitDistance(bodies: readonly PlanetBody[]): number {
+  return Math.max(...orbitLayout(bodies, 0).map(place => place.orbit + place.radius), INNER) * 1.08 / VIEW_TAN
+}
+/** The body a galaxy world is laid out as: its recipe's, or an ordinary planet's. */
+export function bodyOf(world: GalaxyWorld): PlanetBody {
+  // A world still forming is molten: it belongs close in, among the hot worlds.
+  if (world.forming) return { size: 1, heat: 0.95 }
+  return planetById(world.recipe ?? world.id.split('~')[0])?.body ?? ORDINARY_BODY
 }
 /**
  * The world a tap at (x, y) means. On a disc, the nearest disc there: the one that is seen,
@@ -263,11 +283,15 @@ void main() {
   if (uAmbience > 0.0) sky += vec3(0.02, 0.06, 0.24) * smoothstep(0.38, 0.8, fbm(ray * 2.2 + 7.0)) * 0.5 * uAmbience;
 
   // The nearest world along this ray.
+  // Where this ray meets the orbital plane, for the faint trace of each orbit. One line a
+  // pixel wide however far off; it fades toward the horizon, where a pixel spans many orbits.
+  float planeT = -uEye.y / (abs(ray.y) > 1e-4 ? ray.y : 1e-4), planeR = length((uEye + ray * planeT).xz), planeW = fwidth(planeR), trace = 0.0;
   float nearest = 1e9; int found = -1; vec3 normal = vec3(0.0); float halo = 0.0; vec3 haloTint = vec3(0.0); float haloNear = 1e9; vec3 haloFront = vec3(0.0);
   for (int i = 0; i < ${MAX}; i++) {
     if (i >= uCount) break;
     if (uOnly >= 0 && i != uOnly) continue;
     vec3 oc = uEye - uWorld[i].xyz; float r = uWorld[i].w;
+    trace += 1.0 - smoothstep(0.0, planeW * 1.5 + 1e-5, abs(planeR - length(uWorld[i].xz)));
     float b = dot(oc, ray), cc = dot(oc, oc) - r * r, disc = b * b - cc;
     if (disc > 0.0) { float t = -b - sqrt(disc); if (t > 0.0 && t < nearest) { nearest = t; found = i; normal = normalize(oc + ray * t); } }
     else if (b < 0.0) {
@@ -386,6 +410,7 @@ void main() {
     sunLight *= mix(1.0, 0.06, before); sunHaze *= mix(0.35, 0.06, before); sunShafts *= mix(0.12, 0.0, before);
   } else {
     c += sky * smoothstep(0.08, 0.5, sunDistance) + haloTint;
+    if (planeT > 0.01 && uOnly < 0) c += vec3(0.45, 0.62, 0.9) * min(trace, 1.0) * clamp(1.0 - planeW * 2.5, 0.0, 1.0) * 0.1 * (1.0 - uShed.y) * (1.0 - uDive);
   }
   c += sunLight + sunHaze + sunShafts + flare * (found >= 0 ? 0.2 : 1.0);
   // The dive: streaks rushing outward, then the brightness of air as the world fills the view.
@@ -551,6 +576,8 @@ export class Galaxy {
   private readonly resizeObserver: ResizeObserver
 
   constructor(private readonly host: HTMLElement, private readonly options: GalaxyOptions) {
+    // The first view frames every orbit.
+    this.distance = this.reach = fitDistance(options.worlds.map(bodyOf))
     const recipes = [...new Set(options.worlds.filter(w => w.id !== 'custom').map(w => w.recipe ?? w.id))]
     this.presence = new PresenceFeed(recipes, values => { this.population = values; this.wake = 2; options.onPresence?.(values) })
     this.reduced.addEventListener('change', () => { this.wake = 2 }, { signal: this.abort.signal })
@@ -688,7 +715,7 @@ export class Galaxy {
     canvas.addEventListener('pointerdown', event => this.down(event), options)
     canvas.addEventListener('pointermove', event => this.move(event), options)
     for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, event => this.up(event, type === 'pointerup'), options)
-    canvas.addEventListener('wheel', event => { event.preventDefault(); this.handled = performance.now(); this.wake = 2; if (this.chosen < 0) this.distance = Math.min(26, Math.max(6, this.distance * Math.exp(event.deltaY * 0.0012))) }, { signal, passive: false })
+    canvas.addEventListener('wheel', event => { event.preventDefault(); this.handled = performance.now(); this.wake = 2; if (this.chosen < 0) this.distance = Math.min(this.farthest, Math.max(6, this.distance * Math.exp(event.deltaY * 0.0012))) }, { signal, passive: false })
     // Held upright, a phone has height to spare and no width: look down more steeply so the
     // orbits open out into the height. Only for the first view; after that the player's stands.
     if (!this.framed) { this.framed = true; if (this.host.clientHeight > this.host.clientWidth * 1.2) this.pitch = 0.85 }
@@ -764,8 +791,10 @@ export class Galaxy {
   }
   /** Where the worlds are now: see orbitLayout. */
   private places(time: number): { position: Vec; radius: number }[] {
-    return orbitLayout(this.options.worlds.length, time)
+    return orbitLayout(this.options.worlds.map(bodyOf), time)
   }
+  /** The farthest the view may pull back: far enough to see the whole system with room round it. */
+  private get farthest(): number { return Math.max(26, fitDistance(this.options.worlds.map(bodyOf)) * 1.5) }
   private camera(places: { position: Vec; radius: number }[]) {
     // Ease toward the chosen world; arriving is the camera settling close above it.
     const goal: Vec = this.chosen >= 0 ? places[this.chosen].position : [0, 0, 0]
@@ -799,7 +828,7 @@ export class Galaxy {
     const forward = unit(sub(this.target, eye)), right = unit(cross(forward, [0, 1, 0])), up = cross(right, forward)
     return { eye, forward, right, up, // The short side of the screen always spans the same slice of space, so the system fills
     // a phone held upright as well as it fills a wide monitor.
-    tan: 0.62 }
+    tan: VIEW_TAN }
   }
   private reach = 13
   /** Seconds since the last drawn frame, for the eases. */
@@ -927,7 +956,7 @@ export class Galaxy {
     const yaw = this.swingYaw, pitch = this.swingPitch
     yaw.aim += x; yaw.aimSpeed = 0
     pitch.aim = Math.min(PITCH_HIGH, Math.max(PITCH_LOW, pitch.aim + y)); pitch.aimSpeed = 0
-    this.distance = Math.min(26, Math.max(6, this.distance * Math.exp(zoom)))
+    this.distance = Math.min(this.farthest, Math.max(6, this.distance * Math.exp(zoom)))
   }
   /** Shown turn and tilt as last stepped: anything else that writes them is in control. */
   private shown = { yaw: NaN, pitch: NaN }
@@ -1026,7 +1055,7 @@ export class Galaxy {
     const dx = event.clientX - point.x, dy = event.clientY - point.y; point.x = event.clientX; point.y = event.clientY
     if (this.pointers.size === 2) {
       const [a, b] = [...this.pointers.values()], gap = Math.hypot(a.x - b.x, a.y - b.y)
-      if (this.pinch > 0 && this.chosen < 0) this.distance = Math.min(26, Math.max(6, this.distance * this.pinch / Math.max(1, gap)))
+      if (this.pinch > 0 && this.chosen < 0) this.distance = Math.min(this.farthest, Math.max(6, this.distance * this.pinch / Math.max(1, gap)))
       this.pinch = gap; return
     }
     if (!this.drag || this.drag.id !== event.pointerId) return
