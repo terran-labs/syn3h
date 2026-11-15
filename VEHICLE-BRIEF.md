@@ -62,7 +62,7 @@ is right handed with -Z forward, and physics runs at a fixed 50 Hz.
 
 - The physics is Mars Explorer's, adapted. If the owner remembers a different Syn3h hovercraft feel, there is no source for it: ask him to describe it.
 - Throttle pitching the nose and the abrupt low speed stop are faithful to the source and softened only in assisted mode.
-- Sliders: hover.height, force, repel, thrust, assist, clearance, stability, brakeTime.
+- Sliders: hover.height, force, repel, thrust, assist, clearance, stability, brakeTime, turnRate, grip, drag, bank.
 
 ## How to run it
 
