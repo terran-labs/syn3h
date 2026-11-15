@@ -75,6 +75,9 @@ echo "Freezing $MILESTONE ($COMMIT)..."
 ID="$(tools/promote-stable.sh "release-$N: $NOTE" | tail -1)"
 DEST="$(cd ../Syn3h-stable/"$ID" && pwd)"
 printf '*.map\n' > "$DEST/dist/.assetsignore"
+# Every deploy carries each earlier release, and this one, under dist/v/ so that
+# https://www.syn3h.com/?v=<version> keeps serving it. A deploy without them breaks those links.
+node tools/frozen-versions.mjs carry "$DEST" "$CALVER" || fail "could not carry the frozen versions into the build"
 echo "Frozen copy: $DEST"
 echo "Assets: $(find "$DEST/dist" -type f ! -name '*.map' ! -name .assetsignore | wc -l | tr -d ' ') files, $(du -sh "$DEST/dist" | cut -f1) with maps"
 
@@ -136,6 +139,12 @@ else
   tail -1 "$LOG-assets.log"
 fi
 
+# --- Frozen versions ------------------------------------------------------------------------
+# Each frozen release's page and every one of its files, as that page asks for them.
+node tools/frozen-versions.mjs check "$URL" "$DEST" >"$LOG-frozen.log" 2>&1 \
+  || { cat "$LOG-frozen.log"; fail "frozen version links are broken at $URL (see $LOG-frozen.log)"; }
+tail -1 "$LOG-frozen.log"
+
 # --- Smoke test -----------------------------------------------------------------------------
 echo "Smoke testing $URL ..."
 node tools/net-smoke.mjs "$URL" 2>&1 | tee "$LOG-smoke.log" | grep -E "^(FAIL|NET SMOKE)" || true
@@ -166,13 +175,22 @@ done
 tail -1 "$LOG-primary-assets.log"
 if ! tools/domain.sh check www.syn3h.com >"$LOG-primary.log" 2>&1; then
   cat "$LOG-primary.log"
+node tools/frozen-versions.mjs check "$PRIMARY_URL" "$DEST" >"$LOG-primary-frozen.log" 2>&1 \
+  || { cat "$LOG-primary-frozen.log"; fail "frozen version links are broken on the primary domain; roll back the deployment"; }
+tail -1 "$LOG-primary-frozen.log"
   fail "primary domain acceptance failed; roll back the deployment"
 fi
 cat "$LOG-primary.log"
+node tools/frozen-versions.mjs check "$PRIMARY_URL" "$DEST" >"$LOG-primary-frozen.log" 2>&1 \
+  || { cat "$LOG-primary-frozen.log"; fail "frozen version links are broken on the primary domain; roll back the deployment"; }
+tail -1 "$LOG-primary-frozen.log"
 
 # --- Record ---------------------------------------------------------------------------------
 WHEN="$(TZ=America/Los_Angeles date '+%Y-%m-%d %H:%M %Z')"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "release-$N" "$WHEN" "$URL" "$MILESTONE" "$COMMIT" "$VERSION" "$ID" >> ../Syn3h-stable/releases.tsv
+# Accepted: keep this release so every later deploy carries it. A failure here must be
+# repaired before the next release, but does not undo a verified one.
+node tools/frozen-versions.mjs archive "$DEST" "$CALVER" || echo "Warning: release is live but $CALVER was not archived; run tools/frozen-versions.mjs archive before the next release."
 git tag -a "release-$N" -m "release-$N: $NOTE ($URL, version $VERSION)"
 echo
 echo "RELEASE OK: release-$N is live at $URL"

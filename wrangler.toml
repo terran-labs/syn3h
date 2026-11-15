@@ -10,7 +10,9 @@ binding = "ASSETS"
 # /status (how many people are playing, counts only) is answered by the Worker too.
 # /ws never matches a file, so it always reaches the Worker; listing it keeps that true even
 # if SPA style not found handling is enabled later.
-run_worker_first = ["/ws", "/status", "/presence"]
+# "/" goes to the Worker so ?v=<version> can serve a frozen build; build.json and models too,
+# because their names are not content hashed and a frozen page must get its own copies.
+run_worker_first = ["/ws", "/status", "/presence", "/", "/index.html", "/build.json", "/models/*"]
 
 [[durable_objects.bindings]]
 name = "ROOMS"
