@@ -5,6 +5,7 @@ import { GROUP_PROJECTILE, GROUP_TERRAIN, RAPIER, groups } from '../core/physics
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
 import * as p from './params'
+import { isRoadFord } from './nav/fords'
 import { BotGearController, type BotGearHooks } from './gear'
 import { roadWaypoint, type RoadTerrain, type RoadPoint } from './navigation'
 import type { Mind } from './mind/Mind'
@@ -22,7 +23,7 @@ export function isSafeGround(terrain: BotTerrain, x: number, z: number): boolean
   // A wrapping world has no edge to stay away from: the far side of the seam is more ground.
   if (!terrain.wrapSize && (Math.abs(x) > terrain.size / 2 - 3 || Math.abs(z) > terrain.size / 2 - 3)) return false
   const ground = terrain.heightAt(x, z), liquid = terrain.liquidHeightAt?.(x, z)
-  return Number.isFinite(ground) && (liquid == null || !Number.isFinite(liquid) || ground > liquid + 0.5)
+  return Number.isFinite(ground) && (liquid == null || !Number.isFinite(liquid) || ground > liquid + 0.5 || isRoadFord(terrain, x, z))
 }
 export interface BotMatch {
   mode: 'tag' | 'hill'
@@ -144,7 +145,7 @@ export class BotBrain implements System {
   private roam(dt: number, input: InputState, here: { x: number; y: number; z: number }) {
     const status = this.mind!.step(dt, input)
     const liquid = this.terrain.liquidHeightAt?.(here.x, here.z)
-    const afloat = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(here.x, here.z) <= liquid + 0.5
+    const afloat = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(here.x, here.z) <= liquid + 0.5 && !isRoadFord(this.terrain, here.x, here.z)
     // Being over liquid is trouble only for wheels: a hovercraft rides on it and a jet is above it.
     const wheeled = this.vehicle.kind !== 'jet' && this.vehicle.kind !== 'hovercraft'
     this.liquidTime = afloat && wheeled ? this.liquidTime + dt : 0
@@ -248,7 +249,7 @@ export class BotBrain implements System {
     const lead = Math.min(0.8, distance / 45) * p.aggression.value
     let aimX = there.x + targetVelocity.x * lead, aimZ = there.z + targetVelocity.z * lead
     const liquid = this.terrain.liquidHeightAt?.(here.x, here.z)
-    const afloat = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(here.x, here.z) <= liquid + 0.5
+    const afloat = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(here.x, here.z) <= liquid + 0.5 && !isRoadFord(this.terrain, here.x, here.z)
     this.liquidTime = afloat && p.canDrive.value ? this.liquidTime + dt : 0
     if (afloat) {
       // Bots try to crawl toward dry ground before requesting a return to their pad.
