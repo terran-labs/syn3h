@@ -90,7 +90,7 @@ export function particleSeed(birth: N, slot: N): N {
 }
 
 /**
- * Brightness for unlit, normally blended sprites (dust). The scene's lights do not reach a
+ * Brightness for unlit, normally blended effects (dust and tyre marks). The scene's lights do not reach a
  * sprite, so without this a tinted puff glows at night. It follows the same night ramp as the
  * vehicle night fill and keeps a fifth of its daytime brightness in full dark, which reads as
  * dust caught by headlights and moonlight. One render-group uniform, no per-frame allocation.

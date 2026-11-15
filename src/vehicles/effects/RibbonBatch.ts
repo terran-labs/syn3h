@@ -1,7 +1,7 @@
 import {hotExposureNode} from '../skins/hotExposure'
 import * as T from 'three/webgpu'
 import {attribute,float,smoothstep,uniform,uv} from 'three/tsl'
-import type {MarkAlpha} from './sprites'
+import {unlitShadeNode,type MarkAlpha} from './sprites'
 
 /**
  * One global capped quad ring, after VhiclSkidmarks.cs 20-24, 96-195. `mark` gives the alpha
@@ -27,7 +27,8 @@ export class RibbonBatch {
     const m=new T.MeshBasicNodeMaterial({transparent:true,depthWrite:false,side:T.DoubleSide,blending:additive?T.AdditiveBlending:T.NormalBlending})
     const d=attribute('fxAge','vec3'),age=this.clock.sub(d.x).div(d.y)
     m.colorNode=attribute('fxColor','vec3')
-    if(additive)m.colorNode=m.colorNode.mul(hotExposureNode())
+    // Tyre marks are unlit like dust, so they share its night shading; additive trails glow.
+    m.colorNode=m.colorNode.mul(additive?hotExposureNode():unlitShadeNode())
     let opacity=d.z.mul(float(1).sub(smoothstep(additive?0:.65,1,age))).mul(age.lessThan(1).select(1,0))
     const across:typeof opacity=mark?mark(uv().x):float(1).sub(uv().x.sub(.5).abs().mul(2)).pow(2)
     opacity=opacity.mul(across)

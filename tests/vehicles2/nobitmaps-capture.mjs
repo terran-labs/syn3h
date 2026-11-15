@@ -65,7 +65,7 @@ try{
     await page.waitForTimeout(250);await shot(`${h}-lab`)
     await page.evaluate(()=>{window.__fxKeep?.dispose();delete window.__fxKeep})
     // Marks from above, close.
-    await pose(page,3,0,4,5,0);await page.waitForTimeout(2500);await shot(`${h}-marks`)
+    await pose(page,3,0,4,5.5,0);await page.waitForTimeout(3500);await shot(`${h}-marks`)
     await page.evaluate(()=>{const w=window.__lab.w;w.marks.clear();delete window.__lab})
    }else if(kind==='tank'){
     // Creep forward with a settled side camera so the treads are seen scrolling.
