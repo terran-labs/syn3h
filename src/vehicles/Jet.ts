@@ -42,6 +42,8 @@ export class Jet extends Vehicle {
   private readonly smoothed = new THREE.Vector4()
   private vectorPitch = 0
   private vectorYaw = 0
+  /** Stick deflection shown on the tail ring's control surfaces: pitch, roll, yaw. */
+  private readonly controls = new THREE.Vector3()
   readonly modelReady = Promise.resolve()
   /** Input defaults false, so false means the original startup hover mode. */
   get hoverMode(): boolean {return !this.input.special}
@@ -154,7 +156,10 @@ export class Jet extends Vehicle {
   }
   override update(dt:number,alpha:number):void {
     super.update(dt,alpha)
-    this.model.update(this.gearAmount, this.vectorPitch, this.vectorYaw, Math.max(0, this.smoothed.z))
+    // Visual only: the ring's surfaces follow the smoothed stick in both modes, signed like the
+    // nozzle petals. Pulling back (y below 0) is nose up; x is roll right; w is yaw right.
+    this.controls.set(-this.smoothed.y, this.smoothed.x, this.smoothed.w)
+    this.model.update(this.gearAmount, this.vectorPitch, this.vectorYaw, Math.max(0, this.smoothed.z), this.controls)
   }
   protected override applyColors():void {
     this.model?.setColors(this.colors.body, this.colors.accent)

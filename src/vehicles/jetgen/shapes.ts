@@ -131,6 +131,12 @@ export class Builder {
   /** Exit of the main thruster: centre and half size. Four vectoring vanes hinge on its lip. */
   gimbal?: { y: number; z: number; halfWidth: number; halfHeight: number }
   private fus: number[][] = []
+  /**
+   * Moving trailing-edge sections of surfaces built with `flap` (see surf()). Each hinges on the
+   * line from `a` to `b`; they are kept out of `pieces` so the model can turn them.
+   */
+  readonly flaps: { mat: Mat; geometry: THREE.BufferGeometry; a: [number, number, number]; b: [number, number, number] }[] = []
+  private captured?: Piece[]
 
   /**
    * @param detail 1 is full detail; .5 roughly quarters the triangle count.
@@ -141,7 +147,7 @@ export class Builder {
   private segs(n: number): number { return Math.max(1, Math.round(n * this.detail)) }
   private ring(n: number): number { return Math.max(6, 2 * Math.round(n * this.detail / 2)) }
 
-  add(mat: Mat, geometry: THREE.BufferGeometry): void { this.made.push({ mat, geometry }) }
+  add(mat: Mat, geometry: THREE.BufferGeometry): void { (this.captured ?? this.made).push({ mat, geometry }) }
 
   /**
    * `exhaust` makes the body's rear end an engine: the skin stops open at its last row, which is
@@ -155,7 +161,9 @@ export class Builder {
     if (!o.exhaust) return
     const [z, w, t, b, y, e] = keys[keys.length - 1], k = (dz: number, f: number) => [z + dz, w * f, t * f, b * f, y, e]
     const inner = { x, mirror: o.mirror, around: o.around ?? 28 }
-    this.body('dark', [k(0, 1), k(-.07, .9), k(-.36, .62)], { ...inner, seg: 3, caps: [false, false], inside: true })
+    // The inner wall ends in a floor. The glow is additive and writes no depth, so without an
+    // opaque surface behind it the throat was a window into the hull.
+    this.body('dark', [k(0, 1), k(-.07, .9), k(-.36, .62)], { ...inner, seg: 3, caps: [false, true], inside: true })
     this.body('glow', [k(-.46, .72), k(-.32, .72)], { ...inner, seg: 1 })
     for (const sx of o.mirror ? [1, -1] : [1]) this.nozzles.push({ x: x * sx, y, z, r: Math.max(w, t) })
     if (o.exhaust === 'main') this.gimbal = { y: y + (t - b) / 2, z, halfWidth: w, halfHeight: (t + b) / 2 }
@@ -218,7 +226,7 @@ export class Builder {
     if (h.exhaust) {
       // The same open-ended engine as body({ exhaust: 'main' }).
       const [z, w, t, b, y, e] = h.keys[h.keys.length - 1], k = (dz: number, f: number) => [z + dz, w * f, t * f, b * f, y, e]
-      this.body('dark', [k(0, 1), k(-.07, .9), k(-.36, .62)], { seg: 3, caps: [false, false], inside: true })
+      this.body('dark', [k(0, 1), k(-.07, .9), k(-.36, .62)], { seg: 3, caps: [false, true], inside: true })
       this.body('glow', [k(-.46, .72), k(-.32, .72)], { seg: 1 })
       this.nozzles.push({ x: 0, y, z, r: Math.max(w, t) }); this.gimbal = { y: y + (t - b) / 2, z, halfWidth: w, halfHeight: (t + b) / 2 }
     }
@@ -232,7 +240,7 @@ export class Builder {
    * eye. Call it after fuselage(). Below detail 0.4 the tub is left out and the hull stays whole.
    */
   cockpit(z0: number, z1: number, widthFraction: number, eye: [number, number, number], o: { bulge?: number; rim?: number; floor?: number } = {}): void {
-    const bulge = o.bulge ?? .2, rim = o.rim ?? .035, interior = this.detail >= .4
+    const bulge = o.bulge ?? .2, rim = o.rim ?? .024, interior = this.detail >= .4
     const count = Math.max(8, Math.round(26 * this.detail)), at = (z: number) => this.outline(z0, z1, widthFraction, z)
     const stations = Array.from({ length: count + 1 }, (_, i) => z0 + (z1 - z0) * i / count)
     this.eye = eye
@@ -249,8 +257,9 @@ export class Builder {
     this.add('glass', canopy); this.cockpitPieces.push({ mat: 'glass', geometry: canopy })
     if (!interior) { this.body('chrome', stations.map(z => { const e = at(z); return [z, e.cw * 1.12, e.crown + .01, .02, e.yEdge, 2.3] }), { seg: 1, around: 24 }); return }
     this.cut = { z0, z1, fraction: widthFraction }
-    // Rim: a slim tube along each side of the opening, standing on the edge of the skin.
-    for (const side of [1, -1]) this.add('chrome', loft(this.onSkin(z => { const a = at(z).angle; return side > 0 ? a : Math.PI - a })(stations.map(z => [z, rim * Math.min(1, at(z).env * 2.2), rim * .8 * Math.min(1, at(z).env * 2.2), 2.2]), .004, rim * .8, count)))
+    // Rim: one slim closed loop round the opening, swept along the edge of the skin. It is matte
+    // and dark, so from the seat it reads as a clean line and not a band of reflections.
+    this.add('dark', this.rimLoop(z => at(z), z0, z1, rim))
     // Tub: an open trough, faces inward, just outside the opening's edge and under the skin.
     const across = Math.max(6, 2 * Math.round(7 * this.detail))
     const tub = loft(stations.map(z => {
@@ -268,6 +277,64 @@ export class Builder {
     tub.computeVertexNormals()
     if (tub.getAttribute('normal').getY(mid) < 0) { for (let i = 0; i < index.count; i += 3) { const t = index.getX(i + 1); index.setX(i + 1, index.getX(i + 2)); index.setX(i + 2, t) } tub.computeVertexNormals() }
     this.add('trim', tub); this.cockpitPieces.push({ mat: 'trim', geometry: tub })
+  }
+
+  /** A point on the hull's skin at station z and superellipse angle, and the outward normal there. */
+  private skinPoint(z: number, angle: number): THREE.Vector3 {
+    const [w, t, b, y, ex] = this.at(z), p = 2 / Math.max(ex, 1.2), c = Math.cos(angle), s = Math.sin(angle)
+    return new V(w * Math.sign(c) * Math.abs(c) ** p, y + (s >= 0 ? t : b) * Math.sign(s) * Math.abs(s) ** p, z)
+  }
+  private skinNormal(z: number, angle: number): THREE.Vector3 {
+    const side = this.skinPoint(z, angle + .03).sub(this.skinPoint(z, angle - .03)); side.z = 0; side.normalize()
+    const out = new V(side.y, -side.x, 0), p = this.skinPoint(z, angle)
+    if (out.x * p.x + out.y * (p.y - this.at(z)[3]) < 0) out.negate()
+    return out
+  }
+
+  /**
+   * The cockpit rim: a tube swept round the canopy's outline as one closed loop, down the right
+   * edge and back up the left. Its sections stand square to the path, so it stays round where the
+   * outline turns across the nose and tail, and stations crowd toward those two ends, where the
+   * outline curves most. Two straight tubes cut in planes of constant z met there in a notch.
+   */
+  private rimLoop(at: (z: number) => { angle: number; env: number; cw: number }, zStart: number, zEnd0: number, radius: number): THREE.BufferGeometry {
+    // The outline closes to a point at each end, tighter than a tube can turn. Start and stop
+    // where the opening is two tube widths across and close each end with a half circle there.
+    const wide = (from: number, to: number) => { let lo = 0, hi = .5; for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; if (at(from + (to - from) * m).cw < radius * 2) lo = m; else hi = m } return from + (to - from) * hi }
+    const z0 = wide(zStart, zEnd0), z1 = wide(zEnd0, zStart)
+    const half = Math.max(10, Math.round(40 * this.detail)), around = Math.max(6, 2 * Math.round(5 * this.detail))
+    const path: { p: THREE.Vector3; n: THREE.Vector3; r: number }[] = []
+    for (const side of [1, -1]) {
+      for (let i = 0; i <= half; i++) {
+        const s = (1 - Math.cos(Math.PI * i / half)) / 2, z = z0 + (z1 - z0) * (side > 0 ? s : 1 - s), e = at(z)
+        const angle = side > 0 ? e.angle : Math.PI - e.angle
+        path.push({ p: this.skinPoint(z, angle), n: this.skinNormal(z, angle), r: radius * (.5 + .5 * Math.min(1, e.env * 2.2)) })
+      }
+      // Turn across the centre line in a half circle on the skin, not in one hairpin step.
+      const end = path[path.length - 1], zEnd = end.p.z, turn = Math.abs(end.p.x), out = side > 0 ? 1 : -1
+      for (let k = 1; k < 6; k++) {
+        const a = Math.PI * k / 6, x = side * turn * Math.cos(a), z = zEnd + out * turn * Math.sin(a)
+        path.push({ p: new V(x, this.skin(z, x), z), n: new V(0, 1, 0), r: end.r })
+      }
+    }
+    const count = path.length, rings: THREE.Vector3[][] = []
+    for (let j = 0; j <= count; j++) {
+      const { p, n, r } = path[j % count]
+      const tangent = path[(j + 1) % count].p.clone().sub(path[(j + count - 1) % count].p).normalize()
+      const across = new V().crossVectors(tangent, n).normalize(), up = new V().crossVectors(across, tangent)
+      rings.push(Array.from({ length: around }, (_, i) => {
+        const a = i / around * Math.PI * 2
+        return p.clone().addScaledVector(across, r * Math.cos(a)).addScaledVector(up, r * .8 * Math.sin(a) + r * .2)
+      }))
+    }
+    const g = loft(rings, false, false)
+    // The loop closes on its first ring: share the normals there so the join does not show.
+    const normal = g.getAttribute('normal'), width = around + 1, last = count * width
+    for (let i = 0; i < width; i++) {
+      const s = new V(normal.getX(i) + normal.getX(last + i), normal.getY(i) + normal.getY(last + i), normal.getZ(i) + normal.getZ(last + i)).normalize()
+      normal.setXYZ(i, s.x, s.y, s.z); normal.setXYZ(last + i, s.x, s.y, s.z)
+    }
+    return g
   }
 
   /** Distance in metres from the pilot's eye to the nearest canopy or tub surface. */
@@ -367,35 +434,59 @@ export class Builder {
 
   /** Wing, fin or canard. `tipFrom` 0..1 turns the outer part chrome. */
   /** `round: false` keeps the tip full size, for surfaces that meet their mirror image. */
-  surf(keys: number[][], o: { mat?: Mat; tip?: Mat; tipFrom?: number; mirror?: boolean; round?: boolean } = {}): void {
-    for (const m of o.mirror === false ? [false] : [false, true]) {
-      const { rings, t } = surfRings(keys, Math.max(4, Math.round(24 * this.detail)), this.ring(this.hard ? 8 : 22), m, o.round !== false, this.hard)
-      // A surface whose last row is on the centre line meets its mirror image there. Slide its
-      // end section along the span onto the centre plane, so the two halves mitre exactly.
-      const end = keys[keys.length - 1], before = keys[keys.length - 2], dx = (end[0] - before[0]) * (m ? -1 : 1), dy = end[1] - before[1]
-      if (o.mirror !== false && end[0] === 0 && Math.abs(dx) > 1e-6) for (const p of rings[rings.length - 1]) { p.y -= dy / dx * p.x; p.x = 0 }
-      const k = o.tipFrom === undefined ? rings.length - 1 : Math.max(1, t.findIndex(v => v >= o.tipFrom!))
-      // Angular designs keep their wings and fins faceted. The flat normals live in the geometry,
-      // so the shared paint needs no faceted variant of its own.
-      const facet = (g: THREE.BufferGeometry) => { if (!this.hard || this.smooth) return g; const f = g.toNonIndexed(); g.dispose(); f.computeVertexNormals(); return f }
-      // Shade a colour split as one continuous surface, without a seam in its normals.
-      const whole = this.smooth && k < rings.length - 1 ? loft(rings) : undefined
-      const piece = (start: number, end: number, capStart: boolean, capEnd: boolean) => {
-        const geometry = loft(rings.slice(start, end + 1), capStart, capEnd)
-        if (whole) {
-          const source = whole.attributes.normal, target = geometry.attributes.normal
-          const width = rings[0].length + 1
-          for (let i = 0; i < (end - start + 1) * width; i++) {
-            const j = start * width + i
-            target.setXYZ(i, source.getX(j), source.getY(j), source.getZ(j))
-          }
-        }
-        return facet(geometry)
-      }
-      this.add(o.mat ?? (this.hard ? 'panel' : 'paint'), piece(0, k, true, k === rings.length - 1))
-      if (k < rings.length - 1) this.add(o.tip ?? 'chrome', piece(k, rings.length - 1, false, true))
-      whole?.dispose()
+  /**
+   * `flap` is the share of the chord, at the trailing edge, that is a control surface. The fixed
+   * part ends at the hinge line and the moving part is registered in `flaps`, not in `pieces`.
+   * Below detail 0.4 the surface stays whole: at that distance nobody sees it move.
+   */
+  surf(keys: number[][], o: { mat?: Mat; tip?: Mat; tipFrom?: number; mirror?: boolean; round?: boolean; flap?: number } = {}): void {
+    const sides = o.mirror === false ? [false] : [false, true]
+    if (!o.flap || this.detail < .4) { for (const m of sides) this.surfSide(keys, o, m); return }
+    // Two aerofoils in tandem. Each keeps the whole surface's thickness in metres, so the fixed
+    // part closes on the hinge line and the flap's rounded nose sits just behind it.
+    const f = o.flap, gap = .012
+    const fixed = keys.map(([x, y, z, c, t]) => [x, y, z, c * (1 - f), t / (1 - f)])
+    const moving = keys.map(([x, y, z, c, t]) => [x, y, z + c * (1 - f) + gap, c * f - gap, t * .7 / f])
+    const first = keys[0], last = keys[keys.length - 1]
+    for (const m of sides) {
+      this.surfSide(fixed, o, m)
+      const sx = m ? -1 : 1
+      this.captured = []; this.surfSide(moving, o, m)
+      const made = this.captured; this.captured = undefined
+      for (const { mat, geometry } of made) this.flaps.push({
+        mat, geometry,
+        a: [sx * first[0], first[1], first[2] + first[3] * (1 - f) + gap], b: [sx * last[0], last[1], last[2] + last[3] * (1 - f) + gap],
+      })
     }
+  }
+
+  private surfSide(keys: number[][], o: { mat?: Mat; tip?: Mat; tipFrom?: number; mirror?: boolean; round?: boolean }, m: boolean): void {
+    const { rings, t } = surfRings(keys, Math.max(4, Math.round(24 * this.detail)), this.ring(this.hard ? 8 : 22), m, o.round !== false, this.hard)
+    // A surface whose last row is on the centre line meets its mirror image there. Slide its
+    // end section along the span onto the centre plane, so the two halves mitre exactly.
+    const end = keys[keys.length - 1], before = keys[keys.length - 2], dx = (end[0] - before[0]) * (m ? -1 : 1), dy = end[1] - before[1]
+    if (o.mirror !== false && end[0] === 0 && Math.abs(dx) > 1e-6) for (const p of rings[rings.length - 1]) { p.y -= dy / dx * p.x; p.x = 0 }
+    const k = o.tipFrom === undefined ? rings.length - 1 : Math.max(1, t.findIndex(v => v >= o.tipFrom!))
+    // Angular designs keep their wings and fins faceted. The flat normals live in the geometry,
+    // so the shared paint needs no faceted variant of its own.
+    const facet = (g: THREE.BufferGeometry) => { if (!this.hard || this.smooth) return g; const f = g.toNonIndexed(); g.dispose(); f.computeVertexNormals(); return f }
+    // Shade a colour split as one continuous surface, without a seam in its normals.
+    const whole = this.smooth && k < rings.length - 1 ? loft(rings) : undefined
+    const piece = (start: number, end: number, capStart: boolean, capEnd: boolean) => {
+      const geometry = loft(rings.slice(start, end + 1), capStart, capEnd)
+      if (whole) {
+        const source = whole.attributes.normal, target = geometry.attributes.normal
+        const width = rings[0].length + 1
+        for (let i = 0; i < (end - start + 1) * width; i++) {
+          const j = start * width + i
+          target.setXYZ(i, source.getX(j), source.getY(j), source.getZ(j))
+        }
+      }
+      return facet(geometry)
+    }
+    this.add(o.mat ?? (this.hard ? 'panel' : 'paint'), piece(0, k, true, k === rings.length - 1))
+    if (k < rings.length - 1) this.add(o.tip ?? 'chrome', piece(k, rings.length - 1, false, true))
+    whole?.dispose()
   }
 
   /** An engine pod with a chrome inlet spike, mirrored left and right. */
@@ -416,7 +507,7 @@ export class Builder {
   nozzle(z: number, y: number, halfWidth: number, halfHeight: number, x = 0, exponent = 2.2): void {
     const mirror = x !== 0, k = (dz: number, f: number) => [z + dz, halfWidth * f, halfHeight * f, halfHeight * f, y, exponent]
     this.body('chrome', [k(-.12, 1.14), k(.04, 1.12), k(.3, 1), k(.36, .92)], { x, mirror, seg: 3, around: 28, caps: [true, false] })
-    this.body('dark', [k(.36, .92), k(.3, .84), k(.02, .6)], { x, mirror, seg: 3, around: 28, caps: [false, false], inside: true })
+    this.body('dark', [k(.36, .92), k(.3, .84), k(.02, .6)], { x, mirror, seg: 3, around: 28, caps: [false, true], inside: true })
     this.body('glow', [k(-.06, .68), k(.07, .68)], { x, mirror, seg: 1, around: 28 })
     for (const sx of mirror ? [1, -1] : [1]) this.nozzles.push({ x: x * sx, y, z: z + .36, r: Math.max(halfWidth, halfHeight) })
     if (!mirror && !this.gimbal) this.gimbal = { y, z: z + .36, halfWidth: halfWidth * .92, halfHeight: halfHeight * .92 }
