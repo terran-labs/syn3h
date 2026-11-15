@@ -26,6 +26,24 @@ The owner answered the wind question: generated wind only. UX owns removing the 
 wind layer. This supersedes the recording-retention rule for wind only; original music
 and laser recordings remain.
 
+## Sunday 15 November, 9:02am Pacific: new vehicle designs are announced as questions
+
+**Decided** by the owner, in the Hovercraft lead's thread: "Send me a global question
+message whenever new vehicle designs are available, including for the hovercraft, tank, any
+other vehicles. Apply this as a rule in the vehicles thread."
+
+**What it changes.** When a design round is verified live in the shared vehicle lab, its
+lead asks him through Open questions, with the designs as options and the lab link. The
+Vehicles lane records the rule and passes it to every vehicle lead. A lead copies the
+Foreman when it asks.
+
+## Sunday 15 November, 9:05am Pacific: gear names and looks approved
+
+**Decided** by the owner. Player-facing names: Plasma Tag (was tag beam), Plasma Thunder
+(was Big Red), Chaser (was Pesters), Grapple (was Bungee), Yoink. He approved the Weapons
+lane's first recommendation for each item's look and synthesized sound. Internal
+identifiers and wire messages stay as they are.
+
 ## Sunday 15 November, 9:00am Pacific: the rule is what the running game loads
 
 **Decided** by the owner: "Binary assets in the codebase are okay. Binary assets that get
