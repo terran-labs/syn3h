@@ -4,7 +4,7 @@ import type { CordWire, YoinkWire } from '../../shared/protocol'
 import type { Game } from '../core/Game'
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { BotGearAction, BotGearOption } from '../bots/gear'
-import { Bungee, type BungeeHooks } from './bungee/Bungee'
+import { Bungee, BUNGEE_MUZZLE_UP, BUNGEE_MUZZLE_AHEAD, type BungeeHooks } from './bungee/Bungee'
 import { Yoink, type YoinkHooks } from './yoink/Yoink'
 import { BigRed } from './BigRed'
 import type { GearControl } from './aim'
@@ -82,7 +82,11 @@ export class BotGear {
 
   private aim(): void {
     if (!this.target) return
-    const from = this.vehicle.body.translation(), to = this.target.body.translation()
+    const position = this.vehicle.body.translation(), to = this.target.body.translation()
+    const q = this.vehicle.body.rotation()
+    const bungee = this.selected === 'bungee'
+    const from = new THREE.Vector3(0, bungee ? BUNGEE_MUZZLE_UP : 0.4, -(bungee ? BUNGEE_MUZZLE_AHEAD : 2.4))
+      .applyQuaternion(new THREE.Quaternion(q.x, q.y, q.z, q.w)).add(position)
     const size = this.hooks.wrapSize()
     const delta = (n: number) => size > 0 ? n - Math.round(n / size) * size : n
     const d = new THREE.Vector3(delta(to.x - from.x), to.y - from.y, delta(to.z - from.z)).normalize()

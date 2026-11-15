@@ -97,8 +97,8 @@ const EARTH_G = 9.81
 /** Roof hitch above a vehicle's centre, metres. Forces act at the centre, so nothing spins. */
 const HITCH = 0.9
 /** Muzzle, in the vehicle's frame. The hook leaves from the roof. */
-const MUZZLE_UP = 1.1
-const MUZZLE_AHEAD = 1.2
+export const BUNGEE_MUZZLE_UP = 1.1
+export const BUNGEE_MUZZLE_AHEAD = 1.2
 /** Straight ahead aim tilts up this much (radians) so a free cursor still reaches ledges. */
 const LIFT = 0.12
 const DOUBLE_TAP = 0.35
@@ -247,7 +247,7 @@ export class Bungee implements System {
   launch(direction?: [number, number, number]): boolean {
     const me = this.hooks.vehicleOf(this.hooks.self())
     if (!me || !bungeeAllowed.value || this.mine || this.game.time < this.readyAt) return false
-    const aim = aimFrom(this.game, me.body, bungeeLength.value, MUZZLE_UP, MUZZLE_AHEAD, LIFT, !this.hooks.control)
+    const aim = aimFrom(this.game, me.body, bungeeLength.value, BUNGEE_MUZZLE_UP, BUNGEE_MUZZLE_AHEAD, LIFT, !this.hooks.control)
     if (direction) aim.d.set(...direction).normalize()
     const v = me.body.linvel()
     // The hook inherits the vehicle's velocity, so it leaves cleanly at speed.
@@ -653,7 +653,7 @@ export class Bungee implements System {
     const me = this.hooks.vehicleOf(this.hooks.self())
     const show = !this.hooks.control && bungeeAllowed.value && this.hooks.inHand() && !this.mine && me
     if (!show) { this.reticle.visible = false; return }
-    const aim = aimFrom(this.game, me.body, bungeeLength.value, MUZZLE_UP, MUZZLE_AHEAD, LIFT, !this.hooks.control)
+    const aim = aimFrom(this.game, me.body, bungeeLength.value, BUNGEE_MUZZLE_UP, BUNGEE_MUZZLE_AHEAD, LIFT, !this.hooks.control)
     // The aim may pass the camera's target; check what the hook itself would meet first.
     const path = castAim(this.game, aim.o, aim.d, bungeeLength.value, me.body)
     if (!path) { this.reticle.visible = false; return }

@@ -110,6 +110,9 @@ describe('bot gear execution', () => {
     try {
       s.controller.act({ gear: 'bungee', target: s.target, phase: 'press' }); s.step()
       expect(s.cords[0].s).toBe('hook')
+      const hook = s.cords[0] as Extract<CordWire, { s: 'hook' }>
+      const ray = new THREE.Ray(new THREE.Vector3(...hook.o), new THREE.Vector3(...hook.d).normalize())
+      expect(ray.distanceToPoint(new THREE.Vector3(0, 5, -10))).toBeLessThan(0.1)
       expect(s.controller.bungee.mine).toBeDefined()
       s.controller.bungee.applyRemote(1000, { s: 'off' })
       expect(s.controller.bungee.mine).toBeUndefined()
