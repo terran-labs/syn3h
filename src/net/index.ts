@@ -285,7 +285,7 @@ export class NetClient implements System {
     this.blast = new Blast(game, {
       vehicleIds: () => this.vehicleIds(),
       bodyOf: (id) => this.vehicleOf(id)?.body,
-      owns: (id) => this.ownsVehicle(id),
+      owns: (id) => this.ownsVehicle(id) && !materializing(this.vehicleOf(id)),
       wrapSize: () => this.wrapSize,
     })
     this.lasers = new Lasers(game, {
@@ -294,6 +294,7 @@ export class NetClient implements System {
       judgedId: (h) => this.judgedId(h),
       isVehicleBody: (h) => [...this.remotes.values()].some((r) => r.vehicle.body.handle === h),
       onHit: (shooter, shot, victim, at, dir, red) => {
+        if (materializing(this.vehicleOf(shooter)) || materializing(this.vehicleOf(victim))) return
         if (victim === this.id) this.stats.hitsTaken++
         // Big Red shoves in every mode, with some lift. The judging client owns the victim.
         if (red && bigRedPush.value > 0) {
@@ -366,6 +367,7 @@ export class NetClient implements System {
       inHand: () => this.gear.current === 'pester',
       launch: (target) => this.launchPester(target),
       onCatch: (shooter, shot, victim, at, dir) => {
+        if (materializing(this.vehicleOf(shooter)) || materializing(this.vehicleOf(victim))) return
         if (victim === this.id) this.stats.hitsTaken++
         // The caught player's own client bumps it, capped by the room's slider: a sender
         // cannot make this bigger.
@@ -652,7 +654,7 @@ export class NetClient implements System {
    * nothing visible when the room would refuse.
    */
   launchPester(target: number | null): boolean {
-    if (!pesterAllowed.value || target === null) return false
+    if (materializing(this.ctx.player) || !pesterAllowed.value || target === null) return false
     const t = this.ctx.game.time
     if (t - this.lastPester < pesterCooldown.value || this.pesters.mine >= pesterMax.value) return false
     this.lastPester = t
@@ -668,7 +670,7 @@ export class NetClient implements System {
   }
 
   fire(direction?: [number, number, number], target?: { x: number; y: number; z: number }, kind?: 'red'): void {
-    if (kind === 'red' && !bigRedAllowed.value) return
+    if (materializing(this.ctx.player) || (kind === 'red' && !bigRedAllowed.value)) return
     const shot = this.lasers.aim(this.ctx.player.body, this.clock.now())
     if (kind) shot.k = kind
     if (target) direction = [target.x - shot.o[0], target.y - shot.o[1], target.z - shot.o[2]]
@@ -881,7 +883,7 @@ export class NetClient implements System {
   private fireBot(bot: number, direction: [number, number, number], target?: Vehicle): boolean {
     if (!this.isHost) return false
     const vehicle = this.vehicleOf(bot)
-    if (!vehicle) return false
+    if (!vehicle || materializing(vehicle)) return false
     const shot = this.lasers.aim(vehicle.body, this.clock.now())
     shot.d = direction
     if (target) {
@@ -957,9 +959,9 @@ export class NetClient implements System {
   }
 
   private judgedId(handle: number): number | null {
-    if (handle === this.ctx.player.body.handle) return this.id
+    if (handle === this.ctx.player.body.handle) return materializing(this.ctx.player) ? null : this.id
     if (this.isHost && this.bots) {
-      for (const [id, bot] of liveBots(this.bots.vehicles, this.ctx.game.world)) if (bot.body.handle === handle) return id
+      for (const [id, bot] of liveBots(this.bots.vehicles, this.ctx.game.world)) if (bot.body.handle === handle && !materializing(bot)) return id
     }
     return null
   }
@@ -1118,6 +1120,7 @@ export class NetClient implements System {
   }
 
   private touching(a: Vehicle, b: Vehicle): boolean {
+    if (materializing(a) || materializing(b)) return false
     const world = this.ctx.game.world
     let touching = false
     for (let i = 0; i < a.body.numColliders() && !touching; i++) {
@@ -1169,6 +1172,7 @@ export class NetClient implements System {
     const now = this.ctx.player.body.linvel()
     const due = this.shoves.take(this.ctx.game.time, (from) => this.remotes.get(from)?.lastContactAt ?? -Infinity, [now.x, now.y, now.z])
     for (const { from, push } of due) {
+      if (materializing(this.ctx.player) || materializing(this.vehicleOf(from))) continue
       const body = this.ctx.player.body
       // Believe it only from a vehicle that is beside us on our own screen as well.
       const remote = this.remotes.get(from)
@@ -1186,6 +1190,7 @@ export class NetClient implements System {
   }
 
   private onContact(id: number, other: Vehicle, remote?: RemotePlayer): void {
+    if (materializing(this.ctx.player) || materializing(other)) return
     this.stats.rams++
     const a = this.ctx.player.body.linvel()
     const b = other.body.linvel()
@@ -1406,6 +1411,7 @@ export class NetClient implements System {
         if (this.players.has(msg.from)) (this.botGear.get(msg.from)?.yoink ?? this.yoink).applyRemote(msg.from, msg.y)
         break
       case 'shove': {
+        if (materializing(this.ctx.player) || materializing(this.vehicleOf(msg.from))) break
         const push = cleanShove(msg.push)
         if (push) {
           const v = this.ctx.player.body.linvel()
@@ -1711,4 +1717,9 @@ export function startNetworking(ctx: NetContext): NetClient {
   const w = window as unknown as { syn3hNet?: NetClient }
   w.syn3hNet = net
   return net
+}
+
+/** Local-only hold signal. It is not on the wire, so the server cannot veto a remote ram. */
+function materializing(vehicle: Vehicle | undefined): boolean {
+  return vehicle?.object.userData.materializing === true
 }
