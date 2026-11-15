@@ -1,4 +1,8 @@
-/** Normal-entry gear smoke plus host-bot replication. Run through tools/heavy.sh. */
+/**
+ * Normal-entry gear smoke plus host-bot replication. Run through tools/heavy.sh.
+ * For an isolated HTTP server, launch Vite with VITE_SERVER_URL as well as
+ * SYN3H_ROOM_PORT. Set SYN3H_EXPECT_ROOM_URL here to verify the client endpoint.
+ */
 import assert from 'node:assert/strict'
 import { chromium } from 'playwright-core'
 import { mkdir } from 'node:fs/promises'
@@ -24,6 +28,14 @@ try {
     await page.evaluate(room => { const input = document.querySelector('#shell-room'); input.value = room; input.dispatchEvent(new Event('input', { bubbles: true })) }, room)
     await page.locator('.galaxy-label[data-world="volcanic"]').dispatchEvent('click')
     await page.waitForFunction(() => window.syn3h?.shell.playing && !window.syn3h.game.input.suspended && window.syn3hNet?.connected, null, { timeout: 60000 })
+    const endpoint = await page.evaluate(() => window.syn3hNet.conn.url)
+    console.log(`Room connection: ${endpoint}`)
+    if (process.env.SYN3H_EXPECT_ROOM_URL) {
+      const expected = new URL(process.env.SYN3H_EXPECT_ROOM_URL)
+      expected.pathname = '/ws'
+      expected.search = new URLSearchParams({ room }).toString()
+      assert.equal(endpoint, expected.href, 'Client must connect to the isolated room server')
+    }
     return page
   }
   const A = await open(false), B = await open(true)
