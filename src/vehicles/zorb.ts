@@ -47,6 +47,7 @@ import {
 import { defineParam } from '../../shared/params'
 import { GROUP_ALL, GROUP_VEHICLE, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
+import { applyWaterForces, waterSinking } from './buoyancy'
 import { type LiquidState, lavaCoolingTime, lavaViscosity, liquidKind } from './lava'
 import { hotExposureNode } from './skins/hotExposure'
 
@@ -237,6 +238,10 @@ export class ZorbBall {
     const surface = terrain.liquidHeightAt?.(p.x, p.z) ?? -Infinity
     const kind = Number.isFinite(surface) ? liquidKind(terrain as Terrain, p.x, p.z) : null
     if (!kind) return
+    if(kind === 'water' && waterSinking.value){
+      applyWaterForces(this.body,this.world,terrain as Terrain,'zorb',dt,Math.max(MIN_RADIUS,this.radius),p)
+      return
+    }
     const depth = surface - (p.y - Math.max(MIN_RADIUS, this.radius))
     if (depth <= 0) return
     const g = -this.world.gravity.y

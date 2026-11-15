@@ -76,6 +76,8 @@ export interface Terrain {
    * none. Vehicles use it for buoyancy.
    */
   liquidHeightAt?(x: number, z: number): number
+  /** Horizontal water velocity in metres per second; writes into out. */
+  liquidFlowAt?(x: number, z: number, out: { x: number; z: number }): { x: number; z: number }
   /**
    * What the liquid at a world position is: 'lava' is thick and sticky, 'water' floats a
    * vehicle. Null where the
