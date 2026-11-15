@@ -49,3 +49,12 @@ call consolidation. The two study levels vary tread tessellation, not the body s
 
 The default tank exhibit opens this round. Previous rounds remain available as design history.
 The game tank is unchanged until the owner chooses a design.
+
+## Validation
+
+The default study level measures 8,950 to 11,964 triangles and 64 draws per vehicle. All ten
+were captured and inspected from the front, side and rear without page errors. Foundry was
+also inspected in motion, at night, from the cockpit and at a 390 px phone viewport.
+TypeScript and 18 tank tests pass, including checks for six independent carriers, fixed
+pivots, level treads during suspension travel, finite geometry and the triangle limit.
+These checks do not establish game performance or production readiness.

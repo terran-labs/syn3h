@@ -73,11 +73,6 @@ function ring(s: Section, pressure = false) {
     [-w * .74, k], [-w, k + .3], [-w, b], [-rw, roof - .14], [-rw * .82, roof]].map(([x, y]) => v(x, y, z))
 }
 
-function inset(q: Quad, u: number, t: number): Quad {
-  const point = (a: number, b: number) => q[0].clone().lerp(q[1], a).lerp(q[3].clone().lerp(q[2], a), b)
-  return [point(u, t), point(1 - u, t), point(1 - u, 1 - t), point(u, 1 - t)]
-}
-
 function patch(batch: Batch, material: T.Material, surface: Surface, u0 = 0, u1 = 1, t0 = 0, t1 = 1, steps = 1) {
   for (let i = 0; i < steps; i++) {
     const a = t0 + (t1 - t0) * i / steps, b = t0 + (t1 - t0) * (i + 1) / steps
@@ -85,7 +80,7 @@ function patch(batch: Batch, material: T.Material, surface: Surface, u0 = 0, u1 
   }
 }
 
-function surfaceWindow(batch: Batch, m: Mats, surface: Surface, round: boolean, steps: number) {
+function surfaceWindow(batch: Batch, m: Mats, surface: Surface, round: boolean, steps: number, fill = m.field) {
   if (round) {
     // No rectangular plate behind a circular port: both the opening and its metal rim are round.
     const point = (angle: number, radius: number) => surface(.5 + Math.cos(angle) * radius, .5 + Math.sin(angle) * radius)
@@ -109,7 +104,7 @@ function surfaceWindow(batch: Batch, m: Mats, surface: Surface, round: boolean, 
   }
   frame(m.paint, 0, 1, 0, 1, .09, .13)
   frame(m.chrome, .09, .91, .13, .87, .115, .16)
-  patch(batch, m.field, surface, .115, .885, .16, .84, steps)
+  patch(batch, fill, surface, .115, .885, .16, .84, steps)
 }
 
 function cap(batch: Batch, material: T.Material, points: T.Vector3[], rear: boolean) {
@@ -152,6 +147,20 @@ function hull(m: Mats, spec: ExpeditionSpec) {
     const windscreen = i === front && [0, 8, 9].includes(j)
     const sideWindow = i > front && i <= last && [1, 7].includes(j)
     if (windscreen || sideWindow) { surfaceWindow(batch, m, surface, !!spec.portholes && sideWindow, steps); continue }
+    if (spec.radiator?.includes(i) && [1, 7, 9].includes(j)) {
+      // Replace the panel with a framed recess. A decal laid on a curved or twisted quad
+      // sinks into it in places and flickers in others.
+      surfaceWindow(batch, m, surface, false, steps, m.dark)
+      const raised: Surface = (u, t) => {
+        const p = surface(u, t), du = surface(u + .001, t).sub(p), dt = surface(u, t + .001).sub(p)
+        return p.add(du.cross(dt).normalize().multiplyScalar(.025))
+      }
+      for (let k = 1; k < 7; k++) for (let s = 0; s < steps; s++) {
+        const u = .115 + .77 * k / 7
+        batch.rod(m.chrome, raised(u, .16 + .68 * s / steps), raised(u, .16 + .68 * (s + 1) / steps), .018, 5)
+      }
+      continue
+    }
     const under = j >= 3 && j <= 5
     const stripe = spec.stripe === 'shoulders' && [0, 8].includes(j) || spec.stripe === 'belt' && [2, 6].includes(j)
     patch(batch, under ? m.dark : stripe ? m.accent : m.paint, surface, 0, 1, 0, 1, steps)
@@ -160,15 +169,6 @@ function hull(m: Mats, spec: ExpeditionSpec) {
       const c = q[1].clone().lerp(q[2], .57), d = q[0].clone().lerp(q[3], .57)
       for (const p of [a, b, c, d]) p.y += .007
       batch.quad(m.accent, [a, b, c, d])
-    }
-    if (spec.radiator?.includes(i) && [1, 7, 9].includes(j)) {
-      const inner = inset(q, .14, .17)
-      const n = q[1].clone().sub(q[0]).cross(q[3].clone().sub(q[0])).normalize().multiplyScalar(.008)
-      inner.forEach(p => p.add(n)); batch.quad(m.dark, inner)
-      for (let k = 1; k < 7; k++) {
-        const a = inner[0].clone().lerp(inner[1], k / 7), b = inner[3].clone().lerp(inner[2], k / 7)
-        batch.rod(m.chrome, a, b, .018, 5)
-      }
     }
   }
   const endRing = (s: Section) => spec.pressureShell ? Array.from({ length: 30 }, (_, i) => {
@@ -179,10 +179,11 @@ function hull(m: Mats, spec: ExpeditionSpec) {
   lamps(batch, m, spec.sections[0]); lamps(batch, m, spec.sections.at(-1)!, true)
   // Structural bands follow the shell cross-section rather than floating above it.
   for (const i of spec.ribs ?? []) {
-    const a = ring(spec.sections[i], spec.pressureShell), b = a.map(p => p.clone().add(v(0, 0, .095)))
-    for (let j = 0; j < 10; j++) {
-      const expand = (p: T.Vector3) => p.clone().add(v(Math.sign(p.x) * .025, j <= 1 || j >= 7 ? .025 : 0, 0))
-      batch.quad(m.accent, [expand(a[j]), expand(b[j]), expand(b[(j + 1) % 10]), expand(a[(j + 1) % 10])])
+    const a = endRing(spec.sections[i]), b = a.map(p => p.clone().add(v(0, 0, .095)))
+    const middle = (spec.sections[i][2] + spec.sections[i][5]) * .5
+    for (let j = 0; j < a.length; j++) {
+      const expand = (p: T.Vector3) => p.clone().add(v(Math.sign(p.x) * .028, Math.sign(p.y - middle) * .028, 0))
+      batch.quad(m.accent, [expand(a[j]), expand(b[j]), expand(b[(j + 1) % a.length]), expand(a[(j + 1) % a.length])])
     }
   }
   const cabinStart = spec.sections[front + 1], cabinEnd = spec.sections[last + 1]
@@ -213,6 +214,11 @@ function track(m: Mats, width: number, detail: number) {
   const pts = shape.getSpacedPoints(detail > .5 ? 54 : 36).slice(0, -1), n = pts.length, hw = width / 2
   const outer = (i: number, x: number) => v(x, pts[i].y - .76, pts[i].x)
   const inner = (i: number, x: number) => v(x, (pts[i].y - .7) * .82 + .7 - .76, pts[i].x * .88)
+  // The three bearings share a solid cast carrier behind the belt, not an empty triangle.
+  const carrier = (x: number) => [v(x, -.4, -.73), v(x, -.4, .73), v(x, .37, 0)]
+  const a = carrier(-hw * .72), b = carrier(hw * .72)
+  batch.quad(m.dark, [a[0], a[1], a[2], a[0]]); batch.quad(m.dark, [b[2], b[1], b[0], b[2]])
+  for (let i = 0; i < 3; i++) batch.quad(m.dark, [a[i], b[i], b[(i + 1) % 3], a[(i + 1) % 3]])
   for (let i = 0; i < n; i++) {
     const j = (i + 1) % n
     batch.quad(m.rubber, [outer(i, -hw), outer(j, -hw), outer(j, hw), outer(i, hw)])
@@ -265,7 +271,13 @@ function fender(batch: Batch, m: Mats, kind: ExpeditionSpec['fender'], axle: num
     batch.quad(m.dark, [p(i, half, thickness), p(i + 1, half, thickness), p(i + 1, -half, thickness), p(i, -half, thickness)])
     for (const side of [-1, 1]) batch.quad(m.accent, [p(i, side * half), p(i + 1, side * half), p(i + 1, side * half, thickness), p(i, side * half, thickness)])
   }
-  for (const i of [0, profile.length - 1]) batch.quad(m.paint, [p(i, -half), p(i, half), p(i, half, thickness), p(i, -half, thickness)])
+  for (const i of [0, profile.length - 1]) {
+    if (rounded) {
+      const crest = p(i, 0).add(v(0, .09, 0)), base = p(i, 0, thickness)
+      batch.quad(m.paint, [p(i, -half), crest, base, p(i, -half, thickness)])
+      batch.quad(m.paint, [crest, p(i, half), p(i, half, thickness), base])
+    } else batch.quad(m.paint, [p(i, -half), p(i, half), p(i, half, thickness), p(i, -half, thickness)])
+  }
   // A short cast carrier connects each fender directly to its sprocket housing.
   for (const side of [-1, 1]) batch.box(m.dark, [.09, .42, .22], [side * (half - .08), .46, 0])
 }
