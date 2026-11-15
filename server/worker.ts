@@ -7,7 +7,8 @@
  * The Workers runtime types are declared minimally below rather than adding a dependency.
  */
 import type { PlayerInfo } from '../shared/protocol'
-import { REFRESH_MS, RoomRegistry } from './registry'
+import { RoomRegistry, type RegistryEntry } from './registry'
+import { PresenceReporter } from './presenceReporter'
 import { type Peer, Room, type RoomSnapshot } from './room'
 import { REJOIN_GRACE } from '../src/modes/params'
 import { roomName } from './util'
@@ -36,6 +37,7 @@ interface HibernatingWebSocket extends WebSocket {
 }
 interface DurableObjectState {
   storage: DurableObjectStorage
+  waitUntil(promise: Promise<unknown>): void
   acceptWebSocket(ws: WebSocket): void
   getWebSockets(): HibernatingWebSocket[]
   blockConcurrencyWhile<T>(fn: () => Promise<T>): Promise<T>
@@ -65,9 +67,9 @@ export default {
       return env.ROOMS.get(env.ROOMS.idFromName(name)).fetch(req)
     }
     // How many people are playing, in total: counts only. Read before a release.
-    if (url.pathname === '/status') {
+    if (url.pathname === '/status' || url.pathname === '/presence') {
       if (req.method !== 'GET') return new Response('GET only', { status: 405, headers: { allow: 'GET' } })
-      return env.ROOMS.get(env.ROOMS.idFromName(REGISTRY_ID)).fetch(new Request('https://registry/totals'))
+      return env.ROOMS.get(env.ROOMS.idFromName(REGISTRY_ID)).fetch(new Request(`https://registry/${url.pathname === '/presence' ? 'presence' : 'totals'}`))
     }
     return env.ASSETS.fetch(req)
   },
@@ -94,54 +96,41 @@ export class RoomDO {
     })
   }
 
-  /** The count last sent to the registry, and when. -1: nothing sent by this instance. */
-  private reported = -1
-  private reportedAt = 0
+  private readonly reporter = new PresenceReporter(async report => {
+    const response = await this.env.ROOMS.get(this.env.ROOMS.idFromName(REGISTRY_ID))
+      .fetch(new Request('https://registry/report', { method: 'POST', body: JSON.stringify(report) }))
+    if (!response.ok) throw new Error('Registry report failed')
+  })
 
-  /**
-   * Tell the registry how many players are connected here, when that changes and every
-   * REFRESH_MS while there is traffic. Held places (game.rejoin) are not connected and do
-   * not count. Never awaited: counting must not slow or break the game.
-   */
+  /** Counting never blocks gameplay; hold the event alive until ordered delivery finishes. */
   private report(room: Room): void {
-    const players = room.playerCount - room.heldCount
-    const now = Date.now()
-    if (players === this.reported && now - this.reportedAt < REFRESH_MS) return
-    if (players === 0 && this.reported <= 0 && this.reported !== -1) return
-    this.reported = players
-    this.reportedAt = now
-    try {
-      const body = JSON.stringify({ room: room.name, players })
-      void this.env.ROOMS.get(this.env.ROOMS.idFromName(REGISTRY_ID))
-        .fetch(new Request('https://registry/report', { method: 'POST', body }))
-        .catch(() => {})
-    } catch {
-      // Counting must never break the game.
-    }
+    const { seed, ...presence } = room.presence()
+    this.state.waitUntil(this.reporter.report({ room: room.name, ...presence }, seed))
   }
 
   /** Only on the registry instance: the counts, loaded from storage on first use. */
-  private registry: RoomRegistry | null = null
+  private registryReady: Promise<RoomRegistry> | null = null
 
   /** The registry instance's two requests; see REGISTRY_ID. */
   private async registryFetch(req: Request, path: string): Promise<Response> {
-    this.registry ??= new RoomRegistry(await this.state.storage.get<Record<string, { players: number; at: number }>>('counts'))
+    this.registryReady ??= this.state.storage.get<Record<string, RegistryEntry>>('counts').then(saved => new RoomRegistry(saved))
+    const registry = await this.registryReady
     if (path === '/report' && req.method === 'POST') {
-      const body = (await req.json().catch(() => null)) as { room?: unknown; players?: unknown } | null
+      const body = (await req.json().catch(() => null)) as { room?: unknown; players?: unknown; recipeId?: unknown } | null
       if (body && typeof body.room === 'string' && typeof body.players === 'number') {
-        this.registry.report(body.room, body.players, Date.now())
-        await this.state.storage.put('counts', this.registry.save())
+        registry.report(body.room, body.players, Date.now(), body.recipeId)
+        await this.state.storage.put('counts', registry.save())
       }
       return new Response(null, { status: 204 })
     }
-    return new Response(JSON.stringify(this.registry.totals(Date.now())), {
+    return new Response(JSON.stringify(path === '/presence' ? registry.presence(Date.now()) : registry.totals(Date.now())), {
       headers: { 'content-type': 'application/json', 'cache-control': 'no-store' },
     })
   }
 
   async fetch(req: Request): Promise<Response> {
     const path = new URL(req.url).pathname
-    if (path === '/report' || path === '/totals') return this.registryFetch(req, path)
+    if (path === '/report' || path === '/totals' || path === '/presence') return this.registryFetch(req, path)
     const name = roomName(new URL(req.url).searchParams.get('room'))
     const room = this.ensureRoom(name)
     const pair = new WebSocketPair()

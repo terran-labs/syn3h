@@ -44,7 +44,7 @@ export default defineConfig({
     port: 5173,
     allowedHosts: origin ? [origin.hostname] : true,
     // Same-origin /ws keeps HTTPS previews working: a secure page cannot open ws://.
-    proxy: { '/ws': { target: `ws://127.0.0.1:${roomPort}`, ws: true } },
+    proxy: { '/presence': { target: `http://127.0.0.1:${roomPort}` }, '/ws': { target: `ws://127.0.0.1:${roomPort}`, ws: true } },
     hmr: origin ? { protocol: 'wss', host: origin.hostname, clientPort: Number(origin.port || 443) } : undefined,
   },
   build: { target: 'es2022', sourcemap: true },
