@@ -26,7 +26,7 @@
  */
 import * as THREE from 'three/webgpu'
 import {
-  Fn, Loop, abs, clamp, dot, exp, float, interleavedGradientNoise, length, max, min, mix, pass,
+  Fn, If, Loop, abs, clamp, dot, exp, float, interleavedGradientNoise, length, max, min, mix, pass,
   renderOutput, rtt, screenCoordinate, smoothstep, step, uniform, uv, vec2, vec3, vec4,
 } from 'three/tsl'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
@@ -57,6 +57,9 @@ export interface SunSource { readonly sunDirection: THREE.Vector3 }
 
 interface Built {
   key: string
+  /** Quarter resolution shaft targets: skipped entirely while the sun is out of view. */
+  maskTex: N | null
+  raysTex: N | null
   pipeline: THREE.RenderPipeline
   disposables: Array<{ dispose?(): void; renderTarget?: { dispose(): void } }>
 }
@@ -87,7 +90,12 @@ export class PostChain {
     vignette: uniform(0.3),
     grain: uniform(0.35),
     seed: uniform(0),
+    motion: uniform(0),
   }
+  /** Smoothed camera speed in metres a second, for the speed streaks. */
+  private speed = 0
+  private readonly lastCam = new THREE.Vector3()
+  private lastAt = 0
   private readonly grade: Grade = { gain: [1, 1, 1], lift: [0, 0, 0], contrast: 0, saturation: 1 }
   private readonly tmp = new THREE.Vector3()
   private readonly forward = new THREE.Vector3()
@@ -131,7 +139,14 @@ export class PostChain {
     u.vignette.value = P.postVignette.value
     u.grain.value = P.postGrain.value * (tier === 'base' ? 1 : 1)
     u.seed.value = (u.seed.value + 61.7) % 4096
-    this.built!.pipeline.render()
+    u.motion.value = tier === 'full' ? this.updateMotion(camera) * fade : 0
+    // The shaft passes cost nothing while the sun is out of view: their stale contents are
+    // multiplied by a sun visibility of 0, so they are simply not redrawn.
+    const built = this.built!
+    const sunLit = sunVis > 0.001
+    if (built.maskTex) built.maskTex.autoUpdate = sunLit
+    if (built.raysTex) built.raysTex.autoUpdate = sunLit && P.postShafts.value > 0
+    built.pipeline.render()
   }
 
   /** Free the pipeline and every target it made. Safe to repeat. */
@@ -149,6 +164,23 @@ export class PostChain {
     if (on === this.active) return
     this.active = on
     this.host.quality.setPostActive?.(on)
+  }
+
+  /**
+   * Streak amount 0 to 1 from how fast the camera moves: nothing below post.streakSpeed,
+   * full at twice it. Taken from the camera, so it follows whatever is being watched.
+   */
+  private updateMotion(camera: THREE.Camera): number {
+    const now = performance.now()
+    const dt = (now - this.lastAt) / 1000
+    const moved = this.lastCam.distanceTo(camera.position)
+    this.lastCam.copy(camera.position)
+    this.lastAt = now
+    // A teleport, a seam crossing or a pause is not speed.
+    if (dt > 0 && dt < 0.25 && moved / dt < 600) this.speed += (moved / dt - this.speed) * Math.min(1, dt * 4)
+    const from = P.postStreakSpeed.value
+    const amount = Math.min(1, Math.max(0, (this.speed - from) / Math.max(1, from)))
+    return amount * P.postStreaks.value
   }
 
   /** Sun position on screen (top-left origin, as the post quad's uv) and its visibility. */
@@ -170,13 +202,30 @@ export class PostChain {
     this.release()
     const u = this.u as Record<keyof PostChain['u'], N>
     const disposables: Built['disposables'] = []
+    let maskRef: N = null
+    let raysRef: N = null
     const scenePass = pass(scene, camera)
     disposables.push(scenePass as never)
     const color: N = scenePass.getTextureNode('output')
     const depth: N = scenePass.getTextureNode('depth')
     const hot: N = u.bloomThreshold.mul(HOT_CLAMP)
 
-    let hdr: N = color.rgb
+    // Speed streaks: a short radial smear out from the centre, wider towards the edges, only
+    // while the camera is fast. A uniform branch, so it costs nothing when still.
+    const base = Fn(() => {
+      const p = uv()
+      const c = color.sample(p).rgb.toVar()
+      If(u.motion.greaterThan(0.001), () => {
+        const out = p.sub(0.5).mul(u.motion.mul(0.05))
+        const acc = c.toVar()
+        // Jittered per pixel so six taps read as a smear, not six copies.
+        const j = interleavedGradientNoise(screenCoordinate)
+        for (let i = 1; i <= 6; i++) acc.addAssign(color.sample(p.sub(out.mul(j.add(i - 1).div(6)))).rgb)
+        c.assign(acc.div(7))
+      })
+      return c
+    })
+    let hdr: N = tier === 'full' ? base() : color.rgb
 
     if (glowOn) {
       // Geometry only: open sky (depth at the far plane) never feeds the glow. Facing a low
@@ -203,6 +252,7 @@ export class PostChain {
       })
       const maskTex: N = rtt(mask(), null, null, { resolutionScale: 0.25 })
       disposables.push(maskTex)
+      maskRef = maskTex
       const taps = shaftTaps(tier)
       const rays = Fn(() => {
         const p = uv().toVar()
@@ -222,6 +272,7 @@ export class PostChain {
       })
       const raysTex: N = rtt(rays(), null, null, { resolutionScale: 0.25 })
       disposables.push(raysTex)
+      raysRef = raysTex
       // Strongest near the sun, fading across the screen, as light scattered forward does.
       const fromSun = length(uv().sub(u.sunUv).mul(vec2(u.aspect, 1)))
       const fall = exp(fromSun.mul(-1.8))
@@ -275,7 +326,7 @@ export class PostChain {
 
     const pipeline = new THREE.RenderPipeline(renderer, graded())
     pipeline.outputColorTransform = false
-    this.built = { key, pipeline, disposables }
+    this.built = { key, pipeline, disposables, maskTex: maskRef, raysTex: raysRef }
     this.builds++
   }
 }

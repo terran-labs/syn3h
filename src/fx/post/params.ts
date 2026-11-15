@@ -24,6 +24,9 @@ export const postShaftReach = defineParam({ id: 'post.shaftReach', label: 'Sun s
 export const postLowSun = defineParam({ id: 'post.lowSun', label: 'Extra shafts at low sun', group: g, scope: c, default: 0.6, min: 0, max: 3, step: 0.05 })
 export const postFlare = defineParam({ id: 'post.flare', label: 'Lens streak and ghosts', group: g, scope: c, default: 0.5, min: 0, max: 2, step: 0.05 })
 
+export const postStreaks = defineParam({ id: 'post.streaks', label: 'Speed streaks', group: g, scope: c, default: 0.6, min: 0, max: 2, step: 0.05 })
+export const postStreakSpeed = defineParam({ id: 'post.streakSpeed', label: 'Speed streaks start at (m/s)', group: g, scope: c, default: 45, min: 10, max: 200, step: 5 })
+
 export const postLook = defineParam({ id: 'post.look', label: 'Planet colour look', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.05 })
 export const postContrast = defineParam({ id: 'post.contrast', label: 'Contrast', group: g, scope: c, default: 0, min: -0.5, max: 0.5, step: 0.01 })
 export const postSaturation = defineParam({ id: 'post.saturation', label: 'Saturation', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.01 })

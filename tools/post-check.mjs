@@ -32,6 +32,31 @@ await page.waitForFunction(() => window.syn3h?.game?.tick > 25, null, { timeout:
 await page.locator('.shell-play').click({ timeout: 3000 }).catch(() => {})
 await page.waitForFunction(() => window.syn3h?.game?.tick > 25, null, { timeout: 30000 }).catch(async () => { console.log(JSON.stringify({ stuck: true, errors }, null, 2)); await page.screenshot({ path: `${out}/stuck.png` }); process.exit(1) })
 await page.evaluate((sets) => { for (const [k, v] of sets) window.syn3h.params.set(k, isNaN(Number(v)) ? v === 'true' : Number(v)) }, sets)
+// --volcano <distance>: park the vehicle that far from the summit, facing it.
+const volcano = flag('--volcano')
+if (volcano) {
+  const info = await page.evaluate(async (dist) => {
+    const s = window.syn3h, t = s.terrain, top = t.summit?.()
+    if (!top) return null
+    const x = top.x + dist, z = top.z
+    const y = t.heightAt(x, z) + 2
+    // Try both heading conventions; keep the one whose camera ends up facing the summit.
+    const at = () => s.game.camera.position.clone().set(x, y, z)
+    let best = null
+    for (const h of [Math.PI / 2, -Math.PI / 2, 0, Math.PI]) {
+      s.player.teleport(at(), h)
+      await new Promise((r) => setTimeout(r, 1500))
+      const cam = s.game.camera, d = { x: top.x - cam.position.x, z: top.z - cam.position.z }
+      const f = cam.getWorldDirection(cam.position.clone())
+      const score = (f.x * d.x + f.z * d.z) / Math.hypot(d.x, d.z)
+      if (!best || score > best.score) best = { h, score }
+    }
+    s.player.teleport(at(), best.h)
+    await new Promise((r) => setTimeout(r, 1500))
+    return { top, best }
+  }, Number(volcano))
+  console.log('volcano', JSON.stringify(info))
+}
 // --face-sun: turn the sun's azimuth until it sits behind the view centre (the volcano at spawn).
 if (process.argv.includes('--face-sun')) {
   await page.evaluate(() => window.syn3h.params.set('post.on', true))
@@ -46,6 +71,8 @@ if (process.argv.includes('--face-sun')) {
   if (best) await page.evaluate((a) => window.syn3h.params.set('sun.azimuth', a), best.az)
   console.log('sun azimuth', best)
 }
+// --drive: hold W through the views (speed streaks).
+if (process.argv.includes('--drive')) await page.keyboard.down('KeyW')
 const results = []
 for (const hour of hours) {
   await page.evaluate((h) => window.syn3h.params.set('sun.timeOfDay', h), hour)
@@ -55,7 +82,7 @@ for (const hour of hours) {
     const state = await page.evaluate(() => {
       const g = window.syn3h.game
       const chain = g.postChain
-      return { backend: g.backend, tier: chain?.tier, builds: chain?.builds, draws: g.renderer.info.render.drawCalls, exposure: +g.renderer.toneMappingExposure.toFixed(3), level: window.syn3h.params.get('gfx.level').value, sunUv: chain ? [chain.u.sunUv.value.x, chain.u.sunUv.value.y].map((n) => +n.toFixed(3)) : null, sunVis: chain ? +chain.u.sunVis.value.toFixed(3) : null }
+      return { speed: +(chain?.speed ?? 0).toFixed(1), motion: chain ? +chain.u.motion.value.toFixed(3) : null, backend: g.backend, tier: chain?.tier, builds: chain?.builds, draws: g.renderer.info.render.drawCalls, exposure: +g.renderer.toneMappingExposure.toFixed(3), level: window.syn3h.params.get('gfx.level').value, sunUv: chain ? [chain.u.sunUv.value.x, chain.u.sunUv.value.y].map((n) => +n.toFixed(3)) : null, sunVis: chain ? +chain.u.sunVis.value.toFixed(3) : null }
     })
     const shot = `${out}/${webgl ? 'webgl' : 'webgpu'}-h${hour}-${view}.png`
     await page.screenshot({ path: shot })
