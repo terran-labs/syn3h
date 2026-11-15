@@ -42,6 +42,8 @@ export interface YoinkHooks {
   lagOf(id: number): number
   wrapSize(): number
   inHand(): boolean
+  /** False when this client has stopped hearing from player `id`. */
+  responding?(id: number): boolean
   send?(y: YoinkWire): void
   cue?(name: 'yoinkGrab' | 'yoinkFling' | 'yoinkGust', at: THREE.Vector3): void
 }
@@ -61,6 +63,12 @@ const SPIN_DAMP = 3
 /** The gust's cone is wider than the grab's. */
 const GUST_CONE_SCALE = 2
 const GUST_LIFE = 0.35
+/** Seconds past the carry time limit before the carried side ends a carry itself. */
+const CARRY_SLACK = 1
+/** The longest any carry lasts on the carried side, whatever the sliders say. */
+const CARRY_MAX = 30
+/** The room's own allowance for a sender's speed in a fling, m/s (server/room.ts YOINK_OWN_SPEED). */
+const OWN_SPEED = 60
 
 /** Linear RGB at daytime exposure: a warm amber tractor beam. */
 const BEAM_RGB = [3, 1.5, 0.25] as const
@@ -155,7 +163,15 @@ export class Yoink implements System {
 
   /** Another player's Yoink, as relayed. */
   applyRemote(from: number, y: YoinkWire): void {
-    if (from === this.hooks.self()) return
+    if (from === this.hooks.self()) {
+      // The room ended our carry (too long, out of reach, or the load went away): stop
+      // drawing the beam and holding on.
+      if (y.s === 'drop' && this.carries.get(y.to)?.holder === from) {
+        this.endCarry(y.to)
+        this.readyAt = this.game.time + yoinkCooldown.value
+      }
+      return
+    }
     if (y.s === 'grab') this.grab(from, y.to)
     else {
       if (this.carries.get(y.to)?.holder === from) this.endCarry(y.to)
@@ -278,12 +294,20 @@ export class Yoink implements System {
     }
   }
 
-  /** A velocity change for a vehicle, applied only where that vehicle is simulated. */
+  /**
+   * A velocity change for a vehicle, applied only where that vehicle is simulated, and never
+   * more than this room's sliders allow: the room bounds it too, but the pushed player's own
+   * client is the last line of defence and does not trust the sender.
+   */
   private applyFling(id: number, v: readonly number[]): void {
     if (!this.hooks.owns(id)) return
     const body = this.hooks.vehicleOf(id)?.body
     if (!body) return
-    const m = body.mass()
+    const most = flingLimit()
+    const n = Math.hypot(v[0], v[1], v[2])
+    if (!Number.isFinite(n)) return
+    const k = n > most ? most / n : 1
+    const m = body.mass() * k
     body.applyImpulse({ x: v[0] * m, y: v[1] * m, z: v[2] * m }, true)
   }
 
@@ -326,6 +350,16 @@ export class Yoink implements System {
     const load = this.hooks.vehicleOf(to)
     if (!holder || !load) { this.endCarry(to); return }
     if (!this.hooks.owns(to)) return
+    // Our own clock, beside the room's: a carry made by someone else ends after the time
+    // limit plus a second, at 30 s whatever the limit, and as soon as we stop hearing from
+    // the holder.
+    if (c.holder !== this.hooks.self()) {
+      const limit = yoinkHoldTime.value > 0 ? yoinkHoldTime.value + CARRY_SLACK : CARRY_MAX
+      if (this.game.time - c.since > Math.min(limit, CARRY_MAX) || this.hooks.responding?.(c.holder) === false) {
+        this.endCarry(to)
+        return
+      }
+    }
     this.stats.carried++
     const { p: target, v: tv } = this.carryPoint(holder, this.hooks.lagOf(c.holder))
     const lp = load.body.translation()
@@ -375,6 +409,14 @@ export class Yoink implements System {
     this.game.scene.add(mesh)
     this.waves.push({ mesh, age: 0 })
   }
+}
+
+/**
+ * The fastest velocity change a fling or gust may give, m/s: the room's bound
+ * (server/room.ts onYoink) with the most generous allowance for the sender's own speed.
+ */
+export function flingLimit(): number {
+  return Math.max(yoinkFling.value, yoinkPunt.value * 1.3) * 1.25 + OWN_SPEED + 5
 }
 
 function round3(v: readonly number[]): V3 {

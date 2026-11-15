@@ -49,6 +49,7 @@ import { MIN_CLOSING, SHOVE_SHARE, cleanShove } from '../src/net/shove'
 import { wrapDistance } from '../shared/wrap'
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
 import { bungeeAllowed, bungeeLength, bungeeSnap, bungeeVehicles } from '../src/weapons/bungee/params'
+import { bigRedAllowed, bigRedCooldown } from '../src/weapons/bigRedParams'
 import { yoinkAllowed, yoinkCooldown, yoinkFling, yoinkHoldDistance, yoinkHoldTime, yoinkPunt, yoinkPuntRange, yoinkRange } from '../src/weapons/yoink/params'
 import {
   KNOCK_WINDOW, WIN_PAUSE, gameMode, kothKnockBonus, kothRespawnDelay, kothTargetScore, tagCooldown, tagRamReach,
@@ -115,6 +116,8 @@ interface Player {
   /** Server ms until which a dropped player's place is held, or 0 while connected. */
   heldUntil: number
   lastFireAt: number
+  /** Server ms of the last Big Red (Weapons lane), rate limited on its own. */
+  lastRedAt: number
   /** Shots fired recently, by shot id, with server ms of firing. */
   shots: Map<number, number>
   /** Server ms of this player's last tag change. */
@@ -819,12 +822,15 @@ export class Room {
   }
 
   private onFire(peer: Peer, player: Player, shot: unknown): void {
-    if (!this.paramBool(lasersAllowed.def)) return
     if (!isShot(shot)) return
+    // Big Red (shot.k 'red') has its own switch and its own, slower rate; any other kind is refused.
+    const red = shot.k === 'red'
+    if (shot.k !== undefined && !red) return
+    if (!this.paramBool(red ? bigRedAllowed.def : lasersAllowed.def)) return
     const now = this.now()
     // A little slack for jitter between the client's timer and arrival here.
-    const interval = this.paramNumber(laserInterval.def) * 1000 * 0.8
-    if (now - player.lastFireAt < interval) return
+    const interval = this.paramNumber(red ? bigRedCooldown.def : laserInterval.def) * 1000 * 0.8
+    if (now - (red ? player.lastRedAt : player.lastFireAt) < interval) return
     const st = player.lastState
     if (!st || st.paused || now - player.lastStateAt > RESPONDING_MS) return
     const speed = Math.hypot(...st.v)
@@ -834,7 +840,8 @@ export class Room {
     shot.t = Math.min(now / 1000, Math.max(now / 1000 - 1, shot.t))
     const len = Math.hypot(...shot.d)
     shot.d = [shot.d[0] / len, shot.d[1] / len, shot.d[2] / len]
-    player.lastFireAt = now
+    if (red) player.lastRedAt = now
+    else player.lastFireAt = now
     player.shots.set(shot.id, now)
     if (player.shots.size > 64) player.shots.delete(player.shots.keys().next().value as number)
     this.broadcast({ type: 'fire', from: player.info.id, shot }, peer)
@@ -1142,7 +1149,7 @@ export class Room {
     // Joining counts as a tag so a newcomer cannot be tagged in their first seconds.
     const now = this.now()
     return {
-      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, carry: null, yoinkAt: -Infinity, gusted: new Map(), token: null, heldUntil: 0, lastFireAt: -Infinity, shots: new Map(), lastTag: now,
+      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, carry: null, yoinkAt: -Infinity, gusted: new Map(), token: null, heldUntil: 0, lastFireAt: -Infinity, lastRedAt: -Infinity, shots: new Map(), lastTag: now,
       windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now,
     }
   }
