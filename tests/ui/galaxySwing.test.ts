@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { rubberBand, rubberPull, softLimit, springStep, SWING, swingResting, swingStep, type SwingAxis } from '../../src/ui/galaxy/Galaxy'
+import { frameDue, releaseSpeed, rubberBand, rubberPull, softLimit, springStep, SWING, swingResting, swingStep, type SwingAxis } from '../../src/ui/galaxy/Galaxy'
 
 const LOW = -0.2, HIGH = 1.25
 /** Run an axis, let go, for `seconds` at `fps`, with an optional long frame first. */
@@ -71,5 +71,39 @@ describe('galaxy swing', () => {
   })
   it('comes to rest, so the lobby can go idle again', () => {
     expect(swingResting(run({ aim: 0, aimSpeed: 5, view: 0, viewSpeed: 0 }, 6, 30, false, -Infinity, Infinity).end)).toBe(true)
+  })
+  it('follows a flick through a limit the same at 30, 60 and 120 frames a second, mid-flight', () => {
+    // Coasting up into the top limit, crossing it partway through a step at every rate.
+    const start: SwingAxis = { aim: 1.0, aimSpeed: 3.2, view: 1.0, viewSpeed: 3.2 }
+    const at = (fps: number, seconds: number) => run(start, seconds, fps).end
+    for (const seconds of [0.1, 0.2, 0.4]) {
+      const fine = at(120, seconds)
+      for (const fps of [30, 60]) {
+        const coarse = at(fps, seconds)
+        // The aim is solved exactly; the view, following it, within two milliradians (0.11 degrees).
+        expect(Math.abs(coarse.aim - fine.aim)).toBeLessThan(1e-9)
+        expect(Math.abs(coarse.view - fine.view)).toBeLessThan(2e-3)
+      }
+    }
+    // And the furthest it stretches is the same too, inside the most it may.
+    const peaks = [30, 60, 120].map(fps => Math.max(...run(start, 1, fps).trace))
+    for (const peak of peaks) { expect(peak).toBeLessThan(HIGH + SWING.stretch); expect(Math.abs(peak - peaks[2])).toBeLessThan(3e-3) }
+  })
+  it('draws every frame while handled, and thirty a second while idle', () => {
+    expect(frameDue(8, true)).toBe(true)
+    expect(frameDue(8, false)).toBe(false)
+    expect(frameDue(33, false)).toBe(true)
+  })
+  it('measures release speed the same at any pointer rate, and none after a pause', () => {
+    // A steady flick at 2 units a second, sampled at 1000, 240 and 60 Hz.
+    for (const hz of [1000, 240, 60]) {
+      const samples = Array.from({ length: Math.round(hz * 0.3) }, (_, i) => ({ t: i * 1000 / hz, value: 2 * i / hz }))
+      const at = samples[samples.length - 1].t + 1
+      expect(releaseSpeed(samples, at)).toBeGreaterThan(1.9)
+      expect(releaseSpeed(samples, at)).toBeLessThan(2.05)
+      // Held still for a quarter second before letting go: no coast.
+      expect(releaseSpeed(samples, at + 250)).toBe(0)
+    }
+    expect(releaseSpeed([{ t: 0, value: 0 }], 10)).toBe(0)
   })
 })
