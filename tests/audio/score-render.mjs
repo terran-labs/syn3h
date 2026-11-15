@@ -45,6 +45,14 @@ try {
   assert.ok(r.Underwater.brightness < r.Cruise.brightness * 0.7, 'submersion should muffle the mix')
   assert.equal(r['Tag chase'].mode, 'phrygian'); assert.equal(r['Lava field'].mode, 'phrygian'); assert.equal(r.Soaring.mode, 'dorian')
   assert.ok(r['Tag chase'].tempo > r.Parked.tempo + 20, 'a tag chase should raise the tempo')
+  // The modelled string must sound the pitch it is asked for.
+  for (const hz of [130.81, 220, 440, 523.25]) {
+    const pitch = await page.evaluate(async hz => (await import('/src/audio/score/demo.ts')).pluckPitch(hz), hz)
+    const cents = 1200 * Math.log2(pitch.hz / hz)
+    console.log(`pluck ${hz} Hz sounds ${pitch.hz.toFixed(2)} Hz (${cents.toFixed(1)} cents), level ${pitch.level.toFixed(3)}`)
+    assert.ok(pitch.level > 0.01, 'the string should sound')
+    assert.ok(Math.abs(cents) < 6, `the string is out of tune by ${cents.toFixed(1)} cents`)
+  }
   // The arc: cue a build during a cruise and check the breath dips and the release lands above it.
   const arc = await page.evaluate(async () => {
     const { renderScene, wav } = await import('/src/audio/score/demo.ts')
