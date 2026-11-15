@@ -15,6 +15,10 @@
     "stable": {
       "type": "service",
       "command": "exec node tools/serve-stable.mjs --dir ../Syn3h-stable/current --port \"$PASEO_PORT\""
+    },
+    "scorelab": {
+      "type": "service",
+      "command": "SYN3H_NO_ROOM_SERVER=1 npx vite --host 127.0.0.1 --port $PASEO_PORT --strictPort"
     }
   }
 }

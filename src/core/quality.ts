@@ -1,4 +1,5 @@
 /** Local rendering budgets. World parameters and physics resolution are never changed here. */
+import { graphicsOverride } from './renderOptions'
 import { defineParam, params } from '../../shared/params'
 import type { WebGPURenderer } from 'three/webgpu'
 export type GraphicsLevel = 0 | 1 | 2
@@ -13,9 +14,11 @@ export const QUALITY = [
 /**
  * Vehicle surface shading, read by the vehicle skins: 0 plain standard materials, 1 lit
  * procedural detail, 2 adds the clear coat and glass, 3 adds flakes and iridescence. The
- * frame governor lowers this before it gives up a whole graphics level.
+ * frame governor lowers this before it gives up a whole graphics level. The default is plain:
+ * the governor raises it to what the device's graphics level allows, so a build without the
+ * governor never puts the costly tiers on a phone.
  */
-export const vehicleShading = defineParam({ id: 'gfx.vehicleShading', label: 'Vehicle shading: 0 plain to 3 showroom', group: 'Graphics', scope: 'client', default: 3, min: 0, max: 3, step: 1 })
+export const vehicleShading = defineParam({ id: 'gfx.vehicleShading', label: 'Vehicle shading: 0 plain to 3 showroom', group: 'Graphics', scope: 'client', default: 0, min: 0, max: 3, step: 1 })
 export const levelNumber = (value: number): GraphicsLevel => Math.max(0, Math.min(2, Math.round(Number.isFinite(value) ? value : 0))) as GraphicsLevel
 export function qualityBudget() { return QUALITY[levelNumber(graphicsLevel.value)] }
 export interface DeviceHints { userAgent: string; touchPoints: number; memoryGB?: number; adapter?: 'available' | 'missing' | 'fallback'; maxTextureDimension2D?: number }
@@ -452,10 +455,16 @@ export class QualityController {
     this.detected = classifyDevice({ userAgent: nav.userAgent, touchPoints: nav.maxTouchPoints, memoryGB: nav.deviceMemory })
     const pending = storageRead(this.storage, LOAD_KEY)
     if (pending !== null) this.crashCap = Math.max(0, levelNumber(Number(pending)) - 1) as GraphicsLevel
-    this.write(graphicsLevel.def.id, beginLoad(this.storage, this.detected))
+    const initial = beginLoad(this.storage, this.detected)
+    // A level in the address (?gfx=) is a choice made by hand for this page load. It pins the
+    // level like a hand-set gfx.level: rungs inside it may still be shed, the level itself is
+    // never dropped or raised. It is not remembered in storage, so the next plain load is automatic.
+    const override = graphicsOverride(location.search)
+    this.write(graphicsLevel.def.id, override ?? initial)
+    storageWrite(this.storage, LOAD_KEY, String(graphicsLevel.value))
     this.governor = new QualityGovernor({
       level: levelNumber(graphicsLevel.value), ceiling: Math.min(this.detected, this.crashCap) as GraphicsLevel, devicePixelRatio: window.devicePixelRatio || 1,
-      auto: autoQuality.value, levelPinned: storageRead(this.storage, MANUAL_KEY) !== null,
+      auto: autoQuality.value, levelPinned: override !== undefined || storageRead(this.storage, MANUAL_KEY) !== null,
     })
     reportLoading('device', 0.05)
     this.probeDisplay()

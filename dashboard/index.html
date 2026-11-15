@@ -104,6 +104,15 @@
   .veh a.try { display: inline-block; margin-top: 10px; font: 500 13px "Barlow Condensed"; letter-spacing: .12em; text-transform: uppercase; }
   .legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 14px; font-size: 12.5px; color: var(--ink-3); }
   .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .links { margin-bottom: 16px; }
+  .links .g { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--line); }
+  .links .g:first-child { border-top: 0; padding-top: 0; }
+  .links .g h3 { flex: 0 0 100%; margin: 0; font: 500 13px "Barlow Condensed"; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-2); }
+  .links .g h3 span { text-transform: none; letter-spacing: 0; color: var(--ink-3); font: 400 12.5px inherit; margin-left: 8px; }
+  .links a { padding: 5px 11px; border-radius: 999px; border: 1px solid var(--line); background: rgb(255 110 40 / .07); color: var(--ink); font-size: 13.5px; }
+  .links a:hover { background: rgb(255 110 40 / .16); text-decoration: none; }
+  .links a.down { opacity: .5; text-decoration: line-through; background: transparent; }
+  .links a.down::after { content: " (down)"; }
   footer { margin-top: 30px; display: flex; gap: 18px; align-items: center; color: var(--ink-3); font-size: 13px; flex-wrap: wrap; }
   footer img { height: 34px; opacity: .85; }
 </style>
@@ -120,6 +129,8 @@
     <img class="syn" src="assets/syn3h-logo-sun-1024x512.png" alt="Syn3h" />
     <div class="live"><i></i><span id="updated">connecting</span><br /><span id="deadline"></span></div>
   </header>
+
+  <section class="card links"><div id="links"></div></section>
 
   <div class="grid">
     <section class="card c7">
@@ -204,11 +215,13 @@ async function refresh() {
     $('milestones').innerHTML = ms.map((m) => row(m.state, m.title, m.detail)).join('')
     $('workers').innerHTML = (s.workers ?? []).map((w) => row(w.state, w.name, w.detail)).join('') || '<div class="muted">None running.</div>'
     $('decisions').innerHTML = (s.decisions ?? []).map((d) => row(d.state ?? 'waiting', d.title, d.detail)).join('') || '<div class="muted">Nothing right now.</div>'
-    $('known').innerHTML = (s.knownIssues ?? []).map((k) => `<div class="row"><div><div class="t">${esc(k.title)}</div><div class="d">${esc(k.detail)}</div></div></div>`).join('') || '<div class="muted">None recorded.</div>'
+    const issues = (list) => (list ?? []).map((k) => `<div class="row"><div><div class="t">${esc(k.title)}</div><div class="d">${esc(k.detail)}</div></div></div>`).join('') || '<div class="muted">None recorded.</div>'
+    $('known').innerHTML = `<div class="muted">On www.syn3h.com (release 1)</div>${issues(s.knownIssues)}<div class="muted" style="margin-top:14px">On the preview (trunk, becomes release 2)</div>${issues(s.knownIssuesTrunk)}`
     $('strategy').innerHTML = (s.strategy ?? []).map((p) => `<div class="row"><div><div class="t">${esc(p.title)}</div><div class="d">${esc(p.detail)}</div></div></div>`).join('')
     $('accounts').innerHTML = (s.accounts ?? []).map((a) => row(a.state, a.name, a.detail)).join('')
     $('vehiclesNote').textContent = (s.vehiclesNote ?? '') + (s.vehiclesUpdated ? ' Updated ' + s.vehiclesUpdated + '.' : '')
     $('vehicles').innerHTML = (s.vehicles ?? []).map((v) => `<div class="veh"><h3>${esc(v.name)}<span class="tag ${esc(v.overall)}">${esc({ done: 'playable', active: 'in progress', waiting: 'partial', next: 'not built' }[v.overall] ?? v.overall)}</span></h3><div class="role">${esc(v.role)}</div><div class="sum">${esc(v.summary)}</div><div class="meter">${v.aspects.map((x) => `<i class="${esc(x.state)}" title="${esc(x.name)}"></i>`).join('')}</div>${v.aspects.map((x) => `<div class="asp"><div class="dot ${esc(x.state)}"></div><div><b>${esc(x.name)}.</b> <span>${esc(x.detail)}</span></div></div>`).join('')}${v.url ? `<a class="try" href="${esc(v.url)}" target="_blank" rel="noopener">Drive it ›</a>` : ''}</div>`).join('') + '<div class="legend" style="grid-column:1/-1"><span><i style="background:rgb(var(--ok))"></i>Done and checked</span><span><i style="background:rgb(var(--run))"></i>In progress</span><span><i style="background:rgb(var(--wait))"></i>Caveat or approximation</span><span><i style="border:1px solid rgb(var(--wait))"></i>Not started</span></div>'
+    $('links').innerHTML = (s.links ?? []).map((g) => `<div class="g"><h3>${esc(g.group)}<span>${esc(g.note ?? '')}</span></h3>${g.items.map((i) => `<a class="${i.up === false ? 'down' : ''}" href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a>`).join('')}</div>`).join('')
     $('previews').innerHTML = (s.previews ?? []).map((p) => `<a class="p" href="${esc(p.url)}" target="_blank" rel="noopener"><b>${esc(p.title)}</b>${esc(p.detail)}</a>`).join('') || '<div class="none">No previews yet. The first one will be the buggy on Martian terrain.</div>'
     $('branches').innerHTML = (s.git?.branches ?? []).map((b) => `<tr><td class="mono">${esc(b.name)}</td><td>${b.ahead || ''}</td><td>${esc(b.subject)}<div class="muted">${esc(b.when)}</div></td></tr>`).join('')
     $('commits').innerHTML = (s.git?.commits ?? []).map((c) => `<tr><td class="mono">${esc(c.hash)}</td><td>${esc(c.subject)}<div class="muted">${esc(c.when)}${c.refs ? ' · ' + esc(c.refs) : ''}</div></td></tr>`).join('')

@@ -50,6 +50,12 @@ export const FLAG_SPECIAL = 2
 export const FLAG_FIRE = 4
 /** The sender's tab is hidden: this is a heartbeat repeating its last pose. */
 export const FLAG_PAUSED = 8
+/**
+ * The sender rides in a zorb ball (src/vehicles/zorb.ts). Older clients ignore the bit and the
+ * server relays state bytes unchanged, so mixed versions interoperate; an old client simply
+ * does not draw or collide with the ball.
+ */
+export const FLAG_ZORB = 16
 
 /**
  * Layout of a state record. The player id slot is written as 0 by the sender and
@@ -75,6 +81,8 @@ export interface WireInput {
   brakes: boolean
   special: boolean
   fire: boolean
+  /** Optional on the way in so older callers still type check; always set by `decodeState`. */
+  zorb?: boolean
 }
 
 export interface WireState {
@@ -109,7 +117,7 @@ export function encodeState(s: WireState, out?: Uint8Array): Uint8Array {
   dv.setInt8(O_IN + 1, clampAxis(s.input.y))
   dv.setInt8(O_IN + 2, clampAxis(s.input.z))
   dv.setInt8(O_IN + 3, clampAxis(s.input.w))
-  dv.setUint8(O_FLAGS, (s.input.brakes ? FLAG_BRAKES : 0) | (s.input.special ? FLAG_SPECIAL : 0) | (s.input.fire ? FLAG_FIRE : 0) | (s.paused ? FLAG_PAUSED : 0))
+  dv.setUint8(O_FLAGS, (s.input.brakes ? FLAG_BRAKES : 0) | (s.input.special ? FLAG_SPECIAL : 0) | (s.input.fire ? FLAG_FIRE : 0) | (s.paused ? FLAG_PAUSED : 0) | (s.input.zorb ? FLAG_ZORB : 0))
   return buf
 }
 
@@ -139,6 +147,7 @@ export function decodeState(data: ArrayBuffer | Uint8Array): WireState | null {
       brakes: (flags & FLAG_BRAKES) !== 0,
       special: (flags & FLAG_SPECIAL) !== 0,
       fire: (flags & FLAG_FIRE) !== 0,
+      zorb: (flags & FLAG_ZORB) !== 0,
     },
     paused: (flags & FLAG_PAUSED) !== 0,
     bot: kind === BIN_BOT_STATE,
@@ -261,8 +270,12 @@ export type ClientMessage =
    * reports hits on bots, naming the bot as `victim`.
    */
   | { type: 'hit'; shooter: number; shot: number; victim?: number }
-  /** Sent by a client whose vehicle touched another player's vehicle. */
-  | { type: 'ram'; other: number }
+  /**
+   * Sent by a client whose vehicle touched another player's vehicle. `push` is the velocity
+   * change, m/s, the rammer's client worked out for the other vehicle; the server relays it
+   * to that player as `shove`. See src/net/shove.ts.
+   */
+  | { type: 'ram'; other: number; push?: [number, number, number] }
   /** Host only: lock or unlock shared parameters for everyone else. */
   | { type: 'lock'; locked: boolean }
   /** Host only: the King of the Hill zone it computed from the terrain. */
@@ -299,6 +312,8 @@ export type ServerMessage =
   | { type: 'param'; id: string; value: ParamWireValue; from: number }
   | { type: 'fire'; from: number; shot: ShotInfo }
   | { type: 'hit'; shooter: number; victim: number; shot: number }
+  /** Player `from` rammed you: the velocity change to apply if your own physics missed it. */
+  | { type: 'shove'; from: number; push: [number, number, number] }
   | { type: 'game'; game: GameState; event?: TagEvent; actor?: number; target?: number }
   /**
    * The room's world was replaced: set every world parameter to its default, then apply

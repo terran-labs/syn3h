@@ -62,7 +62,10 @@ export interface TerrainRenderQuality {
 export interface Terrain {
   /** Side length in metres. The terrain is centred on the origin. */
   readonly size: number
-  /** Ground height in metres at a world position. Must match the physics collider. */
+  /**
+   * Ground height in metres at a world position. Must match the physics collider. On a
+   * wrapping terrain any x and z are accepted and the result repeats every `wrapSize`.
+   */
   heightAt(x: number, z: number): number
   /** Unit ground normal at a world position. */
   normalAt(x: number, z: number, out: THREE.Vector3): THREE.Vector3
@@ -98,6 +101,16 @@ export interface Terrain {
   summit?(): TerrainSummit | null
   /** Reduce or restore render detail (level of detail distances). Visual only. */
   setRenderQuality?(quality: TerrainRenderQuality): void
+  /**
+   * Side of the wrapping tile in metres, when the world wraps: leaving by one edge arrives at
+   * the opposite one. Undefined means the world does not wrap. Positions are canonical in
+   * [-wrapSize / 2, wrapSize / 2); compare positions with shared/wrap.ts.
+   */
+  readonly wrapSize?: number
+  /** Bring p into the canonical range in place. Returns true if it moved (by whole tiles). */
+  wrapPosition?(p: { x: number; z: number }): boolean
+  /** The image of (x, z) nearest to (refX, refZ), written to `out`. */
+  nearestTo?(x: number, z: number, refX: number, refZ: number, out: { x: number; z: number }): { x: number; z: number }
   dispose(): void
 }
 

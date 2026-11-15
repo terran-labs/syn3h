@@ -22,7 +22,7 @@ export const terrainRoughness = defineParam({
   ...P, id: 'terrain.roughness', label: 'Roughness', default: 0.5, min: 0, max: 1, step: 0.01,
 })
 export const terrainMesaHeight = defineParam({
-  ...P, id: 'terrain.mesaHeight', label: 'Mountain height', default: 120, min: 0, max: 220, step: 2,
+  ...P, id: 'terrain.mesaHeight', label: 'Mountain height', default: 120, min: 0, max: 360, step: 2,
 })
 export const terrainIslandRadius = defineParam({
   ...P, id: 'terrain.islandRadius', label: 'Island size (radius)', default: 800, min: 480, max: 824, step: 4,
@@ -37,6 +37,12 @@ export const terrainSpireHeight = defineParam({
   ...P, id: 'terrain.spireHeight', label: 'Spire height', default: 190, min: 0, max: 300, step: 5,
 })
 
+export const terrainLandShare = defineParam({
+  ...P, id: 'terrain.landShare', label: 'Land share (0 all sea, 1 all land)', default: 0.5, min: 0.3, max: 0.85, step: 0.01,
+})
+export const terrainPlanetSize = defineParam({
+  ...P, id: 'terrain.planetSize', label: 'Planet size: 0 small, 1 medium, 2 large', default: 1, min: 0, max: 2, step: 1,
+})
 export const terrainTreeCover = defineParam({
   ...P, id: 'terrain.treeCover', label: 'Plant cover', default: 0.5, min: 0, max: 1, step: 0.01,
 })
@@ -51,6 +57,14 @@ export const terrainKind = defineParam({
 /** What the sea is made of. A look and feel choice: it does not change the shape of the land. */
 export const worldSeaKind = defineParam({
   id: 'world.seaKind', label: 'Sea: 0 lava, 1 water', group: 'World', scope: 'world', default: 0, min: 0, max: 1, step: 1,
+})
+/**
+ * Whether the world wraps for gameplay: vehicles, cameras, bots and the network carry
+ * things across the seam. The ground is always drawn and collided across the seam; this
+ * switch only tells the rest of the game to act on it, so each part can land dark.
+ */
+export const worldWrap = defineParam({
+  id: 'world.wrap', label: 'Wrapping world', group: 'World', scope: 'world', default: false,
 })
 export const KIND_VOLCANIC = 0
 export const KIND_DESERT = 1
@@ -71,6 +85,10 @@ export interface TerrainSettings {
   spireHeight: number
   /** KIND_VOLCANIC, KIND_DESERT or KIND_ALPINE. */
   kind: number
+  /** 0..1 share of the tile that is land. */
+  landShare: number
+  /** 0 small (1 km tile), 1 medium (2 km), 2 large (4 km). */
+  planetSize: number
   /** 0..1 share of the land in forest. */
   treeCover: number
 }
@@ -87,6 +105,8 @@ export const TERRAIN_PARAMS: Record<keyof TerrainSettings, Param<number>> = {
   cragDensity: terrainCragDensity,
   spireHeight: terrainSpireHeight,
   kind: terrainKind,
+  landShare: terrainLandShare,
+  planetSize: terrainPlanetSize,
   treeCover: terrainTreeCover,
 }
 
