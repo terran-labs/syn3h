@@ -50,6 +50,7 @@ import { wrapDistance } from '../shared/wrap'
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
 import { bungeeAllowed, bungeeLength, bungeeSnap, bungeeVehicles } from '../src/weapons/bungee/params'
 import { bigRedAllowed, bigRedCooldown } from '../src/weapons/bigRedParams'
+import { pesterAllowed, pesterCooldown, pesterLife, pesterMax, pesterRange } from '../src/weapons/pester/params'
 import { yoinkAllowed, yoinkCooldown, yoinkFling, yoinkHoldDistance, yoinkHoldTime, yoinkPunt, yoinkPuntRange, yoinkRange } from '../src/weapons/yoink/params'
 import {
   KNOCK_WINDOW, WIN_PAUSE, gameMode, kothKnockBonus, kothRespawnDelay, kothTargetScore, tagCooldown, tagRamReach,
@@ -118,6 +119,11 @@ interface Player {
   lastFireAt: number
   /** Server ms of the last Big Red (Weapons lane), rate limited on its own. */
   lastRedAt: number
+  /** Live Pesters (Weapons lane): shot id to server ms of launch. Capped at pester.max. */
+  pesters: Map<number, number>
+  /** Who each live Pester chases. */
+  pesterTargets: Map<number, number>
+  lastPesterAt: number
   /** Shots fired recently, by shot id, with server ms of firing. */
   shots: Map<number, number>
   /** Server ms of this player's last tag change. */
@@ -823,10 +829,12 @@ export class Room {
 
   private onFire(peer: Peer, player: Player, shot: unknown): void {
     if (!isShot(shot)) return
+    if (shot.k === 'pester') { this.onPester(peer, player, shot); return }
     // Big Red (shot.k 'red') has its own switch and its own, slower rate; any other kind is refused.
     const red = shot.k === 'red'
     if (shot.k !== undefined && !red) return
     if (!this.paramBool(red ? bigRedAllowed.def : lasersAllowed.def)) return
+    delete shot.to
     const now = this.now()
     // A little slack for jitter between the client's timer and arrival here.
     const interval = this.paramNumber(red ? bigRedCooldown.def : laserInterval.def) * 1000 * 0.8
@@ -845,6 +853,37 @@ export class Room {
     player.shots.set(shot.id, now)
     if (player.shots.size > 64) player.shots.delete(player.shots.keys().next().value as number)
     this.broadcast({ type: 'fire', from: player.info.id, shot }, peer)
+  }
+
+  /**
+   * A Pester launch (Weapons lane): a shot of kind 'pester' chasing vehicle `to`. Its own
+   * switch, its own rate, at most pester.max out per player, and a target that is in the room,
+   * not the sender, and within range round the wrap. A catch is reported by the caught
+   * player's own client as a hit, checked in onHit against the Pester's own lifetime.
+   */
+  private onPester(peer: Peer, player: Player, shot: ShotInfo): void {
+    if (!this.paramBool(pesterAllowed.def)) return
+    const now = this.now()
+    if (now - player.lastPesterAt < this.paramNumber(pesterCooldown.def) * 1000 * 0.8) return
+    const life = (this.paramNumber(pesterLife.def) + 1) * 1000
+    for (const [id, at] of player.pesters) if (now - at > life) { player.pesters.delete(id); player.pesterTargets.delete(id) }
+    if (player.pesters.size >= this.paramNumber(pesterMax.def)) return
+    const st = player.lastState
+    if (!st || st.paused || now - player.lastStateAt > RESPONDING_MS) return
+    if (this.dist(shot.o, st.p) > 8 + Math.hypot(...st.v) * 0.5) return
+    const target = typeof shot.to === 'number' ? this.byId(shot.to) : undefined
+    if (!target || target === player || !target.lastState) return
+    if (this.dist(target.lastState.p, st.p) > this.paramNumber(pesterRange.def) * 1.2 + 20) return
+    shot.t = Math.min(now / 1000, Math.max(now / 1000 - 1, shot.t))
+    const len = Math.hypot(...shot.d)
+    shot.d = [shot.d[0] / len, shot.d[1] / len, shot.d[2] / len]
+    shot.boost = 0
+    player.lastPesterAt = now
+    player.pesters.set(shot.id, now)
+    player.pesterTargets.set(shot.id, target.info.id)
+    player.shots.set(shot.id, now)
+    if (player.shots.size > 64) player.shots.delete(player.shots.keys().next().value as number)
+    this.broadcast({ type: 'fire', from: player.info.id, shot: { id: shot.id, o: shot.o, d: shot.d, boost: 0, t: shot.t, k: 'pester', to: target.info.id } }, peer)
   }
 
   /**
@@ -992,8 +1031,14 @@ export class Room {
     const firedAt = shooter.shots.get(shotId)
     if (firedAt === undefined) return
     const now = this.now()
-    if (now - firedAt > (laserLifetime(this.paramNumber(laserSpeed.def)) + 1) * 1000) return
+    const pester = shooter.pesters.has(shotId)
+    const lifetime = pester ? this.paramNumber(pesterLife.def) : laserLifetime(this.paramNumber(laserSpeed.def))
+    if (now - firedAt > (lifetime + 1) * 1000) return
+    // A Pester catches only the vehicle it was sent after.
+    if (pester && shooter.pesterTargets.get(shotId) !== victim.info.id) return
     shooter.shots.delete(shotId)
+    shooter.pesters.delete(shotId)
+    shooter.pesterTargets.delete(shotId)
     this.broadcast({ type: 'hit', shooter: shooter.info.id, victim: victim.info.id, shot: shotId })
     if (this.mode !== MODE_TAG) {
       // On the hill a tag beam is a shove, and counts as contact for dunks.
@@ -1149,7 +1194,7 @@ export class Room {
     // Joining counts as a tag so a newcomer cannot be tagged in their first seconds.
     const now = this.now()
     return {
-      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, carry: null, yoinkAt: -Infinity, gusted: new Map(), token: null, heldUntil: 0, lastFireAt: -Infinity, lastRedAt: -Infinity, shots: new Map(), lastTag: now,
+      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, carry: null, yoinkAt: -Infinity, gusted: new Map(), token: null, heldUntil: 0, lastFireAt: -Infinity, lastRedAt: -Infinity, pesters: new Map(), pesterTargets: new Map(), lastPesterAt: -Infinity, shots: new Map(), lastTag: now,
       windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now,
     }
   }

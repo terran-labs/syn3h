@@ -12,9 +12,10 @@ import type { Game, System } from '../core/Game'
 import { bungeeAllowed } from './bungee/params'
 import { yoinkAllowed } from './yoink/params'
 import { bigRedAllowed } from './bigRedParams'
+import { pesterAllowed } from './pester/params'
 import { lasersAllowed } from './params'
 
-export type GearId = 'beam' | 'bungee' | 'yoink' | 'red'
+export type GearId = 'beam' | 'bungee' | 'yoink' | 'red' | 'pester'
 
 /** Player-facing names. Kept here so the wording test sees them. */
 export const GEAR_LABELS: Record<GearId, string> = {
@@ -22,11 +23,12 @@ export const GEAR_LABELS: Record<GearId, string> = {
   bungee: 'Bungee',
   yoink: 'Yoink',
   red: 'Big Red',
+  pester: 'Pesters',
 }
 
-const ORDER: GearId[] = ['beam', 'red', 'bungee', 'yoink']
+const ORDER: GearId[] = ['beam', 'red', 'pester', 'bungee', 'yoink']
 
-const ALLOWED: Record<GearId, { value: boolean }> = { beam: lasersAllowed, bungee: bungeeAllowed, yoink: yoinkAllowed, red: bigRedAllowed }
+const ALLOWED: Record<GearId, { value: boolean }> = { beam: lasersAllowed, bungee: bungeeAllowed, yoink: yoinkAllowed, red: bigRedAllowed, pester: pesterAllowed }
 
 export class GearRack implements System {
   private chosen: GearId = 'beam'
