@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { easeInOutQuad, easeOutQuad, PANEL_TRANSITION_MS } from '../../src/ui/SlidingPanels'
 import { parseScoreRow } from '../../src/ui/Scoreboard'
-describe('recovered panel timing', () => {
-  it('uses the serialized two-second duration and quadratic easing', () => {
-    expect(PANEL_TRANSITION_MS).toBe(2000)
+describe('direct panel timing', () => {
+  it('uses one short transition and bounded easing', () => {
+    expect(PANEL_TRANSITION_MS).toBe(240)
     expect(easeInOutQuad(0)).toBe(0); expect(easeInOutQuad(0.5)).toBe(0.5); expect(easeInOutQuad(1)).toBe(1)
     expect(easeOutQuad(0.5)).toBe(0.75)
   })
