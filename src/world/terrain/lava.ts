@@ -9,10 +9,11 @@
  *     A disc of `radius` at height `surface` filling the caldera. The crater walls rise
  *     above the surface, so the part of the disc under them is hidden by the terrain.
  *
- *   data.lava.rivers: LavaRiver[]   (2 to 4 when the flanks allow)
+ *   data.lava.rivers: LavaRiver[]   (usually 3 to 8)
  *     { points: {x, y, z}[], width, pool, bounds }
- *     Polyline about 6 m per point from the source (just below the rim road) downhill to
- *     its pool. y is the lava surface, never increasing along the river. `width` is the
+ *     Polyline about 6 m per point from its source downhill to its pool. Sources are just
+ *     below the rim road and just below each place the volcano road crosses that flank,
+ *     so one flow down the mountain is two or three rivers, broken where the road passes. y is the lava surface, never increasing along the river. `width` is the
  *     lava ribbon width; the carved channel is a little wider. `pool` is the pool it
  *     feeds (also listed in data.lava.pools). `bounds` is the xz bounding box, for fast
  *     queries.
@@ -88,6 +89,8 @@ const CHANNEL_DEPTH = 2.4
 /** Lava depth in the channel: the surface sits this far above the bed. */
 const RIVER_LAVA_DEPTH = 1.4
 const RIVER_STEP = 6
+/** Shorter stretches between roads are not worth a river. */
+const MIN_RIVER_LENGTH = 72
 /** Minimum distance from a river centreline to a road centreline. */
 export const ROAD_CLEARANCE = ROAD_FLAT_HALF + ROAD_SHOULDER + CHANNEL_HALF * 1.6 + 4
 const SCORCH_RADIUS = 18
@@ -136,41 +139,60 @@ function planRivers(data: TerrainData, s: HeightSampler): Planned[] {
     const t = dirs[i]; dirs[i] = dirs[j]; dirs[j] = t
   }
 
+  // The volcano road spirals round the whole cone, so a river from the summit meets it
+  // somewhere. Rivers never cross a road: each direction is walked outward from the rim
+  // and every stretch clear of roads gets its own river, which ends in a pool where the
+  // next road is. Seen from below, the lava runs down to the road, vanishes, and comes out
+  // again beneath it, like a flow that has gone through a tube.
+  const footR = v.radius * (1 + v.gentleStretch)
+  let directions = 0
   for (const [dx0, dz0] of dirs) {
-    if (accepted.length >= want) break
-    // At least ~50 degrees from accepted sources.
-    if (accepted.some((r) => r.dirX * dx0 + r.dirZ * dz0 > 0.64)) continue
-    let x = v.x + dx0 * startR
-    let z = v.z + dz0 * startR
-    if (!roadClear(x, z)) continue
-    const pts = [{ x, z }]
-    let hx = dx0
-    let hz = dz0
-    let length = 0
-    for (let step = 0; step < 220; step++) {
-      const gx = (s.heightAt(x + 6, z) - s.heightAt(x - 6, z)) / 12
-      const gz = (s.heightAt(x, z + 6) - s.heightAt(x, z - 6)) / 12
-      const slope = Math.sqrt(gx * gx + gz * gz)
-      const [ddx, ddz] = normalize2(-gx, -gz)
-      const m = 0.25 * perlin(length * 0.012, accepted.length * 7.3, meanderSeed)
-      const [wx, wz] = normalize2(hx * 0.55 + ddx * 0.45 - hz * m, hz * 0.55 + ddz * 0.45 + hx * m)
-      ;[hx, hz] = steer(hx, hz, wx, wz, TURN_GENTLE)
-      const nx = x + hx * RIVER_STEP
-      const nz = z + hz * RIVER_STEP
-      const edge = half - Math.max(Math.abs(nx), Math.abs(nz))
-      if (edge < 200 || !roadClear(nx, nz) || !riverClear(nx, nz) || !featureClear(nx, nz)) break
-      if (s.heightAt(nx, nz) > s.heightAt(x, z) + 0.5) break
-      // Reached the sea: the river ends at the shore.
-      if (s.heightAt(nx, nz) < 2) break
-      x = nx
-      z = nz
-      length += RIVER_STEP
-      pts.push({ x, z })
-      if (volcanoT(v, x, z) > 1.0 && slope < 0.03) break
+    if (directions >= want) break
+    // At least ~50 degrees from the directions already used.
+    if (accepted.some((r) => r.dirX * dx0 + r.dirZ * dz0 > 0.64 && r.dirX * dx0 + r.dirZ * dz0 < 0.9999)) continue
+    const starts: number[] = []
+    let wasClear = false
+    for (let r0 = startR; r0 < footR; r0 += RIVER_STEP) {
+      const clear = roadClear(v.x + dx0 * r0, v.z + dz0 * r0)
+      if (clear && !wasClear) starts.push(r0 + (starts.length ? 4 : 0))
+      wasClear = clear
     }
-    // Long enough to read as a river, and reaching the lower flank.
-    if (length < 180 || volcanoT(v, x, z) < 0.7) continue
-    accepted.push({ pts, dirX: dx0, dirZ: dz0 })
+    let any = false
+    for (const r0 of starts.slice(0, 3)) {
+      let x = v.x + dx0 * r0
+      let z = v.z + dz0 * r0
+      if (!roadClear(x, z) || !riverClear(x, z)) continue
+      const pts = [{ x, z }]
+      let hx = dx0
+      let hz = dz0
+      let length = 0
+      for (let step = 0; step < 220; step++) {
+        const gx = (s.heightAt(x + 6, z) - s.heightAt(x - 6, z)) / 12
+        const gz = (s.heightAt(x, z + 6) - s.heightAt(x, z - 6)) / 12
+        const slope = Math.sqrt(gx * gx + gz * gz)
+        const [ddx, ddz] = normalize2(-gx, -gz)
+        const m = 0.25 * perlin(length * 0.012, accepted.length * 7.3, meanderSeed)
+        const [wx, wz] = normalize2(hx * 0.55 + ddx * 0.45 - hz * m, hz * 0.55 + ddz * 0.45 + hx * m)
+        ;[hx, hz] = steer(hx, hz, wx, wz, TURN_GENTLE)
+        const nx = x + hx * RIVER_STEP
+        const nz = z + hz * RIVER_STEP
+        const edge = half - Math.max(Math.abs(nx), Math.abs(nz))
+        if (edge < 200 || !roadClear(nx, nz) || !riverClear(nx, nz) || !featureClear(nx, nz)) break
+        if (s.heightAt(nx, nz) > s.heightAt(x, z) + 0.5) break
+        // Reached the sea: the river ends at the shore.
+        if (s.heightAt(nx, nz) < 2) break
+        x = nx
+        z = nz
+        length += RIVER_STEP
+        pts.push({ x, z })
+        if (volcanoT(v, x, z) > 1.0 && slope < 0.03) break
+      }
+      // Long enough to read as a river.
+      if (length < MIN_RIVER_LENGTH) continue
+      accepted.push({ pts, dirX: dx0, dirZ: dz0 })
+      any = true
+    }
+    if (any) directions++
   }
   return accepted
 }
@@ -213,18 +235,19 @@ export const lavaPass: TerrainPass = {
       // Pool at the river mouth, backing up the river if the pool would touch a road.
       let pts = plan.pts
       let pool: LavaPool | null = null
-      for (let back = 0; back < 5 && pts.length > 20 && !pool; back++) {
+      for (let back = 0; back < 5 && pts.length > 9 && !pool; back++) {
         const end = pts[pts.length - 1]
-        const prev = pts[pts.length - 4]
+        const prev = pts[Math.max(0, pts.length - 4)]
         const [dx, dz] = normalize2(end.x - prev.x, end.z - prev.z)
-        const radius = 18 + next() * 18
+        // A short stretch between two wraps of the road gets a small pool that fits there.
+        const radius = pts.length < 34 ? 9 + next() * 5 : 18 + next() * 18
         const px = end.x + dx * radius * 0.7
         const pz = end.z + dz * radius * 0.7
         const clear = data.roads.every(
           (r) => distanceToPolyline(r.points, r.closed, px, pz) > radius + ROAD_FLAT_HALF + ROAD_SHOULDER + 4,
         ) && pools.every((p) => sq(p.x - px) + sq(p.z - pz) > sq(p.radius + radius + 20))
         if (clear) pool = { x: px, z: pz, radius, surface: ringMin(s, px, pz, radius) - 0.4 }
-        else pts = pts.slice(0, pts.length - 5)
+        else pts = pts.slice(0, pts.length - 3)
       }
       if (!pool) continue
 

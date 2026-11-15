@@ -1,10 +1,8 @@
 /**
  * Roads pass: plans graded roads from the seed and flattens the heightfield under them.
  *
- *  - volcano: from spawn pad 0 onto the gentle flank of the volcano, then long switchbacks
- *    whose heading keeps the uphill grade near TRACE_GRADE, to the rim road. Switchbacks
- *    stay within SWITCHBACK_SECTOR of the gentle axis, leaving the far flank free for lava
- *    rivers (a full spiral would wrap the whole cone and have to cross them).
+ *  - volcano: from spawn pad 0 to the foot of the volcano, then one rising spiral round the
+ *    cone to the rim road, steered so the ground under it climbs at TRACE_GRADE.
  *  - rim:     a closed ring just outside the caldera lip
  *  - plain:   a closed ring round the volcano's foot, and one approach road from every
  *    other spawn pad inward to that ring, so every player has a road toward the centre
@@ -27,7 +25,7 @@ import {
   FOOT_RING, SPAWN_FLAT_RADIUS, SPAWN_LEVEL, type TerrainData, type TerrainPass, approachMeander, rimRadius,
 } from './generate'
 import { hash2, smoothstep } from './noise'
-import { TURN_GENTLE, TURN_HAIRPIN, normalize2, sq, steer, visitNearPolyline } from './raster'
+import { TURN_GENTLE, normalize2, sq, steer, visitNearPolyline } from './raster'
 import { HeightSampler } from './sampler'
 
 export interface RoadPoint {
@@ -56,11 +54,9 @@ export const ROAD_FLAT_HALF = 9.5
 export const ROAD_SHOULDER = 12
 /** Longitudinal grade cap of the road profile: 0.2 is about 11.3 degrees. */
 export const MAX_GRADE = 0.2
-/** Grades the volcano tracer aims for, tried in order, leaving room for the cap to smooth bumps. */
-const TRACE_GRADES = [0.15, 0.13, 0.11, 0.09, 0.075]
+/** Grade the volcano road is planned at, leaving room under the cap to smooth bumps. */
+const TRACE_GRADE = 0.14
 const STEP = 4
-/** cos of the half angle of the sector the switchbacks stay in: 100 degrees. */
-const SWITCHBACK_SECTOR_COS = -0.17364817766693033
 
 /** Radius of the rim road around the volcano centre. */
 export function rimRoadRadius(data: TerrainData): number {
@@ -126,14 +122,24 @@ function rimRoad(data: TerrainData, s: HeightSampler): Road {
   return { kind: 'rim', closed: true, width: ROAD_WIDTH, points }
 }
 
-function traceVolcanoRoad(data: TerrainData, s: HeightSampler, rim: Road, traceGrade: number): { road: Road; fits: boolean } {
+/**
+ * The volcano road: one spiral from spawn pad 0 round the cone to the summit ring.
+ *
+ * The road has a planned height for every metre travelled (a steady climb at TRACE_GRADE),
+ * and the tracer steers toward or away from the centre so the ground under it stays at
+ * that height. So the road lies on the mountain like a contour that slowly rises: it winds
+ * into gullies and round ridges instead of bridging them, the cone steepening toward the
+ * top simply makes the spiral tighter, and there are no hairpins, which on a slope this
+ * steep would need a cutting tens of metres deep.
+ */
+function volcanoRoad(data: TerrainData, s: HeightSampler, rim: Road): Road {
   const v = data.layout.volcano
   const reach = v.radius * (1 + v.gentleStretch)
   const ringR = rimRoadRadius(data)
+  const summit = data.layout.summitHeight
   const ex = v.x + v.gentleX * reach * 0.9
   const ez = v.z + v.gentleZ * reach * 0.9
-  let rot = (hash2(data.seed, 31, 7) & 1) === 0 ? 1 : -1
-  let hairpin = false
+  const rot = (hash2(data.seed, 31, 7) & 1) === 0 ? 1 : -1
 
   // Start on the inward edge of spawn pad 0, which sits on the gentle axis.
   const pad = data.layout.spawns[0]
@@ -142,13 +148,18 @@ function traceVolcanoRoad(data: TerrainData, s: HeightSampler, rim: Road, traceG
   let pz = pad.z + hz * (SPAWN_FLAT_RADIUS - 15)
   const points: RoadPoint[] = [{ x: px, y: SPAWN_LEVEL, z: pz }]
   let climbing = false
-  for (let step = 0; step < 2500; step++) {
+  let planned = SPAWN_LEVEL
+  for (let step = 0; step < 3000; step++) {
     let dx: number
     let dz: number
     if (!climbing) {
+      // Across the plain to the foot of the cone.
       const tx = ex - px
       const tz = ez - pz
-      if (tx * tx + tz * tz < 30 * 30) climbing = true
+      if (tx * tx + tz * tz < 30 * 30) {
+        climbing = true
+        planned = s.heightAt(px, pz)
+      }
       ;[dx, dz] = normalize2(tx, tz)
     }
     if (climbing) {
@@ -159,32 +170,25 @@ function traceVolcanoRoad(data: TerrainData, s: HeightSampler, rim: Road, traceG
       const uz = cz / r
       if (r <= ringR + STEP) {
         // Finish exactly on the rim road.
-        const x = v.x - ux * ringR
-        const z = v.z - uz * ringR
-        points.push({ x, y: 0, z })
+        points.push({ x: v.x - ux * ringR, y: 0, z: v.z - uz * ringR })
         break
       }
-      // Uphill slope toward the centre, measured over 20 m to ignore small bumps.
-      // Switch back at the edge of the sector, if still heading out of it.
-      const ox = -ux
-      const oz = -uz
-      const axis = ox * v.gentleX + oz * v.gentleZ
-      const side = ox * v.gentleZ - oz * v.gentleX // which side of the gentle axis we are on
-      const tx = -uz * rot
-      const tz = ux * rot
-      const outward = (tx * v.gentleZ - tz * v.gentleX) * side > 0
-      if (!hairpin && axis < SWITCHBACK_SECTOR_COS && outward) {
-        rot = -rot
-        hairpin = true
+      const ground = s.heightAt(px, pz)
+      if (ground > summit - 1.5 && r < ringR + 40) {
+        // On the flat summit: straight in to the ring road.
+        dx = ux
+        dz = uz
+      } else {
+        planned = Math.min(summit, planned + TRACE_GRADE * STEP)
+        // Below the plan: turn uphill, toward the centre. Above it: ease outward.
+        let inward = (planned - ground) / 14
+        inward = inward < -0.35 ? -0.35 : inward > 0.9 ? 0.9 : inward
+        const along = Math.sqrt(1 - inward * inward)
+        dx = -uz * rot * along + ux * inward
+        dz = ux * rot * along + uz * inward
       }
-      const slope = (s.heightAt(px + ux * 10, pz + uz * 10) - s.heightAt(px - ux * 10, pz - uz * 10)) / 20
-      const sinA = slope > traceGrade ? traceGrade / slope : 1
-      const cosA = Math.sqrt(1 - sinA * sinA)
-      dx = -uz * rot * cosA + ux * sinA
-      dz = ux * rot * cosA + uz * sinA
-      if (hairpin && hx * dx + hz * dz > 0.985) hairpin = false
     }
-    ;[hx, hz] = steer(hx, hz, dx!, dz!, hairpin ? TURN_HAIRPIN : TURN_GENTLE)
+    ;[hx, hz] = steer(hx, hz, dx!, dz!, TURN_GENTLE)
     px += hx * STEP
     pz += hz * STEP
     points.push({ x: px, y: s.heightAt(px, pz), z: pz })
@@ -197,27 +201,8 @@ function traceVolcanoRoad(data: TerrainData, s: HeightSampler, rim: Road, traceG
     const d = sq(p.x - end.x) + sq(p.z - end.z)
     if (d < best) { best = d; endY = p.y }
   }
-  let length = 0
-  for (let i = 1; i < points.length; i++) length += Math.sqrt(sq(points[i].x - points[i - 1].x) + sq(points[i].z - points[i - 1].z))
   profile(points, false, SPAWN_LEVEL, endY)
-  // The road fits if it is long enough to make the climb inside the grade cap, with a
-  // little spare so the profile is not one unbroken ramp at the limit.
-  const fits = (endY - SPAWN_LEVEL) <= MAX_GRADE * 0.8 * length
-  return { road: { kind: 'volcano', closed: false, width: ROAD_WIDTH, points }, fits }
-}
-
-/**
- * Trace the volcano road, relaxing the target grade until the road is long enough to reach
- * the rim inside the grade cap. A steeper or rougher cone simply gets a longer road.
- */
-function volcanoRoad(data: TerrainData, s: HeightSampler, rim: Road): Road {
-  let last: Road | null = null
-  for (const grade of TRACE_GRADES) {
-    const { road, fits } = traceVolcanoRoad(data, s, rim, grade)
-    last = road
-    if (fits) break
-  }
-  return last!
+  return { kind: 'volcano', closed: false, width: ROAD_WIDTH, points }
 }
 
 /** Radius of the foot ring road in the direction of unit vector (ux, uz). */

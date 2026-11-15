@@ -29,6 +29,24 @@ for (const seed of seeds) {
       if (ds > 0.5) maxGrade = Math.max(maxGrade, Math.abs(b.y - a.y) / ds)
     }
     const e = r.points[r.points.length - 1]
+    // Cut and fill: how far the natural-looking ground 14 m either side sits below (fill,
+    // a causeway) or above (cut) the road. Both sides far below means the road is on a wall.
+    let causeway = 0, worstFill = 0, turns = 0
+    for (let i = 2; i < r.points.length - 2; i++) {
+      const a = r.points[i - 2], b = r.points[i], c = r.points[i + 2]
+      const len = Math.hypot(c.x - a.x, c.z - a.z) || 1
+      const nx = -(c.z - a.z) / len, nz = (c.x - a.x) / len
+      const l = s.heightAt(b.x + nx * 16, b.z + nz * 16) - b.y
+      const rr = s.heightAt(b.x - nx * 16, b.z - nz * 16) - b.y
+      const fill = -Math.max(l, rr)
+      if (fill > 6) causeway++
+      worstFill = Math.max(worstFill, fill)
+    }
+    for (let i = 1; i < r.points.length - 1; i++) {
+      const a = r.points[i - 1], b = r.points[i], c = r.points[i + 1]
+      turns += Math.atan2((b.x - a.x) * (c.z - b.z) - (b.z - a.z) * (c.x - b.x), (b.x - a.x) * (c.x - b.x) + (b.z - a.z) * (c.z - b.z))
+    }
+    if (r.kind === 'volcano') return `${r.kind} ${len.toFixed(0)}m grade<=${maxGrade.toFixed(2)} y ${r.points[0].y.toFixed(0)}->${e.y.toFixed(0)}, ${(Math.abs(turns) / (2 * Math.PI)).toFixed(2)} turns, causeway points ${causeway}/${r.points.length}, worst fill ${worstFill.toFixed(0)} m`
     return `${r.kind}${r.closed ? '(ring)' : ''} ${len.toFixed(0)}m grade<=${maxGrade.toFixed(2)} y ${r.points[0].y.toFixed(0)}->${e.y.toFixed(0)}`
   })
   const n = { x: 0, y: 0, z: 0 }
