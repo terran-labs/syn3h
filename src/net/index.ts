@@ -40,7 +40,8 @@ import { BoundsGuard, TagMarker } from '../modes/Tag'
 import { gameMode, kothKnockBonus, kothLaserPush, kothTargetScore, kothZoneRadius } from '../modes/params'
 import { type HillTerrain, computeHillZone } from '../modes/hill'
 import { HillMarker } from '../modes/HillMarker'
-import { LocalLife } from '../modes/Koth'
+import { LocalLife, inDeadlyLiquid } from '../modes/Koth'
+import { attachVehicleEffects } from '../vehicles/effects'
 import { ServerClock } from './Clock'
 import { Connection, serverUrl } from './Connection'
 import { NameTags } from './NameTags'
@@ -107,6 +108,10 @@ export interface MatchState {
   scores: { name: string; score: number; you?: boolean }[]
   target: number
   winner: string | null
+  /** The winner's body colour, '#rrggbb', while there is a winner. */
+  winnerColor?: string
+  /** Whole seconds until the next round, while there is a winner. */
+  nextRoundIn?: number
 }
 
 /** Same shape as the shell minimap's MapEntity. Heading is radians about +Y, 0 facing -Z. */
@@ -212,7 +217,7 @@ export class NetClient implements System {
     this.bounds = new BoundsGuard(player, ctx.terrain)
     this.bounds.onReset = () => this.event('You fell off the planet')
     this.tags = new NameTags(game.camera)
-    this.hill = new HillMarker(game)
+    this.hill = new HillMarker(game, ctx.terrain)
     this.life = new LocalLife(game, ctx.terrain, player)
     this.life.onDied = (cause) => {
       this.stats.deaths++
@@ -360,6 +365,7 @@ export class NetClient implements System {
     else this.life.revive()
     this.life.slot = this.slot
     if (!this.connected) return
+    if (this.isHost && this.mode === MODE_KOTH) this.checkBotDeaths()
     this.detectRams()
     this.sendTimer += dt
     // While hidden the heartbeat timer speaks for us (rendering may still tick in some cases).
@@ -498,6 +504,17 @@ export class NetClient implements System {
     }
   }
 
+  /** Bots in the lava, reported once per fall so whoever pushed them gets the knock-in. */
+  private readonly botsInLava = new WeakSet<Vehicle>()
+  private checkBotDeaths(): void {
+    for (const [id, bot] of liveBots(this.bots?.vehicles ?? [], this.ctx.game.world)) {
+      const dead = inDeadlyLiquid(this.ctx.terrain, bot.body.translation())
+      if (dead && !this.botsInLava.has(bot)) this.send({ type: 'died', cause: 'lava', bot: id })
+      if (dead) this.botsInLava.add(bot)
+      else this.botsInLava.delete(bot)
+    }
+  }
+
   /** Local vehicles (ours, and the bots on the host) against each physical proxy. */
   private detectRams(): void {
     const now = this.ctx.game.time
@@ -562,6 +579,7 @@ export class NetClient implements System {
     const [body, accent] = isBotId(info.id) ? botColors(info.id - BOT_ID_BASE) : info.colors
     ;(vehicle as VehicleExtras).setColors?.(body, accent)
     const r = new RemotePlayer(info, vehicle)
+    r.disposeEffects = this.attachEffects(vehicle)
     this.remotes.set(info.id, r)
     this.ctx.audio?.play('materialize', { x: s.p[0], y: s.p[1], z: s.p[2] })
     return r
@@ -571,7 +589,19 @@ export class NetClient implements System {
     const r = this.remotes.get(id)
     if (!r) return
     this.remotes.delete(id)
+    r.disposeEffects()
     if (r.owned) this.ctx.game.remove(r.vehicle)
+  }
+
+  /** Dust, tracks, lamps and trails for a remote vehicle. Returns its disposer. */
+  private attachEffects(vehicle: Vehicle): () => void {
+    try {
+      return attachVehicleEffects(this.ctx.game, this.ctx.terrain, vehicle, { local: false })
+    } catch (err) {
+      // Effects are cosmetic: never let them stop a player from appearing.
+      console.warn('vehicle effects not attached', err)
+      return () => {}
+    }
   }
 
   /** Kind or colours changed: recolour, or rebuild the vehicle if the kind changed. */
@@ -583,11 +613,13 @@ export class NetClient implements System {
     if (r.owned && extras.kind !== undefined && extras.kind !== info.kind) {
       const t = r.vehicle.body.translation()
       const q = r.vehicle.body.rotation()
+      r.disposeEffects()
       this.ctx.game.remove(r.vehicle)
       const v = createVehicle(this.ctx.game, this.ctx.terrain, info.kind as VehicleKind, new THREE.Vector3(t.x, t.y, t.z), 0)
       v.body.setRotation(q, true)
       this.ctx.game.add(v)
       const next = new RemotePlayer(info, v)
+      next.disposeEffects = this.attachEffects(v)
       for (const s of [...r.buffer.states].reverse()) next.buffer.push(s, s.t, netSendRate.value)
       this.remotes.set(info.id, next)
       ;(v as VehicleExtras).setColors?.(info.colors[0], info.colors[1])
@@ -812,7 +844,16 @@ export class NetClient implements System {
     const scores = [...this.players.values()]
       .map((p) => ({ name: this.displayName(p.id), score: g.scores[p.id] ?? 0, ...(p.id === this.id ? { you: true } : {}) }))
       .sort((a, b) => b.score - a.score)
+    const winner = koth && g.koth.resetAt && g.koth.winner ? g.koth.winner : 0
+    const extra: Partial<MatchState> = winner
+      ? {
+          winnerColor: this.players.get(winner)?.colors[0] ?? DEFAULT_COLORS[0],
+          // Whole seconds, so the change-only push updates it once a second.
+          nextRoundIn: Math.max(0, Math.ceil(g.koth.resetAt - this.clock.now())),
+        }
+      : {}
     return {
+      ...extra,
       mode: koth ? 'koth' : 'tag',
       holderName: lead ? this.displayName(lead) : null,
       holderIsYou: lead !== 0 && lead === this.id,

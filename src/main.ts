@@ -56,6 +56,8 @@ async function main(): Promise<void> {
   // The start screen collects the name and unlocks audio. Networking joins on Play so the
   // room sees the chosen name. ?autoplay=1 skips the screen for automated checks.
   const { shell, audio } = initGameShell(game, player, terrain)
+  // An idle lobby turns into a cinematic tour of the volcano, following a bot if there is one.
+  shell.setAttractCamera(camera, () => bots.vehicles)
   let netStatus: string[] = []
   let joined = false
   const join = () => {

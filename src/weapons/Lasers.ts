@@ -13,6 +13,7 @@ import * as THREE from 'three/webgpu'
 import type { ShotInfo } from '../../shared/protocol'
 import type { Game, System } from '../core/Game'
 import { FIXED_DT, GROUP_ALL, GROUP_LIQUID, GROUP_PROJECTILE, RAPIER, groups } from '../core/physics'
+import { createWeaponEffects } from '../vehicles/effects'
 import { laserGravity, laserLifetime, laserRicochet, laserSpeed } from './params'
 
 export interface LaserHooks {
@@ -40,38 +41,50 @@ interface Projectile {
   mesh: THREE.Group
 }
 
-interface Flash {
-  mesh: THREE.Mesh
-  age: number
-}
-
 /** The longest a late shot is replayed; older ones are mostly gone anyway. */
 const MAX_CATCH_UP = 2
-const LENGTH = 3
+/** Bright core length, and the tapering trail behind it (LaserAuto: width .5 to .2). */
+const LENGTH = 4
+const TRAIL = 10
+/** A shot younger than this is fresh: it gets a muzzle flash. Replayed old shots do not. */
+const FRESH = 0.15
 
 export class Lasers implements System {
   private readonly shots: Projectile[] = []
-  private readonly flashes: Flash[] = []
-  private readonly coreGeo = new THREE.CylinderGeometry(0.07, 0.07, LENGTH, 6, 1).rotateX(Math.PI / 2)
-  private readonly haloGeo = new THREE.CylinderGeometry(0.3, 0.3, LENGTH * 1.2, 8, 1).rotateX(Math.PI / 2)
-  private readonly flashGeo = new THREE.SphereGeometry(1, 12, 8)
+  // Syn3h's LaserAuto look: plasma green. +Z is the direction of travel after rotateX.
+  private readonly coreGeo = new THREE.CylinderGeometry(0.08, 0.08, LENGTH, 6, 1).rotateX(Math.PI / 2)
+  /** Halo that tapers from 0.25 m at the head to 0.1 m at the tail, trailing behind. */
+  private readonly haloGeo = new THREE.CylinderGeometry(0.25, 0.1, TRAIL, 8, 1).rotateX(Math.PI / 2).translate(0, 0, -TRAIL / 2 + LENGTH / 2)
   // Colours above 1 survive tone mapping as a hot, near white core: the glow without bloom.
-  private readonly coreMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(6, 1.2, 0.8) })
+  private readonly coreMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.9, 4, 1.4) })
   private readonly haloMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(1.5, 0.15, 0.08), transparent: true, opacity: 0.45,
+    color: new THREE.Color(0.25, 1.6, 0.45), transparent: true, opacity: 0.5,
     blending: THREE.AdditiveBlending, depthWrite: false,
   })
-  private readonly flashMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(3, 1, 0.5), transparent: true, opacity: 0.9,
-    blending: THREE.AdditiveBlending, depthWrite: false,
+  // The wing material's recipe: additive light washes out to white over a sunlit desert, so a
+  // normally blended tint underneath keeps the green readable at noon.
+  private readonly tintMat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(0.1, 0.75, 0.25), transparent: true, opacity: 0.3, depthWrite: false,
   })
+  private readonly effects: ReturnType<typeof createWeaponEffects> | null
+  /** Shots that already showed their impact here, so a later server confirmation does not repeat it. */
+  private readonly impacted = new Set<string>()
   private readonly ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })
   private readonly tmp = new THREE.Vector3()
   private readonly look = new THREE.Vector3()
   /** Shots fired here, counted for ids. */
   private nextShotId = 1
 
-  constructor(private readonly game: Game, private readonly hooks: LaserHooks) {}
+  constructor(private readonly game: Game, private readonly hooks: LaserHooks) {
+    let effects: ReturnType<typeof createWeaponEffects> | null = null
+    try {
+      effects = createWeaponEffects(game)
+    } catch (err) {
+      // Cosmetic only: lasers still fly and hit without sparks.
+      console.warn('weapon effects unavailable', err)
+    }
+    this.effects = effects
+  }
 
   get count(): number {
     return this.shots.length
@@ -104,7 +117,10 @@ export class Lasers implements System {
       life: laserLifetime(laserSpeed.value),
       mesh: new THREE.Group(),
     }
-    p.mesh.add(new THREE.Mesh(this.coreGeo, this.coreMat), new THREE.Mesh(this.haloGeo, this.haloMat))
+    const tint = new THREE.Mesh(this.haloGeo, this.tintMat)
+    tint.renderOrder = -1
+    p.mesh.add(new THREE.Mesh(this.coreGeo, this.coreMat), tint, new THREE.Mesh(this.haloGeo, this.haloMat))
+    if (age < FRESH) this.effects?.muzzle(p.pos.clone(), new THREE.Vector3(...shot.d).normalize(), false)
     p.mesh.position.copy(p.pos)
     p.mesh.visible = false
     this.game.scene.add(p.mesh)
@@ -117,15 +133,13 @@ export class Lasers implements System {
     p.prev.copy(p.pos)
   }
 
-  /** The server confirmed a hit: end that shot everywhere with a flash. */
+  /** The server confirmed a hit: end that shot everywhere with one impact. */
   confirmHit(shooter: number, shot: number, at?: THREE.Vector3): void {
     const i = this.shots.findIndex((s) => s.shooter === shooter && s.id === shot)
-    if (i >= 0) {
-      this.flash(at ?? this.shots[i].pos)
-      this.kill(i)
-    } else if (at) {
-      this.flash(at)
-    }
+    const p = i >= 0 ? this.shots[i] : null
+    const where = at ?? p?.pos
+    if (where) this.impact(shooter, shot, where, p ? p.vel.clone().normalize().negate() : undefined)
+    if (i >= 0) this.kill(i)
   }
 
   fixedUpdate(dt: number): void {
@@ -142,23 +156,11 @@ export class Lasers implements System {
       p.mesh.position.lerpVectors(p.prev, p.pos, alpha)
       if (p.vel.lengthSq() > 1e-6) p.mesh.lookAt(this.look.copy(p.mesh.position).add(p.vel))
     }
-    for (let i = this.flashes.length - 1; i >= 0; i--) {
-      const f = this.flashes[i]
-      f.age += dt
-      const k = f.age / 0.35
-      if (k >= 1) {
-        this.game.scene.remove(f.mesh)
-        this.flashes.splice(i, 1)
-        continue
-      }
-      f.mesh.scale.setScalar(0.5 + k * 2.5)
-    }
   }
 
   dispose(): void {
     while (this.shots.length) this.kill(this.shots.length - 1)
-    for (const f of this.flashes) this.game.scene.remove(f.mesh)
-    this.flashes.length = 0
+    this.effects?.dispose()
   }
 
   private step(p: Projectile, dt: number): void {
@@ -199,14 +201,14 @@ export class Lasers implements System {
     const victim = parent ? this.hooks.judgedId(parent.handle) : null
     if (victim !== null) {
       this.hooks.onHit(p.shooter, p.id, victim, point, dir.clone())
-      this.flash(point)
+      this.impact(p.shooter, p.id, point, dir.clone().negate())
       this.kill(this.shots.indexOf(p))
       return
     }
     const rico = laserRicochet.value
     const isBody = parent && !parent.isFixed()
     if (isBody || rico === 0) {
-      this.flash(point)
+      this.impact(p.shooter, p.id, point, new THREE.Vector3(hit.normal.x, hit.normal.y, hit.normal.z))
       this.kill(this.shots.indexOf(p))
       return
     }
@@ -218,12 +220,13 @@ export class Lasers implements System {
     p.pos.copy(point).addScaledVector(n, 0.05)
   }
 
-  private flash(at: THREE.Vector3): void {
-    const mesh = new THREE.Mesh(this.flashGeo, this.flashMat)
-    mesh.position.copy(at)
-    mesh.scale.setScalar(0.5)
-    this.game.scene.add(mesh)
-    this.flashes.push({ mesh, age: 0 })
+  /** Sparks where a shot ended, once per shot. */
+  private impact(shooter: number, shot: number, at: THREE.Vector3, normal?: THREE.Vector3): void {
+    const key = `${shooter}:${shot}`
+    if (this.impacted.has(key)) return
+    this.impacted.add(key)
+    if (this.impacted.size > 256) this.impacted.delete(this.impacted.values().next().value as string)
+    this.effects?.impact(at.clone(), normal ?? new THREE.Vector3(0, 1, 0), false)
   }
 
   private kill(i: number): void {

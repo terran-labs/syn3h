@@ -381,7 +381,9 @@ describe('Room King of the Hill', () => {
   const zone = { x: 100, z: 0, inner: 20, outer: 40, yMin: 40, yMax: 80 }
   const inside: [number, number, number] = [130, 50, 0]
   const elsewhere: [number, number, number] = [0, 0, 0]
-  const botState = (n: number, p: [number, number, number]) => state(p, [0, 0, 0], { id: BOT_ID_BASE + n, bot: true })
+  const botState = (n: number, p: [number, number, number], v: [number, number, number] = [0, 0, 0]) =>
+    state(p, v, { id: BOT_ID_BASE + n, bot: true })
+  const moving: [number, number, number] = [5, 0, 0]
 
   /** Host and B in a KotH room with a zone; returns them after the mode switch. */
   function setup() {
@@ -443,13 +445,13 @@ describe('Room King of the Hill', () => {
     expect(g.koth.holder).toBe(host.id)
   })
 
-  it('bots contest but never score', () => {
+  it('moving bots contest but never score', () => {
     const { host, b } = setup()
-    run(2, [[host.peer, botState(0, inside)], [b.peer, state(elsewhere)]])
+    run(2, [[host.peer, botState(0, inside, moving)], [b.peer, state(elsewhere)]])
     let g = b.peer.last('game')!.game
     expect(g.koth.holder).toBe(0)
     expect(g.scores[BOT_ID_BASE] ?? 0).toBe(0)
-    run(3, [[host.peer, botState(0, inside)], [host.peer, state(elsewhere)], [b.peer, state(inside)]])
+    run(3, [[host.peer, botState(0, inside, moving)], [host.peer, state(elsewhere)], [b.peer, state(inside)]])
     g = b.peer.last('game')!.game
     expect(g.koth.contested).toBe(true)
     expect(g.scores[b.id]).toBe(0)
@@ -495,5 +497,42 @@ describe('Room King of the Hill', () => {
     const reset = b.peer.all('game').find((m) => m.event === 'reset')!
     expect(reset.game.scores[host.id]).toBe(0)
     expect(reset.game.koth.winner).toBe(0)
+  })
+})
+
+describe('Room King of the Hill with bots', () => {
+  const zone = { x: 100, z: 0, inner: 20, outer: 40, yMin: 40, yMax: 80 }
+  const inside: [number, number, number] = [130, 50, 0]
+  const bot = (p: [number, number, number], v: [number, number, number] = [0, 0, 0]) =>
+    state(p, v, { id: BOT_ID_BASE, bot: true })
+  function run(seconds: number, positions: [FakePeer, Uint8Array][]) {
+    for (let t = 0; t < seconds * 4; t++) {
+      clock += 250
+      for (const [peer, s] of positions) room.receive(peer, s)
+    }
+  }
+
+  it('a parked bot does not block the hill', () => {
+    const host = join('Host')
+    const b = join('B')
+    send(host.peer, { type: 'param', id: 'game.mode', value: 1 })
+    send(host.peer, { type: 'zone', zone })
+    run(3, [[host.peer, bot([128, 50, 4])], [host.peer, state([0, 0, 0])], [b.peer, state(inside)]])
+    const g = host.peer.last('game')!.game
+    expect(g.koth.holder).toBe(b.id)
+    expect(g.scores[b.id]).toBeGreaterThanOrEqual(2)
+  })
+
+  it('knocking a bot into the lava earns the bonus; only the host may report it', () => {
+    const host = join('Host')
+    const b = join('B')
+    send(host.peer, { type: 'param', id: 'game.mode', value: 1 })
+    run(1, [[host.peer, bot([3, 0, 0], [3, 0, 0])], [host.peer, state([50, 0, 0])], [b.peer, state([0, 0, 0])]])
+    send(b.peer, { type: 'ram', other: BOT_ID_BASE })
+    send(b.peer, { type: 'died', cause: 'lava', bot: BOT_ID_BASE })
+    expect(host.peer.all('game').some((m) => m.event === 'knock')).toBe(false)
+    send(host.peer, { type: 'died', cause: 'lava', bot: BOT_ID_BASE })
+    expect(host.peer.last('game')).toMatchObject({ event: 'knock', actor: b.id, target: BOT_ID_BASE, game: { scores: { [b.id]: 10 } } })
+    expect(host.peer.last('game')!.game.koth.out[BOT_ID_BASE]).toBeGreaterThan(0)
   })
 })
