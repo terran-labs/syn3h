@@ -7,8 +7,11 @@ import type {TileShiftEvent,Vehicle,VehicleObjectEvents} from '../Vehicle'
 import {ParticleBatch} from './ParticleBatch'
 import {RibbonBatch} from './RibbonBatch'
 import {dustSprite,glowSprite,plasmaSprite,tyreMarkAlpha} from './sprites'
+import {windDrift} from '../../world/weather'
 
 const greenPlasma=plasmaSprite(false),redPlasma=plasmaSprite(true)
+/** Shares of the wind velocity given to a new dust particle and to exhaust and energy trails. */
+export const DUST_WIND=.6,EXHAUST_WIND=.3
 
 export interface WheelEffectContact {readonly grounded:boolean;readonly point:T.Vector3;readonly normal:T.Vector3;readonly slip:number}
 type EffectsVehicle=Vehicle & {getWheelEffects?():readonly WheelEffectContact[];hoverMode?:boolean}
@@ -50,6 +53,9 @@ class EffectWorld implements System {
     this.energy=new ParticleBatch(Math.floor(budget*.3),glowSprite,true,octaves)
     this.sparks=new ParticleBatch(Math.max(2,Math.floor(budget*.05)),greenPlasma,true,octaves)
     this.redSparks=new ParticleBatch(Math.max(2,Math.floor(budget*.05)),redPlasma,true,octaves)
+    // Dust and exhaust lean downwind with the weather; weapon sparks are too brief to. Tyre
+    // marks are on the ground and take none.
+    this.dust.windShare=DUST_WIND;this.dust.drift=windDrift;this.energy.windShare=EXHAUST_WIND;this.energy.drift=windDrift
     this.game.scene.add(this.dust.mesh,this.energy.mesh,this.sparks.mesh,this.redSparks.mesh)
     this.stats.particles=this.dust.capacity+this.energy.capacity+this.sparks.capacity+this.redSparks.capacity
   }
