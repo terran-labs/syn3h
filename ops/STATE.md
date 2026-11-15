@@ -29,8 +29,10 @@ The working tree was clean at recovery. The final dry run passed direct and 150 
 latency checks: `/tmp/syn3h-dryrun-r3.log`. Three corrected network checks passed in
 `/tmp/release3-final-net-smoke-r3tmp-{1,2,3}.log`. Earlier similarly named logs contain
 superseded failures. A fresh full suite passed 904 tests in `/tmp/release3-astra-tests.log`.
-Prior thread reported Chrome 12/12, WebKit 6/6, lobby at three sizes and seam passing;
-captures survive as `/tmp/r3f-*`, but final matrix logs still need recovery or replacement.
+Fresh Chrome and iPad-sized WebKit driving checks passed all four vehicles with zero
+errors; results and captures: `/tmp/astra-release3-matrix`. Three fresh consecutive
+network checks passed against this exact frozen copy in `/tmp/astra-release3-net-*.log`.
+The earlier lobby captures and seam result were recovered and inspected.
 
 Release 3 includes the trusted-speed security patch as 17aa00e, equivalent to trunk
 b056c5c for the features on this branch. It caps speed allowance at 100 m/s for beam
@@ -74,10 +76,13 @@ those changes. Water and post effects remain opt-in.
   worktree. Typecheck and 47 camera, generated-jet and operations tests passed.
 - Lobby dfd47d0 adds tap-to-drop and a camera blend. Review is in progress; the Lobby
   lane is checking repeat-drop state and exception cleanup before integration.
-- Recover the Pesters networking review. Multiplayer hit its quota before a final reply.
-  Treat it as a next-release review, not a release 3 blocker.
-- Integrate the existing release-notes/showcase hooks in `tools/release.sh`; their failure
-  must not invalidate a successful deployment. Refresh the dashboard and morning brief.
+- Pesters review found an unbounded speed allowance at launch and reusable live shot IDs.
+  Regression tests reproduced both; fixes passed all 183 network and gear tests.
+  This affects trunk only. Release 3 has no Pesters.
+- Release calendar labels, notes drafts and showcase hooks passed a dry run at 4273b06
+  including direct and delayed network checks. Three failure-path tests prove notes,
+  capture or tag failures do not fail an already live release. No notes are auto-published.
+  The dashboard headline is refreshed. The morning brief still needs the final release state.
 - Reconcile remaining handoffs with the Foreman. Do not infer acceptance from idle agents.
 - Phone QR join, vehicle feel and actual listening remain owner acceptance checks.
 
