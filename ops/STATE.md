@@ -1,89 +1,93 @@
 # Orchestrator state
 
-Last verified: 2026-11-15 00:48 PST. Demo deadline: Sunday noon Pacific.
+Last verified: 2026-11-15 01:26 PST. Demo deadline: Sunday noon Pacific.
 
 ## Authority
 
-Continue authorized overnight releases without owner review. Lobby occupancy is never a
-deployment gate, per the owner's direct answer. Keep frozen-build validation and immediate
-rollback after a failed public check. Only the Orchestrator integrates and deploys.
-Finish existing lane assignments before the new conditional performance and UX queue.
+Continue authorized overnight releases without owner review. Occupancy is never a release
+gate. Keep exact frozen-build validation and immediate rollback after failed public checks.
+Only the Orchestrator integrates and deploys; merge in the fast worktree, then fast-forward
+trunk. Completed features default on through normal entry, preserving explicit off values,
+quality tiers and mutually exclusive choices. Stored room values have no provenance and stay.
 
-Owner decisions: generated wind only; original music and laser stay. Jet adopts Hex ring
-Mark 2 with smooth aerodynamic surfaces. Buggy uses smooth procedural tread. Tank round
-six was rejected; ten distinct six-tread exploration studies are authorized. Automatic bot
-races and all bot gear are authorized. Smooth near-camera ground remains deferred.
+Generated wind only; original music and laser stay. SpaceStation starts unless an explicit
+saved track overrides it. Daydream is five minutes. Jet adopts smooth Hexring Mk2; buggy
+uses smooth procedural tread. Tank round six rejected, ten new studies authorized; no tank
+or hovercraft production study has been selected. Smooth near-camera ground stays deferred.
+Finish existing assignments before conditional performance/UX follow-ons. The owner's newer
+fine-line UI/lobby redesign is directly authorized and underway in UX, independently of that
+condition. Water transparency from above is unimplemented, not an accepted water capability.
 
-## Production and release evidence
+## Production
 
-Release 2 is restored: bc8cb48, Worker747d2041-ba63-403a-818f-77834ae9951a.
-Rollback network check passed in `/tmp/astra-release3-retry-rollback2.log`.
-Release 3 is NOT accepted. Its first deployment failed public hill-scoring snapshots.
-The scoring audit found no demonstrated scoring regression, but the cause remains unproven.
-The second immutable restore failed loading with two resource404s before game initialization.
-Rollback followed. Detailed resource URL logging is now in the check tool.
+Release 2 remains the last verified public build: bc8cb48, Worker
+747d2041-ba63-403a-818f-77834ae9951a. Explicit rollback target is release-2.
+Release 3 was attempted and rolled back twice. First public scoring snapshots failed;
+no scoring regression was demonstrated and the cause remains unproven. Retry failed with
+resource 404s before initialization. Rollback network checks passed. Never infer production
+from the newest release tag or TSV row.
 
-R3 exact source41743f6 includes the trusted-speed cap17aa00e. Frozen build:
-`/Users/vtn/dev/Syn3h-stable/20261115-003203-41743f6`.
-904 tests, dry run, three network checks and eight Chrome/WebKit vehicle drives pass.
-`/tmp/astra-release3-wrap.log` also passes two-player crossing, replication, ram, shove
-and beam across the seam. Original public failure: `/tmp/astra-release3-domain.log`.
-Retry: `/tmp/astra-release3-retry.log`. Deployment records include the attempted R3;
-never infer current production from the latest release tag or TSV row.
+Evidence: /tmp/astra-release3-domain.log, /tmp/astra-release3-retry.log,
+/tmp/astra-release3-retry-rollback2.log and /tmp/astra-public2-diagnostic.log.
+R3 frozen41743f6 includes the speed cap,904tests,dryrun,net3,vehicle8 and both seam checks.
+R4 frozen c72b0cb has975tests including one targeted timeout rerun,dryrun,net3,vehicle8,
+solo seam and multiplayer wrap checks. Both are preserved fallback candidates; neither
+validates the newer normal-entry build. A deliberate new frozen candidate is required.
 
-R4 frozen candidate c72b0cb:
-`/Users/vtn/dev/Syn3h-stable/20261115-002920-c72b0cb`.
-975 tests pass across the full run and one targeted timeout rerun at lower load.
-Dry run and eight vehicle/browser drives pass. Three network runs and both seam checks
-are underway. No later lane work is included; preserve this candidate until explicit recut.
-Calendar history and actual showcase capture remain to reconcile after release acceptance.
+Release automation now checks exact identity, HTML and linked entry JS/CSS before gameplay,
+and checks the primary www domain before recording success. Runtime lazy assets still need
+browser acceptance. Notes/showcase failures stay nonfatal after acceptance; no automatic
+publication. Actual showcase capture and calendar reconciliation remain owed.
 
-## Integration and testing
+## Integrated evidence and current queue
 
-Integrate in `/Users/vtn/dev/Syn3h-wt/fast`; fast-forward the live checkout only after
-review, typecheck and relevant tests. Trunk includes cockpit flags, Pester security fixes,
-direct planet drop with failure cleanup, keyboard/gamepad galaxy navigation, release hooks,
-and improved scoring diagnostics. None of the later handoffs is accepted merely because
-its lane finished. Release hooks must not publish notes automatically or block deployment.
+Trunk065b71b includes terrain/weather defaults, Custom map and fidelity, vegetation,
+hovercraft procedural materials, transparent tier0 canopy, tyre geometry fix, all gear
+and water defaults, rejoin, generated-only wind, recorded music default, brand and UX polish.
+Combined gear/water/server tests265pass; UI/audio/routing127pass; normal-entry two-browser
+gear and eight Chrome/WebKit vehicle drives pass. The prior gear failure hit stale8787;
+HTTP now uses the configured same-origin proxy and the browser asserts its endpoint.
+Evidence: /tmp/astra-corrected-integration.log, /tmp/astra-gearwater-integration.log.
 
-The temporary lane testing hold is lifted. Use trunk4cbebdd tools/heavy.sh, or invoke
-`/Users/vtn/dev/Syn3h/tools/heavy.sh` directly. Every heavy job takes one of three shared
-slots, even at low load. One job per lane, maximum two test workers during resumption.
-No lane bypass or slot override. Do not restart redundant previews or kill by process name.
+Fast now integrates canonical Net4fbc27d, Race UI cdc12c3, main hooks, Bots e8e78c6,
+animated lobby logo7c2c198 and terrain import-cycle70c07ab. Typecheck310 focused tests pass
+in /tmp/astra-race-integration.log. Real host/guest automatic race and rejoin/bot lifecycle
+acceptance remain pending with Bots after this checkpoint lands.
 
-## Pending handoffs and ownership
+Next reviewed handoffs: Jet2e16bf9, Buggy2c9bbaa, Water66fdf14, stable Post19cc879;
+lab-only Hoverf994fd2 and Tankf5bac75. Each has lane evidence; combined browser validation
+and final frozen suite remain required. UX redesign, aerial bot evasion, temporal AA, GI,
+volumetric clouds and Lobby presence remain separate unfinished assignments. Presence is
+read-only contract review, not directory implementation authorization.
 
-- Lobby Custom map: sanitized overrides, cache and stale replies; final browser gate owed.
-  Terrain fidelity corrections follow its accepted planetMap patch, never concurrently.
-- Multiplayer owns server/protocol and race helper; Weapons owns current gear client wiring.
-  Multiplayer takes race composition after explicit transfer of src/net/index.ts.
-- UX owns generated wind, brand cleanup, help, glass/focus and race display; final gates owed.
-- Bots owns ford safety, gear decisions and automatic race state; final gates owed.
-- Jet Mk2, hovercraft procedural materials, buggy tread, vegetation, water and post effects
-  remain lane drafts awaiting their gates and integration review.
-- Phone QR join, vehicle feel and actual listening remain owner acceptance checks.
-- Five-minute continuation heartbeat3ac4c3a6 preserves release supervision.
+## Operations
 
-## Previews and lane topology
+Heavy jobs use /Users/vtn/dev/Syn3h/tools/heavy.sh: strict three slots, one job per lane,
+maximum two test workers. No lane bypass or slot overrides. No new blanket hold. The
+kernel-lock replacement failed independent migration/cancellation review and is parked in
+/tmp/syn3h-heavy-revision. Existing20minute cleanup risk remains open; correct and drain
+old wrappers before rollout. No processes were killed for this review.
 
-Load the paseo-preview skill before preview operations. Use only managed Tailscale HTTPS
-links after verification. The Foreman is checking current health. Game and dashboard are
-broker scripts in workspace `wks_cfcb37521a420b78`. Do not resurrect obsolete tailnet
-outage diagnoses: the late-night disappearance was caused by machine overload.
+Preview configuration edits must validate a complete temp sibling then atomically rename.
+No direct truncating writes. Use scoped broker operations and fresh HTTPS plus rendered
+verification, not stale receipts or bare all-service status. Post32791 recovered through its
+owner; UX32796 and sharedlab32795 have lane verification. Load paseo-preview before sharing.
+Five-minute continuation heartbeat3ac4c3a6 remains the existing supervision arrangement.
 
-Historical lane identities below remain useful for recovery; their old activity claims
-have been removed. Owner resumed the active lanes on available Codex profiles. Do not retry exhausted Claude profiles.
+Phone QR join, current-device driving and actual listening remain owner feedback checks,
+not release permission gates. Historical lane identities follow; thread messages supersede
+this snapshot. Do not retry exhausted Claude profiles.
 
 | Lane | Agent id | Worktree and branch | Dev port | Doing now |
 |---|---|---|---|---|
-| Foreman | c5dc3811-9bca-4a79-9c81-bcdfdf66908d | `/Users/vtn/dev/.vorteo/worktrees/2jg65r8u/foreman`, `ops/foreman` | none | Recovery pending; see current status above. |
-| Terrain Lab | 39e2a688-346b-4874-be02-46a7fe6f13ee | `.../2jg65r8u/terrain-lab`, `feat/terrain-lab` | 5191 | Recovery pending; see current status above. |
-| Vehicles, shared code (Codex 1) | 8b09a27b-c89d-46b1-9e52-0951e4bd020f | `/Users/vtn/dev/Syn3h-wt/vehicles2`, `feat/vehicles2` | 5185 | Recovery pending; see current status above. |
-| Bots, Performance, QA (Codex 2) | 1e6bdac4-cef1-44c7-9768-1eae4b85ef3d | `/Users/vtn/dev/Syn3h-wt/fx`, `feat/fx` | 5186 | Recovery pending; see current status above. |
-| UX and sound (Codex 3) | ba7d0154-b4d0-4b69-9008-805456c9fdde | `/Users/vtn/dev/Syn3h-wt/audio`, `feat/audio` | 5187 | Recovery pending; see current status above. |
-| Multiplayer | 1aea4dff-9b45-4b17-ba36-116438350f17 | `/Users/vtn/dev/Syn3h-wt/net`, `feat/net` | 5183, room 8791 | Recovery pending; see current status above. |
-| Syn3h buggy | 12abdd19-b672-40d7-938a-be2ab2339315 | `.../2jg65r8u/veh-buggy`, `veh/buggy` | 5201 | Recovery pending; see current status above. |
-| Jet | e73e5ed4-a32d-468e-a2cc-cfda3c196288 | `.../2jg65r8u/veh-jet`, `veh/jet` | 5202 | Recovery pending; see current status above. |
-| Hovercraft | 43191a2c-f8f5-4da4-b147-423a10dff345 | `.../2jg65r8u/veh-hovercraft`, `veh/hovercraft` | 5203 | Recovery pending; see current status above. |
-| Classic buggy | 25c9c763-6966-410d-a9f9-0714245088d6 | `.../2jg65r8u/veh-classic-buggy`, `veh/classic-buggy` | 5204 | Recovery pending; see current status above. |
-| Tank | 1e12b353-8e53-4aaa-8784-7d148ebf9c28 | `.../2jg65r8u/veh-tank`, `veh/tank` | 5205 | Recovery pending; see current status above. |
+| Foreman | c5dc3811-9bca-4a79-9c81-bcdfdf66908d | `/Users/vtn/dev/.vorteo/worktrees/2jg65r8u/foreman`, `ops/foreman` | none | See handoffs and current thread checklist. |
+| Terrain Lab | 39e2a688-346b-4874-be02-46a7fe6f13ee | `.../2jg65r8u/terrain-lab`, `feat/terrain-lab` | 5191 | See handoffs and current thread checklist. |
+| Vehicles, shared code (Codex 1) | 8b09a27b-c89d-46b1-9e52-0951e4bd020f | `/Users/vtn/dev/Syn3h-wt/vehicles2`, `feat/vehicles2` | 5185 | See handoffs and current thread checklist. |
+| Bots, Performance, QA (Codex 2) | 1e6bdac4-cef1-44c7-9768-1eae4b85ef3d | `/Users/vtn/dev/Syn3h-wt/fx`, `feat/fx` | 5186 | See handoffs and current thread checklist. |
+| UX and sound (Codex 3) | ba7d0154-b4d0-4b69-9008-805456c9fdde | `/Users/vtn/dev/Syn3h-wt/audio`, `feat/audio` | 5187 | See handoffs and current thread checklist. |
+| Multiplayer | 1aea4dff-9b45-4b17-ba36-116438350f17 | `/Users/vtn/dev/Syn3h-wt/net`, `feat/net` | 5183, room 8791 | See handoffs and current thread checklist. |
+| Syn3h buggy | 12abdd19-b672-40d7-938a-be2ab2339315 | `.../2jg65r8u/veh-buggy`, `veh/buggy` | 5201 | See handoffs and current thread checklist. |
+| Jet | e73e5ed4-a32d-468e-a2cc-cfda3c196288 | `.../2jg65r8u/veh-jet`, `veh/jet` | 5202 | See handoffs and current thread checklist. |
+| Hovercraft | 43191a2c-f8f5-4da4-b147-423a10dff345 | `.../2jg65r8u/veh-hovercraft`, `veh/hovercraft` | 5203 | See handoffs and current thread checklist. |
+| Classic buggy | 25c9c763-6966-410d-a9f9-0714245088d6 | `.../2jg65r8u/veh-classic-buggy`, `veh/classic-buggy` | 5204 | See handoffs and current thread checklist. |
+| Tank | 1e12b353-8e53-4aaa-8784-7d148ebf9c28 | `.../2jg65r8u/veh-tank`, `veh/tank` | 5205 | See handoffs and current thread checklist. |
