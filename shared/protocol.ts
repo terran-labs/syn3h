@@ -265,6 +265,8 @@ export interface ShotInfo {
   boost: number
   /** Server clock seconds at the moment of firing. */
   t: number
+  /** Kind of beam: absent for the tag beam, 'red' for Big Red (src/weapons/bigRedParams.ts). */
+  k?: 'red'
 }
 
 /**

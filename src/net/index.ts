@@ -39,6 +39,8 @@ import { laserInterval, lasersAllowed } from '../weapons/params'
 import { GearRack } from '../weapons/Gear'
 import { Bungee } from '../weapons/bungee/Bungee'
 import { Yoink } from '../weapons/yoink/Yoink'
+import { BigRed } from '../weapons/BigRed'
+import { bigRedAllowed, bigRedPush } from '../weapons/bigRedParams'
 import { BoundsGuard, TagMarker } from '../modes/Tag'
 import { gameMode, kothKnockBonus, kothLaserPush, kothRespawnDelay, kothTargetScore, kothZoneRadius } from '../modes/params'
 import { type HillTerrain, computeHillZone } from '../modes/hill'
@@ -172,6 +174,7 @@ export class NetClient implements System {
   readonly gear: GearRack
   readonly bungee: Bungee
   readonly yoink: Yoink
+  readonly bigRed: BigRed
   /** Remote players and remote bots, by id. */
   readonly remotes = new Map<number, RemotePlayer>()
   readonly players = new Map<number, PlayerInfo>()
@@ -229,10 +232,17 @@ export class NetClient implements System {
       bodyOf: (id) => this.vehicleOf(id)?.body,
       judgedId: (h) => this.judgedId(h),
       isVehicleBody: (h) => [...this.remotes.values()].some((r) => r.vehicle.body.handle === h),
-      onHit: (shooter, shot, victim, at, dir) => {
+      onHit: (shooter, shot, victim, at, dir, red) => {
         if (victim === this.id) this.stats.hitsTaken++
-        // On the hill a laser shoves. The judging client owns the victim, so it applies it.
-        if (this.mode === MODE_KOTH && kothLaserPush.value > 0) {
+        // Big Red shoves in every mode, with some lift. The judging client owns the victim.
+        if (red && bigRedPush.value > 0) {
+          const body = this.vehicleOf(victim)?.body
+          if (body) {
+            const m = body.mass() * bigRedPush.value
+            body.applyImpulse({ x: dir.x * m, y: dir.y * m + m * 0.25, z: dir.z * m }, true)
+          }
+        } else if (this.mode === MODE_KOTH && kothLaserPush.value > 0) {
+          // On the hill a laser shoves. The judging client owns the victim, so it applies it.
           const body = this.vehicleOf(victim)?.body
           if (body) {
             const m = body.mass() * kothLaserPush.value
@@ -273,6 +283,12 @@ export class NetClient implements System {
       wrapSize: () => this.wrapSize,
       inHand: () => this.gear.current === 'yoink',
       send: (y) => { if (this.connected) this.send({ type: 'yoink', y }) },
+    })
+    this.bigRed = new BigRed(game, {
+      body: () => this.ctx.player.body,
+      object: () => this.ctx.player.object,
+      inHand: () => this.gear.current === 'red',
+      fire: (d) => this.fire(d, undefined, 'red'),
     })
     this.marker = new TagMarker(game)
     this.marker.local = player
@@ -327,6 +343,7 @@ export class NetClient implements System {
     g.add(this.gear)
     g.add(this.bungee)
     g.add(this.yoink)
+    g.add(this.bigRed)
     g.add(this.marker)
     g.add(this.bounds)
     g.add(this.hill)
@@ -439,8 +456,10 @@ export class NetClient implements System {
    * Fire one laser from the local vehicle: straight ahead, along `direction`, or from the
    * muzzle toward the world point `target` (for aim assist and automated checks).
    */
-  fire(direction?: [number, number, number], target?: { x: number; y: number; z: number }): void {
+  fire(direction?: [number, number, number], target?: { x: number; y: number; z: number }, kind?: 'red'): void {
+    if (kind === 'red' && !bigRedAllowed.value) return
     const shot = this.lasers.aim(this.ctx.player.body, this.clock.now())
+    if (kind) shot.k = kind
     if (target) direction = [target.x - shot.o[0], target.y - shot.o[1], target.z - shot.o[2]]
     if (direction) {
       const len = Math.hypot(...direction) || 1
