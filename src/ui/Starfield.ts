@@ -11,6 +11,8 @@
  * while the tab is hidden. At the lowest graphics level, or for people who ask for reduced
  * motion, it draws one still frame.
  */
+import { qualityFrame } from './quality/ladder'
+
 export interface StarfieldLook {
   /** Any number. Different seeds turn the world and place its clouds differently. */
   seed: number
@@ -204,6 +206,7 @@ export class Starfield {
   }
   private loop = (now: number): void => {
     if (!this.active || document.hidden) return
+    qualityFrame(now)
     // Still mode: the one frame drawn on resize stays up. Look again in a second in case the
     // graphics level or the motion preference has changed.
     if (this.motionless) {
