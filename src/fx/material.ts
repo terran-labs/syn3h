@@ -23,7 +23,7 @@ export function createLavaMaterial(river = false, shoreline = false, far = false
   const cracks = float(1).sub(smoothstep(float(0.02), float(0.22).sub(crust.mul(0.18)), field.sub(0.5).abs()))
   const edge = shoreline ? float(1).sub(smoothstep(0, 1.8, altitude.sub(attribute('groundHeight', 'float')).abs())).mul(0.4) : float(0)
   const distance = positionWorld.sub(cameraPosition).length()
-  const heat = far ? mix(cracks, float(0.2), smoothstep(250, 1400, distance)).max(edge) : cracks.max(edge)
+  const heat = far ? mix(cracks, float(0.09), smoothstep(250, 1400, distance)).max(edge) : cracks.max(edge)
   const material = new MeshBasicNodeMaterial({ side: DoubleSide })
   // Unlit HDR colour is emissive without adding any real lights or requiring sunlight.
   material.colorNode = mix(uniform(new Color(0x170d0c)), molten.mul(glow), heat)

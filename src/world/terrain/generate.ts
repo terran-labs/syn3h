@@ -52,7 +52,7 @@ export function rimRadius(v: Volcano): number {
   return v.calderaRadius * 1.45 + 4
 }
 /** The flat summit reaches this far outside the rim road, so the road has ground both sides. */
-const SUMMIT_MARGIN = 14
+const SUMMIT_MARGIN = 32
 /** Depth of the sea floor far from shore. */
 const SEA_DEPTH = 60
 
@@ -533,6 +533,14 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
     if (h > top) h = top
     // The summit tips gently toward the crater, so a car shoved inward keeps rolling.
     h -= 1.5 * smoothstep(rho - 6, rc, r)
+    // Outer battlements: fins of rock on the lip of the summit, outside the ring road. From
+    // below they give the volcano a jagged crown instead of a flat table top, and on the
+    // summit they are a broken guard rail with gaps to be knocked through.
+    const lip = rho + SUMMIT_MARGIN - 8
+    if (r > lip - 9 && r < lip + 9) {
+      const fin = smoothstep(0.0, 0.45, perlin(ux * 5.2, uz * 5.2, S.rim + 5) + 0.3 * perlin(ux * 13, uz * 13, S.rim + 6))
+      h += s.roughness * 84 * fin * smoothstep(lip - 9, lip - 2, r) * smoothstep(lip + 9, lip + 1, r)
+    }
     const sN = r / rc
     if (sN < 1.24) {
       const fang = smoothstep(0.02, 0.5, perlin(ux * 3.4, uz * 3.4, S.rim) + 0.25 * perlin(ux * 9, uz * 9, S.rim + 1))

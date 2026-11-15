@@ -14,7 +14,7 @@
     },
     "stable": {
       "type": "service",
-      "command": "cd ../Syn3h-stable/current && npx wrangler dev --local --ip 127.0.0.1 --port $PASEO_PORT"
+      "command": "exec node tools/serve-stable.mjs --dir ../Syn3h-stable/current --port \"$PASEO_PORT\""
     }
   }
 }
