@@ -152,11 +152,51 @@ export class Game {
     this.buildMark = 0
     this.loopStart = performance.now()
     this.last = performance.now()
+    this.started = true
+    if (!this.paused) this.renderer.setAnimationLoop(() => this.frame())
+  }
+
+  private started = false
+  private paused = false
+  /** True while the loop is stopped because nobody can see the page. */
+  get isPaused(): boolean { return this.paused }
+
+  /**
+   * Stops everything the loop drives: physics steps, every system's updates and rendering.
+   * Called when the page is hidden (src/core/lifecycle.ts). Nothing is torn down, so no
+   * shader or pipeline is rebuilt on the way back. Safe before `start` and when already paused.
+   */
+  pause(): void {
+    if (this.paused) return
+    this.paused = true
+    if (!this.started) return
+    this.renderer.setAnimationLoop(null)
+    // Clearing the callback is not enough: three keeps requesting animation frames for its own
+    // bookkeeping (about 15 a second measured in a hidden page). Its animation object has the
+    // stop that the public method does not call; setAnimationLoop starts it again on resume.
+    ;(this.renderer as unknown as { _animation?: { stop?: () => void } })._animation?.stop?.()
+  }
+
+  /**
+   * Starts the loop again from now. The time spent paused is discarded, not simulated: the
+   * frame clock restarts and the leftover fraction of a step is dropped, so the first frame
+   * back takes at most one ordinary step and there is no catch-up burst.
+   */
+  resume(): void {
+    if (!this.paused) return
+    this.paused = false
+    if (!this.started) return
+    this.last = performance.now()
+    this.accumulator = 0
     this.renderer.setAnimationLoop(() => this.frame())
   }
 
+  /** Frames the loop has run since start, drawn or not. Stands still while paused. */
+  frames = 0
+
   private frame(): void {
     const now = performance.now()
+    this.frames++
     if (this.loopStart) { recordStartupPhase('game.start to first animation frame', this.loopStart); this.loopStart = 0 }
     const frameMs = now - this.last
     const frameDt = Math.min(0.25, frameMs / 1000)

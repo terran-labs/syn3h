@@ -3,6 +3,8 @@
  * Keep this file small: features belong behind the seams, not here.
  */
 import { prepareResume, ResumeSession, RESUME_KEY } from './core/resume'
+import { PageLifecycle } from './core/lifecycle'
+import { PauseState, type PauseControl } from './core/pause'
 import { params, worldSeed } from '../shared/params'
 import { BotManager } from './bots/BotManager'
 import { ChaseCamera } from './core/ChaseCamera'
@@ -165,7 +167,18 @@ async function main(): Promise<void> {
   game.add(new WaterEffects(game, terrain, player, bots))
 
   // Handles for debugging and automated checks.
-  Object.assign(window, { syn3h: { planets, game, terrain, player, params, panel, shell, audio, bots, camera } })
+  // The game does not run in a background tab: one controller, obeyed by the loop here. Audio
+  // and the lobby follow the same controller from their own modules.
+  // Two triggers, one state (src/core/pause.ts): the page being hidden, and the player's own
+  // pause from the shell. The loop stops while either holds.
+  const pause = new PauseState()
+  pause.subscribe((paused) => { if (paused) game.pause(); else game.resume() })
+  const lifecycle = new PageLifecycle()
+  lifecycle.onChange((state) => { if (state === 'hidden') pause.pause('hidden'); else pause.resume('hidden') })
+  if (lifecycle.hidden) pause.pause('hidden')
+  // The shell owns the Escape trigger, the overlay and the audio fade, all from this control.
+  ;(shell as unknown as { setPauseControl?: (control: PauseControl) => void }).setPauseControl?.(pause)
+  Object.assign(window, { syn3h: { planets, game, terrain, player, params, panel, shell, audio, bots, camera, lifecycle, pause } })
   game.start()
 }
 
