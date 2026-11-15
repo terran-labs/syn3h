@@ -49,6 +49,17 @@ export function createWheelEffects(count = 4): WheelEffect[] {
   }))
 }
 
+/** Longest slice of a step's motion tested against the ground, in metres. */
+const GUARD_SLICE = 0.5
+/** How far under the surface a vehicle's centre may be before the guard acts. Hulls bottom out a few centimetres above it. */
+const GUARD_DEPTH = 0.25
+/** Height above the surface the centre is put back at. */
+const GUARD_LIFT = 0.35
+/** A move longer than this in one step is a teleport: the speed clamp allows 10 m. */
+const GUARD_MAX_STEP = 25
+/** Ground the collider still covers past the tile edge, a little inside its 128 m margin. */
+const GUARD_EDGE = 120
+
 export abstract class Vehicle implements System {
   readonly object = new THREE.Group()
   private readonly visualDetails=new Set<VehicleDetail>()
@@ -265,7 +276,60 @@ export abstract class Vehicle implements System {
     this.object.position.x += dx; this.object.position.z += dz
   }
 
+  /** Off only in tests, to show what happens without the guard. */
+  static groundGuard = true
+  /** Times the ground guard had to put this vehicle back on the surface. For tests and telemetry. */
+  groundGuardHits = 0
+  private readonly guardNormal = new THREE.Vector3()
+
+  /**
+   * Swept ground check, after every physics step, for every vehicle simulated here (the
+   * player, bots, and remote players near enough to be dynamic).
+   *
+   * Rapier already sweeps the chassis against the terrain collider (CCD), and in trials that
+   * holds to 300 m/s. This is the backstop for what that sweep cannot see. The terrain is a
+   * height surface with no inside: a body whose centre gets under it, by any route, is never
+   * pushed back out and falls through the world. Routes include a collider that is rebuilt
+   * while a vehicle is on it, a remote copy that turns dynamic at an interpolated position,
+   * a direct velocity or position write, or a fast spin, which CCD does not sweep.
+   *
+   * The step's motion is cut into slices of at most GUARD_SLICE metres and each is tested
+   * against the terrain's height function, which does not depend on the collider. So a
+   * vehicle that crossed a ridge and came out the far side within one step is caught as well
+   * as one that ended the step underground. On a hit the vehicle is put back where its
+   * centre met the surface, lifted just clear, and loses only the part of its velocity
+   * that points into the ground, so it carries on along the surface.
+   */
+  private guardGround(): void {
+    const b = this.body
+    if (!Vehicle.groundGuard || b.isKinematic()) return
+    const from = this.currPos, to = b.translation(), terrain = this.terrain
+    // Past the tile and its collider margin there is no ground to stand on: leave falling
+    // off an unwrapped world to the respawn in `localSafety`.
+    const reach = terrain.size / 2 + GUARD_EDGE
+    if (Math.abs(to.x) > reach || Math.abs(to.z) > reach) return
+    const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z
+    const distance = Math.hypot(dx, dy, dz)
+    // A teleport, respawn or whole tile shift is not motion to sweep.
+    if (distance > GUARD_MAX_STEP) return
+    const clearance = (k: number) => from.y + dy * k - terrain.heightAt(from.x + dx * k, from.z + dz * k)
+    const slices = Math.max(1, Math.ceil(distance / GUARD_SLICE))
+    let hit = 0
+    for (let i = 1; i <= slices; i++) if (clearance(i / slices) < -GUARD_DEPTH) { hit = i; break }
+    if (!hit) return
+    // Bisect the slice for where the centre met the surface.
+    let lo = (hit - 1) / slices, hi = hit / slices
+    for (let i = 0; i < 6; i++) { const mid = (lo + hi) / 2; if (clearance(mid) < 0) hi = mid; else lo = mid }
+    const x = from.x + dx * lo, z = from.z + dz * lo
+    b.setTranslation({ x, y: terrain.heightAt(x, z) + GUARD_LIFT, z }, true)
+    const n = terrain.normalAt(x, z, this.guardNormal), v = b.linvel()
+    const into = v.x * n.x + v.y * n.y + v.z * n.z
+    if (into < 0) b.setLinvel({ x: v.x - into * n.x, y: v.y - into * n.y, z: v.z - into * n.z }, true)
+    this.groundGuardHits++
+  }
+
   postPhysics(dt: number): void {
+    this.guardGround()
     this.prevPos.copy(this.currPos)
     this.prevQuat.copy(this.currQuat)
     const t = this.body.translation()
