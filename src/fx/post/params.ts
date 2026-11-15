@@ -11,8 +11,8 @@ import { defineParam, params } from '../../../shared/params'
 const g = 'Post'
 const c = 'client' as const
 
-export const postOn = defineParam({ id: 'post.on', label: 'Post effects on', group: g, scope: c, default: false })
-export const postTablets = defineParam({ id: 'post.tablets', label: 'Post effects on phones and tablets (unmeasured)', group: g, scope: c, default: false })
+export const postOn = defineParam({ id: 'post.on', label: 'Post effects on', group: g, scope: c, default: true })
+export const postTablets = defineParam({ id: 'post.tablets', label: 'Post effects on phones and tablets', group: g, scope: c, default: true })
 
 export const postBloom = defineParam({ id: 'post.bloom', label: 'Glow strength', group: g, scope: c, default: 0.5, min: 0, max: 1.5, step: 0.05 })
 export const postBloomThreshold = defineParam({ id: 'post.bloomThreshold', label: 'Glow threshold (on-screen brightness)', group: g, scope: c, default: 3, min: 0.5, max: 6, step: 0.05 })
@@ -54,7 +54,7 @@ export function postOverride(search: string): boolean | undefined {
 /**
  * The cinematic look in one switch, for the owner to compare: the post chain plus the
  * light rig's ground bounce, the Weather Lab's aerial perspective and the Terrain Lab's
- * material sliders. Each lane's own default stays off; this only sets them for the page.
+ * material sliders. Normal entry uses these defaults too; this remains a comparison preset.
  */
 export const CINEMATIC: Readonly<Record<string, number | boolean>> = {
   'post.on': true, 'light.bounce': 1, 'weather.aerial': 1,
