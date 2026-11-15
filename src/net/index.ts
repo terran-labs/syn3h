@@ -662,6 +662,8 @@ export class NetClient implements System {
       this.sendHeartbeat()
     } else {
       this.stopHeartbeat()
+      // Whatever we measured while hidden (or before) says nothing about now: start over.
+      for (const r of this.remotes.values()) r.buffer.restartEstimate()
     }
   }
 
@@ -914,9 +916,10 @@ export class NetClient implements System {
       const wait = Math.max(0, Math.ceil((this.conn.retryAt - performance.now()) / 1000))
       lines.push(this.conn.state === 'connecting' ? `net: connecting to room ${this.ctx.room}` : `net: offline, retry in ${wait}s (room ${this.ctx.room})`)
     } else {
-      const delays = [...this.remotes.values()].map((r) => r.delay)
-      const delay = delays.length ? Math.max(...delays) : 0
-      lines.push(`net: room ${this.ctx.room}   ping ${Math.round(this.clock.rtt * 1000)} ms   delay ${Math.round(delay * 1000)} ms`)
+      // A parked (hidden tab) player is held still, so its delay is not one anybody sees.
+      const delays = [...this.remotes.values()].filter((r) => !r.paused).map((r) => r.delay)
+      const delay = delays.length ? `${Math.round(Math.max(...delays) * 1000)} ms` : 'none'
+      lines.push(`net: room ${this.ctx.room}   ping ${Math.round(this.clock.rtt * 1000)} ms   delay ${delay}`)
       const host = this.game.host === this.id ? 'you' : this.nameOf(this.game.host)
       lines.push(`host: ${host}   shared sliders ${this.game.locked ? 'LOCKED (host only)' : 'open to all'}`)
       lines.push(...this.modeLines())

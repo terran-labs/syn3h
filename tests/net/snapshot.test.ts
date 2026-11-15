@@ -99,6 +99,32 @@ describe('SnapshotBuffer', () => {
     expect(d).toBeGreaterThan(0.2)
   })
 
+  it('ignores a stale replayed first state and follows slow heartbeats quickly', () => {
+    // Joining replays a hidden tab's last heartbeat, 0.7 s old; then heartbeats arrive 30 ms old.
+    const b = new SnapshotBuffer()
+    b.push({ ...snap(0, 0), paused: true }, 0.7)
+    for (let i = 1; i <= 3; i++) b.push({ ...snap(i, 0), paused: true }, i + 0.03)
+    expect(b.ping).toBeCloseTo(0.03, 3)
+    let d = 0
+    for (let i = 0; i < 180; i++) d = b.delay(1 / 60)
+    expect(d).toBeCloseTo(0.1, 3)
+  })
+
+  it('falls back to the floor within a few seconds of a restart', () => {
+    const b = filled()
+    b.ping = 0.5
+    for (let i = 0; i < 600; i++) b.delay(1 / 60)
+    expect(b.autoDelay).toBeGreaterThan(0.3)
+    b.restartEstimate()
+    expect(b.delay(1 / 60)).toBeCloseTo(0.1, 3)
+    // A falling target is followed with a two second time constant.
+    const c = filled()
+    c.autoDelay = 0.8
+    let d = 0
+    for (let i = 0; i < 60 * 5; i++) d = c.delay(1 / 60)
+    expect(d).toBeLessThan(0.16)
+  })
+
   it('holds a paused vehicle still and keeps it responding through slow heartbeats', () => {
     const b = new SnapshotBuffer()
     b.push({ ...snap(0, 3, 10), paused: true }, 0)
