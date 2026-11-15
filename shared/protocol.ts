@@ -10,6 +10,7 @@
  *
  * No browser or Node dependencies: the client, the Node server and the Worker share it.
  */
+import { wrapDistance } from './wrap'
 
 export const PROTOCOL_VERSION = 2
 
@@ -197,6 +198,13 @@ export interface HillZone {
   yMax: number
 }
 
+/**
+ * Side of the world's tile in metres for each `terrain.planetSize` (0 small, 1 medium, 2
+ * large). The room server needs it to measure distances on a wrapping world and cannot load
+ * the terrain generator; a test keeps this equal to the generator's PLANET_SIZES.
+ */
+export const WRAP_SIZES = [1024, 2048, 4096] as const
+
 /** Sanity limits for a zone sent by a client. Returns a clean copy, or null. */
 export function cleanZone(raw: unknown): HillZone | null {
   if (!raw || typeof raw !== 'object') return null
@@ -209,8 +217,9 @@ export function cleanZone(raw: unknown): HillZone | null {
   return { x: z.x, z: z.z, inner: z.inner, outer: z.outer, yMin: z.yMin, yMax: z.yMax }
 }
 
-export function inZone(zone: HillZone, p: readonly number[]): boolean {
-  const d = Math.hypot(p[0] - zone.x, p[2] - zone.z)
+/** `wrapSize` is the side of a wrapping world in metres (0 or absent: it does not wrap). */
+export function inZone(zone: HillZone, p: readonly number[], wrapSize = 0): boolean {
+  const d = wrapSize > 0 ? wrapDistance(p[0], p[2], zone.x, zone.z, wrapSize) : Math.hypot(p[0] - zone.x, p[2] - zone.z)
   return d >= zone.inner && d <= zone.outer && p[1] >= zone.yMin && p[1] <= zone.yMax
 }
 
