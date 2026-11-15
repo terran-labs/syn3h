@@ -81,27 +81,113 @@ export function nextVersion(date, existing = []) {
   return `v${formatVersion({ yy, month, day, build })}`
 }
 
+const PACIFIC_TIME = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}) (PST|PDT)$/
+export const CHANNELS = ['milestone', 'production']
+
 /**
- * Read ../Syn3h-stable/releases.tsv (written by tools/release.sh) and give each release-N its
- * calendar version, in the order the file lists them. Columns: release, shipped (Pacific,
- * "2026-11-14 19:08 PST"), url, milestone tag, commit, Worker version, frozen copy id.
- * The shipped column is already Pacific, so its date is used as written.
+ * Read ../Syn3h-stable/releases.tsv (written by tools/release.sh): which builds were deployed.
+ * Columns: release, shipped (Pacific, "2026-11-14 19:08 PST"), url, milestone tag, commit,
+ * Worker version, frozen copy id. Versions come from history.tsv, not from this file.
  */
 export function releasesFromTsv(text) {
   const out = []
-  const used = new Map()
   const lines = text.split('\n').map((l) => l.replace(/\r$/, '')).filter((l) => l.trim() !== '')
   for (const [i, line] of lines.entries()) {
-    const cols = line.split('\t')
-    const [release, shipped, url, milestone, commit, workerVersion, frozen] = cols
+    const [release, shipped, url, milestone, commit, workerVersion, frozen] = line.split('\t')
     if (!/^release-\d+$/.test(release ?? '')) throw new Error(`releases.tsv line ${i + 1}: expected release-N, got "${release}"`)
-    const when = (shipped ?? '').match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}) (PST|PDT)$/)
-    if (!when) throw new Error(`releases.tsv line ${i + 1}: expected a Pacific time like "2026-11-14 19:08 PST", got "${shipped}"`)
-    const yy = Number(when[1]) % 100, month = Number(when[2]), day = Number(when[3])
-    const key = `${yy}.${month}.${day}`
-    const build = used.has(key) ? used.get(key) + 1 : 0
-    used.set(key, build)
-    out.push({ release, version: `v${formatVersion({ yy, month, day, build })}`, shipped, url, milestone, commit, workerVersion, frozen })
+    if (!PACIFIC_TIME.test(shipped ?? '')) throw new Error(`releases.tsv line ${i + 1}: expected a Pacific time like "2026-11-14 19:08 PST", got "${shipped}"`)
+    if (!/^[0-9a-f]{7,40}$/.test(commit ?? '')) throw new Error(`releases.tsv line ${i + 1}: expected a commit, got "${commit}"`)
+    out.push({ release, shipped, url, milestone, commit, workerVersion, frozen })
   }
   return out
+}
+
+/**
+ * Read release-notes/history.tsv: every version, oldest first. Lines starting with # are
+ * comments. Columns: version, milestone tag, commit, Pacific time ("2026-11-14 14:06 PST"),
+ * channel (milestone or production), and optionally preview (yes or no, default yes: whether
+ * a milestone ran on a private preview; a plan or a build before the first preview did not).
+ * Checks that each version's day is the day of its
+ * time, that versions only rise, and that builds of a day run 00, 01, 02 with no gaps.
+ */
+export function parseHistory(text) {
+  const rows = []
+  const lines = text.split('\n').map((l) => l.replace(/\r$/, ''))
+  for (const [i, line] of lines.entries()) {
+    if (line.trim() === '' || line.startsWith('#')) continue
+    const where = `history.tsv line ${i + 1}`
+    const [version, milestone, commit, time, channel, preview = 'yes', ...rest] = line.split('\t')
+    if (rest.length) throw new Error(`${where}: expected 5 or 6 columns, got ${6 + rest.length}`)
+    if (preview !== 'yes' && preview !== 'no') throw new Error(`${where}: preview must be yes or no, got "${preview}"`)
+    const v = parseVersion(version ?? '')
+    if (version !== v.tag) throw new Error(`${where}: write the version as ${v.tag}`)
+    if (!milestone) throw new Error(`${where}: no milestone tag`)
+    if (!/^[0-9a-f]{7,40}$/.test(commit ?? '')) throw new Error(`${where}: expected a commit, got "${commit}"`)
+    const when = (time ?? '').match(PACIFIC_TIME)
+    if (!when) throw new Error(`${where}: expected a Pacific time like "2026-11-14 14:06 PST", got "${time}"`)
+    if (Number(when[1]) % 100 !== v.yy || Number(when[2]) !== v.month || Number(when[3]) !== v.day) {
+      throw new Error(`${where}: ${v.tag} is not on the day of ${time}`)
+    }
+    if (!CHANNELS.includes(channel)) throw new Error(`${where}: channel must be milestone or production, got "${channel}"`)
+    const prev = rows.at(-1)
+    if (prev) {
+      if (compareVersions(prev.parsed, v) >= 0) throw new Error(`${where}: ${v.tag} does not follow ${prev.version}`)
+      if (time < prev.time) throw new Error(`${where}: ${time} is earlier than ${prev.time}`)
+    }
+    const sameDay = prev && prev.parsed.yy === v.yy && prev.parsed.month === v.month && prev.parsed.day === v.day
+    const expected = sameDay ? prev.parsed.build + 1 : 0
+    if (v.build !== expected) throw new Error(`${where}: ${v.tag} should be build ${String(expected).padStart(2, '0')} of its day`)
+    rows.push({ version: v.tag, milestone, commit, time, channel, preview: preview === 'yes', parsed: v, hour: Number(when[4]), minute: Number(when[5]) })
+  }
+  return rows
+}
+
+/** "2026-11-14 19:08 PST" as "7:08pm". */
+export function clockTime(time) {
+  const when = time.match(PACIFIC_TIME)
+  if (!when) throw new Error(`Not a Pacific time: ${time}`)
+  const hour = Number(when[4])
+  return `${hour % 12 || 12}:${when[5]}${hour < 12 ? 'am' : 'pm'}`
+}
+
+/** "2026-11-14 19:08 PST" as "14 November 2026". */
+export function longDate(time) {
+  const when = time.match(PACIFIC_TIME)
+  if (!when) throw new Error(`Not a Pacific time: ${time}`)
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+  return `${Number(when[3])} ${months[Number(when[2]) - 1]} ${when[1]}`
+}
+
+/**
+ * The line under the deck that says what kind of build a version was. A milestone never
+ * reads as public.
+ */
+export function kindLine(row, url = 'https://www.syn3h.com/') {
+  return row.channel === 'production'
+    ? `Public release at ${clockTime(row.time)} Pacific on ${longDate(row.time)}, live at ${url}.`
+    : row.preview === false
+      ? `Milestone build at ${clockTime(row.time)} Pacific on ${longDate(row.time)}. It was not released publicly.`
+      : `Milestone build at ${clockTime(row.time)} Pacific on ${longDate(row.time)}. It ran on a private preview and was not released publicly.`
+}
+
+/**
+ * Pair each production row of the history with its releases.tsv row, by commit. Returns
+ * the problems found: a production version with no deployed build, or a deployed build
+ * with no production version.
+ */
+export function matchReleases(history, releases) {
+  const same = (a, b) => a.startsWith(b) || b.startsWith(a)
+  const problems = []
+  const pairs = []
+  for (const row of history.filter((r) => r.channel === 'production')) {
+    const release = releases.find((r) => same(r.commit, row.commit))
+    if (release) pairs.push({ ...row, release: release.release, shipped: release.shipped })
+    else problems.push(`${row.version} is production but no build of ${row.commit} is in releases.tsv`)
+  }
+  for (const release of releases) {
+    if (!history.some((r) => r.channel === 'production' && same(r.commit, release.commit))) {
+      problems.push(`${release.release} (${release.commit}) has no production version in history.tsv`)
+    }
+  }
+  return { pairs, problems }
 }
