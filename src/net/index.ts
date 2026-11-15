@@ -213,6 +213,8 @@ export class NetClient implements System {
   private colors: [string, string]
   private bots: NetBots | null
   private wasHost = false
+  /** The shell's play state last frame: leaving play (Exit world) drops the gear. */
+  private wasDriving = false
   private welcomed = false
   private everWelcomed = false
   /** Which fixed steps send a state; see SimClock.ts. */
@@ -383,9 +385,13 @@ export class NetClient implements System {
     }
     this.rescue.onFreed = (by) => {
       this.event(by === 'crawled' ? 'You crawled free of the lava' : 'Returned to your pad')
-      if (by === 'returned') this.ctx.audio?.play('materialize', this.ctx.player.body.translation())
+      if (by === 'returned') {
+        this.resetGear('own')
+        this.ctx.audio?.play('materialize', this.ctx.player.body.translation())
+      }
     }
     this.rescue.onReturned = () => {
+      this.resetGear('own')
       this.event('Returned to your pad')
       this.ctx.audio?.play('materialize', this.ctx.player.body.translation())
     }
@@ -480,9 +486,38 @@ export class NetClient implements System {
     return true
   }
 
+  /**
+   * Drop live gear state: cords, carries, charges, Pesters and shots in flight. The one place
+   * gear is reset, so no path that moves the player to another world forgets a system.
+   *
+   * 'all' is for a new world or leaving one (world change, Exit world, room leave): every
+   * system and every bot's gear is cleared, other players' cords included, since a ground
+   * anchor or a shot belongs to the old world. The player's own cord and carry are reported
+   * off on the existing wires, and so are the bots' when we host them.
+   *
+   * 'own' is for the player alone being moved or replaced (back to the pad, a new vehicle):
+   * only what the player has out is let go, and everyone else's gear is left alone.
+   */
+  resetGear(scope: 'all' | 'own' = 'all'): void {
+    if (scope === 'own') {
+      this.bungee.letGo('released')
+      this.yoink.drop()
+      this.bigRed.reset()
+      return
+    }
+    this.lasers.reset()
+    this.bungee.reset()
+    this.yoink.reset()
+    this.bigRed.reset()
+    this.pesters.reset()
+    for (const controller of this.botGear.values()) controller.reset()
+  }
+
   /** Announce a new vehicle kind or colours (the local vehicle itself is main.ts's to swap). */
   setProfile(p: { kind?: VehicleKind; colors?: PlayerColors }): void {
-    if (p.kind) this.kind = cleanKind(announcedKind(p.kind)) ?? this.kind
+    const kind = p.kind ? cleanKind(announcedKind(p.kind)) : null
+    if (kind && kind !== this.kind) this.resetGear('own')
+    if (kind) this.kind = kind
     if (p.colors) {
       this.colors = [cleanColor(p.colors.body) ?? this.colors[0], cleanColor(p.colors.accent) ?? this.colors[1]]
     }
@@ -608,6 +643,10 @@ export class NetClient implements System {
     // Where the simulation has got to, against the room clock, once a frame (SimClock.ts).
     this.simClock.observe(this.clock.now(), this.ctx.game.time + alpha * FIXED_DT, dt)
     this.raceBridge.update()
+    // Exit world opens the lobby over a still running game: let go of everything on the way out.
+    const driving = this.raceBridge.driving
+    if (this.wasDriving && !driving) this.resetGear()
+    this.wasDriving = driving
     for (const controller of this.botGear.values()) controller.update(dt)
     const frameAt = performance.now()
     // After a long task the browser often renders before it delivers the queued messages, so
@@ -719,6 +758,7 @@ export class NetClient implements System {
   }
 
   dispose(): void {
+    this.resetGear()
     this.raceBridge.disconnect()
     this.bots?.setGear?.(null)
     for (const controller of this.botGear.values()) controller.dispose()
@@ -1174,6 +1214,10 @@ export class NetClient implements System {
   }
 
   private onTerrainRegenerated(): void {
+    // A new world (another planet, a new seed, the room's world on joining) is built in place,
+    // under the same gear systems: a cord anchored in the old ground would hang in the new
+    // sky, and a carry or shot would continue in a world it never belonged to.
+    this.resetGear()
     // The summit moved with the world: recompute the hill now, and the host resends it.
     this.zoneTimer = 0
     if (this.everWelcomed) {
@@ -1383,6 +1427,9 @@ export class NetClient implements System {
   }
 
   private onDisconnect(): void {
+    // The room drops our cord and carry when it loses us; drop everything here too, since a
+    // reconnect may land in a world that has changed meanwhile.
+    this.resetGear()
     this.welcomed = false
     this.raceBridge.disconnect()
     this.clock.reset()

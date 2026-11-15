@@ -121,6 +121,13 @@ export class BigRed implements System {
     this.fireWas = false
   }
 
+  /** Drop a charge without firing or fizzling, for a world change or leaving the world. */
+  reset(): void {
+    this.cancel()
+    this.readyAt = 0
+    this.glow.visible = false
+  }
+
   update(): void {
     const o = this.hooks.object()
     if (this.charge < 0 || !o) { this.glow.visible = false; return }
