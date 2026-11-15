@@ -94,6 +94,7 @@ async function main() {
   const scenes=process.env.PERFORMANCE_SCENES?.split(',')??MATRIX_SCENES,tiers=process.env.PERFORMANCE_TIERS?.split(',').map(Number)??MATRIX_TIERS
   assert.ok(scenes.every(s=>MATRIX_SCENES.includes(s))&&tiers.every(t=>MATRIX_TIERS.includes(t)))
   // Headless Chrome paces at 60 Hz. A headed run on another display must state its refresh rate.
+  const headed=process.env.PERFORMANCE_HEADED==='1'
   const expectedMs=1000/Number(process.env.PERFORMANCE_REFRESH_HZ??60);assert.ok(expectedMs>0&&Number.isFinite(expectedMs),'PERFORMANCE_REFRESH_HZ')
   const freePort=()=>new Promise((resolve,reject)=>{const s=createServer();s.on('error',reject);s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>resolve(p))})})
   const roomPort=await freePort(),port=await freePort(),origin=`http://127.0.0.1:${port}`
@@ -105,7 +106,8 @@ async function main() {
   try {
     for(let i=0;i<100;i++){try{if((await fetch(`http://127.0.0.1:${roomPort}/status`)).ok)break}catch{}if(i===99)throw Error('Room startup timeout');await pause(100)}
     vite=await createVite({server:{host:'127.0.0.1',port,strictPort:true,proxy:{'/ws':{target:`ws://127.0.0.1:${roomPort}`,ws:true},'/presence':{target:`http://127.0.0.1:${roomPort}`}}}});await vite.listen()
-    browser=await chromium.launch({channel:'chrome',headless:true,args:['--enable-unsafe-webgpu','--use-angle=metal','--ignore-gpu-blocklist']})
+    // Headless Chrome paced a blank page at 67 ms here, so only a headed, vsync-on run can qualify intervals.
+    browser=await chromium.launch({channel:'chrome',headless:!headed,args:['--enable-unsafe-webgpu','--use-angle=metal','--ignore-gpu-blocklist']})
     for(const tier of tiers)for(const scene of scenes){
       const id=`${scene}-tier${tier}`,context=await browser.newContext({viewport:{width:1280,height:720},deviceScaleFactor:1}),roomName=`perf${Date.now()}`
       // Blank-page control in this same browser session, alone in front, with tracing off.
@@ -195,7 +197,7 @@ async function main() {
       if(cellErrors.length)throw Error(`Rendering/setup failure in ${id}; remaining cells not run`)
     }
   }finally{
-    await writeFile(`${out}/results.json`,JSON.stringify({source,scenes,tiers,driveSeconds:DRIVE_SECONDS,results,errors,roomLog,expectedRefreshMs:expectedMs,limitations:'Frame intervals count only in cells whose blank-page controls before and after both paced near the expected refresh. Instrumented shared-host desktop; CPU submission is not GPU execution; manual tier cells do not validate weak hardware.'},null,2))
+    await writeFile(`${out}/results.json`,JSON.stringify({source,headed,scenes,tiers,driveSeconds:DRIVE_SECONDS,results,errors,roomLog,expectedRefreshMs:expectedMs,limitations:'Frame intervals count only in cells whose blank-page controls before and after both paced near the expected refresh. Instrumented shared-host desktop; CPU submission is not GPU execution; manual tier cells do not validate weak hardware.'},null,2))
     await browser?.close();await vite?.close();room.kill('SIGTERM')
   }
   // Keep the full matrix even when a frame budget fails. Exit distinguishes evidence from acceptance.
