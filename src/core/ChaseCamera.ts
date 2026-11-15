@@ -5,6 +5,7 @@ import type { Terrain } from '../world/Terrain'
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Game, System } from './Game'
 import { CameraDirector } from './CameraDirector'
+import { curveOffset, updateCurve } from '../world/curve'
 const number = (id: string, label: string, value: number, min: number, max: number, step = 0.1) => defineParam({ id: `camera.${id}`, label, group: 'Camera', scope: 'client', default: value, min, max, step })
 const boolean = (id: string, label: string, value: boolean) => defineParam({ id: `camera.${id}`, label, group: 'Camera', scope: 'client', default: value })
 // _Runtime.prefab:8755-8795, terra.buggy.prefab:586, CoreCamera.cs:177.
@@ -176,6 +177,16 @@ export class ChaseCamera implements System {
   private cinematic: { position: THREE.Vector3; target: THREE.Vector3; look: THREE.Vector3 } | null = null
 
   update(dt: number): void {
+    this.place(dt)
+    // The round world is drawn bent about the camera. The terrain refreshes that mapping in
+    // its own update, which runs before this one, so it would bend this frame's world about
+    // last frame's camera and shimmer at speed. Refresh it again now the camera has moved.
+    if (this.terrain.size > 0) updateCurve(this.game.camera.position, this.terrain.size)
+  }
+
+  private readonly bend = { x: 0, y: 0, z: 0 }
+  private readonly lookAt = new THREE.Vector3()
+  private place(dt: number): void {
     this.direct(dt)
     if (this.cinematic) {
       const camera = this.game.camera, c = this.cinematic, k = ease(clamp(dt, 0, 0.25), 2)
@@ -185,7 +196,10 @@ export class ChaseCamera implements System {
       camera.position.lerp(this.desired.set(c.position.x, y, c.position.z), k)
       camera.position.y = Math.max(camera.position.y, surfaceHeight(this.terrain, camera.position.x, camera.position.z) + camClearance.value)
       c.look.lerp(c.target, k)
-      camera.up.set(0, 1, 0); camera.lookAt(c.look)
+      // A far subject is drawn round the curve of the planet, below and nearer than its flat
+      // position: aim at where it appears. No effect on a flat world or on close shots.
+      curveOffset(c.look.x, c.look.y, c.look.z, this.bend)
+      camera.up.set(0, 1, 0); camera.lookAt(this.lookAt.set(c.look.x + this.bend.x, c.look.y + this.bend.y, c.look.z + this.bend.z))
       camera.fov = THREE.MathUtils.lerp(camera.fov, 55, k); camera.updateProjectionMatrix()
       return
     }

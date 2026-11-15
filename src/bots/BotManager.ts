@@ -9,6 +9,7 @@ import type { Vehicle } from '../vehicles/Vehicle'
 import { BotBrain, isSafeGround, type BotTerrain } from './BotBrain'
 import { botCount, fleet, spawnRadius } from './params'
 import { Daydream } from './Daydream'
+import { overHorizon } from '../world/curve'
 import { Mind } from './mind/Mind'
 import { createPilot } from './pilot'
 import { createNavigator, pointsOfInterest, type PointOfInterest } from './nav'
@@ -101,6 +102,9 @@ export class BotManager implements System {
     const count = Math.max(0, Math.min(qualityBudget().bots, Math.floor(botCount.value)))
     while (this.bots.length > count) this.removeLast()
     while (this.bots.length < count) if (!this.spawn(this.bots.length)) break
+    // On a round world most of the map is behind the planet. A bot there still drives (its
+    // physics is the host's to run) but there is nothing of it to draw.
+    for (const bot of this.bots) { const p = bot.body.translation(); bot.object.visible = !overHorizon(p.x, p.z, 4, p.y + 3) }
   }
   dispose() {
     this.disposed = true
