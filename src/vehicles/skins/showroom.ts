@@ -21,9 +21,28 @@ import {
   max, mix, mod, normalLocal, normalView, normalize, positionLocal, positionView, positionViewDirection,
   select, sign, sin, smoothstep, uniform, vec2, vec3,
 } from 'three/tsl'
-import { params } from '../../../shared/params'
+import { defineParam, params } from '../../../shared/params'
 import { vehicleShading } from '../../core/quality'
 import { mergedSurfaces, registerVehicleDetail } from './mergeStatic'
+
+/**
+ * Player-facing paint controls. Each drives a shader uniform, so a change shows on the next
+ * frame with no recompile. Defaults are the tuned look; 0 on depth, seams and flakes gives
+ * smooth lacquer with no pattern at all.
+ */
+export const paintScaleSize = defineParam({ id: 'paint.scaleSize', label: 'Scale size', group: 'Vehicle paint', scope: 'client', default: 1, min: .4, max: 4, step: .05 })
+export const paintScaleDepth = defineParam({ id: 'paint.scaleDepth', label: 'Scale depth', group: 'Vehicle paint', scope: 'client', default: .45, min: 0, max: 2, step: .05 })
+export const paintSeams = defineParam({ id: 'paint.seams', label: 'Seam darkness', group: 'Vehicle paint', scope: 'client', default: .35, min: 0, max: 1, step: .05 })
+export const paintFlakes = defineParam({ id: 'paint.flakes', label: 'Metal flakes', group: 'Vehicle paint', scope: 'client', default: .6, min: 0, max: 2, step: .05 })
+export const paintGloss = defineParam({ id: 'paint.gloss', label: 'Sky reflection', group: 'Vehicle paint', scope: 'client', default: .42, min: 0, max: 1.5, step: .02 })
+const live = (param: { value: number; def: { id: string } }): N => {
+  const node = uniform(param.value)
+  params.onChange(id => { if (id === param.def.id) node.value = param.value })
+  return node
+}
+// One uniform per control, shared by every vehicle material.
+let controls: { size: N; depth: N; seams: N; flakes: N } | null = null
+const paintControls = () => controls ??= { size: live(paintScaleSize), depth: live(paintScaleDepth), seams: live(paintSeams), flakes: live(paintFlakes) }
 
 export type SurfaceRole = 'paint' | 'accent' | 'chrome' | 'glass' | 'tyre' | 'lamp' | 'trim'
 export type ShadingTier = 0 | 1 | 2 | 3
@@ -36,8 +55,6 @@ export function setRole<M extends T.Material>(material: M, role: SurfaceRole): M
 
 /** Remote vehicles beyond this drop to plain materials; the lower bound is the way back in. */
 const FAR_OUT = 30, FAR_IN = 25
-/** The live sky map is captured for a subdued scene fill (0.15). Paint wants it at full strength. */
-const ENV_BOOST = .42
 
 // TSL node types do not compose through arithmetic chains, so shader values stay loosely typed.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -111,14 +128,15 @@ const scale = (p: N, lean: number): N => {
  */
 function scaleHeight(cell: number, relief: number, lean: number): ScaleField {
   const n = abs(normalLocal), w4 = n.mul(n).mul(n).mul(n), w = w4.div(w4.x.add(w4.y).add(w4.z))
-  const p = positionLocal.div(cell)
+  const { size, depth } = paintControls(), span: N = size.mul(cell)
+  const p = positionLocal.div(span)
   const h = scale(p.zy, lean).mul(w.x).add(scale(p.xz, lean).mul(w.y)).add(scale(p.xy, lean).mul(w.z))
-  const footprint = length(fwidth(positionLocal)).div(cell)
+  const footprint = length(fwidth(positionLocal)).div(span)
   // Full relief down to about three pixels per scale, gone at about one and a half.
   const fade = smoothstep(.7, .3, footprint)
   // `lit` is 0 in a seam and 1 on a scale. Past the fade it settles on the average of the
   // pattern, so paint too far away to resolve its scales keeps the same overall tone.
-  return { height: h.mul(cell * relief).mul(fade), lit: mix(.88, smoothstep(0, .45, h), fade), fade }
+  return { height: h.mul(span).mul(relief).mul(depth).mul(fade), lit: mix(.88, smoothstep(0, .45, h), fade), fade }
 }
 
 /**
@@ -168,7 +186,6 @@ function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, m
   const first = sources[0]
   material.name = `${first.name || meshName} showroom ${tier}`
   material.side = first.side; material.transparent = first.transparent; material.opacity = first.opacity
-  material.envMapIntensity = ENV_BOOST
   const id = merged ? attribute<'float'>('surfaceId', 'float').round() : null
   let color: N = vec3(0), emission: N = vec3(0), roughness: N = float(0), metalness: N = float(0)
   let coat: N = float(0), coatRoughness: N = float(0), height: N = float(0), flake: N = float(0), flip: N = float(0)
@@ -208,7 +225,7 @@ function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, m
     // catch the sun and the sky as the vehicle turns. Fades before a flake reaches a pixel.
     const cell = floor(positionLocal.mul(400))
     const near = smoothstep(.9, .25, length(fwidth(positionLocal)).mul(400))
-    normal = normalize(normal.add(hash3(cell).sub(.5).mul(.34).mul(flake).mul(near)))
+    normal = normalize(normal.add(hash3(cell).sub(.5).mul(.34).mul(paintControls().flakes).mul(flake).mul(near)))
     // Colour flip: toward grazing angles the paint shifts to its neighbouring hue, the
     // deeper indigo that the 2011 body shows where it turns away from the camera.
     const grazing = float(1).sub(abs(dot(normalView, positionViewDirection))).pow(2.5)
@@ -216,11 +233,13 @@ function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, m
   }
   // A little colour sinks into the grooves so the scales read in flat light as well.
   if (scales.size) {
-    color = color.mul(mix(.3, 1, lit))
-    roughness = roughness.add(float(1).sub(lit).mul(.25))
+    // `seams` 1 is the hard, dark seam of the first version; 0 leaves the relief to speak alone.
+    const seams = paintControls().seams
+    color = color.mul(mix(float(1).sub(seams.mul(.7)), 1, lit))
+    roughness = roughness.add(float(1).sub(lit).mul(seams).mul(.25))
     // Seams are cavities: without occlusion their steep walls mirror the sky and the
     // pattern reads as bright wire instead of dark seams between scales.
-    material.aoNode = mix(.1, 1, lit)
+    material.aoNode = mix(float(1).sub(seams.mul(.9)), 1, lit)
   }
   material.colorNode = color
   material.emissiveNode = authoredEmission ?? emission
@@ -231,7 +250,7 @@ function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, m
     // The lacquer fills the grooves part way: highlights break up over the scales without
     // losing the long, smooth reflection of the sky. It thins out in the seams, which keeps
     // them dark.
-    material.clearcoatNode = scales.size ? coat.mul(mix(.15, 1, lit)) : coat
+    material.clearcoatNode = scales.size ? coat.mul(mix(float(1).sub(paintControls().seams.mul(.85)), 1, lit)) : coat
     material.clearcoatRoughnessNode = coatRoughness
     if (heights.size) material.clearcoatNormalNode = normalize(mix(normalView, bumpNormal(height, normalView), .2))
   }
@@ -247,7 +266,8 @@ function buildGlass(source: Standard): T.Material {
   const material = new T.MeshPhysicalNodeMaterial()
   material.name = `${source.name || 'canopy'} glass`
   material.transparent = true
-  material.envMapIntensity = ENV_BOOST * 1.3
+  // Glass mirrors the sky a little more strongly than paint (see `refresh`).
+  material.userData.glass = true
   const facing = clamp(abs(dot(normalView, positionViewDirection)), 0, 1)
   const fresnel = float(.9).sub(facing.mul(.5))
   // The 2011 canopy reads as pale lavender over the tint, so lift the tint toward white.
@@ -316,10 +336,12 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
     for (const m of tiers[tier]!.values()) {
       const std = m as Standard
       if (std.envMap !== environment) { std.envMap = environment; std.needsUpdate = true }
+      // The live sky map is captured for a subdued scene fill (0.15); paint reflects it at its own strength.
+      std.envMapIntensity = paintGloss.value * (std.userData.glass ? 1.3 : 1)
     }
   }
   const detach = registerVehicleDetail(root, (d, isRemote) => { distance = d; remote = isRemote; refresh() })
-  const unsubscribe = params.onChange(id => { if (id === vehicleShading.def.id) refresh() })
+  const unsubscribe = params.onChange(id => { if (id === vehicleShading.def.id || id === paintGloss.def.id) refresh() })
   refresh()
   return () => {
     detach(); unsubscribe()

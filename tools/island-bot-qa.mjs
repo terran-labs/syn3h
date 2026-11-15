@@ -1,6 +1,7 @@
 /** tools/heavy.sh node tools/island-bot-qa.mjs [output]
  * Optional environment: PLANET, SEED, ROAD_ONLY=1, BOTS, ROAD_START (0..1),
- * CLIMB_SECONDS. A third argument "recovery" skips the initial chase and climb.
+ * CLIMB_SECONDS. Bots chase relentlessly here (bots.freeSpirit 0): this run judges the
+ * pursuit, not their own agenda. A third argument "recovery" skips the initial chase and climb.
  * One headed browser. The climbing player is a scripted target on the public centreline;
  * bots drive their real physics. This does not claim a human completed the climb.
  */
@@ -20,7 +21,7 @@ try{
  await vite.listen();browser=await chromium.launch({channel:'chrome',headless:false,args:['--enable-unsafe-webgpu','--use-angle=metal','--ignore-gpu-blocklist']});
  const page=await browser.newPage({viewport:{width:960,height:540}});page.on('pageerror',e=>errors.push(e.stack??e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
  await page.goto(`http://127.0.0.1:5186/?autoplay=1&room=island-bot-qa&planet=${planet}&seed=${seed}`);await page.waitForFunction(()=>window.syn3hNet?.connected,null,{timeout:90000});
- await page.evaluate(count=>{const s=window.syn3h;s.game.quality.frame=()=>{};s.params.set('gfx.level',1);s.params.set('bots.count',count);s.params.set('bots.canFire',false);},count);
+ await page.evaluate(count=>{const s=window.syn3h;s.game.quality.frame=()=>{};s.params.set('gfx.level',1);s.params.set('bots.freeSpirit',Number(new URLSearchParams(location.search).get('freeSpirit')??0));s.params.set('bots.count',count);s.params.set('bots.canFire',false);},count);
  await page.waitForFunction(count=>window.syn3h.bots.vehicles.length===count,count);
  const sample=phase=>page.evaluate(phase=>{const s=window.syn3h,p=s.player.body.translation(),roads=s.terrain.roadPaths(),climb=roads.find(r=>r.kind==='volcano');return{phase,tick:s.game.tick,time:s.game.time,player:[p.x,p.y,p.z],bots:s.bots.vehicles.map(b=>{const q=b.body.translation();let contact=false;for(let i=0;i<b.body.numColliders();i++)for(let j=0;j<s.player.body.numColliders();j++)s.game.world.contactPair(b.body.collider(i),s.player.body.collider(j),m=>{if(m.numContacts())contact=true;});return{id:b.id,p:[q.x,q.y,q.z],distance:Math.hypot(q.x-p.x,q.y-p.y,q.z-p.z),contact,roadDistance:Math.min(...climb.points.map(a=>Math.hypot(q.x-a.x,q.y-a.y,q.z-a.z))),liquid:s.terrain.liquidKindAt?.(q.x,q.z),visible:b.object.visible,input:{...b.input},velocity:b.body.linvel(),grounded:b.wheelsGrounded,motorSpeed:b.motorSpeed,motorTorque:b.motorTorque,enabled:b.body.isEnabled(),quaternion:b.body.rotation(),brain:(()=>{const a=s.game.systems.find(x=>x.vehicle===b&&'reversing'in x);return a?{reversing:a.reversing,rescues:a.rescues,waypoint:a.waypoint}:null})()};}),game:window.syn3hNet.game};},phase);
  async function phase(name,seconds){const start=Date.now();let shot=-20;while((Date.now()-start)/1000<seconds){const elapsed=(Date.now()-start)/1000;if(errors.length)throw new Error(errors[0]);results.push(await sample(name));if(elapsed-shot>=15){const file=`${out}/${name}-${Math.floor(elapsed)}.png`;await page.screenshot({path:file});frames.push({file,label:`${name} ${Math.floor(elapsed)}s`});shot=elapsed;}await writeFile(`${out}/trace.json`,JSON.stringify({results,errors}));await page.waitForTimeout(1000);}console.log('DONE',name,JSON.stringify(results.at(-1)));}

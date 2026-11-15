@@ -397,7 +397,15 @@ export class Room {
     this.scores[info.id] = 0
 
     if (!this.it || !this.byId(this.it)) this.it = info.id
-    if (!this.host || !this.byId(this.host)) this.host = info.id
+    if (!this.host || !this.byId(this.host)) {
+      // The stored host is not here: the room was rebuilt from storage with nobody connected
+      // (a deploy or a restart reset it). Whoever returns first becomes host, and a lock the
+      // old host set does not carry over to them: the old host may be seconds behind.
+      if (this.host) this.locked = false
+      this.host = info.id
+    }
+    // Scores for players who are no longer in the room (the same rebuild) are not kept.
+    for (const old in this.scores) if (!this.byId(Number(old))) delete this.scores[old]
 
     this.sendTo(peer, {
       type: 'welcome',

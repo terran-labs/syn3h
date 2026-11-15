@@ -185,3 +185,26 @@ describe('bot population', () => {
     manager.dispose(); expect(world.bodies.len()).toBe(1); expect(systems).toHaveLength(0)
   })
 })
+describe('wrapping world', () => {
+  it('chases the nearest image of a target across the seam, and selects by wrapped distance', () => {
+    const { game } = harness()
+    const wrapping: Terrain = { ...terrain, size: 400, wrapSize: 400 }
+    // 20 m apart across the seam at x = +-200; 380 m apart the long way round.
+    const near = new PlaceholderVehicle(game, wrapping, new Vector3(-190, 0.5, 0)); near.body.setBodyType(RAPIER.RigidBodyType.Fixed, true)
+    const far = new PlaceholderVehicle(game, wrapping, new Vector3(120, 0.5, 0)); far.body.setBodyType(RAPIER.RigidBodyType.Fixed, true)
+    // Heading 0 faces -Z; -PI/2 about +Y faces +X, toward the seam.
+    const bot = new PlaceholderVehicle(game, wrapping, new Vector3(190, 0.5, 0), -Math.PI / 2)
+    const brain = new BotBrain(game, wrapping, bot, near)
+    brain.setTargets([near, far]); params.set('bots.targetMode', 1); params.set('bots.canFire', false); params.set('bots.approachSpread', 0)
+    brain.fixedUpdate(0.02)
+    expect(brain.target).toBe(near)
+    // Straight ahead through the seam: full throttle, no turn back toward the far image.
+    expect(bot.input.y).toBeGreaterThan(0); expect(Math.abs(bot.input.x)).toBeLessThan(0.2)
+    // The same layout on a world that does not wrap: the other vehicle is nearer, and the
+    // edge ahead is the end of the world.
+    const flatBot = new PlaceholderVehicle(game, { ...terrain, size: 400 }, new Vector3(190, 0.5, 0), -Math.PI / 2)
+    const flatBrain = new BotBrain(game, { ...terrain, size: 400 }, flatBot, near)
+    flatBrain.setTargets([near, far]); flatBrain.fixedUpdate(0.02)
+    expect(flatBrain.target).toBe(far)
+  })
+})

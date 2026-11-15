@@ -1,3 +1,4 @@
+// PARAMS=paint.seams=1,paint.scaleDepth=1 sets extra sliders first.
 // In-game captures of the showroom shading: node tests/vehicles2/showroom-game.mjs <out> [kinds] [tiers] [hours]
 import {chromium} from 'playwright-core'
 import {mkdir,writeFile} from 'node:fs/promises'
@@ -12,7 +13,7 @@ try{
   page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text())})
   await page.routeWebSocket(/\/ws/,s=>s.close())
   await page.goto(`http://localhost:${port}/?autoplay=1&vehicle=${kind}&planet=${planet}&seed=1`);await page.waitForFunction(()=>window.syn3h?.game.tick>10,null,{timeout:90000})
-  await page.evaluate(()=>{const s=window.syn3h;s.params.set('bots.count',0);s.params.set('sun.dayLength',0);s.game.input.external.brakes=true;s.player.setColors('#1557e0','#1b2a9c')})
+  await page.evaluate(extra=>{const s=window.syn3h;s.params.set('bots.count',0);s.params.set('sun.dayLength',0);s.game.input.external.brakes=true;s.player.setColors('#1557e0','#1b2a9c');for(const pair of (extra||'').split(',').filter(Boolean)){const [id,value]=pair.split('=');s.params.set(id,Number(value))}},process.env.PARAMS??'')
   await page.waitForTimeout(5000)
   for(const hour of hours)for(const tier of tiers){
    await page.evaluate(({hour,tier})=>{const s=window.syn3h;s.params.set('sun.timeOfDay',hour);s.params.set('gfx.vehicleShading',tier)},{hour,tier})
