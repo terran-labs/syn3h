@@ -163,14 +163,25 @@ export class Shell implements System {
       vehicles: () => ({ options: [...this.element.querySelectorAll<HTMLInputElement>('[name="vehicle"]')].map(radio => ({ id: radio.value, label: radio.parentElement!.textContent!.trim() })), current: this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind }),
       onVehicle: id => this.switchVehicle(id as VehicleKind),
     })
-    // On a desktop the cards are there whenever the cursor is free; on touch they open from Create.
-    this.inspector.open = !this.touch.available
+    // A visitor's first view of the world has nothing over it: the cards start closed on every
+    // device and open from Create. On a desktop, once the player has captured the cursor to
+    // drive, releasing it with Escape brings the full interface up (the owner's design: full
+    // cards with the cursor free, the focus display with it captured), unless Create closed them.
+    this.inspector.open = false
     this.focusHud = new FocusHud(this.element)
     const toggle = this.element.querySelector<HTMLButtonElement>('.inspector-toggle')!
-    toggle.addEventListener('click', () => { this.inspector.open = !this.inspector.open; toggle.setAttribute('aria-pressed', String(this.inspector.open)) }, { signal })
+    let chosen: boolean | undefined
+    const setCards = (open: boolean) => { this.inspector.open = open; toggle.setAttribute('aria-pressed', String(open)) }
+    toggle.addEventListener('click', () => { chosen = !this.inspector.open; setCards(chosen) }, { signal })
     toggle.setAttribute('aria-pressed', String(this.inspector.open))
     // Focus: the cursor is captured, so the player is driving. The full interface fades away.
-    document.addEventListener('pointerlockchange', () => this.element.classList.toggle('is-focus', document.pointerLockElement === game.canvas), { signal })
+    let wasLocked = false
+    document.addEventListener('pointerlockchange', () => {
+      const locked = document.pointerLockElement === game.canvas
+      this.element.classList.toggle('is-focus', locked)
+      if (!locked && wasLocked && chosen !== false && !this.menuVisible) setCards(true)
+      wasLocked = locked
+    }, { signal })
     this.glass(signal)
     for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) slider.addEventListener('input', () => params.set(slider.dataset.param!, Number(slider.value)), { signal })
     this.startGalaxy()
