@@ -5,6 +5,7 @@ import { GROUP_PROJECTILE, GROUP_TERRAIN, RAPIER, groups } from '../core/physics
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
 import * as p from './params'
+import { BotGearController, type BotGearHooks } from './gear'
 import { roadWaypoint, type RoadTerrain, type RoadPoint } from './navigation'
 import type { Mind } from './mind/Mind'
 import { GROUND_PROFILE } from './pilot/ground'
@@ -32,6 +33,18 @@ export interface BotMatch {
 }
 export class BotBrain implements System {
   remote = false
+  private gear: BotGearController | null = null
+  setGear(hooks: BotGearHooks | null) {
+    if (hooks && !this.gear) this.gear = new BotGearController(this.vehicle, () => this.terrain.wrapSize, target => {
+      const here = this.vehicle.body.translation(), there = this.imageOf(target.body.translation(), here)
+      const delta = new Vector3(there.x - here.x, there.y - here.y, there.z - here.z), length = delta.length()
+      if (length < 0.01) return false
+      delta.multiplyScalar(1 / length)
+      return !this.game.world.castRay(new RAPIER.Ray(here, delta), length, true, undefined, groups(GROUP_PROJECTILE, GROUP_TERRAIN))
+    }, (x, z) => isSafeGround(this.terrain, x, z) && (this.navigator?.passable(x, z, GROUND_PROFILE) ?? this.terrain.normalAt(x, z, new Vector3()).y > 0.85))
+    this.gear?.setHooks(hooks)
+  }
+  dispose() { this.gear?.setHooks(null) }
   requestRecovery?: () => boolean
   target: Vehicle | null = null
   /**
@@ -172,6 +185,11 @@ export class BotBrain implements System {
     }
   }
   fixedUpdate(dt: number) {
+    if (this.remote) { this.gear?.cancel(); return }
+    this.drive(dt)
+    this.gear?.step(dt, this.target, this.vehicle.input, p.canFire.value, p.canDrive.value)
+  }
+  private drive(dt: number) {
     // Do not even clear input: network playback owns this state.
     if (this.remote) return
     const input = this.vehicle.input

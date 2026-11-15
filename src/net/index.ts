@@ -34,7 +34,10 @@ import type { Game, System } from '../core/Game'
 import { createVehicle, type VehicleKind } from '../vehicles'
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
+import type { BotGearHooks as BotDecisionHooks } from '../bots/gear'
+import { BotGear, botGearOptions } from '../weapons/BotGear'
 import { Lasers } from '../weapons/Lasers'
+import { beamAimDirection } from '../weapons/aim'
 import { laserInterval, lasersAllowed } from '../weapons/params'
 import { GearRack } from '../weapons/Gear'
 import { Bungee } from '../weapons/bungee/Bungee'
@@ -81,6 +84,7 @@ export interface NetBots {
   remote?: boolean
   /** Tell the bots what game is on (the host's manager acts on it). Null is free play. */
   setMatch?(match: BotMatchInfo<Vehicle> | null): void
+  setGear?(hooks: BotDecisionHooks | null): void
 }
 
 export interface PlayerColors {
@@ -177,6 +181,7 @@ export class NetClient implements System {
   readonly conn: Connection
   readonly lasers: Lasers
   /** Gear in hand (Weapons lane, src/weapons). With only the tag beam allowed, nothing changes. */
+  private readonly botGear = new Map<number, BotGear>()
   readonly gear: GearRack
   readonly bungee: Bungee
   readonly yoink: Yoink
@@ -293,6 +298,7 @@ export class NetClient implements System {
       wrapSize: () => this.wrapSize,
       inHand: () => this.gear.current === 'yoink',
       responding: (id) => this.remotes.get(id)?.responding ?? true,
+      heldElsewhere: (id) => [...this.botGear.values()].some(g => g.yoink.holderOf(id) !== null),
       send: (y) => { if (this.connected) this.send({ type: 'yoink', y }) },
     })
     this.bigRed = new BigRed(game, {
@@ -326,6 +332,7 @@ export class NetClient implements System {
         this.send(victim === this.id ? { type: 'hit', shooter, shot } : { type: 'hit', shooter, shot, victim })
       },
     })
+    this.bots?.setGear?.(this.botDecisionHooks)
     this.marker = new TagMarker(game)
     this.marker.local = player
     this.bounds = new BoundsGuard(player, ctx.terrain)
@@ -448,7 +455,9 @@ export class NetClient implements System {
 
   /** Attach the bot manager once it exists. */
   attachBots(bots: NetBots): void {
+    this.bots?.setGear?.(null)
     this.bots = bots
+    bots.setGear?.(this.botDecisionHooks)
     bots.remote = !this.isHost
     this.wasHost = !this.isHost // force the role switch to run on the next frame
   }
@@ -458,6 +467,8 @@ export class NetClient implements System {
   // -------------------------------------------------------------------------------------
 
   fixedUpdate(dt: number): void {
+    this.syncBotGear()
+    for (const controller of this.botGear.values()) controller.fixedUpdate(dt)
     const player = this.ctx.player
     const now = this.clock.now()
     const lp = player.body.translation()
@@ -485,7 +496,7 @@ export class NetClient implements System {
     const t = this.ctx.game.time
     if (this.ctx.game.input.state.fire && this.gear.current === 'beam' && lasersAllowed.value && t - this.lastFire >= laserInterval.value) {
       this.lastFire = t
-      this.fire()
+      this.fire(beamAimDirection(this.ctx.game, player.body))
     }
   }
 
@@ -546,6 +557,7 @@ export class NetClient implements System {
   }
 
   update(dt: number): void {
+    for (const controller of this.botGear.values()) controller.update(dt)
     const frameAt = performance.now()
     // After a long task the browser often renders before it delivers the queued messages, so
     // the gap check in onState alone misses them: also distrust the next moment after a gap.
@@ -628,6 +640,9 @@ export class NetClient implements System {
   }
 
   dispose(): void {
+    this.bots?.setGear?.(null)
+    for (const controller of this.botGear.values()) controller.dispose()
+    this.botGear.clear()
     this.conn.close()
     this.stopHeartbeat()
     for (const id of [...this.remotes.keys()]) this.removeRemote(id)
@@ -637,6 +652,85 @@ export class NetClient implements System {
   // -------------------------------------------------------------------------------------
   // Vehicles and roles
   // -------------------------------------------------------------------------------------
+
+  /** Bot decisions use the same gear implementation and limits as a human driver. */
+  private readonly botDecisionHooks: BotDecisionHooks = {
+    available: vehicle => {
+      if (!this.isHost) return []
+      // Two simultaneous users leave room for human messages in the shared connection budget.
+      const controllers = [...this.botGear.values()]
+      const mine = controllers.find(c => c.vehicle === vehicle)
+      return mine?.active || controllers.filter(c => c.active).length < 2 ? botGearOptions() : []
+    },
+    threats: vehicle => {
+      const id = this.vehicleIdOfBody(vehicle.body.handle)
+      const p = vehicle.body.translation()
+      return this.pesters.list().filter(o => o.to === id).map(o => ({
+        id: `${o.shooter}:${o.id}`,
+        position: { x: this.wrapSize > 0 ? nearestImage(o.pos[0], p.x, this.wrapSize) : o.pos[0], y: o.pos[1], z: this.wrapSize > 0 ? nearestImage(o.pos[2], p.z, this.wrapSize) : o.pos[2] },
+        velocity: { x: o.velocity[0], y: o.velocity[1], z: o.velocity[2] },
+      }))
+    },
+    act: (vehicle, action) => {
+      if (!this.isHost) return
+      const id = this.vehicleIdOfBody(vehicle.body.handle)
+      if (id === null || !isBotId(id) || this.vehicleOf(id) !== vehicle) return
+      let controller = this.botGear.get(id)
+      if (!controller) {
+        if (action.phase === 'cancel' || !botGearOptions().some(o => o.id === action.gear)) return
+        // Announce the bot and its fresh state before its first gear message.
+        this.sendBot(id, vehicle)
+        controller = this.makeBotGear(id, vehicle)
+        this.botGear.set(id, controller)
+      }
+      controller.act(action)
+    },
+  }
+
+  private makeBotGear(id: number, vehicle: Vehicle): BotGear {
+    return new BotGear(this.ctx.game, id, vehicle, {
+      vehicleOf: id => this.vehicleOf(id), vehicleIds: () => this.vehicleIds(),
+      idOfBody: h => this.vehicleIdOfBody(h), owns: id => this.ownsVehicle(id),
+      lagOf: id => this.remotes.get(id)?.delay ?? 0, wrapSize: () => this.wrapSize,
+      now: () => this.clock.now(), responding: id => this.remotes.get(id)?.responding ?? true,
+      heldElsewhere: target => this.yoink.holderOf(target) !== null || [...this.botGear].some(([actor, g]) => actor !== id && g.yoink.holderOf(target) !== null),
+      sendCord: (bot, cord) => { if (this.isHost) this.send({ type: 'cord', bot, cord }) },
+      sendYoink: (bot, y) => { if (this.isHost) this.send({ type: 'yoink', bot, y }) },
+      fireRed: (bot, direction) => this.fireBot(bot, direction),
+      launchPester: (bot, target, direction) => this.fireBot(bot, direction, target),
+    })
+  }
+
+  private fireBot(bot: number, direction: [number, number, number], target?: Vehicle): boolean {
+    if (!this.isHost) return false
+    const vehicle = this.vehicleOf(bot)
+    if (!vehicle) return false
+    const shot = this.lasers.aim(vehicle.body, this.clock.now())
+    shot.d = direction
+    if (target) {
+      if (!pesterAllowed.value || this.pesters.list().filter(o => o.shooter === bot).length >= pesterMax.value) return false
+      const to = this.vehicleIdOfBody(target.body.handle)
+      if (to === null || to === bot) return false
+      shot.k = 'pester'; shot.to = to; shot.boost = 0
+      this.pesters.spawn(bot, shot)
+    } else {
+      if (!bigRedAllowed.value) return false
+      shot.k = 'red'
+      this.lasers.spawn(bot, shot)
+    }
+    this.ctx.audio?.play('laserShot', { x: shot.o[0], y: shot.o[1], z: shot.o[2] })
+    this.send({ type: 'fire', bot, shot: { ...shot, o: this.canonical(shot.o) } })
+    return true
+  }
+
+  private syncBotGear(): void {
+    for (const [id, controller] of this.botGear) {
+      if (this.isHost && this.vehicleOf(id) === controller.vehicle) continue
+      controller.dispose()
+      this.botGear.delete(id)
+      this.pesters.forget(id)
+    }
+  }
 
   private audible: Vehicle[] = []
 
@@ -698,6 +792,10 @@ export class NetClient implements System {
     const host = this.isHost
     if (host === this.wasHost) return
     this.wasHost = host
+    if (!host) {
+      for (const controller of this.botGear.values()) controller.dispose()
+      this.botGear.clear()
+    }
     if (this.bots) this.bots.remote = !host
     // A new host, or a new connection, must announce its bots' kinds afresh.
     this.botKinds.clear()
@@ -774,18 +872,22 @@ export class NetClient implements System {
   }
 
   private sendBots(): void {
-    const t = this.clock.now()
     for (const [id, bot] of liveBots(this.bots?.vehicles ?? [], this.ctx.game.world)) {
-      // Say which vehicle it is before its first state, and again if the slot changes kind
-      // (a mixed fleet), so guests build the same one.
-      if (this.botKinds.get(id) !== bot.kind) {
-        this.botKinds.set(id, bot.kind)
-        this.send({ type: 'bot', id, kind: bot.kind })
-      }
-      const s = bot.getState()
-      this.conn.send(encodeState({ id, t, ...s, p: this.canonical(s.p), bot: true }) as Uint8Array<ArrayBuffer>)
-      this.stats.botStatesSent++
+      this.sendBot(id, bot)
     }
+  }
+
+  private sendBot(id: number, bot: Vehicle): void {
+    const t = this.clock.now()
+    // Say which vehicle it is before its first state, and again if the slot changes kind
+    // (a mixed fleet), so guests build the same one.
+    if (this.botKinds.get(id) !== bot.kind) {
+      this.botKinds.set(id, bot.kind)
+      this.send({ type: 'bot', id, kind: bot.kind })
+    }
+    const s = bot.getState()
+    this.conn.send(encodeState({ id, t, ...s, p: this.canonical(s.p), bot: true }) as Uint8Array<ArrayBuffer>)
+    this.stats.botStatesSent++
   }
 
   /**
@@ -1110,10 +1212,10 @@ export class NetClient implements System {
         }
         break
       case 'cord':
-        if (this.players.has(msg.from)) this.bungee.applyRemote(msg.from, msg.cord, this.clock.now() - msg.t)
+        if (this.players.has(msg.from)) (this.botGear.get(msg.from)?.bungee ?? this.bungee).applyRemote(msg.from, msg.cord, this.clock.now() - msg.t)
         break
       case 'yoink':
-        if (this.players.has(msg.from)) this.yoink.applyRemote(msg.from, msg.y)
+        if (this.players.has(msg.from)) (this.botGear.get(msg.from)?.yoink ?? this.yoink).applyRemote(msg.from, msg.y)
         break
       case 'shove': {
         const push = cleanShove(msg.push)

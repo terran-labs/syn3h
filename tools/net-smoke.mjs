@@ -43,7 +43,9 @@ async function open(name, extra = '') {
   const ctx = await browser.newContext({ viewport: { width: 960, height: 540 } })
   const page = await ctx.newPage()
   page.on('pageerror', (e) => errors.push(`${name} pageerror: ${e.message}`))
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(`${name} console: ${m.text()}`) })
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(`${name} console: ${m.text()} at ${m.location().url}`) })
+  page.on('response', (r) => { if (r.status() >= 400) console.log(`HTTP ${r.status()} ${r.url()}`) })
+  page.on('requestfailed', (r) => console.log(`REQUEST FAILED ${r.url()} ${r.failure()?.errorText}`))
   await page.goto(`${base}?room=${room}&name=${name}&autoplay=1${extra}`, { waitUntil: 'load' })
   // ?autoplay=1 joins the room but leaves the start screen's input suspension on, so press
   // Play as a person would (it is idempotent with autoplay's join).

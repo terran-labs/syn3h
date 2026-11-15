@@ -8,10 +8,12 @@ import * as THREE from 'three/webgpu'
 import type { Game, System } from '../core/Game'
 import type { RAPIER } from '../core/physics'
 import { hotExposureDim } from '../vehicles/skins/hotExposure'
-import { aimFrom } from './aim'
+import { aimFrom, type GearControl } from './aim'
 import { bigRedAllowed, bigRedCharge, bigRedCooldown } from './bigRedParams'
 
 export interface BigRedHooks {
+  control?(): GearControl
+
   body(): RAPIER.RigidBody | undefined
   object(): THREE.Object3D | undefined
   inHand(): boolean
@@ -56,7 +58,7 @@ export class BigRed implements System {
   }
 
   fixedUpdate(dt: number): void {
-    const fire = bigRedAllowed.value && this.hooks.inHand() && this.game.input.state.fire
+    const fire = bigRedAllowed.value && this.hooks.inHand() && (this.hooks.control?.().fire ?? this.game.input.state.fire)
     const pressed = fire && !this.fireWas
     const released = !fire && this.fireWas
     this.fireWas = fire
@@ -85,11 +87,18 @@ export class BigRed implements System {
       if (o) this.hooks.cue?.('bigRedFizzle', o.position)
       return false
     }
-    const aim = aimFrom(this.game, body, 400)
+    const aim = aimFrom(this.game, body, 400, 0.4, 2.4, 0, !this.hooks.control)
+    if (this.hooks.control) aim.d.set(...this.hooks.control().direction).normalize()
     this.hooks.fire([aim.d.x, aim.d.y, aim.d.z])
     this.stats.sent++
     this.readyAt = this.game.time + bigRedCooldown.value
     return true
+  }
+
+  /** Cancel without firing when authority, target or selected gear changes. */
+  cancel(): void {
+    this.charge = -1
+    this.fireWas = false
   }
 
   update(): void {
