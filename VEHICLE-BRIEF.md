@@ -53,7 +53,7 @@ is right handed with -Z forward, and physics runs at a fixed 50 Hz.
 ## Where it stands
 
 - Model: Syn3h's hovercraft decoded from its original file with spoilers, cockpit and rear glow. The main paint material was missing from all three repos, so Syn3h's standard vehicle paint is used.
-- Assisted glide (default, `hover.assist` 1): four hover samples under the hull, damped lift, gentle banking, braking over one second, a collision hull matching the model.
+- Assisted glide (default, `hover.assist` 1): four hover samples under the hull, damped lift, gentle banking, a collision hull matching the model. Livelier defaults chosen by the owner on 14 Nov from harness numbers, before he had driven it: turnRate 70, grip 1.5, drag .2, thrust 320, brakeTime 1.5 (was 46, .8, .12, 220, 1).
 - Original mode (`hover.assist` 0): the source controller with two port errors corrected. It still clips steep slopes, as the original would.
 - Floats over lava and the sea using the terrain's liquid surface.
 - Checked across 7,153 samples on dunes, slopes, drops, the lava lake and the sea on two seeds, with the hull never touching the ground in assisted mode.

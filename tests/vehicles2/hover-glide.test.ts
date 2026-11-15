@@ -1,7 +1,7 @@
 import {beforeAll,describe,it,expect} from 'vitest'
 import * as T from 'three/webgpu'
 import {initPhysics} from '../../src/core/physics'
-import {Hovercraft} from '../../src/vehicles/Hovercraft'
+import {Hovercraft,hoverBrakeTime} from '../../src/vehicles/Hovercraft'
 import {harness} from './harness'
 beforeAll(initPhysics)
 describe('assisted hovercraft',()=>{
@@ -13,10 +13,13 @@ describe('assisted hovercraft',()=>{
  })
  it('brakes gradually while preserving vertical motion',()=>{
   const h=harness(0,false);h.terrain.heightAt=()=>-100
+  // The 90% rule is checked at one second, whatever the shipped default is.
+  const brake=hoverBrakeTime as {value:number},shipped=brake.value;brake.value=1
   const v=new Hovercraft(h.game,h.terrain,new T.Vector3(0,100,0));v.isLocal=false;v.input.brakes=true
   v.body.setLinvel({x:10,y:-2,z:0},true);h.step(v)
   expect(v.body.linvel().x).toBeGreaterThan(9);expect(v.body.linvel().y).toBeCloseTo(-2)
   h.step(v,49);expect(v.body.linvel().x).toBeCloseTo(1,1)
+  brake.value=shipped
   v.dispose();h.world.free()
  })
  it('levels after a jump rather than continually pitching with throttle',()=>{
