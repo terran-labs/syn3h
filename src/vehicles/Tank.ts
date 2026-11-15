@@ -6,12 +6,6 @@ import { defineParam } from '../../shared/params'
 import { Vehicle } from './Vehicle'
 import { VehicleModel } from './skins/VehicleModel'
 import { createTreadMap } from './effects/maps'
-import { addLavaGlow } from './skins/lavaGlow'
-import { addNightReadability } from './skins/nightReadability'
-import { detailLevel, registerVehicleDetail } from './skins/mergeStatic'
-import { ExpeditionTank } from './tankDesigns/expeditionKit'
-import { round8, type TankBody } from './tankDesigns/round8'
-import { round9 } from './tankDesigns/round9'
 
 export const tankPower=defineParam({id:'tank.power',label:'Power',group:'Tank',scope:'world',default:2000,min:500,max:3500,step:10})
 export const tankSpeed=defineParam({id:'tank.speed',label:'Speed',group:'Tank',scope:'world',default:25,min:10,max:40,step:.1})
@@ -23,26 +17,6 @@ export const tankGrip=defineParam({id:'tank.grip',label:'Grip',group:'Tank',scop
 // steered uphill, because the source cuts one side's motor to steer and that side then drags.
 const CLIMB_FADE=10
 export const tankClimb=defineParam({id:'tank.climb',label:'Steepest climb, degrees (90 = original)',group:'Tank',scope:'world',default:45,min:20,max:90,step:1})
-/**
- * The body the tank wears: the id of one design in tankDesigns (round9.ts, round8.ts), or null for the Mars
- * Explorer model. The game ships one approved design and offers no choice, so this is a
- * constant and not a parameter. The owner approved the round nine Fork on 15 November 2026.
- */
-const APPROVED_BODY:string|null='r9-fork'
-// Development servers only: ?tankBody=r8-dart drives a candidate before it is approved.
-const TRIAL_BODY=import.meta.env.DEV&&typeof location!=='undefined'?new URLSearchParams(location.search).get('tankBody'):null
-/** Every body a tank can wear, latest round first. */
-export const TANK_BODIES:readonly TankBody[]=[...round9,...round8]
-let body=TANK_BODIES.find(d=>d.id===(TRIAL_BODY??APPROVED_BODY))??null
-const wearers=new Set<()=>void>()
-/**
- * For the vehicle lab and tests only: dress every tank in another design (an id from TANK_BODIES,
- * or null for the original model). Tanks rebuild in place. `undefined` restores the approved one.
- */
-export function previewTankBody(id?:string|null):void{
-  body=TANK_BODIES.find(d=>d.id===(id===undefined?APPROVED_BODY:id))??null
-  for(const rebuild of wearers)rebuild()
-}
 export const tankCG=defineParam({id:'tank.cg',label:'Centre of gravity',group:'Tank',scope:'world',default:-.2,min:-1.4,max:1,step:.01})
 
 // TankTrack.prefab: the Detailed mesh sits at (0.5,-0.75,-1.05) with X scale 0.82, so a pod is 1.0 wide
@@ -52,98 +26,26 @@ const POD_LENGTH=2.1,POD_HEIGHT=1.37
 // weighs 1 kg, so the pods ride level with the hull origin. The cast starts at CAST_Y and the support
 // spring is SPRING_LENGTH long, which rests the pod centre at hull-local 0 under the tank's weight.
 const CAST_Y=.115,SPRING_LENGTH=.6,SPRING=4000,DAMPER=450,POD_DROOP=.25
-// Ground under a resting tank, below the body origin: half a pod. The generated bodies are
-// modelled standing on y = 0 and are hung this far down.
-const GROUND=POD_HEIGHT/2
-// A pod pitches to lie along the ground under it, up to this many radians from the hull's own pitch.
-const ROCK_LIMIT=.35
 
-// Scratch for applyForces. One set serves every tank: the step is not re-entrant.
-const Q=new THREE.Quaternion(),INV=new THREE.Quaternion()
-const POSITION=new THREE.Vector3(),UP=new THREE.Vector3(),RIGHT=new THREE.Vector3(),DOWN=new THREE.Vector3(),VELOCITY=new THREE.Vector3(),ANGULAR=new THREE.Vector3()
-const ORIGIN=new THREE.Vector3(),NORMAL=new THREE.Vector3(),LIE=new THREE.Vector3(),POINT=new THREE.Vector3(),POINT_VELOCITY=new THREE.Vector3(),LOCAL=new THREE.Vector3()
-const FORCE=new THREE.Vector3(),FORWARD=new THREE.Vector3(),SIDE=new THREE.Vector3(),APPLICATION=new THREE.Vector3(),AXIS=new THREE.Vector3()
-const ZERO={x:0,y:0,z:0},RECOVERY_LIFT={x:0,y:5000,z:0},WORLD_UP=new THREE.Vector3(0,1,0)
-
-/**
- * The tank: the Mars Explorer controller (six tracks, each a shape cast with a spring) under a
- * generated exploration body. No tank exists in the supplied Syn3h snapshots.
- */
+/** Mars Explorer fallback. No tank exists in the supplied Syn3h snapshots. */
 export class Tank extends Vehicle {
   readonly kind = 'tank' as const
-  readonly ridePosition=new THREE.Object3D()
   private readonly treadMaps:THREE.Texture[]=[]
   private readonly models: VehicleModel[]=[]
-  modelReady:Promise<void>=Promise.resolve()
+  readonly modelReady:Promise<void>
   private readonly motors=Array.from({length:6},()=>({speed:0,velocity:0}))
   private readonly tracks:THREE.Group[]=[]
-  private legacyHull?:THREE.Group
   private readonly shape=new RAPIER.Cuboid(.45,.3,1)
-  private readonly bellyRay=new RAPIER.Ray({x:0,y:0,z:0},{x:0,y:-1,z:0})
-  /** Height of each pod above its rest position, in metres: positive when the ground pushes it up. */
-  readonly podLift=new Float32Array(6)
-  private readonly podRock=new Float32Array(6)
-  /** Distance each belt has run, in metres. Doubles: this only ever grows. */
-  private readonly podRun=new Float64Array(6)
-  // Last step's values, so the drawn pods move between physics steps as the body does.
-  private readonly lastLift=new Float32Array(6)
-  private readonly lastRock=new Float32Array(6)
-  private readonly lastRun=new Float64Array(6)
-  private generated?:ExpeditionTank
-  private design:TankBody|null|undefined
-  private chassis?:RAPIER.Collider
-  private detachDetail=()=>{}
-  private readonly wear=()=>this.rebuild()
-  private level:0|1|2=0
-  private castsShadows=true
-  private tinted=false
+  private readonly podY=new Float32Array(6)
   private cg=NaN
   private bellyUp=false
   groundedTracks=0
   constructor(game:Game,terrain:Terrain,position:THREE.Vector3,heading=0){
     super(game,terrain,position,heading)
-    this.object.add(this.ridePosition)
-    this.rebuild()
-    wearers.add(this.wear)
-  }
-  /** Build the current body, replacing whatever is there. Physics state is kept. */
-  private rebuild(){
-    if(body===this.design)return
-    const design=this.design=body
-    this.detachDetail();this.detachDetail=()=>{}
-    this.generated?.dispose();this.generated=undefined
-    this.models.forEach(m=>m.dispose());this.models.length=0
-    this.treadMaps.forEach(t=>t.dispose());this.treadMaps.length=0
-    this.tracks.forEach(t=>t.removeFromParent());this.tracks.length=0
-    this.legacyHull?.removeFromParent();this.legacyHull=undefined
-    if(this.chassis)this.game.world.removeCollider(this.chassis,true)
-    // Tank.prefab Cube: size 2.5x1.5x5, centre Y=1. Track masses are folded into the hull. A
-    // generated body longer than that gets a box as long as it is: a nose that passes through
-    // a wall would take the driver's eye with it. Width, height and clearance are the original's.
-    const hull=design?.hull()
-    this.chassis=this.game.world.createCollider(RAPIER.ColliderDesc.cuboid(1.25,.75,Math.max(2.5,hull?.halfLength??0)).setTranslation(0,1,0).setDensity(0).setCollisionGroups(Vehicle.chassisGroups()),this.body)
+    // Tank.prefab Cube: size 2.5x1.5x5, centre Y=1. Track masses are folded into the hull.
+    game.world.createCollider(RAPIER.ColliderDesc.cuboid(1.25,.75,2.5).setTranslation(0,1,0).setDensity(0).setCollisionGroups(Vehicle.chassisGroups()),this.body)
     this.setMass()
-    if(!design||!hull){this.legacy();return}
-    const tank=new ExpeditionTank(hull,design.color,design.accent)
-    tank.object.position.y=-GROUND;this.object.add(tank.object);this.generated=tank
-    if(this.tinted)tank.setColors(this.colors.body,this.colors.accent)
-    this.ridePosition.position.set(tank.eye[0],tank.eye[1]-GROUND,tank.eye[2])
-    // The cabin is modelled to be sat in, and the lamps are faces of the hull.
-    this.object.userData.cockpit=true;this.object.userData.ownLamps=true
-    this.modelReady=Promise.resolve()
-    if(typeof window!=='undefined')tank.showroom(root=>{addNightReadability(root);addLavaGlow(root)})
-    this.level=0;this.castsShadows=true
-    this.detachDetail=registerVehicleDetail(tank.object,(distance,remote,graphics)=>{
-      this.level=detailLevel(distance,remote,this.level);tank.setLevel(this.level)
-      const cast=!remote||distance<(graphics===2?20:0)
-      if(cast!==this.castsShadows){this.castsShadows=cast;tank.setShadows(cast)}
-    })
-  }
-  /** The Mars Explorer model: a hull and six tread pods loaded from the original files. */
-  private legacy(){
-    this.ridePosition.position.set(0,.95,0)
-    this.object.userData.cockpit=false;this.object.userData.ownLamps=false
-    const hull=new THREE.Group();this.object.add(hull);this.legacyHull=hull
+    const hull=new THREE.Group();this.object.add(hull)
     this.models.push(new VehicleModel(hull,'/models/tank.glb',scene=>{
       scene.rotation.x=Math.PI/2;scene.position.y=.8
       scene.traverse(o=>{if(o instanceof THREE.Mesh){
@@ -153,7 +55,7 @@ export class Tank extends Vehicle {
     }))
     // Tank.js 14-32: three segments per side at X +/-2 and Z +/-2.5,0.
     for(let i=0;i<6;i++){
-      const track=new THREE.Group();track.position.set(i%2?2:-2,this.podLift[i],(Math.floor(i/2)-1)*2.5)
+      const track=new THREE.Group();track.position.set(i%2?2:-2,0,(Math.floor(i/2)-1)*2.5)
       this.object.add(track);this.tracks.push(track)
       this.models.push(new VehicleModel(track,'/models/tanktread.glb',scene=>{
         scene.rotation.x=Math.PI/2;scene.updateMatrixWorld(true)
@@ -168,7 +70,6 @@ export class Tank extends Vehicle {
     }
     this.modelReady=Promise.all(this.models.map(m=>m.ready)).then(()=>{})
   }
-  protected override applyColors(){this.tinted=true;this.generated?.setColors(this.colors.body,this.colors.accent)}
   private setMass(){
     this.cg=tankCG.value
     // Vehicle.js 110 adds the default 1 kg Rigidbody; TankTrack.prefab adds six 40 kg bodies.
@@ -190,77 +91,55 @@ export class Tank extends Vehicle {
     return m.speed
   }
   protected applyForces(dt:number){
-    // A copy driven by the network is not pushed, but its pods still follow the ground.
-    const driven=!this.body.isKinematic()
-    if(driven&&this.cg!==tankCG.value)this.setMass()
-    this.lastLift.set(this.podLift);this.lastRock.set(this.podRock);this.lastRun.set(this.podRun)
-    // Scratch vectors throughout: this runs for every tank every step and creates nothing.
-    const q=Q.copy(this.body.rotation()),inv=INV.copy(q).invert(),position=POSITION.copy(this.body.translation())
-    const up=UP.set(0,1,0).applyQuaternion(q),right=RIGHT.set(1,0,0).applyQuaternion(q),down=DOWN.copy(up).negate()
-    const velocity=VELOCITY.copy(this.body.linvel()),speed=velocity.length()
+    if(this.body.isKinematic())return
+    if(this.cg!==tankCG.value)this.setMass()
+    const q=new THREE.Quaternion().copy(this.body.rotation()),inv=q.clone().invert(),position=new THREE.Vector3().copy(this.body.translation())
+    const up=new THREE.Vector3(0,1,0).applyQuaternion(q),right=new THREE.Vector3(1,0,0).applyQuaternion(q),down=up.clone().negate()
+    const velocity=new THREE.Vector3().copy(this.body.linvel()),speed=velocity.length()
     const parked=this.input.brakes&&speed<3
     // TankMe.js 7-19: stationary braking differs from the ordinary .01 drag and 2 angular drag.
-    if(!driven){}
-    else if(parked){this.body.setLinvel(ZERO,true);this.body.setAngvel(ZERO,true)}
-    else{this.body.setLinvel(velocity.multiplyScalar(Math.max(0,1-.01*dt)),true);this.body.setAngvel(ANGULAR.copy(this.body.angvel()).multiplyScalar(Math.max(0,1-2*dt)),true)}
+    if(parked){this.body.setLinvel({x:0,y:0,z:0},true);this.body.setAngvel({x:0,y:0,z:0},true)}
+    else{this.body.setLinvel(velocity.multiplyScalar(Math.max(0,1-.01*dt)),true);this.body.setAngvel(new THREE.Vector3().copy(this.body.angvel()).multiplyScalar(Math.max(0,1-2*dt)),true)}
     this.groundedTracks=0
     for(let i=0;i<6;i++){
-      const origin=ORIGIN.set(i%2?2:-2,CAST_Y,(Math.floor(i/2)-1)*2.5).applyQuaternion(q).add(position)
+      const local=new THREE.Vector3(i%2?2:-2,CAST_Y,(Math.floor(i/2)-1)*2.5),origin=local.clone().applyQuaternion(q).add(position)
       const hit=this.game.world.castShape(origin,q,down,this.shape,0,SPRING_LENGTH,true,RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,undefined,undefined,this.body)
-      const normal=hit?NORMAL.copy(hit.normal1).normalize():NORMAL.copy(up)
-      const touching=!!hit&&normal.dot(up)>=.1
+      const normal=hit?new THREE.Vector3().copy(hit.normal1).normalize():up
       // A pod off the ground droops a little and eases there, instead of snapping to a fixed offset.
-      const podTarget=hit&&touching?.5-hit.time_of_impact:-POD_DROOP
-      this.podLift[i]+=(podTarget-this.podLift[i])*Math.min(1,dt*(podTarget<this.podLift[i]?6:25))
-      if(this.tracks[i])this.tracks[i].position.y=this.podLift[i]
-      // The pod turns on its arm to lie along the ground: the ground's slope in the hull's frame.
-      let rockTarget=0
-      if(touching){const lie=LIE.copy(normal).applyQuaternion(inv);rockTarget=THREE.MathUtils.clamp(Math.atan2(lie.z,lie.y),-ROCK_LIMIT,ROCK_LIMIT)}
-      this.podRock[i]+=(rockTarget-this.podRock[i])*Math.min(1,dt*12)
-      if(!hit||!touching)continue
+      const podTarget=hit&&normal.dot(up)>=.1?.5-hit.time_of_impact:-POD_DROOP
+      this.podY[i]+=(podTarget-this.podY[i])*Math.min(1,dt*(podTarget<this.podY[i]?6:25));this.tracks[i].position.y=this.podY[i]
+      if(!hit||normal.dot(up)<.1)continue
       this.groundedTracks++
-      const point=POINT.copy(hit.witness1),pointVelocity=POINT_VELOCITY.copy(this.body.velocityAtPoint(point)),v=LOCAL.copy(pointVelocity).applyQuaternion(inv).clampLength(0,1000)
-      // The belt runs with the ground under it, as the original scrolled its tread texture.
-      this.podRun[i]-=v.z*dt
-      if(!driven)continue
+      const point=new THREE.Vector3().copy(hit.witness1),pointVelocity=new THREE.Vector3().copy(this.body.velocityAtPoint(point)),v=pointVelocity.clone().applyQuaternion(inv).clampLength(0,1000)
       // TankTrack.js 57-60 scrolls the original tread texture with local ground speed.
       if(this.treadMaps[i])this.treadMaps[i].offset.y=(this.treadMaps[i].offset.y+dt*v.z*1.2)%1
       // Replaces joint/contact support with a damped spring. Force formula below stays original.
       const support=Math.max(0,(SPRING_LENGTH-hit.time_of_impact)*SPRING-pointVelocity.dot(normal)*DAMPER)
-      this.body.addForceAtPoint(FORCE.copy(normal).multiplyScalar(support),point,true)
+      this.body.addForceAtPoint(normal.clone().multiplyScalar(support),point,true)
       if(parked&&!this.input.y)continue
       const slope=Math.acos(THREE.MathUtils.clamp(normal.y,-1,1))*180/Math.PI
       const climb=tankClimb.value>=90?1:THREE.MathUtils.clamp(1-(slope-tankClimb.value)/CLIMB_FADE,0,1)
-      const motor=this.motor(i,-v.z,dt)*climb,forward=FORWARD.copy(normal).cross(right).normalize(),side=SIDE.copy(forward).cross(normal).normalize()
+      const motor=this.motor(i,-v.z,dt)*climb,forward=normal.clone().cross(right).normalize(),side=forward.clone().cross(normal).normalize()
       // TankTrack.js 102-109: sideways150, rolling50, lift10, raised application point.
       const force=side.multiplyScalar(-v.x*150).addScaledVector(normal,10).addScaledVector(forward,Math.abs(motor)>.1?motor:v.z*50)
-      this.body.addForceAtPoint(force,APPLICATION.copy(point).addScaledVector(up,tankGrip.value),true)
+      const application=point.clone().addScaledVector(up,tankGrip.value)
+      this.body.addForceAtPoint(force,application,true)
     }
     this.wheelsGrounded=this.groundedTracks
-    if(!driven)return
     // TankMe.js 26-40: recovery only when the overturned hull touches terrain. TankMe.js 27
     // skips it inside a zorb ball.
     if(up.y>Math.cos(35*Math.PI/180)||this.zorbed)this.bellyUp=false
-    if(!this.zorbed&&up.y<Math.cos(130*Math.PI/180)&&speed*speed<20&&ANGULAR.copy(this.body.angvel()).lengthSq()<5){
-      this.bellyRay.origin=position
-      const hit=this.game.world.castRay(this.bellyRay,1.8,true,RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,undefined,undefined,this.body)
+    if(!this.zorbed&&up.y<Math.cos(130*Math.PI/180)&&speed*speed<20&&new THREE.Vector3().copy(this.body.angvel()).lengthSq()<5){
+      const hit=this.game.world.castRay(new RAPIER.Ray(position,{x:0,y:-1,z:0}),1.8,true,RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,undefined,undefined,this.body)
       if(hit)this.bellyUp=true
     }
     if(this.bellyUp){
-      this.body.addForce(RECOVERY_LIFT,true)
-      const axis=AXIS.copy(up).cross(WORLD_UP);if(axis.lengthSq()<1e-6)axis.set(1,0,0)
+      this.body.addForce({x:0,y:5000,z:0},true)
+      const axis=up.clone().cross(new THREE.Vector3(0,1,0));if(axis.lengthSq()<1e-6)axis.set(1,0,0)
       // Bound the original acceleration torque to avoid one-step flips with a single rigid body.
       this.body.addTorque(axis.multiplyScalar(20000),true)
     }
   }
-  override update(dt:number,alpha:number){
-    super.update(dt,alpha)
-    const tank=this.generated
-    if(!tank)return
-    for(let i=0;i<6;i++)tank.setPod(i,this.lastLift[i]+(this.podLift[i]-this.lastLift[i])*alpha,this.lastRock[i]+(this.podRock[i]-this.lastRock[i])*alpha,this.lastRun[i]+(this.podRun[i]-this.lastRun[i])*alpha)
-    tank.setLights(this.input.brakes)
-    tank.pose()
-  }
   override teleport(position:THREE.Vector3,heading=0){super.teleport(position,heading);this.motors.forEach(m=>{m.speed=m.velocity=0});this.bellyUp=false}
-  override dispose(){wearers.delete(this.wear);this.detachDetail();this.generated?.dispose();this.treadMaps.forEach(t=>t.dispose());this.models.forEach(m=>m.dispose());super.dispose()}
+  override dispose(){this.treadMaps.forEach(t=>t.dispose());this.models.forEach(m=>m.dispose());super.dispose()}
 }

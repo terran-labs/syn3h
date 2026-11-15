@@ -1,7 +1,7 @@
 import {beforeAll,describe,it,expect} from 'vitest'
 import * as THREE from 'three/webgpu'
 import {initPhysics} from '../../src/core/physics'
-import {Tank,previewTankBody} from '../../src/vehicles/Tank'
+import {Tank} from '../../src/vehicles/Tank'
 import {harness} from './harness'
 import {params} from '../../shared/params'
 import {RAPIER,groups,GROUP_TERRAIN,GROUP_ALL} from '../../src/core/physics'
@@ -40,51 +40,23 @@ describe('legacy tank with six shape casts',()=>{
  })
  it('rests its pods level with the hull and tucks them in the air',()=>{
   const h=harness(),v=new Tank(h.game,h.terrain,new THREE.Vector3(0,2,0));v.isLocal=false;h.step(v,400)
-  const pods=Array.from(v.podLift)
+  const pods=v.object.children.slice(1)
   // TankTrack.prefab: a 1.37 m pod centred on the hull origin puts the ground 0.685 m below it.
-  expect(v.body.translation().y).toBeCloseTo(.685,1);for(const lift of pods)expect(Math.abs(lift)).toBeLessThan(.05)
+  expect(v.body.translation().y).toBeCloseTo(.685,1);for(const pod of pods)expect(Math.abs(pod.position.y)).toBeLessThan(.05)
   v.teleport(new THREE.Vector3(0,100,0));h.step(v,50)
-  for(const lift of v.podLift){expect(lift).toBeLessThan(-.15);expect(lift).toBeGreaterThan(-.3)}
+  for(const pod of pods){expect(pod.position.y).toBeLessThan(-.15);expect(pod.position.y).toBeGreaterThan(-.3)}
   v.dispose();h.world.free()
  })
- it('wears a generated body with a cockpit, and swaps bodies in place',()=>{
-  const h=harness(),v=new Tank(h.game,h.terrain,new THREE.Vector3(0,2,0));v.isLocal=false;h.step(v,300)
-  const meshes=()=>{const out:THREE.Mesh[]=[];v.object.traverse(o=>{if(o instanceof THREE.Mesh)out.push(o)});return out}
-  try{
-   previewTankBody('r8-dart')
-   // A generated design: its own lamps, a cabin to sit in, the eye inside the hull.
-   expect(v.object.userData.cockpit).toBe(true);expect(v.object.userData.ownLamps).toBe(true)
-   expect(v.ridePosition.position.y).toBeGreaterThan(.6);expect(Math.abs(v.ridePosition.position.z)).toBeLessThan(2)
-   const first=meshes().length;expect(first).toBeGreaterThan(0)
-   // The model stands on the ground the physics rests on.
-   v.update(0,1);v.object.updateMatrixWorld(true)
-   const hull=meshes().find(m=>m.name==='Hull and cabin')!,box=new THREE.Box3().setFromObject(hull)
-   expect(box.min.y).toBeGreaterThan(.3);expect(box.max.z-box.min.z).toBeGreaterThan(5)
-   const height=v.body.translation().y
-   previewTankBody('r8-wasp');expect(meshes().length).toBe(first);expect(v.body.translation().y).toBe(height)
-   h.step(v,100);expect(v.groundedTracks).toBe(6);expect(v.body.mass()).toBeCloseTo(241)
-   // 0 is the Mars Explorer model, which loads in a browser only: nothing generated remains.
-   previewTankBody(null);expect(meshes().length).toBe(0);expect(v.object.userData.cockpit).toBe(false)
-   h.step(v,100);expect(v.groundedTracks).toBe(6)
-  }finally{previewTankBody()}
-  v.dispose();h.world.free()
- })
- it('tilts each pod to the ground under it and runs its belt with the ground',()=>{
-  const h=harness(),slope=.2,tilt=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),slope)
-  // A ramp rising toward -Z (forward) out of the flat floor, its foot at z=-3.
-  h.world.createCollider(RAPIER.ColliderDesc.cuboid(20,.5,10).setTranslation(0,10*Math.sin(slope)-.5*Math.cos(slope),-3-10*Math.cos(slope)-.5*Math.sin(slope)).setRotation(tilt).setCollisionGroups(groups(GROUP_TERRAIN,GROUP_ALL)))
-  h.world.step()
-  const v=new Tank(h.game,h.terrain,new THREE.Vector3(0,1.2,5));v.isLocal=false;h.step(v,200)
-  const rock=(v as unknown as {podRock:Float32Array}).podRock,run=(v as unknown as {podRun:Float64Array}).podRun
-  for(const r of rock)expect(Math.abs(r)).toBeLessThan(.02)
-  // As the front axle meets the ramp its pods pitch nose up while the rear ones are still flat.
-  let front=0,rear=0
-  v.input.y=1
-  for(let i=0;i<150;i++){h.step(v);if(rock[0]>front){front=rock[0];rear=Math.abs(rock[4])}}
-  expect(front).toBeGreaterThan(.05);expect(rear).toBeLessThan(front*.6)
-  // Forward travel runs every belt forward by about the distance covered.
-  const travelled=5-v.body.translation().z;expect(travelled).toBeGreaterThan(3)
-  for(const r of run){expect(r).toBeGreaterThan(travelled*.6);expect(r).toBeLessThan(travelled*1.4)}
-  v.dispose();h.world.free()
+ it('refuses a 60 degree face unless the climb limit is turned off',()=>{
+  const climbed=(limit:number)=>{
+   params.set('tank.climb',limit)
+   const h=harness(),tilt=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),Math.PI/3)
+   // A ramp rising toward -Z (forward), its lower edge buried at z=-6.
+   h.world.createCollider(RAPIER.ColliderDesc.cuboid(20,.5,40).setTranslation(0,40*Math.sin(Math.PI/3)-.5,-6-40*Math.cos(Math.PI/3)).setRotation(tilt).setCollisionGroups(groups(GROUP_TERRAIN,GROUP_ALL)))
+   h.world.step()
+   const v=new Tank(h.game,h.terrain,new THREE.Vector3(0,1,0));v.isLocal=false;h.step(v,100)
+   v.input.y=1;h.step(v,400);const y=v.body.translation().y;v.dispose();h.world.free();return y
+  }
+  try{expect(climbed(45)).toBeLessThan(4);expect(climbed(90)).toBeGreaterThan(10)}finally{params.set('tank.climb',45)}
  })
 })

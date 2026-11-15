@@ -131,8 +131,7 @@ export function resolveSelection(tree: TreeSection[], exhibits: LabExhibit[], wa
     design = designs.find(d => d.id === design)?.id ?? byPosition
     if (!design) {
       const preferred = exhibit?.defaultDesign?.(group?.name)
-      // An exhibit that exists to compare (the line-up) may open on the whole set.
-      design = preferred === 'all' ? 'all' : designs.find(d => d.id === preferred)?.id ?? designs[0]?.id ?? ''
+      design = designs.find(d => d.id === preferred)?.id ?? designs[0]?.id ?? ''
     }
   }
   return { vehicle: vehicle.id, group: group?.name, design }
