@@ -16,7 +16,7 @@
 import { BackSide, BoxGeometry, Mesh, NodeMaterial, Vector2, Vector3 } from 'three/webgpu'
 import {
   Fn, If, acos, add, cameraPosition, clamp, cos, dot, exp, float, floor, fract, length, max, min, mix,
-  modelViewProjection, mul, normalize, positionWorld, pow, smoothstep, sub, time, uniform, vec2, vec3, vec4,
+  modelViewProjection, mul, normalize, positionWorld, pow, renderGroup, smoothstep, sub, time, uniform, vec2, vec3, vec4,
 } from 'three/tsl'
 import { BETA_EPSILON, MIE_ZENITH_LENGTH, RAYLEIGH_ZENITH_LENGTH, SKY_FLOOR, SKY_SCALE } from './skyMath'
 
@@ -46,6 +46,9 @@ export class AlienSkyMesh extends Mesh {
   readonly cloudCoverage = uniform(0.4)
   readonly cloudDensity = uniform(0.4)
   readonly cloudElevation = uniform(0.5)
+  /** Camera fallback only. Reflection captures temporarily enable this layer. */
+  cloudLayerVisible = true
+  private readonly cloudVisibility = uniform(1).setGroup(renderGroup).onRenderUpdate(() => this.cloudLayerVisible ? 1 : 0)
 
   constructor() {
     const material = new NodeMaterial()
@@ -158,7 +161,7 @@ export class AlienSkyMesh extends Mesh {
 
       const coverage = this.cloudCoverage as N
       const elevationU = this.cloudElevation as N
-      If(direction.y.greaterThan(0.0).and(coverage.greaterThan(0.0)), () => {
+      If(direction.y.greaterThan(0.0).and(coverage.greaterThan(0.0)).and(this.cloudVisibility.greaterThan(0)), () => {
         const elevation = mix(1.0, 0.1, elevationU)
         const cloudUV = direction.xz.div(direction.y.mul(elevation)).toVar() as N
         cloudUV.mulAssign(this.cloudScale)

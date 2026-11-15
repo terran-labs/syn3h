@@ -9,13 +9,17 @@ for (const mode of modes) {
   try {
     const page = await browser.newPage(touch ? { ...devices[mode === 'ipad' ? 'iPad (gen 7)' : mode === 'landscape' ? 'iPhone 14 landscape' : 'iPhone 14'] } : { viewport: { width: 1440, height: 1000 } })
     const errors = []; page.on('pageerror', error => errors.push(error.message))
-    await page.goto(`http://127.0.0.1:5187/?autoplay=1&room=exploration-${Date.now()}`)
+    await page.goto(`${process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'}?autoplay=1&room=exploration-${Date.now()}`)
     await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 90000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 90000 })
     assert.equal(await page.locator('.shell-hud').isVisible(), false)
     assert.equal(await page.locator('.hud-navigation button').count(), 1)
     const map = await page.locator('.shell-minimap').boundingBox()
     assert.ok(map.x < 25 && map.y > page.viewportSize().height * .2, 'map lives in lower left')
+    if (touch) {
+      const stick = await page.locator('.touch-stick').boundingBox()
+      assert.ok(stick && map.y + map.height + 12 <= stick.y, 'touch minimap clears joystick and label')
+    }
     assert.match(await page.locator('.shell-minimap canvas').evaluate(el => getComputedStyle(el).maskImage || getComputedStyle(el).webkitMaskImage), /radial-gradient/)
     await page.screenshot({ path: `tests/ui/artifacts/exploration/${mode}-drive.png` })
     await page.getByRole('button', { name: 'Open configuration rail' }).click()

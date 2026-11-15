@@ -19,6 +19,8 @@ export interface InspectorOptions {
   /** The vehicles on offer and which is in use, for the switcher in the Vehicles card. */
   vehicles(): { options: readonly { id: string; label: string }[]; current: string }
   onVehicle(id: string): void
+  /** Capture a local bookmark. The caller owns storage and success or failure feedback. */
+  onSaveWorld?(): void
 }
 /** "Mode (0 tag, 1 hill)" or "Glass: 0 Clear, 1 Frosted" gives a name and named choices. */
 export function choicesOf(def: PropertyDef): { name: string; options: { value: number; label: string }[] } | null {
@@ -104,6 +106,14 @@ export class Inspector {
       })
       const foot = document.createElement('div'); foot.className = 'wi-actions wi-foot'
       foot.innerHTML = '<button type="button" data-wi="copy-section">Copy JSON</button><button type="button" data-wi="paste-section">Paste</button>'
+      if (section.id === 'world' && this.options.onSaveWorld) {
+        const save = document.createElement('button'); save.type = 'button'; save.dataset.wi = 'save-world'; save.textContent = 'Save current world'
+        // Saving a local copy does not edit the shared world, even for a locked guest.
+        // Keep native keyboard activation, but do not send Enter/Space to driving input.
+        // Keyup still bubbles so a previously held driving key can be released here.
+        save.addEventListener('keydown', event => event.stopPropagation())
+        foot.append(save)
+      }
       body.append(foot); card.append(head, body); cards.append(card)
       if (open.has(section.id)) this.toggle(card, true)
     }
@@ -219,7 +229,9 @@ export class Inspector {
     }
     this.say(words.length ? `${[...this.rows.values()].filter(r => !r.row.hidden).length} found` : '')
   }
-  private say(text: string): void { this.element.querySelector('.wi-status')!.textContent = text }
+  /** Feedback stays visible while the inspector suppresses transient game toasts. */
+  setStatus(message: string): void { this.element.querySelector('.wi-status')!.textContent = message }
+  private say(text: string): void { this.setStatus(text) }
   private async click(event: Event): Promise<void> {
     const target = event.target as Element, vehicle = target.closest<HTMLElement>('[data-vehicle]')
     if (vehicle) { this.options.onVehicle(vehicle.dataset.vehicle!); return }
@@ -228,6 +240,7 @@ export class Inspector {
     const valueOf = (id: string) => params.get(id)?.value
     switch (button.dataset.wi) {
       case 'toggle': if (card) this.toggle(card); break
+      case 'save-world': this.options.onSaveWorld?.(); break
       case 'copy-world': await this.copy(JSON.stringify(exportWorld(params.all().map(p => p.def as PropertyDef), valueOf), null, 2), 'This world'); break
       case 'copy-section': if (section) await this.copy(JSON.stringify(exportSection(section, valueOf), null, 2), section.title); break
       case 'paste-world': await this.sheet('Paste a world', null); break

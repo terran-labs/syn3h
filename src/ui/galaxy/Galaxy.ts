@@ -376,6 +376,33 @@ export class Galaxy {
       if (this.options.worlds[this.chosen] === world) this.request(world, CLOSE, true)
     }
   }
+  private savedTarget = false
+  /** Borrow a recipe's existing slot for one saved-world flight. Custom is never touched. */
+  savedWorldTarget(recipe: string, seed: number, values: Record<string, ParamValue>, identity: string): () => void {
+    if (this.savedTarget) throw new Error('A saved-world flight is already active.')
+    const index = this.options.worlds.findIndex(world => world.id === recipe)
+    const world = this.options.worlds[index]
+    if (!world) throw new Error('The saved recipe is unavailable.')
+    const original = { ...world }
+    const overrides = Object.fromEntries(Object.entries(values).sort(([a], [b]) => a.localeCompare(b)))
+    Object.assign(world, { recipe, seed, overrides, forming: false, glow: overrides['world.seaKind'] === 0, mapVariant: `saved:${identity}:${JSON.stringify(overrides)}` })
+    const keys = [this.mapKey(world, SMALL), this.mapKey(world, CLOSE)]
+    this.savedTarget = true; this.layers[index] = ''; this.closeIndex = -1; this.wake = 2
+    this.request(world, SMALL, true); this.request(world, CLOSE, true)
+    let restored = false
+    return () => {
+      if (restored) return
+      restored = true
+      for (const key of Object.keys(world) as (keyof GalaxyWorld)[]) if (!(key in original)) delete world[key]
+      Object.assign(world, original)
+      for (let i = this.queue.length - 1; i >= 0; i--) if (keys.includes(this.queue[i].key)) this.queue.splice(i, 1)
+      for (const key of keys) this.maps.delete(key)
+      this.layers[index] = ''; this.closeIndex = -1
+      if (this.closeKey && keys.includes(this.closeKey)) this.closeKey = ''
+      this.savedTarget = false; this.home()
+      if (this.active) this.request(world, SMALL, true)
+    }
+  }
   private syncPresence(): void { this.presence.setActive(this.active && !document.hidden && (this.options.presenceVisible?.() ?? true)) }
   set enabled(value: boolean) {
     if (value === this.active) return
@@ -515,7 +542,7 @@ export class Galaxy {
       this.closeKey = key
       // Keep the CPU copies of close maps few: the newest two.
       const closes = [...this.maps.keys()].filter(k => k.endsWith(`:${CLOSE[0]}`) && k !== key)
-      for (const old of closes.slice(0, Math.max(0, closes.length - 1))) this.maps.delete(old)
+      if (!this.savedTarget) for (const old of closes.slice(0, Math.max(0, closes.length - 1))) this.maps.delete(old)
     }
     this.closeIndex = map && key === this.closeKey ? this.chosen : -1
   }
@@ -638,11 +665,11 @@ export class Galaxy {
     gl.uniform3f(u.uEye, ...view.eye); gl.uniform3f(u.uRight, ...view.right); gl.uniform3f(u.uUp, ...view.up); gl.uniform3f(u.uForward, ...view.forward); gl.uniform1f(u.uTan, view.tan)
     gl.uniform2f(u.uShed, qualityShed(2), qualityShed(3)); gl.uniform1f(u.uAmbience, 1 - qualityShed(1)); gl.uniform1f(u.uDive, this.dive); gl.uniform1f(u.uDim, this.dim)
     gl.uniform1i(u.uOnly, this.editing ? this.chosen : -1)
-    gl.uniform1fv(u.uPopulation, worlds.slice(0, MAX).map(w => w.id === 'custom' ? -1 : this.population.get(w.recipe ?? w.id)?.players ?? -1))
+    gl.uniform1fv(u.uPopulation, worlds.slice(0, MAX).map(w => w.id === 'custom' || w.mapVariant?.startsWith('saved:') ? -1 : this.population.get(w.recipe ?? w.id)?.players ?? -1))
     gl.uniform1i(u.uCount, Math.min(MAX, worlds.length))
     gl.uniform4fv(u.uWorld, places.flatMap(p => [...p.position, p.radius]))
     gl.uniform3fv(u.uLand, worlds.slice(0, MAX).flatMap(w => rgb(w.land))); gl.uniform3fv(u.uSea, worlds.slice(0, MAX).flatMap(w => rgb(w.sea)))
-    gl.uniform4fv(u.uKind, worlds.slice(0, MAX).flatMap((w, i) => [w.forming ? 2 : w.glow ? 1 : 0, this.layers[i] || i === this.closeIndex ? 1 : 0, this.spin(i, time), (w.seed % 97) + i * 3.1]))
+    gl.uniform4fv(u.uKind, worlds.slice(0, MAX).flatMap((w, i) => [w.forming ? 2 : w.glow ? 1 : 0, this.layers[i] === this.mapKey(w, SMALL) || i === this.closeIndex ? 1 : 0, this.spin(i, time), (w.seed % 97) + i * 3.1]))
     const smear = this.flight && this.blurProgram && this.blur > 0.003 && qualityShed(2) < 1
     if (smear) gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo)
     gl.drawArrays(gl.TRIANGLES, 0, 3)

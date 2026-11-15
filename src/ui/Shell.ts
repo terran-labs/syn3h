@@ -1,3 +1,5 @@
+import { SavedWorldStore, SAVED_WORLDS_KEY, savedWorldPlan, worldIdentity, type SavedWorld } from './galaxy/savedWorlds'
+import { SavedMoons } from './galaxy/SavedMoons'
 import type { Game, System } from '../core/Game'
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
@@ -170,6 +172,7 @@ export class Shell implements System {
       summary: id => this.inspectorSummary(id),
       vehicles: () => ({ options: [...this.element.querySelectorAll<HTMLInputElement>('[name="vehicle"]')].map(radio => ({ id: radio.value, label: radio.parentElement!.textContent!.trim() })), current: this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind }),
       onVehicle: id => this.switchVehicle(id as VehicleKind),
+      onSaveWorld: () => this.saveWorld(),
     })
     // A visitor's first view of the world has nothing over it: the cards start closed on every
     // device and open from Create. On a desktop, once the player has captured the cursor to
@@ -213,6 +216,8 @@ export class Shell implements System {
     this.glass(signal)
     for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) slider.addEventListener('input', () => params.set(slider.dataset.param!, Number(slider.value)), { signal })
     this.startGalaxy()
+    this.mountSavedWorlds()
+    window.addEventListener('storage', event => { if (event.key === SAVED_WORLDS_KEY || event.key === null) this.refreshSavedWorlds() }, { signal })
     const unsubscribeWorld = params.onChange(id => { if (params.get(id)?.def.scope === 'world') { this.worldDirty = true; this.refreshCustomPlanet() } })
     signal.addEventListener('abort', unsubscribeWorld)
     try { this.nameInput.value = localStorage.getItem('syn3h.playerName') || '' } catch { /* Storage is optional. */ }
@@ -637,14 +642,16 @@ export class Shell implements System {
   }
   /** True after Custom is first opened; later world edits keep its preview current. */
   private shapingCustom = false
+  private suspendCustomRefresh = false
   private customMapTimer?: ReturnType<typeof setTimeout>
   private refreshCustomPlanet(): void {
-    if (!this.shapingCustom) return
+    if (!this.shapingCustom || this.suspendCustomRefresh) return
     clearTimeout(this.customMapTimer)
     this.customMapTimer = setTimeout(() => this.galaxy?.updateCustom(currentPlanet().id, worldSeed.value, params.snapshot('world')), 120)
   }
   /** Terraform mode: only the sliders that shape a world, opened. */
   private openCustomPlanet(): void {
+    this.suspendCustomRefresh = false
     this.shapingCustom = true
     this.refreshCustomPlanet()
     this.advancedGroups = ['Terrain', 'World', 'Sky', 'Sun', 'Weather', 'Lava']
@@ -658,6 +665,103 @@ export class Shell implements System {
    * other panels open over it as before. Needs WebGL 2. At the lowest graphics level the system
    * is held still and redrawn only while it moves, so weak devices keep it at almost no cost.
    */
+  private readonly savedWorlds = new SavedWorldStore(() => params.all().map(p => p.def))
+  private savedMoons?: SavedMoons
+  private savedList?: HTMLElement
+  private saveWorld(): void {
+    try {
+      const result = this.savedWorlds.save(params.snapshot('world'))
+      this.refreshSavedWorlds()
+      this.inspector.setStatus(result.duplicate ? 'This world is already saved on this device.' : 'World saved on this device.')
+    } catch (error) { this.inspector.setStatus(`World was not saved. ${error instanceof Error ? error.message : 'Storage is unavailable.'}`) }
+  }
+  private mountSavedWorlds(): void {
+    const section = document.createElement('section'); section.className = 'saved-worlds'
+    const title = document.createElement('h3'); title.textContent = 'Saved on this device'
+    this.savedList = document.createElement('div'); this.savedList.setAttribute('aria-label', 'Saved worlds')
+    section.append(title, this.savedList)
+    this.element.querySelector('[data-panel="worlds"]')!.append(section)
+    this.savedMoons = new SavedMoons(this.element.querySelector('.galaxy-ui')!, entry => { void this.enterSavedWorld(entry) })
+    this.refreshSavedWorlds()
+  }
+  private refreshSavedWorlds(): void {
+    if (!this.savedList) return
+    this.savedList.replaceChildren()
+    try {
+      const library = this.savedWorlds.read()
+      this.savedMoons?.set(library.entries)
+      if (!library.entries.length || library.notice) {
+        const note = document.createElement('p'); note.textContent = library.notice ?? 'Use Save current world in the World card.'
+        this.savedList.append(note)
+      }
+      for (const entry of library.entries) {
+        const row = document.createElement('div'); row.className = 'input-action'
+        const enter = document.createElement('button'); enter.type = 'button'; enter.dataset.savedWorld = entry.id
+        enter.textContent = `${planetName(entry.seed)} · ${entry.recipeId}`
+        enter.addEventListener('click', () => { void this.enterSavedWorld(entry) })
+        const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Delete'
+        remove.setAttribute('aria-label', `Delete saved ${planetName(entry.seed)}`)
+        remove.addEventListener('click', () => {
+          try { this.savedWorlds.remove(entry.id); this.refreshSavedWorlds(); this.say('Saved world deleted from this device.') }
+          catch { this.say('The saved world could not be deleted. Storage is unavailable.') }
+        })
+        row.append(enter, remove); this.savedList.append(row)
+      }
+    } catch {
+      this.savedMoons?.set([])
+      this.savedList.textContent = 'Saved worlds could not be read. Existing storage has been left unchanged.'
+    }
+    if (this.galaxy && !this.dropping && !this.savedEntering) this.galaxy.home()
+  }
+  private savedEntering = false
+  private async enterSavedWorld(entry: SavedWorld): Promise<void> {
+    if (this.dropping || this.savedEntering) return
+    this.savedEntering = true
+    this.savedOutcomeStop?.()
+    let applied = false, release: (() => void) | undefined
+    try {
+      // Read again: another tab may have deleted or changed the record after rendering it.
+      const latest = this.savedWorlds.read().entries.find(saved => saved.id === entry.id)
+      if (!latest) { this.say('That saved world is no longer available.'); this.refreshSavedWorlds(); return }
+      const plan = savedWorldPlan(latest, params.all().map(p => p.def))
+      const allowed = () => worldIdentity(plan) === worldIdentity(params.snapshot('world')) || (canEditWorld() && !(this.invited && !this.started))
+      if (!allowed()) { this.say('This room controls its world settings. The saved world was not applied.'); return }
+      this.stopAttract()
+      this.suspendCustomRefresh = true; clearTimeout(this.customMapTimer)
+      const apply = () => {
+        if (!allowed()) throw new Error('The room no longer allows changing this world.')
+        params.applySnapshot(plan, 'local'); applied = true
+        if (!this.started) { this.begin(); this.onPlay?.() }
+      }
+      if (!this.galaxy?.live || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        apply(); this.closeMenu()
+      } else {
+        if (!this.started) this.unlockAudio()
+        release = this.galaxy.savedWorldTarget(latest.recipeId, latest.seed, plan, latest.id)
+        await this.panels.show('index', true); this.galaxyFor('index')
+        await this.descent(latest.recipeId, apply)
+      }
+      if (applied) this.reportSavedOutcome(plan)
+    } catch (error) { this.say(`Saved world was not entered. ${error instanceof Error ? error.message : 'Please try again.'}`) }
+    finally { release?.(); this.savedEntering = false }
+  }
+  /** A room welcome can replace a local plan. Never claim a restore until authority settles. */
+  private savedOutcomeStop?: () => void
+  private reportSavedOutcome(plan: Record<string, import('../../shared/params').ParamValue>): void {
+    const report = () => {
+      const net = (window as { syn3hNet?: { connected?: boolean } }).syn3hNet
+      if (!net?.connected) return false
+      this.say(worldIdentity(params.snapshot('world')) === worldIdentity(plan)
+        ? 'Saved world settings applied.' : 'The current room’s settings replaced the saved world settings.')
+      return true
+    }
+    if (report()) return
+    this.say('Saved settings applied locally. Waiting for the room’s settings.')
+    const stop = () => { clearInterval(timer); this.abort.signal.removeEventListener('abort', stop); this.savedOutcomeStop = undefined }
+    const timer = setInterval(() => { if (report()) stop() }, 500)
+    this.savedOutcomeStop = stop
+    this.abort.signal.addEventListener('abort', stop, { once: true })
+  }
   private startGalaxy(): void {
     // No WebGL 2: the game cannot draw here either, so the index says so plainly.
     if (!Galaxy.supported()) { this.element.querySelector<HTMLElement>('.lobby-unsupported')!.hidden = false; return }
@@ -710,6 +814,7 @@ export class Shell implements System {
         this.pickPlanet(id, true)
       },
       onLayout: (places, chosen) => {
+        this.savedMoons?.layout(places, { width: innerWidth, top: this.brandBottom ?? 220, bottom: this.linksTop ?? innerHeight - 128 }, !!chosen || this.dropping || this.panels.active !== 'index')
         // Each label near its world, on the screen, clear of the links and of each other.
         for (const [id, chip] of chips) if (!this.labelSizes.has(id) && !chip.hidden) this.labelSizes.set(id, { width: chip.offsetWidth, height: chip.offsetHeight })
         // Clear of the wordmark too. While flying to a world, only its label stays.
@@ -950,7 +1055,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.galaxy?.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }

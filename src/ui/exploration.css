@@ -130,3 +130,13 @@ html[data-gfx="0"] .syn3h-shell.exploration-ui[data-glass] .wi-glass { --body: r
 .syn3h-advanced { --tp-base-background-color: rgb(5 18 29 / .8); --tp-container-background-color: rgb(100 190 230 / .07); --tp-container-foreground-color: #d5edf9; --tp-label-foreground-color: #b7d2e0; --tp-input-background-color: rgb(130 210 245 / .09); --tp-input-foreground-color: #e1f4ff; --tp-button-background-color: rgb(130 210 245 / .12); --tp-button-foreground-color: #d5edf9; --tp-base-shadow-color: transparent; }
 .syn3h-shell.exploration-ui .rail-players > summary { position: sticky; top: 0; z-index: 1; background: rgb(5 20 32 / .94); }
 @media (pointer: coarse) { .syn3h-shell.exploration-ui .world-inspector .wi-top .wi-search { font-size: 16px; } }
+
+/* Touch availability, not viewport width, reserves the joystick's lower-left area.
+   Wide tablets can show the same controls as phones. Include safe-area offsets. */
+.syn3h-shell.exploration-ui.has-touch .shell-minimap { width: 160px; height: 160px; bottom: calc(max(28px,env(safe-area-inset-bottom)) + 140px + 16px); }
+@media (max-width: 700px) {
+  .syn3h-shell.exploration-ui.has-touch .shell-minimap { width: 120px; height: 120px; bottom: max(206px,calc(max(28px,env(safe-area-inset-bottom)) + 124px + 16px)); }
+}
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .syn3h-shell.exploration-ui.has-touch .shell-minimap { width: 96px; height: 96px; bottom: calc(max(18px,env(safe-area-inset-bottom)) + 124px + 16px); }
+}
