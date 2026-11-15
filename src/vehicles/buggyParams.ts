@@ -48,6 +48,21 @@ export const buggyFlightAgility = defineParam({
   id: 'buggy.flightAgility', label: 'Flight agility', group: 'Buggy', scope: 'world',
   default: 1, min: 0.5, max: 1.5, step: 0.01,
 })
+/**
+ * How the wings turn the buggy's motion toward its nose (the label lists the choices; the
+ * settings panel shows them as buttons).
+ * 0 Classic: Syn3h. From the first instant the wings are open, all of the buggy's speed points
+ *   along its nose, whichever way it was moving.
+ * 1 Catch: for the first second and a half after the wings open, the motion swings round to
+ *   the nose at a rate that starts gentle and builds, so a buggy that was falling or sliding
+ *   sweeps into flight instead of snapping. After that it is Classic.
+ * 2 Glide: the wings always turn the motion at a rate that grows with speed, as lift does, so
+ *   the buggy carves and slips through turns, loses speed climbing and gains it diving.
+ */
+export const buggyFlightModel = defineParam<number>({
+  id: 'buggy.flightModel', label: 'Wing flight: 0 Classic, 1 Catch, 2 Glide', group: 'Buggy', scope: 'world',
+  default: 1, min: 0, max: 2, step: 1,
+})
 /** "Stall blending": keep some sideslip in flight instead of snapping velocity to the nose. */
 export const buggyFlightSlip = defineParam({
   id: 'buggy.flightSlip', label: 'Stall blending', group: 'Buggy', scope: 'world',

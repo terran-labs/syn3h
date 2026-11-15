@@ -768,3 +768,64 @@ describe('Syn3hBuggy slide recovery', () => {
     expect((await kick(30, 40, true)).recovered).toBe(Infinity)
   })
 })
+
+/**
+ * Opening the wings while moving across the nose. The buggy is in the air, nose toward -Z,
+ * moving at 30 m/s toward +X (fully sideways), and the wings open.
+ */
+describe('Syn3hBuggy wing flight models', () => {
+  /** Degrees between the motion and the nose after `seconds`, and the speed then. */
+  const deploy = async (model: number, seconds: number) => {
+    params.set('buggy.flightModel', model)
+    const { bed, b } = await spawn(0, 200)
+    b.body.setLinvel({ x: 30, y: 0, z: 0 }, true)
+    b.input.special = true
+    bed.run(seconds)
+    const v = b.body.linvel(), sp = Math.hypot(v.x, v.y, v.z), f = axis(b, 0, 0, -1)
+    return { off: Math.acos(Math.min(1, (f.x * v.x + f.y * v.y + f.z * v.z) / sp)) * 180 / Math.PI, speed: sp }
+  }
+
+  test('Classic points all the speed down the nose at once', async () => {
+    const r = await deploy(0, 0.1)
+    expect(r.off).toBeLessThan(2)
+    expect(r.speed).toBeGreaterThan(25)
+  })
+
+  test('Catch swings the motion round to the nose over about a second and keeps the speed', async () => {
+    const early = await deploy(1, 0.3)
+    expect(early.off).toBeGreaterThan(45)
+    const mid = await deploy(1, 0.8)
+    expect(mid.off).toBeLessThan(early.off - 10)
+    const late = await deploy(1, 2.5)
+    expect(late.off).toBeLessThan(3)
+    expect(late.speed).toBeGreaterThan(22)
+  })
+
+  test('Glide carries the motion round with lift, more slowly than Classic', async () => {
+    const early = await deploy(2, 0.3)
+    expect(early.off).toBeGreaterThan(30)
+    expect(early.off).toBeLessThan(85)
+    const late = await deploy(2, 2.5)
+    expect(late.off).toBeLessThan(8)
+  })
+
+  test('Glide loses speed in a climb and gains it in a dive; Classic does neither', async () => {
+    const run = async (model: number, pitch: number) => {
+      params.set('buggy.flightModel', model)
+      const { bed, b } = await flying(300, 35)
+      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch).multiply(rot(b))
+      b.body.setRotation(q, true)
+      const f = axis(b, 0, 0, -1)
+      b.body.setLinvel({ x: f.x * 35, y: f.y * 35, z: f.z * 35 }, true)
+      let climb = 0
+      bed.run(0.5, () => { climb = b.body.linvel().y })
+      return { speed: speed(b), climb }
+    }
+    const up = await run(2, 0.5), down = await run(2, -0.5)
+    expect(up.climb).toBeGreaterThan(0)
+    expect(down.climb).toBeLessThan(0)
+    expect(up.speed).toBeLessThan(down.speed - 1)
+    const classicUp = await run(0, 0.5), classicDown = await run(0, -0.5)
+    expect(Math.abs(classicUp.speed - classicDown.speed)).toBeLessThan(Math.abs(up.speed - down.speed))
+  })
+})

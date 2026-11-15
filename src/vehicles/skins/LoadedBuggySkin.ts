@@ -3,6 +3,8 @@ import {hotExposureNode} from './hotExposure'
 import {addLavaGlow} from './lavaGlow'
 import {addNightReadability} from './nightReadability'
 import {applyShowroom,setRole} from './showroom'
+import { forceField, type ForceField } from './forceField'
+import { graphicsLevel, levelNumber } from '../../core/quality'
 import * as THREE from 'three/webgpu'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { abs, attribute, clamp, dot, float, instancedBufferAttribute, length, min, normalView, positionGeometry, positionViewDirection, sin, smoothstep, time, uniform, vec2 } from 'three/tsl'
@@ -37,6 +39,8 @@ const STRUT_SPAN = .828
 /** The body the owner chose on 14 November 2026: round 4, Box arm. Built by tools/buggy-bodies. */
 const BOX_ARM_BODY = '/models/buggy-boxarm.glb'
 const TAIL_LAMP = .6
+/** Size of one cell of the wings' lattice (m): twice the canopy's, for a surface seen from further off. */
+const WING_CELL = .24
 /** Cockpit glow spots: emission as a multiple of the vehicle's accent colour. */
 const COCKPIT_GLOW = 1.6
 const BRAKE_LAMP = 1.5
@@ -178,6 +182,9 @@ export class LoadedBuggySkin implements BuggySkin {
   private readonly wheels = Array.from({length: 4}, () => new THREE.Group())
   private wings: { mesh: THREE.Mesh; base: Float32Array }[] = []
   private wingInput = [0, 0, 0]
+  /** The wings' force field (see forceField.ts), once loaded. */
+  private wingField?: ForceField
+  private wingMesh?: THREE.Mesh
 
   constructor() {
     // Scripts find the skin by this name (tools/velocity-isolate.mjs).
@@ -319,11 +326,19 @@ export class LoadedBuggySkin implements BuggySkin {
     }
     const edge = float(1).sub(smoothstep(0, .45, dist))
     const rim = float(1).sub(smoothstep(0, .08, dist))
-    // Seen edge on, the sheet itself brightens (the original's fresnel term).
-    const fresnel = float(1).sub(abs(dot(normalView, positionViewDirection))).pow(3)
+    // The shared force field parts: off-angle opacity, the canopy's lattice at wing scale, a
+    // glow where a wing meets the ground, another vehicle or its own hull, and the flash and
+    // ring of an absorbed blow. The contact glow reads the frame's depth, so it is for the
+    // higher graphics tiers; the level is read once, when the skin loads.
+    const field = this.wingField = forceField({ cell: WING_CELL, contact: levelNumber(graphicsLevel.value) >= 2 })
+    // Seen edge on, the sheet itself brightens (the original's fresnel term); face on it is
+    // nearly clear, so the ground shows through the middle of a wing seen from above.
+    const fresnel = field.grazing.pow(2.5)
     // Panning bands across the chord.
     const flow = sin(p.y.mul(2.2).add(p.x.mul(.35)).add(time.mul(3))).mul(.5).add(.5).pow(6)
-    const glow = edge.mul(1.2).add(rim.mul(2.2)).add(flow.mul(.3)).add(fresnel.mul(.5)).add(.03)
+    // The lattice is faint until a band or an absorbed blow passes over it.
+    const lattice = field.lattice.mul(flow.mul(.55).add(field.absorb.mul(2.5)).add(.12))
+    const glow = edge.mul(1.2).add(rim.mul(2.2)).add(flow.mul(.3)).add(fresnel.mul(.9)).add(lattice).add(field.contact.mul(2.6)).add(field.absorb.mul(1.6)).add(.02)
     const energy = new THREE.MeshBasicNodeMaterial({transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false})
     energy.fog = false
     energy.forceSinglePass = true
@@ -335,7 +350,7 @@ export class LoadedBuggySkin implements BuggySkin {
     tint.fog = false
     tint.forceSinglePass = true
     tint.colorNode = this.energyColor.mul(.55).mul(hotExposureNode())
-    tint.opacityNode = clamp(edge.mul(.45).add(rim.mul(.35)).add(flow.mul(.08)).add(.1), 0, .8)
+    tint.opacityNode = clamp(edge.mul(.45).add(rim.mul(.35)).add(flow.mul(.08)).add(fresnel.mul(.3)).add(field.contact.mul(.35)).add(field.absorb.mul(.25)).add(.05), 0, .8)
     for (const o of meshes) {
       for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose()
       o.material = energy; o.castShadow = false; o.receiveShadow = false
@@ -343,6 +358,7 @@ export class LoadedBuggySkin implements BuggySkin {
       under.renderOrder = -1
       o.add(under)
       this.wings.push({mesh: o, base: new Float32Array(o.geometry.attributes.position.array)})
+      this.wingMesh = o
     }
     this.object.add(wingGroup)
     loaded.forEach(g => release(g.scene))
@@ -511,6 +527,11 @@ export class LoadedBuggySkin implements BuggySkin {
     this.sparks = new MotorSparks(8, 48)
     this.object.add(this.sparks.mesh)
     this.wheels.forEach((w, i) => this.setWheel(i, w.position, w.rotation.y, this.rollers[i].rotation.x))
+  }
+
+  fieldHit(worldPoint: THREE.Vector3, strength: number): void {
+    if (!this.wingField || !this.wingMesh?.visible) return
+    this.wingField.hit(this.wingMesh.worldToLocal(scratch.point.copy(worldPoint)), strength)
   }
 
   setLights(braking: boolean): void {

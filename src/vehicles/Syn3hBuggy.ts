@@ -17,7 +17,7 @@ import type { Game } from '../core/Game'
 import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import {
-  buggyBumpStop, buggyCG, buggyCoastDrag, buggyDownforce, buggyFin, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightSlip, buggyGrip,
+  buggyBumpStop, buggyCG, buggyCoastDrag, buggyDownforce, buggyFin, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightModel, buggyFlightSlip, buggyGrip,
   buggyGripFade, buggyIdleHold, buggyNextGen, buggyPower, buggyRebound, buggyRegen, buggyRideHeight, buggyRearSteerFast, buggyShocks, buggySideGrip, buggySideHold, buggySlide, buggySpeed, buggyStability, buggySteerFollow, buggySteerLimit,
   buggyTraction,
 } from './buggyParams'
@@ -95,6 +95,27 @@ const SIDE_ANGLE_SLIDE = 70
 /** Speeds (m/s) over which that takes effect, so low speed handling keeps its grip. */
 const SIDE_SPEED_MIN = 6
 const SIDE_SPEED_FULL = 14
+/**
+ * Wing flight model 1, Catch (see buggy.flightModel): for CATCH_TIME seconds after the wings
+ * open, the motion turns toward the nose at CATCH_START degrees a second, rising with the
+ * square of the time to CATCH_END.
+ */
+const CATCH_TIME = 1.5
+const CATCH_START = 30
+const CATCH_END = 360
+/**
+ * Wing flight model 2, Glide: the motion turns toward the nose at GLIDE_LIFT radians a second
+ * per m/s of speed (a centripetal pull of GLIDE_LIFT v squared, as lift gives), never pulling
+ * more than GLIDE_G g, and trades speed for height at GLIDE_GRAVITY of free fall.
+ */
+const GLIDE_LIFT = 0.07
+const GLIDE_G = 5
+const GLIDE_GRAVITY = 0.6
+/** A change of velocity in one step (m/s) that counts as a blow, for the force fields' absorb effect. */
+const BLOW_MIN = 4
+/** The change that shows at full strength, and the shortest time (s) between two blows shown. */
+const BLOW_FULL = 14
+const BLOW_GAP = 0.12
 /** Body slide (degrees) the front wheels ignore before they follow the travel direction. */
 const FOLLOW_DEAD = 3
 /** Furthest (degrees) the front wheels swing to follow it. */
@@ -201,6 +222,8 @@ export class Syn3hBuggy extends Vehicle {
   private motorStep = 0
   /** Seconds left in which a touchdown still counts as a landing (see LANDING_SLIDE). */
   private landingSlide = 0
+  /** Seconds the wings have been asked open, for the Catch flight model. */
+  private wingTime = 0
 
 
   /** The driver's eye, for the ride camera (see RIDE_HEIGHT). */
@@ -374,6 +397,8 @@ export class Syn3hBuggy extends Vehicle {
   private readonly v2 = new THREE.Vector3()
   private readonly euler = new THREE.Vector3()
   private readonly vLocal = new THREE.Vector3()
+  private readonly v3 = new THREE.Vector3()
+  private readonly v4 = new THREE.Vector3()
 
   protected applyForces(dt: number): void {
     const ub = this.ub
@@ -386,12 +411,14 @@ export class Syn3hBuggy extends Vehicle {
     const kinematic = b.isKinematic()
     const lv = kinematic ? this.carriedVelocity(pos, dt) : b.linvel()
     if (!kinematic) this.carriedValid = false
+    this.feelBlow(lv, pos, dt, kinematic)
     const speedSq = lv.x * lv.x + lv.y * lv.y + lv.z * lv.z
     const myVelocity = Math.sqrt(speedSq)
     const S = buggySpeed.value
     const smoothed = this.inputSmoothed
 
     this.updateInput(dt, speedSq)
+    this.wingTime = this.shouldWingsBeOpen ? this.wingTime + dt : 0
     // Buggy.js 488 (Mars Explorer): no self righting inside a zorb ball.
     if (this.zorbed) this.isInverted = false
     else this.selfRight(dt, speedSq)
@@ -628,6 +655,28 @@ export class Syn3hBuggy extends Vehicle {
     })
 
     ub.flush(dt)
+  }
+
+  private readonly blowLast = new THREE.Vector3()
+  private blowValid = false
+  private blowWait = 0
+  /**
+   * Tell the skin's force fields when the buggy takes a blow: any sudden change of velocity,
+   * whether from the ground, another vehicle, a shove, or the wings taking the whole load of
+   * a buggy that was moving across them. The fields flash at the side the blow came from and
+   * a ring runs across them (BuggySkin.fieldHit). Visual only.
+   */
+  private feelBlow(lv: RAPIER.Vector, pos: THREE.Vector3, dt: number, kinematic: boolean): void {
+    this.blowWait = Math.max(0, this.blowWait - dt)
+    const dv = this.v1.set(lv.x - this.blowLast.x, lv.y - this.blowLast.y, lv.z - this.blowLast.z)
+    const felt = dv.length()
+    if (this.blowValid && !kinematic && felt > BLOW_MIN && this.blowWait === 0 && this.skin?.fieldHit) {
+      // The body was pushed along dv, so the blow landed on the side facing against it.
+      this.skin.fieldHit(this.v2.copy(pos).addScaledVector(dv, -1.2 / felt), THREE.MathUtils.clamp(felt / BLOW_FULL, 0.2, 1.2))
+      this.blowWait = BLOW_GAP
+    }
+    this.blowLast.set(lv.x, lv.y, lv.z)
+    this.blowValid = !kinematic
   }
 
   private readonly carriedLast = new THREE.Vector3()
@@ -887,7 +936,26 @@ export class Syn3hBuggy extends Vehicle {
           const boost = buggyFlightLooPower.value
             ? Math.abs(mis) / 10
             : mis < 0.999 && mis > -0.999 ? Math.abs(mis) / 10 : 0
-          ub.setVelocity(ub.transformDirectionUnity(0, 0, locVel.length() + dt * 50 * boost, this.v2))
+          const speed = locVel.length() + dt * 50 * boost
+          const model = Math.round(buggyFlightModel.value)
+          // How far (radians) the wings may turn the motion toward the nose this step.
+          const turn = model === 1 && this.wingTime < CATCH_TIME
+            ? ((CATCH_START + (CATCH_END - CATCH_START) * (this.wingTime / CATCH_TIME) ** 2) / DEG) * dt
+            : model === 2 ? Math.min(GLIDE_LIFT * myVelocity, (GLIDE_G * 9.81) / Math.max(myVelocity, 1)) * dt : Infinity
+          const dir = this.v3.copy(vel).normalize()
+          const off = dir.angleTo(fwd)
+          if (off <= turn) {
+            // Classic, and the other models once the motion has come round: straight down the nose.
+            if (model === 2) ub.setVelocity(this.v3.copy(fwd).multiplyScalar(Math.max(0, speed - GLIDE_GRAVITY * 9.81 * fwd.y * dt)))
+            else ub.setVelocity(ub.transformDirectionUnity(0, 0, speed, this.v2))
+          } else {
+            // Swing the motion toward the nose by `turn`, about the axis between them (the
+            // body's up when they are opposed and that axis is undefined).
+            const axis = this.v4.crossVectors(dir, fwd)
+            if (axis.lengthSq() < 1e-10) axis.copy(this.up)
+            dir.applyAxisAngle(axis.normalize(), turn)
+            ub.setVelocity(dir.multiplyScalar(model === 2 ? Math.max(0, speed - GLIDE_GRAVITY * 9.81 * dir.y * dt) : speed))
+          }
         }
         ub.addRelativeTorqueAcceleration(mis * 10 * agility, 0, smoothed.x * -13 * agility, dt)
       }
@@ -975,6 +1043,8 @@ export class Syn3hBuggy extends Vehicle {
     this.updateMassProperties()
     this.wheelsGrounded = 0
     this.landingSlide = 0
+    this.wingTime = 0
+    this.blowValid = false
     this.carriedValid = false
     for (let i = 0; i < 4; i++) {
       this.windX[i] = this.windZ[i] = 0
