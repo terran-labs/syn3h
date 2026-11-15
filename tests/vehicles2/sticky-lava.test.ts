@@ -3,6 +3,7 @@ import * as T from 'three/webgpu'
 import {params} from '../../shared/params'
 import {initPhysics} from '../../src/core/physics'
 import {Syn3hBuggy} from '../../src/vehicles/Syn3hBuggy'
+import {waterSinking} from '../../src/vehicles/buoyancy'
 import {ClassicBuggy} from '../../src/vehicles/ClassicBuggy'
 import {Jet} from '../../src/vehicles/Jet'
 import {Hovercraft} from '../../src/vehicles/Hovercraft'
@@ -35,7 +36,8 @@ describe('indestructible viscous lava',()=>{
    v.dispose();h.world.free()
   }
  })
- it('water keeps the buggy float/paddle behavior and produces no heat or sticky state',()=>{
+ it('legacy water keeps the buggy float/paddle behavior and produces no heat or sticky state',()=>{
+  params.set(waterSinking.def.id,false)
   const h=harness();h.terrain.liquidHeightAt=()=>4;h.terrain.liquidKindAt=()=> 'water'
   const v=new Syn3hBuggy(h.game,h.terrain,new T.Vector3(0,4,0));v.isLocal=false;v.input.y=1;h.step(v,200)
   expect(v.liquidState.heat).toBe(0);expect(v.stuck).toBe(false);expect(v.lavaDepth).toBe(0)
