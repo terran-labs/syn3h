@@ -30,12 +30,13 @@ import type { Game } from '../../core/Game'
 import { graphicsLevel, levelNumber } from '../../core/quality'
 import { hotExposureNode } from '../../vehicles/skins/hotExposure'
 import { warmGear } from '../warm'
+import { MAX_BOTS } from '../../../shared/protocol'
 
 // TSL nodes are dynamically typed; the effect sprites use the same alias.
 type N = any // eslint-disable-line @typescript-eslint/no-explicit-any
 
-/** Cords drawn at once. More than this can exist; the extra ones pull unseen. */
-export const TETHER_CORDS = 32
+/** One cord for each of the default room's 16 players and every permitted bot. */
+export const TETHER_CORDS = 16 + MAX_BOTS
 /** Ribbon segments per cord at the mobile and desktop levels, and at level 0. */
 export const TETHER_SEGMENTS = 24
 const SEGMENTS_LOW = 12
