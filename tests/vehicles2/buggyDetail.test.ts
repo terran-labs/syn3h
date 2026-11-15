@@ -15,10 +15,21 @@ function counts(root: THREE.Object3D) {
   return { triangles, draws }
 }
 
-it('loads the real buggy assets and switches complete animated models within each budget', async () => {
+it.each([false, true])('loads real assets within each budget with foreign loader constructors=%s', async (foreignConstructors) => {
   const loader = vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockImplementation(async function(url) {
     const bytes = await readFile(`public${url}`)
-    return new GLTFLoader().parseAsync(Uint8Array.from(bytes).buffer, '')
+    const gltf = await new GLTFLoader().parseAsync(Uint8Array.from(bytes).buffer, '')
+    if (foreignConstructors) {
+      // Match a loader from another Three module: same mesh API, different prototype identity.
+      const prototype = Object.create(THREE.Object3D.prototype, Object.getOwnPropertyDescriptors(THREE.Mesh.prototype))
+      gltf.scene.traverse(object => {
+        if (object instanceof THREE.Mesh) {
+          Object.setPrototypeOf(object, prototype)
+          expect(object instanceof THREE.Mesh).toBe(false)
+        }
+      })
+    }
+    return gltf
   })
   const root = new THREE.Group()
   const callbacks = new Set<VehicleDetail>()

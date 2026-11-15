@@ -59,12 +59,18 @@ const layouts = {
   syn3h: { scale: 1, mounts: axleMounts(.55, .15, 1.2), wheelDiameter: null as number | null, wheelWidth: 1, rest: new THREE.Vector3(1.1, -.2, 1.3) },
 }
 
+// GLTFLoader and the WebGPU renderer can resolve separate Three module instances in
+// a live merged preview. Imported meshes advertise their type without constructor identity.
+function isMesh(object: THREE.Object3D): object is THREE.Mesh {
+  return (object as THREE.Mesh).isMesh === true
+}
+
 /** Bake import transforms so suspension and deformation use the vehicle frame. */
 function extract(root: THREE.Object3D, transform = new THREE.Matrix4()): THREE.Group {
   const result = new THREE.Group()
   root.updateWorldMatrix(true, true)
   root.traverse(o => {
-    if (!(o instanceof THREE.Mesh)) return
+    if (!isMesh(o)) return
     const geometry = o.geometry.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(transform, o.matrixWorld))
     geometry.computeVertexNormals()
     const mesh = new THREE.Mesh(geometry, Array.isArray(o.material) ? o.material.map(m => m.clone()) : o.material.clone())
@@ -76,7 +82,7 @@ function extract(root: THREE.Object3D, transform = new THREE.Matrix4()): THREE.G
 }
 function release(root: THREE.Object3D): void {
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>()
-  root.traverse(o => { if (o instanceof THREE.Mesh) { geometries.add(o.geometry); for (const m of Array.isArray(o.material) ? o.material : [o.material]) materials.add(m) } })
+  root.traverse(o => { if (isMesh(o)) { geometries.add(o.geometry); for (const m of Array.isArray(o.material) ? o.material : [o.material]) materials.add(m) } })
   geometries.forEach(g => g.dispose())
   materials.forEach(m => m.dispose())
 }
@@ -234,7 +240,7 @@ export class LoadedBuggySkin implements BuggySkin {
       src.dispose(); o.material = plain
     } })
     body.traverse(o => {
-      if (!(o instanceof THREE.Mesh)) return
+      if (!isMesh(o)) return
       // Preserve Syn3h's separate trim and light materials; classic has one tinted shell.
       const materials = Array.isArray(o.material) ? o.material : [o.material]
       for (const m of materials) if (m instanceof THREE.MeshStandardMaterial) {
