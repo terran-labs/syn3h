@@ -47,7 +47,7 @@ async function main(): Promise<void> {
   // Graphics levels thin out distant terrain on weaker devices.
   game.quality.attachTerrain(terrain)
   const environment = game.add(createEnvironment(game, terrain))
-  // Post effects (src/fx/post): off by default; ?post=1 or Settings > Advanced > Post.
+  // Post effects follow the player's settings and the current rendering budget.
   game.setPostChain(createPostChain(game, environment, () => player))
 
   const spawn = terrain.spawnPoint(0)
@@ -67,7 +67,7 @@ async function main(): Promise<void> {
     player.teleport(s.position, s.heading)
   })
 
-  // Bots chase and ram the player. The 'bots.count' slider sets how many (0 by default).
+  // Bots chase and ram the player. The 'bots.count' slider sets the requested fleet size.
   const bots = game.add(new BotManager(game, terrain, player))
   bots.setTargets([player])
 
@@ -85,6 +85,13 @@ async function main(): Promise<void> {
   // The start screen collects the name and unlocks audio. Networking joins on Play so the
   // room sees the chosen name. ?autoplay=1 skips the screen for automated checks.
   const { shell, audio } = initGameShell(game, player, terrain)
+  shell.configurePerformance({
+    getPerformanceSnapshot: () => game.quality.getPerformanceSnapshot(),
+    subscribePerformance: listener => game.quality.subscribePerformance(listener),
+    setDiagnosticsVisible: visible => game.quality.setDiagnosticsVisible(visible),
+    ignoreRecommendation: () => game.quality.ignoreRecommendation(),
+    lowerRecommendedTier: () => game.quality.lowerRecommendedTier(),
+  })
   // An idle lobby turns into a cinematic tour of the volcano, following a bot if there is one.
   shell.setAttractCamera(camera, () => bots.vehicles)
   // Nearby bots are audible, positioned in space. Remote players join this list later.
