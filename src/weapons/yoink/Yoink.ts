@@ -17,9 +17,9 @@ import * as THREE from 'three/webgpu'
 import type { YoinkWire } from '../../../shared/protocol'
 import { wrapDelta } from '../../../shared/wrap'
 import type { Game, System } from '../../core/Game'
+import { LiftFieldLook } from './field'
 import { hotExposureDim } from '../../vehicles/skins/hotExposure'
 import { aimFrom, type GearControl } from '../aim'
-import { CordView, SEGMENTS } from '../bungee/Bungee'
 import { sharedLook, warmGear } from '../warm'
 import { gustPush, holdAccel, type V3 } from './hold'
 import {
@@ -56,7 +56,7 @@ export interface YoinkHooks {
 interface Carry {
   holder: number
   since: number
-  view: CordView
+  field: THREE.Mesh
 }
 
 const EARTH_G = 9.81
@@ -77,9 +77,6 @@ const OWN_SPEED = 60
 
 /** Linear RGB at daytime exposure: a warm amber tractor beam. */
 const BEAM_RGB = [3, 1.5, 0.25] as const
-const TINT_RGB = [0.5, 0.25, 0.04] as const
-
-const BEAM_WIDTHS = [0.5, 1.4, 0.18]
 /** Gust rings ready to show at once, for the whole game. A gust lasts a third of a second. */
 const WAVES = 6
 
@@ -91,20 +88,13 @@ interface Wave { mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial; age: number; bu
  * has its own material; they are made once and reused, never cloned per gust.
  */
 class YoinkLook {
-  readonly coreMat = new THREE.MeshBasicMaterial({ name: 'gear yoink core', color: new THREE.Color(...BEAM_RGB), side: THREE.DoubleSide, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })
-  readonly haloMat = new THREE.MeshBasicMaterial({
-    name: 'gear yoink halo', color: new THREE.Color(...BEAM_RGB), transparent: true, opacity: 0.25, side: THREE.DoubleSide,
-    blending: THREE.AdditiveBlending, depthWrite: false,
-  })
-  readonly tintMat = new THREE.MeshBasicMaterial({
-    name: 'gear yoink tint', color: new THREE.Color(...TINT_RGB), transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false,
-  })
+  readonly field: LiftFieldLook
   private readonly waveGeo = new THREE.RingGeometry(0.6, 1, 40)
   private readonly waves: Wave[] = []
-  private readonly proxy: CordView
   private readonly unwarm: () => void
 
   constructor(game: Game) {
+    this.field = new LiftFieldLook(game)
     for (let i = 0; i < WAVES; i++) {
       const mat = new THREE.MeshBasicMaterial({
         name: 'gear yoink wave', color: new THREE.Color(...BEAM_RGB), transparent: true, opacity: 0.8, side: THREE.DoubleSide,
@@ -112,15 +102,9 @@ class YoinkLook {
       })
       this.waves.push({ mesh: new THREE.Mesh(this.waveGeo, mat), mat, age: 0, busy: false })
     }
-    this.proxy = new CordView(this.beamMats(), BEAM_WIDTHS)
     this.unwarm = warmGear(game, [
-      ...this.proxy.group.children.map((m) => [(m as THREE.Mesh).geometry, (m as THREE.Mesh).material as THREE.Material] as const),
       ...this.waves.map((w) => [this.waveGeo, w.mat] as const),
     ])
-  }
-
-  beamMats(): THREE.Material[] {
-    return [this.tintMat, this.haloMat, this.coreMat]
   }
 
   /** A free gust ring, or null when every one is on screen: that gust goes unseen. */
@@ -134,9 +118,9 @@ class YoinkLook {
 
   dispose(): void {
     this.unwarm()
-    this.proxy.dispose()
+    this.field.dispose()
     for (const w of this.waves) { w.mesh.removeFromParent(); w.mat.dispose() }
-    this.coreMat.dispose(); this.haloMat.dispose(); this.tintMat.dispose(); this.waveGeo.dispose()
+    this.waveGeo.dispose()
   }
 }
 
@@ -288,12 +272,8 @@ export class Yoink implements System {
 
   update(dt: number): void {
     const dim = hotExposureDim(this.game.renderer.toneMappingExposure)
-    const look = this.look
-    look.coreMat.color.setRGB(BEAM_RGB[0] * dim, BEAM_RGB[1] * dim, BEAM_RGB[2] * dim)
-    look.haloMat.color.setRGB(BEAM_RGB[0] * dim, BEAM_RGB[1] * dim, BEAM_RGB[2] * dim)
-    look.tintMat.color.setRGB(TINT_RGB[0] * dim, TINT_RGB[1] * dim, TINT_RGB[2] * dim)
-    const cam = this.game.camera.getWorldPosition(new THREE.Vector3())
-    for (const [to, c] of this.carries) this.drawBeam(to, c, cam)
+    this.look.field.update(this.game.time)
+    for (const [to, c] of this.carries) this.drawField(to, c)
     for (let i = this.waves.length - 1; i >= 0; i--) {
       const w = this.waves[i]
       w.age += dt
@@ -410,17 +390,15 @@ export class Yoink implements System {
   private grab(holder: number, to: number): void {
     if (to === holder) return
     this.endCarry(to)
-    const view = new CordView(this.look.beamMats(), BEAM_WIDTHS)
-    view.group.visible = false
-    this.game.scene.add(view.group)
-    this.carries.set(to, { holder, since: this.game.time, view })
+    const field = this.look.field.create()
+    this.game.scene.add(field)
+    this.carries.set(to, { holder, since: this.game.time, field })
   }
 
   private endCarry(to: number): void {
     const c = this.carries.get(to)
     if (!c) return
-    this.game.scene.remove(c.view.group)
-    c.view.dispose()
+    this.game.scene.remove(c.field)
     this.carries.delete(to)
   }
 
@@ -472,30 +450,13 @@ export class Yoink implements System {
     load.body.setAngvel({ x: w.x * k, y: w.y * k, z: w.z * k }, true)
   }
 
-  private drawBeam(to: number, c: Carry, cam: THREE.Vector3): void {
-    const holder = this.hooks.vehicleOf(c.holder)
+  private drawField(to: number, c: Carry): void {
     const load = this.hooks.vehicleOf(to)
-    if (!holder || !load) { c.view.group.visible = false; return }
-    const a = holder.object.position.clone().add(new THREE.Vector3(0, 1, 0).applyQuaternion(holder.object.quaternion))
-    const b = load.object.position.clone()
-    const size = this.hooks.wrapSize()
-    if (size > 0) { b.x = a.x + wrapDelta(a.x, b.x, size); b.z = a.z + wrapDelta(a.z, b.z, size) }
-    const along = new THREE.Vector3().subVectors(b, a)
-    const side = along.clone().cross(new THREE.Vector3(0, 1, 0))
-    if (side.lengthSq() < 1e-6) side.set(1, 0, 0)
-    side.normalize()
-    const up = side.clone().cross(along).normalize()
-    const time = this.game.time
-    for (let i = 0; i <= SEGMENTS; i++) {
-      const u = i / SEGMENTS
-      const p = c.view.points[i].lerpVectors(a, b, u)
-      // A writhing tractor beam: a corkscrew that is still at both ends.
-      const amp = 0.35 * Math.sin(Math.PI * u)
-      const ph = u * 14 - time * 9
-      p.addScaledVector(side, amp * Math.cos(ph)).addScaledVector(up, amp * Math.sin(ph))
-    }
-    c.view.draw(cam)
-    c.view.group.visible = true
+    if (!load) { c.field.visible = false; return }
+    // Use the rendered vehicle's image of the wrapping world, so the field stays on it.
+    c.field.position.copy(load.object.position)
+    c.field.position.y -= 0.3
+    c.field.visible = true
   }
 
   private addWave(o: THREE.Vector3, d: THREE.Vector3): void {
