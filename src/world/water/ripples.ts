@@ -23,7 +23,12 @@ export class Ripples {
   private positioned = false
   private tileSize = uniform(0)
   readonly cells = 256
-  constructor(private renderer:T.WebGPURenderer) {}
+  private renderer!:T.WebGPURenderer
+  /** Binding is separate so sea materials can capture nodes before game systems exist. */
+  attach(renderer:T.WebGPURenderer):void {
+    if(this.renderer!==renderer)this.dispose()
+    this.renderer=renderer
+  }
   /** Set the wrapping world width; zero is an unbounded flat lab. */
   configure(tileSize:number) { this.dispose();this.tileSize.value=Math.max(0,tileSize) }
   disturb(x:number,z:number,radius:number,strength:number) {
@@ -72,7 +77,7 @@ export class Ripples {
     this.quad=new T.QuadMesh(material)
   }
   update(dt:number,cameraX:number,cameraZ:number) {
-    if(!waterRipples.value){this.dispose();return}
+    if(!waterRipples.value||!this.renderer){this.dispose();return}
     if(!this.quad)this.allocate()
     const size=waterRippleSize.value
     if(size!==this.extent.value){this.dispose();this.extent.value=size;this.allocate()}
@@ -97,3 +102,6 @@ export class Ripples {
   }
   dispose(){for(const t of this.targets)t.dispose();this.targets=[];(this.quad?.material as T.Material | undefined)?.dispose();this.quad=null;this.active.value=0;this.positioned=false;this.accumulator=0;this.queue.drain()}
 }
+
+/** Shared by the sea shader and the game effects system; no GPU targets until enabled. */
+export const rippleField=new Ripples()
