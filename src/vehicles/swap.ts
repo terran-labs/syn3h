@@ -24,15 +24,12 @@ import * as THREE from 'three/webgpu'
 import type { Game } from '../core/Game'
 import type { Terrain } from '../world/Terrain'
 import { attachVehicleEffects } from './effects'
-import { createVehicle, type VehicleKind } from './index'
+import { canonicalVehicleKind, createVehicle, type VehicleKind } from './index'
 import type { PlayerSlot } from './PlayerSlot'
 import type { Vehicle } from './Vehicle'
 
 /** Metres the new vehicle starts above the old one's origin, and at least above the surface. */
 export const SWAP_LIFT = 0.5
-
-/** 'buggy-syn3h' is an alias of 'buggy' (see VehicleKind). */
-const canonical = (kind: VehicleKind): VehicleKind => (kind === 'buggy-syn3h' ? 'buggy' : kind)
 
 const position = new THREE.Vector3()
 const forward = new THREE.Vector3()
@@ -63,7 +60,8 @@ export function createVehicleSwapper(
   return {
     swap(kind) {
       const previous = slot.current
-      if (canonical(kind) === canonical(previous.kind)) return previous
+      // Aliases and retired names all build the buggy: asking for one while driving it is no change.
+      if (canonicalVehicleKind(kind) === canonicalVehicleKind(previous.kind)) return previous
       const body = previous.body
       const t = body.translation(), r = body.rotation(), v = body.linvel()
       // Heading from the nose projected on the ground; from the roof when the nose points
