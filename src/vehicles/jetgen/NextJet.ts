@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { Builder, GROUND_Y, type Leg, type Mat } from './shapes'
-import type { JetDesign } from './designs'
+import type { JetDesign } from './shipped'
 import { applyShowroom, setRole } from '../skins/showroom'
 import { addNightReadability } from '../skins/nightReadability'
 import { mergeStatic } from '../skins/mergeStatic'

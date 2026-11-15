@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { Builder, bodyRings, loft, surfRings, type Mat } from './shapes'
-import type { JetDesign } from './designs'
+import type { JetDesign } from './shipped'
 import { setRole } from '../skins/showroom'
 
 /** Far-distance geometry uses the design's outline, without intakes, joints or moving parts. */

@@ -1,4 +1,9 @@
 import { Builder } from './shapes'
+import { SHIPPED_JET, VANGUARD_EYE, type JetDesign } from './shipped'
+
+// The lab's catalogue of study designs. The game ships only SHIPPED_JET (shipped.ts) and must
+// not import this file.
+export { VANGUARD_EYE, type JetDesign }
 
 /**
  * Five next-generation jet designs after the owner's red reference renders: a long nose with
@@ -13,16 +18,6 @@ import { Builder } from './shapes'
  * Body rows:    [z, halfWidth, top, bottom, centreY, exponent]
  * Surface rows: [x, y, zLeadingEdge, chord, thickness], root to tip.
  */
-export interface JetDesign {
-  id: string; name: string; blurb: string; paint: number; accent: number
-  /** Straight-edged, faceted geometry instead of flowing curves. */
-  hard?: boolean
-  /** Smooth normals without changing the angular planform. */
-  smooth?: boolean
-  /** Kept for reference only: every design now renders through the shared vehicle shading. */
-  finish?: 'candy' | 'military'
-  build(b: Builder): void
-}
 
 /**
  * Surface rows along an elliptical arc in the X-Y plane, for hoop and arch tails.
@@ -70,8 +65,6 @@ interface VanguardOptions {
   spine?: boolean
 }
 
-/** The pilot's eye in the Vanguard family: low in the pod, a third of the way along the canopy. */
-export const VANGUARD_EYE: [number, number, number] = [0, .28, -1.6]
 const QUAD_INTAKES = [45, 135, 225, 315].map(a => [a, -.35, 1.25, .2, .13])
 
 /**
@@ -421,8 +414,9 @@ export const JET_DESIGNS: JetDesign[] = [
     build(b) { vanguard(b, options) },
   })),
   // Sixth round: the Quad Hexring as one lofted body, with pointed joints all round the ring.
+  // Its first design, the Mk2, is the jet the game ships.
+  SHIPPED_JET,
   ...([
-    ['mk2', 'Mk2', 'The Hexring cleaned up: intakes and thrusters lofted into their bodies, six ring joints, shallower wingtips.', { ring: 'hex', wing: 'droop' }],
     ['prong', 'Prong', 'The same with the booms run forward as prongs and the canards on the cockpit pod.', { ring: 'hex', wing: 'droop', booms: 'prong', canards: 'pod' }],
     ['span', 'Span', 'The ring widened until its flanks are the booms themselves: a diamond roof and keel, no struts, no canards.', { ring: 'hex', wing: 'droop', ringOnBooms: true, canards: 'none' }],
     ['spine', 'Spine', 'A larger ring braced to the hull by a dorsal and a ventral strut that meet its top and bottom joints.', { ring: 'hex', wing: 'droop', spine: true, ringSize: 1.08 }],

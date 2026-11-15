@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu'
-import { JET_DESIGNS, VANGUARD_EYE } from './designs'
+import { SHIPPED_JET, VANGUARD_EYE } from './shipped'
 import { NextJet } from './NextJet'
 import { buildJetSilhouette } from './JetSilhouette'
 import { detailLevel, mergeStatic, registerVehicleDetail } from '../skins/mergeStatic'
@@ -17,7 +17,7 @@ type Level = 0 | 1 | 2
  */
 export class GameJet {
   readonly object = new THREE.Group()
-  readonly design = JET_DESIGNS.find(d => d.id === 'hex-mk2')!
+  readonly design = SHIPPED_JET
   /** The pilot's eye in the jet's frame. Known without building the close model. */
   readonly eye = new THREE.Vector3(...VANGUARD_EYE)
   private nearModel?: NextJet
