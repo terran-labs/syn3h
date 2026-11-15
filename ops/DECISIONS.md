@@ -26,6 +26,19 @@ The owner answered the wind question: generated wind only. UX owns removing the 
 wind layer. This supersedes the recording-retention rule for wind only; original music
 and laser recordings remain.
 
+## Sunday 15 November, 9:15am Pacific: one approved design per vehicle in the noon release
+
+**Decided** by the owner: "In the version we're shipping at noon today, there should only be
+one approved hovercraft, buggy, tank, and jet. You shouldn't be saving old versions that are
+loaded into the game."
+
+**What it changes.** The noon release offers four vehicles with one design each. Alternate,
+study and superseded designs are not loaded, bundled or reachable by sliders, links, saved
+settings or bots; the vehicle lab stays out of the production build. The hovercraft and tank
+ship in their current model-based form, since he has not approved a generated body for
+either. Design-selecting parameters on the hovercraft and tank branches stay out of the
+candidate.
+
 ## Sunday 15 November, 9:02am Pacific: new vehicle designs are announced as questions
 
 **Decided** by the owner, in the Hovercraft lead's thread: "Send me a global question
