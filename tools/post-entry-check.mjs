@@ -11,6 +11,7 @@ try {
   page.on('pageerror', e => report.errors.push(e.message))
   page.on('console', m => { if (m.type() === 'error') report.errors.push(m.text()) })
   const url = new URL(base)
+  url.searchParams.set('room', `post-entry-${Date.now()}`)
   if (process.argv.includes('--webgl')) url.searchParams.set('webgl', '1')
   // No post/cinematic/quality opt-ins. Enter through the ordinary lobby button.
   await page.goto(url.href, { timeout: 120000 })
@@ -22,10 +23,10 @@ try {
   await page.waitForFunction(tick => window.syn3h.game.tick > tick + 120, enteredAt, { timeout: 120000 })
   const entry = await page.evaluate(() => {
     const s = window.syn3h, g = s.game
-    const ids = ['post.on','post.tablets','light.bounce','light.shadowSoftness','light.shadowStrength','terrain.relief','terrain.detailNormal','terrain.surfaceResponse','terrain.macroColour','terrain.accent','weather.aerial']
+    const ids = ['post.on','post.tablets','post.gi','light.bounce','light.shadowSoftness','light.shadowStrength','terrain.relief','terrain.detailNormal','terrain.surfaceResponse','terrain.macroColour','terrain.accent','weather.aerial']
     return { name:'normal-entry', backend:g.backend, tier:g.postChain.tier, values:Object.fromEntries(ids.map(id=>[id,s.params.get(id)?.value])) }
   })
-  assert.equal(entry.values['post.on'], true); assert.equal(entry.values['post.tablets'], true)
+  assert.equal(entry.values['post.gi'], 1); assert.equal(entry.values['post.on'], true); assert.equal(entry.values['post.tablets'], true)
   assert.equal(entry.values['light.bounce'], 1); assert.equal(entry.values['terrain.relief'], .2)
   assert.equal(entry.values['weather.aerial'], 1)
   for (const id of ['terrain.detailNormal','terrain.surfaceResponse','terrain.macroColour','terrain.accent']) assert.equal(entry.values[id], 1)

@@ -27,11 +27,13 @@
 import * as THREE from 'three/webgpu'
 import {
   Fn, If, Loop, abs, screenSize, sin, clamp, dot, exp, float, interleavedGradientNoise, length, max, min, mix, pass,
-  builtinAOContext, builtinShadowContext, context, mrt, normalView, screenUV, renderOutput, rtt, screenCoordinate, smoothstep, step,  uniform, uv, vec2, vec3, vec4,
+  builtinAOContext, builtinGIContext, builtinShadowContext, context, mrt, normalView, output, screenUV, renderOutput, rtt, screenCoordinate, smoothstep, step,  uniform, uv, vec2, vec3, vec4,
 } from 'three/tsl'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { ao } from 'three/addons/tsl/display/GTAONode.js'
 import { sss } from 'three/addons/tsl/display/SSSNode.js'
+import { ssgi } from 'three/addons/tsl/display/SSGINode.js'
+import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { motionBlurred } from './motion'
 import { graphicsLevel } from '../../core/quality'
 import { params } from '../../../shared/params'
@@ -80,6 +82,7 @@ interface Built {
   /** Ambient occlusion and contact shadow nodes, for their live settings. */
   aoNode: N | null
   sssNode: N | null
+  giNode: N | null
   pipeline: THREE.RenderPipeline
   disposables: Array<{ dispose?(): void; renderTarget?: { dispose(): void } }>
 }
@@ -145,7 +148,7 @@ export class PostChain {
     let tier = postTier({ on: P.postOn.value, level: graphicsLevel.value, deviceLevel: this.host.quality.deviceLevel, tablets: P.postTablets.value, shed })
     this.tier = tier
     // Anything the governor could shed: everything but the colour look itself.
-    this.reportActive(tier !== 'off' && [P.postBloom, P.postShafts, P.postFlare, P.postAO, P.postContact, P.postMotionBlur].some(p => p.value > 0))
+    this.reportActive(tier !== 'off' && [P.postBloom, P.postShafts, P.postFlare, P.postAO, P.postContact, P.postMotionBlur, P.postGI].some(p => p.value > 0))
     if (tier === 'off') {
       this.release()
       renderer.render(scene, camera)
@@ -157,11 +160,12 @@ export class PostChain {
     const shaftsOn = tier !== 'base' && (P.postShafts.value > 0 || P.postFlare.value > 0)
     const flareOn = tier === 'full' && P.postFlare.value > 0
     const aoOn = tier === 'full' && P.postAO.value > 0
+    const giOn = tier === 'full' && P.postGI.value > 0
     const light = tier === 'full' && P.postContact.value > 0 ? findSun(scene) : null
     const toneMap = TONE_MAPS[Math.round(P.postToneMap.value)] ?? renderer.toneMapping
     const debug = Math.round(P.postDebug.value)
-    const key = `${debug}|${tier}|${glowOn}|${shaftsOn}|${flareOn}|${aoOn}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
-    if (this.built?.key !== key) this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug)
+    const key = `${debug}|${tier}|${glowOn}|${shaftsOn}|${flareOn}|${aoOn}|${giOn}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
+    if (this.built?.key !== key) this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn)
 
     const u = this.u
     u.exposure.value = Math.max(1e-4, renderer.toneMappingExposure)
@@ -185,6 +189,7 @@ export class PostChain {
     this.updateCamera(camera as THREE.PerspectiveCamera, tier === 'full' ? P.postMotionBlur.value * fade : 0)
     const b = this.built!
     if (b.aoNode) { b.aoNode.radius.value = P.postAORadius.value; b.aoNode.scale.value = P.postAO.value * fade }
+    if (b.giNode) { b.giNode.radius.value = P.postGIRadius.value; b.giNode.giIntensity.value = P.postGI.value * fade }
     // Contact shadows march toward the sun with no surface bias, so a low sun grazing the
     // ground makes the ground shadow itself (noise, then scanlines). Fade them in with the
     // sun's height; at a low sun the long cascaded shadows carry the scene anyway.
@@ -282,7 +287,7 @@ export class PostChain {
     return sunScreenFade(su, sv, inFront) * sunHeightFactor(sun.y, P.postLowSun.value)
   }
 
-  private build(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, key: string, tier: PostTier, glowOn: boolean, shaftsOn: boolean, flareOn: boolean, aoOn: boolean, light: THREE.DirectionalLight | null, toneMap: THREE.ToneMapping, debug = 0): void {
+  private build(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, key: string, tier: PostTier, glowOn: boolean, shaftsOn: boolean, flareOn: boolean, aoOn: boolean, light: THREE.DirectionalLight | null, toneMap: THREE.ToneMapping, debug = 0, giOn = false): void {
     this.release()
     const u = this.u as Record<keyof PostChain['u'], N>
     const disposables: Built['disposables'] = []
@@ -299,24 +304,48 @@ export class PostChain {
     // sun's shadow maps before the beauty pass and can poison the nearest cascade.
     let aoNode: N = null
     let sssNode: N = null
+    let giNode: N = null
     let contactTex: N = null
     let prePass: ReturnType<typeof pass> | null = null
-    if (aoOn || light) {
+    if (aoOn || light || giOn) {
       prePass = pass(scene, camera)
-      prePass.name = 'Occlusion normals and depth'
+      prePass.name = giOn ? 'Indirect light source' : 'Occlusion normals and depth'
       prePass.transparent = false
-      prePass.setMRT(mrt({ output: normalView }))
-      const unlit = new THREE.Lighting()
-      unlit.enabled = false
-      prePass.lighting = unlit
-      disposables.push(prePass as never, unlit)
+      prePass.setMRT(giOn ? mrt({ output, normal: normalView }) : mrt({ output: normalView }))
+      // The source pass must never inherit the final pass's screen-space lighting:
+      // that would feed its own GI/contact textures back into their input.
+      prePass.contextNode = context({ getAO: () => null, getGI: () => null, getShadow: ({ shadowColorNode }: N) => shadowColorNode })
+      if (!giOn) {
+        const unlit = new THREE.Lighting()
+        unlit.enabled = false
+        prePass.lighting = unlit
+        disposables.push(unlit)
+      }
+      disposables.push(prePass as never)
     }
+    const normals: N = prePass?.getTextureNode(giOn ? 'normal' : 'output')
     if (aoOn) {
-      aoNode = ao(prePass!.getTextureNode('depth'), prePass!.getTextureNode('output'), camera)
+      aoNode = ao(prePass!.getTextureNode('depth'), normals, camera)
       aoNode.resolutionScale = 0.5
       aoNode.samples.value = 12
       disposables.push(aoNode)
       scenePass.contextNode = builtinAOContext(aoNode.getTextureNode().sample(screenUV).r)
+    }
+    if (giOn) {
+      const sourceDepth: N = prePass!.getTextureNode('depth')
+      giNode = ssgi(prePass!.getTextureNode('output'), sourceDepth, normals, camera as THREE.PerspectiveCamera)
+      // Fixed sampling and a depth/normal-aware spatial filter work without temporal
+      // history. Only visible surfaces contribute; the existing sky/ground fill remains.
+      giNode.useTemporalFiltering = false
+      giNode.resolutionScale = 0.5
+      giNode.sliceCount.value = 2
+      giNode.stepCount.value = 6
+      const filter = denoise(giNode.getGINode(), sourceDepth, normals, camera)
+      filter.radius.value = 3
+      const filtered: N = rtt(filter)
+      disposables.push(giNode, filter, filtered)
+      const occlusion: N = aoNode ? aoNode.getTextureNode().sample(screenUV).r : float(1)
+      scenePass.contextNode = builtinGIContext(occlusion, filtered.sample(screenUV).rgb)
     }
     if (light) {
       sssNode = sss(prePass!.getTextureNode('depth'), camera, light)
@@ -481,7 +510,7 @@ export class PostChain {
     if (debug === 2 && contactTex) out = vec4(vec3(contactTex), 1)
     const pipeline = new THREE.RenderPipeline(renderer, out)
     pipeline.outputColorTransform = false
-    this.built = { key, pipeline, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode }
+    this.built = { key, pipeline, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode }
     this.builds++
   }
 }

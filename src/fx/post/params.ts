@@ -28,6 +28,8 @@ export const postMotionBlur = defineParam({ id: 'post.motionBlur', label: 'Motio
 export const postMotionNear = defineParam({ id: 'post.motionNear', label: 'Motion blur starts past (m)', group: g, scope: c, default: 14, min: 2, max: 60, step: 1 })
 
 export const postAO = defineParam({ id: 'post.ao', label: 'Ambient occlusion', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.05 })
+export const postGI = defineParam({ id: 'post.gi', label: 'Indirect light from visible surfaces', group: g, scope: c, default: 1, min: 0, max: 4, step: 0.1 })
+export const postGIRadius = defineParam({ id: 'post.giRadius', label: 'Indirect light reach (m)', group: g, scope: c, default: 6, min: 1, max: 20, step: 0.5 })
 export const postAORadius = defineParam({ id: 'post.aoRadius', label: 'Ambient occlusion radius (m)', group: g, scope: c, default: 1.5, min: 0.2, max: 6, step: 0.1 })
 export const postContact = defineParam({ id: 'post.contact', label: 'Contact shadows', group: g, scope: c, default: 1, min: 0, max: 1, step: 0.05 })
 
