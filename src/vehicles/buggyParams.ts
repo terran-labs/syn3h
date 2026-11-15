@@ -123,7 +123,9 @@ export const buggyCoastDrag = defineParam({
  */
 export const buggyRideHeight = defineParam({
   id: 'buggy.rideHeight', label: 'Ride height at speed', group: 'Buggy', scope: 'world',
-  default: 0.25, min: 0.1, max: 0.4, step: 0.01,
+  // 0.1 is the Syn3h value: little travel at speed, so hills and bumps throw the buggy into the
+  // air. The owner asked for that back on 14 November 2026; 0.25 soaks bumps up instead.
+  default: 0.1, min: 0.1, max: 0.4, step: 0.01,
 })
 /**
  * Next-gen progressive bump stop: extra spring and damping over the last 0.2 m before the body
@@ -131,7 +133,8 @@ export const buggyRideHeight = defineParam({
  */
 export const buggyBumpStop = defineParam({
   id: 'buggy.bumpStop', label: 'Bump stop', group: 'Buggy', scope: 'world',
-  default: 1.5, min: 0, max: 2.5, step: 0.05,
+  // Soft enough to let a bump launch the buggy, firm enough to catch a landing.
+  default: 0.7, min: 0, max: 2.5, step: 0.05,
 })
 /**
  * Next-gen rebound damping, as a multiple of the compression damping set by Shocks. Higher
@@ -139,5 +142,15 @@ export const buggyBumpStop = defineParam({
  */
 export const buggyRebound = defineParam({
   id: 'buggy.rebound', label: 'Rebound damping', group: 'Buggy', scope: 'world',
-  default: 3, min: 1, max: 4, step: 0.1,
+  // 1 lets the springs throw the buggy upward off a crest, as Syn3h did. 3 keeps it planted.
+  default: 1, min: 1, max: 4, step: 0.1,
+})
+/**
+ * Next-gen friction coefficient for a tyre travelling broadside at speed (slip angle past about
+ * 70 degrees). Low values let the buggy slide and tumble on when it lands or spins sideways;
+ * set it to the high speed grip to make broadside tyres bite as hard as steering ones.
+ */
+export const buggySideGrip = defineParam({
+  id: 'buggy.sideGrip', label: 'Grip when sideways', group: 'Buggy', scope: 'world',
+  default: 0.6, min: 0.1, max: 4, step: 0.05,
 })
