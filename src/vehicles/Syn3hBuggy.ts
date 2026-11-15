@@ -1111,6 +1111,14 @@ export class Syn3hBuggy extends Vehicle {
     return d
   }
 
+  /** Effects consume vehicle-local anchors from the current visible skin geometry. */
+  override getWingTip(side: -1 | 1, out: THREE.Vector3): boolean {
+    if (!this.skin?.getWingTip?.(side, out)) return false
+    this.skin.object.updateMatrix()
+    out.applyMatrix4(this.skin.object.matrix)
+    return true
+  }
+
   override update(dt: number, alpha: number): void {
     super.update(dt, alpha)
     // VB 135-149: wheels hang at full travel in the air; graphics spin at half the motor rate.

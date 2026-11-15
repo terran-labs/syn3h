@@ -1,3 +1,4 @@
+import { WingTipAnchors } from './wingTips'
 import { smoothBuggyWheel, distantBuggyBody, distantBuggyArm } from './buggyGeometry'
 import {hotExposureNode} from './hotExposure'
 import {addLavaGlow} from './lavaGlow'
@@ -182,6 +183,8 @@ export class LoadedBuggySkin implements BuggySkin {
   private readonly wheels = Array.from({length: 4}, () => new THREE.Group())
   private wings: { mesh: THREE.Mesh; base: Float32Array }[] = []
   private wingInput = [0, 0, 0]
+  private readonly wingTips: WingTipAnchors[] = []
+  private readonly tipPoint = new THREE.Vector3()
   /** The wings' force field (see forceField.ts), once loaded. */
   private wingField?: ForceField
   private wingMesh?: THREE.Mesh
@@ -359,6 +362,7 @@ export class LoadedBuggySkin implements BuggySkin {
       o.add(under)
       this.wings.push({mesh: o, base: new Float32Array(o.geometry.attributes.position.array)})
       this.wingMesh = o
+      this.wingTips.push(new WingTipAnchors(o))
     }
     this.object.add(wingGroup)
     loaded.forEach(g => release(g.scene))
@@ -572,6 +576,24 @@ export class LoadedBuggySkin implements BuggySkin {
         1.6 * heat, (1.1 + c.g * .5) * heat, (.45 + c.b * .8) * heat)
     }
     if (index === 3) this.sparks.commit(now, this.sparksAllowed)
+  }
+
+  /** Current visible wing tip, in skin-local coordinates, at the active detail level. */
+  getWingTip(side: -1 | 1, out: THREE.Vector3): boolean {
+    if (this.wingInput[0] <= 0 || !this.object.visible) return false
+    let found = false
+    for (const tips of this.wingTips) {
+      if (tips.get(side, this.object, this.tipPoint) && (!found || side * this.tipPoint.x > side * out.x)) {
+        out.copy(this.tipPoint); found = true
+      }
+    }
+    for (const body of this.distantBodies) {
+      const tips = body.userData.wingTips as WingTipAnchors | undefined
+      if (tips?.get(side, this.object, this.tipPoint) && (!found || side * this.tipPoint.x > side * out.x)) {
+        out.copy(this.tipPoint); found = true
+      }
+    }
+    return found
   }
 
   setWings(openAmount: number, steer: number, pitch: number): void {

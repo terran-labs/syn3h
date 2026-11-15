@@ -10,6 +10,8 @@ export interface BuggySkin {
   setWheel(index: number, localPosition: THREE.Vector3, steerAngle: number, spinAngle: number): void
   /** Caller advances openAmount by dt * 2 for the original half-second transition. */
   setWings(openAmount: number, steer: number, pitch: number): void
+  /** Actual visible wing tip in skin-local coordinates; false before load or when folded. */
+  getWingTip?(side: -1 | 1, out: THREE.Vector3): boolean
   setColors(body: THREE.ColorRepresentation, accent: THREE.ColorRepresentation): void
   /**
    * Hub motor load for wheel `index`, 0 idle to 1 flat out (see motorDrive.ts); `regen` while

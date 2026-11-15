@@ -1,3 +1,4 @@
+import { WingTipAnchors } from './wingTips'
 import * as THREE from 'three/webgpu'
 import { mergeStatic, mergedSurfaces } from './mergeStatic'
 import { setRole } from './showroom'
@@ -99,6 +100,7 @@ export function distantBuggyBody(body: THREE.Color, accent: THREE.Color, far: bo
   }
   // Wings share the silhouette draw. Their vertices collapse when flight mode is off.
   const wingMaterial = setRole(new THREE.MeshStandardMaterial({ color: accent }), 'accent')
+  wingMaterial.name = 'Buggy flight wing'
   wingMaterial.color = accent
   const wing = new THREE.BufferGeometry()
   // Convex outline of the original Wings mesh after the skin's X/Y rotations, metres.
@@ -119,6 +121,9 @@ export function distantBuggyBody(body: THREE.Color, accent: THREE.Color, far: bo
   const wingId = surfaces.indexOf(wingMaterial)
   const pos = mesh.geometry.getAttribute('position'), ids = mesh.geometry.getAttribute('surfaceId')
   const base = new Float32Array(pos.array)
+  const wingVertices: number[] = []
+  for (let i = 0; i < pos.count; i++) if (ids.getX(i) === wingId) wingVertices.push(i)
+  root.userData.wingTips = new WingTipAnchors(mesh, wingVertices)
   let wingAmount = -1
   root.userData.setWings = (amount: number) => {
     if (amount === wingAmount) return
