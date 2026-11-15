@@ -1,7 +1,7 @@
 {
   "tagline": "Syn3h, rebuilt native in the browser: its vehicles, its physics, its lobby and its look.",
   "deadline": "Demo: Sunday noon Pacific, Coeur d'Alene",
-  "headline": "Eight lanes are building. The Syn3h buggy has a new tyre model, the game opens at golden hour, and the network delay bug is fixed. The machine is overloaded, so the classic buggy and tank leads are paused for the night.",
+  "headline": "Release candidate m12 is frozen and passes its deploy dry run: sticky lava, three planets, King of the Hill without eliminations, tag beams, the buggy teleport fix and the 2017 lobby. It ships as release 1 the moment Cloudflare sign-in exists. Previews are down pending a Tailscale access review.",
   "previews": [
     {
       "title": "Play the current build",
@@ -281,18 +281,18 @@
   "decisions": [
     {
       "state": "waiting",
-      "title": "Drive the Syn3h buggy",
-      "detail": "It has a new tyre model you have not felt. Your verdict is the acceptance test."
+      "title": "Cloudflare sign-in on this machine",
+      "detail": "npx wrangler login, or an API token. Plus a workers.dev name and a check that no Worker named syn3h exists. Release 1 ships within minutes."
     },
     {
       "state": "waiting",
-      "title": "Cloudflare access",
-      "detail": "A wrangler login on this machine or an API token. Production releases ship the moment it exists."
+      "title": "Review the Tailscale access change",
+      "detail": "The preview broker stopped serving at 5:00pm and will not restart until an administrator re-approves the tailnet scope."
     },
     {
       "state": "waiting",
-      "title": "Listen to the sound",
-      "detail": "Merged for every vehicle, measured, never heard."
+      "title": "Drive it and listen to it",
+      "detail": "Your verdict on the buggy, and your ears on the sound, are still the real acceptance test."
     },
     {
       "state": "waiting",
@@ -624,6 +624,28 @@
           "detail": "A scene creature with no controller found."
         }
       ]
+    }
+  ],
+  "knownIssues": [
+    {
+      "title": "The lava sea is too bright at night",
+      "detail": "At 11pm it can wash out the scene. The game opens at 4:30pm with the clock paused, so this only shows if someone drags the time slider."
+    },
+    {
+      "title": "Getting out of water is not verified",
+      "detail": "On the desert and alpine worlds a floating vehicle turned back into open water in one capture. The default world is volcanic."
+    },
+    {
+      "title": "The alpine summit road",
+      "detail": "An autopilot flipped on it once and passed once. Being checked."
+    },
+    {
+      "title": "The chase camera clips under the shoreline",
+      "detail": "In some frames while crawling out of lava."
+    },
+    {
+      "title": "Not yet done by a person",
+      "detail": "Nobody has driven the game by hand, heard the sound, or tried it on a real phone."
     }
   ]
 }

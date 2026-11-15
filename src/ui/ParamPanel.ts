@@ -31,6 +31,16 @@ export class ParamPanel {
     this.sync(); this.setWorldEditable(canEditWorld()); this.element.hidden = false; this.pane.expanded = true
   }
   hide(): void { this.element.hidden = true }
+  /**
+   * Show only these slider groups, opened, or every group when called with nothing. The
+   * custom planet uses it to offer just the sliders that shape a world.
+   */
+  setGroups(groups?: readonly string[]): void {
+    for (const [title, folder] of this.folders) {
+      folder.hidden = Boolean(groups) && !groups!.includes(title)
+      folder.expanded = Boolean(groups) && groups!.includes(title)
+    }
+  }
   setWorldEditable(editable: boolean): void {
     for (const [id, binding] of this.bindings) binding.disabled = !editable && (params.get(id)?.def.scope === 'world' || id === 'sky.preset')
   }

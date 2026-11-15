@@ -465,11 +465,11 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
     const rho = rimRadius(v)
     const belowSummit = smoothstep(rho * 1.2, rho * 2.1, r)
     const flank = belowSummit * smoothstep(1.0, 0.55, t)
-    cone -= s.roughness * v.height * 0.13 * flank * valley * (1 - 0.7 * gentle)
+    cone -= s.roughness * (v.height < 480 ? v.height : 480) * 0.13 * flank * valley * (1 - 0.7 * gentle)
     // Broken, ridged rock toward the summit so the silhouette is not smooth.
     if (t < 0.75) {
       const rough = ridged(wx * 0.011, wz * 0.011, S.ridge, 2) - 0.35
-      cone += s.roughness * v.height * 0.2 * rough * smoothstep(0.75, 0.2, t) * belowSummit * (1 - 0.6 * gentle)
+      cone += s.roughness * (v.height < 420 ? v.height : 420) * 0.2 * rough * smoothstep(0.75, 0.2, t) * belowSummit * (1 - 0.6 * gentle)
     }
     h += cone
     volcanic = smoothstep(1.0, 0.45, t)

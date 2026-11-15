@@ -15,19 +15,25 @@ const noise = (v: Node<'vec2'>) => {
  */
 export function createLavaMaterial(river = false, shoreline = false, far = false) {
   const clock = uniform(0), speed = uniform(0), scale = uniform(0), crust = uniform(0), glow = uniform(0)
+  // 0..1: turns the glow down when the camera's exposure is turned up at night, so lava stays
+  // orange instead of burning out to white.
+  const dim = uniform(1)
   const direction = uniform(new Vector2()), molten = uniform(new Color()), altitude = uniform(0)
   const coordinates = uv().mul(scale)
   const offset = direction.mul(clock).mul(speed)
   const a = noise(coordinates.sub(offset)), b = noise(coordinates.mul(2.17).add(offset.mul(0.43)))
-  const field = a.mul(0.72).add(b.mul(0.28))
+  // A third, finer layer so the crust still has detail when a vehicle is sitting in it.
+  const c = noise(coordinates.mul(6.3).sub(offset.mul(1.7)))
+  const field = a.mul(0.6).add(b.mul(0.26)).add(c.mul(0.14))
   const cracks = float(1).sub(smoothstep(float(0.02), float(0.22).sub(crust.mul(0.18)), field.sub(0.5).abs()))
   const edge = shoreline ? float(1).sub(smoothstep(0, 1.8, altitude.sub(attribute('groundHeight', 'float')).abs())).mul(0.4) : float(0)
   const distance = positionWorld.sub(cameraPosition).length()
   const heat = far ? mix(cracks, float(0.09), smoothstep(250, 1400, distance)).max(edge) : cracks.max(edge)
   const material = new MeshBasicNodeMaterial({ side: DoubleSide })
   // Unlit HDR colour is emissive without adding any real lights or requiring sunlight.
-  material.colorNode = mix(uniform(new Color(0x170d0c)), molten.mul(glow), heat)
-  const update = (dt: number, level = 0) => {
+  material.colorNode = mix(uniform(new Color(0x170d0c)), molten.mul(glow).mul(dim), heat)
+  const update = (dt: number, level = 0, exposureDim = 1) => {
+    dim.value = exposureDim
     clock.value += dt; speed.value = p.flowSpeed.value; scale.value = p.noiseScale.value
     crust.value = p.crustAmount.value; glow.value = p.glowIntensity.value; altitude.value = level
     direction.value.set(river ? 0 : Math.cos(p.flowDirection.value), river ? 1 : Math.sin(p.flowDirection.value))

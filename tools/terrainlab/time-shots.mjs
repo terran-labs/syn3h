@@ -46,6 +46,9 @@ for (const hour of hours) {
   const tag = `h${hour}`
   await shoot(`${tag}-aerial`, [gx * 1150 + gz * 500, 620, gz * 1150 - gx * 500], [0, 90, 0])
   await shoot(`${tag}-pad4`, [pads[4][0] * 1.02, 17.5, pads[4][1] * 1.02], [0, 170, 0])
+  // Standing on the shore beside pad 4, looking along the coast across the sea.
+  const shore = await page.evaluate(([px, pz]) => { const t = window.syn3h.terrain; const l = Math.hypot(px, pz); let r = l; while (r < 1100 && t.heightAt(px / l * r, pz / l * r) > 1.5) r += 4; return [px / l * (r - 6), t.heightAt(px / l * (r - 6), pz / l * (r - 6)) + 2.5, pz / l * (r - 6)] }, pads[4])
+  await shoot(`${tag}-shore`, shore, [shore[0] * 1.6 - shore[2] * 0.5, 0, shore[2] * 1.6 + shore[0] * 0.5])
   await shoot(`${tag}-summit`, [-gx * 230, S.rimHeight + 150, -gz * 230], [0, S.rimHeight - 20, 0])
 }
 await browser.close()

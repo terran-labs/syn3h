@@ -20,7 +20,7 @@ import { KIND_VOLCANIC, worldSeaKind } from './settings'
 
 interface Liquid {
   material: THREE.Material
-  update(dt: number, level?: number): void
+  update(dt: number, level?: number, exposureDim?: number): void
 }
 
 /**
@@ -134,7 +134,14 @@ export class Volcanics implements System {
   private readonly meshes: THREE.Mesh[] = []
   private readonly emitters: Emitters
 
-  constructor(private readonly scene: THREE.Scene, private readonly sampler: HeightSampler) {
+  /**
+   * `exposure` reports the camera exposure in use (it rises at night) and `dayExposure` the
+   * daytime value, so the lava can hold its brightness on screen as the exposure climbs.
+   */
+  constructor(
+    private readonly scene: THREE.Scene, private readonly sampler: HeightSampler,
+    private readonly exposure: () => number = () => 1, private readonly dayExposure: () => number = () => 1,
+  ) {
     this.group.name = 'volcanics'
     scene.add(this.group)
     this.emitters = new Emitters(scene)
@@ -197,10 +204,14 @@ export class Volcanics implements System {
       const want = (this.seaIsLava ? this.lavaSea : this.waterSea).material
       if (this.seaMesh.material !== want) this.seaMesh.material = want
     }
-    this.lavaSea.update(dt, level)
+    // Hold lava at roughly its daytime brightness on screen, letting a little of the extra
+    // exposure through so it still reads as the brightest thing at night.
+    const over = this.exposure() / Math.max(1e-3, this.dayExposure())
+    const dim = over > 1 ? 1 / (over * 0.8 + 0.2) : 1
+    this.lavaSea.update(dt, level, dim)
     this.waterSea.update(dt, level)
-    this.lavaStill.update(dt)
-    this.lavaRiver.update(dt)
+    this.lavaStill.update(dt, 0, dim)
+    this.lavaRiver.update(dt, 0, dim)
     this.emitters.update(dt)
   }
 

@@ -10,10 +10,12 @@ import { readVehicleChoice, saveVehicleChoice, VehiclePreview, type VehicleChoic
 import { SlidingPanels } from './SlidingPanels'
 import { Starfield } from './Starfield'
 import { wordmarkSvg } from './brand/logo'
+import { PlanetPicker } from './planets/PlanetPicker'
+import { applyPlanet, currentPlanet, encodeWorld, planetName } from '../world/planets'
 import { AttractMode, type CinematicCamera } from './AttractMode'
 import { InviteView, inviteUrl, renderQr } from './InviteView'
 import { Scoreboard, parseScoreRow } from './Scoreboard'
-import { canEditWorld, hostControls } from './worldPermissions'
+import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
 import { MatchHud, type MatchState } from './MatchHud'
 import { creditsHtml } from './data/credits'
@@ -55,6 +57,10 @@ export class Shell implements System {
   private readonly board: Scoreboard
   private readonly hudBoard: Scoreboard
   private paramPanel?: ParamPanel
+  private readonly pickers: PlanetPicker[] = []
+  /** Slider groups the advanced panel is limited to, when it was opened from the custom planet. */
+  private advancedGroups?: readonly string[]
+  private worldDirty = true
   private started = false
   private menuVisible = true
   private readonly previousSuspended: boolean
@@ -75,13 +81,13 @@ export class Shell implements System {
         <section data-panel="index" class="lobby-index">
           <h1 tabindex="-1">Welcome to the future.</h1>
           <div class="lobby-message"><p>You’ve discovered a community where all are welcome, and new ideas are celebrated.</p><p class="lobby-room-label"></p><div class="invite-qr menu-qr"></div><p class="invite-link"></p><button class="shell-invite link-button">Copy invite link</button></div>
-          <nav class="lobby-destinations" aria-label="Lobby"><button class="is-primary" data-goto="explore">Explore</button><button data-goto="vehicle">Vehicle</button><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR</button><button data-goto="settings">Settings</button><button class="return-game is-primary" data-resume hidden>Return to Game</button></nav>
-          <div class="lobby-links"><button data-goto="about">About Syn3h</button><button data-goto="multiplayer">Community</button></div>
+          <nav class="lobby-destinations" aria-label="Worlds"><div class="planet-slot" data-compact></div><button class="return-game is-primary" data-resume hidden>Return to Game</button></nav>
+          <div class="lobby-links"><button data-goto="vehicle">Vehicle</button><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR</button><button data-goto="settings">Settings</button><button data-goto="about">About</button></div>
         </section>
         <section data-panel="explore">${heading('Prepare to Explore')}
           <form class="shell-form"><label for="shell-name">Player name</label><input id="shell-name" name="playerName" maxlength="24" autocomplete="nickname" placeholder="Explorer">
           <label for="shell-room">Room</label><div class="input-action"><input id="shell-room" name="room" maxlength="64" autocomplete="off"><button class="shell-invite" type="button">Copy invite</button></div>
-          <div class="shell-controls"><span><b>WASD / arrows</b> Drive</span><span><b>Space</b> Wings</span><span><b>Shift</b> Brake</span><span><b>L / click</b> Fire</span></div><p class="shell-touch-hint">Left thumb to drive. Right thumb for wings, brake and fire.</p>
+          <div class="shell-controls"><span><b>WASD / arrows</b> Drive</span><span><b>Space</b> Wings</span><span><b>Shift</b> Brake</span><span><b>L / click</b> Tag beam</span></div><p class="shell-touch-hint">Left thumb to drive. Right thumb for wings, brake and tag.</p>
           <button class="shell-play" type="submit">Enter World ›</button></form>${back}
         </section>
         <section data-panel="vehicle">${heading('Your Vehicle')}
@@ -89,11 +95,11 @@ export class Shell implements System {
           <div class="vehicle-help"></div><p class="vehicle-note">Your vehicle and colours are saved on this device.</p><button data-goto="explore">Continue ›</button>${back}
         </section>
         <section data-panel="worlds">${heading('Worlds to Explore')}
-          <p>Procedural volcano</p><fieldset class="world-controls"><legend>World</legend><label for="world-seed">Seed</label><div class="input-action"><input id="world-seed" type="number" min="1" max="999999" step="1"><button id="new-world" type="button">New world</button></div><label class="bots-control" hidden>Bots <output></output><input id="bots-count" type="range" step="1"></label></fieldset>
+          <div class="planet-slot"></div><p class="planet-current"></p><fieldset class="world-controls"><legend>World</legend><label for="world-seed">Seed</label><div class="input-action"><input id="world-seed" type="number" min="1" max="999999" step="1"><button id="new-world" type="button">New world</button></div><label class="bots-control" hidden>Bots <output></output><input id="bots-count" type="range" step="1"></label></fieldset>
           <fieldset class="world-controls"><legend>Sky</legend><div class="sky-presets">${SKY_PRESET_NAMES.map(name => `<button type="button" data-sky="${name}">${name}</button>`).join('')}</div><label for="sky-time">Time of day <output id="sky-time-value"></output></label><input id="sky-time" type="range" min="0" max="24" step="0.05"></fieldset>
           <p class="world-lock-note" hidden>Sliders locked by host.</p><button data-goto="explore">Explore this world ›</button>${back}
         </section>
-        <section data-panel="settings">${heading('Settings')}<div class="settings-links"><button data-goto="music">Music & sound</button><button data-goto="worlds">World & sky</button><button data-goto="advanced">Advanced sliders</button><button class="presentation-toggle" aria-pressed="false">Presentation · P</button></div><fieldset class="host-controls"><legend>Host</legend><label class="host-lock" hidden><input type="checkbox" id="host-lock"> Lock shared sliders</label><p class="host-note"></p></fieldset>${back}</section>
+        <section data-panel="settings">${heading('Settings')}<div class="settings-links"><button data-goto="music">Music & sound</button><button data-goto="worlds">World & sky</button><button data-goto="advanced">Advanced sliders</button><button class="presentation-toggle" aria-pressed="false">Presentation · P</button></div><fieldset class="host-controls"><legend>Host</legend><label class="host-lock" hidden><input type="checkbox" id="host-lock"> Lock shared sliders</label><p class="host-note"></p><button class="world-reset" type="button">Reset world to defaults</button></fieldset>${back}</section>
         <section data-panel="music">${heading('Music & Sound')}<label for="shell-track">Music</label><select id="shell-track">${Object.entries(MUSIC_TRACKS).map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select><label for="music-volume">Music volume <output id="music-volume-value"></output></label><input id="music-volume" type="range" min="0" max="1" step="0.01">${[masterVolume,effectsVolume,engineVolume,dirtVolume,windVolume,worldVolume,remoteVolume,cuesVolume].map(p=>`<label>${p.def.label}<input data-audio-param="${p.def.id}" type="range" min="0" max="1" step="0.01" value="${p.value}"></label>`).join('')}<button class="shell-mute" aria-pressed="false">Mute all audio</button><p class="panel-note">Music starts with your first click or key press.</p>${back}</section>
         <section data-panel="multiplayer">${heading('Multiplayer')}<label class="mode-control" hidden>Game mode<select id="game-mode"><option value="0">Tag</option><option value="1">King of the Hill</option></select></label><p class="multiplayer-room"></p><div class="invite-qr"></div><p class="invite-link"></p><button class="shell-invite">Copy invite link</button><button data-join>Show on screen · J</button><div class="shell-scoreboard" aria-label="Player scores"></div>${back}</section>
         <section data-panel="advanced">${heading('Advanced Settings')}<p class="world-lock-note" hidden>Sliders locked by host.</p><div class="advanced-host"></div>${back}</section>
@@ -119,6 +125,13 @@ export class Shell implements System {
     this.touch = new TouchControls(game.input); this.element.classList.toggle('has-touch', this.touch.available)
     const signal = this.abort.signal
     this.followPointer(signal)
+    // Planets: the index offers them as destinations, the Worlds panel describes them.
+    for (const slot of this.element.querySelectorAll<HTMLElement>('.planet-slot')) {
+      const compact = slot.hasAttribute('data-compact')
+      this.pickers.push(new PlanetPicker(slot, { compact, onPick: id => this.pickPlanet(id, compact), onCustom: () => this.openCustomPlanet() }))
+    }
+    const unsubscribeWorld = params.onChange(id => { if (params.get(id)?.def.scope === 'world') this.worldDirty = true })
+    signal.addEventListener('abort', unsubscribeWorld)
     try { this.nameInput.value = localStorage.getItem('syn3h.playerName') || '' } catch { /* Storage is optional. */ }
     if (!this.nameInput.value.trim()) {
       let seed = ''
@@ -163,6 +176,19 @@ export class Shell implements System {
     this.element.querySelector('#sky-time')!.addEventListener('input', event => { if (canEditWorld()) params.set('sun.timeOfDay', (event.target as HTMLInputElement).value) }, { signal })
     this.element.querySelector('#bots-count')!.addEventListener('input', event => { if (canEditWorld()) params.set('bots.count', (event.target as HTMLInputElement).value) }, { signal })
     this.element.querySelector('#game-mode')!.addEventListener('change', event => { if (canEditWorld() && params.get('game.mode')) params.set('game.mode', Number((event.target as HTMLSelectElement).value)) }, { signal })
+    // Two presses: the first asks, the second (within four seconds) does it. No modal dialog.
+    const reset = this.element.querySelector<HTMLButtonElement>('.world-reset')!
+    let resetArmed: ReturnType<typeof setTimeout> | undefined
+    const disarm = () => { clearTimeout(resetArmed); resetArmed = undefined; reset.textContent = 'Reset world to defaults'; reset.classList.remove('is-confirming') }
+    reset.addEventListener('click', () => {
+      if (!canEditWorld()) return
+      if (!resetArmed) {
+        reset.textContent = hostControls() ? 'Press again to reset for everyone' : 'Press again to reset this world'
+        reset.classList.add('is-confirming'); resetArmed = setTimeout(disarm, 4000); return
+      }
+      disarm(); this.toast(resetWorld() ? 'World reset to defaults.' : 'Sliders locked by host.')
+    }, { signal })
+    signal.addEventListener('abort', () => clearTimeout(resetArmed))
     this.element.querySelector('#host-lock')!.addEventListener('change', event => { const net = hostControls(); if (net?.isHost) net.setLocked((event.target as HTMLInputElement).checked) }, { signal })
     const activity = (event: Event) => {
       this.lastActivity = performance.now()
@@ -185,7 +211,7 @@ export class Shell implements System {
     this.updateInvite()
   }
   private updateInvite(): void {
-    const url = inviteUrl(location.origin, this.room)
+    const url = inviteUrl(location.origin, this.room, encodeWorld())
     if (url !== this.lastInviteUrl) {
       this.lastInviteUrl = url
       for (const host of this.overlay.querySelectorAll('.invite-qr')) renderQr(host, url)
@@ -246,9 +272,10 @@ export class Shell implements System {
     if (id === 'vehicle' && !this.preview) {
       this.preview = new VehiclePreview(this.element.querySelector('.shell-vehicle-preview')!); this.preview.setChoice(this.choice)
     }
+    if (id !== 'advanced') this.advancedGroups = undefined
     if (id === 'advanced') {
       const panel = this.paramPanel ?? (window as unknown as { syn3h?: { panel?: ParamPanel } }).syn3h?.panel
-      panel?.show(this.element.querySelector('.advanced-host')!); this.paramPanel = panel
+      panel?.show(this.element.querySelector('.advanced-host')!); panel?.setGroups(this.advancedGroups); this.paramPanel = panel
     } else this.paramPanel?.hide()
     void this.panels.show(id)
   }
@@ -307,7 +334,7 @@ export class Shell implements System {
     this.toastTimer = setTimeout(() => { element.hidden = true; this.element.querySelector('.shell-message')!.textContent = '' }, 4500)
   }
   private async copyInvite(): Promise<void> {
-    const url = new URL(inviteUrl(location.origin, this.room))
+    const url = new URL(inviteUrl(location.origin, this.room, encodeWorld()))
     try { await navigator.clipboard.writeText(url.href); this.toast('Invite link copied.'); this.invite.element.querySelector('.join-copy')!.textContent = 'Copied' }
     catch { this.element.querySelector('.shell-message')!.textContent = `Invite link: ${url.href}` }
   }
@@ -330,6 +357,25 @@ export class Shell implements System {
       })
     }, { signal, passive: true })
   }
+  /**
+   * Choosing a planet. A different kind becomes the world for everyone in the room, with a
+   * fresh seed, through the shared sliders; the kind already in play is left as it is. From
+   * the index either choice leads on to the name and room form.
+   */
+  private pickPlanet(id: string, thenExplore: boolean): void {
+    if (id !== currentPlanet().id) {
+      if (!canEditWorld()) { this.say('The host has locked this world.'); return }
+      applyPlanet(id)
+    }
+    if (thenExplore) this.showPanel('explore')
+  }
+  /** Terraform mode: only the sliders that shape a world, opened. */
+  private openCustomPlanet(): void {
+    this.advancedGroups = ['Terrain', 'World', 'Sky', 'Sun', 'Weather', 'Lava']
+    this.showPanel('advanced')
+  }
+  /** A short notice that shows in the lobby and, while playing, as a toast. */
+  private say(text: string): void { this.toast(text) }
   private updateHelp(): void {
     renderHelp(this.element.querySelector('.vehicle-help')!, this.choice.vehicleKind)
     this.element.querySelector('.shell-touch-hint')!.textContent = touchHelp(this.choice.vehicleKind)
@@ -392,9 +438,17 @@ export class Shell implements System {
     this.element.querySelector<HTMLInputElement>('#sky-time')!.value = String(time)
     this.element.querySelector('#sky-time-value')!.textContent = `${String(Math.floor(time) % 24).padStart(2, '0')}:${String(Math.floor((time % 1) * 60)).padStart(2, '0')}`
     const editable = canEditWorld(), net = hostControls()
+    const planet = currentPlanet()
+    for (const picker of this.pickers) picker.refresh(planet, worldSeed.value, editable)
+    if (this.worldDirty) {
+      this.worldDirty = false
+      this.element.querySelector('.planet-current')!.textContent = `${planet.label} world ${planetName(worldSeed.value)}. ${planet.centre}.`
+      this.updateInvite()
+    }
     for (const input of this.element.querySelectorAll<HTMLInputElement | HTMLButtonElement>('.world-controls input, .world-controls button')) input.disabled = !editable
     for (const note of this.element.querySelectorAll<HTMLElement>('.world-lock-note')) note.hidden = editable
     this.paramPanel?.setWorldEditable(editable)
+    this.element.querySelector<HTMLButtonElement>('.world-reset')!.disabled = !editable
     const lock = this.element.querySelector<HTMLInputElement>('#host-lock')!; lock.checked = net?.locked ?? false
     this.element.querySelector<HTMLElement>('.host-lock')!.hidden = !net?.isHost
     this.element.querySelector('.host-note')!.textContent = !net ? 'Join a room to manage shared settings.' : !editable ? 'Sliders locked by host.' : net.isHost ? 'You are the host.' : 'Shared sliders are open.'
@@ -406,7 +460,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.starfield.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); for (const picker of this.pickers) picker.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.starfield.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }

@@ -17,8 +17,8 @@ import type { Game } from '../core/Game'
 import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import {
-  buggyCG, buggyCoastDrag, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightSlip, buggyGrip,
-  buggyGripFade, buggyIdleHold, buggyNextGen, buggyPower, buggyRegen, buggyShocks, buggySlide, buggySpeed, buggySteerLimit,
+  buggyBumpStop, buggyCG, buggyCoastDrag, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightSlip, buggyGrip,
+  buggyGripFade, buggyIdleHold, buggyNextGen, buggyPower, buggyRebound, buggyRegen, buggyRideHeight, buggyShocks, buggySlide, buggySpeed, buggySteerLimit,
   buggyTraction,
 } from './buggyParams'
 import { applyLava, floatPoints } from './lava'
@@ -89,6 +89,16 @@ const REVERSE_SPEED = 0.5
 const THROTTLE_DEADZONE = 0.05
 /** Regen force allowed beyond its nominal deceleration, to cover slopes and bumps. */
 const REGEN_TORQUE_MARGIN = 1.25
+/** A contact point closer than this (m) is touching; further ones are only predicted. */
+const CONTACT_TOUCH = 0.01
+/**
+ * Next-gen bump stop (see suspensionForce()). The skid plate meets flat ground when a wheel ray
+ * is about 0.185 m long, so the stop works over ray lengths BUMP_START down to BUMP_END, and
+ * multiplies the damper by up to 1 + BUMP_DAMP there to soak up the hit instead of returning it.
+ */
+const BUMP_START = 0.4
+const BUMP_END = 0.2
+const BUMP_DAMP = 3
 
 function moveToward(v: number, target: number, step: number): number {
   return v > target ? Math.max(target, v - step) : Math.min(target, v + step)
@@ -336,7 +346,7 @@ export class Syn3hBuggy extends Vehicle {
     if (this.areWingsOpen) {
       if (!this.raycast(pos, this.v1.set(0, -1, 0), 5)) desired = 0
     } else {
-      desired = lerp(0.4, 0.1, Math.min(1, myVelocity / S))
+      desired = lerp(0.4, buggyNextGen.value ? buggyRideHeight.value : 0.1, Math.min(1, myVelocity / S))
     }
     this.suspensionRange = lerp(this.suspensionRange, desired, dt * 1)
     this.updateMassProperties()
@@ -471,9 +481,7 @@ export class Syn3hBuggy extends Vehicle {
     // Suspension, VB 336-344: skipped while inverted, shocks at 0.8.
     for (let i = 0; i < 4; i++) {
       if (this.hitDistance[i] === -1 || this.isInverted) continue
-      const f =
-        -this.hitVelocity[i].y * buggyShocks.value * 0.8 * (this.areWingsOpen ? 3 : 1) +
-        this.hitCompress[i] * (20 * mass) * (this.areWingsOpen && i < 2 ? 8 : 1)
+      const f = this.suspensionForce(i, mass, nextGen)
       this.origin.copy(this.origins[i]).applyQuaternion(q).add(pos)
       ub.addForceAtPosition(this.v2.copy(this.up).multiplyScalar(f), this.origin)
     }
@@ -512,14 +520,38 @@ export class Syn3hBuggy extends Vehicle {
   }
 
   /**
+   * Suspension force along the body's up axis for grounded wheel i. Classic is VB 340: a damper
+   * on the mount's vertical speed plus a spring on compression, stiffer with wings open.
+   * Next-gen adds a progressive bump stop near full compression (wings shut): the spring rises
+   * with the square of the depth into the stop, then linearly, and the damper stiffens with it,
+   * so a hard hit is absorbed before the body strikes the ground and bounces off it. The damper
+   * is also firmer on rebound than on compression (buggy.rebound). Next-gen never pulls: a wheel cannot hold the body down to the ground.
+   */
+  private suspensionForce(i: number, mass: number, nextGen: boolean): number {
+    const wings = this.areWingsOpen
+    let damper = -this.hitVelocity[i].y * buggyShocks.value * 0.8 * (wings ? 3 : 1)
+    let spring = this.hitCompress[i] * (20 * mass) * (wings && i < 2 ? 8 : 1)
+    if (!nextGen) return damper + spring
+    if (!wings) {
+      // Rebound: the wheel is extending. Damping it harder keeps a compressed spring from
+      // flinging the body up and pitching it as it leaves a crest.
+      if (damper < 0) damper *= buggyRebound.value
+      const x = Math.max(0, (BUMP_START - this.hitDistance[i]) / (BUMP_START - BUMP_END))
+      spring += buggyBumpStop.value * 20 * mass * (x < 1 ? x * x : 2 * x - 1)
+      if (buggyBumpStop.value > 0) damper *= 1 + BUMP_DAMP * Math.min(1, x)
+    }
+    return Math.max(0, damper + spring)
+  }
+
+  /**
    * Next-gen tyre force for grounded wheel i (see TYRE_MASS). Uses this step's ray hit:
    * hitVelocity (mount velocity in wheel space), hitCompress, hitPoint and qWheel.
    */
   private tyre(i: number, dt: number, speed: number, mass: number): void {
     const hv = this.hitVelocity[i]
     const eff = this.wheelEffects[i]
-    // Load from the classic spring and damper (VB 340), which the suspension pass applies.
-    const load = this.isInverted ? 0 : Math.max(0, -hv.y * buggyShocks.value * 0.8 + this.hitCompress[i] * 20 * mass)
+    // Load is the force the suspension pass applies at this wheel.
+    const load = this.isInverted ? 0 : this.suspensionForce(i, mass, true)
     const traction = buggyTraction.value
     const slide = buggySlide.value
     const grip = lerp(buggyGrip.value, slide, Math.min(1, speed / buggyGripFade.value))
@@ -677,7 +709,13 @@ export class Syn3hBuggy extends Vehicle {
     }
   }
 
-  /** Self righting, VB 545-562, over the contacts Rapier kept from the last step. */
+  /**
+   * Self righting, VB 545-562, over the contacts Rapier kept from the last step. Unity's contact
+   * normal points into this body. Rapier's points from the pair's first collider to its second
+   * and tells us when that order is swapped. Only contacts that actually touch count: the
+   * manifold also lists points still inside the prediction margin. numSolverContacts() reads 0
+   * against a triangle mesh, which is what the terrain is, so count the geometric contacts.
+   */
   private selfRight(dt: number, speedSq: number): void {
     const world = this.game.world
     const n = this.v1
@@ -685,16 +723,13 @@ export class Syn3hBuggy extends Vehicle {
     const angSq = w.x * w.x + w.y * w.y + w.z * w.z
     for (const collider of [this.hull, this.skid]) {
       world.contactPairsWith(collider, (other) => {
-        world.contactPair(collider, other, (manifold) => {
-          const count = manifold.numSolverContacts()
+        world.contactPair(collider, other, (manifold, flipped) => {
+          let count = 0
+          for (let c = manifold.numContacts() - 1; c >= 0; c--) if (manifold.contactDist(c) < CONTACT_TOUCH) count++
           if (count === 0) return
-          // Unity's contact normal points into this body. Rapier's sign depends on the pair's
-          // internal order, so orient it from the contact point toward our centre of mass.
           const mn = manifold.normal()
           n.set(mn.x, mn.y, mn.z)
-          const cp = manifold.solverContactPoint(0)
-          const com = this.body.worldCom()
-          if (cp && n.x * (com.x - cp.x) + n.y * (com.y - cp.y) + n.z * (com.z - cp.z) < 0) n.negate()
+          if (!flipped) n.negate()
           const angle = this.up.angleTo(n) * DEG
           for (let c = 0; c < count; c++) {
             if (this.isInverted && angle < 50) this.isInverted = false
@@ -706,6 +741,36 @@ export class Syn3hBuggy extends Vehicle {
           }
         })
       })
+    }
+  }
+
+  /**
+   * A teleport is a fresh start: besides the pose and velocities the base clears, drop every
+   * piece of drivetrain, suspension and tyre state, so nothing from before (a spinning motor,
+   * the inverted flag, wound up tyres, open wings) acts on the buggy where it lands.
+   */
+  override teleport(position: THREE.Vector3, heading = 0): void {
+    super.teleport(position, heading)
+    this.isInverted = false
+    this.stuckSteps = 0
+    this.motorSpeed = this.motorStep = 0
+    this.motorInputSmoothed = 0
+    this.brakePower = 0
+    this.regenForce = 0
+    this.drive = 'hold'
+    this.inputSmoothed.set(0, 0, 0, 0)
+    this.wingState = 0
+    this.areWingsOpen = this.wingsOpen = false
+    // Rest length, so it lands on its wheels and not on its skid plate.
+    this.suspensionRange = 0.4
+    this.updateMassProperties()
+    this.wheelsGrounded = 0
+    for (let i = 0; i < 4; i++) {
+      this.windX[i] = this.windZ[i] = 0
+      this.sliding[i] = false
+      this.hitDistance[i] = -1
+      this.hitCompress[i] = 0
+      this.hitVelocity[i].set(0, 0, 0)
     }
   }
 

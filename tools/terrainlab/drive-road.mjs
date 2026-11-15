@@ -23,7 +23,7 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
 const errors = []
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
-await page.goto(`${base}?autoplay=1${seed ? `&seed=${seed}` : ''}`, { waitUntil: 'load' })
+await page.goto(`${base}?autoplay=1${seed ? `&seed=${seed}` : ""}${process.env.QUERY ? `&${process.env.QUERY}` : ""}`, { waitUntil: "load" })
 await page.waitForFunction(() => window.syn3h?.game?.tick > 40, null, { timeout: 60000 })
 await page.keyboard.press('KeyH').catch(() => {}) // dismiss the controls card if it is up
 

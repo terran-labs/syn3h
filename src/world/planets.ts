@@ -39,7 +39,7 @@ const MARS: Record<string, ParamValue> = {
   'terrain.islandRadius': 800, 'terrain.coastWobble': 0.2,
   'terrain.volcanoHeight': 540, 'terrain.volcanoRadius': 360, 'terrain.calderaSize': 62,
   'terrain.mesaHeight': 120, 'terrain.cragDensity': 0.34, 'terrain.spireHeight': 190,
-  'terrain.duneHeight': 4, 'terrain.roughness': 0.5, 'terrain.treeCover': 0,
+  'terrain.duneHeight': 4, 'terrain.roughness': 0.5, 'terrain.treeCover': 0.5,
 }
 
 export const PLANETS: readonly PlanetRecipe[] = [
@@ -56,7 +56,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
       ...SKY_PRESETS['Earthlike'], 'sky.turbidity': 5, 'weather.cloudCoverage': 0.12, 'weather.fogDensity': 0.00022,
       'terrain.kind': 1, 'world.seaKind': 1, 'world.lavaAltitude': 0,
       'terrain.islandRadius': 800, 'terrain.coastWobble': 0.26,
-      'terrain.volcanoHeight': 230, 'terrain.volcanoRadius': 420, 'terrain.calderaSize': 70, 'terrain.treeCover': 0,
+      'terrain.volcanoHeight': 230, 'terrain.volcanoRadius': 420, 'terrain.calderaSize': 70, 'terrain.treeCover': 0.5,
       'terrain.mesaHeight': 95, 'terrain.cragDensity': 0.22, 'terrain.spireHeight': 120,
       'terrain.duneHeight': 16, 'terrain.roughness': 0.3,
     },
@@ -71,7 +71,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
       'terrain.islandRadius': 800, 'terrain.coastWobble': 0.3,
       'terrain.volcanoHeight': 600, 'terrain.volcanoRadius': 380, 'terrain.calderaSize': 55,
       'terrain.mesaHeight': 200, 'terrain.cragDensity': 0.5, 'terrain.spireHeight': 90,
-      'terrain.duneHeight': 0, 'terrain.roughness': 0.6, 'terrain.treeCover': 0.75,
+      'terrain.duneHeight': 0, 'terrain.roughness': 0.5, 'terrain.treeCover': 0.75,
     },
   },
 ]
