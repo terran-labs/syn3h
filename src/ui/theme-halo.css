@@ -23,12 +23,12 @@
   --halo-r: 16px;
   /* A tight halo on strokes; a dark under-shadow on text. */
   --halo-glow: 0 0 6px rgb(143 227 255 / .14);
-  --halo-under: 0 0 1px rgb(0 6 12 / .95), 0 1px 9px rgb(0 6 12 / .7);
+  --halo-under: 0 0 1px rgb(0 6 12 / .95), 0 1px 6px rgb(0 6 12 / .6);
   /* The falloff: a near-black blue at low alpha in the middle of a panel, fading to nothing
      at its rim, so the world shows through only slightly dimmed. Never a lightening: a
      grey or white mix reads as a milky slab over the day sky. The text under-shadow does
      most of the work. */
-  --halo-fill: radial-gradient(farthest-side at 50% 50%, rgb(2 10 18 / .28), rgb(2 10 18 / .2) 55%, rgb(2 10 18 / 0));
+  --halo-fill: radial-gradient(farthest-side at 50% 50%, rgb(2 10 18 / .36), rgb(2 10 18 / .26) 60%, rgb(2 10 18 / .04));
   --halo-spread: 0 0 0 transparent;
 }
 
