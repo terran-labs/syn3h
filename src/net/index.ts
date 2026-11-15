@@ -31,7 +31,6 @@ import {
   parseJson,
 } from '../../shared/protocol'
 import type { Game, System } from '../core/Game'
-import { FIXED_DT } from '../core/physics'
 import { createVehicle, type VehicleKind } from '../vehicles'
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
@@ -58,7 +57,6 @@ import { Connection, serverUrl } from './Connection'
 import { NameTags, type TagInfo } from './NameTags'
 import { applyRoomWorld, netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
-import { SendPacer, SimClock } from './SimClock'
 import { type BotMatchInfo, audibleVehicles, bodyAlive, hillHold, liveBots } from './bots'
 import { ShoveQueue, cleanShove, shoveFor } from './shove'
 import { nearestImage, wrapCoord, wrapDistance } from '../../shared/wrap'
@@ -213,10 +211,7 @@ export class NetClient implements System {
   private wasHost = false
   private welcomed = false
   private everWelcomed = false
-  /** Which fixed steps send a state; see SimClock.ts. */
-  private readonly pacer = new SendPacer()
-  /** Room time in step with the physics simulation, for stamping and playing back states. */
-  private readonly simClock = new SimClock()
+  private sendTimer = 0
   private pingTimer = 0
   private pingsSent = 0
   private lastFire = -Infinity
@@ -503,9 +498,7 @@ export class NetClient implements System {
     this.syncBotGear()
     for (const controller of this.botGear.values()) controller.fixedUpdate(dt)
     const player = this.ctx.player
-    // The time this step's result stands for, not the wall clock: steps are then sampled an
-    // even step apart whatever the display rate (SimClock.ts).
-    const now = this.simClock.at(this.ctx.game.time + dt, dt, this.clock.now())
+    const now = this.clock.now()
     const lp = player.body.translation()
     const radius = netProxyRadius.value
     const blend = netProxyBlend.value
@@ -583,21 +576,16 @@ export class NetClient implements System {
     if (!this.connected) return
     if (this.isHost && this.mode === MODE_KOTH) this.checkBotsStuck()
     this.detectRams()
+    this.sendTimer += dt
     // While hidden the heartbeat timer speaks for us (rendering may still tick in some cases).
-    if (document.hidden) {
-      this.pacer.hold(dt, netSendRate.value)
-    } else if (this.pacer.step(dt, netSendRate.value)) {
-      // The pose is the one this step just produced: stamp it with that step's time. The
-      // game's own time is advanced after this hook, hence the + dt.
-      const t = this.simClock.at(this.ctx.game.time + dt, dt, this.clock.now())
-      this.sendState(t)
-      if (this.isHost) this.sendBots(t)
+    if (this.sendTimer >= 1 / netSendRate.value && !document.hidden) {
+      this.sendTimer = 0
+      this.sendState()
+      if (this.isHost) this.sendBots()
     }
   }
 
-  update(dt: number, alpha = 0): void {
-    // Where the simulation has got to, against the room clock, once a frame (SimClock.ts).
-    this.simClock.observe(this.clock.now(), this.ctx.game.time + alpha * FIXED_DT, dt)
+  update(dt: number): void {
     this.raceBridge.update()
     for (const controller of this.botGear.values()) controller.update(dt)
     const frameAt = performance.now()
@@ -750,8 +738,7 @@ export class NetClient implements System {
       if (!controller) {
         if (action.phase === 'cancel' || !botGearOptions().some(o => o.id === action.gear)) return
         // Announce the bot and its fresh state before its first gear message.
-        // Outside the send hook the bot's pose is the last finished step's: the game's time now.
-        this.sendBot(id, vehicle, this.simClock.at(this.ctx.game.time, FIXED_DT, this.clock.now()))
+        this.sendBot(id, vehicle)
         controller = this.makeBotGear(id, vehicle)
         this.botGear.set(id, controller)
       }
@@ -937,19 +924,20 @@ export class NetClient implements System {
   /** The vehicle kind last announced to the room for each of our bots, by bot id. */
   private readonly botKinds = new Map<number, string>()
 
-  private sendState(t: number): void {
+  private sendState(): void {
     const s = this.ctx.player.getState()
-    this.conn.send(encodeState({ id: 0, t, ...s, p: this.canonical(s.p) }) as Uint8Array<ArrayBuffer>)
+    this.conn.send(encodeState({ id: 0, t: this.clock.now(), ...s, p: this.canonical(s.p) }) as Uint8Array<ArrayBuffer>)
     this.stats.statesSent++
   }
 
-  private sendBots(t: number): void {
+  private sendBots(): void {
     for (const [id, bot] of liveBots(this.bots?.vehicles ?? [], this.ctx.game.world)) {
-      this.sendBot(id, bot, t)
+      this.sendBot(id, bot)
     }
   }
 
-  private sendBot(id: number, bot: Vehicle, t: number): void {
+  private sendBot(id: number, bot: Vehicle): void {
+    const t = this.clock.now()
     // Say which vehicle it is before its first state, and again if the slot changes kind
     // (a mixed fleet), so guests build the same one.
     if (this.botKinds.get(id) !== bot.kind) {
