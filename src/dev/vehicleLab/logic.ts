@@ -121,6 +121,8 @@ export interface LabParams {
   headlights?: boolean
   brake: boolean
   motion?: boolean
+  /** Seconds without input before the lab runs by itself. 0 turns that off. */
+  idle?: number
   cockpit: boolean
   stress?: number
   webgl: boolean
@@ -150,6 +152,7 @@ export function parseLabParams(search: string, fallbackVehicle = 'buggy'): LabPa
     headlights: flag(q, 'headlights'),
     brake: flag(q, 'brake') ?? false,
     motion: flag(q, 'motion'),
+    idle: number(q.get('idle')),
     cockpit: flag(q, 'cockpit') ?? false,
     stress: stress === undefined ? undefined : STRESS_COUNTS.reduce((a, c) => Math.abs(c - stress) < Math.abs(a - stress) ? c : a),
     webgl: q.has('webgl'),

@@ -96,8 +96,11 @@ function tailRing(b: Builder, o: VanguardOptions, boomX: number, boomY: number):
     joint(0, cy + r, z1, chord); joint(0, cy - rLow, z1, chord)
   } else if (shape === 'hex') {
     const up = side(30, r), down = side(-30, rLow)
-    b.surf(meetAtCentre([row(up[0], up[1], z0), row(0, cy + r, z1)]), paint); b.surf(meetAtCentre([row(down[0], down[1], z0), row(0, cy - rLow, z1)]), paint)
-    b.surf([row(down[0], down[1], z0), row(up[0], up[1], z0)], paint)
+    // Each of the six panels carries a control surface on its trailing edge. The upper and lower
+    // pairs work as elevators and ailerons, the flanks as rudders (see NextJet.setControls).
+    const control = { ...paint, flap: .38 }
+    b.surf(meetAtCentre([row(up[0], up[1], z0), row(0, cy + r, z1)]), control); b.surf(meetAtCentre([row(down[0], down[1], z0), row(0, cy - rLow, z1)]), control)
+    b.surf([row(down[0], down[1], z0), row(up[0], up[1], z0)], control)
     corners = [row(up[0], up[1], z0), row(down[0], down[1], z0)]
     // The two halves join at the top and bottom points: those get a joint as well.
     joint(0, cy + r, z1, chord); joint(0, cy - rLow, z1, chord)
