@@ -1,19 +1,56 @@
 /**
- * Draws the liquids and fire the generator planned: the sea out to the horizon, the lake in
- * the caldera, the lava rivers and their pools, and the flame, ember and smoke vents.
+ * Draws the liquids and fire the generator planned: the sea out to the horizon, the lake at
+ * the centre, the rivers and their pools, and the flame, ember and smoke vents.
  *
  * Everything is read from `data.lava` and `data.vents`, so what is drawn is exactly what
  * `liquidHeightAt` reports and what vehicles float in. Rebuilt whenever the terrain
- * regenerates. The effects themselves live in src/fx.
+ * regenerates. The sea is lava or water by `world.seaKind`; the lake and rivers are lava on
+ * volcanic worlds and water elsewhere. The lava look and the particles live in src/fx.
  */
 import * as THREE from 'three/webgpu'
+import { attribute, cameraPosition, cameraViewMatrix, normalize, color, float, mix, mx_noise_float, positionWorld, smoothstep, time, uniform, vec3 } from 'three/tsl'
 import { worldLavaAltitude } from '../../../shared/params'
 import type { System } from '../../core/Game'
 import { Emitters } from '../../fx/Emitters'
-import { LavaFlow } from '../../fx/LavaFlow'
+import { buildRibbonGeometry } from '../../fx/LavaFlow'
 import { createLavaMaterial } from '../../fx/material'
 import type { TerrainData } from './generate'
 import type { HeightSampler } from './sampler'
+import { KIND_VOLCANIC, worldSeaKind } from './settings'
+
+interface Liquid {
+  material: THREE.Material
+  update(dt: number, level?: number): void
+}
+
+/**
+ * Water. Lit by the sun and sky like the ground, so it darkens at night. With `shore`, the
+ * mesh carries the ground height under each vertex: shallows are turquoise, deep water is
+ * navy, and a line of foam follows the coast.
+ */
+function createWaterMaterial(shore: boolean): Liquid {
+  const level = uniform(0)
+  const p = positionWorld
+  const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.14, metalness: 0, side: THREE.DoubleSide })
+  // The surface is flat: light it as facing straight up, whatever the mesh winding.
+  material.normalNode = normalize(cameraViewMatrix.transformDirection(vec3(0, 1, 0)))
+  const drift = time.mul(0.25)
+  const swell = mx_noise_float(vec3(p.x.mul(0.035), p.z.mul(0.035), drift))
+  const ripple = mx_noise_float(vec3(p.x.mul(0.22), p.z.mul(0.22), drift.mul(2.2)))
+  // Ripples fade with distance, where they would shimmer.
+  const near = smoothstep(500, 60, p.sub(cameraPosition).length())
+  const shade = swell.mul(0.1).add(ripple.mul(0.08).mul(near)).add(1)
+  if (shore) {
+    const depth = level.sub(attribute<'float'>('groundHeight', 'float'))
+    const water = mix(color(0x2fc4bd), color(0x0a3562), smoothstep(0.5, 22, depth))
+    const foam = smoothstep(1.3, 0.15, depth.add(ripple.mul(0.5))).mul(smoothstep(-0.6, 0.1, depth))
+    material.colorNode = mix(water.mul(shade), color(0xf4fbff), foam.mul(0.85))
+  } else {
+    material.colorNode = mix(color(0x1f8fa6), color(0x135f86), swell.mul(0.5).add(0.5)).mul(shade)
+  }
+  material.roughnessNode = float(0.14).add(ripple.mul(0.05))
+  return { material, update(_dt, l = 0) { level.value = l } }
+}
 
 /** How far past the simulated square the sea is drawn. Beyond the fog in every direction. */
 const SEA_REACH = 24000
@@ -87,11 +124,14 @@ function discGeometry(x: number, y: number, z: number, radius: number): THREE.Bu
 
 export class Volcanics implements System {
   private readonly group = new THREE.Group()
-  private readonly sea = createLavaMaterial(false, true, true)
-  private readonly still = createLavaMaterial(false, false)
+  // Both looks of the sea are built once and swapped, so changing the sea is instant.
+  private readonly lavaSea: Liquid = createLavaMaterial(false, true, true)
+  private readonly waterSea: Liquid = createWaterMaterial(true)
+  private readonly lavaStill: Liquid = createLavaMaterial(false, false)
+  private readonly lavaRiver: Liquid = createLavaMaterial(true)
+  private readonly waterStill: Liquid = createWaterMaterial(false)
   private seaMesh: THREE.Mesh | null = null
-  private readonly discs: THREE.Mesh[] = []
-  private readonly rivers: LavaFlow[] = []
+  private readonly meshes: THREE.Mesh[] = []
   private readonly emitters: Emitters
 
   constructor(private readonly scene: THREE.Scene, private readonly sampler: HeightSampler) {
@@ -101,28 +141,40 @@ export class Volcanics implements System {
     this.rebuild()
   }
 
+  /** True when the sea is lava (world.seaKind 0). */
+  get seaIsLava(): boolean {
+    return worldSeaKind.value === 0
+  }
+
+  /** True when the lake, rivers and pools are lava: only on volcanic worlds. */
+  get flowsAreLava(): boolean {
+    return this.sampler.data.settings.kind === KIND_VOLCANIC
+  }
+
   /** Throw away and rebuild everything for the terrain data the sampler now holds. */
   rebuild(): void {
     this.clear()
     const data: TerrainData = this.sampler.data
     const ground: Ground = { size: data.size, heightAt: (x, z) => this.sampler.heightAt(x, z) }
 
-    this.seaMesh = new THREE.Mesh(seaGeometry(ground), this.sea.material)
+    this.seaMesh = new THREE.Mesh(seaGeometry(ground), (this.seaIsLava ? this.lavaSea : this.waterSea).material)
     this.seaMesh.frustumCulled = false
     this.group.add(this.seaMesh)
 
     const lava = data.lava
-    const disc = (x: number, y: number, z: number, radius: number) => {
-      const mesh = new THREE.Mesh(discGeometry(x, y, z, radius), this.still.material)
-      this.discs.push(mesh)
+    const hot = this.flowsAreLava
+    const add = (geometry: THREE.BufferGeometry, material: THREE.Material) => {
+      const mesh = new THREE.Mesh(geometry, material)
+      this.meshes.push(mesh)
       this.group.add(mesh)
     }
-    if (lava.lake) disc(lava.lake.x, lava.lake.surface, lava.lake.z, lava.lake.radius)
-    for (const p of lava.pools) disc(p.x, p.surface, p.z, p.radius)
+    const still = (hot ? this.lavaStill : this.waterStill).material
+    if (lava.lake) add(discGeometry(lava.lake.x, lava.lake.surface, lava.lake.z, lava.lake.radius), still)
+    for (const p of lava.pools) add(discGeometry(p.x, p.surface, p.z, p.radius), still)
     for (const r of lava.rivers) {
       if (r.points.length < 2) continue
       // A little wider than the planned surface so the ribbon tucks into the channel banks.
-      this.rivers.push(new LavaFlow(this.scene, ground, r.points, r.width + 1.5))
+      add(buildRibbonGeometry(ground, r.points, r.width + 1.5), (hot ? this.lavaRiver : this.waterStill).material)
     }
     for (const v of data.vents) {
       this.emitters.addVent(
@@ -139,10 +191,16 @@ export class Volcanics implements System {
 
   update(dt: number): void {
     const level = worldLavaAltitude.value
-    if (this.seaMesh) this.seaMesh.position.y = level
-    this.sea.update(dt, level)
-    this.still.update(dt)
-    for (const r of this.rivers) r.update(dt)
+    if (this.seaMesh) {
+      this.seaMesh.position.y = level
+      // The sea kind is a live slider: swap the look the moment it changes.
+      const want = (this.seaIsLava ? this.lavaSea : this.waterSea).material
+      if (this.seaMesh.material !== want) this.seaMesh.material = want
+    }
+    this.lavaSea.update(dt, level)
+    this.waterSea.update(dt, level)
+    this.lavaStill.update(dt)
+    this.lavaRiver.update(dt)
     this.emitters.update(dt)
   }
 
@@ -152,13 +210,11 @@ export class Volcanics implements System {
       this.seaMesh.geometry.dispose()
       this.seaMesh = null
     }
-    for (const m of this.discs) {
+    for (const m of this.meshes) {
       this.group.remove(m)
       m.geometry.dispose()
     }
-    this.discs.length = 0
-    for (const r of this.rivers) r.dispose()
-    this.rivers.length = 0
+    this.meshes.length = 0
     this.emitters.clear()
   }
 
@@ -166,7 +222,6 @@ export class Volcanics implements System {
     this.clear()
     this.emitters.dispose()
     this.scene.remove(this.group)
-    this.sea.material.dispose()
-    this.still.material.dispose()
+    for (const l of [this.lavaSea, this.waterSea, this.lavaStill, this.lavaRiver, this.waterStill]) l.material.dispose()
   }
 }
