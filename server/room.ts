@@ -650,13 +650,14 @@ export class Room {
   }
 
   private onState(player: Player, bytes: Uint8Array): void {
-    if (bytes.byteLength !== STATE_BYTES || !this.budget(player, 'state')) return
+    if (bytes.byteLength !== STATE_BYTES) return
     const state = decodeState(bytes)
     if (!state) return
     if (state.bot) {
       this.onBotState(player, state, bytes)
       return
     }
+    if (!this.budget(player, 'state')) return
     state.id = player.info.id
     player.lastState = state
     player.lastStateAt = this.now()
@@ -684,6 +685,9 @@ export class Room {
       this.scores[state.id] ??= 0
       this.broadcast({ type: 'join', player: bot.info })
     }
+    // Twenty Hz per simulated vehicle, with jitter headroom. The finite host-only bot
+    // slots cannot consume the human's budget, or mint an unlimited number of budgets.
+    if (!this.budget(bot, 'state', 30)) return
     bot.lastState = state
     bot.lastStateAt = this.now()
     const out = bytes.slice()
@@ -1349,14 +1353,14 @@ export class Room {
     this.persist()
   }
 
-  private budget(player: Player, kind: 'state' | 'json'): boolean {
+  private budget(player: Player, kind: 'state' | 'json', stateLimit = MAX_STATES_PER_SECOND): boolean {
     const now = this.now()
     if (now - player.windowStart >= 1000) {
       player.windowStart = now
       player.stateCount = 0
       player.jsonCount = 0
     }
-    if (kind === 'state') return ++player.stateCount <= MAX_STATES_PER_SECOND
+    if (kind === 'state') return ++player.stateCount <= stateLimit
     return ++player.jsonCount <= MAX_JSON_PER_SECOND
   }
 

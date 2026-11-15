@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { Room, type Peer } from '../../server/room'
-import { BOT_ID_BASE, MAX_BOTS, PROTOCOL_VERSION, encodeState, type ServerMessage, type WireState } from '../../shared/protocol'
+import { BOT_ID_BASE, MAX_BOTS, PROTOCOL_VERSION, encodeState, decodeState, type ServerMessage, type WireState } from '../../shared/protocol'
 import { emptyInputLike } from './helpers'
 
 class FakePeer implements Peer {
   json: ServerMessage[] = []
-  send(data: string | Uint8Array): void { if (typeof data === 'string') this.json.push(JSON.parse(data)) }
+  states: WireState[] = []
+  send(data: string | Uint8Array): void {
+    if (typeof data === 'string') this.json.push(JSON.parse(data))
+    else { const state = decodeState(data); if (state) this.states.push(state) }
+  }
   close(): void {}
   all<T extends ServerMessage['type']>(type: T): Extract<ServerMessage, { type: T }>[] {
     return this.json.filter((m) => m.type === type) as Extract<ServerMessage, { type: T }>[]
@@ -41,6 +45,34 @@ function setup(params: Record<string, number | boolean> = {}, resume?: string) {
 beforeEach(() => { clock = 100_000; room = new Room('bot-gear', { now: () => clock }) })
 
 describe('Host-authorized bot gear', () => {
+  it('delivers every bot at twenty Hz without starving human states, with a per-slot ceiling', () => {
+    const { host, guest } = setup()
+    clock += 1000
+    guest.peer.states = []
+    for (let frame = 0; frame < 40; frame++) {
+      for (let slot = 0; slot < MAX_BOTS; slot++) place(host.peer, slot, { bot: true, id: bot + slot })
+      place(host.peer, 0)
+    }
+    for (let slot = 0; slot < MAX_BOTS; slot++) expect(guest.peer.states.filter((s) => s.id === bot + slot)).toHaveLength(30)
+    expect(guest.peer.states.filter((s) => s.id === host.id)).toHaveLength(40)
+    for (let i = 0; i < 40; i++) place(host.peer, 0)
+    expect(guest.peer.states.filter((s) => s.id === host.id)).toHaveLength(70)
+  })
+
+  it('does not grant guest bot budgets or create out-of-range bot slots', () => {
+    const { host, guest } = setup()
+    host.peer.states = []
+    for (let i = 0; i < 80; i++) {
+      place(guest.peer, 0, { bot: true, id: bot + 1 })
+      place(guest.peer, 0)
+      place(host.peer, 0, { bot: true, id: bot + MAX_BOTS })
+    }
+    expect(host.peer.states.filter((s) => s.id === bot + 1)).toEqual([])
+    // Guest already sent one ordinary state during setup in the same budget window.
+    expect(host.peer.states.filter((s) => s.id === guest.id)).toHaveLength(69)
+    expect(guest.peer.all('join').some((m) => m.player.id === bot + MAX_BOTS)).toBe(false)
+  })
+
   it('relays bot identity without echo, and gives each actor its own cooldown and shot IDs', () => {
     const { host, guest } = setup()
     place(host.peer, 0, { bot: true, id: bot + 1 })
