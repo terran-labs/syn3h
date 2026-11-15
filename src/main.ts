@@ -70,6 +70,8 @@ async function main(): Promise<void> {
   camera.setVehicle(player)
   // A wrapping world carries the player, the camera and the bots across its seam.
   ;(terrain as { followSeam?: (f: unknown) => void }).followSeam?.({ player, camera, others: () => bots.vehicles })
+  // The round planet is drawn relative to the camera: place it after the camera has moved.
+  game.add({ update: () => (terrain as { afterCamera?: () => void }).afterCamera?.() })
 
   // The start screen collects the name and unlocks audio. Networking joins on Play so the
   // room sees the chosen name. ?autoplay=1 skips the screen for automated checks.
