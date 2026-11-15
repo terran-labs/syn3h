@@ -39,3 +39,10 @@ second player.
 
 Three.js on WebGPU with a WebGL fallback, Rapier physics, TypeScript and Vite. Every world
 is generated on your machine from a shared seed, so there is nothing to download.
+
+## Licence
+
+Syn3h is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE.md):
+you are welcome to play with it, change it, extend it and share what you make, for any
+noncommercial purpose. Commercial use needs a licence from Terran Labs; see
+[NOTICE.md](NOTICE.md). Third-party components keep their own licences.

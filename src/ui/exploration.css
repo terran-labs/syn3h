@@ -195,6 +195,20 @@ html[data-gfx="0"] .syn3h-shell.exploration-ui[data-glass] .wi-glass { --body: r
 .syn3h-shell.exploration-ui:not(.has-touch) .hud-navigation { display: none; }
 .syn3h-shell.exploration-ui .rail-navigation .rail-pause { margin-left: auto; border: 0; background: none; letter-spacing: .13em; text-transform: uppercase; }
 
+/* Vehicle colours: two round swatches beside the vehicle selector, each a 44 px target around
+   a small dot of the colour itself. Hidden on short landscape screens, where the selectors
+   share the header row and there is no room. */
+.syn3h-shell.exploration-ui .wi-quick .wi-vehicle { display: flex; align-items: end; gap: 4px; min-width: 0; }
+.syn3h-shell.exploration-ui .wi-quick .wi-vehicle > label:first-child { flex: 1 1 auto; min-width: 0; }
+.syn3h-shell.exploration-ui .wi-quick .wi-tint { display: flex; flex: 0 0 auto; }
+.syn3h-shell.exploration-ui .wi-quick label.wi-swatch { display: grid; place-items: center; width: 32px; height: 44px; margin: 0; cursor: pointer; }
+.syn3h-shell.exploration-ui .world-inspector .wi-swatch input[type=color] { -webkit-appearance: none; appearance: none; width: 20px; height: 20px; min-height: 0; padding: 0; border: 1px solid var(--s3-line); border-radius: 50%; background: none; box-shadow: 0 0 6px rgb(143 227 255 / .22); cursor: pointer; overflow: hidden; }
+.syn3h-shell.exploration-ui .world-inspector .wi-swatch input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+.syn3h-shell.exploration-ui .world-inspector .wi-swatch input[type=color]::-webkit-color-swatch { border: 0; border-radius: 50%; }
+.syn3h-shell.exploration-ui .world-inspector .wi-swatch input[type=color]::-moz-color-swatch { border: 0; border-radius: 50%; }
+.syn3h-shell.exploration-ui .world-inspector .wi-swatch input[type=color]:focus-visible { outline: 1px solid var(--s3-accent-2); outline-offset: 3px; }
+@media (max-height: 500px) { .syn3h-shell.exploration-ui .wi-quick .wi-tint { display: none; } }
+
 /* Short landscape screens: the header row also carries the vehicle and gear selectors, so
    Pause shrinks to a glyph (its name stays for assistive technology) and the selectors stop
    short of it. */
@@ -203,6 +217,19 @@ html[data-gfx="0"] .syn3h-shell.exploration-ui[data-glass] .wi-glass { --body: r
   .syn3h-shell.exploration-ui .rail-navigation .rail-pause::after { content: 'II'; font-size: 11px; letter-spacing: .18em; }
   .syn3h-shell.exploration-ui .world-inspector .wi-quick { right: 84px; }
 }
+
+/* Leaving a world asks first: a small floating panel in the same light-drawn look, over a
+   lightly dimmed world. A click outside the panel means stay. */
+.syn3h-shell .exit-confirm { position: fixed; inset: 0; z-index: 58; display: grid; place-items: center; padding: 24px; background: rgb(2 8 14 / .38); }
+.syn3h-shell .exit-confirm[hidden] { display: none; }
+.syn3h-shell .exit-confirm-card { display: grid; gap: 10px; justify-items: center; min-width: min(320px, 100%); padding: 22px 26px 20px; border: 1px solid var(--s3-line); border-radius: 16px; background: rgb(3 11 19 / .62); box-shadow: 0 0 6px rgb(143 227 255 / .2); color: var(--s3-ink); text-align: center; }
+.syn3h-shell .exit-confirm strong { font: 500 13px/1.3 'Barlow', sans-serif; letter-spacing: .22em; margin-right: -.22em; text-transform: uppercase; }
+.syn3h-shell .exit-confirm p { margin: 0; font-size: 13.5px; line-height: 1.4; color: var(--s3-dim); }
+.syn3h-shell .exit-confirm-actions { display: flex; gap: 10px; margin-top: 6px; }
+.syn3h-shell.exploration-ui .exit-confirm button { min-height: 44px; min-width: 112px; padding: 8px 18px; border: 1px solid var(--s3-line-quiet); border-radius: 999px; background: none; box-shadow: none; color: var(--s3-ink); font: 400 13.5px 'Barlow', sans-serif; letter-spacing: .04em; cursor: pointer; }
+.syn3h-shell.exploration-ui .exit-confirm .exit-stay { border-color: var(--s3-line); box-shadow: inset 0 0 8px rgb(143 227 255 / .16); }
+.syn3h-shell.exploration-ui .exit-confirm button:focus-visible { outline: 1px solid var(--s3-accent-2); outline-offset: 3px; }
+@media (pointer: coarse) { .syn3h-shell.exploration-ui .exit-confirm button { min-height: 48px; } }
 
 /* Paused: one floating message over the dimmed, still world. The whole veil is the button. */
 .syn3h-shell .pause-veil { position: fixed; inset: 0; z-index: 60; display: grid; place-content: center; justify-items: center; gap: 10px; margin: 0; padding: 24px; border: 0; border-radius: 0; background: rgb(2 8 14 / .46); color: var(--s3-ink); font: inherit; cursor: pointer; -webkit-backdrop-filter: blur(3px) saturate(.8); backdrop-filter: blur(3px) saturate(.8); animation: pause-in .25s ease-out; }
@@ -219,3 +246,51 @@ html[data-gfx="0"] .syn3h-shell.exploration-ui[data-glass] .wi-glass { --body: r
 #syn3h-build-notice, .build-banner { position: fixed; left: 50%; right: auto; top: auto; bottom: max(18px, calc(env(safe-area-inset-bottom) + 10px)); transform: translateX(-50%); z-index: 10000; max-width: calc(100vw - 32px); min-height: 44px; margin: 0; padding: 10px 22px; border: 1px solid rgb(173 224 247 / .45); border-radius: 999px; background: rgb(6 20 32 / .72); color: #e3f2fc; font: 500 14px/1.2 'Barlow',system-ui,sans-serif; letter-spacing: .04em; white-space: nowrap; cursor: pointer; box-shadow: 0 0 26px rgb(100 200 250 / .22), inset 0 1px 0 rgb(255 255 255 / .18); -webkit-backdrop-filter: blur(14px) saturate(1.4); backdrop-filter: blur(14px) saturate(1.4); }
 /* On touch the bottom corners hold the thumb controls: the banner floats just above them. */
 body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-notice, .build-banner) { bottom: calc(max(18px, env(safe-area-inset-bottom)) + 168px); }
+
+/* The gear drum and the Zorb toggle belong to play: hidden in the lobby, under the pause veil
+   and while the exit question is up. */
+.syn3h-shell:not(.is-playing) .gear-selector, .syn3h-shell:not(.is-playing) .gear-actions, .syn3h-shell:not(.is-playing) .zorb-toggle { display: none !important; }
+/* Zorb mode: one hairline pill under the drum, with its key and its state. */
+:root .syn3h-shell .zorb-toggle {
+  position: fixed; z-index: var(--gear-z, 12); left: calc(var(--gear-left, max(20px, calc(env(safe-area-inset-left) + 14px))) + 8px);
+  top: calc(var(--gear-top, 50%) + 129px); display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px 0 10px; margin: 0;
+  border-radius: 999px; border: 1px solid var(--s3-line, rgb(150 215 255 / .45)); background: rgb(3 11 19 / .34); color: var(--s3-ink, #eaf6ff);
+  font: 500 11px/1 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; letter-spacing: .16em; text-transform: uppercase;
+  -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; pointer-events: auto; cursor: pointer; transition: top .22s cubic-bezier(.2,.8,.2,1), opacity .3s ease, border-color .2s ease;
+}
+:root .syn3h-shell .zorb-toggle kbd { display: inline-block; min-width: 22px; padding: 3px 8px 2px; text-align: center; border: 1px solid var(--s3-line, rgb(150 215 255 / .45)); border-radius: 999px; font: inherit; }
+:root .syn3h-shell .zorb-toggle b { font-weight: 500; opacity: .62; }
+:root .syn3h-shell .zorb-toggle[aria-pressed=true] { border-color: var(--s3-accent-2, #9fe0ff); }
+:root .syn3h-shell .zorb-toggle[aria-pressed=true] b { opacity: 1; color: var(--s3-accent-2, #9fe0ff); }
+/* Driving with the cursor captured: the drum is shorter, and the pill is a reminder, not a target. */
+:root .syn3h-shell.is-focus .zorb-toggle { top: calc(var(--gear-top, 50%) + 92px); opacity: .84; pointer-events: none; }
+/* Touch has its own ZORB button beside the other drive buttons. */
+:root .syn3h-shell.has-touch .zorb-toggle { display: none; }
+
+/* The panel header is one line: the world's name, a search, Pause and the way back to
+   driving. Leaving the world sits at the foot with the world actions. */
+.syn3h-shell.exploration-ui .rail-navigation { justify-content: flex-start; gap: 10px; }
+.syn3h-shell.exploration-ui .rail-navigation .rail-world { flex: 0 1 auto; max-width: 46%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 500 11.5px/1 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); }
+.syn3h-shell.exploration-ui .world-inspector .rail-navigation .wi-search { flex: 1 1 0; width: auto; min-width: 0; }
+.syn3h-shell.exploration-ui .rail-navigation .rail-pause { margin-left: 0; flex: 0 0 auto; }
+.syn3h-shell.exploration-ui .rail-navigation .rail-close { flex: 0 0 auto; }
+.syn3h-shell.exploration-ui .rail-foot { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; }
+.syn3h-shell.exploration-ui .rail-foot .wi-actions { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world { flex: 0 0 auto; margin-left: auto; min-height: 34px; padding: 5px 4px 5px 9px; border: 1px solid transparent; background: none; box-shadow: none; font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); white-space: nowrap; }
+.syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world:hover { border-color: var(--s3-line-quiet); }
+/* Short screens: the quick controls share the header's line, so the name gives way and the
+   search takes a line of its own, as before. */
+@media (max-height: 500px) {
+  .syn3h-shell.exploration-ui .rail-navigation { flex-wrap: wrap; justify-content: flex-end; row-gap: 2px; }
+  .syn3h-shell.exploration-ui .rail-navigation .rail-world { display: none; }
+  .syn3h-shell.exploration-ui .wi-quick { left: 10px; }
+  .syn3h-shell.exploration-ui .world-inspector .rail-navigation .wi-search { order: 9; flex: 1 0 100%; }
+  .syn3h-shell.exploration-ui .rail-foot { padding: 2px 8px; }
+  .syn3h-shell.exploration-ui .rail-foot .wi-actions { flex-wrap: nowrap; gap: 3px; }
+  .syn3h-shell.exploration-ui .rail-foot .wi-actions button { padding: 3px; font-size: 9px; min-height: 24px; }
+  .syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world { min-height: 24px; padding-block: 2px; font-size: 10px; }
+}
+
+/* Explore has no game, so the player list shows who is here and no score column. */
+.syn3h-shell.is-explore .score-row { grid-template-columns: minmax(0,1fr) auto; }
+.syn3h-shell.is-explore .score-row strong { display: none; }

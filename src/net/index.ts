@@ -37,6 +37,7 @@ import type { Terrain } from '../world/Terrain'
 import type { BotGearHooks as BotDecisionHooks } from '../bots/gear'
 import { BotGear, botGearOptions } from '../weapons/BotGear'
 import { Lasers } from '../weapons/Lasers'
+import { Blast } from '../weapons/blast'
 import { beamAimDirection } from '../weapons/aim'
 import { laserInterval, lasersAllowed } from '../weapons/params'
 import { GearRack } from '../weapons/Gear'
@@ -60,6 +61,7 @@ import { NameTags, type TagInfo } from './NameTags'
 import { applyRoomWorld, netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
 import { pressHoldsFire } from './pointerFire'
+import { LocalSeat } from './LocalSeat'
 import { PausedHeartbeat } from './PausedHeartbeat'
 import { announcedKind, needsRebuild } from './kinds'
 import { type BotMatchInfo, audibleVehicles, bodyAlive, hillHold, liveBots } from './bots'
@@ -190,6 +192,8 @@ export class NetClient implements System {
   private readonly raceBridge: RaceBridge
   readonly conn: Connection
   readonly lasers: Lasers
+  /** Impacts push nearby vehicles this client simulates (Weapons lane). */
+  readonly blast: Blast
   /** Gear in hand (Weapons lane, src/weapons). With only the tag beam allowed, nothing changes. */
   private readonly botGear = new Map<number, BotGear>()
   readonly gear: GearRack
@@ -235,10 +239,12 @@ export class NetClient implements System {
     resumed: () => { for (const r of this.remotes.values()) r.buffer.restartEstimate() },
   })
   private readonly marker: TagMarker
-  private readonly bounds: BoundsGuard
+  /** The guard and lava rescue built around the vehicle we drive; see LocalSeat.ts. */
+  private readonly seat: LocalSeat<Vehicle, BoundsGuard, LocalRescue>
+  private get bounds(): BoundsGuard { return this.seat.bounds }
+  private get rescue(): LocalRescue { return this.seat.rescue }
   private readonly tags: NameTags
   private readonly hill: HillMarker
-  private readonly rescue: LocalRescue
   /** Pushes relayed from players who rammed us, waiting to see if our physics felt them. */
   private readonly shoves = new ShoveQueue()
   /**
@@ -276,7 +282,14 @@ export class NetClient implements System {
       ],
       send: message => this.send(message),
     })
+    this.blast = new Blast(game, {
+      vehicleIds: () => this.vehicleIds(),
+      bodyOf: (id) => this.vehicleOf(id)?.body,
+      owns: (id) => this.ownsVehicle(id),
+      wrapSize: () => this.wrapSize,
+    })
     this.lasers = new Lasers(game, {
+      onImpact: (at, red) => this.blast.at(red ? 'thunder' : 'tag', at),
       bodyOf: (id) => this.vehicleOf(id)?.body,
       judgedId: (h) => this.judgedId(h),
       isVehicleBody: (h) => [...this.remotes.values()].some((r) => r.vehicle.body.handle === h),
@@ -347,6 +360,7 @@ export class NetClient implements System {
       bodyOf: (id) => this.vehicleOf(id)?.body,
       vehicleIds: () => this.vehicleIds(),
       judges: (id) => this.ownsVehicle(id),
+      onBurst: (at) => this.blast.at('chaser', at),
       heightAt: (x, z) => this.ctx.terrain.heightAt(x, z),
       wrapSize: () => this.wrapSize,
       inHand: () => this.gear.current === 'pester',
@@ -371,28 +385,38 @@ export class NetClient implements System {
     this.bots?.setGear?.(this.botDecisionHooks)
     this.marker = new TagMarker(game)
     this.marker.local = player
-    this.bounds = new BoundsGuard(player, ctx.terrain)
-    this.bounds.onReset = () => this.event('Returned to your pad')
     this.tags = new NameTags(game.camera)
     this.hill = new HillMarker(game, ctx.terrain)
-    this.rescue = new LocalRescue(game, ctx.terrain, player)
-    this.rescue.onStuck = () => {
-      this.stats.stuck++
-      this.event('You are stuck in the lava')
-      if (this.connected) this.send({ type: 'stuck' })
-    }
-    this.rescue.onFreed = (by) => {
-      this.event(by === 'crawled' ? 'You crawled free of the lava' : 'Returned to your pad')
-      if (by === 'returned') {
-        this.resetGear('own')
-        this.ctx.audio?.play('materialize', this.ctx.player.body.translation())
-      }
-    }
-    this.rescue.onReturned = () => {
-      this.resetGear('own')
-      this.event('Returned to your pad')
-      this.ctx.audio?.play('materialize', this.ctx.player.body.translation())
-    }
+    this.seat = new LocalSeat(player, {
+      makeBounds: (vehicle) => {
+        const bounds = new BoundsGuard(vehicle, ctx.terrain)
+        bounds.onReset = () => this.event('Returned to your pad')
+        return bounds
+      },
+      makeRescue: (vehicle) => {
+        const rescue = new LocalRescue(game, ctx.terrain, vehicle)
+        rescue.onStuck = () => {
+          this.stats.stuck++
+          this.event('You are stuck in the lava')
+          if (this.connected) this.send({ type: 'stuck' })
+        }
+        rescue.onFreed = (by) => {
+          this.event(by === 'crawled' ? 'You crawled free of the lava' : 'Returned to your pad')
+          if (by === 'returned') {
+            this.resetGear('own')
+            this.ctx.audio?.play('materialize', this.ctx.player.body.translation())
+          }
+        }
+        rescue.onReturned = () => {
+          this.resetGear('own')
+          this.event('Returned to your pad')
+          this.ctx.audio?.play('materialize', this.ctx.player.body.translation())
+        }
+        return rescue
+      },
+      add: (bounds) => game.add(bounds),
+      remove: (bounds) => game.remove(bounds),
+    })
 
     this.conn.onOpen = () => {
       this.send({
@@ -429,7 +453,7 @@ export class NetClient implements System {
     g.add(this.bigRed)
     g.add(this.pesters)
     g.add(this.marker)
-    g.add(this.bounds)
+    this.seat.start()
     g.add(this.hill)
     this.conn.open()
   }
@@ -504,6 +528,7 @@ export class NetClient implements System {
       return
     }
     this.lasers.reset()
+    this.blast.reset()
     this.bungee.reset()
     this.yoink.reset()
     this.bigRed.reset()
@@ -511,7 +536,48 @@ export class NetClient implements System {
     for (const controller of this.botGear.values()) controller.reset()
   }
 
-  /** Announce a new vehicle kind or colours (the local vehicle itself is main.ts's to swap). */
+  /**
+   * The player switched vehicle in play: `vehicle` replaces the one networking was started
+   * with. Call it after the new vehicle is in the game and the old one is about to be (or has
+   * been) removed, in the same frame. It:
+   *  - lets go of our own cord and anything we are carrying, telling the room, since those
+   *    were holding on from the old vehicle;
+   *  - points everything that reads the local vehicle at the new one (states sent, rams,
+   *    tools, the "it" marker), and rebuilds the pad guard and lava rescue around it;
+   *  - forgets the old vehicle's contact and velocity history, so the swap is not felt as a
+   *    ram or a shove;
+   *  - announces the new kind to the room (and colours, if given), as `setProfile` does, so
+   *    everyone else rebuilds their copy of us.
+   * No reload, no reconnect, and no new protocol: the room sees a profile change. Calling it
+   * with the vehicle already in use only announces the profile.
+   */
+  setPlayer(vehicle: Vehicle, profile: { colors?: PlayerColors } = {}): void {
+    if (vehicle !== this.ctx.player) {
+      // Tools first, while "our vehicle" still means the old one they are attached to. The
+      // one path for the player's own gear (resetGear): setProfile below runs it again when
+      // the kind changed and finds nothing left to let go.
+      try {
+        this.resetGear('own')
+      } catch (err) {
+        // Letting go is a courtesy to the room; it must never stop the swap.
+        console.warn('gear not released on vehicle swap', err)
+      }
+      this.ctx.player = vehicle
+      this.seat.swap(vehicle)
+      this.marker.local = vehicle
+      vehicle.isLocal = true
+      this.velHistory.length = 0
+      this.preVel = [0, 0, 0]
+      for (const r of this.remotes.values()) {
+        r.touching = false
+        r.lastContactAt = -Infinity
+      }
+      this.uiDirty = true
+    }
+    this.setProfile({ kind: vehicle.kind, colors: profile.colors })
+  }
+
+  /** Announce a new vehicle kind or colours (the local vehicle itself is main.ts's to swap; see setPlayer). */
   setProfile(p: { kind?: VehicleKind; colors?: PlayerColors }): void {
     const kind = p.kind ? cleanKind(announcedKind(p.kind)) : null
     if (kind && kind !== this.kind) this.resetGear('own')

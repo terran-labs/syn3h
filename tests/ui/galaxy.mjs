@@ -32,7 +32,7 @@ try {
     const first = await state()
     assert.equal(first.open, true); assert.equal(first.live, true)
     const planets = await page.evaluate(() => window.syn3h.planets.PLANETS.map(p => p.id))
-    assert.deepEqual(first.labels.map(l => l.id).sort(), [...planets, 'custom'].sort(), `${view.name}: a label for each world and the custom one`)
+    assert.deepEqual(first.labels.map(l => l.id).sort(), [...planets].sort(), `${view.name}: a label for each planet; the custom one is hidden for now`)
     for (const label of first.labels) assert.ok(label.x > 0 && label.x < view.viewport.width && label.y > 0 && label.y < view.viewport.height, `${view.name}: ${label.id} is on screen`)
     await page.screenshot({ path: `${out}/${view.name}-home.png` })
     // Dragging empty space swings the view: the worlds move across the screen.

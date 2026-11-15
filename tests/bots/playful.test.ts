@@ -31,15 +31,23 @@ afterEach(() => world.free())
 
 const DT = 0.02
 
+function touching(a: Vehicle, b: Vehicle): boolean {
+  let hit = false
+  for (let i = 0; i < a.body.numColliders(); i++) for (let j = 0; j < b.body.numColliders(); j++) {
+    world.contactPair(a.body.collider(i), b.body.collider(j), m => { if (m.numContacts() > 0) hit = true })
+  }
+  return hit
+}
+
 /**
- * A scripted session: the player drives a slow weave round the middle of the map with four
+ * A scripted session: the player drives slow loops round the middle of the map with four
  * bots in tow, for `seconds`. Returns how often any bot asked to fire or used gear.
  */
 function session(mode: 'free' | 'tag-player-it' | 'tag-bot-it' | 'hill', seconds: number) {
   const game = { world, scene: new Scene(), tick: 0, input: { state: emptyInput() } } as unknown as Game
-  const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); player.id = 'player'
+  const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); player.id = 'player'; player.isLocal = false
   const bots: Vehicle[] = [], brains: BotBrain[] = []
-  let gearUses = 0, beams = 0
+  let gearUses = 0, beams = 0, farthest = 0, travelled = 0
   // Gear the room would offer if it allowed: every kind, in range of anything.
   const hooks: BotGearHooks = {
     available: () => [{ id: 'pester', range: 500, cooldown: 1 }, { id: 'yoink', range: 500, cooldown: 1 }, { id: 'red', range: 500, cooldown: 1, chargeSeconds: 0.5 }, { id: 'bungee', range: 500, cooldown: 1 }],
@@ -56,14 +64,19 @@ function session(mode: 'free' | 'tag-player-it' | 'tag-bot-it' | 'hill', seconds
   for (const brain of brains) brain.match = match
   for (let i = 0; i < seconds / DT; i++) {
     const t = i * DT
-    // The player weaves at a modest speed and stops now and then.
-    Object.assign(player.input, emptyInput(), { y: t % 40 < 32 ? 0.6 : 0, brakes: t % 40 >= 32, x: Math.sin(t * 0.4) * 0.6 })
+    // The player drives slow loops that stay on the map, and stops now and then.
+    Object.assign(player.input, emptyInput(), { y: t % 40 < 32 ? 0.2 : 0, brakes: t % 40 >= 32, x: 0.35 + Math.sin(t * 0.4) * 0.2 })
     for (const brain of brains) { brain.fixedUpdate(DT); if (brain.vehicle.input.fire) beams++ }
     player.fixedUpdate(DT); for (const bot of bots) bot.fixedUpdate(DT)
     world.step()
     player.postPhysics(DT); for (const bot of bots) bot.postPhysics(DT)
+    // In tag the room passes "it" on contact (server/room.ts onRam). Do the same here, so a
+    // bot that is "it" does not stay glued to the player's bumper for five minutes.
+    if (match?.mode === 'tag' && match.it !== player && touching(match.it!, player)) match.it = player
+    const q = player.body.translation(), v = player.body.linvel()
+    farthest = Math.max(farthest, Math.hypot(q.x, q.z)); travelled += Math.hypot(v.x, v.z) * DT
   }
-  return { beams, gearUses }
+  return { beams, gearUses, farthest, travelled }
 }
 
 describe('bots do not fire by default', () => {
@@ -77,7 +90,10 @@ describe('bots do not fire by default', () => {
 
   it.each(['free', 'tag-player-it', 'tag-bot-it', 'hill'] as const)('%s: no beam and no gear across five minutes', (mode) => {
     const r = session(mode, 300)
-    expect(r).toEqual({ beams: 0, gearUses: 0 })
+    // The session is real: the player drives hundreds of metres and stays on the map.
+    expect(r.travelled, JSON.stringify(r)).toBeGreaterThan(300)
+    expect(r.farthest, JSON.stringify(r)).toBeLessThan(SIZE / 2 - 10)
+    expect({ beams: r.beams, gearUses: r.gearUses }).toEqual({ beams: 0, gearUses: 0 })
   }, 120000)
 
   it('with tag beams turned on, the same session does fire: the test can see it', () => {

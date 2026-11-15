@@ -30,7 +30,7 @@ try {
   const settle = settler(page)
   const labels = page.locator('.galaxy-label')
   const planets = await page.evaluate(() => syn3h.planets.PLANETS.map(p => p.id))
-  assert.deepEqual((await labels.evaluateAll(list => list.map(l => l.dataset.world))).sort(), [...planets, 'custom'].sort())
+  assert.deepEqual((await labels.evaluateAll(list => list.map(l => l.dataset.world))).sort(), [...planets].sort())
   assert.equal(await page.locator('.galaxy-label.is-current').getAttribute('data-world'), 'volcanic')
   assert.equal(await page.locator('.planet-card, .planet-orb, .lobby-starfield').count(), 0, 'no planet cards anywhere')
   // The maps are really painted.

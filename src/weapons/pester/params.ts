@@ -58,3 +58,21 @@ export const pesterBump = defineParam({
   id: 'pester.bump', label: 'Chaser bump', group, scope: 'world',
   default: 5, min: 0, max: 15, step: 0.5,
 })
+
+/** The cloud's colour, as a hue in degrees: 200 is light blue. Shared by the room. */
+export const pesterHue = defineParam({
+  id: 'pester.hue', label: 'Chaser colour', group, scope: 'world',
+  default: 200, min: 0, max: 360, step: 1,
+})
+
+/** How big the cloud is, metres from its centre to the edge of the swarm. Looks only. */
+export const pesterSize = defineParam({
+  id: 'pester.size', label: 'Chaser size', group, scope: 'world',
+  default: 1.5, min: 0.4, max: 3, step: 0.05,
+})
+
+/** How bright the cloud glows. */
+export const pesterGlow = defineParam({
+  id: 'pester.glow', label: 'Chaser glow', group, scope: 'world',
+  default: 1, min: 0.2, max: 3, step: 0.05,
+})

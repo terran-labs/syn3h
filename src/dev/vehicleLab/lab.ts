@@ -800,6 +800,15 @@ async function main(): Promise<void> {
     /** For checks: bump sounds played so far. */
     get bumps() { return bumps },
     setFloor(name: FloorName) { studio.setFloor(name); refresh() },
+    /** Set one of the exhibit's own controls by id: a toggle (boolean), a cycle (option index) or a slider (number). */
+    control(id: string, value: number | boolean) {
+      for (const c of entries.flatMap(e => e.model?.controls?.filter(x => x.id === id) ?? [])) {
+        if (c.kind === 'toggle') { c.value = Boolean(value); c.onChange(c.value) }
+        else if (c.kind === 'cycle') { c.index = Number(value); c.onChange(c.index) }
+        else { c.value = Number(value); c.onChange(c.value) }
+      }
+      refresh()
+    },
     setTurntable(on: boolean) { turntable = on; refresh() },
     /** Shows or hides the sidebar (on a phone, opens or closes the sheet). */
     sidebar(open: boolean) { setCollapsed(!open) },

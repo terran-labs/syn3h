@@ -13,6 +13,14 @@ for(const mode of ['desktop','phone']){
   await page.locator('.boot-veil').waitFor({state:'hidden',timeout:120000})
   // The lobby offers planets, not vehicles: no vehicle control, panel or preview anywhere in it.
   assert.equal(await page.locator('[data-goto=vehicle], [data-panel=vehicle], [name=vehicle], .shell-vehicle, .shell-vehicle-preview, canvas[aria-label="Selected vehicle preview"]').count(),0,'the lobby shows no vehicle control')
+  // Three buttons at the bottom and no more; Settings stays simple, with no world shaping.
+  assert.deepEqual(await page.locator('.galaxy-links button').allInnerTexts().then(all=>all.map(text=>text.trim().toLowerCase())),['multiplayer','settings','about'],'the lobby has exactly three buttons')
+  assert.equal(await page.locator('[data-panel=settings] [data-goto=worlds], [data-panel=settings] [data-goto=advanced]').count(),0,'Settings offers no world shaping')
+  await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-lobby.png`})
+  // The lobby lists the planet recipes and nothing else: "Shape your own" is hidden for now.
+  const lobbyWorlds=await page.evaluate(()=>({labels:[...document.querySelectorAll('.galaxy-label')].map(chip=>chip.dataset.world),forming:syn3h.shell.galaxy.options.worlds.filter(world=>world.forming).length,text:document.querySelector('.galaxy-labels').textContent}))
+  assert.ok(lobbyWorlds.labels.length>0&&!lobbyWorlds.labels.includes('custom')&&lobbyWorlds.forming===0,'the lobby lists only the planet recipes')
+  assert.doesNotMatch(lobbyWorlds.text,/shape your own/i)
   await page.locator('.galaxy-label.is-current').focus();await page.keyboard.press('Enter')
   await page.waitForFunction(()=>syn3h.shell.playing&&syn3hNet.connected&&!syn3h.shell.dropping,null,{timeout:120000})
   assert.ok(sockets.includes(`ws://127.0.0.1:${process.env.UX_ROOM_PORT??'5298'}/ws?room=${room}`),'connected to the room server started for this run')
@@ -23,6 +31,21 @@ for(const mode of ['desktop','phone']){
    assert.ok(await control.evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===el}),'top controls actually exposed')
   }
   assert.deepEqual(await vehicle.locator('option').allInnerTexts(),['Buggy','Jet','Hovercraft','Tank'],'the in-play selector offers the four vehicles')
+  // Vehicle colours are chosen in play, beside the selector: the vehicle repaints at once with
+  // no reload, and the choice is saved and announced to the room once the picker settles.
+  if(mode==='desktop'||await page.locator('.wi-swatch input[data-tint=body]').isVisible()){
+   const loadedAt=await page.evaluate(()=>performance.timeOrigin)
+   await page.evaluate(()=>{window.__profiles=[];const net=window.syn3hNet,announce=net.setProfile.bind(net);net.setProfile=profile=>{window.__profiles.push(profile);return announce(profile)}})
+   assert.equal(await page.locator('.wi-swatch input[data-tint=body]').inputValue(),await page.evaluate(()=>syn3h.player.colors.body),'the swatch shows the vehicle\'s colour')
+   await page.locator('.wi-swatch input[data-tint=body]').fill('#ff00aa')
+   await page.waitForFunction(()=>syn3h.player.colors.body==='#ff00aa',null,{timeout:5000})
+   await page.locator('.wi-swatch input[data-tint=accent]').fill('#00ffcc')
+   await page.waitForFunction(()=>syn3h.player.colors.accent==='#00ffcc',null,{timeout:5000})
+   await page.waitForFunction(()=>window.__profiles.some(p=>p.colors?.body==='#ff00aa'&&p.colors?.accent==='#00ffcc')&&JSON.parse(localStorage.getItem('syn3h.vehicle')??'{}').accentColor==='#00ffcc',null,{timeout:5000})
+   assert.ok(await page.evaluate(()=>window.__profiles.length)<=2,'the room is told once the picker settles, not on every step')
+   assert.equal(await page.evaluate(()=>performance.timeOrigin),loadedAt,'changing colour does not reload the page')
+   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-tint.png`})
+  }
   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-selectors.png`})
   await gear.selectOption('bungee');await page.waitForFunction(()=>syn3hNet.gear.current==='bungee')
   await gear.selectOption('yoink');await page.waitForFunction(()=>syn3hNet.gear.current==='yoink')

@@ -151,7 +151,7 @@ describe('gear reset', () => {
     } finally { red.dispose(); s.close() }
   })
 
-  it('Pesters removes every orb in flight and its mesh', () => {
+  it('Pesters removes every one in flight', () => {
     params.set('pester.allowed', true)
     const s = setup()
     const pesters = new Pesters(s.game, {
@@ -167,7 +167,8 @@ describe('gear reset', () => {
       expect(pesters.count).toBe(0)
       expect(pesters.list()).toEqual([])
       expect(pesters.mine).toBe(0)
-      expect(s.game.scene.children.length).toBe(before - 2)
+      // Every Pester is drawn by the same two instanced meshes, which stay in the scene.
+      expect(s.game.scene.children.length).toBe(before)
     } finally { pesters.dispose(); s.close() }
   })
 

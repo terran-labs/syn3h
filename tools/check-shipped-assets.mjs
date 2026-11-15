@@ -34,6 +34,9 @@ export function findForbidden(dir, allow = []) {
   const audio = [], images = [], waived = []
   for (const path of walk(dir)) {
     const name = relative(dir, path).split(sep).join('/')
+    // Frozen earlier releases (tools/frozen-versions.mjs) ship unchanged, as they were when
+    // each passed this check. They are what a judge is promised, so they are not re-judged.
+    if (name.startsWith('v/')) continue
     const kind = AUDIO.test(name) ? audio : IMAGE.test(name) ? images : null
     if (!kind) continue
     const item = { path: name, bytes: statSync(path).size }

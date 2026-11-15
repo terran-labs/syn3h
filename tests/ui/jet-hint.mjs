@@ -25,7 +25,7 @@ try {
     await page.waitForFunction(() => window.syn3h?.game?.tick > 40, null, { timeout: 120000 })
     await page.waitForTimeout(800)
     const first = await card(page)
-    assert.match(first.text, view.hasTouch ? /^Hold THR \+ to lift off/ : /^Hold R to lift off/, `${view.name}: the card after Play leads with lift-off`)
+    assert.match(first.text, view.hasTouch ? /^Hold THR \+ to lift off/ : /^Hold E to lift off/, `${view.name}: the card after Play leads with lift-off`)
     await page.screenshot({ path: `${out}/${view.name}-card.png` })
     await page.waitForTimeout(6500) // the card leaves; the jet sits on its gear
     assert.ok(await altitude(page) < 2.5, `${view.name}: the jet is parked`)
@@ -38,7 +38,7 @@ try {
     } else await page.keyboard.down('w')
     await page.waitForFunction(() => document.querySelector('.spawn-help.is-hint:not([hidden])'), null, { timeout: 8000 })
     const hint = await card(page)
-    assert.equal(hint.text, view.hasTouch ? 'Hold THR + to lift off' : 'Hold R to lift off')
+    assert.equal(hint.text, view.hasTouch ? 'Hold THR + to lift off' : 'Hold E to lift off')
     if (view.hasTouch) assert.equal(await page.locator('.touch-actions [data-action=throttleUp]').evaluate(b => b.classList.contains('is-hinted')), true, 'the THR + button pulses')
     await page.screenshot({ path: `${out}/${view.name}-hint.png` })
     if (view.hasTouch) await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); else await page.keyboard.up('w')

@@ -159,6 +159,7 @@ total for all copies. Counts cover visible meshes only:
 | `setMotion(on)`, `setTurntable(on)`, `setFloor('Gloss' \| 'Shadow')` | As the buttons. |
 | `setIdle(seconds)`, `idle()` | Set the wait before the idle show (0 is off), and read whether it is running. |
 | `setLod(i)` | Detail level index, or -1 for Auto. |
+| `control(id, value)` | Sets one of the exhibit's own controls: a toggle (boolean), a cycle (option index) or a slider (number). `control('game.special', 1)` opens a game vehicle's wings. |
 | `sidebar(open)` | Shows or hides the sidebar (on a phone, opens or closes the sheet). |
 | `param(id, value?)` | Sets a game parameter; with no value, resets it. |
 | `paint(body, accent)` | Colours as numbers. |

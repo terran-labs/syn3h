@@ -4,7 +4,7 @@ import {uniform} from 'three/tsl'
 import {params} from '../../shared/params'
 import {vehicleShading} from '../../src/core/quality'
 import {LOD_FAR,LOD_NEAR,detailLevel,mergeStatic,mergedSurfaces} from '../../src/vehicles/skins/mergeStatic'
-import {TRACK_LUGS,applyShowroom,paintCanopy,paintFlakes,paintScaleDepth,paintScaleSize,paintSeams,roleOf,setRole,wrapTrackScroll} from '../../src/vehicles/skins/showroom'
+import {TRACK_LUGS,showroomWarm,applyShowroom,paintCanopy,paintFlakes,paintScaleDepth,paintScaleSize,paintSeams,roleOf,setRole,wrapTrackScroll} from '../../src/vehicles/skins/showroom'
 
 const box=()=>new T.BoxGeometry(1,1,1)
 const std=(name:string,color=0x336699)=>{const m=new T.MeshStandardMaterial({color});m.name=name;return m}
@@ -85,6 +85,73 @@ describe('showroom vehicle shading',()=>{
   detail(27,true,2);expect(body.material).toBe(paint)
   detail(24,true,2);expect(body.material).toBe(near)
   detail(200,false,2);expect(body.material).toBe(local)
+  dispose()
+ })
+ it('warms a far vehicle\'s close-up materials on proxies, in turn, so arriving only swaps references',()=>{
+  params.set(vehicleShading.def.id,3)
+  const make=()=>{
+   const owner=new T.Group(),root=new T.Group();owner.add(root);scene.add(owner);owner.position.set(40*++made,3,-7)
+   // A far vehicle hides its close-up model and shows a distance model: proxies must not hang from it.
+   root.visible=false
+   let detail:(distance:number,remote:boolean,level:number)=>void=()=>{}
+   owner.userData.registerVehicleDetail=(fn:typeof detail)=>{detail=fn;return()=>{}}
+   const paint=setRole(std('Body'),'paint'),body=new T.Mesh(box(),paint);root.add(body)
+   const wheels=new T.InstancedMesh(box(),setRole(std('Tyres'),'tyre'),4);root.add(wheels)
+   let decorated=0
+   const dispose=applyShowroom(root,()=>{decorated++})
+   const group=()=>scene.children.find(o=>o.name==='Showroom warm'&&o.position.x===owner.position.x)
+   const proxies=()=>group()?.children as T.Mesh[]|undefined
+   const draw=()=>proxies()?.forEach(p=>(p.onBeforeRender as unknown as ()=>void)())
+   return {root,body,wheels,paint,dispose,proxies,group,draw,tick:(d:number,level=2)=>detail(d,true,level),decorations:()=>decorated}
+  }
+  const scene=new T.Scene();let made=0
+  const before={...showroomWarm},a=make(),b=make()
+  // Both far. The first to ask takes the turn; the other waits and builds nothing.
+  a.tick(80);b.tick(80)
+  expect(a.body.material,'still plain while far').toBe(a.paint)
+  expect(a.proxies()?.length).toBe(2);expect(b.proxies()).toBeUndefined()
+  const [bodyProxy,wheelProxy]=a.proxies()!,near=bodyProxy.material
+  expect(near).toBeInstanceOf(T.MeshPhysicalNodeMaterial);expect(bodyProxy.geometry).toBe(a.body.geometry)
+  expect(wheelProxy).toBeInstanceOf(T.InstancedMesh);expect(bodyProxy.castShadow).toBe(true);expect(bodyProxy.frustumCulled).toBe(false)
+  // In the scene at the vehicle's position, not under the hidden model, and far too small to see.
+  expect(a.group()!.parent).toBe(scene);expect(a.group()!.position.toArray()).toEqual([40,3,-7]);expect(a.group()!.scale.x).toBeLessThan(.01)
+  expect(a.root.children).toHaveLength(2)
+  // Updates without a draw (the world behind the lobby) do not count.
+  a.tick(80);a.tick(80);expect(a.proxies()?.length).toBe(2)
+  for(let i=0;i<3;i++){a.draw();a.tick(80);b.tick(80)}
+  expect(a.proxies(),'proxies gone after three drawn frames').toBeUndefined()
+  expect(showroomWarm.warmed-before.warmed).toBe(1)
+  // Now the second vehicle has the turn.
+  b.tick(80);expect(b.proxies()?.length).toBe(2)
+  // Arriving: the mesh takes the very material that was warmed, and nothing new is built or decorated.
+  const decorations=a.decorations()
+  a.tick(20);expect(a.body.material).toBe(near);expect(a.wheels.material).toBe(wheelProxy.material);expect(a.decorations()).toBe(decorations)
+  a.tick(80);a.tick(80);expect(a.proxies(),'no second warm at the same tier and level').toBeUndefined()
+  // A graphics level change replaces every pipeline: warm again, reusing the same materials.
+  for(let i=0;i<3;i++){b.draw();b.tick(80)}
+  a.tick(80,1);expect(a.proxies()?.[0].material).toBe(near)
+  // Coming close mid-warm cancels it; a vehicle that is never drawn gives up its turn.
+  a.tick(10,1);expect(a.proxies()).toBeUndefined();expect(showroomWarm.cancelled-before.cancelled).toBe(1)
+  b.tick(80,1);for(let i=0;i<200;i++)b.tick(80,1)
+  expect(b.proxies()).toBeUndefined();expect(showroomWarm.abandoned-before.abandoned).toBe(1)
+  a.dispose();b.dispose()
+  expect(showroomWarm.proxies-before.proxies,'no proxy left in a scene').toBe(0)
+  expect(scene.children.filter(o=>o.name==='Showroom warm')).toHaveLength(0)
+  // A model that is in no scene cannot be drawn, so it does not hold the turn.
+  const loose=new T.Group(),lone=new T.Group();loose.add(lone);lone.add(new T.Mesh(box(),setRole(std('Body'),'paint')))
+  let tick:(distance:number,remote:boolean,level:number)=>void=()=>{}
+  loose.userData.registerVehicleDetail=(fn:typeof tick)=>{tick=fn;return()=>{}}
+  const drop=applyShowroom(lone,()=>{});tick(80,true,2);tick(80,true,2)
+  expect(showroomWarm.proxies-before.proxies).toBe(0);drop()
+ })
+ it('gives a new set the sky map as it is built, so first use does not ask for a recompile',()=>{
+  params.set(vehicleShading.def.id,2)
+  const scene=new T.Scene(),sky=new T.Texture();scene.environment=sky
+  const root=new T.Group();scene.add(root)
+  const body=new T.Mesh(box(),setRole(std('Body'),'paint'));root.add(body)
+  const dispose=applyShowroom(root,()=>{})
+  const material=body.material as T.MeshStandardMaterial
+  expect(material.envMap).toBe(sky);expect(material.version).toBe(0)
   dispose()
  })
  it('keeps emission a skin added to a merged material, at every tier',()=>{

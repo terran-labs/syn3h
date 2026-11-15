@@ -182,7 +182,20 @@
          changes with each loading phase, and after eight seconds a line that says it is
          still working. All of it is here in the page, so it shows before any script. */
       html[data-boot] .boot-veil { grid-template-rows: 1fr auto auto auto auto 1.2fr; justify-items: center; gap: 0; padding: 24px; text-align: center; }
-      .boot-wordmark { grid-row: 2; width: min(300px, 62vw); height: auto; overflow: visible; fill: #02040a; margin-bottom: clamp(22px, 5vh, 44px); filter: drop-shadow(0 0 2px #64d2ff) drop-shadow(0 0 8px #2997ff) drop-shadow(0 0 22px #0b6fd6); }
+      /* The wordmark arrives as the lobby's logo does (src/ui/brand/logoRenderer.ts): first
+         the dark silhouette with its pale edge, over 1.5 s, then its blue glow, more slowly,
+         over 3 s. Both start invisible, so nothing shows on the first frame. CSS only: it
+         costs nothing before first paint. When loading ends it leaves quickly, in 0.3 s, ahead
+         of the veil's own 0.9 s, so two logos are never seen at once: that fade is on the
+         element's opacity, which neither animation touches, so it goes out from wherever its
+         fade in has reached without first snapping to full. The lobby's logo, held back until
+         loading ends, then starts its own fade from nothing in its own place. */
+      .boot-wordmark { grid-row: 2; width: min(300px, 62vw); height: auto; overflow: visible; fill: #02040a; margin-bottom: clamp(22px, 5vh, 44px); filter: drop-shadow(0 0 2px #64d2ff) drop-shadow(0 0 8px #2997ff) drop-shadow(0 0 22px #0b6fd6); animation: boot-wordmark-glow 3s cubic-bezier(0.45, 0, 0.55, 1) 1.5s both; }
+      .boot-wordmark path { stroke: #bcc4ff; stroke-width: 1.5px; vector-effect: non-scaling-stroke; animation: boot-wordmark-silhouette 1.5s cubic-bezier(0.45, 0, 0.55, 1) both; }
+      @keyframes boot-wordmark-silhouette { from { opacity: 0; } to { opacity: 1; } }
+      @keyframes boot-wordmark-glow { from { filter: drop-shadow(0 0 2px rgb(100 210 255 / 0)) drop-shadow(0 0 8px rgb(41 151 255 / 0)) drop-shadow(0 0 22px rgb(11 111 214 / 0)); } }
+      html[data-boot="done"] .boot-wordmark { opacity: 0; transition: opacity 0.3s ease; }
+      @media (prefers-reduced-motion: reduce) { .boot-wordmark, .boot-wordmark path { animation: none; } }
       .boot-mark { grid-row: 3; width: 116px; height: 116px; animation-delay: 0s; }
       .boot-ring { stroke: color-mix(in srgb, var(--theme-text-primary) 30%, transparent); stroke-width: 1.5; }
       .boot-arc { stroke-width: 3; }
@@ -191,7 +204,7 @@
       .boot-status { grid-row: 4; margin-top: 20px; letter-spacing: 0.02em; }
       /* Hidden for eight seconds, then it fades in by itself: no script needed. */
       .boot-still { grid-row: 5; margin-top: 8px; font-size: 14px; font-weight: 400; color: color-mix(in srgb, var(--theme-text-primary) 62%, transparent); opacity: 0; animation: boot-mark-in 0.6s ease 8s forwards; }
-      html[data-boot="done"] .boot-wordmark, html[data-boot="done"] .boot-status, html[data-boot="done"] .boot-still { transition: opacity 0.4s ease; opacity: 0; animation: none; }
+      html[data-boot="done"] .boot-status, html[data-boot="done"] .boot-still { transition: opacity 0.4s ease; opacity: 0; animation: none; }
     </style>
     <script>
       // Never zoom, part 3. Safari ignores user-scalable=no for pinches, so stop them where

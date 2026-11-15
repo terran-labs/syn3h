@@ -256,12 +256,14 @@ describe('chasing with the route planner', () => {
     brain.mind = new Mind(bot, terrain, createGroundPilot(bot), { seed: 'chaser', navigator: brain.navigator })
     params.set('bots.freeSpirit', 0)
     let wetTime = 0, nearest = Infinity
-    for (let i = 0; i < 3000 && nearest > 6; i++) {
+    // At default aggression a bot stops a polite gap short of its target (KEEP_GAP, 7 m
+    // centre to centre) instead of ramming it: arriving is getting within 10 m.
+    for (let i = 0; i < 3000 && nearest > 10; i++) {
       step(); const p = bot.body.translation()
       if (depth(p.x, p.z) > 0.3) wetTime += DT
       nearest = Math.min(nearest, Math.hypot(p.x, p.z + 100))
     }
-    expect(wetTime).toBeLessThan(0.5); expect(nearest).toBeLessThan(6); expect(brain.rescues).toBe(0)
+    expect(wetTime).toBeLessThan(0.5); expect(nearest).toBeLessThan(10); expect(brain.rescues).toBe(0)
   })
 })
 

@@ -1,4 +1,5 @@
 import { GEAR_LABELS, type GearRack, type GearId } from '../weapons/Gear'
+import { GearSelector, type GearSource } from './gear/GearSelector'
 import { postTier } from '../fx/post/gate'
 import { PerformancePanel } from './PerformancePanel'
 import type { PauseControl } from './pauseControl'
@@ -50,8 +51,21 @@ import './shell.css'
 import './exploration.css'
 import './theme-halo.css'
 
+/**
+ * Whether the lobby offers the "Shape your own" Custom planet. Off at the owner's direction,
+ * 15 November 2026: "hide the 'Shape Your Own' option for now. I want the lobby simple,
+ * elegant, and visually stunning." Everything it needs is still in place here and in the
+ * galaxy, so turning this on brings it back. Worlds are shaped in play, in the World card.
+ */
+const OFFER_CUSTOM_PLANET: boolean = false
 /** Keys that mean "I want to drive": they resume a pause and capture the cursor. */
 const DRIVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
+/**
+ * The lobby's bottom buttons (the owner, 15 November 2026): Multiplayer, Settings and About,
+ * nothing else. Join by QR lives inside Multiplayer ("Show on screen"), and shaping a world
+ * returns with OFFER_CUSTOM_PLANET.
+ */
+const LOBBY_LINKS = `${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''}<button data-goto="multiplayer">Multiplayer</button><button data-goto="settings">Settings</button><button data-goto="about">About</button>`
 const back = '<button type="button" class="panel-back link-button" data-goto="index">Back</button>'
 /** `__SYN3H_BUILD__` is an optional build-time constant (a date or tag) from the bundler. */
 declare const __SYN3H_BUILD__: string | undefined
@@ -115,7 +129,7 @@ export class Shell implements System {
           <h1 tabindex="-1">Welcome to the future.</h1>
           <div class="lobby-message"><p>You’ve discovered a community where all are welcome, and new ideas are celebrated.</p><p class="lobby-room-label"></p><div class="invite-qr menu-qr"></div><p class="invite-link"></p><button class="shell-invite link-button">Copy invite link</button></div>
           <p class="lobby-unsupported" hidden>Syn3h needs WebGL 2, which this browser does not offer. A current Safari, Chrome, Firefox or Edge will run it.</p><nav class="lobby-destinations" aria-label="Worlds"><button class="return-game is-primary" data-resume hidden>Return to Game</button></nav>
-          <div class="lobby-links"><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR</button><button data-goto="settings">Settings</button><button data-goto="about">About</button></div>
+          <div class="lobby-links">${LOBBY_LINKS}</div>
         </section>
         <section data-panel="explore">${heading('Prepare to Explore')}
           <form class="shell-form"><label for="shell-name">Player name</label><input id="shell-name" name="playerName" maxlength="24" autocomplete="nickname" placeholder="Explorer">
@@ -128,18 +142,19 @@ export class Shell implements System {
           <fieldset class="world-controls"><legend>Sky</legend><div class="sky-presets">${SKY_PRESET_NAMES.map(name => `<button type="button" data-sky="${name}">${name}</button>`).join('')}</div><label for="sky-time">Time of day <output id="sky-time-value"></output></label><input id="sky-time" type="range" min="0" max="24" step="0.05"></fieldset>
           <p class="world-lock-note" hidden>Sliders locked by host.</p><button data-goto="explore">Explore this world ›</button>${back}
         </section>
-        <section data-panel="settings">${heading('Settings')}<div class="settings-links"><button data-goto="music">Music & sound</button><button data-goto="worlds">World & sky</button><button data-goto="advanced">Advanced sliders</button><button class="presentation-toggle" aria-pressed="false">Presentation · P</button></div><fieldset class="host-controls"><legend>Host</legend><label class="host-lock" hidden><input type="checkbox" id="host-lock"> Lock shared sliders</label><p class="host-note"></p><button class="world-reset" type="button">Reset world to defaults</button></fieldset>${back}</section>
+        <section data-panel="settings">${heading('Settings')}<div class="settings-links"><button data-goto="music">Music & sound</button>${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">World & sky</button><button data-goto="advanced">Advanced sliders</button>' : ''}<button class="presentation-toggle" aria-pressed="false">Presentation · P</button></div><fieldset class="host-controls"><legend>Host</legend><label class="host-lock" hidden><input type="checkbox" id="host-lock"> Lock shared sliders</label><p class="host-note"></p><button class="world-reset" type="button">Reset world to defaults</button></fieldset>${back}</section>
         <section data-panel="music">${heading('Music & Sound')}<label for="music-volume">Music volume <output id="music-volume-value"></output></label><input id="music-volume" type="range" min="0" max="1" step="0.01">${[masterVolume,effectsVolume,engineVolume,dirtVolume,windVolume,worldVolume,remoteVolume,cuesVolume].map(p=>`<label>${p.def.label}<input data-audio-param="${p.def.id}" type="range" min="0" max="1" step="0.01" value="${p.value}"></label>`).join('')}<button class="shell-mute" aria-pressed="false">Mute all audio</button><p class="panel-note">The music is generated as you play and follows what you do. It starts with your first click or key press.</p>${back}</section>
-        <section data-panel="multiplayer">${heading('Multiplayer')}<label class="mode-control" hidden>Game mode<select id="game-mode"><option value="0">Tag</option><option value="1">King of the Hill</option></select></label><p class="multiplayer-room"></p><div class="invite-qr"></div><p class="invite-link"></p><button class="shell-invite">Copy invite link</button><button data-join>Show on screen · J</button><div class="shell-scoreboard" aria-label="Player scores"></div>${back}</section>
+        <section data-panel="multiplayer">${heading('Multiplayer')}<label class="mode-control" hidden>Game mode<select id="game-mode"><option value="2">Explore</option><option value="0">Tag game</option><option value="1">King of the Hill</option></select></label><p class="multiplayer-room"></p><div class="invite-qr"></div><p class="invite-link"></p><button class="shell-invite">Copy invite link</button><button data-join>Show on screen · J</button><div class="shell-scoreboard" aria-label="Player scores"></div>${back}</section>
         <section data-panel="advanced">${heading('Advanced Settings')}<p class="world-lock-note" hidden>Sliders locked by host.</p><div class="advanced-host"></div>${back}</section>
         <section data-panel="about">${heading('About Syn3h')}${creditsHtml}${back}</section>
       </div>
       <footer class="lobby-footer"><span class="shell-message" role="status" aria-live="polite"></span><span class="build-line">${buildLine}</span></footer>
       </div>
-      <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby"><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR</button><button data-goto="settings">Settings</button><button data-goto="about">About</button></nav></div>
+      <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby">${LOBBY_LINKS}</nav></div>
     </section>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open the panels" aria-pressed="false"><span aria-hidden="true">≡</span><span class="nav-label"> Panels</span></button></nav>
+    <div class="exit-confirm" role="alertdialog" aria-modal="true" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-text" hidden><div class="exit-confirm-card"><strong id="exit-confirm-title">Leave this world?</strong><p id="exit-confirm-text">You will return to the galaxy.</p><div class="exit-confirm-actions"><button type="button" class="exit-stay">Stay</button><button type="button" class="exit-leave">Leave world</button></div></div></div>
     <button type="button" class="pause-veil" hidden><strong>Paused</strong><span class="pause-how">Click to resume</span><small hidden>The world carries on without you.</small></button>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
@@ -153,6 +168,16 @@ export class Shell implements System {
     this.board = new Scoreboard(this.element.querySelector('.shell-scoreboard')!, text => {this.toast(text);if(/joined/i.test(text))audio.cue('join');else if(/left/i.test(text))audio.cue('leave');else if(/tagged| is it/i.test(text))audio.cue('tag')})
     this.hudBoard = new Scoreboard(this.element.querySelector('.hud-scoreboard')!, () => {})
     this.touch = new TouchControls(game.input); this.element.classList.toggle('has-touch', this.touch.available)
+    // The gear drum at the centre-left edge, in both cursor states: the gear in hand, its
+    // neighbours, and the controls that apply right now. On touch it adds buttons for the
+    // gear's extra actions (the Grapple's Let out and Let go).
+    this.gearSelector = new GearSelector(this.element, () => this.gearSource(), { touch: this.touch.available, onSelect: () => this.audio.cue('click') })
+    // Zorb mode sits under the drum, with its key and its state, so it can be found.
+    this.zorbToggle.type = 'button'; this.zorbToggle.className = 'zorb-toggle'; this.zorbToggle.setAttribute('aria-pressed', 'false')
+    this.zorbToggle.innerHTML = '<kbd>X</kbd><span>Zorb</span><b>Off</b>'
+    this.zorbToggle.title = 'Zorb mode: ride inside a ball. Press X to switch.'
+    this.zorbToggle.addEventListener('click', () => { game.input.toggleZorb(); this.audio.cue('click'); this.zorbToggle.blur() }, { signal: this.abort.signal })
+    this.element.append(this.zorbToggle)
     const signal = this.abort.signal
     this.followPointer(signal)
     this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; if (this.galaxy) this.galaxy.enabled = true
@@ -167,6 +192,8 @@ export class Shell implements System {
       // Vehicles are chosen in play only (the lobby offers planets). Four, one design each.
       vehicles: () => ({ options: PLAY_VEHICLES, current: this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind }),
       onVehicle: id => this.switchVehicle(id as VehicleKind),
+      colors: () => this.tintView,
+      onColor: (key, value) => this.setTint(key, value),
       onSaveWorld: () => this.saveWorld(),
     })
     // The owner's rule, 15 November 2026: "Panels being open or closed should be a simple
@@ -176,14 +203,21 @@ export class Shell implements System {
     this.inspector.open = false
     const railTop = this.inspector.element.querySelector('.wi-top')!
     const navigation = document.createElement('div'); navigation.className = 'rail-navigation'
-    navigation.innerHTML = '<button type="button" class="exit-world">↗ Exit world</button><button type="button" class="rail-pause">Pause</button><button type="button" class="rail-close" aria-label="Return to driving">×</button>'
+    // The header is one line: where you are, a search, Pause and the way back to driving.
+    // Leaving the world is rarer and final, so it sits at the foot with the world actions.
+    navigation.innerHTML = '<strong class="rail-world"></strong><button type="button" class="rail-pause">Pause</button><button type="button" class="rail-close" aria-label="Return to driving">×</button>'
     railTop.prepend(navigation)
+    navigation.querySelector('.rail-world')!.after(railTop.querySelector('.wi-search')!)
     const players = document.createElement('details'); players.className = 'rail-players'
     players.innerHTML = '<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><label class="rail-diagnostics"><input type="checkbox"> Connection diagnostics</label></div>'
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
     railTop.after(players)
     this.performancePanel = new PerformancePanel(this.element, () => this.showPanels())
     railTop.querySelector('.wi-actions')!.append(this.performancePanel.toggle)
+    const foot = document.createElement('div'); foot.className = 'rail-foot wi-glass'
+    foot.innerHTML = '<button type="button" class="exit-world">Leave world</button>'
+    foot.prepend(railTop.querySelector('.wi-actions')!)
+    this.inspector.element.querySelector('.wi-cards')!.after(foot)
     players.after(this.performancePanel.element)
     const gear = document.createElement('select'); gear.className = 'gear-select'; gear.setAttribute('aria-label', 'Gear'); gear.disabled = true
     this.inspector.element.querySelector('.wi-gear-slot')!.append(gear)
@@ -191,7 +225,13 @@ export class Shell implements System {
       const rack = (window as unknown as { syn3hNet?: { gear?: GearRack } }).syn3hNet?.gear
       if (rack?.list().includes(gear.value as GearId)) { rack.select(gear.value as GearId); this.audio.cue('click') }
     }, { signal })
-    navigation.querySelector('.exit-world')!.addEventListener('click', () => this.openMenu(), { signal })
+    // Exit world asks first (the owner, 15 November 2026): one stray click on the panels must
+    // not throw the player back to the galaxy. Code that calls openMenu() itself is not asked.
+    foot.querySelector('.exit-world')!.addEventListener('click', () => this.askExit(), { signal })
+    const exitConfirm = this.element.querySelector<HTMLElement>('.exit-confirm')!
+    exitConfirm.addEventListener('click', event => { if (event.target === exitConfirm) this.answerExit(false) }, { signal })
+    exitConfirm.querySelector('.exit-stay')!.addEventListener('click', () => this.answerExit(false), { signal })
+    exitConfirm.querySelector('.exit-leave')!.addEventListener('click', () => this.answerExit(true), { signal })
     players.querySelector('.rail-invite')!.addEventListener('click', () => this.openJoin(), { signal })
     players.querySelector('input')!.addEventListener('change', event => params.set(diagnostics.def.id, (event.target as HTMLInputElement).checked), { signal })
     const music = document.createElement('div'); music.className = 'rail-music'
@@ -368,7 +408,7 @@ export class Shell implements System {
   private inspectorSummary(id: string): string {
     if (id === 'world') return `${currentPlanet().label} · ${planetName(worldSeed.value)}`
     if (id === 'sky') { const hour = Number(params.get('sun.timeOfDay')?.value ?? 0); return `${String(Math.floor(hour) % 24).padStart(2, '0')}:${String(Math.floor((hour % 1) * 60)).padStart(2, '0')}` }
-    if (id === 'game') { const bots = Number(params.get('bots.count')?.value ?? 0); return `${Number(params.get('game.mode')?.value ?? 0) === 1 ? 'King of the Hill' : 'Tag'}${bots ? ` · ${bots} ${bots === 1 ? 'bot' : 'bots'}` : ''}` }
+    if (id === 'game') { const bots = Number(params.get('bots.count')?.value ?? 0); const playing = Number(params.get('game.mode')?.value ?? 2); return `${playing === 1 ? 'King of the Hill' : playing === 0 ? 'Tag game' : 'Explore'}${bots ? ` · ${bots} ${bots === 1 ? 'bot' : 'bots'}` : ''}` }
     if (id === 'vehicles') { const current = this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind; return PLAY_VEHICLES.find(vehicle => vehicle.id === current)?.label ?? '' }
     return id === 'you' ? 'yours only' : ''
   }
@@ -380,6 +420,18 @@ export class Shell implements System {
   private switchVehicle(kind: VehicleKind): void {
     if (kind === this.activeVehicleKind || (kind === 'buggy-syn3h' && this.activeVehicleKind === 'buggy')) return
     saveVehicleChoice({ ...this.choice, vehicleKind: kind })
+    // Swap in place when the game offers it: same spot, heading and speed, no reload. The swap
+    // returns the vehicle now being driven, or null when it cannot run (bots or networking
+    // cannot follow yet). On null, or if it throws, fall through to the reload below, which
+    // always works. main.ts re-points hints, audio and the readouts through setPlayer.
+    // Every buggy name is the buggy (the rule of canonicalVehicleKind in src/vehicles).
+    const family = (name: string) => name === 'jet' || name === 'hovercraft' || name === 'tank' ? name : 'buggy'
+    if (this.vehicleSwap) {
+      try {
+        const next = this.vehicleSwap(kind)
+        if (next && family(next.kind) === family(kind)) { this.choice.vehicleKind = kind; this.audio.cue('click'); return }
+      } catch (error) { console.warn('Vehicle swap failed; reloading instead', error) }
+    }
     try { sessionStorage.removeItem(RESUME_KEY) } catch { /* Storage is optional. */ }
     // The resume session saves the old vehicle again while the page unloads (pagehide, then
     // visibilitychange), which would undo this choice. These listeners are registered after
@@ -390,6 +442,9 @@ export class Shell implements System {
     const url = new URL(location.href); url.searchParams.delete('vehicle'); url.searchParams.set('autoplay', '1')
     location.replace(url)
   }
+  private vehicleSwap?: (kind: VehicleKind) => Vehicle | null
+  /** main.ts hands over the in-place vehicle swap. Without it the selector reloads the page. */
+  setVehicleSwap(swap: (kind: VehicleKind) => Vehicle | null): void { this.vehicleSwap = swap }
   setLoadingMessages(messages: string[]): void { bootLoading?.setMessages(messages) }
   setParamPanel(panel: ParamPanel): void { this.paramPanel = panel }
   showPanel(id: string): void {
@@ -462,6 +517,7 @@ export class Shell implements System {
   private dropping = false
   openMenu(panel = 'index'): void {
     if (!this.started) return
+    if (this.exitAsking) { this.exitAsking = false; this.element.querySelector<HTMLElement>('.exit-confirm')!.hidden = true }
     this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; if (this.galaxy) this.galaxy.enabled = true
     this.releaseCursor()
     this.game.input.suspended = true; this.game.input.mouseFire = false; this.game.input.poll(); this.touch.enabled = false
@@ -588,6 +644,41 @@ export class Shell implements System {
     this.enteringByGesture = true
     void this.captureCursor(true)
   }
+  private exitAsking = false
+  /** Show "Leave this world?". Stay has the focus, so Enter, Escape and a click outside all stay. */
+  private askExit(): void {
+    if (!this.started || this.menuVisible || this.exitAsking || this.userPaused) return
+    this.exitAsking = true
+    const dialog = this.element.querySelector<HTMLElement>('.exit-confirm')!
+    dialog.hidden = false
+    this.game.input.suspended = true; this.game.input.mouseFire = false
+    dialog.querySelector<HTMLButtonElement>('.exit-stay')!.focus({ preventScroll: true })
+  }
+  private answerExit(leave: boolean): void {
+    if (!this.exitAsking) return
+    this.exitAsking = false
+    this.element.querySelector<HTMLElement>('.exit-confirm')!.hidden = true
+    this.game.input.suspended = this.userPaused || this.menuVisible || this.inviteOpen
+    if (leave) this.openMenu()
+    else this.element.querySelector<HTMLButtonElement>('.exit-world')?.focus({ preventScroll: true })
+  }
+  /**
+   * Vehicle colours are chosen in play, beside the vehicle selector (the lobby offers only
+   * planets). The vehicle repaints on every movement of the picker; the choice is saved and
+   * announced to the room once the picker has been still for a moment, not on every step.
+   * Set by initGameShell: `commit` is true for that settled call.
+   */
+  onTint?: (body: string, accent: string, commit: boolean) => void
+  private readonly tintView = { body: this.choice.bodyColor, accent: this.choice.accentColor }
+  private tintTimer?: ReturnType<typeof setTimeout>
+  private setTint(key: 'body' | 'accent', value: string): void {
+    if (!/^#[0-9a-f]{6}$/i.test(value)) return
+    if (key === 'body') this.choice.bodyColor = value; else this.choice.accentColor = value
+    this.tintView.body = this.choice.bodyColor; this.tintView.accent = this.choice.accentColor
+    this.onTint?.(this.choice.bodyColor, this.choice.accentColor, false)
+    clearTimeout(this.tintTimer)
+    this.tintTimer = setTimeout(() => { saveVehicleChoice(this.choice); this.onTint?.(this.choice.bodyColor, this.choice.accentColor, true) }, 200)
+  }
   /** Touch only: the panels are showing rather than the driving view. Never stored. */
   private touchPanels = false
   /** Panels are wanted exactly when the cursor is free (or, on touch, when the menu state is on). */
@@ -602,7 +693,13 @@ export class Shell implements System {
       this.element.querySelector('.inspector-toggle')!.setAttribute('aria-pressed', String(wanted))
     }
     const locked = this.started && !this.menuVisible && !this.game.input.suspended && document.pointerLockElement === this.game.canvas
-    if (this.element.classList.contains('is-focus') !== locked) this.element.classList.toggle('is-focus', locked)
+    if (this.element.classList.contains('is-focus') !== locked) {
+      this.element.classList.toggle('is-focus', locked)
+      // A gear picked with the cursor leaves focus on the drum, where the arrow keys step
+      // through gear. Once driving, they must drive.
+      const focused = document.activeElement
+      if (locked && focused instanceof HTMLElement && this.gearSelector.element.contains(focused)) focused.blur()
+    }
   }
   /** Show the panels: on a desktop that is letting the cursor go. */
   private showPanels(): void { if (this.capturesCursor) this.releaseCursor(); else this.touchPanels = true; this.syncPanels() }
@@ -639,7 +736,7 @@ export class Shell implements System {
     this.userPaused = user
     const veil = this.element.querySelector<HTMLButtonElement>('.pause-veil')!
     veil.hidden = !user; this.element.classList.toggle('is-paused', user)
-    this.game.input.suspended = user || this.menuVisible || this.inviteOpen
+    this.game.input.suspended = user || this.menuVisible || this.inviteOpen || this.exitAsking
     if (user) {
       this.game.input.mouseFire = false
       veil.querySelector('.pause-how')!.textContent = this.touch.available ? 'Tap to resume' : 'Click to resume'
@@ -652,6 +749,13 @@ export class Shell implements System {
     const editing = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON|SUMMARY)$/.test(event.target.tagName))
     if (!editing && !event.repeat && event.code === 'KeyP') { event.preventDefault(); event.stopImmediatePropagation(); this.setPresentation(!this.presentation); return }
     if (!editing && !event.repeat && event.code === 'KeyJ') { event.preventDefault(); event.stopImmediatePropagation(); this.inviteOpen ? this.closeJoin() : this.openJoin(); return }
+    if (this.exitAsking) {
+      // The question owns the keyboard: Escape means stay, Tab moves between its two buttons,
+      // Enter or Space presses the focused one, and nothing reaches driving, pause or shortcuts.
+      if (event.code === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); this.answerExit(false) }
+      else if (event.key === 'Tab') { event.preventDefault(); const buttons = [...this.element.querySelectorAll<HTMLButtonElement>('.exit-confirm button')]; buttons[document.activeElement === buttons[0] ? 1 : 0].focus() }
+      return
+    }
     if (this.inviteOpen) {
       if (event.code === 'Escape') { event.preventDefault(); this.closeJoin() }
       if (event.key === 'Tab') { event.preventDefault(); const buttons = [...this.invite.element.querySelectorAll<HTMLButtonElement>('button')]; buttons[document.activeElement === buttons[0] ? 1 : 0].focus() }
@@ -666,7 +770,7 @@ export class Shell implements System {
     // A drive key means the player wants to drive, unless it is being typed into a field or
     // moving a slider or select. A focused button or summary does not count: it only owns
     // Space and Enter, and focus rests on one after any click on the panels.
-    const field = (element: unknown) => element instanceof HTMLElement && (element.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName))
+    const field = (element: unknown) => element instanceof HTMLElement && (element.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName) || element.closest('[role=listbox]') !== null)
     const typing = field(event.target) || field(document.activeElement)
     if (!typing && !event.repeat && this.started && !this.menuVisible && DRIVE_KEYS.has(event.code) && this.capturesCursor && document.pointerLockElement !== this.game.canvas) void this.captureCursor()
     if (event.code === 'Escape') {
@@ -725,13 +829,6 @@ export class Shell implements System {
    * fresh seed, through the shared sliders; the kind already in play is left as it is. From
    * the index either choice leads on to the name and room form.
    */
-  private pickPlanet(id: string, thenExplore: boolean): void {
-    if (id !== currentPlanet().id) {
-      if (!canEditWorld()) { this.say('The host has locked this world.'); return }
-      applyPlanet(id)
-    }
-    if (thenExplore) this.showPanel('explore')
-  }
   /** True after Custom is first opened; later world edits keep its preview current. */
   private shapingCustom = false
   private suspendCustomRefresh = false
@@ -865,7 +962,8 @@ export class Shell implements System {
     const recipes = Array.from({ length: Math.max(PLANETS.length, rehearse - 1) }, (_, i) => ({ recipe: PLANETS[i % PLANETS.length], copy: Math.floor(i / PLANETS.length) })).slice(0, GALAXY_MAX - 1)
     const worlds: GalaxyWorld[] = recipes.map(({ recipe, copy }, i) => ({ id: copy ? `${recipe.id}~${copy}` : recipe.id, recipe: recipe.id, label: copy ? `${recipe.label} ${copy + 1}` : recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current && !copy ? worldSeed.value : i + 1 }))
     // The custom planet is a world still forming: tap it to shape it with the sliders.
-    worlds.push({ id: 'custom', label: 'Custom', land: 0x31507a, sea: 0x0a1630, glow: false, seed: 7, forming: true })
+    // Hidden for now (see OFFER_CUSTOM_PLANET): the lobby offers planets only.
+    if (OFFER_CUSTOM_PLANET) worlds.push({ id: 'custom', label: 'Custom', land: 0x31507a, sea: 0x0a1630, glow: false, seed: 7, forming: true })
     const chips = this.galaxyChips
     for (const world of worlds) {
       const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
@@ -904,7 +1002,10 @@ export class Shell implements System {
         }
         if (this.invited && !this.started && id !== currentPlanet().id) { this.say('You were invited to another world. You can change it once you are in, if the host allows.'); this.galaxy?.home(); return }
         if (!canEditWorld() && id !== currentPlanet().id) { this.say('The host has locked this world.'); this.galaxy?.home(); return }
-        this.pickPlanet(id, true)
+        // Arriving at a world never opens a form (the owner, 15 November 2026): it goes
+        // straight in. Taps are already drops (tapWorld); this covers the paths that are not.
+        if (id !== currentPlanet().id) applyPlanet(id)
+        if (this.started) this.closeMenu(); else this.play()
       },
       onLayout: (places, chosen) => {
         this.savedMoons?.layout(places, { width: innerWidth, top: this.brandBottom ?? 220, bottom: this.linksTop ?? innerHeight - 128 }, !!chosen || this.dropping || this.panels.active !== 'index')
@@ -975,7 +1076,7 @@ export class Shell implements System {
    */
   private glass(signal: AbortSignal): void {
     const buttons = [...this.element.querySelectorAll<HTMLElement>('button'), ...this.touch.element.querySelectorAll<HTMLElement>('button')]
-    for (const button of buttons) if (!button.matches('.link-button, .lobby-links *, .syn3h-advanced *, .world-inspector *')) button.classList.add('liquid-glass')
+    for (const button of buttons) if (!button.matches('.link-button, .lobby-links *, .syn3h-advanced *, .world-inspector *, .exit-confirm *')) button.classList.add('liquid-glass')
     // Touch screens have no hover, so there is nothing to face.
     if (!matchMedia('(hover: hover)').matches) return
     const REST = 205
@@ -1030,8 +1131,29 @@ export class Shell implements System {
   }
   /** Call after an actual spawn so query overrides and future respawns show the right controls. */
   private muteShown: boolean | undefined
+  private readonly gearSelector: GearSelector
+  private readonly zorbToggle = document.createElement('button')
+  private zorbShown = false
+  private worldShown = ''
+  private gearRack?: GearRack
+  private gearView?: GearSource
+  /** The rack, wrapped once so the drum gets every gear's player-facing name. */
+  private gearSource(): GearSource | undefined {
+    const rack = (window as unknown as { syn3hNet?: { gear?: GearRack } }).syn3hNet?.gear
+    if (!rack) return undefined
+    if (rack !== this.gearRack) {
+      this.gearRack = rack
+      this.gearView = {
+        list: () => rack.list(),
+        get current() { return rack.current },
+        select: id => rack.select(id as GearId),
+        labelOf: id => GEAR_LABELS[id as GearId],
+        controls: () => rack.controls(),
+      }
+    }
+    return this.gearView
+  }
   private gearSelect?: HTMLSelectElement
-  private gearWired = false
   private gearShown = ''
   /**
    * The rail selector shows the available gear and the current choice.
@@ -1041,10 +1163,7 @@ export class Shell implements System {
     const net = (window as unknown as { syn3hNet?: { gear?: GearRack; bungee?: { attached: boolean; letGo(): void } } }).syn3hNet
     const select = this.gearSelect ??= this.element.querySelector<HTMLSelectElement>('.gear-select')!
     if (!net?.gear) { if (!select.disabled) select.disabled = true; return }
-    if (!this.gearWired && net.bungee) {
-      this.gearWired = true
-      this.touch.setGear({ attached: () => net.bungee!.attached, letGo: () => net.bungee!.letGo() })
-    }
+    // The Grapple's extra touch buttons now come from the gear drum (rack.controls()).
     const list = net.gear.list(), signature = list.join(',')
     if (signature !== this.gearShown) {
       this.gearShown = signature; select.replaceChildren()
@@ -1136,11 +1255,16 @@ export class Shell implements System {
     // Per-frame: touch the DOM only when the label changes.
     if (this.audio.isMuted !== this.muteShown) { this.muteShown = this.audio.isMuted; this.element.querySelector('.rail-mute')!.textContent = this.muteShown ? 'Unmute' : 'Mute' }
     this.updateGear()
+    this.gearSelector.update(this.element.classList.contains('is-focus'))
+    const zorb = this.game.input.state.zorb
+    if (zorb !== this.zorbShown) { this.zorbShown = zorb; this.zorbToggle.setAttribute('aria-pressed', String(zorb)); this.zorbToggle.lastElementChild!.textContent = zorb ? 'On' : 'Off' }
     if (this.inspector.open) this.updateGI()
     if (this.started && !this.menuVisible) {
       const focus = this.element.classList.contains('is-focus')
       if (!focus && this.inspector.open) this.inspector.update()
-      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, heading: this.self?.heading ?? 0, world: `${currentPlanet().label} · ${planetName(worldSeed.value)}`, hour: Number(params.get('sun.timeOfDay')?.value ?? 0) })
+      const world = `${currentPlanet().label} · ${planetName(worldSeed.value)}`
+      if (world !== this.worldShown) { this.worldShown = world; this.element.querySelector('.rail-world')!.textContent = world }
+      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, heading: this.self?.heading ?? 0, world, hour: Number(params.get('sun.timeOfDay')?.value ?? 0) })
       const glass = String(Math.round(glassStyle.value)); if (this.element.dataset.glass !== glass) this.element.dataset.glass = glass
     }
     // The stylesheet drops frost at the lowest graphics level.
@@ -1179,12 +1303,14 @@ export class Shell implements System {
     const mode = params.get('game.mode'), modeSelect = this.element.querySelector<HTMLSelectElement>('#game-mode')!
     this.element.querySelector<HTMLElement>('.mode-control')!.hidden = !mode
     modeSelect.disabled = !editable; if (mode) modeSelect.value = String(mode.value)
+    // Explore is the default and has no game: no scores, nobody "it". The player list stays.
+    this.element.classList.toggle('is-explore', !mode || Number(mode.value) === 2)
     const bots = params.get('bots.count'), botsRow = this.element.querySelector<HTMLElement>('.bots-control')!
     botsRow.hidden = !bots
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); this.performancePanel.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }
@@ -1194,7 +1320,12 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
   const audio = new GameAudio(game.camera), shell = game.add(new Shell(game, audio))
   shell.setVehicleKind(player.kind); shell.setTerrain(terrain); audio.setPlayer(player,terrain)
   let activePlayer = player
-  const hints = new PlayHints(), height = new HeightAboveGround()
+  const hints = new PlayHints(); let height = new HeightAboveGround()
+  // A colour picked in play repaints the local vehicle at once and, once settled, tells the room.
+  shell.onTint = (body, accent, commit) => {
+    activePlayer.setColors(body, accent)
+    if (commit) (window as unknown as { syn3hNet?: { setProfile?(profile: { colors: { body: string; accent: string } }): void } }).syn3hNet?.setProfile?.({ colors: { body, accent } })
+  }
   const bridge = game.add({ update(dt = 0) {
     const v = activePlayer.body.linvel(), p = activePlayer.body.translation(), speed = Math.hypot(v.x, v.y, v.z)
     shell.setSpeed(speed)
@@ -1209,5 +1340,5 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
     if (hint) shell.showHint(hint)
   } })
   game.add(audio)
-  return { shell, audio, setPlayer(next) { activePlayer = next; hints.reset(); audio.setPlayer(next,terrain); shell.setVehicleKind(next.kind) }, dispose() { game.remove(bridge); game.remove(shell); game.remove(audio) } }
+  return { shell, audio, setPlayer(next) { activePlayer = next; height = new HeightAboveGround(); hints.reset(); audio.setPlayer(next,terrain); shell.setVehicleKind(next.kind) }, dispose() { game.remove(bridge); game.remove(shell); game.remove(audio) } }
 }

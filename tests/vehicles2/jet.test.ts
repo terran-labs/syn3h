@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { initPhysics } from '../../src/core/physics'
-import { Jet, jetDrag, jetFlightThrust, jetHoverHold, jetVectorResponse } from '../../src/vehicles/Jet'
+import { Jet, JET_LIFT_KEYS, jetDrag, jetFlightThrust, jetHoverHold, jetVectorResponse } from '../../src/vehicles/Jet'
 import { harness } from './harness'
 
 beforeAll(initPhysics)
@@ -94,5 +94,35 @@ describe('Jet hover and flight',()=>{
   v.input.special=false;h.step(v,400)
   expect(v.body.translation().y).toBeCloseTo(onGear,1)
   v.dispose();h.world.free()
+ })
+ it('Q and E lift, lower and throttle the player\'s own jet, and no longer yaw it',()=>{
+  expect(JET_LIFT_KEYS).toBe(1)
+  const keys=new Set<string>()
+  const fly=(special:boolean,held:string[],setup?:(v:Jet,input:{w:number;z:number;special:boolean})=>void)=>{
+   const h=harness(9.81,false);const state=(h.game.input as unknown as {state:{w:number;z:number;special:boolean}}).state
+   ;(h.game.input as unknown as {held:(code:string)=>boolean}).held=code=>keys.has(code)
+   const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,300,0));state.special=special
+   // The player's own jet takes its input from the game; the shared input puts Q and E on w.
+   keys.clear();held.forEach(k=>keys.add(k));state.w=(keys.has('KeyE')?1:0)-(keys.has('KeyQ')?1:0);setup?.(v,state)
+   h.step(v,60);const out={vy:v.body.linvel().y,vz:v.body.linvel().z,yaw:v.body.angvel().y,sent:v.getState().input};v.dispose();h.world.free();return out}
+  // Hover: E climbs, Q descends faster than the altitude hold allows, and neither turns the jet.
+  const up=fly(false,['KeyE']),down=fly(false,['KeyQ']),none=fly(false,[])
+  expect(up.vy).toBeGreaterThan(3);expect(down.vy).toBeLessThan(none.vy-3)
+  // Exactly what R and F do, turn included: the keys' own yaw is gone.
+  const r=fly(false,[],(_v,s)=>{s.z=1}),f=fly(false,[],(_v,s)=>{s.z=-1})
+  expect(up.vy).toBeCloseTo(r.vy,4);expect(up.yaw).toBeCloseTo(r.yaw,5);expect(down.vy).toBeCloseTo(f.vy,4);expect(down.yaw).toBeCloseTo(f.yaw,5)
+  // Other players are sent what was flown: thrust on z, nothing on yaw.
+  expect(up.sent.z).toBe(1);expect(up.sent.w).toBe(0)
+  // Flight: E is forward thrust, exactly as R is.
+  const thrustE=fly(true,['KeyE']),thrustR=fly(true,[],(_v,s)=>{s.z=1})
+  expect(thrustE.vz).toBeLessThan(-5);expect(thrustE.vz).toBeCloseTo(thrustR.vz,3)
+  // R and F still work, and a gamepad's yaw stick still yaws when Q and E are up.
+  const pad=fly(false,[],(_v,s)=>{s.w=.8})
+  expect(Math.abs(pad.yaw)).toBeGreaterThan(.05)
+  // A bot's jet is not the player's: its pilot keeps w as yaw whatever keys are down.
+  const h=harness(9.81,false);(h.game.input as unknown as {held:(code:string)=>boolean}).held=()=>true
+  const bot=new Jet(h.game,h.terrain,new THREE.Vector3(0,300,0));bot.isLocal=false;bot.input.w=1;h.step(bot,30)
+  expect(Math.abs(bot.body.angvel().y)).toBeGreaterThan(.05);expect(bot.input.w).toBe(1)
+  bot.dispose();h.world.free()
  })
 })

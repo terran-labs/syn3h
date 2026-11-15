@@ -2,7 +2,7 @@ import type { VehicleKind } from '../vehicles'
 
 export function vehicleHelp(kind: VehicleKind): string[] {
   // Lift-off first: on the ground W only tips the nose, and the throttle is what flies.
-  if (kind === 'jet') return ['Hold R to lift off and climb · F: come down', 'W / S: nose down / up · A / D: bank · Q / E: yaw', 'Space: switch hover and flight', 'Shift: brake · X: zorb ball']
+  if (kind === 'jet') return ['Hold E to lift off and climb · Q: come down', 'W / S: nose down / up · A / D: bank', 'Space: switch hover and flight · in flight E / Q: more / less thrust', 'Shift: brake · X: zorb ball']
   if (kind === 'hovercraft') return ['W: thrust forward · A / D: turn', 'S: pitch · Shift: brake · X: zorb ball']
   return ['W / S or arrows: drive · A / D: steer', 'Shift: brake · Space: force field wings', 'With wings: W / S pitch · A / D roll', 'L or click: Plasma Tag · X: zorb ball']
 }
@@ -35,7 +35,7 @@ export function touchHelp(kind: VehicleKind): string {
 const MOUSE_LOOK = 'Click, then move the mouse to look round · Esc: release'
 export function quickHelp(kind: VehicleKind, touch = false): string[] {
   if (touch) return [kind === 'jet' ? 'Hold THR + to lift off' : kind === 'hovercraft' ? 'Left thumb: thrust and turn' : 'Left thumb: drive and steer']
-  if (kind === 'jet') return ['Hold R to lift off · F: come down', 'W / S: pitch · A / D: bank · Space: flight mode', MOUSE_LOOK]
+  if (kind === 'jet') return ['Hold E to lift off · Q: come down', 'W / S: pitch · A / D: bank · Space: flight mode', MOUSE_LOOK]
   if (kind === 'hovercraft') return ['W: thrust · A / D: turn · Shift: brake', MOUSE_LOOK]
   return ['WASD or arrows: drive · Shift: brake', 'Space: wings · L or click: Plasma Tag', MOUSE_LOOK]
 }

@@ -1,13 +1,13 @@
 /**
  * The Syn3h wordmark path turned into geometry the GPU can draw: closed contours sorted into
- * filled shapes and holes by the even-odd rule, a triangulated front face, a thin chamfer
- * around every edge and shallow side walls, plus points spread along the outline by arc
- * length for the glow particles to be born on. Pure functions with no DOM, so the tests run
+ * filled shapes and holes by the even-odd rule, a triangulated flat face with a thin edge
+ * band, a wide band outward from the outline for the plasma's glow, plus points spread
+ * along the outline by arc length for the plasma's particles. Pure functions with no DOM, so the tests run
  * them directly.
  *
  * Units: one unit is the height of the wordmark box (226 path units), x to the right, y up,
- * the origin at the centre of the 962 by 226 box, z toward the viewer. The front face sits
- * at z = 0, so at zero tilt it covers exactly the box the SVG wordmark covers.
+ * the origin at the centre of the 962 by 226 box. The face covers exactly the box the SVG
+ * wordmark covers.
  */
 // Earcut alone, from three's sources: importing it from 'three' would pull in most of three.
 import { Earcut } from 'three/src/extras/Earcut.js'
@@ -133,58 +133,92 @@ export function triangleArea(positions: ArrayLike<number>, indices: ArrayLike<nu
 }
 
 export interface WordmarkMesh {
-  /** Interleaved per vertex: x, y, z, normal x, y, z, part (0 face, 1 chamfer, 2 side wall). */
+  /**
+   * Interleaved per vertex: x, y, then an inward offset x, y and the part (0 face, 1 edge).
+   * The edge's inner ring sits at the outline plus offset times the edge width, which the
+   * shader picks so the line stays at least a pixel wide on small screens.
+   */
   vertices: Float32Array
-  /** Vertex counts of the three parts, drawn in this order: walls, face, chamfer. */
-  wallVertices: number
-  bevelVertices: number
+  /** Vertex counts of the two parts, drawn in this order: face, edge. */
   faceVertices: number
+  edgeVertices: number
   triangles: number
 }
-export const FLOATS_PER_VERTEX = 7
+export const FLOATS_PER_VERTEX = 5
 
 /**
- * An extruded wordmark with a 45 degree chamfer: the face at z = 0 is the triangulated
- * outline; the chamfer runs from the outline pulled inward along each mitre by `bevel`, at
- * z = 0, out to the true outline at z = -bevel; the walls drop from there to z = -depth.
- * There is no back face: the mark only ever turns a few degrees.
- * Nothing is culled, so triangle winding cannot hide anything. Order matters instead:
- * walls first, then the face, then the chamfer over the face's edge. That is right for any
- * view from the front, and needs no depth buffer (the lobby's context has none).
+ * The flat wordmark: the triangulated outline as one face, and a thin band just
+ * inside the outline for its edge line, drawn over the face. No depth, no lighting.
  */
-export function buildWordmarkMesh(options: { depth?: number; bevel?: number; contours?: Contour[] } = {}): WordmarkMesh {
-  const depth = options.depth ?? 0.12, bevel = options.bevel ?? 0.013
+export function buildWordmarkMesh(options: { contours?: Contour[] } = {}): WordmarkMesh {
   const contours = options.contours ?? wordmarkContours()
   const face = triangulateFace(contours)
-  const walls: number[] = [], chamfer: number[] = [], inset: Point[] = []
-  const push = (into: number[], x: number, y: number, z: number, n: [number, number, number], part: number) => into.push(x, y, z, n[0], n[1], n[2], part)
+  const front: number[] = [], edge: number[] = []
+  for (const index of face.indices) front.push(face.positions[index * 2], face.positions[index * 2 + 1], 0, 0, 0)
   for (const contour of contours) {
     const normals = edgeNormals(contour), points = contour.points, count = points.length
-    for (let i = 0; i < count; i++) {
-      // Mitre at point i: the mean of its two edge normals, lengthened to keep the chamfer
-      // even, and capped so very sharp corners do not throw a spike.
+    // Mitre at each point: the mean of its two edge normals, lengthened to keep the line
+    // even, and capped so very sharp corners do not throw a spike. Pointing inward.
+    const mitres = points.map((_, i): Point => {
       const a = normals[(i - 1 + count) % count], b = normals[i]
       let mx = a[0] + b[0], my = a[1] + b[1]
       const ml = Math.hypot(mx, my) || 1; mx /= ml; my /= ml
       const scale = Math.min(2, 1 / Math.max(0.2, mx * b[0] + my * b[1]))
-      inset.push([points[i][0] - mx * bevel * scale, points[i][1] - my * bevel * scale])
-    }
-    const base = inset.length - count
+      return [-mx * scale, -my * scale]
+    })
     for (let i = 0; i < count; i++) {
-      const j = (i + 1) % count, p = points[i], q = points[j], ip = inset[base + i], iq = inset[base + j], n = normals[i]
-      const wall: [number, number, number] = [n[0], n[1], 0], k = Math.SQRT1_2, slope: [number, number, number] = [n[0] * k, n[1] * k, k]
-      for (const [x, y, z] of [[p[0], p[1], -bevel], [q[0], q[1], -bevel], [q[0], q[1], -depth], [p[0], p[1], -bevel], [q[0], q[1], -depth], [p[0], p[1], -depth]]) push(walls, x, y, z, wall, 2)
-      for (const [x, y, z] of [[ip[0], ip[1], 0], [iq[0], iq[1], 0], [q[0], q[1], -bevel], [ip[0], ip[1], 0], [q[0], q[1], -bevel], [p[0], p[1], -bevel]]) push(chamfer, x, y, z, slope, 1)
+      const j = (i + 1) % count, p = points[i], q = points[j], mp = mitres[i], mq = mitres[j]
+      for (const [v, m] of [[p, mp], [q, mq], [q, null], [p, mp], [q, null], [p, null]] as const) edge.push(v[0], v[1], m?.[0] ?? 0, m?.[1] ?? 0, 1)
     }
   }
-  // The face is the exact triangulation of the outline. The chamfer is drawn after it and
-  // covers its outer strip, which looks the same as an inset face without having to
-  // triangulate the inset outline (whose traced corners cross themselves in places).
-  const front: number[] = []
-  for (const index of face.indices) push(front, face.positions[index * 2], face.positions[index * 2 + 1], 0, [0, 0, 1], 0)
-  const vertices = new Float32Array([...walls, ...front, ...chamfer])
-  const wallVertices = walls.length / FLOATS_PER_VERTEX, bevelVertices = chamfer.length / FLOATS_PER_VERTEX, faceVertices = front.length / FLOATS_PER_VERTEX
-  return { vertices, wallVertices, bevelVertices, faceVertices, triangles: (wallVertices + bevelVertices + faceVertices) / 3 }
+  const vertices = new Float32Array([...front, ...edge])
+  const faceVertices = front.length / FLOATS_PER_VERTEX, edgeVertices = edge.length / FLOATS_PER_VERTEX
+  return { vertices, faceVertices, edgeVertices, triangles: (faceVertices + edgeVertices) / 3 }
+}
+
+export interface GlowBand {
+  /**
+   * Interleaved per vertex: x, y on the outline; an outward offset x, y (unit length on
+   * the band's outer rim, zero on the outline); the fraction of the way round its contour
+   * (0 to 1); and that contour's length, in wordmark units.
+   */
+  vertices: Float32Array
+  triangles: number
+}
+export const GLOW_FLOATS_PER_VERTEX = 6
+
+/**
+ * The plasma's body: a band running outward from the whole outline, one quad per edge and
+ * a small fan at each corner, so its outer rim is the outline grown by the band width with
+ * rounded corners (the width is the shader's). Where bands overlap, at concave corners and
+ * between close letters, the renderer takes the brighter, so nothing doubles up.
+ */
+export function buildGlowBand(contours = wordmarkContours()): GlowBand {
+  const out: number[] = []
+  const push = (p: Point, o: Point, u: number, length: number) => out.push(p[0], p[1], o[0], o[1], u, length)
+  for (const contour of contours) {
+    const normals = edgeNormals(contour), points = contour.points, count = points.length
+    const along: number[] = []; let length = 0
+    for (let i = 0; i < count; i++) { along.push(length); const q = points[(i + 1) % count]; length += Math.hypot(q[0] - points[i][0], q[1] - points[i][1]) }
+    const zero: Point = [0, 0]
+    for (let i = 0; i < count; i++) {
+      const j = (i + 1) % count, p = points[i], q = points[j], n = normals[i], u0 = along[i] / length, u1 = j === 0 ? 1 : along[j] / length
+      push(p, zero, u0, length); push(q, zero, u1, length); push(q, n, u1, length)
+      push(p, zero, u0, length); push(q, n, u1, length); push(p, n, u0, length)
+      // The corner at q: a fan from this edge's normal round to the next one's, the short way.
+      const m = normals[j], from = Math.atan2(n[1], n[0])
+      let turn = Math.atan2(m[1], m[0]) - from
+      while (turn > Math.PI) turn -= 2 * Math.PI
+      while (turn < -Math.PI) turn += 2 * Math.PI
+      const steps = Math.ceil(Math.abs(turn) / (Math.PI / 6))
+      for (let k = 0; k < steps; k++) {
+        const a = from + turn * k / steps, b = from + turn * (k + 1) / steps
+        push(q, zero, u1 % 1, length); push(q, [Math.cos(a), Math.sin(a)], u1 % 1, length); push(q, [Math.cos(b), Math.sin(b)], u1 % 1, length)
+      }
+    }
+  }
+  const vertices = new Float32Array(out)
+  return { vertices, triangles: vertices.length / GLOW_FLOATS_PER_VERTEX / 3 }
 }
 
 /** A small seeded generator (mulberry32), so a seed always gives the same particles. */

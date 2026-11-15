@@ -23,6 +23,10 @@ const NOTES_DIR = join(REPO, 'release-notes', 'releases')
 const HISTORY = join(REPO, 'release-notes', 'history.tsv')
 const GITHUB_REPO = process.env.SYN3H_GITHUB_REPO || 'terran-labs/syn3h'
 const PLAY_URL = 'https://www.syn3h.com/'
+/** The address that serves one frozen release for good (tools/frozen-versions.mjs). */
+export function frozenUrl(version) {
+  return `${PLAY_URL}?v=${String(version).replace(/^v/, '')}`
+}
 const MANIFEST = 'manifest.json'
 
 /** Sections in the order a notes file has them. Play only in production notes. */
@@ -108,7 +112,7 @@ export function draftNotes(row, from, to, commits) {
     '',
     '- TODO',
     '',
-    ...(production ? ['### Play', '', `Open ${PLAY_URL} in a browser, choose a vehicle and press Play.`, '', '- TODO: the controls that matter for this release', ''] : []),
+    ...(production ? ['### Play', '', `Open ${PLAY_URL} in a browser, choose a vehicle and press Play.`, '', `This exact version stays playable at ${frozenUrl(row.version)}, whatever ships after it.`, '', '- TODO: the controls that matter for this release', ''] : []),
     '### Known issues',
     '',
     '- TODO: from ops/KNOWN-ISSUES.md as it stood when this was built',

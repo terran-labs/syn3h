@@ -8,8 +8,8 @@
  * is hidden and whatever the caller put underneath (the SVG wordmark) stays in view. For
  * people who prefer reduced motion, or with `still` set, it draws one settled frame.
  *
- * Box: by default the wordmark is fitted in the middle of the canvas with room for its glow
- * and sun. Call `setBox` with a rectangle in CSS pixels, relative to the canvas, to put the
+ * Box: by default the wordmark is fitted in the middle of the canvas with room for its
+ * plasma. Call `setBox` with a rectangle in CSS pixels, relative to the canvas, to put the
  * flat wordmark exactly over an element; the SVG wordmark's own bounding box is the one to
  * use, since both are 962 by 226.
  */
@@ -24,10 +24,8 @@ export interface LogoOptions extends LogoLook {
   timeScale: number
   /** Draw one settled frame and never animate. */
   still: boolean
-  /** Play the intro (particles draw the letters) when first shown. */
+  /** Fade in when first shown: the silhouette, then the glow (see LogoLook markFade, glowGap, glowFade). */
   intro: boolean
-  /** Lean toward the pointer, or with the phone's tilt. Off by default. */
-  tilt: 'off' | 'pointer' | 'device'
   /** Frames per second at most. 30 is plenty for a menu; 60 is smoother. */
   fps: number
   /** Most device pixels per CSS pixel. */
@@ -36,22 +34,27 @@ export interface LogoOptions extends LogoLook {
   preserve: boolean
 }
 export const DEFAULT_LOGO_OPTIONS: LogoOptions = {
-  ...DEFAULT_LOGO_LOOK, timeScale: 1, still: false, intro: true, tilt: 'off', fps: 60, maxPixelRatio: 2, preserve: false,
+  ...DEFAULT_LOGO_LOOK, timeScale: 1, still: false, intro: true, fps: 60, maxPixelRatio: 2, preserve: false,
 }
-/** The moment drawn as the still frame: settled, glow well spread. */
+/** The moment drawn as the still frame: well after both stages of the fade in. */
 export const STILL_SECONDS = 7.3
 
-/** Budgets by graphics level (src/core/quality.ts graphicsLevel): 0 safe, 1 mobile, 2 desktop. */
+/**
+ * Budgets by graphics level (src/core/quality.ts graphicsLevel): 0 safe, 1 mobile, 2 desktop.
+ * The plasma's body is a field whose cost does not depend on the level; the particles over
+ * it are large, so fill, not count, is their cost: fewer of them, each brighter, give the
+ * same light for less.
+ */
 export function logoBudget(level: number): Pick<LogoOptions, 'particles' | 'still' | 'fps' | 'maxPixelRatio'> {
-  if (level <= 0) return { particles: 4000, still: true, fps: 0, maxPixelRatio: 1 }
-  if (level < 2) return { particles: 6000, still: false, fps: 30, maxPixelRatio: 1.5 }
-  return { particles: 14000, still: false, fps: 60, maxPixelRatio: 2 }
+  if (level <= 0) return { particles: 80, still: true, fps: 0, maxPixelRatio: 1 }
+  if (level < 2) return { particles: 110, still: false, fps: 30, maxPixelRatio: 1.5 }
+  return { particles: 160, still: false, fps: 60, maxPixelRatio: 2 }
 }
 
 export type LogoLayout = 'fit' | 'icon' | 'card'
 /**
  * Where the 962 by 226 wordmark box goes in a picture of the given size. `fit` leaves room
- * for the glow and sun all round; `icon` is the square app icon (as public/brand/icon-512.png);
+ * for the plasma all round; `icon` is the square app icon (as public/brand/icon-512.png);
  * `card` is the 1200 by 630 share card, with the logo high and room below for a tagline.
  */
 export function logoBox(width: number, height: number, layout: LogoLayout = 'fit'): PixelRect {
@@ -98,8 +101,6 @@ export class LogoMark {
       this.acquire()
       if (typeof ResizeObserver === 'function') { this.observer = new ResizeObserver(() => this.resize()); this.observer.observe(this.canvas) }
       if (typeof document !== 'undefined') document.addEventListener('visibilitychange', this.onVisibility)
-      if (typeof window !== 'undefined') window.addEventListener('pointermove', this.onPointer, { passive: true })
-      if (typeof window !== 'undefined') window.addEventListener('deviceorientation', this.onOrientation, { passive: true })
       this.resize()
     } catch (error) {
       console.warn('Syn3h logo could not start; the SVG wordmark stays.', error)
@@ -130,15 +131,6 @@ export class LogoMark {
     if (renderer.ok) { this.renderer = renderer; this.draw(); if (this.running) this.start() }
   }
   private readonly onVisibility = (): void => { cancelAnimationFrame(this.frame); this.lastNow = null; if (this.running && !document.hidden) this.frame = requestAnimationFrame(this.loop) }
-  private readonly onPointer = (event: PointerEvent): void => {
-    if (this.options.tilt !== 'pointer' || !this.renderer) return
-    this.renderer.lean = [event.clientX / Math.max(1, innerWidth) * 2 - 1, event.clientY / Math.max(1, innerHeight) * 2 - 1]
-  }
-  private readonly onOrientation = (event: DeviceOrientationEvent): void => {
-    if (this.options.tilt !== 'device' || !this.renderer) return
-    const clamp = (v: number) => Math.max(-1, Math.min(1, v))
-    this.renderer.lean = [clamp((event.gamma ?? 0) / 30), clamp(((event.beta ?? 45) - 45) / 30)]
-  }
 
   /** Changes the look or behaviour; takes effect at the next frame. */
   setOptions(options: Partial<LogoOptions>): void {
@@ -171,7 +163,7 @@ export class LogoMark {
     this.frame = requestAnimationFrame(this.loop)
     if (this.motionless) { this.stop(); this.renderStill(); return }
     if (now - this.lastDraw < 1000 / this.options.fps - 2) return
-    // The clock only runs while drawn, so a hidden tab does not skip the intro.
+    // The clock only runs while drawn, so a hidden tab does not skip the fade in.
     if (this.lastNow !== null) this.clock += Math.min(0.1, (now - this.lastNow) / 1000) * this.options.timeScale
     this.lastNow = now; this.lastDraw = now
     this.draw()
@@ -200,8 +192,8 @@ export class LogoMark {
   }
 
   /**
-   * Stops the animation and draws the frame at `seconds` on the logo's clock, with the intro
-   * started at zero (or skipped when `intro` is false). For captures and tests.
+   * Stops the animation and draws the frame at `seconds` on the logo's clock, with the fade
+   * in started at zero (or skipped when `intro` is false). For captures and tests.
    */
   drawFrame(seconds: number, intro = true): void {
     this.stop()
@@ -229,7 +221,6 @@ export class LogoMark {
     this.disposed = true; this.stop()
     this.observer?.disconnect()
     if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', this.onVisibility)
-    if (typeof window !== 'undefined') { window.removeEventListener('pointermove', this.onPointer); window.removeEventListener('deviceorientation', this.onOrientation) }
     this.canvas.removeEventListener('webglcontextlost', this.onLost); this.canvas.removeEventListener('webglcontextrestored', this.onRestored)
     this.renderer?.dispose(); this.renderer = null
     this.gl?.getExtension('WEBGL_lose_context')?.loseContext(); this.gl = null
@@ -253,9 +244,7 @@ export const LOGO_STILLS = [
  */
 export function renderLogoCanvas(width: number, height: number, options: Partial<LogoOptions> & { layout?: LogoLayout } = {}): HTMLCanvasElement | null {
   const source = document.createElement('canvas'); source.width = width; source.height = height
-  // Small icons: fewer, larger particles read better than many sub-pixel ones.
-  const particles = options.particles ?? Math.round(Math.min(14000, Math.max(2500, width * 14)))
-  const mark = new LogoMark(source, { space: true, ...options, particles, still: true, intro: false, preserve: true, maxPixelRatio: 1, sway: 0 })
+  const mark = new LogoMark(source, { space: true, ...options, still: true, intro: false, preserve: true, maxPixelRatio: 1 })
   try {
     if (!mark.generated) return null
     mark.setBox(logoBox(width, height, options.layout ?? 'fit'))
@@ -273,15 +262,14 @@ export function renderLogoPng(width: number, height: number, options: Partial<Lo
 
 const hex = (c: readonly number[]) => '#' + c.map(v => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0')).join('')
 /**
- * The logo as one self-contained SVG document: the wordmark path with its gloss, a glow
- * made by an SVG filter from the path itself, the sun as gradients and, with `space`, the
- * sky and a few seeded stars. No images, no fonts. Static: the particles are the GPU
- * version's; this is for places that take only a file.
+ * The logo as one self-contained SVG document: the flat wordmark path, a soft glow made by
+ * an SVG filter from the path itself and, with `space`, the sky and a few seeded stars. No
+ * images, no fonts. Static: the plasma is the GPU version's; this is for places that take
+ * only a file.
  */
 export function logoSvg(options: Partial<LogoLook> & { width?: number; height?: number; layout?: LogoLayout } = {}): string {
   const look = { ...DEFAULT_LOGO_LOOK, ...options }, width = options.width ?? 1200, height = options.height ?? 630
   const box = logoBox(width, height, options.layout ?? 'fit'), unit = box.height / WORDMARK_HEIGHT
-  const sun = { x: box.x + box.width / 2 + 0.02 * box.height, y: box.y + box.height / 2 + 0.04 * box.height, r: look.sunSize * box.height * 0.91 }
   let stars = ''
   if (look.space) {
     let s = (Math.floor(look.seed * 7919) >>> 0) || 1
@@ -292,9 +280,6 @@ export function logoSvg(options: Partial<LogoLook> & { width?: number; height?: 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Syn3h">
 <defs>
 <radialGradient id="space" cx="50%" cy="${(100 * (box.y + box.height / 2) / height).toFixed(1)}%" r="75%"><stop offset="0" stop-color="#131f38"/><stop offset="1" stop-color="#03060b"/></radialGradient>
-<radialGradient id="corona"><stop offset="0.3" stop-color="${hex(look.sun)}" stop-opacity="0.95"/><stop offset="0.55" stop-color="${hex(look.sun)}" stop-opacity="0.35"/><stop offset="1" stop-color="${hex(look.sun)}" stop-opacity="0"/></radialGradient>
-<radialGradient id="disc" cx="45%" cy="40%"><stop offset="0" stop-color="#e2611c"/><stop offset="0.7" stop-color="#9a2a0a"/><stop offset="1" stop-color="#4a0d03"/></radialGradient>
-<linearGradient id="gloss" x1="0" y1="0" x2="0" y2="${WORDMARK_HEIGHT}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#5a5f6c"/><stop offset="0.36" stop-color="#22252c"/><stop offset="0.362" stop-color="#040508"/><stop offset="0.79" stop-color="#040508"/><stop offset="0.8" stop-color="#26292f"/><stop offset="0.86" stop-color="#030406"/></linearGradient>
 <filter id="glow" x="-20%" y="-60%" width="140%" height="220%" color-interpolation-filters="sRGB">
 <feMorphology in="SourceAlpha" operator="dilate" radius="${(box.height * 0.012 / unit).toFixed(2)}" result="grown"/>
 <feGaussianBlur in="grown" stdDeviation="${(blur / unit / 3).toFixed(2)}" result="near"/>
@@ -305,8 +290,7 @@ export function logoSvg(options: Partial<LogoLook> & { width?: number; height?: 
 </filter>
 </defs>
 ${look.space ? `<rect width="${width}" height="${height}" fill="url(#space)"/>${stars}` : ''}
-${look.sunSize > 0 ? `<circle cx="${sun.x.toFixed(1)}" cy="${sun.y.toFixed(1)}" r="${(sun.r * 2.4).toFixed(1)}" fill="url(#corona)"/><circle cx="${sun.x.toFixed(1)}" cy="${sun.y.toFixed(1)}" r="${sun.r.toFixed(1)}" fill="url(#disc)" opacity="0.8"/>` : ''}
-<g transform="translate(${box.x.toFixed(2)} ${box.y.toFixed(2)}) scale(${unit.toFixed(5)})" filter="url(#glow)"><path fill-rule="evenodd" fill="url(#gloss)" stroke="${hex(look.glow.map(v => v * 0.5 + 0.5))}" stroke-opacity="0.55" stroke-width="${(1 / unit).toFixed(2)}" d="${WORDMARK_PATH}"/></g>
+<g transform="translate(${box.x.toFixed(2)} ${box.y.toFixed(2)}) scale(${unit.toFixed(5)})" filter="url(#glow)"><path fill-rule="evenodd" fill="${hex(look.face)}" stroke="${hex(look.glow.map(v => v * 0.5 + 0.5))}" stroke-opacity="0.55" stroke-width="${(1 / unit).toFixed(2)}" d="${WORDMARK_PATH}"/></g>
 </svg>`
 }
 export { WORDMARK_WIDTH, WORDMARK_HEIGHT }

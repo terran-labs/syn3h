@@ -4,6 +4,7 @@ import type { Game, System } from '../../core/Game'
 import type { Terrain } from '../Terrain'
 import { applyWaterQuery } from './params'
 import type { Vehicle, VehicleObjectEvents } from '../../vehicles/Vehicle'
+import type { PlayerSlot } from '../../vehicles/PlayerSlot'
 import { net } from '../../net'
 import { nearestImage } from '../../../shared/wrap'
 import { Ripples, rippleField, waterRipples } from './ripples'
@@ -25,11 +26,13 @@ export class WaterEffects implements System {
   private serial=0
   private point=new Vector3()
   private velocity=new Vector3()
-  constructor(private game:Game,private terrain:Terrain,private player:Vehicle,private bots:{readonly vehicles:readonly Vehicle[]}){
+  constructor(private game:Game,private terrain:Terrain,private slot:PlayerSlot,private bots:{readonly vehicles:readonly Vehicle[]}){
     this.ripples=rippleField;this.ripples.attach(game.renderer);this.spray=new Spray(game.scene,this.ripples,terrain);this.underwater=new Underwater(game,terrain);this.bubbles=new UnderwaterBubbles(game.scene,terrain,game.camera)
     // A world seam moves the player a whole tile and the world is redrawn round it: spray left
     // behind moves the same way. (The ripple field wraps at the tile, so it needs nothing.)
-    ;(player.object as THREE.Object3D<VehicleObjectEvents>).addEventListener('tileshift',this.onTileShift)
+    this.listen(slot.current,true)
+    // The player changed vehicle: follow the seam shifts of the new one.
+    this.unfollow=slot.onChange((next,previous)=>{this.listen(previous,false);this.listen(next,true)})
   }
   private onTileShift=({dx,dz}:{dx:number;dz:number})=>this.spray.shift(dx,dz)
   /** `?water=1` preview switch: applied once play has begun, after any room state lands. */
@@ -94,5 +97,11 @@ export class WaterEffects implements System {
     const v=body.linvel()
     this.bubbles.trail(p.x-v.x*.08,p.y,p.z-v.z*.08,Math.hypot(v.x,v.y,v.z),dt)
   }
-  dispose(){(this.player.object as THREE.Object3D<VehicleObjectEvents>).removeEventListener('tileshift',this.onTileShift);this.underwater.dispose();this.bubbles.dispose();this.spray.dispose();this.ripples.dispose()}
+  private readonly unfollow:()=>void
+  private get player():Vehicle {return this.slot.current}
+  private listen(vehicle:Vehicle,on:boolean){
+    const object=vehicle.object as THREE.Object3D<VehicleObjectEvents>
+    if(on)object.addEventListener('tileshift',this.onTileShift);else object.removeEventListener('tileshift',this.onTileShift)
+  }
+  dispose(){this.unfollow();this.listen(this.player,false);this.underwater.dispose();this.bubbles.dispose();this.spray.dispose();this.ripples.dispose()}
 }

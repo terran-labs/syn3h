@@ -50,6 +50,13 @@ export class Input {
     target.addEventListener('blur', () => this.keys.clear())
   }
 
+  /**
+   * Whether a physical key is down right now (KeyboardEvent.code). For a vehicle that gives a
+   * key its own meaning, where the shared axes cannot say which key produced a value. False
+   * while input is suspended or another mode has taken the key (roam camera).
+   */
+  held(code: string): boolean { return !this.suspended && this.keys.has(code) }
+
   private axis(neg: string[], pos: string[]): number {
     let v = 0
     for (const k of neg) if (this.keys.has(k)) v -= 1
