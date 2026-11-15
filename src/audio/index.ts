@@ -204,17 +204,20 @@ export class GameAudio implements System {
   }
   update(): void {
     if (!this.context || this.disposed) return
-    if(this.local){this.motion=this.readVehicle(this.local);this.vehicleEvents(this.local)}
+    if(this.local&&alive(this.local)){this.motion=this.readVehicle(this.local);this.vehicleEvents(this.local)}
     this.engine!.update(this.motion, this.enabled)
     this.camera.getWorldPosition(this.position); this.camera.getWorldQuaternion(this.rotation)
     this.forward.set(0, 0, -1).applyQuaternion(this.rotation); this.up.set(0, 1, 0).applyQuaternion(this.rotation)
     if(this.context.currentTime>=this.nextSpatial){
       this.nextSpatial=this.context.currentTime+.2
-      const nearest=this.enabled?[...new Set(this.vehicleSource())].filter(v=>v!==this.local&&v.object.position.distanceToSquared(this.position)<350*350).sort((a,b)=>a.object.position.distanceToSquared(this.position)-b.object.position.distanceToSquared(this.position)).slice(0,4):[]
+      const nearest=this.enabled?[...new Set(this.vehicleSource())].filter(v=>v!==this.local&&alive(v)&&v.object.position.distanceToSquared(this.position)<350*350).sort((a,b)=>a.object.position.distanceToSquared(this.position)-b.object.position.distanceToSquared(this.position)).slice(0,4):[]
       for(const [v,voice] of this.remote)if(!nearest.includes(v)){voice.engine.dispose();setTimeout(()=>voice.panner.disconnect(),80);this.remote.delete(v);this.events.delete(v)}
       for(const v of nearest)if(!this.remote.has(v)){const panner=this.context.createPanner();panner.panningModel='HRTF';panner.distanceModel='inverse';panner.refDistance=7;panner.rolloffFactor=1.5;panner.connect(this.remoteBus!);this.remote.set(v,{panner,engine:new Engine(this.context,panner,this.engine!.noise)})}
       this.lavaNear=this.terrain?lavaProximity(this.terrain,this.position):0
     }
+    // A bot or remote vehicle can be removed between the throttled nearest-list refreshes.
+    // Reading a removed Rapier body corrupts the physics world, so drop its voice first.
+    for(const [v,voice] of this.remote)if(!alive(v)){voice.engine.dispose();setTimeout(()=>voice.panner.disconnect(),80);this.remote.delete(v);this.events.delete(v)}
     for(const [v,voice] of this.remote){const p=v.object.position;voice.panner.positionX.value=p.x;voice.panner.positionY.value=p.y;voice.panner.positionZ.value=p.z;voice.engine.update(this.readVehicle(v),this.enabled);this.vehicleEvents(v)}
     this.world!.update(this.lavaNear,this.enabled)
     const l = this.context.listener, p = this.position, f = this.forward, u = this.up
@@ -235,4 +238,9 @@ export class GameAudio implements System {
     this.local=undefined;this.terrain=undefined;this.vehicleSource=()=>[]
     this.buffers.clear(); this.decks.clear(); this.voices.clear(); void this.context?.close()
   }
+}
+
+/** True while the vehicle's Rapier body is still in the world. A removed body must never be read. */
+function alive(v: Vehicle): boolean {
+  try { return v.body.isValid() } catch { return false }
 }

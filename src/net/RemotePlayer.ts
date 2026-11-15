@@ -39,8 +39,8 @@ export class RemotePlayer {
     this.physical = vehicle.body.bodyType() === RAPIER.RigidBodyType.Dynamic
   }
 
-  push(s: WireState, now: number, sendRate: number): void {
-    this.buffer.push({ t: s.t, p: s.p, q: s.q, v: s.v, w: s.w, input: s.input, paused: s.paused }, now, sendRate)
+  push(s: WireState, now: number, sendRate: number, measure = true): void {
+    this.buffer.push({ t: s.t, p: s.p, q: s.q, v: s.v, w: s.w, input: s.input, paused: s.paused }, now, sendRate, measure)
   }
 
   /** Run before the vehicle's own fixed step. */
