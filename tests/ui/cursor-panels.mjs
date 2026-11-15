@@ -15,7 +15,8 @@ const locked = page => page.evaluate(() => document.pointerLockElement === syn3h
   try {
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
     const errors = []; page.on('pageerror', e => errors.push(e.message)); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()) })
-    await page.goto(`${base}?room=cursor-panels-${Date.now()}`)
+    // The room name must not contain "panel": networking stores a rejoin key named after the room.
+    await page.goto(`${base}?room=cursor-lock-${Date.now()}`)
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     // The lobby is cursor-free by nature and keeps its own panels.
     assert.equal(await page.locator('.galaxy-links').isVisible(), true)
@@ -76,7 +77,7 @@ const locked = page => page.evaluate(() => document.pointerLockElement === syn3h
     await page.keyboard.press('Escape'); await page.locator('.pause-veil').waitFor({ state: 'visible' })
     await page.keyboard.press('KeyW'); await page.locator('.pause-veil').waitFor({ state: 'hidden' })
     // Nothing about the panels is stored: a reload with no gesture has the cursor free, panels open.
-    assert.equal(await page.evaluate(() => Object.keys(localStorage).concat(Object.keys(sessionStorage)).some(key => /inspector|panel|rail/i.test(key))), false, 'no stored panel state')
+    assert.deepEqual(await page.evaluate(() => Object.keys(localStorage).concat(Object.keys(sessionStorage)).filter(key => /inspector|panel|\brail/i.test(key))), [], 'no stored panel state')
     assert.deepEqual(errors, [])
     console.log('desktop: panels follow the cursor lock; Escape frees, then pauses; audio fades and stops; resume recaptures')
   } finally { await browser.close() }
@@ -87,7 +88,7 @@ const locked = page => page.evaluate(() => document.pointerLockElement === syn3h
   try {
     const page = await browser.newPage(devices['iPhone 14'])
     const errors = []; page.on('pageerror', e => errors.push(e.message))
-    await page.goto(`${base}?autoplay=1&room=cursor-panels-touch-${Date.now()}`)
+    await page.goto(`${base}?autoplay=1&room=cursor-lock-touch-${Date.now()}`)
     await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     assert.equal(await visible(page), false, 'touch starts driving')

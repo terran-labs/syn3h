@@ -8,5 +8,9 @@ for ux_attempt in $(seq 1 60); do
   sleep 1
 done
 # UX_TESTS runs several checks against one server; UX_TEST remains for a single one.
-for ux_test in ${UX_TESTS:-${UX_TEST:-tests/ui/follow-on.mjs}}; do node "$ux_test"; done
-SYN3H_URL=http://127.0.0.1:5198/ node tests/ui/exploration.mjs
+# One failing check must not hide the others: run them all, then report which failed.
+ux_failed=""
+for ux_test in ${UX_TESTS:-${UX_TEST:-tests/ui/follow-on.mjs}}; do node "$ux_test" || ux_failed="$ux_failed $ux_test"; done
+SYN3H_URL=http://127.0.0.1:5198/ node tests/ui/exploration.mjs || ux_failed="$ux_failed tests/ui/exploration.mjs"
+if [ -n "$ux_failed" ]; then echo "FAILED:$ux_failed"; exit 1; fi
+echo "ALL PASSED"
