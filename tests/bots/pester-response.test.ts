@@ -31,7 +31,7 @@ const cases: Case[] = [
   { id: 'edge', group: 'safety', angle: 0, distance: 60, bold: .5, warmFlight: 1, terrain: 'edge' },
 ]
 const REACTION = .6, OBSERVATION = .2, ARC_SECONDS = 4, ARC_ANGLE = 25 * Math.PI / 180
-const output = process.env.PESTER_RESPONSE_OUT ?? '/tmp/syn3h-pester-response'
+const output = process.env.PESTER_RESPONSE_OUT ?? '/tmp/syn3h-pester-observations-v1'
 beforeAll(initPhysics)
 
 function run(kind: Kind, action: Action, scenario: Case) {
@@ -64,10 +64,51 @@ function run(kind: Kind, action: Action, scenario: Case) {
     }
     return true
   }
+  // Read-only instrumentation. Private lifetime fields are inspected only in this test;
+  // list() supplies live shot position/velocity, but deliberately exposes no lifetime.
+  const observe = (goal: DriveGoal) => {
+    const ownPosition = new Vector3().copy(vehicle.body.translation())
+    const ownVelocity = new Vector3().copy(vehicle.body.linvel())
+    const shot = pesters.list()[0]
+    const source = (pesters as unknown as { orbs: { id: number; age: number; life: number; popped: number }[] }).orbs.find(o => o.id === 1)
+    const unavailable = shot ? null : caught ? 'caught' : source && source.age > source.life ? 'expired' : 'no-live-shot'
+    const relativePosition = shot ? new Vector3(...shot.pos).sub(ownPosition) : null
+    const relativeVelocity = shot ? new Vector3(...shot.velocity).sub(ownVelocity) : null
+    const range = relativePosition?.length() ?? null
+    const speedSquared = relativeVelocity?.lengthSq() ?? 0
+    const estimateUnavailable = !shot ? unavailable : speedSquared <= 1e-12 ? 'zero-relative-speed' : null
+    // Instantaneous constant-velocity estimate only, not a simulated homing trajectory.
+    const closestTime = relativePosition && relativeVelocity && !estimateUnavailable
+      ? -relativePosition.dot(relativeVelocity) / speedSquared : null
+    const closestOffset = closestTime !== null ? relativePosition!.clone().addScaledVector(relativeVelocity!, closestTime) : null
+    const horizontalSpeed = Math.hypot(ownVelocity.x, ownVelocity.z)
+    const right = horizontalSpeed > 1e-6 ? new Vector3(-ownVelocity.z, 0, ownVelocity.x).divideScalar(horizontalSpeed) : null
+    return {
+      time, ownPosition: ownPosition.toArray(), ownVelocity: ownVelocity.toArray(),
+      mode: vehicle.input.special ? 'forward' : 'hover', ordinaryGoal: {...goal},
+      orb: shot ? { id: shot.id, position: [...shot.pos], velocity: [...shot.velocity], age: source!.age, remainingLife: Math.max(0, source!.life-source!.age) } : null,
+      unavailable, relativePosition: relativePosition?.toArray() ?? null, relativeVelocity: relativeVelocity?.toArray() ?? null,
+      range, catchClearance: range === null ? null : range-pesterRadius.value,
+      terrainClearance: ownPosition.y-surface(ownPosition.x,ownPosition.z),
+      closingSpeed: range !== null && range > 1e-6 ? -relativePosition!.dot(relativeVelocity!)/range : null,
+      closingUnavailable: range === null ? unavailable : range <= 1e-6 ? 'coincident-positions' : null,
+      estimate: { unavailable: estimateUnavailable, closestTime, closestOffset: closestOffset?.toArray() ?? null,
+        interpretation: closestTime === null ? 'undefined' : closestTime < 0 ? 'closest-point-in-past' : closestTime > (source!.life-source!.age) ? 'beyond-remaining-life' : 'within-remaining-life' },
+      lateralSeparation: relativePosition && right ? relativePosition.dot(right) : null,
+      lateralUnavailable: !shot ? unavailable : !right ? 'zero-horizontal-own-speed' : null,
+    }
+  }
+  type Observation = ReturnType<typeof observe>
+  const observations: Observation[] = []
+  let decision: Observation | null = null
   const measured: Pilot = { profile: pilot.profile, reset: () => pilot.reset(), drive(goal,input,dt) {
     lastOrdinary={...goal};let chosen={...goal}
     // Observation/reaction is shared by both arcs. No shot trajectory is simulated here.
     if(time>=0&&time+1e-8>=nextObservation){
+      // Same synchronous boundary for none/left/right, before any altered control.
+      const observation = observe(goal)
+      observations.push(observation)
+      if(decision===null&&time+1e-8>=REACTION)decision=observation
       nextObservation=time+OBSERVATION
       if(pesters.list().length&&seen===null)seen=time
       if(action!=='none'&&seen!==null&&activation===null&&time-seen+1e-8>=REACTION&&pesters.list().length)activation=time
@@ -124,14 +165,15 @@ function run(kind: Kind, action: Action, scenario: Case) {
     expect(mind.activity.destination).toEqual({...destination,y:undefined})
     expect(lastExecuted).toEqual(lastOrdinary)
     expect(activation===null||activation+1e-8>=REACTION).toBe(true)
-    const result={kind,action,scenario,caught,firstCatch,minimumSeparation,activation,firstTurn,appliedSeconds:applied*FIXED_DT,refusedSteps:refused,minimumClearance,flipped,flightSeconds,startSpeed:startVelocity.length(),returnCrossTrack:Math.abs(vehicle.body.translation().x-x0),routeRestored:true,trace,beforeReaction}
+    const pairedLateralResponse: {time:number; separation:number|null; unavailable:string|null}[]=[]
+    const result={kind,action,scenario,caught,firstCatch,minimumSeparation,activation,firstTurn,appliedSeconds:applied*FIXED_DT,refusedSteps:refused,minimumClearance,flipped,flightSeconds,startSpeed:startVelocity.length(),returnCrossTrack:Math.abs(vehicle.body.translation().x-x0),routeRestored:true,decision,observations,pairedLateralResponse,trace,beforeReaction}
     return result
   } finally { pesters!?.dispose();vehicle.dispose();world.free() }
 }
 
 it('measures a fixed aircraft and Pester response envelope',()=>{
   expect([pesterSpeed.value,pesterTurn.value,pesterRadius.value,pesterLife.value]).toEqual([24,1.6,2.4,8])
-  mkdirSync(output,{recursive:true})
+  mkdirSync(output,{recursive:false}) // Refuse to overwrite an earlier measurement directory.
   const results:ReturnType<typeof run>[]=[]
   try {
     for(const kind of ['hover-jet','forward-jet','hovercraft'] as const)for(const scenario of cases){
@@ -139,9 +181,21 @@ it('measures a fixed aircraft and Pester response envelope',()=>{
       for(const action of ['left','right'] as const){
         const result=run(kind,action,scenario);results.push(result)
         expect(result.beforeReaction).toEqual(baseline.beforeReaction)
+        expect(result.decision).toEqual(baseline.decision)
+        // Retrospective response measurement, never an observation or control input.
+        // Fixed baseline travel-right axis at the shared decision, including route return.
+        const v=baseline.decision?.ownVelocity
+        const h=v?Math.hypot(v[0],v[2]):0
+        for(let i=0;i<result.observations.length;i++){
+          const sample=result.observations[i], base=baseline.observations[i]
+          expect(sample.time).toBe(base.time)
+          result.pairedLateralResponse.push({time:sample.time,
+            separation:v&&h>1e-6?((sample.ownPosition[0]-base.ownPosition[0])*(-v[2])+(sample.ownPosition[2]-base.ownPosition[2])*v[0])/h:null,
+            unavailable:v&&h>1e-6?null:'undefined-decision-travel-axis'})
+        }
       }
     }
   } finally {
-    writeFileSync(`${output}/results.json`,JSON.stringify({source:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),reaction:REACTION,observation:OBSERVATION,arcSeconds:ARC_SECONDS,arcDegrees:ARC_ANGLE*180/Math.PI,weapon:{speed:pesterSpeed.value,turn:pesterTurn.value,radius:pesterRadius.value,life:pesterLife.value},cases,results},null,2))
+    writeFileSync(`${output}/results.json`,JSON.stringify({schema:2,wrapSize:0,sampleBoundary:'after Pesters.fixedUpdate, inside Mind pilot drive before altered control and vehicle physics',source:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),reaction:REACTION,observation:OBSERVATION,arcSeconds:ARC_SECONDS,arcDegrees:ARC_ANGLE*180/Math.PI,weapon:{speed:pesterSpeed.value,turn:pesterTurn.value,radius:pesterRadius.value,life:pesterLife.value},cases,results},null,2))
   }
 },120000)
