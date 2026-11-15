@@ -112,3 +112,27 @@ export const buggyCoastDrag = defineParam({
   id: 'buggy.coastDrag', label: 'Coast drag', group: 'Buggy', scope: 'world',
   default: 0.2, min: 0, max: 2, step: 0.01,
 })
+/**
+ * Next-gen ride height at speed: the suspension travel (m) the smart suspension lowers to at
+ * buggy.speed. Syn3h used 0.1, which leaves little room before the body hits the ground.
+ */
+export const buggyRideHeight = defineParam({
+  id: 'buggy.rideHeight', label: 'Ride height at speed', group: 'Buggy', scope: 'world',
+  default: 0.25, min: 0.1, max: 0.4, step: 0.01,
+})
+/**
+ * Next-gen progressive bump stop: extra spring and damping over the last 0.2 m before the body
+ * would hit the ground, in multiples of the main spring at full compression. 0 turns it off.
+ */
+export const buggyBumpStop = defineParam({
+  id: 'buggy.bumpStop', label: 'Bump stop', group: 'Buggy', scope: 'world',
+  default: 1.5, min: 0, max: 2.5, step: 0.05,
+})
+/**
+ * Next-gen rebound damping, as a multiple of the compression damping set by Shocks. Higher
+ * values stop the springs throwing the buggy upward after a bump; 1 is the Syn3h damper.
+ */
+export const buggyRebound = defineParam({
+  id: 'buggy.rebound', label: 'Rebound damping', group: 'Buggy', scope: 'world',
+  default: 3, min: 1, max: 4, step: 0.1,
+})
