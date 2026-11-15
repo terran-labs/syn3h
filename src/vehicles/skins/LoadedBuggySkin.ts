@@ -180,7 +180,8 @@ export class LoadedBuggySkin implements BuggySkin {
   private wingInput = [0, 0, 0]
 
   constructor() {
-    this.object.name = 'buggy skin'
+    // Scripts find the skin by this name (tools/velocity-isolate.mjs).
+    this.object.name = 'syn3h buggy skin'
     const r0 = LAYOUT.rest, m0 = LAYOUT.mounts[3]
     this.strutRest = Math.hypot(r0.x - m0.x, r0.y - m0.y, r0.z - m0.z)
     this.wheels.forEach((w, i) => {
