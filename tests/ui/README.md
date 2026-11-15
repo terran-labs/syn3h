@@ -409,22 +409,38 @@ touch with that button pulsing; again every nine seconds, five times at most. Zo
 (X) has a ZORB thumb button that calls `input.toggleZorb()` and a line in every controls
 text. `jet-hint.mjs` checks the wings hint in the volcano's lava lake and the ZORB button.
 
-## The galaxy lobby (prototype, hidden)
+## The galaxy lobby
 
-Add `?galaxy=1` to the link. In place of the index panel the worlds orbit a sun in 3D
-(`galaxy/Galaxy.ts`): drag empty space to swing the view, pinch or scroll to move in and
+The lobby is a place: in place of the index panel the worlds orbit a sun in 3D
+(`galaxy/Galaxy.ts`). Drag empty space to swing the view, pinch or scroll to move in and
 out, tap a world or its label to fly to it. Arriving makes it the world (through
 `pickPlanet`, so the host lock and the invited-guest rule hold) and opens the name form;
-Back returns to the whole system. Every other panel opens over it as before.
+Back returns to the whole system. Every other panel opens over it as glass. The owner
+asked for this to replace the panel lobby on 14 November 2026.
 
-One fragment shader traces the sun and up to four spheres: no meshes, libraries or images.
-Each world is lit from where the sun is, wears its real map from `paintPlanetMap` (1024 by
-512, painted in the worker one after another) and cuts a shadow through the sun's shafts.
-The sun, shafts, flare and stars are terranlabs.com's, as in `Starfield.ts`, which is
-switched off while the galaxy is on so there is one sky and one context. It needs WebGL 2
-and a graphics level above 0; otherwise, and without the option, the ordinary lobby is
-unchanged. Play gives its context back.
+- One fragment shader traces the sun and up to four spheres: no meshes, libraries or
+  images. Each world is lit from where the sun is, wears its real map from
+  `paintPlanetMap`, shows settlement lights on its night side, and cuts a shadow through
+  the sun's shafts. The sun, shafts, flare and stars are terranlabs.com's.
+- The custom planet is a world still forming: plates of crust drifting on magma. Arriving
+  at it opens the sliders that shape a world.
+- The descent: Enter World from the name form dives toward the chosen world until its air
+  fills the view, then the game's camera comes down from 520 m above the spawn point to its
+  place behind the vehicle while the blur clears (`Shell.descent`, using the camera's
+  cinematic pose hook). The room is joined at the start of the fall. Called from code, with
+  `?autoplay=1`, or with reduced motion asked for, entry is immediate.
+- Grade, in the same shader: highlights rolled off, a vignette, fine film grain, and for
+  the dive, streaks rushing outward and the brightness of air.
+- The quality ladder (`quality/ladder.ts`, terranlabs.com's, logic unchanged) watches frame
+  gaps and sheds, in order: twinkle and drifting cloud; flare, ghosts, grain, the worlds'
+  shadows and frost on glass; noise octaves and night lights; then render scale 0.86, 0.73,
+  0.6. It has no imports, so the game's renderer can call it and share the one state.
+- Fallbacks: without WebGL 2, at `gfx.level` 0, or with `?galaxy=0`, the panel lobby and its
+  starfield are used. If the level falls to 0 during a session the galaxy is retired the
+  next time the player is not looking at it.
 
-Not yet: the flight down into the atmosphere handing over to the game, other players and
-saved seeds as lights and moons, a keyboard way to swing the view, and any check on a real
-phone. `tools/heavy.sh node tests/ui/galaxy.mjs` checks what is there on desktop and phone.
+Known gaps: no keyboard way to swing the view (the labels and links are all reachable by
+keyboard); frame cost unmeasured on real devices; the game measures its own frame rate
+while the lobby is on screen, so a slow lobby can lower `gfx.level` before play starts.
+`tools/heavy.sh node tests/ui/galaxy.mjs` checks the galaxy, the custom world and the
+descent on desktop and phone; `planets.mjs` checks the panel lobby with `?galaxy=0`.
