@@ -37,6 +37,12 @@ export const terrainSpireHeight = defineParam({
   ...P, id: 'terrain.spireHeight', label: 'Spire height', default: 190, min: 0, max: 300, step: 5,
 })
 
+export const terrainLandShare = defineParam({
+  ...P, id: 'terrain.landShare', label: 'Land share (0 all sea, 1 all land)', default: 0.5, min: 0.3, max: 0.85, step: 0.01,
+})
+export const terrainPlanetSize = defineParam({
+  ...P, id: 'terrain.planetSize', label: 'Planet size: 0 small, 1 medium, 2 large', default: 1, min: 0, max: 2, step: 1,
+})
 export const terrainTreeCover = defineParam({
   ...P, id: 'terrain.treeCover', label: 'Plant cover', default: 0.5, min: 0, max: 1, step: 0.01,
 })
@@ -71,6 +77,10 @@ export interface TerrainSettings {
   spireHeight: number
   /** KIND_VOLCANIC, KIND_DESERT or KIND_ALPINE. */
   kind: number
+  /** 0..1 share of the tile that is land. */
+  landShare: number
+  /** 0 small (1 km tile), 1 medium (2 km), 2 large (4 km). */
+  planetSize: number
   /** 0..1 share of the land in forest. */
   treeCover: number
 }
@@ -87,6 +97,8 @@ export const TERRAIN_PARAMS: Record<keyof TerrainSettings, Param<number>> = {
   cragDensity: terrainCragDensity,
   spireHeight: terrainSpireHeight,
   kind: terrainKind,
+  landShare: terrainLandShare,
+  planetSize: terrainPlanetSize,
   treeCover: terrainTreeCover,
 }
 
