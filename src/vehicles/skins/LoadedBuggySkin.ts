@@ -80,6 +80,14 @@ function release(root: THREE.Object3D): void {
   materials.forEach(m => m.dispose())
 }
 
+/** A node by name, allowing the numeric suffix Blender adds on export ('Body.001' loads as 'Body001'). */
+function nodeNamed(root: THREE.Object3D, name: string): THREE.Object3D {
+  let found: THREE.Object3D | undefined
+  root.traverse(o => { if (!found && new RegExp(`^${name}(\\.?\\d+)?$`).test(o.name)) found = o })
+  if (!found) throw new Error(`Buggy model has no ${name} node`)
+  return found
+}
+
 /** Buggy.js 134-158: scale during deployment, then flex the original vertices. */
 export function wingVertex(x: number, y: number, z: number, open: number, steer: number, pitch: number): [number, number, number] {
   open = THREE.MathUtils.clamp(open, 0, 1)
@@ -210,7 +218,7 @@ export class LoadedBuggySkin implements BuggySkin {
     transform.multiply(new THREE.Matrix4().makeRotationY(Math.PI))
     const body = next ? new THREE.Group() : extract(scene.getObjectByName('Body')!, transform)
     // Box arm: the body and its fittings (strut sockets, shock towers, headlight lenses).
-    if (next) for (const name of ['Body', 'Sockets']) body.add(...extract(next.getObjectByName(name)!).children)
+    if (next) for (const name of ['Body', 'Sockets']) body.add(...extract(nodeNamed(next, name)).children)
     body.traverse(o => {
       if (!(o instanceof THREE.Mesh)) return
       // Preserve Syn3h's separate trim and light materials; classic has one tinted shell.
@@ -236,7 +244,7 @@ export class LoadedBuggySkin implements BuggySkin {
     const cockpitTransform = transform.clone()
     if (!classic) cockpitTransform.multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2))
     // The Box arm canopy is one mesh, both halves, already in place.
-    const cockpit = next ? extract(next.getObjectByName('Canopy')!) : extract(scene.getObjectByName('Cockpit')!, cockpitTransform)
+    const cockpit = next ? extract(nodeNamed(next, 'Canopy')) : extract(scene.getObjectByName('Cockpit')!, cockpitTransform)
     cockpit.traverse(o => { if (o instanceof THREE.Mesh) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose(); // Tagged as glass and kept out of the plain body merge, so the showroom tiers can blend it.
       const glass = setRole(new THREE.MeshStandardMaterial({color: classic ? 0xad58ff : 0x192c44, metalness: .65, roughness: .18}), 'glass'); glass.name = 'Cockpit'; glass.userData.separate = true; o.material = glass } })
     // Syn3h: the canopy stays its own mesh (both halves merged together, one draw), outside the
@@ -459,7 +467,7 @@ export class LoadedBuggySkin implements BuggySkin {
     // in the original Axle's frame (hub at the origin, span along +Y), so strutMatrix places it
     // unchanged. Its three materials merge into one instanced draw for all four corners; the
     // spring and rib keep following the vehicle's accent colour through the merge.
-    const arm = extract(next.getObjectByName('Strut')!)
+    const arm = extract(nodeNamed(next, 'Strut'))
     arm.traverse(o => { if (o instanceof THREE.Mesh) {
       const src = o.material as THREE.MeshStandardMaterial
       const m = /chrome/i.test(src.name) ? setRole(chrome(), 'chrome') : /accent/i.test(src.name) ? setRole(new THREE.MeshStandardMaterial({color: this.accentColor, roughness: .35, metalness: .55}), 'accent') : setRole(new THREE.MeshStandardMaterial({color: 0x23272d, roughness: .34, metalness: .7}), 'trim')
