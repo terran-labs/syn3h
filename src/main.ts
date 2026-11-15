@@ -141,7 +141,7 @@ async function main(): Promise<void> {
     },
   })
 
-  // Water Lab: ripples, spray and the underwater look. Each is off until its slider is on.
+  // Water effects follow their normal-entry defaults and explicit player controls.
   game.add(new WaterEffects(game, terrain, player, bots))
 
   // Handles for debugging and automated checks.
