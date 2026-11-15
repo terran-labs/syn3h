@@ -3,7 +3,10 @@
  * a fresh context per case, graphics level 2, pixel ratio 1, the quality governor held still,
  * 2.5 seconds of warm-up and 5 seconds of samples.
  *
- *   tools/heavy.sh node tools/bloom-profile.mjs [URL] [output JSON] [default strength] [threshold] [radius]
+ *   tools/heavy.sh node tools/bloom-profile.mjs [URL] [output JSON] [default strength] [threshold] [radius] [stack]
+ *
+ * stack 'full' adds shafts 0.6, grade 0.5 and vignette 0.4 to the default case and all three
+ * at 1 to the max case, with the sun low (18.6 h) so shafts are drawn.
  *
  * Cases at 1920 x 1080 and 1280 x 720, run back to back as off, default, max, max, default,
  * off, so drift shows as a difference between the two halves. Max is strength 1, radius 1.
@@ -17,7 +20,9 @@ import { writeFile } from 'node:fs/promises'
 const url = process.argv[2] ?? 'http://127.0.0.1:5213/'
 const output = process.argv[3] ?? '/tmp/bloom-profile.json'
 const def = { strength: Number(process.argv[4] ?? 0.5), threshold: Number(process.argv[5] ?? 4), radius: Number(process.argv[6] ?? 0.4) }
-const max = { strength: 1, threshold: def.threshold, radius: 1 }
+const full = process.argv[7] === 'full'
+if (full) def.extra = { 'gfx.shafts': 0.6, 'gfx.grade': 0.5, 'gfx.vignette': 0.4 }
+const max = { strength: 1, threshold: def.threshold, radius: 1, ...(full ? { extra: { 'gfx.shafts': 1, 'gfx.grade': 1, 'gfx.vignette': 1 } } : {}) }
 const sep = url.includes('?') ? '&' : '?'
 const cases = [['off', null], ['default', def], ['max', max], ['max', max], ['default', def], ['off', null]]
 const percentile = (values, p) => { const v = values.filter(Number.isFinite).sort((a, b) => a - b); return v.length ? v[Math.min(v.length - 1, Math.floor(p * v.length))] : null }
@@ -38,11 +43,12 @@ try {
       page.on('pageerror', e => errors.push(e.message))
       await page.goto(`${url}${sep}autoplay=1&gfx=2&room=bloom-profile-${Date.now()}`)
       await page.waitForFunction(() => window.syn3h?.game?.tick > 30, null, { timeout: 90000 })
-      const setup = await page.evaluate(settings => {
+      const setup = await page.evaluate(([settings, full]) => {
         const s = window.syn3h, g = s.game, r = g.renderer
         s.params.set('bots.count', 0); s.params.set('sun.dayLength', 0)
         g.quality.frame = () => {}; r.setPixelRatio(1)
-        if (settings) { s.params.set('gfx.bloomThreshold', settings.threshold); s.params.set('gfx.bloomRadius', settings.radius); s.params.set('gfx.bloom', settings.strength) }
+        if (settings) { s.params.set('gfx.bloomThreshold', settings.threshold); s.params.set('gfx.bloomRadius', settings.radius); s.params.set('gfx.bloom', settings.strength); for (const [id, v] of Object.entries(settings.extra ?? {})) s.params.set(id, v) }
+        if (full) s.params.set('sun.timeOfDay', 18.6)
         r.backend.trackTimestamp = r.hasFeature('timestamp-query')
         const draw = g.draw.bind(g)
         let drawMs = 0, gpuPending = false, lastGpu = null
@@ -55,12 +61,12 @@ try {
         } })
         window.bloomProfile = { start() { samples.length = 0; collecting = true }, stop() { collecting = false; return samples } }
         return { backend: g.backend, timestamps: r.backend.trackTimestamp, drawingBuffer: [r.domElement.width, r.domElement.height] }
-      }, settings)
+      }, [settings, full])
       await page.waitForTimeout(2500)
       await page.evaluate(() => window.bloomProfile.start())
       await page.waitForTimeout(5000)
       const samples = await page.evaluate(() => window.bloomProfile.stop())
-      const active = await page.evaluate(() => !!window.syn3h.game.bloom?.active)
+      const active = await page.evaluate(() => !!window.syn3h.game.post?.active)
       const row = {
         width, height, case: name, settings, active, load: +loadavg()[0].toFixed(2), ...setup, frames: samples.length,
         frameMs: percentile(samples.map(s => s.frameMs), 0.5), p95Ms: percentile(samples.map(s => s.frameMs), 0.95),

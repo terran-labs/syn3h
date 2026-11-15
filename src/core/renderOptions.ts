@@ -125,8 +125,47 @@ export function bloomActive(gate: BloomGate): boolean {
 }
 /** `?bloom=0.6` sets the bloom strength for this page load, clamped to 0..1. */
 export function bloomOverride(search: string): number | undefined {
-  const value = new URLSearchParams(search).get('bloom')
+  return strengthOverride(search, 'bloom')
+}
+function strengthOverride(search: string, key: string): number | undefined {
+  const value = new URLSearchParams(search).get(key)
   if (value === null || value.trim() === '') return undefined
   const n = Number(value)
   return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : undefined
+}
+
+/** The post effects, in the order the stack applies them. */
+export const POST_EFFECTS = ['bloom', 'shafts', 'grade', 'vignette'] as const
+export type PostEffect = typeof POST_EFFECTS[number]
+export type PostStrengths = Readonly<Record<PostEffect, number>>
+
+/** `?bloom= ?shafts= ?grade= ?vignette=` set those strengths for one page load, clamped to 0..1. */
+export function postOverrides(search: string): Partial<Record<PostEffect, number>> {
+  const out: Partial<Record<PostEffect, number>> = {}
+  for (const key of POST_EFFECTS) { const v = strengthOverride(search, key); if (v !== undefined) out[key] = v }
+  return out
+}
+
+/**
+ * Which post effects run this frame. Empty means the plain `renderer.render` path. The
+ * device and level gate is the bloom gate: graphics level 2, a desktop class device and a
+ * verified backend. `backends` lists, per effect, where it was verified; an effect missing
+ * there for this backend switches itself off.
+ */
+export function activePostEffects(strengths: PostStrengths, gate: Omit<BloomGate, 'strength'>, backends: Readonly<Record<PostEffect, Readonly<Record<RenderBackend, boolean>>>> = POST_BACKENDS): PostEffect[] {
+  if (!(gate.level === 2 && gate.deviceLevel === 2)) return []
+  return POST_EFFECTS.filter(effect => {
+    const s = strengths[effect]
+    return s > 0 && Number.isFinite(s) && backends[effect][gate.backend] === true && (gate.allowed ?? BLOOM_BACKENDS)[gate.backend] === true
+  })
+}
+/** Backends where each effect was verified (tools/bloom-review.md). */
+export const POST_BACKENDS: Readonly<Record<PostEffect, Readonly<Record<RenderBackend, boolean>>>> = {
+  bloom: { webgpu: true, webgl: true }, shafts: { webgpu: true, webgl: true }, grade: { webgpu: true, webgl: true }, vignette: { webgpu: true, webgl: true },
+}
+
+/** How strongly the sun casts shafts at this height (sun direction y): only when it is low and up. */
+export function lowSunFactor(sunY: number): number {
+  const s = (a: number, b: number, x: number) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t) }
+  return s(-0.04, 0.03, sunY) * (1 - s(0.2, 0.5, sunY))
 }

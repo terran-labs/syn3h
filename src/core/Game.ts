@@ -11,8 +11,9 @@
  */
 import * as THREE from 'three/webgpu'
 import { installRenderDiagnostics, recordStartupPhase, showRendererLost, startupTiming, timeStartup } from './diagnostics'
-import { bloomActive, gpuDeadlineMs, startRenderer } from './renderOptions'
-import { Bloom, bloomStrength } from './bloom'
+import { activePostEffects, gpuDeadlineMs, startRenderer } from './renderOptions'
+import { PostStack } from './post/PostStack'
+import { bloomStrength, gradeStrength, shaftsStrength, vignetteStrength } from './post/params'
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
 import { QualityController, graphicsLevel, reportLoading, type FrameMetrics } from './quality'
@@ -198,22 +199,26 @@ export class Game {
     this.quality.frame(metrics)
   }
 
-  /** Created on first use; null until bloom has ever been switched on. */
-  private bloom: Bloom | null = null
+  /** Created on first use; null until a post effect has ever been switched on. */
+  private post: PostStack | null = null
 
   /**
-   * Draw the frame. With gfx.bloom at 0 (the default) this is `renderer.render` and nothing
-   * else: the strength test comes first and no Bloom object exists. Bloom also needs graphics
-   * level 2, a desktop class device and a verified backend; when the governor lowers the level
-   * it is released at once, targets and all, and rebuilt when the level returns.
+   * Draw the frame. With every post strength at 0 (the default) this is `renderer.render` and
+   * nothing else: four comparisons come first and no PostStack exists. Post effects also need
+   * graphics level 2, a desktop class device and a verified backend; when the governor lowers
+   * the level the stack is released at once, targets and all, and rebuilt when it returns.
    */
   private draw(): void {
-    if (bloomStrength.value > 0 && bloomActive({ strength: bloomStrength.value, level: graphicsLevel.value, deviceLevel: this.quality.deviceLevel, backend: this.backend })) {
-      this.bloom ??= new Bloom(this.renderer, this.scene, this.camera)
-      this.bloom.render()
-      return
+    const b = bloomStrength.value, s = shaftsStrength.value, g = gradeStrength.value, v = vignetteStrength.value
+    if (b > 0 || s > 0 || g > 0 || v > 0) {
+      const effects = activePostEffects({ bloom: b, shafts: s, grade: g, vignette: v }, { level: graphicsLevel.value, deviceLevel: this.quality.deviceLevel, backend: this.backend })
+      if (effects.length) {
+        this.post ??= new PostStack(this.renderer, this.scene, this.camera)
+        this.post.render(effects)
+        return
+      }
     }
-    if (this.bloom?.active) this.bloom.release()
+    if (this.post?.active) this.post.release()
     this.renderer.render(this.scene, this.camera)
   }
 
