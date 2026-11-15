@@ -98,7 +98,7 @@ export class Engine {
     this.oscillators.forEach((o,i)=>smooth(o.frequency,p.pitch*(i?2.003:1),.18))
     smooth(this.filter.frequency,p.cutoff);smooth(this.tone.gain,m.engine*p.tone*motor);smooth(this.roar.gain,m.engine*p.roar*motor)
     const ground=m.dirt*(motion.kind==='tank'?1.35:1)*level
-    smooth(this.dirt.gain,ground);smooth(this.pulse.frequency,p.pulse);smooth(this.pulseDepth.gain,ground*p.depth)
+    smooth(this.dirt.gain,ground);smooth(this.pulse.frequency,p.pulse);smooth(this.pulseDepth.gain,ground*p.depth*motor)
     smooth(this.dirtFilter.frequency,motion.kind==='tank'?330:180+unit(Math.abs(motion.speed)/55)*400)
     smooth(this.wind.gain,m.wind*level,.3)
     smooth(this.field.gain,motion.wings&&motion.kind!=='jet'?.025*level:0,.2)

@@ -6,7 +6,7 @@
  *
  * Walks the lobby, the vehicle panel, the game for the buggy and the jet, King of the Hill
  * held, contested and won, the join QR view and the in-game menu. In every in-game state it
- * measures the thumb stick, each action button, the minimap, the HUD, the hill strip, the
+ * measures the thumb stick (when held) and its first-run hint, each action button, the minimap, the HUD, the hill strip, the
  * menu buttons, the controls card, the toast, any announcement and the vehicle's place on
  * screen, and fails if any two of them overlap. `--record` only reports, for capturing a
  * build known to fail. Match and score states are fixtures fed to the shell.
@@ -43,7 +43,7 @@ const measure = page => page.evaluate(() => {
       boxes.push({ name: selector + (el.dataset.action ? `[${el.dataset.action}]` : ''), group, left: r.left, right: r.right, top: r.top, bottom: r.bottom })
     }
   }
-  add('.touch-stick', 'stick'); add('.touch-actions button', 'actions'); add('.shell-minimap'); add('.shell-hud'); add('.match-hud')
+  add('.touch-stick', 'stick'); add('.touch-stick-hint', 'stick'); add('.touch-actions button', 'actions'); add('.shell-minimap'); add('.shell-hud'); add('.match-hud')
   add('.hud-navigation'); add('.spawn-help'); add('.shell-toast'); add('.match-announcement')
   const overlaps = []
   for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {

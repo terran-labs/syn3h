@@ -28,6 +28,19 @@ try {
       levels.push({ kind, before:rms(.3,.45), muted:rms(.8,1.1), after:rms(1.5,1.8) })
       engine.dispose(true)
     }
+    // Isolate the motor: modulation feeds tone.gain directly and must also respect wings.
+    const motorLevels = []
+    for (const airborne of [false, true]) for (const wings of [false, true]) {
+      const ctx = new OfflineAudioContext(1, 44100 * 3, 44100)
+      const engine = new Engine(ctx, ctx.destination)
+      for (const name of ['field', 'wind', 'dirt', 'squeal']) engine[name].disconnect()
+      engine.update({ kind: 'buggy-syn3h', speed: 30, throttle: 1, airborne, wings, slip: 0 })
+      const buffer = await ctx.startRendering(), data = buffer.getChannelData(0)
+      let sum = 0
+      for (let i = 44100 * 2; i < data.length; i++) sum += data[i] ** 2
+      motorLevels.push({ airborne, wings, rms: Math.sqrt(sum / 44100) })
+      engine.dispose(true)
+    }
     const audio = syn3h.audio, cues = [], impacts = []
     const originalCue = audio.cue, originalImpact = audio.impact, enabled = audio.enabled, terrain = audio.terrain
     const vehicle = { object: {position: {x:0,y:0,z:0}}, wingsOpen:false, landedThisStep:false, landingImpact:12, zorbed:false }
@@ -39,10 +52,11 @@ try {
       vehicle.zorbed=false; audio.vehicleEvents(vehicle)
       const mutedEvents={cues:[...cues],impacts:[...impacts]}
       vehicle.wingsOpen=false; vehicle.landedThisStep=false; audio.vehicleEvents(vehicle)
-      return {levels,mutedEvents,cues,impacts}
+      return {levels,motorLevels,mutedEvents,cues,impacts}
     } finally { audio.cue=originalCue; audio.impact=originalImpact; audio.enabled=enabled; audio.terrain=terrain; audio.events.delete(vehicle) }
   })
   for(const level of result.levels) { assert.ok(level.before>.0001); assert.equal(level.muted,0); assert.ok(level.after>.0001) }
+  for (const level of result.motorLevels) assert.ok(level.wings ? level.rms < .00001 : level.rms > .001, JSON.stringify(level))
   assert.deepEqual(result.mutedEvents,{cues:[],impacts:[]})
   assert.deepEqual(result.cues,['retract'])
   await writeFile(`${out}/audio.json`,JSON.stringify(result,null,2))
