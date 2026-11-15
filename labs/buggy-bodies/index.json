@@ -1,0 +1,209 @@
+[
+ {
+  "id": "v1-heritage",
+  "name": "Heritage",
+  "notes": [
+   "Your original proportions, untouched",
+   "Surface smoothed one level",
+   "Translucent purple canopy as in the last Syn3h build",
+   "Dark centre stripe"
+  ],
+  "file": "v1-heritage.glb",
+  "triangles": 20302,
+  "round": 1,
+  "gameResolution": false
+ },
+ {
+  "id": "v2-reference",
+  "name": "Reference",
+  "notes": [
+   "Pushed toward your studio renders",
+   "Shorter nose and tail, taller and rounder",
+   "Pinched waist, fuller rear haunches",
+   "Taller hoop spoiler",
+   "Dark glass teardrop canopy, no stripe, dark scoops"
+  ],
+  "file": "v2-reference.glb",
+  "triangles": 20294,
+  "round": 1,
+  "gameResolution": false
+ },
+ {
+  "id": "v3-speedster",
+  "name": "Speedster",
+  "notes": [
+   "Long and low",
+   "Stretched nose and tail, dropped nose",
+   "Low canopy",
+   "Hoop spoiler flattened into a ducktail",
+   "Light stripe"
+  ],
+  "file": "v3-speedster.glb",
+  "triangles": 20398,
+  "round": 1,
+  "gameResolution": false
+ },
+ {
+  "id": "v4-widebody",
+  "name": "Wide body",
+  "notes": [
+   "Muscular: swollen front shoulders and rear haunches",
+   "Deep waist between the wheels",
+   "Wider hoop spoiler",
+   "Tucked belly for clearance",
+   "Dark scoops, bright stripe"
+  ],
+  "file": "v4-widebody.glb",
+  "triangles": 20354,
+  "round": 1,
+  "gameResolution": false
+ },
+ {
+  "id": "v5-bubble",
+  "name": "Bubble",
+  "notes": [
+   "Compact and tall, a moon buggy",
+   "Short nose and tail, inflated body",
+   "Tall clear bubble canopy",
+   "Narrower, taller hoop spoiler"
+  ],
+  "file": "v5-bubble.glb",
+  "triangles": 20238,
+  "round": 1,
+  "gameResolution": false
+ },
+ {
+  "id": "w1-flared",
+  "name": "Flared",
+  "notes": [
+   "Wide body with a first step of flare over each wheel",
+   "Tail lights about 1.6 times larger"
+  ],
+  "file": "w1-flared.glb",
+  "triangles": 22714,
+  "round": 2,
+  "gameResolution": false
+ },
+ {
+  "id": "w2-cobra",
+  "name": "Cobra",
+  "notes": [
+   "Tall rounded front fenders standing above the hood",
+   "Hood dropped into a valley between them",
+   "Strong rear haunches",
+   "Tail lights twice as large"
+  ],
+  "file": "w2-cobra.glb",
+  "triangles": 22706,
+  "round": 2,
+  "gameResolution": false
+ },
+ {
+  "id": "w3-haunches",
+  "name": "Haunches",
+  "notes": [
+   "Rear biased: very large rear haunches, modest front flares",
+   "Long swept tail lights wrapping round the rear corners"
+  ],
+  "file": "w3-haunches.glb",
+  "triangles": 22446,
+  "round": 2,
+  "gameResolution": false
+ },
+ {
+  "id": "w4-cokebottle",
+  "name": "Coke bottle",
+  "notes": [
+   "Deepest waist, so both pairs of flares read strongly from above",
+   "Tall tail lights"
+  ],
+  "file": "w4-cokebottle.glb",
+  "triangles": 22778,
+  "round": 2,
+  "gameResolution": false
+ },
+ {
+  "id": "w5-extreme",
+  "name": "Extreme",
+  "notes": [
+   "Everything turned up: the biggest flares front and rear",
+   "Deep hood valley",
+   "Wider hoop spoiler",
+   "The largest tail lights"
+  ],
+  "file": "w5-extreme.glb",
+  "triangles": 22774,
+  "round": 2,
+  "gameResolution": false
+ },
+ {
+  "id": "r1-blade",
+  "name": "Blade",
+  "notes": [
+   "Linkage: one slim aerofoil blade, swelling where it meets the body",
+   "Body: a chrome collar the blade passes through",
+   "Tail lights: the original kite, half as large again, set in a chrome surround",
+   "Lower body drawn in beside each wheel so the linkage is in the open"
+  ],
+  "file": "r1-blade.glb",
+  "triangles": 6093,
+  "round": 3,
+  "gameResolution": true
+ },
+ {
+  "id": "r2-wishbone",
+  "name": "Wishbone",
+  "notes": [
+   "Linkage: twin arms spread at the body and joined at the hub, with a cross bar",
+   "Body: a dark recess with a chrome rim that takes both arms",
+   "Tail lights: three slanted bars each side",
+   "Lower body drawn in beside each wheel so the linkage is in the open"
+  ],
+  "file": "r2-wishbone.glb",
+  "triangles": 6175,
+  "round": 3,
+  "gameResolution": true
+ },
+ {
+  "id": "r3-coilover",
+  "name": "Coilover",
+  "notes": [
+   "Linkage: a slim lower blade with a spring and damper standing above it",
+   "Body: chrome cone pods reaching toward the wheels, as in your studio renders",
+   "Tail lights: a long swept blade in a chrome surround",
+   "Lower body drawn in beside each wheel so the linkage is in the open"
+  ],
+  "file": "r3-coilover.glb",
+  "triangles": 6315,
+  "round": 3,
+  "gameResolution": true
+ },
+ {
+  "id": "r4-frame",
+  "name": "Space frame",
+  "notes": [
+   "Linkage: an open frame of two spars with cross bracing",
+   "Body: deep dark pockets with a slim chrome edge",
+   "Tail lights: a large kite with a smaller one inboard",
+   "Lower body drawn in beside each wheel so the linkage is in the open"
+  ],
+  "file": "r4-frame.glb",
+  "triangles": 6129,
+  "round": 3,
+  "gameResolution": true
+ },
+ {
+  "id": "r5-delta",
+  "name": "Delta",
+  "notes": [
+   "Linkage: a stub delta wing, narrow at the wheel and broad at the body, with an accent spine",
+   "Body: paint coloured fairings that swell out to meet the wing roots",
+   "Tail lights: a full width bar joining two kites",
+   "Lower body drawn in beside each wheel so the linkage is in the open"
+  ],
+  "file": "r5-delta.glb",
+  "triangles": 5845,
+  "round": 3,
+  "gameResolution": true
+ }
+]

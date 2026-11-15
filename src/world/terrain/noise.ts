@@ -109,3 +109,88 @@ export function smoothstep(edge0: number, edge1: number, x: number): number {
 export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t
 }
+
+// ---------------------------------------------------------------------------------------
+// Periodic noise, for a world that wraps
+// ---------------------------------------------------------------------------------------
+
+function mod(i: number, n: number): number {
+  const m = i % n
+  return m < 0 ? m + n : m
+}
+
+/**
+ * Perlin noise that repeats every `px` lattice cells along x and `pz` along z. The world
+ * tile wraps, so every layer of the terrain has to repeat exactly at the tile's width: call
+ * it with x and z already scaled so the tile spans a whole number of cells.
+ */
+export function pperlin(x: number, z: number, seed: number, px: number, pz: number): number {
+  const x0 = Math.floor(x)
+  const z0 = Math.floor(z)
+  const fx = x - x0
+  const fz = z - z0
+  const ax = mod(x0, px)
+  const az = mod(z0, pz)
+  const bx = ax + 1 === px ? 0 : ax + 1
+  const bz = az + 1 === pz ? 0 : az + 1
+  const h00 = hash2(ax, az, seed) & 7
+  const h10 = hash2(bx, az, seed) & 7
+  const h01 = hash2(ax, bz, seed) & 7
+  const h11 = hash2(bx, bz, seed) & 7
+  const v00 = GX[h00] * fx + GZ[h00] * fz
+  const v10 = GX[h10] * (fx - 1) + GZ[h10] * fz
+  const v01 = GX[h01] * fx + GZ[h01] * (fz - 1)
+  const v11 = GX[h11] * (fx - 1) + GZ[h11] * (fz - 1)
+  const u = fx * fx * fx * (fx * (fx * 6 - 15) + 10)
+  const v = fz * fz * fz * (fz * (fz * 6 - 15) + 10)
+  const a = v00 + (v10 - v00) * u
+  const b = v01 + (v11 - v01) * u
+  return (a + (b - a) * v) * 1.4142135623730951
+}
+
+/**
+ * Periodic fractal sum. Each octave doubles the frequency and the period, which keeps the
+ * repeat exact (the rotation between octaves that `fbm` uses would break it).
+ */
+export function pfbm(x: number, z: number, seed: number, octaves: number, px: number, pz: number): number {
+  let sum = 0
+  let amp = 1
+  let norm = 0
+  for (let o = 0; o < octaves; o++) {
+    sum += pperlin(x + o * 0.37, z + o * 0.61, seed + o * 1013, px, pz) * amp
+    norm += amp
+    amp *= 0.5
+    x *= 2
+    z *= 2
+    px *= 2
+    pz *= 2
+  }
+  return sum / norm
+}
+
+/** Periodic ridged fractal: sharp crests, in [0, 1]. */
+export function pridged(x: number, z: number, seed: number, octaves: number, px: number, pz: number): number {
+  let sum = 0
+  let amp = 1
+  let norm = 0
+  let weight = 1
+  for (let o = 0; o < octaves; o++) {
+    let n = 1 - Math.abs(pperlin(x, z, seed + o * 2029, px, pz))
+    n *= n
+    n *= weight
+    weight = n < 1 ? n : 1
+    sum += n * amp
+    norm += amp
+    amp *= 0.5
+    x *= 2
+    z *= 2
+    px *= 2
+    pz *= 2
+  }
+  return sum / norm
+}
+
+/** hash2 on lattice coordinates wrapped to an n by n tile. */
+export function phash2(ix: number, iz: number, seed: number, n: number): number {
+  return hash2(mod(ix, n), mod(iz, n), seed)
+}

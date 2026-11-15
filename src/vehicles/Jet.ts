@@ -5,6 +5,7 @@ import { RAPIER, unityTorque } from '../core/physics'
 import { defineParam } from '../../shared/params'
 import { Vehicle } from './Vehicle'
 import { VehicleModel } from './skins/VehicleModel'
+import { loadTextureViews } from './skins/textureViews'
 import { hotExposureDim } from './skins/hotExposure'
 
 export const jetHoverDrag = defineParam({id:'jet.hoverDrag',label:'Hover drag',group:'Jet',scope:'world',default:.01,min:.005,max:.015,step:.0001})
@@ -82,10 +83,12 @@ export class Jet extends Vehicle {
     })
     if(typeof window!=='undefined'){
       const glow=new THREE.TextureLoader().load('/models/textures/thruster-glow.png');this.glowMaterial.map=glow;this.glowBase.setRGB(3,3,4);this.textures.push(glow)
-      const texture=new THREE.TextureLoader().load('/models/textures/armor-scales.jpg')
-      texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.repeat.set(15,15)
+      // Two views of one image. A clone of the still-loading texture would be marked for upload
+      // with no image and throw on the first frame that beats the download (see textureViews.ts).
+      const [texture,fine]=loadTextureViews('/models/textures/armor-scales.jpg',2)
+      texture.wrapS=texture.wrapT=fine.wrapS=fine.wrapT=THREE.RepeatWrapping;texture.repeat.set(15,15)
       this.textures.push(texture);this.paint.bumpMap=texture;this.paint.bumpScale=.012
-      const fine=texture.clone();fine.repeat.set(40,40);this.textures.push(fine);this.chrome.bumpMap=fine;this.chrome.bumpScale=.002
+      fine.repeat.set(40,40);this.textures.push(fine);this.chrome.bumpMap=fine;this.chrome.bumpScale=.002
     }
     this.thruster.position.copy(nozzlePosition);this.object.add(this.thruster)
     const glow=new THREE.Mesh(new THREE.CircleGeometry(.42,32),this.glowMaterial)
@@ -122,7 +125,9 @@ export class Jet extends Vehicle {
     }
     if(this.hoverMode){
       this.thruster.quaternion.identity()
-      if(this.input.z===0&&jetHoverHold.value>0){
+      // Not inside a zorb ball: the hold would thrust along the tumbling jet's up axis and carry
+      // the ball off sideways or into the air. Manual throttle still works there.
+      if(this.input.z===0&&jetHoverHold.value>0&&!this.zorbed){
         // Half throttle balances weight (hoverThrustFactor 2); tilt and vertical speed correct it.
         const hold=clamp(.5/Math.max(.3,up.y)-velocity.y*.15,0,1)
         // Fade the hold out near the ground. A jet resting on its gear (hull about 1.3 m up)

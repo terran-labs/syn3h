@@ -5,7 +5,12 @@
  * (ix + 1, iz) to (ix, iz + 1); tests/world measured this against rays (the other diagonal
  * is off by up to half a metre, bilinear by a quarter). Interpolating on the same
  * triangles means `heightAt` returns the height the physics collides with, to float precision.
+ *
+ * The world wraps: the grid is one tile of a torus, and any (x, z) is first brought into the
+ * tile with `wrapCoord`, so heights and normals repeat every `size` metres. The last row and
+ * column of samples are the same world line as the first (see `sealSeam`).
  */
+import { wrapCoord } from '../../../shared/wrap'
 import type { TerrainData } from './generate'
 
 export interface Vec3Like {
@@ -17,15 +22,13 @@ export interface Vec3Like {
 export class HeightSampler {
   constructor(public data: TerrainData) {}
 
-  /** Grid coordinates of a world position, clamped to the grid. */
+  /** Grid coordinates of a world position, wrapped into the tile. */
   private locate(x: number, z: number): { ix: number; iz: number; fx: number; fz: number } {
     const { cell, resolution: n, size } = this.data
     const half = size / 2
-    let gx = (x + half) / cell
-    let gz = (z + half) / cell
-    const max = n - 1
-    gx = gx < 0 ? 0 : gx > max ? max : gx
-    gz = gz < 0 ? 0 : gz > max ? max : gz
+    const gx = (wrapCoord(x, size) + half) / cell
+    const gz = (wrapCoord(z, size) + half) / cell
+    // Rounding can land exactly on the far edge; the last cell covers it.
     let ix = Math.floor(gx)
     let iz = Math.floor(gz)
     if (ix > n - 2) ix = n - 2
@@ -81,4 +84,29 @@ export class HeightSampler {
     iz = iz < 0 ? 0 : iz >= n ? n - 1 : iz
     return this.data.heights[iz * n + ix]
   }
+}
+
+/**
+ * Make the tile's far row and column the exact copy of its first, since sample n - 1 lies
+ * at +size / 2, the image of -size / 2. Each pair is set to its mean, columns first, then
+ * rows, so the four corners end equal. The shading masks are sealed the same way. Returns
+ * the largest change made to any height, in metres.
+ */
+export function sealSeam(data: TerrainData): number {
+  const n = data.resolution
+  const seal = (h: Float32Array): number => {
+    let worst = 0
+    const pair = (a: number, b: number) => {
+      const m = (h[a] + h[b]) / 2
+      worst = Math.max(worst, Math.abs(h[a] - m))
+      h[a] = m
+      h[b] = m
+    }
+    for (let i = 0; i < n; i++) pair(i * n, i * n + n - 1)
+    for (let i = 0; i < n; i++) pair(i, (n - 1) * n + i)
+    return worst
+  }
+  seal(data.volcanic)
+  seal(data.roadDist)
+  return seal(data.heights)
 }

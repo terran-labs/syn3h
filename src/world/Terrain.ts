@@ -62,7 +62,10 @@ export interface TerrainRenderQuality {
 export interface Terrain {
   /** Side length in metres. The terrain is centred on the origin. */
   readonly size: number
-  /** Ground height in metres at a world position. Must match the physics collider. */
+  /**
+   * Ground height in metres at a world position. Must match the physics collider. On a
+   * wrapping terrain any x and z are accepted and the result repeats every `wrapSize`.
+   */
   heightAt(x: number, z: number): number
   /** Unit ground normal at a world position. */
   normalAt(x: number, z: number, out: THREE.Vector3): THREE.Vector3

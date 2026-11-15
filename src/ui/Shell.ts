@@ -93,7 +93,7 @@ export class Shell implements System {
           <form class="shell-form"><label for="shell-name">Player name</label><input id="shell-name" name="playerName" maxlength="24" autocomplete="nickname" placeholder="Explorer">
           <label for="shell-room">Room</label><div class="input-action"><input id="shell-room" name="room" maxlength="64" autocomplete="off"><button class="shell-invite" type="button">Copy invite</button></div>
           <div class="shell-controls"><span><b>WASD / arrows</b> Drive</span><span><b>Space</b> Wings</span><span><b>Shift</b> Brake</span><span><b>L / click</b> Tag beam</span></div><p class="shell-touch-hint">Left thumb to drive. Right thumb for wings, brake and tag.</p>
-          <button class="shell-play" type="submit">Enter World ›</button></form>${back}
+          <button class="shell-play is-primary" type="submit">Enter World ›</button></form>${back}
         </section>
         <section data-panel="vehicle">${heading('Your Vehicle')}
           <fieldset class="shell-vehicle"><legend>Vehicle</legend><div class="shell-vehicle-options"><label><input type="radio" name="vehicle" value="buggy-classic"> Classic</label><label><input type="radio" name="vehicle" value="buggy-syn3h"> Syn3h Buggy</label><label><input type="radio" name="vehicle" value="hovercraft"> Hovercraft</label><label><input type="radio" name="vehicle" value="jet"> Jet</label></div><div class="shell-vehicle-preview"></div><div class="shell-colors"><label>Body <input type="color" name="bodyColor" aria-label="Body colour"></label><label>Accent <input type="color" name="accentColor" aria-label="Accent colour"></label></div></fieldset>
@@ -135,6 +135,7 @@ export class Shell implements System {
       const compact = slot.hasAttribute('data-compact')
       this.pickers.push(new PlanetPicker(slot, { compact, onPick: id => this.pickPlanet(id, compact), onCustom: () => this.openCustomPlanet() }))
     }
+    this.glass(signal)
     const unsubscribeWorld = params.onChange(id => { if (params.get(id)?.def.scope === 'world') this.worldDirty = true })
     signal.addEventListener('abort', unsubscribeWorld)
     try { this.nameInput.value = localStorage.getItem('syn3h.playerName') || '' } catch { /* Storage is optional. */ }
@@ -390,6 +391,34 @@ export class Shell implements System {
   get graphics(): { starfieldFrames: number; starfieldLive: boolean; planetsLive: boolean; planetMaps: number } {
     return { starfieldFrames: this.starfield.frames, starfieldLive: this.starfield.generated, planetsLive: planetOrbs.active, planetMaps: planetOrbs.painted }
   }
+  /**
+   * Every button is terranlabs.com's glass button (.liquid-glass in shell.css), except the
+   * quiet text links. This also carries that site's GlassShine: while the pointer is over a
+   * glass button, the bright side of its one-pixel rim turns to face the pointer, and settles
+   * back when the pointer leaves. Nothing is drawn on the face of the button.
+   */
+  private glass(signal: AbortSignal): void {
+    const buttons = [...this.element.querySelectorAll<HTMLElement>('button'), ...this.touch.element.querySelectorAll<HTMLElement>('button')]
+    for (const button of buttons) if (!button.matches('.link-button, .lobby-links *, .syn3h-advanced *')) button.classList.add('liquid-glass')
+    // Touch screens have no hover, so there is nothing to face.
+    if (!matchMedia('(hover: hover)').matches) return
+    const REST = 205
+    let current: HTMLElement | null = null
+    // Kept unwrapped (it may pass 360) so the CSS transition always takes the short way round.
+    let angle = REST
+    document.addEventListener('pointermove', event => {
+      const target = event.target instanceof Element ? event.target : null
+      const button = target?.closest<HTMLElement>('.liquid-glass') ?? null
+      if (button !== current) { current?.style.removeProperty('--rim-angle'); current = button; angle = REST }
+      if (!button) return
+      const box = button.getBoundingClientRect()
+      const dx = event.clientX - (box.left + box.width / 2), dy = event.clientY - (box.top + box.height / 2)
+      // CSS conic angles start at the top and run clockwise.
+      const facing = (Math.atan2(dx, -dy) * 180) / Math.PI
+      angle += ((((facing - angle) % 360) + 540) % 360) - 180
+      button.style.setProperty('--rim-angle', `${angle.toFixed(1)}deg`)
+    }, { signal, passive: true })
+  }
   private updateHelp(): void {
     renderHelp(this.element.querySelector('.vehicle-help')!, this.choice.vehicleKind)
     this.element.querySelector('.shell-touch-hint')!.textContent = touchHelp(this.choice.vehicleKind)
@@ -453,6 +482,9 @@ export class Shell implements System {
     if (!this.started && !this.inviteOpen && !this.attract?.active && (this.requestedAttract || performance.now() - this.lastActivity > 20000)) this.startAttract()
     this.attract?.update(dt)
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
+    // The stylesheet drops frost at the lowest graphics level.
+    const gfx = String(levelNumber(graphicsLevel.value))
+    if (document.documentElement.dataset.gfx !== gfx) document.documentElement.dataset.gfx = gfx
     if (!this.menuVisible) return
     const mute = this.element.querySelector<HTMLButtonElement>('.shell-mute')!
     mute.textContent = this.audio.isMuted ? 'Unmute audio' : 'Mute all audio'; mute.setAttribute('aria-pressed', String(this.audio.isMuted))
@@ -511,7 +543,7 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
     shell.setMapSelf({ x: p.x, z: p.z, heading, color: activePlayer.colors.body, self: true })
     audio.motion = { speed, throttle: activePlayer.kind === 'jet' ? activePlayer.input.z : activePlayer.input.y, airborne: p.y - terrain.heightAt(p.x, p.z) > 2 }
     const input = activePlayer.input
-    const hint = hints.update(dt, { kind: activePlayer.kind, touch: shell.touch.available, altitude: p.y - terrain.heightAt(p.x, p.z), speed, steer: input.x, pitch: input.y, throttle: input.z, hoverMode: !input.special })
+    const hint = hints.update(dt, { kind: activePlayer.kind, touch: shell.touch.available, altitude: p.y - terrain.heightAt(p.x, p.z), speed, steer: input.x, pitch: input.y, throttle: input.z, hoverMode: !input.special, canLiftOut: activePlayer.canLiftOut })
     if (hint) shell.showHint(hint)
   } })
   game.add(audio)
