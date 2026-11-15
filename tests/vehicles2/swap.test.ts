@@ -8,6 +8,7 @@ import {createVehicle,type VehicleKind} from '../../src/vehicles'
 import {PlayerSlot} from '../../src/vehicles/PlayerSlot'
 import {SWAP_LIFT,createVehicleSwapper} from '../../src/vehicles/swap'
 import type {Vehicle} from '../../src/vehicles/Vehicle'
+import {Materialize} from '../../src/vehicles/effects/Materialize'
 beforeAll(initPhysics)
 
 /** A flat world with the parts of Game the vehicles, their effects and the swap use. */
@@ -106,6 +107,32 @@ describe('swapping the player vehicle in place',()=>{
   expect(next.body.isEnabled()).toBe(false)
   expect(old.body.isEnabled()).toBe(true)
   swapper.dispose();w.physics.free()
+ })
+ it('does not emit engine particles while the vehicle is zorbed',()=>{
+  const w=world(),{swapper}=player(w,'jet')
+  w.step(60)
+  const stats=w.game.scene.userData.vehicleEffects as {emitted:number}
+  expect(stats.emitted).toBeGreaterThan(0)
+  w.game.input.state.zorb=true;w.step(2)
+  const before=stats.emitted
+  w.step(60)
+  expect(stats.emitted).toBe(before)
+  swapper.dispose();w.physics.free()
+ })
+ it('releases a parked hold before reusing the same cached body',()=>{
+  const w=world(),{slot,swapper}=player(w),materialize=w.game.add(new Materialize(w.game,w.terrain))
+  const change=(kind:VehicleKind)=>{const previous=slot.current,next=swapper.swap(kind);if(next!==previous){materialize.cancel(previous);void materialize.begin(next)}return next}
+  const jet=change('jet');w.step(10)
+  expect(jet.body.isKinematic()).toBe(true)
+  expect(change('jet')).toBe(jet);expect(materialize.isHeld(jet)).toBe(true)
+  const tank=change('tank');w.step(10)
+  expect(jet.body.isEnabled()).toBe(false);expect(jet.body.isKinematic()).toBe(false)
+  expect(jet.object.userData.materializing).toBeUndefined()
+  expect(change('jet')).toBe(jet);w.step(90)
+  expect(tank.body.isEnabled()).toBe(false);expect(tank.object.userData.materializing).toBeUndefined()
+  expect(jet.body.isEnabled()).toBe(true);expect(jet.body.isKinematic()).toBe(false)
+  expect(materialize.isHeld(jet)).toBe(false)
+  materialize.dispose();swapper.dispose();w.physics.free()
  })
  it('still removes the old vehicle when a slot listener throws',()=>{
   const w=world(),{slot,swapper}=player(w),old=slot.current
