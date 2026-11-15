@@ -15,7 +15,7 @@ export type QualityLevel = 0 | 1 | 2 | 3 | 4 | 5
 export type GraphicsLevel = QualityLevel
 /** Which parts of the post chain a level may build. Strengths decide the individual effects. */
 export type PostTier = 'off' | 'base' | 'lite' | 'full'
-export const qualityLevel = defineParam({ id: 'gfx.quality', label: 'Quality level: 0 Minimal to 5 Cinematic', group: 'Graphics', scope: 'client', default: 4, min: 0, max: 5, step: 1 })
+export const qualityLevel = defineParam({ id: 'gfx.quality', label: 'Quality level: 0 Minimal to 5 Cinematic', group: 'Graphics', scope: 'client', default: 3, min: 0, max: 5, step: 1 })
 /**
  * The three-step value older consumers read (0, 1 or 2). It follows gfx.quality and is kept
  * only until those consumers read the level budget instead. Do not bind new code to it.
@@ -267,7 +267,7 @@ export const RESOLUTION_STEPS = [0.85, 0.7] as const
 export const RUNG_TIMING: Record<RungKind | 'level', { shedMs: number; climbMs: number }> = {
   post: { shedMs: 2000, climbMs: 10000 },
   resolution: { shedMs: 2000, climbMs: 10000 },
-  level: { shedMs: 8000, climbMs: 60000 },
+  level: { shedMs: 4000, climbMs: 60000 },
 }
 
 export const GOVERNOR = {

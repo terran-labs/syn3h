@@ -12,13 +12,13 @@ describe('eligible performance history',()=>{
   expect(Object.isFrozen(h.history)).toBe(true);expect(Object.isFrozen(h.history[0])).toBe(true)
  })
  it('requires warmup and sustained slow play; recovered windows clear the offer',()=>{
-  const h=new PerformanceHistory();feed(h,16);expect(h.recommendation).toBeNull()
+  const h=new PerformanceHistory();feed(h,9);expect(h.recommendation).toBeNull()
   feed(h,1);expect(h.recommendation).toMatchObject({level:2,targetLevel:1,observedFps:20})
   feed(h,2,16);expect(h.recommendation).toBeNull()
  })
  it('excludes hidden/menu/loading and interrupted samples and breaks consecutive evidence',()=>{
   for(const interrupted of [false,true]){
-   const h=new PerformanceHistory();feed(h,16)
+   const h=new PerformanceHistory();feed(h,9)
    h.sample(metrics(interrupted?1001:50),interrupted,q())
    feed(h,1);expect(h.recommendation).toBeNull();expect(h.history.every(p=>p.p95Ms<1000)).toBe(true)
   }
