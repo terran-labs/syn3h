@@ -17,7 +17,8 @@ URLs and the README GIF link verify. Release 5 is now accepted live as
 Worker and primary-site multiplayer, exact assets and all eight Chrome/WebKit vehicle
 checks pass with no page errors. The acceptance marker matches the Worker identity.
 Future deployment supervisors must now select release 5 as their rollback target.
-Release 5 showcase capture continues after acceptance and cannot invalidate it.
+Release 5 notes and the curated five-scene showcase are published. All six attachment
+URLs and the README latest-GIF link verify; original captures are preserved.
 
 The first attempt failed its primary-site bot-roster check and restored verified
 release 2. Unique-room diagnostics passed on the unchanged frozen build before this
@@ -115,16 +116,19 @@ supervisor. Public acceptance subsequently passed on the same frozen build at 3:
   perturbation margins, no new catches in previously safe cases, and route recovery.
   The current report establishes none of those selection guarantees. This technical
   blocker does not complete the assignment or clear the owner's follow-on condition.
+  A measurement-only follow-up is now authorized for the same 99 cases and unchanged
+  maneuvers: record synchronized vehicle/projectile state at the decision boundary.
+  Independent source review must pass before one typecheck and measurement run.
+  No production policy, tuning sweep or automatic retry is authorized by that step.
   Wheeled bots already evade Pesters; all four gear
   tools have combined browser evidence.
 - **Water transparency from above is unimplemented:** the sea/river material is opaque.
   Shallow colouring does not reveal submerged objects or ground. Transparent falling
   sheets do not satisfy this requirement. Two-client wave visuals and real-mobile cost
   remain unverified.
-- Release 5 notes are generated and full showcase capture follows acceptance. The obsolete lobby
-  readiness check is fixed, and a single capture from the exact frozen build passes
-  with the complete logo and planets visible. Artifact failures remain nonfatal after
-  gameplay acceptance; publication still requires content and image review.
+- Release 5 story publication is complete. The corrected capture produced all eight
+  scenes without errors; five reviewed scenes form the published GIF. The washed-out
+  tag-beam and hovercraft frames are excluded, and original captures are preserved.
 
 The later performance, diagnostics and cursor-UX queue remains pending until current
 assignments finish. It includes the FPS history panel, hardware and rendering failure
