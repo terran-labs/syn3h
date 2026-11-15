@@ -93,7 +93,8 @@ try {
   try {
     await page.goto(`${base}?room=handback-${Date.now()}&autoplay=1&daydream=2`, { waitUntil: 'load' })
     await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && window.syn3h.shell.playing, null, { timeout: 120000 })
-    for (const shot of ['orbit', 'flyby', 'crane', 'low']) {
+    const selectedShots = process.env.DESCENT_SHOTS?.split(',')
+    for (const shot of ['orbit', 'flyby', 'crane', 'low'].filter(s => !selectedShots || selectedShots.includes(s))) {
       const reached = await page.waitForFunction(s => window.syn3h.camera.director.active && window.syn3h.camera.director.shot === s && window.syn3h.camera.directed, shot, { timeout: 90000 }).then(() => true, () => false)
       if (!reached) { results.push({ id: `handback-${shot}`, skipped: 'the director did not reach this shot in 90 s (a fly-by needs speed)' }); await page.keyboard.press('KeyC'); await page.waitForTimeout(500); continue }
       await page.evaluate(record)
