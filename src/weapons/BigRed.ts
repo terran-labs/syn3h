@@ -20,7 +20,8 @@ export interface BigRedHooks {
   cue?(name: 'bigRedCharge' | 'bigRedReady' | 'bigRedFizzle', at: THREE.Vector3): void
 }
 
-const GLOW_RGB = [4, 0.5, 0.3] as const
+// Kept low in green and blue so tone mapping leaves it red, not peach.
+const GLOW_RGB = [2.4, 0.12, 0.06] as const
 /** Short pause after a fizzle, so a mashed button does not stutter. */
 const FIZZLE_PAUSE = 0.2
 
@@ -33,11 +34,19 @@ export class BigRed implements System {
   private readonly mat = new THREE.MeshBasicMaterial({
     color: new THREE.Color(...GLOW_RGB), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false,
   })
+  // The tag beam's recipe: additive light alone washes to salmon over an orange sky, so a
+  // normally blended deep red core keeps it reading red at noon.
+  private readonly core: THREE.Mesh
+  private readonly coreMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.55, 0.01, 0.01), transparent: true, opacity: 0.75, depthWrite: false })
   stats = { sent: 0, fizzled: 0 }
 
   constructor(private readonly game: Game, private readonly hooks: BigRedHooks) {
     this.glow = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), this.mat)
     this.glow.visible = false
+    this.core = new THREE.Mesh(this.glow.geometry, this.coreMat)
+    this.core.scale.setScalar(0.6)
+    this.core.renderOrder = -1
+    this.glow.add(this.core)
     game.scene.add(this.glow)
   }
 
@@ -92,7 +101,7 @@ export class BigRed implements System {
     // Grows while charging, then throbs when ready.
     const pulse = this.charge >= 1 ? 1 + 0.18 * Math.sin(t * 22) : 1 + 0.05 * Math.sin(t * 40)
     this.glow.scale.setScalar((0.25 + 0.85 * this.charge) * pulse)
-    this.glow.position.copy(o.position).add(new THREE.Vector3(0, 0.6, -2.6).applyQuaternion(o.quaternion))
+    this.glow.position.copy(o.position).add(new THREE.Vector3(0, 1.9, -1.2).applyQuaternion(o.quaternion))
     this.glow.visible = true
   }
 
@@ -100,5 +109,6 @@ export class BigRed implements System {
     this.game.scene.remove(this.glow)
     this.glow.geometry.dispose()
     this.mat.dispose()
+    this.coreMat.dispose()
   }
 }
