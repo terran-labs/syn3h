@@ -4,7 +4,7 @@ Written by the Orchestrator. Refreshed at each milestone tag. A fresh or compact
 Orchestrator should be able to resume from this file, `ops/BACKLOG.md`, `ops/LANES.md` and
 `ops/PROTOCOL.md` alone. Times are Pacific; read the clock with `date`, never from memory.
 
-Last refreshed: Saturday 14 November, 7:30pm PST. Demo: Sunday noon PST.
+Last refreshed: Saturday 14 November, 8:15pm PST. Demo: Sunday noon PST.
 
 ## Where things are
 
@@ -72,7 +72,21 @@ Retired in-process subagents (work merged): buggy `af96d3463a8b76592`, multiplay
 
 ## Releases
 
-- LIVE: release-1 = `m13.1-steering` (ee73e41, branch `release/1`, worktree
+- LIVE: release-2 = `m14.2-release2` (bc8cb48, branch `release/2`): m14 plus gallery models
+  out of the build, the recorded default track, the jet texture race fix (fe45b14) and the
+  buggy wheels-forward fix (0add867). Shipped 8:07pm PST. Worker version 747d2041, frozen copy
+  `../Syn3h-stable/20261114-200625-bc8cb48`. Back to release 1 in seconds: `tools/rollback.sh`
+  from this checkout with the token in the environment. Release branches are cut from a tag
+  and take cherry-picked fixes only, so trunk can carry unseen features. Releases are run
+  from the release worktree; `Syn3h-wt/Syn3h-stable` is now a link to `../Syn3h-stable`.
+- MERGING: never merge in this checkout (the live preview serves it). Merge and test in the
+  staging worktree `/Users/vtn/dev/Syn3h-wt/staging` (branch `staging`, vite on port 5179 with
+  `SYN3H_NO_ROOM_SERVER=1`), then `git merge --ff-only staging` here. A conflicted merge here
+  broke the preview for two minutes at 7:40pm.
+- Before any release: check every vehicle on the frozen build in WebKit 2388 as well as
+  Chrome (`/tmp/syn3h-research/tools/webkit2.mjs` pattern). The jet black screen in Safari
+  was invisible to Chrome smoke.
+- PREVIOUS: release-1 = `m13.1-steering` (ee73e41, branch `release/1`, worktree
   `/Users/vtn/dev/Syn3h-wt/release`): m13 plus the buggy steering and upright ram flag fixes.
   https://www.syn3h.com/ (Custom Domain, attached 7:13pm PST) and
   https://syn3h.af-4e7.workers.dev/. Worker `syn3h`, versions 9c01cffa (release) and bde1abd6
