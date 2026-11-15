@@ -1,6 +1,6 @@
 import { defineParam } from '../../shared/params'
 const number = (id: string, label: string, value: number, min: number, max: number, step = 0.1) => defineParam({ id: `bots.${id}`, label, group: 'Bots', scope: 'world', default: value, min, max, step })
-export const botCount = number('count', 'Bot count', 0, 0, 16, 1)
+export const botCount = number('count', 'Bot count', 4, 0, 16, 1)
 export const aggression = number('aggression', 'Aggression', 1, 0, 2)
 export const topThrottle = number('topThrottle', 'Top throttle', 1, 0, 1)
 export const canFire = defineParam({ id: 'bots.canFire', label: 'Bots use tag beams', group: 'Bots', scope: 'world', default: true })
@@ -28,20 +28,19 @@ export const freeSpirit = number('freeSpirit', 'Own agenda (0 always chases)', 0
 
 /**
  * Which vehicles bots drive. 0: buggies only. 1: mixed, every fourth bot a hovercraft and
- * every fourth a jet. Off by default until guests are told each bot's vehicle (networking).
+ * every fourth a jet. Guests receive each bot's type, including after host takeover.
  */
-export const fleet = number('fleet', 'Fleet: 0 buggies, 1 mixed', 0, 0, 1, 1)
+export const fleet = number('fleet', 'Fleet: 0 buggies, 1 mixed', 1, 0, 1, 1)
 
 /**
- * Let a self-flying jet open its wings on long straight legs. Off by default: forward flight
- * is quicker but has only been proven on two courses, and hover mode is the safe way to
- * cross a mountain.
+ * Let a self-flying jet open its wings on long straight legs. The pilot keeps hover mode
+ * for nearby turns and obstacles.
  */
-export const jetForwardFlight = defineParam({ id: 'bots.jetForwardFlight', label: 'Self-flying jets use forward flight', group: 'Bots', scope: 'world', default: false })
+export const jetForwardFlight = defineParam({ id: 'bots.jetForwardFlight', label: 'Self-flying jets use forward flight', group: 'Bots', scope: 'world', default: true })
 
 /**
  * Daydream: seconds without touching the controls before the player's own vehicle starts
  * driving itself. 0 turns it off. Personal, never sent to the room. The settings slider maps
  * its travel onto 10 seconds to 5 minutes with "off" at the far right (see daydreamControl.ts).
  */
-export const daydreamSeconds = defineParam({ id: 'daydream.seconds', label: 'Daydream after idle (s, 0 is off)', group: 'Daydream', scope: 'client', default: 30, min: 0, max: 300, step: 1 })
+export const daydreamSeconds = defineParam({ id: 'daydream.seconds', label: 'Daydream after idle (s, 0 is off)', group: 'Daydream', scope: 'client', default: 300, min: 0, max: 300, step: 1 })

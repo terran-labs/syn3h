@@ -271,7 +271,17 @@ export class Mind {
       if (grade > 0.2) goal.speed = Math.max(3, Math.min(goal.speed, 3 / grade))
     }
     // Wings for a long straight leg, where the pilot has them and the owner allows it.
-    if (this.pilot.profile.flies && jetForwardFlight.value && distance > 400 && act.kind !== 'follow' && act.kind !== 'pause') goal.special = true
+    if (this.pilot.profile.flies && jetForwardFlight.value && destination && distance > 400 && act.kind !== 'follow' && act.kind !== 'pause') {
+      // The ordinary route aim is only 10 to 30 metres away. Passing that to the jet
+      // permanently selected its arrival/hover mode, even with forward flight enabled.
+      // Offer a long aim only when the whole corridor is clear and the nose is aligned.
+      const dx = destination.x - here.x, dz = destination.z - here.z, d = Math.hypot(dx, dz) || 1
+      const reach = Math.min(d, 260), x = here.x + dx / d * reach, z = here.z + dz / d * reach
+      const aligned = (this.forward.x * dx + this.forward.z * dz) / d > 0.85
+      if (aligned && this.crossable(here.x, here.z, x, z)) {
+        goal.x = x; goal.z = z; goal.altitude = Math.max(30, goal.altitude ?? 0); goal.special = true
+      }
+    }
     const status = this.pilot.drive(goal, input, dt)
     if (status.stuckFor > 3 || status.flipped) this.troubleFor += dt
     return status

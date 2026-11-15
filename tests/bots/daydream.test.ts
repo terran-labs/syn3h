@@ -50,7 +50,7 @@ describe('Daydream slider', () => {
     let last = 0
     for (let p = 0; p < DAYDREAM_OFF_POSITION; p++) { const s = daydreamSecondsAt(p); expect(s).toBeGreaterThanOrEqual(last); last = s }
   })
-  it('shows the default 30 seconds a third of the way along and round trips', () => {
+  it('maps 30 seconds a third of the way along and round trips', () => {
     expect(daydreamSecondsAt(daydreamPositionFor(30))).toBe(30)
     expect(daydreamPositionFor(30)).toBeGreaterThan(25); expect(daydreamPositionFor(30)).toBeLessThan(40)
     expect(daydreamPositionFor(0)).toBe(DAYDREAM_OFF_POSITION)
