@@ -58,6 +58,8 @@ import { Connection, serverUrl } from './Connection'
 import { NameTags, type TagInfo } from './NameTags'
 import { applyRoomWorld, netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
+import { LocalSeat } from './LocalSeat'
+import { PausedHeartbeat } from './PausedHeartbeat'
 import { announcedKind, needsRebuild } from './kinds'
 import { SendPacer, SimClock } from './SimClock'
 import { type BotMatchInfo, audibleVehicles, bodyAlive, hillHold, liveBots } from './bots'
@@ -226,12 +228,20 @@ export class NetClient implements System {
   private frameAt = 0
   /** Until this performance.now(), states are still the backlog of a stall the frame loop saw. */
   private stallUntil = 0
-  private heartbeat: ReturnType<typeof setInterval> | null = null
+  /** Speaks for us while the game is paused or the page hidden; see PausedHeartbeat.ts. */
+  private readonly heartbeat = new PausedHeartbeat({
+    interval: HEARTBEAT_MS,
+    send: () => this.sendHeartbeat(),
+    // Whatever we measured while paused (or before) says nothing about now: start over.
+    resumed: () => { for (const r of this.remotes.values()) r.buffer.restartEstimate() },
+  })
   private readonly marker: TagMarker
-  private readonly bounds: BoundsGuard
+  /** The guard and lava rescue built around the vehicle we drive; see LocalSeat.ts. */
+  private readonly seat: LocalSeat<Vehicle, BoundsGuard, LocalRescue>
+  private get bounds(): BoundsGuard { return this.seat.bounds }
+  private get rescue(): LocalRescue { return this.seat.rescue }
   private readonly tags: NameTags
   private readonly hill: HillMarker
-  private readonly rescue: LocalRescue
   /** Pushes relayed from players who rammed us, waiting to see if our physics felt them. */
   private readonly shoves = new ShoveQueue()
   /**
@@ -363,24 +373,34 @@ export class NetClient implements System {
     this.bots?.setGear?.(this.botDecisionHooks)
     this.marker = new TagMarker(game)
     this.marker.local = player
-    this.bounds = new BoundsGuard(player, ctx.terrain)
-    this.bounds.onReset = () => this.event('Returned to your pad')
     this.tags = new NameTags(game.camera)
     this.hill = new HillMarker(game, ctx.terrain)
-    this.rescue = new LocalRescue(game, ctx.terrain, player)
-    this.rescue.onStuck = () => {
-      this.stats.stuck++
-      this.event('You are stuck in the lava')
-      if (this.connected) this.send({ type: 'stuck' })
-    }
-    this.rescue.onFreed = (by) => {
-      this.event(by === 'crawled' ? 'You crawled free of the lava' : 'Returned to your pad')
-      if (by === 'returned') this.ctx.audio?.play('materialize', this.ctx.player.body.translation())
-    }
-    this.rescue.onReturned = () => {
-      this.event('Returned to your pad')
-      this.ctx.audio?.play('materialize', this.ctx.player.body.translation())
-    }
+    this.seat = new LocalSeat(player, {
+      makeBounds: (vehicle) => {
+        const bounds = new BoundsGuard(vehicle, ctx.terrain)
+        bounds.onReset = () => this.event('Returned to your pad')
+        return bounds
+      },
+      makeRescue: (vehicle) => {
+        const rescue = new LocalRescue(game, ctx.terrain, vehicle)
+        rescue.onStuck = () => {
+          this.stats.stuck++
+          this.event('You are stuck in the lava')
+          if (this.connected) this.send({ type: 'stuck' })
+        }
+        rescue.onFreed = (by) => {
+          this.event(by === 'crawled' ? 'You crawled free of the lava' : 'Returned to your pad')
+          if (by === 'returned') this.ctx.audio?.play('materialize', this.ctx.player.body.translation())
+        }
+        rescue.onReturned = () => {
+          this.event('Returned to your pad')
+          this.ctx.audio?.play('materialize', this.ctx.player.body.translation())
+        }
+        return rescue
+      },
+      add: (bounds) => game.add(bounds),
+      remove: (bounds) => game.remove(bounds),
+    })
 
     this.conn.onOpen = () => {
       this.send({
@@ -417,7 +437,7 @@ export class NetClient implements System {
     g.add(this.bigRed)
     g.add(this.pesters)
     g.add(this.marker)
-    g.add(this.bounds)
+    this.seat.start()
     g.add(this.hill)
     this.conn.open()
   }
@@ -472,7 +492,47 @@ export class NetClient implements System {
     return true
   }
 
-  /** Announce a new vehicle kind or colours (the local vehicle itself is main.ts's to swap). */
+  /**
+   * The player switched vehicle in play: `vehicle` replaces the one networking was started
+   * with. Call it after the new vehicle is in the game and the old one is about to be (or has
+   * been) removed, in the same frame. It:
+   *  - lets go of our own cord and anything we are carrying, telling the room, since those
+   *    were holding on from the old vehicle;
+   *  - points everything that reads the local vehicle at the new one (states sent, rams,
+   *    tools, the "it" marker), and rebuilds the pad guard and lava rescue around it;
+   *  - forgets the old vehicle's contact and velocity history, so the swap is not felt as a
+   *    ram or a shove;
+   *  - announces the new kind to the room (and colours, if given), as `setProfile` does, so
+   *    everyone else rebuilds their copy of us.
+   * No reload, no reconnect, and no new protocol: the room sees a profile change. Calling it
+   * with the vehicle already in use only announces the profile.
+   */
+  setPlayer(vehicle: Vehicle, profile: { colors?: PlayerColors } = {}): void {
+    if (vehicle !== this.ctx.player) {
+      // Tools first, while "our vehicle" still means the old one they are attached to.
+      try {
+        this.bungee.letGo()
+        this.yoink.drop()
+      } catch (err) {
+        // Letting go is a courtesy to the room; it must never stop the swap.
+        console.warn('gear not released on vehicle swap', err)
+      }
+      this.ctx.player = vehicle
+      this.seat.swap(vehicle)
+      this.marker.local = vehicle
+      vehicle.isLocal = true
+      this.velHistory.length = 0
+      this.preVel = [0, 0, 0]
+      for (const r of this.remotes.values()) {
+        r.touching = false
+        r.lastContactAt = -Infinity
+      }
+      this.uiDirty = true
+    }
+    this.setProfile({ kind: vehicle.kind, colors: profile.colors })
+  }
+
+  /** Announce a new vehicle kind or colours (the local vehicle itself is main.ts's to swap; see setPlayer). */
   setProfile(p: { kind?: VehicleKind; colors?: PlayerColors }): void {
     if (p.kind) this.kind = cleanKind(announcedKind(p.kind)) ?? this.kind
     if (p.colors) {
@@ -584,8 +644,8 @@ export class NetClient implements System {
     if (!this.connected) return
     if (this.isHost && this.mode === MODE_KOTH) this.checkBotsStuck()
     this.detectRams()
-    // While hidden the heartbeat timer speaks for us (rendering may still tick in some cases).
-    if (document.hidden) {
+    // While paused or hidden the heartbeat timer speaks for us (rendering may still tick in some cases).
+    if (this.heartbeat.paused || document.hidden) {
       this.pacer.hold(dt, netSendRate.value)
     } else if (this.pacer.step(dt, netSendRate.value)) {
       // The pose is the one this step just produced: stamp it with that step's time. The
@@ -716,7 +776,7 @@ export class NetClient implements System {
     for (const controller of this.botGear.values()) controller.dispose()
     this.botGear.clear()
     this.conn.close()
-    this.stopHeartbeat()
+    this.heartbeat.stop()
     for (const id of [...this.remotes.keys()]) this.removeRemote(id)
     this.tags.dispose()
   }
@@ -1180,17 +1240,20 @@ export class NetClient implements System {
   // Hidden tabs
   // -------------------------------------------------------------------------------------
 
+  /**
+   * The game paused or resumed, for either reason (the player's own pause, or a hidden
+   * page). Call from the one pause subscription (src/core/pause.ts). While paused a
+   * once-a-second heartbeat tells the room we are parked, not lost; on resuming the latency
+   * estimates start afresh. Once this has been called, the page's visibility alone no
+   * longer starts or stops the heartbeat.
+   */
+  setPaused(paused: boolean): void {
+    this.heartbeat.setPaused(paused)
+  }
+
+  /** Fallback for a page that never calls setPaused: a hidden page counts as paused. */
   private onVisibility(): void {
-    if (document.hidden) {
-      if (this.heartbeat) return
-      // The render loop stops in a hidden tab; a timer still runs about once a second.
-      this.heartbeat = setInterval(() => this.sendHeartbeat(), HEARTBEAT_MS)
-      this.sendHeartbeat()
-    } else {
-      this.stopHeartbeat()
-      // Whatever we measured while hidden (or before) says nothing about now: start over.
-      for (const r of this.remotes.values()) r.buffer.restartEstimate()
-    }
+    this.heartbeat.visibility(document.hidden)
   }
 
   private sendHeartbeat(): void {
@@ -1198,11 +1261,6 @@ export class NetClient implements System {
     const s = this.ctx.player.getState()
     this.conn.send(encodeState({ id: 0, t: this.clock.now(), ...s, p: this.canonical(s.p), v: [0, 0, 0], w: [0, 0, 0], paused: true }) as Uint8Array<ArrayBuffer>)
     this.stats.heartbeats++
-  }
-
-  private stopHeartbeat(): void {
-    if (this.heartbeat) clearInterval(this.heartbeat)
-    this.heartbeat = null
   }
 
   // -------------------------------------------------------------------------------------
