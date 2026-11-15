@@ -313,11 +313,11 @@ body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-noti
    minimap and the drive stick, three slots tall with thumb-sized slots. The description is
    dropped; the gear's name, status and level stay. */
 @media (max-width: 700px) {
-  .syn3h-shell .gear-selector[data-touch] { --gs-slots: 3; --gs-pitch: 44px; top: var(--gear-top, calc(env(safe-area-inset-top) + 116px)); }
+  .syn3h-shell .gear-selector[data-touch] { --gs-slots: 3; --gs-pitch: 44px; top: var(--gear-top, calc(env(safe-area-inset-top) + 98px)); }
   .syn3h-shell .gear-selector[data-touch] .gs-desc { display: none; }
 }
 @media (max-height: 500px) {
-  .syn3h-shell .gear-selector[data-touch] { --gs-slots: 2.2; --gs-pitch: 44px; top: var(--gear-top, calc(env(safe-area-inset-top) + 60px)); }
+  .syn3h-shell .gear-selector[data-touch] { --gs-slots: 1.5; --gs-pitch: 44px; top: var(--gear-top, calc(env(safe-area-inset-top) + 44px)); }
   .syn3h-shell .gear-selector[data-touch] .gs-desc { display: none; }
 }
 /* On a small screen the open panels cover the drum's place: one or the other. */
