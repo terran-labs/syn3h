@@ -1,6 +1,7 @@
 import * as T from 'three/webgpu'
-import { attribute, cameraPosition, cross, dot, float, mix, mx_fractal_noise_float, normalize, positionWorld, renderGroup, select, smoothstep, uniform, uv, vec3 } from 'three/tsl'
-import { defineParam } from '../../../shared/params'
+import { attribute, cameraPosition, cross, dot, float, mix, mx_fractal_noise_float, normalize, positionWorld, renderGroup, select, smoothstep, uniform, uv, vec2, vec3 } from 'three/tsl'
+import { defineParam, params } from '../../../shared/params'
+import { paletteFor } from '../terrain/palettes'
 import { graphicsLevel } from '../../core/quality'
 import { hotExposureDim } from '../../vehicles/skins/hotExposure'
 import { vehicleNightAmount } from '../../vehicles/skins/nightReadability'
@@ -35,6 +36,20 @@ function sprayLight(): N {
   })
 }
 
+/**
+ * The planet's shallow-water colour, linear, so spray carries the sea's own tint: blue-green on
+ * the alpine world, violet on the ice moon. Read from the terrain look each render.
+ */
+function waterTint(): N {
+  const colour = new T.Color()
+  let look = -1
+  return uniform(new T.Color(.2, .6, .7)).setGroup(renderGroup).onRenderUpdate(() => {
+    const now = Number(params.get('terrain.look')?.value ?? 0)
+    if (now !== look) { look = now; colour.set(paletteFor(now).seaShallow) }
+    return colour
+  })
+}
+
 /** Instanced quad with dynamic vec4 attributes; capacity fixed, count set each frame. */
 function batch(capacity: number, names: string[]) {
   const plane = new T.PlaneGeometry(1, 1), g = new T.InstancedBufferGeometry().copy(plane as unknown as T.InstancedBufferGeometry); plane.dispose()
@@ -48,7 +63,7 @@ function batch(capacity: number, names: string[]) {
  * as seen from the camera (so a fast drop reads as a short streak) and its short axis facing
  * the camera. Mist uses the same quad unstretched, larger and much softer.
  */
-function dropletMaterial(light: N) {
+function dropletMaterial(light: N, tint: N) {
   const a = attribute('sprayA', 'vec4'), b = attribute('sprayB', 'vec4')
   const centre = a.xyz, size = a.w, velocity = b.xyz, mist = b.w.greaterThan(1.5)
   const toCamera = cameraPosition.sub(centre), distance = toCamera.length(), view = toCamera.div(distance.max(1e-4))
@@ -66,14 +81,21 @@ function dropletMaterial(light: N) {
   m.positionNode = centre.add(side.mul(q.x.mul(radius))).add(axis.mul(q.y.mul(half)))
   const r = q.length()
   // A bead: bright rim catching the light and a slightly clearer middle reads as water, not chalk.
-  const bead = float(1).sub(smoothstep(.55, 1, r)).mul(smoothstep(0, .9, r).mul(.35).add(.65))
+  // A drop is mostly transparent water tinted like the sea, with a bright rim and a small
+  // highlight. The tinted body reads against a pale sky, the bright rim against dark water.
+  const body = float(1).sub(smoothstep(.6, 1, r))
+  const rim = smoothstep(.35, .75, r).mul(float(1).sub(smoothstep(.75, 1, r)))
+  const glint = float(1).sub(smoothstep(0, .3, q.sub(vec2(-.25, .35)).length()))
+  const bead = body.mul(.45).add(rim.mul(.5)).add(glint.mul(.5)).min(1)
   const n = mx_fractal_noise_float(vec3(q.mul(1.7).add(centre.xz.mul(.37)), 0), 2, 2, .5).mul(.5).add(.5)
   const puff = float(1).sub(smoothstep(.15, 1, r.add(n.mul(.35)))).mul(n.mul(.6).add(.4))
   // Drops passing right by the lens would fill the screen with blobs: fade them out up close.
   const near = smoothstep(1.5, 6, distance)
   const alpha = select(mist, b.w.sub(2), b.w).mul(near)
   m.opacityNode = select(mist, puff.mul(alpha).mul(.7), bead.mul(alpha).mul(cover.mul(.75).add(.25)).mul(.55))
-  m.colorNode = select(mist, vec3(.82, .88, .93), vec3(.9, .96, 1.05)).mul(light).mul(1.25)
+  const water = mix(tint, vec3(1, 1, 1), .35)
+  const drop = mix(water, vec3(1.15, 1.18, 1.2), rim.max(glint).mul(.85))
+  m.colorNode = select(mist, mix(tint, vec3(1, 1, 1), .6), drop).mul(light).mul(1.2)
   return m
 }
 
@@ -85,7 +107,8 @@ function dropletMaterial(light: N) {
  */
 function foamMaterial(light: N) {
   const A = attribute('foamA', 'vec4'), B = attribute('foamB', 'vec4'), S = attribute('foamSide', 'vec4'), L = attribute('foamLook', 'vec4')
-  const ring = S.xy.length().lessThan(.5)
+  // Side vectors: zero for a ring, length two for the centre wash, unit for an arm crest.
+  const ring = S.xy.length().lessThan(.5), wash = S.xy.length().greaterThan(1.5)
   const q = uv().mul(2).sub(1), t = uv().y
   const sides = normalize(mix(S.xy, S.zw, t).add(1e-5))
   const strip = mix(A.xyz, B.xyz, t).add(vec3(sides.x, 0, sides.y).mul(mix(A.w, B.w, t).mul(q.x)))
@@ -96,13 +119,17 @@ function foamMaterial(light: N) {
   const coarse = mx_fractal_noise_float(vec3(positionWorld.xz.mul(.55), 0), 2, 2, .5).mul(.5).add(.5)
   const fine = mx_fractal_noise_float(vec3(positionWorld.xz.mul(2.6), 3.7), 2, 2, .55).mul(.5).add(.5)
   const texture: N = coarse.mul(.55).add(fine.mul(.55))
-  // Feathered edges across the strip; a soft band for the ring.
-  const shape = select(ring, float(1).sub(smoothstep(0, .2, q.length().sub(.78).abs())), float(1).sub(smoothstep(.25, 1, q.x.abs())))
+  // Feathered edges across the strip; a soft band for the ring. The wash has a ragged edge.
+  const ragged = float(1).sub(smoothstep(.3, 1, q.x.abs().add(coarse.sub(.5).mul(.7))))
+  const crest = float(1).sub(smoothstep(.2, 1, q.x.abs()))
+  const shape = select(ring, float(1).sub(smoothstep(0, .2, q.length().sub(.78).abs())), select(wash, ragged, crest))
+  // The wash is solid and brightest right at the stern, then breaks into lace.
+  const lead = select(wash, float(1).sub(smoothstep(0, .15, age)), float(0))
   // Young foam is a near-solid blanket; old foam keeps only its brightest lace.
-  const threshold = age.mul(.5).add(.24)
+  const threshold = age.mul(select(wash, .62, .5)).add(.24).sub(lead.mul(.3))
   const foam = smoothstep(threshold, threshold.add(.22), texture.mul(shape.mul(.5).add(.6)))
   m.opacityNode = foam.mul(shape).mul(fade).mul(.8)
-  m.colorNode = vec3(.86, .93, .98).mul(light).mul(fine.mul(.2).add(1.05))
+  m.colorNode = vec3(.86, .93, .98).mul(light).mul(fine.mul(.2).add(1.05).add(lead.mul(.2)))
   return m
 }
 
@@ -124,7 +151,7 @@ export class Spray {
     this.sim = new SpraySim(cap, this.water); this.tier = tier; this.packed = -1
     const light = sprayLight()
     const d = batch(cap.droplets, ['sprayA', 'sprayB'])
-    const dropMesh = new T.Mesh(d.g, dropletMaterial(light))
+    const dropMesh = new T.Mesh(d.g, dropletMaterial(light, waterTint()))
     const segments = cap.vehicles * 3 * cap.points + cap.rings
     const f = batch(segments, ['foamA', 'foamB', 'foamSide', 'foamLook'])
     const foamMesh = new T.Mesh(f.g, foamMaterial(light))
