@@ -32,7 +32,10 @@ describe('quality ladder', () => {
     expect(buildLadder(2, 2).map(r => r.pixelRatio)).toEqual([1.5, 1.25, 1, 1, 1, 1])
     // On a display of ratio 1, 1.5 and 1.25 both mean 1, so those rungs would buy nothing.
     expect(buildLadder(2, 1).map(r => r.kind)).toEqual(['base', 'shading', 'particles', 'shadows'])
-    expect(buildLadder(1, 3).map(r => r.kind)).toEqual(['base', 'resolution', 'shading', 'particles'])
+    // Mobile is capped at plain shading until it is timed on a device, so its shading rung has nothing to shed.
+    expect(buildLadder(1, 3).map(r => r.kind)).toEqual(['base', 'resolution', 'particles'])
+    // A hand-set tier brings the rung back: it is the pin that the rung would otherwise lower.
+    expect(SHADING_CAP[1]).toBe(0)
   })
   it('starts every level at its fixed budget with the level shading cap', () => {
     for (const level of [0, 1, 2] as GraphicsLevel[]) {

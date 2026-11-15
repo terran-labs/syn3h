@@ -89,10 +89,13 @@ export const autoQuality = defineParam({ id: 'gfx.auto', label: 'Automatic quali
 /**
  * Highest vehicle shading each level allows. Safe is the crash recovery and low-memory
  * level, so it keeps the plain standard materials and compiles no extra shader variants.
- * Mobile allows clear coat and glass but not the per-pixel flake and iridescence noise.
- * Desktop allows everything.
+ * Desktop allows everything. Mobile also stays plain for now: the showroom tiers have never
+ * been timed on a phone or tablet, and their larger shaders would add to the first frame
+ * wait already seen on iPad. Raise mobile to 1 or 2 once that is measured on a device; the
+ * mobile ladder already has its shading rung and picks it up without other changes. A player
+ * can still choose a higher tier by hand with gfx.vehicleShading.
  */
-export const SHADING_CAP = [0, 2, 3] as const
+export const SHADING_CAP = [0, 0, 3] as const
 
 export type RungKind = 'resolution' | 'shading' | 'particles' | 'shadows'
 /** Effective render settings at one rung. pixelRatio already includes the display cap. */
