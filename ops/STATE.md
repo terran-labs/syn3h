@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-15 01:26 PST. Demo deadline: Sunday noon Pacific.
+Last verified: 2026-11-15 01:52 PST. Demo deadline: Sunday noon Pacific.
 
 ## Authority
 
@@ -49,24 +49,35 @@ gear and eight Chrome/WebKit vehicle drives pass. The prior gear failure hit sta
 HTTP now uses the configured same-origin proxy and the browser asserts its endpoint.
 Evidence: /tmp/astra-corrected-integration.log, /tmp/astra-gearwater-integration.log.
 
-Fast now integrates canonical Net4fbc27d, Race UI cdc12c3, main hooks, Bots e8e78c6,
-animated lobby logo7c2c198 and terrain import-cycle70c07ab. Typecheck310 focused tests pass
-in /tmp/astra-race-integration.log. Real host/guest automatic race and rejoin/bot lifecycle
-acceptance remain pending with Bots after this checkpoint lands.
+Trunk fda6438 integrated canonical races, main/UI hooks, mixed bots, animated lobby logo
+and the terrain import-cycle fix. Limiter rollout 752a16c followed after all old wrappers
+and queued waiters drained. The current root source remains that accepted baseline.
 
-Next reviewed handoffs: Jet2e16bf9, Buggy2c9bbaa, Water66fdf14, stable Post19cc879;
-lab-only Hoverf994fd2 and Tankf5bac75. Each has lane evidence; combined browser validation
-and final frozen suite remain required. UX redesign, aerial bot evasion, temporal AA, GI,
-volumetric clouds and Lobby presence remain separate unfinished assignments. Presence is
-read-only contract review, not directory implementation authorization.
+Unaccepted combined candidate c736963 is on fast: new Buggy and Jet models, Water66fdf14
+plus correction c28eafb and legacy test setup24d121b, stable Post19cc879, GI7e4303e,
+UX3873abc, and Hover/Tank lab studies. Typecheck passes; full suite1124pass/1fail.
+The remaining failure is ice jet bot safety (9.94 seconds inverted, bound below3), assigned
+to Bots against this exact source. Water wing/Zorb tests now pass unchanged bounds.
+Evidence: /tmp/astra-defaults-combined-suite.log. Final combined browser checks are running
+in /tmp/astra-defaults-browser.log. Earlier91b73c3 passed60 lab tests and8 tick-bound vehicle
+runs, which do not validate the later candidate. No new release is frozen or public.
+
+Race lifecycle passes on fda6438 plus getter correction: staged eligible encounter,
+automatic countdown/result, guest controls, held host return and expiry/takeover.
+Natural idle-spawn100s runs had no nearby ground bot within60m and no race proposal.
+Evidence: /tmp/syn3h-astra-races-encounter-v7.log. New UX Exit world selector needs combined
+coverage. Presence0780403 includes canonical serverd247487 and validated UI; pending root
+integration. Saved-seed moons remain contract work. Temporal AA, volumetric clouds, aerial
+Pester evasion and above-water transparency remain unfinished. GI is in the unaccepted batch.
 
 ## Operations
 
-Heavy jobs use /Users/vtn/dev/Syn3h/tools/heavy.sh: strict three slots, one job per lane,
-maximum two test workers. No lane bypass or slot overrides. No new blanket hold. The
-kernel-lock replacement failed independent migration/cancellation review and is parked in
-/tmp/syn3h-heavy-revision. Existing20minute cleanup risk remains open; correct and drain
-old wrappers before rollout. No processes were killed for this review.
+All heavy jobs use absolute /Users/vtn/dev/Syn3h/tools/heavy.sh: kernel-lock v2,
+strict three slots, one job per lane, maximum two test workers. Migration barrier completed,
+all14 lanes cleared; no current hold. Root sentinel is paused until this batch is accepted,
+then resume the existing script, now using the absolute helper for tests and smoke.
+Do not restart old wrappers or bypass the limiter. Current browser job and peer completion
+notifications are active. Existing continuation heartbeat remains in place.
 
 Preview configuration edits must validate a complete temp sibling then atomically rename.
 No direct truncating writes. Use scoped broker operations and fresh HTTPS plus rendered
