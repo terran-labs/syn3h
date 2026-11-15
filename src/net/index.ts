@@ -40,6 +40,8 @@ import { GearRack } from '../weapons/Gear'
 import { Bungee } from '../weapons/bungee/Bungee'
 import { Yoink } from '../weapons/yoink/Yoink'
 import { BigRed } from '../weapons/BigRed'
+import { Pesters } from '../weapons/pester/Pesters'
+import { pesterAllowed, pesterBump, pesterCooldown, pesterMax } from '../weapons/pester/params'
 import { bigRedAllowed, bigRedPush } from '../weapons/bigRedParams'
 import { BoundsGuard, TagMarker } from '../modes/Tag'
 import { gameMode, kothKnockBonus, kothLaserPush, kothRespawnDelay, kothTargetScore, kothZoneRadius } from '../modes/params'
@@ -179,6 +181,7 @@ export class NetClient implements System {
   readonly bungee: Bungee
   readonly yoink: Yoink
   readonly bigRed: BigRed
+  readonly pesters: Pesters
   /** Remote players and remote bots, by id. */
   readonly remotes = new Map<number, RemotePlayer>()
   readonly players = new Map<number, PlayerInfo>()
@@ -202,6 +205,7 @@ export class NetClient implements System {
   private pingTimer = 0
   private pingsSent = 0
   private lastFire = -Infinity
+  private lastPester = -Infinity
   /** performance.now() at the start of the latest frame, to spot local main thread stalls. */
   private frameAt = 0
   /** Until this performance.now(), states are still the backlog of a stall the frame loop saw. */
@@ -297,6 +301,31 @@ export class NetClient implements System {
       inHand: () => this.gear.current === 'red',
       fire: (d) => this.fire(d, undefined, 'red'),
     })
+    this.pesters = new Pesters(game, {
+      self: () => this.id,
+      bodyOf: (id) => this.vehicleOf(id)?.body,
+      vehicleIds: () => this.vehicleIds(),
+      judges: (id) => this.ownsVehicle(id),
+      heightAt: (x, z) => this.ctx.terrain.heightAt(x, z),
+      wrapSize: () => this.wrapSize,
+      inHand: () => this.gear.current === 'pester',
+      launch: (target) => this.launchPester(target),
+      onCatch: (shooter, shot, victim, at, dir) => {
+        if (victim === this.id) this.stats.hitsTaken++
+        // The caught player's own client bumps it, capped by the room's slider: a sender
+        // cannot make this bigger.
+        const body = this.vehicleOf(victim)?.body
+        const bump = Math.min(pesterBump.def.max ?? 15, pesterBump.value)
+        if (body && bump > 0) {
+          const m = body.mass() * bump
+          body.applyImpulse({ x: dir.x * m, y: m * 0.5, z: dir.z * m }, true)
+        }
+        this.stats.hitsJudged++
+        this.ctx.audio?.play('laserHit', at)
+        if (!this.connected) return
+        this.send(victim === this.id ? { type: 'hit', shooter, shot } : { type: 'hit', shooter, shot, victim })
+      },
+    })
     this.marker = new TagMarker(game)
     this.marker.local = player
     this.bounds = new BoundsGuard(player, ctx.terrain)
@@ -351,6 +380,7 @@ export class NetClient implements System {
     g.add(this.bungee)
     g.add(this.yoink)
     g.add(this.bigRed)
+    g.add(this.pesters)
     g.add(this.marker)
     g.add(this.bounds)
     g.add(this.hill)
@@ -463,6 +493,27 @@ export class NetClient implements System {
    * Fire one laser from the local vehicle: straight ahead, along `direction`, or from the
    * muzzle toward the world point `target` (for aim assist and automated checks).
    */
+  /**
+   * Launch a Pester from the local vehicle at vehicle `target` (Weapons lane). Rate and the
+   * number out at once are the room's to enforce; this checks them too so the button does
+   * nothing visible when the room would refuse.
+   */
+  launchPester(target: number | null): boolean {
+    if (!pesterAllowed.value || target === null) return false
+    const t = this.ctx.game.time
+    if (t - this.lastPester < pesterCooldown.value || this.pesters.mine >= pesterMax.value) return false
+    this.lastPester = t
+    const shot = this.lasers.aim(this.ctx.player.body, this.clock.now())
+    shot.k = 'pester'
+    shot.to = target
+    shot.d = this.pesters.launchDirection(this.ctx.player.body)
+    shot.boost = 0
+    this.pesters.spawn(this.id, shot)
+    this.ctx.audio?.play('laserShot', { x: shot.o[0], y: shot.o[1], z: shot.o[2] })
+    if (this.connected) this.send({ type: 'fire', shot: { ...shot, o: this.canonical(shot.o) } })
+    return true
+  }
+
   fire(direction?: [number, number, number], target?: { x: number; y: number; z: number }, kind?: 'red'): void {
     if (kind === 'red' && !bigRedAllowed.value) return
     const shot = this.lasers.aim(this.ctx.player.body, this.clock.now())
@@ -895,6 +946,7 @@ export class NetClient implements System {
     this.remotes.delete(id)
     this.bungee.forget(id)
     this.yoink.forget(id)
+    this.pesters.forget(id)
     r.disposeEffects()
     if (r.owned) this.ctx.game.remove(r.vehicle)
   }
@@ -1051,7 +1103,8 @@ export class NetClient implements System {
         break
       case 'fire':
         if (this.players.has(msg.from)) {
-          this.lasers.spawn(msg.from, this.nearShot(msg.shot), this.clock.now() - msg.shot.t)
+          if (msg.shot.k === 'pester') this.pesters.spawn(msg.from, this.nearShot(msg.shot), this.clock.now() - msg.shot.t)
+          else this.lasers.spawn(msg.from, this.nearShot(msg.shot), this.clock.now() - msg.shot.t)
           const [x, y, z] = msg.shot.o
           this.ctx.audio?.play('laserShot', { x, y, z })
         }
@@ -1073,6 +1126,7 @@ export class NetClient implements System {
       case 'hit': {
         const victim = this.vehicleOf(msg.victim)
         this.lasers.confirmHit(msg.shooter, msg.shot, victim?.object.position)
+        this.pesters.confirmHit(msg.shooter, msg.shot)
         // The judging client already played it.
         if (victim && victim !== this.ctx.player && !(isBotId(msg.victim) && this.isHost)) {
           this.ctx.audio?.play('laserHit', victim.object.position)
