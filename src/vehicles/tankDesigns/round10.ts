@@ -9,8 +9,9 @@
  * fenders are the Sherpa's own. From the buggy and jet: candy paint with an accent stripe cut
  * into the skin, bright rims round every force field pane, and those two vehicles' colours.
  *
- * Nothing here is approved. `previewTankBody` in ../Tank.ts finds these by id.
+ * The approved Sherpa is shared with the game; the other variants remain lab studies.
  */
+import { sherpa } from '../tank/shipped'
 import { panelHull, type ExpeditionSpec } from './expeditionKit'
 import type { TankBody } from './round8'
 
@@ -18,15 +19,7 @@ const body = (id: string, name: string, tagline: string, color: number, accent: 
   ({ id, name, tagline, color, accent, hull: () => panelHull(spec) })
 
 export const round10: TankBody[] = [
-  body('r10-sherpa', '01 Sherpa', 'The Sherpa as it was, smoothed: steep panoramic front, narrow waist, rising rear shoulders.', 0xc6d5cc, 0xd94722, {
-    cabin: [0, 2], fender: 'swept', stripe: 'centre', radiator: [5], ribs: [4], round: .2,
-    sections: [
-      [-3.7, 1.15, .94, 1.66, .92, 1.87], [-2.93, 1.41, .76, 1.65, 1.12, 3.35],
-      [-1.85, 1.42, .72, 1.63, 1.13, 3.36], [-.95, 1.24, .78, 1.59, .98, 2.95],
-      [-.25, 1.15, .88, 1.51, .89, 1.99], [1.25, 1.25, .84, 1.6, 1.01, 2.16],
-      [2.7, 1.5, .72, 1.75, 1.22, 2.57], [3.75, 1.34, .85, 1.66, 1.06, 2.23],
-    ],
-  }),
+  sherpa,
   body('r10-fastback', '02 Fastback', 'The same front under one long roof that falls away to the tail, with a third pane each side. The buggy\'s colours.', 0x0b2f8f, 0x35d6c8, {
     cabin: [0, 3], fender: 'swept', stripe: 'centre', radiator: [5], round: .24,
     sections: [

@@ -5,10 +5,10 @@
  * name in the sidebar to look at it alone.
  *
  * The tank has a Body slider while its design is undecided: 0 is the original model, then the
- * round nine and round eight bodies (TANK_BODIES in src/vehicles/Tank.ts). It dresses the tank through
+ * round nine and round eight bodies (TANK_BODIES in tankDesigns/preview.ts). It dresses the tank through
  * `previewTankBody`, in this page only, and the tank rebuilds in place.
  */
-import { TANK_BODIES, previewTankBody } from '../../../vehicles/Tank'
+import { TANK_BODIES, previewTankBody } from '../../../vehicles/tankDesigns/preview'
 import { gameVehicles } from './gameVehicles'
 import type { LabExhibit } from '../types'
 

@@ -9,10 +9,8 @@ import { createTreadMap } from './effects/maps'
 import { addLavaGlow } from './skins/lavaGlow'
 import { addNightReadability } from './skins/nightReadability'
 import { detailLevel, registerVehicleDetail } from './skins/mergeStatic'
-import { ExpeditionTank } from './tankDesigns/expeditionKit'
-import { round8, type TankBody } from './tankDesigns/round8'
-import { round9 } from './tankDesigns/round9'
-import { round10 } from './tankDesigns/round10'
+import { ExpeditionTank } from './tank/kit'
+import { sherpa, type TankBody } from './tank/shipped'
 
 export const tankPower=defineParam({id:'tank.power',label:'Power',group:'Tank',scope:'world',default:2000,min:500,max:3500,step:10})
 export const tankSpeed=defineParam({id:'tank.speed',label:'Speed',group:'Tank',scope:'world',default:25,min:10,max:40,step:.1})
@@ -24,25 +22,12 @@ export const tankGrip=defineParam({id:'tank.grip',label:'Grip',group:'Tank',scop
 // steered uphill, because the source cuts one side's motor to steer and that side then drags.
 const CLIMB_FADE=10
 export const tankClimb=defineParam({id:'tank.climb',label:'Steepest climb, degrees (90 = original)',group:'Tank',scope:'world',default:45,min:20,max:90,step:1})
-/**
- * The body the tank wears: the id of one design in tankDesigns (round9.ts, round8.ts), or null for the Mars
- * Explorer model. The game ships one approved design and offers no choice, so this is a
- * constant and not a parameter. The owner gave final approval to round ten's Sherpa on
- * 15 November 2026, after approving and then withdrawing the round nine Fork the same morning.
- */
-const APPROVED_BODY:string|null='r10-sherpa'
-// Development servers only: ?tankBody=r8-dart drives a candidate before it is approved.
-const TRIAL_BODY=import.meta.env.DEV&&typeof location!=='undefined'?new URLSearchParams(location.search).get('tankBody'):null
-/** Every body a tank can wear, latest round first. */
-export const TANK_BODIES:readonly TankBody[]=[...round10,...round9,...round8]
-let body=TANK_BODIES.find(d=>d.id===(TRIAL_BODY??APPROVED_BODY))??null
+/** Normal play always builds the approved Sherpa. The lab supplies its own study data. */
+let body: TankBody | null = sherpa
 const wearers=new Set<()=>void>()
-/**
- * For the vehicle lab and tests only: dress every tank in another design (an id from TANK_BODIES,
- * or null for the original model). Tanks rebuild in place. `undefined` restores the approved one.
- */
-export function previewTankBody(id?:string|null):void{
-  body=TANK_BODIES.find(d=>d.id===(id===undefined?APPROVED_BODY:id))??null
+/** Lab hook: replace the body without importing any study into the game's module graph. */
+export function previewTankBody(design: TankBody | null = sherpa):void{
+  body=design
   for(const rebuild of wearers)rebuild()
 }
 export const tankCG=defineParam({id:'tank.cg',label:'Centre of gravity',group:'Tank',scope:'world',default:-.2,min:-1.4,max:1,step:.01})

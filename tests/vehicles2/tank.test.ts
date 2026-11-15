@@ -1,12 +1,13 @@
 import {beforeAll,describe,it,expect} from 'vitest'
 import * as THREE from 'three/webgpu'
 import {initPhysics} from '../../src/core/physics'
-import {Tank,previewTankBody} from '../../src/vehicles/Tank'
+import {Tank} from '../../src/vehicles/Tank'
+import {previewTankBody} from '../../src/vehicles/tankDesigns/preview'
 import {harness} from './harness'
 import {params} from '../../shared/params'
 import {RAPIER,groups,GROUP_TERRAIN,GROUP_ALL} from '../../src/core/physics'
 beforeAll(initPhysics)
-describe('legacy tank with six shape casts',()=>{
+describe('Sherpa tank with six shape casts',()=>{
  it('folds six track masses into one body and rests on all contacts',()=>{
   const h=harness(),v=new Tank(h.game,h.terrain,new THREE.Vector3(0,2,0));v.isLocal=false
   expect(v.body.mass()).toBeCloseTo(241);expect(h.world.bodies.len()).toBe(1)
@@ -51,6 +52,9 @@ describe('legacy tank with six shape casts',()=>{
   const h=harness(),v=new Tank(h.game,h.terrain,new THREE.Vector3(0,2,0));v.isLocal=false;h.step(v,300)
   const meshes=()=>{const out:THREE.Mesh[]=[];v.object.traverse(o=>{if(o instanceof THREE.Mesh)out.push(o)});return out}
   try{
+   // Normal entry must suppress the shared floating lamp spheres too.
+   expect(v.object.userData.ownLamps).toBe(true)
+   expect(v.object.userData.cockpit).toBe(true)
    previewTankBody('r8-dart')
    // A generated design: its own lamps, a cabin to sit in, the eye inside the hull.
    expect(v.object.userData.cockpit).toBe(true);expect(v.object.userData.ownLamps).toBe(true)
