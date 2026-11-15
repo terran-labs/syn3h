@@ -63,7 +63,33 @@ const MAX = GALAXY_MAX
 /** Each world's axis leans this far. */
 const TILT = 0.38
 /** Orbits round the sun; more worlds than this share them. */
-const RINGS = 4
+const RINGS = 3
+/** The innermost orbit, and the clear space kept between any two worlds' surfaces. */
+const INNER = 2.9, CLEAR = 0.3
+/** The two sizes of world. */
+const SMALL_WORLD = 0.7, LARGE_WORLD = 0.82
+/**
+ * Neighbouring orbits sit two of the largest worlds apart plus the clear space, so worlds
+ * on different orbits cannot touch however their angles line up: their centres are never
+ * nearer than the difference of the orbits. Worlds sharing an orbit move together, spread
+ * evenly, and the inner orbit is wide enough for four (a chord of 4.1 against 1.94 needed).
+ */
+const SPACING = LARGE_WORLD * 2 + CLEAR
+/**
+ * Where the worlds are at a time: slow circular orbits, each at its own pace. Up to three
+ * orbits; more worlds share them, spread evenly round each and moving together. Twelve
+ * worlds fit inside the outer orbit four had at the old, too tight spacing (6.78 against
+ * 7.25), so the first view's distance still frames the system on a phone held upright.
+ */
+export function orbitLayout(count: number, time: number): { position: [number, number, number]; radius: number }[] {
+  count = Math.min(MAX, count)
+  const rings = Math.min(RINGS, count)
+  return Array.from({ length: count }, (_, i) => {
+    const ring = i % rings, slot = Math.floor(i / rings), sharing = Math.ceil((count - ring) / rings)
+    const orbit = INNER + ring * SPACING, angle = 0.9 + ring * 1.9 + slot * Math.PI * 2 / sharing + time * 0.045 / Math.sqrt(orbit / INNER)
+    return { position: [Math.cos(angle) * orbit, 0, Math.sin(angle) * orbit], radius: i % 2 ? LARGE_WORLD : SMALL_WORLD }
+  })
+}
 /**
  * Level of detail for the maps: every world wears a small one (512 by 256, about 40 ms to
  * paint on a desktop, half a megabyte on the GPU) from one texture array; the world being
@@ -554,19 +580,9 @@ export class Galaxy {
     this.canvas.width = Math.max(1, Math.round(this.host.clientWidth * scale)); this.canvas.height = Math.max(1, Math.round(this.host.clientHeight * scale))
     if (this.target2) { const gl = this.gl; gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.target2); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.canvas.width, this.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null) }
   }
-  /**
-   * Where the worlds are now: slow circular orbits, each at its own pace. There are at most
-   * four orbits, at the original spacing; with more than four worlds they share them, spread
-   * evenly round each one and moving together, so ten worlds keep the size four had and the
-   * system still fits a phone held upright.
-   */
+  /** Where the worlds are now: see orbitLayout. */
   private places(time: number): { position: Vec; radius: number }[] {
-    const count = Math.min(MAX, this.options.worlds.length), rings = Math.min(RINGS, count)
-    return this.options.worlds.slice(0, MAX).map((_, i) => {
-      const ring = i % rings, slot = Math.floor(i / rings), sharing = Math.ceil((count - ring) / rings)
-      const orbit = 2.9 + ring * 1.45, angle = 0.9 + ring * 1.9 + slot * Math.PI * 2 / sharing + time * 0.045 / Math.sqrt(orbit / 2.9)
-      return { position: [Math.cos(angle) * orbit, 0, Math.sin(angle) * orbit] as Vec, radius: 0.7 + (i % 2) * 0.12 }
-    })
+    return orbitLayout(this.options.worlds.length, time)
   }
   private camera(places: { position: Vec; radius: number }[]) {
     // Ease toward the chosen world; arriving is the camera settling close above it.
