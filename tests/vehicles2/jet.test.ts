@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { initPhysics } from '../../src/core/physics'
-import { Jet, jetDrag } from '../../src/vehicles/Jet'
+import { Jet, jetDrag, jetHoverHold } from '../../src/vehicles/Jet'
 import { harness } from './harness'
 
 beforeAll(initPhysics)
@@ -42,5 +42,15 @@ describe('Jet hover and flight',()=>{
   for(let i=0;i<10;i++){v.input.special=!v.input.special;v.input.x=.2;h.step(v,50)}
   expect([...v.getState().p,...v.getState().q,...v.getState().v].every(Number.isFinite)).toBe(true)
   v.dispose();h.world.free()
+ })
+ it('hover hold is off by default and holds altitude with no throttle key when enabled',()=>{
+  expect(jetHoverHold.value).toBe(0)
+  const h=harness(9.81,false);const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,100,0));v.isLocal=false
+  h.step(v,50);expect(v.body.linvel().y).toBeLessThan(-5)
+  jetHoverHold.value=1
+  try{h.step(v,250);expect(Math.abs(v.body.linvel().y)).toBeLessThan(.5)
+   const y=v.body.translation().y;h.step(v,100);expect(Math.abs(v.body.translation().y-y)).toBeLessThan(1)
+   v.input.z=1;h.step(v,25);expect(v.body.linvel().y).toBeGreaterThan(0)}
+  finally{jetHoverHold.value=0;v.dispose();h.world.free()}
  })
 })
