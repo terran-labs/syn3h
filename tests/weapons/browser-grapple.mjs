@@ -96,7 +96,7 @@ try {
   const report = { backend, shots: [] }
   const shoot = async (name, what) => {
     const points = await subject(what)
-    await page.evaluate(points => {
+    if (what !== 'marker') await page.evaluate(points => {
       window.__captureTarget = points.at(-1)
     }, points)
     await page.waitForTimeout(150)
