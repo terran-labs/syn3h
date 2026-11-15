@@ -171,3 +171,35 @@ Design points already reasoned through:
 - The Orchestrator merges handoffs and runs the full suite. Release 3 is being prepared;
   ask it what the demo cut-off means for water.
 - Message either thread with `send_agent_prompt`. Reply to the owner in this thread.
+
+## Notes from the first reading (added by the Terrain Lab)
+
+A first Water Lab thread was opened in the wrong workspace and replaced by this one. It
+read the code and reported the following before it was closed. Treat these as leads to
+confirm, not facts: it had run nothing.
+
+- Nothing can sink today. The buggy's float code pushes up with 1.6 times its weight when
+  half a metre deep, and the other vehicles share a generic path that steers them toward
+  the surface. By the code, the tank floats, the opposite of what the owner wants.
+- The sea's ripple noise is sampled at world position while the sea chunks jump by whole
+  tiles to follow the camera, so the pattern may pop when a chunk jumps. Check this first.
+- The sea mesh has about one vertex every 21 m on the 4 km tile: long swells can move
+  vertices, short waves can only be faked with lighting.
+- three-stylized-water describes itself as a literal port of Uber Stylized Water. Whether
+  that is a paid Unity asset, and so whether the port's MIT licence holds, is unverified:
+  check the upstream repository (github.com/MatrixRex/Uber-Stylized-Water) and its licence
+  before lifting code. It also loads seven image files. The maths underneath (Gerstner
+  waves, a foam band by depth, shoreline lines from distance to shore) is common knowledge,
+  so writing our own from it is the safe route either way.
+- Gerstner waves move water sideways, so the height at a point needs two or three solver
+  steps in the physics, or visuals and physics drift apart. Wavelengths and directions must
+  fit the tile a whole number of times, with speed following from wavelength.
+- Its proposed order: the shared wave function, then sinking and buoyancy, then sea
+  visuals, underwater, spray and ring ripples, streams. Underwater without a
+  post-processing pass. It thought the estimates were low by about half for phases 1 and 5.
+- It asked the Orchestrator what the release 3 cut-off means for water and whether the
+  Vehicles lane will hand over `src/vehicles/lava.ts`. The answers went to the old thread:
+  ask again.
+
+Since then the owner removed the wrap switch: every world always wraps (`terrain.wrapSize`
+is always the tile size), and planets are drawn at roundness 0.4 by default.
