@@ -26,6 +26,18 @@ The owner answered the wind question: generated wind only. UX owns removing the 
 wind layer. This supersedes the recording-retention rule for wind only; original music
 and laser recordings remain.
 
+## Sunday 15 November, 11:24am Pacific: licensed under PolyForm Noncommercial 1.0.0
+
+**Decided** by the owner: "Update our Git repo with the PolyForm Noncommercial." He wants
+people free to extend the game but not to make money from it without a licence from him.
+The public repository had no licence at all.
+
+**What it changes.** `LICENSE.md` holds the official, unmodified text; `NOTICE.md` carries
+the required notice and how to ask for a commercial licence; the README and package
+metadata name it. Syn3h is source-available, not open source in the strict sense.
+Contributions from others will need a short agreement so he can license the whole
+commercially. The copyright holder is written as Terran Labs unless he says otherwise.
+
 ## Sunday 15 November, 10:45am Pacific: three places to look, one dev preview with everything
 
 **Decided** by the owner: "Eliminate all the outstanding extraneous previews. We should only
