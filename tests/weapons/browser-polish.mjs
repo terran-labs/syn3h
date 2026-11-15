@@ -73,6 +73,10 @@ try {
   for (const [tag, level, post] of [['high', 2, true], ['low', 0, false]]) {
     await page.evaluate(({ level, post }) => { window.syn3h.params.set('gfx.level', level); window.syn3h.params.set('post.on', post) }, { level, post })
     await warm()
+    // Let asynchronous render-chain replacement settle before measuring first use.
+    await page.waitForTimeout(3000)
+    await warm()
+    console.log(JSON.stringify({ tag, warm: await page.evaluate(async () => (await import('/src/weapons/warm.ts')).warmStats(window.syn3h.game)), warmPipelines: await page.evaluate(() => window.__labels) }))
     await page.evaluate(() => { window.__labels = [] })
     const centre = await place()
     await page.waitForTimeout(1000)
