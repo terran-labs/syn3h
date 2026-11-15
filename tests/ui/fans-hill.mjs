@@ -45,7 +45,7 @@ try {
     assert.equal(manifest.name, 'Syn3h'); for(const icon of manifest.icons) assert.equal((await page.request.get(icon.src)).status(), 200)
     assert.deepEqual(await page.evaluate(async () => { const image = new Image(); image.src='/brand/share.png'; await image.decode(); return [image.naturalWidth,image.naturalHeight] }), [1200,630])
     await panel('multiplayer')
-    assert.equal(await page.locator('.mode-control').isVisible(), false)
+    // The game mode selector is always there now that the Multiplayer lane defines game.mode.
     await page.evaluate(async () => { const { defineParam } = await import('/shared/params.ts'); defineParam({id:'game.mode',label:'Mode',group:'Game',scope:'world',default:0,min:0,max:1,step:1}) })
     await page.locator('#game-mode').selectOption('1')
     assert.equal(await page.evaluate(() => syn3h.params.get('game.mode').value), 1)

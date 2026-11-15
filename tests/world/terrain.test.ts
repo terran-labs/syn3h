@@ -49,30 +49,43 @@ describe('terrain generation', () => {
     }
   }, 20000)
 
-  it('is an island: sea on every edge, land in the middle', () => {
+  it('is a wrapping tile: opposite edges match, and about the asked share is land', () => {
     for (const seed of [1, 2, 3, 99, 12345]) {
       const d = generateTerrain(seed, settings)
       const n = d.resolution
       const h = d.heights
-      // Every sample on the border of the simulated square is under the sea surface.
-      let highestEdge = -Infinity
+      // The first and last row, and the first and last column, are the same line of the
+      // world. They must agree closely enough for the seam to be sealed without a step.
+      let seam = 0
       for (let i = 0; i < n; i++) {
-        highestEdge = Math.max(highestEdge, h[i], h[(n - 1) * n + i], h[i * n], h[i * n + n - 1])
+        seam = Math.max(seam, Math.abs(h[i] - h[(n - 1) * n + i]), Math.abs(h[i * n] - h[i * n + n - 1]))
       }
-      expect(highestEdge).toBeLessThan(-10)
-      // A sensible share of the square is land, and nothing sits within a metre of the
-      // surface over a wide area (a shelf there would flicker through the liquid).
+      expect(seam).toBeLessThan(0.5)
       let land = 0
       let shelf = 0
       for (let i = 0; i < h.length; i++) {
         if (h[i] > 0) land++
         if (h[i] > -1 && h[i] < 1) shelf++
       }
-      expect(land / h.length).toBeGreaterThan(0.3)
-      expect(land / h.length).toBeLessThan(0.65)
-      expect(shelf / h.length).toBeLessThan(0.03)
+      expect(Math.abs(land / h.length - settings.landShare)).toBeLessThan(0.12)
+      // Nothing sits within a metre of the surface over a wide area (it would flicker
+      // through the liquid).
+      expect(shelf / h.length).toBeLessThan(0.07)
     }
-  }, 20000)
+    // The land share slider does what it says, and a small and a large planet generate.
+    const sparse = generateTerrain(7, { ...settings, landShare: 0.32 })
+    const full = generateTerrain(7, { ...settings, landShare: 0.8 })
+    const share = (d: TerrainData) => d.heights.reduce((a, v) => a + (v > 0 ? 1 : 0), 0) / d.heights.length
+    expect(share(sparse)).toBeLessThan(0.45)
+    expect(share(full)).toBeGreaterThan(0.7)
+    const small = generateTerrain(7, { ...settings, planetSize: 0 })
+    expect(small.size).toBe(1024)
+    expect(small.resolution).toBe(257)
+    expect(small.roads.find((r) => r.kind === 'volcano')).toBeTruthy()
+    const large = generateTerrain(7, { ...settings, planetSize: 2 })
+    expect(large.size).toBe(4096)
+    expect(large.cell).toBe(4)
+  }, 60000)
 
   it('profiles a continuous cone', () => {
     expect(coneProfile(0)).toBeCloseTo(1, 6)

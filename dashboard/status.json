@@ -628,6 +628,14 @@
   ],
   "knownIssues": [
     {
+      "title": "Black screen on a real iPad",
+      "detail": "The live preview shows black in Safari on the owner's iPad Pro. It draws correctly in the same browser engine on this Mac, so the cause is specific to the device. Adding ?webgl=1 to the address forces the other graphics path. Under investigation, top priority."
+    },
+    {
+      "title": "New default music has not been heard",
+      "detail": "A synthesised score that follows the driving is the default on the preview. It must be listened to before it ships; release 1 keeps the recorded default."
+    },
+    {
       "title": "Wings lift needs two fixes",
       "detail": "Open wings now lift a buggy out of lava and off any shore. Two problems remain: a fast wings-open touch on water is grabbed instead of skipping, and after lifting out the buggy only hovers slowly instead of flying away. Fixes are in progress."
     },

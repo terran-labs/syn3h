@@ -112,7 +112,7 @@ export abstract class Vehicle implements System {
         .setCanSleep(false)
         .setCcdEnabled(true),
     )
-    registerLiquidTerrain(this.body,terrain)
+    registerLiquidTerrain(this.body,terrain,this.liquidState)
     this.object.userData.vehicleHeat=this.liquidState
     this.currPos.copy(position)
     this.prevPos.copy(position)
@@ -139,7 +139,13 @@ export abstract class Vehicle implements System {
     }
     this.body.resetForces(true)
     this.body.resetTorques(true)
-    this.applyForces(dt)
+    const entryVelocity=this.body.linvel()
+    this.liquidState.entrySpeed=Math.hypot(entryVelocity.x,entryVelocity.z)
+    // Forward means launch thrust while the escape field owns motion. Feeding it
+    // into the flight pitch filter would leave a nose-down command at handover.
+    const escapeThrottle=this.input.y
+    if(Number.isFinite(this.liquidState.wingLiftSurface))this.input.y=0
+    try {this.applyForces(dt)} finally {this.input.y=escapeThrottle}
     applyVehicleLiquid(this.body,this.game.world,this.terrain,this.input,this.kind,this.liquidState,dt,this.wingsOpen)
     if(this.lavaDepth>0 && 'inLiquid' in this)(this as unknown as {inLiquid:boolean}).inLiquid=true
   }
@@ -243,6 +249,10 @@ export abstract class Vehicle implements System {
     this.liquidState.wingLiftSurface=-Infinity
     this.liquidState.wingLiftSpeed=0
     this.liquidState.wingLiftAvailable=false
+    this.liquidState.wasImmersed=false
+    this.liquidState.wingWasOpen=this.wingsOpen
+    this.liquidState.fastWingContact=false
+    this.liquidState.wingLaunchSpeed=0
     const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), heading)
     this.body.setTranslation(position, true)
     this.body.setRotation(q, true)

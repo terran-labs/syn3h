@@ -1,14 +1,17 @@
 import * as THREE from 'three/webgpu'
 import type { System } from '../core/Game'
-import { params } from '../../shared/params'
-import { Engine, type MotionAudio } from './Engine'
+import { params, worldSeed } from '../../shared/params'
+import { Engine, unit, type MotionAudio } from './Engine'
 import { synthCue, type Cue } from './Cues'
 import { WorldAudio, lavaProximity, type AudioTerrain } from './WorldAudio'
 import type { Vehicle } from '../vehicles/Vehicle'
+import { Score, scoreSeed, type MatchMood } from './score/Score'
+import { applySubmerge } from './score/ScoreSynth'
 import { cuesVolume, worldVolume, remoteVolume, crossfade, lobbyFade, effectsVolume, masterVolume, musicVolume, muted } from './params'
 
 export type Sound = 'laserShot' | 'laserHit' | 'materialize'
-export const MUSIC_TRACKS = { SpaceStation: 'Space Station', Classic: 'Classic (Mars Explorer)', Carefree: 'Carefree (Mars Explorer)', Ambient: 'Ambient (legacy)' } as const
+/** `Score` is the generated adaptive score (src/audio/score); the rest are recordings. */
+export const MUSIC_TRACKS = { Score: 'Adaptive score (generated)', SpaceStation: 'Space Station', Classic: 'Classic (Mars Explorer)', Carefree: 'Carefree (Mars Explorer)', Ambient: 'Ambient (legacy)' } as const
 export type MusicTrack = keyof typeof MUSIC_TRACKS
 export interface Position { x: number; y: number; z: number }
 const files: Record<Sound | 'wind', string> = { laserShot: 'LaserShot.mp3', laserHit: 'LaserHit.mp3', materialize: 'Materialize.mp3', wind: 'Wind.wav' }
@@ -24,6 +27,9 @@ export class GameAudio implements System {
   private worldBus?: GainNode
   private remoteBus?: GainNode
   private world?: WorldAudio
+  private score?: Score
+  /** Lowpass on the whole mix, closed while the player's vehicle is under a liquid surface. */
+  private submerge?: BiquadFilterNode
   private local?: Vehicle
   private terrain?: AudioTerrain
   private vehicleSource: () => readonly Vehicle[] = () => []
@@ -32,14 +38,15 @@ export class GameAudio implements System {
   private readonly events = new Map<Vehicle,{wings:boolean;landed:boolean;liquid:'lava'|'water'|null}>()
   private nextSpatial = 0
   private lavaNear = 0
+  private match: MatchMood | null = null
   private readonly buffers = new Map<string, AudioBuffer>()
-  private readonly decks = new Map<MusicTrack, Deck>()
+  private readonly decks = new Map<Exclude<MusicTrack, 'Score'>, Deck>()
   private readonly voices = new Set<AudioBufferSourceNode>()
   private readonly forward = new THREE.Vector3()
   private readonly up = new THREE.Vector3()
   private readonly position = new THREE.Vector3()
   private readonly rotation = new THREE.Quaternion()
-  private selected: MusicTrack = 'SpaceStation'
+  private selected: MusicTrack = 'Score'
   private lobbyVisible = true
   private disposed = false
   private loads?: Promise<void>
@@ -54,8 +61,15 @@ export class GameAudio implements System {
     const unlock = () => { void this.unlock().catch((error) => this.errors.push(String(error))) }
     window.addEventListener('pointerdown', unlock, { signal: this.gestures.signal })
     window.addEventListener('keydown', unlock, { signal: this.gestures.signal })
-    this.unsubscribe = params.onChange((id) => { if (id.startsWith('audio.')) this.syncMix() })
+    this.unsubscribe = params.onChange((id) => {
+      if (id.startsWith('audio.')) this.syncMix()
+      if (id === worldSeed.def.id || id === scoreSeed.def.id) this.score?.setSeed(scoreSeed.value || worldSeed.value)
+    })
+    // A hidden tab stops rendering frames, so nothing would schedule notes while the pads held
+    // their last chord. Fade the score out until the tab is back.
+    document.addEventListener('visibilitychange', this.onVisibility)
   }
+  private readonly onVisibility = () => this.score?.synth.setLevel(document.hidden || this.selected !== 'Score' ? 0 : 1, 0.6)
   get state(): AudioContextState | 'locked' { return this.context?.state ?? 'locked' }
   get track(): MusicTrack { return this.selected }
   get loadedSounds(): number { return this.buffers.size }
@@ -71,7 +85,8 @@ export class GameAudio implements System {
       const ceiling=context.createWaveShaper(),curve=new Float32Array(4097)
       for(let i=0;i<curve.length;i++){const x=i/(curve.length-1)*2-1,a=Math.abs(x);curve[i]=Math.sign(x)*(a<=.8?a:.8+.15*(1-Math.exp(-(a-.8)/.15)))}
       ceiling.curve=curve;ceiling.oversample='2x'
-      this.master = context.createGain(); this.master.connect(limiter).connect(ceiling).connect(context.destination)
+      this.submerge = context.createBiquadFilter(); this.submerge.type = 'lowpass'; this.submerge.frequency.value = 20000
+      this.master = context.createGain(); this.master.connect(this.submerge).connect(limiter).connect(ceiling).connect(context.destination)
       this.music = context.createGain(); this.music.connect(this.master)
       this.effects = context.createGain(); this.effects.connect(this.master)
       this.cueBus=context.createGain();this.cueBus.connect(this.master)
@@ -79,6 +94,8 @@ export class GameAudio implements System {
       this.remoteBus=context.createGain();this.remoteBus.connect(this.master)
       this.engine = new Engine(context, this.master)
       this.world = new WorldAudio(context,this.worldBus,this.engine.noise)
+      this.score = new Score(context, this.music, scoreSeed.value || worldSeed.value)
+      this.score.setMatch(this.match)
       this.syncMix()
       this.loads = this.loadBuffers()
     }
@@ -108,6 +125,17 @@ export class GameAudio implements System {
   }
   private async startTrack(track: MusicTrack): Promise<void> {
     const context = this.context!
+    this.score?.setActive(track === 'Score', crossfade.value)
+    if (track === 'Score') {
+      // Nothing to download: fade the recordings out and let the generated score take over.
+      for (const other of this.decks.values()) {
+        clearTimeout(other.stopTimer)
+        other.gain.gain.cancelAndHoldAtTime(context.currentTime)
+        other.gain.gain.linearRampToValueAtTime(0, context.currentTime + crossfade.value)
+        other.stopTimer = setTimeout(() => other.element.pause(), crossfade.value * 1000 + 100)
+      }
+      return
+    }
     let deck = this.decks.get(track)
     if (!deck) {
       const element = new Audio(`/audio/${track}.mp3`)
@@ -156,6 +184,11 @@ export class GameAudio implements System {
   play(sound: Sound, position?: Position): void {
     const buffer = this.buffers.get(sound)
     if (!buffer || this.context?.state !== 'running' || this.voices.size >= 32) return
+    // Laser fire near the listener is what the score hears as combat. A hit counts for more.
+    if (this.enabled && sound !== 'materialize') {
+      const near = position ? unit(1 - (Math.hypot(position.x - this.position.x, position.y - this.position.y, position.z - this.position.z) - 40) / 360) : 1
+      this.score?.combat((sound === 'laserHit' ? 0.3 : 0.14) * near)
+    }
     const source = this.context.createBufferSource(), output = this.output(position)
     source.buffer = buffer; source.connect(output.node); this.voices.add(source)
     source.onended = () => { source.disconnect(); output.dispose(); this.voices.delete(source) }
@@ -173,14 +206,24 @@ export class GameAudio implements System {
   }
   setPlayer(vehicle:Vehicle,terrain:AudioTerrain):void {this.local=vehicle;this.terrain=terrain;this.events.clear()}
   setVehicles(source:()=>readonly Vehicle[]):void {this.vehicleSource=source}
+  /** The match as the score hears it: holding the hill is triumph, a contested hill is tension. */
+  setMatch(match:MatchMood|null):void {this.match=match;this.score?.setMatch(match)}
+  /** Metres the local vehicle sits below a liquid surface; zero or less when dry. */
+  private submersion():number {
+    if(!this.enabled||!this.local||!alive(this.local))return 0
+    const p=this.local.object.position,liquid=this.terrain?.liquidHeightAt?.(p.x,p.z)??-Infinity
+    return Number.isFinite(liquid)?liquid-p.y:0
+  }
   cue(cue:Cue,position?:Position):void {
     if(this.context?.state!=='running'||this.cueStops.size>=16)return
+    if(cue==='tag')this.score?.combat(.5)
+    else if(cue==='capture'||cue==='win')this.score?.accent(cue==='win'?1:.6)
     const out=position?this.output(position,this.cueBus!):{node:this.cueBus!,dispose(){}}
     let stop:()=>void
     stop=synthCue(this.context,out.node,cue,this.engine!.noise,()=>{this.cueStops.delete(stop);out.dispose()})
     this.cueStops.add(stop)
   }
-  get diagnostics(){return {state:this.state,remoteVoices:this.remote.size,engineNodes:(this.engine?.nodeCount??0)+[...this.remote.values()].reduce((n,v)=>n+v.engine.nodeCount,0),oneShots:this.voices.size+this.cueStops.size,trackedVehicles:this.events.size}}
+  get diagnostics(){return {state:this.state,score:this.score?{playing:this.score.playing,mode:this.score.mode,tempo:Math.round(this.score.tempo),mood:{...this.score.mood},nodes:this.score.synth.nodeCount}:null,remoteVoices:this.remote.size,engineNodes:(this.engine?.nodeCount??0)+[...this.remote.values()].reduce((n,v)=>n+v.engine.nodeCount,0),oneShots:this.voices.size+this.cueStops.size,trackedVehicles:this.events.size}}
   private readVehicle(v:Vehicle):MotionAudio {
     const velocity=v.body.linvel(),p=v.object.position,ground=this.terrain?.heightAt(p.x,p.z)??p.y
     return {kind:v.kind,speed:Math.hypot(velocity.x,velocity.y,velocity.z),throttle:v.kind==='jet'?v.input.z:v.input.y,airborne:v.wheelsGrounded===0,wings:v.wingsOpen,slip:Math.max(0,...(v.getWheelEffects?.()??[]).filter(w=>w.grounded).map(w=>w.slip)),altitude:Math.max(0,p.y),clearance:Math.max(0,p.y-ground)}
@@ -221,18 +264,21 @@ export class GameAudio implements System {
     for(const [v,voice] of this.remote)if(!alive(v)){voice.engine.dispose();setTimeout(()=>voice.panner.disconnect(),80);this.remote.delete(v);this.events.delete(v)}
     for(const [v,voice] of this.remote){const p=v.object.position;voice.panner.positionX.value=p.x;voice.panner.positionY.value=p.y;voice.panner.positionZ.value=p.z;voice.engine.update(this.readVehicle(v),this.enabled);this.vehicleEvents(v)}
     this.world!.update(this.lavaNear,this.enabled)
+    const m=this.motion,submerged=this.submersion()
+    this.score!.update({playing:this.enabled,speed:m.speed,throttle:m.throttle,airborne:m.airborne,clearance:m.clearance??0,altitude:m.altitude??0,submerged,lava:this.lavaNear})
+    applySubmerge(this.submerge!,this.score!.mood.depth,this.context.currentTime)
     const l = this.context.listener, p = this.position, f = this.forward, u = this.up
     if (l.positionX) {
       for (const [param, value] of [[l.positionX,p.x],[l.positionY,p.y],[l.positionZ,p.z],[l.forwardX,f.x],[l.forwardY,f.y],[l.forwardZ,f.z],[l.upX,u.x],[l.upY,u.y],[l.upZ,u.z]] as const) param.value = value
     } else { l.setPosition(p.x,p.y,p.z); l.setOrientation(f.x,f.y,f.z,u.x,u.y,u.z) }
   }
   dispose(): void {
-    this.disposed = true; this.gestures.abort(); this.unsubscribe()
+    this.disposed = true; this.gestures.abort(); this.unsubscribe(); document.removeEventListener('visibilitychange', this.onVisibility)
     for (const deck of this.decks.values()) { clearTimeout(deck.stopTimer); deck.element.pause(); deck.element.removeAttribute('src'); deck.element.load(); deck.source.disconnect(); deck.gain.disconnect() }
     for (const source of this.voices) source.stop()
     for(const stop of [...this.cueStops])stop()
     for(const voice of this.remote.values()){voice.engine.dispose(true);voice.panner.disconnect()}
-    this.remote.clear();this.events.clear();this.world?.dispose()
+    this.remote.clear();this.events.clear();this.world?.dispose();this.score?.dispose();this.score=undefined;this.submerge?.disconnect();this.submerge=undefined
     this.engine?.dispose(true); this.engine=undefined; this.world=undefined
     for(const bus of [this.master,this.music,this.effects,this.cueBus,this.worldBus,this.remoteBus])bus?.disconnect()
     this.master=this.music=this.effects=this.cueBus=this.worldBus=this.remoteBus=undefined
