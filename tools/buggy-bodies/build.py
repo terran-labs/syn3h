@@ -871,6 +871,10 @@ def main():
             elif o.name.startswith('wheelPreview') or o.name in ('floor', 'key', 'cam'): o.hide_render = True
         for o in parts: o.hide_render = False
         export(parts, os.path.join(OUT, v['id'] + '.glb'))
+        # The chosen body also goes to public/, where the game loads it.
+        if v.get('ship') and not ONLY:
+            export(parts, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'public', 'models', v['ship']))
+            print('SHIPPED', v['id'], v['ship'])
         tris = sum(len(p.vertices) - 2 for o in parts for p in o.data.polygons)
         print('BUILT', v['id'], 'triangles', tris)
         manifest.append({'id': v['id'], 'name': v['name'], 'notes': v.get('notes', []), 'file': v['id'] + '.glb', 'triangles': tris, 'round': v.get('round', 1), 'gameResolution': bool(v.get('game') or os.environ.get('GAME')),

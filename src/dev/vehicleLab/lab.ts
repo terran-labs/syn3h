@@ -17,7 +17,7 @@ import * as THREE from 'three/webgpu'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { params as gameParams, type ParamDef } from '../../../shared/params'
 import { countStats, FLOOR_NAMES, parseLabParams, pickAutoLod, resolveLod, RollingAverage, STRESS_COUNTS, stressGrid, VIEW_NAMES, visibleBounds, type FloorName, type ViewName } from './logic'
-import { exhibits } from './registry'
+import { exhibits, failures } from './registry'
 import { Studio } from './studio'
 import { buildTree, resolveSelection, selectionFromSearch, selectionToSearch, vehicleParams, type ListedExhibit, type Selection, type TreeSection, type Wanted } from './tree'
 import type { LabControl, LabDesignInfo, LabExhibit, LabModel, LabState, LabStats } from './types'
@@ -25,6 +25,33 @@ import * as ui from './ui'
 
 const params = parseLabParams(location.search)
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T
+
+/** What tools/lab-live.mjs writes to labs/live-status.json each time it rebuilds the live lab. */
+interface LiveStatus { updated: string; trunk: string; branches: { name: string; head: string; subject: string; when: string; merged: boolean; error?: string }[] }
+
+/**
+ * Sidebar footer: where this lab's contents come from. On the live lab that is every vehicle
+ * branch's latest commit; a branch that could not be merged and an exhibit file that failed to
+ * load are named here, so a missing vehicle is explained instead of silently absent.
+ */
+async function showSources(): Promise<void> {
+  const box = document.createElement('div')
+  box.id = 'sources'
+  box.style.cssText = 'margin:16px 12px 20px;padding:10px 12px;border:1px solid #263142;border-radius:8px;font-size:12px;line-height:1.5;color:#9fb0c3'
+  const line = (text: string, color?: string) => { const d = document.createElement('div'); d.textContent = text; if (color) d.style.color = color; box.append(d) }
+  let live: LiveStatus | null = null
+  try {
+    const res = await fetch('/labs/live-status.json', { cache: 'no-store' })
+    if (res.ok && /json/.test(res.headers.get('content-type') ?? '')) live = await res.json() as LiveStatus
+  } catch { live = null }
+  if (live) {
+    const title = document.createElement('div'); title.textContent = 'Live: every vehicle branch, latest commit'; title.style.cssText = 'color:#e6edf5;font-weight:600;margin-bottom:4px'; box.append(title)
+    for (const b of live.branches) line(`${b.merged ? '●' : '✕'} ${b.name.replace(/^veh\//, '')}: ${b.subject.slice(0, 46)} (${b.when})${b.merged ? '' : ' — not shown: ' + (b.error ?? 'did not merge')}`, b.merged ? undefined : '#ffb37a')
+    line(`Rebuilt ${new Date(live.updated).toLocaleTimeString()}`)
+  } else line('Showing this checkout only (not the live lab).')
+  for (const f of failures) line(`✕ ${f.file} failed to load: ${f.error.slice(0, 120)}`, '#ffb37a')
+  $('side-scroll').append(box)
+}
 
 /**
  * View presets as directions from the vehicle, in the stage frame (nose toward -Z). Front and
@@ -103,6 +130,7 @@ async function main(): Promise<void> {
 
   // Every exhibit's designs, for the tree. One failing exhibit is listed with its error.
   status.textContent = 'Listing vehicles…'
+  void showSources()
   const listed: ListedExhibit[] = await Promise.all(exhibits.map(async exhibit => {
     try { return { exhibit, designs: await exhibit.designs() } } catch (error) { console.error(error); return { exhibit, designs: [], error: String(error) } }
   }))
