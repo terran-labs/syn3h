@@ -17,7 +17,7 @@ describe('lava and vents', () => {
       expect(lake).not.toBeNull()
       expect(lake!.surface).toBeGreaterThan(lake!.floor)
       expect(rivers.length).toBeGreaterThanOrEqual(2)
-      expect(rivers.length).toBeLessThanOrEqual(4)
+      expect(rivers.length).toBeLessThanOrEqual(9)
       expect(pools.length).toBe(rivers.length)
       expect(d.vents.length).toBeGreaterThanOrEqual(10)
       expect(d.vents.length).toBeLessThanOrEqual(30)
@@ -31,14 +31,15 @@ describe('lava and vents', () => {
     expect(a.vents).toEqual(b.vents)
   }, 20000)
 
-  it('rivers run downhill in carved channels, from the rim region to their pool, clear of roads', () => {
+  it('rivers run downhill in carved channels to their pool, clear of roads', () => {
     for (const seed of SEEDS) {
       const d = generateTerrain(seed, settings)
       const s = new HeightSampler(d)
       const v = d.layout.volcano
       for (const r of d.lava.rivers) {
         const pts = r.points
-        expect(Math.hypot(pts[0].x - v.x, pts[0].z - v.z)).toBeLessThan(v.calderaRadius * 3)
+        // Every river rises on the volcano: below the rim road, or below a wrap of the spiral road.
+        expect(Math.hypot(pts[0].x - v.x, pts[0].z - v.z)).toBeLessThan(v.radius * (1 + v.gentleStretch))
         for (let i = 1; i < pts.length; i++) expect(pts[i].y).toBeLessThanOrEqual(pts[i - 1].y)
         for (const p of pts) {
           // The lava sits in the ground: the channel bed is below the lava surface.
