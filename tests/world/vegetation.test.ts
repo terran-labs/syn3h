@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu'
 import { describe, expect, it } from 'vitest'
 import { FLORA, type Ground, type Plant, setTint } from '../../src/world/terrain/flora'
-import { COVER_LEVELS, GroundCover, MAX_PLANT_HEIGHT, flowAt, hueMatrix, plantTop } from '../../src/world/terrain/groundcover'
+import { COVER_LEVELS, GroundCover, coverPresetRows, MAX_PLANT_HEIGHT, flowAt, hueMatrix, plantTop } from '../../src/world/terrain/groundcover'
 import { generateTerrain } from '../../src/world/terrain/generate'
 import { HeightSampler } from '../../src/world/terrain/sampler'
 import { defaultTerrainSettings } from '../../src/world/terrain/settings'
@@ -154,6 +154,19 @@ describe('vegetation', () => {
       const a = COVER_LEVELS[i - 1], b = COVER_LEVELS[i]
       for (const k of ['density', 'reach', 'detailNear', 'flowers', 'nightlife'] as const) expect(b[k]).toBeGreaterThanOrEqual(a[k])
       expect(Number(b.bend)).toBeGreaterThanOrEqual(Number(a.bend))
+    }
+  })
+
+  it('matches the rows the six graphics levels preset, where those exist', async () => {
+    // core/quality.ts copies these numbers as literals (core does not import world code),
+    // so the two could drift. Before the six levels land there is nothing to compare.
+    const quality = await import('../../src/core/quality') as unknown as { presetFor?: (level: number) => Record<string, number | boolean> }
+    const rows = coverPresetRows()
+    expect(Object.keys(rows).sort()).toEqual(['cover.bend', 'cover.density', 'cover.detail', 'cover.flowers', 'cover.nightLife', 'cover.reach'])
+    if (!quality.presetFor) return
+    for (let level = 0; level < COVER_LEVELS.length; level++) {
+      const preset = quality.presetFor(level)
+      for (const id in rows) expect(preset[id], `${id} at level ${level}`).toBe(rows[id][level])
     }
   })
 
