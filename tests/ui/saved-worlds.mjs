@@ -47,7 +47,9 @@ try {
     assert.equal(await page.evaluate(() => window.syn3h.shell.dropping), false)
     assert.equal(await page.evaluate(() => window.syn3h.params.get('world.seed').value), 888)
     await page.evaluate(() => { window.syn3h.shell.invited = false })
-    await page.locator('.saved-world-moon').dispatchEvent('click')
+    const moonBox = await page.locator('.saved-world-moon').boundingBox()
+    assert.ok(moonBox)
+    await page.mouse.click(moonBox.x + moonBox.width / 2, moonBox.y + moonBox.height / 2)
     await page.waitForFunction(() => window.syn3h.shell.dropping)
     await page.waitForFunction(() => !window.syn3h.shell.dropping && window.syn3h.shell.started && window.syn3hNet?.connected, null, { timeout: 30000 })
     assert.equal(await page.evaluate(() => window.syn3h.params.get('world.seed').value), 777)
@@ -55,6 +57,50 @@ try {
     assert.equal(await page.evaluate(() => window.syn3h.shell.roomInput.value), 'lobby')
     assert.equal(await page.evaluate(() => JSON.stringify(window.syn3h.shell.galaxy.options.worlds.find(world => world.id === 'custom'))), custom)
     assert.equal(await page.evaluate(() => window.syn3h.shell.galaxy.savedTarget), false)
+    // Verify the real visible World footer, not merely a hidden callback fixture.
+    await page.evaluate(() => { window.syn3h.shell.inspector.open = true })
+    await page.locator('.wi-card[data-section="world"] .wi-head').click()
+    const save = page.locator('[data-wi=save-world]')
+    await save.scrollIntoViewIfNeeded(); await save.click()
+    const visibleStatus = async pattern => {
+      assert.match(await page.locator('.wi-status').textContent(), pattern)
+      assert.equal(await page.locator('.wi-status').evaluate(element => {
+        for (let node = element; node; node = node.parentElement) {
+          const style = getComputedStyle(node)
+          if (node.hidden || style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false
+        }
+        const box = element.getBoundingClientRect()
+        return box.width > 0 && box.height > 0 && box.top < innerHeight && box.bottom > 0
+      }), true, 'save feedback is visibly rendered')
+    }
+    await visibleStatus(/already saved/)
+    assert.equal(await page.evaluate(() => window.syn3h.game.input.suspended), false)
+    await page.evaluate(() => window.syn3h.params.set('terrain.treeCover', 0.1))
+    await save.focus(); await page.keyboard.down('Enter')
+    assert.equal(await page.evaluate(() => { window.syn3h.game.input.poll(); return window.syn3h.game.input.state.fire }), false)
+    await page.keyboard.up('Enter'); await visibleStatus(/World saved/)
+    await page.evaluate(() => window.syn3h.params.set('terrain.treeCover', 0.2))
+    const special = await page.evaluate(() => window.syn3h.game.input.state.special)
+    await page.keyboard.down('Space')
+    assert.equal(await page.evaluate(() => window.syn3h.game.input.state.special), special)
+    await page.keyboard.up('Space'); await visibleStatus(/World saved/)
+    await page.evaluate(() => {
+      window.syn3h.params.set('terrain.treeCover', 0.3)
+      window.__setItem = Storage.prototype.setItem
+      Storage.prototype.setItem = function(key, value) { if (key === 'syn3h.savedWorlds.v1') throw new Error('Storage test failure'); return window.__setItem.call(this, key, value) }
+    })
+    await save.click(); await visibleStatus(/not saved.*Storage test failure/)
+    await page.evaluate(() => { Storage.prototype.setItem = window.__setItem; document.activeElement.blur() })
+    await page.keyboard.down('Enter')
+    assert.equal(await page.evaluate(() => { window.syn3h.game.input.poll(); return window.syn3h.game.input.state.fire }), true)
+    await save.focus(); await page.keyboard.up('Enter')
+    assert.equal(await page.evaluate(() => { window.syn3h.game.input.poll(); return window.syn3h.game.input.state.fire }), false)
+    await page.evaluate(id => {
+      const { shell, params } = window.syn3h
+      for (const entry of shell.savedWorlds.read().entries) if (entry.id !== id) shell.savedWorlds.remove(entry.id)
+      shell.refreshSavedWorlds(); params.set('terrain.treeCover', 0); shell.inspector.open = false
+    }, stored.id)
+    console.log('Save feedback: visible success/duplicate/storage error; Enter/Space activation and key release isolated')
     // A second browser enters the existing authoritative room with different saved settings.
     const safari = await webkit.launch()
     try {

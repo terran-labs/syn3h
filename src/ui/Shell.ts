@@ -672,8 +672,8 @@ export class Shell implements System {
     try {
       const result = this.savedWorlds.save(params.snapshot('world'))
       this.refreshSavedWorlds()
-      this.say(result.duplicate ? 'This world is already saved on this device.' : 'World saved on this device.')
-    } catch (error) { this.say(`World was not saved. ${error instanceof Error ? error.message : 'Storage is unavailable.'}`) }
+      this.inspector.setStatus(result.duplicate ? 'This world is already saved on this device.' : 'World saved on this device.')
+    } catch (error) { this.inspector.setStatus(`World was not saved. ${error instanceof Error ? error.message : 'Storage is unavailable.'}`) }
   }
   private mountSavedWorlds(): void {
     const section = document.createElement('section'); section.className = 'saved-worlds'
@@ -691,7 +691,7 @@ export class Shell implements System {
       const library = this.savedWorlds.read()
       this.savedMoons?.set(library.entries)
       if (!library.entries.length || library.notice) {
-        const note = document.createElement('p'); note.textContent = library.notice ?? 'Save a world from the World card beside Copy world.'
+        const note = document.createElement('p'); note.textContent = library.notice ?? 'Use Save current world in the World card.'
         this.savedList.append(note)
       }
       for (const entry of library.entries) {
