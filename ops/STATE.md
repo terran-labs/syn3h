@@ -4,7 +4,7 @@ Written by the Orchestrator. Refreshed at each milestone tag. A fresh or compact
 Orchestrator should be able to resume from this file, `ops/BACKLOG.md`, `ops/LANES.md` and
 `ops/PROTOCOL.md` alone. Times are Pacific; read the clock with `date`, never from memory.
 
-Last refreshed: Saturday 14 November, 8:15pm PST. Demo: Sunday noon PST.
+Last refreshed: Saturday 14 November, 8:45pm PST. Demo: Sunday noon PST.
 
 ## Where things are
 
@@ -72,6 +72,23 @@ Retired in-process subagents (work merged): buggy `af96d3463a8b76592`, multiplay
 
 ## Releases
 
+- RELEASE 3 GATE (agreed with the Foreman, 8:40pm). Cut from trunk only when all hold:
+  (1) Multiplayer's two-browser seam check, the Vehicles lane's per-vehicle seam review and
+  QA's bots-on-wrap all pass; (2) the owner has driven across a seam and seen the opening
+  view, the Dark Star look, Zorb and the paint; (3) the release opens on a world where the
+  volcano is visible from the spawn pad: if round planets cannot do that at the default size,
+  the default stays flat (`world.curve` 0) for release 3 and round is a lobby choice;
+  (4) every vehicle is clean on the frozen build in Chrome and WebKit, and the dry run passes
+  on the final tag. If not all true by 9am Sunday, the demo runs release 2 and the rest is
+  shown on the preview from this Mac. The score ships as default only on the owner's word
+  (latest: "still ok, still no chills").
+- DEPLOY RULES: no release while anyone is playing, and none after 10am Sunday without the
+  owner's word. About five minutes after a deploy every occupied room is reset: players
+  reconnect in about a second, world settings survive, scores, round, "it" and host restart
+  (docs/CUTOVER.md, "Releasing while people are playing"). The Foreman's sweeps end at
+  9:30pm Saturday; after that digests and this file are the record. The Foreman has asked the
+  owner about a 9:30pm feature freeze; until answered, nothing new starts that cannot be
+  finished and gated tonight.
 - LIVE: release-2 = `m14.2-release2` (bc8cb48, branch `release/2`): m14 plus gallery models
   out of the build, the recorded default track, the jet texture race fix (fe45b14) and the
   buggy wheels-forward fix (0add867). Shipped 8:07pm PST. Worker version 747d2041, frozen copy

@@ -44,7 +44,7 @@ export const terrainPlanetSize = defineParam({
   ...P, id: 'terrain.planetSize', label: 'Planet size: 0 small, 1 medium, 2 large', default: 1, min: 0, max: 2, step: 1,
 })
 export const terrainTreeCover = defineParam({
-  ...P, id: 'terrain.treeCover', label: 'Plant cover', default: 0.5, min: 0, max: 1, step: 0.01,
+  ...P, id: 'terrain.treeCover', label: 'Plant cover (off: no worlds grow trees or cacti)', default: 0, min: 0, max: 1, step: 0.01,
 })
 /**
  * What kind of world this is: it picks the shape of the centre, what fills its lake, and
@@ -57,14 +57,6 @@ export const terrainKind = defineParam({
 /** What the sea is made of. A look and feel choice: it does not change the shape of the land. */
 export const worldSeaKind = defineParam({
   id: 'world.seaKind', label: 'Sea: 0 lava, 1 water', group: 'World', scope: 'world', default: 0, min: 0, max: 1, step: 1,
-})
-/**
- * Whether the world wraps for gameplay: vehicles, cameras, bots and the network carry
- * things across the seam. The ground is always drawn and collided across the seam; this
- * switch only tells the rest of the game to act on it, so each part can land dark.
- */
-export const worldWrap = defineParam({
-  id: 'world.wrap', label: 'Wrapping world', group: 'World', scope: 'world', default: false,
 })
 export const KIND_VOLCANIC = 0
 export const KIND_DESERT = 1

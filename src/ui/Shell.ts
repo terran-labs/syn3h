@@ -12,7 +12,9 @@ import { Starfield } from './Starfield'
 import { wordmarkSvg } from './brand/logo'
 import { PlanetPicker } from './planets/PlanetPicker'
 import { planetOrbs } from './planets/PlanetOrbs'
-import { Galaxy } from './galaxy/Galaxy'
+import { Galaxy, type GalaxyWorld } from './galaxy/Galaxy'
+import { qualityLevel } from './quality/ladder'
+import { Vector3 } from 'three/webgpu'
 import { PLANETS } from '../world/planets'
 import { graphicsLevel, levelNumber } from '../core/quality'
 import { applyPlanet, currentPlanet, encodeWorld, planetName } from '../world/planets'
@@ -36,6 +38,17 @@ const back = '<button type="button" class="panel-back link-button" data-goto="in
 declare const __SYN3H_BUILD__: string | undefined
 const buildLine = typeof __SYN3H_BUILD__ === 'string' && __SYN3H_BUILD__ ? `build version : ${__SYN3H_BUILD__}` : 'browser edition'
 const heading = (text: string) => `<h2 tabindex="-1">${text}</h2>`
+/**
+ * The vehicle paint sliders (src/vehicles/skins/showroom.ts), offered where a vehicle is
+ * chosen. They are personal settings and live shader values, safe to drag. Built from the
+ * registry, so a slider that is not defined is simply not shown.
+ */
+const PAINT_SLIDERS = ['paint.scaleSize', 'paint.scaleDepth', 'paint.seams', 'paint.flakes', 'paint.gloss']
+const paintControls = (): string => {
+  const sliders = PAINT_SLIDERS.map(id => params.get(id)).filter(p => p && typeof p.value === 'number')
+  if (!sliders.length) return ''
+  return `<fieldset class="paint-controls"><legend>Paint</legend>${sliders.map(p => `<label>${p!.def.label}<input data-param="${p!.def.id}" type="range" min="${p!.def.min ?? 0}" max="${p!.def.max ?? 1}" step="${p!.def.step ?? 0.01}" value="${p!.value}"></label>`).join('')}<p class="panel-note">Paint detail shows at higher vehicle shading, in Graphics. <button type="button" class="link-button" data-goto="advanced">All sliders</button></p></fieldset>`
+}
 
 export class Shell implements System {
   readonly element = document.createElement('div')
@@ -66,7 +79,7 @@ export class Shell implements System {
   /** Slider groups the advanced panel is limited to, when it was opened from the custom planet. */
   private advancedGroups?: readonly string[]
   private worldDirty = true
-  /** The 3D galaxy lobby, a prototype shown only with ?galaxy=1 in the link. */
+  /** The 3D galaxy lobby. On by default; ?galaxy=0 in the link keeps the panel lobby. */
   private galaxy?: Galaxy
   /** Arrived by an invite link that names a world: that world is the one to enter. */
   private readonly invited = (() => { const query = new URLSearchParams(location.search); return query.has('room') && query.has('world') })()
@@ -100,7 +113,7 @@ export class Shell implements System {
           <button class="shell-play is-primary" type="submit">Enter World ›</button></form>${back}
         </section>
         <section data-panel="vehicle">${heading('Your Vehicle')}
-          <fieldset class="shell-vehicle"><legend>Vehicle</legend><div class="shell-vehicle-options"><label><input type="radio" name="vehicle" value="buggy-classic"> Classic</label><label><input type="radio" name="vehicle" value="buggy-syn3h"> Syn3h Buggy</label><label><input type="radio" name="vehicle" value="hovercraft"> Hovercraft</label><label><input type="radio" name="vehicle" value="jet"> Jet</label></div><div class="shell-vehicle-preview"></div><div class="shell-colors"><label>Body <input type="color" name="bodyColor" aria-label="Body colour"></label><label>Accent <input type="color" name="accentColor" aria-label="Accent colour"></label></div></fieldset>
+          <fieldset class="shell-vehicle"><legend>Vehicle</legend><div class="shell-vehicle-options"><label><input type="radio" name="vehicle" value="buggy-classic"> Classic</label><label><input type="radio" name="vehicle" value="buggy-syn3h"> Syn3h Buggy</label><label><input type="radio" name="vehicle" value="hovercraft"> Hovercraft</label><label><input type="radio" name="vehicle" value="jet"> Jet</label></div><div class="shell-vehicle-preview"></div><div class="shell-colors"><label>Body <input type="color" name="bodyColor" aria-label="Body colour"></label><label>Accent <input type="color" name="accentColor" aria-label="Accent colour"></label></div></fieldset>${paintControls()}
           <div class="vehicle-help"></div><p class="vehicle-note">Your vehicle and colours are saved on this device.</p><button data-goto="explore">Continue ›</button>${back}
         </section>
         <section data-panel="worlds">${heading('Worlds to Explore')}
@@ -141,6 +154,7 @@ export class Shell implements System {
       this.pickers.push(new PlanetPicker(slot, { compact, onPick: id => this.pickPlanet(id, compact), onCustom: () => this.openCustomPlanet() }))
     }
     this.glass(signal)
+    for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) slider.addEventListener('input', () => params.set(slider.dataset.param!, Number(slider.value)), { signal })
     this.startGalaxy()
     const unsubscribeWorld = params.onChange(id => { if (params.get(id)?.def.scope === 'world') this.worldDirty = true })
     signal.addEventListener('abort', unsubscribeWorld)
@@ -166,9 +180,10 @@ export class Shell implements System {
     for (const button of this.element.querySelectorAll('[data-join]')) button.addEventListener('click', () => this.openJoin(), { signal })
     this.element.querySelector('.shell-menu-button')!.addEventListener('click', () => this.openMenu(), { signal })
     this.element.querySelector('[data-resume]')!.addEventListener('click', () => this.closeMenu(), { signal })
-    this.element.querySelector('form')!.addEventListener('submit', event => { event.preventDefault(); this.play() }, { signal })
+    this.element.querySelector('form')!.addEventListener('submit', event => { event.preventDefault(); this.play(true) }, { signal })
     for (const button of this.element.querySelectorAll('.shell-invite')) button.addEventListener('click', () => { void this.copyInvite() }, { signal })
     this.element.querySelector('.presentation-toggle')!.addEventListener('click', () => this.setPresentation(!this.presentation), { signal })
+    for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) if (document.activeElement !== slider) slider.value = String(params.get(slider.dataset.param!)?.value ?? 0)
     for(const slider of this.element.querySelectorAll<HTMLInputElement>('[data-audio-param]'))slider.addEventListener('input',()=>params.set(slider.dataset.audioParam!,Number(slider.value)),{signal})
     this.element.querySelector('.shell-mute')!.addEventListener('click', () => { audio.setMuted(!audio.isMuted); this.update() }, { signal })
     this.element.querySelector('#shell-track')!.addEventListener('change', event => {
@@ -272,13 +287,13 @@ export class Shell implements System {
     this.lastMatch=state?{...state}:null
     this.matchHud.setState(state)
   }
-  setTerrain(terrain: Terrain): void { this.minimap?.dispose(); this.minimap = new Minimap(terrain, this.element); this.attract?.dispose(); this.attract = new AttractMode(terrain, this.element) }
-  setAttractCamera(camera: CinematicCamera, bots: () => readonly Vehicle[] = () => []): void { this.attract?.setCamera(camera, bots) }
+  setTerrain(terrain: Terrain): void { this.ground = terrain; this.minimap?.dispose(); this.minimap = new Minimap(terrain, this.element); this.attract?.dispose(); this.attract = new AttractMode(terrain, this.element) }
+  setAttractCamera(camera: CinematicCamera, bots: () => readonly Vehicle[] = () => []): void { this.cinematic = camera; this.attract?.setCamera(camera, bots) }
   startAttract(): void { if (!this.started && !this.inviteOpen) this.attract?.start() }
   stopAttract(): void { this.attract?.stop(); this.lastActivity = performance.now(); this.requestedAttract = false }
   get attracting(): boolean { return this.attract?.active ?? false }
   setMapEntities(entities: readonly MapEntity[]): void { this.minimap?.setEntities(entities) }
-  setMapSelf(entity: MapEntity): void { this.minimap?.setSelf(entity) }
+  setMapSelf(entity: MapEntity): void { this.self = entity; this.minimap?.setSelf(entity) }
   setLoadingMessages(messages: string[]): void { bootLoading?.setMessages(messages) }
   setParamPanel(panel: ParamPanel): void { this.paramPanel = panel }
   showPanel(id: string): void {
@@ -295,7 +310,15 @@ export class Shell implements System {
     } else this.paramPanel?.hide()
     void this.panels.show(id)
   }
-  play(): void {
+  /**
+   * Enter the world. From the lobby's own button (`descend`), with the galaxy up, the entry is
+   * a descent: the view falls toward the chosen world until its air fills the screen, then
+   * the game's camera comes down out of that brightness from high above the spawn point to
+   * its place behind the vehicle, and the blur clears. The room is joined at the start, so
+   * the wait is spent falling. Called from code (tests, autoplay, Return to Game) it is
+   * immediate, and so it is for anyone who asks for reduced motion.
+   */
+  play(descend = false): void {
     this.stopAttract()
     if (this.started) { this.closeMenu(); return }
     void this.audio.unlock().then(async () => { await this.audio.ready(); this.audio.play('materialize') }).catch(() => this.toast('Audio is unavailable. You can still play.'))
@@ -305,6 +328,7 @@ export class Shell implements System {
     this.element.querySelector<HTMLElement>('[data-resume]')!.hidden = false
     for (const input of this.element.querySelectorAll<HTMLInputElement>('.shell-vehicle input')) input.disabled = true
     this.element.querySelector('.vehicle-note')!.textContent = 'Vehicle selection is fixed for this session.'
+    if (descend && this.galaxy?.live && this.menuVisible && !matchMedia('(prefers-reduced-motion: reduce)').matches) { this.onPlay?.(); void this.descent(); return }
     this.closeMenu(); this.showHelp(false); this.onPlay?.()
   }
   openMenu(panel = 'index'): void {
@@ -313,6 +337,38 @@ export class Shell implements System {
     this.game.input.suspended = true; this.game.input.mouseFire = false; this.game.input.poll(); this.touch.enabled = false
     this.audio.enabled = false; this.audio.setLobbyVisible(true); this.element.classList.remove('is-playing'); this.showPanel(panel)
   }
+  private async descent(): Promise<void> {
+    const wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+    const game = document.getElementById('game'), root = this.element
+    root.classList.add('is-descending'); this.overlay.inert = true
+    // While the lobby still covers it, lift the game's camera high over the spawn point.
+    const self = this.self, ground = this.ground, camera = this.cinematic
+    const at = self ? new Vector3(self.x, ground?.heightAt(self.x, self.z) ?? 0, self.z) : null
+    const ahead = self ? new Vector3(-Math.sin(self.heading), 0, -Math.cos(self.heading)) : null
+    const pose = (t: number) => {
+      if (!at || !ahead || !camera) return
+      // From 520 m up and a little behind, looking down, to the chase position.
+      const e = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
+      const height = 520 * (1 - e) + 4.5 * e, back = 60 * (1 - e) + 10 * e
+      camera.setCinematicPose(new Vector3(at.x - ahead.x * back, at.y + height, at.z - ahead.z * back), new Vector3(at.x + ahead.x * 8 * e, at.y + 1.5, at.z + ahead.z * 8 * e))
+    }
+    pose(0)
+    await Promise.race([this.galaxy!.descend(currentPlanet().id), wait(2600)])
+    // Through the air: the lobby fades off the top of the game, which arrives blurred and clears.
+    if (game) { game.style.transition = 'none'; game.style.filter = 'blur(18px) brightness(1.5)' }
+    this.overlay.style.transition = 'opacity 0.9s ease'; this.overlay.style.opacity = '0'
+    await wait(60)
+    if (game) { game.style.transition = 'filter 2.2s cubic-bezier(.2,.6,.2,1)'; game.style.filter = 'none' }
+    const started = performance.now(), length = 2400
+    await new Promise<void>(resolve => { const step = () => { const t = Math.min(1, (performance.now() - started) / length); pose(t); if (t < 1) requestAnimationFrame(step); else resolve() }; step() })
+    camera?.clearCinematicPose()
+    this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity'); root.classList.remove('is-descending')
+    if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter') }
+    this.closeMenu(); this.showHelp(false)
+  }
+  private ground?: Terrain
+  private cinematic?: CinematicCamera
+  private self?: MapEntity
   closeMenu(): void {
     if (!this.started) return
     this.menuVisible = false; this.overlay.hidden = true; this.overlay.inert = true; this.starfield.enabled = false; if (this.galaxy) this.galaxy.enabled = false
@@ -395,33 +451,47 @@ export class Shell implements System {
   /** A short notice that shows in the lobby and, while playing, as a toast. */
   private say(text: string): void { this.toast(text) }
   /**
-   * The galaxy lobby (prototype, ?galaxy=1): in place of the index panel, the worlds orbit a
+   * The galaxy lobby, the default (?galaxy=0 turns it off): in place of the index panel, the worlds orbit a
    * sun in 3D. Drag to look around, tap a world to fly to it, and the name form follows. The
    * other panels open over it as before. Needs WebGL 2 and more than the lowest graphics
    * level; otherwise the ordinary lobby stays.
    */
   private startGalaxy(): void {
-    if (!new URLSearchParams(location.search).has('galaxy') || levelNumber(graphicsLevel.value) === 0 || !Galaxy.supported()) return
+    if (new URLSearchParams(location.search).get('galaxy') === '0' || levelNumber(graphicsLevel.value) === 0 || !Galaxy.supported()) return
     const current = currentPlanet().id, labels = this.element.querySelector<HTMLElement>('.galaxy-labels')!
-    const worlds = PLANETS.map((recipe, i) => ({ id: recipe.id, label: recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current ? worldSeed.value : i + 1 }))
+    const worlds: GalaxyWorld[] = PLANETS.slice(0, 3).map((recipe, i) => ({ id: recipe.id, label: recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current ? worldSeed.value : i + 1 }))
+    // The custom planet is a world still forming: tap it to shape it with the sliders.
+    worlds.push({ id: 'custom', label: 'Custom', land: 0x31507a, sea: 0x0a1630, glow: false, seed: 7, forming: true })
     const chips = new Map<string, HTMLButtonElement>()
     for (const world of worlds) {
       const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
       chip.innerHTML = '<strong></strong><small></small>'; chip.querySelector('strong')!.textContent = world.label
-      chip.querySelector('small')!.textContent = world.id === current ? planetName(world.seed) : ''
+      chip.querySelector('small')!.textContent = world.forming ? 'Shape your own' : world.id === current ? planetName(world.seed) : ''
       chip.addEventListener('click', () => this.galaxy?.choose(world.id))
       labels.append(chip); chips.set(world.id, chip)
     }
     this.galaxy = new Galaxy(this.overlay, {
       worlds,
       onArrive: id => {
+        if (id === 'custom') {
+          if (!canEditWorld() || (this.invited && !this.started)) { this.say('This world is not yours to reshape yet.'); this.galaxy?.home(); return }
+          this.openCustomPlanet(); return
+        }
         if (this.invited && !this.started && id !== currentPlanet().id) { this.say('You were invited to another world. You can change it once you are in, if the host allows.'); this.galaxy?.home(); return }
         this.pickPlanet(id, true)
       },
-      onLayout: places => { for (const place of places) { const chip = chips.get(place.id)!; chip.hidden = !place.visible; chip.style.translate = `${place.x.toFixed(1)}px ${(place.y + place.radius + 10).toFixed(1)}px` } },
+      onLayout: places => { for (const place of places) { const chip = chips.get(place.id)!; chip.hidden = !place.visible; 
+        // Under its world, but always wholly on the screen and clear of the links.
+        const x = Math.min(innerWidth - 62, Math.max(62, place.x)), y = Math.min(innerHeight - 128, Math.max(8, place.y + place.radius + 10))
+        chip.style.translate = `${x.toFixed(1)}px ${y.toFixed(1)}px` } },
     })
     this.element.classList.add('is-galaxy'); this.starfield.enabled = false; this.galaxy.enabled = true
     this.galaxyFor(this.panels.active || 'index')
+  }
+  private stopGalaxy(): void {
+    this.galaxy?.dispose(); this.galaxy = undefined
+    this.element.classList.remove('is-galaxy', 'galaxy-open'); this.element.querySelector<HTMLElement>('.galaxy-ui')!.hidden = true
+    this.starfield.enabled = this.menuVisible
   }
   /** The galaxy is the index; any other panel opens over it. */
   private galaxyFor(panel: string): void {
@@ -527,8 +597,12 @@ export class Shell implements System {
     this.attract?.update(dt)
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
     // The stylesheet drops frost at the lowest graphics level.
-    const gfx = String(levelNumber(graphicsLevel.value))
+    // Frost goes at the lowest graphics level, and when the quality ladder is shedding post effects.
+    const gfx = qualityLevel() >= 2 ? '0' : String(levelNumber(graphicsLevel.value))
     if (document.documentElement.dataset.gfx !== gfx) document.documentElement.dataset.gfx = gfx
+    // The lowest graphics level has no place for a traced galaxy: back to the panel lobby,
+    // but never out from under someone who is looking at it.
+    if (this.galaxy && levelNumber(graphicsLevel.value) === 0 && (!this.menuVisible || this.panels.active !== 'index')) this.stopGalaxy()
     if (!this.menuVisible) return
     const mute = this.element.querySelector<HTMLButtonElement>('.shell-mute')!
     mute.textContent = this.audio.isMuted ? 'Unmute audio' : 'Mute all audio'; mute.setAttribute('aria-pressed', String(this.audio.isMuted))

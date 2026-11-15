@@ -23,7 +23,7 @@ try {
     }
     assert.equal(await page.evaluate(() => syn3h.audio.track), 'Score')
     await shot('index')
-    await page.locator('[data-panel=index] [data-goto=vehicle]').click()
+    await page.locator('.galaxy-links [data-goto=vehicle]').click()
     await page.waitForFunction(() => document.querySelector('.lobby-panels').dataset.activePanel === 'vehicle')
     await page.waitForFunction(() => document.querySelector('.shell-vehicle-preview').dataset.ready === 'true', null, { timeout: 30000 })
     await page.locator('[name=vehicle][value=buggy-classic]').check()

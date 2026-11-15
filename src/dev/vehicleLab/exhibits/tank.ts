@@ -12,6 +12,8 @@ const ROUNDS = [{ group: '4', designs: round4, hinge: 'Six treads, each on one t
 const all = ROUNDS.flatMap(r => r.designs)
 
 export const tank: LabExhibit = {
+  // Listed with the other design studies in the lab's sidebar.
+  section: 'Design studies',
   id: 'tank',
   title: 'Syn3h next-gen tank',
   groupLabel: 'Round',

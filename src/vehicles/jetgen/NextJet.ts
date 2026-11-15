@@ -30,27 +30,35 @@ export class NextJet {
   private readonly flake: THREE.DataTexture
   readonly materials: Record<Mat, THREE.Material>
   private readonly paint: THREE.MeshPhysicalMaterial
+  private readonly panel: THREE.MeshPhysicalMaterial
   private readonly glow: THREE.MeshBasicMaterial
   private readonly legs: BuiltLeg[] = []
   private readonly geometries: THREE.BufferGeometry[] = []
   gearAmount = 0
-  /** The main nozzle. It swivels about its pivot to vector the thrust. */
+  /** Sits at the main thruster's exit and holds its four vectoring vanes. */
   readonly thruster = new THREE.Group()
+  /** Current deflection: x is pitch, y is yaw, in radians. */
+  readonly vector = new THREE.Vector2()
+  private petal?: THREE.MeshPhysicalMaterial
+  private readonly vanes: { group: THREE.Group; axis: 'x' | 'y'; sign: number }[] = []
 
   /** @param detail 1 is full detail, lower values cut the triangle count (see Builder). */
   constructor(readonly design: JetDesign, readonly detail = 1) {
     const military = design.finish === 'military'
     this.flake = flakeTexture(design.paint)
     this.paint = military
-      ? new THREE.MeshPhysicalMaterial({ color: design.paint, metalness: .55, roughness: .5, clearcoat: .25, clearcoatRoughness: .4, flatShading: true })
+      ? new THREE.MeshPhysicalMaterial({ color: design.paint, metalness: .55, roughness: .5, clearcoat: .25, clearcoatRoughness: .4 })
       : new THREE.MeshPhysicalMaterial({ color: design.paint, metalness: .78, roughness: .28, clearcoat: 1, clearcoatRoughness: .04, bumpMap: this.flake, bumpScale: .35 })
+    // Same paint, faceted: wings and fins of the angular designs keep their hard planes.
+    this.panel = this.paint.clone(); this.panel.flatShading = true
     this.glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(design.accent).multiplyScalar(1.3), transparent: true, opacity: .8, blending: THREE.AdditiveBlending, depthWrite: false })
     this.materials = {
       paint: this.paint,
-      chrome: military ? new THREE.MeshPhysicalMaterial({ color: 0x7d858f, metalness: 1, roughness: .32, flatShading: true }) : new THREE.MeshPhysicalMaterial({ color: 0xe9edf2, metalness: 1, roughness: .07 }),
+      chrome: military ? new THREE.MeshPhysicalMaterial({ color: 0x7d858f, metalness: 1, roughness: .32 }) : new THREE.MeshPhysicalMaterial({ color: 0xe9edf2, metalness: 1, roughness: .07 }),
       glass: new THREE.MeshPhysicalMaterial({ color: 0x050608, metalness: .7, roughness: .04, clearcoat: 1, clearcoatRoughness: .02 }),
       dark: new THREE.MeshStandardMaterial({ color: 0x0b0c0f, metalness: .4, roughness: .55 }),
       glow: this.glow,
+      panel: this.panel,
       // Squadron colour on tips and fins, where the candy designs carry chrome.
       accent: new THREE.MeshStandardMaterial({ color: design.accent, metalness: .2, roughness: .55, flatShading: military }),
     }
@@ -63,12 +71,21 @@ export class NextJet {
       this.object.add(mesh)
     }
     if (b.gimbal) {
-      this.thruster.position.set(0, b.gimbal.y, b.gimbal.z); this.object.add(this.thruster)
-      for (const mat of Object.keys(this.materials) as Mat[]) {
-        const parts = b.gimbalPieces.filter(p => p.mat === mat).map(p => p.geometry); if (!parts.length) continue
-        const merged = mergeGeometries(parts); parts.forEach(g => g.dispose()); this.geometries.push(merged)
-        const mesh = new THREE.Mesh(merged, this.materials[mat]); mesh.name = `jet-thruster-${mat}`; mesh.castShadow = mat !== 'glow'; this.thruster.add(mesh)
+      // Thrust vectoring: the barrel is fixed. Four curved petals continue its lip and narrow
+      // toward the exit; the top and bottom pair hinge for pitch, the side pair for yaw.
+      const { y, z, halfWidth, halfHeight } = b.gimbal, length = .34, arc = 82 * Math.PI / 180
+      this.thruster.position.set(0, y, z); this.object.add(this.thruster)
+      this.petal = (this.materials.chrome as THREE.MeshPhysicalMaterial).clone(); this.petal.side = THREE.DoubleSide
+      const petal = (centre: number, px: number, py: number, axis: 'x' | 'y') => {
+        const group = new THREE.Group(); group.position.set(px, py, 0); this.thruster.add(group)
+        // A slice of a cone, opened out along +Z from the lip and shaped to the nozzle's outline.
+        const g = this.own(new THREE.CylinderGeometry(.78, 1, length, Math.max(4, Math.round(10 * this.detail)), 1, true, centre - arc / 2, arc))
+        g.rotateX(Math.PI / 2); g.translate(0, 0, length / 2); g.scale(halfWidth, halfHeight, 1); g.translate(-px, -py, 0)
+        const mesh = new THREE.Mesh(g, this.petal); mesh.castShadow = true; group.add(mesh)
+        this.vanes.push({ group, axis, sign: 0 })
       }
+      petal(Math.PI, 0, halfHeight, 'x'); petal(0, 0, -halfHeight, 'x'); petal(Math.PI / 2, halfWidth, 0, 'y'); petal(Math.PI * 1.5, -halfWidth, 0, 'y')
+      this.setVector(0, 0)
     }
     this.object.add(this.gear)
     b.legs.forEach(l => this.legs.push(this.buildLeg(l)))
@@ -134,11 +151,18 @@ export class NextJet {
   }
 
   /**
-   * Swivel the main nozzle, in radians. Positive pitch turns the exhaust up and positive yaw
-   * turns it to the right, as seen from behind. Jet.ts can instead copy its thrust rotation
-   * straight onto `thruster.quaternion`.
+   * Vector the main thruster, in radians, limited to 20 degrees as in VhiclJet.cs 161.
+   * Positive pitch turns the exhaust up, positive yaw turns it to the right seen from behind.
+   * The top and bottom petals move together for pitch and the side petals for yaw.
    */
-  setVector(pitch: number, yaw: number): void { this.thruster.rotation.set(pitch, -yaw, 0, 'YXZ') }
+  setVector(pitch: number, yaw: number): void {
+    const limit = .35, toe = 0
+    this.vector.x = Math.min(limit, Math.max(-limit, pitch)); this.vector.y = Math.min(limit, Math.max(-limit, yaw))
+    for (const v of this.vanes) {
+      if (v.axis === 'x') v.group.rotation.x = -this.vector.x + v.sign * toe
+      else v.group.rotation.y = this.vector.y + v.sign * toe
+    }
+  }
 
   /** Triangles in the whole model, landing gear included. */
   triangles(): number {
@@ -151,11 +175,11 @@ export class NextJet {
   setThrottle(amount: number): void { this.glow.opacity = .2 + .6 * clamp01(amount) }
 
   setColors(paint: THREE.ColorRepresentation, accent: THREE.ColorRepresentation): void {
-    this.paint.color.set(paint); this.glow.color.set(accent).multiplyScalar(1.3)
+    this.paint.color.set(paint); this.panel.color.set(paint); this.glow.color.set(accent).multiplyScalar(1.3)
   }
 
   dispose(): void {
     this.geometries.forEach(g => g.dispose()); this.flake.dispose()
-    Object.values(this.materials).forEach(m => m.dispose())
+    Object.values(this.materials).forEach(m => m.dispose()); this.petal?.dispose()
   }
 }
