@@ -31,6 +31,32 @@ normal-entry defaults. Occupancy is not a deployment gate.
 6. Deliver the 8am Pacific brief and noon public-address/repository handoff using fresh
    production evidence. Distinguish implemented, tested, integrated and public work.
 
+## After the noon demo, 15 November (owner decisions of that morning)
+
+Tracked here at the owner's request. Each item is decided, not proposed, unless marked.
+
+1. **Lobby before the physics engine.** The lobby must appear and be interactive before the
+   physics engine has loaded. Today the shell is built from the world behind it, so the
+   lobby waits for the engine. Needs a startup restructure: build the lobby first, start
+   the world and physics behind it. The owner accepted that this is not in the demo
+   release. Also move the engine's remaining JavaScript glue (about 230 KB) out of the main
+   script. Check: lobby interactive with the engine's file blocked; drop into a world
+   waits on the loading light; time to interactive lobby reported before and after.
+2. **Generated vehicles replace the remaining models.** Buggy, tank and treads, hovercraft
+   (809 KB loaded at run time) are a dated exception to the rule that the running game
+   loads no binary assets. Check: the run-time asset check's model list is empty.
+3. **Reload-free vehicle switching.** The in-play selector is the only way to change
+   vehicle now that the lobby offers planets only, and it reloads the page. Check: switch
+   vehicle in a world with no reload, with the materialization effect.
+4. **Multiplayer away state.** What others see when a guest or the host is hidden or
+   paused; a paused host must not freeze the bots for everyone.
+5. **Six quality levels and the single scene pass** at full quality.
+6. **Ice patches and per-surface grip.** (Proposed to the owner; scoped, not ordered.)
+7. **Limiter guard.** Refuse long-lived servers in `tools/heavy.sh` and flag a slot held
+   longer than fifteen minutes.
+8. **Real-device performance.** A quiet headed run with a blank-page control, and the
+   owner's phone, tablet and a mid-range laptop. No frame-rate claim stands without them.
+
 ## Historical initial queue
 
 The following records the original afternoon queue, not current blockers. Release 1,
