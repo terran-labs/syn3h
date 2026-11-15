@@ -171,7 +171,7 @@ second player.
 
 ## How it is made
 
-<img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1508/lobby.png" alt="The galaxy lobby: nine planets on their orbits around a sun, each labelled" width="420">
+<img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1512/readme-lobby.jpg" alt="The galaxy lobby: nine labelled planets on their orbits around a sun" width="420"> <img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1512/readme-alpine.jpg" alt="The buggy on a green meadow under grey granite peaks on the Alpine world" width="420">
 
 **A world from a number.** Each planet is generated from a seed and shared settings:
 terraced ground, chains of cellular mountains, volcanic islands with lava lakes,
@@ -186,7 +186,7 @@ hovercraft and the tank are generated too.
 you arrive on the other. Cameras, bots, the minimap, the network and even the motion
 vectors of the antialiasing account for wrapping to keep the crossing continuous.
 
-<img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1508/lava-night.png" alt="A buggy at the shore of a glowing lava sea at night, a volcano on the horizon" width="420">
+<img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1512/readme-night.jpg" alt="The buggy on the Ice Moon at night, its headlights lighting the ice under a violet sky" width="420"> <img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1508/lava-night.png" alt="A buggy at the shore of a glowing lava sea at night, a volcano on the horizon" width="420">
 
 **Light that agrees with itself.** The sky is physical scattering, evaluated twice: once in
 the shader that draws it and once in plain code that colours the sun, the ambient light and
@@ -196,6 +196,8 @@ screen-space global illumination, soft contact shadows, raymarched clouds that d
 the wind, temporal antialiasing, and a colour grade for each planet. It runs on WebGPU and
 falls back to WebGL.
 
+<img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1512/readme-swells.jpg" alt="The hovercraft afloat on a rolling blue swell" width="420"> <img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1512/readme-underwater.jpg" alt="The buggy sinking toward a sandy seabed, seen from under the surface" width="420">
+
 **Water that carries you.** The sea is a short sum of swells with one formula, written once
 for the physics and once for the shader. A floating vehicle rises on exactly the wave you
 see, using a shared room clock to keep the swells aligned. The same habit runs through the
@@ -203,7 +205,9 @@ project: waves, wrapping, sky maths and the parameter registry are single shared
 definitions read by the game, the room server and the tests, which keeps what you see,
 what you collide with and what the other player sees consistent.
 
-<img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1508/wings-glide.png" alt="The buggy gliding on its hexagonal force-field wings above the dunes" width="420"> <img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1508/jet-flight.png" alt="The jet climbing over the volcano at 229 metres" width="420">
+<img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1512/readme-wings-glide.jpg" alt="The buggy gliding on its hexagonal force-field wings over desert dunes" width="420"> <img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1512/readme-jet-plume.jpg" alt="The jet in forward flight past desert buttes, thrust plumes streaming behind" width="420">
+
+<img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1512/readme-zorb.jpg" alt="The buggy rolling inside a translucent Zorb ball on the dunes" width="420"> <img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1512/readme-lineup.jpg" alt="The jet, hovercraft, buggy and tank parked together on the desert" width="420">
 
 **Machines with opinions.** Rapier runs the physics at a fixed step, in its own compiled
 file that loads beside the lobby. A buggy that opens force-field wings and glides, a jet
@@ -216,11 +220,13 @@ whole room feels it, and a world's settings travel in its link.
 from what you are doing, and a synthesiser built from Web Audio worklets plays it: pads,
 choir, plucks, bells, a hall. Engines, wind and impacts are synthesised too.
 
-<img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1508/bots-pursuit.png" alt="Three bots in different vehicles trailing the player across a red plain" width="420">
+<img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1512/readme-company.jpg" alt="Bots in a hovercraft, two buggies and a jet closing in on the player across the desert" width="420">
 
 **Company.** Bots have a mind that picks a purpose by seeded personality, a navigator that
 plans a route their kind of vehicle can travel, and a pilot that works the same controls
 you do. Leave the keys alone and the same three layers drive your own vehicle on a tour.
+
+<img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1512/readme-multiplayer-qr.jpg" alt="The Multiplayer panel with the QR code the game draws for its room" width="420">
 
 **A room that sleeps.** One Cloudflare Worker serves the game and gives each room its own
 Durable Object. WebSocket hibernation lets the room stop running code while idle and retain
