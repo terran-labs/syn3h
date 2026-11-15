@@ -14,6 +14,8 @@ import { placeLabels } from './galaxy/labels'
 import { createDaydreamControl } from '../bots/daydreamControl'
 import { Inspector } from './inspector/Inspector'
 import { FocusHud } from './inspector/FocusHud'
+import { RaceHud, type RaceRole } from './RaceHud'
+import type { RaceState } from '../../shared/protocol'
 import { glassStyle } from './inspector/params'
 import { RESUME_KEY } from '../core/resume'
 import { qualityLevel } from './quality/ladder'
@@ -83,6 +85,9 @@ export class Shell implements System {
   private worldDirty = true
   private readonly inspector: Inspector
   private readonly focusHud: FocusHud
+  private readonly raceHud: RaceHud
+  onRaceLeave?: () => void
+  onRaceCancel?: () => void
   private telemetry = { speed: 0, altitude: 0 }
   /** The 3D galaxy: the lobby. Absent only where WebGL 2 is, and then the game cannot draw either. */
   private galaxy?: Galaxy
@@ -170,6 +175,7 @@ export class Shell implements System {
     // cards with the cursor free, the focus display with it captured), unless Create closed them.
     this.inspector.open = false
     this.focusHud = new FocusHud(this.element)
+    this.raceHud = new RaceHud(this.element, { leave: () => this.onRaceLeave?.(), cancel: () => this.onRaceCancel?.() })
     const toggle = this.element.querySelector<HTMLButtonElement>('.inspector-toggle')!
     let chosen: boolean | undefined
     const setCards = (open: boolean) => { this.inspector.open = open; toggle.setAttribute('aria-pressed', String(open)) }
@@ -310,6 +316,9 @@ export class Shell implements System {
   setPresentation(enabled: boolean): void { this.element.classList.toggle('is-presentation', enabled); this.element.querySelector('.presentation-toggle')!.setAttribute('aria-pressed', String(enabled)) }
   setPlayerCount(count: number): void { this.playerCount = Math.max(0, Math.floor(count)); this.updateInvite() }
   private lastMatch: MatchState | null = null
+  setRace(snapshot: Readonly<RaceState> | null, roomNow: () => number, role: Readonly<RaceRole>): void {
+    this.raceHud.setState(snapshot, roomNow, role)
+  }
   setMatchState(state: MatchState | null): void {
     const prev=this.lastMatch
     if(state?.mode==='koth'){
@@ -823,6 +832,7 @@ export class Shell implements System {
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
     // A captured cursor alone is insufficient while a menu or another flow suspends input.
     this.element.classList.toggle('is-focus', this.started && !this.menuVisible && !this.game.input.suspended && document.pointerLockElement === this.game.canvas)
+    this.raceHud.update(this.started && !this.menuVisible && !this.game.input.suspended, this.element.classList.contains('is-focus'), this.self, this.ground?.size)
     this.updateGear()
     if (this.started && !this.menuVisible) {
       const focus = this.element.classList.contains('is-focus')
@@ -873,7 +883,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.galaxy?.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.galaxy?.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }

@@ -554,3 +554,21 @@
 .syn3h-shell.has-touch .shell-hud .gear-chip { min-height: 40px; padding: 6px 16px; }
 
 .syn3h-shell .galaxy-label:focus { outline: 2px solid var(--s3-accent-2); border-radius: 6px; }
+
+/* Automatic races remain a quiet status cue while the player drives. */
+.race-hud { position: fixed; z-index: 12; bottom: 24px; left: 50%; transform: translateX(-50%); width: min(320px, calc(100vw - 32px)); padding: 10px 14px; border: 1px solid rgb(190 225 255 / .3); border-radius: 14px; background: rgb(14 26 42 / .85); color: #edf6ff; box-shadow: 0 5px 24px rgb(0 0 0 / .15); text-align: center; pointer-events: auto; }
+.race-hud[hidden], .race-hud [hidden] { display: none; }
+.race-status, .race-destination, .race-detail { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.race-status { font-size: 15px; }
+.race-destination { font-size: 14px; margin-top: 2px; }
+.race-detail { font-size: 12px; color: #c5d9e9; }
+.race-arrow { display: inline-block; position: absolute; left: 10px; top: 12px; font-size: 22px; }
+.race-hud:has(.race-arrow:not([hidden])) { padding-inline: 34px; }
+.race-controls { display: flex; gap: 4px; justify-content: center; margin-top: 6px; }
+.syn3h-shell .race-controls button { font: inherit; font-size: 12px; min-height: 32px; padding: 4px 9px; border-radius: 8px; }
+.race-hud.is-captured { background: rgb(10 20 34 / .5); border-color: rgb(190 225 255 / .18); pointer-events: none; }
+.race-hud.is-captured .race-controls { display: none; }
+.race-hud.is-collapsed .race-destination, .race-hud.is-collapsed .race-detail, .race-hud.is-collapsed .race-arrow { display: none; }
+.has-touch .race-controls button { min-height: 44px; }
+@media (max-width: 700px) { .race-hud { top: 168px; bottom: auto; width: min(280px, calc(100vw - 32px)); } .syn3h-shell.is-playing.has-landmark-race .shell-toast { top: auto; bottom: 200px; } }
+@media (max-height: 500px) and (orientation: landscape) { .race-hud { top: 10px; bottom: auto; width: 250px; padding-block: 5px; } .has-match .race-hud { top: 110px; } }
