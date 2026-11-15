@@ -28,7 +28,8 @@ export class LiftFieldLook {
     const dots = max(float(0), float(1).sub(x.mul(10))).pow(3).mul(max(float(0), float(1).sub(phase.sub(0.5).abs().mul(7))).pow(3))
     const breath = sin(this.clock.mul(2)).mul(0.08).add(0.92)
     const shape = band.mul(0.25).add(dots.mul(this.detail).mul(1.6)).mul(edges).mul(breath)
-    this.material.colorNode = color(new THREE.Color(2.5, 1.25, 0.16)).mul(shape).mul(hotExposureNode())
+    const tint: N = color(new THREE.Color(2.5, 1.25, 0.16))
+    this.material.colorNode = tint.mul(shape).mul(hotExposureNode())
     this.material.opacityNode = shape.mul(0.3).clamp(0, 0.6)
     this.material.blending = THREE.CustomBlending
     this.material.blendSrc = THREE.OneFactor
