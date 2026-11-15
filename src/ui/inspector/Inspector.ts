@@ -66,6 +66,17 @@ export function parseEdit(text: string, def: Pick<PropertyDef, 'min' | 'max' | '
   return Object.is(n, -0) ? 0 : n
 }
 
+/** A card whose contents are built outside the registry, such as Performance. */
+export interface ExtraCardOptions {
+  /** Place it after the card with this section id; otherwise last. */
+  after?: string
+  /** Property ids this card shows itself. They leave the registry's own cards. */
+  owns?(): readonly string[]
+  /** Called after every rebuild (rows are rebuilt when properties register) to refill rows. */
+  fill?(): void
+}
+interface ExtraCard extends ExtraCardOptions { id: string; card: HTMLElement; summary(): string }
+
 /** How long a card takes to make room for another, and the curve it eases along. */
 const CARD_MOTION: KeyframeAnimationOptions = { duration: 300, easing: 'cubic-bezier(.2,.8,.2,1)' }
 
@@ -78,6 +89,7 @@ export class Inspector {
   private tooltipTimer?: ReturnType<typeof setTimeout>
   private readonly abort = new AbortController()
   private readonly rows = new Map<string, { row: HTMLElement; sync(value: ParamValue): void; def: PropertyDef }>()
+  private readonly extras = new Map<string, ExtraCard>()
   private readonly unsubscribe: () => void
   private editable = true
   private armed?: ReturnType<typeof setTimeout>
@@ -132,7 +144,11 @@ export class Inspector {
     if (params.all().length !== this.known) this.build()
     const editable = canEditWorld()
     if (editable !== this.editable) { this.editable = editable; for (const { row, def } of this.rows.values()) if (def.scope === 'world') for (const control of row.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) control.disabled = !editable; this.element.classList.toggle('is-locked', !editable) }
-    for (const card of this.element.querySelectorAll<HTMLElement>('.wi-card')) card.querySelector('.wi-sum')!.textContent = this.options.summary(card.dataset.section!) || `${this.tree.find(s => s.id === card.dataset.section)?.count ?? 0} properties`
+    for (const card of this.element.querySelectorAll<HTMLElement>('.wi-card')) {
+      const id = card.dataset.section!, extra = this.extras.get(id), sum = card.querySelector('.wi-sum')!
+      const text = extra ? extra.summary() : this.options.summary(id) || `${this.tree.find(s => s.id === id)?.count ?? 0} properties`
+      if (sum.textContent !== text) sum.textContent = text
+    }
     const vehicles = this.options.vehicles()
     const select = this.element.querySelector<HTMLSelectElement>('.wi-vehicle-select')!
     if (document.activeElement !== select) select.value = vehicles.current
@@ -142,7 +158,8 @@ export class Inspector {
   private build(): void {
     const all = params.all(); this.known = all.length
     const open = new Set([...this.element.querySelectorAll<HTMLElement>('.wi-card.is-open')].map(card => card.dataset.section))
-    this.tree = buildTree(all.map(p => p.def as PropertyDef))
+    const owned = new Set([...this.extras.values()].flatMap(extra => extra.owns?.() ?? []))
+    this.tree = buildTree(all.map(p => p.def as PropertyDef).filter(def => !owned.has(def.id)))
     this.rows.clear(); this.editing = null; this.settle()
     const cards = this.element.querySelector('.wi-cards')!; cards.replaceChildren()
     for (const section of this.tree) {
@@ -171,7 +188,42 @@ export class Inspector {
       body.append(foot); card.append(head, body); cards.append(card)
       if (open.has(section.id)) this.toggle(card, true)
     }
+    // Extra cards are the same elements across rebuilds, so they keep their open state.
+    for (const extra of this.extras.values()) { this.place(extra); extra.fill?.() }
     this.editable = !canEditWorld(); this.update()
+  }
+  private place(extra: ExtraCard): void {
+    const cards = this.element.querySelector('.wi-cards')!, after = extra.after ? cards.querySelector(`:scope > [data-section="${extra.after}"]`) : null
+    if (after) after.after(extra.card); else cards.append(extra.card)
+  }
+  /**
+   * Add a card built elsewhere, with the same header, summary, easing and targets as the
+   * registry's cards. `body` becomes its collapsing body. It survives rebuilds; build rows in
+   * it with row() from options.fill, which runs after every rebuild.
+   */
+  addCard(id: string, title: string, body: HTMLElement, summary: () => string, options: ExtraCardOptions = {}): HTMLElement {
+    this.removeCard(id)
+    const card = document.createElement('section'); card.className = 'wi-card wi-glass'; card.dataset.section = id
+    const head = document.createElement('button'); head.type = 'button'; head.className = 'wi-head'; head.dataset.wi = 'toggle'; head.setAttribute('aria-expanded', 'false')
+    head.innerHTML = '<h3></h3><span class="wi-sum"></span><span class="wi-chev" aria-hidden="true"></span>'; head.querySelector('h3')!.textContent = title
+    body.classList.add('wi-body'); body.hidden = true; body.inert = true
+    card.append(head, body)
+    this.extras.set(id, { ...options, id, card, summary })
+    // Rebuild so the ids it owns leave their old cards, then place and fill it.
+    this.build()
+    return card
+  }
+  removeCard(id: string): void {
+    const extra = this.extras.get(id); if (!extra) return
+    this.moving.get(extra.card)?.cancel(); this.moving.delete(extra.card)
+    this.extras.delete(id); extra.card.remove(); this.build()
+  }
+  /** Rebuild now, for an extra card whose owned properties changed. */
+  rebuild(): void { this.build() }
+  /** Open one card (leaving the others as they are), easing as a header click does. */
+  revealCard(id: string): void {
+    const card = this.element.querySelector<HTMLElement>(`.wi-card[data-section="${id}"]`)
+    if (card && !card.classList.contains('is-open')) this.reflow(() => this.toggle(card, true))
   }
   private vehicleSwitch(): HTMLElement {
     const label = document.createElement('label'); label.textContent = 'Vehicle'
@@ -217,7 +269,8 @@ export class Inspector {
     const number = row.querySelector<HTMLButtonElement>('.wi-num'); if (number) number.disabled = !eligible
     this.element.querySelector<HTMLButtonElement>('[data-wi=show-gi]')!.title = message
   }
-  private row(def: PropertyDef): HTMLElement {
+  /** One property row: slider, toggle, choice or number, kept in sync with the registry. */
+  row(def: PropertyDef): HTMLElement {
     if (def.id === 'post.gi') def = { ...def, label: 'Global illumination (GI)' }
     if (def.id === 'post.giRadius') def = { ...def, label: 'GI light reach (m)' }
     const row = document.createElement('div'); row.className = 'wi-row'; row.dataset.id = def.id

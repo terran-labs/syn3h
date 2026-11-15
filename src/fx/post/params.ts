@@ -12,7 +12,6 @@ const g = 'Post'
 const c = 'client' as const
 
 export const postOn = defineParam({ id: 'post.on', label: 'Post effects on', group: g, scope: c, default: true })
-export const postTablets = defineParam({ id: 'post.tablets', label: 'Post effects on phones and tablets', group: g, scope: c, default: true })
 export const postTemporal = defineParam({ id: 'post.temporal', label: 'Temporal antialiasing', group: g, scope: c, default: true })
 
 export const postBloom = defineParam({ id: 'post.bloom', label: 'Glow strength', group: g, scope: c, default: 0.5, min: 0, max: 1.5, step: 0.05 })

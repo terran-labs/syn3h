@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict'
 import { pathToFileURL } from 'node:url'
 export const MATRIX_SCENES = ['lobby', 'spawn', 'water', 'mixedbots', 'twohumans']
-export const MATRIX_TIERS = [0, 1, 2]
+/** Quality levels 0 Minimal to 5 Cinematic. PERFORMANCE_TIERS narrows a run, for example 0,2,4. */
+export const MATRIX_TIERS = [0, 1, 2, 3, 4, 5]
 export const DRIVE_SECONDS = 60
 
 /** Invalid/hidden observations stay in the artifact and prevent an unqualified gate pass. */
@@ -53,9 +54,9 @@ export function installRawCollector() {
     value=s
     const g=s.game,q=g.quality,r=g.renderer,b=r.backend,device=b.device,info=device?.adapterInfo
     const settings=()=>({level:q.governor.level,rung:q.governor.rung,auto:q.governor.auto,levelPinned:q.governor.levelPinned,settings:{...q.governor.settings},targetMs:q.governor.targetMs})
-    raw.initial={at:performance.now(),firstFrameMs:g.performance.firstFrameMs,deviceLevel:q.deviceLevel,adapterProbe:q.adapterProbe,quality:settings(),backend:g.backend,
+    raw.initial={at:performance.now(),firstFrameMs:g.performance.firstFrameMs,qualityState:q.getQualityState?.()??null,adapterProbe:q.adapterProbe,quality:settings(),backend:g.backend,
       hardware:{userAgent:navigator.userAgent,touchPoints:navigator.maxTouchPoints,memoryGB:navigator.deviceMemory??null,adapter:info?{vendor:info.vendor,architecture:info.architecture,description:info.description}:null,maxTextureSize:device?.limits.maxTextureDimension2D??null},
-      viewport:[innerWidth,innerHeight],buffer:[g.canvas.width,g.canvas.height],devicePixelRatio,storage:{level:sessionStorage.getItem('syn3h.graphics.level'),manual:sessionStorage.getItem('syn3h.graphics.manual')}}
+      viewport:[innerWidth,innerHeight],buffer:[g.canvas.width,g.canvas.height],devicePixelRatio,storage:{quality:(()=>{try{return localStorage.getItem('syn3h.quality.v2')}catch{return null}})()}}
     let renderCpuMs=0,pipelineMs=0,pipelines=0,uploads=0,uploadCpuMs=0
     const wrap=(object,key,done)=>{if(typeof object?.[key]!=='function')return;const original=object[key].bind(object);object[key]=(...args)=>{const t=performance.now();try{return original(...args)}finally{done(performance.now()-t)}}}
     wrap(g.postChain??r,'render',ms=>renderCpuMs+=ms)
@@ -130,7 +131,7 @@ async function main() {
         const play=async page=>{await page.locator('.galaxy-label.is-current').press('Enter');await page.waitForFunction(()=>window.syn3h.shell.playing&&window.syn3hNet?.connected,null,{timeout:90000})}
         await open(host,'PerfHost')
         // Every cell starts with fresh storage and automatic detection before explicit tier choice.
-        await host.evaluate(tier=>{const s=window.syn3h,p=window.performanceMatrix;p.phase='transition';p.events.push({at:performance.now(),type:'manual-tier',tier});s.params.set('gfx.auto',false);s.params.set('gfx.level',tier)},tier)
+        await host.evaluate(tier=>{const s=window.syn3h,p=window.performanceMatrix;p.phase='transition';p.events.push({at:performance.now(),type:'manual-tier',tier});s.game.quality.setAuto(false);s.game.quality.setLevel(tier)},tier)
         if(scene!=='lobby'){
           await play(host)
           await host.evaluate(async scene=>{
@@ -150,7 +151,7 @@ async function main() {
               throw Error('No dry shore viewpoint')
             }
           },scene)
-          if(scene==='twohumans'){guest=await context.newPage();await open(guest,'PerfGuest');await guest.evaluate(tier=>{window.syn3h.params.set('gfx.auto',false);window.syn3h.params.set('gfx.level',tier)},tier);await play(guest);await host.bringToFront()}
+          if(scene==='twohumans'){guest=await context.newPage();await open(guest,'PerfGuest');await guest.evaluate(tier=>{window.syn3h.game.quality.setAuto(false);window.syn3h.game.quality.setLevel(tier)},tier);await play(guest);await host.bringToFront()}
         }
         await host.evaluate(()=>window.performanceMatrix.phase='warmup');await host.waitForTimeout(5000)
         await host.evaluate(drive=>{const p=window.performanceMatrix;p.phase='measurement';p.drive=drive;p.driveStart=performance.now()},scene!=='lobby')
@@ -172,13 +173,13 @@ async function main() {
         await host.screenshot({path:`${out}/${id}.png`})
       }catch(error){cellErrors.push({type:'harness',message:String(error)})}
       finally{
-        const raw=await host.evaluate(()=>{const s=window.syn3h,p=window.performanceMatrix;return p?{...p,settings:undefined,final:s?{quality:p.settings(),memory:{...s.game.renderer.info.memory},startup:window.syn3hStartup}:null}:null}).catch(()=>null)
+        const raw=await host.evaluate(()=>{const s=window.syn3h,p=window.performanceMatrix;return p?{...p,settings:undefined,final:s?{quality:p.settings(),qualityState:s.game.quality.getQualityState(),levelChanges:s.game.quality.levelChanges,memory:{...s.game.renderer.info.memory},startup:window.syn3hStartup}:null}:null}).catch(()=>null)
         const guestRaw=guest?await guest.evaluate(()=>{const p=window.performanceMatrix;return p?{...p,settings:undefined}:null}).catch(()=>null):null
         await writeFile(`${out}/${id}.raw.json`,JSON.stringify({raw,guestRaw},null,2))
         if(tracing){
           const done=new Promise(resolve=>cdp.once('Tracing.tracingComplete',resolve));await cdp.send('Tracing.end');const {stream}=await done
           let bytes=0
-          try{while(true){const part=await cdp.send('IO.read',{handle:stream,size:1048576});const buffer=Buffer.from(part.data,part.base64Encoded?'base64':'utf8');bytes+=buffer.length;await appendFile(`${out}/${id}.trace.json`,buffer);if(bytes>512*1024*1024)throw Error('Trace exceeds512MiB; matrix aborted');if(part.eof)break}}finally{await cdp.send('IO.close',{handle:stream})}
+          try{while(true){const part=await cdp.send('IO.read',{handle:stream,size:1048576});const buffer=Buffer.from(part.data,part.base64Encoded?'base64':'utf8');bytes+=buffer.length;await appendFile(`${out}/${id}.trace.json`,buffer);if(bytes>1024*1024*1024)throw Error('Trace exceeds 1 GiB; matrix aborted');if(part.eof)break}}finally{await cdp.send('IO.close',{handle:stream})}
         }
         // The after control needs the game pages gone, as the before control had them not yet open.
         await guest?.close().catch(()=>{});await host.close().catch(()=>{})
@@ -197,7 +198,7 @@ async function main() {
       if(cellErrors.length)throw Error(`Rendering/setup failure in ${id}; remaining cells not run`)
     }
   }finally{
-    await writeFile(`${out}/results.json`,JSON.stringify({source,headed,scenes,tiers,driveSeconds:DRIVE_SECONDS,results,errors,roomLog,expectedRefreshMs:expectedMs,limitations:'Frame intervals count only in cells whose blank-page controls before and after both paced near the expected refresh. Instrumented shared-host desktop; CPU submission is not GPU execution; manual tier cells do not validate weak hardware.'},null,2))
+    await writeFile(`${out}/results.json`,JSON.stringify({source,headed,scenes,tiers,driveSeconds:DRIVE_SECONDS,results,errors,roomLog,expectedRefreshMs:expectedMs,limitations:'Frame intervals count only in cells whose blank-page controls before and after both paced near the expected refresh. Instrumented shared-host desktop; CPU submission is not GPU execution; hand-set level cells do not validate weak hardware.'},null,2))
     await browser?.close();await vite?.close();room.kill('SIGTERM')
   }
   // Keep the full matrix even when a frame budget fails. Exit distinguishes evidence from acceptance.

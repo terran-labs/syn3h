@@ -214,13 +214,12 @@ export class Shell implements System {
     players.innerHTML = '<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><label class="rail-diagnostics"><input type="checkbox"> Connection diagnostics</label></div>'
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
     railTop.after(players)
-    this.performancePanel = new PerformancePanel(this.element, () => this.showPanels())
-    railTop.querySelector('.wi-actions')!.append(this.performancePanel.toggle)
+    // Performance is a card in the rail, after Vehicles: level, fine-tuning and diagnostics.
+    this.performancePanel = new PerformancePanel(this.element, () => this.showPanels(), this.game.quality, this.inspector)
     const foot = document.createElement('div'); foot.className = 'rail-foot wi-glass'
     foot.innerHTML = '<button type="button" class="exit-world">Leave world</button>'
     foot.prepend(railTop.querySelector('.wi-actions')!)
     this.inspector.element.querySelector('.wi-cards')!.after(foot)
-    players.after(this.performancePanel.element)
     const gear = document.createElement('select'); gear.className = 'gear-select'; gear.setAttribute('aria-label', 'Gear'); gear.disabled = true
     this.inspector.element.querySelector('.wi-gear-slot')!.append(gear)
     gear.addEventListener('change', () => {
@@ -1179,18 +1178,19 @@ export class Shell implements System {
     this.hasSeveralGear = list.length > 1; if (select.disabled === this.hasSeveralGear) select.disabled = !this.hasSeveralGear
   }
   private updateGI(): void {
-    const value = Number(params.get('post.gi')?.value ?? 0)
-    const on = Boolean(params.get('post.on')?.value), tablets = Boolean(params.get('post.tablets')?.value)
+    // Match the post gate: lite and full allow effects selected by their strength.
+    const value = Number(params.get('post.gi')?.value ?? 0), on = Boolean(params.get('post.on')?.value)
+    const state = this.game.quality.getQualityState(), level = state.name
     const budget = Math.min(1, Math.max(0, this.game.quality.postBudget))
-    const tier = postTier({ on, level: graphicsLevel.value, deviceLevel: this.game.quality.deviceLevel, tablets, shed: 1 - budget })
+    const tier = postTier({ on, tier: state.postTier, shed: 1 - budget })
+    const eligible = tier === 'lite' || tier === 'full'
     let status: string
-    if (!on) status = 'GI inactive: post effects are off. Enable Post effects in You > Post.'
-    else if (this.game.quality.deviceLevel < 2 && !tablets) status = 'GI inactive: post effects are disabled for this device.'
-    else if (graphicsLevel.value < 2) status = 'GI inactive: requires Desktop render tier. Change Graphics in You or Performance.'
-    else if (tier !== 'full') status = 'GI temporarily inactive: automatic quality has reduced the post-effects budget.'
-    else if (value === 0) status = 'GI is off. Raise this strength to enable indirect light from visible surfaces.'
-    else status = budget < .99 ? 'GI active at reduced strength while automatic quality adjusts.' : 'GI active: indirect light from visible surfaces.'
-    this.inspector.setGIStatus(status, tier === 'full')
+    if (!on) status = `GI is off: post effects are turned off at ${level}. Turn Post effects on to use it.`
+    else if (state.postTier === 'off' || state.postTier === 'base') status = `GI is unavailable at ${level}. Choose Medium or higher to enable indirect light.`
+    else if (budget <= 0) status = `GI is paused while ${level} eases its post effects to keep the frame rate.`
+    else if (value === 0) status = `GI is off at ${level}. Raise this strength, or choose Cinematic, to turn on indirect light.`
+    else status = budget < .99 ? `GI is on at reduced strength while ${level} eases its post effects.` : `GI is on at ${level}: indirect light from visible surfaces.`
+    this.inspector.setGIStatus(status, eligible)
   }
   private hasSeveralGear = false
   setVehicleKind(kind: VehicleKind): void { this.activeVehicleKind = kind; this.touch.setVehicleKind(kind); if (this.started) this.showHelp(false) }

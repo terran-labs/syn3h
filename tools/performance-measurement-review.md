@@ -12,6 +12,10 @@ Startup, transition, warmup and measured phases have separate summaries. The mea
 
 The runner records all renderer console errors and aborts remaining cells on renderer/setup failure. A budget failure is retained and the matrix continues, ending with exit2. Each cell has raw JSON and a Chrome trace; partial raw data is saved before trace export so export failure cannot erase observations. Original artifacts are never overwritten. Isolated ports, unique rooms and endpoint assertions remain; owned processes close after the run. No feature URL switches or extra GPU contexts/adapters are used.
 
+## Six levels (15 November 2026)
+
+The matrix now covers the six quality levels, 0 Minimal to 5 Cinematic, thirty cells by default; PERFORMANCE_TIERS narrows a run. Each cell turns automation off and chooses its level through the quality controller, as the player would, so a cell measures that level's full preset. Sections below that speak of tiers 0, 1 and 2 describe runs made before this change. Each cell's raw file also keeps the controller's record of level changes with the pipelines each one built. The trace cap is 1 GiB per cell, after a two-page cell passed the earlier 512 MiB cap.
+
 ## Pacing controls and withdrawn interval conclusions
 
 A blank page in headless Chrome under the same flags and job wrapper paced at p50 67 ms and p95 133 ms (Lobby's control, relayed by Orchestrator). The browser was not delivering frames near 60 Hz with no game on the page at all. Every frame interval this lane recorded in headless runs without a control is therefore withdrawn as evidence of game speed or of any optimization benefit. That covers the baseline and matched profiles, the 52.6/142.5, 57.2/146 and 38.3/92.2 ms figures quoted below, and the elapsed crossing intervals from Water. The artifacts are kept and are labelled indicative and unqualified. Evidence that does not depend on pacing stands: CPU long tasks and profiles, pipeline and program creation counts, validation errors, draw calls and triangles. GPU timings count only where the backend actually supports them.

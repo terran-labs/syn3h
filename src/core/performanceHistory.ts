@@ -1,4 +1,4 @@
-import type { EffectiveQuality, FrameMetrics } from './quality'
+import type { EffectiveQuality, FrameMetrics, GraphicsLevel } from './quality'
 import type { PerformanceLongFrames, PerformancePipelines, PerformancePoint, PerformanceRecommendation } from './performance'
 
 export const PERFORMANCE_POLICY = Object.freeze({ historyPoints: 120, windowMs: 1000, warmupMs: 5000, slowMs: 12000, slowRatio: .8, interruptedMs: 1000, maxWindowFrames: 2048 })
@@ -95,7 +95,7 @@ export class PerformanceHistory {
     const fps = 1000/point.frameMs
     if (this.warmup > PERFORMANCE_POLICY.warmupMs) this.slow = fps < quality.targetFps*PERFORMANCE_POLICY.slowRatio ? this.slow+this.elapsed : 0
     this.recommendation = !this.ignored && quality.level > 0 && this.slow >= PERFORMANCE_POLICY.slowMs
-      ? Object.freeze({ level: quality.level, targetLevel: (quality.level-1) as 0|1, observedFps: fps }) : null
+      ? Object.freeze({ level: quality.level, targetLevel: (quality.level-1) as GraphicsLevel, observedFps: fps }) : null
     this.frames = []; this.elapsed = this.physics = this.draws = this.triangles = this.stalls = 0
     this.pipelineWindow = this.pipelines ? 0 : null
     this.unpublished = 0; this.dirty = false

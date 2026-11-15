@@ -213,3 +213,11 @@ test('every checked-in notes file renders', () => {
     assert.doesNotMatch(body, /mars|unity|mapmagic/i, row.version)
   }
 })
+
+test('withdrawn versions consume their number without claiming public acceptance', () => {
+  const row = parseHistory('v26.11.1500\tm-withdrawn\tabc1234\t2026-11-15 13:41 PST\twithdrawn\n')[0]
+  assert.match(kindLine(row), /withdrawn after public acceptance failed/)
+  assert.doesNotMatch(kindLine(row), /not released publicly|live at/)
+  assert.equal(nextVersion(new Date('2026-11-15T22:00:00Z'), [row.version]), 'v26.11.1501')
+  assert.deepEqual(matchReleases([row], []), { pairs: [], problems: [] })
+})

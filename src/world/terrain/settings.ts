@@ -74,6 +74,26 @@ export const terrainGroundCover = defineParam({
   id: 'terrain.groundCover', label: 'Grass and flowers', group: 'Terrain', scope: 'world', default: 1, min: 0, max: 1, step: 0.05,
 })
 /**
+ * A planet's own meadow. All four are looks only, read by groundcover.ts: none regenerates
+ * the terrain, and all are shared, so every player in a room sees the same plants.
+ */
+/** Share of the planet's flowers and other small plants that grow; the grass is `terrain.groundCover`. */
+export const terrainFlowers = defineParam({
+  id: 'terrain.flowers', label: 'Flowers', group: 'Terrain', scope: 'world', default: 1, min: 0, max: 1, step: 0.05,
+})
+/** Turns every plant's colour round the colour wheel, in degrees: 0 keeps the planet's own palette. */
+export const terrainFloraHue = defineParam({
+  id: 'terrain.floraHue', label: 'Plant colour shift', group: 'Terrain', scope: 'world', default: 0, min: -180, max: 180, step: 5,
+})
+/** Reshuffles where plants grow and which colours they pick, without changing the ground: 0 is the planet's own. */
+export const terrainFloraSeed = defineParam({
+  id: 'terrain.floraSeed', label: 'Plant seed', group: 'Terrain', scope: 'world', default: 0, min: 0, max: 999, step: 1,
+})
+/** Fireflies and glowing spores after dark, on the planets that have them. */
+export const terrainNightLife = defineParam({
+  id: 'terrain.nightLife', label: 'Fireflies and spores at night', group: 'Terrain', scope: 'world', default: 1, min: 0, max: 1, step: 0.05,
+})
+/**
  * The SHAPE of the world: 0 a cone with a crater (lava lake, rivers and vents unless the
  * world is dry), 1 a great mesa with buttes, 2 a horn peak with ridged ranges. The colours
  * are a separate choice, `terrain.look`, so a planet is a shape plus a look plus sliders.

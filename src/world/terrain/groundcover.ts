@@ -22,10 +22,10 @@
  */
 import * as THREE from 'three/webgpu'
 import {
-  attribute, cameraPosition, cameraViewMatrix, cos, float, fract, mix, normalize, sin, smoothstep, texture, time, uniform,
+  attribute, cameraPosition, cameraViewMatrix, cos, float, fract, mix, normalize, sin, smoothstep, step, texture, time, uniform,
   varying, vec2, vec3,
 } from 'three/tsl'
-import { defineParam, worldLavaAltitude } from '../../../shared/params'
+import { defineParam, params, worldLavaAltitude } from '../../../shared/params'
 import { wrapCoord } from '../../../shared/wrap'
 import type { System } from '../../core/Game'
 import { FLORA, type Ground, type LayerSpec, type Plant, unit } from './flora'
@@ -38,7 +38,8 @@ import type { HeightSampler } from './sampler'
 // Registered in settings.ts, which has no renderer imports, so planet recipes, tests and
 // the server can set it without loading this file.
 import { paletteFor } from './palettes'
-import { terrainGroundCover, terrainRoadStyle } from './settings'
+import { terrainFloraHue, terrainFloraSeed, terrainFlowers, terrainGroundCover, terrainNightLife, terrainRoadStyle } from './settings'
+import { prevailingWindHeading, prevailingWindStrength } from '../weather/wind'
 export const groundCover = terrainGroundCover
 
 export const groundCoverShade = defineParam({
@@ -155,15 +156,49 @@ const SLICE_MS = 1.2
 const SLICE_CELLS = 48
 
 /**
- * What each graphics level grows. `density` is the share of the main grass that is
- * planted and `reach` the share of the full distance plants are drawn to; flowers keep
- * their numbers, being few and cheap. Level 0 (safe) grows nothing. Level 1 (phones and
- * tablets) draws about a sixth of the desktop's plants: see COVER_TIERS in the tests.
+ * What a device can afford to grow. The graphics level picks a row of COVER_LEVELS; the
+ * player's own sliders (terrain.groundCover and the rest) apply on top and are never
+ * changed by it.
  */
-export const COVER_TIERS: readonly ({ density: number; reach: number } | null)[] = [
-  null,
-  { density: 0.5, reach: 0.6 },
-  { density: 1, reach: 1 },
+export interface CoverBudget {
+  /** Share of the main grass that is planted, 0..1. 0 grows nothing at all. */
+  density: number
+  /** Share of the full distance plants are drawn to, 0..1. */
+  reach: number
+  /** Metres out to which plants keep their full shape before the cheaper far one. */
+  detailNear: number
+  /** Share of the flowers and other small plants that grow, 0..1. */
+  flowers: number
+  /** Grass bends away from vehicles. */
+  bend: boolean
+  /** Share of the fireflies and spores that come out at night, 0..1. */
+  nightlife: number
+}
+
+/**
+ * Six rows, cheapest first, for the six graphics levels. Until those land, the three
+ * levels in use (safe, mobile, desktop) take rows 0, 2 and 4: see GroundCover.setLevel.
+ *
+ * | row | meant for                | grows                                                |
+ * |-----|--------------------------|------------------------------------------------------|
+ * | 0   | crash recovery, 2 GB     | nothing                                              |
+ * | 1   | weak phones              | thin grass close by, half the flowers                |
+ * | 2   | phones and tablets       | half the grass over 60 percent of the distance       |
+ * | 3   | laptops, strong tablets  | most of the grass over 80 percent of the distance    |
+ * | 4   | desktops                 | everything                                           |
+ * | 5   | strong desktops          | everything, with full shapes out to 40 m             |
+ *
+ * Measured in headless Chrome in an alpine meadow, row 2 added 156 thousand triangles and
+ * 0.4 ms to the median frame, row 4 about 600 thousand triangles (half of them the post
+ * chain's second scene pass). Not yet timed on a phone.
+ */
+export const COVER_LEVELS: readonly CoverBudget[] = [
+  { density: 0, reach: 0, detailNear: 0, flowers: 0, bend: false, nightlife: 0 },
+  { density: 0.3, reach: 0.45, detailNear: 12, flowers: 0.5, bend: false, nightlife: 0 },
+  { density: 0.5, reach: 0.6, detailNear: 18, flowers: 1, bend: true, nightlife: 0.5 },
+  { density: 0.8, reach: 0.8, detailNear: 24, flowers: 1, bend: true, nightlife: 0.75 },
+  { density: 1, reach: 1, detailNear: 24, flowers: 1, bend: true, nightlife: 1 },
+  { density: 1, reach: 1, detailNear: 40, flowers: 1, bend: true, nightlife: 1 },
 ]
 
 /**
@@ -173,9 +208,64 @@ export const COVER_TIERS: readonly ({ density: number; reach: number } | null)[]
  * a frame before this.
  */
 const LOD_NEAR = 24
+/** The distance in use: the graphics level's `detailNear`. */
+let lodNear = LOD_NEAR
+
+/**
+ * The budget as this device's own settings (client scope, never shared), so the graphics
+ * level can preset them and a player can fine-tune them under it: the level's table in
+ * core/quality.ts lists these ids with the six values from COVER_LEVELS. GroundCover reads
+ * them every frame; nothing else should.
+ */
+export const coverDensity = defineParam({ id: 'cover.density', label: 'Grass density', group: 'Graphics', scope: 'client', default: 1, min: 0, max: 1, step: 0.05 })
+export const coverReach = defineParam({ id: 'cover.reach', label: 'Plant draw distance', group: 'Graphics', scope: 'client', default: 1, min: 0, max: 1, step: 0.05 })
+export const coverDetail = defineParam({ id: 'cover.detail', label: 'Full plant shapes out to, metres', group: 'Graphics', scope: 'client', default: 24, min: 0, max: 60, step: 1 })
+export const coverFlowers = defineParam({ id: 'cover.flowers', label: 'Flower density', group: 'Graphics', scope: 'client', default: 1, min: 0, max: 1, step: 0.05 })
+export const coverBend = defineParam({ id: 'cover.bend', label: 'Grass bends under vehicles', group: 'Graphics', scope: 'client', default: true })
+export const coverNightLife = defineParam({ id: 'cover.nightLife', label: 'Fireflies and spores', group: 'Graphics', scope: 'client', default: 1, min: 0, max: 1, step: 0.05 })
+
+/** The ids above with their six values by graphics level, in the shape the level's preset table takes. */
+export function coverPresetRows(): Record<string, (number | boolean)[]> {
+  return {
+    [coverDensity.def.id]: COVER_LEVELS.map((r) => r.density),
+    [coverReach.def.id]: COVER_LEVELS.map((r) => r.reach),
+    [coverDetail.def.id]: COVER_LEVELS.map((r) => r.detailNear),
+    [coverFlowers.def.id]: COVER_LEVELS.map((r) => r.flowers),
+    [coverBend.def.id]: COVER_LEVELS.map((r) => r.bend),
+    [coverNightLife.def.id]: COVER_LEVELS.map((r) => r.nightlife),
+  }
+}
 
 /** The share of each treadmill's reach that plants are drawn to, by graphics level. Read by the shaders. */
 const reachScale = uniform(1)
+
+/**
+ * The wind the grass leans in: the room's prevailing wind from the weather (its heading,
+ * and its strength as 0.35 in a calm to 1.6 in a gale), so gusts cross a meadow the way
+ * the clouds and the sea are going. `gustPhase` advances faster in a stronger wind.
+ */
+const windDir = uniform(new THREE.Vector2(0.86, 0.51))
+const windAmp = uniform(1)
+const gustPhase = uniform(0)
+
+/** 0 by day, 1 at night: night life is drawn in proportion. */
+const nightAmount = uniform(0)
+
+/** Turns plant colours round the colour wheel (terrain.floraHue). */
+const hueTurn = uniform(new THREE.Matrix3())
+
+/**
+ * What presses the grass down: up to four vehicles and two points on the nearest one's
+ * trail, each (x, z, radius in metres, how hard 0..1). Unused ones press with 0.
+ */
+const BENDERS = 6
+const benders = Array.from({ length: BENDERS }, () => uniform(new THREE.Vector4(0, 0, 1, 0)))
+
+/** A rotation of linear RGB about the grey axis by `degrees`: hue changes, brightness and greys do not. */
+export function hueMatrix(degrees: number, out = new THREE.Matrix3()): THREE.Matrix3 {
+  const a = degrees * Math.PI / 180, c = Math.cos(a), s = Math.sin(a) / Math.sqrt(3), k = (1 - c) / 3
+  return out.set(c + k, k - s, k + s, k + s, c + k, k - s, k - s, k + s, c + k)
+}
 
 /** One shape drawn many times: its mesh and the per-plant values the shader reads. */
 class Batch {
@@ -337,6 +427,9 @@ class Layer {
     return changed
   }
 
+  /** Write the instances again at the next update: what is drawn changed, not what is planted. */
+  redraw(): void { this.dirty = true }
+
   /** Whether every slot shows the cell it stands for. */
   get settled(): boolean { return this.filled && this.left === 0 }
 
@@ -363,7 +456,7 @@ class Layer {
       if (d2 > far2) continue
       if (distant) {
         // Each plant changes shape at its own distance, picked by its random turn.
-        const at = LOD_NEAR * (0.8 + 0.4 * ((sP[s * 4] * 2.17) % 1))
+        const at = lodNear * (0.8 + 0.4 * ((sP[s * 4] * 2.17) % 1))
         if (d2 > at * at) { distant.add(sO, sP, sT, sG, s); continue }
       }
       near.add(sO, sP, sT, sG, s)
@@ -372,8 +465,10 @@ class Layer {
     distant?.end()
   }
 
-  /** This layer's plants shade the ground, and are the ones a lower graphics level thins. */
-  get shading(): boolean { return !!this.cover }
+  /** The main grass (it shades the ground), night life, or the flowers and other small plants. */
+  get kind(): 'grass' | 'motes' | 'plants' { return this.cover ? 'grass' : this.spec.motes ? 'motes' : 'plants' }
+
+  set visible(on: boolean) { for (const m of this.meshes) m.visible = on }
 
   /** How many plants this layer draws now. */
   get drawn(): number { return this.near.drawn + (this.far?.drawn ?? 0) }
@@ -539,18 +634,49 @@ function coverMaterial(reach: number, look: TerrainMaterial | null): THREE.MeshS
   const dist = vec2(origin.x, origin.z).sub(vec2(cameraPosition.x, cameraPosition.z)).length()
   const drawnReach = reachScale.mul(reach)
   const goneAt = pick.mul(0.45).add(0.5).mul(drawnReach)
-  const size = param.y.mul(smoothstep(goneAt, goneAt.sub(drawnReach.mul(0.06)), dist))
+  // A mote (sway of 3, see flora.ts) is night life: it has no size by day, and close to the
+  // camera it is drawn smaller, so it stays a point of light instead of a visible shape.
+  const mote = step(2.5, sway)
+  const size = param.y.mul(smoothstep(goneAt, goneAt.sub(drawnReach.mul(0.06)), dist)).mul(mix(float(1), nightAmount.mul(smoothstep(2, 16, dist).mul(0.7).add(0.3)), mote))
   const turned = vec3(local.x.mul(c).add(local.z.mul(s)), local.y, local.z.mul(c).sub(local.x.mul(s))).mul(size)
   // Clump lean: the whole plant shears sideways with height.
   const lean = vec3(param.z, 0, param.w).mul(local.y.mul(size))
   // Wind: a slow gust front crossing the world plus each plant's own flutter, bending the
   // tips and leaving the roots still. Plumes (sway above 1) bob a little more.
   const tipness = sway.min(1)
-  const gust = sin(origin.x.mul(0.07).add(origin.z.mul(0.05)).add(time.mul(1.3))).mul(0.5).add(0.5)
+  // Gust fronts run downwind across the world; the plant leans the way the wind blows.
+  const along = origin.x.mul(windDir.x).add(origin.z.mul(windDir.y))
+  const gust = sin(along.mul(0.08).sub(gustPhase)).mul(0.5).add(0.5)
   const flutter = sin(time.mul(2.6).add(origin.x.mul(1.7)).add(origin.z.mul(2.3)))
-  const bend = tipness.mul(tipness).mul(size).mul(gust.mul(0.16).add(flutter.mul(0.035)))
+  const bend = tipness.mul(tipness).mul(size).mul(gust.mul(0.16).mul(windAmp).add(flutter.mul(0.035)))
+  // Vehicles: pressed flat under them, shoved outward at their edge, and shivering in a
+  // hovercraft's wash. Decided once per plant from its foot, so a tuft moves as one.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let press: any = float(0), push: any = vec2(0, 0)
+  const foot = vec2(origin.x, origin.z)
+  for (const b of benders) {
+    const d = foot.sub(vec2(b.x, b.y))
+    const len = d.length()
+    const w = smoothstep(b.z, b.z.mul(0.35), len).mul(b.w)
+    press = press.max(w)
+    push = push.add(d.div(len.max(0.05)).mul(w))
+  }
+  const up = local.y.mul(size)
+  const shove = vec3(push.x.mul(0.85), press.mul(-0.72), push.y.mul(0.85)).mul(up)
+  const shiver = sin(time.mul(23).add(origin.x.mul(5.1)).add(origin.z.mul(3.7))).mul(0.03).mul(press).mul(tipness).mul(size)
+  // Night life wanders round its cell and bobs, each mote on its own phase.
+  const phase = param.x.mul(7.3)
+  const drift = vec3(
+    sin(time.mul(0.55).add(phase)).mul(0.45),
+    sin(time.mul(0.37).add(phase.mul(1.7))).mul(0.3).add(0.3),
+    cos(time.mul(0.47).add(phase.mul(1.3))).mul(0.45),
+  ).mul(mote)
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.9, metalness: 0, side: THREE.DoubleSide })
-  material.positionNode = origin.add(turned).add(lean).add(vec3(bend, 0, bend.mul(0.6)))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const wind = windDir as any
+  const blown = vec3(wind.x.mul(bend).add(shiver), 0, wind.y.mul(bend).add(shiver))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  material.positionNode = (origin as any).add(turned).add(lean).add(blown).add(shove).add(drift)
 
   // Lit with the ground's normal at the plant's foot, tipped a little toward straight up
   // for the upper parts so tall stems catch some sky.
@@ -563,7 +689,8 @@ function coverMaterial(reach: number, look: TerrainMaterial | null): THREE.MeshS
   const soil: any = look
     ? varying(look.groundColour(origin, groundAttr.y, groundAttr.w) as GroundNode)
     : vec3(0.35, 0.3, 0.25)
-  const mine = baseColor.mul(mix(vec3(1), plantTint, tintMix))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mine = (hueTurn as any).mul(baseColor.mul(mix(vec3(1), plantTint, tintMix))).max(0)
   // Far plants sink back toward the ground's colour before they vanish.
   const far = smoothstep(drawnReach.mul(0.45), drawnReach.mul(0.92), dist)
   const showMine = own.mul(float(1).sub(far.mul(0.55)))
@@ -573,7 +700,10 @@ function coverMaterial(reach: number, look: TerrainMaterial | null): THREE.MeshS
   // Glow only where the geometry asks for it (hearts and tips), in the plant's own colour.
   // Pulses in slow waves that travel across the ground, so a grove breathes together.
   const pulse = sin(time.mul(1.6).sub(origin.x.mul(0.11)).sub(origin.z.mul(0.08))).mul(0.3).add(0.8)
-  material.emissiveNode = mine.mul(glow).mul(pulse).mul(glowScale).mul(float(1).sub(far))
+  // Night life twinkles on its own phase and burns brighter than a bloom's heart.
+  const twinkle = sin(time.mul(2.9).add(phase.mul(2.1))).mul(0.5).add(0.5)
+  const lit = mix(pulse, twinkle.mul(twinkle).mul(3.5).add(0.8), mote)
+  material.emissiveNode = mine.mul(glow).mul(lit).mul(glowScale).mul(float(1).sub(far))
   return material
 }
 
@@ -588,8 +718,17 @@ export class GroundCover implements System {
   private layers: Layer[] = []
   private material: THREE.MeshStandardNodeMaterial[] = []
   private amount = -1
-  private roadStyle = -1
-  private tier = COVER_TIERS[2]
+  /** The sliders the planting was last done for: a change in any replants. */
+  private planted = ''
+  /** The budget in force: a copy of the cover.* settings, refreshed every frame. */
+  private budget: CoverBudget = { ...COVER_LEVELS[4] }
+  private vehicles: (() => Iterable<THREE.Object3D>) | null = null
+  /** Seconds this cover has run, for the trail behind the nearest vehicle. */
+  private clock = 0
+  private readonly pressing: { x: number; z: number; r: number; w: number; d2: number; o: THREE.Object3D | null }[] =
+    Array.from({ length: 4 }, () => ({ x: 0, z: 0, r: 1, w: 0, d2: Infinity, o: null }))
+  private trailOf: THREE.Object3D | null = null
+  private readonly trail: { x: number; z: number; t: number; r: number; w: number }[] = []
   /** How long replanting may take each frame, in milliseconds. Tests set it to finish at once or to crawl. */
   sliceMs = SLICE_MS
   private treeLine = 0
@@ -625,21 +764,61 @@ export class GroundCover implements System {
       const near = smoothstep(shadeReach.mul(0.95), shadeReach.mul(0.5), vec2(at.x, at.z).sub(vec2(cameraPosition.x, cameraPosition.z)).length())
       return mix(col, col.mul(shadeTint), smoothstep(0.1, 0.8, d).mul(near).mul(shadeStrength).mul(0.75))
     })
-    this.rebuild()
+    this.budget = { ...this.budget, density: -1 }
+    this.applyBudget()
   }
 
   /**
-   * The graphics level: 2 grows everything, 1 a thinner, nearer cover for phones and
-   * tablets, 0 nothing. See COVER_TIERS.
+   * The graphics level, out of `of` levels. With the three in use today (safe, mobile,
+   * desktop) the level takes rows 0, 2 and 4 of COVER_LEVELS; with six it takes its own row.
    */
-  setLevel(level: number): void {
-    const tier = COVER_TIERS[Math.max(0, Math.min(2, Math.round(level)))]
-    if (tier === this.tier) return
-    this.tier = tier
-    this.group.visible = !!tier
-    reachScale.value = tier?.reach ?? 1
-    // The density differs, so replant; with nothing growing, clear the ground's shade too.
-    this.rebuild()
+  setLevel(level: number, of = 3): void {
+    const l = Math.max(0, Math.min(of - 1, Math.round(level)))
+    this.setBudget(COVER_LEVELS[of >= COVER_LEVELS.length ? l : Math.round(l * (COVER_LEVELS.length - 2) / Math.max(1, of - 1))])
+  }
+
+  /**
+   * What this device can afford to grow: a row of COVER_LEVELS, or the caller's own.
+   * Written to the cover.* settings as a preset, so it does not count as the player's own
+   * choice, and applied at once.
+   */
+  setBudget(budget: CoverBudget): void {
+    params.set(coverDensity.def.id, budget.density, 'preset')
+    params.set(coverReach.def.id, budget.reach, 'preset')
+    params.set(coverDetail.def.id, budget.detailNear, 'preset')
+    params.set(coverFlowers.def.id, budget.flowers, 'preset')
+    params.set(coverBend.def.id, budget.bend, 'preset')
+    params.set(coverNightLife.def.id, budget.nightlife, 'preset')
+    this.applyBudget()
+  }
+
+  /** Take up the cover.* settings if any changed. */
+  private applyBudget(): void {
+    const was = this.budget
+    const density = coverDensity.value, reach = coverReach.value, detailNear = coverDetail.value
+    const flowers = coverFlowers.value, bend = coverBend.value, nightlife = coverNightLife.value
+    if (was.density === density && was.reach === reach && was.detailNear === detailNear && was.flowers === flowers
+      && was.bend === bend && was.nightlife === nightlife) return
+    // What is planted depends on these three; the rest only changes how it is drawn.
+    const replant = was.density !== density || was.flowers !== flowers || was.nightlife !== nightlife
+    this.budget = { density, reach, detailNear, flowers, bend, nightlife }
+    reachScale.value = reach || 1
+    lodNear = detailNear
+    this.group.visible = density > 0
+    if (!bend) for (const b of benders) b.value.w = 0
+    if (replant) this.rebuild()
+    else for (const l of this.layers) l.redraw()
+  }
+
+  /**
+   * The vehicles whose wheels and wash bend the grass: called every frame, so it should
+   * return the live objects without allocating.
+   */
+  setVehicles(vehicles: (() => Iterable<THREE.Object3D>) | null): void { this.vehicles = vehicles }
+
+  /** What is pressing the grass now: (x, z, radius, how hard) for each bender in use. For tests and the lab. */
+  pressed(): { x: number; z: number; r: number; w: number }[] {
+    return benders.map((b) => ({ x: b.value.x, z: b.value.y, r: b.value.z, w: b.value.w })).filter((b) => b.w > 0)
   }
 
   /** How many plants each layer draws now, and whether every layer has caught up with the camera. */
@@ -663,10 +842,13 @@ export class GroundCover implements System {
     const flora = FLORA[data.settings.look] ?? { layers: () => [], shade: 0xffffff }
     this.treeLine = data.layout.summitHeight * 0.3
     shadeTint.value.setHex(flora.shade)
-    // A level that grows nothing builds no layers and leaves the ground unshaded.
-    const specs = this.tier ? flora.layers(this.treeLine) : []
+    // A level that grows nothing builds no layers and leaves the ground unshaded. Night
+    // life the device or the room has turned off is not built either.
+    const nightLife = this.budget.nightlife * terrainNightLife.value
+    const specs = this.budget.density > 0 ? flora.layers(this.treeLine).filter((spec) => !spec.motes || nightLife > 0) : []
     const tracks = roadsAreTracks(data.settings.look)
-    this.roadStyle = terrainRoadStyle.value
+    // The plant seed reshuffles placement and colour picks; 0 is the planet's own.
+    const seed = data.seed * 31 + 77 + Math.round(terrainFloraSeed.value) * 7919
     this.layers = specs.map((spec, i) => {
       // Layers on the same grid share a material: it depends only on the treadmill's reach.
       const reach = spec.n * spec.spacing * 0.5
@@ -678,17 +860,24 @@ export class GroundCover implements System {
       }
       const shading = !!spec.shade
       if (shading && (spec.n !== SHADE_N || spec.spacing !== SHADE_SPACING)) throw new Error('the shading layer must use the coverage grid')
-      const layer = new Layer(spec, this.sampler, (data.seed * 31 + 77 + i * 1013) | 0, m, shading ? this.cover : null, tracks)
+      const layer = new Layer(spec, this.sampler, (seed + i * 1013) | 0, m, shading ? this.cover : null, tracks)
       this.group.add(...layer.meshes)
       return layer
     })
     this.amount = groundCover.value
+    this.planted = this.sliders()
   }
 
-  update(): void {
-    if (!this.tier) return
-    // The road style is a look only, so the terrain does not regenerate: replant here.
-    if (groundCover.value !== this.amount || terrainRoadStyle.value !== this.roadStyle) this.rebuild()
+  /** The sliders that decide what is planted, as one value to compare. */
+  private sliders(): string {
+    return `${groundCover.value} ${terrainRoadStyle.value} ${terrainFlowers.value} ${terrainNightLife.value} ${terrainFloraSeed.value}`
+  }
+
+  update(dt = 1 / 60): void {
+    this.applyBudget()
+    if (!(this.budget.density > 0)) return
+    // These are looks only, so the terrain does not regenerate: replant here.
+    if (this.sliders() !== this.planted) this.rebuild()
     // At zero nothing is drawn at all.
     this.group.visible = this.amount > 0
     shadeStrength.value = this.amount > 0 ? groundCoverShade.value : 0
@@ -698,17 +887,78 @@ export class GroundCover implements System {
     // it is about 1.9 by day and 7.6 at night on a volcanic world.
     const night = Math.max(0, Math.min(1, (over - 2.5) / 3.5))
     glowScale.value = (0.3 + 3.7 * night) / Math.max(1, over)
+    nightAmount.value = night
+    hueMatrix(terrainFloraHue.value, hueTurn.value)
+    // The room's wind: its heading, and its strength from a calm to a gale.
+    const heading = prevailingWindHeading(), strength = prevailingWindStrength()
+    windDir.value.set(Math.cos(heading), Math.sin(heading))
+    windAmp.value = 0.35 + 1.25 * strength
+    // Kept within a turn so the shader's sine stays exact however long the game runs.
+    gustPhase.value = (gustPhase.value + dt * (0.9 + 1.4 * strength)) % (Math.PI * 2)
+    this.clock += dt
+    if (this.budget.bend) this.press()
     const p = this.camera.position
     let changed = false
     // One deadline for all layers, so the frame's replanting is bounded however many
     // layers scrolled at once.
     const deadline = performance.now() + this.sliceMs
+    const flowers = this.amount * this.budget.flowers * terrainFlowers.value
+    const nightLife = this.budget.nightlife * terrainNightLife.value
     for (const l of this.layers) {
-      const amount = l.shading ? this.amount * this.tier.density : this.amount
+      const kind = l.kind
+      // Night life is planted all day, so dusk has nothing to wait for, but not drawn.
+      if (kind === 'motes') l.visible = night > 0.02
+      const amount = kind === 'grass' ? this.amount * this.budget.density : kind === 'motes' ? nightLife : flowers
       changed = l.follow(p.x, p.z, amount, this.treeLine, deadline) || changed
     }
     // The coverage map is 31 kB: re-uploading it when any row scrolled is cheap.
     if (changed) this.coverTex.needsUpdate = true
+  }
+
+  /**
+   * Point the shader's benders at the four vehicles nearest the camera that are low enough
+   * to touch the grass, and at two points on the nearest one's trail, so the grass it
+   * crossed takes a moment to stand up again.
+   */
+  private press(): void {
+    const cam = this.camera.position, slots = this.pressing
+    for (const s of slots) { s.w = 0; s.d2 = Infinity; s.o = null }
+    if (this.vehicles) {
+      for (const o of this.vehicles()) {
+        const x = o.position.x, z = o.position.z
+        const d2 = (x - cam.x) ** 2 + (z - cam.z) ** 2
+        if (d2 > 90 * 90) continue
+        // Wheels press hardest; a hovercraft a metre or two up still flattens it with its
+        // wash, over a wider circle; nothing higher than about 6 m reaches the ground.
+        const clearance = Math.max(0, o.position.y - this.sampler.heightAt(x, z))
+        const w = Math.max(0, Math.min(1, 1 - (clearance - 1.5) / 4.5))
+        if (w <= 0) continue
+        // Keep the four nearest, nearest first.
+        let i = slots.length - 1
+        if (d2 >= slots[i].d2) continue
+        const spare = slots[i]
+        while (i > 0 && slots[i - 1].d2 > d2) { slots[i] = slots[i - 1]; i-- }
+        slots[i] = spare
+        spare.x = x; spare.z = z; spare.r = 1.7 + 0.7 * clearance; spare.w = w; spare.d2 = d2; spare.o = o
+      }
+    }
+    for (let i = 0; i < slots.length; i++) benders[i].value.set(slots[i].x, slots[i].z, slots[i].r, slots[i].w)
+    // The trail: where the nearest vehicle was about a quarter and a half second ago.
+    const lead = slots[0], trail = this.trail
+    if (lead.o !== this.trailOf) { this.trailOf = lead.o; trail.length = 0 }
+    while (trail.length && this.clock - trail[0].t > 1) trail.shift()
+    const last = trail[trail.length - 1]
+    if (lead.o && (!last || Math.hypot(lead.x - last.x, lead.z - last.z) > 0.3)) {
+      trail.push({ x: lead.x, z: lead.z, t: this.clock, r: lead.r, w: lead.w })
+    }
+    let k = slots.length
+    for (const [age, share] of [[0.22, 0.6], [0.5, 0.3]]) {
+      let at = null
+      for (let i = trail.length - 1; i >= 0; i--) if (this.clock - trail[i].t >= age) { at = trail[i]; break }
+      if (at) benders[k].value.set(at.x, at.z, at.r * 0.9, at.w * share)
+      else benders[k].value.w = 0
+      k++
+    }
   }
 
   private disposeLayers(): void {
