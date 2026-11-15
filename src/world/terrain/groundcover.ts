@@ -62,6 +62,8 @@ interface Ground {
   y: number
   /** 0..1 patch noise, for drifts and clumps. */
   patch: number
+  /** 0..1 broader noise, for regions: tall or short grass, lush or dry. */
+  region: number
   /** 0..1 how volcanic (rocky) the ground is. */
   rock: number
 }
@@ -151,44 +153,134 @@ function daisy(height: number, petals: number, radius: number, stem: number, cen
   return b.build()
 }
 
+/** Two ribbons crossed at right angles along a path: a stem with volume from every side. */
+function stem(b: Builder, pts: number[][], w0: number, w1: number, c0: THREE.Color, c1: THREE.Color, glow0 = 0, glow1 = 0): void {
+  const n = pts.length - 1
+  for (let i = 0; i < n; i++) {
+    const t0 = i / n, t1 = (i + 1) / n
+    const a = w0 + (w1 - w0) * t0, c = w0 + (w1 - w0) * t1
+    const ca = c0.clone().lerp(c1, t0), cb = c0.clone().lerp(c1, t1)
+    const g = glow0 + (glow1 - glow0) * t1
+    const p = pts[i], q = pts[i + 1]
+    for (const [wx, wz] of [[1, 0], [0, 1]]) {
+      b.v(p[0] - wx * a, p[1], p[2] - wz * a, ca, t0, 0, g); b.v(p[0] + wx * a, p[1], p[2] + wz * a, ca, t0, 0, g); b.v(q[0] - wx * c, q[1], q[2] - wz * c, cb, t1, 0, g)
+      b.v(p[0] + wx * a, p[1], p[2] + wz * a, ca, t0, 0, g); b.v(q[0] + wx * c, q[1], q[2] + wz * c, cb, t1, 0, g); b.v(q[0] - wx * c, q[1], q[2] - wz * c, cb, t1, 0, g)
+    }
+  }
+}
+
 /**
- * The alien flower of the volcanic worlds: a dark stalk that curls over like a fern
- * crozier, a glowing bulb hanging from its tip, and three spores drifting above it. The
- * bulb and spores take the plant's colour and pulse.
+ * A lupin: a tall spike with blossoms spiralling up it, largest at the bottom. The
+ * blossoms take the plant's colour.
  */
-function alienFlower(): THREE.BufferGeometry {
+function lupin(): THREE.BufferGeometry {
   const b = new Builder()
-  const dark = new THREE.Color(0x1c0b26)
-  const mid = new THREE.Color(0x4a1a5e)
+  const green = new THREE.Color(0x3d7a2a)
   const white = new THREE.Color(0xffffff)
-  // The stalk: up, then curling forward and down.
-  const pts: number[][] = []
-  for (let i = 0; i <= 6; i++) {
-    const t = i / 6
-    const curl = t * t * 3.6
-    pts.push([Math.sin(curl) * 0.34 * t, 0.95 * t + (Math.cos(curl) - 1) * 0.22 * t, 0.04 * t])
+  const pale = new THREE.Color(0xd8d8ff)
+  const H = 0.85
+  stem(b, [[0, 0, 0], [0.02, H * 0.5, 0.01], [0.03, H, 0.02]], 0.014, 0.006, green, green)
+  for (let k = 0; k < 11; k++) {
+    const t = k / 10
+    const y = H * (0.36 + 0.62 * t)
+    const a = k * 2.4
+    const size = 0.085 * (1 - 0.6 * t)
+    const cx = 0.03 * (y / H), cz = 0.02 * (y / H)
+    const ox = Math.cos(a), oz = Math.sin(a)
+    // A small petal standing out from the spike and tipping down.
+    b.v(cx, y + size * 0.5, cz, k % 2 ? white : pale, 0.5 + 0.5 * t, 1)
+    b.v(cx + ox * size - oz * size * 0.5, y - size * 0.2, cz + oz * size + ox * size * 0.5, white, 0.5 + 0.5 * t, 1)
+    b.v(cx + ox * size + oz * size * 0.5, y - size * 0.2, cz + oz * size - ox * size * 0.5, white, 0.5 + 0.5 * t, 1)
   }
-  for (let i = 0; i < 6; i++) {
-    const w0 = 0.05 * (1 - i / 9), w1 = 0.05 * (1 - (i + 1) / 9)
-    ribbon(b, pts[i], pts[i + 1], w0, w1, i < 3 ? dark : mid, i < 2 ? dark : mid, i / 6, (i + 1) / 6, i > 3 ? 0.25 : 0)
+  return b.build()
+}
+
+/** A stone: a squashed, uneven lump, darker underneath. Its size comes from the plant's scale. */
+function stone(): THREE.BufferGeometry {
+  const b = new Builder()
+  const top = new THREE.Color(0xa6a49c)
+  const side = new THREE.Color(0x77756f)
+  const low = new THREE.Color(0x4d4b47)
+  const ring: number[][] = []
+  for (let k = 0; k < 6; k++) {
+    const a = (k / 6) * Math.PI * 2
+    const r = 0.26 + 0.1 * (((k * 7) % 5) / 5)
+    ring.push([Math.cos(a) * r, 0.06 + 0.05 * ((k * 3) % 4) / 4, Math.sin(a) * r])
   }
-  // The bulb: an octahedron hanging at the tip.
-  const [bx, by, bz] = [pts[6][0], pts[6][1] - 0.1, pts[6][2]]
-  const R = 0.12
-  const top = [bx, by + R * 1.3, bz], bot = [bx, by - R * 1.5, bz]
-  const ring = [0, 1, 2, 3].map((k) => [bx + Math.cos(k * Math.PI / 2) * R, by, bz + Math.sin(k * Math.PI / 2) * R])
-  for (let k = 0; k < 4; k++) {
-    const p = ring[k], q = ring[(k + 1) % 4]
-    b.v(top[0], top[1], top[2], white, 1, 1, 1); b.v(p[0], p[1], p[2], white, 1, 1, 1); b.v(q[0], q[1], q[2], white, 1, 1, 1)
-    b.v(bot[0], bot[1], bot[2], white, 1, 1, 0.6); b.v(q[0], q[1], q[2], white, 1, 1, 1); b.v(p[0], p[1], p[2], white, 1, 1, 1)
+  const apex = [0.03, 0.24, -0.02]
+  for (let k = 0; k < 6; k++) {
+    const p = ring[k], q = ring[(k + 1) % 6]
+    b.v(apex[0], apex[1], apex[2], top, 0); b.v(p[0], p[1], p[2], k % 2 ? side : top, 0); b.v(q[0], q[1], q[2], side, 0)
+    // The skirt, down into the ground.
+    b.v(p[0], p[1], p[2], side, 0); b.v(p[0] * 1.15, -0.08, p[2] * 1.15, low, 0); b.v(q[0], q[1], q[2], side, 0)
+    b.v(q[0], q[1], q[2], side, 0); b.v(p[0] * 1.15, -0.08, p[2] * 1.15, low, 0); b.v(q[0] * 1.15, -0.08, q[2] * 1.15, low, 0)
   }
-  // Spores: small glowing shards above the stalk. A sway above 1 marks them as drifting.
-  for (let k = 0; k < 3; k++) {
-    const a = k * 2.1 + 0.4, r = 0.16 + k * 0.07, y = 1.05 + k * 0.16
-    const x = Math.cos(a) * r, z = Math.sin(a) * r, s = 0.05
-    b.v(x, y + s * 1.6, z, white, 2 + k, 1, 1)
-    b.v(x - s, y, z + s * 0.5, white, 2 + k, 1, 1)
-    b.v(x + s, y, z - s * 0.5, white, 2 + k, 1, 1)
+  return b.build()
+}
+
+/**
+ * The alien bloom of the volcanic worlds: a pale violet stalk carrying a crown of long
+ * tapering petals that arch out and droop like the arms of a sea anemone. The petals take
+ * the plant's colour and are lit from within, brightest at the heart.
+ */
+function anemone(): THREE.BufferGeometry {
+  const b = new Builder()
+  const root = new THREE.Color(0x2a1238)
+  const neck = new THREE.Color(0x8a4ab0)
+  const white = new THREE.Color(0xffffff)
+  const H = 0.9
+  stem(b, [[0, 0, 0], [0.05, H * 0.45, 0.02], [-0.02, H, 0.03]], 0.05, 0.03, root, neck, 0, 0.25)
+  const hx = -0.02, hz = 0.03
+  const ARMS = 6
+  for (let k = 0; k < ARMS; k++) {
+    const a = (k / ARMS) * Math.PI * 2 + 0.3
+    const ox = Math.cos(a), oz = Math.sin(a)
+    const len = 0.5 + 0.12 * ((k * 5) % 3)
+    // An arm: out and up, then over and down, tapering to a point.
+    const pts: number[][] = []
+    for (let i = 0; i <= 3; i++) {
+      const t = i / 3
+      const r = len * (t * 0.9 + 0.1 * t * t)
+      const y = H + 0.34 * Math.sin(t * 2.5) - 0.2 * t * t
+      pts.push([hx + ox * r, y, hz + oz * r])
+    }
+    for (let i = 0; i < 3; i++) {
+      const w0 = 0.075 * (1 - i / 3.3), w1 = 0.075 * (1 - (i + 1) / 3.3)
+      const p = pts[i], q = pts[i + 1]
+      const g0 = 1 - 0.25 * (i / 3), g1 = 1 - 0.25 * ((i + 1) / 3)
+      // Width runs across the arm, level with the ground.
+      const sx = -oz, sz = ox
+      b.v(p[0] - sx * w0, p[1], p[2] - sz * w0, white, 0.6 + 0.13 * i, 1, g0)
+      b.v(p[0] + sx * w0, p[1], p[2] + sz * w0, white, 0.6 + 0.13 * i, 1, g0)
+      b.v(q[0] - sx * w1, q[1], q[2] - sz * w1, white, 0.73 + 0.13 * i, 1, g1)
+      b.v(p[0] + sx * w0, p[1], p[2] + sz * w0, white, 0.6 + 0.13 * i, 1, g0)
+      b.v(q[0] + sx * w1, q[1], q[2] + sz * w1, white, 0.73 + 0.13 * i, 1, g1)
+      b.v(q[0] - sx * w1, q[1], q[2] - sz * w1, white, 0.73 + 0.13 * i, 1, g1)
+    }
+  }
+  return b.build()
+}
+
+/**
+ * A second alien growth: a clump of tapering tubes of different heights, like tube worms
+ * on a sea vent, dark at the root and glowing toward their open tips.
+ */
+function tubes(): THREE.BufferGeometry {
+  const b = new Builder()
+  const root = new THREE.Color(0x1a0c18)
+  const white = new THREE.Color(0xffffff)
+  for (let k = 0; k < 6; k++) {
+    const a = k * 2.4 + 0.5
+    const r = 0.05 + 0.12 * ((k * 3) % 4) / 4
+    const h = 0.28 + 0.62 * (((k * 7) % 6) / 6)
+    const x = Math.cos(a) * r, z = Math.sin(a) * r
+    const lean = 0.22
+    const tip = [x + Math.cos(a) * h * lean, h, z + Math.sin(a) * h * lean]
+    const w0 = 0.05, w1 = 0.028
+    for (const [wx, wz] of [[1, 0], [0, 1]]) {
+      b.v(x - wx * w0, 0, z - wz * w0, root, 0); b.v(x + wx * w0, 0, z + wz * w0, root, 0); b.v(tip[0] - wx * w1, tip[1], tip[2] - wz * w1, white, 1, 1, 1)
+      b.v(x + wx * w0, 0, z + wz * w0, root, 0); b.v(tip[0] + wx * w1, tip[1], tip[2] + wz * w1, white, 1, 1, 1); b.v(tip[0] - wx * w1, tip[1], tip[2] - wz * w1, white, 1, 1, 1)
+    }
   }
   return b.build()
 }
@@ -207,6 +299,7 @@ function setTint(out: Plant, hex: number, vary: number, h: number): void {
 }
 
 const ALPINE_BLOOMS = [0xffffff, 0xffffff, 0xffd84a, 0xffd84a, 0xb07cf0, 0xff5a6e, 0x7ab8ff]
+const LUPIN_BLOOMS = [0x5a6cff, 0x9a5cff, 0xff7ac8, 0x4aa8ff, 0xd0a0ff]
 const DESERT_BLOOMS = [0xff8a2a, 0xff4f8a, 0xfff06a, 0xff6a3a]
 // Cyan, magenta, acid green, violet: lit from inside.
 const ALIEN_BLOOMS = [0x22f0ff, 0xff38d8, 0x7dff3a, 0x9a5cff, 0x22f0ff]
@@ -215,23 +308,55 @@ function layersFor(kind: number, treeLine: number): LayerSpec[] {
   if (kind === KIND_ALPINE) {
     return [
       {
+        // Grass that changes across the land: tall and lush in some regions, short turf in
+        // others, with sun-dried gold patches and bare ground showing through.
         n: 176, spacing: 0.8, geometry: tuft(6, 0.42, 0x2c5a1c, 0x9ccc58, 0, 0, 0.032),
         grow(c, h, out) {
           if (c.y > treeLine) return
-          // Meadow almost everywhere, thinning toward the tundra.
-          if (unit(h, 22) > 0.95 - 0.5 * smooth(treeLine * 0.6, treeLine, c.y)) return
-          out.scale = 0.7 + 0.7 * unit(h, 2) + 0.4 * c.patch
-          setTint(out, 0xffffff, 0.3, h)
+          const thin = 0.5 * smooth(treeLine * 0.6, treeLine, c.y) + 0.45 * smooth(0.3, 0.12, c.patch)
+          if (unit(h, 22) > 0.97 - thin) return
+          const tall = smooth(0.35, 0.7, c.region)
+          out.scale = (0.45 + 1.35 * tall) * (0.75 + 0.5 * unit(h, 2))
+          // Lush deep green, fresh green, or dry gold, by patch.
+          const dry = smooth(0.62, 0.85, c.patch) * (1 - tall * 0.5)
+          const deep = smooth(0.45, 0.2, c.patch)
+          const k = 0.85 + 0.3 * unit(h, 12)
+          out.r = (1 + 0.55 * dry - 0.25 * deep) * k
+          out.g = (1 + 0.1 * dry - 0.12 * deep) * k
+          out.b = (1 - 0.35 * dry + 0.1 * deep) * k
         },
       },
       {
-        n: 80, spacing: 1.6, geometry: daisy(0.55, 7, 0.2, 0x3d7a2a, 0xffc832),
+        // Daisies in drifts, each drift mostly one colour.
+        n: 80, spacing: 1.6, geometry: daisy(0.5, 7, 0.2, 0x3d7a2a, 0xffc832),
         grow(c, h, out) {
           if (c.y > treeLine) return
-          // Flowers come in drifts.
-          if (unit(h, 22) > 0.1 + 0.75 * smooth(0.5, 0.8, c.patch)) return
-          out.scale = 0.75 + 0.6 * unit(h, 2)
-          setTint(out, ALPINE_BLOOMS[(h >>> 4) % ALPINE_BLOOMS.length], 0.12, h)
+          const band = Math.floor(c.patch * 9)
+          const drift = band % 2 === 1 ? 0.7 : 0.06
+          if (unit(h, 22) > drift) return
+          out.scale = 0.7 + 0.9 * unit(h, 2)
+          const pick = unit(h, 4) < 0.15 ? (h >>> 6) % ALPINE_BLOOMS.length : band % ALPINE_BLOOMS.length
+          setTint(out, ALPINE_BLOOMS[pick], 0.12, h)
+        },
+      },
+      {
+        // Lupins: tall spikes in blue, violet and pink, standing in stands where the grass is tall.
+        n: 64, spacing: 3.2, geometry: lupin(),
+        grow(c, h, out) {
+          if (c.y > treeLine * 0.8) return
+          if (unit(h, 22) > 0.75 * smooth(0.5, 0.75, c.region) * smooth(0.25, 0.5, c.patch)) return
+          out.scale = 0.9 + 0.9 * unit(h, 2)
+          setTint(out, LUPIN_BLOOMS[(Math.floor(c.region * 11) + ((h >>> 6) % 2)) % LUPIN_BLOOMS.length], 0.15, h)
+        },
+      },
+      {
+        // Stones, scattered and in small fields, more of them toward the heights.
+        n: 64, spacing: 3.2, geometry: stone(),
+        grow(c, h, out) {
+          const high = smooth(treeLine * 0.4, treeLine * 1.3, c.y)
+          if (unit(h, 22) > 0.05 + 0.35 * smooth(0.7, 0.9, c.patch) + 0.3 * high) return
+          out.scale = 0.5 + 2.2 * unit(h, 2) * unit(h, 12)
+          setTint(out, 0xffffff, 0.3, h)
         },
       },
     ]
@@ -271,15 +396,24 @@ function layersFor(kind: number, treeLine: number): LayerSpec[] {
       },
     },
     {
-      n: 80, spacing: 1.6, geometry: alienFlower(),
+      // Anemone blooms, in groves that share a colour, with the odd one alone.
+      n: 64, spacing: 3.2, geometry: anemone(),
       grow(c, h, out) {
         if (c.rock > 0.9) return
-        // Groves of them, and the odd one standing alone.
-        if (unit(h, 22) > 0.02 + 0.22 * smooth(0.62, 0.82, c.patch)) return
-        out.scale = 0.8 + 1.0 * unit(h, 2)
-        // A grove shares a colour, with strays.
-        const pick = unit(h, 4) < 0.25 ? (h >>> 6) % ALIEN_BLOOMS.length : Math.floor(c.patch * 23) % ALIEN_BLOOMS.length
+        if (unit(h, 22) > 0.04 + 0.6 * smooth(0.6, 0.8, c.patch)) return
+        out.scale = 0.55 + 0.75 * unit(h, 2)
+        const pick = unit(h, 4) < 0.2 ? (h >>> 6) % ALIEN_BLOOMS.length : Math.floor(c.region * 17) % ALIEN_BLOOMS.length
         setTint(out, ALIEN_BLOOMS[pick], 0.1, h)
+      },
+    },
+    {
+      // Tube clumps, where the anemones are not.
+      n: 64, spacing: 3.2, geometry: tubes(),
+      grow(c, h, out) {
+        if (c.rock > 0.9) return
+        if (unit(h, 22) > 0.03 + 0.5 * smooth(0.42, 0.22, c.patch)) return
+        out.scale = 0.7 + 1.2 * unit(h, 2)
+        setTint(out, ALIEN_BLOOMS[(Math.floor(c.region * 13) + 2) % ALIEN_BLOOMS.length], 0.1, h)
       },
     },
   ]
@@ -305,7 +439,7 @@ class Layer {
   private readonly cellX: Int32Array
   private readonly cellZ: Int32Array
   private readonly plant: Plant = { scale: 0, r: 1, g: 1, b: 1 }
-  private readonly ground: Ground = { x: 0, z: 0, y: 0, patch: 0, rock: 0 }
+  private readonly ground: Ground = { x: 0, z: 0, y: 0, patch: 0, region: 0, rock: 0 }
   private filled = false
 
   constructor(private readonly spec: LayerSpec, private readonly sampler: HeightSampler, private readonly seed: number) {
@@ -382,6 +516,8 @@ class Layer {
     g.rock = data.volcanic[gi]
     const pc = Math.max(1, Math.round(data.size * 0.012))
     g.patch = 0.5 + 0.5 * pperlin((x / data.size) * pc, (z / data.size) * pc, this.seed + 9, pc, pc)
+    const rc = Math.max(1, Math.round(data.size * 0.004))
+    g.region = 0.5 + 0.5 * pperlin((x / data.size) * rc, (z / data.size) * rc, 4242, rc, rc)
     const p = this.plant
     p.scale = 0
     this.spec.grow(g, h, p)
