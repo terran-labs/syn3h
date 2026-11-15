@@ -27,7 +27,7 @@
 import * as THREE from 'three/webgpu'
 import {
   Fn, If, Loop, abs, screenSize, sin, clamp, dot, exp, float, interleavedGradientNoise, length, max, min, mix, pass,
-  builtinAOContext, builtinGIContext, builtinShadowContext, context, mrt, nodeObject, normalView, output, screenUV, renderOutput, rtt, screenCoordinate, smoothstep, step,  uniform, uv, vec2, vec3, vec4,
+  builtinAOContext, builtinGIContext, builtinShadowContext, context, mrt, nodeObject, normalView, output, screenUV, renderOutput, renderGroup, rtt, screenCoordinate, smoothstep, step,  uniform, uv, vec2, vec3, vec4,
 } from 'three/tsl'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { ao } from 'three/addons/tsl/display/GTAONode.js'
@@ -37,6 +37,7 @@ import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { traa } from 'three/addons/tsl/display/TRAANode.js'
 import { CurvedVelocity } from './CurvedVelocity'
 import { cloudVolume, compositeClouds } from './clouds'
+import { underwaterAmountForCamera } from '../../world/water/underwater'
 import type { CloudInputs } from '../../world/Environment'
 import { motionBlurred } from './motion'
 import { graphicsLevel } from '../../core/quality'
@@ -410,7 +411,10 @@ export class PostChain {
 
     if (cloudsOn) {
       const volume: N = cloudVolume(depth, u, this.sun as SunSource & { clouds: CloudInputs })
-      const composite: N = compositeClouds(color, volume, depth, u.projInv)
+      // Capture the scene camera, not the fullscreen pass camera used by the composite.
+      // Surface crossings update only this uniform and preserve the pipeline graph.
+      const visibility = uniform(1).setGroup(renderGroup).onRenderUpdate(() => 1 - underwaterAmountForCamera(camera))
+      const composite: N = compositeClouds(color, volume, depth, u.projInv, visibility)
       disposables.push(volume, composite)
       color = composite
     }
