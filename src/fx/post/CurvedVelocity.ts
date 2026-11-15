@@ -1,5 +1,5 @@
-import { Vector3, VelocityNode, type NodeFrame, type NodeBuilder } from 'three/webgpu'
-import { cameraViewMatrix, modelWorldMatrix, positionLocal, positionPrevious, renderGroup, uniform, vec2, vec4 } from 'three/tsl'
+import { BlendMode, MaterialBlending, Node, Vector3, VelocityNode, type NodeFrame, type NodeBuilder } from 'three/webgpu'
+import { abs, cameraViewMatrix, mix, normalView, modelWorldMatrix, positionLocal, positionPrevious, renderGroup, step, uniform, vec2, vec3, vec4 } from 'three/tsl'
 import { copyCurveState, curveWorldOffset } from '../../world/curve'
 
 /** An out-of-frame reprojection rejects history for procedural vertices without history. */
@@ -40,3 +40,36 @@ export class CurvedVelocity extends VelocityNode {
     return currentClip.xy.div(currentClip.w).sub(previousClip.xy.div(previousClip.w))
   }
 }
+
+/**
+ * Where this fragment was on screen last frame, for reading a screen-space result that is
+ * one frame old. `velocity` is the motion vector above (a difference in clip-space x and y,
+ * y up) and `uv` the fragment's screen position (y down). Returns xy, and in z a weight:
+ * 1 when that position was on screen, 0 when it was not and the old result says nothing.
+ *
+ * Procedural vertices carry the reject sentinel in place of a motion vector. They read the
+ * old result where they are now: a frame late under motion, which is better than none.
+ */
+export function previousScreenUV(velocity: any, uv: any): any {
+  const rejected = step(REJECT_HISTORY_VELOCITY * 0.5, abs(velocity.x))
+  const then: any = mix(uv.sub(velocity.mul(vec2(0.5, -0.5))), uv, rejected)
+  const inside = step(0, then.x).mul(step(then.x, 1)).mul(step(0, then.y)).mul(step(then.y, 1))
+  return vec3(then, inside)
+}
+
+/**
+ * The scene pass's view normal target, for occlusion and indirect light. A surface writes
+ * its normal only if it also writes depth: a see-through sprite (dust, smoke, spray) leaves
+ * the ground's depth in place, so its camera-facing normal over that depth would read as a
+ * wall and occlude the ground behind it. Such a material outputs nothing, and with the
+ * target blended as the material is (see SURFACE_NORMAL_BLEND) nothing is what lands.
+ */
+export class SurfaceNormal extends Node {
+  constructor() { super('vec4') }
+  override setup(builder: NodeBuilder): any {
+    const material = builder.material as unknown as { transparent?: boolean; depthWrite?: boolean }
+    return material.transparent && material.depthWrite === false ? vec4(0) : vec4(normalView, 1)
+  }
+}
+/** Blend the normal target as each material blends: opaque overwrites, see-through adds zero. */
+export const SURFACE_NORMAL_BLEND = new BlendMode(MaterialBlending)
