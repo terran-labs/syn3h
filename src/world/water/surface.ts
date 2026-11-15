@@ -34,6 +34,8 @@ export type WaterMode = 'sea' | 'still' | 'river'
 
 export interface WaterSurface {
   material: THREE.MeshStandardNodeMaterial
+  /** The planet's water colours (palettes.ts seaShallow and seaDeep), so the sea matches the lobby globe. */
+  setColours(shallow: number, deep: number): void
   /** Per frame: sea level and, for the sea, the current wave phases. */
   update(level: number): void
 }
@@ -55,6 +57,8 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   /** Total geometric amplitude, for normalising crest height. */
   const ampTotal = uniform(0)
 
+  const shallowColour = uniform(new THREE.Color(SHALLOW))
+  const deepColour = uniform(new THREE.Color(DEEP))
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.08, metalness: 0, side: THREE.DoubleSide })
   const ground = attribute<'float'>('groundHeight', 'float')
   const p = positionWorld
@@ -127,8 +131,9 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
 
   // Colour from above: shallows to deep by depth, lifted a little on the crests.
   const crestN = mode === 'sea' ? crest.div(max(ampTotal, 0.001)).mul(shoal) : float(0)
-  const body = mix(color(SHALLOW), color(DEEP), smoothstep(0.5, 22, depth))
-  const lifted = mix(body, color(0x3fd6c8), smoothstep(0.2, 1, crestN).mul(0.35))
+  const body = mix(shallowColour, deepColour, smoothstep(0.5, 22, depth))
+  // Crests catch the light: a step toward the shallow colour, brightened.
+  const lifted = mix(body, shallowColour.mul(1.15), smoothstep(0.2, 1, crestN).mul(0.35))
 
   // Foam.
   const breakup = mx_noise_float(vec3(p.x.mul(0.12), p.z.mul(0.12), drift.mul(0.5))).mul(0.5).add(0.5)
@@ -159,12 +164,16 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   // From below: Snell's window. Looking up at the surface, `up` is the cosine between the
   // view ray and straight up.
   const up = normalize(p.sub(cameraPosition)).y
-  const below = mix(color(DEEP).mul(0.55), color(0xbfe8f0), smoothstep(SNELL_COS - 0.04, SNELL_COS + 0.04, up))
+  const below = mix(deepColour.mul(0.55), color(0xbfe8f0), smoothstep(SNELL_COS - 0.04, SNELL_COS + 0.04, up))
   material.colorNode = mix(below, above, faceDirection.mul(0.5).add(0.5))
   material.roughnessNode = float(0.08).add(foam.mul(0.6)).add(abs(rx).mul(0.04))
 
   return {
     material,
+    setColours(shallow: number, deep: number) {
+      shallowColour.value.setHex(shallow)
+      deepColour.value.setHex(deep)
+    },
     update(l: number) {
       level.value = l
       if (mode !== 'sea') return

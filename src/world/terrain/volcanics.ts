@@ -30,6 +30,7 @@ import { waterRiverMaxSpeed, waterWaves } from '../water/params'
 import { SEA_GRID } from '../water/seaWaves'
 import { buildRiverSurface, buildStillSurface, createWaterSurface } from '../water/surface'
 import { WaterfallMist, fallsFromRivers } from '../water/mist'
+import { paletteFor } from './palettes'
 
 interface Liquid {
   material: THREE.Material
@@ -227,8 +228,11 @@ export class Volcanics implements System {
     const ground: Ground = { size: data.size, heightAt: (x, z) => this.sampler.heightAt(x, z) }
 
     this.builtNew = waterWaves.value
+    const palette = paletteFor(data.settings.look)
+    for (const w of [this.newSea, this.newStill, this.newRiver]) w.setColours(palette.seaShallow, palette.seaDeep)
     const seaMaterial = this.seaMaterial()
-    const chunks = seaChunks(data)
+    // A dry world (the Moon) drains its sea below every valley: draw none of it.
+    const chunks = data.settings.dry ? 0 : seaChunks(data)
     for (let cz = 0; cz < chunks; cz++) {
       for (let cx = 0; cx < chunks; cx++) {
         const mesh = new THREE.Mesh(seaChunkGeometry(ground, cx, cz, chunks), seaMaterial)
@@ -236,9 +240,11 @@ export class Volcanics implements System {
         this.group.add(mesh)
       }
     }
-    this.apron = new THREE.Mesh(apronGeometry(ground), seaMaterial)
-    this.apron.frustumCulled = false
-    this.group.add(this.apron)
+    if (!data.settings.dry) {
+      this.apron = new THREE.Mesh(apronGeometry(ground), seaMaterial)
+      this.apron.frustumCulled = false
+      this.group.add(this.apron)
+    }
 
     const lava = data.lava
     const hot = this.flowsAreLava
