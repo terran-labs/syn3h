@@ -22,7 +22,9 @@ for (const mode of modes) {
     }
     assert.match(await page.locator('.shell-minimap canvas').evaluate(el => getComputedStyle(el).maskImage || getComputedStyle(el).webkitMaskImage), /radial-gradient/)
     await page.screenshot({ path: `tests/ui/artifacts/exploration/${mode}-drive.png` })
-    await page.getByRole('button', { name: 'Open configuration rail' }).click()
+    // Panels are open exactly when the cursor is free. A touch device has one switch instead.
+    if (touch && await page.locator('.world-inspector').isHidden()) await page.locator('.inspector-toggle').tap()
+    await page.locator('.world-inspector').waitFor({ state: 'visible' })
     for (const head of await page.locator('.wi-head').all()) await head.click()
     const layout = await page.evaluate(() => {
       const rail = document.querySelector('.world-inspector').getBoundingClientRect()
@@ -71,13 +73,29 @@ for (const mode of modes) {
       await select.evaluate(el => el.dispatchEvent(new KeyboardEvent('keyup', {code:'ArrowUp',bubbles:true})))
       assert.equal(await page.evaluate(() => syn3h.game.input.poll().y), 0)
     }
-    await page.locator('.rail-close').click()
-    await page.keyboard.press('Escape')
-    assert.equal(await page.evaluate(() => syn3h.shell.menuOpen), false, 'Escape never returns to solar system')
-    assert.equal(await page.locator('.inspector-toggle').getAttribute('aria-pressed'), 'true')
-    await page.keyboard.press('Escape')
-    assert.equal(await page.locator('.inspector-toggle').getAttribute('aria-pressed'), 'false')
-    await page.keyboard.press('Escape')
+    if (touch) {
+      await page.locator('.rail-close').tap()
+      assert.equal(await page.locator('.world-inspector').isHidden(), true, 'returning to driving hides the panels')
+      await page.locator('.inspector-toggle').tap()
+      await page.locator('.world-inspector').waitFor({ state: 'visible' })
+    } else {
+      // Returning to driving captures the cursor, and the panels go with it.
+      await page.locator('.rail-close').click()
+      await page.waitForFunction(() => document.pointerLockElement === syn3h.game.canvas)
+      assert.equal(await page.locator('.world-inspector').isHidden(), true, 'panels are closed while the cursor is captured')
+      // Escape frees the cursor: panels. Escape again: paused. Never back to the solar system.
+      await page.keyboard.press('Escape')
+      await page.waitForFunction(() => !document.pointerLockElement)
+      await page.locator('.world-inspector').waitFor({ state: 'visible' })
+      await page.keyboard.press('Escape')
+      await page.locator('.pause-veil').waitFor({ state: 'visible' })
+      assert.equal(await page.evaluate(() => syn3h.shell.menuOpen), false, 'Escape never returns to solar system')
+      await page.keyboard.press('Escape')
+      await page.locator('.pause-veil').waitFor({ state: 'hidden' })
+      await page.waitForFunction(() => document.pointerLockElement === syn3h.game.canvas)
+      await page.keyboard.press('Escape')
+      await page.locator('.world-inspector').waitFor({ state: 'visible' })
+    }
     await page.locator('.exit-world').click()
     await page.waitForFunction(() => syn3h.shell.menuOpen)
     await page.waitForTimeout(700)

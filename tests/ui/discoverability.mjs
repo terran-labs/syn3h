@@ -14,7 +14,7 @@ for(const mode of ['desktop','phone']){
   await page.locator('.galaxy-label.is-current').focus();await page.keyboard.press('Enter')
   await page.waitForFunction(()=>syn3h.shell.playing&&syn3hNet.connected&&!syn3h.shell.dropping,null,{timeout:120000})
   assert.ok(sockets.includes(`ws://127.0.0.1:54671/ws?room=${room}`))
-  await page.getByRole('button',{name:'Open configuration rail'}).click()
+  if(await page.evaluate(()=>!!document.pointerLockElement))await page.keyboard.press('Escape');if(await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'})
   const vehicle=page.getByRole('combobox',{name:'Vehicle (reloads and respawns)'}),gear=page.getByRole('combobox',{name:'Gear',exact:true}),gi=page.getByRole('button',{name:'GI lighting'})
   for(const control of [vehicle,gear,gi]){
    assert.ok(await control.isVisible())
@@ -53,7 +53,7 @@ for(const mode of ['desktop','phone']){
   assert.equal(new URL(page.url()).searchParams.get('vehicle'),null,'no sticky vehicle override left in the URL')
   assert.ok(await page.evaluate(()=>{const p=syn3h.player.body.translation(),s=syn3h.terrain.spawnPoint(0).position;return Math.hypot(p.x-s.x,p.z-s.z)<50}),'vehicle respawns near spawn pad')
   await page.locator('.boot-veil').waitFor({state:'hidden',timeout:120000})
-  await page.getByRole('button',{name:'Open configuration rail'}).click()
+  if(await page.evaluate(()=>!!document.pointerLockElement))await page.keyboard.press('Escape');if(await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'})
   assert.equal(await page.getByRole('combobox',{name:'Vehicle (reloads and respawns)'}).inputValue(),'hovercraft')
   assert.deepEqual(errors,[])
   console.log(`${mode}: exposed selectors, actual gear/GI pipeline and vehicle reload/respawn passed`)

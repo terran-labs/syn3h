@@ -1,6 +1,7 @@
 import { GEAR_LABELS, type GearRack, type GearId } from '../weapons/Gear'
 import { postTier } from '../fx/post/gate'
 import { PerformancePanel } from './PerformancePanel'
+import type { PauseControl } from './pauseControl'
 import type { PerformanceSource } from '../core/performance'
 import { SavedWorldStore, SAVED_WORLDS_KEY, savedWorldPlan, worldIdentity, type SavedWorld } from './galaxy/savedWorlds'
 import { SavedMoons } from './galaxy/SavedMoons'
@@ -47,6 +48,8 @@ import type { VehicleKind } from '../vehicles'
 import './shell.css'
 import './exploration.css'
 
+/** Keys that mean "I want to drive": they resume a pause and capture the cursor. */
+const DRIVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
 const back = '<button type="button" class="panel-back link-button" data-goto="index">Back</button>'
 /** `__SYN3H_BUILD__` is an optional build-time constant (a date or tag) from the bundler. */
 declare const __SYN3H_BUILD__: string | undefined
@@ -150,7 +153,8 @@ export class Shell implements System {
       <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby"><button data-goto="vehicle">Vehicle</button><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR</button><button data-goto="settings">Settings</button><button data-goto="about">About</button></nav></div>
     </section>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
-    <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open configuration rail" aria-pressed="false"><span aria-hidden="true">≡</span><span class="nav-label"> Interface</span></button></nav>
+    <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open the panels" aria-pressed="false"><span aria-hidden="true">≡</span><span class="nav-label"> Panels</span></button></nav>
+    <button type="button" class="pause-veil" hidden><strong>Paused</strong><span class="pause-how">Click to resume</span><small hidden>The world carries on without you.</small></button>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
     document.body.append(this.element); document.body.classList.add('has-game-shell')
@@ -178,20 +182,20 @@ export class Shell implements System {
       onVehicle: id => this.switchVehicle(id as VehicleKind),
       onSaveWorld: () => this.saveWorld(),
     })
-    // A visitor's first view of the world has nothing over it: the cards start closed on every
-    // device and open from Create. On a desktop, once the player has captured the cursor to
-    // drive, releasing it with Escape brings the full interface up (the owner's design: full
-    // cards with the cursor free, the focus display with it captured), unless Create closed them.
+    // The owner's rule, 15 November 2026: "Panels being open or closed should be a simple
+    // function of cursor locking." With the cursor captured you are driving and only the
+    // display shows; with it free the panels are open. There is no stored open or closed
+    // state: `syncPanels` derives it from the real lock, every frame and on every lock event.
     this.inspector.open = false
     const railTop = this.inspector.element.querySelector('.wi-top')!
     const navigation = document.createElement('div'); navigation.className = 'rail-navigation'
-    navigation.innerHTML = '<button type="button" class="exit-world">↗ Exit world</button><button type="button" class="rail-close" aria-label="Close configuration rail">×</button>'
+    navigation.innerHTML = '<button type="button" class="exit-world">↗ Exit world</button><button type="button" class="rail-pause">Pause</button><button type="button" class="rail-close" aria-label="Return to driving">×</button>'
     railTop.prepend(navigation)
     const players = document.createElement('details'); players.className = 'rail-players'
     players.innerHTML = '<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><label class="rail-diagnostics"><input type="checkbox"> Connection diagnostics</label></div>'
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
     railTop.after(players)
-    this.performancePanel = new PerformancePanel(this.element, () => { this.releaseCursor(); this.setInspectorOpen(true) })
+    this.performancePanel = new PerformancePanel(this.element, () => this.showPanels())
     railTop.querySelector('.wi-actions')!.append(this.performancePanel.toggle)
     players.after(this.performancePanel.element)
     const gear = document.createElement('select'); gear.className = 'gear-select'; gear.setAttribute('aria-label', 'Gear'); gear.disabled = true
@@ -209,18 +213,17 @@ export class Shell implements System {
     music.querySelector('button')!.addEventListener('click', () => this.audio.setMuted(!this.audio.isMuted), { signal })
     this.focusHud = new FocusHud(this.element)
     this.raceHud = new RaceHud(this.element, { leave: () => this.onRaceLeave?.(), cancel: () => this.onRaceCancel?.() })
+    // Touch has no cursor to capture, so one control switches between driving and the panels.
     const toggle = this.element.querySelector<HTMLButtonElement>('.inspector-toggle')!
-    toggle.addEventListener('click', () => this.setInspectorOpen(!this.inspector.open, true), { signal })
-    navigation.querySelector('.rail-close')!.addEventListener('click', () => { this.setInspectorOpen(false, true); toggle.focus() }, { signal })
-    toggle.setAttribute('aria-pressed', String(this.inspector.open))
-    // Focus: the cursor is captured, so the player is driving. The full interface fades away.
-    let wasLocked = false
-    document.addEventListener('pointerlockchange', () => {
-      const locked = document.pointerLockElement === game.canvas
-      this.element.classList.toggle('is-focus', locked)
-      if (!locked && wasLocked && this.inspectorChosen !== false && !this.menuVisible) this.setInspectorOpen(true)
-      wasLocked = locked
-    }, { signal })
+    toggle.addEventListener('click', () => { this.touchPanels = !this.touchPanels; this.syncPanels() }, { signal })
+    // Returning to driving is capturing the cursor; this click is the gesture that allows it.
+    navigation.querySelector('.rail-close')!.addEventListener('click', () => this.drive(), { signal })
+    navigation.querySelector('.rail-pause')!.addEventListener('click', () => this.requestPause(), { signal })
+    this.element.querySelector('.pause-veil')!.addEventListener('click', () => this.requestResume(), { signal })
+    // Follow the lock itself, not what was asked for: the browser can drop it on its own
+    // (Escape, a switch of window, a system dialog) and can refuse a request.
+    document.addEventListener('pointerlockchange', () => this.syncPanels(), { signal })
+    document.addEventListener('pointerlockerror', () => this.syncPanels(), { signal })
     this.glass(signal)
     for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) slider.addEventListener('input', () => params.set(slider.dataset.param!, Number(slider.value)), { signal })
     this.startGalaxy()
@@ -300,6 +303,7 @@ export class Shell implements System {
       // camera round the vehicle (ChaseCamera reads the locked pointer), and Escape lets the
       // cursor go again, which the browser does itself. That first click only captures.
       // (Networking also listens for clicks here, after this listener; stop it hearing this one.)
+      if (this.userPaused) return
       if (this.capturesCursor && document.pointerLockElement !== game.canvas) { void this.captureCursor(); event.stopImmediatePropagation(); return }
       game.input.mouseFire = true
       if (document.pointerLockElement !== game.canvas) game.canvas.setPointerCapture(event.pointerId)
@@ -440,6 +444,10 @@ export class Shell implements System {
   }
   /** The session starts: the name is kept and the choices that cannot change in play are fixed. */
   private begin(): void {
+    // Entering a world is the start of driving, by whichever route (Play, a world in the
+    // galaxy, a saved world). Ask for the cursor now, while the click or key press that got
+    // here still counts as a gesture; a refusal just leaves the cursor free and the panels open.
+    if (!this.started && this.capturesCursor) void this.captureCursor(true)
     try { localStorage.setItem('syn3h.playerName', this.playerName) } catch { /* Playing does not require storage. */ }
     this.started = true; this.worldDirty = true; this.nameInput.disabled = true; this.roomInput.disabled = true
     this.element.querySelector<HTMLButtonElement>('.shell-play')!.textContent = 'Return to Game ›'
@@ -539,7 +547,7 @@ export class Shell implements System {
       this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity'); root.classList.remove('is-descending')
       if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter') }
       this.dropping = false
-      if (this.started) { this.closeMenu(); this.showHelp(false) } else { this.overlay.inert = false; this.galaxy?.home() }
+      if (this.started) { this.closeMenu(); this.showHelp(false) } else { this.releaseCursor(); this.overlay.inert = false; this.galaxy?.home() }
     }
   }
   /** The first and last points of the descent's camera path, for waiting on the camera. */
@@ -581,16 +589,69 @@ export class Shell implements System {
     this.element.classList.add('is-playing')
     this.element.querySelector<HTMLElement>('.shell-hud')!.hidden = false
     this.element.querySelector<HTMLElement>('.hud-navigation')!.hidden = false
-    this.element.querySelector<HTMLButtonElement>('.shell-menu-button')!.focus({ preventScroll: true })
+    this.touchPanels = false; this.syncPanels()
   }
   private performancePanel!: PerformancePanel
   configurePerformance(source: PerformanceSource): void { this.performancePanel.configure(source) }
-  private inspectorChosen: boolean | undefined
-  private setInspectorOpen(open: boolean, intentional = false): void {
-    if (intentional) this.inspectorChosen = open
-    this.inspector.hideTooltip()
-    this.inspector.open = open
-    this.element.querySelector('.inspector-toggle')!.setAttribute('aria-pressed', String(open))
+  /** Touch only: the panels are showing rather than the driving view. Never stored. */
+  private touchPanels = false
+  /** Panels are wanted exactly when the cursor is free (or, on touch, when the menu state is on). */
+  private get panelsWanted(): boolean {
+    if (!this.started || this.menuVisible) return false
+    return this.capturesCursor ? document.pointerLockElement !== this.game.canvas : this.touchPanels
+  }
+  private syncPanels(): void {
+    const wanted = this.panelsWanted
+    if (this.inspector.open !== wanted) {
+      this.inspector.hideTooltip(); this.inspector.open = wanted
+      this.element.querySelector('.inspector-toggle')!.setAttribute('aria-pressed', String(wanted))
+    }
+    const locked = this.started && !this.menuVisible && !this.game.input.suspended && document.pointerLockElement === this.game.canvas
+    if (this.element.classList.contains('is-focus') !== locked) this.element.classList.toggle('is-focus', locked)
+  }
+  /** Show the panels: on a desktop that is letting the cursor go. */
+  private showPanels(): void { if (this.capturesCursor) this.releaseCursor(); else this.touchPanels = true; this.syncPanels() }
+  /** Return to driving: on a desktop that is capturing the cursor, which needs a gesture. */
+  private drive(): void { if (this.capturesCursor) void this.captureCursor(); else this.touchPanels = false; this.syncPanels() }
+
+  // Pause. One state shared with the page lifecycle (src/core/pause.ts, the integrator's):
+  // 'user' is a second Escape or the Pause button, 'hidden' is a background tab. Audio fades
+  // and stops for both; the message shows for the player's own pause only. The game loop is
+  // stopped while paused, so nothing here relies on frames.
+  private pauseControl?: PauseControl
+  private pauseUnsubscribe?: () => void
+  private userPaused = false
+  setPauseControl(control: PauseControl): void {
+    this.pauseUnsubscribe?.(); this.pauseControl = control
+    this.pauseUnsubscribe = control.subscribe((paused, reason) => this.applyPause(paused, reason))
+    if (control.paused) this.applyPause(true, control.reason)
+  }
+  private requestPause(): void {
+    if (!this.started || this.menuVisible || this.inviteOpen) return
+    this.releaseCursor()
+    if (this.pauseControl) this.pauseControl.pause('user'); else this.applyPause(true, 'user')
+  }
+  private requestResume(): void {
+    if (!this.userPaused) return
+    if (this.pauseControl) this.pauseControl.resume('user'); else this.applyPause(false, null)
+    // The click, tap or key that resumes is a gesture: go straight back to driving.
+    if (this.capturesCursor) void this.captureCursor(); else { this.touchPanels = false; this.syncPanels() }
+  }
+  private applyPause(paused: boolean, reason: 'user' | 'hidden' | null): void {
+    if (paused) this.audio.pause(0.5); else this.audio.resume(0.3)
+    const user = paused && reason === 'user'
+    if (user === this.userPaused) return
+    this.userPaused = user
+    const veil = this.element.querySelector<HTMLButtonElement>('.pause-veil')!
+    veil.hidden = !user; this.element.classList.toggle('is-paused', user)
+    this.game.input.suspended = user || this.menuVisible || this.inviteOpen
+    if (user) {
+      this.game.input.mouseFire = false
+      veil.querySelector('.pause-how')!.textContent = this.touch.available ? 'Tap to resume' : 'Click to resume'
+      veil.querySelector('small')!.hidden = this.playerCount < 2
+      veil.focus({ preventScroll: true })
+    }
+    this.syncPanels()
   }
   private keydown(event: KeyboardEvent): void {
     const editing = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON|SUMMARY)$/.test(event.target.tagName))
@@ -602,14 +663,23 @@ export class Shell implements System {
       return
     }
     if (!editing && this.started && !this.menuVisible && !event.repeat && (event.code === 'KeyH' || event.key === '?')) { event.preventDefault(); this.toggleHelp(); return }
+    // A drive key outside any field means the player wants to drive: resume if paused, and
+    // capture the cursor (a key press is a gesture). This is also the keyboard-only way back.
+    if (!editing && !event.repeat && this.started && !this.menuVisible && DRIVE_KEYS.has(event.code)) {
+      if (this.userPaused) { this.requestResume(); return }
+      if (this.capturesCursor && document.pointerLockElement !== this.game.canvas) void this.captureCursor()
+    }
     if (event.code === 'Escape') {
       if (event.target instanceof HTMLSelectElement) return
       event.preventDefault(); event.stopImmediatePropagation()
+      // Escape with the cursor captured frees it, which shows the panels. Escape again pauses.
+      // Escape while paused resumes. There is no panel-closing step in between.
+      if (this.userPaused) { this.requestResume(); return }
       if (document.pointerLockElement === this.game.canvas) { this.releaseCursor(); return }
       if (this.menuVisible && this.panels.active !== 'index') this.showPanel('index')
       else if (this.started) {
         if (this.menuVisible) this.closeMenu()
-        else this.setInspectorOpen(!this.inspector.open, true)
+        else this.requestPause()
       }
     } else if (this.menuVisible && event.key === 'Tab') {
       const targets = [...this.overlay.querySelectorAll<HTMLElement>('button, input, select, summary, a[href], [tabindex="0"]')].filter(el => !el.closest('[hidden], [inert]') && !(el as HTMLInputElement).disabled)
@@ -925,11 +995,12 @@ export class Shell implements System {
   private get capturesCursor(): boolean { return !this.touch.available && typeof this.game.canvas.requestPointerLock === 'function' }
   private cursorRequest = 0
   private cursorPending = false
-  private async captureCursor(): Promise<void> {
+  private async captureCursor(entering = false): Promise<void> {
     if (this.cursorPending) return
     this.cursorPending = true
     const requestId = ++this.cursorRequest
-    const active = () => requestId === this.cursorRequest && !this.abort.signal.aborted && this.started && !this.menuVisible && !this.game.input.suspended
+    // While entering a world the menu is still up and the descent is running: started is enough.
+    const active = () => requestId === this.cursorRequest && !this.abort.signal.aborted && this.started && (entering ? !this.userPaused : !this.menuVisible && !this.game.input.suspended)
     try {
       try {
         await (this.game.canvas.requestPointerLock as (options?: { unadjustedMovement?: boolean }) => Promise<void> | void).call(this.game.canvas, { unadjustedMovement: true })
@@ -1053,11 +1124,9 @@ export class Shell implements System {
     this.attract?.update(dt)
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
     // A captured cursor alone is insufficient while a menu or another flow suspends input.
-    this.element.classList.toggle('is-focus', this.started && !this.menuVisible && !this.game.input.suspended && document.pointerLockElement === this.game.canvas)
+    this.syncPanels()
     this.performancePanel.setContext(this.started && !this.menuVisible && !this.game.input.suspended, this.element.classList.contains('is-focus'))
     this.raceHud.update(this.started && !this.menuVisible && !this.game.input.suspended, this.element.classList.contains('is-focus'), this.self, this.ground?.size)
-    const buildNotice = document.getElementById('syn3h-build-notice')
-    if (buildNotice && !this.inspector.element.contains(buildNotice)) this.inspector.element.querySelector('.wi-top')!.append(buildNotice)
     this.element.classList.toggle('show-diagnostics', diagnostics.value)
     this.element.querySelector<HTMLInputElement>('.rail-diagnostics input')!.checked = diagnostics.value
     // Per-frame: touch the DOM only when the label changes.
@@ -1111,7 +1180,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); this.releaseCursor(); this.performancePanel.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); this.performancePanel.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }
