@@ -436,13 +436,55 @@ function track(batch: Batch, width: number, level: 0 | 1) {
 }
 
 /**
+ * A haunch: the flare as a muscle. A thick, crowned shell wider than the tread, deepest over
+ * the drive sprocket and tapering to a lip at each end, with a rolled edge down both sides.
+ * Like the slim flare it is the same on both sides of the vehicle and differs by axle.
+ */
+function haunch(batch: Batch, kind: ExpeditionSpec['fender'], axle: number, width: number) {
+  const gap = .12, front = axle === 0, rear = axle === 2
+  const reach: Record<ExpeditionSpec['fender'], [number, number, number]> = {
+    swept: [front ? .05 : .32, rear ? .12 : .3, rear ? .6 : .12], round: [front ? .08 : .2, rear ? 0 : .2, rear ? .3 : 0],
+    short: [front ? .3 : .46, .42, rear ? .45 : .1], deep: [0, 0, rear ? .34 : 0],
+    folded: [front ? .1 : .36, rear ? .08 : .22, rear ? .44 : .1],
+  }
+  const [ahead, behind, kick] = reach[kind]
+  const slope = (f: number, sz: number) => [sz * (1.03 - .74 * f) + sz * .765 * gap, .37 + .88 * f + .644 * gap - .76]
+  const crest = 1.545 + gap - .76
+  const controls = [slope(ahead, -1), slope((ahead + 1) / 2, -1), [-.24, crest - .04], [0, crest], [.24, crest - .04], slope((behind + 1) / 2, 1), slope(behind, 1)]
+  if (kick) { const end = controls[controls.length - 1]; controls.push([end[0] + kick * .55, end[1] - kick * .16], [end[0] + kick, end[1] - kick * .1]) }
+  const path = new T.CatmullRomCurve3(controls.map(([z, y]) => v(0, y, z)), false, 'centripetal').getPoints(10)
+  const half = width / 2 + .2, part = new Batch(), n = path.length - 1
+  // Depth along the arch: a lip at each end, full over the sprocket.
+  const depth = (i: number) => .06 + .2 * Math.sin(Math.PI * i / n) ** .7
+  const cols = 4
+  const point = (i: number, k: number, under: boolean) => {
+    const u = k / cols * 2 - 1, p = path[i], d = depth(i)
+    // Crowned across, with the edges rolled down past the belt.
+    const upper = p.y + d * .9 * (1 - u * u) - .1 * u ** 4
+    return v(u * half, under ? upper - d * (.35 + .65 * (1 - u * u)) : upper, p.z)
+  }
+  for (let i = 0; i < n; i++) {
+    for (let k = 0; k < cols; k++) {
+      part.quad('paint', [point(i, k, false), point(i + 1, k, false), point(i + 1, k + 1, false), point(i, k + 1, false)], UP)
+      part.quad('frame', [point(i, k, true), point(i + 1, k, true), point(i + 1, k + 1, true), point(i, k + 1, true)], DOWN)
+    }
+    for (const k of [0, cols]) part.quad('accent', [point(i, k, false), point(i + 1, k, false), point(i + 1, k, true), point(i, k, true)], side(k ? 1 : -1))
+  }
+  for (const i of [0, n]) for (let k = 0; k < cols; k++) part.quad('paint', [point(i, k, false), point(i, k + 1, false), point(i, k + 1, true), point(i, k, true)], i ? AFT : FORE)
+  part.soften(.9)
+  batch.append(part)
+  for (const sx of [-1, 1]) batch.box('frame', [.09, .26, .26], [sx * (half - .2), crest - .2, 0])
+}
+
+/**
  * A flare: a slim arched guard that follows the belt a hand's width above it, over the drive
  * sprocket and part way down each slope. It is the same on both sides of the vehicle, because
  * one geometry is drawn for both, so its crown is central and both edges turn down. Each axle
  * covers a different stretch: the front reaches down ahead as a mud guard, the rear trails
  * off behind in a kick.
  */
-function flare(batch: Batch, kind: ExpeditionSpec['fender'], axle: number, width: number) {
+function flare(batch: Batch, kind: ExpeditionSpec['fender'], axle: number, width: number, power = false) {
+  if (power) { haunch(batch, kind, axle, width); return }
   const gap = .1, front = axle === 0, rear = axle === 2
   // How far down each slope the guard stops: 1 at the sprocket, 0 at the idler on the ground.
   const reach: Record<ExpeditionSpec['fender'], [number, number, number]> = {
@@ -474,8 +516,8 @@ function flare(batch: Batch, kind: ExpeditionSpec['fender'], axle: number, width
 }
 
 /** One fender. It belongs to its tread and travels with it. `axle` 0 is the front, 2 the rear. */
-function fender(batch: Batch, kind: ExpeditionSpec['fender'], axle: number, width: number, level: 0 | 1, smooth = false) {
-  if (smooth && !level) { flare(batch, kind, axle, width); return }
+function fender(batch: Batch, kind: ExpeditionSpec['fender'], axle: number, width: number, level: 0 | 1, smooth = false, power = false) {
+  if (smooth && !level) { flare(batch, kind, axle, width, power); return }
   const deep = kind === 'deep', swept = kind === 'swept', rounded = kind === 'round' && !level
   const rear = axle === 2, front = axle === 0
   const controls = [
@@ -600,6 +642,8 @@ export interface TankHull {
   fender: ExpeditionSpec['fender']
   /** Arched fenders with a crown, as the lofted bodies wear, instead of folded plate. */
   smoothFenders?: boolean
+  /** Thick sculpted flares, wider than the tread, for the blended bodies. */
+  powerFenders?: boolean
   /** Distance of the arm pivots from the centreline. The pods sit 0.74 m further out. */
   pivotX: number
   /** Half the hull's length, for the collision box. */
@@ -674,7 +718,7 @@ export class ExpeditionTank {
       if (level === 0) {
         const arms = (sx: number) => { const b = new Batch(); arm(b, sx); return this.instanced(root, b, 3, sx < 0 ? 'Left swing arms' : 'Right swing arms', false) }
         result.arms = [arms(-1), arms(1)]
-        result.pods = [0, 1, 2].map(axle => { const b = new Batch(); track(b, width, 0); fender(b, spec.fender, axle, width, 0, spec.smoothFenders); return this.instanced(root, b, 2, `Treads and fenders, axle ${axle + 1}`, true) })
+        result.pods = [0, 1, 2].map(axle => { const b = new Batch(); track(b, width, 0); fender(b, spec.fender, axle, width, 0, spec.smoothFenders, spec.powerFenders); return this.instanced(root, b, 2, `Treads and fenders, axle ${axle + 1}`, true) })
       } else {
         // One draw for all six: at this distance every pod wears the middle axle's fender.
         const b = new Batch(); track(b, width, 1); fender(b, spec.fender, 1, width, 1)

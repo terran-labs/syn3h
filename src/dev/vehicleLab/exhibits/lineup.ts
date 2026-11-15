@@ -4,12 +4,11 @@
  * across the set, which one vehicle at a time cannot show. Opens as a comparison; pick one
  * name in the sidebar to look at it alone.
  *
- * The tank has a Body slider while its design is undecided: 0 is the original model, 1 to 10
- * the round eight bodies (src/vehicles/tankDesigns/round8.ts). It dresses the tank through
+ * The tank has a Body slider while its design is undecided: 0 is the original model, then the
+ * round nine and round eight bodies (TANK_BODIES in src/vehicles/Tank.ts). It dresses the tank through
  * `previewTankBody`, in this page only, and the tank rebuilds in place.
  */
-import { previewTankBody } from '../../../vehicles/Tank'
-import { round8 } from '../../../vehicles/tankDesigns/round8'
+import { TANK_BODIES, previewTankBody } from '../../../vehicles/Tank'
 import { gameVehicles } from './gameVehicles'
 import type { LabExhibit } from '../types'
 
@@ -35,8 +34,8 @@ export const lineup: LabExhibit = {
     return {
       ...model,
       controls: [...model.controls ?? [], {
-        kind: 'slider', id: 'lineup.tankBody', label: 'Tank body (0 original, 1 to 10 round eight)', group: 'Tank',
-        min: 0, max: round8.length, step: 1, value: 0, onChange: value => previewTankBody(round8[Math.round(value) - 1]?.id ?? null),
+        kind: 'slider', id: 'lineup.tankBody', label: 'Tank body (0 original, 1 to 5 round nine, 6 to 15 round eight)', group: 'Tank',
+        min: 0, max: TANK_BODIES.length, step: 1, value: 0, onChange: value => previewTankBody(TANK_BODIES[Math.round(value) - 1]?.id ?? null),
       }],
     }
   },

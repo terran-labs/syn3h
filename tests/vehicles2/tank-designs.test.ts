@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import * as T from 'three/webgpu'
 import { round7 } from '../../src/vehicles/tankDesigns/round7'
 import { round8 } from '../../src/vehicles/tankDesigns/round8'
+import { round9 } from '../../src/vehicles/tankDesigns/round9'
 import { ExpeditionTank, POD_TRAVEL } from '../../src/vehicles/tankDesigns/expeditionKit'
 import { mergedSurfaces } from '../../src/vehicles/skins/mergeStatic'
 import { roleOf } from '../../src/vehicles/skins/showroom'
@@ -16,7 +17,7 @@ describe('generated tanks', () => {
     expect(new Set(round7.map(d => JSON.stringify(d.spec.sections))).size).toBe(10)
   })
 
-  for (const design of [...round8, ...round7]) it(`${design.name}: budgets, footprint, roles and six independent treads`, () => {
+  for (const design of [...round9, ...round8, ...round7]) it(`${design.id}: budgets, footprint, roles and six independent treads`, () => {
     const tank = new ExpeditionTank(design.hull(), design.color, design.accent)
     tank.object.updateMatrixWorld(true)
     // PATTERN.md rule 4. The tank is allowed 10 draws up close for its moving assemblies.

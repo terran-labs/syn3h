@@ -89,7 +89,7 @@ function crown(ring: number[][], x: number, z: number): number {
 }
 
 /** Smooth normals for a grid of points: rings by columns, the columns closing on themselves when `wrap`. */
-function normals(P: T.Vector3[][], wrap: boolean, flip: boolean): T.Vector3[][] {
+export function normals(P: T.Vector3[][], wrap: boolean, flip: boolean): T.Vector3[][] {
   const N = P.map(row => row.map(() => v(0, 0, 0))), cols = P[0].length, e1 = v(0, 0, 0), e2 = v(0, 0, 0), n = v(0, 0, 0)
   for (let i = 0; i < P.length - 1; i++) for (let j = 0; j < (wrap ? cols : cols - 1); j++) {
     const k = (j + 1) % cols
@@ -104,8 +104,10 @@ function normals(P: T.Vector3[][], wrap: boolean, flip: boolean): T.Vector3[][] 
 }
 
 interface Corner { p: T.Vector3; n: T.Vector3 }
-/** A convex outline in plan (x, z), anticlockwise, that faces above it are cut away inside. */
-type Hole = [number, number][]
+/** A convex outline in plan (x, z), anticlockwise. */
+export type Outline = [number, number][]
+/** A region of the upward-facing skin given another surface (a lamp lens, a stripe), or cut away when `surface` is null. */
+export interface Patch { outline: Outline; surface: Surface | null }
 
 /** Split a convex polygon by the line through a and b: the part to its left, and the rest. */
 function split(poly: Corner[], ax: number, az: number, bx: number, bz: number): [Corner[], Corner[]] {
@@ -118,30 +120,42 @@ function split(poly: Corner[], ax: number, az: number, bx: number, bz: number): 
   return [left, right]
 }
 
-/** Emit a grid as smooth triangles, optionally leaving a hole in the faces that look up. */
-function skin(batch: Batch, P: T.Vector3[][], wrap: boolean, flip: boolean, surface: (i: number, j: number) => Surface, hole?: Hole) {
-  const N = normals(P, wrap, flip), cols = P[0].length
+/**
+ * Emit a grid as smooth triangles. Patches are cut into the faces that look up, exactly along
+ * their outlines whatever the grid; where two overlap the earlier one wins.
+ */
+export function skin(batch: Batch, P: T.Vector3[][], wrap: boolean, flip: boolean, surface: (i: number, j: number) => Surface, patches: Patch[] = [], given?: T.Vector3[][]) {
+  const N = given ?? normals(P, wrap, flip), cols = P[0].length
   const emit = (s: Surface, a: Corner, b: Corner, c: Corner) => flip ? batch.smooth(s, a.p, c.p, b.p, a.n, c.n, b.n) : batch.smooth(s, a.p, b.p, c.p, a.n, b.n, c.n)
-  let x0 = 0, x1 = 0, z0 = 0, z1 = 0
-  if (hole) { x0 = Math.min(...hole.map(h => h[0])); x1 = Math.max(...hole.map(h => h[0])); z0 = Math.min(...hole.map(h => h[1])); z1 = Math.max(...hole.map(h => h[1])) }
+  const boxes = patches.map(p => [Math.min(...p.outline.map(h => h[0])), Math.max(...p.outline.map(h => h[0])), Math.min(...p.outline.map(h => h[1])), Math.max(...p.outline.map(h => h[1]))])
+  // Peel a polygon apart patch by patch: what lies inside an outline takes that patch's surface.
+  const cut = (poly: Corner[], from: number, s: Surface) => {
+    for (let k = from; k < patches.length; k++) {
+      const [x0, x1, z0, z1] = boxes[k]
+      if (!poly.some(c => c.p.x >= x0) || !poly.some(c => c.p.x <= x1) || !poly.some(c => c.p.z >= z0) || !poly.some(c => c.p.z <= z1)) continue
+      const outline = patches[k].outline
+      let rest = poly
+      for (let e = 0; e < outline.length && rest.length >= 3; e++) {
+        const a = outline[e], b = outline[(e + 1) % outline.length], [inside, outside] = split(rest, a[0], a[1], b[0], b[1])
+        if (outside.length >= 3) cut(outside, k + 1, s)
+        rest = inside
+      }
+      const within = patches[k].surface
+      if (within && rest.length >= 3) for (let f = 1; f < rest.length - 1; f++) emit(within, rest[0], rest[f], rest[f + 1])
+      return
+    }
+    for (let f = 1; f < poly.length - 1; f++) emit(s, poly[0], poly[f], poly[f + 1])
+  }
   for (let i = 0; i < P.length - 1; i++) for (let j = 0; j < (wrap ? cols : cols - 1); j++) {
     const k = (j + 1) % cols, s = surface(i, j)
     const at = (r: number, c: number): Corner => ({ p: P[r][c], n: N[r][c] })
     for (const tri of [[at(i, j), at(i, k), at(i + 1, j)], [at(i, k), at(i + 1, k), at(i + 1, j)]]) {
-      const near = hole && tri.every(c => c.n.y > 0) && tri.some(c => c.p.x >= x0 && c.p.x <= x1) && tri.some(c => c.p.z >= z0 && c.p.z <= z1)
-      if (!near) { emit(s, tri[0], tri[1], tri[2]); continue }
-      // Keep what lies outside the outline: peel off the part beyond each edge in turn.
-      let rest = tri
-      for (let e = 0; e < hole.length && rest.length >= 3; e++) {
-        const a = hole[e], b = hole[(e + 1) % hole.length], [inside, outside] = split(rest, a[0], a[1], b[0], b[1])
-        for (let f = 1; f < outside.length - 1; f++) emit(s, outside[0], outside[f], outside[f + 1])
-        rest = inside
-      }
+      if (patches.length && tri.every(c => c.n.y > 0)) cut(tri, 0, s); else emit(s, tri[0], tri[1], tri[2])
     }
   }
 }
 
-interface Build { segs: number; spans: number; matrix?: T.Matrix4; hole?: Hole; plain?: boolean }
+interface Build { segs: number; spans: number; matrix?: T.Matrix4; hole?: Outline; plain?: boolean }
 
 /** One lofted body. In its own frame it runs along Z; `matrix` stands it up as a pylon or a fin. */
 function loft(batch: Batch, l: Loft, o: Build, mirror = false) {
@@ -158,7 +172,7 @@ function loft(batch: Batch, l: Loft, o: Build, mirror = false) {
     const a = (j + .5) / segs * 360
     if (l.stripe && Math.abs(a - 90) < l.stripe) return 'accent'
     return Math.sin(a * Math.PI / 180) < -.55 && base === 'paint' ? 'frame' : base
-  }, o.hole)
+  }, o.hole ? [{ outline: o.hole, surface: null }] : [])
   // Close both ends: a tip takes the body's surface, a mouth is dark.
   for (const end of [0, ring.length - 1]) {
     const centre = P[end].reduce((s, p) => s.add(p), v(0, 0, 0)).multiplyScalar(1 / segs)
@@ -170,7 +184,7 @@ function loft(batch: Batch, l: Loft, o: Build, mirror = false) {
 }
 
 /** The cockpit: a hole's outline, a bright rim, the force field dome and a tub with a seat. */
-function cockpit(batch: Batch, b: Bubble, top: (x: number, z: number) => number, level: 0 | 1 | 2): [number, number, number] {
+export function cockpit(batch: Batch, b: Bubble, top: (x: number, z: number) => number, level: 0 | 1 | 2): [number, number, number] {
   const count = level === 0 ? 28 : level === 1 ? 12 : 8, domeRings = level === 0 ? 6 : level === 1 ? 3 : 2
   const at = (k: number, scale: number) => { const a = k / count * Math.PI * 2; return [Math.cos(a) * b.a * scale, b.z + Math.sin(a) * b.b * scale] }
   const edge = Array.from({ length: count }, (_, k) => { const [x, z] = at(k, 1); return top(x, z) })
@@ -197,6 +211,9 @@ function cockpit(batch: Batch, b: Bubble, top: (x: number, z: number) => number,
   batch.box('trim', [b.a * 1.1, .1, .22], [0, floor + .42, b.z - b.b * .62]); batch.box('accent', [b.a * .7, .02, .1], [0, floor + .48, b.z - b.b * .62])
   return eye
 }
+
+/** The cockpit opening in plan, for cutting it out of the skin. */
+export const cockpitOutline = (b: Bubble): Outline => Array.from({ length: 28 }, (_, k) => { const a = k / 28 * Math.PI * 2; return [Math.cos(a) * b.a, b.z + Math.sin(a) * b.b] })
 
 const pylonOf = (spec: SleekSpec, axle: number): Pylon => ({ ...PYLONS[axle], ...spec.pylons?.[axle] })
 /** Station of a pylon `t` of the way from the body to the pivot: its centre and half-chord. */
@@ -245,7 +262,7 @@ export function sleekHull(spec: SleekSpec): TankHull {
   const lamps = headlamps(spec)
   const build = (batch: Batch, level: 0 | 1 | 2): [number, number, number] => {
     let main: number[][] = []
-    const outline: Hole = Array.from({ length: 28 }, (_, k) => { const a = k / 28 * Math.PI * 2; return [Math.cos(a) * spec.bubble.a, spec.bubble.z + Math.sin(a) * spec.bubble.b] })
+    const outline = cockpitOutline(spec.bubble)
     spec.lofts.forEach((l, i) => {
       const o: Build = level === 0 ? { segs: l.segs ?? (i ? 14 : 24), spans: l.spans ?? (i ? 3 : 5), hole: i ? undefined : outline }
         : level === 1 ? { segs: i ? 8 : 12, spans: 2 } : { segs: i ? 6 : 8, spans: 1 }
