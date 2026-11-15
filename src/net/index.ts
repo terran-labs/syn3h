@@ -253,7 +253,13 @@ export class NetClient implements System {
       wrapSize: () => this.wrapSize,
       now: () => this.clock.now(),
       inHand: () => this.gear.current === 'bungee',
-      send: (cord) => { if (this.connected) this.send({ type: 'cord', cord }) },
+      // Positions go on the wire inside the tile, like every other position.
+      send: (cord) => {
+        if (!this.connected) return
+        if (cord.s === 'hook') this.send({ type: 'cord', cord: { ...cord, o: this.canonical(cord.o) } })
+        else if (cord.s === 'on' && cord.at) this.send({ type: 'cord', cord: { ...cord, at: this.canonical(cord.at) } })
+        else this.send({ type: 'cord', cord })
+      },
     })
     this.marker = new TagMarker(game)
     this.marker.local = player

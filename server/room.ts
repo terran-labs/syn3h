@@ -101,6 +101,8 @@ interface Player {
   fastAt: number
   /** Server ms of the last push relayed from this player, by rammed player id. */
   shoved: Map<number, number>
+  /** The room last relayed this player's Bungee cord as attached. */
+  cordOn: boolean
   /** The secret this player may rejoin with, when it sent a valid one. */
   token: string | null
   /** Server ms until which a dropped player's place is held, or 0 while connected. */
@@ -330,6 +332,8 @@ export class Room {
     const wasActive = this.isActive(player, this.now())
     player.heldUntil = until
     this.rekey(peer, { send() {}, close() {} }, player)
+    // Its owner is not there to let go of it: a held place holds no cord.
+    this.dropCord(player)
     if (wasActive && !this.anyActive(this.now())) {
       this.activeLeft = true
       this.activeAt = this.now()
@@ -833,12 +837,30 @@ export class Room {
       if (!st || this.dist(cord.o, st.p) > 8 + Math.hypot(...st.v) * 0.5) return
       cord.t = Math.min(this.now() / 1000, Math.max(this.now() / 1000 - 1, cord.t))
     } else if (cord.s === 'on') {
-      if (cord.to !== undefined) {
-        if (!this.paramBool(bungeeVehicles.def) || cord.to === player.info.id || !this.byId(cord.to)) return
-      } else if (!cord.at || (st && this.dist(cord.at, st.p) > reach)) return
       if (cord.r < 0 || cord.r > this.paramNumber(bungeeLength.def) + 1) return
+      // Where the cord is tied: a vehicle in the room, or a point on the ground. Either must
+      // be within the cord's reach of the sender, measured round the wrap. A tie to a vehicle
+      // matters most: that vehicle's own client is what pulls it, so an unchecked tie would
+      // let anyone drag anyone from across the world.
+      const other = cord.to !== undefined ? this.byId(cord.to) : undefined
+      if (cord.to !== undefined && (!this.paramBool(bungeeVehicles.def) || cord.to === player.info.id || !other)) return
+      const anchor = other ? other.lastState?.p : cord.at
+      if (!st || !anchor || this.dist(anchor, st.p) > reach) {
+        // Out of reach (or not yet placed). If this was the refresh of a cord the room has
+        // already relayed, the others must not keep pulling on it: tell them it is off.
+        if (player.cordOn) this.dropCord(player, peer)
+        return
+      }
     }
+    player.cordOn = cord.s === 'on'
     this.broadcast({ type: 'cord', from: player.info.id, cord, t: this.now() / 1000 }, peer)
+  }
+
+  /** Tell everyone a player's cord is gone: it stretched out of reach, or its owner dropped out. */
+  private dropCord(player: Player, except?: Peer): void {
+    if (!player.cordOn) return
+    player.cordOn = false
+    this.broadcast({ type: 'cord', from: player.info.id, cord: { s: 'off' }, t: this.now() / 1000 }, except)
   }
 
   /** The victim reports a hit on itself. The room checks the shot really happened. */
@@ -1013,7 +1035,7 @@ export class Room {
     // Joining counts as a tag so a newcomer cannot be tagged in their first seconds.
     const now = this.now()
     return {
-      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), token: null, heldUntil: 0, lastFireAt: -Infinity, shots: new Map(), lastTag: now,
+      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, token: null, heldUntil: 0, lastFireAt: -Infinity, shots: new Map(), lastTag: now,
       windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now,
     }
   }
@@ -1201,7 +1223,9 @@ function cleanCord(c: unknown): CordWire | null {
   }
   if (o.s === 'on' && num(o.r)) {
     if (num(o.to) && Number.isInteger(o.to)) return { s: 'on', to: o.to, r: o.r }
-    if (vec(o.at)) return { s: 'on', at: o.at, n: vec(o.n) ? o.n : [0, 1, 0], r: o.r }
+    // The surface normal is a direction: anything that is not about unit length is replaced.
+    const unit = vec(o.n) && Math.abs(Math.hypot(...o.n) - 1) < 0.05
+    if (vec(o.at)) return { s: 'on', at: o.at, n: unit ? (o.n as [number, number, number]) : [0, 1, 0], r: o.r }
   }
   return null
 }
