@@ -178,8 +178,9 @@ export class HoverBody {
     this.glow.color.set(accent); this.glow.emissive.set(accent)
   }
   setVector(yaw: number): void { this.thruster.rotation.y = -yaw }
-  setThrottle(amount: number): void {
-    const value = .3 + Math.max(0, Math.min(1, amount)) * .7
+  setThrottle(amount: number, running = true): void {
+    // Zero throttle still idles outside a zorb; inside it the drive is completely quiet.
+    const value = running ? .3 + Math.max(0, Math.min(1, amount)) * .7 : 0
     this.glow.emissiveIntensity = value * 2
     for (const mesh of this.glowMeshes) mesh.userData.glow = value
   }

@@ -67,6 +67,34 @@ describe('the generated hovercraft body', () => {
     expect(s.object.parent).toBeNull(); expect(children).toBe(2)
   })
 
+  it('rests its vanes and extinguishes drive glow in a zorb, then resumes on exit', () => {
+    const h = harness(), v = new Hovercraft(h.game, h.terrain, new T.Vector3(0, 3, 0))
+    v.isLocal = false
+    const s = study(v)
+    const glow = () => {
+      const values: number[] = []
+      s.levels[s.detail].object.traverse(o => { if (typeof o.userData.glow === 'number') values.push(o.userData.glow) })
+      return values
+    }
+    v.input.x = 1; v.input.y = 1; v.input.brakes = true
+    v.update(.02, 1)
+    expect(s.levels[0].thruster.rotation.y).toBeCloseTo(-.35)
+    expect(glow().length).toBeGreaterThan(0)
+    expect(glow().every(n => n > 0)).toBe(true)
+    v.input.zorb = true; h.step(v, 100); v.update(.02, 1)
+    expect(v.zorbed).toBe(true)
+    expect(s.levels[0].thruster.rotation.y).toBeCloseTo(0)
+    expect(glow().every(n => n === 0)).toBe(true)
+    // A detail switch must not bring the idle glow back inside the ball.
+    s.setLevel(1); s.update(0, 0, false, false)
+    expect(glow().length).toBeGreaterThan(0)
+    expect(glow().every(n => n === 0)).toBe(true)
+    v.input.zorb = false; h.step(v, 100); v.update(.02, 1)
+    expect(v.zorbed).toBe(false)
+    expect(glow().every(n => n > 0)).toBe(true)
+    v.dispose(); h.world.free()
+  })
+
   it('keeps its whole hull clear of the ground through the island route', () => {
     const h = harness(9.81, false), data = generateTerrain(1, defaultTerrainSettings()), sampler = new HeightSampler(data)
     h.terrain.heightAt = (x, z) => sampler.heightAt(x, z); h.terrain.normalAt = (x, z, out) => sampler.normalAt(x, z, out)

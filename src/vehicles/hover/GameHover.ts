@@ -44,10 +44,10 @@ export class GameHover {
   get detail(): 0 | 1 | 2 { return this.level }
 
   /** Steering in -1..1, throttle in 0..1. Only the visible level is touched. */
-  update(steer: number, throttle: number, braking: boolean): void {
+  update(steer: number, throttle: number, braking: boolean, running = true): void {
     const h = this.levels[this.level]
     if (this.level === 0) h.setVector(steer * .35)
-    if (this.level < 2) { h.setThrottle(throttle); h.setLights(true, braking) }
+    if (this.level < 2) { h.setThrottle(throttle, running); h.setLights(true, braking) }
   }
 
   setColors(body: THREE.ColorRepresentation, accent: THREE.ColorRepresentation): void {
