@@ -100,7 +100,7 @@ try {
     window.__logTimer = setInterval(() => {
       const n = window.syn3hNet, p = window.syn3h.player.body.translation(), v = window.syn3h.player.body.linvel()
       const r = n.remotes.get(other), rp = r?.vehicle.body.translation()
-      log.push({ t: Date.now(), x: p.x, z: p.z, s: Math.hypot(v.x, v.z), rx: rp?.x ?? null, rz: rp?.z ?? null, mode: r?.sample.mode ?? 'none', visible: r?.vehicle.object.visible ?? false, rams: n.stats.rams, shoves: n.stats.shoves, it: n.game.it })
+      log.push({ t: Date.now(), x: p.x, z: p.z, s: Math.hypot(v.x, v.z), rx: rp?.x ?? null, rz: rp?.z ?? null, mode: r?.sample.mode ?? 'none', visible: r?.vehicle.object.visible ?? false, rams: n.stats.rams, shoves: n.stats.shoves, it: n.game.it, up: n.connected, newest: r?.buffer.newest?.t ?? 0, got: n.stats.statesReceived, fps: Math.round(window.syn3h.game.fps ?? 0) })
     }, 10)
   }, other)
   const stop = (page) => page.evaluate(() => { clearInterval(window.__logTimer); return window.__log })
@@ -120,7 +120,13 @@ try {
       if (!e.visible) hidden++
       last = e
     }
-    return { worstErrorM: round(worst), worstRelativeStepM: round(jump), staleSamples: stale, hiddenSamples: hidden }
+    // Diagnostics for a bad run: was the connection up, were states arriving, was the page drawing?
+    const down = log.filter((e) => !e.up).length
+    let gap = 0, lastChange = log[0].t
+    for (let i = 1; i < log.length; i++) if (log[i].got !== log[i - 1].got) { gap = Math.max(gap, log[i].t - lastChange); lastChange = log[i].t }
+    let frame = 0
+    for (let i = 1; i < log.length; i++) frame = Math.max(frame, log[i].t - log[i - 1].t)
+    return { worstErrorM: round(worst), worstRelativeStepM: round(jump), staleSamples: stale, hiddenSamples: hidden, disconnectedSamples: down, longestWaitForAnyStateMs: gap, longestPageStallMs: frame, lowestFps: Math.min(...log.map((e) => e.fps)) }
   }
   const crossed = (log) => ({ from: round(log[0].x), to: round(log.at(-1).x), top: round(Math.max(...log.map((e) => e.s))) })
   const settle = async () => { await Promise.all([drive(a, 0), drive(b, 0)]); await wait(4000) }
@@ -130,7 +136,13 @@ try {
   await settle()
   await Promise.all([record(a, idB), record(b, idA)])
   await Promise.all([drive(a, 16), drive(b, 16, 6)])
-  await Promise.all([a, b].map((p) => p.waitForFunction((x) => window.syn3h.player.body.translation().x > x || window.syn3h.player.body.translation().x < 0, half + 60, { timeout: 30000 }).catch(() => {})))
+  // Until each is 60 m past the seam, measured round the wrap: its own position is kept
+  // inside the tile, so it goes from +half to -half as it crosses.
+  await Promise.all([a, b].map((p) => p.waitForFunction(({ half, size }) => {
+    let d = window.syn3h.player.body.translation().x - half
+    d -= size * Math.floor(d / size + 0.5)
+    return d > 60 && d < 200
+  }, { half, size }, { timeout: 40000 }).catch(() => {})))
   await Promise.all([drive(a, 0), drive(b, 0)])
   await wait(1500)
   const [la, lb] = await Promise.all([stop(a), stop(b)])
@@ -138,8 +150,17 @@ try {
   const seenByA = seen(la, lb), seenByB = seen(lb, la)
   await b.screenshot({ path: '/tmp/syn3h-wrap-cross.png' })
   check('1. both crossed the seam', la.some((e) => wrapDelta(half, e.x) > 20) && lb.some((e) => wrapDelta(half, e.x) > 20), { alice: crossed(la), bob: crossed(lb) })
-  check('1. positions go on the wire inside the tile', Math.abs(canon - (half + 60 - size)) < 1e-6, { sent: canon, for: half + 60 })
+  // The local seam shift lets a vehicle run a little past the edge before moving it a tile
+  // (so it does not flip back and forth on the line); what goes on the wire is always inside.
+  const overrun = Math.max(...[...la, ...lb].map((e) => Math.abs(e.x) - half))
+  check('1. positions go on the wire inside the tile, and each player is kept near it', Math.abs(canon - (half + 60 - size)) < 1e-6 && overrun < 64, { sent: canon, for: half + 60, furthestPastTheEdgeM: round(overrun) })
   check('1. each kept seeing the other where it really was', seenByA.worstErrorM < 6 && seenByB.worstErrorM < 6 && seenByA.staleSamples + seenByB.staleSamples === 0, { seenByA, seenByB })
+  if (seenByA.worstErrorM >= 6 || seenByB.worstErrorM >= 6) {
+    // Keep the raw logs of a bad crossing: it is intermittent.
+    const { writeFileSync } = await import('node:fs')
+    writeFileSync('/tmp/syn3h-wrap-bad.json', JSON.stringify({ size, lane, la, lb }))
+    console.log('raw logs of the bad crossing saved to /tmp/syn3h-wrap-bad.json')
+  }
   check('1. no copy streaked or snapped across the world', seenByA.worstRelativeStepM < 6 && seenByB.worstRelativeStepM < 6, { stepA: seenByA.worstRelativeStepM, stepB: seenByB.worstRelativeStepM })
 
   // 2. Chase: B leaves slowly from 30 m short of the seam; A starts 30 m behind and catches it.
