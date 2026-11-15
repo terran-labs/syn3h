@@ -252,7 +252,12 @@ body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(198
 .syn3h-shell.exploration-ui:not(.galaxy-open) .galaxy-canvas { pointer-events: none; }
 .syn3h-shell.exploration-ui .galaxy-links { margin: 0; }
 .syn3h-shell.exploration-ui .galaxy-hint { margin: 24px 0 26px; }
-.syn3h-shell.exploration-ui.galaxy-open .galaxy-canvas { clip-path: inset(0 0 var(--lobby-footer-space, 150px) 0); }
+.syn3h-shell.exploration-ui.galaxy-open .galaxy-canvas { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--lobby-footer-space, 150px) - 48px), transparent calc(100% - var(--lobby-footer-space, 150px))); mask-image: linear-gradient(to bottom, #000 calc(100% - var(--lobby-footer-space, 150px) - 48px), transparent calc(100% - var(--lobby-footer-space, 150px))); }
 @media (max-height: 550px) {
   .syn3h-shell.exploration-ui .lobby-panels { margin-bottom: 78px; }
+}
+/* Keep release/status text between the panel and the persistent lobby pills. */
+.syn3h-shell.exploration-ui .lobby-footer { position: absolute; bottom: calc(max(18px, env(safe-area-inset-bottom)) + 56px); height: auto; min-height: 22px; }
+@media (max-height: 550px) {
+  .syn3h-shell.exploration-ui .lobby-panels { margin-bottom: 110px; }
 }

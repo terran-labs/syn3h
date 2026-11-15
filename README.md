@@ -32,6 +32,10 @@ phone. There is nothing to install and no account.
 5. **Bring a friend.** Share the address in your address bar. Everyone in the same room
    drives in the same world.
 
+In the galaxy, Multiplayer, Settings and About open their panels directly. Use the
+other lobby buttons to switch panels, or press Escape, tap Back or tap outside to close.
+The galaxy stays on screen while idle.
+
 Press **H** in the game at any time for the controls of the vehicle you are in.
 
 ### Keys
