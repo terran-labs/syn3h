@@ -268,7 +268,12 @@ export interface ShotInfo {
 }
 
 export type ClientMessage =
-  | { type: 'hello'; v: number; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string] }
+  /**
+   * `resume` is a random secret this tab keeps for this room. In a room with `game.rejoin`
+   * on, a player who drops and says hello again with the same secret within the grace time
+   * carries on as the same player. It is never sent to other players.
+   */
+  | { type: 'hello'; v: number; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string]; resume?: string }
   /** Change vehicle kind or colours after joining. */
   | { type: 'profile'; kind?: string; colors?: [string, string] }
   | { type: 'ping'; t: number }

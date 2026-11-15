@@ -259,7 +259,7 @@ export class NetClient implements System {
     this.conn.onOpen = () => {
       this.send({
         type: 'hello', v: PROTOCOL_VERSION, name: playerName(), params: params.snapshot('world'),
-        kind: this.kind, colors: this.colors,
+        kind: this.kind, colors: this.colors, resume: rejoinSecret(this.ctx.room),
       })
     }
     this.conn.onText = (text) => {
@@ -1120,6 +1120,27 @@ function normalizeGame(g: Partial<GameState>): GameState {
 
 /** Name chosen on the start screen, when there is one. */
 let preferredName = ''
+
+/**
+ * This tab's secret for one room: in a room with `game.rejoin` on, saying hello again with it
+ * after a dropout carries on as the same player. Kept for the tab's lifetime (so a reload
+ * rejoins too) and never shown or sent to other players. Each tab has its own.
+ */
+function rejoinSecret(room: string): string | undefined {
+  const key = `syn3h.rejoin.${room}`
+  try {
+    let secret = sessionStorage.getItem(key)
+    if (!secret) {
+      const bytes = crypto.getRandomValues(new Uint8Array(16))
+      secret = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
+      sessionStorage.setItem(key, secret)
+    }
+    return secret
+  } catch {
+    // No session storage (private mode, an embedded frame): this tab simply cannot rejoin.
+    return undefined
+  }
+}
 
 function playerName(): string {
   // An explicit ?name= wins, so links and automated checks can name players.

@@ -47,6 +47,7 @@ import { wrapDistance } from '../shared/wrap'
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
 import {
   KNOCK_WINDOW, WIN_PAUSE, gameMode, kothKnockBonus, kothRespawnDelay, kothTargetScore, tagCooldown, tagRamReach,
+  REJOIN_GRACE, gameRejoin,
 } from '../src/modes/params'
 
 /** One connection, as the room sees it. */
@@ -76,6 +77,12 @@ export interface RoomSnapshot {
   activeAt?: number
   /** The world was reset for being idle: the next player to join brings theirs. */
   vacant?: boolean
+  /**
+   * With `game.rejoin` on: who was in the room, by their rejoin secret, so that a room
+   * rebuilt from storage (a release reset it, everyone dropped at once) can hold their
+   * places. `at` is server ms when the entry was written.
+   */
+  roster?: { token: string; info: PlayerInfo; at: number }[]
 }
 
 interface Player {
@@ -91,6 +98,10 @@ interface Player {
   fastAt: number
   /** Server ms of the last push relayed from this player, by rammed player id. */
   shoved: Map<number, number>
+  /** The secret this player may rejoin with, when it sent a valid one. */
+  token: string | null
+  /** Server ms until which a dropped player's place is held, or 0 while connected. */
+  heldUntil: number
   lastFireAt: number
   /** Shots fired recently, by shot id, with server ms of firing. */
   shots: Map<number, number>
@@ -193,6 +204,7 @@ export class Room {
   /** Advance time based rules. Called on every message; transports may also call it on a timer. */
   tick(): void {
     this.tickSilent(this.now())
+    this.tickHeld(this.now())
     this.tickIdle(this.now())
     this.tickTag(this.now())
     this.tickKoth(this.now())
@@ -202,7 +214,8 @@ export class Room {
     return this.players.size
   }
 
-  /** Players plus connections that have not said hello yet. */
+  /** Players plus connections that have not said hello yet. Held places (game.rejoin) count:
+   * a transport must keep the room and its storage while someone may still come back. */
   get connectionCount(): number {
     return this.players.size + this.pending.size
   }
@@ -281,6 +294,86 @@ export class Room {
     this.pending.delete(peer)
     const player = this.players.get(peer)
     if (!player) return
+    if (this.rejoinOn() && player.token && !player.heldUntil) {
+      this.hold(peer, player)
+      return
+    }
+    this.leave(peer, player)
+  }
+
+  // -------------------------------------------------------------------------------------
+  // Rejoining as the same player (game.rejoin)
+  // -------------------------------------------------------------------------------------
+  //
+  // A dropped player is not removed at once. Its place is held: it stays in the room, in the
+  // list and in every rule exactly as a player whose states have stopped (it cannot be rammed
+  // or hold the hill, and "it" moves on after eight seconds), keeping its id, score and host
+  // role. If the same tab says hello again with its secret before the hold runs out, it takes
+  // the place back and nobody is told anything: to the others it was "not responding" for a
+  // moment. If not, it leaves in the ordinary way.
+
+  private rejoinOn(): boolean {
+    return this.paramBool(gameRejoin.def)
+  }
+
+  /** Keep a dropped player's place. The map key is a stand-in peer that goes nowhere. */
+  private hold(peer: Peer, player: Player, until = this.now() + REJOIN_GRACE * 1000): void {
+    const wasActive = this.isActive(player, this.now())
+    player.heldUntil = until
+    this.rekey(peer, { send() {}, close() {} }, player)
+    if (wasActive && !this.anyActive(this.now())) {
+      this.activeLeft = true
+      this.activeAt = this.now()
+    }
+    this.persist()
+  }
+
+  /**
+   * Put a player under another connection without moving it in the room's order: players are
+   * kept in join order, which decides who becomes host next. A player not yet in the room is
+   * added at the end.
+   */
+  private rekey(from: Peer, to: Peer, player: Player): void {
+    const entries = [...this.players]
+    this.players.clear()
+    let placed = false
+    for (const [peer, p] of entries) {
+      if (peer === from) {
+        this.players.set(to, player)
+        placed = true
+      } else this.players.set(peer, p)
+    }
+    if (!placed) this.players.set(to, player)
+  }
+
+  /** Places whose hold has run out leave for real. Turning the rule off releases them all. */
+  private tickHeld(now: number): void {
+    const on = this.rejoinOn()
+    for (const [key, p] of [...this.players]) {
+      if (p.heldUntil && (!on || now >= p.heldUntil)) this.leave(key, p)
+    }
+  }
+
+  /** Places being held for dropped players. They count as connections: see connectionCount. */
+  get heldCount(): number {
+    let n = 0
+    for (const p of this.players.values()) if (p.heldUntil) n++
+    return n
+  }
+
+  /** The held or duplicate-free player this secret belongs to, if any. */
+  private heldFor(token: string | null): [Peer, Player] | undefined {
+    if (!token) return undefined
+    for (const entry of this.players) if (entry[1].token === token && entry[1].heldUntil) return entry
+    return undefined
+  }
+
+  /** The rejoin secret of a connected player, so a transport can store it with the socket. */
+  token(peer: Peer): string | null {
+    return this.players.get(peer)?.token ?? null
+  }
+
+  private leave(peer: Peer, player: Player): void {
     const wasActive = this.isActive(player, this.now())
     this.players.delete(peer)
     if (wasActive && !this.anyActive(this.now())) {
@@ -315,7 +408,13 @@ export class Room {
     return {
       params: Object.fromEntries(this.values), it: this.it, scores: { ...this.scores }, nextId: this.nextId,
       host: this.host, locked: this.locked, zone: this.koth.zone, activeAt: this.activeAt, vacant: this.vacant,
+      ...(this.rejoinOn() ? { roster: this.roster() } : {}),
     }
+  }
+
+  private roster(): NonNullable<RoomSnapshot['roster']> {
+    const at = this.now()
+    return [...this.players.values()].filter((p) => p.token).map((p) => ({ token: p.token!, info: { ...p.info }, at }))
   }
 
   restore(s: RoomSnapshot): void {
@@ -333,10 +432,27 @@ export class Room {
     // A snapshot from before activity was recorded counts as long idle.
     this.activeAt = typeof s.activeAt === 'number' ? s.activeAt : 0
     this.vacant = Boolean(s.vacant)
+    // The room was rebuilt from storage with nobody connected: hold a place for everyone who
+    // was in it recently, so they come back as themselves and the host and scores stand.
+    if (this.rejoinOn() && Array.isArray(s.roster)) {
+      const now = this.now()
+      for (const entry of s.roster) {
+        if (!entry || !isToken(entry.token) || !entry.info || typeof entry.info.id !== 'number') continue
+        if (now - entry.at > REJOIN_GRACE * 1000 || this.byId(entry.info.id)) continue
+        const player = this.newPlayer({
+          ...entry.info, score: this.scores[entry.info.id] ?? 0,
+          kind: cleanKind(entry.info.kind) ?? 'buggy', colors: cleanColors(entry.info.colors) ?? [...DEFAULT_COLORS],
+        })
+        player.token = entry.token
+        player.joinedAt = 0
+        this.nextId = Math.max(this.nextId, entry.info.id + 1)
+        this.hold({ send() {}, close() {} }, player, now + REJOIN_GRACE * 1000)
+      }
+    }
   }
 
   /** Re-attach a peer that was already joined before the process hibernated. No broadcast. */
-  adopt(peer: Peer, info: PlayerInfo): void {
+  adopt(peer: Peer, info: PlayerInfo, token?: string | null): void {
     const full: PlayerInfo = {
       ...info, score: this.scores[info.id] ?? info.score ?? 0,
       kind: cleanKind(info.kind) ?? 'buggy', colors: cleanColors(info.colors) ?? [...DEFAULT_COLORS],
@@ -344,6 +460,7 @@ export class Room {
     const player = this.newPlayer(full)
     // Not a new arrival: waking from hibernation must not make a parked room look active.
     player.joinedAt = 0
+    player.token = isToken(token) ? token : null
     this.players.set(peer, player)
     this.nextId = Math.max(this.nextId, info.id + 1)
   }
@@ -361,6 +478,22 @@ export class Room {
     if (msg.v !== PROTOCOL_VERSION) {
       this.sendTo(peer, { type: 'error', message: `protocol ${msg.v} not supported, server speaks ${PROTOCOL_VERSION}` })
       peer.close(4000, 'protocol')
+      return
+    }
+    // A dropped player coming back for its held place: the same player carries on.
+    const token = isToken(msg.resume) ? msg.resume : null
+    const held = this.rejoinOn() ? this.heldFor(token) : undefined
+    if (held) {
+      const [key, player] = held
+      this.pending.delete(peer)
+      this.rekey(key, peer, player)
+      player.heldUntil = 0
+      player.lastHeardAt = this.now()
+      player.joinedAt = this.now()
+      player.windowStart = this.now()
+      player.stateCount = player.jsonCount = 0
+      this.welcome(peer, player)
+      this.persist()
       return
     }
     if (this.players.size >= this.maxPlayers) {
@@ -395,6 +528,9 @@ export class Room {
       colors: cleanColors(msg.colors) ?? [...DEFAULT_COLORS],
     }
     const player = this.newPlayer(info)
+    // Two connections must never share a secret (a duplicated tab copies it): the second is
+    // an ordinary new player with none.
+    player.token = token && ![...this.players.values()].some((p) => p.token === token) ? token : null
     this.players.set(peer, player)
     this.scores[info.id] = 0
 
@@ -409,11 +545,19 @@ export class Room {
     // Scores for players who are no longer in the room (the same rebuild) are not kept.
     for (const old in this.scores) if (!this.byId(Number(old))) delete this.scores[old]
 
+    this.welcome(peer, player)
+    this.broadcast({ type: 'join', player: info }, peer)
+    this.broadcast({ type: 'game', game: this.gameState(), event: this.it === info.id ? 'default' : undefined, actor: this.it })
+    this.persist()
+  }
+
+  /** Tell a player who it is and what the room holds, and where everyone else is. */
+  private welcome(peer: Peer, player: Player): void {
     this.sendTo(peer, {
       type: 'welcome',
       v: PROTOCOL_VERSION,
-      id: info.id,
-      slot,
+      id: player.info.id,
+      slot: player.info.slot,
       room: this.name,
       players: this.playerList(),
       params: Object.fromEntries(this.values),
@@ -424,9 +568,6 @@ export class Room {
     for (const other of this.players.values()) {
       if (other !== player && other.lastState) peer.send(encodeStored(other))
     }
-    this.broadcast({ type: 'join', player: info }, peer)
-    this.broadcast({ type: 'game', game: this.gameState(), event: this.it === info.id ? 'default' : undefined, actor: this.it })
-    this.persist()
   }
 
   private onState(player: Player, bytes: Uint8Array): void {
@@ -814,7 +955,7 @@ export class Room {
     // Joining counts as a tag so a newcomer cannot be tagged in their first seconds.
     const now = this.now()
     return {
-      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), lastFireAt: -Infinity, shots: new Map(), lastTag: now,
+      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), token: null, heldUntil: 0, lastFireAt: -Infinity, shots: new Map(), lastTag: now,
       windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now,
     }
   }
@@ -848,7 +989,8 @@ export class Room {
   /** Close connections that have gone completely quiet; see SILENT_MS. */
   private tickSilent(now: number): void {
     for (const [peer, p] of [...this.players]) {
-      if (now - p.lastHeardAt <= SILENT_MS) continue
+      // A held place has no connection to close; it expires on its own clock.
+      if (p.heldUntil || now - p.lastHeardAt <= SILENT_MS) continue
       peer.close(4002, 'silent')
       this.disconnect(peer)
     }
@@ -965,6 +1107,11 @@ function emptyKoth(): KothState {
 
 function encodeStored(p: Player): Uint8Array {
   return encodeState(p.lastState!)
+}
+
+/** A rejoin secret: long enough not to be guessed, plain characters only. */
+function isToken(raw: unknown): raw is string {
+  return typeof raw === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(raw)
 }
 
 function cleanName(raw: unknown, id: number): string {
