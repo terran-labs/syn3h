@@ -1,0 +1,19 @@
+/* HALO: drawn by light. No material, only a faint dark under-glow where text sits; each sheet is
+   a glowing 1.5 px cyan-white outline with stacked bloom, and active elements bloom too. */
+:root {
+  --R: 20px; --r: 13px; --rim: 1.5px;
+  --ink: #f2fdff; --dim: #dff6fb; --acc: 110 232 255; --acc2: 90 170 255; --acc-ink: #9ff2ff;
+  --bd: none;
+  --fill: radial-gradient(120% 90% at 50% 45%, rgb(0 14 24 / .42), rgb(0 14 24 / .26) 65%, rgb(0 14 24 / .14));
+  --edge: linear-gradient(180deg, rgb(225 252 255), rgb(130 238 255) 40%, rgb(110 232 255 / .85));
+  --spec: .0;
+  --halo: 0 0 2px rgb(150 240 255 / .9), 0 0 10px rgb(110 232 255 / .5), 0 0 30px rgb(110 232 255 / .22);
+  --ctl: transparent; --ctl-line: rgb(130 238 255 / .45);
+  --sel: radial-gradient(100% 120% at 50% 0%, rgb(110 232 255 / .3), rgb(110 232 255 / .06));
+  --sel-line: rgb(210 250 255); --sel-glow: inset 0 0 14px rgb(110 232 255 / .45), 0 0 6px rgb(110 232 255 / .8), 0 0 22px rgb(110 232 255 / .45);
+  --tshadow: 0 0 3px rgb(0 6 12 / .85), 0 0 14px rgb(0 6 12 / .6);
+  --hglow: 0 0 12px rgb(110 232 255 / .85);
+  --map: rgb(0 14 24 / .82);
+}
+.card-head h3, .q-name, .g.g0 { color: #f6feff; }
+.mm-over .contour { stroke: rgb(110 232 255 / .45); }

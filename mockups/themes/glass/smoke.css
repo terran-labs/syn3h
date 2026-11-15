@@ -1,0 +1,17 @@
+/* SMOKE: dark graphite glass. Heavy blur under a half-opaque near-black blue fill, one cool
+   hairline rim and a specular top line. No colour anywhere except active states. */
+:root {
+  --R: 18px; --r: 12px; --rim: 1px;
+  --ink: #ffffff; --dim: #c2cbd2; --acc: 215 242 255; --acc2: 160 200 225; --acc-ink: #ffffff;
+  --bd: blur(32px) saturate(1.15);
+  --fill: linear-gradient(180deg, rgb(12 16 24 / .5), rgb(6 9 14 / .55));
+  --edge: linear-gradient(160deg, rgb(225 245 255 / .55), rgb(225 245 255 / .14) 35%, rgb(225 245 255 / .07) 70%, rgb(225 245 255 / .14));
+  --spec: .55;
+  --halo: 0 10px 30px rgb(0 0 0 / .14);
+  --ctl: rgb(255 255 255 / .05); --ctl-line: rgb(255 255 255 / .12);
+  --sel: rgb(225 245 255 / .1);
+  --sel-line: rgb(235 248 255 / .85); --sel-glow: inset 0 0 12px rgb(215 242 255 / .22), 0 0 12px rgb(215 242 255 / .2);
+  --tshadow: 0 1px 1px rgb(0 0 0 / .3);
+  --hglow: 0 0 0 transparent;
+  --map: rgb(8 11 17 / .88);
+}

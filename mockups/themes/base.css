@@ -1,0 +1,127 @@
+/* Shared geometry for the three theme mockups. Themes own every colour, edge and glow;
+   this file owns sizes, so all three hit the same 44 px (desktop) and 48 px (phone) targets. */
+@font-face { font-family: Barlow; font-weight: 400; src: url(file:///Users/vtn/dev/Syn3h-wt/ux-follow-on/public/fonts/barlow-400-latin.woff2) format('woff2'); }
+@font-face { font-family: Barlow; font-weight: 500; src: url(file:///Users/vtn/dev/Syn3h-wt/ux-follow-on/public/fonts/barlow-500-latin.woff2) format('woff2'); }
+@font-face { font-family: Barlow; font-weight: 600; src: url(file:///Users/vtn/dev/Syn3h-wt/ux-follow-on/public/fonts/barlow-600-latin.woff2) format('woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-weight: 500; src: url(file:///Users/vtn/dev/Syn3h-wt/ux-follow-on/public/fonts/barlow-condensed-500-latin.woff2) format('woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-weight: 600; src: url(file:///Users/vtn/dev/Syn3h-wt/ux-follow-on/public/fonts/barlow-condensed-600-latin.woff2) format('woff2'); }
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 100%; height: 100%; }
+body { font: 400 14px/1.3 Barlow, sans-serif; color: var(--ink); background: #05080d; overflow: hidden; -webkit-font-smoothing: antialiased; }
+button, label { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; text-align: inherit; }
+kbd { font: inherit; }
+.ico { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+.frame { position: relative; width: 1440px; height: 1000px; overflow: hidden; background: #05080d center / cover no-repeat; isolation: isolate; }
+body[data-mode=desktop] .frame { background-image: url(file:///tmp/syn3h-mockups/backdrop-desktop.png); }
+/* The phone capture has old controls burned in, so phones crop the cleaner desktop scene. */
+body[data-mode^=phone] .frame { width: 390px; height: 844px; background: #05080d url(file:///tmp/syn3h-mockups/backdrop-desktop.png) 46% 50% / auto 100% no-repeat; }
+
+/* Rail */
+.rail { position: absolute; top: 16px; right: 16px; bottom: 16px; width: 400px; display: flex; flex-direction: column; gap: var(--gap, 8px); }
+.rail-head { display: flex; align-items: center; gap: 8px; min-height: 56px; padding: 6px 8px; }
+.leave { display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px 0 10px; white-space: nowrap; flex: none; }
+.search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px; }
+.search .ph { flex: 1; white-space: nowrap; overflow: hidden; }
+.search kbd { display: grid; place-items: center; width: 20px; height: 20px; font-size: 12px; }
+.icon { width: 44px; height: 44px; display: grid; place-items: center; flex: none; }
+.cards { display: flex; flex-direction: column; gap: var(--gap, 8px); min-height: 0; flex: 1; }
+.card { position: relative; }
+.card-head { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 50px; padding: 0 14px 0 16px; }
+.card-head h3 { font-size: 16px; font-weight: 500; white-space: nowrap; }
+.card-head .sum { flex: 1; min-width: 0; text-align: right; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-head .ico { width: 18px; height: 18px; }
+.card.open .card-head .ico { transform: rotate(180deg); }
+.card.open .sum { visibility: hidden; }
+.card-body { display: flex; flex-direction: column; gap: 4px; padding: 2px 16px 16px; }
+
+/* Performance */
+.quality { display: grid; grid-template-columns: 52px 1fr 52px; gap: 8px; height: 64px; margin-bottom: 6px; }
+.q-step { display: grid; place-items: center; }
+.q-select { position: relative; display: grid; grid-template: 'name caret' auto 'sub caret' auto 'pips caret' auto / 1fr 0; justify-items: center; align-content: center; row-gap: 3px; }
+.q-name { grid-area: name; font-size: 18px; font-weight: 500; line-height: 1; }
+.q-sub { grid-area: sub; font-size: 12px; line-height: 1; }
+.pips { grid-area: pips; display: flex; gap: 4px; margin-top: 5px; }
+.q-caret { position: absolute; right: 12px; top: 50%; translate: 0 -50%; display: grid; }
+.q-caret .ico { width: 16px; height: 16px; }
+.row { display: grid; align-items: center; gap: 12px; min-height: 48px; }
+.row .lbl { font-size: 14px; white-space: nowrap; }
+.toggle-row { grid-template-columns: 1fr auto; }
+.slider-row { grid-template-columns: 104px 1fr 72px; }
+.seg-row { grid-template-columns: 104px 1fr; }
+.switch { position: relative; width: 56px; height: 44px; }
+.slider { position: relative; height: 44px; }
+.slider i { position: absolute; display: block; }
+.num, .num-edit { height: 40px; display: flex; align-items: center; justify-content: flex-end; gap: 2px; padding: 0 10px; font-variant-numeric: tabular-nums; }
+.num-edit em { font-style: normal; margin-left: 4px; }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); height: 44px; }
+.seg button { display: grid; place-items: center; }
+.spark { position: relative; margin-top: 8px; }
+.spark-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
+.spark-head em { font-style: normal; margin-left: 8px; }
+.spark svg { display: block; width: 100%; height: 44px; overflow: visible; }
+.spark path, .spark circle { vector-effect: non-scaling-stroke; }
+.budget-lbl { position: absolute; right: 0; bottom: 33px; font-size: 11px; line-height: 1; }
+
+/* Vehicles */
+.veh { display: grid; grid-template-columns: 172px 1fr; gap: 16px; align-items: start; }
+.veh-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.veh-tile { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; height: 70px; }
+.veh-tile span { font-size: 13px; }
+.glyph { width: 56px; height: 28px; overflow: visible; }
+.tint { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.ring { --size: 96px; position: relative; width: var(--size); height: var(--size); border-radius: 50%; }
+.ring::before { content: ''; position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(hsl(0 85% 58%), hsl(60 85% 58%), hsl(120 75% 50%), hsl(180 80% 52%), hsl(240 80% 62%), hsl(300 80% 60%), hsl(360 85% 58%)); -webkit-mask: radial-gradient(closest-side, transparent calc(100% - var(--band, 12px)), #000 calc(100% - var(--band, 12px) + .5px)); }
+.ring .knob { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%) rotate(calc(var(--h) * 1deg)) translateY(calc(var(--r, 42px) * -1)); }
+.ring .chip { position: absolute; inset: 0; margin: auto; width: 46px; height: 46px; border-radius: 50%; background: hsl(205 72% 52%); }
+.tint-targets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; width: 100%; }
+.tt { display: flex; align-items: center; justify-content: center; gap: 7px; height: 44px; font-size: 13px; }
+.tt i { width: 12px; height: 12px; border-radius: 50%; background: var(--c); flex: none; }
+
+/* In-game button family */
+.kit { position: absolute; left: 24px; bottom: 104px; width: max-content; display: flex; flex-direction: column; gap: 20px; padding: 22px 26px 26px; }
+.kit-title { font-weight: 500; font-size: 12px; letter-spacing: .16em; text-transform: uppercase; }
+.kit-row { display: flex; align-items: center; gap: 16px; }
+.kit-title + .kit-row { margin-top: 30px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 48px; padding: 0 24px; font-size: 15px; white-space: nowrap; }
+.btn.icon { width: 48px; padding: 0; }
+.tip-wrap { position: relative; display: flex; }
+.tooltip { position: absolute; bottom: calc(100% + 12px); left: 50%; translate: -50% 0; display: flex; flex-direction: column; gap: 2px; padding: 9px 13px; font-size: 13px; white-space: nowrap; }
+.tooltip strong { font-weight: 500; }
+.tgl { display: inline-flex; align-items: center; gap: 10px; height: 48px; padding: 0 18px 0 14px; font-size: 15px; }
+.tgl i { display: block; flex: none; }
+.toast { position: absolute; left: 50%; bottom: 28px; translate: -50% 0; z-index: 5; display: flex; align-items: center; gap: 12px; height: 56px; padding: 0 18px; font-size: 15px; white-space: nowrap; }
+.toast .ico { width: 18px; height: 18px; }
+.rounds { display: flex; gap: 16px; margin-left: 16px; }
+.round { position: relative; width: 76px; height: 76px; border-radius: 50%; display: grid; place-items: center; font-size: 13px; }
+
+/* Phone: the rail becomes a sheet; the kit becomes the play HUD. */
+body[data-mode=phone] .rail { top: 72px; left: 0; right: 0; bottom: 0; width: auto; overflow: hidden; -webkit-mask: linear-gradient(#000 calc(100% - 64px), transparent); }
+body[data-mode=phone] .card-head { min-height: 54px; }
+body[data-mode=phone] .icon, body[data-mode=phone] .leave, body[data-mode=phone] .search, body[data-mode=phone] .tt, body[data-mode=phone] .seg, body[data-mode=phone] .slider, body[data-mode=phone] .switch { height: 48px; }
+body[data-mode=phone] .icon { width: 48px; }
+body[data-mode=phone] .leave span { display: none; }
+body[data-mode=phone] .leave { width: 48px; padding: 0; justify-content: center; }
+body[data-mode=phone] .num, body[data-mode=phone] .num-edit { height: 48px; }
+body[data-mode=phone] .veh-tile { height: 72px; }
+body[data-mode=phone] .veh { grid-template-columns: 168px 1fr; gap: 12px; }
+body[data-mode=phone] .slider-row { grid-template-columns: 96px 1fr 72px; gap: 10px; }
+body[data-mode=phone] .seg-row { grid-template-columns: 96px 1fr; }
+
+body[data-mode=phone-play] .kit { inset: 0; width: auto; padding: 0; gap: 0; }
+body[data-mode=phone-play] .kit-title { display: none; }
+body[data-mode=phone-play] .kit-row { display: contents; }
+/* On a phone the bottom belongs to the thumbs, so the notice floats at the top. */
+body[data-mode=phone-play] .toast { top: 56px; bottom: auto; left: 16px; right: 16px; translate: none; justify-content: space-between; }
+body[data-mode=phone-play] .toast span { flex: 1; }
+body[data-mode=phone-play] .btn.primary { position: absolute; left: 16px; right: 16px; bottom: 236px; height: 52px; }
+body[data-mode=phone-play] .btn.quiet { position: absolute; left: 16px; top: 160px; height: 48px; }
+body[data-mode=phone-play] .tip-wrap { position: absolute; right: 16px; top: 160px; }
+body[data-mode=phone-play] .tooltip { top: calc(100% + 12px); bottom: auto; left: auto; right: 0; translate: none; }
+body[data-mode=phone-play] .tgl { position: absolute; left: 16px; height: 52px; }
+body[data-mode=phone-play] .tgl.on { bottom: 128px; }
+body[data-mode=phone-play] .tgl:not(.on) { bottom: 60px; }
+body[data-mode=phone-play] .rounds { position: absolute; right: 16px; bottom: 56px; flex-direction: column; gap: 18px; }
+body[data-mode=phone-play] .round { width: 80px; height: 80px; }
+body[data-mode=phone-play] .btn.icon { width: 52px; height: 52px; }
