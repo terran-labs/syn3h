@@ -19,14 +19,15 @@ const group = 'Weather'
 export const STORMINESS_REFERENCE = 0.5
 
 /**
- * The value the owner is asked to try. The slider default stays 0 until he has felt it
- * (ops/PROTOCOL.md rule 5: land dark); `?weather=` or the slider turns it on.
+ * The default: clearly felt near the summit and in a zorb ball, while road-level driving is
+ * unchanged (tests/weather/climb.test.ts and steering.test.ts hold it to that). On by default
+ * by the owner's wish, relayed by the Foreman on 14 November.
  */
 export const RECOMMENDED_STORMINESS = 0.5
 
 export const storminess = defineParam({
   id: 'weather.storminess', label: 'Storminess (calm to gale)', group, scope: w,
-  default: 0, min: 0, max: 1, step: 0.01,
+  default: RECOMMENDED_STORMINESS, min: 0, max: 1, step: 0.01,
 })
 
 /** Mean wind at the summit, m/s, at the reference storminess. */
