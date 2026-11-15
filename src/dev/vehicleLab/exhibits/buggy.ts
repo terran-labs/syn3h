@@ -18,7 +18,7 @@
  */
 import * as THREE from 'three/webgpu'
 import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js'
-import { accentPaint, addHeadlightBeams, carPaint, chrome, darkMetal, glass, lamp, rubber, updateLamps } from '../materials'
+import { accentPaint, addHeadlightBeams, carPaint, chrome, darkMetal, forceField, glass, lamp, rubber, updateLamps } from '../materials'
 import type { LabControl, LabDesignInfo, LabExhibit, LabModel, LabState } from '../types'
 
 const MODELS = '/labs/buggy-bodies'
@@ -71,7 +71,9 @@ class DesignMaterials {
 
   get(src: THREE.Material, role: Role): THREE.Material {
     const name = baseName(src.name)
-    const key = `${role}:${name}`
+    // A tyre whose tread is a normal map is its own material, apart from plain rubber.
+    const normalMap = (src as THREE.MeshStandardMaterial).normalMap
+    const key = `${role}:${name}:${normalMap?.uuid ?? ''}`
     let m = this.cache.get(key)
     if (!m) { m = this.make(name, src as THREE.MeshStandardMaterial, role); this.cache.set(key, m) }
     return m
@@ -91,7 +93,12 @@ class DesignMaterials {
       // Scoops and sockets: near black, slightly glossy.
       case 'Dark': return new THREE.MeshPhysicalMaterial({ name: 'Dark', color: 0x08090b, metalness: .3, roughness: .6 })
       case 'StrutMetal': return darkMetal()
-      case 'Tire': case 'Tyre': case 'Rubber': return rubber()
+      case 'Tire': case 'Tyre': case 'Rubber': {
+        const m = rubber()
+        // Tread as a texture (labs/buggy-wheels 'texture'): keep the map the file brought.
+        if (src.normalMap) { m.normalMap = src.normalMap; m.normalScale.copy(src.normalScale); m.roughness = .7 }
+        return m
+      }
       default:
         console.warn(`Buggy exhibit: unmapped material "${src.name}", shown as body paint`)
         return this.paint(carPaint(src.color), this.paints)
@@ -104,12 +111,24 @@ class DesignMaterials {
     return m
   }
 
+  /** The canopy force field takes the accent colour, brightened so a dark accent still glows. */
+  readonly field = forceField()
+  private fieldColour(accent: THREE.Color): void {
+    const hsl = { h: 0, s: 0, l: 0 }
+    accent.getHSL(hsl)
+    this.field.color.setHSL(hsl.h, Math.max(hsl.s, .55), THREE.MathUtils.clamp(hsl.l, .45, .62))
+  }
+
   setColors(body: THREE.ColorRepresentation, accent: THREE.ColorRepresentation): void {
     for (const m of this.paints) m.color.set(body)
     for (const m of this.accents) m.color.set(accent)
+    this.fieldColour(new THREE.Color(accent))
   }
-  resetColors(): void { for (const m of [...this.paints, ...this.accents]) m.color.copy(m.userData.built as THREE.Color) }
-  dispose(): void { for (const m of this.cache.values()) m.dispose() }
+  resetColors(): void {
+    for (const m of [...this.paints, ...this.accents]) m.color.copy(m.userData.built as THREE.Color)
+    this.fieldColour(this.accents[0]?.color ?? new THREE.Color(0x49e6ff))
+  }
+  dispose(): void { for (const m of this.cache.values()) m.dispose(); this.field.material.dispose() }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -324,6 +343,8 @@ export const buggy: LabExhibit = {
   title: 'Syn3h buggy bodies',
   groupLabel: 'Round',
   heading: group => group === '1' || group === undefined ? 'Syn3h buggy: five body variations' : `Syn3h buggy: round ${group}, built on Wide body`,
+  // Open on the first new design of a round, not on the carried-over pick.
+  defaultDesign: group => group === '3' ? 'r1-blade' : group === '2' ? 'w1-flared' : undefined,
 
   async designs(): Promise<LabDesignInfo[]> {
     const all = await bodies()
@@ -362,8 +383,12 @@ export const buggy: LabExhibit = {
       loaded.add(src)
       o.material = mats.get(src, 'body')
       o.castShadow = o.receiveShadow = true
-      if (mats.glass.has(o.material)) { o.renderOrder = 2; canopy.push(o) }
+      if (mats.glass.has(o.material)) { o.renderOrder = 2; canopy.push(o); o.userData.glass = o.material; o.castShadow = false }
     })
+    // CANOPY. The owner's design is a force field, not glass; glass stays as a comparison.
+    const setCanopy = (field: boolean) => { for (const o of canopy) (o as THREE.Mesh).material = field ? mats.field.material : o.userData.glass as THREE.Material }
+    mats.resetColors()
+    setCanopy(true)
     // The glb's own materials only lent their names and colours.
     for (const m of loaded) m.dispose()
     object.add(gltf.scene)
@@ -376,7 +401,11 @@ export const buggy: LabExhibit = {
     object.add(wheels.group)
     let lastState: LabState | undefined
 
-    const controls: LabControl[] = wheelChoices.length < 2 ? [] : [{
+    const canopyControl: LabControl = {
+      kind: 'cycle', id: 'buggy.canopy', label: 'Canopy', options: ['Force field', 'Glass'], index: 0,
+      onChange(i) { setCanopy(i === 0) },
+    }
+    const controls: LabControl[] = wheelChoices.length < 2 ? [canopyControl] : [canopyControl, {
       kind: 'cycle', id: 'buggy.wheels', label: 'Wheels', options: wheelChoices.map(w => w.name), index: choice,
       onChange(i) {
         choice = i

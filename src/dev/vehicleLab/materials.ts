@@ -8,6 +8,7 @@
  * they ship.
  */
 import * as THREE from 'three/webgpu'
+import { abs, dot, float, normalView, positionLocal, positionViewDirection, sin, time, uniform } from 'three/tsl'
 import type { LabState } from './types'
 
 export interface MaterialOptions {
@@ -36,6 +37,32 @@ export function glass(o: MaterialOptions & { color?: THREE.ColorRepresentation; 
     name: 'Glass', color: o.color ?? 0x020305, metalness: clear ? .1 : .3, roughness: .04, clearcoat: 1, clearcoatRoughness: 0,
     transparent: clear, opacity: o.opacity ?? 1, depthWrite: !clear, side: o.side ?? (clear ? THREE.DoubleSide : THREE.FrontSide),
   })
+}
+
+/**
+ * A force field shell, for canopies and shields: no surface of its own, only light. The edges
+ * glow where the shell turns away from the eye (a fresnel rim), thin bands of energy drift over
+ * it, and a faint honeycomb shimmer shows it is a field and not glass. Additive, so it never
+ * darkens what is behind it, and drawn on both sides so it reads from inside the cockpit too.
+ * Returns the material and its colour, which the exhibit sets to the vehicle's accent.
+ */
+export function forceField(color: THREE.ColorRepresentation = 0x49e6ff) {
+  const tint = uniform(new THREE.Color(color))
+  const m = new THREE.MeshBasicNodeMaterial({ name: 'Force field', transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false })
+  m.fog = false
+  const facing = abs(dot(normalView, positionViewDirection))
+  const rim = float(1).sub(facing).pow(2.2)
+  // Bands drift from nose to tail; the pow keeps them thin and bright.
+  const bands = sin(positionLocal.z.mul(9).add(positionLocal.y.mul(4)).sub(time.mul(1.6))).mul(.5).add(.5).pow(10)
+  // Three sine sets 60 degrees apart make a honeycomb without a texture.
+  const p = positionLocal.mul(26)
+  const cell = sin(p.x).mul(sin(p.x.mul(.5).add(p.z.mul(.866)))).mul(sin(p.x.mul(.5).sub(p.z.mul(.866)))).abs().pow(.35)
+  const shimmer = float(1).sub(cell).mul(.35)
+  // Mostly rim: face on, the field is nearly invisible, so the driver and the body show through.
+  const glow = rim.mul(1.1).add(bands.mul(rim.add(.2)).mul(.35)).add(shimmer.mul(rim.add(.08)).mul(.3)).add(.012)
+  m.colorNode = tint.mul(glow).mul(.7)
+  m.opacityNode = glow.clamp(0, 1)
+  return { material: m, color: tint.value as THREE.Color }
 }
 
 export const rubber = (o: MaterialOptions = {}) =>

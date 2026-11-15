@@ -536,7 +536,8 @@ async function main(): Promise<void> {
   if (params.stress && params.stress > 1) await api.stress(params.stress)
   if (params.az !== undefined || params.el !== undefined || params.dist !== undefined) api.orbit(params.az ?? 36, params.el ?? 16, params.dist)
   else if (params.view) api.view(params.view)
-  if (params.cockpit) await setCockpit(true)
+  // Not awaited: the move eases over frames, and the render loop has not started yet.
+  if (params.cockpit) void setCockpit(true)
   if (params.still) state.animate = false
   refresh()
 

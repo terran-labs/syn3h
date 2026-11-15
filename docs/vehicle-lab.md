@@ -209,3 +209,9 @@ begins). To compare variations, return several designs; give them a `group` to r
 | `src/dev/vehicleLab/studio.ts` | Softbox environment, key light, day and night, floors. |
 | `src/dev/vehicleLab/materials.ts` | Preview materials, lamps and headlight beams. |
 | `src/dev/vehicleLab/exhibits/` | One file per vehicle, and the registry. |
+
+## Buggy exhibit extras
+
+- **Canopy** cycles between the force field (the design intent: `forceField()` in `materials.ts`, reusable for any shield or canopy) and plain glass.
+- **Wheels** cycles the tyre options listed in `labs/buggy-wheels/index.json`, built by `tools/buggy-bodies/wheels.py`. `?wheels=<id>` picks one from the URL.
+- A body file may bring its own `Strut` (suspension linkage) and `Sockets` (the fittings where the linkage meets the body). Bodies marked `gameResolution` in `labs/buggy-bodies/index.json` are at the triangle count that would ship.
