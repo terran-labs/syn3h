@@ -18,6 +18,7 @@ import { type VehicleKind, createVehicle } from './vehicles'
 import { PlayerSlot } from './vehicles/PlayerSlot'
 import { createVehicleSwapper } from './vehicles/swap'
 import { Materialize } from './vehicles/effects/Materialize'
+import { onZorbPulse } from './vehicles/zorb'
 import type { Vehicle } from './vehicles/Vehicle'
 import { createEnvironment } from './world/Environment'
 import { createPostChain } from './fx/post/PostChain'
@@ -100,8 +101,10 @@ async function main(): Promise<void> {
   // The HUD bridge, hints and the engine voice follow the slot.
   slot.onChange(setPlayer)
   // A vehicle arriving by a switch hangs in a small glowing cloud for a second, then drops.
-  const materialize = game.add(new Materialize(game, terrain, { onCue: (cue, position, hold) => { if (cue === 'materializeStart') audio.play('materialize', position, { seconds: hold }) } }))
+  const materialize = game.add(new Materialize(game, terrain, { onCue: (cue, position, _hold, vehicle) => audio.materialize(cue, position, vehicle) }))
   void materialize.prewarm()
+  const offZorbPulse = onZorbPulse((_ball, centre) => audio.zorbPulse(centre))
+  game.add({ dispose: offZorbPulse })
   shell.configurePerformance({
     getPerformanceSnapshot: () => game.quality.getPerformanceSnapshot(),
     subscribePerformance: listener => game.quality.subscribePerformance(listener),
