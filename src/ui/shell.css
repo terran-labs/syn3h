@@ -545,3 +545,7 @@
 /* The Daydream slider in Settings (the control itself is src/bots/daydreamControl.ts). */
 .syn3h-shell .daydream-control { display: block; text-align: left; margin: 18px 0 4px; font-size: 17px; }
 .syn3h-shell .daydream-control output { float: right; color: var(--s3-accent-2); }
+/* Gear chip: which gear is in hand, under the speed. Tap or press T to switch. */
+.syn3h-shell .shell-hud .gear-chip { display: inline-flex; align-items: center; min-height: 30px; margin: 2px 0 6px; padding: 4px 12px; border-radius: 999px; border: 1px solid rgb(120 190 255 / .45); background: rgb(41 151 255 / .18); color: var(--s3-ink); font: 600 13px/1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: .08em; text-transform: uppercase; pointer-events: auto; cursor: pointer; box-shadow: none; }
+.syn3h-shell .shell-hud .gear-chip[hidden] { display: none; }
+.syn3h-shell.has-touch .shell-hud .gear-chip { min-height: 40px; padding: 6px 16px; }
