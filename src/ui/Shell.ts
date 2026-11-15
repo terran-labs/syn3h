@@ -1,4 +1,5 @@
 import { GEAR_LABELS, type GearRack, type GearId } from '../weapons/Gear'
+import { GearSelector, type GearSource } from './gear/GearSelector'
 import { postTier } from '../fx/post/gate'
 import { PerformancePanel } from './PerformancePanel'
 import type { PauseControl } from './pauseControl'
@@ -161,6 +162,16 @@ export class Shell implements System {
     this.board = new Scoreboard(this.element.querySelector('.shell-scoreboard')!, text => {this.toast(text);if(/joined/i.test(text))audio.cue('join');else if(/left/i.test(text))audio.cue('leave');else if(/tagged| is it/i.test(text))audio.cue('tag')})
     this.hudBoard = new Scoreboard(this.element.querySelector('.hud-scoreboard')!, () => {})
     this.touch = new TouchControls(game.input); this.element.classList.toggle('has-touch', this.touch.available)
+    // The gear drum at the centre-left edge, in both cursor states: the gear in hand, its
+    // neighbours, and the controls that apply right now. On touch it adds buttons for the
+    // gear's extra actions (the Grapple's Let out and Let go).
+    this.gearSelector = new GearSelector(this.element, () => this.gearSource(), { touch: this.touch.available, onSelect: () => this.audio.cue('click') })
+    // Zorb mode sits under the drum, with its key and its state, so it can be found.
+    this.zorbToggle.type = 'button'; this.zorbToggle.className = 'zorb-toggle'; this.zorbToggle.setAttribute('aria-pressed', 'false')
+    this.zorbToggle.innerHTML = '<kbd>X</kbd><span>Zorb</span><b>Off</b>'
+    this.zorbToggle.title = 'Zorb mode: ride inside a ball. Press X to switch.'
+    this.zorbToggle.addEventListener('click', () => { game.input.toggleZorb(); this.audio.cue('click'); this.zorbToggle.blur() }, { signal: this.abort.signal })
+    this.element.append(this.zorbToggle)
     const signal = this.abort.signal
     this.followPointer(signal)
     this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; if (this.galaxy) this.galaxy.enabled = true
@@ -669,7 +680,13 @@ export class Shell implements System {
       this.element.querySelector('.inspector-toggle')!.setAttribute('aria-pressed', String(wanted))
     }
     const locked = this.started && !this.menuVisible && !this.game.input.suspended && document.pointerLockElement === this.game.canvas
-    if (this.element.classList.contains('is-focus') !== locked) this.element.classList.toggle('is-focus', locked)
+    if (this.element.classList.contains('is-focus') !== locked) {
+      this.element.classList.toggle('is-focus', locked)
+      // A gear picked with the cursor leaves focus on the drum, where the arrow keys step
+      // through gear. Once driving, they must drive.
+      const focused = document.activeElement
+      if (locked && focused instanceof HTMLElement && this.gearSelector.element.contains(focused)) focused.blur()
+    }
   }
   /** Show the panels: on a desktop that is letting the cursor go. */
   private showPanels(): void { if (this.capturesCursor) this.releaseCursor(); else this.touchPanels = true; this.syncPanels() }
@@ -740,7 +757,7 @@ export class Shell implements System {
     // A drive key means the player wants to drive, unless it is being typed into a field or
     // moving a slider or select. A focused button or summary does not count: it only owns
     // Space and Enter, and focus rests on one after any click on the panels.
-    const field = (element: unknown) => element instanceof HTMLElement && (element.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName))
+    const field = (element: unknown) => element instanceof HTMLElement && (element.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName) || element.closest('[role=listbox]') !== null)
     const typing = field(event.target) || field(document.activeElement)
     if (!typing && !event.repeat && this.started && !this.menuVisible && DRIVE_KEYS.has(event.code) && this.capturesCursor && document.pointerLockElement !== this.game.canvas) void this.captureCursor()
     if (event.code === 'Escape') {
@@ -1105,8 +1122,28 @@ export class Shell implements System {
   }
   /** Call after an actual spawn so query overrides and future respawns show the right controls. */
   private muteShown: boolean | undefined
+  private readonly gearSelector: GearSelector
+  private readonly zorbToggle = document.createElement('button')
+  private zorbShown = false
+  private gearRack?: GearRack
+  private gearView?: GearSource
+  /** The rack, wrapped once so the drum gets every gear's player-facing name. */
+  private gearSource(): GearSource | undefined {
+    const rack = (window as unknown as { syn3hNet?: { gear?: GearRack } }).syn3hNet?.gear
+    if (!rack) return undefined
+    if (rack !== this.gearRack) {
+      this.gearRack = rack
+      this.gearView = {
+        list: () => rack.list(),
+        get current() { return rack.current },
+        select: id => rack.select(id as GearId),
+        labelOf: id => GEAR_LABELS[id as GearId],
+        controls: () => rack.controls(),
+      }
+    }
+    return this.gearView
+  }
   private gearSelect?: HTMLSelectElement
-  private gearWired = false
   private gearShown = ''
   /**
    * The rail selector shows the available gear and the current choice.
@@ -1116,10 +1153,7 @@ export class Shell implements System {
     const net = (window as unknown as { syn3hNet?: { gear?: GearRack; bungee?: { attached: boolean; letGo(): void } } }).syn3hNet
     const select = this.gearSelect ??= this.element.querySelector<HTMLSelectElement>('.gear-select')!
     if (!net?.gear) { if (!select.disabled) select.disabled = true; return }
-    if (!this.gearWired && net.bungee) {
-      this.gearWired = true
-      this.touch.setGear({ attached: () => net.bungee!.attached, letGo: () => net.bungee!.letGo() })
-    }
+    // The Grapple's extra touch buttons now come from the gear drum (rack.controls()).
     const list = net.gear.list(), signature = list.join(',')
     if (signature !== this.gearShown) {
       this.gearShown = signature; select.replaceChildren()
@@ -1211,6 +1245,9 @@ export class Shell implements System {
     // Per-frame: touch the DOM only when the label changes.
     if (this.audio.isMuted !== this.muteShown) { this.muteShown = this.audio.isMuted; this.element.querySelector('.rail-mute')!.textContent = this.muteShown ? 'Unmute' : 'Mute' }
     this.updateGear()
+    this.gearSelector.update(this.element.classList.contains('is-focus'))
+    const zorb = this.game.input.state.zorb
+    if (zorb !== this.zorbShown) { this.zorbShown = zorb; this.zorbToggle.setAttribute('aria-pressed', String(zorb)); this.zorbToggle.lastElementChild!.textContent = zorb ? 'On' : 'Off' }
     if (this.inspector.open) this.updateGI()
     if (this.started && !this.menuVisible) {
       const focus = this.element.classList.contains('is-focus')
@@ -1259,7 +1296,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }
