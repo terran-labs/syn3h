@@ -40,15 +40,15 @@ export interface ExpeditionSpec {
 export type Level = 0 | 1 | 2
 
 /** Opaque surfaces, in the order the packed material numbers them. */
-const SOLIDS = ['paint', 'accent', 'chrome', 'frame', 'trim', 'rubber', 'track', 'head', 'tail'] as const
-type Solid = typeof SOLIDS[number]
-type Surface = Solid | 'canopy'
+export const SOLIDS = ['paint', 'accent', 'chrome', 'frame', 'trim', 'rubber', 'track', 'head', 'tail'] as const
+export type Solid = typeof SOLIDS[number]
+export type Surface = Solid | 'canopy'
 
-type Quad = [T.Vector3, T.Vector3, T.Vector3, T.Vector3]
+export type Quad = [T.Vector3, T.Vector3, T.Vector3, T.Vector3]
 type Sheet = (u: number, t: number) => T.Vector3
-const v = (x: number, y: number, z: number) => new T.Vector3(x, y, z)
-const UP = v(0, 1, 0), DOWN = v(0, -1, 0), FORE = v(0, 0, -1), AFT = v(0, 0, 1)
-const side = (s: number) => v(s, 0, 0)
+export const v = (x: number, y: number, z: number) => new T.Vector3(x, y, z)
+export const UP = v(0, 1, 0), DOWN = v(0, -1, 0), FORE = v(0, 0, -1), AFT = v(0, 0, 1)
+export const side = (s: number) => v(s, 0, 0)
 
 /** Tail lamp emission: running, and under braking. */
 const TAIL = { idle: .6, brake: 2.2 }
@@ -60,7 +60,7 @@ const TAIL = { idle: .6, brake: 2.2 }
 
 const ab = v(0, 0, 0), ac = v(0, 0, 0), nn = v(0, 0, 0)
 
-class Batch {
+export class Batch {
   private p: number[] = []; private n: number[] = []; private uv: number[] = []; private id: number[] = []
   private cp: number[] = []; private cn: number[] = []
 
@@ -79,6 +79,13 @@ class Batch {
     const k = SOLIDS.indexOf(surface)
     for (let i = 0; i < 3; i++) { this.n.push(nn.x, nn.y, nn.z); this.id.push(k) }
     if (uvs) this.uv.push(...uvs); else this.uv.push(0, 0, 0, 0, 0, 0)
+  }
+  /** One triangle with a normal at each corner, for lofted surfaces. Wound as given. */
+  smooth(surface: Surface, a: T.Vector3, b: T.Vector3, c: T.Vector3, na: T.Vector3, nb: T.Vector3, nc: T.Vector3) {
+    if (nn.crossVectors(ab.subVectors(b, a), ac.subVectors(c, a)).lengthSq() < 1e-14) return
+    if (surface === 'canopy') { this.cp.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z); this.cn.push(na.x, na.y, na.z, nb.x, nb.y, nb.z, nc.x, nc.y, nc.z); return }
+    this.p.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z); this.n.push(na.x, na.y, na.z, nb.x, nb.y, nb.z, nc.x, nc.y, nc.z)
+    const k = SOLIDS.indexOf(surface); this.id.push(k, k, k); this.uv.push(0, 0, 0, 0, 0, 0)
   }
   /** A quad as two triangles. `uvs` is one [u, v] pair per corner, for the track belt. */
   quad(surface: Surface, q: Quad, out?: T.Vector3, uvs?: number[]) {
@@ -212,16 +219,32 @@ function lamps(batch: Batch, s: Section, rear: boolean, level: Level) {
       for (const dy of [-.055, .055]) batch.box('tail', [w * .48, .045, .025], [sx * w * .48, y + dy, z + .065])
     } else for (const x of [.23, .65, 1.07]) {
       const cx = sx * x * Math.min(1, w / 1.3), r = Math.min(.18, w * .14)
-      if (level) { batch.disc('head', v(cx, y, z - .004), 'z', -1, 0, r * 1.05, 8); continue }
-      // Housing, bezel and lens: three rings and one disc, with no hidden end caps.
-      batch.rod('frame', v(cx, y, z), v(cx, y, z - .09), r * 1.24, 10, true)
-      batch.disc('frame', v(cx, y, z - .09), 'z', -1, r * 1.09, r * 1.24, 10)
-      batch.rod('chrome', v(cx, y, z - .09), v(cx, y, z - .11), r * 1.09, 10, true)
-      batch.disc('chrome', v(cx, y, z - .11), 'z', -1, r * .85, r * 1.09, 10)
-      batch.disc('head', v(cx, y, z - .11), 'z', -1, 0, r * .85, 10)
+      headlamp(batch, cx, y, z, r, level)
     }
   }
   batch.box('frame', [w * 1.52, .22, .22], [0, k + .1, z + (rear ? -.025 : .025)])
+}
+
+/**
+ * One headlamp facing forward from a wall at `z`: housing, bezel and lens as three rings and a
+ * disc, with no hidden end caps. `depth` is how far the housing stands out of the wall.
+ */
+export function headlamp(batch: Batch, cx: number, y: number, z: number, r: number, level: 0 | 1 | 2, depth = .09) {
+  if (level) { batch.disc('head', v(cx, y, z - depth - .004), 'z', -1, 0, r * 1.05, 8); return }
+  batch.rod('frame', v(cx, y, z), v(cx, y, z - depth), r * 1.24, 10, true)
+  batch.disc('frame', v(cx, y, z - depth), 'z', -1, r * 1.09, r * 1.24, 10)
+  batch.rod('chrome', v(cx, y, z - depth), v(cx, y, z - depth - .02), r * 1.09, 10, true)
+  batch.disc('chrome', v(cx, y, z - depth - .02), 'z', -1, r * .85, r * 1.09, 10)
+  batch.disc('head', v(cx, y, z - depth - .02), 'z', -1, 0, r * .85, 10)
+}
+
+/** One fixed boss per tread on the hull: the only attachment. `inner` is where it leaves the hull. */
+export function bosses(batch: Batch, pivotX: number, inner = pivotX - .27) {
+  for (const sx of [-1, 1]) for (let axle = 0; axle < 3; axle++) {
+    const p = pivot(sx, axle, pivotX)
+    batch.rod('frame', v(sx * inner, p.y, p.z), v(sx * (pivotX + .14), p.y, p.z), .19, 10)
+    batch.disc('chrome', v(sx * (pivotX + .142), p.y, p.z), 'x', sx, 0, .14, 10)
+  }
 }
 
 /** The far silhouette's hull: plain panels, dark where the windows are. */
@@ -323,12 +346,7 @@ function hull(batch: Batch, spec: ExpeditionSpec, level: 0 | 1): [number, number
     }
     batch.box('trim', [cabinStart[4] * 1.5, .14, .3], [0, eyeY - .35, cabinStart[0] - .3])
     for (const x of [-.4, .4]) batch.box('accent', [.3, .025, .14], [x, eyeY - .267, cabinStart[0] - .3])
-    // One fixed boss per tread on the hull: the only attachment.
-    for (const sx of [-1, 1]) for (let axle = 0; axle < 3; axle++) {
-      const p = pivot(sx, axle)
-      batch.rod('frame', v(sx * 1.1, p.y, p.z), v(sx * 1.63, p.y, p.z), .22, 10)
-      batch.disc('chrome', v(sx * 1.632, p.y, p.z), 'x', sx, 0, .16, 10)
-    }
+    bosses(batch, PANEL_PIVOT)
   }
   return [0, eyeY, eyeZ]
 }
@@ -341,7 +359,12 @@ function hull(batch: Batch, spec: ExpeditionSpec, level: 0 | 1): [number, number
 /** Longitudinal spacing of the three axles. */
 export const AXLE_SPACING = 2.48
 /** The arm's hull pivot, and the pod centre relative to it at rest. */
-const pivot = (sx: number, axle: number) => v(sx * 1.37, 1.26, (axle - 1) * AXLE_SPACING - .55)
+export const PIVOT_Y = 1.26
+/** Distance of the round seven hulls' pivots from the centreline. */
+const PANEL_PIVOT = 1.37
+export const pivot = (sx: number, axle: number, pivotX: number) => v(sx * pivotX, PIVOT_Y, (axle - 1) * AXLE_SPACING - .55)
+/** A pod's centre at rest. */
+export const podRest = (sx: number, axle: number, pivotX: number) => v(sx * (pivotX + ARM.x), PIVOT_Y + ARM.y, (axle - 1) * AXLE_SPACING)
 const ARM = { x: .74, y: -.5, z: .55 }
 const ARM_REACH = Math.hypot(ARM.y, ARM.z), ARM_REST = Math.atan2(ARM.z, -ARM.y)
 /** Furthest a pod can drop below and rise above its rest height, in metres. */
@@ -357,7 +380,7 @@ function beltOutline(count: number) {
 }
 
 function track(batch: Batch, width: number, level: 0 | 1) {
-  const pts = beltOutline(level ? 14 : 44), n = pts.length, hw = width / 2, centre = v(0, -.15, 0)
+  const pts = beltOutline(level ? 14 : 36), n = pts.length, hw = width / 2, centre = v(0, -.15, 0)
   const outer = (i: number, x: number) => v(x, pts[i].y - .76, pts[i].x)
   const inner = (i: number, x: number) => v(x, (pts[i].y - .7) * .82 + .7 - .76, pts[i].x * .88)
   // Belt length along its outside, rounded to whole lugs so the pattern closes on itself.
@@ -390,16 +413,69 @@ function track(batch: Batch, width: number, level: 0 | 1) {
     for (const sx of [-1, 1]) {
       const at = v(sx * face, y - .76, z)
       if (level) { batch.disc('chrome', at, 'x', sx, 0, r * .78, 6); continue }
-      // One flat wheel face in three zones, so nothing overlaps and nothing is hidden.
-      batch.disc('frame', at, 'x', sx, r * .78, r, 10)
+      // One flat wheel face in zones, so nothing overlaps and nothing is hidden. The top wheel
+      // drives the belt: its rim is cut into sprocket teeth, bright against dark.
+      if (y > 1) for (let k = 0; k < 20; k++) {
+        const a0 = k / 20 * Math.PI * 2, a1 = (k + 1) / 20 * Math.PI * 2
+        const p = (angle: number, radius: number) => v(at.x, at.y + Math.sin(angle) * radius, at.z + Math.cos(angle) * radius)
+        batch.quad(k % 2 ? 'frame' : 'chrome', [p(a0, r * .78), p(a0, r), p(a1, r), p(a1, r * .78)], side(sx))
+      } else batch.disc('frame', at, 'x', sx, r * .78, r, 10)
       batch.disc('chrome', at, 'x', sx, r * .42, r * .78, 10)
       batch.disc('accent', at, 'x', sx, 0, r * .42, 10)
     }
   }
+  // Three road wheels carry the ground run between the two idlers.
+  if (!level) for (const z of [-.37, 0, .37]) {
+    const r = .15, y = .055 + .075 + r - .76, face = hw - .02
+    batch.rod('frame', v(-face, y, z), v(face, y, z), r, 8, true)
+    for (const sx of [-1, 1]) {
+      batch.disc('chrome', v(sx * face, y, z), 'x', sx, r * .45, r, 8)
+      batch.disc('accent', v(sx * face, y, z), 'x', sx, 0, r * .45, 8)
+    }
+  }
+}
+
+/**
+ * A flare: a slim arched guard that follows the belt a hand's width above it, over the drive
+ * sprocket and part way down each slope. It is the same on both sides of the vehicle, because
+ * one geometry is drawn for both, so its crown is central and both edges turn down. Each axle
+ * covers a different stretch: the front reaches down ahead as a mud guard, the rear trails
+ * off behind in a kick.
+ */
+function flare(batch: Batch, kind: ExpeditionSpec['fender'], axle: number, width: number) {
+  const gap = .1, front = axle === 0, rear = axle === 2
+  // How far down each slope the guard stops: 1 at the sprocket, 0 at the idler on the ground.
+  const reach: Record<ExpeditionSpec['fender'], [number, number, number]> = {
+    swept: [front ? .12 : .5, rear ? .3 : .45, rear ? .5 : 0], round: [front ? .2 : .34, rear ? .1 : .34, 0],
+    short: [front ? .5 : .66, .6, rear ? .34 : 0], deep: [front ? 0 : .12, rear ? 0 : .12, rear ? .2 : 0],
+    folded: [front ? .2 : .5, rear ? .16 : .3, rear ? .28 : 0],
+  }
+  const [ahead, behind, kick] = reach[kind]
+  // Along a belt slope from the idler (0) to the sprocket (1), stood off by the gap.
+  const slope = (f: number, sz: number) => [sz * (1.03 - .74 * f) + sz * .765 * gap, .37 + .88 * f + .644 * gap - .76]
+  const controls = [slope(ahead, -1), slope((ahead + 1) / 2, -1), [-.2, 1.5 + gap - .76], [0, 1.545 + gap - .76], [.2, 1.5 + gap - .76], slope((behind + 1) / 2, 1), slope(behind, 1)]
+  if (kick) { const end = controls[controls.length - 1]; controls.push([end[0] + kick * .6, end[1] - kick * .1], [end[0] + kick, end[1] + kick * .08]) }
+  const path = new T.CatmullRomCurve3(controls.map(([z, y]) => v(0, y, z)), false, 'centripetal').getPoints(11)
+  const half = width / 2 + .1, thick = kind === 'deep' ? .09 : .055, part = new Batch()
+  // Five columns across: edge, shoulder, crown, shoulder, edge.
+  const column = (p: T.Vector3, k: number, drop: number) => { const u = k / 2 - 1; return v(u * half, p.y + .05 * (1 - u * u) - .05 * u * u - drop, p.z) }
+  for (let i = 0; i < path.length - 1; i++) {
+    for (let k = 0; k < 4; k++) {
+      part.quad('paint', [column(path[i], k, 0), column(path[i + 1], k, 0), column(path[i + 1], k + 1, 0), column(path[i], k + 1, 0)], UP)
+      part.quad('frame', [column(path[i], k, thick), column(path[i + 1], k, thick), column(path[i + 1], k + 1, thick), column(path[i], k + 1, thick)], DOWN)
+    }
+    for (const k of [0, 4]) part.quad('accent', [column(path[i], k, 0), column(path[i + 1], k, 0), column(path[i + 1], k, thick), column(path[i], k, thick)], side(k ? 1 : -1))
+  }
+  for (const i of [0, path.length - 1]) for (let k = 0; k < 4; k++) part.quad('accent', [column(path[i], k, 0), column(path[i], k + 1, 0), column(path[i], k + 1, thick), column(path[i], k, thick)], i ? AFT : FORE)
+  part.soften(.7)
+  batch.append(part)
+  // Two cast stays carry it from the sprocket housing.
+  for (const sx of [-1, 1]) batch.box('frame', [.07, .3, .2], [sx * (half - .1), 1.545 + gap - .76 - .2, 0])
 }
 
 /** One fender. It belongs to its tread and travels with it. `axle` 0 is the front, 2 the rear. */
-function fender(batch: Batch, kind: ExpeditionSpec['fender'], axle: number, width: number, level: 0 | 1) {
+function fender(batch: Batch, kind: ExpeditionSpec['fender'], axle: number, width: number, level: 0 | 1, smooth = false) {
+  if (smooth && !level) { flare(batch, kind, axle, width); return }
   const deep = kind === 'deep', swept = kind === 'swept', rounded = kind === 'round' && !level
   const rear = axle === 2, front = axle === 0
   const controls = [
@@ -442,17 +518,17 @@ function fender(batch: Batch, kind: ExpeditionSpec['fender'], axle: number, widt
 /** The swing arm of one side, from the hull pivot at its origin to the pod's hub. */
 function arm(batch: Batch, sx: number) {
   const end = v(sx * ARM.x, ARM.y, ARM.z)
-  batch.rod('frame', v(0, 0, 0), end, .18, 10)
+  batch.rod('frame', v(0, 0, 0), end, .15, 10)
   // A bright collar where the pod turns on the arm.
-  batch.rod('chrome', end.clone().multiplyScalar(.8), end.clone().multiplyScalar(.93), .205, 10, true)
+  batch.rod('chrome', end.clone().multiplyScalar(.8), end.clone().multiplyScalar(.93), .172, 10, true)
 }
 
 /** The far silhouette's pods: a prism and a fender plate each, fixed at rest. */
-function farPods(batch: Batch, width: number) {
+function farPods(batch: Batch, width: number, pivotX: number) {
   const outline = [[-1.05, .22], [-.8, .055], [.8, .055], [1.05, .22], [.22, 1.45], [-.22, 1.45]], hw = width / 2
   const top = [[-1.19, 1.05], [-.38, 1.57], [.42, 1.57], [1.12, 1.05]], half = hw + .12
   for (const sx of [-1, 1]) for (let axle = 0; axle < 3; axle++) {
-    const c = pivot(sx, axle).add(v(sx * ARM.x, ARM.y, ARM.z)), at = (z: number, y: number, x: number) => v(c.x + x, c.y + y - .76, c.z + z)
+    const c = podRest(sx, axle, pivotX), at = (z: number, y: number, x: number) => v(c.x + x, c.y + y - .76, c.z + z)
     for (let i = 0; i < 6; i++) {
       const a = outline[i], b = outline[(i + 1) % 6]
       batch.quad('rubber', [at(a[0], a[1], -hw), at(b[0], b[1], -hw), at(b[0], b[1], hw), at(a[0], a[1], hw)], v(0, (a[1] + b[1]) * .5 - .6, (a[0] + b[0]) * .5))
@@ -515,12 +591,45 @@ const REACH = new T.Sphere(new T.Vector3(0, 1.2, 0), 5.6)
 
 interface Built { root: T.Group; arms?: [T.InstancedMesh, T.InstancedMesh]; pods?: T.InstancedMesh[]; triangles: number; draws: number }
 
+/**
+ * What a body supplies to become a tank: its hull at each detail level and where the running
+ * gear hangs. The treads, arms, materials and detail switching are the same for every body.
+ */
+export interface TankHull {
+  trackWidth: number
+  fender: ExpeditionSpec['fender']
+  /** Arched fenders with a crown, as the lofted bodies wear, instead of folded plate. */
+  smoothFenders?: boolean
+  /** Distance of the arm pivots from the centreline. The pods sit 0.74 m further out. */
+  pivotX: number
+  /** Half the hull's length, for the collision box. */
+  halfLength: number
+  /** Headlamp centres, for beams and effects. */
+  headlamps: T.Vector3[]
+  /** Near (0) or mid (1) hull. Returns the driver's eye. */
+  near(batch: Batch, level: 0 | 1): [number, number, number]
+  /** Far silhouette hull, a few dozen faces. */
+  far(batch: Batch): void
+}
+
+/** The round seven panel hulls as a tank body. */
+export function panelHull(spec: ExpeditionSpec): TankHull {
+  const nose = spec.sections[0], y = (nose[2] + nose[3]) * .5 + .12
+  return {
+    trackWidth: spec.trackWidth ?? .93, fender: spec.fender, pivotX: PANEL_PIVOT,
+    halfLength: Math.max(-nose[0], spec.sections.at(-1)![0]),
+    headlamps: [-1, 1].flatMap(sx => [.23, .65, 1.07].map(x => v(sx * x * Math.min(1, nose[1] / 1.3), y, nose[0] - .12))),
+    near: (batch, level) => hull(batch, spec, level),
+    far: batch => farHull(batch, spec),
+  }
+}
+
 export class ExpeditionTank {
   readonly object = new T.Group()
   /** The driver's eye in the model's frame. */
   readonly eye: [number, number, number]
   /** Headlamp centres in the model's frame, for beams and effects. */
-  readonly headlamps: T.Vector3[]
+  get headlamps(): T.Vector3[] { return this.hull.headlamps }
   private readonly mats: Surfaces
   private readonly built: (Built | undefined)[] = []
   private readonly geometries: T.BufferGeometry[] = []
@@ -530,11 +639,9 @@ export class ExpeditionTank {
   private current: Level = 0
   private detachShowroom?: () => void
 
-  constructor(readonly spec: ExpeditionSpec, color: T.ColorRepresentation, accent: T.ColorRepresentation) {
+  constructor(readonly hull: TankHull, color: T.ColorRepresentation, accent: T.ColorRepresentation) {
     this.object.name = 'Exploration tank'
-    this.mats = surfaces(color, accent, spec.trackWidth ?? .93)
-    const nose = spec.sections[0], y = (nose[2] + nose[3]) * .5 + .12
-    this.headlamps = [-1, 1].flatMap(sx => [.23, .65, 1.07].map(x => v(sx * x * Math.min(1, nose[1] / 1.3), y, nose[0] - .12)))
+    this.mats = surfaces(color, accent, hull.trackWidth)
     const near = this.build(0)
     this.eye = near.root.userData.eye as [number, number, number]
     this.pose()
@@ -554,20 +661,20 @@ export class ExpeditionTank {
 
   private build(level: Level): Built {
     const done = this.built[level]; if (done) return done
-    const root = new T.Group(), spec = this.spec, width = spec.trackWidth ?? .93
+    const root = new T.Group(), spec = this.hull, width = spec.trackWidth
     root.name = ['Near', 'Mid', 'Far'][level]; root.visible = level === this.current
     const result: Built = { root, triangles: 0, draws: 0 }
     const body = new Batch()
-    if (level === 2) { farHull(body, spec); farPods(body, width); this.mesh(root, body.solid(), 'Silhouette') }
+    if (level === 2) { spec.far(body); farPods(body, width, spec.pivotX); this.mesh(root, body.solid(), 'Silhouette') }
     else {
-      root.userData.eye = hull(body, spec, level)
+      root.userData.eye = spec.near(body, level)
       this.mesh(root, body.solid(), 'Hull and cabin')
       const glass = body.canopy()
       if (glass) { const mesh = new T.Mesh(this.own(glass), this.mats.canopy); mesh.name = 'Cabin windows'; root.add(mesh) }
       if (level === 0) {
         const arms = (sx: number) => { const b = new Batch(); arm(b, sx); return this.instanced(root, b, 3, sx < 0 ? 'Left swing arms' : 'Right swing arms', false) }
         result.arms = [arms(-1), arms(1)]
-        result.pods = [0, 1, 2].map(axle => { const b = new Batch(); track(b, width, 0); fender(b, spec.fender, axle, width, 0); return this.instanced(root, b, 2, `Treads and fenders, axle ${axle + 1}`, true) })
+        result.pods = [0, 1, 2].map(axle => { const b = new Batch(); track(b, width, 0); fender(b, spec.fender, axle, width, 0, spec.smoothFenders); return this.instanced(root, b, 2, `Treads and fenders, axle ${axle + 1}`, true) })
       } else {
         // One draw for all six: at this distance every pod wears the middle axle's fender.
         const b = new Batch(); track(b, width, 1); fender(b, spec.fender, 1, width, 1)
@@ -610,7 +717,7 @@ export class ExpeditionTank {
       const sx = i % 2 ? 1 : -1, axle = i >> 1
       // Swing angle that raises the arm's end by `lift`: negative swings it up.
       const swing = ARM_REST - Math.acos(Math.min(1, Math.max(-1, (-ARM.y - this.lift[i]) / ARM_REACH)))
-      const c = Math.cos(swing), s = Math.sin(swing), px = sx * 1.37, py = 1.26, pz = (axle - 1) * AXLE_SPACING - .55
+      const c = Math.cos(swing), s = Math.sin(swing), px = sx * this.hull.pivotX, py = PIVOT_Y, pz = (axle - 1) * AXLE_SPACING - .55
       if (b.arms) {
         matrix.compose(place.set(px, py, pz), turn.setFromAxisAngle(X, swing), unit)
         b.arms[i % 2].setMatrixAt(axle, matrix)

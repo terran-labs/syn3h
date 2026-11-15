@@ -45,7 +45,7 @@ export interface LabExhibit {
   groupLabel?: string
   /** Heading for a group, for example 'Syn3h buggy: round 2, built on Wide body'. Defaults to title. */
   heading?(group: string | undefined): string
-  /** Designs shown when the page opens, by id. Defaults to the first design of the group. */
+  /** Design shown when the page opens, by id, or 'all' to open side by side. Defaults to the first design of the group. */
   defaultDesign?(group: string | undefined): string | undefined
 }
 

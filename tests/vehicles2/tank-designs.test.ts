@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as T from 'three/webgpu'
 import { round7 } from '../../src/vehicles/tankDesigns/round7'
+import { round8 } from '../../src/vehicles/tankDesigns/round8'
 import { ExpeditionTank, POD_TRAVEL } from '../../src/vehicles/tankDesigns/expeditionKit'
 import { mergedSurfaces } from '../../src/vehicles/skins/mergeStatic'
 import { roleOf } from '../../src/vehicles/skins/showroom'
@@ -9,14 +10,14 @@ import { roleOf } from '../../src/vehicles/skins/showroom'
 const instance = (mesh: T.InstancedMesh, i: number) => { const m = new T.Matrix4(); mesh.getMatrixAt(i, m); return m.premultiply(mesh.matrixWorld) }
 const meshes = (root: T.Object3D) => { const out: T.Mesh[] = []; root.traverse(o => { if (o instanceof T.Mesh && o.visible && o.parent?.visible !== false) out.push(o) }); return out }
 
-describe('ten exploration tanks', () => {
-  it('has ten distinct silhouettes rather than colour copies', () => {
-    expect(new Set(round7.map(d => d.id)).size).toBe(10)
+describe('generated tanks', () => {
+  it('has ten distinct silhouettes a round rather than colour copies', () => {
+    expect(new Set([...round7, ...round8].map(d => d.id)).size).toBe(20)
     expect(new Set(round7.map(d => JSON.stringify(d.spec.sections))).size).toBe(10)
   })
 
-  for (const design of round7) it(`${design.name}: budgets, footprint, roles and six independent treads`, () => {
-    const tank = new ExpeditionTank(design.spec, design.color, design.accent ?? 0xff5a12)
+  for (const design of [...round8, ...round7]) it(`${design.name}: budgets, footprint, roles and six independent treads`, () => {
+    const tank = new ExpeditionTank(design.hull(), design.color, design.accent)
     tank.object.updateMatrixWorld(true)
     // PATTERN.md rule 4. The tank is allowed 10 draws up close for its moving assemblies.
     const near = tank.stats(0), mid = tank.stats(1), far = tank.stats(2)
@@ -43,8 +44,9 @@ describe('ten exploration tanks', () => {
       else box.union(local.applyMatrix4(mesh.matrixWorld))
     }
     const size = box.getSize(new T.Vector3())
-    expect(size.x).toBeGreaterThan(5); expect(size.x).toBeLessThan(5.7)
-    expect(size.z).toBeGreaterThan(7.4); expect(size.z).toBeLessThan(8.5)
+    // The original's footprint: pods at 2 m either side, 2.5 m apart, each 2.1 m long.
+    expect(size.x).toBeGreaterThan(4.9); expect(size.x).toBeLessThan(5.7)
+    expect(size.z).toBeGreaterThan(7); expect(size.z).toBeLessThan(8.5)
     expect(box.min.y).toBeGreaterThan(-.01); expect(box.min.y).toBeLessThan(.1)
     expect(box.containsPoint(new T.Vector3(...tank.eye))).toBe(true)
 
@@ -75,7 +77,7 @@ describe('ten exploration tanks', () => {
   })
 
   it('faces outward: the hull and each pod enclose a positive volume', () => {
-    const tank = new ExpeditionTank(round7[0].spec, round7[0].color, 0xffffff)
+    const tank = new ExpeditionTank(round8[0].hull(), round8[0].color, 0xffffff)
     for (const mesh of meshes(tank.object.children[0])) {
       if (mesh.name === 'Cabin windows') continue
       const p = mesh.geometry.getAttribute('position'), n = mesh.geometry.getAttribute('normal')

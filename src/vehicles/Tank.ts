@@ -10,7 +10,7 @@ import { addLavaGlow } from './skins/lavaGlow'
 import { addNightReadability } from './skins/nightReadability'
 import { detailLevel, registerVehicleDetail } from './skins/mergeStatic'
 import { ExpeditionTank } from './tankDesigns/expeditionKit'
-import { round7 } from './tankDesigns/round7'
+import { round8 } from './tankDesigns/round8'
 
 export const tankPower=defineParam({id:'tank.power',label:'Power',group:'Tank',scope:'world',default:2000,min:500,max:3500,step:10})
 export const tankSpeed=defineParam({id:'tank.speed',label:'Speed',group:'Tank',scope:'world',default:25,min:10,max:40,step:.1})
@@ -23,11 +23,12 @@ export const tankGrip=defineParam({id:'tank.grip',label:'Grip',group:'Tank',scop
 const CLIMB_FADE=10
 export const tankClimb=defineParam({id:'tank.climb',label:'Steepest climb, degrees (90 = original)',group:'Tank',scope:'world',default:45,min:20,max:90,step:1})
 /**
- * Which body the tank wears. 1 to 10 are the generated exploration designs (tankDesigns/round7.ts,
- * in the order the vehicle lab lists them); 0 is the Mars Explorer model. The physics is the same
+ * Which body the tank wears. 1 to 10 are the generated designs (tankDesigns/round8.ts, in the
+ * order the vehicle lab lists them); 0 is the Mars Explorer model, and the default until the
+ * owner picks a design. The physics is the same
  * under all of them: six tracks on the original footprint. Changing it rebuilds the tank in place.
  */
-export const tankDesign=defineParam({id:'tank.design',label:'Body design (1 to 10, 0 = original)',group:'Tank',scope:'world',default:0,min:0,max:round7.length,step:1})
+export const tankDesign=defineParam({id:'tank.design',label:'Body design (1 to 10, 0 = original)',group:'Tank',scope:'world',default:0,min:0,max:round8.length,step:1})
 export const tankCG=defineParam({id:'tank.cg',label:'Centre of gravity',group:'Tank',scope:'world',default:-.2,min:-1.4,max:1,step:.01})
 
 // TankTrack.prefab: the Detailed mesh sits at (0.5,-0.75,-1.05) with X scale 0.82, so a pod is 1.0 wide
@@ -95,14 +96,15 @@ export class Tank extends Vehicle {
     this.tracks.forEach(t=>t.removeFromParent());this.tracks.length=0
     this.legacyHull?.removeFromParent();this.legacyHull=undefined
     if(this.chassis)this.game.world.removeCollider(this.chassis,true)
-    const design=round7[want-1]
-    // Tank.prefab Cube: size 2.5x1.5x5, centre Y=1. Track masses are folded into the hull. The
-    // generated bodies are 7.7 m long, so their box is too: a nose that passes through a wall
-    // would take the driver's eye with it. Height and clearance are the original's.
-    this.chassis=this.game.world.createCollider(RAPIER.ColliderDesc.cuboid(1.25,.75,design?3.8:2.5).setTranslation(0,1,0).setDensity(0).setCollisionGroups(Vehicle.chassisGroups()),this.body)
+    const design=round8[want-1]
+    // Tank.prefab Cube: size 2.5x1.5x5, centre Y=1. Track masses are folded into the hull. A
+    // generated body longer than that gets a box as long as it is: a nose that passes through
+    // a wall would take the driver's eye with it. Width, height and clearance are the original's.
+    const hull=design?.hull()
+    this.chassis=this.game.world.createCollider(RAPIER.ColliderDesc.cuboid(1.25,.75,Math.max(2.5,hull?.halfLength??0)).setTranslation(0,1,0).setDensity(0).setCollisionGroups(Vehicle.chassisGroups()),this.body)
     this.setMass()
-    if(!design){this.legacy();return}
-    const tank=new ExpeditionTank(design.spec,design.color,design.accent??0xff5a12)
+    if(!design||!hull){this.legacy();return}
+    const tank=new ExpeditionTank(hull,design.color,design.accent)
     tank.object.position.y=-GROUND;this.object.add(tank.object);this.generated=tank
     if(this.tinted)tank.setColors(this.colors.body,this.colors.accent)
     this.ridePosition.position.set(tank.eye[0],tank.eye[1]-GROUND,tank.eye[2])

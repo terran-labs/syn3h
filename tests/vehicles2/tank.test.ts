@@ -54,12 +54,12 @@ describe('legacy tank with six shape casts',()=>{
    params.set('tank.design',1)
    // A generated design: its own lamps, a cabin to sit in, the eye inside the hull.
    expect(v.object.userData.cockpit).toBe(true);expect(v.object.userData.ownLamps).toBe(true)
-   expect(v.ridePosition.position.y).toBeGreaterThan(1);expect(v.ridePosition.position.z).toBeLessThan(-1)
+   expect(v.ridePosition.position.y).toBeGreaterThan(.6);expect(Math.abs(v.ridePosition.position.z)).toBeLessThan(2)
    const first=meshes().length;expect(first).toBeGreaterThan(0)
    // The model stands on the ground the physics rests on.
    v.update(0,1);v.object.updateMatrixWorld(true)
    const hull=meshes().find(m=>m.name==='Hull and cabin')!,box=new THREE.Box3().setFromObject(hull)
-   expect(box.min.y).toBeGreaterThan(.3);expect(box.max.z-box.min.z).toBeGreaterThan(7.4)
+   expect(box.min.y).toBeGreaterThan(.3);expect(box.max.z-box.min.z).toBeGreaterThan(5)
    const height=v.body.translation().y
    params.set('tank.design',8);expect(meshes().length).toBe(first);expect(v.body.translation().y).toBe(height)
    h.step(v,100);expect(v.groundedTracks).toBe(6);expect(v.body.mass()).toBeCloseTo(241)
