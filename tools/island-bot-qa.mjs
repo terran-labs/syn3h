@@ -7,7 +7,8 @@
  * bots drive their real physics. This does not claim a human completed the climb.
  */
 import { chromium } from 'playwright-core';
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createServer } from 'vite';
 import { serveStable } from './serve-stable.mjs';
 import { mkdir,writeFile,readFile } from 'node:fs/promises';
@@ -21,8 +22,9 @@ process.env.SYN3H_NO_ROOM_SERVER='1';process.env.VITE_SERVER_URL=`ws://127.0.0.1
 const room=await serveStable({dir:process.cwd(),port:0});
 const vite=await createServer({define:{'import.meta.env.VITE_SERVER_URL':JSON.stringify(`ws://127.0.0.1:${port}`)},server:{host:'127.0.0.1',port,strictPort:true,proxy:{'/ws':{target:`ws://127.0.0.1:${room.server.address().port}`,ws:true}}}});
 let browser;const frames=[],results=[],errors=[];
+async function smoke(){const result=await promisify(execFile)(process.execPath,['tools/smoke.mjs',`http://127.0.0.1:${port}/`,`${out}/smoke.png`]);console.log(result.stdout);if(result.stderr)console.error(result.stderr);}
 try{
- await vite.listen();browser=await chromium.launch({channel:'chrome',headless:false,args:['--enable-unsafe-webgpu','--use-angle=metal','--ignore-gpu-blocklist']});
+ await vite.listen();if(process.env.SMOKE_ONLY){await smoke();}else{browser=await chromium.launch({channel:'chrome',headless:false,args:['--enable-unsafe-webgpu','--use-angle=metal','--ignore-gpu-blocklist']});
  const page=await browser.newPage({viewport:{width:960,height:540}});page.on('websocket',ws=>{if(ws.url().includes('/ws?')){console.log('ROOM SOCKET',ws.url());if(!ws.url().startsWith(`ws://127.0.0.1:${port}/ws?`))errors.push('Wrong room endpoint: '+ws.url());}});page.on('pageerror',e=>errors.push(e.stack??e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());});
  await page.goto(`http://127.0.0.1:${port}/?autoplay=1&room=island-bot-qa&planet=${planet}&seed=${seed}`);await page.waitForFunction(()=>window.syn3hNet?.connected,null,{timeout:90000});
  if(process.env.NORMAL_DEFAULTS){const defaults=await page.evaluate(()=>Object.fromEntries(['bots.count','bots.fleet','bots.jetForwardFlight','daydream.seconds'].map(id=>[id,window.syn3h.params.get(id).value])));console.log('NORMAL DEFAULTS',defaults);if(defaults['bots.count']!==4||defaults['bots.fleet']!==1||defaults['bots.jetForwardFlight']!==true||defaults['daydream.seconds']!==300)throw new Error('Normal bot defaults differ');}
@@ -65,5 +67,6 @@ try{
  const data=await Promise.all(frames.map(async f=>({label:f.label,url:'data:image/png;base64,'+(await readFile(f.file)).toString('base64')})));
  await sheet.evaluate(async frames=>{const c=document.getElementById('sheet');c.width=1280;c.height=Math.ceil(frames.length/4)*200;const ctx=c.getContext('2d');ctx.font='14px sans-serif';for(let i=0;i<frames.length;i++){const img=new Image();img.src=frames[i].url;await img.decode();const x=i%4*320,y=Math.floor(i/4)*200;ctx.drawImage(img,x,y,320,180);ctx.fillStyle='white';ctx.fillText(frames[i].label,x+5,y+195);}},data);
  await sheet.screenshot({path:`${out}/contact-sheet.png`});console.log('ERRORS',errors);if(errors.length)throw new Error(errors[0]);
- if(process.env.SMOKE){await browser.close();browser=null;execFileSync(process.execPath,['tools/smoke.mjs',`http://127.0.0.1:${port}/`,`${out}/smoke.png`],{stdio:'inherit'});}
+ if(process.env.SMOKE){await browser.close();browser=null;await smoke();}
+ }
 }finally{await browser?.close();await vite.close();await room.close();}
