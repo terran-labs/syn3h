@@ -220,12 +220,6 @@ export class Shell implements System {
     foot.innerHTML = '<button type="button" class="exit-world">Leave world</button>'
     foot.prepend(railTop.querySelector('.wi-actions')!)
     this.inspector.element.querySelector('.wi-cards')!.after(foot)
-    const gear = document.createElement('select'); gear.className = 'gear-select'; gear.setAttribute('aria-label', 'Gear'); gear.disabled = true
-    this.inspector.element.querySelector('.wi-gear-slot')!.append(gear)
-    gear.addEventListener('change', () => {
-      const rack = (window as unknown as { syn3hNet?: { gear?: GearRack } }).syn3hNet?.gear
-      if (rack?.list().includes(gear.value as GearId)) { rack.select(gear.value as GearId); this.audio.cue('click') }
-    }, { signal })
     // Exit world asks first (the owner, 15 November 2026): one stray click on the panels must
     // not throw the player back to the galaxy. Code that calls openMenu() itself is not asked.
     foot.querySelector('.exit-world')!.addEventListener('click', () => this.askExit(), { signal })
@@ -1158,24 +1152,10 @@ export class Shell implements System {
     }
     return this.gearView
   }
-  private gearSelect?: HTMLSelectElement
-  private gearShown = ''
-  /**
-   * The rail selector shows the available gear and the current choice.
-   * Tapping it (or T) moves to the next. The rack and the Bungee are the Weapons lane's.
-   */
+  /** Gear selection and touch actions live in the HUD drum. */
   private updateGear(): void {
-    const net = (window as unknown as { syn3hNet?: { gear?: GearRack; bungee?: { attached: boolean; letGo(): void } } }).syn3hNet
-    const select = this.gearSelect ??= this.element.querySelector<HTMLSelectElement>('.gear-select')!
-    if (!net?.gear) { if (!select.disabled) select.disabled = true; return }
-    // The Grapple's extra touch buttons now come from the gear drum (rack.controls()).
-    const list = net.gear.list(), signature = list.join(',')
-    if (signature !== this.gearShown) {
-      this.gearShown = signature; select.replaceChildren()
-      for (const id of list) { const option = document.createElement('option'); option.value = id; option.textContent = GEAR_LABELS[id]; select.append(option) }
-    }
-    if (select.value !== net.gear.current && document.activeElement !== select) select.value = net.gear.current
-    this.hasSeveralGear = list.length > 1; if (select.disabled === this.hasSeveralGear) select.disabled = !this.hasSeveralGear
+    const rack = (window as unknown as { syn3hNet?: { gear?: GearRack } }).syn3hNet?.gear
+    this.hasSeveralGear = (rack?.list().length ?? 0) > 1
   }
   private updateGI(): void {
     // Match the post gate: lite and full allow effects selected by their strength.
