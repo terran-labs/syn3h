@@ -21,7 +21,7 @@ await mkdir(output,{recursive:true});
 try {
   process.env.SYN3H_NO_ROOM_SERVER='1';
   room=await serveStable({dir:process.cwd(),port:0});
-  vite=await createServer({server:{host:'127.0.0.1',port:5186,strictPort:true,proxy:{'/ws':{target:`ws://127.0.0.1:${room.server.address().port}`,ws:true}}}});await vite.listen();
+  vite=await createServer({define:{'import.meta.env.VITE_SERVER_URL':JSON.stringify('ws://127.0.0.1:5186')},server:{host:'127.0.0.1',port:5186,strictPort:true,proxy:{'/ws':{target:`ws://127.0.0.1:${room.server.address().port}`,ws:true}}}});await vite.listen();
   if(!probe){const gate=await run(process.execPath,['tools/smoke.mjs','http://127.0.0.1:5186/',`${output}/gate.png`],{maxBuffer:1e6});await writeFile(`${output}/smoke.log`,gate.stdout+gate.stderr);console.log('SMOKE OK before soak');}
   browser=await chromium.launch({channel:'chrome',headless:false,args:['--enable-unsafe-webgpu','--use-angle=metal','--ignore-gpu-blocklist','--enable-precise-memory-info']});
   const browserCDP=await browser.newBrowserCDPSession();

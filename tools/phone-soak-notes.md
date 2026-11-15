@@ -28,5 +28,6 @@ Scope and artifacts
 - Inspected layout evidence: `/tmp/syn3h-phone-soak/iphone-auto-4x-landscape.png` and the portrait screenshots in the same directory.
 - Before the timed runs, short harness checks exercised forced-safe and WebGL fallback for 20 seconds, plus a 30-second WebGL repeat, with no page errors. They are probes, not soaks: `/tmp/syn3h-phone-probe/summary.json`.
 - Forced-safe and WebGL five-minute soaks and the fifteen-minute growth check were cancelled. A failed third-case entry reflects deliberate browser closure at the case boundary, not a game crash.
+- The HTTP development client used fresh rooms on the shared port-8787 room server, not the random-port server started by the original harness. The harness now explicitly sets its server URL. Client rendering and memory measurements remain local, but this was not an isolated networking benchmark.
 - Initial source was `ae16596`. The heavy-job wrapper merge arrived late in the Android case; manual reload kept the running game in place, but CSS hot-updated. The phone screenshots are evidence of the observed layout, not a frozen benchmark of that later merge.
 - Before the soak: typecheck, 28 bot/core tests and the standard smoke gate passed. No full suite was run. All future heavy checks use `tools/heavy.sh`.
