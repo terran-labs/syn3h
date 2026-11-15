@@ -107,11 +107,13 @@ async function main(): Promise<void> {
       url.searchParams.set('autoplay', '1')
       // An explicit lobby vehicle change starts a new session.
       try { sessionStorage.removeItem(RESUME_KEY) } catch {}
-      // ResumeSession saves on pagehide. Clear after that older listener so it cannot
-      // restore the previous vehicle over this explicit lobby selection.
-      window.addEventListener('pagehide', () => {
+      // ResumeSession saves on both unload signals. Clear after its older listeners,
+      // including a visibilitychange delivered after pagehide.
+      const clearPreviousResume = () => {
         try { sessionStorage.removeItem(RESUME_KEY) } catch {}
-      }, { once: true })
+      }
+      window.addEventListener('pagehide', clearPreviousResume)
+      document.addEventListener('visibilitychange', clearPreviousResume)
       location.replace(url)
       return
     }
