@@ -1,6 +1,6 @@
 /**
  * Close-up screenshots of the grass and flowers on a world: the player is parked on open
- * ground beside a spawn pad (PAD and SIDE in the environment pick which pad and how far to its side) and the game's own camera is used, by day and at night.
+ * ground beside a spawn pad (PAD and SIDE in the environment pick which pad and how far to its side) and the game's own camera is used, by day, at night, and pulled in close.
  *
  *   node tools/terrainlab/cover-shots.mjs [baseUrl] [outDir] [world,world,...]
  */
@@ -33,11 +33,23 @@ for (const world of worlds) {
     s.player.body.setLinvel({ x: 0, y: 0, z: 0 }, true)
     s.params.set('sun.dayLength', 0)
   }, [Number(process.env.PAD ?? 2), Number(process.env.SIDE ?? 45)])
+  // Hide the controls card and the update toast: they cover the plants nearest the camera.
+  await page.evaluate(() => {
+    for (const el of document.querySelectorAll('body *')) {
+      const t = el.firstChild?.textContent?.trim()
+      if (el.children.length && (t === 'Controls' || /^New build available/.test(el.textContent?.trim() ?? ''))) el.style.display = 'none'
+    }
+  })
   await page.waitForTimeout(3500)
   await page.screenshot({ path: `${out}/${name}-day.png` })
   await page.evaluate(() => window.syn3h.params.set('sun.timeOfDay', 22.5))
   await page.waitForTimeout(3500)
   await page.screenshot({ path: `${out}/${name}-night.png` })
+  // A close look by day, with the camera pulled in low behind the vehicle.
+  await page.evaluate(() => { window.syn3h.params.set('sun.timeOfDay', 15); window.syn3h.params.set('camera.distance', 2.2) })
+  await page.waitForTimeout(3000)
+  await page.screenshot({ path: `${out}/${name}-close.png` })
+  await page.evaluate(() => window.syn3h.params.set('camera.distance', 6.25))
 }
 await browser.close()
 console.log(JSON.stringify({ out, errors }))

@@ -135,6 +135,7 @@ export class ProceduralTerrain implements Terrain {
     this.cover = game.add(new GroundCover(
       game.scene, this.sampler, game.camera,
       () => game.renderer.toneMappingExposure / Math.max(1e-3, Number(params.get('sky.exposure')?.value ?? game.renderer.toneMappingExposure)),
+      this.look,
     ))
 
     this.unsubscribe = params.onChange((id) => {
