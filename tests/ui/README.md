@@ -444,3 +444,25 @@ keyboard); frame cost unmeasured on real devices; the game measures its own fram
 while the lobby is on screen, so a slow lobby can lower `gfx.level` before play starts.
 `tools/heavy.sh node tests/ui/galaxy.mjs` checks the galaxy, the custom world and the
 descent on desktop and phone; `planets.mjs` checks the panel lobby with `?galaxy=0`.
+
+## The page never zooms
+
+The owner's iPad occasionally zoomed the page, which puts the controls out of reach. Every
+route is closed, all in `index.html` so it holds before any script loads:
+
+- the viewport says `minimum-scale=1, maximum-scale=1, user-scalable=no`;
+- `html { touch-action: manipulation }` removes double-tap zoom;
+- Safari ignores the viewport for pinches, so its `gesturestart`, `gesturechange` and
+  `gestureend` events, any two-finger `touchmove` and `dblclick` are cancelled;
+- on touch screens every `input`, `select` and `textarea` is at least 16px, because Safari
+  zooms in when a smaller field is focused (the Advanced sliders' number fields were);
+- if the page is found scaled anyway, the viewport is restated once nothing is being typed,
+  which makes Safari reset its scale.
+
+The galaxy's own pinch uses pointer events on its canvas and is unaffected.
+`tools/heavy.sh node tests/ui/no-zoom.mjs` checks this in WebKit at iPad and iPhone sizes.
+It cannot pinch a real screen. Zoom is an accessibility aid, so this is a deliberate trade
+for a game whose controls are fixed to the screen edges.
+
+The Vehicle panel carries the paint sliders (`paint.*`, client scope) built from the
+registry, with a link to all sliders for vehicle shading.
