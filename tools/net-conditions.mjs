@@ -64,6 +64,10 @@ const sets = argv.flatMap((a, i) => (a === '--set' ? [argv[i + 1].split('=')] : 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
 const proxy = spawn('npx', ['tsx', 'server/latency-proxy.ts', '--listen', listen, '--target', target, ...Object.entries(net).flatMap(([k, v]) => [`--${k}`, v])], { stdio: ['ignore', 'ignore', 'inherit'] })
+// Without its own proxy this would measure whatever else answers on the port (it happened:
+// a leftover proxy with other settings), so a proxy that fails to start ends the run.
+let finished = false
+proxy.on('exit', (code) => { if (!finished) { console.error(`latency proxy exited early (code ${code}); is port ${listen} in use?`); process.exit(3) } })
 await wait(2500)
 
 // One browser process per player. Two pages in one headless Chrome take turns at being the
@@ -325,7 +329,9 @@ try {
       return { tagged, beamsSent: sent, ms: tagged ? Date.now() - t0 : null }
     },
     async hill() {
-      await place(b, 0, 0, 0)
+      // B waits at its spawn pad, well away from the hill: the runway itself may lie inside
+      // the zone, and two vehicles in it are a contest, not a capture.
+      await b.evaluate(() => { const s = window.syn3h.terrain.spawnPoint(1); window.syn3h.player.teleport(s.position, s.heading) })
       await a.evaluate(() => window.syn3h.params.set('game.mode', 1))
       const t0 = Date.now()
       const gotZone = await b.waitForFunction(() => window.syn3hNet.game.mode === 1 && window.syn3hNet.game.koth.zone, null, { timeout: 10000 }).then(() => true, () => false)
@@ -352,7 +358,11 @@ try {
       await wait(3000)
       const score = await b.evaluate((id) => window.syn3hNet.game.scores[id] ?? 0, idA)
       await a.evaluate(() => window.syn3h.params.set('game.mode', 0))
-      return { zoneOnB: true, zoneMs, captureSeenOnB: held, captureMs, scoreAfter3s: score }
+      const seen = await a.evaluate(() => {
+        const p = window.syn3h.player.body.translation(), k = window.syn3hNet.game.koth
+        return { p: [p.x, p.y, p.z].map((n) => +n.toFixed(1)), r: +Math.hypot(p.x - k.zone.x, p.z - k.zone.z).toFixed(1), zone: k.zone, holder: k.holder, contested: k.contested, stuck: k.out }
+      })
+      return { zoneOnB: true, zoneMs, captureSeenOnB: held, captureMs, scoreAfter3s: score, spot, seen }
     },
   }
 
@@ -367,6 +377,7 @@ try {
   report.errors = errors
   report.replaced = replaced
 } finally {
+  finished = true
   await Promise.all(browsers.map((b) => b.close()))
   proxy.kill()
 }

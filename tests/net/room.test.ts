@@ -209,7 +209,8 @@ describe('Room', () => {
     const b = join('B')
     room.disconnect(a.peer)
     expect(b.peer.last('leave')).toEqual({ type: 'leave', id: a.id })
-    expect(b.peer.last('game')).toMatchObject({ event: 'leave', game: { it: b.id } })
+    // A was both "it" and host: the room hears about each.
+    expect(b.peer.all('game').slice(-2)).toMatchObject([{ event: 'leave', game: { it: b.id } }, { event: 'host', actor: b.id, game: { it: b.id, host: b.id } }])
     expect(room.playerCount).toBe(1)
     expect(b.peer.last('game')!.game.scores[a.id]).toBeUndefined()
   })
@@ -647,5 +648,133 @@ describe('Room idle reset', () => {
     busy.connect(late2)
     busy.receive(late2, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, name: 'M', params: { 'world.gravity': 7 } }))
     expect(late2.last('welcome')!.params['world.gravity']).toBe(3)
+  })
+})
+
+describe('Room with strangers', () => {
+  /** Advance the clock one second at a time, each listed peer sending its state every step. */
+  function run(seconds: number, states: [FakePeer, () => Uint8Array][]) {
+    for (let t = 0; t < seconds; t++) {
+      clock += 1000
+      for (const [peer, make] of states) room.receive(peer, make())
+    }
+  }
+  const here = () => state([0, 0, 0])
+  const parked = () => state([0, 0, 0], [0, 0, 0], { paused: true })
+
+  it('takes sixteen players, turns the seventeenth away, and reuses a freed place', () => {
+    const players = Array.from({ length: 16 }, (_, i) => join(`P${i}`))
+    expect(room.playerCount).toBe(16)
+    expect(new Set(players.map((p) => p.peer.last('welcome')!.slot)).size).toBe(16)
+    const late = new FakePeer()
+    room.connect(late)
+    room.receive(late, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, name: 'Late', params: {} }))
+    expect(late.last('error')).toEqual({ type: 'error', message: 'room is full' })
+    expect(late.closed).toBe(true)
+    expect(late.last('welcome')).toBeUndefined()
+    expect(room.playerCount).toBe(16)
+
+    room.disconnect(players[5].peer)
+    const next = join('Next')
+    expect(next.peer.last('welcome')!.slot).toBe(5)
+    expect(room.playerCount).toBe(16)
+  })
+
+  it('tells players with the same name apart', () => {
+    const names = ['Sam', 'sam', 'Sam', 'Sam 2'].map((n) => join(n).peer.last('welcome')!)
+    const list = names.at(-1)!.players.map((p) => p.name)
+    expect(list).toEqual(['Sam', 'sam 2', 'Sam 3', 'Sam 2 2'])
+    // The number fits inside the name limit.
+    const long = 'x'.repeat(24)
+    join(long)
+    const twin = join(long).peer.last('welcome')!.players.at(-1)!.name
+    expect(twin).toBe(`${'x'.repeat(22)} 2`)
+    // A name freed by leaving can be taken again.
+    const c = join('Casey')
+    room.disconnect(c.peer)
+    expect(join('Casey').peer.last('welcome')!.players.at(-1)!.name).toBe('Casey')
+  })
+
+  it('passes "it" on when its holder parks for eight seconds, and not before', () => {
+    const a = join('A')
+    const b = join('B')
+    const c = join('C')
+    expect(b.peer.last('game')?.game.it ?? a.id).toBe(a.id)
+    // Everyone plays past the join grace.
+    run(11, [[a.peer, here], [b.peer, here], [c.peer, here]])
+    // A locks their phone: heartbeats say parked.
+    run(7, [[a.peer, parked], [b.peer, here], [c.peer, here]])
+    expect(c.peer.last('game')?.game.it ?? a.id).toBe(a.id)
+    run(2, [[a.peer, parked], [b.peer, here], [c.peer, here]])
+    expect(c.peer.last('game')).toMatchObject({ event: 'leave', game: { it: b.id } })
+    // A comes back and is just another player.
+    run(3, [[a.peer, here], [b.peer, here], [c.peer, here]])
+    expect(c.peer.last('game')!.game.it).toBe(b.id)
+  })
+
+  it('keeps "it" with a holder who is back within eight seconds, or when nobody else is playing', () => {
+    const a = join('A')
+    const b = join('B')
+    run(11, [[a.peer, here], [b.peer, here]])
+    run(6, [[a.peer, parked], [b.peer, here]])
+    run(6, [[a.peer, here], [b.peer, here]])
+    run(6, [[a.peer, parked], [b.peer, here]])
+    expect(b.peer.last('game')?.game.it ?? a.id).toBe(a.id)
+    // Both parked: there is nobody to pass it to.
+    run(20, [[a.peer, parked], [b.peer, parked]])
+    expect(b.peer.last('game')?.game.it ?? a.id).toBe(a.id)
+  })
+
+  it('passes "it" on from a holder whose states simply stop', () => {
+    const a = join('A')
+    const b = join('B')
+    run(11, [[a.peer, here], [b.peer, here]])
+    run(15, [[b.peer, here]])
+    expect(b.peer.last('game')).toMatchObject({ event: 'leave', game: { it: b.id } })
+    expect(room.playerCount).toBe(2)
+  })
+
+  it('closes a connection that has been silent for three minutes, but not a parked tab', () => {
+    const a = join('A')
+    const gone = join('Gone')
+    const hidden = join('Hidden')
+    for (let t = 0; t < 185; t++) {
+      clock += 1000
+      room.receive(a.peer, here())
+      // A long hidden tab is throttled to one heartbeat a minute.
+      if (t % 60 === 0) room.receive(hidden.peer, parked())
+    }
+    expect(gone.peer.closed).toBe(true)
+    expect(a.peer.all('leave')).toEqual([{ type: 'leave', id: gone.id }])
+    expect(hidden.peer.closed).toBe(false)
+    expect(room.playerCount).toBe(2)
+  })
+
+  it('carries a King of the Hill round on when the host leaves', () => {
+    const zone = { x: 100, z: 0, inner: 20, outer: 40, yMin: 40, yMax: 80 }
+    const onHill = () => state([130, 50, 0])
+    const host = join('Host')
+    const b = join('B')
+    const c = join('C')
+    send(host.peer, { type: 'param', id: 'game.mode', value: 1 })
+    send(host.peer, { type: 'zone', zone })
+    run(5, [[host.peer, here], [b.peer, onHill], [c.peer, here]])
+    const before = c.peer.last('game')!.game
+    expect(before.koth.holder).toBe(b.id)
+    expect(before.scores[b.id]).toBeGreaterThanOrEqual(4)
+
+    room.disconnect(host.peer)
+    expect(c.peer.last('game')).toMatchObject({ event: 'host', actor: b.id, game: { host: b.id, mode: 1 } })
+    run(5, [[b.peer, onHill], [c.peer, here]])
+    const after = c.peer.last('game')!.game
+    expect(after.koth.zone).toEqual(zone)
+    expect(after.koth.holder).toBe(b.id)
+    expect(after.scores[b.id]).toBeGreaterThan(before.scores[b.id])
+    expect(after.scores[host.id]).toBeUndefined()
+    // The new host may move the hill; the others still may not.
+    send(c.peer, { type: 'zone', zone: { ...zone, x: 50 } })
+    expect(c.peer.last('game')!.game.koth.zone).toEqual(zone)
+    send(b.peer, { type: 'zone', zone: { ...zone, x: 50 } })
+    expect(c.peer.last('game')!.game.koth.zone).toMatchObject({ x: 50 })
   })
 })
