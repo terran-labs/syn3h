@@ -376,6 +376,7 @@ export class NetClient implements System {
       }
       r.delay = r.buffer.delay(dt, netInterpDelay.value, netMaxDelay.value)
       r.wrapSize = this.wrapSize
+      r.groundAt = this.groundAt
       r.steer(now - r.delay, maxEx, lp, radius, blend)
     }
     this.applyShoves()
@@ -670,6 +671,9 @@ export class NetClient implements System {
     return { ...shot, o: [nearestImage(shot.o[0], me.x, size), shot.o[1], nearestImage(shot.o[2], me.z, size)] }
   }
 
+  /** The terrain's height, as remote vehicles use it to stay out of the hills. */
+  private readonly groundAt = (x: number, z: number): number => this.ctx.terrain.heightAt(x, z)
+
   /** Side of the wrapping world in metres, or 0 when the world does not wrap. */
   private get wrapSize(): number {
     return this.ctx.terrain.wrapSize ?? 0
@@ -729,6 +733,7 @@ export class NetClient implements System {
     const [body, accent] = isBotId(info.id) ? botColors(info.id - BOT_ID_BASE) : info.colors
     ;(vehicle as VehicleExtras).setColors?.(body, accent)
     const r = new RemotePlayer(info, vehicle)
+    r.groundAt = this.groundAt
     r.disposeEffects = this.attachEffects(vehicle)
     this.remotes.set(info.id, r)
     this.ctx.audio?.play('materialize', { x: s.p[0], y: s.p[1], z: s.p[2] })
@@ -769,6 +774,8 @@ export class NetClient implements System {
       v.body.setRotation(q, true)
       this.ctx.game.add(v)
       const next = new RemotePlayer(info, v)
+      next.groundAt = this.groundAt
+      next.clearance = r.clearance
       next.disposeEffects = this.attachEffects(v)
       for (const s of [...r.buffer.states].reverse()) next.buffer.push(s, s.t, netSendRate.value)
       this.remotes.set(info.id, next)
