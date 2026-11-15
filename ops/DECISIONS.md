@@ -2,6 +2,23 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Saturday 14 November, about 11:15pm Pacific: roads are worn tracks except on the alpine world
+
+**Decided** (Terrain Lab thread, relayed by the Orchestrator). "I don't think anything
+other than the alpine forest should have the clean asphalt road with edges". Every planet
+but alpine draws its roads as worn tracks. On trunk; not in release 3.
+
+## Saturday 14 November, 11:26pm Pacific: the throttle comes back in a gentler form
+
+**What happened.** Lifting the throttle at 10:13pm raised load to 30 to 45. The preview
+broker's health checks time out at that load and it fails closed, so every preview link
+went down at about 11:10pm. The device list had not changed; nothing needed re-approving.
+
+**What changed.** Heavy jobs now run at low priority, vitest is capped at three workers a
+run, and jobs queue above a load of 8 with five slots. The Foreman restarted the game,
+dashboard and vehicle lab previews through the broker on the owner's request. If the
+owner wants no throttle at all, the cost is that his preview links drop under load.
+
 ## Saturday 14 November, 10:25pm to 10:35pm Pacific: four decisions in the Foreman thread
 
 1. **Releases may go public overnight unseen.** "Yes. All new releases may go public

@@ -32,6 +32,19 @@ decisions in `ops/DECISIONS.md` or from standing direction in `FOREMAN-BRIEF.md`
 10. **Five vehicle leads, started 4:35pm.** Check: each has merged `build/weekend`, looked at
     a drive capture of its vehicle, and told the owner its two weakest points.
 
+## Next, high priority (owner, 14 November about 11:15pm, via Terrain Lab)
+
+- **Smooth ground near the camera.** "Let's not do this now, but add it to the backlog as a
+  high priority." Within an adjustable distance (about 120 m by default, a per device
+  slider) draw the ground at about 1 m with smooth interpolation of the existing 4 m
+  heights and exact road cross-sections, and give every locally simulated vehicle, bots
+  included, a physics ground patch built from the same maths. "Doing it right in this case
+  includes physical interpolation as well as visual interpolation. Tires clipping through
+  the terrain is unacceptable." One shared world slider for driven ground detail so all
+  players ride the same surface. Owner of the work: Terrain Lab; estimate four to five
+  hours. Check: a tyre never sinks below the drawn ground in a capture at 1 m detail, and
+  two players on the same slope read the same ride height.
+
 ## Waiting on the owner
 
 - Drive the Syn3h buggy by hand and say what is wrong.
