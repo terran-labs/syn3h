@@ -37,7 +37,8 @@ import type { HeightSampler } from './sampler'
 
 // Registered in settings.ts, which has no renderer imports, so planet recipes, tests and
 // the server can set it without loading this file.
-import { terrainGroundCover } from './settings'
+import { paletteFor } from './palettes'
+import { terrainGroundCover, terrainRoadStyle } from './settings'
 export const groundCover = terrainGroundCover
 
 export const groundCoverShade = defineParam({
@@ -87,6 +88,36 @@ export function coverHeights(look: number, treeLine = 100): { top: number; talle
 
 /** Nothing grows within this height of the sea level: the largest wave crest plus 0.3 m. */
 const SHORE_MARGIN = 1.8
+
+/** Beside a made road nothing grows within this distance of its centreline, in metres. */
+const ROAD_CLEAR = 7.5
+
+/**
+ * Beside a worn track (two wheel ruts about 1.3 m either side of the centreline, worn
+ * ground fading out by 3.6 to 5 m): short grass on the crown between the ruts, bare ruts,
+ * and growth thinning back in from TRACK_RUTS to TRACK_CLEAR.
+ */
+const TRACK_CROWN = 0.6
+const TRACK_RUTS = 2.2
+const TRACK_CLEAR = 4.5
+
+/** Whether this planet's roads are drawn as worn tracks: its palette, unless the shared slider overrides it. */
+export function roadsAreTracks(look: number): boolean {
+  const style = Math.round(terrainRoadStyle.value)
+  return style === 2 || (style === 0 && paletteFor(look).track > 0)
+}
+
+/** Distance to the nearest road centreline at a wrapped world point, interpolated between grid points. */
+function roadDistAt(data: HeightSampler['data'], wx: number, wz: number): number {
+  const half = data.size / 2, n = data.resolution
+  const fx = Math.max(0, Math.min(n - 1.001, (wx + half) / data.cell))
+  const fz = Math.max(0, Math.min(n - 1.001, (wz + half) / data.cell))
+  const ix = Math.floor(fx), iz = Math.floor(fz), tx = fx - ix, tz = fz - iz
+  const r = data.roadDist, i = iz * n + ix
+  const a = r[i] + (r[i + 1] - r[i]) * tx
+  const b = r[i + n] + (r[i + n + 1] - r[i + n]) * tx
+  return a + (b - a) * tz
+}
 
 /** Plants count as near a river, pool or shore within this many metres of its edge. */
 const FLOW_REACH = 35
@@ -140,6 +171,8 @@ class Layer {
     material: THREE.Material,
     /** Coverage per slot, written when this is the shading layer. */
     private readonly cover: Uint8Array | null,
+    /** Roads on this planet are worn tracks, so growth comes up to them. */
+    private readonly tracks = false,
   ) {
     const count = spec.n * spec.n
     this.maxScale = MAX_PLANT_HEIGHT / Math.max(1e-3, plantTop(spec.geometry))
@@ -243,7 +276,21 @@ class Layer {
     const half = data.size / 2
     const gi = Math.min(data.resolution - 1, Math.round((wz + half) / data.cell)) * data.resolution +
       Math.min(data.resolution - 1, Math.round((wx + half) / data.cell))
-    if (data.roadDist[gi] < 7.5) return
+    const road = roadDistAt(data, wx, wz)
+    let roadScale = 1
+    if (!this.tracks) {
+      if (road < ROAD_CLEAR) return
+    } else if (road < TRACK_CROWN) {
+      // Only short grass on the crown between the ruts.
+      if (!this.cover) return
+      roadScale = 0.45
+    } else if (road < TRACK_CLEAR) {
+      if (road < TRACK_RUTS) return
+      // Thinning back in from the worn edge of the track, shorter nearer it.
+      const t = (road - TRACK_RUTS) / (TRACK_CLEAR - TRACK_RUTS)
+      if (unit(phash2(cx, cz, this.seed + 5, cells), 7) > t * t * (3 - 2 * t)) return
+      roadScale = 0.55 + 0.45 * t
+    }
     const g = this.ground
     g.x = x; g.z = z; g.y = y
     g.treeLine = treeLine
@@ -258,6 +305,7 @@ class Layer {
     p.scale = 0; p.lx = 0; p.lz = 0
     this.spec.grow(g, h, p)
     if (!(p.scale > 0)) return
+    p.scale *= roadScale
     // Soft cap: small plants keep their size, tall ones are pressed under the limit
     // gradually, so a layer near the cap keeps its variety instead of all stopping at it.
     P[s * 4 + 1] = this.maxScale * Math.tanh(p.scale / this.maxScale)
@@ -403,6 +451,7 @@ export class GroundCover implements System {
   private layers: Layer[] = []
   private material: THREE.MeshStandardNodeMaterial[] = []
   private amount = -1
+  private roadStyle = -1
   private enabled = true
   private treeLine = 0
   /** Coverage of the shading layer, one byte per slot; see SHADE_N. */
@@ -460,6 +509,8 @@ export class GroundCover implements System {
     this.treeLine = data.layout.summitHeight * 0.3
     shadeTint.value.setHex(flora.shade)
     const specs = flora.layers(this.treeLine)
+    const tracks = roadsAreTracks(data.settings.look)
+    this.roadStyle = terrainRoadStyle.value
     this.layers = specs.map((spec, i) => {
       // Layers on the same grid share a material: it depends only on the treadmill's reach.
       const reach = spec.n * spec.spacing * 0.5
@@ -471,7 +522,7 @@ export class GroundCover implements System {
       }
       const shading = !!spec.shade
       if (shading && (spec.n !== SHADE_N || spec.spacing !== SHADE_SPACING)) throw new Error('the shading layer must use the coverage grid')
-      const layer = new Layer(spec, this.sampler, (data.seed * 31 + 77 + i * 1013) | 0, m, shading ? this.cover : null)
+      const layer = new Layer(spec, this.sampler, (data.seed * 31 + 77 + i * 1013) | 0, m, shading ? this.cover : null, tracks)
       this.group.add(layer.mesh)
       return layer
     })
@@ -480,7 +531,8 @@ export class GroundCover implements System {
 
   update(): void {
     if (!this.enabled) return
-    if (groundCover.value !== this.amount) this.rebuild()
+    // The road style is a look only, so the terrain does not regenerate: replant here.
+    if (groundCover.value !== this.amount || terrainRoadStyle.value !== this.roadStyle) this.rebuild()
     // At zero nothing is drawn at all.
     this.group.visible = this.amount > 0
     shadeStrength.value = this.amount > 0 ? groundCoverShade.value : 0
