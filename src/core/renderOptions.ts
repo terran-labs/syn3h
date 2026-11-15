@@ -101,3 +101,21 @@ export function deviceLostMessage(info: { api?: string; message?: string; reason
   const detail = info?.message && info.message !== 'Unknown reason' ? ` (${info.message})` : ''
   return `The ${api} was lost${detail}. Reload to keep playing.`
 }
+
+/**
+ * What the lobby is doing to the 3D view, from the shell's own state classes.
+ *
+ *  - 'playing': the world is the picture. Render every frame and judge the frame rate.
+ *  - 'lobby': a menu or the start screen is up but the world shows through or is about to
+ *    (the plain lobby, the attract tour, the descent from the galaxy). Render every frame,
+ *    but the frame rate says nothing about how the game will run, so do not judge it.
+ *  - 'covered': the opaque galaxy lobby hides the world entirely. Do not judge the frame
+ *    rate, and there is no point drawing a world nobody can see at full rate.
+ *
+ * Without a shell at all (a lab page, a test) the view is always 'playing'.
+ */
+export type ViewState = 'playing' | 'lobby' | 'covered'
+export function viewState(shell: { contains(name: string): boolean } | null | undefined): ViewState {
+  if (!shell || shell.contains('is-playing')) return 'playing'
+  return shell.contains('is-galaxy') && !shell.contains('is-descending') && !shell.contains('is-attract') ? 'covered' : 'lobby'
+}
