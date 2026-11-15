@@ -42,7 +42,11 @@ try {
 
   report.backend = await page.evaluate(async () => {
     const s = window.syn3h, g = s.game, r = g.renderer
-    for (const [id, v] of Object.entries({ 'bots.count': 0, 'sun.dayLength': 0, 'sun.timeOfDay': 15, 'gfx.auto': false, 'gfx.level': 2, 'post.on': true,
+    // The top quality level allows every effect; the check then sets the strengths it needs.
+    // The governor's budget is held full so a slow headless frame cannot shed effects mid-check.
+    if (g.quality.setLevel) { g.quality.setAuto(false); g.quality.setLevel(5) } else { s.params.set('gfx.auto', false); s.params.set('gfx.level', 2) }
+    Object.defineProperty(g.quality, 'postBudget', { configurable: true, get: () => 1 })
+    for (const [id, v] of Object.entries({ 'bots.count': 0, 'sun.dayLength': 0, 'sun.timeOfDay': 15, 'post.on': true, 'post.bloom': 0.5, 'post.shafts': 0.7, 'post.flare': 0.5,
       // Frame-to-frame differences must come from the effects under test alone.
       'post.temporal': false, 'post.motionBlur': 0, 'post.grain': 0, 'post.heat': 0, 'post.plunge': 0, 'post.clouds': 0 })) s.params.set(id, v)
     await new Promise(done => setTimeout(done, 1500))
