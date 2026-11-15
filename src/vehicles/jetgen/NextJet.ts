@@ -34,25 +34,41 @@ export class NextJet {
   private readonly legs: BuiltLeg[] = []
   private readonly geometries: THREE.BufferGeometry[] = []
   gearAmount = 0
+  /** The main nozzle. It swivels about its pivot to vector the thrust. */
+  readonly thruster = new THREE.Group()
 
-  constructor(readonly design: JetDesign) {
+  /** @param detail 1 is full detail, lower values cut the triangle count (see Builder). */
+  constructor(readonly design: JetDesign, readonly detail = 1) {
+    const military = design.finish === 'military'
     this.flake = flakeTexture(design.paint)
-    this.paint = new THREE.MeshPhysicalMaterial({ color: design.paint, metalness: .78, roughness: .28, clearcoat: 1, clearcoatRoughness: .04, bumpMap: this.flake, bumpScale: .35 })
+    this.paint = military
+      ? new THREE.MeshPhysicalMaterial({ color: design.paint, metalness: .55, roughness: .5, clearcoat: .25, clearcoatRoughness: .4, flatShading: true })
+      : new THREE.MeshPhysicalMaterial({ color: design.paint, metalness: .78, roughness: .28, clearcoat: 1, clearcoatRoughness: .04, bumpMap: this.flake, bumpScale: .35 })
     this.glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(design.accent).multiplyScalar(1.3), transparent: true, opacity: .8, blending: THREE.AdditiveBlending, depthWrite: false })
     this.materials = {
       paint: this.paint,
-      chrome: new THREE.MeshPhysicalMaterial({ color: 0xe9edf2, metalness: 1, roughness: .07 }),
+      chrome: military ? new THREE.MeshPhysicalMaterial({ color: 0x7d858f, metalness: 1, roughness: .32, flatShading: true }) : new THREE.MeshPhysicalMaterial({ color: 0xe9edf2, metalness: 1, roughness: .07 }),
       glass: new THREE.MeshPhysicalMaterial({ color: 0x050608, metalness: .7, roughness: .04, clearcoat: 1, clearcoatRoughness: .02 }),
       dark: new THREE.MeshStandardMaterial({ color: 0x0b0c0f, metalness: .4, roughness: .55 }),
       glow: this.glow,
+      // Squadron colour on tips and fins, where the candy designs carry chrome.
+      accent: new THREE.MeshStandardMaterial({ color: design.accent, metalness: .2, roughness: .55, flatShading: military }),
     }
-    const b = new Builder(); design.build(b)
+    const b = new Builder(detail, design.hard ?? false); design.build(b)
     this.nozzles = b.nozzles; this.hover = b.hover
     for (const mat of Object.keys(this.materials) as Mat[]) {
       const parts = b.pieces.filter(p => p.mat === mat).map(p => p.geometry); if (!parts.length) continue
       const merged = mergeGeometries(parts); parts.forEach(g => g.dispose()); this.geometries.push(merged)
       const mesh = new THREE.Mesh(merged, this.materials[mat]); mesh.name = `jet-${mat}`; mesh.castShadow = mat !== 'glow'; mesh.receiveShadow = mat !== 'glow'
       this.object.add(mesh)
+    }
+    if (b.gimbal) {
+      this.thruster.position.set(0, b.gimbal.y, b.gimbal.z); this.object.add(this.thruster)
+      for (const mat of Object.keys(this.materials) as Mat[]) {
+        const parts = b.gimbalPieces.filter(p => p.mat === mat).map(p => p.geometry); if (!parts.length) continue
+        const merged = mergeGeometries(parts); parts.forEach(g => g.dispose()); this.geometries.push(merged)
+        const mesh = new THREE.Mesh(merged, this.materials[mat]); mesh.name = `jet-thruster-${mat}`; mesh.castShadow = mat !== 'glow'; this.thruster.add(mesh)
+      }
     }
     this.object.add(this.gear)
     b.legs.forEach(l => this.legs.push(this.buildLeg(l)))
@@ -115,6 +131,20 @@ export class NextJet {
     this.object.updateMatrixWorld(true)
     const inverse = new THREE.Matrix4().copy(this.object.matrixWorld).invert()
     return this.legs.map(l => l.foot.getWorldPosition(new THREE.Vector3()).applyMatrix4(inverse).y - .042)
+  }
+
+  /**
+   * Swivel the main nozzle, in radians. Positive pitch turns the exhaust up and positive yaw
+   * turns it to the right, as seen from behind. Jet.ts can instead copy its thrust rotation
+   * straight onto `thruster.quaternion`.
+   */
+  setVector(pitch: number, yaw: number): void { this.thruster.rotation.set(pitch, -yaw, 0, 'YXZ') }
+
+  /** Triangles in the whole model, landing gear included. */
+  triangles(): number {
+    let count = 0
+    this.object.traverse(o => { if (o instanceof THREE.Mesh) { const g = o.geometry as THREE.BufferGeometry; count += (g.index ? g.index.count : g.getAttribute('position').count) / 3 } })
+    return Math.round(count)
   }
 
   /** Glow strength for the nozzles and hover ports, 0..1. */

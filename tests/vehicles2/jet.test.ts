@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { initPhysics } from '../../src/core/physics'
-import { Jet, jetDrag, jetFlightThrust, jetHoverHold } from '../../src/vehicles/Jet'
+import { Jet, jetDrag, jetFlightThrust, jetHoverHold, jetVectorResponse } from '../../src/vehicles/Jet'
 import { harness } from './harness'
 
 beforeAll(initPhysics)
@@ -50,6 +50,18 @@ describe('Jet hover and flight',()=>{
   const full=run();jetFlightThrust.value=1
   try{const half=run();expect(half).toBeGreaterThan(0);expect(half).toBeLessThan(full*.7)}
   finally{jetFlightThrust.value=2}
+ })
+ it('thrust vectoring steers below stall speed in pitch and yaw, and its slider scales it',()=>{
+  expect(jetVectorResponse.value).toBe(.3)
+  // 12 m/s is under the 20 m/s stall speed, where the wings have little authority.
+  const rate=(axis:'y'|'w',vector:number)=>{jetVectorResponse.value=vector
+   const h=harness(9.81,false);const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,500,0));v.isLocal=false;v.input.special=true;v.input.z=1
+   h.step(v,2);v.body.setLinvel({x:0,y:0,z:-12},true);v.body.setAngvel({x:0,y:0,z:0},true);v.input[axis]=-1;h.step(v,50)
+   const w=v.body.angvel(),r=Math.hypot(w.x,w.y,w.z)*180/Math.PI;v.dispose();h.world.free();return r}
+  try{const pitch=rate('y',.3),yaw=rate('w',.3)
+   expect(pitch).toBeGreaterThan(30);expect(yaw).toBeGreaterThan(8)
+   expect(rate('y',1)).toBeGreaterThan(pitch*2);expect(rate('w',1)).toBeGreaterThan(yaw*2)}
+  finally{jetVectorResponse.value=.3}
  })
  it('hover hold lets go near the ground so a landed jet keeps its weight',()=>{
   const h=harness(9.81,false);const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,1.4,0));v.isLocal=false

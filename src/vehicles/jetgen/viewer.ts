@@ -38,9 +38,17 @@ async function main() {
   const floor = new THREE.Mesh(new THREE.CircleGeometry(40, 64), new THREE.ShadowNodeMaterial({ opacity: .38 }))
   floor.rotation.x = -Math.PI / 2; floor.position.y = GROUND_Y; floor.receiveShadow = true; scene.add(floor)
 
-  const jets = JET_DESIGNS.map(d => new NextJet(d)), spacing = 9.5
-  // Rows of five: the first round in front, each later round behind it.
-  jets.forEach((j, i) => { j.object.position.set((i % 5 - 2) * -spacing, 0, Math.floor(i / 5) * 12); scene.add(j.object) })
+  const spacing = 9.5, query = new URLSearchParams(location.search)
+  // ?detail=low shows the reduced polygon versions.
+  let detail = query.get('detail') === 'low' ? .5 : 1
+  let jets: NextJet[] = []
+  const build = () => {
+    jets.forEach(j => { scene.remove(j.object); j.dispose() })
+    jets = JET_DESIGNS.map(d => new NextJet(d, detail))
+    // Rows of five: the first round in front, each later round behind it.
+    jets.forEach((j, i) => { j.object.position.set((i % 5 - 2) * -spacing, 0, Math.floor(i / 5) * 12); scene.add(j.object) })
+    api.jets = jets
+  }
   let current = 0, all = false, gearTarget = 0, gear = 0, autoGear = true, hoverLift = 1
   const name = document.querySelector('#name')!, blurb = document.querySelector('#blurb')!, nav = document.querySelector('#nav')!
   const buttons: HTMLButtonElement[] = []
@@ -50,22 +58,26 @@ async function main() {
     jets.forEach((j, i) => { j.object.visible = all || i === current })
     buttons.forEach((b, i) => b.classList.toggle('on', all ? i === jets.length : i === current))
     name.textContent = all ? 'Next-generation jets' : `${current + 1}. ${jets[current].design.name}`
-    blurb.textContent = all ? 'Generated from parameters, no model files. Pick one to look closer.' : jets[current].design.blurb
+    blurb.textContent = all ? 'Generated from parameters, no model files. Pick one to look closer.' : `${jets[current].design.blurb} ${jets[current].triangles().toLocaleString('en-US')} triangles at ${detail === 1 ? 'full' : 'reduced'} detail.`
     if (all) view(new THREE.Vector3(-.25, .6, -1), 62, new THREE.Vector3(0, 0, 5))
     else view(new THREE.Vector3(-.62, .42, -.8), 12, jets[current].object.position.clone().setY(-.1))
   }
-  jets.forEach((j, i) => { const b = document.createElement('button'); b.textContent = `${i + 1} ${j.design.name}`; b.onclick = () => show(i); nav.append(b); buttons.push(b) })
+  JET_DESIGNS.forEach((d, i) => { const b = document.createElement('button'); b.textContent = `${i + 1} ${d.name}`; b.onclick = () => show(i); nav.append(b); buttons.push(b) })
   const allButton = document.createElement('button'); allButton.textContent = 'All'; allButton.onclick = () => show(-1); nav.append(allButton); buttons.push(allButton)
   const gearButton = document.createElement('button'); gearButton.textContent = 'Landing gear: auto'; nav.append(gearButton)
   gearButton.onclick = () => { if (autoGear) { autoGear = false; gearTarget = 1 } else if (gearTarget === 1) gearTarget = 0; else autoGear = true; gearButton.textContent = `Landing gear: ${autoGear ? 'auto' : gearTarget ? 'down' : 'up'}` }
+  const detailButton = document.createElement('button'); detailButton.textContent = `Polygons: ${detail === 1 ? 'full' : 'reduced'}`; nav.append(detailButton)
+  detailButton.onclick = () => { detail = detail === 1 ? .5 : 1; build(); detailButton.textContent = `Polygons: ${detail === 1 ? 'full' : 'reduced'}`; show(all ? -1 : current) }
   const picker = document.createElement('label'); picker.innerHTML = 'Paint <input type="color">'; nav.append(picker)
   const input = picker.querySelector('input')!; input.oninput = () => jets[current].setColors(input.value, jets[current].design.accent)
-  document.querySelector('#status')!.textContent = ''
-  show(Number(new URLSearchParams(location.search).get('design') ?? 1) - 1)
 
   let elapsed = 0; const timer = new THREE.Timer()
   const api = {
-    ready: true, jets, show, renderer,
+    ready: false, jets, show, renderer,
+    /** For captures: full (1) or reduced (.5) polygons. */
+    setDetail(value: number) { detail = value; build(); show(all ? -1 : current) },
+    /** For captures: hold the main nozzle at a fixed deflection, or pass null to resume the sweep. */
+    vector: null as [number, number] | null,
     /** For captures: fix the gear, the height above the floor and the camera. */
     pose(g: number, lift: number, dir: [number, number, number], distance: number) {
       autoGear = false; gear = gearTarget = g; hoverLift = lift
@@ -73,12 +85,16 @@ async function main() {
       jets.forEach(j => { j.object.position.y = lift }); view(new THREE.Vector3(...dir), distance, target)
     },
   }
+  build(); document.querySelector('#status')!.textContent = ''
+  show(Number(query.get('design') ?? 1) - 1); api.ready = true
   Object.assign(window, { jetLab: api })
   renderer.setAnimationLoop(() => {
     timer.update(); const dt = Math.min(timer.getDelta(), .05); elapsed += dt
     if (autoGear) { gearTarget = Math.floor(elapsed / 5) % 2; hoverLift = 1 }
     gear += Math.sign(gearTarget - gear) * Math.min(Math.abs(gearTarget - gear), dt * .7)
-    jets.forEach(j => { j.setGear(gear); j.setThrottle(1 - gear * .7); if (autoGear || gearTarget !== gear) j.object.position.y = hoverLift * (1 - gear) * 1.6 })
+    // Sweep the main nozzle through its travel so the thrust vectoring is visible.
+    const v = api.vector ?? [Math.sin(elapsed * 1.6) * .35, Math.cos(elapsed * 1.6) * .35]
+    jets.forEach(j => { j.setGear(gear); j.setThrottle(1 - gear * .7); j.setVector(v[0], v[1]); if (autoGear || gearTarget !== gear) j.object.position.y = hoverLift * (1 - gear) * 1.6 })
     controls.update(); renderer.render(scene, camera)
   })
   addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight) })

@@ -5,9 +5,9 @@ import { NextJet } from '../../src/vehicles/jetgen/NextJet'
 import { GROUND_Y } from '../../src/vehicles/jetgen/shapes'
 
 describe('generated next-generation jets', () => {
-  it('offers ten distinct designs in two rounds', () => {
-    expect(JET_DESIGNS).toHaveLength(10)
-    expect(new Set(JET_DESIGNS.map(d => d.id)).size).toBe(10)
+  it('offers fifteen distinct designs in three rounds', () => {
+    expect(JET_DESIGNS).toHaveLength(15)
+    expect(new Set(JET_DESIGNS.map(d => d.id)).size).toBe(15)
   })
   for (const design of JET_DESIGNS) {
     it(`${design.name} builds, fits the current jet's envelope and keeps its functions`, () => {
@@ -29,6 +29,15 @@ describe('generated next-generation jets', () => {
       jet.setGear(1)
       expect(jet.gear.visible).toBe(true)
       for (const y of jet.footHeights()) expect(y).toBeCloseTo(GROUND_Y, 2)
+      // The main nozzle is its own part and swivels about its pivot.
+      expect(jet.thruster.children.length).toBeGreaterThan(0)
+      jet.setVector(.3, -.2)
+      expect(jet.thruster.rotation.x).toBeCloseTo(.3); expect(jet.thruster.rotation.y).toBeCloseTo(.2)
+      // The reduced version keeps every function at well under half the triangles.
+      const low = new NextJet(design, .5)
+      expect(low.triangles()).toBeLessThan(jet.triangles() * (design.hard ? .8 : .5))
+      expect(low.hover).toHaveLength(3); expect(low.thruster.children.length).toBeGreaterThan(0)
+      low.dispose()
       jet.setGear(0)
       expect(jet.gear.visible).toBe(false)
       for (const y of jet.footHeights()) expect(y).toBeGreaterThan(GROUND_Y + .5)

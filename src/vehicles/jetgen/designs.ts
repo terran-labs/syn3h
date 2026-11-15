@@ -13,7 +13,14 @@ import { Builder } from './shapes'
  * Body rows:    [z, halfWidth, top, bottom, centreY, exponent]
  * Surface rows: [x, y, zLeadingEdge, chord, thickness], root to tip.
  */
-export interface JetDesign { id: string; name: string; blurb: string; paint: number; accent: number; build(b: Builder): void }
+export interface JetDesign {
+  id: string; name: string; blurb: string; paint: number; accent: number
+  /** Straight-edged, faceted geometry instead of flowing curves. */
+  hard?: boolean
+  /** 'military' swaps candy paint and chrome for satin paint, gunmetal trim and squadron-colour tips. */
+  finish?: 'candy' | 'military'
+  build(b: Builder): void
+}
 
 /**
  * Surface rows along an elliptical arc in the X-Y plane, for hoop and arch tails.
@@ -30,6 +37,10 @@ function arc(cx: number, cy: number, rx: number, ry: number, a0: number, a1: num
 /** The forward-swept wing of the Stiletto, shared by the second-round hybrids. */
 const FORWARD_SWEPT = [[.55, 0, .7, 2.0, .1], [1.5, .08, .3, 1.6, .085], [2.6, .2, -.2, 1.2, .075], [3.3, .38, -.5, .9, .07], [3.55, .62, -.55, .75, .07]]
 const STILETTO_HULL = [[-3.6, .05, .03, .03, 0, 2], [-3.2, .2, .12, .1, 0, 2.2], [-2.2, .36, .26, .2, 0, 2.3], [-.8, .5, .4, .3, .02, 2.3], [.6, .62, .5, .36, .04, 2.4], [1.9, .62, .48, .36, .06, 2.6], [2.7, .52, .4, .34, .06, 3], [3.1, .46, .32, .3, .06, 3.2]]
+
+/** Chined, diamond-section hulls for the third round. */
+const POD_HULL = [[-3.5, .04, .02, .02, -.02, 1.3], [-2.6, .34, .16, .12, 0, 1.35], [-1.6, .52, .34, .2, .02, 1.4], [-.4, .68, .44, .28, .03, 1.5], [.9, .7, .44, .3, .04, 1.6], [2.0, .52, .36, .3, .05, 1.8], [2.7, .42, .32, .3, .05, 2]]
+const BOOM_HULL = [[-1.9, .03, .03, .03, -.05, 1.4], [-1.0, .2, .2, .16, -.05, 1.5], [.4, .28, .26, .22, -.05, 1.5], [2.2, .26, .24, .2, -.03, 1.5], [3.1, .18, .18, .16, 0, 1.6]]
 
 export const JET_DESIGNS: JetDesign[] = [
   {
@@ -57,7 +68,7 @@ export const JET_DESIGNS: JetDesign[] = [
       b.scoop(-.2, 1.5, .2, .16, .62)
       b.surf([[1.0, 0, -.6, 2.9, .1], [2.0, .05, .2, 2.2, .08], [2.9, .1, 1.2, 1.5, .07], [3.5, .3, 2.1, 1.0, .07], [3.7, .78, 2.6, .7, .08]], { tipFrom: .8 })
       b.surf([[.7, .3, 1.6, 1.3, .09], [.95, .75, 2.1, .9, .08], [1.25, 1.15, 2.6, .55, .07]], { tipFrom: .7 })
-      b.nozzle(3.1, .07, .34, .17, .42, 3.4)
+      b.nozzle(3.1, .07, .62, .18, 0, 3.6)
       b.port(0, -1.74, .3, .44); b.port(.7, 1.16, .24, .42)
       b.leg([0, -.1, -1.15], 'aft'); b.leg([.9, -.1, .3], 'in')
     },
@@ -197,6 +208,102 @@ export const JET_DESIGNS: JetDesign[] = [
       b.nozzle(3.1, .06, .4, .24, 0, 3.4)
       b.port(0, -1.74, .22, .4); b.port(1.5, 1.16, .2, .36, .02)
       b.leg([0, -.16, -1.15], 'aft'); b.leg([.74, -.2, 1.2], 'aft')
+    },
+  },
+  // Third round: Scimitar's twin booms and Halo's ring tail, with hard military lines.
+  // Chined diamond hulls, straight cranked wings, polygonal rings, satin paint. No weapons.
+  {
+    id: 'warden', name: 'Warden', paint: 0x3d4650, accent: 0xe8641a, hard: true, finish: 'military',
+    blurb: 'Scimitar squared off: a chined pod between twin booms, with an octagonal ring tail strung between the booms around the main thruster.',
+    build(b) {
+      b.fuselage(POD_HULL)
+      b.canopy(-2.9, -.7, .6, .06)
+      b.scoop(-.3, 1.2, .26, .18)
+      b.body('paint', BOOM_HULL, { x: 1.55, mirror: true, around: 20 })
+      b.surf([[.5, 0, -.4, 2.2, .08], [1.55, -.02, -.2, 2.0, .08]], { round: false })
+      b.surf([[1.55, -.02, .7, 1.6, .07], [3.0, .2, -.1, .95, .06], [3.65, .3, -.4, .6, .05]], { tipFrom: .75, tip: 'accent' })
+      b.surf([[.35, -.05, -2.3, .75, .07], [1.2, -.2, -1.75, .3, .05]], { tipFrom: .5, tip: 'accent' })
+      b.surf(arc(0, .05, 1.55, 1.05, 0, 90, 2.2, 2.5, .9, .75, .06, 3), { round: false })
+      b.surf(arc(0, .05, 1.55, .7, 0, -90, 2.2, 2.5, .9, .75, .06, 3), { round: false })
+      b.surf([[1.6, .12, 2.2, .9, .06], [2.1, .9, 2.9, .4, .05]], { tipFrom: .5, tip: 'accent' })
+      b.nozzle(2.7, .05, .36, .26, 0, 4)
+      b.nozzle(3.1, 0, .17, .17, 1.55, 3)
+      b.port(0, -1.74, .24, .4); b.port(1.55, 1.16, .16, .38, -.27)
+      b.leg([0, -.12, -1.15], 'aft'); b.leg([1.55, -.12, 1.75], 'aft')
+    },
+  },
+  {
+    id: 'bastion', name: 'Bastion', paint: 0x4a5236, accent: 0xf2c230, hard: true, finish: 'military',
+    blurb: 'Halo hardened: one chined hull, cranked forward-swept wings, engine nacelles and an octagonal ring tail braced top and bottom.',
+    build(b) {
+      b.fuselage([[-3.6, .04, .02, .02, 0, 1.3], [-2.6, .3, .18, .12, 0, 1.35], [-1.2, .5, .36, .24, .02, 1.4], [.4, .66, .48, .32, .04, 1.5], [1.8, .62, .48, .36, .05, 1.7], [2.6, .5, .42, .38, .06, 2], [3.0, .42, .4, .38, .06, 2.2]])
+      b.canopy(-3.0, -.9, .6, .06)
+      b.scoop(-.4, 1.1, .24, .18)
+      b.surf([[.55, 0, .9, 1.9, .08], [1.6, .05, .3, 1.5, .07], [3.0, .22, -.3, .9, .06], [3.6, .34, -.5, .6, .05]], { tipFrom: .8, tip: 'accent' })
+      b.surf([[.3, -.1, -2.4, .7, .07], [1.15, -.3, -1.85, .3, .05]], { tipFrom: .5, tip: 'accent' })
+      b.engine(1.05, -.08, .2, 2.5, .24)
+      b.surf(arc(0, .06, 1.05, 1.05, 0, 90, 2.2, 2.45, .85, .8, .06, 3), { round: false })
+      b.surf(arc(0, .06, 1.05, .95, 0, -90, 2.2, 2.45, .85, .8, .06, 3), { round: false })
+      b.surf([[0, .44, 1.9, .9, .05], [0, 1.1, 2.35, .75, .05]], { mirror: false, round: false, mat: 'accent' })
+      b.surf([[0, -.34, 1.9, .9, .05], [0, -.88, 2.35, .75, .05]], { mirror: false, round: false })
+      b.nozzle(3.0, .06, .36, .36, 0, 2.2)
+      b.port(0, -1.74, .22, .4); b.port(1.5, 1.16, .2, .36, .02)
+      b.leg([0, -.16, -1.15], 'aft'); b.leg([1.05, -.2, 1.2], 'aft')
+    },
+  },
+  {
+    id: 'lancer', name: 'Lancer', paint: 0x1d2b44, accent: 0x38d6c6, hard: true, finish: 'military',
+    blurb: 'The booms run forward as twin prongs past a recessed cockpit pod, with a tight ring ducting the main thruster and drooped wingtip plates.',
+    build(b) {
+      b.fuselage([[-2.6, .05, .03, .03, 0, 1.3], [-1.9, .36, .22, .14, 0, 1.4], [-.8, .6, .42, .26, .02, 1.5], [.6, .7, .46, .3, .04, 1.6], [1.9, .56, .4, .32, .05, 1.8], [2.7, .44, .36, .34, .06, 2.2]])
+      b.canopy(-2.2, -.3, .6, .07)
+      b.body('paint', [[-3.6, .02, .02, .02, -.08, 1.4], [-2.4, .16, .14, .12, -.08, 1.5], [-.6, .26, .24, .2, -.06, 1.5], [1.6, .28, .26, .22, -.04, 1.5], [3.0, .2, .2, .18, -.02, 1.6]], { x: 1.35, mirror: true, around: 20 })
+      b.surf([[.5, 0, -1.0, 2.6, .08], [1.35, -.04, -.9, 2.5, .08]], { round: false })
+      b.surf([[1.35, -.04, .5, 1.7, .07], [2.9, .12, -.1, 1.0, .06], [3.45, .1, -.3, .8, .06], [3.6, -.45, -.2, .7, .06]], { tipFrom: .66, tip: 'accent' })
+      b.surf(arc(0, .06, .85, .85, 0, 90, 2.3, 2.5, .7, .7, .06, 3), { round: false })
+      b.surf(arc(0, .06, .85, .8, 0, -90, 2.3, 2.5, .7, .7, .06, 3), { round: false })
+      b.surf([[1.35, -.02, 2.2, .8, .06], [.85, .06, 2.3, .7, .06]], { round: false })
+      b.surf([[1.4, .15, 2.0, 1.0, .06], [1.9, 1.0, 2.9, .4, .05]], { tipFrom: .5, tip: 'accent' })
+      b.nozzle(2.7, .06, .34, .34, 0, 2.2)
+      b.nozzle(3.0, -.02, .18, .18, 1.35, 3)
+      b.port(0, -1.74, .2, .36); b.port(1.35, 1.16, .16, .38, -.27)
+      b.leg([0, -.1, -1.0], 'aft'); b.leg([1.35, -.12, 1.75], 'aft')
+    },
+  },
+  {
+    id: 'aegis', name: 'Aegis', paint: 0x8a7a5c, accent: 0xc0392b, hard: true, finish: 'military',
+    blurb: 'A wide chined lifting body with forward-swept wings, a squared-off box tail in place of the ring, and one broad flat vectoring nozzle.',
+    build(b) {
+      b.fuselage([[-3.4, .06, .02, .02, 0, 1.25], [-2.4, .6, .16, .1, 0, 1.3], [-1.0, 1.0, .32, .18, .02, 1.35], [.6, 1.25, .4, .22, .04, 1.4], [2.0, 1.15, .36, .22, .05, 1.5], [3.0, .9, .24, .2, .06, 1.8]])
+      b.canopy(-2.8, -.6, .42, .06)
+      b.scoop(-.1, 1.3, .2, .15, .6)
+      b.surf([[1.1, .02, 1.0, 1.7, .07], [2.2, .1, .4, 1.2, .06], [3.3, .26, -.2, .7, .05], [3.65, .34, -.4, .5, .05]], { tipFrom: .8, tip: 'accent' })
+      b.surf([[.7, .12, -1.9, .7, .06], [1.5, .4, -1.4, .3, .05]], { tipFrom: .5, tip: 'accent' })
+      b.surf([[1.05, .2, 2.0, 1.0, .06], [1.2, 1.0, 2.5, .8, .06], [.02, 1.0, 2.6, .8, .06]], { round: false })
+      b.nozzle(3.0, .06, .55, .2, 0, 4)
+      b.port(0, -1.74, .28, .42); b.port(.7, 1.16, .24, .42)
+      b.leg([0, -.1, -1.15], 'aft'); b.leg([.9, -.08, .3], 'in')
+    },
+  },
+  {
+    id: 'vanguard', name: 'Vanguard', paint: 0x565c66, accent: 0xff3d5a, hard: true, finish: 'military',
+    blurb: 'Twin booms carry a free octagonal ring on four X struts around the main thruster, with dogtooth forward-swept wings and boom canards.',
+    build(b) {
+      b.fuselage(POD_HULL)
+      b.canopy(-2.9, -.7, .6, .06)
+      b.scoop(-.3, 1.2, .26, .18)
+      b.body('paint', BOOM_HULL, { x: 1.5, mirror: true, around: 20 })
+      b.surf([[.5, 0, -.4, 2.2, .08], [1.5, -.02, -.2, 2.0, .08]], { round: false })
+      b.surf([[1.5, -.02, .9, 1.5, .07], [2.2, .08, .5, 1.3, .065], [2.25, .09, .2, 1.4, .065], [3.2, .24, -.3, .8, .055], [3.65, .32, -.5, .5, .05]], { tipFrom: .75, tip: 'accent' })
+      b.surf([[1.6, -.05, -1.1, .7, .06], [2.5, .05, -.7, .3, .05]], { tipFrom: .5, tip: 'accent' })
+      b.surf(arc(0, .05, .95, .95, 0, 90, 2.25, 2.45, .75, .75, .06, 3), { round: false, mat: 'accent' })
+      b.surf(arc(0, .05, .95, .9, 0, -90, 2.25, 2.45, .75, .75, .06, 3), { round: false, mat: 'accent' })
+      b.surf([[1.5, 0, 2.1, .9, .06], [.68, .72, 2.3, .75, .06]], { round: false })
+      b.surf([[1.5, -.05, 2.1, .9, .06], [.68, -.6, 2.3, .75, .06]], { round: false })
+      b.nozzle(2.7, .05, .34, .34, 0, 2.2)
+      b.nozzle(3.1, 0, .17, .17, 1.5, 3)
+      b.port(0, -1.74, .24, .4); b.port(1.5, 1.16, .16, .38, -.27)
+      b.leg([0, -.12, -1.15], 'aft'); b.leg([1.5, -.12, 1.75], 'aft')
     },
   },
 ]

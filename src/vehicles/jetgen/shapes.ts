@@ -8,7 +8,7 @@ import * as THREE from 'three/webgpu'
  * A "body" is a loft of superellipse cross sections along Z. A "surface" (wing, fin, canard)
  * is a loft of aerofoil sections along a curved span.
  */
-export type Mat = 'paint' | 'chrome' | 'glass' | 'dark' | 'glow'
+export type Mat = 'paint' | 'chrome' | 'glass' | 'dark' | 'glow' | 'accent'
 export interface Piece { mat: Mat; geometry: THREE.BufferGeometry }
 /** A landing gear leg. `fold` says where the strut swings to when stowed. */
 export interface Leg { hinge: [number, number, number]; fold: 'aft' | 'fore' | 'in' }
@@ -18,10 +18,17 @@ export const GROUND_Y = -1.283
 const V = THREE.Vector3
 
 /** Catmull-Rom through rows of numbers, u in 0..1 across the rows. */
+const crSmooth = (keys: number[][], u: number) => cr(keys, u)
 export function cr(keys: number[][], u: number): number[] {
   const K = keys.length - 1, x = Math.min(Math.max(u, 0), 1) * K, i = Math.min(Math.floor(x), K - 1), f = x - i
   const a = keys[Math.max(i - 1, 0)], b = keys[i], c = keys[i + 1], d = keys[Math.min(i + 2, K)]
   return b.map((_, k) => .5 * (2 * b[k] + (-a[k] + c[k]) * f + (2 * a[k] - 5 * b[k] + 4 * c[k] - d[k]) * f * f + (-a[k] + 3 * b[k] - 3 * c[k] + d[k]) * f * f * f))
+}
+
+/** Straight lines between the rows instead of a curve: hard creases for the angular designs. */
+export function lerpRows(keys: number[][], u: number): number[] {
+  const K = keys.length - 1, x = Math.min(Math.max(u, 0), 1) * K, i = Math.min(Math.floor(x), K - 1), f = x - i
+  return keys[i].map((v, k) => v + (keys[i + 1][k] - v) * f)
 }
 
 /** Skin a stack of closed rings. Winding is fixed afterwards so normals always face out. */
@@ -55,10 +62,11 @@ export function loft(rings: THREE.Vector3[][], capStart = true, capEnd = true): 
 }
 
 /** Rings for a body. Keys are rows of [z, halfWidth, top, bottom, centreY, exponent]. */
-export function bodyRings(keys: number[][], x = 0, seg = 10, around = 28, mirror = false): THREE.Vector3[][] {
+export function bodyRings(keys: number[][], x = 0, seg = 10, around = 28, mirror = false, linear = false): THREE.Vector3[][] {
+  const at = linear ? lerpRows : cr
   const rings: THREE.Vector3[][] = [], N = (keys.length - 1) * seg
   for (let j = 0; j <= N; j++) {
-    const [z, w, t, b, y, e] = cr(keys, j / N), ring: THREE.Vector3[] = [], p = 2 / Math.max(e, 1.2)
+    const [z, w, t, b, y, e] = at(keys, j / N), ring: THREE.Vector3[] = [], p = 2 / Math.max(e, 1.2)
     for (let i = 0; i < around; i++) {
       const a = i / around * Math.PI * 2, c = Math.cos(a), s = Math.sin(a)
       ring.push(new V((mirror ? -1 : 1) * (x + Math.max(w, .002) * Math.sign(c) * Math.abs(c) ** p), y + Math.max(s >= 0 ? t : b, .002) * Math.sign(s) * Math.abs(s) ** p, z))
@@ -73,8 +81,11 @@ export function bodyRings(keys: number[][], x = 0, seg = 10, around = 28, mirror
  * root to tip; the span may curve, so a wing can crank up or drop into a tip pod.
  * Returns the parameter of each ring so the caller can split the tip off as chrome.
  */
-export function surfRings(keys: number[][], n = 22, around = 20, mirror = false, roundTip = true): { rings: THREE.Vector3[][]; t: number[] } {
-  const ts = Array.from({ length: n + 1 }, (_, j) => 1 - (1 - j / n) ** 1.5)
+export function surfRings(keys: number[][], n = 22, around = 20, mirror = false, roundTip = true, linear = false): { rings: THREE.Vector3[][]; t: number[] } {
+  const cr = linear ? lerpRows : crSmooth, K = keys.length - 1
+  // Straight-edged surfaces put a ring on every row so the cranks stay crisp, and keep square tips.
+  const ts = linear ? Array.from({ length: K * 2 + 1 }, (_, j) => j / (K * 2)) : Array.from({ length: n + 1 }, (_, j) => 1 - (1 - j / n) ** 1.5)
+  if (linear) roundTip = false
   const rings = ts.map(t => {
     const [x, y, z, ch, tk] = cr(keys, t), [x2, y2] = cr(keys, Math.min(1, t + .002)), [x1, y1] = cr(keys, Math.max(0, t - .002))
     let tx = x2 - x1, ty = y2 - y1; const l = Math.hypot(tx, ty) || 1; tx /= l; ty /= l
@@ -97,18 +108,29 @@ export class Builder {
   readonly hover: [number, number, number][] = []
   /** Rear nozzles: position and half size, for effects. */
   readonly nozzles: { x: number; y: number; z: number; r: number }[] = []
+  /** The main nozzle swivels: its pieces are kept apart, in the frame of its pivot. */
+  readonly gimbalPieces: Piece[] = []
+  gimbal?: { y: number; z: number }
   private fus: number[][] = []
+
+  /**
+   * @param detail 1 is full detail; .5 roughly quarters the triangle count.
+   * @param hard straight lines between rows and square tips, for the angular military designs.
+   */
+  constructor(readonly detail = 1, readonly hard = false) {}
+  private segs(n: number): number { return this.hard ? 1 : Math.max(1, Math.round(n * this.detail)) }
+  private ring(n: number): number { return Math.max(6, 2 * Math.round(n * this.detail / 2)) }
 
   add(mat: Mat, geometry: THREE.BufferGeometry): void { this.pieces.push({ mat, geometry }) }
 
   body(mat: Mat, keys: number[][], o: { x?: number; mirror?: boolean; seg?: number; around?: number; caps?: [boolean, boolean] } = {}): void {
     const caps = o.caps ?? [true, true]
-    for (const m of o.mirror ? [false, true] : [false]) this.add(mat, loft(bodyRings(keys, o.x ?? 0, o.seg ?? 10, o.around ?? 28, m), caps[0], caps[1]))
+    for (const m of o.mirror ? [false, true] : [false]) this.add(mat, loft(bodyRings(keys, o.x ?? 0, this.segs(o.seg ?? 10), this.ring(o.around ?? 28), m, this.hard), caps[0], caps[1]))
   }
 
   /** The main hull. Later calls (canopy, scoop, ports) sit on its surface. */
   fuselage(keys: number[][]): void {
-    const N = (keys.length - 1) * 12; this.fus = Array.from({ length: N + 1 }, (_, j) => cr(keys, j / N))
+    const N = (keys.length - 1) * 12; this.fus = Array.from({ length: N + 1 }, (_, j) => (this.hard ? lerpRows : cr)(keys, j / N))
     this.body('paint', keys, { seg: 12, around: 40 })
   }
 
@@ -126,8 +148,9 @@ export class Builder {
 
   /** Black glass inlaid in the hull with a chrome surround, as on the reference. */
   canopy(z0: number, z1: number, widthFraction = .62, bulge = .06): void {
-    const make = (a: number, b: number, f: number, bg: number) => Array.from({ length: 19 }, (_, i) => {
-      const s = i / 18, z = a + (b - a) * s, [w, t, , y, e] = this.at(z), env = Math.max(.03, Math.sin(Math.PI * s)) ** .45
+    const count = Math.max(6, Math.round(18 * this.detail))
+    const make = (a: number, b: number, f: number, bg: number) => Array.from({ length: count + 1 }, (_, i) => {
+      const s = i / count, z = a + (b - a) * s, [w, t, , y, e] = this.at(z), env = Math.max(.03, Math.sin(Math.PI * s)) ** .45
       const ff = Math.min(.97, f * env), d = t * (1 - (1 - ff ** e) ** (1 / e))
       return [z, w * ff, d + bg * env, .02, y + t - d, 2.3]
     })
@@ -148,7 +171,7 @@ export class Builder {
   /** `round: false` keeps the tip full size, for surfaces that meet their mirror image. */
   surf(keys: number[][], o: { mat?: Mat; tip?: Mat; tipFrom?: number; mirror?: boolean; round?: boolean } = {}): void {
     for (const m of o.mirror === false ? [false] : [false, true]) {
-      const { rings, t } = surfRings(keys, 24, 22, m, o.round !== false)
+      const { rings, t } = surfRings(keys, Math.max(4, Math.round(24 * this.detail)), this.ring(this.hard ? 8 : 22), m, o.round !== false, this.hard)
       const k = o.tipFrom === undefined ? rings.length - 1 : Math.max(1, t.findIndex(v => v >= o.tipFrom!))
       this.add(o.mat ?? 'paint', loft(rings.slice(0, k + 1), true, k === rings.length - 1))
       if (k < rings.length - 1) this.add(o.tip ?? 'chrome', loft(rings.slice(k), false, true))
@@ -167,6 +190,14 @@ export class Builder {
   /** A rear nozzle: chrome rim, dark throat and a glow disc. Mirrored when x is not 0. */
   nozzle(z: number, y: number, halfWidth: number, halfHeight: number, x = 0, exponent = 2.2): void {
     const mirror = x !== 0, k = (dz: number, f: number) => [z + dz, halfWidth * f, halfHeight * f, halfHeight * f, y, exponent]
+    if (!mirror && !this.gimbal) {
+      // The first centreline nozzle is the main thruster. It vectors, so only its collar is fixed.
+      this.body('chrome', [k(-.12, 1.14), k(.04, 1.12)], { seg: 1, around: 28 })
+      const g = (mat: Mat, rows: [number, number][], seg: number) => this.gimbalPieces.push({ mat, geometry: loft(bodyRings(rows.map(([dz, f]) => [dz, halfWidth * f, halfHeight * f, halfHeight * f, 0, exponent]), 0, this.segs(seg), this.ring(28), false, this.hard)) })
+      g('chrome', [[-.06, .98], [.2, 1], [.5, .82]], 4); g('dark', [[.44, .76], [.5, .76]], 1); g('glow', [[.502, .6], [.51, .6]], 1)
+      this.gimbal = { y, z }; this.nozzles.push({ x: 0, y, z: z + .5, r: Math.max(halfWidth, halfHeight) })
+      return
+    }
     this.body('chrome', [k(-.12, 1.12), k(.1, 1.1), k(.24, .98)], { x, mirror, seg: 4, around: 28 })
     this.body('dark', [k(.2, .9), k(.26, .9)], { x, mirror, seg: 1, around: 28 })
     this.body('glow', [k(.262, .72), k(.27, .72)], { x, mirror, seg: 1, around: 28 })
@@ -178,7 +209,7 @@ export class Builder {
     for (const sx of x === 0 ? [1] : [1, -1]) {
       const py = y ?? this.skin(z, x, -1) + .03
       const slab = (mat: Mat, f: number, depth: number) => {
-        const g = loft(bodyRings([[0, halfWidth * f, halfLength * f, halfLength * f, 0, 3], [depth, halfWidth * f, halfLength * f, halfLength * f, 0, 3]], 0, 1, 28))
+        const g = loft(bodyRings([[0, halfWidth * f, halfLength * f, halfLength * f, 0, 3], [depth, halfWidth * f, halfLength * f, halfLength * f, 0, 3]], 0, 1, this.ring(28)))
         g.rotateX(Math.PI / 2); g.translate(x * sx, py, z); this.add(mat, g)
       }
       slab('chrome', 1.16, .07); slab('dark', .96, .085); slab('glow', .7, .09)
