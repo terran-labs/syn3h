@@ -116,10 +116,10 @@ supervisor. Public acceptance subsequently passed on the same frozen build at 3:
   perturbation margins, no new catches in previously safe cases, and route recovery.
   The current report establishes none of those selection guarantees. This technical
   blocker does not complete the assignment or clear the owner's follow-on condition.
-  A measurement-only follow-up is now authorized for the same 99 cases and unchanged
-  maneuvers: record synchronized vehicle/projectile state at the decision boundary.
-  Independent source review must pass before one typecheck and measurement run.
-  No production policy, tuning sweep or automatic retry is authorized by that step.
+  The measurement-only follow-up passed typecheck and all 99 cases. Every original
+  result field is unchanged; independent review verified 2,045 live projectile
+  observations. This closes the instrumentation gap, not the unsafe-selection gap.
+  No further production policy, tuning sweep or measurement run is authorized.
   Wheeled bots already evade Pesters; all four gear
   tools have combined browser evidence.
 - **Water transparency from above is unimplemented:** the sea/river material is opaque.
@@ -131,7 +131,9 @@ supervisor. Public acceptance subsequently passed on the same frozen build at 3:
   tag-beam and hovercraft frames are excluded, and original captures are preserved.
 
 The later performance, diagnostics and cursor-UX queue remains pending until current
-assignments finish. It includes the FPS history panel, hardware and rendering failure
+assignments finish. An owner question now asks whether this independent work may
+proceed while aircraft evasion remains blocked; no automatic default applies.
+It includes the FPS history panel, hardware and rendering failure
 information, one low-FPS recommendation control and adjustable tiers. Reuse the current
 owner-authorized minimap and rail work rather than implementing them twice. Connection
 diagnostics in that rail are not the requested FPS, hardware and failure diagnostics.
