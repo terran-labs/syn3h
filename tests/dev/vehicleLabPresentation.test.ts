@@ -42,6 +42,7 @@ describe('how the vehicle lab names and orders its exhibits', () => {
   })
   it('shows the comparison as a single line, and works when no lane provides one', () => {
     expect(compareOnly.has(COMPARE_ALL)).toBe(true)
+    expect((present(lanes())[0] as LabExhibit & { compareOnly?: boolean }).compareOnly).toBe(true)
     const without = present(lanes().filter(e => e.id !== 'lineup'))
     expect(without[0].title).toBe('Buggy')
   })

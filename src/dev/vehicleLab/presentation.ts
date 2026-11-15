@@ -44,6 +44,8 @@ export function present(exhibits: LabExhibit[]): LabExhibit[] {
   for (const e of shown) {
     if (e.id === 'game-buggy') e.title = 'Buggy'
     else if (e.id === COMPARE_ALL) { e.title = 'Compare all vehicles'; e.section = IN_GAME }
+    // Read by the sidebar (lab.ts renderTree) to draw the exhibit as one line.
+    if (compareOnly.has(e.id)) (e as LabExhibit & { compareOnly?: boolean }).compareOnly = true
     else if (isStudy(e)) {
       // The family names the vehicle ('tank'); an exhibit without one is named by its id ('tank-archive').
       const title = futureTitle(e.family ?? e.id)

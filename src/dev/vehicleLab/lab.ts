@@ -18,7 +18,6 @@ import { classifyDevice, SHADING_CAP, vehicleShading } from '../../core/quality'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { params as gameParams, type ParamDef } from '../../../shared/params'
 import { countStats, FLOOR_NAMES, parseLabParams, pickAutoLod, resolveLod, RollingAverage, STRESS_COUNTS, stressGrid, VIEW_NAMES, visibleBounds, type FloorName, type ViewName } from './logic'
-import { compareOnly } from './presentation'
 import { exhibits, failures } from './registry'
 import { Studio } from './studio'
 import { buildTree, resolveSelection, selectionFromSearch, selectionToSearch, vehicleParams, type ListedExhibit, type Selection, type TreeSection, type Wanted } from './tree'
@@ -252,7 +251,8 @@ async function main(): Promise<void> {
         const chosen = selection?.vehicle === v.id
         if (v.error) { treeBox.append(ui.el('div', 'tree-error', `${v.title}: could not list designs`)); continue }
         // The comparison of the game's vehicles is one line that opens the whole set side by side.
-        if (compareOnly.has(v.id)) {
+        // (Marked by presentation.ts on the exhibit itself, so this file needs no new import: several lanes edit its imports.)
+        if ((exhibits.find(e => e.id === v.id) as { compareOnly?: boolean } | undefined)?.compareOnly) {
           const b = ui.button(v.title, () => void select({ vehicle: v.id, design: 'all' }), 'tree-item tree-leaf')
           if (chosen) b.setAttribute('aria-current', 'true')
           treeBox.append(b)
