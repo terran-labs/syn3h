@@ -13,3 +13,8 @@ that controller's selected track.
 Classic, Carefree and Ambient remain optional legacy tracks. Ambient is byte-identical
 in the supplied Mars Explorer and Syn3h repositories. Effects and wind are the supplied
 original game assets, reused with the owner's authorization.
+
+Vehicle engines, energy fields, lava ambience and game/UI cues are new Web Audio
+synthesis in `src/audio/`. No NWH, Enviro or AQUAS sound samples are redistributed.
+The vehicle audio search and exact original effect GUIDs are recorded in
+`tests/audio/provenance.md`.
