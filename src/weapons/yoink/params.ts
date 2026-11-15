@@ -41,16 +41,20 @@ export const yoinkHoldTime = defineParam({
   default: 4, min: 0, max: 30, step: 0.5,
 })
 
-/** Speed a let-go vehicle leaves at, m/s, where the holder aims. */
+/**
+ * Speed a let-go vehicle leaves at, m/s, where the holder aims. Capped at 50 so the most any
+ * fling can give (this, with the room's allowance for the holder's own speed) stays near the
+ * speeds the ground guard is proven at (tests/weapons/fling-ground.test.ts).
+ */
 export const yoinkFling = defineParam({
   id: 'yoink.fling', label: 'Fling speed', group, scope: 'world',
-  default: 28, min: 0, max: 80, step: 1,
+  default: 28, min: 0, max: 50, step: 1,
 })
 
 /** A tap with nothing in the cone: a gust that shoves what is close in front. */
 export const yoinkPunt = defineParam({
   id: 'yoink.punt', label: 'Gust strength', group, scope: 'world',
-  default: 14, min: 0, max: 50, step: 1,
+  default: 14, min: 0, max: 30, step: 1,
 })
 
 export const yoinkPuntRange = defineParam({
