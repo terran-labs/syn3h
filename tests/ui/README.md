@@ -176,3 +176,46 @@ Run `node tests/ui/fans-hill.mjs` for generated and saved names, loading rotatio
 metadata/assets, credits, late mode registration, host lock and all four hill states
 at desktop and 390 by 844 phone sizes. Screenshots and its JSON report are under
 `tests/ui/artifacts/`.
+
+## Game jam presentation
+
+After `shell.setTerrain(terrain)`, wire the cinematic camera and bot list:
+
+```ts
+shell.setAttractCamera(camera, () => bots.vehicles)
+```
+
+The shell also discovers the existing `window.syn3h` camera as a fallback. Attract
+mode starts after 20 seconds without lobby input, or immediately with `?attract=1`.
+It alternates volcano, road and bot shots. The first key or touch restores the
+lobby without activating its underlying controls. Camera parameters stay intact.
+
+J toggles the full-screen invite. The invite contains only the current origin and
+`?room=NAME`, so autoplay and attract flags do not travel with it. The Multiplayer
+panel and menu include the same QR and copy action. `shell.setPlayerCount(count)`
+can provide an explicit human count; otherwise `setStatus` reads the networking
+player map and excludes bots. P toggles presentation sizing; Settings has the same
+control. Developer status lines remain available outside presentation mode.
+
+The match API now accepts optional `winnerColor: string` (a CSS colour) and
+`nextRoundIn: number` (remaining seconds from the server). A newly reported winner
+gets a six-second countdown when no authoritative countdown is supplied. Repeated
+identical snapshots do not restart it. At zero the banner waits for the server to
+clear the winner; the UI never starts rounds itself.
+
+The QR encoder uses UTF-8 byte mode, error correction M and versions 1 through 10.
+It supports 213 bytes; longer invites retain the copyable link and explain the QR
+limit. The 88 fixed matrix hashes in `qr-vectors.json` cover every mask and every
+supported version, generated with Nayuki's independent Python reference using
+`QrSegment.make_bytes`, `QrCode.Ecc.MEDIUM`, forced masks and `boostecl=False`.
+The MIT notice is shipped under `public/brand/licenses/qr.txt`.
+
+`node tests/ui/projector.mjs` checks desktop and 320 by 844 touch flows, all three
+camera shots, idle wakeup, long names, 16 score rows, invite clipboard contents,
+presentation mode and the round countdown. It writes screenshots and a JSON report
+to `tests/ui/artifacts/`. On macOS, independently decode the rendered screenshot:
+
+```sh
+swift tests/ui/decode-qr.swift tests/ui/artifacts/projector-qr.png
+swift tests/ui/decode-qr.swift tests/ui/artifacts/narrow-qr.png
+```

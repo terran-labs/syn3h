@@ -220,7 +220,7 @@
   .match-announcement.round-end { top: 400px; padding: 12px; }
   .round-end strong { font-size: 26px; }
   .round-end small { font-size: 18px; margin-top: 6px; }
-  .round-end ~ .spawn-help { display: none; }
+  .syn3h-shell:has(.round-end:not([hidden])) .spawn-help { display: none; }
 }
 @media(max-width:350px) {
   .shell-hud { width: 164px; }

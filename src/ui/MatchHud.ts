@@ -48,12 +48,12 @@ export class MatchHud {
     }
     // Copy snapshots because callers may reuse their score arrays between frames.
     const next: MatchState = { ...state, target: Math.max(1, Number.isFinite(state.target) ? state.target : 60), scores: state.scores.map(row => ({ ...row })) }
+    const signature = JSON.stringify(next)
+    if (signature === this.signature) return
     if (next.winner) {
       if (next.winner !== this.previous?.winner) this.roundEnds = performance.now() + 6000
       if (typeof next.nextRoundIn === 'number' && Number.isFinite(next.nextRoundIn)) this.roundEnds = performance.now() + Math.max(0, next.nextRoundIn) * 1000
     } else { if (this.previous?.winner) { this.announcement.hidden = true; this.parent.classList.remove('match-announcing') } clearInterval(this.roundTimer); this.announcement.classList.remove('round-end'); this.announcement.style.removeProperty('--winner-color') }
-    const signature = JSON.stringify(next)
-    if (signature === this.signature) return
     this.signature = signature; this.parent.classList.add('has-match'); this.element.hidden = false
     this.element.classList.toggle('is-contested', next.contested); this.element.classList.toggle('is-yours', next.holderIsYou && !next.contested)
     const title = document.createElement('strong'); title.textContent = 'King of the Hill'
@@ -74,7 +74,7 @@ export class MatchHud {
     const message = matchAnnouncement(this.previous, next)
     if (next.winner) {
       clearTimeout(this.timer); this.announcement.classList.add('round-end'); this.announcement.hidden = false; this.parent.classList.add('match-announcing')
-      this.announcement.style.setProperty('--winner-color', /^#[0-9a-f]{6}$/i.test(next.winnerColor ?? '') ? next.winnerColor! : '#8dbce5')
+      this.announcement.style.setProperty('--winner-color', CSS.supports('color', next.winnerColor ?? '') ? next.winnerColor! : '#8dbce5')
       const title = document.createElement('strong'); title.textContent = `${next.winner} wins!`
       const count = document.createElement('small'); this.announcement.replaceChildren(title, count)
       const tick = () => { const seconds = Math.max(0, Math.ceil((this.roundEnds - performance.now()) / 1000)); count.textContent = seconds ? `Next round in ${seconds}` : 'Waiting for the next round' }
