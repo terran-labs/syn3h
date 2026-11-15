@@ -1,37 +1,38 @@
 /**
  * Which post pipeline a frame gets. Pure, so tests can drive it.
  *
- *   off   plain renderer.render: post effects switched off, graphics level 0, or a phone or
- *         tablet (device class below desktop) whose post effects toggle is off. Nothing allocated.
- *   base  colour look, vignette and grain only: one full-screen pass. Used when the frame
- *         governor's post budget has reached 0.
- *   lite  base plus sun shafts with half the taps. Graphics level 1.
- *   full  everything: glow, sun shafts, lens streak and ghosts, look, vignette, grain.
+ *   off   plain renderer.render: post effects switched off, or a quality level without
+ *         them. Nothing allocated.
+ *   base  colour look, vignette and grain only: one full-screen pass. The level that asks
+ *         for it, and where every level lands when the governor's post budget reaches 0.
+ *   lite  the look plus whichever effects have a strength above 0, sun shafts at half taps.
+ *   full  the same with full shaft taps.
  *
- * Between full or lite and base, strengths fade with the governor's eased budget, so the
- * costly passes are faded out before they are removed and faded in after they return.
- * The frame governor in src/core/quality.ts is the only in-game quality authority; the
- * lobby's ladder is not fed from the game loop.
+ * The quality level (src/core/quality.ts) decides the tier and, through each effect's
+ * strength, which effects exist: a strength of 0 removes that effect from the pipeline. The
+ * chain does not second-guess it by device class. Inside a level the governor's eased
+ * budget only fades strengths; it creates no pipeline until it reaches 0 and the chain
+ * falls to base.
  */
 export type PostTier = 'off' | 'base' | 'lite' | 'full'
 
 export interface PostGateInput {
   on: boolean
-  /** gfx.level now (the governor may lower it during a session). */
-  level: number
-  /** The level the device was classified as at load; 2 is desktop class. */
-  deviceLevel: number
-  /** Allow post effects on phones and tablets; enabled by default. */
-  tablets: boolean
+  /** The tier the current quality level allows (quality.postTier). */
+  tier: PostTier
   /** 1 minus the governor's post budget: 0 keeps post effects, 1 has shed them. */
   shed: number
 }
 
 export function postTier(input: PostGateInput): PostTier {
-  if (!input.on || !(input.level >= 1)) return 'off'
-  if (input.deviceLevel < 2 && !input.tablets) return 'off'
-  if (input.shed >= 1) return 'base'
-  return input.level >= 2 ? 'full' : 'lite'
+  if (!input.on || input.tier === 'off') return 'off'
+  if (input.tier === 'base' || input.shed >= 1) return 'base'
+  return input.tier === 'lite' ? 'lite' : 'full'
+}
+
+/** Whether a tier draws effects at all, beyond the colour look. */
+export function drawsEffects(tier: PostTier): boolean {
+  return tier === 'lite' || tier === 'full'
 }
 
 /** Sun shaft march taps per tier. Quarter resolution, so even 32 is cheap. */

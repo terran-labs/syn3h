@@ -24,12 +24,12 @@ afterEach(()=>vi.unstubAllGlobals())
 it('captures the first callback and all stalls even when recommendation eligibility rejects them',()=>{
  vi.stubGlobal('window',{});vi.stubGlobal('document',{hidden:true,addEventListener(){}})
  vi.stubGlobal('navigator',{userAgent:'fixture',maxTouchPoints:0})
- vi.stubGlobal('sessionStorage',{getItem:()=>null});vi.stubGlobal('innerWidth',1280);vi.stubGlobal('innerHeight',720);vi.stubGlobal('devicePixelRatio',1)
+ vi.stubGlobal('localStorage',{getItem:()=>null});vi.stubGlobal('innerWidth',1280);vi.stubGlobal('innerHeight',720);vi.stubGlobal('devicePixelRatio',1)
  installRawCollector()
- const original=vi.fn(),quality={frame:original,governor:{level:0,rung:0,auto:true,levelPinned:false,settings:{pixelRatio:1},targetMs:1000/30},deviceLevel:0,adapterProbe:'fallback'}
+ const original=vi.fn(),quality={frame:original,governor:{level:0,rung:0,auto:true,levelPinned:false,settings:{pixelRatio:1},targetMs:1000/30},getQualityState:()=>({level:0,ceiling:2}),adapterProbe:'fallback'}
  window.syn3h={game:{quality,renderer:{backend:{},render(){}},performance:{firstFrameMs:null},canvas:{width:1280,height:720},camera:{position:{x:0,y:0,z:0}},scene:{},backend:'webgl'},player:{body:{translation:()=>({x:0,y:0,z:0})}},bots:{vehicles:[]},terrain:{}}
  expect(window.performanceMatrix.initial.firstFrameMs).toBeNull()
- expect(window.performanceMatrix.initial.deviceLevel).toBe(0)
+ expect(window.performanceMatrix.initial.qualityState).toEqual({level:0,ceiling:2})
  quality.frame({frameMs:1700},false)
  expect(original).toHaveBeenCalledOnce()
  expect(window.performanceMatrix.frames).toHaveLength(1)
