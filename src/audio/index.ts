@@ -46,7 +46,7 @@ export class GameAudio implements System {
   private readonly up = new THREE.Vector3()
   private readonly position = new THREE.Vector3()
   private readonly rotation = new THREE.Quaternion()
-  private selected: MusicTrack = 'Score'
+  private selected: MusicTrack = 'SpaceStation'
   private lobbyVisible = true
   private disposed = false
   private loads?: Promise<void>
