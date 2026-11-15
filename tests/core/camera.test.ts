@@ -5,11 +5,11 @@ import { ChaseCamera, constrainCamera, type CameraVehicle } from '../../src/core
 import type { Game } from '../../src/core/Game'
 import type { Terrain } from '../../src/world/Terrain'
 beforeEach(() => { for (const p of params.all().filter(p => p.def.group === 'Camera')) params.set(p.def.id, p.def.default) })
-function harness(heightAt = (_x: number, _z: number) => 0) {
+function harness(heightAt = (_x: number, _z: number) => 0, liquidHeightAt?: (x: number, z: number) => number) {
   const camera = new PerspectiveCamera(60), target = new Object3D()
   target.position.set(0, 1, 0)
   const game = { camera } as Game
-  const terrain = { heightAt } as Terrain
+  const terrain = { heightAt, liquidHeightAt } as Terrain
   const chase = new ChaseCamera(game, terrain); chase.target = target
   return { camera, target, chase }
 }
@@ -39,6 +39,27 @@ describe('Syn3h camera', () => {
       expect(camera.position.y).toBeGreaterThanOrEqual(30.5)
     }
     chase.dispose(); expect(target.visible).toBe(true)
+  })
+  it('lifts the arm above liquid without collapsing its follow distance', () => {
+    const terrain = { heightAt: () => -10, liquidHeightAt: () => 0 }
+    const pivot = new Vector3(0, -1, 0), desired = new Vector3(0, -2, 9)
+    const point = constrainCamera(terrain, pivot, desired, 0.5)
+    expect(point.toArray()).toEqual([0, 0.5, 9])
+    expect(pivot.y).toBe(-1); expect(desired.y).toBe(-2)
+    expect(constrainCamera({ ...terrain, heightAt: () => 2 }, pivot, desired, 0.5).y).toBeGreaterThanOrEqual(2.5)
+    expect(constrainCamera({ ...terrain, liquidHeightAt: () => -Infinity }, pivot, desired, 0.5).y).toBe(-2)
+  })
+  it('preserves cinematic easing and restores chase above the liquid surface', () => {
+    const { camera, target, chase } = harness(() => -20, () => 0)
+    camera.position.set(0, 3, 0)
+    chase.setCinematicPose(new Vector3(10, -4, 10), new Vector3(0, 0, 0))
+    chase.update(0.02)
+    expect(camera.position.x).toBeGreaterThan(0); expect(camera.position.x).toBeLessThan(10)
+    for (let i = 0; i < 300; i++) { chase.update(0.02); expect(camera.position.y).toBeGreaterThanOrEqual(0.5) }
+    expect(camera.position.y).toBeCloseTo(1.5, 3)
+    chase.clearCinematicPose(); target.position.y = -4; chase.update(0.02)
+    expect(camera.position.y).toBeGreaterThanOrEqual(0.5)
+    expect(target.visible).toBe(true)
   })
   it('uses the ride point, restores visibility, and supports explicit flight binding', () => {
     const { camera, target, chase } = harness(), ride = new Object3D()
