@@ -6,7 +6,7 @@ export function vehicleHelp(kind: VehicleKind): string[] {
   if (kind === 'hovercraft') return ['W: thrust forward · A / D: turn', 'S: pitch · Shift: brake · X: zorb ball']
   return ['W / S or arrows: drive · A / D: steer', 'Shift: brake · Space: force field wings', 'With wings: W / S pitch · A / D roll', 'L or click: tag beam · X: zorb ball']
 }
-export const cameraHelp = ['C: chase, cockpit, orbit, stationary, roam', 'Right click: cockpit · middle drag or Alt+drag: look', 'Wheel or + / −: distance · Z: scope']
+export const cameraHelp = ['Click: capture the mouse, then move it to look round · Esc: release', 'C: chase, cockpit, orbit, stationary, roam · Right click: cockpit', 'Wheel or + / −: distance · Z: scope']
 export function touchHelp(kind: VehicleKind): string {
   return kind === 'jet' ? 'Hold THR + to lift off, THR − to come down. Left thumb: pitch and bank. MODE: hover or flight. BRAKE: slow down. ZORB: ride in a ball.' : kind === 'hovercraft' ? 'Left thumb: thrust, turn and pitch. BRAKE: slow down. ZORB: ride in a ball.' : 'Left thumb: drive and steer. WINGS: deploy wings. BRAKE: slow down. TAG: send a tag beam. ZORB: ride in a ball.'
 }
@@ -15,11 +15,13 @@ export function touchHelp(kind: VehicleKind): string {
  * and must not compete with the first look at the vehicle, the road and the volcano, so
  * this is two lines; H opens the full list from `vehicleHelp` and `cameraHelp`.
  */
+/** On a desktop the first click captures the cursor; after that the mouse looks round. */
+const MOUSE_LOOK = 'Click, then move the mouse to look round · Esc: release'
 export function quickHelp(kind: VehicleKind, touch = false): string[] {
   if (touch) return [kind === 'jet' ? 'Hold THR + to lift off' : kind === 'hovercraft' ? 'Left thumb: thrust and turn' : 'Left thumb: drive and steer']
-  if (kind === 'jet') return ['Hold R to lift off · F: come down', 'W / S: pitch · A / D: bank · Space: flight mode']
-  if (kind === 'hovercraft') return ['W: thrust · A / D: turn · Shift: brake', 'C: camera']
-  return ['WASD or arrows: drive · Shift: brake', 'Space: wings · L: tag beam · C: camera']
+  if (kind === 'jet') return ['Hold R to lift off · F: come down', 'W / S: pitch · A / D: bank · Space: flight mode', MOUSE_LOOK]
+  if (kind === 'hovercraft') return ['W: thrust · A / D: turn · Shift: brake', MOUSE_LOOK]
+  return ['WASD or arrows: drive · Shift: brake', 'Space: wings · L or click: tag beam', MOUSE_LOOK]
 }
 export function renderHelp(element: HTMLElement, kind: VehicleKind, touch = false, quick = false): void {
   element.replaceChildren()

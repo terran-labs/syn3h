@@ -230,8 +230,16 @@ export class Shell implements System {
     window.addEventListener('keydown', event => this.keydown(event), { capture: true, signal })
     game.canvas.addEventListener('pointerdown', event => {
       if (!this.started || this.menuVisible || event.pointerType === 'touch' || event.button !== 0) return
-      game.input.mouseFire = true; game.canvas.setPointerCapture(event.pointerId)
+      // The first click in play captures the cursor: from then on moving the mouse swings the
+      // camera round the vehicle (ChaseCamera reads the locked pointer), and Escape lets the
+      // cursor go again, which the browser does itself. That first click only captures.
+      // (Networking also listens for clicks here, after this listener; stop it hearing this one.)
+      if (this.capturesCursor && document.pointerLockElement !== game.canvas) { this.captureCursor(); event.stopImmediatePropagation(); return }
+      game.input.mouseFire = true
+      if (document.pointerLockElement !== game.canvas) game.canvas.setPointerCapture(event.pointerId)
     }, { signal })
+    // Losing the capture (Escape, a switch of window) must not leave a beam held down.
+    document.addEventListener('pointerlockchange', () => { if (document.pointerLockElement !== game.canvas) game.input.mouseFire = false }, { signal })
     for (const name of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) game.canvas.addEventListener(name, () => { game.input.mouseFire = false }, { signal })
     window.addEventListener('blur', () => { game.input.mouseFire = false }, { signal })
     this.updateHelp(); bootLoading?.finish()
@@ -339,6 +347,7 @@ export class Shell implements System {
   openMenu(panel = 'index'): void {
     if (!this.started) return
     this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; this.starfield.enabled = !this.galaxy; if (this.galaxy) this.galaxy.enabled = true
+    this.releaseCursor()
     this.game.input.suspended = true; this.game.input.mouseFire = false; this.game.input.poll(); this.touch.enabled = false
     this.audio.enabled = false; this.audio.setLobbyVisible(true); this.element.classList.remove('is-playing'); this.showPanel(panel)
   }
@@ -538,6 +547,16 @@ export class Shell implements System {
       button.style.setProperty('--rim-angle', `${angle.toFixed(1)}deg`)
     }, { signal, passive: true })
   }
+  /** Desktop with a mouse only: phones and tablets have their thumb controls. */
+  private get capturesCursor(): boolean { return !this.touch.available && typeof this.game.canvas.requestPointerLock === 'function' }
+  private captureCursor(): void {
+    // Unadjusted movement where the browser offers it, so the swing is the same on every OS.
+    try {
+      const request = (this.game.canvas.requestPointerLock as (options?: { unadjustedMovement?: boolean }) => Promise<void> | void).call(this.game.canvas, { unadjustedMovement: true })
+      if (request && typeof (request as Promise<void>).catch === 'function') (request as Promise<void>).catch(() => { try { void this.game.canvas.requestPointerLock() } catch { /* The cursor stays free; play carries on. */ } })
+    } catch { /* The cursor stays free; play carries on. */ }
+  }
+  private releaseCursor(): void { if (document.pointerLockElement === this.game.canvas) document.exitPointerLock() }
   private updateHelp(): void {
     renderHelp(this.element.querySelector('.vehicle-help')!, this.choice.vehicleKind)
     this.element.querySelector('.shell-touch-hint')!.textContent = touchHelp(this.choice.vehicleKind)
