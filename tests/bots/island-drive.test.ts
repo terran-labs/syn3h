@@ -25,12 +25,17 @@ export function drive(seed: string, seconds: number, verbose = false, vehicleKin
   const spawn = terrain.spawnPoint(0), sights = pointsOfInterest(terrain), navigator = createNavigator(terrain)
   const buggy = vehicleKind === 'jet' ? new Jet(game, terrain, spawn.position, spawn.heading) : vehicleKind === 'hovercraft' ? new Hovercraft(game, terrain, spawn.position, spawn.heading) : new Syn3hBuggy(game, terrain, spawn.position, spawn.heading); buggy.isLocal = false
   const mind = new Mind(buggy, terrain, createPilot(buggy, terrain)!, { seed, personality: DAYDREAM_PERSONALITY, navigator, places: () => sights })
-  const kinds = new Set<string>(); let crashed = false, low = Infinity, path = 0, wet = 0, flipped = 0, slow = 0, far = 0, kind = ''
+  const kinds = new Set<string>(); let travel = 0, lastSteer = 0, side = 0, reversals = 0, crashed = false, low = Infinity, path = 0, wet = 0, flipped = 0, slow = 0, far = 0, kind = ''
   const last = spawn.position.clone(), cells = new Set<string>(), up = new Vector3(), q = new Quaternion()
   for (let i = 0; i < seconds / DT; i++) {
     mind.step(DT, buggy.input); buggy.fixedUpdate(DT); world.step(); buggy.postPhysics(DT)
     const p = buggy.body.translation(), v = buggy.body.linvel()
     path += Math.hypot(p.x - last.x, p.z - last.z); last.set(p.x, p.y, p.z)
+    // How busy the steering is: wheel travel per second (1 is centre to full lock), and how
+    // often it swaps sides. A smooth driver moves the wheel little and seldom reverses it.
+    const sx = buggy.input.x
+    travel += Math.abs(sx - lastSteer); lastSteer = sx
+    if (Math.abs(sx) > 0.15 && Math.sign(sx) !== side) { if (side !== 0) reversals++; side = Math.sign(sx) }
     far = Math.max(far, Math.hypot(p.x - spawn.position.x, p.z - spawn.position.z))
     cells.add(`${Math.floor(p.x / 64)}:${Math.floor(p.z / 64)}`)
     if (terrain.liquidHeightAt!(p.x, p.z)! > p.y) wet += DT
@@ -53,7 +58,7 @@ export function drive(seed: string, seconds: number, verbose = false, vehicleKin
   }
   world.free()
   if (process.env.BOT_CAPTIONS) appendFileSync('/tmp/syn3h-island-drive.log', `  captions: ${[...kinds].join(' | ')}\n`)
-  return { reachable, low, path, wet, flipped, slow, far, cells: cells.size, abandoned: mind.abandoned }
+  return { steerTravel: travel / seconds * 100, reversals: reversals / seconds * 60, reachable, low, path, wet, flipped, slow, far, cells: cells.size, abandoned: mind.abandoned }
 }
 
 type Run = ReturnType<typeof drive>

@@ -7,13 +7,13 @@
 #
 # Unthrottled unless the machine is genuinely busy: when the 1 minute load average is below
 # SYN3H_HEAVY_LOAD (default 12, about one per core here) the job runs at once and takes no
-# slot. Only above that does it wait for one of SYN3H_HEAVY_SLOTS (default 8) machine-wide
+# slot. Only above that does it wait for one of SYN3H_HEAVY_SLOTS (default 6) machine-wide
 # slots. SYN3H_HEAVY_BYPASS=1 always runs at once: for the trunk gate only, so landings never
 # queue behind a lane's screenshots.
 #
 # Slots are directories under /tmp/syn3h-heavy. mkdir is atomic, so no two jobs share one.
 # A slot older than 20 minutes is treated as abandoned and reclaimed.
-SLOTS="${SYN3H_HEAVY_SLOTS:-8}"
+SLOTS="${SYN3H_HEAVY_SLOTS:-6}"
 LIMIT="${SYN3H_HEAVY_LOAD:-12}"
 ROOT=/tmp/syn3h-heavy
 mkdir -p "$ROOT"

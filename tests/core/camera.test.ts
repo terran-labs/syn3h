@@ -56,7 +56,8 @@ describe('Syn3h camera', () => {
     chase.update(0.02)
     expect(camera.position.x).toBeGreaterThan(0); expect(camera.position.x).toBeLessThan(10)
     for (let i = 0; i < 300; i++) { chase.update(0.02); expect(camera.position.y).toBeGreaterThanOrEqual(0.5) }
-    expect(camera.position.y).toBeCloseTo(1.5, 3)
+    // One metre above the liquid plus the terrain clearance (1.2 m by default).
+    expect(camera.position.y).toBeCloseTo(2.2, 3)
     chase.clearCinematicPose(); target.position.y = -4; chase.update(0.02)
     expect(camera.position.y).toBeGreaterThanOrEqual(0.5)
     expect(target.visible).toBe(true)

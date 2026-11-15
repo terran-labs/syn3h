@@ -5,7 +5,7 @@ import { RAPIER, unityTorque } from '../core/physics'
 import { defineParam } from '../../shared/params'
 import { Vehicle } from './Vehicle'
 import { VehicleModel } from './skins/VehicleModel'
-import { loadTextureViews } from './skins/textureViews'
+import { setRole } from './skins/showroom'
 import { hotExposureDim } from './skins/hotExposure'
 
 export const jetHoverDrag = defineParam({id:'jet.hoverDrag',label:'Hover drag',group:'Jet',scope:'world',default:.01,min:.005,max:.015,step:.0001})
@@ -43,14 +43,16 @@ export class Jet extends Vehicle {
   private readonly smoothed = new THREE.Vector4()
   private readonly thruster = new THREE.Group()
   private readonly hoverGlows: THREE.Mesh[] = []
-  private readonly textures: THREE.Texture[] = []
   /** Undimmed glow colour. update() rescales from this each frame, never cumulatively. */
   private readonly glowBase = new THREE.Color(0x66ddff)
   private readonly glowMaterial = new THREE.MeshBasicMaterial({color:0x66ddff,transparent:true,opacity:.65,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide})
-  private readonly paint = new THREE.MeshPhysicalMaterial({color:new THREE.Color(.09088451,.15540954,.30147058),metalness:1,roughness:.1,clearcoat:1,clearcoatRoughness:.12})
-  private readonly chrome = new THREE.MeshPhysicalMaterial({color:new THREE.Color(.78676474,.78676474,.78676474),metalness:1,roughness:.178})
-  private readonly cockpit = new THREE.MeshPhysicalMaterial({color:0x892ba7,metalness:.35,roughness:.12,clearcoat:1,iridescence:.35,iridescenceIOR:1.3})
-  private readonly accent = new THREE.MeshStandardMaterial({color:0x515151,metalness:0,roughness:.48})
+  // The vehicle pattern (PATTERN.md): the jet authors no look. Each surface is tagged with a role
+  // and the shared showroom shading builds scales, clear coat, canopy, night fill and lava glow,
+  // as on every other vehicle. Colours are the prefab's; the numbers are only shading tier 0.
+  private readonly paint = setRole(new THREE.MeshStandardMaterial({color:new THREE.Color(.09088451,.15540954,.30147058),metalness:.8,roughness:.3}),'paint')
+  private readonly chrome = setRole(new THREE.MeshStandardMaterial({color:new THREE.Color(.78676474,.78676474,.78676474),metalness:1,roughness:.14}),'chrome')
+  private readonly cockpit = setRole(new THREE.MeshStandardMaterial({color:0x892ba7,metalness:.65,roughness:.18}),'glass')
+  private readonly accent = setRole(new THREE.MeshStandardMaterial({color:0x515151,metalness:.85,roughness:.26}),'accent')
   get modelReady(): Promise<void> {return this.model.ready}
   /** Input defaults false, so false means the original startup hover mode. */
   get hoverMode(): boolean {return !this.input.special}
@@ -86,15 +88,10 @@ export class Jet extends Vehicle {
       this.gear=scene.getObjectByName('Landing_Gear')
       if(this.gear){this.gear.visible=false}
     })
-    if(typeof window!=='undefined'){
-      const glow=new THREE.TextureLoader().load('/models/textures/thruster-glow.png');this.glowMaterial.map=glow;this.glowBase.setRGB(3,3,4);this.textures.push(glow)
-      // Two views of one image. A clone of the still-loading texture would be marked for upload
-      // with no image and throw on the first frame that beats the download (see textureViews.ts).
-      const [texture,fine]=loadTextureViews('/models/textures/armor-scales.jpg',2)
-      texture.wrapS=texture.wrapT=fine.wrapS=fine.wrapT=THREE.RepeatWrapping;texture.repeat.set(15,15)
-      this.textures.push(texture);this.paint.bumpMap=texture;this.paint.bumpScale=.012
-      fine.repeat.set(40,40);this.textures.push(fine);this.chrome.bumpMap=fine;this.chrome.bumpScale=.002
-    }
+    // No image files: the paint's scales come from the shared shading and the glow is plain colour.
+    // The canopy stays its own draw so the shared shading can make it see-through.
+    this.cockpit.name='Cockpit';this.cockpit.userData.separate=true
+    this.glowBase.setRGB(3,3,4)
     this.thruster.position.copy(nozzlePosition);this.object.add(this.thruster)
     const glow=new THREE.Mesh(new THREE.CircleGeometry(.42,32),this.glowMaterial)
     this.thruster.add(glow)
@@ -197,7 +194,7 @@ export class Jet extends Vehicle {
   }
   override teleport(position:THREE.Vector3,heading=0):void {super.teleport(position,heading);this.smoothed.set(0,0,0,0)}
   override dispose():void {
-    this.model.dispose();this.textures.forEach(t=>t.dispose())
+    this.model.dispose()
     this.object.traverse(o=>{if(o instanceof THREE.Mesh)o.geometry.dispose()})
     this.paint.dispose();this.chrome.dispose();this.cockpit.dispose();this.accent.dispose();this.glowMaterial.dispose()
     super.dispose()

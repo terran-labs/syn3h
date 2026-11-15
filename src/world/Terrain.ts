@@ -26,6 +26,12 @@ export interface TerrainRoadPath {
   /** Paved width in metres. */
   width: number
   points: readonly { x: number; y: number; z: number }[]
+  /**
+   * Stretches of this road under shallow water where a river fords it: `start` and `end` are
+   * indices into `points`, `depth` the deepest water over the road in metres (built to
+   * 0.35). Drivable. Empty or absent unless the world has fords.
+   */
+  fords?: readonly { start: number; end: number; depth: number }[]
 }
 
 /** A place where fire, embers or smoke rise: for effects and for sound. */
@@ -76,6 +82,8 @@ export interface Terrain {
    * none. Vehicles use it for buoyancy.
    */
   liquidHeightAt?(x: number, z: number): number
+  /** Horizontal water velocity in metres per second; writes into out. */
+  liquidFlowAt?(x: number, z: number, out: { x: number; z: number }): { x: number; z: number }
   /**
    * What the liquid at a world position is: 'lava' is thick and sticky, 'water' floats a
    * vehicle. Null where the
