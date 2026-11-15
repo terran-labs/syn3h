@@ -79,4 +79,20 @@ describe('Jet hover and flight',()=>{
    v.input.z=1;h.step(v,25);expect(v.body.linvel().y).toBeGreaterThan(0)}
   finally{jetHoverHold.value=1;v.dispose();h.world.free()}
  })
+ it('landing gear holds a resting jet up and its collider follows the gear when it retracts',()=>{
+  const h=harness();const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,2.5,0));v.isLocal=false
+  // Hover mode lowers the gear in one second; the hold lets go near the ground, so the jet lands.
+  h.step(v,400);const onGear=v.body.translation().y
+  expect(Math.abs(v.body.linvel().y)).toBeLessThan(.05)
+  // At rest the gear is not moving: the jet must not creep sideways on a level floor.
+  const x=v.body.translation().x,z=v.body.translation().z;h.step(v,200)
+  expect(Math.hypot(v.body.translation().x-x,v.body.translation().z-z)).toBeLessThan(.05)
+  // Flight mode with no throttle raises the gear, and the hull settles lower.
+  v.input.special=true;h.step(v,400)
+  expect(v.body.translation().y).toBeLessThan(onGear-.3)
+  // Back to hover: the gear comes down again and lifts the hull back to where it stood.
+  v.input.special=false;h.step(v,400)
+  expect(v.body.translation().y).toBeCloseTo(onGear,1)
+  v.dispose();h.world.free()
+ })
 })
