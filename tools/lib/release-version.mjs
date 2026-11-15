@@ -82,7 +82,7 @@ export function nextVersion(date, existing = []) {
 }
 
 const PACIFIC_TIME = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}) (PST|PDT)$/
-export const CHANNELS = ['milestone', 'production']
+export const CHANNELS = ['milestone', 'production', 'withdrawn']
 
 /**
  * Read ../Syn3h-stable/releases.tsv (written by tools/release.sh): which builds were deployed.
@@ -105,7 +105,7 @@ export function releasesFromTsv(text) {
 /**
  * Read release-notes/history.tsv: every version, oldest first. Lines starting with # are
  * comments. Columns: version, milestone tag, commit, Pacific time ("2026-11-14 14:06 PST"),
- * channel (milestone or production), and optionally preview (yes or no, default yes: whether
+ * channel (milestone, production or withdrawn), and optionally preview (yes or no, default yes: whether
  * a milestone ran on a private preview; a plan or a build before the first preview did not).
  * Checks that each version's day is the day of its
  * time, that versions only rise, and that builds of a day run 00, 01, 02 with no gaps.
@@ -128,7 +128,7 @@ export function parseHistory(text) {
     if (Number(when[1]) % 100 !== v.yy || Number(when[2]) !== v.month || Number(when[3]) !== v.day) {
       throw new Error(`${where}: ${v.tag} is not on the day of ${time}`)
     }
-    if (!CHANNELS.includes(channel)) throw new Error(`${where}: channel must be milestone or production, got "${channel}"`)
+    if (!CHANNELS.includes(channel)) throw new Error(`${where}: channel must be milestone, production or withdrawn, got "${channel}"`)
     const prev = rows.at(-1)
     if (prev) {
       if (compareVersions(prev.parsed, v) >= 0) throw new Error(`${where}: ${v.tag} does not follow ${prev.version}`)
@@ -163,6 +163,7 @@ export function longDate(time) {
  * reads as public.
  */
 export function kindLine(row, url = 'https://www.syn3h.com/') {
+  if (row.channel === 'withdrawn') return `Released at ${clockTime(row.time)} Pacific on ${longDate(row.time)}, then withdrawn after public acceptance failed.`
   return row.channel === 'production'
     ? `Public release at ${clockTime(row.time)} Pacific on ${longDate(row.time)}, live at ${url}.`
     : row.preview === false
