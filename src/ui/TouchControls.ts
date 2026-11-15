@@ -14,7 +14,7 @@ export class TouchControls {
     this.element.setAttribute('aria-label', 'Touch driving controls')
     this.element.hidden = true
     if (!this.available) return
-    this.element.innerHTML = `<div class="touch-stick" role="group" aria-label="Drag to steer and drive"><span class="touch-knob"></span><span class="touch-stick-label">DRIVE</span></div><div class="touch-actions"><button type="button" data-action="throttleUp" hidden>THR +</button><button type="button" data-action="throttleDown" hidden>THR −</button><button type="button" data-action="special" aria-pressed="false">WINGS</button><button type="button" data-action="brakes">BRAKE</button><button type="button" class="touch-fire" data-action="fire">TAG</button></div>`
+    this.element.innerHTML = `<div class="touch-stick" role="group" aria-label="Drag to steer and drive"><span class="touch-knob"></span><span class="touch-stick-label">DRIVE</span></div><div class="touch-actions"><button type="button" data-action="throttleUp" hidden>THR +</button><button type="button" data-action="throttleDown" hidden>THR −</button><button type="button" data-action="special" aria-pressed="false">WINGS</button><button type="button" data-action="brakes">BRAKE</button><button type="button" data-action="zorb" aria-pressed="false">ZORB</button><button type="button" class="touch-fire" data-action="fire">TAG</button></div>`
     parent.append(this.element)
     const signal = this.abort.signal
     const stick = this.element.querySelector<HTMLElement>('.touch-stick')!
@@ -40,15 +40,17 @@ export class TouchControls {
       stick.addEventListener(name, (event) => { if (event.pointerId === pointer) reset() }, { signal })
     }
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('button')) {
-      const action = button.dataset.action as 'brakes' | 'special' | 'fire' | 'throttleUp' | 'throttleDown'
+      const action = button.dataset.action as 'brakes' | 'special' | 'fire' | 'throttleUp' | 'throttleDown' | 'zorb'
       const pointers = new Set<number>()
       const throttle = action === 'throttleUp' || action === 'throttleDown'
-      const release = () => { pointers.clear(); if (throttle) { this.thrust.delete(action); this.syncThrust() } else if (action !== 'special') input.external[action] = false; button.classList.remove('held') }
+      const release = () => { pointers.clear(); if (throttle) { this.thrust.delete(action); this.syncThrust() } else if (action !== 'special' && action !== 'zorb') input.external[action] = false; button.classList.remove('held') }
       this.resetters.push(release)
       button.addEventListener('pointerdown', (event) => {
         if (!this.active || input.suspended) return
         event.preventDefault(); button.setPointerCapture(event.pointerId); pointers.add(event.pointerId)
         if (action === 'special') input.state.special = !input.state.special
+        // Zorb mode, the X key: ride inside a ball. A toggle, like the wings.
+        else if (action === 'zorb') input.toggleZorb()
         else if (throttle) { this.thrust.add(action); this.syncThrust() }
         else input.external[action] = true
         button.classList.add('held'); this.update()
@@ -77,6 +79,7 @@ export class TouchControls {
   }
   update(): void {
     this.element.querySelector('[data-action="special"]')?.setAttribute('aria-pressed', String(this.input.state.special))
+    this.element.querySelector('[data-action="zorb"]')?.setAttribute('aria-pressed', String(this.input.state.zorb))
   }
   /** Pulse one button, to go with a hint that names it. Null clears it. */
   highlight(action: string | null): void {

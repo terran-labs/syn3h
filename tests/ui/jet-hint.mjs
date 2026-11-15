@@ -2,6 +2,7 @@
  * The jet says how to lift off. Its controls card leads with it, and a player who pushes W
  * (or the thumb stick) on the parked jet for two seconds is told which control lifts it:
  * R on a keyboard, the THR + button on touch, which pulses. Using that control lifts the jet.
+ * It also checks the wings hint for a buggy sunk in lava and the ZORB touch button.
  *
  *   tools/heavy.sh node tests/ui/jet-hint.mjs
  *
@@ -49,6 +50,30 @@ try {
     await page.waitForFunction(() => { const s = window.syn3h, p = s.player.body.translation(); return p.y - s.terrain.heightAt(p.x, p.z) > 6 }, null, { timeout: 15000 })
     if (view.hasTouch) await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }); else await page.keyboard.up('r')
     await page.screenshot({ path: `${out}/${view.name}-airborne.png` })
+    await context.close()
+  }
+  // A buggy sunk in the volcano's lava lake is told its wings lift it out, and on a phone
+  // the WINGS button pulses. The ZORB button toggles zorb mode.
+  for (const view of [{ name: 'desktop', viewport: { width: 1280, height: 720 } }, { name: 'phone', viewport: { width: 844, height: 390 }, hasTouch: true, isMobile: true }]) {
+    const context = await browser.newContext(view), page = await context.newPage()
+    page.on('pageerror', e => errors.push(`wings ${view.name}: ${e.message}`))
+    await page.goto(`http://127.0.0.1:5187/?room=wings-hint-${view.name}-${Date.now()}&vehicle=buggy&autoplay=1`, { waitUntil: 'load' })
+    await page.waitForFunction(() => window.syn3h?.game?.tick > 40, null, { timeout: 120000 })
+    await page.waitForTimeout(6500)
+    await page.evaluate(() => { const s = window.syn3h, top = s.terrain.summit(); s.player.teleport(s.game.camera.position.clone().set(top.x, top.lake.surface + 1.5, top.z), 0) })
+    await page.waitForFunction(() => window.syn3h.player.canLiftOut, null, { timeout: 20000 })
+    await page.waitForFunction(() => document.querySelector('.spawn-help.is-hint:not([hidden])'), null, { timeout: 8000 })
+    assert.equal((await card(page)).text, view.hasTouch ? 'WINGS: lift out' : 'Space: wings to lift out')
+    if (view.hasTouch) {
+      assert.equal(await page.locator('.touch-actions [data-action=special]').evaluate(b => b.classList.contains('is-hinted')), true, 'the WINGS button pulses')
+      const zorb = page.locator('.touch-actions [data-action=zorb]')
+      assert.equal(await zorb.getAttribute('aria-pressed'), 'false')
+      await zorb.tap(); await page.waitForFunction(() => window.syn3h.game.input.state.zorb === true)
+      await page.waitForFunction(() => document.querySelector('.touch-actions [data-action=zorb]').getAttribute('aria-pressed') === 'true')
+      await page.screenshot({ path: `${out}/${view.name}-zorb.png` })
+      await zorb.tap(); await page.waitForFunction(() => window.syn3h.game.input.state.zorb === false)
+    }
+    await page.screenshot({ path: `${out}/${view.name}-wings.png` })
     await context.close()
   }
   console.log(JSON.stringify({ ok: true, errors }))
