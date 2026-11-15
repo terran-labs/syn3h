@@ -505,10 +505,10 @@ async function main(): Promise<void> {
     if (handles.cockpit) { handles.cockpit.set(cockpit.on); handles.cockpit.root.hidden = side || stress > 1 || !e?.model?.cockpit }
     handles.floor?.set(FLOOR_NAMES.indexOf(studio.floor))
     handles.night?.set(state.night); handles.headlights?.set(state.headlights); handles.brake?.set(state.braking)
+    handles.motor?.set(!!motor); handles.revs?.set(revs); handles.force?.set(force)
     handles.detail?.set(lodChoice + 1)
     handles.stress?.set(STRESS_COUNTS.indexOf(stress))
     handles.motion?.set(state.animate)
-    handles.motor?.set(!!motor); handles.revs?.set(revs); handles.force?.set(force)
     handles.own?.setAttribute('aria-pressed', String(!paint))
     handles.swatches.forEach((b, i) => b.setAttribute('aria-pressed', String(!!paint && PAINTS[i][1] === paint[0] && PAINTS[i][2] === paint[1])))
     if (paint) { handles.body?.set(hex(paint[0])); handles.accent?.set(hex(paint[1])) }
@@ -770,6 +770,8 @@ async function main(): Promise<void> {
     setHeadlights(on: boolean) { state.headlights = on; refresh() },
     setBraking(on: boolean) { state.braking = on; refresh() },
     setMotion(on: boolean) { state.animate = on; refresh() },
+    setFloor(name: FloorName) { studio.setFloor(name); refresh() },
+    setTurntable(on: boolean) { turntable = on; refresh() },
     /** Plays or stops the game's engine voice for the vehicle on show. Needs a click or key press first, as all browser audio does. */
     setMotor(on: boolean) { setMotor(on); refresh() },
     /** Engine revs for Motor sound: 0 idle to 1 flat out. Ignored while Motion is on. */
@@ -782,8 +784,6 @@ async function main(): Promise<void> {
     setForce(value: number) { force = Math.min(1, Math.max(0, value)); refresh() },
     /** For checks: bump sounds played so far. */
     get bumps() { return bumps },
-    setFloor(name: FloorName) { studio.setFloor(name); refresh() },
-    setTurntable(on: boolean) { turntable = on; refresh() },
     /** Shows or hides the sidebar (on a phone, opens or closes the sheet). */
     sidebar(open: boolean) { setCollapsed(!open) },
     /** Sets a game parameter by id, or resets it with no value. */
