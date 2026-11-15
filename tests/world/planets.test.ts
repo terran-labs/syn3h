@@ -56,6 +56,19 @@ describe('planet recipes', () => {
     applyPlanet('volcanic', 1)
   }, 60000)
 
+  it('a world left at its defaults is the volcanic recipe and encodes as just its id and seed', () => {
+    // Registered defaults must agree with the volcanic recipe, or every invite link for a
+    // fresh world would carry needless overrides.
+    for (const id in PLANETS[0].values) {
+      if (id.startsWith('terrain.') || id.startsWith('world.')) {
+        expect(params.get(id)!.def.default, id).toBe(PLANETS[0].values[id])
+      }
+    }
+    for (const p of params.all()) if (p.def.scope === 'world') params.set(p.def.id, p.def.default)
+    params.applySnapshot(PLANETS[0].values, 'preset')
+    expect(encodeWorld()).toBe(`volcanic.${worldSeed.value}`)
+  })
+
   it('names are pronounceable, stable and varied', () => {
     expect(planetName(4821)).toBe(planetName(4821))
     const names = new Set(Array.from({ length: 500 }, (_, i) => planetName(i + 1)))
