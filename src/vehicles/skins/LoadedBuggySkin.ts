@@ -1,3 +1,4 @@
+import { smoothBuggyWheel, distantBuggyBody, distantBuggyArm } from './buggyGeometry'
 import {hotExposureNode} from './hotExposure'
 import {addLavaGlow} from './lavaGlow'
 import {addNightReadability} from './nightReadability'
@@ -5,7 +6,7 @@ import {applyShowroom,setRole} from './showroom'
 import * as THREE from 'three/webgpu'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { abs, attribute, clamp, dot, float, instancedBufferAttribute, length, min, normalView, positionGeometry, positionViewDirection, sin, smoothstep, time, uniform, vec2 } from 'three/tsl'
-import {mergeStatic,registerVehicleDetail,staticLods,reducedGeometry} from './mergeStatic'
+import {mergeStatic,registerVehicleDetail,staticLods,reducedGeometry,detailLevel} from './mergeStatic'
 import type { BuggySkin } from './BuggySkin'
 import { MotorSparks } from './motorSparks'
 import type Node from 'three/src/nodes/core/Node.js'
@@ -143,6 +144,10 @@ export class LoadedBuggySkin implements BuggySkin {
   private detachDetail=()=>{}
   private detachShowroom=()=>{}
   private axleBatch?:THREE.InstancedMesh
+  private tyreBatch?: THREE.InstancedMesh
+  private midTyres?: THREE.InstancedMesh
+  private midArms?: THREE.InstancedMesh
+  private readonly distantBodies: THREE.Group[] = []
   private readonly simpleWheels:THREE.Group[]=[]
   private readonly highWheels:THREE.Object3D[]=[]
   /** Spinning part of each wheel (tyre and rotor ring). The wheel group itself only steers. */
@@ -270,7 +275,7 @@ export class LoadedBuggySkin implements BuggySkin {
       staticBody.add(lights)
     }
     mergeStatic(staticBody,true)
-    const bodyLods=staticLods(staticBody)
+    const bodyLods=classic ? staticLods(staticBody) : []
     if (canopy !== staticBody) {
       mergeStatic(canopy, true)
       // The force field stays in view from the seat: Syn3hBuggy sets userData.cockpit on the
@@ -280,32 +285,56 @@ export class LoadedBuggySkin implements BuggySkin {
       this.object.add(canopy)
     }
     const wheelRoot = classic ? loaded[1]!.scene : scene.getObjectByName('Wheel_Template')!
-    const wheel = extract(wheelRoot)
+    const wheel = classic ? extract(wheelRoot) : smoothBuggyWheel()
     const bounds = new THREE.Box3().setFromObject(wheel), center = bounds.getCenter(new THREE.Vector3())
     const d = this.layout.wheelDiameter
     const scale = d === null ? 1 : d / (bounds.max.y - bounds.min.y)
-    wheel.traverse(o => { if (o instanceof THREE.Mesh) {
+    if (classic) wheel.traverse(o => { if (o instanceof THREE.Mesh) {
       o.geometry.translate(-center.x, -center.y, -center.z).scale(scale * this.layout.wheelWidth, scale, scale)
       const accent = /beadlock|plane_2/i.test(o.name)
       for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose(); const rubber = /rubber|^plane$/i.test(o.name); o.material = setRole(new THREE.MeshStandardMaterial({color: accent ? this.accentColor : rubber ? 0x171b20 : 0x89949f, roughness: accent ? .35 : .7, metalness: accent ? .55 : .15}), accent ? 'accent' : rubber ? 'tyre' : 'chrome')
       if (accent) this.accentMaterials.push(o.material)
     } })
     mergeStatic(wheel,true)
-    this.rollers.forEach((w, i) => { const visual = wheel.clone(true); if (i % 2 === 0) visual.rotation.y = Math.PI; w.add(visual); this.highWheels.push(visual) })
+    if (!classic) {
+      const mesh = wheel.children[0] as THREE.Mesh
+      this.tyreBatch = new THREE.InstancedMesh(mesh.geometry, mesh.material, 4)
+      this.tyreBatch.name = 'Smooth tyres and chrome rings'
+      this.tyreBatch.castShadow = this.tyreBatch.receiveShadow = true
+      this.tyreBatch.frustumCulled = false
+      this.object.add(this.tyreBatch)
+    }
+    if (classic) this.rollers.forEach((w, i) => { const visual = wheel.clone(true); if (i % 2 === 0) visual.rotation.y = Math.PI; w.add(visual); this.highWheels.push(visual) })
     // Syn3h exported a true simple wheel and rim. Classic has no simple wheel asset here.
-    const simpleRoot=scene.getObjectByName('Wheel_Template_Simple')
+    const simpleRoot=classic ? scene.getObjectByName('Wheel_Template_Simple') : undefined
     if(simpleRoot){
       const simple=extract(simpleRoot),b=new THREE.Box3().setFromObject(simple),c=b.getCenter(new THREE.Vector3())
       simple.traverse(o=>{if(o instanceof THREE.Mesh){o.geometry.translate(-c.x,-c.y,-c.z);for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();o.material=new THREE.MeshStandardMaterial({color:0x171b20,roughness:.7,metalness:.15})}})
       mergeStatic(simple,true)
       this.rollers.forEach((w,i)=>{const low=simple.clone(true);low.visible=false;if(i%2===0)low.rotation.y=Math.PI;w.add(low);this.simpleWheels.push(low)})
     }
-    if(!simpleRoot){
+    if(classic && !simpleRoot){
       // No classic simple wheel was recovered. Generate a distant-only reduction, retaining tint.
       const low=wheel.clone(true);low.traverse(o=>{if(o instanceof THREE.Mesh)o.geometry=reducedGeometry(o.geometry,.06)})
       this.wheels.forEach((w,i)=>{const visual=low.clone(true);visual.visible=false;if(i%2===0)visual.rotation.y=Math.PI;w.add(visual);this.simpleWheels.push(visual)})
     }
-    if (!classic) this.buildHubMotors(scene, next!)
+    let midBody: THREE.Group | undefined, farBody: THREE.Group | undefined
+    if (!classic) {
+      this.buildHubMotors(scene, next!)
+      midBody = distantBuggyBody(this.bodyColor, this.accentColor, false)
+      farBody = distantBuggyBody(this.bodyColor, this.accentColor, true)
+      this.object.add(midBody, farBody)
+      this.distantBodies.push(midBody, farBody)
+      const tyre = smoothBuggyWheel(12).children[0] as THREE.Mesh
+      this.midTyres = new THREE.InstancedMesh(tyre.geometry, tyre.material, 4)
+      this.midTyres.name = 'Mid tyres'; this.midTyres.frustumCulled = false
+      const arm = distantBuggyArm()
+      this.midArms = new THREE.InstancedMesh(arm.geometry, arm.material, 4)
+      this.midArms.name = 'Mid suspension'; this.midArms.frustumCulled = false
+      this.object.add(this.midTyres, this.midArms)
+      midBody.visible = farBody.visible = this.midTyres.visible = this.midArms.visible = false
+      this.wheels.forEach((w, i) => this.setWheel(i, w.position, w.rotation.y, this.rollers[i].rotation.x))
+    }
     const wingTransform = transform.clone()
     if (!classic) wingTransform.multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2))
     const wingGroup = extract(scene.getObjectByName(classic ? 'Wing' : 'Wings')!, wingTransform)
@@ -316,6 +345,8 @@ export class LoadedBuggySkin implements BuggySkin {
         wingGroup.add(reflected)
       }
     }
+    // Both flight wings deform by vertex position, so they can share one geometry and draw.
+    if (!classic) mergeStatic(wingGroup, true)
     // Force field material after Syn3h "Vehicle Wings" (an edge detecting, fresnel, panning
     // texture shader: brightness 7, pan speed -0.5, texture V scale 0.1, solid colour tinted by
     // the vehicle). Our wing meshes are coarse shells with arbitrary UVs, so the edge glow is
@@ -350,12 +381,14 @@ export class LoadedBuggySkin implements BuggySkin {
     const glow = edge.mul(1.2).add(rim.mul(2.2)).add(flow.mul(.3)).add(fresnel.mul(.5)).add(.03)
     const energy = new THREE.MeshBasicNodeMaterial({transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false})
     energy.fog = false
+    if (!classic) energy.forceSinglePass = true
     energy.colorNode = this.energyColor.mul(glow).mul(hotExposureNode())
     energy.opacityNode = clamp(glow, 0, 1)
     // Additive light washes out to white over a sunlit desert, so a normally blended tint layer
     // underneath keeps the accent hue readable at noon; at night the additive glow dominates.
     const tint = new THREE.MeshBasicNodeMaterial({transparent: true, side: THREE.DoubleSide, depthWrite: false})
     tint.fog = false
+    if (!classic) tint.forceSinglePass = true
     tint.colorNode = this.energyColor.mul(.55).mul(hotExposureNode())
     tint.opacityNode = clamp(edge.mul(.45).add(rim.mul(.35)).add(flow.mul(.08)).add(.1), 0, .8)
     for (const o of meshes) {
@@ -371,13 +404,23 @@ export class LoadedBuggySkin implements BuggySkin {
     this.setColors(this.bodyColor, this.accentColor)
     this.setWings(this.wingInput[0], this.wingInput[1], this.wingInput[2])
     const shadows:THREE.Mesh[]=[];this.object.traverse(o=>{if(o instanceof THREE.Mesh&&o.castShadow)shadows.push(o)})
+    let lastDetail: 0 | 1 | 2 = 0
     this.detachDetail=registerVehicleDetail(this.object,(distance,remote,level)=>{
       const low=remote&&distance>(level===2?60:30)
+      if (!classic) {
+        lastDetail = detailLevel(distance, remote, lastDetail)
+        const near = lastDetail === 0, mid = lastDetail === 1
+        staticBody.visible = canopy.visible = wingGroup.visible = near
+        this.tyreBatch!.visible = near
+        this.struts!.visible = near
+        this.stators.forEach((s, i) => { s.visible = near && i === 0 })
+        midBody!.visible = this.midTyres!.visible = this.midArms!.visible = mid
+        farBody!.visible = lastDetail === 2
+      }
       this.wheels.forEach((_,i)=>{if(this.simpleWheels[i]){this.highWheels[i].visible=!low;this.simpleWheels[i].visible=low}})
       bodyLods.forEach(p=>{p.high.visible=!low;p.low.visible=low})
       if(this.axleBatch)this.axleBatch.visible=!low
-      // The wing struts stay at every distance: they are a large part of the silhouette.
-      if(this.stators.length===2){this.stators[0].visible=!low;this.stators[1].visible=low}
+
       // Sparks are a close-up detail; other players' buggies only show them nearby.
       this.sparksAllowed=!remote||distance<(level===2?40:20)
       const cast=!remote||distance<(level===2?20:0)
@@ -396,6 +439,12 @@ export class LoadedBuggySkin implements BuggySkin {
     // the `Roll` child (tyre and rotor ring), while `Rim` (the stator) sits on the steered root.
     wheel.rotation.set(0, steerAngle, 0)
     this.rollers[index].rotation.x = spinAngle
+    if (this.tyreBatch) {
+      wheel.updateMatrix(); this.rollers[index].updateMatrix()
+      scratch.matrix.multiplyMatrices(wheel.matrix, this.rollers[index].matrix)
+      this.tyreBatch.setMatrixAt(index, scratch.matrix); this.tyreBatch.instanceMatrix.needsUpdate = true
+      if (this.midTyres) { this.midTyres.setMatrixAt(index, scratch.matrix); this.midTyres.instanceMatrix.needsUpdate = true }
+    }
     const mount = this.layout.mounts[index]
     if (this.axleBatch) {
       const axle = this.axles[index], delta = localPosition.clone().sub(mount)
@@ -409,6 +458,7 @@ export class LoadedBuggySkin implements BuggySkin {
       for (const s of this.stators) { s.setMatrixAt(index, wheel.matrix); s.instanceMatrix.needsUpdate = true }
       this.strutMatrix(localPosition, mount, scratch.matrix)
       this.struts.setMatrixAt(index, scratch.matrix); this.struts.instanceMatrix.needsUpdate = true
+      if (this.midArms) { this.midArms.setMatrixAt(index, scratch.matrix); this.midArms.instanceMatrix.needsUpdate = true }
     }
     // Rotor speed for the spark direction, from successive spin angles.
     this.spinRate[index] = spinAngle - this.lastSpin[index]
@@ -454,7 +504,7 @@ export class LoadedBuggySkin implements BuggySkin {
         const materials = Array.isArray(o.material) ? o.material : [o.material]
         const isChrome = materials.some(m => /chrome/i.test(m.name))
         for (const m of materials) m.dispose()
-        o.material = isChrome ? chrome() : wingMetal()
+        o.material = isChrome ? setRole(chrome(), 'chrome') : setRole(wingMetal(), 'frame')
       } })
       return part
     }
@@ -462,14 +512,14 @@ export class LoadedBuggySkin implements BuggySkin {
     // glow colour is a per-instance attribute, so four wheels stay one draw call.
     const glow = instancedBufferAttribute(this.statorGlow, 'vec3')
     const tips = smoothstep(STATOR_TIP - .1, STATOR_TIP, abs(positionGeometry.z))
-    this.stators = ['Rim', 'RimSimple'].map((name, lod) => {
+    this.stators = ['RimSimple'].map((name, lod) => {
       const part = prepare(name)
       mergeStatic(part, true)
       const merged = part.children[0] as THREE.Mesh<THREE.BufferGeometry, THREE.MeshStandardNodeMaterial>
       const material = merged.material
       material.emissiveNode = (material.emissiveNode as Node<'vec3'>).add((glow as Node<'vec3'>).mul(tips).mul(2.5))
       const mesh = new THREE.InstancedMesh(merged.geometry, material, 4)
-      mesh.name = lod ? 'Stators (far)' : 'Stators'
+      mesh.name = 'Stators'
       mesh.castShadow = mesh.receiveShadow = true
       mesh.frustumCulled = false
       mesh.visible = !lod
@@ -541,6 +591,7 @@ export class LoadedBuggySkin implements BuggySkin {
 
   setWings(openAmount: number, steer: number, pitch: number): void {
     this.wingInput = [openAmount, steer, pitch]
+    for (const body of this.distantBodies) body.userData.setWings(THREE.MathUtils.clamp(openAmount, 0, 1))
     for (const {mesh, base} of this.wings) {
       mesh.visible = openAmount > 0
       const position = mesh.geometry.attributes.position
