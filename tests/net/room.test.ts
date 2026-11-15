@@ -1115,3 +1115,43 @@ describe('Room with strangers', () => {
     expect(c.peer.last('game')!.game.koth.zone).toMatchObject({ x: 50 })
   })
 })
+
+describe('Room does not believe absurd speeds', () => {
+  // A modified client's state can claim any velocity. Checks that give leeway for speed must
+  // not turn that claim into reach.
+  const liar: [number, number, number] = [0, 0, -10_000]
+
+  it('refuses a tag beam whose origin is far from its sender, whatever speed the sender claims', () => {
+    const a = join('A')
+    const b = join('B')
+    clock += 3100
+    room.receive(a.peer, state([0, 0, 0], liar))
+    room.receive(b.peer, state([0, 0, -800]))
+    // Beside B, 800 m from A: inside "8 m plus half a second of travel" only if 10 km/s is believed.
+    send(a.peer, { type: 'fire', shot: { id: 1, o: [0, 1, -795], d: [0, 0, -1], boost: 0, t: clock / 1000 } })
+    expect(b.peer.last('fire')).toBeUndefined()
+    // Nor may it add thousands of m/s to the beam.
+    send(a.peer, { type: 'fire', shot: { id: 2, o: [0, 1, -2], d: [0, 0, -1], boost: 5000, t: clock / 1000 } })
+    expect(b.peer.last('fire')).toBeUndefined()
+    // A fast vehicle still gets its honest leeway: 100 m/s allows 58 m and a boost of 150.
+    send(a.peer, { type: 'fire', shot: { id: 3, o: [0, 1, -50], d: [0, 0, -1], boost: 140, t: clock / 1000 } })
+    expect(b.peer.last('fire')).toMatchObject({ from: a.id, shot: { id: 3 } })
+  })
+
+  it('does not pass "it" by a ram from across the world, nor relay its shove', () => {
+    const a = join('A')
+    const b = join('B')
+    clock += 3100
+    room.receive(a.peer, state([0, 0, 0], liar))
+    room.receive(b.peer, state([0, 0, -800]))
+    send(a.peer, { type: 'ram', other: b.id, push: [0, 0, -30] })
+    expect(b.peer.last('game')?.game.it ?? a.id).toBe(a.id)
+    expect(b.peer.all('shove')).toEqual([])
+    // Within what 100 m/s allows (10 + 30 m) it still counts.
+    room.receive(b.peer, state([0, 0, -35]))
+    send(a.peer, { type: 'ram', other: b.id, push: [0, 0, -30] })
+    expect(b.peer.last('game')).toMatchObject({ event: 'ram', game: { it: b.id } })
+    // And the relayed shove is bounded by the believed speed: 100 x 0.65 is over the 30 cap.
+    expect(Math.hypot(...b.peer.last('shove')!.push)).toBeLessThanOrEqual(30.001)
+  })
+})
