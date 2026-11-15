@@ -1,6 +1,6 @@
 /**
- * Pesters: slow, wobbly plasma orbs with googly eyes that chase another player and tag them
- * if they catch up. They pop after `pester.life` seconds.
+ * Pesters: slow glowing clouds of light that chase another player and tag them if they
+ * catch up. They fade after `pester.life` seconds. How they look is in cloud.ts.
  *
  * Networking rides on the tag beam's messages: a Pester is a shot of kind 'pester' naming its
  * target (`shot.to`). Every client flies every Pester toward its own view of the target, so
@@ -17,9 +17,9 @@ import type { ShotInfo } from '../../../shared/protocol'
 import { nearestImage, wrapDelta } from '../../../shared/wrap'
 import type { Game, System } from '../../core/Game'
 import { FIXED_DT, type RAPIER } from '../../core/physics'
-import { hotExposureDim } from '../../vehicles/skins/hotExposure'
 import { aimFrom } from '../aim'
 import { warmGear } from '../warm'
+import { PesterCloud } from './cloud'
 import { pesterAllowed, pesterLife, pesterMax, pesterRadius, pesterRange, pesterSpeed, pesterTurn } from './params'
 import { steer, type V3 } from './steer'
 
@@ -49,8 +49,8 @@ interface Orb {
   life: number
   /** Seconds since popping, or -1 while alive. */
   popped: number
-  mesh: THREE.Group
-  seed: number
+  /** Its place in the cloud's buffers, or -1 if every place was taken. */
+  slot: number
 }
 
 /** Pesters keep this far above the ground. */
@@ -62,29 +62,19 @@ const MAX_CATCH_UP = 2
 /** Lift and lean of a launch: up and ahead from the roof. */
 const LAUNCH_UP = 0.5
 
-/** Linear RGB at daytime exposure: hot magenta plasma, which no other gear uses. */
-const CORE_RGB = [3.6, 0.7, 3] as const
-const HALO_RGB = [1.6, 0.2, 1.4] as const
-const TINT_RGB = [0.45, 0.04, 0.4] as const
+/** Distance to its target, metres, at which a Pester is at its loosest and dimmest. */
+const FAR = 60
 
 export class Pesters implements System {
   private readonly orbs: Orb[] = []
-  private readonly sphere = new THREE.SphereGeometry(1, 18, 12)
-  private readonly coreMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...CORE_RGB) })
-  private readonly haloMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(...HALO_RGB), transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false,
-  })
-  private readonly tintMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...TINT_RGB), transparent: true, opacity: 0.45, depthWrite: false })
-  private readonly eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(1, 1, 1) })
-  private readonly pupilMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.01, 0.01, 0.02) })
+  private readonly cloud = new PesterCloud()
+  private readonly unwarm: () => void
   private fireWas = false
-  private nextSeed = 1
   stats = { launched: 0, caught: 0, popped: 0 }
 
-  private readonly unwarm: () => void
-
   constructor(private readonly game: Game, private readonly hooks: PesterHooks) {
-    this.unwarm = warmGear(game, [this.tintMat, this.haloMat, this.coreMat, this.eyeMat, this.pupilMat].map((m) => [this.sphere, m] as const))
+    game.scene.add(this.cloud.haze, this.cloud.light)
+    this.unwarm = warmGear(game, [], () => this.cloud.warm())
   }
 
   /** Pesters the local player has out. */
@@ -96,6 +86,20 @@ export class Pesters implements System {
   /** Every live Pester, for checks: shooter, target and position. */
   list(): { id: number; shooter: number; to: number | null; pos: [number, number, number]; velocity: [number, number, number] }[] {
     return this.orbs.filter((o) => o.popped < 0).map((o) => ({ id: o.id, shooter: o.shooter, to: o.to, pos: [o.pos.x, o.pos.y, o.pos.z], velocity: [o.vel[0], o.vel[1], o.vel[2]] }))
+  }
+
+  /** Metres to the closest Pester hunting the local player, or null. For the sound lane. */
+  nearest(): number | null {
+    const me = this.hooks.self()
+    const at = this.hooks.bodyOf(me)?.translation()
+    if (!at) return null
+    let best: number | null = null
+    for (const o of this.orbs) {
+      if (o.to !== me || o.popped >= 0) continue
+      const d = this.offset(o.pos, at).length()
+      if (best === null || d < best) best = d
+    }
+    return best
   }
 
   /**
@@ -142,10 +146,8 @@ export class Pesters implements System {
       shooter, id: shot.id, to: typeof shot.to === 'number' ? shot.to : null,
       pos: new THREE.Vector3(...shot.o), prev: new THREE.Vector3(...shot.o),
       vel: [d.x * speed, d.y * speed, d.z * speed], age: 0, life: pesterLife.value, popped: -1,
-      mesh: this.makeMesh(), seed: this.nextSeed++,
+      slot: this.cloud.take(),
     }
-    o.mesh.position.copy(o.pos)
-    this.game.scene.add(o.mesh)
     this.orbs.push(o)
     let catchUp = Math.min(MAX_CATCH_UP, Math.max(0, age))
     while (catchUp >= FIXED_DT && o.popped < 0) { this.step(o, FIXED_DT); catchUp -= FIXED_DT }
@@ -180,42 +182,38 @@ export class Pesters implements System {
   }
 
   update(dt: number, alpha: number): void {
-    const dim = hotExposureDim(this.game.renderer.toneMappingExposure)
-    this.coreMat.color.setRGB(CORE_RGB[0] * dim, CORE_RGB[1] * dim, CORE_RGB[2] * dim)
-    this.haloMat.color.setRGB(HALO_RGB[0] * dim, HALO_RGB[1] * dim, HALO_RGB[2] * dim)
-    this.tintMat.color.setRGB(TINT_RGB[0] * dim, TINT_RGB[1] * dim, TINT_RGB[2] * dim)
-    const t = this.game.time
+    const size = this.hooks.wrapSize()
     for (let i = this.orbs.length - 1; i >= 0; i--) {
       const o = this.orbs[i]
+      const x = o.prev.x + (o.pos.x - o.prev.x) * alpha, y = o.prev.y + (o.pos.y - o.prev.y) * alpha, z = o.prev.z + (o.pos.z - o.prev.z) * alpha
       if (o.popped >= 0) {
+        // Ended: the swarm scatters outward and fades where it was.
         o.popped += dt
         const k = o.popped / POP_TIME
-        o.mesh.scale.setScalar(1 + k * 2.5)
-        o.mesh.children.forEach((c, j) => { c.visible = j === 1 })
         if (k >= 1) {
-          this.game.scene.remove(o.mesh)
+          this.cloud.free(o.slot)
           this.orbs.splice(i, 1)
+          continue
         }
+        this.cloud.set(o.slot, x, y, z, 0, 0, 0, 1, k)
         continue
       }
-      // A jittery wobble on top of the path, its own for each Pester.
-      const s = o.seed * 1.7
-      o.mesh.position.lerpVectors(o.prev, o.pos, alpha)
-      o.mesh.position.x += 0.35 * Math.sin(t * 7 + s)
-      o.mesh.position.y += 0.3 * Math.sin(t * 9.3 + s * 2)
-      o.mesh.position.z += 0.35 * Math.cos(t * 6.1 + s)
-      o.mesh.scale.setScalar(1 + 0.12 * Math.sin(t * 13 + s))
-      // The eyes look where it is going.
-      o.mesh.lookAt(o.mesh.position.clone().add(new THREE.Vector3(...o.vel)))
+      // Brighter and tighter the closer it is to catching its target.
+      let energy = 0.3
+      const t = o.to !== null ? this.hooks.bodyOf(o.to)?.translation() : undefined
+      if (t) {
+        const dx = size > 0 ? wrapDelta(x, t.x, size) : t.x - x, dz = size > 0 ? wrapDelta(z, t.z, size) : t.z - z
+        energy = Math.max(0.3, 1 - Math.hypot(dx, t.y - y, dz) / FAR)
+      }
+      this.cloud.set(o.slot, x, y, z, o.vel[0], o.vel[1], o.vel[2], energy, 0)
     }
+    this.cloud.update(this.game.time)
   }
 
   dispose(): void {
-    for (const o of this.orbs) this.game.scene.remove(o.mesh)
     this.orbs.length = 0
     this.unwarm()
-    this.sphere.dispose()
-    for (const m of [this.coreMat, this.haloMat, this.tintMat, this.eyeMat, this.pupilMat]) m.dispose()
+    this.cloud.dispose()
   }
 
   // ---------------------------------------------------------------------------------------
@@ -267,28 +265,5 @@ export class Pesters implements System {
     if (o.popped >= 0) return
     o.popped = 0
     this.stats.popped++
-  }
-
-  /** A glowing orb with googly eyes, all generated. */
-  private makeMesh(): THREE.Group {
-    const g = new THREE.Group()
-    const tint = new THREE.Mesh(this.sphere, this.tintMat)
-    tint.scale.setScalar(0.75)
-    tint.renderOrder = -1
-    const halo = new THREE.Mesh(this.sphere, this.haloMat)
-    halo.scale.setScalar(1.15)
-    const core = new THREE.Mesh(this.sphere, this.coreMat)
-    core.scale.setScalar(0.55)
-    g.add(tint, halo, core)
-    for (const side of [-1, 1]) {
-      const eye = new THREE.Mesh(this.sphere, this.eyeMat)
-      eye.scale.setScalar(0.2)
-      eye.position.set(side * 0.24, 0.2, 0.52)
-      const pupil = new THREE.Mesh(this.sphere, this.pupilMat)
-      pupil.scale.setScalar(0.1)
-      pupil.position.set(side * 0.25, 0.2, 0.68)
-      g.add(eye, pupil)
-    }
-    return g
   }
 }
