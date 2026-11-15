@@ -3,7 +3,7 @@ import * as T from 'three/webgpu'
 import {RibbonBatch} from '../../src/vehicles/effects/RibbonBatch'
 import {ParticleBatch} from '../../src/vehicles/effects/ParticleBatch'
 import {dustSprite} from '../../src/vehicles/effects/sprites'
-import {effectNoise,hideUnusedLamps,writeVehicleLamps} from '../../src/vehicles/effects'
+import {DUST_WIND,EXHAUST_WIND,effectNoise,hideUnusedLamps,writeVehicleLamps} from '../../src/vehicles/effects'
 describe('bounded vehicle effects',()=>{
  it('caps the quad ring and rejects teleport bridges',()=>{
   const r=new RibbonBatch(4),a=new T.Vector3(),b=new T.Vector3(0,0,1),side=new T.Vector3(1,0,0),color=new T.Color()
@@ -46,4 +46,18 @@ describe('bounded vehicle effects',()=>{
   expect(index).toBe(0);batch.getMatrixAt(0,m);expect(m.elements[0]).toBe(0)
   batch.geometry.dispose();batch.material.dispose()
  })
+ it('gives a new particle its share of the wind at its birth position, once',()=>{
+  const p=new ParticleBatch(4,dustSprite),at=new T.Vector3(10,2,-30),v=new T.Vector3(1,3,0),c=new T.Color(),asked:number[][]=[]
+  const velocity=()=>Array.from((p.mesh.geometry.getAttribute('fxVelocity') as T.BufferAttribute).array as Float32Array)
+  // No share: untouched, and the wind is not even asked.
+  p.drift=(x,y,z,out)=>{asked.push([x,y,z]);out.x=4;out.z=-2};p.emit(at,v,1,1,0,c)
+  expect(velocity().slice(0,3)).toEqual([1,3,0]);expect(asked.length).toBe(0)
+  p.windShare=.5;p.emit(at,v,1,1,0,c)
+  expect(velocity().slice(3,6)).toEqual([3,3,-1]);expect(asked).toEqual([[10,2,-30]])
+  // A calm world, or a wind function that fails, leaves the particle as emitted.
+  p.drift=(_x,_y,_z,out)=>{out.x=0;out.z=0};p.emit(at,v,1,1,0,c);expect(velocity().slice(6,9)).toEqual([1,3,0])
+  p.drift=(_x,_y,_z,out)=>{out.x=NaN;out.z=NaN};p.emit(at,v,1,1,0,c);expect(velocity().slice(9,12)).toEqual([1,3,0])
+  p.dispose()
+ })
+ it('dust takes more of the wind than exhaust',()=>{expect(DUST_WIND).toBeCloseTo(.6);expect(EXHAUST_WIND).toBeCloseTo(.3)})
 })

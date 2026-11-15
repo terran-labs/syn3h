@@ -61,6 +61,14 @@ export const terrainTreeCover = defineParam({
 export const worldAtmosphere = defineParam({
   id: 'world.atmosphere', label: 'Atmosphere (0 vacuum, 1 full)', group: 'World', scope: 'world', default: 1, min: 0, max: 1, step: 0.01,
 })
+/**
+ * How roads are drawn: 0 as the planet's palette says (a made road on alpine worlds, worn
+ * tracks elsewhere), 1 always a made road, 2 always a track. A look only: the road bed
+ * under it, and how it drives, are the same.
+ */
+export const terrainRoadStyle = defineParam({
+  id: 'terrain.roadStyle', label: 'Roads: 0 by planet, 1 made road, 2 worn track', group: 'Terrain', scope: 'world', default: 0, min: 0, max: 2, step: 1,
+})
 /** How much grass and small flowers grow. Read by groundcover.ts; not a regeneration. */
 export const terrainGroundCover = defineParam({
   id: 'terrain.groundCover', label: 'Grass and flowers', group: 'Terrain', scope: 'world', default: 1, min: 0, max: 1, step: 0.05,

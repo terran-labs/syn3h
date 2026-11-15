@@ -13,7 +13,7 @@
  *    glow, because Preetham's sky goes black two degrees after sunset.
  *  - The ratio betaTheta / beta is guarded so zeroing every channel cannot produce NaN.
  */
-import { BackSide, BoxGeometry, Mesh, NodeMaterial, Vector3 } from 'three/webgpu'
+import { BackSide, BoxGeometry, Mesh, NodeMaterial, Vector2, Vector3 } from 'three/webgpu'
 import {
   Fn, If, acos, add, cameraPosition, clamp, cos, dot, exp, float, floor, fract, length, max, min, mix,
   modelViewProjection, mul, normalize, positionWorld, pow, smoothstep, sub, time, uniform, vec2, vec3, vec4,
@@ -41,6 +41,8 @@ export class AlienSkyMesh extends Mesh {
   readonly starBrightness = uniform(0)
   readonly cloudScale = uniform(0.0002)
   readonly cloudSpeed = uniform(0.00002)
+  /** Cloud pattern offset, advanced each frame downwind by src/world/weather/clouds.ts. */
+  readonly cloudOffset = uniform(new Vector2(0, 0))
   readonly cloudCoverage = uniform(0.4)
   readonly cloudDensity = uniform(0.4)
   readonly cloudElevation = uniform(0.5)
@@ -160,7 +162,7 @@ export class AlienSkyMesh extends Mesh {
         const elevation = mix(1.0, 0.1, elevationU)
         const cloudUV = direction.xz.div(direction.y.mul(elevation)).toVar() as N
         cloudUV.mulAssign(this.cloudScale)
-        cloudUV.addAssign(time.mul(this.cloudSpeed))
+        cloudUV.addAssign(this.cloudOffset)
 
         const evolve = time.mul(this.cloudSpeed).mul(300.0)
         const cloudNoise = fbm(cloudUV.mul(1000.0), evolve).mul(0.7).add(0.5).clamp(0.0, 1.0).toVar() as N
