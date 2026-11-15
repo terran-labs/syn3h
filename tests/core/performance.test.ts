@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { PerformanceHistory, PERFORMANCE_POLICY, PipelineCounter } from '../../src/core/performanceHistory'
 import { buildLadder, QualityGovernor, type EffectiveQuality } from '../../src/core/quality'
-const q = (level: 0|1|2 = 2): EffectiveQuality => ({...buildLadder(level)[0],level,rung:0,rungs:4,auto:false,targetFps:level===2?60:30})
+const q = (level: 0|1|2|3|4|5 = 2): EffectiveQuality => ({...buildLadder(level)[0],level,rung:0,rungs:4,auto:false,targetFps:level>=2?60:30})
 const metrics = (frameMs: number) => ({frameMs,fps:1000/frameMs,physicsMs:2,drawCalls:100,triangles:1000,firstFrameMs:1})
 function feed(h: PerformanceHistory, seconds: number, ms=50, quality=q(), eligible=true) { for(let t=0;t<seconds*1000;t+=ms)h.sample(metrics(ms),eligible,quality) }
 describe('eligible performance history',()=>{
@@ -45,7 +45,7 @@ describe('eligible performance history',()=>{
 import { afterEach, vi } from 'vitest'
 import { QualityController } from '../../src/core/quality'
 import { params } from '../../shared/params'
-afterEach(()=>{vi.unstubAllGlobals();params.set('gfx.level',2);params.set('gfx.auto',true)})
+afterEach(()=>{vi.unstubAllGlobals();params.set('gfx.quality',4);params.set('gfx.auto',true)})
 it('subscribes once, shares F3 state, lowers via the governor and disposes listeners',()=>{
  const entries=new Map<string,string>(),listeners=new Map<string,Function>()
  const storage={getItem:(k:string)=>entries.get(k)??null,setItem:(k:string,v:string)=>entries.set(k,v),removeItem:(k:string)=>entries.delete(k)}
@@ -61,8 +61,9 @@ it('subscribes once, shares F3 state, lowers via the governor and disposes liste
  expect(seen).toEqual([false,true]);expect(Object.isFrozen(c.getPerformanceSnapshot().quality)).toBe(true)
  params.set('gfx.auto',false)
  for(let i=0;i<400;i++)c.frame(metrics(50))
- expect(c.getPerformanceSnapshot().recommendation?.targetLevel).toBe(1)
- expect(c.lowerRecommendedTier()).toBe(true);expect(c.governor.level).toBe(1);expect(c.governor.levelPinned).toBe(true);expect(c.governor.auto).toBe(false)
+ // A first visit with no adapter information starts at High, so the offer is Medium.
+ expect(c.getPerformanceSnapshot().recommendation?.targetLevel).toBe(2)
+ expect(c.lowerRecommendedTier()).toBe(true);expect(c.governor.level).toBe(2);expect(c.governor.levelPinned).toBe(true);expect(c.governor.auto).toBe(false)
  expect(c.lowerRecommendedTier()).toBe(false)
  c.ignoreRecommendation();expect(entries.get('syn3h.performance.ignore')).toBe('1')
  unsub();const n=seen.length;c.toggleDiagnostics();expect(seen).toHaveLength(n)
