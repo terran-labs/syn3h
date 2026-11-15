@@ -80,7 +80,7 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
       })
     }
     if(await page.evaluate(()=>!!document.pointerLockElement)){await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.pointerLockElement)}if(await page.locator('.inspector-toggle').isVisible()&&await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'})
-    await page.locator('.exit-world').click(); await page.waitForFunction(()=>!syn3h.shell.playing)
+    await page.locator('.exit-world').click(); await page.locator('.exit-leave').click(); await page.waitForFunction(()=>!syn3h.shell.playing)
     await page.locator('.galaxy-label.is-current').focus();await page.keyboard.press('Enter')
     await page.waitForFunction(()=>syn3h.shell.playing&&!syn3h.shell.dropping,null,{timeout:60000})
     assert.equal(await page.evaluate(()=>fixture.listeners.size),1,'lobby return does not duplicate subscription')

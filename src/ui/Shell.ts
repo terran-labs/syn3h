@@ -140,6 +140,7 @@ export class Shell implements System {
     </section>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open the panels" aria-pressed="false"><span aria-hidden="true">≡</span><span class="nav-label"> Panels</span></button></nav>
+    <div class="exit-confirm" role="alertdialog" aria-modal="true" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-text" hidden><div class="exit-confirm-card"><strong id="exit-confirm-title">Leave this world?</strong><p id="exit-confirm-text">You will return to the galaxy.</p><div class="exit-confirm-actions"><button type="button" class="exit-stay">Stay</button><button type="button" class="exit-leave">Leave world</button></div></div></div>
     <button type="button" class="pause-veil" hidden><strong>Paused</strong><span class="pause-how">Click to resume</span><small hidden>The world carries on without you.</small></button>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
@@ -191,7 +192,13 @@ export class Shell implements System {
       const rack = (window as unknown as { syn3hNet?: { gear?: GearRack } }).syn3hNet?.gear
       if (rack?.list().includes(gear.value as GearId)) { rack.select(gear.value as GearId); this.audio.cue('click') }
     }, { signal })
-    navigation.querySelector('.exit-world')!.addEventListener('click', () => this.openMenu(), { signal })
+    // Exit world asks first (the owner, 15 November 2026): one stray click on the panels must
+    // not throw the player back to the galaxy. Code that calls openMenu() itself is not asked.
+    navigation.querySelector('.exit-world')!.addEventListener('click', () => this.askExit(), { signal })
+    const exitConfirm = this.element.querySelector<HTMLElement>('.exit-confirm')!
+    exitConfirm.addEventListener('click', event => { if (event.target === exitConfirm) this.answerExit(false) }, { signal })
+    exitConfirm.querySelector('.exit-stay')!.addEventListener('click', () => this.answerExit(false), { signal })
+    exitConfirm.querySelector('.exit-leave')!.addEventListener('click', () => this.answerExit(true), { signal })
     players.querySelector('.rail-invite')!.addEventListener('click', () => this.openJoin(), { signal })
     players.querySelector('input')!.addEventListener('change', event => params.set(diagnostics.def.id, (event.target as HTMLInputElement).checked), { signal })
     const music = document.createElement('div'); music.className = 'rail-music'
@@ -462,6 +469,7 @@ export class Shell implements System {
   private dropping = false
   openMenu(panel = 'index'): void {
     if (!this.started) return
+    if (this.exitAsking) { this.exitAsking = false; this.element.querySelector<HTMLElement>('.exit-confirm')!.hidden = true }
     this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; if (this.galaxy) this.galaxy.enabled = true
     this.releaseCursor()
     this.game.input.suspended = true; this.game.input.mouseFire = false; this.game.input.poll(); this.touch.enabled = false
@@ -588,6 +596,24 @@ export class Shell implements System {
     this.enteringByGesture = true
     void this.captureCursor(true)
   }
+  private exitAsking = false
+  /** Show "Leave this world?". Stay has the focus, so Enter, Escape and a click outside all stay. */
+  private askExit(): void {
+    if (!this.started || this.menuVisible || this.exitAsking || this.userPaused) return
+    this.exitAsking = true
+    const dialog = this.element.querySelector<HTMLElement>('.exit-confirm')!
+    dialog.hidden = false
+    this.game.input.suspended = true; this.game.input.mouseFire = false
+    dialog.querySelector<HTMLButtonElement>('.exit-stay')!.focus({ preventScroll: true })
+  }
+  private answerExit(leave: boolean): void {
+    if (!this.exitAsking) return
+    this.exitAsking = false
+    this.element.querySelector<HTMLElement>('.exit-confirm')!.hidden = true
+    this.game.input.suspended = this.userPaused || this.menuVisible || this.inviteOpen
+    if (leave) this.openMenu()
+    else this.element.querySelector<HTMLButtonElement>('.exit-world')?.focus({ preventScroll: true })
+  }
   /** Touch only: the panels are showing rather than the driving view. Never stored. */
   private touchPanels = false
   /** Panels are wanted exactly when the cursor is free (or, on touch, when the menu state is on). */
@@ -639,7 +665,7 @@ export class Shell implements System {
     this.userPaused = user
     const veil = this.element.querySelector<HTMLButtonElement>('.pause-veil')!
     veil.hidden = !user; this.element.classList.toggle('is-paused', user)
-    this.game.input.suspended = user || this.menuVisible || this.inviteOpen
+    this.game.input.suspended = user || this.menuVisible || this.inviteOpen || this.exitAsking
     if (user) {
       this.game.input.mouseFire = false
       veil.querySelector('.pause-how')!.textContent = this.touch.available ? 'Tap to resume' : 'Click to resume'
@@ -652,6 +678,13 @@ export class Shell implements System {
     const editing = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON|SUMMARY)$/.test(event.target.tagName))
     if (!editing && !event.repeat && event.code === 'KeyP') { event.preventDefault(); event.stopImmediatePropagation(); this.setPresentation(!this.presentation); return }
     if (!editing && !event.repeat && event.code === 'KeyJ') { event.preventDefault(); event.stopImmediatePropagation(); this.inviteOpen ? this.closeJoin() : this.openJoin(); return }
+    if (this.exitAsking) {
+      // The question owns the keyboard: Escape means stay, Tab moves between its two buttons,
+      // Enter or Space presses the focused one, and nothing reaches driving, pause or shortcuts.
+      if (event.code === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); this.answerExit(false) }
+      else if (event.key === 'Tab') { event.preventDefault(); const buttons = [...this.element.querySelectorAll<HTMLButtonElement>('.exit-confirm button')]; buttons[document.activeElement === buttons[0] ? 1 : 0].focus() }
+      return
+    }
     if (this.inviteOpen) {
       if (event.code === 'Escape') { event.preventDefault(); this.closeJoin() }
       if (event.key === 'Tab') { event.preventDefault(); const buttons = [...this.invite.element.querySelectorAll<HTMLButtonElement>('button')]; buttons[document.activeElement === buttons[0] ? 1 : 0].focus() }
@@ -975,7 +1008,7 @@ export class Shell implements System {
    */
   private glass(signal: AbortSignal): void {
     const buttons = [...this.element.querySelectorAll<HTMLElement>('button'), ...this.touch.element.querySelectorAll<HTMLElement>('button')]
-    for (const button of buttons) if (!button.matches('.link-button, .lobby-links *, .syn3h-advanced *, .world-inspector *')) button.classList.add('liquid-glass')
+    for (const button of buttons) if (!button.matches('.link-button, .lobby-links *, .syn3h-advanced *, .world-inspector *, .exit-confirm *')) button.classList.add('liquid-glass')
     // Touch screens have no hover, so there is nothing to face.
     if (!matchMedia('(hover: hover)').matches) return
     const REST = 205
