@@ -45,3 +45,16 @@ describe('windDrift', () => {
     expect(Math.hypot(a.x, a.z)).toBeGreaterThan(0)
   })
 })
+
+import { prevailingWindHeading, prevailingWindStrength } from '../../src/world/weather'
+
+describe('prevailing wind', () => {
+  it('turns slowly and is zero strength without air', () => {
+    let max = 0
+    for (let i = 1; i < 600; i++) max = Math.max(max, Math.abs(prevailingWindHeading(T + i) - prevailingWindHeading(T + i - 1)))
+    expect(max).toBeLessThan(0.02)
+    expect(prevailingWindStrength()).toBeGreaterThan(0.2)
+    params.set('world.atmosphere', 0)
+    expect(prevailingWindStrength()).toBe(0)
+  })
+})

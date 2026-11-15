@@ -243,3 +243,27 @@ export function windDrift<T extends Vec3Like>(x: number, y: number, z: number, o
   if (Math.abs(t - driftFrameAt) > 0.05) { currentWindFrame(driftTerrain, driftFrame); driftFrameAt = t }
   return windAt(driftFrame, x, y, z, t, out)
 }
+
+// ---------------------------------------------------------------------------------------
+// One room-wide wind, for things that need a single direction (sea waves)
+// ---------------------------------------------------------------------------------------
+
+const roomFrame = {} as WindFrame
+
+/**
+ * The room's prevailing wind heading in radians, 0 blowing toward +x and pi / 2 toward +z.
+ * The seed's direction plus the direction slider, drifting slowly (about 50 degrees either
+ * way over several minutes) and with no gusts in it, so it is the same everywhere on the
+ * world and smooth in time. Deterministic from the seed, the sliders and the shared clock.
+ */
+export function prevailingWindHeading(t: number = weatherTime()): number {
+  return windHeading(currentWindFrame(driftTerrain, roomFrame), t, 0)
+}
+
+/**
+ * The room's mean wind strength, 0 calm to 1 a strong gale: the summit's mean wind over
+ * FULL_STRENGTH, with no gusts and no height. 0 on an airless world or at storminess 0.
+ */
+export function prevailingWindStrength(): number {
+  return Math.min(1, strength(currentWindFrame(driftTerrain, roomFrame)).mean / FULL_STRENGTH)
+}
