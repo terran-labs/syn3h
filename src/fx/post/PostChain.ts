@@ -45,9 +45,8 @@ import { CurvedVelocity, SURFACE_NORMAL_BLEND, SurfaceNormal, previousScreenUV }
 import { cloudVolume, compositeClouds } from './clouds'
 import type { CloudInputs } from '../../world/Environment'
 import { motionBlurred } from './motion'
-import { graphicsLevel } from '../../core/quality'
 import { params } from '../../../shared/params'
-import { type PostTier, lowSunAmount, postTier, shaftTaps, sunHeightFactor, sunScreenFade } from './gate'
+import { type PostTier, drawsEffects, lowSunAmount, postTier, shaftTaps, sunHeightFactor, sunScreenFade } from './gate'
 import { type Grade, gradeFor, lookForKind } from './looks'
 import * as P from './params'
 
@@ -61,12 +60,13 @@ export const SHAFT_CLAMP = 1.5
 export interface PostChainHost {
   /**
    * The frame governor (src/core/quality.ts), the one in-game quality authority.
-   * deviceLevel: the device class, 2 is desktop. postBudget: its post effects rung, 0 to 1
-   * eased; absent until that lane adds it, which reads as a full budget. setPostActive tells
+   * postTier: the tier the current quality level allows; absent reads as full, for
+   * fixtures that drive the chain alone. postBudget: the governor's post budget, 0 to 1
+   * eased, which only fades strengths; absent reads as a full budget. setPostActive tells
    * the governor whether there is anything to shed, so its post rung exists only while the
    * chain draws a costly effect.
    */
-  readonly quality: { readonly deviceLevel: number; readonly postBudget?: number; setPostActive?(on: boolean): void }
+  readonly quality: { readonly postTier?: PostTier; readonly postBudget?: number; setPostActive?(on: boolean): void }
 }
 export interface SunSource {
   readonly sunDirection: THREE.Vector3
@@ -174,7 +174,10 @@ export class PostChain {
   render(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, _frameMs?: number): void {
     const budget = this.host.quality.postBudget
     const shed = 1 - Math.min(1, Math.max(0, budget ?? 1))
-    let tier = postTier({ on: P.postOn.value, level: graphicsLevel.value, deviceLevel: this.host.quality.deviceLevel, tablets: P.postTablets.value, shed })
+    const tier = postTier({ on: P.postOn.value, tier: this.host.quality.postTier ?? 'full', shed })
+    // The quality level owns which effects exist, through their strengths. Tier only
+    // separates the look alone (base) from a chain that draws effects (lite, full).
+    const effects = drawsEffects(tier)
     this.tier = tier
     // Anything the governor could shed: everything but the colour look itself.
     this.reportActive(tier !== 'off' && (P.postTemporal.value || [P.postBloom, P.postShafts, P.postFlare, P.postAO, P.postContact, P.postMotionBlur, P.postGI, P.postClouds].some(p => p.value > 0)))
@@ -185,20 +188,23 @@ export class PostChain {
     }
     const fade = tier === 'base' ? 0 : 1 - shed
     const sunVis = this.updateSun(camera, renderer)
-    const glowOn = tier === 'full' && P.postBloom.value > 0
-    const shaftsOn = tier !== 'base' && (P.postShafts.value > 0 || P.postFlare.value > 0)
-    const flareOn = tier === 'full' && P.postFlare.value > 0
-    const aoOn = tier === 'full' && P.postAO.value > 0
-    const giOn = tier === 'full' && P.postGI.value > 0
+    const glowOn = effects && P.postBloom.value > 0
+    const shaftsOn = effects && (P.postShafts.value > 0 || P.postFlare.value > 0)
+    const flareOn = effects && P.postFlare.value > 0
+    const aoOn = effects && P.postAO.value > 0
+    const giOn = effects && P.postGI.value > 0
     const clouds = this.sun.clouds
-    const cloudsOn = tier === 'full' && P.postClouds.value > 0 && !!clouds && clouds.coverage > 0 && clouds.density > 0 && clouds.atmosphere > 0
-    const light = tier === 'full' && P.postContact.value > 0 ? findSun(scene) : null
+    const cloudsOn = effects && P.postClouds.value > 0 && !!clouds && clouds.coverage > 0 && clouds.density > 0 && clouds.atmosphere > 0
+    const light = effects && P.postContact.value > 0 ? findSun(scene) : null
     const toneMap = TONE_MAPS[Math.round(P.postToneMap.value)] ?? renderer.toneMapping
     const debug = Math.round(P.postDebug.value)
-    const temporalOn = tier === 'full' && P.postTemporal.value && debug === 0
+    const temporalOn = effects && P.postTemporal.value && debug === 0
+    // Motion blur, heat shimmer and the splash share one composite, built only if one is wanted.
+    const motionOn = effects && P.postMotionBlur.value > 0
+    const composeOn = effects && (motionOn || P.postHeat.value > 0 || P.postPlunge.value > 0)
     const historyKey = temporalOn ? ['world.curve', 'world.seed', 'terrain.kind', 'terrain.planetSize', 'camera.mode'].map(id => params.get(id)?.value).join('|') : ''
-    const key = `${debug}|${tier}|${glowOn}|${shaftsOn}|${flareOn}|${aoOn}|${giOn}|${cloudsOn}|${temporalOn}|${historyKey}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
-    if (this.built?.key !== key) this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn, cloudsOn, temporalOn)
+    const key = `${debug}|${tier}|${motionOn}|${composeOn}|${glowOn}|${shaftsOn}|${flareOn}|${aoOn}|${giOn}|${cloudsOn}|${temporalOn}|${historyKey}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
+    if (this.built?.key !== key) this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn, cloudsOn, temporalOn, motionOn, composeOn)
 
     const u = this.u
     u.exposure.value = Math.max(1e-4, renderer.toneMappingExposure)
@@ -219,7 +225,7 @@ export class PostChain {
     u.vignette.value = P.postVignette.value
     u.grain.value = P.postGrain.value * (tier === 'base' ? 1 : 1)
     u.seed.value = (u.seed.value + 61.7) % 4096
-    this.updateCamera(camera as THREE.PerspectiveCamera, tier === 'full' ? P.postMotionBlur.value * fade : 0)
+    this.updateCamera(camera as THREE.PerspectiveCamera, effects ? P.postMotionBlur.value * fade : 0)
     const b = this.built!
     if (b.aoNode) { b.aoNode.radius.value = P.postAORadius.value; b.aoNode.scale.value = P.postAO.value * fade }
     if (b.giNode) { b.giNode.radius.value = P.postGIRadius.value; b.giNode.giIntensity.value = P.postGI.value * fade }
@@ -228,7 +234,7 @@ export class PostChain {
     // sun's height; at a low sun the long cascaded shadows carry the scene anyway.
     const sunUp = smooth01(0.25, 0.45, this.sun.sunDirection.y)
     if (b.sssNode) b.sssNode.shadowIntensity.value = P.postContact.value * fade * sunUp
-    u.plunge.value = tier === 'full' ? this.updatePlunge() : 0
+    u.plunge.value = effects ? this.updatePlunge() : 0
     u.heat.value = P.postHeat.value * fade
     u.time.value = (performance.now() / 1000) % 1000
     // The shaft passes cost nothing while the sun is out of view: their stale contents are
@@ -336,7 +342,7 @@ export class PostChain {
     return sunScreenFade(su, sv, inFront) * sunHeightFactor(sun.y, P.postLowSun.value)
   }
 
-  private build(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, key: string, tier: PostTier, glowOn: boolean, shaftsOn: boolean, flareOn: boolean, aoOn: boolean, light: THREE.DirectionalLight | null, toneMap: THREE.ToneMapping, debug = 0, giOn = false, cloudsOn = false, temporalOn = false): void {
+  private build(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, key: string, tier: PostTier, glowOn: boolean, shaftsOn: boolean, flareOn: boolean, aoOn: boolean, light: THREE.DirectionalLight | null, toneMap: THREE.ToneMapping, debug = 0, giOn = false, cloudsOn = false, temporalOn = false, motionOn = false, composeOn = false): void {
     this.release()
     const u = this.u as Record<keyof PostChain['u'], N>
     const disposables: Built['disposables'] = []
@@ -461,7 +467,7 @@ export class PostChain {
         const wob = vec2(sin(p.y.mul(170).add(t.mul(7.3))).add(sin(p.y.mul(97).sub(t.mul(4.1))).mul(0.6)), sin(p.x.mul(130).add(t.mul(5.7))))
         p.addAssign(wob.mul(hot).mul(u.heat).mul(0.0011))
       })
-      const c = (tier === 'full' ? motionBlurred(color, depth, p, { projInv: u.projInv, camWorld: u.camWorld, prevView: u.prevView, prevProj: u.prevProj, amount: u.motionAmount, nearFade: u.motionNear, maxBlur: u.motionMax }) : color.sample(p).rgb).toVar()
+      const c = (motionOn ? motionBlurred(color, depth, p, { projInv: u.projInv, camWorld: u.camWorld, prevView: u.prevView, prevProj: u.prevProj, amount: u.motionAmount, nearFade: u.motionNear, maxBlur: u.motionMax }) : color.sample(p).rgb).toVar()
       If(u.plunge.greaterThan(0.001), () => {
         // A soft 8-tap ring and the liquid's colour, both fading with the pulse.
         const r = u.plunge.mul(0.012)
@@ -476,7 +482,7 @@ export class PostChain {
       })
       return c
     })
-    let hdr: N = tier === 'full' ? base() : color.rgb
+    let hdr: N = composeOn ? base() : color.rgb
 
     if (glowOn) {
       // Geometry only: open sky (depth at the far plane) never feeds the glow. Facing a low
