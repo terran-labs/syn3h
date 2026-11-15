@@ -14,7 +14,9 @@
  *     Worker and the WebAssembly compile and instantiate entry points.
  *
  * It exits 1 when any audio, image, video, model or font is loaded or decoded that is not on
- * ALLOWLIST below. WebAssembly is classed as code: reported with its size, never a failure.
+ * ALLOWLIST below. WebAssembly is classed as code, and exactly one file of it is accepted: the
+ * physics engine, fetched from its own hashed URL. Any other WebAssembly file, or WebAssembly
+ * compiled from bytes held in the page (a binary inlined in a script), fails the gate.
  * SVG is a vector text format, not a bitmap: reported, never a failure. Images the game
  * draws itself (canvas toBlob, toDataURL, convertToBlob) are marked generated and pass.
  *
@@ -52,6 +54,9 @@ export const ALLOWLIST = [
   // Permanent. Desktop Chrome itself fetches the apple-touch-icon named by the <link> tag in
   // index.html (resource type "other": the browser, not game code). The owner's brief accepts
   // icon link tags. It still costs that visitor 42 KB, so it stays visible in the report.
+  // Permanent. Code, not an asset: the Rapier physics engine, shipped as its own hashed file
+  // so it is not parsed as text inside the main script (tools/rapier-wasm.mjs).
+  { kind: 'wasm', pattern: /^\/assets\/rapier_wasm3d_bg-[\w-]+\.wasm$/, why: 'Rapier physics engine, code, loaded from its own file', term: 'permanent' },
   { kind: 'image', type: 'other', pattern: /^\/brand\/(apple-touch-icon|icon-192|icon-512)\.png$/, why: 'install icon fetched by the browser from the index.html link tag, not by the game', term: 'permanent' },
 ]
 
@@ -83,7 +88,17 @@ export function allowed(record) {
 
 /** Records that fail the gate. */
 export function violations(records) {
-  return records.filter((r) => BINARY_KINDS.has(r.kind) && !r.generated && !allowed(r))
+  return records.filter((r) => (BINARY_KINDS.has(r.kind) && !r.generated && !allowed(r)) || wasmViolation(r))
+}
+
+/**
+ * WebAssembly must come from the one allowed URL. Instantiating an already compiled module is
+ * the second half of that load and carries no bytes. Bytes compiled from a buffer were held in
+ * the page, which is how a binary inlined in a script shows up.
+ */
+export function wasmViolation(record) {
+  if (record.kind !== 'wasm' || record.source === 'module') return false
+  return record.source === 'buffer' || !allowed(record)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -169,7 +184,8 @@ const INSTRUMENT = String.raw`(() => {
   const W = WebAssembly, len = (b) => (b && (b.byteLength ?? b.length)) || 0
   const wrapW = (name) => { const f = W[name]; if (!f) return; W[name] = function (src, ...a) {
     if (src instanceof W.Module) send({ api: 'WebAssembly.' + name, mime: 'application/wasm', bytes: 0, source: 'module', caller: caller() })
-    else if (src && typeof src.then === 'function' || src instanceof Response) Promise.resolve(src).then((res) => res.clone().arrayBuffer().then((b) => send({ api: 'WebAssembly.' + name, mime: 'application/wasm', bytes: b.byteLength, source: 'stream', url: short(res.url), path: res.url ? new URL(res.url).pathname : '', caller: caller() }))).catch(() => {})
+    else if (src instanceof Response) { const copy = src.clone(); copy.arrayBuffer().then((b) => send({ api: 'WebAssembly.' + name, mime: 'application/wasm', bytes: b.byteLength, source: 'stream', url: short(copy.url), path: copy.url ? new URL(copy.url).pathname : '', caller: caller() })).catch(() => {}) }
+    else if (src && typeof src.then === 'function') Promise.resolve(src).then((res) => res.clone().arrayBuffer().then((b) => send({ api: 'WebAssembly.' + name, mime: 'application/wasm', bytes: b.byteLength, source: 'stream', url: short(res.url), path: res.url ? new URL(res.url).pathname : '', caller: caller() }))).catch(() => {})
     else send({ api: 'WebAssembly.' + name, mime: 'application/wasm', bytes: len(src), source: 'buffer', caller: caller() })
     return f.call(this, src, ...a) } }
   for (const n of ['instantiate', 'compile', 'instantiateStreaming', 'compileStreaming']) wrapW(n)
