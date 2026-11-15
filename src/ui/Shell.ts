@@ -14,7 +14,7 @@ import { GameAudio } from '../audio'
 import { masterVolume, effectsVolume, engineVolume, windVolume, dirtVolume, worldVolume, cuesVolume, remoteVolume, musicVolume } from '../audio/params'
 import { applySkyPreset, SKY_PRESET_NAMES, type SkyPresetName } from '../world/sky/presets'
 import { TouchControls } from './TouchControls'
-import { readVehicleChoice, saveVehicleChoice, VehiclePreview, type VehicleChoice } from './VehicleChoice'
+import { readVehicleChoice, saveVehicleChoice, PLAY_VEHICLES, type VehicleChoice } from './VehicleChoice'
 import { SlidingPanels } from './SlidingPanels'
 import { populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
@@ -57,17 +57,6 @@ const back = '<button type="button" class="panel-back link-button" data-goto="in
 declare const __SYN3H_BUILD__: string | undefined
 const buildLine = typeof __SYN3H_BUILD__ === 'string' && __SYN3H_BUILD__ ? `build version : ${__SYN3H_BUILD__}` : 'browser edition'
 const heading = (text: string) => `<h2 tabindex="-1">${text}</h2>`
-/**
- * The vehicle paint sliders (src/vehicles/skins/showroom.ts), offered where a vehicle is
- * chosen. They are personal settings and live shader values, safe to drag. Built from the
- * registry, so a slider that is not defined is simply not shown.
- */
-const PAINT_SLIDERS = ['paint.scaleSize', 'paint.scaleDepth', 'paint.seams', 'paint.flakes', 'paint.gloss']
-const paintControls = (): string => {
-  const sliders = PAINT_SLIDERS.map(id => params.get(id)).filter(p => p && typeof p.value === 'number')
-  if (!sliders.length) return ''
-  return `<fieldset class="paint-controls"><legend>Paint</legend>${sliders.map(p => `<label>${p!.def.label}<input data-param="${p!.def.id}" type="range" min="${p!.def.min ?? 0}" max="${p!.def.max ?? 1}" step="${p!.def.step ?? 0.01}" value="${p!.value}"></label>`).join('')}<p class="panel-note">Paint detail shows at higher vehicle shading, in Graphics. <button type="button" class="link-button" data-goto="advanced">All sliders</button></p></fieldset>`
-}
 
 export class Shell implements System {
   readonly element = document.createElement('div')
@@ -88,7 +77,6 @@ export class Shell implements System {
   private lastInviteUrl = ''
   private readonly matchHud: MatchHud
   private minimap?: Minimap
-  private preview?: VehiclePreview
   private readonly panels: SlidingPanels
   private readonly board: Scoreboard
   private readonly hudBoard: Scoreboard
@@ -127,17 +115,13 @@ export class Shell implements System {
           <h1 tabindex="-1">Welcome to the future.</h1>
           <div class="lobby-message"><p>You’ve discovered a community where all are welcome, and new ideas are celebrated.</p><p class="lobby-room-label"></p><div class="invite-qr menu-qr"></div><p class="invite-link"></p><button class="shell-invite link-button">Copy invite link</button></div>
           <p class="lobby-unsupported" hidden>Syn3h needs WebGL 2, which this browser does not offer. A current Safari, Chrome, Firefox or Edge will run it.</p><nav class="lobby-destinations" aria-label="Worlds"><button class="return-game is-primary" data-resume hidden>Return to Game</button></nav>
-          <div class="lobby-links"><button data-goto="vehicle">Vehicle</button><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR</button><button data-goto="settings">Settings</button><button data-goto="about">About</button></div>
+          <div class="lobby-links"><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR</button><button data-goto="settings">Settings</button><button data-goto="about">About</button></div>
         </section>
         <section data-panel="explore">${heading('Prepare to Explore')}
           <form class="shell-form"><label for="shell-name">Player name</label><input id="shell-name" name="playerName" maxlength="24" autocomplete="nickname" placeholder="Explorer">
           <label for="shell-room">Room</label><div class="input-action"><input id="shell-room" name="room" maxlength="64" autocomplete="off"><button class="shell-invite" type="button">Copy invite</button></div>
-          <div class="shell-controls"><span><b>WASD / arrows</b> Drive</span><span><b>Space</b> Wings</span><span><b>Shift</b> Brake</span><span><b>L / click</b> Tag beam</span></div><p class="shell-touch-hint">Left thumb to drive. Right thumb for wings, brake and tag.</p>
+          <div class="shell-controls"><span><b>WASD / arrows</b> Drive</span><span><b>Space</b> Wings</span><span><b>Shift</b> Brake</span><span><b>L / click</b> Plasma Tag</span></div><p class="shell-touch-hint">Left thumb to drive. Right thumb for wings, brake and tag.</p>
           <button class="shell-play is-primary" type="submit">Enter World ›</button></form>${back}
-        </section>
-        <section data-panel="vehicle">${heading('Your Vehicle')}
-          <fieldset class="shell-vehicle"><legend>Vehicle</legend><div class="shell-vehicle-options"><label><input type="radio" name="vehicle" value="buggy-classic"> Classic</label><label><input type="radio" name="vehicle" value="buggy-syn3h"> Syn3h Buggy</label><label><input type="radio" name="vehicle" value="hovercraft"> Hovercraft</label><label><input type="radio" name="vehicle" value="jet"> Jet</label></div><div class="shell-vehicle-preview"></div><div class="shell-colors"><label>Body <input type="color" name="bodyColor" aria-label="Body colour"></label><label>Accent <input type="color" name="accentColor" aria-label="Accent colour"></label></div></fieldset>${paintControls()}
-          <div class="vehicle-help"></div><p class="vehicle-note">Your vehicle and colours are saved on this device.</p><button data-goto="explore">Continue ›</button>${back}
         </section>
         <section data-panel="worlds">${heading('Worlds to Explore')}
           <p class="planet-current"></p><fieldset class="world-controls"><legend>World</legend><label for="world-seed">Seed</label><div class="input-action"><input id="world-seed" type="number" min="1" max="999999" step="1"><button id="new-world" type="button">New world</button></div><label class="bots-control" hidden>Bots <output></output><input id="bots-count" type="range" step="1"></label></fieldset>
@@ -152,7 +136,7 @@ export class Shell implements System {
       </div>
       <footer class="lobby-footer"><span class="shell-message" role="status" aria-live="polite"></span><span class="build-line">${buildLine}</span></footer>
       </div>
-      <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby"><button data-goto="vehicle">Vehicle</button><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR</button><button data-goto="settings">Settings</button><button data-goto="about">About</button></nav></div>
+      <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby"><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR</button><button data-goto="settings">Settings</button><button data-goto="about">About</button></nav></div>
     </section>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open the panels" aria-pressed="false"><span aria-hidden="true">≡</span><span class="nav-label"> Panels</span></button></nav>
@@ -180,7 +164,8 @@ export class Shell implements System {
     // The world inspector and the display for when the cursor is captured (inspector/).
     this.inspector = new Inspector(this.element, {
       summary: id => this.inspectorSummary(id),
-      vehicles: () => ({ options: [...this.element.querySelectorAll<HTMLInputElement>('[name="vehicle"]')].map(radio => ({ id: radio.value, label: radio.parentElement!.textContent!.trim() })), current: this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind }),
+      // Vehicles are chosen in play only (the lobby offers planets). Four, one design each.
+      vehicles: () => ({ options: PLAY_VEHICLES, current: this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind }),
       onVehicle: id => this.switchVehicle(id as VehicleKind),
       onSaveWorld: () => this.saveWorld(),
     })
@@ -242,14 +227,6 @@ export class Shell implements System {
     }
     this.roomInput.value = new URL(location.href).searchParams.get('room')?.trim().slice(0, 64) || 'lobby'
     this.roomInput.addEventListener('input', () => this.updateRoomLabels(), { signal }); this.updateRoomLabels()
-    for (const radio of this.element.querySelectorAll<HTMLInputElement>('[name="vehicle"]')) {
-      radio.checked = radio.value === this.choice.vehicleKind
-      radio.addEventListener('change', () => { this.choice.vehicleKind = radio.value as VehicleChoice['vehicleKind']; this.saveChoice() }, { signal })
-    }
-    for (const key of ['bodyColor', 'accentColor'] as const) {
-      const input = this.element.querySelector<HTMLInputElement>(`[name="${key}"]`)!; input.value = this.choice[key]
-      input.addEventListener('input', () => { this.choice[key] = input.value; this.saveChoice() }, { signal })
-    }
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-goto]')) button.addEventListener('click', () => this.showPanel(button.dataset.goto!), { signal })
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-open]')) button.addEventListener('click', () => this.openMenu(button.dataset.open!), { signal })
     for (const button of this.element.querySelectorAll('[data-join]')) button.addEventListener('click', () => this.openJoin(), { signal })
@@ -344,7 +321,6 @@ export class Shell implements System {
     if (this.inviteFromGame) this.closeMenu()
     else this.element.querySelector<HTMLButtonElement>('[data-join]')!.focus()
   }
-  private saveChoice(): void { saveVehicleChoice(this.choice); this.preview?.setChoice(this.choice); this.updateHelp() }
   get vehicleKind(): VehicleChoice['vehicleKind'] { return this.choice.vehicleKind }
   get bodyColor(): string { return this.choice.bodyColor }
   get accentColor(): string { return this.choice.accentColor }
@@ -388,7 +364,7 @@ export class Shell implements System {
     if (id === 'world') return `${currentPlanet().label} · ${planetName(worldSeed.value)}`
     if (id === 'sky') { const hour = Number(params.get('sun.timeOfDay')?.value ?? 0); return `${String(Math.floor(hour) % 24).padStart(2, '0')}:${String(Math.floor((hour % 1) * 60)).padStart(2, '0')}` }
     if (id === 'game') { const bots = Number(params.get('bots.count')?.value ?? 0); return `${Number(params.get('game.mode')?.value ?? 0) === 1 ? 'King of the Hill' : 'Tag'}${bots ? ` · ${bots} ${bots === 1 ? 'bot' : 'bots'}` : ''}` }
-    if (id === 'vehicles') return this.element.querySelector<HTMLInputElement>(`[name="vehicle"][value="${this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind}"]`)?.parentElement?.textContent?.trim() ?? ''
+    if (id === 'vehicles') { const current = this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind; return PLAY_VEHICLES.find(vehicle => vehicle.id === current)?.label ?? '' }
     return id === 'you' ? 'yours only' : ''
   }
   /**
@@ -415,9 +391,6 @@ export class Shell implements System {
     if(id!==this.panels.active)this.audio.cue('click')
     this.lastActivity = performance.now()
     this.galaxyFor(id)
-    if (id === 'vehicle' && !this.preview) {
-      this.preview = new VehiclePreview(this.element.querySelector('.shell-vehicle-preview')!); this.preview.setChoice(this.choice)
-    }
     if (id !== 'advanced') this.advancedGroups = undefined
     if (id === 'advanced') {
       const panel = this.paramPanel ?? (window as unknown as { syn3h?: { panel?: ParamPanel } }).syn3h?.panel
@@ -458,8 +431,6 @@ export class Shell implements System {
     this.started = true; this.worldDirty = true; this.nameInput.disabled = true; this.roomInput.disabled = true
     this.element.querySelector<HTMLButtonElement>('.shell-play')!.textContent = 'Return to Game ›'
     this.element.querySelector<HTMLElement>('[data-resume]')!.hidden = false
-    for (const input of this.element.querySelectorAll<HTMLInputElement>('.shell-vehicle input')) input.disabled = true
-    this.element.querySelector('.vehicle-note')!.textContent = 'Vehicle selection is fixed for this session.'
   }
   /**
    * A world tapped in the galaxy. Any world but Custom is a drop, straight from the tap: no
@@ -1029,7 +1000,6 @@ export class Shell implements System {
     if (document.pointerLockElement === this.game.canvas) document.exitPointerLock()
   }
   private updateHelp(): void {
-    renderHelp(this.element.querySelector('.vehicle-help')!, this.choice.vehicleKind)
     this.element.querySelector('.shell-touch-hint')!.textContent = touchHelp(this.choice.vehicleKind)
     renderHelp(this.element.querySelector('.shell-controls')!, this.choice.vehicleKind)
   }
@@ -1189,7 +1159,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); this.performancePanel.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); this.performancePanel.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }

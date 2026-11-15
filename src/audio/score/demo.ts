@@ -107,18 +107,18 @@ function mount(): void {
   const state: Scene = { ...SCENES.Cruise }
   let context: AudioContext | undefined, score: Score | undefined, filter: BiquadFilterNode | undefined, analyser: AnalyserNode | undefined
   const sliders: [keyof Scene, string, number, number, number][] = [
-    ['speed', 'Speed (m/s)', 0, 60, 1], ['heat', 'Tag beams nearby', 0, 1, 0.01], ['clearance', 'Height above ground (m)', 0, 200, 1], ['altitude', 'Altitude (m)', 0, 600, 5],
+    ['speed', 'Speed (m/s)', 0, 60, 1], ['heat', 'Plasma Tag nearby', 0, 1, 0.01], ['clearance', 'Height above ground (m)', 0, 200, 1], ['altitude', 'Altitude (m)', 0, 600, 5],
     ['submerged', 'Depth under water (m)', 0, 5, 0.1], ['lava', 'Lava nearby', 0, 1, 0.01], ['progress', 'Your share of the winning score', 0, 1, 0.01],
     ['neighbours', 'Convoy: vehicles nearby', 0, 3, 1], ['gap', 'Convoy: how far away (m)', 0, 320, 5], ['ground', `Terrain ahead: ${Object.keys(GROUNDS).join(', ')}`, 0, Object.keys(GROUNDS).length - 1, 1],
   ]
   const toggles: [keyof Scene, string][] = [['playing', 'In play (off is the lobby)'], ['airborne', 'Airborne'], ['holding', 'Holding the hill'], ['contested', 'Hill contested']]
   root.innerHTML = `<h1>SYN3H / ADAPTIVE SCORE</h1><p>Everything you hear is synthesised live from a seed. Nothing is a recording.</p>
-    <button id="power">Start the score</button> <label>Theme seed <input id="seed" type="number" value="1234" min="1" max="999999"></label> <button id="reseed">New theme</button> <button id="shot">Tag beam nearby</button> <button id="burst">Six tag beams</button> <button id="accent">Capture</button> <button id="climax">Play the climb and release</button> <button id="surge">Surge (as on take-off)</button> <button id="win">Release now (as on a win)</button>
+    <button id="power">Start the score</button> <label>Theme seed <input id="seed" type="number" value="1234" min="1" max="999999"></label> <button id="reseed">New theme</button> <button id="shot">Plasma Tag nearby</button> <button id="burst">Six Plasma Tags</button> <button id="accent">Capture</button> <button id="climax">Play the climb and release</button> <button id="surge">Surge (as on take-off)</button> <button id="win">Release now (as on a win)</button>
     <div id="scenes">${Object.keys(SCENES).map(name => `<button data-scene="${name}">${name}</button>`).join('')}</div>
     ${sliders.map(([key, label, min, max, step]) => `<label>${label} <output data-out="${key}"></output><input data-key="${key}" type="range" min="${min}" max="${max}" step="${step}"></label>`).join('')}
     <div id="toggles">${toggles.map(([key, label]) => `<label><input data-toggle="${key}" type="checkbox"> ${label}</label>`).join('')}</div>
     <div id="layers"><strong>Layers</strong> ${LAYERS.map(name => `<label><input data-layer="${name}" type="checkbox" checked> ${name}</label>`).join('')}</div>
-    <div id="options"><strong>Experiments</strong> ${([[scoreTagNotes, 'Tag beams play notes'], [scoreConvoy, 'Convoy harmony'], [scoreTerrain, 'Terrain as melody'], [scoreWeather, 'Space weather']] as const).map(([param, label]) => `<label><input data-option="${param.def.id}" type="checkbox"> ${label}</label>`).join('')}</div>
+    <div id="options"><strong>Experiments</strong> ${([[scoreTagNotes, 'Plasma Tag plays notes'], [scoreConvoy, 'Convoy harmony'], [scoreTerrain, 'Terrain as melody'], [scoreWeather, 'Space weather']] as const).map(([param, label]) => `<label><input data-option="${param.def.id}" type="checkbox"> ${label}</label>`).join('')}</div>
     <label style="display:inline-block"><input id="lite" type="checkbox"> Lighter score (for phones)</label> <label style="display:inline-block"><input id="network" type="checkbox"> Algorithmic hall (cheaper)</label>
     <label>Volume <input id="volume" type="range" min="0" max="1" step="0.01" value="0.6"></label>
     <pre id="readout">Stopped</pre><canvas id="scope" width="640" height="120"></canvas>`
