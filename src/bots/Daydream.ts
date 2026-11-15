@@ -128,20 +128,23 @@ export class Daydream implements System {
   fixedUpdate(dt: number): void {
     if (!this.active || !this.mind) return
     // Physics runs before update. A pause or gamepad input must win on this step too.
-    if (this.game.input.suspended || this.blocked?.() || (typeof document !== 'undefined' && document.hidden) || this.gamepadBusy()) { this.noteActivity(); return }
+    if (!(daydreamSeconds.value > 0) || this.game.input.suspended || this.blocked?.() || (typeof document !== 'undefined' && document.hidden) || this.gamepadBusy()) { this.noteActivity(); return }
     this.mind.step(dt, this.auto)
     this.write(this.auto.x, this.auto.y, this.auto.z, this.auto.w, this.auto.brakes, this.auto.special)
   }
 
   private engage(): void {
-    this.active = true
     this.specialBefore = this.game.input.state.special
     // A fresh mind each time, seeded so no two daydreams in a session take the same drive.
-    this.mind = new Mind(this.player, this.terrain, this.pilot!, {
+    const mind = new Mind(this.player, this.terrain, this.pilot!, {
       seed: `${worldSeed.value}:daydream:${this.engagements++}:${this.game.tick}`,
       personality: DAYDREAM_PERSONALITY, navigator: this.options.navigator, places: this.options.places, others: this.options.others,
     })
     this.pilot!.reset()
+    this.mind = mind
+    // Publish control ownership only after the mind and pilot are ready.
+    this.player.object.userData.autopilot = true
+    this.active = true
     if (typeof document !== 'undefined') {
       this.pill ??= this.createPill()
       this.pill.hidden = false
@@ -151,6 +154,7 @@ export class Daydream implements System {
 
   private release(): void {
     this.active = false
+    delete this.player.object.userData.autopilot
     // Hand back only what this class put there: a thumb already on the touch stick has
     // written its own values by now, and those are the player's.
     const { state, external } = this.game.input

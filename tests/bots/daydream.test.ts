@@ -142,6 +142,47 @@ describe('mind', () => {
 })
 
 describe('Daydream', () => {
+  it('marks ownership only after setup and clears it on hand-back, swap and disposal', () => {
+    const { game } = harness(), terrain = flat(800)
+    const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0))
+    const next = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0))
+    const pilot = createGroundPilot(player)
+    const reset = vi.spyOn(pilot, 'reset')
+    reset.mockImplementationOnce(() => { throw new Error('pilot setup failed') })
+    const daydream = new Daydream(game, terrain, player, { pilot })
+    expect(() => daydream.update(15)).toThrow('pilot setup failed')
+    expect(daydream.active).toBe(false)
+    expect(daydream.mind).toBeNull()
+    expect(player.object.userData.autopilot).toBeUndefined()
+    daydream.update(15)
+    expect(player.object.userData.autopilot).toBe(true)
+    daydream.noteActivity()
+    expect(player.object.userData.autopilot).toBeUndefined()
+    daydream.update(0); daydream.update(15)
+    expect(player.object.userData.autopilot).toBe(true)
+    daydream.setPlayer(next)
+    expect(player.object.userData.autopilot).toBeUndefined()
+    expect(next.object.userData.autopilot).toBeUndefined()
+    daydream.update(15)
+    expect(next.object.userData.autopilot).toBe(true)
+    daydream.dispose()
+    expect(next.object.userData.autopilot).toBeUndefined()
+  })
+  it.each(['disabled', 'suspended', 'blocked'])('clears ownership before physics when %s', reason => {
+    const { game, input } = harness(), terrain = flat(800)
+    const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0))
+    let blocked = false
+    const daydream = new Daydream(game, terrain, player, { blocked: () => blocked })
+    daydream.update(15)
+    expect(player.object.userData.autopilot).toBe(true)
+    if (reason === 'disabled') params.set('daydream.seconds', 0)
+    if (reason === 'suspended') input.suspended = true
+    if (reason === 'blocked') blocked = true
+    daydream.fixedUpdate(DT)
+    expect(daydream.active).toBe(false)
+    expect(player.object.userData.autopilot).toBeUndefined()
+    daydream.dispose()
+  })
   it.each(['keydown', 'pointerdown', 'pointermove', 'touchstart', 'touchmove', 'wheel'])('releases immediately on %s without waiting for a frame', type => {
     const events = new EventTarget()
     Object.assign(events, { location: { search: '' } })
