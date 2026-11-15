@@ -85,7 +85,7 @@ interface Cord {
   view: CordView
 }
 
-const SEGMENTS = 24
+export const SEGMENTS = 24
 /** Each layer's width grows with distance past this many metres per metre of width. */
 const MIN_SCREEN = 0.03
 /** The cord's strength slider is in multiples of this, whatever the world's gravity. */
@@ -109,7 +109,7 @@ const TAUT_RGB = [3.2, 2.2, 0.6] as const
 const TINT_RGB = [0.05, 0.35, 0.5] as const
 
 /** A camera facing ribbon along the cord, drawn three times: tint, halo and core. */
-class CordView {
+export class CordView {
   readonly group = new THREE.Group()
   readonly points = Array.from({ length: SEGMENTS + 1 }, () => new THREE.Vector3())
   private readonly layers: { geo: THREE.BufferGeometry; width: number }[] = []

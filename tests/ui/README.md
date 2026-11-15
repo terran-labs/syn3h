@@ -524,3 +524,13 @@ Checks (dev servers on 5187 and 8797):
 
 Known limits: about 35 of the 218 properties have a written description, the rest show
 their limits only; switching vehicle reloads the page and respawns you.
+
+## Gear chip and Bungee controls
+
+While the host allows more than one kind of gear, a chip under the speed reads
+"Gear: Tag beam" or "Gear: Bungee"; tapping it or pressing T switches. The help card gains
+the gear lines. On touch, LET OUT (holds V) and LET GO show only while a cord is attached.
+Cues `bungeeLaunch`, `bungeeAttach` and `bungeeRelease` exist in `src/audio/Cues.ts`; the
+Bungee's `cue` hook in `src/net/index.ts` still has to call `audio.cue(name, at)`.
+
+Check: `node tests/ui/gear.mjs` (Chrome desktop and WebKit iPhone landscape).

@@ -135,7 +135,7 @@ export class Shell implements System {
       </div>
       <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby"><button data-goto="vehicle">Vehicle</button><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR</button><button data-goto="settings">Settings</button><button data-goto="about">About</button></nav></div>
     </section>
-    <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
+    <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><button type="button" class="gear-chip" hidden></button><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button" aria-label="Open menu">☰<span class="nav-label"> Menu</span></button><button data-open="multiplayer">Players</button><button class="inspector-toggle" type="button" aria-pressed="false">Create</button></nav>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
@@ -163,14 +163,25 @@ export class Shell implements System {
       vehicles: () => ({ options: [...this.element.querySelectorAll<HTMLInputElement>('[name="vehicle"]')].map(radio => ({ id: radio.value, label: radio.parentElement!.textContent!.trim() })), current: this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind }),
       onVehicle: id => this.switchVehicle(id as VehicleKind),
     })
-    // On a desktop the cards are there whenever the cursor is free; on touch they open from Create.
-    this.inspector.open = !this.touch.available
+    // A visitor's first view of the world has nothing over it: the cards start closed on every
+    // device and open from Create. On a desktop, once the player has captured the cursor to
+    // drive, releasing it with Escape brings the full interface up (the owner's design: full
+    // cards with the cursor free, the focus display with it captured), unless Create closed them.
+    this.inspector.open = false
     this.focusHud = new FocusHud(this.element)
     const toggle = this.element.querySelector<HTMLButtonElement>('.inspector-toggle')!
-    toggle.addEventListener('click', () => { this.inspector.open = !this.inspector.open; toggle.setAttribute('aria-pressed', String(this.inspector.open)) }, { signal })
+    let chosen: boolean | undefined
+    const setCards = (open: boolean) => { this.inspector.open = open; toggle.setAttribute('aria-pressed', String(open)) }
+    toggle.addEventListener('click', () => { chosen = !this.inspector.open; setCards(chosen) }, { signal })
     toggle.setAttribute('aria-pressed', String(this.inspector.open))
     // Focus: the cursor is captured, so the player is driving. The full interface fades away.
-    document.addEventListener('pointerlockchange', () => this.element.classList.toggle('is-focus', document.pointerLockElement === game.canvas), { signal })
+    let wasLocked = false
+    document.addEventListener('pointerlockchange', () => {
+      const locked = document.pointerLockElement === game.canvas
+      this.element.classList.toggle('is-focus', locked)
+      if (!locked && wasLocked && chosen !== false && !this.menuVisible) setCards(true)
+      wasLocked = locked
+    }, { signal })
     this.glass(signal)
     for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) slider.addEventListener('input', () => params.set(slider.dataset.param!, Number(slider.value)), { signal })
     this.startGalaxy()
@@ -658,6 +669,26 @@ export class Shell implements System {
     renderHelp(this.element.querySelector('.shell-controls')!, this.choice.vehicleKind)
   }
   /** Call after an actual spawn so query overrides and future respawns show the right controls. */
+  private gearWired = false
+  private gearShown = ''
+  /**
+   * The gear chip: which gear is in hand, shown only while the host allows more than one.
+   * Tapping it (or T) moves to the next. The rack and the Bungee are the Weapons lane's.
+   */
+  private updateGear(): void {
+    const net = (window as unknown as { syn3hNet?: { gear?: { list(): string[]; label: string; next(): void }; bungee?: { attached: boolean; letGo(): void } } }).syn3hNet
+    const chip = this.element.querySelector<HTMLButtonElement>('.gear-chip')!
+    if (!net?.gear) { if (!chip.hidden) chip.hidden = true; return }
+    if (!this.gearWired) {
+      this.gearWired = true
+      chip.addEventListener('click', () => { net.gear!.next(); this.audio.cue('click'); chip.blur() }, { signal: this.abort.signal })
+      if (net.bungee) this.touch.setGear({ attached: () => net.bungee!.attached, letGo: () => net.bungee!.letGo() })
+    }
+    const several = net.gear.list().length > 1, text = several ? `Gear: ${net.gear.label}` : ''
+    if (text === this.gearShown) return
+    this.gearShown = text; chip.hidden = !several; chip.textContent = text; this.hasSeveralGear = several
+  }
+  private hasSeveralGear = false
   setVehicleKind(kind: VehicleKind): void { this.activeVehicleKind = kind; this.touch.setVehicleKind(kind); if (this.started) this.showHelp(false) }
   /**
    * The controls card, in the lower left so it never covers the vehicle. After Play it is the
@@ -667,7 +698,7 @@ export class Shell implements System {
    */
   showHelp(full = true): void {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!, touch = this.touch.available
-    renderHelp(hint.querySelector('div')!, this.activeVehicleKind, touch, !full)
+    renderHelp(hint.querySelector('div')!, this.activeVehicleKind, touch, !full, this.hasSeveralGear)
     hint.classList.toggle('is-full', full); hint.classList.remove('is-hint'); this.touch.highlight(null)
     hint.querySelector('small')!.textContent = touch ? '' : full ? 'H or ? to hide' : 'H: all controls'
     hint.hidden = false; clearTimeout(this.helpTimer); this.helpInput?.abort(); this.helpInput = undefined
@@ -715,6 +746,7 @@ export class Shell implements System {
     if (!this.started && !this.inviteOpen && !this.attract?.active && (this.requestedAttract || performance.now() - this.lastActivity > 20000)) this.startAttract()
     this.attract?.update(dt)
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
+    this.updateGear()
     if (this.started && !this.menuVisible) {
       const focus = this.element.classList.contains('is-focus')
       if (!focus && this.inspector.open) this.inspector.update()
