@@ -55,31 +55,67 @@ describe('adaptive score composer', () => {
     expect(loud.filter((step, n) => step.snare && n < 112 && (n % 16 === 4 || n % 16 === 12))).toEqual([])
   })
 
-  it('follows the arc: theme, still, build, breath, then a release a minor third up', () => {
-    const { c, steps } = run(11, fight, STEPS_PER_SECTION * 4), home = steps[0].chord!.tonic
+  it('follows the arc: theme, still, build, climb, breath, then a release in the relative major', () => {
+    const { steps } = run(11, cruise, STEPS_PER_SECTION * 6), home = steps[0].chord!.tonic
     const section = (n: number) => steps.slice(n * STEPS_PER_SECTION, (n + 1) * STEPS_PER_SECTION)
-    expect(count(section(0), 'lead')).toBeGreaterThan(0)
-    expect(count(section(1), 'lead')).toBe(0)
-    // The build: a held bass note, one swell, then nothing but the hall for the last half bar.
-    const build = section(2), roots = new Set(build.filter(s => s.chord).map(s => s.chord!.root))
-    expect(roots.size).toBe(1)
-    expect(build[96].riser).toBe(24)
-    expect(build[120].breath).toBe(true)
-    for (const key of ['arp', 'bass', 'kick', 'snare', 'lead'] as const) expect(count(build.slice(120), key), key).toBe(0)
-    // The release.
-    const release = section(3)
+    const [theme, still, build, climb, release, afterglow] = [0, 1, 2, 3, 4, 5].map(section)
+    expect(count(theme, 'lead')).toBeGreaterThan(8)
+    expect(count(still, 'lead')).toBe(0)
+    expect(count(theme, 'strings')).toBe(0)
+    // Build and climb: one held bass note, strings on the beat and then twice as fast.
+    for (const part of [build, climb]) expect(new Set(part.filter(s => s.chord).map(s => s.chord!.root)).size).toBe(1)
+    expect(count(build, 'strings')).toBe(STEPS_PER_SECTION / 4)
+    expect(count(climb.slice(0, 96), 'strings')).toBe(48)
+    expect(climb[96].riser).toBe(24)
+    expect(count(climb.slice(112, 120), 'snare')).toBe(8)
+    // The breath: nothing but the hall for the last half bar.
+    expect(climb[120].breath).toBe(true)
+    for (const key of ['arp', 'bass', 'kick', 'snare', 'lead', 'strings', 'pluck'] as const) expect(count(climb.slice(120), key), key).toBe(0)
+    // The release: a minor third up, in the major, with everything.
     expect(release[0].impact).toBe(true)
     expect(release[0].chord!.tonic).toBe((home + 3) % 12)
-    expect(steps[0].impact).toBeUndefined()
-    expect(Math.min(...release.filter(s => s.lead).map(s => s.lead!.midi))).toBeGreaterThanOrEqual(65 + 12)
-    expect(c.role).toBe('release')
+    expect(release[0].chord!.mode).toBe('major')
     expect(release[0].bell?.velocity).toBe(1)
     expect(count(release, 'brass')).toBe(count(release, 'lead'))
-    expect(count(section(0), 'brass')).toBe(0)
-    // A quiet mood still gets its swell and its arrival.
-    const quiet = run(11, calm, STEPS_PER_SECTION * 3 + 1).steps
-    expect(quiet[2 * STEPS_PER_SECTION + 96].riser).toBe(24)
-    expect(quiet[3 * STEPS_PER_SECTION].impact).toBe(true)
+    expect(count(release, 'kick')).toBe(8)
+    expect(steps[0].impact).toBeUndefined()
+    // The afterglow stays in the major; the next theme falls back to the minor of the new home.
+    expect(afterglow[0].chord!.mode).toBe('major')
+    expect(count(afterglow, 'lead')).toBe(6)
+    const next = run(11, cruise, STEPS_PER_SECTION * 7).steps[6 * STEPS_PER_SECTION].chord!
+    expect(next.mode).toBe('aeolian'); expect(next.tonic).toBe((home + 3) % 12)
+  })
+
+  it('plays the same theme every time it comes round, and an octave up in the release', () => {
+    const { c, steps } = run(11, cruise, STEPS_PER_SECTION * 11)
+    expect(c.theme).toHaveLength(4)
+    const shape = (n: number) => steps.slice(n * STEPS_PER_SECTION, (n + 1) * STEPS_PER_SECTION).map((s, at) => s.lead ? `${at}:${s.lead.steps}` : '').filter(Boolean)
+    expect(shape(4)).toEqual(shape(0))
+    expect(shape(6)).toEqual(shape(0))
+    expect(shape(10)).toEqual(shape(0))
+    const lowest = (n: number) => Math.min(...steps.slice(n * STEPS_PER_SECTION, (n + 1) * STEPS_PER_SECTION).filter(s => s.lead).map(s => s.lead!.midi))
+    expect(lowest(4)).toBeGreaterThanOrEqual(65 + 12)
+    expect(lowest(0)).toBeLessThan(65 + 12)
+    // The third phrase is the top of the theme.
+    const top = (phrase: number) => Math.max(...c.theme[phrase].map(note => note.offset))
+    expect(top(2)).toBe(top(0) + 2)
+  })
+
+  it('a dark mood keeps its release in the minor, and a surge reaches it in two bars', () => {
+    const c = new Composer(3)
+    for (let i = 0; i < 20; i++) c.step(fight)
+    c.cue('surge')
+    const steps = Array.from({ length: 33 }, () => c.step(fight))
+    expect(c.role).toBe('release')
+    expect(steps[0].riser).toBe(24); expect(steps[0].chord).toBeDefined()
+    expect(steps[24].breath).toBe(true)
+    expect(steps[32].impact).toBe(true)
+    expect(steps[32].chord!.mode).toBe('phrygian')
+    // A turn of mood during a release must not lift the key a second time.
+    const key = steps[32].chord!.tonic
+    const after = Array.from({ length: 64 }, () => c.step(cruise)).filter(s => s.chord)
+    expect(after.every(s => s.chord!.tonic === key)).toBe(true)
+    expect(c.role).toBe('release')
   })
 
   it('suspends the third of every second chord and resolves it a bar later', () => {

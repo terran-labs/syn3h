@@ -43,6 +43,8 @@ export interface MatchMood { holding: boolean; contested: boolean; /** 0..1 shar
 
 /** Seconds of music scheduled ahead of the audio clock. Covers a dropped frame or three. */
 const LOOKAHEAD = 0.22
+/** Seconds between surges the game may trigger. A release that comes too often stops meaning anything. */
+const SURGE_COOLDOWN = 40
 /** Move `value` toward `target` with a time constant in seconds. */
 const follow = (value: number, target: number, tau: number, dt: number) => value + (target - value) * (1 - Math.exp(-dt / tau))
 
@@ -59,6 +61,8 @@ export class Score {
   private match: MatchMood = { holding: false, contested: false, progress: 0 }
   private tension = 0
   private release = 0
+  private airTime = 0
+  private lastCue = -Infinity
 
   constructor(private readonly context: BaseAudioContext, output: AudioNode, seed: number) {
     this.seed = seed
@@ -70,8 +74,8 @@ export class Score {
   get mode(): string { return this.composer.mode }
   /** Where the music is in its theme, still, build, release arc. */
   get role(): Role { return this.composer.role }
-  /** Jump the arc: `build` starts the long swell toward a release about eight bars away. */
-  cue(role: Role): void { this.composer.cue(role) }
+  /** Jump the arc: `climb` starts the swell toward a release eight bars away, `surge` toward one two bars away. */
+  cue(role: Role | 'surge'): void { this.composer.cue(role); this.lastCue = this.context.currentTime }
 
   /** Fade the score in or out. It keeps no audio scheduled while inactive. */
   setActive(active: boolean, seconds = 2): void {
@@ -82,10 +86,23 @@ export class Score {
   /** A new seed means new themes and usually a new key. Takes effect on the next sixteenth. */
   setSeed(seed: number): void { if (seed !== this.seed) { this.seed = seed; this.composer = new Composer(seed) } }
   /** Report a shot or a hit. `amount` is roughly 0.1 for a distant shot and 0.5 for being hit. */
-  combat(amount: number): void { this.mood.heat = unit(this.mood.heat + Math.max(0, amount)) }
+  combat(amount: number): void {
+    this.mood.heat = unit(this.mood.heat + Math.max(0, amount))
+    // Being tagged is answered at once, outside the bar grid.
+    if (amount >= 0.45 && this.active) this.synth.braam()
+  }
   setMatch(match: MatchMood | null): void { this.match = match ?? { holding: false, contested: false, progress: 0 } }
-  /** A capture, a win: land a drop right now, outside the bar grid. */
-  accent(strength = 1): void { if (this.active) this.synth.impact(undefined, strength) }
+  /**
+   * A big moment in play. A win (strength 1) brings the release now. A capture brings a surge,
+   * a release two bars away, unless one was cued in the last while; then only the drop lands.
+   */
+  accent(strength = 1): void {
+    if (!this.active) return
+    const now = this.context.currentTime, role = this.composer.role
+    if (strength >= 1) this.cue('release')
+    else if (now - this.lastCue > SURGE_COOLDOWN && role !== 'climb' && role !== 'release') this.cue('surge')
+    else this.synth.impact(undefined, strength)
+  }
 
   update(input: ScoreInput): void {
     const now = this.context.currentTime, dt = Math.min(0.25, Math.max(0, now - this.last))
@@ -102,6 +119,12 @@ export class Score {
     m.triumph = follow(m.triumph, input.playing ? unit((this.match.holding ? 0.6 : 0) + this.match.progress * 0.5) : 0, 3, dt)
     m.intensity = follow(m.intensity, input.playing ? unit((0.12 + 0.5 * m.energy + 0.8 * m.heat + 0.25 * this.tension) * scale) : 0, 1, dt)
     m.darkness = follow(m.darkness, input.playing ? unit(0.34 + 0.6 * m.heat + 0.55 * unit(input.lava) + 0.2 * depth - 0.3 * m.lift - 0.25 * m.triumph) : 0.1, 2, dt)
+
+    // Leaving the ground: after a moment of real flight the music surges toward a release.
+    const flying = input.playing && input.airborne && input.clearance > 12
+    const was = this.airTime
+    this.airTime = flying ? this.airTime + dt : 0
+    if (this.active && was < 1.2 && this.airTime >= 1.2 && now - this.lastCue > SURGE_COOLDOWN && this.composer.role !== 'climb' && this.composer.role !== 'release') this.cue('surge')
 
     const level = levels(m)
     this.bpm = follow(this.bpm, level.bpm * scoreTempo.value, 4, dt)
