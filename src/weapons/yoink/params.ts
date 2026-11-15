@@ -6,9 +6,9 @@ import { defineParam } from '../../../shared/params'
 
 const group = 'Gear: Yoink'
 
-/** Off until the owner has tried it (protocol rule 5). */
+/** Available on the normal entry; the host can still turn it off for the room. */
 export const yoinkAllowed = defineParam({
-  id: 'yoink.allowed', label: 'Yoink', group, scope: 'world', default: false,
+  id: 'yoink.allowed', label: 'Yoink', group, scope: 'world', default: true,
 })
 
 /** How far away a vehicle can be grabbed. */

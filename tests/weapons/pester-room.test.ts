@@ -41,7 +41,7 @@ describe('Pesters in the room', () => {
   }
 
   it('refuses a launch while Pesters are off', () => {
-    const a = join('A')
+    const a = join('A', { 'pester.allowed': false })
     const b = join('B')
     room.receive(a.peer, state([0, 0, 0]))
     room.receive(b.peer, state([0, 0, -40]))

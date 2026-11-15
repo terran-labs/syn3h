@@ -75,7 +75,7 @@ describe('Yoink in the room', () => {
   beforeEach(() => { clock = 100_000; room = new Room('test', { now: () => clock }) })
 
   it('relays grabs and flings within reach, and nothing while Yoink is off', () => {
-    const a = join('A')
+    const a = join('A', { 'yoink.allowed': false })
     const b = join('B')
     room.receive(a.peer, state([0, 0, 0]))
     room.receive(b.peer, state([0, 0, -20]))
