@@ -1,5 +1,5 @@
 /**
- * Jet exhibit: the generated next-generation jet designs from src/vehicles/jetgen, in five
+ * Jet exhibit: the generated next-generation jet designs from src/vehicles/jetgen, in six
  * review rounds. Each design is built twice, at full and reduced polygon count, as its two
  * detail levels. They render through the shared vehicle shading, like every other vehicle.
  */
@@ -9,8 +9,8 @@ import { NextJet } from '../../../vehicles/jetgen/NextJet'
 import { GROUND_Y } from '../../../vehicles/jetgen/shapes'
 import type { LabExhibit } from '../types'
 
-const ROUNDS = ['1', '2', '3', '4', '5']
-const ROUND_TITLES = ['first designs after the red reference', 'forward-swept wings with arch tails', 'military hybrids of Scimitar and Halo', 'Vanguard with intakes around the fuselage', 'variations on the Vanguard Quad']
+const ROUNDS = ['1', '2', '3', '4', '5', '6']
+const ROUND_TITLES = ['first designs after the red reference', 'forward-swept wings with arch tails', 'military hybrids of Scimitar and Halo', 'Vanguard with intakes around the fuselage', 'variations on the Vanguard Quad', 'the Hexring as one lofted body']
 
 export const jet: LabExhibit = {
   // Listed with the other design studies in the lab's sidebar.
@@ -18,9 +18,9 @@ export const jet: LabExhibit = {
   id: 'jet',
   title: 'Syn3h jet',
   groupLabel: 'Round',
-  heading: group => `Syn3h jet: round ${group ?? 5}, ${ROUND_TITLES[Number(group ?? 5) - 1] ?? ''}`,
+  heading: group => `Syn3h jet: round ${group ?? 6}, ${ROUND_TITLES[Number(group ?? 6) - 1] ?? ''}`,
   async designs() {
-    return JET_DESIGNS.map((d, i) => ({ id: d.id, name: d.name, notes: [d.blurb], group: ROUNDS[Math.floor(i / 5)] }))
+    return JET_DESIGNS.map((d, i) => ({ id: d.id, name: d.name, notes: [d.blurb], group: ROUNDS[i < 20 ? Math.floor(i / 5) : i < 24 ? 4 : 5] }))
   },
   async build(info) {
     const design = JET_DESIGNS.find(d => d.id === info.id)!

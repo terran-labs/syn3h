@@ -64,14 +64,18 @@ export function loft(rings: THREE.Vector3[][], capStart = true, capEnd = true, i
 }
 
 /** Rings for a body. Keys are rows of [z, halfWidth, top, bottom, centreY, exponent]. */
-export function bodyRings(keys: number[][], x = 0, seg = 10, around = 28, mirror = false, linear = false): THREE.Vector3[][] {
+/** `bump(z, angle)` pushes the skin outward by that many metres: intakes and blisters that are part of the body. */
+export function bodyRings(keys: number[][], x = 0, seg = 10, around = 28, mirror = false, linear = false, bump?: (z: number, angle: number) => number): THREE.Vector3[][] {
   const at = linear ? lerpRows : cr
   const rings: THREE.Vector3[][] = [], N = (keys.length - 1) * seg
   for (let j = 0; j <= N; j++) {
     const [z, w, t, b, y, e] = at(keys, j / N), ring: THREE.Vector3[] = [], p = 2 / Math.max(e, 1.2)
     for (let i = 0; i < around; i++) {
       const a = i / around * Math.PI * 2, c = Math.cos(a), s = Math.sin(a)
-      ring.push(new V((mirror ? -1 : 1) * (x + Math.max(w, .002) * Math.sign(c) * Math.abs(c) ** p), y + Math.max(s >= 0 ? t : b, .002) * Math.sign(s) * Math.abs(s) ** p, z))
+      let px = Math.max(w, .002) * Math.sign(c) * Math.abs(c) ** p, py = Math.max(s >= 0 ? t : b, .002) * Math.sign(s) * Math.abs(s) ** p
+      const d = bump ? bump(z, a) : 0
+      if (d > 0) { const l = Math.hypot(px, py) || 1; px += px / l * d; py += py / l * d }
+      ring.push(new V((mirror ? -1 : 1) * (x + px), y + py, z))
     }
     rings.push(ring)
   }
@@ -125,15 +129,50 @@ export class Builder {
 
   add(mat: Mat, geometry: THREE.BufferGeometry): void { this.pieces.push({ mat, geometry }) }
 
-  body(mat: Mat, keys: number[][], o: { x?: number; mirror?: boolean; seg?: number; around?: number; caps?: [boolean, boolean]; inside?: boolean } = {}): void {
-    const caps = o.caps ?? [true, true]
-    for (const m of o.mirror ? [false, true] : [false]) this.add(mat, loft(bodyRings(keys, o.x ?? 0, this.segs(o.seg ?? 10), this.ring(o.around ?? 28), m), caps[0], caps[1], o.inside))
+  /**
+   * `exhaust` makes the body's rear end an engine: the skin stops open at its last row, which is
+   * the nozzle lip, and a dark inner wall runs forward from that same row to the glow. The
+   * thruster is then the body itself, with no separate collar. 'main' also hinges the vectoring
+   * petals on the lip.
+   */
+  body(mat: Mat, keys: number[][], o: { x?: number; mirror?: boolean; seg?: number; around?: number; caps?: [boolean, boolean]; inside?: boolean; bump?: (z: number, angle: number) => number; exhaust?: boolean | 'main' } = {}): void {
+    const caps = o.exhaust ? [true, false] : o.caps ?? [true, true], x = o.x ?? 0
+    for (const m of o.mirror ? [false, true] : [false]) this.add(mat, loft(bodyRings(keys, x, this.segs(o.seg ?? 10), this.ring(o.around ?? 28), m, false, o.bump), caps[0], caps[1], o.inside))
+    if (!o.exhaust) return
+    const [z, w, t, b, y, e] = keys[keys.length - 1], k = (dz: number, f: number) => [z + dz, w * f, t * f, b * f, y, e]
+    const inner = { x, mirror: o.mirror, around: o.around ?? 28 }
+    this.body('dark', [k(0, 1), k(-.07, .9), k(-.36, .62)], { ...inner, seg: 3, caps: [false, false], inside: true })
+    this.body('glow', [k(-.46, .72), k(-.32, .72)], { ...inner, seg: 1 })
+    for (const sx of o.mirror ? [1, -1] : [1]) this.nozzles.push({ x: x * sx, y, z, r: Math.max(w, t) })
+    if (o.exhaust === 'main') this.gimbal = { y: y + (t - b) / 2, z, halfWidth: w, halfHeight: (t + b) / 2 }
   }
 
   /** The main hull. Later calls (canopy, scoop, ports) sit on its surface. */
-  fuselage(keys: number[][]): void {
+  /**
+   * `intakes` are rows of [angle, z0, z1, halfWidth, height]: each is a bulge of the hull's own
+   * skin, rising in a raked face at z0 and fading back into the body behind z1, with a dark
+   * mouth set in the face. `exhaust` ends the hull in the main thruster (see body()).
+   */
+  fuselage(keys: number[][], o: { intakes?: number[][]; exhaust?: boolean } = {}): void {
     const N = (keys.length - 1) * 12; this.fus = Array.from({ length: N + 1 }, (_, j) => cr(keys, j / N))
-    this.body('paint', keys, { seg: 12, around: 40 })
+    const smooth = (v: number) => { const t = Math.min(1, Math.max(0, v)); return t * t * (3 - 2 * t) }
+    const intakes = (o.intakes ?? []).map(([deg, z0, z1, halfWidth, height]) => {
+      // Angular half width of the bulge, from its width in metres and the hull's size there.
+      const [w, t] = this.at(z0 + (z1 - z0) * .3)
+      return { a: deg * Math.PI / 180, z0, z1, height, spread: halfWidth * 1.6 / Math.max(.2, (w + t) / 2) }
+    })
+    const bump = intakes.length ? (z: number, angle: number) => {
+      let d = 0
+      for (const i of intakes) {
+        let da = Math.abs(angle - i.a) % (Math.PI * 2); if (da > Math.PI) da = Math.PI * 2 - da
+        const across = 1 - smooth((da / i.spread - .5) / .5), L = i.z1 - i.z0
+        const along = smooth((z - (i.z0 - .03)) / .09) * (1 - smooth((z - (i.z0 + L * .45)) / (L * .55 + .45)))
+        d = Math.max(d, i.height * across * along)
+      }
+      return d
+    } : undefined
+    this.body('paint', keys, { seg: 12, around: intakes.length ? 64 : 40, bump, exhaust: o.exhaust ? 'main' : false })
+    for (const [deg, z0, , halfWidth, height] of o.intakes ?? []) this.mouth(z0, deg, halfWidth, height)
   }
 
   /** Hull section at z: [halfWidth, top, bottom, centreY, exponent]. */
@@ -169,19 +208,14 @@ export class Builder {
     this.body('dark', [[z0 - .045, halfWidth * .86, height * .86, .0, y(z0) + .015, 4], [z0 + .04, halfWidth * .86, height * .86, .0, y(z0) + .015, 4]], { x, mirror, seg: 1 })
   }
 
-  /**
-   * An air intake built into the hull at any angle around it: 90 is the top, 0 the right flank,
-   * 270 the belly. It follows the skin along its whole length, stands square to the surface
-   * there (not to the hull's centre line), and sits on a low fairing that starts ahead of the
-   * mouth and fades out behind, so it reads as part of the body.
-   */
-  intake(z0: number, z1: number, angleDeg: number, halfWidth: number, height: number): void {
-    const a = angleDeg * Math.PI / 180, L = z1 - z0, around = this.ring(18), lo = this.fus[0][0], hi = this.fus[this.fus.length - 1][0]
+  /** Rings of a small part that stands on the hull's skin at one angle, square to the surface. */
+  private onSkin(angleDeg: number): (rows: number[][], sink: number, depth: number, count: number) => THREE.Vector3[][] {
+    const a = angleDeg * Math.PI / 180, around = this.ring(18), lo = this.fus[0][0], hi = this.fus[this.fus.length - 1][0]
     const skinAt = (z: number, ang: number) => {
       const [w, t, b, y, ex] = this.at(z), p = 2 / Math.max(ex, 1.2), c = Math.cos(ang), s = Math.sin(ang)
       return new V(w * Math.sign(c) * Math.abs(c) ** p, y + (s >= 0 ? t : b) * Math.sign(s) * Math.abs(s) ** p, z)
     }
-    const rings = (rows: number[][], sink: number, depth: number, count: number) => Array.from({ length: count + 1 }, (_, j) => {
+    return (rows: number[][], sink: number, depth: number, count: number) => Array.from({ length: count + 1 }, (_, j) => {
       const [z, hw, h, e] = count === 1 ? rows[j] : cr(rows, j / count), zs = Math.min(Math.max(z, lo), hi)
       // The point on the skin, the direction around the hull there, and the true surface normal.
       const skin = skinAt(zs, a); skin.z = z
@@ -194,6 +228,21 @@ export class Builder {
         return skin.clone().addScaledVector(side, u).addScaledVector(out, v)
       })
     })
+  }
+
+  /** The dark opening of an intake that is part of the hull (see fuselage()). */
+  private mouth(z0: number, angleDeg: number, halfWidth: number, height: number): void {
+    this.add('dark', loft(this.onSkin(angleDeg)([[z0 - .04, halfWidth * .82, height * .8, 3.6], [z0 + .07, halfWidth * .82, height * .8, 3.6]], .0, .04, 1)))
+  }
+
+  /**
+   * An air intake built into the hull at any angle around it: 90 is the top, 0 the right flank,
+   * 270 the belly. It follows the skin along its whole length, stands square to the surface
+   * there (not to the hull's centre line), and sits on a low fairing that starts ahead of the
+   * mouth and fades out behind, so it reads as part of the body.
+   */
+  intake(z0: number, z1: number, angleDeg: number, halfWidth: number, height: number): void {
+    const L = z1 - z0, rings = this.onSkin(angleDeg)
     const n = Math.max(5, Math.round(12 * this.detail))
     // Fairing: wide, low and rounded, from ahead of the mouth to well behind the duct.
     this.add('paint', loft(rings([[z0 - .45, halfWidth * .9, .012, 2.2], [z0 - .05, halfWidth * 1.5, height * .42, 2.2], [z0 + L * .6, halfWidth * 1.45, height * .42, 2.2], [z1 + .1, halfWidth * 1.1, height * .25, 2.2], [z1 + .5, halfWidth * .6, .012, 2.2]], .03, .1, n)))
