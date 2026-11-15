@@ -147,10 +147,10 @@ export class Game {
     return system
   }
 
-  remove(system: System): void {
+  remove(system: System, dispose = true): void {
     const i = this.systems.indexOf(system)
     if (i >= 0) this.systems.splice(i, 1)
-    system.dispose?.()
+    if (dispose) system.dispose?.()
   }
 
   start(): void {
