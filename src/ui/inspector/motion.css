@@ -58,9 +58,10 @@
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row :is(.wi-num, .wi-num-edit).is-invalid { color: var(--s3-warn, #ffb08a); text-decoration-color: currentColor; border-bottom-color: currentColor; animation: wi-refuse .32s cubic-bezier(.3,.7,.3,1); }
 @keyframes wi-refuse { 25% { translate: -3px 0; } 60% { translate: 2px 0; } }
 
-/* Short screens (a phone on its side): five finger-sized headers and an open card do not
-   fit, so the stack scrolls, and an open card keeps at least 120 px of body. */
-@media (max-height: 500px) {
+/* Phones, on their side or upright: finger-sized headers, an open card and (when it is open)
+   the performance panel do not always fit, so the stack scrolls instead of pushing headers
+   off the screen, and an open card keeps at least 120 px of body. */
+@media (max-height: 500px), (max-width: 700px) {
   .syn3h-shell.exploration-ui .world-inspector .wi-cards { overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: thin; }
   .syn3h-shell.exploration-ui .world-inspector .wi-cards > .wi-card.is-open { min-height: calc(var(--wi-head) + 2px + 120px); }
 }
