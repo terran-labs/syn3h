@@ -24,7 +24,21 @@ in the first bundle and costs no download.
 | World seed | `worldSeed`, or `audio.score.seed` | Key, chord progressions, arpeggio shapes and melody |
 
 The harmony changes mode at the next chord boundary, at most two bars away, and lands the
-change with a sub drop. Sections are eight bars; a busy one ends in a riser and a fill.
+change with a sub drop.
+
+## The arc
+
+A steady texture never raises a hair, so sections of eight bars follow a four-part cycle:
+
+| Section | What happens |
+|---|---|
+| theme | The theremin states a melody: a pickup, a leap to a long held note, a stepwise fall. |
+| still | The melody rests. Pads, drone and pulse only. |
+| build | The bass holds the dominant under moving chords, the filters open, a halo and a noise swell grow, then half a bar of near silence. |
+| release | The key lifts a minor third. The theme returns an octave up; pipe organ and high choir enter; the level rises about 5 dB. |
+
+Every second chord arrives with its third suspended and resolves a bar later. `Score.cue('build')`
+starts a build on demand; the lab has a button for it.
 
 ## Tuning
 
