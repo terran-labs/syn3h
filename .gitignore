@@ -4,3 +4,4 @@ dist
 .DS_Store
 *.local
 paseo.local.json
+labs/live-status.json

@@ -2,18 +2,12 @@ import * as THREE from 'three/webgpu'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { Builder, GROUND_Y, type Leg, type Mat } from './shapes'
 import type { JetDesign } from './designs'
+import { applyShowroom, setRole } from '../skins/showroom'
+import { addNightReadability } from '../skins/nightReadability'
+import { addLavaGlow } from '../skins/lavaGlow'
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v))
 const ease = (v: number) => { const t = clamp01(v); return t * t * (3 - 2 * t) }
-
-/** Metal flake for the candy paint: a tiny generated noise tile, no image file. */
-function flakeTexture(seed: number): THREE.DataTexture {
-  const size = 64, data = new Uint8Array(size * size * 4); let s = seed >>> 0 || 1
-  for (let i = 0; i < size * size; i++) { s = (s * 1664525 + 1013904223) >>> 0; const v = 96 + (s >>> 24) * .6; data[i * 4] = data[i * 4 + 1] = data[i * 4 + 2] = v; data[i * 4 + 3] = 255 }
-  const t = new THREE.DataTexture(data, size, size); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(48, 110)
-  t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true; t.needsUpdate = true
-  return t
-}
 
 interface BuiltLeg { spec: Leg; pivot: THREE.Group; piston: THREE.Group; foot: THREE.Group; doors: { group: THREE.Group; axis: 'x' | 'z'; sign: number }[]; upper: number; travel: number }
 
@@ -27,46 +21,59 @@ export class NextJet {
   readonly nozzles: Builder['nozzles']
   readonly hover: Builder['hover']
   readonly gear = new THREE.Group()
-  private readonly flake: THREE.DataTexture
   readonly materials: Record<Mat, THREE.Material>
-  private readonly paint: THREE.MeshPhysicalMaterial
-  private readonly panel: THREE.MeshPhysicalMaterial
+  private readonly paint: THREE.MeshStandardMaterial
+  private readonly canopy: THREE.MeshStandardMaterial
+  private readonly accent: THREE.MeshStandardMaterial
+  private detachShowroom?: () => void
   private readonly glow: THREE.MeshBasicMaterial
   private readonly legs: BuiltLeg[] = []
   private readonly geometries: THREE.BufferGeometry[] = []
   gearAmount = 0
+  /** The pilot's eye, for the ride camera. Present when the design has a real cockpit. */
+  ridePosition?: THREE.Object3D
+  /** Metres from the eye to the nearest canopy or tub surface. */
+  clearance = Infinity
   /** Sits at the main thruster's exit and holds its four vectoring vanes. */
   readonly thruster = new THREE.Group()
   /** Current deflection: x is pitch, y is yaw, in radians. */
   readonly vector = new THREE.Vector2()
-  private petal?: THREE.MeshPhysicalMaterial
+  private petal?: THREE.MeshStandardMaterial
   private readonly vanes: { group: THREE.Group; axis: 'x' | 'y'; sign: number }[] = []
 
   /** @param detail 1 is full detail, lower values cut the triangle count (see Builder). */
   constructor(readonly design: JetDesign, readonly detail = 1) {
-    const military = design.finish === 'military'
-    this.flake = flakeTexture(design.paint)
-    this.paint = military
-      ? new THREE.MeshPhysicalMaterial({ color: design.paint, metalness: .55, roughness: .5, clearcoat: .25, clearcoatRoughness: .4 })
-      : new THREE.MeshPhysicalMaterial({ color: design.paint, metalness: .78, roughness: .28, clearcoat: 1, clearcoatRoughness: .04, bumpMap: this.flake, bumpScale: .35 })
-    // Same paint, faceted: wings and fins of the angular designs keep their hard planes.
-    this.panel = this.paint.clone(); this.panel.flatShading = true
+    // The vehicle pattern (src/vehicles/PATTERN.md): no look is authored here. Each surface is
+    // tagged with a role and the shared showroom shading builds the scales, clear coat, flakes,
+    // canopy, night fill and lava glow, the same as on every other vehicle. The plain numbers
+    // below are only what shading tier 0 shows.
+    this.paint = setRole(new THREE.MeshStandardMaterial({ color: design.paint, metalness: .8, roughness: .3 }), 'paint')
+    this.accent = setRole(new THREE.MeshStandardMaterial({ color: design.accent, metalness: .85, roughness: .26 }), 'accent')
+    // 'glass' until the shared 'canopy' role reaches trunk; the force field takes the accent colour.
+    this.canopy = setRole(new THREE.MeshStandardMaterial({ color: design.accent, metalness: .65, roughness: .18 }), 'glass')
+    this.canopy.name = 'Cockpit'; this.canopy.userData.separate = true
+    // Additive glow for the nozzle throats and hover ports; becomes the shared 'glow' role when it lands.
     this.glow = new THREE.MeshBasicMaterial({ color: new THREE.Color(design.accent).multiplyScalar(1.3), transparent: true, opacity: .8, blending: THREE.AdditiveBlending, depthWrite: false })
     this.materials = {
       paint: this.paint,
-      chrome: military ? new THREE.MeshPhysicalMaterial({ color: 0x7d858f, metalness: 1, roughness: .32 }) : new THREE.MeshPhysicalMaterial({ color: 0xe9edf2, metalness: 1, roughness: .07 }),
-      glass: new THREE.MeshPhysicalMaterial({ color: 0x050608, metalness: .7, roughness: .04, clearcoat: 1, clearcoatRoughness: .02 }),
-      dark: new THREE.MeshStandardMaterial({ color: 0x0b0c0f, metalness: .4, roughness: .55 }),
+      // Faceted wings and fins carry flat normals in their geometry, so they share the paint.
+      panel: this.paint,
+      accent: this.accent,
+      chrome: setRole(new THREE.MeshStandardMaterial({ color: 0xe9edf2, metalness: 1, roughness: .14 }), 'chrome'),
+      glass: this.canopy,
+      // Matte dark surfaces: intake mouths, nozzle walls, gear skids. Trim keeps its own numbers.
+      dark: setRole(new THREE.MeshStandardMaterial({ color: 0x0b0c0f, metalness: .4, roughness: .55 }), 'trim'),
       glow: this.glow,
-      panel: this.panel,
-      // Squadron colour on tips and fins, where the candy designs carry chrome.
-      accent: new THREE.MeshStandardMaterial({ color: design.accent, metalness: .2, roughness: .55, flatShading: military }),
+      // Cockpit interior: matte, dark, its own numbers as the trim role allows.
+      trim: setRole(new THREE.MeshStandardMaterial({ color: 0x1b1e24, metalness: .15, roughness: .8 }), 'trim'),
     }
     const b = new Builder(detail, design.hard ?? false); design.build(b)
+    const pieces = b.pieces
     this.nozzles = b.nozzles; this.hover = b.hover
+    if (b.eye) { this.ridePosition = new THREE.Object3D(); this.ridePosition.position.set(...b.eye); this.object.add(this.ridePosition); this.clearance = b.cockpitClearance() }
     for (const mat of Object.keys(this.materials) as Mat[]) {
-      const parts = b.pieces.filter(p => p.mat === mat).map(p => p.geometry); if (!parts.length) continue
-      const merged = mergeGeometries(parts); parts.forEach(g => g.dispose()); this.geometries.push(merged)
+      const parts = pieces.filter(p => p.mat === mat).map(p => p.geometry); if (!parts.length) continue
+      const merged = this.merge(parts)
       const mesh = new THREE.Mesh(merged, this.materials[mat]); mesh.name = `jet-${mat}`; mesh.castShadow = mat !== 'glow'; mesh.receiveShadow = mat !== 'glow'
       this.object.add(mesh)
     }
@@ -75,7 +82,7 @@ export class NextJet {
       // toward the exit; the top and bottom pair hinge for pitch, the side pair for yaw.
       const { y, z, halfWidth, halfHeight } = b.gimbal, length = .34, arc = 82 * Math.PI / 180
       this.thruster.position.set(0, y, z); this.object.add(this.thruster)
-      this.petal = (this.materials.chrome as THREE.MeshPhysicalMaterial).clone(); this.petal.side = THREE.DoubleSide
+      this.petal = (this.materials.chrome as THREE.MeshStandardMaterial).clone(); this.petal.side = THREE.DoubleSide
       const petal = (centre: number, px: number, py: number, axis: 'x' | 'y') => {
         const group = new THREE.Group(); group.position.set(px, py, 0); this.thruster.add(group)
         // A slice of a cone, opened out along +Z from the lip and shaped to the nozzle's outline.
@@ -93,6 +100,22 @@ export class NextJet {
   }
 
   private own<T extends THREE.BufferGeometry>(g: T): T { this.geometries.push(g); return g }
+
+  /** One geometry per material. Faceted parts are unindexed, so a mixed set is unindexed whole. */
+  private merge(parts: THREE.BufferGeometry[]): THREE.BufferGeometry {
+    const mixed = parts.some(g => !g.index) && parts.some(g => g.index)
+    const list = mixed ? parts.map(g => g.index ? g.toNonIndexed() : g) : parts
+    const merged = mergeGeometries(list); new Set([...parts, ...list]).forEach(g => g.dispose())
+    return this.own(merged)
+  }
+
+  /**
+   * Hand the materials to the shared showroom shading. Call once the jet is in a scene. Until
+   * then, and at shading tier 0, the plain tagged materials show.
+   */
+  showroom(): void {
+    this.detachShowroom ??= applyShowroom(this.object, root => { addNightReadability(root); addLavaGlow(root) })
+  }
 
   private buildLeg(spec: Leg): BuiltLeg {
     const [hx, hy, hz] = spec.hinge, total = hy - (GROUND_Y + .042), upper = total * .62, travel = total - upper
@@ -175,11 +198,12 @@ export class NextJet {
   setThrottle(amount: number): void { this.glow.opacity = .2 + .6 * clamp01(amount) }
 
   setColors(paint: THREE.ColorRepresentation, accent: THREE.ColorRepresentation): void {
-    this.paint.color.set(paint); this.panel.color.set(paint); this.glow.color.set(accent).multiplyScalar(1.3)
+    this.paint.color.set(paint); this.accent.color.set(accent); this.canopy.color.set(accent); this.glow.color.set(accent).multiplyScalar(1.3)
   }
 
   dispose(): void {
-    this.geometries.forEach(g => g.dispose()); this.flake.dispose()
-    Object.values(this.materials).forEach(m => m.dispose()); this.petal?.dispose()
+    this.detachShowroom?.()
+    this.geometries.forEach(g => g.dispose())
+    new Set(Object.values(this.materials)).forEach(m => m.dispose()); this.petal?.dispose()
   }
 }

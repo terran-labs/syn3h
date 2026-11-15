@@ -853,6 +853,40 @@ describe('Room rejoin as the same player (game.rejoin)', () => {
     expect([host.id, b.id]).not.toContain(c.id)
   })
 
+  it('after hibernation, connected players take their places: nobody is listed twice', () => {
+    let stored = room.snapshot()
+    room = new Room('test', { now: () => clock, onPersist: (s) => { stored = s } })
+    const host = join('Host', on, { resume: SECRET_A })
+    const b = join('B', {}, { resume: SECRET_B })
+    send(host.peer, { type: 'lock', locked: true })
+    const infoHost = room.info(host.peer)!
+    const infoB = room.info(b.peer)!
+    // The object hibernates and wakes: a new Room, restored, then the live sockets adopted
+    // with the info and secret kept in their attachments.
+    clock += 20_000
+    room = new Room('test', { now: () => clock, onPersist: (s) => { stored = s } })
+    room.restore(stored)
+    expect(room.heldCount).toBe(2)
+    const hostPeer = new FakePeer()
+    const bPeer = new FakePeer()
+    room.adopt(hostPeer, infoHost, SECRET_A)
+    room.adopt(bPeer, infoB, SECRET_B)
+    expect(room.heldCount).toBe(0)
+    expect(room.playerCount).toBe(2)
+    // The host drops and returns: still the host, and the list has exactly two players.
+    room.disconnect(hostPeer)
+    expect(room.heldCount).toBe(1)
+    const back = join('Host', {}, { resume: SECRET_A })
+    expect(back.id).toBe(infoHost.id)
+    expect(back.peer.last('welcome')!.players.map((p) => p.id).sort()).toEqual([infoHost.id, infoB.id].sort())
+    expect(back.peer.last('welcome')!.game).toMatchObject({ host: infoHost.id, locked: true })
+    expect(bPeer.all('leave')).toEqual([])
+    // Thirty seconds later nothing lingers.
+    for (let t = 0; t < 35; t++) { clock += 1000; room.receive(bPeer, state([0, 0, 0])); room.receive(back.peer, state([1, 0, 0])) }
+    expect(room.heldCount).toBe(0)
+    expect(room.playerCount).toBe(2)
+  })
+
   it('does not hold places from a roster older than the grace time', () => {
     let stored = room.snapshot()
     room = new Room('test', { now: () => clock, onPersist: (s) => { stored = s } })

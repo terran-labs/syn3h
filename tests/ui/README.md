@@ -491,3 +491,27 @@ and chase. Escape releases the cursor, which the browser does itself, so the fir
 releases and the next opens the menu; opening the menu any other way releases it too.
 Touch devices never capture. `tools/heavy.sh node tests/ui/cursor.mjs` checks all of it.
 Aiming a beam where the camera looks is the Weapons lane's.
+
+## World inspector and focus display
+
+`src/ui/inspector/`: the Create button opens five frosted cards (World, Sky & weather, Game,
+Vehicles, You). Each card is an accordion of groups; every registered property is a row with
+its guardrails and a detail pane. Copy world and Paste world move the shared values as JSON
+(`{ "syn3h": "world", "version": 1, "values": { id: value } }`); pasted numbers are clamped
+to their limits and personal settings are left out unless the You section is pasted.
+
+While the cursor is captured the cards, HUD and minimap fade out and the focus display fades
+in. Three settings in You, Interface choose the look: Focus display (Arc, Horizon,
+Telemetry), Reticle (Dot, Ring, Bracket) and Glass (Clear, Frosted, Deep).
+
+On touch the cards start closed, and while open the minimap and drive controls step aside.
+
+Checks (dev servers on 5187 and 8797):
+
+- `npx vitest run tests/ui/inspector.test.ts`: tree, limits, JSON round trip, clamping.
+- `node tests/ui/inspector.mjs`: Chrome; cards, accordion, search, copy, paste, glass,
+  pointer lock fade and the three focus looks. Screenshots in `artifacts/inspector/`.
+- `node tests/ui/inspector-touch.mjs`: WebKit at iPad, iPhone and iPhone landscape sizes.
+
+Known limits: about 35 of the 218 properties have a written description, the rest show
+their limits only; switching vehicle reloads the page and respawns you.

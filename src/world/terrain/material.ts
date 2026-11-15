@@ -17,6 +17,25 @@ import {
 } from 'three/tsl'
 import { ROAD_WIDTH } from './roads'
 import { applyCurve } from '../curve'
+import { paletteFor } from './palettes'
+import { LOOK_ALPINE, terrainRoadStyle } from './settings'
+import { defineParam, params } from '../../../shared/params'
+
+/**
+ * Rich surface: four personal sliders, all 0 by default, which keeps the plain ground and
+ * builds none of the extra shader. Any of them above 0 rebuilds the material with the
+ * extra detail in it, so the cost is only paid by players who turn it on.
+ */
+const R = { group: 'Terrain', scope: 'client', default: 0, min: 0, max: 1, step: 0.01 } as const
+/** Centimetre to decimetre grain in the normal near the camera, gone by 60 m; ripples on sand. */
+export const terrainDetailNormal = defineParam({ ...R, id: 'terrain.detailNormal', label: 'Ground: close-up grain' })
+/** Roughness by zone (rock, ash, road) and glitter on sand and snow. */
+export const terrainSurfaceResponse = defineParam({ ...R, id: 'terrain.surfaceResponse', label: 'Ground: surface response and glitter' })
+/** Hue and value drift every few hundred metres. */
+export const terrainMacroColour = defineParam({ ...R, id: 'terrain.macroColour', label: 'Ground: large colour variation' })
+/** One accent colour per planet, used sparingly. */
+export const terrainAccent = defineParam({ ...R, id: 'terrain.accent', label: 'Ground: accent colour' })
+const RICH = [terrainDetailNormal, terrainSurfaceResponse, terrainMacroColour, terrainAccent]
 
 export interface TerrainMaterial {
   material: THREE.MeshStandardNodeMaterial
@@ -25,44 +44,31 @@ export interface TerrainMaterial {
   /** Height of the sea surface: the shore is scorched and glows just above it. */
   setSea(level: number): void
   /**
-   * Recolour the ground for a kind of world. `lavaSea` and `lavaLake` say whether those glow
-   * and scorch; `snowHeight` is where snow starts (pass a huge number for none).
+   * Recolour the ground for a look (an index into palettes.ts). `lavaSea` and `lavaLake` say
+   * whether those glow and scorch; `snowHeight` is where snow starts (a huge number for none).
    */
-  setLook(kind: number, lavaSea: boolean, lavaLake: boolean, snowHeight: number): void
+  setLook(look: number, lavaSea: boolean, lavaLake: boolean, snowHeight: number): void
   /** Where the lava lake is, so the crater and its crown can glow. A radius of 0 turns it off. */
   setLake(x: number, z: number, radius: number, surface: number): void
+  /**
+   * The ground's colour at world position `at`, as a node: the same palette, noise, shore,
+   * tundra and snow the terrain shows, without roads, grain or anything camera dependent.
+   * `normalY` is the ground normal's y there and `rockMask` the terrain's volcanic mask.
+   * It follows setLook, setSea and the snow line, so anything coloured with it recolours
+   * with the ground.
+   */
+  groundColour(at: GroundNode, normalY: GroundNode, rockMask: GroundNode): GroundNode
+  /**
+   * Shade the ground under plants: `fn` receives the world position and the ground colour
+   * (before roads) and returns the colour to use. Pass null to remove it. Rebuilds the
+   * terrain's colour, so call it once at start, not every frame.
+   */
+  setCoverShade(fn: ((at: GroundNode, col: GroundNode) => GroundNode) | null): void
 }
 
-interface Palette {
-  groundDark: number; groundLight: number; rockDark: number; rockLight: number
-  /** The darker rock of the centre feature and the mountain tops. */
-  darkRockA: number; darkRockB: number
-  /** Ground at the waterline (overridden to scorched black round a lava sea). */
-  shore: number
-  roadDark: number; roadLight: number; roadLine: number
-}
-
-/** Ground colours by kind of world: 0 volcanic, 1 desert, 2 alpine. */
-const PALETTES: Palette[] = [
-  // Volcanic: saturated rust and basalt, the colour of Tholus and the Mars Explorer worlds.
-  {
-    groundDark: 0xa5351a, groundLight: 0xd9602c, rockDark: 0x7a2a14, rockLight: 0xa8431f,
-    darkRockA: 0x241715, darkRockB: 0x3f241c, shore: 0xc28a5a,
-    roadDark: 0x5e2d1d, roadLight: 0x74402b, roadLine: 0xc79670,
-  },
-  // Desert: gold sand, banded orange sandstone, a pale beach.
-  {
-    groundDark: 0xc98a3c, groundLight: 0xf0c878, rockDark: 0x9a4a22, rockLight: 0xd08040,
-    darkRockA: 0x8a4a26, darkRockB: 0xb86a34, shore: 0xf2deb0,
-    roadDark: 0x7a5230, roadLight: 0x93683f, roadLine: 0xf6e3b4,
-  },
-  // Alpine: meadow green, grey granite, shingle at the water.
-  {
-    groundDark: 0x3f5f26, groundLight: 0x86a04a, rockDark: 0x55555a, rockLight: 0x8a8782,
-    darkRockA: 0x3e4044, darkRockB: 0x63625f, shore: 0xb8b29c,
-    roadDark: 0x5a4a38, roadLight: 0x6e5c46, roadLine: 0xd8cfb8,
-  },
-]
+/** A TSL node. Left loose because TSL's own node types do not compose across calls. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type GroundNode = any
 
 export function createTerrainMaterial(): TerrainMaterial {
   const summit = uniform(200)
@@ -72,13 +78,7 @@ export function createTerrainMaterial(): TerrainMaterial {
   const p = positionWorld
   const volcanic = attribute<'float'>('volcanic', 'float')
 
-  const huge = mx_noise_float(p.mul(0.0025)) // ~400 m regions
-  const big = mx_noise_float(p.mul(0.012)) // ~80 m patches
-  const mid = mx_noise_float(p.mul(0.09)) // ~10 m
   const fine = mx_noise_float(p.mul(0.7)) // ~1.5 m grain
-
-  // Steepness from the geometry normal: 0 flat, 1 vertical.
-  const slope = float(1).sub(normalGeometry.y)
 
   // The palette is a set of uniforms, so one material serves every kind of world and a
   // change of kind recolours the ground without rebuilding anything. See PALETTES.
@@ -91,44 +91,90 @@ export function createTerrainMaterial(): TerrainMaterial {
   const glow = uniform(1)
   // Snow lies above this height on ground that is not too steep. Far above the world: off.
   const snowLine = uniform(1e6)
-  // 1 on alpine worlds, 0 elsewhere.
+  // 1 on the alpine look, 0 elsewhere.
   const alpine = uniform(0)
-  const dustDark = pal.groundDark
-  const dustLight = pal.groundLight
-  // Mostly large soft regions; the 80 m patches alone read as leopard spots from the air.
-  let col = mix(dustDark, dustLight, smoothstep(-1.1, 1.1, huge.mul(0.9).add(big.mul(0.45)).add(mid.mul(0.25))))
+  const snowColour = U(0xeef2f6)
+  // Wet ice and volcanic glass are smoother than dust.
+  const gloss = uniform(0)
+  // Glowing seams in the rock; black turns them off.
+  const seam = U(0)
+  // Rich surface (see the sliders above). `rich` says whether the extra shader is built.
+  let rich = RICH.some((r) => r.value > 0)
+  const uDetail = uniform(terrainDetailNormal.value)
+  const uResponse = uniform(terrainSurfaceResponse.value)
+  const uMacro = uniform(terrainMacroColour.value)
+  const uAccent = uniform(terrainAccent.value)
+  const accent = U(0)
+  // x: 1 when this look has an accent; y: 1 for a shore margin, 0 for cliff streaks; z: sand glitter.
+  const accentMode = uniform(new THREE.Vector3(0, 0, 0))
 
-  // Layered sandstone on cliffs: bands in altitude, wobbled so they are not ruler straight.
-  // Kept faint and broken up by noise: strong regular bands read as turned wood.
-  const strata = sin(p.y.mul(0.3).add(big.mul(7)).add(mid.mul(2.5))).mul(0.5).add(0.5)
-  const rock = mix(pal.rockDark, pal.rockLight, strata.mul(0.22).add(mid.mul(0.45)).add(0.35))
-  const cliff = smoothstep(0.16, 0.38, slope.add(mid.mul(0.05)))
-  col = mix(col, rock, cliff)
+  /**
+   * The ground's colour at a world position, from the palette and three scales of noise:
+   * dust, cliff rock, dark rock, shore, alpine tundra and snow. No roads, grain, bump or
+   * anything that depends on the camera, so it can be evaluated anywhere, for example at
+   * the foot of a plant in a vertex shader. The terrain's own colour is built from this
+   * same function, so the two cannot drift apart.
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const ground = (at: any, normalY: any, rockMask: any) => {
+    const huge = mx_noise_float(at.mul(0.0025)) // ~400 m regions
+    const big = mx_noise_float(at.mul(0.012)) // ~80 m patches
+    const mid = mx_noise_float(at.mul(0.09)) // ~10 m
+    // Steepness: 0 flat, 1 vertical.
+    const slope = float(1).sub(normalY)
+    // Mostly large soft regions; the 80 m patches alone read as leopard spots from the air.
+    let col = mix(pal.groundDark, pal.groundLight, smoothstep(-1.1, 1.1, huge.mul(0.9).add(big.mul(0.45)).add(mid.mul(0.25))))
 
-  // Basalt on volcanoes: darkest where steep, dusted where flat.
-  const basalt = mix(pal.darkRockA, pal.darkRockB, smoothstep(-0.8, 0.8, big.mul(0.7).add(mid.mul(0.3))))
-  const basaltAmount = volcanic.mul(float(0.5).add(smoothstep(0.03, 0.2, slope).mul(0.4)))
-  col = mix(col, basalt, basaltAmount.clamp(0, 1))
+    // Layered sandstone on cliffs: bands in altitude, wobbled so they are not ruler straight.
+    // Kept faint and broken up by noise: strong regular bands read as turned wood.
+    const strata = sin(at.y.mul(0.3).add(big.mul(7)).add(mid.mul(2.5))).mul(0.5).add(0.5)
+    const rock = mix(pal.rockDark, pal.rockLight, strata.mul(0.22).add(mid.mul(0.45)).add(0.35))
+    const cliff = smoothstep(0.16, 0.38, slope.add(mid.mul(0.05)))
+    col = mix(col, rock, cliff)
 
-  // Scorched shore: ground just above the liquid is burnt black, and the last metre glows.
+    // Basalt on volcanoes: darkest where steep, dusted where flat.
+    const basalt = mix(pal.darkRockA, pal.darkRockB, smoothstep(-0.8, 0.8, big.mul(0.7).add(mid.mul(0.3))))
+    const basaltAmount = rockMask.mul(float(0.5).add(smoothstep(0.03, 0.2, slope).mul(0.4)))
+    col = mix(col, basalt, basaltAmount.clamp(0, 1))
+
+    // Scorched shore: ground just above the liquid is burnt black round lava, pale by water.
+    col = mix(col, pal.shore, smoothstep(8, 2, at.y.sub(sea)).mul(0.9))
+
+    if (rich) {
+      // Large drift in value and in warmth, so an island is not one swatch from the air.
+      const m1 = mx_noise_float(at.mul(0.0019).add(31))
+      const m2 = mx_noise_float(at.mul(0.0041).add(77))
+      const warm = m2.mul(0.07).mul(uMacro)
+      col = col.mul(m1.mul(0.1).mul(uMacro).add(1)).mul(vec3(float(1).add(warm), 1, float(1).sub(warm)))
+      // The planet's one accent: mineral streaks running down the cliffs (stretched in
+      // height), or a margin of growth just above the waterline. Patchy at 150 m so it is
+      // found, not everywhere.
+      const where = smoothstep(0.0, 0.45, mx_noise_float(at.mul(0.006).add(3)))
+      const streak = smoothstep(0.2, 0.65, mx_noise_float(vec3(at.x.mul(0.11), at.y.mul(0.015), at.z.mul(0.11)).add(9))).mul(cliff)
+      const up = at.y.sub(sea)
+      const margin = smoothstep(1.5, 4, up).mul(smoothstep(16, 7, up)).mul(float(1).sub(cliff)).mul(smoothstep(-0.3, 0.3, mid))
+      col = mix(col, accent, mix(streak, margin, accentMode.y).mul(where).mul(accentMode.x).mul(uAccent).mul(0.6))
+    }
+
+    // Alpine ground changes with height: meadow, then thin tan tundra and scree, well
+    // below the snow. Off on other worlds.
+    const zone = smoothstep(snowLine.mul(0.45), snowLine.mul(0.9), at.y.add(big.mul(18)))
+    const tundra = mix(color(0x8a8452), color(0x6f6a5c), smoothstep(-0.4, 0.6, mid))
+    col = mix(col, tundra, zone.mul(float(1).sub(cliff)).mul(alpine))
+
+    // Snow: above the snow line, thinning on steep faces, with a ragged lower edge.
+    const snow = smoothstep(snowLine, snowLine.add(45), at.y.add(big.mul(22)).add(mid.mul(6)))
+      .mul(smoothstep(0.5, 0.22, slope))
+    col = mix(col, snowColour, snow)
+    return { col, cliff, mid, big, zone, snow, rockAmount: basaltAmount.clamp(0, 1) }
+  }
+
+  let base = ground(p, normalGeometry.y, volcanic)
+  const { cliff, mid, big, zone, snow: snowAmount, rockAmount } = base
   const aboveSea = p.y.sub(sea)
-  col = mix(col, pal.shore, smoothstep(8, 2, aboveSea).mul(0.9))
-
-  // Alpine ground changes with height: meadow, with drifts of wild flowers, then thin tan
-  // tundra and scree as the trees give out, well below the snow. Off on other worlds.
-  const zone = smoothstep(snowLine.mul(0.45), snowLine.mul(0.9), p.y.add(big.mul(18)))
-  const tundra = mix(color(0x8a8452), color(0x6f6a5c), smoothstep(-0.4, 0.6, mid))
-  col = mix(col, tundra, zone.mul(float(1).sub(cliff)).mul(alpine))
-  const patch = smoothstep(0.25, 0.6, mx_noise_float(p.mul(0.021).add(40)))
-  const petal = smoothstep(0.35, 0.75, mx_noise_float(p.mul(1.9)))
-  const bloom = mix(color(0xe8c93a), color(0xb06ad0), smoothstep(-0.2, 0.2, mx_noise_float(p.mul(0.008).add(90))))
-  const nearGround = smoothstep(160, 30, p.sub(cameraPosition).length())
-  col = mix(col, bloom, patch.mul(petal).mul(nearGround).mul(float(1).sub(zone)).mul(float(1).sub(cliff)).mul(alpine).mul(0.7))
-
-  // Snow: above the snow line, thinning on steep faces, with a ragged lower edge.
-  const snow = smoothstep(snowLine, snowLine.add(45), p.y.add(big.mul(22)).add(mid.mul(6)))
-    .mul(smoothstep(0.5, 0.22, slope))
-  col = mix(col, color(0xeef2f6), snow)
+  // Set by the ground cover: darkens and tints the ground under dense growth.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let coverShade: ((at: any, col: any) => any) | null = null
 
   // Roads: packed darker surface with faint lighter edge lines, from the per-vertex distance
   // to the nearest centreline. Distance interpolates almost linearly across a cell, so the
@@ -138,17 +184,47 @@ export function createTerrainMaterial(): TerrainMaterial {
   // Faded out by 500 m: coarser levels of detail sample the distance too sparsely to draw
   // an 11 m road, and at that range it is a few pixels wide anyway.
   const roadFade = smoothstep(500, 280, p.sub(cameraPosition).length())
-  const paved = smoothstep(edge + 0.35, edge - 0.35, roadDist).mul(roadFade)
-  const packed = mix(pal.roadDark, pal.roadLight, smoothstep(-0.6, 0.6, mid.add(fine.mul(0.3))))
-  col = mix(col, packed, paved.mul(0.92))
-  const line = smoothstep(0.32, 0.08, roadDist.sub(edge - 0.9).abs())
-  col = mix(col, pal.roadLine, line.mul(paved).mul(0.45))
+  // Road style, from the palette or the slider. `track` is 0 for a made road with crisp
+  // edges and lines, 1 for a worn track; `wear` is how bare the track's band is.
+  const track = uniform(0)
+  const wear = uniform(1)
+  const made = smoothstep(edge + 0.35, edge - 0.35, roadDist)
+  // A track is narrower than the bed it runs on, and its edge wanders by a metre or so
+  // with the ground's own noise, so it has no boundary to read as a ruled line.
+  const ragged = roadDist.add(mx_noise_float(p.mul(0.09)).mul(1.3)).add(fine.mul(0.45))
+  const worn = smoothstep(4.4, 1.6, ragged)
+  // Two wheel ruts either side of the centreline (the distance is unsigned, so one term
+  // draws both), wobbling a little, with a less worn strip between them.
+  const rut = smoothstep(0.62, 0.12, roadDist.sub(1.3).add(mx_noise_float(p.mul(0.21)).mul(0.14)).abs())
+  const crown = smoothstep(0.75, 0.2, roadDist)
+  const trackAmount = worn.mul(wear).mul(float(1).sub(crown.mul(0.55))).mul(0.82).max(rut.mul(0.95)).mul(smoothstep(5.2, 3.6, ragged))
+  // What the rest of the material treats as road: where plants, glitter and seams stay off.
+  const paved = mix(made, trackAmount, track).mul(roadFade)
 
-  // Grain, so close ground never looks like flat paint.
-  col = col.mul(fine.mul(0.08).add(0.96))
+  /** The terrain's full colour: the shared ground colour, then what only the terrain has. */
+  const buildColour = () => {
+    let col = base.col
+    // Drifts of wild flowers painted into the alpine meadow, near the camera.
+    const patch = smoothstep(0.25, 0.6, mx_noise_float(p.mul(0.021).add(40)))
+    const petal = smoothstep(0.35, 0.75, mx_noise_float(p.mul(1.9)))
+    const bloom = mix(color(0xe8c93a), color(0xb06ad0), smoothstep(-0.2, 0.2, mx_noise_float(p.mul(0.008).add(90))))
+    const nearGround = smoothstep(160, 30, p.sub(cameraPosition).length())
+    col = mix(col, bloom, patch.mul(petal).mul(nearGround).mul(float(1).sub(zone)).mul(float(1).sub(cliff)).mul(alpine).mul(0.7))
+    if (coverShade) col = coverShade(p, col)
+    const packed = mix(pal.roadDark, pal.roadLight, smoothstep(-0.6, 0.6, mid.add(fine.mul(0.3))))
+    // A made road is its own surface. A track is the ground itself, compacted: the ground
+    // colour darkened and pulled part of the way to the road colour, so it belongs to
+    // whatever it crosses.
+    const compacted = mix(col.mul(0.62), packed, 0.55)
+    col = mix(col, mix(packed, compacted, track), paved.mul(mix(float(0.92), float(1), track)))
+    const line = smoothstep(0.32, 0.08, roadDist.sub(edge - 0.9).abs())
+    col = mix(col, pal.roadLine, line.mul(paved).mul(0.45).mul(float(1).sub(track)))
+    // Grain, so close ground never looks like flat paint.
+    return col.mul(fine.mul(0.08).add(0.96))
+  }
 
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.95, metalness: 0 })
-  material.colorNode = col
+  material.colorNode = buildColour()
   // Heat from the sea lights the waterline, so the coast reads at night and from the air.
   const shoreGlow = smoothstep(1.4, -1.5, aboveSea).mul(0.7)
   // Light from the lava lake on the crater walls and the rock crown round it. Not a real
@@ -160,15 +236,44 @@ export function createTerrainMaterial(): TerrainMaterial {
   const reach = smoothstep(lake.z.mul(2.6), lake.z.mul(0.9), lakeDist)
   const rise = smoothstep(lake.w.add(95), lake.w.add(4), p.y).mul(smoothstep(lake.w.sub(6), lake.w.add(1), p.y))
   const lakeGlow = reach.mul(rise).mul(facing.mul(0.85).add(0.15)).mul(0.55)
-  material.emissiveNode = vec3(1.0, 0.2, 0.02).mul(shoreGlow.add(lakeGlow)).mul(glow)
-  material.roughnessNode = max(float(0.78), float(0.97).sub(cliff.mul(0.1)).sub(paved.mul(0.15)))
+  // Seams: thin bright veins along a contour of the patch noise, broken up by a second
+  // contour so they come and go instead of drawing closed loops.
+  const vein = smoothstep(0.014, 0.0, big.add(mid.mul(0.12)).abs())
+    .mul(smoothstep(-0.25, 0.35, mx_noise_float(p.mul(0.004).add(17))))
+    .mul(float(1).sub(paved))
+  material.emissiveNode = vec3(1.0, 0.2, 0.02).mul(shoreGlow.add(lakeGlow)).mul(glow).add(seam.mul(vein).mul(0.55))
+  const camDist = p.sub(cameraPosition).length()
+  // Glitter: about one grain in fifteen, in 2 cm cells, on loose sand and on snow. Each
+  // grain is a tiny mirror with its own tilt, so the real sun lights it and nothing
+  // sparkles at night. Gone by 35 m, where grains are smaller than a pixel and would shimmer.
+  const grain = p.mul(45).floor().mul(0.731)
+  const loose = max(snowAmount, accentMode.z.mul(float(1).sub(cliff)).mul(float(1).sub(rockAmount))).mul(float(1).sub(paved))
+  const spark = smoothstep(0.42, 0.5, mx_noise_float(grain.add(0.37))).mul(loose).mul(smoothstep(35, 6, camDist)).mul(uResponse)
+
+  const buildRoughness = () => {
+    const plain = max(float(0.78), float(0.97).sub(cliff.mul(0.1)).sub(paved.mul(0.15).mul(float(1).sub(track))))
+    if (!rich) return plain.sub(gloss)
+    // By zone: dust and ash matt, dark rock smoother and wetter near lava, cliffs between,
+    // packed road a little polished.
+    let zoned = mix(float(0.9), float(0.52), rockAmount).sub(smoothstep(12, 1, aboveSea).mul(glow).mul(0.12))
+    zoned = mix(zoned, float(0.8), cliff.mul(float(1).sub(rockAmount)))
+    zoned = mix(zoned, float(0.7), paved)
+    return mix(mix(plain, zoned, uResponse), float(0.1), spark).sub(gloss).max(0.08)
+  }
   // Bump from the same world noise: metre-scale relief the 4 m grid cannot hold. Three's
   // bumpMap() only perturbs textures (it re-samples at offset UVs), so this is Mikkelsen's
   // surface gradient method written out, with unnormalised screen derivatives so the
   // relief is in real metres. It fades with distance, where the fine noise would shimmer.
-  material.normalNode = Fn(() => {
-    const fade = smoothstep(220, 40, p.sub(cameraPosition).length())
-    const height = mid.mul(0.5).add(fine.mul(0.1)).mul(fade)
+  const buildNormal = () => Fn(() => {
+    const fade = smoothstep(220, 40, camDist)
+    let height = mid.mul(0.5).add(fine.mul(0.1)).mul(fade)
+    if (rich) {
+      // Grain from 30 cm down to 4 cm, near the camera only.
+      const close = mx_noise_float(p.mul(3.1)).mul(0.05).add(mx_noise_float(p.mul(8.7)).mul(0.02)).add(mx_noise_float(p.mul(23)).mul(0.008))
+      // Wind ripples on loose sand, half a metre apart, bent by the 10 m noise.
+      const ripple = sin(p.x.mul(9.2).add(p.z.mul(7.6)).add(mid.mul(14)).add(mx_noise_float(p.mul(0.35)).mul(5))).mul(0.007).mul(accentMode.z).mul(float(1).sub(cliff)).mul(float(1).sub(rockAmount))
+      height = height.add(close.add(ripple.mul(float(1).sub(paved))).mul(smoothstep(60, 6, camDist)).mul(uDetail))
+    }
     const dH = vec2(height.dFdx(), height.dFdy())
     const sx = positionView.dFdx()
     const sy = positionView.dFdy()
@@ -177,26 +282,72 @@ export function createTerrainMaterial(): TerrainMaterial {
     const r2 = n.cross(sx)
     const det = sx.dot(r1)
     const grad = det.sign().mul(r1.mul(dH.x).add(r2.mul(dH.y)))
-    return det.abs().mul(n).sub(grad).normalize()
+    const out = det.abs().mul(n).sub(grad).normalize()
+    if (!rich) return out
+    const tilt = vec3(mx_noise_float(grain.add(5.1)), mx_noise_float(grain.add(11.7)), 0)
+    return out.add(tilt.mul(spark).mul(0.7)).normalize()
   })()
+  material.roughnessNode = buildRoughness()
+  material.normalNode = buildNormal()
+  /** Rebuild every node that differs between the plain and the rich surface. */
+  const rebuild = () => {
+    base = ground(p, normalGeometry.y, volcanic)
+    material.colorNode = buildColour()
+    material.roughnessNode = buildRoughness()
+    material.normalNode = buildNormal()
+    material.needsUpdate = true
+  }
+  params.onChange((id) => {
+    if (!RICH.some((r) => r.def.id === id)) return
+    uDetail.value = terrainDetailNormal.value
+    uResponse.value = terrainSurfaceResponse.value
+    uMacro.value = terrainMacroColour.value
+    uAccent.value = terrainAccent.value
+    const on = RICH.some((r) => r.value > 0)
+    if (on !== rich) { rich = on; rebuild() }
+  })
   material.name = 'terrain'
   // Planet curve: bends only the drawn position. Every colour above reads positionWorld,
   // which stays flat, so the ground does not recolour as the camera moves.
   applyCurve(material)
+
+  let paletteTrack = 1
+  const applyRoadStyle = () => {
+    const style = terrainRoadStyle.value as number
+    const t = style === 1 ? 0 : style === 2 ? Math.max(paletteTrack, 0.9) : paletteTrack
+    track.value = t > 0 ? 1 : 0
+    wear.value = t
+  }
+  params.onChange((id) => { if (id === terrainRoadStyle.def.id) applyRoadStyle() })
 
   return {
     material,
     setSummit(height) {
       summit.value = Math.max(20, height)
     },
-    setLook(kind, lavaSea, lavaLake, snowHeight) {
-      const c = PALETTES[kind] ?? PALETTES[0]
-      for (const k in pal) pal[k as keyof typeof pal].value.setHex(c[k as keyof Palette])
+    setLook(look, lavaSea, lavaLake, snowHeight) {
+      const c = paletteFor(look)
+      for (const k in pal) pal[k as keyof typeof pal].value.setHex(c[k as keyof typeof pal])
+      snowColour.value.setHex(c.snow)
+      seam.value.setHex(c.seam)
+      accent.value.setHex(c.accent)
+      paletteTrack = c.track
+      applyRoadStyle()
+      accentMode.value.set(c.accent ? 1 : 0, c.accentShore, c.sparkle)
+      gloss.value = c.gloss
       // A lava sea scorches its shore black; water leaves the palette's own beach colour.
       if (lavaSea) pal.shore.value.setHex(0x140a08)
       glow.value = lavaSea || lavaLake ? 1 : 0
       snowLine.value = snowHeight
-      alpine.value = kind === 2 ? 1 : 0
+      alpine.value = look === LOOK_ALPINE ? 1 : 0
+    },
+    groundColour(at, normalY, rockMask) {
+      return ground(at, normalY, rockMask).col
+    },
+    setCoverShade(fn) {
+      coverShade = fn
+      material.colorNode = buildColour()
+      material.needsUpdate = true
     },
     setLake(x, z, radius, surface) {
       lake.value.set(x, z, radius, surface)

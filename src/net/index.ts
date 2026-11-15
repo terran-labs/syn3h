@@ -36,6 +36,8 @@ import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
 import { Lasers } from '../weapons/Lasers'
 import { laserInterval, lasersAllowed } from '../weapons/params'
+import { GearRack } from '../weapons/Gear'
+import { Bungee } from '../weapons/bungee/Bungee'
 import { BoundsGuard, TagMarker } from '../modes/Tag'
 import { gameMode, kothKnockBonus, kothLaserPush, kothRespawnDelay, kothTargetScore, kothZoneRadius } from '../modes/params'
 import { type HillTerrain, computeHillZone } from '../modes/hill'
@@ -50,6 +52,7 @@ import { RemotePlayer } from './RemotePlayer'
 import { type BotMatchInfo, audibleVehicles, bodyAlive, hillHold, liveBots } from './bots'
 import { ShoveQueue, cleanShove, shoveFor } from './shove'
 import { nearestImage, wrapCoord, wrapDistance } from '../../shared/wrap'
+import { setWaterClock } from '../world/water/seaWaves'
 
 /** The slice of GameAudio (src/audio) networking uses. */
 export interface NetAudio {
@@ -164,6 +167,9 @@ export class NetClient implements System {
   readonly clock = new ServerClock()
   readonly conn: Connection
   readonly lasers: Lasers
+  /** Gear in hand (Weapons lane, src/weapons). With only the tag beam allowed, nothing changes. */
+  readonly gear: GearRack
+  readonly bungee: Bungee
   /** Remote players and remote bots, by id. */
   readonly remotes = new Map<number, RemotePlayer>()
   readonly players = new Map<number, PlayerInfo>()
@@ -237,6 +243,25 @@ export class NetClient implements System {
         this.send(victim === this.id ? { type: 'hit', shooter, shot } : { type: 'hit', shooter, shot, victim })
       },
     })
+    // Gear (Weapons lane). The Bungee pulls only vehicles this client simulates.
+    this.gear = new GearRack(game)
+    this.bungee = new Bungee(game, {
+      self: () => this.id,
+      vehicleOf: (id) => this.vehicleOf(id),
+      idOfBody: (h) => this.vehicleIdOfBody(h),
+      owns: (id) => id === this.id || (isBotId(id) && Boolean(this.bots && !this.bots.remote) && !this.remotes.has(id)),
+      lagOf: (id) => this.remotes.get(id)?.delay ?? 0,
+      wrapSize: () => this.wrapSize,
+      now: () => this.clock.now(),
+      inHand: () => this.gear.current === 'bungee',
+      // Positions go on the wire inside the tile, like every other position.
+      send: (cord) => {
+        if (!this.connected) return
+        if (cord.s === 'hook') this.send({ type: 'cord', cord: { ...cord, o: this.canonical(cord.o) } })
+        else if (cord.s === 'on' && cord.at) this.send({ type: 'cord', cord: { ...cord, at: this.canonical(cord.at) } })
+        else this.send({ type: 'cord', cord })
+      },
+    })
     this.marker = new TagMarker(game)
     this.marker.local = player
     this.bounds = new BoundsGuard(player, ctx.terrain)
@@ -287,6 +312,8 @@ export class NetClient implements System {
     const g = this.ctx.game
     g.add(this)
     g.add(this.lasers)
+    g.add(this.gear)
+    g.add(this.bungee)
     g.add(this.marker)
     g.add(this.bounds)
     g.add(this.hill)
@@ -389,7 +416,7 @@ export class NetClient implements System {
 
     // Firing, rate limited (VehicleMe.js 45-66). Works offline too.
     const t = this.ctx.game.time
-    if (this.ctx.game.input.state.fire && lasersAllowed.value && t - this.lastFire >= laserInterval.value) {
+    if (this.ctx.game.input.state.fire && this.gear.current === 'beam' && lasersAllowed.value && t - this.lastFire >= laserInterval.value) {
       this.lastFire = t
       this.fire()
     }
@@ -455,6 +482,7 @@ export class NetClient implements System {
     for (const r of this.remotes.values()) r.reimage(here)
     this.placeHill()
     this.syncBotMatch()
+    this.shareClock()
     this.tags.update([...this.remotes.entries()].map(([id, r]) => ({
       vehicle: r.vehicle,
       name: this.displayName(id),
@@ -545,6 +573,16 @@ export class NetClient implements System {
     return undefined
   }
 
+  /** Id of any vehicle here with this body handle: ours, a remote's, or a bot we simulate. */
+  private vehicleIdOfBody(handle: number): number | null {
+    if (handle === this.ctx.player.body.handle) return this.id
+    for (const [id, r] of this.remotes) if (r.vehicle.body.handle === handle) return id
+    if (this.bots && !this.bots.remote) {
+      for (const [id, bot] of liveBots(this.bots.vehicles, this.ctx.game.world)) if (bot.body.handle === handle) return id
+    }
+    return null
+  }
+
   private judgedId(handle: number): number | null {
     if (handle === this.ctx.player.body.handle) return this.id
     if (this.isHost && this.bots) {
@@ -565,6 +603,21 @@ export class NetClient implements System {
     // Take over: drop our replicas of the old host's bots; our own manager simulates them now.
     for (const [id] of [...this.remotes]) if (isBotId(id)) this.removeRemote(id)
     if (this.bots?.vehicles.length) this.event('You are host: simulating bots')
+  }
+
+  private clockShared = false
+
+  /**
+   * Once our estimate of the room's clock is good (the first ping has come back), hand it to
+   * everything that must look the same on every screen at the same moment: the sea's waves
+   * today. Until then, and in single player, those run on the game's own time. The switch
+   * happens once per page; the sea steps to the shared time at that moment. The clock keeps
+   * running through a dropout, so nothing steps again on reconnecting.
+   */
+  private shareClock(): void {
+    if (this.clockShared || !this.clock.synced) return
+    this.clockShared = true
+    setWaterClock(() => this.clock.now())
   }
 
   private botMatchKey = 'unset'
@@ -772,6 +825,7 @@ export class NetClient implements System {
     const r = this.remotes.get(id)
     if (!r) return
     this.remotes.delete(id)
+    this.bungee.forget(id)
     r.disposeEffects()
     if (r.owned) this.ctx.game.remove(r.vehicle)
   }
@@ -932,6 +986,9 @@ export class NetClient implements System {
           const [x, y, z] = msg.shot.o
           this.ctx.audio?.play('laserShot', { x, y, z })
         }
+        break
+      case 'cord':
+        if (this.players.has(msg.from)) this.bungee.applyRemote(msg.from, msg.cord, this.clock.now() - msg.t)
         break
       case 'shove': {
         const push = cleanShove(msg.push)

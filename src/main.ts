@@ -15,9 +15,12 @@ import { readVehicleChoice, saveVehicleChoice } from './ui/VehicleChoice'
 import { type VehicleKind, createVehicle } from './vehicles'
 import { attachVehicleEffects } from './vehicles/effects'
 import { createEnvironment } from './world/Environment'
+import { createPostChain } from './fx/post/PostChain'
 import { createTerrain } from './world'
 import * as planets from './world/planets'
 import { applyPlanet, decodeWorld } from './world/planets'
+import { WaterEffects } from './world/water/WaterEffects'
+import { WeatherSystem, applyWeatherQuery, setWeatherClock } from './world/weather'
 
 async function main(): Promise<void> {
   const canvas = document.getElementById('game') as HTMLCanvasElement
@@ -43,7 +46,9 @@ async function main(): Promise<void> {
   const terrain = createTerrain(game, worldSeed.value)
   // Graphics levels thin out distant terrain on weaker devices.
   game.quality.attachTerrain(terrain)
-  game.add(createEnvironment(game, terrain))
+  const environment = game.add(createEnvironment(game, terrain))
+  // Post effects (src/fx/post): off by default; ?post=1 or Settings > Advanced > Post.
+  game.setPostChain(createPostChain(game, environment, () => player))
 
   const spawn = terrain.spawnPoint(0)
   // The vehicle comes from ?vehicle=..., else the choice saved by the lobby, else the Syn3h buggy.
@@ -70,6 +75,10 @@ async function main(): Promise<void> {
   camera.setVehicle(player)
   // A wrapping world carries the player, the camera and the bots across its seam.
   ;(terrain as { followSeam?: (f: unknown) => void }).followSeam?.({ player, camera, others: () => bots.vehicles })
+  // Wind: a force on the vehicles this client owns (the player and its bots), never on remote
+  // copies, whose owners apply it themselves. `?weather=0.5` sets the storminess for a look.
+  game.add(new WeatherSystem(() => terrain, () => [player, ...bots.vehicles]))
+  applyWeatherQuery(location.search)
   // The round planet is drawn relative to the camera: place it after the camera has moved.
   game.add({ update: () => (terrain as { afterCamera?: () => void }).afterCamera?.() })
 
@@ -112,6 +121,9 @@ async function main(): Promise<void> {
       setMatchState: (m) => shell.setMatchState(m),
       names: (seed, kind) => generateName(seed, kind),
     })
+    // Every client reads the wind from the room's clock, so gusts agree between players.
+    const roomClock = (connection as { clock?: { now(): number } }).clock
+    if (roomClock) setWeatherClock(() => roomClock.now())
     // Remote players and bots are audible, positioned in space.
     audio.setVehicles(() => connection.audibleVehicles())
     game.add(new ResumeSession({ game, terrain, player, room: shell.room || query.get('room') || 'lobby', saved, network: connection }))
@@ -128,6 +140,9 @@ async function main(): Promise<void> {
       hud.textContent = [`${mph} MPH   ${game.backend}   ${Math.round(game.fps)} fps`, ...netStatus].join('\n')
     },
   })
+
+  // Water Lab: ripples, spray and the underwater look. Each is off until its slider is on.
+  game.add(new WaterEffects(game, terrain, player, bots))
 
   // Handles for debugging and automated checks.
   Object.assign(window, { syn3h: { planets, game, terrain, player, params, panel, shell, audio, bots, camera } })

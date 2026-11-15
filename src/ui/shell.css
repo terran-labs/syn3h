@@ -16,6 +16,12 @@
   --s3-card: rgb(28 28 30 / .78); --s3-radius: 18px; --s3-radius-small: 8px;
   --theme-accent-primary-rgb: 41 151 255; --theme-heading-accent: #2997ff; --theme-focus-ring: #64d2ff;
 }
+/* The panel is frosted glass, which only reads over a busy galaxy if the frost is real. Safari
+   (every phone and iPad) blurs what is behind it only weakly over the galaxy's canvas, so a
+   bright planet showed straight through the text. There, and anywhere without backdrop blur
+   at all, the panel carries a darker body of its own. Chrome and Firefox keep the lighter glass. */
+@supports (font: -apple-system-body) and (-webkit-appearance: none) { :root { --s3-panel: rgb(14 15 20 / .86); } }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) { :root { --s3-panel: rgb(14 15 20 / .92); } }
 .syn3h-shell { --accent: var(--s3-accent); --panel: var(--s3-card); color: var(--s3-ink); font: 400 17px/1.5 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; }
 /* The wordmark is one vector path: black letters over a blue light that shows round the
    edges and through the gaps, as in the 2017 build. Change --s3-glow to relight it. */
