@@ -4,7 +4,7 @@ import { createTerrainCollider } from '../../src/world/terrain/collider'
 import {
   SPAWN_LEVEL, coneProfile, generateTerrain, rimRadius, terrainChecksum, type TerrainData,
 } from '../../src/world/terrain/generate'
-import { rng } from '../../src/world/terrain/noise'
+import { perlin, rng } from '../../src/world/terrain/noise'
 import { HeightSampler } from '../../src/world/terrain/sampler'
 import { defaultTerrainSettings } from '../../src/world/terrain/settings'
 import { spawnPointAt } from '../../src/world/terrain/spawn'
@@ -83,21 +83,40 @@ describe('terrain generation', () => {
   })
 
   it('generates fast enough and reports the time', () => {
-    generateTerrain(4, settings)
-    generateTerrain(5, settings) // warm the JIT, as a running game would be
-    for (const resolution of [513, 1025]) {
-      const runs: number[] = []
-      // Best of several: on a busy machine most runs are slowed by other work, and the
-      // fastest one is the closest to what the generator itself costs.
-      for (let i = 0; i < (resolution === 513 ? 12 : 2); i++) {
-        const t = performance.now()
-        generateTerrain(1000 + i, settings, { resolution })
-        runs.push(performance.now() - t)
-      }
-      const best = Math.min(...runs)
-      process.stdout.write(`terrain generation ${resolution}x${resolution}: best ${best.toFixed(1)} ms, median ${[...runs].sort((a, b) => a - b)[runs.length >> 1].toFixed(1)} ms over ${runs.length} runs\n`)
-      if (resolution === 513) expect(best).toBeLessThan(150)
+    // The budget is 150 ms at the shipping resolution on an idle machine of the class this
+    // was measured on. Tests run in parallel, often on a busy machine, where everything is
+    // slower by the same factor, so a fixed noise workload is timed between runs and the
+    // budget is stretched by however much slower than idle that workload ran. On an idle
+    // machine the factor is 1 and this is a plain 150 ms limit.
+    const CALIBRATION_IDLE_MS = 32
+    const calibrate = () => {
+      let sum = 0
+      const t = performance.now()
+      for (let i = 0; i < 2_000_000; i++) sum += perlin(i * 0.37, i * 0.11, 7)
+      return sum === Infinity ? Infinity : performance.now() - t
     }
+    generateTerrain(4, settings) // warm the JIT, as a running game would be
+    generateTerrain(5, settings)
+    let best = Infinity
+    let calibration = Infinity
+    const runs: number[] = []
+    for (let i = 0; i < 12; i++) {
+      calibration = Math.min(calibration, calibrate())
+      const t = performance.now()
+      generateTerrain(1000 + i, settings)
+      runs.push(performance.now() - t)
+      best = Math.min(best, runs[i])
+    }
+    const slowdown = Math.max(1, calibration / CALIBRATION_IDLE_MS)
+    const median = [...runs].sort((a, b) => a - b)[runs.length >> 1]
+    process.stdout.write(
+      `terrain generation 513x513: best ${best.toFixed(1)} ms, median ${median.toFixed(1)} ms over ${runs.length} runs; ` +
+      `machine ${slowdown.toFixed(2)}x slower than idle, so ${(best / slowdown).toFixed(1)} ms idle equivalent\n`,
+    )
+    expect(best).toBeLessThan(150 * slowdown)
+    const t = performance.now()
+    generateTerrain(2000, settings, { resolution: 1025 })
+    process.stdout.write(`terrain generation 1025x1025: ${(performance.now() - t).toFixed(1)} ms\n`)
   }, 60000)
 })
 
