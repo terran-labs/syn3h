@@ -42,6 +42,15 @@ Never stop it by name.
    then do they point somewhere a phone can reach.
 3. Guests scan the QR code from the lobby or the in game menu, or type the address.
 
+**Open a fresh room for the demo.** On the projector, pick a room name nobody has used
+before, for example `?room=demo-sunday`, and let the QR code carry it. Do not use `lobby` or
+any room used during testing, on production or on this server. A room keeps its world
+settings, and a room stored by an older build can lack settings that newer builds have; until
+the release that includes the fix for that (joiners take defaults for whatever a stored room
+lacks, on trunk from milestone m14), people joining such a room can each build a different
+island. A fresh name has no stored world: the first player in brings theirs, and everyone after
+gets exactly that. The same rule applies to the public address.
+
 Rooms on this server are separate from production's. Anyone still on the public address is in
 a different world from the people on the Mac's address.
 
@@ -98,7 +107,8 @@ Do these at the venue, on the venue's network, with production still the plan:
    network isolates clients: set up the hotspot now, not during the demo, and repeat.
 4. On that phone: does it render, is there sound after the first tap, can it drive, does the
    projector see it move, does the QR code on the projector open the same room?
-5. Two phones and the projector in one room for two minutes: ram, tag with a beam, hold the
+5. Use the fresh demo room name for this, the one the audience will join, not `lobby`.
+   Two phones and the projector in one room for two minutes: ram, tag with a beam, hold the
    hill. Watch the delay figure on the HUD's `net:` line; under about 200 ms is comfortable.
 6. Leave the fallback server running and `caffeinate` on. Switching to it mid demo is then
    just putting its address on the projector.
