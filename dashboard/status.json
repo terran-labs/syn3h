@@ -1,27 +1,17 @@
 {
   "tagline": "Syn3h, rebuilt native in the browser: its vehicles, its physics, its lobby and its look.",
   "deadline": "Demo: Sunday noon Pacific, Coeur d'Alene",
-  "headline": "Release candidate m13 is frozen and passes its deploy dry run: night glow that keeps its colour, a camera that stays above lava and sea, and a ram fix verified by 30 of 30 two-player rams. Trunk adds wings that lift a buggy out of lava and water. Release 1 and the syn3h.com switch run the moment the Cloudflare token arrives. Previews are back.",
+  "headline": "Release 1 is live at www.syn3h.com: the game with the steering fix, checked by a two-player test on the public address. Release 2 is being assembled on trunk: wings that lift a buggy out of lava and water, rear-end shoves, tag beams that stay green at night, the buggy's original lights and wheel struts, and a synthesised score. Open item: a black screen on a real iPad.",
   "previews": [
     {
       "title": "Play the current build",
       "url": "https://vorton-previews.tail285f88.ts.net:32782/",
-      "detail": "Opens on the Syn3h lobby. Pick Buggy, Hovercraft or Jet under Vehicle. WASD drives, Space opens wings, Shift brakes, L fires, C changes camera."
-    },
-    {
-      "title": "King of the Hill with bots",
-      "url": "https://vorton-previews.tail285f88.ts.net:32782/",
-      "detail": "In the lobby choose Multiplayer, set the mode to King of the Hill, then raise Bots under Worlds. Drive the road from your pad to the summit."
+      "detail": "Opens on the Syn3h lobby. WASD drives, Space opens wings, Shift brakes, C changes camera. For King of the Hill choose Multiplayer, set the mode, then raise Bots under Worlds and drive the road to the summit."
     },
     {
       "title": "Fly the Syn3h jet",
       "url": "https://vorton-previews.tail285f88.ts.net:32782/?vehicle=jet",
       "detail": "R thrust, Space switches hover and flight, S pulls up, A and D bank."
-    },
-    {
-      "title": "Terrain Lab gallery",
-      "url": "https://vorton-previews.tail285f88.ts.net:32783/terrainlab-gallery.html",
-      "detail": "Island world prototypes from the Terrain Lab."
     },
     {
       "title": "Classic Mars Explorer buggy",
@@ -32,11 +22,6 @@
       "title": "A different world",
       "url": "https://vorton-previews.tail285f88.ts.net:32782/?seed=2024",
       "detail": "Every seed moves the volcano, the mesas and the road."
-    },
-    {
-      "title": "Source on GitHub",
-      "url": "https://github.com/terran-labs/syn3h",
-      "detail": "Public. Tagged at each milestone, m00 to m08."
     }
   ],
   "milestones": [
@@ -662,6 +647,137 @@
     {
       "title": "Network study is thin",
       "detail": "Loss and stall results come from one run per condition on a loaded Mac. Nothing was measured on a phone, venue wifi or mobile data."
+    }
+  ],
+  "links": [
+    {
+      "group": "Public (release 1, frozen)",
+      "note": "What the world sees. Changes only when a release ships.",
+      "items": [
+        {
+          "title": "www.syn3h.com",
+          "url": "https://www.syn3h.com/"
+        },
+        {
+          "title": "workers.dev address",
+          "url": "https://syn3h.af-4e7.workers.dev/"
+        },
+        {
+          "title": "Source on GitHub",
+          "url": "https://github.com/terran-labs/syn3h"
+        }
+      ]
+    },
+    {
+      "group": "Live game (trunk, port 32782)",
+      "note": "Follows every merge.",
+      "items": [
+        {
+          "title": "Play",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/",
+          "page": "index.html"
+        },
+        {
+          "title": "Syn3h buggy",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/?vehicle=buggy-syn3h"
+        },
+        {
+          "title": "Jet",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/?vehicle=jet"
+        },
+        {
+          "title": "Hovercraft",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/?vehicle=hovercraft"
+        },
+        {
+          "title": "Tank",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/?vehicle=tank"
+        },
+        {
+          "title": "Classic buggy",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/?vehicle=buggy-classic"
+        },
+        {
+          "title": "WebGL path",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/?webgl=1"
+        },
+        {
+          "title": "Render diagnostics",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/?diag=1"
+        },
+        {
+          "title": "Safe graphics on WebGL",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/?diag=1&webgl=1&gfx=0"
+        }
+      ]
+    },
+    {
+      "group": "Labs on trunk (port 32782)",
+      "note": "Workbench pages; not part of public releases.",
+      "items": [
+        {
+          "title": "Terrain generator",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/terrainlab.html",
+          "page": "terrainlab.html"
+        },
+        {
+          "title": "Terrain gallery",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/terrainlab-gallery.html",
+          "page": "terrainlab-gallery.html"
+        },
+        {
+          "title": "Planet generator",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/planets.html",
+          "page": "planets.html"
+        },
+        {
+          "title": "Adaptive score lab",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/score.html",
+          "page": "score.html"
+        },
+        {
+          "title": "Volcanic effects",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/fx.html",
+          "page": "fx.html"
+        },
+        {
+          "title": "Pursuit bots",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/bots.html",
+          "page": "bots.html"
+        },
+        {
+          "title": "Buggy skins",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/skins.html",
+          "page": "skins.html"
+        },
+        {
+          "title": "Buggy body variations",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/buggy-bodies.html",
+          "page": "buggy-bodies.html"
+        },
+        {
+          "title": "Vehicle gallery",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/tests/vehicles2/gallery.html"
+        }
+      ]
+    },
+    {
+      "group": "Terrain Lab's own branch (port 32783)",
+      "note": "Ahead of trunk, so these can differ from the trunk pages above.",
+      "items": [
+        {
+          "title": "Terrain generator",
+          "url": "https://vorton-previews.tail285f88.ts.net:32783/terrainlab.html"
+        },
+        {
+          "title": "Terrain gallery",
+          "url": "https://vorton-previews.tail285f88.ts.net:32783/terrainlab-gallery.html"
+        },
+        {
+          "title": "Planet generator",
+          "url": "https://vorton-previews.tail285f88.ts.net:32783/planets.html"
+        }
+      ]
     }
   ]
 }
