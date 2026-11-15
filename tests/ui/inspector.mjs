@@ -30,9 +30,9 @@ try {
   // Capturing and then releasing the cursor, with Create untouched, surfaces the cards.
   await page.mouse.click(500, 420); await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-focus'), null, { timeout: 5000 })
   await page.evaluate(() => document.exitPointerLock()); await page.waitForFunction(() => !document.querySelector('.world-inspector').hidden, null, { timeout: 5000 })
-  assert.ok(await corner() > 300, 'minimap did not step aside for the open cards')
-  // Create closes them and the minimap goes back; Create opens them again.
-  await page.locator('.inspector-toggle').click(); assert.ok(await corner() < 60, 'minimap did not return')
+  assert.ok(await corner() < 60, 'minimap must remain bottom left with the rail open')
+  // Closing and reopening the rail leaves the map in its bottom-left position.
+  await page.locator('.rail-close').click(); assert.ok(await corner() < 60, 'minimap moved when rail closed')
   await page.locator('.inspector-toggle').click(); await page.waitForTimeout(300)
   // Five cards, each with a summary, holding every registered property between them.
   assert.deepEqual(await page.locator('.wi-card').evaluateAll(cards => cards.map(c => c.dataset.section)), ['world', 'sky', 'game', 'vehicles', 'you'])

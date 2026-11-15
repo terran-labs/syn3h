@@ -60,6 +60,7 @@ export class Inspector {
     const signal = this.abort.signal
     this.tooltip.addEventListener('pointerenter', () => clearTimeout(this.tooltipTimer), { signal })
     this.tooltip.addEventListener('pointerleave', () => this.hideTooltip(), { signal })
+    this.tooltip.addEventListener('pointerdown', event => { if (event.pointerType === 'touch') this.hideTooltip() }, { signal })
     this.element.addEventListener('scroll', () => this.hideTooltip(), { capture: true, signal })
     window.addEventListener('resize', () => this.hideTooltip(), { signal })
     document.addEventListener('pointerdown', event => { if (!(event.target as Element).closest('.wi-row, .wi-tooltip')) this.hideTooltip() }, { signal })

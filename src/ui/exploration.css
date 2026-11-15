@@ -41,7 +41,7 @@
 .syn3h-shell.exploration-ui .world-inspector .is-on, .syn3h-shell.exploration-ui .world-inspector .wi-actions [data-wi=copy-world] { background: rgb(100 200 245 / .1); border-color: rgb(170 224 250 / .45); box-shadow: none; }
 .syn3h-shell.exploration-ui .wi-cards { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; overflow: visible; padding: 0; margin: 0; gap: 7px; }
 .syn3h-shell.exploration-ui .wi-card { display: flex; flex-direction: column; min-height: 34px; flex: 0 0 34px; overflow: hidden; }
-.syn3h-shell.exploration-ui .wi-card.is-open { flex: 1 1 34px; }
+.syn3h-shell.exploration-ui .wi-card.is-open { flex: 0 1 auto; }
 .syn3h-shell.exploration-ui .world-inspector .wi-head { flex: 0 0 33px; min-height: 33px; padding: 8px 11px; align-items: center; }
 .syn3h-shell.exploration-ui .wi-head h3 { font: 400 14px/1 'Barlow',sans-serif; letter-spacing: .12em; }
 .syn3h-shell.exploration-ui .wi-sum { font-size: 11px; }
@@ -124,3 +124,9 @@ html[data-gfx="0"] .syn3h-shell.exploration-ui[data-glass] .wi-glass { --body: r
   .syn3h-shell.exploration-ui .world-inspector .wi-head { flex-basis: 23px; min-height: 23px; padding-block: 3px; }
   .syn3h-shell.exploration-ui .wi-head h3 { font-size: 12px; }
 }
+
+.syn3h-shell.exploration-ui .world-inspector .wi-head { border: 0; border-radius: 0; background: none; box-shadow: none; }
+/* Custom-world editing uses the same instrument palette through its existing theme tokens. */
+.syn3h-advanced { --tp-base-background-color: rgb(5 18 29 / .8); --tp-container-background-color: rgb(100 190 230 / .07); --tp-container-foreground-color: #d5edf9; --tp-label-foreground-color: #b7d2e0; --tp-input-background-color: rgb(130 210 245 / .09); --tp-input-foreground-color: #e1f4ff; --tp-button-background-color: rgb(130 210 245 / .12); --tp-button-foreground-color: #d5edf9; --tp-base-shadow-color: transparent; }
+.syn3h-shell.exploration-ui .rail-players > summary { position: sticky; top: 0; z-index: 1; background: rgb(5 20 32 / .94); }
+@media (pointer: coarse) { .syn3h-shell.exploration-ui .world-inspector .wi-top .wi-search { font-size: 16px; } }
