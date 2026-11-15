@@ -45,10 +45,10 @@ try {
   await page.goto(`${origin}/score.html`)
   // Pure signal-processing cost, with no game or scheduling in the way: 30 s of a release in
   // a full chase (every instrument sounding), scheduled up front and rendered flat out.
-  for (const lite of [false, true]) {
-    const r = await page.evaluate(async lite => {
+  for (const [name, lite, network] of [['full, convolution hall', false, false], ['full, algorithmic hall', false, true], ['lighter', true, true]]) {
+    const r = await page.evaluate(async ([lite, network]) => {
       const { Composer, levels } = await import('/src/audio/score/Composer.ts'), { ScoreSynth } = await import('/src/audio/score/ScoreSynth.ts')
-      const seconds = 30, context = new OfflineAudioContext(2, 44100 * seconds, 44100), synth = new ScoreSynth(context, context.destination, lite)
+      const seconds = 30, context = new OfflineAudioContext(2, 44100 * seconds, 44100), synth = new ScoreSynth(context, context.destination, lite, network)
       await synth.ready
       const mood = { intensity: 0.95, lift: 0.6, darkness: 0.9, triumph: 0.5 }
       synth.setLevel(1, 0.1); synth.setLevels(levels(mood), 0, 0.9, { tension: 1, release: 1 })
@@ -62,7 +62,7 @@ try {
       const started = performance.now(), buffer = await context.startRendering(), ms = performance.now() - started
       let peak = 0; for (const v of buffer.getChannelData(0)) peak = Math.max(peak, Math.abs(v))
       return { ms, share: ms / (seconds * 1000), nodes: synth.nodeCount, peak }
-    }, lite)
-    console.log(`${lite ? 'lighter' : 'full   '} tier: ${r.nodes} nodes, 30 s renders in ${Math.round(r.ms)} ms = ${(r.share * 100).toFixed(1)}% of one core here; at 4x slower ${(r.share * 400).toFixed(0)}%, at 6x slower ${(r.share * 600).toFixed(0)}%  (peak ${r.peak.toFixed(2)})`)
+    }, [lite, network])
+    console.log(`${name.padEnd(24)}: ${r.nodes} nodes, 30 s renders in ${Math.round(r.ms)} ms = ${(r.share * 100).toFixed(1)}% of one core here; at 4x slower ${(r.share * 400).toFixed(0)}%, at 6x slower ${(r.share * 600).toFixed(0)}%  (peak ${r.peak.toFixed(2)})`)
   }
 } finally { await browser.close() }

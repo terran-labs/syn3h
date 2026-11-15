@@ -25,6 +25,8 @@ export const scoreReverb = tune('reverb', 'Hall size', 0.9, 0, 1.5)
  * it itself when the browser reports the audio thread falling behind.
  */
 export const scoreLite = defineParam({ id: 'audio.score.lite', label: 'Lighter score (for phones)', group: 'Adaptive score', scope: 'client', default: false })
+/** The feedback-delay-network hall in place of the convolution: about a quarter of the cost. The lighter tier always uses it. */
+export const scoreNetworkHall = defineParam({ id: 'audio.score.networkHall', label: 'Algorithmic hall (cheaper)', group: 'Adaptive score', scope: 'client', default: false })
 /** 0 follows the world seed, so each world has its own key and themes. */
 export const scoreSeed = tune('seed', 'Theme seed (0 = world)', 0, 0, 999999, 1)
 
@@ -76,7 +78,7 @@ export class Score {
   constructor(private readonly context: BaseAudioContext, private readonly output: AudioNode, seed: number) {
     this.seed = seed
     this.composer = new Composer(seed)
-    this.synth = new ScoreSynth(context, output, scoreLite.value)
+    this.synth = new ScoreSynth(context, output, scoreLite.value, scoreLite.value || scoreNetworkHall.value)
     // Where the browser can tell us how hard the audio thread is working, watch it. Two bad
     // readings in a row and the score steps down to its lighter instruments, for good.
     const capacity = (context as { renderCapacity?: { start(options: { updateInterval: number }): void; addEventListener(type: 'update', listener: (event: { averageLoad: number; underrunRatio: number }) => void): void } }).renderCapacity
@@ -144,11 +146,11 @@ export class Score {
 
   update(input: ScoreInput): void {
     this.pollUnderruns(this.context.currentTime)
-    if (scoreLite.value !== this.synth.lite) {
+    if (scoreLite.value !== this.synth.lite || (scoreLite.value || scoreNetworkHall.value) !== this.synth.network) {
       // Swap the instruments: fade the old set out and let the new one take the next sixteenth.
       const old = this.synth
       old.setLevel(0, 0.4); setTimeout(() => old.dispose(), 1500)
-      this.synth = new ScoreSynth(this.context, this.output, scoreLite.value)
+      this.synth = new ScoreSynth(this.context, this.output, scoreLite.value, scoreLite.value || scoreNetworkHall.value)
       this.synth.setLevel(this.active ? 1 : 0, 0.6)
     }
     const now = this.context.currentTime, dt = Math.min(0.25, Math.max(0, now - this.last))

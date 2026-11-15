@@ -102,7 +102,9 @@ export class LocalRescue {
   check(): void {
     const p = this.player.body.translation()
     const half = this.terrain.size * 0.5
-    if (p.y < -250 || Math.abs(p.x) > half * 1.5 || Math.abs(p.z) > half * 1.5) {
+    // A wrapping world has no edge to leave by: only falling through it counts.
+    const outside = !this.terrain.wrapSize && (Math.abs(p.x) > half * 1.5 || Math.abs(p.z) > half * 1.5)
+    if (p.y < -250 || outside) {
       this.timer.clear()
       this.toPad()
       this.onReturned()
