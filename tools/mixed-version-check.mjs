@@ -15,16 +15,23 @@ import assert from 'node:assert/strict'
 const root = resolve(process.argv[2])
 const output = process.argv[3] ?? '/tmp/syn3h-mixed-version.json'
 const { Room } = await tsImport(pathToFileURL(resolve('server/room.ts')).href, import.meta.url)
+const { RoomRegistry } = await tsImport(pathToFileURL(resolve('server/registry.ts')).href, import.meta.url)
 const rooms = new Map(), browsers = [], results = [], errors = [], wire = []
 const mime = { '.html':'text/html', '.js':'text/javascript', '.css':'text/css', '.json':'application/json', '.wasm':'application/wasm', '.svg':'image/svg+xml', '.woff2':'font/woff2', '.glb':'model/gltf-binary' }
 const server = createServer(async (req,res) => {
   try {
     const path = new URL(req.url,'http://fixture').pathname
+    if (path === '/presence') {
+      const registry = new RoomRegistry(), now = Date.now()
+      for (const [name,room] of rooms) { const p = room.presence(); registry.report(name,p.players,now,p.recipeId) }
+      res.writeHead(200, { 'content-type':'application/json' }).end(JSON.stringify(registry.presence(now)))
+      return
+    }
     const file = resolve(root, '.' + (path === '/' ? '/index.html' : decodeURIComponent(path)))
     if (!file.startsWith(root + sep)) { res.writeHead(403).end(); return }
     const data = await readFile(file)
     res.writeHead(200, { 'content-type':mime[extname(file)] ?? 'application/octet-stream' }).end(data)
-  } catch { res.writeHead(404).end() }
+  } catch { console.log('FIXTURE 404',req.url); res.writeHead(404).end() }
 })
 const sockets = new WebSocketServer({ noServer:true })
 server.on('upgrade',(req,socket,head) => {
