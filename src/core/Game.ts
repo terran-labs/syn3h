@@ -72,13 +72,12 @@ export class Game {
   }
 
   async init(): Promise<void> {
+    // Physics starts first and is awaited only where the physics world is created, below: its
+    // WebAssembly downloads and compiles while the adapter probe and the renderer start.
+    const physics = timeStartup('physics init (Rapier WASM), beside the probe and renderer', () => initPhysics())
+    physics.catch(() => { /* Reported where it is awaited. */ })
     await timeStartup('quality initialise (WebGPU adapter probe)', () => this.quality.initialize())
     reportLoading('physics', 0.15)
-    await timeStartup('physics init (Rapier WASM)', () => initPhysics())
-    this.world = createWorld(worldGravity.value)
-    params.onChange((id, value) => {
-      if (id === worldGravity.def.id) this.world.gravity = { x: 0, y: -(value as number), z: 0 }
-    })
 
     reportLoading('renderer', 0.4)
     // `?webgl=1` forces the WebGL 2 backend: a way round a WebGPU implementation that
@@ -113,6 +112,13 @@ export class Game {
     }
     window.addEventListener('resize', resize)
     resize()
+    // Without physics there is no game: stop the one loop already running (the display probe)
+    // and let the failure reach the page, which asks for a reload. Nothing else has started.
+    try { await timeStartup('wait for physics after the renderer', () => physics) } catch (error) { this.quality.dispose(); throw error }
+    this.world = createWorld(worldGravity.value)
+    params.onChange((id, value) => {
+      if (id === worldGravity.def.id) this.world.gravity = { x: 0, y: -(value as number), z: 0 }
+    })
     reportLoading('world', 0.7)
     this.buildMark = performance.now()
   }

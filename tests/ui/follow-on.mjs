@@ -14,7 +14,7 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
     await page.locator('.boot-veil').waitFor({state:'hidden',timeout:120000})
     await page.locator('.galaxy-label.is-current').focus(); await page.keyboard.press('Enter')
     await page.waitForFunction(()=>window.syn3h?.shell.playing && window.syn3hNet?.connected && !syn3h.shell.dropping,null,{timeout:120000})
-    assert.ok(sockets.some(url=>url===`ws://127.0.0.1:54671/ws?room=${room}`),'known existing backend and disposable room')
+    assert.ok(sockets.some(url=>url===`ws://127.0.0.1:${process.env.UX_ROOM_PORT??'5298'}/ws?room=${room}`),'the room server started for this run, and a disposable room')
     // Fixture drives the presentation contract only. It does not claim core eligibility tests.
     await page.evaluate(async()=>{
       const {effectiveQuality}=await import('/src/core/quality.ts')
@@ -26,7 +26,7 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
       syn3h.shell.configurePerformance(f.source)
     })
     assert.equal(await page.evaluate(()=>fixture.listeners.size),1,'reconfigure replaces subscription')
-    await page.locator('.inspector-toggle').click(); await page.locator('.performance-toggle').click()
+    if(await page.evaluate(()=>!!document.pointerLockElement)){await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.pointerLockElement)}if(await page.locator('.inspector-toggle').isVisible()&&await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'}); await page.locator('.performance-toggle').click()
     assert.equal(await page.locator('.performance-panel').isVisible(),true)
     assert.equal(await page.locator('.performance-chart polyline').evaluate(el=>el.getAttribute('points').split(' ').length),120)
     assert.match(await page.locator('.performance-body').innerText(),/Unavailable/)
@@ -48,6 +48,11 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
       const search=page.locator('.wi-search')
       await page.evaluate(()=>{document.activeElement?.blur();window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyW'}))})
       assert.equal(await page.evaluate(()=>syn3h.game.input.poll().y),1)
+      // W outside any field means "drive": it captures the cursor and the panels close. Wait for
+      // that to settle either way, free the cursor again, then move focus into a field.
+      await page.waitForFunction(()=>document.pointerLockElement===syn3h.game.canvas,null,{timeout:3000}).catch(()=>{})
+      if(await page.evaluate(()=>!!document.pointerLockElement))await page.keyboard.press('Escape')
+      await page.locator('.world-inspector').waitFor({state:'visible'})
       await search.focus(); await page.keyboard.up('KeyW')
       assert.equal(await page.evaluate(()=>syn3h.game.input.poll().y),0,'keyup after field focus clears held drive')
       for(const locator of [search,page.locator('.wi-head').first(),page.locator('.rail-close')]) {
@@ -60,7 +65,6 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
         assert.deepEqual(result.after,result.before,'native controls cannot toggle special')
       }
       await search.focus();await page.keyboard.press('F3');assert.equal(await page.locator('#frame-time-hud').count(),0,'native input F3 does not open diagnostics')
-      await page.locator('.rail-close').click()
       await page.mouse.click(650,400)
       await page.waitForFunction(()=>document.pointerLockElement===syn3h.game.canvas)
       assert.equal(await page.evaluate(()=>syn3h.game.input.mouseFire),false)
@@ -75,7 +79,7 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
         if(calls!==2)throw new Error(`Expected raw and fallback, got ${calls}`)
       })
     }
-    if(await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click()
+    if(await page.evaluate(()=>!!document.pointerLockElement)){await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.pointerLockElement)}if(await page.locator('.inspector-toggle').isVisible()&&await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'})
     await page.locator('.exit-world').click(); await page.waitForFunction(()=>!syn3h.shell.playing)
     await page.locator('.galaxy-label.is-current').focus();await page.keyboard.press('Enter')
     await page.waitForFunction(()=>syn3h.shell.playing&&!syn3h.shell.dropping,null,{timeout:60000})

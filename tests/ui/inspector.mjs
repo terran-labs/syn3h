@@ -22,8 +22,10 @@ try {
   await page.waitForFunction(() => window.syn3h?.game?.tick > 40, null, { timeout: 120000 })
   await page.waitForTimeout(6500)
   const value = id => page.evaluate(id => window.syn3h.params.get(id).value, id)
-  // First view: nothing over the world. The cards are closed and the minimap is in its corner.
-  assert.equal(await page.evaluate(() => document.querySelector('.world-inspector').hidden), true)
+  // On arrival the browser may or may not have granted the cursor. Either way the panels
+  // show exactly when it is free; free it here to look at them.
+  assert.equal(await page.evaluate(() => document.querySelector('.world-inspector').hidden), await page.evaluate(() => !!document.pointerLockElement))
+  if (await page.evaluate(() => !!document.pointerLockElement)) { await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('.world-inspector').hidden) }
   const corner = () => page.evaluate(() => document.querySelector('.shell-minimap').getBoundingClientRect().left)
   assert.ok(await corner() < 60, 'minimap is not in its corner on landing')
   await page.screenshot({ path: `${out}/0-landing.png` })
@@ -32,8 +34,8 @@ try {
   await page.evaluate(() => document.exitPointerLock()); await page.waitForFunction(() => !document.querySelector('.world-inspector').hidden, null, { timeout: 5000 })
   assert.ok(await corner() < 60, 'minimap must remain bottom left with the rail open')
   // Closing and reopening the rail leaves the map in its bottom-left position.
-  await page.locator('.rail-close').click(); assert.ok(await corner() < 60, 'minimap moved when rail closed')
-  await page.locator('.inspector-toggle').click(); await page.waitForTimeout(300)
+  await page.locator('.rail-close').click(); await page.waitForFunction(() => document.pointerLockElement === syn3h.game.canvas); assert.ok(await corner() < 60, 'minimap moved when the panels closed')
+  await page.evaluate(() => document.exitPointerLock()); await page.waitForFunction(() => !document.querySelector('.world-inspector').hidden)
   // Five cards, each with a summary, holding every registered property between them.
   assert.deepEqual(await page.locator('.wi-card').evaluateAll(cards => cards.map(c => c.dataset.section)), ['world', 'sky', 'game', 'vehicles', 'you'])
   assert.equal(await page.locator('.wi-row').count(), await page.evaluate(() => window.syn3h.params.all().length))

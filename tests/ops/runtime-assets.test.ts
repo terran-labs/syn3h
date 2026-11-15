@@ -60,10 +60,26 @@ describe('violations', () => {
       { kind: 'font', path: '/fonts/other.woff2' },
       { kind: 'model', path: '/models/jet.glb' },
       { kind: 'font', path: '/fonts/barlow-500-latin.woff2' },
-      { kind: 'wasm', path: '' },
+      { kind: 'wasm', path: '', source: 'module' },
+      { kind: 'wasm', path: '/assets/rapier_wasm3d_bg-C6GCbKVJ.wasm', source: 'stream' },
       { kind: 'vector', path: '/brand/favicon.svg' },
       { kind: 'image', path: '', generated: true },
     ]
     expect(violations(records).map((r: { kind: string }) => r.kind)).toEqual(['audio', 'image', 'video', 'font'])
+  })
+  it('accepts WebAssembly only as the physics engine fetched from its own file', () => {
+    const fine = [
+      { kind: 'wasm', path: '/assets/rapier_wasm3d_bg-C6GCbKVJ.wasm' },
+      { kind: 'wasm', path: '/assets/rapier_wasm3d_bg-C6GCbKVJ.wasm', source: 'stream' },
+      { kind: 'wasm', path: '', source: 'module' },
+    ]
+    expect(violations(fine)).toEqual([])
+    const bad = [
+      // Bytes compiled from a buffer were held in the page: a binary inlined in a script.
+      { kind: 'wasm', path: '', source: 'buffer', bytes: 3082103 },
+      { kind: 'wasm', path: '/assets/other-abc.wasm' },
+      { kind: 'wasm', path: '/rapier_wasm3d_bg.wasm', source: 'stream' },
+    ]
+    expect(violations(bad)).toEqual(bad)
   })
 })
