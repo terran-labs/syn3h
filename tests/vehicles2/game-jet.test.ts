@@ -158,18 +158,17 @@ describe('Mk2 moving parts and thrusters', () => {
     b.pieces.forEach(p => p.geometry.dispose()); b.flaps.forEach(f => f.geometry.dispose())
   })
 
-  it('runs the cockpit rim as one closed loop that stays slim and round at the nose', () => {
+  it('sweeps each side of the cockpit rim as one smooth tube that ends in a fine point', () => {
     const b = new Builder(.6, true, true); new GameJet().design.build(b)
-    // The rim is the dark piece that spans the whole canopy opening.
-    const rim = b.pieces.filter(p => p.mat === 'dark').map(p => { p.geometry.computeBoundingBox(); return p.geometry }).find(g => g.boundingBox!.min.z < -2.8 && g.boundingBox!.max.z > -.8)!
-    expect(rim).toBeDefined()
-    const p = rim.attributes.position, box = rim.boundingBox!
-    // Closed across the centre line at both ends, with no gap where two halves would meet.
-    for (const end of [box.min.z, box.max.z]) {
-      let left = false, right = false
-      for (let i = 0; i < p.count; i++) if (Math.abs(p.getZ(i) - end) < .05) { if (p.getX(i) <= 0) left = true; if (p.getX(i) >= 0) right = true }
-      expect(left && right).toBe(true)
-    }
+    // The rim pieces are the dark ones that run the length of the canopy opening.
+    const rims = b.pieces.filter(p => p.mat === 'dark').map(p => { p.geometry.computeBoundingBox(); return p.geometry }).filter(g => g.boundingBox!.max.z - g.boundingBox!.min.z > 1.5)
+    expect(rims).toHaveLength(2)
+    // One on each side, and slim: nowhere thicker than 6 cm, under a centimetre at the ends.
+    expect(rims[0].boundingBox!.min.x * rims[1].boundingBox!.min.x).toBeLessThan(0)
+    const rim = rims[0], p = rim.attributes.position, box = rim.boundingBox!
+    let tip = 0
+    for (let i = 0; i < p.count; i++) if (p.getZ(i) < box.min.z + .004) tip = Math.max(tip, Math.abs(p.getX(i)) - Math.abs(box.min.x > 0 ? box.min.x : box.max.x))
+    expect(tip).toBeLessThan(.012)
     // Welded and smooth: no vertex normal disagrees with a face it belongs to by more than 75 degrees.
     const index = rim.index!, n = rim.attributes.normal, a = new THREE.Vector3(), c = new THREE.Vector3(), d = new THREE.Vector3(), v = new THREE.Vector3()
     let worst = 1
@@ -179,7 +178,7 @@ describe('Mk2 moving parts and thrusters', () => {
       face.normalize()
       for (let k = 0; k < 3; k++) worst = Math.min(worst, face.dot(v.fromBufferAttribute(n, index.getX(i + k))))
     }
-    expect(worst).toBeGreaterThan(Math.cos(75 * Math.PI / 180))
+    expect(worst).toBeGreaterThan(Math.cos(80 * Math.PI / 180))
     b.pieces.forEach(q => q.geometry.dispose()); b.flaps.forEach(f => f.geometry.dispose())
   })
 })

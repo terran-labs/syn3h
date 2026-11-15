@@ -257,16 +257,16 @@ export class Builder {
     this.add('glass', canopy); this.cockpitPieces.push({ mat: 'glass', geometry: canopy })
     if (!interior) { this.body('chrome', stations.map(z => { const e = at(z); return [z, e.cw * 1.12, e.crown + .01, .02, e.yEdge, 2.3] }), { seg: 1, around: 24 }); return }
     this.cut = { z0, z1, fraction: widthFraction }
-    // Rim: one slim closed loop round the opening, swept along the edge of the skin. It is matte
-    // and dark, so from the seat it reads as a clean line and not a band of reflections.
-    this.add('dark', this.rimLoop(z => at(z), z0, z1, rim))
+    // Rim: a slim tube along each side of the opening, swept along the edge of the skin. It is
+    // matte and dark, so from the seat it reads as a clean line and not a band of reflections.
+    for (const side of [1, -1] as const) this.add('dark', this.rimSide(z => at(z), z0, z1, rim, side))
     // Tub: an open trough, faces inward, just outside the opening's edge and under the skin.
     const across = Math.max(6, 2 * Math.round(7 * this.detail))
     const tub = loft(stations.map(z => {
       const e = at(z), [w, t, b, y, ex] = this.at(z), d = depth(z)
       return Array.from({ length: across + 1 }, (_, k) => {
         const phi = Math.PI * k / across, c = Math.cos(phi), sn = Math.sin(phi)
-        const py = e.yEdge - .02 - d * sn ** (2 / 3.2), half = py >= y ? t : b
+        const py = e.yEdge - .012 - d * sn ** (2 / 3.2), half = py >= y ? t : b
         // Stay inside the hull's skin at this height.
         const room = w * Math.max(0, 1 - Math.min(1, Math.abs(py - y) / half) ** ex) ** (1 / ex) - .05
         return new V(Math.sign(c) * Math.min((e.cw + .012) * Math.abs(c) ** (2 / 3.2), Math.max(.01, room)), py, z)
@@ -292,54 +292,29 @@ export class Builder {
   }
 
   /**
-   * The cockpit rim: a tube swept round the canopy's outline as one closed loop, down the right
-   * edge and back up the left. Its sections stand square to the path, so it stays round where the
-   * outline turns across the nose and tail, and stations crowd toward those two ends, where the
-   * outline curves most. Two straight tubes cut in planes of constant z met there in a notch.
+   * One side of the cockpit rim: a tube swept along the canopy's outline on the skin. Its
+   * sections stand square to the path, so it stays round where the outline turns in toward the
+   * nose and tail, and stations crowd toward those ends, where the outline curves most. It
+   * thins to a fine point at each end, so the two sides converge ahead of the pilot as two clean
+   * lines. Tubes cut in planes of constant z smeared there and met in a notch.
    */
-  private rimLoop(at: (z: number) => { angle: number; env: number; cw: number }, zStart: number, zEnd0: number, radius: number): THREE.BufferGeometry {
-    // The outline closes to a point at each end, tighter than a tube can turn. Start and stop
-    // where the opening is a little wider than the tube and close each end with a half circle
-    // there. The tube thins to a third toward both ends, so the turn ahead of the pilot is a
-    // fine line and not a knob.
-    const wide = (from: number, to: number) => { let lo = 0, hi = .5; for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; if (at(from + (to - from) * m).cw < radius * 1.2) lo = m; else hi = m } return from + (to - from) * hi }
-    const z0 = wide(zStart, zEnd0), z1 = wide(zEnd0, zStart)
-    const half = Math.max(10, Math.round(40 * this.detail)), around = Math.max(6, 2 * Math.round(5 * this.detail))
-    const path: { p: THREE.Vector3; n: THREE.Vector3; r: number }[] = []
-    for (const side of [1, -1]) {
-      for (let i = 0; i <= half; i++) {
-        const s = (1 - Math.cos(Math.PI * i / half)) / 2, z = z0 + (z1 - z0) * (side > 0 ? s : 1 - s), e = at(z)
-        const angle = side > 0 ? e.angle : Math.PI - e.angle
-        const fromEnd = Math.min(1, Math.min(s, 1 - s) / .1), taper = fromEnd * fromEnd * (3 - 2 * fromEnd)
-        path.push({ p: this.skinPoint(z, angle), n: this.skinNormal(z, angle), r: radius * (.33 + .67 * taper) })
-      }
-      // Turn across the centre line in a half circle on the skin, not in one hairpin step.
-      const end = path[path.length - 1], zEnd = end.p.z, turn = Math.abs(end.p.x), out = side > 0 ? 1 : -1
-      for (let k = 1; k < 6; k++) {
-        const a = Math.PI * k / 6, x = side * turn * Math.cos(a), z = zEnd + out * turn * Math.sin(a)
-        path.push({ p: new V(x, this.skin(z, x), z), n: new V(0, 1, 0), r: end.r })
-      }
-    }
-    const count = path.length, rings: THREE.Vector3[][] = []
-    for (let j = 0; j <= count; j++) {
-      const { p, n, r } = path[j % count]
-      const tangent = path[(j + 1) % count].p.clone().sub(path[(j + count - 1) % count].p).normalize()
+  private rimSide(at: (z: number) => { angle: number; env: number; cw: number }, zStart: number, zEnd: number, radius: number, side: 1 | -1): THREE.BufferGeometry {
+    // The outline closes to a point at each end. Run between the stations where the opening is
+    // as wide as the tube.
+    const wide = (from: number, to: number) => { let lo = 0, hi = .5; for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; if (at(from + (to - from) * m).cw < radius) lo = m; else hi = m } return from + (to - from) * hi }
+    const z0 = wide(zStart, zEnd), z1 = wide(zEnd, zStart)
+    const count = Math.max(10, Math.round(40 * this.detail)), around = Math.max(6, 2 * Math.round(5 * this.detail))
+    const path = Array.from({ length: count + 1 }, (_, i) => {
+      const s = (1 - Math.cos(Math.PI * i / count)) / 2, z = z0 + (z1 - z0) * s, e = at(z), angle = side > 0 ? e.angle : Math.PI - e.angle
+      const fromEnd = Math.min(1, Math.min(s, 1 - s) / .12), taper = fromEnd * fromEnd * (3 - 2 * fromEnd)
+      return { p: this.skinPoint(z, angle), n: this.skinNormal(z, angle), r: radius * (.12 + .88 * taper) }
+    })
+    return loft(path.map(({ p, n, r }, j) => {
+      const tangent = path[Math.min(count, j + 1)].p.clone().sub(path[Math.max(0, j - 1)].p).normalize()
       const across = new V().crossVectors(tangent, n).normalize(), up = new V().crossVectors(across, tangent)
-      rings.push(Array.from({ length: around }, (_, i) => {
-        const a = i / around * Math.PI * 2
-        // Taller than wide and set low: it reaches down past the edge of the skin to the tub, so
-        // no light shows between them from the seat.
-        return p.clone().addScaledVector(across, r * Math.cos(a)).addScaledVector(up, r * 1.5 * Math.sin(a) - r * .6)
-      }))
-    }
-    const g = loft(rings, false, false)
-    // The loop closes on its first ring: share the normals there so the join does not show.
-    const normal = g.getAttribute('normal'), width = around + 1, last = count * width
-    for (let i = 0; i < width; i++) {
-      const s = new V(normal.getX(i) + normal.getX(last + i), normal.getY(i) + normal.getY(last + i), normal.getZ(i) + normal.getZ(last + i)).normalize()
-      normal.setXYZ(i, s.x, s.y, s.z); normal.setXYZ(last + i, s.x, s.y, s.z)
-    }
-    return g
+      // Set a little low, so it reaches down to the tub and no light shows between them.
+      return Array.from({ length: around }, (_, i) => { const a = i / around * Math.PI * 2; return p.clone().addScaledVector(across, r * Math.cos(a)).addScaledVector(up, r * 1.2 * Math.sin(a) - r * .4) })
+    }))
   }
 
   /** Distance in metres from the pilot's eye to the nearest canopy or tub surface. */
