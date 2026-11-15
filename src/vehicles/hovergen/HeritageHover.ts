@@ -3,6 +3,8 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { bodyRings, loft, type Mat } from '../jetgen/shapes'
 import { mergeStatic } from '../skins/mergeStatic'
 import { applyShowroom, setRole } from '../skins/showroom'
+import { addLavaGlow } from '../skins/lavaGlow'
+import { addNightReadability } from '../skins/nightReadability'
 import { buildHeritage, heritageHull, addHeritageBox, type HeritageDesign } from './heritage'
 
 /** Round two uses the common vehicle materials. Round one retains its original builder. */
@@ -20,7 +22,12 @@ export class HeritageHover {
   private readonly glowMeshes: T.Mesh[] = []
   private detach = () => {}
 
-  constructor(readonly design: HeritageDesign, readonly level: 0 | 1 | 2) {
+  /**
+   * `game` defers the shared shading until `showroom()`: the tiers and the night and lava
+   * passes register with the owning vehicle, which only exists once the craft is attached.
+   * The lab leaves it false and gets the shading at once, with no game passes.
+   */
+  constructor(readonly design: HeritageDesign, readonly level: 0 | 1 | 2, private readonly game = false) {
     this.paint = setRole(new T.MeshStandardMaterial({ color: design.paint, metalness: .8, roughness: .24 }), 'paint')
     this.accent = setRole(new T.MeshStandardMaterial({ color: design.accent, roughness: .4 }), 'accent')
     this.glow = setRole(new T.MeshStandardMaterial({ color: design.accent, emissive: design.accent, emissiveIntensity: 2, transparent: true, depthWrite: false, side: T.DoubleSide, blending: T.AdditiveBlending }), 'glow')
@@ -83,9 +90,17 @@ export class HeritageHover {
     }
     mergeStatic(this.object)
     this.object.traverse(o => { if (o instanceof T.Mesh && o.material === this.glow) this.glowMeshes.push(o) })
-    this.detach = applyShowroom(this.object, () => {})
+    if (!game) this.detach = applyShowroom(this.object, () => {})
     this.setLights(false, false)
   }
+
+  /** Game use: call once the craft is attached to its vehicle. The far silhouette has no tiers. */
+  showroom(): void {
+    if (!this.game || this.level === 2 || this.shaded) return
+    this.shaded = true
+    this.detach = applyShowroom(this.object, root => { addNightReadability(root); addLavaGlow(root) })
+  }
+  private shaded = false
 
   setColors(body: T.ColorRepresentation, accent: T.ColorRepresentation): void {
     this.paint.color.set(body); this.accent.color.set(accent)

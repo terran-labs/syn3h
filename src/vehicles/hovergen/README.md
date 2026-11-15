@@ -1,7 +1,9 @@
 # Hovercraft studies
 
 Round one stays in `designs.ts` and `NextHover.ts`. Round two lives in `heritage.ts`
-and `HeritageHover.ts`; both appear under the hovercraft in the shared vehicle lab.
+and `HeritageHover.ts`, round three in `round3.ts` and `Round3Hover.ts`, round four in
+`round4.ts` (it reuses `Round3Hover`). All four
+appear under the hovercraft in the shared vehicle lab; a round is never deleted.
 
 The owner rejected round one's proportions and requested five variants closer to
 the original hovercraft, including its rear spoiler, at roughly the buggy's size.
@@ -34,3 +36,53 @@ Near and mid geometry come from the shape kit at different resolutions; far uses
 an explicit hull, cockpit and spoiler silhouette in one draw. Budget and scale
 assertions are in `hover-heritage.test.ts`. Tests, cockpit sightline checks, rendered
 comparison and timing measurements must pass before this round is ready to publish.
+
+## Round three
+
+On 15 November 2026 the owner accepted round two's proportions and rejected its
+fittings: the headlights and tail lamps sat at fixed coordinates and hung in the air
+beside the hull. He asked for ten explorations and reinterpretations of the original,
+with styling from the approved jet and buggy.
+
+The rule for round three is that nothing is placed by coordinate. Each fitting asks
+the hull where its skin is and is generated from the answer: headlamp pods faired into
+the nose or a light bar on the nose's own outline, tail bars in a socket turned to lie
+along the stern or a band on the stern's outline, vents as bulges of the hull's skin,
+spoiler supports rooted below the deck. Each fitting records an anchor point that must
+be inside the hull. `floating()` returns the anchors that are not, and
+`hover-round3.test.ts` requires none.
+
+A design is a recipe over one hull: nose lamps (socket, twin, visor), tail lamps (bars,
+band), thruster (the original stalk, the jet's hex ring, twin booms, through the
+stern), spoiler (classic, box, hex, fins, tee, arch, duck), vents, stripe and chine,
+plus hull multipliers. From the buggy: recessed lamps in dark sockets, centre stripe,
+flank vents, box supports with accent ribs. From the jet: the six-sided ring, faceted
+accent plates, twin booms, drooped accent tips.
+
+`Round3Hover` steps the generator's detail down until a level fits its triangle budget,
+so a design with more fittings spends fewer triangles on its hull, not more in total.
+
+## Round four
+
+The owner did not pick from round three. He named what he liked: the red Ducktail's air
+intakes and stern thrust duct, and the silver Arrow's wing whose tips dip down on the
+outside. He asked for the thrust pads, headlights and motor flares to be much better
+integrated, for the body to curve up at the edges of the cockpit so the canopy is part
+of the body's shape, and for a thruster he cannot see into from behind. Round four is
+five variations on that: Ember, Gull, Vee, Lowwing, Kite.
+
+What every round four design does: a coaming strip lifts the deck to a lip inside the
+canopy's foot; headlamps are bands on the nose outline (wrapped round each corner, or
+one bar across); each lift port sits in a belly blister with its ring 8 mm proud; the
+thruster is the open end of a cowl grown from the deck, closed 10 cm inside the lip by
+a solid disc that carries the glow (`plugNozzle`). "Motor flares" was read as the
+chrome collar round the old nozzle; that reading is the lead's, not confirmed.
+
+The see-through thruster came from the shape kit: a nozzle ends in a transparent
+additive glow with nothing opaque behind it, so the eye went on into the hull. Round
+three's nozzles now get the same disc.
+
+`GameHover` and the `hover.body` parameter (commit 7e1b2ff) let the game's hovercraft
+wear a round two study. The owner then ruled that the game ships one approved design
+per vehicle with no selector. Branch `veh/hovercraft-single` holds that version (one
+generated body, no model file), parked until he approves a design.
