@@ -9,7 +9,7 @@ for (const mode of modes) {
   try {
     const page = await browser.newPage(touch ? { ...devices[mode === 'ipad' ? 'iPad (gen 7)' : mode === 'landscape' ? 'iPhone 14 landscape' : 'iPhone 14'] } : { viewport: { width: 1440, height: 1000 } })
     const errors = []; page.on('pageerror', error => errors.push(error.message))
-    await page.goto(`http://127.0.0.1:5187/?autoplay=1&room=exploration-${Date.now()}`)
+    await page.goto(`${process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'}?autoplay=1&room=exploration-${Date.now()}`)
     await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 90000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 90000 })
     assert.equal(await page.locator('.shell-hud').isVisible(), false)
