@@ -725,6 +725,14 @@
           "url": "https://vorton-previews.tail285f88.ts.net:32782/vehicle-lab.html?vehicle=game-skins"
         },
         {
+          "title": "Vehicle lab: jet designs",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/vehicle-lab.html?vehicle=jet"
+        },
+        {
+          "title": "Vehicle lab: tank designs",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/vehicle-lab.html?vehicle=tank"
+        },
+        {
           "title": "Jet design lab",
           "url": "https://vorton-previews.tail285f88.ts.net:32782/jetlab.html",
           "page": "jetlab.html"
@@ -772,6 +780,11 @@
         {
           "title": "Vehicle gallery",
           "url": "https://vorton-previews.tail285f88.ts.net:32782/tests/vehicles2/gallery.html"
+        },
+        {
+          "title": "Opening view: round against flat",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/terrainlab-opening.html",
+          "page": "terrainlab-opening.html"
         }
       ]
     },

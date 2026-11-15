@@ -80,7 +80,7 @@
    "Tail lights about 1.6 times larger"
   ],
   "file": "w1-flared.glb",
-  "triangles": 22714,
+  "triangles": 21266,
   "round": 2,
   "gameResolution": false
  },
@@ -94,7 +94,7 @@
    "Tail lights twice as large"
   ],
   "file": "w2-cobra.glb",
-  "triangles": 22706,
+  "triangles": 21554,
   "round": 2,
   "gameResolution": false
  },
@@ -106,7 +106,7 @@
    "Long swept tail lights wrapping round the rear corners"
   ],
   "file": "w3-haunches.glb",
-  "triangles": 22446,
+  "triangles": 21330,
   "round": 2,
   "gameResolution": false
  },
@@ -118,7 +118,7 @@
    "Tall tail lights"
   ],
   "file": "w4-cokebottle.glb",
-  "triangles": 22778,
+  "triangles": 21842,
   "round": 2,
   "gameResolution": false
  },
@@ -132,7 +132,7 @@
    "The largest tail lights"
   ],
   "file": "w5-extreme.glb",
-  "triangles": 22774,
+  "triangles": 21746,
   "round": 2,
   "gameResolution": false
  },
@@ -146,7 +146,7 @@
    "Lower body drawn in beside each wheel so the linkage is in the open"
   ],
   "file": "r1-blade.glb",
-  "triangles": 6093,
+  "triangles": 5463,
   "round": 3,
   "gameResolution": true
  },
@@ -160,7 +160,7 @@
    "Lower body drawn in beside each wheel so the linkage is in the open"
   ],
   "file": "r2-wishbone.glb",
-  "triangles": 6175,
+  "triangles": 5423,
   "round": 3,
   "gameResolution": true
  },
@@ -174,9 +174,12 @@
    "Lower body drawn in beside each wheel so the linkage is in the open"
   ],
   "file": "r3-coilover.glb",
-  "triangles": 6315,
+  "triangles": 5771,
   "round": 3,
-  "gameResolution": true
+  "gameResolution": true,
+  "alsoIn": [
+   "4"
+  ]
  },
  {
   "id": "r4-frame",
@@ -188,7 +191,7 @@
    "Lower body drawn in beside each wheel so the linkage is in the open"
   ],
   "file": "r4-frame.glb",
-  "triangles": 6129,
+  "triangles": 5307,
   "round": 3,
   "gameResolution": true
  },
@@ -202,8 +205,68 @@
    "Lower body drawn in beside each wheel so the linkage is in the open"
   ],
   "file": "r5-delta.glb",
-  "triangles": 5845,
+  "triangles": 5367,
   "round": 3,
   "gameResolution": true
+ },
+ {
+  "id": "c1-aarm",
+  "name": "A-arm",
+  "notes": [
+   "Lower member: a broad A-arm, two deep arms and a web, about three times the old blade",
+   "One coilover from the arm to a tower raised from the fender",
+   "Tail lights: one rounded bar each side, inside the rear panel",
+   "Headlights: a domed lens in a chrome bezel over each nose duct, about twice the old lamp"
+  ],
+  "file": "c1-aarm.glb",
+  "triangles": 6411,
+  "round": 4,
+  "gameResolution": true,
+  "basedOn": "Coilover"
+ },
+ {
+  "id": "c2-box",
+  "name": "Box arm",
+  "notes": [
+   "Lower member: a heavy tapered box section with an accent rib",
+   "One large coilover to a fender tower",
+   "Tail lights: two slim stacked bars each side",
+   "Headlights: larger lens with a chrome halo ring"
+  ],
+  "file": "c2-box.glb",
+  "triangles": 6855,
+  "round": 4,
+  "gameResolution": true,
+  "basedOn": "Coilover"
+ },
+ {
+  "id": "c3-twin",
+  "name": "Twin shock",
+  "notes": [
+   "Lower member: a large aerofoil arm, broad at the body",
+   "Two slimmer shocks per wheel, each to its own tower",
+   "Tail lights: a slanted bar in a chrome surround",
+   "Headlights: wide oval lenses"
+  ],
+  "file": "c3-twin.glb",
+  "triangles": 7799,
+  "round": 4,
+  "gameResolution": true,
+  "basedOn": "Coilover"
+ },
+ {
+  "id": "c4-fork",
+  "name": "Fork",
+  "notes": [
+   "Lower member: two thick tubes forking from the hub to the body, cross braced",
+   "One big coilover standing between them",
+   "Tail lights: a tall rounded lamp each side",
+   "Headlights: the largest lenses, with a halo ring"
+  ],
+  "file": "c4-fork.glb",
+  "triangles": 6467,
+  "round": 4,
+  "gameResolution": true,
+  "basedOn": "Coilover"
  }
 ]
