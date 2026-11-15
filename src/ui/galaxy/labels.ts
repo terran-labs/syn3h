@@ -13,7 +13,12 @@
  */
 /** depth: distance from the eye along the view; smaller is nearer. Without it, no depth rule applies. */
 export interface LabelPlace { id: string; x: number; y: number; radius: number; visible: boolean; depth?: number }
-export interface LabelSpot { id: string; x: number; y: number; spot: number; crowded: boolean }
+/**
+ * spot is the side chosen, -1 when crowded. A crowded label is still given a position clear of
+ * nearer worlds, since a focused one is shown; blocked means no such position exists and the
+ * caller must keep it out of sight even when focused.
+ */
+export interface LabelSpot { id: string; x: number; y: number; spot: number; crowded: boolean; blocked?: boolean }
 type Box = { left: number; top: number; right: number; bottom: number }
 /** How much of disc a is covered by disc b, 0 to 1. */
 function covered(a: LabelPlace, b: LabelPlace): number {
@@ -70,16 +75,30 @@ export function placeLabels(
     const before = options.previous?.get(place.id)
     const tries = [0, 1, 2, 3, 4, 5, 6, 7]
     if (before !== undefined && before >= 0 && before < spots.length) tries.unshift(before)
-    // A world mostly behind a nearer one is not named over it.
-    const hidden = nearer.some(disc => covered(place, disc) > 0.5)
+    // A world mostly behind a nearer one is not named over it. Two thresholds, keyed on last
+    // frame, so a pair resting near half cover does not blink the label every frame.
+    const threshold = before !== undefined && before < 0 ? 0.45 : 0.55
+    const hidden = nearer.some(disc => covered(place, disc) > threshold)
     let chosen = -1, box: Box | null = null
     if (onScreen(place) && !hidden) for (const i of tries) { box = fits(i); if (box) { chosen = i; break } }
     // The world in play is named wherever a spot is clear of the worlds in front of it, even
     // over farther worlds and other labels, under it by preference.
     if (!box && place.id === options.first && !hidden) for (const i of tries) if (behindNothing(boxAt(i))) { chosen = i; box = boxAt(i); break }
-    if (box) taken.push(box)
-    const [x, y] = spots[Math.max(0, chosen)]
-    result.push({ id: place.id, x, y, spot: chosen, crowded: chosen < 0 })
+    if (box) { taken.push(box); const [x, y] = spots[chosen]; result.push({ id: place.id, x, y, spot: chosen, crowded: false }); continue }
+    // Crowded, it fades, but a focused one still shows: put it where it cannot cover a nearer
+    // world, further out if the sides are all taken. Nowhere at all, and it is blocked.
+    let rest: number[] | undefined
+    for (const reach of [1, 1.6, 2.4]) {
+      for (let i = 0; i < spots.length && !rest; i++) {
+        const [sx, sy] = spots[i]
+        const x = Math.min(bounds.width - margin - w / 2, Math.max(margin + w / 2, place.x + (sx - place.x) * reach))
+        const y = Math.min(bounds.bottom - h, Math.max(top, place.y + (sy + h / 2 - place.y) * reach - h / 2))
+        if (behindNothing({ left: x - w / 2 - pad, top: y - pad, right: x + w / 2 + pad, bottom: y + h + pad })) rest = [x, y]
+      }
+      if (rest) break
+    }
+    const [x, y] = rest ?? spots[0]
+    result.push({ id: place.id, x, y, spot: -1, crowded: true, ...(rest ? {} : { blocked: true }) })
   }
   return result
 }

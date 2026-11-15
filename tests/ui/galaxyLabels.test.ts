@@ -100,4 +100,34 @@ describe('galaxy labels', () => {
     const moved = placeLabels([play, under, ...farther], sizes(['play', 'under', 'f1', 'f2', 'f3']), bounds, { first: 'play', previous: new Map([['play', 0]]) }).find(s => s.id === 'play')!
     expect(moved.crowded).toBe(false); expect(moved.spot).not.toBe(0); expect(over(moved, under)).toBe(false)
   })
+  it('gives a crowded label a position clear of nearer worlds, for when it is focused', () => {
+    // Mostly behind a nearer world, so faded; focused, it must still not cover the front world.
+    const hidden: LabelPlace = { id: 'hidden', x: 200, y: 300, radius: 12, visible: true, depth: 25 }
+    const front: LabelPlace = { id: 'front', x: 203, y: 300, radius: 13, visible: true, depth: 9 }
+    const [spot] = placeLabels([hidden, front], sizes(['hidden', 'front']), bounds).filter(s => s.id === 'hidden')
+    expect(spot).toMatchObject({ crowded: true, spot: -1 }); expect(spot.blocked).toBeUndefined()
+    expect(over(spot, front)).toBe(false)
+    // Walled in by nearer worlds on every side and further out: blocked, for the caller to hide.
+    const wall = Array.from({ length: 40 }, (_, i): LabelPlace => ({ id: `n${i}`, x: (i % 8) * 60 + 10, y: 150 + Math.floor(i / 8) * 75, radius: 48, visible: true, depth: 1 }))
+    const boxed = placeLabels([hidden, ...wall], sizes(['hidden', ...wall.map(n => n.id)]), bounds).find(s => s.id === 'hidden')!
+    expect(boxed).toMatchObject({ crowded: true, blocked: true })
+  })
+  it('hides and shows a half-covered world with hysteresis, not at one threshold', () => {
+    // Slide the front world across the back one, so cover runs 0.3 to 0.7 and back.
+    const back: LabelPlace = { id: 'back', x: 200, y: 300, radius: 20, visible: true, depth: 30 }
+    const coverAt = (dx: number) => { const d = dx, r = 20; return d >= 2 * r ? 0 : (2 * r * r * Math.acos(d / (2 * r)) - 0.5 * d * Math.sqrt(4 * r * r - d * d)) / (Math.PI * r * r) }
+    let previous = new Map<string, number>(), flips: { cover: number; hidden: boolean }[] = []
+    const path = [...Array.from({ length: 81 }, (_, i) => 22 - i * 0.2), ...Array.from({ length: 81 }, (_, i) => 6 + i * 0.2)]
+    let was: boolean | undefined
+    for (const dx of path) {
+      const front: LabelPlace = { id: 'front', x: 200 + dx, y: 300, radius: 20, visible: true, depth: 10 }
+      const spot = placeLabels([back, front], sizes(['back', 'front']), bounds, { previous }).find(s => s.id === 'back')!
+      previous = new Map([['back', spot.spot]])
+      if (spot.crowded !== was) { flips.push({ cover: coverAt(dx), hidden: spot.crowded }); was = spot.crowded }
+    }
+    // Shown, hidden once past 0.55, shown again only below 0.45: three states, two flips.
+    expect(flips.map(f => f.hidden)).toEqual([false, true, false])
+    expect(flips[1].cover).toBeGreaterThan(0.55); expect(flips[1].cover).toBeLessThan(0.57)
+    expect(flips[2].cover).toBeLessThan(0.45); expect(flips[2].cover).toBeGreaterThan(0.43)
+  })
 })

@@ -93,6 +93,16 @@ export function orbitLayout(count: number, time: number): { position: [number, n
   })
 }
 /**
+ * The world a tap at (x, y) means. On a disc, the nearest disc there: the one that is seen,
+ * since a tap is a drop and must never land on a world hidden behind it. Just off every disc,
+ * a generous margin on small screens picks the closest edge.
+ */
+export function pickWorld(screen: readonly { id: string; x: number; y: number; radius: number; visible: boolean; depth: number }[], x: number, y: number, margin = 22): string | undefined {
+  const shown = screen.filter(s => s.visible).map(s => ({ s, d: Math.hypot(s.x - x, s.y - y) - s.radius }))
+  const on = shown.filter(e => e.d < 0).sort((a, b) => a.s.depth - b.s.depth)[0]
+  return (on ?? shown.filter(e => e.d < margin).sort((a, b) => a.d - b.d)[0])?.s.id
+}
+/**
  * The feel of the view under a finger. The finger moves an aim; what is shown follows the aim
  * on a critically damped spring, quick enough to stay under the finger (a frame or two) but
  * weighted. Let go and the aim coasts on, slowing the way a flicked list does on a phone. The
@@ -956,8 +966,8 @@ export class Galaxy {
     if (drag.moved || !tap) return
     // A tap: the nearest world under the finger, with a generous margin on small screens.
     const box = this.canvas.getBoundingClientRect(), x = event.clientX - box.left, y = event.clientY - box.top
-    const found = this.screen.filter(s => s.visible).map(s => ({ s, d: Math.hypot(s.x - x, s.y - y) - s.radius })).filter(e => e.d < 22).sort((a, b) => a.d - b.d)[0]
-    if (found) { if (!this.options.onTap?.(found.s.id)) this.choose(found.s.id) } else if (this.chosen >= 0 && !this.flight) this.home()
+    const found = pickWorld(this.screen, x, y)
+    if (found) { if (!this.options.onTap?.(found)) this.choose(found) } else if (this.chosen >= 0 && !this.flight) this.home()
   }
   dispose(): void { this.presence.dispose(); this.active = false; this.abort.abort(); this.resizeObserver.disconnect(); this.release() }
 }
