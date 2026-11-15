@@ -15,3 +15,7 @@ export const spawnRadius = number('spawnRadius', 'Spawn radius', 24, 10, 100)
 
 export const approachSpread = number('approachSpread', 'Approach spread', 8, 0, 20)
 export const cornerSpeed = number('cornerSpeed', 'Corner speed', 12, 4, 30)
+
+export const roadSpeed = number('roadSpeed', 'Road speed (m/s)', 10, 6, 25)
+export const reverseBrakeTime = number('reverseBrakeTime', 'Brake before reverse (s)', 0.35, 0, 2, 0.05)
+export const roadCornerSpeed = number('roadCornerSpeed', 'Road corner speed (m/s)', 6, 2, 20)

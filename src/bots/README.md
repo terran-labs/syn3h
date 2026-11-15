@@ -13,7 +13,7 @@ Include `bots` in the `window.syn3h` debug handles if desired. The module regist
 
 Every client may create a manager. Networking must set `manager.remote = true` on non-hosts before simulation; this immediately disposes all managed effects, brains and vehicles. Remote managers never spawn bots. Networking owns its separate remote copies. Host takeover spawns fresh vehicles on the next update. `isLocal = false` prevents keyboard reads here; it does not prevent the vehicle's forces from running. Do not give a host-owned bot a remote interpolation controller on the same host.
 
-`bots.setTargets([player, ...remoteVehicles])` replaces available targets. Target mode 0 follows the explicit local player; mode 1 selects the nearest supplied vehicle, excluding itself. Add `...bots.vehicles` to that list if bots should attack each other. Refresh the list after joins, leaves or population changes. `game.remove(bots)` unregisters every brain and vehicle and removes their Rapier bodies.
+`bots.setTargets([player, ...remoteVehicles])` replaces available targets. Target mode 0 follows the explicit local player; mode 1 selects the nearest supplied vehicle, excluding itself. Add `...bots.vehicles` to that list if bots should chase each other. Refresh the list after joins, leaves or population changes. `game.remove(bots)` unregisters every brain and vehicle and removes their Rapier bodies.
 
 The controller writes `input.fire` in one-step pulses when the fire interval passes and the terrain ray is clear. Actual firing requires the weapon system. The placeholder vehicle has no weapon implementation.
 
@@ -29,10 +29,12 @@ Positive input X means right, so the yaw error uses the negative-Z forward vecto
 
 ## Recovery and limits
 
-The added safety probe checks terrain bounds and optional `terrain.liquidHeightAt(x, z)` before driving ahead or reversing. Momentum can still carry a vehicle into lava. Uphill pursuit follows optional road centrelines from `roadPaths()` or the older `data.roads` shape; roads farther than 70 metres from the bot or 45 metres from the target are ignored. Terrain without the optional liquid query provides no lava avoidance. After sustained immobility or a flipped orientation, recovery tries terrain spawn points and teleports only to dry ground. Turning off driving also disables recovery.
+The safety probe checks terrain bounds and optional `terrain.liquidHeightAt(x, z)` before driving ahead or reversing. Momentum can still carry a vehicle into lava. A bot tries to crawl toward dry ground for `bots.recoveryTime` seconds, then asks the manager to return it to a dry spawn point. The same vehicle, body, name and effects remain attached. Sustained immobility and a flipped orientation also request recovery. Turning off driving disables recovery.
+
+Road guidance uses the public `roadPaths()` or older `data.roads` seam. It connects nearby approach, foot-ring, spiral and summit nodes only when their heights agree. Replacing the road array on regeneration invalidates the graph. Roads farther than 70 metres from either endpoint are ignored. Route queries run every 0.4 seconds; `bots.roadSpeed` and `bots.roadCornerSpeed` govern braking, and lateral variation narrows on a road. Full summit pursuit still requires browser validation against the current vehicle and terrain.
 
 Spawns use deterministic index/tick offsets around the player, reject steep slopes and wet ground, and keep five metres between new bots. If no valid position is available, the manager leaves the count below the requested value and retries on subsequent frames. Bots use stable hue offsets, target velocity prediction, lateral approach offsets and nearby ally avoidance. Corner braking above `bots.cornerSpeed` reduces overshoot. No wings are deployed, matching the active Syn3h bot logic. Headless contact tests cover both the placeholder and Syn3h buggy.
 
-Run `npx vitest run tests/bots` for headless Rapier tests. With Vite on port 5186, `node src/bots/smoke.mjs` sets five bots through the public parameter API, waits for real contact, captures screenshots, then clears the population.
+Run `tools/heavy.sh npx vitest run tests/bots --maxWorkers=2` for headless Rapier tests. With Vite on port 5186, `node src/bots/smoke.mjs` sets five bots through the public parameter API, waits for real contact, captures screenshots, then clears the population.
 
 Host bots attach shared vehicle effects with `local: false`; effects are disposed before the body. A monotonic lifetime ID and the world seed supply `generateName`, so removing and replacing an array slot does not reuse the old identity.

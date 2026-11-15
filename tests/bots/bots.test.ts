@@ -86,7 +86,7 @@ describe('bot pursuit', () => {
     const bot = new PlaceholderVehicle(game, terrain, new Vector3(0, 0.5, 20))
     const brain = new BotBrain(game, terrain, bot, target)
     for (let i = 0; i < 76; i++) brain.fixedUpdate(0.02)
-    expect(bot.input.y).toBeLessThan(0); expect(brain.rescues).toBe(0)
+    expect(bot.input.y).toBeLessThan(0); expect(bot.input.brakes).toBe(true); expect(brain.rescues).toBe(0)
     for (let i = 0; i < 400; i++) brain.fixedUpdate(0.02)
     expect(brain.rescues).toBe(1)
   })
@@ -114,6 +114,21 @@ describe('bot pursuit', () => {
   })
 })
 describe('bot population', () => {
+  it('returns a stuck bot to dry ground without replacing its body, name or effects', () => {
+    const {game,systems,step}=harness(), player=stationaryTarget(game)
+    const wet={...terrain,liquidHeightAt:(_x:number,z:number)=>z>10?2:-Infinity}
+    const manager=game.add(new BotManager(game,wet,player))
+    params.set('bots.count',1);manager.update()
+    const bot=manager.vehicles[0],handle=bot.body.handle,id=bot.id,name=bot.name
+    bot.teleport(new Vector3(0,1,20));bot.body.setBodyType(RAPIER.RigidBodyType.Fixed,true)
+    for(let i=0;i<700;i++)step()
+    expect(manager.vehicles[0]).toBe(bot);expect(bot.body.handle).toBe(handle)
+    expect(bot.id).toBe(id);expect(bot.name).toBe(name);expect(bot.body.translation().z).toBeLessThan(10)
+    expect(effects.attached[0].disposed).toBe(false)
+    expect(systems.some(s=>s instanceof BotBrain&&s.rescues>0)).toBe(true)
+    manager.dispose()
+  })
+
   it('keeps Rapier usable when graphics and count drop together or in adjacent frames', () => {
     const { game, systems, step } = harness(), player = stationaryTarget(game)
     const manager = game.add(new BotManager(game, terrain, player))
