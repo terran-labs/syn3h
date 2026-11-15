@@ -27,6 +27,13 @@ export const roadCornerSpeed = number('roadCornerSpeed', 'Road corner speed (m/s
 export const freeSpirit = number('freeSpirit', 'Own agenda (0 always chases)', 0.6, 0, 1, 0.05)
 
 /**
+ * Let a self-flying jet open its wings on long straight legs. Off by default: forward flight
+ * is quicker but has only been proven on two courses, and hover mode is the safe way to
+ * cross a mountain.
+ */
+export const jetForwardFlight = defineParam({ id: 'bots.jetForwardFlight', label: 'Self-flying jets use forward flight', group: 'Bots', scope: 'world', default: false })
+
+/**
  * Daydream: seconds without touching the controls before the player's own vehicle starts
  * driving itself. 0 turns it off. Personal, never sent to the room. The settings slider maps
  * its travel onto 10 seconds to 5 minutes with "off" at the far right (see daydreamControl.ts).

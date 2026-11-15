@@ -13,7 +13,7 @@ import type { InputState } from '../../core/Input'
 import type { Vehicle } from '../../vehicles/Vehicle'
 import { isSafeGround, type BotTerrain } from '../BotBrain'
 import { roadPaths, roadWaypoint } from '../navigation'
-import { roadSpeed } from '../params'
+import { jetForwardFlight, roadSpeed } from '../params'
 import type { DriveGoal, Navigator, NavPoint, Pilot, PilotStatus, Route } from '../pilot/types'
 import { hashString, seededRandom } from '../random'
 import { type Personality, personalityFor } from './personality'
@@ -177,6 +177,21 @@ export class Mind {
       this.troubleFor = clear ? Math.max(0, this.troubleFor - dt) : this.troubleFor + dt
       if (act.kind === 'follow' && distance < 6) { goal.stopWithin = 6; goal.x = target.x; goal.z = target.z }
     }
+    if (this.pilot.profile.flies && act.kind !== 'pause') {
+      // An aircraft must be above the ground ahead before it gets there. Look along the way
+      // it is going: hold a height that clears the highest ground within reach, and slow
+      // down in proportion to how fast that ground rises, because it can only climb so quickly.
+      const dx = goal.x - here.x, dz = goal.z - here.z, d = Math.hypot(dx, dz) || 1, base = this.surface(here.x, here.z)
+      let top = base, grade = 0
+      for (const reach of [12, 25, 45, 70]) {
+        const h = this.surface(here.x + dx / d * reach, here.z + dz / d * reach)
+        top = Math.max(top, h); grade = Math.max(grade, (h - base) / reach)
+      }
+      goal.altitude = this.pilot.profile.cruiseAltitude + Math.min(60, top - base)
+      if (grade > 0.2) goal.speed = Math.max(3, Math.min(goal.speed, 3 / grade))
+    }
+    // Wings for a long straight leg, where the pilot has them and the owner allows it.
+    if (this.pilot.profile.flies && jetForwardFlight.value && distance > 400 && act.kind !== 'follow' && act.kind !== 'pause') goal.special = true
     const status = this.pilot.drive(goal, input, dt)
     if (status.stuckFor > 3 || status.flipped) this.troubleFor += dt
     return status
@@ -214,8 +229,9 @@ export class Mind {
       ['road', road ? 0.8 + p.patience : 0],
       ['summit', summit ? 0.3 + p.boldness * 0.8 : 0],
       ['follow', leader ? p.sociability * 1.6 : 0],
-      ['donut', roomy && speed < 12 ? p.mischief * 0.7 : 0],
-      ['weave', p.mischief * 0.5],
+      // Stunts are for wheels and skirts; an aircraft showing off near a mountain ends badly.
+      ['donut', roomy && speed < 12 && !this.pilot.profile.flies ? p.mischief * 0.7 : 0],
+      ['weave', this.pilot.profile.flies ? 0 : p.mischief * 0.5],
     ]
     let total = 0
     for (const o of options) { if (o[0] === this.lastKind) o[1] *= o[0] === 'explore' ? 0.6 : 0.15; total += o[1] }
@@ -343,11 +359,7 @@ export class Mind {
     const bold = this.personality.boldness
     const onRoad = this.waypoint !== null && !this.options.navigator
     let speed = onRoad ? roadSpeed.value * (0.85 + bold * 0.4) : 8 + bold * 6
-    if (activity.kind === 'weave') speed = 11 + bold * 3
-    if (activity.kind === 'follow') {
-      const lv = activity.leader!.body.linvel()
-      speed = Math.min(22, Math.hypot(lv.x, lv.z) + Math.max(0, distance - 4) * 0.5)
-    }
+    if (this.pilot.profile.flies) speed = 11 + bold * 4
     return speed
   }
 
