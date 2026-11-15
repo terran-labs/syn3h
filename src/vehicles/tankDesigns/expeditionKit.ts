@@ -34,6 +34,8 @@ export interface ExpeditionSpec {
   stripe?: 'centre' | 'shoulders' | 'belt'
   trackWidth?: number
   pressureShell?: boolean
+  /** Soften the hull: how far each corner is rounded back along its edges, 0 to about 0.4. */
+  round?: number
 }
 
 /** 0 near (the player's own tank and others within 30 m), 1 mid, 2 far silhouette. */
@@ -173,7 +175,7 @@ function patch(batch: Batch, surface: Surface, sheet: Sheet, out: T.Vector3, u0 
   }
 }
 
-interface Opening { round: boolean; steps: number; segments: number; border: Surface; rim: Surface | null; fill: Surface | null }
+interface Opening { round: boolean; steps: number; segments: number; border: Surface; rim: Surface | null; fill: Surface | null; /** The pane fills its panel but for a slim border: for softened hulls, whose corners already frame it. */ tight?: boolean }
 
 /** A framed opening in one hull panel: a border in the panel's own surface, a rim, then the pane. */
 function opening(batch: Batch, sheet: Sheet, out: T.Vector3, o: Opening) {
@@ -199,9 +201,11 @@ function opening(batch: Batch, sheet: Sheet, out: T.Vector3, o: Opening) {
     patch(batch, surface, sheet, out, u, 1 - u, t0, t)
     patch(batch, surface, sheet, out, u, 1 - u, 1 - t, t1)
   }
-  if (o.rim) { frame(o.border, 0, 1, 0, 1, .09, .13); frame(o.rim, .09, .91, .13, .87, .115, .16) }
-  else frame(o.border, 0, 1, 0, 1, .115, .16)
-  if (o.fill) patch(batch, o.fill, sheet, out, .115, .885, .16, .84, o.steps)
+  // Border, then rim, then pane: [border u, border t, pane u, pane t].
+  const [bu, bt, pu, pt] = o.tight ? [.025, .035, .055, .07] : [.09, .13, .115, .16]
+  if (o.rim) { frame(o.border, 0, 1, 0, 1, bu, bt); frame(o.rim, bu, 1 - bu, bt, 1 - bt, pu, pt) }
+  else frame(o.border, 0, 1, 0, 1, pu, pt)
+  if (o.fill) patch(batch, o.fill, sheet, out, pu, 1 - pu, pt, 1 - pt, o.steps)
 }
 
 function cap(batch: Batch, surface: Surface, points: T.Vector3[], out: T.Vector3) {
@@ -264,30 +268,63 @@ function outward(q: Quad, a: Section, b: Section) {
   return v(c.x, c.y - (a[2] + a[5] + b[2] + b[5]) * .25, 0)
 }
 
+/** A ring with each corner turned into a short arc: three points per corner, the flats between them. */
+function rounded(points: T.Vector3[], amount: number) {
+  const n = points.length, out: T.Vector3[] = []
+  for (let j = 0; j < n; j++) {
+    const p = points[j], a = p.clone().lerp(points[(j + n - 1) % n], amount), b = p.clone().lerp(points[(j + 1) % n], amount)
+    out.push(a, a.clone().add(b).addScaledVector(p, 2).multiplyScalar(.25), b)
+  }
+  return out
+}
+
 function hull(batch: Batch, spec: ExpeditionSpec, level: 0 | 1): [number, number, number] {
-  const rings = spec.sections.map(s => ring(s, spec.pressureShell)), [front, last] = spec.cabin
+  const [front, last] = spec.cabin, sections = spec.sections
   const steps = spec.pressureShell && !level ? 3 : 1
+  // Softened hulls round every corner, round the section and along the length, and keep the
+  // panels between as flats: windows, grilles and stripes sit on those exactly as before.
+  const soft = spec.round && !level && !spec.pressureShell ? spec.round : 0
+  const blend = (a: Section, b: Section, t: number) => a.map((x, k) => x + (b[k] - x) * t) as Section
+  const outline = (s: Section) => soft ? rounded(ring(s), soft) : ring(s, spec.pressureShell)
+  /** The section where original section `k` was: itself, or the middle of its rounded corner. */
+  const at = (k: number): Section => {
+    if (!soft || k === 0 || k === sections.length - 1) return sections[k]
+    const a = blend(sections[k], sections[k - 1], soft * .7), b = blend(sections[k], sections[k + 1], soft * .7)
+    return a.map((x, f) => (x + 2 * sections[k][f] + b[f]) / 4) as Section
+  }
+  // Rows of the skin: `bay` is the original bay the strip after this row belongs to, -1 for a corner.
+  const rows: { section: Section; bay: number }[] = []
+  sections.forEach((sec, k) => {
+    if (!soft || k === 0 || k === sections.length - 1) { rows.push({ section: sec, bay: k }); return }
+    rows.push({ section: blend(sec, sections[k - 1], soft * .7), bay: -1 }, { section: at(k), bay: -1 }, { section: blend(sec, sections[k + 1], soft * .7), bay: k })
+  })
+  const rings = rows.map(r => outline(r.section)), count = rings[0].length
+  // Columns: the panel a column is, or -1 - vertex for a corner column.
+  const columns = Array.from({ length: count }, (_, c) => !soft ? c : c % 3 === 2 ? (c - 2) / 3 : -1 - Math.floor(c / 3))
+  const cabinZ = [sections[front][0], sections[last + 1][0]]
   // The cabin's inner face is collected apart so its normals are not blended with the outer skin.
   const shell = new Batch(), liner = new Batch()
-  for (let i = 0; i < rings.length - 1; i++) for (let j = 0; j < 10; j++) {
-    const q: Quad = [rings[i][j], rings[i + 1][j], rings[i + 1][(j + 1) % 10], rings[i][(j + 1) % 10]]
+  for (let r = 0; r < rings.length - 1; r++) for (let c = 0; c < count; c++) {
+    const i = rows[r].bay, j = columns[c], feature = i >= 0 && j >= 0
+    const q: Quad = [rings[r][c], rings[r + 1][c], rings[r + 1][(c + 1) % count], rings[r][(c + 1) % count]]
     const sheet: Sheet = spec.pressureShell ? (u, t) => {
       const a = spec.sections[i], b = spec.sections[i + 1], s = a.map((x, k) => x + (b[k] - x) * u)
       const angle = (72 - (j + t) * 36) * Math.PI / 180
       return v(Math.cos(angle) * s[1], (s[5] + s[2]) * .5 + Math.sin(angle) * (s[5] - s[2]) * .5, s[0])
     } : (u, t) => q[0].clone().lerp(q[1], u).lerp(q[3].clone().lerp(q[2], u), t)
-    const out = outward(q, spec.sections[i], spec.sections[i + 1]), inward = out.clone().negate()
-    const occupied = i >= front && i <= last
-    const windscreen = i === front && [0, 8, 9].includes(j)
-    const sideWindow = i > front && i <= last && [1, 7].includes(j)
+    const out = outward(q, rows[r].section, rows[r + 1].section), inward = out.clone().negate()
+    const middle = (rows[r].section[0] + rows[r + 1].section[0]) / 2
+    const occupied = i >= 0 ? i >= front && i <= last : middle > cabinZ[0] && middle < cabinZ[1]
+    const windscreen = feature && i === front && [0, 8, 9].includes(j)
+    const sideWindow = feature && i > front && i <= last && [1, 7].includes(j)
     if (windscreen || sideWindow) {
       const round = !!spec.portholes && sideWindow, segments = level ? 10 : 24
-      opening(shell, sheet, out, { round, steps, segments, border: 'paint', rim: level ? null : 'chrome', fill: 'canopy' })
-      opening(liner, sheet, inward, { round, steps, segments, border: 'trim', rim: null, fill: null })
+      opening(shell, sheet, out, { round, steps, segments, border: 'paint', rim: level ? null : 'chrome', fill: 'canopy', tight: !!soft })
+      opening(liner, sheet, inward, { round, steps, segments, border: 'trim', rim: null, fill: null, tight: !!soft })
       continue
     }
     if (occupied) patch(liner, 'trim', sheet, inward, 0, 1, 0, 1, steps)
-    if (spec.radiator?.includes(i) && [1, 7, 9].includes(j)) {
+    if (feature && spec.radiator?.includes(i) && [1, 7, 9].includes(j)) {
       // Replace the panel with a framed recess. A decal laid on a curved or twisted quad
       // sinks into it in places and flickers in others.
       opening(shell, sheet, out, { round: false, steps, segments: 0, border: 'paint', rim: level ? null : 'chrome', fill: 'frame' })
@@ -302,7 +339,8 @@ function hull(batch: Batch, spec: ExpeditionSpec, level: 0 | 1): [number, number
       }
       continue
     }
-    const under = j >= 3 && j <= 5
+    // A corner column is dark only between two dark panels, under the hull.
+    const under = j >= 0 ? j >= 3 && j <= 5 : j === -5 || j === -6
     const stripe = spec.stripe === 'shoulders' && [0, 8].includes(j) || spec.stripe === 'belt' && [2, 6].includes(j)
     if (spec.stripe === 'centre' && j === 9 && i !== front) {
       // The centre stripe is cut into the roof panel, not laid over it.
@@ -313,14 +351,15 @@ function hull(batch: Batch, spec: ExpeditionSpec, level: 0 | 1): [number, number
   const endRing = (s: Section) => spec.pressureShell && !level ? Array.from({ length: 30 }, (_, i) => {
     const a = (72 - i * 12) * Math.PI / 180
     return v(Math.cos(a) * s[1], (s[5] + s[2]) * .5 + Math.sin(a) * (s[5] - s[2]) * .5, s[0])
-  }) : ring(s, spec.pressureShell)
+  }) : outline(s)
   if (spec.pressureShell) { shell.soften(); liner.soften() }
+  if (soft) { shell.soften(.95); liner.soften(.95) }
   batch.append(shell); batch.append(liner)
   cap(batch, 'paint', endRing(spec.sections[0]), FORE); cap(batch, 'paint', endRing(spec.sections.at(-1)!), AFT)
   lamps(batch, spec.sections[0], false, level); lamps(batch, spec.sections.at(-1)!, true, level)
   // Structural bands follow the shell cross-section rather than floating above it.
   for (const i of spec.ribs ?? []) {
-    const a = endRing(spec.sections[i]), middle = (spec.sections[i][2] + spec.sections[i][5]) * .5
+    const a = endRing(at(i)), middle = (at(i)[2] + at(i)[5]) * .5
     const lift = (p: T.Vector3, dz: number) => v(p.x + Math.sign(p.x) * .028, p.y + Math.sign(p.y - middle) * .028, p.z + dz)
     for (let j = 0; j < a.length; j++) {
       const p = a[j], q = a[(j + 1) % a.length], out = v((p.x + q.x) * .5, (p.y + q.y) * .5 - middle, 0)
@@ -336,7 +375,7 @@ function hull(batch: Batch, spec: ExpeditionSpec, level: 0 | 1): [number, number
   const floorY = Math.min(cabinStart[2] + .32, eyeY - .9)
   const cabinLength = cabinEnd[0] - spec.sections[front][0]
   batch.box('trim', [cabinStart[1] * 1.65, .12, cabinLength], [0, floorY, (cabinEnd[0] + spec.sections[front][0]) / 2])
-  cap(batch, 'trim', rings[front], AFT); cap(batch, 'trim', rings[last + 1], FORE)
+  cap(batch, 'trim', outline(at(front)), AFT); cap(batch, 'trim', outline(at(last + 1)), FORE)
   if (!level) {
     // Two seats and a low dashboard leave the windscreen clear.
     for (const x of [-.43, .43]) {

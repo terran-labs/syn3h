@@ -12,6 +12,7 @@ import { detailLevel, registerVehicleDetail } from './skins/mergeStatic'
 import { ExpeditionTank } from './tankDesigns/expeditionKit'
 import { round8, type TankBody } from './tankDesigns/round8'
 import { round9 } from './tankDesigns/round9'
+import { round10 } from './tankDesigns/round10'
 
 export const tankPower=defineParam({id:'tank.power',label:'Power',group:'Tank',scope:'world',default:2000,min:500,max:3500,step:10})
 export const tankSpeed=defineParam({id:'tank.speed',label:'Speed',group:'Tank',scope:'world',default:25,min:10,max:40,step:.1})
@@ -33,7 +34,7 @@ const APPROVED_BODY:string|null=null
 // Development servers only: ?tankBody=r8-dart drives a candidate before it is approved.
 const TRIAL_BODY=import.meta.env.DEV&&typeof location!=='undefined'?new URLSearchParams(location.search).get('tankBody'):null
 /** Every body a tank can wear, latest round first. */
-export const TANK_BODIES:readonly TankBody[]=[...round9,...round8]
+export const TANK_BODIES:readonly TankBody[]=[...round10,...round9,...round8]
 let body=TANK_BODIES.find(d=>d.id===(TRIAL_BODY??APPROVED_BODY))??null
 const wearers=new Set<()=>void>()
 /**
