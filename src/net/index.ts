@@ -37,6 +37,7 @@ import type { Terrain } from '../world/Terrain'
 import type { BotGearHooks as BotDecisionHooks } from '../bots/gear'
 import { BotGear, botGearOptions } from '../weapons/BotGear'
 import { Lasers } from '../weapons/Lasers'
+import { Blast } from '../weapons/blast'
 import { beamAimDirection } from '../weapons/aim'
 import { laserInterval, lasersAllowed } from '../weapons/params'
 import { GearRack } from '../weapons/Gear'
@@ -190,6 +191,8 @@ export class NetClient implements System {
   private readonly raceBridge: RaceBridge
   readonly conn: Connection
   readonly lasers: Lasers
+  /** Impacts push nearby vehicles this client simulates (Weapons lane). */
+  readonly blast: Blast
   /** Gear in hand (Weapons lane, src/weapons). With only the tag beam allowed, nothing changes. */
   private readonly botGear = new Map<number, BotGear>()
   readonly gear: GearRack
@@ -276,7 +279,14 @@ export class NetClient implements System {
       ],
       send: message => this.send(message),
     })
+    this.blast = new Blast(game, {
+      vehicleIds: () => this.vehicleIds(),
+      bodyOf: (id) => this.vehicleOf(id)?.body,
+      owns: (id) => this.ownsVehicle(id),
+      wrapSize: () => this.wrapSize,
+    })
     this.lasers = new Lasers(game, {
+      onImpact: (at, red) => this.blast.at(red ? 'thunder' : 'tag', at),
       bodyOf: (id) => this.vehicleOf(id)?.body,
       judgedId: (h) => this.judgedId(h),
       isVehicleBody: (h) => [...this.remotes.values()].some((r) => r.vehicle.body.handle === h),
@@ -347,6 +357,7 @@ export class NetClient implements System {
       bodyOf: (id) => this.vehicleOf(id)?.body,
       vehicleIds: () => this.vehicleIds(),
       judges: (id) => this.ownsVehicle(id),
+      onBurst: (at) => this.blast.at('chaser', at),
       heightAt: (x, z) => this.ctx.terrain.heightAt(x, z),
       wrapSize: () => this.wrapSize,
       inHand: () => this.gear.current === 'pester',
@@ -504,6 +515,7 @@ export class NetClient implements System {
       return
     }
     this.lasers.reset()
+    this.blast.reset()
     this.bungee.reset()
     this.yoink.reset()
     this.bigRed.reset()

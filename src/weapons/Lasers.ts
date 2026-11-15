@@ -31,6 +31,8 @@ export interface LaserHooks {
   isVehicleBody(handle: number): boolean
   /** A shot hit a vehicle this client judges. `dir` is the shot's unit direction; `red` for Big Red. */
   onHit(shooter: number, shot: number, victim: number, at: THREE.Vector3, dir: THREE.Vector3, red: boolean): void
+  /** A shot ended at `at`, on anything; once per shot on every client. For the impact push. */
+  onImpact?(at: THREE.Vector3, red: boolean): void
 }
 
 interface Projectile {
@@ -331,6 +333,7 @@ export class Lasers implements System {
     this.impacted.add(key)
     if (this.impacted.size > 256) this.impacted.delete(this.impacted.values().next().value as string)
     this.effects?.impact(at.clone(), normal ?? new THREE.Vector3(0, 1, 0), red)
+    this.hooks.onImpact?.(at, red)
   }
 
   private kill(i: number): void {

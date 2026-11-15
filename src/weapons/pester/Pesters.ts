@@ -36,6 +36,8 @@ export interface PesterHooks {
   launch(target: number | null): void
   /** A Pester caught a vehicle this client judges. */
   onCatch(shooter: number, shot: number, victim: number, at: THREE.Vector3, dir: THREE.Vector3): void
+  /** A Pester caught something at `at`; once per Pester on every client. For the impact push. */
+  onBurst?(at: THREE.Vector3): void
 }
 
 interface Orb {
@@ -158,7 +160,7 @@ export class Pesters implements System {
   /** The room confirmed a catch: pop that Pester everywhere. */
   confirmHit(shooter: number, shot: number): void {
     const o = this.orbs.find((p) => p.shooter === shooter && p.id === shot && p.popped < 0)
-    if (o) this.pop(o)
+    if (o) { this.hooks.onBurst?.(o.pos); this.pop(o) }
   }
 
   /** A player left: pop their Pesters. */
@@ -260,6 +262,7 @@ export class Pesters implements System {
         const dir = new THREE.Vector3(...o.vel).normalize()
         this.stats.caught++
         this.hooks.onCatch(o.shooter, o.id, o.to, o.pos.clone(), dir)
+        this.hooks.onBurst?.(o.pos)
         this.pop(o)
       }
     }
