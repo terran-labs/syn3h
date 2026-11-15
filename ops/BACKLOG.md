@@ -27,10 +27,10 @@ decisions in `ops/DECISIONS.md` or from standing direction in `FOREMAN-BRIEF.md`
    interpolation delay drops to what the ping justifies, or the reason is documented.
 8. **Public hosting on Cloudflare.** Blocked on the owner's Cloudflare access. Check: a
    phone on mobile data joins a room by QR code.
-9. **Start the Multiplayer lane.** Blocked: needs a thread. Check: brief acknowledged, branch
-   merged up to date, first handoff through the gate.
-10. **Vehicle leads.** Blocked: five workspaces have briefs and no threads. (proposed: start
-    only the Syn3h buggy lead until the owner has driven it)
+9. **Multiplayer lane, started 4:35pm.** Check: branch merged up to date, deployment
+   prepared to the point of one command, first handoff through the gate.
+10. **Five vehicle leads, started 4:35pm.** Check: each has merged `build/weekend`, looked at
+    a drive capture of its vehicle, and told the owner its two weakest points.
 
 ## Waiting on the owner
 

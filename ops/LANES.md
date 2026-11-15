@@ -12,12 +12,12 @@ refreshes the thread column on each sweep.
 | Vehicles (Codex 1) | `feat/vehicles2` | Idle since 4:06pm, merged | Shared vehicle code: `Vehicle.ts`, `unityBody.ts`, `lava.ts`, `index.ts`, shared skins, `src/vehicles/effects/` |
 | Bots, Performance and QA (Codex 2) | `feat/fx` | Running, 2 commits unmerged | Bots, camera, graphics levels, QA sweeps, stable channel |
 | UX (Codex 3) | `feat/audio` | Idle since 4:25pm, merged | Lobby, HUD, menus, demo features, sound |
-| Multiplayer | `feat/net` | No thread. Brief only | Networking, room server, modes, deployment |
-| Syn3h buggy | `veh/buggy` | No thread. Brief only | `Syn3hBuggy.ts`, its skin, model, test and `buggy.*` defaults |
-| Classic buggy | `veh/classic-buggy` | No thread. Brief only | See its `VEHICLE-BRIEF.md` |
-| Jet | `veh/jet` | No thread. Brief only | See its `VEHICLE-BRIEF.md` |
-| Hovercraft | `veh/hovercraft` | No thread. Brief only | See its `VEHICLE-BRIEF.md` |
-| Tank | `veh/tank` | No thread. Brief only | See its `VEHICLE-BRIEF.md` |
+| Multiplayer | `feat/net` | Started 4:35pm (Claude 1, Opus) | Networking, room server, modes, deployment |
+| Syn3h buggy | `veh/buggy` | Started 4:34pm (Claude 1, Opus) | `Syn3hBuggy.ts`, its skin, model, test and `buggy.*` defaults |
+| Classic buggy | `veh/classic-buggy` | Started 4:35pm (Claude 1, Opus) | See its `VEHICLE-BRIEF.md` |
+| Jet | `veh/jet` | Started 4:35pm (Claude 1, Opus) | See its `VEHICLE-BRIEF.md` |
+| Hovercraft | `veh/hovercraft` | Started 4:35pm (Claude 1, Opus) | See its `VEHICLE-BRIEF.md` |
+| Tank | `veh/tank` | Started 4:35pm (Claude 1, Opus) | See its `VEHICLE-BRIEF.md` |
 
 Retired branches, fully merged and far behind: `feat/sky`, `feat/terrain`, `feat/buggy`.
 

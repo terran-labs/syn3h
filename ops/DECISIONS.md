@@ -2,6 +2,20 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Saturday 14 November, 4:33pm Pacific: start all six empty lanes
+
+**Decided.** Start threads now for Multiplayer and all five vehicle leads (Syn3h buggy,
+classic buggy, jet, hovercraft, tank).
+
+**Why.** Maximum parallelism for tonight's push. The Foreman recommended starting only
+Multiplayer and the Syn3h buggy until the owner had driven the game; he chose all six.
+
+**What it changes.** Six new lead threads run on Claude 1 with Opus, each in its own
+workspace and worktree, as peers of the Orchestrator. Ten lanes now hand off to one
+merger, so protocol rules 3 (lane tests only) and 4 (batched merges) are no longer
+optional. All six lanes draw on the Claude 1 quota alongside the Orchestrator and Terrain
+Lab.
+
 ## Saturday 14 November, 4:27pm Pacific: the Foreman coordinates and reports
 
 **Decided.** The Foreman is the owner's single point of coordination and reports on the
