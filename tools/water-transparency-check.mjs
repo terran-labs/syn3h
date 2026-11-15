@@ -38,7 +38,7 @@ async function configure(page) {
 }
 async function scene(page, kind) {
   return page.evaluate(async kind => {
-    const T = await import(performance.getEntriesByType('resource').find(r => r.name.includes('/three_webgpu.js')).name), s = window.syn3h, t = s.terrain, level = s.params.get('world.lavaAltitude').value
+    const T = await import((await (await fetch('/src/world/water/bubbles.ts')).text()).match(/from ["']([^"']*three_webgpu[^"']*)["']/)[1]), s = window.syn3h, t = s.terrain, level = s.params.get('world.lavaAltitude').value
     let spot
     const good = (x, z, surface, lo = 1.6, hi = 4.5) => {
       const bed = t.heightAt(x, z), actual = t.liquidHeightAt(x, z)
@@ -101,7 +101,7 @@ async function shot(page, label) {
   await page.waitForTimeout(1200)
   const state = await page.evaluate(async () => {
     const s = window.syn3h, v = s.terrain.volcanics
-    const T = await import(performance.getEntriesByType('resource').find(r => r.name.includes('/three_webgpu.js')).name)
+    const T = await import((await (await fetch('/src/world/water/bubbles.ts')).text()).match(/from ["']([^"']*three_webgpu[^"']*)["']/)[1])
     const markerProof = window.waterClear?.markers.children.map(o => {
       o.geometry.computeBoundingBox(); const b = o.geometry.boundingBox, corners = []
       for (const x of [b.min.x, b.max.x]) for (const z of [b.min.z, b.max.z]) {
@@ -255,7 +255,7 @@ try {
     const recapture = () => a.evaluate(async () => {
       // Force a sky-only reflection capture now, through the real schedule (param invalidation).
       const s = window.syn3h, g = s.game, sky = g.scene.children.find(o => o.sunDirection && o.betaR), id = 'sky.turbidity', v = s.params.get(id).value
-      if (!window.pmremHooked) { window.pmremHooked = true; const T = await import(performance.getEntriesByType('resource').find(r => r.name.includes('/three_webgpu.js')).name), original = T.PMREMGenerator.prototype.fromScene; T.PMREMGenerator.prototype.fromScene = function (...args) { const target = original.apply(this, args); window.lastPmrem = target; return target } }
+      if (!window.pmremHooked) { window.pmremHooked = true; const T = await import((await (await fetch('/src/world/water/bubbles.ts')).text()).match(/from ["']([^"']*three_webgpu[^"']*)["']/)[1]), original = T.PMREMGenerator.prototype.fromScene; T.PMREMGenerator.prototype.fromScene = function (...args) { const target = original.apply(this, args); window.lastPmrem = target; return target } }
       const log = window.skyMixLog ??= []
       if (!window.skyMixWrapped) { window.skyMixWrapped = true; const node = sky.underwaterMix, original = node.update; node.update = function (frame) { const r = original.call(this, frame); log.push({ player: frame.camera === g.camera, value: this.value }); return r } }
       const before = s.game.scene.userData.skyEnvironment.captures
