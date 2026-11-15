@@ -457,29 +457,30 @@ describe('Room King of the Hill', () => {
     expect(g.scores[b.id]).toBe(0)
   })
 
-  it('credits a knock-in to the last player to touch, within the window only', () => {
+  it('credits a dunk to the last player to touch, within the window only', () => {
     const { host, b } = setup()
     run(4, [[host.peer, state([0, 0, 0])], [b.peer, state([3, 0, 0])]])
     send(host.peer, { type: 'ram', other: b.id })
     clock += 2000
-    send(b.peer, { type: 'died', cause: 'lava' })
-    expect(b.peer.last('game')).toMatchObject({ event: 'knock', actor: host.id, target: b.id, game: { scores: { [host.id]: 10 } } })
+    send(b.peer, { type: 'stuck' })
+    expect(b.peer.last('game')).toMatchObject({ event: 'dunk', actor: host.id, target: b.id, game: { scores: { [host.id]: 10 } } })
     expect(b.peer.last('game')!.game.koth.out[b.id]).toBeGreaterThan(clock / 1000)
-    // A second death while out is ignored.
-    send(b.peer, { type: 'died', cause: 'lava' })
-    expect(b.peer.all('game').filter((m) => m.event === 'knock' || m.event === 'died').length).toBe(1)
-    // Out players do not hold the hill until they respawn.
+    // A second report while still stuck is ignored.
+    send(b.peer, { type: 'stuck' })
+    expect(b.peer.all('game').filter((m) => m.event === 'dunk' || m.event === 'stuck').length).toBe(1)
+    // A stuck player does not hold the hill until the return delay has passed.
     run(1, [[b.peer, state(inside)], [host.peer, state(elsewhere)]])
     expect(host.peer.last('game')!.game.koth.holder).not.toBe(b.id)
     run(3, [[b.peer, state(inside)], [host.peer, state(elsewhere)]])
     expect(host.peer.last('game')!.game.koth.holder).toBe(b.id)
 
-    // Too long after the contact: just a death, no credit.
+    // Too long after the contact: stuck, but nobody's dunk. A tab with an older bundle still
+    // sends the old message name, which means the same.
     run(1, [[host.peer, state([0, 0, 0])], [b.peer, state([3, 0, 0])]])
     send(host.peer, { type: 'ram', other: b.id })
     run(6, [[host.peer, state([0, 0, 0])], [b.peer, state([300, 0, 0])]])
     send(b.peer, { type: 'died', cause: 'fell' })
-    expect(b.peer.last('game')).toMatchObject({ event: 'died', actor: b.id })
+    expect(b.peer.last('game')).toMatchObject({ event: 'stuck', actor: b.id })
     expect(b.peer.last('game')!.game.scores[host.id]).toBe(10)
   })
 
@@ -523,16 +524,16 @@ describe('Room King of the Hill with bots', () => {
     expect(g.scores[b.id]).toBeGreaterThanOrEqual(2)
   })
 
-  it('knocking a bot into the lava earns the bonus; only the host may report it', () => {
+  it('dunking a bot in the lava earns the bonus; only the host may report it', () => {
     const host = join('Host')
     const b = join('B')
     send(host.peer, { type: 'param', id: 'game.mode', value: 1 })
     run(1, [[host.peer, bot([3, 0, 0], [3, 0, 0])], [host.peer, state([50, 0, 0])], [b.peer, state([0, 0, 0])]])
     send(b.peer, { type: 'ram', other: BOT_ID_BASE })
-    send(b.peer, { type: 'died', cause: 'lava', bot: BOT_ID_BASE })
-    expect(host.peer.all('game').some((m) => m.event === 'knock')).toBe(false)
-    send(host.peer, { type: 'died', cause: 'lava', bot: BOT_ID_BASE })
-    expect(host.peer.last('game')).toMatchObject({ event: 'knock', actor: b.id, target: BOT_ID_BASE, game: { scores: { [b.id]: 10 } } })
+    send(b.peer, { type: 'stuck', bot: BOT_ID_BASE })
+    expect(host.peer.all('game').some((m) => m.event === 'dunk')).toBe(false)
+    send(host.peer, { type: 'stuck', bot: BOT_ID_BASE })
+    expect(host.peer.last('game')).toMatchObject({ event: 'dunk', actor: b.id, target: BOT_ID_BASE, game: { scores: { [b.id]: 10 } } })
     expect(host.peer.last('game')!.game.koth.out[BOT_ID_BASE]).toBeGreaterThan(0)
   })
 })

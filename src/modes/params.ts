@@ -34,25 +34,27 @@ export const kothZoneRadius = defineParam({
   default: 1, min: 0.25, max: 3, step: 0.05,
 })
 
-/** Seconds a vehicle that fell in stays out before respawning. */
+/** Seconds a vehicle stuck in the lava has to crawl out before it is lifted back to its pad.
+ * The id predates the sticky lava rule and stays, so saved rooms keep their value. */
 export const kothRespawnDelay = defineParam({
-  id: 'koth.respawnDelay', label: 'Hill: respawn delay', group: 'Game', scope: 'world',
+  id: 'koth.respawnDelay', label: 'Hill: seconds stuck before return', group: 'Game', scope: 'world',
   default: 3, min: 0, max: 15, step: 0.5,
 })
 
-/** Points for the last player to touch someone who then fell in, within KNOCK_WINDOW. */
+/** Points for the last player to touch someone who then got stuck in the lava, within
+ * KNOCK_WINDOW: a dunk. The id predates the name. */
 export const kothKnockBonus = defineParam({
-  id: 'koth.knockBonus', label: 'Hill: knock-in bonus', group: 'Game', scope: 'world',
+  id: 'koth.knockBonus', label: 'Hill: dunk bonus', group: 'Game', scope: 'world',
   default: 10, min: 0, max: 60, step: 1,
 })
 
 /** Velocity change a laser hit gives its victim in King of the Hill, m/s. */
 export const kothLaserPush = defineParam({
-  id: 'koth.laserPush', label: 'Hill: laser push', group: 'Game', scope: 'world',
+  id: 'koth.laserPush', label: 'Hill: tag beam push', group: 'Game', scope: 'world',
   default: 4, min: 0, max: 20, step: 0.5,
 })
 
-/** Seconds after the last contact during which a fall still counts as a knock-in. */
+/** Seconds after the last contact during which getting stuck still counts as a dunk. */
 export const KNOCK_WINDOW = 5
 /** Seconds the winner is shown before the next round starts. */
 export const WIN_PAUSE = 6

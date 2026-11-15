@@ -21,8 +21,8 @@
  * 10. world seed: A changes it, B regenerates and stays on the ground; a late joiner with a
  *     different ?seed= gets the room's seed
  * 11. King of the Hill: A switches the mode, the host's zone reaches everyone, A alone on the
- *     rim scores, B joins it and the hill is contested, B drives into the lava lake and is out,
- *     then respawns
+ *     rim scores, B joins it and the hill is contested, B sinks into the lava lake and is
+ *     stuck (still visible to A), then is lifted back to its pad
  * Exits non zero on any failure or page error.
  */
 import { chromium } from 'playwright-core'
@@ -320,15 +320,15 @@ try {
       }, { zone, lavaAt })
       await wait(800)
       const outB = await a.evaluate((id) => window.syn3hNet.game.koth.out[id] ?? 0, idB)
-      const deaths = await b.evaluate(() => window.syn3hNet.stats.deaths)
-      const hiddenOnA = await a.evaluate((id) => window.syn3hNet.remotes.get(id)?.vehicle.object.visible === false, idB)
-      check('lava puts B out, and A sees it gone', deaths === 1 && outB > 0 && hiddenOnA, { deaths, outB, hiddenOnA })
+      const stuck = await b.evaluate(() => ({ count: window.syn3hNet.stats.stuck, visible: window.syn3h.player.object.visible, hud: document.getElementById('hud').textContent.match(/stuck in the lava[^\n]*/)?.[0] ?? null }))
+      const visibleOnA = await a.evaluate((id) => window.syn3hNet.remotes.get(id)?.vehicle.object.visible === true, idB)
+      check('lava sticks B: it sits out of the hill count but stays in the world', stuck.count === 1 && stuck.visible && stuck.hud && outB > 0 && visibleOnA, { stuck, outB, visibleOnA })
       await wait(3500)
       const back = await b.evaluate(() => {
         const p = window.syn3h.player.body.translation()
         return { visible: window.syn3h.player.object.visible, y: +p.y.toFixed(1), ground: +window.syn3h.terrain.heightAt(p.x, p.z).toFixed(1) }
       })
-      check('B respawns on the ground after the delay', back.visible && back.y > back.ground - 1 && back.y < back.ground + 6, back)
+      check('B is lifted back to its pad after the delay', back.visible && back.y > back.ground - 1 && back.y < back.ground + 6, back)
     } else {
       console.log('SKIP lava: no lava under the zone centre on this terrain')
     }

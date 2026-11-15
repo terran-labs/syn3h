@@ -81,7 +81,7 @@ export class Lasers implements System {
       effects = createWeaponEffects(game)
     } catch (err) {
       // Cosmetic only: lasers still fly and hit without sparks.
-      console.warn('weapon effects unavailable', err)
+      console.warn('tag beam effects unavailable', err)
     }
     this.effects = effects
   }

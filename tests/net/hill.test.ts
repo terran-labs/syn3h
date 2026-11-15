@@ -35,18 +35,52 @@ describe('computeHillZone', () => {
   })
 })
 
-import { inDeadlyLiquid } from '../../src/modes/Koth'
+import { StuckTimer, inStickyLiquid } from '../../src/modes/Koth'
 
-describe('inDeadlyLiquid', () => {
+describe('inStickyLiquid', () => {
   const at = { x: 0, y: 4.9, z: 0 }
   it('counts any liquid when the terrain cannot tell lava from water', () => {
-    expect(inDeadlyLiquid({ liquidHeightAt: () => 5 }, at)).toBe(true)
-    expect(inDeadlyLiquid({ liquidHeightAt: () => 4 }, at)).toBe(false)
-    expect(inDeadlyLiquid({ liquidHeightAt: () => -Infinity }, at)).toBe(false)
-    expect(inDeadlyLiquid({}, at)).toBe(false)
+    expect(inStickyLiquid({ liquidHeightAt: () => 5 }, at)).toBe(true)
+    expect(inStickyLiquid({ liquidHeightAt: () => 4 }, at)).toBe(false)
+    expect(inStickyLiquid({ liquidHeightAt: () => -Infinity }, at)).toBe(false)
+    expect(inStickyLiquid({}, at)).toBe(false)
   })
-  it('counts only lava when it can: water floats', () => {
-    expect(inDeadlyLiquid({ liquidHeightAt: () => 5, liquidKindAt: () => 'lava' }, at)).toBe(true)
-    expect(inDeadlyLiquid({ liquidHeightAt: () => 5, liquidKindAt: () => 'water' }, at)).toBe(false)
+  it('counts only lava when it can: water never sticks', () => {
+    expect(inStickyLiquid({ liquidHeightAt: () => 5, liquidKindAt: () => 'lava' }, at)).toBe(true)
+    expect(inStickyLiquid({ liquidHeightAt: () => 5, liquidKindAt: () => 'water' }, at)).toBe(false)
+  })
+})
+
+describe('StuckTimer', () => {
+  it('reports stuck once, then lifts the vehicle back to its pad after the delay', () => {
+    const t = new StuckTimer()
+    expect(t.step(10, false, 3)).toBe(null)
+    expect(t.step(11, true, 3)).toBe('stuck')
+    expect(t.stuck).toBe(true)
+    expect(t.step(12, true, 3)).toBe(null)
+    expect(t.step(13.9, true, 3)).toBe(null)
+    expect(t.step(14, true, 3)).toBe('returned')
+    expect(t.stuck).toBe(false)
+    // Back on the pad, clear of the lava: nothing more to report.
+    expect(t.step(14.1, false, 3)).toBe(null)
+  })
+  it('lets a vehicle crawl out, but only once it has been clear for half a second', () => {
+    const t = new StuckTimer()
+    expect(t.step(1, true, 3)).toBe('stuck')
+    expect(t.step(1.5, false, 3)).toBe(null)
+    // Bobbed back under: the clear time starts again and it is still the same stuck.
+    expect(t.step(1.7, true, 3)).toBe(null)
+    expect(t.step(2, false, 3)).toBe(null)
+    expect(t.step(2.4, false, 3)).toBe(null)
+    expect(t.step(2.5, false, 3)).toBe('crawled')
+    expect(t.stuck).toBe(false)
+    expect(t.step(3, true, 3)).toBe('stuck')
+  })
+  it('forgets the countdown when cleared', () => {
+    const t = new StuckTimer()
+    t.step(1, true, 3)
+    t.clear()
+    expect(t.stuck).toBe(false)
+    expect(t.step(2, false, 3)).toBe(null)
   })
 })

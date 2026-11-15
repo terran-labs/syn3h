@@ -216,7 +216,8 @@ export interface KothState {
   winner: number
   /** Server seconds when the round resets after a win, or 0. */
   resetAt: number
-  /** Players currently out (fell in lava or off the world), with server seconds of respawn. */
+  /** Players and bots stuck in the lava, with the server second each counts again. Nothing
+   * is ever removed from play; a stuck vehicle only sits out of the hill count. */
   out: Record<number, number>
 }
 
@@ -266,7 +267,9 @@ export type ClientMessage =
   | { type: 'lock'; locked: boolean }
   /** Host only: the King of the Hill zone it computed from the terrain. */
   | { type: 'zone'; zone: HillZone }
-  /** My vehicle (or, from the host, bot `bot`) touched lava or fell off the world. */
+  /** My vehicle (or, from the host, bot `bot`) is stuck in the lava. */
+  | { type: 'stuck'; bot?: number }
+  /** The old name for `stuck`, still accepted from tabs holding an older bundle. */
   | { type: 'died'; cause: 'lava' | 'fell'; bot?: number }
   /** Put the shared world back to defaults (allowed whenever moving a shared slider is). */
   | { type: 'reset' }
@@ -274,7 +277,7 @@ export type ClientMessage =
 export type TagEvent =
   | 'default' | 'ram' | 'laser' | 'score' | 'leave' | 'lock' | 'host'
   // King of the Hill
-  | 'mode' | 'capture' | 'contest' | 'free' | 'died' | 'knock' | 'win' | 'reset'
+  | 'mode' | 'capture' | 'contest' | 'free' | 'stuck' | 'dunk' | 'win' | 'reset'
 
 export type ServerMessage =
   | {
