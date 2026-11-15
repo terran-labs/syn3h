@@ -535,3 +535,7 @@
    game arrives blurred beneath it (Shell.descent sets the game canvas's own filter). */
 .is-descending .lobby-stage, .is-descending .galaxy-ui { opacity: 0; transition: opacity .45s ease; pointer-events: none; }
 .is-descending .galaxy-canvas { filter: blur(9px) brightness(1.25); transition: filter 1.5s cubic-bezier(.5,0,.9,.4); }
+
+/* The Daydream slider in Settings (the control itself is src/bots/daydreamControl.ts). */
+.syn3h-shell .daydream-control { display: block; text-align: left; margin: 18px 0 4px; font-size: 17px; }
+.syn3h-shell .daydream-control output { float: right; color: var(--s3-accent-2); }
