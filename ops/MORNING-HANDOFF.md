@@ -2,20 +2,22 @@
 
 Prepared during the 15 November overnight run. This is a working draft, not the 8am
 report. Recheck production, integration and lane evidence before delivering it.
-Evidence snapshot: 3:37am Pacific. Release 4 is the last accepted release. Release 5
-is deployed with public acceptance still running; aircraft evasion remains unfinished.
+Evidence snapshot: 3:38am Pacific. Release 5 is accepted publicly; aircraft evasion
+and the conditional performance, diagnostics and transparent-water work remain unfinished.
 
 ## Public build
 
-The last accepted build is release 4 at https://www.syn3h.com/ as `da5a89c`, version `v26.11.1500`,
+Release 4 was accepted at https://www.syn3h.com/ as `da5a89c`, version `v26.11.1500`,
 Worker `ef3e2f23-e868-41d6-9894-4b09e9b57db2`. Independent log review confirms
 exact entry assets, worker and primary-domain multiplayer, and all eight public
 Chrome/WebKit vehicle checks with no page errors. The acceptance marker matches.
 Its notes and curated three-image showcase are published on GitHub. All four attachment
-URLs and the README GIF link verify. The current release 5 attempt has uploaded
+URLs and the README GIF link verify. Release 5 is now accepted live as
 `5e38ef6`, version `v26.11.1501`, Worker `e9f20f19-4194-40c2-8e6b-a8becb6190a0`.
-Worker gameplay and exact primary-site assets pass; primary gameplay and vehicle
-acceptance remain pending. Automatic rollback selects accepted release 4.
+Worker and primary-site multiplayer, exact assets and all eight Chrome/WebKit vehicle
+checks pass with no page errors. The acceptance marker matches the Worker identity.
+Future deployment supervisors must now select release 5 as their rollback target.
+Release 5 showcase capture continues after acceptance and cannot invalidate it.
 
 The first attempt failed its primary-site bot-roster check and restored verified
 release 2. Unique-room diagnostics passed on the unchanged frozen build before this
@@ -83,7 +85,7 @@ permission error is retained in the record; its temporary services were confirme
 The frozen release gate exited successfully after three multiplayer runs, simulated
 latency, eight vehicle/browser checks, both renderers, solo and two-player seams, and
 matching all 338 manifest files. Seven interruption tests pass on the final deployment
-supervisor. These checks permit the public attempt, but do not replace its acceptance.
+supervisor. Public acceptance subsequently passed on the same frozen build at 3:38am Pacific.
 
 - Procedural cloud volumes `35c0167`: lane reports typecheck, 16 tests, both-backend
   cloud cases, wrap/weather/reflection invariants, normal entry and HTTPS smoke passing.
@@ -114,7 +116,7 @@ supervisor. These checks permit the public attempt, but do not replace its accep
   Shallow colouring does not reveal submerged objects or ground. Transparent falling
   sheets do not satisfy this requirement. Two-client wave visuals and real-mobile cost
   remain unverified.
-- Release 5 notes and full showcase await public acceptance. The obsolete lobby
+- Release 5 notes are generated and full showcase capture follows acceptance. The obsolete lobby
   readiness check is fixed, and a single capture from the exact frozen build passes
   with the complete logo and planets visible. Artifact failures remain nonfatal after
   gameplay acceptance; publication still requires content and image review.
