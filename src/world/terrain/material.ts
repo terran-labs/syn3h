@@ -23,11 +23,15 @@ export interface TerrainMaterial {
   setSummit(height: number): void
   /** Height of the sea surface: the shore is scorched and glows just above it. */
   setSea(level: number): void
+  /** Where the lava lake is, so the crater and its crown can glow. A radius of 0 turns it off. */
+  setLake(x: number, z: number, radius: number, surface: number): void
 }
 
 export function createTerrainMaterial(): TerrainMaterial {
   const summit = uniform(200)
   const sea = uniform(0)
+  // Lava lake: x, z of its centre, its radius and its surface height.
+  const lake = uniform(new THREE.Vector4(0, 0, 0, -1000))
   const p = positionWorld
   const volcanic = attribute<'float'>('volcanic', 'float')
 
@@ -81,7 +85,17 @@ export function createTerrainMaterial(): TerrainMaterial {
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.95, metalness: 0 })
   material.colorNode = col
   // Heat from the sea lights the waterline, so the coast reads at night and from the air.
-  material.emissiveNode = vec3(1.0, 0.2, 0.02).mul(smoothstep(1.4, -1.5, aboveSea)).mul(0.7)
+  const shoreGlow = smoothstep(1.4, -1.5, aboveSea).mul(0.7)
+  // Light from the lava lake on the crater walls and the rock crown round it. Not a real
+  // light: a radial term that is strongest on faces turned toward the lake, falls off with
+  // distance from it and with height above it. At night the summit glows from within.
+  const toLake = vec2(lake.x.sub(p.x), lake.y.sub(p.z))
+  const lakeDist = toLake.length()
+  const facing = vec2(normalGeometry.x, normalGeometry.z).dot(toLake.div(lakeDist.max(0.001))).max(0)
+  const reach = smoothstep(lake.z.mul(2.6), lake.z.mul(0.9), lakeDist)
+  const rise = smoothstep(lake.w.add(95), lake.w.add(4), p.y).mul(smoothstep(lake.w.sub(6), lake.w.add(1), p.y))
+  const lakeGlow = reach.mul(rise).mul(facing.mul(0.85).add(0.15)).mul(0.55)
+  material.emissiveNode = vec3(1.0, 0.2, 0.02).mul(shoreGlow.add(lakeGlow))
   material.roughnessNode = max(float(0.78), float(0.97).sub(cliff.mul(0.1)).sub(paved.mul(0.15)))
   // Bump from the same world noise: metre-scale relief the 4 m grid cannot hold. Three's
   // bumpMap() only perturbs textures (it re-samples at offset UVs), so this is Mikkelsen's
@@ -106,6 +120,9 @@ export function createTerrainMaterial(): TerrainMaterial {
     material,
     setSummit(height) {
       summit.value = Math.max(20, height)
+    },
+    setLake(x, z, radius, surface) {
+      lake.value.set(x, z, radius, surface)
     },
     setSea(level) {
       sea.value = level
