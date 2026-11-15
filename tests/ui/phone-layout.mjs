@@ -140,27 +140,27 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
   // The world in the link is the world in the lobby, and no other is offered before joining.
   const landed = await world()
   check(landed.planet === 'alpine' && landed.seed === 90210, `${view.name}: landed on ${landed.planet}.${landed.seed}, not alpine.90210`)
-  const offered = await page.locator('[data-panel=worlds] .planet-card:not([data-planet=custom]):enabled').evaluateAll(list => list.map(card => card.dataset.planet))
+  const offered = await page.locator('.galaxy-label:not([data-world=custom]):not(.is-locked)').evaluateAll(list => list.map(label => label.dataset.world))
   check(offered.join() === 'alpine', `${view.name}: an invited guest is offered ${offered.join()}`)
-  // While the three maps are painted: the starfield keeps drawing and a tap is answered.
-  const before = await page.evaluate(() => ({ starfieldFrames: (window.syn3h.shell.galaxy?.frames ?? 0) })), t0 = Date.now()
+  // While the maps are painted: the galaxy keeps drawing and a tap is answered.
+  const before = await page.evaluate(() => ({ galaxyFrames: (window.syn3h.shell.galaxy?.frames ?? 0) })), t0 = Date.now()
   await page.locator('.galaxy-links [data-goto=worlds]').tap()
   await page.waitForFunction(() => { const p = document.querySelector('.lobby-panels'); return p.dataset.busy === 'true' || p.dataset.activePanel === 'worlds' })
   const tapMs = Date.now() - t0
   await settle('worlds'); await page.waitForTimeout(5000)
   const during = await g(), seconds = (Date.now() - t0) / 1000
-  const starFps = (await page.evaluate(() => (window.syn3h.shell.galaxy?.frames ?? 0)) - before.starfieldFrames) / seconds
+  const starFps = (await page.evaluate(() => (window.syn3h.shell.galaxy?.frames ?? 0)) - before.galaxyFrames) / seconds
   check(tapMs < 1000, `${view.name}: a tap took ${tapMs} ms to be answered while planets were painting`)
   check(starFps >= 8, `${view.name}: the galaxy fell to ${starFps.toFixed(1)} frames a second`)
   check(during.planetMaps >= 3, `${view.name}: only ${during.planetMaps} planet maps were painted`)
   await fits('worlds')
   check(await page.locator('#new-world').isDisabled(), `${view.name}: an invited guest can re-roll the world before joining`)
-  check(await page.locator('[data-panel=worlds] [data-planet=custom]').isDisabled(), `${view.name}: an invited guest can open Custom before joining`)
+  check(await page.locator('.galaxy-label[data-world=custom]').evaluate(l => l.classList.contains('is-locked')), `${view.name}: an invited guest can open Custom before joining`)
   await page.evaluate(() => window.syn3h.shell.openJoin()); await page.waitForTimeout(600)
   const qr = await page.evaluate(() => { const r = document.querySelector('.join-view .invite-qr').getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: innerHeight } })
   check(qr.top >= 0 && qr.bottom <= qr.height, `${view.name}: the QR code does not fit the screen (${Math.round(qr.top)} to ${Math.round(qr.bottom)} of ${qr.height})`)
   await fits('join-qr'); await page.evaluate(() => window.syn3h.shell.closeJoin())
-  // On to driving: the planet card, the name form, Enter World.
+  // On to driving: the world's label, the name form, Enter World.
   await page.evaluate(() => window.syn3h.shell.showPanel('index')); await settle('index'); await fits('index')
   // The index is the galaxy: every world's label and the links are on the screen.
   await page.waitForTimeout(1500)
@@ -171,31 +171,30 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
   await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-playing') && window.syn3hNet?.connected, null, { timeout: 60000 })
   await page.waitForTimeout(2500)
   const playing = await g(), driving = await world()
-  check(!playing.starfieldLive && !playing.planetsLive && !(await page.evaluate(() => window.syn3h.shell.galaxy?.live)), `${view.name}: lobby graphics contexts still live while playing: ${JSON.stringify(playing)}`)
+  check(!playing.galaxyLive, `${view.name}: lobby graphics contexts still live while playing: ${JSON.stringify(playing)}`)
   check(driving.planet === 'alpine' && driving.seed === 90210, `${view.name}: driving on ${driving.planet}.${driving.seed}`)
   await page.screenshot({ path: `${out}/${label}-guest-${view.name}-driving.png` })
   // Back in the menu the sky returns; a hidden tab stops it; the lowest graphics level holds it still.
   await page.evaluate(() => window.syn3h.shell.openMenu()); await page.waitForTimeout(2500)
   const menu = await g()
   // In the room, alone and so its host, the guest may shape the world: the Custom sliders fit.
-  await page.evaluate(() => window.syn3h.shell.showPanel('worlds')); await settle('worlds')
-  await page.locator('[data-panel=worlds] [data-planet=custom]').tap(); await settle('advanced'); await fits('custom')
-  check(await page.evaluate(() => { const s = window.syn3h.shell; return s.galaxy ? s.galaxy.live === true : s.graphics.starfieldLive }), `${view.name}: the lobby sky did not come back with the menu`)
+  await page.evaluate(() => window.syn3h.shell.showPanel('index')); await settle('index')
+  await page.locator('.galaxy-label[data-world=custom]').tap(); await settle('advanced'); await fits('custom')
+  check(await page.evaluate(() => window.syn3h.shell.graphics.galaxyLive), `${view.name}: the galaxy did not come back with the menu`)
   await page.evaluate(() => { Object.defineProperty(document, 'hidden', { value: true, configurable: true }); document.dispatchEvent(new Event('visibilitychange')) })
   const frames = () => page.evaluate(() => (window.syn3h.shell.galaxy?.frames ?? 0))
   const hidden0 = await frames(); await page.waitForTimeout(1500); const hidden1 = await frames()
   check(hidden1 === hidden0, `${view.name}: the galaxy drew ${hidden1 - hidden0} frames in a hidden tab`)
-  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { value: false, configurable: true }); document.dispatchEvent(new Event('visibilitychange')); clearInterval(window.__pin); window.syn3h.params.set('gfx.level', 0); window.syn3h.shell.showPanel('worlds') })
-  await settle('worlds'); await page.waitForTimeout(3000)
+  await page.evaluate(() => { Object.defineProperty(document, 'hidden', { value: false, configurable: true }); document.dispatchEvent(new Event('visibilitychange')); clearInterval(window.__pin); window.syn3h.params.set('gfx.level', 0); window.syn3h.shell.showPanel('index') })
+  await settle('index'); await page.waitForTimeout(3000)
   const low0 = await g(); await page.waitForTimeout(2000); const low1 = await g()
-  const flat = await page.locator('[data-panel=worlds] .planet-orb').evaluateAll(list => list.every(c => c.dataset.flat !== undefined))
-  check(low1.starfieldFrames === low0.starfieldFrames, `${view.name}: at graphics level 0 the starfield still animates`)
-  check(!low1.planetsLive && flat, `${view.name}: at graphics level 0 the planets are still shaded: ${JSON.stringify(low1)} flat=${flat}`)
+  check(low1.galaxyLive, `${view.name}: at graphics level 0 the galaxy is gone`)
+  check(low1.galaxyFrames === low0.galaxyFrames, `${view.name}: at graphics level 0 the galaxy still animates (${low1.galaxyFrames - low0.galaxyFrames} frames in 2 s)`)
   await page.screenshot({ path: `${out}/${label}-guest-${view.name}-level0.png` })
   report.guest.push({ view: view.name, usableMs, tapMs, starFps: +starFps.toFixed(1), planetMaps: during.planetMaps, landed, driving })
   await context.close()
 }
-for (const row of report.guest) console.log(`guest ${row.view}: lobby usable in ${row.usableMs} ms at 4x throttle, tap answered in ${row.tapMs} ms, starfield ${row.starFps} fps, ${row.planetMaps} maps`)
+for (const row of report.guest) console.log(`guest ${row.view}: lobby usable in ${row.usableMs} ms at 4x throttle, tap answered in ${row.tapMs} ms, galaxy ${row.starFps} fps, ${row.planetMaps} maps`)
 for (const failure of guestFailures) console.log(`GUEST FAIL ${failure}`)
 if (strict && guestFailures.length) process.exitCode = 1
 await browser.close(); await safari.close()
