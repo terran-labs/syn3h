@@ -23,6 +23,21 @@ for(const mode of ['desktop','phone']){
    assert.ok(await control.evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===el}),'top controls actually exposed')
   }
   assert.deepEqual(await vehicle.locator('option').allInnerTexts(),['Buggy','Jet','Hovercraft','Tank'],'the in-play selector offers the four vehicles')
+  // Vehicle colours are chosen in play, beside the selector: the vehicle repaints at once with
+  // no reload, and the choice is saved and announced to the room once the picker settles.
+  if(mode==='desktop'||await page.locator('.wi-swatch input[data-tint=body]').isVisible()){
+   const loadedAt=await page.evaluate(()=>performance.timeOrigin)
+   await page.evaluate(()=>{window.__profiles=[];const net=window.syn3hNet,announce=net.setProfile.bind(net);net.setProfile=profile=>{window.__profiles.push(profile);return announce(profile)}})
+   assert.equal(await page.locator('.wi-swatch input[data-tint=body]').inputValue(),await page.evaluate(()=>syn3h.player.colors.body),'the swatch shows the vehicle\'s colour')
+   await page.locator('.wi-swatch input[data-tint=body]').fill('#ff00aa')
+   await page.waitForFunction(()=>syn3h.player.colors.body==='#ff00aa',null,{timeout:5000})
+   await page.locator('.wi-swatch input[data-tint=accent]').fill('#00ffcc')
+   await page.waitForFunction(()=>syn3h.player.colors.accent==='#00ffcc',null,{timeout:5000})
+   await page.waitForFunction(()=>window.__profiles.some(p=>p.colors?.body==='#ff00aa'&&p.colors?.accent==='#00ffcc')&&JSON.parse(localStorage.getItem('syn3h.vehicle')??'{}').accentColor==='#00ffcc',null,{timeout:5000})
+   assert.ok(await page.evaluate(()=>window.__profiles.length)<=2,'the room is told once the picker settles, not on every step')
+   assert.equal(await page.evaluate(()=>performance.timeOrigin),loadedAt,'changing colour does not reload the page')
+   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-tint.png`})
+  }
   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-selectors.png`})
   await gear.selectOption('bungee');await page.waitForFunction(()=>syn3hNet.gear.current==='bungee')
   await gear.selectOption('yoink');await page.waitForFunction(()=>syn3hNet.gear.current==='yoink')
