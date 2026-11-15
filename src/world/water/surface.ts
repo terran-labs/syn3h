@@ -124,7 +124,7 @@ export function waterOpacityNode(depth: THREE.Node<'float'>, foam: THREE.Node<'f
   const mirror = float(1).sub(abs(view.y)).pow(5).mul(0.98).add(0.02)
   const above = max(float(1).sub(float(1).sub(mirror).mul(kept)), foam.mul(0.9))
   // From underwater, a clear Snell window and nearly opaque reflection outside its cone.
-  const window = smoothstep(SNELL_COS - .04, SNELL_COS + .04, view.y.negate())
+  const window = smoothstep(SNELL_COS - .14, SNELL_COS + .06, view.y.negate())
   return view.y.greaterThanEqual(0).select(above, mix(float(.98), float(.12), window))
 }
 
@@ -293,7 +293,7 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   // From below: Snell's window. Looking up at the surface, `up` is the cosine between the
   // view ray and straight up.
   const up = normalize(p.sub(cameraPosition)).y
-  const below = mix(deepColour.mul(0.55), color(0xbfe8f0), smoothstep(SNELL_COS - 0.04, SNELL_COS + 0.04, up))
+  const below = mix(deepColour.mul(0.55), color(0xbfe8f0), smoothstep(SNELL_COS - 0.14, SNELL_COS + 0.06, up))
   material.colorNode = mix(below, above, faceDirection.mul(0.5).add(0.5))
   // Glassy close up; rougher with distance, where many unresolved facets share a pixel and
   // a mirror would sparkle and alias.
