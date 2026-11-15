@@ -28,9 +28,17 @@ it.each([['syn3h',Syn3hBuggy],['classic',ClassicBuggy]] as const)('%s sinks upri
   expect(v.body.translation().z).toBeLessThan(z-2)
  }finally{v.dispose();h.world.free()}
 })
-it('open wings lift a buggy from the seabed',()=>{
+// The owner's rule since 15 November 2026: wings in liquid push along the nose. The old
+// assertion here required a level buggy to hover straight up from the bed to above 10 m.
+it('open wings push a level buggy along its nose, not straight up',()=>{
  const h=setup(),v=new Syn3hBuggy(h.game,h.terrain,new THREE.Vector3(0,1,0));v.isLocal=false
- try{h.step(v,60);v.input.special=true;h.step(v,300);expect(v.body.translation().y).toBeGreaterThan(10)}finally{v.dispose();h.world.free()}
+ try{
+  h.step(v,60);const start=v.body.translation(),x=start.x,y=start.y,z=start.z
+  v.input.special=true;h.step(v,120)
+  const p=v.body.translation()
+  expect(Math.hypot(p.x-x,p.z-z)).toBeGreaterThan(4)
+  expect(p.y).toBeLessThan(y+1)
+ }finally{v.dispose();h.world.free()}
 })
 it('switch off retains the legacy float',()=>{
  const h=setup();waterSinking.value=false
