@@ -2,6 +2,37 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Sunday 15 November, overnight: normal-entry features and continued coordination
+
+The owner directed all developed features to default on without special URLs. This
+supersedes the earlier default-off policy. Keep player controls and performance tiers;
+explicitly identify unfinished features and validation gaps. Do not treat mutually
+exclusive vehicle, biome, music or interface choices as switches that must all be on.
+
+The owner established an overnight goal: finish existing assignments, then improve
+performance tiers and diagnostics, cursor-locked UX with minimap-edge vignettes, gear,
+playful bots, multiplayer reliability and visibly transparent water. Diagnostics should
+show FPS and history, rendering factors, detected hardware and rendering failures.
+Sustained poor performance should offer one floating control to ignore advice or lower
+the rendering tier. Prepare the morning brief at 8am Pacific.
+
+## Sunday 15 November, overnight: deployment occupancy and generated wind
+
+The Orchestrator relayed the owner's direct instruction never to hold deployments
+because someone is in a lobby. Frozen-build validation, public checks and immediate
+rollback remain required. Occupancy is no longer a release gate.
+
+The owner answered the wind question: generated wind only. UX owns removing the recorded
+wind layer. This supersedes the recording-retention rule for wind only; original music
+and laser recordings remain.
+
+## Sunday 15 November, overnight: coordinated validation queue
+
+After host load exceeded 40 and preview validation stalled, the Orchestrator removed
+the load-based throttle bypass. Every heavy job now takes one of three machine-wide
+slots. Each lane runs one queued job with at most two test workers during recovery.
+Release jobs use the same queue. The temporary blanket heavy-job hold has been cleared.
+
 ## Saturday 14 November, about 11:15pm Pacific: roads are worn tracks except on the alpine world
 
 **Decided** (Terrain Lab thread, relayed by the Orchestrator). "I don't think anything
