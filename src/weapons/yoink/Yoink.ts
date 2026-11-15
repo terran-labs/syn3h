@@ -228,6 +228,30 @@ export class Yoink implements System {
     this.fireWas = false
   }
 
+  /**
+   * Drop every carry, the player's and everyone else's, clear gust rings and held input.
+   * For a world change, leaving the world or the room, or the vehicle being replaced. The
+   * player's own carry is reported dropped so the room and the others end it too. No
+   * cooldown: this is not a drop the player chose. Shared materials are kept (see warm.ts).
+   */
+  reset(): void {
+    const mine = this.holding
+    for (const to of [...this.carries.keys()]) this.endCarry(to)
+    if (mine !== null) this.hooks.send?.({ s: 'drop', to: mine })
+    for (const w of this.waves) {
+      this.game.scene.remove(w.mesh)
+      w.busy = false
+    }
+    this.waves.length = 0
+    this.fireWas = false
+    this.readyAt = 0
+  }
+
+  /** Live carries and gust rings, for automated checks. */
+  get count(): number {
+    return this.carries.size + this.waves.length
+  }
+
   /** Another player's Yoink, as relayed. */
   applyRemote(from: number, y: YoinkWire): void {
     if (from === this.hooks.self()) {
