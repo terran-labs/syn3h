@@ -97,15 +97,19 @@ export const autoQuality = defineParam({ id: 'gfx.auto', label: 'Automatic quali
  */
 export const SHADING_CAP = [0, 0, 3] as const
 
-export type RungKind = 'resolution' | 'shading' | 'particles' | 'shadows'
+export type RungKind = 'post' | 'resolution' | 'shading' | 'particles' | 'shadows'
 /** Effective render settings at one rung. pixelRatio already includes the display cap. */
-export interface RungSettings { kind: RungKind | 'base'; pixelRatio: number; vehicleShading: number; particles: number; shadows: number }
+/** `post` is the post-effects budget at this rung: 1 full, 0 shed. Always 0 when no post chain is active. */
+export interface RungSettings { kind: RungKind | 'base'; pixelRatio: number; vehicleShading: number; particles: number; shadows: number; post: number }
 
 /**
  * Rungs below each level's full budget, in shedding order. Each step changes one value and
  * keeps the others from the step above. Ordered by how little the player notices against
  * what it buys:
- * - Resolution first. Fill cost scales with pixel count (1.5 to 1.25 is 31 percent fewer
+ * - Post effects before anything, on desktop and only while a post chain is active: they
+ *   fade out over half a second, which nobody notices, and cost nothing to bring back. With
+ *   no chain active the rung changes nothing and is dropped like any other empty step.
+ * - Resolution next. Fill cost scales with pixel count (1.5 to 1.25 is 31 percent fewer
  *   pixels, 1.25 to 1 another 36 percent) and the antialiased upscale is hard to see while
  *   driving. It is also the cheapest change to make: a canvas resize, no shader compile.
  * - Vehicle shading next. It costs only where vehicles cover the screen, but losing flakes
@@ -121,7 +125,7 @@ export interface RungSettings { kind: RungKind | 'base'; pixelRatio: number; veh
 export const LADDER_STEPS: ReadonlyArray<ReadonlyArray<readonly [RungKind, number]>> = [
   /* safe */ [['resolution', 0.85], ['particles', 120], ['resolution', 0.7]],
   /* mobile */ [['resolution', 0.85], ['shading', 1], ['particles', 480]],
-  /* desktop */ [['resolution', 1.25], ['resolution', 1], ['shading', 2], ['particles', 1200], ['shadows', 0]],
+  /* desktop */ [['post', 0], ['resolution', 1.25], ['resolution', 1], ['shading', 2], ['particles', 1200], ['shadows', 0]],
 ]
 
 /**
@@ -132,6 +136,7 @@ export const LADDER_STEPS: ReadonlyArray<ReadonlyArray<readonly [RungKind, numbe
  * whole-level drop keeps the previous monitor's eight seconds.
  */
 export const RUNG_TIMING: Record<RungKind | 'level', { shedMs: number; climbMs: number }> = {
+  post: { shedMs: 2000, climbMs: 10000 },
   resolution: { shedMs: 2000, climbMs: 10000 },
   particles: { shedMs: 4000, climbMs: 20000 },
   shading: { shedMs: 5000, climbMs: 30000 },
@@ -173,10 +178,10 @@ function snapInterval(ms: number): number {
 }
 
 function sameSettings(a: RungSettings, b: RungSettings) {
-  return a.pixelRatio === b.pixelRatio && a.vehicleShading === b.vehicleShading && a.particles === b.particles && a.shadows === b.shadows
+  return a.pixelRatio === b.pixelRatio && a.vehicleShading === b.vehicleShading && a.particles === b.particles && a.shadows === b.shadows && a.post === b.post
 }
 function notAbove(a: RungSettings, b: RungSettings) {
-  return a.pixelRatio <= b.pixelRatio && a.vehicleShading <= b.vehicleShading && a.particles <= b.particles && a.shadows <= b.shadows
+  return a.pixelRatio <= b.pixelRatio && a.vehicleShading <= b.vehicleShading && a.particles <= b.particles && a.shadows <= b.shadows && a.post <= b.post
 }
 
 /**
@@ -184,14 +189,15 @@ function notAbove(a: RungSettings, b: RungSettings) {
  * that change nothing here (a 1.25 pixel ratio on a display of ratio 1, or a shading step
  * while the player has pinned shading) are dropped, so every rung costs a real change.
  */
-export function buildLadder(level: GraphicsLevel, devicePixelRatio = 1, shadingPin: number | null = null): RungSettings[] {
+export function buildLadder(level: GraphicsLevel, devicePixelRatio = 1, shadingPin: number | null = null, postActive = false): RungSettings[] {
   const dpr = Number.isFinite(devicePixelRatio) && devicePixelRatio > 0 ? devicePixelRatio : 1
   const budget = QUALITY[level]
-  let current: RungSettings = { kind: 'base', pixelRatio: Math.min(dpr, budget.pixelRatio), vehicleShading: shadingPin ?? SHADING_CAP[level], particles: budget.particles, shadows: budget.shadows }
+  let current: RungSettings = { kind: 'base', pixelRatio: Math.min(dpr, budget.pixelRatio), vehicleShading: shadingPin ?? SHADING_CAP[level], particles: budget.particles, shadows: budget.shadows, post: postActive ? 1 : 0 }
   const ladder = [current]
   for (const [kind, value] of LADDER_STEPS[level]) {
     const next = { ...current, kind }
-    if (kind === 'resolution') next.pixelRatio = Math.min(dpr, value)
+    if (kind === 'post') next.post = Math.min(current.post, value)
+    else if (kind === 'resolution') next.pixelRatio = Math.min(dpr, value)
     else if (kind === 'shading') next.vehicleShading = shadingPin ?? Math.min(current.vehicleShading, value)
     else if (kind === 'particles') next.particles = value
     else next.shadows = value
@@ -300,7 +306,21 @@ export class QualityGovernor {
     if (!up) return null
     return Math.min(GOVERNOR.maxClimbWaitMs, up.timing.climbMs * (this.backoff.get(`${up.level}:${up.rung}`) ?? 1))
   }
-  private ladderFor(level: GraphicsLevel) { return buildLadder(level, this.devicePixelRatio, this.shadingPin) }
+  private ladderFor(level: GraphicsLevel) { return buildLadder(level, this.devicePixelRatio, this.shadingPin, this.postActive) }
+  private postActive = false
+  /**
+   * A post chain started or stopped drawing effects. While one is active the desktop ladder
+   * gains a first rung that sheds them; otherwise the ladder is exactly as it was. Keeps
+   * every other rung value, like a display change.
+   */
+  setPostActive(on: boolean): GovernorChange | null {
+    if (on === this.postActive) return null
+    const from = this.settings
+    this.postActive = on; this.ladder = this.ladderFor(this.level)
+    // Starting effects starts them at full budget; the governor sheds them if it must.
+    this.rung = this.mapRung({ ...from, post: on ? 1 : 0 })
+    return this.change('manual', GOVERNOR.manualSettleMs)
+  }
   private change(reason: GovernorReason, settleMs = GOVERNOR.settleMs): GovernorChange {
     this.settle = settleMs; this.clearEvidence()
     return { level: this.level, rung: this.rung, reason, settings: this.settings }
@@ -517,8 +537,6 @@ export class QualityController {
     if (level !== this.governor.level) { this.write(graphicsLevel.def.id, level); this.governor.reset(level, 'level-drop') }
     this.apply()
   }
-  /** The level this device was classified as, adapter included once initialised; 2 is desktop class. */
-  get deviceLevel(): GraphicsLevel { return this.detected }
   attachRenderer(renderer: WebGPURenderer) { this.renderer = renderer; this.apply() }
   /** Optional hook for terrain builders; no regeneration or physics changes are implied. */
   attachTerrain(terrain: QualityTerrain) { this.terrain = terrain; this.written.terrain = false; this.onTerrain?.(); this.apply() }
@@ -537,6 +555,19 @@ export class QualityController {
     effective = { ...s, level, rung: g.rung, rungs: g.ladder.length, auto: g.auto, targetFps: Math.round(1000 / g.targetMs) }
     window.dispatchEvent(new CustomEvent('syn3h:quality', { detail: { ...budget, ...effective, budget, reason: this.lastReason } }))
   }
+  private budget = 1
+  private postOn() { return this.governor.ladder[0].post > 0 }
+  /**
+   * How much of their strength post effects may use now, 0 to 1. It is the governor's first
+   * desktop rung: 1 at full budget, easing to 0 over about half a second when the governor
+   * sheds post effects (before it touches resolution), and back when it climbs. A chain
+   * multiplies its strengths by this and may drop to a single colour pass at 0.
+   */
+  get postBudget() { return this.budget }
+  /** Tell the governor a post chain is drawing effects (or has stopped), so it can shed them first. */
+  setPostActive(on: boolean) { const change = this.governor.setPostActive(on); if (change) { this.lastReason = change.reason; this.apply() } }
+  /** The device class found at startup: 0 safe, 1 mobile, 2 desktop. */
+  get deviceLevel() { return this.detected }
   /** True until the first frame with draw calls. */
   get isLoading() { return this.loading }
   /**
@@ -553,6 +584,10 @@ export class QualityController {
       const change = this.governor.sample(metrics.frameMs, judge && !document.hidden) ?? moved
       if (change) { this.lastReason = change.reason; this.apply() }
     }
+    // Ease toward the rung's budget: full while effects are not shed (or none are active).
+    const wanted = this.governor.settings.kind === 'base' || this.governor.settings.post > 0 || !this.postOn() ? 1 : 0
+    const step = Math.min(1, Math.max(0, metrics.frameMs) / 500)
+    this.budget += Math.max(-step, Math.min(step, wanted - this.budget))
     this.hudElapsed += metrics.frameMs
     if (this.hud && !this.hud.hidden && this.hudElapsed >= 250) {
       this.hudElapsed = 0

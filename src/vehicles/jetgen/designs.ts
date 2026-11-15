@@ -17,7 +17,7 @@ export interface JetDesign {
   id: string; name: string; blurb: string; paint: number; accent: number
   /** Straight-edged, faceted geometry instead of flowing curves. */
   hard?: boolean
-  /** 'military' swaps candy paint and chrome for satin paint, gunmetal trim and squadron-colour tips. */
+  /** Kept for reference only: every design now renders through the shared vehicle shading. */
   finish?: 'candy' | 'military'
   build(b: Builder): void
 }
@@ -62,8 +62,14 @@ interface VanguardOptions {
   canards?: 'boom' | 'pod' | 'none'
   /** Main thruster exit: round, or wide and flat. */
   nozzle?: 'round' | 'flat'
+  /** Ring radius in metres (default .95). */
+  ringSize?: number
+  /** Struts from the hull's spine and keel to the ring's top and bottom joints. */
+  spine?: boolean
 }
 
+/** The pilot's eye in the Vanguard family: low in the pod, a third of the way along the canopy. */
+export const VANGUARD_EYE: [number, number, number] = [0, .28, -1.6]
 const QUAD_INTAKES = [45, 135, 225, 315].map(a => [a, -.35, 1.25, .2, .13])
 
 /**
@@ -73,7 +79,11 @@ const QUAD_INTAKES = [45, 135, 225, 315].map(a => [a, -.35, 1.25, .2, .13])
  */
 function tailRing(b: Builder, o: VanguardOptions, boomX: number, boomY: number): void {
   const cy = .05, z0 = 2.25, z1 = 2.45, chord = .75, t = .06, shape = o.ring ?? 'oct'
-  const r = o.ringOnBooms ? boomX : .95, rLow = o.ringOnBooms ? .8 : .9, zm = (z0 + z1) / 2
+  // A ring on the booms is sized so its flanks land on them: a hexagon's flanks are at cos 30.
+  const r = o.ringOnBooms ? (shape === 'hex' ? boomX / Math.cos(Math.PI / 6) : boomX) : o.ringSize ?? .95
+  const rLow = o.ringOnBooms ? r * .6 : r * .95, zm = (z0 + z1) / 2
+  // A pointed chrome longeron through a joint, along the chord.
+  const joint = (x: number, y: number, z: number, c: number) => b.body('chrome', [[z - .26, .003, .003, .003, y, 1.5], [z - .06, .045, .045, .045, y, 1.5], [z + .1, .065, .065, .065, y, 1.5], [z + c - .1, .065, .065, .065, y, 1.5], [z + c + .06, .045, .045, .045, y, 1.5], [z + c + .26, .003, .003, .003, y, 1.5]], { x, mirror: x !== 0, seg: 3, around: 8 })
   const row = (x: number, y: number, z: number) => [x, y, z, chord, t]
   const side = (deg: number, ry: number) => { const a = deg * Math.PI / 180; return [r * Math.cos(a), cy + ry * Math.sin(a)] }
   const paint = { round: false, mat: 'accent' as const }
@@ -81,42 +91,57 @@ function tailRing(b: Builder, o: VanguardOptions, boomX: number, boomY: number):
   if (shape === 'oct') {
     const top = [row(r, cy, z0), row(...side(45, r) as [number, number], zm), row(0, cy + r, z1)], bottom = [row(r, cy, z0), row(...side(-45, rLow) as [number, number], zm), row(0, cy - rLow, z1)]
     b.surf(meetAtCentre(top), paint); b.surf(meetAtCentre(bottom), paint); corners = [top[1], bottom[1]]
+    joint(0, cy + r, z1, chord); joint(0, cy - rLow, z1, chord)
   } else if (shape === 'hex') {
     const up = side(30, r), down = side(-30, rLow)
     b.surf(meetAtCentre([row(up[0], up[1], z0), row(0, cy + r, z1)]), paint); b.surf(meetAtCentre([row(down[0], down[1], z0), row(0, cy - rLow, z1)]), paint)
     b.surf([row(down[0], down[1], z0), row(up[0], up[1], z0)], paint)
     corners = [row(up[0], up[1], z0), row(down[0], down[1], z0)]
+    // The two halves join at the top and bottom points: those get a joint as well.
+    joint(0, cy + r, z1, chord); joint(0, cy - rLow, z1, chord)
   } else {
     const x = r * .78, up = cy + r * .78, down = cy - rLow * .78
     b.surf(meetAtCentre([row(x, up, z0), row(0, up, z1)]), paint); b.surf(meetAtCentre([row(x, down, z0), row(0, down, z1)]), paint); b.surf([row(x, down, z0), row(x, up, z0)], paint)
     corners = [row(x, up, z0), row(x, down, z0)]
+  }
+  if (o.spine) {
+    b.surf([[0, .36, z0 - .1, chord + .1, t], [0, cy + r, z1, chord, t]], { mirror: false, round: false })
+    b.surf([[0, -.27, z0 - .1, chord + .1, t], [0, cy - rLow, z1, chord, t]], { mirror: false, round: false })
   }
   if (o.ringOnBooms) return
   for (const [x, y, z, c] of corners) {
     // Carry the strut a little past the corner, along its own line, so it ends inside the ring.
     const dx = x - boomX, dy = y - boomY, k = .03 / Math.hypot(dx, dy)
     b.surf([[boomX, boomY, z - .15, c + .15, t], [x + dx * k, y + dy * k, z, c, t]], { round: false })
-    b.body('chrome', [[z - .07, .015, .015, .015, y, 1.6], [z + .04, .07, .07, .07, y, 1.6], [z + c - .04, .07, .07, .07, y, 1.6], [z + c + .07, .015, .015, .015, y, 1.6]], { x, mirror: true, seg: 2, around: 8 })
+    joint(x, y, z, c)
   }
 }
 
-/** The Vanguard family: a chined cockpit pod between twin booms with a ring tail. */
+/**
+ * The Vanguard family: a chined cockpit pod between twin booms with a ring tail. The pod and
+ * the booms are each one lofted skin from nose to nozzle lip: the four intakes are bulges of
+ * the pod's skin and the three thrusters are the open rear ends of their bodies.
+ */
 function vanguard(b: Builder, o: VanguardOptions = {}): void {
-  const bx = 1.5
-  b.fuselage(POD_HULL)
-  b.canopy(-2.9, -.7, .6, .06)
-  for (const [angle, z0, z1, halfWidth, height] of o.intakes ?? QUAD_INTAKES) b.intake(z0, z1, angle, halfWidth, height)
-  b.body('paint', o.booms === 'prong' ? [[-3.5, .02, .02, .02, -.07, 1.4], [-2.3, .16, .15, .12, -.07, 1.5], [-.6, .26, .25, .2, -.05, 1.5], [.4, .28, .26, .22, -.05, 1.5], [2.2, .26, .24, .2, -.03, 1.5], [3.1, .18, .18, .16, 0, 1.6]] : BOOM_HULL, { x: bx, mirror: true, around: 20 })
+  const bx = 1.5, flat = o.nozzle === 'flat'
+  const tail = flat
+    ? [[2.0, .56, .36, .3, .05, 2.2], [2.6, .54, .28, .26, .05, 3], [2.95, .52, .24, .24, .05, 3.6], [3.08, .48, .21, .21, .05, 3.6]]
+    : [[2.0, .52, .38, .32, .05, 1.9], [2.6, .42, .37, .35, .05, 2.1], [2.95, .39, .37, .37, .05, 2.2], [3.08, .35, .34, .34, .05, 2.2]]
+  b.fuselage([...POD_HULL.slice(0, 5), ...tail], { intakes: o.intakes ?? QUAD_INTAKES, exhaust: true })
+  // A real cockpit: an opening in the hull, an interior tub and a bubble canopy over the pilot.
+  b.cockpit(-2.9, -.7, .6, VANGUARD_EYE, { bulge: .2 })
+  const boomTail = [[2.2, .26, .24, .2, -.03, 1.6], [2.9, .2, .2, .19, 0, 2], [3.2, .17, .17, .17, 0, 2.2]]
+  const boomNose = o.booms === 'prong' ? [[-3.5, .02, .02, .02, -.07, 1.4], [-2.3, .16, .15, .12, -.07, 1.5], [-.6, .26, .25, .2, -.05, 1.5], [.4, .28, .26, .22, -.05, 1.5]] : BOOM_HULL.slice(0, 3)
+  b.body('paint', [...boomNose, ...boomTail], { x: bx, mirror: true, around: 20, exhaust: true })
   b.surf([[.5, 0, -.4, 2.2, .08], [bx, -.02, -.2, 2.0, .08]], { round: false })
   // One clean forward sweep: the leading edge runs straight from the boom to the tip.
-  if (o.wing === 'droop') b.surf([[bx, -.02, .9, 1.5, .07], [2.4, .1, .36, 1.16, .062], [3.3, .2, -.18, .82, .055], [3.55, -.3, -.12, .72, .055]], { tipFrom: .66, tip: 'accent' })
+  // The drooped tip plate turns down a quarter of a metre, half its first depth.
+  if (o.wing === 'droop') b.surf([[bx, -.02, .9, 1.5, .07], [2.4, .1, .36, 1.16, .062], [3.3, .2, -.18, .82, .055], [3.55, -.05, -.14, .74, .055]], { tipFrom: .66, tip: 'accent' })
   else b.surf([[bx, -.02, .9, 1.5, .07], [2.4, .1, .36, 1.16, .062], [3.2, .22, -.12, .8, .055], [3.65, .32, -.39, .5, .05]], { tipFrom: .75, tip: 'accent' })
   const canards = o.canards ?? 'boom'
   if (canards === 'boom') b.surf([[1.6, -.05, -1.1, .7, .06], [2.5, .05, -.7, .3, .05]], { tipFrom: .5, tip: 'accent' })
   if (canards === 'pod') b.surf([[.35, -.05, -2.3, .75, .07], [1.2, -.2, -1.75, .3, .05]], { tipFrom: .5, tip: 'accent' })
   tailRing(b, o, bx, -.03)
-  if (o.nozzle === 'flat') b.nozzle(2.7, .05, .5, .22, 0, 4); else b.nozzle(2.7, .05, .34, .34, 0, 2.2)
-  b.nozzle(3.1, 0, .17, .17, bx, 3)
   b.port(0, -1.74, .24, .4); b.port(bx, 1.16, .16, .38, -.27)
   b.leg([0, -.12, -1.15], 'aft'); b.leg([bx, -.12, 1.75], 'aft')
 }
@@ -388,6 +413,17 @@ export const JET_DESIGNS: JetDesign[] = [
     ['span', 'Spanring', 'A wide ring that runs straight into the booms with no struts, and no canards: the cleanest outline.', { ringOnBooms: true, canards: 'none' }],
   ] as [string, string, string, VanguardOptions][]).map(([id, name, blurb, options]): JetDesign => ({
     id: `quad-${id}`, name: `Quad ${name}`, paint: 0x565c66, accent: 0xff3d5a, hard: true, finish: 'military', blurb,
+    build(b) { vanguard(b, options) },
+  })),
+  // Sixth round: the Quad Hexring as one lofted body, with pointed joints all round the ring.
+  ...([
+    ['mk2', 'Mk2', 'The Hexring cleaned up: intakes and thrusters lofted into their bodies, six ring joints, shallower wingtips.', { ring: 'hex', wing: 'droop' }],
+    ['prong', 'Prong', 'The same with the booms run forward as prongs and the canards on the cockpit pod.', { ring: 'hex', wing: 'droop', booms: 'prong', canards: 'pod' }],
+    ['span', 'Span', 'The ring widened until its flanks are the booms themselves: a diamond roof and keel, no struts, no canards.', { ring: 'hex', wing: 'droop', ringOnBooms: true, canards: 'none' }],
+    ['spine', 'Spine', 'A larger ring braced to the hull by a dorsal and a ventral strut that meet its top and bottom joints.', { ring: 'hex', wing: 'droop', spine: true, ringSize: 1.08 }],
+    ['heavy', 'Heavy', 'A wide flat main thruster, prong booms and plain swept tips: the heaviest looking of the five.', { ring: 'hex', wing: 'swept', booms: 'prong', nozzle: 'flat', canards: 'none' }],
+  ] as [string, string, string, VanguardOptions][]).map(([id, name, blurb, options]): JetDesign => ({
+    id: `hex-${id}`, name: `Hexring ${name}`, paint: 0x565c66, accent: 0xff3d5a, hard: true, finish: 'military', blurb,
     build(b) { vanguard(b, options) },
   })),
 ]

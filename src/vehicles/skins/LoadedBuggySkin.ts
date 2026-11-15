@@ -38,6 +38,8 @@ const STRUT_SPAN = .828
  * orange to salmon (sRGB 255,92,46 and 255,172,101) where the original shows saturated red.
  * Same 2:5 ratio, scaled: 0.6 renders deep red, the brake's 1.5 a hotter red (255,64,33).
  */
+/** The body the owner chose on 14 November 2026: round 4, Box arm. Built by tools/buggy-bodies. */
+const BOX_ARM_BODY = '/models/buggy-boxarm.glb'
 const TAIL_LAMP = .6
 const BRAKE_LAMP = 1.5
 
@@ -76,6 +78,14 @@ function release(root: THREE.Object3D): void {
   root.traverse(o => { if (o instanceof THREE.Mesh) { geometries.add(o.geometry); for (const m of Array.isArray(o.material) ? o.material : [o.material]) materials.add(m) } })
   geometries.forEach(g => g.dispose())
   materials.forEach(m => m.dispose())
+}
+
+/** A node by name, allowing the numeric suffix Blender adds on export ('Body.001' loads as 'Body001'). */
+function nodeNamed(root: THREE.Object3D, name: string): THREE.Object3D {
+  let found: THREE.Object3D | undefined
+  root.traverse(o => { if (!found && new RegExp(`^${name}(\\.?\\d+)?$`).test(o.name)) found = o })
+  if (!found) throw new Error(`Buggy model has no ${name} node`)
+  return found
 }
 
 /** Buggy.js 134-158: scale during deployment, then flex the original vertices. */
@@ -194,15 +204,21 @@ export class LoadedBuggySkin implements BuggySkin {
   private async load(kind: 'classic' | 'syn3h'): Promise<void> {
     const loaded = await Promise.all(kind === 'classic'
       ? [loader.loadAsync('/models/buggy-classic.glb'), loader.loadAsync('/models/buggy-classic-wheel.glb')]
-      : [loader.loadAsync('/models/buggy.glb')])
+      // Syn3h: wheels, hub wings and flight wings from the original model; the body, canopy,
+      // body fittings and suspension arm from the Box arm body (tools/buggy-bodies, variant
+      // c2-box), which is the owner's original body reshaped and is already in the game frame.
+      : [loader.loadAsync('/models/buggy.glb'), loader.loadAsync(BOX_ARM_BODY)])
     if (this.disposed) { loaded.forEach(g => release(g.scene)); return }
     const scene = loaded[0].scene
     const classic = kind === 'classic'
+    const next = classic ? null : loaded[1]!.scene
     const k = this.layout.scale
     const transform = new THREE.Matrix4().makeScale(k, k, k)
     // Both sources put their headlight meshes on +Z; our nose points toward -Z.
     transform.multiply(new THREE.Matrix4().makeRotationY(Math.PI))
-    const body = extract(scene.getObjectByName('Body')!, transform)
+    const body = next ? new THREE.Group() : extract(scene.getObjectByName('Body')!, transform)
+    // Box arm: the body and its fittings (strut sockets, shock towers, headlight lenses).
+    if (next) for (const name of ['Body', 'Sockets']) body.add(...extract(nodeNamed(next, name)).children)
     body.traverse(o => {
       if (!(o instanceof THREE.Mesh)) return
       // Preserve Syn3h's separate trim and light materials; classic has one tinted shell.
@@ -212,6 +228,8 @@ export class LoadedBuggySkin implements BuggySkin {
         else if (/accent/i.test(m.name)) { this.accentMaterials.push(m); setRole(m, 'accent') }
         else if (/chrome/i.test(m.name)) setRole(m, 'chrome')
         else if (/light/i.test(m.name)) setRole(m, 'lamp')
+        // Scoop interiors, socket wells: near black structure.
+        else if (/dark/i.test(m.name)) setRole(m, 'trim')
         m.roughness = .36; m.metalness = .3
         // Syn3h lamps are faces of the Body mesh itself. Emission from terra.buggy.prefab; values
         // above 1 are deliberate (no bloom here, so they survive tone mapping as a hot core).
@@ -225,14 +243,15 @@ export class LoadedBuggySkin implements BuggySkin {
     const staticBody=new THREE.Group();this.object.add(staticBody);staticBody.add(body)
     const cockpitTransform = transform.clone()
     if (!classic) cockpitTransform.multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2))
-    const cockpit = extract(scene.getObjectByName('Cockpit')!, cockpitTransform)
+    // The Box arm canopy is one mesh, both halves, already in place.
+    const cockpit = next ? extract(nodeNamed(next, 'Canopy')) : extract(scene.getObjectByName('Cockpit')!, cockpitTransform)
     cockpit.traverse(o => { if (o instanceof THREE.Mesh) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose(); // Tagged as glass and kept out of the plain body merge, so the showroom tiers can blend it.
       const glass = setRole(new THREE.MeshStandardMaterial({color: classic ? 0xad58ff : 0x192c44, metalness: .65, roughness: .18}), 'glass'); glass.name = 'Cockpit'; glass.userData.separate = true; o.material = glass } })
     // Syn3h: the canopy stays its own mesh (both halves merged together, one draw), outside the
     // body merge, tagged so the first person ride camera can hide it and only it.
     const canopy = classic ? staticBody : new THREE.Group()
     canopy.add(cockpit)
-    if (!classic) { const mirrored = cockpit.clone(true); mirrored.scale.x = -1; canopy.add(mirrored) }
+    if (!classic && !next) { const mirrored = cockpit.clone(true); mirrored.scale.x = -1; canopy.add(mirrored) }
     const headlights = scene.getObjectByName('Headlights')
     if (headlights) {
       const lights = extract(headlights, transform)
@@ -273,7 +292,7 @@ export class LoadedBuggySkin implements BuggySkin {
       const low=wheel.clone(true);low.traverse(o=>{if(o instanceof THREE.Mesh)o.geometry=reducedGeometry(o.geometry,.06)})
       this.wheels.forEach((w,i)=>{const visual=low.clone(true);visual.visible=false;if(i%2===0)visual.rotation.y=Math.PI;w.add(visual);this.simpleWheels.push(visual)})
     }
-    if (!classic) this.buildHubMotors(scene)
+    if (!classic) this.buildHubMotors(scene, next!)
     const wingTransform = transform.clone()
     if (!classic) wingTransform.multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2))
     const wingGroup = extract(scene.getObjectByName(classic ? 'Wing' : 'Wings')!, wingTransform)
@@ -405,7 +424,7 @@ export class LoadedBuggySkin implements BuggySkin {
   }
 
   /** Syn3h only: the wing struts, the stators and the motor glow, from the original glb. */
-  private buildHubMotors(scene: THREE.Object3D): void {
+  private buildHubMotors(scene: THREE.Object3D, next: THREE.Object3D): void {
     // Chrome is a bright, fairly smooth metal; the game has no environment map, so keep some
     // diffuse colour or it renders near black away from the sun.
     const chrome = () => new THREE.MeshStandardMaterial({color: 0xc4ccd6, metalness: .75, roughness: .22})
@@ -444,12 +463,21 @@ export class LoadedBuggySkin implements BuggySkin {
       this.object.add(mesh)
       return mesh
     })
-    // Axle is a single Accent.001 (wing metal) primitive: one instanced draw for all four struts, replacing
-    // the cylinders. Its origin is the narrow root, so it is not recentred.
-    const axle = extract(scene.getObjectByName('Axle')!).children[0] as THREE.Mesh
-    for (const m of Array.isArray(axle.material) ? axle.material : [axle.material]) m.dispose()
-    this.struts = new THREE.InstancedMesh(axle.geometry, wingMetal(), 4)
-    this.struts.name = 'Wing struts'
+    // The Box arm's suspension member: a heavy box arm with an accent rib and a coilover, modelled
+    // in the original Axle's frame (hub at the origin, span along +Y), so strutMatrix places it
+    // unchanged. Its three materials merge into one instanced draw for all four corners; the
+    // spring and rib keep following the vehicle's accent colour through the merge.
+    const arm = extract(nodeNamed(next, 'Strut'))
+    arm.traverse(o => { if (o instanceof THREE.Mesh) {
+      const src = o.material as THREE.MeshStandardMaterial
+      const m = /chrome/i.test(src.name) ? setRole(chrome(), 'chrome') : /accent/i.test(src.name) ? setRole(new THREE.MeshStandardMaterial({color: this.accentColor, roughness: .35, metalness: .55}), 'accent') : setRole(new THREE.MeshStandardMaterial({color: 0x23272d, roughness: .34, metalness: .7}), 'trim')
+      if (/accent/i.test(src.name)) this.accentMaterials.push(m)
+      src.dispose(); o.material = m
+    } })
+    mergeStatic(arm, true)
+    const axle = arm.children[0] as THREE.Mesh
+    this.struts = new THREE.InstancedMesh(axle.geometry, axle.material, 4)
+    this.struts.name = 'Suspension arms'
     this.struts.castShadow = this.struts.receiveShadow = true
     this.struts.frustumCulled = false
     this.object.add(this.struts)

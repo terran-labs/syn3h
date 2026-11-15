@@ -2,8 +2,9 @@
 // node:test beside the tool, like tools/serve-stable.test.mjs: vitest excludes tools/**.
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { compareVersions, formatVersion, isVersion, nextVersion, pacificDay, parseVersion, releasesFromTsv } from './release-version.mjs'
-import { draftNotes, referencedAssets, renderNotes, screenshotSection } from '../release-notes.mjs'
+import { readFileSync } from 'node:fs'
+import { compareVersions, formatVersion, isVersion, kindLine, matchReleases, nextVersion, pacificDay, parseHistory, parseVersion, releasesFromTsv } from './release-version.mjs'
+import { draftNotes, parseManifest, referencedAssets, renderNotes, screenshotSection } from '../release-notes.mjs'
 
 // 14 November 2026, 19:08 PST is 03:08 UTC on the 15th.
 const release1 = new Date('2026-11-15T03:08:00Z')
@@ -81,14 +82,60 @@ const TSV = [
   '',
 ].join('\n')
 
-test('releases.tsv maps release-N to its version', () => {
-  const rows = releasesFromTsv(TSV)
-  assert.deepEqual(rows.map((r) => [r.release, r.version, r.milestone, r.commit]), [
-    ['release-1', 'v26.11.1400', 'm13.1-steering', 'ee73e41'],
-    ['release-2', 'v26.11.1401', 'm14.2-release2', 'bc8cb48'],
+// The checked-in history, so a bad edit to it fails here.
+const HISTORY_TEXT = readFileSync(new URL('../../release-notes/history.tsv', import.meta.url), 'utf8')
+const HISTORY = parseHistory(HISTORY_TEXT)
+
+test('the checked-in history: fourteen builds of 14 November, two of them public', () => {
+  assert.equal(HISTORY.length, 14)
+  assert.equal(HISTORY[0].version, 'v26.11.1400')
+  assert.equal(HISTORY[0].milestone, 'm00-proposal')
+  assert.equal(HISTORY.at(-1).version, 'v26.11.1413')
+  assert.deepEqual(HISTORY.filter((r) => r.channel === 'production').map((r) => [r.version, r.milestone, r.commit]), [
+    ['v26.11.1412', 'm13.1-steering', 'ee73e41'],
+    ['v26.11.1413', 'm14.2-release2', 'bc8cb48'],
   ])
-  const later = releasesFromTsv(TSV + 'release-3\t2026-11-15 09:30 PST\tu\tm15\tabc1234\tid\tf\n')
-  assert.equal(later[2].version, 'v26.11.1500')
+  assert.ok(!HISTORY.some((r) => /^m14\.[34]/.test(r.milestone)), 'unshipped candidates are not in the history')
+  const { pairs, problems } = matchReleases(HISTORY, releasesFromTsv(TSV))
+  assert.deepEqual(problems, [])
+  assert.deepEqual(pairs.map((p) => [p.release, p.version]), [['release-1', 'v26.11.1412'], ['release-2', 'v26.11.1413']])
+})
+
+test('next comes after the history', () => {
+  const versions = HISTORY.map((r) => r.version)
+  assert.equal(nextVersion(new Date('2026-11-15T05:30:00Z'), versions), 'v26.11.1414') // 9:30pm on the 14th
+  assert.equal(nextVersion(new Date('2026-11-15T18:00:00Z'), versions), 'v26.11.1500') // 10am on the 15th
+})
+
+test('kind lines never call a milestone public', () => {
+  const [plan, , first] = HISTORY
+  assert.equal(kindLine(plan), 'Milestone build at 2:06pm Pacific on 14 November 2026. It was not released publicly.')
+  assert.equal(kindLine(first), 'Milestone build at 2:50pm Pacific on 14 November 2026. It ran on a private preview and was not released publicly.')
+  assert.equal(kindLine(HISTORY[12]), 'Public release at 7:08pm Pacific on 14 November 2026, live at https://www.syn3h.com/.')
+  assert.equal(kindLine({ ...first, time: '2026-11-15 09:05 PST' }), 'Milestone build at 9:05am Pacific on 15 November 2026. It ran on a private preview and was not released publicly.')
+  assert.equal(kindLine({ ...first, time: '2026-11-15 00:10 PST' }).slice(0, 26), 'Milestone build at 12:10am')
+  for (const row of HISTORY.filter((r) => r.channel === 'milestone')) assert.match(kindLine(row), /not released publicly\.$/)
+})
+
+test('a bad history is rejected', () => {
+  const row = (v, t, c = 'milestone', extra = '') => `${v}\tm\tabc1234\t2026-11-14 ${t} PST\t${c}${extra}`
+  assert.equal(parseHistory(['# comment', row('v26.11.1400', '14:00'), row('v26.11.1401', '15:00', 'production')].join('\n')).length, 2)
+  assert.throws(() => parseHistory(row('v26.11.1401', '14:00')), /should be build 00/)
+  assert.throws(() => parseHistory([row('v26.11.1400', '14:00'), row('v26.11.1402', '15:00')].join('\n')), /should be build 01/)
+  assert.throws(() => parseHistory([row('v26.11.1401', '14:00'), row('v26.11.1400', '15:00')].join('\n')), /should be build 00/)
+  assert.throws(() => parseHistory([row('v26.11.1400', '14:00'), row('v26.11.1401', '13:00')].join('\n')), /earlier than/)
+  assert.throws(() => parseHistory(row('v26.11.1500', '14:00')), /not on the day/)
+  assert.throws(() => parseHistory(row('v26.11.1400', '14:00', 'beta')), /channel must be/)
+  assert.throws(() => parseHistory(row('26.11.1400', '14:00')), /write the version as v26\.11\.1400/)
+  assert.throws(() => parseHistory(row('v26.11.1400', '14:00', 'milestone', '\tmaybe')), /preview must be yes or no/)
+  assert.equal(parseHistory(row('v26.11.1400', '14:00', 'milestone', '\tno'))[0].preview, false)
+  assert.throws(() => parseHistory('v26.11.1400\tm\tnot-a-sha\t2026-11-14 14:00 PST\tmilestone'), /expected a commit/)
+})
+
+test('production versions and deployed builds must match', () => {
+  const releases = releasesFromTsv(TSV + 'release-3\t2026-11-15 09:30 PST\tu\tm15\tabc1234\tid\tf\n')
+  assert.deepEqual(matchReleases(HISTORY, releases).problems, ['release-3 (abc1234) has no production version in history.tsv'])
+  assert.deepEqual(matchReleases(HISTORY, releasesFromTsv(TSV.split('\n')[0])).problems, ['v26.11.1413 is production but no build of bc8cb48 is in releases.tsv'])
 })
 
 test('releases.tsv with a malformed row is rejected', () => {
@@ -96,24 +143,69 @@ test('releases.tsv with a malformed row is rejected', () => {
   assert.throws(() => releasesFromTsv('release-1\t2026-11-14T19:08\n'), /expected a Pacific time/)
 })
 
+const MILESTONE = HISTORY[2]
+const PRODUCTION = HISTORY[12]
+const notesFor = (row, { play = row.channel === 'production', extra = '' } = {}) => [
+  `## Syn3h ${row.version}`, '', 'A deck', '', kindLine(row), '', '<!-- a comment -->', '',
+  '### The story so far', '', 'It happened.', '', '### Features', '', '- a', '', '### Fixes', '', '- b', '',
+  ...(play ? ['### Play', '', 'p', ''] : []), '### Known issues', '', '- k', '', extra,
+].join('\n')
+
 test('a draft cannot render until it is written', () => {
-  const draft = draftNotes('v26.11.1500', 'release-2', 'm15', ['abc1234 Buggy: a -- b'])
-  assert.match(draft, /^\(AI Generated\)\n\n## Syn3h v26\.11\.1500\n/)
-  assert.throws(() => renderNotes(draft, 'v26.11.1500'), /still contain TODO/)
+  const draft = draftNotes(MILESTONE, 'm01-foundation', 'm02-first-playable', ['abc1234 Buggy: a -- b'])
+  assert.match(draft, /^## Syn3h v26\.11\.1402\n/)
+  assert.doesNotMatch(draft, /AI Generated/)
+  assert.doesNotMatch(draft, /### Play/)
+  assert.match(draftNotes(PRODUCTION, 'a', 'b', []), /### Play/)
+  assert.throws(() => renderNotes(draft, MILESTONE), /still contain TODO/)
 })
 
-test('render strips comments and checks the shape', () => {
-  const notes = [
-    '(AI Generated)', '', '## Syn3h v26.11.1500', '', 'A deck', '', '<!-- private -->', '',
-    '### Features', '', '- a', '', '### Fixes', '', '- b', '', '### Play', '', 'p', '',
-    '### Known issues', '', '- k', '', screenshotSection('v26.11.1500'), '',
-  ].join('\n')
-  const body = renderNotes(notes, 'v26.11.1500')
-  assert.doesNotMatch(body, /private|\n\n\n/)
-  assert.throws(() => renderNotes(notes, 'v26.11.1501'), /heading must be/)
-  assert.throws(() => renderNotes(notes.replace('(AI Generated)', '(AI Generated).'), 'v26.11.1500'), /first line/)
-  assert.throws(() => renderNotes(notes.replace('- b', '- b — c'), 'v26.11.1500'), /dash/)
-  const names = referencedAssets(body, 'v26.11.1500')
-  assert.equal(names[0], 'syn3h-showcase.gif')
-  assert.equal(names.length, 11)
+test('render checks the shape for the channel', () => {
+  const body = renderNotes(notesFor(MILESTONE), MILESTONE)
+  assert.doesNotMatch(body, /a comment|\n\n\n|Screenshots/)
+  assert.ok(renderNotes(notesFor(PRODUCTION), PRODUCTION).includes('### Play'))
+  assert.throws(() => renderNotes(notesFor(MILESTONE, { play: true }), MILESTONE), /Play" belongs only in production/)
+  assert.throws(() => renderNotes(notesFor(PRODUCTION, { play: false }), PRODUCTION), /production notes need/)
+  assert.throws(() => renderNotes(notesFor(MILESTONE), HISTORY[3]), /must be the heading "## Syn3h v26.11.1403"/)
+  assert.throws(() => renderNotes(notesFor(MILESTONE).replace(kindLine(MILESTONE), kindLine(PRODUCTION)), MILESTONE), /line under the deck/)
+  assert.throws(() => renderNotes(`(AI Generated)\n\n${notesFor(MILESTONE)}`, MILESTONE), /first line must be the heading/)
+  assert.throws(() => renderNotes(notesFor(MILESTONE).replace('- b', '- b — c'), MILESTONE), /dash/)
+  assert.throws(() => renderNotes(notesFor(MILESTONE).replace('- b', '- the lasers fire'), MILESTONE), /wording rule: lasers, fire/)
+  assert.throws(() => renderNotes(notesFor(MILESTONE, { extra: '### Screenshots\n\n![x](y)' }), MILESTONE), /built from the assets manifest/)
+  const swapped = notesFor(MILESTONE).replace('### The story so far\n\nIt happened.\n\n### Features\n\n- a', '### Features\n\n- a\n\n### The story so far\n\nIt happened.')
+  assert.throws(() => renderNotes(swapped, MILESTONE), /must be the first section/)
+})
+
+test('screenshots come from the manifest, the GIF first', () => {
+  const manifest = parseManifest(JSON.stringify({ images: [{ file: '01-lobby.png', caption: 'The lobby' }, { file: '02-hill.png', caption: 'King of the Hill' }], gif: 'syn3h-showcase.gif' }))
+  const body = renderNotes(notesFor(MILESTONE), MILESTONE, manifest)
+  const section = body.slice(body.indexOf('### Screenshots'))
+  assert.equal(section, [
+    '### Screenshots', '',
+    '![Syn3h showcase](https://github.com/terran-labs/syn3h/releases/download/v26.11.1402/syn3h-showcase.gif)', '',
+    '![The lobby](https://github.com/terran-labs/syn3h/releases/download/v26.11.1402/01-lobby.png)', '_The lobby_', '',
+    '![King of the Hill](https://github.com/terran-labs/syn3h/releases/download/v26.11.1402/02-hill.png)', '_King of the Hill_', '',
+  ].join('\n'))
+  assert.deepEqual(referencedAssets(body, 'v26.11.1402'), ['syn3h-showcase.gif', '01-lobby.png', '02-hill.png'])
+  // No GIF, and no images at all.
+  assert.doesNotMatch(screenshotSection('v26.11.1402', parseManifest('{"images":[{"file":"a.png","caption":"A"}],"gif":null}')), /showcase/)
+  assert.equal(screenshotSection('v26.11.1400', parseManifest('{"images":[],"gif":null}')), '')
+  assert.doesNotMatch(renderNotes(notesFor(MILESTONE), MILESTONE, parseManifest('{"images":[],"gif":null}')), /Screenshots/)
+})
+
+test('a bad manifest is rejected', () => {
+  assert.throws(() => parseManifest('nope'), /not JSON/)
+  assert.throws(() => parseManifest('{"images":[{"file":"../x.png","caption":"x"}]}'), /plain file name/)
+  assert.throws(() => parseManifest('{"images":[{"file":"x.png","caption":""}]}'), /no caption/)
+  assert.throws(() => parseManifest('{"images":[{"file":"x.png","caption":"a [b]"}]}'), /brackets/)
+  assert.throws(() => parseManifest('{"images":[],"gif":"manifest.json"}'), /gif must be/)
+})
+
+test('every checked-in notes file renders', () => {
+  for (const row of HISTORY) {
+    const text = readFileSync(new URL(`../../release-notes/releases/${row.version}.md`, import.meta.url), 'utf8')
+    const body = renderNotes(text, row)
+    assert.match(body, /### The story so far\n\n[^\n#]+\n/, row.version)
+    assert.doesNotMatch(body, /mars|unity|mapmagic/i, row.version)
+  }
 })

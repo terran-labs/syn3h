@@ -263,3 +263,19 @@ begins). To compare variations, return several designs; give them a `group` to r
   body an entry was built on (in its notes and the round heading). Without any marks, Wide body
   carries into the rounds after round 1 as before. A round opens on its first design that is
   not carried over.
+
+## The live lab
+
+There is one lab link for everyone, served by the `lab` preview service (`tools/lab-live.mjs`).
+It shows trunk plus the latest commit of every `veh/*` branch, rebuilt within about fifteen
+seconds of any of them moving, with no merge queue in between. So:
+
+- To show a design, commit it to your vehicle branch. Nothing else. Do not make or share a
+  preview page of your own for a vehicle.
+- The sidebar footer lists the branches the live lab is built from. A branch that does not
+  merge cleanly is named there with the conflicting files and is left out until it does; merge
+  trunk into your branch to fix it. An exhibit file that fails to load is named there too, and
+  the other vehicles still show.
+- Never delete or overwrite a round. Every version stays viewable: add a new group (round) and
+  leave the old ones in place. Old rounds are tagged "older" and collapsed in the sidebar.
+- Put design studies under `section: 'Design studies'` so they sit together.

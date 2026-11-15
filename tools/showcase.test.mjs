@@ -2,10 +2,20 @@
 // Pure parts of the release showcase. vite.config.ts excludes tools/** from vitest.
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { execFile } from 'node:child_process'
+import { access, mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { promisify } from 'node:util'
 import {
-  FRAME_LIMITS, MAX_GIF_BYTES, SCENES, SCENE_IDS, buildManifest, concatScript, frameStats,
-  gifArgs, judgeFrame, missingFeature, parseArgs, sceneRoom, sceneUrl,
+  DEFAULT_SCENE_IDS, FRAME_LIMITS, MAX_GIF_BYTES, SCENES, SCENE_IDS, buildManifest, frameStats,
+  gifArgs, holdFramerate, judgeFrame, missingFeature, parseArgs, sceneRoom, sceneUrl, selectScenes,
 } from './lib/showcase-scenes.mjs'
+
+const run = promisify(execFile)
+const FFMPEG = process.env.FFMPEG ?? '/opt/homebrew/bin/ffmpeg'
+const FFPROBE = FFMPEG.replace(/ffmpeg$/, 'ffprobe')
+const haveFfmpeg = await access(FFMPEG).then(() => access(FFPROBE)).then(() => true, () => false)
 
 const solid = (r, g, b, n = 1000) => Buffer.from(Array.from({ length: n }, () => [r, g, b]).flat())
 const noise = (n = 4000, seed = 1) => {
@@ -82,22 +92,56 @@ test('a scene may relax a limit without changing the default', () => {
   assert.equal(judgeFrame(dim, { ...FRAME_LIMITS, ...SCENES[0].limits }).ok, true)
 })
 
-test('concat script holds each still once, the last included', () => {
-  assert.equal(concatScript(['/o/a.png', '/o/b.png'], 1.5),
-    "file '/o/a.png'\nduration 1.5\nfile '/o/b.png'\nduration 1.5\n")
-  assert.throws(() => concatScript([]), /No stills/)
-  assert.throws(() => concatScript(["/o/it's.png"]), /Unsafe/)
+test('default run is the eight published scenes; the other two need --only', () => {
+  assert.deepEqual(selectScenes(null).map((s) => s.id), [...DEFAULT_SCENE_IDS])
+  assert.equal(DEFAULT_SCENE_IDS.length, 8)
+  assert.ok(!DEFAULT_SCENE_IDS.includes('king-of-the-hill') && !DEFAULT_SCENE_IDS.includes('other-world'))
+  assert.deepEqual(selectScenes(['other-world', 'lobby']).map((s) => s.id), ['lobby', 'other-world'])
+  assert.deepEqual(selectScenes(['king-of-the-hill']).map((s) => s.id), ['king-of-the-hill'])
+  assert.throws(() => selectScenes(['lobby', 'nope']), /Unknown scene nope/)
 })
 
-test('gif arguments loop forever and use a generated palette at 960 x 540', () => {
-  const args = gifArgs({ list: '/o/l.txt', output: '/o/x.gif' })
+test('hold becomes an exact frame rate, so the delay is the hold', () => {
+  assert.equal(holdFramerate(1.5), '100/150')
+  assert.equal(holdFramerate(2), '100/200')
+  assert.throws(() => holdFramerate(0), /Hold must be/)
+  assert.throws(() => holdFramerate(NaN), /Hold must be/)
+})
+
+test('gif arguments: image sequence in, per-frame palette, 832 x 468, looping', () => {
+  const args = gifArgs({ pattern: '/o/.seq/%d.png', output: '/o/x.gif', hold: 1.5 })
+  assert.equal(args[args.indexOf('-framerate') + 1], '100/150')
+  assert.equal(args[args.indexOf('-i') + 1], '/o/.seq/%d.png')
   const filter = args[args.indexOf('-filter_complex') + 1]
-  assert.match(filter, /scale=960:540/)
-  assert.match(filter, /palettegen/)
-  assert.match(filter, /paletteuse/)
+  assert.match(filter, /scale=832:468/)
+  assert.match(filter, /palettegen=stats_mode=single/)
+  assert.match(filter, /paletteuse=new=1/)
+  assert.doesNotMatch(filter, /fps=/)
   assert.equal(args[args.indexOf('-loop') + 1], '0')
   assert.equal(args.at(-1), '/o/x.gif')
   assert.equal(MAX_GIF_BYTES, 10485760)
+})
+
+test('the GIF has exactly one frame per scene, each held for the hold', { skip: !haveFfmpeg && 'ffmpeg not found' }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'syn3h-showcase-test-'))
+  try {
+    for (const scenes of [1, 2, 8]) {
+      for (let i = 1; i <= scenes; i++) {
+        await run(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', `testsrc2=size=320x180:rate=1:duration=1,hue=h=${i * 40}`, '-frames:v', '1', join(dir, `${i}.png`)])
+      }
+      const gif = join(dir, `out-${scenes}.gif`)
+      await run(FFMPEG, gifArgs({ pattern: join(dir, '%d.png'), output: gif, hold: 1.5 }))
+      const { stdout } = await run(FFPROBE, ['-v', 'error', '-count_frames', '-show_entries', 'stream=nb_read_frames,width,height:format=duration', '-of', 'json', gif])
+      const info = JSON.parse(stdout)
+      assert.equal(Number(info.streams[0].nb_read_frames), scenes, `${scenes} scenes`)
+      assert.equal(info.streams[0].width, 832)
+      assert.equal(info.streams[0].height, 468)
+      assert.equal(Number(info.format.duration), scenes * 1.5)
+      await rm(gif)
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 })
 
 test('manifest records build identity, files sorted, and skips with reasons', () => {
@@ -112,6 +156,7 @@ test('manifest records build identity, files sorted, and skips with reasons', ()
   assert.equal(m.buildId, 'b')
   assert.deepEqual(m.files.map((f) => f.file), ['a.gif', 'z.png'])
   assert.deepEqual(m.gif.order, ['lobby.png', 'jet-flight.png'])
+  assert.equal(m.gif.frames, 2)
   assert.equal(m.skipped[0].reason, 'build lacks param:liquid.wingLift')
 })
 
