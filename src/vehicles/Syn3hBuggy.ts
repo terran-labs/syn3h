@@ -44,6 +44,12 @@ const RAY_OUTSET = 0.22
 /** Front to rear axle distance from WheelPos, for the next-gen steering limit. */
 const WHEELBASE = WHEEL_POS.z * 2
 export const AXEL_POS = { x: 0.55, y: 0.15, z: 1.2 }
+/**
+ * The driver's eye above the origin. The Unity prefab's RideCam sat at 0.95, a hand's width
+ * under the canopy. With the cockpit tub the seat is lower: 0.8 is half a metre above the tub
+ * floor and a quarter of a metre clear of the canopy.
+ */
+const RIDE_HEIGHT = 0.8
 /** Prefab WingOpenSpeed. */
 const WING_OPEN_SPEED = 12
 /** Vhicl prefab InputSmoothingFactor. */
@@ -177,6 +183,9 @@ export class Syn3hBuggy extends Vehicle {
   private motorStep = 0
 
 
+  /** The driver's eye, for the ride camera (see RIDE_HEIGHT). */
+  override readonly ridePosition = new THREE.Object3D()
+
   /** Vehicle.getWheelEffects: persistent FL, FR, RL, RR entries from the last fixed step. */
   readonly wheelEffects: readonly WheelEffect[] = createWheelEffects(4)
   getWheelEffects(): readonly WheelEffect[] {
@@ -245,6 +254,8 @@ export class Syn3hBuggy extends Vehicle {
     this.updateMassProperties()
 
     this.ub = new UnityBody(this.body, world, PREFAB_DRAG, PREFAB_ANGULAR_DRAG)
+    this.ridePosition.position.set(0, RIDE_HEIGHT, 0)
+    this.object.add(this.ridePosition)
 
     this.fbBody = new THREE.MeshStandardMaterial({ color: this.colors.body, roughness: 0.4, metalness: 0.3 })
     this.buildFallback()

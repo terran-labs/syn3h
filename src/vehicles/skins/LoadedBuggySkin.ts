@@ -218,7 +218,16 @@ export class LoadedBuggySkin implements BuggySkin {
     transform.multiply(new THREE.Matrix4().makeRotationY(Math.PI))
     const body = next ? new THREE.Group() : extract(scene.getObjectByName('Body')!, transform)
     // Box arm: the body and its fittings (strut sockets, shock towers, headlight lenses).
-    if (next) for (const name of ['Body', 'Sockets']) body.add(...extract(nodeNamed(next, name)).children)
+    // Interior: the cockpit tub under the force field canopy (sills, floor, seat, dash).
+    if (next) for (const name of ['Body', 'Sockets', 'Interior']) body.add(...extract(nodeNamed(next, name)).children)
+    // The exported paint carries a clear coat, which loads as a physical material and would
+    // keep each part out of the body merge. The shared shading supplies every look from the
+    // role, so reduce each to a plain material that only carries its name and colour.
+    if (next) body.traverse(o => { if (o instanceof THREE.Mesh) {
+      const src = o.material as THREE.MeshStandardMaterial
+      const plain = new THREE.MeshStandardMaterial({color: src.color}); plain.name = src.name
+      src.dispose(); o.material = plain
+    } })
     body.traverse(o => {
       if (!(o instanceof THREE.Mesh)) return
       // Preserve Syn3h's separate trim and light materials; classic has one tinted shell.
@@ -228,8 +237,9 @@ export class LoadedBuggySkin implements BuggySkin {
         else if (/accent/i.test(m.name)) { this.accentMaterials.push(m); setRole(m, 'accent') }
         else if (/chrome/i.test(m.name)) setRole(m, 'chrome')
         else if (/light/i.test(m.name)) setRole(m, 'lamp')
-        // Scoop interiors, socket wells: near black structure.
-        else if (/dark/i.test(m.name)) setRole(m, 'trim')
+        // Scoop interiors, socket wells: dark structural metal.
+        else if (/dark/i.test(m.name)) setRole(m, 'frame')
+        else if (/interior/i.test(m.name)) setRole(m, 'trim')
         m.roughness = .36; m.metalness = .3
         // Syn3h lamps are faces of the Body mesh itself. Emission from terra.buggy.prefab; values
         // above 1 are deliberate (no bloom here, so they survive tone mapping as a hot core).
@@ -246,7 +256,8 @@ export class LoadedBuggySkin implements BuggySkin {
     // The Box arm canopy is one mesh, both halves, already in place.
     const cockpit = next ? extract(nodeNamed(next, 'Canopy')) : extract(scene.getObjectByName('Cockpit')!, cockpitTransform)
     cockpit.traverse(o => { if (o instanceof THREE.Mesh) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose(); // Tagged as glass and kept out of the plain body merge, so the showroom tiers can blend it.
-      const glass = setRole(new THREE.MeshStandardMaterial({color: classic ? 0xad58ff : 0x192c44, metalness: .65, roughness: .18}), 'glass'); glass.name = 'Cockpit'; glass.userData.separate = true; o.material = glass } })
+      // Syn3h: the shared force field canopy. Classic keeps its glass until its own pass.
+      const glass = setRole(new THREE.MeshStandardMaterial({color: classic ? 0xad58ff : 0x192c44, metalness: .65, roughness: .18}), classic ? 'glass' : 'canopy'); glass.name = 'Cockpit'; glass.userData.separate = true; o.material = glass } })
     // Syn3h: the canopy stays its own mesh (both halves merged together, one draw), outside the
     // body merge, tagged so the first person ride camera can hide it and only it.
     const canopy = classic ? staticBody : new THREE.Group()
@@ -262,7 +273,11 @@ export class LoadedBuggySkin implements BuggySkin {
     const bodyLods=staticLods(staticBody)
     if (canopy !== staticBody) {
       mergeStatic(canopy, true)
-      canopy.traverse(o => { if (o instanceof THREE.Mesh) { o.name = 'Canopy'; o.userData.hideInRide = true } })
+      // Tagged for the ride camera only so it does not hide the whole vehicle: the camera hides
+      // just tagged parts, and this tag is on an empty marker, not on the canopy. The force
+      // field stays in view from the seat, nearly clear, as PATTERN.md asks.
+      canopy.traverse(o => { if (o instanceof THREE.Mesh) o.name = 'Canopy' })
+      const marker = new THREE.Object3D(); marker.name = 'Ride view marker'; marker.userData.hideInRide = true; canopy.add(marker)
       canopy.name = 'Canopy'
       this.object.add(canopy)
     }
@@ -470,7 +485,7 @@ export class LoadedBuggySkin implements BuggySkin {
     const arm = extract(nodeNamed(next, 'Strut'))
     arm.traverse(o => { if (o instanceof THREE.Mesh) {
       const src = o.material as THREE.MeshStandardMaterial
-      const m = /chrome/i.test(src.name) ? setRole(chrome(), 'chrome') : /accent/i.test(src.name) ? setRole(new THREE.MeshStandardMaterial({color: this.accentColor, roughness: .35, metalness: .55}), 'accent') : setRole(new THREE.MeshStandardMaterial({color: 0x23272d, roughness: .34, metalness: .7}), 'trim')
+      const m = /chrome/i.test(src.name) ? setRole(chrome(), 'chrome') : /accent/i.test(src.name) ? setRole(new THREE.MeshStandardMaterial({color: this.accentColor, roughness: .35, metalness: .55}), 'accent') : setRole(new THREE.MeshStandardMaterial({color: 0x23272d, roughness: .34, metalness: .7}), 'frame')
       if (/accent/i.test(src.name)) this.accentMaterials.push(m)
       src.dispose(); o.material = m
     } })
