@@ -55,6 +55,19 @@ describe('level presets', () => {
 })
 
 describe('choosing the starting level', () => {
+  it('caps the actual WebGL renderer after an available GPU probe without raising crash caps', async () => {
+    for (const gpu of [true, false]) {
+      const { c } = await boot({ adapter: 'available' })
+      c.attachRenderer({ backend: { isWebGPUBackend: gpu }, setPixelRatio() {} } as unknown as Parameters<QualityController['attachRenderer']>[0])
+      expect(c.getQualityState()).toMatchObject({ level: gpu ? 3 : 2, ceiling: gpu ? 5 : 2 })
+      c.dispose()
+    }
+    const { c } = await boot({ adapter: 'available', session: store({ [LOAD_KEY]: '2' }) })
+    c.attachRenderer({ backend: { isWebGPUBackend: false }, setPixelRatio() {} } as unknown as Parameters<QualityController['attachRenderer']>[0])
+    expect(c.getQualityState()).toMatchObject({ level: 1, ceiling: 1 })
+    c.dispose()
+  })
+
   it('starts every capable device at High on a first visit, whatever it says it is', async () => {
     const { c } = await boot({ adapter: 'available' })
     expect(c.getQualityState()).toMatchObject({ level: 3, name: 'High', ceiling: 5, pinned: false, auto: true })

@@ -149,7 +149,7 @@ export class Materialize implements System {
 
   /** Make the cloud's batch for the current graphics level. */
   private build():void {
-    const level=levelNumber(Number(graphicsLevel.value))
+    const level=Math.min(2,levelNumber(Number(graphicsLevel.value)))
     if(level===this.level)return
     this.cloud?.dispose()
     this.level=level
@@ -229,7 +229,7 @@ export class Materialize implements System {
 
   /** Feed the cloud round every vehicle materializing. Allocates nothing. */
   update(dt:number):void {
-    if(levelNumber(Number(graphicsLevel.value))!==this.level)this.build()
+    if(Math.min(2,levelNumber(Number(graphicsLevel.value)))!==this.level)this.build()
     this.clock+=Math.min(.1,Math.max(0,dt))
     const cloud=this.cloud
     cloud.clock.value=this.clock

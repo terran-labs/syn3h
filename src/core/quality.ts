@@ -813,7 +813,17 @@ export class QualityController implements QualitySource {
     if (level !== this.governor.level) { this.governor.reset(level, 'level-drop'); this.lastReason = 'level-drop' }
     this.apply('start')
   }
-  attachRenderer(renderer: WebGPURenderer) { this.renderer = renderer; this.apply('start') }
+  attachRenderer(renderer: WebGPURenderer) {
+    this.renderer = renderer
+    // The renderer may fall back after a successful adapter probe, or be forced to WebGL.
+    if (!(renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend) {
+      this.capability = { start: Math.min(this.capability.start, 2) as QualityLevel, ceiling: Math.min(this.capability.ceiling, 2) as QualityLevel }
+      const ceiling = Math.min(this.capability.ceiling, this.crashCap) as QualityLevel
+      this.governor.setCeiling(ceiling)
+      if (this.governor.level > ceiling) { this.governor.reset(ceiling, 'level-drop'); this.lastReason = 'level-drop' }
+    }
+    this.apply('start')
+  }
   /** Optional hook for terrain builders; no regeneration or physics changes are implied. */
   attachTerrain(terrain: QualityTerrain) { this.terrain = terrain; this.terrainWritten = false; this.onTerrain?.(); this.apply('start') }
   /** Startup timing hook: main calls attachTerrain right after building the terrain. */
