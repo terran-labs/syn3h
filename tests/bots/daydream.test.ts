@@ -218,3 +218,27 @@ describe('mixed fleet', () => {
     manager.dispose()
   })
 })
+
+describe('chasing with the route planner', () => {
+  it('goes round a lake to reach its target instead of driving in', async () => {
+    const { BotBrain } = await import('../../src/bots/BotBrain')
+    const { createNavigator } = await import('../../src/bots/nav')
+    const { game, step } = harness()
+    // A lake 120 m wide lies across the direct line; the dry way is round either end.
+    const wet = (x: number, z: number) => Math.abs(x) < 60 && z < -30 && z > -70
+    const terrain = flat(600, { liquidHeightAt: (x: number, z: number) => wet(x, z) ? 2 : -Infinity })
+    const target = new Syn3hBuggy(game, terrain, new Vector3(0, 1, -100)); target.isLocal = false
+    target.body.setBodyType(RAPIER.RigidBodyType.Fixed, true)
+    const bot = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); bot.isLocal = false
+    params.set('bots.canFire', false)
+    const brain = game.add(new BotBrain(game, terrain, bot, target)); game.add(bot)
+    brain.navigator = createNavigator(terrain)
+    let wetTime = 0, nearest = Infinity
+    for (let i = 0; i < 3000 && nearest > 6; i++) {
+      step(); const p = bot.body.translation()
+      if (wet(p.x, p.z)) wetTime += DT
+      nearest = Math.min(nearest, Math.hypot(p.x, p.z + 100))
+    }
+    expect(wetTime).toBe(0); expect(nearest).toBeLessThan(6); expect(brain.rescues).toBe(0)
+  })
+})

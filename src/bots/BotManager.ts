@@ -78,6 +78,7 @@ export class BotManager implements System {
       // Each bot gets a character from the world seed and its own id, and a mind to act on it.
       const pilot = createPilot(bot, this.terrain)
       if (pilot) brain.mind = new Mind(bot, this.terrain, pilot, { seed: `${worldSeed.value}:${bot.id}`, navigator: this.navigator, others: () => [...this.targets, ...this.bots] })
+      brain.navigator = this.navigator
       brain.remote = this.remote
       brain.setTargets(this.targets)
       // Register brain first so its input reaches the vehicle in the same physics step.
