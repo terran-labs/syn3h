@@ -402,3 +402,9 @@ the minimap sits top right under the menu, clear of the action buttons, and anno
 sit between the hill panel and the vehicle. `phone-layout.mjs` now walks the same layout
 states on an "iPad Pro 11 landscape" in WebKit (build 2388), where the game takes its
 WebGL path.
+
+The same hints carry the wings: while a buggy sits in lava or water with its wings closed
+(`Vehicle.canLiftOut`), the card says "Space: wings to lift out", or "WINGS: lift out" on
+touch with that button pulsing; again every nine seconds, five times at most. Zorb mode
+(X) has a ZORB thumb button that calls `input.toggleZorb()` and a line in every controls
+text. `jet-hint.mjs` checks the wings hint in the volcano's lava lake and the ZORB button.
