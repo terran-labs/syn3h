@@ -1380,8 +1380,10 @@ export class NetClient implements System {
   displayName(id: number): string {
     if (isBotId(id) && this.ctx.names) {
       // Seeded, so it only changes with the world's seed: generate each once.
-      if (this.botNamesSeed !== worldSeed.value) {
+      // The cache is only as good as what made it: a new seed or a replaced namer starts over.
+      if (this.botNamesSeed !== worldSeed.value || this.botNamer !== this.ctx.names) {
         this.botNamesSeed = worldSeed.value
+        this.botNamer = this.ctx.names
         this.botNames.clear()
       }
       const known = this.botNames.get(id)
@@ -1399,6 +1401,7 @@ export class NetClient implements System {
 
   private readonly botNames = new Map<number, string>()
   private botNamesSeed: unknown = undefined
+  private botNamer: unknown = undefined
 
   private lastMatchKey = ''
 
