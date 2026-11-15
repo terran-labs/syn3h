@@ -60,6 +60,24 @@ capture does it through `accent`, and a win brings the release at once. Surges a
 The worklets are plain JavaScript because the browser loads them as modules. Each loads on
 its own; if one fails the score plays on without it (the choir falls back to filtered saws).
 
+## Cost, and the lighter tier
+
+`audio.score.lite` ("Lighter score (for phones)") builds a cheaper set of instruments: no sung
+choir (filtered saws stand in), no shimmer, halo or endless rise, fewer oscillators, and a
+1.6 second hall in place of 5.5. The music is the same. The quality system may set it, and
+the score sets it itself after two strained readings from the browser's audio counters
+(`renderCapacity` or `playbackStats`), where a browser has them.
+
+Measured with `node tests/audio/score-load.mjs`, busiest passage (a release in a full chase),
+on a loaded M-series Mac: full about 15% of one core, lighter about 8%. Scaled to a CPU four
+times slower that is 58% and 32%; six times slower, 87% and 48%. Those scalings are
+arithmetic, not measurements: nothing here has been run on a phone. Chrome's CPU throttle
+does not slow the audio thread, so its zero underruns prove nothing.
+
+Where the cost sits (percent of one core): the 5.5 s hall 5.0, the 1.6 s hall about 1.6,
+sixty oscillators 1.5, the choir worklet 1.2, thirty filters 1.0, pluck and shimmer worklets
+0.4 and 0.3.
+
 ## Tuning
 
 `audio.score.energy`, `audio.score.tempo`, `audio.score.reverb` and `audio.score.seed` are in
