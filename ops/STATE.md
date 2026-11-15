@@ -4,7 +4,7 @@ Written by the Orchestrator. Refreshed at each milestone tag. A fresh or compact
 Orchestrator should be able to resume from this file, `ops/BACKLOG.md`, `ops/LANES.md` and
 `ops/PROTOCOL.md` alone. Times are Pacific; read the clock with `date`, never from memory.
 
-Last refreshed: Saturday 14 November, 4:35pm PST. Demo: Sunday noon PST.
+Last refreshed: Saturday 14 November, 5:06pm PST. Demo: Sunday noon PST.
 
 ## Where things are
 
@@ -30,6 +30,19 @@ Scripts are in `paseo.json`.
 
 Terrain Lab runs its own preview on port 32783.
 
+## OUTAGE: all previews down since Saturday 5:00pm PST
+
+Dashboard (:32781) and game (:32782) answer 502. The broker's log
+(`~/.local/share/vorteo-native-preview/https-broker.stderr.log`) repeats "HTTPS broker check
+failed: Tailnet access scope changed; administrator review required". This is a deliberate
+safety stop: the owner or the Host administrator must review the tailnet scope. Do not work
+around it and do not run broker commands meanwhile: `start`, `restart` and `status` hang.
+When it clears: `paseo-preview.mjs start dashboard` and `start game` for workspace
+`wks_cfcb37521a420b78`, then the smoke test. Told the Foreman at 5:05pm.
+
+Unverified because of the outage: the sound crash fix (cd0fe52) in a browser. The sequence
+is eight bots, then `gfx.level` 1 and `bots.count` 0, repeated; the world must keep stepping.
+
 ## Lanes
 
 Hand work to Codex and peer threads with `mcp__paseo__send_agent_prompt` (agent id). The
@@ -47,14 +60,19 @@ survive a new Orchestrator thread, and their roles have moved to the peer lanes.
 | Syn3h buggy | 12abdd19-b672-40d7-938a-be2ab2339315 | `.../2jg65r8u/veh-buggy`, `veh/buggy` | 5201 | New. |
 | Jet | e73e5ed4-a32d-468e-a2cc-cfda3c196288 | `.../2jg65r8u/veh-jet`, `veh/jet` | 5202 | New. |
 | Hovercraft | 43191a2c-f8f5-4da4-b147-423a10dff345 | `.../2jg65r8u/veh-hovercraft`, `veh/hovercraft` | 5203 | New. |
-| Classic buggy | 25c9c763-6966-410d-a9f9-0714245088d6 | `.../2jg65r8u/veh-classic-buggy`, `veh/classic-buggy` | 5204 | New. |
-| Tank | 1e12b353-8e53-4aaa-8784-7d148ebf9c28 | `.../2jg65r8u/veh-tank`, `veh/tank` | 5205 | New. |
+| Classic buggy | 25c9c763-6966-410d-a9f9-0714245088d6 | `.../2jg65r8u/veh-classic-buggy`, `veh/classic-buggy` | 5204 | PAUSED by the owner Saturday 4:57pm for the night. No code changes. Notes: twitchy at speed, tiny in the chase camera. |
+| Tank | 1e12b353-8e53-4aaa-8784-7d148ebf9c28 | `.../2jg65r8u/veh-tank`, `veh/tank` | 5205 | PAUSED by the owner Saturday 4:57pm for the night. No code changes. Notes: climbs walls (tracks push about 5x its weight), pods dangle when airborne, spiral climb untested. |
 
 Retired in-process subagents (work merged): buggy `af96d3463a8b76592`, multiplayer
 `a1eae81e1306386c5`, terrain `a299bf2f70ffc6287`, sky `a9fb1d017a64aab40`. Retired branches:
 `feat/sky`, `feat/terrain`, `feat/buggy`.
 
 ## Rules that have bitten us
+
+- Machine load reached 69 on Saturday at 4:53pm with ten lanes active. Every heavy job goes
+  through `tools/heavy.sh <command>` (three machine-wide slots). One dev server per lane.
+- Role briefs live on each lane's own branch, not on trunk: a brief on trunk gives every
+  other lane an add/add conflict.
 
 - Account rule from the owner: Claude 1 and Codex 1, 2, 3 only. Never Claude 2. This thread
   cannot launch workers (its preset is pinned to Claude 2); the owner or Foreman starts
