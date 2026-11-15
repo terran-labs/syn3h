@@ -2,6 +2,20 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Saturday 14 November, 9:10pm Pacific: calendar versions, release notes and GitHub releases, as in Freed and Vorteo
+
+**Decided.** Syn3h adopts the versioning, release notes and GitHub tagging used by Freed
+and Vorteo. Every earlier production release is published retroactively as a tagged
+GitHub release with full notes and screenshots.
+
+**What it changes.** Production versions are `YY.M.DDBUILD` with a `v` prefix, the build
+counting from 00 each day: release 1 becomes v26.11.1400 and release 2 becomes v26.11.1401.
+The `release-N` tags stay, because the release, rollback and domain tools use them. Notes
+live in `release-notes/releases/` and follow Freed's shape: the "(AI Generated)" line, a
+one line deck, features, fixes, how to play, known issues, and screenshots captured from
+that release's own frozen build. The release script writes the version into the build
+file and drafts the notes; the showcase GIF attaches to the same GitHub release.
+
 ## Saturday 14 November, 9:05pm Pacific: every production release makes a showcase GIF for the README
 
 **Decided.** As in the Freed project, each production release generates an animated GIF
