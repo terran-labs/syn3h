@@ -14,6 +14,145 @@ The animation is captured from each production release and follows the latest on
 and screenshots for every release are on the
 [releases page](https://github.com/terran-labs/syn3h/releases).
 
+## How to play
+
+Open [www.syn3h.com](https://www.syn3h.com/) in a recent browser on a computer, tablet or
+phone. There is nothing to install and no account.
+
+1. **Pick a world.** The lobby is a small solar system. Drag to look around and tap a
+   planet to land on it.
+2. **Take the controls.** On a computer, click once to capture the mouse, then drive with
+   the keys and look around with the mouse. On a touch screen, steer with your left thumb
+   and use the buttons on the right.
+3. **Open the panels.** Press Esc to free the mouse and the side panel slides in: game
+   mode, players, vehicles, world, sky, performance and your own settings. Click back into
+   the world and it slides away.
+4. **Change vehicle.** Open Vehicles in the side panel and choose a buggy, jet, hovercraft
+   or tank. It swaps where you stand.
+5. **Bring a friend.** Share the address in your address bar. Everyone in the same room
+   drives in the same world.
+
+Press **H** in the game at any time for the controls of the vehicle you are in.
+
+### Keys
+
+**Every vehicle**
+
+| Key | What it does |
+|---|---|
+| W A S D or the arrow keys | Drive and steer |
+| Shift | Brake |
+| Space | The vehicle's special: wings on the buggy, hover or flight on the jet, a hop inside the Zorb ball |
+| X | Roll inside a Zorb ball, or leave it |
+| L, Enter or left click | Use the selected gear (Plasma Tag to start) |
+| T | Next gear |
+| 1 to 9 | Choose a gear by its place in the rack |
+| H or ? | Show or hide the controls |
+| J | Show or hide the invite panel with its QR code |
+| P | Presentation mode, for a projector |
+| Esc | Free the mouse and show the side panel. Press it again to pause |
+
+**Buggy**
+
+| Key | What it does |
+|---|---|
+| Space | Open or fold the force field wings |
+| W and S, with wings open | Pitch down and up |
+| A and D, with wings open | Roll |
+
+**Jet**
+
+| Key | What it does |
+|---|---|
+| E, or R | Hold to lift off and climb. In flight: more thrust |
+| Q, or F | Come down. In flight: less thrust |
+| W and S | Nose down and up |
+| A and D | Bank |
+| Space | Switch between hover and flight |
+
+**Hovercraft**
+
+| Key | What it does |
+|---|---|
+| W | Thrust forward |
+| A and D | Turn |
+| S | Pitch |
+
+**Gear**
+
+| Gear | How to use it |
+|---|---|
+| Plasma Tag | Click or press L to tag another vehicle with a streak of plasma |
+| Plasma Thunder | Hold until fully charged, then release. Letting go early fizzles |
+| Chaser | Aim at a vehicle and press to send a Chaser after it |
+| Grapple | Click to launch, hold to reel in, V or the mouse wheel to let out, G to let go |
+| Yoink | Aim at a vehicle and hold to grab, release to fling. With no target, press for a gust |
+
+A gamepad works too: the D-pad's left and right switch gear, LB lets the grapple out and RB
+lets it go.
+
+### Camera
+
+Press **C** to step through the five camera modes, in this order:
+
+| Mode | What you see |
+|---|---|
+| Chase | Behind the vehicle, following it. The default |
+| Cockpit | From the driver's seat |
+| Orbit | Around the vehicle, wherever you point the mouse |
+| Stationary | The camera stays where it is and watches the vehicle go |
+| Roam | A free camera. W A S D moves it, E and Q raise and lower it, Shift makes it ten times faster. The vehicle's driving keys are off while you roam |
+
+| Key or mouse | What it does |
+|---|---|
+| C | Next camera mode |
+| Right click | Jump to the cockpit, and back to chase |
+| Mouse wheel, or + and - | Move the camera closer or farther. In roam, change the roam speed |
+| Z, held | Scope: zoom in. Turn the wheel while holding Z to change the magnification |
+| Middle mouse drag, or Alt and left drag | Look around without capturing the mouse |
+| Mouse, once captured | Look around |
+
+### On a phone or tablet
+
+Steer with your left thumb: the stick appears where you touch. The buttons on the right
+depend on the vehicle: WINGS on the buggy, THR + and THR - and MODE on the jet, and BRAKE,
+TAG and ZORB on all of them. Tap a gear in the selector to switch, and use the Panels
+button to open and close the side panel.
+
+### Questions
+
+**Do I need to install anything or sign in?** No. It runs in the browser from one address.
+
+**Which browsers work?** Recent Chrome, Edge, Safari and Firefox. It uses WebGPU where the
+browser has it and falls back to WebGL where it does not.
+
+**How do I play with other people?** Everyone who opens the plain address joins the room
+called `lobby`, up to sixteen players, in the world the first of them chose. For a room of
+your own, press J and share the invite link or the QR code: it carries the room's name
+and the world.
+
+**My vehicle started driving by itself.** That is Daydream. After fifteen seconds without
+input the vehicle takes itself for a drive. Touch any control and it is yours again.
+
+**It is running slowly.** Open Performance in the side panel and pick a lower quality
+level. There are six, from Minimal to Cinematic. With Auto on, the game lowers the level
+itself when frames drop, unless you have pinned one by hand.
+
+**How do I change the world?** Open World or Sky in the side panel. Gravity, time of day,
+weather, water and a few hundred other settings are live sliders, and in a shared room
+everyone feels the change.
+
+**What are the bots doing?** They follow you around by default and do not use gear. Each
+has its own personality and picks its own route.
+
+**Can I play an older version?** Yes. Every release is kept: add `?v=` and the version to
+the address, for example
+[www.syn3h.com/?v=26.11.1503](https://www.syn3h.com/?v=26.11.1503). The
+[releases page](https://github.com/terran-labs/syn3h/releases) lists them, each with its
+playable link.
+
+**Can I use the code?** Yes, for anything noncommercial. See [Licence](#licence).
+
 ## Run it
 
 ```sh
@@ -23,17 +162,6 @@ npm run dev
 
 Open the address it prints. The room server starts alongside it, so a second tab is a
 second player.
-
-## Controls
-
-| | |
-|---|---|
-| Drive | W A S D or arrows |
-| Wings, or hover and flight on the jet | Space |
-| Brake | Shift |
-| Tag beam | L or click |
-| Camera | C |
-| Help | H |
 
 ## How it is made
 
