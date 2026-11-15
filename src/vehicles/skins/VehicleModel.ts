@@ -1,3 +1,4 @@
+import {addNightReadability} from './nightReadability'
 import * as THREE from 'three/webgpu'
 import {mergeStatic,registerVehicleDetail,staticLods} from './mergeStatic'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
@@ -17,6 +18,7 @@ export class VehicleModel {
       // Merge direct static siblings, never the named gear/track parents animated by a vehicle.
       mergeStatic(gltf.scene)
       const lods=staticLods(gltf.scene)
+      addNightReadability(gltf.scene)
       root.add(gltf.scene)
       const shadows:THREE.Mesh[]=[];gltf.scene.traverse(o=>{if(o instanceof THREE.Mesh&&o.castShadow)shadows.push(o)})
       this.detachDetail=registerVehicleDetail(root,(distance,remote,level)=>{const low=remote&&distance>(level===2?60:30);lods.forEach(p=>{p.high.visible=!low;p.low.visible=low});const cast=!remote||distance<(level===2?20:0);shadows.forEach(m=>{m.castShadow=cast})})

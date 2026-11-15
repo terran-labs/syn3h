@@ -1,3 +1,4 @@
+import {addNightReadability} from './nightReadability'
 import * as THREE from 'three/webgpu'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { abs, attribute, clamp, dot, float, length, min, normalView, positionViewDirection, sin, smoothstep, time, uniform, vec2 } from 'three/tsl'
@@ -258,6 +259,7 @@ export class LoadedBuggySkin implements BuggySkin {
       const cast=!remote||distance<(level===2?20:0)
       shadows.forEach(m=>{m.castShadow=cast})
     })
+    addNightReadability(this.object)
     this.object.visible = true
   }
 
