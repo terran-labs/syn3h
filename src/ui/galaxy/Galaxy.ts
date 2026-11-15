@@ -872,7 +872,9 @@ export class Galaxy {
     // The island turns slowly with its world and the world moves along its orbit: follow both.
     const at = this.places(this.clock)[this.chosen].position
     const { facing, latitude } = approach(Math.atan2(-at[0], -at[2]), this.spin(this.chosen, this.clock), this.yaw, this.facingSide)
-    this.facing = facing
+    // A flight keeps the bearing it set out for: the island moves a few degrees in that time,
+    // and a bearing that changed under it would bend the fall.
+    if (!this.flight) this.facing = facing
     const share = perFrame(0.07, this.step)
     if (!this.drag && !this.flight) { const y = turn(this.yaw, this.facing), p = latitude - this.pitch; this.yaw += y * share; this.pitch += p * share; this.facingSettled = Math.abs(y) < 0.003 && Math.abs(p) < 0.003 }
     return latitude
