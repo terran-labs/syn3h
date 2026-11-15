@@ -4,7 +4,7 @@ Written by the Orchestrator. Refreshed at each milestone tag. A fresh or compact
 Orchestrator should be able to resume from this file, `ops/BACKLOG.md`, `ops/LANES.md` and
 `ops/PROTOCOL.md` alone. Times are Pacific; read the clock with `date`, never from memory.
 
-Last refreshed: Saturday 14 November, 5:06pm PST. Demo: Sunday noon PST.
+Last refreshed: Saturday 14 November, 5:22pm PST. Demo: Sunday noon PST.
 
 ## Where things are
 
@@ -12,8 +12,9 @@ Last refreshed: Saturday 14 November, 5:06pm PST. Demo: Sunday noon PST.
   edits it. `main` is fast-forwarded to it at each milestone.
 - Remote: `origin` = https://github.com/terran-labs/syn3h (public). Push `build/weekend`,
   `main` and tags after each milestone: `git branch -f main build/weekend && git push origin --all && git push origin --tags`.
-- Tags: `m00-proposal` to `m08-sound-and-spiral-road`. Next is `m09`.
-- Tests: `npx tsc --noEmit` and `npx vitest run --maxWorkers=2` (234 passing). Smoke:
+- Tags: `m00-proposal` to `m11-rc1`. `m11-rc1` (28d0adc) is the release candidate that release 1
+  ships unless a real defect fix lands. Next milestone tag is `m12`.
+- Tests: `npx tsc --noEmit` and `tools/heavy.sh npx vitest run --maxWorkers=2` (261 passing at m11-rc1). Smoke:
   `node tools/smoke.mjs https://vorton-previews.tail285f88.ts.net:32782/ /tmp/x.png`
   (it appends `?autoplay=1`). `node --test tools/serve-stable.test.mjs` for the stable server.
 
@@ -40,8 +41,8 @@ around it and do not run broker commands meanwhile: `start`, `restart` and `stat
 When it clears: `paseo-preview.mjs start dashboard` and `start game` for workspace
 `wks_cfcb37521a420b78`, then the smoke test. Told the Foreman at 5:05pm.
 
-Unverified because of the outage: the sound crash fix (cd0fe52) in a browser. The sequence
-is eight bots, then `gfx.level` 1 and `bots.count` 0, repeated; the world must keep stepping.
+The sound crash fix (cd0fe52) is verified on a local server: eight bots, then `gfx.level` 1
+and `bots.count` 0, three rounds, physics still stepping, no errors.
 
 ## Lanes
 
@@ -60,12 +61,40 @@ survive a new Orchestrator thread, and their roles have moved to the peer lanes.
 | Syn3h buggy | 12abdd19-b672-40d7-938a-be2ab2339315 | `.../2jg65r8u/veh-buggy`, `veh/buggy` | 5201 | New. |
 | Jet | e73e5ed4-a32d-468e-a2cc-cfda3c196288 | `.../2jg65r8u/veh-jet`, `veh/jet` | 5202 | New. |
 | Hovercraft | 43191a2c-f8f5-4da4-b147-423a10dff345 | `.../2jg65r8u/veh-hovercraft`, `veh/hovercraft` | 5203 | New. |
-| Classic buggy | 25c9c763-6966-410d-a9f9-0714245088d6 | `.../2jg65r8u/veh-classic-buggy`, `veh/classic-buggy` | 5204 | PAUSED by the owner Saturday 4:57pm for the night. No code changes. Notes: twitchy at speed, tiny in the chase camera. |
+| Classic buggy | 25c9c763-6966-410d-a9f9-0714245088d6 | `.../2jg65r8u/veh-classic-buggy`, `veh/classic-buggy` | 5204 | CLOSED by the owner Saturday about 5:10pm: off the MVP. Left a post-MVP TODO.md at the repo root. No code changes. Notes: twitchy at speed, tiny in the chase camera. |
 | Tank | 1e12b353-8e53-4aaa-8784-7d148ebf9c28 | `.../2jg65r8u/veh-tank`, `veh/tank` | 5205 | PAUSED by the owner Saturday 4:57pm for the night. No code changes. Notes: climbs walls (tracks push about 5x its weight), pods dangle when airborne, spiral climb untested. |
 
 Retired in-process subagents (work merged): buggy `af96d3463a8b76592`, multiplayer
 `a1eae81e1306386c5`, terrain `a299bf2f70ffc6287`, sky `a9fb1d017a64aab40`. Retired branches:
 `feat/sky`, `feat/terrain`, `feat/buggy`.
+
+## Releases
+
+- `tools/release.sh <n> "note"` from a clean, tagged integration checkout: freezes the build,
+  deploys from the frozen copy with wrangler, runs the two player network test against the
+  public address, tags `release-<n>`. `--dry-run` does everything but deploy and passed on
+  m11-rc1 (direct and through 150 ms latency). `tools/rollback.sh` puts the previous one back.
+- Blocked on the owner: Cloudflare access (`npx wrangler whoami` says not authenticated), a
+  workers.dev subdomain name, confirming no existing Worker is named `syn3h`, and free or
+  paid plan (free = 100,000 Durable Object requests a day; about 2.3 hours for 8 players and
+  4 bots). Recommended to him: pay the 5 USD.
+- syn3h.com: `tools/domain.sh` and `docs/CUTOVER.md`. Never part of a normal release. Needs
+  the owner's explicit word after he has seen release 1. Recommended: attach www only.
+- Local verification while previews are down: `npx vite --host 127.0.0.1 --port 5173 --strictPort`
+  in the integration checkout (it spawns the room server on 8787), then
+  `tools/heavy.sh node tools/smoke.mjs http://127.0.0.1:5173/ /tmp/x.png`. Stop both by PID.
+
+## Standing owner decisions (see ops/DECISIONS.md for the record)
+
+- Syn3h is the reference, not Mars Explorer. Every world is an island. Sliders for everything.
+- No death or violence in any world (Saturday about 5:10pm): lava is sticky and makes things
+  glow, vehicles are indestructible, nothing is "eliminated". Routed to Multiplayer, Vehicles,
+  UX and Bots. Laser tag is unchanged until he answers the Foreman's question: no lane may
+  rename or remove lasers on its own reading.
+- Classic buggy is off the MVP and its lane is closed; tank lane is paused.
+- Accounts: Claude 1 and Codex 1, 2, 3. Never start anything on Claude 2. Observed, not yet
+  confirmed by him: the owner himself has switched the UX, jet and hovercraft threads to
+  Claude 2. Threads he switches may stay there.
 
 ## Rules that have bitten us
 
