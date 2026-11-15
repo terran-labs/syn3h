@@ -8,10 +8,13 @@
  *   mirror is a real reflection pass (three's reflector node), so it follows animation, detail
  *   levels and lamps. It costs one extra scene render at half resolution.
  * - Shadow: a plain matte floor that shows the contact shadow clearly and costs nothing extra.
+ *
+ * Either floor fades out as the camera comes down to it and is gone at floor level and below
+ * (see fade()), so the camera can go under the floor and look up at a vehicle's underside.
  */
 import * as THREE from 'three/webgpu'
 import { color, reflector, uniform } from 'three/tsl'
-import type { FloorName } from './logic'
+import { floorOpacity, type FloorName } from './logic'
 
 /**
  * A dark room lit by a few long softboxes, rendered once into a PMREM environment map. The long
@@ -37,12 +40,16 @@ function softboxRoom(): THREE.Scene {
   return room
 }
 
+/** Strength of the light from below once the floor has faded out (see Studio.fade). */
+const UNDER_LIGHT = 2.2
 const DAY = { background: 0x8d9096, key: 2.6, hemi: .5, environment: 1, reflection: .42 }
 const NIGHT = { background: 0x06080c, key: .08, hemi: .07, environment: .14, reflection: .55 }
 
 export class Studio {
   readonly key = new THREE.DirectionalLight(0xfff3e4, DAY.key)
   readonly hemi = new THREE.HemisphereLight(0xdde6f5, 0x2a2b30, DAY.hemi)
+  /** Lights undersides from below. Off above the floor; comes up as the floor fades out. */
+  readonly under = new THREE.DirectionalLight(0xe6ecf5, 0)
   night = false
   floor: FloorName = 'Gloss'
   private readonly background = new THREE.Color(DAY.background)
@@ -52,6 +59,8 @@ export class Studio {
   private readonly matte: THREE.Mesh
   private readonly reflection = uniform(DAY.reflection)
   private readonly reflector: ReturnType<typeof reflector>
+  /** How solid the floor is drawn, 0 to 1 (see fade()). */
+  private readonly opacity = uniform(1)
 
   constructor(private readonly scene: THREE.Scene, renderer: THREE.WebGPURenderer, o: { reflectionScale?: number } = {}) {
     scene.background = this.background
@@ -69,12 +78,14 @@ export class Studio {
     this.key.shadow.normalBias = .03
     this.key.shadow.bias = -.0003
     this.fitShadow(8)
-    scene.add(this.key, this.key.target, this.hemi)
+    this.under.position.set(3, -12, -4)
+    scene.add(this.key, this.key.target, this.hemi, this.under, this.under.target)
 
     // Gloss floor: dark base colour, plus the mirror image added as emission so the key light
     // does not double light the reflection.
     this.reflector = reflector({ resolutionScale: o.reflectionScale ?? .5 })
-    const glossMaterial = new THREE.MeshStandardNodeMaterial({ metalness: .2, roughness: .28 })
+    const glossMaterial = new THREE.MeshStandardNodeMaterial({ metalness: .2, roughness: .28, transparent: true })
+    glossMaterial.opacityNode = this.opacity
     glossMaterial.colorNode = color(0x1b1c20)
     glossMaterial.emissiveNode = this.reflector.rgb.mul(this.reflection)
     this.gloss = new THREE.Mesh(new THREE.CircleGeometry(90, 64), glossMaterial)
@@ -84,10 +95,13 @@ export class Studio {
     // The reflector's target defines the mirror plane: its local +Z is the plane normal.
     this.gloss.add(this.reflector.target)
 
-    this.matte = new THREE.Mesh(new THREE.CircleGeometry(90, 64), new THREE.MeshStandardMaterial({ color: 0x6f737a, roughness: .92, metalness: 0 }))
+    this.matte = new THREE.Mesh(new THREE.CircleGeometry(90, 64), new THREE.MeshStandardMaterial({ color: 0x6f737a, roughness: .92, metalness: 0, transparent: true }))
     this.matte.rotation.x = -Math.PI / 2
     this.matte.receiveShadow = true
     this.matte.name = 'Shadow floor'
+    // Drawn before a vehicle's own see-through parts (canopies, force field wings), which
+    // stand on it.
+    this.gloss.renderOrder = this.matte.renderOrder = -10
     scene.add(this.gloss, this.matte)
     this.setFloor('Gloss')
   }
@@ -108,8 +122,27 @@ export class Studio {
 
   setFloor(name: FloorName): void {
     this.floor = name
-    this.gloss.visible = name === 'Gloss'
-    this.matte.visible = name === 'Shadow'
+    this.showFloor()
+  }
+
+  /**
+   * Call each frame with the camera's height above the floor. The floor fades as the camera
+   * nears it and is not drawn at all from floor level down, which also skips the gloss floor's
+   * reflection pass there.
+   */
+  fade(cameraHeight: number): void {
+    const o = floorOpacity(cameraHeight)
+    if (o === this.opacity.value) return
+    this.opacity.value = o
+    this.under.intensity = (1 - o) * UNDER_LIGHT
+    ;(this.matte.material as THREE.MeshStandardMaterial).opacity = o
+    this.showFloor()
+  }
+
+  private showFloor(): void {
+    const shown = this.opacity.value > 0
+    this.gloss.visible = shown && this.floor === 'Gloss'
+    this.matte.visible = shown && this.floor === 'Shadow'
   }
 
   setNight(on: boolean): void {
@@ -129,6 +162,6 @@ export class Studio {
     this.environment.dispose()
     for (const m of [this.gloss, this.matte]) { m.geometry.dispose(); (m.material as THREE.Material).dispose(); m.removeFromParent() }
     this.reflector.dispose()
-    this.key.dispose(); this.hemi.dispose()
+    this.key.dispose(); this.hemi.dispose(); this.under.dispose(); this.under.removeFromParent()
   }
 }
