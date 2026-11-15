@@ -287,3 +287,17 @@ blue. Colours are the `--s3-*` tokens at the top of `shell.css`.
 the reference's shape and on a phone. The owner's reference captures show his desktop, so
 they stay in the git-ignored `tests/ui/artifacts/reference/`.
 
+## Wording
+
+No player-visible text may speak of death, violence or weapons (owner's rule, 14 November
+2026). Lava is sticky and makes things glow; vehicles are indestructible; the beam game is
+"tag beams" and its verb is "tag". `tests/ui/wording.test.ts` scans every readable string,
+HTML text node and label attribute in `src/ui` and `src/audio`, 4500 generated names, the
+loading messages, `index.html` and the manifest, and fails on a banned word. Identifiers,
+file names, parameter ids and protocol markers are unchanged: the touch button's action is
+still `fire` and the clips are still `LaserShot.mp3`, but the button reads TAG.
+
+Going into lava plays a low gulp with one rising bubble; going into water plays a splash.
+Settings has "Reset world to defaults": the first press asks, a second within four seconds
+does it, for everyone in the room when connected.
+

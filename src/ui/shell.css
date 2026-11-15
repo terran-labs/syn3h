@@ -331,3 +331,6 @@
   .hud-scoreboard .score-row { grid-template-columns: minmax(58%,1fr) minmax(0,auto) auto; }
   .hud-scoreboard .score-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
+/* Reset world: a second press confirms, and the label says who it affects. */
+.syn3h-shell .world-reset { display: block; width: 100%; margin-top: 12px; font-size: 17px; }
+.syn3h-shell .world-reset.is-confirming { color: #ffd19e; border-color: rgb(255 190 120 / .5); }

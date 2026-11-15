@@ -29,7 +29,7 @@ export class GameAudio implements System {
   private vehicleSource: () => readonly Vehicle[] = () => []
   private readonly remote = new Map<Vehicle, {engine:Engine;panner:PannerNode}>()
   private readonly cueStops = new Set<() => void>()
-  private readonly events = new Map<Vehicle,{wings:boolean;landed:boolean;lava:boolean}>()
+  private readonly events = new Map<Vehicle,{wings:boolean;landed:boolean;liquid:'lava'|'water'|null}>()
   private nextSpatial = 0
   private lavaNear = 0
   private readonly buffers = new Map<string, AudioBuffer>()
@@ -187,14 +187,15 @@ export class GameAudio implements System {
   }
   private vehicleEvents(v:Vehicle):void {
     const p=v.object.position,liquid=this.terrain?.liquidHeightAt?.(p.x,p.z)??-Infinity
-    const lava=this.terrain?.liquidKindAt?.(p.x,p.z)==='lava'&&p.y<liquid+1
+    // A thick gloop going into lava, a splash going into a sea, lake or river.
+    const liquidKind=p.y<liquid+1?this.terrain?.liquidKindAt?.(p.x,p.z)??null:null
     const previous=this.events.get(v)
     if(this.enabled&&previous){
       if(previous.wings!==v.wingsOpen)this.cue(v.wingsOpen?'deploy':'retract',p)
       if(v.landedThisStep&&!previous.landed)this.impact(v.landingImpact,p)
-      if(lava&&!previous.lava)this.cue('lava',p)
+      if(liquidKind&&!previous.liquid)this.cue(liquidKind==='lava'?'lava':'splash',p)
     }
-    this.events.set(v,{wings:v.wingsOpen,landed:v.landedThisStep,lava})
+    this.events.set(v,{wings:v.wingsOpen,landed:v.landedThisStep,liquid:liquidKind})
   }
   fixedUpdate(): void {
     // A landing flag may clear before the next rendered frame on a slow device.

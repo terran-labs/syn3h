@@ -13,7 +13,7 @@ import { wordmarkSvg } from './brand/logo'
 import { AttractMode, type CinematicCamera } from './AttractMode'
 import { InviteView, inviteUrl, renderQr } from './InviteView'
 import { Scoreboard, parseScoreRow } from './Scoreboard'
-import { canEditWorld, hostControls } from './worldPermissions'
+import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
 import { MatchHud, type MatchState } from './MatchHud'
 import { creditsHtml } from './data/credits'
@@ -81,7 +81,7 @@ export class Shell implements System {
         <section data-panel="explore">${heading('Prepare to Explore')}
           <form class="shell-form"><label for="shell-name">Player name</label><input id="shell-name" name="playerName" maxlength="24" autocomplete="nickname" placeholder="Explorer">
           <label for="shell-room">Room</label><div class="input-action"><input id="shell-room" name="room" maxlength="64" autocomplete="off"><button class="shell-invite" type="button">Copy invite</button></div>
-          <div class="shell-controls"><span><b>WASD / arrows</b> Drive</span><span><b>Space</b> Wings</span><span><b>Shift</b> Brake</span><span><b>L / click</b> Fire</span></div><p class="shell-touch-hint">Left thumb to drive. Right thumb for wings, brake and fire.</p>
+          <div class="shell-controls"><span><b>WASD / arrows</b> Drive</span><span><b>Space</b> Wings</span><span><b>Shift</b> Brake</span><span><b>L / click</b> Tag beam</span></div><p class="shell-touch-hint">Left thumb to drive. Right thumb for wings, brake and tag.</p>
           <button class="shell-play" type="submit">Enter World ›</button></form>${back}
         </section>
         <section data-panel="vehicle">${heading('Your Vehicle')}
@@ -93,7 +93,7 @@ export class Shell implements System {
           <fieldset class="world-controls"><legend>Sky</legend><div class="sky-presets">${SKY_PRESET_NAMES.map(name => `<button type="button" data-sky="${name}">${name}</button>`).join('')}</div><label for="sky-time">Time of day <output id="sky-time-value"></output></label><input id="sky-time" type="range" min="0" max="24" step="0.05"></fieldset>
           <p class="world-lock-note" hidden>Sliders locked by host.</p><button data-goto="explore">Explore this world ›</button>${back}
         </section>
-        <section data-panel="settings">${heading('Settings')}<div class="settings-links"><button data-goto="music">Music & sound</button><button data-goto="worlds">World & sky</button><button data-goto="advanced">Advanced sliders</button><button class="presentation-toggle" aria-pressed="false">Presentation · P</button></div><fieldset class="host-controls"><legend>Host</legend><label class="host-lock" hidden><input type="checkbox" id="host-lock"> Lock shared sliders</label><p class="host-note"></p></fieldset>${back}</section>
+        <section data-panel="settings">${heading('Settings')}<div class="settings-links"><button data-goto="music">Music & sound</button><button data-goto="worlds">World & sky</button><button data-goto="advanced">Advanced sliders</button><button class="presentation-toggle" aria-pressed="false">Presentation · P</button></div><fieldset class="host-controls"><legend>Host</legend><label class="host-lock" hidden><input type="checkbox" id="host-lock"> Lock shared sliders</label><p class="host-note"></p><button class="world-reset" type="button">Reset world to defaults</button></fieldset>${back}</section>
         <section data-panel="music">${heading('Music & Sound')}<label for="shell-track">Music</label><select id="shell-track">${Object.entries(MUSIC_TRACKS).map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select><label for="music-volume">Music volume <output id="music-volume-value"></output></label><input id="music-volume" type="range" min="0" max="1" step="0.01">${[masterVolume,effectsVolume,engineVolume,dirtVolume,windVolume,worldVolume,remoteVolume,cuesVolume].map(p=>`<label>${p.def.label}<input data-audio-param="${p.def.id}" type="range" min="0" max="1" step="0.01" value="${p.value}"></label>`).join('')}<button class="shell-mute" aria-pressed="false">Mute all audio</button><p class="panel-note">Music starts with your first click or key press.</p>${back}</section>
         <section data-panel="multiplayer">${heading('Multiplayer')}<label class="mode-control" hidden>Game mode<select id="game-mode"><option value="0">Tag</option><option value="1">King of the Hill</option></select></label><p class="multiplayer-room"></p><div class="invite-qr"></div><p class="invite-link"></p><button class="shell-invite">Copy invite link</button><button data-join>Show on screen · J</button><div class="shell-scoreboard" aria-label="Player scores"></div>${back}</section>
         <section data-panel="advanced">${heading('Advanced Settings')}<p class="world-lock-note" hidden>Sliders locked by host.</p><div class="advanced-host"></div>${back}</section>
@@ -163,6 +163,19 @@ export class Shell implements System {
     this.element.querySelector('#sky-time')!.addEventListener('input', event => { if (canEditWorld()) params.set('sun.timeOfDay', (event.target as HTMLInputElement).value) }, { signal })
     this.element.querySelector('#bots-count')!.addEventListener('input', event => { if (canEditWorld()) params.set('bots.count', (event.target as HTMLInputElement).value) }, { signal })
     this.element.querySelector('#game-mode')!.addEventListener('change', event => { if (canEditWorld() && params.get('game.mode')) params.set('game.mode', Number((event.target as HTMLSelectElement).value)) }, { signal })
+    // Two presses: the first asks, the second (within four seconds) does it. No modal dialog.
+    const reset = this.element.querySelector<HTMLButtonElement>('.world-reset')!
+    let resetArmed: ReturnType<typeof setTimeout> | undefined
+    const disarm = () => { clearTimeout(resetArmed); resetArmed = undefined; reset.textContent = 'Reset world to defaults'; reset.classList.remove('is-confirming') }
+    reset.addEventListener('click', () => {
+      if (!canEditWorld()) return
+      if (!resetArmed) {
+        reset.textContent = hostControls() ? 'Press again to reset for everyone' : 'Press again to reset this world'
+        reset.classList.add('is-confirming'); resetArmed = setTimeout(disarm, 4000); return
+      }
+      disarm(); this.toast(resetWorld() ? 'World reset to defaults.' : 'Sliders locked by host.')
+    }, { signal })
+    signal.addEventListener('abort', () => clearTimeout(resetArmed))
     this.element.querySelector('#host-lock')!.addEventListener('change', event => { const net = hostControls(); if (net?.isHost) net.setLocked((event.target as HTMLInputElement).checked) }, { signal })
     const activity = (event: Event) => {
       this.lastActivity = performance.now()
@@ -395,6 +408,7 @@ export class Shell implements System {
     for (const input of this.element.querySelectorAll<HTMLInputElement | HTMLButtonElement>('.world-controls input, .world-controls button')) input.disabled = !editable
     for (const note of this.element.querySelectorAll<HTMLElement>('.world-lock-note')) note.hidden = editable
     this.paramPanel?.setWorldEditable(editable)
+    this.element.querySelector<HTMLButtonElement>('.world-reset')!.disabled = !editable
     const lock = this.element.querySelector<HTMLInputElement>('#host-lock')!; lock.checked = net?.locked ?? false
     this.element.querySelector<HTMLElement>('.host-lock')!.hidden = !net?.isHost
     this.element.querySelector('.host-note')!.textContent = !net ? 'Join a room to manage shared settings.' : !editable ? 'Sliders locked by host.' : net.isHost ? 'You are the host.' : 'Shared sliders are open.'
