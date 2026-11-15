@@ -31,6 +31,14 @@ uses the updated integration `tools/heavy.sh`: three machine-wide slots, no load
 bypass or slot overrides. Run one heavy job per lane, with at most two test workers
 during the restart wave. Release jobs share the slots. Do not restart redundant previews.
 
+Replace preview configuration atomically. When editing `paseo.json`, write a complete
+temporary sibling file, parse it successfully, then rename it over the destination. Do not
+truncate the live file while writing: the broker can read invalid JSON, fail closed and
+remove every affected HTTPS mapping even while its backend continues running. The service
+owner handles recovery through one scoped broker start, or restart if the definition changed,
+then verifies both the HTTPS response and rendered content. Old ready receipts do not prove
+current availability. Query one service when needed, not every reservation with bare status.
+
 ## 4. Merge in batches, tag what is good
 
 The Orchestrator merges ready handoffs in a batch, runs the full suite and the smoke test
