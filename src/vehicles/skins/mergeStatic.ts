@@ -3,6 +3,9 @@ import type Node from 'three/src/nodes/core/Node.js'
 import {attribute,float,uniform,vec3} from 'three/tsl'
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js'
 
+/** Source materials packed into one merged draw, in `surfaceId` order. Read by the showroom shading. */
+export const mergedSurfaces=new WeakMap<T.Material,T.MeshStandardMaterial[]>()
+
 /** Merge only explicitly static leaves. Animated parents and mapped/physical materials stay intact. */
 export function mergeStatic(root:T.Object3D,flatten=false):void {
   root.updateWorldMatrix(true,true)
@@ -21,7 +24,7 @@ export function mergeStatic(root:T.Object3D,flatten=false):void {
       const a1=a.getComponent(i+1,k),a2=a.getComponent(i+2,k);a.setComponent(i+1,k,a2);a.setComponent(i+2,k,a1)
     }
     g.clearGroups()
-    const simple=m instanceof T.MeshStandardMaterial&&!(m instanceof T.MeshPhysicalMaterial)&&!m.transparent&&!m.map&&!m.normalMap&&!m.bumpMap&&!m.roughnessMap&&!m.metalnessMap&&!m.emissiveMap&&!m.alphaMap&&!m.aoMap&&!m.envMap&&!m.lightMap&&!m.displacementMap&&m.envMapIntensity===1&&!m.vertexColors&&m.alphaTest===0&&m.side===T.FrontSide
+    const simple=m instanceof T.MeshStandardMaterial&&!(m instanceof T.MeshPhysicalMaterial)&&!m.transparent&&!m.map&&!m.normalMap&&!m.bumpMap&&!m.roughnessMap&&!m.metalnessMap&&!m.emissiveMap&&!m.alphaMap&&!m.aoMap&&!m.envMap&&!m.lightMap&&!m.displacementMap&&m.envMapIntensity===1&&!m.vertexColors&&m.alphaTest===0&&m.side===T.FrontSide&&!m.userData.separate
     if(simple){plain.push({material:m,geometry:g,source:mesh});continue}
     const key=m.uuid+':'+Object.keys(g.attributes).sort().join(',')
     let bucket=buckets.get(key);if(!bucket){bucket={material:m,parts:[],sources:[]};buckets.set(key,bucket)}bucket.parts.push(g);bucket.sources.push(mesh)
@@ -30,7 +33,7 @@ export function mergeStatic(root:T.Object3D,flatten=false):void {
     const materials=[...new Set(plain.map(p=>p.material))],idx=attribute('surfaceId','float')
     let color:Node<'vec3'>=vec3(0),emission:Node<'vec3'>=vec3(0),roughness:Node<'float'>=float(0),metalness:Node<'float'>=float(0)
     materials.forEach((m,i)=>{const mask=idx.round().equal(i).select(1,0);color=color.add(uniform(m.color).mul(mask));emission=emission.add(uniform(m.emissive).mul(m.emissiveIntensity).mul(mask));roughness=roughness.add(mask.mul(m.roughness));metalness=metalness.add(mask.mul(m.metalness))})
-    const material=new T.MeshStandardNodeMaterial();material.colorNode=color;material.emissiveNode=emission;material.roughnessNode=roughness;material.metalnessNode=metalness
+    const material=new T.MeshStandardNodeMaterial();material.colorNode=color;material.emissiveNode=emission;material.roughnessNode=roughness;material.metalnessNode=metalness;mergedSurfaces.set(material,materials)
     const parts=plain.map(p=>{const g=p.geometry;for(const name of Object.keys(g.attributes))if(!['position','normal','uv'].includes(name))g.deleteAttribute(name);if(!g.attributes.normal)g.computeVertexNormals();if(!g.attributes.uv)g.setAttribute('uv',new T.BufferAttribute(new Float32Array(g.attributes.position.count*2),2));g.setAttribute('surfaceId',new T.BufferAttribute(new Float32Array(g.attributes.position.count).fill(materials.indexOf(p.material)),1));return g})
     const geometry=mergeGeometries(parts);if(geometry){const mesh=new T.Mesh(geometry,material);mesh.name='Merged static surfaces';mesh.castShadow=plain.some(p=>p.source.castShadow);mesh.receiveShadow=plain.some(p=>p.source.receiveShadow);root.add(mesh);plain.forEach(p=>p.source.removeFromParent())}
     else material.dispose()

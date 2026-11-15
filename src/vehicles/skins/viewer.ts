@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { ClassicBuggySkin, Syn3hBuggySkin } from './index'
 
 async function main() {
@@ -18,6 +19,10 @@ async function main() {
   const controls = new OrbitControls(camera, renderer.domElement)
   controls.target.set(0, .5, 0)
   controls.update()
+  // A neutral studio map so the paint and glass have something to reflect.
+  const room = new RoomEnvironment(), pmrem = new THREE.PMREMGenerator(renderer)
+  scene.environment = pmrem.fromScene(room, .04).texture; scene.environmentIntensity = .5
+  room.dispose(); pmrem.dispose()
   scene.add(new THREE.HemisphereLight(0xb8dcff, 0x50463a, 2.2))
   const sun = new THREE.DirectionalLight(0xffdfbc, 4)
   sun.position.set(-4, 10, -6); sun.castShadow = true
@@ -38,7 +43,7 @@ async function main() {
   button.onclick = () => { auto = !auto; button.textContent = `Auto wings: ${auto ? 'on' : 'off'}` }
   let elapsed = 0
   const timer = new THREE.Timer()
-  const api = {skins, renderer, ready: true, focus(index: number) { const p = skins[index].object.position; controls.target.copy(p); camera.position.copy(p).add(new THREE.Vector3(3, 2.5, -4.5)); controls.update() }, setOpen(value: number) {auto = false; open = value; skins.forEach(s => s.setWings(value, 0, 0))}}
+  const api = {skins, renderer, camera, controls, ready: true, focus(index: number) { const p = skins[index].object.position; controls.target.copy(p); camera.position.copy(p).add(new THREE.Vector3(3, 2.5, -4.5)); controls.update() }, setOpen(value: number) {auto = false; open = value; skins.forEach(s => s.setWings(value, 0, 0))}}
   Object.assign(window, {skinViewer: api})
   renderer.setAnimationLoop(() => {
     timer.update(); const dt = Math.min(timer.getDelta(), .05); elapsed += dt
