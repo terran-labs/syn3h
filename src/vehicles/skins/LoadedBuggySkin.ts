@@ -1,3 +1,4 @@
+import {addLavaGlow} from './lavaGlow'
 import {addNightReadability} from './nightReadability'
 import * as THREE from 'three/webgpu'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
@@ -260,6 +261,7 @@ export class LoadedBuggySkin implements BuggySkin {
       shadows.forEach(m=>{m.castShadow=cast})
     })
     addNightReadability(this.object)
+    addLavaGlow(this.object)
     this.object.visible = true
   }
 

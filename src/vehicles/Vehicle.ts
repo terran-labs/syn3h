@@ -1,3 +1,4 @@
+import {applyVehicleLiquid,createLiquidState,registerLiquidTerrain} from './lava'
 /**
  * Vehicle base class.
  *
@@ -50,6 +51,9 @@ export function createWheelEffects(count = 4): WheelEffect[] {
 export abstract class Vehicle implements System {
   readonly object = new THREE.Group()
   private readonly visualDetails=new Set<VehicleDetail>()
+  readonly liquidState=createLiquidState()
+  get lavaDepth():number {return this.liquidState.lavaDepth}
+  get stuck():boolean {return this.liquidState.stuck}
   readonly body: RAPIER.RigidBody
   /** Control state for this step. Written by the player or by the network layer. */
   readonly input: InputState = emptyInput()
@@ -106,6 +110,8 @@ export abstract class Vehicle implements System {
         .setCanSleep(false)
         .setCcdEnabled(true),
     )
+    registerLiquidTerrain(this.body,terrain)
+    this.object.userData.vehicleHeat=this.liquidState
     this.currPos.copy(position)
     this.prevPos.copy(position)
     this.currQuat.copy(q)
@@ -132,6 +138,8 @@ export abstract class Vehicle implements System {
     this.body.resetForces(true)
     this.body.resetTorques(true)
     this.applyForces(dt)
+    applyVehicleLiquid(this.body,this.game.world,this.terrain,this.input,this.kind,this.liquidState,dt)
+    if(this.lavaDepth>0 && 'inLiquid' in this)(this as unknown as {inLiquid:boolean}).inLiquid=true
   }
 
   /**

@@ -1,4 +1,4 @@
-/** Lava behaviour on a flat bed with a lava surface 2 m above the ground. */
+/** Legacy water behaviour on a flat bed with a water surface 2 m above the ground. */
 import { afterEach, describe, expect, test } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { params } from '../../shared/params'
@@ -10,6 +10,7 @@ const LAVA = 4
 async function inLava(y = LAVA + 1, vz = 0) {
   const bed = await makeBed()
   bed.terrain.liquidHeightAt = () => LAVA
+  bed.terrain.liquidKindAt = () => 'water'
   const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, y, 0)))
   b.isLocal = false
   b.body.setLinvel({ x: 0, y: 0, z: vz }, true)
@@ -17,7 +18,7 @@ async function inLava(y = LAVA + 1, vz = 0) {
 }
 afterEach(() => { for (const p of params.all()) params.set(p.def.id, p.def.default) })
 
-describe('lava', () => {
+describe('legacy water buoyancy', () => {
   test('a slow buggy floats near the surface instead of sinking', async () => {
     const { bed, b } = await inLava()
     bed.run(6)
@@ -37,7 +38,7 @@ describe('lava', () => {
     expect(b.body.translation().z - z0).toBeLessThan(-8)
   })
 
-  test('hitting lava fast skims across it', async () => {
+  test('hitting water fast skims across it', async () => {
     const { bed, b } = await inLava(LAVA + 0.3, -30)
     let maxY = -Infinity
     bed.run(1.5, () => { maxY = Math.max(maxY, b.body.translation().y) })
@@ -52,7 +53,7 @@ describe('lava', () => {
     expect(b.body.translation().y).toBeGreaterThan(LAVA - 2)
   })
 
-  test('with lavaFloat off it ignores the lava, as Syn3h did', async () => {
+  test('with the legacy float toggle off it ignores water', async () => {
     params.set(buggyLavaFloat.def.id, false)
     const { bed, b } = await inLava()
     bed.run(4)
