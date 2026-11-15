@@ -7,7 +7,7 @@
  *
  * Needs the lane dev server on 5187.
  */
-import { chromium } from 'playwright-core'
+import { chromium, devices, webkit } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 const out = 'tests/ui/artifacts/boot-veil'
@@ -51,6 +51,44 @@ try {
     await page.screenshot({ path: `${out}/${view.name}-lobby.png` })
     await context.close()
   }
+  // Safari on a phone and a tablet over a slow link: the bundle is held back.
+  // The veil must be unmistakably a loading screen the whole time: the name, a ring of real
+  // size, a word of status, and after eight seconds a line that says it is still working.
+  const safari = await webkit.launch()
+  for (const name of ['iPhone 14', 'iPad Pro 11 landscape']) {
+    const context = await safari.newContext({ ...devices[name] }), page = await context.newPage()
+    page.on('pageerror', e => { if (!/image\.complete/.test(e.message)) errors.push(`${name}: ${e.message}`) })
+    // Held until released below: a link as slow as it needs to be. No screenshots here: WebKit
+    // cannot take one while the page's module script is pending. The Chrome pass above has them.
+    let arrive; const slow = new Promise(resolve => { arrive = resolve })
+    await page.route(/\/src\/main\.ts/, async route => { await slow; await route.continue() })
+    await page.goto(`http://127.0.0.1:5187/?room=boot-${name.replace(/\W+/g, '-')}-${Date.now()}`, { waitUntil: 'commit' })
+    await page.waitForFunction(() => document.documentElement.dataset.boot === 'loading' && document.querySelector('.boot-status'))
+    await page.waitForTimeout(1500)
+    const seen = () => page.evaluate(() => {
+      const box = selector => { const el = document.querySelector(selector), r = el.getBoundingClientRect(), style = getComputedStyle(el); return { width: r.width, height: r.height, top: r.top, bottom: r.bottom, opacity: Number(style.opacity), text: el.textContent.trim(), inView: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth } }
+      return { wordmark: box('.boot-wordmark'), mark: box('.boot-mark'), status: box('.boot-status'), still: box('.boot-still'), game: Boolean(window.syn3h) }
+    })
+    const first = await seen()
+    assert.equal(first.game, false)
+    assert.ok(first.wordmark.width >= 180 && first.wordmark.inView, `${name}: the name is on the veil (${Math.round(first.wordmark.width)} px)`)
+    assert.ok(first.mark.width >= 100 && first.mark.opacity > 0.9 && first.mark.inView, `${name}: the ring is a real size (${Math.round(first.mark.width)} px)`)
+    assert.equal(first.status.text, 'Loading the engine'); assert.ok(first.status.inView && first.status.opacity > 0.9)
+    assert.ok(first.still.opacity < 0.1, `${name}: the still-working line waits`)
+    assert.ok(first.wordmark.bottom <= first.mark.top && first.mark.bottom <= first.status.top, `${name}: name, ring, status in that order without overlap`)
+    await page.waitForTimeout(7600)
+    const later = await seen()
+    assert.equal(later.game, false, `${name}: still waiting for the bundle ${JSON.stringify(later)}`)
+    assert.ok(later.still.opacity > 0.9 && later.still.inView && /still working/i.test(later.still.text), `${name}: after eight seconds it says it is still working`)
+    // The bundle arrives: the word changes with the phases, then the veil lifts.
+    arrive()
+    await page.waitForFunction(() => document.querySelector('.boot-status').textContent !== 'Loading the engine', null, { timeout: 30000 })
+    await page.waitForFunction(() => document.documentElement.dataset.boot === 'done', null, { timeout: 90000 })
+    await page.waitForTimeout(1300)
+    assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.boot-veil')).visibility), 'hidden')
+    await context.close()
+  }
+  await safari.close()
   // A failure at startup is shown at once, not hidden behind the veil.
   const broken = await browser.newPage({ viewport: { width: 1280, height: 720 } })
   await broken.addInitScript(() => { Object.defineProperty(navigator, 'gpu', { get() { throw new Error('graphics refused for this test') } }); HTMLCanvasElement.prototype.getContext = () => { throw new Error('graphics refused for this test') } })

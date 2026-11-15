@@ -22,6 +22,18 @@ import { spawnPointAt } from './spawn'
 import { Trees } from './trees'
 import { Volcanics } from './volcanics'
 
+/** A vehicle the seam can move: the game's Vehicle satisfies this. */
+export interface SeamVehicle {
+  body: RAPIER.RigidBody
+  shiftBy(dx: number, dz: number): void
+}
+
+export interface SeamFollowers {
+  player: SeamVehicle
+  camera?: { shift(dx: number, dz: number): void }
+  others(): readonly SeamVehicle[]
+}
+
 export class ProceduralTerrain implements Terrain {
   /** Side of the current tile in metres. Changes with the planet size setting. */
   get size(): number {
@@ -48,7 +60,19 @@ export class ProceduralTerrain implements Terrain {
   private readonly unsubscribe: () => void
   private pending = false
   private readonly lodSystem: System
-  private curveTick = 0
+  private wasRound = false
+  private cameraLed = false
+  private followCamera: () => void = () => {}
+
+  /**
+   * Call once per frame after the camera has moved (register a system after the camera's).
+   * The round planet, levels of detail and horizon culling are all measured from the
+   * camera, so doing them before it moves would draw the world one frame behind it.
+   */
+  afterCamera(): void {
+    this.cameraLed = true
+    this.followCamera()
+  }
   /** The sea, lava lake, rivers and vents drawn from the generated data. */
   private readonly volcanics: Volcanics
   private readonly trees: Trees
@@ -64,24 +88,41 @@ export class ProceduralTerrain implements Terrain {
     this.collider = createTerrainCollider(game.world, this.data)
     // Level of detail follows the camera once per frame, after the camera has moved.
     this.lodSystem = game.add({
-      update: () => {
-        this.meshes.updateLod(game.camera.position)
-        this.look.setSea(worldLavaAltitude.value)
+      // Before each physics step, and before the vehicles' own steps: carry things across
+      // the seam and keep the ground under them.
+      fixedUpdate: () => this.keepSeam(),
+      // Until something calls afterCamera() itself, do the camera-dependent work here.
+      update: () => { if (!this.cameraLed) this.followCamera() },
+    })
+    this.followCamera = () => {
+      {
         // Curved horizon. Every material in the scene must take the same bend or its objects
-        // float against the ground, so while the curve is on, the scene is walked a few times
-        // a second and anything new (a joined vehicle, rebuilt particles, a loaded model) is
+        // float against the ground, so while the curve is on, the scene is walked every frame
+        // (a few hundred objects) and anything new (a joined vehicle, rebuilt particles) is
         // bent too. The sky is left alone. Nothing is touched while the curve is 0.
         updateCurve(game.camera.position, this.size)
-        if (curveParam.value > 0 && this.curveTick++ % 20 === 0) {
+        // After the curve: level of detail also hides chunks that are over the horizon.
+        this.meshes.updateLod(game.camera.position)
+        this.look.setSea(worldLavaAltitude.value)
+        const round = curveParam.value > 0
+        if (round || this.wasRound) {
           game.scene.traverse((o) => {
             const m = (o as THREE.Mesh).material
             if (!m || o instanceof AlienSkyMesh) return
-            if (Array.isArray(m)) for (const x of m) applyCurve(x)
-            else applyCurve(m)
+            if (round) {
+              if (Array.isArray(m)) for (const x of m) applyCurve(x)
+              else applyCurve(m)
+            }
+            // On a sphere, ground that is off screen on the flat world can be in view (the
+            // far limb from high up), so the flat world's culling boxes are wrong.
+            const u = o.userData as { flatCulled?: boolean }
+            if (round && o.frustumCulled) { u.flatCulled = true; o.frustumCulled = false }
+            else if (!round && u.flatCulled) { u.flatCulled = false; o.frustumCulled = true }
           })
+          this.wasRound = round
         }
-      },
-    })
+      }
+    }
     this.volcanics = game.add(new Volcanics(
       game.scene, this.sampler,
       () => game.renderer.toneMappingExposure,
@@ -119,6 +160,67 @@ export class ProceduralTerrain implements Terrain {
     return this.data.layout.summitHeight
   }
 
+  private colliderX = 0
+  private colliderZ = 0
+  private seam: SeamFollowers | null = null
+
+  /**
+   * Tell the terrain who lives on it, so a wrapping world can carry them across its seam.
+   * `player` is the vehicle this client drives; `camera` follows it; `others` are every
+   * other vehicle simulated here (bots, and remote players near enough to be physical).
+   */
+  followSeam(followers: SeamFollowers): void {
+    this.seam = followers
+  }
+
+  /**
+   * The wrapping world, each physics step.
+   *
+   *  1. The player stays inside the tile. A few metres past an edge they are moved a whole
+   *     tile back, with the camera, keeping velocity: the ground there is the same ground,
+   *     so nothing is seen or felt.
+   *  2. Every other vehicle is kept at its image nearest the player, so a bot chasing across
+   *     the seam, or a friend just over it, is beside the player and can be rammed.
+   *  3. The collider is a window of ground centred near the player (the tile plus a margin),
+   *     rebuilt when the player has moved about 100 m, so those others have ground too.
+   */
+  private keepSeam(): void {
+    const f = this.seam
+    const size = this.data.size
+    if (!f || !worldWrap.value) {
+      if (this.colliderX !== 0 || this.colliderZ !== 0) this.moveCollider(0, 0)
+      return
+    }
+    const half = size / 2
+    const p = f.player.body.translation()
+    // Hysteresis: 4 m past the edge, so a vehicle driving along the seam is not flipped
+    // back and forth every step.
+    const dx = p.x > half + 4 ? -size : p.x < -half - 4 ? size : 0
+    const dz = p.z > half + 4 ? -size : p.z < -half - 4 ? size : 0
+    if (dx || dz) {
+      f.player.shiftBy(dx, dz)
+      f.camera?.shift(dx, dz)
+    }
+    const px = p.x + dx
+    const pz = p.z + dz
+    for (const v of f.others()) {
+      if (v === f.player || !v.body.isValid()) continue
+      const t = v.body.translation()
+      const ox = nearestImage(t.x, px, size) - t.x
+      const oz = nearestImage(t.z, pz, size) - t.z
+      if (ox || oz) v.shiftBy(ox, oz)
+    }
+    if (Math.abs(px - this.colliderX) > 96 || Math.abs(pz - this.colliderZ) > 96) this.moveCollider(px, pz)
+  }
+
+  private moveCollider(x: number, z: number): void {
+    const cell = this.data.cell
+    this.colliderX = Math.round(x / cell) * cell
+    this.colliderZ = Math.round(z / cell) * cell
+    this.game.world.removeCollider(this.collider, true)
+    this.collider = createTerrainCollider(this.game.world, this.data, this.colliderX, this.colliderZ)
+  }
+
   /** Colours, snow and glow for this kind of world and its sea. */
   private lightLake(): void {
     const lake = this.data.lava.lake
@@ -149,6 +251,8 @@ export class ProceduralTerrain implements Terrain {
     this.look.setSummit(this.summitHeight())
     this.lightLake()
     this.game.world.removeCollider(this.collider, true)
+    this.colliderX = 0
+    this.colliderZ = 0
     this.collider = createTerrainCollider(this.game.world, this.data)
     this.volcanics.rebuild()
     this.trees.rebuild()

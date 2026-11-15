@@ -267,27 +267,32 @@ action button, minimap, HUD, strip, menu row, controls card, toast, announcement
 vehicle's place on screen, and fails if any two overlap. Match states are fixtures, so it
 needs only the lane dev server.
 
-## Lobby art direction
+## Art direction: Dark Star
 
-The lobby follows the owner's 2017 Syn3h build as art direction, not as a specification:
-near-black space, one saturated blue, thin type, a dark slab panel, slab buttons that light
-blue. Colours are the `--s3-*` tokens at the top of `shell.css`.
+On 14 November 2026 the owner replaced the 2017 Syn3h look with the Dark Star theme of the
+new terranlabs.com ("it honestly just looks better than the design we lifted from a decade
+ago"). Source: /Users/vtn/dev/terranlabs.com at 68c1e06.
 
-- Sky: `Starfield.ts` draws the nebula and three depths of stars in one WebGL 2 fragment
-  shader, seeded from the world seed, at most thirty frames a second and not at all while
-  the game is on screen. No images. Without WebGL 2 the CSS gradient behind it shows.
-- Logo: one vector path (`brand/wordmarkPath.ts`, about 3 KB) traced from the legacy
-  bitmap by `tools/brand/trace-logo.mjs` and lit in CSS. The lobby, loading, invite and
-  attract screens no longer request the 1.5 MB `public/brand/syn3h.png`; that file now
-  only feeds the share card generator.
-- The stage leans up to 1.6 degrees toward a mouse pointer and the star depths slide
-  against each other. Touch and reduced-motion users get a still stage.
-- `__SYN3H_BUILD__`, if the bundler defines it, appears as "build version : ..." under
-  the panel; otherwise the line reads "browser edition".
+- Colours and type: Dark Star's tokens (`--s3-*` and the few `--theme-*` names that site's
+  CSS reads) and its two families, Barlow and Barlow Condensed, served from `public/fonts`
+  under the SIL Open Font License.
+- Buttons: that site's glass button, `.liquid-glass`, copied verbatim into `shell.css`
+  between two marker comments, with its pointer-facing rim (`Shell.glass`, a port of
+  GlassShine.tsx). `Shell.glass` gives every button the class; the quiet text links are
+  not glass. `.is-primary` is the accent-filled variant. Frost is dropped on the in-play
+  menu row and thumb buttons and at graphics level 0, because it re-blurs the moving world
+  every frame.
+- Sky: `Starfield.ts` is that site's Planetfall opening as a lobby background: deep
+  space, wheeling stars, a world's limb with its atmosphere along the bottom, and the sun
+  clearing the limb with shifting shafts, a lens streak and ghosts. The sun, shaft, flare
+  and star formulas are PlanetGL.tsx's, unchanged. A faint nebula remains as an option.
+- Panel: a sheet of frosted glass with Dark Star's 18 px radius and hairline border.
+- Loading: that site's veil, see "The loading veil".
+- Logo: still the Syn3h wordmark as one vector path, lit in Dark Star's blue.
 
-`tools/heavy.sh node tests/ui/lobby-reference.mjs <label>` captures every lobby screen at
-the reference's shape and on a phone. The owner's reference captures show his desktop, so
-they stay in the git-ignored `tests/ui/artifacts/reference/`.
+`tools/heavy.sh node tests/ui/lobby-reference.mjs <label>` captures every lobby screen on
+a desktop and a phone. The owner's 2017 reference captures stay in the git-ignored
+`tests/ui/artifacts/reference/`.
 
 ## Wording
 
@@ -397,3 +402,29 @@ the minimap sits top right under the menu, clear of the action buttons, and anno
 sit between the hill panel and the vehicle. `phone-layout.mjs` now walks the same layout
 states on an "iPad Pro 11 landscape" in WebKit (build 2388), where the game takes its
 WebGL path.
+
+The same hints carry the wings: while a buggy sits in lava or water with its wings closed
+(`Vehicle.canLiftOut`), the card says "Space: wings to lift out", or "WINGS: lift out" on
+touch with that button pulsing; again every nine seconds, five times at most. Zorb mode
+(X) has a ZORB thumb button that calls `input.toggleZorb()` and a line in every controls
+text. `jet-hint.mjs` checks the wings hint in the volcano's lava lake and the ZORB button.
+
+## The galaxy lobby (prototype, hidden)
+
+Add `?galaxy=1` to the link. In place of the index panel the worlds orbit a sun in 3D
+(`galaxy/Galaxy.ts`): drag empty space to swing the view, pinch or scroll to move in and
+out, tap a world or its label to fly to it. Arriving makes it the world (through
+`pickPlanet`, so the host lock and the invited-guest rule hold) and opens the name form;
+Back returns to the whole system. Every other panel opens over it as before.
+
+One fragment shader traces the sun and up to four spheres: no meshes, libraries or images.
+Each world is lit from where the sun is, wears its real map from `paintPlanetMap` (1024 by
+512, painted in the worker one after another) and cuts a shadow through the sun's shafts.
+The sun, shafts, flare and stars are terranlabs.com's, as in `Starfield.ts`, which is
+switched off while the galaxy is on so there is one sky and one context. It needs WebGL 2
+and a graphics level above 0; otherwise, and without the option, the ordinary lobby is
+unchanged. Play gives its context back.
+
+Not yet: the flight down into the atmosphere handing over to the game, other players and
+saved seeds as lights and moons, a keyboard way to swing the view, and any check on a real
+phone. `tools/heavy.sh node tests/ui/galaxy.mjs` checks what is there on desktop and phone.

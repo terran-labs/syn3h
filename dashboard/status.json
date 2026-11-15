@@ -1,7 +1,7 @@
 {
   "tagline": "Syn3h, rebuilt native in the browser: its vehicles, its physics, its lobby and its look.",
   "deadline": "Demo: Sunday noon Pacific, Coeur d'Alene",
-  "headline": "Release 1 is live at www.syn3h.com: the game with the steering fix, checked by a two-player test on the public address. Release 2 is being assembled on trunk: wings that lift a buggy out of lava and water, rear-end shoves, tag beams that stay green at night, the buggy's original lights and wheel struts, and a synthesised score. Open item: a black screen on a real iPad.",
+  "headline": "Release 2 is live at www.syn3h.com: wings that lift a buggy out of lava and water, rear-end shoves, tag beams that stay green at night, the buggy's original lights and wheel struts, jet lift-off hints, a loading screen, and fixes for a jet black screen in Safari and for the buggy rolling backward under throttle. On the preview and not yet public: round planets, Zorb mode, new paint, the Dark Star look, Daydream and the generated score.",
   "previews": [
     {
       "title": "Play the current build",
@@ -613,41 +613,37 @@
   ],
   "knownIssues": [
     {
-      "title": "Half a minute of black before the first frame on an iPad",
-      "detail": "Seen on the preview; not yet measured on the public build. Nothing tells the visitor it is loading. Being measured now."
+      "title": "Not yet done by a person",
+      "detail": "Nobody has joined from a phone by QR code on the public address or listened on the demo speakers."
     },
     {
-      "title": "Wings do not lift a buggy out of lava or off steep shores",
-      "detail": "On desert and alpine worlds a buggy in the sea can slide back off a steep bank. Fixed on the preview."
-    },
-    {
-      "title": "Rear-ending a moving car gives no shove",
-      "detail": "The tag passes but the car in front feels nothing. Fixed on the preview."
-    },
-    {
-      "title": "Tag beams look nearly white at night",
-      "detail": "Fixed on the preview."
-    },
-    {
-      "title": "The jet does nothing on W alone",
-      "detail": "R lifts off. The controls card does not say so plainly. Fixed on the preview."
-    },
-    {
-      "title": "Link previews show no image",
-      "detail": "The share card address was not absolute. Fixed on the preview."
+      "title": "The loading screen is a dim ring with no words",
+      "detail": "A slow connection can still read as a black screen for a few seconds. Being reworded on the preview."
     },
     {
       "title": "syn3h.com without www depends on the old host",
       "detail": "The old hosting account is what redirects it to www. Attaching it to the game is the fix after the demo."
     },
     {
-      "title": "Not yet done by a person",
-      "detail": "Nobody has joined from a phone by QR code on the public address or listened on the demo speakers."
+      "title": "Bots crowd the summit",
+      "detail": "Bots reach the top on every world, then ram each other and some drive off the edge."
+    },
+    {
+      "title": "Head-on rams at high speed are chaotic",
+      "detail": "Two cars closing at over 40 m/s can be thrown hard. Measured once."
+    },
+    {
+      "title": "Changing vehicle in the lobby reloads the page",
+      "detail": "A shortcut taken to keep the demo safe."
+    },
+    {
+      "title": "Network study is thin",
+      "detail": "One run per condition on a loaded Mac. Nothing measured on a phone, venue wifi or mobile data."
     }
   ],
   "links": [
     {
-      "group": "Public (release 1, frozen)",
+      "group": "Public (release 2, frozen)",
       "note": "What the world sees. Changes only when a release ships.",
       "items": [
         {
@@ -704,6 +700,14 @@
         {
           "title": "Safe graphics on WebGL",
           "url": "https://vorton-previews.tail285f88.ts.net:32782/?diag=1&webgl=1&gfx=0"
+        },
+        {
+          "title": "Tiny wrapping planet",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/?world=alpine.7~terrain.planetSize=0,world.wrap=true&room=tiny-planet"
+        },
+        {
+          "title": "Galaxy lobby (prototype)",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/?galaxy=1"
         }
       ]
     },
@@ -711,6 +715,20 @@
       "group": "Labs on trunk (port 32782)",
       "note": "Workbench pages; not part of public releases.",
       "items": [
+        {
+          "title": "Vehicle lab",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/vehicle-lab.html?vehicle=buggy",
+          "page": "vehicle-lab.html"
+        },
+        {
+          "title": "Vehicle lab: in-game skins",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/vehicle-lab.html?vehicle=game-skins"
+        },
+        {
+          "title": "Jet design lab",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/jetlab.html",
+          "page": "jetlab.html"
+        },
         {
           "title": "Terrain generator",
           "url": "https://vorton-previews.tail285f88.ts.net:32782/terrainlab.html",
@@ -778,32 +796,20 @@
   ],
   "knownIssuesTrunk": [
     {
-      "title": "Half a minute of black before the first frame on an iPad",
-      "detail": "Seen over the preview link: the game then runs at 61 frames a second with no errors. Where the time goes, and whether the public build is as slow, is being measured now."
-    },
-    {
-      "title": "The jet throws an error in Safari's engine on the WebGL path",
-      "detail": "A texture arrives empty. The buggy does not. Under investigation."
+      "title": "The preview link loads slowly on phones and tablets",
+      "detail": "About half a minute on an iPad, because the development server sends 28 MB uncompressed. The public site sends about 2 MB and starts in a few seconds. Demo from the public site, not this link."
     },
     {
       "title": "New and unseen by the owner",
-      "detail": "The retuned score as default music, the buggy's original lights, struts and wheel stators, the alpine world's new look, the loading screen from terranlabs.com, and the tablet touch layout."
+      "detail": "Zorb mode (X), the new vehicle paint, the Dark Star look, Daydream (the vehicle drives itself after 30 idle seconds), bots with personalities, continents and planet sizes."
     },
     {
-      "title": "Bots crowd the summit",
-      "detail": "Bots reach the top on every world, then ram each other and some drive off the edge."
+      "title": "Round planets are not finished",
+      "detail": "Driving past the edge of the world still falls off: the wrap needs work in the vehicle, multiplayer and bot code before it can ship."
     },
     {
-      "title": "Head-on rams at high speed are chaotic",
-      "detail": "Two cars closing at over 40 m/s can be thrown hard. Measured once."
-    },
-    {
-      "title": "Changing vehicle in the lobby reloads the page",
-      "detail": "A shortcut taken to keep the demo safe."
-    },
-    {
-      "title": "Network study is thin",
-      "detail": "One run per condition on a loaded Mac. Nothing measured on a phone, venue wifi or mobile data."
+      "title": "The generated score is not yet good enough to be the default",
+      "detail": "The owner's verdict on the retune: fairly good, not there yet. It is selectable; a version with an arc and new instruments is on the preview."
     }
   ]
 }

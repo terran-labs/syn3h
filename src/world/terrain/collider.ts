@@ -17,7 +17,12 @@ import type { TerrainData } from './generate'
 /** Cells of wrapped ground past each edge of the tile: 32 cells, 128 m at 4 m cells. */
 export const COLLIDER_MARGIN = 32
 
-export function heightfieldDesc(data: TerrainData, margin = COLLIDER_MARGIN): RAPIER.ColliderDesc {
+/**
+ * `shiftX` and `shiftZ` are whole cells: the field then covers the same extent centred that
+ * many cells from the origin, read from the periodic grid, so the collider can follow a
+ * vehicle anywhere on a wrapping world.
+ */
+export function heightfieldDesc(data: TerrainData, margin = COLLIDER_MARGIN, shiftX = 0, shiftZ = 0): RAPIER.ColliderDesc {
   const n = data.resolution
   const period = n - 1 // the last sample is the image of the first
   const m = Math.min(margin, period)
@@ -26,13 +31,13 @@ export function heightfieldDesc(data: TerrainData, margin = COLLIDER_MARGIN): RA
   const cols = new Float32Array(N * N)
   // Inside the tile read the grid directly (so an unsealed grid still matches `heightAt`
   // there); in the margin read the wrapped sample.
-  const wrap = (j: number) => {
-    const g = j - m
+  const wrap = (j: number, shift: number) => {
+    const g = j - m + shift
     return g >= 0 && g <= period ? g : ((g % period) + period) % period
   }
   for (let jz = 0; jz < N; jz++) {
-    const row = wrap(jz) * n
-    for (let jx = 0; jx < N; jx++) cols[jz + jx * N] = src[row + wrap(jx)]
+    const row = wrap(jz, shiftZ) * n
+    for (let jx = 0; jx < N; jx++) cols[jz + jx * N] = src[row + wrap(jx, shiftX)]
   }
   const extent = (N - 1) * data.cell
   return RAPIER.ColliderDesc.heightfield(
@@ -47,6 +52,14 @@ export function heightfieldDesc(data: TerrainData, margin = COLLIDER_MARGIN): RA
     .setFriction(1)
 }
 
-export function createTerrainCollider(world: RAPIER.World, data: TerrainData): RAPIER.Collider {
-  return world.createCollider(heightfieldDesc(data))
+/**
+ * The collider, centred as near (centreX, centreZ) as whole cells allow. Returns it with
+ * the centre actually used.
+ */
+export function createTerrainCollider(
+  world: RAPIER.World, data: TerrainData, centreX = 0, centreZ = 0,
+): RAPIER.Collider {
+  const sx = Math.round(centreX / data.cell)
+  const sz = Math.round(centreZ / data.cell)
+  return world.createCollider(heightfieldDesc(data, COLLIDER_MARGIN, sx, sz).setTranslation(sx * data.cell, 0, sz * data.cell))
 }

@@ -4,7 +4,7 @@ Written by the Orchestrator. Refreshed at each milestone tag. A fresh or compact
 Orchestrator should be able to resume from this file, `ops/BACKLOG.md`, `ops/LANES.md` and
 `ops/PROTOCOL.md` alone. Times are Pacific; read the clock with `date`, never from memory.
 
-Last refreshed: Saturday 14 November, 7:30pm PST. Demo: Sunday noon PST.
+Last refreshed: Saturday 14 November, 8:45pm PST. Demo: Sunday noon PST.
 
 ## Where things are
 
@@ -72,7 +72,38 @@ Retired in-process subagents (work merged): buggy `af96d3463a8b76592`, multiplay
 
 ## Releases
 
-- LIVE: release-1 = `m13.1-steering` (ee73e41, branch `release/1`, worktree
+- RELEASE 3 GATE (agreed with the Foreman, 8:40pm). Cut from trunk only when all hold:
+  (1) Multiplayer's two-browser seam check, the Vehicles lane's per-vehicle seam review and
+  QA's bots-on-wrap all pass; (2) the owner has driven across a seam and seen the opening
+  view, the Dark Star look, Zorb and the paint; (3) the release opens on a world where the
+  volcano is visible from the spawn pad: if round planets cannot do that at the default size,
+  the default stays flat (`world.curve` 0) for release 3 and round is a lobby choice;
+  (4) every vehicle is clean on the frozen build in Chrome and WebKit, and the dry run passes
+  on the final tag. If not all true by 9am Sunday, the demo runs release 2 and the rest is
+  shown on the preview from this Mac. The score ships as default only on the owner's word
+  (latest: "still ok, still no chills").
+- DEPLOY RULES: no release while anyone is playing, and none after 10am Sunday without the
+  owner's word. About five minutes after a deploy every occupied room is reset: players
+  reconnect in about a second, world settings survive, scores, round, "it" and host restart
+  (docs/CUTOVER.md, "Releasing while people are playing"). The Foreman's sweeps end at
+  9:30pm Saturday; after that digests and this file are the record. The Foreman has asked the
+  owner about a 9:30pm feature freeze; until answered, nothing new starts that cannot be
+  finished and gated tonight.
+- LIVE: release-2 = `m14.2-release2` (bc8cb48, branch `release/2`): m14 plus gallery models
+  out of the build, the recorded default track, the jet texture race fix (fe45b14) and the
+  buggy wheels-forward fix (0add867). Shipped 8:07pm PST. Worker version 747d2041, frozen copy
+  `../Syn3h-stable/20261114-200625-bc8cb48`. Back to release 1 in seconds: `tools/rollback.sh`
+  from this checkout with the token in the environment. Release branches are cut from a tag
+  and take cherry-picked fixes only, so trunk can carry unseen features. Releases are run
+  from the release worktree; `Syn3h-wt/Syn3h-stable` is now a link to `../Syn3h-stable`.
+- MERGING: never merge in this checkout (the live preview serves it). Merge and test in the
+  staging worktree `/Users/vtn/dev/Syn3h-wt/staging` (branch `staging`, vite on port 5179 with
+  `SYN3H_NO_ROOM_SERVER=1`), then `git merge --ff-only staging` here. A conflicted merge here
+  broke the preview for two minutes at 7:40pm.
+- Before any release: check every vehicle on the frozen build in WebKit 2388 as well as
+  Chrome (`/tmp/syn3h-research/tools/webkit2.mjs` pattern). The jet black screen in Safari
+  was invisible to Chrome smoke.
+- PREVIOUS: release-1 = `m13.1-steering` (ee73e41, branch `release/1`, worktree
   `/Users/vtn/dev/Syn3h-wt/release`): m13 plus the buggy steering and upright ram flag fixes.
   https://www.syn3h.com/ (Custom Domain, attached 7:13pm PST) and
   https://syn3h.af-4e7.workers.dev/. Worker `syn3h`, versions 9c01cffa (release) and bde1abd6

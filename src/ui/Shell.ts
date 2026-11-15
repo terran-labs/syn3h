@@ -12,6 +12,8 @@ import { Starfield } from './Starfield'
 import { wordmarkSvg } from './brand/logo'
 import { PlanetPicker } from './planets/PlanetPicker'
 import { planetOrbs } from './planets/PlanetOrbs'
+import { Galaxy } from './galaxy/Galaxy'
+import { PLANETS } from '../world/planets'
 import { graphicsLevel, levelNumber } from '../core/quality'
 import { applyPlanet, currentPlanet, encodeWorld, planetName } from '../world/planets'
 import { AttractMode, type CinematicCamera } from './AttractMode'
@@ -64,6 +66,8 @@ export class Shell implements System {
   /** Slider groups the advanced panel is limited to, when it was opened from the custom planet. */
   private advancedGroups?: readonly string[]
   private worldDirty = true
+  /** The 3D galaxy lobby, a prototype shown only with ?galaxy=1 in the link. */
+  private galaxy?: Galaxy
   /** Arrived by an invite link that names a world: that world is the one to enter. */
   private readonly invited = (() => { const query = new URLSearchParams(location.search); return query.has('room') && query.has('world') })()
   private started = false
@@ -93,7 +97,7 @@ export class Shell implements System {
           <form class="shell-form"><label for="shell-name">Player name</label><input id="shell-name" name="playerName" maxlength="24" autocomplete="nickname" placeholder="Explorer">
           <label for="shell-room">Room</label><div class="input-action"><input id="shell-room" name="room" maxlength="64" autocomplete="off"><button class="shell-invite" type="button">Copy invite</button></div>
           <div class="shell-controls"><span><b>WASD / arrows</b> Drive</span><span><b>Space</b> Wings</span><span><b>Shift</b> Brake</span><span><b>L / click</b> Tag beam</span></div><p class="shell-touch-hint">Left thumb to drive. Right thumb for wings, brake and tag.</p>
-          <button class="shell-play" type="submit">Enter World ›</button></form>${back}
+          <button class="shell-play is-primary" type="submit">Enter World ›</button></form>${back}
         </section>
         <section data-panel="vehicle">${heading('Your Vehicle')}
           <fieldset class="shell-vehicle"><legend>Vehicle</legend><div class="shell-vehicle-options"><label><input type="radio" name="vehicle" value="buggy-classic"> Classic</label><label><input type="radio" name="vehicle" value="buggy-syn3h"> Syn3h Buggy</label><label><input type="radio" name="vehicle" value="hovercraft"> Hovercraft</label><label><input type="radio" name="vehicle" value="jet"> Jet</label></div><div class="shell-vehicle-preview"></div><div class="shell-colors"><label>Body <input type="color" name="bodyColor" aria-label="Body colour"></label><label>Accent <input type="color" name="accentColor" aria-label="Accent colour"></label></div></fieldset>
@@ -112,6 +116,7 @@ export class Shell implements System {
       </div>
       <footer class="lobby-footer"><span class="shell-message" role="status" aria-live="polite"></span><span class="build-line">${buildLine}</span></footer>
       </div>
+      <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby"><button data-goto="vehicle">Vehicle</button><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR</button><button data-goto="settings">Settings</button><button data-goto="about">About</button></nav></div>
     </section>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button" aria-label="Open menu">☰<span class="nav-label"> Menu</span></button><button data-open="multiplayer">Players</button><button data-open="worlds">Create</button></nav>
@@ -135,6 +140,8 @@ export class Shell implements System {
       const compact = slot.hasAttribute('data-compact')
       this.pickers.push(new PlanetPicker(slot, { compact, onPick: id => this.pickPlanet(id, compact), onCustom: () => this.openCustomPlanet() }))
     }
+    this.glass(signal)
+    this.startGalaxy()
     const unsubscribeWorld = params.onChange(id => { if (params.get(id)?.def.scope === 'world') this.worldDirty = true })
     signal.addEventListener('abort', unsubscribeWorld)
     try { this.nameInput.value = localStorage.getItem('syn3h.playerName') || '' } catch { /* Storage is optional. */ }
@@ -277,6 +284,7 @@ export class Shell implements System {
   showPanel(id: string): void {
     if(id!==this.panels.active)this.audio.cue('click')
     this.lastActivity = performance.now()
+    this.galaxyFor(id)
     if (id === 'vehicle' && !this.preview) {
       this.preview = new VehiclePreview(this.element.querySelector('.shell-vehicle-preview')!); this.preview.setChoice(this.choice)
     }
@@ -301,13 +309,13 @@ export class Shell implements System {
   }
   openMenu(panel = 'index'): void {
     if (!this.started) return
-    this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; this.starfield.enabled = true
+    this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; this.starfield.enabled = !this.galaxy; if (this.galaxy) this.galaxy.enabled = true
     this.game.input.suspended = true; this.game.input.mouseFire = false; this.game.input.poll(); this.touch.enabled = false
     this.audio.enabled = false; this.audio.setLobbyVisible(true); this.element.classList.remove('is-playing'); this.showPanel(panel)
   }
   closeMenu(): void {
     if (!this.started) return
-    this.menuVisible = false; this.overlay.hidden = true; this.overlay.inert = true; this.starfield.enabled = false
+    this.menuVisible = false; this.overlay.hidden = true; this.overlay.inert = true; this.starfield.enabled = false; if (this.galaxy) this.galaxy.enabled = false
     // The game is about to be on screen: give the lobby's graphics contexts back at once.
     planetOrbs.release()
     this.game.input.suspended = false; this.touch.enabled = true; this.audio.enabled = true; this.audio.setLobbyVisible(false); this.paramPanel?.hide()
@@ -386,9 +394,74 @@ export class Shell implements System {
   }
   /** A short notice that shows in the lobby and, while playing, as a toast. */
   private say(text: string): void { this.toast(text) }
+  /**
+   * The galaxy lobby (prototype, ?galaxy=1): in place of the index panel, the worlds orbit a
+   * sun in 3D. Drag to look around, tap a world to fly to it, and the name form follows. The
+   * other panels open over it as before. Needs WebGL 2 and more than the lowest graphics
+   * level; otherwise the ordinary lobby stays.
+   */
+  private startGalaxy(): void {
+    if (!new URLSearchParams(location.search).has('galaxy') || levelNumber(graphicsLevel.value) === 0 || !Galaxy.supported()) return
+    const current = currentPlanet().id, labels = this.element.querySelector<HTMLElement>('.galaxy-labels')!
+    const worlds = PLANETS.map((recipe, i) => ({ id: recipe.id, label: recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current ? worldSeed.value : i + 1 }))
+    const chips = new Map<string, HTMLButtonElement>()
+    for (const world of worlds) {
+      const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
+      chip.innerHTML = '<strong></strong><small></small>'; chip.querySelector('strong')!.textContent = world.label
+      chip.querySelector('small')!.textContent = world.id === current ? planetName(world.seed) : ''
+      chip.addEventListener('click', () => this.galaxy?.choose(world.id))
+      labels.append(chip); chips.set(world.id, chip)
+    }
+    this.galaxy = new Galaxy(this.overlay, {
+      worlds,
+      onArrive: id => {
+        if (this.invited && !this.started && id !== currentPlanet().id) { this.say('You were invited to another world. You can change it once you are in, if the host allows.'); this.galaxy?.home(); return }
+        this.pickPlanet(id, true)
+      },
+      onLayout: places => { for (const place of places) { const chip = chips.get(place.id)!; chip.hidden = !place.visible; chip.style.translate = `${place.x.toFixed(1)}px ${(place.y + place.radius + 10).toFixed(1)}px` } },
+    })
+    this.element.classList.add('is-galaxy'); this.starfield.enabled = false; this.galaxy.enabled = true
+    this.galaxyFor(this.panels.active || 'index')
+  }
+  /** The galaxy is the index; any other panel opens over it. */
+  private galaxyFor(panel: string): void {
+    if (!this.galaxy) return
+    const open = panel === 'index'
+    this.element.classList.toggle('galaxy-open', open)
+    this.element.querySelector<HTMLElement>('.galaxy-ui')!.hidden = !open
+    if (open) this.galaxy.home()
+  }
   /** What the lobby's own graphics are doing, for the phone checks. */
   get graphics(): { starfieldFrames: number; starfieldLive: boolean; planetsLive: boolean; planetMaps: number } {
     return { starfieldFrames: this.starfield.frames, starfieldLive: this.starfield.generated, planetsLive: planetOrbs.active, planetMaps: planetOrbs.painted }
+  }
+  /**
+   * Every button is terranlabs.com's glass button (.liquid-glass in shell.css), except the
+   * quiet text links. This also carries that site's GlassShine: while the pointer is over a
+   * glass button, the bright side of its one-pixel rim turns to face the pointer, and settles
+   * back when the pointer leaves. Nothing is drawn on the face of the button.
+   */
+  private glass(signal: AbortSignal): void {
+    const buttons = [...this.element.querySelectorAll<HTMLElement>('button'), ...this.touch.element.querySelectorAll<HTMLElement>('button')]
+    for (const button of buttons) if (!button.matches('.link-button, .lobby-links *, .syn3h-advanced *')) button.classList.add('liquid-glass')
+    // Touch screens have no hover, so there is nothing to face.
+    if (!matchMedia('(hover: hover)').matches) return
+    const REST = 205
+    let current: HTMLElement | null = null
+    // Kept unwrapped (it may pass 360) so the CSS transition always takes the short way round.
+    let angle = REST
+    document.addEventListener('pointermove', event => {
+      const target = event.target instanceof Element ? event.target : null
+      const button = target?.closest<HTMLElement>('.liquid-glass') ?? null
+      if (button !== current) { current?.style.removeProperty('--rim-angle'); current = button; angle = REST }
+      if (!button) return
+      const box = button.getBoundingClientRect()
+      const dx = event.clientX - (box.left + box.width / 2), dy = event.clientY - (box.top + box.height / 2)
+      // CSS conic angles start at the top and run clockwise.
+      const facing = (Math.atan2(dx, -dy) * 180) / Math.PI
+      angle += ((((facing - angle) % 360) + 540) % 360) - 180
+      button.style.setProperty('--rim-angle', `${angle.toFixed(1)}deg`)
+    }, { signal, passive: true })
   }
   private updateHelp(): void {
     renderHelp(this.element.querySelector('.vehicle-help')!, this.choice.vehicleKind)
@@ -453,6 +526,9 @@ export class Shell implements System {
     if (!this.started && !this.inviteOpen && !this.attract?.active && (this.requestedAttract || performance.now() - this.lastActivity > 20000)) this.startAttract()
     this.attract?.update(dt)
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
+    // The stylesheet drops frost at the lowest graphics level.
+    const gfx = String(levelNumber(graphicsLevel.value))
+    if (document.documentElement.dataset.gfx !== gfx) document.documentElement.dataset.gfx = gfx
     if (!this.menuVisible) return
     const mute = this.element.querySelector<HTMLButtonElement>('.shell-mute')!
     mute.textContent = this.audio.isMuted ? 'Unmute audio' : 'Mute all audio'; mute.setAttribute('aria-pressed', String(this.audio.isMuted))
@@ -492,7 +568,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); for (const picker of this.pickers) picker.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.starfield.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); for (const picker of this.pickers) picker.dispose(); this.galaxy?.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.starfield.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }
@@ -511,7 +587,7 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
     shell.setMapSelf({ x: p.x, z: p.z, heading, color: activePlayer.colors.body, self: true })
     audio.motion = { speed, throttle: activePlayer.kind === 'jet' ? activePlayer.input.z : activePlayer.input.y, airborne: p.y - terrain.heightAt(p.x, p.z) > 2 }
     const input = activePlayer.input
-    const hint = hints.update(dt, { kind: activePlayer.kind, touch: shell.touch.available, altitude: p.y - terrain.heightAt(p.x, p.z), speed, steer: input.x, pitch: input.y, throttle: input.z, hoverMode: !input.special })
+    const hint = hints.update(dt, { kind: activePlayer.kind, touch: shell.touch.available, altitude: p.y - terrain.heightAt(p.x, p.z), speed, steer: input.x, pitch: input.y, throttle: input.z, hoverMode: !input.special, canLiftOut: activePlayer.canLiftOut })
     if (hint) shell.showHint(hint)
   } })
   game.add(audio)

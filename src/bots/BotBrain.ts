@@ -1,3 +1,4 @@
+import { nearestImage, wrapCoord } from '../../shared/wrap'
 import { Quaternion, Vector3 } from 'three/webgpu'
 import type { Game, System } from '../core/Game'
 import { emptyInput } from '../core/Input'
@@ -13,7 +14,8 @@ export function steeringError(forward: { x: number; z: number }, delta: { x: num
   return Math.atan2(forward.x * delta.z - forward.z * delta.x, forward.x * delta.x + forward.z * delta.z)
 }
 export function isSafeGround(terrain: BotTerrain, x: number, z: number): boolean {
-  if (Math.abs(x) > terrain.size / 2 - 3 || Math.abs(z) > terrain.size / 2 - 3) return false
+  // A wrapping world has no edge to stay away from.
+  if (!terrain.wrapSize && (Math.abs(x) > terrain.size / 2 - 3 || Math.abs(z) > terrain.size / 2 - 3)) return false
   const ground = terrain.heightAt(x, z), liquid = terrain.liquidHeightAt?.(x, z)
   return Number.isFinite(ground) && (liquid == null || !Number.isFinite(liquid) || ground > liquid + 0.5)
 }
@@ -112,7 +114,13 @@ export class BotBrain implements System {
     }
     this.routeTime -= dt
     if (this.routeTime <= 0) {
-      this.waypoint = !afloat && distance > 18 ? roadWaypoint(this.terrain, here, there, Math.max(8, Math.min(16, speed * 0.6))) : null
+      // Roads are given inside the tile; on a wrapping world this bot may be at an image
+      // outside it. Ask in tile coordinates, then bring the answer back beside the bot.
+      const w = this.terrain.wrapSize
+      const from = w ? { x: wrapCoord(here.x, w), y: here.y, z: wrapCoord(here.z, w) } : here
+      const to = w ? { x: wrapCoord(there.x, w), y: there.y, z: wrapCoord(there.z, w) } : there
+      const found = !afloat && distance > 18 ? roadWaypoint(this.terrain, from, to, Math.max(8, Math.min(16, speed * 0.6))) : null
+      this.waypoint = found && w ? { ...found, x: nearestImage(found.x, here.x, w), z: nearestImage(found.z, here.z, w) } : found
       this.routeTime = 0.4
     }
     const waypoint = !afloat && distance > 18 ? this.waypoint : null

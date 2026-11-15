@@ -1,6 +1,6 @@
 import { loadingMessages } from './data/loadingMessages'
 
-const phaseLabels: Record<string, string> = { device: 'Checking your device', physics: 'Preparing motion', renderer: 'Preparing the view', world: 'Building your world', ready: 'Ready to explore' }
+const phaseLabels: Record<string, string> = { device: 'Checking your device', physics: 'Preparing motion', renderer: 'Preparing the view', world: 'Building the world', ready: 'Ready to explore' }
 export interface LoadingDetail { phase?: string; progress?: number; elapsedMs?: number }
 
 /** The progress meter the bootstrap script in index.html puts on `window`. */
@@ -17,8 +17,9 @@ const LIMIT_MS = 45000
  * raises the mark's target as the game reports its phases, and when the world is ready it
  * lets the light finish its lap and lifts the veil.
  *
- * Nothing is written on the veil. The phase and a loading message are kept in a status
- * region that only screen readers see.
+ * The veil carries Syn3h's name, a word of status and, after eight seconds, a line saying
+ * it is still working (all in index.html, so they show before this module arrives). This
+ * module changes the word as the phases pass.
  */
 export class LoadingScreen {
   readonly element = document.createElement('section')
@@ -30,12 +31,13 @@ export class LoadingScreen {
   private readonly abort = new AbortController()
   constructor() {
     this.element.className = 'syn3h-loading'
-    this.element.setAttribute('role', 'status'); this.element.setAttribute('aria-live', 'polite')
+    // The veil's own status line is the one screen readers hear; this copy is for the checks.
+    this.element.setAttribute('aria-hidden', 'true')
     this.element.innerHTML = '<p class="loading-phase">Starting Syn3h</p><progress aria-label="Loading progress"></progress><p class="loading-message"></p>'
     document.body.append(this.element)
     this.setMessages(this.messages)
     // The bundle has arrived and is running.
-    meter()?.set(0.45)
+    meter()?.set(0.45); this.say('Starting Syn3h')
     window.addEventListener('syn3h:loading', event => this.update((event as CustomEvent<LoadingDetail>).detail), { signal: this.abort.signal })
     this.timer = setInterval(() => { this.index++; this.element.querySelector('.loading-message')!.textContent = this.messages[this.index % this.messages.length] }, 5000)
     this.limit = setTimeout(() => this.finish(), LIMIT_MS)
@@ -57,13 +59,18 @@ export class LoadingScreen {
   }
   update(detail?: LoadingDetail): void {
     if (!detail || typeof detail !== 'object') return
-    if (typeof detail.phase === 'string') this.element.querySelector('.loading-phase')!.textContent = phaseLabels[detail.phase] ?? detail.phase
+    if (typeof detail.phase === 'string') this.say(phaseLabels[detail.phase] ?? detail.phase)
     const progress = this.element.querySelector('progress')!
     if (typeof detail.progress === 'number' && Number.isFinite(detail.progress)) {
       progress.max = 1; progress.value = Math.min(1, Math.max(0, detail.progress))
       // The game's own progress takes the light from where the bundle left it to nearly round.
       meter()?.set(0.45 + 0.47 * progress.value)
     } else progress.removeAttribute('value')
+  }
+  /** The word of status on the veil. */
+  private say(text: string): void {
+    this.element.querySelector('.loading-phase')!.textContent = text
+    const status = document.querySelector('.boot-status'); if (status) status.textContent = text
   }
   /** Everything is here. Let the light finish its lap, then lift. */
   finish(): void {

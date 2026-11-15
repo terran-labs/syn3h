@@ -1,7 +1,7 @@
 # Known issues
 
-Kept by the Orchestrator. Last revised Saturday 14 November, 7:30pm PST. These ship as known
-in release 1 by the Foreman's decision, on the grounds that a fresh room opens on the
+Kept by the Orchestrator. Last revised Saturday 14 November, 8:15pm PST. These ship as known
+in the public release by the Foreman's decision, on the grounds that a fresh room opens on the
 volcanic world in paused daylight.
 
 Closed since the first list: the lava sea burning to white at night (fixed at its cause, the
@@ -15,9 +15,9 @@ fixed on trunk for release 2).
 | Issue | Where it shows | Owner |
 |---|---|---|
 | syn3h.com (the apex) still points at the old host, which is what redirects it to www. If that hosting account lapses the apex stops working. Fix after the demo: attach the apex to the Worker | Production | Orchestrator, owner's word |
-| Release 1 has no absolute share card address, so link previews show no image until release 2 | Production | Fixed on trunk |
-| About half a minute of black before the first frame on the owner's iPad Pro over the preview link (firstDrawSubmittedMs 32637), then 61 fps on WebGPU with no errors. Cause of the delay and whether production shares it: being measured | iPadOS Safari, probably every phone | QA, top priority |
-| The synthesised score is the default music on trunk and nobody has listened to it; it ships as default in release 2 only on the owner's word after hearing it | Music | Soundscape thread, owner |
+| The dev preview link takes about half a minute to first frame on an iPad (28 MB uncompressed from the dev server); production sends about 2 MB and starts in 1.4 to 2.9 s. Demo from production only. The loading veil is a dim ring with no words | Preview link; veil everywhere | UX for the veil |
+| One two-player check failed on www within a minute of the release 2 deploy (a clamped slider reached player A but not B); three reruns passed. Possibly a room straddling two Worker versions during a deploy | Production, during deploys | Multiplayer to assess |
+| The generated score is the default on trunk only; release 2 ships the recorded default. The owner wants it better before it is the default | Music | Soundscape thread, owner |
 | Bots reach every summit, then ram each other and some drive off the edge; one of four left the alpine road at the last bend | Summits, alpine road | Bots and QA |
 | Joining a room stored by an older build could give a hybrid world. Fixed on trunk after m13; release 1 (m13) relies on fresh room names | Rooms that outlive a release | Multiplayer |
 | The loss and stall study is one run per condition on a loaded Mac at about 15 frames a second; nothing measured on a phone, venue wifi or mobile data. Read its numbers as indicative only | Network | Multiplayer |
