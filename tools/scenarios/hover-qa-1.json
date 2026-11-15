@@ -1,0 +1,41 @@
+{
+  "durationMs": 20000,
+  "captureEveryMs": 2500,
+  "settleMs": 1000,
+  "events": [
+    {
+      "atMs": 0,
+      "params": {
+        "bots.count": 0,
+        "gfx.level": 0
+      },
+      "down": [
+        "KeyW"
+      ]
+    },
+    {
+      "atMs": 7000,
+      "down": [
+        "KeyA"
+      ]
+    },
+    {
+      "atMs": 8500,
+      "up": [
+        "KeyA"
+      ]
+    },
+    {
+      "atMs": 12000,
+      "down": [
+        "KeyD"
+      ]
+    },
+    {
+      "atMs": 13500,
+      "up": [
+        "KeyD"
+      ]
+    }
+  ]
+}
