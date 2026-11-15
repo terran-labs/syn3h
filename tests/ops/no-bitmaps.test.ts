@@ -1,7 +1,7 @@
 /**
  * AGENTS.md, "generate it, do not ship it", and the owner's instruction of 14 November 2026:
  * "eliminate all remaining bitmap textures from the project". This fails when a tracked image
- * file exists that is not on the list below. The list is what existed that day. It only
+ * file exists that is not on the list below. The list is what was left once the vehicle effect images had gone that night. It only
  * shrinks: delete an entry when its file is replaced by a shader, a vector or a build step,
  * and never add one. The test also fails for an entry whose file is gone, so the list cannot
  * go stale.
@@ -31,19 +31,12 @@ const ALLOWED = new Map<string, string>([
   ['public/brand/marsxplr.png', 'UX'],
   ['public/brand/share.png', 'UX'],
   ['public/brand/syn3h.png', 'UX'],
-  // Vehicles lane: removed by feat/vehicles2-nobitmaps. Delete these six lines with that merge.
-  ['public/models/effects/dust.png', 'Vehicles'],
-  ['public/models/effects/plasma-green.png', 'Vehicles'],
-  ['public/models/effects/plasma-red.png', 'Vehicles'],
-  ['public/models/effects/skidmark.png', 'Vehicles'],
-  ['public/models/textures/hexagons.jpg', 'Vehicles'],
-  ['public/models/textures/tank-track.png', 'Vehicles'],
   // Jet and hovercraft leads: go when those vehicles move to the shared materials (PATTERN.md).
   ['public/models/textures/armor-scales.jpg', 'Jet and hovercraft leads'],
   ['public/models/textures/thruster-glow.png', 'Jet and hovercraft leads'],
 ])
 /** The list may never be longer than it was on the day it was written. */
-const CEILING = 19
+const CEILING = 13
 
 const tracked = (): string[] =>
   execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split('\0').filter((f) => IMAGE.test(f))
