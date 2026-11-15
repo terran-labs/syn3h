@@ -42,12 +42,30 @@ describe('vehicle safety', () => {
     expect(Math.abs(b.body.linvel().z)).toBeLessThan(500)
   })
 
-  test('remote copies are left alone', async () => {
+  test('remote copies are left alone by the owner-side nets', async () => {
+    // The respawn, underground rescue, speed clamp and upright rescue belong to the client
+    // that owns a vehicle. A copy simulated here (a bot, a remote player) gets none of them.
+    const { bed, b } = await local()
+    b.isLocal = false
+    b.body.setTranslation({ x: 3, y: -400, z: 3 }, true)
+    bed.run(0.02)
+    // Not respawned from below -300. (A jump that long is a teleport to the ground guard.)
+    expect(b.body.translation().y).toBeLessThan(-390)
+  })
+
+  test('any vehicle found just under the terrain is put back on it, remote copies included', async () => {
+    // The terrain collider has no inside, so a body under it is never pushed out. The swept
+    // ground guard (Vehicle.guardGround) is physics integrity, not an owner-side net: it
+    // covers bots and remote players near enough to be dynamic, in place, without respawning.
     const { bed, b } = await local()
     b.isLocal = false
     b.body.setTranslation({ x: 3, y: -5, z: 3 }, true)
     bed.run(0.02)
-    expect(b.body.translation().y).toBeLessThan(-4)
+    const t = b.body.translation()
+    expect(t.y).toBeGreaterThan(0)
+    // Put back where its path crossed the surface, between where it was and where it was
+    // written to: not sent to a spawn point.
+    expect(Math.hypot(t.x, t.z)).toBeLessThan(Math.hypot(3, 3) + 0.01)
   })
 })
 
