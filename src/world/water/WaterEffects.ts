@@ -65,7 +65,7 @@ export class WaterEffects implements System {
       }
     }
     this.ripples.update(dt,game.camera.position.x,game.camera.position.z)
-    this.underwater.update()
+    this.underwater.update(dt)
   }
   dispose(){(this.player.object as THREE.Object3D<VehicleObjectEvents>).removeEventListener('tileshift',this.onTileShift);this.underwater.dispose();this.spray.dispose();this.ripples.dispose()}
 }
