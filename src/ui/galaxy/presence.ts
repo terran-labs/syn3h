@@ -1,7 +1,8 @@
+import type { PresenceSnapshot } from '../../../shared/presence'
+export type { PresenceSnapshot } from '../../../shared/presence'
+
 /** Public recipe totals only. Room identities and joining stay outside the lobby feed. */
 export interface Population { rooms: number; players: number }
-interface Report extends Population { recipeId: string | null; oldestReportAt: number }
-export interface PresenceSnapshot { version: 1; generatedAt: number; ttlMs: number; byRecipe: Report[] }
 export type Populations = ReadonlyMap<string, Population | null>
 export const PRESENCE_TTL = 90_000
 export const PRESENCE_POLL = 30_000

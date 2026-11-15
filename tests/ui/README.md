@@ -608,3 +608,8 @@ population of its own. Planet taps retain the existing room and direct descent.
 `presence.test.ts` covers payload validation, report freshness, cancellation and polling.
 `presence.mjs` supplies controlled public responses to check labels, display state,
 play/reopen behavior and unchanged room routing. It does not validate the server endpoint.
+
+`presence-live.mjs` starts an isolated, temporary Vite proxy and room server, connects
+humans in two separate Alpine rooms, and checks normal-entry counts in Chrome and WebKit.
+It uses the real same-origin endpoint and saves captures under `artifacts/presence`.
+Run every browser check through the absolute trunk heavy-job helper.
