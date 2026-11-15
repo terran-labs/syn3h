@@ -110,6 +110,58 @@ describe('spray simulation', () => {
     }
   })
 
+  it('thins every source evenly instead of overwriting when the pool is full', () => {
+    const c = sprayCapacity(0), sim = new SpraySim(c, sea)
+    let full = 0
+    for (let i = 0; i < 1200; i++) {
+      sim.step(1 / 60)
+      for (let v = 0; v < 4; v++) sim.vehicle(`v${v}`, i * .4, 0, v * 20, 24, 0, 0, .8, 1 / 60)
+      if (i > 300 && sim.dropletCount >= c.droplets) full++
+    }
+    expect(sim.throttle).toBeLessThan(.6)
+    expect(sim.dropletCount).toBeLessThanOrEqual(c.droplets)
+    // Once the throttle has settled the pool is rarely at its limit and refusals stop growing.
+    expect(full).toBeLessThan(60)
+    const refused = sim.refused
+    for (let i = 0; i < 300; i++) { sim.step(1 / 60); for (let v = 0; v < 4; v++) sim.vehicle(`v${v}`, (1200 + i) * .4, 0, v * 20, 24, 0, 0, .8, 1 / 60) }
+    expect(sim.refused - refused).toBeLessThan(60)
+  })
+
+  it('makes the centre wash dominant when planing and drops it at low speed', () => {
+    const strengths = (speed: number) => {
+      const sim = new SpraySim(cap, sea); drive(sim, 120, speed)
+      const n = cap.vehicles * ARMS * cap.points + cap.rings, A = new Float32Array(n * 4), B = new Float32Array(n * 4), S = new Float32Array(n * 4), L = new Float32Array(n * 4)
+      const m = sim.packSurface(A, B, S, L)
+      let wash = 0, arms = 0, washWidth = 0, armWidth = 0
+      for (let i = 0; i < m; i++) { const w = Math.hypot(S[i * 4], S[i * 4 + 1]) > 1.5; if (w) { wash = Math.max(wash, L[i * 4]); washWidth = Math.max(washWidth, A[i * 4 + 3]) } else { arms = Math.max(arms, L[i * 4]); armWidth = Math.max(armWidth, A[i * 4 + 3]) } }
+      return { wash, arms, washWidth, armWidth }
+    }
+    const fast = strengths(22), slow = strengths(2.5)
+    expect(fast.wash).toBeGreaterThan(fast.arms); expect(fast.washWidth).toBeGreaterThan(fast.armWidth * 2)
+    expect(slow.wash).toBeLessThan(.05); expect(slow.arms).toBeGreaterThan(.2)
+  })
+
+  it('fades strips through bends tighter than their width instead of folding', () => {
+    const sim = new SpraySim(cap, sea), r = 2.5, w = 15 / r
+    for (let i = 0; i < 240; i++) {
+      const t = i / 60, x = r * Math.sin(w * t), z = r * Math.cos(w * t)
+      sim.step(1 / 60); sim.vehicle('a', x, 0, z, 15 * Math.cos(w * t), 0, -15 * Math.sin(w * t), .5, 1 / 60)
+    }
+    const n = cap.vehicles * ARMS * cap.points + cap.rings, A = new Float32Array(n * 4), B = new Float32Array(n * 4), S = new Float32Array(n * 4), L = new Float32Array(n * 4)
+    const m = sim.packSurface(A, B, S, L)
+    // Wherever a segment is wider than the bend it sits on, it must have faded out rather than
+    // cross itself. Bend radius from the turn between the two end sides, as the strip is drawn.
+    let tight = 0, loose = 0
+    for (let i = 0; i < m; i++) {
+      const o = i * 4, ax = S[o], az = S[o + 1], bx = S[o + 2], bz = S[o + 3], la = Math.hypot(ax, az), lb = Math.hypot(bx, bz)
+      if (la < .5) continue
+      const turn = Math.acos(Math.max(-1, Math.min(1, (ax * bx + az * bz) / la / lb)))
+      const radius = Math.hypot(B[o] - A[o], B[o + 2] - A[o + 2]) / Math.max(turn, 1e-6), half = Math.max(A[o + 3], B[o + 3])
+      if (half > radius) { tight++; expect(Math.max(L[o], L[o + 1])).toBeLessThan(.01) } else if (half < radius * .5) loose++
+    }
+    expect(tight).toBeGreaterThan(0); expect(loose).toBeGreaterThan(0)
+  })
+
   it('ignores bad input', () => {
     const sim = new SpraySim(cap, sea)
     sim.vehicle('a', NaN, 0, 0, 20, 0, 0, 1, 1 / 60); sim.vehicle('a', 0, 0, 0, Infinity, 0, 0, 1, 1 / 60); sim.shift(NaN, 0); sim.step(NaN)

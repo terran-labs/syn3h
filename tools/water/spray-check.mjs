@@ -20,12 +20,14 @@ try {
   await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 120000 })
   await page.evaluate(() => window.syn3h.shell.play())
   await page.waitForFunction(() => window.syn3hNet?.connected && window.syn3h.game.time > 3, null, { timeout: 120000 })
-  await page.evaluate(async () => {
+  const planet = process.env.SPRAY_PLANET ?? 'alpine', seed = Number(process.env.SPRAY_SEED ?? 7)
+  report.planet = { planet, seed }
+  await page.evaluate(async ({ planet, seed }) => {
     const s = window.syn3h
     const { applyPlanet } = await import('/src/world/planets.ts')
-    applyPlanet('alpine', 7)
+    applyPlanet(planet, seed)
     for (const [id, value] of Object.entries({ 'bots.count': 0, 'gfx.auto': false, 'gfx.level': 2, 'sun.timeOfDay': 12, 'sun.dayLength': 0, 'world.curve': 0, 'weather.storminess': 0 })) s.params.set(id, value)
-  })
+  }, { planet, seed })
   await page.waitForTimeout(2500)
   // A straight run of open sea along -z (the vehicles' forward axis with no rotation).
   report.run = await page.evaluate(() => {
@@ -33,7 +35,9 @@ try {
     const deep = (x, z) => t.liquidKindAt(x, z) === 'water' && sea - t.heightAt(x, z) > 4
     for (let x = -size / 2 + 40; x < size / 2 - 40; x += 10) for (let z = -size / 2 + 200; z < size / 2 - 40; z += 10) {
       let ok = true
-      for (let d = 0; d <= 180 && ok; d += 6) for (const w of [-14, 0, 14]) if (!deep(x + w, z - d)) { ok = false; break }
+      for (let d = 0; d <= 180 && ok; d += 6) for (const w of [-20, 0, 20]) if (!deep(x + w, z - d)) { ok = false; break }
+      // Room for a tight circle at the start of the run.
+      for (let a = 0; a < 6.28 && ok; a += .4) for (const r of [10, 20, 30]) if (!deep(x + Math.cos(a) * r, z - 30 + Math.sin(a) * r)) { ok = false; break }
       if (ok) return window.sprayRun = { x, z, sea }
     }
     throw Error('No open sea run')
@@ -50,26 +54,32 @@ try {
       if (q.view === 'chase') { c.position.set(p.x + 3, p.y + 4.5, p.z + 13); c.lookAt(p.x, p.y + .3, p.z - 4) }
       else if (q.view === 'side') { c.position.set(p.x + 15, p.y + 2.2, p.z + 4); c.lookAt(p.x, p.y + .4, p.z + 3) }
       else if (q.view === 'high') { c.position.set(p.x + 9, p.y + 16, p.z + 22); c.lookAt(p.x, p.y, p.z + 6) }
+      else if (q.view === 'circle') { c.position.set(q.cx + 4, q.cy + 30, q.cz + 30); c.lookAt(q.cx, q.cy, q.cz) }
       else if (q.view === 'drop') { c.position.set(q.x + 12, q.y + 4, q.z + 12); c.lookAt(q.x, q.y + 1, q.z) }
     }, fixedUpdate() {
       const q = window.sprayRunInfo; if (q.mode === 'idle') return
       const b = s.player.body
       if (q.mode === 'drive') {
-        b.setRotation({ x: 0, y: 0, z: 0, w: 1 }, true); b.setAngvel({ x: 0, y: 0, z: 0 }, true)
+        // Heading theta from -z, turning toward +x: a tight circle or an S-curve.
+        const t = s.game.time - (q.t0 ?? 0)
+        const theta = q.path === 'circle' ? q.speed / 12 * t : q.path === 'scurve' ? .55 * Math.sin(.8 * t) : 0
+        b.setRotation({ x: 0, y: Math.sin(-theta / 2), z: 0, w: Math.cos(-theta / 2) }, true); b.setAngvel({ x: 0, y: 0, z: 0 }, true)
         // Hold the hull at the waterline with a vertical servo, like a planing hull, so a slow
         // wade does not sink: still velocity, never a teleport.
         const p = b.translation(), surface = s.terrain.liquidHeightAt(p.x, p.z)
-        b.setLinvel({ x: 0, y: Math.max(-6, Math.min(6, (surface + (q.lift ?? .05) - p.y) * 6)), z: -q.speed }, true)
+        b.setLinvel({ x: q.speed * Math.sin(theta), y: Math.max(-6, Math.min(6, (surface + (q.lift ?? .05) - p.y) * 6)), z: -q.speed * Math.cos(theta) }, true)
       } else if (q.mode === 'drop') { const v = b.linvel(); b.setLinvel({ x: 0, y: v.y, z: 0 }, true); b.setAngvel({ x: 0, y: 0, z: 0 }, true) }
     } }
     s.game.systems.splice(s.game.systems.indexOf(e), 0, camera)
   })
-  const start = async (speed, view) => page.evaluate(({ speed, view }) => {
+  const start = async (speed, view, path = 'straight') => page.evaluate(({ speed, view, path }) => {
     const s = window.syn3h, r = window.sprayRunInfo, run = window.sprayRun
-    Object.assign(r, { mode: 'drive', speed, view })
-    s.player.body.setTranslation({ x: run.x, y: run.sea + .1, z: run.z }, true)
+    // A circle of radius 12 m whose centre is 12 m to the right of the start, 30 m down the run.
+    const x = path === 'circle' ? run.x - 12 : run.x, z = path === 'circle' ? run.z - 30 : run.z
+    Object.assign(r, { mode: 'drive', speed, view, path, t0: s.game.time, cx: run.x, cy: run.sea, cz: run.z - 30 })
+    s.player.body.setTranslation({ x, y: run.sea + .1, z }, true)
     s.player.body.setLinvel({ x: 0, y: 0, z: -speed }, true)
-  }, { speed, view })
+  }, { speed, view, path })
   const shot = async (label, extra = {}) => {
     const state = await page.evaluate(() => {
       const s = window.syn3h, sp = window.sprayEffects.spray, sim = sp.state ?? sp.sim, p = s.player.body.translation()
@@ -86,7 +96,12 @@ try {
       await page.evaluate(t => window.syn3h.params.set('sun.timeOfDay', t), time)
       await start(22, 'chase'); await page.waitForTimeout(3500); await shot(`${tag}-skim-chase`)
       await start(22, 'side'); await page.waitForTimeout(3500); await shot(`${tag}-skim-side`)
-      if (tag === 'day') { await start(22, 'high'); await page.waitForTimeout(3500); await shot(`${tag}-skim-high`) }
+      if (tag === 'day') {
+        await start(22, 'high'); await page.waitForTimeout(3500); await shot(`${tag}-skim-high`)
+        await start(14, 'circle', 'circle'); await page.waitForTimeout(5000); await shot(`${tag}-circle`)
+        await start(20, 'high', 'scurve'); await page.waitForTimeout(5500); await shot(`${tag}-scurve`)
+        await start(8, 'chase'); await page.waitForTimeout(4000); await shot(`${tag}-slow8`)
+      }
       await start(2.5, 'chase'); await page.waitForTimeout(4000); await shot(`${tag}-wade`)
       await start(0, 'chase'); await page.waitForTimeout(3000); await shot(`${tag}-stationary`)
       // Entry splash: drop from 9 m and capture just after contact.

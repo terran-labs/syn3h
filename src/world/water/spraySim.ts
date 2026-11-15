@@ -42,6 +42,8 @@ const GRAVITY = 9.81
 export const WAKE_LIFT = .04
 /** Drop the oldest wake points at this age, seconds, at full speed. */
 const WAKE_LIFE = 2.8
+/** Half the beam of a typical hull, metres: where the wash starts and the arms leave from. */
+const HULL = .95
 
 interface VehicleState {
   slot: number; seen: number; submerged: number
@@ -64,6 +66,17 @@ export class SpraySim {
   readonly rings: Float32Array
   ringCount = 0
   private vehicles = new Map<string, VehicleState>()
+  /**
+   * Share of requested droplets actually emitted. When the pool would overflow, every source is
+   * thinned by the same factor instead of overwriting live drops, so density degrades evenly.
+   * Steady-state demand is the requested rate times the mean droplet life, both smoothed.
+   */
+  throttle = 1
+  private requested = 0
+  private requestRate = 0
+  private meanLife = .6
+  /** Droplets refused because the pool was full; with the throttle working this stays near zero. */
+  refused = 0
   private slotUsed: Uint8Array
   private time = 0
   private seed = 0x5eed
@@ -111,12 +124,18 @@ export class SpraySim {
       d[o + DX] += d[o + DVX] * dt; d[o + DY] += d[o + DVY] * dt; d[o + DZ] += d[o + DVZ] * dt
       const landed = !mist && d[o + DVY] < 0 && d[o + DY] <= d[o + DFLOOR]
       if (d[o + DAGE] >= d[o + DLIFE] || landed) {
+        this.meanLife += (d[o + DAGE] - this.meanLife) * .01
         const last = (--this.dropletCount) * D
         if (last !== o) d.copyWithin(o, last, last + D)
         continue
       }
       i++
     }
+    // Smooth the demand over about a second and set the shared throttle from it.
+    this.requestRate += (this.requested / dt - this.requestRate) * Math.min(1, dt * 2)
+    this.requested = 0
+    const demand = this.requestRate * this.meanLife
+    this.throttle = demand > this.cap.droplets * .85 ? this.cap.droplets * .85 / demand : 1
     const p = this.points, P = this.cap.points
     for (let arm = 0; arm < this.armCount.length; arm++) {
       let start = this.armStart[arm], count = this.armCount[arm]
@@ -185,7 +204,13 @@ export class SpraySim {
     s.touching = sub > 0
     if (sub > 0 && dt > 0) {
       // Bow spray: rate grows with speed; a slow wade sheds only the odd drop.
-      const bowRate = Math.min(this.cap.droplets * 1.5, speed * speed * 2 + speed * 8) * sub * (speed > .8 ? 1 : 0)
+      // Demand is measured before throttling; measuring after it would chase its own tail.
+      const want = this.throttle
+      const rawBow = Math.min(this.cap.droplets * 1.5, speed * speed * 2 + speed * 8) * sub * (speed > .8 ? 1 : 0)
+      const rawTail = speed > 7 ? Math.min(this.cap.droplets, (speed - 7) * 18) * sub : 0
+      const rawMist = speed > 5 ? Math.min(50, (speed - 5) * 3) * sub : 0
+      this.requested += (rawBow + rawTail + rawMist) * dt
+      const bowRate = want * rawBow
       let n = due(bowRate, dt, s.bow); s.bow = carried
       for (let i = 0; i < n; i++) {
         const sign = i % 2 ? 1 : -1, out = .4 + this.random() * 1.2, up = .5 + this.random() * 1.5
@@ -194,14 +219,14 @@ export class SpraySim {
         this.drop(x + ox, y + .05, z + oz, vx * .6 + sx * sign * out * k * 1.7, up * k * 2.2, vz * .6 + sz * sign * out * k * 1.7, .007 + this.random() * .012, y, 0, scale)
       }
       // Rooster tail: a column thrown up behind a fast hull, falling back into its own wake.
-      const tailRate = speed > 7 ? Math.min(this.cap.droplets, (speed - 7) * 18) * sub : 0
+      const tailRate = want * rawTail
       n = due(tailRate, dt, s.tail); s.tail = carried
       for (let i = 0; i < n; i++) {
         const k = speed * (.22 + this.random() * .2), j = (this.random() - .5) * .9
         this.drop(x - fx * 1.6 + sx * j * .4, y + .1, z - fz * 1.6 + sz * j * .4, vx * .35 + sx * j * 1.2, k, vz * .35 + sz * j * 1.2, .015 + this.random() * .02, y, 0, scale)
       }
       // A low, soft sheet of mist along the hull at speed.
-      const mistRate = speed > 5 ? Math.min(50, (speed - 5) * 3) * sub : 0
+      const mistRate = want * rawMist
       n = due(mistRate, dt, s.mist); s.mist = carried
       for (let i = 0; i < n; i++) {
         const sign = i % 2 ? 1 : -1, along = (this.random() - .5) * 2.4
@@ -217,8 +242,8 @@ export class SpraySim {
 
   private drop(x: number, y: number, z: number, vx: number, vy: number, vz: number, size: number, floor: number, kind: number, scale: number) {
     // When full, overwrite a random live droplet rather than dropping new spray on the floor.
-    const i = this.dropletCount < this.cap.droplets ? this.dropletCount++ : Math.floor(this.random() * this.cap.droplets)
-    const d = this.droplets, o = i * D
+    if (this.dropletCount >= this.cap.droplets) { this.refused++; return }
+    const i = this.dropletCount++, d = this.droplets, o = i * D
     d[o + DX] = x; d[o + DY] = y; d[o + DZ] = z; d[o + DVX] = vx; d[o + DVY] = vy; d[o + DVZ] = vz
     // Ballistic droplets live until they land; the cap only bounds a stray one.
     d[o + DAGE] = 0; d[o + DLIFE] = kind ? .7 + this.random() * .5 : 3; d[o + DSIZE] = size * scale
@@ -226,7 +251,7 @@ export class SpraySim {
   }
 
   private splash(x: number, y: number, z: number, impact: number, scale: number) {
-    const n = Math.min(Math.floor(this.cap.droplets * .5), Math.round((20 + impact * 14) * scale))
+    const n = Math.min(Math.floor(this.cap.droplets * .5), Math.round((20 + impact * 14) * scale * this.throttle))
     for (let i = 0; i < n; i++) {
       const a = i / n * Math.PI * 2 + this.random() * .3, r = 1 + this.random() * .5, out = (1 + this.random() * 1.2) * Math.min(6, impact * .3)
       this.drop(x + Math.cos(a) * r, y + .05, z + Math.sin(a) * r, Math.cos(a) * out, (.6 + this.random() * .6) * Math.min(9, impact * .7), Math.sin(a) * out, .015 + this.random() * .025, y, 0, scale)
@@ -240,17 +265,20 @@ export class SpraySim {
   private lay(s: VehicleState, x: number, y: number, z: number, speed: number, teleported: boolean, scale: number) {
     const P = this.cap.points, p = this.points, fx = s.dirX, fz = s.dirZ, sx = -fz, sz = fx
     const moving = speed > .8
-    const strength = Math.min(1, speed / 7)
+    // Arms are the faint crests at the edge of the wash; the wash itself only appears when planing.
+    const strength = Math.min(1, speed / 7), wash = smoothstep01((speed - 4) / 9)
     // Space points so a full ring spans the whole wake lifetime: length then grows with speed.
     const spacing = Math.max(.6, speed * WAKE_LIFE / (P - 2))
     for (let a = 0; a < ARMS; a++) {
       const arm = s.slot * ARMS + a, side = a === 0 ? -1 : a === 1 ? 1 : 0
-      const back = side ? .4 : 1.6, ax = x - fx * back + sx * side * .85, az = z - fz * back + sz * side * .85
-      const halfWidth = (side ? .16 + speed * .011 : .3 + speed * .014) * scale
+      // The wash starts at hull width at the stern; the arms start at its edges, further forward.
+      const back = side ? .9 : 1.4, ax = x - fx * back + sx * side * HULL, az = z - fz * back + sz * side * HULL
+      const halfWidth = (side ? .12 + speed * .006 : HULL * (.6 + .4 * wash)) * scale
       const head = arm * 5
       if (!moving) { this.armHeadActive[arm] = 0; continue }
       const h = this.armHead
-      h[head] = ax; h[head + 1] = this.surface(ax, az, y) + WAKE_LIFT; h[head + 2] = az; h[head + 3] = halfWidth; h[head + 4] = strength
+      const pointStrength = side ? strength * (.75 - .3 * wash) : wash
+      h[head] = ax; h[head + 1] = this.surface(ax, az, y) + WAKE_LIFT; h[head + 2] = az; h[head + 3] = halfWidth; h[head + 4] = pointStrength
       this.armHeadActive[arm] = 1
       let count = this.armCount[arm]
       if (count > 0 && !teleported) {
@@ -261,10 +289,12 @@ export class SpraySim {
       const o = (arm * P + (this.armStart[arm] + count) % P) * W
       p[o + WX] = ax; p[o + WY] = h[head + 1]; p[o + WZ] = az
       // Arms spread outward at roughly the Kelvin angle; the centre wash stays put and widens.
-      const drift = side * speed * .3
+      // Slow enough to hug the widening wash for its first second, then open into the V.
+      const drift = side * speed * .16
       p[o + WVX] = sx * drift; p[o + WVZ] = sz * drift
-      p[o + WAGE] = 0; p[o + WLIFE] = side ? WAKE_LIFE : WAKE_LIFE * .45
-      p[o + WWIDTH] = halfWidth; p[o + WSTRENGTH] = side ? strength : strength * .6
+      // The wash breaks up over roughly 20 m whatever the speed.
+      p[o + WAGE] = 0; p[o + WLIFE] = side ? WAKE_LIFE : Math.max(.8, Math.min(2.2, 20 / Math.max(1, speed)))
+      p[o + WWIDTH] = halfWidth; p[o + WSTRENGTH] = pointStrength
       p[o + WLINK] = count > 0 && !teleported ? 1 : 0
       this.armCount[arm] = count + 1
     }
@@ -343,7 +373,8 @@ export class SpraySim {
     const p = this.points, o = (arm * this.cap.points + (this.armStart[arm] + k) % this.cap.points) * W
     const t = p[o + WAGE] / p[o + WLIFE]
     out[at] = p[o + WX]; out[at + 1] = p[o + WY]; out[at + 2] = p[o + WZ]
-    out[at + 3] = p[o + WWIDTH] * (1 + p[o + WAGE] * .7)
+    // The wash spreads fast behind the hull; the crests stay thin.
+    out[at + 3] = p[o + WWIDTH] * (1 + p[o + WAGE] * (arm % ARMS === 2 ? 2.2 : .5))
     out[at + 4] = p[o + WSTRENGTH] * Math.max(0, 1 - t) ** 1.4
     out[at + 5] = t
   }
@@ -354,9 +385,16 @@ export class SpraySim {
     this.node(arm, Math.max(0, k0 - 1), s, 0); this.node(arm, k0, s, 6); this.node(arm, k1, s, 12); this.node(arm, Math.min(total - 1, k1 + 1), s, 18)
     sideOf(s[0], s[2], s[12], s[14], side, n * 4)
     sideOf(s[6], s[8], s[18], s[20], side, n * 4 + 2)
+    // A strip folds on the inside of a bend tighter than its half width. Estimate the bend
+    // radius from the turn between the two end sides and fade the segment as it approaches that.
+    const turn = Math.acos(Math.max(-1, Math.min(1, side[n * 4] * side[n * 4 + 2] + side[n * 4 + 1] * side[n * 4 + 3])))
+    const length = Math.hypot(s[12] - s[6], s[14] - s[8]), half = Math.max(s[9], s[15])
+    const fold = turn > 1e-3 ? Math.max(0, Math.min(1, (length / turn / Math.max(half, 1e-3) - 1) / .5)) : 1
+    // Side vectors of length two mark the centre wash for the shader; rings have none.
+    if (arm % ARMS === 2) for (let j = 0; j < 4; j++) side[n * 4 + j] *= 2
     a[n * 4] = s[6]; a[n * 4 + 1] = s[7]; a[n * 4 + 2] = s[8]; a[n * 4 + 3] = s[9]
     b[n * 4] = s[12]; b[n * 4 + 1] = s[13]; b[n * 4 + 2] = s[14]; b[n * 4 + 3] = s[15]
-    look[n * 4] = s[10]; look[n * 4 + 1] = s[16]; look[n * 4 + 2] = s[11]; look[n * 4 + 3] = s[17]
+    look[n * 4] = s[10] * fold; look[n * 4 + 1] = s[16] * fold; look[n * 4 + 2] = s[11]; look[n * 4 + 3] = s[17]
     return n + 1
   }
 }
@@ -375,3 +413,5 @@ function due(rate: number, dt: number, carry: number): number {
   carried = total - count
   return count
 }
+
+function smoothstep01(x: number) { const t = Math.max(0, Math.min(1, x)); return t * t * (3 - 2 * t) }
