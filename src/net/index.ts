@@ -47,7 +47,9 @@ import { BigRed } from '../weapons/BigRed'
 import { Pesters } from '../weapons/pester/Pesters'
 import { pesterAllowed, pesterBump, pesterCooldown, pesterMax } from '../weapons/pester/params'
 import { bigRedAllowed, bigRedPush } from '../weapons/bigRedParams'
-import { BoundsGuard, TagMarker } from '../modes/Tag'
+import { BoundsGuard } from '../modes/Tag'
+// The "it" marker: one draw, and shown over the local player's own vehicle too.
+import { ItMarker as TagMarker } from './ItMarker'
 import { gameMode, kothKnockBonus, kothLaserPush, kothRespawnDelay, kothTargetScore, kothZoneRadius } from '../modes/params'
 import { type HillTerrain, computeHillZone } from '../modes/hill'
 import { HillMarker } from '../modes/HillMarker'
@@ -58,6 +60,7 @@ import { Connection, serverUrl } from './Connection'
 import { NameTags, type TagInfo } from './NameTags'
 import { applyRoomWorld, netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
+import { pressHoldsFire } from './pointerFire'
 import { PausedHeartbeat } from './PausedHeartbeat'
 import { announcedKind, needsRebuild } from './kinds'
 import { SendPacer, SimClock } from './SimClock'
@@ -416,7 +419,7 @@ export class NetClient implements System {
 
     // The original fired with the mouse; nothing else uses a canvas click yet.
     const canvas = game.renderer.domElement
-    canvas.addEventListener('pointerdown', (e) => { if (e.button === 0) game.input.mouseFire = true })
+    canvas.addEventListener('pointerdown', (e) => { if (pressHoldsFire(e)) game.input.mouseFire = true })
     window.addEventListener('pointerup', () => { game.input.mouseFire = false })
     window.addEventListener('blur', () => { game.input.mouseFire = false })
   }

@@ -250,6 +250,14 @@ async function main(): Promise<void> {
       for (const v of sec.vehicles) {
         const chosen = selection?.vehicle === v.id
         if (v.error) { treeBox.append(ui.el('div', 'tree-error', `${v.title}: could not list designs`)); continue }
+        // The comparison of the game's vehicles is one line that opens the whole set side by side.
+        // (Marked by presentation.ts on the exhibit itself, so this file needs no new import: several lanes edit its imports.)
+        if ((exhibits.find(e => e.id === v.id) as { compareOnly?: boolean } | undefined)?.compareOnly) {
+          const b = ui.button(v.title, () => void select({ vehicle: v.id, design: 'all' }), 'tree-item tree-leaf')
+          if (chosen) b.setAttribute('aria-current', 'true')
+          treeBox.append(b)
+          continue
+        }
         // A vehicle with one design is a leaf: selecting it shows that design.
         if (!v.groups.length && v.designs.length <= 1) {
           const b = ui.button(v.title, () => void select({ vehicle: v.id }), 'tree-item tree-leaf')

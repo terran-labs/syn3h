@@ -37,7 +37,8 @@ describe('what the game loads',()=>{
   expect(game.length).toBeGreaterThan(100)
  })
  it('contains no design study, lab or viewer',()=>{
-  const studies=game.filter(f=>/^src\/vehicles\/(hovergen|tankDesigns)\/|^src\/dev\/|^labs\/|^tools\/|\/viewer\.ts$|^src\/vehicles\/ClassicBuggy/.test(f))
+  // The jet's study designs live in jetgen/designs.ts; the game takes its one design from jetgen/shipped.ts.
+  const studies=game.filter(f=>/^src\/vehicles\/(hovergen|tankDesigns)\/|^src\/vehicles\/jetgen\/designs\.ts$|^src\/dev\/|^labs\/|^tools\/|\/viewer\.ts$|^src\/vehicles\/ClassicBuggy/.test(f))
   expect(studies).toEqual([])
  })
  it('offers exactly four vehicles, one of each',()=>{
