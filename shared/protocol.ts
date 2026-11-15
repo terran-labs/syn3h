@@ -305,7 +305,8 @@ export type ClientMessage =
   | { type: 'profile'; kind?: string; colors?: [string, string] }
   | { type: 'ping'; t: number }
   | { type: 'param'; id: string; value: ParamWireValue }
-  | { type: 'fire'; shot: ShotInfo }
+  /** Optional bot actor: only the current host may act for a live bot it simulates. */
+  | { type: 'fire'; shot: ShotInfo; bot?: number }
   /**
    * Sent by the victim's own client: "shot `shot` from `shooter` hit me". The host also
    * reports hits on bots, naming the bot as `victim`.
@@ -330,9 +331,9 @@ export type ClientMessage =
   /** Host only: which vehicle bot `id` is, so guests build the same kind (mixed bot fleets). */
   | { type: 'bot'; id: number; kind: string }
   /** My Bungee cord changed. */
-  | { type: 'cord'; cord: CordWire }
+  | { type: 'cord'; cord: CordWire; bot?: number }
   /** I grabbed, flung or dropped a vehicle with Yoink. */
-  | { type: 'yoink'; y: YoinkWire }
+  | { type: 'yoink'; y: YoinkWire; bot?: number }
 
 export type TagEvent =
   | 'default' | 'ram' | 'laser' | 'score' | 'leave' | 'lock' | 'host'
