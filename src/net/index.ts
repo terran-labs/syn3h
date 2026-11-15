@@ -47,7 +47,7 @@ import { Connection, serverUrl } from './Connection'
 import { NameTags } from './NameTags'
 import { applyRoomWorld, netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
-import { audibleVehicles, bodyAlive, liveBots } from './bots'
+import { type BotMatchInfo, audibleVehicles, bodyAlive, hillHold, liveBots } from './bots'
 import { ShoveQueue, cleanShove, shoveFor } from './shove'
 import { nearestImage, wrapCoord, wrapDistance } from '../../shared/wrap'
 
@@ -67,6 +67,8 @@ export interface NetAudio {
 export interface NetBots {
   readonly vehicles: readonly Vehicle[]
   remote?: boolean
+  /** Tell the bots what game is on (the host's manager acts on it). Null is free play. */
+  setMatch?(match: BotMatchInfo<Vehicle> | null): void
 }
 
 export interface PlayerColors {
@@ -452,6 +454,7 @@ export class NetClient implements System {
     const here = this.ctx.player.body.translation()
     for (const r of this.remotes.values()) r.reimage(here)
     this.placeHill()
+    this.syncBotMatch()
     this.tags.update([...this.remotes.entries()].map(([id, r]) => ({
       vehicle: r.vehicle,
       name: this.displayName(id),
@@ -562,6 +565,31 @@ export class NetClient implements System {
     // Take over: drop our replicas of the old host's bots; our own manager simulates them now.
     for (const [id] of [...this.remotes]) if (isBotId(id)) this.removeRemote(id)
     if (this.bots?.vehicles.length) this.event('You are host: simulating bots')
+  }
+
+  private botMatchKey = 'unset'
+  private botMatchIt: Vehicle | null = null
+
+  /**
+   * Keep the host's bots told what game is on: the mode, the vehicle that is "it", the hill.
+   * Networking owns the rules; this only lets the bots play along. Told again whenever any
+   * of it changes, including when the vehicle behind "it" is replaced (a remote that changed
+   * kind). Off line, or when another client hosts, the bots are in free play.
+   */
+  private syncBotMatch(): void {
+    const bots = this.bots
+    if (!bots?.setMatch) return
+    const on = this.connected && this.isHost
+    const koth = this.mode === MODE_KOTH
+    const zone = on && koth ? this.game.koth.zone : null
+    const it = on && !koth && this.game.it ? (this.vehicleOf(this.game.it) ?? null) : null
+    const key = !on ? '' : koth ? `hill:${JSON.stringify(zone)}` : `tag:${this.game.it}`
+    if (key === this.botMatchKey && it === this.botMatchIt) return
+    this.botMatchKey = key
+    this.botMatchIt = it
+    if (!on) bots.setMatch(null)
+    else if (koth) bots.setMatch({ mode: 'hill', zone: zone ? hillHold(zone, this.ctx.player.body.translation()) : null })
+    else bots.setMatch({ mode: 'tag', it })
   }
 
   /** The vehicle kind last announced to the room for each of our bots, by bot id. */
