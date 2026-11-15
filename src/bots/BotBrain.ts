@@ -5,7 +5,7 @@ import { GROUP_PROJECTILE, GROUP_TERRAIN, RAPIER, groups } from '../core/physics
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
 import * as p from './params'
-import { roadWaypoint, type RoadTerrain } from './navigation'
+import { roadWaypoint, type RoadTerrain, type RoadPoint } from './navigation'
 export type BotTerrain = Terrain & RoadTerrain & { liquidHeightAt?(x: number, z: number): number | null | undefined }
 const clamp = (x: number, max = 1) => Math.max(-max, Math.min(max, x))
 /** Positive means turn right. Our forward is -Z; positive Y rotation turns left. */
@@ -19,13 +19,18 @@ export function isSafeGround(terrain: BotTerrain, x: number, z: number): boolean
 }
 export class BotBrain implements System {
   remote = false
+  requestRecovery?: () => boolean
   target: Vehicle | null = null
   reversing = false
   rescues = 0
+  private reverseBrake = 0
+  private routeTime = 0
+  private waypoint: RoadPoint | null = null
   private strategyTime = 0
   private targetTime = 2
   private fireTime = 0
   private immobileTime = 0
+  private liquidTime = 0
   private flippedTime = 0
   private readonly lastPosition = new Vector3()
   private readonly forward = new Vector3()
@@ -54,12 +59,19 @@ export class BotBrain implements System {
     }
   }
   private rescue() {
+    if (this.requestRecovery) {
+      if (this.requestRecovery()) {
+        this.lastPosition.copy(this.vehicle.body.translation()); this.immobileTime = this.liquidTime = this.flippedTime = this.strategyTime = 0
+        this.reversing = false; this.routeTime = 0; this.waypoint = null; this.reverseBrake = p.reverseBrakeTime.value; this.rescues++
+      }
+      return
+    }
     for (let i = 0; i < 16; i++) {
       const spawn = this.terrain.spawnPoint(this.index + i + 1)
       if (!isSafeGround(this.terrain, spawn.position.x, spawn.position.z)) continue
       this.vehicle.teleport(spawn.position, spawn.heading)
-      this.lastPosition.copy(spawn.position); this.immobileTime = this.flippedTime = this.strategyTime = 0
-      this.reversing = false; this.rescues++; return
+      this.lastPosition.copy(spawn.position); this.immobileTime = this.liquidTime = this.flippedTime = this.strategyTime = 0
+      this.reversing = false; this.routeTime = 0; this.waypoint = null; this.reverseBrake = p.reverseBrakeTime.value; this.rescues++; return
     }
   }
   fixedUpdate(dt: number) {
@@ -80,11 +92,11 @@ export class BotBrain implements System {
     const targetVelocity = this.target.body.linvel()
     const lead = Math.min(0.8, distance / 45) * p.aggression.value
     let aimX = there.x + targetVelocity.x * lead, aimZ = there.z + targetVelocity.z * lead
-    const elevation = Math.abs(this.terrain.heightAt(here.x, here.z) - this.terrain.heightAt(there.x, there.z))
     const liquid = this.terrain.liquidHeightAt?.(here.x, here.z)
     const afloat = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(here.x, here.z) <= liquid + 0.5
+    this.liquidTime = afloat && p.canDrive.value ? this.liquidTime + dt : 0
     if (afloat) {
-      // Floating buggies paddle forward toward a dry shore instead of reversing forever.
+      // Bots try to crawl toward dry ground before requesting a return to their pad.
       let shore: { x: number; z: number } | null = null
       for (const radius of [8, 16, 32, 64, 128, 256]) {
         let best = Infinity
@@ -98,16 +110,25 @@ export class BotBrain implements System {
       }
       if (shore) { aimX = shore.x; aimZ = shore.z }
     }
-    const waypoint = !afloat && distance > 25 && elevation > 8 ? roadWaypoint(this.terrain, here, there, Math.max(8, speed * 0.6)) : null
+    this.routeTime -= dt
+    if (this.routeTime <= 0) {
+      this.waypoint = !afloat && distance > 18 ? roadWaypoint(this.terrain, here, there, Math.max(8, Math.min(16, speed * 0.6))) : null
+      this.routeTime = 0.4
+    }
+    const waypoint = !afloat && distance > 18 ? this.waypoint : null
     if (waypoint) { aimX = waypoint.x; aimZ = waypoint.z }
     // Stable per-bot lateral offsets fade out near contact so every bot can still ram.
     const spread = ((this.index * 0.61803398875 % 1) - 0.5) * p.approachSpread.value * Math.min(1, Math.max(0, distance - 8) / 20)
-    if (!afloat && distance > 0.1) { aimX += dz / distance * spread; aimZ -= dx / distance * spread }
+    if (!afloat && distance > 0.1) {
+      const ax = aimX - here.x, az = aimZ - here.z, length = Math.hypot(ax, az) || 1
+      const offset = waypoint ? Math.max(-1, Math.min(1, spread)) : spread
+      aimX += az / length * offset; aimZ -= ax / length * offset
+    }
     // Repel nearby allies, never the selected target. This prevents a single-file pileup.
     for (const peer of this.peers) {
       if (peer === this.vehicle || peer === this.target || !peer.body.isValid()) continue
       const pos = peer.body.translation(), px = here.x - pos.x, pz = here.z - pos.z, separation = Math.hypot(px, pz)
-      if (separation > 0.1 && separation < 7) { aimX += px / separation * (7 - separation) * 2; aimZ += pz / separation * (7 - separation) * 2 }
+      if (separation > 0.1 && separation < 7) { aimX += px / separation * (7 - separation) * (waypoint ? 0.25 : 2); aimZ += pz / separation * (7 - separation) * (waypoint ? 0.25 : 2) }
     }
     const error = steeringError(this.forward, { x: aimX - here.x, z: aimZ - here.z })
     // VhiclBot.cs:35-55 and VehicleBot.js:79-91: wrap yaw, divide by 20 degrees,
@@ -119,17 +140,31 @@ export class BotBrain implements System {
       if (this.strategyTime >= p.strategyInterval.value) {
         // VhiclBot.cs:63-74 switches to reverse when movement is below one metre.
         const moved = this.lastPosition.distanceTo(here)
+        const wasReversing = this.reversing
         this.reversing = moved < p.stuckDistance.value
+        if (this.reversing && !wasReversing) this.reverseBrake = p.reverseBrakeTime.value
         this.immobileTime = this.reversing ? this.immobileTime + this.strategyTime : 0
         this.strategyTime = 0; this.lastPosition.copy(here)
       }
       if (afloat) this.reversing = false
-      input.x = this.reversing ? clamp(-rotation) : Math.abs(rotation) < 0.1 ? 0 : clamp(rotation * p.aggression.value, distance < 15 ? 1 : 0.6)
+      input.x = this.reversing ? clamp(-rotation) : Math.abs(rotation) < 0.1 ? 0 : clamp(rotation * p.aggression.value, waypoint || distance < 15 ? 1 : 0.6)
+      if (waypoint && !this.reversing) {
+        // Four-wheel steering needs a gentle curvature command on narrow roads.
+        // Full original pursuit lock makes the buggy circle an eight-metre waypoint.
+        const look = Math.max(8, Math.hypot(aimX - here.x, aimZ - here.z))
+        input.x = Math.abs(error) > Math.PI / 2 ? Math.sign(error) * 0.6 : clamp(6 * Math.sin(error) / look, 0.6)
+      }
       input.y = Math.min(1, p.aggression.value) * p.topThrottle.value * (this.reversing ? -1 : 1)
       // Keep enough throttle to turn, but shed speed before a tight corner.
       if (!this.reversing && Math.abs(error) > 0.6 && speed > p.cornerSpeed.value) {
         input.y *= 0.25; input.brakes = speed > p.cornerSpeed.value * 1.5
       }
+      const roadLimit = Math.max(p.roadCornerSpeed.value, p.roadSpeed.value * (1 - Math.min(1, Math.abs(error))))
+      if (waypoint && !this.reversing && speed > roadLimit) {
+        input.y = Math.min(input.y, 0.15); input.brakes ||= speed > roadLimit * 1.2
+      }
+      // Stop spinning wheels before asking the drivetrain to reverse.
+      if (this.reverseBrake > 0) { input.brakes = true; this.reverseBrake = Math.max(0, this.reverseBrake - dt) }
       // Probe the intended travel direction. Reverse and steer away from water or world edges.
       const direction = this.reversing ? -1 : 1
       const lookAhead = Math.max(4, Math.min(16, speed * 0.7))
@@ -137,10 +172,10 @@ export class BotBrain implements System {
         input.y = -direction * p.topThrottle.value * 0.5
         input.x = (this.index % 2 ? -1 : 1) * -direction
       }
-      if (this.immobileTime >= p.recoveryTime.value || this.flippedTime >= p.recoveryTime.value / 2 || here.y < this.terrain.heightAt(here.x, here.z) - 10) this.rescue()
+      if (this.liquidTime >= p.recoveryTime.value || this.immobileTime >= p.recoveryTime.value || this.flippedTime >= p.recoveryTime.value / 2 || here.y < this.terrain.heightAt(here.x, here.z) - 10) this.rescue()
     } else {
       // VehicleBot.js:118-120 disables driving. Pausing must not trigger a rescue.
-      input.brakes = true; this.strategyTime = this.immobileTime = this.flippedTime = 0; this.lastPosition.copy(here)
+      input.brakes = true; this.strategyTime = this.immobileTime = this.liquidTime = this.flippedTime = 0; this.lastPosition.copy(here)
     }
     // VehicleBot.js:124-126 fires once per second if terrain does not block the target.
     // Weapons consume input.fire; this controller never spawns projectiles itself.

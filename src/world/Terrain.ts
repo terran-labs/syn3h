@@ -74,7 +74,8 @@ export interface Terrain {
    */
   liquidHeightAt?(x: number, z: number): number
   /**
-   * What the liquid at a world position is: 'lava' is deadly, 'water' is not. Null where the
+   * What the liquid at a world position is: 'lava' is thick and sticky, 'water' floats a
+   * vehicle. Null where the
    * ground stands above the liquid.
    */
   liquidKindAt?(x: number, z: number): 'lava' | 'water' | null

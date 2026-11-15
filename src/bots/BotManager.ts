@@ -48,6 +48,15 @@ export class BotManager implements System {
       bot.isLocal = false; bot.id = `bot-${this.nextBotId++}`; bot.name = generateName(`${worldSeed.value}:${bot.id}`, 'bot')
       bot.setColors(`hsl(${(index * 137.508 + 15) % 360}, 85%, 55%)`, '#ffffff')
       const brain = new BotBrain(this.game, this.terrain, bot, this.player, index)
+      brain.requestRecovery = () => {
+        // Reuse the same vehicle and stable identity when sticky terrain defeats it.
+        for (let attempt = 0; attempt < 16; attempt++) {
+          const spawn = this.terrain.spawnPoint(index + attempt + 1)
+          if (!isSafeGround(this.terrain, spawn.position.x, spawn.position.z)) continue
+          bot.teleport(spawn.position, spawn.heading); return true
+        }
+        return false
+      }
       brain.remote = this.remote
       brain.setTargets(this.targets)
       // Register brain first so its input reaches the vehicle in the same physics step.

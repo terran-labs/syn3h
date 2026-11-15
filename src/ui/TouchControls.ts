@@ -14,7 +14,7 @@ export class TouchControls {
     this.element.setAttribute('aria-label', 'Touch driving controls')
     this.element.hidden = true
     if (!this.available) return
-    this.element.innerHTML = `<div class="touch-stick" role="group" aria-label="Drag to steer and drive"><span class="touch-knob"></span><span class="touch-stick-label">DRIVE</span></div><div class="touch-actions"><button type="button" data-action="throttleUp" hidden>THR +</button><button type="button" data-action="throttleDown" hidden>THR −</button><button type="button" data-action="special" aria-pressed="false">WINGS</button><button type="button" data-action="brakes">BRAKE</button><button type="button" class="touch-fire" data-action="fire">FIRE</button></div>`
+    this.element.innerHTML = `<div class="touch-stick" role="group" aria-label="Drag to steer and drive"><span class="touch-knob"></span><span class="touch-stick-label">DRIVE</span></div><div class="touch-actions"><button type="button" data-action="throttleUp" hidden>THR +</button><button type="button" data-action="throttleDown" hidden>THR −</button><button type="button" data-action="special" aria-pressed="false">WINGS</button><button type="button" data-action="brakes">BRAKE</button><button type="button" class="touch-fire" data-action="fire">TAG</button></div>`
     parent.append(this.element)
     const signal = this.abort.signal
     const stick = this.element.querySelector<HTMLElement>('.touch-stick')!
