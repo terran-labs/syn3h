@@ -1,7 +1,110 @@
 import * as THREE from 'three/webgpu'
 import { float, materialColor, mix, sin, smoothstep, time, uv, vec3 } from 'three/tsl'
+import { DROP_FALL, findDrops, riverSpeed, type RiverDrop } from '../terrain/lava'
 
 type Point = { x: number; y: number; z: number }
+type Ground = { heightAt(x: number, z: number): number }
+
+/** Water depth over the carved channel bed (lava.ts RIVER_LAVA_DEPTH) plus sampling slack. */
+export const RIVER_DRAPE_DEPTH = 1.7
+
+/**
+ * Where a river is drawn. The planned surface (`points[].y`, what the physics floats on)
+ * never rises, but the ground under it can fall away faster: a mouth pool carved into a
+ * bowl, or a cliff the channel carve could not follow on the 4 m grid. Drawn at the planned
+ * height there, the ribbon is a level slab hanging in the air. Unsupported water falls, so
+ * each point is lowered to sit no more than RIVER_DRAPE_DEPTH above the ground under it, or
+ * on the receiving water (`waterAt`: lake, pool or sea surface, -Infinity where there is
+ * none), whichever is higher. The tail that lies on the receiving water is cut one point in,
+ * so the ribbon meets that surface instead of lying flat on it.
+ */
+export function drapeRiver(ground: Ground, points: readonly Point[], waterAt: (x: number, z: number) => number): Point[] {
+  // On the ribbon's own 3 m spacing, so no vertex the ribbon adds lies between drape samples.
+  const dense: Point[] = []
+  for (let i = 0; i < points.length - 1; i++) {
+    const a = points[i], b = points[i + 1]
+    const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / DRAPE_STEP))
+    for (let k = 0; k < n; k++) dense.push(lerp(a, b, k / n))
+  }
+  dense.push(points[points.length - 1])
+  const out: Point[] = []
+  const held = (p: Point, y: number) => Math.min(y, Math.max(ground.heightAt(p.x, p.z) + RIVER_DRAPE_DEPTH, waterAt(p.x, p.z)))
+  for (const p of dense) {
+    const y = held(p, p.y)
+    const prev = out[out.length - 1]
+    if (prev && prev.y - y > RIVER_DRAPE_DEPTH) {
+      // Support ends somewhere in this step: carry the water level to that edge, the lip.
+      let lo = 0, hi = 1
+      for (let k = 0; k < 8; k++) {
+        const t = (lo + hi) / 2
+        if (held(lerp(prev, p, t), prev.y) >= prev.y - .05) lo = t; else hi = t
+      }
+      if (lo > .02) out.push({ ...lerp(prev, p, lo), y: prev.y })
+    }
+    out.push({ x: p.x, y, z: p.z })
+    // Once the river reaches still water it has arrived: stop one point inside.
+    if (out.length > 1 && y <= waterAt(p.x, p.z) + .05) break
+  }
+  return out
+}
+
+const DRAPE_STEP = 2.5
+
+function lerp(a: Point, b: Point, t: number): Point {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, z: a.z + (b.z - a.z) * t }
+}
+
+export interface RiverPieces {
+  /** The draped centre line for the ribbon. */
+  points: Point[]
+  /** Steep runs of the draped line, for the mist at their feet. */
+  drops: RiverDrop[]
+  /** Free-falling sheets, at most one per drop. */
+  sheets: THREE.BufferGeometry[]
+}
+
+/**
+ * Everything drawn for one river: the draped ribbon line, and for each steep run of it a
+ * falling sheet. A long steep run may contain a short ledge without enough current to leap
+ * the whole run, so the full arc is tried first, then its individual ledges, tallest first.
+ */
+export function riverPieces(
+  ground: Ground, points: readonly Point[], width: number, waterAt: (x: number, z: number) => number,
+  gravity: number, maxSpeed: number,
+): RiverPieces {
+  const draped = drapeRiver(ground, points, waterAt)
+  const drops = findDrops(draped)
+  const sheets: THREE.BufferGeometry[] = []
+  const covered: number[] = []
+  // Sheer edges: one step falls further than a drop does over its whole run. The water
+  // leaves the lip at the speed of the stretch above it and lands that far out.
+  for (let i = 1; i + 1 < draped.length; i++) {
+    const before = draped[i - 1], lip = draped[i], below = draped[i + 1]
+    const drop = lip.y - below.y
+    if (drop <= DROP_FALL) continue
+    const run = Math.hypot(lip.x - before.x, lip.z - before.z)
+    const along = Math.hypot(below.x - lip.x, below.z - lip.z) || 1
+    const speed = riverSpeed(run > 0 ? Math.max(0, before.y - lip.y) / run : 0, maxSpeed)
+    const throw_ = Math.max(.5, speed * Math.sqrt(2 * drop / gravity))
+    const fx = lip.x + (below.x - lip.x) / along * throw_, fz = lip.z + (below.z - lip.z) / along * throw_
+    // It lands on the receiving water where there is some, else at the level below the edge.
+    const foot = { x: fx, y: Math.min(lip.y, Math.max(below.y, waterAt(fx, fz))), z: fz }
+    const sheet = buildFallSheet(ground, lip, foot, width, gravity, maxSpeed)
+    if (sheet) { sheets.push(sheet); covered.push(i) }
+  }
+  // Steep runs: the full arc first, then its individual ledges, tallest first.
+  for (const drop of drops) {
+    const s = drop.steepest
+    if (covered.some((i) => i >= drop.start && i <= drop.end)) continue
+    const ledges = Array.from({ length: s.end - s.start }, (_, i) => [s.start + i, s.start + i + 1] as const)
+      .sort(([a, b], [c, d]) => (draped[c].y - draped[d].y) - (draped[a].y - draped[b].y))
+    for (const [a, b] of [[s.start, s.end], ...ledges]) {
+      const sheet = buildFallSheet(ground, draped[a], draped[b], width, gravity, maxSpeed)
+      if (sheet) { sheets.push(sheet); break }
+    }
+  }
+  return { points: draped, drops, sheets }
+}
 
 /** A horizontal launch under gravity, joining the lip to the receiving stream.
  * Reject shallow runs, impossible launch speeds and arcs that cut through a bank.

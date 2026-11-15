@@ -24,7 +24,7 @@ export class WaterEffects implements System {
   private point=new Vector3()
   private velocity=new Vector3()
   constructor(private game:Game,private terrain:Terrain,private player:Vehicle,private bots:{readonly vehicles:readonly Vehicle[]}){
-    this.ripples=rippleField;this.ripples.attach(game.renderer);this.spray=new Spray(game.scene,this.ripples);this.underwater=new Underwater(game,terrain);this.bubbles=new UnderwaterBubbles(game.scene,terrain,game.camera)
+    this.ripples=rippleField;this.ripples.attach(game.renderer);this.spray=new Spray(game.scene,this.ripples,terrain);this.underwater=new Underwater(game,terrain);this.bubbles=new UnderwaterBubbles(game.scene,terrain,game.camera)
     // A world seam moves the player a whole tile and the world is redrawn round it: spray left
     // behind moves the same way. (The ripple field wraps at the tile, so it needs nothing.)
     ;(player.object as THREE.Object3D<VehicleObjectEvents>).addEventListener('tileshift',this.onTileShift)
