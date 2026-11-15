@@ -376,8 +376,9 @@ export class ProceduralTerrain implements Terrain {
     this.meshes.setLodDistances(near, far)
     // Forest out to the level's draw distance: 700 m on the weakest phones.
     this.trees.setDrawDistance(Math.min(1800, quality.drawDistance))
-    // Grass and flowers cost a few hundred thousand triangles: desktop level only for now.
-    this.cover.setEnabled(quality.level >= 2)
+    // Grass and flowers: everything on desktop, a thinner and nearer cover on phones and
+    // tablets, nothing at the safe level.
+    this.cover.setLevel(quality.level)
   }
 
   /** Terrain triangles in view at the current levels of detail, versus at full detail. */
