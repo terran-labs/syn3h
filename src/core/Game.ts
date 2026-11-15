@@ -11,12 +11,16 @@
  */
 import * as THREE from 'three/webgpu'
 import { installRenderDiagnostics, recordStartupPhase, showRendererLost, startupTiming, timeStartup } from './diagnostics'
-import { bloomActive, gpuDeadlineMs, startRenderer } from './renderOptions'
-import { Bloom, bloomStrength } from './bloom'
+import { gpuDeadlineMs, startRenderer } from './renderOptions'
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
-import { QualityController, graphicsLevel, reportLoading, type FrameMetrics } from './quality'
+import { QualityController, reportLoading, type FrameMetrics } from './quality'
 import { FIXED_DT, RAPIER, createWorld, initPhysics } from './physics'
+
+/** A post chain draws the frame instead of renderer.render (see setPostChain). */
+export interface PostChainHook {
+  render(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, frameMs: number): void
+}
 
 export interface System {
   /** Apply forces. Runs before every physics step. */
@@ -54,6 +58,9 @@ export class Game {
   readonly performance: FrameMetrics = { fps: 0, frameMs: 0, physicsMs: 0, drawCalls: 0, triangles: 0, firstFrameMs: null }
 
   private readonly systems: System[] = []
+  private postChain: PostChainHook | null = null
+  /** Hand frames to a post chain, or null to render plainly. */
+  setPostChain(chain: PostChainHook | null): void { this.postChain = chain }
   private accumulator = 0
   private last = 0
   private averageFrameMs = 1000 / 60
@@ -187,7 +194,8 @@ export class Game {
     const updateStart = performance.now()
     for (const s of this.systems) s.update?.(frameDt, alpha)
     const renderStart = performance.now()
-    this.draw()
+    if (this.postChain) this.postChain.render(this.renderer, this.scene, this.camera, frameMs)
+    else this.renderer.render(this.scene, this.camera)
     if (this.startupFrames < 3) this.recordStartupFrame(updateStart, renderStart)
     const metrics = this.performance
     metrics.fps = this.fps
@@ -196,25 +204,6 @@ export class Game {
     metrics.triangles = this.renderer.info.render.triangles
     if (metrics.firstFrameMs === null && metrics.drawCalls > 0) metrics.firstFrameMs = performance.now()
     this.quality.frame(metrics)
-  }
-
-  /** Created on first use; null until bloom has ever been switched on. */
-  private bloom: Bloom | null = null
-
-  /**
-   * Draw the frame. With gfx.bloom at 0 (the default) this is `renderer.render` and nothing
-   * else: the strength test comes first and no Bloom object exists. Bloom also needs graphics
-   * level 2, a desktop class device and a verified backend; when the governor lowers the level
-   * it is released at once, targets and all, and rebuilt when the level returns.
-   */
-  private draw(): void {
-    if (bloomStrength.value > 0 && bloomActive({ strength: bloomStrength.value, level: graphicsLevel.value, deviceLevel: this.quality.deviceLevel, backend: this.backend })) {
-      this.bloom ??= new Bloom(this.renderer, this.scene, this.camera)
-      this.bloom.render()
-      return
-    }
-    if (this.bloom?.active) this.bloom.release()
-    this.renderer.render(this.scene, this.camera)
   }
 
   /**

@@ -15,6 +15,7 @@ import { readVehicleChoice, saveVehicleChoice } from './ui/VehicleChoice'
 import { type VehicleKind, createVehicle } from './vehicles'
 import { attachVehicleEffects } from './vehicles/effects'
 import { createEnvironment } from './world/Environment'
+import { createPostChain } from './fx/post/PostChain'
 import { createTerrain } from './world'
 import * as planets from './world/planets'
 import { applyPlanet, decodeWorld } from './world/planets'
@@ -43,7 +44,9 @@ async function main(): Promise<void> {
   const terrain = createTerrain(game, worldSeed.value)
   // Graphics levels thin out distant terrain on weaker devices.
   game.quality.attachTerrain(terrain)
-  game.add(createEnvironment(game, terrain))
+  const environment = game.add(createEnvironment(game, terrain))
+  // Post effects (src/fx/post): off by default; ?post=1 or Settings > Advanced > Post.
+  game.setPostChain(createPostChain(game, environment))
 
   const spawn = terrain.spawnPoint(0)
   // The vehicle comes from ?vehicle=..., else the choice saved by the lobby, else the Syn3h buggy.

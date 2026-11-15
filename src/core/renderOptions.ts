@@ -101,32 +101,3 @@ export function deviceLostMessage(info: { api?: string; message?: string; reason
   const detail = info?.message && info.message !== 'Unknown reason' ? ` (${info.message})` : ''
   return `The ${api} was lost${detail}. Reload to keep playing.`
 }
-
-/**
- * Bloom gating. Bloom is landed dark: strength 0 (the default) means the frame takes exactly
- * the old path, `renderer.render(scene, camera)`, with no pipeline object and no extra render
- * targets. Anything above 0 still blooms only on a desktop class device at graphics level 2,
- * on a backend where it has been checked to work.
- */
-export type RenderBackend = 'webgpu' | 'webgl'
-export interface BloomGate {
-  strength: number
-  /** Current graphics level; the governor may lower it at run time. */
-  level: number
-  /** The level the device was classified as (2 means a desktop class device). */
-  deviceLevel: number
-  backend: RenderBackend
-  allowed?: Readonly<Record<RenderBackend, boolean>>
-}
-/** Backends where bloom was verified (tools/bloom-review.md). */
-export const BLOOM_BACKENDS: Readonly<Record<RenderBackend, boolean>> = { webgpu: true, webgl: true }
-export function bloomActive(gate: BloomGate): boolean {
-  return gate.strength > 0 && Number.isFinite(gate.strength) && gate.level === 2 && gate.deviceLevel === 2 && (gate.allowed ?? BLOOM_BACKENDS)[gate.backend] === true
-}
-/** `?bloom=0.6` sets the bloom strength for this page load, clamped to 0..1. */
-export function bloomOverride(search: string): number | undefined {
-  const value = new URLSearchParams(search).get('bloom')
-  if (value === null || value.trim() === '') return undefined
-  const n = Number(value)
-  return Number.isFinite(n) ? Math.min(1, Math.max(0, n)) : undefined
-}
