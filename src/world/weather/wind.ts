@@ -217,3 +217,29 @@ export const WIND_PARAM_IDS = {
   atmosphere: 'world.atmosphere',
 } as const
 
+
+// ---------------------------------------------------------------------------------------
+// Drift for effects
+// ---------------------------------------------------------------------------------------
+
+let driftTerrain: Partial<Terrain> | null = null
+const driftFrame = {} as WindFrame
+let driftFrameAt = -Infinity
+
+/** The terrain `windDrift` reads the summit height from. The WeatherSystem sets it. */
+export function setWindTerrain(terrain: Partial<Terrain> | null): void {
+  driftTerrain = terrain
+  driftFrameAt = -Infinity
+}
+
+/**
+ * Wind velocity in m/s at a world position now, for particles, smoke and plumes: add it to
+ * their velocity (or a share of it) and they lean and travel downwind with the gusts players
+ * feel. Horizontal; y is 0. Cheap enough for every live particle: the sliders are read at
+ * most every 50 ms and the rest is a few sines and noise lookups.
+ */
+export function windDrift<T extends Vec3Like>(x: number, y: number, z: number, out: T): T {
+  const t = weatherTime()
+  if (Math.abs(t - driftFrameAt) > 0.05) { currentWindFrame(driftTerrain, driftFrame); driftFrameAt = t }
+  return windAt(driftFrame, x, y, z, t, out)
+}
