@@ -14,7 +14,8 @@ export class Spray {
   private map:T.DataTexture|null=null
   private states=new Map<string,State>()
   private time=0
-  private white=new T.Color(.75,.94,1)
+  // Above 1: spray is sunlit white water and should read brighter than the sea after tone mapping.
+  private white=new T.Color(1.5,1.6,1.7)
   constructor(private scene:T.Scene,private ripples:Ripples){}
   private allocate(){
     this.map=new T.DataTexture(new Uint8Array([255,255,255,255]),1,1);this.map.needsUpdate=true

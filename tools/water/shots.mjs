@@ -71,7 +71,16 @@ const spots = await page.evaluate(() => {
     }
   }
   deep.y = sea + 0.3
-  return { coast, river, deep, sea }
+  // A ford: a road point a few metres before a forded span, heading along the road.
+  let ford = null
+  for (const road of t.roadPaths()) {
+    const f = road.fords?.[0]
+    if (!f) continue
+    const i = Math.max(0, f.start - 3), p = road.points[i], q = road.points[Math.min(road.points.length - 1, f.end)]
+    ford = { x: p.x, y: p.y, z: p.z, heading: Math.atan2(-(q.x - p.x), -(q.z - p.z)) }
+    break
+  }
+  return { coast, river, deep, sea, ford }
 })
 
 const place = (s) => page.evaluate((p) => {
@@ -89,6 +98,7 @@ const shots = [
   ['river-new', spots.river, { 'water.waves': true }],
   ['deep-new', spots.deep, { 'water.waves': true, 'water.waveHeight': 2.4 }],
   ['deep-sink', spots.deep, { 'water.waves': true, 'water.sinking': true }],
+  ['ford', spots.ford, { 'water.waves': true, 'water.sinking': true, 'water.ripples': true, 'water.spray': true }, 8],
   ['under-all', spots.deep, { 'water.waves': true, 'water.sinking': true, 'water.underwater': true, 'water.ripples': true, 'water.spray': true }],
   ['skim-all', spots.deep, { 'water.waves': true, 'water.sinking': true, 'water.underwater': true, 'water.ripples': true, 'water.spray': true }, 16],
 ]
@@ -99,7 +109,7 @@ for (const [name, spot, values, speed] of shots) {
   await place(spot)
   if (speed) {
     // Hold a speed along the heading for a few seconds: a skimming run.
-    const end = Date.now() + 3000
+    const end = Date.now() + (name === 'ford' ? 6000 : 3000)
     const trace = []
     while (Date.now() < end) {
       trace.push(await page.evaluate(([v, h]) => {
@@ -109,7 +119,7 @@ for (const [name, spot, values, speed] of shots) {
       }, [speed, spot.heading]))
       await page.waitForTimeout(100)
     }
-    report.trace = trace
+    report[name + 'Trace'] = trace
   } else if (name === 'under-all' || name === 'deep-sink') {
     const trace = []
     for (let i = 0; i < 30; i++) {

@@ -28,12 +28,12 @@ export const waterRiverMaxSpeed = defineParam({
 
 /**
  * `?water=1` in the page address turns on everything the Water Lab built, for previews:
- * a water sea, waves, sinking, the underwater camera, ripples and spray. Set as local
+ * a water sea, rivers that ford roads and reach the sea, waves, sinking, the underwater camera, ripples and spray. Set as local
  * slider changes, so a host shares them with the room as any slider change would.
  */
 export function applyWaterQuery(search: string = typeof location === 'undefined' ? '' : location.search): void {
   if (new URLSearchParams(search).get('water') !== '1') return
   for (const [id, value] of Object.entries({
-    'world.seaKind': 1, 'water.waves': true, 'water.sinking': true, 'water.underwater': true, 'water.ripples': true, 'water.spray': true,
+    'world.seaKind': 1, 'terrain.fords': 1, 'water.waves': true, 'water.sinking': true, 'water.underwater': true, 'water.ripples': true, 'water.spray': true,
   })) params.set(id, value, 'local')
 }

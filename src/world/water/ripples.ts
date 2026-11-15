@@ -55,7 +55,7 @@ export class Ripples {
     return vec3(dx.negate(),1,dz.negate()).normalize()
   }
   private allocate() {
-    this.targets=Array.from({length:2},()=>new T.RenderTarget(this.cells,this.cells,{type:T.HalfFloatType,format:T.RGBAFormat,minFilter:T.NearestFilter,magFilter:T.NearestFilter,depthBuffer:false}))
+    this.targets=Array.from({length:2},()=>new T.RenderTarget(this.cells,this.cells,{type:T.HalfFloatType,format:T.RGBAFormat,minFilter:T.LinearFilter,magFilter:T.LinearFilter,depthBuffer:false}))
     const saved=this.renderer.getRenderTarget(), clear=this.renderer.getClearColor(new T.Color()), alpha=this.renderer.getClearAlpha()
     this.renderer.setClearColor(0,0)
     for(const target of this.targets){this.renderer.setRenderTarget(target);this.renderer.clear()}
