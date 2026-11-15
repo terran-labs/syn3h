@@ -34,6 +34,9 @@ export const hoverDrag = defineParam({id:'hover.drag',label:'Glide air drag',gro
 /** Lean into a turn at full steering, in degrees. */
 export const hoverBank = defineParam({id:'hover.bank',label:'Glide bank angle (deg)',group:'Hovercraft',scope:'world',default:12,min:0,max:35,step:1})
 
+/** The assisted glide keeps every point of the hull envelope at least this far above the surface, in metres. */
+const HULL_GUARD=.4
+
 /** Hovercraft.js 12-61, with world-down probing and Unity's explicit damping rule. */
 export class Hovercraft extends Vehicle {
   readonly kind = 'hovercraft' as const
@@ -154,14 +157,32 @@ export class Hovercraft extends Vehicle {
     return Math.max(this.terrain.heightAt(x,z),this.terrain.liquidHeightAt?.(x,z)??-Infinity)
   }
 
+  // Scratch vectors: the glide and its clearance guard run for every hovercraft on every
+  // physics step and render frame, so they allocate nothing.
+  private readonly gForward=new THREE.Vector3()
+  private readonly gRight=new THREE.Vector3()
+  private readonly gPoints=[new THREE.Vector3(),new THREE.Vector3(),new THREE.Vector3(),new THREE.Vector3()]
+  private readonly gHeights=[0,0,0,0]
+  private readonly gA=new THREE.Vector3()
+  private readonly gB=new THREE.Vector3()
+  private readonly gUp=new THREE.Vector3()
+  private readonly gW=new THREE.Vector3()
+  private readonly gP=new THREE.Vector3()
+  private readonly gQ=new THREE.Quaternion()
+
   private applyGlide(dt:number):void {
     const u=this.unity,q=u.q,p=u.pos,v=u.velocity,mass=this.body.mass()
-    const forward=new THREE.Vector3(0,0,-1).applyQuaternion(q);forward.y=0;forward.normalize()
-    const right=new THREE.Vector3(1,0,0).applyQuaternion(q);right.y=0;right.normalize()
+    const forward=this.gForward.set(0,0,-1).applyQuaternion(q);forward.y=0;forward.normalize()
+    const right=this.gRight.set(1,0,0).applyQuaternion(q);right.y=0;right.normalize()
     // Four footprint samples anticipate slopes instead of letting a centre ray miss the nose.
-    const points=[[-1,-1.3],[1,-1.3],[-1,1.3],[1,1.3]].map(([x,z])=>new THREE.Vector3(x,0,z).applyQuaternion(q).add(p))
-    const heights=points.map(a=>this.surface(a.x,a.z))
-    const distance=points.reduce((sum,a,i)=>sum+a.y-heights[i],0)/4
+    const points=this.gPoints,heights=this.gHeights
+    let distance=0
+    for(let i=0;i<4;i++){
+      const a=points[i].set(i&1?1:-1,0,i<2?-1.3:1.3).applyQuaternion(q).add(p)
+      heights[i]=this.surface(a.x,a.z)
+      distance=distance+a.y-heights[i]
+    }
+    distance/=4
     const under=distance<30
     this.wheelsGrounded=under?4:0
     const target=hoverClearance.value
@@ -173,36 +194,57 @@ export class Hovercraft extends Vehicle {
       const surfaceVelocity=THREE.MathUtils.clamp(forwardSlope*v.dot(forward)+rightSlope*v.dot(right),-12,12)
       // Damp relative to the rising ground, so a sustained climb does not consume hover clearance.
       const accel=Math.max(0,Math.min(45,-this.game.world.gravity.y+(target-distance)*spring-(v.y-surfaceVelocity)*damping))
-      u.addForce(new THREE.Vector3(0,accel*mass,0))
+      u.addForce(this.gA.set(0,accel*mass,0))
     }
-    const horizontal=new THREE.Vector3(v.x,0,v.z)
+    const horizontal=this.gB.set(v.x,0,v.z)
     if(this.input.brakes){
       // Exponential braking: 90% speed loss in the selected time, without arresting gravity.
       const decay=Math.exp(-Math.LN10*dt/hoverBrakeTime.value)
-      u.setVelocity(new THREE.Vector3(v.x*decay,v.y,v.z*decay))
+      u.setVelocity(this.gA.set(v.x*decay,v.y,v.z*decay))
     }else{
-      u.addForce(forward.clone().multiplyScalar(Math.max(0,this.input.y)*hoverThrust.value))
-      u.addForce(right.clone().multiplyScalar(-horizontal.dot(right)*mass*hoverGrip.value))
+      u.addForce(this.gA.copy(forward).multiplyScalar(Math.max(0,this.input.y)*hoverThrust.value))
+      u.addForce(this.gA.copy(right).multiplyScalar(-horizontal.dot(right)*mass*hoverGrip.value))
       u.addForce(horizontal.multiplyScalar(-mass*hoverDrag.value))
     }
     // Follow gentle terrain pitch and bank into a turn (12 degrees by default), even over a jump.
     const pitch=under?THREE.MathUtils.clamp(((heights[2]+heights[3])-(heights[0]+heights[1]))/5.2,-.3,.3):0
-    const desiredUp=new THREE.Vector3(0,1,0).addScaledVector(forward,pitch).addScaledVector(right,this.input.x*Math.tan(hoverBank.value*Math.PI/180)).normalize()
-    const up=new THREE.Vector3(0,1,0).applyQuaternion(q),w=new THREE.Vector3().copy(this.body.angvel())
-    const error=up.clone().cross(desiredUp)
+    const desiredUp=this.gB.set(0,1,0).addScaledVector(forward,pitch).addScaledVector(right,this.input.x*Math.tan(hoverBank.value*Math.PI/180)).normalize()
+    const up=this.gUp.set(0,1,0).applyQuaternion(q),w=this.gW.copy(this.body.angvel())
+    const error=this.gA.copy(up).cross(desiredUp)
     // The antiparallel case has no cross product; choose a deterministic recovery axis.
     if(up.dot(desiredUp)<-.95)error.copy(right)
     const strength=hoverStability.value
-    const acceleration=error.multiplyScalar(strength*2).add(new THREE.Vector3(-w.x*strength*.7,0,-w.z*strength*.7))
+    const acceleration=error.multiplyScalar(strength*2).add(this.gB.set(-w.x*strength*.7,0,-w.z*strength*.7))
     acceleration.y=(-this.input.x*hoverTurnRate.value*Math.PI/180-w.y)*4
     u.addTorqueAcceleration(acceleration,dt)
     u.drag=0;u.angularDrag=0;u.flush(dt)
   }
 
-  /** Conservative hull-envelope check also covers narrow terrain crests between the hover rays. */
-  private hullClearance(p:THREE.Vector3,q:THREE.Quaternion):number {
+  /**
+   * Conservative hull-envelope check also covers narrow terrain crests between the hover rays.
+   *
+   * The full check samples the surface under 9 x 13 points on the hull's floor and roof: 234
+   * lookups, twice per frame, for every hovercraft. Measured on generated terrain that was
+   * 473 lookups and about 230 microseconds per step per craft (tests/vehicles2/hover-cost).
+   * The terrain is linear across 4 m cells, so a quarter of the floor points (every second
+   * one each way, 0.64 m by 0.53 m apart) already bounds it closely: between two of them the
+   * ground cannot rise 0.5 m unless it is steeper than 57 degrees on both sides of a crest
+   * narrower than the gap. So when that coarse pass clears the 0.4 m guard by half a metre
+   * the full pass is skipped. The roof joins the coarse pass once the craft tilts past about
+   * 25 degrees. Anything closer falls through to the original full check, unchanged, so a
+   * correction is computed from exactly the same samples as before.
+   */
+  private hullClearance(p:THREE.Vector3Like,q:THREE.QuaternionLike):number {
+    const point=this.gP
+    // World-up component of the craft's own up axis.
+    const roof=1-2*(q.x*q.x+q.z*q.z)<.9
     let clearance=Infinity
-    const point=new THREE.Vector3()
+    for(let ix=0;ix<=8;ix+=2)for(let iz=0;iz<=12;iz+=2)for(let layer=0;layer<(roof?2:1);layer++){
+      point.set(-1.27+2.54*ix/8,layer?1.03:0,-1.65+3.18*iz/12).applyQuaternion(q).add(p)
+      clearance=Math.min(clearance,point.y-this.surface(point.x,point.z))
+    }
+    if(clearance>=HULL_GUARD+.5)return clearance
+    clearance=Infinity
     for(let ix=0;ix<=8;ix++)for(let iz=0;iz<=12;iz++)for(const y of [0,1.03]){
       point.set(-1.27+2.54*ix/8,y,-1.65+3.18*iz/12).applyQuaternion(q).add(p)
       clearance=Math.min(clearance,point.y-this.surface(point.x,point.z))
@@ -211,10 +253,10 @@ export class Hovercraft extends Vehicle {
   }
   override postPhysics(dt:number):void {
     if(hoverAssist.value&&!this.body.isKinematic()&&!this.zorbed){
-      const p=new THREE.Vector3().copy(this.body.translation()),q=new THREE.Quaternion().copy(this.body.rotation())
+      const p=this.gA.copy(this.body.translation()),q=this.gQ.copy(this.body.rotation())
       const clearance=this.hullClearance(p,q)
-      if(clearance<.4){
-        p.y+=.4-clearance;this.body.setTranslation(p,true);this.clearanceCorrections++
+      if(clearance<HULL_GUARD){
+        p.y+=HULL_GUARD-clearance;this.body.setTranslation(p,true);this.clearanceCorrections++
         const v=this.body.linvel();if(v.y<0)this.body.setLinvel({x:v.x,y:0,z:v.z},true)
       }
     }
@@ -223,7 +265,7 @@ export class Hovercraft extends Vehicle {
   override update(dt:number,alpha:number):void {
     super.update(dt,alpha)
     // Interpolating two valid poses can cut through a sharp crest; keep the rendered hull clear too.
-    if(hoverAssist.value){const c=this.hullClearance(this.object.position,this.object.quaternion);if(c<.4)this.object.position.y+=.4-c}
+    if(hoverAssist.value){const c=this.hullClearance(this.object.position,this.object.quaternion);if(c<HULL_GUARD)this.object.position.y+=HULL_GUARD-c}
   }
 
   protected override applyColors():void {

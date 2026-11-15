@@ -29,6 +29,28 @@ function roomServer(): Plugin {
   }
 }
 
+/**
+ * Tweakpane's stylesheet carries one bitmap: a 126 byte PNG, inlined as a data URL, for the
+ * colour picker's hue strip. The owner's rule is that the running game loads no bitmaps, and a
+ * hue strip is six colour stops, so the production build swaps it for the gradient it depicts.
+ * Fails the build if the library changes shape, so a new inlined image cannot slip through.
+ * Dev servers pre-bundle dependencies and keep the PNG; the release gate runs on the build.
+ */
+function tweakpaneWithoutBitmap(): Plugin {
+  const image = /url\(data:image\/png;base64,[A-Za-z0-9+/=]+\)/g
+  const hue = 'linear-gradient(to right,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#f00)'
+  return {
+    name: 'syn3h-tweakpane-without-bitmap',
+    apply: 'build',
+    transform(code, id) {
+      if (!/node_modules\/tweakpane\/dist\/tweakpane\.js/.test(id.replaceAll('\\', '/'))) return
+      const found = code.match(image)?.length ?? 0
+      if (found !== 1) throw new Error(`Tweakpane changed: expected 1 inlined image, found ${found}. Review vite.config.ts before shipping.`)
+      return { code: code.replace(image, hue), map: null }
+    },
+  }
+}
+
 /** Shown in the lobby as the build version: the nearest tag and commit, read at build time. */
 function buildLabel(): string {
   if (process.env.SYN3H_RELEASE_VERSION) return process.env.SYN3H_RELEASE_VERSION
@@ -38,7 +60,7 @@ function buildLabel(): string {
 export default defineConfig({
   define: { __SYN3H_BUILD__: JSON.stringify(buildLabel()) },
   // manualReload: a merge shows a "new build available" notice instead of resetting the page.
-  plugins: [roomServer(), manualReload()],
+  plugins: [roomServer(), manualReload(), tweakpaneWithoutBitmap()],
   server: {
     host: '127.0.0.1',
     port: 5173,

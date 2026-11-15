@@ -1,7 +1,8 @@
 import * as THREE from 'three/webgpu'
-import { ClassicBuggySkin, Syn3hBuggySkin } from '../vehicles/skins'
+import { Syn3hBuggySkin } from '../vehicles/skins'
 import type { BuggySkin } from '../vehicles/skins/BuggySkin'
 import { VehicleModel } from '../vehicles/skins/VehicleModel'
+import { GameJet } from '../vehicles/jetgen/GameJet'
 import type { VehicleKind } from '../vehicles'
 
 export interface VehicleChoice {
@@ -12,7 +13,7 @@ export interface VehicleChoice {
 const defaults: VehicleChoice = { vehicleKind: 'buggy-syn3h', bodyColor: '#1768b4', accentColor: '#49e6ff' }
 export function sanitizeVehicleChoice(value: Partial<VehicleChoice> | null): VehicleChoice {
   const color = (value: unknown, fallback: string) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback
-  return { vehicleKind: (['buggy', 'buggy-classic', 'buggy-syn3h', 'jet', 'hovercraft'] as unknown[]).includes(value?.vehicleKind) ? value!.vehicleKind! : 'buggy-syn3h', bodyColor: color(value?.bodyColor, defaults.bodyColor), accentColor: color(value?.accentColor, defaults.accentColor) }
+  return { vehicleKind: (['buggy', 'buggy-syn3h', 'jet', 'hovercraft'] as unknown[]).includes(value?.vehicleKind) ? value!.vehicleKind! : 'buggy-syn3h', bodyColor: color(value?.bodyColor, defaults.bodyColor), accentColor: color(value?.accentColor, defaults.accentColor) }
 }
 export function readVehicleChoice(): VehicleChoice {
   try { return sanitizeVehicleChoice(JSON.parse(localStorage.getItem('syn3h.vehicle') || 'null')) } catch { return { ...defaults } }
@@ -29,6 +30,7 @@ export class VehiclePreview {
   private readonly observer: ResizeObserver
   private skin?: BuggySkin
   private model?: VehicleModel
+  private jet?: GameJet
   private modelRoot = new THREE.Group()
   private kind?: VehicleChoice['vehicleKind']
   private choice: VehicleChoice = readVehicleChoice()
@@ -56,11 +58,22 @@ export class VehiclePreview {
     if (!this.initialized || this.disposed) return
     if (choice.vehicleKind !== this.kind) {
       if (this.skin) { this.scene.remove(this.skin.object); this.skin.dispose() }
-      this.model?.dispose(); this.scene.remove(this.modelRoot); this.model = undefined; this.skin = undefined
+      this.model?.dispose(); this.jet?.dispose(); this.scene.remove(this.modelRoot); this.model = undefined; this.jet = undefined; this.skin = undefined
       this.kind = choice.vehicleKind
-      if (choice.vehicleKind === 'jet' || choice.vehicleKind === 'hovercraft') {
+      if (choice.vehicleKind === 'jet') {
+        // The jet is generated, the same model the game flies: nothing to load.
+        const jet = this.jet = new GameJet()
+        this.modelRoot = new THREE.Group(); this.modelRoot.add(jet.object); this.scene.add(this.modelRoot)
+        jet.setColors(choice.bodyColor, choice.accentColor); jet.update(1, 0, 0, 0)
+        const box = new THREE.Box3().setFromObject(jet.near.object), size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3())
+        const scale = 3.5 / Math.max(size.x, size.y, size.z, 1)
+        this.modelRoot.scale.setScalar(scale); this.modelRoot.position.copy(center).multiplyScalar(-scale)
+        this.host.dataset.ready = 'true'; delete this.host.dataset.error; void this.draw()
+        return
+      }
+      if (choice.vehicleKind === 'hovercraft') {
         this.modelRoot = new THREE.Group(); this.scene.add(this.modelRoot)
-        const model = this.model = new VehicleModel(this.modelRoot, `/models/${choice.vehicleKind}.glb`)
+        const model = this.model = new VehicleModel(this.modelRoot, '/models/hovercraft.glb')
         this.host.dataset.ready = 'false'
         void model.ready.then(() => {
           if (this.disposed || this.model !== model) return
@@ -71,7 +84,7 @@ export class VehiclePreview {
         })
         return
       }
-      const skin = this.skin = choice.vehicleKind === 'buggy-classic' ? new ClassicBuggySkin() : new Syn3hBuggySkin()
+      const skin = this.skin = new Syn3hBuggySkin()
       this.scene.add(skin.object)
       this.host.dataset.ready = 'false'
       void skin.ready.then(() => {
@@ -80,7 +93,7 @@ export class VehiclePreview {
         this.host.dataset.ready = 'true'; delete this.host.dataset.error; void this.draw()
       }).catch(() => { if (!this.disposed && this.skin === skin) this.host.dataset.error = 'Preview unavailable. Your selection is saved.' })
     }
-    this.skin?.setColors(choice.bodyColor, choice.accentColor)
+    this.skin?.setColors(choice.bodyColor, choice.accentColor); this.jet?.setColors(choice.bodyColor, choice.accentColor)
     void this.draw()
   }
   private resize(): void {
@@ -100,7 +113,7 @@ export class VehiclePreview {
   }
   dispose(): void {
     if (this.disposed) return
-    this.disposed = true; this.observer.disconnect(); this.skin?.dispose(); this.model?.dispose()
+    this.disposed = true; this.observer.disconnect(); this.skin?.dispose(); this.model?.dispose(); this.jet?.dispose()
     if (this.initialized && !this.drawing) this.renderer.dispose()
   }
 }

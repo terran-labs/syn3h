@@ -4,12 +4,16 @@
  * intervals between animation frames over a few seconds, so they are capped by the
  * display's refresh in a headed browser; a headless one usually runs uncapped.
  *
- *   node tools/terrainlab/cover-cost.mjs [baseUrl] [world,world,...]
+ *   node tools/terrainlab/cover-cost.mjs [baseUrl] [world,world,...] [graphics level]
+ *
+ * The graphics level (0 safe, 1 phones and tablets, 2 desktop) is forced with ?gfx=, to
+ * compare what each level draws on the same machine. It does not stand in for a phone.
  */
 import { chromium } from 'playwright-core'
 
 const base = process.argv[2] ?? 'http://localhost:5191/'
 const worlds = (process.argv[3] ?? 'alpine.7,desert.7,volcanic.1').split(',')
+const gfx = process.argv[4] ? `&gfx=${process.argv[4]}` : ''
 const browser = await chromium.launch({
   channel: 'chrome', headless: true,
   args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist', '--disable-gpu-vsync', '--disable-frame-rate-limit'],
@@ -19,7 +23,7 @@ const errors = []
 page.on('pageerror', (e) => errors.push(e.message))
 const rows = []
 for (const world of worlds) {
-  await page.goto(`${base}?autoplay=1&world=${world}&room=cost${Date.now().toString(36)}`, { waitUntil: 'load' })
+  await page.goto(`${base}?autoplay=1&world=${world}&room=cost${Date.now().toString(36)}${gfx}`, { waitUntil: 'load' })
   await page.waitForFunction(() => window.syn3h?.game?.tick > 90, null, { timeout: 90000 })
   await page.evaluate(() => {
     const s = window.syn3h, t = s.terrain, pad = t.data.layout.spawns[2]

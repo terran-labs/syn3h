@@ -47,7 +47,8 @@ for (const mode of modes) {
     await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('show-diagnostics'))
     await page.locator('.rail-diagnostics input').uncheck()
     if (!touch) {
-      const select = page.locator('.rail-music select')
+      // Any native select will do; the synthetic keys below never change its value.
+      const select = page.locator('.wi-vehicle-select')
       await select.focus()
       // Check held keys before keyup: a leak can disappear before a frame assertion.
       for (const code of ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Enter']) {
@@ -69,8 +70,6 @@ for (const mode of modes) {
       assert.equal(await page.evaluate(() => syn3h.game.input.poll().y), 1)
       await select.evaluate(el => el.dispatchEvent(new KeyboardEvent('keyup', {code:'ArrowUp',bubbles:true})))
       assert.equal(await page.evaluate(() => syn3h.game.input.poll().y), 0)
-      await select.selectOption('Score')
-      await page.waitForFunction(() => syn3h.shell.audio.track === 'Score')
     }
     await page.locator('.rail-close').click()
     await page.keyboard.press('Escape')

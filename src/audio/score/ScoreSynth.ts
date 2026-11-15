@@ -455,7 +455,9 @@ export class ScoreSynth {
     // their entry means something. The mouths open as the music climbs. The oscillator choirs
     // are the fallback and fall silent once the sung choir has loaded.
     // In a convoy the neighbours carry these parts: each is as loud as its vehicle is near, and sits on its side.
-    const carried = (slot: number) => this.convoy ? this.convoy[slot]?.level ?? 0 : 1, side = (slot: number) => this.convoy?.[slot]?.pan ?? 0
+    // A part with no neighbour to carry it stays with the player, and a far neighbour only
+    // softens its part: driving alone or at a distance never thins the music out.
+    const carried = (slot: number) => { const voice = this.convoy?.[slot]; return voice ? 0.4 + 0.6 * voice.level : 1 }, side = (slot: number) => this.convoy?.[slot]?.pan ?? 0
     to(this.stringPan.pan, side(0), 0.3); to(this.brassPan.pan, side(1), 0.3); to(this.organPan.pan, side(2), 0.3); to(this.bellPan.pan, side(2), 0.3)
     const men = unit(Math.max(level.choir, arc.release * 0.9, 0.2)) * trim.choir, women = unit(Math.max(arc.release, (level.choir - 0.5) * 2)) * trim.choir * carried(1)
     to(this.choirGain.gain, this.choir ? 0 : men * 0.5, 1.2)

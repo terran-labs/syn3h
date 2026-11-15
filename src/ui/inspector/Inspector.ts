@@ -51,6 +51,7 @@ export class Inspector {
     this.element.className = 'world-inspector'; this.element.setAttribute('aria-label', 'World inspector')
     this.element.innerHTML = `<div class="wi-top wi-glass"><input class="wi-search" type="search" placeholder="Find a setting" aria-label="Find a setting" autocomplete="off" spellcheck="false">
       <div class="wi-actions"><button type="button" data-wi="copy-world">Copy world</button><button type="button" data-wi="paste-world">Paste world</button><button type="button" data-wi="reset">Reset</button></div></div>
+      <div class="wi-quick"><div class="wi-vehicle-slot"></div><label class="wi-gear-slot">Gear</label><button type="button" data-wi="show-gi">GI lighting</button></div>
       <div class="wi-cards"></div>
       <div class="wi-detail wi-glass" hidden></div>
       <div class="wi-sheet wi-glass" hidden><strong></strong><textarea spellcheck="false" aria-label="World as JSON"></textarea><div class="wi-actions"><button type="button" data-wi="apply">Paste it in</button><button type="button" data-wi="close">Close</button></div></div>
@@ -66,12 +67,13 @@ export class Inspector {
     this.element.addEventListener('scroll', () => this.hideTooltip(), { capture: true, signal })
     window.addEventListener('resize', () => this.hideTooltip(), { signal })
     document.addEventListener('pointerdown', event => { if (!(event.target as Element).closest('.wi-row, .wi-tooltip')) this.hideTooltip() }, { signal })
+    this.element.querySelector('.wi-vehicle-slot')!.append(this.vehicleSwitch())
     this.build()
     this.unsubscribe = params.onChange((id, value) => this.rows.get(id)?.sync(value))
     this.element.addEventListener('click', event => this.click(event))
     this.element.querySelector<HTMLInputElement>('.wi-search')!.addEventListener('input', event => this.search((event.target as HTMLInputElement).value))
     // Typing here must not drive the vehicle.
-    for (const type of ['keydown', 'keyup'] as const) this.element.addEventListener(type, event => { if ((event.target as Element).matches('input[type=search], textarea, input[type=number]')) event.stopPropagation() })
+    this.element.addEventListener('keydown', event => { if ((event.target as Element).matches('input[type=search], textarea, input[type=number]')) event.stopPropagation() })
   }
   get open(): boolean { return !this.element.hidden }
   set open(value: boolean) { this.element.hidden = !value; if (!value) this.hideTooltip() }
@@ -83,7 +85,8 @@ export class Inspector {
     if (editable !== this.editable) { this.editable = editable; for (const { row, def } of this.rows.values()) if (def.scope === 'world') for (const control of row.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) control.disabled = !editable; this.element.classList.toggle('is-locked', !editable) }
     for (const card of this.element.querySelectorAll<HTMLElement>('.wi-card')) card.querySelector('.wi-sum')!.textContent = this.options.summary(card.dataset.section!) || `${this.tree.find(s => s.id === card.dataset.section)?.count ?? 0} properties`
     const vehicles = this.options.vehicles()
-    for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-vehicle]')) button.classList.toggle('is-on', button.dataset.vehicle === vehicles.current)
+    const select = this.element.querySelector<HTMLSelectElement>('.wi-vehicle-select')!
+    if (document.activeElement !== select) select.value = vehicles.current
   }
   private build(): void {
     const all = params.all(); this.known = all.length
@@ -97,7 +100,7 @@ export class Inspector {
       head.innerHTML = '<h3></h3><span class="wi-sum"></span><span class="wi-chev" aria-hidden="true"></span>'; head.querySelector('h3')!.textContent = section.title
       const body = document.createElement('div'); body.className = 'wi-body'; body.hidden = true
       const blurb = document.createElement('p'); blurb.className = 'wi-blurb'; blurb.textContent = section.blurb; body.append(blurb)
-      if (section.id === 'vehicles') body.append(this.vehicleSwitch())
+
       section.tree.forEach((group, index) => {
         const fold = document.createElement('details'); fold.className = 'wi-group'; fold.open = index === 0
         const summary = document.createElement('summary'); summary.innerHTML = '<span></span><small></small>'
@@ -120,11 +123,38 @@ export class Inspector {
     this.editable = !canEditWorld(); this.update()
   }
   private vehicleSwitch(): HTMLElement {
-    const wrap = document.createElement('div'); wrap.className = 'wi-switch'; wrap.setAttribute('role', 'group'); wrap.setAttribute('aria-label', 'Your vehicle')
-    for (const option of this.options.vehicles().options) { const button = document.createElement('button'); button.type = 'button'; button.dataset.vehicle = option.id; button.textContent = option.label; wrap.append(button) }
-    return wrap
+    const label = document.createElement('label'); label.textContent = 'Vehicle · reloads & respawns'
+    const select = document.createElement('select'); select.className = 'wi-vehicle-select'; select.setAttribute('aria-label', 'Vehicle (reloads and respawns)')
+    for (const option of this.options.vehicles().options) { const item = document.createElement('option'); item.value = option.id; item.textContent = option.label; select.append(item) }
+    select.addEventListener('change', () => this.options.onVehicle(select.value), { signal: this.abort.signal })
+    label.append(select); return label
+  }
+  /** Opens the existing registered GI slider, rather than creating a second control. */
+  private showGI(): void {
+    const search = this.element.querySelector<HTMLInputElement>('.wi-search')!; search.value = ''; this.search('')
+    const row = this.rows.get('post.gi')?.row
+    if (!row) { this.setStatus('GI controls are unavailable in this build.'); return }
+    const card = row.closest<HTMLElement>('.wi-card')!
+    for (const other of this.element.querySelectorAll<HTMLElement>('.wi-card')) this.toggle(other, other === card)
+    row.closest<HTMLDetailsElement>('details')!.open = true
+    this.hideTooltip()
+    row.scrollIntoView({ block: 'nearest' })
+    const input = row.querySelector<HTMLInputElement>('input')!
+    if (!input.disabled) input.focus({ preventScroll: true })
+  }
+  setGIStatus(message: string, eligible: boolean): void {
+    const row = this.rows.get('post.gi')?.row
+    if (!row) return
+    let note = row.querySelector<HTMLElement>('.wi-gi-status')
+    if (!note) { note = document.createElement('small'); note.className = 'wi-gi-status'; note.id = 'gi-status'; row.append(note) }
+    if (note.textContent !== message) note.textContent = message
+    const input = row.querySelector<HTMLInputElement>('input')!
+    input.disabled = !eligible; input.setAttribute('aria-describedby', 'gi-status')
+    this.element.querySelector<HTMLButtonElement>('[data-wi=show-gi]')!.title = message
   }
   private row(def: PropertyDef): HTMLElement {
+    if (def.id === 'post.gi') def = { ...def, label: 'Global illumination (GI)' }
+    if (def.id === 'post.giRadius') def = { ...def, label: 'GI light reach (m)' }
     const row = document.createElement('div'); row.className = 'wi-row'; row.dataset.id = def.id
     const label = document.createElement('span'); label.className = 'wi-label'
     const output = document.createElement('output')
@@ -240,6 +270,7 @@ export class Inspector {
     const valueOf = (id: string) => params.get(id)?.value
     switch (button.dataset.wi) {
       case 'toggle': if (card) this.toggle(card); break
+      case 'show-gi': this.showGI(); break
       case 'save-world': this.options.onSaveWorld?.(); break
       case 'copy-world': await this.copy(JSON.stringify(exportWorld(params.all().map(p => p.def as PropertyDef), valueOf), null, 2), 'This world'); break
       case 'copy-section': if (section) await this.copy(JSON.stringify(exportSection(section, valueOf), null, 2), section.title); break

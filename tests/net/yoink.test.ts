@@ -211,3 +211,35 @@ describe('Room Yoink flings and gusts', () => {
     expect(c.peer.yoinks().length).toBeGreaterThanOrEqual(before)
   })
 })
+
+describe('Room Yoink carries whose other end goes away', () => {
+  it('drops the carry of a vehicle whose place is held for a rejoin', () => {
+    const a = join('A', { ...world, 'game.rejoin': true })
+    const b = join('B', {}, { resume: 'b'.repeat(32) })
+    const c = join('C')
+    run(250, [[a, [0, 0, 0]], [b, [0, 0, -20]], [c, [5, 0, 0]]])
+    send(a.peer, { type: 'yoink', y: { s: 'grab', to: b.id } })
+    room.disconnect(b.peer)
+    expect(room.heldCount).toBe(1)
+    run(250, [[a, [0, 0, 0]], [c, [5, 0, 0]]])
+    expect(c.peer.yoinks().map((y) => [y.s, y.to])).toEqual([['grab', b.id], ['drop', b.id]])
+    expect(a.peer.yoinks()).toEqual([{ from: a.id, s: 'drop', to: b.id }])
+    // Nor can the held place be grabbed again.
+    run(1000, [[a, [0, 0, 0]], [c, [5, 0, 0]]])
+    send(a.peer, { type: 'yoink', y: { s: 'grab', to: b.id } })
+    expect(c.peer.yoinks()).toHaveLength(2)
+  })
+
+  it('drops a carry when the host switches Yoink off', () => {
+    const a = join('A', world)
+    const b = join('B')
+    const places: [Joined, [number, number, number]][] = [[a, [0, 0, 0]], [b, [0, 0, -20]]]
+    run(250, places)
+    send(a.peer, { type: 'yoink', y: { s: 'grab', to: b.id } })
+    send(a.peer, { type: 'param', id: 'yoink.allowed', value: false })
+    run(250, places)
+    expect(b.peer.yoinks().map((y) => y.s)).toEqual(['grab', 'drop'])
+    run(1000, places)
+    expect(b.peer.yoinks()).toHaveLength(2)
+  })
+})
