@@ -17,7 +17,7 @@ import { type TerrainMaterial, createTerrainMaterial } from './material'
 import { LOD_FAR, LOD_NEAR, type TerrainMeshes, type TriangleStats, createTerrainMeshes } from './mesh'
 import { rimRoadRadius } from './roads'
 import { HeightSampler, sealSeam } from './sampler'
-import { KIND_ALPINE, KIND_VOLCANIC, TERRAIN_PARAM_IDS, currentTerrainSettings, worldSeaKind } from './settings'
+import { KIND_ALPINE, KIND_VOLCANIC, TERRAIN_PARAM_IDS, currentTerrainSettings, worldSeaKind, worldWrap } from './settings'
 import { spawnPointAt } from './spawn'
 import { Trees } from './trees'
 import { Volcanics } from './volcanics'
@@ -28,8 +28,8 @@ export class ProceduralTerrain implements Terrain {
     return this.data.size
   }
   /** The world is one tile of a torus this many metres on a side: the current size. */
-  get wrapSize(): number {
-    return this.data.size
+  get wrapSize(): number | undefined {
+    return worldWrap.value ? this.data.size : undefined
   }
   /** Largest height change (m) sealing the tile's seam made on the last generation. */
   lastSeamCorrection = 0
@@ -158,8 +158,8 @@ export class ProceduralTerrain implements Terrain {
   }
 
   wrapPosition(p: { x: number; z: number }): boolean {
-    const x = wrapCoord(p.x, this.wrapSize)
-    const z = wrapCoord(p.z, this.wrapSize)
+    const x = wrapCoord(p.x, this.data.size)
+    const z = wrapCoord(p.z, this.data.size)
     if (x === p.x && z === p.z) return false
     p.x = x
     p.z = z
@@ -167,8 +167,8 @@ export class ProceduralTerrain implements Terrain {
   }
 
   nearestTo(x: number, z: number, refX: number, refZ: number, out: { x: number; z: number }): { x: number; z: number } {
-    out.x = nearestImage(x, refX, this.wrapSize)
-    out.z = nearestImage(z, refZ, this.wrapSize)
+    out.x = nearestImage(x, refX, this.data.size)
+    out.z = nearestImage(z, refZ, this.data.size)
     return out
   }
 
@@ -182,7 +182,7 @@ export class ProceduralTerrain implements Terrain {
 
   /** Caldera lake, pools and rivers where present, else the global lava plane. */
   liquidHeightAt(x: number, z: number): number {
-    return lavaSurfaceAt(this.data.lava, wrapCoord(x, this.wrapSize), wrapCoord(z, this.wrapSize), worldLavaAltitude.value)
+    return lavaSurfaceAt(this.data.lava, wrapCoord(x, this.data.size), wrapCoord(z, this.data.size), worldLavaAltitude.value)
   }
 
   /**
@@ -191,8 +191,8 @@ export class ProceduralTerrain implements Terrain {
    */
   liquidKindAt(x: number, z: number): 'lava' | 'water' | null {
     const sea = worldLavaAltitude.value
-    x = wrapCoord(x, this.wrapSize)
-    z = wrapCoord(z, this.wrapSize)
+    x = wrapCoord(x, this.data.size)
+    z = wrapCoord(z, this.data.size)
     const surface = lavaSurfaceAt(this.data.lava, x, z, sea)
     if (surface <= this.sampler.heightAt(x, z)) return null
     // Above the sea level it is the lake, a river or a pool; otherwise it is the sea.

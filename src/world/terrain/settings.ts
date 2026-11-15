@@ -58,6 +58,14 @@ export const terrainKind = defineParam({
 export const worldSeaKind = defineParam({
   id: 'world.seaKind', label: 'Sea: 0 lava, 1 water', group: 'World', scope: 'world', default: 0, min: 0, max: 1, step: 1,
 })
+/**
+ * Whether the world wraps for gameplay: vehicles, cameras, bots and the network carry
+ * things across the seam. The ground is always drawn and collided across the seam; this
+ * switch only tells the rest of the game to act on it, so each part can land dark.
+ */
+export const worldWrap = defineParam({
+  id: 'world.wrap', label: 'Wrapping world', group: 'World', scope: 'world', default: false,
+})
 export const KIND_VOLCANIC = 0
 export const KIND_DESERT = 1
 export const KIND_ALPINE = 2
