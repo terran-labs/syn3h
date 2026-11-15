@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-15 02:22 PST. Demo deadline: Sunday noon Pacific.
+Last verified: 2026-11-15 03:08 PST. Demo deadline: Sunday noon Pacific.
 
 ## Authority
 
@@ -20,24 +20,23 @@ condition. Water transparency from above is unimplemented, not an accepted water
 
 ## Production
 
-Release 2 remains the last verified public build: bc8cb48, Worker
-747d2041-ba63-403a-818f-77834ae9951a. Explicit rollback target is release-2.
-Release 3 was attempted and rolled back twice. First public scoring snapshots failed;
-no scoring regression was demonstrated and the cause remains unproven. Retry failed with
-resource 404s before initialization. Rollback network checks passed. Never infer production
-from the newest release tag or TSV row.
+Release 4 is accepted live at https://www.syn3h.com/ as of 03:05 PST:
+version v26.11.1500, source da5a89c, Worker ef3e2f23-e868-41d6-9894-4b09e9b57db2,
+frozen copy 20261115-021120-da5a89c. Exact entry assets, public multiplayer and eight
+Chrome/WebKit vehicle drives passed with no page errors. Acceptance marker and full log:
+/tmp/astra-release4-accepted and /tmp/astra-release4-publish-retry2.log.
 
-Evidence: /tmp/astra-release3-domain.log, /tmp/astra-release3-retry.log,
-/tmp/astra-release3-retry-rollback2.log and /tmp/astra-public2-diagnostic.log.
-R3 frozen41743f6 includes the speed cap,904tests,dryrun,net3,vehicle8 and both seam checks.
-R4 frozen c72b0cb has975tests including one targeted timeout rerun,dryrun,net3,vehicle8,
-solo seam and multiplayer wrap checks. Both are preserved fallback candidates; neither
-validates the newer normal-entry build. The new frozen candidate is recorded below.
+The first release-4 attempt failed the primary site's default-bot wait and rolled back to
+release-2; both rollback addresses passed. The test used a repeating room namespace.
+Unique timestamp/random rooms now prevent fixture reuse; the earlier cause is unproven.
+All waits and assertions were retained. Preserved evidence: /tmp/astra-release4-attempt1.
+Release 3 was attempted and rolled back twice. Never infer acceptance from tags alone.
+For a future release, explicitly select the last accepted rollback target, now release-4.
+The current pinned supervisor still targets release-2 and must not be reused blindly.
 
-Release automation now checks exact identity, HTML and linked entry JS/CSS before gameplay,
-and checks the primary www domain before recording success. Runtime lazy assets still need
-browser acceptance. Notes/showcase failures stay nonfatal after acceptance; no automatic
-publication. Actual showcase capture and calendar reconciliation remain owed.
+Release automation checks exact identity, HTML and entry assets, then primary gameplay
+and the eight-vehicle matrix before recording acceptance. Notes and captures are nonfatal
+post-acceptance artifacts. Showcase generation is still running; review its results.
 
 ## Integrated evidence and current queue
 
@@ -67,22 +66,27 @@ Exit world eligibility, host drop/rejoin and expiry/takeover with no errors.
 Evidence: /tmp/astra-combined-races-fixed.log. This stages an eligible nearby encounter;
 idle-spawn discovery is not guaranteed. Presence passes combined live endpoint checks.
 
-Release 4 is frozen as 20261115-021120-da5a89c, version v26.11.1500. Nothing new is public.
-The first frozen network test incorrectly required two total roster entries, ignoring four
-default bots. Captured rosters confirm both humans and all four bots on both clients.
-The corrected test verifies default bot replication before isolating its two-human scoring
-fixture. The direct and 150 ms latency dry run passes. A later repeat sampled the hill
-marker before its game-step update; its wait now includes marker visibility within the
-original deadline. Three fresh consecutive runs and vehicle/render/seam gates are pending.
-Game artifacts have not changed.
-The pinned deployment wrapper verifies the exact frozen file set and hashes, and fails
-unless invoked through the absolute heavy helper. Public verification and rollback remain.
+Frozen validation passed: full suite 1,143 tests, direct and 150 ms latency network,
+three consecutive network runs, eight vehicles, WebGPU/WebGL entry and solo seams.
+The dry two-player seam fixture passed all 17 checks, including actual far-side contact,
+tag transfer and shove. It uses supported dry terrain, bounded readiness and unchanged
+original gameplay assertions. Earlier intermittent startup stale states remain unexplained;
+the dry steady-state result does not prove wet or rough-terrain behavior.
+Evidence: /tmp/syn3h-frozen-wrap-grade05.log and .json. Tooling fixes are on fast1b2cc25.
 
-Clouds35c0167 and saved-world moons873e408 have lane gates and independent source review;
-both are queued after this closed release attempt. Temporal AA remains in development.
-Aircraft Pester evasion16df9a6 is rejected: no useful escapes in the bounded experiment.
-A different design needs measured pilot response before implementation. Ground dodge and
-all-bot gear remain delivered. Above-water transparency remains unimplemented.
+Next batch is isolated in /Users/vtn/dev/Syn3h-wt/next-visuals, integration/next-visuals:
+cloud35c0167, temporal8edddad, saved moons873e408 minimal dependencies, touchb30fe51.
+Combined typecheck and146 focused tests pass. Saved-world Chrome/WebKit checks pass;
+settled logo capture, combined rendering and touch checks remain. Current3c66c1b changes
+only capture timing after that successful saved-world run. No next-batch public claim.
+Temporal rejects history on procedural position/sprite materials, including water/grass;
+GI is screen-space, clouds have no ground shadows, real-device performance is unmeasured.
+
+Aircraft Pester evasion16df9a6 remains rejected. Research7ec2630 passed99 measurements
+and independent Weapons review, with two escapes and two harmful catches. No safe side
+selection or forward-flight benefit established. No further runtime implementation approved.
+Ground dodge and all-bot gear remain delivered. Water transparency remains unimplemented;
+smooth near-camera terrain remains deferred and tank/hover study selection remains open.
 
 ## Operations
 
