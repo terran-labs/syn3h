@@ -1,7 +1,8 @@
 /**
  * The Syn3h wordmark path turned into geometry the GPU can draw: closed contours sorted into
  * filled shapes and holes by the even-odd rule, a triangulated flat face with a thin edge
- * band, plus points spread along the outline by arc length for the plasma to be born on. Pure functions with no DOM, so the tests run
+ * band, a wide band outward from the outline for the plasma's glow, plus points spread
+ * along the outline by arc length for the plasma's particles. Pure functions with no DOM, so the tests run
  * them directly.
  *
  * Units: one unit is the height of the wordmark box (226 path units), x to the right, y up,
@@ -173,6 +174,51 @@ export function buildWordmarkMesh(options: { contours?: Contour[] } = {}): Wordm
   const vertices = new Float32Array([...front, ...edge])
   const faceVertices = front.length / FLOATS_PER_VERTEX, edgeVertices = edge.length / FLOATS_PER_VERTEX
   return { vertices, faceVertices, edgeVertices, triangles: (faceVertices + edgeVertices) / 3 }
+}
+
+export interface GlowBand {
+  /**
+   * Interleaved per vertex: x, y on the outline; an outward offset x, y (unit length on
+   * the band's outer rim, zero on the outline); the fraction of the way round its contour
+   * (0 to 1); and that contour's length, in wordmark units.
+   */
+  vertices: Float32Array
+  triangles: number
+}
+export const GLOW_FLOATS_PER_VERTEX = 6
+
+/**
+ * The plasma's body: a band running outward from the whole outline, one quad per edge and
+ * a small fan at each corner, so its outer rim is the outline grown by the band width with
+ * rounded corners (the width is the shader's). Where bands overlap, at concave corners and
+ * between close letters, the renderer takes the brighter, so nothing doubles up.
+ */
+export function buildGlowBand(contours = wordmarkContours()): GlowBand {
+  const out: number[] = []
+  const push = (p: Point, o: Point, u: number, length: number) => out.push(p[0], p[1], o[0], o[1], u, length)
+  for (const contour of contours) {
+    const normals = edgeNormals(contour), points = contour.points, count = points.length
+    const along: number[] = []; let length = 0
+    for (let i = 0; i < count; i++) { along.push(length); const q = points[(i + 1) % count]; length += Math.hypot(q[0] - points[i][0], q[1] - points[i][1]) }
+    const zero: Point = [0, 0]
+    for (let i = 0; i < count; i++) {
+      const j = (i + 1) % count, p = points[i], q = points[j], n = normals[i], u0 = along[i] / length, u1 = j === 0 ? 1 : along[j] / length
+      push(p, zero, u0, length); push(q, zero, u1, length); push(q, n, u1, length)
+      push(p, zero, u0, length); push(q, n, u1, length); push(p, n, u0, length)
+      // The corner at q: a fan from this edge's normal round to the next one's, the short way.
+      const m = normals[j], from = Math.atan2(n[1], n[0])
+      let turn = Math.atan2(m[1], m[0]) - from
+      while (turn > Math.PI) turn -= 2 * Math.PI
+      while (turn < -Math.PI) turn += 2 * Math.PI
+      const steps = Math.ceil(Math.abs(turn) / (Math.PI / 6))
+      for (let k = 0; k < steps; k++) {
+        const a = from + turn * k / steps, b = from + turn * (k + 1) / steps
+        push(q, zero, u1 % 1, length); push(q, [Math.cos(a), Math.sin(a)], u1 % 1, length); push(q, [Math.cos(b), Math.sin(b)], u1 % 1, length)
+      }
+    }
+  }
+  const vertices = new Float32Array(out)
+  return { vertices, triangles: vertices.length / GLOW_FLOATS_PER_VERTEX / 3 }
 }
 
 /** A small seeded generator (mulberry32), so a seed always gives the same particles. */

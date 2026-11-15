@@ -41,13 +41,14 @@ export const STILL_SECONDS = 7.3
 
 /**
  * Budgets by graphics level (src/core/quality.ts graphicsLevel): 0 safe, 1 mobile, 2 desktop.
- * The particles are large, so fill, not count, is their cost: fewer of them, each brighter,
- * give the same light for less.
+ * The plasma's body is a field whose cost does not depend on the level; the particles over
+ * it are large, so fill, not count, is their cost: fewer of them, each brighter, give the
+ * same light for less.
  */
 export function logoBudget(level: number): Pick<LogoOptions, 'particles' | 'still' | 'fps' | 'maxPixelRatio'> {
-  if (level <= 0) return { particles: 220, still: true, fps: 0, maxPixelRatio: 1 }
-  if (level < 2) return { particles: 300, still: false, fps: 30, maxPixelRatio: 1.5 }
-  return { particles: 450, still: false, fps: 60, maxPixelRatio: 2 }
+  if (level <= 0) return { particles: 80, still: true, fps: 0, maxPixelRatio: 1 }
+  if (level < 2) return { particles: 110, still: false, fps: 30, maxPixelRatio: 1.5 }
+  return { particles: 160, still: false, fps: 60, maxPixelRatio: 2 }
 }
 
 export type LogoLayout = 'fit' | 'icon' | 'card'
@@ -289,7 +290,7 @@ export function logoSvg(options: Partial<LogoLook> & { width?: number; height?: 
 </filter>
 </defs>
 ${look.space ? `<rect width="${width}" height="${height}" fill="url(#space)"/>${stars}` : ''}
-<g transform="translate(${box.x.toFixed(2)} ${box.y.toFixed(2)}) scale(${unit.toFixed(5)})" filter="url(#glow)"><path fill-rule="evenodd" fill="#02040a" stroke="${hex(look.glow.map(v => v * 0.5 + 0.5))}" stroke-opacity="0.55" stroke-width="${(1 / unit).toFixed(2)}" d="${WORDMARK_PATH}"/></g>
+<g transform="translate(${box.x.toFixed(2)} ${box.y.toFixed(2)}) scale(${unit.toFixed(5)})" filter="url(#glow)"><path fill-rule="evenodd" fill="${hex(look.face)}" stroke="${hex(look.glow.map(v => v * 0.5 + 0.5))}" stroke-opacity="0.55" stroke-width="${(1 / unit).toFixed(2)}" d="${WORDMARK_PATH}"/></g>
 </svg>`
 }
 export { WORDMARK_WIDTH, WORDMARK_HEIGHT }
