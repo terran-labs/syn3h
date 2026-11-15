@@ -17,11 +17,6 @@ import { Input } from './Input'
 import { QualityController, reportLoading, type FrameMetrics } from './quality'
 import { FIXED_DT, RAPIER, createWorld, initPhysics } from './physics'
 
-/** A post chain draws the frame instead of renderer.render (see setPostChain). */
-export interface PostChainHook {
-  render(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, frameMs: number): void
-}
-
 export interface System {
   /** Apply forces. Runs before every physics step. */
   fixedUpdate?(dt: number): void
@@ -58,9 +53,6 @@ export class Game {
   readonly performance: FrameMetrics = { fps: 0, frameMs: 0, physicsMs: 0, drawCalls: 0, triangles: 0, firstFrameMs: null }
 
   private readonly systems: System[] = []
-  private postChain: PostChainHook | null = null
-  /** Hand frames to a post chain, or null to render plainly. */
-  setPostChain(chain: PostChainHook | null): void { this.postChain = chain }
   private accumulator = 0
   private last = 0
   private averageFrameMs = 1000 / 60
@@ -194,8 +186,7 @@ export class Game {
     const updateStart = performance.now()
     for (const s of this.systems) s.update?.(frameDt, alpha)
     const renderStart = performance.now()
-    if (this.postChain) this.postChain.render(this.renderer, this.scene, this.camera, frameMs)
-    else this.renderer.render(this.scene, this.camera)
+    this.renderer.render(this.scene, this.camera)
     if (this.startupFrames < 3) this.recordStartupFrame(updateStart, renderStart)
     const metrics = this.performance
     metrics.fps = this.fps
