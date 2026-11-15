@@ -59,7 +59,10 @@ export class BoundsGuard implements System {
   slot = 0
   onReset: () => void = () => {}
 
-  constructor(private readonly player: Vehicle, private readonly terrain: Terrain) {}
+  constructor(private player: Vehicle, private readonly terrain: Terrain) {}
+
+  /** The local player changed vehicle in place. */
+  setPlayer(next: Vehicle): void { this.player = next }
 
   postPhysics(): void {
     const b = this.player.body

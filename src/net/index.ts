@@ -472,6 +472,18 @@ export class NetClient implements System {
     return true
   }
 
+  /**
+   * The local player changed vehicle in place (main.ts swapVehicle). `ctx.player` already reads
+   * the new one; this rebinds the three things that took the vehicle at construction. Call
+   * `setProfile({ kind })` afterwards so the other players rebuild their copy.
+   */
+  setPlayer(vehicle: Vehicle): void {
+    this.marker.local = vehicle
+    this.bounds.setPlayer(vehicle)
+    this.rescue.setPlayer(vehicle)
+    vehicle.spawnSlot = this.slot
+  }
+
   /** Announce a new vehicle kind or colours (the local vehicle itself is main.ts's to swap). */
   setProfile(p: { kind?: VehicleKind; colors?: PlayerColors }): void {
     if (p.kind) this.kind = cleanKind(announcedKind(p.kind)) ?? this.kind

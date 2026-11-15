@@ -87,7 +87,14 @@ export class LocalRescue {
   onReturned: () => void = () => {}
   private readonly timer = new StuckTimer()
 
-  constructor(private readonly game: Game, private readonly terrain: Terrain, private readonly player: Vehicle) {}
+  constructor(private readonly game: Game, private readonly terrain: Terrain, private player: Vehicle) {}
+
+  /** The local player changed vehicle in place. A fresh vehicle is not stuck: start the count again. */
+  setPlayer(next: Vehicle): void {
+    if (next === this.player) return
+    this.release()
+    this.player = next
+  }
 
   get stuck(): boolean {
     return this.timer.stuck
