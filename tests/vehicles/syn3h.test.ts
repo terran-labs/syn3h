@@ -483,6 +483,27 @@ describe('Syn3hBuggy', () => {
     expect(motorMax).toBeLessThan(40)
   })
 
+  test('a vehicle landing on its roof side does not flag an upright buggy as inverted', async () => {
+    const { bed, b } = await onMesh()
+    const top = bed.add(new Syn3hBuggy(bed.game, bed.terrain, pos(b).add(new THREE.Vector3(0.4, 1.6, 0.3)), 0.5))
+    top.isLocal = false
+    let flagged = 0, touched = false
+    const w = bed.game.world
+    bed.run(3, () => {
+      if (b.isInverted) flagged++
+      w.contactPair(b.hull, top.hull, () => { touched = true })
+      w.contactPair(b.hull, top.skid, () => { touched = true })
+    })
+    expect(touched).toBe(true)
+    expect(flagged).toBe(0)
+    // Still on its suspension under the load, and able to drive out from under it.
+    expect(b.wheelsGrounded).toBe(4)
+    const p0 = pos(b)
+    b.input.y = 1
+    bed.run(3)
+    expect(planar(pos(b), p0)).toBeGreaterThan(10)
+  })
+
   test('wheel rays ignore other vehicles', async () => {
     const { bed, b } = await spawn()
     bed.run(3)
