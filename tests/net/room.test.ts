@@ -651,6 +651,35 @@ describe('Room idle reset', () => {
   })
 })
 
+describe('Room rebuilt after a deploy', () => {
+  it('keeps the world, forgets departed players\' scores, and does not hand a lock to a new host', () => {
+    const host = join('Host')
+    const b = join('B')
+    send(host.peer, { type: 'param', id: 'world.gravity', value: 15 })
+    send(host.peer, { type: 'lock', locked: true })
+    const stored = room.snapshot()
+    expect(stored.locked).toBe(true)
+
+    // The object is reset: a new Room from storage, every socket gone. B is back first.
+    room = new Room('test', { now: () => clock })
+    room.restore(stored)
+    clock += 3000
+    const b2 = join('B', { 'world.gravity': 15 })
+    const welcome = b2.peer.last('welcome')!
+    expect(welcome.params['world.gravity']).toBe(15)
+    expect(welcome.game.host).toBe(b2.id)
+    expect(welcome.game.locked).toBe(false)
+    expect(Object.keys(welcome.game.scores)).toEqual([String(b2.id)])
+    expect(b2.id).not.toBe(host.id)
+    expect(b2.id).not.toBe(b.id)
+    // The old host returns as an ordinary player and may edit the world again.
+    const h2 = join('Host', { 'world.gravity': 15 })
+    send(h2.peer, { type: 'param', id: 'world.gravity', value: 12 })
+    expect(b2.peer.last('param')).toMatchObject({ id: 'world.gravity', value: 12 })
+    expect(Object.keys(h2.peer.last('welcome')!.game.scores).sort()).toEqual([String(b2.id), String(h2.id)].sort())
+  })
+})
+
 describe('Room relayed shoves', () => {
   it('passes a rammer\'s push to the rammed player only, clamped, in any mode', () => {
     const a = join('A')
