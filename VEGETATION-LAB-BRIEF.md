@@ -13,7 +13,7 @@ The one thing to confirm with him is the volcanic palette (see "Open with the ow
 
 ## The project in one paragraph
 
-A browser rebuild of Mars Explorer and Syn3h: Three.js r187 WebGPURenderer with TSL node
+A browser game: Three.js r187 WebGPURenderer with TSL node
 materials and a WebGL 2 fallback, Rapier, TypeScript, Vite, vitest. Every world is a
 procedurally generated planet built identically on every client from a shared seed and
 shared sliders. Worlds wrap at their edges and are drawn as a sphere. Three kinds exist

@@ -68,8 +68,8 @@ Generated screenshots, a JSON report and a six-second engine WAV are in `tests/a
 
 ## Vehicle and world mix
 
-The engine graphs are newly synthesised. Exact recovered references and excluded
-vendor audio are listed in `provenance.md`. The tag beam, tagged, materialize and wind
+The engine graphs are synthesised; `provenance.md` records where the audio comes
+from. The tag beam, tagged, materialize and wind
 sounds are synthesised too; no recording and no package audio ships.
 
 - Syn3h buggy: a rising electric turbine tone over tyre roar, with a restrained
@@ -82,7 +82,7 @@ sounds are synthesised too; no recording and no package audio ships.
 - Landings: short low thumps scale with touchdown speed.
 - Lava: low bubbling near liquid surfaces and optional vents; entry adds a
   falling splash tone and filtered sizzle.
-- Wind: the original wind recording, with a blended loop boundary, rises with
+- Wind: generated noise with a blended loop boundary, rises with
   speed, altitude and airborne state.
 - Game: ascending capture, beating contested, descending lost, four-note win,
   short countdown ticks, tag chirp, join/leave tones and quiet panel clicks.

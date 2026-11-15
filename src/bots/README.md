@@ -32,7 +32,7 @@ manager owns it (`bots.daydream`), so the composition root needs no wiring.
 
 Each bot gets a `Personality` from the world seed and its id (boldness, curiosity,
 sociability, mischief, patience) and a Mind. `bots.freeSpirit` sets the share of time it
-follows its own agenda instead of chasing: 0 is the original relentless pursuit, 1 never
+follows its own agenda instead of chasing: 0 is relentless pursuit, 1 never
 chases. `brain.mood` says which it is doing; `brain.mind.caption` says what.
 
 # Pursuit
@@ -54,13 +54,13 @@ Every client may create a manager. Networking must set `manager.remote = true` o
 
 The controller writes `input.fire` in one-step pulses when the fire interval passes and the terrain ray is clear. Actual firing requires the weapon system. The placeholder vehicle has no weapon implementation.
 
-## Port sources
+## Pursuit controller
 
-- `VhiclBot.cs:35-55`: wrapped yaw, 20 degree steering scale, 2 degree dead zone, full steering within 15 metres, 0.6 steering limit beyond that, forward throttle and reversed steering while backing out.
-- `VhiclBot.cs:59-74`: pursue the local player and check movement every 1.5 seconds; reverse below one metre of movement. Random initial scheduling is replaced by deterministic index staggering.
-- `VehicleBot.js:11-25`: refresh target selection every two seconds and choose the nearest other vehicle.
-- `VehicleBot.js:61,118-126`: independent drive/fire switches and terrain-obstructed firing on a one-second interval.
-- `Game.js:1005-1038`: add/remove numbered bots. The new manager reconciles a population parameter instead of creating network RPCs or waiting for materialization effects.
+- Steering: wrapped yaw, 20 degree steering scale, 2 degree dead zone, full steering within 15 metres, 0.6 steering limit beyond that, forward throttle and reversed steering while backing out.
+- Pursue the local player and check movement every 1.5 seconds; reverse below one metre of movement. Checks are staggered deterministically by bot index.
+- Refresh target selection every two seconds and choose the nearest other vehicle.
+- Independent drive/fire switches and terrain-obstructed firing on a one-second interval.
+- Bots are added and removed by reconciling a population parameter, with no network RPCs and no wait for materialization effects.
 
 Positive input X means right, so the yaw error uses the negative-Z forward vector directly. Tests check both turn directions with the bot initially facing away from its target.
 

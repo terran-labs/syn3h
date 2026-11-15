@@ -35,13 +35,13 @@ published 2026-11-03).
   - No semantics. There is no "road", only triangles.
   - The mesh under you changes as levels of detail load, so collision geometry has to be
     pinned to one level near the vehicle or it will pop.
-  - Mars Explorer's vehicles help here. The buggy and hovercraft touch the ground only
+  - Our vehicles help here. The buggy and hovercraft touch the ground only
     through raycasts, so they can raycast against the visible tile meshes with
     [three-mesh-bvh](https://github.com/gkjohnson/three-mesh-bvh) and need no physics
     colliders for terrain at all. Only chassis impacts need real colliders.
   - The tileset is in Earth centred coordinates with values in the millions of metres.
     Reorient it so a chosen latitude and longitude sits at the origin, and recentre
-    periodically for the jet. Syn3h's `CoreFloatingOrigin.cs` is the same idea.
+    periodically for the jet.
   - Memory. The renderer's cache is a hard cap: when full, refinement stops. Teleoperator's
     notes put the iOS tab limit near 1 to 1.5 GB, so phones need a small cache and a short
     view distance.

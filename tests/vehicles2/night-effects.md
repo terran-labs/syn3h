@@ -2,7 +2,7 @@
 
 The 23:00 island capture confirms a visible headlight pool on the road, standing and moving, and readable tyre edges. The light points along vehicle -Z. Terrain uses MeshStandardNodeMaterial and already receives spot lights. The weak beam came from 80 candela with inverse-square falloff and an aim point too low, not a reversed vehicle frame or an unlit terrain shader.
 
-The revised local beam uses 1600 candela, or 1800 for the jet, and aims farther down the road. Its source range and cone remain 50 m and 60 degrees. A small night-only paint fill and edge term keeps the vehicle silhouette readable without extra lights or submissions. World exposure and sky reflections are unchanged. Transparent cockpits are excluded. This is a new visibility aid, not a claim about the original shader.
+The revised local beam uses 1600 candela, or 1800 for the jet, and aims farther down the road. Its range and cone remain 50 m and 60 degrees. A small night-only paint fill and edge term keeps the vehicle silhouette readable without extra lights or submissions. World exposure and sky reflections are unchanged. Transparent cockpits are excluded.
 
 Evidence:
 

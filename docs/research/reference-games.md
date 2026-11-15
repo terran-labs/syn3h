@@ -39,10 +39,10 @@ What explains the things you liked:
 Where we should differ:
 
 - Folio steps physics with the frame's delta time (`world.timestep = ticker.deltaScaled`).
-  That is fine for a single player toy. We need a fixed step, because Mars Explorer's
-  constants assume one and because networked ramming needs every client to behave alike.
+  That is fine for a single player toy. We need a fixed step, because our
+  vehicle constants assume one and because networked ramming needs every client to behave alike.
 - Rapier's vehicle controller models a road car. It cannot express a hovercraft, a jet or a
-  tracked tank, and Mars Explorer's buggy is its own raycast model anyway.
+  tracked tank, and our buggy is its own raycast model anyway.
 - Folio's server is not a multiplayer vehicle sync. Do not expect to lift netcode from it.
 
 ## teleoperator.mindblown.ai

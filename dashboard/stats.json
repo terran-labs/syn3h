@@ -1,0 +1,93 @@
+{
+  "generatedAt": "2026-11-15T23:14:20.427Z",
+  "commits": {
+    "total": 1469,
+    "last48h": 1469,
+    "merges": 453
+  },
+  "pullRequests": {
+    "count": 0,
+    "merged": 0,
+    "mergedDirectly": 453,
+    "note": "Lanes merge branches directly; few changes went through pull requests."
+  },
+  "releases": {
+    "production": 11,
+    "today": 9,
+    "withdrawn": 1,
+    "newest": "v26.11.1509",
+    "newestAt": "2026-11-15 14:28 PST"
+  },
+  "code": {
+    "sourceFiles": 314,
+    "lines": 58949,
+    "testFiles": 213,
+    "params": 301
+  },
+  "tokens": {
+    "stale": false,
+    "countedAt": "2026-11-15T23:14:20.427Z",
+    "claude": {
+      "input": 28086,
+      "output": 14001244,
+      "cacheRead": 3740490905,
+      "cacheWrite": 39361334,
+      "total": 3793881569,
+      "sessions": 99,
+      "messages": 12272
+    },
+    "codex": {
+      "input": 19775135,
+      "output": 3455539,
+      "cacheRead": 1496447744,
+      "cacheWrite": 0,
+      "reasoning": 849841,
+      "total": 1519678418,
+      "sessions": 39
+    },
+    "total": 5313559987,
+    "firstSessionAt": "2026-11-14T21:41:39.778Z",
+    "hours": 25.5,
+    "perHour": 208010885
+  },
+  "price": {
+    "low": 1536,
+    "high": 1732,
+    "currency": "USD",
+    "models": [
+      {
+        "model": "Claude Opus 5.5",
+        "tokens": 799855293,
+        "low": 323,
+        "high": 362
+      },
+      {
+        "model": "Claude Fable 5.2",
+        "tokens": 2994026276,
+        "low": 1213,
+        "high": 1371
+      }
+    ],
+    "unpricedTokens": 0,
+    "ratesDate": "2026-11-03",
+    "rates": [
+      {
+        "model": "Claude Fable 5.2",
+        "input": 8,
+        "output": 40,
+        "cacheRead": 0.2,
+        "cacheWriteLow": 10,
+        "cacheWriteHigh": 16
+      },
+      {
+        "model": "Claude Opus 5.5",
+        "input": 4,
+        "output": 20,
+        "cacheRead": 0.2,
+        "cacheWriteLow": 5,
+        "cacheWriteHigh": 8
+      }
+    ],
+    "note": "Estimate only: what the Claude tokens would cost at list API prices of 2026-11-03. Not what was paid; these sessions ran on subscriptions. Codex tokens are not priced."
+  }
+}

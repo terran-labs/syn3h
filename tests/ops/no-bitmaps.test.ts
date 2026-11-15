@@ -19,7 +19,6 @@ const IMAGE = /\.(png|jpe?g|webp|gif|bmp|ico|avif|tga|tiff?|ktx2?|hdr|exr|dds|ba
 /** Each line: path, then who removes it. */
 const ALLOWED = new Map<string, string>([
   // Orchestrator: dashboard marks, to become the vector wordmark and traced marks.
-  ['dashboard/assets/marsxplr-logo.png', 'Orchestrator'],
   ['dashboard/assets/syn3h-logo-sun-1024x512.png', 'Orchestrator'],
   ['dashboard/assets/terran-labs-logo.png', 'Orchestrator'],
   ['dashboard/assets/terran-labs-wordmark.png', 'Orchestrator'],
@@ -31,7 +30,7 @@ const ALLOWED = new Map<string, string>([
   ['public/brand/share.png', 'UX'],
 ])
 /** The list may never be longer than it was on the day it was written. */
-const CEILING = 8
+const CEILING = 7
 
 const tracked = (): string[] =>
   execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split('\0').filter((f) => IMAGE.test(f))

@@ -13,7 +13,7 @@ In `main.ts`, insert the attach call immediately after `game.add(player)`. Remot
 
 All attached actors share capped buffers: 1,024 track quads, 256 trail quads, and 600 desktop, 240 mobile or 60 safe-level particle slots. Quality changes rebuild particle buffers. Seven shared draws cover the particle/ribbon buffers and one instanced lamp batch. Four lamp instances per vehicle add no per-vehicle draw calls; the batch is capped at 128 vehicles. Only local vehicles receive road spotlights, without shadows. The buggy has one beam at each front lamp, sharing the previous total intensity; other vehicles keep one central beam. Last-disposer cleanup removes the shared system and disposes geometry and materials. Repeated disposal is safe. `game.scene.userData.vehicleEffects` exposes capacities, emitted count and CPU update timing, not GPU timing.
 
-Buggy contacts use `getWheelEffects()` in FL, FR, RL, RR order. Each entry supplies grounded state, world point, world normal and absolute lateral slip. `landedThisStep` is sampled after every physics step, with `landingImpact` setting the puff strength. Fallback terrain projection supports older vehicles. Dust and tracks are suppressed over liquid; entering liquid emits one small capped splash/steam approximation. This is new behavior, not a recovered Syn3h effect.
+Buggy contacts use `getWheelEffects()` in FL, FR, RL, RR order. Each entry supplies grounded state, world point, world normal and absolute lateral slip. `landedThisStep` is sampled after every physics step, with `landingImpact` setting the puff strength. Fallback terrain projection supports older vehicles. Dust and tracks are suppressed over liquid; entering liquid emits one small capped splash/steam approximation.
 
 ## Tyre marks by surface
 
@@ -23,36 +23,36 @@ Set by the owner on 15 November 2026: marks differ by surface, only the Methane 
 
 Every world wraps. When the local player crosses a tile edge, `Vehicle.shiftBy` moves it a whole tile and dispatches `{ type: 'tileshift', dx, dz }` on `vehicle.object`. The effects attached with `local: true` then call `shift(dx, dz)` on every shared batch (tyre marks, trails, dust, exhaust, weapon sparks) and move that vehicle's own mark and trail history by the same vector, so everything behind the player stays behind it and its marks carry on unbroken. A shift rewrites the stored world positions in place and uploads each buffer once; frames without a shift cost nothing. A uniform offset was rejected: it would add work to every vertex on every frame, and every later emit would have to subtract the running offset. Any other vehicle the terrain re-images near the player leaves its marks where they are and starts its history again. The Syn3h buggy's motor sparks are emitted in the vehicle's own frame and need nothing.
 
-## Source and adaptations
+## Generated looks
 
-Sources are the read-only Syn3h client Assets tree. No effect loads an image. The original textures (dust, skid mark, green and red plasma, and the HoverGlow thruster glow as an exhaust particle) were measured and replaced by shader-generated looks in `sprites.ts`; the effect images are no longer shipped. Each particle gets its own noise pattern from its birth time and slot, and the pattern drifts as it ages. The noise uses one octave at the safe graphics level and two above it. `maps.ts` generates the tank tread map once at run time in place of `tank-track.png`. `tests/vehicles2/no-images.test.ts` fails if vehicle code loads an image again. No vehicle bitmap exceptions remain; the guard also inspects GLB image and texture declarations.
+No effect loads an image. Dust, skid marks, green and red plasma, and the thruster glow as an exhaust particle are shader-generated looks in `sprites.ts`; no effect images are shipped. Each particle gets its own noise pattern from its birth time and slot, and the pattern drifts as it ages. The noise uses one octave at the safe graphics level and two above it. `maps.ts` generates the tank tread map once at run time. `tests/vehicles2/no-images.test.ts` fails if vehicle code loads an image again. No vehicle bitmap exceptions remain; the guard also inspects GLB image and texture declarations.
 
-Two deliberate differences from the images. Dust is now tinted: `dust.png` had black colour channels, so every puff drew black whatever tint was passed. Tyre marks now have soft shoulders, tread ribs and patchiness: `skidmark.png` had alpha 1 everywhere, so marks drew as flat bands.
+Dust takes the tint it is passed. Tyre marks have soft shoulders, tread ribs and patchiness rather than flat bands.
 
-| Effect | Recovered values | Browser adaptation |
+| Effect | Values | Browser adaptation |
 | --- | --- | --- |
-| Tracks | `_Core/Scripts/VhiclSkidmarks.cs`: 1,024 marks, width .5, offset .04, spacing .75, intensity divided by two | Colour, strength, tread pattern, width and lifetime come from the ground under each wheel (`treads.ts`, below); classic width .3; rings reject teleport bridges |
-| Slip intensity | Buggy `VhiclBuggy.cs` lines 316-322: lateral speed greater than forward speed times .3 gives input magnitude times .5 plus .25 | Lower-slip fallback uses .5, since material friction is not exposed |
-| Jet main exhaust | `terra.jet.prefab`: 100/s, life .3, size 1, speed 10, growth -.95 | Throttle scales size and speed; original controller particle section is commented out |
-| Jet hover exhaust | 25/s per nozzle, life 1, size .2/.3, spread .4, growth 2 | Reconstructs commented controller intent, max(.1, throttle times .3) size |
-| Hovercraft exhaust | Prefab 100/s, life .3, size .8, speed 7 | Throttle-scaled, shares jet particle batch |
-| Hovercraft dust | Prefab 50/s, life 1, size .3, ellipsoid 1.3 by 1.8 | Samples terrain beneath craft and fades with height |
-| Headlights | Warm light (1,.9965517,.875), range 50, cone 60 degrees; material emission (2.447059,2.858824,3) | One local light replaces paired spots; Three intensity adapted to visible ground lighting at night |
-| Tail lights | Original emission (2,0,0) | Braking increases red emission; fixture placements outside buggy are approximate |
-| Wing trails | No vehicle TrailRenderer components or leftTrail/rightTrail fields in these snapshots | New subtle .1 m wide, .8 s trails; approximate tips, accent colour |
+| Tracks | 1,024 marks, width .5, offset .04, spacing .75, intensity divided by two | Colour, strength, tread pattern, width and lifetime come from the ground under each wheel (`treads.ts`, below); classic width .3; rings reject teleport bridges |
+| Slip intensity | Buggy: lateral speed greater than forward speed times .3 gives input magnitude times .5 plus .25 | Lower-slip fallback uses .5, since material friction is not exposed |
+| Jet main exhaust | 100/s, life .3, size 1, speed 10, growth -.95 | Throttle scales size and speed |
+| Jet hover exhaust | 25/s per nozzle, life 1, size .2/.3, spread .4, growth 2 | Size max(.1, throttle times .3) |
+| Hovercraft exhaust | 100/s, life .3, size .8, speed 7 | Throttle-scaled, shares jet particle batch |
+| Hovercraft dust | 50/s, life 1, size .3, ellipsoid 1.3 by 1.8 | Samples terrain beneath craft and fades with height |
+| Headlights | Warm light (1,.9965517,.875), range 50, cone 60 degrees; material emission (2.447059,2.858824,3) | One local light; Three intensity adapted to visible ground lighting at night |
+| Tail lights | Emission (2,0,0) | Braking increases red emission; fixture placements outside buggy are approximate |
+| Wing trails | None | Subtle .1 m wide, .8 s trails; approximate tips, accent colour |
 
-Particle alpha uses a smooth sine approximation to the original five-key fade. Particles use world-space birth positions and inherit vehicle velocity. Wheels use speed and slip to grow dust. Original exhaust glow cones already supplied by the jet model remain in place. Ground dust, landing puffs and wing trails are cosmetic reconstructions where no active source implementation survives.
+Particle alpha uses a smooth sine fade. Particles use world-space birth positions and inherit vehicle velocity. Wheels use speed and slip to grow dust. Exhaust glow cones already supplied by the jet model remain in place. Ground dust, landing puffs and wing trails are cosmetic.
 
 ## Laser handoff
 
-`VhiclLaser.cs` in this snapshot is entirely commented out. Prefabs and materials still give the intended look:
+The intended laser look:
 
 * LaserAuto uses Plasma Green, one-second trail, width .5 to .2, very small minimum vertex spacing (.0001), transparent ends with an opaque middle. Its shot pitch is 1.3.
 * LaserSnipe uses Plasma Red, one-second trail, width 2 to 1, minimum vertex spacing 3, opaque leading body fading at the tail. Its shot pitch is .5.
-* Both reference `_Core/Audio/LaserShot.mp3`, volume 1, attenuation range 1 to 500.
+* Both play their shot at volume 1, attenuation range 1 to 500.
 * PlasmaSparks emits four particles, size .4 to .7, life .8, random lateral velocity 3, growth 2. This hook approximates its spread; it does not reproduce stretched billboards or gravity.
 
-Current `Lasers.ts` uses fixed three-metre red/orange cylinders and orange spherical impacts. To match Syn3h, replace those with additive green auto and red snipe plasma trails using the prefab widths and lifetime, and use four plasma impact sparks. Keep collision and networking authoritative. Do not change hit detection to follow the visible trail.
+Current `Lasers.ts` uses fixed three-metre red/orange cylinders and orange spherical impacts. For the intended look, replace those with additive green auto and red snipe plasma trails using the widths and lifetime above, and use four plasma impact sparks. Keep collision and networking authoritative. Do not change hit detection to follow the visible trail.
 
 ```ts
 const effects = createWeaponEffects(game)
@@ -62,7 +62,7 @@ effects.impact(worldHit, worldNormal, isSnipe)
 effects.dispose()
 ```
 
-Call muzzle only for fresh shots, including fresh replicated shots, rather than old replayed projectiles. Call impact once when an authoritative hit is accepted. The hook supplies generated green and red plasma sprites and bounded particles, but deliberately leaves sound and projectile ownership with the weapon system. The short muzzle flash is a new approximation. Impact sound was not established from these assets, so no substitute sound is claimed as original.
+Call muzzle only for fresh shots, including fresh replicated shots, rather than old replayed projectiles. Call impact once when an authoritative hit is accepted. The hook supplies generated green and red plasma sprites and bounded particles, but deliberately leaves sound and projectile ownership with the weapon system. The short muzzle flash is a new approximation.
 
 ## Verification
 
@@ -74,8 +74,8 @@ Evidence is under `/tmp/syn3h-vehicles2/effects-{buggy,jet,hovercraft}-{noon,nig
 
 ## Night visibility follow-up
 
-The original 50 m range and 60 degree cone remain. The local spotlight now starts at y .35 and aims at (0, -.8, -22) in the vehicle frame, with 1600 candela at night (1800 for the jet). Its old 80 candela and lower aim produced almost no visible pool under inverse-square falloff. The terrain already receives standard spot lighting, so no terrain shader change is needed. Remote vehicles still receive no spotlight.
+The 50 m range and 60 degree cone remain. The local spotlight now starts at y .35 and aims at (0, -.8, -22) in the vehicle frame, with 1600 candela at night (1800 for the jet). Its old 80 candela and lower aim produced almost no visible pool under inverse-square falloff. The terrain already receives standard spot lighting, so no terrain shader change is needed. Remote vehicles still receive no spotlight.
 
-Shared vehicle materials receive a small night-only paint fill and a cool edge term on batched surfaces. Daylight and standalone viewers retain their previous shading; transparent glass is untouched. This is an art-directed visibility aid, not a recovered Unity effect. It adds no lights or submissions and does not change world exposure or the environment map.
+Shared vehicle materials receive a small night-only paint fill and a cool edge term on batched surfaces. Daylight and standalone viewers retain their previous shading; transparent glass is untouched. This is an art-directed visibility aid. It adds no lights or submissions and does not change world exposure or the environment map.
 
 The updated tyre slip value does not suppress rolling tracks or dry-ground dust: both depend on speed and grounded contact, with slip affecting intensity and plume size. No threshold change was needed. Captures and measurements are recorded in `tests/vehicles2/night-effects.md`.
