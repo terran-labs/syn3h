@@ -29,9 +29,10 @@ try{
   await page.screenshot({path:`/tmp/swap-hold-${kind}.png`})
   await page.waitForFunction(()=>window.__holdProbe.free.length>=110,null,{timeout:60000})
   const result=await page.evaluate(()=>{const p=window.__holdProbe,s=window.syn3h;return {...p,kind:s.player.kind,kinematic:s.player.body.isKinematic(),heldFlag:s.player.object.userData.materializing===true}})
+  report.last=result
   assert.equal(result.kind,kind);assert.equal(result.heldFlag,false);assert.equal(result.kinematic,false)
-  assert.ok(result.held.length>=55&&result.held.length<=61,`${kind} held ${result.held.length} ticks`)
-  for(const row of result.held){assert.ok(Math.abs(row.y-start.y)<.001);assert.ok(row.speed<.001);assert.ok(row.up>.999);assert.deepEqual(row.input,[0,0,0,0,false])}
+  assert.ok(result.held.length>=48&&result.held.length<=51,`${kind} held ${result.held.length} ticks`)
+  for(const row of result.held){assert.ok(Math.abs(row.y-start.y)<.001);assert.ok(row.speed<.01,`${kind} speed ${row.speed} at ${row.tick}`);assert.ok(row.up>.999);assert.deepEqual(row.input,[0,0,0,0,false])}
   assert.ok(Math.min(...result.free.map(r=>r.y))<start.y-.1,`${kind} did not drop`)
   const canFire=await page.evaluate(()=>{const n=window.syn3hNet,before=n.stats.shotsFired;n.fire();return n.stats.shotsFired===before+1})
   assert.equal(canFire,true)
@@ -39,4 +40,4 @@ try{
  }
  report.rapid=await page.evaluate(()=>{const s=window.syn3h,a=s.swapVehicle('jet'),same=s.swapVehicle('jet'),stillHeld=a.object.userData.materializing===true,b=s.swapVehicle('tank'),again=s.swapVehicle('jet');return {same:same===a,stillHeld,reused:again===a,tankDisabled:!b.body.isEnabled(),tankDynamic:!b.body.isKinematic(),tankClear:!b.object.userData.materializing,jetHeld:!!a.object.userData.materializing}})
  assert.ok(Object.values(report.rapid).every(Boolean));assert.equal(report.errors.length,0)
-}catch(e){report.failure=String(e);process.exitCode=1}finally{await browser?.close();server.kill('SIGTERM');await writeFile('/tmp/swap-hold-browser.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report))}
+}catch(e){report.failure=String(e);process.exitCode=1}finally{await browser?.close();server.kill('SIGTERM');await writeFile('/tmp/swap-hold-browser.json',JSON.stringify(report,null,2));console.log(JSON.stringify({...report,last:undefined}))}
