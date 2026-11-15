@@ -22,6 +22,8 @@ export class RemotePlayer {
   /** Currently in contact with the local vehicle. */
   touching = false
   lastRamSent = -Infinity
+  /** Game time the local vehicle last touched this one, for relayed shoves (shove.ts). */
+  lastContactAt = -Infinity
   delay = 0.1
   /** Removes this vehicle's effects; call before removing the vehicle. */
   disposeEffects: () => void = () => {}

@@ -155,9 +155,11 @@ const hash3 = Fn(([c]: [N]) => fract(sin(vec3(dot(c, vec3(127.1, 311.7, 74.7)), 
  * Build the material a mesh uses at a tier above 0. `sources` are the materials the mesh was
  * authored with: one, or several packed into a single draw by `mergeStatic`, selected per
  * vertex by `surfaceId`. Colours stay live because the uniforms hold the sources' own Color
- * objects, which is what the vehicle classes and `setColors` write to.
+ * objects, which is what the vehicle classes and `setColors` write to. `authoredEmission` is the
+ * emission node the mesh's material already had, if any: a skin may add its own glow to it after
+ * merging (the Syn3h stator tips do), and every tier must keep that.
  */
-function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, meshName: string): T.Material {
+function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, meshName: string, authoredEmission: N | null): T.Material {
   const roles = sources.map(s => roleOf(s, meshName))
   // Canopy glass is its own draw (see `separate` in mergeStatic), so it can blend.
   if (!merged && roles[0] === 'glass' && tier >= 2) return buildGlass(sources[0])
@@ -221,7 +223,7 @@ function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, m
     material.aoNode = mix(.1, 1, lit)
   }
   material.colorNode = color
-  material.emissiveNode = emission
+  material.emissiveNode = authoredEmission ?? emission
   material.roughnessNode = clamp(roughness, .04, 1)
   material.metalnessNode = metalness
   if (heights.size || tier === 3) material.normalNode = normal
@@ -270,6 +272,9 @@ export type Decorate = (root: T.Object3D) => void
 export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void {
   const entries: { mesh: T.Mesh; source: Standard }[] = []
   root.traverse(o => { if (o instanceof T.Mesh && !Array.isArray(o.material) && isStandard(o.material)) entries.push({ mesh: o, source: o.material }) })
+  // Read before anything is decorated: tier 0 decoration wraps these nodes in place.
+  const authored = new Map<T.Material, N | null>()
+  for (const e of entries) authored.set(e.source, (e.source as unknown as T.MeshStandardNodeMaterial).emissiveNode ?? null)
   const tiers: (Map<T.Mesh, T.Material> | undefined)[] = []
   const built = new Set<T.Material>()
   let current = -1, far = false, remote = false, distance = 0
@@ -283,7 +288,7 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
         let variant = tier === 0 ? e.source : cache.get(e.source)
         if (!variant) {
           const packed = mergedSurfaces.get(e.source)
-          variant = build(packed ?? [e.source], Boolean(packed), tier as 1 | 2 | 3, e.mesh.name)
+          variant = build(packed ?? [e.source], Boolean(packed), tier as 1 | 2 | 3, e.mesh.name, authored.get(e.source) ?? null)
           cache.set(e.source, variant); built.add(variant)
         }
         e.mesh.material = variant

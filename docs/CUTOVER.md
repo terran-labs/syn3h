@@ -123,9 +123,18 @@ the redirect is to go.
      follow the Open Graph spec need an absolute URL, so the UX lane should make both absolute
      (`https://www.syn3h.com/...`) before the cutover.
    - mail: `dig MX syn3h.com` and `dig TXT syn3h.com` match the export
-   - afterwards: in the first release after a verified cutover, switch `og:url`, `og:image`
+   - done on trunk for release 2: switch `og:url`, `og:image`
      and `twitter:image` in `index.html` from the workers.dev address to
      `https://www.syn3h.com` (UX lane; `tests/ui/share.test.ts` keeps them on one origin)
+
+## If a check fails after the attach
+
+Rule set by the Foreman after the first cutover (14 November, 7:15pm PST). On a failed
+post-attach check, stop all further changes and take up to five minutes to establish whether
+the failure is ours or is the old origin still being served from Cloudflare's cache
+(`curl -sD - https://www.syn3h.com/` showing the old site's title or an `x-host` header from
+the old host; a 406 on the WebSocket came from there the first time and cleared in about a
+minute). Roll back if the failure is ours, or if it has not cleared in five minutes.
 
 ## Rollback of the cutover
 

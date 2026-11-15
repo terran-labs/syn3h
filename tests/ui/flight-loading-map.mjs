@@ -15,7 +15,9 @@ try {
     })
     await page.goto('http://127.0.0.1:5187/?vehicle=jet&room=flight-ui', { waitUntil: 'domcontentloaded' })
     await page.locator('.syn3h-loading').waitFor({ state: 'visible' })
-    assert.equal(await page.locator('.syn3h-loading progress').getAttribute('value'), null)
+    // The device check has reported by now; the veil from index.html is what is on screen.
+    assert.equal(await page.locator('.syn3h-loading progress').getAttribute('value'), '0.05')
+    assert.equal(await page.evaluate(() => document.documentElement.dataset.boot), 'loading')
     await page.screenshot({ path: `tests/ui/artifacts/${device}-loading-indeterminate.png` })
     await page.evaluate(() => dispatchEvent(new CustomEvent('syn3h:loading', { detail: { phase: 'Preparing terrain', progress: .42, elapsedMs: 4200 } })))
     assert.equal(await page.locator('.loading-phase').textContent(), 'Preparing terrain')

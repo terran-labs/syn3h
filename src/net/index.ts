@@ -48,6 +48,7 @@ import { NameTags } from './NameTags'
 import { applyRoomWorld, netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
 import { audibleVehicles, bodyAlive, liveBots } from './bots'
+import { ShoveQueue, cleanShove, shoveFor } from './shove'
 
 /** The slice of GameAudio (src/audio) networking uses. */
 export interface NetAudio {
@@ -131,6 +132,13 @@ export interface NetEvent {
 
 /** Contact closer than this counts as touching. */
 const CONTACT_DIST = 0.05
+/** Physics steps of our own velocity kept: 0.6 s, the window a relayed push looks back over. */
+const VEL_HISTORY = 30
+
+/** A relayed push is believed only from a vehicle within this distance on our screen, m. A
+ * rammer's copy trails it by its speed times the playback delay, a few metres at most. */
+const SHOVE_REACH = 15
+
 /** Do not repeat a ram report for the same pair more often than this, in seconds. */
 const RAM_REPEAT = 0.5
 /** Heartbeat interval for a hidden tab, ms. Browsers allow about one timer a second there. */
@@ -164,7 +172,7 @@ export class NetClient implements System {
     koth: { zone: null, holder: 0, contested: false, winner: 0, resetAt: 0, out: {} },
   }
   /** Counts for automated checks. */
-  stats = { stuck: 0, statesSent: 0, statesReceived: 0, rams: 0, hitsTaken: 0, hitsJudged: 0, shotsFired: 0, heartbeats: 0, botStatesSent: 0 }
+  stats = { stuck: 0, shoves: 0, statesSent: 0, statesReceived: 0, rams: 0, hitsTaken: 0, hitsJudged: 0, shotsFired: 0, heartbeats: 0, botStatesSent: 0 }
 
   private kind: WireVehicleKind
   private colors: [string, string]
@@ -186,6 +194,14 @@ export class NetClient implements System {
   private readonly tags: NameTags
   private readonly hill: HillMarker
   private readonly rescue: LocalRescue
+  /** Pushes relayed from players who rammed us, waiting to see if our physics felt them. */
+  private readonly shoves = new ShoveQueue()
+  /**
+   * Our velocity a tenth of a second ago: what we had before a contact began. The step in
+   * which a contact is first seen may already have spent most of our speed on it.
+   */
+  private preVel: [number, number, number] = [0, 0, 0]
+  private readonly velHistory: [number, number, number][] = []
   private zoneTimer = 0
   private mapTimer = 0
   private localZone: HillZone | null = null
@@ -360,6 +376,11 @@ export class NetClient implements System {
       r.delay = r.buffer.delay(dt, netInterpDelay.value, netMaxDelay.value)
       r.steer(now - r.delay, maxEx, lp, radius, blend)
     }
+    this.applyShoves()
+    const pv = this.ctx.player.body.linvel()
+    this.velHistory.push([pv.x, pv.y, pv.z])
+    if (this.velHistory.length > VEL_HISTORY) this.velHistory.shift()
+    this.preVel = this.velHistory[Math.max(0, this.velHistory.length - 6)]
 
     // Firing, rate limited (VehicleMe.js 45-66). Works offline too.
     const t = this.ctx.game.time
@@ -576,9 +597,10 @@ export class NetClient implements System {
         continue
       }
       const touching = this.touching(this.ctx.player, r.vehicle)
+      if (touching) r.lastContactAt = now
       if (touching && !r.touching && now - r.lastRamSent > RAM_REPEAT) {
         r.lastRamSent = now
-        this.onContact(id, r.vehicle)
+        this.onContact(id, r.vehicle, r)
       }
       r.touching = touching
     }
@@ -609,7 +631,27 @@ export class NetClient implements System {
     return touching
   }
 
-  private onContact(id: number, other: Vehicle): void {
+  /** Apply relayed pushes whose ram our own physics did not feel; see shove.ts. */
+  private applyShoves(): void {
+    const now = this.ctx.player.body.linvel()
+    const due = this.shoves.take(this.ctx.game.time, (from) => this.remotes.get(from)?.lastContactAt ?? -Infinity, [now.x, now.y, now.z])
+    for (const { from, push } of due) {
+      const body = this.ctx.player.body
+      // Believe it only from a vehicle that is beside us on our own screen as well.
+      const remote = this.remotes.get(from)
+      if (!remote || !remote.responding) continue
+      const me = body.translation()
+      const it = remote.vehicle.body.translation()
+      if (Math.hypot(it.x - me.x, it.y - me.y, it.z - me.z) > SHOVE_REACH) continue
+      const v = body.linvel()
+      body.setLinvel({ x: v.x + push[0], y: v.y + push[1], z: v.z + push[2] }, true)
+      this.stats.shoves++
+      this.ctx.audio?.impact(Math.hypot(...push), body.translation())
+      this.event(`Ram: ${this.nameOf(from)} and you`)
+    }
+  }
+
+  private onContact(id: number, other: Vehicle, remote?: RemotePlayer): void {
     this.stats.rams++
     const a = this.ctx.player.body.linvel()
     const b = other.body.linvel()
@@ -618,7 +660,12 @@ export class NetClient implements System {
     this.event(`Ram: you and ${this.nameOf(id)}`)
     // In tag only contact involving "it" means anything; on the hill every touch may be the
     // push that dunks someone. The server checks again anyway.
-    if (this.game.mode === MODE_KOTH || this.game.it === this.id || this.game.it === id) this.send({ type: 'ram', other: id })
+    // A player's copy also gets the push we would have given it, in case its own screen
+    // never sees the contact. Bots are pushed where they are simulated.
+    const o = other.body.translation()
+    const push = remote && !isBotId(id) ? shoveFor([p.x, p.y, p.z], [o.x, o.y, o.z], this.preVel, remote.sample.v as [number, number, number]) : null
+    if (push) this.send({ type: 'ram', other: id, push })
+    else if (this.game.mode === MODE_KOTH || this.game.it === this.id || this.game.it === id) this.send({ type: 'ram', other: id })
   }
 
   private spawnRemote(info: PlayerInfo, s: WireState): RemotePlayer {
@@ -798,6 +845,14 @@ export class NetClient implements System {
           this.ctx.audio?.play('laserShot', { x, y, z })
         }
         break
+      case 'shove': {
+        const push = cleanShove(msg.push)
+        if (push) {
+          const v = this.ctx.player.body.linvel()
+          this.shoves.add(msg.from, push, this.ctx.game.time, this.remotes.get(msg.from)?.delay ?? 0.1, [v.x, v.y, v.z], this.velHistory[0] ?? [v.x, v.y, v.z])
+        }
+        break
+      }
       case 'hit': {
         const victim = this.vehicleOf(msg.victim)
         this.lasers.confirmHit(msg.shooter, msg.shot, victim?.object.position)

@@ -1,5 +1,6 @@
 import {afterEach,describe,expect,it} from 'vitest'
 import * as T from 'three/webgpu'
+import {uniform} from 'three/tsl'
 import {params} from '../../shared/params'
 import {vehicleShading} from '../../src/core/quality'
 import {mergeStatic,mergedSurfaces} from '../../src/vehicles/skins/mergeStatic'
@@ -83,6 +84,20 @@ describe('showroom vehicle shading',()=>{
   detail(27,true,2);expect(body.material).toBe(paint)
   detail(24,true,2);expect(body.material).toBe(near)
   detail(200,false,2);expect(body.material).toBe(local)
+  dispose()
+ })
+ it('keeps emission a skin added to a merged material, at every tier',()=>{
+  params.set(vehicleShading.def.id,0)
+  const root=new T.Group();root.add(new T.Mesh(box(),std('Body')),new T.Mesh(box(),std('Chrome')))
+  mergeStatic(root,true)
+  const mesh=root.children[0] as T.Mesh,merged=mesh.material as T.MeshStandardNodeMaterial
+  // As the Syn3h stators do: add a glow to the merged material after merging.
+  const glow=uniform(new T.Color(1,0,0)),base=merged.emissiveNode!
+  merged.emissiveNode=(base as unknown as {add(n:unknown):typeof base}).add(glow)
+  // A decorator that wraps emission in place, as the night and lava passes do.
+  const dispose=applyShowroom(root,r=>r.traverse(o=>{if(o instanceof T.Mesh){const m=o.material as T.MeshStandardNodeMaterial;m.emissiveNode=(m.emissiveNode as unknown as {mul(n:number):typeof base}).mul(1)}}))
+  const has=(m:T.MeshStandardNodeMaterial)=>{let found=false;m.emissiveNode!.traverse(n=>{if(n===glow)found=true});return found}
+  for(const tier of [1,2,3]){params.set(vehicleShading.def.id,tier);expect(mesh.material).not.toBe(merged);expect(has(mesh.material as T.MeshStandardNodeMaterial)).toBe(true)}
   dispose()
  })
 })
