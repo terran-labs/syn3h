@@ -40,17 +40,22 @@ audio.play('laserHit', position)
 audio.impact(impactSpeed, position)
 ```
 
-`impact` expects a nonnegative speed-like strength, reaches full gain at 20 and clamps above that. Spawn audio plays when Play unlocks audio and decoding finishes. All audio mix parameters have client scope. `audio.setTrack('Classic' | 'Ambient' | 'Carefree')` crossfades streamed tracks; `audio.setMuted(boolean)` controls the master bus. `audio.errors` reports failed assets without stopping the game.
+`impact` expects a nonnegative speed-like strength, reaches full gain at 20 and clamps above that. These three sounds are synthesised (`src/audio/Cues.ts`); `audio.play('materialize', position, { seconds })` stretches the building swoosh to a spawn hold. Spawn audio plays when Play unlocks audio. All audio mix parameters have client scope. The generated score is the only music, in the lobby and in play; there is no track choice. `audio.setMuted(boolean)` controls the master bus, `audio.outputLevel` reads the final mix in dBFS for checks, and `audio.errors` reports failures without stopping the game.
 
 The engine bridge uses the player's speed and drive input. Airborne detection currently uses terrain clearance above two metres because the shared Vehicle interface has no wheel contacts. Replace that fallback with the buggy's contact state during integration if available. Audio assets and keyboard/gamepad mappings remain unchanged. The only change outside assigned audio/UI/asset/test files is an additive `Input.external` field and input merging, plus enforcing its existing `suspended` flag in `poll()`. There is no index.html change.
 
 ## Verification
 
-New visitors start with Space Station. Explicit music selections persist in
-`syn3h.musicTrack`; invalid or unavailable storage falls back to Space Station. Score
-remains selectable, with tag notes, convoy, terrain and weather layers enabled by default.
-Their switches and the lighter instrument mode remain independent. Switching music retains
-the existing crossfade and mute behavior. Wind uses the generated camera/weather voice only.
+No audio file ships (owner's rule, 15 November 2026). The generated score starts with the
+first gesture, with tag notes, convoy, terrain and weather layers enabled by default; their
+switches and the lighter instrument mode remain independent. A choice saved by an older
+build under `syn3h.musicTrack` is removed on start. The lobby holds the score's quiet state
+and is lifted 6 dB there. Wind uses the generated camera/weather voice only.
+
+`tests/audio/generated-only.mjs` (game on `SYN3H_URL`) is the browser proof: zero audio-file
+requests, audible lobby and play levels, the three synthesised sounds, cleanup, and stall
+behaviour. `tools/check-shipped-assets.mjs` is the release check for shipped audio and
+unrequired bitmaps; `tests/ops/shipped-assets.test.ts` covers it.
 
 `tests/audio/score-game.mjs <origin>` checks these defaults, restored choices, switching,
 mute and lighter mode in the real browser. Run all checks through `tools/heavy.sh`.
@@ -64,8 +69,8 @@ Generated screenshots, a JSON report and a six-second engine WAV are in `tests/a
 ## Vehicle and world mix
 
 The engine graphs are newly synthesised. Exact recovered references and excluded
-vendor audio are listed in `provenance.md`. Original LaserShot, LaserHit,
-Materialize and Wind remain in use. No package audio was copied.
+vendor audio are listed in `provenance.md`. The tag beam, tagged, materialize and wind
+sounds are synthesised too; no recording and no package audio ships.
 
 - Syn3h buggy: a rising electric turbine tone over tyre roar, with a restrained
   high squeal as grounded wheels slip.

@@ -7,14 +7,12 @@ try{
  const page=await browser.newPage({viewport:{width:390,height:844},hasTouch:true,isMobile:true}),errors=[]
  const audioRequests=[];page.on('request',r=>{if(r.url().includes('/audio/'))audioRequests.push(r.url())})
  page.on('pageerror',e=>errors.push(e.message));const cdp=await page.context().newCDPSession(page),nodes=new Map();cdp.on('WebAudio.audioNodeCreated',({node})=>nodes.set(node.nodeId,node.nodeType));cdp.on('WebAudio.audioNodeWillBeDestroyed',({nodeId})=>nodes.delete(nodeId));await cdp.send('WebAudio.enable')
- await page.goto('http://127.0.0.1:5187/');await page.waitForFunction(()=>window.syn3h?.audio,null,{timeout:60000})
- assert.equal(await page.evaluate(()=>syn3h.audio.state),'locked');assert.equal(nodes.size,0)
- await page.touchscreen.tap(30,200);await page.evaluate(()=>syn3h.audio.ready())
- assert.equal(audioRequests.some(url=>url.endsWith('/Wind.wav')),false,'recorded wind must not load')
- assert.equal(await page.evaluate(()=>syn3h.audio.loadedSounds),3,'original tag and materialize recordings still load')
+ await page.goto(process.env.SYN3H_URL??'http://127.0.0.1:5187/');await page.waitForFunction(()=>window.syn3h?.audio,null,{timeout:60000})
+ assert.equal(await page.evaluate(()=>syn3h.audio.state),'locked') // the mix may already be built, suspended, ahead of the gesture
+ await page.touchscreen.tap(30,200);await page.waitForFunction(()=>syn3h.audio.state==='running')
+ assert.deepEqual(audioRequests.filter(url=>!url.includes('/src/audio/')),[],'no audio file loads')
  assert.equal(await page.evaluate(()=>!!syn3h.audio.weatherWind),true,'generated wind remains connected')
- // Exercise the generated arrangement with all default layers during the teardown gate.
- await page.evaluate(()=>syn3h.audio.setTrack('Score'))
+ // The generated arrangement with all default layers plays through the teardown gate.
  await page.evaluate(async()=>{syn3h.shell.showPanel('music');await document.fonts.ready});await page.waitForTimeout(600);await page.screenshot({path:'tests/audio/artifacts/phone-mix.png'})
  await page.evaluate(()=>{syn3h.params.set('bots.count',0);syn3h.shell.stopAttract();syn3h.shell.onPlay=()=>{};syn3h.shell.play();syn3h.game.remove(syn3h.camera)})
  await page.waitForTimeout(6000)

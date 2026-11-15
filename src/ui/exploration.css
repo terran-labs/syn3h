@@ -64,9 +64,8 @@
 .syn3h-shell.exploration-ui.show-diagnostics .rail-player-body .score-detail { display: block; font: 11px/1.5 ui-monospace,monospace; color: #a5c1d1; overflow-wrap: anywhere; }
 .syn3h-shell.exploration-ui .rail-player-body .score-row { font-size: 12px; padding: 5px 0; background: none; border-bottom: 1px solid var(--s3-line-quiet); }
 .syn3h-shell.exploration-ui .rail-player-body button { min-height: 30px; padding: 5px 8px; font-size: 11px; margin: 5px 5px 5px 0; }
-.syn3h-shell.exploration-ui .rail-diagnostics, .syn3h-shell.exploration-ui .rail-music label { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 11px; }
+.syn3h-shell.exploration-ui .rail-diagnostics, .syn3h-shell.exploration-ui .rail-music { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 11px; }
 .syn3h-shell.exploration-ui .rail-diagnostics input { width: 14px; height: 14px; }
-.syn3h-shell.exploration-ui .rail-music select { min-height: 28px; width: 100%; padding: 2px; font-size: 11px; }
 /* Tooltips sit outside the rail so internal scroll containers cannot clip them. */
 .syn3h-shell.exploration-ui .wi-tooltip { position: fixed; z-index: 60; max-height: calc(100dvh - 24px); overflow: auto; padding: 12px; font: 12px/1.5 'Barlow',sans-serif; border-left: 1px solid #b1eaff; }
 .syn3h-shell.exploration-ui .wi-tooltip[hidden] { display: none; }
