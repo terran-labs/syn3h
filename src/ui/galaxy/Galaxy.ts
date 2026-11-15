@@ -240,7 +240,7 @@ void main() {
   if (uAmbience > 0.0) sky += vec3(0.02, 0.06, 0.24) * smoothstep(0.38, 0.8, fbm(ray * 2.2 + 7.0)) * 0.5 * uAmbience;
 
   // The nearest world along this ray.
-  float nearest = 1e9; int found = -1; vec3 normal = vec3(0.0); float halo = 0.0; vec3 haloTint = vec3(0.0);
+  float nearest = 1e9; int found = -1; vec3 normal = vec3(0.0); float halo = 0.0; vec3 haloTint = vec3(0.0); float haloNear = 1e9; vec3 haloFront = vec3(0.0);
   for (int i = 0; i < ${MAX}; i++) {
     if (i >= uCount) break;
     if (uOnly >= 0 && i != uOnly) continue;
@@ -254,6 +254,8 @@ void main() {
       float toward = 0.3 + 0.7 * clamp(dot(normalize(-uWorld[i].xyz), normalize(oc + ray * (-b))) * 0.5 + 0.5, 0.0, 1.0);
       // Tint and strength add up, so where two halos overlap the colour blends, not switches.
       float h = pow(clamp(1.0 - miss / (r * 0.14), 0.0, 1.0), 2.5) * toward * 0.6; halo += h; haloTint += air * h;
+      // The nearest halo on this ray is kept apart: it also shows over a world farther off.
+      if (h > 0.0 && -b < haloNear) { haloNear = -b; haloFront = air * h; }
     }
   }
   // The sun at the centre, as a light in the sky: core, bloom and haze by angle from it.
@@ -263,7 +265,9 @@ void main() {
   vec2 sunDirection = toSun / max(length(toSun), 0.00001);
   vec3 sunLight = vec3(1.0, 0.98, 0.94) * exp(-sunDistance * 42.0) * 2.4;
   sunLight += mix(WARM, vec3(1.0, 0.8, 0.55), 0.5) * exp(-sunDistance * 11.0) * 0.8;
-  sunLight += mix(WARM, ACCENT_B, 0.35) * exp(-sunDistance * 2.8) * 0.22;
+  // The wide haze and the shafts are kept apart from the sun itself: a world beyond the sun
+  // still has the sun in front of it, but must not have the whole glow painted over it.
+  vec3 sunHaze = mix(WARM, ACCENT_B, 0.35) * exp(-sunDistance * 2.8) * 0.22;
   float shafts =
     pow(noise(vec3(sunDirection * 2.4, uTime * 0.09)), 2.0) * 0.9 +
     pow(noise(vec3(sunDirection * 6.5 + 3.0, uTime * 0.15)), 3.0) * 0.8 +
@@ -299,7 +303,7 @@ void main() {
     cut = mix(0.45 * clamp((sunP.z - w.z) / uWorld[i].w * 0.5 + 0.5, 0.0, 1.0), cut, clear);
     shade *= 1.0 - cut * 0.85 * (1.0 - uShed.x);
   }
-  sunLight += mix(vec3(1.0, 0.86, 0.66), WARM, 0.3) * shafts * reach * 0.95 * shade;
+  vec3 sunShafts = mix(vec3(1.0, 0.86, 0.66), WARM, 0.3) * shafts * reach * 0.95 * shade;
   // Lens: a horizontal streak and three ghosts toward the centre. Post effects, shed first.
   vec3 flare = vec3(0.55, 0.75, 1.0) * exp(-abs(toSun.y) * 120.0) * exp(-abs(toSun.x) * 2.6) * 0.5;
   vec2 view = q * 0.5, sunView = sunP.xy * 0.5;
@@ -346,12 +350,21 @@ void main() {
     vec3 air = mix(uSea[found], vec3(0.35, 0.6, 1.0), 0.45);
     world += air * pow(1.0 - clamp(dot(normal, -ray), 0.0, 1.0), 3.0) * (0.15 + 0.7 * lit);
     c = world;
-    // The sun is hidden behind a world that stands in front of it.
-    if (sunP.z > nearest) sunLight *= 0.06;
+    // The air of a nearer world, where its limb crosses this one: not cut off at this disc.
+    if (haloNear < nearest) c += haloFront;
+    // A world is solid. One in front of the sun hides it, all but a trace. One beyond the sun
+    // has the sun and its near glow in front of it, but only a veil of the wide haze and
+    // almost none of the shafts: painted on in full, they made a far world look like glass.
+    // The change across the sun's depth is a ramp the width of the world, never a switch.
+    // Judged at the world's centre, not at each point of its surface: the surface nearest the
+    // eye and its limb lie at different depths, and judging each pixel drew the plane at the
+    // sun's depth across the sphere as a disc inside it.
+    float before = smoothstep(-2.0 * uWorld[found].w, 2.0 * uWorld[found].w, sunP.z - toScreen(uWorld[found].xyz).z);
+    sunLight *= mix(1.0, 0.06, before); sunHaze *= mix(0.35, 0.06, before); sunShafts *= mix(0.12, 0.0, before);
   } else {
     c += sky * smoothstep(0.08, 0.5, sunDistance) + haloTint;
   }
-  c += sunLight + flare * (found >= 0 ? 0.2 : 1.0);
+  c += sunLight + sunHaze + sunShafts + flare * (found >= 0 ? 0.2 : 1.0);
   // The dive: streaks rushing outward, then the brightness of air as the world fills the view.
   if (uDive > 0.0) {
     float rush = pow(noise(vec3(normalize(q + 0.0001) * 11.0, uTime * 3.2)), 3.0) * smoothstep(0.15, 1.3, length(q));
