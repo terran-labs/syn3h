@@ -5,7 +5,39 @@ Priority order. Each item has a one line acceptance check. The Orchestrator disp
 Items marked (proposed) come from the Foreman and wait for the owner. The rest follow from
 decisions in `ops/DECISIONS.md` or from standing direction in `FOREMAN-BRIEF.md`.
 
-## Now
+## Current execution order, 15 November at 3:05am Pacific
+
+The native Foreman checklist and Orchestrator state track current execution. The older
+list below is historical and must not be used to request access or decisions again.
+Release 4 is accepted publicly; the owner already authorized overnight deployment and
+normal-entry defaults. Occupancy is not a deployment gate.
+
+1. Finish combined acceptance and integration of clouds, temporal antialiasing,
+   saved-world moons and touch minimap clearance. Preserve the accepted release while
+   testing this separate batch. Check ordinary entry, both rendering backends, saved
+   settings and room authority, touch controls, and a fully revealed lobby logo.
+2. Complete release notes and showcase capture without undoing an accepted gameplay
+   release if an artifact fails. Verify the actual published artifacts before closing.
+3. Resolve the aircraft evasion design from measured pilot response. The first overlay
+   and later response research are not accepted production behavior. Research found
+   two useful escapes and two harmful conversions; any next design needs a safe
+   selection rule, fresh held-out cases, perturbation margins and full-lifetime checks.
+4. Reconcile remaining lane obligations and explicit owner review items. Do not infer
+   completion from idle threads or pick a production tank/hovercraft design for the owner.
+5. Once existing assignments finish, execute the owner's performance, diagnostics,
+   cursor UX, tools/bots/multiplayer and transparent-water follow-on work. Acceptance
+   requirements are in [FOLLOW-ON-ACCEPTANCE.md](FOLLOW-ON-ACCEPTANCE.md). This preparation
+   does not clear the owner's ordering condition or the smooth-ground deferral.
+6. Deliver the 8am Pacific brief and noon public-address/repository handoff using fresh
+   production evidence. Distinguish implemented, tested, integrated and public work.
+
+## Historical initial queue
+
+The following records the original afternoon queue, not current blockers. Release 1,
+Cloudflare setup and the first buggy handling review have since completed. Other old
+items require current evidence before being carried forward.
+
+### Original Now
 
 1. **Ship production release 1 to Cloudflare.** Blocked on the owner's Cloudflare access.
    Check: the public address serves a tagged build with its build id, a phone on mobile
@@ -19,7 +51,7 @@ decisions in `ops/DECISIONS.md` or from standing direction in `FOREMAN-BRIEF.md`
 5. **Give idle builders work.** Codex 1 and Codex 3 were idle at 4:30pm. Check: no builder
    is idle for more than ten minutes while this list has unstarted items.
 
-## Next
+### Original Next
 
 6. **First impression at load is dark.** The default build opens at night with the controls
    card over the vehicle. Check: on a projector in a lit room the vehicle, road and volcano
@@ -45,7 +77,7 @@ decisions in `ops/DECISIONS.md` or from standing direction in `FOREMAN-BRIEF.md`
   hours. Check: a tyre never sinks below the drawn ground in a capture at 1 m detail, and
   two players on the same slope read the same ride height.
 
-## Waiting on the owner
+## Historical owner questions, reassess before asking
 
 - Drive the Syn3h buggy by hand and say what is wrong.
 - Listen to the five vehicle voices on real speakers.
