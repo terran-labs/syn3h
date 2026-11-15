@@ -1,0 +1,26 @@
+<!doctype html>
+<!-- Contact sheet: three layouts (rows) by cursor locked and cursor free (columns). Labels sit
+     outside the frames; the frames themselves are the rendered PNGs from /tmp. -->
+<meta charset="utf-8"><title>Syn3h HUD layouts: overview</title>
+<style>
+  @font-face { font-family: Barlow; font-weight: 400; src: url(../../public/fonts/barlow-400-latin.woff2) format('woff2'); }
+  @font-face { font-family: Barlow; font-weight: 500; src: url(../../public/fonts/barlow-500-latin.woff2) format('woff2'); }
+  body { margin: 0; padding: 36px 40px 40px; background: #070c12; color: #eaf6ff; font: 400 14px Barlow, sans-serif; width: 1600px; box-sizing: border-box; }
+  h1 { font: 500 22px Barlow; letter-spacing: .06em; margin: 0 0 24px; }
+  .grid { display: grid; grid-template-columns: 200px 1fr 1fr; gap: 18px 20px; align-items: center; }
+  .col { font: 500 12px Barlow; letter-spacing: .22em; text-transform: uppercase; color: rgb(220 240 255 / .7); }
+  .name { font: 500 20px Barlow; letter-spacing: .04em; }
+  .name p { font: 400 13px/1.45 Barlow; color: rgb(220 240 255 / .72); margin: 8px 0 0; letter-spacing: 0; }
+  img { width: 100%; display: block; border-radius: 10px; border: 1px solid rgb(220 244 255 / .18); }
+</style>
+<body>
+<h1>Syn3h HUD layouts</h1>
+<div class="grid">
+  <span></span><span class="col">Cursor locked: driving</span><span class="col">Cursor free: panels open</span>
+  <div class="name">Orbit<p>Everything rides orbits around the speed and height crescents; settings fan out along the right orbit.</p></div>
+  <img src="file:///tmp/syn3h-mockups/layouts-2/orbit-locked-day.png"><img src="file:///tmp/syn3h-mockups/layouts-2/orbit-free-day.png">
+  <div class="name">Horizon<p>Status, banner and vehicle ride one sweeping curve along the bottom; settings slide in from the right.</p></div>
+  <img src="file:///tmp/syn3h-mockups/layouts-2/horizon-locked-day.png"><img src="file:///tmp/syn3h-mockups/layouts-2/horizon-free-day.png">
+  <div class="name">Halo<p>Status and vehicle gather above and below the crescents; settings open as a lens inside them.</p></div>
+  <img src="file:///tmp/syn3h-mockups/layouts-2/halo-locked-day.png"><img src="file:///tmp/syn3h-mockups/layouts-2/halo-free-day.png">
+</div>

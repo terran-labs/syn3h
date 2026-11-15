@@ -1,0 +1,45 @@
+<!doctype html>
+<!-- Horizon: one long sweeping hairline arcs across the bottom from the minimap ring, and tag status,
+     the build banner and the vehicle ride on it; the top of the screen belongs to the sky. Freeing
+     the cursor slides a lit settings sidebar in from the right, its left edge one gentle curve,
+     and the horizon shortens to meet it. -->
+<meta charset="utf-8"><title>Syn3h HUD: Horizon</title>
+<link rel="stylesheet" href="shared.css">
+<body>
+<script type="module">
+import * as H from './shared.js'
+const { LOCKED, FREE, PAUSED, DEVICE, VW, VH } = H
+
+function desktop() {
+  const P0 = [214, 958], P2 = [FREE ? 1000 : 1420, 958], C = [(P0[0] + P2[0]) / 2, 850]
+  const B = t => [(1 - t) ** 2 * P0[0] + 2 * t * (1 - t) * C[0] + t * t * P2[0], (1 - t) ** 2 * P0[1] + 2 * t * (1 - t) * C[1] + t * t * P2[1]]
+  const [sx, sy] = B(.17), [bx, by] = B(.5), [vx, vy] = B(.84), [tx, ty] = B(.84), [ex, ey] = B(.97)
+  const curve = `<svg class="crescents" width="${VW}" height="${VH}" style="left:0;top:0"><defs><linearGradient id="hz" x1="0" x2="1"><stop offset="0" stop-color="#fff" stop-opacity=".1"/><stop offset=".2" stop-color="#fff"/><stop offset=".8" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity=".1"/></linearGradient><mask id="hzm"><rect width="${VW}" height="${VH}" fill="url(#hz)"/></mask></defs>
+    <path class="cr-track" style="stroke:var(--hair)" mask="url(#hzm)" d="M${P0} Q${C} ${P2}"/></svg>`
+  const sidebar = FREE ? `<div class="panel-out" style="right:20px;top:20px;width:400px;height:640px">${H.outline(400, 640, 20, { left: 14 })}
+    <div class="inner"><div class="sheet-title"><span>Settings</span><small>Volcanic · Vagard III</small></div>${H.searchRow()}<div>${H.settingRows()}</div><div style="flex:1"></div>${H.footRow()}</div></div>` : ''
+  return `${H.nameTags(FREE ? [1] : [])}${H.desktopBase()}${curve}
+  ${H.tagStatus(`left:${sx}px;top:${sy - 14}px;transform:translate(-50%,-100%)`)}
+  ${H.banner(`left:${bx}px;top:${by - 14}px;transform:translate(-50%,-100%)`)}
+  ${H.vehicleSwitch(`left:${vx}px;top:${vy - 12}px;transform:translate(-50%,-100%)`)}
+  ${H.toast(`left:${tx}px;top:${ty - 84}px;transform:translate(-50%,-100%)`)}
+  ${LOCKED ? H.escHint(`left:${ex}px;top:${ey + 16}px;transform:translateX(-50%)`) : ''}
+  ${sidebar}
+  ${PAUSED ? H.pauseCard() : ''}`
+}
+
+function phone() {
+  const port = DEVICE === 'portrait'
+  // A short sweep above the thumbs carries status; the banner rides its crest.
+  const extra = port
+    ? `<svg class="crescents" width="${VW}" height="${VH}" style="left:0;top:0"><path class="cr-track" style="stroke:var(--hair)" d="M12 548 Q195 500 378 548"/></svg>`
+    : `<svg class="crescents" width="${VW}" height="${VH}" style="left:0;top:0"><path class="cr-track" style="stroke:var(--hair)" d="M150 385 Q466 300 560 385"/></svg>`
+  return H.nameTags() + H.phone({
+    status: H.tagStatus(port ? 'left:50%;top:470px;transform:translateX(-50%)' : 'left:44px;top:24px'),
+    toastAt: port ? 'left:12px;top:52px' : 'left:50%;top:12px;transform:translateX(-50%)',
+    bannerAt: port ? 'left:50%;top:410px;transform:translateX(-50%)' : undefined,
+    sheet: 'bottom', extra,
+  })
+}
+H.mount('horizon', () => DEVICE === 'desktop' ? desktop() : phone())
+</script>

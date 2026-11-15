@@ -1,0 +1,47 @@
+<!doctype html>
+<!-- Orbit: everything rides concentric orbits around the speed and height crescents. The gear
+     selector is the left orbit; tag status and vehicle ride the mirrored right orbit. Freeing the
+     cursor fans the settings out along that right orbit as a column of lit rows. -->
+<meta charset="utf-8"><title>Syn3h HUD: Orbit</title>
+<link rel="stylesheet" href="shared.css">
+<body>
+<script type="module">
+import * as H from './shared.js'
+const { LOCKED, FREE, PAUSED, DEVICE, VW, VH, icon } = H
+const cx = VW / 2, cy = VH / 2
+const at = (r, deg) => [cx + r * Math.cos(deg * Math.PI / 180), cy + r * Math.sin(deg * Math.PI / 180)]
+
+function desktop() {
+  let right = ''
+  if (!FREE) {
+    const [sx, sy] = at(480, -15), [vx, vy] = at(480, 15), [ex, ey] = at(480, 27)
+    right = `<svg class="crescents" width="${VW}" height="${VH}" style="left:0;top:0"><path class="cr-track" d="${H.arcPath(cx, cy, 446, -32, 32)}"/></svg>
+      ${H.tagStatus(`left:${sx}px;top:${sy}px;transform:translateY(-50%)`)}
+      ${H.vehicleSwitch(`left:${vx}px;top:${vy}px;transform:translateY(-50%)`)}
+      ${LOCKED ? H.escHint(`left:${ex}px;top:${ey}px;transform:translateY(-50%)`) : ''}`
+  } else {
+    // Settings rows fan out along the right orbit (radius 400), each starting on the curve.
+    const rows = [
+      `<label class="search pill" style="width:290px">${icon('search', 16)}<span>Find a setting</span></label>`,
+      H.vehicleSwitch('width:290px;justify-content:space-between', true),
+      ...H.SETTINGS.filter(([t]) => t !== 'Vehicles').map(([t, s]) => `<button class="set-row" style="width:290px"><span class="sr-t">${t}</span><span class="sr-s">${s}</span>${icon('chevD', 16)}</button>`),
+      `<div class="foot" style="width:290px">${'<button class="btn">' + icon('link', 16) + ' Copy link</button><button class="btn">' + icon('leave', 16) + ' Leave world</button>'}</div>`,
+    ]
+    const pitch = 58, y0 = cy - (rows.length - 1) * pitch / 2
+    right = `<svg class="crescents" width="${VW}" height="${VH}" style="left:0;top:0"><path class="cr-track" d="${H.arcPath(cx, cy, 384, -44, 44)}"/></svg>`
+      + rows.map((row, i) => { const y = y0 + i * pitch, x = cx + Math.sqrt(400 ** 2 - (y - cy) ** 2); return `<div style="left:${x.toFixed(0)}px;top:${y}px;transform:translateY(-50%)">${row}</div>` }).join('')
+      + H.tagStatus(`left:${cx + Math.sqrt(400 ** 2 - (y0 - 70 - cy) ** 2)}px;top:${y0 - 70}px;transform:translateY(-50%)`)
+  }
+  return `${H.nameTags(FREE ? [1] : [])}${H.desktopBase()}${right}
+  ${H.banner('left:50%;bottom:20px;transform:translateX(-50%)')}
+  ${H.toast('left:50%;top:20px;transform:translateX(-50%)')}
+  ${PAUSED ? H.pauseCard() : ''}`
+}
+
+const phone = () => H.nameTags() + H.phone({
+  status: H.tagStatus(DEVICE === 'portrait' ? 'left:14px;top:66px' : 'left:44px;top:24px'),
+  toastAt: DEVICE === 'portrait' ? 'right:12px;top:108px' : 'left:50%;top:12px;transform:translateX(-50%)',
+  sheet: 'right',
+})
+H.mount('orbit', () => DEVICE === 'desktop' ? desktop() : phone())
+</script>
