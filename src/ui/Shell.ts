@@ -648,6 +648,11 @@ export class Shell implements System {
     }
     this.galaxy = new Galaxy(this.overlay, {
       worlds,
+      logo: () => {
+        const mark = this.element.querySelector<SVGElement>('.shell-logo')!, box = mark.getBoundingClientRect(), host = this.overlay.getBoundingClientRect()
+        return { box: { x: box.x - host.x, y: box.y - host.y, width: box.width, height: box.height }, level: levelNumber(graphicsLevel.value) }
+      },
+      onLogo: drawn => this.element.classList.toggle('has-animated-logo', drawn),
       still: () => levelNumber(graphicsLevel.value) === 0,
       onTap: chosen => this.tapWorld(chosen),
       onFocus: id => chips.get(id)?.focus({ preventScroll: true }),

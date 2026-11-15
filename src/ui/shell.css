@@ -583,3 +583,6 @@
 .has-touch .race-controls button { min-height: 44px; }
 @media (max-width: 700px) { .race-hud { top: 168px; bottom: auto; width: min(280px, calc(100vw - 32px)); } .syn3h-shell.is-playing.has-landmark-race .shell-toast { top: auto; bottom: 200px; } }
 @media (max-height: 500px) and (orientation: landscape) { .race-hud { top: 10px; bottom: auto; width: 250px; padding-block: 5px; } .has-match .race-hud { top: 110px; } }
+
+/* The SVG retains its box and accessible name while Galaxy draws the same mark. */
+.has-animated-logo .shell-logo { opacity: 0; animation: none; }
