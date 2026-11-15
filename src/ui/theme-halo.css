@@ -17,18 +17,17 @@
  */
 
 .syn3h-shell.exploration-ui {
-  --s3-ink: #f3fbff; --s3-dim: #d8eaf3; --s3-soft: #b4d0dd; --s3-accent: #8fe3ff; --s3-accent-2: #c6f1ff;
+  --s3-ink: #f3fbff; --s3-dim: #d8eaf3; --s3-soft: #cfe3ec; --s3-accent: #8fe3ff; --s3-accent-2: #c6f1ff;
   --s3-line: rgb(205 240 255 / .5); --s3-line-quiet: rgb(205 240 255 / .2); --s3-panel: rgb(3 11 18 / .3);
   --s3-radius: 16px; --s3-radius-small: 10px; --s3-warn: #ffb08a;
   --halo-r: 16px;
   /* A tight halo on strokes; a dark under-shadow on text. */
   --halo-glow: 0 0 6px rgb(143 227 255 / .14);
-  --halo-under: 0 0 1px rgb(0 6 12 / .95), 0 1px 6px rgb(0 6 12 / .6);
-  /* The falloff: a near-black blue at low alpha in the middle of a panel, fading to nothing
-     at its rim, so the world shows through only slightly dimmed. Never a lightening: a
-     grey or white mix reads as a milky slab over the day sky. The text under-shadow does
-     most of the work. */
-  --halo-fill: radial-gradient(farthest-side at 50% 50%, rgb(2 10 18 / .36), rgb(2 10 18 / .26) 60%, rgb(2 10 18 / .04));
+  --halo-under: 0 0 1px rgb(0 8 14 / .9), 0 1px 2px rgb(0 8 14 / .55);
+  /* One even smoked tint across the whole panel, up to the rim and clipped by its radius.
+     Invisible at night (dark on dark); clean smoked glass by day, with the same contrast for
+     every label. A radial falloff read as brown smears with bright edges over the sky. */
+  --halo-fill: rgb(3 11 19 / .34);
   --halo-spread: 0 0 0 transparent;
 }
 
@@ -38,7 +37,7 @@
 .syn3h-shell.exploration-ui:is([data-glass], *) :is(.shell-toast, .match-hud, .race-hud, .join-card),
 .syn3h-shell.exploration-ui:is([data-glass], *) .performance-recommendation {
   border: 1px solid var(--s3-line); border-radius: var(--halo-r);
-  background: var(--halo-fill); background-image: var(--halo-fill);
+  background: var(--halo-fill); background-image: none;
   box-shadow: var(--halo-glow), var(--halo-spread);
   -webkit-backdrop-filter: none; backdrop-filter: none;
   color: var(--s3-ink); text-shadow: var(--halo-under);
@@ -54,7 +53,7 @@ html[data-gfx] .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector 
 /* The quick selectors and the players list float as panels of their own. */
 .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-quick { border-bottom: 1px solid var(--s3-line); }
 .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players { border-bottom: 1px solid var(--s3-line); }
-.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players > summary { background: rgb(2 10 18 / .5); border-radius: var(--halo-r) var(--halo-r) 0 0; }
+.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players > summary { background: none; border-radius: var(--halo-r) var(--halo-r) 0 0; }
 .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players:not([open]) > summary { border-radius: var(--halo-r); background: none; }
 
 /* ---------- Generic buttons: hairline pills, no fill, no glowing text ---------- */
@@ -87,12 +86,14 @@ html[data-gfx] .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector 
 /* Quick selectors */
 .syn3h-shell.exploration-ui .wi-quick label { font: 400 11px 'Barlow', sans-serif; letter-spacing: .04em; color: var(--s3-soft); }
 .syn3h-shell.exploration-ui .world-inspector .wi-quick select { background: none; border-bottom: 1px solid var(--s3-line-quiet); color: var(--s3-ink); }
-.syn3h-shell.exploration-ui .world-inspector .wi-quick button { font-size: 12px; color: var(--s3-dim); }
+.syn3h-shell.exploration-ui .world-inspector .wi-quick button { font-size: 12px; color: var(--s3-ink); }
+/* Disabled stays dimmer than enabled but readable over the bright sky. */
+.syn3h-shell.exploration-ui .world-inspector button:disabled { opacity: .62; }
 .syn3h-shell.exploration-ui .wi-gi-status { color: var(--s3-dim); }
 
 /* ---------- Cards ---------- */
 .syn3h-shell.exploration-ui .world-inspector .wi-head h3 { font: 500 11.5px/1 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); text-shadow: var(--halo-under); }
-.syn3h-shell.exploration-ui .world-inspector .wi-card.is-open > .wi-head h3 { color: #fff; text-shadow: var(--halo-under), 0 0 8px rgb(143 227 255 / .22); }
+.syn3h-shell.exploration-ui .world-inspector .wi-card.is-open > .wi-head h3 { color: #fff; text-shadow: var(--halo-under); }
 .syn3h-shell.exploration-ui .world-inspector .wi-sum { font-size: 13px; color: rgb(234 245 251 / .9); letter-spacing: 0; }
 .syn3h-shell.exploration-ui .world-inspector .wi-chev { width: 6px; height: 6px; border-right: 1px solid var(--s3-soft); border-bottom: 1px solid var(--s3-soft); }
 .syn3h-shell.exploration-ui .world-inspector .wi-card > .wi-head:hover { background: none; box-shadow: none; }
@@ -140,7 +141,7 @@ html[data-gfx] .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector 
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit.is-invalid { border-color: var(--s3-warn); box-shadow: 0 0 0 3px rgb(255 176 138 / .16); }
 
 /* ---------- Tooltip, detail and sheet ---------- */
-.syn3h-shell.exploration-ui:is([data-glass], *) .wi-glass.wi-tooltip.wi-tooltip { --body: none; border: 1px solid var(--s3-line); border-left-color: var(--s3-line); border-radius: var(--halo-r); background: radial-gradient(120% 100% at 50% 50%, rgb(2 9 15 / .8), rgb(2 9 15 / .66)); padding: 12px 14px; font: 400 13px/1.45 'Barlow', sans-serif; }
+.syn3h-shell.exploration-ui:is([data-glass], *) .wi-glass.wi-tooltip.wi-tooltip { --body: none; border: 1px solid var(--s3-line); border-left-color: var(--s3-line); border-radius: var(--halo-r); background: var(--halo-fill); padding: 12px 14px; font: 400 13px/1.45 'Barlow', sans-serif; }
 .syn3h-shell.exploration-ui .wi-tooltip strong, .syn3h-shell.exploration-ui .world-inspector .wi-detail strong { font: 500 11.5px/1.3 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: #fff; }
 .syn3h-shell.exploration-ui .world-inspector .wi-detail p { color: var(--s3-dim); font-size: 13px; }
 .syn3h-shell.exploration-ui .world-inspector .wi-detail small { color: var(--s3-soft); }
@@ -165,10 +166,10 @@ html[data-gfx] .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector 
 .syn3h-shell.exploration-ui .performance-body dt, .syn3h-shell.exploration-ui .performance-history { color: var(--s3-soft); }
 .syn3h-shell.exploration-ui .performance-chart path { stroke: rgb(226 240 255 / .3); stroke-dasharray: 2 4; }
 .syn3h-shell.exploration-ui .performance-chart polyline { stroke: var(--s3-accent-2); stroke-width: 1.25; filter: drop-shadow(0 0 3px rgb(143 227 255 / .35)); }
-.syn3h-shell.exploration-ui:is([data-glass], *) .performance-recommendation { border-radius: var(--halo-r); background: radial-gradient(120% 100% at 50% 50%, rgb(2 9 15 / .78), rgb(2 9 15 / .62)); font-size: 13px; }
+.syn3h-shell.exploration-ui:is([data-glass], *) .performance-recommendation { border-radius: var(--halo-r); background: var(--halo-fill); font-size: 13px; }
 
 /* ---------- HUD pieces ---------- */
-.syn3h-shell.exploration-ui:is([data-glass], *) :is(.shell-toast, .match-hud, .race-hud, .join-card) { background: radial-gradient(120% 100% at 50% 50%, rgb(2 9 15 / .6), rgb(2 9 15 / .42)); font-weight: 400; }
+.syn3h-shell.exploration-ui:is([data-glass], *) :is(.shell-toast, .match-hud, .race-hud, .join-card) { background: var(--halo-fill); font-weight: 400; }
 .syn3h-shell.exploration-ui .spawn-help { font-size: 12.5px; color: var(--s3-ink); text-shadow: var(--halo-under); }
 .syn3h-shell.exploration-ui .spawn-help strong { font: 500 11px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; }
 /* The minimap ring matches the crescents: one hairline and a tight halo. */
@@ -179,7 +180,7 @@ html[data-gfx] .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector 
 .syn3h-shell.exploration-ui .hud-navigation .inspector-toggle { border: 1px solid var(--s3-line); border-radius: 999px; background: var(--halo-fill); box-shadow: var(--halo-glow), var(--halo-spread); font: 500 11px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; }
 
 /* Touch controls: hairline rings, no fills to speak of, small letter-spaced captions. */
-.syn3h-shell.exploration-ui .touch-controls button, .touch-controls button { border: 1px solid var(--s3-line, rgb(205 240 255 / .5)); border-radius: 50%; background: radial-gradient(closest-side, rgb(2 9 15 / .34), rgb(2 9 15 / .16)); box-shadow: 0 0 6px rgb(143 227 255 / .12); color: #f3fbff; font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; text-shadow: 0 0 2px rgb(0 6 12 / .85), 0 1px 7px rgb(0 6 12 / .6); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.syn3h-shell.exploration-ui .touch-controls button, .touch-controls button { border: 1px solid var(--s3-line, rgb(205 240 255 / .5)); border-radius: 50%; background: radial-gradient(closest-side, rgb(2 9 15 / .34), rgb(2 9 15 / .16)); box-shadow: 0 0 6px rgb(143 227 255 / .12); color: #f3fbff; font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; text-shadow: 0 0 1px rgb(0 8 14 / .9), 0 1px 2px rgb(0 8 14 / .55); -webkit-backdrop-filter: none; backdrop-filter: none; }
 .touch-controls button:active { background: rgb(143 227 255 / .1); border-color: rgb(198 241 255 / .9); box-shadow: inset 0 0 8px rgb(143 227 255 / .2), 0 0 6px rgb(143 227 255 / .2); }
 .touch-controls .touch-stick { border: 1px solid rgb(226 238 255 / .4); background: radial-gradient(circle, transparent 66%, rgb(143 227 255 / .06)); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .touch-controls .touch-knob { border: 1px solid rgb(255 255 255 / .85); background: radial-gradient(closest-side, rgb(255 255 255 / .14), rgb(255 255 255 / .03)); box-shadow: 0 0 6px rgb(143 227 255 / .25); }
@@ -187,12 +188,12 @@ html[data-gfx] .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector 
 /* ---------- Pause ---------- */
 .syn3h-shell.exploration-ui .pause-veil { background: rgb(2 8 14 / .5); -webkit-backdrop-filter: none; backdrop-filter: none; border: 0; border-radius: 0; text-shadow: var(--halo-under); }
 .syn3h-shell.exploration-ui .pause-veil:hover { background: rgb(2 8 14 / .5); border: 0; box-shadow: none; }
-.syn3h-shell.exploration-ui .pause-veil strong { font-weight: 500; text-shadow: var(--halo-under), 0 0 10px rgb(143 227 255 / .25); }
+.syn3h-shell.exploration-ui .pause-veil strong { font-weight: 500; text-shadow: var(--halo-under); }
 .syn3h-shell.exploration-ui .pause-veil .pause-how { font: 500 12px 'Barlow', sans-serif; letter-spacing: .2em; color: var(--s3-accent-2); }
 .syn3h-shell.exploration-ui .pause-veil small { font-size: 13px; color: var(--s3-dim); }
 
 /* ---------- The reload notice: a slim capsule at the bottom centre ---------- */
-body #syn3h-build-notice, body .build-banner { border: 1px solid rgb(205 240 255 / .55); border-radius: 999px; background: radial-gradient(120% 160% at 50% 50%, rgb(2 9 15 / .62), rgb(2 9 15 / .44)); box-shadow: 0 0 6px rgb(143 227 255 / .14), 0 0 34px rgb(0 6 12 / .22); color: #f3fbff; font: 400 13.5px/1.2 'Barlow', system-ui, sans-serif; letter-spacing: .03em; text-shadow: 0 0 2px rgb(0 6 12 / .85), 0 1px 7px rgb(0 6 12 / .6); -webkit-backdrop-filter: none; backdrop-filter: none; }
+body #syn3h-build-notice, body .build-banner { border: 1px solid rgb(205 240 255 / .55); border-radius: 999px; background: rgb(3 11 19 / .34); box-shadow: 0 0 6px rgb(143 227 255 / .14), 0 0 34px rgb(0 6 12 / .22); color: #f3fbff; font: 400 13.5px/1.2 'Barlow', system-ui, sans-serif; letter-spacing: .03em; text-shadow: 0 0 1px rgb(0 8 14 / .9), 0 1px 2px rgb(0 8 14 / .55); -webkit-backdrop-filter: none; backdrop-filter: none; }
 body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(198 241 255 / .9); }
 
 /* Short landscape screens tuck the quick selectors into the top block's spare space
