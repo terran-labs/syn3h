@@ -18,8 +18,9 @@ for (const engine of [chromium, webkit]) {
     assert.equal(await page.locator('.shell-logo').evaluate(el => getComputedStyle(el).opacity), '0', 'SVG does not draw over the animation')
     await page.screenshot({ path: `tests/ui/artifacts/logo/${engine.name()}.png` })
     await page.evaluate(() => window.syn3h.shell.showPanel('settings'))
-    await page.waitForFunction(() => window.syn3h.shell.galaxy.logo.introTime > 3.6)
-    assert.equal(await page.evaluate(() => window.syn3h.shell.galaxy.logo.look.sway), 0, 'panels show a settled logo')
+    // Behind a panel the galaxy dims and then holds the logo still (its sway, inert now, is
+    // how the galaxy says so). Wait for that, not for a clock.
+    await page.waitForFunction(() => window.syn3h.shell.galaxy.logo.introTime > 1 && window.syn3h.shell.galaxy.logo.look.sway === 0, null, { timeout: 10000 })
     await page.evaluate(() => window.syn3h.shell.showPanel('index'))
     await page.waitForTimeout(500)
     await page.screenshot({ path: `tests/ui/artifacts/logo/${engine.name()}-settled.png` })
@@ -27,11 +28,11 @@ for (const engine of [chromium, webkit]) {
     await page.evaluate(() => { window.syn3h.shell.galaxy.wake = 2 })
     await page.waitForTimeout(300)
     assert.equal(await page.evaluate(() => window.syn3h.shell.galaxy.logo.look.sway), 0)
-    assert.ok(await page.evaluate(() => window.syn3h.shell.galaxy.logo.introTime) > 3.6, 'reduced motion skips intro')
+    assert.ok(await page.evaluate(() => window.syn3h.shell.galaxy.logo.introTime) > 1e5, 'reduced motion skips the fade')
     await page.emulateMedia({ reducedMotion: 'no-preference' })
     await page.evaluate(() => { clearInterval(window.__pin); window.syn3h.params.set('gfx.level', 0); window.syn3h.shell.galaxy.wake = 2 })
     await page.waitForTimeout(300)
-    assert.ok(await page.evaluate(() => window.syn3h.shell.galaxy.logo.look.particles) <= 4000)
+    assert.ok(await page.evaluate(() => window.syn3h.shell.galaxy.logo.look.particles) <= 220)
     assert.equal(await page.evaluate(() => window.syn3h.shell.galaxy.logo.look.sway), 0)
     // Restore the context through the browser's own extension; the SVG bridges the loss.
     await page.evaluate(() => { const g = window.syn3h.shell.galaxy; window.__oldLogo = g.logo; window.__loss = g.gl.getExtension('WEBGL_lose_context'); window.__loss.loseContext() })
