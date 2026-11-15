@@ -20,10 +20,11 @@
 import * as THREE from 'three/webgpu'
 import {
   abs, attribute, cameraPosition, cameraViewMatrix, color, cos, faceDirection, float, max, mix, modelWorldMatrix,
-  mx_noise_float, normalize, positionGeometry, positionLocal, positionWorld, sin, smoothstep, time, uniform, uv, vec3, vec4,
+  mx_noise_float, normalize, positionGeometry, positionLocal, positionWorld, sin, smoothstep, time, uniform, uv, vec3, vec4, renderGroup,
 } from 'three/tsl'
 import { SEA_COMPONENTS as WAVE_COUNT, seaWaves, waveScale } from './seaWaves'
 import { rippleField } from './ripples'
+import { waterClarity } from './params'
 
 /** A float node that sums are folded into. TSL's operator typings do not narrow through a loop. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -46,6 +47,29 @@ const SHALLOW = 0x2fc4bd
 const DEEP = 0x0a3562
 const FOAM = 0xf4fbff
 
+/** Alpha blending reveals the real bed and opaque objects already in the colour buffer.
+ * No refraction target: depth is the generated water column, not per-object optical depth.
+ * Use the same inexpensive graph on both backends and every quality tier.
+ */
+export function waterOpacityNode(depth: THREE.Node<'float'>, foam: THREE.Node<'float'>) {
+  const clarity = uniform(waterClarity.value).setGroup(renderGroup).onRenderUpdate(() => waterClarity.value)
+  const view = normalize(cameraPosition.sub(positionWorld))
+  const grazing = float(1).sub(abs(view.y)).pow(5)
+  const absorbed = float(1).sub(max(depth, 0).div(clarity).negate().exp())
+  const above = max(float(.12).add(absorbed.mul(.85)), foam.mul(.9))
+  const reflected = mix(above, float(.98), grazing)
+  // From underwater, a clear Snell window and nearly opaque reflection outside its cone.
+  const window = smoothstep(SNELL_COS - .04, SNELL_COS + .04, view.y.negate())
+  return view.y.greaterThanEqual(0).select(reflected, mix(float(.98), float(.12), window))
+}
+
+export function configureWaterBlending(material: THREE.MeshStandardNodeMaterial): void {
+  material.transparent = true
+  material.depthWrite = false
+  // These surfaces are single sheets; drawing both faces twice darkens the water needlessly.
+  material.forceSinglePass = true
+}
+
 export function createWaterSurface(mode: WaterMode): WaterSurface {
   const level = uniform(0)
   // Wave i: (kx, kz, phase, geometric amplitude) and the amplitude used for shading.
@@ -59,11 +83,12 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   const shallowColour = uniform(new THREE.Color(SHALLOW))
   const deepColour = uniform(new THREE.Color(DEEP))
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.08, metalness: 0, side: THREE.DoubleSide })
+  configureWaterBlending(material)
   const ground = attribute<'float'>('groundHeight', 'float')
   const p = positionWorld
 
   // Water depth at rest. Rivers carry their own bed height, as does the sea.
-  const depth = level.sub(ground)
+  const depth = (mode === 'sea' ? level : positionGeometry.y).sub(ground)
   const shoal = mode === 'sea' ? smoothstep(0, shoalDepth, depth) : float(0)
 
   // Vertex: swell. World xz before the bend; the wave vectors fit the tile, so every image of
@@ -158,6 +183,7 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
     const streaks = mx_noise_float(vec3(uv().x.mul(1.4), uv().y.sub(time.mul(flowSpeed)).mul(0.25), drift)).mul(0.5).add(0.5)
     foam = max(foam, white.mul(smoothstep(0.25, 0.6, streaks).mul(0.6).add(white.mul(0.4))))
   }
+  material.opacityNode = waterOpacityNode(depth, foam)
   const above = mix(lifted, color(FOAM), foam.mul(0.9))
 
   // From below: Snell's window. Looking up at the surface, `up` is the cosine between the
@@ -241,7 +267,8 @@ export function buildRiverSurface(
     if (i) distance += Math.hypot(p.x - prev.x, p.z - prev.z)
     // Smooth the slope over neighbours so white water does not flicker segment to segment.
     const slope = (prev.slope + p.slope * 2 + next.slope) / 4
-    for (const side of [-1, 1]) {
+    // A centre sample keeps bank heights from making the entire channel look like foam.
+    for (const side of [-1, 0, 1]) {
       const x = p.x - (dz / len) * (width / 2) * side
       const z = p.z + (dx / len) * (width / 2) * side
       positions.push(x, p.y, z)
@@ -251,8 +278,8 @@ export function buildRiverSurface(
       slopes.push(slope)
     }
     if (i) {
-      const a = (i - 1) * 2
-      index.push(a, a + 1, a + 2, a + 1, a + 3, a + 2)
+      const a = (i - 1) * 3
+      for (let j = 0; j < 2; j++) index.push(a + j, a + j + 1, a + j + 3, a + j + 1, a + j + 4, a + j + 3)
     }
   }
   const geometry = new THREE.BufferGeometry()

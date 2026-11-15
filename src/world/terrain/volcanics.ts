@@ -13,7 +13,7 @@
  * the camera has moved an eighth of a tile.
  */
 import * as THREE from 'three/webgpu'
-import { attribute, cameraPosition, cameraViewMatrix, normalize, color, float, mix, mx_noise_float, positionWorld, smoothstep, time, uniform, vec3 } from 'three/tsl'
+import { attribute, cameraPosition, cameraViewMatrix, normalize, color, float, mix, mx_noise_float, positionWorld, positionGeometry, smoothstep, time, uniform, vec3 } from 'three/tsl'
 import { worldGravity, worldLavaAltitude } from '../../../shared/params'
 import { nearestImage } from '../../../shared/wrap'
 import { overHorizon } from '../curve'
@@ -28,7 +28,7 @@ import { KIND_VOLCANIC, worldSeaKind } from './settings'
 import { riverSpeed } from './lava'
 import { waterRiverMaxSpeed, waterWaves } from '../water/params'
 import { SEA_GRID } from '../water/seaWaves'
-import { buildRiverSurface, buildStillSurface, createWaterSurface } from '../water/surface'
+import { buildRiverSurface, buildStillSurface, createWaterSurface, configureWaterBlending, waterOpacityNode } from '../water/surface'
 import { WaterfallMist, fallsFromRivers } from '../water/mist'
 import { buildFallSheet, createFallMaterial } from '../water/falls'
 import { paletteFor } from './palettes'
@@ -47,6 +47,9 @@ function createWaterMaterial(shore: boolean): Liquid {
   const level = uniform(0)
   const p = positionWorld
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.14, metalness: 0, side: THREE.DoubleSide })
+  configureWaterBlending(material)
+  const depth = (shore ? level : positionGeometry.y).sub(attribute<'float'>('groundHeight', 'float'))
+  material.opacityNode = waterOpacityNode(depth, float(0))
   // The surface is flat: light it as facing straight up, whatever the mesh winding.
   material.normalNode = normalize(cameraViewMatrix.transformDirection(vec3(0, 1, 0)))
   const drift = time.mul(0.25)
@@ -56,9 +59,9 @@ function createWaterMaterial(shore: boolean): Liquid {
   const near = smoothstep(500, 60, p.sub(cameraPosition).length())
   const shade = swell.mul(0.1).add(ripple.mul(0.08).mul(near)).add(1)
   if (shore) {
-    const depth = level.sub(attribute<'float'>('groundHeight', 'float'))
     const water = mix(color(0x2fc4bd), color(0x0a3562), smoothstep(0.5, 22, depth))
     const foam = smoothstep(1.3, 0.15, depth.add(ripple.mul(0.5))).mul(smoothstep(-0.6, 0.1, depth))
+    material.opacityNode = waterOpacityNode(depth, foam)
     material.colorNode = mix(water.mul(shade), color(0xf4fbff), foam.mul(0.85))
   } else {
     material.colorNode = mix(color(0x1f8fa6), color(0x135f86), swell.mul(0.5).add(0.5)).mul(shade)
@@ -288,12 +291,12 @@ export class Volcanics implements System {
       return
     }
     const still = (hot ? this.lavaStill : this.waterStill).material
-    if (lava.lake) add(discGeometry(lava.lake.x, lava.lake.surface, lava.lake.z, lava.lake.radius), still, true)
-    for (const p of lava.pools) add(discGeometry(p.x, p.surface, p.z, p.radius), still, true)
+    if (lava.lake) add(hot ? discGeometry(lava.lake.x, lava.lake.surface, lava.lake.z, lava.lake.radius) : buildStillSurface(ground, lava.lake.x, lava.lake.surface, lava.lake.z, lava.lake.radius), still, true)
+    for (const p of lava.pools) add(hot ? discGeometry(p.x, p.surface, p.z, p.radius) : buildStillSurface(ground, p.x, p.surface, p.z, p.radius), still, true)
     for (const r of lava.rivers) {
       if (r.points.length < 2) continue
       // A little wider than the planned surface so the ribbon tucks into the channel banks.
-      add(buildRibbonGeometry(ground, r.points, r.width + 1.5), (hot ? this.lavaRiver : this.waterStill).material, false)
+      add(hot ? buildRibbonGeometry(ground, r.points, r.width + 1.5) : buildRiverSurface(ground, r.points, r.width + 1.5, (slope) => riverSpeed(slope, waterRiverMaxSpeed.value)), (hot ? this.lavaRiver : this.waterStill).material, false)
     }
     this.placedVents = []
     this.place()

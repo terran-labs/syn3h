@@ -9,6 +9,10 @@ const P = { group: 'Water', scope: 'world' as const }
 
 /** Master switch for the new sea surface: waves, shoreline foam lines, the new water look. */
 export const waterWaves = defineParam({ ...P, id: 'water.waves', label: 'Sea waves', default: true })
+/** Approximate light attenuation distance through the water column, in metres. */
+export const waterClarity = defineParam({
+  ...P, id: 'water.clarity', label: 'Water clarity (m)', default: 10, min: 1, max: 50, step: 1,
+})
 /** Crest to trough height of the biggest possible swell, metres. */
 export const waterWaveHeight = defineParam({
   ...P, id: 'water.waveHeight', label: 'Wave height (m)', default: 0.8, min: 0, max: WAVE_MAX_HEIGHT, step: 0.05,
