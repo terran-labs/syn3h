@@ -495,6 +495,26 @@ export function releaseSpeed(samples: readonly { t: number; value: number }[], a
 }
 /** The shortest signed turn from angle a to angle b. */
 const turn = (a: number, b: number) => { const d = (b - a) % (Math.PI * 2); return d > Math.PI ? d - Math.PI * 2 : d < -Math.PI ? d + Math.PI * 2 : d }
+/**
+ * Where the camera settles round a chosen world, as a bearing from the world and a tilt. `sun`
+ * is the bearing of the sun from the world, `spin` the world's turn on its axis now, `from`
+ * the camera's bearing now. The camera goes to the side the world's island is on, so the dive
+ * falls as near the island as it can, but never to the night side: it stays between half a
+ * radian off the sun (so the shafts stand behind the world, not the camera) and 1.35 radians
+ * (the edge of the lit side). With the island on the night side it takes that limit on the
+ * island's side. The world is not turned: the camera does all the moving.
+ */
+export function approach(sun: number, spin: number, from: number, keep?: 1 | -1): { facing: number; latitude: number; side: 1 | -1 } {
+  const ct = Math.cos(TILT), st = Math.sin(TILT)
+  // The island's direction from the world's centre for a spin s is (-sin s, st cos s, ct cos s).
+  const island = Math.atan2(-Math.sin(spin), ct * Math.cos(spin)), off = turn(sun, island)
+  // Dead behind the world the island favours neither side: keep to the side the camera is on.
+  // Once a side is taken it is kept (`keep`), so the camera never swings across the sun to
+  // chase an island that has turned round the back of its world.
+  const side = keep ?? (Math.abs(Math.abs(off) - Math.PI) < 0.2 ? (turn(sun, from) >= 0 ? 1 : -1) : off >= 0 ? 1 : -1)
+  const round = off * side >= 0 ? Math.abs(off) : Math.PI * 2 - Math.abs(off)   // the island's angle from the sun, going round by that side
+  return { facing: sun + side * Math.min(1.35, Math.max(0.5, round)), latitude: Math.asin(st * Math.cos(spin)), side }
+}
 
 export class Galaxy {
   canvas = document.createElement('canvas')
@@ -833,29 +853,28 @@ export class Galaxy {
   private reach = 13
   /** Seconds since the last drawn frame, for the eases. */
   private step = 1 / 30
-  /** Extra turn of each world on its axis: how a chosen world brings its island round. */
-  private readonly spinOffset: number[] = []
   /** Where the camera settles round a chosen world: an angle, a quarter turn off the sun. */
   private facing = 0
   private facingSettled = true
-  private spin(i: number, time: number): number { return time * 0.05 + i * 2.1 + (this.spinOffset[i] ?? 0) }
+  /** The side of the sun the camera took round the chosen world, kept until another is chosen. */
+  private facingSide: 1 | -1 = 1
+  /** Each world's slow turn on its axis. Nothing else turns a world. */
+  private spin(i: number, time: number): number { return time * 0.05 + i * 2.1 }
   /**
-   * Flying to a world, the camera swings round to its lit side, a little off the sun so the
-   * shafts still stand behind it, and the world turns on its axis to bring its island (the
-   * map's longitude 0, latitude 0, where the game spawns) to face the camera. The dive then
-   * falls onto the island, so orbit and ground line up.
+   * Flying to a world, only the camera moves: the world keeps its own slow turn and is never
+   * turned to meet the view. The camera swings round the world as it falls, a curving,
+   * deorbiting approach, toward the side its island is on (the map's longitude 0, latitude 0,
+   * where the game spawns), kept within the lit side: see approach.
    */
   private face(): number {
     this.facingSettled = true
     if (this.chosen < 0 || this.options.worlds[this.chosen].forming) return this.pitch
-    const i = this.chosen, ct = Math.cos(TILT), st = Math.sin(TILT)
-    // The island's direction from the world's centre for a spin s is (-sin s, st cos s, ct cos s).
-    const want = Math.atan2(-ct * Math.sin(this.facing), Math.cos(this.facing)), now = this.spin(i, this.clock)
-    const spinStep = turn(now, want), latitude = Math.asin(st * Math.cos(want))
+    // The island turns slowly with its world and the world moves along its orbit: follow both.
+    const at = this.places(this.clock)[this.chosen].position
+    const { facing, latitude } = approach(Math.atan2(-at[0], -at[2]), this.spin(this.chosen, this.clock), this.yaw, this.facingSide)
+    this.facing = facing
     const share = perFrame(0.07, this.step)
-    this.spinOffset[i] = (this.spinOffset[i] ?? 0) + spinStep * share
-    if (!this.drag && !this.flight) { const y = turn(this.yaw, this.facing), p = latitude - this.pitch; this.yaw += y * share; this.pitch += p * share; this.facingSettled = Math.abs(y) < 0.003 && Math.abs(p) < 0.003 && Math.abs(spinStep) < 0.003 }
-    else this.facingSettled = Math.abs(spinStep) < 0.003
+    if (!this.drag && !this.flight) { const y = turn(this.yaw, this.facing), p = latitude - this.pitch; this.yaw += y * share; this.pitch += p * share; this.facingSettled = Math.abs(y) < 0.003 && Math.abs(p) < 0.003 }
     return latitude
   }
   private loop = (now: number): void => {
@@ -941,7 +960,7 @@ export class Galaxy {
     this.chosen = index; this.arriving = 0; this.arrived = false; this.settleTilt()
     // Settle on the lit side, a quarter turn off the sun, on whichever side the view is now.
     const at = this.places(this.clock)[index].position, sun = Math.atan2(-at[0], -at[2])
-    this.facing = sun + 0.6 * (turn(sun, this.yaw) >= 0 ? 1 : -1)
+    const settle = approach(sun, this.spin(index, this.clock), this.yaw); this.facing = settle.facing; this.facingSide = settle.side
     // Its full-size map, ahead of anything else waiting, for the close view and the dive.
     const world = this.options.worlds[index]
     if (!world.forming) this.request(world, CLOSE, true)
