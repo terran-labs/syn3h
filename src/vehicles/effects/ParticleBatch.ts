@@ -17,6 +17,16 @@ export class ParticleBatch {
   private readonly settings:T.InstancedBufferAttribute
   private readonly tint:T.InstancedBufferAttribute
   emitted=0
+  /**
+   * Share of the wind a particle is born with: dust takes most of it, exhaust less, sparks
+   * none. The wind is sampled once, at the birth position, and added to the birth velocity,
+   * so it costs one call per particle and nothing per frame; a particle keeps the wind it was
+   * born into for its second or two of life and does not follow a later gust.
+   */
+  windShare=0
+  /** Wind velocity in m/s at a world position (the weather system's `windDrift`). Set by the owner. */
+  drift:((x:number,y:number,z:number,out:{x:number;y:number;z:number})=>unknown)|null=null
+  private readonly gust={x:0,y:0,z:0}
   constructor(readonly capacity:number,sprite:Sprite,additive=false,octaves=2){
     const plane=new T.PlaneGeometry(1,1),g=new T.InstancedBufferGeometry().copy(plane as unknown as T.InstancedBufferGeometry);plane.dispose();g.instanceCount=capacity
     this.origin=new T.InstancedBufferAttribute(new Float32Array(capacity*3),3).setUsage(T.DynamicDrawUsage)
@@ -39,7 +49,9 @@ export class ParticleBatch {
   }
   emit(position:T.Vector3,velocity:T.Vector3,life:number,size:number,grow:number,color:T.Color){
     const i=this.next;this.next=(i+1)%this.capacity;this.emitted++
-    this.origin.setXYZ(i,position.x,position.y,position.z);this.velocity.setXYZ(i,velocity.x,velocity.y,velocity.z)
+    let vx=velocity.x,vz=velocity.z
+    if(this.windShare>0&&this.drift){const g=this.gust;g.x=g.y=g.z=0;this.drift(position.x,position.y,position.z,g);if(Number.isFinite(g.x)&&Number.isFinite(g.z)){vx+=g.x*this.windShare;vz+=g.z*this.windShare}}
+    this.origin.setXYZ(i,position.x,position.y,position.z);this.velocity.setXYZ(i,vx,velocity.y,vz)
     this.settings.setXYZW(i,this.clock.value,life,size,grow);this.tint.setXYZ(i,color.r,color.g,color.b)
     for(const [a,n] of [[this.origin,3],[this.velocity,3],[this.settings,4],[this.tint,3]] as const){a.addUpdateRange(i*n,n);a.needsUpdate=true}
   }

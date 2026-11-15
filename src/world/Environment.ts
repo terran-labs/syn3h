@@ -8,7 +8,7 @@
  * one never recompiles a shader. The one exception is shadow quality, which rebuilds the light.
  */
 import * as THREE from 'three/webgpu'
-import { cameraPosition, fog, max, normalize, positionWorld, pow, renderGroup, uniform, vec2, vec3 } from 'three/tsl'
+import { cameraPosition, max, normalize, positionWorld, pow, renderGroup, uniform, vec2, vec3 } from 'three/tsl'
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js'
 import { params } from '../../shared/params'
 import type { Game, System } from '../core/Game'
@@ -21,7 +21,7 @@ import {
   sunE, sunlightColor, wrapHour, advanceHour, type RGB, type Vec3,
 } from './sky/skyMath'
 import * as P from './sky/skyParams'
-import { heightFog } from './weather/fog'
+import { heightFog, weatherFogNode } from './weather/fog'
 import { advanceCloudDrift } from './weather/clouds'
 
 export interface Environment extends System {
@@ -130,8 +130,9 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   scene.fog = null
   // Height fog (src/world/weather/fog.ts): per planet haze that thins with altitude, plus the
   // uniform fog density above.
-  const haze = heightFog(max(fogColor, vec3(0.0)), fogDensityU)
-  ;(scene as unknown as { fogNode: unknown }).fogNode = fog(haze.color, haze.factor)
+  // The sun is read at render time, after the state below exists.
+  const haze = heightFog(max(fogColor, vec3(0.0)), fogDensityU, { direction: () => sunDirection, color: () => sunColor })
+  ;(scene as unknown as { fogNode: unknown }).fogNode = weatherFogNode(haze.color, haze.factor)
 
   // State ---------------------------------------------------------------------------------
   let hour = wrapHour(P.sunTimeOfDay.value)
