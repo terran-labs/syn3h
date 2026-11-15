@@ -88,5 +88,14 @@ let last = performance.now()
 renderer.setAnimationLoop(() => {
   const now = performance.now(), dt = Math.min(0.1, (now - last) / 1000); last = now
   for (const g of globes) g.mesh.rotation.y += spin * dt
+  // Each label sits just below its globe on screen.
+  const below = new THREE.Vector3()
+  globes.forEach((g, i) => {
+    const el = labels.children[i] as HTMLElement | undefined
+    if (!el) return
+    below.copy(g.mesh.position).setY(-1.75).project(camera)
+    el.style.left = `${((below.x + 1) / 2) * innerWidth}px`
+    el.style.top = `${((1 - below.y) / 2) * innerHeight}px`
+  })
   renderer.render(scene, camera)
 })

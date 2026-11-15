@@ -30,18 +30,20 @@ describe('planet maps', () => {
       const map = paintPlanetMap(recipe.id, 90210, W, H)
       const lava = recipe.values['world.seaKind'] === 0
       const isSea = ([r, g, b]: number[]) => lava ? r > g && r > b : b > r && b >= g * 0.6
-      // The centre region: most pixels within a few degrees are not sea.
-      let land = 0, total = 0
-      for (let y = H / 2 - 4; y < H / 2 + 4; y++) for (let x = W / 2 - 4; x < W / 2 + 4; x++) {
-        total++
-        const [r, g, b] = pixel(map, x, y)
-        if (lava ? !(r > 140 && g > 60 && b < 60 && r - g > 70) : !(b > r && b > g)) land++
+      // The very centre is the crater lake, so look at a ring about 400 m out (15 degrees),
+      // between the volcano and the coast: it must be land on every recipe.
+      const isLand = ([r, g, b]: number[]) => lava ? r > 90 && r < 250 && b < 110 && r - g > 40 : !(b > r && b > g)
+      let land = 0
+      const ringPx = (15 / 360) * W
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2
+        if (isLand(pixel(map, Math.round(W / 2 + Math.cos(a) * ringPx), Math.round(H / 2 + Math.sin(a) * ringPx)))) land++
       }
-      expect(land / total).toBeGreaterThan(0.8)
+      expect(land).toBeGreaterThanOrEqual(12)
       // The antipode (longitude 180, latitude 0) is at the image edge; sample a small ring
       // and require most of it to be sea of the right colour.
       let sea = 0
-      for (const x of [0, 1, 2, W - 3, W - 2, W - 1]) for (const y of [H / 2 - 1, H / 2]) if (isSea(pixel(map, x, y))) sea++
+      for (const x of [0, 1, 2, W - 3, W - 2, W - 1]) for (const y of [H / 2 - 1, H / 2]) { const c = pixel(map, x, y); if (isSea(c) && !isLand(c)) sea++ }
       expect(sea).toBeGreaterThanOrEqual(10)
     })
   }
