@@ -34,7 +34,7 @@ function player(w:ReturnType<typeof world>,kind:VehicleKind='buggy'){
  const slot=new PlayerSlot(v),swapper=createVehicleSwapper(w.game,w.terrain,slot)
  return {slot,swapper}
 }
-const KINDS:VehicleKind[]=['jet','hovercraft','tank','buggy-classic','buggy']
+const KINDS:VehicleKind[]=['jet','hovercraft','tank','buggy']
 
 describe('swapping the player vehicle in place',()=>{
  it('keeps the spot, heading, speed, identity and controls, and sets the new vehicle level',()=>{
@@ -56,7 +56,7 @@ describe('swapping the player vehicle in place',()=>{
  })
  it('does nothing when the player already drives that kind, aliases included',()=>{
   const w=world(),{slot,swapper}=player(w),before=slot.current
-  expect(swapper.swap('buggy')).toBe(before);expect(swapper.swap('buggy-syn3h')).toBe(before);expect(before.body.isValid()).toBe(true)
+  expect(swapper.swap('buggy')).toBe(before);expect(swapper.swap('buggy-syn3h')).toBe(before);expect(swapper.swap('buggy-classic')).toBe(before);expect(before.body.isValid()).toBe(true)
   w.physics.free()
  })
  it('never starts the new vehicle under the ground or the liquid surface',()=>{
@@ -67,14 +67,14 @@ describe('swapping the player vehicle in place',()=>{
   expect(swapper.swap('hovercraft').body.translation().y).toBeCloseTo(6+SWAP_LIFT,5)
   w.physics.free()
  })
- it('leaves no orphaned body, collider, object, system, effect or listener after ten swaps',()=>{
+ it('leaves no orphaned body, collider, object, system, effect or listener after twelve swaps',()=>{
   const w=world(),{slot,swapper}=player(w);w.step(30)
   // One full cycle first, so each kind's census is taken from a world that has already swapped.
   for(const kind of KINDS){swapper.swap(kind);w.step(5)}
   const baseline=new Map<VehicleKind,ReturnType<typeof census>>(),hooks=new Map<VehicleKind,number>()
   for(const kind of KINDS){swapper.swap(kind);w.step(5);baseline.set(kind,census(w));hooks.set(kind,listeners(slot.current))}
   const seen=new Set<Vehicle>()
-  for(let round=0;round<2;round++)for(const kind of KINDS){
+  for(let round=0;round<3;round++)for(const kind of KINDS){
    const previous=slot.current,next=swapper.swap(kind);w.step(5)
    expect(previous.body.isValid(),`${kind}: old body removed`).toBe(false)
    expect(previous.object.parent,`${kind}: old object out of the scene`).toBeNull()
@@ -83,7 +83,7 @@ describe('swapping the player vehicle in place',()=>{
    expect(listeners(next),`${kind}: same listeners as the first time`).toBe(hooks.get(kind))
    seen.add(next)
   }
-  expect(seen.size).toBe(10)
+  expect(seen.size).toBe(12)
   const p=slot.current.body.translation();expect(Number.isFinite(p.y)).toBe(true);expect(p.y).toBeGreaterThan(-.3)
   swapper.dispose();w.physics.free()
  })
