@@ -5,6 +5,7 @@ import { RAPIER, unityTorque } from '../core/physics'
 import { defineParam } from '../../shared/params'
 import { Vehicle } from './Vehicle'
 import { VehicleModel } from './skins/VehicleModel'
+import { hotExposureDim } from './skins/hotExposure'
 
 export const jetHoverDrag = defineParam({id:'jet.hoverDrag',label:'Hover drag',group:'Jet',scope:'world',default:.01,min:.005,max:.015,step:.0001})
 export const jetDrag = defineParam({id:'jet.drag',label:'Flight drag',group:'Jet',scope:'world',default:.0001,min:.00005,max:.00015,step:.00001})
@@ -37,6 +38,8 @@ export class Jet extends Vehicle {
   private readonly thruster = new THREE.Group()
   private readonly hoverGlows: THREE.Mesh[] = []
   private readonly textures: THREE.Texture[] = []
+  /** Undimmed glow colour. update() rescales from this each frame, never cumulatively. */
+  private readonly glowBase = new THREE.Color(0x66ddff)
   private readonly glowMaterial = new THREE.MeshBasicMaterial({color:0x66ddff,transparent:true,opacity:.65,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide})
   private readonly paint = new THREE.MeshPhysicalMaterial({color:new THREE.Color(.09088451,.15540954,.30147058),metalness:1,roughness:.1,clearcoat:1,clearcoatRoughness:.12})
   private readonly chrome = new THREE.MeshPhysicalMaterial({color:new THREE.Color(.78676474,.78676474,.78676474),metalness:1,roughness:.178})
@@ -78,7 +81,7 @@ export class Jet extends Vehicle {
       if(this.gear){this.gear.visible=false}
     })
     if(typeof window!=='undefined'){
-      const glow=new THREE.TextureLoader().load('/models/textures/thruster-glow.png');this.glowMaterial.map=glow;this.glowMaterial.color.setRGB(3,3,4);this.textures.push(glow)
+      const glow=new THREE.TextureLoader().load('/models/textures/thruster-glow.png');this.glowMaterial.map=glow;this.glowBase.setRGB(3,3,4);this.textures.push(glow)
       const texture=new THREE.TextureLoader().load('/models/textures/armor-scales.jpg')
       texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.repeat.set(15,15)
       this.textures.push(texture);this.paint.bumpMap=texture;this.paint.bumpScale=.012
@@ -171,12 +174,15 @@ export class Jet extends Vehicle {
     super.update(dt,alpha)
     if(this.gear){this.gear.visible=this.gearAmount>0;this.gear.scale.x=this.gear.scale.y=Math.max(.001,this.gearAmount)}
     this.thruster.scale.set(1,1,this.hoverMode?.18:Math.max(.15,this.smoothed.z))
+    // Night auto exposure would bleach this hot additive glow to white; dim it as the lava sea does.
+    const exposure=this.game.renderer?.toneMappingExposure
+    this.glowMaterial.color.copy(this.glowBase).multiplyScalar(exposure===undefined?1:hotExposureDim(exposure))
     this.glowMaterial.opacity=this.hoverMode?.35:Math.max(.15,this.smoothed.z)*.7
     this.hoverGlows.forEach(g=>{g.visible=this.hoverMode;g.scale.y=Math.max(.08,this.smoothed.z)})
   }
   protected override applyColors():void {
     this.paint.color.set(this.colors.body);this.accent.color.set(this.colors.accent)
-    this.glowMaterial.color.set(this.colors.accent).multiplyScalar(3)
+    this.glowBase.set(this.colors.accent).multiplyScalar(3)
   }
   override teleport(position:THREE.Vector3,heading=0):void {super.teleport(position,heading);this.smoothed.set(0,0,0,0)}
   override dispose():void {

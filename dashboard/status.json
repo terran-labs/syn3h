@@ -1,7 +1,7 @@
 {
   "tagline": "Syn3h, rebuilt native in the browser: its vehicles, its physics, its lobby and its look.",
   "deadline": "Demo: Sunday noon Pacific, Coeur d'Alene",
-  "headline": "Release candidate m12 is frozen and passes its deploy dry run: sticky lava, three planets, King of the Hill without eliminations, tag beams, the buggy teleport fix and the 2017 lobby. It ships as release 1 the moment Cloudflare sign-in exists. Previews are down pending a Tailscale access review.",
+  "headline": "Release candidate m13 is frozen and passes its deploy dry run: night glow that keeps its colour, a camera that stays above lava and sea, and a ram fix verified by 30 of 30 two-player rams. Trunk adds wings that lift a buggy out of lava and water. Release 1 and the syn3h.com switch run the moment the Cloudflare token arrives. Previews are back.",
   "previews": [
     {
       "title": "Play the current build",
@@ -629,7 +629,7 @@
   "knownIssues": [
     {
       "title": "Steep shores on water worlds",
-      "detail": "On desert and alpine worlds a vehicle that falls in the sea lands fine on a gentle beach, but on a steep bank it climbs a few metres and slides back in. The default world is volcanic."
+      "detail": "On desert and alpine worlds a vehicle that falls in the sea lands fine on a gentle beach but slides back off a steep bank. The owner chose wild shores; open wings are to lift a buggy out of water and lava. That lift is being built."
     },
     {
       "title": "Bots crowd the summit",
@@ -637,11 +637,7 @@
     },
     {
       "title": "Tag beams look nearly white at night",
-      "detail": "They are green by day. A fix is queued."
-    },
-    {
-      "title": "The chase camera clips under the shoreline",
-      "detail": "In some frames while crawling out of lava."
+      "detail": "They are green by day. The fix is coded and awaiting night captures."
     },
     {
       "title": "Changing vehicle in the lobby reloads the page",

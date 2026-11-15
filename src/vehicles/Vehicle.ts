@@ -54,6 +54,8 @@ export abstract class Vehicle implements System {
   readonly liquidState=createLiquidState()
   get lavaDepth():number {return this.liquidState.lavaDepth}
   get stuck():boolean {return this.liquidState.stuck}
+  /** HUD hint: a wet buggy with closed wings and the shared escape lift enabled. */
+  get canLiftOut():boolean {return !this.wingsOpen&&this.liquidState.wingLiftAvailable}
   readonly body: RAPIER.RigidBody
   /** Control state for this step. Written by the player or by the network layer. */
   readonly input: InputState = emptyInput()
@@ -138,7 +140,7 @@ export abstract class Vehicle implements System {
     this.body.resetForces(true)
     this.body.resetTorques(true)
     this.applyForces(dt)
-    applyVehicleLiquid(this.body,this.game.world,this.terrain,this.input,this.kind,this.liquidState,dt)
+    applyVehicleLiquid(this.body,this.game.world,this.terrain,this.input,this.kind,this.liquidState,dt,this.wingsOpen)
     if(this.lavaDepth>0 && 'inLiquid' in this)(this as unknown as {inLiquid:boolean}).inLiquid=true
   }
 
@@ -238,6 +240,9 @@ export abstract class Vehicle implements System {
 
   /** Teleport, clearing motion and interpolation history. */
   teleport(position: THREE.Vector3, heading = 0): void {
+    this.liquidState.wingLiftSurface=-Infinity
+    this.liquidState.wingLiftSpeed=0
+    this.liquidState.wingLiftAvailable=false
     const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), heading)
     this.body.setTranslation(position, true)
     this.body.setRotation(q, true)

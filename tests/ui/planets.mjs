@@ -1,7 +1,9 @@
 /**
  * Planet picker check: the lobby offers one card per kind of world plus Custom; picking a
  * kind rebuilds the world and leads to the name form; Custom opens only the sliders that
- * shape a world; the invite link carries the world; a locked room refuses a change.
+ * shape a world; the invite link carries the world; a locked room refuses a change; an
+ * invited guest is held to the linked world until they join; Play releases the lobby's
+ * graphics contexts.
  *
  *   tools/heavy.sh node tests/ui/planets.mjs
  *
@@ -58,6 +60,24 @@ try {
   await page.evaluate(() => { window.syn3hNet = { isHost: false, locked: true, canEditWorld: false, setLocked() {} }; syn3h.shell.showPanel('index') }); await settle('index')
   await page.waitForFunction(() => document.querySelector('.lobby-index [data-planet=desert]').disabled)
   assert.equal(await page.locator('.lobby-index [data-planet=alpine]').isEnabled(), true)
+  // A guest arriving by an invite link that names a world: that world, and no other, until
+  // they are in the room. Pressing Play hands the lobby's graphics contexts back.
+  const guest = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  guest.on('pageerror', e => errors.push(e.message))
+  await guest.goto(`http://127.0.0.1:5187/?room=planets-guest-${Date.now()}&world=desert.4242`, { waitUntil: 'load' })
+  await guest.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false', null, { timeout: 120000 })
+  assert.deepEqual(await guest.evaluate(() => [syn3h.planets.currentPlanet().id, syn3h.params.get('world.seed').value]), ['desert', 4242])
+  await guest.waitForFunction(() => document.querySelector('.lobby-index [data-planet=alpine]').disabled)
+  assert.deepEqual(await guest.locator('.lobby-index .planet-card:enabled').evaluateAll(list => list.map(card => card.dataset.planet)), ['desert'])
+  assert.equal(await guest.locator('#new-world').isDisabled(), true)
+  await guest.waitForFunction(() => syn3h.shell.graphics.planetMaps >= 1 && syn3h.shell.graphics.planetsLive, null, { timeout: 20000 })
+  await guest.locator('.lobby-index [data-planet=desert]').click()
+  await guest.waitForFunction(() => document.querySelector('.lobby-panels').dataset.activePanel === 'explore' && document.querySelector('.lobby-panels').dataset.busy === 'false')
+  await guest.locator('.shell-play').click()
+  await guest.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-playing'))
+  await guest.waitForTimeout(500)
+  assert.deepEqual(await guest.evaluate(() => { const g = syn3h.shell.graphics; return [g.starfieldLive, g.planetsLive] }), [false, false], 'contexts released on Play')
+  await guest.close()
   console.log(JSON.stringify({ ok: true, world: `alpine.${after.seed}`, name, groups, errors }))
 } finally { await browser.close() }
 if (errors.length) { console.log(errors); process.exitCode = 1 }

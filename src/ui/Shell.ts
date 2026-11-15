@@ -11,6 +11,8 @@ import { SlidingPanels } from './SlidingPanels'
 import { Starfield } from './Starfield'
 import { wordmarkSvg } from './brand/logo'
 import { PlanetPicker } from './planets/PlanetPicker'
+import { planetOrbs } from './planets/PlanetOrbs'
+import { graphicsLevel, levelNumber } from '../core/quality'
 import { applyPlanet, currentPlanet, encodeWorld, planetName } from '../world/planets'
 import { AttractMode, type CinematicCamera } from './AttractMode'
 import { InviteView, inviteUrl, renderQr } from './InviteView'
@@ -61,6 +63,8 @@ export class Shell implements System {
   /** Slider groups the advanced panel is limited to, when it was opened from the custom planet. */
   private advancedGroups?: readonly string[]
   private worldDirty = true
+  /** Arrived by an invite link that names a world: that world is the one to enter. */
+  private readonly invited = (() => { const query = new URLSearchParams(location.search); return query.has('room') && query.has('world') })()
   private started = false
   private menuVisible = true
   private readonly previousSuspended: boolean
@@ -119,7 +123,7 @@ export class Shell implements System {
     this.nameInput = this.element.querySelector('#shell-name')!; this.roomInput = this.element.querySelector('#shell-room')!
     this.speed = this.element.querySelector('.shell-speed strong')!
     this.panels = new SlidingPanels(this.element.querySelector('.lobby-panels')!)
-    this.starfield = new Starfield(this.overlay, { seed: worldSeed.value })
+    this.starfield = new Starfield(this.overlay, { seed: worldSeed.value }, () => levelNumber(graphicsLevel.value) === 0)
     this.board = new Scoreboard(this.element.querySelector('.shell-scoreboard')!, text => {this.toast(text);if(/joined/i.test(text))audio.cue('join');else if(/left/i.test(text))audio.cue('leave');else if(/tagged| is it/i.test(text))audio.cue('tag')})
     this.hudBoard = new Scoreboard(this.element.querySelector('.hud-scoreboard')!, () => {})
     this.touch = new TouchControls(game.input); this.element.classList.toggle('has-touch', this.touch.available)
@@ -284,7 +288,7 @@ export class Shell implements System {
     if (this.started) { this.closeMenu(); return }
     void this.audio.unlock().then(async () => { await this.audio.ready(); this.audio.play('materialize') }).catch(() => this.toast('Audio is unavailable. You can still play.'))
     try { localStorage.setItem('syn3h.playerName', this.playerName) } catch { /* Playing does not require storage. */ }
-    this.started = true; this.nameInput.disabled = true; this.roomInput.disabled = true
+    this.started = true; this.worldDirty = true; this.nameInput.disabled = true; this.roomInput.disabled = true
     this.element.querySelector<HTMLButtonElement>('.shell-play')!.textContent = 'Return to Game ›'
     this.element.querySelector<HTMLElement>('[data-resume]')!.hidden = false
     for (const input of this.element.querySelectorAll<HTMLInputElement>('.shell-vehicle input')) input.disabled = true
@@ -300,6 +304,8 @@ export class Shell implements System {
   closeMenu(): void {
     if (!this.started) return
     this.menuVisible = false; this.overlay.hidden = true; this.overlay.inert = true; this.starfield.enabled = false
+    // The game is about to be on screen: give the lobby's graphics contexts back at once.
+    planetOrbs.release()
     this.game.input.suspended = false; this.touch.enabled = true; this.audio.enabled = true; this.audio.setLobbyVisible(false); this.paramPanel?.hide()
     this.element.classList.add('is-playing')
     this.element.querySelector<HTMLElement>('.shell-hud')!.hidden = false
@@ -376,6 +382,10 @@ export class Shell implements System {
   }
   /** A short notice that shows in the lobby and, while playing, as a toast. */
   private say(text: string): void { this.toast(text) }
+  /** What the lobby's own graphics are doing, for the phone checks. */
+  get graphics(): { starfieldFrames: number; starfieldLive: boolean; planetsLive: boolean; planetMaps: number } {
+    return { starfieldFrames: this.starfield.frames, starfieldLive: this.starfield.generated, planetsLive: planetOrbs.active, planetMaps: planetOrbs.painted }
+  }
   private updateHelp(): void {
     renderHelp(this.element.querySelector('.vehicle-help')!, this.choice.vehicleKind)
     this.element.querySelector('.shell-touch-hint')!.textContent = touchHelp(this.choice.vehicleKind)
@@ -439,13 +449,16 @@ export class Shell implements System {
     this.element.querySelector('#sky-time-value')!.textContent = `${String(Math.floor(time) % 24).padStart(2, '0')}:${String(Math.floor((time % 1) * 60)).padStart(2, '0')}`
     const editable = canEditWorld(), net = hostControls()
     const planet = currentPlanet()
-    for (const picker of this.pickers) picker.refresh(planet, worldSeed.value, editable)
+    // A guest who came by an invite link is shown that world and no other until they are in
+    // the room, where the host's lock decides.
+    const invitedOnly = this.invited && !this.started
+    for (const picker of this.pickers) picker.refresh(planet, worldSeed.value, editable && !invitedOnly)
     if (this.worldDirty) {
       this.worldDirty = false
-      this.element.querySelector('.planet-current')!.textContent = `${planet.label} world ${planetName(worldSeed.value)}. ${planet.centre}.`
+      this.element.querySelector('.planet-current')!.textContent = `${planet.label} world ${planetName(worldSeed.value)}. ${planet.centre}.${invitedOnly ? ' You were invited to this world.' : ''}`
       this.updateInvite()
     }
-    for (const input of this.element.querySelectorAll<HTMLInputElement | HTMLButtonElement>('.world-controls input, .world-controls button')) input.disabled = !editable
+    for (const input of this.element.querySelectorAll<HTMLInputElement | HTMLButtonElement>('.world-controls input, .world-controls button')) input.disabled = !editable || invitedOnly
     for (const note of this.element.querySelectorAll<HTMLElement>('.world-lock-note')) note.hidden = editable
     this.paramPanel?.setWorldEditable(editable)
     this.element.querySelector<HTMLButtonElement>('.world-reset')!.disabled = !editable

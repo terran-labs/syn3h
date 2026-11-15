@@ -4,7 +4,7 @@ Written by the Orchestrator. Refreshed at each milestone tag. A fresh or compact
 Orchestrator should be able to resume from this file, `ops/BACKLOG.md`, `ops/LANES.md` and
 `ops/PROTOCOL.md` alone. Times are Pacific; read the clock with `date`, never from memory.
 
-Last refreshed: Saturday 14 November, 5:35pm PST. Demo: Sunday noon PST.
+Last refreshed: Saturday 14 November, 6:40pm PST. Demo: Sunday noon PST.
 
 ## Where things are
 
@@ -12,11 +12,15 @@ Last refreshed: Saturday 14 November, 5:35pm PST. Demo: Sunday noon PST.
   edits it. `main` is fast-forwarded to it at each milestone.
 - Remote: `origin` = https://github.com/terran-labs/syn3h (public). Push `build/weekend`,
   `main` and tags after each milestone: `git branch -f main build/weekend && git push origin --all && git push origin --tags`.
-- Tags: `m00-proposal` to `m11-rc1`. `m11-rc1` (28d0adc) is the release candidate that release 1
-  ships unless a real defect fix lands. Next milestone tag is `m12`.
-- Tests: `npx tsc --noEmit` and `tools/heavy.sh npx vitest run --maxWorkers=2` (261 passing at m11-rc1). Smoke:
-  `node tools/smoke.mjs https://vorton-previews.tail285f88.ts.net:32782/ /tmp/x.png`
-  (it appends `?autoplay=1`). `node --test tools/serve-stable.test.mjs` for the stable server.
+- Tags: `m00-proposal` to `m13-night-glow-camera` (e4f2580). m13 is the release 1 candidate
+  (dry run passed 6:34pm, frozen as `../Syn3h-stable/20261114-183353-e4f2580`); m12
+  (87e9e34) is the rollback target. Trunk is ahead of m13 at cced254 (wings lift, ram flag
+  follow-up, phone guest lobby); next tag is `m14`, held for the Vehicles lane's wing-lift
+  fixes (fast water skip, release into flight).
+- Tests: `npx tsc --noEmit` and `tools/heavy.sh npx vitest run --maxWorkers=2` (365 passing at
+  cced254). Smoke: `node tools/smoke.mjs https://vorton-previews.tail285f88.ts.net:32782/ /tmp/x.png`
+  (it appends `?autoplay=1`; for `?vehicle=jet` it holds R and W, because W alone is pitch).
+  `node --test tools/serve-stable.test.mjs` for the stable server.
 
 ## Previews (managed broker, workspace `wks_cfcb37521a420b78`)
 
@@ -31,15 +35,13 @@ Scripts are in `paseo.json`.
 
 Terrain Lab runs its own preview on port 32783.
 
-## OUTAGE: all previews down since Saturday 5:00pm PST
+## Preview outage, closed
 
-Dashboard (:32781) and game (:32782) answer 502. The broker's log
-(`~/.local/share/vorteo-native-preview/https-broker.stderr.log`) repeats "HTTPS broker check
-failed: Tailnet access scope changed; administrator review required". This is a deliberate
-safety stop: the owner or the Host administrator must review the tailnet scope. Do not work
-around it and do not run broker commands meanwhile: `start`, `restart` and `status` hang.
-When it clears: `paseo-preview.mjs start dashboard` and `start game` for workspace
-`wks_cfcb37521a420b78`, then the smoke test. Told the Foreman at 5:05pm.
+All previews were down from 5:00pm to 6:38pm PST Saturday (tailnet scope change from the
+owner's own iPad; the Foreman re-pinned the broker on his word). Dashboard and game were
+restarted with `start` and verified through their links at 6:40pm. Broker commands are
+allowed again, one at a time; if one hangs past 60 s stop it by PID and read
+`~/.local/share/vorteo-native-preview/https-broker.stderr.log`.
 
 The sound crash fix (cd0fe52) is verified on a local server: eight bots, then `gfx.level` 1
 and `bots.count` 0, three rounds, physics still stepping, no errors.
@@ -74,12 +76,23 @@ Retired in-process subagents (work merged): buggy `af96d3463a8b76592`, multiplay
   deploys from the frozen copy with wrangler, runs the two player network test against the
   public address, tags `release-<n>`. `--dry-run` does everything but deploy and passed on
   m11-rc1 (direct and through 150 ms latency). `tools/rollback.sh` puts the previous one back.
-- Blocked on the owner: Cloudflare access (`npx wrangler whoami` says not authenticated), a
-  workers.dev subdomain name, confirming no existing Worker is named `syn3h`, and free or
-  the plan. DECIDED 5:32pm: Workers Paid (5 USD a month); he upgrades the account himself.
-  Keep the WebSocket relay; no WebRTC tonight.
-- syn3h.com: `tools/domain.sh` and `docs/CUTOVER.md`. Never part of a normal release. Needs
-  the owner's explicit word after he has seen release 1. Recommended: attach www only.
+- Cloudflare: workers.dev subdomain is `af-4e7` (release 1 will be
+  https://syn3h.af-4e7.workers.dev/), no Worker named `syn3h` exists, plan was free at 6:20pm
+  and the owner is upgrading to Workers Paid. Access arrives as one API token in the file
+  `~/.config/syn3h/cloudflare-token` (mode 600), not there at 6:40pm. Read it into
+  `CLOUDFLARE_API_TOKEN` for the release and domain commands only; never echo it or write it
+  to a log, commit or this file. Keep the WebSocket relay; no WebRTC tonight.
+- CUTOVER ORDERED: the owner said "Cut over ASAP" at 6:25pm (relayed by the Foreman, recorded
+  in ops/DECISIONS.md), waiving "after he has seen release 1". When the token exists, in
+  order: (1) verify the token (tokens/verify active) and that the syn3h.com zone is visible,
+  else stop; (2) `tools/release.sh 1 "note"` from the tagged candidate, all checks green;
+  (3) only then `tools/domain.sh export`, confirm it touches only web records at
+  www.syn3h.com, `tools/domain.sh attach release-1 www.syn3h.com --owner-approved` (www only,
+  never the apex, never MX or TXT); (4) runbook checks incl. apex still redirects and MX/TXT
+  match the export; (5) send the Foreman the address, tag, each check result, export path
+  and rollback command. Stop and report on any failed check, on non-web records at www, or
+  on anything outside the runbook. If the plan is still free, say so but do not block.
+- syn3h.com: `tools/domain.sh` and `docs/CUTOVER.md`. Never part of a normal release.
 - Local verification while previews are down: `npx vite --host 127.0.0.1 --port 5173 --strictPort`
   in the integration checkout (it spawns the room server on 8787), then
   `tools/heavy.sh node tools/smoke.mjs http://127.0.0.1:5173/ /tmp/x.png`. Stop both by PID.
@@ -96,12 +109,22 @@ Retired in-process subagents (work merged): buggy `af96d3463a8b76592`, multiplay
   confirmed by him: the owner himself has switched the UX, jet and hovercraft threads to
   Claude 2. Threads he switches may stay there.
 
-## First fix for release 2
+## Recent owner decisions (after 6pm Saturday)
 
-The teleport defect: a Syn3h buggy returned with `vehicle.teleport(...)` can sit immobile on
-its skid plate with the motor spinning. Every lava rescue and return-to-pad uses teleport.
-With the buggy lead (12abdd19), whose process exited at 5:36pm with code 143 and may need the
-owner to restart it. Evidence: /tmp/syn3h-island-final/trace.json, bots 9 and 11 from t=120.
+- Shores stay wild (guaranteed beaches were built and reverted).
+- "Buggies should float very aggressively when their force field wings are deployed. This
+  allows them to climb out of any situation." Built by the Vehicles lane: `liquid.wingLift`
+  (world, default 18), `Vehicle.canLiftOut` for a HUD hint "Space: wings to lift out".
+- Laser tag is "tag beams"; no weapon or death words in player text.
+- UX thread (Codex 3): send it nothing until the Foreman relays the owner's answer. Its
+  queue: the wings hint from `player.canLiftOut`, absolute og:image and og:url, and making
+  "R to lift off" obvious on the jet (W alone does nothing on a parked jet).
+
+## Closed defects
+
+Buggy teleport immobility (c201e46), verified by 30 of 30 two-player rams; upright buggies no
+longer flag as inverted on a ram (8cb4a14, Multiplayer to rerun `tools/ram-inverted-repro.mjs`
+once its handoff merges); night glow; shore camera.
 
 ## Rules that have bitten us
 
@@ -133,8 +156,8 @@ owner to restart it. Evidence: /tmp/syn3h-island-final/trace.json, bots 9 and 11
 ## Owed and open
 
 - Stable channel has no link (see Previews). Cloudflare deploy would replace it.
-- Cloudflare access from the owner. Deploy is `npm run build && npx wrangler deploy` from
-  `build/weekend`; then give the address to UX for the share card and QR.
+- Multiplayer handoff pending (8d3c67a and later on feat/net): tag beam night colour, room
+  hardening, interpolation delay cap, venue fallback runbook, loss and stall report.
 - Nobody has driven the game by hand or heard the sound.
 - Lobby vehicle change reloads the page (a deliberate shortcut in `main.ts`).
 - Remote players are not yet in `audio.setVehicles` (bots are).

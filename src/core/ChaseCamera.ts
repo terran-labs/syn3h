@@ -43,17 +43,31 @@ export interface CameraVehicle extends Vehicle {
 const ease = (dt: number, rate: number) => 1 - Math.exp(-Math.max(0, dt) * rate)
 const clamp = THREE.MathUtils.clamp
 
-/** Sample the whole camera arm, not just its endpoint, so hills cannot hide the car. */
-export function constrainCamera(terrain: Pick<Terrain, 'heightAt'>, pivot: THREE.Vector3, desired: THREE.Vector3, clearance: number): THREE.Vector3 {
-  const result = desired.clone(), distance = pivot.distanceTo(desired)
+type CameraTerrain = Pick<Terrain, 'heightAt' | 'liquidHeightAt'>
+function liquidHeight(terrain: CameraTerrain, x: number, z: number): number {
+  const height = terrain.liquidHeightAt?.(x, z)
+  return height != null && Number.isFinite(height) ? height : -Infinity
+}
+function surfaceHeight(terrain: CameraTerrain, x: number, z: number): number {
+  return Math.max(terrain.heightAt(x, z), liquidHeight(terrain, x, z))
+}
+
+/** Sample the camera arm so hills cannot hide the car; stay above liquid too. */
+export function constrainCamera(terrain: CameraTerrain, pivot: THREE.Vector3, desired: THREE.Vector3, clearance: number): THREE.Vector3 {
+  const start = pivot.clone(), result = desired.clone()
+  // Lift a submerged arm instead of collapsing it onto the vehicle at the shore.
+  // Existing rotation easing still controls the chase; the surface is a hard lower bound.
+  start.y = Math.max(start.y, liquidHeight(terrain, start.x, start.z) + clearance)
+  result.y = Math.max(result.y, liquidHeight(terrain, result.x, result.z) + clearance)
+  const distance = start.distanceTo(result)
   const steps = Math.min(160, Math.max(1, Math.ceil(distance / 0.25)))
   for (let i = 1; i <= steps; i++) {
-    const t = i / steps, x = THREE.MathUtils.lerp(pivot.x, desired.x, t), z = THREE.MathUtils.lerp(pivot.z, desired.z, t)
-    const y = THREE.MathUtils.lerp(pivot.y, desired.y, t)
-    if (y < terrain.heightAt(x, z) + clearance) { result.lerpVectors(pivot, desired, Math.max(0, (i - 1) / steps)); break }
+    const t = i / steps, x = THREE.MathUtils.lerp(start.x, result.x, t), z = THREE.MathUtils.lerp(start.z, result.z, t)
+    const y = THREE.MathUtils.lerp(start.y, result.y, t)
+    if (y < surfaceHeight(terrain, x, z) + clearance) { result.lerpVectors(start, result, Math.max(0, (i - 1) / steps)); break }
   }
-  // Final clamp is essential after collision shortening, teleports and interpolation.
-  result.y = Math.max(result.y, terrain.heightAt(result.x, result.z) + clearance)
+  // Essential after collision shortening, teleports and interpolation.
+  result.y = Math.max(result.y, surfaceHeight(terrain, result.x, result.z) + clearance)
   return result
 }
 
@@ -141,8 +155,9 @@ export class ChaseCamera implements System {
       const camera = this.game.camera, c = this.cinematic, k = ease(clamp(dt, 0, 0.25), 2)
       this.restoreVisibility()
       // Keep the shot above the ground even if the script asks for a point inside a hill.
-      const y = Math.max(c.position.y, this.terrain.heightAt(c.position.x, c.position.z) + camClearance.value + 1)
+      const y = Math.max(c.position.y, surfaceHeight(this.terrain, c.position.x, c.position.z) + camClearance.value + 1)
       camera.position.lerp(this.desired.set(c.position.x, y, c.position.z), k)
+      camera.position.y = Math.max(camera.position.y, surfaceHeight(this.terrain, camera.position.x, camera.position.z) + camClearance.value)
       c.look.lerp(c.target, k)
       camera.up.set(0, 1, 0); camera.lookAt(c.look)
       camera.fov = THREE.MathUtils.lerp(camera.fov, 55, k); camera.updateProjectionMatrix()
