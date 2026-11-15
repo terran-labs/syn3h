@@ -3,12 +3,12 @@
  * silhouettes on the original six-tread footprint, not edits to the rejected cockpit stack.
  * Every roofline below includes its cabin. The window bays cut that same shell.
  */
-import { buildExpedition, type ExpeditionSpec } from './expeditionKit'
+import { ExpeditionTank, type ExpeditionSpec } from './expeditionKit'
 import type { TankDesign } from './designs'
 
 export interface ExpeditionDesign extends TankDesign { spec: ExpeditionSpec }
 function design(id: string, name: string, tagline: string, color: number, accent: number, spec: ExpeditionSpec): ExpeditionDesign {
-  return { id, name, tagline, color, accent, spec, build: m => buildExpedition(m, spec) }
+  return { id, name, tagline, color, accent, spec, build: () => new ExpeditionTank(spec, color, accent).object }
 }
 
 export const round7: ExpeditionDesign[] = [
