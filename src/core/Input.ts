@@ -81,6 +81,11 @@ export class Input {
       if (px !== 0) s.x = px
       if (py !== 0) s.y = py
       s.w = s.w || dz(pad.axes[2] ?? 0)
+      // Throttle (z) on the right stick's vertical axis, with the D-pad as a digital fallback.
+      // Only the jet reads z, so ground vehicles are unaffected; without this a jet could not
+      // lift off from a gamepad at all.
+      const pz = -dz(pad.axes[3] ?? 0) || (pad.buttons[12]?.pressed ? 1 : 0) - (pad.buttons[13]?.pressed ? 1 : 0)
+      if (pz !== 0) s.z = pz
       s.brakes = s.brakes || Boolean(pad.buttons[1]?.pressed)
       s.fire = s.fire || Boolean(pad.buttons[0]?.pressed)
       const specialDown = Boolean(pad.buttons[3]?.pressed)

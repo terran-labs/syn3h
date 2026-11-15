@@ -3,7 +3,8 @@
  * input the game feeds the score has a slider here, and the scene buttons set them all at
  * once. `renderScene` renders a scene offline for the browser check in tests/audio.
  */
-import { Score, type ScoreInput } from './Score'
+import { Score, scoreLite, type ScoreInput } from './Score'
+import { params } from '../../../shared/params'
 import type { Role } from './Composer'
 import { applySubmerge, LAYERS } from './ScoreSynth'
 
@@ -29,11 +30,14 @@ function drive(score: Score, scene: Scene): void {
 }
 
 /** Render a scene offline and measure it. Used by tests/audio/score-render.mjs. */
-export async function renderScene(name: string, seconds = 16, seed = 1234, rate = 44100, cue?: Role) {
+export async function renderScene(name: string, seconds = 16, seed = 1234, rate = 44100, cue?: Role | 'surge', only?: readonly string[], lite = false) {
+  params.set(scoreLite.def.id, lite)
   const context = new OfflineAudioContext(2, rate * seconds, rate), scene = SCENES[name]
   const filter = context.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 20000; filter.connect(context.destination)
   const score = new Score(context, filter, seed)
   await score.synth.ready
+  // Solo some layers, to measure an instrument on its own.
+  if (only) for (const layer of LAYERS) score.synth.trim[layer] = only.includes(layer) ? 1 : 0
   score.setActive(true, 0.3)
   if (cue) score.cue(cue)
   const roles: Role[] = []
@@ -98,11 +102,12 @@ function mount(): void {
   ]
   const toggles: [keyof Scene, string][] = [['playing', 'In play (off is the lobby)'], ['airborne', 'Airborne'], ['holding', 'Holding the hill'], ['contested', 'Hill contested']]
   root.innerHTML = `<h1>SYN3H / ADAPTIVE SCORE</h1><p>Everything you hear is synthesised live from a seed. Nothing is a recording.</p>
-    <button id="power">Start the score</button> <label>Theme seed <input id="seed" type="number" value="1234" min="1" max="999999"></label> <button id="reseed">New theme</button> <button id="shot">Tag beam nearby</button> <button id="accent">Capture</button> <button id="climax">Play the build and release</button>
+    <button id="power">Start the score</button> <label>Theme seed <input id="seed" type="number" value="1234" min="1" max="999999"></label> <button id="reseed">New theme</button> <button id="shot">Tag beam nearby</button> <button id="accent">Capture</button> <button id="climax">Play the climb and release</button> <button id="surge">Surge (as on take-off)</button> <button id="win">Release now (as on a win)</button>
     <div id="scenes">${Object.keys(SCENES).map(name => `<button data-scene="${name}">${name}</button>`).join('')}</div>
     ${sliders.map(([key, label, min, max, step]) => `<label>${label} <output data-out="${key}"></output><input data-key="${key}" type="range" min="${min}" max="${max}" step="${step}"></label>`).join('')}
     <div id="toggles">${toggles.map(([key, label]) => `<label><input data-toggle="${key}" type="checkbox"> ${label}</label>`).join('')}</div>
     <div id="layers"><strong>Layers</strong> ${LAYERS.map(name => `<label><input data-layer="${name}" type="checkbox" checked> ${name}</label>`).join('')}</div>
+    <label style="display:inline-block"><input id="lite" type="checkbox"> Lighter score (for phones)</label>
     <label>Volume <input id="volume" type="range" min="0" max="1" step="0.01" value="0.6"></label>
     <pre id="readout">Stopped</pre><canvas id="scope" width="640" height="120"></canvas>`
   const sync = () => {
@@ -142,15 +147,19 @@ function mount(): void {
   root.querySelector('#reseed')!.addEventListener('click', () => { seed.value = String(1 + Math.floor(Math.random() * 999998)); score?.setSeed(Number(seed.value)) })
   seed.addEventListener('change', () => score?.setSeed(Number(seed.value)))
   root.querySelector('#shot')!.addEventListener('click', () => score?.combat(0.2))
+  root.querySelector<HTMLInputElement>('#lite')!.addEventListener('change', event => { params.set(scoreLite.def.id, (event.target as HTMLInputElement).checked); for (const box of root.querySelectorAll<HTMLInputElement>('[data-layer]')) box.checked = true })
   root.querySelector('#accent')!.addEventListener('click', () => score?.accent())
-  root.querySelector('#climax')!.addEventListener('click', () => score?.cue('build'))
+  root.querySelector('#climax')!.addEventListener('click', () => score?.cue('climb'))
+  root.querySelector('#surge')!.addEventListener('click', () => score?.cue('surge'))
+  root.querySelector('#win')!.addEventListener('click', () => score?.accent(1))
   const readout = root.querySelector('#readout')!, canvas = root.querySelector<HTMLCanvasElement>('#scope')!, g = canvas.getContext('2d')!, bins = new Uint8Array(1024)
   const frame = () => {
     requestAnimationFrame(frame)
     if (!score || !context || !filter) return
     drive(score, state); applySubmerge(filter, score.mood.depth, context.currentTime)
     const m = score.mood, pct = (v: number) => `${Math.round(v * 100)}%`.padStart(4)
-    readout.textContent = `mode ${score.mode.padEnd(8)}  section ${score.role.padEnd(7)}  tempo ${Math.round(score.tempo)} bpm\nintensity ${pct(m.intensity)}  heat ${pct(m.heat)}  lift ${pct(m.lift)}  darkness ${pct(m.darkness)}  triumph ${pct(m.triumph)}  submerged ${pct(m.depth)}`
+    const load = score.load ? `\naudio thread ${Math.round(score.load.average * 100)}% busy, ${(score.load.underruns * 100).toFixed(1)}% underruns${score.synth.lite ? '  (lighter score)' : ''}` : ''
+    readout.textContent = `mode ${score.mode.padEnd(8)}  section ${score.role.padEnd(7)}  tempo ${Math.round(score.tempo)} bpm\nintensity ${pct(m.intensity)}  heat ${pct(m.heat)}  lift ${pct(m.lift)}  darkness ${pct(m.darkness)}  triumph ${pct(m.triumph)}  submerged ${pct(m.depth)}${load}`
     analyser!.getByteFrequencyData(bins)
     g.fillStyle = '#0b0d14'; g.fillRect(0, 0, canvas.width, canvas.height); g.fillStyle = '#5fd4ff'
     // Log frequency axis, so bass and treble each get room.
