@@ -7,14 +7,14 @@ const run = (hints: PlayHints, seconds: number, state: HintState) => { const out
 
 describe('jet lift-off', () => {
   it('every jet controls text leads with how to lift off', () => {
-    expect(quickHelp('jet')[0]).toMatch(/^Hold R to lift off/)
-    expect(vehicleHelp('jet')[0]).toMatch(/^Hold R to lift off/)
+    expect(quickHelp('jet')[0]).toMatch(/^Hold E to lift off/)
+    expect(vehicleHelp('jet')[0]).toMatch(/^Hold E to lift off/)
     expect(quickHelp('jet', true)[0]).toBe('Hold THR + to lift off')
     expect(touchHelp('jet')).toMatch(/^Hold THR \+ to lift off/)
   })
   it('speaks up after two seconds of W on a parked jet, naming the right control', () => {
     expect(run(new PlayHints(), 1.8, parked)).toEqual([])
-    expect(run(new PlayHints(), 2.5, parked)).toEqual(['Hold R to lift off'])
+    expect(run(new PlayHints(), 2.5, parked)).toEqual(['Hold E to lift off'])
     expect(run(new PlayHints(), 2.5, { ...parked, touch: true })).toEqual(['Hold THR + to lift off'])
     expect(liftOffHint(true).touchAction).toBe('throttleUp')
   })

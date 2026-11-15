@@ -246,3 +246,51 @@ html[data-gfx="0"] .syn3h-shell.exploration-ui[data-glass] .wi-glass { --body: r
 #syn3h-build-notice, .build-banner { position: fixed; left: 50%; right: auto; top: auto; bottom: max(18px, calc(env(safe-area-inset-bottom) + 10px)); transform: translateX(-50%); z-index: 10000; max-width: calc(100vw - 32px); min-height: 44px; margin: 0; padding: 10px 22px; border: 1px solid rgb(173 224 247 / .45); border-radius: 999px; background: rgb(6 20 32 / .72); color: #e3f2fc; font: 500 14px/1.2 'Barlow',system-ui,sans-serif; letter-spacing: .04em; white-space: nowrap; cursor: pointer; box-shadow: 0 0 26px rgb(100 200 250 / .22), inset 0 1px 0 rgb(255 255 255 / .18); -webkit-backdrop-filter: blur(14px) saturate(1.4); backdrop-filter: blur(14px) saturate(1.4); }
 /* On touch the bottom corners hold the thumb controls: the banner floats just above them. */
 body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-notice, .build-banner) { bottom: calc(max(18px, env(safe-area-inset-bottom)) + 168px); }
+
+/* The gear drum and the Zorb toggle belong to play: hidden in the lobby, under the pause veil
+   and while the exit question is up. */
+.syn3h-shell:not(.is-playing) .gear-selector, .syn3h-shell:not(.is-playing) .gear-actions, .syn3h-shell:not(.is-playing) .zorb-toggle { display: none !important; }
+/* Zorb mode: one hairline pill under the drum, with its key and its state. */
+:root .syn3h-shell .zorb-toggle {
+  position: fixed; z-index: var(--gear-z, 12); left: calc(var(--gear-left, max(20px, calc(env(safe-area-inset-left) + 14px))) + 8px);
+  top: calc(var(--gear-top, 50%) + 129px); display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 16px 0 10px; margin: 0;
+  border-radius: 999px; border: 1px solid var(--s3-line, rgb(150 215 255 / .45)); background: rgb(3 11 19 / .34); color: var(--s3-ink, #eaf6ff);
+  font: 500 11px/1 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; letter-spacing: .16em; text-transform: uppercase;
+  -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; pointer-events: auto; cursor: pointer; transition: top .22s cubic-bezier(.2,.8,.2,1), opacity .3s ease, border-color .2s ease;
+}
+:root .syn3h-shell .zorb-toggle kbd { display: inline-block; min-width: 22px; padding: 3px 8px 2px; text-align: center; border: 1px solid var(--s3-line, rgb(150 215 255 / .45)); border-radius: 999px; font: inherit; }
+:root .syn3h-shell .zorb-toggle b { font-weight: 500; opacity: .62; }
+:root .syn3h-shell .zorb-toggle[aria-pressed=true] { border-color: var(--s3-accent-2, #9fe0ff); }
+:root .syn3h-shell .zorb-toggle[aria-pressed=true] b { opacity: 1; color: var(--s3-accent-2, #9fe0ff); }
+/* Driving with the cursor captured: the drum is shorter, and the pill is a reminder, not a target. */
+:root .syn3h-shell.is-focus .zorb-toggle { top: calc(var(--gear-top, 50%) + 92px); opacity: .84; pointer-events: none; }
+/* Touch has its own ZORB button beside the other drive buttons. */
+:root .syn3h-shell.has-touch .zorb-toggle { display: none; }
+
+/* The panel header is one line: the world's name, a search, Pause and the way back to
+   driving. Leaving the world sits at the foot with the world actions. */
+.syn3h-shell.exploration-ui .rail-navigation { justify-content: flex-start; gap: 10px; }
+.syn3h-shell.exploration-ui .rail-navigation .rail-world { flex: 0 1 auto; max-width: 46%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 500 11.5px/1 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); }
+.syn3h-shell.exploration-ui .world-inspector .rail-navigation .wi-search { flex: 1 1 0; width: auto; min-width: 0; }
+.syn3h-shell.exploration-ui .rail-navigation .rail-pause { margin-left: 0; flex: 0 0 auto; }
+.syn3h-shell.exploration-ui .rail-navigation .rail-close { flex: 0 0 auto; }
+.syn3h-shell.exploration-ui .rail-foot { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; }
+.syn3h-shell.exploration-ui .rail-foot .wi-actions { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world { flex: 0 0 auto; margin-left: auto; min-height: 34px; padding: 5px 4px 5px 9px; border: 1px solid transparent; background: none; box-shadow: none; font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); white-space: nowrap; }
+.syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world:hover { border-color: var(--s3-line-quiet); }
+/* Short screens: the quick controls share the header's line, so the name gives way and the
+   search takes a line of its own, as before. */
+@media (max-height: 500px) {
+  .syn3h-shell.exploration-ui .rail-navigation { flex-wrap: wrap; justify-content: flex-end; row-gap: 2px; }
+  .syn3h-shell.exploration-ui .rail-navigation .rail-world { display: none; }
+  .syn3h-shell.exploration-ui .wi-quick { left: 10px; }
+  .syn3h-shell.exploration-ui .world-inspector .rail-navigation .wi-search { order: 9; flex: 1 0 100%; }
+  .syn3h-shell.exploration-ui .rail-foot { padding: 2px 8px; }
+  .syn3h-shell.exploration-ui .rail-foot .wi-actions { flex-wrap: nowrap; gap: 3px; }
+  .syn3h-shell.exploration-ui .rail-foot .wi-actions button { padding: 3px; font-size: 9px; min-height: 24px; }
+  .syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world { min-height: 24px; padding-block: 2px; font-size: 10px; }
+}
+
+/* Explore has no game, so the player list shows who is here and no score column. */
+.syn3h-shell.is-explore .score-row { grid-template-columns: minmax(0,1fr) auto; }
+.syn3h-shell.is-explore .score-row strong { display: none; }
