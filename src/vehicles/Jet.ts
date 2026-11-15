@@ -24,6 +24,12 @@ export const jetFlightThrust = defineParam<number>({id:'jet.flightThrust',label:
 // is what steers the jet there. It is separate from jet.controlResponse, which only scales the
 // aerodynamic control torques.
 export const jetVectorResponse = defineParam<number>({id:'jet.vectorResponse',label:'Thrust vectoring',group:'Jet',scope:'world',default:.3,min:.1,max:1,step:.05})
+/**
+ * Q and E work the jet's lift and thrust axis: lift and lower in hover mode, more and less
+ * forward thrust in flight mode, the same axis R and F drive. 1 is E up and Q down, matching the
+ * roam camera; -1 swaps them. The owner asked for these keys on 15 November 2026.
+ */
+export const JET_LIFT_KEYS: 1 | -1 = 1
 const clamp = THREE.MathUtils.clamp
 const lerp = (a:number,b:number,t:number)=>THREE.MathUtils.lerp(a,b,clamp(t,0,1))
 const hullVertices = new Float32Array([-1.086619, -0.316382, -1.978747, 0.0, 0.543169, -2.110775, 0.0, -0.324233, -3.398361, 0.0, 0.482615, 1.50864, -3.851598, 0.125607, 1.143191, 0.0, -0.589476, -2.522558, 0.0, -0.636839, 0.479384, 0.0, -0.166176, 2.98234, -2.551439, 0.855675, 3.431675, 1.086619, -0.316382, -1.978747, 3.851598, 0.125607, 1.143191, 2.551439, 0.855675, 3.431675])
@@ -74,7 +80,24 @@ export class Jet extends Vehicle {
     this.applyColors()
   }
 
+  /**
+   * For the player's own jet, Q and E are lift and thrust, not yaw. The shared input puts those
+   * keys on the yaw axis (w), which a gamepad's right stick and the bot pilot also use, so the
+   * keys are read directly and their yaw is taken back out. The input is rewritten in place:
+   * what is sent to other players is then what this jet flew.
+   */
+  private liftKeys():void {
+    const held=(this.game.input as {held?:(code:string)=>boolean}).held
+    if(!held) return
+    const up=held.call(this.game.input,'KeyE'),down=held.call(this.game.input,'KeyQ')
+    if(!up&&!down) return
+    // With either key down the shared yaw axis holds only their value, never the gamepad's.
+    this.input.w=0
+    this.input.z=clamp(this.input.z+JET_LIFT_KEYS*((up?1:0)-(down?1:0)),-1,1)
+  }
+
   protected applyForces(dt:number):void {
+    if(this.isLocal) this.liftKeys()
     this.wingsOpen=!this.hoverMode
     // Vhicl.cs 269 smooths all four axes at fixedDeltaTime * 10.
     this.smoothed.lerp(new THREE.Vector4(this.input.x,this.input.y,this.input.z,this.input.w),Math.min(1,dt*10))
