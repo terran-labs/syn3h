@@ -15,11 +15,11 @@ describe('adaptive score composer', () => {
 
   it('keeps every pitched note inside the mode of its chord', () => {
     for (const seed of [1, 2, 3, 42, 999]) for (const mood of [calm, cruise, fight, { ...cruise, lift: 1 }]) {
-      const { c, steps } = run(seed, mood, STEPS_PER_SECTION * 3)
+      const { steps } = run(seed, mood, STEPS_PER_SECTION * 9)
       let scale = new Set<number>()
       for (const step of steps) {
-        if (step.chord) scale = new Set(MODES[step.chord.mode].map(n => (n + c.tonic) % 12))
-        const pitches = [...(step.chord?.pad ?? []), ...(step.chord ? [step.chord.root] : []), step.arp?.midi, step.bass?.midi, step.lead?.midi, step.beep].filter((n): n is number => n !== undefined)
+        if (step.chord) scale = new Set(MODES[step.chord.mode].map(n => (n + step.chord!.tonic) % 12))
+        const pitches = [...(step.chord?.pad ?? []), ...(step.resolve ?? []), ...(step.chord ? [step.chord.root] : []), step.arp?.midi, step.bass?.midi, step.lead?.midi, step.beep, step.pluck?.midi, step.bell?.midi, step.brass?.midi].filter((n): n is number => n !== undefined)
         for (const midi of pitches) expect(scale.has(((midi % 12) + 12) % 12), `seed ${seed} midi ${midi}`).toBe(true)
       }
     }
@@ -37,8 +37,10 @@ describe('adaptive score composer', () => {
 
   it('layers instruments in as intensity rises', () => {
     const quiet = run(3, calm, STEPS_PER_SECTION).steps, mid = run(3, cruise, STEPS_PER_SECTION).steps, loud = run(3, fight, STEPS_PER_SECTION).steps
-    for (const key of ['kick', 'snare', 'hat', 'bass', 'arp', 'riser'] as const) expect(count(quiet, key), key).toBe(0)
+    for (const key of ['kick', 'snare', 'hat', 'bass', 'arp', 'riser', 'impact'] as const) expect(count(quiet, key), key).toBe(0)
     expect(count(quiet, 'lead')).toBeGreaterThan(0)
+    // With the sequencer silent a plucked string keeps the pulse, one note to a beat.
+    expect(count(quiet, 'pluck')).toBe(STEPS_PER_SECTION / 4)
     expect(count(mid, 'arp')).toBe(STEPS_PER_SECTION / 2)
     expect(count(mid, 'kick')).toBe(STEPS_PER_SECTION / 16)
     expect(count(mid, 'hat')).toBe(0)
@@ -53,11 +55,42 @@ describe('adaptive score composer', () => {
     expect(loud.filter((step, n) => step.snare && n < 112 && (n % 16 === 4 || n % 16 === 12))).toEqual([])
   })
 
-  it('swells into a new section and lands it with an impact', () => {
-    const { steps } = run(11, fight, STEPS_PER_SECTION + 1)
-    expect(steps[STEPS_PER_SECTION - 16].riser).toBe(16)
-    expect(steps[STEPS_PER_SECTION].impact).toBe(true)
+  it('follows the arc: theme, still, build, breath, then a release a minor third up', () => {
+    const { c, steps } = run(11, fight, STEPS_PER_SECTION * 4), home = steps[0].chord!.tonic
+    const section = (n: number) => steps.slice(n * STEPS_PER_SECTION, (n + 1) * STEPS_PER_SECTION)
+    expect(count(section(0), 'lead')).toBeGreaterThan(0)
+    expect(count(section(1), 'lead')).toBe(0)
+    // The build: a held bass note, one swell, then nothing but the hall for the last half bar.
+    const build = section(2), roots = new Set(build.filter(s => s.chord).map(s => s.chord!.root))
+    expect(roots.size).toBe(1)
+    expect(build[96].riser).toBe(24)
+    expect(build[120].breath).toBe(true)
+    for (const key of ['arp', 'bass', 'kick', 'snare', 'lead'] as const) expect(count(build.slice(120), key), key).toBe(0)
+    // The release.
+    const release = section(3)
+    expect(release[0].impact).toBe(true)
+    expect(release[0].chord!.tonic).toBe((home + 3) % 12)
     expect(steps[0].impact).toBeUndefined()
+    expect(Math.min(...release.filter(s => s.lead).map(s => s.lead!.midi))).toBeGreaterThanOrEqual(65 + 12)
+    expect(c.role).toBe('release')
+    expect(release[0].bell?.velocity).toBe(1)
+    expect(count(release, 'brass')).toBe(count(release, 'lead'))
+    expect(count(section(0), 'brass')).toBe(0)
+    // A quiet mood still gets its swell and its arrival.
+    const quiet = run(11, calm, STEPS_PER_SECTION * 3 + 1).steps
+    expect(quiet[2 * STEPS_PER_SECTION + 96].riser).toBe(24)
+    expect(quiet[3 * STEPS_PER_SECTION].impact).toBe(true)
+  })
+
+  it('suspends the third of every second chord and resolves it a bar later', () => {
+    const { steps } = run(5, cruise, STEPS_PER_SECTION)
+    for (const at of [32, 96]) {
+      const chord = steps[at].chord!, resolved = steps[at + 16].resolve!
+      expect(resolved).toHaveLength(4)
+      expect(resolved.filter((midi, voice) => midi !== chord.pad[voice])).toHaveLength(1)
+      expect(Math.abs(resolved[1] - chord.pad[1]) % 12).toBeLessThanOrEqual(2)
+    }
+    expect(steps[16].resolve).toBeUndefined()
   })
 
   it('turns dark within one chord of a fight starting', () => {

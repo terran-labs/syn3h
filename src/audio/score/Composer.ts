@@ -63,7 +63,17 @@ export const STEPS_PER_CHORD = 32
 export const STEPS_PER_SECTION = 128
 
 export interface Note { midi: number; velocity: number; /** Gate length in sixteenths. */ steps: number }
-export interface Chord { mode: ModeName; degree: number; /** Four pad voices, low to high. */ pad: number[]; root: number }
+/** `pad` is root, third (or a suspended fourth), fifth and a colour tone, in that order. `root` is the bass and drone note. */
+export interface Chord { mode: ModeName; degree: number; pad: number[]; root: number; /** Pitch class of the key at this chord. */ tonic: number }
+/**
+ * Sections follow a four-part arc, because a steady texture never raises a hair:
+ *   theme    the melody is stated
+ *   still    the melody rests; pads, drone and pulse only
+ *   build    the bass holds the dominant under moving chords, a swell grows, then a breath of near silence
+ *   release  the key lifts a minor third, the theme returns an octave up, organ and high choir enter
+ */
+export const ROLES = ['theme', 'still', 'build', 'release'] as const
+export type Role = (typeof ROLES)[number]
 export interface Step {
   index: number
   /** Present on the step where the harmony changes. */
@@ -75,10 +85,20 @@ export interface Step {
   snare?: number
   hat?: number
   openHat?: number
+  /** A plucked string (koto, harp): doubles the sequencer an octave up, or picks out the chord alone when calm. */
+  pluck?: Note
+  /** A struck bell on the home note: full at a release, soft at the start of a still section. */
+  bell?: Note
+  /** The theme on brass, under the theremin. Only in a release. */
+  brass?: Note
   /** A distant telemetry beep at this MIDI pitch. Only in quiet passages. */
   beep?: number
-  /** A noise swell lasting this many sixteenths, leading into the next section. */
+  /** A noise swell lasting this many sixteenths, leading into the release. */
   riser?: number
+  /** The suspended fourth of this chord resolving to its third: new pad voices. */
+  resolve?: number[]
+  /** Everything but the hall falls away for the half bar before the release. */
+  breath?: boolean
   /** A sub drop and crash on a section start or a turn to a darker mode. */
   impact?: boolean
 }
@@ -137,12 +157,12 @@ const fold = (midi: number, low: number) => ((((midi - low) % 12) + 12) % 12) + 
 interface MotifNote { at: number; offset: number; steps: number }
 
 export class Composer {
-  /** Pitch class of the home note, fixed for a seed. */
-  readonly tonic: number
   private readonly random: () => number
+  private key: number
   private index = 0
   private position = STEPS_PER_SECTION
   private modeIndex = -1
+  private cycle = -1
   private progression: readonly number[] = PROGRESSIONS.dorian[0]
   private arp: readonly number[] = ARPS[0]
   private accents: readonly number[] = BASS_ACCENTS[0]
@@ -151,20 +171,34 @@ export class Composer {
 
   constructor(seed: number) {
     this.random = seeded(seed)
-    this.tonic = Math.floor(this.random() * 12)
+    this.key = Math.floor(this.random() * 12)
   }
+  /** Pitch class of the home note. It lifts a minor third at every release. */
+  get tonic(): number { return this.key }
   get mode(): ModeName { return MODE_NAMES[Math.max(0, this.modeIndex)] }
+  get role(): Role { return ROLES[Math.max(0, this.cycle) % ROLES.length] }
+  /** 0..1 through the build, then falling away across the release. Drives filters and the halo. */
+  get tension(): number {
+    const t = Math.min(1, this.position / STEPS_PER_SECTION)
+    return this.role === 'build' ? t : this.role === 'release' ? 1 - 0.6 * t : this.role === 'theme' ? 0.15 : 0
+  }
+
+  /** Jump the arc so the next sixteenth starts a section of this role. For the lab and for big game moments. */
+  cue(role: Role): void { this.cycle += ((ROLES.indexOf(role) - this.cycle - 1) % 4 + 4) % 4; this.position = STEPS_PER_SECTION }
 
   private pick<T>(list: readonly T[]): T { return list[Math.floor(this.random() * list.length)] }
   /** MIDI pitch of a scale degree in the current mode, counted up from the tonic at octave 0. */
   private pitch(degree: number): number {
     const scale = MODES[this.mode]
-    return this.tonic + scale[((degree % 7) + 7) % 7] + 12 * Math.floor(degree / 7)
+    return this.key + scale[((degree % 7) + 7) % 7] + 12 * Math.floor(degree / 7)
   }
 
   private newSection(modeIndex: number): void {
     this.modeIndex = modeIndex
     this.position = 0
+    this.cycle++
+    // The lift: the release arrives a minor third higher than the build that led to it.
+    if (this.role === 'release') this.key = (this.key + 3) % 12
     this.progression = this.pick(PROGRESSIONS[this.mode])
     // One arpeggio in four is a fresh random walk; the rest are shapes that are known to work.
     if (this.random() < 0.25) {
@@ -173,23 +207,20 @@ export class Composer {
       this.arp = walk
     } else this.arp = this.pick(ARPS)
     this.accents = this.pick(BASS_ACCENTS)
-    this.motif = this.newMotif()
+    // The release restates the theme it was built toward; every other section writes a new one.
+    if (this.role !== 'release' || !this.motif.length) this.motif = this.newMotif()
   }
 
-  /** A two-bar phrase of two or three long notes, repeated over every chord of the section. */
+  /**
+   * A two-bar phrase with a shape: a pickup, a leap up to a long held chord tone, then a
+   * stepwise fall. The leap and the held note are what a listener remembers.
+   */
   private newMotif(): MotifNote[] {
-    const count = 2 + Math.floor(this.random() * 2)
-    const starts = new Set<number>([this.random() < 0.6 ? 0 : 2])
-    while (starts.size < count) starts.add(2 * Math.floor(this.random() * 16))
-    const ordered = [...starts].sort((a, b) => a - b)
-    let offset = this.pick(CHORD_TONES)
-    return ordered.map((at, i) => {
-      if (i > 0) offset = Math.min(8, Math.max(0, offset + this.pick([-2, -1, 1, 2])))
-      // Notes on a beat land on a chord tone; the ones between may pass through the scale.
-      if (at % 8 === 0) offset = CHORD_TONES.reduce((best, tone) => Math.abs(tone - offset) < Math.abs(best - offset) ? tone : best)
-      const next = ordered[i + 1] ?? STEPS_PER_CHORD
-      return { at, offset, steps: Math.min(16, next - at) }
-    })
+    const start = this.pick([0, 2, 4]), low = this.pick([0, 2]), peak = this.pick(low === 0 ? [4, 7] : [7, 9])
+    const peakAt = start + this.pick([2, 4]), fallAt = peakAt + this.pick([8, 10, 12])
+    const notes = [{ at: start, offset: low }, { at: peakAt, offset: peak }, { at: fallAt, offset: peak - 1 }]
+    if (fallAt + 6 < STEPS_PER_CHORD && this.random() < 0.6) notes.push({ at: fallAt + this.pick([4, 6]), offset: peak - 2 })
+    return notes.map((note, i) => ({ ...note, steps: Math.min(16, (notes[i + 1]?.at ?? STEPS_PER_CHORD) - note.at) }))
   }
 
   /** What plays on the next sixteenth. */
@@ -204,59 +235,78 @@ export class Composer {
         this.newSection(target)
       }
     }
-    const pos = this.position++
+    const pos = this.position++, role = this.role
     const bar = Math.floor(pos / STEPS_PER_BAR), s = pos % STEPS_PER_BAR
     const chordIndex = Math.floor(pos / STEPS_PER_CHORD), inChord = pos % STEPS_PER_CHORD
     const degree = this.progression[chordIndex]
-    const root = fold(this.pitch(degree), 31)
+    // In the build the bass refuses to move: it holds the dominant while the chords change above it.
+    const root = fold(this.pitch(role === 'build' ? 4 : degree), 31)
+    // The half bar of near silence before the release.
+    const breath = role === 'build' && bar === 7 && s >= 8
+    // A seventh, or a ninth in open air. Harmonic minor doubles the root instead: its sevenths grate.
+    const colour = this.mode === 'harmonic' ? 7 : mood.lift > 0.5 ? 8 : 6
+    const voices = (third: number) => [0, third, 4, colour].map(offset => fold(this.pitch(degree + offset), 50))
+    // Every second chord arrives with its third suspended a step high and resolves a bar later.
+    const suspended = chordIndex % 2 === 1
 
     if (inChord === 0) {
-      // A seventh, or a ninth in open air. Harmonic minor doubles the root instead: its sevenths grate.
-      const colour = this.mode === 'harmonic' ? 7 : mood.lift > 0.5 ? 8 : 6
-      const pad = [0, 2, 4, colour].map(offset => fold(this.pitch(degree + offset), 50)).sort((a, b) => a - b)
-      out.chord = { mode: this.mode, degree, pad, root }
+      out.chord = { mode: this.mode, degree, pad: voices(suspended ? 3 : 2), root, tonic: this.key }
       if (pos === 0 && (this.risen || (turnedDarker && i >= 0.3))) out.impact = true
       if (pos === 0) this.risen = false
     }
+    if (suspended && inChord === STEPS_PER_BAR) out.resolve = voices(2)
+    if (breath && s === 8) out.breath = true
 
     // The sequencer line: quarter notes when calm, eighths at a cruise, sixteenths only in a chase.
     const every = i < 0.3 ? 4 : i < 0.6 ? 2 : 1
-    if (level.arp > 0 && s % every === 0) {
+    if (level.arp > 0 && s % every === 0 && !breath) {
       const base = fold(this.pitch(degree), 36) - this.pitch(degree)
-      const midi = this.pitch(degree + ARP_TONES[this.arp[s]]) + base + (mood.lift > 0.6 ? 12 : 0)
+      const midi = this.pitch(degree + ARP_TONES[this.arp[s]]) + base + (mood.lift > 0.6 || role === 'release' ? 12 : 0)
       out.arp = { midi, velocity: s % 4 === 0 ? 1 : 0.7, steps: every }
+      if (s % 2 === 0) out.pluck = { midi: midi + 12, velocity: out.arp.velocity * 0.8, steps: 8 }
+    } else if (level.arp === 0 && s % 4 === 0 && !breath) {
+      // Too calm for the sequencer: a string picks out the chord, one note to a beat.
+      const base = fold(this.pitch(degree), 48) - this.pitch(degree)
+      out.pluck = { midi: this.pitch(degree + ARP_TONES[this.arp[s]]) + base, velocity: s === 0 ? 0.7 : 0.45, steps: 16 }
     }
+    if (pos === 0 && (role === 'release' || role === 'still')) out.bell = { midi: fold(this.pitch(0), 48), velocity: role === 'release' ? 1 : 0.45, steps: 32 }
 
-    if (level.bass > 0) {
+    if (level.bass > 0 && !breath) {
       if (i < 0.6) {
         if (s % 4 === 0) out.bass = { midi: root + (s === 12 && bar % 2 === 1 ? 12 : 0), velocity: 0.85, steps: 3 }
       } else {
         const span = i < 0.85 ? 2 : 1
-        const walking = i >= 0.8 && bar % 2 === 1 && s >= 13
+        const walking = i >= 0.8 && bar % 2 === 1 && s >= 13 && role !== 'build'
         const midi = walking ? fold(this.pitch(degree + (s === 14 ? 6 : 4)), 43) : root + (this.accents[s] ? 12 : 0)
         if (s % span === 0) out.bass = { midi, velocity: s % 4 === 0 ? 1 : 0.72, steps: span }
       }
     }
 
-    if (level.lead > 0.05) {
+    // The melody rests in the still section, and in the release it returns an octave up at full voice.
+    const sings = role === 'release' ? 1 : role === 'still' ? 0 : role === 'theme' ? Math.max(0.5, level.lead) : level.lead
+    if (sings > 0.05 && !breath) {
       const lastChord = chordIndex === this.progression.length - 1
       for (let n = 0; n < this.motif.length; n++) {
         const note = this.motif[n]
         if (note.at !== inChord) continue
         // The last chord answers the phrase by playing its notes in reverse order.
         const offset = lastChord ? this.motif[this.motif.length - 1 - n].offset : note.offset
-        const base = fold(this.pitch(degree), 65) - this.pitch(degree)
-        out.lead = { midi: this.pitch(degree + offset) + base, velocity: level.lead, steps: note.steps }
+        const base = fold(this.pitch(degree), 65) - this.pitch(degree) + (role === 'release' ? 12 : 0)
+        out.lead = { midi: this.pitch(degree + offset) + base, velocity: sings, steps: note.steps }
+        if (role === 'release') out.brass = { midi: out.lead.midi - 12, velocity: 1, steps: note.steps }
       }
     }
 
-    if (level.drums > 0) {
+    if (level.drums > 0 && !breath) {
       // A heartbeat once a bar, then twice, and four on the floor only in a full chase.
       if (s % (i < 0.5 ? 16 : i < 0.75 ? 8 : 4) === 0) out.kick = 0.7 + 0.3 * i
       else if ((i >= 0.75 && bar % 2 === 1 && s === 14) || (i >= 0.9 && bar % 4 === 3 && s === 10)) out.kick = 0.6
       // `snare` is a low drum, a taiko more than a snare. Half time: one hit on beat three.
-      const fill = bar === 7 && i >= 0.5 && s >= 12
-      if (fill) out.snare = 0.4 + 0.15 * (s - 12)
+      // The build ends in a roll that grows into the breath; other sections end in a short fill.
+      const roll = role === 'build' && bar === 7 && i >= 0.5
+      const fill = role !== 'build' && bar === 7 && i >= 0.5 && s >= 12
+      if (roll) out.snare = 0.3 + 0.07 * s
+      else if (fill) out.snare = 0.4 + 0.15 * (s - 12)
       else if (i >= 0.55 && s === 8) out.snare = 0.85
       else if (i >= 0.8 && bar % 2 === 1 && (s === 11 || s === 14)) out.snare = 0.55
       if (i >= 0.8 && s % 4 === 2) out.hat = 0.5
@@ -264,7 +314,8 @@ export class Composer {
     }
     // Telemetry: four even beeps on the fifth of the key, far away, once per section.
     if (i < 0.35 && chordIndex === 2 && inChord < 16 && inChord % 4 === 0) out.beep = fold(this.pitch(4), 79)
-    if (bar === 7 && s === 0 && i >= 0.4) { out.riser = STEPS_PER_BAR; this.risen = true }
+    // The swell into the release. It plays at any intensity: a quiet build still needs to arrive somewhere.
+    if (role === 'build' && bar === 6 && s === 0) { out.riser = 24; this.risen = true }
     return out
   }
 }

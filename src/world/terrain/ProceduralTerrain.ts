@@ -4,8 +4,11 @@
  */
 import * as THREE from 'three/webgpu'
 import { params, worldLavaAltitude, worldSeed } from '../../../shared/params'
+import { nearestImage, wrapCoord } from '../../../shared/wrap'
 import type { Game, System } from '../../core/Game'
 import type { RAPIER } from '../../core/physics'
+import { applyCurve, curveParam, updateCurve } from '../curve'
+import { AlienSkyMesh } from '../sky/AlienSkyMesh'
 import type { SpawnPoint, Terrain, TerrainRenderQuality, TerrainRoadPath, TerrainSummit, TerrainVent } from '../Terrain'
 import { createTerrainCollider } from './collider'
 import { lavaSurfaceAt } from './lava'
@@ -13,34 +16,45 @@ import { type TerrainData, generateTerrain } from './generate'
 import { type TerrainMaterial, createTerrainMaterial } from './material'
 import { LOD_FAR, LOD_NEAR, type TerrainMeshes, type TriangleStats, createTerrainMeshes } from './mesh'
 import { rimRoadRadius } from './roads'
-import { HeightSampler } from './sampler'
-import { KIND_ALPINE, KIND_VOLCANIC, TERRAIN_PARAM_IDS, currentTerrainSettings, worldSeaKind } from './settings'
+import { HeightSampler, sealSeam } from './sampler'
+import { KIND_ALPINE, KIND_VOLCANIC, TERRAIN_PARAM_IDS, currentTerrainSettings, worldSeaKind, worldWrap } from './settings'
 import { spawnPointAt } from './spawn'
 import { Trees } from './trees'
 import { Volcanics } from './volcanics'
 
 export class ProceduralTerrain implements Terrain {
-  readonly size: number
+  /** Side of the current tile in metres. Changes with the planet size setting. */
+  get size(): number {
+    return this.data.size
+  }
+  /** The world is one tile of a torus this many metres on a side: the current size. */
+  get wrapSize(): number | undefined {
+    return worldWrap.value ? this.data.size : undefined
+  }
+  /** Largest height change (m) sealing the tile's seam made on the last generation. */
+  lastSeamCorrection = 0
   /** Increments on every regeneration. */
   version = 0
   data: TerrainData
   /** Milliseconds the last generation took (generation only, not upload). */
   lastGenerateMs = 0
   private readonly sampler: HeightSampler
-  private readonly meshes: TerrainMeshes
+  private meshes: TerrainMeshes
+  /** The last render quality request, re-applied when the meshes are rebuilt. */
+  private lod: [number, number] | null = null
   private readonly look: TerrainMaterial
   private collider: RAPIER.Collider
   private readonly listeners = new Set<() => void>()
   private readonly unsubscribe: () => void
   private pending = false
   private readonly lodSystem: System
+  private curveTick = 0
   /** The sea, lava lake, rivers and vents drawn from the generated data. */
   private readonly volcanics: Volcanics
   private readonly trees: Trees
 
   constructor(private readonly game: Game, private seed: number) {
     this.data = this.generate()
-    this.size = this.data.size
     this.sampler = new HeightSampler(this.data)
     this.look = createTerrainMaterial()
     this.look.setSummit(this.summitHeight())
@@ -53,12 +67,26 @@ export class ProceduralTerrain implements Terrain {
       update: () => {
         this.meshes.updateLod(game.camera.position)
         this.look.setSea(worldLavaAltitude.value)
+        // Curved horizon. Every material in the scene must take the same bend or its objects
+        // float against the ground, so while the curve is on, the scene is walked a few times
+        // a second and anything new (a joined vehicle, rebuilt particles, a loaded model) is
+        // bent too. The sky is left alone. Nothing is touched while the curve is 0.
+        updateCurve(game.camera.position, this.size)
+        if (curveParam.value > 0 && this.curveTick++ % 20 === 0) {
+          game.scene.traverse((o) => {
+            const m = (o as THREE.Mesh).material
+            if (!m || o instanceof AlienSkyMesh) return
+            if (Array.isArray(m)) for (const x of m) applyCurve(x)
+            else applyCurve(m)
+          })
+        }
       },
     })
     this.volcanics = game.add(new Volcanics(
       game.scene, this.sampler,
       () => game.renderer.toneMappingExposure,
       () => Number(params.get('sky.exposure')?.value ?? game.renderer.toneMappingExposure),
+      game.camera,
     ))
     this.trees = game.add(new Trees(game.scene, this.sampler, game.camera))
 
@@ -80,6 +108,9 @@ export class ProceduralTerrain implements Terrain {
   private generate(): TerrainData {
     const t = performance.now()
     const data = generateTerrain(this.seed, currentTerrainSettings())
+    // The far row and column are the image of the first: make them identical so the
+    // height field, mesh and collider are exactly periodic.
+    this.lastSeamCorrection = sealSeam(data)
     this.lastGenerateMs = performance.now() - t
     return data
   }
@@ -102,9 +133,19 @@ export class ProceduralTerrain implements Terrain {
 
   /** Rebuild heights, mesh and collider in place, then notify listeners. */
   regenerate(): void {
+    const old = this.data
     this.data = this.generate()
     this.sampler.data = this.data
-    this.meshes.update(this.data)
+    if (this.data.size === old.size && this.data.resolution === old.resolution) {
+      this.meshes.update(this.data)
+    } else {
+      // A new planet size: the chunk grid is sized from the tile, so build it afresh.
+      this.game.scene.remove(this.meshes.group)
+      this.meshes.dispose()
+      this.meshes = createTerrainMeshes(this.data, this.look.material)
+      if (this.lod) this.meshes.setLodDistances(this.lod[0], this.lod[1])
+      this.game.scene.add(this.meshes.group)
+    }
     this.look.setSummit(this.summitHeight())
     this.lightLake()
     this.game.world.removeCollider(this.collider, true)
@@ -114,6 +155,21 @@ export class ProceduralTerrain implements Terrain {
     this.version++
     console.info(`terrain regenerated: seed ${this.seed}, ${this.lastGenerateMs.toFixed(0)} ms`)
     for (const l of this.listeners) l()
+  }
+
+  wrapPosition(p: { x: number; z: number }): boolean {
+    const x = wrapCoord(p.x, this.data.size)
+    const z = wrapCoord(p.z, this.data.size)
+    if (x === p.x && z === p.z) return false
+    p.x = x
+    p.z = z
+    return true
+  }
+
+  nearestTo(x: number, z: number, refX: number, refZ: number, out: { x: number; z: number }): { x: number; z: number } {
+    out.x = nearestImage(x, refX, this.data.size)
+    out.z = nearestImage(z, refZ, this.data.size)
+    return out
   }
 
   heightAt(x: number, z: number): number {
@@ -126,7 +182,7 @@ export class ProceduralTerrain implements Terrain {
 
   /** Caldera lake, pools and rivers where present, else the global lava plane. */
   liquidHeightAt(x: number, z: number): number {
-    return lavaSurfaceAt(this.data.lava, x, z, worldLavaAltitude.value)
+    return lavaSurfaceAt(this.data.lava, wrapCoord(x, this.data.size), wrapCoord(z, this.data.size), worldLavaAltitude.value)
   }
 
   /**
@@ -135,6 +191,8 @@ export class ProceduralTerrain implements Terrain {
    */
   liquidKindAt(x: number, z: number): 'lava' | 'water' | null {
     const sea = worldLavaAltitude.value
+    x = wrapCoord(x, this.data.size)
+    z = wrapCoord(z, this.data.size)
     const surface = lavaSurfaceAt(this.data.lava, x, z, sea)
     if (surface <= this.sampler.heightAt(x, z)) return null
     // Above the sea level it is the lake, a river or a pool; otherwise it is the sea.
@@ -184,6 +242,7 @@ export class ProceduralTerrain implements Terrain {
     // Full detail shrinks with the square of the detail share: 250 m, 140 m, 62 m.
     const near = LOD_NEAR * detail * detail
     const far = Math.max(near, Math.min(LOD_FAR * detail, quality.drawDistance * 0.6))
+    this.lod = [near, far]
     this.meshes.setLodDistances(near, far)
     // Forest out to the level's draw distance: 700 m on the weakest phones.
     this.trees.setDrawDistance(Math.min(1800, quality.drawDistance))

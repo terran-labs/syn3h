@@ -133,6 +133,23 @@ def deform(co, v):
     cabin = bump(u, s.get('cabin_at', 0.52), 0.3) * smoothstep(0.55, 1.0, h) * bump(x, 0, 0.9)
     z += s.get('cabin', 0) * cabin
     y += s.get('cabin_shift', 0) * smoothstep(0.5, 1.0, h) * bump(u, 0.52, 0.45)
+    # Fender flares: a bulge over each axle, pushed out toward the wheel and raised into a crest
+    # above it, so the fenders stand proud of the hood and deck like a Cobra's. The body is
+    # waisted to about 0.75 at the axles and the tyres start at 1.07, which is the room there is.
+    hoop = spoiler_weight(co)
+    for key, at in (('fender_front', 0.16), ('fender_rear', 0.8)):
+        f = s.get(key)
+        if not f: continue
+        # The rear hoop spoiler stands on the haunches behind the wheel: fade the bulge out
+        # before it, and leave the hoop itself alone, or the spoiler buckles.
+        w = bump(u, at, f.get('length', 0.2)) * (1 - hoop) * (1 - smoothstep(1.45, 1.75, co[1]))
+        side = 1 if x >= 0 else -1
+        # The tyres stand beside the body up to about z 0.33 at rest (inner edge at x 0.86), so
+        # the bulge grows above them, as a fender over the wheel, and stays slim lower down.
+        x += side * f.get('out', 0) * w * smoothstep(0.3, 0.75, abs(x)) * smoothstep(0.3, 0.7, h)
+        z += f.get('up', 0) * w * bump(abs(x), f.get('crest', 0.62), 0.5) * smoothstep(0.3, 0.9, h)
+    # Hood valley: drop the centre of the hood between the front fenders.
+    z -= s.get('hood_valley', 0) * bump(u, 0.2, 0.25) * bump(x, 0, 0.38) * smoothstep(0.4, 0.9, h)
     # Roundness: push the mid height outward a little for a fuller, more inflated section.
     x *= 1 + s.get('round', 0) * bump(h, 0.45, 0.5) * bump(u, 0.5, 0.6)
     z *= 1 + s.get('height', 0)
@@ -172,6 +189,43 @@ def apply_shape(me, v, canopy=False):
             vert.co.y = yc + (vert.co.y - yc) * c.get('length', 1) + c.get('shift', 0)
     else:
         restyle_spoiler(me, v)
+
+
+# The original tail light is a small kite on each rear corner, centred here (right side), with
+# its tip pointing outboard. Larger lights are grown from it: the rear of the body is cut along
+# the outline of a scaled kite, as seen from directly behind, and the faces inside take the
+# tail light material. The light stays part of the body surface, not a part stuck on top.
+TAIL_CENTRE = Vector((0.371, 1.966, 0.421))
+# Kite corners as (outboard distance, height) from the centre: tip, top, inner, bottom.
+TAIL_KITE = [(0.32, 0.0), (-0.03, 0.097), (-0.05, 0.0), (0.01, -0.06)]
+
+
+def inside(poly, p):
+    hit = False
+    for (x1, y1), (x2, y2) in zip(poly, poly[1:] + poly[:1]):
+        if (y1 > p[1]) != (y2 > p[1]) and p[0] < (x2 - x1) * (p[1] - y1) / (y2 - y1) + x1: hit = not hit
+    return hit
+
+
+def grow_tail_lights(me, t, tail_slot):
+    if not t: return
+    sx, sz = t.get('long', 1), t.get('tall', 1)
+    kite = [(a * sx + t.get('shift', 0), b * sz + t.get('lift', 0)) for a, b in TAIL_KITE]
+    bm = bmesh.new(); bm.from_mesh(me)
+    rear = lambda f, side: f.calc_center_median().y > 1.25 and f.calc_center_median().x * side > 0 and f.normal.y > 0.05
+    for side in (1, -1):
+        # Each kite edge is a line in the rear view, so a plane parallel to the car's length.
+        for (a1, b1), (a2, b2) in zip(kite, kite[1:] + kite[:1]):
+            faces = [f for f in bm.faces if rear(f, side)]
+            geom = list({v for f in faces for v in f.verts}) + list({e for f in faces for e in f.edges}) + faces
+            co = Vector((side * (TAIL_CENTRE.x + a1), 0, TAIL_CENTRE.z + b1))
+            along = Vector((side * (a2 - a1), 0, b2 - b1))
+            bmesh.ops.bisect_plane(bm, geom=geom, dist=1e-5, plane_co=co, plane_no=Vector((0, 1, 0)).cross(along).normalized(), clear_inner=False, clear_outer=False)
+        for f in bm.faces:
+            c = f.calc_center_median()
+            if rear(f, side) and inside(kite, (side * c.x - TAIL_CENTRE.x, c.z - TAIL_CENTRE.z)): f.material_index = tail_slot
+    bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
+    bm.to_mesh(me); bm.free()
 
 
 def refine(me, r):
@@ -306,7 +360,8 @@ VIEWS = {
     'rear': ((-1.0, 1.25, 0.6), (0, 0, 0.25), 3.3),
     'side': ((1, 0, 0.1), (0, 0, 0.25), 3.3),
     'top': ((0, 0.02, 1), (0, 0, 0.25), 3.3),
-    'tail': ((0.7, 1.0, 0.35), (0.3, 1.5, 0.45), 1.5),
+    'tail': ((0.35, 1.0, 0.3), (0.0, 1.7, 0.4), 1.6),
+    'nose': ((0.0, -1.0, 0.22), (0, 0, 0.3), 3.0),
 }
 
 
@@ -329,7 +384,7 @@ def wheels_for_preview(mats):
     for sx in (-1, 1):
         for sy in (-1, 1):
             o = bpy.data.objects.new('wheelPreview', tyre_src)
-            o.location = (sx * 1.32, sy * 1.3, -0.1)
+            o.location = (sx * 1.1, sy * 1.3, -0.19)
             bpy.context.scene.collection.objects.link(o); objs.append(o)
     return objs
 
@@ -363,6 +418,8 @@ def build(v):
             if key in trim: p.material_index = slot(trim[key])
         elif p.material_index == tail_i and 'tail' in trim:
             p.material_index = slot(trim['tail'])
+    if v.get('tail'):
+        grow_tail_lights(body_me, v['tail'], slot(trim.get('tail', 'TailLights')) if 'tail' in trim else tail_i)
     apply_shape(body_me, v)
     refine(body_me, v.get('refine', {}))
     body = bpy.data.objects.new('Body', body_me); scene.collection.objects.link(body)
@@ -399,7 +456,8 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     manifest = []
     for v in VARIANTS:
-        if ONLY and v['id'] not in ONLY: continue
+        if ONLY and ONLY != ['round2'] and v['id'] not in ONLY: continue
+        if ONLY == ['round2'] and v.get('round', 1) != 2 and v['id'] != 'v4-widebody': continue
         parts, mats = build(v)
         if PREVIEW:
             os.makedirs(PREVIEW, exist_ok=True)
@@ -410,8 +468,8 @@ def main():
         export(parts, os.path.join(OUT, v['id'] + '.glb'))
         tris = sum(len(p.vertices) - 2 for o in parts for p in o.data.polygons)
         print('BUILT', v['id'], 'triangles', tris)
-        manifest.append({'id': v['id'], 'name': v['name'], 'notes': v.get('notes', []), 'file': v['id'] + '.glb', 'triangles': tris})
-    if not ONLY:
+        manifest.append({'id': v['id'], 'name': v['name'], 'notes': v.get('notes', []), 'file': v['id'] + '.glb', 'triangles': tris, 'round': v.get('round', 1)})
+    if not ONLY or ONLY == ['round2']:
         import json
         with open(os.path.join(OUT, 'index.json'), 'w') as f: json.dump(manifest, f, indent=1)
 

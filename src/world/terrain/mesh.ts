@@ -10,6 +10,10 @@
  *    to hide them, which is simpler than stitching edges and costs a few hundred triangles.
  *  - The full level uses Rapier's triangle split, so up close the visible surface is the
  *    collided surface. Coarser levels are only used beyond LOD_NEAR.
+ *  - The world wraps. Each chunk is drawn once, at whichever image of it (the tile repeats
+ *    every `size` metres) is nearest the camera, so the 8 x 8 chunks always surround the
+ *    camera and there is ground in every direction. The shift is a whole tile, so it is
+ *    invisible: the heights are periodic and the seam row is shared (see `sealSeam`).
  */
 import * as THREE from 'three/webgpu'
 import type { TerrainData } from './generate'
@@ -108,13 +112,14 @@ function fillChunk(geometry: THREE.BufferGeometry, data: TerrainData, x0: number
       P[k * 3 + 1] = h[i]
       P[k * 3 + 2] = -half + iz * c
       // Smooth vertex normals from central differences; the shading looks better than the
-      // faceted physics normals and differs from them by a few degrees at most.
-      const l = h[ix > 0 ? i - 1 : i]
-      const r = h[ix < n - 1 ? i + 1 : i]
-      const d = h[iz > 0 ? i - n : i]
-      const u = h[iz < n - 1 ? i + n : i]
-      const dx = (r - l) / ((ix > 0 && ix < n - 1 ? 2 : 1) * c)
-      const dz = (u - d) / ((iz > 0 && iz < n - 1 ? 2 : 1) * c)
+      // faceted physics normals and differs from them by a few degrees at most. Neighbours
+      // wrap across the seam (sample n - 1 is sample 0), so both sides shade alike.
+      const l = h[ix > 0 ? i - 1 : i + n - 2]
+      const r = h[ix < n - 1 ? i + 1 : i - (n - 2)]
+      const d = h[iz > 0 ? i - n : i + (n - 2) * n]
+      const u = h[iz < n - 1 ? i + n : i - (n - 2) * n]
+      const dx = (r - l) / (2 * c)
+      const dz = (u - d) / (2 * c)
       const inv = 1 / Math.sqrt(dx * dx + 1 + dz * dz)
       N[k * 3] = -dx * inv
       N[k * 3 + 1] = inv
@@ -146,8 +151,15 @@ interface Chunk {
   levels: THREE.Mesh[]
   /** The geometry whose attributes all levels share. */
   base: THREE.BufferGeometry
+  /** Bounding box at the drawn image, used for culling stats and level of detail. */
   box: THREE.Box3
   level: number
+  /** World offset of the drawn image from the canonical tile: whole multiples of size. */
+  ox: number
+  oz: number
+  /** Centre of the chunk in the canonical tile. */
+  cx: number
+  cz: number
 }
 
 export function createTerrainMeshes(data: TerrainData, material: THREE.Material): TerrainMeshes {
@@ -169,7 +181,10 @@ export function createTerrainMeshes(data: TerrainData, material: THREE.Material)
       base.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(verts * 3), 3))
       base.setAttribute('volcanic', new THREE.BufferAttribute(new Float32Array(verts), 1))
       base.setAttribute('road', new THREE.BufferAttribute(new Float32Array(verts), 1))
-      const chunk: Chunk = { x0: cx * cells, z0: cz * cells, cells, levels: [], base, box: new THREE.Box3(), level: 0 }
+      const chunk: Chunk = {
+        x0: cx * cells, z0: cz * cells, cells, levels: [], base, box: new THREE.Box3(), level: 0, ox: 0, oz: 0,
+        cx: -data.size / 2 + (cx + 0.5) * cells * data.cell, cz: -data.size / 2 + (cz + 0.5) * cells * data.cell,
+      }
       fillChunk(base, data, chunk.x0, chunk.z0, cells)
       chunk.levels = indices.map((index, level) => {
         const g = level === 0 ? base : new THREE.BufferGeometry()
@@ -192,6 +207,20 @@ export function createTerrainMeshes(data: TerrainData, material: THREE.Material)
     }
   }
 
+  const size = data.size
+  /** Move a chunk to the image nearest (x, z). */
+  const place = (ch: Chunk, x: number, z: number) => {
+    const ox = size * Math.round((x - ch.cx) / size)
+    const oz = size * Math.round((z - ch.cz) / size)
+    if (ox === ch.ox && oz === ch.oz) return
+    ch.ox = ox
+    ch.oz = oz
+    for (const m of ch.levels) {
+      m.position.set(ox, 0, oz)
+      m.updateMatrix()
+    }
+    ch.box.copy(ch.base.boundingBox!).translate(new THREE.Vector3(ox, 0, oz))
+  }
   let lodNear = LOD_NEAR
   let lodFar = LOD_FAR
   const setLevel = (ch: Chunk, level: number) => {
@@ -206,7 +235,7 @@ export function createTerrainMeshes(data: TerrainData, material: THREE.Material)
     update(next) {
       for (const ch of chunks) {
         fillChunk(ch.base, next, ch.x0, ch.z0, ch.cells)
-        ch.box.copy(ch.base.boundingBox!)
+        ch.box.copy(ch.base.boundingBox!).translate(new THREE.Vector3(ch.ox, 0, ch.oz))
         for (const m of ch.levels) {
           m.geometry.boundingBox = ch.base.boundingBox
           m.geometry.boundingSphere = ch.base.boundingSphere
@@ -215,6 +244,7 @@ export function createTerrainMeshes(data: TerrainData, material: THREE.Material)
     },
     updateLod(camera) {
       for (const ch of chunks) {
+        place(ch, camera.x, camera.z)
         const d = ch.box.distanceToPoint(camera)
         setLevel(ch, d < lodNear ? 0 : d < lodFar ? 1 : 2)
       }

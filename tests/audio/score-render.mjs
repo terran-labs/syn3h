@@ -36,6 +36,7 @@ try {
     assert.equal(r.bad, 0, `${name}: non-finite samples`)
     assert.ok(r.rms > 0.02, `${name}: too quiet (${r.rms})`)
     assert.ok(r.peak < 1, `${name}: clips before the limiter (${r.peak})`)
+    delete r.envelope; delete r.roles
     assert.ok(r.width > 0.005, `${name}: not stereo`)
   }
   const r = report
@@ -44,5 +45,30 @@ try {
   assert.ok(r.Underwater.brightness < r.Cruise.brightness * 0.7, 'submersion should muffle the mix')
   assert.equal(r['Tag chase'].mode, 'phrygian'); assert.equal(r['Lava field'].mode, 'phrygian'); assert.equal(r.Soaring.mode, 'dorian')
   assert.ok(r['Tag chase'].tempo > r.Parked.tempo + 20, 'a tag chase should raise the tempo')
+  // The modelled string must sound the pitch it is asked for.
+  for (const hz of [130.81, 220, 440, 523.25]) {
+    const pitch = await page.evaluate(async hz => (await import('/src/audio/score/demo.ts')).pluckPitch(hz), hz)
+    const cents = 1200 * Math.log2(pitch.hz / hz)
+    console.log(`pluck ${hz} Hz sounds ${pitch.hz.toFixed(2)} Hz (${cents.toFixed(1)} cents), level ${pitch.level.toFixed(3)}`)
+    assert.ok(pitch.level > 0.01, 'the string should sound')
+    assert.ok(Math.abs(cents) < 6, `the string is out of tune by ${cents.toFixed(1)} cents`)
+  }
+  // The arc: cue a build during a cruise and check the breath dips and the release lands above it.
+  const arc = await page.evaluate(async () => {
+    const { renderScene, wav } = await import('/src/audio/score/demo.ts')
+    const r = await renderScene('Cruise', 60, 1234, 44100, 'build')
+    const bytes = new Uint8Array(wav(r.left, r.right, r.rate))
+    let text = ''; for (let i = 0; i < bytes.length; i += 32768) text += String.fromCharCode(...bytes.subarray(i, i + 32768))
+    return { envelope: r.envelope, roles: r.roles, peak: r.peak, wav: btoa(text) }
+  })
+  await writeFile('tests/audio/artifacts/score-arc.wav', Buffer.from(arc.wav, 'base64'))
+  const landed = arc.roles.indexOf('release')
+  console.log('arc', arc.roles.map((role, second) => `${second}:${role[0]}${arc.envelope[second].toFixed(2)}`).join(' '))
+  assert.ok(landed > 10, 'the release should follow a build')
+  const build = arc.envelope.slice(4, landed - 4), mean = build.reduce((a, b) => a + b, 0) / build.length
+  const breath = Math.min(...arc.envelope.slice(landed - 3, landed + 1)), release = Math.max(...arc.envelope.slice(landed, landed + 6))
+  console.log(`build ${mean.toFixed(3)}  breath ${breath.toFixed(3)}  release ${release.toFixed(3)}  peak ${arc.peak.toFixed(2)}`)
+  assert.ok(breath < mean * 0.8, 'the breath should fall below the build')
+  assert.ok(release > mean * 1.25, 'the release should land above the build')
   console.log('score render ok')
 } finally { await browser.close() }
