@@ -167,6 +167,8 @@ export class Shell implements System {
       // Vehicles are chosen in play only (the lobby offers planets). Four, one design each.
       vehicles: () => ({ options: PLAY_VEHICLES, current: this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind }),
       onVehicle: id => this.switchVehicle(id as VehicleKind),
+      colors: () => this.tintView,
+      onColor: (key, value) => this.setTint(key, value),
       onSaveWorld: () => this.saveWorld(),
     })
     // The owner's rule, 15 November 2026: "Panels being open or closed should be a simple
@@ -575,6 +577,23 @@ export class Shell implements System {
   }
   private performancePanel!: PerformancePanel
   configurePerformance(source: PerformanceSource): void { this.performancePanel.configure(source) }
+  /**
+   * Vehicle colours are chosen in play, beside the vehicle selector (the lobby offers only
+   * planets). The vehicle repaints on every movement of the picker; the choice is saved and
+   * announced to the room once the picker has been still for a moment, not on every step.
+   * Set by initGameShell: `commit` is true for that settled call.
+   */
+  onTint?: (body: string, accent: string, commit: boolean) => void
+  private readonly tintView = { body: this.choice.bodyColor, accent: this.choice.accentColor }
+  private tintTimer?: ReturnType<typeof setTimeout>
+  private setTint(key: 'body' | 'accent', value: string): void {
+    if (!/^#[0-9a-f]{6}$/i.test(value)) return
+    if (key === 'body') this.choice.bodyColor = value; else this.choice.accentColor = value
+    this.tintView.body = this.choice.bodyColor; this.tintView.accent = this.choice.accentColor
+    this.onTint?.(this.choice.bodyColor, this.choice.accentColor, false)
+    clearTimeout(this.tintTimer)
+    this.tintTimer = setTimeout(() => { saveVehicleChoice(this.choice); this.onTint?.(this.choice.bodyColor, this.choice.accentColor, true) }, 200)
+  }
   /** Touch only: the panels are showing rather than the driving view. Never stored. */
   private touchPanels = false
   /** Panels are wanted exactly when the cursor is free (or, on touch, when the menu state is on). */
@@ -1168,7 +1187,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); this.performancePanel.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }
@@ -1179,6 +1198,11 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
   shell.setVehicleKind(player.kind); shell.setTerrain(terrain); audio.setPlayer(player,terrain)
   let activePlayer = player
   const hints = new PlayHints(), height = new HeightAboveGround()
+  // A colour picked in play repaints the local vehicle at once and, once settled, tells the room.
+  shell.onTint = (body, accent, commit) => {
+    activePlayer.setColors(body, accent)
+    if (commit) (window as unknown as { syn3hNet?: { setProfile?(profile: { colors: { body: string; accent: string } }): void } }).syn3hNet?.setProfile?.({ colors: { body, accent } })
+  }
   const bridge = game.add({ update(dt = 0) {
     const v = activePlayer.body.linvel(), p = activePlayer.body.translation(), speed = Math.hypot(v.x, v.y, v.z)
     shell.setSpeed(speed)
