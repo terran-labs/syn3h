@@ -12,6 +12,7 @@ import { storminess } from './params'
 export * from './params'
 export * from './wind'
 export * from './drag'
+export * from './clouds'
 export { WeatherSystem, type WindVehicle } from './WeatherSystem'
 
 /** `?weather=<0..1>` sets the storminess locally (the room then shares it), for trying it out. */

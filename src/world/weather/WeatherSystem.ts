@@ -12,7 +12,7 @@
 import type { System } from '../../core/Game'
 import type { Terrain } from '../Terrain'
 import { exposureOf, windAcceleration } from './drag'
-import { type Vec3Like, type WindFrame, currentWindFrame, weatherTime, windAt } from './wind'
+import { type Vec3Like, type WindFrame, currentWindFrame, setWindTerrain, weatherTime, windAt } from './wind'
 
 /** What the system needs of a vehicle. `Vehicle` satisfies it. */
 export interface WindVehicle {
@@ -39,6 +39,7 @@ export class WeatherSystem implements System {
   private readonly frame = {} as WindFrame
   private readonly w = { x: 0, y: 0, z: 0 }
   private readonly a = { x: 0, y: 0, z: 0 }
+  private lastTerrain: Terrain | null = null
 
   constructor(
     private readonly terrain: () => Terrain | null,
@@ -47,6 +48,7 @@ export class WeatherSystem implements System {
 
   fixedUpdate(): void {
     const terrain = this.terrain()
+    if (terrain !== this.lastTerrain) { setWindTerrain(terrain); this.lastTerrain = terrain }
     const f = currentWindFrame(terrain, this.frame)
     const t = weatherTime()
     for (const v of this.vehicles()) this.apply(v, f, t, terrain)

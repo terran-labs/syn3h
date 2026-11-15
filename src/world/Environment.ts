@@ -22,6 +22,7 @@ import {
 } from './sky/skyMath'
 import * as P from './sky/skyParams'
 import { heightFog } from './weather/fog'
+import { advanceCloudDrift } from './weather/clouds'
 
 export interface Environment extends System {
   /** Unit vector pointing from the ground toward the sun. Other systems may read it. */
@@ -171,6 +172,8 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   })
 
   const update = (dt: number) => {
+    // Clouds drift downwind (src/world/weather/clouds.ts).
+    advanceCloudDrift(sky.cloudOffset.value, P.cloudSpeed.value, dt, _terrain)
     hour = advanceHour(hour, dt, P.sunDayLength.value)
     sunDirectionAt(hour, P.sunTilt.value, P.sunAzimuth.value, sun)
     sunDirection.set(sun[0], sun[1], sun[2])
