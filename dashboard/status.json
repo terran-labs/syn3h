@@ -1,8 +1,7 @@
 {
   "tagline": "Syn3h, rebuilt native in the browser: its vehicles, its physics, its lobby and its look.",
-  "deadline": "Demo: Sunday noon, Coeur d'Alene",
-  "updated": "Saturday 10:05pm PT",
-  "headline": "Sound is in for every vehicle, the summit road is now one rising spiral, and the code is public on GitHub. Each vehicle and the Foreman have their own workspace, waiting for you to start a thread.",
+  "deadline": "Demo: Sunday noon Pacific, Coeur d'Alene",
+  "headline": "Eight lanes are building. The Syn3h buggy has a new tyre model, the game opens at golden hour, and the network delay bug is fixed. The machine is overloaded, so the classic buggy and tank leads are paused for the night.",
   "previews": [
     {
       "title": "Play the current build",
@@ -187,6 +186,11 @@
       "detail": "github.com/terran-labs/syn3h is public with eight milestone tags. The nine old Syn3h repos are renamed legacy-unity-*."
     },
     {
+      "state": "done",
+      "title": "Live preview no longer resets under you",
+      "detail": "A merge now shows a 'new build available' notice, and a reload puts you back where you were with the same vehicle, wings, camera and room."
+    },
+    {
       "state": "active",
       "title": "Frame rate on real hardware",
       "detail": "Headed Chrome on this M2 Max: about 8 ms a frame at 1280 x 720. Headless numbers were misleading. Quiet-machine and phone readings still to come."
@@ -216,64 +220,84 @@
     {
       "state": "active",
       "name": "Syn3h :: Orchestrator (Claude 1, Fable)",
-      "detail": "Dispatch, review, merges, tests, previews, this dashboard."
+      "detail": "Dispatch, review, merges, full test suite, previews, this dashboard."
     },
     {
-      "state": "waiting",
-      "name": "Syn3h :: Foreman (needs a thread)",
-      "detail": "Your one conversation. Send: Read FOREMAN-BRIEF.md and begin."
+      "state": "active",
+      "name": "Syn3h :: Foreman",
+      "detail": "Your one conversation. Records decisions and directs the Orchestrator."
     },
     {
       "state": "active",
       "name": "Syn3h :: Terrain Lab (Claude 1, Fable)",
-      "detail": "Island generator, lava, fog. Your direct line."
+      "detail": "Island generator, lava, fog. Looking at the summit at night."
     },
     {
-      "state": "waiting",
-      "name": "Syn3h :: UX (Codex 3)",
-      "detail": "Lobby, HUD, demo features, sound. All delivered; free."
+      "state": "active",
+      "name": "Syn3h :: UX",
+      "detail": "Phone landscape layout, then the lobby restyle from your 2017 screenshots."
     },
     {
-      "state": "waiting",
+      "state": "active",
       "name": "Syn3h :: Vehicles (Codex 1)",
-      "detail": "Shared vehicle code and effects. Free."
+      "detail": "Draw calls for bots and remote vehicles, then headlights and night look."
     },
     {
       "state": "active",
       "name": "Syn3h :: Bots, Performance & QA (Codex 2)",
-      "detail": "Resume after reload and a reload notice for the live channel."
+      "detail": "A physics crash when bots and the graphics level change together, then bots on the island."
+    },
+    {
+      "state": "active",
+      "name": "Syn3h :: Multiplayer",
+      "detail": "Release script and dry run for Cloudflare; clearing stale room settings."
+    },
+    {
+      "state": "active",
+      "name": "Syn3h :: Buggy",
+      "detail": "Next-gen tyre model merged. Waiting for you to drive it."
+    },
+    {
+      "state": "active",
+      "name": "Syn3h :: Jet",
+      "detail": "Waiting for your feel report. Proposes an altitude hold for hover on keyboards."
+    },
+    {
+      "state": "active",
+      "name": "Syn3h :: Hovercraft",
+      "detail": "Getting started."
     },
     {
       "state": "waiting",
-      "name": "Syn3h :: Multiplayer (needs a thread)",
-      "detail": "Send: Read MULTIPLAYER-BRIEF.md and begin."
+      "name": "Syn3h :: Classic Buggy (paused)",
+      "detail": "Paused for the night to relieve the machine. Twitchy at speed and small in the camera."
     },
     {
       "state": "waiting",
-      "name": "Syn3h :: Buggy, Jet, Hovercraft, Classic Buggy, Tank (need threads)",
-      "detail": "One workspace per vehicle for look and handling. Send: Read VEHICLE-BRIEF.md and begin."
+      "name": "Syn3h :: Tank (paused)",
+      "detail": "Paused for the night. It climbs walls: the tracks push about five times its weight."
     }
   ],
   "decisions": [
     {
       "state": "waiting",
-      "title": "Drive the game and listen to it",
-      "detail": "Nobody has driven it by hand or heard the sound. Your verdict is the acceptance test."
+      "title": "Drive the Syn3h buggy",
+      "detail": "It has a new tyre model you have not felt. Your verdict is the acceptance test."
     },
     {
       "state": "waiting",
       "title": "Cloudflare access",
-      "detail": "A wrangler login on this machine or an API token. Needed for the audience to join, and it would also give you a frozen public demo."
+      "detail": "A wrangler login on this machine or an API token. Production releases ship the moment it exists."
+    },
+    {
+      "state": "waiting",
+      "title": "Listen to the sound",
+      "detail": "Merged for every vehicle, measured, never heard."
     },
     {
       "state": "waiting",
       "title": "Revoke three old API keys",
       "detail": "Google Maps, Bing and WRLD keys are committed in the public legacy-unity-syn3h-client repo."
-    },
-    {
-      "state": "waiting",
-      "title": "Start the Foreman, and vehicle threads as you want them",
-      "detail": "Workspaces and briefs are ready."
     }
   ],
   "strategy": [
@@ -315,7 +339,6 @@
       "detail": "One builder each, directed by the orchestrator."
     }
   ],
-  "vehiclesUpdated": "Saturday 10:05pm PT",
   "vehiclesNote": "Every vehicle has been checked by automated tests, scripted drives and screenshots. None has been driven by hand yet. Sound is merged for all five but has not been heard by anyone. Each vehicle has its own workspace for conversations about look and feel.",
   "vehicles": [
     {
@@ -333,7 +356,7 @@
         {
           "state": "done",
           "name": "Physics",
-          "detail": "Ported from VhiclBuggy.cs with the values in terra.buggy.prefab: wheel radius 0.5, wheelbase 2.6 m, mass 30, the prefab's hull and skid plate. Inertia rebuilt the way Unity derives it."
+          "detail": "Ported from VhiclBuggy.cs with the prefab's values. A next-gen tyre model is now on by default (grip up to a limit, then sliding; ABS; speed-limited steering); buggy.nextGen off restores the Syn3h equations exactly."
         },
         {
           "state": "done",
@@ -368,7 +391,7 @@
         {
           "state": "waiting",
           "name": "Known issues",
-          "detail": "Slight rightward pull under throttle and a hard stop when parking: both are in the Syn3h source. Syn3h had lava floating switched off; ours is on, borrowed from Mars Explorer. Changing vehicle in the lobby reloads the page."
+          "detail": "The rightward pull under throttle is gone with the new tyre model. Syn3h had lava floating switched off; ours is on. Changing vehicle in the lobby reloads the page. The new tyre model has not been driven by hand."
         }
       ]
     },
@@ -521,6 +544,11 @@
           "state": "waiting",
           "name": "Known issues",
           "detail": "Rolls over in hard turns at speed; our ground gripped harder than Unity's, which is fixed, but it remains lively. Top speed runs far past the speed slider, as the original equations do. The paint only approximates the original reflective shader."
+        },
+        {
+          "state": "waiting",
+          "name": "Lead's first look",
+          "detail": "A 1.5 second turn at 33 m/s put it on two wheels. It is about 3 percent of the frame width in the chase camera. Lane paused for the night."
         }
       ]
     },
@@ -565,6 +593,11 @@
           "state": "waiting",
           "name": "Checked by",
           "detail": "Five physics tests and one smoke run on the island. No long drive, no climb of the volcano."
+        },
+        {
+          "state": "waiting",
+          "name": "Lead's first look",
+          "detail": "It climbs walls: six tracks push about five times its weight, and it pitched to 68 degrees on a ridge and stayed. Track pods dangle when they leave the ground. Lane paused for the night."
         }
       ]
     },

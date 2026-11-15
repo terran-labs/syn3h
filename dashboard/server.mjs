@@ -49,7 +49,13 @@ createServer((req, res) => {
   const url = new URL(req.url, 'http://x')
   if (url.pathname === '/api/status') {
     let status = {}
-    try { status = JSON.parse(readFileSync(join(here, 'status.json'), 'utf8')) } catch (e) { status = { error: String(e) } }
+    try {
+      status = JSON.parse(readFileSync(join(here, 'status.json'), 'utf8'))
+      // Never trust a hand written time: stamp from the file's own modification time, in Pacific.
+      const stamp = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', weekday: 'long', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' }).format(statSync(join(here, 'status.json')).mtime)
+      status.updated = stamp
+      if (status.vehicles) status.vehiclesUpdated = stamp
+    } catch (e) { status = { error: String(e) } }
     return send(res, 200, TYPES['.json'], JSON.stringify({ ...status, git: gitState(), docs: DOCS.map(([id, , title]) => ({ id, title })), now: new Date().toISOString() }))
   }
   if (url.pathname.startsWith('/api/doc/')) {
