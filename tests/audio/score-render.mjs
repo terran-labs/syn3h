@@ -40,9 +40,9 @@ try {
   }
   const r = report
   assert.ok(r['Flat out'].rms > r.Parked.rms, 'speed should raise the level')
-  assert.ok(r['Tag chase'].brightness > r.Cruise.brightness, 'a tag chase should brighten the mix')
+  assert.ok(r['Tag chase'].rms > r.Cruise.rms * 1.2, 'a tag chase should be heavier than a cruise')
   assert.ok(r.Underwater.brightness < r.Cruise.brightness * 0.7, 'submersion should muffle the mix')
-  assert.equal(r['Tag chase'].mode, 'phrygian'); assert.equal(r['Lava field'].mode, 'phrygian'); assert.equal(r.Soaring.mode, 'lydian')
+  assert.equal(r['Tag chase'].mode, 'phrygian'); assert.equal(r['Lava field'].mode, 'phrygian'); assert.equal(r.Soaring.mode, 'dorian')
   assert.ok(r['Tag chase'].tempo > r.Parked.tempo + 20, 'a tag chase should raise the tempo')
   console.log('score render ok')
 } finally { await browser.close() }

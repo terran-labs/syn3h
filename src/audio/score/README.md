@@ -15,9 +15,9 @@ in the first bundle and costs no download.
 
 | Game state | Where it comes from | What it does to the music |
 |---|---|---|
-| Speed, throttle | the local vehicle | Intensity: arpeggio, then bass and kick, then hats and snare; tempo rises from 88 to 128 |
+| Speed, throttle | the local vehicle | Intensity: arpeggio, then bass and kick, then a half-time low drum; tempo rises from 60 to 100 |
 | Tag beams | beams sent and landed near the listener, being tagged | Heat that decays over about nine seconds; raises intensity and turns the harmony dark |
-| Altitude, height above ground | the local vehicle | Lift: choir, brighter filters, the arpeggio an octave up, lydian harmony |
+| Altitude, height above ground | the local vehicle | Lift: choir, brighter filters, the sequencer line an octave up, dorian harmony |
 | Lava nearby | `lavaProximity` | Phrygian harmony, a growling bass when it is also intense |
 | Submersion | vehicle below `liquidHeightAt` | A lowpass on the whole mix, engine and effects included, and a bigger hall |
 | Match | `Shell.setMatchState` | Holding the hill is triumph (bells and choir forward), a contested hill is tension |
