@@ -1,18 +1,30 @@
-@font-face { font-family: 'Syn3h Lato'; src: url('/fonts/Lato-Thin.ttf') format('truetype'); font-weight: 100; font-display: swap; }
-@font-face { font-family: 'Syn3h Roboto'; src: url('/fonts/Roboto-Thin.ttf') format('truetype'); font-weight: 100; font-display: swap; }
-/* Art direction: the 2017 Syn3h lobby. Near-black space, one saturated blue, thin type,
-   dark slabs with a faint bevel that light up blue. Tokens live on :root because the loading
-   screen and touch controls sit outside .syn3h-shell. */
-:root { --s3-accent: #4da3ff; --s3-glow: #0f5fe0; --s3-ink: #d5dbe6; --s3-dim: #8793a6; --s3-space: #020308; --s3-slab-top: #0e121a; --s3-slab-bottom: #040508; --s3-edge: rgb(255 255 255 / .04); --s3-line: rgb(120 160 220 / .2); --s3-panel: rgb(1 2 4 / .82); }
-.syn3h-shell { --accent: var(--s3-accent); --panel: var(--s3-panel); color: var(--s3-ink); font: 100 18px/1.5 'Syn3h Roboto', sans-serif; }
+/* Barlow and Barlow Condensed: the two families of terranlabs.com's Dark Star theme, served
+   from this site (SIL Open Font License, public/fonts/OFL-Barlow.txt). Latin subset. */
+@font-face { font-family: 'Barlow'; src: url('/fonts/barlow-400-latin.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Barlow'; src: url('/fonts/barlow-500-latin.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'Barlow'; src: url('/fonts/barlow-600-latin.woff2') format('woff2'); font-weight: 600; font-display: swap; }
+@font-face { font-family: 'Barlow Condensed'; src: url('/fonts/barlow-condensed-500-latin.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'Barlow Condensed'; src: url('/fonts/barlow-condensed-600-latin.woff2') format('woff2'); font-weight: 600; font-display: swap; }
+/* Art direction: terranlabs.com's Dark Star theme (the owner's choice, 14 November 2026,
+   replacing the 2017 Syn3h look): deep space, electric blue, Barlow type, frosted glass.
+   The --theme-* names are that site's, kept so its button CSS below can be used verbatim.
+   Tokens live on :root because the touch controls sit outside .syn3h-shell. */
+:root {
+  --s3-accent: #2997ff; --s3-accent-2: #64d2ff; --s3-accent-3: #9b78ff; --s3-glow: #0b6fd6;
+  --s3-ink: #f5f5f7; --s3-dim: #aeaeb2; --s3-soft: #8e8e93; --s3-space: #01020a;
+  --s3-line: rgb(84 84 88 / .72); --s3-line-quiet: rgb(84 84 88 / .48); --s3-panel: rgb(22 23 28 / .58);
+  --s3-card: rgb(28 28 30 / .78); --s3-radius: 18px; --s3-radius-small: 8px;
+  --theme-accent-primary-rgb: 41 151 255; --theme-heading-accent: #2997ff; --theme-focus-ring: #64d2ff;
+}
+.syn3h-shell { --accent: var(--s3-accent); --panel: var(--s3-card); color: var(--s3-ink); font: 400 17px/1.5 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; }
 /* The wordmark is one vector path: black letters over a blue light that shows round the
    edges and through the gaps, as in the 2017 build. Change --s3-glow to relight it. */
-.wordmark { display: block; height: auto; overflow: visible; fill: #02050b; filter: drop-shadow(0 0 2px #3d8fff) drop-shadow(0 0 9px var(--s3-glow)) drop-shadow(0 0 12px var(--s3-glow)) drop-shadow(0 0 42px color-mix(in srgb, var(--s3-glow) 75%, transparent)); }
+.wordmark { display: block; height: auto; overflow: visible; fill: #02040a; filter: drop-shadow(0 0 2px #64d2ff) drop-shadow(0 0 9px var(--s3-accent)) drop-shadow(0 0 12px var(--s3-glow)) drop-shadow(0 0 42px color-mix(in srgb, var(--s3-glow) 75%, transparent)); }
 .syn3h-shell *, .touch-controls * { box-sizing: border-box; }
 .syn3h-shell [hidden], .touch-controls[hidden], .syn3h-advanced[hidden] { display: none !important; }
 .has-game-shell { overscroll-behavior: none; }
 .has-game-shell #hud { display: none; }
-.shell-overlay { position: fixed; inset: 0; z-index: 30; display: flex; padding: max(12px, env(safe-area-inset-top)) 24px max(12px, env(safe-area-inset-bottom)); background: radial-gradient(ellipse at 50% 120%, #06123a, var(--s3-space) 60%); overflow: hidden; touch-action: pan-y; perspective: 1500px; }
+.shell-overlay { position: fixed; inset: 0; z-index: 30; display: flex; padding: max(12px, env(safe-area-inset-top)) 24px max(12px, env(safe-area-inset-bottom)); background: var(--s3-space); overflow: hidden; touch-action: pan-y; perspective: 1500px; }
 /* Everything in the lobby hangs on one stage that leans a degree or two toward the pointer. */
 .lobby-stage { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; align-items: center; flex-direction: column; transform: rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)); transition: transform .7s cubic-bezier(.2,.7,.2,1); }
 .lobby-starfield { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
@@ -20,42 +32,172 @@
 .shell-logo { width: min(600px, 72vw); max-height: 80%; animation: logo-enter 2.75s cubic-bezier(.333,0,.667,1) both; }
 /* Logo Idle.anim contains no keys. Keep its settled glow rather than inventing a pulse. */
 @keyframes logo-enter { 0% { transform: translateZ(50px); opacity: .1; filter: drop-shadow(0 0 0 transparent); } 27.27% { opacity: .7; filter: drop-shadow(0 0 4px var(--s3-glow)); } 100% { transform: translateZ(0); opacity: 1; } }
-.lobby-panels { position: relative; perspective: 300px; width: min(1000px,100%); min-height: 0; flex: 1 1 600px; max-height: 760px; background: var(--s3-panel); box-shadow: 0 30px 80px rgb(0 0 0 / .5); }
+/* The panel is a sheet of frosted glass over the sky: Dark Star's card radius and hairline. */
+.lobby-panels { position: relative; perspective: 300px; width: min(1000px,100%); min-height: 0; flex: 1 1 600px; max-height: 760px; background: var(--s3-panel); border: 1px solid var(--s3-line-quiet); border-radius: var(--s3-radius); -webkit-backdrop-filter: blur(22px) saturate(150%); backdrop-filter: blur(22px) saturate(150%); box-shadow: 0 2px 4px rgb(0 0 0 / .2), 0 12px 32px rgb(0 0 0 / .16), 0 28px 58px rgb(0 0 0 / .1); }
 .lobby-panels > section { height: 100%; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #2b3a52 transparent; padding: 34px 30px 22px; max-width: 700px; margin: auto; text-align: center; touch-action: pan-y; }
 .lobby-panels > .lobby-index { max-width: none; display: grid; grid-template-columns: minmax(0,300px) minmax(0,440px); grid-template-areas: 'title title' 'message destinations' 'links links'; gap: clamp(18px,4.5vh,48px) 70px; justify-content: center; align-content: center; padding: 30px 40px 20px; }
 .lobby-index > h1 { grid-area: title; margin: 0; }
 .lobby-destinations { grid-area: destinations; }
 .lobby-links { grid-area: links; }
 .lobby-message { grid-area: message; align-self: center; text-align: center; }
-.syn3h-shell h1, .syn3h-shell h2 { font: 100 32px/1.25 'Syn3h Lato', sans-serif; color: #fff; margin: 0 0 24px; text-wrap: balance; }
-.syn3h-shell h1 { font-size: 36px; }
+.syn3h-shell h1, .syn3h-shell h2 { font: 600 38px/1.05 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: -0.01em; color: #fff; margin: 0 0 22px; text-wrap: balance; }
+.syn3h-shell h1 { font-size: clamp(40px, 5.2vw, 64px); text-transform: uppercase; }
 .syn3h-shell p { margin: 12px 0 22px; }
 .syn3h-shell .lobby-room-label { color: var(--s3-dim); font-size: 15px; overflow-wrap: anywhere; }
 .lobby-links { display: flex; justify-content: center; gap: 12px 44px; flex-wrap: wrap; }
-/* Buttons are dark slabs: lit from above, a hairline bevel below. Hover, focus and the
-   primary action turn the label and the edge blue. */
-.syn3h-shell button:not(.syn3h-advanced *), .syn3h-shell select:not(.syn3h-advanced *) { color: var(--s3-ink); background: linear-gradient(var(--s3-slab-top), var(--s3-slab-bottom)); font: 100 20px/1.3 'Syn3h Roboto', sans-serif; padding: 12px 18px; border: 1px solid var(--s3-edge); border-bottom-color: rgb(255 255 255 / .09); border-radius: 3px; box-shadow: 0 2px 0 rgb(0 0 0 / .7), inset 0 1px 0 rgb(255 255 255 / .04); cursor: pointer; min-height: 46px; touch-action: manipulation; transition: color .16s, border-color .16s, box-shadow .16s, translate .08s; }
-.syn3h-shell select:not(.syn3h-advanced *) { background: var(--s3-slab-bottom); }
-.syn3h-shell button:not(.syn3h-advanced *):active { translate: 0 1px; }
-/* Text links: the quiet row under the panel, and Back. */
-.syn3h-shell button.link-button, .syn3h-shell .lobby-links button { background: none; border: 0; box-shadow: none; padding: 0 4px; min-height: 40px; font-size: 16px; color: var(--s3-dim); }
-.syn3h-shell button.link-button::before, .syn3h-shell .lobby-links button::before { content: '› '; }
+/* Buttons. Every button is terranlabs.com's glass button; Shell.ts gives them the
+   .liquid-glass class. This rule only sets what is Syn3h's: type, size and touch. */
+.syn3h-shell button:not(.syn3h-advanced *), .syn3h-shell select:not(.syn3h-advanced *), .touch-actions button { font: 500 18px/1.3 'Barlow', 'Avenir Next', 'Segoe UI', sans-serif; padding: 11px 22px; cursor: pointer; min-height: 46px; touch-action: manipulation; }
+.syn3h-shell select:not(.syn3h-advanced *) { color: var(--s3-ink); background: rgb(255 255 255 / .06); border: 1px solid var(--s3-line); border-radius: var(--s3-radius-small); }
+@property --rim-angle { syntax: "<angle>"; inherits: false; initial-value: 205deg; }
+
+/* ---- From terranlabs.com src/index.css, verbatim: the glass button. ---- */
+
+/* Liquid glass.
+   Three things make it read as glass and not as a tinted box:
+   1. Frost: what is behind it is heavily blurred, then lifted in saturation
+      and brightness, the way thick glass gathers light.
+   2. An edge that catches light: the border is a gradient, bright where
+      light would strike the rim (top left, bottom right) and nearly absent
+      between, and it turns slowly so the rim never looks painted on.
+   3. A restrained surface: one soft highlight near the top, no gloss stripe.
+   True refraction (bending the image at the rim) is not possible in CSS on
+   Safari, so this stops at frost, rim light and depth. */
+.liquid-glass {
+  --glass-tint: 255 255 255;
+  --glass-ink: #fff;
+  /* The glass itself. Variants change this, not `background`, so the
+     highlight below stays on top of whichever fill is in use. */
+  --glass-fill: linear-gradient(
+    180deg,
+    rgb(var(--glass-tint) / 0.13) 0%,
+    rgb(var(--glass-tint) / 0.06) 55%,
+    rgb(var(--glass-tint) / 0.1) 100%
+  );
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  isolation: isolate;
+  border-radius: 999px;
+  border: 0;
+  /* The fill is the whole surface. Nothing is drawn on it under the
+     pointer; only the rim answers (see ::before below). */
+  background: var(--glass-fill);
+  -webkit-backdrop-filter: blur(30px) saturate(190%) brightness(1.12);
+  backdrop-filter: blur(30px) saturate(190%) brightness(1.12);
+  box-shadow:
+    inset 0 0 0 0.5px rgb(var(--glass-tint) / 0.14),
+    inset 0 10px 18px -12px rgb(var(--glass-tint) / 0.5),
+    inset 0 -8px 14px -10px rgb(0 0 0 / 0.3),
+    0 14px 36px rgb(0 0 0 / 0.32);
+  color: var(--glass-ink);
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
+  transition: box-shadow 0.25s ease;
+}
+
+/* The rim. A conic gradient masked down to a one-pixel ring: brightest
+   where light would strike the edge (upper left, lower right). At rest it
+   is still. Pointed at, the bright edge turns to face the pointer and
+   settles back when the pointer leaves. It never turns by itself; an
+   earlier version did, and that read as a gimmick. */
+.liquid-glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1px;
+  background: conic-gradient(
+    from var(--rim-angle),
+    rgb(var(--glass-tint) / 0.42),
+    rgb(var(--glass-tint) / 0.08) 18%,
+    rgb(var(--glass-tint) / 0.04) 38%,
+    rgb(var(--glass-tint) / 0.3) 52%,
+    rgb(var(--glass-tint) / 0.07) 70%,
+    rgb(var(--glass-tint) / 0.04) 88%,
+    rgb(var(--glass-tint) / 0.42)
+  );
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  transition: --rim-angle 0.35s ease-out;
+}
+
+/* Pointed at, the glass stays exactly where it is. It used to lift a pixel
+   and deepen its shadow, which read as the button rising off the page. Now
+   only the edge answers: the rim's bright side faces the pointer
+   (src/components/GlassShine.tsx sets --rim-angle) and the inner rim
+   brightens a little. Nothing moves across the face of the button. */
+.liquid-glass:hover {
+  box-shadow:
+    inset 0 0 0 0.5px rgb(var(--glass-tint) / 0.24),
+    inset 0 10px 18px -12px rgb(var(--glass-tint) / 0.62),
+    inset 0 -8px 14px -10px rgb(0 0 0 / 0.3),
+    0 14px 36px rgb(0 0 0 / 0.32);
+}
+
+.liquid-glass:focus-visible {
+  outline: 2px solid var(--theme-heading-accent);
+  outline-offset: 3px;
+}
+
+/* The primary action is the same glass with the theme's accent in it. */
+.liquid-glass-primary {
+  /* Nearly solid, on purpose. The frost behind glass comes from
+     backdrop-filter, and a browser drops that whenever an ancestor is even
+     slightly transparent, which every Planetfall section is while it fades
+     in and out. A thin tint then showed the scene straight through the
+     button. So the primary button carries its own body: the accent,
+     deepened so a white label passes contrast, with only a breath of the
+     scene left for the blur to soften when it is available. */
+  --glass-fill: linear-gradient(
+    180deg,
+    color-mix(in oklab, rgb(var(--theme-accent-primary-rgb)) 74%, #000) 0%,
+    color-mix(in oklab, rgb(var(--theme-accent-primary-rgb)) 52%, #000) 58%,
+    color-mix(in oklab, rgb(var(--theme-accent-primary-rgb)) 62%, #000) 100%
+  );
+}
+/* ---- End of the verbatim block. ---- */
+
+/* The action that leads on (the world in play, Enter World, Return to Game) is the same
+   glass with the accent in it, as .liquid-glass-primary above. */
+.liquid-glass.is-primary {
+  --glass-fill: linear-gradient(
+    180deg,
+    color-mix(in oklab, rgb(var(--theme-accent-primary-rgb)) 74%, #000) 0%,
+    color-mix(in oklab, rgb(var(--theme-accent-primary-rgb)) 52%, #000) 58%,
+    color-mix(in oklab, rgb(var(--theme-accent-primary-rgb)) 62%, #000) 100%
+  );
+}
+/* Frost is costly: it re-blurs whatever is behind every frame. In play, over the moving
+   world, the menu row and thumb buttons keep the glass's rim and light but not the blur,
+   and at the lowest graphics level nothing blurs. */
+.hud-navigation .liquid-glass, .touch-actions .liquid-glass, html[data-gfx="0"] .liquid-glass, html[data-gfx="0"] .lobby-panels { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.hud-navigation .liquid-glass, .touch-actions .liquid-glass { --glass-fill: linear-gradient(180deg, rgb(30 34 44 / .72), rgb(16 18 24 / .72)); }
+.syn3h-shell .liquid-glass:disabled { opacity: .4; cursor: default; }
+/* Text links: the quiet row under the panel, and Back. Not glass. */
+.syn3h-shell button.link-button, .syn3h-shell .lobby-links button { background: none; border: 0; box-shadow: none; padding: 0 4px; min-height: 40px; font-size: 16px; font-weight: 400; color: var(--s3-dim); transition: color .18s; }
+.syn3h-shell button.link-button:is(:hover, :focus-visible), .syn3h-shell .lobby-links button:is(:hover, :focus-visible) { color: var(--s3-ink); }
+.syn3h-shell button.link-button::before, .syn3h-shell .lobby-links button::before { content: '› '; color: var(--s3-accent); }
 .syn3h-shell button.panel-back::before { content: '‹ '; }
-.syn3h-shell button:not(.syn3h-advanced *):is(:hover, :focus-visible, .is-primary):not(:disabled) { color: var(--s3-accent); border-color: color-mix(in srgb, var(--s3-accent) 42%, transparent); }
-.syn3h-shell button:not(.syn3h-advanced *, .link-button, .lobby-links *):is(:hover, :focus-visible, .is-primary):not(:disabled) { background: linear-gradient(#0a1a34, #040912); box-shadow: 0 2px 0 rgb(0 0 0 / .7), 0 0 22px rgb(20 100 255 / .2), inset 0 1px 0 rgb(120 180 255 / .12); }
-.syn3h-shell button:not(.syn3h-advanced *):disabled, .syn3h-shell input:not(.syn3h-advanced *):disabled { opacity: .45; cursor: default; }
-.syn3h-shell :focus-visible { outline: 1px solid var(--s3-accent); outline-offset: 3px; }
+.syn3h-shell :focus-visible { outline: 2px solid var(--theme-focus-ring); outline-offset: 3px; }
 .syn3h-shell h1:focus, .syn3h-shell h2:focus { outline: none; }
 
 .lobby-destinations { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.syn3h-shell .lobby-destinations button { min-height: clamp(52px, 8.5vh, 82px); font-size: 22px; }
+.syn3h-shell .lobby-destinations button { min-height: clamp(52px, 8.5vh, 82px); font-size: 20px; }
 .syn3h-shell .lobby-destinations .return-game { grid-column: 1 / -1; }
 .syn3h-shell .panel-back { display: block; margin: 26px auto 0; }
-.lobby-footer { position: relative; display: flex; flex-direction: column; justify-content: center; align-items: center; width: min(1000px,100%); flex: 0 0 38px; font-size: 12px; color: #667185; }
+.lobby-footer { position: relative; display: flex; flex-direction: column; justify-content: center; align-items: center; width: min(1000px,100%); flex: 0 0 38px; font-size: 12px; color: var(--s3-soft); }
 .shell-message { overflow-wrap: anywhere; font-size: 13px; }
 .syn3h-shell label:not(.syn3h-advanced *) { display: block; text-align: left; margin: 14px 0 6px; font-size: 17px; }
-.syn3h-shell input:not(.syn3h-advanced *):not([type=radio]):not([type=checkbox]):not([type=color]):not([type=range]) { display: block; width: 100%; background: #04060b; color: #e6edf8; border: 1px solid var(--s3-line); border-radius: 3px; font: 100 20px 'Syn3h Roboto',sans-serif; padding: 11px 13px; min-height: 46px; transition: border-color .16s, box-shadow .16s; }
-.syn3h-shell input:not(.syn3h-advanced *):focus { outline: none; border-color: var(--s3-accent); box-shadow: 0 0 18px rgb(20 100 255 / .22); }
+.syn3h-shell input:not(.syn3h-advanced *):not([type=radio]):not([type=checkbox]):not([type=color]):not([type=range]) { display: block; width: 100%; background: rgb(255 255 255 / .06); color: var(--s3-ink); border: 1px solid var(--s3-line); border-radius: var(--s3-radius-small); font: 400 19px 'Barlow',sans-serif; padding: 11px 13px; min-height: 46px; transition: border-color .18s, box-shadow .18s; }
+.syn3h-shell input:not(.syn3h-advanced *):focus { outline: none; border-color: var(--theme-focus-ring); box-shadow: 0 0 0 3px rgb(41 151 255 / .25); }
 .syn3h-shell input:not(.syn3h-advanced *)[type=range] { display: block; width: 100%; accent-color: var(--s3-accent); min-height: 34px; margin: 5px 0 20px; }
 .syn3h-shell input:not(.syn3h-advanced *)[type=radio], .syn3h-shell input:not(.syn3h-advanced *)[type=checkbox] { accent-color: var(--s3-accent); width: 20px; height: 20px; margin: 0; vertical-align: middle; }
 .syn3h-shell select:not(.syn3h-advanced *) { width: 100%; }
@@ -65,13 +207,13 @@
 .input-action input { min-width: 0; }
 .input-action button { flex-shrink: 0; font-size: 16px; }
 .shell-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 22px 0; text-align: left; font-size: 14px; }
-.shell-controls b { color: #dce9fd; font-weight: 100; display: block; }
+.shell-controls b { color: #dce9fd; font-weight: 600; display: block; }
 .shell-touch-hint { display: none; font-size: 15px; }
 .has-touch .shell-touch-hint { display: block; }
 .has-touch .shell-controls { display: none; }
 .shell-play { width: 100%; margin-top: 12px; }
-.shell-vehicle { border: 1px solid var(--s3-line); padding: 12px; margin: 0 0 14px; }
-.shell-vehicle legend { padding: 0 10px; font-family: 'Syn3h Lato',sans-serif; }
+.shell-vehicle { border: 1px solid var(--s3-line-quiet); border-radius: var(--s3-radius); padding: 12px; margin: 0 0 14px; }
+.shell-vehicle legend { padding: 0 10px; font-family: 'Barlow Condensed','Arial Narrow',sans-serif; font-weight: 600; }
 .shell-vehicle-options { display: flex; justify-content: center; gap: 24px; }
 .shell-vehicle-options label { margin: 0; cursor: pointer; display: flex; align-items: center; gap: 10px; }
 .shell-vehicle-preview { height: 190px; position: relative; }
@@ -79,39 +221,39 @@
 .shell-vehicle-preview[data-error]::after { content: attr(data-error); position: absolute; inset: 0; display: grid; place-items: center; font-size: 15px; }
 .shell-colors { display: flex; justify-content: center; gap: 30px; }
 .shell-colors label { display: flex; gap: 12px; align-items: center; margin: 0; }
-.syn3h-shell input:not(.syn3h-advanced *)[type=color] { width: 64px; height: 38px; background: #04060b; border: 1px solid var(--s3-line); padding: 3px; cursor: pointer; }
+.syn3h-shell input:not(.syn3h-advanced *)[type=color] { width: 64px; height: 38px; background: rgb(255 255 255 / .06); border: 1px solid var(--s3-line); border-radius: var(--s3-radius-small); padding: 3px; cursor: pointer; }
 .vehicle-note, .panel-note { font-size: 15px; color: var(--s3-dim); }
-.world-controls, .host-controls { text-align: left; border: 1px solid var(--s3-line); padding: 12px 16px; margin: 14px 0; }
-.world-controls legend, .host-controls legend { padding: 0 8px; font-family: 'Syn3h Lato',sans-serif; color: #e0e9f6; }
+.world-controls, .host-controls { text-align: left; border: 1px solid var(--s3-line-quiet); border-radius: var(--s3-radius); padding: 12px 16px; margin: 14px 0; }
+.world-controls legend, .host-controls legend { padding: 0 8px; font-family: 'Barlow Condensed','Arial Narrow',sans-serif; font-weight: 600; color: #e0e9f6; }
 .sky-presets { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .sky-presets button { font-size: 16px; }
 .world-lock-note { color: #e4ba8f; font-size: 15px; }
 .settings-links { display: grid; gap: 12px; }
 .shell-scoreboard { margin-top: 20px; }
-.score-row { display: grid; grid-template-columns: minmax(0,1fr) auto 35px; align-items: center; gap: 8px; text-align: left; padding: 8px 10px; border-bottom: 1px solid #50607855; font-size: 17px; }
+.score-row { display: grid; grid-template-columns: minmax(0,1fr) auto 35px; align-items: center; gap: 8px; text-align: left; padding: 8px 10px; border-bottom: 1px solid rgb(84 84 88 / .4); font-size: 17px; }
 .score-row > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.score-row small { color: #a1badb; font-size: 10px; }
-.score-row strong { text-align: right; font-weight: 100; color: white; }
+.score-row small { color: var(--s3-dim); font-size: 10px; }
+.score-row strong { text-align: right; font-weight: 600; color: white; }
 .score-row.is-it { background: #6c361f80; border-left: 2px solid #edac73; }
-.score-row.is-self { box-shadow: inset 0 -1px #759cc5; }
-.score-detail { color: #a3b1c6; font-size: 12px; padding: 3px 0; overflow-wrap: anywhere; }
-.shell-hud { position: fixed; left: max(20px,env(safe-area-inset-left)); top: max(20px,env(safe-area-inset-top)); z-index: 12; width: 235px; padding: 12px; pointer-events: none; color: white; background: #101826a6; border: 1px solid #63778a33; }
+.score-row.is-self { box-shadow: inset 0 -1px var(--s3-accent); }
+.score-detail { color: var(--s3-dim); font-size: 12px; padding: 3px 0; overflow-wrap: anywhere; }
+.shell-hud { position: fixed; left: max(20px,env(safe-area-inset-left)); top: max(20px,env(safe-area-inset-top)); z-index: 12; width: 235px; padding: 12px; pointer-events: none; color: white; background: rgb(22 23 28 / .62); border: 1px solid rgb(84 84 88 / .48); }
 .shell-speed { display: flex; align-items: baseline; gap: 8px; padding-bottom: 6px; }
-.shell-speed strong { font: 100 44px/1 'Syn3h Lato',sans-serif; }
-.shell-speed span { font-size: 13px; color: #b8c7dc; }
+.shell-speed strong { font: 600 44px/1 'Barlow Condensed', 'Arial Narrow', sans-serif; }
+.shell-speed span { font-size: 13px; color: var(--s3-dim); }
 .hud-scoreboard { max-height: 180px; overflow: hidden; }
 .hud-scoreboard .score-row { font-size: 14px; padding: 4px; }
 .hud-scoreboard .score-detail { font-size: 10px; }
 .hud-navigation { position: fixed; top: max(20px,env(safe-area-inset-top)); right: max(20px,env(safe-area-inset-right)); z-index: 15; display: flex; gap: 8px; }
 .syn3h-shell .hud-navigation button { font-size: 16px; min-height: 44px; }
-.shell-toast { position: fixed; z-index: 50; left: 50%; top: max(20px,env(safe-area-inset-top)); transform: translateX(-50%); max-width: min(90vw,500px); padding: 10px 18px; background: #1b2d45f5; border: 1px solid #6284b2; color: white; font-size: 16px; pointer-events: none; text-align: center; }
+.shell-toast { position: fixed; z-index: 50; left: 50%; top: max(20px,env(safe-area-inset-top)); transform: translateX(-50%); max-width: min(90vw,500px); padding: 10px 18px; background: rgb(28 28 30 / .92); border: 1px solid rgb(84 84 88 / .72); color: white; font-size: 16px; pointer-events: none; text-align: center; }
 .syn3h-advanced { width: 100%; --tp-base-background-color: #182337; --tp-base-shadow-color: transparent; --tp-base-border-radius: 2px; --tp-container-background-color: #26354b; --tp-container-foreground-color: #d8e4f4; --tp-label-foreground-color: #cad7e7; --tp-input-background-color: #34465e; --tp-input-foreground-color: #e8f2ff; --tp-button-background-color: #506787; --tp-button-foreground-color: white; }
 .touch-controls { position: fixed; inset: 0; z-index: 20; pointer-events: none; user-select: none; -webkit-user-select: none; touch-action: none; }
 .touch-stick { position: absolute; left: max(24px,env(safe-area-inset-left)); bottom: max(28px,env(safe-area-inset-bottom)); width: 140px; height: 140px; border: 1px solid #9ebee37a; border-radius: 50%; background: #15203570; pointer-events: auto; touch-action: none; }
 .touch-knob { position: absolute; width: 52px; height: 52px; top: 43px; left: 43px; border-radius: 50%; background: #6799cf65; border: 1px solid #abcff7b0; }
-.touch-stick-label { position: absolute; bottom: 10px; width: 100%; text-align: center; font: 100 12px 'Syn3h Roboto',sans-serif; letter-spacing: 2px; color: #d0e4fc; }
+.touch-stick-label { position: absolute; bottom: 10px; width: 100%; text-align: center; font: 400 12px 'Barlow', sans-serif; letter-spacing: 2px; color: #d0e4fc; }
 .touch-actions { position: absolute; right: max(24px,env(safe-area-inset-right)); bottom: max(30px,env(safe-area-inset-bottom)); display: grid; grid-template-columns: 62px 62px; gap: 12px; }
-.touch-actions button { border: 1px solid #9ebee37a; border-radius: 50%; height: 62px; color: #e5f0ff; background: #182c47bd; font: 100 15px 'Syn3h Roboto',sans-serif; pointer-events: auto; touch-action: none; }
+.touch-actions button { border: 1px solid #9ebee37a; border-radius: 50%; height: 62px; color: #e5f0ff; background: #182c47bd; font: 400 15px 'Barlow', sans-serif; pointer-events: auto; touch-action: none; }
 .touch-actions .touch-fire { grid-column: 2; background: #43668dc9; }
 .touch-actions button.held, .touch-actions button[aria-pressed=true] { background: #8bbff2dd; color: #10243b; }
 @media (max-width: 700px) { .shell-overlay { padding: max(8px,env(safe-area-inset-top)) 16px max(8px,env(safe-area-inset-bottom)); } .lobby-brand { flex-basis: 120px; } .shell-logo { width: 290px; } .lobby-panels { max-height: none; width: 100%; } .lobby-panels > section { padding: 8px 4px 16px; } .lobby-panels > .lobby-index { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 14px; padding: 18px 12px 12px; } .lobby-message { padding: 0; max-width: 330px; } .lobby-index > h1 { font-size: 28px; } .lobby-message p { font-size: 16px; margin: 8px 0; } .lobby-links { margin: 6px 0; justify-content: center; } .lobby-destinations { width: 100%; max-width: 360px; gap: 8px; } .syn3h-shell .lobby-destinations button { min-height: 58px; font-size: 19px; } .lobby-footer { font-size: 11px; flex-basis: 30px; } .shell-hud { left: 12px; top: 12px; width: 180px; padding: 8px; } .shell-speed strong { font-size: 34px; } .hud-scoreboard { max-height: 95px; } .hud-scoreboard .score-detail { display: none; } .hud-navigation { right: 12px; top: 12px; flex-direction: column; gap: 5px; } .hud-navigation button { padding: 8px 12px; font-size: 14px; } .touch-stick { width: 124px; height: 124px; left: 18px; } .touch-knob { left: 35px; top: 35px; } .touch-actions { right: 18px; } .shell-vehicle-preview { height: 170px; } .shell-colors { gap: 20px; } }
@@ -128,64 +270,51 @@
 
 .touch-controls [hidden] { display: none !important; }
 .shell-vehicle-options { flex-wrap: wrap; gap: 10px 18px; }
-.vehicle-help { text-align: left; font-size: 14px; line-height: 1.7; color: #c8d9ef; }
+.vehicle-help { text-align: left; font-size: 14px; line-height: 1.7; color: var(--s3-ink); }
 /* Controls card: lower left, clear of the vehicle in the chase camera at every screen size. */
-.spawn-help { position: fixed; z-index: 14; left: max(20px,env(safe-area-inset-left)); bottom: max(20px,env(safe-area-inset-bottom)); max-width: 26em; padding: 8px 14px; background: #152337d9; border: 1px solid #536b8a; font-size: clamp(13px,0.9vw,18px); line-height: 1.55; pointer-events: none; }
-.spawn-help strong { font-weight: 100; color: white; display: none; }
+.spawn-help { position: fixed; z-index: 14; left: max(20px,env(safe-area-inset-left)); bottom: max(20px,env(safe-area-inset-bottom)); max-width: 26em; padding: 8px 14px; background: rgb(28 28 30 / .82); border: 1px solid rgb(84 84 88 / .72); font-size: clamp(13px,0.9vw,18px); line-height: 1.55; pointer-events: none; }
+.spawn-help strong { font-weight: 600; color: white; display: none; }
 .spawn-help.is-full { max-width: 28em; padding: 12px 16px; font-size: clamp(14px,0.95vw,19px); }
 .spawn-help.is-full strong { display: block; }
-.spawn-help small { color: #9bb8db; }
+.spawn-help small { color: var(--s3-dim); }
 .spawn-help small:empty { display: none; }
 /* Touch: one slim line between the vehicle and the thumb controls. */
 .has-touch .spawn-help { left: 50%; right: auto; bottom: calc(max(30px,env(safe-area-inset-bottom)) + 160px); transform: translateX(-50%); max-width: calc(100% - 24px); padding: 5px 12px; white-space: nowrap; }
 .syn3h-shell:not(.is-playing) .spawn-help { display: none; }
 
-.syn3h-loading { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: radial-gradient(ellipse at 50% 120%, #06123a, var(--s3-space) 60%); color: var(--s3-ink); font: 100 18px 'Syn3h Roboto',sans-serif; padding: 24px; text-align: center; }
-.syn3h-loading > :not(canvas) { position: relative; }
+/* The loading veil is in index.html. This is its status text, for screen readers only. */
+.syn3h-loading { position: fixed; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .syn3h-loading[hidden] { display: none; }
-.syn3h-loading .wordmark { width: min(440px,80vw); margin-bottom: 18px; }
-.syn3h-loading h1 { font: 100 30px 'Syn3h Lato',sans-serif; margin: 0; color: white; }
-.syn3h-loading p { margin: 0; }
-.syn3h-loading progress { width: min(320px,80vw); height: 3px; accent-color: var(--s3-accent); }
-.syn3h-loading small { color: #667185; }
 #fatal { z-index: 100; }
 
-.shell-minimap { position: fixed; right: 20px; bottom: 20px; z-index: 12; width: 162px; height: 162px; border: 1px solid #7992b2; background: #101826; pointer-events: none; }
+.shell-minimap { position: fixed; right: 20px; bottom: 20px; z-index: 12; width: 162px; height: 162px; border: 1px solid rgb(84 84 88 / .72); background: #101826; pointer-events: none; }
 .shell-minimap canvas { display: block; width: 100%; height: 100%; opacity: .88; }
 .shell-minimap span { position: absolute; top: 0; left: 5px; color: white; font-size: 12px; text-shadow: 0 1px 2px black; }
 .syn3h-shell:not(.is-playing) .shell-minimap { display: none; }
 @media (max-width: 700px) { .shell-minimap { right: 12px; top: 190px; bottom: auto; width: 110px; height: 110px; } .syn3h-shell.is-playing .shell-toast { left: 12px; top: 112px; transform: none; width: calc(100% - 146px); font-size: 13px; padding: 6px 10px; text-align: left; } }
-.syn3h-loading progress { appearance: none; border: 0; background: #28374d; border-radius: 0; }
-.syn3h-loading progress::-webkit-progress-bar { background: #28374d; }
-.syn3h-loading progress::-webkit-progress-value { background: #7abaff; }
-.syn3h-loading progress::-moz-progress-bar { background: #7abaff; }
-.syn3h-loading progress:indeterminate { background: linear-gradient(90deg,#28374d 20%,#7abaff 50%,#28374d 80%); background-size: 200% 100%; animation: loading-sweep 1.8s linear infinite; }
-.syn3h-loading progress:indeterminate::-webkit-progress-bar { background: transparent; }
-@keyframes loading-sweep { to { background-position: -200% 0; } }
-@media (prefers-reduced-motion: reduce) { .syn3h-loading progress:indeterminate { animation: none; } }
 
 .shell-credits { text-align: left; font-size: 15px; line-height: 1.6; }
-.shell-credits summary { cursor: pointer; color: #dceaff; padding: 12px; border: 1px solid #536b8a; }
+.shell-credits summary { cursor: pointer; color: var(--s3-ink); padding: 12px; border: 1px solid rgb(84 84 88 / .72); }
 .shell-credits ul { padding-left: 22px; }
-.shell-credits a { color: #9ccaff; text-underline-offset: 3px; }
+.shell-credits a { color: var(--s3-accent-2); text-underline-offset: 3px; }
 
-.match-hud { position: fixed; z-index: 13; top: 85px; left: 50%; transform: translateX(-50%); width: 330px; padding: 12px; background: #152337ee; border: 1px solid #7188a7; pointer-events: none; }
-.match-hud > strong { font: 100 24px 'Syn3h Lato',sans-serif; color: white; }
+.match-hud { position: fixed; z-index: 13; top: 85px; left: 50%; transform: translateX(-50%); width: 330px; padding: 12px; background: rgb(28 28 30 / .88); border: 1px solid rgb(84 84 88 / .72); pointer-events: none; }
+.match-hud > strong { font: 600 24px 'Barlow Condensed', 'Arial Narrow', sans-serif; color: white; }
 .syn3h-shell .hill-holder { margin: 4px 0; overflow-wrap: anywhere; line-height: 1.3; }
-.match-hud > small { color: #a7c8ef; }
-.match-hud.is-yours { border-color: #78c9da; }
+.match-hud > small { color: var(--s3-dim); }
+.match-hud.is-yours { border-color: var(--s3-accent-2); }
 .match-hud.is-contested { border-color: #e4b078; }
 .match-hud.is-contested .hill-holder { color: #ffd19e; }
 .match-race { margin-top: 9px; display: grid; gap: 8px; }
 .match-score { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 2px 6px; font-size: 13px; }
 .match-score span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.match-score.is-you { color: #b0eaff; }
-.match-score progress { grid-column: 1 / -1; width: 100%; height: 4px; appearance: none; border: 0; background: #34445a; }
-.match-score progress::-webkit-progress-bar { background: #34445a; }
-.match-score progress::-webkit-progress-value { background: #87b5e5; }
-.match-score.is-you progress::-webkit-progress-value { background: #8bd6d9; }
-.match-score progress::-moz-progress-bar { background: #87b5e5; }
-.match-announcement { position: fixed; z-index: 16; left: 50%; top: 43%; transform: translateX(-50%); width: min(600px,85vw); padding: 16px; text-align: center; background: #152337ec; border: 1px solid #8dbce5; color: white; font: 100 36px/1.2 'Syn3h Lato',sans-serif; pointer-events: none; overflow-wrap: anywhere; }
+.match-score.is-you { color: var(--s3-accent-2); }
+.match-score progress { grid-column: 1 / -1; width: 100%; height: 4px; appearance: none; border: 0; background: rgb(84 84 88 / .5); }
+.match-score progress::-webkit-progress-bar { background: rgb(84 84 88 / .5); }
+.match-score progress::-webkit-progress-value { background: var(--s3-accent); }
+.match-score.is-you progress::-webkit-progress-value { background: var(--s3-accent-2); }
+.match-score progress::-moz-progress-bar { background: var(--s3-accent); }
+.match-announcement { position: fixed; z-index: 16; left: 50%; top: 43%; transform: translateX(-50%); width: min(600px,85vw); padding: 16px; text-align: center; background: rgb(28 28 30 / .88); border: 1px solid var(--s3-accent); color: white; font: 600 36px/1.2 'Barlow Condensed', 'Arial Narrow', sans-serif; pointer-events: none; overflow-wrap: anywhere; }
 .syn3h-shell:not(.is-playing) .match-hud, .syn3h-shell:not(.is-playing) .match-announcement { display: none; }
 @media (max-width: 700px) {
   .match-hud { left: 12px; top: 190px; width: calc(100% - 146px); max-height: 205px; overflow: hidden; transform: none; padding: 8px; font-size: 13px; }
@@ -233,7 +362,7 @@
 .is-presentation .match-score { font-size: 20px; }
 .is-presentation .match-score progress { height: 7px; }
 .match-announcement.round-end { top: 40%; left: 0; transform: none; width: 100%; border-width: 3px 0; border-color: var(--winner-color); box-shadow: 0 0 30px #0008; padding: 24px; }
-.round-end strong { display: block; color: var(--winner-color); font: 100 52px/1.15 'Syn3h Lato',sans-serif; }
+.round-end strong { display: block; color: var(--winner-color); font: 600 52px/1.15 'Barlow Condensed', 'Arial Narrow', sans-serif; }
 .round-end small { display: block; color: white; font-size: 25px; margin-top: 10px; }
 @media(max-width:700px) {
   .is-presentation .shell-hud { width: calc(100% - 140px); }
@@ -337,11 +466,11 @@
 
 /* Planets: one card per kind of world. The orb is drawn by PlanetOrbs; the card is a button. */
 .planet-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-.syn3h-shell .planet-card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 10px 12px; text-align: center; min-height: 0; }
+.syn3h-shell .planet-card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 10px 12px; text-align: center; min-height: 0; border-radius: var(--s3-radius); }
 .planet-orb { width: 96px; aspect-ratio: 1; flex: none; display: block; transition: scale .25s cubic-bezier(.2,.7,.2,1); }
 .planet-card:is(:hover, :focus-visible):not(:disabled) .planet-orb { scale: 1.08; }
 .planet-text { display: grid; gap: 2px; min-width: 0; }
-.planet-text strong { font: 100 21px/1.2 'Syn3h Lato', sans-serif; }
+.planet-text strong { font: 600 22px/1.1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: 0.01em; }
 .planet-text small { font-size: 13px; line-height: 1.35; color: var(--s3-dim); text-wrap: balance; }
 .planet-card.is-primary .planet-text small { color: var(--s3-ink); }
 /* Lobby index: orb beside the name, two to a row, as the 2017 lobby listed its worlds. */
@@ -389,3 +518,31 @@
 .touch-actions button.is-hinted { animation: touch-hint 1s ease-in-out infinite; border-color: #cfe6ff; }
 @keyframes touch-hint { 50% { box-shadow: 0 0 0 9px rgb(120 190 255 / .28); background: #8bbff2c0; color: #10243b; } }
 @media (prefers-reduced-motion: reduce) { .touch-actions button.is-hinted { animation: none; box-shadow: 0 0 0 5px rgb(120 190 255 / .4); } }
+/* Touch tablets (an iPad on its side is 1194 x 834): the screen is desktop sized but the
+   thumb controls are on it, so the minimap goes to the top right, under the menu, where the
+   action buttons are not, and announcements sit above the vehicle. Phones have their own
+   layouts above; this is for touch screens larger than those. */
+@media (min-width: 701px) and (min-height: 501px) {
+  .has-touch .shell-minimap { top: 76px; bottom: auto; }
+  .has-touch .match-announcement { top: 322px; font-size: 30px; padding: 10px 16px; }
+  .has-touch .match-announcement.round-end { top: 318px; padding: 10px; }
+  .has-touch .round-end strong { font-size: 34px; }
+  .has-touch .round-end small { font-size: 18px; margin-top: 4px; }
+}
+
+/* The galaxy lobby (prototype, ?galaxy=1). The worlds are drawn by Galaxy.ts on a canvas that
+   fills the overlay; in place of the index panel there are only labels under the worlds, a
+   line of help and the quiet links. Other panels open over it as glass. */
+.galaxy-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.galaxy-canvas:active { cursor: grabbing; }
+.galaxy-open .lobby-stage { pointer-events: none; }
+.galaxy-open .lobby-panels, .galaxy-open .lobby-footer { visibility: hidden; }
+.galaxy-ui { position: absolute; inset: 0; pointer-events: none; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding: 0 16px max(18px, env(safe-area-inset-bottom)); }
+.galaxy-ui > * { pointer-events: auto; }
+.galaxy-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.syn3h-shell .galaxy-label { position: absolute; left: 0; top: 0; translate: -200px -200px; transform: translateX(-50%); pointer-events: auto; background: none; border: 0; box-shadow: none; padding: 4px 10px; min-height: 0; display: grid; justify-items: center; color: var(--s3-ink); text-shadow: 0 1px 6px #000; cursor: pointer; }
+.galaxy-label strong { font: 600 20px/1.1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: 0.04em; text-transform: uppercase; }
+.galaxy-label small { font-size: 13px; color: var(--s3-accent-2); }
+.galaxy-label small:empty { display: none; }
+.syn3h-shell .galaxy-hint { margin: 0 0 6px; font-size: 15px; color: var(--s3-dim); text-shadow: 0 1px 6px #000; text-align: center; }
+.galaxy-links { padding: 6px 18px; border-radius: 999px; background: rgb(10 12 18 / .5); }

@@ -66,12 +66,12 @@ export const PLANETS: readonly PlanetRecipe[] = [
     blurb: 'Pine forest and granite ranges under a snow peak, in a cold blue sea.',
     swatch: [0x5f8a3a, 0x1c5f9a],
     values: {
-      ...SKY_PRESETS['Earthlike'], 'weather.cloudCoverage': 0.45, 'weather.fogDensity': 0.00025,
+      ...SKY_PRESETS['Earthlike'], 'weather.cloudCoverage': 0.45, 'weather.fogDensity': 0.0003,
       'terrain.kind': 2, 'world.seaKind': 1, 'world.lavaAltitude': 0,
       'terrain.islandRadius': 800, 'terrain.coastWobble': 0.3,
       'terrain.volcanoHeight': 600, 'terrain.volcanoRadius': 380, 'terrain.calderaSize': 55,
-      'terrain.mesaHeight': 200, 'terrain.cragDensity': 0.5, 'terrain.spireHeight': 90,
-      'terrain.duneHeight': 0, 'terrain.roughness': 0.5, 'terrain.treeCover': 0.75,
+      'terrain.mesaHeight': 330, 'terrain.cragDensity': 0.56, 'terrain.spireHeight': 0,
+      'terrain.duneHeight': 0, 'terrain.roughness': 0.5, 'terrain.treeCover': 0.95,
     },
   },
 ]

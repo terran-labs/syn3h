@@ -4,6 +4,7 @@
  * dynamic body, nudged toward the snapshot pose and given the snapshot's velocities, so
  * collisions with us are real physics. Farther away it is kinematic and placed exactly.
  */
+import { nearestImage } from '../../shared/wrap'
 import * as THREE from 'three/webgpu'
 import type { PlayerInfo, WireState } from '../../shared/protocol'
 import { RAPIER } from '../core/physics'
@@ -22,6 +23,8 @@ export class RemotePlayer {
   /** Currently in contact with the local vehicle. */
   touching = false
   lastRamSent = -Infinity
+  /** Game time the local vehicle last touched this one, for relayed shoves (shove.ts). */
+  lastContactAt = -Infinity
   delay = 0.1
   /** Removes this vehicle's effects; call before removing the vehicle. */
   disposeEffects: () => void = () => {}
@@ -57,7 +60,12 @@ export class RemotePlayer {
     // A parked (hidden tab) vehicle is frozen on its owner's screen, so it is a wall here too.
     this.setPhysical(near && this.responding && !this.paused)
 
-    const [px, py, pz] = s.p
+    // On a wrapping world a remote vehicle is placed at its image nearest to us, so a friend
+    // just across the seam is beside us, not a world away.
+    const wrap = (this.vehicle as unknown as { terrain?: { wrapSize?: number } }).terrain?.wrapSize
+    const py = s.p[1]
+    const px = wrap ? nearestImage(s.p[0], localPos.x, wrap) : s.p[0]
+    const pz = wrap ? nearestImage(s.p[2], localPos.z, wrap) : s.p[2]
     if (!this.physical) {
       body.setNextKinematicTranslation({ x: px, y: py, z: pz })
       body.setNextKinematicRotation({ x: s.q[0], y: s.q[1], z: s.q[2], w: s.q[3] })

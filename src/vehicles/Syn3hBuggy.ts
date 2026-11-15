@@ -23,6 +23,7 @@ import {
 } from './buggyParams'
 import { applyLava, floatPoints, lavaViscosity } from './lava'
 import type { BuggySkin } from './skins/BuggySkin'
+import { type MotorDriveInput, motorDrive, smoothEffort } from './skins/motorDrive'
 import { DEG, UnityBody, lerp, signedAngle, unityEulerAngles } from './unityBody'
 import { Vehicle, type WheelEffect, createWheelEffects } from './Vehicle'
 
@@ -91,6 +92,8 @@ const HOLD_DECEL = 3
 /** Below this speed the reverse key reverses instead of regenerating. */
 const REVERSE_SPEED = 0.5
 const THROTTLE_DEADZONE = 0.05
+/** Slowest the wheels turn under full throttle (m/s at the tread); see driveFloor(). */
+const DRIVE_FLOOR = 3
 /** Regen force allowed beyond its nominal deceleration, to cover slopes and bumps. */
 const REGEN_TORQUE_MARGIN = 1.25
 /** A contact point closer than this (m) is touching; further ones are only predicted. */
@@ -255,7 +258,12 @@ export class Syn3hBuggy extends Vehicle {
     this.object.add(skin.object)
     skin.setColors(this.colors.body, this.colors.accent)
     skin.ready.then(
-      () => { if (this.skin === skin) this.fallback.visible = false },
+      () => {
+        if (this.skin !== skin) return
+        this.fallback.visible = false
+        // Contract with the effects lane: the vehicle object says its skin draws its own lamps.
+        if (skin.ownLamps) this.object.userData.ownLamps = true
+      },
       (err) => {
         console.warn('Buggy model failed to load, keeping the primitive model', err)
         if (this.skin === skin) { skin.dispose(); this.skin = null }
@@ -342,7 +350,9 @@ export class Syn3hBuggy extends Vehicle {
     const smoothed = this.inputSmoothed
 
     this.updateInput(dt, speedSq)
-    this.selfRight(dt, speedSq)
+    // Buggy.js 488 (Mars Explorer): no self righting inside a zorb ball.
+    if (this.zorbed) this.isInverted = false
+    else this.selfRight(dt, speedSq)
 
     let wheelsAreTouchingGround = false
     this.totalSuspensionCompression = 0
@@ -496,6 +506,7 @@ export class Syn3hBuggy extends Vehicle {
       ub.addForceAtPosition(this.v2, this.hitPoint)
       this.motorSpeed += ((hitVel.z - this.motorSpeed) * friction * dt) / this.motorTorque
     }
+    if (nextGen && this.drive === 'drive' && !this.brakes && Math.abs(smoothed.y) > THROTTLE_DEADZONE) this.driveFloor(smoothed.y)
     this.wheelsGrounded = grounded
     this.landedThisStep = wasAirborne && grounded > 0
     if (this.landedThisStep) this.landingImpact = Math.max(0, -lv.y)
@@ -627,8 +638,9 @@ export class Syn3hBuggy extends Vehicle {
    * tapped throttle holds a speed:
    * - drive: throttle along the direction of travel (or from rest) runs the classic motor.
    * - coast: no throttle above HOLD_SPEED. The motor freewheels with buggy.coastDrag.
-   * - regen: throttle against the direction of travel. The motor decelerates the wheels at
+   * - regen: the reverse key while rolling forward. The motor decelerates the wheels at
    *   buggy.regen g, torque limited, until the buggy is nearly stopped; then the key reverses.
+   *   The forward key never regenerates: it always drives (see driveFloor()).
    * - hold: no throttle below HOLD_SPEED. The motor eases to zero and stays there, and the
    *   tyres' static friction parks the buggy, slopes included. No brake drag freeze.
    * In regen and hold the motor is a fixed reference the tyres pull the body toward.
@@ -643,7 +655,9 @@ export class Syn3hBuggy extends Vehicle {
     }
     if (!throttle) {
       this.drive = buggyIdleHold.value && Math.abs(vf) < HOLD_SPEED && this.wheelsGrounded > 0 ? 'hold' : 'coast'
-    } else if (Math.sign(y) !== Math.sign(vf) && Math.abs(vf) > REVERSE_SPEED) {
+    } else if (y < 0 && vf > REVERSE_SPEED) {
+      // Only the reverse key regenerates. The forward key always drives: rolling back down a
+      // hill with it held is the moment the motor must pull hardest, not brake gently.
       this.drive = 'regen'
     } else this.drive = 'drive'
 
@@ -662,7 +676,20 @@ export class Syn3hBuggy extends Vehicle {
     } else {
       this.motorSpeed += (y * this.motorAccel) / MOTOR_MASS * dt
       this.motorSpeed -= (this.motorSpeed * MOTOR_DRAG) / this.motorTorque * dt
+      this.driveFloor(y)
     }
+  }
+
+  /**
+   * Under throttle the wheels always turn the way the driver asked, at DRIVE_FLOOR or faster:
+   * the motor has torque to spare, so the ground can never drag it backward. On a hill too
+   * steep to grip the tyres spin and the buggy slides, instead of the wheels being wound
+   * backward as it falls. Called after the motor update and again after the tyres react on it.
+   */
+  private driveFloor(y: number): void {
+    const dir = Math.sign(y)
+    const floor = DRIVE_FLOOR * Math.min(1, Math.abs(y))
+    if (this.motorSpeed * dir < floor) this.motorSpeed = dir * floor
   }
 
   /** Flight, VB 389-480. Runs on the wish to fly (`_shouldWingsBeOpen`), as in the source. */
@@ -831,6 +858,32 @@ export class Syn3hBuggy extends Vehicle {
 
   private readonly wheelPos = new THREE.Vector3()
   private readonly lastWings = [0, 0, 0]
+  /** Smoothed hub motor effort per wheel, for the skin's glow and sparks (visual only). */
+  readonly motorEffort = [0, 0, 0, 0]
+  private readonly driveIn: MotorDriveInput = {
+    throttle: 0, forwardSpeed: 0, motorSpeed: 0, topSpeed: 1, brakes: false, wingsOpen: false, grounded: false, sliding: false,
+  }
+  private readonly driveOut = { effort: 0, regen: false }
+  private readonly vDrive = new THREE.Vector3()
+  private readonly qDrive = new THREE.Quaternion()
+
+  /** Fill `driveIn` for wheel `i` from this buggy's public state. */
+  private motorDriveInput(i: number): MotorDriveInput {
+    const d = this.driveIn
+    if (i === 0) {
+      // Body speed along the nose (Unity sign, forward positive), once per frame.
+      const v = this.body.linvel(), r = this.body.rotation()
+      d.forwardSpeed = -this.vDrive.set(v.x, v.y, v.z).applyQuaternion(this.qDrive.set(r.x, r.y, r.z, r.w).invert()).z
+    }
+    d.throttle = this.inputSmoothed.y
+    d.motorSpeed = this.motorSpeed
+    d.topSpeed = buggySpeed.value * 10
+    d.brakes = this.brakes
+    d.wingsOpen = this.areWingsOpen
+    d.grounded = this.hitDistance[i] !== -1
+    d.sliding = this.sliding[i]
+    return d
+  }
 
   override update(dt: number, alpha: number): void {
     super.update(dt, alpha)
@@ -844,11 +897,18 @@ export class Syn3hBuggy extends Vehicle {
         -WHEEL_POS.z * (i < 2 ? 1 : -1),
       )
       this.skin?.setWheel(i, this.wheelPos, this.steer[i], this.spin)
+      if (this.skin?.setDrive) {
+        const drive = motorDrive(this.motorDriveInput(i), this.driveOut)
+        this.motorEffort[i] = smoothEffort(this.motorEffort[i], drive.effort, dt)
+        this.skin.setDrive(i, this.motorEffort[i], drive.regen)
+      }
       const g = this.fbWheels[i]
       g.position.copy(this.wheelPos)
       g.rotation.y = this.steer[i]
       this.fbSpinners[i].rotation.x = this.spin
     }
+    // An EV lights its brake lamps for regeneration as well as the brakes.
+    this.skin?.setLights?.(this.brakes || this.drive === 'regen')
     // The skin rewrites every wing vertex, so only call it when something visible changed.
     const w = this.lastWings
     const ws = this.wingState, wx = this.inputSmoothed.x, wp = this.motorInputSmoothed

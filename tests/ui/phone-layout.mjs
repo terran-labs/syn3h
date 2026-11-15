@@ -1,5 +1,6 @@
 /**
- * Phone layout check, portrait (390 x 844) and landscape (844 x 390), with touch.
+ * Phone and tablet layout check: portrait (390 x 844) and landscape (844 x 390) phones in
+ * Chrome, and an iPad Pro 11 on its side in WebKit, all with touch.
  *
  *   tools/heavy.sh node tests/ui/phone-layout.mjs <label> [--record]
  *
@@ -13,7 +14,7 @@
  * It then plays a guest's first run on a slow phone: see the section near the end. That part
  * joins a room, so it needs the lane room server as well as the dev server on 5187.
  */
-import { chromium } from 'playwright-core'
+import { chromium, devices, webkit } from 'playwright-core'
 import { mkdir, writeFile } from 'node:fs/promises'
 
 const label = process.argv[2] ?? 'run'
@@ -53,9 +54,17 @@ const measure = page => page.evaluate(() => {
   return { overlaps, offscreen, boxes: boxes.map(b => ({ name: b.name, box: [b.left, b.top, b.right, b.bottom].map(Math.round) })) }
 })
 
-for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } }, { name: 'landscape', viewport: { width: 844, height: 390 } }]) {
+// A tablet too: an iPad Pro 11 on its side, in WebKit as Safari runs it (no WebGPU there, so
+// the game takes its WebGL path). Touch controls show at desktop width.
+const safari = await webkit.launch()
+const layouts = [
+  { name: 'portrait', viewport: { width: 390, height: 844 } },
+  { name: 'landscape', viewport: { width: 844, height: 390 } },
+  { name: 'ipad', engine: safari, device: devices['iPad Pro 11 landscape'] },
+]
+for (const view of layouts) {
   for (const vehicle of ['buggy', 'jet']) {
-    const context = await browser.newContext({ ...view, hasTouch: true, isMobile: true, deviceScaleFactor: 2 })
+    const context = view.engine ? await view.engine.newContext({ ...view.device }) : await browser.newContext({ viewport: view.viewport, hasTouch: true, isMobile: true, deviceScaleFactor: 2 })
     const page = await context.newPage()
     page.on('pageerror', e => report.errors.push(`${view.name} ${vehicle}: ${e.message}`))
     page.on('console', m => { if (m.type() === 'error') report.errors.push(`${view.name} ${vehicle}: ${m.text()}`) })
@@ -184,7 +193,7 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
 for (const row of report.guest) console.log(`guest ${row.view}: lobby usable in ${row.usableMs} ms at 4x throttle, tap answered in ${row.tapMs} ms, starfield ${row.starFps} fps, ${row.planetMaps} maps`)
 for (const failure of guestFailures) console.log(`GUEST FAIL ${failure}`)
 if (strict && guestFailures.length) process.exitCode = 1
-await browser.close()
+await browser.close(); await safari.close()
 const bad = report.states.filter(s => s.overlaps.length || s.offscreen.length)
 await writeFile(`${out}/${label}-report.json`, JSON.stringify(report, null, 1))
 for (const s of report.states) console.log(`${s.view} ${s.vehicle} ${s.state}: ${s.overlaps.length || s.offscreen.length ? [...s.overlaps, ...s.offscreen.map(n => `${n} off screen`)].join('; ') : 'clear'}`)

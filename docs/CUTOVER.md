@@ -75,6 +75,38 @@ version: after a cutover, the domain stays attached and serves whichever version
 For the same reason, later `tools/release.sh` deploys (whose config lists no routes) leave the
 domain attached; wrangler only touches Custom Domains when the config lists some.
 
+## Releasing while people are playing
+
+A release does not drop anyone at the moment of the deploy, and it does not leave them alone
+either. What Cloudflare does (Durable Objects changelog of 30 October 2026, and "Use
+WebSockets" in the Durable Objects documentation):
+
+- A room nobody is in gets the new code the next time someone joins it.
+- A room with players in it is an active Durable Object. By default its code update is
+  deferred: it keeps running the **old** room code for up to 5 minutes while Cloudflare waits
+  for it to go idle, which a room in play never does. Then it is reset. Deferral is best
+  effort: the reset can come sooner.
+- The reset closes every socket in that room at once. Each player's game reconnects by itself
+  (under a second in our reconnect check) and stays where it was.
+
+What a room keeps across that reset, measured with `tools/deploy-reset-check.mjs`: the world
+(every shared slider, the seed, the game mode). What it loses: scores and the round in
+progress, who is "it", and who is host: players come back with new ids, the first one back
+becomes host, and a slider lock is released. During the 5 minutes before the reset, pages
+loaded fresh run the new client against the old room code.
+
+So:
+
+1. **Do not release during a demo or a round that matters.** Release before people arrive,
+   or between sessions when rooms are empty.
+2. If a release must go out with people playing, choose the moment: deploy with
+   `--durable-objects-code-update-mode immediate`, so every room blinks once, now, instead
+   of five minutes later without warning. `tools/release.sh` does not pass this flag; add it
+   to the deploy line for that one release. Say "the game will blink for a second" first.
+3. After any release with people connected, start a fresh round: scores were reset.
+4. A release that changes the wire protocol (`PROTOCOL_VERSION`) must not go out with people
+   playing at all: old pages and new rooms refuse each other until the page reloads.
+
 ## Step 2: cut over syn3h.com
 
 Today: syn3h.com's DNS is on Cloudflare, the apex redirects to www, www serves the existing
@@ -123,9 +155,18 @@ the redirect is to go.
      follow the Open Graph spec need an absolute URL, so the UX lane should make both absolute
      (`https://www.syn3h.com/...`) before the cutover.
    - mail: `dig MX syn3h.com` and `dig TXT syn3h.com` match the export
-   - afterwards: in the first release after a verified cutover, switch `og:url`, `og:image`
+   - done on trunk for release 2: switch `og:url`, `og:image`
      and `twitter:image` in `index.html` from the workers.dev address to
      `https://www.syn3h.com` (UX lane; `tests/ui/share.test.ts` keeps them on one origin)
+
+## If a check fails after the attach
+
+Rule set by the Foreman after the first cutover (14 November, 7:15pm PST). On a failed
+post-attach check, stop all further changes and take up to five minutes to establish whether
+the failure is ours or is the old origin still being served from Cloudflare's cache
+(`curl -sD - https://www.syn3h.com/` showing the old site's title or an `x-host` header from
+the old host; a 406 on the WebSocket came from there the first time and cleared in about a
+minute). Roll back if the failure is ours, or if it has not cleared in five minutes.
 
 ## Rollback of the cutover
 

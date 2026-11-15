@@ -41,6 +41,7 @@ import {
 // Imported for their side effect of defining world parameters, so the server knows their
 // ranges. Modules that define parameters next to Three.js code cannot be imported here; their
 // ids pass through with a basic type check instead.
+import { MIN_CLOSING, SHOVE_SHARE, cleanShove } from '../src/net/shove'
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
 import {
   KNOCK_WINDOW, WIN_PAUSE, gameMode, kothKnockBonus, kothRespawnDelay, kothTargetScore, tagCooldown, tagRamReach,
@@ -82,6 +83,12 @@ interface Player {
   lastStateAt: number
   /** Server ms when anything at all last arrived from this player. */
   lastHeardAt: number
+  /** The fastest this player has been in the last half second, m/s, and when: its speed
+   * going into a ram, even if its newest state is from after the impact. */
+  fast: number
+  fastAt: number
+  /** Server ms of the last push relayed from this player, by rammed player id. */
+  shoved: Map<number, number>
   lastFireAt: number
   /** Shots fired recently, by shot id, with server ms of firing. */
   shots: Map<number, number>
@@ -121,6 +128,10 @@ const IT_ABSENT_MS = 8000
  * hold a place in the room and a line in everyone's player list. If it comes back, it rejoins.
  */
 const SILENT_MS = 180_000
+/** At most one relayed push per rammer and rammed player in this time. */
+const SHOVE_REPEAT_MS = 500
+/** How long a player's top speed is remembered for bounding its push. */
+const SHOVE_SPEED_MEMORY_MS = 500
 /**
  * A room nobody is actually playing in forgets its world, so the next visitor does not inherit
  * a stale night sky or someone's gravity. "Active" means connected and sending live (not
@@ -239,7 +250,7 @@ export class Room {
         this.onProfile(player, msg.kind, msg.colors)
         break
       case 'ram':
-        this.onRam(player, msg.other)
+        this.onRam(player, msg.other, msg.push)
         break
       case 'lock':
         this.onLock(player, msg.locked)
@@ -386,7 +397,15 @@ export class Room {
     this.scores[info.id] = 0
 
     if (!this.it || !this.byId(this.it)) this.it = info.id
-    if (!this.host || !this.byId(this.host)) this.host = info.id
+    if (!this.host || !this.byId(this.host)) {
+      // The stored host is not here: the room was rebuilt from storage with nobody connected
+      // (a deploy or a restart reset it). Whoever returns first becomes host, and a lock the
+      // old host set does not carry over to them: the old host may be seconds behind.
+      if (this.host) this.locked = false
+      this.host = info.id
+    }
+    // Scores for players who are no longer in the room (the same rebuild) are not kept.
+    for (const old in this.scores) if (!this.byId(Number(old))) delete this.scores[old]
 
     this.sendTo(peer, {
       type: 'welcome',
@@ -419,6 +438,11 @@ export class Room {
     state.id = player.info.id
     player.lastState = state
     player.lastStateAt = this.now()
+    const speed = Math.hypot(...state.v)
+    if (speed >= player.fast || player.lastStateAt - player.fastAt > SHOVE_SPEED_MEMORY_MS) {
+      player.fast = speed
+      player.fastAt = player.lastStateAt
+    }
     // Copy before stamping: the transport may reuse its buffer.
     const out = bytes.slice()
     stampStateId(out, player.info.id)
@@ -656,7 +680,7 @@ export class Room {
   }
 
   /** A client says its vehicle touched another. Contact between "it" and anyone passes it on. */
-  private onRam(reporter: Player, otherId: unknown): void {
+  private onRam(reporter: Player, otherId: unknown, push?: unknown): void {
     if (typeof otherId !== 'number') return
     const other = this.byId(otherId)
     if (!other || other === reporter) return
@@ -667,6 +691,12 @@ export class Room {
     // Both states are slightly old, so allow for how far fast vehicles travel meanwhile.
     const reach = this.paramNumber(tagRamReach.def) + (Math.hypot(...a.v) + Math.hypot(...b.v)) * 0.3
     if (dist(a.p, b.p) > reach) return
+    // Pass the rammer's push on to the rammed player, whose client applies it if its own
+    // physics missed the hit. Bots are simulated by the host, where the rammer's copy already
+    // pushes them, so they get none.
+    const to = other.info.bot ? undefined : this.peerOf(other)
+    const shove = to ? this.boundedShove(reporter, other, push, now) : null
+    if (shove && to) this.sendTo(to, { type: 'shove', from: reporter.info.id, push: shove })
     // Remember the contact both ways: whoever falls in next may have been pushed.
     this.lastContact.set(other.info.id, { by: reporter.info.id, at: now })
     this.lastContact.set(reporter.info.id, { by: other.info.id, at: now })
@@ -678,6 +708,25 @@ export class Room {
     const wasIt = this.it
     const newIt = wasIt === reporter.info.id ? other.info.id : reporter.info.id
     this.setIt(newIt, 'ram', wasIt)
+  }
+
+  /**
+   * The rammer's push, made safe for a room of strangers: well formed, no stronger than the
+   * two vehicles' speeds allow (so a client cannot fling someone from a standstill), and at
+   * most one per pair every SHOVE_REPEAT_MS. Null if nothing should be relayed.
+   */
+  private boundedShove(reporter: Player, other: Player, push: unknown, now: number): [number, number, number] | null {
+    const clean = cleanShove(push)
+    if (!clean || !other.lastState) return null
+    if (now - (reporter.shoved.get(other.info.id) ?? -Infinity) < SHOVE_REPEAT_MS) return null
+    // The most they can have been closing at: the rammer's recent best plus the other's speed.
+    const closing = reporter.fast + Math.hypot(...other.lastState.v)
+    const limit = closing * SHOVE_SHARE
+    if (limit < MIN_CLOSING * SHOVE_SHARE) return null
+    const len = Math.hypot(...clean)
+    const k = len > limit ? limit / len : 1
+    reporter.shoved.set(other.info.id, now)
+    return [clean[0] * k, clean[1] * k, clean[2] * k]
   }
 
   private onLock(player: Player, locked: unknown): void {
@@ -744,7 +793,7 @@ export class Room {
     // Joining counts as a tag so a newcomer cannot be tagged in their first seconds.
     const now = this.now()
     return {
-      info, lastState: null, lastStateAt: 0, lastHeardAt: now, lastFireAt: -Infinity, shots: new Map(), lastTag: now,
+      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), lastFireAt: -Infinity, shots: new Map(), lastTag: now,
       windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now,
     }
   }

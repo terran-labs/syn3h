@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Syn3h buggy body variations</title><link rel="icon" href="data:,">
+<!-- The buggy body gallery moved into the vehicle lab. This keeps old links working: ?round=N becomes ?group=N. -->
+<script>
+const q = new URLSearchParams(location.search)
+q.set('vehicle', 'buggy')
+if (q.has('round')) { q.set('group', q.get('round')); q.delete('round') }
+location.replace('/vehicle-lab.html?' + q.toString())
+</script></head><body><a href="/vehicle-lab.html?vehicle=buggy">Open the buggy bodies in the vehicle lab</a></body></html>

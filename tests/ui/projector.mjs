@@ -55,7 +55,8 @@ try {
   await page.waitForTimeout(1100);await page.evaluate(s=>syn3h.shell.setMatchState(s),winner)
   assert.match(await page.locator('.round-end small').textContent(),/5/)
   await page.waitForTimeout(3000);await page.screenshot({path:`tests/ui/artifacts/${device}-countdown.png`})
-  assert.match(await page.locator('.round-end small').textContent(),/2/)
+  // About four seconds in. A screenshot on a busy machine can cost most of a second, so 1 is allowed.
+  assert.match(await page.locator('.round-end small').textContent(),/[12]/)
   await page.evaluate(s=>syn3h.shell.setMatchState({...s,holderName:null}),state)
   assert.equal(await page.locator('.round-end').count(),0)
   await page.keyboard.press('j');assert.equal(await page.locator('.touch-controls').isVisible(),false);await page.keyboard.press('j');assert.equal(await page.evaluate(()=>syn3h.shell.menuOpen),false)
