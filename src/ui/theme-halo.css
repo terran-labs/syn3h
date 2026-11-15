@@ -79,7 +79,7 @@ html[data-gfx] .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector 
 .syn3h-shell.exploration-ui .wi-top #syn3h-build-notice { border: 1px solid var(--s3-line) !important; border-radius: 999px !important; background: none !important; box-shadow: var(--halo-glow) !important; color: var(--s3-ink); text-shadow: var(--halo-under); }
 
 /* Quick selectors */
-.syn3h-shell.exploration-ui .wi-quick label { font: 500 11px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--s3-soft); }
+.syn3h-shell.exploration-ui .wi-quick label { font: 400 11px 'Barlow', sans-serif; letter-spacing: .04em; color: var(--s3-soft); }
 .syn3h-shell.exploration-ui .world-inspector .wi-quick select { background: none; border-bottom: 1px solid var(--s3-line-quiet); color: var(--s3-ink); }
 .syn3h-shell.exploration-ui .world-inspector .wi-quick button { font-size: 12px; color: var(--s3-dim); }
 .syn3h-shell.exploration-ui .wi-gi-status { color: var(--s3-dim); }
@@ -126,13 +126,16 @@ html[data-gfx] .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector 
 /* Editable numbers: a faint dotted underline always says "you can type here". */
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num { color: var(--s3-accent-2); font: 500 13.5px 'Barlow', sans-serif; font-variant-numeric: tabular-nums; text-decoration-color: rgb(198 241 255 / .4); text-shadow: var(--halo-under); }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num:is(:hover, :focus-visible) { text-decoration-color: var(--s3-accent-2); }
+/* The focus ring follows a rounded edge rather than drawing a square box. */
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num { border-radius: 8px; }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num:focus-visible { outline: 1px solid rgb(198 241 255 / .7); outline-offset: -4px; }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit { border: 1px solid rgb(198 241 255 / .9); border-radius: 8px; background: rgb(2 9 15 / .55); color: #fff; box-shadow: 0 0 0 3px rgb(143 227 255 / .14), var(--halo-glow); }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit:focus { outline: none; }
 .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit.is-invalid { border-color: var(--s3-warn); box-shadow: 0 0 0 3px rgb(255 176 138 / .16); }
 
 /* ---------- Tooltip, detail and sheet ---------- */
-.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-tooltip { --body: none; border: 1px solid var(--s3-line); border-left-color: var(--s3-line); border-radius: var(--halo-r); background: radial-gradient(120% 100% at 50% 50%, rgb(2 9 15 / .8), rgb(2 9 15 / .66)); padding: 12px 14px; font: 400 13px/1.45 'Barlow', sans-serif; }
-.syn3h-shell.exploration-ui .world-inspector .wi-tooltip strong, .syn3h-shell.exploration-ui .world-inspector .wi-detail strong { font: 500 11.5px/1.3 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: #fff; }
+.syn3h-shell.exploration-ui:is([data-glass], *) .wi-glass.wi-tooltip.wi-tooltip { --body: none; border: 1px solid var(--s3-line); border-left-color: var(--s3-line); border-radius: var(--halo-r); background: radial-gradient(120% 100% at 50% 50%, rgb(2 9 15 / .8), rgb(2 9 15 / .66)); padding: 12px 14px; font: 400 13px/1.45 'Barlow', sans-serif; }
+.syn3h-shell.exploration-ui .wi-tooltip strong, .syn3h-shell.exploration-ui .world-inspector .wi-detail strong { font: 500 11.5px/1.3 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: #fff; }
 .syn3h-shell.exploration-ui .world-inspector .wi-detail p { color: var(--s3-dim); font-size: 13px; }
 .syn3h-shell.exploration-ui .world-inspector .wi-detail small { color: var(--s3-soft); }
 .syn3h-shell.exploration-ui .world-inspector .wi-chip { border: 1px solid var(--s3-line-quiet); color: var(--s3-dim); }
@@ -185,6 +188,14 @@ html[data-gfx] .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector 
 /* ---------- The reload notice: a slim capsule at the bottom centre ---------- */
 body #syn3h-build-notice, body .build-banner { border: 1px solid rgb(205 240 255 / .55); border-radius: 999px; background: radial-gradient(120% 160% at 50% 50%, rgb(2 9 15 / .62), rgb(2 9 15 / .44)); box-shadow: 0 0 6px rgb(143 227 255 / .14), 0 0 34px rgb(0 6 12 / .22); color: #f3fbff; font: 400 13.5px/1.2 'Barlow', system-ui, sans-serif; letter-spacing: .03em; text-shadow: 0 0 2px rgb(0 6 12 / .85), 0 1px 7px rgb(0 6 12 / .6); -webkit-backdrop-filter: none; backdrop-filter: none; }
 body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(198 241 255 / .9); }
+
+/* Short landscape screens tuck the quick selectors into the top block's spare space
+   (exploration.css): there they are not a panel, and their captions stay hidden. */
+@media (max-height: 500px) {
+  .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-quick { border: 0; border-radius: 0; background: none; box-shadow: none; }
+  .syn3h-shell.exploration-ui .wi-quick label { font-size: 0; line-height: 0; }
+  .syn3h-shell.exploration-ui .world-inspector .wi-quick [data-wi=show-gi] { font-size: 0; }
+}
 
 @media (prefers-reduced-motion: reduce) {
   .syn3h-shell.exploration-ui .world-inspector *, body #syn3h-build-notice { transition: none; }
