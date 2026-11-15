@@ -19,7 +19,7 @@ import { spawn } from 'node:child_process'
 import { chromium } from 'playwright-core'
 
 const base = process.argv[2] ?? 'http://localhost:5183/'
-const WORLD = 'alpine.7~terrain.planetSize=0,world.curve=0.45'
+const WORLD = 'alpine.7~terrain.planetSize=0,world.curve=0.8'
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 const proxy = spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'server/latency-proxy.ts', '--listen', '8794', '--target', 'http://127.0.0.1:8791', '--rtt', '40'], { stdio: 'ignore' })
 let finished = false

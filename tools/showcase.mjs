@@ -12,9 +12,15 @@
  *   --version  release version for the manifest and the output folder, e.g. v26.11.1401
  *   --port     port for the server this tool starts (default 5348)
  *   --out      output root (default /tmp/syn3h-showcase); files go to <out>/<version>/
- *   --only     comma separated scene ids, for staging work; the GIF then holds only those
+ *   --only     comma separated scene ids; the GIF then holds only those. Without it the run
+ *              captures the eight default scenes (DEFAULT_SCENE_IDS); king-of-the-hill and
+ *              other-world are available only through --only
  *   --headless run Chrome headless with the GPU flags tools/smoke.mjs uses (default headed)
- *   --hold     seconds each still is held in the GIF (default 1.5)
+ *   --hold     seconds each still is held in the GIF (default 1.5), stored as the frame delay
+ *   --rebuild-gif  rebuild the GIF and manifest from the stills and manifest already in
+ *              <out>/<version>/, without a server or a browser
+ *
+ * The GIF has exactly one frame per still, 832 x 468, each with its own palette.
  *
  * Each scene opens in a fresh browser context and a fresh room with a fixed seed. Staging
  * runs inside the page through window.syn3h. A frame is accepted only after the scene's
@@ -23,15 +29,15 @@
  */
 import { spawn, execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { access, copyFile, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright-core'
 import { resolveCaptureTeleport } from './capture-landmarks.mjs'
 import {
-  FRAME_LIMITS, SCENES, MAX_GIF_BYTES, buildManifest, concatScript, frameStats, gifArgs, judgeFrame,
-  missingFeature, parseArgs, sceneUrl,
+  FRAME_LIMITS, MAX_GIF_BYTES, buildManifest, frameStats, gifArgs, judgeFrame,
+  missingFeature, parseArgs, SCENE_IDS, sceneUrl, selectScenes,
 } from './lib/showcase-scenes.mjs'
 
 const run = promisify(execFile)
@@ -40,15 +46,72 @@ const GPU_ARGS = ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-a
 const WIDTH = 1280, HEIGHT = 720
 const here = fileURLToPath(new URL('.', import.meta.url))
 
-const options = parseArgs(process.argv.slice(2), ['dir', 'url', 'version', 'port', 'out', 'only', 'headless', 'hold'])
+const options = parseArgs(process.argv.slice(2), ['dir', 'url', 'version', 'port', 'out', 'only', 'headless', 'hold', 'rebuild-gif'])
 if (!options.version || !/^v[\w.-]+$/.test(options.version)) throw new Error('--version is required, like v26.11.1401')
-if (!options.dir === !options.url) throw new Error('Give exactly one of --dir or --url')
+const rebuildOnly = Boolean(options['rebuild-gif'])
+if (!rebuildOnly && !options.dir === !options.url) throw new Error('Give exactly one of --dir or --url')
 const hold = Number(options.hold ?? 1.5)
-const only = typeof options.only === 'string' ? options.only.split(',') : null
-const scenes = only ? SCENES.filter((s) => only.includes(s.id)) : SCENES
-if (only && scenes.length !== only.length) throw new Error(`Unknown scene in --only; known: ${SCENES.map((s) => s.id).join(', ')}`)
+const scenes = selectScenes(typeof options.only === 'string' ? options.only.split(',') : null)
 const outDir = resolve(options.out ?? '/tmp/syn3h-showcase', options.version)
 const runTag = Date.now().toString(36)
+const sha256 = (buf) => createHash('sha256').update(buf).digest('hex')
+
+/**
+ * Build the GIF from the captured stills, one frame each, then hash every file and write
+ * the manifest. The stills are copied to a numbered sequence because ffmpeg's image2
+ * input needs one; the copy is removed afterwards.
+ */
+async function assemble({ captured, skipped, build, browser, generatedAt }) {
+  if (!captured.length) throw new Error('No scene captured')
+  const seq = join(outDir, '.seq')
+  await rm(seq, { recursive: true, force: true })
+  await mkdir(seq)
+  for (const [i, c] of captured.entries()) await copyFile(join(outDir, c.file), join(seq, `${i + 1}.png`))
+  const gif = join(outDir, 'syn3h-showcase.gif')
+  try {
+    await run(FFMPEG, gifArgs({ pattern: join(seq, '%d.png'), output: gif, hold }))
+  } finally {
+    await rm(seq, { recursive: true, force: true })
+  }
+  const gifBytes = (await stat(gif)).size
+  if (gifBytes > MAX_GIF_BYTES) throw new Error(`GIF is ${gifBytes} bytes, over the ${MAX_GIF_BYTES} limit`)
+  const files = []
+  for (const file of [...captured.map((c) => c.file), 'syn3h-showcase.gif']) {
+    const bytes = await readFile(join(outDir, file))
+    files.push({ file, bytes: bytes.length, sha256: sha256(bytes) })
+  }
+  const manifest = buildManifest({ version: options.version, build, files, captured, skipped, hold, browser, generatedAt })
+  await writeFile(join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
+  console.log(`gif ${gifBytes} bytes, ${captured.length} frames; manifest ${join(outDir, 'manifest.json')}`)
+}
+
+// --- rebuild the GIF from stills already captured -----------------------------------------
+if (rebuildOnly) {
+  const old = JSON.parse(await readFile(join(outDir, 'manifest.json'), 'utf8'))
+  const exists = (c) => access(join(outDir, c.file)).then(() => true, () => false)
+  // Candidates are the captured stills plus any an earlier --only rebuild left out, in scene
+  // order. Stills missing from the folder are dropped; with --only the others are recorded
+  // as left out, keeping their file and details, so a later full rebuild restores them.
+  const LEFT_OUT = 'left out of the GIF by --only'
+  const order = (c) => SCENE_IDS.indexOf(c.id)
+  const candidates = [...(old.captured ?? []), ...(old.skipped ?? []).filter((x) => x.reason === LEFT_OUT && x.file)]
+    .map(({ reason, ...c }) => c).sort((x, y) => order(x) - order(y))
+  const wanted = typeof options.only === 'string' ? new Set(scenes.map((sc) => sc.id)) : null
+  const captured = [], leftOut = []
+  for (const c of candidates) {
+    if (!await exists(c)) { console.log(`missing still, dropped: ${c.file}`); continue }
+    if (wanted && !wanted.has(c.id)) leftOut.push({ ...c, reason: LEFT_OUT })
+    else captured.push(c)
+  }
+  if (leftOut.length) console.log(`left out of the GIF: ${leftOut.map((c) => c.id).join(', ')}`)
+  const skipped = [...(old.skipped ?? []).filter((x) => x.reason !== LEFT_OUT), ...leftOut]
+  await assemble({
+    captured, skipped, browser: old.browser,
+    build: { id: old.buildId, commit: old.commit, note: old.buildNote },
+    generatedAt: old.generatedAt,
+  })
+  process.exit(0)
+}
 
 // --- the server -------------------------------------------------------------------------
 let server = null
@@ -443,8 +506,6 @@ async function captureScene(browser, scene) {
   }
 }
 
-const sha256 = (buf) => createHash('sha256').update(buf).digest('hex')
-
 try {
   const build = await (await fetch(new URL('build.json', base))).json()
   console.log(`build ${build.id} (${build.commit.slice(0, 7)}) -> ${outDir}`)
@@ -452,7 +513,7 @@ try {
   await mkdir(outDir, { recursive: true })
   const headless = Boolean(options.headless)
   const browser = await chromium.launch({ channel: 'chrome', headless, args: GPU_ARGS })
-  const captured = [], skipped = [], files = []
+  const captured = [], skipped = []
   try {
     for (const scene of scenes) {
       console.log(`scene ${scene.id}`)
@@ -470,29 +531,13 @@ try {
   } finally {
     await browser.close()
   }
-  if (!captured.length) throw new Error('No scene captured')
-
-  const list = join(outDir, '.concat.txt')
-  await writeFile(list, concatScript(captured.map((c) => join(outDir, c.file)), hold))
-  const gif = join(outDir, 'syn3h-showcase.gif')
-  await run(FFMPEG, gifArgs({ list, output: gif }))
-  await rm(list)
-  const gifBytes = (await stat(gif)).size
-  if (gifBytes > MAX_GIF_BYTES) throw new Error(`GIF is ${gifBytes} bytes, over the ${MAX_GIF_BYTES} limit`)
-
-  for (const file of [...captured.map((c) => c.file), 'syn3h-showcase.gif']) {
-    const bytes = await readFile(join(outDir, file))
-    files.push({ file, bytes: bytes.length, sha256: sha256(bytes) })
-  }
-  const manifest = buildManifest({
-    version: options.version, build, files, captured, skipped, hold,
+  await assemble({
+    captured, skipped, build,
     browser: { channel: 'chrome', headless, viewport: `${WIDTH}x${HEIGHT}`, args: GPU_ARGS },
     generatedAt: new Date().toISOString(),
   })
-  await writeFile(join(outDir, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n')
   console.log(`captured ${captured.map((c) => c.id).join(', ')}`)
   if (skipped.length) console.log(`skipped ${skipped.map((s) => `${s.id} (${s.reason})`).join('; ')}`)
-  console.log(`gif ${gifBytes} bytes; manifest ${join(outDir, 'manifest.json')}`)
 } finally {
   stopServer()
 }

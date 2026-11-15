@@ -36,11 +36,25 @@ export interface RoadPoint {
 
 export type RoadKind = 'volcano' | 'rim' | 'plain'
 
+/** A stretch of road under shallow water where a river crosses it. */
+export interface RoadFord {
+  /** Indices into the road's points: the first and last point under water. */
+  start: number
+  end: number
+  /** Deepest water over the road along the stretch, in metres. */
+  depth: number
+}
+
+/** Water depth over the road that a ford is built to. */
+export const FORD_DEPTH = 0.35
+
 export interface Road {
   kind: RoadKind
   closed: boolean
   width: number
   points: RoadPoint[]
+  /** Fords along this road, filled by the lava pass when `terrain.fords` is on. Usually empty. */
+  fords: RoadFord[]
 }
 
 /** Painted width. */
@@ -119,7 +133,7 @@ function rimRoad(data: TerrainData, s: HeightSampler): Road {
     ux = nx
   }
   profile(points, true)
-  return { kind: 'rim', closed: true, width: ROAD_WIDTH, points }
+  return { kind: 'rim', closed: true, width: ROAD_WIDTH, points, fords: [] }
 }
 
 /**
@@ -204,7 +218,7 @@ function volcanoRoad(data: TerrainData, s: HeightSampler, rim: Road): Road {
     if (d < best) { best = d; endY = p.y }
   }
   profile(points, false, SPAWN_LEVEL, endY)
-  return { kind: 'volcano', closed: false, width: ROAD_WIDTH, points }
+  return { kind: 'volcano', closed: false, width: ROAD_WIDTH, points, fords: [] }
 }
 
 /** Radius of the foot ring road in the direction of unit vector (ux, uz). */
@@ -234,7 +248,7 @@ function footRoad(data: TerrainData, s: HeightSampler): Road {
     ux = nx
   }
   profile(points, true)
-  return { kind: 'plain', closed: true, width: ROAD_WIDTH, points }
+  return { kind: 'plain', closed: true, width: ROAD_WIDTH, points, fords: [] }
 }
 
 /** One road from each spawn pad (except pad 0, which has the volcano road) to the foot ring. */
@@ -257,7 +271,7 @@ function approachRoads(data: TerrainData, s: HeightSampler): Road[] {
     }
     if (points.length < 8) continue
     profile(points, false, SPAWN_LEVEL)
-    roads.push({ kind: 'plain', closed: false, width: ROAD_WIDTH, points })
+    roads.push({ kind: 'plain', closed: false, width: ROAD_WIDTH, points, fords: [] })
   }
   return roads
 }
