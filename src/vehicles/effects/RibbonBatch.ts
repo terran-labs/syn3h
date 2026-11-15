@@ -36,11 +36,17 @@ export class RibbonBatch {
     this.mesh=new T.Mesh(g,m);this.mesh.frustumCulled=false;this.mesh.renderOrder=additive?2:1
   }
   add(a:T.Vector3,b:T.Vector3,side:T.Vector3,width:number,life:number,alpha:number,color:T.Color){
-    if(![...a.toArray(),...b.toArray(),width,life].every(Number.isFinite)||a.distanceToSquared(b)>900)return
+    const ok=Number.isFinite
+    if(!(ok(a.x)&&ok(a.y)&&ok(a.z)&&ok(b.x)&&ok(b.y)&&ok(b.z)&&ok(width)&&ok(life))||a.distanceToSquared(b)>900)return
     const i=this.cursor;this.cursor=(i+1)%this.capacity;this.count=Math.min(this.capacity,this.count+1)
-    const points=[a.clone().addScaledVector(side,width*.5),a.clone().addScaledVector(side,-width*.5),b.clone().addScaledVector(side,width*.5),b.clone().addScaledVector(side,-width*.5)]
-    points.forEach((p,j)=>{this.position.setXYZ(i*4+j,p.x,p.y,p.z);this.data.setXYZ(i*4+j,this.clock.value,life,alpha);this.tint.setXYZ(i*4+j,color.r,color.g,color.b)})
-    for(const attr of [this.position,this.data,this.tint]){attr.addUpdateRange(i*12,12);attr.needsUpdate=true}
+    // Corners in the same order and with the same arithmetic as before (end + side * +-half width),
+    // written straight into the buffers instead of through four cloned vectors.
+    const half=width*.5,now=this.clock.value
+    for(let j=0;j<4;j++){
+      const end=j<2?a:b,s=j%2?-half:half,k=i*4+j
+      this.position.setXYZ(k,end.x+side.x*s,end.y+side.y*s,end.z+side.z*s);this.data.setXYZ(k,now,life,alpha);this.tint.setXYZ(k,color.r,color.g,color.b)
+    }
+    this.position.addUpdateRange(i*12,12);this.position.needsUpdate=true;this.data.addUpdateRange(i*12,12);this.data.needsUpdate=true;this.tint.addUpdateRange(i*12,12);this.tint.needsUpdate=true
     this.mesh.geometry.setDrawRange(0,this.count*6)
   }
   /**
