@@ -11,7 +11,9 @@ import { applyCurve, curveParam, updateCurve } from '../curve'
 import { AlienSkyMesh } from '../sky/AlienSkyMesh'
 import type { SpawnPoint, Terrain, TerrainRenderQuality, TerrainRoadPath, TerrainSummit, TerrainVent } from '../Terrain'
 import { createTerrainCollider } from './collider'
-import { lavaSurfaceAt } from './lava'
+import { lavaSurfaceAt, liquidFlowAt } from './lava'
+import { seaWaves, setWaterClock } from '../water/seaWaves'
+import { waterRiverMaxSpeed } from '../water/params'
 import { type TerrainData, generateTerrain } from './generate'
 import { type TerrainMaterial, createTerrainMaterial } from './material'
 import { LOD_FAR, LOD_NEAR, type TerrainMeshes, type TriangleStats, createTerrainMeshes } from './mesh'
@@ -80,6 +82,8 @@ export class ProceduralTerrain implements Terrain {
   private readonly cover: GroundCover
 
   constructor(private readonly game: Game, private seed: number) {
+    // Single player: waves follow simulated time. Networking may swap in the server clock.
+    setWaterClock(() => game.time)
     this.data = this.generate()
     this.sampler = new HeightSampler(this.data)
     this.look = createTerrainMaterial()
@@ -156,6 +160,7 @@ export class ProceduralTerrain implements Terrain {
   private generate(): TerrainData {
     const t = performance.now()
     const data = generateTerrain(this.seed, currentTerrainSettings())
+    seaWaves.configure(data.size, this.seed)
     // The far row and column are the image of the first: make them identical so the
     // height field, mesh and collider are exactly periodic.
     this.lastSeamCorrection = sealSeam(data)
@@ -291,9 +296,23 @@ export class ProceduralTerrain implements Terrain {
     return this.sampler.normalAt(x, z, out)
   }
 
-  /** Caldera lake, pools and rivers where present, else the global lava plane. */
+  /**
+   * Caldera lake, pools and rivers where present, else the global lava plane. A water sea
+   * carries the shared waves when they are on (`water.waves`), shrunk in the shallows exactly
+   * as the sea material draws them.
+   */
   liquidHeightAt(x: number, z: number): number {
-    return lavaSurfaceAt(this.data.lava, wrapCoord(x, this.data.size), wrapCoord(z, this.data.size), worldLavaAltitude.value)
+    const sea = worldLavaAltitude.value
+    x = wrapCoord(x, this.data.size)
+    z = wrapCoord(z, this.data.size)
+    const surface = lavaSurfaceAt(this.data.lava, x, z, sea)
+    if (surface !== sea || !seaWaves.enabled || (worldSeaKind.value as number) !== 1) return surface
+    return surface + seaWaves.offsetAt(x, z, this.sampler.heightAt(x, z), sea)
+  }
+
+  /** Velocity of the water or lava at (x, z), m/s: rivers flow, the sea, lake and pools do not. */
+  liquidFlowAt(x: number, z: number, out: { x: number; z: number }): { x: number; z: number } {
+    return liquidFlowAt(this.data.lava, wrapCoord(x, this.data.size), wrapCoord(z, this.data.size), waterRiverMaxSpeed.value, out)
   }
 
   /**

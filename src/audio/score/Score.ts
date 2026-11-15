@@ -61,6 +61,8 @@ export interface ScoreInput {
   convoy?: readonly { distance: number; pan: number; closing?: number }[]
   /** Sixteen ground heights in metres along the way ahead, nearest first, for terrain as melody. */
   relief?: readonly number[]
+  /** Strength of the game's wind at the listener, 0 calm to 1 gale. The score quietens its own wind layer under it, and space weather comes more often in a gust. */
+  wind?: number
 }
 export interface MatchMood { holding: boolean; contested: boolean; /** 0..1 share of the winning score. */ progress: number }
 
@@ -185,7 +187,7 @@ export class Score {
     if (lift > 0.45 && this.chance() < 0.4) this.synth.chorus(now + 0.05, 3 + Math.floor(this.chance() * 4), place)
     else this.synth.whistler(now + 0.05, 5000 + this.chance() * 3000, 700 + this.chance() * 500, 0.8 + this.chance() * 0.9, place)
     // Every 7 to 23 seconds on the ground, every 2 to 7 high up.
-    this.nextWeather = now + (4 + this.chance() * 10) / (0.6 + 1.5 * lift)
+    this.nextWeather = now + (4 + this.chance() * 10) / (0.6 + 1.5 * lift + unit(input.wind ?? 0))
   }
 
   update(input: ScoreInput): void {
@@ -232,6 +234,7 @@ export class Score {
     else if (now - this.reliefAt > 0.5) this.relief = null
     this.synth.convoy = scoreConvoy.value && input.playing ? this.convoy.map(v => ({ level: unit(1 - (v.distance - 30) / 270), pan: Math.max(-1, Math.min(1, v.pan)) * 0.8 })) : null
     this.composer.setContour(scoreTerrain.value && input.playing ? this.relief : null)
+    this.synth.wind = follow(this.synth.wind, input.playing ? unit(input.wind ?? 0) : 0, 1, dt)
     this.weather(input, now)
 
     const level = levels(m)

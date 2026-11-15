@@ -15,6 +15,7 @@ import {
   type PlayerInfo,
   type ServerMessage,
   type ShotInfo,
+  type CordWire,
   type TagEvent,
   BOT_ID_BASE,
   DEFAULT_COLORS,
@@ -46,6 +47,7 @@ import {
 import { MIN_CLOSING, SHOVE_SHARE, cleanShove } from '../src/net/shove'
 import { wrapDistance } from '../shared/wrap'
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
+import { bungeeAllowed, bungeeLength, bungeeSnap, bungeeVehicles } from '../src/weapons/bungee/params'
 import {
   KNOCK_WINDOW, WIN_PAUSE, gameMode, kothKnockBonus, kothRespawnDelay, kothTargetScore, tagCooldown, tagRamReach,
   REJOIN_GRACE, gameRejoin,
@@ -99,6 +101,8 @@ interface Player {
   fastAt: number
   /** Server ms of the last push relayed from this player, by rammed player id. */
   shoved: Map<number, number>
+  /** The room last relayed this player's Bungee cord as attached. */
+  cordOn: boolean
   /** The secret this player may rejoin with, when it sent a valid one. */
   token: string | null
   /** Server ms until which a dropped player's place is held, or 0 while connected. */
@@ -281,6 +285,9 @@ export class Room {
       case 'bot':
         this.onBotKind(player, msg.id, msg.kind)
         break
+      case 'cord':
+        this.onCord(peer, player, msg.cord)
+        break
       case 'stuck':
       case 'died': // the name older bundles send
         if (typeof msg.bot === 'number') {
@@ -325,6 +332,8 @@ export class Room {
     const wasActive = this.isActive(player, this.now())
     player.heldUntil = until
     this.rekey(peer, { send() {}, close() {} }, player)
+    // Its owner is not there to let go of it: a held place holds no cord.
+    this.dropCord(player)
     if (wasActive && !this.anyActive(this.now())) {
       this.activeLeft = true
       this.activeAt = this.now()
@@ -457,6 +466,17 @@ export class Room {
 
   /** Re-attach a peer that was already joined before the process hibernated. No broadcast. */
   adopt(peer: Peer, info: PlayerInfo, token?: string | null): void {
+    // After hibernation the room is restored from storage first, which holds a place for
+    // everyone on its roster, and then the sockets that are still connected are adopted. A
+    // connected player is not absent: it takes its held place, it is not added beside it.
+    for (const [key, held] of this.players) {
+      if (!held.heldUntil || held.info.id !== info.id) continue
+      this.rekey(key, peer, held)
+      held.heldUntil = 0
+      held.lastHeardAt = this.now()
+      if (isToken(token)) held.token = token
+      return
+    }
     const full: PlayerInfo = {
       ...info, score: this.scores[info.id] ?? info.score ?? 0,
       kind: cleanKind(info.kind) ?? 'buggy', colors: cleanColors(info.colors) ?? [...DEFAULT_COLORS],
@@ -801,6 +821,48 @@ export class Room {
     this.broadcast({ type: 'fire', from: player.info.id, shot }, peer)
   }
 
+  /**
+   * A player's Bungee cord (Weapons lane). Checked and relayed; the room keeps no cord state,
+   * since owners resend every two seconds while attached. A hook must leave from near the
+   * sender, an anchor must be within the cord's reach, and a cord can tie only to a vehicle
+   * that is in the room.
+   */
+  private onCord(peer: Peer, player: Player, raw: unknown): void {
+    if (!this.paramBool(bungeeAllowed.def)) return
+    const cord = cleanCord(raw)
+    if (!cord) return
+    const st = player.lastState
+    const reach = this.paramNumber(bungeeLength.def) * this.paramNumber(bungeeSnap.def) + 10
+    if (cord.s === 'hook') {
+      if (!st || this.dist(cord.o, st.p) > 8 + Math.hypot(...st.v) * 0.5) return
+      cord.t = Math.min(this.now() / 1000, Math.max(this.now() / 1000 - 1, cord.t))
+    } else if (cord.s === 'on') {
+      if (cord.r < 0 || cord.r > this.paramNumber(bungeeLength.def) + 1) return
+      // Where the cord is tied: a vehicle in the room, or a point on the ground. Either must
+      // be within the cord's reach of the sender, measured round the wrap. A tie to a vehicle
+      // matters most: that vehicle's own client is what pulls it, so an unchecked tie would
+      // let anyone drag anyone from across the world.
+      const other = cord.to !== undefined ? this.byId(cord.to) : undefined
+      if (cord.to !== undefined && (!this.paramBool(bungeeVehicles.def) || cord.to === player.info.id || !other)) return
+      const anchor = other ? other.lastState?.p : cord.at
+      if (!st || !anchor || this.dist(anchor, st.p) > reach) {
+        // Out of reach (or not yet placed). If this was the refresh of a cord the room has
+        // already relayed, the others must not keep pulling on it: tell them it is off.
+        if (player.cordOn) this.dropCord(player, peer)
+        return
+      }
+    }
+    player.cordOn = cord.s === 'on'
+    this.broadcast({ type: 'cord', from: player.info.id, cord, t: this.now() / 1000 }, peer)
+  }
+
+  /** Tell everyone a player's cord is gone: it stretched out of reach, or its owner dropped out. */
+  private dropCord(player: Player, except?: Peer): void {
+    if (!player.cordOn) return
+    player.cordOn = false
+    this.broadcast({ type: 'cord', from: player.info.id, cord: { s: 'off' }, t: this.now() / 1000 }, except)
+  }
+
   /** The victim reports a hit on itself. The room checks the shot really happened. */
   private onHit(reporter: Player, shooterId: unknown, shotId: unknown, victimId?: unknown): void {
     if (typeof shooterId !== 'number' || typeof shotId !== 'number') return
@@ -973,7 +1035,7 @@ export class Room {
     // Joining counts as a tag so a newcomer cannot be tagged in their first seconds.
     const now = this.now()
     return {
-      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), token: null, heldUntil: 0, lastFireAt: -Infinity, shots: new Map(), lastTag: now,
+      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, token: null, heldUntil: 0, lastFireAt: -Infinity, shots: new Map(), lastTag: now,
       windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now,
     }
   }
@@ -1146,6 +1208,26 @@ function cleanColors(raw: unknown): [string, string] | null {
 
 function dist(a: readonly number[], b: readonly number[]): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
+}
+
+/** A well formed cord message, rebuilt from only the fields it should have; null otherwise. */
+function cleanCord(c: unknown): CordWire | null {
+  if (!c || typeof c !== 'object') return null
+  const o = c as Record<string, unknown>
+  const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+  const vec = (v: unknown): v is [number, number, number] => isVec3(v)
+  if (o.s === 'off') return { s: 'off' }
+  if (o.s === 'hook') {
+    if (!vec(o.o) || !vec(o.d) || !num(o.t) || Math.hypot(...o.d) > 2000) return null
+    return { s: 'hook', o: o.o, d: o.d, t: o.t }
+  }
+  if (o.s === 'on' && num(o.r)) {
+    if (num(o.to) && Number.isInteger(o.to)) return { s: 'on', to: o.to, r: o.r }
+    // The surface normal is a direction: anything that is not about unit length is replaced.
+    const unit = vec(o.n) && Math.abs(Math.hypot(...o.n) - 1) < 0.05
+    if (vec(o.at)) return { s: 'on', at: o.at, n: unit ? (o.n as [number, number, number]) : [0, 1, 0], r: o.r }
+  }
+  return null
 }
 
 function isShot(s: unknown): s is ShotInfo {

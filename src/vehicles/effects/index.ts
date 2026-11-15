@@ -3,9 +3,15 @@ import * as T from 'three/webgpu'
 import type {Game,System} from '../../core/Game'
 import {qualityBudget,graphicsLevel} from '../../core/quality'
 import type {Terrain} from '../../world/Terrain'
-import type {Vehicle} from '../Vehicle'
+import type {TileShiftEvent,Vehicle,VehicleObjectEvents} from '../Vehicle'
 import {ParticleBatch} from './ParticleBatch'
 import {RibbonBatch} from './RibbonBatch'
+import {dustSprite,glowSprite,plasmaSprite,tyreMarkAlpha} from './sprites'
+import {windDrift} from '../../world/weather'
+
+const greenPlasma=plasmaSprite(false),redPlasma=plasmaSprite(true)
+/** Shares of the wind velocity given to a new dust particle and to exhaust and energy trails. */
+export const DUST_WIND=.6,EXHAUST_WIND=.3
 
 export interface WheelEffectContact {readonly grounded:boolean;readonly point:T.Vector3;readonly normal:T.Vector3;readonly slip:number}
 type EffectsVehicle=Vehicle & {getWheelEffects?():readonly WheelEffectContact[];hoverMode?:boolean}
@@ -21,11 +27,6 @@ class EffectWorld implements System {
   private references=0
   private level=-1
   private serial=0
-  private readonly textures:T.Texture[]=[]
-  private readonly dustMap:T.Texture
-  private readonly exhaustMap:T.Texture
-  private readonly plasmaMap:T.Texture
-  private readonly redPlasmaMap:T.Texture
   readonly marks:RibbonBatch
   readonly trails:RibbonBatch
   dust!:ParticleBatch
@@ -36,9 +37,8 @@ class EffectWorld implements System {
   clock=0
   readonly stats={vehicles:0,particles:0,marks:0,emitted:0,updateMs:0,peakUpdateMs:0,batches:7}
   constructor(readonly game:Game){
-    const load=(url:string)=>{const t=new T.TextureLoader().load(url);t.colorSpace=T.SRGBColorSpace;this.textures.push(t);return t}
-    this.dustMap=load('/models/effects/dust.png');this.exhaustMap=load('/models/textures/thruster-glow.png');this.plasmaMap=load('/models/effects/plasma-green.png');this.redPlasmaMap=load('/models/effects/plasma-red.png')
-    this.marks=new RibbonBatch(1024,load('/models/effects/skidmark.png'));this.trails=new RibbonBatch(256,undefined,true)
+    // Every sprite and the tyre mark are generated in the shader (sprites.ts); nothing is loaded.
+    this.marks=new RibbonBatch(1024,tyreMarkAlpha);this.trails=new RibbonBatch(256,undefined,true)
     this.lamps.frustumCulled=false;this.lamps.count=0
     this.lamps.onBeforeRender=()=>{this.lamps.material.color.setScalar(hotExposureDim(game.renderer.toneMappingExposure));let index=0;for(const e of this.vehicles.values())index=e.writeLamps(this.lamps,index);hideUnusedLamps(this.lamps,index);this.lamps.instanceMatrix.needsUpdate=true;if(this.lamps.instanceColor)this.lamps.instanceColor.needsUpdate=true}
     game.scene.add(this.lamps,this.marks.mesh,this.trails.mesh);this.rebudget();game.scene.userData.vehicleEffects=this.stats
@@ -47,11 +47,15 @@ class EffectWorld implements System {
   release(){if(--this.references===0){worlds.delete(this.game);this.game.remove(this)}}
   private rebudget(){
     this.level=graphicsLevel.value;this.dust?.dispose();this.energy?.dispose();this.sparks?.dispose();this.redSparks?.dispose()
-    const budget=Math.floor(qualityBudget().particles*.25)
-    this.dust=new ParticleBatch(Math.floor(budget*.6),this.dustMap)
-    this.energy=new ParticleBatch(Math.floor(budget*.3),this.exhaustMap,true)
-    this.sparks=new ParticleBatch(Math.max(2,Math.floor(budget*.05)),this.plasmaMap,true)
-    this.redSparks=new ParticleBatch(Math.max(2,Math.floor(budget*.05)),this.redPlasmaMap,true)
+    // One noise octave at the safe level, two above it. Rebuilt here when the level changes.
+    const budget=Math.floor(qualityBudget().particles*.25),octaves=Number(this.level)===0?1:2
+    this.dust=new ParticleBatch(Math.floor(budget*.6),dustSprite,false,octaves)
+    this.energy=new ParticleBatch(Math.floor(budget*.3),glowSprite,true,octaves)
+    this.sparks=new ParticleBatch(Math.max(2,Math.floor(budget*.05)),greenPlasma,true,octaves)
+    this.redSparks=new ParticleBatch(Math.max(2,Math.floor(budget*.05)),redPlasma,true,octaves)
+    // Dust and exhaust lean downwind with the weather; weapon sparks are too brief to. Tyre
+    // marks are on the ground and take none.
+    this.dust.windShare=DUST_WIND;this.dust.drift=windDrift;this.energy.windShare=EXHAUST_WIND;this.energy.drift=windDrift
     this.game.scene.add(this.dust.mesh,this.energy.mesh,this.sparks.mesh,this.redSparks.mesh)
     this.stats.particles=this.dust.capacity+this.energy.capacity+this.sparks.capacity+this.redSparks.capacity
   }
@@ -60,6 +64,8 @@ class EffectWorld implements System {
     const n=Math.round((Number(graphicsLevel.value)===0?3:8)*strength)
     for(let i=0;i<n;i++){const a=this.noise()*Math.PI*2;velocity.set(Math.cos(a)*strength,1+this.noise(),Math.sin(a)*strength);this.dust.emit(p,velocity,1,.4+this.noise()*.4,2,color)}
   }
+  /** Carry everything already drawn across a world seam with the local player (see VehicleEffects.onTileShift). */
+  shift(dx:number,dz:number){for(const b of [this.dust,this.energy,this.sparks,this.redSparks,this.marks,this.trails])b.shift(dx,dz)}
   postPhysics(){for(const e of this.vehicles.values())e.captureLanding()}
   update(dt:number){
     const start=performance.now();dt=Math.min(.1,dt);this.clock+=dt
@@ -70,7 +76,7 @@ class EffectWorld implements System {
     this.stats.emitted=this.dust.emitted+this.energy.emitted+this.sparks.emitted+this.redSparks.emitted
     this.stats.updateMs=performance.now()-start;this.stats.peakUpdateMs=Math.max(this.stats.peakUpdateMs,this.stats.updateMs)
   }
-  dispose(){this.lamps.removeFromParent();this.lamps.geometry.dispose();this.lamps.material.dispose();for(const e of this.vehicles.values())e.dispose();this.vehicles.clear();for(const b of [this.dust,this.energy,this.sparks,this.redSparks,this.marks,this.trails])b.dispose();this.textures.forEach(t=>t.dispose());delete this.game.scene.userData.vehicleEffects}
+  dispose(){this.lamps.removeFromParent();this.lamps.geometry.dispose();this.lamps.material.dispose();for(const e of this.vehicles.values())e.dispose();this.vehicles.clear();for(const b of [this.dust,this.energy,this.sparks,this.redSparks,this.marks,this.trails])b.dispose();delete this.game.scene.userData.vehicleEffects}
 }
 function worldFor(game:Game){let w=worlds.get(game);if(!w){w=new EffectWorld(game);worlds.set(game,w);game.add(w)}return w}
 
@@ -96,6 +102,7 @@ class VehicleEffects {
   private lastVertical=0
   private throttle=0
   private readonly unlisten?:()=>void
+  private readonly onTileShift:(e:TileShiftEvent)=>void
   private readonly buggy:boolean
   private readonly classic:boolean
   constructor(private readonly world:EffectWorld,private readonly terrain:Terrain,private readonly vehicle:EffectsVehicle,local:boolean){
@@ -114,7 +121,21 @@ class VehicleEffects {
       this.root.add(this.spot,this.spot.target)
     }
     this.unlisten=terrain.onRegenerate?.(()=>{this.reset();world.marks.clear();world.trails.clear()})
+    // A world seam. The terrain moves the local player a whole tile and redraws the world around
+    // it, so everything already drawn moves the same way, and so does this vehicle's history, so
+    // its marks and trails carry on unbroken. Any other vehicle shifted here is being re-imaged
+    // near the player: what it left behind stays put and its history resets, as it would after
+    // any long move. Nothing runs on frames without a shift.
+    this.onTileShift=({dx,dz})=>{
+      if(local){
+        world.shift(dx,dz)
+        for(const q of [...this.previousMarks,...this.previousTips])if(q){q.x+=dx;q.z+=dz}
+        this.lastPosition.x+=dx;this.lastPosition.z+=dz
+      }else{this.reset();this.lastPosition.copy(vehicle.object.position)}
+    }
+    this.events.addEventListener('tileshift',this.onTileShift)
   }
+  private get events(){return this.vehicle.object as T.Object3D<VehicleObjectEvents>}
   writeLamps(batch:T.InstancedMesh,index:number):number {
     this.root.updateWorldMatrix(true,true)
     return writeVehicleLamps(batch,index,this.vehicle.object,this.lampPoints,this.headMaterial.color,this.tailMaterial.color,this.lampMatrix)
@@ -205,7 +226,7 @@ class VehicleEffects {
       }
     }else if(!trails)this.previousTips.fill(null)
   }
-  dispose(){this.unlisten?.();this.root.removeFromParent();this.headMaterial.dispose();this.tailMaterial.dispose();this.spot?.dispose()}
+  dispose(){this.unlisten?.();this.events.removeEventListener('tileshift',this.onTileShift);this.root.removeFromParent();this.headMaterial.dispose();this.tailMaterial.dispose();this.spot?.dispose()}
 }
 
 /**

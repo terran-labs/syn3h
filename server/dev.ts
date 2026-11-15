@@ -13,6 +13,13 @@ const port = Number(process.env.PORT ?? 8787)
 const rooms = new Map<string, Room>()
 
 const http = createServer((req, res) => {
+  // The same answer the Worker gives at /status: counts only (held places are not connected).
+  if ((req.url ?? '').split('?')[0] === '/status') {
+    const live = [...rooms.values()].map((r) => r.playerCount - r.heldCount).filter((n) => n > 0)
+    res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+    res.end(JSON.stringify({ rooms: live.length, players: live.reduce((a, b) => a + b, 0) }))
+    return
+  }
   res.writeHead(200, { 'content-type': 'text/plain' })
   const counts = [...rooms.values()].map((r) => `${r.name}: ${r.playerCount}`)
   res.end(`Syn3h room server\n${counts.join('\n')}\n`)

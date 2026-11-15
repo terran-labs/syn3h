@@ -8,6 +8,8 @@ import type {Game} from '../../src/core/Game'
 import type {Terrain} from '../../src/world/Terrain'
 import {createVehicle,type VehicleKind} from '../../src/vehicles'
 import {Vehicle} from '../../src/vehicles/Vehicle'
+import {params} from '../../shared/params'
+import {WeatherSystem,storminess,type WindVehicle} from '../../src/world/weather'
 beforeAll(initPhysics)
 afterEach(()=>{Vehicle.groundGuard=true})
 const N=257,CELL=4,SIZE=(N-1)*CELL
@@ -138,5 +140,23 @@ describe('vehicles and the ground at speed',()=>{
   v.teleport(new T.Vector3(SIZE/2+400,5,0));for(let i=0;i<200;i++)step(l,v)
   expect(v.groundGuardHits).toBe(0);expect(v.body.translation().y).toBeLessThan(-50)
   v.dispose();l.world.free()
+ })
+ it('holds in a gale: no vehicle is blown through the ground, and one put under it still comes back',()=>{
+  // Wind is on by default in play, and pushes hardest on a zorb ball.
+  params.set(storminess.def.id,1)
+  try{
+   for(const zorb of [false,true]){
+    const l=land(),v=createVehicle(l.game,l.terrain,'buggy',new T.Vector3(3,l.heightAt(3,100)+2,100),0);v.isLocal=false;v.input.zorb=zorb
+    const weather=new WeatherSystem(()=>l.terrain,()=>[v as unknown as WindVehicle])
+    let strongest=0;const blow=()=>{weather.fixedUpdate();strongest=Math.max(strongest,v.wind.length())}
+    expect(fly(l,v,400,blow),`blown about${zorb?' in a ball':''}`).toBeGreaterThan(-.3)
+    expect(strongest,'the gale reached the vehicle').toBeGreaterThan(.002);expect(v.groundGuardHits).toBe(0)
+    const p=v.body.translation();v.body.setTranslation({x:p.x,y:l.heightAt(p.x,p.z)-2.5,z:p.z},true);v.body.setLinvel({x:0,y:-6,z:-30},true)
+    blow();step(l,v)
+    const q=v.body.translation();expect(q.y-l.heightAt(q.x,q.z),'one step after going under').toBeGreaterThan(0)
+    expect(fly(l,v,150,blow),'afterwards').toBeGreaterThan(-.3)
+    v.dispose();l.world.free()
+   }
+  }finally{params.set(storminess.def.id,storminess.def.default)}
  })
 })

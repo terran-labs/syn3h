@@ -59,6 +59,32 @@ export function plantTop(geometry: THREE.BufferGeometry): number {
   return top
 }
 
+/**
+ * For each ground cover layer on a planet (by its look): its tallest plant before and after
+ * the height cap, sampled over many cells. For tests and reports.
+ */
+export function coverHeights(look: number, treeLine = 100): { top: number; tallest: number; capped: number }[] {
+  const layers = (FLORA[look] ?? FLORA[0]).layers(treeLine)
+  return layers.map((spec) => {
+    const top = plantTop(spec.geometry)
+    const cap = MAX_PLANT_HEIGHT / top
+    let most = 0
+    const out: Plant = { scale: 0, r: 1, g: 1, b: 1, lx: 0, lz: 0 }
+    for (let h = 0; h < 30000; h++) {
+      for (const patch of [0.2, 0.5, 0.7, 0.9]) {
+        out.scale = 0
+        spec.grow({
+          x: 0, z: 0, y: 1, patch, region: patch, rock: 0, flow: patch > 0.6 ? 1 : 0,
+          clumpD: 0.2, clump: patch, outX: 1, outZ: 0, treeLine,
+        }, (h * 2654435761) >>> 0, out)
+        most = Math.max(most, out.scale)
+      }
+    }
+    // The soft cap in Layer.plantCell never exceeds the hard one used here.
+    return { top, tallest: top * most, capped: top * Math.min(most, cap) }
+  })
+}
+
 /** Nothing grows within this height of the sea level: the largest wave crest plus 0.3 m. */
 const SHORE_MARGIN = 1.8
 

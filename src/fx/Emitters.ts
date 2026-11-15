@@ -3,6 +3,7 @@ import { attribute, float, fract, mix, sin, smoothstep, uniform, uv, vec2, vec3 
 import type { System } from '../core/Game'
 import { qualityBudget } from '../core/quality'
 import { particleBudget, windX, windZ } from './params'
+import { windDrift } from '../world/weather'
 export type VentKind = 'flame' | 'embers' | 'smoke'
 export interface VentOptions { kind: VentKind; radius: number; height: number; intensity: number }
 interface Vent extends VentOptions { x: number; y: number; z: number; birth: number }
@@ -74,8 +75,18 @@ export class Emitters implements System {
     }
     this.dirty = false
   }
+  /** Where the wind is sampled: the vent nearest this point (the camera), set by the owner. */
+  readonly listener = { x: 0, y: 0, z: 0 }
+  private readonly drift = { x: 0, y: 0, z: 0 }
   update(dt: number) {
-    this.clock.value += dt; this.wind.value.set(windX.value, windZ.value)
+    // The weather's wind at the vent nearest the camera (one sample: all vents share one
+    // uniform, and the nearest is the one that is seen), plus the old lava.windX and windZ
+    // sliders as an offset so saved worlds keep their lean.
+    let near: Vent | null = null, best = Infinity
+    for (const v of this.vents) { const d = (v.x - this.listener.x) ** 2 + (v.z - this.listener.z) ** 2; if (d < best) { best = d; near = v } }
+    const at = near ?? this.listener
+    windDrift(at.x, at.y, at.z, this.drift)
+    this.clock.value += dt; this.wind.value.set(this.drift.x + windX.value, this.drift.z + windZ.value)
     if (this.dirty || Math.floor(Math.min(particleBudget.value, qualityBudget().particles)) !== this.budget) this.rebuild()
   }
   dispose() { this.clear() }

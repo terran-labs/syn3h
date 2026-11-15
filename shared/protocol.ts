@@ -267,6 +267,17 @@ export interface ShotInfo {
   t: number
 }
 
+/**
+ * A player's Bungee cord (src/weapons/bungee). Sent by its owner whenever it changes and
+ * every two seconds while attached; the room checks and relays it. Positions are canonical.
+ * `hook`: launched from `o` with velocity `d` (m/s) at server time `t`. `on`: attached to
+ * vehicle `to`, or to the ground at `at` with surface normal `n`, with `r` metres of cord out.
+ */
+export type CordWire =
+  | { s: 'hook'; o: [number, number, number]; d: [number, number, number]; t: number }
+  | { s: 'on'; to?: number; at?: [number, number, number]; n?: [number, number, number]; r: number }
+  | { s: 'off' }
+
 export type ClientMessage =
   /**
    * `resume` is a random secret this tab keeps for this room. In a room with `game.rejoin`
@@ -302,6 +313,8 @@ export type ClientMessage =
   | { type: 'reset' }
   /** Host only: which vehicle bot `id` is, so guests build the same kind (mixed bot fleets). */
   | { type: 'bot'; id: number; kind: string }
+  /** My Bungee cord changed. */
+  | { type: 'cord'; cord: CordWire }
 
 export type TagEvent =
   | 'default' | 'ram' | 'laser' | 'score' | 'leave' | 'lock' | 'host'
@@ -330,6 +343,8 @@ export type ServerMessage =
   | { type: 'hit'; shooter: number; victim: number; shot: number }
   /** Player `from` rammed you: the velocity change to apply if your own physics missed it. */
   | { type: 'shove'; from: number; push: [number, number, number] }
+  /** Player `from`'s Bungee cord, relayed at server time `t`. */
+  | { type: 'cord'; from: number; cord: CordWire; t: number }
   | { type: 'game'; game: GameState; event?: TagEvent; actor?: number; target?: number }
   /**
    * The room's world was replaced: set every world parameter to its default, then apply

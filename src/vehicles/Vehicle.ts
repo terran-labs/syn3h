@@ -21,6 +21,14 @@ import type { VehicleKind } from './index'
 import { ZORB_CHEAP_DISTANCE, ZORB_DEFAULT_CAM_OFFSET, ZorbBall, ZorbShield, zorbSpeed } from './zorb'
 
 /** Everything needed to reproduce a vehicle on another client. Plain numbers for the wire. */
+/**
+ * Dispatched on `vehicle.object` after `shiftBy` has moved the vehicle, so things drawn in
+ * world space that belong with it (tyre marks, dust, trails) can move too. Listeners must not
+ * move the vehicle.
+ */
+export interface TileShiftEvent { type: 'tileshift'; dx: number; dz: number }
+export type VehicleObjectEvents = THREE.Object3DEventMap & { tileshift: TileShiftEvent }
+
 export interface VehicleState {
   p: [number, number, number]
   q: [number, number, number, number]
@@ -71,8 +79,20 @@ export abstract class Vehicle implements System {
   readonly body: RAPIER.RigidBody
   /** Control state for this step. Written by the player or by the network layer. */
   readonly input: InputState = emptyInput()
+  /**
+   * The driver's eye, for the ride camera: an Object3D parented to `object`, inside the
+   * canopy and at least 0.25 m from any surface (PATTERN.md rule 3). A vehicle without one
+   * is viewed from 0.95 m above its origin, the Unity prefab's RideCam.
+   */
+  readonly ridePosition?: THREE.Object3D
   /** True when this client simulates and owns the vehicle. */
   isLocal = true
+  /**
+   * Wind acceleration in m/s^2, applied at the centre of mass at the end of each fixed step.
+   * Zero by default. The weather system (src/world/weather) sets it on the vehicles this
+   * client simulates; remote copies keep zero because their owner already applied it.
+   */
+  readonly wind = new THREE.Vector3()
   /** Display name and stable id, set by whoever spawns it. */
   id = ''
   name = ''
@@ -114,8 +134,15 @@ export abstract class Vehicle implements System {
   setColors(body: THREE.ColorRepresentation, accent: THREE.ColorRepresentation): void {
     this.colors.body = `#${new THREE.Color(body).getHexString()}`
     this.colors.accent = `#${new THREE.Color(accent).getHexString()}`
+    this.liveColors.body.set(body); this.liveColors.accent.set(accent)
     this.applyColors()
   }
+
+  /**
+   * The same colours as live Color objects, published on `object.userData.vehicleColors` so
+   * shared shading (the force field canopy) can follow them without knowing the vehicle class.
+   */
+  private readonly liveColors = { body: new THREE.Color(this.colors.body), accent: new THREE.Color(this.colors.accent) }
 
   protected applyColors(): void {}
 
@@ -140,6 +167,7 @@ export abstract class Vehicle implements System {
     )
     registerLiquidTerrain(this.body,terrain,this.liquidState)
     this.object.userData.vehicleHeat=this.liquidState
+    this.object.userData.vehicleColors=this.liveColors
     this.currPos.copy(position)
     this.prevPos.copy(position)
     this.currQuat.copy(q)
@@ -182,6 +210,10 @@ export abstract class Vehicle implements System {
     if(this.zorbed)this.zorb.float(this.terrain,this.liquidState,dt)
     else applyVehicleLiquid(this.body,this.game.world,this.terrain,this.input,this.kind,this.liquidState,dt,this.wingsOpen)
     if(this.lavaDepth>0 && 'inLiquid' in this)(this as unknown as {inLiquid:boolean}).inLiquid=true
+    // Last, so the controllers and the liquid pass are untouched and the force still reaches
+    // the integrator. A force, never a velocity write: buggies integrate their own accelerations.
+    const w=this.wind
+    if((w.x!==0||w.y!==0||w.z!==0)&&!this.body.isKinematic()){const m=this.body.mass();this.body.addForce({x:w.x*m,y:w.y*m,z:w.z*m},true)}
   }
 
   /**
@@ -267,6 +299,7 @@ export abstract class Vehicle implements System {
   /**
    * Move by a whole world tile across the seam of a wrapping world. Velocity and rotation
    * are kept and the drawn position moves with the body, so nothing is seen to jump.
+   * Announces the move afterwards as a `tileshift` event on `object` (see TileShiftEvent).
    */
   shiftBy(dx: number, dz: number): void {
     const t = this.body.translation()
@@ -274,6 +307,7 @@ export abstract class Vehicle implements System {
     this.prevPos.x += dx; this.prevPos.z += dz
     this.currPos.x += dx; this.currPos.z += dz
     this.object.position.x += dx; this.object.position.z += dz
+    ;(this.object as THREE.Object3D<VehicleObjectEvents>).dispatchEvent({ type: 'tileshift', dx, dz })
   }
 
   /** Off only in tests, to show what happens without the guard. */

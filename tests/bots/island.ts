@@ -13,13 +13,15 @@ import { HeightSampler } from '../../src/world/terrain/sampler'
 import { defaultTerrainSettings, type TerrainSettings } from '../../src/world/terrain/settings'
 import { spawnPointAt } from '../../src/world/terrain/spawn'
 
-export function island(world: RAPIER.World, seed = 1, settings: Partial<TerrainSettings> = {}, seaLevel = 0): BotTerrain {
+export function island(world: RAPIER.World, seed = 1, settings: Partial<TerrainSettings> = {}, seaLevel = 0, wrap = false): BotTerrain {
   const data = generateTerrain(seed, { ...defaultTerrainSettings(), ...settings })
   const sampler = new HeightSampler(data)
   createTerrainCollider(world, data)
   const rim = data.roads.find(r => r.kind === 'rim'), v = data.layout.volcano
   return {
     size: data.size,
+    // The game's worlds always wrap now; tests opt in, so the plain island stays available.
+    ...(wrap ? { wrapSize: data.size } : {}),
     heightAt: (x, z) => sampler.heightAt(x, z),
     normalAt: (x, z, out) => sampler.normalAt(x, z, out),
     liquidHeightAt: (x, z) => lavaSurfaceAt(data.lava, x, z, seaLevel),

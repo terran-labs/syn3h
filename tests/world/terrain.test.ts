@@ -97,36 +97,42 @@ describe('terrain generation', () => {
 
   it('generates fast enough and reports the time', () => {
     // The budget is 150 ms at the shipping resolution on an idle machine of the class this
-    // was measured on. Tests run in parallel, often on a busy machine, where everything is
-    // slower by the same factor, so a fixed noise workload is timed between runs and the
-    // budget is stretched by however much slower than idle that workload ran. On an idle
-    // machine the factor is 1 and this is a plain 150 ms limit.
+    // was measured on, where a fixed noise workload (the calibration below) takes 32 ms.
+    // Wall time is useless on a busy machine: at a load of 40 a run is descheduled for
+    // longer than it computes. So both are measured in CPU time actually spent by this
+    // process, which does not count time spent waiting for a core, and the test asserts
+    // their ratio: generation may cost at most 150 / 32 calibrations. Idle, the ratio is
+    // about 2.9; a generator twice as slow reaches 5.8 and fails.
     const CALIBRATION_IDLE_MS = 32
-    const calibrate = () => {
-      let sum = 0
-      const t = performance.now()
-      for (let i = 0; i < 2_000_000; i++) sum += perlin(i * 0.37, i * 0.11, 7)
-      return sum === Infinity ? Infinity : performance.now() - t
+    const BUDGET_MS = 150
+    const cpuMs = (fn: () => void) => {
+      const start = process.cpuUsage()
+      fn()
+      const used = process.cpuUsage(start)
+      return (used.user + used.system) / 1000
     }
+    let sink = 0
+    const calibrate = () => { for (let i = 0; i < 2_000_000; i++) sink += perlin(i * 0.37, i * 0.11, 7) }
     generateTerrain(4, settings) // warm the JIT, as a running game would be
     generateTerrain(5, settings)
+    calibrate()
     let best = Infinity
     let calibration = Infinity
     const runs: number[] = []
     for (let i = 0; i < 12; i++) {
-      calibration = Math.min(calibration, calibrate())
-      const t = performance.now()
-      generateTerrain(1000 + i, settings)
-      runs.push(performance.now() - t)
+      calibration = Math.min(calibration, cpuMs(calibrate))
+      runs.push(cpuMs(() => { generateTerrain(1000 + i, settings) }))
       best = Math.min(best, runs[i])
     }
-    const slowdown = Math.max(1, calibration / CALIBRATION_IDLE_MS)
+    expect(Number.isFinite(sink)).toBe(true)
+    const ratio = best / calibration
     const median = [...runs].sort((a, b) => a - b)[runs.length >> 1]
     process.stdout.write(
-      `terrain generation 513x513: best ${best.toFixed(1)} ms, median ${median.toFixed(1)} ms over ${runs.length} runs; ` +
-      `machine ${slowdown.toFixed(2)}x slower than idle, so ${(best / slowdown).toFixed(1)} ms idle equivalent\n`,
+      `terrain generation 513x513: best ${best.toFixed(1)} ms, median ${median.toFixed(1)} ms of CPU over ${runs.length} runs; ` +
+      `calibration ${calibration.toFixed(1)} ms, ratio ${ratio.toFixed(2)} (limit ${(BUDGET_MS / CALIBRATION_IDLE_MS).toFixed(2)}), ` +
+      `so ${(ratio * CALIBRATION_IDLE_MS).toFixed(1)} ms idle equivalent\n`,
     )
-    expect(best).toBeLessThan(150 * slowdown)
+    expect(ratio).toBeLessThan(BUDGET_MS / CALIBRATION_IDLE_MS)
     const t = performance.now()
     generateTerrain(2000, settings, { resolution: 1025 })
     process.stdout.write(`terrain generation 1025x1025: ${(performance.now() - t).toFixed(1)} ms\n`)
