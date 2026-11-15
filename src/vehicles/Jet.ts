@@ -19,6 +19,7 @@ export const jetHoverHold = defineParam<number>({id:'jet.hoverHold',label:'Hover
 // terra.jet.prefab flightThrustFactor=2: full throttle pushes at twice the jet's weight, and
 // Syn3h's drag barely opposes it, so speed keeps building. Lower this for a slower jet.
 export const jetFlightThrust = defineParam<number>({id:'jet.flightThrust',label:'Flight thrust',group:'Jet',scope:'world',default:2,min:.25,max:3,step:.05})
+export const jetNeutralThrottle = defineParam<number>({id:'jet.neutralThrottle',label:'Neutral flight throttle',group:'Jet',scope:'world',default:.5,min:0,max:1,step:.05})
 // How far the main nozzle swivels, as a share of VhiclJet.cs 161-162 (20 degrees of pitch at a
 // standstill, easing to 5 at speed). Below stall speed the wings have little authority, so this
 // is what steers the jet there. It is separate from jet.controlResponse, which only scales the
@@ -114,8 +115,35 @@ export class Jet extends Vehicle {
     this.input.z=clamp(this.input.z+JET_LIFT_KEYS*((up?1:0)-(down?1:0)),-1,1)
   }
 
+  /** Resolve the human's neutral command before smoothing and replication. Pilots own theirs. */
+  private neutralThrottle():void {
+    if(!this.hoverMode&&this.input.z>0&&!this.object.userData.materializing)this.holdReleased=false
+    if(!this.isLocal||this.hoverMode||this.zorbed||this.input.z!==0||this.input.brakes||
+      this.game.input.suspended||this.object.userData.autopilot||this.object.userData.materializing||
+      this.body.isKinematic()||this.holdReleased)return
+    // Opposing held throttle keys mean an intentional zero, not hands off.
+    if(['KeyQ','KeyE','KeyR','KeyF'].some(code=>this.game.input.held?.(code)))return
+    const p=this.body.translation()
+    // Keep a newly spawned or just-landed jet planted, including before contact data is ready.
+    if(p.y-this.terrain.heightAt(p.x,p.z)<=2.6)return
+    let grounded=false
+    for(let i=0;i<this.body.numColliders();i++){
+      const collider=this.body.collider(i)
+      this.game.world.contactPairsWith(collider,other=>{
+        this.game.world.contactPair(collider,other,manifold=>{
+          if(Math.abs(manifold.normal().y)<.5)return
+          for(let j=0;j<manifold.numSolverContacts();j++){
+            if(manifold.solverContactDist(j)<=.02)grounded=true
+          }
+        })
+      })
+    }
+    if(!grounded)this.input.z=jetNeutralThrottle.value
+  }
+
   protected applyForces(dt:number):void {
     if(this.isLocal) this.liftKeys()
+    this.neutralThrottle()
     this.wingsOpen=!this.hoverMode
     // Vhicl.cs 269 smooths all four axes at fixedDeltaTime * 10.
     this.smoothed.lerp(new THREE.Vector4(this.input.x,this.input.y,this.input.z,this.input.w),Math.min(1,dt*10))

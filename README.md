@@ -68,11 +68,16 @@ Press **H** in the game at any time for the controls of the vehicle you are in.
 
 | Key | What it does |
 |---|---|
-| E, or R | Hold to lift off and climb. In flight: more thrust |
-| Q, or F | Come down. In flight: less thrust |
+| E, or R | Hold for full upward thrust in hover or full forward thrust in flight |
+| Q, or F | Hold for downward thrust in hover or reverse thrust in flight |
 | W and S | Nose down and up |
 | A and D | Bank |
 | Space | Switch between hover and flight |
+
+Release the thrust keys to return to 50% thrust in airborne flight, adjustable with
+**Neutral flight throttle**. Hover keeps its altitude hold. The flight default stays off
+on the ground, during materialization and settling, while braking, and inside the Zorb.
+Automated pilots keep control of their own throttle.
 
 **Hovercraft**
 
