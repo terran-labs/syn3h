@@ -11,6 +11,14 @@ export const QUALITY = [
   { name: 'mobile', pixelRatio: 1, shadows: 0, particles: 960, bots: 4, drawDistance: 1400, detail: 0.75 },
   { name: 'desktop', pixelRatio: 1.5, shadows: 1, particles: 2400, bots: 8, drawDistance: 3000, detail: 1 },
 ] as const
+/**
+ * Vehicle surface shading, read by the vehicle skins: 0 plain standard materials, 1 lit
+ * procedural detail, 2 adds the clear coat and glass, 3 adds flakes and iridescence. The
+ * frame governor lowers this before it gives up a whole graphics level. The default is plain:
+ * the governor raises it to what the device's graphics level allows, so a build without the
+ * governor never puts the costly tiers on a phone.
+ */
+export const vehicleShading = defineParam({ id: 'gfx.vehicleShading', label: 'Vehicle shading: 0 plain to 3 showroom', group: 'Graphics', scope: 'client', default: 0, min: 0, max: 3, step: 1 })
 export const levelNumber = (value: number): GraphicsLevel => Math.max(0, Math.min(2, Math.round(Number.isFinite(value) ? value : 0))) as GraphicsLevel
 export function qualityBudget() { return QUALITY[levelNumber(graphicsLevel.value)] }
 export interface DeviceHints { userAgent: string; touchPoints: number; memoryGB?: number; adapter?: 'available' | 'missing' | 'fallback'; maxTextureDimension2D?: number }
