@@ -4,7 +4,7 @@ import {uniform} from 'three/tsl'
 import {params} from '../../shared/params'
 import {vehicleShading} from '../../src/core/quality'
 import {mergeStatic,mergedSurfaces} from '../../src/vehicles/skins/mergeStatic'
-import {applyShowroom,roleOf,setRole} from '../../src/vehicles/skins/showroom'
+import {applyShowroom,paintFlakes,paintScaleDepth,paintScaleSize,paintSeams,roleOf,setRole} from '../../src/vehicles/skins/showroom'
 
 const box=()=>new T.BoxGeometry(1,1,1)
 const std=(name:string,color=0x336699)=>{const m=new T.MeshStandardMaterial({color});m.name=name;return m}
@@ -98,6 +98,21 @@ describe('showroom vehicle shading',()=>{
   const dispose=applyShowroom(root,r=>r.traverse(o=>{if(o instanceof T.Mesh){const m=o.material as T.MeshStandardNodeMaterial;m.emissiveNode=(m.emissiveNode as unknown as {mul(n:number):typeof base}).mul(1)}}))
   const has=(m:T.MeshStandardNodeMaterial)=>{let found=false;m.emissiveNode!.traverse(n=>{if(n===glow)found=true});return found}
   for(const tier of [1,2,3]){params.set(vehicleShading.def.id,tier);expect(mesh.material).not.toBe(merged);expect(has(mesh.material as T.MeshStandardNodeMaterial)).toBe(true)}
+  dispose()
+ })
+ it('drives scale depth, seams, size and flakes from live sliders without rebuilding materials',()=>{
+  params.set(vehicleShading.def.id,3)
+  const root=new T.Group(),body=new T.Mesh(box(),setRole(std('Body'),'paint'));root.add(body)
+  const dispose=applyShowroom(root,()=>{})
+  const built=body.material as unknown as T.MeshPhysicalNodeMaterial
+  const values=()=>{const seen=new Set<number>();for(const node of [built.normalNode!,built.colorNode!,built.aoNode!])node.traverse(n=>{const v=(n as unknown as {value?:unknown}).value;if(typeof v==='number')seen.add(v)});return seen}
+  for(const [param,value] of [[paintScaleDepth,1.37],[paintSeams,.93],[paintScaleSize,2.61],[paintFlakes,1.83]] as const){
+   expect(values().has(value)).toBe(false)
+   params.set(param.def.id,value)
+   expect(values().has(value)).toBe(true)
+   params.set(param.def.id,param.def.default)
+  }
+  expect(body.material).toBe(built)
   dispose()
  })
 })
