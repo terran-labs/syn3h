@@ -4,6 +4,7 @@ import { defineParam, params } from '../../shared/params'
 import type { Terrain } from '../world/Terrain'
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Game, System } from './Game'
+import { CameraDirector } from './CameraDirector'
 const number = (id: string, label: string, value: number, min: number, max: number, step = 0.1) => defineParam({ id: `camera.${id}`, label, group: 'Camera', scope: 'client', default: value, min, max, step })
 const boolean = (id: string, label: string, value: boolean) => defineParam({ id: `camera.${id}`, label, group: 'Camera', scope: 'client', default: value })
 // _Runtime.prefab:8755-8795, terra.buggy.prefab:586, CoreCamera.cs:177.
@@ -32,6 +33,8 @@ export const camSensitivity = number('sensitivity', 'Mouse rotation multiplier',
 export const camScope = number('scope', 'Scope magnification', 3.25, 1.5, 5, 0.25)
 export const camRoamSpeed = number('roamSpeed', 'Roam speed', 2, 0.25, 25)
 export const camRideHeight = number('rideHeight', 'Fallback ride height', 0.95, 0, 5)
+/** Cut between cinematic shots while the vehicle drives itself (Daydream). */
+export const camDaydreamShots = boolean('daydreamShots', 'Cinematic shots while daydreaming', true)
 
 export interface CameraVehicle extends Vehicle {
   wingOpen?: boolean
@@ -131,6 +134,7 @@ export class ChaseCamera implements System {
     }) as EventListener, { capture: true })
     listen(window, 'pointerup', () => { this.dragging = false })
     listen(game.canvas, 'contextmenu', event => event.preventDefault())
+    listen(window, 'syn3h:daydream', ((event: CustomEvent<{ active: boolean }>) => { if (event.detail?.active) this.director.start(); else this.director.stop() }) as EventListener)
     listen(window, 'pointermove', ((event: PointerEvent) => {
       if ((!this.dragging && document.pointerLockElement !== game.canvas) || this.game.input.suspended) return
       const sensitivity = camSensitivity.value * (this.scopeHeld ? 0.75 / 4 : 1) * Math.PI / 180 * 0.1
@@ -142,6 +146,20 @@ export class ChaseCamera implements System {
       const param = this.scopeHeld ? camScope : Math.round(camMode.value) === 4 ? camRoamSpeed : camDistance
       params.set(param.def.id, param.value + Math.sign(event.deltaY) * (this.scopeHeld ? -0.25 : 1))
     }) as EventListener, { passive: false })
+  }
+
+  /** Chooses shots while the vehicle drives itself. Started and stopped by Daydream's event. */
+  readonly director = new CameraDirector()
+  /** True while the current cinematic pose is the director's, not the attract mode's. */
+  private directed = false
+  private readonly shotPosition = new THREE.Vector3()
+  private readonly shotTarget = new THREE.Vector3()
+  private direct(dt: number): void {
+    const vehicle = this.vehicle
+    const wanted = this.director.active && camDaydreamShots.value && vehicle?.body.isValid() && (this.directed || !this.cinematic)
+      && this.director.update(clamp(dt, 0, 0.25), vehicle.object.position, vehicle.body.linvel(), this.terrain, this.shotPosition, this.shotTarget)
+    if (wanted) { this.setCinematicPose(this.shotPosition, this.shotTarget); this.directed = true }
+    else if (this.directed) { this.clearCinematicPose(); this.directed = false }
   }
 
   setVehicle(vehicle: CameraVehicle | null): void { this.restoreVisibility(); this.vehicle = vehicle; this.target = vehicle?.object ?? null }
@@ -158,6 +176,7 @@ export class ChaseCamera implements System {
   private cinematic: { position: THREE.Vector3; target: THREE.Vector3; look: THREE.Vector3 } | null = null
 
   update(dt: number): void {
+    this.direct(dt)
     if (this.cinematic) {
       const camera = this.game.camera, c = this.cinematic, k = ease(clamp(dt, 0, 0.25), 2)
       this.restoreVisibility()

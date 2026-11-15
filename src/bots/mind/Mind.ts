@@ -68,6 +68,7 @@ export class Mind {
   private swerveSide = 1
   private lastKind: ActivityKind = 'pause'
   private bestDistance = Infinity
+  private leaderIdle = 0
   private bestTime = 0
   private readonly goal: DriveGoal = { x: 0, z: 0, speed: 0 }
   private readonly q = new Quaternion()
@@ -121,6 +122,9 @@ export class Mind {
       const p = a.leader.body.translation(), lv = a.leader.body.linvel(), ls = Math.hypot(lv.x, lv.z) || 1
       const side = this.personality.mischief > 0.5 ? 4 : -4
       a.destination = { x: p.x - lv.x / ls * 9 + lv.z / ls * side, z: p.z - lv.z / ls * 9 - lv.x / ls * side }
+      // A leader that has stopped is no longer leading anywhere.
+      this.leaderIdle = Math.hypot(lv.x, lv.z) < 1.5 ? this.leaderIdle + dt : 0
+      if (this.leaderIdle > 4) a.until = 0
     }
     const destination = a.destination
     const distance = destination ? Math.hypot(destination.x - here.x, destination.z - here.z) : Infinity
@@ -206,6 +210,7 @@ export class Mind {
 
   private begin(kind: ActivityKind, destination: NavPoint | null, leader: Vehicle | null, seconds: number): void {
     this.activity = { kind, destination, leader, until: this.time + seconds }
+    this.leaderIdle = 0
     this.lastKind = kind
   }
 
@@ -235,7 +240,10 @@ export class Mind {
         const point = points[Math.floor(this.random() * points.length)]
         const d = Math.hypot(point.x - here.x, point.z - here.z)
         if (d < 120) continue
-        const score = 1 / (1 + (this.visits.get(this.cellOf(point.x, point.z)) ?? 0) * 0.2) + this.random() * 0.6 - d / 4000
+        // Prefer road it has not driven and road that lies ahead: doubling straight back
+        // along the way it came looks aimless.
+        const ahead = ((point.x - here.x) * this.forward.x + (point.z - here.z) * this.forward.z) / d
+        const score = 1 / (1 + (this.visits.get(this.cellOf(point.x, point.z)) ?? 0) * 0.2) + this.random() * 0.6 - d / 4000 + ahead * 0.4
         if (score > bestScore) { bestScore = score; best = point }
       }
     }
@@ -254,7 +262,10 @@ export class Mind {
     let best: Vehicle | null = null, bestDistance = 400
     for (const other of this.options.others?.() ?? []) {
       if (other === this.vehicle || !other.body.isValid()) continue
-      const p = other.body.translation(), d = Math.hypot(p.x - here.x, p.z - here.z)
+      const p = other.body.translation(), v = other.body.linvel(), d = Math.hypot(p.x - here.x, p.z - here.z)
+      // Someone going somewhere, not someone parked or already on our bumper: tailing a
+      // vehicle that is itself chasing us turns into two cars circling each other.
+      if (d < 20 || Math.hypot(v.x, v.z) < 3) continue
       if (d < bestDistance) { bestDistance = d; best = other }
     }
     return best
