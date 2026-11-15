@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { buildWordmarkMesh, evenOddArea, FLOATS_PER_VERTEX, insidePolygon, sampleOutline, triangleArea, triangulateFace, wordmarkContours, type Contour, type Point } from '../../src/ui/brand/wordmarkMesh'
+import { buildGlowBand, buildWordmarkMesh, evenOddArea, FLOATS_PER_VERTEX, GLOW_FLOATS_PER_VERTEX, insidePolygon, sampleOutline, triangleArea, triangulateFace, wordmarkContours, type Contour, type Point } from '../../src/ui/brand/wordmarkMesh'
 import { LogoMark, logoBox, logoBudget, logoSvg } from '../../src/ui/brand/LogoMark'
 import { LogoRenderer } from '../../src/ui/brand/logoRenderer'
 import { WORDMARK_HEIGHT, WORDMARK_WIDTH } from '../../src/ui/brand/wordmarkPath'
@@ -60,6 +60,22 @@ describe('wordmark geometry', () => {
     expect(maxX - minX).toBeCloseTo(WORDMARK_WIDTH / WORDMARK_HEIGHT, 1)
     expect(maxY - minY).toBeCloseTo(1, 2)
   })
+  it('grows the glow band outward from the outline, with whole contours of arc length', () => {
+    const band = buildGlowBand(contours), v = band.vertices, n = v.length / GLOW_FLOATS_PER_VERTEX
+    expect(n % 3).toBe(0)
+    let rim = 0, outward = 0
+    for (let k = 0; k < n; k++) {
+      const at = k * GLOW_FLOATS_PER_VERTEX, offset = Math.hypot(v[at + 2], v[at + 3])
+      // Either on the outline (no offset) or on the rim (a unit offset).
+      expect(Math.min(offset, Math.abs(offset - 1))).toBeLessThan(1e-5)
+      expect(v[at + 4]).toBeGreaterThanOrEqual(0); expect(v[at + 4]).toBeLessThanOrEqual(1)
+      if (offset < 0.5) continue
+      rim++
+      if (!filled([v[at] + v[at + 2] * 0.004, v[at + 1] + v[at + 3] * 0.004], contours)) outward++
+    }
+    // Rim directions point away from the letters (bar the sharpest traced corners).
+    expect(outward / rim).toBeGreaterThan(0.97)
+  })
   it('seeds every particle on the outline with a unit normal pointing out of the letters', () => {
     const samples = sampleOutline(4000, 3)
     const edges = contours.flatMap(c => c.points.map((p, i) => [p, c.points[(i + 1) % c.points.length]] as const))
@@ -95,8 +111,8 @@ describe('layout and budgets', () => {
   it('budgets by graphics level, lowest still', () => {
     expect(logoBudget(0).still).toBe(true)
     expect(logoBudget(1).particles).toBeLessThan(logoBudget(2).particles)
-    // Large soft particles: a couple of thousand at most, so fill stays below the old sparks'.
-    expect(logoBudget(2).particles).toBeLessThanOrEqual(2000)
+    // A field carries the glow; the particles over it are few and large.
+    expect(logoBudget(2).particles).toBeLessThanOrEqual(500)
   })
 })
 
@@ -143,12 +159,13 @@ describe('LogoMark lifecycle', () => {
     fake.calls.length = 0
     mark.renderStill()
     // No sky behind the lobby logo: plasma, then the flat wordmark.
-    expect(fake.calls.filter(c => c.startsWith('draw'))).toEqual(['draw POINTS 500', 'draw TRIANGLES 2946'])
+    const band = `draw TRIANGLES ${buildGlowBand().vertices.length / GLOW_FLOATS_PER_VERTEX}`
+    expect(fake.calls.filter(c => c.startsWith('draw'))).toEqual([band, 'draw POINTS 500', 'draw TRIANGLES 2946'])
     mark.setOptions({ space: true }); fake.calls.length = 0; mark.renderStill()
-    expect(fake.calls.filter(c => c.startsWith('draw'))).toEqual(['draw TRIANGLES 3', 'draw POINTS 500', 'draw TRIANGLES 2946'])
+    expect(fake.calls.filter(c => c.startsWith('draw'))).toEqual(['draw TRIANGLES 3', band, 'draw POINTS 500', 'draw TRIANGLES 2946'])
     mark.dispose()
     expect(fake.loseContext).toHaveBeenCalledTimes(1)
-    expect(fake.calls.filter(c => c === 'deleteProgram')).toHaveLength(3)
+    expect(fake.calls.filter(c => c === 'deleteProgram')).toHaveLength(4)
     expect(mark.generated).toBe(false)
     // A canvas it was given stays in the page; one it made would be removed.
     expect(canvas.remove).not.toHaveBeenCalled()
@@ -170,7 +187,7 @@ describe('LogoMark lifecycle', () => {
     const fake = fakeGl(), renderer = new LogoRenderer(fake.gl, { particles: 200 })
     expect(fake.state.CURRENT_PROGRAM).toBe('host-program')
     renderer.draw(5, { x: 100, y: 100, width: 426, height: 100 })
-    expect(fake.calls.filter(c => c.startsWith('draw'))).toHaveLength(2)
+    expect(fake.calls.filter(c => c.startsWith('draw'))).toHaveLength(3)
     expect(fake.state.CURRENT_PROGRAM).toBe('host-program')
     expect(fake.state.VERTEX_ARRAY_BINDING).toBe('host-vao')
     expect(fake.state.ARRAY_BUFFER_BINDING).toBe('host-buffer')
