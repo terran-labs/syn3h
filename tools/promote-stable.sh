@@ -16,6 +16,6 @@ mkdir -p "$(dirname "$DEST")"
 mkdir "$DEST"
 cp -R dist wrangler.toml server shared src package.json tsconfig.json "$DEST/"
 ln -sfn "$(pwd)/node_modules" "$DEST/node_modules"
-node -e 'const fs = require("node:fs"); const [dest,id,commit,note] = process.argv.slice(1); fs.writeFileSync(dest + "/dist/build.json", JSON.stringify({id,commit,built:new Date().toISOString(),note}) + "\n")' "$DEST" "$ID" "$(git rev-parse HEAD)" "$NOTE"
+node -e 'const fs = require("node:fs"); const [dest,id,commit,note] = process.argv.slice(1); fs.writeFileSync(dest + "/dist/build.json", JSON.stringify({id,commit,built:new Date().toISOString(),note,...(process.env.SYN3H_RELEASE_VERSION ? {version:process.env.SYN3H_RELEASE_VERSION} : {})}) + "\n")' "$DEST" "$ID" "$(git rev-parse HEAD)" "$NOTE"
 ln -sfn "$ID" ../Syn3h-stable/current
 echo "$ID"

@@ -190,37 +190,12 @@ Then publish v26.11.1400 to v26.11.1413 in order, with `--latest` on v26.11.1413
 
 ## Hook for tools/release.sh
 
-Not applied. Proposed for the Foreman to review. It computes the version from the history
-before adding this release's row, records the row, tags the version beside `release-<n>`,
-and drafts notes from the previous release. A failed draft warns and never fails a release
-that is already live. Nothing is pushed.
+The release script computes the calendar version before freezing the build. That label
+appears in the lobby and in the frozen build metadata. After successful public network
+checks, the script records the history row, creates the calendar tag and drafts notes.
+It then captures the showcase from the frozen build.
 
-```diff
---- a/tools/release.sh
-+++ b/tools/release.sh
-@@
- # --- Record ---------------------------------------------------------------------------------
- WHEN="$(TZ=America/Los_Angeles date '+%Y-%m-%d %H:%M %Z')"
-+# Calendar version (release-notes/README.md), from the history before this release's row.
-+CALVER="$(node tools/release-notes.mjs next)" || fail "could not compute the calendar version"
-+PREV="$(tail -1 ../Syn3h-stable/releases.tsv 2>/dev/null | cut -f1)"
- printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "release-$N" "$WHEN" "$URL" "$MILESTONE" "$COMMIT" "$VERSION" "$ID" >> ../Syn3h-stable/releases.tsv
- git tag -a "release-$N" -m "release-$N: $NOTE ($URL, version $VERSION)"
-+printf '%s\t%s\t%s\t%s\tproduction\n' "$CALVER" "$MILESTONE" "$COMMIT" "$WHEN" >> release-notes/history.tsv
-+git tag -a "$CALVER" -m "Syn3h $CALVER ($MILESTONE, release-$N)"
-+node tools/release-notes.mjs draft "$CALVER" "${PREV:-m00-proposal}" "release-$N" \
-+  || echo "Warning: could not draft release notes for $CALVER; run tools/release-notes.mjs draft by hand."
- echo
--echo "RELEASE OK: release-$N is live at $URL"
-+echo "RELEASE OK: release-$N ($CALVER) is live at $URL"
- echo "For ops/RELEASES.md:"
--echo "- release-$N, $WHEN: $URL from $MILESTONE ($COMMIT), Worker version $VERSION, frozen copy $ID. $NOTE"
-+echo "- release-$N ($CALVER), $WHEN: $URL from $MILESTONE ($COMMIT), Worker version $VERSION, frozen copy $ID. $NOTE"
-```
-
-The history row and the draft leave the working tree dirty after the release, which is the
-point: the next step is to write the notes and commit them with the row. Milestone rows are
-added by hand when a milestone is tagged. The decision also says the release script should
-write the version into the build file; the lobby label comes from `git describe --tags` in
-`vite.config.ts`, which runs before the version tag exists, so that part needs its own
-change in `vite.config.ts` or `tools/promote-stable.sh` and is not in this patch.
+Drafting and capture failures print warnings without failing a release that is already
+live. Their logs and partial artifacts are retained for repair. The hook never publishes
+the notes or images; review them before publication. The history row and draft leave the
+release checkout dirty so they can be reviewed and committed together.
