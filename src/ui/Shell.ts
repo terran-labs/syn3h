@@ -197,14 +197,21 @@ export class Shell implements System {
     this.inspector.open = false
     const railTop = this.inspector.element.querySelector('.wi-top')!
     const navigation = document.createElement('div'); navigation.className = 'rail-navigation'
-    navigation.innerHTML = '<button type="button" class="exit-world">↗ Exit world</button><button type="button" class="rail-pause">Pause</button><button type="button" class="rail-close" aria-label="Return to driving">×</button>'
+    // The header is one line: where you are, a search, Pause and the way back to driving.
+    // Leaving the world is rarer and final, so it sits at the foot with the world actions.
+    navigation.innerHTML = '<strong class="rail-world"></strong><button type="button" class="rail-pause">Pause</button><button type="button" class="rail-close" aria-label="Return to driving">×</button>'
     railTop.prepend(navigation)
+    navigation.querySelector('.rail-world')!.after(railTop.querySelector('.wi-search')!)
     const players = document.createElement('details'); players.className = 'rail-players'
     players.innerHTML = '<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><label class="rail-diagnostics"><input type="checkbox"> Connection diagnostics</label></div>'
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
     railTop.after(players)
     this.performancePanel = new PerformancePanel(this.element, () => this.showPanels())
     railTop.querySelector('.wi-actions')!.append(this.performancePanel.toggle)
+    const foot = document.createElement('div'); foot.className = 'rail-foot wi-glass'
+    foot.innerHTML = '<button type="button" class="exit-world">Leave world</button>'
+    foot.prepend(railTop.querySelector('.wi-actions')!)
+    this.inspector.element.querySelector('.wi-cards')!.after(foot)
     players.after(this.performancePanel.element)
     const gear = document.createElement('select'); gear.className = 'gear-select'; gear.setAttribute('aria-label', 'Gear'); gear.disabled = true
     this.inspector.element.querySelector('.wi-gear-slot')!.append(gear)
@@ -214,7 +221,7 @@ export class Shell implements System {
     }, { signal })
     // Exit world asks first (the owner, 15 November 2026): one stray click on the panels must
     // not throw the player back to the galaxy. Code that calls openMenu() itself is not asked.
-    navigation.querySelector('.exit-world')!.addEventListener('click', () => this.askExit(), { signal })
+    foot.querySelector('.exit-world')!.addEventListener('click', () => this.askExit(), { signal })
     const exitConfirm = this.element.querySelector<HTMLElement>('.exit-confirm')!
     exitConfirm.addEventListener('click', event => { if (event.target === exitConfirm) this.answerExit(false) }, { signal })
     exitConfirm.querySelector('.exit-stay')!.addEventListener('click', () => this.answerExit(false), { signal })
@@ -1125,6 +1132,7 @@ export class Shell implements System {
   private readonly gearSelector: GearSelector
   private readonly zorbToggle = document.createElement('button')
   private zorbShown = false
+  private worldShown = ''
   private gearRack?: GearRack
   private gearView?: GearSource
   /** The rack, wrapped once so the drum gets every gear's player-facing name. */
@@ -1252,7 +1260,9 @@ export class Shell implements System {
     if (this.started && !this.menuVisible) {
       const focus = this.element.classList.contains('is-focus')
       if (!focus && this.inspector.open) this.inspector.update()
-      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, heading: this.self?.heading ?? 0, world: `${currentPlanet().label} · ${planetName(worldSeed.value)}`, hour: Number(params.get('sun.timeOfDay')?.value ?? 0) })
+      const world = `${currentPlanet().label} · ${planetName(worldSeed.value)}`
+      if (world !== this.worldShown) { this.worldShown = world; this.element.querySelector('.rail-world')!.textContent = world }
+      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, heading: this.self?.heading ?? 0, world, hour: Number(params.get('sun.timeOfDay')?.value ?? 0) })
       const glass = String(Math.round(glassStyle.value)); if (this.element.dataset.glass !== glass) this.element.dataset.glass = glass
     }
     // The stylesheet drops frost at the lowest graphics level.

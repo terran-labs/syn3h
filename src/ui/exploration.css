@@ -266,3 +266,27 @@ body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-noti
 :root .syn3h-shell.is-focus .zorb-toggle { top: calc(var(--gear-top, 50%) + 92px); opacity: .84; pointer-events: none; }
 /* Touch has its own ZORB button beside the other drive buttons. */
 :root .syn3h-shell.has-touch .zorb-toggle { display: none; }
+
+/* The panel header is one line: the world's name, a search, Pause and the way back to
+   driving. Leaving the world sits at the foot with the world actions. */
+.syn3h-shell.exploration-ui .rail-navigation { justify-content: flex-start; gap: 10px; }
+.syn3h-shell.exploration-ui .rail-navigation .rail-world { flex: 0 1 auto; max-width: 46%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: 500 11.5px/1 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); }
+.syn3h-shell.exploration-ui .world-inspector .rail-navigation .wi-search { flex: 1 1 0; width: auto; min-width: 0; }
+.syn3h-shell.exploration-ui .rail-navigation .rail-pause { margin-left: 0; flex: 0 0 auto; }
+.syn3h-shell.exploration-ui .rail-navigation .rail-close { flex: 0 0 auto; }
+.syn3h-shell.exploration-ui .rail-foot { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 10px; }
+.syn3h-shell.exploration-ui .rail-foot .wi-actions { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world { flex: 0 0 auto; margin-left: auto; min-height: 34px; padding: 5px 4px 5px 9px; border: 1px solid transparent; background: none; box-shadow: none; font: 500 11.5px 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); white-space: nowrap; }
+.syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world:hover { border-color: var(--s3-line-quiet); }
+/* Short screens: the quick controls share the header's line, so the name gives way and the
+   search takes a line of its own, as before. */
+@media (max-height: 500px) {
+  .syn3h-shell.exploration-ui .rail-navigation { flex-wrap: wrap; justify-content: flex-end; row-gap: 2px; }
+  .syn3h-shell.exploration-ui .rail-navigation .rail-world { display: none; }
+  .syn3h-shell.exploration-ui .wi-quick { left: 10px; }
+  .syn3h-shell.exploration-ui .world-inspector .rail-navigation .wi-search { order: 9; flex: 1 0 100%; }
+  .syn3h-shell.exploration-ui .rail-foot { padding: 2px 8px; }
+  .syn3h-shell.exploration-ui .rail-foot .wi-actions { flex-wrap: nowrap; gap: 3px; }
+  .syn3h-shell.exploration-ui .rail-foot .wi-actions button { padding: 3px; font-size: 9px; min-height: 24px; }
+  .syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world { min-height: 24px; padding-block: 2px; font-size: 10px; }
+}
