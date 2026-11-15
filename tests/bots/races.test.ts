@@ -70,6 +70,22 @@ describe('automatic landmark races', () => {
     expect(s.published.at(-1)?.phase).toBe('cancelled')
     expect(s.published.at(-1)!.revision).toBeGreaterThan(state.revision + 1)
   })
+  it('accepts a lower canonical revision when a speculative transition is rejected', () => {
+    const s = setup(); s.advance(30); s.ack()
+    const countdown = s.published.at(-1)!
+    s.advance(5)
+    expect(s.published.at(-1)?.phase).toBe('running')
+    s.races.apply({ ...countdown, updatedAt: 135, remainingMs: 1000, winnerName: null })
+    expect(s.races.goal(s.candidates[1].vehicle)?.countdown).toBe(true)
+    s.advance(1)
+    expect(s.published.at(-1)?.revision).toBe(countdown.revision + 1)
+  })
+  it('releases bot control when a publication receives no reply', () => {
+    const s = setup(); s.advance(30); s.advance(6)
+    s.ack()
+    expect(s.races.goal(s.candidates[1].vehicle)).toBeNull()
+    s.advance(20); expect(s.published).toHaveLength(1)
+  })
   it('never migrates an old host race and stops driving after authority loss', () => {
     const s = setup(); s.start()
     s.races.setHooks(null)

@@ -41,7 +41,7 @@ export class BotRaces {
       this.state = null; this.previous.clear(); return
     }
     // A host must not adopt another host's simulation after transfer.
-    if (!this.state || state.id !== this.state.id || state.revision < this.state.revision) return
+    if (!this.state || state.id !== this.state.id || (this.acknowledged && state.revision < this.state.revision)) return
     this.state = { ...state, destination: { ...state.destination }, participants: state.participants.map(p => ({ ...p })) }
     this.endsAt = state.updatedAt + state.remainingMs / 1000
     this.acknowledged = true
