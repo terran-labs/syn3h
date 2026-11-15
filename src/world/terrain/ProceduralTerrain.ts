@@ -55,7 +55,11 @@ export class ProceduralTerrain implements Terrain {
         this.look.setSea(worldLavaAltitude.value)
       },
     })
-    this.volcanics = game.add(new Volcanics(game.scene, this.sampler))
+    this.volcanics = game.add(new Volcanics(
+      game.scene, this.sampler,
+      () => game.renderer.toneMappingExposure,
+      () => Number(params.get('sky.exposure')?.value ?? game.renderer.toneMappingExposure),
+    ))
     this.trees = game.add(new Trees(game.scene, this.sampler, game.camera))
 
     this.unsubscribe = params.onChange((id) => {
