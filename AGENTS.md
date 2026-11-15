@@ -22,13 +22,17 @@ In practice:
   textures, sprites, image files and recordings.
 - Expose what you generate through the parameter registry (`shared/params.ts`) or plain
   options with a seed, so it can be tuned and shared.
-- Ship no pre-generated textures, audio files or other large binary data. The owner
-  withdrew the earlier exception for his recorded originals on 15 November 2026: music,
-  cues and wind are all synthesised, and the generated score is the only music, in the
-  lobby and in play. If a generated version cannot yet match an asset, say so to the
-  owner and get his decision; do not quietly keep the asset.
-- The only bitmaps that stay are those a platform demands: install icons and the social
-  share card. Vehicle meshes are an open question for the owner, not a standing exception.
+- The running game loads no binary assets: no recorded audio, images, textures, models or
+  fonts fetched or decoded at run time. The owner's rule of 15 November 2026: "Binary
+  assets in the codebase are okay. Binary assets that get loaded into the running game are
+  unacceptable." It withdraws the earlier exception for his recorded originals: music, cues
+  and wind are synthesised, and the generated score is the only music.
+- Binaries the game itself never loads may live in the repository: install icons and the
+  link-preview card (fetched by the browser, the phone and crawlers), source art, captures.
+- If a generated version cannot yet match an asset, say so to the owner and get his
+  decision; do not quietly keep the asset. Anything he accepts goes on the release check's
+  approved list with a date. Today that is only the vehicle models still loaded for the
+  noon release, to be replaced by generated vehicles after the demo.
 - Do not be constrained by how the 2010 and 2017 Unity builds were made. Use current web
   platform features (WebGPU, WebGL 2, modern CSS, Web Audio) to cut load time and raise
   the visual effect. The originals are art direction, not a specification.

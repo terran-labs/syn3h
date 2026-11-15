@@ -26,6 +26,19 @@ The owner answered the wind question: generated wind only. UX owns removing the 
 wind layer. This supersedes the recording-retention rule for wind only; original music
 and laser recordings remain.
 
+## Sunday 15 November, 9:00am Pacific: the rule is what the running game loads
+
+**Decided** by the owner: "Binary assets in the codebase are okay. Binary assets that get
+loaded into the running game are unacceptable."
+
+**What it changes.** The release check is defined by the requests a scripted play session
+makes, not by what the repository holds. Install icons and the share card stay as checked
+in, because the game never loads them; no build-time generation is needed. Fonts are
+loaded at run time, so Barlow fails the rule; his answer on it is pending, recommended as
+the device font. The vehicle models kept for noon are the one dated exception. The physics
+engine's compiled code is classed as code, not an asset, and is reported to him with its
+size so he can object. `AGENTS.md` is updated.
+
 ## Sunday 15 November, 8:55am Pacific: classic buggy removed; live models stay for noon
 
 **Decided** by the owner, answering the Foreman's question on the 1.7 MB of vehicle models.
