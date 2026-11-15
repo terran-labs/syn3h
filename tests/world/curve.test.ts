@@ -15,7 +15,8 @@ describe('planet radius', () => {
     expect(curveRadius(SIZE, 0)).toBe(Infinity)
     expect(curveRadius(SIZE, NaN)).toBe(Infinity)
     expect(curveRadius(SIZE, 0.5)).toBeCloseTo(2 * R, 9)
-    expect(curveParam.def.default).toBe(1)
+    // Drawn larger than true by default, so the centre's mountain shows from the spawn pads.
+    expect(curveParam.def.default).toBe(0.4)
   })
 })
 

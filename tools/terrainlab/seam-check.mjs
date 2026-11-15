@@ -16,8 +16,7 @@ const browser = await chromium.launch({
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
 const errors = []
 page.on('pageerror', (e) => errors.push(e.message))
-const sep = world.includes('~') ? ',' : '~'
-await page.goto(`${base}?autoplay=1&world=${world}${sep}world.wrap=true&room=seam${Date.now().toString(36)}`, { waitUntil: 'load' })
+await page.goto(`${base}?autoplay=1&world=${world}&room=seam${Date.now().toString(36)}`, { waitUntil: 'load' })
 await page.waitForFunction(() => window.syn3h?.game?.tick > 60, null, { timeout: 90000 })
 
 const results = []
