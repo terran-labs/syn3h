@@ -7,7 +7,7 @@ import { defineParam, type Param, worldSeed } from '../../../shared/params'
 const P = { scope: 'world', group: 'Terrain', deferred: true } as const
 
 export const terrainVolcanoHeight = defineParam({
-  ...P, id: 'terrain.volcanoHeight', label: 'Volcano height', default: 480, min: 120, max: 600, step: 5,
+  ...P, id: 'terrain.volcanoHeight', label: 'Volcano height', default: 540, min: 120, max: 640, step: 5,
 })
 export const terrainVolcanoRadius = defineParam({
   ...P, id: 'terrain.volcanoRadius', label: 'Volcano radius', default: 360, min: 220, max: 480, step: 5,
