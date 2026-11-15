@@ -131,7 +131,8 @@ describe('showroom vehicle shading',()=>{
   for(let i=0;i<3;i++){b.draw();b.tick(80)}
   a.tick(80,1);expect(a.proxies()?.[0].material).toBe(near)
   // Coming close mid-warm cancels it; a vehicle that is never drawn gives up its turn.
-  a.tick(10,1);expect(a.proxies()).toBeUndefined();expect(showroomWarm.cancelled-before.cancelled).toBe(1)
+  const cancelledBeforeArrival=showroomWarm.cancelled
+  a.tick(10,1);expect(a.proxies()).toBeUndefined();expect(showroomWarm.cancelled-cancelledBeforeArrival).toBe(1)
   b.tick(80,1);for(let i=0;i<200;i++)b.tick(80,1)
   expect(b.proxies()).toBeUndefined();expect(showroomWarm.abandoned-before.abandoned).toBe(1)
   a.dispose();b.dispose()
