@@ -5,6 +5,7 @@
 import type { LabExhibit } from '../types'
 import { buggy } from './buggy'
 import { gameSkins } from './gameSkins'
+import { hover } from './hover'
 import { jet } from './jet'
 
-export const exhibits: Record<string, LabExhibit> = Object.fromEntries([buggy, gameSkins, jet].map(e => [e.id, e]))
+export const exhibits: Record<string, LabExhibit> = Object.fromEntries([buggy, gameSkins, hover, jet].map(e => [e.id, e]))
