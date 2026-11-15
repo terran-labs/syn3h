@@ -104,7 +104,6 @@ export class Inspector {
     this.element.className = 'world-inspector'; this.element.setAttribute('aria-label', 'World inspector')
     this.element.innerHTML = `<div class="wi-top wi-glass"><input class="wi-search" type="search" placeholder="Find a setting" aria-label="Find a setting" autocomplete="off" spellcheck="false">
       <div class="wi-actions"><button type="button" data-wi="copy-world">Copy world</button><button type="button" data-wi="paste-world">Paste world</button><button type="button" data-wi="reset">Reset</button></div></div>
-      <div class="wi-quick"><div class="wi-vehicle-slot"></div><label class="wi-gear-slot">Gear</label><button type="button" data-wi="show-gi">GI lighting</button></div>
       <div class="wi-cards"></div>
       <div class="wi-detail wi-glass" hidden></div>
       <div class="wi-sheet wi-glass" hidden><strong></strong><textarea spellcheck="false" aria-label="World as JSON"></textarea><div class="wi-actions"><button type="button" data-wi="apply">Paste it in</button><button type="button" data-wi="close">Close</button></div></div>
@@ -120,7 +119,7 @@ export class Inspector {
     this.element.addEventListener('scroll', () => this.hideTooltip(), { capture: true, signal })
     window.addEventListener('resize', () => this.hideTooltip(), { signal })
     document.addEventListener('pointerdown', event => { if (!(event.target as Element).closest('.wi-row, .wi-tooltip')) this.hideTooltip() }, { signal })
-    this.element.querySelector('.wi-vehicle-slot')!.append(this.vehicleSwitch())
+    this.vehicleControl = this.vehicleSwitch()
     this.build()
     this.unsubscribe = params.onChange((id, value) => this.rows.get(id)?.sync(value))
     this.element.addEventListener('click', event => this.click(event))
@@ -167,6 +166,7 @@ export class Inspector {
       const head = document.createElement('button'); head.type = 'button'; head.className = 'wi-head'; head.dataset.wi = 'toggle'; head.setAttribute('aria-expanded', 'false')
       head.innerHTML = '<h3></h3><span class="wi-sum"></span><span class="wi-chev" aria-hidden="true"></span>'; head.querySelector('h3')!.textContent = section.title
       const body = document.createElement('div'); body.className = 'wi-body'; body.hidden = true
+      if (section.id === 'vehicles') body.append(this.vehicleControl)
       const blurb = document.createElement('p'); blurb.className = 'wi-blurb'; blurb.textContent = section.blurb; body.append(blurb)
 
       section.tree.forEach((group, index) => {
@@ -244,6 +244,7 @@ export class Inspector {
     }
     wrap.append(label, tint); return wrap
   }
+  private vehicleControl!: HTMLElement
   private readonly tintInputs: HTMLInputElement[] = []
   /** Opens the existing registered GI slider, rather than creating a second control. */
   private showGI(): void {
@@ -267,7 +268,6 @@ export class Inspector {
     const input = row.querySelector<HTMLInputElement>('input')!
     input.disabled = !eligible; input.setAttribute('aria-describedby', 'gi-status')
     const number = row.querySelector<HTMLButtonElement>('.wi-num'); if (number) number.disabled = !eligible
-    this.element.querySelector<HTMLButtonElement>('[data-wi=show-gi]')!.title = message
   }
   /** One property row: slider, toggle, choice or number, kept in sync with the registry. */
   row(def: PropertyDef): HTMLElement {

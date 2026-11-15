@@ -33,7 +33,7 @@
 
 /* ---------- Panels ---------- */
 .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass,
-.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector :is(.wi-quick, .rail-players, .performance-panel),
+.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector :is(.rail-players, .performance-panel),
 .syn3h-shell.exploration-ui:is([data-glass], *) :is(.shell-toast, .match-hud, .race-hud, .join-card),
 .syn3h-shell.exploration-ui:is([data-glass], *) .performance-recommendation {
   border: 1px solid var(--s3-line); border-radius: var(--halo-r);
@@ -51,7 +51,6 @@ html[data-gfx] .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector 
 .syn3h-shell.exploration-ui .world-inspector { font: 400 13.5px/1.4 'Barlow', sans-serif; color: var(--s3-ink); text-shadow: var(--halo-under); }
 .syn3h-shell.exploration-ui .world-inspector *, .syn3h-shell.exploration-ui .world-inspector :is(button, input, select) { -webkit-backdrop-filter: none; backdrop-filter: none; }
 /* The quick selectors and the players list float as panels of their own. */
-.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-quick { border-bottom: 1px solid var(--s3-line); }
 .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players { border-bottom: 1px solid var(--s3-line); }
 .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players > summary { background: none; border-radius: var(--halo-r) var(--halo-r) 0 0; }
 .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players:not([open]) > summary { border-radius: var(--halo-r); background: none; }
@@ -84,9 +83,6 @@ html[data-gfx] .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector 
 .syn3h-shell.exploration-ui .wi-top #syn3h-build-notice { border: 1px solid var(--s3-line) !important; border-radius: 999px !important; background: none !important; box-shadow: var(--halo-glow) !important; color: var(--s3-ink); text-shadow: var(--halo-under); }
 
 /* Quick selectors */
-.syn3h-shell.exploration-ui .wi-quick label { font: 400 11px 'Barlow', sans-serif; letter-spacing: .04em; color: var(--s3-soft); }
-.syn3h-shell.exploration-ui .world-inspector .wi-quick select { background: none; border-bottom: 1px solid var(--s3-line-quiet); color: var(--s3-ink); }
-.syn3h-shell.exploration-ui .world-inspector .wi-quick button { font-size: 12px; color: var(--s3-ink); }
 /* Disabled stays dimmer than enabled but readable over the bright sky. */
 .syn3h-shell.exploration-ui .world-inspector button:disabled { opacity: .62; }
 .syn3h-shell.exploration-ui .wi-gi-status { color: var(--s3-dim); }
@@ -196,13 +192,6 @@ html[data-gfx] .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector 
 body #syn3h-build-notice, body .build-banner { border: 1px solid rgb(205 240 255 / .55); border-radius: 999px; background: rgb(3 11 19 / .34); box-shadow: 0 0 6px rgb(143 227 255 / .14), 0 0 34px rgb(0 6 12 / .22); color: #f3fbff; font: 400 13.5px/1.2 'Barlow', system-ui, sans-serif; letter-spacing: .03em; text-shadow: 0 0 1px rgb(0 8 14 / .9), 0 1px 2px rgb(0 8 14 / .55); -webkit-backdrop-filter: none; backdrop-filter: none; }
 body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(198 241 255 / .9); }
 
-/* Short landscape screens tuck the quick selectors into the top block's spare space
-   (exploration.css): there they are not a panel, and their captions stay hidden. */
-@media (max-height: 500px) {
-  .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-quick { border: 0; border-radius: 0; background: none; box-shadow: none; }
-  .syn3h-shell.exploration-ui .wi-quick label { font-size: 0; line-height: 0; }
-  .syn3h-shell.exploration-ui .world-inspector .wi-quick [data-wi=show-gi] { font-size: 0; }
-}
 
 @media (prefers-reduced-motion: reduce) {
   .syn3h-shell.exploration-ui .world-inspector *, body #syn3h-build-notice { transition: none; }
