@@ -35,10 +35,69 @@ second player.
 | Camera | C |
 | Help | H |
 
-## Built with
+## How it is made
 
-Three.js on WebGPU with a WebGL fallback, Rapier physics, TypeScript and Vite. Every world
-is generated on your machine from a shared seed, so there is nothing to download.
+**A world from a number.** Every planet is a pure function of a seed: a radial island,
+terraced noise for the ground, chains of cellular mountains, a volcano with a lava lake at
+its heart, and roads laid over what the terrain allows. Nothing is downloaded. Your machine
+grows the same island as everyone else's in the room, and the globe you tap in the lobby is
+painted from that very island, so the preview is the place.
+
+**A world without an edge.** The map is a tile that repeats exactly. Drive off one side and
+you arrive on the other. Cameras, bots, the minimap, the network and even the motion
+vectors of the antialiasing all measure to the nearest image, so the seam is not there to
+find.
+
+**Light that agrees with itself.** The sky is physical scattering, evaluated twice: once in
+the shader that draws it and once in plain code that colours the sun, the ambient light and
+the fog with the same terms. The picture is then finished in one pipeline written in
+three.js shading nodes: glow, sun shafts the volcano can eclipse, ambient occlusion,
+screen-space global illumination, soft contact shadows, raymarched clouds that drift with
+the wind, temporal antialiasing, and a colour grade for each planet. It runs on WebGPU and
+falls back to WebGL.
+
+**Water you can stand on.** The sea is a short sum of swells with one formula, written once
+for the physics and once for the shader. A floating vehicle rises on exactly the wave you
+see, on every player's screen.
+
+**Machines with opinions.** Rapier runs the physics at a fixed step, in its own compiled
+file that loads beside the lobby. A buggy that opens force-field wings and glides, a jet
+that hovers and flies, a hovercraft, a tank, and a Zorb ball any of them can roll inside.
+Switch between them in place, without leaving the world. Gravity, drag, buoyancy and some
+three hundred other parameters are live: change one and the whole room feels it.
+
+**Music nobody recorded.** A seeded composer writes the score a sixteenth note at a time
+from what you are doing, and a synthesiser built from Web Audio worklets plays it: pads,
+choir, plucks, bells, a hall. Engines, wind and impacts are synthesised too.
+
+**Company.** Bots have a mind that picks a purpose by seeded personality, a navigator that
+plans a route their kind of vehicle can travel, and a pilot that works the same controls
+you do. Leave the keys alone and the same three layers drive your own vehicle on a tour.
+
+**A room that sleeps.** One Cloudflare Worker serves the game and gives each room its own
+Durable Object. Sockets hibernate, so an empty room costs nothing and a full one keeps its
+world. A phone joins by a QR code the game draws itself.
+
+**Every version stays playable.** Each release is frozen and kept:
+[www.syn3h.com/?v=26.11.1503](https://www.syn3h.com/?v=26.11.1503) will serve that build
+exactly, however many follow it.
+
+### What is unusual about it
+
+- **It ships formulas, not files.** Terrain, sky, water, clouds, plants, sound and music
+  are generated at run time. The main script is about 2.3 MB and the physics engine about
+  3.1 MB before compression. The only binaries the running game still loads are the
+  interface font and the models for two vehicles, which are being replaced by generated
+  ones.
+- **One definition, three readers.** Waves, wrapping, sky maths and the parameter registry
+  are plain shared code read by the client, the server and the tests, so what you see,
+  what you collide with and what the other player sees cannot drift apart.
+- **Everything is a parameter.** Worlds, vehicles and effects are tuned from a registry
+  with sliders, and a world's settings travel in its link.
+- **It was built in a weekend** by one person directing a team of AI agents, each with its
+  own lane, tests and browser checks, releasing to production through the night.
+
+Three.js, Rapier, TypeScript and Vite. No game engine.
 
 ## Licence
 
