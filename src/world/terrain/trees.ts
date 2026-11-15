@@ -7,6 +7,9 @@
  * of them and patches beyond the draw distance are hidden. Colour varies a little per
  * plant. Crystal shards glow so they read at night. Plants have no collision: cars pass
  * through, so nothing can trap or flip a vehicle.
+ *
+ * The world wraps: each patch is drawn at whichever image of it is nearest the camera,
+ * like the terrain chunks, so forest continues across the seam.
  */
 import * as THREE from 'three/webgpu'
 import type { System } from '../../core/Game'
@@ -283,8 +286,17 @@ export class Trees implements System {
 
   update(): void {
     const c = this.camera.position
+    const size = this.sampler.data.size
     for (const p of this.patches) {
-      p.visible = p.boundingSphere!.distanceToPoint(c) < this.drawDistance
+      const s = p.boundingSphere!
+      const ox = size * Math.round((c.x - s.center.x) / size)
+      const oz = size * Math.round((c.z - s.center.z) / size)
+      if (ox !== p.position.x || oz !== p.position.z) {
+        p.position.set(ox, 0, oz)
+        p.updateMatrix()
+      }
+      const dx = s.center.x + ox - c.x, dy = s.center.y - c.y, dz = s.center.z + oz - c.z
+      p.visible = Math.sqrt(dx * dx + dy * dy + dz * dz) - s.radius < this.drawDistance
     }
   }
 

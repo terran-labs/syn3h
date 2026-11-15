@@ -16,6 +16,7 @@ import {
   positionView, positionWorld, sin, smoothstep, uniform, vec2, vec3,
 } from 'three/tsl'
 import { ROAD_WIDTH } from './roads'
+import { applyCurve } from '../curve'
 
 export interface TerrainMaterial {
   material: THREE.MeshStandardNodeMaterial
@@ -179,6 +180,9 @@ export function createTerrainMaterial(): TerrainMaterial {
     return det.abs().mul(n).sub(grad).normalize()
   })()
   material.name = 'terrain'
+  // Planet curve: bends only the drawn position. Every colour above reads positionWorld,
+  // which stays flat, so the ground does not recolour as the camera moves.
+  applyCurve(material)
 
   return {
     material,
