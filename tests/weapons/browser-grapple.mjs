@@ -159,9 +159,18 @@ try {
     await page.evaluate(() => window.syn3hNet.bungee.setReel(0))
     // The landing marker while aiming at the ground.
     await letGo(); await settle(8, 14)
-    await page.evaluate(() => window.syn3hNet.gear.select('bungee'))
-    await page.waitForTimeout(500)
+    await page.evaluate(() => {
+      const s = window.syn3h
+      window.syn3hNet.gear.select('bungee')
+      // The unlocked aim follows the vehicle. A level vehicle points above the horizon,
+      // so pitch it toward the ground to produce an actual landing marker.
+      const pitch = s.player.object.quaternion.clone().setFromAxisAngle(s.player.object.position.clone().set(1, 0, 0), -.65)
+      s.player.body.setRotation(s.player.object.quaternion.clone().multiply(pitch), true)
+      s.player.body.setEnabledRotations(false, false, false, true)
+    })
+    await page.waitForFunction(() => window.syn3hNet.bungee.look.markerShown.some(Boolean), null, { timeout: 10000 })
     await shoot(`${tag}-marker`, 'marker')
+    await page.evaluate(() => window.syn3h.player.body.setEnabledRotations(true, true, true, true))
   }
 
   // Gear pipelines built while each set runs. The warm-up (src/weapons/warm.ts) compiles the
