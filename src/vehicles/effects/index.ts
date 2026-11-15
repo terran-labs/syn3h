@@ -7,6 +7,8 @@ import type {TileShiftEvent,Vehicle,VehicleObjectEvents} from '../Vehicle'
 import {ParticleBatch} from './ParticleBatch'
 import {RibbonBatch} from './RibbonBatch'
 import {dustSprite,glowSprite,plasmaSprite,tyreMarkAlpha} from './sprites'
+import {DEFAULT_TREAD,TREADS} from './treads'
+import type {SurfaceKind} from '../../world/terrain/surface'
 import {windDrift} from '../../world/weather'
 
 const greenPlasma=plasmaSprite(false),redPlasma=plasmaSprite(true)
@@ -19,7 +21,7 @@ const worlds=new WeakMap<Game,EffectWorld>()
 const clamp=T.MathUtils.clamp
 /** Integer hashing keeps cosmetic emission reproducible without touching simulation randomness. */
 export function effectNoise(i:number){let n=Math.imul(i+1,0x45d9f3b);n=Math.imul(n^(n>>>16),0x45d9f3b);return ((n^(n>>>16))>>>0)/4294967296}
-const dustColor=new T.Color(.48,.27,.12),markColor=new T.Color(.055,.035,.022)
+const dustColor=new T.Color(.48,.27,.12),markColor=new T.Color()
 const temp=new T.Vector3(),normal=new T.Vector3(),side=new T.Vector3(),velocity=new T.Vector3()
 // Scratch for the per frame path, so a frame with nine vehicles allocates nothing here. Each is
 // written and read within one statement or one loop pass; nothing keeps a reference to them.
@@ -204,11 +206,17 @@ class VehicleEffects {
         if(!touching||!this.dry(wp)||speed<.5){this.hasMark[i]=false;continue}
         normal.copy(contact?.normal??this.terrain.normalAt(wp.x,wp.z,temp));if(!contact)wp.y=y
         wp.addScaledVector(normal,.04)
-        const slip=Math.abs(contact?.slip??this.localVelocity.x),intensity=slip>Math.abs(this.localVelocity.z)*.3?Math.abs(v.input.y)*.5+.25:.5
+        const slip=Math.abs(contact?.slip??this.localVelocity.x)
         const prev=this.previousMarks[i]
         if(!this.hasMark[i]){prev.copy(wp);this.hasMark[i]=true}
         else if(prev.distanceToSquared(wp)>=.75*.75){
-          side.copy(wp).sub(prev).cross(normal).normalize();w.marks.add(prev,wp,side,this.classic?.3:.5,60,clamp(intensity,0,1)/2,markColor);prev.copy(wp)
+          // The ground decides the mark: its colour, how deep the print and how long it lasts
+          // (treads.ts). A rolling wheel leaves the light mark; one sliding sideways under
+          // throttle or brakes leaves up to the heavy one.
+          const style=TREADS[this.terrain.surfaceAt?.(wp.x,wp.z)as SurfaceKind]??DEFAULT_TREAD
+          const sliding=slip>Math.abs(this.localVelocity.z)*.3?clamp(Math.max(Math.abs(v.input.y),v.input.brakes?1:0),0,1):0
+          side.copy(wp).sub(prev).cross(normal).normalize()
+          w.marks.add(prev,wp,side,(this.classic?.3:.5)*style.width,style.life,T.MathUtils.lerp(style.roll,style.slip,sliding),markColor.setRGB(style.tint[0],style.tint[1],style.tint[2]),style.tread);prev.copy(wp)
         }
         if(this.dustTimer>=1/(25*rateScale)&&speed>2){
           velocity.set(raw.x*-.08+(w.noise()-.5)*slip*.3,.6+w.noise(),raw.z*-.08)

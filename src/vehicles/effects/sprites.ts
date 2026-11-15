@@ -25,8 +25,11 @@ export interface SpriteLook { rgb: N; alpha: N }
  * `octaves` the noise detail, 1 at the safe graphics level and 2 or 3 above it.
  */
 export type Sprite = (p: N, seed: N, age: N, octaves: number) => SpriteLook
-/** Alpha across a ribbon quad from its u coordinate, 0 to 1 across the mark. */
-export type MarkAlpha = (u: N) => N
+/**
+ * Alpha over a ribbon quad: `u` 0 to 1 across the mark, `v` 0 to 1 along the quad, `tread` the
+ * per-quad surface response (0 a scuff, 1 a deep print).
+ */
+export type MarkAlpha = (u: N, v: N, tread: N) => N
 
 /**
  * Soft, irregular dust puff. The old dust.png peaked at alpha .29 with a lumpy edge.
@@ -69,19 +72,32 @@ export const glowSprite: Sprite = (p, seed, age, octaves) => {
 }
 
 /**
- * Tyre mark alpha across a ribbon quad: soft shoulders, tread ribs running along the mark and a
- * low, world-anchored patchiness so a long mark is not one flat band. `u` runs across the mark.
+ * Tyre mark alpha across a ribbon quad. `u` runs across the mark, `v` along it (0 to 1 over
+ * each quad) and `tread` says what the ground does with a tyre (see treads.ts): 1 is a deep
+ * print in soft ground, with strong ribs and chevron lug blocks; 0 is a scuff on hard ground,
+ * with no pattern, soft edges and a broken, patchy body. One shader draws every surface, so
+ * the marks stay a single draw call.
  *
  * The old skidmark.png had alpha 1 everywhere, so marks drew as flat bands with hard edges. The
- * ribs fade out once they get finer than a few pixels, so distant marks do not shimmer.
+ * ribs and lugs fade out once they get finer than a few pixels, so distant marks do not shimmer.
  */
-export const tyreMarkAlpha: MarkAlpha = u => {
-  const shoulders = smoothstep(0, .2, u).mul(float(1).sub(smoothstep(.8, 1, u)))
+export const tyreMarkAlpha: MarkAlpha = (u, v, tread) => {
+  // A print has a firm edge; a scuff feathers out over a third of its width.
+  const edge = mix(float(.34), float(.16), tread)
+  const shoulders = smoothstep(0, edge, u).mul(float(1).sub(smoothstep(float(1).sub(edge), 1, u)))
   const ribs = 6, wave = fract(u.mul(ribs)).sub(.5).abs().mul(2)
   const ribFade = float(1).sub(smoothstep(.12, .35, fwidth(u).mul(ribs)))
-  const rib = mix(float(1), smoothstep(.15, .6, wave).mul(.28).add(.72), ribFade)
-  const patch = mx_noise_float(vec3(positionWorld.xz.mul(1.4), 0)).mul(.12).add(.94)
-  return shoulders.mul(rib).mul(patch)
+  const ribDepth = mix(float(.06), float(.42), tread)
+  const rib = mix(float(1), float(1).sub(ribDepth).add(smoothstep(.15, .6, wave).mul(ribDepth)), ribFade)
+  // Lug blocks: three chevrons to a quad, pointing along the mark. A whole number, so the
+  // pattern runs on from one quad into the next.
+  const lugs = 3, chevron = fract(v.mul(lugs).add(u.sub(.5).abs().mul(1.4)))
+  const lugFade = float(1).sub(smoothstep(.12, .35, fwidth(v).mul(lugs)))
+  const lug = mix(float(1), smoothstep(0, .14, chevron).mul(float(1).sub(smoothstep(.62, .78, chevron))).mul(.55).add(.45), tread.mul(lugFade))
+  // World-anchored patchiness: slight on a print, heavy on a scuff, which comes and goes.
+  const amount = mix(float(.5), float(.12), tread)
+  const patch = mx_noise_float(vec3(positionWorld.xz.mul(1.4), 0)).mul(amount).add(float(1).sub(amount.mul(.5))).clamp(0, 1.1)
+  return shoulders.mul(rib).mul(lug).mul(patch)
 }
 
 /** Per particle seed from its birth time and buffer slot, two values in 0 to 1. */
