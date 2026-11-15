@@ -40,15 +40,10 @@
 /* The panel is a sheet of frosted glass over the sky: Dark Star's card radius and hairline. */
 .lobby-panels { position: relative; perspective: 300px; width: min(1000px,100%); min-height: 0; flex: 1 1 600px; max-height: 760px; background: var(--s3-panel); border: 1px solid var(--s3-line-quiet); border-radius: var(--s3-radius); -webkit-backdrop-filter: blur(22px) saturate(150%); backdrop-filter: blur(22px) saturate(150%); box-shadow: 0 2px 4px rgb(0 0 0 / .2), 0 12px 32px rgb(0 0 0 / .16), 0 28px 58px rgb(0 0 0 / .1); }
 .lobby-panels > section { height: 100%; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: #2b3a52 transparent; padding: 34px 30px 22px; max-width: 700px; margin: auto; text-align: center; touch-action: pan-y; }
-.lobby-panels > .lobby-index { max-width: none; display: grid; grid-template-columns: minmax(0,300px) minmax(0,440px); grid-template-areas: 'title title' 'message destinations' 'links links'; gap: clamp(18px,4.5vh,48px) 70px; justify-content: center; align-content: center; padding: 30px 40px 20px; }
-.lobby-index > h1 { grid-area: title; margin: 0; }
-.lobby-destinations { grid-area: destinations; }
 .lobby-links { grid-area: links; }
-.lobby-message { grid-area: message; align-self: center; text-align: center; }
 .syn3h-shell h1, .syn3h-shell h2 { font: 600 38px/1.05 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: -0.01em; color: #fff; margin: 0 0 22px; text-wrap: balance; }
 .syn3h-shell h1 { font-size: clamp(40px, 5.2vw, 64px); text-transform: uppercase; }
 .syn3h-shell p { margin: 12px 0 22px; }
-.syn3h-shell .lobby-room-label { color: var(--s3-dim); font-size: 15px; overflow-wrap: anywhere; }
 .lobby-links { display: flex; justify-content: center; gap: 12px 44px; flex-wrap: wrap; }
 /* Buttons. Every button is terranlabs.com's glass button; Shell.ts gives them the
    .liquid-glass class. This rule only sets what is Syn3h's: type, size and touch. */
@@ -193,10 +188,6 @@
 .syn3h-shell button.panel-back::before { content: '‹ '; }
 .syn3h-shell :focus-visible { outline: 2px solid var(--theme-focus-ring); outline-offset: 3px; }
 .syn3h-shell h1:focus, .syn3h-shell h2:focus { outline: none; }
-
-.lobby-destinations { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-.syn3h-shell .lobby-destinations button { min-height: clamp(52px, 8.5vh, 82px); font-size: 20px; }
-.syn3h-shell .lobby-destinations .return-game { grid-column: 1 / -1; }
 .syn3h-shell .panel-back { display: block; margin: 26px auto 0; }
 .lobby-footer { position: relative; display: flex; flex-direction: column; justify-content: center; align-items: center; width: min(1000px,100%); flex: 0 0 38px; font-size: 12px; color: var(--s3-soft); }
 .shell-message { overflow-wrap: anywhere; font-size: 13px; }
@@ -261,8 +252,8 @@
 .touch-actions button { border: 1px solid #9ebee37a; border-radius: 50%; height: 62px; color: #e5f0ff; background: #182c47bd; font: 400 15px 'Barlow', sans-serif; pointer-events: auto; touch-action: none; }
 .touch-actions .touch-fire { grid-column: 2; background: #43668dc9; }
 .touch-actions button.held, .touch-actions button[aria-pressed=true] { background: #8bbff2dd; color: #10243b; }
-@media (max-width: 700px) { .shell-overlay { padding: max(8px,env(safe-area-inset-top)) 16px max(8px,env(safe-area-inset-bottom)); } .lobby-brand { flex-basis: 120px; } .shell-logo { width: 290px; } .lobby-panels { max-height: none; width: 100%; } .lobby-panels > section { padding: 8px 4px 16px; } .lobby-panels > .lobby-index { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 14px; padding: 18px 12px 12px; } .lobby-message { padding: 0; max-width: 330px; } .lobby-index > h1 { font-size: 28px; } .lobby-message p { font-size: 16px; margin: 8px 0; } .lobby-links { margin: 6px 0; justify-content: center; } .lobby-destinations { width: 100%; max-width: 360px; gap: 8px; } .syn3h-shell .lobby-destinations button { min-height: 58px; font-size: 19px; } .lobby-footer { font-size: 11px; flex-basis: 30px; } .shell-hud { left: 12px; top: 12px; width: 180px; padding: 8px; } .shell-speed strong { font-size: 34px; } .hud-scoreboard { max-height: 95px; } .hud-scoreboard .score-detail { display: none; } .hud-navigation { right: 12px; top: 12px; flex-direction: column; gap: 5px; } .hud-navigation button { padding: 8px 12px; font-size: 14px; } .touch-stick { width: 124px; height: 124px; left: 18px; } .touch-knob { left: 35px; top: 35px; } .touch-actions { right: 18px; } .shell-vehicle-preview { height: 170px; } .shell-colors { gap: 20px; } }
-@media (max-height: 550px) { .lobby-brand { flex-basis: 66px; } .shell-logo { width: 190px; } .lobby-panels > section { padding-top: 14px; } .lobby-panels > .lobby-index { gap: 10px 40px; padding: 12px 24px 8px; align-content: start; } .lobby-index > h1 { font-size: 24px; } .lobby-message p:first-child, .lobby-index .menu-qr { display: none; } .syn3h-shell .lobby-destinations button { min-height: 44px; font-size: 18px; } .lobby-footer { flex-basis: 22px; } }
+@media (max-width: 700px) { .shell-overlay { padding: max(8px,env(safe-area-inset-top)) 16px max(8px,env(safe-area-inset-bottom)); } .lobby-brand { flex-basis: 120px; } .shell-logo { width: 290px; } .lobby-panels { max-height: none; width: 100%; } .lobby-panels > section { padding: 8px 4px 16px; } .lobby-links { margin: 6px 0; justify-content: center; } .lobby-footer { font-size: 11px; flex-basis: 30px; } .shell-hud { left: 12px; top: 12px; width: 180px; padding: 8px; } .shell-speed strong { font-size: 34px; } .hud-scoreboard { max-height: 95px; } .hud-scoreboard .score-detail { display: none; } .hud-navigation { right: 12px; top: 12px; flex-direction: column; gap: 5px; } .hud-navigation button { padding: 8px 12px; font-size: 14px; } .touch-stick { width: 124px; height: 124px; left: 18px; } .touch-knob { left: 35px; top: 35px; } .touch-actions { right: 18px; } .shell-vehicle-preview { height: 170px; } .shell-colors { gap: 20px; } }
+@media (max-height: 550px) { .lobby-brand { flex-basis: 66px; } .shell-logo { width: 190px; } .lobby-panels > section { padding-top: 14px; } .lobby-footer { flex-basis: 22px; } }
 @media (prefers-reduced-motion: reduce) { .shell-logo { animation: none; } .lobby-stage { transform: none; transition: none; } }
 
 @keyframes panel-arrival { from { opacity: 0; transform: translateZ(-30px); } to { opacity: 1; transform: translateZ(0); } }
@@ -334,7 +325,6 @@
 
 .invite-qr { width: min(240px,100%); margin: 12px auto; }
 .invite-qr svg { display: block; width: 100%; height: auto; }
-.menu-qr { width: 120px; margin-left: 0; }
 .invite-link, .join-room { overflow-wrap: anywhere; font-size: 14px; }
 .join-view { position: fixed; inset: 0; z-index: 80; background: radial-gradient(ellipse at 50% 120%, #06123a, var(--s3-space) 60%); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px; overflow: auto; text-align: center; }
 .join-view > .wordmark { width: 240px; flex: none; margin-bottom: 14px; }
@@ -345,7 +335,7 @@
 .join-view .invite-link { font-size: 18px; }
 .join-view .join-count { font-size: 20px; }
 .join-view > div:last-child { display: flex; gap: 12px; margin-top: 12px; }
-@media(max-width:700px) { .menu-qr { width: 96px; margin: 8px auto; } .lobby-panels > .lobby-index { justify-content: flex-start; } .join-view > .wordmark { width: 190px; } .syn3h-shell .join-view h1 { font-size: 30px; } .join-view .join-room { font-size: 20px; } .join-view .invite-link { font-size: 13px; } .join-view .invite-qr { width: min(42vh,85vw); } }
+@media(max-width:700px) { .join-view > .wordmark { width: 190px; } .syn3h-shell .join-view h1 { font-size: 30px; } .join-view .join-room { font-size: 20px; } .join-view .invite-link { font-size: 13px; } .join-view .invite-qr { width: min(42vh,85vw); } }
 
 .is-attract .shell-overlay { visibility: hidden; }
 .attract-overlay { position: fixed; inset: 0; z-index: 40; color: white; background: linear-gradient(transparent 65%,#03060cbb); display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; padding: 24px; cursor: pointer; }
@@ -491,9 +481,6 @@
 }
 /* Lobby index on a short screen: the planets and the links fit without scrolling. */
 @media (max-height: 550px) {
-  .lobby-index .invite-link { display: none; }
-  .lobby-index > h1 { font-size: 22px; }
-  .syn3h-shell .lobby-index .lobby-room-label { margin: 0 0 4px; }
   .syn3h-shell .lobby-links button { min-height: 32px; }
 }
 /* A hint for a player who seems stuck: the controls card with a lit edge, and on touch the
