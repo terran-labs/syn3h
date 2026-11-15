@@ -537,13 +537,20 @@ export class QualityController {
     effective = { ...s, level, rung: g.rung, rungs: g.ladder.length, auto: g.auto, targetFps: Math.round(1000 / g.targetMs) }
     window.dispatchEvent(new CustomEvent('syn3h:quality', { detail: { ...budget, ...effective, budget, reason: this.lastReason } }))
   }
-  frame(metrics: FrameMetrics) {
+  /** True until the first frame with draw calls. */
+  get isLoading() { return this.loading }
+  /**
+   * Once per rendered frame. `judge` is false while a lobby or menu is on screen: those
+   * frames are spent on the lobby's own drawing, so they must not step the game's quality
+   * down before the player has started. Evidence gathered so far is dropped too.
+   */
+  frame(metrics: FrameMetrics, judge = true) {
     if (this.loading && metrics.drawCalls > 0) {
       this.loading = false; finishLoad(this.storage); reportLoading('ready', 1)
     }
     if (!this.loading) {
       const moved = this.governor.setDevicePixelRatio(window.devicePixelRatio || 1)
-      const change = this.governor.sample(metrics.frameMs, !document.hidden) ?? moved
+      const change = this.governor.sample(metrics.frameMs, judge && !document.hidden) ?? moved
       if (change) { this.lastReason = change.reason; this.apply() }
     }
     this.hudElapsed += metrics.frameMs

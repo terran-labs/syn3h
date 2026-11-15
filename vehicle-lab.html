@@ -2,40 +2,135 @@
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Syn3h vehicle lab</title><link rel="icon" href="data:,">
 <!-- Developer tool: see docs/vehicle-lab.md. Not part of the production build (vite builds index.html only). -->
 <style>
-html,body{height:100%}
-body{margin:0;background:#8d9096;color:#f2f5f8;font:15px/1.35 system-ui,-apple-system,sans-serif;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
+/* One type scale (12, 13, 14, 16 px), one spacing step (4 px), a restrained dark theme. */
+:root{
+  --panel:rgba(15,18,22,.94);--raise:#1a1f26;--line:#262d36;--line2:#36404b;
+  --text:#e7ecf1;--muted:#93a0ad;--accent:#5aa9ff;--accent-ink:#06111f;--warn:#ffb37a;
+  --side:320px;--rail:52px;--head:52px;--target:44px;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:#8d9096;color:var(--text);font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
+#view{position:fixed;inset:0;touch-action:none}
 canvas{display:block}
-#top{position:absolute;top:0;left:0;right:0;padding:calc(12px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) 0 calc(16px + env(safe-area-inset-left));pointer-events:none;text-shadow:0 1px 3px #000a,0 0 10px #0008}
-h1{font-size:19px;margin:0 0 2px}#hint{margin:0;font-size:13px;opacity:.9}
-#card{position:absolute;left:calc(16px + env(safe-area-inset-left));top:calc(70px + env(safe-area-inset-top));max-width:340px;background:rgba(16,18,22,.74);border:1px solid #ffffff2a;border-radius:9px;padding:10px 14px;pointer-events:none}
-#name{font-size:17px}#group{font-size:12px;opacity:.7}
-#notes{margin:6px 0 0;padding-left:18px;color:#d3dae2;font-size:13.5px}
-#stats{margin:8px 0 0;font:12.5px/1.4 ui-monospace,Menlo,monospace;color:#9fe0b8;white-space:pre-wrap}
-#status{position:absolute;left:0;right:0;top:45%;text-align:center;font-size:17px;text-shadow:0 1px 4px #000}
-#bar{position:absolute;left:0;right:0;bottom:0;padding:10px calc(10px + env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left));display:flex;flex-direction:column;gap:8px;align-items:center;background:linear-gradient(#0000,#000a 35%)}
-#tabs,.panel{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
-.panel{display:none}.panel.open{display:flex}
-#tabs button{background:#0000;border-color:#ffffff40}
-#tabs button[aria-pressed=true]{background:#ffffff26;border-color:#fff;color:#fff}
-button,.picker,.slider{min-height:44px;min-width:44px;box-sizing:border-box;padding:9px 14px;color:#fff;background:#1d2026d9;border:1px solid #ffffff3a;border-radius:9px;font:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
-button[aria-pressed=true]{background:#fff;color:#111;border-color:#fff}
-button[hidden]{display:none}
-.swatch{width:44px;padding:0;border-radius:50%;border:2px solid #fff8}
-.swatch[aria-pressed=true]{border:3px solid #fff;outline:2px solid #000}
-.picker input{width:34px;height:26px;border:0;padding:0;background:none}
-.slider input{width:120px}
-/* Roomy screens (iPad landscape, desktop) show every panel at once; narrow ones use the tabs. */
-@media (min-width:1000px) and (min-height:600px){#tabs{display:none}.panel{display:flex}#bar{gap:6px}}
-/* Phones: a compact card under the title; tap it to show the notes. */
-#more{display:none;font-size:12px;opacity:.7;margin-top:2px}
-@media (max-width:640px){#card{top:calc(44px + env(safe-area-inset-top));left:10px;right:10px;max-width:none;padding:8px 12px;pointer-events:auto;cursor:pointer}#card:not(.expanded) #notes{display:none}#more{display:block}#card.expanded #more{display:none}#notes{font-size:12.5px}#hint{display:none}h1{font-size:16px}#tabs{gap:6px}#tabs button{padding:8px 10px}}
-@media (max-height:500px){#card{max-width:260px}#notes{display:none}#hint{display:none}}
-/* In the cockpit only the camera buttons stay, so the bar does not hide the view ahead. */
-body.inside #tabs,body.inside .panel{display:none}body.inside .panel[data-name=Camera]{display:flex}body.inside #card{display:none}
-body.still #top,body.still #card,body.still #bar,body.still #status{display:none}
+#status{position:fixed;left:0;right:0;top:44%;text-align:center;font-size:16px;text-shadow:0 1px 4px #000;pointer-events:none}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* Sidebar */
+#side{position:fixed;top:0;left:0;bottom:0;width:var(--side);background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;
+  padding-left:env(safe-area-inset-left);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);z-index:2}
+.side-head{display:flex;align-items:center;gap:8px;min-height:var(--head);padding:env(safe-area-inset-top) 8px 0 4px;border-bottom:1px solid var(--line);flex:none}
+.brand{font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.icon{width:var(--target);height:var(--target);flex:none;border:0;background:none;border-radius:8px;cursor:pointer;display:grid;place-items:center;color:var(--muted)}
+.icon:hover{background:var(--raise);color:var(--text)}
+.icon svg{width:20px;height:20px}
+.side-scroll{overflow-y:auto;overscroll-behavior:contain;flex:1;padding:8px 12px calc(16px + env(safe-area-inset-bottom));scrollbar-width:thin;scrollbar-gutter:stable}
+.handle{display:none}
+
+/* Collapsed: a slim rail on wide screens. */
+body.collapsed #side{width:var(--rail)}
+body.collapsed .side-scroll,body.collapsed .brand{display:none}
+body.collapsed .side-head{border-bottom:0;padding:env(safe-area-inset-top) 4px 0}
+
+/* Tree */
+.tree-sec>summary{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.tree-sec{border-bottom:0}
+.tree-section{font-size:12px;font-weight:600;color:var(--muted);margin:12px 4px 4px}
+.tree-item{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:8px 12px;border:0;border-radius:8px;background:none;text-align:left;cursor:pointer;color:var(--text)}
+.tree-item:hover{background:var(--raise)}
+.tree-item[aria-current=true]{background:#1d3550;box-shadow:inset 3px 0 0 var(--accent)}
+.tree-compare{color:var(--accent)}
+.tree-compare[aria-current=true]{color:var(--text)}
+.tree-veh>summary,.tree-grp>summary{display:flex;align-items:center;gap:8px;min-height:40px;padding:8px 12px;border-radius:8px;cursor:pointer;list-style:none}
+.tree-grp>summary{color:var(--muted);font-size:13px}
+.tree-veh>summary:hover,.tree-grp>summary:hover{background:var(--raise)}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"";width:6px;height:6px;border:solid currentColor;border-width:0 1.5px 1.5px 0;transform:rotate(-45deg);margin:0 4px 0 2px;flex:none;opacity:.7;transition:transform .12s}
+details[open]>summary::before{transform:rotate(45deg)}
+.tree-veh>.sec-body,.tree-grp>.sec-body{padding-left:12px}
+.tag{font-size:12px;color:var(--muted);border:1px solid var(--line2);border-radius:99px;padding:0 8px;margin-left:auto;line-height:18px}
+.tree-error{color:var(--warn);font-size:13px;padding:8px 12px}
+
+/* Info panel */
+#options{margin-top:4px;border-top:1px solid var(--line);padding-top:12px}
+.info{background:var(--raise);border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px}
+.info-title{font-size:12px;color:var(--muted)}
+.info-name{font-size:16px;font-weight:600;margin-top:2px}
+.info-notes{margin:8px 0 0;padding-left:18px;font-size:13px;color:#c9d2db}
+.info-notes li+li{margin-top:2px}
+.stats{font:12px/1.4 ui-monospace,Menlo,monospace;color:#9fe0b8;margin-top:8px;font-variant-numeric:tabular-nums}
+.note{font-size:12px;color:var(--muted)}
+
+/* Option sections */
+.sec{border-bottom:1px solid var(--line)}
+.sec>summary{display:flex;align-items:center;gap:8px;min-height:var(--target);padding:0 4px;font-weight:600;cursor:pointer;list-style:none}
+.sec>.sec-body{padding:0 4px 12px;display:flex;flex-direction:column;gap:4px}
+.sub{font-size:12px;font-weight:600;color:var(--muted);margin:12px 0 0}
+.row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:var(--target);margin:0}
+.row .label{flex:1;min-width:0}
+.buttons{justify-content:flex-start;flex-wrap:wrap;gap:6px}
+.btn{min-height:36px;padding:6px 12px;border:1px solid var(--line2);border-radius:8px;background:var(--raise);cursor:pointer}
+.btn:hover{border-color:#4a5663}
+.btn[aria-pressed=true]{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.small{font-size:13px}
+
+/* Switch */
+input[role=switch]{appearance:none;-webkit-appearance:none;width:40px;height:24px;border-radius:12px;background:#3a4450;position:relative;cursor:pointer;flex:none;margin:0;transition:background .12s}
+input[role=switch]::before{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#e7ecf1;transition:transform .12s}
+input[role=switch]:checked{background:var(--accent)}
+input[role=switch]:checked::before{transform:translateX(16px)}
+.toggle{cursor:pointer}
+
+/* Segmented choice */
+.seg{display:block;border:0;padding:4px 0;min-height:0;min-width:0}
+.seg legend{padding:0;margin-bottom:6px;font-size:13px;color:var(--muted);float:left;width:100%}
+.seg-track{clear:both;display:flex;background:#0b0e12;border:1px solid var(--line2);border-radius:8px;padding:2px;gap:2px}
+.seg-track input{position:absolute;opacity:0;width:1px;height:1px;margin:0;pointer-events:none}
+.seg-track label{flex:1;min-width:0;min-height:40px;display:grid;place-items:center;padding:0 6px;border-radius:6px;cursor:pointer;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#c9d2db}
+.seg-track label:hover{background:var(--raise)}
+.seg-track input:checked+label{background:#2b3540;color:var(--text);box-shadow:inset 0 0 0 1px #4a5663}
+.seg-track input:focus-visible+label{outline:2px solid var(--accent);outline-offset:-2px}
+
+/* Select, slider, colour */
+select{min-height:36px;max-width:60%;background:var(--raise);border:1px solid var(--line2);border-radius:8px;padding:4px 8px}
+.slider{display:block;padding:4px 0}
+.slider-head{display:flex;align-items:center;gap:8px;min-height:32px}
+.slider-head .label{flex:1;min-width:0}
+output{font:12px ui-monospace,Menlo,monospace;color:var(--text);font-variant-numeric:tabular-nums;min-width:48px;text-align:right}
+input[type=range]{width:100%;height:28px;margin:0;accent-color:var(--accent)}
+.reset{width:32px;height:32px;border:0;border-radius:6px;background:none;color:var(--muted);cursor:pointer;flex:none;visibility:hidden}
+.changed .reset{visibility:visible}
+.reset:hover{background:var(--raise);color:var(--text)}
+.changed>.slider-head .label,.toggle.changed .label{color:var(--accent)}
+.colour input{width:52px;height:32px;border:1px solid var(--line2);border-radius:6px;background:none;padding:2px;cursor:pointer}
+.swatches{justify-content:flex-start;flex-wrap:wrap;gap:6px;padding:4px 0}
+.swatch{width:var(--target);height:var(--target);border-radius:50%;border:2px solid #ffffff40;cursor:pointer;padding:0}
+.swatch[aria-pressed=true]{border:3px solid #fff;box-shadow:0 0 0 2px #000}
+
+/* Bottom sheet: narrow or portrait screens. Keep in step with SHEET in lab.ts. */
+@media (max-width:699px),(orientation:portrait) and (max-width:1100px){
+  #side{top:auto;right:0;width:auto;height:min(55vh,560px);border-right:0;border-top:1px solid var(--line);border-radius:14px 14px 0 0;padding-right:env(safe-area-inset-right)}
+  .handle{display:block;position:absolute;top:6px;left:50%;width:36px;height:4px;margin-left:-18px;border-radius:2px;background:var(--line2)}
+  .side-head{padding-top:8px}
+  body.collapsed #side{width:auto;height:calc(var(--head) + 8px + env(safe-area-inset-bottom))}
+  body.collapsed .brand{display:block}
+  body.collapsed .side-head{padding:8px 8px 0 4px}
+}
+body.still #side,body.still #status{display:none}
 </style></head><body>
-<div id="top"><h1 id="title">Syn3h vehicle lab</h1><p id="hint">Drag to orbit, pinch or scroll to zoom.</p></div>
-<div id="card"><strong id="name"></strong><div id="group"></div><ul id="notes"></ul><div id="stats"></div><div id="more">Tap for notes</div></div>
+<div id="view"></div>
+<aside id="side" aria-label="Vehicle lab">
+  <div class="handle" aria-hidden="true"></div>
+  <div class="side-head">
+    <button id="collapse" class="icon" type="button" aria-controls="side-scroll" aria-expanded="true" aria-label="Hide the sidebar"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 5h14M3 10h14M3 15h14"/></svg></button>
+    <span class="brand" id="brand">Syn3h vehicle lab</span>
+  </div>
+  <div class="side-scroll" id="side-scroll">
+    <nav id="tree" aria-label="Vehicles"></nav>
+    <div id="options" aria-label="Options"></div>
+  </div>
+</aside>
 <div id="status">Loading…</div>
-<div id="bar"><div id="tabs"></div></div>
 <script type="module" src="/src/dev/vehicleLab/lab.ts"></script></body></html>

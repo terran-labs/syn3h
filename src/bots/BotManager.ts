@@ -9,7 +9,7 @@ import type { Vehicle } from '../vehicles/Vehicle'
 import { BotBrain, isSafeGround, type BotMatch, type BotTerrain } from './BotBrain'
 import { botCount, fleet, spawnRadius } from './params'
 import { Daydream } from './Daydream'
-import { overHorizon } from '../world/curve'
+import { curveFactor, overHorizon } from '../world/curve'
 import { Mind } from './mind/Mind'
 import { createPilot } from './pilot'
 import { createNavigator, pointsOfInterest, type PointOfInterest } from './nav'
@@ -51,6 +51,7 @@ export class BotManager implements System {
     this.targets = [...vehicles]
     for (const brain of this.brains) brain.setTargets(this.targets)
   }
+  private readonly look = new Vector3()
   private match: BotMatch | null = null
   /**
    * Tell the bots what game is on: who is "it" in tag, or where the hill is. Call whenever
@@ -115,7 +116,16 @@ export class BotManager implements System {
     while (this.bots.length < count) if (!this.spawn(this.bots.length)) break
     // On a round world most of the map is behind the planet. A bot there still drives (its
     // physics is the host's to run) but there is nothing of it to draw.
-    for (const bot of this.bots) { const p = bot.body.translation(); bot.object.visible = !overHorizon(p.x, p.z, 4, p.y + 3) }
+    // On a round world three's own frustum culling is off (the bend moves things after it
+    // would have tested them), so a bot behind the camera would still be submitted: test
+    // that here. Eight metres of slack covers the vehicle's size and the bend up close.
+    const round = curveFactor() > 0, camera = this.game.camera
+    if (round) camera.getWorldDirection(this.look)
+    for (const bot of this.bots) {
+      const p = bot.body.translation()
+      const behind = round && (p.x - camera.position.x) * this.look.x + (p.y - camera.position.y) * this.look.y + (p.z - camera.position.z) * this.look.z < -8
+      bot.object.visible = !behind && !overHorizon(p.x, p.z, 4, p.y + 3)
+    }
   }
   dispose() {
     this.disposed = true
