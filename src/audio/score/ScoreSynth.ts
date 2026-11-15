@@ -148,7 +148,12 @@ export class ScoreSynth {
   private drums = 0
   private disposed = false
 
-  constructor(private readonly context: BaseAudioContext, output: AudioNode) {
+  /**
+   * `lite` builds a cheaper graph for phones: no sung choir (filtered saws stand in), no shimmer,
+   * no halo or endless rise, fewer oscillators in the pads, strings, bell and low brass, and a
+   * 1.6 second hall in place of 5.5. The hall is the largest single cost. Same music, less air.
+   */
+  constructor(private readonly context: BaseAudioContext, output: AudioNode, readonly lite = false) {
     const c = context
     const own = <T extends AudioNode>(node: T): T => { this.nodes.push(node); return node }
     const gain = (value: number, ...to: (AudioNode | AudioParam)[]) => { const g = own(c.createGain()); g.gain.value = value; for (const node of to) g.connect(node as AudioNode); return g }
@@ -168,7 +173,7 @@ export class ScoreSynth {
     this.pump = gain(1, sum)
 
     // Hall and ping-pong delay, both fed by sends.
-    const hall = own(c.createConvolver()); hall.buffer = hallImpulse(c)
+    const hall = own(c.createConvolver()); hall.buffer = hallImpulse(c, lite ? 1.6 : 5.5)
     this.reverbSend = gain(0.9, wet); hall.connect(this.reverbSend)
     const reverb = gain(1, hall)
     const left = own(c.createDelay(1.5)), right = own(c.createDelay(1.5)), damp = filter('lowpass', 3200)
@@ -193,7 +198,7 @@ export class ScoreSynth {
     for (let voice = 0; voice < 4; voice++) {
       const group: OscillatorNode[] = [], drift = gain(6)
       osc('sine', 0.09 + voice * 0.037).connect(drift)
-      for (let i = 0; i < 3; i++) {
+      for (let i = lite ? 1 : 0; i < 3; i++) {
         const o = osc('sawtooth'); o.detune.value = (i - 1) * 16 + (voice - 1.5) * 2; drift.connect(o.detune)
         o.connect(gain(0.1, spread[(i + voice) % 3])); group.push(o)
       }
@@ -240,7 +245,7 @@ export class ScoreSynth {
     // the build, so the air above the music seems to open before the release lands.
     this.haloGain = gain(0, reverb)
     const shiver = gain(0.5, this.haloGain); osc('sine', 0.23).connect(gain(0.35, shiver.gain))
-    for (let voice = 0; voice < 4; voice++) { const o = osc('sine', 880); o.detune.value = (voice - 1.5) * 5; o.connect(gain(0.25, shiver)); this.haloOscs.push(o) }
+    for (let voice = 0; voice < (lite ? 0 : 4); voice++) { const o = osc('sine', 880); o.detune.value = (voice - 1.5) * 5; o.connect(gain(0.25, shiver)); this.haloOscs.push(o) }
 
     // Sequencer: two low saws through a resonant filter, each note echoed by the delay.
     this.arpFilter = filter('lowpass', 500, 6)
@@ -293,7 +298,8 @@ export class ScoreSynth {
     // Bell: modal synthesis. A bell is a handful of pure tones at fixed, inharmonic ratios (hum,
     // prime, the minor-third tierce, quint, nominal and up), each dying at its own rate.
     this.bellBus = gain(0, gain(0.5, sum), reverb)
-    for (const [ratio, level, ring] of [[0.5, 0.25, 6], [1, 0.5, 4.5], [1.2, 0.35, 3.2], [1.5, 0.2, 2.4], [2.003, 0.45, 2], [2.5, 0.15, 1.2], [3, 0.2, 1], [4.01, 0.12, 0.6]] as const) {
+    const partials = [[0.5, 0.25, 6], [1, 0.5, 4.5], [1.2, 0.35, 3.2], [1.5, 0.2, 2.4], [2.003, 0.45, 2], [2.5, 0.15, 1.2], [3, 0.2, 1], [4.01, 0.12, 0.6]] as const
+    for (const [ratio, level, ring] of lite ? partials.slice(0, 5) : partials) {
       const o = osc('sine', 220 * ratio), vca = gain(0, this.bellBus); o.connect(vca)
       this.bellPartials.push({ osc: o, vca, ratio, level, ring })
     }
@@ -309,7 +315,7 @@ export class ScoreSynth {
     body.reduce((from, to) => { from.connect(to); return to }).connect(this.stringVca)
     for (let voice = 0; voice < 3; voice++) {
       const pair: OscillatorNode[] = []
-      for (const detune of [-6, 7]) { const o = osc('sawtooth', 220); o.detune.value = detune; o.connect(gain(0.16, pan((voice - 1) * 0.5, body[0]))); pair.push(o) }
+      for (const detune of lite ? [0] : [-6, 7]) { const o = osc('sawtooth', 220); o.detune.value = detune; o.connect(gain(0.16, pan((voice - 1) * 0.5, body[0]))); pair.push(o) }
       this.stringOscs.push(pair)
     }
 
@@ -318,13 +324,14 @@ export class ScoreSynth {
     this.braamFilter = filter('lowpass', 150, 1); this.braamVca = gain(0, sum, gain(0.6, reverb))
     const growl = own(c.createWaveShaper()); growl.curve = tanhCurve; growl.oversample = '2x'
     this.braamFilter.connect(growl).connect(this.braamVca)
-    for (const [ratio, detune] of [[1, -8], [1, 8], [1.5, 0], [2, 5]] as const) { const o = osc('sawtooth', 55 * ratio); o.detune.value = detune; o.connect(gain(0.3, this.braamFilter)); this.braamOscs.push(o) }
+    const stack = [[1, -8], [1.5, 0], [1, 8], [2, 5]] as const
+    for (const [ratio, detune] of lite ? stack.slice(0, 2) : stack) { const o = osc('sawtooth', 55 * ratio); o.detune.value = detune; o.connect(gain(0.3, this.braamFilter)); this.braamOscs.push(o) }
 
     // Endless rise (Shepard and Risset): eight sines an octave apart glide upward together. Each
     // fades in at the bottom and out at the top, so the ear hears a climb that never arrives.
     // It runs under the climb and is cut at the release.
     this.riseBus = gain(0, gain(0.5, sum), reverb)
-    for (let n = 0; n < 8; n++) { const o = osc('sine', 30), vca = gain(0, this.riseBus); o.connect(vca); this.rise.push({ osc: o, vca }) }
+    for (let n = 0; n < (lite ? 0 : 8); n++) { const o = osc('sine', 30), vca = gain(0, this.riseBus); o.connect(vca); this.rise.push({ osc: o, vca }) }
 
     // Shimmer: an octave-up cascade (shimmer.worklet.js) fed from the pads, choir, strings,
     // bell and theremin, and returned through the hall.
@@ -340,12 +347,12 @@ export class ScoreSynth {
         this.pluck = own(new AudioWorkletNode(context, 'pluck', { numberOfInputs: 0, outputChannelCount: [2] }))
         this.pluck.connect(this.pluckBus)
       }),
-      load(new URL('./choir.worklet.js', import.meta.url).href, () => {
+      lite ? Promise.resolve() : load(new URL('./choir.worklet.js', import.meta.url).href, () => {
         this.choir = own(new AudioWorkletNode(context, 'choir', { numberOfInputs: 0, outputChannelCount: [2] }))
         this.choir.connect(gain(0.7, sum)); this.choir.connect(reverb); this.choir.connect(gain(0.6, shimmerIn))
         this.sing(0.01)
       }),
-      load(new URL('./shimmer.worklet.js', import.meta.url).href, () => {
+      lite ? Promise.resolve() : load(new URL('./shimmer.worklet.js', import.meta.url).href, () => {
         this.shimmer = own(new AudioWorkletNode(context, 'shimmer', { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 2, channelCountMode: 'explicit', outputChannelCount: [2] }))
         shimmerIn.connect(this.shimmer); this.shimmer.connect(this.shimmerOut)
       }),
@@ -496,7 +503,7 @@ export class ScoreSynth {
       const hz = midiHz(midi)
       for (const o of this.padOscs[voice]) o.frequency.setTargetAtTime(hz, time, glide)
       this.organOscs[voice].frequency.setTargetAtTime(hz, time, glide)
-      this.haloOscs[voice].frequency.setTargetAtTime(hz * 4, time, glide)
+      this.haloOscs[voice]?.frequency.setTargetAtTime(hz * 4, time, glide)
     })
   }
 
@@ -524,7 +531,7 @@ export class ScoreSynth {
 
   /** A low brass hit on the current bass note. */
   braam(time: number = this.context.currentTime + 0.02, strength = 1): void {
-    const ratios = [1, 1, 1.5, 2]
+    const ratios = [1, 1.5, 1, 2]
     this.braamOscs.forEach((o, n) => o.frequency.setValueAtTime(this.rootHz * ratios[n], time))
     this.braamFilter.frequency.setValueAtTime(140, time); this.braamFilter.frequency.linearRampToValueAtTime(1200, time + 0.22); this.braamFilter.frequency.setTargetAtTime(220, time + 0.22, 0.5)
     this.braamVca.gain.setTargetAtTime(0.4 * strength * this.trim.brass, time, 0.035); this.braamVca.gain.setTargetAtTime(0, time + 0.9, 0.45)
