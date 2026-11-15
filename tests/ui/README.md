@@ -568,3 +568,16 @@ The map is an approximation of the island on a globe, not an exact view of the w
 wrapping world. Existing painter limits include shoreline shading based on absolute
 height rather than height above sea level, and a snow threshold that differs from the
 terrain renderer. Terrain owns those corrections; this change only supplies live settings.
+
+## Animated lobby logo
+
+Ordinary lobby entry uses the existing LogoRenderer inside Galaxy's WebGL2 context.
+It shares the galaxy clock and render scale, uses the existing particle budgets, and
+settles immediately for reduced motion, the safe tier or an open panel. The SVG retains
+its layout and accessible name, and becomes visible if the renderer fails or the context
+is lost. Leaving the lobby disposes the logo's GL resources; context restoration rebuilds
+the renderer. No branding assets or logo design changed.
+
+`lobby-logo.mjs` checks shared context identity, animation, panel settling, reduced motion,
+safe particle count, context restoration, teardown and reopening in Chrome and WebKit.
+The galaxy caps its shared loop at 30 fps outside a drop, below the logo's desktop ceiling.

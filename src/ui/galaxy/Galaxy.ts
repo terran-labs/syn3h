@@ -9,6 +9,8 @@
  * lobby graphics it draws at most thirty times a second, stops in a hidden tab, and gives
  * its WebGL context back when disabled.
  */
+import { LogoRenderer, type PixelRect } from '../brand/logoRenderer'
+import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
 import type { ParamValue } from '../../../shared/params'
 import { qualityFrame, qualityScale, qualityShed } from '../quality/ladder'
 
@@ -45,6 +47,9 @@ export interface GalaxyOptions {
   still?(): boolean
   /** Focus the label selected with a controller, so its normal activation stays accessible. */
   onFocus?(id: string): void
+  /** Logo box in CSS pixels relative to this host, plus the existing graphics tier. */
+  logo?(): { box: PixelRect; level: number } | undefined
+  onLogo?(drawn: boolean): void
 }
 /**
  * The most worlds the galaxy draws, the sun aside. The trace costs little per world (a ray
@@ -256,6 +261,8 @@ export class Galaxy {
   canvas = document.createElement('canvas')
   /** Frames drawn, for the checks. */
   frames = 0
+  private logo: LogoRenderer | null = null
+  private logoSeen = false
   private gl: WebGL2RenderingContext | null = null
   private uniforms: Record<string, WebGLUniformLocation | null> = {}
   /** Painted maps keyed by world, recipe, seed, snapshot and size; kept across context loss. */
@@ -317,13 +324,14 @@ export class Galaxy {
   private readonly resizeObserver: ResizeObserver
 
   constructor(private readonly host: HTMLElement, private readonly options: GalaxyOptions) {
+    this.reduced.addEventListener('change', () => { this.wake = 2 }, { signal: this.abort.signal })
     addEventListener('keydown', event => this.key(event), { signal: this.abort.signal })
     this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(host)
     document.addEventListener('visibilitychange', () => { cancelAnimationFrame(this.frame); if (this.active && !document.hidden) this.loop(0) }, { signal: this.abort.signal })
   }
   /** False when WebGL 2 is not available: the caller keeps the ordinary lobby. */
   static supported(): boolean { try { return Boolean(document.createElement('canvas').getContext('webgl2')) } catch { return false } }
-  get live(): boolean { return this.gl !== null }
+  get live(): boolean { return this.gl !== null && !this.gl.isContextLost() }
   /** Worlds whose painted maps have arrived. */
   get painted(): number { return this.options.worlds.filter(world => this.maps.has(this.mapKey(world, SMALL))).length }
   private mapKey(world: GalaxyWorld, size: readonly [number, number]): string { return `${world.id}:${world.recipe ?? world.id}:${world.seed}:${world.mapVariant ?? ''}:${size[0]}` }
@@ -401,7 +409,22 @@ export class Galaxy {
       gl.useProgram(blur); gl.uniform1i(this.blurUniforms.uScene, 2); gl.useProgram(program)
     }
     this.gl = gl
+    if (this.options.logo) {
+      this.logo = new LogoRenderer(gl, { particles: logoBudget(this.options.logo()?.level ?? 0).particles })
+      if (!this.logo.ok) { this.logo.dispose(); this.logo = null }
+      else if (this.logoSeen || this.reduced.matches || this.options.still?.()) this.logo.skipIntro()
+    }
     const signal = this.abort.signal, options = { signal }
+    canvas.addEventListener('webglcontextlost', event => {
+      if (this.canvas !== canvas || this.gl !== gl) return
+      event.preventDefault(); cancelAnimationFrame(this.frame); this.options.onLogo?.(false)
+    }, options)
+    canvas.addEventListener('webglcontextrestored', () => {
+      if (!this.active || this.canvas !== canvas || this.gl !== gl) return
+      const selected = this.options.worlds[this.chosen]?.id
+      this.release(); this.acquire()
+      if (selected) this.choose(selected)
+    }, options)
     canvas.addEventListener('pointerdown', event => this.down(event), options)
     canvas.addEventListener('pointermove', event => this.move(event), options)
     for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, event => this.up(event, type === 'pointerup'), options)
@@ -414,6 +437,7 @@ export class Galaxy {
   private release(): void {
     // A finished or abandoned drop does not outlive the context: the next showing starts clean.
     this.home()
+    this.logo?.dispose(); this.logo = null; this.options.onLogo?.(false)
     cancelAnimationFrame(this.frame); this.worker?.terminate(); this.worker = null; this.queue.length = 0; this.painting = false
     this.array = this.close = null; this.fbo = null; this.target2 = null; this.program = null; this.blurProgram = null
     this.gl?.getExtension('WEBGL_lose_context')?.loseContext(); this.gl = null; this.canvas.remove(); this.pointers.clear(); this.drag = null
@@ -562,13 +586,14 @@ export class Galaxy {
     this.last = now
     this.controller(elapsed)
     const gl = this.gl, u = this.uniforms
-    if (!gl) return
+    if (!gl || gl.isContextLost()) return
     if (this.shownScale !== qualityScale()) this.resize()
     // Behind an open panel the galaxy is a backdrop: dimmed, and held still once it has dimmed.
     this.dim = Math.abs(this.dim - this.backdrop) < 0.01 ? this.backdrop : mix(this.dim, this.backdrop, 0.18)
     const still = Boolean(this.options.still?.()) || this.reduced.matches || this.backdrop < 1, wall = performance.now()
     if (!still) this.clock += Math.min(0.25, (wall - this.lastClock) / 1000)
     this.lastClock = wall
+    if (still !== this.holding) this.wake = 2
     const time = this.clock; this.holding = still
     // The view keeps a little of the last drag's swing, and drifts very slowly when left alone.
     if (!this.drag) { this.yaw += this.spinVelocity; this.spinVelocity *= 0.93; if (Math.abs(this.spinVelocity) < 1e-5) this.spinVelocity = 0; if (this.chosen < 0 && !still) this.yaw += 0.0006 }
@@ -599,6 +624,15 @@ export class Galaxy {
       gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.target2)
       gl.uniform1f(this.blurUniforms.uBlur, this.blur); gl.uniform2f(this.blurUniforms.uSize, this.canvas.width, this.canvas.height)
       gl.drawArrays(gl.TRIANGLES, 0, 3); gl.useProgram(this.program)
+    }
+    const logo = this.logo, layout = this.options.logo?.()
+    if (logo && layout) {
+      const budget = logoBudget(layout.level), held = this.reduced.matches || budget.still || this.backdrop < 1
+      if (held) logo.skipIntro()
+      logo.setLook({ particles: Math.round(budget.particles * (1 - qualityShed(1) * 0.65)), sway: held ? 0 : 0.07, opacity: 1 - this.dive })
+      const sx = this.canvas.width / this.host.clientWidth, sy = this.canvas.height / this.host.clientHeight, box = layout.box
+      logo.draw(held ? STILL_SECONDS : time, { x: box.x * sx, y: box.y * sy, width: box.width * sx, height: box.height * sy })
+      this.logoSeen = true; this.options.onLogo?.(true)
     }
     this.frames++
     // Tell the labels where the worlds are, and notice arrival.

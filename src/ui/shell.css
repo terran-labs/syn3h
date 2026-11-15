@@ -565,3 +565,6 @@
   .is-shaping-world .shell-logo { width: 180px; }
   .is-shaping-world .lobby-panels { width: 100%; margin-top: auto; flex: 0 1 52vh; }
 }
+
+/* The SVG retains its box and accessible name while Galaxy draws the same mark. */
+.has-animated-logo .shell-logo { opacity: 0; animation: none; }
