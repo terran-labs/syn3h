@@ -5,7 +5,7 @@ const payload = (byRecipe: unknown[] = [], generatedAt = now) => ({ version: 1, 
 const row = (recipeId: string | null, players = 3, rooms = 2, oldestReportAt = now) => ({ recipeId, players, rooms, oldestReportAt })
 const response = (body: unknown, ok = true) => ({ ok, json: async () => body }) as Response
 
-afterEach(() => vi.useRealTimers())
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 describe('public recipe populations', () => {
   it('keeps unknown distinct from fresh zero and never assigns legacy counts to a recipe', () => {
     expect(populations(null, ['volcanic'], now).get('volcanic')).toBeNull()
@@ -24,6 +24,19 @@ describe('public recipe populations', () => {
   })
   it('rejects malformed, duplicate and negative counts', () => {
     for (const value of [null, {}, payload([row('alpine', -1)]), payload([row('alpine'), row('alpine')]), payload([row('alpine', 1.5)]), payload([row('alpine', 3, 2, now + 1)])]) expect(readPresence(value)).toBeNull()
+  })
+  it('calls the browser fetch with its global receiver', async () => {
+    vi.useFakeTimers(); vi.setSystemTime(now)
+    const fetcher = vi.fn(function (this: unknown) {
+      if (this !== globalThis) throw new TypeError('Illegal invocation')
+      return Promise.resolve(response(payload([row('alpine')])))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const changed = vi.fn(), feed = new PresenceFeed(['alpine'], changed)
+    feed.setActive(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(changed.mock.lastCall![0].get('alpine')).toEqual({ players: 3, rooms: 2 })
+    feed.dispose()
   })
   it('polls only when active, with one request in flight and abort on hide', async () => {
     vi.useFakeTimers(); vi.setSystemTime(now)

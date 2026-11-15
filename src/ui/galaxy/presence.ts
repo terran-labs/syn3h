@@ -43,7 +43,7 @@ export class PresenceFeed {
   private expiryTimer?: ReturnType<typeof setTimeout>
   private timeout?: ReturnType<typeof setTimeout>
   private snapshot: PresenceSnapshot | null = null
-  constructor(private readonly recipes: readonly string[], private readonly changed: (values: Populations) => void, private readonly fetcher: typeof fetch = fetch) {}
+  constructor(private readonly recipes: readonly string[], private readonly changed: (values: Populations) => void, private readonly fetcher: typeof fetch = globalThis.fetch.bind(globalThis)) {}
 
   setActive(active: boolean): void {
     if (active === this.active) return
