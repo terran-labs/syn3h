@@ -82,9 +82,9 @@ test('a scene may relax a limit without changing the default', () => {
   assert.equal(judgeFrame(dim, { ...FRAME_LIMITS, ...SCENES[0].limits }).ok, true)
 })
 
-test('concat script holds each still and repeats the last', () => {
+test('concat script holds each still once, the last included', () => {
   assert.equal(concatScript(['/o/a.png', '/o/b.png'], 1.5),
-    "file '/o/a.png'\nduration 1.5\nfile '/o/b.png'\nduration 1.5\nfile '/o/b.png'\n")
+    "file '/o/a.png'\nduration 1.5\nfile '/o/b.png'\nduration 1.5\n")
   assert.throws(() => concatScript([]), /No stills/)
   assert.throws(() => concatScript(["/o/it's.png"]), /Unsafe/)
 })

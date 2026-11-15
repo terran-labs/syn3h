@@ -142,13 +142,14 @@ export function judgeFrame(stats, limits = FRAME_LIMITS) {
 }
 
 /**
- * ffmpeg concat demuxer script holding each still for `hold` seconds. The last file is
- * listed twice because the demuxer ignores the final duration otherwise.
+ * ffmpeg concat demuxer script holding each still for `hold` seconds. The GIF filter runs at
+ * a fixed frame rate, which honours the last duration, so the last file is not repeated
+ * (repeating it, the usual concat workaround, held the last still twice as long).
  */
 export function concatScript(files, hold = 1.5) {
   if (!files.length) throw new Error('No stills to assemble')
   for (const f of files) if (/['\n\r]/.test(f)) throw new Error(`Unsafe file name for the concat script: ${f}`)
-  return files.map((f) => `file '${f}'\nduration ${hold}`).join('\n') + `\nfile '${files.at(-1)}'\n`
+  return files.map((f) => `file '${f}'\nduration ${hold}\n`).join('')
 }
 
 /** ffmpeg arguments for a looping GIF from a concat script, with a generated palette. */
