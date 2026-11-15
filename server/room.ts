@@ -49,7 +49,7 @@ import { MIN_CLOSING, SHOVE_SHARE, cleanShove } from '../src/net/shove'
 import { wrapDistance } from '../shared/wrap'
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
 import { bungeeAllowed, bungeeLength, bungeeSnap, bungeeVehicles } from '../src/weapons/bungee/params'
-import { yoinkAllowed, yoinkFling, yoinkHoldDistance, yoinkPunt, yoinkPuntRange, yoinkRange } from '../src/weapons/yoink/params'
+import { yoinkAllowed, yoinkCooldown, yoinkFling, yoinkHoldDistance, yoinkHoldTime, yoinkPunt, yoinkPuntRange, yoinkRange } from '../src/weapons/yoink/params'
 import {
   KNOCK_WINDOW, WIN_PAUSE, gameMode, kothKnockBonus, kothRespawnDelay, kothTargetScore, tagCooldown, tagRamReach,
   REJOIN_GRACE, gameRejoin,
@@ -105,6 +105,11 @@ interface Player {
   shoved: Map<number, number>
   /** The room last relayed this player's Bungee cord as attached. */
   cordOn: boolean
+  /** The vehicle this player is carrying with Yoink, and since when (server ms). */
+  carry: { to: number; at: number } | null
+  /** Server ms of this player's last relayed grab or fling, and of its last gust per target. */
+  yoinkAt: number
+  gusted: Map<number, number>
   /** The secret this player may rejoin with, when it sent a valid one. */
   token: string | null
   /** Server ms until which a dropped player's place is held, or 0 while connected. */
@@ -148,6 +153,12 @@ const IT_ABSENT_MS = 8000
  * hold a place in the room and a line in everyone's player list. If it comes back, it rejoins.
  */
 const SILENT_MS = 180_000
+/** No carry lasts longer than this, whatever the sliders say, ms. */
+const YOINK_MAX_CARRY_MS = 30_000
+/** Grace past the carry time limit before the room ends a carry itself, ms. */
+const YOINK_CARRY_SLACK_MS = 1500
+/** The most of a sender's own reported speed that counts toward its fling limit, m/s. */
+const YOINK_OWN_SPEED = 60
 /** At most one relayed push per rammer and rammed player in this time. */
 const SHOVE_REPEAT_MS = 500
 /** How long a player's top speed is remembered for bounding its push. */
@@ -211,6 +222,7 @@ export class Room {
   /** Advance time based rules. Called on every message; transports may also call it on a timer. */
   tick(): void {
     this.tickSilent(this.now())
+    this.tickYoink(this.now())
     this.tickHeld(this.now())
     this.tickIdle(this.now())
     this.tickTag(this.now())
@@ -337,8 +349,9 @@ export class Room {
     const wasActive = this.isActive(player, this.now())
     player.heldUntil = until
     this.rekey(peer, { send() {}, close() {} }, player)
-    // Its owner is not there to let go of it: a held place holds no cord.
+    // Its owner is not there to let go of it: a held place holds no cord and carries nobody.
     this.dropCord(player)
+    this.endCarry(player)
     if (wasActive && !this.anyActive(this.now())) {
       this.activeLeft = true
       this.activeAt = this.now()
@@ -393,6 +406,7 @@ export class Room {
 
   private leave(peer: Peer, player: Player): void {
     const wasActive = this.isActive(player, this.now())
+    this.endCarry(player)
     this.players.delete(peer)
     if (wasActive && !this.anyActive(this.now())) {
       this.activeLeft = true
@@ -862,24 +876,91 @@ export class Room {
   }
 
   /**
-   * Yoink (Weapons lane). The vehicle acted on must be in the room, not the sender's own, and
-   * within reach of the sender round the wrap; a fling may be no faster than the room allows.
-   * The acted-on vehicle's own client applies it, so these checks are what stop a modified
-   * client from flinging anyone from anywhere.
+   * Yoink (Weapons lane): grab a vehicle and carry it, fling it, or shove it with a gust.
+   *
+   * The vehicle acted on is moved by its own client, on the word of the message relayed
+   * here, so these checks are all that stand between a modified client and everyone else:
+   *  - the two must be in the room, placed, playing (not parked or silent) and within reach,
+   *    round the wrap;
+   *  - a carry is the room's to end. The game's own carry time limit runs on the holder's
+   *    client, which a modified one ignores; the room remembers who carries whom and drops
+   *    the carry itself when the time is up, the two drift out of reach, or the holder goes
+   *    quiet or leaves (tickYoink, endCarry);
+   *  - one vehicle is carried by one player at a time, and a player carries one;
+   *  - flings and gusts are rationed per sender and target by the recharge time, so they
+   *    cannot be stacked into one enormous shove;
+   *  - a fling is no faster than the room's sliders allow plus the sender's own speed, and
+   *    that speed is the sender's word, so only a sensible amount of it counts.
    */
   private onYoink(peer: Peer, player: Player, raw: unknown): void {
     if (!this.paramBool(yoinkAllowed.def)) return
     const y = cleanYoink(raw)
     if (!y) return
+    const now = this.now()
     const other = this.byId(y.to)
-    if (!other || other === player || !other.lastState || !player.lastState) return
-    const reach = Math.max(this.paramNumber(yoinkRange.def), this.paramNumber(yoinkPuntRange.def), this.paramNumber(yoinkHoldDistance.def) * 2) * 1.5 + 10
-    if (this.dist(other.lastState.p, player.lastState.p) > reach) return
-    if (y.s === 'fling') {
-      const most = Math.max(this.paramNumber(yoinkFling.def), this.paramNumber(yoinkPunt.def) * 1.3) * 1.25 + Math.hypot(...player.lastState.v) + 5
-      if (Math.hypot(...y.v) > most) return
+    const mine = player.lastState
+    const theirs = other?.lastState
+    if (!other || other === player || !theirs || !mine) return
+    if (mine.paused || theirs.paused || now - player.lastStateAt > RESPONDING_MS) return
+    if (now - other.lastStateAt > (other.info.bot ? BOT_EXPIRY_MS : RESPONDING_MS)) return
+    if (this.dist(theirs.p, mine.p) > this.yoinkReach()) return
+    const carrying = player.carry?.to === y.to
+    // The recharge between uses, with a little slack for timing; never less than a quarter second.
+    const recharge = Math.max(250, this.paramNumber(yoinkCooldown.def) * 1000 * 0.8)
+
+    if (y.s === 'drop') {
+      if (carrying) this.endCarry(player, peer)
+      return
     }
+    if (y.s === 'grab') {
+      if (carrying || now - player.yoinkAt < recharge) return
+      for (const p of this.players.values()) if (p !== player && p.carry?.to === y.to) return
+      if (player.carry) this.endCarry(player)
+      player.carry = { to: y.to, at: now }
+      player.yoinkAt = now
+      this.broadcast({ type: 'yoink', from: player.info.id, y }, peer)
+      return
+    }
+    // A fling: the end of a carry, or a gust on a vehicle in reach.
+    const own = Math.min(YOINK_OWN_SPEED, Math.hypot(...mine.v))
+    const most = Math.max(this.paramNumber(yoinkFling.def), this.paramNumber(yoinkPunt.def) * 1.3) * 1.25 + own + 5
+    if (Math.hypot(...y.v) > most) return
+    if (carrying) {
+      player.carry = null
+    } else {
+      if (now - (player.gusted.get(y.to) ?? -Infinity) < recharge) return
+      player.gusted.set(y.to, now)
+    }
+    player.yoinkAt = now
     this.broadcast({ type: 'yoink', from: player.info.id, y }, peer)
+  }
+
+  /** How far apart a Yoink's two vehicles may be, metres: the game's reaches with slack. */
+  private yoinkReach(): number {
+    return Math.max(this.paramNumber(yoinkRange.def), this.paramNumber(yoinkPuntRange.def), this.paramNumber(yoinkHoldDistance.def) * 2) * 1.5 + 10
+  }
+
+  /** The room ends a carry: everyone, the carried vehicle's client above all, is told "drop". */
+  private endCarry(holder: Player, except?: Peer): void {
+    const carry = holder.carry
+    if (!carry) return
+    holder.carry = null
+    this.broadcast({ type: 'yoink', from: holder.info.id, y: { s: 'drop', to: carry.to } }, except)
+  }
+
+  /** Carries that have run their time, lost their holder or stretched out of reach are ended. */
+  private tickYoink(now: number): void {
+    const limit = this.paramNumber(yoinkHoldTime.def)
+    // "No limit" on the slider still ends: nobody is carried for more than YOINK_MAX_CARRY_MS.
+    const most = Math.min(YOINK_MAX_CARRY_MS, limit > 0 ? limit * 1000 + YOINK_CARRY_SLACK_MS : YOINK_MAX_CARRY_MS)
+    const on = this.paramBool(yoinkAllowed.def)
+    for (const holder of this.players.values()) {
+      const carry = holder.carry
+      if (!carry) continue
+      const other = this.byId(carry.to)
+      const gone = !other || !other.lastState || !holder.lastState || holder.lastState.paused || now - holder.lastStateAt > RESPONDING_MS
+      if (!on || gone || now - carry.at > most || this.dist(other.lastState!.p, holder.lastState!.p) > this.yoinkReach()) this.endCarry(holder)
+    }
   }
 
   /** Tell everyone a player's cord is gone: it stretched out of reach, or its owner dropped out. */
@@ -1061,7 +1142,7 @@ export class Room {
     // Joining counts as a tag so a newcomer cannot be tagged in their first seconds.
     const now = this.now()
     return {
-      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, token: null, heldUntil: 0, lastFireAt: -Infinity, shots: new Map(), lastTag: now,
+      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, carry: null, yoinkAt: -Infinity, gusted: new Map(), token: null, heldUntil: 0, lastFireAt: -Infinity, shots: new Map(), lastTag: now,
       windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now,
     }
   }
