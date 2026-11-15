@@ -224,7 +224,7 @@ export function createJetPilot(vehicle: Vehicle, terrain: Terrain): Pilot {
     if (Math.hypot(goal.x - goalX, goal.z - goalZ) > 5) { goalX = goal.x; goalZ = goal.z; best = dist; status.stuckFor = 0 }
     const arrived = goal.stopWithin !== undefined && dist <= goal.stopWithin
     // A flying jet cannot be blocked by terrain, so moving (climbing included) counts as progress.
-    if (arrived || dist < best - 1 || vel.length() > 2) { best = Math.min(best, dist); status.stuckFor = 0 }
+    if (arrived || dist < best - 1 || dist < 4 || vel.length() > 2) { best = Math.min(best, dist); status.stuckFor = 0 }
     else status.stuckFor += dt
     return status
   }
