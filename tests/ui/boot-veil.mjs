@@ -47,7 +47,7 @@ try {
     assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.boot-veil')).visibility), 'hidden')
     // The lobby underneath takes the taps.
     await page.waitForFunction(() => document.querySelector('.lobby-panels')?.dataset.busy === 'false', null, { timeout: 60000 })
-    assert.equal(await page.evaluate(() => { const b = document.querySelector('.lobby-index .planet-card').getBoundingClientRect(); return document.elementFromPoint(b.left + 20, b.top + 20)?.closest('.planet-card') !== null }), true)
+    assert.equal(await page.evaluate(() => { const b = document.querySelector('.galaxy-links button').getBoundingClientRect(); return document.elementFromPoint(b.left + 12, b.top + 12)?.closest('.galaxy-links') !== null }), true)
     await page.screenshot({ path: `${out}/${view.name}-lobby.png` })
     await context.close()
   }

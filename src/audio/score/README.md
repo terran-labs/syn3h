@@ -62,21 +62,35 @@ its own; if one fails the score plays on without it (the choir falls back to fil
 
 ## Cost, and the lighter tier
 
-`audio.score.lite` ("Lighter score (for phones)") builds a cheaper set of instruments: no sung
-choir (filtered saws stand in), no shimmer, halo or endless rise, fewer oscillators, and a
-1.6 second hall in place of 5.5. The music is the same. The quality system may set it, and
-the score sets it itself after two strained readings from the browser's audio counters
-(`renderCapacity` or `playbackStats`), where a browser has them.
+Measured with `node tests/audio/score-load.mjs` on the busiest passage (a release in a full
+chase), on an M-series Mac that was loaded by other work, so the figures are probably high:
 
-Measured with `node tests/audio/score-load.mjs`, busiest passage (a release in a full chase),
-on a loaded M-series Mac: full about 15% of one core, lighter about 8%. Scaled to a CPU four
-times slower that is 58% and 32%; six times slower, 87% and 48%. Those scalings are
-arithmetic, not measurements: nothing here has been run on a phone. Chrome's CPU throttle
-does not slow the audio thread, so its zero underruns prove nothing.
+| Configuration | Share of one core | At 4x slower | At 6x slower |
+|---|---|---|---|
+| Full, convolution hall (default) | 13.5% | 54% | 81% |
+| Full, algorithmic hall (`audio.score.networkHall`) | 9.3% | 37% | 56% |
+| Lighter (`audio.score.lite`) | 7.7% | 31% | 46% |
+| Not sounding (a recording selected, or faded out) | 0.03% | | |
 
-Where the cost sits (percent of one core): the 5.5 s hall 5.0, the 1.6 s hall about 1.6,
-sixty oscillators 1.5, the choir worklet 1.2, thirty filters 1.0, pluck and shimmer worklets
-0.4 and 0.3.
+The scaled columns are arithmetic, not measurements: nothing here has been run on a phone.
+Chrome's CPU throttle does not slow the audio thread, so its zero underruns prove nothing.
+
+Why it costs what it does:
+- **The graph runs whether or not it is heard.** About two thirds of the cost is a hundred
+  oscillators, the hall and the worklets ticking over; the notes add little. So the graph is
+  unplugged from the output whenever the score is silent, and idle voices (the oscillator
+  choirs once the sung choir loads, the endless rise, the low brass) are unplugged too. An
+  unconnected Web Audio node is not computed.
+- **The convolution hall** is a third of the total (5.0% for 5.5 s). `hall.worklet.js` is a
+  feedback delay network that does the same job for 1.2%, and its tail can lengthen at a
+  release. It is an option until it has been judged by ear against the convolution.
+- **The choir** tabulates its glottal pulse and skips a section that is not singing.
+
+`audio.score.lite` builds a cheaper set of instruments: no sung choir (filtered saws stand
+in), no shimmer, halo or endless rise, fewer oscillators, and the algorithmic hall. The music
+is the same. The quality system may set it, and the score sets it itself after two strained
+readings from the browser's audio counters (`renderCapacity` or `playbackStats`), where a
+browser has them.
 
 ## Tuning
 

@@ -365,6 +365,41 @@ describe('Room bots', () => {
   })
 })
 
+describe('Room mixed bot fleets', () => {
+  const botAt = (n: number) => state([n * 5, 0, 0], [0, 0, 0], { id: BOT_ID_BASE + n, bot: true })
+
+  it('tells guests each bot\'s vehicle kind as the host announces it', () => {
+    const host = join('Host')
+    const guest = join('Guest')
+    // The kind comes before the bot's first state, so the bot is born as that vehicle.
+    send(host.peer, { type: 'bot', id: BOT_ID_BASE + 1, kind: 'hovercraft' })
+    room.receive(host.peer, botAt(0))
+    room.receive(host.peer, botAt(1))
+    const joined = guest.peer.all('join').map((m) => [m.player.id, m.player.kind])
+    expect(joined).toEqual([[BOT_ID_BASE, 'buggy'], [BOT_ID_BASE + 1, 'hovercraft']])
+    // A late joiner gets the same from the player list.
+    const late = join('Late')
+    expect(late.peer.last('welcome')!.players.filter((p) => p.bot).map((p) => p.kind)).toEqual(['buggy', 'hovercraft'])
+    // The slot changes vehicle: everyone is told once.
+    send(host.peer, { type: 'bot', id: BOT_ID_BASE, kind: 'jet' })
+    send(host.peer, { type: 'bot', id: BOT_ID_BASE, kind: 'jet' })
+    expect(guest.peer.all('profile').map((m) => [m.player.id, m.player.kind])).toEqual([[BOT_ID_BASE, 'jet']])
+  })
+
+  it('takes bot kinds only from the host, and only real kinds for real bot ids', () => {
+    const host = join('Host')
+    const guest = join('Guest')
+    room.receive(host.peer, botAt(0))
+    send(guest.peer, { type: 'bot', id: BOT_ID_BASE, kind: 'tank' })
+    send(host.peer, { type: 'bot', id: BOT_ID_BASE, kind: 'starship' })
+    send(host.peer, { type: 'bot', id: guest.id, kind: 'tank' })
+    send(host.peer, { type: 'bot', id: BOT_ID_BASE + 5000, kind: 'tank' })
+    send(host.peer, { type: 'bot', id: 'x', kind: 'tank' })
+    expect(guest.peer.all('profile')).toEqual([])
+    expect(join('Late').peer.last('welcome')!.players.find((p) => p.bot)!.kind).toBe('buggy')
+  })
+})
+
 describe('Room paused players', () => {
   it('relays heartbeats but a paused player cannot ram or be rammed', () => {
     const a = join('A')
@@ -677,6 +712,155 @@ describe('Room rebuilt after a deploy', () => {
     send(h2.peer, { type: 'param', id: 'world.gravity', value: 12 })
     expect(b2.peer.last('param')).toMatchObject({ id: 'world.gravity', value: 12 })
     expect(Object.keys(h2.peer.last('welcome')!.game.scores).sort()).toEqual([String(b2.id), String(h2.id)].sort())
+  })
+})
+
+describe('Room rejoin as the same player (game.rejoin)', () => {
+  const SECRET_A = 'a'.repeat(32)
+  const SECRET_B = 'b'.repeat(32)
+  const on = { 'game.rejoin': true }
+  const here = () => state([0, 0, 0])
+
+  it('is off by default: a secret changes nothing and a dropout is a leave', () => {
+    const a = join('A', {}, { resume: SECRET_A })
+    const b = join('B', {}, { resume: SECRET_B })
+    room.disconnect(a.peer)
+    expect(b.peer.last('leave')).toEqual({ type: 'leave', id: a.id })
+    expect(room.playerCount).toBe(1)
+    expect(room.heldCount).toBe(0)
+    const again = join('A', {}, { resume: SECRET_A })
+    expect(again.id).not.toBe(a.id)
+    expect(room.snapshot().roster).toBeUndefined()
+  })
+
+  it('holds a dropped player\'s place and gives it back to the same secret, telling nobody', () => {
+    const a = join('A', on, { resume: SECRET_A })
+    const b = join('B', {}, { resume: SECRET_B })
+    send(a.peer, { type: 'lock', locked: true })
+    send(a.peer, { type: 'param', id: 'game.mode', value: 1 })
+    send(a.peer, { type: 'zone', zone: { x: 100, z: 0, inner: 20, outer: 40, yMin: 40, yMax: 80 } })
+    for (let t = 0; t < 12; t++) { clock += 250; room.receive(a.peer, state([130, 50, 0])); room.receive(b.peer, here()) }
+    const score = b.peer.last('game')!.game.scores[a.id]
+    expect(score).toBeGreaterThanOrEqual(2)
+    const joinsBefore = b.peer.all('join').length
+
+    room.disconnect(a.peer)
+    expect(b.peer.all('leave')).toEqual([])
+    expect(room.playerCount).toBe(2)
+    expect(room.heldCount).toBe(1)
+    expect(room.connectionCount).toBe(2)
+    // Five seconds of wifi trouble later, the same tab is back.
+    for (let t = 0; t < 5; t++) { clock += 1000; room.receive(b.peer, here()) }
+    const back = join('Someone else entirely', {}, { resume: SECRET_A })
+    const welcome = back.peer.last('welcome')!
+    expect(back.id).toBe(a.id)
+    expect(welcome.slot).toBe(a.peer.last('welcome')!.slot)
+    expect(welcome.players.map((p) => p.name)).toEqual(['A', 'B'])
+    expect(welcome.game.host).toBe(a.id)
+    expect(welcome.game.locked).toBe(true)
+    expect(welcome.game.scores[a.id]).toBeGreaterThanOrEqual(score)
+    expect(room.heldCount).toBe(0)
+    expect(b.peer.all('leave')).toEqual([])
+    expect(b.peer.all('join').length).toBe(joinsBefore)
+    // It is a full player again: its states reach B and it may use the host's lock.
+    room.receive(back.peer, state([1, 2, 3]))
+    expect(decodeState(b.peer.bin.at(-1)!)!.id).toBe(a.id)
+    send(back.peer, { type: 'lock', locked: false })
+    expect(b.peer.last('game')!.game.locked).toBe(false)
+  })
+
+  it('lets a held place go after thirty seconds, as an ordinary leave', () => {
+    const a = join('A', on, { resume: SECRET_A })
+    const b = join('B', {}, { resume: SECRET_B })
+    room.disconnect(a.peer)
+    for (let t = 0; t < 29; t++) { clock += 1000; room.receive(b.peer, here()) }
+    expect(room.heldCount).toBe(1)
+    for (let t = 0; t < 2; t++) { clock += 1000; room.receive(b.peer, here()) }
+    expect(room.heldCount).toBe(0)
+    expect(b.peer.last('leave')).toEqual({ type: 'leave', id: a.id })
+    expect(b.peer.last('game')!.game.host).toBe(b.id)
+    // Too late: the secret now makes a new player.
+    expect(join('A', {}, { resume: SECRET_A }).id).not.toBe(a.id)
+  })
+
+  it('passes "it" on from a held place after eight seconds, like any absent player', () => {
+    const a = join('A', on, { resume: SECRET_A })
+    const b = join('B', {}, { resume: SECRET_B })
+    for (let t = 0; t < 11; t++) { clock += 1000; room.receive(a.peer, here()); room.receive(b.peer, here()) }
+    room.disconnect(a.peer)
+    for (let t = 0; t < 15; t++) { clock += 1000; room.receive(b.peer, here()) }
+    expect(b.peer.last('game')!.game.it).toBe(b.id)
+    expect(room.heldCount).toBe(1)
+  })
+
+  it('never gives one secret to two connections, and ignores a malformed one', () => {
+    const a = join('A', on, { resume: SECRET_A })
+    const copy = join('Copy', {}, { resume: SECRET_A })
+    expect(copy.id).not.toBe(a.id)
+    // The duplicate has no secret of its own: dropping it is an ordinary leave.
+    room.disconnect(copy.peer)
+    expect(a.peer.last('leave')).toEqual({ type: 'leave', id: copy.id })
+    const short = join('Short', {}, { resume: 'abc' })
+    room.disconnect(short.peer)
+    expect(a.peer.last('leave')).toEqual({ type: 'leave', id: short.id })
+    expect(room.heldCount).toBe(0)
+  })
+
+  it('releases every held place when the rule is turned off', () => {
+    const a = join('A', on, { resume: SECRET_A })
+    const b = join('B', {}, { resume: SECRET_B })
+    room.disconnect(b.peer)
+    expect(room.heldCount).toBe(1)
+    send(a.peer, { type: 'param', id: 'game.rejoin', value: false })
+    clock += 100
+    room.receive(a.peer, here())
+    expect(room.heldCount).toBe(0)
+    expect(a.peer.last('leave')).toEqual({ type: 'leave', id: b.id })
+  })
+
+  it('survives everyone dropping at once and the room being rebuilt from storage', () => {
+    let stored = room.snapshot()
+    room = new Room('test', { now: () => clock, onPersist: (s) => { stored = s } })
+    const host = join('Host', on, { resume: SECRET_A })
+    const b = join('B', {}, { resume: SECRET_B })
+    send(host.peer, { type: 'param', id: 'world.gravity', value: 15 })
+    send(host.peer, { type: 'lock', locked: true })
+    expect(stored.roster!.map((r) => r.info.name)).toEqual(['Host', 'B'])
+    // No secret is ever sent to a player.
+    expect(JSON.stringify([...host.peer.json, ...b.peer.json])).not.toContain(SECRET_A)
+    expect(JSON.stringify([...host.peer.json, ...b.peer.json])).not.toContain(SECRET_B)
+
+    // A release resets the room: a new object from storage, no sockets. B is back first.
+    clock += 3000
+    room = new Room('test', { now: () => clock, onPersist: (s) => { stored = s } })
+    room.restore(stored)
+    expect(room.heldCount).toBe(2)
+    const b2 = join('B', { 'world.gravity': 3 }, { resume: SECRET_B })
+    expect(b2.id).toBe(b.id)
+    const w = b2.peer.last('welcome')!
+    // The room's world stands (B does not bring one), the host is still the host, the lock holds.
+    expect(w.params['world.gravity']).toBe(15)
+    expect(w.game.host).toBe(host.id)
+    expect(w.game.locked).toBe(true)
+    expect(w.players.map((p) => p.id).sort()).toEqual([host.id, b.id].sort())
+    const h2 = join('Host', {}, { resume: SECRET_A })
+    expect(h2.id).toBe(host.id)
+    expect(room.heldCount).toBe(0)
+    send(h2.peer, { type: 'lock', locked: false })
+    expect(b2.peer.last('game')!.game.locked).toBe(false)
+    // A newcomer gets a fresh id, not one of theirs.
+    const c = join('C')
+    expect([host.id, b.id]).not.toContain(c.id)
+  })
+
+  it('does not hold places from a roster older than the grace time', () => {
+    let stored = room.snapshot()
+    room = new Room('test', { now: () => clock, onPersist: (s) => { stored = s } })
+    join('Host', on, { resume: SECRET_A })
+    clock += 60_000
+    room = new Room('test', { now: () => clock })
+    room.restore(stored)
+    expect(room.heldCount).toBe(0)
   })
 })
 

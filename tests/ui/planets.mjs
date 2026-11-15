@@ -1,5 +1,5 @@
 /**
- * Planet picker check: the lobby offers one card per kind of world plus Custom; picking a
+ * Planet picker check, for the panel lobby (?galaxy=0, the fallback): the lobby offers one card per kind of world plus Custom; picking a
  * kind rebuilds the world and leads to the name form; Custom opens only the sliders that
  * shape a world; the invite link carries the world; a locked room refuses a change; an
  * invited guest is held to the linked world until they join; Play releases the lobby's
@@ -19,7 +19,7 @@ const errors = []
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   page.on('pageerror', e => errors.push(e.message)); page.on('console', m => { if (m.type() === 'error') errors.push(m.text()) })
-  await page.goto(`http://127.0.0.1:5187/?room=planets-${Date.now()}`, { waitUntil: 'load' })
+  await page.goto(`http://127.0.0.1:5187/?galaxy=0&room=planets-${Date.now()}`, { waitUntil: 'load' })
   await page.waitForFunction(() => window.syn3h?.game?.tick > 25, null, { timeout: 120000 })
   const settle = id => page.waitForFunction(id => { const p = document.querySelector('.lobby-panels'); return p.dataset.activePanel === id && p.dataset.busy === 'false' }, id)
   await page.evaluate(() => syn3h.shell.showPanel('index')); await settle('index')
@@ -64,7 +64,7 @@ try {
   // they are in the room. Pressing Play hands the lobby's graphics contexts back.
   const guest = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   guest.on('pageerror', e => errors.push(e.message))
-  await guest.goto(`http://127.0.0.1:5187/?room=planets-guest-${Date.now()}&world=desert.4242`, { waitUntil: 'load' })
+  await guest.goto(`http://127.0.0.1:5187/?galaxy=0&room=planets-guest-${Date.now()}&world=desert.4242`, { waitUntil: 'load' })
   await guest.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false', null, { timeout: 120000 })
   assert.deepEqual(await guest.evaluate(() => [syn3h.planets.currentPlanet().id, syn3h.params.get('world.seed').value]), ['desert', 4242])
   await guest.waitForFunction(() => document.querySelector('.lobby-index [data-planet=alpine]').disabled)

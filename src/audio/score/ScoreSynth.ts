@@ -74,6 +74,9 @@ export class ScoreSynth {
   private readonly out: GainNode
   private readonly pump: GainNode
   private readonly swell: GainNode
+  private readonly output: AudioNode
+  private parked = true
+  private parkAt = Infinity
   private readonly dry: GainNode
   /** Audio time at which the breath before a release begins; Infinity when none is pending. */
   private hushAt = Infinity
@@ -128,6 +131,11 @@ export class ScoreSynth {
   private readonly bellPartials: { osc: OscillatorNode; vca: GainNode; ratio: number; level: number; ring: number }[] = []
   private readonly bellBus: GainNode
   private choir?: AudioWorkletNode
+  private hall?: AudioWorkletNode
+  private riseOn = false
+  private braamUntil = -1
+  private readonly riseOut: AudioNode[]
+  private readonly braamOut: AudioNode[]
   private shimmer?: AudioWorkletNode
   private readonly shimmerOut: GainNode
   private readonly stringOscs: OscillatorNode[][] = []
@@ -153,7 +161,7 @@ export class ScoreSynth {
    * no halo or endless rise, fewer oscillators in the pads, strings, bell and low brass, and a
    * 1.6 second hall in place of 5.5. The hall is the largest single cost. Same music, less air.
    */
-  constructor(private readonly context: BaseAudioContext, output: AudioNode, readonly lite = false) {
+  constructor(private readonly context: BaseAudioContext, output: AudioNode, readonly lite = false, /** Use the algorithmic hall (hall.worklet.js), a quarter of the cost of the convolution. */ readonly network = lite) {
     const c = context
     const own = <T extends AudioNode>(node: T): T => { this.nodes.push(node); return node }
     const gain = (value: number, ...to: (AudioNode | AudioParam)[]) => { const g = own(c.createGain()); g.gain.value = value; for (const node of to) g.connect(node as AudioNode); return g }
@@ -162,7 +170,10 @@ export class ScoreSynth {
     const pan = (value: number, to: AudioNode) => { const p = own(c.createStereoPanner()); p.pan.value = value; p.connect(to); return p }
     const loop = (buffer: AudioBuffer) => { const s = own(c.createBufferSource()); s.buffer = buffer; s.loop = true; this.sources.push(s); return s }
 
-    this.out = gain(0, output)
+    // Not connected yet: the whole graph stays unplugged, and so uncomputed, until the score is
+    // asked to sound, and is unplugged again once it has faded out. A player listening to a
+    // recording, or with music off, pays nothing for the score.
+    this.out = gain(0); this.output = output
     // A gentle bus compressor glues the layers and keeps a full passage from towering over a quiet one.
     const glue = own(c.createDynamicsCompressor()); glue.threshold.value = -20; glue.knee.value = 14; glue.ratio.value = 3; glue.attack.value = 0.02; glue.release.value = 0.25
     // After the compressor, so it cannot be flattened: the release is allowed to be louder than the build.
@@ -173,9 +184,18 @@ export class ScoreSynth {
     this.pump = gain(1, sum)
 
     // Hall and ping-pong delay, both fed by sends.
-    const hall = own(c.createConvolver()); hall.buffer = hallImpulse(c, lite ? 1.6 : 5.5)
-    this.reverbSend = gain(0.9, wet); hall.connect(this.reverbSend)
-    const reverb = gain(1, hall)
+    // The hall is either a convolution with a generated impulse (the original, and the most
+    // expensive thing here) or the feedback delay network in hall.worklet.js, which costs a
+    // quarter as much and whose tail can grow while it rings. If the network cannot load, the
+    // convolution takes its place.
+    this.reverbSend = gain(0.9, wet)
+    const reverb = gain(1)
+    const convolve = () => { const hall = own(c.createConvolver()); hall.buffer = hallImpulse(c, lite ? 1.6 : 5.5); reverb.connect(hall).connect(this.reverbSend) }
+    const hallReady = !network ? (convolve(), Promise.resolve()) : context.audioWorklet.addModule(new URL('./hall.worklet.js', import.meta.url).href).then(() => {
+      if (this.disposed) return
+      this.hall = own(new AudioWorkletNode(context, 'hall', { numberOfInputs: 1, channelCount: 2, channelCountMode: 'explicit', outputChannelCount: [2] }))
+      reverb.connect(this.hall).connect(this.reverbSend)
+    }).catch(convolve)
     const left = own(c.createDelay(1.5)), right = own(c.createDelay(1.5)), damp = filter('lowpass', 3200)
     this.delays.push(left, right)
     const delayIn = gain(1, left)
@@ -321,7 +341,9 @@ export class ScoreSynth {
 
     // Low brass hit: a stack of saws on the bass note, driven hard, the filter thrown open and
     // let fall. It answers a turn to a dark mode and a tag landing on you.
-    this.braamFilter = filter('lowpass', 150, 1); this.braamVca = gain(0, sum, gain(0.6, reverb))
+    this.braamFilter = filter('lowpass', 150, 1); this.braamVca = gain(0)
+    // Connected only while a hit is sounding: an unconnected voice is not computed at all.
+    this.braamOut = [sum, gain(0.6, reverb)]
     const growl = own(c.createWaveShaper()); growl.curve = tanhCurve; growl.oversample = '2x'
     this.braamFilter.connect(growl).connect(this.braamVca)
     const stack = [[1, -8], [1.5, 0], [1, 8], [2, 5]] as const
@@ -330,7 +352,8 @@ export class ScoreSynth {
     // Endless rise (Shepard and Risset): eight sines an octave apart glide upward together. Each
     // fades in at the bottom and out at the top, so the ear hears a climb that never arrives.
     // It runs under the climb and is cut at the release.
-    this.riseBus = gain(0, gain(0.5, sum), reverb)
+    this.riseBus = gain(0)
+    this.riseOut = [gain(0.5, sum), reverb]
     for (let n = 0; n < (lite ? 0 : 8); n++) { const o = osc('sine', 30), vca = gain(0, this.riseBus); o.connect(vca); this.rise.push({ osc: o, vca }) }
 
     // Shimmer: an octave-up cascade (shimmer.worklet.js) fed from the pads, choir, strings,
@@ -350,12 +373,15 @@ export class ScoreSynth {
       lite ? Promise.resolve() : load(new URL('./choir.worklet.js', import.meta.url).href, () => {
         this.choir = own(new AudioWorkletNode(context, 'choir', { numberOfInputs: 0, outputChannelCount: [2] }))
         this.choir.connect(gain(0.7, sum)); this.choir.connect(reverb); this.choir.connect(gain(0.6, shimmerIn))
+        // The oscillator choirs were the fallback. Unplugged, they cost nothing.
+        this.choirGain.disconnect(); this.highChoirGain.disconnect()
         this.sing(0.01)
       }),
       lite ? Promise.resolve() : load(new URL('./shimmer.worklet.js', import.meta.url).href, () => {
         this.shimmer = own(new AudioWorkletNode(context, 'shimmer', { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 2, channelCountMode: 'explicit', outputChannelCount: [2] }))
         shimmerIn.connect(this.shimmer); this.shimmer.connect(this.shimmerOut)
       }),
+      hallReady,
     ]).then(() => {})
     for (const source of this.sources) source.start()
   }
@@ -365,6 +391,8 @@ export class ScoreSynth {
   /** Overall level of the score, for fading it in and out. */
   setLevel(level: number, seconds = 1.5): void {
     const now = this.context.currentTime
+    if (level > 0 && this.parked) { this.out.connect(this.output); this.parked = false }
+    this.parkAt = level > 0 ? Infinity : now + seconds * 2 + 0.5
     this.out.gain.cancelScheduledValues(now)
     this.out.gain.setTargetAtTime(level, now, seconds / 3)
   }
@@ -372,9 +400,10 @@ export class ScoreSynth {
   /** Move every layer toward the levels the mood asks for. Called every frame. */
   setLevels(level: Levels, depth: number, reverb: number, arc: Arc = { tension: 0, release: 0 }): void {
     const now = this.context.currentTime, to = (param: AudioParam, value: number, tau = 0.5) => param.setTargetAtTime(value, now, tau)
-    const trim = this.trim, bright = unit(level.brightness + 0.3 * arc.tension)
+    if (!this.parked && now > this.parkAt) { this.out.disconnect(); this.parked = true }
+    const trim = this.trim, bright = unit(level.brightness + 0.3 * arc.tension + 0.2 * arc.release)
     this.brightness = bright; this.drums = level.drums
-    to(this.swell.gain, 0.8 + 0.1 * arc.tension + 0.25 * arc.release, 0.3)
+    to(this.swell.gain, 0.72 + 0.1 * arc.tension + 0.33 * arc.release, 0.3)
     to(this.padBus.gain, level.pad * 0.9 * trim.pad)
     to(this.padFilter.frequency, 320 + bright ** 1.5 * 4200)
     to(this.droneGain.gain, level.drone * 0.4 * trim.drone)
@@ -408,6 +437,9 @@ export class ScoreSynth {
     to(this.bellBus.gain, 0.6 * trim.bells)
     // Under water the hall grows, as if the sound had nowhere to go.
     to(this.reverbSend.gain, reverb * (0.8 + 0.5 * unit(depth)))
+    // The algorithmic hall can do what a recorded impulse cannot: its tail lengthens at a release and under water.
+    if (this.hall) to(this.hall.parameters.get('decay')!, (this.lite ? 4 : 5.5) * (1 + 0.6 * arc.release + 0.5 * unit(depth)), 0.5)
+    if (this.braamUntil >= 0 && now > this.braamUntil) { this.braamVca.disconnect(); this.braamUntil = -1 }
   }
 
   /** Schedule one sixteenth of the composition at `time`. `duration` is one sixteenth in seconds. */
@@ -517,6 +549,9 @@ export class ScoreSynth {
   private climb(arc: Arc, now: number): void {
     const rising = arc.tension > 0.5 && arc.release < 0.5 && now < this.hushAt, dt = Math.min(0.25, Math.max(0, now - this.riseTime))
     this.riseTime = now
+    // Plugged in only while it climbs.
+    if (rising && !this.riseOn) { for (const to of this.riseOut) this.riseBus.connect(to); this.riseOn = true }
+    else if (!rising && this.riseOn && this.riseBus.gain.value < 0.001) { this.riseBus.disconnect(); this.riseOn = false }
     this.riseBus.gain.setTargetAtTime(rising ? (arc.tension - 0.5) * 0.5 * this.trim.pad : 0, now, rising ? 0.8 : 0.05)
     if (!rising) return
     // One octave every twelve seconds, faster as the climb nears its top.
@@ -534,6 +569,8 @@ export class ScoreSynth {
     const ratios = [1, 1.5, 1, 2]
     this.braamOscs.forEach((o, n) => o.frequency.setValueAtTime(this.rootHz * ratios[n], time))
     this.braamFilter.frequency.setValueAtTime(140, time); this.braamFilter.frequency.linearRampToValueAtTime(1200, time + 0.22); this.braamFilter.frequency.setTargetAtTime(220, time + 0.22, 0.5)
+    if (this.braamUntil < 0) for (const to of this.braamOut) this.braamVca.connect(to)
+    this.braamUntil = time + 5
     this.braamVca.gain.setTargetAtTime(0.4 * strength * this.trim.brass, time, 0.035); this.braamVca.gain.setTargetAtTime(0, time + 0.9, 0.45)
   }
 

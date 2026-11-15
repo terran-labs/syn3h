@@ -47,6 +47,8 @@ export class HillMarker implements System {
   private time = 0
   private zone: HillZone | null = null
   private zoneKey = ''
+  /** Whole-tile displacement of the drawn zone, x and z; see setImage. */
+  private readonly image = new THREE.Vector2()
 
   constructor(private readonly game: Game, private readonly ground: HillGround) {
     for (let w = 0; w < 2; w++) {
@@ -84,7 +86,7 @@ export class HillMarker implements System {
     const key = JSON.stringify(zone)
     if (key === this.zoneKey) return
     this.zoneKey = key
-    this.group.position.set(zone.x, zone.yMin, zone.z)
+    this.group.position.set(zone.x + this.image.x, zone.yMin, zone.z + this.image.y)
     const [inner, outer] = this.walls
     // A disc zone has no inner wall.
     inner.visible = zone.inner > 1
@@ -97,6 +99,17 @@ export class HillMarker implements System {
     return this.group.visible
   }
 
+  /**
+   * Draw the zone displaced by whole tiles of a wrapping world, so it stands at the image
+   * nearest the player. The posts' heights hold: the ground repeats with the tile.
+   */
+  setImage(dx: number, dz: number): void {
+    if (dx === this.image.x && dz === this.image.y) return
+    this.image.set(dx, dz)
+    if (this.zone) this.group.position.set(this.zone.x + dx, this.zone.yMin, this.zone.z + dz)
+    this.posts.position.set(dx, 0, dz)
+  }
+
   update(dt: number): void {
     const zone = this.zone
     if (!zone) return
@@ -105,7 +118,7 @@ export class HillMarker implements System {
     const k = Math.min(1, dt * 4)
     const breathe = 0.88 + Math.sin(this.time * 2.2) * 0.12
     this.game.camera.getWorldPosition(this.cam)
-    const d = Math.hypot(this.cam.x - zone.x, this.cam.z - zone.z)
+    const d = Math.hypot(this.cam.x - zone.x - this.image.x, this.cam.z - zone.z - this.image.y)
     const radii = [zone.inner, zone.outer]
     this.wallMaterials.forEach((mats, w) => {
       // A landmark from afar; out of the way up close, where the posts mark the edge instead.
