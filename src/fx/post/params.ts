@@ -51,7 +51,24 @@ export function postOverride(search: string): boolean | undefined {
   if (value === null) return undefined
   return value !== '0' && value !== 'false' && value !== 'off'
 }
+/**
+ * The cinematic look in one switch, for the owner to compare: the post chain plus the
+ * light rig's ground bounce, the Weather Lab's aerial perspective and the Terrain Lab's
+ * material sliders. Each lane's own default stays off; this only sets them for the page.
+ */
+export const CINEMATIC: Readonly<Record<string, number | boolean>> = {
+  'post.on': true, 'light.bounce': 1, 'weather.aerial': 1,
+  'terrain.detailNormal': 1, 'terrain.surfaceResponse': 1, 'terrain.macroColour': 1, 'terrain.accent': 1,
+}
+
 if (typeof location !== 'undefined') {
   const on = postOverride(location.search)
   if (on !== undefined) params.set(postOn.def.id, on)
+  // ?cinematic=1. Applied after every module has registered its sliders (unknown ids are
+  // ignored by params.set, so the order of imports cannot drop one silently: retry once).
+  if (new URLSearchParams(location.search).has('cinematic')) {
+    const apply = () => { for (const [id, v] of Object.entries(CINEMATIC)) params.set(id, v) }
+    apply()
+    setTimeout(apply, 0)
+  }
 }
