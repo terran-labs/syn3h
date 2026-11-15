@@ -34,21 +34,23 @@ describe('wordmark geometry', () => {
       expect(filled(centroid, contours)).toBe(true)
     }
   })
-  it('builds the extruded, chamfered mesh over the exact face', () => {
+  it('builds the flat mesh: the exact face and an edge line inside it', () => {
     const mesh = buildWordmarkMesh()
-    expect(mesh.triangles).toBe(1646)
-    expect(mesh.vertices.length).toBe((mesh.wallVertices + mesh.bevelVertices + mesh.faceVertices) * FLOATS_PER_VERTEX)
-    // The face is the exact outline triangulation; the chamfer's inner ring lies inside the letters.
-    const faceStart = mesh.wallVertices * FLOATS_PER_VERTEX
-    const faceArea = triangleArea(mesh.vertices.subarray(faceStart), Array.from({ length: mesh.faceVertices }, (_, k) => k), FLOATS_PER_VERTEX)
+    expect(mesh.triangles).toBe(982)
+    expect(mesh.vertices.length).toBe((mesh.faceVertices + mesh.edgeVertices) * FLOATS_PER_VERTEX)
+    // The face is the exact outline triangulation, with no inset; the edge's inner ring,
+    // pushed in by an edge width, lies inside the letters.
+    const faceArea = triangleArea(mesh.vertices, Array.from({ length: mesh.faceVertices }, (_, k) => k), FLOATS_PER_VERTEX)
     expect(Math.abs(faceArea - evenOddArea(contours)) / evenOddArea(contours)).toBeLessThan(1e-4)
-    const bevelStart = (mesh.wallVertices + mesh.faceVertices) * FLOATS_PER_VERTEX
+    for (let k = 0; k < mesh.faceVertices; k++) expect([mesh.vertices[k * FLOATS_PER_VERTEX + 2], mesh.vertices[k * FLOATS_PER_VERTEX + 3], mesh.vertices[k * FLOATS_PER_VERTEX + 4]]).toEqual([0, 0, 0])
+    const edgeStart = mesh.faceVertices * FLOATS_PER_VERTEX, width = 0.006
     let inner = 0, outside = 0
-    for (let k = 0; k < mesh.bevelVertices; k++) {
-      const at = bevelStart + k * FLOATS_PER_VERTEX
-      if (mesh.vertices[at + 2] !== 0) continue
+    for (let k = 0; k < mesh.edgeVertices; k++) {
+      const at = edgeStart + k * FLOATS_PER_VERTEX
+      expect(mesh.vertices[at + 4]).toBe(1)
+      if (mesh.vertices[at + 2] === 0 && mesh.vertices[at + 3] === 0) continue
       inner++
-      if (!filled([mesh.vertices[at], mesh.vertices[at + 1]], contours)) outside++
+      if (!filled([mesh.vertices[at] + mesh.vertices[at + 2] * width, mesh.vertices[at + 1] + mesh.vertices[at + 3] * width], contours)) outside++
     }
     // Bar a few at the sharpest traced corners.
     expect(outside / inner).toBeLessThan(0.02)
@@ -93,6 +95,8 @@ describe('layout and budgets', () => {
   it('budgets by graphics level, lowest still', () => {
     expect(logoBudget(0).still).toBe(true)
     expect(logoBudget(1).particles).toBeLessThan(logoBudget(2).particles)
+    // Large soft particles: a couple of thousand at most, so fill stays below the old sparks'.
+    expect(logoBudget(2).particles).toBeLessThanOrEqual(2000)
   })
 })
 
@@ -138,7 +142,10 @@ describe('LogoMark lifecycle', () => {
     expect(mark.generated).toBe(true)
     fake.calls.length = 0
     mark.renderStill()
-    expect(fake.calls.filter(c => c.startsWith('draw'))).toEqual(['draw TRIANGLES 3', 'draw POINTS 500', 'draw TRIANGLES 4938'])
+    // No sky behind the lobby logo: plasma, then the flat wordmark.
+    expect(fake.calls.filter(c => c.startsWith('draw'))).toEqual(['draw POINTS 500', 'draw TRIANGLES 2946'])
+    mark.setOptions({ space: true }); fake.calls.length = 0; mark.renderStill()
+    expect(fake.calls.filter(c => c.startsWith('draw'))).toEqual(['draw TRIANGLES 3', 'draw POINTS 500', 'draw TRIANGLES 2946'])
     mark.dispose()
     expect(fake.loseContext).toHaveBeenCalledTimes(1)
     expect(fake.calls.filter(c => c === 'deleteProgram')).toHaveLength(3)
@@ -163,7 +170,7 @@ describe('LogoMark lifecycle', () => {
     const fake = fakeGl(), renderer = new LogoRenderer(fake.gl, { particles: 200 })
     expect(fake.state.CURRENT_PROGRAM).toBe('host-program')
     renderer.draw(5, { x: 100, y: 100, width: 426, height: 100 })
-    expect(fake.calls.filter(c => c.startsWith('draw'))).toHaveLength(3)
+    expect(fake.calls.filter(c => c.startsWith('draw'))).toHaveLength(2)
     expect(fake.state.CURRENT_PROGRAM).toBe('host-program')
     expect(fake.state.VERTEX_ARRAY_BINDING).toBe('host-vao')
     expect(fake.state.ARRAY_BUFFER_BINDING).toBe('host-buffer')
@@ -201,6 +208,8 @@ describe('no assets', () => {
     expect(forbidden).not.toHaveBeenCalled()
     // The SVG references only its own gradients and filters.
     expect(svg).not.toMatch(/<image|href=|url\((?!#)|@font-face|<text/)
+    // Flat: no sun and no gloss gradient on the letters.
+    expect(logoSvg()).not.toMatch(/corona|disc|gloss|<circle/)
     for (const file of ['LogoMark.ts', 'logoRenderer.ts', 'wordmarkMesh.ts']) {
       const source = readFileSync(new URL(`../../src/ui/brand/${file}`, import.meta.url), 'utf8')
       expect(source).not.toMatch(/fetch\(|new Image|XMLHttpRequest|FontFace|\.woff|import\(|url\((?!#)|createImageBitmap|texImage/)
