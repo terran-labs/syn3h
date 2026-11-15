@@ -7,5 +7,6 @@ for ux_attempt in $(seq 1 60); do
   if curl -fsS http://127.0.0.1:5198/ > /dev/null; then break; fi
   sleep 1
 done
-node "${UX_TEST:-tests/ui/follow-on.mjs}"
+# UX_TESTS runs several checks against one server; UX_TEST remains for a single one.
+for ux_test in ${UX_TESTS:-${UX_TEST:-tests/ui/follow-on.mjs}}; do node "$ux_test"; done
 SYN3H_URL=http://127.0.0.1:5198/ node tests/ui/exploration.mjs

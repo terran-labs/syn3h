@@ -23,4 +23,5 @@ engine and game cues are new synthesis, not recovered Syn3h recordings.
   underwater/splash recordings. No proprietary-tree samples were copied.
 
 Paths above are relative to `/tmp/syn3h-research/legacy/`. These trees were read
-as source data only. Existing music provenance remains in public/audio/README.md.
+as source data only. The recorded music and effects that once shipped from `public/audio`
+were removed on 15 November 2026 at the owner's direction; everything heard is synthesised.
