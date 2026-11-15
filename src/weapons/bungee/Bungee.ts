@@ -15,8 +15,8 @@
  * in world x and z across steps except a hook in flight, which is re-imaged each step.
  *
  * Networking: `send` reports this player's cord as a CordWire whenever it changes, and
- * `applyRemote` takes another player's. Until the room relays cords, a cord to a remote
- * player pulls only you, like a winch on a moving post.
+ * `applyRemote` takes another player's. The room relays and checks cords, so a cord to
+ * another player pulls both vehicles: each client pulls the end it simulates.
  */
 import * as THREE from 'three/webgpu'
 import type { CordWire } from '../../../shared/protocol'
@@ -25,6 +25,7 @@ import type { Game, System } from '../../core/Game'
 import { GROUP_ALL, GROUP_LIQUID, GROUP_PROJECTILE, RAPIER, groups } from '../../core/physics'
 import { hotExposureDim } from '../../vehicles/skins/hotExposure'
 import { aimFrom, castAim, type GearControl } from '../aim'
+import { sharedLook, warmGear } from '../warm'
 import {
   bungeeAllowed, bungeeCooldown, bungeeDamping, bungeeHookSpeed, bungeeLength, bungeeMaxPull, bungeeMinLength,
   bungeeReelSpeed, bungeeSnap, bungeeStiffness, bungeeTimeout, bungeeVehicles,
@@ -161,24 +162,73 @@ export class CordView {
   }
 }
 
-export class Bungee implements System {
-  private readonly cords = new Map<number, Cord>()
-  private readonly coreMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...SLACK_RGB), side: THREE.DoubleSide })
-  private readonly haloMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(...SLACK_RGB), transparent: true, opacity: 0.35, side: THREE.DoubleSide,
+const CORD_WIDTHS = [0.28, 0.5, 0.11]
+
+/**
+ * Everything a Bungee draws with. One per game, shared by the player's Bungee and every
+ * bot's, and compiled before anyone fires (see warm.ts).
+ */
+class BungeeLook {
+  readonly coreMat = new THREE.MeshBasicMaterial({ name: 'gear bungee core', color: new THREE.Color(...SLACK_RGB), side: THREE.DoubleSide })
+  readonly haloMat = new THREE.MeshBasicMaterial({
+    name: 'gear bungee halo', color: new THREE.Color(...SLACK_RGB), transparent: true, opacity: 0.35, side: THREE.DoubleSide,
     blending: THREE.AdditiveBlending, depthWrite: false,
   })
   // As the tag beam does: a normally blended tint under the additive light keeps the cord
   // readable over a sunlit desert, where additive colour alone washes out to white.
-  private readonly tintMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(...TINT_RGB), transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false,
+  readonly tintMat = new THREE.MeshBasicMaterial({
+    name: 'gear bungee tint', color: new THREE.Color(...TINT_RGB), transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false,
   })
-  private readonly hookGeo = new THREE.OctahedronGeometry(0.35, 0)
-  private readonly ringGeo = new THREE.RingGeometry(0.7, 1, 32)
-  private readonly ringMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(...SLACK_RGB), transparent: true, opacity: 0.8, side: THREE.DoubleSide,
+  readonly hookGeo = new THREE.OctahedronGeometry(0.35, 0)
+  readonly ringGeo = new THREE.RingGeometry(0.7, 1, 32)
+  readonly ringMat = new THREE.MeshBasicMaterial({
+    name: 'gear bungee ring', color: new THREE.Color(...SLACK_RGB), transparent: true, opacity: 0.8, side: THREE.DoubleSide,
     blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
   })
+  /** The game time at which the player's own cord last set the colours; it outranks bots. */
+  private ledAt = -1
+  private readonly proxy: CordView
+  private readonly unwarm: () => void
+
+  constructor(private readonly game: Game) {
+    this.proxy = new CordView(this.cordMats(), CORD_WIDTHS)
+    this.unwarm = warmGear(game, [
+      ...this.proxy.group.children.map((m) => [(m as THREE.Mesh).geometry, (m as THREE.Mesh).material as THREE.Material] as const),
+      [this.hookGeo, this.coreMat], [this.ringGeo, this.haloMat], [this.ringGeo, this.ringMat],
+    ])
+  }
+
+  cordMats(): THREE.Material[] {
+    return [this.tintMat, this.haloMat, this.coreMat]
+  }
+
+  /**
+   * Colour every cord from one cord's glow. All cords share the materials, so one cord
+   * leads: the player's own when it has one, otherwise whichever asked last.
+   */
+  setGlow(glow: number, dim: number, lead: boolean): void {
+    if (!lead && this.ledAt === this.game.time) return
+    if (lead) this.ledAt = this.game.time
+    const r = SLACK_RGB[0] + (TAUT_RGB[0] - SLACK_RGB[0]) * glow
+    const g = SLACK_RGB[1] + (TAUT_RGB[1] - SLACK_RGB[1]) * glow
+    const b = SLACK_RGB[2] + (TAUT_RGB[2] - SLACK_RGB[2]) * glow
+    this.coreMat.color.setRGB(r * dim, g * dim, b * dim)
+    this.haloMat.color.setRGB(r * dim * 0.6, g * dim * 0.6, b * dim * 0.6)
+    this.tintMat.color.setRGB(TINT_RGB[0] * dim, TINT_RGB[1] * dim, TINT_RGB[2] * dim)
+  }
+
+  dispose(): void {
+    this.unwarm()
+    this.proxy.dispose()
+    this.coreMat.dispose(); this.haloMat.dispose(); this.tintMat.dispose(); this.ringMat.dispose()
+    this.hookGeo.dispose(); this.ringGeo.dispose()
+  }
+}
+
+export class Bungee implements System {
+  private readonly cords = new Map<number, Cord>()
+  private readonly shared: { look: BungeeLook; release(): void }
+  private readonly look: BungeeLook
   private readonly hookMeshes = new Map<number, THREE.Mesh>()
   private readonly anchorMeshes = new Map<number, THREE.Mesh>()
   private readonly reticle: THREE.Mesh
@@ -196,7 +246,9 @@ export class Bungee implements System {
   stats = { launched: 0, attachedGround: 0, attachedVehicle: 0, released: 0, snapped: 0, timedOut: 0 }
 
   constructor(private readonly game: Game, private readonly hooks: BungeeHooks, target: Window = window) {
-    this.reticle = new THREE.Mesh(this.ringGeo, this.ringMat)
+    this.shared = sharedLook(game, 'bungee', () => new BungeeLook(game))
+    this.look = this.shared.look
+    this.reticle = new THREE.Mesh(this.look.ringGeo, this.look.ringMat)
     this.reticle.visible = false
     this.reticle.renderOrder = 10
     game.scene.add(this.reticle)
@@ -342,8 +394,7 @@ export class Bungee implements System {
   dispose(): void {
     for (const id of [...this.cords.keys()]) this.remove(id)
     this.game.scene.remove(this.reticle)
-    this.coreMat.dispose(); this.haloMat.dispose(); this.tintMat.dispose(); this.ringMat.dispose()
-    this.hookGeo.dispose(); this.ringGeo.dispose()
+    this.shared.release()
   }
 
   // ---------------------------------------------------------------------------------------
@@ -395,7 +446,7 @@ export class Bungee implements System {
   private startHook(owner: number, o: THREE.Vector3, vel: THREE.Vector3): Cord {
     const c = this.makeCord(owner)
     c.hook = { pos: o.clone(), prev: o.clone(), vel: vel.clone(), travelled: 0 }
-    const mesh = new THREE.Mesh(this.hookGeo, this.coreMat)
+    const mesh = new THREE.Mesh(this.look.hookGeo, this.look.coreMat)
     mesh.position.copy(o)
     this.game.scene.add(mesh)
     this.hookMeshes.set(owner, mesh)
@@ -404,7 +455,7 @@ export class Bungee implements System {
 
   private makeCord(owner: number): Cord {
     this.remove(owner)
-    const view = new CordView([this.tintMat, this.haloMat, this.coreMat], [0.28, 0.5, 0.11])
+    const view = new CordView(this.look.cordMats(), CORD_WIDTHS)
     view.group.visible = false
     this.game.scene.add(view.group)
     const c: Cord = {
@@ -625,21 +676,16 @@ export class Bungee implements System {
     c.view.draw(camPos)
     c.view.group.visible = true
 
-    const r = SLACK_RGB[0] + (TAUT_RGB[0] - SLACK_RGB[0]) * glow
-    const g = SLACK_RGB[1] + (TAUT_RGB[1] - SLACK_RGB[1]) * glow
-    const bl = SLACK_RGB[2] + (TAUT_RGB[2] - SLACK_RGB[2]) * glow
-    // One material set for every cord: the local cord's glow drives the colour, others share it.
+    // One material set for every cord: the player's own cord drives the colour, others share it.
     if (c.owner === this.hooks.self() || this.cords.size === 1) {
-      this.coreMat.color.setRGB(r * dim, g * dim, bl * dim)
-      this.haloMat.color.setRGB(r * dim * 0.6, g * dim * 0.6, bl * dim * 0.6)
-      this.tintMat.color.setRGB(TINT_RGB[0] * dim, TINT_RGB[1] * dim, TINT_RGB[2] * dim)
+      this.look.setGlow(glow, dim, !this.hooks.control && c.owner === this.hooks.self())
     }
   }
 
   private drawAnchor(c: Cord, at: THREE.Vector3): void {
     let mesh = this.anchorMeshes.get(c.owner)
     if (!mesh) {
-      mesh = new THREE.Mesh(this.ringGeo, this.haloMat)
+      mesh = new THREE.Mesh(this.look.ringGeo, this.look.haloMat)
       mesh.scale.setScalar(0.6)
       this.game.scene.add(mesh)
       this.anchorMeshes.set(c.owner, mesh)
@@ -660,7 +706,7 @@ export class Bungee implements System {
     const vehicle = path.handle !== null && this.hooks.idOfBody(path.handle) !== null
     const ok = !vehicle || bungeeVehicles.value
     const k = ok ? dim : dim * 0.25
-    this.ringMat.color.setRGB((vehicle ? TAUT_RGB[0] : SLACK_RGB[0]) * k, (vehicle ? TAUT_RGB[1] : SLACK_RGB[1]) * k, (vehicle ? TAUT_RGB[2] : SLACK_RGB[2]) * k)
+    this.look.ringMat.color.setRGB((vehicle ? TAUT_RGB[0] : SLACK_RGB[0]) * k, (vehicle ? TAUT_RGB[1] : SLACK_RGB[1]) * k, (vehicle ? TAUT_RGB[2] : SLACK_RGB[2]) * k)
     this.reticle.position.copy(path.point).addScaledVector(path.normal, 0.08)
     this.reticle.lookAt(path.point.clone().add(path.normal))
     this.reticle.scale.setScalar(Math.max(0.6, camPos.distanceTo(path.point) * 0.018))
