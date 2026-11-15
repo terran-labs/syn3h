@@ -35,9 +35,10 @@ import { phash2, pperlin } from './noise'
 import { distanceToPolyline } from './raster'
 import type { HeightSampler } from './sampler'
 
-export const groundCover = defineParam({
-  id: 'terrain.groundCover', label: 'Grass and flowers', group: 'Terrain', scope: 'world', default: 1, min: 0, max: 1, step: 0.05,
-})
+// Registered in settings.ts, which has no renderer imports, so planet recipes, tests and
+// the server can set it without loading this file.
+import { terrainGroundCover } from './settings'
+export const groundCover = terrainGroundCover
 
 export const groundCoverShade = defineParam({
   id: 'terrain.groundCoverShade', label: 'Ground darkened under grass', group: 'Terrain', scope: 'world', default: 1, min: 0, max: 1, step: 0.05,

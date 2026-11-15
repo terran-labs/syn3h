@@ -17,7 +17,7 @@ import { type TerrainMaterial, createTerrainMaterial } from './material'
 import { LOD_FAR, LOD_NEAR, type TerrainMeshes, type TriangleStats, createTerrainMeshes } from './mesh'
 import { rimRoadRadius } from './roads'
 import { HeightSampler, sealSeam } from './sampler'
-import { KIND_ALPINE, KIND_VOLCANIC, TERRAIN_PARAM_IDS, currentTerrainSettings, worldSeaKind } from './settings'
+import { KIND_VOLCANIC, TERRAIN_PARAM_IDS, currentTerrainSettings, worldSeaKind } from './settings'
 import { spawnPointAt } from './spawn'
 import { GroundCover } from './groundcover'
 import { Trees } from './trees'
@@ -232,9 +232,11 @@ export class ProceduralTerrain implements Terrain {
     const hot = kind === KIND_VOLCANIC
     if (lake && hot) this.look.setLake(lake.x, lake.z, lake.radius, lake.surface)
     else this.look.setLake(0, 0, 0, -1000)
-    // Alpine worlds carry snow from a third of the way up the peak, so the ranges are capped too.
-    const snow = kind === KIND_ALPINE ? this.data.layout.summitHeight * 0.36 : 1e6
-    this.look.setLook(kind, worldSeaKind.value === 0, hot, snow)
+    // Snow starts at a share of the summit's height set by the recipe: alpine worlds carry
+    // it from a third of the way up, an ice moon from the shore, most worlds not at all.
+    const line = this.data.settings.snowLine
+    const snow = line >= 2 ? 1e6 : this.data.layout.summitHeight * line
+    this.look.setLook(this.data.settings.look, worldSeaKind.value === 0, hot && !!lake, snow)
   }
 
   /** Rebuild heights, mesh and collider in place, then notify listeners. */

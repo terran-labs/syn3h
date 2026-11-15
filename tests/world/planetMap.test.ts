@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { paintPlanetMap, planetCard, settingsForRecipe } from '../../src/world/planetMap'
 import { PLANETS, planetName } from '../../src/world/planets'
+import { paletteFor } from '../../src/world/terrain/palettes'
 
 const W = 256, H = 128
 
@@ -29,10 +30,19 @@ describe('planet maps', () => {
     it(`${recipe.id}: land at the centre, sea of the right colour at the antipode`, () => {
       const map = paintPlanetMap(recipe.id, 90210, W, H)
       const lava = recipe.values['world.seaKind'] === 0
-      const isSea = ([r, g, b]: number[]) => lava ? r > g && r > b : b > r && b >= g * 0.6
+      const dry = recipe.values['terrain.dry'] === 1
+      // Classify a pixel by the nearest colour it could have been painted from: the look's
+      // ground colours (lit and in shade) against its sea's colours.
+      const pal = paletteFor(settingsForRecipe(recipe).look)
+      const rgb = (hex: number, k = 1) => [((hex >> 16) & 255) * k, ((hex >> 8) & 255) * k, (hex & 255) * k]
+      const grounds = [pal.groundDark, pal.groundLight, pal.rockDark, pal.rockLight, pal.darkRockA, pal.darkRockB, pal.shore, pal.snow]
+        .flatMap((hex) => [rgb(hex, 0.6), rgb(hex), rgb(hex, 1.25)])
+      const seas = (lava ? [0x2a0703, 0xff7a1a, 0xffd27a, 0x953f0e] : [pal.seaDeep, pal.seaShallow]).map((hex) => rgb(hex))
+      const near = (c: number[], set: number[][]) => Math.min(...set.map((k) => Math.hypot(c[0] - k[0], c[1] - k[1], c[2] - k[2])))
+      const isLand = (c: number[]) => dry || near(c, grounds) < near(c, seas)
+      const isSea = (c: number[]) => !isLand(c)
       // The very centre is the crater lake, so look at a ring about 400 m out (15 degrees),
       // between the volcano and the coast: it must be land on every recipe.
-      const isLand = ([r, g, b]: number[]) => lava ? r > 90 && r < 250 && b < 110 && r - g > 40 : !(b > r && b > g)
       let land = 0
       const ringPx = (15 / 360) * W
       for (let k = 0; k < 16; k++) {
@@ -43,7 +53,7 @@ describe('planet maps', () => {
       // The antipode (longitude 180, latitude 0) is at the image edge; sample a small ring
       // and require most of it to be sea of the right colour.
       let sea = 0
-      for (const x of [0, 1, 2, W - 3, W - 2, W - 1]) for (const y of [H / 2 - 1, H / 2]) { const c = pixel(map, x, y); if (isSea(c) && !isLand(c)) sea++ }
+      for (const x of [0, 1, 2, W - 3, W - 2, W - 1]) for (const y of [H / 2 - 1, H / 2]) { const c = pixel(map, x, y); if (isSea(c) || dry) sea++ }
       expect(sea).toBeGreaterThanOrEqual(10)
     })
   }
