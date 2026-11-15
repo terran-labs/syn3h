@@ -16,8 +16,10 @@ export type Sound = 'laserShot' | 'laserHit' | 'materialize'
 export const MUSIC_TRACKS = { Score: 'Adaptive score (generated)', SpaceStation: 'Space Station', Classic: 'Classic (Mars Explorer)', Carefree: 'Carefree (Mars Explorer)', Ambient: 'Ambient (legacy)' } as const
 export type MusicTrack = keyof typeof MUSIC_TRACKS
 export interface Position { x: number; y: number; z: number }
-// The wind is generated now (weatherWind.ts); Wind.wav is no longer downloaded.
-const files: Record<Sound, string> = { laserShot: 'LaserShot.mp3', laserHit: 'LaserHit.mp3', materialize: 'Materialize.mp3' }
+// Two winds: the owner's recorded clip follows the vehicle's own speed (Engine.setWind), and
+// the generated voice (weatherWind.ts) carries the weather at the camera. AGENTS.md: the
+// recorded originals stay unless the owner says otherwise.
+const files: Record<Sound | 'wind', string> = { laserShot: 'LaserShot.mp3', laserHit: 'LaserHit.mp3', materialize: 'Materialize.mp3', wind: 'Wind.wav' }
 interface Deck { element: HTMLAudioElement; source: MediaElementAudioSourceNode; gain: GainNode; stopTimer?: ReturnType<typeof setTimeout> }
 
 export class GameAudio implements System {
@@ -128,6 +130,7 @@ export class GameAudio implements System {
         const buffer = await this.context!.decodeAudioData(await response.arrayBuffer())
         if (this.disposed) return
         this.buffers.set(name, buffer)
+        if (name === 'wind') this.engine!.setWind(buffer)
       } catch (error) { this.errors.push(String(error)) }
     }))
   }

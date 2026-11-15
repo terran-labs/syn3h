@@ -16,6 +16,7 @@ import {
   type ServerMessage,
   type ShotInfo,
   type CordWire,
+  type YoinkWire,
   type TagEvent,
   BOT_ID_BASE,
   DEFAULT_COLORS,
@@ -48,6 +49,9 @@ import { MIN_CLOSING, SHOVE_SHARE, cleanShove } from '../src/net/shove'
 import { wrapDistance } from '../shared/wrap'
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
 import { bungeeAllowed, bungeeLength, bungeeSnap, bungeeVehicles } from '../src/weapons/bungee/params'
+import { bigRedAllowed, bigRedCooldown } from '../src/weapons/bigRedParams'
+import { pesterAllowed, pesterCooldown, pesterLife, pesterMax, pesterRange } from '../src/weapons/pester/params'
+import { yoinkAllowed, yoinkCooldown, yoinkFling, yoinkHoldDistance, yoinkHoldTime, yoinkPunt, yoinkPuntRange, yoinkRange } from '../src/weapons/yoink/params'
 import {
   KNOCK_WINDOW, WIN_PAUSE, gameMode, kothKnockBonus, kothRespawnDelay, kothTargetScore, tagCooldown, tagRamReach,
   REJOIN_GRACE, gameRejoin,
@@ -103,11 +107,23 @@ interface Player {
   shoved: Map<number, number>
   /** The room last relayed this player's Bungee cord as attached. */
   cordOn: boolean
+  /** The vehicle this player is carrying with Yoink, and since when (server ms). */
+  carry: { to: number; at: number } | null
+  /** Server ms of this player's last relayed grab or fling, and of its last gust per target. */
+  yoinkAt: number
+  gusted: Map<number, number>
   /** The secret this player may rejoin with, when it sent a valid one. */
   token: string | null
   /** Server ms until which a dropped player's place is held, or 0 while connected. */
   heldUntil: number
   lastFireAt: number
+  /** Server ms of the last Big Red (Weapons lane), rate limited on its own. */
+  lastRedAt: number
+  /** Live Pesters (Weapons lane): shot id to server ms of launch. Capped at pester.max. */
+  pesters: Map<number, number>
+  /** Who each live Pester chases. */
+  pesterTargets: Map<number, number>
+  lastPesterAt: number
   /** Shots fired recently, by shot id, with server ms of firing. */
   shots: Map<number, number>
   /** Server ms of this player's last tag change. */
@@ -146,6 +162,28 @@ const IT_ABSENT_MS = 8000
  * hold a place in the room and a line in everyone's player list. If it comes back, it rejoins.
  */
 const SILENT_MS = 180_000
+/** No carry lasts longer than this, whatever the sliders say, ms. */
+const YOINK_MAX_CARRY_MS = 30_000
+/** Grace past the carry time limit before the room ends a carry itself, ms. */
+const YOINK_CARRY_SLACK_MS = 1500
+/**
+ * The most of a player's reported speed that the room believes when a check gives leeway for
+ * speed, m/s. Positions and velocities are each client's own word. Several checks rightly
+ * allow more distance to a faster vehicle (a beam leaves from "near" its sender, a ram
+ * reaches "about as far as the two travelled since their last states"), which made the
+ * allowance as large as a client cared to claim: a state saying 10,000 m/s let a beam start
+ * five kilometres away, beside anyone, and let a "ram" pass the tag across the whole world.
+ * No vehicle here approaches this; anything above it earns no more leeway.
+ */
+const TRUSTED_SPEED = 100
+
+/** A player's speed for the purpose of leeway: see TRUSTED_SPEED. */
+function leewaySpeed(v: readonly number[]): number {
+  return Math.min(TRUSTED_SPEED, Math.hypot(v[0], v[1], v[2]))
+}
+
+/** The most of a sender's own reported speed that counts toward its fling limit, m/s. */
+const YOINK_OWN_SPEED = 60
 /** At most one relayed push per rammer and rammed player in this time. */
 const SHOVE_REPEAT_MS = 500
 /** How long a player's top speed is remembered for bounding its push. */
@@ -209,6 +247,7 @@ export class Room {
   /** Advance time based rules. Called on every message; transports may also call it on a timer. */
   tick(): void {
     this.tickSilent(this.now())
+    this.tickYoink(this.now())
     this.tickHeld(this.now())
     this.tickIdle(this.now())
     this.tickTag(this.now())
@@ -288,6 +327,9 @@ export class Room {
       case 'cord':
         this.onCord(peer, player, msg.cord)
         break
+      case 'yoink':
+        this.onYoink(peer, player, msg.y)
+        break
       case 'stuck':
       case 'died': // the name older bundles send
         if (typeof msg.bot === 'number') {
@@ -332,8 +374,9 @@ export class Room {
     const wasActive = this.isActive(player, this.now())
     player.heldUntil = until
     this.rekey(peer, { send() {}, close() {} }, player)
-    // Its owner is not there to let go of it: a held place holds no cord.
+    // Its owner is not there to let go of it: a held place holds no cord and carries nobody.
     this.dropCord(player)
+    this.endCarry(player)
     if (wasActive && !this.anyActive(this.now())) {
       this.activeLeft = true
       this.activeAt = this.now()
@@ -388,6 +431,7 @@ export class Room {
 
   private leave(peer: Peer, player: Player): void {
     const wasActive = this.isActive(player, this.now())
+    this.endCarry(player)
     this.players.delete(peer)
     if (wasActive && !this.anyActive(this.now())) {
       this.activeLeft = true
@@ -605,7 +649,7 @@ export class Room {
     state.id = player.info.id
     player.lastState = state
     player.lastStateAt = this.now()
-    const speed = Math.hypot(...state.v)
+    const speed = leewaySpeed(state.v)
     if (speed >= player.fast || player.lastStateAt - player.fastAt > SHOVE_SPEED_MEMORY_MS) {
       player.fast = speed
       player.fastAt = player.lastStateAt
@@ -800,25 +844,64 @@ export class Room {
   }
 
   private onFire(peer: Peer, player: Player, shot: unknown): void {
-    if (!this.paramBool(lasersAllowed.def)) return
     if (!isShot(shot)) return
+    // A live id identifies one launch across all gear; reusing it would overwrite its target.
+    if (player.shots.has(shot.id) || player.pesters.has(shot.id)) return
+    if (shot.k === 'pester') { this.onPester(peer, player, shot); return }
+    // Big Red (shot.k 'red') has its own switch and its own, slower rate; any other kind is refused.
+    const red = shot.k === 'red'
+    if (shot.k !== undefined && !red) return
+    if (!this.paramBool(red ? bigRedAllowed.def : lasersAllowed.def)) return
+    delete shot.to
     const now = this.now()
     // A little slack for jitter between the client's timer and arrival here.
-    const interval = this.paramNumber(laserInterval.def) * 1000 * 0.8
-    if (now - player.lastFireAt < interval) return
+    const interval = this.paramNumber(red ? bigRedCooldown.def : laserInterval.def) * 1000 * 0.8
+    if (now - (red ? player.lastRedAt : player.lastFireAt) < interval) return
     const st = player.lastState
     if (!st || st.paused || now - player.lastStateAt > RESPONDING_MS) return
-    const speed = Math.hypot(...st.v)
+    const speed = leewaySpeed(st.v)
     if (this.dist(shot.o, st.p) > 8 + speed * 0.5) return
     if (shot.boost < 0 || shot.boost > Math.max(5, speed * 1.5)) return
     // Never let a client claim a firing time far from now: projectiles are replayed from it.
     shot.t = Math.min(now / 1000, Math.max(now / 1000 - 1, shot.t))
     const len = Math.hypot(...shot.d)
     shot.d = [shot.d[0] / len, shot.d[1] / len, shot.d[2] / len]
-    player.lastFireAt = now
+    if (red) player.lastRedAt = now
+    else player.lastFireAt = now
     player.shots.set(shot.id, now)
     if (player.shots.size > 64) player.shots.delete(player.shots.keys().next().value as number)
     this.broadcast({ type: 'fire', from: player.info.id, shot }, peer)
+  }
+
+  /**
+   * A Pester launch (Weapons lane): a shot of kind 'pester' chasing vehicle `to`. Its own
+   * switch, its own rate, at most pester.max out per player, and a target that is in the room,
+   * not the sender, and within range round the wrap. A catch is reported by the caught
+   * player's own client as a hit, checked in onHit against the Pester's own lifetime.
+   */
+  private onPester(peer: Peer, player: Player, shot: ShotInfo): void {
+    if (!this.paramBool(pesterAllowed.def)) return
+    const now = this.now()
+    if (now - player.lastPesterAt < this.paramNumber(pesterCooldown.def) * 1000 * 0.8) return
+    const life = (this.paramNumber(pesterLife.def) + 1) * 1000
+    for (const [id, at] of player.pesters) if (now - at > life) { player.pesters.delete(id); player.pesterTargets.delete(id) }
+    if (player.pesters.size >= this.paramNumber(pesterMax.def)) return
+    const st = player.lastState
+    if (!st || st.paused || now - player.lastStateAt > RESPONDING_MS) return
+    if (this.dist(shot.o, st.p) > 8 + leewaySpeed(st.v) * 0.5) return
+    const target = typeof shot.to === 'number' ? this.byId(shot.to) : undefined
+    if (!target || target === player || !target.lastState) return
+    if (this.dist(target.lastState.p, st.p) > this.paramNumber(pesterRange.def) * 1.2 + 20) return
+    shot.t = Math.min(now / 1000, Math.max(now / 1000 - 1, shot.t))
+    const len = Math.hypot(...shot.d)
+    shot.d = [shot.d[0] / len, shot.d[1] / len, shot.d[2] / len]
+    shot.boost = 0
+    player.lastPesterAt = now
+    player.pesters.set(shot.id, now)
+    player.pesterTargets.set(shot.id, target.info.id)
+    player.shots.set(shot.id, now)
+    if (player.shots.size > 64) player.shots.delete(player.shots.keys().next().value as number)
+    this.broadcast({ type: 'fire', from: player.info.id, shot: { id: shot.id, o: shot.o, d: shot.d, boost: 0, t: shot.t, k: 'pester', to: target.info.id } }, peer)
   }
 
   /**
@@ -834,7 +917,7 @@ export class Room {
     const st = player.lastState
     const reach = this.paramNumber(bungeeLength.def) * this.paramNumber(bungeeSnap.def) + 10
     if (cord.s === 'hook') {
-      if (!st || this.dist(cord.o, st.p) > 8 + Math.hypot(...st.v) * 0.5) return
+      if (!st || this.dist(cord.o, st.p) > 8 + leewaySpeed(st.v) * 0.5) return
       cord.t = Math.min(this.now() / 1000, Math.max(this.now() / 1000 - 1, cord.t))
     } else if (cord.s === 'on') {
       if (cord.r < 0 || cord.r > this.paramNumber(bungeeLength.def) + 1) return
@@ -854,6 +937,94 @@ export class Room {
     }
     player.cordOn = cord.s === 'on'
     this.broadcast({ type: 'cord', from: player.info.id, cord, t: this.now() / 1000 }, peer)
+  }
+
+  /**
+   * Yoink (Weapons lane): grab a vehicle and carry it, fling it, or shove it with a gust.
+   *
+   * The vehicle acted on is moved by its own client, on the word of the message relayed
+   * here, so these checks are all that stand between a modified client and everyone else:
+   *  - the two must be in the room, placed, playing (not parked or silent) and within reach,
+   *    round the wrap;
+   *  - a carry is the room's to end. The game's own carry time limit runs on the holder's
+   *    client, which a modified one ignores; the room remembers who carries whom and drops
+   *    the carry itself when the time is up, the two drift out of reach, or the holder goes
+   *    quiet or leaves (tickYoink, endCarry);
+   *  - one vehicle is carried by one player at a time, and a player carries one;
+   *  - flings and gusts are rationed per sender and target by the recharge time, so they
+   *    cannot be stacked into one enormous shove;
+   *  - a fling is no faster than the room's sliders allow plus the sender's own speed, and
+   *    that speed is the sender's word, so only a sensible amount of it counts.
+   */
+  private onYoink(peer: Peer, player: Player, raw: unknown): void {
+    if (!this.paramBool(yoinkAllowed.def)) return
+    const y = cleanYoink(raw)
+    if (!y) return
+    const now = this.now()
+    const other = this.byId(y.to)
+    const mine = player.lastState
+    const theirs = other?.lastState
+    if (!other || other === player || !theirs || !mine) return
+    if (mine.paused || theirs.paused || now - player.lastStateAt > RESPONDING_MS) return
+    if (now - other.lastStateAt > (other.info.bot ? BOT_EXPIRY_MS : RESPONDING_MS)) return
+    if (this.dist(theirs.p, mine.p) > this.yoinkReach()) return
+    const carrying = player.carry?.to === y.to
+    // The recharge between uses, with a little slack for timing; never less than a quarter second.
+    const recharge = Math.max(250, this.paramNumber(yoinkCooldown.def) * 1000 * 0.8)
+
+    if (y.s === 'drop') {
+      if (carrying) this.endCarry(player, peer)
+      return
+    }
+    if (y.s === 'grab') {
+      if (carrying || now - player.yoinkAt < recharge) return
+      for (const p of this.players.values()) if (p !== player && p.carry?.to === y.to) return
+      if (player.carry) this.endCarry(player)
+      player.carry = { to: y.to, at: now }
+      player.yoinkAt = now
+      this.broadcast({ type: 'yoink', from: player.info.id, y }, peer)
+      return
+    }
+    // A fling: the end of a carry, or a gust on a vehicle in reach.
+    const own = Math.min(YOINK_OWN_SPEED, Math.hypot(...mine.v))
+    const most = Math.max(this.paramNumber(yoinkFling.def), this.paramNumber(yoinkPunt.def) * 1.3) * 1.25 + own + 5
+    if (Math.hypot(...y.v) > most) return
+    if (carrying) {
+      player.carry = null
+    } else {
+      if (now - (player.gusted.get(y.to) ?? -Infinity) < recharge) return
+      player.gusted.set(y.to, now)
+    }
+    player.yoinkAt = now
+    this.broadcast({ type: 'yoink', from: player.info.id, y }, peer)
+  }
+
+  /** How far apart a Yoink's two vehicles may be, metres: the game's reaches with slack. */
+  private yoinkReach(): number {
+    return Math.max(this.paramNumber(yoinkRange.def), this.paramNumber(yoinkPuntRange.def), this.paramNumber(yoinkHoldDistance.def) * 2) * 1.5 + 10
+  }
+
+  /** The room ends a carry: everyone, the carried vehicle's client above all, is told "drop". */
+  private endCarry(holder: Player, except?: Peer): void {
+    const carry = holder.carry
+    if (!carry) return
+    holder.carry = null
+    this.broadcast({ type: 'yoink', from: holder.info.id, y: { s: 'drop', to: carry.to } }, except)
+  }
+
+  /** Carries that have run their time, lost their holder or stretched out of reach are ended. */
+  private tickYoink(now: number): void {
+    const limit = this.paramNumber(yoinkHoldTime.def)
+    // "No limit" on the slider still ends: nobody is carried for more than YOINK_MAX_CARRY_MS.
+    const most = Math.min(YOINK_MAX_CARRY_MS, limit > 0 ? limit * 1000 + YOINK_CARRY_SLACK_MS : YOINK_MAX_CARRY_MS)
+    const on = this.paramBool(yoinkAllowed.def)
+    for (const holder of this.players.values()) {
+      const carry = holder.carry
+      if (!carry) continue
+      const other = this.byId(carry.to)
+      const gone = !other || !other.lastState || !holder.lastState || holder.lastState.paused || now - holder.lastStateAt > RESPONDING_MS
+      if (!on || gone || now - carry.at > most || this.dist(other.lastState!.p, holder.lastState!.p) > this.yoinkReach()) this.endCarry(holder)
+    }
   }
 
   /** Tell everyone a player's cord is gone: it stretched out of reach, or its owner dropped out. */
@@ -878,8 +1049,14 @@ export class Room {
     const firedAt = shooter.shots.get(shotId)
     if (firedAt === undefined) return
     const now = this.now()
-    if (now - firedAt > (laserLifetime(this.paramNumber(laserSpeed.def)) + 1) * 1000) return
+    const pester = shooter.pesters.has(shotId)
+    const lifetime = pester ? this.paramNumber(pesterLife.def) : laserLifetime(this.paramNumber(laserSpeed.def))
+    if (now - firedAt > (lifetime + 1) * 1000) return
+    // A Pester catches only the vehicle it was sent after.
+    if (pester && shooter.pesterTargets.get(shotId) !== victim.info.id) return
     shooter.shots.delete(shotId)
+    shooter.pesters.delete(shotId)
+    shooter.pesterTargets.delete(shotId)
     this.broadcast({ type: 'hit', shooter: shooter.info.id, victim: victim.info.id, shot: shotId })
     if (this.mode !== MODE_TAG) {
       // On the hill a tag beam is a shove, and counts as contact for dunks.
@@ -913,7 +1090,7 @@ export class Room {
     const b = other.lastState
     if (!a || !b || a.paused || b.paused || now - reporter.lastStateAt > RESPONDING_MS || now - other.lastStateAt > RESPONDING_MS) return
     // Both states are slightly old, so allow for how far fast vehicles travel meanwhile.
-    const reach = this.paramNumber(tagRamReach.def) + (Math.hypot(...a.v) + Math.hypot(...b.v)) * 0.3
+    const reach = this.paramNumber(tagRamReach.def) + (leewaySpeed(a.v) + leewaySpeed(b.v)) * 0.3
     if (this.dist(a.p, b.p) > reach) return
     // Pass the rammer's push on to the rammed player, whose client applies it if its own
     // physics missed the hit. Bots are simulated by the host, where the rammer's copy already
@@ -962,7 +1139,7 @@ export class Room {
     if (!clean || !other.lastState) return null
     if (now - (reporter.shoved.get(other.info.id) ?? -Infinity) < SHOVE_REPEAT_MS) return null
     // The most they can have been closing at: the rammer's recent best plus the other's speed.
-    const closing = reporter.fast + Math.hypot(...other.lastState.v)
+    const closing = reporter.fast + leewaySpeed(other.lastState.v)
     const limit = closing * SHOVE_SHARE
     if (limit < MIN_CLOSING * SHOVE_SHARE) return null
     const len = Math.hypot(...clean)
@@ -1035,7 +1212,7 @@ export class Room {
     // Joining counts as a tag so a newcomer cannot be tagged in their first seconds.
     const now = this.now()
     return {
-      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, token: null, heldUntil: 0, lastFireAt: -Infinity, shots: new Map(), lastTag: now,
+      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, carry: null, yoinkAt: -Infinity, gusted: new Map(), token: null, heldUntil: 0, lastFireAt: -Infinity, lastRedAt: -Infinity, pesters: new Map(), pesterTargets: new Map(), lastPesterAt: -Infinity, shots: new Map(), lastTag: now,
       windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now,
     }
   }
@@ -1227,6 +1404,16 @@ function cleanCord(c: unknown): CordWire | null {
     const unit = vec(o.n) && Math.abs(Math.hypot(...o.n) - 1) < 0.05
     if (vec(o.at)) return { s: 'on', at: o.at, n: unit ? (o.n as [number, number, number]) : [0, 1, 0], r: o.r }
   }
+  return null
+}
+
+/** A well formed Yoink message, rebuilt from only the fields it should have; null otherwise. */
+function cleanYoink(y: unknown): YoinkWire | null {
+  if (!y || typeof y !== 'object') return null
+  const o = y as Record<string, unknown>
+  if (typeof o.to !== 'number' || !Number.isInteger(o.to)) return null
+  if (o.s === 'grab' || o.s === 'drop') return { s: o.s, to: o.to }
+  if (o.s === 'fling' && isVec3(o.v)) return { s: 'fling', to: o.to, v: o.v }
   return null
 }
 

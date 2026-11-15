@@ -10,17 +10,25 @@
 import { params } from '../../shared/params'
 import type { Game, System } from '../core/Game'
 import { bungeeAllowed } from './bungee/params'
+import { yoinkAllowed } from './yoink/params'
+import { bigRedAllowed } from './bigRedParams'
+import { pesterAllowed } from './pester/params'
 import { lasersAllowed } from './params'
 
-export type GearId = 'beam' | 'bungee'
+export type GearId = 'beam' | 'bungee' | 'yoink' | 'red' | 'pester'
 
 /** Player-facing names. Kept here so the wording test sees them. */
 export const GEAR_LABELS: Record<GearId, string> = {
   beam: 'Tag beam',
   bungee: 'Bungee',
+  yoink: 'Yoink',
+  red: 'Big Red',
+  pester: 'Pesters',
 }
 
-const ORDER: GearId[] = ['beam', 'bungee']
+const ORDER: GearId[] = ['beam', 'red', 'pester', 'bungee', 'yoink']
+
+const ALLOWED: Record<GearId, { value: boolean }> = { beam: lasersAllowed, bungee: bungeeAllowed, yoink: yoinkAllowed, red: bigRedAllowed, pester: pesterAllowed }
 
 export class GearRack implements System {
   private chosen: GearId = 'beam'
@@ -45,7 +53,7 @@ export class GearRack implements System {
 
   /** Gear the host allows, in rack order. Never empty: the tag beam stands in. */
   list(): GearId[] {
-    const on = ORDER.filter((g) => (g === 'beam' ? lasersAllowed.value : bungeeAllowed.value))
+    const on = ORDER.filter((g) => ALLOWED[g].value)
     return on.length ? on : ['beam']
   }
 

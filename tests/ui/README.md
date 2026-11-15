@@ -349,8 +349,10 @@ What makes that hold:
 Measured on this Mac in headless Chrome at four times throttle: lobby usable in about one
 second, taps answered in 0.3 to 0.65 seconds, starfield 11 to 13 frames a second with the
 game rendering underneath (with the old starfield lobby). Those are emulation figures, not
-a phone's. The galaxy's figures are still to be taken on a quiet machine: the first run,
-at a load average of 32, gave taps in 2.1 to 3.6 s and 6 to 10 frames a second.
+a phone's. With the galaxy and its nine planets, at a load average of 5 to 8 (15
+November, 12am): lobby usable in 1.7 to 1.9 s, taps answered in 0.3 to 0.6 s, the galaxy
+at 10 frames a second on the open lobby. Its frame rate is measured on the galaxy itself,
+since behind a panel it stops on purpose.
 
 
 ## Hints for a player who seems stuck
@@ -419,8 +421,37 @@ asked for this to replace the panel lobby on 14 November 2026.
   images. Each world is lit from where the sun is, wears its real map from
   `paintPlanetMap`, shows settlement lights on its night side, and cuts a shadow through
   the sun's shafts. The sun, shafts, flare and stars are terranlabs.com's.
+- Many worlds: every planet recipe appears, up to `GALAXY_MAX` (12) bodies with Custom. Up
+  to four orbits at the original spacing; more worlds share them, spread evenly round each,
+  so ten keep the size four had. Each world wears a small map (512 by 256, about 40 ms to
+  paint on this Mac) from one texture array; the world being flown to is repainted at
+  1024 by 512 (about 130 ms) for the close view and the dive. Held upright, a phone looks
+  down more steeply so the orbits use its height.
+- Labels (`galaxy/labels.ts`) try under, over, right and left of their world and take the
+  first spot clear of other labels, other worlds, the wordmark and the links; the world in
+  play is placed first and always named. One with no room fades (its world still answers a
+  tap); labels of worlds off the screen are not pinned to its edge; while flying to a world
+  only its label stays.
 - The custom planet is a world still forming: plates of crust drifting on magma. Arriving
   at it opens the sliders that shape a world.
+- Flying to a world, the camera swings to its sunlit side a little off the sun, and the
+  world turns on its axis to bring its island (map longitude 0, latitude 0, where the game
+  spawns) to face the camera, so the dive falls onto the island. Behind an open panel the
+  galaxy dims (35 percent, 70 behind the name form) and stops drawing: WebKit's frost is
+  weak, and nothing behind glass needs to move.
+- A tap on a world is the drop (the owner's instruction, 15 November): no name form, no
+  panel, one motion from the solar system into the follow camera. The galaxy flies a timed
+  path (not per-frame easing, so a slow frame cannot make it lurch) across the system, round
+  to the lit side and down into the air, drawing every frame with a radial motion blur pass
+  in proportion to how fast the view is closing. Under the light the world is built and the
+  room joined, where a hitch cannot be seen; the game appears through the rushing light,
+  its camera falling from 520 m with the field of view easing to the follow camera's, and
+  `ChaseCamera.clearCinematicPose(0.8)` blends into the follow camera. Custom still flies
+  to its world and opens its sliders. `drop.mjs` records every frame gap from tap to ground.
+- The descent holds in the light until the room has answered (up to 5 s), since a slow
+  join can rebuild the world and move the spawn point; the camera path is taken after
+  that. A returning player (`localStorage` `syn3h.descents`) gets a quicker dive and a
+  1.4 s fall; a tap, click or key during the descent lands at once.
 - The descent: Enter World from the name form dives toward the chosen world until its air
   fills the view, then the game's camera comes down from 520 m above the spawn point to its
   place behind the vehicle while the blur clears (`Shell.descent`, using the camera's
@@ -443,7 +474,11 @@ keyboard); frame cost unmeasured on real devices; the game measures its own fram
 while the lobby is on screen, so a slow lobby can lower `gfx.level` before play starts.
 `tools/heavy.sh node tests/ui/galaxy.mjs` checks the galaxy, the custom world and the
 descent on desktop and phone, the still mode, the row of names and the missing-WebGL 2
-notice; `planets.mjs` checks choosing worlds through it. Both take `SYN3H_URL`.
+notice; `planets.mjs` checks choosing worlds through it; `galaxy-crowd.mjs` rehearses ten
+worlds (`?worlds=10`, development builds only) at desktop, phone portrait and landscape and
+in WebKit at iPad size. All take `SYN3H_URL`. Its GPU timings on this Mac (median ms per
+frame, four worlds then ten): desktop 2.7 and 3.0, portrait 1.9 and 2.6, landscape 1.9 and
+2.0; labels shown with ten worlds: 10, 6 and 7. Comparisons, not a phone's figures.
 
 ## The page never zooms
 
@@ -500,3 +535,13 @@ Checks (dev servers on 5187 and 8797):
 
 Known limits: about 35 of the 218 properties have a written description, the rest show
 their limits only; switching vehicle reloads the page and respawns you.
+
+## Gear chip and Bungee controls
+
+While the host allows more than one kind of gear, a chip under the speed reads
+"Gear: Tag beam" or "Gear: Bungee"; tapping it or pressing T switches. The help card gains
+the gear lines. On touch, LET OUT (holds V) and LET GO show only while a cord is attached.
+Cues `bungeeLaunch`, `bungeeAttach` and `bungeeRelease` exist in `src/audio/Cues.ts`; the
+Bungee's `cue` hook in `src/net/index.ts` still has to call `audio.cue(name, at)`.
+
+Check: `node tests/ui/gear.mjs` (Chrome desktop and WebKit iPhone landscape).

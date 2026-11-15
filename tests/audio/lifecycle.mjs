@@ -16,7 +16,7 @@ try{
  for(let i=0;Date.now()-start<Number(process.env.AUDIO_TEST_MS??300000);i++){
   await page.evaluate(i=>{
    const {audio,terrain,game}=syn3h,kinds=['buggy-syn3h','buggy-classic','jet','hovercraft','tank']
-   const fake=(index)=>({kind:kinds[(i+index)%kinds.length],object:{position:game.camera.position.clone().addScalar(index*3)},body:{linvel:()=>({x:20,y:0,z:10})},input:{y:1,z:.8},wheelsGrounded:i%3?4:0,wingsOpen:i%3===0,landedThisStep:false,landingImpact:8,getWheelEffects:()=>[{grounded:true,slip:5}]})
+   const fake=(index)=>({kind:kinds[(i+index)%kinds.length],object:{position:game.camera.position.clone().addScalar(index*3)},body:{isValid:()=>true,linvel:()=>({x:20,y:0,z:10})},input:{y:1,z:.8},wheelsGrounded:i%3?4:0,wingsOpen:i%3===0,landedThisStep:false,landingImpact:8,getWheelEffects:()=>[{grounded:true,slip:5}]})
    audio.setPlayer(fake(0),terrain);audio.setVehicles(()=>Array.from({length:12},(_,n)=>fake(n+1)));audio.enabled=true
    for(const cue of ['capture','contested','lost','win','tick','tag','join','leave','click','deploy','retract','lava'])audio.cue(cue)
    audio.setMuted(i%5===0)
@@ -29,6 +29,9 @@ try{
  }
  const counts=samples.slice(Math.min(3,samples.length-1)).map(s=>s.nodes);assert.ok(Math.max(...counts)-Math.min(...counts)<30,'audio graph grows across vehicle replacements')
  await page.evaluate(()=>{syn3h.audio.dispose();window.gc?.()});await page.waitForTimeout(200);await cdp.send('HeapProfiler.collectGarbage')
- const end=await page.evaluate(()=>syn3h.audio.diagnostics);assert.equal(end.engineNodes,0);assert.equal(end.remoteVoices,0);assert.equal(end.oneShots,0);assert.equal(end.state,'closed');assert.deepEqual(errors,[]);assert.ok([...nodes.values()].every(type=>/^AudioDestination(Node)?$/.test(type)),JSON.stringify([...nodes.values()]))
+ const end=await page.evaluate(()=>syn3h.audio.diagnostics);assert.equal(end.engineNodes,0);assert.equal(end.remoteVoices,0);assert.equal(end.oneShots,0);assert.equal(end.state,'closed');assert.deepEqual(errors,[]);// After shutdown only the closed context's destination may remain, plus the adaptive score's
+ // worklet nodes: Chrome keeps a worklet node listed until its processor is collected, even
+ // with the context closed. They make no sound and cost no audio thread time by then.
+ const left=[...nodes.values()];assert.ok(left.every(type=>/^AudioDestination(Node)?$|^AudioWorklet(Node)?$/.test(type)),JSON.stringify(left));assert.ok(left.filter(type=>/Worklet/.test(type)).length<=4,JSON.stringify(left))
  await writeFile(`tests/audio/artifacts/${process.env.AUDIO_TEST_MS?'teardown':'lifecycle'}.json`,JSON.stringify({elapsedMs:Date.now()-start,samples,end,remainingNodes:[...nodes.values()],errors},null,2));console.log('Audio lifecycle passed',end,'nodes',nodes.size)
 }finally{await browser.close()}

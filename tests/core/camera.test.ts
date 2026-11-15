@@ -62,6 +62,44 @@ describe('Syn3h camera', () => {
     expect(camera.position.y).toBeGreaterThanOrEqual(0.5)
     expect(target.visible).toBe(true)
   })
+  it('cuts straight back to the chase pose when a cinematic pose is cleared without a blend', () => {
+    const { camera, chase } = harness()
+    chase.setCinematicPose(new Vector3(40, 60, 40), new Vector3(0, 0, 0))
+    for (let i = 0; i < 30; i++) chase.update(0.02)
+    chase.clearCinematicPose(); chase.update(1 / 60)
+    expect(camera.position.z).toBeCloseTo(9.25); expect(camera.position.y).toBeCloseTo(1 + 9.25 * 0.15); expect(camera.fov).toBe(80)
+  })
+  it('blends from a cinematic pose into the live chase pose over the time asked', () => {
+    const { camera, chase } = harness()
+    chase.setCinematicPose(new Vector3(40, 60, 40), new Vector3(0, 0, 0))
+    for (let i = 0; i < 200; i++) chase.update(0.02)
+    const from = camera.position.clone(), fov = camera.fov
+    expect(fov).toBeCloseTo(55, 0)
+    chase.clearCinematicPose(1); chase.update(0.02)
+    // Barely moved after one frame, with no jump in field of view.
+    expect(camera.position.distanceTo(from)).toBeLessThan(1); expect(Math.abs(camera.fov - fov)).toBeLessThan(1)
+    let last = camera.position.distanceTo(from)
+    for (let i = 0; i < 24; i++) { chase.update(0.02); const moved = camera.position.distanceTo(from); expect(moved).toBeGreaterThanOrEqual(last - 1e-6); last = moved }
+    expect(camera.fov).toBeGreaterThan(fov); expect(camera.fov).toBeLessThan(80)
+    for (let i = 0; i < 40; i++) chase.update(0.02)
+    // Landed exactly where the chase camera itself would be.
+    expect(camera.position.z).toBeCloseTo(9.25); expect(camera.position.y).toBeCloseTo(1 + 9.25 * 0.15); expect(camera.fov).toBeCloseTo(80)
+    expect(camera.getWorldDirection(new Vector3()).z).toBeCloseTo(-1)
+  })
+  it('keeps a blend clear of the ground, carries it across a seam, and lets a new shot cancel it', () => {
+    const { camera, target, chase } = harness((_x, z) => z > 15 && z < 25 ? 30 : 0)
+    chase.setCinematicPose(new Vector3(0, 40, 40), new Vector3(0, 0, 0))
+    for (let i = 0; i < 300; i++) chase.update(0.02)
+    chase.clearCinematicPose(2)
+    for (let i = 0; i < 50; i++) { chase.update(0.02); expect(camera.position.y).toBeGreaterThanOrEqual(camera.position.z > 15 && camera.position.z < 25 ? 31.2 : 1.2) }
+    const before = camera.position.x
+    // A seam crossing moves the vehicle and the camera by a whole tile together.
+    target.position.x += 100; chase.shift(100, 0); chase.update(0.02)
+    expect(camera.position.x - before).toBeGreaterThan(99)
+    chase.setCinematicPose(new Vector3(100, 50, 50), new Vector3(100, 0, 0), 70)
+    for (let i = 0; i < 300; i++) chase.update(0.02)
+    expect(camera.fov).toBeCloseTo(70, 0)
+  })
   it('uses the ride point, restores visibility, and supports explicit flight binding', () => {
     const { camera, target, chase } = harness(), ride = new Object3D()
     ride.position.set(0, 2, 0); target.add(ride); target.updateMatrixWorld(true)
@@ -72,6 +110,17 @@ describe('Syn3h camera', () => {
     target.rotation.x = 0.4
     for (let i = 0; i < 300; i++) chase.update(0.02)
     expect(camera.getWorldDirection(new Vector3()).y).toBeGreaterThan(0.3)
+  })
+  it('ride view hides nothing on a vehicle that declares a cockpit, tagged parts included', () => {
+    const { target, chase } = harness(), canopy = new Object3D(), ride = new Object3D()
+    canopy.userData.hideInRide = true; target.add(canopy, ride); target.userData.cockpit = true
+    chase.setVehicle({ object: target, ridePosition: ride, body: { linvel: () => ({ x: 0, y: 0, z: 0 }) } } as unknown as CameraVehicle)
+    params.set('camera.mode', 1)
+    for (let i = 0; i < 40; i++) chase.update(0.02)
+    expect(target.visible).toBe(true); expect(canopy.visible).toBe(true)
+    // Without the flag the same vehicle loses its tagged canopy, as before.
+    target.userData.cockpit = false; params.set('camera.mode', 0); chase.update(0.02); params.set('camera.mode', 1); chase.update(0.02)
+    expect(target.visible).toBe(true); expect(canopy.visible).toBe(false)
   })
   it('ride view hides only tagged parts, the whole vehicle when nothing is tagged, and restores both', () => {
     const { target, chase } = harness()

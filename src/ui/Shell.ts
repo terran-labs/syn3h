@@ -9,7 +9,8 @@ import { TouchControls } from './TouchControls'
 import { readVehicleChoice, saveVehicleChoice, VehiclePreview, type VehicleChoice } from './VehicleChoice'
 import { SlidingPanels } from './SlidingPanels'
 import { wordmarkSvg } from './brand/logo'
-import { Galaxy, type GalaxyWorld } from './galaxy/Galaxy'
+import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
+import { placeLabels } from './galaxy/labels'
 import { createDaydreamControl } from '../bots/daydreamControl'
 import { Inspector } from './inspector/Inspector'
 import { FocusHud } from './inspector/FocusHud'
@@ -19,6 +20,7 @@ import { qualityLevel } from './quality/ladder'
 import { Vector3 } from 'three/webgpu'
 import { PLANETS } from '../world/planets'
 import { graphicsLevel, levelNumber } from '../core/quality'
+import { camDistance, camFov, camHeight, camOffset } from '../core/ChaseCamera'
 import { applyPlanet, currentPlanet, encodeWorld, planetName } from '../world/planets'
 import { AttractMode, type CinematicCamera } from './AttractMode'
 import { InviteView, inviteUrl, renderQr } from './InviteView'
@@ -134,7 +136,7 @@ export class Shell implements System {
       </div>
       <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby"><button data-goto="vehicle">Vehicle</button><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR</button><button data-goto="settings">Settings</button><button data-goto="about">About</button></nav></div>
     </section>
-    <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
+    <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><button type="button" class="gear-chip" hidden></button><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button" aria-label="Open menu">☰<span class="nav-label"> Menu</span></button><button data-open="multiplayer">Players</button><button class="inspector-toggle" type="button" aria-pressed="false">Create</button></nav>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
@@ -162,14 +164,25 @@ export class Shell implements System {
       vehicles: () => ({ options: [...this.element.querySelectorAll<HTMLInputElement>('[name="vehicle"]')].map(radio => ({ id: radio.value, label: radio.parentElement!.textContent!.trim() })), current: this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind }),
       onVehicle: id => this.switchVehicle(id as VehicleKind),
     })
-    // On a desktop the cards are there whenever the cursor is free; on touch they open from Create.
-    this.inspector.open = !this.touch.available
+    // A visitor's first view of the world has nothing over it: the cards start closed on every
+    // device and open from Create. On a desktop, once the player has captured the cursor to
+    // drive, releasing it with Escape brings the full interface up (the owner's design: full
+    // cards with the cursor free, the focus display with it captured), unless Create closed them.
+    this.inspector.open = false
     this.focusHud = new FocusHud(this.element)
     const toggle = this.element.querySelector<HTMLButtonElement>('.inspector-toggle')!
-    toggle.addEventListener('click', () => { this.inspector.open = !this.inspector.open; toggle.setAttribute('aria-pressed', String(this.inspector.open)) }, { signal })
+    let chosen: boolean | undefined
+    const setCards = (open: boolean) => { this.inspector.open = open; toggle.setAttribute('aria-pressed', String(open)) }
+    toggle.addEventListener('click', () => { chosen = !this.inspector.open; setCards(chosen) }, { signal })
     toggle.setAttribute('aria-pressed', String(this.inspector.open))
     // Focus: the cursor is captured, so the player is driving. The full interface fades away.
-    document.addEventListener('pointerlockchange', () => this.element.classList.toggle('is-focus', document.pointerLockElement === game.canvas), { signal })
+    let wasLocked = false
+    document.addEventListener('pointerlockchange', () => {
+      const locked = document.pointerLockElement === game.canvas
+      this.element.classList.toggle('is-focus', locked)
+      if (!locked && wasLocked && chosen !== false && !this.menuVisible) setCards(true)
+      wasLocked = locked
+    }, { signal })
     this.glass(signal)
     for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) slider.addEventListener('input', () => params.set(slider.dataset.param!, Number(slider.value)), { signal })
     this.startGalaxy()
@@ -367,16 +380,50 @@ export class Shell implements System {
   play(descend = false): void {
     this.stopAttract()
     if (this.started) { this.closeMenu(); return }
+    this.unlockAudio(); this.begin()
+    if (descend && this.galaxy?.live && this.menuVisible && !matchMedia('(prefers-reduced-motion: reduce)').matches) { this.onPlay?.(); void this.descent(currentPlanet().id); return }
+    this.closeMenu(); this.showHelp(false); this.onPlay?.()
+  }
+  /** Audio may only start inside a tap or a key press: call this from one. */
+  private unlockAudio(): void {
     void this.audio.unlock().then(async () => { await this.audio.ready(); this.audio.play('materialize') }).catch(() => this.toast('Audio is unavailable. You can still play.'))
+  }
+  /** The session starts: the name is kept and the choices that cannot change in play are fixed. */
+  private begin(): void {
     try { localStorage.setItem('syn3h.playerName', this.playerName) } catch { /* Playing does not require storage. */ }
     this.started = true; this.worldDirty = true; this.nameInput.disabled = true; this.roomInput.disabled = true
     this.element.querySelector<HTMLButtonElement>('.shell-play')!.textContent = 'Return to Game ›'
     this.element.querySelector<HTMLElement>('[data-resume]')!.hidden = false
     for (const input of this.element.querySelectorAll<HTMLInputElement>('.shell-vehicle input')) input.disabled = true
     this.element.querySelector('.vehicle-note')!.textContent = 'Vehicle selection is fixed for this session.'
-    if (descend && this.galaxy?.live && this.menuVisible && !matchMedia('(prefers-reduced-motion: reduce)').matches) { this.onPlay?.(); void this.descent(); return }
-    this.closeMenu(); this.showHelp(false); this.onPlay?.()
   }
+  /**
+   * A world tapped in the galaxy. Any world but Custom is a drop, straight from the tap: no
+   * form, no pause. Returns true when the tap is dealt with here (a drop, or a refusal).
+   */
+  private tapWorld(galaxyId: string): boolean {
+    const id = galaxyId.split('~')[0], current = currentPlanet().id
+    if (this.dropping) return true
+    if (id === 'custom') return false
+    if (this.invited && !this.started && id !== current) { this.say('You were invited to another world. You can change it once you are in, if the host allows.'); return true }
+    if (!canEditWorld() && id !== current) { this.say('The host has locked this world.'); return true }
+    this.stopAttract()
+    // No galaxy to fly through (or no motion wanted): straight in.
+    if (!this.galaxy?.live || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      if (id !== current) applyPlanet(id)
+      if (this.started) this.closeMenu(); else this.play()
+      return true
+    }
+    if (!this.started) this.unlockAudio()
+    void this.descent(galaxyId, () => {
+      // Under the light, where a hitch cannot be seen: the world is built and the room joined.
+      if (id !== currentPlanet().id) applyPlanet(id)
+      if (!this.started) { this.begin(); this.onPlay?.() }
+    })
+    return true
+  }
+  /** True from a drop's tap until the player is on the ground. */
+  private dropping = false
   openMenu(panel = 'index'): void {
     if (!this.started) return
     this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; if (this.galaxy) this.galaxy.enabled = true
@@ -384,34 +431,95 @@ export class Shell implements System {
     this.game.input.suspended = true; this.game.input.mouseFire = false; this.game.input.poll(); this.touch.enabled = false
     this.audio.enabled = false; this.audio.setLobbyVisible(true); this.element.classList.remove('is-playing'); this.showPanel(panel)
   }
-  private async descent(): Promise<void> {
-    const wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
-    const game = document.getElementById('game'), root = this.element
-    root.classList.add('is-descending'); this.overlay.inert = true
-    // While the lobby still covers it, lift the game's camera high over the spawn point.
-    const self = this.self, ground = this.ground, camera = this.cinematic
-    const at = self ? new Vector3(self.x, ground?.heightAt(self.x, self.z) ?? 0, self.z) : null
-    const ahead = self ? new Vector3(-Math.sin(self.heading), 0, -Math.cos(self.heading)) : null
-    const pose = (t: number) => {
-      if (!at || !ahead || !camera) return
-      // From 520 m up and a little behind, looking down, to the chase position.
-      const e = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
-      const height = 520 * (1 - e) + 4.5 * e, back = 60 * (1 - e) + 10 * e
-      camera.setCinematicPose(new Vector3(at.x - ahead.x * back, at.y + height, at.z - ahead.z * back), new Vector3(at.x + ahead.x * 8 * e, at.y + 1.5, at.z + ahead.z * 8 * e))
+  /**
+   * The drop, one unbroken motion. The galaxy flies across the system to the world and down
+   * into its air, with motion blur (Galaxy.descend). Under the light at the bottom of the
+   * dive `underLight` builds the world and joins the room, and the drop holds there only as
+   * long as the room takes to answer (a slow join can rebuild the world and move the spawn
+   * point). Then the game shows through, blurred, its camera falling from 520 m and easing
+   * into the follow camera's own place behind the vehicle, which takes over from there. A
+   * player who has seen it before gets a quicker drop; a tap, click or key lands at once.
+   */
+  private async descent(galaxyId: string, underLight?: () => void): Promise<void> {
+    const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    const game = document.getElementById('game'), root = this.element, camera = this.cinematic
+    this.dropping = true; root.classList.add('is-descending'); this.overlay.inert = true
+    const skipping = new AbortController()
+    let landed = false
+    try {
+      let seen = 0
+      try { seen = Number(localStorage.getItem('syn3h.descents')) || 0; localStorage.setItem('syn3h.descents', String(seen + 1)) } catch { /* Storage is optional. */ }
+      let skip = false
+      // Listen from the next frame, so the tap that started the drop does not also end it.
+      requestAnimationFrame(() => { for (const type of ['pointerdown', 'keydown'] as const) addEventListener(type, () => { skip = true }, { signal: skipping.signal, capture: true }) })
+      const until = async (done: () => boolean, ms: number) => { const end = performance.now() + ms; while (!done() && !skip && performance.now() < end) await frame() }
+      // While the lobby still covers it, put the game's camera high over the spawn point.
+      const view = (this.game as unknown as { camera?: { position: Vector3 } }).camera
+      const lift = () => { pose(0); if (view && this.descentTop) view.position.copy(this.descentTop) }
+      let pose = this.descentPose(); lift()
+      let dived = false
+      void this.galaxy!.descend(galaxyId, seen > 0).then(() => { dived = true })
+      await until(() => dived, 4000)
+      underLight?.()
+      await until(() => Boolean((window as { syn3hNet?: { connected?: boolean } }).syn3hNet?.connected), 5000)
+      // The spawn point may have moved with the room's world: start from over where the player is now.
+      pose = this.descentPose(); lift()
+      // Through the air: the lobby fades off the top of the game, which arrives blurred and clears.
+      const length = skip ? 0 : seen > 0 ? 1700 : 2400
+      if (game) { game.style.transition = 'none'; game.style.filter = skip ? 'none' : 'blur(12px) brightness(1.3)' }
+      this.overlay.style.transition = `opacity ${skip ? 0.2 : 0.6}s ease-out`; this.overlay.style.opacity = '0'
+      await frame()
+      if (game && !skip) { game.style.transition = `filter ${(length * 0.7 / 1000).toFixed(2)}s cubic-bezier(.1,.6,.3,1)`; game.style.filter = 'none' }
+      const started = performance.now()
+      await new Promise<void>((resolve, reject) => { const step = () => { try { const t = skip || length === 0 ? 1 : Math.min(1, (performance.now() - started) / length); pose(t); if (t < 1) requestAnimationFrame(step); else resolve() } catch (error) { reject(error) } }; step() })
+      // The camera eases along the path a little behind it: let it settle into the follow
+      // camera's place, then hand over with a blend (an instant cut where that is not offered).
+      const end = this.descentEnd
+      if (view && end && !skip) await until(() => view.position.distanceTo(end) < 0.15, 1200)
+      if (camera) (camera.clearCinematicPose as (blendSeconds?: number) => void).call(camera, skip ? 0 : 0.8)
+      landed = true
+    } catch (error) {
+      console.warn('World descent failed', error)
+      this.say('The flight was interrupted. You can continue playing or choose a world again.')
+    } finally {
+      // Whatever happened on the way (a world that failed to build, say), never leave the
+      // lobby inert, blurred or half faded: put everything back and let the player in.
+      skipping.abort()
+      if (!landed) camera?.clearCinematicPose()
+      this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity'); root.classList.remove('is-descending')
+      if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter') }
+      this.dropping = false
+      if (this.started) { this.closeMenu(); this.showHelp(false) } else { this.overlay.inert = false; this.galaxy?.home() }
     }
-    pose(0)
-    await Promise.race([this.galaxy!.descend(currentPlanet().id), wait(2600)])
-    // Through the air: the lobby fades off the top of the game, which arrives blurred and clears.
-    if (game) { game.style.transition = 'none'; game.style.filter = 'blur(18px) brightness(1.5)' }
-    this.overlay.style.transition = 'opacity 0.9s ease'; this.overlay.style.opacity = '0'
-    await wait(60)
-    if (game) { game.style.transition = 'filter 2.2s cubic-bezier(.2,.6,.2,1)'; game.style.filter = 'none' }
-    const started = performance.now(), length = 2400
-    await new Promise<void>(resolve => { const step = () => { const t = Math.min(1, (performance.now() - started) / length); pose(t); if (t < 1) requestAnimationFrame(step); else resolve() }; step() })
-    camera?.clearCinematicPose()
-    this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity'); root.classList.remove('is-descending')
-    if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter') }
-    this.closeMenu(); this.showHelp(false)
+  }
+  /** The first and last points of the descent's camera path, for waiting on the camera. */
+  private descentTop?: Vector3
+  private descentEnd?: Vector3
+  /**
+   * The descent's camera path over where the player is now: t from 0 (520 m up, looking down
+   * at the spawn point) to 1 (where the follow camera sits: behind the vehicle by its arm,
+   * raised by its height ratio, looking level along the vehicle's heading). It falls fast at
+   * first, carrying on the dive's speed, and slows into place.
+   */
+  private descentPose(): (t: number) => void {
+    const self = this.self, ground = this.ground, camera = this.cinematic
+    if (!self || !camera) { this.descentTop = this.descentEnd = undefined; return () => {} }
+    const floor = ground?.heightAt(self.x, self.z) ?? 0, at = new Vector3(self.x, floor, self.z)
+    const ahead = new Vector3(-Math.sin(self.heading), 0, -Math.cos(self.heading))
+    const arm = camOffset.value + camDistance.value, body = floor + Math.max(0.5, this.telemetry.altitude)
+    const end = new Vector3(at.x - ahead.x * arm, body + arm * camHeight.value, at.z - ahead.z * arm)
+    const endLook = end.clone().addScaledVector(ahead, 60)
+    const startHeight = 520, endHeight = Math.max(1.5, end.y - floor)
+    this.descentTop = new Vector3(at.x - ahead.x * 40, floor + startHeight, at.z - ahead.z * 40); this.descentEnd = end
+    const position = new Vector3(), look = new Vector3()
+    return t => {
+      const fall = 1 - (1 - t) ** 2.4, turnTo = t * t * t * (t * (t * 6 - 15) + 10)
+      const height = Math.exp(Math.log(startHeight) + (Math.log(endHeight) - Math.log(startHeight)) * fall), back = 40 + (arm - 40) * fall
+      position.set(at.x - ahead.x * back, floor + height, at.z - ahead.z * back)
+      look.copy(at).lerp(endLook, turnTo)
+      // The field of view goes from about the galaxy's (64 degrees) to the follow camera's own.
+      ;(camera.setCinematicPose as (position: Vector3, target: Vector3, fov?: number) => void).call(camera, position.clone(), look.clone(), 64 + (camFov.value - 64) * fall)
+    }
   }
   private ground?: Terrain
   private cinematic?: CinematicCamera
@@ -504,7 +612,11 @@ export class Shell implements System {
     // No WebGL 2: the game cannot draw here either, so the index says so plainly.
     if (!Galaxy.supported()) { this.element.querySelector<HTMLElement>('.lobby-unsupported')!.hidden = false; return }
     const current = currentPlanet().id, labels = this.element.querySelector<HTMLElement>('.galaxy-labels')!
-    const worlds: GalaxyWorld[] = PLANETS.slice(0, 3).map((recipe, i) => ({ id: recipe.id, label: recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current ? worldSeed.value : i + 1 }))
+    // Every planet recipe, up to the galaxy's limit with room for Custom. In development,
+    // ?worlds=N repeats the recipes to rehearse a crowded system before new ones land.
+    const rehearse = import.meta.env.DEV ? Number(new URLSearchParams(location.search).get('worlds')) || 0 : 0
+    const recipes = Array.from({ length: Math.max(PLANETS.length, rehearse - 1) }, (_, i) => ({ recipe: PLANETS[i % PLANETS.length], copy: Math.floor(i / PLANETS.length) })).slice(0, GALAXY_MAX - 1)
+    const worlds: GalaxyWorld[] = recipes.map(({ recipe, copy }, i) => ({ id: copy ? `${recipe.id}~${copy}` : recipe.id, recipe: recipe.id, label: copy ? `${recipe.label} ${copy + 1}` : recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current && !copy ? worldSeed.value : i + 1 }))
     // The custom planet is a world still forming: tap it to shape it with the sliders.
     worlds.push({ id: 'custom', label: 'Custom', land: 0x31507a, sea: 0x0a1630, glow: false, seed: 7, forming: true })
     const chips = this.galaxyChips
@@ -512,13 +624,15 @@ export class Shell implements System {
       const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
       chip.innerHTML = '<strong></strong><small></small>'; chip.querySelector('strong')!.textContent = world.label
       chip.querySelector('small')!.textContent = world.forming ? 'Shape your own' : world.id === current ? planetName(world.seed) : ''
-      chip.addEventListener('click', () => this.galaxy?.choose(world.id))
+      chip.addEventListener('click', () => { if (!this.tapWorld(world.id)) this.galaxy?.choose(world.id) })
       labels.append(chip); chips.set(world.id, chip)
     }
     this.galaxy = new Galaxy(this.overlay, {
       worlds,
       still: () => levelNumber(graphicsLevel.value) === 0,
-      onArrive: id => {
+      onTap: chosen => this.tapWorld(chosen),
+      onArrive: chosen => {
+        const id = chosen.split('~')[0]
         if (id === 'custom') {
           if (!canEditWorld() || (this.invited && !this.started)) { this.say('This world is not yours to reshape yet.'); this.galaxy?.home(); return }
           this.openCustomPlanet(); return
@@ -527,25 +641,45 @@ export class Shell implements System {
         if (!canEditWorld() && id !== currentPlanet().id) { this.say('The host has locked this world.'); this.galaxy?.home(); return }
         this.pickPlanet(id, true)
       },
-      onLayout: places => { for (const place of places) { const chip = chips.get(place.id)!; chip.hidden = !place.visible; 
-        // Under its world, but always wholly on the screen and clear of the links.
-        const x = Math.min(innerWidth - 62, Math.max(62, place.x)), y = Math.min(innerHeight - 128, Math.max(8, place.y + place.radius + 10))
-        chip.style.translate = `${x.toFixed(1)}px ${y.toFixed(1)}px` } },
+      onLayout: (places, chosen) => {
+        // Each label near its world, on the screen, clear of the links and of each other.
+        for (const [id, chip] of chips) if (!this.labelSizes.has(id) && !chip.hidden) this.labelSizes.set(id, { width: chip.offsetWidth, height: chip.offsetHeight })
+        // Clear of the wordmark too. While flying to a world, only its label stays.
+        if (!this.brandBottom) {
+          this.brandBottom = this.element.querySelector('.lobby-brand')?.getBoundingClientRect().bottom ?? 0
+          const hint = this.element.querySelector('.galaxy-hint')?.getBoundingClientRect().top ?? 0
+          this.linksTop = hint > innerHeight / 2 ? hint - 4 : innerHeight - 128
+        }
+        const shown = chosen ? places.filter(place => place.id === chosen) : places
+        const spots = placeLabels(shown, this.labelSizes, { width: innerWidth, height: innerHeight, bottom: this.linksTop, top: this.brandBottom + 4 }, { first: chosen ?? currentPlanet().id, previous: this.labelSpots })
+        if (chosen) for (const place of places) if (place.id !== chosen) chips.get(place.id)!.classList.add('is-crowded')
+        for (const place of places) chips.get(place.id)!.hidden = !place.visible
+        for (const spot of spots) {
+          const chip = chips.get(spot.id)!; this.labelSpots.set(spot.id, spot.spot)
+          chip.style.translate = `${spot.x.toFixed(1)}px ${spot.y.toFixed(1)}px`; chip.classList.toggle('is-crowded', spot.crowded)
+        }
+      },
     })
+    addEventListener('resize', () => { this.brandBottom = undefined }, { signal: this.abort.signal })
     this.element.classList.add('is-galaxy'); this.galaxy.enabled = true
     // WebGL 2 exists but the galaxy would not start (a shader the driver refuses): the world
     // names stay, as a row of buttons, so a visitor can still choose one and play.
     this.element.classList.toggle('galaxy-flat', !this.galaxy.live)
     this.galaxyFor(this.panels.active || 'index')
   }
-  /** The galaxy's world labels, by world id. */
+  /** The galaxy's world labels, by world id, with their measured sizes and last spots. */
   private readonly galaxyChips = new Map<string, HTMLButtonElement>()
+  private readonly labelSizes = new Map<string, { width: number; height: number }>()
+  private readonly labelSpots = new Map<string, number>()
+  /** Where the wordmark ends, measured once per window size. */
+  private brandBottom?: number
+  private linksTop = 0
   /** Labels follow the world in play: its generated name, and which worlds can be chosen now. */
   private refreshGalaxyLabels(open: boolean): void {
     const current = currentPlanet().id
     for (const [id, chip] of this.galaxyChips) {
       const small = chip.querySelector('small')!, text = id === 'custom' ? small.textContent : id === current ? planetName(worldSeed.value) : ''
-      if (small.textContent !== text) small.textContent = text
+      if (small.textContent !== text) { small.textContent = text; this.labelSizes.delete(id) }
       chip.classList.toggle('is-current', id === current)
       chip.classList.toggle('is-locked', !open && id !== current)
     }
@@ -557,6 +691,9 @@ export class Shell implements System {
     this.element.classList.toggle('galaxy-open', open)
     this.element.querySelector<HTMLElement>('.galaxy-ui')!.hidden = !open
     if (open) this.galaxy.home()
+    // Behind a panel the galaxy dims and holds still; behind the name form a little less,
+    // since the world just chosen is the picture there.
+    this.galaxy.backdrop = open ? 1 : panel === 'explore' ? 0.7 : 0.35
   }
   /** What the lobby's own graphics are doing, for the phone checks. */
   get graphics(): { galaxyLive: boolean; galaxyFrames: number; planetMaps: number } {
@@ -606,6 +743,26 @@ export class Shell implements System {
     renderHelp(this.element.querySelector('.shell-controls')!, this.choice.vehicleKind)
   }
   /** Call after an actual spawn so query overrides and future respawns show the right controls. */
+  private gearWired = false
+  private gearShown = ''
+  /**
+   * The gear chip: which gear is in hand, shown only while the host allows more than one.
+   * Tapping it (or T) moves to the next. The rack and the Bungee are the Weapons lane's.
+   */
+  private updateGear(): void {
+    const net = (window as unknown as { syn3hNet?: { gear?: { list(): string[]; label: string; next(): void }; bungee?: { attached: boolean; letGo(): void } } }).syn3hNet
+    const chip = this.element.querySelector<HTMLButtonElement>('.gear-chip')!
+    if (!net?.gear) { if (!chip.hidden) chip.hidden = true; return }
+    if (!this.gearWired) {
+      this.gearWired = true
+      chip.addEventListener('click', () => { net.gear!.next(); this.audio.cue('click'); chip.blur() }, { signal: this.abort.signal })
+      if (net.bungee) this.touch.setGear({ attached: () => net.bungee!.attached, letGo: () => net.bungee!.letGo() })
+    }
+    const several = net.gear.list().length > 1, text = several ? `Gear: ${net.gear.label}` : ''
+    if (text === this.gearShown) return
+    this.gearShown = text; chip.hidden = !several; chip.textContent = text; this.hasSeveralGear = several
+  }
+  private hasSeveralGear = false
   setVehicleKind(kind: VehicleKind): void { this.activeVehicleKind = kind; this.touch.setVehicleKind(kind); if (this.started) this.showHelp(false) }
   /**
    * The controls card, in the lower left so it never covers the vehicle. After Play it is the
@@ -615,7 +772,7 @@ export class Shell implements System {
    */
   showHelp(full = true): void {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!, touch = this.touch.available
-    renderHelp(hint.querySelector('div')!, this.activeVehicleKind, touch, !full)
+    renderHelp(hint.querySelector('div')!, this.activeVehicleKind, touch, !full, this.hasSeveralGear)
     hint.classList.toggle('is-full', full); hint.classList.remove('is-hint'); this.touch.highlight(null)
     hint.querySelector('small')!.textContent = touch ? '' : full ? 'H or ? to hide' : 'H: all controls'
     hint.hidden = false; clearTimeout(this.helpTimer); this.helpInput?.abort(); this.helpInput = undefined
@@ -663,6 +820,7 @@ export class Shell implements System {
     if (!this.started && !this.inviteOpen && !this.attract?.active && (this.requestedAttract || performance.now() - this.lastActivity > 20000)) this.startAttract()
     this.attract?.update(dt)
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
+    this.updateGear()
     if (this.started && !this.menuVisible) {
       const focus = this.element.classList.contains('is-focus')
       if (!focus && this.inspector.open) this.inspector.update()

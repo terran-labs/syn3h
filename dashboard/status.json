@@ -1,7 +1,7 @@
 {
   "tagline": "Syn3h, rebuilt native in the browser: its vehicles, its physics, its lobby and its look.",
   "deadline": "Demo: Sunday noon Pacific, Coeur d'Alene",
-  "headline": "Release 2 is live at www.syn3h.com: wings that lift a buggy out of lava and water, rear-end shoves, tag beams that stay green at night, the buggy's original lights and wheel struts, jet lift-off hints, a loading screen, and fixes for a jet black screen in Safari and for the buggy rolling backward under throttle. On the preview and not yet public: round planets, Zorb mode, new paint, the Dark Star look, Daydream and the generated score.",
+  "headline": "Release 2 is public. Release 3 passes 904 tests, three consecutive two-player checks and all four vehicles in Chrome and WebKit; it waits for the public room to empty. Trunk includes nine planets, the galaxy lobby, wind and fog, the world inspector, worn tracks, and opt-in water, post effects and new tag gear.",
   "previews": [
     {
       "title": "Play the current build",

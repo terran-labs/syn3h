@@ -63,6 +63,11 @@ if [ -z "$DRY" ]; then
   fi
 fi
 
+# Resolve the calendar label before building, so the UI and frozen metadata agree.
+CALVER="$(node tools/release-notes.mjs next)" || fail "could not compute the calendar version"
+export SYN3H_RELEASE_VERSION="$CALVER"
+PREV="$(tail -1 ../Syn3h-stable/releases.tsv 2>/dev/null | cut -f1)"
+
 # --- Freeze ---------------------------------------------------------------------------------
 echo "Freezing $MILESTONE ($COMMIT)..."
 ID="$(tools/promote-stable.sh "release-$N: $NOTE" | tail -1)"
@@ -146,3 +151,18 @@ echo
 echo "RELEASE OK: release-$N is live at $URL"
 echo "For ops/RELEASES.md:"
 echo "- release-$N, $WHEN: $URL from $MILESTONE ($COMMIT), Worker version $VERSION, frozen copy $ID. $NOTE"
+
+# These artifacts describe an already verified release. A capture or draft failure must
+# never turn a successful deploy into a failed release or trigger rollback.
+if ! (
+  printf '%s\t%s\t%s\t%s\tproduction\n' "$CALVER" "$MILESTONE" "$COMMIT" "$WHEN" >> release-notes/history.tsv || exit 1
+  git tag -a "$CALVER" -m "Syn3h $CALVER ($MILESTONE, release-$N)" || exit 1
+  node tools/release-notes.mjs draft "$CALVER" "${PREV:-m00-proposal}" "release-$N"
+); then
+  echo "Warning: release is live; calendar tag or notes need repair. Inspect history before retrying."
+fi
+if ! node tools/showcase.mjs --dir "$DEST" --version "$CALVER" --headless >"$LOG-showcase.log" 2>&1; then
+  echo "Warning: release is live; showcase capture failed. See $LOG-showcase.log."
+else
+  echo "Showcase ready at /tmp/syn3h-showcase/$CALVER. Review notes and images before publication."
+fi
