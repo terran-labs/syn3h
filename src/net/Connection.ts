@@ -27,7 +27,11 @@ export class Connection {
   close(): void {
     this.stopped = true
     if (this.timer) clearTimeout(this.timer)
-    this.ws?.close()
+    this.timer = null
+    const ws = this.ws
+    this.ws = null
+    this.state = 'closed'
+    ws?.close()
   }
 
   send(data: string | Uint8Array<ArrayBuffer>): void {
@@ -46,11 +50,13 @@ export class Connection {
     ws.binaryType = 'arraybuffer'
     this.ws = ws
     ws.onopen = () => {
+      if (this.ws !== ws || this.stopped) return
       this.state = 'open'
       this.backoff = 500
       this.onOpen()
     }
     ws.onmessage = (e) => {
+      if (this.ws !== ws || this.stopped) return
       if (typeof e.data === 'string') this.onText(e.data)
       else if (e.data instanceof ArrayBuffer) this.onBinary(e.data)
     }

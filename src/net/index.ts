@@ -110,6 +110,8 @@ export interface NetContext {
   name?: string
   /** Room name from the URL (?room=name), or 'lobby'. */
   room: string
+  /** Visible notice when a full room falls back to local play. */
+  onJoinStatus?(message: string): void
   /** Vehicle kind chosen on the start screen. Falls back to `player.kind`, then 'buggy'. */
   kind?: VehicleKind
   /** Colours chosen on the start screen, as '#rrggbb'. */
@@ -194,6 +196,8 @@ export class NetClient implements System {
   readonly clock = new ServerClock()
   private readonly raceBridge: RaceBridge
   readonly conn: Connection
+  private localAfterFull = false
+  private joinStatus = ''
   readonly lasers: Lasers
   /** Impacts push nearby vehicles this client simulates (Weapons lane). */
   readonly blast: Blast
@@ -980,7 +984,7 @@ export class NetClient implements System {
 
   /** Become or stop being the bot simulator when hosting changes hands. */
   private updateBotRole(): void {
-    const host = this.isHost
+    const host = this.isHost || this.localAfterFull
     if (host === this.wasHost) return
     this.wasHost = host
     if (!host) {
@@ -1368,6 +1372,8 @@ export class NetClient implements System {
         this.raceBridge.receive(msg.race)
         break
       case 'welcome': {
+        this.localAfterFull = false
+        this.joinStatus = ''
         this.id = msg.id
         this.slot = msg.slot
         // The vehicle's own fall and underground rescue puts it back at this slot.
@@ -1461,6 +1467,7 @@ export class NetClient implements System {
         break
       }
       case 'error':
+        if (msg.message === 'room is full') { this.onRoomFull(); break }
         this.event(`Server: ${msg.message}`)
         if (msg.message.includes('protocol')) reloadForNewProtocol()
         break
@@ -1508,7 +1515,7 @@ export class NetClient implements System {
     this.send({ type: 'param', id, value })
   }
 
-  private onDisconnect(): void {
+  private onDisconnect(retrying = true): void {
     // The room drops our cord and carry when it loses us; drop everything here too, since a
     // reconnect may land in a world that has changed meanwhile.
     this.resetGear()
@@ -1517,7 +1524,19 @@ export class NetClient implements System {
     this.clock.reset()
     this.pingsSent = 0
     for (const id of [...this.remotes.keys()]) this.removeRemote(id)
-    this.event('Disconnected, reconnecting')
+    if (retrying) this.event('Disconnected, reconnecting')
+  }
+
+  /** A full room is a refusal, not a transient transport failure. */
+  private onRoomFull(): void {
+    this.conn.close()
+    this.onDisconnect(false)
+    this.players.clear()
+    this.localAfterFull = true
+    this.joinStatus = 'No room available. Playing locally with bots.'
+    this.updateBotRole()
+    this.uiDirty = true
+    this.ctx.onJoinStatus?.(this.joinStatus)
   }
 
   private nameOf(id: number): string {
@@ -1624,9 +1643,10 @@ export class NetClient implements System {
 
   private status(): string[] {
     const lines: string[] = []
+    if (this.joinStatus) lines.push(this.joinStatus)
     if (!this.connected) {
       const wait = Math.max(0, Math.ceil((this.conn.retryAt - performance.now()) / 1000))
-      lines.push(this.conn.state === 'connecting' ? `net: connecting to room ${this.ctx.room}` : `net: offline, retry in ${wait}s (room ${this.ctx.room})`)
+      if (!this.localAfterFull) lines.push(this.conn.state === 'connecting' ? `net: connecting to room ${this.ctx.room}` : `net: offline, retry in ${wait}s (room ${this.ctx.room})`)
     } else {
       // A parked (hidden tab) player is held still, so its delay is not one anybody sees.
       const delays = [...this.remotes.values()].filter((r) => !r.paused).map((r) => r.delay)
