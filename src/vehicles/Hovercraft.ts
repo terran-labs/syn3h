@@ -7,25 +7,29 @@ import { Vehicle } from './Vehicle'
 import { UnityBody } from './unityBody'
 import { VehicleModel } from './skins/VehicleModel'
 
-// Settings.js slider defaults, documented in docs/architecture/mars-explorer.md.
+// Settings.js slider defaults, documented in docs/architecture/mars-explorer.md. Thrust is the
+// exception: Settings.js has 220, raised to 320 with the livelier glide (see below). Set it back
+// to 220 together with hover.assist 0 for the source feel.
 export const hoverHeight = defineParam({id:'hover.height',label:'Height',group:'Hovercraft',scope:'world',default:15,min:5,max:25,step:.1})
 export const hoverForce = defineParam({id:'hover.force',label:'Hover force',group:'Hovercraft',scope:'world',default:100,min:20,max:180,step:1})
 export const hoverRepel = defineParam({id:'hover.repel',label:'Repel',group:'Hovercraft',scope:'world',default:2.5,min:.5,max:4.5,step:.1})
-export const hoverThrust = defineParam({id:'hover.thrust',label:'Thrust',group:'Hovercraft',scope:'world',default:220,min:20,max:420,step:1})
+export const hoverThrust = defineParam({id:'hover.thrust',label:'Thrust',group:'Hovercraft',scope:'world',default:320,min:20,max:420,step:1})
 
 // Zero restores the source controller. Assistance is a demo adaptation, not recovered Unity code.
 export const hoverAssist = defineParam({id:'hover.assist',label:'Glide assistance',group:'Hovercraft',scope:'world',default:1,min:0,max:1,step:1})
 export const hoverClearance = defineParam({id:'hover.clearance',label:'Glide clearance',group:'Hovercraft',scope:'world',default:2.5,min:.5,max:10,step:.1})
 export const hoverStability = defineParam({id:'hover.stability',label:'Glide stability',group:'Hovercraft',scope:'world',default:8,min:0,max:15,step:.1})
-export const hoverBrakeTime = defineParam({id:'hover.brakeTime',label:'Brake time to 90% stop',group:'Hovercraft',scope:'world',default:1,min:.3,max:3,step:.1})
-// Glide handling constants, exposed so feel can be tuned live. Defaults are the values the
-// glide shipped with; like the rest of the glide they are a demo adaptation, not Unity code.
+export const hoverBrakeTime = defineParam({id:'hover.brakeTime',label:'Brake time to 90% stop',group:'Hovercraft',scope:'world',default:1.5,min:.3,max:3,step:.1})
+// Glide handling, tunable live. Like the rest of the glide this is a demo adaptation, not Unity
+// code. The glide first shipped with turn 46, grip .8, drag .12, thrust 220 (Settings.js) and
+// brake 1 s; the owner chose the livelier set below on 14 Nov 2026 from harness measurements:
+// a 90 degree turn's path settles in 2.2 s instead of 3.8 s, 90% of top speed in 11.5 s not 19 s.
 /** Yaw rate the craft settles at with full steering, in degrees per second. */
-export const hoverTurnRate = defineParam({id:'hover.turnRate',label:'Glide turn rate (deg/s)',group:'Hovercraft',scope:'world',default:46,min:20,max:140,step:1})
+export const hoverTurnRate = defineParam({id:'hover.turnRate',label:'Glide turn rate (deg/s)',group:'Hovercraft',scope:'world',default:70,min:20,max:140,step:1})
 /** Sideways velocity damping per second: low slides like a puck, high tracks like a car. */
-export const hoverGrip = defineParam({id:'hover.grip',label:'Glide sideways grip',group:'Hovercraft',scope:'world',default:.8,min:0,max:6,step:.1})
+export const hoverGrip = defineParam({id:'hover.grip',label:'Glide sideways grip',group:'Hovercraft',scope:'world',default:1.5,min:0,max:6,step:.1})
 /** Horizontal air drag per second. Top speed is thrust / (mass * drag). */
-export const hoverDrag = defineParam({id:'hover.drag',label:'Glide air drag',group:'Hovercraft',scope:'world',default:.12,min:.02,max:.6,step:.01})
+export const hoverDrag = defineParam({id:'hover.drag',label:'Glide air drag',group:'Hovercraft',scope:'world',default:.2,min:.02,max:.6,step:.01})
 /** Lean into a turn at full steering, in degrees. */
 export const hoverBank = defineParam({id:'hover.bank',label:'Glide bank angle (deg)',group:'Hovercraft',scope:'world',default:12,min:0,max:35,step:1})
 
