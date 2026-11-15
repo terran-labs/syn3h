@@ -2,6 +2,18 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Saturday 14 November, about 6:15pm Pacific: wild shores, and wings float you out
+
+**Decided** (in the Terrain Lab thread, relayed by the Orchestrator).
+
+1. Shores stay wild. Guaranteed beaches were built and reverted on the owner's word.
+2. "Buggies should float very aggressively when their force field wings are deployed. This
+   allows them to climb out of any situation." Wings are the way out of steep coasts and of
+   lava.
+
+**What it changes.** The Vehicles lane builds the aggressive wing float, with captures
+required. UX adds a HUD hint. No terrain work on beaches.
+
 ## Saturday 14 November, 5:32pm Pacific: Cloudflare Workers Paid, and keep the relay
 
 **Decided.** Build production on Cloudflare Workers and pay the 5 USD a month for Workers
