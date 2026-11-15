@@ -204,21 +204,19 @@ export class Shell implements System {
     // state: `syncPanels` derives it from the real lock, every frame and on every lock event.
     this.inspector.open = false
     const railTop = this.inspector.element.querySelector('.wi-top')!
-    const navigation = document.createElement('div'); navigation.className = 'rail-navigation'
-    // The header is one line: where you are, a search, Pause and the way back to driving.
-    // Leaving the world is rarer and final, so it sits at the foot with the world actions.
-    navigation.innerHTML = '<strong class="rail-world"></strong><button type="button" class="rail-pause">Pause</button><button type="button" class="rail-close" aria-label="Return to driving">×</button>'
-    railTop.prepend(navigation)
-    navigation.querySelector('.rail-world')!.after(railTop.querySelector('.wi-search')!)
     const players = document.createElement('details'); players.className = 'rail-players'
     players.innerHTML = '<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><label class="rail-diagnostics"><input type="checkbox"> Connection diagnostics</label></div>'
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
-    railTop.after(players)
-    // Performance is a card in the rail, after Vehicles: level, fine-tuning and diagnostics.
+    this.inspector.setSessionCard(players)
+    // Performance follows Sky; its controls remain part of the searchable card stack.
     this.performancePanel = new PerformancePanel(this.element, () => this.showPanels(), this.game.quality, this.inspector)
     const foot = document.createElement('div'); foot.className = 'rail-foot wi-glass'
-    foot.innerHTML = '<button type="button" class="exit-world">Leave world</button>'
-    foot.prepend(railTop.querySelector('.wi-actions')!)
+    foot.innerHTML = '<div class="rail-tools"><button type="button" class="rail-pause">Pause</button></div>'
+    foot.querySelector('.rail-tools')!.prepend(railTop.querySelector('.wi-search')!)
+    const actions = railTop.querySelector('.wi-actions')!
+    actions.insertAdjacentHTML('beforeend', '<button type="button" class="exit-world">Leave world</button>')
+    foot.append(actions)
+    railTop.remove()
     this.inspector.element.querySelector('.wi-cards')!.after(foot)
     // Exit world asks first (the owner, 15 November 2026): one stray click on the panels must
     // not throw the player back to the galaxy. Code that calls openMenu() itself is not asked.
@@ -238,9 +236,7 @@ export class Shell implements System {
     // Touch has no cursor to capture, so one control switches between driving and the panels.
     const toggle = this.element.querySelector<HTMLButtonElement>('.inspector-toggle')!
     toggle.addEventListener('click', () => { this.touchPanels = !this.touchPanels; this.syncPanels() }, { signal })
-    // Returning to driving is capturing the cursor; this click is the gesture that allows it.
-    navigation.querySelector('.rail-close')!.addEventListener('click', () => this.drive(), { signal })
-    navigation.querySelector('.rail-pause')!.addEventListener('click', () => this.requestPause(), { signal })
+    foot.querySelector('.rail-pause')!.addEventListener('click', () => this.requestPause(), { signal })
     this.element.querySelector('.pause-veil')!.addEventListener('click', () => this.requestResume(), { signal })
     // Follow the lock itself, not what was asked for: the browser can drop it on its own
     // (Escape, a switch of window, a system dialog) and can refuse a request.
@@ -759,6 +755,11 @@ export class Shell implements System {
       if (event.key === 'Tab') { event.preventDefault(); const buttons = [...this.invite.element.querySelectorAll<HTMLButtonElement>('button')]; buttons[document.activeElement === buttons[0] ? 1 : 0].focus() }
       return
     }
+    if (this.started && !this.menuVisible && this.inspector.open && !event.repeat && (event.ctrlKey || event.metaKey) && event.code === 'KeyF') {
+      event.preventDefault(); event.stopImmediatePropagation()
+      this.inspector.element.querySelector<HTMLInputElement>('.wi-search')!.focus()
+      return
+    }
     if (!editing && this.started && !this.menuVisible && !event.repeat && (event.code === 'KeyH' || event.key === '?')) { event.preventDefault(); this.toggleHelp(); return }
     // A drive key outside any field means the player wants to drive: resume if paused, and
     // capture the cursor (a key press is a gesture). This is also the keyboard-only way back.
@@ -1133,7 +1134,6 @@ export class Shell implements System {
   private readonly gearSelector: GearSelector
   private readonly zorbToggle = document.createElement('button')
   private zorbShown = false
-  private worldShown = ''
   private gearRack?: GearRack
   private gearView?: GearSource
   /** The rack, wrapped once so the drum gets every gear's player-facing name. */
@@ -1249,7 +1249,6 @@ export class Shell implements System {
       const focus = this.element.classList.contains('is-focus')
       if (!focus && this.inspector.open) this.inspector.update()
       const world = `${currentPlanet().label} · ${planetName(worldSeed.value)}`
-      if (world !== this.worldShown) { this.worldShown = world; this.element.querySelector('.rail-world')!.textContent = world }
       this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, heading: this.self?.heading ?? 0, world, hour: Number(params.get('sun.timeOfDay')?.value ?? 0) })
       const glass = String(Math.round(glassStyle.value)); if (this.element.dataset.glass !== glass) this.element.dataset.glass = glass
     }

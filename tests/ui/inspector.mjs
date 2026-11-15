@@ -34,7 +34,7 @@ try {
   await page.evaluate(() => document.exitPointerLock()); await page.waitForFunction(() => !document.querySelector('.world-inspector').hidden, null, { timeout: 5000 })
   assert.ok(await corner() < 60, 'minimap must remain bottom left with the rail open')
   // Closing and reopening the rail leaves the map in its bottom-left position.
-  await page.locator('.rail-close').click(); await page.waitForFunction(() => document.pointerLockElement === syn3h.game.canvas); assert.ok(await corner() < 60, 'minimap moved when the panels closed')
+  await page.mouse.click(100, 150); await page.locator('.world-inspector').waitFor({ state: 'hidden' }); await page.waitForFunction(() => document.pointerLockElement === syn3h.game.canvas); assert.ok(await corner() < 60, 'minimap moved when the panels closed')
   await page.evaluate(() => document.exitPointerLock()); await page.waitForFunction(() => !document.querySelector('.world-inspector').hidden)
   // Five cards, each with a summary, holding every registered property between them.
   assert.deepEqual(await page.locator('.wi-card').evaluateAll(cards => cards.map(c => c.dataset.section)), ['world', 'sky', 'game', 'vehicles', 'you'])

@@ -90,7 +90,7 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
       await page.locator('.world-inspector').waitFor({state:'visible'})
       await search.focus(); await page.keyboard.up('KeyW')
       assert.equal(await page.evaluate(()=>syn3h.game.input.poll().y),0,'keyup after field focus clears held drive')
-      for(const locator of [search,page.locator('.wi-head').first(),page.locator('.rail-close')]) {
+      for(const locator of [search,page.locator('.wi-head').first(),page.locator('.rail-pause')]) {
         await locator.focus()
         const result=await locator.evaluate(el=>{
           const input=syn3h.game.input, before={...input.poll()}

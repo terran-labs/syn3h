@@ -91,6 +91,10 @@ export class Inspector {
   private readonly rows = new Map<string, { row: HTMLElement; sync(value: ParamValue): void; def: PropertyDef }>()
   private readonly extras = new Map<string, ExtraCard>()
   private readonly unsubscribe: () => void
+  private sessionCard?: HTMLDetailsElement
+  private shown = true
+  private visibilityMotion?: Animation
+  private visibilityInitialized = false
   private editable = true
   private armed?: ReturnType<typeof setTimeout>
   private pasteTarget: string | null = null
@@ -135,8 +139,41 @@ export class Inspector {
       else if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); edit.finish(false, true) }
     }, { capture: true, signal })
   }
-  get open(): boolean { return !this.element.hidden }
-  set open(value: boolean) { this.element.hidden = !value; if (!value) this.hideTooltip() }
+  get open(): boolean { return this.shown }
+  set open(value: boolean) {
+    if (this.visibilityInitialized && value === this.shown) return
+    const animate = this.visibilityInitialized && !matchMedia('(prefers-reduced-motion: reduce)').matches
+    this.visibilityInitialized = true
+    this.shown = value
+    this.visibilityMotion?.cancel()
+    this.visibilityMotion = undefined
+    // Closing stops hit testing immediately, even while the panel fades away.
+    this.element.inert = !value
+    this.element.style.pointerEvents = value ? '' : 'none'
+    if (!value) this.hideTooltip()
+    this.element.hidden = false
+    if (!animate) { this.element.hidden = !value; return }
+    const frames = [{ opacity: 0, transform: 'translateX(20px)' }, { opacity: 1, transform: 'translateX(0)' }]
+    const motion = this.element.animate(value ? frames : [...frames].reverse(), { duration: 180, easing: 'cubic-bezier(.2,.8,.2,1)' })
+    this.visibilityMotion = motion
+    motion.onfinish = () => {
+      if (this.visibilityMotion !== motion) return
+      this.element.hidden = !this.shown
+      this.visibilityMotion = undefined
+    }
+  }
+  /** Keep the session controls and their listeners intact through registry rebuilds. */
+  setSessionCard(card: HTMLDetailsElement): void {
+    this.sessionCard = card
+    card.dataset.section = 'players'
+    this.placeSessionCard()
+  }
+  private placeSessionCard(): void {
+    if (!this.sessionCard) return
+    const cards = this.element.querySelector('.wi-cards')!
+    const game = cards.querySelector('[data-section="game"]')
+    if (game) game.after(this.sessionCard); else cards.prepend(this.sessionCard)
+  }
 
   /** Rebuild if properties have been defined since the last look; refresh summaries and locks. */
   update(): void {
@@ -190,6 +227,7 @@ export class Inspector {
     }
     // Extra cards are the same elements across rebuilds, so they keep their open state.
     for (const extra of this.extras.values()) { this.place(extra); extra.fill?.() }
+    this.placeSessionCard()
     this.editable = !canEditWorld(); this.update()
   }
   private place(extra: ExtraCard): void {
@@ -427,12 +465,13 @@ export class Inspector {
     if (words.length && !this.beforeSearch) this.beforeSearch = { cards: cards.map(card => card.classList.contains('is-open')), folds: folds.map(fold => fold.open) }
     this.element.classList.toggle('is-searching', words.length > 0)
     for (const card of this.element.querySelectorAll<HTMLElement>('.wi-card')) {
-      let cardHits = 0
+      const headingHit = words.length > 0 && words.every(word => (card.querySelector('h3')?.textContent ?? '').toLowerCase().includes(word))
+      let cardHits = headingHit ? 1 : 0
       for (const fold of card.querySelectorAll<HTMLDetailsElement>('.wi-group')) {
         let hits = 0
         for (const row of fold.querySelectorAll<HTMLElement>('.wi-row')) {
           const def = this.rows.get(row.dataset.id!)!.def, hay = `${def.label} ${def.group} ${def.id} ${describe(def)}`.toLowerCase()
-          const hit = words.every(word => hay.includes(word)); row.hidden = words.length > 0 && !hit; if (hit) hits++
+          const hit = headingHit || words.every(word => hay.includes(word)); row.hidden = words.length > 0 && !hit; if (hit) hits++
         }
         fold.hidden = words.length > 0 && hits === 0; if (words.length) fold.open = hits > 0
         cardHits += hits
@@ -440,6 +479,7 @@ export class Inspector {
       card.hidden = words.length > 0 && cardHits === 0
       if (words.length) this.toggle(card, cardHits > 0)
     }
+    if (this.sessionCard) this.sessionCard.hidden = words.length > 0 && !words.every(word => this.sessionCard!.textContent!.toLowerCase().includes(word))
     if (!words.length && this.beforeSearch) {
       const before = this.beforeSearch; this.beforeSearch = undefined
       cards.forEach((card, i) => this.toggle(card, before.cards[i] ?? false)); folds.forEach((fold, i) => { fold.open = before.folds[i] ?? false })
@@ -500,5 +540,5 @@ export class Inspector {
     this.element.querySelector<HTMLElement>('.wi-sheet')!.hidden = true
     const line = pasteSummary(result); this.say(line); return line
   }
-  dispose(): void { this.settle(); this.unsubscribe(); this.abort.abort(); clearTimeout(this.armed); clearTimeout(this.tooltipTimer); this.tooltip.remove(); this.element.remove() }
+  dispose(): void { this.visibilityMotion?.cancel(); this.settle(); this.unsubscribe(); this.abort.abort(); clearTimeout(this.armed); clearTimeout(this.tooltipTimer); this.tooltip.remove(); this.element.remove() }
 }
