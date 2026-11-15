@@ -20,7 +20,7 @@ set -eu
 cd "$(dirname "$0")/.."
 # A release builds, runs wrangler and two Chromes: hold one machine-wide heavy slot throughout.
 if [ -z "${SYN3H_RELEASE_SLOT:-}" ] && [ -x tools/heavy.sh ]; then
-  SYN3H_RELEASE_SLOT=1 exec tools/heavy.sh env SYN3H_RELEASE_SLOT=1 "$0" "$@"
+  SYN3H_RELEASE_SLOT=1 exec tools/heavy.sh env SYN3H_RELEASE_SLOT=1 "$(pwd)/tools/release.sh" "$@"
 fi
 REPO="$(pwd)"
 N="${1:-}"
