@@ -8,8 +8,17 @@ import { WAVE_COUNT, buildWaves, shoalFactor, wavePhases, waveOffset, waveSlope,
 import { prevailingWindHeading, prevailingWindStrength, weatherTime } from '../weather'
 import { waterWaveHeight, waterWaveLength, waterWaves, waterWaveTurn } from './params'
 
-/** Sea grid lines per tile side; must match SEA_SEGMENTS in terrain/volcanics.ts. */
-export const SEA_GRID = 192
+/**
+ * Sea grid lines per tile side; terrain/volcanics.ts builds the sea mesh from it.
+ *
+ * It decides which swells are real. A wave needs four grid spacings to be drawn, and only
+ * drawn waves lift vehicles (see `minGeometricLength`). At 192 a two kilometre tile had a
+ * vertex every 10.7 m, so of the five components only the 60 m swell moved the surface:
+ * 40 per cent of the wave height, the rest was lighting. At 384 (5.3 m) the 37 m and 26 m
+ * waves are geometry too, 80 per cent, and the sea visibly rolls under the hull. Cost: 148
+ * thousand sea vertices a tile instead of 37 thousand, culled by chunk.
+ */
+export const SEA_GRID = 384
 
 /**
  * The sea follows the room's prevailing wind, which turns slowly. Wave vectors must fit the

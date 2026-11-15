@@ -16,3 +16,20 @@ export class DisturbanceQueue {
   }
   drain() { return this.events.splice(0) }
 }
+/**
+ * When the ripple field needs simulating. Nothing moves it but disturbances (hulls, splashes),
+ * and each step damps it by 0.8 per cent, so `settle` seconds after the last one it is flat
+ * to well under a millimetre. Until the next disturbance there is nothing to compute: a dry
+ * world, lava, the lobby and a parked vehicle all cost no passes at all.
+ */
+export class RippleSleep {
+  private quiet = Infinity
+  constructor(readonly settle = 10) {}
+  /** Call once a frame with the disturbances waiting. True while the field must run. */
+  step(pending: number, dt: number): boolean {
+    if (pending > 0) this.quiet = 0
+    else this.quiet += Math.max(0, dt)
+    return this.quiet < this.settle
+  }
+  reset(): void { this.quiet = Infinity }
+}

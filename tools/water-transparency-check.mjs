@@ -1,5 +1,5 @@
 /** Controlled evidence through ordinary entry. No water feature query or room interception.
- * node tools/water-transparency-check.mjs BASE OUT [webgpu|webgl] [visual|sync|cost]
+ * node tools/water-transparency-check.mjs BASE OUT [webgpu|webgl] [visual|sync|cost|leak|crossing|dive|sky]
  * Run via the absolute shared heavy limiter. WATER_HEADED=1 for a real window.
  */
 import { chromium } from 'playwright-core'
@@ -208,7 +208,8 @@ try {
             const before={...window.crossCounts},fog=g.scene.fogNode?.id
             await new Promise(requestAnimationFrame)
             const now=performance.now()
-            rows.push({phase,below,frame,rafMs:now-last,gameMs:g.performance.frameMs,pipelines:window.crossCounts.pipelines-before.pipelines,programs:window.crossCounts.programs-before.programs,fogBefore:fog,fogAfter:g.scene.fogNode?.id})
+            const e=g.systems.find(x=>x.underwater),cp=g.camera.position
+            rows.push({lensDepth:+(window.syn3h.terrain.liquidHeightAt(cp.x,cp.z)-cp.y).toFixed(3),blend:+e.underwater.amount.toFixed(3),bubbles:e.bubbles.mesh.geometry.instanceCount,phase,below,frame,rafMs:now-last,gameMs:g.performance.frameMs,pipelines:window.crossCounts.pipelines-before.pipelines,programs:window.crossCounts.programs-before.programs,fogBefore:fog,fogAfter:g.scene.fogNode?.id})
             last=now
           }
         }
@@ -218,6 +219,65 @@ try {
       writeFileSync(`${out}/report.json`,JSON.stringify(report,null,2))
       console.log(JSON.stringify({tier,crossings:trace.filter(x=>x.phase>0&&x.frame<3),maxMs:Math.max(...trace.map(x=>x.rafMs))}))
     }
+  }
+    // Fixed simulated steps: stop the loop and drive Game.frame with a faked 1/30 s clock, so
+    // every screenshot is a known simulated time regardless of how slowly headless Chrome runs.
+    if (mode === 'dive') {
+      report.cases.push(await scene(a, 'submerged'))
+      await a.evaluate(() => { window.waterClear.markers.visible = false; window.waterClear.horizon = true; window.waterClear.depth = -1.2; window.syn3h.params.set('water.waves', true); window.syn3h.params.set('gfx.level', 2) })
+      await a.waitForTimeout(4000)
+      await a.evaluate(() => window.syn3h.game.renderer.setAnimationLoop(null))
+      const step = () => a.evaluate(() => { const g = window.syn3h.game, e = g.systems.find(x => x.underwater), p = g.camera.position, t = window.syn3h.terrain
+        g.last = performance.now() - 1000 / 30; g.frame()
+        return { time: +g.time.toFixed(3), lensY: +p.y.toFixed(3), surface: +t.liquidHeightAt(p.x, p.z).toFixed(3), lens: { ...e.lens }, blend: +e.underwater.amount.toFixed(3), bubbles: e.bubbles.mesh.geometry.instanceCount } })
+      const rows = []
+      // Desired lens: 1.2 m above, then a step to 2.5 m below (the vehicle dives), then back.
+      for (const [label, depth, frames] of [['above', -1.2, 15], ['dive', 2.5, 60], ['surface', -1.2, 60]]) {
+        await a.evaluate(d => { window.waterClear.depth = d }, depth)
+        for (let i = 0; i < frames; i++) {
+          const row = { label, i, desiredDepth: depth, ...(await step()) }; rows.push(row)
+          if (label !== 'above' && i % 4 === 0 || label === 'above' && i === 14) { const name = `dive-${String(rows.length).padStart(3, '0')}-${label}-${i}`; row.shot = name; await a.screenshot({ path: `${out}/${name}.png` }) }
+        }
+      }
+      report.cases.push({ dive: rows })
+      await a.evaluate(() => window.syn3h.game.start())
+    }
+  if (mode === 'sky') {
+    // Bright strip and reflection proof. The leak scene: swamp, horizontal view under water.
+    await a.evaluate(async()=>{const {applyPlanet}=await import('/src/world/planets.ts');applyPlanet('swamp',7)})
+    await a.waitForTimeout(2000)
+    report.cases.push(await scene(a,'submerged'))
+    await a.evaluate(()=>{window.waterClear.horizon=true;window.waterClear.markers.visible=false;window.waterClear.depth=-3;window.syn3h.params.set('water.waves',true);window.syn3h.params.set('gfx.level',2)})
+    const recapture = () => a.evaluate(async () => {
+      // Force a sky-only reflection capture now, through the real schedule (param invalidation).
+      const s = window.syn3h, g = s.game, sky = g.scene.children.find(o => o.sunDirection && o.betaR), id = 'sky.turbidity', v = s.params.get(id).value
+      if (!window.pmremHooked) { window.pmremHooked = true; const T = await import(performance.getEntriesByType('resource').find(r => r.name.includes('/three_webgpu.js')).name), original = T.PMREMGenerator.prototype.fromScene; T.PMREMGenerator.prototype.fromScene = function (...args) { const target = original.apply(this, args); window.lastPmrem = target; return target } }
+      const log = window.skyMixLog ??= []
+      if (!window.skyMixWrapped) { window.skyMixWrapped = true; const node = sky.underwaterMix, original = node.update; node.update = function (frame) { const r = original.call(this, frame); log.push({ player: frame.camera === g.camera, value: this.value }); return r } }
+      const before = s.game.scene.userData.skyEnvironment.captures
+      s.params.set(id, v + .01); await new Promise(r => setTimeout(r, 900)); s.params.set(id, v); await new Promise(r => setTimeout(r, 1500))
+      const rt = window.lastPmrem, w = rt.width, h = rt.height
+      if (g.scene.environment !== rt.texture) throw Error('Captured PMREM target is not scene.environment')
+      const px = await g.renderer.readRenderTargetPixelsAsync(rt, 0, 0, w, h)
+      let sum = 0; for (let i = 0; i < px.length; i++) sum += Number(px[i])
+      let hash = 2166136261; const bytes = new Uint8Array(px.buffer, px.byteOffset, px.byteLength); for (let i = 0; i < bytes.length; i++) hash = Math.imul(hash ^ bytes[i], 16777619) >>> 0
+      const e = g.systems.find(x => x.underwater)
+      return { captures: s.game.scene.userData.skyEnvironment.captures - before, size: [w, h], sum, hash: hash.toString(16), blend: e.underwater.amount, skyAmount: sky.underwaterAmount, nonPlayerNonZero: log.filter(x => !x.player && x.value !== 0).length, nonPlayer: log.filter(x => !x.player).length, playerNonZero: log.filter(x => x.player && x.value > 0).length }
+    })
+    const above = await recapture(); report.cases.push({ reflection: 'above', ...above })
+    await shot(a, 'sky-above')
+    for (const depth of [1, 7]) {
+      await a.evaluate(d => { window.waterClear.depth = d }, depth)
+      await a.waitForTimeout(3000)
+      await shot(a, `sky-under-depth${depth}`)
+      report.cases.push({ reflection: `under-${depth}`, ...(await recapture()) })
+      await a.evaluate(()=>{const sky=window.syn3h.game.scene.children.find(o=>o.sunDirection&&o.betaR);window.leakSky=sky;sky.visible=false})
+      await shot(a, `sky-under-depth${depth}-without-sky`)
+      await a.evaluate(()=>{window.leakSky.visible=true})
+    }
+    await a.evaluate(() => { window.waterClear.depth = -3 })
+    await a.waitForTimeout(3000)
+    report.cases.push({ reflection: 'returned', ...(await recapture()) })
   }
   if (mode === 'cost') {
     for (const kind of ['sea','pool','river']) {
