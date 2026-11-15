@@ -92,6 +92,7 @@ try {
 
   // 2. Drive A forward and watch it on B.
   const before = await remoteOfA()
+  const realBefore = await realA()
   await a.bringToFront()
   await a.keyboard.down('KeyW')
   await wait(3000)
@@ -100,9 +101,14 @@ try {
   await a.keyboard.down('ShiftLeft')
   await a.waitForFunction(() => { const v = window.syn3h.player.body.linvel(); return Math.hypot(v.x, v.z) < 0.3 }, null, { timeout: 8000 }).catch(() => {})
   await a.keyboard.up('ShiftLeft')
-  await wait(600)
-  const after = await remoteOfA()
+  // Two separate questions, so a slow buggy and a starved copy are told apart: did A itself
+  // drive (read on A), and did B's copy of A follow (read on B). B's page is in the background
+  // while A is driven, and under load its playback lags, so wait for the copy to move instead
+  // of sleeping a fixed time: up to 10 s for the 3 m that 3 s of throttle exceeds tenfold.
   const truth = await realA()
+  check('A itself drives', d2(realBefore, truth) > 10, { before: realBefore, after: truth, moved: +d2(realBefore, truth).toFixed(2) })
+  let after = await remoteOfA()
+  for (let i = 0; i < 50 && !(d2(before, after) > 3 && d2(after, truth) < 2); i++) { await wait(200); after = await remoteOfA() }
   check('A moves on B', d2(before, after) > 3, { before, after, moved: +d2(before, after).toFixed(2) })
   check('B tracks A within 2 m once settled', d2(after, truth) < 2, { remote: after, real: truth, error: +d2(after, truth).toFixed(2) })
 
