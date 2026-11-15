@@ -95,8 +95,8 @@ export class ProceduralTerrain implements Terrain {
     const hot = kind === KIND_VOLCANIC
     if (lake && hot) this.look.setLake(lake.x, lake.z, lake.radius, lake.surface)
     else this.look.setLake(0, 0, 0, -1000)
-    // Alpine worlds carry snow on the upper half of the peak.
-    const snow = kind === KIND_ALPINE ? this.data.layout.summitHeight * 0.5 : 1e6
+    // Alpine worlds carry snow from a third of the way up the peak, so the ranges are capped too.
+    const snow = kind === KIND_ALPINE ? this.data.layout.summitHeight * 0.36 : 1e6
     this.look.setLook(kind, worldSeaKind.value === 0, hot, snow)
   }
 
