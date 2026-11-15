@@ -135,6 +135,8 @@ const CONTACT_DIST = 0.05
 const RAM_REPEAT = 0.5
 /** Heartbeat interval for a hidden tab, ms. Browsers allow about one timer a second there. */
 const HEARTBEAT_MS = 1000
+/** A gap this long since our last frame means our main thread, not the network, was slow. */
+const LOCAL_STALL_MS = 250
 
 // Every vehicle kind the game can build must be one the server accepts.
 type KindsCovered = VehicleKind extends WireVehicleKind ? true : false
@@ -174,6 +176,10 @@ export class NetClient implements System {
   private pingTimer = 0
   private pingsSent = 0
   private lastFire = -Infinity
+  /** performance.now() at the start of the latest frame, to spot local main thread stalls. */
+  private frameAt = 0
+  /** Until this performance.now(), states are still the backlog of a stall the frame loop saw. */
+  private stallUntil = 0
   private heartbeat: ReturnType<typeof setInterval> | null = null
   private readonly marker: TagMarker
   private readonly bounds: BoundsGuard
@@ -377,6 +383,11 @@ export class NetClient implements System {
   }
 
   update(dt: number): void {
+    const frameAt = performance.now()
+    // After a long task the browser often renders before it delivers the queued messages, so
+    // the gap check in onState alone misses them: also distrust the next moment after a gap.
+    if (frameAt - this.frameAt > LOCAL_STALL_MS) this.stallUntil = frameAt + LOCAL_STALL_MS
+    this.frameAt = frameAt
     this.pingTimer -= dt
     if (this.conn.state === 'open' && this.pingTimer <= 0) {
       // Quick pings at first to sync the clock, then a slow heartbeat.
@@ -651,6 +662,8 @@ export class NetClient implements System {
       this.sendHeartbeat()
     } else {
       this.stopHeartbeat()
+      // Whatever we measured while hidden (or before) says nothing about now: start over.
+      for (const r of this.remotes.values()) r.buffer.restartEstimate()
     }
   }
 
@@ -682,7 +695,11 @@ export class NetClient implements System {
     const info = this.players.get(s.id)
     if (!info) return
     const r = this.remotes.get(s.id) ?? this.spawnRemote(info, s)
-    r.push(s, this.clock.now(), netSendRate.value)
+    // A state handled long after our last frame waited behind a local stall (terrain rebuild,
+    // shader compile, a hidden tab): its age says nothing about the network.
+    const at = performance.now()
+    const measure = at - this.frameAt < LOCAL_STALL_MS && at > this.stallUntil
+    r.push(s, this.clock.now(), netSendRate.value, measure)
     this.stats.statesReceived++
   }
 
@@ -899,9 +916,10 @@ export class NetClient implements System {
       const wait = Math.max(0, Math.ceil((this.conn.retryAt - performance.now()) / 1000))
       lines.push(this.conn.state === 'connecting' ? `net: connecting to room ${this.ctx.room}` : `net: offline, retry in ${wait}s (room ${this.ctx.room})`)
     } else {
-      const delays = [...this.remotes.values()].map((r) => r.delay)
-      const delay = delays.length ? Math.max(...delays) : 0
-      lines.push(`net: room ${this.ctx.room}   ping ${Math.round(this.clock.rtt * 1000)} ms   delay ${Math.round(delay * 1000)} ms`)
+      // A parked (hidden tab) player is held still, so its delay is not one anybody sees.
+      const delays = [...this.remotes.values()].filter((r) => !r.paused).map((r) => r.delay)
+      const delay = delays.length ? `${Math.round(Math.max(...delays) * 1000)} ms` : 'none'
+      lines.push(`net: room ${this.ctx.room}   ping ${Math.round(this.clock.rtt * 1000)} ms   delay ${delay}`)
       const host = this.game.host === this.id ? 'you' : this.nameOf(this.game.host)
       lines.push(`host: ${host}   shared sliders ${this.game.locked ? 'LOCKED (host only)' : 'open to all'}`)
       lines.push(...this.modeLines())

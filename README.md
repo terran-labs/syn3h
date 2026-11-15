@@ -1,28 +1,33 @@
 # Syn3h
 
-A browser native rebuild of [Mars Explorer](https://github.com/terran-labs/unity3d-marsxplr)
-and its successor Syn3h: off road sci fi vehicles, procedural alien skies, and multiplayer
-with every physical and environmental parameter exposed as a shared slider. No Unity. Built
-on WebGPU with a WebGL fallback.
+Off-road sci-fi vehicles on procedural volcanic islands, with multiplayer, running native in
+the browser.
 
-Status: planning. No game code yet.
+Drive a buggy with force field wings, a jet or a hovercraft up a volcano, ram your friends
+into the lava, and change the world's gravity, sky and physics while you play.
 
-## Documents
+## Run it
 
-| Document | What it covers |
-| --- | --- |
-| [docs/PROPOSAL.md](docs/PROPOSAL.md) | The recommended stack and design: rendering, physics, sky, terrain, multiplayer, sliders, risks, open decisions |
-| [docs/ROADMAP.md](docs/ROADMAP.md) | Build order with acceptance checks, for the first weekend and after |
-| [docs/architecture/mars-explorer.md](docs/architecture/mars-explorer.md) | How the original game works, with the vehicle physics and netcode read from source |
-| [docs/architecture/syn3h.md](docs/architecture/syn3h.md) | What the Unity version of Syn3h was built from and what carries over |
-| [docs/research/reference-games.md](docs/research/reference-games.md) | The stacks behind bruno-simon.com and Teleoperator |
-| [docs/research/real-world-cities.md](docs/research/real-world-cities.md) | Options for streamed real world cities and terrain |
+```sh
+npm install
+npm run dev
+```
 
-## The short version
+Open the address it prints. The room server starts alongside it, so a second tab is a
+second player.
 
-- Three.js `WebGPURenderer` with TSL shaders.
-- Rapier for rigid bodies and raycasts, with vehicle forces ported from the original
-  Mars Explorer scripts.
-- Owner authoritative multiplayer over a small WebSocket room server, with nearby remote
-  vehicles kept physical so they can be rammed.
-- One parameter registry that drives the UI, the network sync and saved presets.
+## Controls
+
+| | |
+|---|---|
+| Drive | W A S D or arrows |
+| Wings, or hover and flight on the jet | Space |
+| Brake | Shift |
+| Fire | L or click |
+| Camera | C |
+| Help | H |
+
+## Built with
+
+Three.js on WebGPU with a WebGL fallback, Rapier physics, TypeScript and Vite. Every world
+is generated on your machine from a shared seed, so there is nothing to download.

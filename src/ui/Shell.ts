@@ -55,6 +55,8 @@ export class Shell implements System {
   private menuVisible = true
   private readonly previousSuspended: boolean
   private helpTimer?: ReturnType<typeof setTimeout>
+  /** Listeners that dismiss the short controls card on the player's first input. */
+  private helpInput?: AbortController
   private activeVehicleKind: VehicleKind = this.choice.vehicleKind
   private toastTimer?: ReturnType<typeof setTimeout>
   readonly touch: TouchControls
@@ -94,7 +96,7 @@ export class Shell implements System {
     </section>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button" aria-label="Open menu">☰ Menu</button><button data-open="multiplayer">Players</button><button data-open="worlds">Create</button></nav>
-    <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small>H or ? to show again</small></aside>
+    <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
     document.body.append(this.element); document.body.classList.add('has-game-shell')
     this.invite = new InviteView(this.element, () => this.closeJoin(), () => { void this.copyInvite() })
@@ -251,7 +253,7 @@ export class Shell implements System {
     this.element.querySelector<HTMLElement>('[data-resume]')!.hidden = false
     for (const input of this.element.querySelectorAll<HTMLInputElement>('.shell-vehicle input')) input.disabled = true
     this.element.querySelector('.vehicle-note')!.textContent = 'Vehicle selection is fixed for this session.'
-    this.closeMenu(); this.showHelp(); this.onPlay?.()
+    this.closeMenu(); this.showHelp(false); this.onPlay?.()
   }
   openMenu(panel = 'index'): void {
     if (!this.started) return
@@ -277,7 +279,7 @@ export class Shell implements System {
       if (event.key === 'Tab') { event.preventDefault(); const buttons = [...this.invite.element.querySelectorAll<HTMLButtonElement>('button')]; buttons[document.activeElement === buttons[0] ? 1 : 0].focus() }
       return
     }
-    if (this.started && !this.menuVisible && !event.repeat && (event.code === 'KeyH' || event.key === '?')) { event.preventDefault(); this.showHelp(); return }
+    if (this.started && !this.menuVisible && !event.repeat && (event.code === 'KeyH' || event.key === '?')) { event.preventDefault(); this.toggleHelp(); return }
     if (event.code === 'Escape') {
       event.preventDefault(); event.stopImmediatePropagation()
       if (this.menuVisible && this.panels.active !== 'index') this.showPanel('index')
@@ -306,11 +308,37 @@ export class Shell implements System {
     renderHelp(this.element.querySelector('.shell-controls')!, this.choice.vehicleKind)
   }
   /** Call after an actual spawn so query overrides and future respawns show the right controls. */
-  setVehicleKind(kind: VehicleKind): void { this.activeVehicleKind = kind; this.touch.setVehicleKind(kind); if (this.started) this.showHelp() }
-  showHelp(): void {
+  setVehicleKind(kind: VehicleKind): void { this.activeVehicleKind = kind; this.touch.setVehicleKind(kind); if (this.started) this.showHelp(false) }
+  /**
+   * The controls card, in the lower left so it never covers the vehicle. After Play it is the
+   * short version: it leaves after five seconds or on the first key, click or touch, but stays
+   * at least a second and a half so an eager driver still gets to read it. H or ? opens the
+   * full list, which stays for its whole time because the player asked for it.
+   */
+  showHelp(full = true): void {
+    const hint = this.element.querySelector<HTMLElement>('.spawn-help')!, touch = this.touch.available
+    renderHelp(hint.querySelector('div')!, this.activeVehicleKind, touch, !full)
+    hint.classList.toggle('is-full', full)
+    hint.querySelector('small')!.textContent = touch ? '' : full ? 'H or ? to hide' : 'H: all controls'
+    hint.hidden = false; clearTimeout(this.helpTimer); this.helpInput?.abort(); this.helpInput = undefined
+    const hide = () => this.hideHelp()
+    this.helpTimer = setTimeout(hide, full ? 8500 : 5000)
+    if (full) return
+    const shown = performance.now(), input = this.helpInput = new AbortController()
+    const dismiss = (event: Event) => {
+      if (event instanceof KeyboardEvent && (event.repeat || event.code === 'KeyH' || event.key === '?')) return
+      input.abort(); clearTimeout(this.helpTimer)
+      this.helpTimer = setTimeout(hide, Math.max(0, 1500 - (performance.now() - shown)))
+    }
+    for (const type of ['keydown', 'pointerdown', 'touchstart']) window.addEventListener(type, dismiss, { capture: true, passive: true, signal: input.signal })
+  }
+  private hideHelp(): void {
+    clearTimeout(this.helpTimer); this.helpInput?.abort(); this.helpInput = undefined
+    this.element.querySelector<HTMLElement>('.spawn-help')!.hidden = true
+  }
+  private toggleHelp(): void {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!
-    renderHelp(hint.querySelector('div')!, this.activeVehicleKind, this.touch.available)
-    hint.hidden = false; clearTimeout(this.helpTimer); this.helpTimer = setTimeout(() => { hint.hidden = true }, 8500)
+    if (!hint.hidden && hint.classList.contains('is-full')) this.hideHelp(); else this.showHelp()
   }
   setStatus(lines: readonly string[]): void { this.board.setStatus(lines); this.hudBoard.setStatus(lines); const players = (window as unknown as {syn3hNet?:{players?:Map<number,{bot?:boolean}>}}).syn3hNet?.players; this.playerCount = players ? [...players.values()].filter(player => !player.bot).length : lines.filter(line => parseScoreRow(line)).length; this.updateInvite() }
   setSpeed(metresPerSecond: number): void { this.speed.textContent = String(Math.round(Math.abs(metresPerSecond) * 2.23694)) }
@@ -332,7 +360,7 @@ export class Shell implements System {
     if (document.activeElement !== track) track.value = this.audio.track
     const seed = this.element.querySelector<HTMLInputElement>('#world-seed')!
     if (document.activeElement !== seed && seed.dataset.dirty !== 'true') seed.value = String(worldSeed.value)
-    const time = Number(params.get('sun.timeOfDay')?.value ?? 10.5)
+    const time = Number(params.get('sun.timeOfDay')?.value ?? 16.5)
     this.element.querySelector<HTMLInputElement>('#sky-time')!.value = String(time)
     this.element.querySelector('#sky-time-value')!.textContent = `${String(Math.floor(time) % 24).padStart(2, '0')}:${String(Math.floor((time % 1) * 60)).padStart(2, '0')}`
     const editable = canEditWorld(), net = hostControls()
@@ -350,7 +378,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.starfield.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.starfield.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }

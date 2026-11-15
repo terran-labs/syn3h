@@ -66,3 +66,49 @@ export const buggyIdleHold = defineParam({
   id: 'buggy.idleHold', label: 'Idle hold', group: 'Buggy', scope: 'world',
   default: true,
 })
+
+// ---- Next-gen tyre model (Syn3h buggy only; new, not from either original) ----------------
+
+/**
+ * Next-gen physics: each wheel holds with static friction up to grip x load, and friction falls
+ * toward the slide coefficient as it slips faster. Off restores the classic Syn3h
+ * wheel equations (VhiclBuggy.cs 280-332), whose friction is a pure damper on slip speed.
+ */
+export const buggyNextGen = defineParam({
+  id: 'buggy.nextGen', label: 'Next-gen physics', group: 'Buggy', scope: 'world',
+  default: true,
+})
+/** Static friction coefficient at low speed: how hard a tyre holds before it lets go. */
+export const buggyGrip = defineParam({
+  id: 'buggy.grip', label: 'Grip (static)', group: 'Buggy', scope: 'world',
+  default: 1.2, min: 0.3, max: 2, step: 0.01,
+})
+/** Sliding (dynamic) friction coefficient once a tyre has let go. */
+export const buggySlide = defineParam({
+  id: 'buggy.slide', label: 'Slide (dynamic)', group: 'Buggy', scope: 'world',
+  default: 0.75, min: 0.2, max: 1.5, step: 0.01,
+})
+/** Speed (m/s) by which static grip has faded to the slide value, so fast driving drifts. */
+export const buggyGripFade = defineParam({
+  id: 'buggy.gripFade', label: 'Grip fade speed', group: 'Buggy', scope: 'world',
+  default: 30, min: 5, max: 80, step: 1,
+})
+/**
+ * Next-gen steering limit, as a multiple of what the tyres can hold. Full lock at speed is cut to
+ * the angle whose cornering force is this many times the grip limit, so keyboard steering grips
+ * at 1 and slides more the higher it goes. The classic Syn3h angles are always the ceiling.
+ */
+export const buggySteerLimit = defineParam({
+  id: 'buggy.steerLimit', label: 'Steering limit (x grip)', group: 'Buggy', scope: 'world',
+  default: 1.1, min: 0.5, max: 4, step: 0.05,
+})
+/** Next-gen regen braking on the reverse key while rolling forward, in g at full key. */
+export const buggyRegen = defineParam({
+  id: 'buggy.regen', label: 'Regen braking (g)', group: 'Buggy', scope: 'world',
+  default: 0.6, min: 0.1, max: 1.2, step: 0.01,
+})
+/** Next-gen drivetrain drag when coasting off throttle, per second of motor speed. */
+export const buggyCoastDrag = defineParam({
+  id: 'buggy.coastDrag', label: 'Coast drag', group: 'Buggy', scope: 'world',
+  default: 0.2, min: 0, max: 2, step: 0.01,
+})

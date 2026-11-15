@@ -46,7 +46,7 @@ export const ROAD_DIST_CAP = 64
 /** The ring road round the volcano's foot runs at this multiple of the cone radius. */
 export const FOOT_RING = 1.04
 /** Drop from the summit to the crater floor: far enough to be a fall, near enough to see the lava. */
-export const CRATER_DEPTH = 22
+export const CRATER_DEPTH = 15
 /** Radius of the rim road, on the flat summit just outside the crater's crown. */
 export function rimRadius(v: Volcano): number {
   return v.calderaRadius * 1.45 + 4

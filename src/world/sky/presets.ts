@@ -17,12 +17,12 @@ export interface SkyPreset {
 }
 
 export const SKY_PRESETS = {
-  /** Butterscotch dust sky: red scattering, so the sunset turns blue. */
+  /** Butterscotch dust sky: red scattering, so the sunset turns blue. Matches the defaults. */
   'Mars day': {
     'sky.rayleighR': 24, 'sky.rayleighG': 15, 'sky.rayleighB': 5.5, 'sky.rayleigh': 1,
     'sky.turbidity': 6, 'sky.mieCoefficient': 0.012, 'sky.mieDirectionalG': 0.75,
     'sky.nightBrightness': 1, 'weather.cloudCoverage': 0.15, 'weather.fogDensity': 0.0002,
-    'sun.timeOfDay': 10.5,
+    'sun.timeOfDay': 16.5,
   },
   /** Preetham's Earth wavelengths. */
   'Earthlike': {
