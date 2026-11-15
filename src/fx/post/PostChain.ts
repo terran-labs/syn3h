@@ -47,9 +47,11 @@ export interface PostChainHost {
   /**
    * The frame governor (src/core/quality.ts), the one in-game quality authority.
    * deviceLevel: the device class, 2 is desktop. postBudget: its post effects rung, 0 to 1
-   * eased; absent until that lane adds it, which reads as a full budget.
+   * eased; absent until that lane adds it, which reads as a full budget. setPostActive tells
+   * the governor whether there is anything to shed, so its post rung exists only while the
+   * chain draws a costly effect.
    */
-  readonly quality: { readonly deviceLevel: number; readonly postBudget?: number }
+  readonly quality: { readonly deviceLevel: number; readonly postBudget?: number; setPostActive?(on: boolean): void }
 }
 export interface SunSource { readonly sunDirection: THREE.Vector3 }
 
@@ -97,6 +99,7 @@ export class PostChain {
     const shed = 1 - Math.min(1, Math.max(0, budget ?? 1))
     let tier = postTier({ on: P.postOn.value, level: graphicsLevel.value, deviceLevel: this.host.quality.deviceLevel, tablets: P.postTablets.value, shed })
     this.tier = tier
+    this.reportActive(tier !== 'off' && (P.postBloom.value > 0 || P.postShafts.value > 0 || P.postFlare.value > 0))
     if (tier === 'off') {
       this.release()
       renderer.render(scene, camera)
@@ -139,7 +142,14 @@ export class PostChain {
     this.built = null
   }
 
-  dispose(): void { this.release() }
+  dispose(): void { this.release(); this.reportActive(false) }
+
+  private active = false
+  private reportActive(on: boolean): void {
+    if (on === this.active) return
+    this.active = on
+    this.host.quality.setPostActive?.(on)
+  }
 
   /** Sun position on screen (top-left origin, as the post quad's uv) and its visibility. */
   private updateSun(camera: THREE.Camera, renderer: THREE.WebGPURenderer): number {
