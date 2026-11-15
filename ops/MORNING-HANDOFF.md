@@ -2,15 +2,20 @@
 
 Prepared during the 15 November overnight run. This is a working draft, not the 8am
 report. Recheck production, integration and lane evidence before delivering it.
-Evidence snapshot: 2:35am Pacific. Production identity below was last checked directly
-at 2:28am; it is not a fresh deployment verdict.
+Evidence snapshot: 3:03am Pacific. A public retry is running; it is not yet an
+accepted release. Recheck its outcome before presenting production status.
 
 ## Public build
 
-The latest direct metadata check still identifies release 2, `bc8cb48`, at
-https://www.syn3h.com/. Release 3 failed public checks and was rolled back. Its local
-tests do not establish public acceptance. The first failure concerned score display;
-the retry failed resource loading. Neither cause has been conclusively established.
+Release 2, `bc8cb48`, was restored and verified after the first default-on release
+attempt failed its primary-site bot-roster check. The cause remains unproven. Unique
+room names replace a repeating test identity, and the corrected fixture passed all
+34 checks on the unchanged frozen candidate.
+
+The second attempt has deployed Worker `ef3e2f23-e868-41d6-9894-4b09e9b57db2`.
+Its worker assets match the frozen candidate; public gameplay acceptance is still
+running with automatic rollback armed. Do not describe this attempt as accepted.
+Earlier release 3 score-display and resource-loading failures also remain unexplained.
 
 The next release must verify exact frozen HTML and entry assets, normal gameplay on
 the primary public domain, and the combined browser cases. Exact asset and primary-domain
@@ -48,8 +53,12 @@ frequency remains unmeasured: earlier idle runs never met the nearby-bot prerequ
 Earlier combined checks cover four interface viewports, both rendering backends and
 all eight vehicle/browser combinations. The frozen copy passed direct and simulated-latency dry runs, three consecutive
 multiplayer checks, eight fresh-room vehicle checks and the solo seam check. Its
-two-player seam run failed stale-replica and ram assertions, so acceptance remains open.
-The wet fixture and new sinking behavior need diagnosis; no assertion limits were relaxed.
+two-player seam gate now passes all 17 checks on a verified dry route. The earlier wet
+fixture put both cars almost sixty metres underwater, preventing contact. The newly
+introduced route-selection cap was revised from 0.3 to 0.5 per sampled axis after
+review; original gameplay assertions stayed intact. This proves steady-state dry
+crossing and contact, not rough-terrain or sea coverage. Earlier intermittent startup
+staleness remains unexplained.
 Its identity is `20261115-021120-da5a89c`, version `v26.11.1500`.
 The deploy wrapper must preserve those artifacts without rebuilding between acceptance
 and deployment. Public acceptance is not established by source tests or a dry run.
@@ -59,7 +68,11 @@ workers. The sentinel has resumed from the passing candidate baseline, per the i
 
 ## Ready for the next batch
 
-These handoffs are excluded from the closed release candidate and are not public:
+These handoffs are excluded from the closed release candidate and are not public.
+They are combined separately at `943d716`: typecheck and 146 focused tests pass, as
+do saved-world cases in Chrome and WebKit. Rendering, touch-layout and a possible
+incomplete logo reveal still need combined review. The eight minimal dependency
+picks passed independent review without replaying older interface changes.
 
 - Procedural cloud volumes `35c0167`: lane reports typecheck, 16 tests, both-backend
   cloud cases, wrap/weather/reflection invariants, normal entry and HTTPS smoke passing.
@@ -80,7 +93,8 @@ These handoffs are excluded from the closed release candidate and are not public
 ## Work still underway
 - Hovercraft and jet Pester evasion remain unfinished. The bounded overlay experiment
   converted none of eight caught cases into escapes; its draft is excluded from integration
-  and needs a different reviewed design. Wheeled bots already evade Pesters; all four gear
+  and needs a different reviewed design. Measurement-only pilot response work has
+  resumed without production edits. Wheeled bots already evade Pesters; all four gear
   tools have combined browser evidence.
 - **Water transparency from above is unimplemented:** the sea/river material is opaque.
   Shallow colouring does not reveal submerged objects or ground. Transparent falling
@@ -94,6 +108,9 @@ assignments finish. It includes the FPS history panel, hardware and rendering fa
 information, one low-FPS recommendation control and adjustable tiers. Reuse the current
 owner-authorized minimap and rail work rather than implementing them twice. Connection
 diagnostics in that rail are not the requested FPS, hardware and failure diagnostics.
+An existing F3 panel already exposes FPS, frame timing, physics cost and draw counts;
+reuse it and the current quality governor. The history chart and recommendation control
+remain missing. Both wave and still-water fallback materials need transparency work.
 
 ## Fifteen-minute owner viewing list
 
