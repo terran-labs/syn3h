@@ -16,7 +16,8 @@
  */
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
-import { spawn } from 'node:child_process'
+import { spawn, execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:net'
 
@@ -36,7 +37,9 @@ const record = () => {
   const w = window, s = w.syn3h, T = []; w.__trace = T; w.__stop = false
   const dir = s.game.camera.position.clone()
   const sampler = { update() {
-    const now = performance.now()
+    // Camera motion uses the frame-start clock. Work before this sampler varies, so
+    // timestamping here would invent short intervals after an expensive frame.
+    const now = s.game.last
     const cam = s.game.camera, c = s.camera, p = s.player.object.position, shell = document.querySelector('.syn3h-shell').classList
     cam.getWorldDirection(dir)
     const f = s.player.object.getWorldDirection(dir.clone())
@@ -82,6 +85,7 @@ try {
     } catch (error) { results.push({ id: planet, errors, harness: String(error) }) }
     await page.close()
   }
+  if (!process.env.DESCENT_SKIP_HANDBACK) {
   // In play: the vehicle drives itself after two idle seconds; take the controls during each shot.
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } }), errors = []
   page.on('pageerror', e => errors.push(e.message))
@@ -103,6 +107,12 @@ try {
     }
   } catch (error) { results.push({ id: 'handback', errors, harness: String(error) }) }
   await page.close()
+  }
+  if (process.env.DESCENT_SMOKE) {
+    await browser.close()
+    const smoke = await promisify(execFile)(process.execPath, ['tools/smoke.mjs', `${base}?room=descent-smoke-${Date.now()}`, `${out}/smoke.png`], { maxBuffer: 1000000 })
+    console.log(smoke.stdout)
+  }
 } finally { await browser.close(); vite.kill('SIGTERM') }
 
 /**
@@ -153,4 +163,4 @@ export function judgeHandback(trace, keyAt) {
 }
 await writeFile(`${out}/results.json`, JSON.stringify(results, null, 2))
 for (const r of results) console.log(JSON.stringify(r))
-process.exit(results.every(r => r.pass || r.skipped) ? 0 : 1)
+process.exit(results.every(r => (r.pass || r.skipped) && !r.errors?.length) ? 0 : 1)
