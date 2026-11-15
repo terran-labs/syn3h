@@ -90,6 +90,16 @@ export function showRendererLost(info?: { api?: string; message?: string; reason
   return true
 }
 
+/**
+ * getParameter is a blocking round trip to the GPU process and snapshots are built about once a
+ * second, so the WebGL limit is asked once per context. It cannot change while the context lives.
+ */
+const glLimits=new WeakMap<object,number>()
+function glMaxTextureSize(gl: WebGL2RenderingContext): number {
+  let size=glLimits.get(gl)
+  if(size===undefined){size=gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;glLimits.set(gl,size)}
+  return size
+}
 /** Read the selected renderer and startup record. Never acquire a context or adapter. */
 export function readPerformanceEnvironment(game: Game): PerformanceEnvironment {
   const backend=game.renderer?.backend as unknown as {device?: GPUDevice;gl?: WebGL2RenderingContext}|undefined
@@ -99,7 +109,7 @@ export function readPerformanceEnvironment(game: Game): PerformanceEnvironment {
     backend:startupTiming.backend ?? (game.renderer?game.backend:'initializing'),
     adapter:info?[info.vendor,info.architecture,info.device,info.description].filter(Boolean).join(' ')||null:null,
     memoryGB:nav?.deviceMemory ?? null,
-    maxTextureSize:device?.limits.maxTextureDimension2D ?? (backend?.gl?backend.gl.getParameter(backend.gl.MAX_TEXTURE_SIZE) as number:null),
+    maxTextureSize:device?.limits.maxTextureDimension2D ?? (backend?.gl?glMaxTextureSize(backend.gl):null),
     fallbackReason:startupTiming.fallbackReason??null,deviceLost:startupTiming.deviceLost??null,
   }
 }

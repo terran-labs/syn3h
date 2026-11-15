@@ -15,6 +15,7 @@ import { drawFrame, gpuDeadlineMs, startRenderer, viewState, type PostChain } fr
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
 import { QualityController, reportLoading, type FrameMetrics } from './quality'
+import { PipelineCounter } from './performanceHistory'
 import { FIXED_DT, RAPIER, createWorld, initPhysics } from './physics'
 
 export interface System {
@@ -50,6 +51,7 @@ export class Game {
   fps = 0
 
   readonly quality = new QualityController()
+  private readonly pipelineCounter = new PipelineCounter()
   readonly performance: FrameMetrics = { fps: 0, frameMs: 0, physicsMs: 0, drawCalls: 0, triangles: 0, firstFrameMs: null }
 
   private readonly systems: System[] = []
@@ -198,6 +200,10 @@ export class Game {
     metrics.frameMs = frameMs
     metrics.drawCalls = this.renderer.info.render.drawCalls
     metrics.triangles = this.renderer.info.render.triangles
+    // Read-only look at the renderer's own pipeline cache, as recordStartupFrame does once.
+    const pipelines = this.pipelineCounter.scan((this.renderer as unknown as { _pipelines?: { caches?: Map<unknown, object> } })._pipelines?.caches)
+    metrics.pipelinesLive = pipelines?.live ?? null
+    metrics.pipelinesFresh = pipelines?.fresh ?? null
     if (metrics.firstFrameMs === null && metrics.drawCalls > 0) metrics.firstFrameMs = performance.now()
     // Frames in the lobby say how the lobby runs, not how the game will: only play is judged.
     this.quality.frame(metrics, view === 'playing')

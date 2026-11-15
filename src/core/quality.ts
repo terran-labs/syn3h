@@ -433,7 +433,9 @@ export class QualityGovernor {
 }
 
 export interface QualityTerrain { setRenderQuality?(options: { level: GraphicsLevel; drawDistance: number; detail: number }): void }
-export interface FrameMetrics { fps: number; frameMs: number; physicsMs: number; drawCalls: number; triangles: number; firstFrameMs: number | null }
+export interface FrameMetrics { fps: number; frameMs: number; physicsMs: number; drawCalls: number; triangles: number; firstFrameMs: number | null
+  /** Renderer pipeline cache this frame: live size and objects not seen before. Absent or null where unreadable. */
+  pipelinesLive?: number | null; pipelinesFresh?: number | null }
 /** Values the cascade has actually applied, for consumers that need more than the level budget. */
 export interface EffectiveQuality extends RungSettings { level: GraphicsLevel; rung: number; rungs: number; auto: boolean; targetFps: number }
 let effective: EffectiveQuality = { ...buildLadder(2)[0], level: 2, rung: 0, rungs: buildLadder(2).length, auto: true, targetFps: 60 }
@@ -489,6 +491,7 @@ export class QualityController {
     return Object.freeze({ visible: this.diagnosticsVisible,
       quality: Object.freeze({...g.settings,level:g.level,rung:g.rung,rungs:g.ladder.length,auto:g.auto,targetFps:Math.round(1000/g.targetMs)}),
       levelPinned:g.levelPinned,history:this.history.history,recommendation:this.history.recommendation,
+      pipelines:this.history.pipelines,longFrames:this.history.longFrames,
       environment:Object.freeze(this.environment?.() ?? {backend:'initializing',adapter:null,memoryGB:null,maxTextureSize:null,fallbackReason:null,deviceLost:null}) })
   }
   subscribePerformance(listener: (snapshot: PerformanceSnapshot) => void): () => void {
@@ -635,6 +638,7 @@ export class QualityController {
   frame(metrics: FrameMetrics, judge = true) {
     if(this.disposed)return
     const wasLoading=this.loading
+    const counted=this.history.observe(metrics,!document.hidden)
     if (this.loading && metrics.drawCalls > 0) {
       this.loading = false; finishLoad(this.storage); reportLoading('ready', 1)
     }
@@ -645,7 +649,7 @@ export class QualityController {
     }
     const g=this.governor
     const eligible=!wasLoading&&!this.loading&&judge&&!document.hidden
-    if(this.history.sample(metrics,eligible,{...g.settings,level:g.level,rung:g.rung,rungs:g.ladder.length,auto:g.auto,targetFps:Math.round(1000/g.targetMs)}))this.publishPerformance()
+    if(this.history.sample(metrics,eligible,{...g.settings,level:g.level,rung:g.rung,rungs:g.ladder.length,auto:g.auto,targetFps:Math.round(1000/g.targetMs)})||counted)this.publishPerformance()
     // Ease toward the rung's budget: full while effects are not shed (or none are active).
     const wanted = this.governor.settings.kind === 'base' || this.governor.settings.post > 0 || !this.postOn() ? 1 : 0
     const step = Math.min(1, Math.max(0, metrics.frameMs) / 500)

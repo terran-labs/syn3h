@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { PerformanceHistory, PERFORMANCE_POLICY } from '../../src/core/performanceHistory'
+import { PerformanceHistory, PERFORMANCE_POLICY, PipelineCounter } from '../../src/core/performanceHistory'
 import { buildLadder, QualityGovernor, type EffectiveQuality } from '../../src/core/quality'
 const q = (level: 0|1|2 = 2): EffectiveQuality => ({...buildLadder(level)[0],level,rung:0,rungs:4,auto:false,targetFps:level===2?60:30})
 const metrics = (frameMs: number) => ({frameMs,fps:1000/frameMs,physicsMs:2,drawCalls:100,triangles:1000,firstFrameMs:1})
@@ -88,4 +88,41 @@ it('Ignore has no cross-tab localStorage fallback',()=>{
  vi.stubGlobal('navigator',{userAgent:'Desktop',maxTouchPoints:0});vi.stubGlobal('location',{search:''})
  const c=new QualityController();c.ignoreRecommendation()
  expect(entries.has('syn3h.performance.ignore')).toBe(false);c.dispose()
+})
+
+describe('device readback counters',()=>{
+ it('counts pipelines by identity so a same-frame swap is not hidden by a constant size',()=>{
+  const c=new PipelineCounter(),cache=new Map<string,object>([['a',{}],['b',{}]])
+  expect(c.scan(cache)).toEqual({live:2,fresh:2})
+  expect(c.scan(cache)).toEqual({live:2,fresh:0})
+  cache.delete('a');cache.set('a',{}) // released and recreated under the same key: size unchanged
+  expect(c.scan(cache)).toEqual({live:2,fresh:1});expect(c.created).toBe(3)
+  expect(c.scan(undefined)).toBeNull();expect(c.scan(null)).toBeNull()
+ })
+ it('reports pipelines as unavailable rather than zero when the renderer gives nothing',()=>{
+  const h=new PerformanceHistory();feed(h,2)
+  expect(h.pipelines).toBeNull();expect(h.history.at(-1)!.pipelinesCreated).toBeNull()
+ })
+ it('keeps cumulative pipelines and per-window counts across evidence resets',()=>{
+  const h=new PerformanceHistory(),m=(fresh:number)=>({...metrics(50),pipelinesLive:10,pipelinesFresh:fresh})
+  for(let t=0;t<1000;t+=50){const f=m(t===0?10:t===500?25:0);h.observe(f,true);h.sample(f,true,q())}
+  // The first sample opens a new quality key and resets the window; the cumulative count keeps it.
+  expect(h.history.at(-1)!.pipelinesCreated).toBe(25);expect(h.pipelines).toEqual({live:10,created:35})
+  h.resetEvidence();h.observe(m(3),true)
+  expect(h.pipelines).toEqual({live:10,created:38})
+  for(let t=0;t<1000;t+=50){const f=m(0);h.observe(f,true);h.sample(f,true,q())}
+  expect(h.history.at(-1)!.pipelinesCreated).toBe(3)
+ })
+ it('counts long frames in menus and over a second, but not while hidden',()=>{
+  const h=new PerformanceHistory()
+  h.observe(metrics(16),true);h.observe(metrics(80),true);h.observe(metrics(1700),true);h.observe(metrics(900),false);h.observe(metrics(NaN),true)
+  h.sample(metrics(1700),false,q());h.resetEvidence();h.ignore()
+  expect(h.longFrames).toEqual({over50:2,over1000:1});expect(h.history).toHaveLength(0)
+ })
+ it('asks for a publish about once a second while counters change, and stays quiet otherwise',()=>{
+  const h=new PerformanceHistory();let publishes=0
+  for(let i=0;i<100;i++)if(h.observe(metrics(60),true))publishes++
+  expect(publishes).toBe(5)
+  const quiet=new PerformanceHistory();for(let i=0;i<400;i++)expect(quiet.observe(metrics(16),true)).toBe(false)
+ })
 })
