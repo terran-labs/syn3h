@@ -389,6 +389,18 @@ export class Shell implements System {
   private switchVehicle(kind: VehicleKind): void {
     if (kind === this.activeVehicleKind || (kind === 'buggy-syn3h' && this.activeVehicleKind === 'buggy')) return
     saveVehicleChoice({ ...this.choice, vehicleKind: kind })
+    // Swap in place when the game offers it: same spot, heading and speed, no reload. The swap
+    // returns the vehicle now being driven, or null when it cannot run (bots or networking
+    // cannot follow yet). On null, or if it throws, fall through to the reload below, which
+    // always works. main.ts re-points hints, audio and the readouts through setPlayer.
+    // Every buggy name is the buggy (the rule of canonicalVehicleKind in src/vehicles).
+    const family = (name: string) => name === 'jet' || name === 'hovercraft' || name === 'tank' ? name : 'buggy'
+    if (this.vehicleSwap) {
+      try {
+        const next = this.vehicleSwap(kind)
+        if (next && family(next.kind) === family(kind)) { this.choice.vehicleKind = kind; this.audio.cue('click'); return }
+      } catch (error) { console.warn('Vehicle swap failed; reloading instead', error) }
+    }
     try { sessionStorage.removeItem(RESUME_KEY) } catch { /* Storage is optional. */ }
     // The resume session saves the old vehicle again while the page unloads (pagehide, then
     // visibilitychange), which would undo this choice. These listeners are registered after
@@ -399,6 +411,9 @@ export class Shell implements System {
     const url = new URL(location.href); url.searchParams.delete('vehicle'); url.searchParams.set('autoplay', '1')
     location.replace(url)
   }
+  private vehicleSwap?: (kind: VehicleKind) => Vehicle | null
+  /** main.ts hands over the in-place vehicle swap. Without it the selector reloads the page. */
+  setVehicleSwap(swap: (kind: VehicleKind) => Vehicle | null): void { this.vehicleSwap = swap }
   setLoadingMessages(messages: string[]): void { bootLoading?.setMessages(messages) }
   setParamPanel(panel: ParamPanel): void { this.paramPanel = panel }
   showPanel(id: string): void {
@@ -1246,7 +1261,7 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
   const audio = new GameAudio(game.camera), shell = game.add(new Shell(game, audio))
   shell.setVehicleKind(player.kind); shell.setTerrain(terrain); audio.setPlayer(player,terrain)
   let activePlayer = player
-  const hints = new PlayHints(), height = new HeightAboveGround()
+  const hints = new PlayHints(); let height = new HeightAboveGround()
   // A colour picked in play repaints the local vehicle at once and, once settled, tells the room.
   shell.onTint = (body, accent, commit) => {
     activePlayer.setColors(body, accent)
@@ -1266,5 +1281,5 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
     if (hint) shell.showHint(hint)
   } })
   game.add(audio)
-  return { shell, audio, setPlayer(next) { activePlayer = next; hints.reset(); audio.setPlayer(next,terrain); shell.setVehicleKind(next.kind) }, dispose() { game.remove(bridge); game.remove(shell); game.remove(audio) } }
+  return { shell, audio, setPlayer(next) { activePlayer = next; height = new HeightAboveGround(); hints.reset(); audio.setPlayer(next,terrain); shell.setVehicleKind(next.kind) }, dispose() { game.remove(bridge); game.remove(shell); game.remove(audio) } }
 }
