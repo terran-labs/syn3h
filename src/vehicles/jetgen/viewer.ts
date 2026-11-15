@@ -34,12 +34,13 @@ async function main() {
   const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true
   const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(-5, 12, -4); sun.castShadow = true
   sun.shadow.mapSize.set(4096, 4096); sun.shadow.normalBias = .03; sun.shadow.bias = -.0003
-  Object.assign(sun.shadow.camera, { left: -36, right: 36, top: 16, bottom: -16 }); scene.add(sun)
+  Object.assign(sun.shadow.camera, { left: -36, right: 36, top: 26, bottom: -26 }); scene.add(sun)
   const floor = new THREE.Mesh(new THREE.CircleGeometry(40, 64), new THREE.ShadowNodeMaterial({ opacity: .38 }))
   floor.rotation.x = -Math.PI / 2; floor.position.y = GROUND_Y; floor.receiveShadow = true; scene.add(floor)
 
   const jets = JET_DESIGNS.map(d => new NextJet(d)), spacing = 9.5
-  jets.forEach((j, i) => { j.object.position.x = (i - (jets.length - 1) / 2) * -spacing; scene.add(j.object) })
+  // Rows of five: the first round in front, each later round behind it.
+  jets.forEach((j, i) => { j.object.position.set((i % 5 - 2) * -spacing, 0, Math.floor(i / 5) * 12); scene.add(j.object) })
   let current = 0, all = false, gearTarget = 0, gear = 0, autoGear = true, hoverLift = 1
   const name = document.querySelector('#name')!, blurb = document.querySelector('#blurb')!, nav = document.querySelector('#nav')!
   const buttons: HTMLButtonElement[] = []
@@ -48,13 +49,13 @@ async function main() {
     all = index < 0; current = Math.max(0, index)
     jets.forEach((j, i) => { j.object.visible = all || i === current })
     buttons.forEach((b, i) => b.classList.toggle('on', all ? i === jets.length : i === current))
-    name.textContent = all ? 'Five next-generation jets' : `${current + 1}. ${jets[current].design.name}`
+    name.textContent = all ? 'Next-generation jets' : `${current + 1}. ${jets[current].design.name}`
     blurb.textContent = all ? 'Generated from parameters, no model files. Pick one to look closer.' : jets[current].design.blurb
-    if (all) view(new THREE.Vector3(-.25, .5, -1), 52, new THREE.Vector3(0, 0, 0))
+    if (all) view(new THREE.Vector3(-.25, .6, -1), 62, new THREE.Vector3(0, 0, 5))
     else view(new THREE.Vector3(-.62, .42, -.8), 12, jets[current].object.position.clone().setY(-.1))
   }
   jets.forEach((j, i) => { const b = document.createElement('button'); b.textContent = `${i + 1} ${j.design.name}`; b.onclick = () => show(i); nav.append(b); buttons.push(b) })
-  const allButton = document.createElement('button'); allButton.textContent = 'All five'; allButton.onclick = () => show(-1); nav.append(allButton); buttons.push(allButton)
+  const allButton = document.createElement('button'); allButton.textContent = 'All'; allButton.onclick = () => show(-1); nav.append(allButton); buttons.push(allButton)
   const gearButton = document.createElement('button'); gearButton.textContent = 'Landing gear: auto'; nav.append(gearButton)
   gearButton.onclick = () => { if (autoGear) { autoGear = false; gearTarget = 1 } else if (gearTarget === 1) gearTarget = 0; else autoGear = true; gearButton.textContent = `Landing gear: ${autoGear ? 'auto' : gearTarget ? 'down' : 'up'}` }
   const picker = document.createElement('label'); picker.innerHTML = 'Paint <input type="color">'; nav.append(picker)
@@ -68,7 +69,7 @@ async function main() {
     /** For captures: fix the gear, the height above the floor and the camera. */
     pose(g: number, lift: number, dir: [number, number, number], distance: number) {
       autoGear = false; gear = gearTarget = g; hoverLift = lift
-      const target = all ? new THREE.Vector3(0, lift * .5, 0) : jets[current].object.position.clone().setY(lift - .1)
+      const target = all ? new THREE.Vector3(0, lift * .5, 5) : jets[current].object.position.clone().setY(lift - .1)
       jets.forEach(j => { j.object.position.y = lift }); view(new THREE.Vector3(...dir), distance, target)
     },
   }

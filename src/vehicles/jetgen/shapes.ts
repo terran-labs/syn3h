@@ -73,13 +73,13 @@ export function bodyRings(keys: number[][], x = 0, seg = 10, around = 28, mirror
  * root to tip; the span may curve, so a wing can crank up or drop into a tip pod.
  * Returns the parameter of each ring so the caller can split the tip off as chrome.
  */
-export function surfRings(keys: number[][], n = 22, around = 20, mirror = false): { rings: THREE.Vector3[][]; t: number[] } {
+export function surfRings(keys: number[][], n = 22, around = 20, mirror = false, roundTip = true): { rings: THREE.Vector3[][]; t: number[] } {
   const ts = Array.from({ length: n + 1 }, (_, j) => 1 - (1 - j / n) ** 1.5)
   const rings = ts.map(t => {
     const [x, y, z, ch, tk] = cr(keys, t), [x2, y2] = cr(keys, Math.min(1, t + .002)), [x1, y1] = cr(keys, Math.max(0, t - .002))
     let tx = x2 - x1, ty = y2 - y1; const l = Math.hypot(tx, ty) || 1; tx /= l; ty /= l
     // Round the tip off instead of ending in a flat slab.
-    const r = t > .92 ? Math.max(.12, Math.sqrt(1 - ((t - .92) / .08) ** 2)) : 1, c = ch * r, z0 = z + (ch - c) * .5, ring: THREE.Vector3[] = []
+    const r = roundTip && t > .92 ? Math.max(.12, Math.sqrt(1 - ((t - .92) / .08) ** 2)) : 1, c = ch * r, z0 = z + (ch - c) * .5, ring: THREE.Vector3[] = []
     for (let i = 0; i < around; i++) {
       const a = i / around * Math.PI * 2, u = (1 - Math.cos(a)) / 2, h = tk * c * 1.3 * Math.sqrt(u) * (1 - u) * Math.sign(Math.sin(a))
       ring.push(new V((mirror ? -1 : 1) * (x - ty * h), y + tx * h, z0 + u * c))
@@ -145,9 +145,10 @@ export class Builder {
   }
 
   /** Wing, fin or canard. `tipFrom` 0..1 turns the outer part chrome. */
-  surf(keys: number[][], o: { mat?: Mat; tip?: Mat; tipFrom?: number; mirror?: boolean } = {}): void {
+  /** `round: false` keeps the tip full size, for surfaces that meet their mirror image. */
+  surf(keys: number[][], o: { mat?: Mat; tip?: Mat; tipFrom?: number; mirror?: boolean; round?: boolean } = {}): void {
     for (const m of o.mirror === false ? [false] : [false, true]) {
-      const { rings, t } = surfRings(keys, 24, 22, m)
+      const { rings, t } = surfRings(keys, 24, 22, m, o.round !== false)
       const k = o.tipFrom === undefined ? rings.length - 1 : Math.max(1, t.findIndex(v => v >= o.tipFrom!))
       this.add(o.mat ?? 'paint', loft(rings.slice(0, k + 1), true, k === rings.length - 1))
       if (k < rings.length - 1) this.add(o.tip ?? 'chrome', loft(rings.slice(k), false, true))
