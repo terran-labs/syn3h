@@ -611,3 +611,25 @@ covers header visibility, internal body space, tooltip placement, optional diagn
 Escape behavior and Exit world. `UX_VIEW=desktop|ipad|phone|landscape` selects one viewport.
 Run through the currently approved absolute heavy-job wrapper. Lobby drop, Custom planet,
 animated logo and cursor checks remain part of the regression gate after integration.
+
+## Recipe population lights
+
+The lobby polls the public aggregate `/presence` feed every 30 seconds while visible,
+with one request in flight and a ten-second request timeout. It stops on tab hiding,
+play, descent, the join overlay and attract mode. Counts expire 90 seconds after the
+oldest report, independently of the polling schedule. Failed, invalid or stale data
+shows “Population unknown”; a fresh empty response means zero connected players.
+
+Lights represent connected humans across rooms using a recipe, including spectators.
+They do not represent bots or joinable room identities. At most twelve lights are drawn
+per planet; the label gives the exact “N connected across M rooms” total. Custom has no
+population of its own. Planet taps retain the existing room and direct descent.
+
+`presence.test.ts` covers payload validation, report freshness, cancellation and polling.
+`presence.mjs` supplies controlled public responses to check labels, display state,
+play/reopen behavior and unchanged room routing. It does not validate the server endpoint.
+
+`presence-live.mjs` starts an isolated, temporary Vite proxy and room server, connects
+humans in two separate Alpine rooms, and checks normal-entry counts in Chrome and WebKit.
+It uses the real same-origin endpoint and saves captures under `artifacts/presence`.
+Run every browser check through the absolute trunk heavy-job helper.

@@ -10,7 +10,7 @@ binding = "ASSETS"
 # /status (how many people are playing, counts only) is answered by the Worker too.
 # /ws never matches a file, so it always reaches the Worker; listing it keeps that true even
 # if SPA style not found handling is enabled later.
-run_worker_first = ["/ws", "/status"]
+run_worker_first = ["/ws", "/status", "/presence"]
 
 [[durable_objects.bindings]]
 name = "ROOMS"

@@ -8,11 +8,33 @@ import { createServer } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
 import { type Peer, Room } from './room'
 import { roomName } from './util'
+import { RoomRegistry } from './registry'
+import { PresenceReporter } from './presenceReporter'
 
 const port = Number(process.env.PORT ?? 8787)
 const rooms = new Map<string, Room>()
+const registry = new RoomRegistry()
+const reporters = new Map<string, PresenceReporter>()
+function report(room: Room): void {
+  let reporter = reporters.get(room.name)
+  if (!reporter) {
+    reporter = new PresenceReporter(async r => { registry.report(r.room, r.players, Date.now(), r.recipeId) })
+    reporters.set(room.name, reporter)
+  }
+  const { seed, ...presence } = room.presence()
+  void reporter.report({ room: room.name, ...presence }, seed)
+}
 
 const http = createServer((req, res) => {
+  const path = (req.url ?? '').split('?')[0]
+  if (path === '/presence' || path === '/status') {
+    if (req.method !== 'GET') { res.writeHead(405, { allow: 'GET' }); res.end('GET only'); return }
+  }
+  if (path === '/presence') {
+    res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' })
+    res.end(JSON.stringify(registry.presence(Date.now())))
+    return
+  }
   // The same answer the Worker gives at /status: counts only (held places are not connected).
   if ((req.url ?? '').split('?')[0] === '/status') {
     const live = [...rooms.values()].map((r) => r.playerCount - r.heldCount).filter((n) => n > 0)
@@ -59,9 +81,11 @@ function attach(ws: WebSocket, name: string): void {
     } else {
       r.receive(peer, data.toString())
     }
+    report(r)
   })
   ws.on('close', () => {
     r.disconnect(peer)
+    report(r)
     if (r.connectionCount === 0 && rooms.get(name) === r) rooms.delete(name)
   })
   ws.on('error', () => ws.close())
