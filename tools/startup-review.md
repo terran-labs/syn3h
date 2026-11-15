@@ -175,9 +175,66 @@ Finer phases inside `main.ts` would need marks there. Not needed for the conclus
 Orchestrator wants them, wrap `createTerrain`, `createEnvironment`, `createVehicle` and
 `initGameShell` in `timeStartup` from `./core/diagnostics`.
 
+## Task 2: bounded graphics startup and device loss
+
+**Graphics startup can no longer hang, and a lost GPU shows a message with a Reload
+button.** It is on by default because healthy devices take the same path as before. The
+deadline only fires on a stall. The slowest healthy renderer start I measured was 15 ms at
+6x CPU throttling; the deadline is 8 seconds.
+
+- The quality adapter probe (`src/core/quality.ts`) used to await `requestAdapter` with no
+  limit, before the renderer existed. It now uses `probeAdapter` with the deadline. A
+  stalled probe sends the renderer straight to WebGL 2.
+- `startRenderer` (`src/core/renderOptions.ts`) handles the renderer start. If `renderer.init()` stalls past the deadline or rejects,
+  the game abandons the WebGPU renderer and starts WebGL 2 on a fresh clone of the game
+  canvas, in case the stalled attempt already claimed the old one. If the stalled renderer
+  finishes later, it is disposed. When there is no adapter or the device request rejects,
+  three.js falls back by itself, as before; the reason is now recorded.
+- Each fallback writes its reason to `window.syn3hStartup.fallbackReason`, to a console
+  warning and to the `?diag=1` overlay (`fallback:` line).
+- If the renderer's WebGPU device or WebGL context is lost, `showRendererLost` puts a
+  full-screen notice over the game with the reason and a Reload button. This is plain DOM
+  created from `src/core`, so `src/ui` is unchanged. Three's own handler still runs first.
+  Device loss with reason `destroyed` (our own dispose) is ignored by three and never reaches it.
+  The lobby's deliberate context releases are on other canvases and do not trigger it.
+- `?gpudeadline=MS` changes the deadline; `?gpudeadline=0` turns it off. This is the escape
+  hatch if a slow but healthy device ever trips it.
+
+Tests (`tests/core/renderer-startup.test.ts`, with fakes): deadline, value, rejection and
+timeout handling; the URL parameter; probe results for no WebGPU, stalled, rejected
+(synchronous and asynchronous), missing, software fallback and available adapters; healthy
+start unchanged; `?webgl=1` unchanged; stalled init falls back on a fresh canvas; a late
+finishing stalled renderer is disposed; rejected init falls back; three's own fallback is
+recorded; a stalled probe skips WebGPU; a WebGL failure after that still surfaces as an
+error; one loss notice with a working reload action. tests/core: 42 passed.
+
+Real browsers (`tools/startup-fallback-check.mjs`, load 7.9): in both Chrome and WebKit
+2388, all five cases passed with no page errors: healthy start on WebGPU with the overlay's
+startup block, stalled adapter probe to WebGL 2 (first draw about 3.0 s with a 1.5 s
+deadline), stalled device request to WebGL 2 with one game canvas, a real WebGL context loss
+(`WEBGL_lose_context`) showing the notice, and a simulated WebGPU loss callback showing the
+notice. Screenshots are in `/tmp/startup-fallback/`. A real WebGPU device loss cannot be
+triggered from a page without `destroy()`, which three ignores by design, so that path is
+tested only through the callback.
+
+## Exact lines wanted in files this lane does not own
+
+- None are needed for Task 1 or Task 2.
+- Optional, Orchestrator, `src/main.ts`: for finer world build phases, import `timeStartup`
+  from `./core/diagnostics` and write
+  `const terrain = await timeStartup('terrain', () => createTerrain(game, worldSeed.value))`,
+  and the same around `createEnvironment`, `createVehicle` and `initGameShell`.
+- Optional, Orchestrator, demo hosting: serve a production build rather than `vite` for the
+  demo link. `tools/startup-serve.mjs` shows the 20 lines it takes to add gzip to a static
+  server, if `tools/serve-stable.mjs` should match Cloudflare.
+- Optional, UX, `index.html` or `src/ui/LoadingScreen.ts`: some words on the veil after a
+  few seconds, so a slow load does not look like a dead one.
+
 ## Still unproven on real hardware
 
 - The iPad's throughput to the preview host. Everything above is a shaped link on a Mac.
 - Safari's shader compile time on the iPad's GPU. WebKit on macOS uses the same Metal
   compiler family, but not the same chip or driver.
 - Whether iPadOS Safari keeps compiled shaders between visits the way macOS WebKit did here.
+- The fallback and loss paths on iPadOS. They are tested with injected stalls and a forced
+  WebGL context loss on macOS, not with a real iPad GPU fault.

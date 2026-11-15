@@ -10,7 +10,8 @@
  * Systems register with `game.add(system)`. Order of registration is order of execution.
  */
 import * as THREE from 'three/webgpu'
-import { installRenderDiagnostics, recordStartupPhase, startupTiming, timeStartup } from './diagnostics'
+import { installRenderDiagnostics, recordStartupPhase, showRendererLost, startupTiming, timeStartup } from './diagnostics'
+import { gpuDeadlineMs, startRenderer } from './renderOptions'
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
 import { QualityController, reportLoading, type FrameMetrics } from './quality'
@@ -61,7 +62,7 @@ export class Game {
   private buildMark = 0
   private startupFrames = 0
   private loopStart = 0
-  constructor(readonly canvas: HTMLCanvasElement) {
+  constructor(public canvas: HTMLCanvasElement) {
     // From Game.ts running to here: the rest of the modules main.ts imports run.
     recordStartupPhase('run remaining modules to main()', startupTiming.phases.at(-1)?.endMs ?? 0)
     this.observeRenderer = installRenderDiagnostics(this)
@@ -81,11 +82,22 @@ export class Game {
     // `?webgl=1` forces the WebGL 2 backend: a way round a WebGPU implementation that
     // initialises but draws nothing (first seen as a black screen on iPadOS Safari).
     const forceWebGL = new URLSearchParams(location.search).has('webgl')
-    this.renderer = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: true, forceWebGL })
-    this.observeRenderer?.()
-    await timeStartup('renderer.init (adapter, device, context)', () => this.renderer.init())
+    // WebGPU startup is bounded: a stall, a rejection or a missing adapter ends in WebGL 2
+    // with the reason recorded in diagnostics, never a hang. Healthy devices are unchanged.
+    const probe = this.quality.adapterProbe
+    const started = await timeStartup('renderer.init (adapter, device, context)', () => startRenderer((webgl, freshCanvas) => {
+      if (freshCanvas) this.replaceCanvas()
+      this.renderer = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: true, forceWebGL: webgl })
+      this.observeRenderer?.()
+      return this.renderer
+    }, { forceWebGL, deadlineMs: gpuDeadlineMs(location.search), probe, skipWebGPU: probe === 'timeout' ? 'the WebGPU adapter probe stalled; started WebGL 2' : undefined }))
+    this.renderer = started.renderer
+    if (started.fallbackReason) { startupTiming.fallbackReason = started.fallbackReason; console.warn(`Syn3h: ${started.fallbackReason}`) }
     this.backend = (this.renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'webgpu' : 'webgl'
     startupTiming.backend = this.backend
+    // Device or context loss leaves a frozen canvas; tell the player and offer a reload.
+    const lost = this.renderer.onDeviceLost
+    this.renderer.onDeviceLost = info => { lost.call(this.renderer, info); showRendererLost(info) }
     this.quality.attachRenderer(this.renderer)
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.shadowMap.enabled = true
@@ -101,6 +113,13 @@ export class Game {
     resize()
     reportLoading('world', 0.7)
     this.buildMark = performance.now()
+  }
+
+  /** Swap in a clean canvas, for a WebGL 2 start after a WebGPU attempt may have claimed this one. */
+  private replaceCanvas(): void {
+    const fresh = this.canvas.cloneNode(false) as HTMLCanvasElement
+    this.canvas.replaceWith(fresh)
+    this.canvas = fresh
   }
 
   /**
