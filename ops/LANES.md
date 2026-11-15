@@ -14,10 +14,10 @@ refreshes the thread column on each sweep.
 | UX (Codex 3) | `feat/audio` | Running: brighter first impression | Lobby, HUD, menus, demo features, `src/audio/**`, `src/ui/data/**`, sky colour and time of day defaults |
 | Multiplayer | `feat/net` | Started 4:35pm (Claude 1, Opus) | Networking, room server, modes, deployment |
 | Syn3h buggy | `veh/buggy` | Started 4:34pm (Claude 1, Opus) | `Syn3hBuggy.ts`, its skin, model, test and `buggy.*` defaults |
-| Classic buggy | `veh/classic-buggy` | Started 4:35pm (Claude 1, Opus) | See its `VEHICLE-BRIEF.md` |
+| Classic buggy | `veh/classic-buggy` | Paused by the owner at 4:57pm | See its `VEHICLE-BRIEF.md` |
 | Jet | `veh/jet` | Started 4:35pm (Claude 1, Opus) | See its `VEHICLE-BRIEF.md` |
 | Hovercraft | `veh/hovercraft` | Started 4:35pm (Claude 1, Opus) | See its `VEHICLE-BRIEF.md` |
-| Tank | `veh/tank` | Started 4:35pm (Claude 1, Opus) | See its `VEHICLE-BRIEF.md` |
+| Tank | `veh/tank` | Paused by the owner at 4:57pm | See its `VEHICLE-BRIEF.md` |
 
 Retired branches, fully merged and far behind: `feat/sky`, `feat/terrain`, `feat/buggy`.
 

@@ -2,6 +2,18 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Saturday 14 November, 4:57pm Pacific: pause the classic buggy and tank leads
+
+**Decided.** The classic buggy and tank lead threads are paused for tonight. Their branches
+and threads are kept.
+
+**Why.** Machine load reached 50 to 69 on 12 cores with ten lanes running. Neither vehicle
+is on the demo's critical path.
+
+**What it changes.** Eight lanes remain. Both paused leads were told to stop their
+processes, commit work in progress and report what they found. Only the owner or the
+Foreman resumes them. Heavy jobs on all lanes go through `tools/heavy.sh`, three at a time.
+
 ## Saturday 14 November, 4:45pm Pacific: the stable channel is production on Cloudflare
 
 **Decided.** The frozen demo build is called the production release and is served from
