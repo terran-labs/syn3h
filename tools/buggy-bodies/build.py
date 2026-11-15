@@ -156,7 +156,8 @@ def deform(co, v):
     if sc:
         w = max(bump(u, 0.165, 0.17), bump(u, 0.82, 0.17)) * (1 - smoothstep(0.38, 0.62, h))
         side = 1 if x >= 0 else -1
-        x = side * max(min(abs(x), 0.58), abs(x) * (1 - sc * w)) if abs(x) > 0.58 else x
+        # Pull toward the mount line by a fraction, so the flank stays a curve, not a flat cut.
+        if abs(x) > 0.58: x = side * (0.58 + (abs(x) - 0.58) * (1 - min(0.85, sc * 2.6) * w))
     # Hood valley: drop the centre of the hood between the front fenders.
     z -= s.get('hood_valley', 0) * bump(u, 0.2, 0.25) * bump(x, 0, 0.38) * smoothstep(0.4, 0.9, h)
     # Roundness: push the mid height outward a little for a fuller, more inflated section.
@@ -216,22 +217,33 @@ def inside(poly, p):
     return hit
 
 
-def cut_rear(bm, poly, side, slot):
+def cut_rear(bm, poly, side, slot, front=False):
     """
     Cut the rear of the body along a polygon drawn in the rear view and give the faces inside
     it a material. `poly` is (x, z) in metres; side 1 or -1 mirrors it onto that side, side 0
     uses it as drawn (for shapes that cross the centre line).
     """
     sign = side or 1
-    rear = lambda f: f.calc_center_median().y > 1.25 and f.normal.y > 0.05 and (side == 0 or f.calc_center_median().x * side > 0)
+    if front:
+        rear = lambda f: f.calc_center_median().y < -1.3 and f.normal.y < -0.05 and (side == 0 or f.calc_center_median().x * side > 0)
+    else:
+        rear = lambda f: f.calc_center_median().y > 1.25 and f.normal.y > 0.05 and (side == 0 or f.calc_center_median().x * side > 0)
+    # Only faces under the outline are cut. A cutting plane is endless, so without this every
+    # edge of the outline would slice the whole end of the car into slivers.
+    lo_x, hi_x = min(p[0] for p in poly) - 0.01, max(p[0] for p in poly) + 0.01
+    lo_z, hi_z = min(p[1] for p in poly) - 0.01, max(p[1] for p in poly) + 0.01
+    def under(f):
+        xs = [sign * v.co.x for v in f.verts]; zs = [v.co.z for v in f.verts]
+        return max(xs) > lo_x and min(xs) < hi_x and max(zs) > lo_z and min(zs) < hi_z
     for (x1, z1), (x2, z2) in zip(poly, poly[1:] + poly[:1]):
-        faces = [f for f in bm.faces if rear(f)]
+        faces = [f for f in bm.faces if rear(f) and under(f)]
         geom = list({v for f in faces for v in f.verts}) + list({e for f in faces for e in f.edges}) + faces
         # Each edge is a line in the rear view, so a plane parallel to the car's length.
         along = Vector((sign * (x2 - x1), 0, z2 - z1))
+        if along.length < 1e-6: continue
         bmesh.ops.bisect_plane(bm, geom=geom, dist=1e-5, plane_co=Vector((sign * x1, 0, z1)), plane_no=Vector((0, 1, 0)).cross(along).normalized(), clear_inner=False, clear_outer=False)
     # Cuts leave many-sided faces whose centre can fall outside them: split before testing.
-    bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if rear(f) and len(f.verts) > 3])
+    bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if rear(f) and under(f) and len(f.verts) > 3])
     for f in bm.faces:
         c = f.calc_center_median()
         if rear(f) and inside(poly, (sign * c.x, c.z)): f.material_index = slot
@@ -246,6 +258,32 @@ def grown(poly, by):
     """A polygon enlarged about its centroid, for a trim surround."""
     cx = sum(p[0] for p in poly) / len(poly); cz = sum(p[1] for p in poly) / len(poly)
     return [(cx + (x - cx) * by, cz + (z - cz) * by) for x, z in poly]
+
+
+def capsule(x0, x1, z0, z1, n=5, slant=0.0):
+    """A rounded bar as a rear or front view polygon; slant leans its ends (metres at the top)."""
+    r = (z1 - z0) / 2; zc = (z0 + z1) / 2
+    pts = []
+    for k in range(n + 1):
+        a = -math.pi / 2 + math.pi * k / n
+        pts.append((x1 - r + r * math.cos(a), zc + r * math.sin(a)))
+    for k in range(n + 1):
+        a = math.pi / 2 + math.pi * k / n
+        pts.append((x0 + r + r * math.cos(a), zc + r * math.sin(a)))
+    return [(x + slant * (z - zc) / max(r, 1e-6) * 0.5, z) for x, z in pts]
+
+
+def ellipse(cx, cz, rx, rz, n=12):
+    return [(cx + rx * math.cos(2 * math.pi * k / n), cz + rz * math.sin(2 * math.pi * k / n)) for k in range(n)]
+
+
+def cut_lights(me, shapes, slot_of, front):
+    bm = bmesh.new(); bm.from_mesh(me)
+    for shape in shapes:
+        for side in ((0,) if shape.get('centre') else (1, -1)):
+            cut_rear(bm, shape['poly'], side, slot_of(shape['material']), front=front)
+    bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
+    bm.to_mesh(me); bm.free()
 
 
 def grow_tail_lights(me, t, slot_of):
@@ -266,6 +304,24 @@ def grow_tail_lights(me, t, slot_of):
         for side in ((0,) if shape.get('centre') else (1, -1)):
             cut_rear(bm, shape['poly'], side, slot_of(shape['material']))
     bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
+    bm.to_mesh(me); bm.free()
+
+
+def clean(me, c):
+    """
+    Tidy a game-resolution body: weld stray duplicates, drop collapsed faces, make normals
+    consistent, and mark creases sharper than `sharp` degrees so the exported normals split
+    there. Without the split, smooth shading smears light across every crease, which is what
+    made the reshaped bodies look lumpy.
+    """
+    bm = bmesh.new(); bm.from_mesh(me)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts[:], dist=c.get('weld', 2e-4))
+    bmesh.ops.dissolve_degenerate(bm, edges=bm.edges[:], dist=1e-5)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    limit = math.radians(c.get('sharp', 42))
+    for e in bm.edges:
+        fs = e.link_faces
+        e.smooth = not (len(fs) == 2 and (fs[0].normal.angle(fs[1].normal, 0) > limit or fs[0].material_index != fs[1].material_index and c.get('split_materials', True)))
     bm.to_mesh(me); bm.free()
 
 
@@ -413,10 +469,27 @@ def tube(bm, p0, p1, r0, r1, n=6):
     bm.faces.new(rings[0][::-1]); bm.faces.new(rings[1])
 
 
+def coilover(piece, bottom, top, spring=0.058, rod=0.022, coils=5):
+    """A damper rod with a stack of rings standing in for the coil spring, and end collars."""
+    b, t = Vector(bottom), Vector(top)
+    piece('Chrome', lambda bm: tube(bm, b, t, rod, rod))
+    piece('Chrome', lambda bm: tube(bm, b.lerp(t, 0.1), b.lerp(t, 0.15), spring * 1.15, spring * 1.15, n=8))
+    piece('Chrome', lambda bm: tube(bm, b.lerp(t, 0.82), b.lerp(t, 0.87), spring * 1.15, spring * 1.15, n=8))
+    for k in range(coils):
+        f0 = 0.17 + (0.63 / coils) * k
+        piece('Accent', lambda bm, f0=f0: tube(bm, b.lerp(t, f0), b.lerp(t, f0 + 0.63 / coils * 0.62), spring, spring, n=8))
+
+
+# Top of each shock in the strut frame, per design: the body fitting for it is built there.
+SHOCK_TOPS = {}
+
+
 def make_strut(kind, mats):
     """One strut in the strut frame, as a mesh with material slots [StrutMetal, Chrome, Accent]."""
     L = STRUT_SPAN
     parts = []   # (bmesh builder, material name)
+    tops = SHOCK_TOPS.setdefault(kind, [])
+    tops.clear()
 
     def piece(material, build):
         bm = bmesh.new(); build(bm); parts.append((bm, material))
@@ -449,6 +522,34 @@ def make_strut(kind, mats):
         piece('StrutMetal', lambda bm: loft(bm, [(0.02, 0.14, 0.06, 0, 0), (0.3, 0.26, 0.055, 0, 0), (0.6, 0.48, 0.07, 0, 0), (L, 0.66, 0.11, 0, 0)]))
         piece('Accent', lambda bm: loft(bm, [(0.1, 0.03, 0.068, 0, 0), (0.62, 0.05, 0.08, 0, 0)], n=6, cap=False))
         piece('Chrome', lambda bm: loft(bm, [(-0.03, 0.2, 0.11, 0, 0), (0.04, 0.2, 0.11, 0, 0)]))
+    elif kind == 'co-aarm':
+        # A broad A-arm: two deep arms spread wide at the body with a web between them, and one
+        # coilover from the arm near the hub up to a tower on the fender.
+        for sx in (-1, 1):
+            piece('StrutMetal', lambda bm, sx=sx: loft(bm, [(0.02, 0.13, 0.11, sx * 0.05, -0.02), (0.3, 0.14, 0.1, sx * 0.13, -0.02), (L, 0.17, 0.12, sx * 0.34, -0.02)]))
+        piece('StrutMetal', lambda bm: loft(bm, [(0.1, 0.2, 0.035, 0, -0.03), (0.5, 0.42, 0.03, 0, -0.03), (0.74, 0.62, 0.03, 0, -0.03)], n=6))
+        piece('Chrome', lambda bm: loft(bm, [(-0.04, 0.26, 0.16, 0, 0), (0.07, 0.26, 0.16, 0, 0)]))
+        tops.append((0, 0.33, 0.6)); coilover(piece, (0, 0.05, 0.2), tops[-1])
+    elif kind == 'co-box':
+        # A heavy box section arm, tapered, with a raised rib, and a big single coilover.
+        piece('StrutMetal', lambda bm: loft(bm, [(0.02, 0.24, 0.13, 0, -0.02), (0.3, 0.3, 0.12, 0, -0.02), (0.6, 0.46, 0.12, 0, -0.02), (L, 0.6, 0.14, 0, -0.02)], n=8))
+        piece('Accent', lambda bm: loft(bm, [(0.12, 0.05, 0.15, 0, -0.01), (0.7, 0.07, 0.15, 0, -0.01)], n=6))
+        piece('Chrome', lambda bm: loft(bm, [(-0.04, 0.3, 0.17, 0, 0), (0.06, 0.3, 0.17, 0, 0)]))
+        tops.append((0, 0.35, 0.58)); coilover(piece, (0, 0.07, 0.2), tops[-1], spring=0.07, rod=0.026)
+    elif kind == 'co-twin':
+        # A large aerofoil lower arm with a pair of shocks, one ahead of and one behind the axle.
+        piece('StrutMetal', lambda bm: loft(bm, [(0.02, 0.28, 0.1, 0, -0.02), (0.28, 0.3, 0.09, 0, -0.02), (0.55, 0.5, 0.1, 0, -0.02), (L, 0.72, 0.13, 0, -0.02)]))
+        piece('Chrome', lambda bm: loft(bm, [(-0.04, 0.3, 0.16, 0, 0), (0.06, 0.3, 0.16, 0, 0)]))
+        for sx in (-1, 1):
+            tops.append((sx * 0.17, 0.32, 0.6)); coilover(piece, (sx * 0.08, 0.04, 0.22), tops[-1], spring=0.045, rod=0.018)
+    elif kind == 'co-fork':
+        # Two thick round tubes forking from the hub to the body, braced, with one big coilover.
+        for sx in (-1, 1):
+            piece('StrutMetal', lambda bm, sx=sx: tube(bm, (sx * 0.05, -0.02, 0.03), (sx * 0.3, -0.02, L), 0.06, 0.075, n=8))
+        piece('StrutMetal', lambda bm: tube(bm, (-0.16, -0.02, 0.38), (0.16, -0.02, 0.38), 0.035, 0.035))
+        piece('StrutMetal', lambda bm: tube(bm, (-0.25, -0.02, 0.66), (0.25, -0.02, 0.66), 0.035, 0.035))
+        piece('Chrome', lambda bm: loft(bm, [(-0.04, 0.28, 0.17, 0, 0), (0.07, 0.28, 0.17, 0, 0)]))
+        tops.append((0, 0.36, 0.58)); coilover(piece, (0, 0.03, 0.38), tops[-1], spring=0.068, rod=0.026)
     else:
         raise ValueError(kind)
     names = ['StrutMetal', 'Chrome', 'Accent']
@@ -483,14 +584,14 @@ def corners():
             yield Vector((MOUNT.x * sx, MOUNT.y * sy, MOUNT.z)), Vector((HUB.x * sx, HUB.y * sy, HUB.z))
 
 
-def make_sockets(kind, body_obj, mats):
+def make_sockets(kind, body_obj, mats, towers=(), size=1.0, lamps=None):
     """
     Where each strut meets the body: a fitting on the body side so the linkage reads as bolted
     to the structure, not poked through the paint. Found by casting from the wheel hub toward
     the mount onto the finished body, so it follows whatever shape the body has.
     """
     tree, bm_body = bvh_of(body_obj)
-    names = ['Chrome', 'Dark', 'Body', 'Accent']
+    names = ['Chrome', 'Dark', 'Body', 'Accent', 'Headlights']
     me = bpy.data.meshes.new('Sockets')
     for n in names: me.materials.append(mats[n])
     bm = bmesh.new()
@@ -506,6 +607,37 @@ def make_sockets(kind, body_obj, mats):
     def disc(ring, material, reverse=False):
         f = bm.faces.new(ring[::-1] if reverse else ring); f.material_index = names.index(material)
 
+    # Headlights as clean new parts: a domed lens in a chrome bezel set over each nose duct. The
+    # original lamp is a few faces deep inside the duct; repainting the duct to enlarge it gave a
+    # ragged outline, so the lens is its own geometry and covers the duct mouth.
+    if lamps:
+        rx, rz = lamps['rx'], lamps['rz']
+        for side in (1, -1):
+            cx, cz = side * lamps.get('x', 0.62), lamps.get('z', 0.33)
+            # Rays from in front of the car onto the bezel line find the duct's rim and its lean.
+            rim = []
+            for k in range(12):
+                a = 2 * math.pi * k / 12
+                hit, n, _, _ = tree.ray_cast(Vector((cx + rx * 1.15 * math.cos(a), -4, cz + rz * 1.15 * math.sin(a))), Vector((0, 1, 0)))
+                if hit is not None: rim.append((hit, n))
+            if len(rim) < 6: continue
+            # A plane through the rim hits (least squares on y = a x + b z + c) gives the lens's seat.
+            import numpy as np
+            A = np.array([[h.x, h.z, 1] for h, _ in rim]); yv = np.array([h.y for h, _ in rim])
+            ax_, bz_, c_ = np.linalg.lstsq(A, yv, rcond=None)[0]
+            normal = Vector((ax_, -1, bz_)).normalized()           # faces forward
+            centre = Vector((cx, ax_ * cx + bz_ * cz + c_, cz)) + normal * 0.012
+            right = normal.cross(Vector((0, 0, 1))).normalized(); upv = right.cross(normal)
+            def lens_ring(r, out):
+                return [bm.verts.new(centre + right * (rx * r * math.cos(2 * math.pi * k / 14)) + upv * (rz * r * math.sin(2 * math.pi * k / 14)) + normal * out) for k in range(14)]
+            b0, b1, b2 = lens_ring(1.22, -0.03), lens_ring(1.2, 0.012), lens_ring(1.0, 0.018)
+            skin(b0, b1, 'Chrome'); skin(b1, b2, 'Chrome')
+            l1, l2 = lens_ring(0.72, 0.045), lens_ring(0.36, 0.06)
+            skin(b2, l1, 'Headlights'); skin(l1, l2, 'Headlights'); disc(l2, 'Headlights')
+            if lamps.get('halo'):
+                # A thin chrome ring standing on the lens, a halo around the bright centre.
+                h0, h1, h2 = lens_ring(0.62, 0.05), lens_ring(0.56, 0.062), lens_ring(0.5, 0.054)
+                skin(h0, h1, 'Chrome'); skin(h1, h2, 'Chrome')
     for mount, hub in corners():
         d = (hub - mount).normalized()
         hit, normal, _, _ = tree.ray_cast(hub, -d)
@@ -526,8 +658,9 @@ def make_sockets(kind, body_obj, mats):
             skin(rim0, rim1, 'Chrome'); skin(rim1, well, 'Dark'); disc(well, 'Dark')
         elif kind == 'pod':
             # A chrome cone reaching out from the body toward the wheel, as in the studio renders.
-            base = ellipse_ring(hit - d * 0.08, d, chord, e, 0.26, 0.17); mid = ellipse_ring(hit + d * 0.07, d, chord, e, 0.19, 0.12)
-            tip = ellipse_ring(hit + d * 0.17, d, chord, e, 0.13, 0.085); mouth = ellipse_ring(hit + d * 0.15, d, chord, e, 0.1, 0.06)
+            k = size
+            base = ellipse_ring(hit - d * 0.08, d, chord, e, 0.26 * k, 0.17 * k); mid = ellipse_ring(hit + d * 0.07, d, chord, e, 0.19 * k, 0.12 * k)
+            tip = ellipse_ring(hit + d * 0.17, d, chord, e, 0.13 * k, 0.085 * k); mouth = ellipse_ring(hit + d * 0.15, d, chord, e, 0.1 * k, 0.06 * k)
             skin(base, mid, 'Chrome'); skin(mid, tip, 'Chrome'); skin(tip, mouth, 'Dark'); disc(mouth, 'Dark')
         elif kind == 'pocket':
             # A deep dark pocket with a slim chrome edge: the frame disappears into the body.
@@ -542,6 +675,25 @@ def make_sockets(kind, body_obj, mats):
             skin(base, mid, 'Body'); skin(mid, lip, 'Body'); skin(lip, mouth, 'Accent'); disc(mouth, 'Dark')
         else:
             raise ValueError(kind)
+        # Shock towers: where each shock's top meets the body, a paint coloured blister rises
+        # from the fender and carries a chrome cup, so the spring has something to push on.
+        m = strut_matrix(hub, mount)
+        for top in towers:
+            T = m @ Vector((top[0], top[1], top[2]))
+            p, n, _, _ = tree.find_nearest(T)
+            if (T - p).dot(n) < -0.2: continue
+            axis = (m.to_3x3() @ Vector((0, 0.72, 0.69))).normalized()   # roughly along the shock
+            u1 = n.cross(Vector((0, 1, 0))); u1 = u1.normalized() if u1.length > 1e-3 else Vector((1, 0, 0))
+            u2 = n.cross(u1)
+            rings = []
+            for t, (r, h) in enumerate([(0.17, -0.02), (0.14, 0.035), (0.09, 0.07)]):
+                rings.append([bm.verts.new(p + n * h + (u1 * math.cos(2 * math.pi * k / 10) + u2 * math.sin(2 * math.pi * k / 10)) * r) for k in range(10)])
+            skin(rings[0], rings[1], 'Body'); skin(rings[1], rings[2], 'Body'); disc(rings[2], 'Dark')
+            a1 = axis.cross(n); a1 = a1.normalized() if a1.length > 1e-3 else u1
+            a2 = axis.cross(a1)
+            cup = lambda c, r: [bm.verts.new(c + (a1 * math.cos(2 * math.pi * k / 10) + a2 * math.sin(2 * math.pi * k / 10)) * r) for k in range(10)]
+            c0, c1, c2 = cup(T - axis * 0.05, 0.085), cup(T + axis * 0.03, 0.085), cup(T + axis * 0.055, 0.045)
+            skin(c0, c1, 'Chrome'); skin(c1, c2, 'Chrome'); disc(c2, 'Chrome')
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
     bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
     bm.to_mesh(me); bm.free(); bm_body.free()
@@ -585,6 +737,8 @@ VIEWS = {
     'tail': ((0.35, 1.0, 0.3), (0.0, 1.7, 0.4), 1.6),
     'nose': ((0.0, -1.0, 0.22), (0, 0, 0.3), 3.0),
     'link': ((0.0, -1.0, 0.1), (0.72, -1.3, 0.02), 0.55),
+    'corner': ((0.75, -1.0, 0.5), (0.8, -1.3, 0.1), 0.95),
+    'face': ((0.25, -1.0, 0.25), (0.0, -1.7, 0.3), 1.5),
     'linktop': ((0.5, -0.5, 1.0), (0.85, -1.3, 0.0), 0.8),
 }
 
@@ -642,12 +796,17 @@ def build(v):
             if key in trim: p.material_index = slot(trim[key])
         elif p.material_index == tail_i and 'tail' in trim:
             p.material_index = slot(trim['tail'])
+    head_i = body_slots.index('Headlights')
+    slot_of = lambda name: tail_i if name == 'TailLights' else head_i if name == 'Headlights' else slot(name)
     if v.get('tail'):
-        grow_tail_lights(body_me, v['tail'], lambda name: tail_i if name == 'TailLights' else slot(name))
+        grow_tail_lights(body_me, v['tail'], slot_of)
+    if v.get('head'):
+        cut_lights(body_me, v['head'], slot_of, front=True)
     apply_shape(body_me, v)
     # GAME=1 skips the subdivision: the shape changes are smooth deformations of the original
     # game-resolution mesh, so the body keeps its form at the original triangle count.
     if not (os.environ.get('GAME') or v.get('game')): refine(body_me, v.get('refine', {}))
+    if v.get('clean'): clean(body_me, v['clean'])
     body = bpy.data.objects.new('Body', body_me); scene.collection.objects.link(body)
     for p in body_me.polygons: p.use_smooth = True
     mirror_x(canopy_me)
@@ -656,11 +815,15 @@ def build(v):
     for p in canopy_me.polygons: p.use_smooth = True
     canopy = bpy.data.objects.new('Canopy', canopy_me); scene.collection.objects.link(canopy)
     parts = [body, canopy]
-    if v.get('socket'):
-        o = bpy.data.objects.new('Sockets', make_sockets(v['socket'], body, mats)); scene.collection.objects.link(o); parts.append(o)
+    # The strut first: its shock tops decide where the body's towers go.
+    strut = None
     if v.get('strut'):
         strut = bpy.data.objects.new('Strut', make_strut(v['strut'], mats)); scene.collection.objects.link(strut)
-        strut['own_frame'] = True; parts.append(strut)
+        strut['own_frame'] = True
+    if v.get('socket'):
+        o = bpy.data.objects.new('Sockets', make_sockets(v['socket'], body, mats, towers=SHOCK_TOPS.get(v.get('strut'), ()), size=v.get('socket_size', 1.0), lamps=v.get('lamps')))
+        scene.collection.objects.link(o); parts.append(o)
+    if strut: parts.append(strut)
     for extra in v.get('extras', []):
         kind = extra['kind']
         if kind == 'ribbon':
@@ -710,7 +873,8 @@ def main():
         export(parts, os.path.join(OUT, v['id'] + '.glb'))
         tris = sum(len(p.vertices) - 2 for o in parts for p in o.data.polygons)
         print('BUILT', v['id'], 'triangles', tris)
-        manifest.append({'id': v['id'], 'name': v['name'], 'notes': v.get('notes', []), 'file': v['id'] + '.glb', 'triangles': tris, 'round': v.get('round', 1), 'gameResolution': bool(v.get('game') or os.environ.get('GAME'))})
+        manifest.append({'id': v['id'], 'name': v['name'], 'notes': v.get('notes', []), 'file': v['id'] + '.glb', 'triangles': tris, 'round': v.get('round', 1), 'gameResolution': bool(v.get('game') or os.environ.get('GAME')),
+                         **({'alsoIn': v['alsoIn']} if v.get('alsoIn') else {}), **({'basedOn': v['basedOn']} if v.get('basedOn') else {})})
     if not ONLY or ONLY == ['round2']:
         import json
         with open(os.path.join(OUT, 'index.json'), 'w') as f: json.dump(manifest, f, indent=1)
