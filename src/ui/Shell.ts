@@ -77,6 +77,10 @@ const heading = (text: string) => `<h2 tabindex="-1">${text}</h2>`
 export class Shell implements System {
   readonly element = document.createElement('div')
   onPlay?: () => void
+  /** A handled request owns the room transition and prevents local world edits. */
+  onPlanetRequest?: (recipe: string) => boolean
+  /** Integration must check this whole contract, not setRoom alone, before routing. */
+  get publicRoomRoutingVersion(): 1 { return 1 }
   private readonly abort = new AbortController()
   private readonly nameInput: HTMLInputElement
   private readonly roomInput: HTMLInputElement
@@ -362,6 +366,19 @@ export class Shell implements System {
   get accentColor(): string { return this.choice.accentColor }
   get playerName(): string { return this.nameInput.value.trim().slice(0, 24) || 'Explorer' }
   get room(): string { return this.roomInput.value.trim().slice(0, 64) || 'lobby' }
+  /** Admission changes the displayed room and invites together; it does not join a room. */
+  setRoom(room: string): void {
+    const value = room.trim().slice(0, 64)
+    if (!value) return
+    this.roomInput.value = value
+    this.updateRoomLabels()
+  }
+  /** Use existing status surfaces, including the lobby hint when no panel is open. */
+  showRoomStatus(text: string): void {
+    this.toast(text)
+    this.inspector.setStatus(text)
+    this.element.querySelector('.galaxy-hint')!.textContent = text || 'Drag to look around. Tap a world to go there.'
+  }
   get playing(): boolean { return this.started && !this.menuVisible }
   get menuOpen(): boolean { return this.menuVisible }
   get activePanel(): string { return this.panels.active }
@@ -487,6 +504,7 @@ export class Shell implements System {
     const id = galaxyId.split('~')[0], current = currentPlanet().id
     if (this.dropping) return true
     if (id === 'custom') return false
+    if (this.onPlanetRequest?.(id)) return true
     if (this.invited && !this.started && id !== current) { this.say('You were invited to another world. You can change it once you are in, if the host allows.'); return true }
     if (!canEditWorld() && id !== current) { this.say('The host has locked this world.'); return true }
     this.stopAttract()
@@ -1000,6 +1018,7 @@ export class Shell implements System {
           if (!canEditWorld() || (this.invited && !this.started)) { this.say('This world is not yours to reshape yet.'); this.galaxy?.home(); return }
           this.openCustomPlanet(); return
         }
+        if (this.onPlanetRequest?.(id)) return
         if (this.invited && !this.started && id !== currentPlanet().id) { this.say('You were invited to another world. You can change it once you are in, if the host allows.'); this.galaxy?.home(); return }
         if (!canEditWorld() && id !== currentPlanet().id) { this.say('The host has locked this world.'); this.galaxy?.home(); return }
         // Arriving at a world never opens a form (the owner, 15 November 2026): it goes
