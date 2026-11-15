@@ -258,6 +258,9 @@ export class Shell implements System {
       else if(prev?.holderIsYou&&!state.holderIsYou)this.audio.cue('lost')
       else if(state.holderName&&state.holderName!==prev?.holderName&&!state.contested)this.audio.cue('capture')
     }
+    // The adaptive score follows the match: your share of the target, and whether you hold the hill.
+    const mine=state?.scores.find(score=>score.you)
+    this.audio.setMatch(state&&!state.winner?{holding:state.holderIsYou&&!state.contested,contested:state.contested&&state.holderIsYou,progress:mine&&state.target>0?mine.score/state.target:0}:null)
     this.lastMatch=state?{...state}:null
     this.matchHud.setState(state)
   }
