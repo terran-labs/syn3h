@@ -18,7 +18,7 @@ import {
 import { ROAD_WIDTH } from './roads'
 import { applyCurve } from '../curve'
 import { paletteFor } from './palettes'
-import { LOOK_ALPINE } from './settings'
+import { LOOK_ALPINE, terrainRoadStyle } from './settings'
 import { defineParam, params } from '../../../shared/params'
 
 /**
@@ -184,7 +184,22 @@ export function createTerrainMaterial(): TerrainMaterial {
   // Faded out by 500 m: coarser levels of detail sample the distance too sparsely to draw
   // an 11 m road, and at that range it is a few pixels wide anyway.
   const roadFade = smoothstep(500, 280, p.sub(cameraPosition).length())
-  const paved = smoothstep(edge + 0.35, edge - 0.35, roadDist).mul(roadFade)
+  // Road style, from the palette or the slider. `track` is 0 for a made road with crisp
+  // edges and lines, 1 for a worn track; `wear` is how bare the track's band is.
+  const track = uniform(0)
+  const wear = uniform(1)
+  const made = smoothstep(edge + 0.35, edge - 0.35, roadDist)
+  // A track is narrower than the bed it runs on, and its edge wanders by a metre or so
+  // with the ground's own noise, so it has no boundary to read as a ruled line.
+  const ragged = roadDist.add(mx_noise_float(p.mul(0.09)).mul(1.3)).add(fine.mul(0.45))
+  const worn = smoothstep(4.4, 1.6, ragged)
+  // Two wheel ruts either side of the centreline (the distance is unsigned, so one term
+  // draws both), wobbling a little, with a less worn strip between them.
+  const rut = smoothstep(0.62, 0.12, roadDist.sub(1.3).add(mx_noise_float(p.mul(0.21)).mul(0.14)).abs())
+  const crown = smoothstep(0.75, 0.2, roadDist)
+  const trackAmount = worn.mul(wear).mul(float(1).sub(crown.mul(0.55))).mul(0.82).max(rut.mul(0.95)).mul(smoothstep(5.2, 3.6, ragged))
+  // What the rest of the material treats as road: where plants, glitter and seams stay off.
+  const paved = mix(made, trackAmount, track).mul(roadFade)
 
   /** The terrain's full colour: the shared ground colour, then what only the terrain has. */
   const buildColour = () => {
@@ -197,9 +212,13 @@ export function createTerrainMaterial(): TerrainMaterial {
     col = mix(col, bloom, patch.mul(petal).mul(nearGround).mul(float(1).sub(zone)).mul(float(1).sub(cliff)).mul(alpine).mul(0.7))
     if (coverShade) col = coverShade(p, col)
     const packed = mix(pal.roadDark, pal.roadLight, smoothstep(-0.6, 0.6, mid.add(fine.mul(0.3))))
-    col = mix(col, packed, paved.mul(0.92))
+    // A made road is its own surface. A track is the ground itself, compacted: the ground
+    // colour darkened and pulled part of the way to the road colour, so it belongs to
+    // whatever it crosses.
+    const compacted = mix(col.mul(0.62), packed, 0.55)
+    col = mix(col, mix(packed, compacted, track), paved.mul(mix(float(0.92), float(1), track)))
     const line = smoothstep(0.32, 0.08, roadDist.sub(edge - 0.9).abs())
-    col = mix(col, pal.roadLine, line.mul(paved).mul(0.45))
+    col = mix(col, pal.roadLine, line.mul(paved).mul(0.45).mul(float(1).sub(track)))
     // Grain, so close ground never looks like flat paint.
     return col.mul(fine.mul(0.08).add(0.96))
   }
@@ -232,7 +251,7 @@ export function createTerrainMaterial(): TerrainMaterial {
   const spark = smoothstep(0.42, 0.5, mx_noise_float(grain.add(0.37))).mul(loose).mul(smoothstep(35, 6, camDist)).mul(uResponse)
 
   const buildRoughness = () => {
-    const plain = max(float(0.78), float(0.97).sub(cliff.mul(0.1)).sub(paved.mul(0.15)))
+    const plain = max(float(0.78), float(0.97).sub(cliff.mul(0.1)).sub(paved.mul(0.15).mul(float(1).sub(track))))
     if (!rich) return plain.sub(gloss)
     // By zone: dust and ash matt, dark rock smoother and wetter near lava, cliffs between,
     // packed road a little polished.
@@ -292,6 +311,15 @@ export function createTerrainMaterial(): TerrainMaterial {
   // which stays flat, so the ground does not recolour as the camera moves.
   applyCurve(material)
 
+  let paletteTrack = 1
+  const applyRoadStyle = () => {
+    const style = terrainRoadStyle.value as number
+    const t = style === 1 ? 0 : style === 2 ? Math.max(paletteTrack, 0.9) : paletteTrack
+    track.value = t > 0 ? 1 : 0
+    wear.value = t
+  }
+  params.onChange((id) => { if (id === terrainRoadStyle.def.id) applyRoadStyle() })
+
   return {
     material,
     setSummit(height) {
@@ -303,6 +331,8 @@ export function createTerrainMaterial(): TerrainMaterial {
       snowColour.value.setHex(c.snow)
       seam.value.setHex(c.seam)
       accent.value.setHex(c.accent)
+      paletteTrack = c.track
+      applyRoadStyle()
       accentMode.value.set(c.accent ? 1 : 0, c.accentShore, c.sparkle)
       gloss.value = c.gloss
       // A lava sea scorches its shore black; water leaves the palette's own beach colour.

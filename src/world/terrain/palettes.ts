@@ -22,6 +22,13 @@ export interface Palette {
   accent: number
   /** 1: the accent is a margin above the waterline; 0: mineral streaks down the cliffs. */
   accentShore: number
+  /**
+   * How the roads are drawn. 0: a made road with crisp edges and edge lines (alpine only).
+   * Above 0: a worn track, two wheel ruts with a ragged edge that fades into the ground;
+   * the number is how worn the band between and beside the ruts is (1 a well used dirt
+   * track, 0.3 little more than tyre marks).
+   */
+  track: number
   /** The sea on the lobby's painted globe. The sea in the world itself is the Water Lab's. */
   seaDeep: number; seaShallow: number
 }
@@ -37,8 +44,10 @@ export const PALETTES: readonly Palette[] = [
   {
     groundDark: 0xa5351a, groundLight: 0xd9602c, rockDark: 0x7a2a14, rockLight: 0xa8431f,
     darkRockA: 0x241715, darkRockB: 0x3f241c, shore: 0xc28a5a,
-    roadDark: 0x5e2d1d, roadLight: 0x74402b, roadLine: 0xc79670, ...PLAIN, ...WATER,
+    // Pale trodden dust, so a track shows on rust plains and on black basalt alike.
+    roadDark: 0x8c5c44, roadLight: 0xa97a5e, roadLine: 0xc79670, ...PLAIN, ...WATER,
     sparkle: 0, accent: 0x5a4fb0, accentShore: 0,
+    track: 0.9,
   },
   // 1 Desert: gold sand, banded orange sandstone, a pale beach.
   {
@@ -46,6 +55,7 @@ export const PALETTES: readonly Palette[] = [
     darkRockA: 0x8a4a26, darkRockB: 0xb86a34, shore: 0xf2deb0,
     roadDark: 0x7a5230, roadLight: 0x93683f, roadLine: 0xf6e3b4, ...PLAIN, ...WATER,
     sparkle: 1, accent: 0x3f9a7a, accentShore: 1,
+    track: 1,
   },
   // 2 Alpine: meadow green, grey granite, shingle at the water.
   {
@@ -53,6 +63,7 @@ export const PALETTES: readonly Palette[] = [
     darkRockA: 0x3e4044, darkRockB: 0x63625f, shore: 0xb8b29c,
     roadDark: 0x5a4a38, roadLight: 0x6e5c46, roadLine: 0xd8cfb8, ...PLAIN, seaDeep: 0x0a3562, seaShallow: 0x2f8fc4,
     sparkle: 0, accent: 0xb08a6a, accentShore: 0,
+    track: 0,
   },
   // 3 Archipelago: bright tropical green over white sand and pale coral rock.
   {
@@ -60,6 +71,7 @@ export const PALETTES: readonly Palette[] = [
     darkRockA: 0x8c8672, darkRockB: 0xb8b09a, shore: 0xf8efcf,
     roadDark: 0x9a8660, roadLight: 0xb39c74, roadLine: 0xfff6d8, ...PLAIN, seaDeep: 0x0b5f92, seaShallow: 0x58ecd8,
     sparkle: 0.5, accent: 0, accentShore: 0,
+    track: 0.8,
   },
   // 4 Ice moon: blue-white ice plains, pale blue cliffs, wet and glinting.
   {
@@ -68,6 +80,7 @@ export const PALETTES: readonly Palette[] = [
     roadDark: 0x4a6a86, roadLight: 0x5f809c, roadLine: 0xe8f6ff,
     snow: 0xf4f8ff, gloss: 0.18, seam: 0, seaDeep: 0x061a33, seaShallow: 0x1f5f8a,
     sparkle: 0.7, accent: 0x3fd0e0, accentShore: 0,
+    track: 0.7,
   },
   // 5 Obsidian: black volcanic glass with faint magenta seams.
   {
@@ -76,6 +89,7 @@ export const PALETTES: readonly Palette[] = [
     roadDark: 0x2c2630, roadLight: 0x3a3340, roadLine: 0x9a4a8a,
     snow: 0xeef2f6, gloss: 0.2, seam: 0xff2a9a, ...WATER,
     ...NO_ACCENT,
+    track: 0.55,
   },
   // 6 Badlands: red clay and strongly banded cream and oxblood buttes.
   {
@@ -83,6 +97,7 @@ export const PALETTES: readonly Palette[] = [
     darkRockA: 0x6a2a1c, darkRockB: 0xb0583a, shore: 0xe2b890,
     roadDark: 0x5a2a1e, roadLight: 0x70392a, roadLine: 0xf0c8a0, ...PLAIN, seaDeep: 0x0e4a5a, seaShallow: 0x3fb0a0,
     sparkle: 0, accent: 0x6fb0a0, accentShore: 0,
+    track: 1,
   },
   // 7 Moon: grey regolith, nothing else.
   {
@@ -90,6 +105,7 @@ export const PALETTES: readonly Palette[] = [
     darkRockA: 0x3a3a3e, darkRockB: 0x5e5e62, shore: 0x56565a,
     roadDark: 0x4e4e52, roadLight: 0x5e5e62, roadLine: 0xd4d4d4, ...PLAIN, seaDeep: 0x3a3a3e, seaShallow: 0x56565a,
     sparkle: 0.3, accent: 0, accentShore: 0,
+    track: 0.3,
   },
   // 8 Methane swamp: olive and ochre mud round a teal sea.
   {
@@ -97,6 +113,7 @@ export const PALETTES: readonly Palette[] = [
     darkRockA: 0x3a3a1e, darkRockB: 0x5e5a2e, shore: 0x6c6a3a,
     roadDark: 0x3e3a22, roadLight: 0x524c2c, roadLine: 0xc8c890, ...PLAIN, seaDeep: 0x0a3a34, seaShallow: 0x2fa890,
     sparkle: 0, accent: 0xb05a2a, accentShore: 1,
+    track: 0.9,
   },
 ]
 
