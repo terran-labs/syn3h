@@ -16,6 +16,10 @@ for (const mode of modes) {
     assert.equal(await page.locator('.hud-navigation button').count(), 1)
     const map = await page.locator('.shell-minimap').boundingBox()
     assert.ok(map.x < 25 && map.y > page.viewportSize().height * .2, 'map lives in lower left')
+    if (touch) {
+      const stick = await page.locator('.touch-stick').boundingBox()
+      assert.ok(stick && map.y + map.height + 12 <= stick.y, 'touch minimap clears joystick and label')
+    }
     assert.match(await page.locator('.shell-minimap canvas').evaluate(el => getComputedStyle(el).maskImage || getComputedStyle(el).webkitMaskImage), /radial-gradient/)
     await page.screenshot({ path: `tests/ui/artifacts/exploration/${mode}-drive.png` })
     await page.getByRole('button', { name: 'Open configuration rail' }).click()
