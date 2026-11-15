@@ -2,6 +2,20 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Saturday 14 November, 10:10pm Pacific: unthrottle, and review every half hour
+
+**Decided.** The owner asked why there is a throttle at all and for everything to be
+unthrottled, and for a review every half hour of optimizations made, problems smoothed
+out, and help needed from him.
+
+**Why.** At 10:08pm the three heavy job slots were full with about fourteen jobs waiting,
+while load was 14 on 12 cores and memory was 92 percent free. Trunk merges had fallen
+from 33 an hour to 2.
+
+**What it changes.** The throttle becomes load aware: jobs run at once while the machine
+has room, and queue for one of eight slots only when load passes 12. The gate helper gets
+its own slot. The Foreman reviews every half hour through the night.
+
 ## Saturday 14 November, 10:40pm Pacific: releases tell the story of the build; one GIF frame per scene
 
 **Decided.** The GitHub releases should tell the story of the project from its start, in
