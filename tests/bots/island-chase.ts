@@ -28,7 +28,7 @@ export function chase(seed: number, bots: number, seconds: number, speed = 11, k
   const points = climb.points
   const player = new PlaceholderVehicle(game, terrain, new Vector3(points[0].x, points[0].y + 1, points[0].z)); player.isLocal = false
   player.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true)
-  params.set('bots.fleet', 0); params.set('bots.count', bots); params.set('bots.canFire', false); params.set('bots.freeSpirit', 0); params.set('daydream.seconds', 0)
+  params.set('bots.fleet', 0); params.set('bots.count', bots); params.set('bots.tagBeams', false); params.set('bots.freeSpirit', 0); params.set('daydream.seconds', 0)
   const manager = game.add(new BotManager(game, terrain, player)); manager.update()
   // A diagnostic control run can exclude vehicle contacts while keeping terrain physics.
   // It is never a gameplay setting and cannot establish a fix by itself.

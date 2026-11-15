@@ -275,10 +275,17 @@ function rotation(pitch: number, yaw: number): Float32Array {
   return new Float32Array([cy, 0, -sy, sy * sx, cx, cy * sx, sy * cx, -sx, cy * cx])
 }
 
-/** The GL state the logo changes, read before and put back after each draw. */
+/**
+ * The host's GL state that the logo changes, read once when the renderer is made and put
+ * back after every draw. Reading it per draw is what must never happen: each getParameter
+ * or isEnabled is a synchronous round trip that waits for the GPU process to drain all the
+ * work queued before it, the host's whole frame included. Measured in the lobby, that was
+ * 0.7 to 1.9 s main-thread stalls on the way down to a planet. The viewport is not cached:
+ * draw puts back the whole drawing buffer, which tracks resizes.
+ */
 interface SavedState {
   program: WebGLProgram | null; vao: WebGLVertexArrayObject | null; arrayBuffer: WebGLBuffer | null
-  viewport: Int32Array; scissor: Int32Array; colorMask: boolean[]
+  scissor: Int32Array; colorMask: boolean[]
   enabled: [number, boolean][]
   blend: [number, number, number, number, number, number]
 }
@@ -287,7 +294,11 @@ export interface DrawStats { drawCalls: number; particles: number; triangles: nu
 
 /**
  * The logo's GL resources in one context. It never creates or loses a context: the owner
- * does that. `draw` leaves the GL state as it found it.
+ * does that. `draw` puts back the state the host had when the renderer was made (see
+ * SavedState) and a viewport over the whole drawing buffer, without querying anything. So a
+ * host that changes its own resting program, vertex array, blend or scissor state after
+ * making the renderer must set it again after `draw`, or make a new renderer. After a lost
+ * context, make a new renderer: that also reads the state afresh.
  */
 export class LogoRenderer {
   look: LogoLook
@@ -306,6 +317,10 @@ export class LogoRenderer {
   private builtSeed = Number.NaN
   private markVertices = 0
   private readonly uniforms = new Map<WebGLProgram, Map<string, WebGLUniformLocation | null>>()
+  /** Read once, here, and never again: see SavedState. */
+  private readonly host: SavedState
+  /** Particle attribute locations, looked up once when the programs are built. */
+  private particleAttributes: [number, number][] = []
   private introStart: number | null = null
   private tilt: [number, number] = [0, 0]
   /** Pointer or device tilt, -1 to 1 on each axis; added to the mark's own sway. */
@@ -313,6 +328,7 @@ export class LogoRenderer {
 
   constructor(private readonly gl: WebGL2RenderingContext, look: Partial<LogoLook> = {}) {
     this.look = { ...DEFAULT_LOGO_LOOK, ...look }
+    this.host = this.save()
     const mesh = buildWordmarkMesh()
     this.triangles = mesh.triangles
     let ok = false
@@ -322,7 +338,6 @@ export class LogoRenderer {
 
   private build(vertices: Float32Array): boolean {
     const gl = this.gl
-    const saved = this.save()
     try {
       this.sky = compile(gl, SKY_VERTEX, SKY_FRAGMENT)
       this.glow = compile(gl, GLOW_VERTEX, GLOW_FRAGMENT)
@@ -338,10 +353,11 @@ export class LogoRenderer {
         gl.enableVertexAttribArray(at); gl.vertexAttribPointer(at, size, gl.FLOAT, false, stride, offset)
       }
       this.markVertices = vertices.length / FLOATS_PER_VERTEX
+      this.particleAttributes = ([['aOutline', 0], ['aSeed', 16]] as const).map(([name, offset]): [number, number] => [gl.getAttribLocation(this.glow!, name), offset]).filter(([at]) => at >= 0)
       this.glowVao = gl.createVertexArray(); this.glowBuffer = gl.createBuffer()
       this.fillParticles()
       return true
-    } finally { this.restore(saved) }
+    } finally { this.restore() }
   }
 
   /** (Re)builds the particle buffer when the count grows past it or the seed changes. */
@@ -353,10 +369,7 @@ export class LogoRenderer {
     for (let i = 0; i < built; i++) { data.set(samples.points.subarray(i * 4, i * 4 + 4), i * 8); data.set(samples.seeds.subarray(i * 4, i * 4 + 4), i * 8 + 4) }
     gl.bindVertexArray(this.glowVao); gl.bindBuffer(gl.ARRAY_BUFFER, this.glowBuffer)
     gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW)
-    for (const [name, offset] of [['aOutline', 0], ['aSeed', 16]] as const) {
-      const at = gl.getAttribLocation(this.glow!, name); if (at < 0) continue
-      gl.enableVertexAttribArray(at); gl.vertexAttribPointer(at, 4, gl.FLOAT, false, 32, offset)
-    }
+    for (const [at, offset] of this.particleAttributes) { gl.enableVertexAttribArray(at); gl.vertexAttribPointer(at, 4, gl.FLOAT, false, 32, offset) }
     this.builtParticles = built; this.builtSeed = this.look.seed
   }
 
@@ -384,15 +397,15 @@ export class LogoRenderer {
     const gl = this.gl
     return {
       program: gl.getParameter(gl.CURRENT_PROGRAM), vao: gl.getParameter(gl.VERTEX_ARRAY_BINDING), arrayBuffer: gl.getParameter(gl.ARRAY_BUFFER_BINDING),
-      viewport: gl.getParameter(gl.VIEWPORT), scissor: gl.getParameter(gl.SCISSOR_BOX), colorMask: gl.getParameter(gl.COLOR_WRITEMASK),
+      scissor: gl.getParameter(gl.SCISSOR_BOX), colorMask: gl.getParameter(gl.COLOR_WRITEMASK),
       enabled: [gl.BLEND, gl.DEPTH_TEST, gl.CULL_FACE, gl.SCISSOR_TEST, gl.STENCIL_TEST, gl.RASTERIZER_DISCARD, gl.SAMPLE_ALPHA_TO_COVERAGE].map(cap => [cap, gl.isEnabled(cap)] as [number, boolean]),
       blend: [gl.getParameter(gl.BLEND_SRC_RGB), gl.getParameter(gl.BLEND_DST_RGB), gl.getParameter(gl.BLEND_SRC_ALPHA), gl.getParameter(gl.BLEND_DST_ALPHA), gl.getParameter(gl.BLEND_EQUATION_RGB), gl.getParameter(gl.BLEND_EQUATION_ALPHA)],
     }
   }
-  private restore(s: SavedState): void {
-    const gl = this.gl
+  private restore(): void {
+    const gl = this.gl, s = this.host
     gl.useProgram(s.program); gl.bindVertexArray(s.vao); gl.bindBuffer(gl.ARRAY_BUFFER, s.arrayBuffer)
-    if (s.viewport) gl.viewport(s.viewport[0], s.viewport[1], s.viewport[2], s.viewport[3])
+    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight)
     if (s.scissor) gl.scissor(s.scissor[0], s.scissor[1], s.scissor[2], s.scissor[3])
     if (s.colorMask) gl.colorMask(s.colorMask[0], s.colorMask[1], s.colorMask[2], s.colorMask[3])
     for (const [cap, on] of s.enabled) { if (on) gl.enable(cap); else gl.disable(cap) }
@@ -415,7 +428,6 @@ export class LogoRenderer {
     if (this.introStart === null) this.introStart = seconds
     const intro = this.introTime = Math.max(0, seconds - this.introStart)
     const look = this.look
-    const saved = this.save()
     try {
       this.fillParticles()
       // The mark's own slow sway, plus any lean the caller feeds in, eased.
@@ -486,7 +498,7 @@ export class LogoRenderer {
       gl.uniform2f(this.location(this.mark!, 'uTilt'), pitch, yaw)
       gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
       gl.bindVertexArray(this.markVao); gl.drawArrays(gl.TRIANGLES, 0, this.markVertices)
-    } finally { this.restore(saved) }
+    } finally { this.restore() }
   }
 
   /** Deletes the logo's GL objects. The context itself belongs to the caller. */

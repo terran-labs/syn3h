@@ -3,6 +3,8 @@
  * Keep this file small: features belong behind the seams, not here.
  */
 import { prepareResume, ResumeSession, RESUME_KEY } from './core/resume'
+import { PageLifecycle } from './core/lifecycle'
+import { PauseState, type PauseControl } from './core/pause'
 import { params, worldSeed } from '../shared/params'
 import { BotManager } from './bots/BotManager'
 import { ChaseCamera } from './core/ChaseCamera'
@@ -47,7 +49,7 @@ async function main(): Promise<void> {
   // Graphics levels thin out distant terrain on weaker devices.
   game.quality.attachTerrain(terrain)
   const environment = game.add(createEnvironment(game, terrain))
-  // Post effects (src/fx/post): off by default; ?post=1 or Settings > Advanced > Post.
+  // Post effects follow the player's settings and the current rendering budget.
   game.setPostChain(createPostChain(game, environment, () => player))
 
   const spawn = terrain.spawnPoint(0)
@@ -67,7 +69,7 @@ async function main(): Promise<void> {
     player.teleport(s.position, s.heading)
   })
 
-  // Bots chase and ram the player. The 'bots.count' slider sets how many (0 by default).
+  // Bots chase and ram the player. The 'bots.count' slider sets the requested fleet size.
   const bots = game.add(new BotManager(game, terrain, player))
   bots.setTargets([player])
 
@@ -85,10 +87,26 @@ async function main(): Promise<void> {
   // The start screen collects the name and unlocks audio. Networking joins on Play so the
   // room sees the chosen name. ?autoplay=1 skips the screen for automated checks.
   const { shell, audio } = initGameShell(game, player, terrain)
+  shell.configurePerformance({
+    getPerformanceSnapshot: () => game.quality.getPerformanceSnapshot(),
+    subscribePerformance: listener => game.quality.subscribePerformance(listener),
+    setDiagnosticsVisible: visible => game.quality.setDiagnosticsVisible(visible),
+    ignoreRecommendation: () => game.quality.ignoreRecommendation(),
+    lowerRecommendedTier: () => game.quality.lowerRecommendedTier(),
+  })
   // An idle lobby turns into a cinematic tour of the volcano, following a bot if there is one.
   shell.setAttractCamera(camera, () => bots.vehicles)
   // Nearby bots are audible, positioned in space. Remote players join this list later.
   audio.setVehicles(() => bots.vehicles)
+  // Two triggers, one state (src/core/pause.ts): the page being hidden, and the player's own
+  // pause from the shell. The loop stops while either holds.
+  const pause = new PauseState()
+  pause.subscribe((paused) => { if (paused) game.pause(); else game.resume() })
+  const lifecycle = new PageLifecycle()
+  lifecycle.onChange((state) => { if (state === 'hidden') pause.pause('hidden'); else pause.resume('hidden') })
+  if (lifecycle.hidden) pause.pause('hidden')
+  // The shell owns the Escape trigger, the overlay and the audio fade, all from this control.
+  ;(shell as unknown as { setPauseControl?: (control: PauseControl) => void }).setPauseControl?.(pause)
   let netStatus: string[] = []
   let joined = false
   const join = () => {
@@ -100,6 +118,13 @@ async function main(): Promise<void> {
       url.searchParams.set('autoplay', '1')
       // An explicit lobby vehicle change starts a new session.
       try { sessionStorage.removeItem(RESUME_KEY) } catch {}
+      // ResumeSession saves on both unload signals. Clear after its older listeners,
+      // including a visibilitychange delivered after pagehide.
+      const clearPreviousResume = () => {
+        try { sessionStorage.removeItem(RESUME_KEY) } catch {}
+      }
+      window.addEventListener('pagehide', clearPreviousResume)
+      document.addEventListener('visibilitychange', clearPreviousResume)
       location.replace(url)
       return
     }
@@ -130,6 +155,10 @@ async function main(): Promise<void> {
     // Every client reads the wind from the room's clock, so gusts agree between players.
     // Handed over by networking once that clock has synced (the sea gets it the same way).
     connection.onRoomClock((now) => setWeatherClock(now))
+    // The room hears about a pause for either reason: the paused heartbeat (one message a
+    // second) is the one thing that keeps running, so others see "paused", not a dropout.
+    pause.subscribe((paused) => connection.setPaused(paused))
+    connection.setPaused(pause.paused)
     // Remote players and bots are audible, positioned in space.
     audio.setVehicles(() => connection.audibleVehicles())
     game.add(new ResumeSession({ game, terrain, player, room: shell.room || query.get('room') || 'lobby', saved, network: connection }))
@@ -151,7 +180,9 @@ async function main(): Promise<void> {
   game.add(new WaterEffects(game, terrain, player, bots))
 
   // Handles for debugging and automated checks.
-  Object.assign(window, { syn3h: { planets, game, terrain, player, params, panel, shell, audio, bots, camera } })
+  // The game does not run in a background tab: one controller, obeyed by the loop here. Audio
+  // and the lobby follow the same controller from their own modules.
+  Object.assign(window, { syn3h: { planets, game, terrain, player, params, panel, shell, audio, bots, camera, lifecycle, pause } })
   game.start()
 }
 

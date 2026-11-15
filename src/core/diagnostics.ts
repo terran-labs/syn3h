@@ -1,5 +1,5 @@
 import type { Game } from './Game'
-import { graphicsLevel, loadingProgress } from './quality'
+import type { PerformanceEnvironment } from './performance'
 import { deviceLostMessage } from './renderOptions'
 
 /**
@@ -90,74 +90,63 @@ export function showRendererLost(info?: { api?: string; message?: string; reason
   return true
 }
 
-/** Opt-in diagnostics only. Submitted draws are not proof that the display has pixels. */
-export function installRenderDiagnostics(game: Game): (() => void) | undefined {
-  if (new URLSearchParams(location.search).get('diag') !== '1') return
-  const panel = document.createElement('details')
-  panel.open = true
-  panel.style.cssText = 'position:fixed;left:8px;top:8px;z-index:2147483647;background:#080b12f5;color:#fff;padding:10px;max-width:calc(100vw - 36px);max-height:48vh;overflow:auto;font:12px monospace'
-  const title = document.createElement('summary'); title.textContent = 'Syn3h device diagnostics (tap to fold)'
-  const text = document.createElement('pre'); text.style.cssText = 'white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0 0'
-  panel.append(title, text); document.body.append(panel)
-  const errors: string[] = []
-  const contextEvents: string[] = []
-  const contextEvent = (message: string) => { contextEvents.push(message); if (contextEvents.length > 12) contextEvents.shift(); refresh() }
-  const record = (message: string) => { errors.push(message); if (errors.length > 12) errors.shift(); refresh() }
-  const contexts: WeakRef<WebGLRenderingContext | WebGL2RenderingContext>[] = []
-  const seen = new WeakSet<object>()
-  const original = HTMLCanvasElement.prototype.getContext
-  // Observe successful contexts, including detached planet canvases, without creating any.
-  HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, ...args: Parameters<typeof original>) {
-    const context = original.apply(this, args)
-    if (context && (args[0] === 'webgl' || args[0] === 'webgl2' || args[0] === 'experimental-webgl') && !seen.has(context)) {
-      seen.add(context); contexts.push(new WeakRef(context as WebGLRenderingContext))
-      this.addEventListener('webglcontextlost', () => contextEvent(`WebGL context lost: ${this === game.canvas ? 'GAME' : 'lobby/other'}`))
-      this.addEventListener('webglcontextrestored', () => contextEvent('WebGL context restored'))
-    }
-    return context
-  } as typeof original
-  window.addEventListener('error', event => record(`Error: ${event.message}`))
-  window.addEventListener('unhandledrejection', event => record(`Rejected: ${String(event.reason)}`))
-  let observed: GPUDevice | undefined
-  function refresh() {
-    const renderer = game.renderer
-    const backend = renderer?.backend as unknown as { device?: GPUDevice; gl?: WebGL2RenderingContext; context?: GPUCanvasContext } | undefined
-    const device = backend?.device
-    if (device && observed !== device) {
-      observed = device
-      // Keep Three's own error handlers intact.
-      device.addEventListener('uncapturederror', event => record(`GPU error: ${(event as GPUUncapturedErrorEvent).error.message}`))
-      void device.lost.then(info => record(`GPU lost: ${info.reason}: ${info.message}`))
-    }
-    const adapter = device?.adapterInfo
-    const rect = game.canvas.getBoundingClientRect()
-    const live = contexts.filter(ref => { const context = ref.deref(); return context && !context.isContextLost() }).length
-    const snapshot = {
-      phase: loadingProgress.phase, backend: renderer ? game.backend : 'initializing',
-      adapter: adapter ? `${adapter.vendor} ${adapter.architecture} ${adapter.device} ${adapter.description}`.trim() || 'not disclosed' : 'not exposed',
-      maxTexture: device?.limits.maxTextureDimension2D ?? backend?.gl?.getParameter(backend.gl.MAX_TEXTURE_SIZE),
-      canvas: `${game.canvas.width} x ${game.canvas.height}`, css: `${Math.round(rect.width)} x ${Math.round(rect.height)}`,
-      pixelRatio: renderer?.getPixelRatio(), devicePixelRatio: window.devicePixelRatio,
-      graphics: graphicsLevel.value, exposure: renderer?.toneMappingExposure,
-      colorSpace: renderer?.outputColorSpace, toneMapping: renderer?.toneMapping,
-      samples: (renderer as unknown as { _samples?: number })?._samples,
-      firstDrawSubmittedMs: game.performance.firstFrameMs, tick: game.tick,
-      fps: Math.round(game.fps), draws: game.performance.drawCalls,
-      webglContexts: `${live} live / ${contexts.length} created since Game construction`,
-      domCanvases: document.querySelectorAll('canvas').length, errors: [...errors], contextEvents: [...contextEvents],
-      startup: (readNavigationTiming(), formatStartup()),
-    }
-    ;(window as unknown as { syn3hDiagnostics: unknown }).syn3hDiagnostics = snapshot
-    text.textContent = Object.entries(snapshot).map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join('\n') || 'none' : key === 'startup' ? `\n${value}` : value ?? 'pending'}`).join('\n')
+/**
+ * getParameter is a blocking round trip to the GPU process and snapshots are built about once a
+ * second, so the WebGL limit is asked once per context. It cannot change while the context lives.
+ */
+const glLimits=new WeakMap<object,number>()
+function glMaxTextureSize(gl: WebGL2RenderingContext): number {
+  let size=glLimits.get(gl)
+  if(size===undefined){size=gl.getParameter(gl.MAX_TEXTURE_SIZE) as number;glLimits.set(gl,size)}
+  return size
+}
+/** Read the selected renderer and startup record. Never acquire a context or adapter. */
+export function readPerformanceEnvironment(game: Game): PerformanceEnvironment {
+  const backend=game.renderer?.backend as unknown as {device?: GPUDevice;gl?: WebGL2RenderingContext}|undefined
+  const device=backend?.device, info=device?.adapterInfo
+  const nav=typeof navigator==='undefined'?undefined:navigator as Navigator & {deviceMemory?:number}
+  return {
+    backend:startupTiming.backend ?? (game.renderer?game.backend:'initializing'),
+    adapter:info?[info.vendor,info.architecture,info.device,info.description].filter(Boolean).join(' ')||null:null,
+    memoryGB:nav?.deviceMemory ?? null,
+    maxTextureSize:device?.limits.maxTextureDimension2D ?? (backend?.gl?glMaxTextureSize(backend.gl):null),
+    fallbackReason:startupTiming.fallbackReason??null,deviceLost:startupTiming.deviceLost??null,
   }
-  refresh()
-  window.setInterval(refresh, 500)
+}
+
+/**
+ * Reuse the existing quality frame feed for diagnostics. The old opt-in path installed a
+ * global getContext patch, anonymous listeners and an interval without a disposal path.
+ * Keep its URL alias, but use the same toggleable panel as F3 and the touch control.
+ */
+export function installRenderDiagnostics(game: Game): () => void {
+  const errors: string[]=[]
+  const read=(): PerformanceEnvironment=>{
+    const environment=readPerformanceEnvironment(game),r=game.renderer
+    // Bounded compatibility data for existing capture tools; no global hooks or timer.
+    ;(window as unknown as {syn3hDiagnostics:unknown}).syn3hDiagnostics={
+      ...environment,adapter:environment.adapter??'not exposed',maxTexture:environment.maxTextureSize,
+      canvas:`${game.canvas.width} x ${game.canvas.height}`,pixelRatio:r?.getPixelRatio(),
+      firstDrawSubmittedMs:game.performance.firstFrameMs,tick:game.tick,fps:game.fps,
+      draws:game.performance.drawCalls,errors:[...errors],startup:formatStartup(),
+      contextEvents:[],webglContexts:'not tracked',
+    }
+    return environment
+  }
+  game.quality.setPerformanceEnvironment(read)
+  if(new URLSearchParams(location.search).get('diag')==='1')game.quality.setDiagnosticsVisible(true)
+  const observed=new WeakSet<object>()
   return () => {
-    const renderer = game.renderer
-    const onError = renderer.onError
-    const onLost = renderer.onDeviceLost
-    // Cover failures during init, before the periodic device observer can attach.
-    renderer.onError = message => { record(`Renderer error: ${message}`); onError.call(renderer, message) }
-    renderer.onDeviceLost = info => { record(`Renderer device lost: ${JSON.stringify(info)}`); onLost.call(renderer, info) }
+    const renderer=game.renderer
+    if(observed.has(renderer))return
+    observed.add(renderer)
+    const onLost=renderer.onDeviceLost,onError=renderer.onError
+    renderer.onError=message=>{errors.push(String(message));if(errors.length>12)errors.shift();onError.call(renderer,message);game.quality.setPerformanceEnvironment(read)}
+    renderer.onDeviceLost=info=>{
+      startupTiming.deviceLost=deviceLostMessage(info);onLost.call(renderer,info)
+      // Game wraps this callback and writes its detailed record after it returns.
+      // Publish after that stack completes, even if the animation loop has stopped.
+      queueMicrotask(()=>game.quality.setPerformanceEnvironment(read))
+    }
   }
 }

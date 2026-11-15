@@ -7,6 +7,8 @@ import type {TileShiftEvent,Vehicle,VehicleObjectEvents} from '../Vehicle'
 import {ParticleBatch} from './ParticleBatch'
 import {RibbonBatch} from './RibbonBatch'
 import {dustSprite,glowSprite,plasmaSprite,tyreMarkAlpha} from './sprites'
+import {DEFAULT_TREAD,TREADS} from './treads'
+import type {SurfaceKind} from '../../world/terrain/surface'
 import {windDrift} from '../../world/weather'
 
 const greenPlasma=plasmaSprite(false),redPlasma=plasmaSprite(true)
@@ -19,8 +21,13 @@ const worlds=new WeakMap<Game,EffectWorld>()
 const clamp=T.MathUtils.clamp
 /** Integer hashing keeps cosmetic emission reproducible without touching simulation randomness. */
 export function effectNoise(i:number){let n=Math.imul(i+1,0x45d9f3b);n=Math.imul(n^(n>>>16),0x45d9f3b);return ((n^(n>>>16))>>>0)/4294967296}
-const dustColor=new T.Color(.48,.27,.12),markColor=new T.Color(.055,.035,.022)
+const dustColor=new T.Color(.48,.27,.12),markColor=new T.Color()
 const temp=new T.Vector3(),normal=new T.Vector3(),side=new T.Vector3(),velocity=new T.Vector3()
+// Scratch for the per frame path, so a frame with nine vehicles allocates nothing here. Each is
+// written and read within one statement or one loop pass; nothing keeps a reference to them.
+const wp=new T.Vector3(),at=new T.Vector3(),tip=new T.Vector3(),rawVelocity=new T.Vector3(),toCamera=new T.Vector3(),inverse=new T.Quaternion(),trailColor=new T.Color()
+/** terra.jet hover thrusters, local x and z. */
+const HOVER_THRUSTERS:readonly (readonly [number,number])[]=[[-1.544781,1.170159],[0,-1.735762],[1.455346,1.153567]]
 
 class EffectWorld implements System {
   readonly vehicles=new Map<Vehicle,VehicleEffects>()
@@ -65,12 +72,18 @@ class EffectWorld implements System {
     for(let i=0;i<n;i++){const a=this.noise()*Math.PI*2;velocity.set(Math.cos(a)*strength,1+this.noise(),Math.sin(a)*strength);this.dust.emit(p,velocity,1,.4+this.noise()*.4,2,color)}
   }
   /** Carry everything already drawn across a world seam with the local player (see VehicleEffects.onTileShift). */
-  shift(dx:number,dz:number){for(const b of [this.dust,this.energy,this.sparks,this.redSparks,this.marks,this.trails])b.shift(dx,dz)}
+  shift(dx:number,dz:number){this.dust.shift(dx,dz);this.energy.shift(dx,dz);this.sparks.shift(dx,dz);this.redSparks.shift(dx,dz);this.marks.shift(dx,dz);this.trails.shift(dx,dz)}
+  private sky:(T.Object3D&{sunDirection?:{value:T.Vector3}})|null=null
+  /** Height of the sun, for the headlights. The sky is found once and looked up again only if it leaves the scene. */
+  sunY():number {
+    if(this.sky?.parent!==this.game.scene)this.sky=(this.game.scene.children.find(o=>'sunDirection' in o)??null) as typeof this.sky
+    return this.sky?.sunDirection?.value.y??1
+  }
   postPhysics(){for(const e of this.vehicles.values())e.captureLanding()}
   update(dt:number){
     const start=performance.now();dt=Math.min(.1,dt);this.clock+=dt
     if(this.level!==graphicsLevel.value)this.rebudget()
-    for(const b of [this.dust,this.energy,this.sparks,this.redSparks,this.marks,this.trails])b.clock.value=this.clock
+    const clock=this.clock;this.dust.clock.value=clock;this.energy.clock.value=clock;this.sparks.clock.value=clock;this.redSparks.clock.value=clock;this.marks.clock.value=clock;this.trails.clock.value=clock
     for(const e of this.vehicles.values())e.update(dt)
     this.stats.vehicles=this.vehicles.size;this.stats.marks=this.marks.used
     this.stats.emitted=this.dust.emitted+this.energy.emitted+this.sparks.emitted+this.redSparks.emitted
@@ -87,8 +100,11 @@ class VehicleEffects {
   private readonly lampPoints:T.Object3D[]=[]
   private readonly lampMatrix=new T.Matrix4()
   private readonly spots:T.SpotLight[]=[]
-  private readonly previousMarks:(T.Vector3|null)[]=[null,null,null,null]
-  private readonly previousTips:(T.Vector3|null)[]=[null,null]
+  // Last tyre mark and wing tip positions, kept in place; the flags say which are live.
+  private readonly previousMarks=[new T.Vector3(),new T.Vector3(),new T.Vector3(),new T.Vector3()]
+  private readonly hasMark=[false,false,false,false]
+  private readonly previousTips=[new T.Vector3(),new T.Vector3()]
+  private readonly hasTip=[false,false]
   private readonly lastPosition=new T.Vector3()
   private readonly localVelocity=new T.Vector3()
   private readonly color=new T.Color()
@@ -104,14 +120,13 @@ class VehicleEffects {
   private readonly unlisten?:()=>void
   private readonly onTileShift:(e:TileShiftEvent)=>void
   private readonly buggy:boolean
-  private readonly classic:boolean
   constructor(private readonly world:EffectWorld,private readonly terrain:Terrain,private readonly vehicle:EffectsVehicle,local:boolean){
-    this.buggy=vehicle.kind.startsWith('buggy');this.classic=vehicle.kind==='buggy-classic'
+    this.buggy=vehicle.kind.startsWith('buggy')
     this.root.name='Vehicle effects';vehicle.object.add(this.root);this.lastPosition.copy(vehicle.object.position)
-    const jet=vehicle.kind==='jet',hover=vehicle.kind==='hovercraft',width=jet?1:this.classic?.45:.584,front=jet?3.2756:hover?1.4:this.classic?1.05:1.775
+    const jet=vehicle.kind==='jet',hover=vehicle.kind==='hovercraft',width=jet?1:.584,front=jet?3.2756:hover?1.4:1.775
     for(const sign of [-1,1]){
       const head=new T.Object3D();head.position.set(sign*width,jet?-.423:.036,-front);this.root.add(head);this.lampPoints.push(head)
-      const tail=new T.Object3D();tail.scale.set(1.7,.6,.5);tail.position.set(sign*width,.12,jet?2.7:hover?1.3:this.classic?1:1.7);this.root.add(tail);this.lampPoints.push(tail)
+      const tail=new T.Object3D();tail.scale.set(1.7,.6,.5);tail.position.set(sign*width,.12,jet?2.7:hover?1.3:1.7);this.root.add(tail);this.lampPoints.push(tail)
     }
     if(local){
       // Syn3h prefab range50, cone60 degrees. Unity intensity is not candela.
@@ -135,7 +150,8 @@ class VehicleEffects {
     this.onTileShift=({dx,dz})=>{
       if(local){
         world.shift(dx,dz)
-        for(const q of [...this.previousMarks,...this.previousTips])if(q){q.x+=dx;q.z+=dz}
+        for(const q of this.previousMarks){q.x+=dx;q.z+=dz}
+        for(const q of this.previousTips){q.x+=dx;q.z+=dz}
         this.lastPosition.x+=dx;this.lastPosition.z+=dz
       }else{this.reset();this.lastPosition.copy(vehicle.object.position)}
     }
@@ -147,21 +163,21 @@ class VehicleEffects {
     return writeVehicleLamps(batch,index,this.vehicle.object,this.lampPoints,this.headMaterial.color,this.tailMaterial.color,this.lampMatrix)
   }
   captureLanding(){if(this.vehicle.landedThisStep)this.pendingLanding=Math.max(this.pendingLanding,this.vehicle.landingImpact)}
-  private reset(){this.pendingLanding=0;this.previousMarks.fill(null);this.previousTips.fill(null);this.wasGrounded=false}
+  private reset(){this.pendingLanding=0;this.hasMark.fill(false);this.hasTip.fill(false);this.wasGrounded=false}
   private dry(p:T.Vector3){return (this.terrain.liquidHeightAt?.(p.x,p.z)??-Infinity)<this.terrain.heightAt(p.x,p.z)-.01}
-  private point(x:number,y:number,z:number){return new T.Vector3(x,y,z).applyQuaternion(this.vehicle.object.quaternion).add(this.vehicle.object.position)}
+  private point(x:number,y:number,z:number,out:T.Vector3){return out.set(x,y,z).applyQuaternion(this.vehicle.object.quaternion).add(this.vehicle.object.position)}
   update(dt:number){
     const v=this.vehicle,w=this.world,p=v.object.position
     if(p.distanceToSquared(this.lastPosition)>900)this.reset()
     this.lastPosition.copy(p);this.q.copy(v.object.quaternion)
     const raw=v.body.linvel(),speed=Math.hypot(raw.x,raw.y,raw.z)
-    this.localVelocity.set(raw.x,raw.y,raw.z).applyQuaternion(this.q.clone().invert())
+    rawVelocity.set(raw.x,raw.y,raw.z)
+    this.localVelocity.copy(rawVelocity).applyQuaternion(inverse.copy(this.q).invert())
     this.throttle=T.MathUtils.lerp(this.throttle,Math.max(0,v.kind==='hovercraft'?v.input.y:v.input.z),Math.min(1,dt*10))
     this.color.set(v.colors.accent)
     this.tailMaterial.color.setRGB(v.input.brakes?5:2,0,0)
     if(this.spots.length){
-      const sky=w.game.scene.children.find(o=>'sunDirection' in o) as unknown as {sunDirection?:{value:T.Vector3}}|undefined
-      const sunY=sky?.sunDirection?.value.y??1
+      const sunY=w.sunY()
       const intensity=clamp((.08-sunY)/.18,0,1)*(v.kind==='jet'?1800:1600)/this.spots.length
       for(const spot of this.spots)spot.intensity=intensity
     }
@@ -182,17 +198,25 @@ class VehicleEffects {
     if(this.buggy){
       const contacts=v.getWheelEffects?.()
       for(let i=0;i<4;i++){
-        const contact=contacts?.[i],wp=contact?.point.clone()??this.point((i%2?1:-1)*(this.classic?.7:1.1),0,(i<2?-1:1)*(this.classic?.8:1.3))
+        const contact=contacts?.[i]
+        if(contact)wp.copy(contact.point);else this.point((i%2?1:-1)*1.1,0,(i<2?-1:1)*1.3,wp)
         const y=this.terrain.heightAt(wp.x,wp.z)
         const touching=contact?.grounded??(grounded&&wp.y-y<1.4&&wp.y-y>-.3)
-        if(!touching||!this.dry(wp)||speed<.5){this.previousMarks[i]=null;continue}
+        if(!touching||!this.dry(wp)||speed<.5){this.hasMark[i]=false;continue}
         normal.copy(contact?.normal??this.terrain.normalAt(wp.x,wp.z,temp));if(!contact)wp.y=y
         wp.addScaledVector(normal,.04)
-        const slip=Math.abs(contact?.slip??this.localVelocity.x),intensity=slip>Math.abs(this.localVelocity.z)*.3?Math.abs(v.input.y)*.5+.25:.5
+        const slip=Math.abs(contact?.slip??this.localVelocity.x)
         const prev=this.previousMarks[i]
-        if(prev&&prev.distanceToSquared(wp)>=.75*.75){
-          side.copy(wp).sub(prev).cross(normal).normalize();w.marks.add(prev,wp,side,this.classic?.3:.5,60,clamp(intensity,0,1)/2,markColor);this.previousMarks[i]=wp
-        }else if(!prev)this.previousMarks[i]=wp
+        if(!this.hasMark[i]){prev.copy(wp);this.hasMark[i]=true}
+        else if(prev.distanceToSquared(wp)>=.75*.75){
+          // The ground decides the mark: its colour, how deep the print and how long it lasts
+          // (treads.ts). A rolling wheel leaves the light mark; one sliding sideways under
+          // throttle or brakes leaves up to the heavy one.
+          const style=TREADS[this.terrain.surfaceAt?.(wp.x,wp.z)as SurfaceKind]??DEFAULT_TREAD
+          const sliding=slip>Math.abs(this.localVelocity.z)*.3?clamp(Math.max(Math.abs(v.input.y),v.input.brakes?1:0),0,1):0
+          side.copy(wp).sub(prev).cross(normal).normalize()
+          w.marks.add(prev,wp,side,.5*style.width,style.life,T.MathUtils.lerp(style.roll,style.slip,sliding),markColor.setRGB(style.tint[0],style.tint[1],style.tint[2]),style.tread);prev.copy(wp)
+        }
         if(this.dustTimer>=1/(25*rateScale)&&speed>2){
           velocity.set(raw.x*-.08+(w.noise()-.5)*slip*.3,.6+w.noise(),raw.z*-.08)
           w.dust.emit(wp,velocity,1,.25+Math.min(1,slip*.08+speed*.008),2,dustColor)
@@ -210,15 +234,15 @@ class VehicleEffects {
         const count=Math.min(12,Math.floor(this.exhaustTimer*rate));this.exhaustTimer=0
         for(let i=0;i<count;i++){
           // terra.jet main: life .3,size1,speed10; Hovercraft: .3,.8,7.
-          const at=this.point(jet?0:.00962,jet?0:.672562,jet?2.971839:1.357518)
+          this.point(jet?0:.00962,jet?0:.672562,jet?2.971839:1.357518,at)
           const throttle=hover?.1:Math.max(.05,this.throttle)
-          velocity.set(0,0,(jet?10:7)*throttle).applyQuaternion(this.q).add(new T.Vector3(raw.x,raw.y,raw.z))
+          velocity.set(0,0,(jet?10:7)*throttle).applyQuaternion(this.q).add(rawVelocity)
           w.energy.emit(at,velocity,.3,(jet?1:.8)*Math.max(.2,throttle),-.95,this.color)
         }
-        if(hover&&this.throttle>.01)for(const [x,z] of [[-1.544781,1.170159],[0,-1.735762],[1.455346,1.153567]]){
+        if(hover&&this.throttle>.01)for(const [x,z] of HOVER_THRUSTERS){
           // 25/s per thruster, life1, size max(.1,throttle*.3), lateral spread .4.
-          if(w.noise()<.25){velocity.set((w.noise()-.5)*.8,-this.throttle,(w.noise()-.5)*.8).applyQuaternion(this.q).add(new T.Vector3(raw.x,raw.y,raw.z))
-            w.energy.emit(this.point(x,-1.256482,z),velocity,1,Math.max(.1,this.throttle*.3),2,this.color)}
+          if(w.noise()<.25){velocity.set((w.noise()-.5)*.8,-this.throttle,(w.noise()-.5)*.8).applyQuaternion(this.q).add(rawVelocity)
+            w.energy.emit(this.point(x,-1.256482,z,at),velocity,1,Math.max(.1,this.throttle*.3),2,this.color)}
         }
       }
     }
@@ -227,11 +251,11 @@ class VehicleEffects {
       this.trailTimer=0
       for(let i=0;i<2;i++){
         // These snapshots lack vehicle TrailRenderers. Reconstructed tips, width .1, lifetime .8.
-        const tip=this.point((i?1:-1)*(this.buggy?(this.classic?3.6:4.2):3.85),this.buggy?.1:.13,this.buggy?1.2:1.14),prev=this.previousTips[i]
-        if(prev){side.copy(tip).sub(prev).cross(w.game.camera.position.clone().sub(tip)).normalize();w.trails.add(prev,tip,side,.1,.8,.22,this.color.clone().multiplyScalar(2))}
-        this.previousTips[i]=tip
+        const prev=this.previousTips[i];this.point((i?1:-1)*(this.buggy?4.2:3.85),this.buggy?.1:.13,this.buggy?1.2:1.14,tip)
+        if(this.hasTip[i]){side.copy(tip).sub(prev).cross(toCamera.copy(w.game.camera.position).sub(tip)).normalize();w.trails.add(prev,tip,side,.1,.8,.22,trailColor.copy(this.color).multiplyScalar(2))}
+        prev.copy(tip);this.hasTip[i]=true
       }
-    }else if(!trails)this.previousTips.fill(null)
+    }else if(!trails)this.hasTip.fill(false)
   }
   dispose(){this.unlisten?.();this.events.removeEventListener('tileshift',this.onTileShift);this.root.removeFromParent();this.headMaterial.dispose();this.tailMaterial.dispose();for(const spot of this.spots)spot.dispose()}
 }

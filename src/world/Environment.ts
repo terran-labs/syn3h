@@ -140,8 +140,12 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   const fogSunXZ = live(new THREE.Vector2(1, 0), () => fogState.sunXZ)
   const fogDensityU = live(fogState.density, () => fogState.density)
   const view = normalize((positionWorld as N).sub(cameraPosition)) as N
-  const viewXZ = normalize(vec2(view.x, view.z).add(vec2(1e-5, 0))) as N
-  const cosA = viewXZ.dot(fogSunXZ) as N
+  // How far the view ray points toward the sun's bearing. The horizontal part of the unit
+  // view ray is used as it is, not normalised: a ray looking down at the ground near the
+  // camera points nowhere near the sun, so it takes the neutral side colour. Normalising it
+  // gave every pixel the full glow of its compass bearing, which from above drew a bright
+  // wedge on the ground with its point under the camera. Level views are unchanged.
+  const cosA = vec2(view.x, view.z).dot(fogSunXZ) as N
   // The glow toward the sun is narrow, the darkening away from it broad.
   const towardW = pow(max(cosA, 0.0), 4.0)
   const awayW = max(cosA.negate(), 0.0)

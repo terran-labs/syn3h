@@ -12,7 +12,7 @@ await mkdir(output, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist'] })
 const results = [], sheets = {}
 try {
-  for (const kind of ['buggy', 'buggy-classic', 'jet', 'hovercraft']) for (const seed of [1, 42, 2024]) for (const quality of [0, 2]) {
+  for (const kind of ['buggy', 'jet', 'hovercraft']) for (const seed of [1, 42, 2024]) for (const quality of [0, 2]) {
     const label = `${kind}-seed${seed}-gfx${quality}`, errors = [], pictures = []
     const context = await browser.newContext({ viewport: { width: 800, height: 450 } })
     await context.routeWebSocket(/\/ws(?:\?|$)/, socket => socket.close())

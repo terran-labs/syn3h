@@ -4,7 +4,7 @@ const out=process.argv[2];await mkdir(out,{recursive:true})
 const browser=await chromium.launch({channel:'chrome',headless:true,args:['--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=metal','--ignore-gpu-blocklist']})
 const results=[],images=[]
 try{
- for(const planet of ['volcanic','alpine'])for(const kind of (process.env.KIND?[process.env.KIND]:['buggy','buggy-classic'])){
+ for(const planet of ['volcanic','alpine'])for(const kind of (process.env.KIND?[process.env.KIND]:['buggy'])){
   const page=await browser.newPage({viewport:{width:960,height:540}}),errors=[]
   page.on('pageerror',e=>errors.push(e.message));await page.routeWebSocket(/\/ws/,s=>s.close())
   await page.goto(`http://localhost:5185/?autoplay=1&vehicle=${kind}&planet=${planet}&seed=${planet==='alpine'?7:1}`);await page.waitForFunction(()=>window.syn3h?.game.tick>10)

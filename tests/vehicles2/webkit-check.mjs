@@ -3,7 +3,7 @@
 //   node tests/vehicles2/webkit-check.mjs <out dir> [kinds]      PORT=5206 by default
 import {webkit} from 'playwright-core'
 import {mkdir,writeFile} from 'node:fs/promises'
-const out=process.argv[2],kinds=(process.argv[3]??'buggy,buggy-classic,jet,hovercraft,tank').split(','),port=process.env.PORT??'5206'
+const out=process.argv[2],kinds=(process.argv[3]??'buggy,jet,hovercraft,tank').split(','),port=process.env.PORT??'5206'
 await mkdir(out,{recursive:true})
 const browser=await webkit.launch({headless:true}),results=[]
 try{
