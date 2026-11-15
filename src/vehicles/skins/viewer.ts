@@ -2,6 +2,8 @@ import * as THREE from 'three/webgpu'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { ClassicBuggySkin, Syn3hBuggySkin } from './index'
+import { params } from '../../../shared/params'
+import { vehicleShading } from '../../core/quality'
 
 async function main() {
   const renderer = new THREE.WebGPURenderer({antialias: true})
@@ -33,6 +35,8 @@ async function main() {
   scene.add(sun)
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({color: 0x283441, roughness: .85}))
   ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground)
+  // The viewer has no frame governor, so ask for the full showroom shading here.
+  params.set(vehicleShading.def.id, 3)
   const skins = [new ClassicBuggySkin(), new Syn3hBuggySkin()]
   // Camera faces +Z, so positive X appears on the left of the comparison.
   skins.forEach((skin, i) => { skin.object.position.set(i ? -4.6 : 4.6, .65, 0); skin.setColors(i ? 0xe96d26 : 0x2375d1, i ? 0xffb94a : 0x3ce5ff); scene.add(skin.object) })
