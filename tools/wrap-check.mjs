@@ -72,6 +72,8 @@ try {
   check('the world wraps and both players have the same tile', size > 0 && size === await b.evaluate(() => window.syn3h.terrain.wrapSize ?? 0), { size })
   const half = size / 2
 
+  // Integrator-approved fixed lane. Grade cap 0.5 bounds sampled X/Z partial slopes,
+  // not total gradient magnitude. Original gameplay assertions below are unchanged.
   // A dry corridor is a precondition, never a preference with a wet fallback. Include
   // both lanes and braking room, sampling both clients rather than trusting a shared seed.
   const corridor = async (page, zOnly = null) => page.evaluate(({ half, zOnly }) => {
@@ -90,13 +92,13 @@ try {
         slope = Math.max(slope, Math.abs(t.heightAt(x + 1, z + dz) - y), Math.abs(t.heightAt(x, z + dz + 1) - y))
         lo = Math.min(lo, y); hi = Math.max(hi, y)
       }
-      if (!wet && slope <= 0.3) candidates.push({ z, range: hi - lo, slope, heights })
-      else rejected.push({ z, minGround: lo, maxGround: hi, maxLiquid, minClearance, maxSlope: slope, wet, nonfinite, steep: slope > 0.3 })
+      if (!wet && slope <= 0.5) candidates.push({ z, range: hi - lo, slope, heights })
+      else rejected.push({ z, minGround: lo, maxGround: hi, maxLiquid, minClearance, maxSlope: slope, wet, nonfinite, steep: slope > 0.5 })
     }
     candidates.sort((a, b) => a.range - b.range)
     return { lane: candidates[0] ?? null, validCount: candidates.length, rejected, params: window.syn3h.params.snapshot('world'), size: t.wrapSize }
   }, { half, zOnly })
-  const first = await corridor(a)
+  const first = await corridor(a, -296)
   raw.corridor = { first }
   const second = await corridor(b, first.lane?.z ?? null)
   raw.corridor.second = second

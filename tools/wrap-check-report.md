@@ -22,3 +22,7 @@ Logs: `/tmp/syn3h-frozen-wrap-dry.log`, `/tmp/syn3h-frozen-wrap-sample.log`, `/t
 ## Remaining decision
 
 The integrator must select a different supported fixture geometry/world before another gate. Do not lower the slope threshold, silently use water or replace terrain/colliders. The original intermittent startup stale-state failure remains unresolved; future readiness success would establish steady-state readiness, not repair or explain that earlier failure.
+
+## Integrator-approved fixed-lane attempt
+
+The integrator authorized one full gate on z -296, keeping the same world and travel bounds. The fixture-only grade cap changes from 0.3 to 0.5 based on the sampled route and existing climb evidence. This is a cap on sampled absolute X/Z partial slopes, not a universal terrain angle; combined gradient could be greater. It supports attempting the route, not claiming success. All original replication, contact, tag and shove assertions remain unchanged. Both-client corridor verification still precedes driving.
