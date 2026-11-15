@@ -247,6 +247,10 @@ export class Room {
   /** Advance time based rules. Called on every message; transports may also call it on a timer. */
   tick(): void {
     this.tickSilent(this.now())
+    this.expireBots()
+    for (const bot of this.bots.values()) {
+      if (!bot.lastState || bot.lastState.paused || this.now() - bot.lastStateAt > RESPONDING_MS) this.dropCord(bot)
+    }
     this.tickYoink(this.now())
     this.tickHeld(this.now())
     this.tickIdle(this.now())
@@ -276,7 +280,6 @@ export class Room {
     // Before the tick, which closes connections that have gone silent: this one just spoke.
     const heard = this.players.get(peer)
     if (heard) heard.lastHeardAt = this.now()
-    this.expireBots()
     this.tick()
     if (typeof data !== 'string') {
       const bytes = data instanceof Uint8Array ? data : new Uint8Array(data)
@@ -299,9 +302,11 @@ export class Room {
       case 'param':
         this.onParam(player, msg.id, msg.value)
         break
-      case 'fire':
-        this.onFire(peer, player, msg.shot)
+      case 'fire': {
+        const actor = this.gearActor(player, msg.bot)
+        if (actor) this.onFire(peer, actor, msg.shot)
         break
+      }
       case 'hit':
         this.onHit(player, msg.shooter, msg.shot, msg.victim)
         break
@@ -324,12 +329,16 @@ export class Room {
       case 'bot':
         this.onBotKind(player, msg.id, msg.kind)
         break
-      case 'cord':
-        this.onCord(peer, player, msg.cord)
+      case 'cord': {
+        const actor = this.gearActor(player, msg.bot)
+        if (actor) this.onCord(peer, actor, msg.cord)
         break
-      case 'yoink':
-        this.onYoink(peer, player, msg.y)
+      }
+      case 'yoink': {
+        const actor = this.gearActor(player, msg.bot)
+        if (actor) this.onYoink(peer, actor, msg.y)
         break
+      }
       case 'stuck':
       case 'died': // the name older bundles send
         if (typeof msg.bot === 'number') {
@@ -377,6 +386,7 @@ export class Room {
     // Its owner is not there to let go of it: a held place holds no cord and carries nobody.
     this.dropCord(player)
     this.endCarry(player)
+    if (player.info.id === this.host) this.clearBots()
     if (wasActive && !this.anyActive(this.now())) {
       this.activeLeft = true
       this.activeAt = this.now()
@@ -446,6 +456,7 @@ export class Room {
     const hostLeft = this.host === id
     if (hostLeft) {
       this.host = nextId
+      this.clearBots()
       if (!next) this.locked = false
     }
     // "It" is a tag role: announce its move only in tag. A leaver who was host as well gets
@@ -698,14 +709,38 @@ export class Room {
     const now = this.now()
     for (const [id, bot] of this.bots) {
       if (now - bot.lastStateAt < BOT_EXPIRY_MS) continue
-      this.bots.delete(id)
-      delete this.scores[id]
-      this.broadcast({ type: 'leave', id })
-      if (this.it === id) {
-        const next = this.players.values().next().value as Player | undefined
-        this.setIt(next ? next.info.id : 0, 'leave')
-      }
+      this.removeBot(id, bot)
     }
+  }
+
+  /** Bot simulations belong to this host connection, never to its successor or held place. */
+  private clearBots(): void {
+    for (const [id, bot] of this.bots) this.removeBot(id, bot)
+    this.botKinds.clear()
+  }
+
+  private removeBot(id: number, bot: Player): void {
+    this.dropCord(bot)
+    this.endCarry(bot)
+    for (const holder of [...this.players.values(), ...this.bots.values()]) {
+      if (holder.carry?.to === id) this.endCarry(holder)
+    }
+    this.bots.delete(id)
+    delete this.scores[id]
+    this.broadcast({ type: 'leave', id })
+    if (this.it === id) {
+      const next = this.players.values().next().value as Player | undefined
+      this.setIt(next ? next.info.id : 0, 'leave')
+    }
+  }
+
+  /** Keep the connection's budget, but use the actor's own positions and gear limits. */
+  private gearActor(sender: Player, botId: unknown): Player | undefined {
+    if (botId === undefined) return sender
+    if (sender.info.id !== this.host || sender.heldUntil || typeof botId !== 'number' || !Number.isInteger(botId) || !isBotId(botId)) return
+    const bot = this.bots.get(botId)
+    if (!bot?.lastState || bot.lastState.paused || this.now() - bot.lastStateAt > RESPONDING_MS) return
+    return bot
   }
 
   private onProfile(player: Player, kind: unknown, colors: unknown): void {
@@ -931,7 +966,7 @@ export class Room {
       if (!st || !anchor || this.dist(anchor, st.p) > reach) {
         // Out of reach (or not yet placed). If this was the refresh of a cord the room has
         // already relayed, the others must not keep pulling on it: tell them it is off.
-        if (player.cordOn) this.dropCord(player, peer)
+        if (player.cordOn) this.dropCord(player, player.info.bot ? undefined : peer)
         return
       }
     }
@@ -978,7 +1013,7 @@ export class Room {
     }
     if (y.s === 'grab') {
       if (carrying || now - player.yoinkAt < recharge) return
-      for (const p of this.players.values()) if (p !== player && p.carry?.to === y.to) return
+      for (const p of [...this.players.values(), ...this.bots.values()]) if (p !== player && p.carry?.to === y.to) return
       if (player.carry) this.endCarry(player)
       player.carry = { to: y.to, at: now }
       player.yoinkAt = now
@@ -1018,7 +1053,7 @@ export class Room {
     // "No limit" on the slider still ends: nobody is carried for more than YOINK_MAX_CARRY_MS.
     const most = Math.min(YOINK_MAX_CARRY_MS, limit > 0 ? limit * 1000 + YOINK_CARRY_SLACK_MS : YOINK_MAX_CARRY_MS)
     const on = this.paramBool(yoinkAllowed.def)
-    for (const holder of this.players.values()) {
+    for (const holder of [...this.players.values(), ...this.bots.values()]) {
       const carry = holder.carry
       if (!carry) continue
       const other = this.byId(carry.to)
