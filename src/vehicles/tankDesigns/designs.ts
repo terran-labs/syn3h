@@ -27,7 +27,7 @@ import * as THREE from 'three/webgpu'
 import { at, bell, blob, body, hump, mirrored, plan, rod, sm, trackPod, V, type Livery, type Mats } from './kit'
 
 /** One round of studies. The lab shows rounds as groups. */
-export interface TankDesign { id: string; name: string; tagline: string; color: number; build(m: Mats): THREE.Group }
+export interface TankDesign { id: string; name: string; tagline: string; color: number; accent?: number; build(m: Mats): THREE.Group }
 
 export const PODZ = [-2.45, 0, 2.45], PX = 2.05, BASE = 1.34
 export const ARM_X = 1.5, ARM = .78, REST = Math.asin(.3 / ARM), ORANGE = 0xff5a12

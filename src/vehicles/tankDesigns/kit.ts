@@ -8,25 +8,42 @@
  */
 import * as THREE from 'three/webgpu'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { dot, normalView, positionViewDirection, sin, time } from 'three/tsl'
 import { abs, float, fract, length, max, min, mix, normalLocal, oneMinus, positionLocal, smoothstep, uniform, vec3 } from 'three/tsl'
 
-export interface Mats { paint: THREE.Material; accent: THREE.Material; chrome: THREE.Material; tail: THREE.Material; glass: THREE.Material; rubber: THREE.Material; dark: THREE.Material; glow: THREE.Material; /** Body colour, shared by every skin() of one design so a swatch can repaint it. */ paintU: { value: THREE.Color }; /** Headlamp brightness: 1 lit, about 0.3 for an unlit lens. */ lampU: { value: number } }
+export interface Mats { paint: THREE.Material; accent: THREE.Material; chrome: THREE.Material; tail: THREE.Material; glass: THREE.Material; rubber: THREE.Material; dark: THREE.Material; glow: THREE.Material; /** Body colour, shared by every skin() of one design so a swatch can repaint it. */ paintU: { value: THREE.Color }; /** Headlamp brightness: 1 lit, about 0.3 for an unlit lens. */ lampU: { value: number }; /** Second colour: stripes, ribs, springs, rim rings and the force field. */ accentU: { value: THREE.Color }; /** Force field canopy, in the accent colour. */ field: THREE.Material }
 
 /** Body paint for parts that are not part of a blended body (separate fenders), on the shared colour. */
-function loosePaint(paintU: unknown) {
-  const mat = new THREE.MeshPhysicalNodeMaterial({ side: THREE.DoubleSide, roughness: .36, metalness: .15, clearcoat: .5, clearcoatRoughness: .15 })
+function loosePaint(paintU: unknown, metalness = .15) {
+  const mat = new THREE.MeshPhysicalNodeMaterial({ side: THREE.DoubleSide, roughness: .36, metalness, clearcoat: .5, clearcoatRoughness: .15 })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   mat.colorNode = paintU as any
   return mat
 }
 
+/**
+ * Force field canopy: bright at the rim, nearly clear face on, with thin bands drifting along it.
+ * A stand-in for the shared `canopy` role (src/vehicles/PATTERN.md rule 2) until that lands.
+ */
+function forceField(tint: unknown) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type N = any
+  const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false })
+  mat.fog = false
+  const rim: N = float(1).sub(abs(dot(normalView, positionViewDirection))).pow(2.2)
+  const bands: N = sin(positionLocal.z.mul(9).add(positionLocal.y.mul(4)).sub(time.mul(1.6))).mul(.5).add(.5).pow(10)
+  const glow: N = rim.mul(1.2).add(bands.mul(rim.add(.25)).mul(.4)).add(.09)
+  mat.colorNode = (tint as N).mul(glow).mul(.8); mat.opacityNode = glow.clamp(0, 1)
+  return mat
+}
+
 export function makeMats(color: number, accent = 0xff5a12): Mats {
-  const side = THREE.DoubleSide, paintU = uniform(new THREE.Color(color))
+  const side = THREE.DoubleSide, paintU = uniform(new THREE.Color(color)), accentU = uniform(new THREE.Color(accent))
   return {
     paint: loosePaint(paintU),
-    accent: new THREE.MeshPhysicalMaterial({ color: accent, metalness: .6, roughness: .4, clearcoat: 1, clearcoatRoughness: .1, side }),
-    // Satin alloy, not mirror chrome: the owner asked for NASA hardware, not jewellery.
-    chrome: new THREE.MeshStandardMaterial({ color: 0xc4c8ce, metalness: 1, roughness: .3, side }),
+    accent: loosePaint(accentU, .5), accentU, field: forceField(accentU),
+    // Bright metal: the owner wants the buggy's shiny rims and fittings.
+    chrome: new THREE.MeshStandardMaterial({ color: 0xe6e9ee, metalness: 1, roughness: .1, side }),
     paintU, lampU: uniform(1),
     glass: new THREE.MeshPhysicalMaterial({ color: 0x020305, metalness: .3, roughness: .04, clearcoat: 1, clearcoatRoughness: 0, side }),
     rubber: new THREE.MeshStandardMaterial({ color: 0x0b0b0c, metalness: 0, roughness: .82, side }),
@@ -199,6 +216,8 @@ export function wheel(m: Mats, r: number, hw: number) {
     const a = i / 5 * Math.PI * 2, mesh = new THREE.Mesh(hole, m.rubber)
     mesh.position.set(side * (hw - .045), Math.sin(a) * r * .5, Math.cos(a) * r * .5); g.add(mesh)
   }
+  // The buggy's motor ring: an accent hoop where rim meets tyre, on the outer face.
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(r * .88, .028, 6, dense(32, 14)), m.accent); ring.rotation.y = Math.PI / 2; ring.position.x = hw - .02; g.add(ring)
   return g
 }
 
@@ -286,9 +305,11 @@ export function bodyGeometry(b: BodySpec): THREE.BufferGeometry {
 }
 
 /** A rectangular region of glazing or solar cells cut into the skin. x is |x|. Omitted bounds are open. */
-export interface Pane { kind: 'glass' | 'solar'; z: [number, number]; y: [number, number]; x?: [number, number]; pitchZ?: number; pitchX?: number; gap?: number }
+export interface Pane { kind: 'glass' | 'solar' | 'dark' | 'tail'; z: [number, number]; y: [number, number]; x?: [number, number]; pitchZ?: number; pitchX?: number; gap?: number }
 /** A round mark at [|x|, y, z]: porthole, lamp, intake. */
-export interface Spot { kind: 'glass' | 'glow' | 'tail' | 'dark'; at: [number, number, number]; r: number }
+export interface Spot { kind: 'glass' | 'glow' | 'tail' | 'dark'; at: [number, number, number]; r: number; /** Stretch along the vehicle: 2 makes an oval twice as long as it is tall. */ long?: number }
+/** A stripe along the vehicle in the accent colour, between two distances from the centreline, on upper surfaces. */
+export interface Band { x: [number, number] }
 /** A hoop round the body at z, half width w. */
 export interface Stripe { z: number; w: number; color: number }
 /**
@@ -296,7 +317,7 @@ export interface Stripe { z: number; w: number; color: number }
  * lies between z[0] and z[1], so it lands on the nose or tail wall without knowing its exact shape.
  */
 export interface Lamp { kind: 'head' | 'tail'; x: number; y: number; r: number; z: [number, number] }
-export interface Livery { lamps?: Lamp[]; lower: number; lowerMetal?: number; lowerRough?: number; glass?: number; panes?: Pane[]; spots?: Spot[]; stripes?: Stripe[] }
+export interface Livery { bands?: Band[]; lamps?: Lamp[]; lower: number; lowerMetal?: number; lowerRough?: number; glass?: number; panes?: Pane[]; spots?: Spot[]; stripes?: Stripe[] }
 
 /**
  * Material for a blended body. Everything is decided per pixel from position and normal, so
@@ -315,24 +336,29 @@ export function skin(m: Mats, l: Livery) {
   let glow: N = vec3(0, 0, 0)
   for (const s of l.stripes ?? []) { const k = oneMinus(smoothstep(s.w - e, s.w + e, abs(p.z.sub(s.z)))).mul(oneMinus(under)); color = mix(color, rgb(s.color), k) }
   const put = (k: N, hex: number, r: number, mt: number) => { color = mix(color, rgb(hex), k); rough = mix(rough, float(r), k); metal = mix(metal, float(mt), k) }
+  for (const b of l.bands ?? []) color = mix(color, m.accentU as N, inside(ax, b.x[0], b.x[1]).mul(oneMinus(under)))
   for (const w of l.panes ?? []) {
     let k: N = inside(p.z, w.z[0], w.z[1]).mul(inside(p.y, w.y[0], w.y[1]))
     if (w.x) k = k.mul(inside(ax, w.x[0], w.x[1]))
     if (w.pitchZ) k = k.mul(mullion(p.z, w.pitchZ, w.gap ?? .06))
     if (w.pitchX) k = k.mul(mullion(p.x, w.pitchX, w.gap ?? .06))
-    if (w.kind === 'glass') put(k, l.glass ?? 0x05070a, .05, .6); else put(k, 0x0a1838, .22, .7)
+    if (w.kind === 'glass') put(k, l.glass ?? 0x05070a, .05, .6)
+    else if (w.kind === 'dark') put(k, 0x0c0d10, .55, .3)
+    else if (w.kind === 'tail') { put(k, 0x4a0a06, .2, .1); glow = max(glow, rgb(0xff2414).mul(k)) }
+    else put(k, 0x0a1838, .22, .7)
   }
   for (const s of l.spots ?? []) {
-    const k: N = oneMinus(smoothstep(s.r - e, s.r + e, length(vec3(ax.sub(s.at[0]), p.y.sub(s.at[1]), p.z.sub(s.at[2])))))
+    const k: N = oneMinus(smoothstep(s.r - e, s.r + e, length(vec3(ax.sub(s.at[0]), p.y.sub(s.at[1]), p.z.sub(s.at[2]).div(s.long ?? 1)))))
     if (s.kind === 'glass') put(k, l.glass ?? 0x05070a, .05, .6)
     else if (s.kind === 'dark') put(k, 0x0c0d10, .6, .3)
     else { put(k, 0x111111, .3, 0); glow = max(glow, rgb(s.kind === 'glow' ? 0xfff2d2 : 0xff2414).mul(k)) }
   }
   for (const s of l.lamps ?? []) {
     const d: N = length(vec3(ax.sub(s.x), p.y.sub(s.y), 0)), on: N = inside(p.z, s.z[0], s.z[1])
-    // Dark bezel, then the lit lens inside it.
+    // Chrome halo ring, a dark duct, then the lit lens.
+    put(oneMinus(smoothstep(s.r * 1.16 - e, s.r * 1.16 + e, d)).mul(on), 0xe6e9ee, .1, 1)
     put(oneMinus(smoothstep(s.r - e, s.r + e, d)).mul(on), 0x0c0d10, .35, .6)
-    const lens: N = oneMinus(smoothstep(s.r * .8 - e, s.r * .8 + e, d)).mul(on)
+    const lens: N = oneMinus(smoothstep(s.r * .74 - e, s.r * .74 + e, d)).mul(on)
     put(lens, s.kind === 'head' ? 0xd8dde2 : 0x4a0a06, .12, .2)
     glow = max(glow, s.kind === 'head' ? rgb(0xfff2d2).mul(lens).mul(m.lampU as N).mul(1.6) : rgb(0xff2414).mul(lens))
   }
