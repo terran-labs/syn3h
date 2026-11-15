@@ -1,21 +1,31 @@
 /**
  * Gallery for the buggy body variations (buggy-bodies.html). Loads the bodies that
- * tools/buggy-bodies/build.py exports to public/models/buggy-bodies, puts the original wheels
- * beside them and lets the owner orbit each one, compare all five, change the paint and switch
- * to night to judge the lights. Review tool only: nothing here ships in the game.
+ * tools/buggy-bodies/build.py exports to labs/buggy-bodies, puts the original wheels, inner
+ * wheel wings and wing struts on them and lets the owner orbit each one, compare a round side
+ * by side, change the paint and switch to night to judge the lights. Review tool only: nothing
+ * here ships in the game. The models live in labs/, which the dev server serves from the
+ * repository root but the production build does not copy.
+ *
+ * ?round=1 shows the first round; the default is the latest round plus the body it grew from.
  */
 import * as THREE from 'three/webgpu'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 
-interface Variant { id: string; name: string; notes: string[]; file: string; triangles: number }
+interface Variant { id: string; name: string; notes: string[]; file: string; triangles: number; round: number }
+
+const MODELS = '/labs/buggy-bodies'
+/** The round 1 body the owner picked as the base for round 2. */
+const PICKED = 'v4-widebody'
 
 const PAINTS: [string, number, number | null][] = [
   ['As built', -1, null], ['Navy', 0x0b1560, 0x101014], ['Blue', 0x1553c8, 0xd01818], ['Red', 0xb3140f, 0x101014], ['White', 0xe8ecf0, 0x1553c8], ['Black', 0x0c0d10, 0xff7a14],
 ]
-/** Wheel rest positions in the game frame (nose at -Z), from the Syn3h prefab. */
-const WHEELS = [[-1.32, -0.2, -1.3], [1.32, -0.2, -1.3], [-1.32, -0.2, 1.3], [1.32, -0.2, 1.3]]
+/** Wheel positions at rest in the game frame (nose at -Z): Syn3hBuggy WHEEL_POS at ride height. */
+const WHEELS = [[-1.1, -0.19, -1.3], [1.1, -0.19, -1.3], [-1.1, -0.19, 1.3], [1.1, -0.19, 1.3]]
+/** Where each strut meets the body: the prefab's AxelPos, as LoadedBuggySkin's mounts. */
+const MOUNTS = [[-0.55, 0.15, -1.2], [0.55, 0.15, -1.2], [-0.55, 0.15, 1.2], [0.55, 0.15, 1.2]]
 const SPACING = 4
 
 async function main() {
@@ -51,11 +61,16 @@ async function main() {
   scene.add(ground)
 
   const loader = new GLTFLoader()
-  const variants: Variant[] = await (await fetch('/models/buggy-bodies/index.json')).json()
+  const all: Variant[] = await (await fetch(`${MODELS}/index.json`)).json()
+  const latest = Math.max(...all.map(v => v.round))
+  const round = Number(new URLSearchParams(location.search).get('round')) || latest
+  const variants = all.filter(v => v.round === round || (round > 1 && v.id === PICKED))
+  if (round > 1) for (const v of variants) if (v.id === PICKED) v.name += ' (your pick)'
+  document.querySelector('#title')!.textContent = round > 1 ? `Syn3h buggy: round ${round}, built on Wide body` : 'Syn3h buggy: five body variations'
 
   // Original wheels: tyre and rim ring, with the inner wing (the stator) inside.
   const parts = await loader.loadAsync('/models/buggy.glb')
-  const bake = (name: string, material: THREE.Material) => {
+  const bake = (name: string, material: THREE.Material, centre = true) => {
     const root = parts.scene.getObjectByName(name)!
     root.updateWorldMatrix(true, true)
     const group = new THREE.Group()
@@ -64,19 +79,32 @@ async function main() {
       const g = o.geometry.clone().applyMatrix4(o.matrixWorld); g.computeVertexNormals()
       const m = new THREE.Mesh(g, material); m.castShadow = true; group.add(m)
     })
-    const c = new THREE.Box3().setFromObject(group).getCenter(new THREE.Vector3())
-    group.children.forEach(m => (m as THREE.Mesh).geometry.translate(-c.x, -c.y, -c.z))
+    if (centre) {
+      const c = new THREE.Box3().setFromObject(group).getCenter(new THREE.Vector3())
+      group.children.forEach(m => (m as THREE.Mesh).geometry.translate(-c.x, -c.y, -c.z))
+    }
     return group
   }
   const tyre = bake('Wheel_Template', new THREE.MeshStandardMaterial({ color: 0x15181c, roughness: 0.8 }))
   const stator = bake('Rim', new THREE.MeshStandardMaterial({ color: 0x9aa6b2, roughness: 0.2, metalness: 1 }))
+  // The wing strut. Its narrow root is at the mesh origin and it spans along +Y.
+  const strut = bake('Axle', new THREE.MeshStandardMaterial({ color: 0x59616c, roughness: 0.3, metalness: 0.55 }), false)
+  const up = new THREE.Vector3(0, 1, 0)
   const wheelSet = () => {
     const g = new THREE.Group()
-    for (const [x, y, z] of WHEELS) {
+    WHEELS.forEach(([x, y, z], i) => {
       const w = new THREE.Group(); w.position.set(x, y, z)
       const t = tyre.clone(true); if (x < 0) t.rotation.y = Math.PI
       w.add(t, stator.clone(true)); g.add(w)
-    }
+      // Same placement as LoadedBuggySkin.strutMatrix: span from the hub to the body mount,
+      // thickness as near straight down as it can be, so the chord lies fore and aft.
+      const hub = new THREE.Vector3(x, y, z), span = new THREE.Vector3(...MOUNTS[i]).sub(hub).normalize()
+      const thick = up.clone().addScaledVector(span, -up.dot(span)).normalize().negate()
+      const s = strut.clone(true)
+      s.matrixAutoUpdate = false
+      s.matrix.makeBasis(new THREE.Vector3().crossVectors(span, thick), span, thick).setPosition(hub)
+      g.add(s)
+    })
     return g
   }
 
@@ -86,7 +114,7 @@ async function main() {
   const cars: THREE.Group[] = []
   for (const [i, v] of variants.entries()) {
     status.textContent = `Loading ${v.name}…`
-    const gltf = await loader.loadAsync(`/models/buggy-bodies/${v.file}`)
+    const gltf = await loader.loadAsync(`${MODELS}/${v.file}`)
     const car = new THREE.Group(); car.name = v.id
     bodyMats.push([]); accentMats.push([])
     const cache = new Map<THREE.Material, THREE.Material>()
@@ -127,7 +155,7 @@ async function main() {
     if (lineup && Math.abs(dir.x) > 1 && Math.abs(dir.z) > 1) dir = new THREE.Vector3(Math.sign(dir.x) * 0.8, 2.4, Math.sign(dir.z) * 5)
     const centre = new THREE.Vector3(lineup ? 0 : cars[current].position.x, 0.1, 0)
     controls.target.copy(centre)
-    camera.position.copy(centre).addScaledVector(dir.clone().normalize(), lineup ? 36 / Math.min(1.6, Math.max(0.5, camera.aspect)) : (camera.aspect < 1 ? 11 : 8))
+    camera.position.copy(centre).addScaledVector(dir.clone().normalize(), lineup ? 7.4 * cars.length / Math.min(1.6, Math.max(0.5, camera.aspect)) : (camera.aspect < 1 ? 11 : 8))
     controls.update()
   }
   const layout = () => {
@@ -138,7 +166,7 @@ async function main() {
     variantButtons.forEach((b, i) => b.setAttribute('aria-pressed', String(!lineup && i === current)))
     lineupButton.setAttribute('aria-pressed', String(lineup))
     const v = variants[current]
-    nameEl.textContent = lineup ? 'All five' : `${current + 1}. ${v.name}`
+    nameEl.textContent = lineup ? 'Side by side' : `${current + 1}. ${v.name}`
     notesEl.innerHTML = ''
     for (const n of lineup ? variants.map((x, i) => `${i + 1}. ${x.name} (left to right)`) : v.notes) { const li = document.createElement('li'); li.textContent = n; notesEl.append(li) }
   }
@@ -175,6 +203,6 @@ async function main() {
   renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera) })
   addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight) })
   // For scripted screenshots.
-  Object.assign(window, { bodiesViewer: { ready: true, show, lineup(on = true) { lineup = on; layout(); frame() }, view(name: string) { frame(VIEWS.find(v => v[0] === name)![1]) }, paint, setNight } })
+  Object.assign(window, { bodiesViewer: { ready: true, show, lineup(on = true) { lineup = on; layout(); frame() }, view(name: string) { frame(VIEWS.find(v => v[0] === name)![1]) }, look(p: number[], t: number[]) { camera.position.fromArray(p); controls.target.fromArray(t); controls.update() }, paint, setNight } })
 }
 main().catch(error => { document.querySelector('#status')!.textContent = String(error); console.error(error) })
