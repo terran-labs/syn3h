@@ -98,7 +98,7 @@ export class Inspector {
         // Saving a local copy does not edit the shared world, even for a locked guest.
         // Keep native keyboard activation, but do not send Enter/Space to driving input.
         // Keyup still bubbles so a previously held driving key can be released here.
-        save.addEventListener('keydown', event => event.stopPropagation(), { signal: this.abort.signal })
+        save.addEventListener('keydown', event => event.stopPropagation())
         foot.append(save)
       }
       body.append(foot); card.append(head, body); cards.append(card)
