@@ -21,11 +21,61 @@ The controller offers `game.quality.attachTerrain(terrain)`. If terrain implemen
 
 Session storage records `syn3h.loading.level` when loading starts and clears it after a frame with draws. A surviving marker reduces the next attempt by one level, including repeated failures down to safe. A separate session value remembers a manually selected or automatically reduced level. Session storage avoids treating another tab's load as a crash; local storage is a fallback when session storage is unavailable. Storage denial does not prevent the game from starting.
 
-After five seconds of warmup, four consecutive two-second windows below 54 fps at desktop quality or 28 fps at mobile quality reduce quality by one level. Hidden tabs, invalid samples and pauses above one second do not count. A 15-second cooldown prevents rapid repeated reductions. Quality does not automatically increase.
+Frame pressure is handled by the cascade described below. `FrameBudgetMonitor`, the original whole-level monitor (four consecutive two-second windows below 54 or 28 fps, 15 second cooldown), stays exported and tested but the controller no longer uses it.
 
-`window` emits `syn3h:loading` events with `{phase, progress, elapsedMs}`. Phases are device, physics, renderer, world and ready. Progress is an estimate, not download byte progress. Elapsed time is measured from navigation. `loadingProgress` exports the latest state for UI code that subscribes after initialization. `syn3h:quality` carries the selected level and budgets.
+`window` emits `syn3h:loading` events with `{phase, progress, elapsedMs}`. Phases are device, physics, renderer, world and ready. Progress is an estimate, not download byte progress. Elapsed time is measured from navigation. `loadingProgress` exports the latest state for UI code that subscribes after initialization. `syn3h:quality` carries the selected level, the effective rung values (`rung`, `rungs`, `kind`, `pixelRatio`, `vehicleShading`, `particles`, `shadows`, `auto`, `targetFps`), the fixed level `budget` and the `reason` for the change. `effectiveQuality()` returns the same values for code that polls.
 
-F3 toggles a small HUD with smoothed fps, frame interval, physics-step CPU time, draw calls and triangles. `game.performance` exposes these values and first-frame submission time. Physics time includes fixed system updates and Rapier stepping. Neither CPU time nor frame interval is isolated GPU time. `Game` now smooths frame duration before computing fps, avoiding the previous bias from averaging reciprocal frame times.
+F3 toggles a small HUD with the level, target fps, rung, pixel ratio, vehicle shading tier, the last window's 90th percentile frame, smoothed fps, frame interval, physics-step CPU time, draw calls and triangles. `game.performance` exposes these values and first-frame submission time. Physics time includes fixed system updates and Rapier stepping. Neither CPU time nor frame interval is isolated GPU time. `Game` now smooths frame duration before computing fps, avoiding the previous bias from averaging reciprocal frame times.
+
+## Performance cascade
+
+`QualityGovernor` (pure, no DOM) sheds cost in small rungs inside a level before giving up the level, and climbs back when there is sustained headroom. `QualityController` feeds it every rendered frame interval and applies its choice. Tests: `tests/core/quality-cascade.test.ts`, driven by synthetic frame traces.
+
+| Level | Rung 0 (fixed budget) | Then, in order |
+| --- | --- | --- |
+| Desktop | pixel ratio 1.5, shading 3, particles 2400, shadows 1 | ratio 1.25, ratio 1, shading 2, particles 1200, shadows 0, drop to mobile |
+| Mobile | ratio 1, shading 2, particles 960, shadows 0 | ratio 0.85, shading 1, particles 480, drop to safe |
+| Safe | ratio 1, shading 0, particles 240, shadows 0 | ratio 0.85, particles 120, ratio 0.7 |
+
+Pixel ratios are capped by the display, and rungs that change nothing on this display are dropped (a ratio 1 monitor has no 1.25 rung). The cascade is monotone: each level's bottom is nowhere richer than the next level's top, except safe's fixed ratio of 1; a drop maps to the first rung that is nowhere richer than the current one, so mobile at 0.85 drops to safe at 0.85. Shading caps are desktop 3, mobile 2, safe 0. Safe is the crash and low-memory level, so it compiles no extra material variants.
+
+| Rung kind | Slow evidence to shed | Headroom to climb (before backoff) |
+| --- | ---: | ---: |
+| Resolution | 2 s | 10 s |
+| Particles | 4 s | 20 s |
+| Vehicle shading | 5 s | 30 s |
+| Shadows | 6 s | 45 s |
+| Whole level | 8 s | 60 s |
+
+Frames go into one-second windows. A window is slow when its 90th percentile frame is 25 percent over target, and has headroom when its 95th percentile is within 10 percent of target (15 percent under target when the display is faster than the target, since only then can headroom be seen). Evidence must be consecutive. Hidden tabs and frames that are not finite, not positive or above one second clear the evidence. Nothing is decided in the first five seconds, and two seconds after any change are ignored so resize or compile hitches are not evidence.
+
+Target rate is 60 fps on desktop and 30 on mobile and safe, never faster than the display. While the game loads, the controller probes idle animation frames to find the display interval, so a browser capped at 30 fps from the start (Low Power Mode) gets a 30 fps target. Game frames only ever reveal displays of 60 Hz or faster, so a desktop that is GPU bound at 45 fps from its first frame still sheds. A cap that starts mid-session looks the same as a slow GPU and is treated as one: desktop sheds to mobile, which targets 30.
+
+A climb that has to be undone within 30 seconds doubles that rung's climb wait, up to 32 times its base and at most ten minutes. A climb that holds for 30 seconds halves it again. A scene that hovers on the threshold makes 9 changes in five simulated minutes, with climb waits of 10, 20, 40, 80 and 160 seconds.
+
+### Manual and automatic
+
+- A hand-set `gfx.level` pins that level for the session (`syn3h.graphics.manual` in session storage). The ladder restarts at its top. The governor may still shed rungs inside it but never changes the level.
+- A hand-set `gfx.vehicleShading` pins shading at that value, even above the level cap. Shading rungs are skipped. The other rungs keep working.
+- `gfx.auto` (default on) off returns to the current level's fixed budget, rung 0, and makes no automatic changes. Only the load crash fallback still lowers the level. Switching it on clears both pins.
+- Automatic climbs never exceed the detected device level or the crash fallback level. An automatic drop is still saved as the next load's start level, but it does not cap later climbs.
+- The controller writes `gfx.shadowQuality`, `lava.particleBudget` and `gfx.vehicleShading` only when their effective value or the level changes, and its own writes are not mistaken for the player's.
+
+### What each rung buys on this machine
+
+`node tests/core/quality-cascade-browser.mjs` renders the live autoplay scene in headless Chrome (WebGPU, 1280 by 720, device scale 2) with the animation loop stopped and waits for the GPU queue after each frame, so it reads submit plus GPU time. Medians of 40 frames, three passes, on a shared, loaded Mac (14 November 2026):
+
+| Case | Pass 1 | Pass 2 | Pass 3 |
+| --- | ---: | ---: | ---: |
+| Ratio 1.5 | 5.2 ms | 5.1 | 5.1 |
+| Ratio 1.25 | 5.3 | 4.9 | 3.9 |
+| Ratio 1 | 5.9 | 4.3 | 3.4 |
+| Ratio 0.85 | 4.3 | 3.2 | 3.1 |
+| Ratio 0.7 | 3.2 | 3.3 | 2.8 |
+| Ratio 1, shadows 1 | 4.9 | 5.0 | 3.1 |
+| Ratio 1, shadows 0 | 5.6 | 3.7 | 3.4 |
+
+The only reading above the noise is the full range: going from ratio 1.5 to 0.7 takes about 2 ms off a 5 ms frame. The intermediate steps differ by less than the spread between passes, and the first pass is still warming. Shadows 1 against 0 shows no difference beyond noise. Vehicle shading tiers had no consumer on this branch and were not measured. Particle budgets were not measured. These are an Apple GPU's numbers on a light scene. The ladder order rests on how cost scales (pixel count, compile hitches) rather than on these readings, and phone timing still needs a real device.
 
 ## Load experiment
 
