@@ -262,10 +262,11 @@ export abstract class Vehicle implements System {
     this.currQuat.set(r.x, r.y, r.z, r.w)
     if (this.zorb.active) {
       const v = this.body.isKinematic() ? this.zorbVelocity.subVectors(this.currPos, this.prevPos).divideScalar(dt) : this.zorbVelocity.copy(this.body.linvel())
-      this.zorb.observe(v, this.currPos, this.game.world.gravity, dt, this.terrain)
+      this.zorb.observe(v, this.zorb.centre(this.zorbCentre), this.game.world.gravity, dt, this.terrain)
     }
   }
   private readonly zorbVelocity = new THREE.Vector3()
+  private readonly zorbCentre = new THREE.Vector3()
 
   update(dt: number, alpha: number): void {
     this.object.position.lerpVectors(this.prevPos, this.currPos, alpha)
@@ -282,7 +283,7 @@ export abstract class Vehicle implements System {
       this.zorbShield=new ZorbShield(this.game.scene)
     }
     const cheap=levelNumber(graphicsLevel.value)===0||(!this.isLocal&&distance>ZORB_CHEAP_DISTANCE)
-    if(!this.zorbShield.update(dt,this.zorb,this.object.position,this.colors.accent,cheap)){
+    if(!this.zorbShield.update(dt,this.zorb,this.object,this.colors.accent,cheap)){
       this.zorbShield.dispose();this.zorbShield=null
     }
   }

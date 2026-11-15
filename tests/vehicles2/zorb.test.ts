@@ -51,8 +51,9 @@ describe('zorb ball physics', () => {
     // body with and without the ball at the same instant, recomputed from its colliders.
     const same = (a: ReturnType<typeof massProps>, b: ReturnType<typeof massProps>) => {
       expect(a.mass).toBeCloseTo(b.mass, 9)
-      expect(a.com.distanceTo(b.com)).toBeLessThan(1e-9)
-      expect(a.inertia.distanceTo(b.inertia)).toBeLessThan(1e-9 * Math.max(1, b.inertia.length()))
+      // Rapier sums in 32 bit floats: an extra zero mass term moves the result by 1e-8 m.
+      expect(a.com.distanceTo(b.com)).toBeLessThan(1e-6)
+      expect(a.inertia.distanceTo(b.inertia)).toBeLessThan(1e-6 * Math.max(1, b.inertia.length()))
       // Rapier stores rotations as 32 bit floats.
       expect(Math.abs(a.frame.dot(b.frame))).toBeCloseTo(1, 6)
     }
@@ -95,7 +96,9 @@ describe('zorb ball physics', () => {
     h.step(v, 300)
     expect(v.zorb.radius).toBe(target)
     expect(v.body.translation().y).toBeGreaterThan(rest + 4)
-    expect(v.body.translation().y).toBeCloseTo(target, 0)
+    expect(v.zorb.centre(new THREE.Vector3()).y).toBeCloseTo(target, 1)
+    // Hanging upright under the keel.
+    expect(UP.clone().applyQuaternion(new THREE.Quaternion().copy(v.body.rotation())).y).toBeGreaterThan(0.99)
     done()
   })
 
@@ -172,8 +175,13 @@ describe('zorb ball physics', () => {
       // Roll about, then let the bottom-heavy ball settle before getting out.
       v.zorbView = camera(0.3); v.input.y = 1; v.input.x = 0.5; h.step(v, 120)
       v.input.y = 0; v.input.x = 0; h.step(v, 600)
-      v.input.zorb = false; h.step(v, 250)
-      expect(v.zorb.active).toBe(false)
+      // Switching off shrinks the ball and sets the car down instead of dropping it 5 m.
+      v.input.zorb = false
+      let fall = 0, steps = 0
+      while (v.zorb.active && steps < 200) { h.step(v); steps++; fall = Math.min(fall, v.body.linvel().y) }
+      expect(steps * 0.02).toBeLessThan(1.6)
+      expect(fall).toBeGreaterThan(-5)
+      h.step(v, 200)
       expect(v.wheelsGrounded).toBeGreaterThanOrEqual(3)
       const q = new THREE.Quaternion().copy(v.body.rotation())
       expect(UP.clone().applyQuaternion(q).y).toBeGreaterThan(0.9)
@@ -201,7 +209,8 @@ describe('zorb ball physics', () => {
       v.input.x = 0; v.input.special = false; v.input.zorb = false; h.step(v, 500)
       expect(h.world.colliders.len()).toBe(baseline)
       expect(finite(v)).toBe(true)
-      expect(v.body.translation().y).toBeLessThan(4)
+      // Back on the ground, or for the jet held in a low hover by its altitude hold.
+      expect(v.body.translation().y).toBeLessThan(kind === 'jet' ? 6 : 3)
       done()
     }
   })
@@ -250,7 +259,7 @@ describe('zorb ball on liquids', () => {
         })
         v.input.zorb = true; h.step(v, 300)
         // Base of the ball rides about ZORB_FLOAT_DEPTH under the surface.
-        expect(v.body.translation().y).toBeCloseTo(depth + v.zorb.radius - ZORB_FLOAT_DEPTH, 0)
+        expect(v.zorb.centre(new THREE.Vector3()).y).toBeCloseTo(depth + v.zorb.radius - ZORB_FLOAT_DEPTH, 0)
         expect(v.stuck).toBe(false)
         expect(v.liquidState.heat).toBe(0)
         v.zorbView = camera(0); v.input.x = 1

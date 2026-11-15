@@ -25,9 +25,15 @@
  * Deliberate changes:
  *  - The original waited one second (`yield WaitForSeconds(1)`) before building the ball. Here
  *    it starts growing on the fixed step the flag changes.
- *  - Switching off removes the collider at once (the original turned it into a trigger shield
- *    for the separate tag mode, which this port does not have); the visual fades out.
+ *  - Switching off does not drop the vehicle from the middle of the ball (the original turned
+ *    the collider into a trigger at once, for its separate tag mode, which this port does not
+ *    have). The ball shrinks, ramping up to ZORB_SHRINK_SPEED slower than gravity so the car
+ *    keeps resting on it, lowering the car onto its wheels; the
+ *    collider goes once it is ZORB_RELEASE_RADIUS across; the visual fades out meanwhile.
  *  - The surface texture (Plasma.png) and ramp (Ramp.png) are generated in the shader.
+ *  - The ball is centred ZORB_KEEL above the vehicle's centre of mass, not on its pivot. On the
+ *    pivot the buggy's mass, .2 m ahead of it, swung the car about 70 degrees nose down at rest.
+ *    A little keel keeps the car hanging upright and swinging like a weighted hamster ball.
  *
  * Frames: Unity is left handed with +Z forward, ours is right handed with -Z forward and a
  * three.js camera looks down its -Z. A Unity camera-local direction (x, y, z) is (x, y, -z) in
@@ -61,6 +67,14 @@ export const ZORB_REST_ALPHA = 0.2275
 export const ZORB_DEFAULT_CAM_OFFSET = 3
 /** How deep the base of a floating ball sits in water or lava, in metres. */
 export const ZORB_FLOAT_DEPTH = 0.4
+/** The ball's centre sits this far above the vehicle's centre of mass, in the vehicle frame. */
+export const ZORB_KEEL = 0.35
+/** Metres per second a switched-off ball shrinks, so the car is set down rather than dropped. */
+export const ZORB_SHRINK_SPEED = 4
+/** How fast the shrink speeds up. Below g, so the car stays on the ball instead of falling. */
+const SHRINK_RAMP = 6
+/** Radius below which a shrinking ball is removed: the wheels reach the ground about here. */
+export const ZORB_RELEASE_RADIUS = 1
 /** Smallest collider radius while growing; Rapier needs a non-degenerate ball. */
 const MIN_RADIUS = 0.05
 
@@ -76,6 +90,7 @@ export function zorbRadius(size: number, camOffset: number): number {
 const tmpV = new THREE.Vector3()
 const tmpN = new THREE.Vector3()
 const tmpQ = new THREE.Quaternion()
+const tmpC = new THREE.Vector3()
 
 /** Terrain functions the ball reads for its ground-contact glow. */
 interface ZorbTerrain {
@@ -108,6 +123,8 @@ export class ZorbBall {
   private readonly lastVelocity = new THREE.Vector3()
   private hasVelocity = false
   private restitution = -1
+  /** Ball centre in the vehicle's local frame, fixed when the ball is built. */
+  readonly offset = new THREE.Vector3()
 
   constructor(
     private readonly world: RAPIER.World,
@@ -115,21 +132,42 @@ export class ZorbBall {
     private readonly camOffset: () => number,
   ) {}
 
+  /** The collider exists, growing, full size or shrinking away. */
   get active(): boolean { return this.collider !== null }
+  /** Zorb mode is switched on (the ball may still be growing). */
+  on = false
+  private shrinkSpeed = 0
 
   /**
-   * Run once per fixed step before the vehicle's controller. Builds, grows or removes the
-   * collider to match `on`.
+   * Run once per fixed step before the vehicle's controller. Builds, grows, shrinks or removes
+   * the collider to match `on`.
    */
   sync(on: boolean, dt: number): void {
-    if (!on) { this.remove(); return }
+    this.on = on
+    if (!on) {
+      if (!this.collider) return
+      this.shrinkSpeed = Math.min(ZORB_SHRINK_SPEED, this.shrinkSpeed + SHRINK_RAMP * dt)
+      this.radius -= this.shrinkSpeed * dt
+      // A collider shrinking under the car is not a moving contact to Rapier: gravity builds a
+      // fall speed the contact never removes, and the car would hit the ground with it. On the
+      // ground, cap the descent at the shrink speed.
+      const v = this.body.linvel()
+      if (this.contact > 0.5 && !this.body.isKinematic() && v.y < -this.shrinkSpeed) this.body.setLinvel({ x: v.x, y: -this.shrinkSpeed, z: v.z }, true)
+      if (this.radius <= ZORB_RELEASE_RADIUS) this.remove()
+      else this.collider.setRadius(this.radius)
+      return
+    }
     this.target = zorbRadius(zorbSize.value, this.camOffset())
+    this.shrinkSpeed = 0
     if (!this.collider) {
       // Vehicle.js 228-231: a fresh toggle restarts the scale from zero.
       this.radius = 0
       this.hasVelocity = false
+      const com = this.body.localCom()
+      this.offset.set(com.x, com.y + ZORB_KEEL, com.z)
       this.collider = this.world.createCollider(
         RAPIER.ColliderDesc.ball(MIN_RADIUS)
+          .setTranslation(this.offset.x, this.offset.y, this.offset.z)
           .setDensity(0)
           .setFriction(ZORB_FRICTION)
           .setRestitution(zorbBounce.value)
@@ -162,7 +200,7 @@ export class ZorbBall {
    * `view` is the camera's world rotation (three.js convention, looking down its -Z).
    */
   drive(input: { x: number; y: number }, view: THREE.Quaternion, dt: number): void {
-    if (!this.collider || this.body.isKinematic() || (!input.x && !input.y)) return
+    if (!this.on || !this.collider || this.body.isKinematic() || (!input.x && !input.y)) return
     const speed = zorbSpeed.value
     const side = input.x * Math.max(0, speed + zorbAgility.value)
     tmpV.set(side, 0, -input.y * speed).applyQuaternion(view)
@@ -196,7 +234,7 @@ export class ZorbBall {
     state.fastWingContact = false
     state.wasImmersed = false
     if (!this.collider || this.body.isKinematic()) return
-    const p = this.body.translation()
+    const p = this.centre(tmpC)
     const surface = terrain.liquidHeightAt?.(p.x, p.z) ?? -Infinity
     const kind = Number.isFinite(surface) ? liquidKind(terrain as Terrain, p.x, p.z) : null
     if (!kind) return
@@ -234,6 +272,12 @@ export class ZorbBall {
     if (this.contact > 0) terrain.normalAt(centre.x, centre.z, this.contactDir).negate()
   }
 
+  /** World position of the ball centre from the body's pose. */
+  centre(out: THREE.Vector3): THREE.Vector3 {
+    const r = this.body.rotation()
+    return out.copy(this.offset).applyQuaternion(tmpQ.set(r.x, r.y, r.z, r.w)).add(this.body.translation())
+  }
+
   /** Read and clear the strongest impact since the last call. */
   takeImpact(): number {
     const i = this.impact
@@ -249,6 +293,7 @@ export class ZorbBall {
       this.collider = null
     }
     this.radius = 0
+    this.on = false
     this.hasVelocity = false
   }
 }
@@ -258,7 +303,7 @@ export class ZorbBall {
 // ---------------------------------------------------------------------------------------------
 
 /** Brightness calibration for our tone mapped pipeline; Unity 2 drew it untonemapped. */
-const SHIELD_GAIN = 2.6
+const SHIELD_GAIN = 3
 /** ForceField _Offset advances .1 per second over a 4x tiled texture's v; on the unit sphere that
  * is about .1 * pi radians of latitude per second. */
 const SCROLL_RATE = 0.1 * Math.PI
@@ -283,12 +328,12 @@ function shieldMaterial(cheap: boolean): THREE.MeshBasicNodeMaterial {
   // The mesh keeps world rotation identity (RamoSphere.js Update), so the local position is a
   // world direction from the centre: no UVs, so no pinching at the poles.
   const dir = positionLocal.normalize()
-  const patch = smoothstep(0.86, 1, dot(dir, contactDir)).mul(contact)
+  const patch = smoothstep(0.93, 1, dot(dir, contactDir)).mul(contact)
   const ramp = facingRamp()
   let colour
   if (cheap) {
     // Fresnel only: the ramp at the Plasma texture's mean grey, plus a plain contact glow.
-    colour = ramp.mul(0.45).add(patch.mul(1.4))
+    colour = ramp.mul(0.45).add(patch.mul(0.35))
   } else {
     // Plasma.png: grey marble with thin bright ridges. A domain-warped noise field, banded by a
     // sine, gives the same ridged swirl. It scrolls downward at the original rate and the warp
@@ -299,13 +344,15 @@ function shieldMaterial(cheap: boolean): THREE.MeshBasicNodeMaterial {
     const ridge = pow(float(1).sub(abs(sin(n.mul(10)))), 5)
     const marble = ridge.mul(0.85).add(n.mul(0.5).add(0.5).mul(0.3))
     // Where the ball meets the ground the ridges brighten into a caustic-like patch.
-    colour = marble.mul(ramp).add(patch.mul(ridge.mul(2.2).add(0.6)))
+    colour = marble.mul(ramp).add(patch.mul(ridge.mul(1.3).add(0.1)))
   }
   const material = new THREE.MeshBasicNodeMaterial({
     transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
   })
   material.fog = false
-  material.toneMapped = true
+  // Transparent double sided materials otherwise draw back faces then front faces. Additive
+  // light without depth writes does not depend on that order, so one draw is enough.
+  material.forceSinglePass = true
   material.colorNode = tint.mul(colour).mul(alpha).mul(SHIELD_GAIN).mul(hotExposureNode())
   material.name = cheap ? 'zorb-shield-cheap' : 'zorb-shield'
   return material
@@ -354,19 +401,19 @@ export class ZorbShield implements ShieldData {
    * RamoSphere.js Update: alpha eases toward its resting value at rate 3 per second; an impact
    * with normal speed i > 3 sets it to rest + i * .1.
    */
-  update(dt: number, ball: ZorbBall, position: THREE.Vector3, accent: THREE.ColorRepresentation, cheap: boolean): boolean {
-    const on = ball.active
+  update(dt: number, ball: ZorbBall, vehicle: THREE.Object3D, accent: THREE.ColorRepresentation, cheap: boolean): boolean {
+    const on = ball.on
     const impact = ball.takeImpact()
     if (impact > 3) this.alpha = Math.max(this.alpha, ZORB_REST_ALPHA + impact * 0.1)
     this.alpha = THREE.MathUtils.lerp(this.alpha, on ? ZORB_REST_ALPHA : 0, Math.min(1, dt * 3))
-    if (on) this.mesh.scale.setScalar(Math.max(MIN_RADIUS, ball.radius))
-    this.mesh.position.copy(position)
+    if (ball.active) this.mesh.scale.setScalar(Math.max(MIN_RADIUS, ball.radius))
+    this.mesh.position.copy(ball.offset).applyQuaternion(vehicle.quaternion).add(vehicle.position)
     this.mesh.quaternion.copy(tmpQ.identity())
-    this.contact = THREE.MathUtils.lerp(this.contact, on ? ball.contact : 0, Math.min(1, dt * 8))
+    this.contact = THREE.MathUtils.lerp(this.contact, ball.active ? ball.contact : 0, Math.min(1, dt * 8))
     this.contactDir.lerp(ball.contactDir, Math.min(1, dt * 8)).normalize()
     this.tint.set(accent)
     this.mesh.material = cheap ? this.materials.cheap : this.materials.full
-    return on || this.alpha > 0.004
+    return ball.active || this.alpha > 0.004
   }
 
   dispose(): void {
