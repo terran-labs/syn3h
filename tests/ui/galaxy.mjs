@@ -55,7 +55,17 @@ try {
     await page.waitForFunction(() => window.syn3h.shell.galaxy.dim === 1, null, { timeout: 15000 })
     // Tapping a world drops straight into it: no form, no panel, one motion to the ground.
     const alpine = await page.evaluate(() => window.syn3h.shell.galaxy.screen.find(s => s.id === 'alpine'))
-    const before = Date.now()
+    // Measure the actual transition. Screenshot transfer can finish after landing on a busy host.
+    await page.evaluate(() => {
+      const root = document.querySelector('.syn3h-shell')
+      window.__dropTiming = { start: performance.now(), end: 0 }
+      const observer = new MutationObserver(() => {
+        if (root.classList.contains('is-playing') && !root.classList.contains('is-descending')) {
+          window.__dropTiming.end = performance.now(); observer.disconnect()
+        }
+      })
+      observer.observe(root, { attributes: true, attributeFilter: ['class'] })
+    })
     await page.mouse.click(alpine.x, alpine.y)
     await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-descending'), null, { timeout: 1000 })
     await page.waitForTimeout(900); await page.screenshot({ path: `${out}/${view.name}-flying.png` })
@@ -63,7 +73,7 @@ try {
     await page.waitForTimeout(1500); await page.screenshot({ path: `${out}/${view.name}-descent-arrive.png` })
     await page.waitForFunction(() => { const s = document.querySelector('.syn3h-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 15000 })
     assert.equal(await page.evaluate(() => window.syn3h.planets.currentPlanet().id), 'alpine')
-    const took = Date.now() - before
+    const took = await page.evaluate(() => window.__dropTiming.end - window.__dropTiming.start)
     assert.ok(took > 2500 && took < 11000, `${view.name}: the drop took ${took} ms`)
     // (A slow headless browser can have dropped the graphics level by now, which retires the galaxy.)
     assert.notEqual(await page.evaluate(() => window.syn3h.shell.galaxy?.live), true, 'the galaxy gives its graphics back')
@@ -78,10 +88,15 @@ try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
     page.on('pageerror', e => errors.push(`still: ${e.message}`))
     await page.goto(`${base}?room=galaxy-still-${Date.now()}`, { waitUntil: 'load' }); await ready(page)
-    await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 0), 200) })
+    await page.evaluate(() => { window.__pin = setInterval(() => { window.syn3h.shell.stopAttract(); window.syn3h.params.set('gfx.level', 0) }, 200) })
     // Every map painted first: each one arriving is a reason to draw.
     await page.waitForFunction(() => window.syn3h.shell.graphics.planetMaps >= window.syn3h.planets.PLANETS.length, null, { timeout: 60000 })
-    await page.waitForTimeout(1500)
+    // Let the finite resting tilt finish; after that the low-end lobby must stop drawing.
+    await page.waitForFunction(() => {
+      const g = window.syn3h.shell.galaxy
+      return Math.abs(g.pitch - 20 * Math.PI / 180) < 1e-8 && !g.resting && g.swingResting
+    }, null, { timeout: 15000 })
+    await page.waitForTimeout(500)
     const g = () => page.evaluate(() => { const g = window.syn3h.shell.galaxy; return { live: g?.live, frames: g?.frames, idle: g?.idle } })
     const a = await g(); await page.waitForTimeout(1500); const b = await g()
     assert.equal(b.live, true, 'level 0 keeps the galaxy')

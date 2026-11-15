@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { REST, restStep } from '../../src/ui/galaxy/Galaxy'
+import { REST, REST_LOW, restStep } from '../../src/ui/galaxy/Galaxy'
 
 /** Leave a tilt alone for `seconds` at `fps`, counting idle time from `idle`. */
 function leave(pitch: number, seconds: number, fps: number, idle = 0): number {
@@ -33,6 +33,14 @@ describe('galaxy resting view', () => {
     expect((second - REST.pitch) / (1.25 - REST.pitch)).toBeGreaterThan(0.75)
     // A third of a minute in it is within a degree.
     expect(Math.abs(leave(1.25, 20, 30, REST.after) - REST.pitch)).toBeLessThan(Math.PI / 180)
+  })
+  it('finishes the low-quality tilt within four seconds of settling, even at six frames per second', () => {
+    for (const fps of [6, 30, 60]) for (const start of [-0.2, 0.85, 1.25]) {
+      let pitch = start
+      for (let i = 0; i < fps * 4; i++) pitch = restStep(pitch, REST_LOW.after + i / fps, 1 / fps, REST_LOW)
+      expect(pitch).toBe(REST_LOW.pitch)
+      expect(restStep(pitch, 100, 1 / fps, REST_LOW)).toBe(pitch)
+    }
   })
   it('lands exactly on the resting tilt and stays, so the lobby can go idle', () => {
     const landed = leave(0.9, 90, 30, REST.after)

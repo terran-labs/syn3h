@@ -218,15 +218,17 @@ export const REST = {
   /** Seconds for the remaining tilt to fall by e: slow enough to read as drifting, not moving. */
   ease: 5,
 } as const
+/** Low-end devices finish the tilt quickly and snap the final quarter degree before idling. */
+export const REST_LOW = { ...REST, ease: 0.7, snap: Math.PI / 720 } as const
 /**
  * The tilt after dt seconds, given how long the view has been left alone. Before REST.after it
  * is untouched; after, it closes on the resting tilt exponentially (exact at any frame rate)
  * and lands on it exactly, so the lobby can go idle.
  */
-export function restStep(pitch: number, idle: number, dt: number, rest: { after: number; pitch: number; ease: number } = REST): number {
+export function restStep(pitch: number, idle: number, dt: number, rest: { after: number; pitch: number; ease: number; snap?: number } = REST): number {
   if (idle < rest.after || pitch === rest.pitch) return pitch
   const next = rest.pitch + (pitch - rest.pitch) * Math.exp(-Math.max(0, dt) / rest.ease)
-  return Math.abs(next - rest.pitch) < 2e-4 ? rest.pitch : next
+  return Math.abs(next - rest.pitch) < (rest.snap ?? 2e-4) ? rest.pitch : next
 }
 /** Nothing left moving on this axis. */
 export const swingResting = (axis: SwingAxis) => axis.aimSpeed === 0 && axis.viewSpeed === 0 && axis.view === axis.aim
@@ -904,12 +906,13 @@ export class Galaxy {
     // Behind an open panel the galaxy is a backdrop: dimmed, and held still once it has dimmed.
     this.dim = Math.abs(this.dim - this.backdrop) < 0.01 ? this.backdrop : mix(this.dim, this.backdrop, perFrame(0.18, elapsed))
     const still = Boolean(this.options.still?.()) || this.reduced.matches || this.backdrop < 1, wall = performance.now()
-    if (!still) this.clock += Math.min(0.25, (wall - this.lastClock) / 1000)
+    const wallElapsed = Math.max(0, (wall - this.lastClock) / 1000)
+    if (!still) this.clock += Math.min(0.25, wallElapsed)
     this.lastClock = wall
     if (still !== this.holding) this.wake = 2
     const time = this.clock; this.holding = still
     // The view keeps a little of the last drag's swing, and drifts very slowly when left alone.
-    this.swing(elapsed, !this.drag && this.chosen < 0 && !still)
+    this.swing(elapsed, !this.drag && this.chosen < 0 && !still, wallElapsed)
     const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : [0.5, 0.5, 1]
     const framingMoves = this.framing.some((v, i) => Math.abs(v - frameGoal[i]) > 0.001)
     this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], perFrame(0.18, elapsed)) : frameGoal[i]) as Vec
@@ -1005,7 +1008,7 @@ export class Galaxy {
   private settleTilt(): void { this.swingYaw.aimSpeed = 0; this.swingPitch.aimSpeed = 0 }
   private get swingResting(): boolean { return swingResting(this.swingYaw) && swingResting(this.swingPitch) }
   /** Step the view's spring and coast by the real time since the last frame. */
-  private swing(elapsed: number, drift: boolean): void {
+  private swing(elapsed: number, drift: boolean, restElapsed = elapsed): void {
     // A flight or the settle round a chosen world writes the view itself; adopt() hands it over.
     this.adopt()
     // Left alone, the view drifts very slowly round, aim and view together.
@@ -1016,7 +1019,7 @@ export class Galaxy {
     // Never under reduced motion, never round a chosen world, never while anything else moves.
     this.resting = false
     if (!this.reduced.matches && this.chosen < 0 && !this.flight && !held && this.pointers.size === 0 && this.backdrop === 1 && this.swingResting) {
-      const tilt = restStep(this.swingPitch.view, (performance.now() - this.handled) / 1000, dt)
+      const tilt = restStep(this.swingPitch.view, (performance.now() - this.handled) / 1000, restElapsed, this.options.still?.() ? REST_LOW : REST)
       if (tilt !== this.swingPitch.view) { this.swingPitch.aim = this.swingPitch.view = tilt; this.resting = true }
     }
     if (this.reduced.matches) {
