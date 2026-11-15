@@ -26,10 +26,13 @@
  */
 import * as THREE from 'three/webgpu'
 import {
-  Fn, If, Loop, abs, sin, clamp, dot, exp, float, interleavedGradientNoise, length, max, min, mix, pass,
-  renderOutput, rtt, screenCoordinate, smoothstep, step, uniform, uv, vec2, vec3, vec4,
+  Fn, If, Loop, abs, screenSize, sin, clamp, dot, exp, float, interleavedGradientNoise, length, max, min, mix, pass,
+  renderOutput, rtt, screenCoordinate, smoothstep, step,  uniform, uv, vec2, vec3, vec4,
 } from 'three/tsl'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
+import { ao } from 'three/addons/tsl/display/GTAONode.js'
+import { sss } from 'three/addons/tsl/display/SSSNode.js'
+import { motionBlurred } from './motion'
 import { graphicsLevel } from '../../core/quality'
 import { params } from '../../../shared/params'
 import { type PostTier, lowSunAmount, postTier, shaftTaps, sunHeightFactor, sunScreenFade } from './gate'
@@ -53,7 +56,15 @@ export interface PostChainHost {
    */
   readonly quality: { readonly deviceLevel: number; readonly postBudget?: number; setPostActive?(on: boolean): void }
 }
-export interface SunSource { readonly sunDirection: THREE.Vector3 }
+export interface SunSource {
+  readonly sunDirection: THREE.Vector3
+  /** Linear colour times intensity of the direct light, and the horizon sky colour. */
+  readonly sunColor?: THREE.Color
+  readonly horizonColor?: THREE.Color
+}
+
+/** three's tone mapping constants for post.toneMap 0, 1, 2. */
+const TONE_MAPS = [THREE.ACESFilmicToneMapping, THREE.AgXToneMapping, THREE.NeutralToneMapping]
 /** The watched vehicle, for the plunge when it goes under a liquid surface. */
 export interface PlungeSource { readonly liquidState: { readonly wasImmersed: boolean; readonly lavaDepth: number } }
 
@@ -66,6 +77,9 @@ interface Built {
   /** Quarter resolution shaft targets: skipped entirely while the sun is out of view. */
   maskTex: N | null
   raysTex: N | null
+  /** Ambient occlusion and contact shadow nodes, for their live settings. */
+  aoNode: N | null
+  sssNode: N | null
   pipeline: THREE.RenderPipeline
   disposables: Array<{ dispose?(): void; renderTarget?: { dispose(): void } }>
 }
@@ -96,18 +110,28 @@ export class PostChain {
     vignette: uniform(0.3),
     grain: uniform(0.35),
     seed: uniform(0),
-    motion: uniform(0),
     plunge: uniform(0),
     heat: uniform(0.6),
     time: uniform(0),
     plungeTint: uniform(new THREE.Vector3(1, 1, 1)),
+    // Camera, for rebuilding positions from depth (three's camera nodes describe the post
+    // quad's camera inside the pipeline, so the scene camera is passed in by hand).
+    projInv: uniform(new THREE.Matrix4()),
+    camWorld: uniform(new THREE.Matrix4()),
+    camPos: uniform(new THREE.Vector3()),
+    prevView: uniform(new THREE.Matrix4()),
+    prevProj: uniform(new THREE.Matrix4()),
+    motionAmount: uniform(0),
+    motionNear: uniform(14),
+    motionMax: uniform(0.04),
   }
+  private readonly prevView = new THREE.Matrix4()
+  private readonly prevProj = new THREE.Matrix4()
+  private readonly prevPos = new THREE.Vector3()
+  private hasPrev = false
   /** 0 to 1, jumps to 1 when the watched vehicle goes under and decays over about 0.7 s. */
   private plunge = 0
   private wasUnder = false
-  /** Smoothed camera speed in metres a second, for the speed streaks. */
-  private speed = 0
-  private readonly lastCam = new THREE.Vector3()
   private lastAt = 0
   private readonly grade: Grade = { gain: [1, 1, 1], lift: [0, 0, 0], contrast: 0, saturation: 1 }
   private readonly tmp = new THREE.Vector3()
@@ -120,7 +144,8 @@ export class PostChain {
     const shed = 1 - Math.min(1, Math.max(0, budget ?? 1))
     let tier = postTier({ on: P.postOn.value, level: graphicsLevel.value, deviceLevel: this.host.quality.deviceLevel, tablets: P.postTablets.value, shed })
     this.tier = tier
-    this.reportActive(tier !== 'off' && (P.postBloom.value > 0 || P.postShafts.value > 0 || P.postFlare.value > 0))
+    // Anything the governor could shed: everything but the colour look itself.
+    this.reportActive(tier !== 'off' && [P.postBloom, P.postShafts, P.postFlare, P.postAO, P.postContact, P.postMotionBlur].some(p => p.value > 0))
     if (tier === 'off') {
       this.release()
       renderer.render(scene, camera)
@@ -131,8 +156,12 @@ export class PostChain {
     const glowOn = tier === 'full' && P.postBloom.value > 0
     const shaftsOn = tier !== 'base' && (P.postShafts.value > 0 || P.postFlare.value > 0)
     const flareOn = tier === 'full' && P.postFlare.value > 0
-    const key = `${tier}|${glowOn}|${shaftsOn}|${flareOn}|${renderer.toneMapping}|${renderer.outputColorSpace}`
-    if (this.built?.key !== key) this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn)
+    const aoOn = tier === 'full' && P.postAO.value > 0
+    const light = tier === 'full' && P.postContact.value > 0 ? findSun(scene) : null
+    const toneMap = TONE_MAPS[Math.round(P.postToneMap.value)] ?? renderer.toneMapping
+    const debug = Math.round(P.postDebug.value)
+    const key = `${debug}|${tier}|${glowOn}|${shaftsOn}|${flareOn}|${aoOn}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
+    if (this.built?.key !== key) this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug)
 
     const u = this.u
     u.exposure.value = Math.max(1e-4, renderer.toneMappingExposure)
@@ -153,7 +182,14 @@ export class PostChain {
     u.vignette.value = P.postVignette.value
     u.grain.value = P.postGrain.value * (tier === 'base' ? 1 : 1)
     u.seed.value = (u.seed.value + 61.7) % 4096
-    u.motion.value = tier === 'full' ? this.updateMotion(camera) * fade : 0
+    this.updateCamera(camera as THREE.PerspectiveCamera, tier === 'full' ? P.postMotionBlur.value * fade : 0)
+    const b = this.built!
+    if (b.aoNode) { b.aoNode.radius.value = P.postAORadius.value; b.aoNode.scale.value = P.postAO.value * fade }
+    // Contact shadows march toward the sun with no surface bias, so a low sun grazing the
+    // ground makes the ground shadow itself (noise, then scanlines). Fade them in with the
+    // sun's height; at a low sun the long cascaded shadows carry the scene anyway.
+    const sunUp = smooth01(0.25, 0.45, this.sun.sunDirection.y)
+    if (b.sssNode) b.sssNode.shadowIntensity.value = P.postContact.value * fade * sunUp
     u.plunge.value = tier === 'full' ? this.updatePlunge() : 0
     u.heat.value = P.postHeat.value * fade
     u.time.value = (performance.now() / 1000) % 1000
@@ -184,20 +220,29 @@ export class PostChain {
   }
 
   /**
-   * Streak amount 0 to 1 from how fast the camera moves: nothing below post.streakSpeed,
-   * full at twice it. Taken from the camera, so it follows whatever is being watched.
+   * Camera matrices for rebuilding positions from depth, and last frame's for motion blur.
+   * A jump (teleport, seam crossing, respawn) or a pause skips one frame of blur.
    */
-  private updateMotion(camera: THREE.Camera): number {
+  private updateCamera(camera: THREE.PerspectiveCamera, blur: number): void {
+    const u = this.u
+    camera.updateMatrixWorld()
+    ;(u.projInv.value as THREE.Matrix4).copy(camera.projectionMatrixInverse)
+    ;(u.camWorld.value as THREE.Matrix4).copy(camera.matrixWorld)
+    ;(u.camPos.value as THREE.Vector3).copy(camera.position)
     const now = performance.now()
     const dt = (now - this.lastAt) / 1000
-    const moved = this.lastCam.distanceTo(camera.position)
-    this.lastCam.copy(camera.position)
     this.lastAt = now
-    // A teleport, a seam crossing or a pause is not speed.
-    if (dt > 0 && dt < 0.25 && moved / dt < 600) this.speed += (moved / dt - this.speed) * Math.min(1, dt * 4)
-    const from = P.postStreakSpeed.value
-    const amount = Math.min(1, Math.max(0, (this.speed - from) / Math.max(1, from)))
-    return amount * P.postStreaks.value
+    const jumped = !this.hasPrev || dt > 0.25 || this.prevPos.distanceTo(camera.position) > 40
+    if (jumped) { this.prevView.copy(camera.matrixWorldInverse); this.prevProj.copy(camera.projectionMatrix) }
+    ;(u.prevView.value as THREE.Matrix4).copy(this.prevView)
+    ;(u.prevProj.value as THREE.Matrix4).copy(this.prevProj)
+    // Shutter as a share of one 60 Hz frame, so the look does not change with frame rate.
+    u.motionAmount.value = jumped ? 0 : blur * Math.min(2, (1 / 60) / Math.max(1e-3, dt))
+    u.motionNear.value = P.postMotionNear.value
+    this.prevView.copy(camera.matrixWorldInverse)
+    this.prevProj.copy(camera.projectionMatrix)
+    this.prevPos.copy(camera.position)
+    this.hasPrev = true
   }
 
   /**
@@ -237,7 +282,7 @@ export class PostChain {
     return sunScreenFade(su, sv, inFront) * sunHeightFactor(sun.y, P.postLowSun.value)
   }
 
-  private build(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, key: string, tier: PostTier, glowOn: boolean, shaftsOn: boolean, flareOn: boolean): void {
+  private build(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, key: string, tier: PostTier, glowOn: boolean, shaftsOn: boolean, flareOn: boolean, aoOn: boolean, light: THREE.DirectionalLight | null, toneMap: THREE.ToneMapping, debug = 0): void {
     this.release()
     const u = this.u as Record<keyof PostChain['u'], N>
     const disposables: Built['disposables'] = []
@@ -249,8 +294,48 @@ export class PostChain {
     const depth: N = scenePass.getTextureNode('depth')
     const hot: N = u.bloomThreshold.mul(HOT_CLAMP)
 
-    // Speed streaks: a short radial smear out from the centre, wider towards the edges, only
-    // while the camera is fast. A uniform branch, so it costs nothing when still.
+    // Ambient occlusion and contact shadows, from the lit pass's own depth (normals rebuilt
+    // from depth), at half resolution. They darken the frame where geometry crowds a point or
+    // something small stands between it and the sun. A pre-pass that would let occlusion
+    // touch only the ambient light was tried: it re-rendered every object and corrupted the
+    // sun's nearest shadow cascade (shadow maps render at the first pass of a frame).
+    let aoNode: N = null
+    let sssNode: N = null
+    let shade: N = float(1)
+    let contactTex: N = null
+    if (aoOn) {
+      aoNode = ao(depth, null as never, camera)
+      aoNode.resolutionScale = 0.5
+      aoNode.samples.value = 12
+      disposables.push(aoNode)
+      shade = shade.mul(aoNode.getTextureNode().sample(uv()).r)
+    }
+    if (light) {
+      sssNode = sss(depth, camera, light)
+      sssNode.resolutionScale = 0.5
+      sssNode.maxDistance.value = 0.5
+      sssNode.thickness.value = 0.12
+      sssNode.quality.value = 0.5
+      disposables.push(sssNode)
+      // The raw march speckles open ground (depth precision where each ray starts). A 3x3
+      // blur three pixels apart, then a remap: scattered specks average near white and
+      // go back to 1; a real contact shadow, solid under a tyre, stays dark.
+      const raw: N = sssNode.getTextureNode()
+      const blurAt = Fn(() => {
+        const p = uv()
+        const px = vec2(3, 3).div(screenSize)
+        const sum = float(0).toVar()
+        for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) sum.addAssign(raw.sample(p.add(px.mul(vec2(x, y)))).r)
+        return smoothstep(0.45, 0.85, sum.div(9))
+      })
+      const contact = blurAt()
+      contactTex = contact
+      // Leave some fill: contact shadows only darken what the sun lit.
+      shade = shade.mul(mix(float(1), contact, 0.6))
+    }
+
+    // The scene colour as the eye sees it this frame: heat shimmer bends where it reads from,
+    // camera motion blur smears it, and the plunge softens and tints it.
     const base = Fn(() => {
       const p = uv().toVar()
       // Heat shimmer: air above glowing lava bends. Look a little below this pixel on screen
@@ -264,7 +349,7 @@ export class PostChain {
         const wob = vec2(sin(p.y.mul(170).add(t.mul(7.3))).add(sin(p.y.mul(97).sub(t.mul(4.1))).mul(0.6)), sin(p.x.mul(130).add(t.mul(5.7))))
         p.addAssign(wob.mul(hot).mul(u.heat).mul(0.0011))
       })
-      const c = color.sample(p).rgb.toVar()
+      const c = (tier === 'full' ? motionBlurred(color, depth, p, { projInv: u.projInv, camWorld: u.camWorld, prevView: u.prevView, prevProj: u.prevProj, amount: u.motionAmount, nearFade: u.motionNear, maxBlur: u.motionMax }) : color.sample(p).rgb).toVar()
       If(u.plunge.greaterThan(0.001), () => {
         // A soft 8-tap ring and the liquid's colour, both fading with the pulse.
         const r = u.plunge.mul(0.012)
@@ -277,17 +362,10 @@ export class PostChain {
         const lum = dot(soft, vec3(0.2126, 0.7152, 0.0722))
         c.assign(mix(soft, u.plungeTint.mul(lum).mul(1.6), u.plunge.mul(0.45)))
       })
-      If(u.motion.greaterThan(0.001), () => {
-        const out = p.sub(0.5).mul(u.motion.mul(0.05))
-        const acc = c.toVar()
-        // Jittered per pixel so six taps read as a smear, not six copies.
-        const j = interleavedGradientNoise(screenCoordinate)
-        for (let i = 1; i <= 6; i++) acc.addAssign(color.sample(p.sub(out.mul(j.add(i - 1).div(6)))).rgb)
-        c.assign(acc.div(7))
-      })
       return c
     })
     let hdr: N = tier === 'full' ? base() : color.rgb
+    if (aoOn || light) hdr = hdr.mul(shade)
 
     if (glowOn) {
       // Geometry only: open sky (depth at the far plane) never feeds the glow. Facing a low
@@ -367,7 +445,7 @@ export class PostChain {
     }
 
     // Tone map and convert as renderer.render would, then grade the display values.
-    const mapped: N = renderOutput(vec4(hdr, 1), renderer.toneMapping, renderer.outputColorSpace)
+    const mapped: N = renderOutput(vec4(hdr, 1), toneMap, renderer.outputColorSpace)
     const graded = Fn(() => {
       const p = uv()
       const c = clamp(mapped.rgb, 0, 1).mul(u.gain).toVar()
@@ -386,11 +464,29 @@ export class PostChain {
       return vec4(c, 1)
     })
 
-    const pipeline = new THREE.RenderPipeline(renderer, graded())
+    let out: N = graded()
+    // Debug views: the raw occlusion or contact shadow buffers, white is unoccluded.
+    if (debug === 1 && aoNode) out = vec4(vec3(aoNode.getTextureNode().sample(uv()).r), 1)
+    if (debug === 2 && contactTex) out = vec4(vec3(contactTex), 1)
+    const pipeline = new THREE.RenderPipeline(renderer, out)
     pipeline.outputColorTransform = false
-    this.built = { key, pipeline, disposables, maskTex: maskRef, raysTex: raysRef }
+    this.built = { key, pipeline, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode }
     this.builds++
   }
+}
+
+function smooth01(e0: number, e1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)))
+  return t * t * (3 - 2 * t)
+}
+
+/** The shadow-casting directional light (sun by day, moon by night), if any. */
+function findSun(scene: THREE.Scene): THREE.DirectionalLight | null {
+  for (const child of scene.children) {
+    const light = child as THREE.DirectionalLight
+    if (light.isDirectionalLight && light.castShadow) return light
+  }
+  return null
 }
 
 /** Build the chain for this game. Register it with `game.setPostChain`. */
