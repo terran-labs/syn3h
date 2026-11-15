@@ -3,7 +3,18 @@ const number = (id: string, label: string, value: number, min: number, max: numb
 export const botCount = number('count', 'Bot count', 4, 0, 16, 1)
 export const aggression = number('aggression', 'Aggression', 1, 0, 2)
 export const topThrottle = number('topThrottle', 'Top throttle', 1, 0, 1)
-export const canFire = defineParam({ id: 'bots.canFire', label: 'Bots use tag beams', group: 'Bots', scope: 'world', default: true })
+/**
+ * Whether bots use their gear on other vehicles: tag beams, and the bungee, yoink and big red
+ * when the room allows them. Off by default: bots are playful company, and dropping into a
+ * world where they open fire at once felt hostile.
+ *
+ * The id was 'bots.canFire' while the default was true. The registry keeps no record of
+ * whether a value was chosen or merely the default, so saved worlds, room snapshots and a
+ * host's hello all carry 'bots.canFire: true' explicitly, and applying them would turn firing
+ * back on. Under a new id those old values are unknown and ignored (params.set returns false
+ * for an unknown id), so only a deliberate choice made from now on enables it.
+ */
+export const canFire = defineParam({ id: 'bots.tagBeams', label: 'Bots use tag beams', group: 'Bots', scope: 'world', default: false })
 export const canDrive = defineParam({ id: 'bots.canDrive', label: 'Can drive', group: 'Bots', scope: 'world', default: true })
 /** Registry has no enum type: 0 is local player, 1 is nearest supplied vehicle. */
 export const targetMode = number('targetMode', 'Target: 0 player, 1 nearest', 0, 0, 1, 1)

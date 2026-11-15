@@ -64,9 +64,8 @@
 .syn3h-shell.exploration-ui.show-diagnostics .rail-player-body .score-detail { display: block; font: 11px/1.5 ui-monospace,monospace; color: #a5c1d1; overflow-wrap: anywhere; }
 .syn3h-shell.exploration-ui .rail-player-body .score-row { font-size: 12px; padding: 5px 0; background: none; border-bottom: 1px solid var(--s3-line-quiet); }
 .syn3h-shell.exploration-ui .rail-player-body button { min-height: 30px; padding: 5px 8px; font-size: 11px; margin: 5px 5px 5px 0; }
-.syn3h-shell.exploration-ui .rail-diagnostics, .syn3h-shell.exploration-ui .rail-music label { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 11px; }
+.syn3h-shell.exploration-ui .rail-diagnostics, .syn3h-shell.exploration-ui .rail-music { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 11px; }
 .syn3h-shell.exploration-ui .rail-diagnostics input { width: 14px; height: 14px; }
-.syn3h-shell.exploration-ui .rail-music select { min-height: 28px; width: 100%; padding: 2px; font-size: 11px; }
 /* Tooltips sit outside the rail so internal scroll containers cannot clip them. */
 .syn3h-shell.exploration-ui .wi-tooltip { position: fixed; z-index: 60; max-height: calc(100dvh - 24px); overflow: auto; padding: 12px; font: 12px/1.5 'Barlow',sans-serif; border-left: 1px solid #b1eaff; }
 .syn3h-shell.exploration-ui .wi-tooltip[hidden] { display: none; }
@@ -79,13 +78,16 @@
 
 /* A map fading into the world, centred on the player, with no rectangular backing. */
 .syn3h-shell.exploration-ui .shell-minimap, .syn3h-shell.exploration-ui:not(.has-touch):has(.world-inspector:not([hidden])) .shell-minimap { left: max(16px,env(safe-area-inset-left)); bottom: max(16px,env(safe-area-inset-bottom)); top: auto; right: auto; width: 210px; height: 210px; border: 0; background: none; box-shadow: none; pointer-events: none; }
-.syn3h-shell.exploration-ui .shell-minimap canvas { width: 100%; height: 100%; opacity: .78; -webkit-mask-image: radial-gradient(ellipse closest-side,#000 42%,rgb(0 0 0 / .8) 62%,transparent 100%); mask-image: radial-gradient(ellipse closest-side,#000 42%,rgb(0 0 0 / .8) 62%,transparent 100%); }
+/* The owner wants the map at least 80% opaque in the centre. Opacity, this feathering mask
+   and the focus fade below multiply, so the product is what counts: .94 here, .94 x .92 = .86
+   with the cursor captured. tests/ui/minimap-opacity.mjs measures it from pixels. */
+.syn3h-shell.exploration-ui .shell-minimap canvas { width: 100%; height: 100%; opacity: .94; -webkit-mask-image: radial-gradient(ellipse closest-side,#000 52%,rgb(0 0 0 / .8) 70%,transparent 100%); mask-image: radial-gradient(ellipse closest-side,#000 52%,rgb(0 0 0 / .8) 70%,transparent 100%); }
 .syn3h-shell.exploration-ui .shell-minimap::after { content: ''; position: absolute; inset: 24px; border: 1px solid rgb(175 225 250 / .2); border-radius: 50%; box-shadow: 0 0 14px rgb(100 200 250 / .06); }
 .syn3h-shell.exploration-ui .shell-minimap span { top: 13px; left: 50%; right: auto; color: #b1eaff; font: 10px 'Barlow',sans-serif; letter-spacing: .15em; text-shadow: 0 0 8px #6bc5f1; }
 .syn3h-shell.exploration-ui.is-playing .focus-hud { opacity: .7; }
 .syn3h-shell.exploration-ui.is-focus .focus-hud { opacity: 1; }
 .syn3h-shell.exploration-ui:not(.is-focus) .focus-hud [data-reticle] { display: none; }
-.syn3h-shell.exploration-ui.is-focus .shell-minimap { opacity: .6; }
+.syn3h-shell.exploration-ui.is-focus .shell-minimap { opacity: .92; }
 .syn3h-shell.exploration-ui .spawn-help { left: 240px; bottom: 20px; background: none; border: 0; font-size: 12px; text-shadow: 0 1px 5px #001019; }
 .syn3h-shell.exploration-ui :is(.shell-toast, .match-hud, .race-hud, .join-card) { border-radius: 3px; background: rgb(5 20 32 / .8); border: 1px solid var(--s3-line); box-shadow: 0 0 18px rgb(100 200 250 / .05); font-weight: 400; }
 .touch-controls .touch-stick { background: radial-gradient(circle,transparent 58%,rgb(145 220 250 / .09) 69%,transparent 71%); border: 1px solid rgb(175 225 250 / .25); box-shadow: none; }
@@ -139,4 +141,52 @@ html[data-gfx="0"] .syn3h-shell.exploration-ui[data-glass] .wi-glass { --body: r
 }
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .syn3h-shell.exploration-ui.has-touch .shell-minimap { width: 96px; height: 96px; bottom: calc(max(18px,env(safe-area-inset-bottom)) + 124px + 16px); }
+}
+
+/* Diagnostics consume rail space; only their body scrolls. SVG reuses core history. */
+.syn3h-shell.exploration-ui .performance-panel { flex: 0 1 auto; min-height: 78px; max-height: 42%; display: flex; flex-direction: column; overflow: hidden; color: #dcedf6; background: rgb(6 21 33 / .94); border: 1px solid var(--s3-line); border-radius: 3px; }
+.performance-panel header { display: flex; align-items: center; justify-content: space-between; padding: 4px 9px; flex: 0 0 auto; }
+.performance-panel header strong { font-size: 12px; font-weight: 400; letter-spacing: .1em; }
+.performance-body { min-height: 0; overflow: auto; padding: 0 10px 10px; font-size: 12px; }
+.performance-body p { margin: 6px 0; }
+.performance-controls { display: flex; align-items: center; gap: 12px; }
+.performance-controls label { display: flex; align-items: center; gap: 6px; }
+.performance-body dl { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; margin: 8px 0; }
+.performance-body dt { color: #a6c7d8; }
+.performance-body dd { margin: 0; overflow-wrap: anywhere; text-align: right; }
+.performance-chart { display: block; width: 100%; height: 64px; margin-top: 8px; }
+.performance-chart path { stroke: #8dcce555; }
+.performance-chart polyline { stroke: #a2e4ff; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.performance-history { color: #a6c7d8; font-size: 11px; }
+.syn3h-shell.exploration-ui .performance-recommendation { position: fixed; left: 50%; top: 100px; transform: translateX(-50%); max-width: min(340px,calc(100vw - 32px)); padding: 10px 14px; background: rgb(6 21 33 / .96); border: 1px solid var(--s3-line); border-radius: 3px; pointer-events: auto; z-index: 40; font-size: 13px; }
+.performance-recommendation p { margin: 0 0 8px; }
+.performance-recommendation button + button { margin-left: 8px; }
+@media (pointer: coarse) { .syn3h-shell.exploration-ui .performance-controls select { font-size: 16px; } }
+@media (max-height: 500px) { .syn3h-shell.exploration-ui .performance-panel { max-height: 35%; min-height: 60px; } .syn3h-shell.exploration-ui .performance-recommendation { top: 12px; left: 16px; transform: none; max-width: 280px; } }
+.syn3h-shell.exploration-ui .performance-panel header button { width: 28px; height: 26px; min-height: 26px; padding: 0; font-size: 18px; }
+.syn3h-shell.exploration-ui .performance-controls label { display: flex; align-items: center; font-size: 12px; }
+.syn3h-shell.exploration-ui.has-touch:has(.world-inspector:not([hidden])) .spawn-help { display: none; }
+@media (max-height: 500px) {
+  .syn3h-shell.exploration-ui .performance-panel { min-height: 36px; }
+  .syn3h-shell.exploration-ui .wi-cards { min-height: 132px; }
+}
+
+/* Direct selectors reuse the existing vehicle and gear actions, outside collapsed cards. */
+.syn3h-shell.exploration-ui .wi-quick { display: grid; grid-template-columns: minmax(0,1.3fr) minmax(0,1fr) auto; gap: 6px; flex: 0 0 auto; padding: 7px 8px; background: rgb(6 21 33 / .92); border-bottom: 1px solid var(--s3-line-quiet); align-items: end; }
+.syn3h-shell.exploration-ui .wi-quick label { display: block; font-size: 10px; color: #c9e4f2; margin: 0; }
+.syn3h-shell.exploration-ui .wi-quick select { width: 100%; min-width: 0; min-height: 28px; padding: 3px 2px; font-size: 12px; }
+.syn3h-shell.exploration-ui .wi-quick button { min-height: 28px; padding: 4px 5px; font-size: 11px; }
+.syn3h-shell.exploration-ui .wi-gi-status { grid-column: 1 / -1; font-size: 12px; line-height: 1.4; color: #c9e4f2; }
+@media (pointer: coarse) { .syn3h-shell.exploration-ui .wi-quick select { font-size: 16px; } }
+/* Short landscape screens have no spare row: the selectors sit in the empty space beside
+   Exit world, without captions. The selects keep their accessible names and show the
+   current vehicle and gear themselves. */
+@media (max-height: 500px) {
+  .syn3h-shell.exploration-ui .wi-quick { position: absolute; z-index: 1; top: 3px; left: 132px; right: 46px; padding: 0; gap: 4px; background: none; border: 0; align-items: center; grid-template-columns: minmax(0,1.25fr) minmax(0,1fr) auto; }
+  .syn3h-shell.exploration-ui .wi-quick label { font-size: 0; line-height: 0; }
+  .syn3h-shell.exploration-ui .wi-quick select, .syn3h-shell.exploration-ui .wi-quick button { min-height: 26px; padding-block: 1px; }
+  /* "GI" alone leaves the two selectors enough width to show a readable name. */
+  .syn3h-shell.exploration-ui .wi-quick [data-wi=show-gi] { font-size: 0; padding-inline: 7px; }
+  .syn3h-shell.exploration-ui .wi-quick [data-wi=show-gi]::after { content: 'GI'; font-size: 11px; }
+  .syn3h-shell.exploration-ui .wi-quick select { padding-inline: 4px 0; }
 }

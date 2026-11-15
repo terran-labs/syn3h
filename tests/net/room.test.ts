@@ -196,6 +196,21 @@ describe('Room', () => {
     expect(b.peer.last('game')).toMatchObject({ event: 'laser', game: { it: b.id } })
   })
 
+  it('relays no tag beam while the host has switched beams off', () => {
+    const a = join('A', { 'laser.allowed': false })
+    const b = join('B')
+    clock += 3100
+    room.receive(a.peer, state([0, 0, 0]))
+    room.receive(b.peer, state([0, 0, -50]))
+    send(a.peer, { type: 'fire', shot: { id: 1, o: [0, 0.5, -2], d: [0, 0, -1], boost: 0, t: clock / 1000 } })
+    send(b.peer, { type: 'fire', shot: { id: 1, o: [0, 0.5, -48], d: [0, 0, 1], boost: 0, t: clock / 1000 } })
+    expect(a.peer.all('fire')).toEqual([])
+    expect(b.peer.all('fire')).toEqual([])
+    // A shot the room never relayed cannot be claimed as a hit.
+    send(b.peer, { type: 'hit', shooter: a.id, shot: 1 })
+    expect(a.peer.all('hit')).toEqual([])
+  })
+
   it('rejects shots fired from somewhere the shooter is not', () => {
     const a = join('A')
     const b = join('B')

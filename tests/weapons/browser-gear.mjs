@@ -83,7 +83,7 @@ try {
   report.cameraShots = aims.length
   console.log('Gear selection and camera aim passed')
   // Position a bot and the guest above terrain to exercise gear without navigation noise.
-  await A.evaluate(() => { const p = window.syn3h.params; p.set('bots.canDrive', false); p.set('bots.canFire', false); p.set('bots.count', 1) })
+  await A.evaluate(() => { const p = window.syn3h.params; p.set('bots.canDrive', false); p.set('bots.tagBeams', false); p.set('bots.count', 1) })
   await A.waitForFunction(() => window.syn3h.bots.vehicles.length === 1)
   const ids = await A.evaluate(() => ({ bot: window.syn3hNet.vehicleIdOfBody(window.syn3h.bots.vehicles[0].body.handle), host: window.syn3hNet.id }))
   ids.guest = await B.evaluate(() => window.syn3hNet.id)
@@ -148,7 +148,7 @@ try {
     s.player.body.setGravityScale(0, true)
     s.params.set('yoink.allowed', true)
     s.params.set('bots.targetMode', 0)
-    s.params.set('bots.canFire', true)
+    s.params.set('bots.tagBeams', true)
   })
   await A.waitForFunction(bot => window.syn3hNet.botGear.get(bot)?.yoink.holding === window.syn3hNet.id, ids.bot)
   await A.waitForFunction(bot => window.syn3hNet.botGear.get(bot)?.yoink.holding === null, ids.bot)

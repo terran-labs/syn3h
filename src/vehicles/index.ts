@@ -6,16 +6,15 @@
 import type * as THREE from 'three/webgpu'
 import type { Game } from '../core/Game'
 import type { Terrain } from '../world/Terrain'
-import { ClassicBuggy } from './ClassicBuggy'
 import { Hovercraft } from './Hovercraft'
 import { Jet } from './Jet'
 import { Tank } from './Tank'
-import { ClassicBuggySkin, Syn3hBuggySkin } from './skins'
+import { Syn3hBuggySkin } from './skins'
 import { Syn3hBuggy } from './Syn3hBuggy'
 import type { Vehicle } from './Vehicle'
 
 /**
- * 'buggy' and 'buggy-syn3h' are the Syn3h buggy, the default. 'buggy-classic' is the Mars
+ * 'buggy' and 'buggy-syn3h' are the Syn3h buggy, the default. 'buggy-classic' was the Mars
  * Explorer buggy with its own physics and model.
  */
 export type VehicleKind = 'buggy' | 'buggy-classic' | 'buggy-syn3h' | 'jet' | 'hovercraft' | 'tank'
@@ -26,8 +25,7 @@ export type VehicleKind = 'buggy' | 'buggy-classic' | 'buggy-syn3h' | 'jet' | 'h
  * out. Add a new kind here and to the switch below.
  */
 export const VEHICLE_KINDS: readonly { kind: VehicleKind; name: string }[] = [
-  { kind: 'buggy', name: 'Syn3h buggy' },
-  { kind: 'buggy-classic', name: 'Mars Explorer buggy' },
+  { kind: 'buggy', name: 'Buggy' },
   { kind: 'jet', name: 'Jet' },
   { kind: 'hovercraft', name: 'Hovercraft' },
   { kind: 'tank', name: 'Tank' },
@@ -35,6 +33,17 @@ export const VEHICLE_KINDS: readonly { kind: VehicleKind; name: string }[] = [
 
 /** Models load over HTTP, so only in a browser. Headless tests keep the primitive visuals. */
 const hasDom = typeof document !== 'undefined'
+
+/**
+ * The kind `createVehicle` really builds for a requested kind. The Mars Explorer buggy was
+ * retired on 15 November 2026, but its name is still out there: in saved lobby choices, shared
+ * links (?vehicle=buggy-classic), resume snapshots, and the hello of an older client in the
+ * same room. Each of those gets the Syn3h buggy. So does any kind this build does not know,
+ * so a newer client's vehicle is never drawn as nothing.
+ */
+export function canonicalVehicleKind(kind: string | null | undefined): VehicleKind {
+  return kind === 'jet' || kind === 'hovercraft' || kind === 'tank' ? kind : 'buggy'
+}
 
 export function createVehicle(
   game: Game,
@@ -44,8 +53,6 @@ export function createVehicle(
   heading = 0,
 ): Vehicle {
   switch (kind) {
-    case 'buggy-classic':
-      return new ClassicBuggy(game, terrain, position, heading, hasDom ? () => new ClassicBuggySkin() : undefined)
     case 'jet':
       return new Jet(game, terrain, position, heading)
     // The Mars Explorer tank. Syn3h had none, so it is reachable by ?vehicle=tank only.
@@ -53,6 +60,7 @@ export function createVehicle(
       return new Tank(game, terrain, position, heading)
     case 'hovercraft':
       return new Hovercraft(game, terrain, position, heading)
+    // 'buggy-classic' and anything unknown land here too: see `canonicalVehicleKind`.
     case 'buggy':
     case 'buggy-syn3h':
     default:

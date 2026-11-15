@@ -54,7 +54,7 @@ import { LocalRescue, StuckTimer, inStickyLiquid } from '../modes/Koth'
 import { attachVehicleEffects } from '../vehicles/effects'
 import { ServerClock } from './Clock'
 import { Connection, serverUrl } from './Connection'
-import { NameTags } from './NameTags'
+import { NameTags, type TagInfo } from './NameTags'
 import { applyRoomWorld, netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
 import { type BotMatchInfo, audibleVehicles, bodyAlive, hillHold, liveBots } from './bots'
@@ -166,6 +166,9 @@ const HEARTBEAT_MS = 1000
 /** A gap this long since our last frame means our main thread, not the network, was slow. */
 const LOCAL_STALL_MS = 250
 
+/** Seconds between rebuilds of the status lines, match state and name tag text. */
+const UI_INTERVAL = 0.2
+
 // Every vehicle kind the game can build must be one the server accepts.
 type KindsCovered = VehicleKind extends WireVehicleKind ? true : false
 const kindsCovered: KindsCovered = true
@@ -233,6 +236,12 @@ export class NetClient implements System {
   private readonly velHistory: [number, number, number][] = []
   private zoneTimer = 0
   private mapTimer = 0
+  /** Seconds until the status lines, match state and name tag text are next rebuilt. */
+  private uiTimer = 0
+  /** Something those show has changed (a room message, an event): rebuild on the next frame. */
+  private uiDirty = true
+  /** The name tags' list, reused between frames; its text is rebuilt with the status. */
+  private readonly tagList: TagInfo[] = []
   private localZone: HillZone | null = null
   private localZoneKey = ''
 
@@ -498,6 +507,7 @@ export class NetClient implements System {
       // Defensive: a replica whose body left the world (it should not happen: we own them).
       if (!bodyAlive(this.ctx.game.world, r.vehicle)) {
         this.remotes.delete(id)
+        this.uiDirty = true
         continue
       }
       r.delay = r.buffer.delay(dt, netInterpDelay.value, netMaxDelay.value)
@@ -605,19 +615,47 @@ export class NetClient implements System {
     this.placeHill()
     this.syncBotMatch()
     this.shareClock()
-    this.tags.update([...this.remotes.entries()].map(([id, r]) => ({
-      vehicle: r.vehicle,
-      name: this.displayName(id),
-      it: id === it || id === holder,
-      note: [id === it ? 'IT' : '', id === holder ? 'KING' : '', stuck[id] ? 'stuck' : '', r.paused ? 'paused' : !r.responding ? 'not responding' : ''].filter(Boolean).join(' '),
-    })))
+    // Text changes a few times a second at most, or when the room says something: building
+    // every status line, the match state and each tag's words on every frame, and making the
+    // shell compare them, was steady work and garbage for nothing anyone could read that fast.
+    this.uiTimer -= dt
+    const refresh = this.uiDirty || this.uiTimer <= 0
+    if (refresh) {
+      this.uiTimer = UI_INTERVAL
+      this.uiDirty = false
+      this.refreshTags(it, holder, stuck)
+    }
+    // Tags still follow their vehicles every frame; only their words wait.
+    this.tags.update(this.tagList)
     this.mapTimer -= dt
     if (this.ctx.setMapEntities && this.mapTimer <= 0) {
       this.mapTimer = 0.2
       this.ctx.setMapEntities(this.mapMarkers())
     }
-    this.ctx.setStatus(this.status())
-    this.pushMatch()
+    if (refresh) {
+      this.ctx.setStatus(this.status())
+      this.pushMatch()
+    }
+  }
+
+  /** Rebuild the name tag list in place: one entry per remote vehicle, with its words. */
+  private refreshTags(it: number, holder: number, stuck: Record<number, unknown>): void {
+    const list = this.tagList
+    let n = 0
+    for (const [id, r] of this.remotes) {
+      const tag = list[n] ?? (list[n] = { vehicle: r.vehicle, name: '', note: '', it: false })
+      n++
+      tag.vehicle = r.vehicle
+      tag.name = this.displayName(id)
+      tag.it = id === it || id === holder
+      let note = id === it ? 'IT' : ''
+      if (id === holder) note += note ? ' KING' : 'KING'
+      if (stuck[id]) note += note ? ' stuck' : 'stuck'
+      const state = r.paused ? 'paused' : !r.responding ? 'not responding' : ''
+      if (state) note += note ? ` ${state}` : state
+      tag.note = note
+    }
+    list.length = n
   }
 
   private mapMarkers(): MapMarker[] {
@@ -1059,6 +1097,7 @@ export class NetClient implements System {
     r.groundAt = this.groundAt
     r.disposeEffects = this.attachEffects(vehicle)
     this.remotes.set(info.id, r)
+    this.uiDirty = true
     this.ctx.audio?.play('materialize', { x: s.p[0], y: s.p[1], z: s.p[2] })
     return r
   }
@@ -1067,6 +1106,7 @@ export class NetClient implements System {
     const r = this.remotes.get(id)
     if (!r) return
     this.remotes.delete(id)
+    this.uiDirty = true
     this.bungee.forget(id)
     this.yoink.forget(id)
     this.pesters.forget(id)
@@ -1177,6 +1217,8 @@ export class NetClient implements System {
   }
 
   private onMessage(msg: ServerMessage): void {
+    // Anything the room says may change what the status, scores or tags show.
+    this.uiDirty = true
     switch (msg.type) {
       case 'race':
         this.raceBridge.receive(msg.race)
@@ -1336,16 +1378,30 @@ export class NetClient implements System {
 
   /** A player's chosen name; bots get a seeded name every client agrees on. */
   displayName(id: number): string {
-    const info = this.players.get(id)
     if (isBotId(id) && this.ctx.names) {
+      // Seeded, so it only changes with the world's seed: generate each once.
+      // The cache is only as good as what made it: a new seed or a replaced namer starts over.
+      if (this.botNamesSeed !== worldSeed.value || this.botNamer !== this.ctx.names) {
+        this.botNamesSeed = worldSeed.value
+        this.botNamer = this.ctx.names
+        this.botNames.clear()
+      }
+      const known = this.botNames.get(id)
+      if (known !== undefined) return known
       try {
-        return this.ctx.names(`${worldSeed.value}:${id}`, 'bot')
+        const name = this.ctx.names(`${worldSeed.value}:${id}`, 'bot')
+        this.botNames.set(id, name)
+        return name
       } catch {
         // Fall back to the server's name.
       }
     }
-    return info?.name ?? `Player ${id}`
+    return this.players.get(id)?.name ?? `Player ${id}`
   }
+
+  private readonly botNames = new Map<number, string>()
+  private botNamesSeed: unknown = undefined
+  private botNamer: unknown = undefined
 
   private lastMatchKey = ''
 
@@ -1388,6 +1444,7 @@ export class NetClient implements System {
   }
 
   private event(text: string): void {
+    this.uiDirty = true
     this.events.push({ at: performance.now(), text })
     if (this.events.length > 20) this.events.shift()
   }

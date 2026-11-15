@@ -36,6 +36,8 @@ export class Jet extends Vehicle {
   readonly ridePosition = new THREE.Object3D()
   private readonly model: GameJet
   private gearAmount = 0
+  /** The gear amount the collider was last shaped for; -1 forces the first update. */
+  private colliderGear = -1
   private readonly gearCollider: RAPIER.Collider
   private readonly smoothed = new THREE.Vector4()
   private vectorPitch = 0
@@ -64,7 +66,7 @@ export class Jet extends Vehicle {
     this.gearCollider.setEnabled(false)
     this.model = new GameJet()
     this.object.add(this.model.object)
-    this.ridePosition.position.copy(this.model.near.ridePosition!.position)
+    this.ridePosition.position.copy(this.model.eye)
     this.object.userData.cockpit = true
     this.model.attach()
     this.applyColors()
@@ -87,10 +89,15 @@ export class Jet extends Vehicle {
     const weight=Math.max(0,-this.game.world.gravity.y)*mass
     const torque=(x:number,y:number,z:number)=>this.body.addTorque(new THREE.Vector3().copy(unityTorque(x,y,z)).applyQuaternion(q),true)
     let drag=0,angularDrag=3
-    this.gearCollider.setEnabled(this.gearAmount>0)
-    if(this.gearAmount>0){
-      this.gearCollider.setShape(new RAPIER.Cuboid(1.75*this.gearAmount,.5*this.gearAmount,1.75))
-      this.gearCollider.setTranslationWrtParent({x:0,y:-.083-.7*this.gearAmount,z:-.3})
+    // Reshape the gear collider only while the gear moves. Replacing the shape every step made
+    // Rapier rebuild a resting jet's ground contacts sixty times a second.
+    if(this.gearAmount!==this.colliderGear){
+      this.colliderGear=this.gearAmount
+      this.gearCollider.setEnabled(this.gearAmount>0)
+      if(this.gearAmount>0){
+        this.gearCollider.setShape(new RAPIER.Cuboid(1.75*this.gearAmount,.5*this.gearAmount,1.75))
+        this.gearCollider.setTranslationWrtParent({x:0,y:-.083-.7*this.gearAmount,z:-.3})
+      }
     }
     if(this.hoverMode){
       this.vectorPitch = this.vectorYaw = 0

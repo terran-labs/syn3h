@@ -659,3 +659,35 @@ false/zero, deletion and failed writes. `saved-target.test.ts` checks cache/desc
 restoration and late worker results. `saved-worlds.mjs` uses an ephemeral real room server
 and same-origin proxy to check Chrome restore/reload/failure and phone WebKit authority,
 locked guests, deletion and keyboard entry. Captures are in `artifacts/saved-worlds`.
+
+## Follow-on performance interface
+
+`Shell.configurePerformance(source)` binds the existing quality controller through the
+read-only `PerformanceSource` contract. Bind controller methods in the composition root;
+there is no optional-method fallback. Reconfiguration releases the old subscription and
+Shell disposal releases the current one. Core owns F3 visibility, history, eligibility,
+Ignore persistence and the Lower action. The panel owns presentation only, with an SVG
+chart capped at 120 supplied samples and no timer, animation loop or GPU context.
+
+The Performance button is in the ordinary configuration rail. Native-control key presses
+stay within the interface; key releases reach gameplay cleanup. Missing hardware fields
+say Unavailable and browser memory is labeled as an estimate. Recommendations show only
+during unlocked play so their actions cannot consume captured driving clicks.
+
+Run `/Users/vtn/dev/Syn3h/tools/heavy.sh sh tests/ui/run-follow-on.sh` for the isolated UI
+gate. It owns a temporary Vite process on 5198, uses the existing room backend on 54671,
+asserts that endpoint with disposable rooms, and stops only its own Vite process. It does
+not start a room server or restart a managed preview. Those ports must be available and
+the backend must be running; adapt the harness before using another environment.
+
+The four-view browser fixture uses normal galaxy entry, then injects a controlled telemetry
+supplier to test layout, history bounds, visible labels, action delegation, subscription
+replacement and repeated mount/dispose. It also tests held-key release after focus changes,
+capture, Escape, rejected pointer-lock fallback and returning through Exit world. This is
+presentation evidence, not proof of real low-FPS eligibility or controller integration.
+The subsequent exploration gate checks touch map clearance and existing rail behavior.
+
+On the shared host, fixture initial render measurements were 0.20 ms in Chrome and 8 ms
+in WebKit (coarse timer resolution). These are not physical-device measurements or a
+steady-state performance comparison. The Performance lane owns matched scene benchmarks;
+the integrator owns ordinary-entry controller wiring and the final combined gate.

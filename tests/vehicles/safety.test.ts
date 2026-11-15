@@ -1,7 +1,6 @@
 /** Owner-side safety nets in the Vehicle base, exercised on the Syn3h buggy. */
 import { describe, expect, test } from 'vitest'
 import * as THREE from 'three/webgpu'
-import { ClassicBuggy } from '../../src/vehicles/ClassicBuggy'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
 import { makeBed } from './harness'
 
@@ -72,7 +71,6 @@ describe('vehicle safety', () => {
 describe('upright rescue', () => {
   const makers = [
     ['Syn3h', (bed: Awaited<ReturnType<typeof makeBed>>) => new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 1.2, 0))],
-    ['classic', (bed: Awaited<ReturnType<typeof makeBed>>) => new ClassicBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 1.2, 0))],
   ] as const
 
   test.each(makers)('%s buggy stuck on its roof for 3 s is set upright in place, keeping its heading', async (_n, make) => {
@@ -110,7 +108,7 @@ describe('upright rescue', () => {
 
   test('a buggy sliding fast on its roof is not reset yet', async () => {
     const bed = await makeBed()
-    const b = bed.add(new ClassicBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 1.2, 0)))
+    const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 1.2, 0)))
     b.isLocal = true
     b.body.setRotation(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI), true)
     bed.run(0.5)

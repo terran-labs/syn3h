@@ -82,18 +82,35 @@ function hash(n: number, seed: number): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295 * 2 - 1
 }
 
-/** Smooth 1D value noise in [-1, 1], one lattice point per unit. */
-function noise1(x: number, seed: number): number {
+/**
+ * The last lattice cell each noise stream looked up. Callers in one frame (every vehicle,
+ * every particle spawned) ask for nearly the same time, so the two hashes of a cell are
+ * usually already here. Pure memo: the values are exactly what `hash` returns.
+ */
+interface Cell { i: number; seed: number; a: number; b: number }
+const cell = (): Cell => ({ i: Number.NaN, seed: Number.NaN, a: 0, b: 0 })
+const CELLS = { slow: cell(), mid: cell(), fast: cell(), drift: cell(), veer: cell() }
+
+/** Smooth 1D value noise in [-1, 1], one lattice point per unit. `memo` is that stream's cell. */
+function noise1(x: number, seed: number, memo?: Cell): number {
   const i = Math.floor(x)
   const f = x - i
   const u = f * f * (3 - 2 * f)
-  const a = hash(i, seed)
-  return a + (hash(i + 1, seed) - a) * u
+  if (!memo) { const a = hash(i, seed); return a + (hash(i + 1, seed) - a) * u }
+  if (memo.i !== i || memo.seed !== seed) { memo.i = i; memo.seed = seed; memo.a = hash(i, seed); memo.b = hash(i + 1, seed) }
+  return memo.a + (memo.b - memo.a) * u
 }
 
-/** The seed's own fixed numbers, so a frame costs no hashing per call beyond the noise. */
+/** The seed's own fixed angles (k = 1..5), hashed once per seed rather than on every call. */
+const ANGLES = 6
+let anglesSeed = Number.NaN
+const angles = new Float64Array(ANGLES)
 function seedAngle(seed: number, k: number): number {
-  return (hash(k, seed) + 1) * Math.PI
+  if (seed !== anglesSeed) {
+    for (let j = 0; j < ANGLES; j++) angles[j] = (hash(j, seed) + 1) * Math.PI
+    anglesSeed = seed
+  }
+  return angles[k]
 }
 
 const TAU = Math.PI * 2
@@ -103,24 +120,31 @@ const TAU = Math.PI * 2
  * seconds give swells a player can feel and hear arrive and pass.
  */
 function gustNoise(t: number, seed: number): number {
-  return (noise1(t / 13, seed + 101) * 0.6 + noise1(t / 5, seed + 202) * 0.3 + noise1(t / 2, seed + 303) * 0.1) / 0.8
+  return (noise1(t / 13, seed + 101, CELLS.slow) * 0.6 + noise1(t / 5, seed + 202, CELLS.mid) * 0.3 + noise1(t / 2, seed + 303, CELLS.fast) * 0.1) / 0.8
 }
 
 // ---------------------------------------------------------------------------------------
 // The field
 // ---------------------------------------------------------------------------------------
 
-/** Effective summit speed and gustiness for a frame, in m/s and 0..1+. */
-function strength(f: WindFrame): { mean: number; gust: number } {
+/** Effective mean summit speed for a frame, m/s. */
+function meanSpeed(f: WindFrame): number {
   const air = Math.max(0, f.atmosphere)
-  const mean = air > 0 ? f.speed * (f.storminess / STORMINESS_REFERENCE) * Math.min(1, air * 4) : 0
-  return { mean, gust: f.gustiness * (0.6 + 0.8 * f.storminess) }
+  return air > 0 ? f.speed * (f.storminess / STORMINESS_REFERENCE) * Math.min(1, air * 4) : 0
 }
+
+/** Effective gustiness for a frame, 0..1+. */
+function gustAmount(f: WindFrame): number {
+  return f.gustiness * (0.6 + 0.8 * f.storminess)
+}
+
+/** Scaled height at which the wind stops growing: ALTITUDE_CAP times the summit value. */
+const HEIGHT_LIMIT = ALTITUDE_CAP ** (1 / HEIGHT_EXPONENT)
 
 /** Share of the summit wind at height y: SEA_LEVEL_SHARE at sea level, 1 at the rim. */
 export function heightShare(f: WindFrame, y: number): number {
   const span = Math.max(20, f.top - f.sea)
-  const h = Math.min(ALTITUDE_CAP ** (1 / HEIGHT_EXPONENT), Math.max(0, (y - f.sea) / span))
+  const h = Math.min(HEIGHT_LIMIT, Math.max(0, (y - f.sea) / span))
   return SEA_LEVEL_SHARE + (1 - SEA_LEVEL_SHARE) * h ** HEIGHT_EXPONENT
 }
 
@@ -142,14 +166,21 @@ export function gustEnvelope(f: WindFrame, x: number, z: number, t: number): num
 /** Prevailing direction in radians (0 blows toward +x) at time t. */
 export function windHeading(f: WindFrame, t: number, gust = 0): number {
   return seedAngle(f.seed, 3) + f.direction * Math.PI / 180
-    + 0.9 * noise1(t / 240, f.seed + 404) + 0.25 * gust * noise1(t / 7, f.seed + 505)
+    + 0.9 * noise1(t / 240, f.seed + 404, CELLS.drift) + 0.25 * gust * noise1(t / 7, f.seed + 505, CELLS.veer)
 }
+
+/**
+ * The heading's cosine and sine for the last (seed, direction, time, gust) asked for. The
+ * heading is the same everywhere on the world, so one frame's callers share it.
+ */
+const heading = { seed: Number.NaN, direction: Number.NaN, t: Number.NaN, gust: Number.NaN, cos: 1, sin: 0 }
 
 /**
  * Wind velocity in m/s at a world position and shared time, written into `out`. Horizontal.
  */
 export function windAt<T extends Vec3Like>(f: WindFrame, x: number, y: number, z: number, t: number, out: T): T {
-  const { mean, gust } = strength(f)
+  const mean = meanSpeed(f)
+  const gust = gustAmount(f)
   out.y = 0
   if (mean <= 0 || f.wrap <= 0) { out.x = 0; out.z = 0; return out }
   const n = gustNoise(t - gustLag(f, x, z), f.seed)
@@ -160,9 +191,14 @@ export function windAt<T extends Vec3Like>(f: WindFrame, x: number, y: number, z
   const kz = TAU * z / f.wrap
   const patch = 1 + 0.15 * Math.sin(kx + seedAngle(f.seed, 4)) * Math.sin(kz + seedAngle(f.seed, 5))
   const speed = mean * heightShare(f, y) * g * patch
-  const a = windHeading(f, t, gust)
-  out.x = Math.cos(a) * speed
-  out.z = Math.sin(a) * speed
+  const m = heading
+  if (m.t !== t || m.gust !== gust || m.seed !== f.seed || m.direction !== f.direction) {
+    const a = windHeading(f, t, gust)
+    m.seed = f.seed; m.direction = f.direction; m.t = t; m.gust = gust
+    m.cos = Math.cos(a); m.sin = Math.sin(a)
+  }
+  out.x = m.cos * speed
+  out.z = m.sin * speed
   return out
 }
 
@@ -265,5 +301,5 @@ export function prevailingWindHeading(t: number = weatherTime()): number {
  * FULL_STRENGTH, with no gusts and no height. 0 on an airless world or at storminess 0.
  */
 export function prevailingWindStrength(): number {
-  return Math.min(1, strength(currentWindFrame(driftTerrain, roomFrame)).mean / FULL_STRENGTH)
+  return Math.min(1, meanSpeed(currentWindFrame(driftTerrain, roomFrame)) / FULL_STRENGTH)
 }

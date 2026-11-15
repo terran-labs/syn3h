@@ -26,7 +26,8 @@ export const jet: LabExhibit = {
   async build(info) {
     const design = JET_DESIGNS.find(d => d.id === info.id)!
     if (design.id === 'hex-mk2') {
-      const jet = new GameJet(); jet.attach()
+      // The lab measures a model when it is built, so the close level must exist by then.
+      const jet = new GameJet(); jet.attach(); jet.setLevel(0)
       let gearDown = true, gear = 1
       return {
         object: jet.object,
@@ -41,7 +42,7 @@ export const jet: LabExhibit = {
           gear += Math.sign(target - gear) * Math.min(Math.abs(target - gear), dt * .7)
           jet.update(gear, state.animate ? Math.sin(state.time * .9) * .22 : 0, state.steer * .27, state.animate ? state.throttle : .4)
         },
-        cockpit: { eye: jet.near.ridePosition!.position.clone() },
+        cockpit: { eye: jet.eye.clone() },
         controls: [{ kind: 'toggle', id: 'jet.gear', label: 'Landing gear', value: true, onChange: on => { gearDown = on } }],
         dispose() { jet.dispose() },
       }
