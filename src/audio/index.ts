@@ -321,14 +321,14 @@ export class GameAudio implements System {
   get diagnostics(){return {state:this.state,score:this.score?{playing:this.score.playing,mode:this.score.mode,tempo:Math.round(this.score.tempo),stalls:this.score.stalls,mood:{...this.score.mood},nodes:this.score.synth.nodeCount}:null,remoteVoices:this.remote.size,engineNodes:(this.engine?.nodeCount??0)+(this.weatherWind?.nodeCount??0)+[...this.remote.values()].reduce((n,v)=>n+v.engine.nodeCount,0),oneShots:this.voices.size+this.cueStops.size,trackedVehicles:this.events.size}}
   private readVehicle(v:Vehicle):MotionAudio {
     const velocity=v.body.linvel(),p=v.object.position,ground=this.terrain?.heightAt(p.x,p.z)??p.y
-    return {kind:v.kind,speed:Math.hypot(velocity.x,velocity.y,velocity.z),throttle:v.kind==='jet'?v.input.z:v.input.y,airborne:v.wheelsGrounded===0,wings:v.wingsOpen,slip:Math.max(0,...(v.getWheelEffects?.()??[]).filter(w=>w.grounded).map(w=>w.slip)),altitude:Math.max(0,p.y),clearance:Math.max(0,p.y-ground)}
+    return {zorbed:v.zorbed,kind:v.kind,speed:Math.hypot(velocity.x,velocity.y,velocity.z),throttle:v.kind==='jet'?v.input.z:v.input.y,airborne:v.wheelsGrounded===0,wings:v.wingsOpen,slip:Math.max(0,...(v.getWheelEffects?.()??[]).filter(w=>w.grounded).map(w=>w.slip)),altitude:Math.max(0,p.y),clearance:Math.max(0,p.y-ground)}
   }
   private vehicleEvents(v:Vehicle):void {
     const p=v.object.position,liquid=this.terrain?.liquidHeightAt?.(p.x,p.z)??-Infinity
     // A thick gloop going into lava, a splash going into a sea, lake or river.
     const liquidKind=p.y<liquid+1?this.terrain?.liquidKindAt?.(p.x,p.z)??null:null
     const previous=this.events.get(v)
-    if(this.enabled&&previous){
+    if(this.enabled&&!v.zorbed&&previous){
       if(previous.wings!==v.wingsOpen)this.cue(v.wingsOpen?'deploy':'retract',p)
       if(v.landedThisStep&&!previous.landed)this.impact(v.landingImpact,p)
       if(liquidKind&&!previous.liquid)this.cue(liquidKind==='lava'?'lava':'splash',p)

@@ -1,3 +1,4 @@
+import { modeChoices } from '../modeAvailability'
 /**
  * The world inspector: every property of the world and of your own settings, in play, as a
  * stack of frosted glass cards down the right edge. One card per logical section; inside an
@@ -29,6 +30,7 @@ export interface InspectorOptions {
 }
 /** "Mode (0 tag, 1 hill)" or "Glass: 0 Clear, 1 Frosted" gives a name and named choices. */
 export function choicesOf(def: PropertyDef): { name: string; options: { value: number; label: string }[] } | null {
+  if (def.id === 'game.mode') return { name: 'Mode', options: modeChoices }
   if (typeof def.default !== 'number' || def.min === undefined || def.max === undefined || def.step !== 1) return null
   const found = [...def.label.matchAll(/(\d+)\s+([A-Za-z][A-Za-z ]*?)(?=\s*(?:,|\)|$|\d+\s))/g)].map(m => ({ value: Number(m[1]), label: m[2].trim() }))
   const lo = Math.min(def.min, def.max), hi = Math.max(def.min, def.max)
@@ -173,7 +175,7 @@ export class Inspector {
   }
   private vehicleSwitch(): HTMLElement {
     const label = document.createElement('label'); label.textContent = 'Vehicle'
-    const select = document.createElement('select'); select.className = 'wi-vehicle-select'; select.setAttribute('aria-label', 'Vehicle (reloads and respawns)')
+    const select = document.createElement('select'); select.className = 'wi-vehicle-select'; select.setAttribute('aria-label', 'Vehicle')
     for (const option of this.options.vehicles().options) { const item = document.createElement('option'); item.value = option.id; item.textContent = option.label; select.append(item) }
     select.addEventListener('change', () => this.options.onVehicle(select.value), { signal: this.abort.signal })
     label.append(select)

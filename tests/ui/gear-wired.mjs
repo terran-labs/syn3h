@@ -57,6 +57,8 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
     await page.waitForFunction(() => document.querySelectorAll('.gear-selector .gs-hints li').length > 0)
     const hints = await page.locator('.gear-selector .gs-hints').innerText()
     assert.ok(hints.trim().length > 0, 'the Grapple shows its controls')
+    await page.waitForTimeout(600)
+    assert.match(await page.locator('.gear-selector .gs-item.is-active').innerText(), /grapple/i, 'the drum has turned to the Grapple')
     await page.screenshot({ path: `${out}/desktop-grapple.png` })
     // The pill is a real button with the cursor free.
     await page.locator('.zorb-toggle').click()
@@ -94,9 +96,7 @@ for (const [name, device] of [['phone', devices['iPhone 14']], ['landscape', { .
     // The old LET OUT and LET GO stay hidden: the rack supplies the extra buttons now.
     for (const action of ['letOut', 'letGo']) assert.equal(await page.locator(`.touch-actions [data-action="${action}"]`).isVisible(), false, `${action} duplicate stays hidden`)
     assert.equal(await page.locator('.touch-actions [data-action="zorb"]').isVisible(), true, 'touch keeps its ZORB button')
-    const overlaps = []
-    for (const other of ['.shell-minimap', '.touch-stick', '.touch-actions']) if (!apart(await box(page, '.gs-drum'), await box(page, other))) overlaps.push(other)
-    console.log(`${name}: drum overlaps ${overlaps.length ? overlaps.join(', ') : 'nothing'}`)
+    for (const other of ['.shell-minimap', '.touch-stick', '.touch-actions', '.fh-left']) assert.ok(apart(await box(page, '.gs-drum'), await box(page, other)), `${name}: the drum clears ${other}`)
     assert.deepEqual(errors, [], `page errors: ${errors.join(' | ')}`)
     console.log(`${name}: gear drum on touch passed`)
   } finally { await browser.close() }
