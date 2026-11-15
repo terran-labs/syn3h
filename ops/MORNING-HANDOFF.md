@@ -130,9 +130,9 @@ supervisor. Public acceptance subsequently passed on the same frozen build at 3:
   scenes without errors; five reviewed scenes form the published GIF. The washed-out
   tag-beam and hovercraft frames are excluded, and original captures are preserved.
 
-The later performance, diagnostics and cursor-UX queue remains pending until current
-assignments finish. An owner question now asks whether this independent work may
-proceed while aircraft evasion remains blocked; no automatic default applies.
+The owner has authorized the independent performance, diagnostics, cursor-UX and
+transparent-water queue to proceed while aircraft evasion remains blocked.
+The Orchestrator is coordinating existing lanes; aircraft avoidance stays excluded.
 It includes the FPS history panel, hardware and rendering failure
 information, one low-FPS recommendation control and adjustable tiers. Reuse the current
 owner-authorized minimap and rail work rather than implementing them twice. Connection

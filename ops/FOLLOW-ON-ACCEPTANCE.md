@@ -1,8 +1,8 @@
 # Owner follow-on acceptance
 
-Prepared from the overnight direction and current source. Implementation begins after
-existing open-thread assignments finish. This is acceptance preparation, not a new
-scope approval, release gate or permission to bypass lane ownership.
+Prepared from the overnight direction and current source. The owner has now authorized
+independent follow-on implementation while aircraft evasion remains unfinished.
+The acceptance checks below preserve lane ownership and existing release safeguards.
 
 ## Performance and adjustable tiers
 
