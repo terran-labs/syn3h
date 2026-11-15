@@ -26,7 +26,7 @@
  */
 import * as THREE from 'three/webgpu'
 import {
-  Fn, If, Loop, abs, clamp, dot, exp, float, interleavedGradientNoise, length, max, min, mix, pass,
+  Fn, If, Loop, abs, sin, clamp, dot, exp, float, interleavedGradientNoise, length, max, min, mix, pass,
   renderOutput, rtt, screenCoordinate, smoothstep, step, uniform, uv, vec2, vec3, vec4,
 } from 'three/tsl'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
@@ -98,6 +98,8 @@ export class PostChain {
     seed: uniform(0),
     motion: uniform(0),
     plunge: uniform(0),
+    heat: uniform(0.6),
+    time: uniform(0),
     plungeTint: uniform(new THREE.Vector3(1, 1, 1)),
   }
   /** 0 to 1, jumps to 1 when the watched vehicle goes under and decays over about 0.7 s. */
@@ -152,6 +154,8 @@ export class PostChain {
     u.seed.value = (u.seed.value + 61.7) % 4096
     u.motion.value = tier === 'full' ? this.updateMotion(camera) * fade : 0
     u.plunge.value = tier === 'full' ? this.updatePlunge() : 0
+    u.heat.value = P.postHeat.value * fade
+    u.time.value = (performance.now() / 1000) % 1000
     // The shaft passes cost nothing while the sun is out of view: their stale contents are
     // multiplied by a sun visibility of 0, so they are simply not redrawn.
     const built = this.built!
@@ -247,7 +251,18 @@ export class PostChain {
     // Speed streaks: a short radial smear out from the centre, wider towards the edges, only
     // while the camera is fast. A uniform branch, so it costs nothing when still.
     const base = Fn(() => {
-      const p = uv()
+      const p = uv().toVar()
+      // Heat shimmer: air above glowing lava bends. Look a little below this pixel on screen
+      // (uv grows downward); if that is lava-hot (bright and orange, so white headlights do
+      // not count), wobble where this pixel reads from. One extra tap; strength follows heat.
+      If(u.heat.greaterThan(0.001), () => {
+        const below = color.sample(p.add(vec2(0, 0.025))).rgb.mul(u.exposure)
+        const orange = smoothstep(0.25, 0.6, below.r.sub(below.b).div(below.r.add(0.001)))
+        const hot = smoothstep(0.6, 2.2, below.r).mul(orange)
+        const t = u.time
+        const wob = vec2(sin(p.y.mul(170).add(t.mul(7.3))).add(sin(p.y.mul(97).sub(t.mul(4.1))).mul(0.6)), sin(p.x.mul(130).add(t.mul(5.7))))
+        p.addAssign(wob.mul(hot).mul(u.heat).mul(0.0011))
+      })
       const c = color.sample(p).rgb.toVar()
       If(u.plunge.greaterThan(0.001), () => {
         // A soft 8-tap ring and the liquid's colour, both fading with the pulse.

@@ -29,6 +29,8 @@ export const postStreakSpeed = defineParam({ id: 'post.streakSpeed', label: 'Spe
 
 export const postPlunge = defineParam({ id: 'post.plunge', label: 'Splash blur when a vehicle goes under', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.05 })
 
+export const postHeat = defineParam({ id: 'post.heat', label: 'Heat shimmer over lava', group: g, scope: c, default: 0.6, min: 0, max: 2, step: 0.05 })
+
 export const postLook = defineParam({ id: 'post.look', label: 'Planet colour look', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.05 })
 export const postContrast = defineParam({ id: 'post.contrast', label: 'Contrast', group: g, scope: c, default: 0, min: -0.5, max: 0.5, step: 0.01 })
 export const postSaturation = defineParam({ id: 'post.saturation', label: 'Saturation', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.01 })
