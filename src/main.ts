@@ -15,6 +15,7 @@ import { generateName } from './ui/data/names'
 import { initGameShell } from './ui/Shell'
 import { readVehicleChoice, saveVehicleChoice } from './ui/VehicleChoice'
 import { type VehicleKind, createVehicle } from './vehicles'
+import { PlayerSlot } from './vehicles/PlayerSlot'
 import { attachVehicleEffects } from './vehicles/effects'
 import { createEnvironment } from './world/Environment'
 import { createPostChain } from './fx/post/PostChain'
@@ -50,7 +51,7 @@ async function main(): Promise<void> {
   game.quality.attachTerrain(terrain)
   const environment = game.add(createEnvironment(game, terrain))
   // Post effects follow the player's settings and the current rendering budget.
-  game.setPostChain(createPostChain(game, environment, () => player))
+  game.setPostChain(createPostChain(game, environment, () => slot.current))
 
   const spawn = terrain.spawnPoint(0)
   // The vehicle comes from ?vehicle=..., else the choice saved by the lobby, else the Syn3h buggy.
@@ -61,12 +62,15 @@ async function main(): Promise<void> {
   player.isLocal = true
   player.setColors?.(choice.bodyColor, choice.accentColor)
   game.add(player)
+  // Everything that follows the player reads it from this slot, so the vehicle can be changed
+  // in place later without rebuilding those systems. `player` is only the vehicle spawned first.
+  const slot = new PlayerSlot(player)
   // Tracks, dust, thrusters and lights. Only the local vehicle gets a real headlight.
   attachVehicleEffects(game, terrain, player, { local: true })
   // A new seed or terrain parameter rebuilds the ground in place: put the player back on it.
   terrain.onRegenerate?.(() => {
     const s = terrain.spawnPoint(0)
-    player.teleport(s.position, s.heading)
+    slot.current.teleport(s.position, s.heading)
   })
 
   // Bots chase and ram the player. The 'bots.count' slider sets the requested fleet size.
@@ -75,18 +79,21 @@ async function main(): Promise<void> {
 
   const camera = game.add(new ChaseCamera(game, terrain))
   camera.setVehicle(player)
+  slot.onChange((next) => camera.setVehicle(next))
   // A wrapping world carries the player, the camera and the bots across its seam.
-  ;(terrain as { followSeam?: (f: unknown) => void }).followSeam?.({ player, camera, others: () => bots.vehicles })
+  ;(terrain as { followSeam?: (f: unknown) => void }).followSeam?.({ get player() { return slot.current }, camera, others: () => bots.vehicles })
   // Wind: a force on the vehicles this client owns (the player and its bots), never on remote
   // copies, whose owners apply it themselves. `?weather=0.5` sets the storminess for a look.
-  game.add(new WeatherSystem(() => terrain, () => [player, ...bots.vehicles]))
+  game.add(new WeatherSystem(() => terrain, () => [slot.current, ...bots.vehicles]))
   applyWeatherQuery(location.search)
   // The round planet is drawn relative to the camera: place it after the camera has moved.
   game.add({ update: () => (terrain as { afterCamera?: () => void }).afterCamera?.() })
 
   // The start screen collects the name and unlocks audio. Networking joins on Play so the
   // room sees the chosen name. ?autoplay=1 skips the screen for automated checks.
-  const { shell, audio } = initGameShell(game, player, terrain)
+  const { shell, audio, setPlayer } = initGameShell(game, player, terrain)
+  // The HUD bridge, hints and the engine voice follow the slot.
+  slot.onChange(setPlayer)
   shell.configurePerformance({
     getPerformanceSnapshot: () => game.quality.getPerformanceSnapshot(),
     subscribePerformance: listener => game.quality.subscribePerformance(listener),
@@ -102,6 +109,7 @@ async function main(): Promise<void> {
   let joined = false
   const join = () => {
     if (joined) return
+    const player = slot.current
     // The lobby may have changed the vehicle after this one spawned. Rebuilding every system
     // that holds the player is riskier than a reload this close to the demo, so reload.
     if (!query.has('vehicle') && shell.vehicleKind !== player.kind && !(shell.vehicleKind === 'buggy-syn3h' && player.kind === 'buggy')) {
@@ -148,7 +156,7 @@ async function main(): Promise<void> {
     connection.onRoomClock((now) => setWeatherClock(now))
     // Remote players and bots are audible, positioned in space.
     audio.setVehicles(() => connection.audibleVehicles())
-    game.add(new ResumeSession({ game, terrain, player, room: shell.room || query.get('room') || 'lobby', saved, network: connection }))
+    game.add(new ResumeSession({ game, terrain, get player() { return slot.current }, room: shell.room || query.get('room') || 'lobby', saved, network: connection }))
   }
   shell.onPlay = join
   if (query.has('autoplay')) shell.play()
@@ -157,14 +165,14 @@ async function main(): Promise<void> {
   shell.setParamPanel(panel)
   game.add({
     update() {
-      const v = player.body.linvel()
+      const v = slot.current.body.linvel()
       const mph = Math.round(Math.hypot(v.x, v.y, v.z) * 2.23)
       hud.textContent = [`${mph} MPH   ${game.backend}   ${Math.round(game.fps)} fps`, ...netStatus].join('\n')
     },
   })
 
   // Water effects follow their normal-entry defaults and explicit player controls.
-  game.add(new WaterEffects(game, terrain, player, bots))
+  game.add(new WaterEffects(game, terrain, slot.current, bots))
 
   // Handles for debugging and automated checks.
   // The game does not run in a background tab: one controller, obeyed by the loop here. Audio
@@ -178,7 +186,7 @@ async function main(): Promise<void> {
   if (lifecycle.hidden) pause.pause('hidden')
   // The shell owns the Escape trigger, the overlay and the audio fade, all from this control.
   ;(shell as unknown as { setPauseControl?: (control: PauseControl) => void }).setPauseControl?.(pause)
-  Object.assign(window, { syn3h: { planets, game, terrain, player, params, panel, shell, audio, bots, camera, lifecycle, pause } })
+  Object.assign(window, { syn3h: { planets, game, terrain, get player() { return slot.current }, slot, params, panel, shell, audio, bots, camera, lifecycle, pause } })
   game.start()
 }
 
