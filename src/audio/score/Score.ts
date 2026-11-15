@@ -89,6 +89,10 @@ export class Score {
   private tension = 0
   private release = 0
   private airTime = 0
+  private convoy: { distance: number; pan: number; closing: number }[] = []
+  private convoyAt = -Infinity
+  private relief: number[] | null = null
+  private reliefAt = -Infinity
   private wasPlaying = false
   private opened = false
   private readonly tags: number[] = []
@@ -174,7 +178,7 @@ export class Score {
   private weather(input: ScoreInput, now: number): void {
     const on = scoreWeather.value && this.active && input.playing
     // Something closing at 30 m/s raises the telemetry beep about a semitone and a half: a real Doppler shift, exaggerated threefold.
-    const closing = on ? input.convoy?.[0]?.closing ?? 0 : 0
+    const closing = on ? this.convoy[0]?.closing ?? 0 : 0
     this.synth.doppler = 1 + Math.max(-0.3, Math.min(0.3, 3 * closing / 340))
     if (!on || now < this.nextWeather) return
     const lift = this.mood.lift, place = this.chance() * 1.6 - 0.8
@@ -220,8 +224,14 @@ export class Score {
     this.wasPlaying = input.playing
 
     // Convoy harmony: the three nearest vehicles carry parts, fading out between 30 and 300 m.
-    this.synth.convoy = scoreConvoy.value && input.playing ? (input.convoy ?? []).slice(0, 3).map(v => ({ level: unit(1 - (v.distance - 30) / 270), pan: Math.max(-1, Math.min(1, v.pan)) * 0.8 })) : null
-    this.composer.setContour(scoreTerrain.value && input.playing ? input.relief ?? null : null)
+    // The game refreshes these every few frames, in arrays it reuses, and may leave them out in
+    // between. So copy what arrives and hold it for half a second before treating it as gone.
+    if (input.convoy) { this.convoy = input.convoy.slice(0, 3).map(v => ({ distance: v.distance, pan: v.pan, closing: v.closing ?? 0 })); this.convoyAt = now }
+    else if (now - this.convoyAt > 0.5) this.convoy = []
+    if (input.relief) { this.relief = input.relief.slice(0, 16); this.reliefAt = now }
+    else if (now - this.reliefAt > 0.5) this.relief = null
+    this.synth.convoy = scoreConvoy.value && input.playing ? this.convoy.map(v => ({ level: unit(1 - (v.distance - 30) / 270), pan: Math.max(-1, Math.min(1, v.pan)) * 0.8 })) : null
+    this.composer.setContour(scoreTerrain.value && input.playing ? this.relief : null)
     this.weather(input, now)
 
     const level = levels(m)
