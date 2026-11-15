@@ -19,8 +19,9 @@ The shared liquid path returns immediately when the lower chassis clears the sur
 (body y >= surface + 0.25), or liquidKindAt returns null. It therefore stops overwriting
 velocity and resetting force accumulators on dry ground. In shallows its target height
 includes bed height plus 0.7 m, capped at surface plus 0.3 m, to lift it into that handover.
-Also, resetForces clears accumulated forces, not impulses already applied by UnityBody.flush;
-the strong liquid damping still acts on the resulting velocity while immersed.
+Correction after inspecting UnityBody.flush: it submits forces, not impulses. resetForces
+therefore replaces those controller forces while immersed; the early return above restores
+normal wheel control outside the liquid band. The handover test results remain unchanged.
 
 Evidence: `/tmp/syn3h-vehicles2/lava-camera-repro/trace.json` and contact sheet (seed 7),
 `/tmp/syn3h-vehicles2/lava-camera-seed1/trace.json` and contact sheet (seed 1).
