@@ -109,11 +109,11 @@ publishing a run of versions in order leaves the one you choose on top. A real r
 
 ## Notes files
 
-`release-notes/releases/v<version>.md`, in Freed's shape adapted to a game:
+`release-notes/releases/v<version>.md`, in Freed's shape adapted to a game. By the owner's
+instruction of 14 November 2026 there is no "(AI Generated)" line: the body opens on the
+heading, and `render` refuses anything above it.
 
 ```markdown
-(AI Generated)
-
 ## Syn3h v26.11.1412
 
 A one line deck naming the most meaningful outcomes, as X, Y and Z

@@ -146,14 +146,15 @@ test('releases.tsv with a malformed row is rejected', () => {
 const MILESTONE = HISTORY[2]
 const PRODUCTION = HISTORY[12]
 const notesFor = (row, { play = row.channel === 'production', extra = '' } = {}) => [
-  '(AI Generated)', '', `## Syn3h ${row.version}`, '', 'A deck', '', kindLine(row), '', '<!-- a comment -->', '',
+  `## Syn3h ${row.version}`, '', 'A deck', '', kindLine(row), '', '<!-- a comment -->', '',
   '### The story so far', '', 'It happened.', '', '### Features', '', '- a', '', '### Fixes', '', '- b', '',
   ...(play ? ['### Play', '', 'p', ''] : []), '### Known issues', '', '- k', '', extra,
 ].join('\n')
 
 test('a draft cannot render until it is written', () => {
   const draft = draftNotes(MILESTONE, 'm01-foundation', 'm02-first-playable', ['abc1234 Buggy: a -- b'])
-  assert.match(draft, /^\(AI Generated\)\n\n## Syn3h v26\.11\.1402\n/)
+  assert.match(draft, /^## Syn3h v26\.11\.1402\n/)
+  assert.doesNotMatch(draft, /AI Generated/)
   assert.doesNotMatch(draft, /### Play/)
   assert.match(draftNotes(PRODUCTION, 'a', 'b', []), /### Play/)
   assert.throws(() => renderNotes(draft, MILESTONE), /still contain TODO/)
@@ -165,9 +166,9 @@ test('render checks the shape for the channel', () => {
   assert.ok(renderNotes(notesFor(PRODUCTION), PRODUCTION).includes('### Play'))
   assert.throws(() => renderNotes(notesFor(MILESTONE, { play: true }), MILESTONE), /Play" belongs only in production/)
   assert.throws(() => renderNotes(notesFor(PRODUCTION, { play: false }), PRODUCTION), /production notes need/)
-  assert.throws(() => renderNotes(notesFor(MILESTONE), HISTORY[3]), /heading must be/)
+  assert.throws(() => renderNotes(notesFor(MILESTONE), HISTORY[3]), /must be the heading "## Syn3h v26.11.1403"/)
   assert.throws(() => renderNotes(notesFor(MILESTONE).replace(kindLine(MILESTONE), kindLine(PRODUCTION)), MILESTONE), /line under the deck/)
-  assert.throws(() => renderNotes(notesFor(MILESTONE).replace('(AI Generated)', '(AI Generated).'), MILESTONE), /first line/)
+  assert.throws(() => renderNotes(`(AI Generated)\n\n${notesFor(MILESTONE)}`, MILESTONE), /first line must be the heading/)
   assert.throws(() => renderNotes(notesFor(MILESTONE).replace('- b', '- b — c'), MILESTONE), /dash/)
   assert.throws(() => renderNotes(notesFor(MILESTONE).replace('- b', '- the lasers fire'), MILESTONE), /wording rule: lasers, fire/)
   assert.throws(() => renderNotes(notesFor(MILESTONE, { extra: '### Screenshots\n\n![x](y)' }), MILESTONE), /built from the assets manifest/)

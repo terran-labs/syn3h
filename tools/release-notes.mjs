@@ -83,8 +83,6 @@ function commitSubjects(from, to) {
 export function draftNotes(row, from, to, commits) {
   const production = row.channel === 'production'
   return [
-    '(AI Generated)',
-    '',
     `## Syn3h ${row.version}`,
     '',
     'TODO: one line deck, the most meaningful outcomes, as "X, Y and Z"',
@@ -128,11 +126,10 @@ export function renderNotes(text, row, manifest = { images: [], gif: null }) {
   const notes = text.replace(/<!--[\s\S]*?-->/g, '').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim()
   const lines = notes.split('\n')
   const problems = []
-  if (lines[0] !== '(AI Generated)') problems.push('the first line must be exactly "(AI Generated)"')
-  if (lines[1] !== '') problems.push('a blank line must follow "(AI Generated)"')
-  if (lines[2] !== `## Syn3h ${tag}`) problems.push(`the heading must be "## Syn3h ${tag}"`)
-  if (!lines[4] || lines[4].startsWith('#')) problems.push('a one line deck must follow the heading')
-  if (lines[6] !== kindLine(row)) problems.push(`the line under the deck must be "${kindLine(row)}"`)
+  // The owner's instruction of 14 November 2026: no "(AI Generated)" line; the body opens on the heading.
+  if (lines[0] !== `## Syn3h ${tag}`) problems.push(`the first line must be the heading "## Syn3h ${tag}"`)
+  if (lines[1] !== '' || !lines[2] || lines[2].startsWith('#')) problems.push('a one line deck must follow the heading after a blank line')
+  if (lines[4] !== kindLine(row)) problems.push(`the line under the deck must be "${kindLine(row)}"`)
   const found = lines.filter((l) => l.startsWith('### ')).map((l) => l.slice(4))
   for (const name of found) if (!SECTIONS.includes(name)) problems.push(`unexpected section "### ${name}"${name === 'Screenshots' ? ' (it is built from the assets manifest)' : ''}`)
   for (const name of REQUIRED) if (!found.includes(name)) problems.push(`missing "### ${name}"`)
