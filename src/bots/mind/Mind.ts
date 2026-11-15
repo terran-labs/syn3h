@@ -83,6 +83,8 @@ export class Mind {
   private lastKind: ActivityKind = 'pause'
   private bestDistance = Infinity
   private leaderIdle = 0
+  private lastX = NaN
+  private lastZ = NaN
   private sight: Place | null = null
   /** Where it has been, one point every few metres, newest last: the proven way back out. */
   private readonly trail: NavPoint[] = []
@@ -135,6 +137,16 @@ export class Mind {
     this.time += dt
     const here = body.translation(), v = body.linvel(), speed = Math.hypot(v.x, v.z)
     this.q.copy(body.rotation()); this.forward.set(0, 0, -1).applyQuaternion(this.q)
+    // A jump in one step is a teleport. Across the seam of a wrapping world it is a whole
+    // tile, and the plan is still good once it is moved the same way; otherwise start afresh.
+    const jx = here.x - this.lastX, jz = here.z - this.lastZ
+    if (Number.isFinite(jx) && Math.hypot(jx, jz) > 30) {
+      const wrap = this.terrain.wrapSize
+      const sx = wrap ? Math.round(jx / wrap) * wrap : 0, sz = wrap ? Math.round(jz / wrap) * wrap : 0
+      if ((sx || sz) && Math.hypot(jx - sx, jz - sz) < 30) this.shiftPlan(sx, sz)
+      else this.reset()
+    }
+    this.lastX = here.x; this.lastZ = here.z
     const cell = this.cellOf(here.x, here.z)
     this.visits.set(cell, (this.visits.get(cell) ?? 0) + dt)
     const crumb = this.trail[this.trail.length - 1]
@@ -222,6 +234,16 @@ export class Mind {
   }
 
   // ---- choosing what to do -----------------------------------------------------------
+
+  private shiftPlan(dx: number, dz: number): void {
+    const moved = new Set<NavPoint>()
+    const move = (p: NavPoint | null | undefined) => { if (p && !moved.has(p)) { moved.add(p); p.x += dx; p.z += dz } }
+    // Destinations may be shared objects (a road point, a place of interest): move a copy.
+    if (this.activity.destination) this.activity.destination = { ...this.activity.destination, x: this.activity.destination.x + dx, z: this.activity.destination.z + dz }
+    for (const p of this.trail) move(p)
+    // Routes and road waypoints are asked for again rather than moved: they are cheap.
+    this.route = null; this.waypoint = null; this.waypointTime = 0
+  }
 
   private clearPlan(): void {
     this.route = null; this.waypoint = null; this.troubleFor = 0; this.bestDistance = Infinity; this.bestTime = this.time

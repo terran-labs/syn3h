@@ -346,13 +346,43 @@ export function computeLayout(seed: number, s: TerrainSettings, size: number): T
     dune: subSeed(seed, 9), detail: subSeed(seed, 10), gully: subSeed(seed, 11), rim: subSeed(seed, 12),
     approach: subSeed(seed, 13), continent: subSeed(seed, 14),
   }
+  const fields = computeFields(size, seeds)
   return {
     half, volcano, cones: [], mesas: [], islandRadius, spawnRadius: ringR, summitHeight, spawns,
-    // The share of the tile that is land sets how high the continent noise must reach. The
-    // constants were fitted so the slider reads true to within a few percent (see tests).
-    continentLevel: 0.62 - 1.05 * ((s.landShare - 0.04) / 1.09),
-    windX, windZ, fields: computeFields(size, seeds), seeds,
+    continentLevel: continentLevel(fields, islandRadius, s),
+    windX, windZ, fields, seeds,
   }
+}
+
+/**
+ * How high the continent noise must reach to be land, chosen so the asked share of this
+ * tile is land. Measured, not guessed: every lattice point is ranked by how readily it
+ * becomes land (the main island always is), and the level is set where the asked share of
+ * them clear it. So the land share slider reads true on every seed and planet size.
+ */
+function continentLevel(F: LowFields, islandRadius: number, s: TerrainSettings): number {
+  const n = F.n - 1 // the last row and column repeat the first
+  const rank = new Float32Array(n * n)
+  let island = 0
+  for (let iz = 0; iz < n; iz++) {
+    const z = -F.half + iz * F.step
+    for (let ix = 0; ix < n; ix++) {
+      const x = -F.half + ix * F.step
+      const i = iz * F.n + ix
+      const r = Math.sqrt(x * x + z * z)
+      const wobble = F.coast[i]
+      // The same expressions as shapeHeight: the island's own coast, and the strait that
+      // keeps continents off the volcano.
+      if (r / islandRadius - s.coastWobble * wobble < 1) { rank[iz * n + ix] = Infinity; island++; continue }
+      const strait = smoothstep(islandRadius * 0.75, islandRadius * 0.45, r) * 2
+      rank[iz * n + ix] = F.continent[i] + 0.12 * wobble - strait / 4
+    }
+  }
+  const want = Math.round(s.landShare * n * n)
+  if (want <= island) return Infinity
+  rank.sort()
+  // Land is rank > level: the top `want` points.
+  return rank[n * n - want]
 }
 
 // ---------------------------------------------------------------------------------------

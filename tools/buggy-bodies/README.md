@@ -14,5 +14,5 @@ Cockpit meshes: proportions change through smooth deformations, the spoiler and 
 restyled, and the surface is subdivided once. The original headlight and tail light faces are
 kept, under the materials `Headlights` and `TailLights`.
 
-The gallery is `buggy-bodies.html` (`src/vehicles/skins/bodiesViewer.ts`). It is a review
+The gallery is the vehicle lab, `vehicle-lab.html?vehicle=buggy` (`src/dev/vehicleLab/exhibits/buggy.ts`; see `docs/vehicle-lab.md`). It is a review
 page for the owner; the game does not load these bodies yet.

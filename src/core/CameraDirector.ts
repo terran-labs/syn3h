@@ -34,6 +34,9 @@ export class CameraDirector {
   start(): void { this.active = true; this.index = 0; this.begin() }
   stop(): void { this.active = false; this.shot = 'chase' }
 
+  /** The world moved by a whole tile under the vehicle (seam crossing): move the fixed shot with it. */
+  shift(dx: number, dz: number): void { this.anchor.x += dx; this.anchor.z += dz }
+
   private begin(): void {
     this.shot = SEQUENCE[this.index][0]; this.shotTime = 0; this.blockedTime = 0; this.placed = false
     this.side = -this.side

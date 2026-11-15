@@ -5,7 +5,7 @@ import type { Terrain } from '../world/Terrain'
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Game, System } from './Game'
 import { CameraDirector } from './CameraDirector'
-import { curveOffset, updateCurve } from '../world/curve'
+import { curveOffset } from '../world/curve'
 const number = (id: string, label: string, value: number, min: number, max: number, step = 0.1) => defineParam({ id: `camera.${id}`, label, group: 'Camera', scope: 'client', default: value, min, max, step })
 const boolean = (id: string, label: string, value: boolean) => defineParam({ id: `camera.${id}`, label, group: 'Camera', scope: 'client', default: value })
 // _Runtime.prefab:8755-8795, terra.buggy.prefab:586, CoreCamera.cs:177.
@@ -153,6 +153,8 @@ export class ChaseCamera implements System {
   readonly director = new CameraDirector()
   /** True while the current cinematic pose is the director's, not the attract mode's. */
   private directed = false
+  private readonly bend = { x: 0, y: 0, z: 0 }
+  private readonly lookAt = new THREE.Vector3()
   private readonly shotPosition = new THREE.Vector3()
   private readonly shotTarget = new THREE.Vector3()
   private direct(dt: number): void {
@@ -176,17 +178,16 @@ export class ChaseCamera implements System {
   clearCinematicPose(): void { this.cinematic = null; this.previousTarget = null }
   private cinematic: { position: THREE.Vector3; target: THREE.Vector3; look: THREE.Vector3 } | null = null
 
-  update(dt: number): void {
-    this.place(dt)
-    // The round world is drawn bent about the camera. The terrain refreshes that mapping in
-    // its own update, which runs before this one, so it would bend this frame's world about
-    // last frame's camera and shimmer at speed. Refresh it again now the camera has moved.
-    if (this.terrain.size > 0) updateCurve(this.game.camera.position, this.terrain.size)
+  /** Follow the target across the seam of a wrapping world: move everything by a whole tile. */
+  shift(dx: number, dz: number): void {
+    for (const v of [this.previousPosition, this.pivot, this.desired, this.game.camera.position]) { v.x += dx; v.z += dz }
+    if (this.cinematic) for (const v of [this.cinematic.position, this.cinematic.target, this.cinematic.look]) { v.x += dx; v.z += dz }
+    this.director.shift(dx, dz)
   }
 
-  private readonly bend = { x: 0, y: 0, z: 0 }
-  private readonly lookAt = new THREE.Vector3()
-  private place(dt: number): void {
+  update(dt: number): void {
+    // The round mapping is refreshed after this by terrain.afterCamera() (wired in main.ts),
+    // so the world is bent about this frame's camera, not the last one's.
     this.direct(dt)
     if (this.cinematic) {
       const camera = this.game.camera, c = this.cinematic, k = ease(clamp(dt, 0, 0.25), 2)
