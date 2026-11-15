@@ -1,7 +1,7 @@
 {
   "tagline": "Syn3h, rebuilt native in the browser: its vehicles, its physics, its lobby and its look.",
   "deadline": "Demo: Sunday noon, Coeur d'Alene",
-  "updated": "Saturday 8:05pm PT",
+  "updated": "Saturday 8:50pm PT",
   "headline": "The island is in: a volcano at the centre of a lava sea, with lava rivers, flame vents and a road to the summit. In a real Chrome on this Mac the game renders in about 8 ms a frame; the slow readings came from headless test browsers.",
   "previews": [
     {
@@ -162,19 +162,24 @@
       "detail": "Merged. Volcano at the origin, lava to the horizon, eight coastal spawn pads, rock fangs round the summit, lava and vents drawn. 75 ms to generate."
     },
     {
+      "state": "done",
+      "title": "Hovercraft handling",
+      "detail": "Merged. Assisted glide holds clearance over dunes, slopes, lava and sea with zero hull-through-ground samples. The original controller is one slider away."
+    },
+    {
+      "state": "done",
+      "title": "Demo features",
+      "detail": "Merged: join by QR (J), attract mode, presentation HUD (P), winner banner."
+    },
+    {
       "state": "active",
       "title": "Frame rate on real hardware",
       "detail": "Headed Chrome on this M2 Max: about 8 ms a frame at 1280 x 720. Headless numbers were misleading. Quiet-machine and phone readings still to come."
     },
     {
       "state": "active",
-      "title": "Hovercraft handling",
-      "detail": "Pitches hard off jumps and clips steep slopes. Being diagnosed against the source and fixed."
-    },
-    {
-      "state": "active",
-      "title": "Demo features",
-      "detail": "Join by QR code, attract mode, presentation HUD, winner banner."
+      "title": "Sound",
+      "detail": "A voice per vehicle, audible bots, lava and wind, King of the Hill stingers."
     },
     {
       "state": "next",
@@ -185,43 +190,43 @@
       "state": "next",
       "title": "Demo rehearsal",
       "detail": "Full run through on the demo hardware and network, with a fallback plan."
+    },
+    {
+      "state": "next",
+      "title": "Public deployment",
+      "detail": "Rehearsed locally under Cloudflare's runtime. Waiting on your Cloudflare access."
     }
   ],
   "workers": [
     {
       "state": "active",
-      "name": "Multiplayer (Claude 1)",
-      "detail": "Effects on remote vehicles, laser look, a calmer hill marker, island rules."
-    },
-    {
-      "state": "active",
-      "name": "Terrain Lab (Claude 1, your direct line)",
-      "detail": "Island generator with lava and fire drawn, fog."
-    },
-    {
-      "state": "active",
-      "name": "Codex 1: hovercraft and jet",
-      "detail": "Fixing hovercraft handling; a full minute of jet flight including crashes."
-    },
-    {
-      "state": "active",
-      "name": "Codex 2: frame rate",
-      "detail": "Profiling every system on a quiet machine; bot manager fix."
-    },
-    {
-      "state": "active",
-      "name": "Codex 3: demo features",
-      "detail": "QR join, attract mode, presentation HUD, winner banner."
-    },
-    {
-      "state": "done",
-      "name": "Buggy (Claude 1)",
-      "detail": "Delivered, including the stuck-on-roof rescue."
-    },
-    {
-      "state": "active",
-      "name": "Orchestrator (Claude 1)",
+      "name": "Syn3h :: Orchestrator (Claude 1, Fable)",
       "detail": "Merging, testing, previews, this dashboard."
+    },
+    {
+      "state": "active",
+      "name": "Syn3h :: Terrain Lab (Claude 1, Fable)",
+      "detail": "Your direct line for the island generator, lava and fog."
+    },
+    {
+      "state": "active",
+      "name": "Syn3h :: UX (Codex 3)",
+      "detail": "Lobby, HUD, menus, demo features, and now sound."
+    },
+    {
+      "state": "waiting",
+      "name": "Syn3h :: Vehicles (Codex 1)",
+      "detail": "Buggy, jet, hovercraft, tank, effects. Hovercraft just delivered."
+    },
+    {
+      "state": "active",
+      "name": "Syn3h :: Bots, Performance & QA (Codex 2)",
+      "detail": "Bots, camera, graphics levels, QA sweeps. Profiling the island build."
+    },
+    {
+      "state": "waiting",
+      "name": "Syn3h :: Multiplayer (needs a thread)",
+      "detail": "Workspace and brief are ready. Start a thread there; until then the work sits inside the Orchestrator."
     }
   ],
   "decisions": [
