@@ -3,9 +3,7 @@
 //   node tests/vehicles2/nobitmaps-capture.mjs <out> [kinds] [backend]     PORT=5207 by default
 // kinds: buggy,jet,hovercraft,tank (default all). backend: webgpu (default) or webgl.
 // Exits non-zero on a browser error, any image request under those two folders, or a tank whose
-// tread maps did not scroll while it drove. One allowance, matching no-images.test.ts: the jet
-// and hovercraft paint still load armor-scales.jpg and thruster-glow.png until those vehicles
-// move to the shared vehicle materials system.
+// tread maps did not scroll while it drove. No bitmap exceptions remain.
 //
 // The buggy run also stages a "lab": with the buggy parked and a settled camera, it emits dust,
 // exhaust, both plasma colours and a set of tyre marks straight into the shared effect batches,
@@ -17,7 +15,7 @@ const port=process.env.PORT??'5207',hours=[12,23]
 await mkdir(out,{recursive:true})
 const browser=await chromium.launch({channel:'chrome',headless:true,args:['--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=metal','--ignore-gpu-blocklist']})
 const results=[]
-const allowed=kind=>/^(jet|hovercraft)$/.test(kind)?['/models/textures/armor-scales.jpg','/models/textures/thruster-glow.png']:[]
+const allowed=()=>[]
 // Camera in the vehicle frame: forward f, right r, up u, looking at forward tf, up tu. The game
 // camera eases toward this pose, so callers wait before a screenshot or repeat it while moving.
 const pose=(page,f,r,u,tf=0,tu=.3)=>page.evaluate(({f,r,u,tf,tu})=>{const s=window.syn3h,o=s.player.object,V=o.position.constructor

@@ -96,8 +96,9 @@ export interface Wanted { vehicle?: string; group?: string; design?: string }
 export function selectionFromSearch(search: string): Wanted {
   const q = new URLSearchParams(search)
   const wanted: Wanted = { vehicle: q.get('vehicle') ?? undefined, group: q.get('group') ?? q.get('round') ?? undefined, design: q.get('design') ?? undefined }
-  // game-skins showed the Syn3h and classic skins; both are now in-game vehicle exhibits.
-  if (wanted.vehicle === 'game-skins') return { vehicle: wanted.design === 'classic' ? 'game-buggy-classic' : 'game-buggy' }
+  // game-skins showed the Syn3h and classic skins. The classic buggy is retired, so both old
+  // links, and a link to its own exhibit, open the Syn3h buggy.
+  if (wanted.vehicle === 'game-skins' || wanted.vehicle === 'game-buggy-classic') return { vehicle: 'game-buggy' }
   return wanted
 }
 

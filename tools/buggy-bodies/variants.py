@@ -171,6 +171,9 @@ for v in VARIANTS:
     if v['id'] == 'c2-box': v['ship'] = 'buggy-boxarm.glb'
     # The shipped body gets the cockpit tub (PATTERN.md rule 3); the review rounds stay as approved.
     if v['id'] == 'c2-box': v['tub'] = True; v['views'] = ['front', 'cabin']
+    # 15 November 2026, the owner on the shipped body: a plain smooth cockpit with glowing spots,
+    # a smooth skid plate underneath, and the shocks and arms carried by the body's own surface.
+    if v['id'] == 'c2-box': v['blend'] = True
 for v in VARIANTS:
     v.setdefault('views', ['front', 'rear', 'side'])
     if v.get('round') == 2: v['views'] = ['front', 'nose', 'top']

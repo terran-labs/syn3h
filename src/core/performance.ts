@@ -13,7 +13,19 @@ export interface PerformancePoint {
   readonly triangles: number
   readonly stalls: number
   readonly frames: number
+  /**
+   * Pipeline objects first seen in this window; null where the renderer's bookkeeping is not
+   * readable. A count of CPU-side creations, not GPU compile or execution time.
+   */
+  readonly pipelinesCreated?: number | null
 }
+/** Live and cumulative pipeline objects. Misses one created and released inside a single frame. */
+export interface PerformancePipelines { readonly live: number; readonly created: number }
+/**
+ * Visible frames since start, counted in menus and loading too and never reset by recommendation
+ * evidence, so freezes over a second are included. `stalls` in the history is the narrower count.
+ */
+export interface PerformanceLongFrames { readonly over50: number; readonly over1000: number }
 export interface PerformanceEnvironment {
   readonly backend: string
   readonly adapter: string | null
@@ -35,6 +47,9 @@ export interface PerformanceSnapshot {
   readonly history: readonly PerformancePoint[]
   readonly recommendation: Readonly<PerformanceRecommendation> | null
   readonly environment: Readonly<PerformanceEnvironment>
+  /** null means unavailable on this renderer: show that, never zero. */
+  readonly pipelines?: Readonly<PerformancePipelines> | null
+  readonly longFrames?: Readonly<PerformanceLongFrames>
 }
 /** Bind methods to their controller before passing this interface to presentation code. */
 export interface PerformanceSource {

@@ -50,7 +50,7 @@ const SEAMS:[string,number,number][]=[['east',-TILE,0],['west',TILE,0],['south',
 const make=(h:H,kind:VehicleKind,y=2)=>{const v=createVehicle(h.game,h.terrain,kind,new T.Vector3(0,y,0),0);v.isLocal=false;return v}
 
 describe('a whole tile shift at a seam leaves a vehicle undisturbed',()=>{
- for(const kind of ['buggy','buggy-classic','hovercraft','tank'] as const)for(const [seam,dx,dz] of SEAMS){
+ for(const kind of ['buggy','hovercraft','tank'] as const)for(const [seam,dx,dz] of SEAMS){
   it(`${kind} on the ground, ${seam}`,()=>{
    const h=harness(),v=make(h,kind)
    try{expectUndisturbed(`${kind} ${seam}`,cross(h,v,dx,dz),dx,dz)}finally{v.dispose();h.world.free()}

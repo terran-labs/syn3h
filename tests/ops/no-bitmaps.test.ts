@@ -29,12 +29,9 @@ const ALLOWED = new Map<string, string>([
   ['public/brand/icon-192.png', 'UX'],
   ['public/brand/icon-512.png', 'UX'],
   ['public/brand/share.png', 'UX'],
-  // Jet and hovercraft leads: go when those vehicles move to the shared materials (PATTERN.md).
-  ['public/models/textures/armor-scales.jpg', 'Jet and hovercraft leads'],
-  ['public/models/textures/thruster-glow.png', 'Jet and hovercraft leads'],
 ])
 /** The list may never be longer than it was on the day it was written. */
-const CEILING = 10
+const CEILING = 8
 
 const tracked = (): string[] =>
   execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split('\0').filter((f) => IMAGE.test(f))

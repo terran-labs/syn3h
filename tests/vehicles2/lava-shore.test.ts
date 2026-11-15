@@ -2,11 +2,10 @@ import { beforeAll, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { initPhysics, RAPIER, groups, GROUP_TERRAIN, GROUP_ALL } from '../../src/core/physics'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
-import { ClassicBuggy } from '../../src/vehicles/ClassicBuggy'
 import { Tank } from '../../src/vehicles/Tank'
 import { harness } from './harness'
 beforeAll(initPhysics)
-it.each([['syn3h',Syn3hBuggy],['classic',ClassicBuggy],['tank',Tank]] as const)('%s hands lava crawl back to ground drive on a beach', (_name, Vehicle) => {
+it.each([['syn3h',Syn3hBuggy],['tank',Tank]] as const)('%s hands lava crawl back to ground drive on a beach', (_name, Vehicle) => {
  const h=harness(9.81,false),slope=Math.tan(9*Math.PI/180)
  h.terrain.heightAt=(_x,z)=>-z*slope
  h.terrain.liquidHeightAt=()=>0

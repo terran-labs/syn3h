@@ -1,14 +1,12 @@
 /** Vehicle.getWheelEffects and landing flags, on both buggies. */
 import { describe, expect, test } from 'vitest'
 import * as THREE from 'three/webgpu'
-import { ClassicBuggy } from '../../src/vehicles/ClassicBuggy'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
 import type { Vehicle } from '../../src/vehicles/Vehicle'
 import { makeBed } from './harness'
 
 const kinds = [
   ['Syn3h', (bed: Awaited<ReturnType<typeof makeBed>>, y: number) => new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, y, 0))],
-  ['classic', (bed: Awaited<ReturnType<typeof makeBed>>, y: number) => new ClassicBuggy(bed.game, bed.terrain, new THREE.Vector3(0, y, 0))],
 ] as const
 
 describe.each(kinds)('%s buggy wheel effects', (_name, make) => {

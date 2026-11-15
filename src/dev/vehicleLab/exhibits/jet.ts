@@ -26,8 +26,10 @@ export const jet: LabExhibit = {
   async build(info) {
     const design = JET_DESIGNS.find(d => d.id === info.id)!
     if (design.id === 'hex-mk2') {
-      const jet = new GameJet(); jet.attach()
+      // The lab measures a model when it is built, so the close level must exist by then.
+      const jet = new GameJet(); jet.attach(); jet.setLevel(0)
       let gearDown = true, gear = 1
+      const controls = new THREE.Vector3()
       return {
         object: jet.object,
         groundY: GROUND_Y,
@@ -39,9 +41,11 @@ export const jet: LabExhibit = {
         update(dt, state) {
           const target = state.animate ? (Math.floor(state.time / 5) % 2 === 0 ? 1 : 0) : gearDown ? 1 : 0
           gear += Math.sign(target - gear) * Math.min(Math.abs(target - gear), dt * .7)
-          jet.update(gear, state.animate ? Math.sin(state.time * .9) * .22 : 0, state.steer * .27, state.animate ? state.throttle : .4)
+          // Stick back is nose up: the nozzle turns its exhaust up and the ring's surfaces rise.
+          controls.set(-state.pitch, state.steer, state.yaw)
+          jet.update(gear, -state.pitch * .3, state.steer * .06 + state.yaw * .26, state.animate ? state.throttle : .4, controls)
         },
-        cockpit: { eye: jet.near.ridePosition!.position.clone() },
+        cockpit: { eye: jet.eye.clone() },
         controls: [{ kind: 'toggle', id: 'jet.gear', label: 'Landing gear', value: true, onChange: on => { gearDown = on } }],
         dispose() { jet.dispose() },
       }
@@ -64,7 +68,8 @@ export const jet: LabExhibit = {
         gear += Math.sign(target - gear) * Math.min(Math.abs(target - gear), dt * .7)
         for (const j of levels) {
           j.setGear(gear); j.setThrottle(state.animate ? state.throttle : .4)
-          j.setVector(state.animate ? Math.sin(state.time * .9) * .22 : 0, state.steer * .27)
+          j.setVector(-state.pitch * .3, state.steer * .06 + state.yaw * .26)
+          j.setControls(-state.pitch, state.steer, state.yaw)
         }
       },
       cockpit: levels[0].ridePosition ? { eye: levels[0].ridePosition.position.clone() } : undefined,

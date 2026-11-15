@@ -3,7 +3,7 @@
 // renderer a texture marked for upload with no image throws ("reading 'complete'").
 //   node tests/vehicles2/texture-race.mjs [kinds] [backends]     PORT=5206 by default
 import {chromium} from 'playwright-core'
-const kinds=(process.argv[2]??'jet,hovercraft,tank,buggy,buggy-classic').split(','),backends=(process.argv[3]??'webgpu,webgl').split(',')
+const kinds=(process.argv[2]??'jet,hovercraft,tank,buggy').split(','),backends=(process.argv[3]??'webgpu,webgl').split(',')
 const port=process.env.PORT??'5206'
 const browser=await chromium.launch({channel:'chrome',headless:true,args:['--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=metal','--ignore-gpu-blocklist']})
 const results=[]

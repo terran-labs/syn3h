@@ -8,7 +8,12 @@ try {
   await page.goto(process.env.SYN3H_URL ?? 'http://127.0.0.1:5193/')
   await page.waitForFunction(() => window.syn3h?.shell?.galaxy?.live && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
   await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400); window.syn3h.shell.galaxy.options.still = () => true })
-  const view = () => page.evaluate(() => { const g = window.syn3h.shell.galaxy; return [g.yaw, g.pitch, g.distance] })
+  // Keys and sticks move an aim and the view springs after it over the next drawn frames:
+  // read the view once its swing has come to rest, never in the same instant as the key.
+  const view = async () => {
+    await page.waitForFunction(() => { const g = window.syn3h.shell.galaxy; return g.swingResting && Math.abs(g.reach - g.distance) < 0.01 * g.distance }, null, { timeout: 10000 })
+    return page.evaluate(() => { const g = window.syn3h.shell.galaxy; return [g.yaw, g.pitch, g.distance] })
+  }
   const before = await view()
   await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowUp'); await page.keyboard.press('+')
   const after = await view()
