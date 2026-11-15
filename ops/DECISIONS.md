@@ -2,6 +2,21 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Saturday 14 November, about 10:15pm Pacific: no cut-off; build and ship as fast as possible; noon is the hand-over
+
+**Decided** (Terrain Lab thread, relayed by the Orchestrator). "Tell the Orchestrator to
+eliminate its cutoff and just continue building and shipping everything as fast as we
+possibly can. I'm going to be hand-managing this. I'll decide what the cutoff is tomorrow.
+Our final deadline cutoff is at noon. that's when the judges need this handed over."
+
+**What it changes.** The 9am Sunday cut-off for release 3 is gone, and so is the Foreman's
+"nothing after 10am" limit; the owner sets the cut-off himself on Sunday. Trunk keeps
+landing as fast as the gate allows. Open, asked of him at 10:25pm: whether "shipping"
+includes public releases to www.syn3h.com that he has not looked at, and what the judges'
+hand-over at noon consists of. Until he answers nothing is deployed. Also approved in that
+thread: six new planets (Archipelago, Ice moon, Obsidian, Badlands, a low gravity Moon, a
+Methane swamp).
+
 ## Saturday 14 November, 10:10pm Pacific: unthrottle, and review every half hour
 
 **Decided.** The owner asked why there is a throttle at all and for everything to be
