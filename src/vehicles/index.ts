@@ -20,6 +20,19 @@ import type { Vehicle } from './Vehicle'
  */
 export type VehicleKind = 'buggy' | 'buggy-classic' | 'buggy-syn3h' | 'jet' | 'hovercraft' | 'tank'
 
+/**
+ * Every vehicle `createVehicle` builds, with a display name, for tools that list them (the
+ * vehicle lab shows each one automatically). 'buggy-syn3h' is an alias of 'buggy' and is left
+ * out. Add a new kind here and to the switch below.
+ */
+export const VEHICLE_KINDS: readonly { kind: VehicleKind; name: string }[] = [
+  { kind: 'buggy', name: 'Syn3h buggy' },
+  { kind: 'buggy-classic', name: 'Mars Explorer buggy' },
+  { kind: 'jet', name: 'Jet' },
+  { kind: 'hovercraft', name: 'Hovercraft' },
+  { kind: 'tank', name: 'Tank' },
+]
+
 /** Models load over HTTP, so only in a browser. Headless tests keep the primitive visuals. */
 const hasDom = typeof document !== 'undefined'
 
