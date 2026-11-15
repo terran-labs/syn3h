@@ -154,3 +154,62 @@ export const buggySideGrip = defineParam({
   id: 'buggy.sideGrip', label: 'Grip when sideways', group: 'Buggy', scope: 'world',
   default: 0.6, min: 0.1, max: 4, step: 0.05,
 })
+/**
+ * Next-gen counter-steer assist. Steering range shrinks with speed so full lock cannot spin
+ * the buggy, which also meant that once the body had slid a few degrees off its direction of
+ * travel the front wheels could no longer be pointed back along it, and holding full
+ * counter-steer held the slide. With this at 1 the front wheels swing toward the direction of
+ * travel once the buggy slides more than a few degrees, and the driver's steering is added to
+ * that. Normal cornering is unchanged. 0 is the old behaviour.
+ */
+export const buggySteerFollow = defineParam({
+  id: 'buggy.steerFollow', label: 'Counter-steer assist', group: 'Buggy', scope: 'world',
+  default: 1, min: 0, max: 1, step: 0.05,
+})
+/**
+ * Next-gen rear steering at speed, as a fraction of the Syn3h rear angle. Syn3h steers the
+ * rear wheels against the fronts at every speed (1), which tightens slow turns but makes the
+ * tail step out at speed. 0 holds the rear wheels straight by the grip fade speed; negative
+ * values steer them with the fronts there, as road cars with four wheel steering do.
+ */
+export const buggyRearSteerFast = defineParam({
+  id: 'buggy.rearSteerFast', label: 'Rear steering at speed', group: 'Buggy', scope: 'world',
+  default: 0, min: -1, max: 1, step: 0.05,
+})
+/**
+ * Next-gen: the least grip a broadside tyre keeps, as a fraction of its grip at that speed,
+ * except just after a landing. A buggy that lands sideways still slides and tumbles on
+ * (buggy.sideGrip), but a slide that starts on the ground can be caught. 0 is the old
+ * behaviour: any broadside tyre falls to buggy.sideGrip.
+ */
+export const buggySideHold = defineParam({
+  id: 'buggy.sideHold', label: 'Grip kept in a slide', group: 'Buggy', scope: 'world',
+  default: 0.5, min: 0, max: 1, step: 0.05,
+})
+/**
+ * Next-gen aerodynamic downforce with the wheels down, in g at 40 m/s. It grows with speed
+ * squared. Off by default: grip at speed is already three times the grip at rest, and with
+ * the tail fin on, 0.3 g of it pressed the buggy onto its bump stops hard enough to flip it
+ * over a 0.4 m bump at 42 m/s, where the owner wants a clean launch.
+ */
+export const buggyDownforce = defineParam({
+  id: 'buggy.downforce', label: 'Downforce at speed (g)', group: 'Buggy', scope: 'world',
+  default: 0, min: 0, max: 1, step: 0.05,
+})
+/**
+ * Next-gen tail fin: a side force at the tail that grows with speed and turns the buggy to
+ * point where it is going, on the ground and in the air. 0 is none.
+ */
+export const buggyFin = defineParam({
+  id: 'buggy.fin', label: 'Tail fin', group: 'Buggy', scope: 'world',
+  default: 1, min: 0, max: 3, step: 0.05,
+})
+/**
+ * Next-gen stability assist: damps the buggy's turning (per second) at speed while the
+ * steering is let go and the wheels are down. Off by default: it also damps a drift the
+ * driver wanted.
+ */
+export const buggyStability = defineParam({
+  id: 'buggy.stability', label: 'Stability assist', group: 'Buggy', scope: 'world',
+  default: 0, min: 0, max: 5, step: 0.1,
+})

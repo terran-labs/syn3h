@@ -314,24 +314,45 @@ describe('Syn3hBuggy', () => {
     expect(axis(b, 0, 1, 0).y).toBeGreaterThan(0.9)
   })
 
-  test('landing broadside at speed, next-gen slides on instead of gripping to a stop', async () => {
-    const slide = async (sideGrip?: number) => {
+  /** Thrown sideways at 20 m/s from rest: how far it goes, when it stops and when it faces its travel. */
+  const sideways = async () => {
+    const { bed, b } = await spawn()
+    bed.run(3)
+    const x0 = pos(b).x
+    b.body.setLinvel({ x: 20, y: 0, z: 0 }, true)
+    let t = 0, stopped = Infinity, faced = Infinity
+    bed.run(6, () => {
+      t += 0.02
+      const v = b.body.linvel(), sp = Math.hypot(v.x, v.z), f = axis(b, 0, 0, -1)
+      if (stopped === Infinity && sp < 3) stopped = t
+      if (faced === Infinity && sp > 3 && (f.x * v.x + f.z * v.z) / sp > 0.97) faced = t
+    })
+    return { distance: pos(b).x - x0, stopped, faced, upright: axis(b, 0, 1, 0).y }
+  }
+
+  test('broadside at speed, the sideways grip slider decides whether next-gen slides on or grips to a stop', async () => {
+    // The tyres alone: no tail fin, no counter-steer assist, and no grip kept in a ground slide.
+    const tyres = async (sideGrip?: number) => {
+      params.set('buggy.fin', 0); params.set('buggy.steerFollow', 0); params.set('buggy.sideHold', 0)
       if (sideGrip !== undefined) params.set('buggy.sideGrip', sideGrip)
-      const { bed, b } = await spawn()
-      bed.run(3)
-      const x0 = pos(b).x
-      b.body.setLinvel({ x: 20, y: 0, z: 0 }, true)
-      let t = 0, stopped = -1
-      bed.run(6, () => { t += 0.02; const v = b.body.linvel(); if (stopped < 0 && Math.hypot(v.x, v.z) < 3) stopped = t })
-      return { distance: pos(b).x - x0, stopped, upright: axis(b, 0, 1, 0).y }
+      return sideways()
     }
-    const slides = await slide()
+    const slides = await tyres()
     // With broadside grip as high as steering grip it stops in about a second (the old behaviour).
-    const bites = await slide(4)
+    const bites = await tyres(4)
     expect(bites.stopped).toBeLessThan(1.4)
     expect(slides.stopped).toBeGreaterThan(1.8)
     expect(slides.distance).toBeGreaterThan(bites.distance * 1.8)
     expect(slides.upright).toBeGreaterThan(0.9)
+  })
+
+  test('broadside at speed, next-gen slides, turns to face its travel and rolls on upright', async () => {
+    // The tail fin (buggy.fin) swings the nose round; before it, the buggy slid to a stop.
+    const r = await sideways()
+    expect(r.faced).toBeLessThan(2)
+    expect(r.stopped).toBe(Infinity)
+    expect(r.distance).toBeGreaterThan(40)
+    expect(r.upright).toBeGreaterThan(0.9)
   })
 
   test.each([[false, 1], [true, 0]])('next-gen lands a 4 m drop at 30 m/s on its wheels (planted settings %s: at most %i body strike)', async (planted, strikes) => {
@@ -693,5 +714,57 @@ describe('Syn3hBuggy', () => {
       return b.getState()
     }
     expect(await run()).toEqual(await run())
+  })
+})
+
+/**
+ * A slide at speed must be catchable. The buggy is yawed off its direction of travel at speed
+ * and the driver holds full counter-steer (toward the travel direction) or lets go. Before 15
+ * November 2026 holding counter-steer held the slide: the steering limit is measured from the
+ * body, so the front wheels could not reach the direction of travel.
+ */
+describe('Syn3hBuggy slide recovery', () => {
+  afterEach(() => { for (const id of ['buggy.fin', 'buggy.steerFollow', 'buggy.rearSteerFast', 'buggy.sideHold']) params.set(id, params.get(id)!.def.default as number) })
+
+  /** Signed angle (degrees) from the nose to the velocity, positive when it is to the nose's right. */
+  const slip = (b: Syn3hBuggy) => {
+    const f = axis(b, 0, 0, -1), v = b.body.linvel()
+    return Math.atan2(f.z * v.x - f.x * v.z, f.x * v.x + f.z * v.z) * 180 / Math.PI
+  }
+  /** Seconds until the slide is over for good (Infinity if it is not within 5 s), and whether it stayed upright. */
+  const kick = async (speed: number, angle: number, counterSteer: boolean) => {
+    const { bed, b } = await spawn()
+    bed.run(2)
+    b.body.setLinvel({ x: 0, y: 0, z: -speed }, true); b.motorSpeed = speed; b.input.y = 1
+    bed.run(1.5, () => { const v = b.body.linvel(); b.body.setLinvel({ x: 0, y: v.y, z: -speed }, true) })
+    b.body.setRotation(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle * Math.PI / 180).multiply(rot(b)), true)
+    b.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
+    let t = 0, recovered = Infinity, upright = 1
+    bed.run(5, () => {
+      t += 0.02
+      const s = slip(b)
+      b.input.x = counterSteer && Math.abs(s) > 1 ? Math.sign(s) : 0
+      if (recovered === Infinity && Math.abs(s) < 3 && Math.abs(b.body.angvel().y) < 0.3) recovered = t
+      else if (Math.abs(s) > 6) recovered = Infinity
+      upright = Math.min(upright, axis(b, 0, 1, 0).y)
+    })
+    return { recovered, upright }
+  }
+
+  test.each([[30, 40], [45, 40], [60, 5], [45, 90]])('at %i m/s a %i degree slide is caught with full counter-steer held', async (speed, angle) => {
+    const r = await kick(speed, angle, true)
+    expect(r.recovered).toBeLessThan(2.5)
+    expect(r.upright).toBeGreaterThan(0.9)
+  })
+
+  test.each([[30, 40], [45, 90], [60, 70]])('at %i m/s a %i degree slide straightens with the steering let go', async (speed, angle) => {
+    const r = await kick(speed, angle, false)
+    expect(r.recovered).toBeLessThan(2.5)
+    expect(r.upright).toBeGreaterThan(0.9)
+  })
+
+  test('without the tail fin and the assists, held counter-steer holds a 40 degree slide at 30 m/s (the reported fault)', async () => {
+    params.set('buggy.fin', 0); params.set('buggy.steerFollow', 0); params.set('buggy.rearSteerFast', 1); params.set('buggy.sideHold', 0)
+    expect((await kick(30, 40, true)).recovered).toBe(Infinity)
   })
 })

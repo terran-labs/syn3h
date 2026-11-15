@@ -17,8 +17,8 @@ import type { Game } from '../core/Game'
 import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import {
-  buggyBumpStop, buggyCG, buggyCoastDrag, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightSlip, buggyGrip,
-  buggyGripFade, buggyIdleHold, buggyNextGen, buggyPower, buggyRebound, buggyRegen, buggyRideHeight, buggyShocks, buggySideGrip, buggySlide, buggySpeed, buggySteerLimit,
+  buggyBumpStop, buggyCG, buggyCoastDrag, buggyDownforce, buggyFin, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightSlip, buggyGrip,
+  buggyGripFade, buggyIdleHold, buggyNextGen, buggyPower, buggyRebound, buggyRegen, buggyRideHeight, buggyRearSteerFast, buggyShocks, buggySideGrip, buggySideHold, buggySlide, buggySpeed, buggyStability, buggySteerFollow, buggySteerLimit,
   buggyTraction,
 } from './buggyParams'
 import { applyLava, floatPoints, lavaViscosity } from './lava'
@@ -95,6 +95,22 @@ const SIDE_ANGLE_SLIDE = 70
 /** Speeds (m/s) over which that takes effect, so low speed handling keeps its grip. */
 const SIDE_SPEED_MIN = 6
 const SIDE_SPEED_FULL = 14
+/** Body slide (degrees) the front wheels ignore before they follow the travel direction. */
+const FOLLOW_DEAD = 3
+/** Furthest (degrees) the front wheels swing to follow it. */
+const FOLLOW_MAX = 45
+/** Speeds (m/s) over which the counter-steer and stability assists come in. */
+const ASSIST_SPEED_MIN = 10
+const ASSIST_SPEED_FULL = 20
+/** How long (s) after its wheels touch down a landing counts as one; see buggy.sideHold. */
+const LANDING_SLIDE = 0.7
+/** Speed (m/s) at which buggy.downforce is quoted, and the speed past which it stops growing. */
+const AERO_SPEED = 40
+const AERO_SPEED_MAX = 60
+/** Tail fin: side acceleration per (m/s sideways at the tail) per (m/s of speed) at buggy.fin 1. */
+const FIN = 0.005
+/** Where the fin acts, behind the origin (m). */
+const FIN_Z = 1.8
 /** Next-gen steering limit at rest, as a multiple of grip; see buggy.steerLimit. */
 const STEER_LIMIT_SLOW = 1.1
 /** Next-gen drivetrain (see drivetrain()): below HOLD_SPEED (m/s) with no throttle it parks. */
@@ -183,6 +199,8 @@ export class Syn3hBuggy extends Vehicle {
   private regenForce = 0
   /** Motor speed at the start of this step's wheel pass (next-gen). */
   private motorStep = 0
+  /** Seconds left in which a touchdown still counts as a landing (see LANDING_SLIDE). */
+  private landingSlide = 0
 
 
   /** The driver's eye, for the ride camera (see RIDE_HEIGHT). */
@@ -355,6 +373,7 @@ export class Syn3hBuggy extends Vehicle {
   private readonly v1 = new THREE.Vector3()
   private readonly v2 = new THREE.Vector3()
   private readonly euler = new THREE.Vector3()
+  private readonly vLocal = new THREE.Vector3()
 
   protected applyForces(dt: number): void {
     const ub = this.ub
@@ -403,7 +422,15 @@ export class Syn3hBuggy extends Vehicle {
     let s = smoothed.x * (lerp(30, 25, myVelocity / S) / 90)
     this.steer[0] = this.steer[1] = -Math.atan2(s, 1 - Math.abs(s))
     s = -smoothed.x * (lerp(30, 10, myVelocity / S) / 90)
+    // Next-gen: the rear wheels steer against the fronts when slow, and fade to
+    // buggy.rearSteerFast of that (straight, or with the fronts) by the grip fade speed.
+    if (buggyNextGen.value) s *= lerp(1, buggyRearSteerFast.value, THREE.MathUtils.smoothstep(myVelocity, buggyGripFade.value * 0.5, buggyGripFade.value))
     this.steer[2] = this.steer[3] = -Math.atan2(s, 1 - Math.abs(s))
+    // Body velocity and turn rate in the body's frame (Unity: x right, z forward; yaw left
+    // positive), for the steering assist and the aerodynamics below.
+    const vl = ub.inverseTransformDirectionUnity(kinematic ? this.v2.set(lv.x, lv.y, lv.z) : ub.velocity, this.vLocal)
+    const wv = b.angvel()
+    const yawRate = wv.x * this.up.x + wv.y * this.up.y + wv.z * this.up.z
     if (buggyNextGen.value) {
       // Opposite front and rear angles turn on a radius of about WHEELBASE / (tan f + tan r).
       // Cap that sum so full lock asks for buggy.steerLimit times the grip the tyres have.
@@ -415,10 +442,23 @@ export class Syn3hBuggy extends Vehicle {
       const loose = THREE.MathUtils.clamp(fast * 2 - 1, 0, 1)
       const limit = lerp(Math.min(STEER_LIMIT_SLOW, buggySteerLimit.value), buggySteerLimit.value, loose)
       const cap = (WHEELBASE * grip * buggyTraction.value * 9.81 * limit) / v2
-      const sum = Math.abs(Math.tan(this.steer[0])) + Math.abs(Math.tan(this.steer[2]))
+      // Front minus rear: they add when opposed and cancel when the rear steers with the front.
+      const sum = Math.abs(Math.tan(this.steer[0]) - Math.tan(this.steer[2]))
       if (sum > cap) {
         const f = cap / sum
         for (let w = 0; w < 4; w++) this.steer[w] = Math.atan(Math.tan(this.steer[w]) * f)
+      }
+      // Counter-steer assist (buggy.steerFollow). The limit above is measured from the body, so
+      // once the body has slid further than that from its direction of travel no steering
+      // could point the front wheels back along it: every tyre slid alike and the wheel did
+      // nothing. Past FOLLOW_DEAD the front wheels swing to the direction the front axle is
+      // travelling, and the driver's capped steering is added to that, so it always works the
+      // front tyres either side of rolling free.
+      const follow = buggySteerFollow.value * THREE.MathUtils.smoothstep(myVelocity, ASSIST_SPEED_MIN, ASSIST_SPEED_FULL)
+      if (follow > 0 && vl.z > ASSIST_SPEED_MIN * 0.5) {
+        const travel = Math.atan2(-(vl.x - WHEEL_POS.z * yawRate), vl.z) * DEG
+        const past = Math.min(FOLLOW_MAX, Math.max(0, Math.abs(travel) - FOLLOW_DEAD)) * Math.sign(travel)
+        this.steer[0] = this.steer[1] = this.steer[0] + (follow * past) / DEG
       }
     }
 
@@ -490,6 +530,7 @@ export class Syn3hBuggy extends Vehicle {
 
     // Wheels, VB 288-332.
     const wasAirborne = this.wheelsGrounded === 0
+    this.landingSlide = wasAirborne ? LANDING_SLIDE : Math.max(0, this.landingSlide - dt)
     let grounded = 0
     for (let i = 0; i < 4; i++) {
       this.origin.copy(this.origins[i]).applyQuaternion(q).add(pos)
@@ -553,6 +594,7 @@ export class Syn3hBuggy extends Vehicle {
       ub.addForceAtPosition(this.v2.copy(this.up).multiplyScalar(f), this.origin)
     }
 
+    if (nextGen && !this.shouldWingsBeOpen && !this.isInverted) this.aero(dt, mass, myVelocity, grounded, vl.x, yawRate, smoothed.x, pos, q)
     if (this.shouldWingsBeOpen) this.fly(dt, myVelocity, smoothed)
     else if (nextGen) {
       // The tyres do the braking and the parking, so only the free rolling drag remains.
@@ -684,7 +726,11 @@ export class Syn3hBuggy extends Vehicle {
     if (travel > SIDE_SPEED_MIN) {
       const angle = Math.atan2(Math.abs(slipX), Math.abs(hv.z)) * DEG
       const broadside = THREE.MathUtils.smoothstep(angle, SIDE_ANGLE_GRIP, SIDE_ANGLE_SLIDE) * THREE.MathUtils.smoothstep(travel, SIDE_SPEED_MIN, SIDE_SPEED_FULL)
-      mu = Math.min(mu, lerp(mu, buggySideGrip.value, broadside))
+      // On the ground a slide keeps buggy.sideHold of the tyre's grip, so it can be caught;
+      // the full drop to buggy.sideGrip is for the moments after a landing.
+      const landing = Math.min(1, this.landingSlide / (LANDING_SLIDE * 0.5))
+      const floor = lerp(Math.max(buggySideGrip.value, buggySideHold.value * mu), buggySideGrip.value, landing)
+      mu = Math.min(mu, lerp(mu, floor, broadside))
     }
     const cap = mu * traction * load
     const n = Math.hypot(fx, fz)
@@ -708,6 +754,34 @@ export class Syn3hBuggy extends Vehicle {
     this.ub.addForceAtPosition(this.v2, this.hitPoint)
     if (!locked) this.motorSpeed -= (fz * dt) / this.motorTorque
     eff.slip = this.sliding[i] ? slip : 0
+  }
+
+  /**
+   * Next-gen aerodynamics with the wings shut (not from Syn3h), all growing with speed:
+   * - downforce (buggy.downforce) along the body's down axis, only in proportion to the wheels
+   *   on the ground, so it adds grip at speed without shortening a jump;
+   * - a tail fin (buggy.fin): a side force at the tail against its sideways motion, which
+   *   turns the buggy to point where it is going, on the ground and in the air;
+   * - the stability assist (buggy.stability): a damper on the turn rate while the steering is
+   *   let go, at speed, with at least two wheels down.
+   * `side` is the body's rightward speed and `yawRate` its turn rate, left positive.
+   */
+  private aero(dt: number, mass: number, speed: number, grounded: number, side: number, yawRate: number, steerInput: number, pos: THREE.Vector3, q: THREE.Quaternion): void {
+    const ub = this.ub
+    const down = buggyDownforce.value
+    if (down > 0 && grounded > 0) {
+      const k = Math.min(speed, AERO_SPEED_MAX) / AERO_SPEED
+      ub.addForce(this.v2.copy(this.down).multiplyScalar(down * 9.81 * mass * k * k * (grounded / 4)))
+    }
+    const fin = buggyFin.value
+    if (fin > 0 && speed > 1) {
+      // The tail (our +Z) moves right when the body does, and left of that as it yaws left.
+      const tailSide = side + FIN_Z * yawRate
+      const right = this.v2.set(1, 0, 0).applyQuaternion(q).multiplyScalar(-fin * FIN * mass * tailSide * Math.min(speed, AERO_SPEED_MAX))
+      ub.addForceAtPosition(right, this.v1.set(0, 0, FIN_Z).applyQuaternion(q).add(pos))
+    }
+    const assist = buggyStability.value * THREE.MathUtils.smoothstep(speed, ASSIST_SPEED_MIN, ASSIST_SPEED_FULL) * (1 - Math.min(1, Math.abs(steerInput)))
+    if (assist > 0 && grounded >= 2) ub.addTorqueAcceleration(this.v2.copy(this.up).multiplyScalar(-assist * yawRate), dt)
   }
 
   /**
@@ -900,6 +974,7 @@ export class Syn3hBuggy extends Vehicle {
     this.suspensionRange = 0.4
     this.updateMassProperties()
     this.wheelsGrounded = 0
+    this.landingSlide = 0
     this.carriedValid = false
     for (let i = 0; i < 4; i++) {
       this.windX[i] = this.windZ[i] = 0
