@@ -123,8 +123,9 @@ button to open and close the side panel.
 
 **Do I need to install anything or sign in?** No. It runs in the browser from one address.
 
-**Which browsers work?** Recent Chrome, Edge, Safari and Firefox. It uses WebGPU where the
-browser has it and falls back to WebGL where it does not.
+**Which browsers work?** It is tested in Chrome and in Safari's engine, on computers, iPads
+and phones. It uses WebGPU where the browser has it and falls back to WebGL where it does
+not, so other recent browsers should work too.
 
 **How do I play with other people?** Everyone who opens the plain address joins the room
 called `lobby`, up to sixteen players, in the world the first of them chose. For a room of
