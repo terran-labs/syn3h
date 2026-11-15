@@ -190,3 +190,32 @@ html[data-gfx="0"] .syn3h-shell.exploration-ui[data-glass] .wi-glass { --body: r
   .syn3h-shell.exploration-ui .wi-quick [data-wi=show-gi]::after { content: 'GI'; font-size: 11px; }
   .syn3h-shell.exploration-ui .wi-quick select { padding-inline: 4px 0; }
 }
+
+/* Panels follow the cursor: a desktop needs no button for them. Touch keeps one switch. */
+.syn3h-shell.exploration-ui:not(.has-touch) .hud-navigation { display: none; }
+.syn3h-shell.exploration-ui .rail-navigation .rail-pause { margin-left: auto; border: 0; background: none; letter-spacing: .13em; text-transform: uppercase; }
+
+/* Short landscape screens: the header row also carries the vehicle and gear selectors, so
+   Pause shrinks to a glyph (its name stays for assistive technology) and the selectors stop
+   short of it. */
+@media (max-height: 500px) {
+  .syn3h-shell.exploration-ui .rail-navigation .rail-pause { font-size: 0; letter-spacing: 0; min-width: 30px; padding-inline: 6px; }
+  .syn3h-shell.exploration-ui .rail-navigation .rail-pause::after { content: 'II'; font-size: 11px; letter-spacing: .18em; }
+  .syn3h-shell.exploration-ui .world-inspector .wi-quick { right: 84px; }
+}
+
+/* Paused: one floating message over the dimmed, still world. The whole veil is the button. */
+.syn3h-shell .pause-veil { position: fixed; inset: 0; z-index: 60; display: grid; place-content: center; justify-items: center; gap: 10px; margin: 0; padding: 24px; border: 0; border-radius: 0; background: rgb(2 8 14 / .46); color: var(--s3-ink); font: inherit; cursor: pointer; -webkit-backdrop-filter: blur(3px) saturate(.8); backdrop-filter: blur(3px) saturate(.8); animation: pause-in .25s ease-out; }
+.syn3h-shell .pause-veil[hidden] { display: none; }
+.syn3h-shell .pause-veil strong { font: 500 clamp(30px,5vw,54px)/1 'Barlow Condensed',sans-serif; letter-spacing: .32em; margin-right: -.32em; text-transform: uppercase; text-shadow: 0 0 26px rgb(120 215 250 / .55); }
+.syn3h-shell .pause-veil .pause-how { font-size: 15px; letter-spacing: .14em; text-transform: uppercase; color: var(--s3-accent-2); }
+.syn3h-shell .pause-veil small { font-size: 13px; color: var(--s3-dim); }
+.syn3h-shell .pause-veil:focus-visible { outline: none; }
+@keyframes pause-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .syn3h-shell .pause-veil { animation: none; } }
+
+/* "New build available. Press to reload": a banner floating at the bottom centre, clear of
+   the touch controls and the home indicator. The dev server creates the button on <body>. */
+#syn3h-build-notice, .build-banner { position: fixed; left: 50%; right: auto; top: auto; bottom: max(18px, calc(env(safe-area-inset-bottom) + 10px)); transform: translateX(-50%); z-index: 10000; max-width: calc(100vw - 32px); min-height: 44px; margin: 0; padding: 10px 22px; border: 1px solid rgb(173 224 247 / .45); border-radius: 999px; background: rgb(6 20 32 / .72); color: #e3f2fc; font: 500 14px/1.2 'Barlow',system-ui,sans-serif; letter-spacing: .04em; white-space: nowrap; cursor: pointer; box-shadow: 0 0 26px rgb(100 200 250 / .22), inset 0 1px 0 rgb(255 255 255 / .18); -webkit-backdrop-filter: blur(14px) saturate(1.4); backdrop-filter: blur(14px) saturate(1.4); }
+/* On touch the bottom corners hold the thumb controls: the banner floats just above them. */
+body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-notice, .build-banner) { bottom: calc(max(18px, env(safe-area-inset-bottom)) + 168px); }

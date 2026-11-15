@@ -1,0 +1,70 @@
+/* The inspector's editable numbers, card motion and finger-sized targets.
+   This file loads before exploration.css, which sets compact sizes; every rule here carries
+   one more class than the rule it replaces so it wins without !important. Colours come only
+   from the --s3-* tokens, so a theme restyles this by changing tokens. */
+
+/* Rows are as tall as the 44 px hit areas inside them, so neighbouring rows never overlap
+   and steal the edge of a target. */
+.syn3h-shell.exploration-ui .world-inspector { --wi-head: 44px; --wi-hit: 44px; --wi-row: var(--wi-hit); --wi-num: 50px; }
+/* A finger needs more than a pointer. */
+.syn3h-shell.exploration-ui.has-touch .world-inspector { --wi-head: 48px; }
+@media (pointer: coarse) { .syn3h-shell.exploration-ui .world-inspector { --wi-head: 48px; } }
+
+/* Card headers. The card adds its 1 px border above and below the header. */
+.syn3h-shell.exploration-ui .world-inspector .wi-cards > .wi-card { min-height: calc(var(--wi-head) + 2px); }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards > .wi-card:not(.is-open) { flex-basis: calc(var(--wi-head) + 2px); }
+.syn3h-shell.exploration-ui .world-inspector .wi-card > .wi-head { flex: 0 0 var(--wi-head); min-height: var(--wi-head); padding-block: 0; }
+/* While a card's height eases, its content is clipped rather than scrolled. */
+.syn3h-shell.exploration-ui .world-inspector .wi-card.is-moving > .wi-body { overflow: hidden; }
+
+/* Rows, fold summaries and controls. Visuals stay slim; the hit areas grow. */
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row { min-height: var(--wi-row); padding-block: 0; grid-template-columns: minmax(0,1fr) 100px var(--wi-num); }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row.is-choice { grid-template-columns: minmax(0,82px) 1fr; }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-group > summary { min-height: var(--wi-hit); padding-block: 0; }
+/* A range input takes clicks across its whole box; the 1 px track and thin thumb are drawn
+   in the middle of it by exploration.css. */
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input[type=range] { height: var(--wi-hit); }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-hit { display: grid; place-items: center; justify-self: end; width: var(--wi-hit); height: var(--wi-hit); margin: 0; cursor: pointer; }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-seg { row-gap: 12px; }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-seg button { position: relative; min-width: var(--wi-hit); min-height: 30px; }
+/* The pseudo-element is the button's hit area, 44 px tall around a 30 px button. It is placed
+   from the padding box, inside the 1 px border, hence the extra pixel. */
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-seg button::after { content: ""; position: absolute; inset: calc((30px - var(--wi-hit)) / 2 - 1px) -1px; }
+
+/* The number beside a slider reads as plain text and edits in place. */
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num {
+  display: block; width: 100%; min-width: 0; min-height: var(--wi-row); margin: 0; padding: 0 2px;
+  border: 0; border-radius: 0; background: none; box-shadow: none; text-shadow: none; letter-spacing: 0;
+  color: var(--s3-accent-2); font: 500 13px 'Barlow', sans-serif; font-variant-numeric: tabular-nums;
+  text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: text;
+  text-decoration: underline dotted transparent; text-underline-offset: 4px; transition: text-decoration-color .15s;
+}
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num:is(:hover, :focus-visible) { background: none; border: 0; box-shadow: none; text-decoration-color: var(--s3-accent-2); }
+/* No hover on a touch screen, so the dotted line is always faintly there. */
+.syn3h-shell.exploration-ui.has-touch .world-inspector .wi-cards .wi-row .wi-num { text-decoration-color: var(--s3-line); }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num:disabled { cursor: default; text-decoration-color: transparent; }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row .wi-num[hidden] { display: none; }
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit {
+  display: block; width: 100%; min-width: 0; height: 30px; margin: 0; padding: 0 4px;
+  border: 0; border-bottom: 1px solid var(--s3-accent-2); border-radius: 0; background: var(--s3-panel); box-shadow: none;
+  color: var(--s3-ink); font: 500 13px 'Barlow', sans-serif; font-variant-numeric: tabular-nums; text-align: right;
+}
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit:focus { outline: 1px solid var(--s3-accent-2); outline-offset: 1px; }
+/* Safari zooms the page into any field set below 16 px. */
+.syn3h-shell.exploration-ui.has-touch .world-inspector .wi-cards .wi-row input.wi-num-edit { font-size: 16px; }
+@media (pointer: coarse) { .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row input.wi-num-edit { font-size: 16px; } }
+/* Text that is not a number: the old value comes back, with a short warm flash and nudge.
+   There is no warning token yet, so the fallback colour stands in until a theme sets one. */
+.syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row :is(.wi-num, .wi-num-edit).is-invalid { color: var(--s3-warn, #ffb08a); text-decoration-color: currentColor; border-bottom-color: currentColor; animation: wi-refuse .32s cubic-bezier(.3,.7,.3,1); }
+@keyframes wi-refuse { 25% { translate: -3px 0; } 60% { translate: 2px 0; } }
+
+/* Short screens (a phone on its side): five finger-sized headers and an open card do not
+   fit, so the stack scrolls, and an open card keeps at least 120 px of body. */
+@media (max-height: 500px) {
+  .syn3h-shell.exploration-ui .world-inspector .wi-cards { overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: thin; }
+  .syn3h-shell.exploration-ui .world-inspector .wi-cards > .wi-card.is-open { min-height: calc(var(--wi-head) + 2px + 120px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .syn3h-shell.exploration-ui .world-inspector .wi-cards .wi-row :is(.wi-num, .wi-num-edit).is-invalid { animation: none; }
+}
