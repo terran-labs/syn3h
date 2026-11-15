@@ -57,6 +57,18 @@ export const jetPilotTuning = {
    */
   maxYawRate: 1.2,
   headingGain: 2,
+  /** Forward flight (goal.special): cruise speed, m/s, and the least height above the surface. */
+  flightSpeed: 40,
+  flightAltitude: 30,
+  /** Hand back to hover this far from the goal, metres, or sooner at speed (4 s of travel). */
+  returnDistance: 150,
+  /** Steepest commanded bank in forward flight, degrees, and the fastest turn, rad/s. */
+  maxBank: 30,
+  maxTurnRate: .4,
+  /** Forward flight hands back to hover to make a turn sharper than this, degrees. */
+  flightMaxTurn: 50,
+  /** Forward flight: wanted climb rate per metre of height error, per second. */
+  flightHeightGain: .5,
 }
 
 /** Jet torque per unit input in hover mode: terra.jet.prefab hoverSteerFactor 4 times mass. */
@@ -65,6 +77,11 @@ const STEER_PER_MASS = 4
 const RIGHTING_PER_MASS = 0.2
 /** Jet angular drag in hover mode, per second; the attitude loop already gets this damping. */
 const HOVER_ANGULAR_DRAG = 2
+/** Forward flight torque per unit input at full authority (Jet.ts: steer 20, control response .3). */
+const FLIGHT_PITCH_TORQUE = 200 * 20 * .2 * .3
+const FLIGHT_ROLL_TORQUE = 200 * 20 * .75 * .3
+/** Lift per (m/s)^2 per unit of angle of attack near sea level: jet.lift .5 * 1.225 * 15. */
+const LIFT_PER_V2 = .5 * 1.225 * 15
 /** Body origin height when resting on the deployed landing gear. */
 const GEAR_HEIGHT = 1.3
 const DEG = Math.PI / 180
@@ -89,6 +106,12 @@ export function createJetPilot(vehicle: Vehicle, terrain: Terrain): Pilot {
   let best = Infinity, goalX = NaN, goalZ = NaN
   let heldHeading = NaN
   let leanX = 0, leanZ = 0
+  // Forward flight state. 'launch' is hover mode building speed and height before the wings open.
+  let mode: 'hover' | 'launch' | 'flight' = 'hover'
+  let gammaIntegral = 0
+  const hoverGoal: DriveGoal = { x: 0, z: 0, speed: 0 }
+  const fd = new THREE.Vector3(), fu = new THREE.Vector3(), fr = new THREE.Vector3(), fNose = new THREE.Vector3(), fUp = new THREE.Vector3()
+  const basis = new THREE.Matrix4(), qWant = new THREE.Quaternion(), localSpin = new THREE.Vector3()
 
   const surface = (x: number, z: number) => Math.max(terrain.heightAt(x, z), terrain.liquidHeightAt?.(x, z) ?? -Infinity)
 
@@ -118,25 +141,58 @@ export function createJetPilot(vehicle: Vehicle, terrain: Terrain): Pilot {
 
   function drive(goal: DriveGoal, input: InputState, dt: number): PilotStatus {
     const body = vehicle.body
-    const mass = body.mass(), g = 9.81, weight = mass * g
-    const tune = jetPilotTuning
     q.copy(body.rotation()); inv.copy(q).invert()
     pos.copy(body.translation()); vel.copy(body.linvel()); angvel.copy(body.angvel())
     up.set(0, 1, 0).applyQuaternion(q)
     forward.set(0, 0, -1).applyQuaternion(q)
     inertia.copy(body.principalInertia())
-
-    input.special = false
     input.brakes = false
     input.fire = false
 
-    const ground = surface(pos.x, pos.z)
-    const height = pos.y - ground
+    const height = pos.y - surface(pos.x, pos.z)
     status.airborne = height > GEAR_HEIGHT + .4
     status.flipped = up.y < .3
-
-    // Horizontal plan.
     const dx = goal.x - pos.x, dz = goal.z - pos.z, dist = Math.hypot(dx, dz)
+
+    // Forward flight only far from the goal; hover does the take off and the arrival.
+    const tune = jetPilotTuning
+    const speedNow = vel.length()
+    const altitude = goal.altitude ?? tune.cruiseAltitude
+    const flightAltitude = Math.max(altitude, tune.flightAltitude)
+    const far = dist > Math.max(tune.returnDistance, speedNow * 4)
+    if (!goal.special || !far) mode = 'hover'
+    else if (mode === 'hover') mode = 'launch'
+    else {
+      // Heading error of the velocity: big turns are made in hover, where the jet turns on
+      // the spot. Pitch authority in forward flight is too weak to hold a steep bank.
+      const hs = Math.hypot(vel.x, vel.z)
+      const turn = hs > 1 ? Math.abs(headingError(vel.x / hs, vel.z / hs, dx / dist, dz / dist)) : Math.PI
+      if (mode === 'launch' && hs > 17 && turn < .3 && height > flightAltitude * .7 && up.y > .8) { mode = 'flight'; gammaIntegral = 0 }
+      else if (mode === 'flight' && (speedNow < 21 || height < 10 || up.y < .3 || turn > tune.flightMaxTurn * DEG)) mode = 'launch'
+    }
+    input.special = mode === 'flight'
+
+    if (mode === 'flight') flightControl(goal, input, dt, dist, flightAltitude)
+    else if (mode === 'launch') {
+      // Hover flat out toward the goal and climb, so the wings open above stall speed.
+      hoverGoal.x = goal.x; hoverGoal.z = goal.z; hoverGoal.speed = 30; hoverGoal.altitude = flightAltitude; hoverGoal.stopWithin = undefined
+      hoverControl(hoverGoal, input, dt, dist, height)
+    } else hoverControl(goal, input, dt, dist, height)
+
+    // Progress: seconds without getting a metre closer, reset when the goal moves or it arrives.
+    if (Math.hypot(goal.x - goalX, goal.z - goalZ) > 5) { goalX = goal.x; goalZ = goal.z; best = dist; status.stuckFor = 0 }
+    const arrived = goal.stopWithin !== undefined && dist <= goal.stopWithin
+    // A flying jet cannot be blocked by terrain, so moving (climbing included) counts as progress.
+    if (arrived || dist < best - 1 || dist < 4 || vel.length() > 2) { best = Math.min(best, dist); status.stuckFor = 0 }
+    else status.stuckFor += dt
+    return status
+  }
+
+  /** Hover mode: the cascade described at the top of this file. */
+  function hoverControl(goal: DriveGoal, input: InputState, dt: number, dist: number, height: number): void {
+    const mass = vehicle.body.mass(), g = 9.81
+    const tune = jetPilotTuning
+    const dx = goal.x - pos.x, dz = goal.z - pos.z
     const ux = dist > 1e-3 ? dx / dist : 0, uz = dist > 1e-3 ? dz / dist : 0
     let speed = Math.max(0, goal.speed)
     if (goal.stopWithin !== undefined) {
@@ -219,18 +275,60 @@ export function createJetPilot(vehicle: Vehicle, terrain: Terrain): Pilot {
     input.x = x
     input.y = y
     input.w = clamp(sum - x, -1, 1)
+  }
 
-    // Progress: seconds without getting a metre closer, reset when the goal moves or it arrives.
-    if (Math.hypot(goal.x - goalX, goal.z - goalZ) > 5) { goalX = goal.x; goalZ = goal.z; best = dist; status.stuckFor = 0 }
-    const arrived = goal.stopWithin !== undefined && dist <= goal.stopWithin
-    // A flying jet cannot be blocked by terrain, so moving (climbing included) counts as progress.
-    if (arrived || dist < best - 1 || dist < 4 || vel.length() > 2) { best = Math.min(best, dist); status.stuckFor = 0 }
-    else status.stuckFor += dt
-    return status
+  /**
+   * Forward flight (wings, input.special true). Bank to turn, angle of attack for lift and
+   * climb, throttle for speed. The wanted attitude is built as a full orientation: nose along
+   * the wanted flight path raised by the angle of attack, up tilted by the bank.
+   */
+  function flightControl(goal: DriveGoal, input: InputState, dt: number, dist: number, altitude: number): void {
+    const tune = jetPilotTuning, g = 9.81, mass = vehicle.body.mass()
+    const speed = Math.max(vel.length(), 1)
+    const hs = Math.max(Math.hypot(vel.x, vel.z), .1), hx = vel.x / hs, hz = vel.z / hs
+    // Height: the highest surface over the next five seconds of travel, plus the altitude.
+    let ground = surface(pos.x, pos.z)
+    for (let i = 1; i <= 10; i++) { const t = i * .5; ground = Math.max(ground, surface(pos.x + vel.x * t, pos.z + vel.z * t)) }
+    const gamma = Math.asin(clamp(vel.y / speed, -1, 1))
+    const gammaWant = clamp((ground + altitude - pos.y) * tune.flightHeightGain / speed, -.2, .3)
+    const gammaError = gammaWant - gamma
+    gammaIntegral = clamp(gammaIntegral + gammaError * dt * .5, -.1, .1)
+    // Turn: bank for a turn rate proportional to the heading error of the velocity.
+    const ux = (goal.x - pos.x) / Math.max(dist, 1e-3), uz = (goal.z - pos.z) / Math.max(dist, 1e-3)
+    const err = headingError(hx, hz, ux, uz)
+    const turnRate = clamp(err * .6, -tune.maxTurnRate, tune.maxTurnRate)
+    const bank = clamp(Math.atan(speed * turnRate / g), -tune.maxBank * DEG, tune.maxBank * DEG)
+    // Angle of attack that carries the weight in this bank, plus the climb correction.
+    const need = Math.asin(Math.min(.3, mass * g / (Math.cos(bank) * LIFT_PER_V2 * speed * speed)))
+    const alpha = clamp(need + gammaError * .8 + gammaIntegral, -.1, .3)
+    // Wanted flight path, its unbanked up and right, then bank and angle of attack.
+    fd.set(hx * Math.cos(gammaWant), Math.sin(gammaWant), hz * Math.cos(gammaWant))
+    fu.set(0, 1, 0).addScaledVector(fd, -fd.y).normalize()
+    fr.crossVectors(fd, fu)
+    fUp.copy(fu).multiplyScalar(Math.cos(bank)).addScaledVector(fr, Math.sin(bank))
+    fNose.copy(fd).multiplyScalar(Math.cos(alpha)).addScaledVector(fUp, Math.sin(alpha))
+    fUp.multiplyScalar(Math.cos(alpha)).addScaledVector(fd, -Math.sin(alpha))
+    fr.crossVectors(fNose, fUp)
+    basis.makeBasis(fr, fUp, fd.copy(fNose).negate())
+    qWant.setFromRotationMatrix(basis)
+    // Orientation error in the craft's own frame, as axis times angle (small angle form).
+    const e = qWant.premultiply(inv)
+    if (e.w < 0) { e.x = -e.x; e.y = -e.y; e.z = -e.z; e.w = -e.w }
+    localSpin.copy(angvel).applyQuaternion(inv)
+    const authority = clamp(speed / 20 * .7, .05, 1)
+    // Local torque from inputs (Jet.ts flight): x axis -y * pitch torque, z axis -x * roll torque.
+    const tx = (2 * e.x * 3 - localSpin.x * 1.5) * inertia.x
+    const tz = (2 * e.z * 5 - localSpin.z * 1.5) * inertia.z
+    input.y = clamp(-tx / (FLIGHT_PITCH_TORQUE * authority), -1, 1)
+    input.x = clamp(-tz / (FLIGHT_ROLL_TORQUE * authority), -1, 1)
+    // Yaw only through thrust vectoring: a little, to keep the nose on the flight path.
+    input.w = clamp(-(2 * e.y - localSpin.y) * 2, -1, 1)
+    const cruise = Math.max(goal.speed, tune.flightSpeed)
+    input.z = clamp(.15 + (cruise - speed) * .08 + .5 * Math.sin(gammaWant), .02, 1)
   }
 
   function reset(): void {
-    best = Infinity; goalX = NaN; goalZ = NaN; heldHeading = NaN; leanX = 0; leanZ = 0
+    best = Infinity; goalX = NaN; goalZ = NaN; heldHeading = NaN; leanX = 0; leanZ = 0; mode = 'hover'; gammaIntegral = 0
     status.stuckFor = 0; status.airborne = false; status.flipped = false
   }
 

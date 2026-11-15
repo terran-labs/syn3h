@@ -150,6 +150,46 @@ describe('jet pilot, hover mode', () => {
     f.w.free()
   })
 
+  it('special: forward flight over a ridge is faster than hover and ends in a hover stop', () => {
+    const leg = (special: boolean) => {
+      const f = launch(ridge(-500, 40, 60), new THREE.Vector3(0, GEAR + .3, 0), 0, 2400)
+      const goal: DriveGoal = { x: 300, z: -900, speed: 15, stopWithin: 4, special }
+      let flying = 0, minClear = Infinity, flightMin = Infinity
+      const t = fly(f, goal, 120, () => distTo(f, goal) < 4 && f.v.body.linvel().y ** 2 + f.v.body.linvel().x ** 2 + f.v.body.linvel().z ** 2 < 1, () => {
+        if (f.v.input.special) { flying += FIXED_DT; flightMin = Math.min(flightMin, agl(f)) }
+        if (f.t > 3) minClear = Math.min(minClear, agl(f) - GEAR)
+      })
+      const end = distTo(f, goal); f.w.free()
+      return { t, flying, minClear, flightMin, end }
+    }
+    const hover = leg(false), wings = leg(true)
+    report('forward flight 950 m over a 40 m ridge', { hover_s: hover.t, wings_s: wings.t, secondsOnWings: wings.flying, lowestOnWings_m: wings.flightMin, minClearanceAfterTakeoff_m: wings.minClear, endDistance_m: wings.end })
+    expect(wings.flying).toBeGreaterThan(15)
+    expect(wings.t).toBeLessThan(hover.t * .75)
+    expect(wings.flightMin).toBeGreaterThan(12)
+    expect(wings.minClear).toBeGreaterThan(5)
+    expect(wings.end).toBeLessThan(4)
+  })
+
+  it('special: a sharp change of goal in forward flight turns in hover and flies on', () => {
+    const f = launch(() => 0, new THREE.Vector3(0, GEAR + .3, 0), 0, 2400)
+    fly(f, { x: 0, z: -1000, speed: 15, special: true }, 20)
+    expect(f.v.input.special).toBe(true)
+    const goal: DriveGoal = { x: 700, z: -300, speed: 15, stopWithin: 4, special: true }
+    let minClear = Infinity, relaunched = NaN, wasHover = false
+    const t = fly(f, goal, 90, () => distTo(f, goal) < 4, () => {
+      minClear = Math.min(minClear, agl(f) - GEAR)
+      if (!f.v.input.special) wasHover = true
+      else if (wasHover && Number.isNaN(relaunched)) relaunched = f.t
+    })
+    report('forward flight sharp turn', { reached_s: t, relaunchedOnWingsAt_s: relaunched, minClearance_m: minClear })
+    expect(wasHover).toBe(true)
+    expect(relaunched).toBeGreaterThan(0)
+    expect(minClear).toBeGreaterThan(8)
+    expect(distTo(f, goal)).toBeLessThan(4)
+    f.w.free()
+  })
+
   it('writes the same input for the same state and resets cleanly', () => {
     const run = () => {
       const f = launch(() => 0, new THREE.Vector3(0, GEAR + .3, 0))
