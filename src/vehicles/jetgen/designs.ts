@@ -28,11 +28,15 @@ export interface JetDesign {
  * The leading edge runs from z0 to z1 and the chord from chord0 to chord1.
  */
 function arc(cx: number, cy: number, rx: number, ry: number, a0: number, a1: number, z0: number, z1: number, chord0: number, chord1: number, thick = .08, n = 7): number[][] {
-  return Array.from({ length: n }, (_, i) => {
+  const rows = Array.from({ length: n }, (_, i) => {
     const k = i / (n - 1), a = (a0 + (a1 - a0) * k) * Math.PI / 180
-    return [Math.max(.02, cx + rx * Math.cos(a)), cy + ry * Math.sin(a), z0 + (z1 - z0) * k, chord0 + (chord1 - chord0) * k, thick]
+    return [cx + rx * Math.cos(a), cy + ry * Math.sin(a), z0 + (z1 - z0) * k, chord0 + (chord1 - chord0) * k, thick]
   })
+  return cx === 0 && Math.abs(Math.abs(a1) - 90) < 1e-6 ? meetAtCentre(rows) : rows
 }
+
+/** Rows that end on the centre line: Builder.surf mitres them against their mirror image. */
+const meetAtCentre = (rows: number[][]): number[][] => rows
 
 /** The forward-swept wing of the Stiletto, shared by the second-round hybrids. */
 const FORWARD_SWEPT = [[.55, 0, .7, 2.0, .1], [1.5, .08, .3, 1.6, .085], [2.6, .2, -.2, 1.2, .075], [3.3, .38, -.5, .9, .07], [3.55, .62, -.55, .75, .07]]
@@ -42,15 +46,53 @@ const STILETTO_HULL = [[-3.6, .05, .03, .03, 0, 2], [-3.2, .2, .12, .1, 0, 2.2],
 const POD_HULL = [[-3.5, .04, .02, .02, -.02, 1.3], [-2.6, .34, .16, .12, 0, 1.35], [-1.6, .52, .34, .2, .02, 1.4], [-.4, .68, .44, .28, .03, 1.5], [.9, .7, .44, .3, .04, 1.6], [2.0, .52, .36, .3, .05, 1.8], [2.7, .42, .32, .3, .05, 2]]
 const BOOM_HULL = [[-1.9, .03, .03, .03, -.05, 1.4], [-1.0, .2, .2, .16, -.05, 1.5], [.4, .28, .26, .22, -.05, 1.5], [2.2, .26, .24, .2, -.03, 1.5], [3.1, .18, .18, .16, 0, 1.6]]
 
+/** How a Vanguard is put together. Every field has the Vanguard Quad's value as its default. */
+interface VanguardOptions {
+  /** Intakes as rows of [angle, z0, z1, halfWidth, height]. */
+  intakes?: number[][]
+  /** Tail ring outline: eight sides, six sides, or a square box. */
+  ring?: 'oct' | 'hex' | 'box'
+  /** A wide ring that runs straight into the booms, with no struts. */
+  ringOnBooms?: boolean
+  /** Outer wings: a plain forward sweep, or the same with tip plates turned down. */
+  wing?: 'swept' | 'droop'
+  /** Booms end ahead of the wing, or run forward past the cockpit as prongs. */
+  booms?: 'short' | 'prong'
+  /** Canards on the booms, on the cockpit pod, or none. */
+  canards?: 'boom' | 'pod' | 'none'
+  /** Main thruster exit: round, or wide and flat. */
+  nozzle?: 'round' | 'flat'
+}
+
+const QUAD_INTAKES = [45, 135, 225, 315].map(a => [a, -.35, 1.25, .2, .13])
+
 /**
- * A polygonal ring tail hung on X struts. The struts run from each boom to the ring's 45 degree
- * corners and take their end position, leading edge and chord from the ring's own rows, so the
- * two always meet exactly; a slim chrome longeron runs through each joint.
+ * The tail ring. Its outline is a list of corners; the struts run from each boom to the
+ * corners nearest it and take their end position, leading edge and chord from those same
+ * corners, so ring and strut always meet exactly. A slim longeron runs through each joint.
  */
-function ringOnStruts(b: Builder, cy: number, r: number, rLow: number, z0: number, z1: number, chord: number, boomX: number, boomY: number): void {
-  const top = arc(0, cy, r, r, 0, 90, z0, z1, chord, chord, .06, 3), bottom = arc(0, cy, r, rLow, 0, -90, z0, z1, chord, chord, .06, 3)
-  b.surf(top, { round: false, mat: 'accent' }); b.surf(bottom, { round: false, mat: 'accent' })
-  for (const [x, y, z, c, t] of [top[1], bottom[1]]) {
+function tailRing(b: Builder, o: VanguardOptions, boomX: number, boomY: number): void {
+  const cy = .05, z0 = 2.25, z1 = 2.45, chord = .75, t = .06, shape = o.ring ?? 'oct'
+  const r = o.ringOnBooms ? boomX : .95, rLow = o.ringOnBooms ? .8 : .9, zm = (z0 + z1) / 2
+  const row = (x: number, y: number, z: number) => [x, y, z, chord, t]
+  const side = (deg: number, ry: number) => { const a = deg * Math.PI / 180; return [r * Math.cos(a), cy + ry * Math.sin(a)] }
+  const paint = { round: false, mat: 'accent' as const }
+  let corners: number[][]
+  if (shape === 'oct') {
+    const top = [row(r, cy, z0), row(...side(45, r) as [number, number], zm), row(0, cy + r, z1)], bottom = [row(r, cy, z0), row(...side(-45, rLow) as [number, number], zm), row(0, cy - rLow, z1)]
+    b.surf(meetAtCentre(top), paint); b.surf(meetAtCentre(bottom), paint); corners = [top[1], bottom[1]]
+  } else if (shape === 'hex') {
+    const up = side(30, r), down = side(-30, rLow)
+    b.surf(meetAtCentre([row(up[0], up[1], z0), row(0, cy + r, z1)]), paint); b.surf(meetAtCentre([row(down[0], down[1], z0), row(0, cy - rLow, z1)]), paint)
+    b.surf([row(down[0], down[1], z0), row(up[0], up[1], z0)], paint)
+    corners = [row(up[0], up[1], z0), row(down[0], down[1], z0)]
+  } else {
+    const x = r * .78, up = cy + r * .78, down = cy - rLow * .78
+    b.surf(meetAtCentre([row(x, up, z0), row(0, up, z1)]), paint); b.surf(meetAtCentre([row(x, down, z0), row(0, down, z1)]), paint); b.surf([row(x, down, z0), row(x, up, z0)], paint)
+    corners = [row(x, up, z0), row(x, down, z0)]
+  }
+  if (o.ringOnBooms) return
+  for (const [x, y, z, c] of corners) {
     // Carry the strut a little past the corner, along its own line, so it ends inside the ring.
     const dx = x - boomX, dy = y - boomY, k = .03 / Math.hypot(dx, dy)
     b.surf([[boomX, boomY, z - .15, c + .15, t], [x + dx * k, y + dy * k, z, c, t]], { round: false })
@@ -58,20 +100,25 @@ function ringOnStruts(b: Builder, cy: number, r: number, rLow: number, z0: numbe
   }
 }
 
-/** The Vanguard, with any set of intakes: rows of [angle, z0, z1, halfWidth, height]. */
-function vanguard(b: Builder, intakes: number[][]): void {
+/** The Vanguard family: a chined cockpit pod between twin booms with a ring tail. */
+function vanguard(b: Builder, o: VanguardOptions = {}): void {
+  const bx = 1.5
   b.fuselage(POD_HULL)
   b.canopy(-2.9, -.7, .6, .06)
-  for (const [angle, z0, z1, halfWidth, height] of intakes) b.intake(z0, z1, angle, halfWidth, height)
-  b.body('paint', BOOM_HULL, { x: 1.5, mirror: true, around: 20 })
-  b.surf([[.5, 0, -.4, 2.2, .08], [1.5, -.02, -.2, 2.0, .08]], { round: false })
-  b.surf([[1.5, -.02, .9, 1.5, .07], [2.2, .08, .5, 1.3, .065], [2.25, .09, .2, 1.4, .065], [3.2, .24, -.3, .8, .055], [3.65, .32, -.5, .5, .05]], { tipFrom: .75, tip: 'accent' })
-  b.surf([[1.6, -.05, -1.1, .7, .06], [2.5, .05, -.7, .3, .05]], { tipFrom: .5, tip: 'accent' })
-  ringOnStruts(b, .05, .95, .9, 2.25, 2.45, .75, 1.5, -.03)
-  b.nozzle(2.7, .05, .34, .34, 0, 2.2)
-  b.nozzle(3.1, 0, .17, .17, 1.5, 3)
-  b.port(0, -1.74, .24, .4); b.port(1.5, 1.16, .16, .38, -.27)
-  b.leg([0, -.12, -1.15], 'aft'); b.leg([1.5, -.12, 1.75], 'aft')
+  for (const [angle, z0, z1, halfWidth, height] of o.intakes ?? QUAD_INTAKES) b.intake(z0, z1, angle, halfWidth, height)
+  b.body('paint', o.booms === 'prong' ? [[-3.5, .02, .02, .02, -.07, 1.4], [-2.3, .16, .15, .12, -.07, 1.5], [-.6, .26, .25, .2, -.05, 1.5], [.4, .28, .26, .22, -.05, 1.5], [2.2, .26, .24, .2, -.03, 1.5], [3.1, .18, .18, .16, 0, 1.6]] : BOOM_HULL, { x: bx, mirror: true, around: 20 })
+  b.surf([[.5, 0, -.4, 2.2, .08], [bx, -.02, -.2, 2.0, .08]], { round: false })
+  // One clean forward sweep: the leading edge runs straight from the boom to the tip.
+  if (o.wing === 'droop') b.surf([[bx, -.02, .9, 1.5, .07], [2.4, .1, .36, 1.16, .062], [3.3, .2, -.18, .82, .055], [3.55, -.3, -.12, .72, .055]], { tipFrom: .66, tip: 'accent' })
+  else b.surf([[bx, -.02, .9, 1.5, .07], [2.4, .1, .36, 1.16, .062], [3.2, .22, -.12, .8, .055], [3.65, .32, -.39, .5, .05]], { tipFrom: .75, tip: 'accent' })
+  const canards = o.canards ?? 'boom'
+  if (canards === 'boom') b.surf([[1.6, -.05, -1.1, .7, .06], [2.5, .05, -.7, .3, .05]], { tipFrom: .5, tip: 'accent' })
+  if (canards === 'pod') b.surf([[.35, -.05, -2.3, .75, .07], [1.2, -.2, -1.75, .3, .05]], { tipFrom: .5, tip: 'accent' })
+  tailRing(b, o, bx, -.03)
+  if (o.nozzle === 'flat') b.nozzle(2.7, .05, .5, .22, 0, 4); else b.nozzle(2.7, .05, .34, .34, 0, 2.2)
+  b.nozzle(3.1, 0, .17, .17, bx, 3)
+  b.port(0, -1.74, .24, .4); b.port(bx, 1.16, .16, .38, -.27)
+  b.leg([0, -.12, -1.15], 'aft'); b.leg([bx, -.12, 1.75], 'aft')
 }
 
 export const JET_DESIGNS: JetDesign[] = [
@@ -132,7 +179,7 @@ export const JET_DESIGNS: JetDesign[] = [
       b.body('chrome', [[-1.55, .01, .01, .01, -.05, 2], [-1.3, .05, .05, .05, -.05, 2], [-1.05, .13, .13, .12, -.05, 2], [-.85, .2, .2, .19, -.05, 2]], { x: 1.55, mirror: true, seg: 5, around: 20 })
       b.surf([[.5, 0, -.5, 2.2, .1], [1.0, -.01, -.4, 2.1, .1], [1.55, -.02, -.3, 2.0, .1]])
       b.surf([[1.55, -.02, -.1, 1.9, .09], [2.5, .1, .5, 1.5, .08], [3.3, .05, 1.1, 1.1, .08], [3.6, -.45, 1.5, .95, .1]], { tipFrom: .8 })
-      b.surf([[1.55, .15, 2.1, 1.0, .08], [1.3, .55, 2.4, .85, .07], [.7, .82, 2.65, .75, .07], [.02, .88, 2.75, .7, .07]])
+      b.surf([[1.55, .15, 2.1, 1.0, .08], [1.3, .55, 2.4, .85, .07], [.7, .82, 2.65, .75, .07], [0, .88, 2.75, .7, .07]])
       b.surf([[1.6, .15, 2.2, .9, .08], [1.85, .6, 2.6, .65, .07], [2.1, .95, 2.95, .42, .06]], { tipFrom: .7 })
       b.nozzle(3.1, 0, .19, .19, 1.55)
       b.nozzle(2.1, .05, .3, .18, 0, 3.2)
@@ -311,7 +358,7 @@ export const JET_DESIGNS: JetDesign[] = [
       b.scoop(-.1, 1.3, .2, .15, .6)
       b.surf([[1.1, .02, 1.0, 1.7, .07], [2.2, .1, .4, 1.2, .06], [3.3, .26, -.2, .7, .05], [3.65, .34, -.4, .5, .05]], { tipFrom: .8, tip: 'accent' })
       b.surf([[.7, .12, -1.9, .7, .06], [1.5, .4, -1.4, .3, .05]], { tipFrom: .5, tip: 'accent' })
-      b.surf([[1.05, .2, 2.0, 1.0, .06], [1.2, 1.0, 2.5, .8, .06], [.02, 1.0, 2.6, .8, .06]], { round: false })
+      b.surf([[1.05, .2, 2.0, 1.0, .06], [1.2, 1.0, 2.5, .8, .06], [0, 1.0, 2.6, .8, .06]], { round: false })
       b.nozzle(3.0, .06, .55, .2, 0, 4)
       b.port(0, -1.74, .28, .42); b.port(.7, 1.16, .24, .42)
       b.leg([0, -.1, -1.15], 'aft'); b.leg([.9, -.08, .3], 'in')
@@ -320,17 +367,27 @@ export const JET_DESIGNS: JetDesign[] = [
   {
     id: 'vanguard', name: 'Vanguard', paint: 0x565c66, accent: 0xff3d5a, hard: true, finish: 'military',
     blurb: 'Twin booms carry a free octagonal ring on four X struts around the main thruster, with dogtooth forward-swept wings and boom canards.',
-    build(b) { vanguard(b, [[90, -.3, 1.2, .26, .18]]) },
+    build(b) { vanguard(b, { intakes: [[90, -.3, 1.2, .26, .18]] }) },
   },
   // Fourth round: the Vanguard with several intakes spaced evenly around the fuselage.
   ...([
     ['tri', 'Tri', 'Three intakes at 120 degrees: one on the spine and one low on each flank.', [90, 210, 330].map(a => [a, -.3, 1.2, .22, .17])],
-    ['quad', 'Quad', 'Four intakes in an X at 90 degrees, echoing the X struts of the tail ring.', [45, 135, 225, 315].map(a => [a, -.3, 1.1, .18, .15])],
+    ['quad', 'Quad', 'Four intakes in an X at 90 degrees, echoing the X struts of the tail ring.', QUAD_INTAKES],
     ['hex', 'Hex', 'Six intakes at 60 degrees right round the hull, belly included.', [30, 90, 150, 210, 270, 330].map(a => [a, -.2, 1.0, .15, .13])],
     ['collar', 'Collar', 'Eight short intakes in a tight collar behind the cockpit.', [0, 1, 2, 3, 4, 5, 6, 7].map(k => [22.5 + 45 * k, .1, .9, .11, .1])],
     ['stagger', 'Stagger', 'Two rows of three, the rear row turned 60 degrees so the six never line up.', [...[90, 210, 330].map(a => [a, -.6, .3, .17, .14]), ...[30, 150, 270].map(a => [a, .5, 1.4, .17, .14])]],
   ] as [string, string, string, number[][]][]).map(([id, name, blurb, intakes]): JetDesign => ({
     id: `vanguard-${id}`, name: `Vanguard ${name}`, paint: 0x565c66, accent: 0xff3d5a, hard: true, finish: 'military', blurb,
-    build(b) { vanguard(b, intakes) },
+    build(b) { vanguard(b, { intakes }) },
+  })),
+  // Fifth round: variations on the Vanguard Quad.
+  ...([
+    ['prong', 'Prong', 'The booms run forward past the cockpit as twin prongs, with the canards moved to the pod.', { booms: 'prong', canards: 'pod' }],
+    ['hex', 'Hexring', 'A six-sided tail ring with upright flanks, and wingtip plates turned down.', { ring: 'hex', wing: 'droop' }],
+    ['box', 'Boxtail', 'A square box tail around a wide flat thruster, for a heavier, more armoured look.', { ring: 'box', nozzle: 'flat' }],
+    ['span', 'Spanring', 'A wide ring that runs straight into the booms with no struts, and no canards: the cleanest outline.', { ringOnBooms: true, canards: 'none' }],
+  ] as [string, string, string, VanguardOptions][]).map(([id, name, blurb, options]): JetDesign => ({
+    id: `quad-${id}`, name: `Quad ${name}`, paint: 0x565c66, accent: 0xff3d5a, hard: true, finish: 'military', blurb,
+    build(b) { vanguard(b, options) },
   })),
 ]
