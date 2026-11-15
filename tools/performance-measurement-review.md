@@ -1,6 +1,6 @@
 # Raw performance matrix and first-entry audit
 
-This prepares measurement, not a performance claim. The delivered controller checkpoint1491605 remains unchanged. Browser execution waits for Post Effects' isolated WebGPU reproduction and Orchestrator's clearance. No governor threshold or workload optimization is included.
+This prepares measurement, not a performance claim. The delivered controller checkpoint1491605 remains unchanged. Browser execution waits for Post Effects' corrected ripple revision and Orchestrator's clearance of the exact candidate. Coordinate Water's permanent fog correction before spending the full matrix on known broken crossings. No governor threshold or workload optimization is included.
 
 ## Matrix contract
 
@@ -16,7 +16,7 @@ The runner records all renderer console errors and aborts remaining cells on ren
 
 Chrome tracing starts before navigation with timeline, user-timing, V8/GC and GPU categories. This covers initial module work and startup work before the per-frame collector exists. Runtime instrumentation times the existing render path, existing backend render-pipeline creation and existing texture-update submission calls. These counters do not measure asynchronous compilation completion, transfer completion or GPU execution. A timeline event's name or correlation is a lead, not proof of the dominant cause. Terrain/map generation must be tied to source stacks or existing startup measures; GC pauses must be identified by trace events; texture upload and compilation must be corroborated with their call/event timing. Missing trace categories or backend methods must be reported as unmeasured, not zero cost. Instrumentation itself can perturb results.
 
-The previous matched profile is failed rendering evidence because it logged a WebGPU usage conflict, despite its process exiting zero. Its recommendation-filtered sample stream also omitted intervals over1000ms and cannot satisfy the raw stall gate. Root's existing desktop medians/p99 of52.6/142.5ms spawn,57.2/146ms water and38.3/92.2ms two humans are historical evidence only. No lower-tier or lobby acceptance follows from them. Requested reflection-map size64 is not actual allocation size: the installed Three PMREM clamps to at least256. The256RGBA16Float error is not yet causally assigned.
+The previous matched profile is failed rendering evidence because it logged a WebGPU usage conflict, despite its process exiting zero. Its recommendation-filtered sample stream also omitted intervals over1000ms and cannot satisfy the raw stall gate. Root's existing desktop medians/p99 of52.6/142.5ms spawn,57.2/146ms water and38.3/92.2ms two humans are historical evidence only. No lower-tier or lobby acceptance follows from them. Requested reflection-map size64 is not actual allocation size: the installed Three PMREM clamps to at least256. Post Effects has since confirmed a Ripples source/destination alias on reallocation, as relayed by Orchestrator. This supersedes the earlier unassigned-cause note; the reflection allocation size alone was not causal evidence. Post owns the minimal reset and lifecycle/WebGPU/WebGL regression. The exact tested fix revision and raw Post evidence must accompany the next candidate; they have not yet been supplied to this lane.
 
 ## First-entry source audit
 
@@ -30,11 +30,13 @@ Potential proactive inputs already available without probing include viewport/ba
 
 Each water cell additionally records a separate30s crossing fixture after its60s drive. It uses the existing cinematic-camera API at a deterministic point with at least8m of water depth, alternating requested camera height3m above and3m below the live surface every5s. Actual camera position, surface depth and rendered scene-node identity are recorded per frame, alongside requested transition events. These are staged camera transitions, not a claim about natural vehicle submersion. Crossing frames have their own strict twice-budget gate and remain in the raw artifact. A requested crossing that never produces the expected actual depth cannot establish acceptance.
 
-Source audit at1491605 identifies candidates, not a measured causal ranking:
+Orchestrator relayed Water's baseline evidence: 25 createRenderPipeline calls on each tier 0 crossing across ten repeated entries/exits, with RAF intervals of 84 to 331 ms. This verifies repeated pipeline creation at crossings, rather than merely a suspicious fog assignment. Shared-host load limits interpretation of the elapsed times; call counts do not establish asynchronous GPU compilation duration or assign the whole stall to one operation. Exact Water source and artifact references remain pending. The permanent fog correction should be considered with the ripple fix for the same candidate before the full matrix runs.
+
+The source audit below was performed at1491605. Water's measured crossing mechanism is now corroborated by peer evidence; the other paths remain candidates, not a measured causal ranking:
 
 | Path | Assignment behavior | Trigger and evidence needed |
 | --- | --- | --- |
-| world/water/underwater.ts | Restores saved scene.fogNode, then assigns underwater fog while immersed; updates uniforms and light/environment intensity | Camera depth crossing. Correlate actual depth and final fog identity with pipeline/compile trace; repeated restore/set during an underwater update does not alone prove recompilation. |
+| world/water/underwater.ts | Restores saved scene.fogNode, then assigns underwater fog while immersed; updates uniforms and light/environment intensity | Camera depth crossing. Water measured 25 pipeline-creation calls per tier 0 crossing; retain actual depth, final fog identity and pipeline timing in the corrected-candidate trace. The assignment alone was insufficient evidence. |
 | world/Environment.ts | Installs weather fog node at environment creation; clears on disposal | Startup/environment lifecycle. Weather values update existing haze uniforms; do not assume all weather sliders replace nodes. |
 | vehicles/skins/showroom.ts | Lazily builds and swaps cached material sets when shading tier changes; plain canopies created on first use | Tier change, remote distance and spawn. Identify first variant creation versus reuse in pipeline/source-stack traces. |
 | vehicles/zorb.ts | Selects cheap/full material | Quality-dependent rendering path; correlate with tier event rather than attribute every stall to it. |
