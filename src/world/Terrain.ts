@@ -28,6 +28,15 @@ export interface TerrainRoadPath {
   points: readonly { x: number; y: number; z: number }[]
 }
 
+/** A place where fire, embers or smoke rise: for effects and for sound. */
+export interface TerrainVent {
+  x: number
+  y: number
+  z: number
+  kind: 'flame' | 'embers' | 'smoke'
+  size: number
+}
+
 /** The top of the main volcano: where King of the Hill is fought. */
 export interface TerrainSummit {
   /** Centre of the caldera. */
@@ -79,6 +88,11 @@ export interface Terrain {
    * replaced on regeneration, so read them again in an `onRegenerate` listener.
    */
   roadPaths?(): readonly TerrainRoadPath[]
+  /**
+   * Flame, ember and smoke emitter anchors on the lava and the ground, identical on every
+   * client. `size` is a rough emitter radius in metres. Replaced on regeneration.
+   */
+  vents?(): readonly TerrainVent[]
   /** The main volcano's summit, identical on every client. Null if the world has none. */
   summit?(): TerrainSummit | null
   /** Reduce or restore render detail (level of detail distances). Visual only. */
