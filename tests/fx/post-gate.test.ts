@@ -1,25 +1,33 @@
 import { describe, expect, it } from 'vitest'
-import { type PostGateInput, postTier, shaftTaps, sunHeightFactor, sunScreenFade } from '../../src/fx/post/gate'
+import { type PostGateInput, drawsEffects, postTier, shaftTaps, sunHeightFactor, sunScreenFade } from '../../src/fx/post/gate'
 import { LOOKS, gradeFor, lookForKind } from '../../src/fx/post/looks'
 import { postOverride } from '../../src/fx/post/params'
 
-const desktop: PostGateInput = { on: true, level: 2, deviceLevel: 2, tablets: false, shed: 0 }
+const full: PostGateInput = { on: true, tier: 'full', shed: 0 }
 
 describe('post tier', () => {
-  it('is off when switched off or at graphics level 0', () => {
-    expect(postTier({ ...desktop, on: false })).toBe('off')
-    expect(postTier({ ...desktop, level: 0 })).toBe('off')
-    expect(postTier({ ...desktop, level: Number.NaN })).toBe('off')
+  it('is off when switched off or when the quality level has no post effects', () => {
+    expect(postTier({ ...full, on: false })).toBe('off')
+    expect(postTier({ ...full, tier: 'off' })).toBe('off')
+    expect(postTier({ ...full, tier: 'off', shed: 1 })).toBe('off')
   })
-  it('is off on phones and tablets unless the player opts in', () => {
-    expect(postTier({ ...desktop, deviceLevel: 1, level: 1 })).toBe('off')
-    expect(postTier({ ...desktop, deviceLevel: 1, level: 1, tablets: true })).toBe('lite')
+  it('follows the tier the quality level allows, with no device class of its own', () => {
+    expect(postTier(full)).toBe('full')
+    expect(postTier({ ...full, tier: 'lite' })).toBe('lite')
+    expect(postTier({ ...full, tier: 'base' })).toBe('base')
   })
-  it('is full at level 2, lite at level 1, base once the governor has shed post effects', () => {
-    expect(postTier(desktop)).toBe('full')
-    expect(postTier({ ...desktop, level: 1 })).toBe('lite')
-    expect(postTier({ ...desktop, shed: 0.5 })).toBe('full')
-    expect(postTier({ ...desktop, shed: 1 })).toBe('base')
+  it('keeps its tier while the budget only fades, and falls to base when it is spent', () => {
+    for (const tier of ['lite', 'full'] as const) {
+      for (const shed of [0, 0.25, 0.5, 0.99]) expect(postTier({ on: true, tier, shed })).toBe(tier)
+      expect(postTier({ on: true, tier, shed: 1 })).toBe('base')
+    }
+    expect(postTier({ on: true, tier: 'base', shed: 0.5 })).toBe('base')
+  })
+  it('draws effects on lite and full only', () => {
+    expect(drawsEffects('off')).toBe(false)
+    expect(drawsEffects('base')).toBe(false)
+    expect(drawsEffects('lite')).toBe(true)
+    expect(drawsEffects('full')).toBe(true)
   })
   it('marches fewer shaft taps on cheaper tiers and none on base', () => {
     expect(shaftTaps('full')).toBeGreaterThan(shaftTaps('lite'))

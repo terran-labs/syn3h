@@ -1,28 +1,33 @@
 import { describe, expect, it, afterEach } from 'vitest'
-import { beginLoad, classifyDevice, finishLoad, FrameBudgetMonitor, graphicsLevel, LOAD_KEY, qualityBudget } from '../../src/core/quality'
+import { assessCapability, beginLoad, finishLoad, FrameBudgetMonitor, graphicsLevel, LOAD_KEY, qualityBudget, qualityLevel } from '../../src/core/quality'
 import { Scene } from 'three/webgpu'
 import { Emitters } from '../../src/fx/Emitters'
 import { params } from '../../shared/params'
-const desktop = { userAgent: 'Macintosh Chrome', touchPoints: 0, memoryGB: 8, adapter: 'available' as const }
-afterEach(() => params.set(graphicsLevel.def.id, 2))
+const capable = { memoryGB: 8, adapter: 'available' as const, maxTextureDimension2D: 16384 }
+afterEach(() => params.set(qualityLevel.def.id, 4))
 describe('device quality', () => {
-  it('classifies desktops, touch iPads, low memory devices and fallback adapters', () => {
-    expect(classifyDevice(desktop)).toBe(2)
-    expect(classifyDevice({ ...desktop, touchPoints: 5 })).toBe(1)
-    expect(classifyDevice({ ...desktop, userAgent: 'Android', memoryGB: 4 })).toBe(1)
-    expect(classifyDevice({ ...desktop, userAgent: 'iPhone', adapter: 'missing' })).toBe(0)
-    expect(classifyDevice({ ...desktop, memoryGB: 2 })).toBe(0)
-    expect(classifyDevice({ ...desktop, adapter: 'fallback' })).toBe(0)
-    expect(classifyDevice({ ...desktop, adapter: 'missing' })).toBe(1)
+  it('judges what the graphics stack can do, never what kind of device it is', () => {
+    expect(assessCapability(capable)).toEqual({ start: 3, ceiling: 5 })
+    // Unknown memory (Safari reports none) is not a reason to hold a device back.
+    expect(assessCapability({ adapter: 'available', maxTextureDimension2D: 16384 })).toEqual({ start: 3, ceiling: 5 })
+    expect(assessCapability({ ...capable, memoryGB: 2 })).toEqual({ start: 2, ceiling: 5 })
+    expect(assessCapability({ ...capable, maxTextureDimension2D: 4096 })).toEqual({ start: 2, ceiling: 5 })
+    // No WebGPU adapter means the WebGL 2 path; a software adapter starts at the bottom.
+    expect(assessCapability({ ...capable, adapter: 'missing' })).toEqual({ start: 2, ceiling: 2 })
+    expect(assessCapability({ ...capable, adapter: 'fallback' })).toEqual({ start: 0, ceiling: 2 })
+    // The inputs carry no user agent or touch count, so a phone and a desktop with the same stack get the same answer.
+    expect(Object.keys(capable).sort()).toEqual(['adapter', 'maxTextureDimension2D', 'memoryGB'])
   })
   it('steps down repeated interrupted loads, then clears the pending marker', () => {
     const entries = new Map<string, string>()
     const storage = { getItem: (key: string) => entries.get(key) ?? null, setItem: (key: string, value: string) => { entries.set(key, value) }, removeItem: (key: string) => { entries.delete(key) } }
+    expect(beginLoad(storage, 5)).toBe(5)
+    expect(beginLoad(storage, 5)).toBe(4)
+    expect(beginLoad(storage, 5)).toBe(3)
     expect(beginLoad(storage, 2)).toBe(2)
-    expect(beginLoad(storage, 2)).toBe(1)
-    expect(beginLoad(storage, 2)).toBe(0)
+    for (const expected of [1, 0, 0]) expect(beginLoad(storage, 5)).toBe(expected)
     finishLoad(storage); expect(entries.has(LOAD_KEY)).toBe(false)
-    expect(beginLoad(storage, 2)).toBe(2)
+    expect(beginLoad(storage, 5)).toBe(5)
   })
   it('works when browser storage is disabled', () => {
     const unavailable = { getItem() { throw new Error('denied') }, setItem() { throw new Error('denied') }, removeItem() { throw new Error('denied') } }
@@ -37,8 +42,14 @@ describe('device quality', () => {
     emitters.clear(); expect(emitters.particleCount).toBe(0)
   })
   it('reduces local particle and bot budgets with graphics level', () => {
-    params.set('gfx.level', 0); expect(qualityBudget().particles).toBe(240); expect(qualityBudget().bots).toBe(2)
-    params.set('gfx.level', 1); expect(qualityBudget().pixelRatio).toBe(1); expect(qualityBudget().bots).toBe(4)
+    params.set('gfx.quality', 0); expect(qualityBudget().particles).toBe(240); expect(qualityBudget().bots).toBe(2)
+    params.set('gfx.quality', 2); expect(qualityBudget().pixelRatio).toBe(1); expect(qualityBudget().bots).toBe(4)
+    params.set('gfx.quality', 5); expect(qualityBudget().name).toBe('Cinematic'); expect(qualityBudget().bots).toBe(16)
+  })
+  it('keeps the older three-step value in step with the level, both ways', () => {
+    for (const [level, older] of [[0, 0], [1, 1], [2, 1], [3, 2], [4, 2], [5, 2]]) { params.set('gfx.quality', level); expect(graphicsLevel.value).toBe(older) }
+    // Code that still sets the older value lands on the level with the same budget as before.
+    for (const [older, level] of [[0, 0], [1, 2], [2, 4]]) { params.set('gfx.quality', 5); params.set('gfx.level', older); expect(qualityLevel.value).toBe(older === 2 ? 5 : level) }
   })
 })
 describe('sustained frame pressure', () => {

@@ -25,10 +25,10 @@ try {
   await page.waitForFunction(tick => window.syn3h.game.tick > tick + 120, enteredAt, { timeout: 120000 })
   const entry = await page.evaluate(() => {
     const s = window.syn3h, g = s.game
-    const ids = ['post.on','post.tablets','post.gi','post.clouds','post.temporal','light.bounce','light.shadowSoftness','light.shadowStrength','terrain.relief','terrain.detailNormal','terrain.surfaceResponse','terrain.macroColour','terrain.accent','weather.aerial']
+    const ids = ['post.on','post.gi','post.clouds','post.temporal','light.bounce','light.shadowSoftness','light.shadowStrength','terrain.relief','terrain.detailNormal','terrain.surfaceResponse','terrain.macroColour','terrain.accent','weather.aerial']
     return { name:'normal-entry', backend:g.backend, tier:g.postChain.tier, values:Object.fromEntries(ids.map(id=>[id,s.params.get(id)?.value])) }
   })
-  assert.equal(entry.values['post.gi'], 1); assert.equal(entry.values['post.on'], true); assert.equal(entry.values['post.tablets'], true)
+  assert.equal(entry.values['post.gi'], 1); assert.equal(entry.values['post.on'], true);
   assert.equal(entry.values['post.clouds'], 1)
   assert.equal(entry.values['post.temporal'], true)
   assert.equal(entry.values['light.bounce'], 1); assert.equal(entry.values['terrain.relief'], .2)

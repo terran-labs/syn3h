@@ -73,6 +73,11 @@ export interface LayerSpec {
    * (LOD_NEAR in groundcover.ts). Worth giving only to layers with thousands of plants.
    */
   far?: THREE.BufferGeometry
+  /**
+   * Night life: drifting points of light (spores, fireflies) that come out after dark and
+   * are not drawn by day. Their shape comes from `motes()`.
+   */
+  motes?: boolean
   /** What grows in a cell, given the ground there and a hash of the cell. */
   grow(c: Ground, h: number, out: Plant): void
   /** This layer's plants darken the ground beneath them (see SHADE_N in groundcover.ts). */
@@ -193,6 +198,50 @@ export function farTuft(blades: number, height: number, root: number, tip: numbe
   return b.build()
 }
 
+/** A daisy and its cheaper shape for the distance. */
+function daisies(height: number, petals: number, radius: number, stemCol: number, centre: number) {
+  return { geometry: daisy(height, petals, radius, stemCol, centre), far: daisy(height, petals, radius, stemCol, centre, true) }
+}
+
+/** A seed-head grass and its cheaper shape for the distance. */
+function seedGrasses(stalks: number, height: number, stalkCol: number, plumeCol: number, plumeLen = 0.16) {
+  return { geometry: seedGrass(stalks, height, stalkCol, plumeCol, plumeLen), far: seedGrass(stalks, height, stalkCol, plumeCol, plumeLen, true) }
+}
+
+/**
+ * Night life: one point of light, two crossed diamonds 10 cm across, 30 cm up. The `sway` of 3 on
+ * every vertex marks it for the shader as a mote: it drifts, twinkles and shows only at
+ * night. It takes the plant's tint as its colour.
+ */
+export function motes(size = 0.05): THREE.BufferGeometry {
+  const b = new Builder(0.01)
+  const w = C(0xffffff)
+  const y = 0.3, s = size
+  for (const [ax, az] of [[1, 0], [0, 1]]) {
+    // A diamond, not a square: up close a square reads as a scrap of paper.
+    const p = [[0, y - s, 0], [ax * s, y, az * s], [0, y + s, 0], [-ax * s, y, -az * s]]
+    b.tri(p[0], p[1], p[2], [w, w, w], [3, 3, 3], 1, [1, 1, 1])
+    b.tri(p[0], p[2], p[3], [w, w, w], [3, 3, 3], 1, [1, 1, 1])
+  }
+  return b.build()
+}
+
+/**
+ * A layer of night life. `chance(c)` is how likely a cell holds a mote, given its ground;
+ * `colours` are picked per mote, the last one rare.
+ */
+function nightLife(chance: (c: Ground) => number, colours: number[]): LayerSpec {
+  return {
+    n: 80, spacing: 1.6, motes: true, geometry: motes(),
+    grow(c, h, out) {
+      if (unit(h, 22) > chance(c)) return
+      out.scale = 0.6 + 1.1 * unit(h, 2)
+      const rare = unit(h, 4) < 0.06
+      setTint(out, rare ? colours[colours.length - 1] : colours[(h >>> 14) % (colours.length - 1)], 0.2, h)
+    },
+  }
+}
+
 /** The main grass of a world: the full tuft, and its cheaper shape for the distance. */
 function grass(blades: number, height: number, root: number, tip: number, opts: { glow?: number; curl?: number; width?: number } = {}) {
   return { geometry: tuft(blades, height, root, tip, opts), far: farTuft(blades, height, root, tip, opts) }
@@ -256,10 +305,29 @@ function flowerHead(b: Builder, hx: number, hy: number, hz: number, petals: numb
   }
 }
 
+/** The flower head for the distance: four broad petals and a centre, six triangles for the full head's 23 or so. */
+function farHead(b: Builder, hx: number, hy: number, hz: number, radius: number, centre: THREE.Color): void {
+  const deep = C(0xb8b8b8), pale = C(0xffffff)
+  for (let i = 0; i < 4; i++) {
+    const a0 = (i / 4) * Math.PI * 2, a1 = ((i + 0.9) / 4) * Math.PI * 2
+    b.tri([hx, hy, hz], [hx + Math.cos(a0) * radius, hy + 0.05, hz + Math.sin(a0) * radius], [hx + Math.cos(a1) * radius, hy + 0.05, hz + Math.sin(a1) * radius],
+      [deep, pale, pale], [1, 1, 1], 1)
+  }
+  const rr = radius * 0.3
+  b.tri([hx - rr, hy + 0.03, hz - rr * 0.6], [hx + rr, hy + 0.03, hz - rr * 0.6], [hx, hy + 0.03, hz + rr], [centre, centre, centre], [1, 1, 1])
+  b.tri([hx - rr, hy + 0.03, hz + rr * 0.6], [hx, hy + 0.03, hz - rr], [hx + rr, hy + 0.03, hz + rr * 0.6], [centre, centre, centre], [1, 1, 1])
+}
+
 /** A daisy: a thin stem with two leaves at its foot and a cupped flower head. */
-export function daisy(height: number, petals: number, radius: number, stemCol: number, centre: number): THREE.BufferGeometry {
+export function daisy(height: number, petals: number, radius: number, stemCol: number, centre: number, far = false): THREE.BufferGeometry {
   const b = new Builder(0.12)
   const cs = C(stemCol)
+  if (far) {
+    // For the distance: one flat stem, no leaves, and a head of a few wide petals.
+    ribbon(b, [0, 0, 0], [0.03, height, 0.02], 0.014, 0.009, cs, cs, 0, 1)
+    farHead(b, 0.03, height, 0.02, radius, C(centre))
+    return b.build()
+  }
   stem(b, [[0, 0, 0], [0.025, height * 0.55, 0.012], [0.03, height, 0.02]], 0.011, 0.007, cs, cs)
   ribbon(b, [0, 0, 0], [0.11, 0.07, 0.03], 0.022, 0.004, cs, cs, 0, 0.3)
   ribbon(b, [0, 0, 0], [-0.08, 0.06, -0.07], 0.02, 0.004, cs, cs, 0, 0.3)
@@ -302,7 +370,7 @@ export function cushion(): THREE.BufferGeometry {
  * A seed-head grass: a few slender stalks, each carrying a narrow plume of seeds that
  * bows in the wind. The plume takes the plant's colour.
  */
-export function seedGrass(stalks: number, height: number, stalkCol: number, plumeCol: number, plumeLen = 0.16): THREE.BufferGeometry {
+export function seedGrass(stalks: number, height: number, stalkCol: number, plumeCol: number, plumeLen = 0.16, far = false): THREE.BufferGeometry {
   const b = new Builder(0.12)
   const cs = C(stalkCol), cp = C(plumeCol)
   for (let i = 0; i < stalks; i++) {
@@ -311,6 +379,14 @@ export function seedGrass(stalks: number, height: number, stalkCol: number, plum
     const ox = Math.cos(a), oz = Math.sin(a)
     const lean = 0.12 + 0.1 * r01(i, 13)
     const top = [ox * (0.04 + h * lean), h, oz * (0.04 + h * lean)]
+    if (far) {
+      // For the distance: a flat stalk and the head as one tapering ribbon, four
+      // triangles for the full stalk's fifteen.
+      const flen = plumeLen * (0.8 + 0.4 * r01(i, 7))
+      ribbon(b, [ox * 0.03, 0, oz * 0.03], top, 0.012, 0.008, cs, cs, 0, 0.9)
+      ribbon(b, top, [top[0] + ox * 0.35 * flen, h + flen, top[2] + oz * 0.35 * flen], 0.022, 0.006, cp, cp, 0.9, 1.05, { tint: 1 })
+      continue
+    }
     stem(b, [[ox * 0.03, 0, oz * 0.03], top], 0.009, 0.006, cs, cs, { s1: 0.9 })
     // The head: the stalk runs on through it, set with small spikelets in two
     // alternating rows that angle up and out, like an ear of wild grain. No closed outline,
@@ -635,7 +711,7 @@ function alpineLayers(treeLine: number): LayerSpec[] {
     },
     {
       // Seed-head grasses standing above the turf where the grass is tall.
-      n: 80, spacing: 1.6, geometry: seedGrass(4, 0.62, 0x8a8a4a, 0xd8d0a0),
+      n: 80, spacing: 1.6, ...seedGrasses(4, 0.62, 0x8a8a4a, 0xd8d0a0),
       grow(c, h, out) {
         if (c.y > treeLine * 0.85) return
         if (unit(h, 22) > 0.55 * smooth(0.45, 0.7, c.region) * smooth(0.3, 0.6, c.patch)) return
@@ -645,7 +721,7 @@ function alpineLayers(treeLine: number): LayerSpec[] {
     },
     {
       // Daisies in drifts, each drift mostly one colour.
-      n: 80, spacing: 1.6, geometry: daisy(0.42, 9, 0.11, 0x3a6a26, 0xf0b828),
+      n: 80, spacing: 1.6, ...daisies(0.42, 9, 0.11, 0x3a6a26, 0xf0b828),
       grow(c, h, out) {
         if (c.y > treeLine) return
         const band = Math.floor(c.patch * 9)
@@ -688,6 +764,8 @@ function alpineLayers(treeLine: number): LayerSpec[] {
         setTint(out, 0xe0e0dc, 0.3, h)
       },
     },
+    // Fireflies along the rivers and pools, below the tree line.
+    nightLife((c) => (c.y > treeLine ? 0 : 0.02 + 0.28 * smooth(0.3, 1, c.flow)), [0xffe08a, 0xfff0b0, 0xc8ff8a]),
   ]
 }
 
@@ -708,7 +786,7 @@ function desertLayers(): LayerSpec[] {
     },
     {
       // Foxtail seed heads standing out of the bigger clumps.
-      n: 80, spacing: 1.6, geometry: seedGrass(5, 0.55, 0xa08048, 0xf4e6b8, 0.2),
+      n: 80, spacing: 1.6, ...seedGrasses(5, 0.55, 0xa08048, 0xf4e6b8, 0.2),
       grow(c, h, out) {
         if (c.rock > 0.5) return
         if (unit(h, 22) > 0.4 * smooth(0.58, 0.78, c.patch)) return
@@ -726,7 +804,7 @@ function desertLayers(): LayerSpec[] {
       },
     },
     {
-      n: 80, spacing: 1.6, geometry: daisy(0.3, 7, 0.1, 0x7a7a3a, 0x5a2a10),
+      n: 80, spacing: 1.6, ...daisies(0.3, 7, 0.1, 0x7a7a3a, 0x5a2a10),
       grow(c, h, out) {
         if (c.rock > 0.5) return
         if (unit(h, 22) > 0.22 * Math.max(smooth(0.6, 0.8, c.patch), c.flow)) return
@@ -794,6 +872,8 @@ function volcanicLayers(palette: number[]): LayerSpec[] {
         ember(c, h, out, 0.12, palette)
       },
     },
+    // Spores rising off the growth, thickest along the lava, in the plants' own colours.
+    nightLife((c) => (c.rock > 0.9 && c.flow < 0.3 ? 0 : 0.03 + 0.35 * c.flow + 0.1 * smooth(0.6, 0.8, c.patch)), [...palette, CYAN]),
   ]
 }
 
@@ -816,7 +896,7 @@ function archipelagoLayers(): LayerSpec[] {
     },
     {
       // Sea oats: pale seed heads leaning in the wind, in a band along the shore.
-      n: 80, spacing: 1.6, geometry: seedGrass(5, 0.7, 0x9a9a5a, 0xf0e2b0, 0.2),
+      n: 80, spacing: 1.6, ...seedGrasses(5, 0.7, 0x9a9a5a, 0xf0e2b0, 0.2),
       grow(c, h, out) {
         if (unit(h, 22) > 0.03 + 0.6 * smooth(0.5, 0.9, c.flow)) return
         out.scale = 0.8 + 0.5 * unit(h, 2)
@@ -825,7 +905,7 @@ function archipelagoLayers(): LayerSpec[] {
     },
     {
       // Tropical blooms in drifts.
-      n: 80, spacing: 1.6, geometry: daisy(0.32, 6, 0.12, 0x2e6a1c, 0xffd23a),
+      n: 80, spacing: 1.6, ...daisies(0.32, 6, 0.12, 0x2e6a1c, 0xffd23a),
       grow(c, h, out) {
         const band = Math.floor(c.patch * 9)
         if (unit(h, 22) > (band % 2 === 1 ? 0.6 : 0.05)) return
@@ -833,6 +913,8 @@ function archipelagoLayers(): LayerSpec[] {
         setTint(out, ISLE_BLOOMS[(band + (unit(h, 4) < 0.15 ? 1 : 0)) % ISLE_BLOOMS.length], 0.08, h)
       },
     },
+    // A few fireflies inland, away from the salt.
+    nightLife((c) => 0.07 * smooth(0.45, 0.75, c.region) * (1 - c.flow), [0xffe08a, 0xfff0b0, 0xc8ff8a]),
   ]
 }
 
@@ -868,6 +950,8 @@ function swampLayers(): LayerSpec[] {
         setTint(out, unit(h, 4) < 0.2 ? 0x9aff4a : 0x2ae8c8, 0.15, h)
       },
     },
+    // Fireflies over the wet ground: sickly green, now and then teal like the glowcaps.
+    nightLife((c) => 0.05 + 0.3 * c.flow + 0.12 * smooth(0.5, 0.25, c.patch), [0xb8ff4a, 0x9aff4a, 0xd8ff7a, 0x2ae8c8]),
   ]
 }
 
