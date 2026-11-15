@@ -2,6 +2,18 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Saturday 14 November, 5:32pm Pacific: Cloudflare Workers Paid, and keep the relay
+
+**Decided.** Build production on Cloudflare Workers and pay the 5 USD a month for Workers
+Paid. The room server stays a WebSocket relay; no switch to WebRTC peer to peer tonight.
+
+**Why.** The free plan's 100,000 room requests a day would be spent in about two hours of a
+full room, and tonight's testing shares that day with the demo. Peer to peer fails on
+phone and venue networks and would replace tested code the night before the demo.
+
+**What it changes.** The owner upgrades the account. Release 1 still waits for Cloudflare
+access on this machine. A packet loss study and a venue fallback runbook are in flight.
+
 ## Saturday 14 November, about 5:15pm Pacific: no death or violence in any world
 
 **Decided** (in the Terrain Lab thread, relayed by the Orchestrator). No death or violence

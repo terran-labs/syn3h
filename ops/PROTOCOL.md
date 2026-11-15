@@ -94,3 +94,11 @@ Proposed, awaiting the owner: new features stop when tonight's push ends. Sunday
 fixes, a hand driven rehearsal on the demo hardware and network, and one final promotion to
 stable. Nothing merges after 10am Sunday without the owner saying so. After the freeze, lanes may
 still merge work that is off by default (rule 5).
+
+## 11. Never kill processes by name
+
+`pkill`, `killall` and any kill that matches on a name or command line are forbidden for
+every lane, with no exceptions. Stop only processes you started, by the PID you recorded
+when you started them. At 5:30pm on Saturday a malformed `pkill` terminated every lane's
+servers, Chrome, the Claude app and the Vorteo host daemons. It was the second name based
+kill to cause damage that day.
