@@ -6,8 +6,11 @@
  * Each call to `step` returns what every instrument plays on the next sixteenth, given the
  * current mood. The mood decides three things:
  *  - which layers play (intensity brings in arpeggio, then bass and kick, then hats and snare)
- *  - which mode the harmony is in (darkness walks lydian, dorian, aeolian, phrygian)
+ *  - which mode the harmony is in (darkness walks dorian, aeolian, harmonic minor, phrygian)
  *  - how the melody and choir sit on top (lift and triumph)
+ *
+ * The palette is deep space, not arcade: slow tempos, low sequencer lines, long melody
+ * notes and half-time drums. Nothing here should bounce.
  *
  * A mode change is taken at the next chord boundary, not the next section, so the harmony
  * turns within two bars of a fight starting.
@@ -24,19 +27,21 @@ export interface Mood {
   triumph: number
 }
 
-export const MODE_NAMES = ['lydian', 'dorian', 'aeolian', 'phrygian'] as const
+export const MODE_NAMES = ['dorian', 'aeolian', 'harmonic', 'phrygian'] as const
 export type ModeName = (typeof MODE_NAMES)[number]
 export const MODES: Record<ModeName, readonly number[]> = {
-  lydian: [0, 2, 4, 6, 7, 9, 11],
   dorian: [0, 2, 3, 5, 7, 9, 10],
   aeolian: [0, 2, 3, 5, 7, 8, 10],
+  /** Harmonic minor: the raised seventh gives the major V chord of Russian romantic harmony. */
+  harmonic: [0, 2, 3, 5, 7, 8, 11],
   phrygian: [0, 1, 3, 5, 7, 8, 10],
 }
 /** Chord roots as scale degrees. Each mode has a few progressions that show off its colour. */
 const PROGRESSIONS: Record<ModeName, readonly (readonly number[])[]> = {
-  lydian: [[0, 1, 0, 4], [0, 5, 1, 0], [0, 1, 5, 4]],
   dorian: [[0, 3, 0, 6], [0, 6, 3, 0], [0, 2, 3, 6]],
   aeolian: [[0, 5, 2, 6], [5, 6, 0, 0], [0, 5, 3, 6]],
+  // Only i, iv and V: the other chords of harmonic minor are augmented or diminished.
+  harmonic: [[0, 3, 4, 0], [0, 3, 0, 4], [0, 4, 0, 4]],
   phrygian: [[0, 1, 0, 6], [0, 1, 5, 0], [0, 6, 1, 0]],
 }
 const ARPS: readonly (readonly number[])[] = [
@@ -70,6 +75,8 @@ export interface Step {
   snare?: number
   hat?: number
   openHat?: number
+  /** A distant telemetry beep at this MIDI pitch. Only in quiet passages. */
+  beep?: number
   /** A noise swell lasting this many sixteenths, leading into the next section. */
   riser?: number
   /** A sub drop and crash on a section start or a turn to a darker mode. */
@@ -96,16 +103,18 @@ export function seeded(seed: number): () => number {
 export function levels(mood: Mood) {
   const i = unit(mood.intensity), lift = unit(mood.lift), dark = unit(mood.darkness), triumph = unit(mood.triumph)
   return {
-    bpm: 88 + 40 * i,
+    bpm: 60 + 40 * i,
     pad: 0.95 - 0.3 * i,
     drone: 0.9 - 0.35 * smooth(0.4, 1, i),
     arp: smooth(0.1, 0.3, i),
-    bass: smooth(0.28, 0.42, i),
+    bass: smooth(0.3, 0.45, i),
     drums: smooth(0.28, 0.45, i),
+    /** Wind in the void and the telemetry beeps: strongest when little else is playing. */
+    air: 1 - 0.7 * i,
     lead: unit(Math.max(1 - smooth(0.15, 0.45, i), lift * 0.9, triumph)),
     choir: unit(Math.max(lift, triumph * 0.8)),
     /** Filter openness of the pads and arpeggio. */
-    brightness: unit(0.32 + 0.43 * i + 0.35 * lift + 0.15 * triumph - 0.1 * dark),
+    brightness: unit(0.25 + 0.4 * i + 0.25 * lift + 0.1 * triumph - 0.1 * dark),
     /** Bass distortion: only a dark, intense mood growls. */
     drive: unit(dark * i * 1.5),
   }
@@ -167,9 +176,9 @@ export class Composer {
     this.motif = this.newMotif()
   }
 
-  /** A two-bar phrase of three to five notes, repeated over every chord of the section. */
+  /** A two-bar phrase of two or three long notes, repeated over every chord of the section. */
   private newMotif(): MotifNote[] {
-    const count = 3 + Math.floor(this.random() * 3)
+    const count = 2 + Math.floor(this.random() * 2)
     const starts = new Set<number>([this.random() < 0.6 ? 0 : 2])
     while (starts.size < count) starts.add(2 * Math.floor(this.random() * 16))
     const ordered = [...starts].sort((a, b) => a - b)
@@ -179,7 +188,7 @@ export class Composer {
       // Notes on a beat land on a chord tone; the ones between may pass through the scale.
       if (at % 8 === 0) offset = CHORD_TONES.reduce((best, tone) => Math.abs(tone - offset) < Math.abs(best - offset) ? tone : best)
       const next = ordered[i + 1] ?? STEPS_PER_CHORD
-      return { at, offset, steps: Math.min(8, next - at) }
+      return { at, offset, steps: Math.min(16, next - at) }
     })
   }
 
@@ -202,26 +211,30 @@ export class Composer {
     const root = fold(this.pitch(degree), 31)
 
     if (inChord === 0) {
-      const colour = mood.lift > 0.5 ? 8 : 6
-      const pad = [0, 2, 4, colour].map(offset => fold(this.pitch(degree + offset), 53)).sort((a, b) => a - b)
+      // A seventh, or a ninth in open air. Harmonic minor doubles the root instead: its sevenths grate.
+      const colour = this.mode === 'harmonic' ? 7 : mood.lift > 0.5 ? 8 : 6
+      const pad = [0, 2, 4, colour].map(offset => fold(this.pitch(degree + offset), 50)).sort((a, b) => a - b)
       out.chord = { mode: this.mode, degree, pad, root }
       if (pos === 0 && (this.risen || (turnedDarker && i >= 0.3))) out.impact = true
       if (pos === 0) this.risen = false
     }
 
-    if (level.arp > 0 && (i >= 0.45 || s % 2 === 0)) {
-      const base = fold(this.pitch(degree), 48) - this.pitch(degree)
+    // The sequencer line: quarter notes when calm, eighths at a cruise, sixteenths only in a chase.
+    const every = i < 0.3 ? 4 : i < 0.6 ? 2 : 1
+    if (level.arp > 0 && s % every === 0) {
+      const base = fold(this.pitch(degree), 36) - this.pitch(degree)
       const midi = this.pitch(degree + ARP_TONES[this.arp[s]]) + base + (mood.lift > 0.6 ? 12 : 0)
-      out.arp = { midi, velocity: s % 4 === 0 ? 1 : 0.7, steps: i >= 0.45 ? 1 : 2 }
+      out.arp = { midi, velocity: s % 4 === 0 ? 1 : 0.7, steps: every }
     }
 
     if (level.bass > 0) {
-      if (i < 0.55) {
-        if (s % 2 === 0) out.bass = { midi: root + (s === 14 ? 12 : 0), velocity: 0.85, steps: 2 }
+      if (i < 0.6) {
+        if (s % 4 === 0) out.bass = { midi: root + (s === 12 && bar % 2 === 1 ? 12 : 0), velocity: 0.85, steps: 3 }
       } else {
+        const span = i < 0.85 ? 2 : 1
         const walking = i >= 0.8 && bar % 2 === 1 && s >= 13
         const midi = walking ? fold(this.pitch(degree + (s === 14 ? 6 : 4)), 43) : root + (this.accents[s] ? 12 : 0)
-        out.bass = { midi, velocity: s % 4 === 0 ? 1 : 0.72, steps: 1 }
+        if (s % span === 0) out.bass = { midi, velocity: s % 4 === 0 ? 1 : 0.72, steps: span }
       }
     }
 
@@ -232,21 +245,25 @@ export class Composer {
         if (note.at !== inChord) continue
         // The last chord answers the phrase by playing its notes in reverse order.
         const offset = lastChord ? this.motif[this.motif.length - 1 - n].offset : note.offset
-        const base = fold(this.pitch(degree), 72) - this.pitch(degree)
+        const base = fold(this.pitch(degree), 65) - this.pitch(degree)
         out.lead = { midi: this.pitch(degree + offset) + base, velocity: level.lead, steps: note.steps }
       }
     }
 
     if (level.drums > 0) {
-      if (i < 0.45 ? s % 8 === 0 : s % 4 === 0) out.kick = 0.7 + 0.3 * i
+      // A heartbeat once a bar, then twice, and four on the floor only in a full chase.
+      if (s % (i < 0.5 ? 16 : i < 0.75 ? 8 : 4) === 0) out.kick = 0.7 + 0.3 * i
       else if ((i >= 0.75 && bar % 2 === 1 && s === 14) || (i >= 0.9 && bar % 4 === 3 && s === 10)) out.kick = 0.6
+      // `snare` is a low drum, a taiko more than a snare. Half time: one hit on beat three.
       const fill = bar === 7 && i >= 0.5 && s >= 12
       if (fill) out.snare = 0.4 + 0.15 * (s - 12)
-      else if (i >= 0.55 && (s === 4 || s === 12)) out.snare = 0.8
-      if (i >= 0.65) out.hat = s % 4 === 2 ? 0.8 : s % 2 === 0 ? 0.45 : 0.28
-      else if (i >= 0.42 && s % 4 === 2) out.hat = 0.6
-      if (i >= 0.6 && bar % 2 === 1 && s === 14) out.openHat = 0.7
+      else if (i >= 0.55 && s === 8) out.snare = 0.85
+      else if (i >= 0.8 && bar % 2 === 1 && (s === 11 || s === 14)) out.snare = 0.55
+      if (i >= 0.8 && s % 4 === 2) out.hat = 0.5
+      if (i >= 0.8 && bar % 2 === 1 && s === 14) out.openHat = 0.6
     }
+    // Telemetry: four even beeps on the fifth of the key, far away, once per section.
+    if (i < 0.35 && chordIndex === 2 && inChord < 16 && inChord % 4 === 0) out.beep = fold(this.pitch(4), 79)
     if (bar === 7 && s === 0 && i >= 0.4) { out.riser = STEPS_PER_BAR; this.risen = true }
     return out
   }

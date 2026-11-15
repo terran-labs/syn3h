@@ -19,7 +19,7 @@ describe('adaptive score composer', () => {
       let scale = new Set<number>()
       for (const step of steps) {
         if (step.chord) scale = new Set(MODES[step.chord.mode].map(n => (n + c.tonic) % 12))
-        const pitches = [...(step.chord?.pad ?? []), ...(step.chord ? [step.chord.root] : []), step.arp?.midi, step.bass?.midi, step.lead?.midi].filter((n): n is number => n !== undefined)
+        const pitches = [...(step.chord?.pad ?? []), ...(step.chord ? [step.chord.root] : []), step.arp?.midi, step.bass?.midi, step.lead?.midi, step.beep].filter((n): n is number => n !== undefined)
         for (const midi of pitches) expect(scale.has(((midi % 12) + 12) % 12), `seed ${seed} midi ${midi}`).toBe(true)
       }
     }
@@ -40,13 +40,17 @@ describe('adaptive score composer', () => {
     for (const key of ['kick', 'snare', 'hat', 'bass', 'arp', 'riser'] as const) expect(count(quiet, key), key).toBe(0)
     expect(count(quiet, 'lead')).toBeGreaterThan(0)
     expect(count(mid, 'arp')).toBe(STEPS_PER_SECTION / 2)
-    expect(count(mid, 'kick')).toBe(STEPS_PER_SECTION / 8)
+    expect(count(mid, 'kick')).toBe(STEPS_PER_SECTION / 16)
+    expect(count(mid, 'hat')).toBe(0)
+    expect(count(quiet, 'beep')).toBe(4)
     expect(count(mid, 'snare')).toBe(0)
     expect(count(loud, 'arp')).toBe(STEPS_PER_SECTION)
     expect(count(loud, 'bass')).toBe(STEPS_PER_SECTION)
-    expect(count(loud, 'hat') + count(loud, 'openHat')).toBeGreaterThanOrEqual(STEPS_PER_SECTION)
+    expect(count(loud, 'hat')).toBe(STEPS_PER_SECTION / 4)
     expect(count(loud, 'kick')).toBeGreaterThanOrEqual(STEPS_PER_SECTION / 4)
-    expect(count(loud, 'snare')).toBeGreaterThanOrEqual(16)
+    expect(count(loud, 'snare')).toBeGreaterThanOrEqual(8)
+    // Half time: the low drum never lands on beats two and four.
+    expect(loud.filter((step, n) => step.snare && n < 112 && (n % 16 === 4 || n % 16 === 12))).toEqual([])
   })
 
   it('swells into a new section and lands it with an impact', () => {
@@ -59,7 +63,7 @@ describe('adaptive score composer', () => {
   it('turns dark within one chord of a fight starting', () => {
     const c = new Composer(21)
     for (let i = 0; i < 40; i++) c.step(cruise)
-    expect(c.mode).toBe('dorian')
+    expect(c.mode).toBe('aeolian')
     const next = Array.from({ length: STEPS_PER_CHORD }, () => c.step(fight))
     const turn = next.find(step => step.chord)
     expect(turn?.chord?.mode).toBe('phrygian')
@@ -78,7 +82,7 @@ describe('adaptive score composer', () => {
     for (const mood of [calm, cruise, fight, { intensity: 9, lift: -2, darkness: Number.NaN, triumph: 4 }]) {
       const level = levels(mood)
       for (const [name, value] of Object.entries(level)) if (name !== 'bpm') { expect(value, name).toBeGreaterThanOrEqual(0); expect(value, name).toBeLessThanOrEqual(1) }
-      expect(level.bpm).toBeGreaterThanOrEqual(88); expect(level.bpm).toBeLessThanOrEqual(128)
+      expect(level.bpm).toBeGreaterThanOrEqual(60); expect(level.bpm).toBeLessThanOrEqual(100)
     }
     expect(levels(calm).drums).toBe(0)
     expect(levels(fight).drive).toBeGreaterThan(0.9)
