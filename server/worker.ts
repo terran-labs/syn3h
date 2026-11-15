@@ -71,8 +71,76 @@ export default {
       if (req.method !== 'GET') return new Response('GET only', { status: 405, headers: { allow: 'GET' } })
       return env.ROOMS.get(env.ROOMS.idFromName(REGISTRY_ID)).fetch(new Request(`https://registry/${url.pathname === '/presence' ? 'presence' : 'totals'}`))
     }
-    return env.ASSETS.fetch(req)
+    return serveVersioned(req, url, env)
   },
+}
+
+/**
+ * Frozen versions. Every deployment carries each frozen release's files under
+ * /v/<version>/ (listed in /v/versions.json). `/?v=26.11.1503` serves that release's
+ * document at the root; its content-hashed files then resolve either at the root (while it
+ * is still the latest build) or, once a later build has replaced them, through the
+ * not-found fallback below. Files whose names are not hashed (build.json, models) are
+ * chosen by the page that asks for them, read from the Referer's own `v`.
+ */
+const VERSION = /^v?(\d+\.\d+\.\d+)$/
+function versionOf(value: string | null): string | null {
+  return value ? (VERSION.exec(value.trim())?.[1] ?? null) : null
+}
+async function frozenVersions(req: Request, env: Env): Promise<string[]> {
+  try {
+    const r = await env.ASSETS.fetch(new Request(new URL('/v/versions.json', req.url)))
+    if (!r.ok) return []
+    const list = ((await r.json()) as { versions?: unknown }).versions
+    return Array.isArray(list) ? list.filter((v): v is string => typeof v === 'string') : []
+  } catch {
+    return []
+  }
+}
+async function serveVersioned(req: Request, url: URL, env: Env): Promise<Response> {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return env.ASSETS.fetch(req)
+  const isDocument = url.pathname === '/' || url.pathname === '/index.html'
+  let referrerV: string | null = null
+  try {
+    const ref = req.headers.get('Referer')
+    if (ref) referrerV = versionOf(new URL(ref).searchParams.get('v'))
+  } catch {
+    // An unparsable Referer selects nothing.
+  }
+  const asked = url.searchParams.has('v')
+  const wanted = isDocument ? versionOf(url.searchParams.get('v')) : referrerV
+  if (isDocument && asked && !wanted) return unknownVersion(url.searchParams.get('v') ?? '', await frozenVersions(req, env))
+  if (wanted) {
+    const path = isDocument ? `/v/${wanted}/` : `/v/${wanted}${url.pathname}`
+    const frozen = await env.ASSETS.fetch(new Request(new URL(path, url.origin), { method: req.method, headers: req.headers }))
+    if (frozen.ok || frozen.status === 304) {
+      const out = new Response(frozen.body, frozen)
+      out.headers.set('x-syn3h-version', wanted)
+      if (!isDocument) out.headers.append('vary', 'Referer')
+      if (isDocument) out.headers.set('cache-control', 'no-store')
+      return out
+    }
+    if (isDocument) return unknownVersion(wanted, await frozenVersions(req, env))
+  }
+  const latest = await env.ASSETS.fetch(req)
+  if (latest.status !== 404 || isDocument) return latest
+  // A file the latest build no longer has: a frozen release may still own it.
+  for (const version of await frozenVersions(req, env)) {
+    const frozen = await env.ASSETS.fetch(new Request(new URL(`/v/${version}${url.pathname}`, url.origin), { method: req.method, headers: req.headers }))
+    if (frozen.ok || frozen.status === 304) {
+      const out = new Response(frozen.body, frozen)
+      out.headers.set('x-syn3h-version', version)
+      return out
+    }
+  }
+  return latest
+}
+function unknownVersion(asked: string, versions: string[]): Response {
+  const list = versions.map(v => `https://www.syn3h.com/?v=${v}`).join('\n')
+  return new Response(`Syn3h has no frozen version "${asked}".\n\nFrozen versions:\n${list}\n`, {
+    status: 404,
+    headers: { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' },
+  })
 }
 
 /**
