@@ -273,7 +273,9 @@ export class BotBrain implements System {
         if (this.mind.activity.kind !== 'hold') this.mind.hold(match.zone, match.zone.radius, 120)
         this.mood = 'roam'; this.roam(dt, input, here); return
       }
-      if (match?.mode === 'tag' && match.it?.body.isValid()) {
+      // Default tag rooms still provide playful company. Competitive fleeing and
+      // hunting are opt-in through aggression or disabling following.
+      if (!this.playful && match?.mode === 'tag' && match.it?.body.isValid()) {
         if (match.it === this.vehicle) {
           // It: hunt whoever is nearest, relentlessly, until someone else is it.
           this.mood = 'chase'; this.moodTime = Math.max(this.moodTime, 1); this.target = this.nearestOther(here) ?? this.target
@@ -301,9 +303,9 @@ export class BotBrain implements System {
     this.up.set(0, 1, 0).applyQuaternion(this.quaternion)
     const dx = there.x - here.x, dz = there.z - here.z, distance = Math.hypot(dx, dz)
     const velocity = this.vehicle.body.linvel(), speed = Math.hypot(velocity.x, velocity.z)
-    // A playful bot with a mind trails the target like a duckling instead of pursuing it. Not
-    // the one that is "it" in tag, which must catch someone, and not in a race.
-    const ducking = this.mind !== null && this.playful && !this.raceGoal && !(this.match?.mode === 'tag' && this.match.it === this.vehicle) && p.canDrive.value
+    // Outside races, a playful bot trails its target like a duckling. Being tagged
+    // does not silently change the player's following choice.
+    const ducking = this.mind !== null && this.playful && !this.raceGoal && p.canDrive.value
     if (ducking) this.duck.follow(this.target)
     this.duck.active = ducking
     const step = ducking ? this.duck.step(dt, here, there, p.playfulness.value, (x, z) => this.standable(x, z)) : null

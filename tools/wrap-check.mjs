@@ -64,7 +64,7 @@ try {
     console.log('PUBLIC BUILD OK', JSON.stringify(raw.identity))
   }
   const a = await open('Alice')
-  await a.evaluate(() => window.syn3h.params.set('bots.count', 0))
+  await a.evaluate(() => { window.syn3h.params.set('bots.count', 0); window.syn3h.params.set('game.mode', 0) })
   const b = await open('Bob')
   await Promise.all([a, b].map((p) => p.waitForFunction(() => window.syn3hNet.players.size === 2 && window.syn3hNet.remotes.size === 1, null, { timeout: 30000 })))
   const [idA, idB] = await Promise.all([a, b].map((p) => p.evaluate(() => window.syn3hNet.id)))

@@ -16,10 +16,13 @@ export const tagRamReach = defineParam({
   default: 10, min: 4, max: 40, step: 1,
 })
 
-/** 0 tag, 1 King of the Hill. Changing it resets the scores. */
+/**
+ * 2 Explore (the default: no game), 0 Tag, 1 King of the Hill; see MODE_EXPLORE in
+ * shared/protocol.ts for why Explore is not 0. Changing it resets the scores.
+ */
 export const gameMode = defineParam({
-  id: 'game.mode', label: 'Mode (0 tag, 1 hill)', group: 'Game', scope: 'world',
-  default: 0, min: 0, max: 1, step: 1,
+  id: 'game.mode', label: 'Mode (0 tag, 1 hill, 2 explore)', group: 'Game', scope: 'world',
+  default: 2, min: 0, max: 2, step: 1,
 })
 
 /** Seconds alone on the hill needed to win a round. */
@@ -70,3 +73,8 @@ export const REJOIN_GRACE = 30
 export const KNOCK_WINDOW = 5
 /** Seconds the winner is shown before the next round starts. */
 export const WIN_PAUSE = 6
+
+/** Landmark races start only when the room opts in. */
+export const raceAuto = defineParam({
+  id: 'race.auto', label: 'Automatic landmark races', group: 'Game', scope: 'world', default: false,
+})

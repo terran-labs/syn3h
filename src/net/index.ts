@@ -16,6 +16,7 @@ import {
   type GameState,
   type HillZone,
   MAX_BOTS,
+  MODE_EXPLORE,
   MODE_KOTH,
   MODE_TAG,
   type PlayerInfo,
@@ -50,7 +51,7 @@ import { bigRedAllowed, bigRedPush } from '../weapons/bigRedParams'
 import { BoundsGuard } from '../modes/Tag'
 // The "it" marker: one draw, and shown over the local player's own vehicle too.
 import { ItMarker as TagMarker } from './ItMarker'
-import { gameMode, kothKnockBonus, kothLaserPush, kothRespawnDelay, kothTargetScore, kothZoneRadius } from '../modes/params'
+import { raceAuto, gameMode, kothKnockBonus, kothLaserPush, kothRespawnDelay, kothTargetScore, kothZoneRadius } from '../modes/params'
 import { type HillTerrain, computeHillZone } from '../modes/hill'
 import { HillMarker } from '../modes/HillMarker'
 import { LocalRescue, StuckTimer, inStickyLiquid } from '../modes/Koth'
@@ -208,7 +209,7 @@ export class NetClient implements System {
   id = 0
   slot = 0
   game: GameState = {
-    it: 0, scores: {}, host: 0, locked: false, mode: MODE_TAG,
+    it: 0, scores: {}, host: 0, locked: false, mode: MODE_EXPLORE,
     koth: { zone: null, holder: 0, contested: false, winner: 0, resetAt: 0, out: {} },
   }
   /** Counts for automated checks. */
@@ -276,7 +277,7 @@ export class NetClient implements System {
       role: () => ({ id: this.id, host: this.isHost, connected: this.connected }),
       synced: () => this.clock.synced,
       bots: () => this.bots,
-      candidates: () => [
+      candidates: () => !raceAuto.value ? [] : [
         { id: this.id, vehicle: this.ctx.player, active: this.raceBridge.driving && !document.hidden, human: true },
         ...liveBots(this.bots?.vehicles ?? [], this.ctx.game.world).map(([id, vehicle]) => ({ id, vehicle, active: !document.hidden, human: false })),
       ],
@@ -285,7 +286,7 @@ export class NetClient implements System {
     this.blast = new Blast(game, {
       vehicleIds: () => this.vehicleIds(),
       bodyOf: (id) => this.vehicleOf(id)?.body,
-      owns: (id) => this.ownsVehicle(id),
+      owns: (id) => this.ownsVehicle(id) && !materializing(this.vehicleOf(id)),
       wrapSize: () => this.wrapSize,
     })
     this.lasers = new Lasers(game, {
@@ -294,6 +295,7 @@ export class NetClient implements System {
       judgedId: (h) => this.judgedId(h),
       isVehicleBody: (h) => [...this.remotes.values()].some((r) => r.vehicle.body.handle === h),
       onHit: (shooter, shot, victim, at, dir, red) => {
+        if (materializing(this.vehicleOf(shooter)) || materializing(this.vehicleOf(victim))) return
         if (victim === this.id) this.stats.hitsTaken++
         // Big Red shoves in every mode, with some lift. The judging client owns the victim.
         if (red && bigRedPush.value > 0) {
@@ -302,8 +304,9 @@ export class NetClient implements System {
             const m = body.mass() * bigRedPush.value
             body.applyImpulse({ x: dir.x * m, y: dir.y * m + m * 0.25, z: dir.z * m }, true)
           }
-        } else if (this.mode === MODE_KOTH && kothLaserPush.value > 0) {
-          // On the hill a laser shoves. The judging client owns the victim, so it applies it.
+        } else if (this.mode !== MODE_TAG && kothLaserPush.value > 0) {
+          // On the hill, and in Explore where the beam is a toy, a beam shoves; in tag it
+          // tags instead. The judging client owns the victim, so it applies it.
           const body = this.vehicleOf(victim)?.body
           if (body) {
             const m = body.mass() * kothLaserPush.value
@@ -366,6 +369,7 @@ export class NetClient implements System {
       inHand: () => this.gear.current === 'pester',
       launch: (target) => this.launchPester(target),
       onCatch: (shooter, shot, victim, at, dir) => {
+        if (materializing(this.vehicleOf(shooter)) || materializing(this.vehicleOf(victim))) return
         if (victim === this.id) this.stats.hitsTaken++
         // The caught player's own client bumps it, capped by the room's slider: a sender
         // cannot make this bigger.
@@ -420,7 +424,7 @@ export class NetClient implements System {
 
     this.conn.onOpen = () => {
       this.send({
-        type: 'hello', v: PROTOCOL_VERSION, name: playerName(), params: params.snapshot('world'),
+        type: 'hello', v: PROTOCOL_VERSION, modes: 2, name: playerName(), params: params.snapshot('world'),
         kind: this.kind, colors: this.colors, resume: rejoinSecret(this.ctx.room),
       })
     }
@@ -652,7 +656,7 @@ export class NetClient implements System {
    * nothing visible when the room would refuse.
    */
   launchPester(target: number | null): boolean {
-    if (!pesterAllowed.value || target === null) return false
+    if (materializing(this.ctx.player) || !pesterAllowed.value || target === null) return false
     const t = this.ctx.game.time
     if (t - this.lastPester < pesterCooldown.value || this.pesters.mine >= pesterMax.value) return false
     this.lastPester = t
@@ -668,7 +672,7 @@ export class NetClient implements System {
   }
 
   fire(direction?: [number, number, number], target?: { x: number; y: number; z: number }, kind?: 'red'): void {
-    if (kind === 'red' && !bigRedAllowed.value) return
+    if (materializing(this.ctx.player) || (kind === 'red' && !bigRedAllowed.value)) return
     const shot = this.lasers.aim(this.ctx.player.body, this.clock.now())
     if (kind) shot.k = kind
     if (target) direction = [target.x - shot.o[0], target.y - shot.o[1], target.z - shot.o[2]]
@@ -881,7 +885,7 @@ export class NetClient implements System {
   private fireBot(bot: number, direction: [number, number, number], target?: Vehicle): boolean {
     if (!this.isHost) return false
     const vehicle = this.vehicleOf(bot)
-    if (!vehicle) return false
+    if (!vehicle || materializing(vehicle)) return false
     const shot = this.lasers.aim(vehicle.body, this.clock.now())
     shot.d = direction
     if (target) {
@@ -957,9 +961,9 @@ export class NetClient implements System {
   }
 
   private judgedId(handle: number): number | null {
-    if (handle === this.ctx.player.body.handle) return this.id
+    if (handle === this.ctx.player.body.handle) return materializing(this.ctx.player) ? null : this.id
     if (this.isHost && this.bots) {
-      for (const [id, bot] of liveBots(this.bots.vehicles, this.ctx.game.world)) if (bot.body.handle === handle) return id
+      for (const [id, bot] of liveBots(this.bots.vehicles, this.ctx.game.world)) if (bot.body.handle === handle && !materializing(bot)) return id
     }
     return null
   }
@@ -1026,7 +1030,8 @@ export class NetClient implements System {
   private syncBotMatch(): void {
     const bots = this.bots
     if (!bots?.setMatch) return
-    const on = this.connected && this.isHost
+    // In Explore there is no game to tell them about: free play, as when off line.
+    const on = this.connected && this.isHost && this.mode !== MODE_EXPLORE
     const koth = this.mode === MODE_KOTH
     const zone = on && koth ? this.game.koth.zone : null
     const it = on && !koth && this.game.it ? (this.vehicleOf(this.game.it) ?? null) : null
@@ -1118,6 +1123,7 @@ export class NetClient implements System {
   }
 
   private touching(a: Vehicle, b: Vehicle): boolean {
+    if (materializing(a) || materializing(b)) return false
     const world = this.ctx.game.world
     let touching = false
     for (let i = 0; i < a.body.numColliders() && !touching; i++) {
@@ -1169,6 +1175,7 @@ export class NetClient implements System {
     const now = this.ctx.player.body.linvel()
     const due = this.shoves.take(this.ctx.game.time, (from) => this.remotes.get(from)?.lastContactAt ?? -Infinity, [now.x, now.y, now.z])
     for (const { from, push } of due) {
+      if (materializing(this.ctx.player) || materializing(this.vehicleOf(from))) continue
       const body = this.ctx.player.body
       // Believe it only from a vehicle that is beside us on our own screen as well.
       const remote = this.remotes.get(from)
@@ -1186,6 +1193,7 @@ export class NetClient implements System {
   }
 
   private onContact(id: number, other: Vehicle, remote?: RemotePlayer): void {
+    if (materializing(this.ctx.player) || materializing(other)) return
     this.stats.rams++
     const a = this.ctx.player.body.linvel()
     const b = other.body.linvel()
@@ -1406,6 +1414,7 @@ export class NetClient implements System {
         if (this.players.has(msg.from)) (this.botGear.get(msg.from)?.yoink ?? this.yoink).applyRemote(msg.from, msg.y)
         break
       case 'shove': {
+        if (materializing(this.ctx.player) || materializing(this.vehicleOf(msg.from))) break
         const push = cleanShove(msg.push)
         if (push) {
           const v = this.ctx.player.body.linvel()
@@ -1461,7 +1470,7 @@ export class NetClient implements System {
       case 'leave': if (msg.game.it && msg.game.it !== this.id) this.event(`${this.nameOf(msg.game.it)} is it`); break
       case 'lock': this.event(msg.game.locked ? 'Host locked shared sliders' : 'Host unlocked shared sliders'); break
       case 'host': this.event(msg.actor === this.id ? 'You are now host' : `${a} is now host`); break
-      case 'mode': this.event(msg.game.mode === MODE_KOTH ? 'King of the Hill: get to the rim and hold it' : 'Tag: ram or beam whoever is it'); break
+      case 'mode': this.event(msg.game.mode === MODE_KOTH ? 'King of the Hill: get to the rim and hold it' : msg.game.mode === MODE_TAG ? 'Tag game: ram or beam whoever is it' : 'Explore: no game running'); break
       case 'capture': this.event(`${a} ${msg.actor === this.id ? 'hold' : 'holds'} the hill`); break
       case 'contest': this.event('The hill is contested'); break
       case 'stuck': this.event(`${a} ${is(a)} stuck in the lava`); break
@@ -1532,7 +1541,8 @@ export class NetClient implements System {
   private pushMatch(): void {
     const set = this.ctx.setMatchState
     if (!set) return
-    const state = this.connected ? this.matchState() : null
+    // In Explore there is no match to show: the shell hides its match display on null.
+    const state = this.connected && this.game.mode !== MODE_EXPLORE ? this.matchState() : null
     const key = JSON.stringify(state)
     if (key === this.lastMatchKey) return
     this.lastMatchKey = key
@@ -1574,6 +1584,7 @@ export class NetClient implements System {
 
   private modeLines(): string[] {
     const g = this.game
+    if (g.mode === MODE_EXPLORE) return ['mode: Explore']
     if (g.mode !== MODE_KOTH) return ['mode: Tag   ram or beam whoever is it']
     const k = g.koth
     const target = kothTargetScore.value
@@ -1653,7 +1664,7 @@ function reloadForNewProtocol(): void {
 /** Fill fields an older room server does not send, so a mismatch degrades instead of throwing. */
 function normalizeGame(g: Partial<GameState>): GameState {
   return {
-    it: g.it ?? 0, scores: g.scores ?? {}, host: g.host ?? 0, locked: Boolean(g.locked), mode: g.mode ?? MODE_TAG,
+    it: g.it ?? 0, scores: g.scores ?? {}, host: g.host ?? 0, locked: Boolean(g.locked), mode: g.mode ?? MODE_EXPLORE,
     koth: { zone: null, holder: 0, contested: false, winner: 0, resetAt: 0, out: {}, ...g.koth },
   }
 }
@@ -1711,4 +1722,9 @@ export function startNetworking(ctx: NetContext): NetClient {
   const w = window as unknown as { syn3hNet?: NetClient }
   w.syn3hNet = net
   return net
+}
+
+/** Local-only hold signal. It is not on the wire, so the server cannot veto a remote ram. */
+function materializing(vehicle: Vehicle | undefined): boolean {
+  return vehicle?.object.userData.materializing === true
 }

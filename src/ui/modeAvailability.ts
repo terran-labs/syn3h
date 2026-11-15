@@ -1,5 +1,5 @@
-/** Enable only with the Multiplayer lane's tested Explore server handoff. */
-export const EXPLORE_AVAILABLE = false
+/** The compatible room server supports Explore alongside Tag and King of the Hill. */
+export const EXPLORE_AVAILABLE = true
 export const modeChoices = [
   { value: 0, label: 'Tag game' },
   { value: 1, label: 'King of the Hill' },

@@ -199,7 +199,8 @@ let report
 try {
   const a = await open('Alice')
   const b = await open('Bob')
-  await Promise.all([a, b].map((p) => p.waitForFunction(() => window.syn3hNet?.connected && window.syn3hNet.players.size === 2, null, { timeout: 60000 })))
+  await Promise.all([a, b].map((p) => p.waitForFunction(() => window.syn3hNet?.connected && [...window.syn3hNet.players.values()].filter(p => !p.bot).length === 2, null, { timeout: 60000 })))
+  await a.evaluate(() => window.syn3h.params.set('game.mode', 0))
   const [idA, idB] = await Promise.all([a, b].map((p) => p.evaluate(() => window.syn3hNet.id)))
   await Promise.all([a.waitForFunction((id) => window.syn3hNet.remotes.has(id), idB, { timeout: 20000 }), b.waitForFunction((id) => window.syn3hNet.remotes.has(id), idA, { timeout: 20000 })])
   for (const [id, value] of sets) await Promise.all([a, b].map((p) => p.evaluate(([id, value]) => window.syn3h.params.set(id, Number(value)), [id, value])))

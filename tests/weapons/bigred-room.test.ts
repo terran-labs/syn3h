@@ -16,7 +16,7 @@ let room: Room
 function join(name: string, params: Record<string, number | boolean> = {}) {
   const peer = new FakePeer()
   room.connect(peer)
-  room.receive(peer, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, name, params }))
+  room.receive(peer, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, modes: 2, name, params }))
   return { peer, id: peer.all('welcome')[0]!.id }
 }
 function state(p: [number, number, number]): Uint8Array {
@@ -39,7 +39,7 @@ describe('Big Red in the room', () => {
   })
 
   it('is relayed when on, on its own slower rate beside the tag beam, and tags like one', () => {
-    const a = join('A', { 'bigRed.allowed': true })
+    const a = join('A', { 'game.mode': 0,  'bigRed.allowed': true })
     const b = join('B')
     // Past the newcomer's grace, when a player cannot be tagged.
     clock += 10_000

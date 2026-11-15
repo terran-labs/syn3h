@@ -42,7 +42,7 @@ try {
       const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
       const errors = []; page.on('pageerror', e => errors.push(e.message))
       await page.goto(origin)
-      await page.waitForFunction(() => document.querySelector('[data-world="alpine"] .galaxy-population')?.textContent === '2 connected across 2 rooms', null, { timeout: 120000 })
+      await page.waitForFunction(() => document.querySelector('[data-world="alpine"] .galaxy-population')?.textContent === '2 online', null, { timeout: 120000 })
       await page.waitForFunction(() => window.syn3h?.shell?.galaxy?.live && document.documentElement.dataset.boot === 'done')
       await page.evaluate(() => { window.syn3h.shell.stopAttract(); window.syn3h.shell.galaxy.wake = 2 })
       await page.waitForTimeout(300)

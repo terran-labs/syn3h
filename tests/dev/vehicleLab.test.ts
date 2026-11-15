@@ -157,3 +157,16 @@ it('the floor is solid from a viewing height, fades near it and is gone at and b
   expect(floorOpacity(0)).toBe(0)
   expect(floorOpacity(-2)).toBe(0)
 })
+
+describe('motor sound', () => {
+  it('gives each exhibit the engine voice of its vehicle', async () => {
+    const { motorKind } = await import('../../src/dev/vehicleLab/logic')
+    expect(motorKind('buggy')).toBe('buggy')
+    expect(motorKind('game-buggy')).toBe('buggy')
+    expect(motorKind('game-buggy-classic')).toBe('buggy-classic')
+    expect(motorKind('jet')).toBe('jet'); expect(motorKind('game-jet')).toBe('jet')
+    expect(motorKind('hover')).toBe('hovercraft'); expect(motorKind('game-hovercraft')).toBe('hovercraft')
+    expect(motorKind('tank')).toBe('tank'); expect(motorKind('tank-archive')).toBe('tank')
+    expect(motorKind('')).toBe('buggy')
+  })
+})

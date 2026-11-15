@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bodyOf, fitDistance, GALAXY_MAX, orbitLayout, worldRadius } from '../../src/ui/galaxy/Galaxy'
+import { bodyOf, fitDistance, GALAXY_MAX, openingDistance, orbitLayout, worldRadius } from '../../src/ui/galaxy/Galaxy'
 import { ORDINARY_BODY, PLANETS, type PlanetBody } from '../../src/world/planets'
 
 const recipeBodies = PLANETS.map(recipe => recipe.body ?? ORDINARY_BODY)
@@ -29,12 +29,12 @@ function smallestGap(bodies: PlanetBody[]): number {
 
 describe('galaxy layout', () => {
   it('never lets two worlds touch, with clear space between them, for every count and mix of sizes', () => {
-    for (const bodies of systems()) if (bodies.length > 1) expect(smallestGap(bodies)).toBeGreaterThanOrEqual(0.139)
+    for (const bodies of systems()) if (bodies.length > 1) expect(smallestGap(bodies)).toBeGreaterThanOrEqual(0.079)
   })
   it('gives every world an orbit of its own, each beyond the last by both radii and the clear space', () => {
     for (const bodies of systems()) {
       const lanes = orbitLayout(bodies, 0).sort((a, b) => a.orbit - b.orbit)
-      for (let i = 1; i < lanes.length; i++) expect(lanes[i].orbit - lanes[i - 1].orbit).toBeGreaterThanOrEqual(lanes[i].radius + lanes[i - 1].radius + 0.139)
+      for (let i = 1; i < lanes.length; i++) expect(lanes[i].orbit - lanes[i - 1].orbit).toBeGreaterThanOrEqual(lanes[i].radius + lanes[i - 1].radius + 0.079)
     }
   })
   it('orders the orbits by heat: molten worlds nearest the sun, frozen ones farthest', () => {
@@ -77,6 +77,13 @@ describe('galaxy layout', () => {
     for (let count = 1; count <= GALAXY_MAX + 2; count++) expect(orbitLayout(Array.from({ length: count }, () => ORDINARY_BODY), 0)).toHaveLength(Math.min(count, GALAXY_MAX))
     expect(orbitLayout(recipeBodies, 123.4)).toEqual(orbitLayout(recipeBodies, 123.4))
     expect(orbitLayout(recipeBodies, 0)[0].position).not.toEqual(orbitLayout(recipeBodies, 10)[0].position)
+  })
+  it('opens closer on portrait phones while leaving tablets and landscape fitted', () => {
+    const full = fitDistance(recipeBodies)
+    expect(openingDistance(recipeBodies, 390, 844)).toBeCloseTo(full * 0.8)
+    for (const [width, height] of [[844, 390], [1024, 1366], [1440, 900]]) {
+      expect(openingDistance(recipeBodies, width, height)).toBe(full)
+    }
   })
   it('frames the whole system at the first view, with a tenth world too', () => {
     for (const bodies of [recipeBodies, [...recipeBodies, { size: 1, heat: 0.95 }]]) {

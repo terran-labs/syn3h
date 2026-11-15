@@ -78,7 +78,9 @@ try {
   const plain = { host: await hostKinds(a), guest: await guestKinds(b) }
   check('2. the same slots remade as buggies are buggies for the guest too', plain.host.length === 4 && new Set(plain.host).size === 1 && JSON.stringify(plain.host) === JSON.stringify(plain.guest), plain)
 
-  // 3. The match.
+  // 3. The match. Choose Tag explicitly; rooms start in Explore.
+  await a.evaluate(() => window.syn3h.params.set('game.mode', 0))
+  await a.waitForFunction(() => window.syn3hNet.game.mode === 0)
   const tag1 = { host: await matchOf(a), guest: await matchOf(b), it: await a.evaluate(() => window.syn3hNet.game.it) }
   check('3. tag: the host\'s bots are told which vehicle is "it"; the guest\'s are told nothing', tag1.host?.mode === 'tag' && tag1.host.it === (tag1.it === idA ? 'the host player' : tag1.host.it) && tag1.host.it !== null && tag1.guest === null, tag1)
   // Exercise a real contact, including fresh replicated positions and the room cooldown.

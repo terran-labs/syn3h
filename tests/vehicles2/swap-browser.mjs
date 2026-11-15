@@ -15,10 +15,12 @@ try{
  await page.goto(base+'/?autoplay=1&vehicle=buggy&room=swap-perf',{waitUntil:'load'})
  await page.waitForFunction(()=>window.syn3h?.game.tick>60,null,{timeout:180000})
  await page.evaluate(()=>{const s=window.syn3h;s.params.set('gfx.auto',false);s.params.set('bots.count',0);window.__gaps=[];window.__pipes=0;let last=performance.now();function frame(){const now=performance.now();window.__gaps.push(now-last);last=now;requestAnimationFrame(frame)}requestAnimationFrame(frame);const d=s.game.renderer.backend.device;if(d)for(const name of ['createRenderPipeline','createRenderPipelineAsync']){const real=d[name].bind(d);d[name]=x=>{window.__pipes++;return real(x)}}})
+ await page.waitForFunction(()=>!window.syn3h.game.scene.userData.playerVehicleCache?.pending,null,{timeout:120000})
  await page.waitForTimeout(4000)
+ report.warmWorstFrameMs=await page.evaluate(()=>Math.round(Math.max(...window.__gaps)))
  const initialLoads=loads
  report.backend=await page.evaluate(()=>window.syn3h.game.backend)
- for(let i=0;i<20;i++){
+ for(let i=0;i<Number(process.env.SWAP_STEPS??20);i++){
   const kind=['jet','hovercraft','tank','buggy'][i%4]
   const before=await page.evaluate(()=>{window.__gaps=[];return window.__pipes})
   const start=Date.now()
@@ -31,5 +33,6 @@ try{
  await page.keyboard.down('KeyW');await page.waitForTimeout(3000);await page.keyboard.up('KeyW')
  report.finalSpeed=await page.evaluate(()=>{const v=window.syn3h.player.body.linvel();return Math.hypot(v.x,v.y,v.z)})
  assert.equal(report.loads,0);assert.equal(report.errors.length,0)
+ if(process.env.SWAP_MAX_GAP)for(const row of report.steps)assert.ok(row.worstFrameMs<=Number(process.env.SWAP_MAX_GAP),JSON.stringify(row))
  for(const row of report.steps.slice(4)){assert.equal(row.bodies,report.steps[3].bodies);assert.equal(row.lights,2)}
 }catch(e){report.failure=String(e);process.exitCode=1}finally{await browser?.close();server.kill('SIGTERM');await writeFile(process.env.SWAP_REPORT??'/tmp/swap-reuse-browser.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report))}

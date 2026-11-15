@@ -5,6 +5,10 @@ import type { Game } from '../../core/Game'
 import type { Terrain } from '../Terrain'
 import { underwaterLook, underwaterRamp } from './waterEffectsMath'
 export const waterUnderwater=defineParam<boolean>({id:'water.underwater',label:'Underwater camera',group:'Water',scope:'client',default:true})
+// Post effects run after scene fog. Share its eased amount by camera so they can fade
+// atmospheric overlays without changing their graph or affecting reflection captures.
+const cameraAmounts=new WeakMap<T.Camera,number>()
+export function underwaterAmountForCamera(camera:T.Camera):number{return cameraAmounts.get(camera)??0}
 /** Narrow seam on AlienSkyMesh: see src/world/sky/AlienSkyMesh.ts. */
 interface SkySeam {underwaterCamera:T.Camera|null;underwaterAmount:number;underwaterTint:{value:T.Vector3}}
 interface LightState {light:T.Light;before:number;applied:number}
@@ -66,6 +70,7 @@ export class Underwater {
     const target=Math.max(wet?underwaterRamp(depth):0,Number.isFinite(depth)?wash*.6:0)
     const step=Math.max(0,Math.min(.25,dt))/.25
     this.blend.value+=Math.max(-step,Math.min(step,target-this.blend.value))
+    cameraAmounts.set(this.game.camera,this.blend.value)
     const look=underwaterLook(Math.max(0,Number.isFinite(depth)?depth:0))
     if(wet||wash>0){
       this.tint.value.setRGB(look.red,look.green,look.blue);this.extinction.value=look.extinction+wash*.5
@@ -84,5 +89,5 @@ export class Underwater {
     }
     this.active=true
   }
-  dispose(){this.restore();if(this.sky){this.sky.underwaterAmount=0;this.sky.underwaterCamera=null}if(this.game.scene.fogNode===this.fogNode)this.game.scene.fogNode=this.savedFog}
+  dispose(){this.restore();cameraAmounts.delete(this.game.camera);if(this.sky){this.sky.underwaterAmount=0;this.sky.underwaterCamera=null}if(this.game.scene.fogNode===this.fogNode)this.game.scene.fogNode=this.savedFog}
 }

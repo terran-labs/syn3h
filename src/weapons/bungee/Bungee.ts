@@ -23,14 +23,14 @@ import type { CordWire } from '../../../shared/protocol'
 import { nearestImage, wrapDelta } from '../../../shared/wrap'
 import type { Game, System } from '../../core/Game'
 import { GROUP_ALL, GROUP_LIQUID, GROUP_PROJECTILE, RAPIER, groups } from '../../core/physics'
-import { hotExposureDim } from '../../vehicles/skins/hotExposure'
 import { aimFrom, castAim, type GearControl } from '../aim'
-import { sharedLook, warmGear } from '../warm'
+import { sharedLook } from '../warm'
 import {
   bungeeAllowed, bungeeCooldown, bungeeDamping, bungeeHookSpeed, bungeeLength, bungeeMaxPull, bungeeMinLength,
   bungeeReelSpeed, bungeeSnap, bungeeStiffness, bungeeTimeout, bungeeVehicles,
 } from './params'
 import { cordGlow, cordPull, cordSag, predict, reducedMass, type CordTuning } from './rope'
+import { BEAD_SPACING, SLACK_RGB, TAUT_RGB, TETHER_SEGMENTS, TetherLook, tetherColor } from './tether'
 
 type Vec3 = [number, number, number]
 
@@ -87,7 +87,12 @@ interface Cord {
   pull: number
   mass: number
   twang: number
-  view: CordView
+  /** For drawing: +1 when the pull carries the owner toward the far end, -1 the far end toward the owner. */
+  flow: number
+  /** For drawing: how far the beads have run, metres, kept within one bead spacing. */
+  phase: number
+  /** Place in the shared tether buffers (tether.ts), or -1 when every place is taken. */
+  slot: number
 }
 
 export const SEGMENTS = 24
@@ -102,18 +107,17 @@ export const BUNGEE_MUZZLE_UP = 1.1
 export const BUNGEE_MUZZLE_AHEAD = 1.2
 /** Straight ahead aim tilts up this much (radians) so a free cursor still reaches ledges. */
 const LIFT = 0.12
+const UP = new THREE.Vector3(0, 1, 0)
 const DOUBLE_TAP = 0.35
 /** Wheel notch in metres of cord. */
 const WHEEL_STEP = 3
 const RESEND = 2
 const SEND_GAP = 0.1
 
-/** Linear RGB at daytime exposure: slack is cool plasma blue, taut runs hot gold. */
-const SLACK_RGB = [0.25, 1.4, 2.2] as const
-const TAUT_RGB = [3.2, 2.2, 0.6] as const
-const TINT_RGB = [0.05, 0.35, 0.5] as const
-
-/** A camera facing ribbon along the cord, drawn three times: tint, halo and core. */
+/**
+ * A camera facing ribbon along a cord, drawn once per material. The Yoink's beam draws with
+ * it; the Grapple's own cords are drawn by tether.ts.
+ */
 export class CordView {
   readonly group = new THREE.Group()
   readonly points = Array.from({ length: SEGMENTS + 1 }, () => new THREE.Vector3())
@@ -162,77 +166,19 @@ export class CordView {
   }
 }
 
-const CORD_WIDTHS = [0.28, 0.5, 0.11]
-
-/**
- * Everything a Bungee draws with. One per game, shared by the player's Bungee and every
- * bot's, and compiled before anyone fires (see warm.ts).
- */
-class BungeeLook {
-  readonly coreMat = new THREE.MeshBasicMaterial({ name: 'gear bungee core', color: new THREE.Color(...SLACK_RGB), side: THREE.DoubleSide })
-  readonly haloMat = new THREE.MeshBasicMaterial({
-    name: 'gear bungee halo', color: new THREE.Color(...SLACK_RGB), transparent: true, opacity: 0.35, side: THREE.DoubleSide,
-    blending: THREE.AdditiveBlending, depthWrite: false,
-  })
-  // As the tag beam does: a normally blended tint under the additive light keeps the cord
-  // readable over a sunlit desert, where additive colour alone washes out to white.
-  readonly tintMat = new THREE.MeshBasicMaterial({
-    name: 'gear bungee tint', color: new THREE.Color(...TINT_RGB), transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false,
-  })
-  readonly hookGeo = new THREE.OctahedronGeometry(0.35, 0)
-  readonly ringGeo = new THREE.RingGeometry(0.7, 1, 32)
-  readonly ringMat = new THREE.MeshBasicMaterial({
-    name: 'gear bungee ring', color: new THREE.Color(...SLACK_RGB), transparent: true, opacity: 0.8, side: THREE.DoubleSide,
-    blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
-  })
-  /** The game time at which the player's own cord last set the colours; it outranks bots. */
-  private ledAt = -1
-  private readonly proxy: CordView
-  private readonly unwarm: () => void
-
-  constructor(private readonly game: Game) {
-    this.proxy = new CordView(this.cordMats(), CORD_WIDTHS)
-    this.unwarm = warmGear(game, [
-      ...this.proxy.group.children.map((m) => [(m as THREE.Mesh).geometry, (m as THREE.Mesh).material as THREE.Material] as const),
-      [this.hookGeo, this.coreMat], [this.ringGeo, this.haloMat], [this.ringGeo, this.ringMat],
-    ])
-  }
-
-  cordMats(): THREE.Material[] {
-    return [this.tintMat, this.haloMat, this.coreMat]
-  }
-
-  /**
-   * Colour every cord from one cord's glow. All cords share the materials, so one cord
-   * leads: the player's own when it has one, otherwise whichever asked last.
-   */
-  setGlow(glow: number, dim: number, lead: boolean): void {
-    if (!lead && this.ledAt === this.game.time) return
-    if (lead) this.ledAt = this.game.time
-    const r = SLACK_RGB[0] + (TAUT_RGB[0] - SLACK_RGB[0]) * glow
-    const g = SLACK_RGB[1] + (TAUT_RGB[1] - SLACK_RGB[1]) * glow
-    const b = SLACK_RGB[2] + (TAUT_RGB[2] - SLACK_RGB[2]) * glow
-    this.coreMat.color.setRGB(r * dim, g * dim, b * dim)
-    this.haloMat.color.setRGB(r * dim * 0.6, g * dim * 0.6, b * dim * 0.6)
-    this.tintMat.color.setRGB(TINT_RGB[0] * dim, TINT_RGB[1] * dim, TINT_RGB[2] * dim)
-  }
-
-  dispose(): void {
-    this.unwarm()
-    this.proxy.dispose()
-    this.coreMat.dispose(); this.haloMat.dispose(); this.tintMat.dispose(); this.ringMat.dispose()
-    this.hookGeo.dispose(); this.ringGeo.dispose()
-  }
-}
-
 export class Bungee implements System {
   private readonly cords = new Map<number, Cord>()
-  private readonly shared: { look: BungeeLook; release(): void }
-  private readonly look: BungeeLook
-  private readonly hookMeshes = new Map<number, THREE.Mesh>()
-  private readonly anchorMeshes = new Map<number, THREE.Mesh>()
-  private readonly reticle: THREE.Mesh
+  private readonly shared: { look: TetherLook; release(): void }
+  private readonly look: TetherLook
+  /** This Bungee's landing marker in the shared look, or -1 (bots aim without one). */
+  private readonly marker: number
   private readonly ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })
+  /** Scratch for drawing, so a frame allocates nothing per cord. */
+  private readonly points = Array.from({ length: TETHER_SEGMENTS + 1 }, () => new THREE.Vector3())
+  private readonly drawA = new THREE.Vector3()
+  private readonly drawB = new THREE.Vector3()
+  private readonly drawSide = new THREE.Vector3()
+  private readonly rgb = [0, 0, 0]
 
   private fireWas = false
   private lastPress = -Infinity
@@ -248,12 +194,9 @@ export class Bungee implements System {
   stats = { launched: 0, attachedGround: 0, attachedVehicle: 0, released: 0, snapped: 0, timedOut: 0 }
 
   constructor(private readonly game: Game, private readonly hooks: BungeeHooks, target: Window = window) {
-    this.shared = sharedLook(game, 'bungee', () => new BungeeLook(game))
+    this.shared = sharedLook(game, 'bungee', () => new TetherLook(game))
     this.look = this.shared.look
-    this.reticle = new THREE.Mesh(this.look.ringGeo, this.look.ringMat)
-    this.reticle.visible = false
-    this.reticle.renderOrder = 10
-    game.scene.add(this.reticle)
+    this.marker = hooks.control ? -1 : this.look.takeMarker()
     if (hooks.control) return
     target.addEventListener('keydown', (e) => {
       if (e.repeat || game.input.suspended) return
@@ -366,12 +309,16 @@ export class Bungee implements System {
     this.padWas.release = false
     this.sentAt = -Infinity
     this.sentRest = 0
-    this.reticle.visible = false
+    this.look.showMarker(this.marker, false)
+    this.look.flush()
   }
 
   /** Live cords and hooks, by owner, for automated checks. */
   get count(): number {
-    return this.cords.size + this.hookMeshes.size + this.anchorMeshes.size
+    let parts = this.cords.size
+    // A hook in flight, and a ground anchor, each count once more, as their meshes used to.
+    for (const c of this.cords.values()) if (c.hook || c.at) parts++
+    return parts
   }
 
   /** Another player's cord, as relayed. `age` is seconds since it was sent. */
@@ -450,16 +397,17 @@ export class Bungee implements System {
   }
 
   update(dt: number): void {
-    const dim = hotExposureDim(this.game.renderer.toneMappingExposure)
-    const camPos = this.game.camera.getWorldPosition(new THREE.Vector3())
+    const camPos = this.look.begin(this.game.camera, this.game.time)
     const t = this.tuning()
-    for (const c of this.cords.values()) this.drawCord(c, dt, dim, camPos, t)
-    this.drawReticle(dim, camPos)
+    for (const c of this.cords.values()) this.drawCord(c, dt, camPos, t)
+    this.drawReticle(camPos)
+    this.look.flush()
   }
 
   dispose(): void {
     for (const id of [...this.cords.keys()]) this.remove(id)
-    this.game.scene.remove(this.reticle)
+    this.look.freeMarker(this.marker)
+    this.look.flush()
     this.shared.release()
   }
 
@@ -513,21 +461,14 @@ export class Bungee implements System {
   private startHook(owner: number, o: THREE.Vector3, vel: THREE.Vector3): Cord {
     const c = this.makeCord(owner)
     c.hook = { pos: o.clone(), prev: o.clone(), vel: vel.clone(), travelled: 0 }
-    const mesh = new THREE.Mesh(this.look.hookGeo, this.look.coreMat)
-    mesh.position.copy(o)
-    this.game.scene.add(mesh)
-    this.hookMeshes.set(owner, mesh)
     return c
   }
 
   private makeCord(owner: number): Cord {
     this.remove(owner)
-    const view = new CordView(this.look.cordMats(), CORD_WIDTHS)
-    view.group.visible = false
-    this.game.scene.add(view.group)
     const c: Cord = {
       owner, hook: null, to: null, at: null, normal: new THREE.Vector3(0, 1, 0), rest: 0, since: this.game.time,
-      pull: 0, mass: 1, twang: 0, view,
+      pull: 0, mass: 1, twang: 0, flow: 1, phase: 0, slot: this.look.takeCord(),
     }
     this.cords.set(owner, c)
     return c
@@ -536,12 +477,7 @@ export class Bungee implements System {
   private remove(owner: number): void {
     const c = this.cords.get(owner)
     if (!c) return
-    this.game.scene.remove(c.view.group)
-    c.view.dispose()
-    const hook = this.hookMeshes.get(owner)
-    if (hook) { this.game.scene.remove(hook); this.hookMeshes.delete(owner) }
-    const anchor = this.anchorMeshes.get(owner)
-    if (anchor) { this.game.scene.remove(anchor); this.anchorMeshes.delete(owner) }
+    this.look.freeCord(c.slot)
     this.cords.delete(owner)
   }
 
@@ -653,6 +589,9 @@ export class Bungee implements System {
     const f = cordPull(length, c.rest, rate, mu, this.tuning())
     c.pull = f
     c.mass = mu
+    // Drawing only: the beads run the way the lighter end is dragged, toward the heavier
+    // end. A ground anchor is the heaviest of all, so they run to it.
+    c.flow = e.ma <= e.mb ? 1 : -1
     if (f <= 0) return
     const j = f * dt
     const owner = this.hooks.vehicleOf(c.owner)!
@@ -697,87 +636,96 @@ export class Bungee implements System {
 
   // ---------------------------------------------------------------------------------------
 
-  private drawCord(c: Cord, dt: number, dim: number, camPos: THREE.Vector3, t: CordTuning): void {
+  /** Where a cord meets a vehicle: its roof hitch, as rendered, into `out`. */
+  private hitch(object: THREE.Object3D, out: THREE.Vector3): THREE.Vector3 {
+    return out.set(0, HITCH, 0).applyQuaternion(object.quaternion).add(object.position)
+  }
+
+  private drawCord(c: Cord, dt: number, camPos: THREE.Vector3, t: CordTuning): void {
+    const look = this.look
     const owner = this.hooks.vehicleOf(c.owner)
-    if (!owner) { c.view.group.visible = false; return }
+    if (!owner || c.slot < 0) { look.hideCord(c.slot); return }
     // Drawn between the rendered (interpolated) vehicles, not the physics bodies, so the cord
     // stays on the roof at any frame rate.
-    const a = owner.object.position.clone().add(new THREE.Vector3(0, HITCH, 0).applyQuaternion(owner.object.quaternion))
-    const hookMesh = this.hookMeshes.get(c.owner)
-    let b: THREE.Vector3
-    if (c.hook) {
-      b = c.hook.pos.clone()
-      if (hookMesh) {
-        hookMesh.position.copy(b)
-        hookMesh.rotation.y += dt * 12
-      }
-    } else if (c.to !== null) {
+    const a = this.hitch(owner.object, this.drawA)
+    const b = this.drawB
+    const size = this.hooks.wrapSize()
+    if (c.hook) b.copy(c.hook.pos)
+    else if (c.to !== null) {
       const other = this.hooks.vehicleOf(c.to)
-      if (!other) { c.view.group.visible = false; return }
-      b = other.object.position.clone().add(new THREE.Vector3(0, HITCH, 0).applyQuaternion(other.object.quaternion))
-      const size = this.hooks.wrapSize()
+      if (!other) { look.hideCord(c.slot); return }
+      this.hitch(other.object, b)
       if (size > 0) { b.x = a.x + wrapDelta(a.x, b.x, size); b.z = a.z + wrapDelta(a.z, b.z, size) }
     } else if (c.at) {
-      b = this.nearestTo(c.at, a)
-      this.drawAnchor(c, b)
-    } else return
-    if (!c.hook && hookMesh) { this.game.scene.remove(hookMesh); this.hookMeshes.delete(c.owner) }
+      b.copy(c.at)
+      if (size > 0) { b.x = nearestImage(b.x, a.x, size); b.z = nearestImage(b.z, a.z, size) }
+    } else { look.hideCord(c.slot); return }
 
     const span = a.distanceTo(b)
     const sag = c.hook ? 0 : cordSag(span, c.rest)
     c.twang = Math.max(0, c.twang - dt * 2.5)
     const glow = c.hook ? 0.2 : cordGlow(c.pull, c.mass, t)
     const time = this.game.time
-    const side = new THREE.Vector3().subVectors(b, a).cross(new THREE.Vector3(0, 1, 0))
+    // Beads run the way the pull goes, a stroll when slack and a rush when taut.
+    const flow = c.hook ? 1 : c.flow
+    const phase = c.phase - flow * (1.2 + 15 * glow) * dt
+    c.phase = ((phase % BEAD_SPACING) + BEAD_SPACING) % BEAD_SPACING
+    const side = this.drawSide.subVectors(b, a).cross(UP)
     if (side.lengthSq() < 1e-6) side.set(1, 0, 0)
     side.normalize()
-    for (let i = 0; i <= SEGMENTS; i++) {
-      const u = i / SEGMENTS
-      const p = c.view.points[i].lerpVectors(a, b, u)
-      const bell = 4 * u * (1 - u)
-      p.y -= sag * bell
+    const n = look.segments
+    for (let i = 0; i <= n; i++) {
+      const u = i / n
+      const p = this.points[i].lerpVectors(a, b, u)
+      p.y -= sag * 4 * u * (1 - u)
       // A plucked string: a twang on attach, and a hum that rises with tension.
       const wobble = (c.twang * 0.7 + glow * 0.05) * Math.sin(Math.PI * u) * Math.sin(time * (18 + glow * 30))
       p.addScaledVector(side, wobble)
     }
-    c.view.draw(camPos)
-    c.view.group.visible = true
+    const rgb = tetherColor(glow, this.rgb)
+    look.writeCord(c.slot, this.points, glow, c.phase, rgb)
 
-    // One material set for every cord: the player's own cord drives the colour, others share it.
-    if (c.owner === this.hooks.self() || this.cords.size === 1) {
-      this.look.setGlow(glow, dim, !this.hooks.control && c.owner === this.hooks.self())
+    const star = look.cordSpark(c.slot, 0), tail = look.cordSpark(c.slot, 1), anchor = look.cordSpark(c.slot, 2)
+    if (c.hook) {
+      // In flight: a small bright star with a short comet tail behind it.
+      look.star(star, b, 0.45, rgb, 1.7, 0.6)
+      const dir = this.drawSide.copy(c.hook.vel)
+      const speed = dir.length()
+      if (speed > 1e-3) look.tail(tail, b, dir.divideScalar(speed), Math.min(2.8, c.hook.travelled), 0.34, rgb, 1.1)
+      else look.hideSpark(tail)
+      look.hideSpark(anchor)
+      return
+    }
+    look.hideSpark(star)
+    look.hideSpark(tail)
+    // Attached: one bright pulse and an outward wave, then a slow soft breath.
+    const age = time - c.since
+    const flash = Math.max(0, 1 - age / 0.45) * 1.6
+    const breath = 0.55 + 0.18 * Math.sin(time * 1.7 + c.owner)
+    if (c.to === null) {
+      const wave = age < 0.8 ? Math.max(0.002, age / 0.8) : 0
+      look.ring(anchor, this.drawSide.copy(b).addScaledVector(c.normal, 0.06), c.normal, 0.7, rgb, breath + flash, wave)
+    } else {
+      look.star(anchor, b, 0.32 + flash * 0.15, rgb, breath + 0.3 + flash, 0.5)
     }
   }
 
-  private drawAnchor(c: Cord, at: THREE.Vector3): void {
-    let mesh = this.anchorMeshes.get(c.owner)
-    if (!mesh) {
-      mesh = new THREE.Mesh(this.look.ringGeo, this.look.haloMat)
-      mesh.scale.setScalar(0.6)
-      this.game.scene.add(mesh)
-      this.anchorMeshes.set(c.owner, mesh)
-    }
-    mesh.position.copy(at).addScaledVector(c.normal, 0.05)
-    mesh.lookAt(at.clone().add(c.normal))
-  }
-
-  /** The landing ring: where the hook would catch, shown while the Bungee is in hand. */
-  private drawReticle(dim: number, camPos: THREE.Vector3): void {
+  /** The landing marker: where the hook would catch, shown while the Bungee is in hand. */
+  private drawReticle(camPos: THREE.Vector3): void {
+    if (this.marker < 0) return
     const me = this.hooks.vehicleOf(this.hooks.self())
     const show = !this.hooks.control && bungeeAllowed.value && this.hooks.inHand() && !this.mine && me
-    if (!show) { this.reticle.visible = false; return }
+    if (!show) { this.look.showMarker(this.marker, false); return }
     const aim = aimFrom(this.game, me.body, bungeeLength.value, BUNGEE_MUZZLE_UP, BUNGEE_MUZZLE_AHEAD, LIFT, !this.hooks.control)
     // The aim may pass the camera's target; check what the hook itself would meet first.
     const path = castAim(this.game, aim.o, aim.d, bungeeLength.value, me.body)
-    if (!path) { this.reticle.visible = false; return }
+    if (!path) { this.look.showMarker(this.marker, false); return }
     const vehicle = path.handle !== null && this.hooks.idOfBody(path.handle) !== null
     const ok = !vehicle || bungeeVehicles.value
-    const k = ok ? dim : dim * 0.25
-    this.look.ringMat.color.setRGB((vehicle ? TAUT_RGB[0] : SLACK_RGB[0]) * k, (vehicle ? TAUT_RGB[1] : SLACK_RGB[1]) * k, (vehicle ? TAUT_RGB[2] : SLACK_RGB[2]) * k)
-    this.reticle.position.copy(path.point).addScaledVector(path.normal, 0.08)
-    this.reticle.lookAt(path.point.clone().add(path.normal))
-    this.reticle.scale.setScalar(Math.max(0.6, camPos.distanceTo(path.point) * 0.018))
-    this.reticle.visible = true
+    this.look.showMarker(this.marker, true)
+    const at = this.drawA.copy(path.point).addScaledVector(path.normal, 0.1)
+    const radius = Math.max(0.6, camPos.distanceTo(path.point) * 0.018)
+    this.look.ring(this.marker, at, path.normal, radius, vehicle ? TAUT_RGB : SLACK_RGB, ok ? 1 : 0.25, 0, true)
   }
 
   // ---------------------------------------------------------------------------------------

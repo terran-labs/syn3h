@@ -14,9 +14,8 @@
  * picks one by position, so append new designs rather than reordering.
  */
 import { sleekHull, type SleekSpec } from './sleekKit'
-import type { TankHull } from './expeditionKit'
-
-export interface TankBody { id: string; name: string; tagline: string; color: number; accent: number; hull(): TankHull }
+import type { TankBody } from '../tank/shipped'
+export type { TankBody } from '../tank/shipped'
 
 const body = (id: string, name: string, tagline: string, color: number, accent: number, spec: SleekSpec): TankBody =>
   ({ id, name, tagline, color, accent, hull: () => sleekHull(spec) })

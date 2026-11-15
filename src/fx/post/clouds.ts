@@ -18,7 +18,7 @@ type N = any
 export const CLOUD_STEPS = 24
 
 /** Reconstruct the half-resolution layer without spreading sky clouds onto foregrounds. */
-export function compositeClouds(surface: N, volume: N, depth: N, projInv: N): N {
+export function compositeClouds(surface: N, volume: N, depth: N, projInv: N, visibility: N = float(1)): N {
   return rtt(Fn(() => {
     const p = uv(), size = vec2(volume.size())
     const pixel = p.mul(size).sub(0.5), cell = floor(pixel), fraction = fract(pixel)
@@ -32,7 +32,9 @@ export function compositeClouds(surface: N, volume: N, depth: N, projInv: N): N 
         .mul(y ? fraction.y : float(1).sub(fraction.y)).mul(compatible)
       sum.addAssign(volume.sample(tap).mul(weight)); weights.addAssign(weight)
     }
-    const cloud = sum.div(weights.max(1e-5))
+    // The volume is premultiplied: fade its colour and opacity together so submersion
+    // cannot leave a bright cloud painted over the water fog.
+    const cloud = sum.div(weights.max(1e-5)).mul(visibility)
     return vec4(surface.sample(p).rgb.mul(float(1).sub(cloud.a)).add(cloud.rgb), 1)
   })())
 }

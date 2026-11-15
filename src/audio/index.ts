@@ -3,6 +3,8 @@ import type { System } from '../core/Game'
 import { params, worldSeed } from '../../shared/params'
 import { Engine, unit, type MotionAudio } from './Engine'
 import { synthCue, type Cue, type CueOptions } from './Cues'
+import { CrashWatcher, impactStrength, synthImpact, type ImpactKind } from './Impacts'
+import type { SurfaceKind } from '../world/terrain/surface'
 import { WorldAudio, lavaProximity, type AudioTerrain } from './WorldAudio'
 import type { Vehicle } from '../vehicles/Vehicle'
 import { Score, scoreSeed, type MatchMood } from './score/Score'
@@ -23,6 +25,11 @@ const cueFor: Record<Sound, Cue> = { laserShot: 'beam', laserHit: 'tagged', mate
  * eases back over a couple of seconds when play begins and engines, wind and drums join.
  */
 const LOBBY_LIFT = 2
+/** Match the terrain classifier, including snow and roads within a world. */
+const IMPACT_SURFACE: Record<SurfaceKind, ImpactKind> = {
+  dust: 'dust', sand: 'sand', grass: 'soil', mud: 'mud', snow: 'snow', ice: 'ice',
+  glass: 'glass', regolith: 'dust', rock: 'rock', road: 'rock', track: 'soil',
+}
 /** Storage key of the retired track selector. Removed on start so old choices cannot linger. */
 const RETIRED_TRACK_KEY = 'syn3h.musicTrack'
 
@@ -55,6 +62,8 @@ export class GameAudio implements System {
   private readonly remote = new Map<Vehicle, {engine:Engine;panner:PannerNode}>()
   private readonly cueStops = new Set<() => void>()
   private readonly events = new Map<Vehicle,{wings:boolean;landed:boolean;liquid:'lava'|'water'|null}>()
+  private readonly crashes = new CrashWatcher()
+  private impactSeed = 0
   private nextSpatial = 0
   private lavaNear = 0
   private match: MatchMood | null = null
@@ -214,6 +223,7 @@ export class GameAudio implements System {
   pause(seconds = 0.5): void {
     if (this.paused || this.disposed) return
     this.paused = true
+    this.crashes.reset()
     const context = this.context
     if (!context || !this.master) return
     const now = context.currentTime
@@ -279,17 +289,22 @@ export class GameAudio implements System {
     stop = synthCue(this.context, duck ?? output.node, cueFor[sound], this.engine!.noise, () => { this.cueStops.delete(stop); duck?.disconnect(); output.dispose() }, options)
     this.cueStops.add(stop)
   }
-  impact(strength: number, position?: Position): void {
-    if (!this.context || this.context.state !== 'running' || !Number.isFinite(strength) || strength <= 0 || this.voices.size >= 32) return
-    const now = this.context.currentTime, output = this.output(position)
-    const source = this.context.createBufferSource(), filter = this.context.createBiquadFilter(), gain = this.context.createGain()
-    source.buffer = this.engine!.noise; filter.type = 'lowpass'; filter.frequency.value = 180
-    gain.gain.setValueAtTime(0, now); gain.gain.linearRampToValueAtTime(Math.min(.7, strength / 25), now + .005); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3)
-    source.connect(filter).connect(gain).connect(output.node); this.voices.add(source)
-    source.onended = () => { source.disconnect(); filter.disconnect(); gain.disconnect(); output.dispose(); this.voices.delete(source) }
-    source.start(); source.stop(now + 0.32)
+  /** Network contacts use the hull clang; landings pass the surface beneath them. */
+  impact(strength: number, position?: Position, kind: ImpactKind = 'vehicle', hull = this.local?.kind): void {
+    if (!this.enabled || this.paused || this.local?.zorbed || this.context?.state !== 'running' || !Number.isFinite(strength) || strength <= 2 || this.cueStops.size >= 32) return
+    if (kind === 'vehicle') this.crashes.suppress(this.context.currentTime)
+    const output = this.output(position)
+    let stop: () => void
+    stop = synthImpact(this.context, output.node, { kind, hull, strength: impactStrength(strength), seed: ++this.impactSeed }, () => {
+      this.cueStops.delete(stop); output.dispose()
+    })
+    this.cueStops.add(stop)
   }
-  setPlayer(vehicle:Vehicle,terrain:AudioTerrain):void {this.local=vehicle;this.terrain=terrain;this.events.clear()}
+  private groundImpact(position: Position): ImpactKind {
+    const surface = this.terrain?.surfaceAt?.(position.x, position.z) ?? 'rock'
+    return IMPACT_SURFACE[surface]
+  }
+  setPlayer(vehicle:Vehicle,terrain:AudioTerrain):void {this.local=vehicle;this.terrain=terrain;this.events.clear();this.crashes.reset()}
   setVehicles(source:()=>readonly Vehicle[]):void {this.vehicleSource=source}
   /** The match as the score hears it: holding the hill is triumph, a contested hill is tension. */
   setMatch(match:MatchMood|null):void {this.match=match;this.score?.setMatch(match)}
@@ -330,7 +345,7 @@ export class GameAudio implements System {
     const previous=this.events.get(v)
     if(this.enabled&&!v.zorbed&&previous){
       if(previous.wings!==v.wingsOpen)this.cue(v.wingsOpen?'deploy':'retract',p)
-      if(v.landedThisStep&&!previous.landed)this.impact(v.landingImpact,p)
+      if(v.landedThisStep&&!previous.landed)this.impact(v.landingImpact,p,this.groundImpact(p),v.kind)
       if(liquidKind&&!previous.liquid)this.cue(liquidKind==='lava'?'lava':'splash',p)
     }
     this.events.set(v,{wings:v.wingsOpen,landed:v.landedThisStep,liquid:liquidKind})
@@ -338,7 +353,16 @@ export class GameAudio implements System {
   fixedUpdate(): void {
     // A landing flag may clear before the next rendered frame on a slow device.
     if(!this.context || this.disposed || this.paused)return
-    if(this.local)this.vehicleEvents(this.local)
+    if(this.local){
+      const v = this.local
+      // Only local physics is authoritative. Remote interpolation can jump in velocity.
+      if (this.enabled && !v.zorbed && alive(v)) {
+        if (v.landedThisStep) this.crashes.suppress(this.context.currentTime)
+        const lost = this.crashes.step(v.body.translation(), v.body.linvel(), this.context.currentTime)
+        if (lost && v.wheelsGrounded > 0) this.impact(lost, v.object.position, this.groundImpact(v.object.position), v.kind)
+      } else this.crashes.reset()
+      this.vehicleEvents(v)
+    }
     for(const vehicle of this.remote.keys())this.vehicleEvents(vehicle)
   }
   update(): void {

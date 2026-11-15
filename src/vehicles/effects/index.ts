@@ -185,6 +185,9 @@ class VehicleEffects {
       const intensity=clamp((.08-sunY)/.18,0,1)*(v.kind==='jet'?1800:1600)/this.spots.length
       for(const spot of this.spots)spot.intensity=intensity
     }
+    // A sealed zorb has no running engine plume or tyre contact. Keep lamps current above;
+    // particles already in flight finish their bounded lifetime.
+    if(v.zorbed){this.reset();return}
     // Suppress distant emissions. Existing particles continue their bounded shader lifetime.
     if(p.distanceToSquared(w.game.camera.position)>qualityBudget().drawDistance**2)return
     this.dustTimer+=dt;this.exhaustTimer+=dt;this.trailTimer+=dt

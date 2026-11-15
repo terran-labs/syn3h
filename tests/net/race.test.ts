@@ -16,7 +16,7 @@ const bot = BOT_ID_BASE
 function send(peer: Peer, msg: object) { room.receive(peer, JSON.stringify(msg)) }
 function join(name: string) {
   const peer = new FakePeer(); room.connect(peer)
-  send(peer, { type: 'hello', v: PROTOCOL_VERSION, name, params: {} })
+  send(peer, { type: 'hello', v: PROTOCOL_VERSION, name, params: { 'race.auto': true } })
   return peer
 }
 function place(peer: Peer, id = 0, x = 0, paused = false) {
@@ -43,6 +43,17 @@ beforeEach(() => {
 })
 
 describe('Automatic race relay', () => {
+  it('refuses automatic races when disabled and cancels an active race on opt-out', () => {
+    send(host, { type: 'param', id: 'race.auto', value: false })
+    publish(proposal())
+    expect(host.race()).toBeNull()
+    send(host, { type: 'param', id: 'race.auto', value: true })
+    publish(proposal())
+    expect(host.race()?.phase).toBe('countdown')
+    send(host, { type: 'param', id: 'race.auto', value: false })
+    expect(host.race()?.phase).toBe('cancelled')
+  })
+
   it('requires host authority and explicit driving, excludes spectators, and replies on rejection', () => {
     send(guest, { type: 'race', race: proposal() })
     expect(guest.all('race').at(-1)).toEqual({ type: 'race', race: null })

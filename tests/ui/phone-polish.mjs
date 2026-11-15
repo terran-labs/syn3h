@@ -15,7 +15,7 @@ try {
   await page.evaluate(() => syn3h.shell.play())
   await page.waitForFunction(() => window.syn3hNet?.connected)
   await page.waitForTimeout(500)
-  const nav = await page.locator('.hud-navigation').boundingBox(), toast = await page.locator('.shell-toast').boundingBox(), stick = await page.locator('.touch-stick').boundingBox()
+  const nav = await page.locator('.hud-navigation').boundingBox(), toast = await page.locator('.shell-toast').boundingBox(), stick = await page.locator('.touch-stick-hint').evaluate(el => el.getBoundingClientRect())
   assert.ok(toast.y > nav.y + nav.height)
   assert.ok(toast.y + toast.height < stick.y)
   await page.screenshot({ path: 'tests/ui/artifacts/phone-hud-final.png' })
