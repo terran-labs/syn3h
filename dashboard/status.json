@@ -716,21 +716,13 @@
       "note": "Workbench pages; not part of public releases.",
       "items": [
         {
-          "title": "Vehicle lab",
-          "url": "https://vorton-previews.tail285f88.ts.net:32782/vehicle-lab.html?vehicle=buggy",
+          "title": "Vehicle lab (live, every vehicle and round)",
+          "url": "https://vorton-previews.tail285f88.ts.net:32795/vehicle-lab.html"
+        },
+        {
+          "title": "Vehicle lab on trunk",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/vehicle-lab.html",
           "page": "vehicle-lab.html"
-        },
-        {
-          "title": "Vehicle lab: in-game skins",
-          "url": "https://vorton-previews.tail285f88.ts.net:32782/vehicle-lab.html?vehicle=game-skins"
-        },
-        {
-          "title": "Vehicle lab: jet designs",
-          "url": "https://vorton-previews.tail285f88.ts.net:32782/vehicle-lab.html?vehicle=jet"
-        },
-        {
-          "title": "Vehicle lab: tank designs",
-          "url": "https://vorton-previews.tail285f88.ts.net:32782/vehicle-lab.html?vehicle=tank"
         },
         {
           "title": "Jet design lab",
@@ -795,6 +787,11 @@
           "title": "Tank design studies (own page)",
           "url": "https://vorton-previews.tail285f88.ts.net:32782/tank-designs.html",
           "page": "tank-designs.html"
+        },
+        {
+          "title": "Water lab",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/water-lab.html",
+          "page": "water-lab.html"
         }
       ]
     },
