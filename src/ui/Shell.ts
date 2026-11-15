@@ -8,6 +8,7 @@ import { applySkyPreset, SKY_PRESET_NAMES, type SkyPresetName } from '../world/s
 import { TouchControls } from './TouchControls'
 import { readVehicleChoice, saveVehicleChoice, VehiclePreview, type VehicleChoice } from './VehicleChoice'
 import { SlidingPanels } from './SlidingPanels'
+import { populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
 import { placeLabels } from './galaxy/labels'
@@ -643,6 +644,7 @@ export class Shell implements System {
       const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
       chip.innerHTML = '<strong></strong><small></small>'; chip.querySelector('strong')!.textContent = world.label
       chip.querySelector('small')!.textContent = world.forming ? 'Shape your own' : world.id === current ? planetName(world.seed) : ''
+      if (world.id !== 'custom') { const count = document.createElement('small'); count.className = 'galaxy-population'; count.textContent = 'Population unknown'; chip.append(count) }
       chip.addEventListener('click', () => { if (!this.tapWorld(world.id)) this.galaxy?.choose(world.id) })
       labels.append(chip); chips.set(world.id, chip)
     }
@@ -651,6 +653,17 @@ export class Shell implements System {
       logo: () => {
         const mark = this.element.querySelector<SVGElement>('.shell-logo')!, box = mark.getBoundingClientRect(), host = this.overlay.getBoundingClientRect()
         return { box: { x: box.x - host.x, y: box.y - host.y, width: box.width, height: box.height }, level: levelNumber(graphicsLevel.value) }
+      },
+      presenceVisible: () => this.menuVisible && !this.attracting && !this.inviteOpen && !this.dropping,
+      onPresence: values => {
+        for (const world of worlds) {
+          if (world.id === 'custom') continue
+          const chip = chips.get(world.id)!, text = populationLabel(values.get(world.recipe ?? world.id) ?? null)
+          const count = chip.querySelector('.galaxy-population')!
+          if (count.textContent !== text) { count.textContent = text; this.labelSizes.delete(world.id) }
+          chip.title = `${text}. Counts span separate rooms; choosing this planet uses your current room.`
+          chip.setAttribute('aria-label', `${world.label}: ${chip.title}`)
+        }
       },
       onLogo: drawn => this.element.classList.toggle('has-animated-logo', drawn),
       still: () => levelNumber(graphicsLevel.value) === 0,

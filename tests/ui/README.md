@@ -591,3 +591,20 @@ the renderer. No branding assets or logo design changed.
 `lobby-logo.mjs` checks shared context identity, animation, panel settling, reduced motion,
 safe particle count, context restoration, teardown and reopening in Chrome and WebKit.
 The galaxy caps its shared loop at 30 fps outside a drop, below the logo's desktop ceiling.
+
+## Recipe population lights
+
+The lobby polls the public aggregate `/presence` feed every 30 seconds while visible,
+with one request in flight and a ten-second request timeout. It stops on tab hiding,
+play, descent, the join overlay and attract mode. Counts expire 90 seconds after the
+oldest report, independently of the polling schedule. Failed, invalid or stale data
+shows “Population unknown”; a fresh empty response means zero connected players.
+
+Lights represent connected humans across rooms using a recipe, including spectators.
+They do not represent bots or joinable room identities. At most twelve lights are drawn
+per planet; the label gives the exact “N connected across M rooms” total. Custom has no
+population of its own. Planet taps retain the existing room and direct descent.
+
+`presence.test.ts` covers payload validation, report freshness, cancellation and polling.
+`presence.mjs` supplies controlled public responses to check labels, display state,
+play/reopen behavior and unchanged room routing. It does not validate the server endpoint.

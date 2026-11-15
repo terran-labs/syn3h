@@ -9,6 +9,7 @@
  * lobby graphics it draws at most thirty times a second, stops in a hidden tab, and gives
  * its WebGL context back when disabled.
  */
+import { PresenceFeed, type Populations } from './presence'
 import { LogoRenderer, type PixelRect } from '../brand/logoRenderer'
 import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
 import type { ParamValue } from '../../../shared/params'
@@ -50,6 +51,8 @@ export interface GalaxyOptions {
   /** Logo box in CSS pixels relative to this host, plus the existing graphics tier. */
   logo?(): { box: PixelRect; level: number } | undefined
   onLogo?(drawn: boolean): void
+  onPresence?(values: Populations): void
+  presenceVisible?(): boolean
 }
 /**
  * The most worlds the galaxy draws, the sun aside. The trace costs little per world (a ray
@@ -78,6 +81,7 @@ uniform float uDive;                // 0 in orbit, 1 through the atmosphere of t
 uniform float uDim;                 // 1 as the lobby itself; lower behind an open panel
 uniform vec3 uEye, uRight, uUp, uForward; uniform float uTan;
 uniform int uCount; uniform int uOnly;
+uniform float uPopulation[${MAX}];
 uniform vec4 uWorld[${MAX}];        // xyz position, w radius
 uniform vec3 uLand[${MAX}], uSea[${MAX}];
 uniform vec4 uKind[${MAX}];         // x glow, y has map, z spin, w seed
@@ -221,6 +225,21 @@ void main() {
     c = mix(c, vec3(0.62, 0.8, 1.0), smoothstep(0.5, 1.0, uDive) * 0.68);
     c += vec3(0.8, 0.92, 1.0) * rush * uDive * 1.3;
   }
+  // Connected humans by recipe: at most twelve lights; the label carries the exact total.
+  for (int i = 0; i < ${MAX}; i++) {
+    if (i >= uCount) break;
+    if (uPopulation[i] <= 0.0 || uOnly >= 0) continue;
+    vec3 p = toScreen(uWorld[i].xyz);
+    if (p.z <= 0.0 || (found >= 0 && found != i)) continue;
+    float ring = uWorld[i].w / (p.z * uTan) * 1.28;
+    vec2 d = q - p.xy;
+    float count = min(12.0, uPopulation[i]);
+    float angle = atan(d.y, d.x) + 3.14159265 - uTime * 0.08;
+    float arc = (fract(angle / 6.2831853 * count + 0.5) - 0.5) * 6.2831853 / count * ring;
+    float distanceToLight = length(vec2(length(d) - ring, arc));
+    float size = 4.0 / (minSide * uFrame.z);
+    c += vec3(0.3, 0.85, 1.0) * exp(-distanceToLight * distanceToLight / (size * size)) * (1.0 - uDive);
+  }
   // Grade: roll the highlights off, a vignette to hold the eye in the middle, fine film grain.
   c = c / (1.0 + 0.3 * max(max(c.r, c.g), c.b));
   vec2 corner = gl_FragCoord.xy / uSize - 0.5;
@@ -261,6 +280,8 @@ export class Galaxy {
   canvas = document.createElement('canvas')
   /** Frames drawn, for the checks. */
   frames = 0
+  private readonly presence: PresenceFeed
+  private population: Populations = new Map()
   private logo: LogoRenderer | null = null
   private logoSeen = false
   private gl: WebGL2RenderingContext | null = null
@@ -324,10 +345,12 @@ export class Galaxy {
   private readonly resizeObserver: ResizeObserver
 
   constructor(private readonly host: HTMLElement, private readonly options: GalaxyOptions) {
+    const recipes = [...new Set(options.worlds.filter(w => w.id !== 'custom').map(w => w.recipe ?? w.id))]
+    this.presence = new PresenceFeed(recipes, values => { this.population = values; this.wake = 2; options.onPresence?.(values) })
     this.reduced.addEventListener('change', () => { this.wake = 2 }, { signal: this.abort.signal })
     addEventListener('keydown', event => this.key(event), { signal: this.abort.signal })
     this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(host)
-    document.addEventListener('visibilitychange', () => { cancelAnimationFrame(this.frame); if (this.active && !document.hidden) this.loop(0) }, { signal: this.abort.signal })
+    document.addEventListener('visibilitychange', () => { this.syncPresence(); cancelAnimationFrame(this.frame); if (this.active && !document.hidden) this.loop(0) }, { signal: this.abort.signal })
   }
   /** False when WebGL 2 is not available: the caller keeps the ordinary lobby. */
   static supported(): boolean { try { return Boolean(document.createElement('canvas').getContext('webgl2')) } catch { return false } }
@@ -353,9 +376,11 @@ export class Galaxy {
       if (this.options.worlds[this.chosen] === world) this.request(world, CLOSE, true)
     }
   }
+  private syncPresence(): void { this.presence.setActive(this.active && !document.hidden && (this.options.presenceVisible?.() ?? true)) }
   set enabled(value: boolean) {
     if (value === this.active) return
     this.active = value
+    this.syncPresence()
     if (value) this.acquire(); else this.release()
   }
   /** Back out to the whole system, for example after returning from a world's panel. */
@@ -386,7 +411,7 @@ export class Galaxy {
     gl.linkProgram(program)
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { console.warn('Syn3h galaxy shader failed.', gl.getProgramInfoLog(program)); return }
     gl.useProgram(program); gl.bindVertexArray(gl.createVertexArray())
-    for (const name of ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex']) this.uniforms[name] = gl.getUniformLocation(program, name)
+    for (const name of ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex']) this.uniforms[name] = gl.getUniformLocation(program, name)
     // One array of small maps on unit 0, the close map on unit 1.
     const linear = (target: number) => { gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE) }
     gl.activeTexture(gl.TEXTURE0); this.array = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.array)
@@ -577,6 +602,7 @@ export class Galaxy {
     return latitude
   }
   private loop = (now: number): void => {
+    this.syncPresence()
     if (!this.active || document.hidden) return
     this.frame = requestAnimationFrame(this.loop)
     qualityFrame(now)
@@ -612,6 +638,7 @@ export class Galaxy {
     gl.uniform3f(u.uEye, ...view.eye); gl.uniform3f(u.uRight, ...view.right); gl.uniform3f(u.uUp, ...view.up); gl.uniform3f(u.uForward, ...view.forward); gl.uniform1f(u.uTan, view.tan)
     gl.uniform2f(u.uShed, qualityShed(2), qualityShed(3)); gl.uniform1f(u.uAmbience, 1 - qualityShed(1)); gl.uniform1f(u.uDive, this.dive); gl.uniform1f(u.uDim, this.dim)
     gl.uniform1i(u.uOnly, this.editing ? this.chosen : -1)
+    gl.uniform1fv(u.uPopulation, worlds.slice(0, MAX).map(w => w.id === 'custom' ? -1 : this.population.get(w.recipe ?? w.id)?.players ?? -1))
     gl.uniform1i(u.uCount, Math.min(MAX, worlds.length))
     gl.uniform4fv(u.uWorld, places.flatMap(p => [...p.position, p.radius]))
     gl.uniform3fv(u.uLand, worlds.slice(0, MAX).flatMap(w => rgb(w.land))); gl.uniform3fv(u.uSea, worlds.slice(0, MAX).flatMap(w => rgb(w.sea)))
@@ -734,5 +761,5 @@ export class Galaxy {
     const found = this.screen.filter(s => s.visible).map(s => ({ s, d: Math.hypot(s.x - x, s.y - y) - s.radius })).filter(e => e.d < 22).sort((a, b) => a.d - b.d)[0]
     if (found) { if (!this.options.onTap?.(found.s.id)) this.choose(found.s.id) } else if (this.chosen >= 0 && !this.flight) this.home()
   }
-  dispose(): void { this.active = false; this.abort.abort(); this.resizeObserver.disconnect(); this.release() }
+  dispose(): void { this.presence.dispose(); this.active = false; this.abort.abort(); this.resizeObserver.disconnect(); this.release() }
 }
