@@ -50,6 +50,13 @@ import './shell.css'
 import './exploration.css'
 import './theme-halo.css'
 
+/**
+ * Whether the lobby offers the "Shape your own" Custom planet. Off at the owner's direction,
+ * 15 November 2026: "hide the 'Shape Your Own' option for now. I want the lobby simple,
+ * elegant, and visually stunning." Everything it needs is still in place here and in the
+ * galaxy, so turning this on brings it back. Worlds are shaped in play, in the World card.
+ */
+const OFFER_CUSTOM_PLANET: boolean = false
 /** Keys that mean "I want to drive": they resume a pause and capture the cursor. */
 const DRIVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
 const back = '<button type="button" class="panel-back link-button" data-goto="index">Back</button>'
@@ -917,7 +924,8 @@ export class Shell implements System {
     const recipes = Array.from({ length: Math.max(PLANETS.length, rehearse - 1) }, (_, i) => ({ recipe: PLANETS[i % PLANETS.length], copy: Math.floor(i / PLANETS.length) })).slice(0, GALAXY_MAX - 1)
     const worlds: GalaxyWorld[] = recipes.map(({ recipe, copy }, i) => ({ id: copy ? `${recipe.id}~${copy}` : recipe.id, recipe: recipe.id, label: copy ? `${recipe.label} ${copy + 1}` : recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current && !copy ? worldSeed.value : i + 1 }))
     // The custom planet is a world still forming: tap it to shape it with the sliders.
-    worlds.push({ id: 'custom', label: 'Custom', land: 0x31507a, sea: 0x0a1630, glow: false, seed: 7, forming: true })
+    // Hidden for now (see OFFER_CUSTOM_PLANET): the lobby offers planets only.
+    if (OFFER_CUSTOM_PLANET) worlds.push({ id: 'custom', label: 'Custom', land: 0x31507a, sea: 0x0a1630, glow: false, seed: 7, forming: true })
     const chips = this.galaxyChips
     for (const world of worlds) {
       const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
