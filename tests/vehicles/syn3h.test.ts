@@ -416,6 +416,56 @@ describe('Syn3hBuggy', () => {
     expect(planar(pos(b), p0)).toBeGreaterThan(20)
   })
 
+  /** A lava pool `depth` m deep over the flat bed for |z| < 30, dry beyond. */
+  const lavaPool = async (depth: number) => {
+    const bed = await makeBed()
+    bed.terrain.liquidHeightAt = (_x, z) => (Math.abs(z) < 30 ? depth : -Infinity)
+    bed.terrain.liquidKindAt = () => 'lava'
+    const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, depth + 1.5, 0), 0))
+    b.isLocal = false
+    bed.run(4)
+    return { bed, b }
+  }
+
+  test('crawls out of shallow lava under power and drives away', async () => {
+    const { bed, b } = await lavaPool(0.6)
+    b.input.y = 1
+    let t = 0
+    while (pos(b).z > -31 && t < 40) {
+      bed.run(0.5)
+      t += 0.5
+    }
+    expect(t).toBeLessThan(30)
+    bed.run(3)
+    expect(speed(b)).toBeGreaterThan(15)
+  })
+
+  test('the hold does not pin it in deeper lava: it crawls whenever the throttle is pressed', async () => {
+    const { bed, b } = await lavaPool(1)
+    expect(b.lavaDepth).toBeGreaterThan(0)
+    expect(b.stuck).toBe(true)
+    expect(b.drive).toBe('hold')
+    for (let i = 0; i < 2; i++) {
+      const z0 = pos(b).z
+      b.input.y = 1
+      bed.run(5)
+      expect(z0 - pos(b).z).toBeGreaterThan(1)
+      b.input.y = 0
+      bed.run(3)
+      expect(speed(b)).toBeLessThan(0.05)
+    }
+  })
+
+  test('the motor does not spin up unloaded while floating in deep lava', async () => {
+    const { bed, b } = await lavaPool(2)
+    expect(b.wheelsGrounded).toBe(0)
+    b.input.y = 1
+    let motorMax = 0
+    bed.run(20, () => { motorMax = Math.max(motorMax, Math.abs(b.motorSpeed)) })
+    expect(motorMax).toBeLessThan(15)
+    expect(-pos(b).z).toBeGreaterThan(3)
+  })
+
   test('wheel rays ignore other vehicles', async () => {
     const { bed, b } = await spawn()
     bed.run(3)
