@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildGlowBand, buildWordmarkMesh, evenOddArea, FLOATS_PER_VERTEX, GLOW_FLOATS_PER_VERTEX, insidePolygon, sampleOutline, triangleArea, triangulateFace, wordmarkContours, type Contour, type Point } from '../../src/ui/brand/wordmarkMesh'
 import { LogoMark, logoBox, logoBudget, logoSvg } from '../../src/ui/brand/LogoMark'
-import { LogoRenderer } from '../../src/ui/brand/logoRenderer'
+import { INTRO_SECONDS, LogoRenderer } from '../../src/ui/brand/logoRenderer'
 import { WORDMARK_HEIGHT, WORDMARK_WIDTH } from '../../src/ui/brand/wordmarkPath'
 
 const filled = (p: Point, contours: Contour[]) => contours.filter(c => insidePolygon(p, c.points)).length % 2 === 1
@@ -133,6 +133,8 @@ function fakeGl(options: { link?: boolean } = {}) {
     bindVertexArray: (v: unknown) => { state.VERTEX_ARRAY_BINDING = v }, bindBuffer: (_: unknown, b: unknown) => { state.ARRAY_BUFFER_BINDING = b },
     viewport: (...v: number[]) => { state.VIEWPORT = new Int32Array(v) }, scissor: (...v: number[]) => { state.SCISSOR_BOX = new Int32Array(v) },
     drawArrays: (mode: string, first: number, count: number) => calls.push(`draw ${mode} ${count}`),
+    // Locations are the fake's own { args: [program, name] }, so a value can be read back by name.
+    uniform1f: (at: { args: unknown[] } | null, value: number) => calls.push(`uniform ${String(at?.args[1])} ${value}`),
   }
   const proxy = new Proxy(gl, {
     get(target, key) {
@@ -210,6 +212,51 @@ describe('LogoMark lifecycle', () => {
     expect(fake.state.VERTEX_ARRAY_BINDING).toBe('host-vao')
     expect([...fake.enabled]).toEqual(['SCISSOR_TEST'])
     renderer.dispose()
+  })
+})
+
+/** The uOpacity each draw call was made with, in draw order. */
+function drawOpacities(calls: string[]): number[] {
+  let opacity = Number.NaN
+  const out: number[] = []
+  for (const call of calls) {
+    if (call.startsWith('uniform uOpacity ')) opacity = Number(call.split(' ')[2])
+    else if (call.startsWith('draw')) out.push(opacity)
+  }
+  return out
+}
+
+describe('two-stage fade in', () => {
+  const box = { x: 100, y: 100, width: 426, height: 100 }
+  // Draws are the glow field, the glow particles, then the wordmark: [glow, glow, mark].
+  const frame = (renderer: LogoRenderer, fake: ReturnType<typeof fakeGl>, seconds: number) => { fake.calls.length = 0; renderer.draw(seconds, box); return drawOpacities(fake.calls) }
+  it('shows nothing at first, then the silhouette, then the glow more slowly', () => {
+    const fake = fakeGl(), renderer = new LogoRenderer(fake.gl, { particles: 50 })
+    expect(renderer.look.markFade).toBe(1.5); expect(renderer.look.glowFade).toBe(3)
+    expect(frame(renderer, fake, 10)).toEqual([0, 0, 0])
+    const half = frame(renderer, fake, 10.75)
+    expect(half[2]).toBeCloseTo(0.5, 5); expect(half[0]).toBe(0); expect(half[1]).toBe(0)
+    expect(frame(renderer, fake, 11.5)).toEqual([0, 0, 1])
+    const glowing = frame(renderer, fake, 13)
+    expect(glowing[0]).toBeCloseTo(0.5, 5); expect(glowing[1]).toBeCloseTo(0.5, 5); expect(glowing[2]).toBe(1)
+    expect(frame(renderer, fake, 14.5)).toEqual([1, 1, 1])
+    expect(renderer.introTime).toBeGreaterThanOrEqual(INTRO_SECONDS)
+    // The gap holds the glow back after the silhouette has arrived.
+    renderer.setLook({ glowGap: 1 }); renderer.replayIntro()
+    frame(renderer, fake, 20)
+    expect(frame(renderer, fake, 22.4)).toEqual([0, 0, 1])
+    expect(frame(renderer, fake, 22.6)[0]).toBeGreaterThan(0)
+  })
+  it('replays when shown again after being hidden, unless skipped', () => {
+    const fake = fakeGl(), renderer = new LogoRenderer(fake.gl, { particles: 50 })
+    frame(renderer, fake, 0); expect(frame(renderer, fake, 10)).toEqual([1, 1, 1])
+    renderer.setLook({ opacity: 0 }); expect(frame(renderer, fake, 11)).toEqual([0, 0, 0])
+    renderer.setLook({ opacity: 1 }); expect(frame(renderer, fake, 12)).toEqual([0, 0, 0])
+    expect(frame(renderer, fake, 12.75)[2]).toBeCloseTo(0.5, 5)
+    // Skipped (reduced motion, a held lobby): the finished logo at once, also after hiding.
+    renderer.skipIntro(); expect(frame(renderer, fake, 13)).toEqual([1, 1, 1])
+    renderer.setLook({ opacity: 0 }); frame(renderer, fake, 14)
+    renderer.setLook({ opacity: 1 }); expect(frame(renderer, fake, 15)).toEqual([1, 1, 1])
   })
 })
 

@@ -24,7 +24,7 @@ export interface LogoOptions extends LogoLook {
   timeScale: number
   /** Draw one settled frame and never animate. */
   still: boolean
-  /** Fade in when first shown. */
+  /** Fade in when first shown: the silhouette, then the glow (see LogoLook markFade, glowGap, glowFade). */
   intro: boolean
   /** Frames per second at most. 30 is plenty for a menu; 60 is smoother. */
   fps: number
@@ -36,7 +36,7 @@ export interface LogoOptions extends LogoLook {
 export const DEFAULT_LOGO_OPTIONS: LogoOptions = {
   ...DEFAULT_LOGO_LOOK, timeScale: 1, still: false, intro: true, fps: 60, maxPixelRatio: 2, preserve: false,
 }
-/** The moment drawn as the still frame: well after the fade in, plasma evenly spread. */
+/** The moment drawn as the still frame: well after both stages of the fade in. */
 export const STILL_SECONDS = 7.3
 
 /**
