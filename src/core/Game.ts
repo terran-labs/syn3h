@@ -138,8 +138,11 @@ export class Game {
     if (this.buildMark) this.buildMark = recordStartupPhase('build until terrain attached to quality', this.buildMark)
   }
 
-  add<T extends System>(system: T): T {
-    this.systems.push(system)
+  /** Insert before an existing system, or append if the anchor is absent. */
+  add<T extends System>(system: T, before?: System): T {
+    const at = before ? this.systems.indexOf(before) : -1
+    if (at < 0) this.systems.push(system)
+    else this.systems.splice(at, 0, system)
     // Before the loop starts, each add closes the phase that built the system. In order,
     // main adds environment and sky, the player vehicle, bots, the chase camera, then the
     // HUD after the shell and lobby are built.

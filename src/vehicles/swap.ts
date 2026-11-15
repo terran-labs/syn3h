@@ -93,7 +93,8 @@ export function createVehicleSwapper(
       next.wind.copy(previous.wind)
       Object.assign(next.input, previous.input)
       next.body.setLinvel({ x: 0, y: 0, z: 0 }, true)
-      game.add(next)
+      // Preserve interpolation before the camera, including cached vehicle activation.
+      game.add(next, previous)
       // Attach first so the shared effect world stays alive even when there are no bots.
       const oldDetach = detach
       detach = attachEffects(next)
