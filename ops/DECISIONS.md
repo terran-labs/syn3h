@@ -26,6 +26,20 @@ The owner answered the wind question: generated wind only. UX owns removing the 
 wind layer. This supersedes the recording-retention rule for wind only; original music
 and laser recordings remain.
 
+## Sunday 15 November, 10:45am Pacific: three places to look, one dev preview with everything
+
+**Decided** by the owner: "Eliminate all the outstanding extraneous previews. We should only
+have the live site, the live dev preview, and the vehicle lab. Merge all latest work into
+the live dev preview ASAP." He is told through Open questions when it is ready. Finishing
+the interface is his highest priority for the remaining hour.
+
+**What it changes.** One dev preview serves the integration branch and receives every
+lane's work as it passes typecheck and unit tests. The UX, Post Effects, water and other
+lane previews are stopped through the broker; lanes verify on local servers. The release
+check stays separate and still runs every browser check. The second build freezes when the
+interface work arrives green or at 11:10am, whichever is first, and sheds from the bottom
+of his priority list. Release 6 went live at 10:19am.
+
 ## Sunday 15 November, 9:32am to 9:45am Pacific: physics engine loading, and a lobby of planets only
 
 **Decided** by the owner.
