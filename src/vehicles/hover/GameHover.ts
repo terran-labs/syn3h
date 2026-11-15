@@ -1,11 +1,10 @@
 import * as THREE from 'three/webgpu'
 import { detailLevel, registerVehicleDetail } from '../skins/mergeStatic'
-import { HERITAGE_EYE } from './heritage'
-import { Round3Hover, type HoverSpec } from './Round3Hover'
-import type { Round3Design } from './round3'
+import { HoverBody, type HoverSpec } from './HoverBody'
+import { HOVER_EYE } from './kit'
 
 /**
- * A generated hovercraft design (round three or four) as the game drives it: the close model with its cockpit, a
+ * A generated hovercraft body as the game drives it: the close model with its cockpit, a
  * reduced one from 30 m and a one-draw silhouette from 120 m (PATTERN.md rule 4).
  *
  * All three are built up front. They are generated in a few milliseconds and share nothing
@@ -13,17 +12,17 @@ import type { Round3Design } from './round3'
  */
 export class GameHover {
   readonly object = new THREE.Group()
-  readonly levels: [Round3Hover, Round3Hover, Round3Hover]
+  readonly levels: [HoverBody, HoverBody, HoverBody]
   /** The driver's eye in the craft's frame. */
-  readonly eye = new THREE.Vector3(...HERITAGE_EYE)
+  readonly eye = new THREE.Vector3(...HOVER_EYE)
   /** Bounds of the close model in the craft's frame, for the collision hull and clearance guard. */
   readonly bounds = new THREE.Box3()
   private level: 0 | 1 | 2 = 0
   private detachDetail = () => {}
   private attached = false
 
-  constructor(readonly design: Round3Design | HoverSpec) {
-    this.levels = [new Round3Hover(design, 0, true), new Round3Hover(design, 1, true), new Round3Hover(design, 2, true)]
+  constructor(readonly design: HoverSpec) {
+    this.levels = [new HoverBody(design, 0, true), new HoverBody(design, 1, true), new HoverBody(design, 2, true)]
     this.object.add(...this.levels.map(h => h.object))
     this.object.updateMatrixWorld(true)
     this.bounds.setFromObject(this.levels[0].object)

@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import * as T from 'three/webgpu'
 import { initPhysics } from '../../src/core/physics'
 import { Hovercraft, HOVER_DESIGN } from '../../src/vehicles/Hovercraft'
-import { GameHover } from '../../src/vehicles/hovergen/GameHover'
+import { GameHover } from '../../src/vehicles/hover/GameHover'
 import { R3_EYE } from '../../src/vehicles/hovergen/round3'
 import { R4_DESIGNS } from '../../src/vehicles/hovergen/round4'
 import { generateTerrain } from '../../src/world/terrain/generate'
@@ -87,7 +87,7 @@ describe('the generated hovercraft body', () => {
 
 describe('shared hovercraft geometry', () => {
   it('builds each level once and shares it between craft, with separate materials', async () => {
-    const { hoverBuilds } = await import('../../src/vehicles/hovergen/Round3Hover')
+    const { hoverBuilds } = await import('../../src/vehicles/hover/HoverBody')
     const first = new GameHover(HOVER_DESIGN), before = hoverBuilds.count
     const second = new GameHover(HOVER_DESIGN), third = new GameHover(HOVER_DESIGN)
     // Later craft generate nothing.

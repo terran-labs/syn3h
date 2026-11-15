@@ -5,9 +5,8 @@ import { RAPIER, unityTorque } from '../core/physics'
 import { defineParam, worldLavaAltitude } from '../../shared/params'
 import { Vehicle } from './Vehicle'
 import { UnityBody } from './unityBody'
-import { GameHover } from './hovergen/GameHover'
-import type { HoverSpec } from './hovergen/Round3Hover'
-import { R4_DESIGNS, buildRound4, round4Far } from './hovergen/round4'
+import { GameHover } from './hover/GameHover'
+import { LOWWING_SPEC } from './hover/lowwing'
 
 // Settings.js slider defaults, documented in docs/architecture/mars-explorer.md. Thrust is the
 // exception: Settings.js has 220, raised to 320 with the livelier glide (see below). Set it back
@@ -36,13 +35,13 @@ export const hoverDrag = defineParam({id:'hover.drag',label:'Glide air drag',gro
 export const hoverBank = defineParam({id:'hover.bank',label:'Glide bank angle (deg)',group:'Hovercraft',scope:'world',default:12,min:0,max:35,step:1})
 
 /**
- * The hovercraft's body: one generated design from round four (src/vehicles/hovergen), with
- * its cockpit and three detail levels. Nothing is loaded; the body is built from parameters
- * when the vehicle is created. The game ships exactly one design: Lowwing, which the owner
- * approved on 15 Nov 2026 as "good enough to ship" for now.
+ * The hovercraft's body: one generated design (src/vehicles/hover/lowwing.ts), with its
+ * cockpit and three detail levels. Nothing is loaded; the body is built from parameters when
+ * the first hovercraft is created and its geometry is shared by the rest. The game ships
+ * exactly one design: Lowwing, which the owner approved on 15 Nov 2026 as "good enough to
+ * ship" for now.
  */
-const design = R4_DESIGNS.find(d => d.id === 'h4-low')!
-export const HOVER_DESIGN: HoverSpec = { id: design.id, paint: design.paint, accent: design.accent, build: detail => buildRound4(design, detail), far: () => round4Far(design) }
+export const HOVER_DESIGN = LOWWING_SPEC
 
 /** Hull envelope in the craft's frame: x and z start and extent, floor and roof height, in metres. */
 interface Envelope {x:number;w:number;y0:number;y1:number;z:number;l:number}
