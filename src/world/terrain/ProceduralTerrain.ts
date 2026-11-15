@@ -414,11 +414,11 @@ export class ProceduralTerrain implements Terrain {
     this.look.setDetail(quality.detail)
     // Grass and flowers: everything on desktop, a thinner and nearer cover on phones and
     // tablets, nothing at the safe level.
-    // `quality` is the six-step level where the caller has one; `level` the older three.
-    // Once the level's own preset table lists the cover.* settings, this call can go.
-    const six = (quality as { quality?: number }).quality
-    if (six === undefined) this.cover.setLevel(quality.level)
-    else this.cover.setLevel(six, 6)
+    // With the three older levels, pick the cover's budget here. A caller that passes the
+    // six-step `quality` presets the cover.* settings itself (PRESET_TABLE in
+    // core/quality.ts), and writing them again here would undo a player's own fine-tuning
+    // on every automatic level change.
+    if ((quality as { quality?: number }).quality === undefined) this.cover.setLevel(quality.level)
   }
 
   /** Terrain triangles in view at the current levels of detail, versus at full detail. */
