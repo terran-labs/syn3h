@@ -9,8 +9,8 @@ in any world. Lava is sticky and makes things glow. Vehicles are indestructible.
 
 **What it changes.** King of the Hill no longer eliminates: a vehicle in lava is stuck and
 glowing, then returns to its pad or drives out slowly. The Orchestrator is routing this to
-Multiplayer, Vehicles, UX and Bots. Open under this rule: whether laser tag stays, is
-renamed, or goes. Asked of the owner at 5:20pm.
+Multiplayer, Vehicles, UX and Bots. Laser tag: decided at 5:22pm. The mechanic stays and is
+renamed tag beams, with no weapon wording anywhere in the interface.
 
 ## Saturday 14 November, about 5:15pm Pacific: classic buggy is off the MVP
 
