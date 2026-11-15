@@ -55,9 +55,12 @@ export function sunScreenFade(u: number, v: number, inFront: boolean): number {
  * sun by `lowSun` (0 none) so golden hour gets the strongest rays.
  */
 export function sunHeightFactor(sunY: number, lowSun: number): number {
-  const up = smooth(-0.03, 0.04, sunY)
-  const low = 1 - smooth(0.08, 0.55, sunY)
-  return up * (1 + lowSun * low)
+  return smooth(-0.03, 0.04, sunY) * (1 + lowSun * lowSunAmount(sunY))
+}
+
+/** 1 for a sun near the horizon, 0 once it is high (sin of elevation above about 0.55). */
+export function lowSunAmount(sunY: number): number {
+  return 1 - smooth(0.08, 0.55, sunY)
 }
 
 function smooth(e0: number, e1: number, x: number): number {

@@ -32,7 +32,7 @@ import {
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { graphicsLevel } from '../../core/quality'
 import { params } from '../../../shared/params'
-import { type PostTier, postTier, shaftTaps, sunHeightFactor, sunScreenFade } from './gate'
+import { type PostTier, lowSunAmount, postTier, shaftTaps, sunHeightFactor, sunScreenFade } from './gate'
 import { type Grade, gradeFor, lookForKind } from './looks'
 import * as P from './params'
 
@@ -143,7 +143,8 @@ export class PostChain {
     u.shafts.value = P.postShafts.value * fade
     u.shaftLength.value = P.postShaftLength.value
     u.shaftReach.value = P.postShaftReach.value
-    u.flare.value = P.postFlare.value * fade
+    // Ghosts and streak belong to a low sun; overhead they read as smudges on the ground.
+    u.flare.value = P.postFlare.value * fade * (0.25 + 0.75 * lowSunAmount(this.sun.sunDirection.y))
     const g = gradeFor(lookForKind(params.get('terrain.kind')?.value), P.postLook.value, { contrast: P.postContrast.value, saturation: P.postSaturation.value, warmth: P.postWarmth.value }, this.grade)
     ;(u.gain.value as THREE.Vector3).set(g.gain[0], g.gain[1], g.gain[2])
     ;(u.lift.value as THREE.Vector3).set(g.lift[0], g.lift[1], g.lift[2])
@@ -357,7 +358,7 @@ export class PostChain {
           const gB = float(1).sub(smoothstep(0.012, 0.022, length(view.add(sunView.mul(0.25)))))
           const ringD = length(view.add(sunView.mul(0.8)))
           const gC = float(1).sub(smoothstep(0.07, 0.09, ringD)).mul(smoothstep(0.045, 0.07, ringD))
-          const ghosts = vec3(0.4, 0.7, 1.0).mul(gA).mul(0.07).add(vec3(1.0, 0.6, 0.3).mul(gB).mul(0.12)).add(vec3(0.6, 1.0, 0.8).mul(gC).mul(0.035))
+          const ghosts = vec3(0.4, 0.7, 1.0).mul(gA).mul(0.07).add(vec3(1.0, 0.6, 0.3).mul(gB).mul(0.12)).add(vec3(0.6, 1.0, 0.8).mul(gC).mul(0.02))
           const tint = vec3(0.75, 0.88, 1.0)
           return sunLight.mul(tint.mul(streak).mul(0.35).add(ghosts.mul(2.2)))
         })
