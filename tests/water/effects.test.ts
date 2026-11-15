@@ -12,7 +12,7 @@ describe('underwater attenuation',()=>{
 })
 
 import { Scene, PerspectiveCamera, DirectionalLight, HemisphereLight, Vector3 } from 'three/webgpu'
-import { Underwater, waterUnderwater } from '../../src/world/water/underwater'
+import { Underwater, waterUnderwater, underwaterAmountForCamera } from '../../src/world/water/underwater'
 import type { Game } from '../../src/core/Game'
 import type { Terrain } from '../../src/world/Terrain'
 describe('underwater restoration',()=>{
@@ -54,6 +54,27 @@ it('allows ripple nodes and updates before renderer attachment',()=>{
 
 import { underwaterRamp } from '../../src/world/water/waterEffectsMath'
 describe('underwater look arrives with the lens',()=>{
+ it('shares the eased blend only with its camera and clears it on exit and disposal',()=>{
+  const scene=new Scene(),camera=new PerspectiveCamera(),reflection=new PerspectiveCamera()
+  camera.position.y=-3
+  const effect=new Underwater({scene,camera} as Game,{liquidKindAt:()=> 'water',liquidHeightAt:()=>0} as unknown as Terrain)
+  const previous=waterUnderwater.value;waterUnderwater.value=true
+  try{
+   expect(underwaterAmountForCamera(camera)).toBe(0)
+   effect.update(1/60)
+   expect(underwaterAmountForCamera(camera)).toBeGreaterThan(0)
+   expect(underwaterAmountForCamera(camera)).toBeLessThan(1)
+   expect(underwaterAmountForCamera(reflection)).toBe(0)
+   for(let i=0;i<30;i++)effect.update(1/60)
+   expect(underwaterAmountForCamera(camera)).toBe(1)
+   camera.position.y=3
+   for(let i=0;i<30;i++)effect.update(1/60)
+   expect(underwaterAmountForCamera(camera)).toBe(0)
+   camera.position.y=-3;effect.update(.25)
+   expect(underwaterAmountForCamera(camera)).toBe(1)
+   effect.dispose();expect(underwaterAmountForCamera(camera)).toBe(0)
+  }finally{effect.dispose();waterUnderwater.value=previous}
+ })
  it('ramps over depth and time, not in one frame',()=>{
   expect(underwaterRamp(0)).toBe(0);expect(underwaterRamp(.225)).toBeCloseTo(.5);expect(underwaterRamp(2)).toBe(1)
   const scene=new Scene(),camera=new PerspectiveCamera();camera.position.y=-3
