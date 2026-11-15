@@ -26,9 +26,10 @@ export const tankClimb=defineParam({id:'tank.climb',label:'Steepest climb, degre
 /**
  * The body the tank wears: the id of one design in tankDesigns (round9.ts, round8.ts), or null for the Mars
  * Explorer model. The game ships one approved design and offers no choice, so this is a
- * constant and not a parameter. The owner approved the round nine Fork on 15 November 2026.
+ * constant and not a parameter. It stays null until the owner gives final approval: he approved
+ * the round nine Fork on 15 November 2026 and withdrew it within minutes of seeing it drive.
  */
-const APPROVED_BODY:string|null='r9-fork'
+const APPROVED_BODY:string|null=null
 // Development servers only: ?tankBody=r8-dart drives a candidate before it is approved.
 const TRIAL_BODY=import.meta.env.DEV&&typeof location!=='undefined'?new URLSearchParams(location.search).get('tankBody'):null
 /** Every body a tank can wear, latest round first. */
