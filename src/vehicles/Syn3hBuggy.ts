@@ -23,6 +23,7 @@ import {
 } from './buggyParams'
 import { applyLava, floatPoints, lavaViscosity } from './lava'
 import type { BuggySkin } from './skins/BuggySkin'
+import { type MotorDriveInput, motorDrive, smoothEffort } from './skins/motorDrive'
 import { DEG, UnityBody, lerp, signedAngle, unityEulerAngles } from './unityBody'
 import { Vehicle, type WheelEffect, createWheelEffects } from './Vehicle'
 
@@ -255,7 +256,12 @@ export class Syn3hBuggy extends Vehicle {
     this.object.add(skin.object)
     skin.setColors(this.colors.body, this.colors.accent)
     skin.ready.then(
-      () => { if (this.skin === skin) this.fallback.visible = false },
+      () => {
+        if (this.skin !== skin) return
+        this.fallback.visible = false
+        // Contract with the effects lane: the vehicle object says its skin draws its own lamps.
+        if (skin.ownLamps) this.object.userData.ownLamps = true
+      },
       (err) => {
         console.warn('Buggy model failed to load, keeping the primitive model', err)
         if (this.skin === skin) { skin.dispose(); this.skin = null }
@@ -831,6 +837,32 @@ export class Syn3hBuggy extends Vehicle {
 
   private readonly wheelPos = new THREE.Vector3()
   private readonly lastWings = [0, 0, 0]
+  /** Smoothed hub motor effort per wheel, for the skin's glow and sparks (visual only). */
+  readonly motorEffort = [0, 0, 0, 0]
+  private readonly driveIn: MotorDriveInput = {
+    throttle: 0, forwardSpeed: 0, motorSpeed: 0, topSpeed: 1, brakes: false, wingsOpen: false, grounded: false, sliding: false,
+  }
+  private readonly driveOut = { effort: 0, regen: false }
+  private readonly vDrive = new THREE.Vector3()
+  private readonly qDrive = new THREE.Quaternion()
+
+  /** Fill `driveIn` for wheel `i` from this buggy's public state. */
+  private motorDriveInput(i: number): MotorDriveInput {
+    const d = this.driveIn
+    if (i === 0) {
+      // Body speed along the nose (Unity sign, forward positive), once per frame.
+      const v = this.body.linvel(), r = this.body.rotation()
+      d.forwardSpeed = -this.vDrive.set(v.x, v.y, v.z).applyQuaternion(this.qDrive.set(r.x, r.y, r.z, r.w).invert()).z
+    }
+    d.throttle = this.inputSmoothed.y
+    d.motorSpeed = this.motorSpeed
+    d.topSpeed = buggySpeed.value * 10
+    d.brakes = this.brakes
+    d.wingsOpen = this.areWingsOpen
+    d.grounded = this.hitDistance[i] !== -1
+    d.sliding = this.sliding[i]
+    return d
+  }
 
   override update(dt: number, alpha: number): void {
     super.update(dt, alpha)
@@ -844,11 +876,18 @@ export class Syn3hBuggy extends Vehicle {
         -WHEEL_POS.z * (i < 2 ? 1 : -1),
       )
       this.skin?.setWheel(i, this.wheelPos, this.steer[i], this.spin)
+      if (this.skin?.setDrive) {
+        const drive = motorDrive(this.motorDriveInput(i), this.driveOut)
+        this.motorEffort[i] = smoothEffort(this.motorEffort[i], drive.effort, dt)
+        this.skin.setDrive(i, this.motorEffort[i], drive.regen)
+      }
       const g = this.fbWheels[i]
       g.position.copy(this.wheelPos)
       g.rotation.y = this.steer[i]
       this.fbSpinners[i].rotation.x = this.spin
     }
+    // An EV lights its brake lamps for regeneration as well as the brakes.
+    this.skin?.setLights?.(this.brakes || this.drive === 'regen')
     // The skin rewrites every wing vertex, so only call it when something visible changed.
     const w = this.lastWings
     const ws = this.wingState, wx = this.inputSmoothed.x, wp = this.motorInputSmoothed
