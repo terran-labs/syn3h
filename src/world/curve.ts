@@ -2,9 +2,9 @@
  * Round planet: draws the flat, wrapping world as the sphere it would be, without touching
  * physics.
  *
- * The world is a square tile `size` metres across that wraps, so travelling `size` metres
- * in a straight line brings you home. A planet you can circle in `size` metres has radius
- * R = size / 2 pi, and that is the radius used: nothing is tuned by eye.
+ * The world is a square tile `size` metres across that wraps. Its true planet is the sphere
+ * with the same surface area (see planetRadius): nothing is tuned by eye. The roundness
+ * setting then draws that planet at its true size or scaled.
  *
  * Every vertex is placed where it would be on that sphere, seen from the camera. For a
  * point at ground distance d from the camera's ground point and height h above the sea:
@@ -34,24 +34,42 @@ import { cameraViewMatrix, cos, float, modelWorldMatrix, positionLocal, renderGr
 import { defineParam } from '../../shared/params'
 
 /**
- * 1 is the true planet: the sphere whose circumference is the world tile. Lower values draw
- * a larger, flatter planet than the world really is (0.5 is twice the true radius), and 0
- * is flat. Only 1 is geometrically honest; the rest are for taste and for comparison.
+ * 1 is the true planet: the sphere with the same surface area as the world. Lower values
+ * draw a larger, flatter planet (0.5 is twice the radius), 0 is flat, and values above 1
+ * draw a smaller, tighter ball than the world really is.
+ *
+ * The default is 0.71, the owner's choice: the planet is drawn about 1.4 times its true
+ * radius, so the centre's mountain stands clear of the horizon from every spawn pad on
+ * every size of world (tools/terrainlab/pad-view.ts has the geometry) and the world still
+ * plainly curves away.
  */
 export const curveParam = defineParam<number>({
   id: 'world.curve', label: 'Planet roundness (1 true, 0 flat)', group: 'World', scope: 'world',
-  default: 1, min: 0, max: 1, step: 0.01,
+  default: 0.71, min: 0, max: 1.8, step: 0.01,
 })
 
-/** The radius of the planet whose circumference is a tile `size` metres across. */
+/**
+ * The true radius of the planet for a world tile `size` metres across.
+ *
+ * The world is a square that wraps, which is a torus, and a torus cannot be laid onto a
+ * sphere exactly, so "true" has to choose what to keep. This keeps surface area: the
+ * sphere has exactly as much ground as the world, 4 pi R^2 = size^2, so
+ * R = size / (2 sqrt(pi)), about 0.282 of the tile (578 m for a 2 km world). Then every
+ * point of the world has its own place on the sphere: the farthest point of the tile, a
+ * corner, is 0.707 size away, short of the far pole at pi R = 0.886 size.
+ *
+ * The other candidate, the sphere whose circumference is the tile (R = size / 2 pi), has
+ * less than a third of the world's area and would crush the corners onto the far side.
+ * It is reachable as roundness sqrt(pi), about 1.77.
+ */
 export function planetRadius(size: number): number {
-  return size / (2 * Math.PI)
+  return size / (2 * Math.sqrt(Math.PI))
 }
 
 /** The radius drawn for a roundness setting: the true radius at 1, larger below, Infinity at 0. */
 export function curveRadius(size: number, curve: number): number {
   if (!(curve > 0)) return Infinity
-  return planetRadius(size) / (curve > 1 ? 1 : curve)
+  return planetRadius(size) / curve
 }
 
 /** Camera x, camera z and 1 / R (0 when flat). Written by updateCurve. */

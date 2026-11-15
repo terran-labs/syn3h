@@ -1,7 +1,7 @@
 /**
- * Jet exhibit: the generated next-generation jet designs from src/vehicles/jetgen, in four
+ * Jet exhibit: the generated next-generation jet designs from src/vehicles/jetgen, in six
  * review rounds. Each design is built twice, at full and reduced polygon count, as its two
- * detail levels. The materials are the designs' own (candy or military finish).
+ * detail levels. They render through the shared vehicle shading, like every other vehicle.
  */
 import * as THREE from 'three/webgpu'
 import { JET_DESIGNS } from '../../../vehicles/jetgen/designs'
@@ -9,22 +9,24 @@ import { NextJet } from '../../../vehicles/jetgen/NextJet'
 import { GROUND_Y } from '../../../vehicles/jetgen/shapes'
 import type { LabExhibit } from '../types'
 
-const ROUNDS = ['1', '2', '3', '4']
-const ROUND_TITLES = ['first designs after the red reference', 'forward-swept wings with arch tails', 'military hybrids of Scimitar and Halo', 'Vanguard with intakes around the fuselage']
+const ROUNDS = ['1', '2', '3', '4', '5', '6']
+const ROUND_TITLES = ['first designs after the red reference', 'forward-swept wings with arch tails', 'military hybrids of Scimitar and Halo', 'Vanguard with intakes around the fuselage', 'variations on the Vanguard Quad', 'the Hexring as one lofted body']
 
 export const jet: LabExhibit = {
+  // Listed with the other design studies in the lab's sidebar.
+  section: 'Design studies',
   id: 'jet',
   title: 'Syn3h jet',
   groupLabel: 'Round',
-  heading: group => `Syn3h jet: round ${group ?? 4}, ${ROUND_TITLES[Number(group ?? 4) - 1] ?? ''}`,
+  heading: group => `Syn3h jet: round ${group ?? 6}, ${ROUND_TITLES[Number(group ?? 6) - 1] ?? ''}`,
   async designs() {
-    return JET_DESIGNS.map((d, i) => ({ id: d.id, name: d.name, notes: [d.blurb], group: ROUNDS[Math.floor(i / 5)] }))
+    return JET_DESIGNS.map((d, i) => ({ id: d.id, name: d.name, notes: [d.blurb], group: ROUNDS[i < 20 ? Math.floor(i / 5) : i < 24 ? 4 : 5] }))
   },
   async build(info) {
     const design = JET_DESIGNS.find(d => d.id === info.id)!
     const levels = [new NextJet(design, 1), new NextJet(design, .5)]
     const object = new THREE.Group()
-    levels.forEach((j, i) => { j.object.visible = i === 0; object.add(j.object) })
+    levels.forEach((j, i) => { j.object.visible = i === 0; object.add(j.object); j.showroom() })
     let gearDown = true, gear = 1
     return {
       object,
@@ -40,9 +42,10 @@ export const jet: LabExhibit = {
         gear += Math.sign(target - gear) * Math.min(Math.abs(target - gear), dt * .7)
         for (const j of levels) {
           j.setGear(gear); j.setThrottle(state.animate ? state.throttle : .4)
-          j.setVector(state.animate ? Math.sin(state.time * 1.6) * .3 : 0, state.steer * .4)
+          j.setVector(state.animate ? Math.sin(state.time * .9) * .22 : 0, state.steer * .27)
         }
       },
+      cockpit: levels[0].ridePosition ? { eye: levels[0].ridePosition.position.clone() } : undefined,
       controls: [{ kind: 'toggle', id: 'jet.gear', label: 'Landing gear', value: true, onChange: on => { gearDown = on } }],
       dispose() { levels.forEach(j => j.dispose()) },
     }

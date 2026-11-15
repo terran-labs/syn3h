@@ -1,7 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat'
 import { beforeAll, describe, expect, it } from 'vitest'
 import { BOT_ID_BASE, MAX_BOTS } from '../../shared/protocol'
-import { audibleVehicles, bodyAlive, liveBots } from '../../src/net/bots'
+import { audibleVehicles, bodyAlive, hillHold, liveBots } from '../../src/net/bots'
 
 beforeAll(async () => {
   await RAPIER.init()
@@ -46,5 +46,27 @@ describe('bot replication safety', () => {
     expect(list).toEqual([p2, p3, bots[0], bots[1]])
     // A client that does not simulate bots passes none of its own (it hears the replicas).
     expect(audibleVehicles([[2, p2]], [], world)).toEqual([p2])
+  })
+})
+
+describe('hillHold', () => {
+  const ring = { x: 100, z: -50, inner: 80, outer: 108 }
+  it('sends bots to the ring, on the side nearest the host, never to the lake in the middle', () => {
+    const hold = hillHold(ring, { x: 400, z: -50 })
+    expect(hold.x).toBeCloseTo(100 + 94)
+    expect(hold.z).toBeCloseTo(-50)
+    expect(hold.radius).toBeCloseTo(14)
+    // Every point bots may hold lies inside the ring.
+    const d = Math.hypot(hold.x - ring.x, hold.z - ring.z)
+    expect(d - hold.radius).toBeGreaterThanOrEqual(ring.inner)
+    expect(d + hold.radius).toBeLessThanOrEqual(ring.outer)
+    // From the other side it is the other side of the ring.
+    expect(hillHold(ring, { x: 100, z: -500 }).z).toBeCloseTo(-50 - 94)
+    // A host standing on the centre still gets a point on the ring.
+    const centre = hillHold(ring, { x: 100, z: -50 })
+    expect(Math.hypot(centre.x - ring.x, centre.z - ring.z)).toBeCloseTo(94)
+  })
+  it('holds a disc zone at its centre', () => {
+    expect(hillHold({ x: 5, z: 6, inner: 0, outer: 30 }, { x: 100, z: 100 })).toEqual({ x: 5, z: 6, radius: 30 })
   })
 })

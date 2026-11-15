@@ -13,7 +13,8 @@
  */
 import { PLANETS, planetById, planetName, type PlanetRecipe } from './planets'
 import { generateTerrain, type TerrainData } from './terrain/generate'
-import { defaultTerrainSettings, KIND_ALPINE, KIND_VOLCANIC, type TerrainSettings } from './terrain/settings'
+import { paletteFor } from './terrain/palettes'
+import { defaultTerrainSettings, KIND_VOLCANIC, type TerrainSettings } from './terrain/settings'
 
 /** Angular distance from the globe's centre point to the edge of the 2 km square, in degrees. */
 export const ISLAND_ANGLE = 38
@@ -57,22 +58,13 @@ export function planetCard(recipeId: string, seed: number): PlanetCard {
 }
 
 // ---------------------------------------------------------------------------------------
-// Colours. Copied from terrain/material.ts PALETTES (that file imports three).
+// Colours. The ground palettes are terrain/palettes.ts, shared with the terrain material.
 // ---------------------------------------------------------------------------------------
 
-interface Pal { groundDark: number; groundLight: number; rockDark: number; rockLight: number; darkRockA: number; darkRockB: number; shore: number; roadLine: number }
-const PALETTES: Pal[] = [
-  { groundDark: 0xa5351a, groundLight: 0xd9602c, rockDark: 0x7a2a14, rockLight: 0xa8431f, darkRockA: 0x241715, darkRockB: 0x3f241c, shore: 0xc28a5a, roadLine: 0xc79670 },
-  { groundDark: 0xc98a3c, groundLight: 0xf0c878, rockDark: 0x9a4a22, rockLight: 0xd08040, darkRockA: 0x8a4a26, darkRockB: 0xb86a34, shore: 0xf2deb0, roadLine: 0xf6e3b4 },
-  { groundDark: 0x3f5f26, groundLight: 0x86a04a, rockDark: 0x55555a, rockLight: 0x8a8782, darkRockA: 0x3e4044, darkRockB: 0x63625f, shore: 0xb8b29c, roadLine: 0xd8cfb8 },
-]
-const SNOW = 0xeef2f6
 const TREE = 0x1d3a1a
 const LAVA_CRUST = 0x2a0703
 const LAVA_HOT = 0xff7a1a
 const LAVA_WHITE = 0xffd27a
-const WATER_DEEP = 0x0a3562
-const WATER_SHALLOW = 0x2fc4bd
 const FOAM = 0xf2fbff
 
 type RGB = [number, number, number]
@@ -204,10 +196,15 @@ export function paintPlanetMap(recipeId: string, seed: number, width = 1024, hei
   const settings = settingsForRecipe(recipe)
   const data = generateTerrain(seed, settings, { resolution: MAP_RESOLUTION })
   const kind = settings.kind
-  const pal = PALETTES[kind] ?? PALETTES[0]
+  const pal = paletteFor(settings.look)
   const lavaSea = recipe.values['world.seaKind'] === 0
   const lavaLake = kind === KIND_VOLCANIC
-  const snowLine = kind === KIND_ALPINE ? data.layout.summitHeight * 0.5 : Infinity
+  const dry = settings.dry > 0
+  // The painted snow sits a little higher than in the world, where it thins on steep faces.
+  const snowy = settings.snowLine < 2
+  const snowLine = snowy ? data.layout.summitHeight * Math.min(0.5, settings.snowLine * 1.4) : Infinity
+  // A dry world has no sea: its low ground is land all the way down.
+  const seaLevel = dry ? -1e6 : Number(recipe.values['world.lavaAltitude'] ?? 0)
   const ov = overlays(data)
   const isles = islets(seed)
   const N = lattice(seed | 0)
@@ -221,8 +218,8 @@ export function paintPlanetMap(recipeId: string, seed: number, width = 1024, hei
   const C = {
     gd: rgb(pal.groundDark), gl: rgb(pal.groundLight), rd: rgb(pal.rockDark), rl: rgb(pal.rockLight),
     ba: rgb(pal.darkRockA), bb: rgb(pal.darkRockB), shore: rgb(pal.shore), road: rgb(pal.roadLine),
-    snow: rgb(SNOW), tree: rgb(TREE), crust: rgb(LAVA_CRUST), hot: rgb(LAVA_HOT), white: rgb(LAVA_WHITE),
-    deep: rgb(WATER_DEEP), shallow: rgb(WATER_SHALLOW), foam: rgb(FOAM),
+    snow: rgb(pal.snow), tree: rgb(TREE), crust: rgb(LAVA_CRUST), hot: rgb(LAVA_HOT), white: rgb(LAVA_WHITE),
+    deep: rgb(pal.seaDeep), shallow: rgb(pal.seaShallow), foam: rgb(FOAM),
   }
   // Light from the north west, a little above the horizon. World: north is -z, west is -x.
   const lx = -0.55, lz = -0.55, ly = 0.63
@@ -244,6 +241,20 @@ export function paintPlanetMap(recipeId: string, seed: number, width = 1024, hei
       mixInto(col, C.shallow, clamp01(shore * 0.85 + (v - 0.5) * 0.12))
       mixInto(col, C.foam, smooth(0.9, 1, shore) * 0.8)
     }
+  }
+
+  // Bare ground for the far side of a world with no sea: the palette mottled at two scales,
+  // with dark basins, so it reads as the same dust as the mapped square.
+  const farGround = (nx: number, ny: number, nz: number) => {
+    const v1 = valueNoise(N, nx * 5 + 80.41, ny * 5, nz * 5)
+    const v2 = valueNoise(N, nx * 40 + 95.03, ny * 40, nz * 40)
+    col[0] = C.gd[0]; col[1] = C.gd[1]; col[2] = C.gd[2]
+    mixInto(col, C.gl, smooth(0.15, 0.85, v1 * 0.7 + v2 * 0.3))
+    mixInto(col, C.ba, smooth(0.52, 0.66, valueNoise(N, nx * 2.3 + 12.7, ny * 2.3, nz * 2.3)) * 0.7)
+    const pit = valueNoise(N, nx * 22 + 3.1, ny * 22, nz * 22)
+    mixInto(col, C.rd, smooth(0.7, 0.8, pit) * 0.6)
+    const s = 0.85 + v2 * 0.25
+    col[0] *= s; col[1] *= s; col[2] *= s
   }
 
   // Longitude trig per column, reused on every row.
@@ -271,7 +282,7 @@ export function paintPlanetMap(recipeId: string, seed: number, width = 1024, hei
         const wx = east * metresPerRad, wz = -north * metresPerRad
         if (wx > -half && wx < half && wz > -half && wz < half) {
           const h = sampleGrid(H, n, half, cell, wx, wz)
-          if (h > 0) {
+          if (h > seaLevel) {
             land = true
             const hx = sampleGrid(H, n, half, cell, wx + cell, wz) - sampleGrid(H, n, half, cell, wx - cell, wz)
             const hz = sampleGrid(H, n, half, cell, wx, wz + cell) - sampleGrid(H, n, half, cell, wx, wz - cell)
@@ -290,7 +301,7 @@ export function paintPlanetMap(recipeId: string, seed: number, width = 1024, hei
             const vol = sampleGrid(data.volcanic, n, half, cell, wx, wz)
             mixInto(col, v2 > 0.5 ? C.bb : C.ba, clamp01(vol * (0.5 + smooth(0.03, 0.2, slope) * 0.4)))
             // Beach.
-            mixInto(col, C.shore, smooth(8, 2, h) * 0.9)
+            mixInto(col, C.shore, smooth(8, 2, h - (dry ? -1e6 : seaLevel)) * 0.9)
             // Trees.
             const tree = sampleGrid(ov.trees, ov.n, half, ov.cell, wx, wz)
             mixInto(col, C.tree, clamp01(tree * 1.4) * 0.75)
@@ -313,9 +324,15 @@ export function paintPlanetMap(recipeId: string, seed: number, width = 1024, hei
             const edge = Math.max(Math.abs(wx), Math.abs(wz))
             liquid(lavaSea, smooth(lavaSea ? -30 : -60, 0, h) * smooth(half, half * 0.8, edge), nx, ny, nz)
           }
+        } else if (dry) {
+          land = true
+          farGround(nx, ny, nz)
         } else {
           liquid(lavaSea, 0, nx, ny, nz)
         }
+      } else if (dry) {
+        land = true
+        farGround(nx, ny, nz)
       } else {
         // Islets: a wobbled distance to the nearest blob centre.
         let best = -1
@@ -334,7 +351,7 @@ export function paintPlanetMap(recipeId: string, seed: number, width = 1024, hei
           mixInto(col, C.gl, v2 * 0.7)
           mixInto(col, kind === KIND_VOLCANIC ? C.ba : C.rd, smooth(0.45, 0.9, best) * 0.6)
           mixInto(col, C.shore, smooth(0.12, 0.0, best) * 0.8)
-          if (kind === KIND_ALPINE) mixInto(col, C.snow, smooth(0.7, 0.95, best))
+          if (snowy) mixInto(col, C.snow, smooth(settings.snowLine < 0.2 ? 0.1 : 0.7, 0.95, best))
           const s = 0.8 + v2 * 0.3
           col[0] *= s; col[1] *= s; col[2] *= s
         } else {
@@ -344,7 +361,7 @@ export function paintPlanetMap(recipeId: string, seed: number, width = 1024, hei
 
       if (polar > 0) {
         if (lavaSea && !land) mixInto(col, C.crust, polar * 0.7)
-        else if (!lavaSea) mixInto(col, C.snow, polar * (kind === KIND_ALPINE ? 0.9 : 0.35))
+        else if (!lavaSea && !dry) mixInto(col, C.snow, polar * (snowy ? 0.9 : 0.35))
       }
       const o = (py * width + px) * 4
       out[o] = col[0]; out[o + 1] = col[1]; out[o + 2] = col[2]; out[o + 3] = 255

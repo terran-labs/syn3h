@@ -3,11 +3,14 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { JET_DESIGNS } from './designs'
 import { NextJet } from './NextJet'
 import { GROUND_Y } from './shapes'
+import { params } from '../../../shared/params'
+import { vehicleShading } from '../../core/quality'
 
 /** A grey studio sphere, generated: the backdrop and, blurred, the reflections on the metal. */
 function studio(withLights: boolean): THREE.Scene {
-  const scene = new THREE.Scene(), g = new THREE.SphereGeometry(60, 48, 24), p = g.getAttribute('position'), colors: number[] = []
-  for (let i = 0; i < p.count; i++) { const h = p.getY(i) / 60, v = withLights ? (h > 0 ? .16 + .1 * h : .16 + .55 * -h) : (h > 0 ? .34 - .16 * h : .34 + .4 * -h); colors.push(v, v, v * 1.01) }
+  // The backdrop must enclose every row of jets; the reflection room stays small.
+  const radius = withLights ? 60 : 400, scene = new THREE.Scene(), g = new THREE.SphereGeometry(radius, 48, 24), p = g.getAttribute('position'), colors: number[] = []
+  for (let i = 0; i < p.count; i++) { const h = p.getY(i) / radius, v = withLights ? (h > 0 ? .16 + .1 * h : .16 + .55 * -h) : (h > 0 ? .34 - .16 * h : .34 + .4 * -h); colors.push(v, v, v * 1.01) }
   g.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
   scene.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false })))
   if (withLights) {
@@ -30,23 +33,25 @@ async function main() {
   const scene = studio(false)
   const pmrem = new THREE.PMREMGenerator(renderer)
   scene.environment = pmrem.fromScene(studio(true), .03).texture
-  const camera = new THREE.PerspectiveCamera(34, innerWidth / innerHeight, .1, 200)
+  const camera = new THREE.PerspectiveCamera(34, innerWidth / innerHeight, .1, 1000)
   const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true
   const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(-5, 12, -4); sun.castShadow = true
   sun.shadow.mapSize.set(4096, 4096); sun.shadow.normalBias = .03; sun.shadow.bias = -.0003
-  Object.assign(sun.shadow.camera, { left: -36, right: 36, top: 26, bottom: -26 }); scene.add(sun)
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(40, 64), new THREE.ShadowNodeMaterial({ opacity: .38 }))
+  Object.assign(sun.shadow.camera, { left: -40, right: 40, top: 80, bottom: -30 }); scene.add(sun)
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(160, 64), new THREE.ShadowNodeMaterial({ opacity: .38 }))
   floor.rotation.x = -Math.PI / 2; floor.position.y = GROUND_Y; floor.receiveShadow = true; scene.add(floor)
 
   const spacing = 9.5, query = new URLSearchParams(location.search)
   // ?detail=low shows the reduced polygon versions.
   let detail = query.get('detail') === 'low' ? .5 : 1
+  // Full showroom shading, as on a desktop in the game: scales, clear coat, flakes.
+  params.set(vehicleShading.def.id, Number(query.get('shading') ?? 3))
   let jets: NextJet[] = []
   const build = () => {
     jets.forEach(j => { scene.remove(j.object); j.dispose() })
     jets = JET_DESIGNS.map(d => new NextJet(d, detail))
     // Rows of five: the first round in front, each later round behind it.
-    jets.forEach((j, i) => { j.object.position.set((i % 5 - 2) * -spacing, 0, Math.floor(i / 5) * 12); scene.add(j.object) })
+    jets.forEach((j, i) => { j.object.position.set((i % 5 - 2) * -spacing, 0, Math.floor(i / 5) * 12); scene.add(j.object); j.showroom() })
     api.jets = jets
   }
   let current = 0, all = false, gearTarget = 0, gear = 0, autoGear = true, hoverLift = 1
@@ -74,6 +79,11 @@ async function main() {
   let elapsed = 0; const timer = new THREE.Timer()
   const api = {
     ready: false, jets, show, renderer,
+    /** For captures: put the camera at a point in the current jet's frame, looking at another. */
+    lookFrom(from: [number, number, number], to: [number, number, number]) {
+      const origin = jets[current].object.position
+      camera.position.set(...from).add(origin); controls.target.set(...to).add(origin); controls.update()
+    },
     /** For captures: full (1) or reduced (.5) polygons. */
     setDetail(value: number) { detail = value; build(); show(all ? -1 : current) },
     /** For captures: hold the main nozzle at a fixed deflection, or pass null to resume the sweep. */
@@ -92,8 +102,8 @@ async function main() {
     timer.update(); const dt = Math.min(timer.getDelta(), .05); elapsed += dt
     if (autoGear) { gearTarget = Math.floor(elapsed / 5) % 2; hoverLift = 1 }
     gear += Math.sign(gearTarget - gear) * Math.min(Math.abs(gearTarget - gear), dt * .7)
-    // Sweep the main nozzle through its travel so the thrust vectoring is visible.
-    const v = api.vector ?? [Math.sin(elapsed * 1.6) * .35, Math.cos(elapsed * 1.6) * .35]
+    // Work the vectoring vanes gently: pitch, with a slower yaw over it.
+    const v = api.vector ?? [Math.sin(elapsed * .9) * .22, Math.sin(elapsed * .45) * .22]
     jets.forEach(j => { j.setGear(gear); j.setThrottle(1 - gear * .7); j.setVector(v[0], v[1]); if (autoGear || gearTarget !== gear) j.object.position.y = hoverLift * (1 - gear) * 1.6 })
     controls.update(); renderer.render(scene, camera)
   })

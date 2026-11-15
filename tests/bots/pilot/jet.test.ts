@@ -188,7 +188,7 @@ describe('jet pilot, hover mode', () => {
     expect(minClear).toBeGreaterThan(8)
     expect(distTo(f, goal)).toBeLessThan(4)
     f.w.free()
-  })
+  }, 30000) // A long flight; five seconds is not enough on a loaded machine.
 
   it('writes the same input for the same state and resets cleanly', () => {
     const run = () => {

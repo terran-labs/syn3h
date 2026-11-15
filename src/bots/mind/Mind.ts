@@ -19,7 +19,7 @@ import { hashString, seededRandom } from '../random'
 import { nearestImage, wrapDistance } from '../../../shared/wrap'
 import { type Personality, personalityFor } from './personality'
 
-export type ActivityKind = 'road' | 'summit' | 'explore' | 'follow' | 'donut' | 'weave' | 'pause' | 'retreat' | 'visit'
+export type ActivityKind = 'road' | 'summit' | 'explore' | 'follow' | 'donut' | 'weave' | 'pause' | 'retreat' | 'visit' | 'flee' | 'hold'
 
 export interface Activity {
   kind: ActivityKind
@@ -58,6 +58,7 @@ export interface MindOptions {
 const CAPTIONS: Record<ActivityKind, string> = {
   road: 'cruising the road', summit: 'heading for the summit', explore: 'exploring', follow: 'tagging along',
   donut: 'doing donuts', weave: 'carving', pause: 'taking in the view', retreat: 'finding another way', visit: 'sightseeing',
+  flee: 'making a run for it', hold: 'holding the hill',
 }
 
 const VISIT_CELL = 64
@@ -83,6 +84,9 @@ export class Mind {
   private lastKind: ActivityKind = 'pause'
   private bestDistance = Infinity
   private leaderIdle = 0
+  private readonly slide: NavPoint = { x: 0, z: 0 }
+  private fleeTime = 0
+  private holdRadius = 10
   private lastX = NaN
   private lastZ = NaN
   private sight: Place | null = null
@@ -121,6 +125,16 @@ export class Mind {
   /** Go after one vehicle for a while: how a bot that cannot ram still joins the chase. */
   pursue(leader: Vehicle, seconds: number): void {
     this.clearPlan(); this.begin('follow', null, leader, seconds)
+  }
+
+  /** Get away from one vehicle for a while: what a bot does when whoever is "it" comes close. */
+  flee(threat: Vehicle, seconds: number): void {
+    this.clearPlan(); this.begin('flee', null, threat, seconds); this.fleeTime = 0
+  }
+
+  /** Go to a place and stay inside it: King of the Hill. */
+  hold(place: NavPoint, radius: number, seconds: number): void {
+    this.clearPlan(); this.begin('hold', { x: place.x, z: place.z, y: place.y }, null, seconds); this.holdRadius = radius
   }
 
   /** Forget the current plan: after a teleport, a regenerated world, or a handover. */
@@ -166,11 +180,28 @@ export class Mind {
       this.leaderIdle = Math.hypot(lv.x, lv.z) < 1.5 ? this.leaderIdle + dt : 0
       if (this.leaderIdle > 4) a.until = 0
     }
+    if (a.kind === 'flee') {
+      // Every couple of seconds, pick somewhere it can stand that puts distance between
+      // them: straight away from the threat if that is drivable, else off to one side.
+      this.fleeTime -= dt
+      if (!a.leader?.body.isValid()) a.until = 0
+      else if (this.fleeTime <= 0 || !a.destination) {
+        this.fleeTime = 2
+        const t = a.leader.body.translation(), away = Math.atan2(here.z - t.z, here.x - t.x)
+        a.destination = null
+        for (const turn of [0, 0.7, -0.7, 1.4, -1.4]) {
+          const x = here.x + Math.cos(away + turn) * 110, z = here.z + Math.sin(away + turn) * 110
+          if (this.standable(x, z)) { a.destination = { x, z }; break }
+        }
+        this.route = null; this.bestDistance = Infinity; this.bestTime = this.time
+        if (!a.destination || Math.hypot(t.x - here.x, t.z - here.z) > 160) a.until = 0
+      }
+    }
     const destination = a.destination
     const distance = destination ? Math.hypot(destination.x - here.x, destination.z - here.z) : Infinity
-    const arrived = destination !== null && a.kind !== 'follow' && distance < 10
+    const arrived = destination !== null && a.kind !== 'follow' && a.kind !== 'hold' && a.kind !== 'flee' && distance < 10
     // Give up on a place it has stopped getting closer to: 12 seconds without gaining 5 m.
-    if (destination && a.kind !== 'follow') {
+    if (destination && a.kind !== 'follow' && a.kind !== 'hold' && a.kind !== 'flee') {
       if (distance < this.bestDistance - 5) { this.bestDistance = distance; this.bestTime = this.time }
       else if (this.time - this.bestTime > 12) { this.abandoned++; a.until = 0 }
     }
@@ -194,6 +225,9 @@ export class Mind {
       goal.x = here.x + this.forward.x * 2 - this.forward.z * 6 * this.swerveSide
       goal.z = here.z + this.forward.z * 2 + this.forward.x * 6 * this.swerveSide
       goal.speed = 9
+      // A donut drifts. If it has wandered to within a few lengths of anything it cannot
+      // stand on, that is the end of the show.
+      for (let i = 0; i < 6; i++) if (!this.standable(here.x + Math.cos(i * Math.PI / 3) * 12, here.z + Math.sin(i * Math.PI / 3) * 12)) { act.until = 0; break }
     } else {
       // A follow chosen this step has no offset point yet: aim at the leader itself for now.
       const target = act.destination ?? act.leader?.body.translation() ?? here
@@ -212,6 +246,9 @@ export class Mind {
       }
       this.troubleFor = clear ? Math.max(0, this.troubleFor - dt) : this.troubleFor + dt
       if (act.kind === 'follow' && distance < 6) { goal.stopWithin = 6; goal.x = target.x; goal.z = target.z }
+      // On the hill: stop well inside the zone and stay, rather than circling its centre.
+      if (act.kind === 'hold' && distance < this.holdRadius * 0.6) { goal.stopWithin = this.holdRadius * 0.6; goal.x = target.x; goal.z = target.z }
+      if (act.kind === 'flee') goal.speed = Math.max(goal.speed, 16)
     }
     if (this.pilot.profile.flies && act.kind !== 'pause') {
       // An aircraft must be above the ground ahead before it gets there. Look along the way
@@ -266,7 +303,7 @@ export class Mind {
       return this.begin('pause', null, null, 1.5 + r() * 2.5)
     }
     const flat = this.terrain.normalAt(here.x, here.z, this.normal).y > 0.96
-    const roomy = flat && [0, 1, 2, 3, 4, 5].every(i => isSafeGround(this.terrain, here.x + Math.cos(i * Math.PI / 3) * 16, here.z + Math.sin(i * Math.PI / 3) * 16))
+    const roomy = flat && [0, 1, 2, 3, 4, 5].every(i => this.standable(here.x + Math.cos(i * Math.PI / 3) * 28, here.z + Math.sin(i * Math.PI / 3) * 28))
     const leader = this.pickLeader(here)
     const road = this.pickRoadPoint(here)
     const summit = this.pickSummit()
@@ -393,7 +430,9 @@ export class Mind {
 
   /** Refresh the look ahead point: along a planned route, else along the roads, else direct. */
   private aimFor(here: { x: number; y: number; z: number }, target: NavPoint, speed: number, dt: number): void {
-    const look = Math.max(8, Math.min(18, speed * 0.7))
+    // Look further ahead the faster it goes, as a driver does: a near aim point at speed
+    // means sawing at the wheel.
+    const look = Math.max(10, Math.min(30, speed * 1.2))
     const navigator = this.options.navigator
     if (navigator) {
       this.routeTime -= dt
@@ -409,7 +448,15 @@ export class Mind {
       const points = this.route?.points
       if (points?.length) {
         while (this.routeIndex < points.length - 1 && Math.hypot(points[this.routeIndex].x - here.x, points[this.routeIndex].z - here.z) < look) this.routeIndex++
-        this.waypoint = points[this.routeIndex]
+        // Aim at the spot on the route that is `look` metres away, sliding along it, rather
+        // than at the next waypoint: a waypoint aim jumps each time one is passed, and every
+        // jump is a twitch at the wheel.
+        const b = points[this.routeIndex], a = this.routeIndex > 0 ? points[this.routeIndex - 1] : null
+        const db = Math.hypot(b.x - here.x, b.z - here.z), da = a ? Math.hypot(a.x - here.x, a.z - here.z) : db
+        if (a && db > look && da < look) {
+          const t = (look - da) / (db - da)
+          this.slide.x = a.x + (b.x - a.x) * t; this.slide.z = a.z + (b.z - a.z) * t; this.waypoint = this.slide
+        } else this.waypoint = b
         return
       }
     }
@@ -436,18 +483,44 @@ export class Mind {
     const profile = this.pilot.profile
     const dx = aimX - here.x, dz = aimZ - here.z, d = Math.hypot(dx, dz) || 1
     // An aircraft looks much further: what matters is a wall it cannot out-climb.
-    const reach = profile.flies ? 70 : Math.max(8, Math.min(24, speed * 1.2)), base = Math.atan2(dz, dx)
+    // A driver who turns the wheel smoothly has to see trouble earlier: about two seconds ahead.
+    const reach = profile.flies ? 70 : Math.max(10, Math.min(36, speed * 2)), base = Math.atan2(dz, dx)
     for (const swerve of SWERVES) {
       // Try the side it last chose first, so it does not dither between two ways round.
       const angle = base + swerve * this.swerveSide, cx = Math.cos(angle), cz = Math.sin(angle)
       const midX = here.x + cx * reach * 0.5, midZ = here.z + cz * reach * 0.5
       const endX = here.x + cx * reach, endZ = here.z + cz * reach
-      if (!this.crossable(here.x, here.z, midX, midZ) || !this.crossable(midX, midZ, endX, endZ)) continue
+      const nearX = here.x + cx * reach * 0.25, nearZ = here.z + cz * reach * 0.25
+      if (!this.crossable(here.x, here.z, nearX, nearZ) || !this.crossable(nearX, nearZ, midX, midZ) || !this.crossable(midX, midZ, endX, endZ)) continue
+      if (this.parkedInWay(here, endX, endZ)) continue
       if (swerve === 0) return { x: aimX, z: aimZ, swerved: false }
       if (swerve * this.swerveSide < 0) this.swerveSide = -this.swerveSide
       return { x: here.x + cx * Math.max(reach, Math.min(d, 20)), z: here.z + cz * Math.max(reach, Math.min(d, 20)), swerved: true }
     }
     return null
+  }
+
+  /**
+   * Is a vehicle that is standing still (or nearly) on the line from here to (bx, bz)?
+   * Moving traffic sorts itself out; a parked one has to be driven round. The vehicle being
+   * tailed and anything on a hill this mind is trying to hold do not count.
+   */
+  private parkedInWay(here: { x: number; z: number }, bx: number, bz: number): boolean {
+    const others = this.options.others?.()
+    if (!others || this.pilot.profile.flies) return false
+    const dx = bx - here.x, dz = bz - here.z, length = Math.hypot(dx, dz) || 1
+    const a = this.activity, hill = a.kind === 'hold' ? a.destination : null
+    for (const other of others) {
+      if (other === this.vehicle || other === a.leader || !other.body.isValid()) continue
+      const v = other.body.linvel()
+      if (v.x * v.x + v.z * v.z > 9) continue
+      const p = other.body.translation(), px = p.x - here.x, pz = p.z - here.z
+      if (hill && Math.hypot(p.x - hill.x, p.z - hill.z) < this.holdRadius) continue
+      const along = (px * dx + pz * dz) / length
+      if (along < 0 || along > length) continue
+      if (Math.abs(px * dz - pz * dx) / length < 4) return true
+    }
+    return false
   }
 
   /** May this vehicle travel from a to b: dry (or floating), inside the world, not too steep. */

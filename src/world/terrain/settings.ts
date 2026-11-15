@@ -43,32 +43,64 @@ export const terrainLandShare = defineParam({
 export const terrainPlanetSize = defineParam({
   ...P, id: 'terrain.planetSize', label: 'Planet size: 0 small, 1 medium, 2 large', default: 1, min: 0, max: 2, step: 1,
 })
+/**
+ * Fords: on water worlds, rivers carry on across the roads as shallow fords and run down to
+ * the sea, instead of stopping in a pool above each road. Off by default: it reshapes the
+ * world's rivers, and lava rivers never ford.
+ */
+export const terrainFords = defineParam({
+  ...P, id: 'terrain.fords', label: 'Rivers ford the roads (0 off, 1 on)', default: 0, min: 0, max: 1, step: 1,
+})
 export const terrainTreeCover = defineParam({
   ...P, id: 'terrain.treeCover', label: 'Plant cover (off: no worlds grow trees or cacti)', default: 0, min: 0, max: 1, step: 0.01,
 })
 /**
- * What kind of world this is: it picks the shape of the centre, what fills its lake, and
- * the colours of the ground. 0 volcanic (Mars), 1 desert, 2 alpine. See shared/planets.ts
- * for the recipes that set this together with everything else.
+ * How much air the world has, 0 to 1. Read by the weather (wind force, wind sound, fog):
+ * 1 is a full atmosphere, 0 is a vacuum with no wind, no wind sound and no fog (the Moon).
+ */
+export const worldAtmosphere = defineParam({
+  id: 'world.atmosphere', label: 'Atmosphere (0 vacuum, 1 full)', group: 'World', scope: 'world', default: 1, min: 0, max: 1, step: 0.01,
+})
+/** How much grass and small flowers grow. Read by groundcover.ts; not a regeneration. */
+export const terrainGroundCover = defineParam({
+  id: 'terrain.groundCover', label: 'Grass and flowers', group: 'Terrain', scope: 'world', default: 1, min: 0, max: 1, step: 0.05,
+})
+/**
+ * The SHAPE of the world: 0 a cone with a crater (lava lake, rivers and vents unless the
+ * world is dry), 1 a great mesa with buttes, 2 a horn peak with ridged ranges. The colours
+ * are a separate choice, `terrain.look`, so a planet is a shape plus a look plus sliders.
+ * See world/planets.ts for the recipes.
  */
 export const terrainKind = defineParam({
-  ...P, id: 'terrain.kind', label: 'World kind: 0 volcanic, 1 desert, 2 alpine', default: 0, min: 0, max: 2, step: 1,
+  ...P, id: 'terrain.kind', label: 'Shape: 0 volcano, 1 mesa, 2 horn peak', default: 0, min: 0, max: 2, step: 1,
+})
+/** The ground's palette: an index into terrain/palettes.ts. Also names the planet. */
+export const terrainLook = defineParam({
+  ...P, id: 'terrain.look',
+  label: 'Look: 0 volcanic 1 desert 2 alpine 3 isles 4 ice 5 obsidian 6 badlands 7 moon 8 swamp',
+  default: 0, min: 0, max: 8, step: 1,
+})
+/** Where snow starts, as a fraction of the summit's height. 2 is above everything: no snow. */
+export const terrainSnowLine = defineParam({
+  ...P, id: 'terrain.snowLine', label: 'Snow line (share of summit height, 2 none)', default: 2, min: 0, max: 2, step: 0.01,
+})
+/** A dry world has no lake, rivers, pools or vents. Sink the sea level below -60 to drain the sea too. */
+export const terrainDry = defineParam({
+  ...P, id: 'terrain.dry', label: 'Dry world: no lake or rivers (0 off, 1 on)', default: 0, min: 0, max: 1, step: 1,
+})
+/** Impact craters over the open ground: 0 none, 1 saturated. */
+export const terrainCraters = defineParam({
+  ...P, id: 'terrain.craters', label: 'Impact craters', default: 0, min: 0, max: 1, step: 0.01,
 })
 /** What the sea is made of. A look and feel choice: it does not change the shape of the land. */
 export const worldSeaKind = defineParam({
   id: 'world.seaKind', label: 'Sea: 0 lava, 1 water', group: 'World', scope: 'world', default: 0, min: 0, max: 1, step: 1,
 })
-/**
- * Whether the world wraps for gameplay: vehicles, cameras, bots and the network carry
- * things across the seam. The ground is always drawn and collided across the seam; this
- * switch only tells the rest of the game to act on it, so each part can land dark.
- */
-export const worldWrap = defineParam({
-  id: 'world.wrap', label: 'Wrapping world', group: 'World', scope: 'world', default: false,
-})
 export const KIND_VOLCANIC = 0
 export const KIND_DESERT = 1
 export const KIND_ALPINE = 2
+/** The look whose ground carries alpine tundra and painted meadow flowers. */
+export const LOOK_ALPINE = 2
 
 /** Everything generation depends on besides the seed. Plain data so tests need no registry. */
 export interface TerrainSettings {
@@ -83,14 +115,24 @@ export interface TerrainSettings {
   coastWobble: number
   cragDensity: number
   spireHeight: number
-  /** KIND_VOLCANIC, KIND_DESERT or KIND_ALPINE. */
+  /** The shape: KIND_VOLCANIC (cone), KIND_DESERT (mesa) or KIND_ALPINE (horn). */
   kind: number
+  /** Palette index, see palettes.ts. */
+  look: number
+  /** Snow starts at this fraction of the summit height; 2 or more means none. */
+  snowLine: number
+  /** 1: no lake, rivers, pools or vents. */
+  dry: number
+  /** 0..1 density and depth of impact craters. */
+  craters: number
   /** 0..1 share of the tile that is land. */
   landShare: number
   /** 0 small (1 km tile), 1 medium (2 km), 2 large (4 km). */
   planetSize: number
   /** 0..1 share of the land in forest. */
   treeCover: number
+  /** 1 when rivers ford the roads and reach the sea (water worlds only). */
+  fords: number
 }
 
 export const TERRAIN_PARAMS: Record<keyof TerrainSettings, Param<number>> = {
@@ -105,9 +147,14 @@ export const TERRAIN_PARAMS: Record<keyof TerrainSettings, Param<number>> = {
   cragDensity: terrainCragDensity,
   spireHeight: terrainSpireHeight,
   kind: terrainKind,
+  look: terrainLook,
+  snowLine: terrainSnowLine,
+  dry: terrainDry,
+  craters: terrainCraters,
   landShare: terrainLandShare,
   planetSize: terrainPlanetSize,
   treeCover: terrainTreeCover,
+  fords: terrainFords,
 }
 
 /** Param ids whose change regenerates the terrain. */

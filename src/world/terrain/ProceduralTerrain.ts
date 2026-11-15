@@ -17,8 +17,9 @@ import { type TerrainMaterial, createTerrainMaterial } from './material'
 import { LOD_FAR, LOD_NEAR, type TerrainMeshes, type TriangleStats, createTerrainMeshes } from './mesh'
 import { rimRoadRadius } from './roads'
 import { HeightSampler, sealSeam } from './sampler'
-import { KIND_ALPINE, KIND_VOLCANIC, TERRAIN_PARAM_IDS, currentTerrainSettings, worldSeaKind, worldWrap } from './settings'
+import { KIND_VOLCANIC, TERRAIN_PARAM_IDS, currentTerrainSettings, worldSeaKind } from './settings'
 import { spawnPointAt } from './spawn'
+import { GroundCover } from './groundcover'
 import { Trees } from './trees'
 import { Volcanics } from './volcanics'
 
@@ -40,8 +41,8 @@ export class ProceduralTerrain implements Terrain {
     return this.data.size
   }
   /** The world is one tile of a torus this many metres on a side: the current size. */
-  get wrapSize(): number | undefined {
-    return worldWrap.value ? this.data.size : undefined
+  get wrapSize(): number {
+    return this.data.size
   }
   /** Largest height change (m) sealing the tile's seam made on the last generation. */
   lastSeamCorrection = 0
@@ -76,6 +77,7 @@ export class ProceduralTerrain implements Terrain {
   /** The sea, lava lake, rivers and vents drawn from the generated data. */
   private readonly volcanics: Volcanics
   private readonly trees: Trees
+  private readonly cover: GroundCover
 
   constructor(private readonly game: Game, private seed: number) {
     this.data = this.generate()
@@ -130,6 +132,10 @@ export class ProceduralTerrain implements Terrain {
       game.camera,
     ))
     this.trees = game.add(new Trees(game.scene, this.sampler, game.camera))
+    this.cover = game.add(new GroundCover(
+      game.scene, this.sampler, game.camera,
+      () => game.renderer.toneMappingExposure / Math.max(1e-3, Number(params.get('sky.exposure')?.value ?? game.renderer.toneMappingExposure)),
+    ))
 
     this.unsubscribe = params.onChange((id) => {
       // The sea kind only recolours: no regeneration.
@@ -187,10 +193,7 @@ export class ProceduralTerrain implements Terrain {
   private keepSeam(): void {
     const f = this.seam
     const size = this.data.size
-    if (!f || !worldWrap.value) {
-      if (this.colliderX !== 0 || this.colliderZ !== 0) this.moveCollider(0, 0)
-      return
-    }
+    if (!f) return
     const half = size / 2
     const p = f.player.body.translation()
     // Hysteresis: 4 m past the edge, so a vehicle driving along the seam is not flipped
@@ -228,9 +231,11 @@ export class ProceduralTerrain implements Terrain {
     const hot = kind === KIND_VOLCANIC
     if (lake && hot) this.look.setLake(lake.x, lake.z, lake.radius, lake.surface)
     else this.look.setLake(0, 0, 0, -1000)
-    // Alpine worlds carry snow from a third of the way up the peak, so the ranges are capped too.
-    const snow = kind === KIND_ALPINE ? this.data.layout.summitHeight * 0.36 : 1e6
-    this.look.setLook(kind, worldSeaKind.value === 0, hot, snow)
+    // Snow starts at a share of the summit's height set by the recipe: alpine worlds carry
+    // it from a third of the way up, an ice moon from the shore, most worlds not at all.
+    const line = this.data.settings.snowLine
+    const snow = line >= 2 ? 1e6 : this.data.layout.summitHeight * line
+    this.look.setLook(this.data.settings.look, worldSeaKind.value === 0, hot && !!lake, snow)
   }
 
   /** Rebuild heights, mesh and collider in place, then notify listeners. */
@@ -256,6 +261,7 @@ export class ProceduralTerrain implements Terrain {
     this.collider = createTerrainCollider(this.game.world, this.data)
     this.volcanics.rebuild()
     this.trees.rebuild()
+    this.cover.rebuild()
     this.version++
     console.info(`terrain regenerated: seed ${this.seed}, ${this.lastGenerateMs.toFixed(0)} ms`)
     for (const l of this.listeners) l()
@@ -350,6 +356,8 @@ export class ProceduralTerrain implements Terrain {
     this.meshes.setLodDistances(near, far)
     // Forest out to the level's draw distance: 700 m on the weakest phones.
     this.trees.setDrawDistance(Math.min(1800, quality.drawDistance))
+    // Grass and flowers cost a few hundred thousand triangles: desktop level only for now.
+    this.cover.setEnabled(quality.level >= 2)
   }
 
   /** Terrain triangles in view at the current levels of detail, versus at full detail. */
@@ -368,6 +376,7 @@ export class ProceduralTerrain implements Terrain {
     this.game.remove(this.lodSystem)
     this.game.remove(this.volcanics)
     this.game.remove(this.trees)
+    this.game.remove(this.cover)
     this.listeners.clear()
     this.game.scene.remove(this.meshes.group)
     this.meshes.dispose()

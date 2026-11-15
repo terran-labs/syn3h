@@ -1,77 +1,108 @@
 # Vehicle lab
 
-The vehicle lab is the shared page for previewing and judging vehicle models. It shows any
-vehicle that has an exhibit file, in a generated photo studio, with the controls every lane
-needs: compare designs, orbit or sit in the cockpit, switch lamps and night, step through detail
-levels, read triangle and draw call counts, stress test many copies, repaint and animate.
+The vehicle lab is the shared page for previewing and judging vehicle models. Its sidebar lists
+every vehicle: the design studies and every vehicle the game can build. Pick one and its Options
+tree lets you change everything about it: view, lights, detail level, paint, motion, its own
+controls and the game parameters that belong to it. It all happens in a generated photo studio,
+with live triangle and draw call counts.
 
 It is a developer tool. The production build has one entry, `index.html`, so neither
 `vehicle-lab.html` nor `src/dev/vehicleLab/` ships in the game.
 
 ## Open it
 
-Run the dev server and open:
+Run the dev server and open `/vehicle-lab.html`. It opens on the first vehicle in the sidebar.
+Every selection rewrites the URL, so copying the address bar reproduces the view.
 
-- `/vehicle-lab.html?vehicle=buggy`: the buggy body gallery (round by round).
-- `/vehicle-lab.html?vehicle=game-skins`: the real in-game Syn3h and Mars Explorer skins.
+- `?vehicle=buggy`: the next Syn3h buggy design studies, round by round.
+- `?vehicle=game-buggy`, `game-buggy-classic`, `game-jet`, `game-hovercraft`, `game-tank`: the
+  vehicles as the game builds them.
 
-`/buggy-bodies.html` still works: it redirects to the buggy exhibit and turns `?round=N` into
-`?group=N`.
+Old links keep working. `/buggy-bodies.html?round=N` opens round N of the design studies.
+`?vehicle=game-skins` opens the in-game Syn3h buggy, and `&design=classic` opens the Mars
+Explorer buggy instead.
 
-## Controls
+## Every vehicle shows up by itself
 
-On a wide screen (iPad landscape, desktop) every control group shows at once. On a phone the
-groups sit behind five tabs (Designs, Camera, Lights, Motion, Paint), and the notes card shows
-only the name and stats until you tap it. Every button is at least 44 px square.
+There are two ways in, and neither needs an edit to the lab:
 
-**Designs**
+1. **A vehicle in the game.** Add the kind to `createVehicle` and to `VEHICLE_KINDS` in
+   `src/vehicles/index.ts`. `exhibits/gameVehicles.ts` makes one exhibit per entry: it builds the
+   real vehicle with `createVehicle`, in a private physics world with a flat ground slab. It
+   drops the vehicle with no input until it settles, then fixes the body so it cannot fall or
+   drive away. From then on the lab keeps running the vehicle's fixed step and visual update, and
+   Motion feeds its input, so wheels, wings, gear and lamps move as far as they can without the
+   body moving. The vehicle runs as a remote copy, so Far shows what other players see.
+2. **A design study or any other model.** Drop a file in `src/dev/vehicleLab/exhibits/` that
+   exports a `LabExhibit` (see "Add an exhibit" below). `registry.ts` collects every exhibit any
+   file there exports, named or default, singly or in an array. The sidebar orders them by
+   `order`, then title.
 
-- Numbered design buttons show one design.
-- **Side by side** lines up every design in the group, first on the left seen from the front.
-- **Round 1, Round 2...** (the exhibit's group label) reload the page on that group. The last
-  group is the default.
+## The sidebar
 
-**Camera**
+On a wide screen the sidebar sits on the left and the vehicle is framed in the space beside it.
+The menu button at its top folds it to a slim rail and back. On a phone, or on a tablet held
+upright, it becomes a bottom sheet instead: closed, it shows only a header naming the vehicle,
+and the same button opens it to just over half the screen, scrollable. The vehicle is always
+framed in the visible area. Every target is at least 44 px.
 
-- Drag to orbit, pinch or scroll to zoom, two fingers or right drag to pan.
-- **Front, Rear, Side, Top, Low** frame the design. Front and Rear are three quarter views; in
-  side by side they become near head on so no car hides another.
-- **Turntable** spins the stage slowly.
-- **Cockpit** eases the camera to the driver's eye, looking forward, and hides the canopy. Drag
-  to look around from the seat. Press again to ease back out to where you were. Shown only when
-  the model has a cockpit, and not in side by side or stress mode.
+**Vehicles** lists exhibits under section headings (Design studies, In the game). A vehicle with
+groups (the studies' rounds) opens to them, latest first and open, older ones marked "older".
+Each group, or each vehicle without groups, has **Compare all N**, which shows its designs side
+by side, first on the left seen from the front. A design carried over from an earlier round is
+marked "pick". A vehicle with one design is a single entry.
 
-**Lights**
+Under the tree, the **Options** tree starts with an info panel (heading, design name, notes, live
+counts) and continues with collapsible sections. Each remembers whether it was open:
 
-- **Night** darkens the studio and turns the headlights on.
-- **Headlights** switches the lamps. At night the beams light the floor.
-- **Brake** holds the brake: tail lamps brighten.
-- **Floor** cycles **Gloss** (a dark mirror floor, a real reflection pass, so it shows animation
-  and lamps) and **Shadow** (a matte floor that shows the contact shadow and costs nothing).
+- **View**: Front, Rear, Side, Top and Low presets (Front and Rear are three quarter views; when
+  comparing they become near head on so no car hides another), **Turntable**, **Cockpit** and
+  **Floor**. Cockpit eases the camera to the driver's eye, looking forward, and hides the canopy.
+  Drag to look around from the seat; switch it off to ease back out. It shows only when the model
+  has a cockpit, and not when comparing or with stress copies. **Floor** is **Gloss** (a dark
+  mirror floor, a real reflection pass, so it shows animation and lamps) or **Shadow** (a matte
+  floor that shows the contact shadow and costs nothing).
+- **Lights**: **Night** darkens the studio and turns the headlights on, **Headlights** switches
+  the lamps (at night the beams light the floor), **Brake** holds the brake.
+- **Detail**: **Level** is Auto or a named level. Auto picks by camera distance with the
+  exhibit's thresholds, as the game would. Below it are the live counts and **Stress copies**:
+  ×10, ×25 or ×50 copies of the design on a grid, with total counts, frame time and render call
+  time. Copies are static clones at the current level without headlight beams. The frame time is
+  a rough local measurement, capped by the display rate.
+- **Paint**: **Own colours** restores each design's built colours; swatches and the **Body** and
+  **Accent** colour inputs repaint every design.
+- **Motion**: throttle and steering cycle gently and the vehicle animates what it can.
+- The exhibit's own controls, under the headings it gives them (for the studies, **Canopy** and
+  **Wheels**; for game vehicles, **Input**). When comparing, a change applies to every design
+  that has the control.
+- **Parameters**: the game parameters that belong to the vehicle (see below), each with its
+  label, value and a reset that appears once it differs from the default, plus **Reset all**.
 
-**Motion**
+All controls are real form controls: switches, segmented choices (arrow keys move between
+segments), sliders with a numeric readout, colour inputs. They work from the keyboard with a
+visible focus ring.
 
-- **Motion** animates the vehicle: throttle and steering cycle gently and the exhibit moves its
-  suspension, wheels, gear and so on.
-- **Detail** cycles Auto, then each detail level. Auto picks by camera distance with the
-  exhibit's thresholds, as the game would. The card shows the level in use.
-- **×1, ×10, ×25, ×50** places copies of the current design on a grid and shows the total
-  triangles, draw calls and frame time. Copies are static clones at the current detail level
-  without headlight beams. The frame time is a rough local measurement: it is capped by the
-  display rate, so also read the render call time beside it.
-- Exhibit controls follow, for example **Wheels** on the buggy or **Wings** and **Shading** on the
-  game skins. In side by side a change applies to every design that has the control.
+## Parameters
 
-**Paint**
+The game declares its tunable values with `defineParam` in `shared/params.ts`. The Parameters
+section lists the ones that belong to the selected vehicle and changes them live in this page
+only; nothing is saved. Most are physics, so they show no change on a vehicle held still; visual
+ones such as Vehicle shading change the model at once.
 
-- **Own colours** restores each design's built colours.
-- Swatches set the body and accent colours. **Pick** sets the body to any colour.
+Which belong (`vehicleParams` in `tree.ts`): take the exhibit's `family`, or its id if it has no
+family. Game vehicles use their kind as the family. The family's first word (`buggy-classic`
+gives `buggy`) must equal the parameter id's prefix (`buggy.power`), start with it (`hovercraft`
+and `hover.thrust`), or equal its group name (`Tank`). `gfx.vehicleShading` is added for every
+vehicle. Shared world groups (Lava, Liquid, Zorb) act on every vehicle and stay in the game's own
+settings panel. An exhibit can set `paramGroups` to name groups, id prefixes or full ids instead,
+or `[]` for none; the design studies use `[]` because body studies have no physics. A parameter
+whose label matches the hidden word list (`HIDDEN_LABEL` in `tree.ts`) is never listed.
 
 ## Stats
 
-The card always shows triangles and draw calls for the current design at the detail level in
-use. In side by side it lists each design and the total; in stress mode it shows totals for all
-copies. Counts cover visible meshes only:
+The info panel and the Detail section show triangles and draw calls for the current design at
+the detail level in use; when comparing, the total for all designs; with stress copies, the
+total for all copies. Counts cover visible meshes only:
 
 - triangles from the index count, or vertex count for unindexed geometry, divided by three;
 - an InstancedMesh counts as one draw and its triangles once per instance;
@@ -83,9 +114,9 @@ copies. Counts cover visible meshes only:
 
 | Parameter | Meaning |
 | --- | --- |
-| `vehicle=<id>` | Exhibit id, default `buggy`. |
+| `vehicle=<id>` | Exhibit id (or an alias), default the first in the sidebar. |
 | `design=<id or n or all>` | A design by id or 1 based position; `all` for side by side. |
-| `group=<name>` | Design group, default the last. |
+| `group=<name>` | Design group, default the last. `round=` is read as `group=`. |
 | `view=Front\|Rear\|Side\|Top\|Low` | Camera preset. |
 | `az=<deg>&el=<deg>&dist=<m>` | Camera azimuth from the nose toward +X, elevation, distance. Each is optional; they override `view`. |
 | `lod=auto\|<name>\|<n>` | Detail level by name (`Far`) or 0 based index. |
@@ -108,7 +139,9 @@ copies. Counts cover visible meshes only:
 | Call | Effect |
 | --- | --- |
 | `ready` | True once the first design has rendered a few frames. |
-| `designs` | Design ids in the current group. |
+| `vehicles()` | Every vehicle in the sidebar: id, title, section, groups and design ids. |
+| `select(vehicle, design?, group?)` | Selects a vehicle without reloading; `design` may be an id, a 1 based position or `all`. Returns a promise. |
+| `exhibit`, `designs` | The current exhibit id and the design ids in the current group. |
 | `show(i)` | Show design `i` (0 based). Returns a promise. |
 | `sideBySide(on)` | Side by side on or off. Returns a promise. |
 | `view(name)` | Camera preset. |
@@ -117,6 +150,8 @@ copies. Counts cover visible meshes only:
 | `setNight(on)`, `setHeadlights(on)`, `setBraking(on)` | Lights. |
 | `setMotion(on)`, `setTurntable(on)`, `setFloor('Gloss' \| 'Shadow')` | As the buttons. |
 | `setLod(i)` | Detail level index, or -1 for Auto. |
+| `sidebar(open)` | Shows or hides the sidebar (on a phone, opens or closes the sheet). |
+| `param(id, value?)` | Sets a game parameter; with no value, resets it. |
 | `paint(body, accent)` | Colours as numbers. |
 | `cockpit(on)` | Ease in or out. The promise resolves when the camera arrives. |
 | `stress(n)` | 1, 10, 25 or 50 copies. |
@@ -132,18 +167,23 @@ await page.evaluate(async () => { vehicleLab.orbit(70, 32, 13); await vehicleLab
 await page.screenshot({ path: '/tmp/night.png' })
 ```
 
-## Add your vehicle
+## Add an exhibit
+
+A vehicle the game builds needs no exhibit (see above). For design studies or a model the game
+cannot build yet:
 
 1. Create `src/dev/vehicleLab/exhibits/<yours>.ts` exporting a `LabExhibit` (types in
-   `src/dev/vehicleLab/types.ts`).
-2. Add it to the list in `src/dev/vehicleLab/exhibits/index.ts`.
+   `src/dev/vehicleLab/types.ts`). That is all; it appears in the sidebar.
+2. Optionally give it a `section` (sidebar heading), an `order`, a `family` or `paramGroups`
+   for the Parameters section, and `aliases` for old URL ids.
 3. Open `/vehicle-lab.html?vehicle=<your id>`.
 
 Your model follows the game frame: nose toward -Z, Y up, metres, origin at the vehicle origin.
 Report `groundY`, the height of the ground contact relative to the origin (negative when the
 origin is above the ground); the lab lifts the model onto the floor. Everything else is optional:
-leave out `lods` and there is no Detail button, leave out `cockpit` and there is no Cockpit
-button.
+leave out `lods` and there is no Level choice, leave out `cockpit` and there is no Cockpit
+switch. Controls you return in `controls` appear in the Options tree under their `group`
+heading (default 'Vehicle').
 
 Keep the model's materials your own business. For procedural models,
 `src/dev/vehicleLab/materials.ts` has the standard preview set the tank studies used (car paint
@@ -187,7 +227,7 @@ export const hover: LabExhibit = {
         beams.update(state)
       },
       cockpit: { eye: new THREE.Vector3(0, .6, -.4) },
-      controls: [{ kind: 'toggle', id: 'hover.skirt', label: 'Skirt', value: true, onChange: on => { hull.visible = on } }],
+      controls: [{ kind: 'toggle', id: 'hover.skirt', label: 'Skirt', group: 'Hull', value: true, onChange: on => { hull.visible = on } }],
       dispose() { beams.dispose(); hull.geometry.dispose(); Object.values(m).forEach(x => x.dispose()) },
     }
   },
@@ -203,15 +243,39 @@ begins). To compare variations, return several designs; give them a `group` to r
 | File | What |
 | --- | --- |
 | `vehicle-lab.html` | Page and styles. |
-| `src/dev/vehicleLab/lab.ts` | The lab: state, interface, camera, cockpit, stress, frame loop, capture API. |
+| `src/dev/vehicleLab/lab.ts` | The lab: selection, sidebar, camera, cockpit, stress, frame loop, capture API. |
+| `src/dev/vehicleLab/registry.ts` | Collects every exhibit in `exhibits/`. |
+| `src/dev/vehicleLab/tree.ts` | Pure sidebar model: registration, tree, selection and URL, parameter mapping. |
+| `src/dev/vehicleLab/ui.ts` | Form control builders for the sidebar. |
 | `src/dev/vehicleLab/types.ts` | The exhibit interface. |
 | `src/dev/vehicleLab/logic.ts` | Pure parts (stats, groups, URL parameters, Auto detail), tested in `tests/dev/`. |
 | `src/dev/vehicleLab/studio.ts` | Softbox environment, key light, day and night, floors. |
 | `src/dev/vehicleLab/materials.ts` | Preview materials, lamps and headlight beams. |
-| `src/dev/vehicleLab/exhibits/` | One file per vehicle, and the registry. |
+| `src/dev/vehicleLab/exhibits/` | One file per exhibit: `buggy.ts` (design studies), `gameVehicles.ts` (every game vehicle). |
 
-## Buggy exhibit extras
+## Design studies extras
 
 - **Canopy** cycles between the force field (the design intent: `forceField()` in `materials.ts`, reusable for any shield or canopy) and plain glass.
-- **Wheels** cycles the tyre options listed in `labs/buggy-wheels/index.json`, built by `tools/buggy-bodies/wheels.py`. `?wheels=<id>` picks one from the URL.
+- **Wheels** (the Tyres choice) picks among the tyre options listed in `labs/buggy-wheels/index.json`, built by `tools/buggy-bodies/wheels.py`. `?wheels=<id>` picks one from the URL.
 - A body file may bring its own `Strut` (suspension linkage) and `Sockets` (the fittings where the linkage meets the body). Bodies marked `gameResolution` in `labs/buggy-bodies/index.json` are at the triangle count that would ship.
+- A round's picks are generic: an entry in `labs/buggy-bodies/index.json` with `alsoIn: [rounds]`
+  appears first in those rounds, marked as the pick they build on, and `basedOn: <id>` names the
+  body an entry was built on (in its notes and the round heading). Without any marks, Wide body
+  carries into the rounds after round 1 as before. A round opens on its first design that is
+  not carried over.
+
+## The live lab
+
+There is one lab link for everyone, served by the `lab` preview service (`tools/lab-live.mjs`).
+It shows trunk plus the latest commit of every `veh/*` branch, rebuilt within about fifteen
+seconds of any of them moving, with no merge queue in between. So:
+
+- To show a design, commit it to your vehicle branch. Nothing else. Do not make or share a
+  preview page of your own for a vehicle.
+- The sidebar footer lists the branches the live lab is built from. A branch that does not
+  merge cleanly is named there with the conflicting files and is left out until it does; merge
+  trunk into your branch to fix it. An exhibit file that fails to load is named there too, and
+  the other vehicles still show.
+- Never delete or overwrite a round. Every version stays viewable: add a new group (round) and
+  leave the old ones in place. Old rounds are tagged "older" and collapsed in the sidebar.
+- Put design studies under `section: 'Design studies'` so they sit together.
