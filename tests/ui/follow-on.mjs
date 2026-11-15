@@ -38,23 +38,26 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
     })
     assert.equal(await page.evaluate(()=>fixture.listeners.size),1,'reconfigure replaces subscription')
     assert.equal(await page.evaluate(()=>fixture.qualityListeners.size),1,'reconfiguring quality replaces its subscription')
-    if(await page.evaluate(()=>!!document.pointerLockElement)){await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.pointerLockElement)}if(await page.locator('.inspector-toggle').isVisible()&&await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'}); await page.locator('.performance-toggle').click()
-    assert.equal(await page.locator('.performance-panel').isVisible(),true)
+    if(await page.evaluate(()=>!!document.pointerLockElement)){await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.pointerLockElement)}if(await page.locator('.inspector-toggle').isVisible()&&await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'}); await page.locator('.wi-card[data-section=performance] .wi-head').click()
+    // Diagnostics are a fold in the Performance card; opening it asks the source to sample.
+    await page.locator('.performance-diagnostics > summary').click()
+    await page.waitForFunction(()=>fixture.snapshot.visible)
+    assert.equal(await page.locator('.performance-card .performance-body').isVisible(),true)
     // Six levels from the quality source, the active one selected; choosing calls setLevel.
     const level=page.getByRole('combobox',{name:'Quality level'})
     assert.deepEqual(await level.locator('option').allInnerTexts(),['Minimal','Low','Medium','High','Ultra','Cinematic'])
     assert.equal(await level.inputValue(),'4')
     await level.selectOption('2'); assert.deepEqual(await page.evaluate(()=>fixture.qualityCalls.level),[2])
     assert.match(await page.locator('.performance-quality').innerText(),/^Medium\b.*chosen level/)
-    await page.locator('.performance-controls input[type=checkbox]').uncheck(); assert.deepEqual(await page.evaluate(()=>fixture.qualityCalls.auto),[false])
+    await page.locator('.wi-auto input').uncheck(); assert.deepEqual(await page.evaluate(()=>fixture.qualityCalls.auto),[false])
     await page.evaluate(()=>fixture.emitQuality({level:4,name:'Ultra',auto:true,pinned:false,easing:'resolution'}))
-    assert.equal(await level.inputValue(),'4'); assert.equal(await page.locator('.performance-controls input[type=checkbox]').isChecked(),true)
+    assert.equal(await level.inputValue(),'4'); assert.equal(await page.locator('.wi-auto input').isChecked(),true)
     assert.match(await page.locator('.performance-quality').innerText(),/^Ultra, easing resolution\b.*automatic/)
     assert.equal(await page.locator('.performance-chart polyline').evaluate(el=>el.getAttribute('points').split(' ').length),120)
     assert.match(await page.locator('.performance-body').innerText(),/Unavailable/)
     assert.match(await page.locator('.performance-body').innerText(),/Fallback/)
-    const fit=await page.locator('.performance-panel').evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight})
-    assert.ok(fit,'performance panel inside viewport')
+    const fit=await page.locator('.wi-level').evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight})
+    assert.ok(fit,'level row inside viewport')
     for(const head of await page.locator('.wi-head').all())await head.click()
     // Headers are finger-sized now, so on a phone the stack may scroll; what matters is that
     // with the diagnostics open every card header can still be reached and nothing scrolls sideways.
@@ -66,14 +69,16 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
     assert.match(await page.locator('.performance-recommendation').innerText(),/Try the Low level\?/)
     assert.match(await page.locator('[data-performance=lower]').innerText(),/^Lower level$/)
     // Retired vocabulary never reaches the player.
-    for(const selector of ['.performance-panel','.performance-recommendation'])assert.doesNotMatch(await page.locator(selector).innerText(),/\b(tiers?|safe|mobile|desktop|unmeasured)\b/i,selector)
+    for(const selector of ['.performance-card','.performance-recommendation'])assert.doesNotMatch(await page.locator(selector).innerText(),/\b(tiers?|safe|mobile|desktop|unmeasured)\b/i,selector)
     await page.locator('[data-performance=ignore]').click()
     assert.equal(await page.evaluate(()=>fixture.calls.ignore),1)
     assert.equal(await page.locator('.performance-recommendation').isVisible(),false)
     await page.evaluate(()=>{fixture.snapshot={...fixture.snapshot,recommendation:{level:2,targetLevel:1,observedFps:20}};fixture.emit()})
     await page.locator('[data-performance=lower]').click(); assert.equal(await page.evaluate(()=>fixture.calls.lower),1)
     await page.evaluate(()=>{fixture.snapshot={...fixture.snapshot,recommendation:null};fixture.emit()})
-    await page.locator('[data-performance=close]').click()
+    if(!await page.locator('.wi-card[data-section=performance]').evaluate(el=>el.classList.contains('is-open')))await page.locator('.wi-card[data-section=performance] .wi-head').click()
+    await page.locator('.performance-diagnostics > summary').click()
+    await page.waitForFunction(()=>!fixture.snapshot.visible)
     if(mode==='desktop') {
       const search=page.locator('.wi-search')
       await page.evaluate(()=>{document.activeElement?.blur();window.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyW'}))})
@@ -118,7 +123,7 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
     await page.evaluate(()=>syn3h.shell.performancePanel.dispose())
     assert.equal(await page.evaluate(()=>fixture.listeners.size),0,'dispose releases subscription')
     assert.equal(await page.evaluate(()=>fixture.qualityListeners.size),0,'dispose releases the quality subscription')
-    assert.equal(await page.locator('.performance-panel').count(),0)
+    assert.equal(await page.locator('.wi-card[data-section=performance]').count(),0,'dispose removes the Performance card')
     const lifecycle = await page.evaluate(async()=>{
       const {PerformancePanel}=await import('/src/ui/PerformancePanel.ts')
       let maxRenderMs=0
@@ -130,7 +135,7 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
         panel.dispose()
         if(fixture.listeners.size||fixture.qualityListeners.size)throw new Error('Leaked subscription')
       }
-      return{maxRenderMs,remaining:document.querySelectorAll('.performance-panel').length}
+      return{maxRenderMs,remaining:document.querySelectorAll('.performance-card').length}
     })
     assert.equal(lifecycle.remaining,0)
     console.log(`${mode}: fixture initial render max ${lifecycle.maxRenderMs.toFixed(2)}ms (shared host, not device benchmark)`)

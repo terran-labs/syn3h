@@ -185,10 +185,8 @@ export class Shell implements System {
     players.innerHTML = '<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><label class="rail-diagnostics"><input type="checkbox"> Connection diagnostics</label></div>'
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
     railTop.after(players)
-    this.performancePanel = new PerformancePanel(this.element, () => this.showPanels())
-    this.performancePanel.configureQuality(this.game.quality)
-    railTop.querySelector('.wi-actions')!.append(this.performancePanel.toggle)
-    players.after(this.performancePanel.element)
+    // Performance is a card in the rail, after Vehicles: level, fine-tuning and diagnostics.
+    this.performancePanel = new PerformancePanel(this.element, () => this.showPanels(), this.game.quality, this.inspector)
     const gear = document.createElement('select'); gear.className = 'gear-select'; gear.setAttribute('aria-label', 'Gear'); gear.disabled = true
     this.inspector.element.querySelector('.wi-gear-slot')!.append(gear)
     gear.addEventListener('change', () => {
