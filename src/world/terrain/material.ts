@@ -22,11 +22,10 @@ import { LOOK_ALPINE, terrainRoadStyle } from './settings'
 import { defineParam, params } from '../../../shared/params'
 
 /**
- * Rich surface: four personal sliders, all 0 by default, which keeps the plain ground and
- * builds none of the extra shader. Any of them above 0 rebuilds the material with the
- * extra detail in it, so the cost is only paid by players who turn it on.
+ * Rich surface is enabled for ordinary play. The four personal sliders remain adjustable;
+ * setting all four to zero removes the extra shader work for players who prefer it off.
  */
-const R = { group: 'Terrain', scope: 'client', default: 0, min: 0, max: 1, step: 0.01 } as const
+const R = { group: 'Terrain', scope: 'client', default: 1, min: 0, max: 1, step: 0.01 } as const
 /** Centimetre to decimetre grain in the normal near the camera, gone by 60 m; ripples on sand. */
 export const terrainDetailNormal = defineParam({ ...R, id: 'terrain.detailNormal', label: 'Ground: close-up grain' })
 /** Roughness by zone (rock, ash, road) and glitter on sand and snow. */

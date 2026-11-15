@@ -84,7 +84,7 @@ export function serverUrl(room: string): string {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
     return `${proto}//${location.host}${q}`
   }
-  // Using the page's host name rather than localhost lets phones on the LAN reach the dev server.
-  const base = (import.meta.env.VITE_SERVER_URL as string | undefined) ?? `ws://${location.hostname || 'localhost'}:8787`
+  // HTTP development also uses Vite's same-origin proxy, including isolated room ports.
+  const base = (import.meta.env.VITE_SERVER_URL as string | undefined) ?? `ws://${location.host}`
   return base.replace(/\/+$/, '').replace(/\/ws$/, '') + q
 }

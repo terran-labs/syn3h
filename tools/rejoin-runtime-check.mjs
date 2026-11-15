@@ -77,7 +77,7 @@ try {
   const a = player(room, 'Alice', SECRET('a'))
   const b = player(room, 'Bob', SECRET('b'))
   await a.connect(); await b.connect()
-  a.send({ type: 'param', id: 'game.rejoin', value: true })
+  check('fresh rooms enable same-player rejoin without an opt-in', a.params['game.rejoin'] === true && b.params['game.rejoin'] === true, { alice: a.params['game.rejoin'], bob: b.params['game.rejoin'] })
   a.send({ type: 'param', id: 'world.gravity', value: 15 })
   a.send({ type: 'lock', locked: true })
   await wait(800)
@@ -127,7 +127,9 @@ try {
   const room2 = `${room}off`
   const d = player(room2, 'Dan', SECRET('d'))
   const e = player(room2, 'Eve', SECRET('e'))
-  await d.connect(); await e.connect(); await wait(300)
+  await d.connect(); await e.connect()
+  d.send({ type: 'param', id: 'game.rejoin', value: false })
+  await wait(300)
   const dId = d.welcome.id
   e.events.length = 0
   await d.drop(); await wait(1500)
@@ -140,6 +142,6 @@ try {
   await wait(1500)
   rmSync(persist, { recursive: true, force: true })
 }
-const ok = results.length >= 7 && results.every(Boolean)
+const ok = results.length >= 8 && results.every(Boolean)
 console.log(ok ? 'REJOIN RUNTIME CHECK OK' : 'REJOIN RUNTIME CHECK FAILED')
 process.exit(ok ? 0 : 1)

@@ -2,6 +2,179 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Sunday 15 November, overnight: normal-entry features and continued coordination
+
+The owner directed all developed features to default on without special URLs. This
+supersedes the earlier default-off policy. Keep player controls and performance tiers;
+explicitly identify unfinished features and validation gaps. Do not treat mutually
+exclusive vehicle, biome, music or interface choices as switches that must all be on.
+
+The owner established an overnight goal: finish existing assignments, then improve
+performance tiers and diagnostics, cursor-locked UX with minimap-edge vignettes, gear,
+playful bots, multiplayer reliability and visibly transparent water. Diagnostics should
+show FPS and history, rendering factors, detected hardware and rendering failures.
+Sustained poor performance should offer one floating control to ignore advice or lower
+the rendering tier. Prepare the morning brief at 8am Pacific.
+
+## Sunday 15 November, overnight: deployment occupancy and generated wind
+
+The Orchestrator relayed the owner's direct instruction never to hold deployments
+because someone is in a lobby. Frozen-build validation, public checks and immediate
+rollback remain required. Occupancy is no longer a release gate.
+
+The owner answered the wind question: generated wind only. UX owns removing the recorded
+wind layer. This supersedes the recording-retention rule for wind only; original music
+and laser recordings remain.
+
+## Sunday 15 November, overnight: coordinated validation queue
+
+After host load exceeded 40 and preview validation stalled, the Orchestrator removed
+the load-based throttle bypass. Every heavy job now takes one of three machine-wide
+slots. Each lane runs one queued job with at most two test workers during recovery.
+Release jobs use the same queue. The temporary blanket heavy-job hold has been cleared.
+
+## Saturday 14 November, about 11:15pm Pacific: roads are worn tracks except on the alpine world
+
+**Decided** (Terrain Lab thread, relayed by the Orchestrator). "I don't think anything
+other than the alpine forest should have the clean asphalt road with edges". Every planet
+but alpine draws its roads as worn tracks. On trunk; not in release 3.
+
+## Saturday 14 November, 11:26pm Pacific: the throttle comes back in a gentler form
+
+**What happened.** Lifting the throttle at 10:13pm raised load to 30 to 45. The preview
+broker's health checks time out at that load and it fails closed, so every preview link
+went down at about 11:10pm. The device list had not changed; nothing needed re-approving.
+
+**What changed.** Heavy jobs now run at low priority, vitest is capped at three workers a
+run, and jobs queue above a load of 8 with five slots. The Foreman restarted the game,
+dashboard and vehicle lab previews through the broker on the owner's request. If the
+owner wants no throttle at all, the cost is that his preview links drop under load.
+
+## Saturday 14 November, 10:25pm to 10:35pm Pacific: four decisions in the Foreman thread
+
+1. **Releases may go public overnight unseen.** "Yes. All new releases may go public
+   overnight without me looking at each one. Keep shipping as fast as you can." The
+   Orchestrator ships on its own checks, rolls back at once if a check on the live site
+   fails, and keeps the fixes only build ready.
+2. **The judges' hand-over at noon** is the public address https://www.syn3h.com/ and the
+   GitHub repository link. Nothing else needs preparing.
+3. **Weather is a go.** Wind as a real force on vehicles, zorb balls especially; a
+   generated wind sound heard relative to the camera, so a chase camera behind a fast jet
+   hears it too; and more fog on "pretty much all worlds, unless there's a world like a
+   moon that really doesn't need fog". A Weather Lab lane owns it. The owner authorised new
+   Codex workspaces, but the platform does not let the Foreman start Codex threads, so the
+   lane started on Claude 1 for him to move.
+4. **No "(AI Generated)" line on published releases,** "past, present, and future". It is
+   removed from the two live GitHub releases, the notes files and the tool. This is an
+   exception for release notes; his general rule for other posts stands.
+
+## Saturday 14 November, about 10:15pm Pacific: no cut-off; build and ship as fast as possible; noon is the hand-over
+
+**Decided** (Terrain Lab thread, relayed by the Orchestrator). "Tell the Orchestrator to
+eliminate its cutoff and just continue building and shipping everything as fast as we
+possibly can. I'm going to be hand-managing this. I'll decide what the cutoff is tomorrow.
+Our final deadline cutoff is at noon. that's when the judges need this handed over."
+
+**What it changes.** The 9am Sunday cut-off for release 3 is gone, and so is the Foreman's
+"nothing after 10am" limit; the owner sets the cut-off himself on Sunday. Trunk keeps
+landing as fast as the gate allows. Open, asked of him at 10:25pm: whether "shipping"
+includes public releases to www.syn3h.com that he has not looked at, and what the judges'
+hand-over at noon consists of. Until he answers nothing is deployed. Also approved in that
+thread: six new planets (Archipelago, Ice moon, Obsidian, Badlands, a low gravity Moon, a
+Methane swamp).
+
+## Saturday 14 November, 10:10pm Pacific: unthrottle, and review every half hour
+
+**Decided.** The owner asked why there is a throttle at all and for everything to be
+unthrottled, and for a review every half hour of optimizations made, problems smoothed
+out, and help needed from him.
+
+**Why.** At 10:08pm the three heavy job slots were full with about fourteen jobs waiting,
+while load was 14 on 12 cores and memory was 92 percent free. Trunk merges had fallen
+from 33 an hour to 2.
+
+**What it changes.** The throttle becomes load aware: jobs run at once while the machine
+has room, and queue for one of eight slots only when load passes 12. The gate helper gets
+its own slot. The Foreman reviews every half hour through the night.
+
+## Saturday 14 November, 10:40pm Pacific: releases tell the story of the build; one GIF frame per scene
+
+**Decided.** The GitHub releases should tell the story of the project from its start, in
+more granular steps than the two public releases. The owner allowed deleting and
+recreating the existing ones. The showcase GIF holds exactly one frame per composed scene.
+
+**What it changes.** Fourteen releases, one per chapter of the day: twelve milestone
+builds, each marked as not released publicly, then the two public releases, renumbered
+v26.11.1412 and v26.11.1413. Each has a short narrative of what happened in that stretch
+and screenshots of the game as it was then. The GIF is rebuilt with eight frames.
+
+## Saturday 14 November, about 10:30pm Pacific: the pointer steers the camera
+
+**Decided** (UX thread, relayed by the Orchestrator). "Our interface should capture the
+cursor. Moving the cursor around should orbit the camera while driving, unless Escape is
+tapped."
+
+## Saturday 14 November, evening: four decisions made in lead threads
+
+Relayed by the Orchestrator at 9:30pm with the owner's words as the leads quoted them.
+
+1. **No large vegetation on any world** (Terrain Lab thread). "The alpine trees look
+   absolutely ridiculous, and they're destroying it for me. Eliminate all large vegetation
+   such as trees from all worlds, eliminate cacti, etc."
+2. **Planets are drawn larger than true** (Terrain Lab thread). "Yes, definitely draw
+   planets larger than true." Roundness defaults to 0.4, so the summit shows from every
+   spawn pad. This settles the opening view gate, pending his look at the comparison page.
+3. **Wrapping is always on** (Terrain Lab thread). "Wrapping should not be optional.
+   Wrapping is a core feature." The wrap switch is deleted. Consequence: round planets
+   cannot ship without the wrap, so the full trunk option depends on the seam checks.
+4. **The galaxy lobby replaces the panel lobby** (UX thread). "Replace the lobby ASAP",
+   "Don't hold back. Try shipping the full Galaxy Lobby now". It is the default on trunk,
+   with the panel lobby as fallback.
+
+## Saturday 14 November, 9:10pm Pacific: calendar versions, release notes and GitHub releases, as in Freed and Vorteo
+
+**Decided.** Syn3h adopts the versioning, release notes and GitHub tagging used by Freed
+and Vorteo. Every earlier production release is published retroactively as a tagged
+GitHub release with full notes and screenshots.
+
+**What it changes.** Production versions are `YY.M.DDBUILD` with a `v` prefix, the build
+counting from 00 each day: release 1 becomes v26.11.1400 and release 2 becomes v26.11.1401.
+The `release-N` tags stay, because the release, rollback and domain tools use them. Notes
+live in `release-notes/releases/` and follow Freed's shape: the "(AI Generated)" line, a
+one line deck, features, fixes, how to play, known issues, and screenshots captured from
+that release's own frozen build. The release script writes the version into the build
+file and drafts the notes; the showcase GIF attaches to the same GitHub release.
+
+## Saturday 14 November, 9:05pm Pacific: every production release makes a showcase GIF for the README
+
+**Decided.** As in the Freed project, each production release generates an animated GIF
+of the game's best scenes, and the GitHub README embeds it. The owner named bots, visible
+tag beams, the lobby and vistas, and left the rest to the Foreman's judgment.
+
+**What it changes.** A capture tool renders a fixed list of scenes from the frozen release
+build, assembles a looping GIF and uploads it with the stills to a GitHub release for the
+release tag. The README embeds the latest release's GIF, so it follows production without
+further commits. A failed capture is reported loudly but never blocks or undoes a release
+that is already live. The first one is made for release 2 without redeploying. The README's
+own wording is brought in line with the no violence rule at the same time.
+
+## Saturday 14 November, 8:40pm Pacific: keep building overnight, decide the demo build in the morning
+
+**Decided.** No feature freeze tonight. Lanes keep building overnight. Which build runs the
+demo is decided on Sunday morning.
+
+**Why.** The owner wants as much of the vision as possible in front of the audience. The
+Foreman recommended a freeze at 9:30pm with one approved release by 10am; he chose to
+keep going.
+
+**What it changes.** Release 2 stays public overnight. Nothing deploys overnight, because
+the bar for release 3 needs the owner's eyes. So that the morning decision is a choice
+between tested things, the Orchestrator keeps three options ready: release 2 as it is; a
+fixes only build (release 2 plus the worded loading veil, the bounded start and any
+defect fixes); and full trunk. Standing limits: no release while anyone is playing, none
+after 10am Sunday without the owner's word, and the opening view must show the volcano.
+The Foreman sweeps hourly overnight and has a morning brief ready by 8am.
+
 ## Saturday 14 November, 6:25pm Pacific: cut over syn3h.com as soon as possible
 
 **Decided.** "Cut over ASAP." The owner gave his word for the domain switch without

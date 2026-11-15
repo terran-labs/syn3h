@@ -45,11 +45,11 @@ export const terrainPlanetSize = defineParam({
 })
 /**
  * Fords: on water worlds, rivers carry on across the roads as shallow fords and run down to
- * the sea, instead of stopping in a pool above each road. Off by default: it reshapes the
- * world's rivers, and lava rivers never ford.
+ * the sea, instead of stopping in a pool above each road. Enabled by default for water
+ * rivers; lava rivers never ford. Players can restore the old river layout with the slider.
  */
 export const terrainFords = defineParam({
-  ...P, id: 'terrain.fords', label: 'Rivers ford the roads (0 off, 1 on)', default: 0, min: 0, max: 1, step: 1,
+  ...P, id: 'terrain.fords', label: 'Rivers ford the roads (0 off, 1 on)', default: 1, min: 0, max: 1, step: 1,
 })
 export const terrainTreeCover = defineParam({
   ...P, id: 'terrain.treeCover', label: 'Plant cover (off: no worlds grow trees or cacti)', default: 0, min: 0, max: 1, step: 0.01,

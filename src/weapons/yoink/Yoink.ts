@@ -18,7 +18,7 @@ import type { YoinkWire } from '../../../shared/protocol'
 import { wrapDelta } from '../../../shared/wrap'
 import type { Game, System } from '../../core/Game'
 import { hotExposureDim } from '../../vehicles/skins/hotExposure'
-import { aimFrom } from '../aim'
+import { aimFrom, type GearControl } from '../aim'
 import { CordView, SEGMENTS } from '../bungee/Bungee'
 import { gustPush, holdAccel, type V3 } from './hold'
 import {
@@ -34,6 +34,10 @@ export interface YoinkVehicle {
 }
 
 export interface YoinkHooks {
+  control?(): GearControl
+  /** Prevent competing local controllers from grabbing the same vehicle. */
+  heldElsewhere?(id: number): boolean
+
   self(): number
   vehicleOf(id: number): YoinkVehicle | undefined
   /** Every vehicle here, by id: ours, remote players and bots. */
@@ -117,7 +121,9 @@ export class Yoink implements System {
   press(): 'grab' | 'gust' | null {
     const me = this.hooks.vehicleOf(this.hooks.self())
     if (!me || !yoinkAllowed.value || this.game.time < this.readyAt || this.holding !== null) return null
-    const aim = aimFrom(this.game, me.body, yoinkRange.value)
+    const aim = aimFrom(this.game, me.body, yoinkRange.value, 0.4, 2.4, 0, !this.hooks.control)
+    const control = this.hooks.control?.()
+    if (control) aim.d.set(...control.direction).normalize()
     const target = this.pick(aim.o, aim.d, yoinkRange.value, yoinkCone.value)
     if (target !== null) {
       this.grab(this.hooks.self(), target)
@@ -136,7 +142,8 @@ export class Yoink implements System {
     const to = this.holding
     if (to === null) return
     const me = this.hooks.vehicleOf(this.hooks.self())
-    const aim = me ? aimFrom(this.game, me.body, yoinkRange.value) : null
+    const aim = me ? aimFrom(this.game, me.body, yoinkRange.value, 0.4, 2.4, 0, !this.hooks.control) : null
+    if (aim && this.hooks.control) aim.d.set(...this.hooks.control().direction).normalize()
     const d = aim?.d ?? new THREE.Vector3(0, 0.3, -1).normalize()
     // A little lift, so a flat aim still sails.
     const dir = d.clone().add(new THREE.Vector3(0, 0.15, 0)).normalize()
@@ -159,6 +166,12 @@ export class Yoink implements System {
     this.hooks.send?.({ s: 'drop', to })
     this.stats.drops++
     this.readyAt = this.game.time + yoinkCooldown.value
+  }
+
+  /** Drop gently and clear the input edge when a controller is interrupted. */
+  cancel(): void {
+    this.drop()
+    this.fireWas = false
   }
 
   /** Another player's Yoink, as relayed. */
@@ -219,14 +232,18 @@ export class Yoink implements System {
 
   dispose(): void {
     for (const to of [...this.carries.keys()]) this.endCarry(to)
-    for (const w of this.waves) this.game.scene.remove(w.mesh)
+    for (const w of this.waves) {
+      this.game.scene.remove(w.mesh)
+      ;(w.mesh.material as THREE.Material).dispose()
+    }
+    this.waves.length = 0
     this.coreMat.dispose(); this.haloMat.dispose(); this.tintMat.dispose(); this.waveMat.dispose(); this.waveGeo.dispose()
   }
 
   // ---------------------------------------------------------------------------------------
 
   private controls(): void {
-    const fire = this.hooks.inHand() && this.game.input.state.fire
+    const fire = this.hooks.inHand() && (this.hooks.control?.().fire ?? this.game.input.state.fire)
     const pressed = fire && !this.fireWas
     const released = !fire && this.fireWas
     this.fireWas = fire
@@ -248,7 +265,7 @@ export class Yoink implements System {
     let best: number | null = null
     let bestScore = Infinity
     for (const id of this.hooks.vehicleIds()) {
-      if (id === self) continue
+      if (id === self || this.hooks.heldElsewhere?.(id)) continue
       const to = this.offset(o, id)
       if (!to) continue
       const dist = to.length()

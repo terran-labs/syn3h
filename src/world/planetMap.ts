@@ -190,9 +190,11 @@ function islets(seed: number): Islet[] {
 /**
  * Paint a planet as an RGBA equirectangular texture: longitude across (column 0 at -180),
  * latitude down (row 0 at the north pole). Deterministic for the same inputs.
+ * Overrides come from the sanitized parameter snapshot; this painter does not mutate it.
  */
-export function paintPlanetMap(recipeId: string, seed: number, width = 1024, height = 512): PlanetMap {
-  const recipe = planetById(recipeId) ?? PLANETS[0]
+export function paintPlanetMap(recipeId: string, seed: number, width = 1024, height = 512, overrides: PlanetRecipe['values'] = {}): PlanetMap {
+  const base = planetById(recipeId) ?? PLANETS[0]
+  const recipe = { ...base, values: { ...base.values, ...overrides } }
   const settings = settingsForRecipe(recipe)
   const data = generateTerrain(seed, settings, { resolution: MAP_RESOLUTION })
   const kind = settings.kind
@@ -200,9 +202,9 @@ export function paintPlanetMap(recipeId: string, seed: number, width = 1024, hei
   const lavaSea = recipe.values['world.seaKind'] === 0
   const lavaLake = kind === KIND_VOLCANIC
   const dry = settings.dry > 0
-  // The painted snow sits a little higher than in the world, where it thins on steep faces.
+  // Match the terrain material's threshold; the map still approximates slope and noise.
   const snowy = settings.snowLine < 2
-  const snowLine = snowy ? data.layout.summitHeight * Math.min(0.5, settings.snowLine * 1.4) : Infinity
+  const snowLine = snowy ? data.layout.summitHeight * settings.snowLine : Infinity
   // A dry world has no sea: its low ground is land all the way down.
   const seaLevel = dry ? -1e6 : Number(recipe.values['world.lavaAltitude'] ?? 0)
   const ov = overlays(data)
@@ -322,7 +324,7 @@ export function paintPlanetMap(recipeId: string, seed: number, width = 1024, hei
           } else {
             // Sea over the continent's shelf: shallower water glows or lightens near the coast.
             const edge = Math.max(Math.abs(wx), Math.abs(wz))
-            liquid(lavaSea, smooth(lavaSea ? -30 : -60, 0, h) * smooth(half, half * 0.8, edge), nx, ny, nz)
+            liquid(lavaSea, smooth(lavaSea ? -30 : -60, 0, h - seaLevel) * smooth(half, half * 0.8, edge), nx, ny, nz)
           }
         } else if (dry) {
           land = true

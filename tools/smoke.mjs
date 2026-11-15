@@ -47,7 +47,9 @@ const before = await read()
 const jet = url.includes('vehicle=jet')
 if (jet) await page.keyboard.down('KeyR')
 await page.keyboard.down('KeyW')
-await page.waitForTimeout(3000)
+// Shader compilation and shared host load can make three wall seconds only a few ticks.
+// Measure a real three seconds of physics while still bounding a stalled game.
+await page.waitForFunction(tick => window.syn3h?.game.tick >= tick + 150, before?.tick ?? 0, { timeout: 60000 })
 await page.keyboard.up('KeyW')
 if (jet) await page.keyboard.up('KeyR')
 const after = await read()

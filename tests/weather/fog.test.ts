@@ -12,8 +12,8 @@ import { generateTerrain } from '../../src/world/terrain/generate'
 import { HeightSampler } from '../../src/world/terrain/sampler'
 import { currentTerrainSettings } from '../../src/world/terrain/settings'
 import { spawnPointAt } from '../../src/world/terrain/spawn'
-import { hazeDepth, hazeNow } from '../../src/world/weather/fog'
-import { storminess } from '../../src/world/weather/params'
+import { aerial, aerialWeights, AERIAL_DENSITY, AERIAL_HEIGHT, hazeDepth, hazeNow } from '../../src/world/weather/fog'
+import { atmosphereValue, storminess } from '../../src/world/weather/params'
 import { PLANET_WEATHER } from '../../src/world/weather/planetWeather'
 
 afterEach(() => { applyPlanet('volcanic', 1, { source: 'preset' }); params.set(storminess.def.id, storminess.def.default) })
@@ -75,6 +75,13 @@ describe('height fog', () => {
           report.push(`${p.id} ${seed} pad ${i}: ${d.toFixed(0)} m, peak ${peak.toFixed(0)}, rim ${(rimSeen * 100).toFixed(0)}%, flank ${(flankSeen * 100).toFixed(0)}%`)
           expect(rimSeen, `${p.id} seed ${seed} pad ${i} rim`).toBeGreaterThan(0.7)
           expect(flankSeen, `${p.id} seed ${seed} pad ${i} flank`).toBeGreaterThan(0.45)
+          // The default aerial layer adds extinction per channel. Keep most of the rim's
+          // contrast even in the channel that scatters most, with the height fog above.
+          const weights = aerialWeights()
+          const strongest = Math.max(weights.x, weights.y, weights.z)
+          const upper = { density: AERIAL_DENSITY * aerial.def.default * atmosphereValue(), height: AERIAL_HEIGHT, sea: h.sea }
+          const combinedRim = seen(hazeDepth(h, eye, rim) + strongest * hazeDepth(upper, eye, rim))
+          expect(combinedRim, `${p.id} seed ${seed} pad ${i} rim with default aerial`).toBeGreaterThan(0.6)
         }
       }
     }
