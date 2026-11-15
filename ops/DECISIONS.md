@@ -2,6 +2,21 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Saturday 14 November, 6:25pm Pacific: cut over syn3h.com as soon as possible
+
+**Decided.** "Cut over ASAP." The owner gave his word for the domain switch without
+waiting to see release 1 on the workers.dev address first.
+
+**Why.** He wants the rebuilt game on the domain tonight. The Foreman had recommended he
+see release 1 first; he chose speed. Rollback takes about a minute.
+
+**What it changes.** As soon as Cloudflare access exists: ship release 1 from the current
+candidate, and if its automated checks pass on the workers.dev address, export the zone
+and attach www.syn3h.com at once with the owner approved flag. The automated checks still
+gate the switch; the owner's viewing does not. Scope is www only; the apex redirect and
+all mail records are untouched. Account facts from his screenshot: workers.dev subdomain
+af-4e7, no existing Worker named syn3h, free plan at the time.
+
 ## Saturday 14 November, about 6:15pm Pacific: wild shores, and wings float you out
 
 **Decided** (in the Terrain Lab thread, relayed by the Orchestrator).
