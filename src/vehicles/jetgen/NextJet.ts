@@ -34,6 +34,12 @@ export class NextJet {
   ridePosition?: THREE.Object3D
   /** Metres from the eye to the nearest canopy or tub surface. */
   clearance = Infinity
+  /**
+   * True when the design has a real cockpit. Whatever the ride camera follows must then carry
+   * `userData.cockpit = true` (PATTERN.md rule 3), so the pilot sees the tub, rim and nose. It is
+   * set on this object for the labs; Jet.ts must set it on its own root when it adopts a design.
+   */
+  cockpit = false
   /** Sits at the main thruster's exit and holds its four vectoring vanes. */
   readonly thruster = new THREE.Group()
   /** Current deflection: x is pitch, y is yaw, in radians. */
@@ -70,7 +76,7 @@ export class NextJet {
     const b = new Builder(detail, design.hard ?? false); design.build(b)
     const pieces = b.pieces
     this.nozzles = b.nozzles; this.hover = b.hover
-    if (b.eye) { this.ridePosition = new THREE.Object3D(); this.ridePosition.position.set(...b.eye); this.object.add(this.ridePosition); this.clearance = b.cockpitClearance() }
+    if (b.eye) { this.ridePosition = new THREE.Object3D(); this.ridePosition.position.set(...b.eye); this.object.add(this.ridePosition); this.clearance = b.cockpitClearance(); this.cockpit = true }
     for (const mat of Object.keys(this.materials) as Mat[]) {
       const parts = pieces.filter(p => p.mat === mat).map(p => p.geometry); if (!parts.length) continue
       const merged = this.merge(parts)
@@ -94,6 +100,7 @@ export class NextJet {
       petal(Math.PI, 0, halfHeight, 'x'); petal(0, 0, -halfHeight, 'x'); petal(Math.PI / 2, halfWidth, 0, 'y'); petal(Math.PI * 1.5, -halfWidth, 0, 'y')
       this.setVector(0, 0)
     }
+    if (this.cockpit) this.object.userData.cockpit = true
     this.object.add(this.gear)
     b.legs.forEach(l => this.legs.push(this.buildLeg(l)))
     this.setGear(0)

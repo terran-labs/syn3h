@@ -273,11 +273,9 @@ export class LoadedBuggySkin implements BuggySkin {
     const bodyLods=staticLods(staticBody)
     if (canopy !== staticBody) {
       mergeStatic(canopy, true)
-      // Tagged for the ride camera only so it does not hide the whole vehicle: the camera hides
-      // just tagged parts, and this tag is on an empty marker, not on the canopy. The force
-      // field stays in view from the seat, nearly clear, as PATTERN.md asks.
+      // The force field stays in view from the seat: Syn3hBuggy sets userData.cockpit on the
+      // vehicle, which tells the ride camera to hide nothing.
       canopy.traverse(o => { if (o instanceof THREE.Mesh) o.name = 'Canopy' })
-      const marker = new THREE.Object3D(); marker.name = 'Ride view marker'; marker.userData.hideInRide = true; canopy.add(marker)
       canopy.name = 'Canopy'
       this.object.add(canopy)
     }
