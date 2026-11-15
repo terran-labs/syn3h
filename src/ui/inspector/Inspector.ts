@@ -12,6 +12,7 @@ import { canEditWorld, resetWorld } from '../worldPermissions'
 import { buildTree, describe, exportSection, exportWorld, fraction, limits, parseWorld, pasteSummary, show, type PropertyDef, type SectionNode } from './model'
 import './params'
 import './inspector.css'
+import './motion.css'
 
 export interface InspectorOptions {
   /** One line for a closed card, for example "Alpine · Harimos". Empty hides it. */
@@ -32,6 +33,36 @@ export function choicesOf(def: PropertyDef): { name: string; options: { value: n
   return { name: name || def.group, options: found.map(option => ({ value: option.value, label: option.label[0].toUpperCase() + option.label.slice(1) })) }
 }
 
+/**
+ * Read what a player typed into a number field: "2400 m", "85%", "1,5" and "−3" all work.
+ * Clamped to the property's limits and snapped to its step; null when there is no number.
+ * A percentage on a 0 to 1 property means a fraction of it, so "85%" on a volume is 0.85.
+ */
+export function parseEdit(text: string, def: Pick<PropertyDef, 'min' | 'max' | 'step'>): number | null {
+  let s = text.trim().replace(/[\u2212\u2013]/g, '-').replace(/[\s\u00a0_']/g, '')
+  // One comma and no point is a decimal comma; otherwise commas group thousands.
+  s = /^[-+]?\d*,\d+(?!.*[.,])/.test(s) ? s.replace(',', '.') : s.replace(/,/g, '')
+  const match = /^[-+]?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?/i.exec(s)
+  if (!match) return null
+  const rest = s.slice(match[0].length)
+  if (/\d/.test(rest)) return null
+  let n = Number(match[0])
+  if (!Number.isFinite(n)) return null
+  const lo = def.min !== undefined && def.max !== undefined ? Math.min(def.min, def.max) : def.min
+  const hi = def.min !== undefined && def.max !== undefined ? Math.max(def.min, def.max) : def.max
+  if (rest.startsWith('%') && lo !== undefined && hi !== undefined && lo >= 0 && hi <= 1) n /= 100
+  const clamp = (v: number) => Math.min(hi ?? Infinity, Math.max(lo ?? -Infinity, v))
+  n = clamp(n)
+  if (def.step && def.step > 0) {
+    const base = lo ?? 0, places = (String(def.step).split('.')[1] ?? '').length
+    n = clamp(Number((base + Math.round((n - base) / def.step) * def.step).toFixed(places)))
+  }
+  return Object.is(n, -0) ? 0 : n
+}
+
+/** How long a card takes to make room for another, and the curve it eases along. */
+const CARD_MOTION: KeyframeAnimationOptions = { duration: 300, easing: 'cubic-bezier(.2,.8,.2,1)' }
+
 export class Inspector {
   readonly element = document.createElement('aside')
   private tree: SectionNode[] = []
@@ -46,6 +77,10 @@ export class Inspector {
   private armed?: ReturnType<typeof setTimeout>
   private pasteTarget: string | null = null
   private beforeSearch?: { cards: boolean[]; folds: boolean[] }
+  /** The number being typed into, if any, and how to finish it. */
+  private editing: { field: HTMLInputElement; finish(commit: boolean, refocus: boolean): void } | null = null
+  /** Card height animations in flight. A new toggle starts from wherever these have got to. */
+  private readonly moving = new Map<HTMLElement, Animation>()
 
   constructor(parent: HTMLElement, private readonly options: InspectorOptions) {
     this.element.className = 'world-inspector'; this.element.setAttribute('aria-label', 'World inspector')
@@ -73,7 +108,15 @@ export class Inspector {
     this.element.addEventListener('click', event => this.click(event))
     this.element.querySelector<HTMLInputElement>('.wi-search')!.addEventListener('input', event => this.search((event.target as HTMLInputElement).value))
     // Typing here must not drive the vehicle.
-    this.element.addEventListener('keydown', event => { if ((event.target as Element).matches('input[type=search], textarea, input[type=number]')) event.stopPropagation() })
+    this.element.addEventListener('keydown', event => { if ((event.target as Element).matches('input[type=search], textarea, input[type=number], .wi-num-edit')) event.stopPropagation() })
+    // Enter and Escape finish a number edit. This listens on the window in the capture phase,
+    // registered before the shell's own, so Escape cancels the edit instead of closing the rail.
+    window.addEventListener('keydown', event => {
+      const edit = this.editing
+      if (!edit || event.target !== edit.field || event.isComposing) return
+      if (event.key === 'Enter') { event.preventDefault(); edit.finish(true, true) }
+      else if (event.key === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); edit.finish(false, true) }
+    }, { capture: true, signal })
   }
   get open(): boolean { return !this.element.hidden }
   set open(value: boolean) { this.element.hidden = !value; if (!value) this.hideTooltip() }
@@ -92,7 +135,7 @@ export class Inspector {
     const all = params.all(); this.known = all.length
     const open = new Set([...this.element.querySelectorAll<HTMLElement>('.wi-card.is-open')].map(card => card.dataset.section))
     this.tree = buildTree(all.map(p => p.def as PropertyDef))
-    this.rows.clear()
+    this.rows.clear(); this.editing = null; this.settle()
     const cards = this.element.querySelector('.wi-cards')!; cards.replaceChildren()
     for (const section of this.tree) {
       const card = document.createElement('section'); card.className = 'wi-card wi-glass'; card.dataset.section = section.id
@@ -135,7 +178,7 @@ export class Inspector {
     const row = this.rows.get('post.gi')?.row
     if (!row) { this.setStatus('GI controls are unavailable in this build.'); return }
     const card = row.closest<HTMLElement>('.wi-card')!
-    for (const other of this.element.querySelectorAll<HTMLElement>('.wi-card')) this.toggle(other, other === card)
+    this.reflow(() => { for (const other of this.element.querySelectorAll<HTMLElement>('.wi-card')) this.toggle(other, other === card) })
     row.closest<HTMLDetailsElement>('details')!.open = true
     this.hideTooltip()
     row.scrollIntoView({ block: 'nearest' })
@@ -150,6 +193,7 @@ export class Inspector {
     if (note.textContent !== message) note.textContent = message
     const input = row.querySelector<HTMLInputElement>('input')!
     input.disabled = !eligible; input.setAttribute('aria-describedby', 'gi-status')
+    const number = row.querySelector<HTMLButtonElement>('.wi-num'); if (number) number.disabled = !eligible
     this.element.querySelector<HTMLButtonElement>('[data-wi=show-gi]')!.title = message
   }
   private row(def: PropertyDef): HTMLElement {
@@ -170,7 +214,9 @@ export class Inspector {
       label.textContent = def.label
       const box = document.createElement('input'); box.type = 'checkbox'; box.setAttribute('aria-label', def.label)
       box.addEventListener('change', () => params.set(def.id, box.checked, 'local'))
-      row.append(label, box, output)
+      // The box stays small; the label around it is the 44 px target a thumb can hit.
+      const hit = document.createElement('label'); hit.className = 'wi-hit'; hit.append(box)
+      row.append(label, hit, output)
       sync = value => { box.checked = Boolean(value); output.textContent = show(Boolean(value)) }
     } else {
       label.textContent = def.label
@@ -178,11 +224,16 @@ export class Inspector {
       const input = document.createElement('input'); input.type = ranged ? 'range' : 'number'; input.setAttribute('aria-label', def.label)
       if (ranged) { input.min = String(Math.min(def.min!, def.max!)); input.max = String(Math.max(def.min!, def.max!)) }
       input.step = String(def.step ?? 'any')
+      // The number beside the slider is a button: press it and it becomes a field to type into.
+      const number = document.createElement('button'); number.type = 'button'; number.className = 'wi-num'
+      const display = (text: string) => { number.textContent = text; number.setAttribute('aria-label', `${def.label}: ${text}, edit`) }
+      number.addEventListener('click', () => this.edit(def, number))
+      number.addEventListener('keydown', event => { if (event.key === 'F2') { event.preventDefault(); this.edit(def, number) } })
       // A property marked deferred (the terrain rebuilds) applies when the slider is let go.
       input.addEventListener(def.deferred ? 'change' : 'input', () => params.set(def.id, Number(input.value), 'local'))
-      if (def.deferred) input.addEventListener('input', () => { output.textContent = show(Number(input.value), def) })
-      row.append(label, input, output)
-      sync = value => { if (document.activeElement !== input) input.value = String(value); output.textContent = show(value, def) }
+      if (def.deferred) input.addEventListener('input', () => display(show(Number(input.value), def)))
+      row.append(label, input, number)
+      sync = value => { if (document.activeElement !== input) input.value = String(value); display(show(value, def)) }
     }
     sync(param.value)
     row.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') this.detail(def) })
@@ -193,6 +244,35 @@ export class Inspector {
     for (const control of row.querySelectorAll('input, button')) control.setAttribute('aria-describedby', 'setting-tooltip')
     this.rows.set(def.id, { row, sync, def })
     return row
+  }
+  /** Swap a row's number for a text field, preselected. Enter or leaving commits; Escape cancels. */
+  private edit(def: PropertyDef, number: HTMLButtonElement): void {
+    if (number.disabled || number.hidden) return
+    this.editing?.finish(true, false)
+    const field = document.createElement('input'); field.type = 'text'; field.inputMode = 'decimal'; field.enterKeyHint = 'done'
+    field.className = 'wi-num-edit'; field.autocomplete = 'off'; field.spellcheck = false
+    field.setAttribute('aria-label', def.label); field.setAttribute('aria-describedby', 'setting-tooltip')
+    const before = number.textContent ?? ''
+    field.value = before
+    let done = false, flash: ReturnType<typeof setTimeout> | undefined
+    const mark = (element: HTMLElement) => { element.classList.remove('is-invalid'); void element.offsetWidth; element.classList.add('is-invalid'); clearTimeout(flash); flash = setTimeout(() => element.classList.remove('is-invalid'), 700) }
+    const finish = (commit: boolean, refocus: boolean) => {
+      if (done) return
+      if (commit) {
+        const value = parseEdit(field.value, def)
+        // Nothing readable: put the old number back. Pressing Enter keeps the field open to try again.
+        if (value === null && refocus) { field.value = before; field.select(); mark(field); return }
+        if (value === null) mark(number)
+        else params.set(def.id, value, 'local')
+      }
+      done = true; if (this.editing?.field === field) this.editing = null
+      number.hidden = false; if (refocus) number.focus({ preventScroll: true })
+      field.remove()
+    }
+    field.addEventListener('blur', () => finish(true, false))
+    this.editing = { field, finish }
+    number.hidden = true; number.after(field)
+    field.focus({ preventScroll: true }); field.select()
   }
   hideTooltip(): void {
     clearTimeout(this.tooltipTimer); this.tooltip.hidden = true; this.selected = ''
@@ -231,7 +311,40 @@ export class Inspector {
     pane.style.top = `${Math.max(12, Math.min(innerHeight - height - 12, fitsLeft ? row.top : row.top - height - 12))}px`
   }
   private toggle(card: HTMLElement, open = !card.classList.contains('is-open')): void {
-    card.classList.toggle('is-open', open); card.querySelector<HTMLElement>('.wi-body')!.hidden = !open; card.querySelector('.wi-head')!.setAttribute('aria-expanded', String(open))
+    const body = card.querySelector<HTMLElement>('.wi-body')!
+    card.classList.toggle('is-open', open); body.hidden = !open; body.inert = !open; card.querySelector('.wi-head')!.setAttribute('aria-expanded', String(open))
+  }
+  /**
+   * Open or close cards, easing every card's height from where it was to where it lands
+   * (FLIP on height). The browser runs the animation; no script runs per frame. A closing
+   * body stays drawn, inert and clipped, until its card has shrunk to the header.
+   */
+  private reflow(change: () => void): void {
+    const cards = [...this.element.querySelectorAll<HTMLElement>('.wi-card')]
+    const from = cards.map(card => card.getBoundingClientRect().height)
+    this.settle(); change()
+    const to = cards.map(card => card.getBoundingClientRect().height)
+    // Asked fresh each toggle: a cached MediaQueryList can lag behind a changed preference in WebKit.
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches || !this.open || cards.every((card, i) => Math.abs(from[i] - to[i]) < 0.5)) return
+    cards.forEach((card, i) => {
+      // Every visible card is pinned along its own path, changed or not, so the stack's total
+      // holds steady and no flexible card is squeezed while its neighbours move.
+      if (!from[i] || !to[i]) return
+      const body = card.querySelector<HTMLElement>('.wi-body')!
+      body.hidden = false; card.classList.add('is-moving')
+      const frame = (height: number): Keyframe => ({ flexGrow: 0, flexShrink: 0, flexBasis: `${height}px`, minHeight: '0px' })
+      const motion = card.animate([frame(from[i]), frame(to[i])], CARD_MOTION)
+      motion.onfinish = () => { if (this.moving.get(card) === motion) this.land(card) }
+      this.moving.set(card, motion)
+    })
+  }
+  /** Stop every card animation now and leave each card in its resting state. */
+  private settle(): void {
+    for (const [card, motion] of this.moving) { motion.cancel(); this.land(card) }
+  }
+  private land(card: HTMLElement): void {
+    this.moving.delete(card); card.classList.remove('is-moving')
+    card.querySelector<HTMLElement>('.wi-body')!.hidden = !card.classList.contains('is-open')
   }
   private search(query: string): void {
     const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
@@ -269,7 +382,7 @@ export class Inspector {
     const card = button.closest<HTMLElement>('.wi-card'), section = card ? this.tree.find(s => s.id === card.dataset.section) : undefined
     const valueOf = (id: string) => params.get(id)?.value
     switch (button.dataset.wi) {
-      case 'toggle': if (card) this.toggle(card); break
+      case 'toggle': if (card) this.reflow(() => this.toggle(card)); break
       case 'show-gi': this.showGI(); break
       case 'save-world': this.options.onSaveWorld?.(); break
       case 'copy-world': await this.copy(JSON.stringify(exportWorld(params.all().map(p => p.def as PropertyDef), valueOf), null, 2), 'This world'); break
@@ -313,5 +426,5 @@ export class Inspector {
     this.element.querySelector<HTMLElement>('.wi-sheet')!.hidden = true
     const line = pasteSummary(result); this.say(line); return line
   }
-  dispose(): void { this.unsubscribe(); this.abort.abort(); clearTimeout(this.armed); clearTimeout(this.tooltipTimer); this.tooltip.remove(); this.element.remove() }
+  dispose(): void { this.settle(); this.unsubscribe(); this.abort.abort(); clearTimeout(this.armed); clearTimeout(this.tooltipTimer); this.tooltip.remove(); this.element.remove() }
 }

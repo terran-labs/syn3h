@@ -24,14 +24,20 @@ for (const mode of modes) {
     await page.screenshot({ path: `tests/ui/artifacts/exploration/${mode}-drive.png` })
     await page.getByRole('button', { name: 'Open configuration rail' }).click()
     for (const head of await page.locator('.wi-head').all()) await head.click()
-    const layout = await page.evaluate(() => {
-      const rail = document.querySelector('.world-inspector').getBoundingClientRect()
-      return [...document.querySelectorAll('.wi-head')].map(el => { const r = el.getBoundingClientRect(); return r.top >= rail.top && r.bottom <= rail.bottom && r.height >= 22 })
-    })
-    assert.ok(layout.every(Boolean), 'every section header stays visible')
-    assert.equal(await page.locator('.wi-cards').evaluate(el => el.scrollHeight > el.clientHeight + 2), false, 'stack does not scroll or crop cards')
+    await page.waitForFunction(() => !document.querySelector('.wi-cards').getAnimations({ subtree: true }).some(a => a.playState === 'running'))
+    // Headers are finger-sized (44 px, 48 on touch). On a short screen the stack may scroll
+    // vertically to fit them, so each must be reachable by scrolling, and nothing scrolls sideways.
+    const layout = await page.evaluate(minimum => {
+      const rail = document.querySelector('.world-inspector').getBoundingClientRect(), stack = document.querySelector('.wi-cards')
+      const heads = [...document.querySelectorAll('.wi-head')].map(el => { el.scrollIntoView({ block: 'nearest' }); const r = el.getBoundingClientRect(), s = stack.getBoundingClientRect(); return r.top >= Math.max(rail.top, s.top) - 1 && r.bottom <= Math.min(rail.bottom, s.bottom) + 1 && r.height >= minimum - .5 })
+      stack.scrollTop = 0
+      return { heads, sideways: stack.scrollWidth > stack.clientWidth + 1 || document.querySelector('.world-inspector').scrollWidth > rail.width + 1 }
+    }, touch ? 48 : 44)
+    assert.ok(layout.heads.every(Boolean), 'every section header is full size and reachable')
+    assert.equal(layout.sideways, false, 'stack never scrolls sideways')
     await page.screenshot({ path: `tests/ui/artifacts/exploration/${mode}-all-sections.png` })
     for (const head of await page.locator('.wi-card:not([data-section=sky]) .wi-head').all()) await head.click()
+    await page.waitForFunction(() => !document.querySelector('.wi-cards').getAnimations({ subtree: true }).some(a => a.playState === 'running'))
     assert.ok(await page.locator('.wi-card[data-section=sky] .wi-body').evaluate(el => el.clientHeight > 60), 'selected panel has usable internal space')
     const row = page.locator('.wi-row[data-id="sun.timeOfDay"]')
     await row.scrollIntoViewIfNeeded()
