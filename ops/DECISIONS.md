@@ -2,6 +2,19 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Saturday 14 November, 9:05pm Pacific: every production release makes a showcase GIF for the README
+
+**Decided.** As in the Freed project, each production release generates an animated GIF
+of the game's best scenes, and the GitHub README embeds it. The owner named bots, visible
+tag beams, the lobby and vistas, and left the rest to the Foreman's judgment.
+
+**What it changes.** A capture tool renders a fixed list of scenes from the frozen release
+build, assembles a looping GIF and uploads it with the stills to a GitHub release for the
+release tag. The README embeds the latest release's GIF, so it follows production without
+further commits. A failed capture is reported loudly but never blocks or undoes a release
+that is already live. The first one is made for release 2 without redeploying. The README's
+own wording is brought in line with the no violence rule at the same time.
+
 ## Saturday 14 November, 8:40pm Pacific: keep building overnight, decide the demo build in the morning
 
 **Decided.** No feature freeze tonight. Lanes keep building overnight. Which build runs the
