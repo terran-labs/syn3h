@@ -43,7 +43,9 @@ async function open(name, extra = '') {
   const ctx = await browser.newContext({ viewport: { width: 960, height: 540 } })
   const page = await ctx.newPage()
   page.on('pageerror', (e) => errors.push(`${name} pageerror: ${e.message}`))
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(`${name} console: ${m.text()}`) })
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(`${name} console: ${m.text()} at ${m.location().url}`) })
+  page.on('response', (r) => { if (r.status() >= 400) console.log(`HTTP ${r.status()} ${r.url()}`) })
+  page.on('requestfailed', (r) => console.log(`REQUEST FAILED ${r.url()} ${r.failure()?.errorText}`))
   await page.goto(`${base}?room=${room}&name=${name}&autoplay=1${extra}`, { waitUntil: 'load' })
   // ?autoplay=1 joins the room but leaves the start screen's input suspension on, so press
   // Play as a person would (it is idempotent with autoplay's join).
@@ -330,9 +332,13 @@ try {
     const score = (id) => a.evaluate((id) => window.syn3hNet.game.scores[id] ?? 0, id)
     const parkedA = await park(a, 0.3)
     await b.evaluate(() => { const s = window.syn3h.terrain.spawnPoint(1); window.syn3h.player.teleport(s.position, 0) })
-    await wait(4000)
+    // Wait for the server's result, rather than starting a four-second timer while a
+    // loaded browser may still be delivering the teleport. Keep the scoring threshold.
+    const scoringStart = Date.now()
+    await a.waitForFunction((id) => window.syn3hNet.game.koth.holder === id && (window.syn3hNet.game.scores[id] ?? 0) >= 2, idA, { timeout: 15000 }).catch(() => {})
     const [holder, scoreA] = [await a.evaluate(() => window.syn3hNet.game.koth.holder), await score(idA)]
-    check('A alone on the hill holds it and scores', holder === idA && scoreA >= 2, { holder, scoreA, parkedA })
+    check('A alone on the hill holds it and scores', holder === idA && scoreA >= 2, { holder, scoreA, parkedA, elapsedMs: Date.now() - scoringStart })
+    await b.waitForFunction(() => window.__match.at(-1)?.scores.some((x) => x.name === 'Alice' && x.score >= 2), null, { timeout: 5000 }).catch(() => {})
     const held = await b.evaluate(() => window.__match.at(-1))
     check('match display: A holds, scores in seconds, target 60', held?.mode === 'koth' && held.holderName === 'Alice' && !held.holderIsYou && held.target === 60 && held.scores.find((x) => x.name === 'Alice')?.score >= 2 && held.scores.some((x) => x.you), held)
     await b.screenshot({ path: '/tmp/syn3h-koth-far.png' })
