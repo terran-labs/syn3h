@@ -53,7 +53,8 @@ const record = () => {
 }
 try {
   const planets = process.argv[3]?.split(',') ?? ['desert', 'alpine', 'volcanic', 'archipelago', 'ice']
-  for (const planet of planets) {
+  const selected = process.env.DESCENT_CASES?.split(',')
+  for (const planet of planets.filter(p => !selected || selected.includes(p))) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } }), errors = []
     page.on('pageerror', e => errors.push(e.message))
     try {
