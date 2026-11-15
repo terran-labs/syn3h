@@ -542,6 +542,16 @@ While the host allows more than one kind of gear, a chip under the speed reads
 "Gear: Tag beam" or "Gear: Bungee"; tapping it or pressing T switches. The help card gains
 the gear lines. On touch, LET OUT (holds V) and LET GO show only while a cord is attached.
 Cues `bungeeLaunch`, `bungeeAttach` and `bungeeRelease` exist in `src/audio/Cues.ts`; the
-Bungee's `cue` hook in `src/net/index.ts` still has to call `audio.cue(name, at)`.
+Bungee's `cue` hook in `src/net/index.ts` calls `audio.cue(name, at)`.
 
 Check: `node tests/ui/gear.mjs` (Chrome desktop and WebKit iPhone landscape).
+
+## November 15 UX follow-up
+
+The inspector uses a cooler tint and less saturation over warm skies. Safari's dark backing
+and the safe graphics fallback now outrank all three glass weights. `node tests/ui/glass.mjs`
+checks those styles in Chrome and WebKit without loading a world.
+
+The existing center dot remains available for all gear. Suspended input hides the focus
+display even if pointer capture remains active; `inspector.mjs` checks that transition.
+Brand export commands, output sizes and failure behavior are in `tools/brand/README.md`.

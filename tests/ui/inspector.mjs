@@ -92,6 +92,11 @@ try {
     await page.screenshot({ path: `${out}/6-focus-${name}.png` })
   }
   await page.keyboard.up('w')
+  // Suspended input hides the aiming display even if the browser still holds the cursor.
+  await page.evaluate(() => { window.syn3h.game.input.suspended = true })
+  await page.waitForFunction(() => !document.querySelector('.syn3h-shell').classList.contains('is-focus'))
+  await page.evaluate(() => { window.syn3h.game.input.suspended = false })
+  await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-focus'))
   // Letting the cursor go brings the full interface back.
   await page.evaluate(() => document.exitPointerLock())
   await page.waitForFunction(() => !document.querySelector('.syn3h-shell').classList.contains('is-focus'))

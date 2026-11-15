@@ -17,8 +17,8 @@
  * and the limiter all apply. `level` follows the existing "Wind volume" slider (audio.wind).
  * Per frame: one wind lookup and a handful of AudioParam targets, nothing allocated.
  *
- * Plays alongside the owner's recorded Wind.wav, which follows the vehicle's own speed and
- * altitude. To keep the two from doubling, the camera's motion counts here at OWN_MOTION.
+ * The sole wind voice since the owner's 15 November 2026 choice. Camera motion still
+ * counts at OWN_MOTION to keep driving rush restrained; weather strength is unchanged.
  */
 import type * as THREE from 'three/webgpu'
 import { atmosphereValue } from '../world/weather/params'
