@@ -555,11 +555,16 @@ export class NetClient implements System {
     if (host === this.wasHost) return
     this.wasHost = host
     if (this.bots) this.bots.remote = !host
+    // A new host, or a new connection, must announce its bots' kinds afresh.
+    this.botKinds.clear()
     if (!host) return
     // Take over: drop our replicas of the old host's bots; our own manager simulates them now.
     for (const [id] of [...this.remotes]) if (isBotId(id)) this.removeRemote(id)
     if (this.bots?.vehicles.length) this.event('You are host: simulating bots')
   }
+
+  /** The vehicle kind last announced to the room for each of our bots, by bot id. */
+  private readonly botKinds = new Map<number, string>()
 
   private sendState(): void {
     const s = this.ctx.player.getState()
@@ -570,6 +575,12 @@ export class NetClient implements System {
   private sendBots(): void {
     const t = this.clock.now()
     for (const [id, bot] of liveBots(this.bots?.vehicles ?? [], this.ctx.game.world)) {
+      // Say which vehicle it is before its first state, and again if the slot changes kind
+      // (a mixed fleet), so guests build the same one.
+      if (this.botKinds.get(id) !== bot.kind) {
+        this.botKinds.set(id, bot.kind)
+        this.send({ type: 'bot', id, kind: bot.kind })
+      }
       const s = bot.getState()
       this.conn.send(encodeState({ id, t, ...s, p: this.canonical(s.p), bot: true }) as Uint8Array<ArrayBuffer>)
       this.stats.botStatesSent++
@@ -761,10 +772,11 @@ export class NetClient implements System {
       next.disposeEffects = this.attachEffects(v)
       for (const s of [...r.buffer.states].reverse()) next.buffer.push(s, s.t, netSendRate.value)
       this.remotes.set(info.id, next)
-      ;(v as VehicleExtras).setColors?.(info.colors[0], info.colors[1])
+      const [body, accent] = isBotId(info.id) ? botColors(info.id - BOT_ID_BASE) : info.colors
+      ;(v as VehicleExtras).setColors?.(body, accent)
       return
     }
-    extras.setColors?.(info.colors[0], info.colors[1])
+    if (!isBotId(info.id)) extras.setColors?.(info.colors[0], info.colors[1])
   }
 
   private onTerrainRegenerated(): void {
@@ -847,6 +859,7 @@ export class NetClient implements System {
         // The room's world replaces ours entirely, gaps included; see applyRoomWorld.
         applyRoomWorld(msg.params)
         this.welcomed = true
+        this.botKinds.clear()
         this.bounds.slot = msg.slot
         if (!this.everWelcomed) {
           // Spread players out; on a reconnect, stay where we are.

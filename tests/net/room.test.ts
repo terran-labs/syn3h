@@ -365,6 +365,41 @@ describe('Room bots', () => {
   })
 })
 
+describe('Room mixed bot fleets', () => {
+  const botAt = (n: number) => state([n * 5, 0, 0], [0, 0, 0], { id: BOT_ID_BASE + n, bot: true })
+
+  it('tells guests each bot\'s vehicle kind as the host announces it', () => {
+    const host = join('Host')
+    const guest = join('Guest')
+    // The kind comes before the bot's first state, so the bot is born as that vehicle.
+    send(host.peer, { type: 'bot', id: BOT_ID_BASE + 1, kind: 'hovercraft' })
+    room.receive(host.peer, botAt(0))
+    room.receive(host.peer, botAt(1))
+    const joined = guest.peer.all('join').map((m) => [m.player.id, m.player.kind])
+    expect(joined).toEqual([[BOT_ID_BASE, 'buggy'], [BOT_ID_BASE + 1, 'hovercraft']])
+    // A late joiner gets the same from the player list.
+    const late = join('Late')
+    expect(late.peer.last('welcome')!.players.filter((p) => p.bot).map((p) => p.kind)).toEqual(['buggy', 'hovercraft'])
+    // The slot changes vehicle: everyone is told once.
+    send(host.peer, { type: 'bot', id: BOT_ID_BASE, kind: 'jet' })
+    send(host.peer, { type: 'bot', id: BOT_ID_BASE, kind: 'jet' })
+    expect(guest.peer.all('profile').map((m) => [m.player.id, m.player.kind])).toEqual([[BOT_ID_BASE, 'jet']])
+  })
+
+  it('takes bot kinds only from the host, and only real kinds for real bot ids', () => {
+    const host = join('Host')
+    const guest = join('Guest')
+    room.receive(host.peer, botAt(0))
+    send(guest.peer, { type: 'bot', id: BOT_ID_BASE, kind: 'tank' })
+    send(host.peer, { type: 'bot', id: BOT_ID_BASE, kind: 'starship' })
+    send(host.peer, { type: 'bot', id: guest.id, kind: 'tank' })
+    send(host.peer, { type: 'bot', id: BOT_ID_BASE + 5000, kind: 'tank' })
+    send(host.peer, { type: 'bot', id: 'x', kind: 'tank' })
+    expect(guest.peer.all('profile')).toEqual([])
+    expect(join('Late').peer.last('welcome')!.players.find((p) => p.bot)!.kind).toBe('buggy')
+  })
+})
+
 describe('Room paused players', () => {
   it('relays heartbeats but a paused player cannot ram or be rammed', () => {
     const a = join('A')

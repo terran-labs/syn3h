@@ -38,6 +38,7 @@ import {
   parseJson,
   stampStateId,
   WRAP_SIZES,
+  MAX_BOTS, type WireVehicleKind,
 } from '../shared/protocol'
 // Imported for their side effect of defining world parameters, so the server knows their
 // ranges. Modules that define parameters next to Three.js code cannot be imported here; their
@@ -276,6 +277,9 @@ export class Room {
       case 'reset':
         // Same permission as moving a shared slider.
         if (!this.locked || player.info.id === this.host) this.resetWorld('host', player.info.id)
+        break
+      case 'bot':
+        this.onBotKind(player, msg.id, msg.kind)
         break
       case 'stuck':
       case 'died': // the name older bundles send
@@ -598,7 +602,7 @@ export class Room {
     let bot = this.bots.get(state.id)
     if (!bot) {
       const n = state.id - BOT_ID_BASE
-      bot = this.newPlayer({ id: state.id, name: `Bot ${n + 1}`, slot: -1, score: 0, kind: 'buggy', colors: ['#3a3f47', '#ffb000'], bot: true })
+      bot = this.newPlayer({ id: state.id, name: `Bot ${n + 1}`, slot: -1, score: 0, kind: this.botKinds.get(state.id) ?? 'buggy', colors: ['#3a3f47', '#ffb000'], bot: true })
       // Bots appear and vanish with a slider; they do not get a newcomer's grace period.
       bot.lastTag = -Infinity
       this.bots.set(state.id, bot)
@@ -609,6 +613,21 @@ export class Room {
     bot.lastStateAt = this.now()
     const out = bytes.slice()
     for (const [peer, other] of this.players) if (other !== sender) peer.send(out)
+  }
+
+  /** Vehicle kinds the host has announced for its bots, by bot id; a bot not named is a buggy. */
+  private readonly botKinds = new Map<number, WireVehicleKind>()
+
+  /** The host says which vehicle a bot is. Guests are told when it changes for a bot they see. */
+  private onBotKind(sender: Player, id: unknown, kind: unknown): void {
+    if (sender.info.id !== this.host || typeof id !== 'number' || !isBotId(id) || id >= BOT_ID_BASE + MAX_BOTS) return
+    const clean = cleanKind(kind)
+    if (!clean || this.botKinds.get(id) === clean) return
+    this.botKinds.set(id, clean)
+    const bot = this.bots.get(id)
+    if (!bot || bot.info.kind === clean) return
+    bot.info.kind = clean
+    this.broadcast({ type: 'profile', player: bot.info })
   }
 
   private expireBots(): void {

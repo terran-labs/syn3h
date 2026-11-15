@@ -300,6 +300,8 @@ export type ClientMessage =
   | { type: 'died'; cause: 'lava' | 'fell'; bot?: number }
   /** Put the shared world back to defaults (allowed whenever moving a shared slider is). */
   | { type: 'reset' }
+  /** Host only: which vehicle bot `id` is, so guests build the same kind (mixed bot fleets). */
+  | { type: 'bot'; id: number; kind: string }
 
 export type TagEvent =
   | 'default' | 'ram' | 'laser' | 'score' | 'leave' | 'lock' | 'host'
