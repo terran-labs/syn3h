@@ -278,7 +278,8 @@ describe('bots that know the game', () => {
     return { ...h, player, manager }
   }
   const far = (v: { body: RAPIER.RigidBody }, x = 0, z = 0) => { const p = v.body.translation(); return Math.hypot(p.x - x, p.z - z) }
-  it('tag: bots run from whoever is it, and a bot that is it hunts the nearest vehicle', async () => {
+  it('competitive tag: bots flee and hunt when following is disabled', async () => {
+    params.set('bots.followYou', 0)
     const { step, player, manager } = await setup(3)
     manager.setMatch({ mode: 'tag', it: player })
     for (let i = 0; i < 1000; i++) step()
@@ -292,6 +293,17 @@ describe('bots that know the game', () => {
       for (const other of [player, ...manager.vehicles]) if (other !== hunter) { const p = other.body.translation(), q = hunter.body.translation(); nearest = Math.min(nearest, Math.hypot(p.x - q.x, p.z - q.z)) }
     }
     expect(nearest).toBeLessThan(6)
+    manager.dispose()
+  })
+  it('default tag bots stay nearby and follow even when the player or a bot is it', async () => {
+    const { step, player, manager } = await setup(3)
+    for (const itVehicle of [player, manager.vehicles[0]]) {
+      manager.setMatch({ mode: 'tag', it: itVehicle })
+      for (let i = 0; i < 1500; i++) step()
+      const nearby = manager.vehicles.filter(bot => far(bot) < 40)
+      expect(nearby.length, manager.vehicles.map(bot => far(bot).toFixed(1)).join(', ')).toBeGreaterThanOrEqual(2)
+      for (const bot of manager.vehicles) expect(bot.input.fire).toBe(false)
+    }
     manager.dispose()
   })
   it('hill: most bots go to the zone and stay in it', async () => {
