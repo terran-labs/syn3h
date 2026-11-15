@@ -613,3 +613,29 @@ play/reopen behavior and unchanged room routing. It does not validate the server
 humans in two separate Alpine rooms, and checks normal-entry counts in Chrome and WebKit.
 It uses the real same-origin endpoint and saves captures under `artifacts/presence`.
 Run every browser check through the absolute trunk heavy-job helper.
+
+## Saved-world moons
+
+Save current world in the World card stores a complete world snapshot on this device.
+Guests may save while editing is locked. The Worlds panel lists local saves with separate
+Delete buttons; deletion changes neither the running world nor its room. Twelve saves
+are allowed, with no silent eviction. Identical snapshots reuse the existing bookmark;
+the same seed with different settings creates another bookmark.
+
+Generated moons follow their recipe planets, with 44-pixel button targets. Crowded moons
+remain reachable through the Worlds list. A moon or list entry drops directly, preserving
+room selection and checking permission against all saved settings, including the seed.
+An existing room can replace local settings on welcome; a message reports that outcome.
+Worlds are snapshots of settings, not room invitations or guaranteed terrain across game
+updates. Removed settings are ignored with a notice; new settings use current defaults.
+
+The saved flight temporarily borrows its recipe planet slot. Its descriptor is restored
+and obsolete map results rejected on success or failure. Custom's descriptor and retained
+maps are preserved; its live snapshot updates resume when the Custom editor is reopened.
+No extra GPU context, texture assets, protocol changes or shared parameter edits are used.
+
+`savedWorlds.test.ts` covers strict storage validation, defaults, deduplication, limits,
+false/zero, deletion and failed writes. `saved-target.test.ts` checks cache/descriptor
+restoration and late worker results. `saved-worlds.mjs` uses an ephemeral real room server
+and same-origin proxy to check Chrome restore/reload/failure and phone WebKit authority,
+locked guests, deletion and keyboard entry. Captures are in `artifacts/saved-worlds`.
