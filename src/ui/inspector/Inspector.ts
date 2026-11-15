@@ -20,6 +20,10 @@ export interface InspectorOptions {
   /** The vehicles on offer and which is in use, for the switcher in the Vehicles card. */
   vehicles(): { options: readonly { id: string; label: string }[]; current: string }
   onVehicle(id: string): void
+  /** The player's vehicle colours as #rrggbb. With onColor, two swatches sit beside the vehicle selector. */
+  colors?(): { body: string; accent: string }
+  /** Called on every movement in the colour picker, so the vehicle can repaint as it is dragged. */
+  onColor?(key: 'body' | 'accent', value: string): void
   /** Capture a local bookmark. The caller owns storage and success or failure feedback. */
   onSaveWorld?(): void
 }
@@ -130,6 +134,8 @@ export class Inspector {
     const vehicles = this.options.vehicles()
     const select = this.element.querySelector<HTMLSelectElement>('.wi-vehicle-select')!
     if (document.activeElement !== select) select.value = vehicles.current
+    const colors = this.options.colors?.()
+    if (colors) for (const input of this.tintInputs) { const value = colors[input.dataset.tint as 'body' | 'accent']; if (input.value !== value && document.activeElement !== input) input.value = value }
   }
   private build(): void {
     const all = params.all(); this.known = all.length
@@ -166,12 +172,25 @@ export class Inspector {
     this.editable = !canEditWorld(); this.update()
   }
   private vehicleSwitch(): HTMLElement {
-    const label = document.createElement('label'); label.textContent = 'Vehicle · reloads & respawns'
+    const label = document.createElement('label'); label.textContent = 'Vehicle'
     const select = document.createElement('select'); select.className = 'wi-vehicle-select'; select.setAttribute('aria-label', 'Vehicle (reloads and respawns)')
     for (const option of this.options.vehicles().options) { const item = document.createElement('option'); item.value = option.id; item.textContent = option.label; select.append(item) }
     select.addEventListener('change', () => this.options.onVehicle(select.value), { signal: this.abort.signal })
-    label.append(select); return label
+    label.append(select)
+    if (!this.options.colors || !this.options.onColor) return label
+    // Vehicle colours live beside the vehicle choice. Each swatch opens the platform's own
+    // colour picker; the vehicle repaints while it is dragged, with no reload.
+    const wrap = document.createElement('div'); wrap.className = 'wi-vehicle'
+    const tint = document.createElement('span'); tint.className = 'wi-tint'; tint.setAttribute('role', 'group'); tint.setAttribute('aria-label', 'Vehicle colours')
+    for (const [key, name] of [['body', 'Body colour'], ['accent', 'Accent colour']] as const) {
+      const swatch = document.createElement('label'); swatch.className = 'wi-swatch'; swatch.title = name
+      const input = document.createElement('input'); input.type = 'color'; input.dataset.tint = key; input.setAttribute('aria-label', name)
+      input.addEventListener('input', () => this.options.onColor!(key, input.value), { signal: this.abort.signal })
+      swatch.append(input); tint.append(swatch); this.tintInputs.push(input)
+    }
+    wrap.append(label, tint); return wrap
   }
+  private readonly tintInputs: HTMLInputElement[] = []
   /** Opens the existing registered GI slider, rather than creating a second control. */
   private showGI(): void {
     const search = this.element.querySelector<HTMLInputElement>('.wi-search')!; search.value = ''; this.search('')

@@ -140,6 +140,7 @@ export class Shell implements System {
     </section>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open the panels" aria-pressed="false"><span aria-hidden="true">≡</span><span class="nav-label"> Panels</span></button></nav>
+    <div class="exit-confirm" role="alertdialog" aria-modal="true" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-text" hidden><div class="exit-confirm-card"><strong id="exit-confirm-title">Leave this world?</strong><p id="exit-confirm-text">You will return to the galaxy.</p><div class="exit-confirm-actions"><button type="button" class="exit-stay">Stay</button><button type="button" class="exit-leave">Leave world</button></div></div></div>
     <button type="button" class="pause-veil" hidden><strong>Paused</strong><span class="pause-how">Click to resume</span><small hidden>The world carries on without you.</small></button>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
@@ -167,6 +168,8 @@ export class Shell implements System {
       // Vehicles are chosen in play only (the lobby offers planets). Four, one design each.
       vehicles: () => ({ options: PLAY_VEHICLES, current: this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind }),
       onVehicle: id => this.switchVehicle(id as VehicleKind),
+      colors: () => this.tintView,
+      onColor: (key, value) => this.setTint(key, value),
       onSaveWorld: () => this.saveWorld(),
     })
     // The owner's rule, 15 November 2026: "Panels being open or closed should be a simple
@@ -192,7 +195,13 @@ export class Shell implements System {
       const rack = (window as unknown as { syn3hNet?: { gear?: GearRack } }).syn3hNet?.gear
       if (rack?.list().includes(gear.value as GearId)) { rack.select(gear.value as GearId); this.audio.cue('click') }
     }, { signal })
-    navigation.querySelector('.exit-world')!.addEventListener('click', () => this.openMenu(), { signal })
+    // Exit world asks first (the owner, 15 November 2026): one stray click on the panels must
+    // not throw the player back to the galaxy. Code that calls openMenu() itself is not asked.
+    navigation.querySelector('.exit-world')!.addEventListener('click', () => this.askExit(), { signal })
+    const exitConfirm = this.element.querySelector<HTMLElement>('.exit-confirm')!
+    exitConfirm.addEventListener('click', event => { if (event.target === exitConfirm) this.answerExit(false) }, { signal })
+    exitConfirm.querySelector('.exit-stay')!.addEventListener('click', () => this.answerExit(false), { signal })
+    exitConfirm.querySelector('.exit-leave')!.addEventListener('click', () => this.answerExit(true), { signal })
     players.querySelector('.rail-invite')!.addEventListener('click', () => this.openJoin(), { signal })
     players.querySelector('input')!.addEventListener('change', event => params.set(diagnostics.def.id, (event.target as HTMLInputElement).checked), { signal })
     const music = document.createElement('div'); music.className = 'rail-music'
@@ -463,6 +472,7 @@ export class Shell implements System {
   private dropping = false
   openMenu(panel = 'index'): void {
     if (!this.started) return
+    if (this.exitAsking) { this.exitAsking = false; this.element.querySelector<HTMLElement>('.exit-confirm')!.hidden = true }
     this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; if (this.galaxy) this.galaxy.enabled = true
     this.releaseCursor()
     this.game.input.suspended = true; this.game.input.mouseFire = false; this.game.input.poll(); this.touch.enabled = false
@@ -589,6 +599,41 @@ export class Shell implements System {
     this.enteringByGesture = true
     void this.captureCursor(true)
   }
+  private exitAsking = false
+  /** Show "Leave this world?". Stay has the focus, so Enter, Escape and a click outside all stay. */
+  private askExit(): void {
+    if (!this.started || this.menuVisible || this.exitAsking || this.userPaused) return
+    this.exitAsking = true
+    const dialog = this.element.querySelector<HTMLElement>('.exit-confirm')!
+    dialog.hidden = false
+    this.game.input.suspended = true; this.game.input.mouseFire = false
+    dialog.querySelector<HTMLButtonElement>('.exit-stay')!.focus({ preventScroll: true })
+  }
+  private answerExit(leave: boolean): void {
+    if (!this.exitAsking) return
+    this.exitAsking = false
+    this.element.querySelector<HTMLElement>('.exit-confirm')!.hidden = true
+    this.game.input.suspended = this.userPaused || this.menuVisible || this.inviteOpen
+    if (leave) this.openMenu()
+    else this.element.querySelector<HTMLButtonElement>('.exit-world')?.focus({ preventScroll: true })
+  }
+  /**
+   * Vehicle colours are chosen in play, beside the vehicle selector (the lobby offers only
+   * planets). The vehicle repaints on every movement of the picker; the choice is saved and
+   * announced to the room once the picker has been still for a moment, not on every step.
+   * Set by initGameShell: `commit` is true for that settled call.
+   */
+  onTint?: (body: string, accent: string, commit: boolean) => void
+  private readonly tintView = { body: this.choice.bodyColor, accent: this.choice.accentColor }
+  private tintTimer?: ReturnType<typeof setTimeout>
+  private setTint(key: 'body' | 'accent', value: string): void {
+    if (!/^#[0-9a-f]{6}$/i.test(value)) return
+    if (key === 'body') this.choice.bodyColor = value; else this.choice.accentColor = value
+    this.tintView.body = this.choice.bodyColor; this.tintView.accent = this.choice.accentColor
+    this.onTint?.(this.choice.bodyColor, this.choice.accentColor, false)
+    clearTimeout(this.tintTimer)
+    this.tintTimer = setTimeout(() => { saveVehicleChoice(this.choice); this.onTint?.(this.choice.bodyColor, this.choice.accentColor, true) }, 200)
+  }
   /** Touch only: the panels are showing rather than the driving view. Never stored. */
   private touchPanels = false
   /** Panels are wanted exactly when the cursor is free (or, on touch, when the menu state is on). */
@@ -640,7 +685,7 @@ export class Shell implements System {
     this.userPaused = user
     const veil = this.element.querySelector<HTMLButtonElement>('.pause-veil')!
     veil.hidden = !user; this.element.classList.toggle('is-paused', user)
-    this.game.input.suspended = user || this.menuVisible || this.inviteOpen
+    this.game.input.suspended = user || this.menuVisible || this.inviteOpen || this.exitAsking
     if (user) {
       this.game.input.mouseFire = false
       veil.querySelector('.pause-how')!.textContent = this.touch.available ? 'Tap to resume' : 'Click to resume'
@@ -653,6 +698,13 @@ export class Shell implements System {
     const editing = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON|SUMMARY)$/.test(event.target.tagName))
     if (!editing && !event.repeat && event.code === 'KeyP') { event.preventDefault(); event.stopImmediatePropagation(); this.setPresentation(!this.presentation); return }
     if (!editing && !event.repeat && event.code === 'KeyJ') { event.preventDefault(); event.stopImmediatePropagation(); this.inviteOpen ? this.closeJoin() : this.openJoin(); return }
+    if (this.exitAsking) {
+      // The question owns the keyboard: Escape means stay, Tab moves between its two buttons,
+      // Enter or Space presses the focused one, and nothing reaches driving, pause or shortcuts.
+      if (event.code === 'Escape') { event.preventDefault(); event.stopImmediatePropagation(); this.answerExit(false) }
+      else if (event.key === 'Tab') { event.preventDefault(); const buttons = [...this.element.querySelectorAll<HTMLButtonElement>('.exit-confirm button')]; buttons[document.activeElement === buttons[0] ? 1 : 0].focus() }
+      return
+    }
     if (this.inviteOpen) {
       if (event.code === 'Escape') { event.preventDefault(); this.closeJoin() }
       if (event.key === 'Tab') { event.preventDefault(); const buttons = [...this.invite.element.querySelectorAll<HTMLButtonElement>('button')]; buttons[document.activeElement === buttons[0] ? 1 : 0].focus() }
@@ -976,7 +1028,7 @@ export class Shell implements System {
    */
   private glass(signal: AbortSignal): void {
     const buttons = [...this.element.querySelectorAll<HTMLElement>('button'), ...this.touch.element.querySelectorAll<HTMLElement>('button')]
-    for (const button of buttons) if (!button.matches('.link-button, .lobby-links *, .syn3h-advanced *, .world-inspector *')) button.classList.add('liquid-glass')
+    for (const button of buttons) if (!button.matches('.link-button, .lobby-links *, .syn3h-advanced *, .world-inspector *, .exit-confirm *')) button.classList.add('liquid-glass')
     // Touch screens have no hover, so there is nothing to face.
     if (!matchMedia('(hover: hover)').matches) return
     const REST = 205
@@ -1186,7 +1238,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); this.performancePanel.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }
@@ -1197,6 +1249,11 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
   shell.setVehicleKind(player.kind); shell.setTerrain(terrain); audio.setPlayer(player,terrain)
   let activePlayer = player
   const hints = new PlayHints(), height = new HeightAboveGround()
+  // A colour picked in play repaints the local vehicle at once and, once settled, tells the room.
+  shell.onTint = (body, accent, commit) => {
+    activePlayer.setColors(body, accent)
+    if (commit) (window as unknown as { syn3hNet?: { setProfile?(profile: { colors: { body: string; accent: string } }): void } }).syn3hNet?.setProfile?.({ colors: { body, accent } })
+  }
   const bridge = game.add({ update(dt = 0) {
     const v = activePlayer.body.linvel(), p = activePlayer.body.translation(), speed = Math.hypot(v.x, v.y, v.z)
     shell.setSpeed(speed)

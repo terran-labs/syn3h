@@ -56,7 +56,11 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
     const fit=await page.locator('.performance-panel').evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight})
     assert.ok(fit,'performance panel inside viewport')
     for(const head of await page.locator('.wi-head').all())await head.click()
-    assert.equal(await page.locator('.wi-cards').evaluate(el=>el.scrollHeight>el.clientHeight+2),false,'diagnostics do not crop card headers')
+    // Headers are finger-sized now, so on a phone the stack may scroll; what matters is that
+    // with the diagnostics open every card header can still be reached and nothing scrolls sideways.
+    await page.waitForFunction(()=>!document.querySelector('.wi-cards').getAnimations({subtree:true}).some(a=>a.playState==='running'))
+    const reach=await page.evaluate(()=>{const stack=document.querySelector('.wi-cards');const all=[...document.querySelectorAll('.wi-head')].every(el=>{el.scrollIntoView({block:'nearest'});const r=el.getBoundingClientRect(),s=stack.getBoundingClientRect();return r.top>=s.top-1&&r.bottom<=s.bottom+1});stack.scrollTop=0;return{all,sideways:stack.scrollWidth>stack.clientWidth+1}})
+    assert.ok(reach.all,'diagnostics do not put any card header out of reach');assert.equal(reach.sideways,false,'the card stack does not scroll sideways')
     await page.screenshot({path:`tests/ui/artifacts/follow-on/${mode}-performance.png`})
     await page.evaluate(()=>{fixture.snapshot={...fixture.snapshot,recommendation:{level:2,targetLevel:1,observedFps:20}};fixture.emit()})
     assert.match(await page.locator('.performance-recommendation').innerText(),/Try the Low level\?/)
@@ -106,7 +110,7 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
       })
     }
     if(await page.evaluate(()=>!!document.pointerLockElement)){await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.pointerLockElement)}if(await page.locator('.inspector-toggle').isVisible()&&await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'})
-    await page.locator('.exit-world').click(); await page.waitForFunction(()=>!syn3h.shell.playing)
+    await page.locator('.exit-world').click(); await page.locator('.exit-leave').click(); await page.waitForFunction(()=>!syn3h.shell.playing)
     await page.locator('.galaxy-label.is-current').focus();await page.keyboard.press('Enter')
     await page.waitForFunction(()=>syn3h.shell.playing&&!syn3h.shell.dropping,null,{timeout:60000})
     assert.equal(await page.evaluate(()=>fixture.listeners.size),1,'lobby return does not duplicate subscription')

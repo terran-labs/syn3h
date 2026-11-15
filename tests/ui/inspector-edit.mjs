@@ -164,6 +164,11 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
       requestAnimationFrame(look)
     }))
     const end = run.samples.at(-1)
+    // If the card did not open, say what state it was in: this check has failed without a cause before.
+    if (!(end > run.start + 100)) console.log('card state at failure', JSON.stringify(await page.evaluate(() => {
+      const card = document.querySelector('.wi-card[data-section=sky]'), body = card.querySelector('.wi-body'), stack = document.querySelector('.wi-cards')
+      return { cardClass: card.className, bodyHidden: body.hidden, bodyDisplay: getComputedStyle(body).display, bodyHeight: Math.round(body.getBoundingClientRect().height), bodyChildren: body.childElementCount, cardFlex: getComputedStyle(card).flex, cardMinHeight: getComputedStyle(card).minHeight, stack: [stack.clientHeight, stack.scrollHeight], rail: Math.round(document.querySelector('.world-inspector').getBoundingClientRect().height), railChildren: [...document.querySelector('.world-inspector').children].map(c => `${c.className.split(' ')[0]}:${Math.round(c.getBoundingClientRect().height)}`), cards: [...document.querySelectorAll('.wi-card')].map(c => `${c.dataset.section}:${Math.round(c.getBoundingClientRect().height)}:${c.classList.contains('is-open') ? 'open' : 'closed'}`), moving: document.querySelectorAll('.is-moving').length, animations: document.getAnimations().length, paused: syn3h.shell.userPaused, locked: !!document.pointerLockElement, viewport: [innerWidth, innerHeight] }
+    })))
     assert.ok(end > run.start + 100, `the card opened (${run.start} to ${end})`)
     assert.ok(run.samples.some(h => h > run.start + 5 && h < end - 5), `heights pass through intermediate values: ${run.samples.map(Math.round).join(',')}`)
     assert.equal(run.running, 0, 'the animation has finished inside 500 ms')
