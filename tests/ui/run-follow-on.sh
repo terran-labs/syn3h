@@ -7,5 +7,5 @@ for ux_attempt in $(seq 1 60); do
   if curl -fsS http://127.0.0.1:5198/ > /dev/null; then break; fi
   sleep 1
 done
-node tests/ui/follow-on.mjs
+node "${UX_TEST:-tests/ui/follow-on.mjs}"
 SYN3H_URL=http://127.0.0.1:5198/ node tests/ui/exploration.mjs

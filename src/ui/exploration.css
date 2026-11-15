@@ -168,3 +168,23 @@ html[data-gfx="0"] .syn3h-shell.exploration-ui[data-glass] .wi-glass { --body: r
   .syn3h-shell.exploration-ui .performance-panel { min-height: 36px; }
   .syn3h-shell.exploration-ui .wi-cards { min-height: 132px; }
 }
+
+/* Direct selectors reuse the existing vehicle and gear actions, outside collapsed cards. */
+.syn3h-shell.exploration-ui .wi-quick { display: grid; grid-template-columns: minmax(0,1.3fr) minmax(0,1fr) auto; gap: 6px; flex: 0 0 auto; padding: 7px 8px; background: rgb(6 21 33 / .92); border-bottom: 1px solid var(--s3-line-quiet); align-items: end; }
+.syn3h-shell.exploration-ui .wi-quick label { display: block; font-size: 10px; color: #c9e4f2; margin: 0; }
+.syn3h-shell.exploration-ui .wi-quick select { width: 100%; min-width: 0; min-height: 28px; padding: 3px 2px; font-size: 12px; }
+.syn3h-shell.exploration-ui .wi-quick button { min-height: 28px; padding: 4px 5px; font-size: 11px; }
+.syn3h-shell.exploration-ui .wi-gi-status { grid-column: 1 / -1; font-size: 12px; line-height: 1.4; color: #c9e4f2; }
+@media (pointer: coarse) { .syn3h-shell.exploration-ui .wi-quick select { font-size: 16px; } }
+/* Short landscape screens have no spare row: the selectors sit in the empty space beside
+   Exit world, without captions. The selects keep their accessible names and show the
+   current vehicle and gear themselves. */
+@media (max-height: 500px) {
+  .syn3h-shell.exploration-ui .wi-quick { position: absolute; z-index: 1; top: 3px; left: 132px; right: 46px; padding: 0; gap: 4px; background: none; border: 0; align-items: center; grid-template-columns: minmax(0,1.25fr) minmax(0,1fr) auto; }
+  .syn3h-shell.exploration-ui .wi-quick label { font-size: 0; line-height: 0; }
+  .syn3h-shell.exploration-ui .wi-quick select, .syn3h-shell.exploration-ui .wi-quick button { min-height: 26px; padding-block: 1px; }
+  /* "GI" alone leaves the two selectors enough width to show a readable name. */
+  .syn3h-shell.exploration-ui .wi-quick [data-wi=show-gi] { font-size: 0; padding-inline: 7px; }
+  .syn3h-shell.exploration-ui .wi-quick [data-wi=show-gi]::after { content: 'GI'; font-size: 11px; }
+  .syn3h-shell.exploration-ui .wi-quick select { padding-inline: 4px 0; }
+}
