@@ -2,7 +2,8 @@
 
 How the Syn3h lanes work together during the Saturday night push (4:30pm to 9:30pm Pacific)
 and through to the demo on Sunday at noon Pacific. Written by the Foreman on Saturday 14
-November. Proposed to the Orchestrator; items marked **adopted** have been confirmed by it.
+November. The Orchestrator adopted all ten rules at 4:40pm. Rule 6 is adopted but blocked: the
+stable preview has no link yet. Rule 10 awaits the owner.
 
 ## 1. One trunk, one merger
 
@@ -88,4 +89,5 @@ Foreman reads lead threads on each sweep and records owner decisions in `ops/DEC
 
 Proposed, awaiting the owner: new features stop when tonight's push ends. Sunday morning is
 fixes, a hand driven rehearsal on the demo hardware and network, and one final promotion to
-stable. Nothing merges after 10am Sunday without the owner saying so.
+stable. Nothing merges after 10am Sunday without the owner saying so. After the freeze, lanes may
+still merge work that is off by default (rule 5).
