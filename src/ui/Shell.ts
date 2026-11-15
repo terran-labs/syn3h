@@ -1,3 +1,5 @@
+import { PerformancePanel } from './PerformancePanel'
+import type { PerformanceSource } from '../core/performance'
 import { SavedWorldStore, SAVED_WORLDS_KEY, savedWorldPlan, worldIdentity, type SavedWorld } from './galaxy/savedWorlds'
 import { SavedMoons } from './galaxy/SavedMoons'
 import type { Game, System } from '../core/Game'
@@ -187,6 +189,9 @@ export class Shell implements System {
     players.innerHTML = '<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><label class="rail-diagnostics"><input type="checkbox"> Connection diagnostics</label></div>'
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
     railTop.after(players)
+    this.performancePanel = new PerformancePanel(this.element, () => { this.releaseCursor(); this.setInspectorOpen(true) })
+    railTop.querySelector('.wi-actions')!.append(this.performancePanel.toggle)
+    players.after(this.performancePanel.element)
     const gear = this.element.querySelector('.gear-chip')!; players.querySelector('.rail-player-body')!.append(gear)
     navigation.querySelector('.exit-world')!.addEventListener('click', () => this.openMenu(), { signal })
     players.querySelector('.rail-invite')!.addEventListener('click', () => this.openJoin(), { signal })
@@ -284,13 +289,18 @@ export class Shell implements System {
     }
     for (const type of ['keydown', 'pointerdown', 'wheel', 'pointermove']) window.addEventListener(type, activity, { capture: true, signal, passive: false })
     window.addEventListener('keydown', event => this.keydown(event), { capture: true, signal })
+    // Native controls keep their defaults and local handlers, but must not drive or fire.
+    // Let keyup reach Input even when focus moved while a driving key was held.
+    this.element.addEventListener('keydown', event => {
+      if (event.target instanceof Element && event.target.closest('button, input, select, textarea, summary, [contenteditable=true]')) event.stopPropagation()
+    }, { signal })
     game.canvas.addEventListener('pointerdown', event => {
-      if (!this.started || this.menuVisible || event.pointerType === 'touch' || event.button !== 0) return
+      if (!this.started || this.menuVisible || game.input.suspended || event.pointerType === 'touch' || event.button !== 0) return
       // The first click in play captures the cursor: from then on moving the mouse swings the
       // camera round the vehicle (ChaseCamera reads the locked pointer), and Escape lets the
       // cursor go again, which the browser does itself. That first click only captures.
       // (Networking also listens for clicks here, after this listener; stop it hearing this one.)
-      if (this.capturesCursor && document.pointerLockElement !== game.canvas) { this.captureCursor(); event.stopImmediatePropagation(); return }
+      if (this.capturesCursor && document.pointerLockElement !== game.canvas) { void this.captureCursor(); event.stopImmediatePropagation(); return }
       game.input.mouseFire = true
       if (document.pointerLockElement !== game.canvas) game.canvas.setPointerCapture(event.pointerId)
     }, { signal })
@@ -567,6 +577,8 @@ export class Shell implements System {
     this.element.querySelector<HTMLElement>('.hud-navigation')!.hidden = false
     this.element.querySelector<HTMLButtonElement>('.shell-menu-button')!.focus({ preventScroll: true })
   }
+  private performancePanel!: PerformancePanel
+  configurePerformance(source: PerformanceSource): void { this.performancePanel.configure(source) }
   private inspectorChosen: boolean | undefined
   private setInspectorOpen(open: boolean, intentional = false): void {
     if (intentional) this.inspectorChosen = open
@@ -575,7 +587,7 @@ export class Shell implements System {
     this.element.querySelector('.inspector-toggle')!.setAttribute('aria-pressed', String(open))
   }
   private keydown(event: KeyboardEvent): void {
-    const editing = event.target instanceof HTMLElement && (event.target.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName))
+    const editing = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON|SUMMARY)$/.test(event.target.tagName))
     if (!editing && !event.repeat && event.code === 'KeyP') { event.preventDefault(); event.stopImmediatePropagation(); this.setPresentation(!this.presentation); return }
     if (!editing && !event.repeat && event.code === 'KeyJ') { event.preventDefault(); event.stopImmediatePropagation(); this.inviteOpen ? this.closeJoin() : this.openJoin(); return }
     if (this.inviteOpen) {
@@ -587,6 +599,7 @@ export class Shell implements System {
     if (event.code === 'Escape') {
       if (event.target instanceof HTMLSelectElement) return
       event.preventDefault(); event.stopImmediatePropagation()
+      if (document.pointerLockElement === this.game.canvas) { this.releaseCursor(); return }
       if (this.menuVisible && this.panels.active !== 'index') this.showPanel('index')
       else if (this.started) {
         if (this.menuVisible) this.closeMenu()
@@ -904,14 +917,31 @@ export class Shell implements System {
   }
   /** Desktop with a mouse only: phones and tablets have their thumb controls. */
   private get capturesCursor(): boolean { return !this.touch.available && typeof this.game.canvas.requestPointerLock === 'function' }
-  private captureCursor(): void {
-    // Unadjusted movement where the browser offers it, so the swing is the same on every OS.
+  private cursorRequest = 0
+  private cursorPending = false
+  private async captureCursor(): Promise<void> {
+    if (this.cursorPending) return
+    this.cursorPending = true
+    const requestId = ++this.cursorRequest
+    const active = () => requestId === this.cursorRequest && !this.abort.signal.aborted && this.started && !this.menuVisible && !this.game.input.suspended
     try {
-      const request = (this.game.canvas.requestPointerLock as (options?: { unadjustedMovement?: boolean }) => Promise<void> | void).call(this.game.canvas, { unadjustedMovement: true })
-      if (request && typeof (request as Promise<void>).catch === 'function') (request as Promise<void>).catch(() => { try { void this.game.canvas.requestPointerLock() } catch { /* The cursor stays free; play carries on. */ } })
-    } catch { /* The cursor stays free; play carries on. */ }
+      try {
+        await (this.game.canvas.requestPointerLock as (options?: { unadjustedMovement?: boolean }) => Promise<void> | void).call(this.game.canvas, { unadjustedMovement: true })
+      } catch {
+        // Some browsers reject raw motion. A denied fallback must not reject unhandled.
+        if (active()) await this.game.canvas.requestPointerLock()
+      }
+    } catch { /* A denied capture leaves the native cursor available. */ }
+    finally {
+      this.cursorPending = false
+      if (!active() && document.pointerLockElement === this.game.canvas) document.exitPointerLock()
+    }
   }
-  private releaseCursor(): void { if (document.pointerLockElement === this.game.canvas) document.exitPointerLock() }
+  private releaseCursor(): void {
+    ++this.cursorRequest
+    this.game.input.mouseFire = false
+    if (document.pointerLockElement === this.game.canvas) document.exitPointerLock()
+  }
   private updateHelp(): void {
     renderHelp(this.element.querySelector('.vehicle-help')!, this.choice.vehicleKind)
     this.element.querySelector('.shell-touch-hint')!.textContent = touchHelp(this.choice.vehicleKind)
@@ -997,6 +1027,7 @@ export class Shell implements System {
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
     // A captured cursor alone is insufficient while a menu or another flow suspends input.
     this.element.classList.toggle('is-focus', this.started && !this.menuVisible && !this.game.input.suspended && document.pointerLockElement === this.game.canvas)
+    this.performancePanel.setContext(this.started && !this.menuVisible && !this.game.input.suspended, this.element.classList.contains('is-focus'))
     this.raceHud.update(this.started && !this.menuVisible && !this.game.input.suspended, this.element.classList.contains('is-focus'), this.self, this.ground?.size)
     const buildNotice = document.getElementById('syn3h-build-notice')
     if (buildNotice && !this.inspector.element.contains(buildNotice)) this.inspector.element.querySelector('.wi-top')!.append(buildNotice)
@@ -1055,7 +1086,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); this.releaseCursor(); this.performancePanel.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }
