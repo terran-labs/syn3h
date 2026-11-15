@@ -63,14 +63,14 @@ try {
   await page.waitForFunction(() => vehicleLab.motor?.state === 'running')
   assert.equal(await page.evaluate(() => vehicleLab.motor.kind), 'buggy')
   const voices = {}
-  for (const vehicle of ['game-jet', 'game-hovercraft', 'game-buggy-classic', 'tank', 'hover', 'buggy']) {
+  for (const vehicle of ['game-jet', 'game-hovercraft', 'game-tank', 'tank', 'hover', 'buggy']) {
     await page.evaluate(v => vehicleLab.select(v), vehicle)
     await page.waitForFunction(v => vehicleLab.exhibit === v, vehicle, { timeout: 60000 })
     await page.waitForTimeout(300)
     voices[vehicle] = await page.evaluate(() => vehicleLab.motor.kind)
   }
   console.log('motor voices', voices)
-  assert.deepEqual(voices, { 'game-jet': 'jet', 'game-hovercraft': 'hovercraft', 'game-buggy-classic': 'buggy-classic', tank: 'tank', hover: 'hovercraft', buggy: 'buggy' })
+  assert.deepEqual(voices, { 'game-jet': 'jet', 'game-hovercraft': 'hovercraft', 'game-tank': 'tank', tank: 'tank', hover: 'hovercraft', buggy: 'buggy' })
   const buttons = await page.locator('.sec', { hasText: 'Bump sounds' }).locator('button').allTextContents()
   console.log('bump buttons', buttons.join(', '))
   assert.equal(buttons.length, 9)
