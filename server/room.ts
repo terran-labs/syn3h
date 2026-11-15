@@ -16,6 +16,7 @@ import {
   type ServerMessage,
   type ShotInfo,
   type CordWire,
+  type YoinkWire,
   type TagEvent,
   BOT_ID_BASE,
   DEFAULT_COLORS,
@@ -48,6 +49,7 @@ import { MIN_CLOSING, SHOVE_SHARE, cleanShove } from '../src/net/shove'
 import { wrapDistance } from '../shared/wrap'
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
 import { bungeeAllowed, bungeeLength, bungeeSnap, bungeeVehicles } from '../src/weapons/bungee/params'
+import { yoinkAllowed, yoinkFling, yoinkHoldDistance, yoinkPunt, yoinkPuntRange, yoinkRange } from '../src/weapons/yoink/params'
 import {
   KNOCK_WINDOW, WIN_PAUSE, gameMode, kothKnockBonus, kothRespawnDelay, kothTargetScore, tagCooldown, tagRamReach,
   REJOIN_GRACE, gameRejoin,
@@ -287,6 +289,9 @@ export class Room {
         break
       case 'cord':
         this.onCord(peer, player, msg.cord)
+        break
+      case 'yoink':
+        this.onYoink(peer, player, msg.y)
         break
       case 'stuck':
       case 'died': // the name older bundles send
@@ -856,6 +861,27 @@ export class Room {
     this.broadcast({ type: 'cord', from: player.info.id, cord, t: this.now() / 1000 }, peer)
   }
 
+  /**
+   * Yoink (Weapons lane). The vehicle acted on must be in the room, not the sender's own, and
+   * within reach of the sender round the wrap; a fling may be no faster than the room allows.
+   * The acted-on vehicle's own client applies it, so these checks are what stop a modified
+   * client from flinging anyone from anywhere.
+   */
+  private onYoink(peer: Peer, player: Player, raw: unknown): void {
+    if (!this.paramBool(yoinkAllowed.def)) return
+    const y = cleanYoink(raw)
+    if (!y) return
+    const other = this.byId(y.to)
+    if (!other || other === player || !other.lastState || !player.lastState) return
+    const reach = Math.max(this.paramNumber(yoinkRange.def), this.paramNumber(yoinkPuntRange.def), this.paramNumber(yoinkHoldDistance.def) * 2) * 1.5 + 10
+    if (this.dist(other.lastState.p, player.lastState.p) > reach) return
+    if (y.s === 'fling') {
+      const most = Math.max(this.paramNumber(yoinkFling.def), this.paramNumber(yoinkPunt.def) * 1.3) * 1.25 + Math.hypot(...player.lastState.v) + 5
+      if (Math.hypot(...y.v) > most) return
+    }
+    this.broadcast({ type: 'yoink', from: player.info.id, y }, peer)
+  }
+
   /** Tell everyone a player's cord is gone: it stretched out of reach, or its owner dropped out. */
   private dropCord(player: Player, except?: Peer): void {
     if (!player.cordOn) return
@@ -1227,6 +1253,16 @@ function cleanCord(c: unknown): CordWire | null {
     const unit = vec(o.n) && Math.abs(Math.hypot(...o.n) - 1) < 0.05
     if (vec(o.at)) return { s: 'on', at: o.at, n: unit ? (o.n as [number, number, number]) : [0, 1, 0], r: o.r }
   }
+  return null
+}
+
+/** A well formed Yoink message, rebuilt from only the fields it should have; null otherwise. */
+function cleanYoink(y: unknown): YoinkWire | null {
+  if (!y || typeof y !== 'object') return null
+  const o = y as Record<string, unknown>
+  if (typeof o.to !== 'number' || !Number.isInteger(o.to)) return null
+  if (o.s === 'grab' || o.s === 'drop') return { s: o.s, to: o.to }
+  if (o.s === 'fling' && isVec3(o.v)) return { s: 'fling', to: o.to, v: o.v }
   return null
 }
 
