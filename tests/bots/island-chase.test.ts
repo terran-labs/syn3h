@@ -14,5 +14,9 @@ describe('summit chase on the real island', () => {
     const r = chase(seed, 4, 265, 11, 0, verbose ? line => appendFileSync('/tmp/syn3h-island-chase.log', line + '\n') : undefined)
     appendFileSync('/tmp/syn3h-island-chase.log', `seed ${seed} summit ${r.summit.toFixed(0)} arrived ${r.arrived}/4 ${JSON.stringify(r.bots.map(b => ({ id: b.id, gap: Math.round(b.gap), y: Math.round(b.height), fellAt: b.fellAt && Math.round(b.fellAt), offRoad: Math.round(b.offRoad) })))}\n`)
     expect(r.summit).toBeGreaterThan(150)
+    // Bots bunched on the narrow road sometimes knock one another off it: across a sweep of
+    // seeds and target speeds about one climb in twenty five fails. So this asserts most
+    // arrive, not all. Tighten it when the bunching is solved.
+    expect(r.arrived).toBeGreaterThanOrEqual(3)
   }, 120000)
 })
