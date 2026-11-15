@@ -209,6 +209,9 @@ export abstract class Vehicle implements System {
   fixedUpdate(dt: number): void {
     if (this.isLocal) {
       Object.assign(this.input, this.game.input.state)
+      // Held in the air while it materializes (effects/Materialize.ts): the driver's axes and
+      // trigger wait until it is released. Toggles are left alone so wings and zorb keep their state.
+      if (this.object.userData.materializing === true) { this.input.x = this.input.y = this.input.z = this.input.w = 0; this.input.fire = false }
       this.zorbView = this.game.camera?.quaternion ?? null
       this.localSafety()
     }

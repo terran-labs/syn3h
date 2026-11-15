@@ -17,6 +17,7 @@ import { readVehicleChoice, saveVehicleChoice } from './ui/VehicleChoice'
 import { type VehicleKind, createVehicle } from './vehicles'
 import { PlayerSlot } from './vehicles/PlayerSlot'
 import { createVehicleSwapper } from './vehicles/swap'
+import { Materialize } from './vehicles/effects/Materialize'
 import type { Vehicle } from './vehicles/Vehicle'
 import { createEnvironment } from './world/Environment'
 import { createPostChain } from './fx/post/PostChain'
@@ -97,6 +98,9 @@ async function main(): Promise<void> {
   const { shell, audio, setPlayer } = initGameShell(game, player, terrain)
   // The HUD bridge, hints and the engine voice follow the slot.
   slot.onChange(setPlayer)
+  // A vehicle arriving by a switch hangs in a small glowing cloud for a second, then drops.
+  const materialize = game.add(new Materialize(game, terrain, { onCue: (cue, position, hold) => { if (cue === 'materializeStart') audio.play('materialize', position, { seconds: hold }) } }))
+  void materialize.prewarm()
   shell.configurePerformance({
     getPerformanceSnapshot: () => game.quality.getPerformanceSnapshot(),
     subscribePerformance: listener => game.quality.subscribePerformance(listener),
@@ -135,7 +139,12 @@ async function main(): Promise<void> {
   const swapVehicle = (kind: VehicleKind): Vehicle | null => {
     const previous = slot.current
     try {
-      return swapper.swap(kind)
+      // An old vehicle switched away from mid-materialization must be let go before it is disposed.
+      materialize.cancel(previous)
+      const next = swapper.swap(kind)
+      // The new one holds its heading only: the hold zeroes its speed, then it drops and drives.
+      if (next !== previous) void materialize.begin(next)
+      return next
     } catch (error) {
       console.error('swapVehicle', error)
       // A follower failed after the change: the new vehicle is in place, so report it.
