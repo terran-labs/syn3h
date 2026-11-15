@@ -730,6 +730,10 @@ export class Syn3hBuggy extends Vehicle {
    * and tells us when that order is swapped. Only contacts that actually touch count: the
    * manifold also lists points still inside the prediction margin. numSolverContacts() reads 0
    * against a triangle mesh, which is what the terrain is, so count the geometric contacts.
+   *
+   * Not in the source: the flag only sets while the body is actually past 90 degrees from world
+   * up. A contact on the roof side of an upright buggy (another vehicle ramming or landing on
+   * it) would otherwise switch the suspension and tyres off until a ground contact cleared it.
    */
   private selfRight(dt: number, speedSq: number): void {
     const world = this.game.world
@@ -748,7 +752,7 @@ export class Syn3hBuggy extends Vehicle {
           const angle = this.up.angleTo(n) * DEG
           for (let c = 0; c < count; c++) {
             if (this.isInverted && angle < 50) this.isInverted = false
-            else if (!this.isInverted && angle > 90) this.isInverted = true
+            else if (!this.isInverted && angle > 90 && this.up.y < 0) this.isInverted = true
             if (this.isInverted && angSq < 2 && speedSq < 8) {
               this.v2.crossVectors(this.up, UP).multiplyScalar(this.up.angleTo(UP) * DEG * 0.5)
               this.ub.addTorqueAcceleration(this.v2, dt)
