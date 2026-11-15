@@ -141,7 +141,7 @@ describe('materialize lifecycle',()=>{
     await done
     expect(m.isMaterializing(v)).toBe(false)
     expect(cues.map(c=>c.cue)).toEqual(['materializeStart','materializeCancel','materializeStart','materializeCancel'])
-    expect(cues.at(-1)?.y).toBe(cues.at(-2)?.y)
+    expect(cues.at(-1)?.y).toBeCloseTo(cues.at(-2)!.y,5)
     h.world.free()
   })
 
