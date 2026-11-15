@@ -1177,15 +1177,15 @@ export class Shell implements System {
     this.hasSeveralGear = list.length > 1; if (select.disabled === this.hasSeveralGear) select.disabled = !this.hasSeveralGear
   }
   private updateGI(): void {
-    // Indirect light runs on the full post chain (Ultra and Cinematic) and is part of the
-    // Cinematic level. Every message names the active level and what turns GI on.
+    // Match the post gate: lite and full allow effects selected by their strength.
     const value = Number(params.get('post.gi')?.value ?? 0), on = Boolean(params.get('post.on')?.value)
     const state = this.game.quality.getQualityState(), level = state.name
     const budget = Math.min(1, Math.max(0, this.game.quality.postBudget))
-    const eligible = on && state.postTier === 'full' && budget > 0
+    const tier = postTier({ on, tier: state.postTier, shed: 1 - budget })
+    const eligible = tier === 'lite' || tier === 'full'
     let status: string
     if (!on) status = `GI is off: post effects are turned off at ${level}. Turn Post effects on to use it.`
-    else if (state.postTier !== 'full') status = `GI is part of the Cinematic level and needs at least Ultra. This is ${level}: raise the level to turn on indirect light.`
+    else if (state.postTier === 'off' || state.postTier === 'base') status = `GI is unavailable at ${level}. Choose Medium or higher to enable indirect light.`
     else if (budget <= 0) status = `GI is paused while ${level} eases its post effects to keep the frame rate.`
     else if (value === 0) status = `GI is off at ${level}. Raise this strength, or choose Cinematic, to turn on indirect light.`
     else status = budget < .99 ? `GI is on at reduced strength while ${level} eases its post effects.` : `GI is on at ${level}: indirect light from visible surfaces.`
