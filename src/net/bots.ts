@@ -44,3 +44,28 @@ export function audibleVehicles<T extends HasBody>(
   for (const [, v] of liveBots(ownBots, world)) into.push(v)
   return into
 }
+
+/** What the host's bots are told about the game (the bot manager's `setMatch`). */
+export type BotMatchInfo<V> =
+  | { mode: 'tag'; it: V | null }
+  | { mode: 'hill'; zone: { x: number; z: number; radius: number } | null }
+
+/**
+ * The place bots should hold for a King of the Hill zone, as a point and a radius. The zone
+ * is usually a ring (the rim road round the lava lake), and its centre is the lake: sending
+ * bots to the centre would park them in the lava. So for a ring they are sent to the point
+ * on its mid line nearest `near` (the host), with half the ring's width as the radius; a
+ * disc zone is held at its centre.
+ */
+export function hillHold(
+  zone: { x: number; z: number; inner: number; outer: number },
+  near: { x: number; z: number },
+): { x: number; z: number; radius: number } {
+  if (zone.inner <= 1) return { x: zone.x, z: zone.z, radius: zone.outer }
+  const mid = (zone.inner + zone.outer) / 2
+  let dx = near.x - zone.x
+  let dz = near.z - zone.z
+  const d = Math.hypot(dx, dz)
+  if (d < 1e-3) { dx = 1; dz = 0 } else { dx /= d; dz /= d }
+  return { x: zone.x + dx * mid, z: zone.z + dz * mid, radius: (zone.outer - zone.inner) / 2 }
+}
