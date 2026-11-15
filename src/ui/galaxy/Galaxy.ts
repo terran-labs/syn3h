@@ -140,7 +140,7 @@ void main() {
     // Turn the world on its tilted axis.
     float tilt = 0.38, ct = cos(tilt), st = sin(tilt); vec3 g = vec3(normal.x, ct * normal.y - st * normal.z, st * normal.y + ct * normal.z);
     float spin = uKind[found].z; g = vec3(cos(spin) * g.x + sin(spin) * g.z, g.y, -sin(spin) * g.x + cos(spin) * g.z);
-    vec3 surface; float land; float molten = 0.0;
+    vec3 surface; float land; float molten = 0.0; float dry = 1.0;   // dry: ground a settlement could stand on
     if (uKind[found].x > 1.5) {
       // A world still forming: plates of dark crust drifting on magma, never the same twice.
       float plates = fbm(g * 2.4 + vec3(0.0, uTime * 0.05, uKind[found].w)), cracks = fbm(g * 6.0 + vec3(uTime * 0.11, 0.0, 3.0));
@@ -149,10 +149,12 @@ void main() {
     } else if (uKind[found].y > 0.5) {
       vec4 m = mapAt(found, vec2(atan(g.x, g.z) / 6.2831853 + 0.5, 0.5 - asin(clamp(g.y, -1.0, 1.0)) / 3.1415927));
       surface = m.rgb; land = 1.0 - clamp((m.r - m.b * 1.6 - 0.25) * 2.2, 0.0, 1.0);
+      // The painted map is opaque: open water is where blue leads the other two.
+      dry = 1.0 - smoothstep(0.02, 0.14, m.b - max(m.r, m.g));
     } else {
       float h = fbm(g * 2.1 + uKind[found].w), detail = fbm(g * 7.0);
       land = smoothstep(0.5, 0.54, h + (detail - 0.5) * 0.12);
-      surface = mix(uSea[found] * (0.8 + 0.4 * detail), uLand[found] * (0.62 + 0.75 * detail), land);
+      surface = mix(uSea[found] * (0.8 + 0.4 * detail), uLand[found] * (0.62 + 0.75 * detail), land); dry = land;
     }
     float cloud = uAmbience > 0.0 && uKind[found].x < 0.5 ? 0.5 * uAmbience * smoothstep(0.5, 0.72, fbm(g * 3.2 + vec3(uTime * 0.02, 0.0, uTime * 0.013) + 9.0)) : 0.0;
     surface = mix(surface, vec3(0.93, 0.96, 1.0), cloud);
@@ -162,7 +164,7 @@ void main() {
     world += surface * molten * 0.9;                                              // and magma lights itself
     // Night side of a watered world: the lights of settlements on the land.
     if (uKind[found].x < 0.5 && uShed.y < 1.0) {
-      vec3 lampCell = floor(g * 46.0); float lamp = step(0.93, hash(lampCell)) * smoothstep(0.35, 0.0, lit) * land;
+      vec3 lampCell = floor(g * 46.0); float lamp = step(0.93, hash(lampCell)) * smoothstep(0.35, 0.0, lit) * dry;
       world += vec3(1.0, 0.75, 0.42) * lamp * 0.55 * (1.0 - uShed.y);
     }
     vec3 air = mix(uSea[found], vec3(0.35, 0.6, 1.0), 0.45);

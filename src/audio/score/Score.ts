@@ -12,7 +12,7 @@
  *  - the match               holding the hill is triumph, a contested hill is tension
  */
 import { defineParam, params } from '../../../shared/params'
-import { Composer, levels, unit, type Mood, type Role } from './Composer'
+import { Composer, levels, seeded, unit, type Mood, type Role } from './Composer'
 import { ScoreSynth } from './ScoreSynth'
 
 const tune = (id: string, label: string, value: number, min: number, max: number, step = 0.01) => defineParam({ id: `audio.score.${id}`, label, group: 'Adaptive score', scope: 'client', default: value, min, max, step })
@@ -27,6 +27,15 @@ export const scoreReverb = tune('reverb', 'Hall size', 0.9, 0, 1.5)
 export const scoreLite = defineParam({ id: 'audio.score.lite', label: 'Lighter score (for phones)', group: 'Adaptive score', scope: 'client', default: false })
 /** The feedback-delay-network hall in place of the convolution: about a quarter of the cost. The lighter tier always uses it. */
 export const scoreNetworkHall = defineParam({ id: 'audio.score.networkHall', label: 'Algorithmic hall (cheaper)', group: 'Adaptive score', scope: 'client', default: false })
+const option = (id: string, label: string) => defineParam({ id: `audio.score.${id}`, label, group: 'Adaptive score', scope: 'client', default: false })
+/** Tag beams near you become notes: each lands on the next sixteenth, pitched from the chord, climbing as they come. */
+export const scoreTagNotes = option('tagNotes', 'Tag beams play notes')
+/** Nearby vehicles each carry part of the arrangement, heard from their side. Alone you hear only your own line. */
+export const scoreConvoy = option('convoy', 'Convoy harmony')
+/** The sequencer and plucked strings trace the skyline ahead of your vehicle. */
+export const scoreTerrain = option('terrain', 'Terrain as melody')
+/** Whistlers and dawn chorus at altitude, and a telemetry beep bent by whatever is closing on you. */
+export const scoreWeather = option('weather', 'Space weather')
 /** 0 follows the world seed, so each world has its own key and themes. */
 export const scoreSeed = tune('seed', 'Theme seed (0 = world)', 0, 0, 999999, 1)
 
@@ -45,6 +54,13 @@ export interface ScoreInput {
   submerged: number
   /** 0..1 nearness of lava. */
   lava: number
+  /**
+   * Nearby vehicles, nearest first, for convoy harmony: metres away, where they sit from
+   * left (-1) to right (1) of the listener, and optionally how fast they are closing in m/s.
+   */
+  convoy?: readonly { distance: number; pan: number; closing?: number }[]
+  /** Sixteen ground heights in metres along the way ahead, nearest first, for terrain as melody. */
+  relief?: readonly number[]
 }
 export interface MatchMood { holding: boolean; contested: boolean; /** 0..1 share of the winning score. */ progress: number }
 
@@ -73,6 +89,17 @@ export class Score {
   private tension = 0
   private release = 0
   private airTime = 0
+  private convoy: { distance: number; pan: number; closing: number }[] = []
+  private convoyAt = -Infinity
+  private relief: number[] | null = null
+  private reliefAt = -Infinity
+  private wasPlaying = false
+  private opened = false
+  private readonly tags: number[] = []
+  private tagIndex = 0
+  private lastTag = -Infinity
+  private nextWeather = 0
+  private readonly chance = seeded(8675309)
   private lastCue = -Infinity
 
   constructor(private readonly context: BaseAudioContext, private readonly output: AudioNode, seed: number) {
@@ -107,12 +134,15 @@ export class Score {
     if (active === this.active) return
     this.active = active
     this.synth.setLevel(active ? 1 : 0, seconds)
+    // The first thing anyone hears is the theme at full height, not a quiet preamble.
+    if (active && !this.opened) { this.opened = true; this.composer.cue('release') }
   }
   /** A new seed means new themes and usually a new key. Takes effect on the next sixteenth. */
   setSeed(seed: number): void { if (seed !== this.seed) { this.seed = seed; this.composer = new Composer(seed) } }
   /** Report a shot or a hit. `amount` is roughly 0.1 for a distant shot and 0.5 for being hit. */
   combat(amount: number): void {
     this.mood.heat = unit(this.mood.heat + Math.max(0, amount))
+    if (scoreTagNotes.value && this.active && this.tags.length < 8) this.tags.push(amount)
     // Being tagged is answered at once, outside the bar grid.
     if (amount >= 0.45 && this.active) this.synth.braam()
   }
@@ -142,6 +172,20 @@ export class Score {
     const events = stats.underrunEvents ?? stats.fallbackFramesEvents ?? 0
     if (this.underrunEvents >= 0) this.strained(events - this.underrunEvents >= 2)
     this.underrunEvents = events
+  }
+
+  /** Space weather: whistlers come more often the higher you fly; the chorus only in open air. */
+  private weather(input: ScoreInput, now: number): void {
+    const on = scoreWeather.value && this.active && input.playing
+    // Something closing at 30 m/s raises the telemetry beep about a semitone and a half: a real Doppler shift, exaggerated threefold.
+    const closing = on ? this.convoy[0]?.closing ?? 0 : 0
+    this.synth.doppler = 1 + Math.max(-0.3, Math.min(0.3, 3 * closing / 340))
+    if (!on || now < this.nextWeather) return
+    const lift = this.mood.lift, place = this.chance() * 1.6 - 0.8
+    if (lift > 0.45 && this.chance() < 0.4) this.synth.chorus(now + 0.05, 3 + Math.floor(this.chance() * 4), place)
+    else this.synth.whistler(now + 0.05, 5000 + this.chance() * 3000, 700 + this.chance() * 500, 0.8 + this.chance() * 0.9, place)
+    // Every 7 to 23 seconds on the ground, every 2 to 7 high up.
+    this.nextWeather = now + (4 + this.chance() * 10) / (0.6 + 1.5 * lift)
   }
 
   update(input: ScoreInput): void {
@@ -174,6 +218,22 @@ export class Score {
     this.airTime = flying ? this.airTime + dt : 0
     if (this.active && was < 1.2 && this.airTime >= 1.2 && now - this.lastCue > SURGE_COOLDOWN && this.composer.role !== 'climb' && this.composer.role !== 'release') this.cue('surge')
 
+    // Pressing Play is an arrival: the music swells and lands as the player appears.
+    // (Unless something has just asked for a particular section.)
+    if (this.active && input.playing && !this.wasPlaying && this.composer.role !== 'release' && now - this.lastCue > 1) this.cue('surge')
+    this.wasPlaying = input.playing
+
+    // Convoy harmony: the three nearest vehicles carry parts, fading out between 30 and 300 m.
+    // The game refreshes these every few frames, in arrays it reuses, and may leave them out in
+    // between. So copy what arrives and hold it for half a second before treating it as gone.
+    if (input.convoy) { this.convoy = input.convoy.slice(0, 3).map(v => ({ distance: v.distance, pan: v.pan, closing: v.closing ?? 0 })); this.convoyAt = now }
+    else if (now - this.convoyAt > 0.5) this.convoy = []
+    if (input.relief) { this.relief = input.relief.slice(0, 16); this.reliefAt = now }
+    else if (now - this.reliefAt > 0.5) this.relief = null
+    this.synth.convoy = scoreConvoy.value && input.playing ? this.convoy.map(v => ({ level: unit(1 - (v.distance - 30) / 270), pan: Math.max(-1, Math.min(1, v.pan)) * 0.8 })) : null
+    this.composer.setContour(scoreTerrain.value && input.playing ? this.relief : null)
+    this.weather(input, now)
+
     const level = levels(m)
     this.bpm = follow(this.bpm, level.bpm * scoreTempo.value, 4, dt)
     // The release arrives at once and fades over the section that follows it.
@@ -184,7 +244,15 @@ export class Score {
     if (this.nextTime < now - 0.05) this.nextTime = now + 0.06
     const duration = 15 / this.bpm
     while (this.nextTime < now + LOOKAHEAD) {
-      this.synth.play(this.composer.step(m), this.nextTime, duration)
+      const step = this.composer.step(m)
+      // One tag beam per sixteenth, each a chord tone higher than the last: rapid beams become a rising run.
+      const tag = this.tags.shift()
+      if (tag !== undefined) {
+        if (this.nextTime - this.lastTag > 2) this.tagIndex = 0
+        this.lastTag = this.nextTime
+        step.tag = { midi: this.composer.tone(this.tagIndex++, 72), velocity: unit(0.45 + tag * 1.4), steps: 1 }
+      }
+      this.synth.play(step, this.nextTime, duration)
       this.nextTime += duration
     }
   }

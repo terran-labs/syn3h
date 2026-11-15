@@ -7,6 +7,7 @@ import { WorldAudio, lavaProximity, type AudioTerrain } from './WorldAudio'
 import type { Vehicle } from '../vehicles/Vehicle'
 import { Score, scoreSeed, type MatchMood } from './score/Score'
 import { applySubmerge } from './score/ScoreSynth'
+import { senseConvoy, senseRelief, type ConvoyVoice } from './scoreSenses'
 import { cuesVolume, worldVolume, remoteVolume, crossfade, lobbyFade, effectsVolume, masterVolume, musicVolume, muted } from './params'
 
 export type Sound = 'laserShot' | 'laserHit' | 'materialize'
@@ -31,6 +32,15 @@ export class GameAudio implements System {
   /** Lowpass on the whole mix, closed while the player's vehicle is under a liquid surface. */
   private submerge?: BiquadFilterNode
   private local?: Vehicle
+  // What the score hears beyond the player's own motion (scoreSenses.ts). Sampled every
+  // tenth frame into arrays that are kept, so nothing is allocated while the game runs.
+  private readonly convoy: ConvoyVoice[] = []
+  private readonly reliefHeights: number[] = []
+  private relief: number[] | undefined
+  private readonly convoyMemory = new WeakMap<Vehicle, number>()
+  private readonly others: Vehicle[] = []
+  private senseFrame = 0
+  private sensedAt = 0
   private terrain?: AudioTerrain
   private vehicleSource: () => readonly Vehicle[] = () => []
   private readonly remote = new Map<Vehicle, {engine:Engine;panner:PannerNode}>()
@@ -190,8 +200,14 @@ export class GameAudio implements System {
       this.score?.combat((sound === 'laserHit' ? 0.3 : 0.14) * near)
     }
     const source = this.context.createBufferSource(), output = this.output(position)
-    source.buffer = buffer; source.connect(output.node); this.voices.add(source)
-    source.onended = () => { source.disconnect(); output.dispose(); this.voices.delete(source) }
+    // When the score plays a note for each tag beam, the recorded beam ducks under it by
+    // about 9 dB: the note carries the music, the recording still says where it came from.
+    // The "tagged" sound stays at full level, since it is the confirmation.
+    const duck = sound === 'laserShot' && params.get('audio.score.tagNotes')?.value ? this.context.createGain() : null
+    if (duck) duck.gain.value = 0.35
+    source.buffer = buffer; if (duck) source.connect(duck).connect(output.node); else source.connect(output.node)
+    this.voices.add(source)
+    source.onended = () => { source.disconnect(); duck?.disconnect(); output.dispose(); this.voices.delete(source) }
     source.start()
   }
   impact(strength: number, position?: Position): void {
@@ -208,6 +224,16 @@ export class GameAudio implements System {
   setVehicles(source:()=>readonly Vehicle[]):void {this.vehicleSource=source}
   /** The match as the score hears it: holding the hill is triumph, a contested hill is tension. */
   setMatch(match:MatchMood|null):void {this.match=match;this.score?.setMatch(match)}
+  /** The other vehicles and the ground ahead, for the score. Removed vehicles are never read. */
+  private sense():void {
+    const now=this.context!.currentTime,seconds=now-this.sensedAt;this.sensedAt=now
+    this.others.length=0
+    if(this.enabled)for(const v of this.vehicleSource())if(v!==this.local&&alive(v)&&!this.others.includes(v))this.others.push(v)
+    // Remote vehicles are already placed at their nearest image on a wrapping world.
+    senseConvoy(this.convoy,this.position,this.forward,this.up,this.others,v=>v.object.position,this.convoyMemory,seconds)
+    const local=this.local
+    this.relief=this.enabled&&local&&alive(local)&&this.terrain?senseRelief(this.reliefHeights,local.object.position,local.body.linvel(),(x,z)=>this.terrain!.heightAt(x,z)):undefined
+  }
   /** Metres the local vehicle sits below a liquid surface; zero or less when dry. */
   private submersion():number {
     if(!this.enabled||!this.local||!alive(this.local))return 0
@@ -265,7 +291,10 @@ export class GameAudio implements System {
     for(const [v,voice] of this.remote){const p=v.object.position;voice.panner.positionX.value=p.x;voice.panner.positionY.value=p.y;voice.panner.positionZ.value=p.z;voice.engine.update(this.readVehicle(v),this.enabled);this.vehicleEvents(v)}
     this.world!.update(this.lavaNear,this.enabled)
     const m=this.motion,submerged=this.submersion()
-    this.score!.update({playing:this.enabled,speed:m.speed,throttle:m.throttle,airborne:m.airborne,clearance:m.clearance??0,altitude:m.altitude??0,submerged,lava:this.lavaNear})
+    if(this.senseFrame++%10===0)this.sense()
+    // `convoy` and `relief` are optional inputs the score reads only when its toggles are on.
+    const heard={playing:this.enabled,speed:m.speed,throttle:m.throttle,airborne:m.airborne,clearance:m.clearance??0,altitude:m.altitude??0,submerged,lava:this.lavaNear,convoy:this.convoy,relief:this.relief}
+    this.score!.update(heard)
     applySubmerge(this.submerge!,this.score!.mood.depth,this.context.currentTime)
     const l = this.context.listener, p = this.position, f = this.forward, u = this.up
     if (l.positionX) {
