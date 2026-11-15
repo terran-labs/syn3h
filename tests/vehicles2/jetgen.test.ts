@@ -5,9 +5,9 @@ import { NextJet } from '../../src/vehicles/jetgen/NextJet'
 import { GROUND_Y } from '../../src/vehicles/jetgen/shapes'
 
 describe('generated next-generation jets', () => {
-  it('offers fifteen distinct designs in three rounds', () => {
-    expect(JET_DESIGNS).toHaveLength(15)
-    expect(new Set(JET_DESIGNS.map(d => d.id)).size).toBe(15)
+  it('offers twenty distinct designs in four rounds', () => {
+    expect(JET_DESIGNS).toHaveLength(20)
+    expect(new Set(JET_DESIGNS.map(d => d.id)).size).toBe(20)
   })
   for (const design of JET_DESIGNS) {
     it(`${design.name} builds, fits the current jet's envelope and keeps its functions`, () => {
