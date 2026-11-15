@@ -1,6 +1,6 @@
 /** Indestructible vehicles: viscous lava, cooling paint and legacy water buoyancy. */
 import * as THREE from 'three/webgpu'
-import { applyWaterForces, waterSinking, hasWaterContact } from './buoyancy'
+import { applyWaterForces, waterSinking, hasWaterContact, planingShare, waterProfiles } from './buoyancy'
 import { defineParam } from '../../shared/params'
 import type { RAPIER } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
@@ -36,14 +36,11 @@ export function applyLava(
   // The shared hydrodynamic pass owns forces, but controllers still need contact for motor drag.
   if (waterSinking.value) return terrain ? hasWaterContact(ub.body, terrain) : false
   if (!buggyLavaFloat.value) return false
-  // The shared force field handles wing escape for both buggies, independent of mass.
+  // Wings open in water: the shared pass pushes along the nose (applyVehicleLiquid). A fast
+  // winged touch keeps the skim support that preserves cruise speed (commit c28eafb).
   const state=liquidStates.get(ub.body)
   const wet=Number.isFinite(liquidAt(ub.pos.x,ub.pos.z))&&ub.pos.y<liquidAt(ub.pos.x,ub.pos.z)+.25
-  if (input.wingsOpen && liquidWingLift.value > 0 && state &&
-      (Number.isFinite(state.wingLiftSurface)||startsWingEscape(state,wet,input.wingsOpen))) return false
   if(input.wingsOpen&&liquidWingLift.value>0&&wet&&state&&(state.fastWingContact||(!state.wasImmersed&&state.entrySpeed>=8))){
-    // A flying force field skips vertically, without the paddle drag that can erase
-    // cruise speed in a few frames. Closed-wing floating retains the legacy forces.
     const velocity=ub.body.linvel(),depth=Math.max(0,liquidAt(ub.pos.x,ub.pos.z)-ub.pos.y)
     ub.addForce(tmpF.set(0,ub.body.mass()*(-ub.world.gravity.y+Math.max(0,-velocity.y)*8+depth*20),0))
     return true
@@ -60,7 +57,7 @@ export function applyLava(
   if (pos.y < h + 0.1 && pos.y - h > -3) {
     // The original's `hit.distance` here is from a ray cast 3 m above the body down to the surface.
     const hitDistance = pos.y + 3 - h
-    if (input.wingsOpen && hitDistance < 2) ub.addForce(tmpF.set(0, 400, 0))
+    // The original pushed straight up (400) with wings open; wings now push along the nose.
     const e = unityEulerAngles(ub.q, tmpE)
     const roll = signedAngle(e.z)
     const pitch = signedAngle(e.x)
@@ -116,30 +113,85 @@ export function floatPoints(halfWidth: number, halfLength: number, yLow: number,
 }
 
 
-export const liquidWingLift=defineParam({id:'liquid.wingLift',label:'Wing escape lift (m/s²)',group:'Liquid',scope:'world',default:18,min:0,max:40,step:1})
+/**
+ * Wings in liquid. Holding the wings open in water or lava pushes the vehicle along its nose
+ * and adds a share of wing lift that grows with forward speed. Nothing pushes straight up:
+ * a level vehicle surges forward, a nose-up one climbs out. Both buggies only (the others
+ * have no wings); remote vehicles and bots run the same pass in Vehicle.fixedUpdate.
+ */
+export const liquidWingLift=defineParam({id:'liquid.wingLift',label:'Wing push in liquid (m/s²)',group:'Liquid',scope:'world',default:18,min:0,max:40,step:1})
+export const liquidWingPushSpeed=defineParam({id:'liquid.wingPushSpeed',label:'Wing push fades out by (m/s)',group:'Liquid',scope:'world',default:12,min:2,max:40,step:1})
+export const liquidWingEffect=defineParam({id:'liquid.wingEffect',label:'Wing lift in liquid (share of weight)',group:'Liquid',scope:'world',default:.6,min:0,max:1.5,step:.05})
+export const liquidWingLiftSpeed=defineParam({id:'liquid.wingLiftSpeed',label:'Speed for full wing lift in liquid (m/s)',group:'Liquid',scope:'world',default:12,min:2,max:40,step:1})
 
-export const lavaViscosity=defineParam({id:'lava.viscosity',label:'Viscosity',group:'Lava',scope:'world',default:6,min:0,max:20,step:.1})
+// Lava is wadeable: a viscous drag that grows with depth and speed, and a crawl push that
+// always beats it at low speed. Full throttle at the resting depth settles near
+// crawlPower / (viscosity * (1 + sinkDepth)), 3 m/s with these defaults.
+export const lavaViscosity=defineParam({id:'lava.viscosity',label:'Viscosity',group:'Lava',scope:'world',default:2.5,min:0,max:20,step:.1})
 export const lavaSinkDepth=defineParam({id:'lava.sinkDepth',label:'Sink depth (m)',group:'Lava',scope:'world',default:.45,min:.1,max:2,step:.05})
-export const lavaCrawlPower=defineParam({id:'lava.crawlPower',label:'Crawl power (m/s²)',group:'Lava',scope:'world',default:3,min:0,max:15,step:.1})
+export const lavaCrawlPower=defineParam({id:'lava.crawlPower',label:'Crawl power (m/s²)',group:'Lava',scope:'world',default:11,min:0,max:30,step:.5})
+export const lavaTurnRate=defineParam({id:'lava.turnRate',label:'Turn rate (rad/s)',group:'Lava',scope:'world',default:.6,min:.1,max:2,step:.05})
 export const lavaCoolingTime=defineParam({id:'lava.coolingTime',label:'Cooling time (s)',group:'Lava',scope:'world',default:20,min:1,max:120,step:1})
 const liquidTerrains=new WeakMap<RAPIER.RigidBody,Terrain>()
 const liquidStates=new WeakMap<RAPIER.RigidBody,LiquidState>()
 export function registerLiquidTerrain(body:RAPIER.RigidBody,terrain:Terrain,state:LiquidState):void {liquidTerrains.set(body,terrain);liquidStates.set(body,state)}
-function startsWingEscape(state:LiquidState,wet:boolean,wings:boolean):boolean {
- return wet&&wings&&((!state.wasImmersed&&state.entrySpeed<8)||(!state.wingWasOpen&&state.wasImmersed))
-}
 export function liquidKind(terrain:Terrain,x:number,z:number):'lava'|'water'|null {
  return terrain.liquidKindAt?terrain.liquidKindAt(x,z):'lava'
 }
+
+/** Smooth 0..1 wetness from how far the lower chassis is under the surface (0 to .5 m). */
+export function liquidWetness(immersion:number):number {
+ const x=THREE.MathUtils.clamp(immersion/.5,0,1)
+ return x*x*(3-2*x)
+}
+
+/**
+ * Wing acceleration in a liquid, in m/s². `forward` and `up` are the body's unit axes in world
+ * space, `forwardSpeed` the velocity along `forward`. The push lies along the nose and fades
+ * as forward speed reaches `pushSpeed`; the lift lies along the body's up axis and grows with
+ * the square of forward speed. At rest the result is purely along the nose.
+ */
+export function wingLiquidAcceleration(forward:THREE.Vector3,up:THREE.Vector3,forwardSpeed:number,wetness:number,gravity:number,out:THREE.Vector3,
+ push=liquidWingLift.value,pushSpeed=liquidWingPushSpeed.value,effect=liquidWingEffect.value,liftSpeed=liquidWingLiftSpeed.value):THREE.Vector3 {
+ const s=Math.max(0,forwardSpeed)
+ const thrust=push*wetness*Math.max(0,1-s/Math.max(.1,pushSpeed))
+ const lift=effect*gravity*wetness*Math.min(1,(s/Math.max(.1,liftSpeed))**2)
+ return out.copy(forward).multiplyScalar(thrust).addScaledVector(up,lift)
+}
+
+/**
+ * Lava response for one step, as pure numbers: the new velocity after viscous drag, crawl
+ * push and the vertical hold toward the resting depth, all scaled by `wetness` so nothing
+ * jumps at the surface. Implicit decay keeps it stable at any step length.
+ */
+export function lavaVelocityStep(v:{x:number;y:number;z:number},forward:{x:number;z:number},throttle:number,wetness:number,lavaDepth:number,heightError:number,wing:{x:number;y:number;z:number},dt:number,
+ out:{x:number;y:number;z:number},viscosity=lavaViscosity.value,crawl=lavaCrawlPower.value):{x:number;y:number;z:number} {
+ const drag=viscosity*wetness*(1+Math.min(2,lavaDepth))
+ const decay=Math.exp(-drag*dt)
+ const push=crawl*throttle*wetness
+ // Integrate a = F - drag v exactly over the step: v' = v e^{-kt} + a (1 - e^{-kt}) / k.
+ const gain=drag>1e-6?(1-decay)/drag:dt
+ out.x=v.x*decay+(forward.x*push+wing.x)*gain
+ out.z=v.z*decay+(forward.z*push+wing.z)*gain
+ // Height: a damped hold toward the resting depth, plus the wings' climb at viscous terminal speed.
+ const hold=THREE.MathUtils.clamp(heightError*2,-1.5,2)+wing.y/Math.max(1,drag)
+ const blend=(1-Math.exp(-Math.max(3,drag*2)*dt))*wetness
+ out.y=THREE.MathUtils.lerp(v.y,hold,blend)
+ return out
+}
+
 export interface LiquidState {
  lavaDepth:number
  entrySpeed:number
  wasImmersed:boolean
  wingWasOpen:boolean
  fastWingContact:boolean
+ /** Retired with the vertical escape field; always zero. Kept for existing readers. */
  wingLaunchSpeed:number
  wingLiftAvailable:boolean
+ /** Retired with the vertical escape field; always zero. */
  wingLiftSpeed:number
+ /** Retired with the vertical escape field; always -Infinity. */
  wingLiftSurface:number
  stuck:boolean
  heat:number
@@ -148,7 +200,7 @@ export interface LiquidState {
  heatHeight:number
 }
 export function createLiquidState():LiquidState {return {entrySpeed:0,wasImmersed:false,wingWasOpen:false,fastWingContact:false,wingLaunchSpeed:0,wingLiftSpeed:0,wingLiftAvailable:false,wingLiftSurface:-Infinity,lavaDepth:0,stuck:false,heat:0,heatNormal:new THREE.Vector3(0,1,0),heatHeight:-100}}
-const liquidQ=new THREE.Quaternion(),inverseQ=new THREE.Quaternion(),forward=new THREE.Vector3(),angular=new THREE.Vector3(),upAxis=new THREE.Vector3(),wetNormal=new THREE.Vector3(),globalUp=new THREE.Vector3(0,1,0)
+const liquidQ=new THREE.Quaternion(),inverseQ=new THREE.Quaternion(),forward=new THREE.Vector3(),flat=new THREE.Vector3(),angular=new THREE.Vector3(),upAxis=new THREE.Vector3(),wetNormal=new THREE.Vector3(),globalUp=new THREE.Vector3(0,1,0),wing=new THREE.Vector3(),userF=new THREE.Vector3(),userT=new THREE.Vector3(),nextV={x:0,y:0,z:0}
 
 /** Runs after each vehicle controller, so wheel, wing and jet forces cannot skim through lava. */
 export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terrain:Terrain,input:{x:number;y:number;z:number},kind:string,state:LiquidState,dt:number,wingsOpen=false):void {
@@ -161,89 +213,71 @@ export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terr
  const immersion=Number.isFinite(surface)&&type?Math.max(0,surface-p.y+.25):0
  const buggy=kind==='buggy'||kind==='buggy-syn3h'||kind==='buggy-classic'
  state.wingLiftAvailable=buggy&&liquidWingLift.value>0&&immersion>0
- if(!wingsOpen||!buggy||liquidWingLift.value<=0)state.wingLiftSurface=-Infinity
- else if(startsWingEscape(state,immersion>0,wingsOpen))state.wingLiftSurface=surface
+ state.wingLiftSurface=-Infinity;state.wingLiftSpeed=0;state.wingLaunchSpeed=0
  if(!immersion||!wingsOpen)state.fastWingContact=false
  else if(!state.wasImmersed&&wingsOpen&&state.entrySpeed>=8)state.fastWingContact=true
  state.wasImmersed=immersion>0;state.wingWasOpen=wingsOpen
- // A deployed field carries its lift above the surface so the hull clears a wild shore.
- // The ten-metre hover height follows the Syn3h thermal band (VhiclBuggy.cs 459-466).
- // Hold it until wings close; an altitude cutoff stranded stalled buggies on steep banks.
- const escape=wingsOpen&&Number.isFinite(state.wingLiftSurface)
- if(!escape){state.wingLiftSurface=-Infinity;state.wingLiftSpeed=0;state.wingLaunchSpeed=0}
- if(!immersion&&!escape&&!(type==='water'&&waterSinking.value))return
- if(type==='water'){state.heat=0;state.heatHeight=-100}
- if(type==='water'&&waterSinking.value&&!escape){
-  // An already flying field skips without hull drag, just as in the legacy water path.
-  // Keep its vertical support too; merely removing drag lets the skim fall underwater.
-  if(buggy&&wingsOpen&&state.fastWingContact&&liquidWingLift.value>0){
+ if(!immersion&&!(type==='water'&&waterSinking.value))return
+ const wetness=liquidWetness(immersion)
+ const r=body.rotation();liquidQ.set(r.x,r.y,r.z,r.w)
+ forward.set(0,0,-1).applyQuaternion(liquidQ);upAxis.set(0,1,0).applyQuaternion(liquidQ)
+ const wings=buggy&&wingsOpen&&liquidWingLift.value>0&&immersion>0&&!body.isKinematic()
+ if(wings){
+  const v=body.linvel()
+  wingLiquidAcceleration(forward,upAxis,v.x*forward.x+v.y*forward.y+v.z*forward.z,wetness,-world.gravity.y,wing)
+ }else wing.set(0,0,0)
+ if(type==='water'){
+  state.heat=0;state.heatHeight=-100
+  if(wings)body.addForce({x:wing.x*body.mass(),y:wing.y*body.mass(),z:wing.z*body.mass()},true)
+  if(!waterSinking.value)return
+  // Buoyancy, drag and planing lift are continuous in depth and speed (buoyancy.ts).
+  // A fast winged touch skims on its wings without hull drag (commit c28eafb), but only in
+  // proportion to its planing share: as it slows the skim support fades, the water forces
+  // fade in, and it settles and sinks like any hull.
+  const skim=buggy&&wingsOpen&&state.fastWingContact?planingShare(Math.hypot(body.linvel().x,body.linvel().z),waterProfiles.buggy.planing.value):0
+  if(skim>0){
    const velocity=body.linvel(),depth=Math.max(0,surface-p.y)
-   body.addForce({x:0,y:body.mass()*(-world.gravity.y+Math.max(0,-velocity.y)*8+depth*20),z:0},true)
-  }else applyWaterForces(body,world,terrain,kind,dt)
+   body.addForce({x:0,y:skim*wetness*body.mass()*(-world.gravity.y+Math.max(0,-velocity.y)*8+depth*20),z:0},true)
+  }
+  if(skim<1)applyWaterForces(body,world,terrain,kind,dt,0,undefined,1-skim)
+  // Water resists the hull turning: with wings open the attitude is held, so a raised nose
+  // stays raised against the stalled wing's pitch-down torque.
+  if(wings){
+   const w=body.angvel(),k=Math.exp(-4*wetness*dt)
+   body.setAngvel({x:w.x*k,y:w.y,z:w.z*k},true)
+  }
   return
  }
- if(type==='water'&&buggy&&!escape)return
- const lava=type==='lava',fraction=Math.min(1,immersion/.5)
- const v=body.linvel(),w=body.angvel(),r=body.rotation();liquidQ.set(r.x,r.y,r.z,r.w)
- if(lava&&immersion>0){
-  const wasCold=state.heat===0
-  state.heat=1
-  wetNormal.set(0,1,0).applyQuaternion(inverseQ.copy(liquidQ).invert())
-  // Keep the deepest wetted band while hot. A new cold entry starts a fresh band.
-  if(state.heatHeight===-100||surface-p.y>state.heatHeight||wasCold){state.heatNormal.copy(wetNormal);state.heatHeight=surface-p.y}
- }
- state.stuck=lava&&state.lavaDepth>=lavaSinkDepth.value*.65&&Math.hypot(v.x,v.z)<1.5
- if(escape)state.stuck=false
- // A fast winged skim keeps momentum in either liquid. Lava still heats the coat;
- // closing the wings restores its sticky grab immediately.
- if(!escape&&buggy&&wingsOpen&&state.fastWingContact)return
+ if(type!=='lava'||!immersion)return
+ const v=body.linvel(),w=body.angvel()
+ const wasCold=state.heat===0
+ state.heat=1
+ wetNormal.set(0,1,0).applyQuaternion(inverseQ.copy(liquidQ).invert())
+ // Keep the deepest wetted band while hot. A new cold entry starts a fresh band.
+ if(state.heatHeight===-100||surface-p.y>state.heatHeight||wasCold){state.heatNormal.copy(wetNormal);state.heatHeight=surface-p.y}
+ state.stuck=state.lavaDepth>=lavaSinkDepth.value*.65&&Math.hypot(v.x,v.z)<1.5
  if(body.isKinematic())return
- if(escape){
-  // A buoyant force field replaces sticky drag while deployed. The acceleration is
-  // mass independent; the speed cap prevents old paddle/thermal forces adding a launch.
-  body.resetForces(true);body.resetTorques(true)
-  const gain=1-Math.exp(-4*dt)
-  forward.set(0,0,-1).applyQuaternion(liquidQ);forward.y=0
-  if(forward.lengthSq()>.01)forward.normalize();else forward.set(0,0,-1)
-  const throttle=THREE.MathUtils.clamp(input.y,-1,1)
-  // Flight controllers can rotate vertical velocity into forward speed each step.
-  // Keep the field's climb rate separately so that conversion cannot cancel escape.
-  const targetHeight=Math.max(state.wingLiftSurface+10,terrain.heightAt(p.x,p.z)+3)
-  const wantedClimb=THREE.MathUtils.clamp((targetHeight-p.y)*2,-2,6)
-  state.wingLiftSpeed+=THREE.MathUtils.clamp(wantedClimb-state.wingLiftSpeed,-liquidWingLift.value*dt,liquidWingLift.value*dt)
-  const atHeight=p.y>=targetHeight-1
-  if(atHeight&&throttle>.25)state.wingLaunchSpeed=Math.min(24,Math.max(6,state.wingLaunchSpeed)+12*throttle*dt)
-  else state.wingLaunchSpeed=0
-  const limit=Math.max(6,state.wingLaunchSpeed)
-  const hx=THREE.MathUtils.lerp(v.x,forward.x*throttle*limit,gain),hz=THREE.MathUtils.lerp(v.z,forward.z*throttle*limit,gain)
-  const horizontalLimit=Math.min(1,limit/Math.max(.001,Math.hypot(hx,hz)))
-  body.setLinvel({x:hx*horizontalLimit,y:state.wingLiftSpeed,z:hz*horizontalLimit},true)
-  body.addForce({x:0,y:-world.gravity.y*body.mass(),z:0},true)
-  upAxis.set(0,1,0).applyQuaternion(liquidQ);angular.copy(upAxis).cross(globalUp)
-  // Flight steering can add angular velocity directly before this shared pass.
-  // The active field owns attitude, so do not blend that pitch input into its leveller.
-  body.setAngvel({x:angular.x*3,y:-input.x*.7,z:angular.z*3},true)
-  // Release at a useful cruise speed, well above the original speed-squared stall
-  // threshold of 16. No force, attitude or speed override remains on the next step.
-  if(atHeight&&state.wingLaunchSpeed>=24&&Math.hypot(hx,hz)>=22){state.wingLiftSurface=-Infinity;state.wingLiftSpeed=0;state.wingLaunchSpeed=0}
-  return
- }
- // Replace native drive forces only while immersed. Gravity still belongs to Rapier.
+ // The lava owns motion in proportion to wetness: controller forces (wheels, wings, jets)
+ // fade out as the chassis goes under and return smoothly as it climbs out.
+ const keep=1-wetness
+ body.userForce(userF);body.userTorque(userT)
  body.resetForces(true);body.resetTorques(true)
- const drag=(lava?lavaViscosity.value:1.2)*fraction*(1+Math.min(2,state.lavaDepth))
- const decay=Math.exp(-drag*dt),verticalBlend=1-Math.exp(-Math.max(3,drag*2)*dt)
- // In shallows, support the chassis above the bed instead of commanding it into the shore.
- const target=Math.max(surface-(lava?lavaSinkDepth.value:0),Math.min(surface+.3,terrain.heightAt(p.x,p.z)+.7))
- const verticalTarget=THREE.MathUtils.clamp((target-p.y)*2,-1.5,2)
- forward.set(0,0,-1).applyQuaternion(liquidQ);forward.y=0
- if(forward.lengthSq()<.01)forward.set(0,0,-1);else forward.normalize()
+ if(keep>0){body.addForce({x:userF.x*keep,y:userF.y*keep,z:userF.z*keep},true);body.addTorque({x:userT.x*keep,y:userT.y*keep,z:userT.z*keep},true)}
+ // Support the chassis above the bed in shallows instead of commanding it into the shore.
+ const target=Math.max(surface-lavaSinkDepth.value,Math.min(surface+.3,terrain.heightAt(p.x,p.z)+.7))
+ flat.copy(forward);flat.y=0
+ if(flat.lengthSq()<.01)flat.set(0,0,-1);else flat.normalize()
  const throttle=THREE.MathUtils.clamp(kind==='jet'?input.z:input.y,-1,1)
- const acceleration=(lava?lavaCrawlPower.value:4)*throttle
- body.setLinvel({x:v.x*decay+forward.x*acceleration*dt,y:THREE.MathUtils.lerp(v.y,verticalTarget,verticalBlend),z:v.z*decay+forward.z*acceleration*dt},true)
- body.addForce({x:0,y:-world.gravity.y*body.mass(),z:0},true)
- // A damped leveller and slow yaw permit deliberate crawling out even after a tumble.
- upAxis.set(0,1,0).applyQuaternion(liquidQ);angular.copy(upAxis).cross(globalUp)
- const turn=-input.x*(lava?.35:.7)*Math.max(.25,Math.abs(throttle))
- const angularBlend=1-Math.exp(-Math.max(2,drag)*dt)
- body.setAngvel({x:THREE.MathUtils.lerp(w.x,angular.x,angularBlend),y:THREE.MathUtils.lerp(w.y,turn,angularBlend),z:THREE.MathUtils.lerp(w.z,angular.z,angularBlend)},true)
+ lavaVelocityStep(v,flat,throttle,wetness,state.lavaDepth,target-p.y,wing,dt,nextV)
+ body.setLinvel(nextV,true)
+ // Gravity still belongs to Rapier; the lava carries the weight it covers.
+ body.addForce({x:0,y:-world.gravity.y*body.mass()*wetness,z:0},true)
+ // A damped leveller and steady yaw let a vehicle wade out even after a tumble. With wings
+ // open the attitude is held rather than levelled, so a raised nose stays raised.
+ angular.copy(upAxis).cross(globalUp)
+ const drag=lavaViscosity.value*wetness*(1+Math.min(2,state.lavaDepth))
+ const turn=-input.x*lavaTurnRate.value*Math.max(.35,Math.abs(throttle))
+ const angularBlend=(1-Math.exp(-Math.max(2,drag)*dt))*wetness
+ const ax=wings?0:angular.x,az=wings?0:angular.z
+ body.setAngvel({x:THREE.MathUtils.lerp(w.x,ax,angularBlend),y:THREE.MathUtils.lerp(w.y,turn,angularBlend),z:THREE.MathUtils.lerp(w.z,az,angularBlend)},true)
 }

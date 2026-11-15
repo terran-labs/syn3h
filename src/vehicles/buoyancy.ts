@@ -8,6 +8,16 @@ import { seaWaves } from '../world/water/seaWaves'
 export const waterSinking = defineParam<boolean>({ id:'water.sinking', label:'Sinking physics', group:'Water', scope:'world', default:true })
 export const waterLinearDrag=defineParam({id:'water.linearDrag',label:'Linear drag (1/s)',group:'Water',scope:'world',default:.35,min:0,max:3,step:.05})
 export const waterQuadraticDrag=defineParam({id:'water.quadraticDrag',label:'Quadratic drag (1/m)',group:'Water',scope:'world',default:.06,min:0,max:.5,step:.01})
+// Planing: dynamic lift from speed at the surface. It starts at each kind's planing speed and
+// reaches `planingLift` times the weight at about 1.5 times that speed, so only a vehicle that
+// arrives fairly fast rides the surface; as it slows the lift fades and it settles and sinks.
+export const waterPlaningLift=defineParam({id:'water.planingLift',label:'Planing lift (share of weight)',group:'Water',scope:'world',default:1.2,min:0,max:3,step:.05})
+// A planing hull wets far less of itself, so its drag falls with the same curve.
+export const waterPlaningDrag=defineParam({id:'water.planingDrag',label:'Hull drag left when planing (share)',group:'Water',scope:'world',default:.25,min:0,max:1,step:.05})
+/** Planing share 0..1 for a horizontal speed and planing onset speed: 0 below onset, 1 at about 1.48 times it. */
+export function planingShare(horizontal:number,onset:number):number {
+ return Math.min(1,Math.max(0,(horizontal/Math.max(.1,onset))**2-1)/1.2)
+}
 function tuning(kind:string, buoyancy:number, planing:number) {
  return {
   buoyancy:defineParam({id:`water.${kind}.buoyancy`,label:`${kind} buoyancy / weight`,group:'Water',scope:'world',default:buoyancy,min:0,max:4,step:.05}),
@@ -31,11 +41,13 @@ export function hasWaterContact(body:RAPIER.RigidBody,terrain:Terrain):boolean {
 // than displacing water like a solid sphere. Keep current-relative drag in the shared pass.
 const ZORB_SUPPORT_DEPTH=.4
 /** A box's four displacement columns, or the sealed field's shallow support envelope. */
-export function applyWaterForces(body:RAPIER.RigidBody,world:RAPIER.World,terrain:Terrain,kind:string,dt:number, radius=0,centre?:THREE.Vector3):void {
+/** `scale` (0..1) blends the whole response in, for a skim handing back to the water. */
+export function applyWaterForces(body:RAPIER.RigidBody,world:RAPIER.World,terrain:Terrain,kind:string,dt:number, radius=0,centre?:THREE.Vector3,scale=1):void {
  if(body.isKinematic())return
  const profile=kind.includes('buggy')?waterProfiles.buggy:waterProfiles[kind as keyof typeof waterProfiles]??waterProfiles.hovercraft
  const p=centre??body.translation(),r=body.rotation();q.set(r.x,r.y,r.z,r.w)
- const mass=body.mass(),g=-world.gravity.y,n=radius?1:4
+ if(scale<=0)return
+ const mass=body.mass()*Math.min(1,scale),g=-world.gravity.y,n=radius?1:4
  for(let i=0;i<n;i++){
   if(radius)point.copy(p)
   else point.set(i&1? .8:-.8,0,i&2?1.2:-1.2).applyQuaternion(q).add(p)
@@ -58,13 +70,16 @@ export function applyWaterForces(body:RAPIER.RigidBody,world:RAPIER.World,terrai
   const v=body.velocityAtPoint(point),vx=v.x-flow.x,vy=v.y-surfaceSpeed,vz=v.z-flow.z
   const speed=Math.hypot(vx,vy,vz),horizontal=Math.hypot(vx,vz)
   // F/m = -(linear + quadratic |v|) v. Limit only the numerical decay per step.
-  const drag=Math.min(.8/Math.max(dt,.001),waterLinearDrag.value+waterQuadraticDrag.value*speed)*fraction*mass/n
+  // Planing applies only near the surface, fading within a metre below the hull. No tank planing.
+  const planing=kind==='tank'||radius?0:planingShare(horizontal,profile.planing.value)*Math.max(0,1-Math.max(0,depth))
+  const hull=1-(1-waterPlaningDrag.value)*planing
+  const drag=Math.min(.8/Math.max(dt,.001),(waterLinearDrag.value+waterQuadraticDrag.value*speed)*hull)*fraction*mass/n
   const buoy=profile.buoyancy.value*mass*g*fraction/n
-  // Planing is a surface effect, fading within a metre below the hull. No tank planing.
+  // Planing is a surface effect.
   // Dynamic lift can carry the hull's weight with a little to spare, never more: past that a
   // real hull rises, wets less and loses lift, which the wetted fraction already models, but
   // an uncapped v^2 term in a 60 Hz step overshoots and throws the car into the air.
-  const plane=kind==='tank'||radius?0:mass*g/n*Math.min(1.2,Math.max(0,(horizontal/profile.planing.value)**2-1))*fraction*Math.max(0,1-Math.max(0,depth))
+  const plane=mass*g/n*waterPlaningLift.value*planing*fraction
   // Heave damping: water resists a hull bobbing up and down far more than drag along it.
   // About critical for the buoyancy spring (omega = sqrt(lift per metre / mass) ~ 4.5 /s).
   // Only while the hull is crossing the surface: fully under, it sinks at its drag speed.
