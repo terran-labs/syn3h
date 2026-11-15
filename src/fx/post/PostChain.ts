@@ -26,7 +26,7 @@
  */
 import * as THREE from 'three/webgpu'
 import {
-  Fn, If, Loop, abs, sin, clamp, dot, exp, float, interleavedGradientNoise, length, max, min, mix, pass,
+  Fn, If, Loop, abs, screenSize, sin, clamp, dot, exp, float, interleavedGradientNoise, length, max, min, mix, pass,
   renderOutput, rtt, screenCoordinate, smoothstep, step,  uniform, uv, vec2, vec3, vec4,
 } from 'three/tsl'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
@@ -185,7 +185,11 @@ export class PostChain {
     this.updateCamera(camera as THREE.PerspectiveCamera, tier === 'full' ? P.postMotionBlur.value * fade : 0)
     const b = this.built!
     if (b.aoNode) { b.aoNode.radius.value = P.postAORadius.value; b.aoNode.scale.value = P.postAO.value * fade }
-    if (b.sssNode) b.sssNode.shadowIntensity.value = P.postContact.value * fade
+    // Contact shadows march toward the sun with no surface bias, so a low sun grazing the
+    // ground makes the ground shadow itself (noise, then scanlines). Fade them in with the
+    // sun's height; at a low sun the long cascaded shadows carry the scene anyway.
+    const sunUp = smooth01(0.25, 0.45, this.sun.sunDirection.y)
+    if (b.sssNode) b.sssNode.shadowIntensity.value = P.postContact.value * fade * sunUp
     u.plunge.value = tier === 'full' ? this.updatePlunge() : 0
     u.heat.value = P.postHeat.value * fade
     u.time.value = (performance.now() / 1000) % 1000
@@ -298,6 +302,7 @@ export class PostChain {
     let aoNode: N = null
     let sssNode: N = null
     let shade: N = float(1)
+    let contactTex: N = null
     if (aoOn) {
       aoNode = ao(depth, null as never, camera)
       aoNode.resolutionScale = 0.5
@@ -308,11 +313,25 @@ export class PostChain {
     if (light) {
       sssNode = sss(depth, camera, light)
       sssNode.resolutionScale = 0.5
-      sssNode.maxDistance.value = 0.6
-      sssNode.thickness.value = 0.25
+      sssNode.maxDistance.value = 0.5
+      sssNode.thickness.value = 0.12
+      sssNode.quality.value = 0.5
       disposables.push(sssNode)
-      // Contact shadows only matter where the sun lights a surface; leave some fill.
-      shade = shade.mul(mix(float(1), sssNode.getTextureNode().sample(uv()).r, 0.75))
+      // The raw march speckles open ground (depth precision where each ray starts). A 3x3
+      // blur three pixels apart, then a remap: scattered specks average near white and
+      // go back to 1; a real contact shadow, solid under a tyre, stays dark.
+      const raw: N = sssNode.getTextureNode()
+      const blurAt = Fn(() => {
+        const p = uv()
+        const px = vec2(3, 3).div(screenSize)
+        const sum = float(0).toVar()
+        for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) sum.addAssign(raw.sample(p.add(px.mul(vec2(x, y)))).r)
+        return smoothstep(0.45, 0.85, sum.div(9))
+      })
+      const contact = blurAt()
+      contactTex = contact
+      // Leave some fill: contact shadows only darken what the sun lit.
+      shade = shade.mul(mix(float(1), contact, 0.6))
     }
 
     // The scene colour as the eye sees it this frame: heat shimmer bends where it reads from,
@@ -448,12 +467,17 @@ export class PostChain {
     let out: N = graded()
     // Debug views: the raw occlusion or contact shadow buffers, white is unoccluded.
     if (debug === 1 && aoNode) out = vec4(vec3(aoNode.getTextureNode().sample(uv()).r), 1)
-    if (debug === 2 && sssNode) out = vec4(vec3(sssNode.getTextureNode().sample(uv()).r), 1)
+    if (debug === 2 && contactTex) out = vec4(vec3(contactTex), 1)
     const pipeline = new THREE.RenderPipeline(renderer, out)
     pipeline.outputColorTransform = false
     this.built = { key, pipeline, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode }
     this.builds++
   }
+}
+
+function smooth01(e0: number, e1: number, x: number): number {
+  const t = Math.min(1, Math.max(0, (x - e0) / (e1 - e0)))
+  return t * t * (3 - 2 * t)
 }
 
 /** The shadow-casting directional light (sun by day, moon by night), if any. */
