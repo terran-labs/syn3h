@@ -6,7 +6,7 @@ import {applyShowroom,setRole} from './showroom'
 import * as THREE from 'three/webgpu'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { abs, attribute, clamp, dot, float, instancedBufferAttribute, length, min, normalView, positionGeometry, positionViewDirection, sin, smoothstep, time, uniform, vec2 } from 'three/tsl'
-import {mergeStatic,registerVehicleDetail,staticLods,reducedGeometry,detailLevel} from './mergeStatic'
+import {mergeStatic,registerVehicleDetail,detailLevel} from './mergeStatic'
 import type { BuggySkin } from './BuggySkin'
 import { MotorSparks } from './motorSparks'
 import type Node from 'three/src/nodes/core/Node.js'
@@ -17,11 +17,6 @@ const up = new THREE.Vector3(0, 1, 0)
 const axleMounts = (x: number, y: number, z: number) =>
   [new THREE.Vector3(-x, y, -z), new THREE.Vector3(x, y, -z), new THREE.Vector3(-x, y, z), new THREE.Vector3(x, y, z)]
 
-/**
- * Per kind layout. Classic: Mars Explorer Buggy.prefab (Lod scale 2.15, axelPos (.375, -.1, .75),
- * 0.6 m wheels). Syn3h: terra.buggy.prefab (Lod scale 1, so the glb is used at its true size,
- * AxelPos (.55, .15, 1.2), wheel template at its native 1.04 m diameter).
- */
 /**
  * Syn3h hub motor geometry, in the stator's own frame (glb axes, wheel axle along X). The `Rim`
  * mesh is the stator: a wing across the hub whose two tips (z = +-STATOR_TIP) nearly touch the
@@ -56,10 +51,11 @@ function mulberry32(seed: number): () => number {
   }
 }
 
-const layouts = {
-  classic: { scale: 2.15, mounts: axleMounts(.375, -.1, .75), wheelDiameter: .6 as number | null, wheelWidth: 1.2, rest: new THREE.Vector3(.7, -.3, .8) },
-  syn3h: { scale: 1, mounts: axleMounts(.55, .15, 1.2), wheelDiameter: null as number | null, wheelWidth: 1, rest: new THREE.Vector3(1.1, -.2, 1.3) },
-}
+/**
+ * terra.buggy.prefab: the glb is used at its true size (Lod scale 1). Axle mounts are the
+ * prefab's AxelPos (.55, .15, 1.2); `rest` is where a wheel sits before the first frame.
+ */
+const LAYOUT = { mounts: axleMounts(.55, .15, 1.2), rest: new THREE.Vector3(1.1, -.2, 1.3) }
 
 // GLTFLoader and the WebGPU renderer can resolve separate Three module instances in
 // a live merged preview. Imported meshes advertise their type without constructor identity.
@@ -97,18 +93,7 @@ function nodeNamed(root: THREE.Object3D, name: string): THREE.Object3D {
   return found
 }
 
-/** Buggy.js 134-158: scale during deployment, then flex the original vertices. */
-export function wingVertex(x: number, y: number, z: number, open: number, steer: number, pitch: number): [number, number, number] {
-  open = THREE.MathUtils.clamp(open, 0, 1)
-  if (open < 1) return [x * open, y * open, z]
-  const unityZ = -z
-  const t = (unityZ > .2 ? 0 : unityZ * steer * .14 * Math.abs(x) / 10) + x * pitch * .04
-  const nx = y * Math.sin(t) + x * Math.cos(t)
-  // Preserve the original sequential x/y update, including its small asymmetry.
-  return [nx, y * Math.cos(t) - nx * Math.sin(t), z]
-}
-
-/** Syn3h VhiclBuggy.cs 112-128: same deployment scale, different flex and no forward cutoff. */
+/** Syn3h VhiclBuggy.cs 112-128: scale during deployment, then flex the original vertices. */
 export function wingVertexSyn3h(x: number, y: number, z: number, open: number, steer: number, pitch: number): [number, number, number] {
   open = THREE.MathUtils.clamp(open, 0, 1)
   if (open < 1) return [x * open, y * open, z]
@@ -146,18 +131,15 @@ const scratch = {
 export class LoadedBuggySkin implements BuggySkin {
   readonly object = new THREE.Group()
   readonly ready: Promise<void>
-  /** Syn3h's lamps are emissive faces of its body mesh (see load). */
-  readonly ownLamps: boolean
+  /** The lamps are emissive faces of the body mesh (see load). */
+  readonly ownLamps = true
   private disposed = false
   private detachDetail=()=>{}
   private detachShowroom=()=>{}
-  private axleBatch?:THREE.InstancedMesh
   private tyreBatch?: THREE.InstancedMesh
   private midTyres?: THREE.InstancedMesh
   private midArms?: THREE.InstancedMesh
   private readonly distantBodies: THREE.Group[] = []
-  private readonly simpleWheels:THREE.Group[]=[]
-  private readonly highWheels:THREE.Object3D[]=[]
   /** Spinning part of each wheel (tyre and rotor ring). The wheel group itself only steers. */
   private readonly rollers = Array.from({length: 4}, () => new THREE.Group())
   // Syn3h hub motors: wing struts, stators (near and far detail), glow and sparks.
@@ -194,70 +176,51 @@ export class LoadedBuggySkin implements BuggySkin {
   private readonly glowMaterials: THREE.MeshStandardMaterial[] = []
   private readonly energyColor = uniform(this.accentColor)
   private readonly wheels = Array.from({length: 4}, () => new THREE.Group())
-  private readonly axles: THREE.Mesh[] = []
   private wings: { mesh: THREE.Mesh; base: Float32Array }[] = []
   private wingInput = [0, 0, 0]
-  private readonly layout: (typeof layouts)['classic']
-  private readonly wingFn: typeof wingVertex
 
-  constructor(kind: 'classic' | 'syn3h') {
-    this.layout = layouts[kind]
-    this.wingFn = kind === 'classic' ? wingVertex : wingVertexSyn3h
-    this.object.name = `${kind} buggy skin`
-    this.ownLamps = kind === 'syn3h'
-    const r0 = this.layout.rest, m0 = this.layout.mounts[3]
+  constructor() {
+    this.object.name = 'buggy skin'
+    const r0 = LAYOUT.rest, m0 = LAYOUT.mounts[3]
     this.strutRest = Math.hypot(r0.x - m0.x, r0.y - m0.y, r0.z - m0.z)
-    // Classic keeps its thin cylinder axles; Syn3h's wing struts are created on load.
-    if (kind === 'classic') {
-      const axleGeometry=new THREE.CylinderGeometry(.025,.025,1,8),axleMaterial=new THREE.MeshStandardMaterial({color:0x667788,metalness:.7,roughness:.3})
-      this.axleBatch=new THREE.InstancedMesh(axleGeometry,axleMaterial,4);this.axleBatch.castShadow=true;this.axleBatch.frustumCulled=false;this.object.add(this.axleBatch)
-      for (let i = 0; i < 4; i++) { const axle = new THREE.Mesh(axleGeometry, axleMaterial); axle.castShadow = true; this.axles.push(axle) }
-    }
     this.wheels.forEach((w, i) => {
       this.object.add(w)
       w.add(this.rollers[i])
 
-      const r = this.layout.rest
+      const r = LAYOUT.rest
       this.setWheel(i, new THREE.Vector3(i % 2 ? r.x : -r.x, r.y, i < 2 ? -r.z : r.z), 0, 0)
     })
     this.object.visible = false
-    this.ready = this.load(kind)
+    this.ready = this.load()
   }
 
-  private async load(kind: 'classic' | 'syn3h'): Promise<void> {
-    const loaded = await Promise.all(kind === 'classic'
-      ? [loader.loadAsync('/models/buggy-classic.glb'), loader.loadAsync('/models/buggy-classic-wheel.glb')]
-      // Syn3h: wheels, hub wings and flight wings from the original model; the body, canopy,
-      // body fittings and suspension arm from the Box arm body (tools/buggy-bodies, variant
-      // c2-box), which is the owner's original body reshaped and is already in the game frame.
-      : [loader.loadAsync('/models/buggy.glb'), loader.loadAsync(BOX_ARM_BODY)])
+  private async load(): Promise<void> {
+    // Wheel stators and flight wings from the original model; the body, canopy, interior,
+    // fittings, suspension arm and shock from the Box arm body (tools/buggy-bodies, variant
+    // c2-box), which is the owner's original body reshaped and is already in the game frame.
+    const loaded = await Promise.all([loader.loadAsync('/models/buggy.glb'), loader.loadAsync(BOX_ARM_BODY)])
     if (this.disposed) { loaded.forEach(g => release(g.scene)); return }
-    const scene = loaded[0].scene
-    const classic = kind === 'classic'
-    const next = classic ? null : loaded[1]!.scene
-    const k = this.layout.scale
-    const transform = new THREE.Matrix4().makeScale(k, k, k)
-    // Both sources put their headlight meshes on +Z; our nose points toward -Z.
-    transform.multiply(new THREE.Matrix4().makeRotationY(Math.PI))
-    const body = next ? new THREE.Group() : extract(scene.getObjectByName('Body')!, transform)
+    const scene = loaded[0].scene, next = loaded[1].scene
+    // The original model puts its headlight meshes on +Z; our nose points toward -Z.
+    const transform = new THREE.Matrix4().makeRotationY(Math.PI)
+    const body = new THREE.Group()
     // Box arm: the body and its fittings (strut sockets, shock towers, headlight lenses).
     // Interior: the smooth cockpit bowl under the force field canopy, with its glow spots.
     // Sockets also carries the skid plate and the swellings that take the arms and shocks.
-    if (next) for (const name of ['Body', 'Sockets', 'Interior']) body.add(...extract(nodeNamed(next, name)).children)
+    for (const name of ['Body', 'Sockets', 'Interior']) body.add(...extract(nodeNamed(next, name)).children)
     // The exported paint carries a clear coat, which loads as a physical material and would
     // keep each part out of the body merge. The shared shading supplies every look from the
     // role, so reduce each to a plain material that only carries its name and colour.
-    if (next) body.traverse(o => { if (o instanceof THREE.Mesh) {
+    body.traverse(o => { if (o instanceof THREE.Mesh) {
       const src = o.material as THREE.MeshStandardMaterial
       const plain = new THREE.MeshStandardMaterial({color: src.color}); plain.name = src.name
       src.dispose(); o.material = plain
     } })
     body.traverse(o => {
       if (!isMesh(o)) return
-      // Preserve Syn3h's separate trim and light materials; classic has one tinted shell.
       const materials = Array.isArray(o.material) ? o.material : [o.material]
       for (const m of materials) if (m instanceof THREE.MeshStandardMaterial) {
-        if (classic || /body|material/i.test(m.name)) { this.bodyMaterials.push(m); setRole(m, 'paint') }
+        if (/body|material/i.test(m.name)) { this.bodyMaterials.push(m); setRole(m, 'paint') }
         else if (/glow/i.test(m.name)) { this.glowMaterials.push(m); setRole(m, 'accent') }
         else if (/accent/i.test(m.name)) { this.accentMaterials.push(m); setRole(m, 'accent') }
         else if (/chrome/i.test(m.name)) setRole(m, 'chrome')
@@ -266,107 +229,68 @@ export class LoadedBuggySkin implements BuggySkin {
         else if (/dark/i.test(m.name)) setRole(m, 'frame')
         else if (/interior/i.test(m.name)) setRole(m, 'trim')
         m.roughness = .36; m.metalness = .3
-        // Syn3h lamps are faces of the Body mesh itself. Emission from terra.buggy.prefab; values
+        // The lamps are faces of the Body mesh itself. Emission from terra.buggy.prefab; values
         // above 1 are deliberate (no bloom here, so they survive tone mapping as a hot core).
         // addNightReadability later scales emission by hotExposureNode, as the effects lamps use
         // hotExposureDim, so they do not bleach under the night exposure. mergeStatic reads the
         // emissive Color by reference, so setLights can change it after the merge.
-        if (!classic && /headlight/i.test(m.name)) { m.color.set(0xe8f0ff); m.emissive.setRGB(2.447059, 2.858824, 3); m.metalness = 0 }
-        else if (!classic && /tail ?light/i.test(m.name)) { m.color.set(0x400000); m.emissive.setRGB(TAIL_LAMP, 0, 0); m.metalness = 0; this.tailLamps = m.emissive }
+        if (/headlight/i.test(m.name)) { m.color.set(0xe8f0ff); m.emissive.setRGB(2.447059, 2.858824, 3); m.metalness = 0 }
+        else if (/tail ?light/i.test(m.name)) { m.color.set(0x400000); m.emissive.setRGB(TAIL_LAMP, 0, 0); m.metalness = 0; this.tailLamps = m.emissive }
       }
     })
     const staticBody=new THREE.Group();this.object.add(staticBody);staticBody.add(body)
-    const cockpitTransform = transform.clone()
-    if (!classic) cockpitTransform.multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2))
-    // The Box arm canopy is one mesh, both halves, already in place.
-    const cockpit = next ? extract(nodeNamed(next, 'Canopy')) : extract(scene.getObjectByName('Cockpit')!, cockpitTransform)
-    cockpit.traverse(o => { if (o instanceof THREE.Mesh) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose(); // Tagged as glass and kept out of the plain body merge, so the showroom tiers can blend it.
-      // Syn3h: the shared force field canopy. Classic keeps its glass until its own pass.
-      const glass = setRole(new THREE.MeshStandardMaterial({color: classic ? 0xad58ff : 0x192c44, metalness: .65, roughness: .18}), classic ? 'glass' : 'canopy'); glass.name = 'Cockpit'; glass.userData.separate = true; o.material = glass } })
-    // Syn3h: the canopy stays its own mesh (both halves merged together, one draw), outside the
-    // body merge, tagged so the first person ride camera can hide it and only it.
-    const canopy = classic ? staticBody : new THREE.Group()
+    // The canopy is one mesh, both halves, already in place: the shared force field. It stays
+    // out of the body merge (one draw of its own), so the showroom tiers can blend it.
+    const cockpit = extract(nodeNamed(next, 'Canopy'))
+    cockpit.traverse(o => { if (o instanceof THREE.Mesh) {
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose()
+      const glass = setRole(new THREE.MeshStandardMaterial({color: 0x192c44, metalness: .65, roughness: .18}), 'canopy'); glass.name = 'Cockpit'; glass.userData.separate = true; o.material = glass
+    } })
+    const canopy = new THREE.Group()
     canopy.add(cockpit)
-    if (!classic && !next) { const mirrored = cockpit.clone(true); mirrored.scale.x = -1; canopy.add(mirrored) }
     const headlights = scene.getObjectByName('Headlights')
     if (headlights) {
       const lights = extract(headlights, transform)
       lights.traverse(o => { if (o instanceof THREE.Mesh) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose(); o.material = setRole(new THREE.MeshStandardMaterial({color: 0xfff4bc, emissive: 0xffe899, emissiveIntensity: 2}), 'lamp') } })
       staticBody.add(lights)
     }
-    mergeStatic(staticBody,true)
-    const bodyLods=classic ? staticLods(staticBody) : []
-    if (canopy !== staticBody) {
-      mergeStatic(canopy, true)
-      // The force field stays in view from the seat: Syn3hBuggy sets userData.cockpit on the
-      // vehicle, which tells the ride camera to hide nothing.
-      canopy.traverse(o => { if (o instanceof THREE.Mesh) o.name = 'Canopy' })
-      canopy.name = 'Canopy'
-      this.object.add(canopy)
-    }
-    const wheelRoot = classic ? loaded[1]!.scene : scene.getObjectByName('Wheel_Template')!
-    const wheel = classic ? extract(wheelRoot) : smoothBuggyWheel()
-    const bounds = new THREE.Box3().setFromObject(wheel), center = bounds.getCenter(new THREE.Vector3())
-    const d = this.layout.wheelDiameter
-    const scale = d === null ? 1 : d / (bounds.max.y - bounds.min.y)
-    if (classic) wheel.traverse(o => { if (o instanceof THREE.Mesh) {
-      o.geometry.translate(-center.x, -center.y, -center.z).scale(scale * this.layout.wheelWidth, scale, scale)
-      const accent = /beadlock|plane_2/i.test(o.name)
-      for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose(); const rubber = /rubber|^plane$/i.test(o.name); o.material = setRole(new THREE.MeshStandardMaterial({color: accent ? this.accentColor : rubber ? 0x171b20 : 0x89949f, roughness: accent ? .35 : .7, metalness: accent ? .55 : .15}), accent ? 'accent' : rubber ? 'tyre' : 'chrome')
-      if (accent) this.accentMaterials.push(o.material)
-    } })
-    mergeStatic(wheel,true)
-    if (!classic) {
-      const mesh = wheel.children[0] as THREE.Mesh
-      this.tyreBatch = new THREE.InstancedMesh(mesh.geometry, mesh.material, 4)
-      this.tyreBatch.name = 'Smooth tyres and chrome rings'
-      this.tyreBatch.castShadow = this.tyreBatch.receiveShadow = true
-      this.tyreBatch.frustumCulled = false
-      this.object.add(this.tyreBatch)
-    }
-    if (classic) this.rollers.forEach((w, i) => { const visual = wheel.clone(true); if (i % 2 === 0) visual.rotation.y = Math.PI; w.add(visual); this.highWheels.push(visual) })
-    // Syn3h exported a true simple wheel and rim. Classic has no simple wheel asset here.
-    const simpleRoot=classic ? scene.getObjectByName('Wheel_Template_Simple') : undefined
-    if(simpleRoot){
-      const simple=extract(simpleRoot),b=new THREE.Box3().setFromObject(simple),c=b.getCenter(new THREE.Vector3())
-      simple.traverse(o=>{if(o instanceof THREE.Mesh){o.geometry.translate(-c.x,-c.y,-c.z);for(const m of Array.isArray(o.material)?o.material:[o.material])m.dispose();o.material=new THREE.MeshStandardMaterial({color:0x171b20,roughness:.7,metalness:.15})}})
-      mergeStatic(simple,true)
-      this.rollers.forEach((w,i)=>{const low=simple.clone(true);low.visible=false;if(i%2===0)low.rotation.y=Math.PI;w.add(low);this.simpleWheels.push(low)})
-    }
-    if(classic && !simpleRoot){
-      // No classic simple wheel was recovered. Generate a distant-only reduction, retaining tint.
-      const low=wheel.clone(true);low.traverse(o=>{if(o instanceof THREE.Mesh)o.geometry=reducedGeometry(o.geometry,.06)})
-      this.wheels.forEach((w,i)=>{const visual=low.clone(true);visual.visible=false;if(i%2===0)visual.rotation.y=Math.PI;w.add(visual);this.simpleWheels.push(visual)})
-    }
-    let midBody: THREE.Group | undefined, farBody: THREE.Group | undefined
-    if (!classic) {
-      this.buildHubMotors(scene, next!)
-      midBody = distantBuggyBody(this.bodyColor, this.accentColor, false)
-      farBody = distantBuggyBody(this.bodyColor, this.accentColor, true)
-      this.object.add(midBody, farBody)
-      this.distantBodies.push(midBody, farBody)
-      const tyre = smoothBuggyWheel(12).children[0] as THREE.Mesh
-      this.midTyres = new THREE.InstancedMesh(tyre.geometry, tyre.material, 4)
-      this.midTyres.name = 'Mid tyres'; this.midTyres.frustumCulled = false
-      const arm = distantBuggyArm()
-      this.midArms = new THREE.InstancedMesh(arm.geometry, arm.material, 4)
-      this.midArms.name = 'Mid suspension'; this.midArms.frustumCulled = false
-      this.object.add(this.midTyres, this.midArms)
-      midBody.visible = farBody.visible = this.midTyres.visible = this.midArms.visible = false
-      this.wheels.forEach((w, i) => this.setWheel(i, w.position, w.rotation.y, this.rollers[i].rotation.x))
-    }
-    const wingTransform = transform.clone()
-    if (!classic) wingTransform.multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2))
-    const wingGroup = extract(scene.getObjectByName(classic ? 'Wing' : 'Wings')!, wingTransform)
-    if (!classic) {
-      const originals = [...wingGroup.children]
-      for (const o of originals) if (o instanceof THREE.Mesh) {
-        const reflected = o.clone(); reflected.geometry = o.geometry.clone().scale(-1, 1, 1)
-        wingGroup.add(reflected)
-      }
+    mergeStatic(staticBody, true)
+    mergeStatic(canopy, true)
+    // The force field stays in view from the seat: Syn3hBuggy sets userData.cockpit on the
+    // vehicle, which tells the ride camera to hide nothing.
+    canopy.traverse(o => { if (o instanceof THREE.Mesh) o.name = 'Canopy' })
+    canopy.name = 'Canopy'
+    this.object.add(canopy)
+    const wheel = smoothBuggyWheel()
+    mergeStatic(wheel, true)
+    const mesh = wheel.children[0] as THREE.Mesh
+    this.tyreBatch = new THREE.InstancedMesh(mesh.geometry, mesh.material, 4)
+    this.tyreBatch.name = 'Smooth tyres and chrome rings'
+    this.tyreBatch.castShadow = this.tyreBatch.receiveShadow = true
+    this.tyreBatch.frustumCulled = false
+    this.object.add(this.tyreBatch)
+    this.buildHubMotors(scene, next)
+    const midBody = distantBuggyBody(this.bodyColor, this.accentColor, false)
+    const farBody = distantBuggyBody(this.bodyColor, this.accentColor, true)
+    this.object.add(midBody, farBody)
+    this.distantBodies.push(midBody, farBody)
+    const tyre = smoothBuggyWheel(12).children[0] as THREE.Mesh
+    this.midTyres = new THREE.InstancedMesh(tyre.geometry, tyre.material, 4)
+    this.midTyres.name = 'Mid tyres'; this.midTyres.frustumCulled = false
+    const arm = distantBuggyArm()
+    this.midArms = new THREE.InstancedMesh(arm.geometry, arm.material, 4)
+    this.midArms.name = 'Mid suspension'; this.midArms.frustumCulled = false
+    this.object.add(this.midTyres, this.midArms)
+    midBody.visible = farBody.visible = this.midTyres.visible = this.midArms.visible = false
+    this.wheels.forEach((w, i) => this.setWheel(i, w.position, w.rotation.y, this.rollers[i].rotation.x))
+    const wingTransform = transform.clone().multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2))
+    const wingGroup = extract(scene.getObjectByName('Wings')!, wingTransform)
+    for (const o of [...wingGroup.children]) if (o instanceof THREE.Mesh) {
+      const reflected = o.clone(); reflected.geometry = o.geometry.clone().scale(-1, 1, 1)
+      wingGroup.add(reflected)
     }
     // Both flight wings deform by vertex position, so they can share one geometry and draw.
-    if (!classic) mergeStatic(wingGroup, true)
+    mergeStatic(wingGroup, true)
     // Force field material after Syn3h "Vehicle Wings" (an edge detecting, fresnel, panning
     // texture shader: brightness 7, pan speed -0.5, texture V scale 0.1, solid colour tinted by
     // the vehicle). Our wing meshes are coarse shells with arbitrary UVs, so the edge glow is
@@ -401,14 +325,14 @@ export class LoadedBuggySkin implements BuggySkin {
     const glow = edge.mul(1.2).add(rim.mul(2.2)).add(flow.mul(.3)).add(fresnel.mul(.5)).add(.03)
     const energy = new THREE.MeshBasicNodeMaterial({transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false})
     energy.fog = false
-    if (!classic) energy.forceSinglePass = true
+    energy.forceSinglePass = true
     energy.colorNode = this.energyColor.mul(glow).mul(hotExposureNode())
     energy.opacityNode = clamp(glow, 0, 1)
     // Additive light washes out to white over a sunlit desert, so a normally blended tint layer
     // underneath keeps the accent hue readable at noon; at night the additive glow dominates.
     const tint = new THREE.MeshBasicNodeMaterial({transparent: true, side: THREE.DoubleSide, depthWrite: false})
     tint.fog = false
-    if (!classic) tint.forceSinglePass = true
+    tint.forceSinglePass = true
     tint.colorNode = this.energyColor.mul(.55).mul(hotExposureNode())
     tint.opacityNode = clamp(edge.mul(.45).add(rim.mul(.35)).add(flow.mul(.08)).add(.1), 0, .8)
     for (const o of meshes) {
@@ -426,21 +350,15 @@ export class LoadedBuggySkin implements BuggySkin {
     const shadows:THREE.Mesh[]=[];this.object.traverse(o=>{if(o instanceof THREE.Mesh&&o.castShadow)shadows.push(o)})
     let lastDetail: 0 | 1 | 2 = 0
     this.detachDetail=registerVehicleDetail(this.object,(distance,remote,level)=>{
-      const low=remote&&distance>(level===2?60:30)
-      if (!classic) {
-        lastDetail = detailLevel(distance, remote, lastDetail)
-        const near = lastDetail === 0, mid = lastDetail === 1
-        staticBody.visible = canopy.visible = wingGroup.visible = near
-        this.tyreBatch!.visible = near
-        this.struts!.visible = near
-        if (this.shocks) this.shocks.visible = near
-        this.stators.forEach((s, i) => { s.visible = near && i === 0 })
-        midBody!.visible = this.midTyres!.visible = this.midArms!.visible = mid
-        farBody!.visible = lastDetail === 2
-      }
-      this.wheels.forEach((_,i)=>{if(this.simpleWheels[i]){this.highWheels[i].visible=!low;this.simpleWheels[i].visible=low}})
-      bodyLods.forEach(p=>{p.high.visible=!low;p.low.visible=low})
-      if(this.axleBatch)this.axleBatch.visible=!low
+      lastDetail = detailLevel(distance, remote, lastDetail)
+      const near = lastDetail === 0, mid = lastDetail === 1
+      staticBody.visible = canopy.visible = wingGroup.visible = near
+      this.tyreBatch!.visible = near
+      this.struts!.visible = near
+      if (this.shocks) this.shocks.visible = near
+      this.stators.forEach((s, i) => { s.visible = near && i === 0 })
+      midBody.visible = this.midTyres!.visible = this.midArms!.visible = mid
+      farBody.visible = lastDetail === 2
 
       // Sparks are a close-up detail; other players' buggies only show them nearby.
       this.sparksAllowed=!remote||distance<(level===2?40:20)
@@ -466,14 +384,7 @@ export class LoadedBuggySkin implements BuggySkin {
       this.tyreBatch.setMatrixAt(index, scratch.matrix); this.tyreBatch.instanceMatrix.needsUpdate = true
       if (this.midTyres) { this.midTyres.setMatrixAt(index, scratch.matrix); this.midTyres.instanceMatrix.needsUpdate = true }
     }
-    const mount = this.layout.mounts[index]
-    if (this.axleBatch) {
-      const axle = this.axles[index], delta = localPosition.clone().sub(mount)
-      axle.position.copy(mount).addScaledVector(delta, .5)
-      axle.scale.y = delta.length()
-      if (delta.lengthSq() > 1e-10) axle.quaternion.setFromUnitVectors(up, delta.normalize())
-      axle.updateMatrix();this.axleBatch.setMatrixAt(index,axle.matrix);this.axleBatch.instanceMatrix.needsUpdate=true
-    }
+    const mount = LAYOUT.mounts[index]
     if (this.struts) {
       wheel.updateMatrix()
       for (const s of this.stators) { s.setMatrixAt(index, wheel.matrix); s.instanceMatrix.needsUpdate = true }
@@ -647,7 +558,7 @@ export class LoadedBuggySkin implements BuggySkin {
     for (const {mesh, base} of this.wings) {
       mesh.visible = openAmount > 0
       const position = mesh.geometry.attributes.position
-      for (let i = 0; i < position.count; i++) position.setXYZ(i, ...this.wingFn(base[i*3], base[i*3+1], base[i*3+2], openAmount, steer, pitch))
+      for (let i = 0; i < position.count; i++) position.setXYZ(i, ...wingVertexSyn3h(base[i*3], base[i*3+1], base[i*3+2], openAmount, steer, pitch))
       position.needsUpdate = true
       mesh.geometry.computeVertexNormals()
       mesh.geometry.computeBoundingSphere()

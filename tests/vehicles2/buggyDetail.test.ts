@@ -35,7 +35,7 @@ it.each([false, true])('loads real assets within each budget with foreign loader
   const callbacks = new Set<VehicleDetail>()
   const detail: VehicleDetail = (distance, remote, level) => callbacks.forEach(fn => fn(distance, remote, level))
   root.userData.registerVehicleDetail = (fn: VehicleDetail) => { callbacks.add(fn); return () => callbacks.delete(fn) }
-  const skin = new LoadedBuggySkin('syn3h'); root.add(skin.object)
+  const skin = new LoadedBuggySkin(); root.add(skin.object)
   try {
     await skin.ready
     detail(0, false, 2)
