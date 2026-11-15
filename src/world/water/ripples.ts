@@ -1,7 +1,7 @@
 import * as T from 'three/webgpu'
 import { float, texture, uniform, uv, vec2, vec3, vec4, smoothstep } from 'three/tsl'
 import { defineParam } from '../../../shared/params'
-import { DisturbanceQueue, snappedOrigin } from './rippleMath'
+import { DisturbanceQueue, RippleSleep, snappedOrigin } from './rippleMath'
 
 export const waterRipples = defineParam<boolean>({id:'water.ripples',label:'Simulated ripples',group:'Water',scope:'client',default:true})
 export const waterRippleSize = defineParam({id:'water.rippleSize',label:'Ripple window (m)',group:'Water',scope:'client',default:128,min:32,max:256,step:16})
@@ -10,6 +10,9 @@ export const waterRippleSize = defineParam({id:'water.rippleSize',label:'Ripple 
 export class Ripples {
   private targets: T.RenderTarget[] = []
   private queue = new DisturbanceQueue()
+  private sleep = new RippleSleep()
+  /** Simulation passes rendered since creation: evidence that an undisturbed field costs none. */
+  readonly stats = { passes: 0 }
   private origin = uniform(new T.Vector2())
   private shift = uniform(new T.Vector2())
   private extent = uniform(128)
@@ -56,10 +59,7 @@ export class Ripples {
   }
   private allocate() {
     this.targets=Array.from({length:2},()=>new T.RenderTarget(this.cells,this.cells,{type:T.HalfFloatType,format:T.RGBAFormat,minFilter:T.LinearFilter,magFilter:T.LinearFilter,depthBuffer:false}))
-    const saved=this.renderer.getRenderTarget(), clear=this.renderer.getClearColor(new T.Color()), alpha=this.renderer.getClearAlpha()
-    this.renderer.setClearColor(0,0)
-    for(const target of this.targets){this.renderer.setRenderTarget(target);this.renderer.clear()}
-    this.renderer.setRenderTarget(saved);this.renderer.setClearColor(clear,alpha)
+    this.flatten()
     this.source.value=this.targets[0].texture
     const p=uv().add(this.shift), d=1/this.cells
     const sample=(offset:any)=>this.source.sample(p.add(offset)).r
@@ -76,9 +76,23 @@ export class Ripples {
     material.fragmentNode=vec4(inside.select(this.stepWave.greaterThan(0).select(next,h),0).add(impulse).mul(edge),inside.select(this.stepWave.greaterThan(0).select(h,previous),0).add(impulse).mul(edge),0,1)
     this.quad=new T.QuadMesh(material)
   }
+  /** Zero both height buffers: a fresh field, and one waking after its window moved unseen. */
+  private flatten() {
+    const saved=this.renderer.getRenderTarget(), clear=this.renderer.getClearColor(new T.Color()), alpha=this.renderer.getClearAlpha()
+    this.renderer.setClearColor(0,0)
+    for(const target of this.targets){this.renderer.setRenderTarget(target);this.renderer.clear()}
+    this.renderer.setRenderTarget(saved);this.renderer.setClearColor(clear,alpha)
+  }
   update(dt:number,cameraX:number,cameraZ:number) {
     if(!waterRipples.value||!this.renderer){this.dispose();return}
+    // Asleep until something disturbs the water: no passes, no uploads, and the sea shader
+    // reads a flat field through `active`. The targets and pipeline stay, so waking is free.
+    if(!this.sleep.step(this.queue.events.length,dt)){
+      if(this.active.value){this.active.value=0;this.positioned=false;this.accumulator=0}
+      return
+    }
     if(!this.quad)this.allocate()
+    else if(!this.positioned)this.flatten()
     const size=waterRippleSize.value
     if(size!==this.extent.value){this.dispose();this.extent.value=size;this.allocate()}
     const tile=this.tileSize.value
@@ -94,13 +108,13 @@ export class Ripples {
     try {
       for(let i=0;i<Math.max(1,count);i++){
         this.stepWave.value=count>0?1:0
-        this.index=1-this.index;this.renderer.setRenderTarget(this.targets[this.index]);this.quad!.render(this.renderer)
+        this.index=1-this.index;this.renderer.setRenderTarget(this.targets[this.index]);this.quad!.render(this.renderer);this.stats.passes++
         this.source.value=this.targets[this.index].texture;this.shift.value.set(0,0)
         for(const e of this.events)e.value.w=0
       }
     } finally {this.renderer.setRenderTarget(saved)}
   }
-  dispose(){for(const t of this.targets)t.dispose();this.targets=[];(this.quad?.material as T.Material | undefined)?.dispose();this.quad=null;this.active.value=0;this.positioned=false;this.accumulator=0;this.queue.drain()}
+  dispose(){for(const t of this.targets)t.dispose();this.targets=[];(this.quad?.material as T.Material | undefined)?.dispose();this.quad=null;this.active.value=0;this.positioned=false;this.accumulator=0;this.queue.drain();this.sleep.reset()}
 }
 
 /** Shared by the sea shader and the game effects system; no GPU targets until enabled. */
