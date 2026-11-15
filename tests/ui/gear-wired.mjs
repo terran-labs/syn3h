@@ -28,7 +28,7 @@ const apart = (a, b) => !a || !b || a.r <= b.x || b.r <= a.x || a.b <= b.y || b.
     await page.locator('.galaxy-label.is-current').focus(); await page.keyboard.press('Enter')
     await page.waitForFunction(() => syn3h.shell.playing && !syn3h.shell.dropping && window.syn3hNet?.gear, null, { timeout: 120000 })
     await page.waitForFunction(() => document.pointerLockElement === syn3h.game.canvas, null, { timeout: 10000 })
-    await page.waitForFunction(() => !document.querySelector('.gear-selector').hidden)
+    await page.waitForFunction(() => !document.querySelector('.gear-selector').hidden && document.querySelector('.gear-selector').dataset.mode === 'locked')
     // Driving: the drum is display only, the pill is a reminder.
     assert.equal(await page.locator('.gear-selector').getAttribute('data-mode'), 'locked')
     assert.equal(await page.locator('.zorb-toggle').isVisible(), true, 'Zorb pill shows while driving')
