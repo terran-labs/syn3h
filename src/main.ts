@@ -58,6 +58,8 @@ async function main(): Promise<void> {
   const { shell, audio } = initGameShell(game, player, terrain)
   // An idle lobby turns into a cinematic tour of the volcano, following a bot if there is one.
   shell.setAttractCamera(camera, () => bots.vehicles)
+  // Nearby bots are audible, positioned in space. Remote players join this list later.
+  audio.setVehicles(() => bots.vehicles)
   let netStatus: string[] = []
   let joined = false
   const join = () => {
