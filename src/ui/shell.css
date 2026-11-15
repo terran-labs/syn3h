@@ -554,3 +554,14 @@
 .syn3h-shell.has-touch .shell-hud .gear-chip { min-height: 40px; padding: 6px 16px; }
 
 .syn3h-shell .galaxy-label:focus { outline: 2px solid var(--s3-accent-2); border-radius: 6px; }
+
+/* Custom keeps its generated planet in view while the player shapes it. */
+.is-shaping-world .lobby-brand { flex-basis: 100px; }
+.is-shaping-world .shell-logo { width: 260px; }
+.is-shaping-world .lobby-panels { width: min(42vw, 520px); align-self: flex-end; }
+.is-shaping-world .lobby-panels > section { padding: 20px 14px; }
+@media (max-width: 700px) {
+  .is-shaping-world .lobby-brand { flex-basis: 65px; }
+  .is-shaping-world .shell-logo { width: 180px; }
+  .is-shaping-world .lobby-panels { width: 100%; margin-top: auto; flex: 0 1 52vh; }
+}
