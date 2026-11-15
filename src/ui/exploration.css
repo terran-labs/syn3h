@@ -29,7 +29,7 @@
 .syn3h-shell.exploration-ui .wi-glass::before { display: none; }
 .syn3h-shell.exploration-ui[data-glass="0"] .wi-glass { --body: rgb(6 21 33 / .55); --frost: 6px; }
 .syn3h-shell.exploration-ui[data-glass="2"] .wi-glass { --body: rgb(6 21 33 / .91); --frost: 22px; }
-.syn3h-shell.exploration-ui .wi-top { padding: 8px 10px; gap: 5px; border: 0; border-bottom: 1px solid var(--s3-line); background: linear-gradient(90deg,transparent,rgb(6 21 33 / .75)); }
+.syn3h-shell.exploration-ui .wi-top { padding: 8px 10px; gap: 5px; border: 0; border-bottom: 1px solid var(--s3-line); background: linear-gradient(90deg,rgb(6 21 33 / .9),rgb(6 21 33 / .82)); }
 .syn3h-shell.exploration-ui .rail-navigation { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .syn3h-shell.exploration-ui .rail-navigation button { min-height: 34px; padding: 5px 9px; font-size: 12px; }
 .syn3h-shell.exploration-ui .rail-navigation .exit-world { border: 0; padding-left: 0; background: none; letter-spacing: .13em; text-transform: uppercase; }
