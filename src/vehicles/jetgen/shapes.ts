@@ -8,7 +8,8 @@ import * as THREE from 'three/webgpu'
  * A "body" is a loft of superellipse cross sections along Z. A "surface" (wing, fin, canard)
  * is a loft of aerofoil sections along a curved span.
  */
-export type Mat = 'paint' | 'chrome' | 'glass' | 'dark' | 'glow' | 'accent'
+/** 'panel' is the paint with faceted shading: the angular designs use it on wings and fins. */
+export type Mat = 'paint' | 'chrome' | 'glass' | 'dark' | 'glow' | 'accent' | 'panel'
 export interface Piece { mat: Mat; geometry: THREE.BufferGeometry }
 /** A landing gear leg. `fold` says where the strut swings to when stowed. */
 export interface Leg { hinge: [number, number, number]; fold: 'aft' | 'fore' | 'in' }
@@ -115,22 +116,23 @@ export class Builder {
 
   /**
    * @param detail 1 is full detail; .5 roughly quarters the triangle count.
-   * @param hard straight lines between rows and square tips, for the angular military designs.
+   * @param hard straight-edged, faceted wings and fins with square tips, for the angular military
+   *   designs. Hulls stay smooth curves so the body shades cleanly.
    */
   constructor(readonly detail = 1, readonly hard = false) {}
-  private segs(n: number): number { return this.hard ? 1 : Math.max(1, Math.round(n * this.detail)) }
+  private segs(n: number): number { return Math.max(1, Math.round(n * this.detail)) }
   private ring(n: number): number { return Math.max(6, 2 * Math.round(n * this.detail / 2)) }
 
   add(mat: Mat, geometry: THREE.BufferGeometry): void { this.pieces.push({ mat, geometry }) }
 
   body(mat: Mat, keys: number[][], o: { x?: number; mirror?: boolean; seg?: number; around?: number; caps?: [boolean, boolean] } = {}): void {
     const caps = o.caps ?? [true, true]
-    for (const m of o.mirror ? [false, true] : [false]) this.add(mat, loft(bodyRings(keys, o.x ?? 0, this.segs(o.seg ?? 10), this.ring(o.around ?? 28), m, this.hard), caps[0], caps[1]))
+    for (const m of o.mirror ? [false, true] : [false]) this.add(mat, loft(bodyRings(keys, o.x ?? 0, this.segs(o.seg ?? 10), this.ring(o.around ?? 28), m), caps[0], caps[1]))
   }
 
   /** The main hull. Later calls (canopy, scoop, ports) sit on its surface. */
   fuselage(keys: number[][]): void {
-    const N = (keys.length - 1) * 12; this.fus = Array.from({ length: N + 1 }, (_, j) => (this.hard ? lerpRows : cr)(keys, j / N))
+    const N = (keys.length - 1) * 12; this.fus = Array.from({ length: N + 1 }, (_, j) => cr(keys, j / N))
     this.body('paint', keys, { seg: 12, around: 40 })
   }
 
@@ -167,13 +169,36 @@ export class Builder {
     this.body('dark', [[z0 - .02, halfWidth * .86, height * .86, .0, y(z0) + .015, 4], [z0 + .04, halfWidth * .86, height * .86, .0, y(z0) + .015, 4]], { x, mirror, seg: 1 })
   }
 
+  /**
+   * An air intake standing on the hull's skin at any angle around it: 90 is the top, 0 the
+   * right flank, 270 the belly. Several at regular angles ring the fuselage.
+   */
+  intake(z0: number, z1: number, angleDeg: number, halfWidth: number, height: number): void {
+    const a = angleDeg * Math.PI / 180, c = Math.cos(a), s = Math.sin(a), L = z1 - z0, around = this.ring(16)
+    const rings = (rows: number[][], sink: number, depth: number, count: number) => Array.from({ length: count + 1 }, (_, j) => {
+      const [z, hw, h, e] = count === 1 ? rows[j] : cr(rows, j / count), [w, t, b, y, ex] = this.at(Math.min(Math.max(z, z0), z1)), p = 2 / Math.max(ex, 1.2)
+      // The point on the skin, the outward direction there and the direction around the hull.
+      const skin = new V(w * Math.sign(c) * Math.abs(c) ** p, y + (s >= 0 ? t : b) * Math.sign(s) * Math.abs(s) ** p, z)
+      const out = new V(skin.x, skin.y - y, 0); if (out.lengthSq() < 1e-8) out.set(c, s, 0); out.normalize()
+      const side = new V(-out.y, out.x, 0), q = 2 / e
+      return Array.from({ length: around }, (_, i) => {
+        const b2 = i / around * Math.PI * 2, cb = Math.cos(b2), sb = Math.sin(b2)
+        const u = Math.max(hw, .002) * Math.sign(cb) * Math.abs(cb) ** q, v = Math.max(sb >= 0 ? h : depth, .002) * Math.sign(sb) * Math.abs(sb) ** q - sink
+        return skin.clone().addScaledVector(side, u).addScaledVector(out, v)
+      })
+    })
+    this.add('paint', loft(rings([[z0, halfWidth, height, 4], [z0 + L * .35, halfWidth, height * .96, 4], [z0 + L * .75, halfWidth * .8, height * .5, 3], [z1, halfWidth * .45, .02, 2.5]], .03, .06, Math.max(4, Math.round(10 * this.detail)))))
+    this.add('chrome', loft(rings([[z0 - .012, halfWidth * 1.05, height * 1.06, 4], [z0 + .05, halfWidth * 1.05, height * 1.06, 4]], .03, .06, 1)))
+    this.add('dark', loft(rings([[z0 - .02, halfWidth * .86, height * .86, 4], [z0 + .04, halfWidth * .86, height * .86, 4]], .015, .02, 1)))
+  }
+
   /** Wing, fin or canard. `tipFrom` 0..1 turns the outer part chrome. */
   /** `round: false` keeps the tip full size, for surfaces that meet their mirror image. */
   surf(keys: number[][], o: { mat?: Mat; tip?: Mat; tipFrom?: number; mirror?: boolean; round?: boolean } = {}): void {
     for (const m of o.mirror === false ? [false] : [false, true]) {
       const { rings, t } = surfRings(keys, Math.max(4, Math.round(24 * this.detail)), this.ring(this.hard ? 8 : 22), m, o.round !== false, this.hard)
       const k = o.tipFrom === undefined ? rings.length - 1 : Math.max(1, t.findIndex(v => v >= o.tipFrom!))
-      this.add(o.mat ?? 'paint', loft(rings.slice(0, k + 1), true, k === rings.length - 1))
+      this.add(o.mat ?? (this.hard ? 'panel' : 'paint'), loft(rings.slice(0, k + 1), true, k === rings.length - 1))
       if (k < rings.length - 1) this.add(o.tip ?? 'chrome', loft(rings.slice(k), false, true))
     }
   }
@@ -193,7 +218,7 @@ export class Builder {
     if (!mirror && !this.gimbal) {
       // The first centreline nozzle is the main thruster. It vectors, so only its collar is fixed.
       this.body('chrome', [k(-.12, 1.14), k(.04, 1.12)], { seg: 1, around: 28 })
-      const g = (mat: Mat, rows: [number, number][], seg: number) => this.gimbalPieces.push({ mat, geometry: loft(bodyRings(rows.map(([dz, f]) => [dz, halfWidth * f, halfHeight * f, halfHeight * f, 0, exponent]), 0, this.segs(seg), this.ring(28), false, this.hard)) })
+      const g = (mat: Mat, rows: [number, number][], seg: number) => this.gimbalPieces.push({ mat, geometry: loft(bodyRings(rows.map(([dz, f]) => [dz, halfWidth * f, halfHeight * f, halfHeight * f, 0, exponent]), 0, this.segs(seg), this.ring(28))) })
       g('chrome', [[-.06, .98], [.2, 1], [.5, .82]], 4); g('dark', [[.44, .76], [.5, .76]], 1); g('glow', [[.502, .6], [.51, .6]], 1)
       this.gimbal = { y, z }; this.nozzles.push({ x: 0, y, z: z + .5, r: Math.max(halfWidth, halfHeight) })
       return
