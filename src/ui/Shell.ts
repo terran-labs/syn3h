@@ -190,22 +190,23 @@ export class Shell implements System {
     const music = document.createElement('div'); music.className = 'rail-music'
     music.innerHTML = `<label>Music<select aria-label="Music track">${Object.entries(MUSIC_TRACKS).map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select></label><button type="button" class="rail-mute">Mute</button>`
     players.querySelector('.rail-player-body')!.append(music)
+    // Preserve native select keys while keeping them out of gameplay. Keyup must still
+    // reach Input so a driving key released after focus changes cannot get stuck.
+    music.querySelector('select')!.addEventListener('keydown', event => event.stopPropagation(), { signal })
     music.querySelector('select')!.addEventListener('change', event => { void this.audio.setTrack((event.target as HTMLSelectElement).value as MusicTrack) }, { signal })
     music.querySelector('button')!.addEventListener('click', () => this.audio.setMuted(!this.audio.isMuted), { signal })
     this.focusHud = new FocusHud(this.element)
     this.raceHud = new RaceHud(this.element, { leave: () => this.onRaceLeave?.(), cancel: () => this.onRaceCancel?.() })
     const toggle = this.element.querySelector<HTMLButtonElement>('.inspector-toggle')!
-    let chosen: boolean | undefined
-    const setCards = (open: boolean) => { this.inspector.open = open; toggle.setAttribute('aria-pressed', String(open)) }
-    toggle.addEventListener('click', () => { chosen = !this.inspector.open; setCards(chosen) }, { signal })
-    navigation.querySelector('.rail-close')!.addEventListener('click', () => { chosen = false; setCards(false); toggle.focus() }, { signal })
+    toggle.addEventListener('click', () => this.setInspectorOpen(!this.inspector.open, true), { signal })
+    navigation.querySelector('.rail-close')!.addEventListener('click', () => { this.setInspectorOpen(false, true); toggle.focus() }, { signal })
     toggle.setAttribute('aria-pressed', String(this.inspector.open))
     // Focus: the cursor is captured, so the player is driving. The full interface fades away.
     let wasLocked = false
     document.addEventListener('pointerlockchange', () => {
       const locked = document.pointerLockElement === game.canvas
       this.element.classList.toggle('is-focus', locked)
-      if (!locked && wasLocked && chosen !== false && !this.menuVisible) setCards(true)
+      if (!locked && wasLocked && this.inspectorChosen !== false && !this.menuVisible) this.setInspectorOpen(true)
       wasLocked = locked
     }, { signal })
     this.glass(signal)
@@ -560,6 +561,13 @@ export class Shell implements System {
     this.element.querySelector<HTMLElement>('.hud-navigation')!.hidden = false
     this.element.querySelector<HTMLButtonElement>('.shell-menu-button')!.focus({ preventScroll: true })
   }
+  private inspectorChosen: boolean | undefined
+  private setInspectorOpen(open: boolean, intentional = false): void {
+    if (intentional) this.inspectorChosen = open
+    this.inspector.hideTooltip()
+    this.inspector.open = open
+    this.element.querySelector('.inspector-toggle')!.setAttribute('aria-pressed', String(open))
+  }
   private keydown(event: KeyboardEvent): void {
     const editing = event.target instanceof HTMLElement && (event.target.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName))
     if (!editing && !event.repeat && event.code === 'KeyP') { event.preventDefault(); event.stopImmediatePropagation(); this.setPresentation(!this.presentation); return }
@@ -571,11 +579,12 @@ export class Shell implements System {
     }
     if (!editing && this.started && !this.menuVisible && !event.repeat && (event.code === 'KeyH' || event.key === '?')) { event.preventDefault(); this.toggleHelp(); return }
     if (event.code === 'Escape') {
+      if (event.target instanceof HTMLSelectElement) return
       event.preventDefault(); event.stopImmediatePropagation()
       if (this.menuVisible && this.panels.active !== 'index') this.showPanel('index')
       else if (this.started) {
         if (this.menuVisible) this.closeMenu()
-        else { this.inspector.hideTooltip(); this.inspector.open = !this.inspector.open }
+        else this.setInspectorOpen(!this.inspector.open, true)
       }
     } else if (this.menuVisible && event.key === 'Tab') {
       const targets = [...this.overlay.querySelectorAll<HTMLElement>('button, input, select, summary, a[href], [tabindex="0"]')].filter(el => !el.closest('[hidden], [inert]') && !(el as HTMLInputElement).disabled)

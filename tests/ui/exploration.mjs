@@ -42,9 +42,39 @@ for (const mode of modes) {
     await page.locator('.rail-diagnostics input').check()
     await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('show-diagnostics'))
     await page.locator('.rail-diagnostics input').uncheck()
+    if (!touch) {
+      const select = page.locator('.rail-music select')
+      await select.focus()
+      // Check held keys before keyup: a leak can disappear before a frame assertion.
+      for (const code of ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Enter']) {
+        const result = await select.evaluate((el, code) => {
+          const input = window.syn3h.game.input
+          const before = { ...input.poll() }
+          const event = new KeyboardEvent('keydown', { code, key: code === 'Space' ? ' ' : code, bubbles: true, cancelable: true })
+          el.dispatchEvent(event)
+          const held = { ...input.poll() }
+          el.dispatchEvent(new KeyboardEvent('keyup', { code, bubbles: true }))
+          return { before, held, prevented: event.defaultPrevented, suspended: input.suspended }
+        }, code)
+        assert.equal(result.suspended, false)
+        assert.equal(result.prevented, false, `${code} retains native select behavior`)
+        assert.deepEqual(result.held, result.before, `${code} cannot drive, fire or toggle abilities`)
+      }
+      // A key begun outside the select must still be released inside it.
+      await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', {code:'ArrowUp'})))
+      assert.equal(await page.evaluate(() => syn3h.game.input.poll().y), 1)
+      await select.evaluate(el => el.dispatchEvent(new KeyboardEvent('keyup', {code:'ArrowUp',bubbles:true})))
+      assert.equal(await page.evaluate(() => syn3h.game.input.poll().y), 0)
+      await select.selectOption('Score')
+      await page.waitForFunction(() => syn3h.shell.audio.track === 'Score')
+    }
     await page.locator('.rail-close').click()
     await page.keyboard.press('Escape')
     assert.equal(await page.evaluate(() => syn3h.shell.menuOpen), false, 'Escape never returns to solar system')
+    assert.equal(await page.locator('.inspector-toggle').getAttribute('aria-pressed'), 'true')
+    await page.keyboard.press('Escape')
+    assert.equal(await page.locator('.inspector-toggle').getAttribute('aria-pressed'), 'false')
+    await page.keyboard.press('Escape')
     await page.locator('.exit-world').click()
     await page.waitForFunction(() => syn3h.shell.menuOpen)
     await page.waitForTimeout(700)
