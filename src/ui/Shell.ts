@@ -25,6 +25,7 @@ import { generateName } from './data/names'
 import { Minimap, type MapEntity } from './Minimap'
 import { bootLoading } from './LoadingScreen'
 import { renderHelp, touchHelp } from './VehicleHelp'
+import { PlayHints, type Hint } from './PlayHints'
 import type { VehicleKind } from '../vehicles'
 import './shell.css'
 
@@ -402,7 +403,7 @@ export class Shell implements System {
   showHelp(full = true): void {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!, touch = this.touch.available
     renderHelp(hint.querySelector('div')!, this.activeVehicleKind, touch, !full)
-    hint.classList.toggle('is-full', full)
+    hint.classList.toggle('is-full', full); hint.classList.remove('is-hint'); this.touch.highlight(null)
     hint.querySelector('small')!.textContent = touch ? '' : full ? 'H or ? to hide' : 'H: all controls'
     hint.hidden = false; clearTimeout(this.helpTimer); this.helpInput?.abort(); this.helpInput = undefined
     const hide = () => this.hideHelp()
@@ -418,7 +419,22 @@ export class Shell implements System {
   }
   private hideHelp(): void {
     clearTimeout(this.helpTimer); this.helpInput?.abort(); this.helpInput = undefined
+    this.touch.highlight(null)
     this.element.querySelector<HTMLElement>('.spawn-help')!.hidden = true
+  }
+  /**
+   * One line in the controls card for a player who seems stuck, for example pushing W on a
+   * parked jet. On touch the button it names pulses. Stays out of the way of the full list.
+   */
+  showHint(hint: Hint): void {
+    const card = this.element.querySelector<HTMLElement>('.spawn-help')!
+    if (!this.started || this.menuVisible || (!card.hidden && card.classList.contains('is-full'))) return
+    const line = document.createElement('div'); line.textContent = hint.text
+    card.querySelector('div')!.replaceChildren(line); card.querySelector('small')!.textContent = ''
+    card.classList.remove('is-full'); card.classList.add('is-hint'); card.hidden = false
+    this.touch.highlight(hint.touchAction ?? null)
+    clearTimeout(this.helpTimer); this.helpInput?.abort(); this.helpInput = undefined
+    this.helpTimer = setTimeout(() => this.hideHelp(), 5000)
   }
   private toggleHelp(): void {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!
@@ -483,14 +499,18 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
   const audio = new GameAudio(game.camera), shell = game.add(new Shell(game, audio))
   shell.setVehicleKind(player.kind); shell.setTerrain(terrain); audio.setPlayer(player,terrain)
   let activePlayer = player
-  const bridge = game.add({ update() {
+  const hints = new PlayHints()
+  const bridge = game.add({ update(dt = 0) {
     const v = activePlayer.body.linvel(), p = activePlayer.body.translation(), speed = Math.hypot(v.x, v.y, v.z)
     shell.setSpeed(speed)
     const q = activePlayer.body.rotation()
     const heading = Math.atan2(2 * (q.x * q.z + q.w * q.y), 1 - 2 * (q.x * q.x + q.y * q.y))
     shell.setMapSelf({ x: p.x, z: p.z, heading, color: activePlayer.colors.body, self: true })
     audio.motion = { speed, throttle: activePlayer.kind === 'jet' ? activePlayer.input.z : activePlayer.input.y, airborne: p.y - terrain.heightAt(p.x, p.z) > 2 }
+    const input = activePlayer.input
+    const hint = hints.update(dt, { kind: activePlayer.kind, touch: shell.touch.available, altitude: p.y - terrain.heightAt(p.x, p.z), speed, steer: input.x, pitch: input.y, throttle: input.z, hoverMode: !input.special })
+    if (hint) shell.showHint(hint)
   } })
   game.add(audio)
-  return { shell, audio, setPlayer(next) { activePlayer = next; audio.setPlayer(next,terrain); shell.setVehicleKind(next.kind) }, dispose() { game.remove(bridge); game.remove(shell); game.remove(audio) } }
+  return { shell, audio, setPlayer(next) { activePlayer = next; hints.reset(); audio.setPlayer(next,terrain); shell.setVehicleKind(next.kind) }, dispose() { game.remove(bridge); game.remove(shell); game.remove(audio) } }
 }
