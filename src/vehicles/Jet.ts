@@ -122,7 +122,9 @@ export class Jet extends Vehicle {
     }
     if(this.hoverMode){
       this.thruster.quaternion.identity()
-      if(this.input.z===0&&jetHoverHold.value>0){
+      // Not inside a zorb ball: the hold would thrust along the tumbling jet's up axis and carry
+      // the ball off sideways or into the air. Manual throttle still works there.
+      if(this.input.z===0&&jetHoverHold.value>0&&!this.zorbed){
         // Half throttle balances weight (hoverThrustFactor 2); tilt and vertical speed correct it.
         const hold=clamp(.5/Math.max(.3,up.y)-velocity.y*.15,0,1)
         // Fade the hold out near the ground. A jet resting on its gear (hull about 1.3 m up)

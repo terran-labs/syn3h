@@ -125,9 +125,10 @@ export class Tank extends Vehicle {
       this.body.addForceAtPoint(force,application,true)
     }
     this.wheelsGrounded=this.groundedTracks
-    // TankMe.js 26-40: recovery only when the overturned hull touches terrain.
-    if(up.y>Math.cos(35*Math.PI/180))this.bellyUp=false
-    if(up.y<Math.cos(130*Math.PI/180)&&speed*speed<20&&new THREE.Vector3().copy(this.body.angvel()).lengthSq()<5){
+    // TankMe.js 26-40: recovery only when the overturned hull touches terrain. TankMe.js 27
+    // skips it inside a zorb ball.
+    if(up.y>Math.cos(35*Math.PI/180)||this.zorbed)this.bellyUp=false
+    if(!this.zorbed&&up.y<Math.cos(130*Math.PI/180)&&speed*speed<20&&new THREE.Vector3().copy(this.body.angvel()).lengthSq()<5){
       const hit=this.game.world.castRay(new RAPIER.Ray(position,{x:0,y:-1,z:0}),1.8,true,RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,undefined,undefined,this.body)
       if(hit)this.bellyUp=true
     }

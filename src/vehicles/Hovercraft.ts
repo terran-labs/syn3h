@@ -99,6 +99,9 @@ export class Hovercraft extends Vehicle {
   protected applyForces(dt: number): void {
     if (this.body.isKinematic()) return
     this.configureChassis();this.unity.begin()
+    // Inside a zorb ball the craft rides passively. Its glide support, grip, drag and levelling
+    // damp the ball to a third of its speed, and the legacy 15 m hover would float the ball.
+    if(this.zorbed){this.wheelsGrounded=0;return}
     if(hoverAssist.value){this.applyGlide(dt);return}
     const q = new THREE.Quaternion().copy(this.body.rotation()), inv = q.clone().invert()
     const velocity = new THREE.Vector3().copy(this.body.linvel()), speed = velocity.length()
@@ -208,7 +211,7 @@ export class Hovercraft extends Vehicle {
     return clearance
   }
   override postPhysics(dt:number):void {
-    if(hoverAssist.value&&!this.body.isKinematic()){
+    if(hoverAssist.value&&!this.body.isKinematic()&&!this.zorbed){
       const p=new THREE.Vector3().copy(this.body.translation()),q=new THREE.Quaternion().copy(this.body.rotation())
       const clearance=this.hullClearance(p,q)
       if(clearance<.4){

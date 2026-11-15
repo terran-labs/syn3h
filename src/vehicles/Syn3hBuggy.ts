@@ -342,7 +342,9 @@ export class Syn3hBuggy extends Vehicle {
     const smoothed = this.inputSmoothed
 
     this.updateInput(dt, speedSq)
-    this.selfRight(dt, speedSq)
+    // Buggy.js 488 (Mars Explorer): no self righting inside a zorb ball.
+    if (this.zorbed) this.isInverted = false
+    else this.selfRight(dt, speedSq)
 
     let wheelsAreTouchingGround = false
     this.totalSuspensionCompression = 0
