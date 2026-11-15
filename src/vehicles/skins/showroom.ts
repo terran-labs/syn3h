@@ -8,7 +8,7 @@
  *
  * Cost is tiered through `gfx.vehicleShading` (see `core/quality.ts`):
  *   0  the plain materials the vehicle was built with, unchanged
- *   1  scales, knurl and tread as lit bump detail on a standard material, and the
+ *   1  scales, knurl, tread and track lugs as lit bump detail on a standard material, and the
  *      cockpit canopy as a plain force field
  *   2  adds the clear coat and the lattice on the force field canopy
  *   3  adds metal flakes and the colour flip
@@ -20,7 +20,7 @@ import * as T from 'three/webgpu'
 import {
   Fn, abs, atan, attribute, clamp, cross, dFdx, dFdy, dot, faceDirection, float, floor, fract, fwidth, length,
   max, mix, mod, normalLocal, normalView, normalize, positionLocal, positionView, positionViewDirection,
-  select, sign, sin, smoothstep, time, uniform, vec2, vec3,
+  select, sign, sin, smoothstep, time, uniform, uv, vec2, vec3,
 } from 'three/tsl'
 import { defineParam, params } from '../../../shared/params'
 import { vehicleShading } from '../../core/quality'
@@ -52,7 +52,7 @@ let controls: { size: N; depth: N; seams: N; flakes: N } | null = null
 const paintControls = () => controls ??= { size: live(paintScaleSize), depth: live(paintScaleDepth), seams: live(paintSeams), flakes: live(paintFlakes) }
 
 /** `canopy` is the shared force field. `glass` is the first version's reflective canopy, kept until each vehicle moves over. */
-export type SurfaceRole = 'paint' | 'accent' | 'chrome' | 'frame' | 'canopy' | 'glass' | 'glow' | 'tyre' | 'lamp' | 'trim'
+export type SurfaceRole = 'paint' | 'accent' | 'chrome' | 'frame' | 'canopy' | 'glass' | 'glow' | 'tyre' | 'track' | 'lamp' | 'trim'
 export type ShadingTier = 0 | 1 | 2 | 3
 
 /** Tag a source material with what it represents. Untagged materials are inferred or left as trim. */
@@ -93,6 +93,8 @@ const LOOK: Record<SurfaceRole, Look> = {
   glass: { roughness: .05, metalness: .2, coat: 1, cell: 0, relief: 0, lean: 0 },
   canopy: { roughness: .05, metalness: .2, coat: 1, cell: 0, relief: 0, lean: 0 },
   tyre: { roughness: .86, metalness: 0, coat: 0, cell: 0, relief: 0, lean: 0 },
+  // A rubber belt; its lugs are TRACK_LUGS below.
+  track: { roughness: .84, metalness: 0, coat: 0, cell: 0, relief: 0, lean: 0 },
   lamp: { roughness: .3, metalness: 0, coat: 0, cell: 0, relief: 0, lean: 0 },
   trim: { roughness: .5, metalness: .3, coat: 0, cell: 0, relief: 0, lean: 0 },
 }
@@ -108,6 +110,8 @@ export function roleOf(material: T.Material, meshName = ''): SurfaceRole {
   const name = `${meshName} ${material.name}`
   if (/cockpit|canopy|glass/i.test(name)) return 'glass'
   if (/chrome|silver|spoiler/i.test(name)) return 'chrome'
+  // Before tyre: a "rubber belt" is a track.
+  if (/tread|track|belt/i.test(name)) return 'track'
   if (/tire|tyre|rubber/i.test(name)) return 'tyre'
   if (/headlight|tail ?light|lamp/i.test(name)) return 'lamp'
   if (/accent/i.test(name)) return 'trim'
@@ -166,6 +170,46 @@ function tyreHeight(): N {
 }
 
 /**
+ * The lug pattern of the `track` role: chevron lugs moulded across a rubber belt. The role owns
+ * these, not the vehicle, so every tracked vehicle reads as the same make of track.
+ *   pitch    metres from one lug to the next, along the belt
+ *   depth    metres of relief
+ *   chevron  degrees the lug arms sweep back from straight across, toward +v
+ *   fill     fraction of the pitch the lug's top covers
+ *   width    belt width in metres, used only to turn the chevron angle into a sweep across a
+ *            0 to 1 u. A vehicle may give its own with `material.userData.trackWidth`.
+ */
+export const TRACK_LUGS = { pitch: .16, depth: .022, chevron: 28, fill: .42, width: .6 } as const
+
+/**
+ * Track lug relief from the belt's own coordinates: `uv` u runs across the belt 0 to 1, v along
+ * it in metres. `scroll` is how far the belt has moved, in metres: the lugs sit at v - scroll, so
+ * a positive scroll carries them toward +v. Returns the height in metres and `fade`, which falls
+ * from 1 to 0 as the lug pitch shrinks from about seven pixels to three, so a distant track is
+ * plain rubber rather than a shimmer. `raised` is 1 on a lug and 0 in the gap between.
+ */
+function trackHeight(scroll: N, width: number): { height: N; raised: N; fade: N } {
+  const { pitch, depth, chevron, fill } = TRACK_LUGS
+  const across = uv().x, along = uv().y.sub(scroll)
+  // Lug phase: the arms sweep back from the centre line by the chevron angle.
+  const sweep = width * Math.tan(chevron * Math.PI / 180)
+  const phase = along.add(abs(across.sub(.5)).mul(sweep)).div(pitch)
+  const half = fill * .5
+  // Sloped walls, a flat top, and a plain margin along both edges of the belt.
+  const raised = smoothstep(half + .07, half - .03, abs(fract(phase).sub(.5)))
+    .mul(smoothstep(0, .06, across)).mul(smoothstep(1, .94, across))
+  // The relief lives in the lug walls, a tenth of the pitch, so it fades sooner than the
+  // scales do: full down to about seven pixels per lug, gone at about three.
+  const fade = smoothstep(.35, .15, fwidth(phase))
+  return { height: raised.mul(depth).mul(fade), raised, fade }
+}
+/** A scroll value wrapped to one lug pitch, which is exact for the pattern and keeps float precision. */
+export function wrapTrackScroll(metres: number): number {
+  const p = TRACK_LUGS.pitch, r = metres % p
+  return r < 0 ? r + p : r
+}
+
+/**
  * Bump a view space normal from a height in metres. Mikkelsen's surface gradient method, as in
  * three's BumpMapNode, but with true screen derivatives of a procedural height so the relief
  * keeps its physical depth at any zoom.
@@ -189,7 +233,7 @@ const hash3 = Fn(([c]: [N]) => fract(sin(vec3(dot(c, vec3(127.1, 311.7, 74.7)), 
  * emission node the mesh's material already had, if any: a skin may add its own glow to it after
  * merging (the Syn3h stator tips do), and every tier must keep that.
  */
-function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, meshName: string, authoredEmission: N | null, accent: T.Color | null): T.Material {
+function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, meshName: string, authoredEmission: N | null, accent: T.Color | null, instancedScroll = false): T.Material {
   const roles = sources.map(s => roleOf(s, meshName))
   // The cockpit canopy is its own draw (see `separate` in mergeStatic), so it can blend.
   if (!merged && (roles[0] === 'canopy' || (roles[0] === 'glass' && paintCanopy.value))) return buildCanopy(sources[0], tier, accent)
@@ -208,6 +252,8 @@ function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, m
   let coat: N = float(0), coatRoughness: N = float(0), height: N = float(0), flake: N = float(0), flip: N = float(0)
   // 1 everywhere except in the seams between scales.
   let lit: N = float(1)
+  // Shading for track lug gaps, 1 elsewhere. Built once however many sources are tracks.
+  let groove: N = float(1), track: { height: N; raised: N; fade: N } | null = null
   const heights = new Map<string, N>(), scales = new Map<string, ScaleField>()
   sources.forEach((source, i) => {
     const role = roles[i], look = LOOK[role]
@@ -231,6 +277,24 @@ function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, m
       const key = 'tyre'
       if (!heights.has(key)) heights.set(key, tyreHeight())
       height = height.add(heights.get(key).mul(mask))
+    } else if (role === 'track') {
+      if (!track) {
+        // Per object by default: a uniform refreshed from `userData.trackScroll` as each mesh
+        // draws, so treads at different speeds share this material. With `instancedScroll`, a
+        // per-instance `trackScroll` attribute instead, so many treads can be one instanced draw.
+        const scroll: N = instancedScroll
+          ? mod(attribute<'float'>('trackScroll', 'float'), TRACK_LUGS.pitch)
+          : uniform(0).onObjectUpdate(({ object }) => wrapTrackScroll(Number(object?.userData.trackScroll ?? 0)))
+        material.userData.trackScrollNode = scroll
+        material.userData.instancedScroll = instancedScroll
+        track = trackHeight(scroll, Number(source.userData.trackWidth ?? TRACK_LUGS.width))
+        heights.set('track', track.height)
+      }
+      height = height.add(track.height.mul(mask))
+      // Gaps between lugs a shade darker; past the fade, the pattern's average.
+      groove = groove.sub(float(1).sub(mix(.92, mix(.78, 1, track.raised), track.fade)).mul(mask))
+      // Lugs too small to resolve still scatter light: a little rougher, as the scales do.
+      roughness = roughness.add(float(1).sub(track.fade).mul(.08).mul(mask))
     } else if (look.cell > 0) {
       const key = `${look.cell}`
       if (!scales.has(key)) { const field = scaleHeight(look.cell, look.relief, look.lean); scales.set(key, field); heights.set(key, field.height) }
@@ -264,6 +328,7 @@ function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, m
     // pattern reads as bright wire instead of dark seams between scales.
     material.aoNode = mix(float(1).sub(seams.mul(.9)), 1, lit)
   }
+  if (track) color = color.mul(groove)
   material.colorNode = color
   material.emissiveNode = authoredEmission ?? emission
   material.roughnessNode = clamp(roughness, .04, 1)
@@ -392,6 +457,16 @@ function buildGlass(source: Standard): T.Material {
   return material
 }
 
+/**
+ * Whether a mesh's `track` surfaces read their scroll per instance: when its material sets
+ * `userData.instancedScroll = true`, or its geometry carries a `trackScroll` attribute. Either
+ * way the attribute must be an InstancedBufferAttribute of one float per instance. Without it
+ * the scroll is `mesh.userData.trackScroll`.
+ */
+function scrolls(mesh: T.Mesh, source: Standard): boolean {
+  return source.userData.instancedScroll === true || mesh.geometry.hasAttribute('trackScroll')
+}
+
 /** Runs the shared night and lava passes over whatever materials the meshes currently hold. */
 export type Decorate = (root: T.Object3D) => void
 
@@ -417,13 +492,15 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
     let set = tiers[tier]
     if (set) for (const e of entries) e.mesh.material = set.get(e.mesh)!
     else {
-      const cache = new Map<T.Material, T.Material>()
+      // Keyed by source, and apart for meshes that scroll a track per instance (see `scrolls`).
+      const cache = new Map<T.Material, T.Material>(), instancedCache = new Map<T.Material, T.Material>()
       for (const e of entries) {
-        let variant = tier === 0 ? e.source : cache.get(e.source)
+        const instanced = scrolls(e.mesh, e.source), shared = instanced ? instancedCache : cache
+        let variant = tier === 0 ? e.source : shared.get(e.source)
         if (!variant) {
           const packed = mergedSurfaces.get(e.source)
-          variant = build(packed ?? [e.source], Boolean(packed), tier as 1 | 2 | 3, e.mesh.name, authored.get(e.source) ?? null, accent)
-          cache.set(e.source, variant); built.add(variant)
+          variant = build(packed ?? [e.source], Boolean(packed), tier as 1 | 2 | 3, e.mesh.name, authored.get(e.source) ?? null, accent, instanced)
+          shared.set(e.source, variant); built.add(variant)
         }
         e.mesh.material = variant
       }
