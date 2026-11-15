@@ -135,6 +135,8 @@ const CONTACT_DIST = 0.05
 const RAM_REPEAT = 0.5
 /** Heartbeat interval for a hidden tab, ms. Browsers allow about one timer a second there. */
 const HEARTBEAT_MS = 1000
+/** A gap this long since our last frame means our main thread, not the network, was slow. */
+const LOCAL_STALL_MS = 250
 
 // Every vehicle kind the game can build must be one the server accepts.
 type KindsCovered = VehicleKind extends WireVehicleKind ? true : false
@@ -174,6 +176,10 @@ export class NetClient implements System {
   private pingTimer = 0
   private pingsSent = 0
   private lastFire = -Infinity
+  /** performance.now() at the start of the latest frame, to spot local main thread stalls. */
+  private frameAt = 0
+  /** Until this performance.now(), states are still the backlog of a stall the frame loop saw. */
+  private stallUntil = 0
   private heartbeat: ReturnType<typeof setInterval> | null = null
   private readonly marker: TagMarker
   private readonly bounds: BoundsGuard
@@ -377,6 +383,11 @@ export class NetClient implements System {
   }
 
   update(dt: number): void {
+    const frameAt = performance.now()
+    // After a long task the browser often renders before it delivers the queued messages, so
+    // the gap check in onState alone misses them: also distrust the next moment after a gap.
+    if (frameAt - this.frameAt > LOCAL_STALL_MS) this.stallUntil = frameAt + LOCAL_STALL_MS
+    this.frameAt = frameAt
     this.pingTimer -= dt
     if (this.conn.state === 'open' && this.pingTimer <= 0) {
       // Quick pings at first to sync the clock, then a slow heartbeat.
@@ -682,7 +693,11 @@ export class NetClient implements System {
     const info = this.players.get(s.id)
     if (!info) return
     const r = this.remotes.get(s.id) ?? this.spawnRemote(info, s)
-    r.push(s, this.clock.now(), netSendRate.value)
+    // A state handled long after our last frame waited behind a local stall (terrain rebuild,
+    // shader compile, a hidden tab): its age says nothing about the network.
+    const at = performance.now()
+    const measure = at - this.frameAt < LOCAL_STALL_MS && at > this.stallUntil
+    r.push(s, this.clock.now(), netSendRate.value, measure)
     this.stats.statesReceived++
   }
 

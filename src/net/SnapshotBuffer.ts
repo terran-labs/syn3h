@@ -21,6 +21,11 @@ export interface Snapshot {
   paused?: boolean
 }
 
+/** The most one state can move the jitter estimate, seconds. A single late state (a Wi-Fi
+ * hiccup, a garbage collection pause) must not make every remote vehicle lag by half a second
+ * for the next twenty; sustained jitter still raises the estimate to its true size. */
+export const JITTER_SAMPLE_CAP = 0.1
+
 /** How long a paused player may go between heartbeats before counting as gone. Chrome
  * throttles timers in long hidden tabs to once a minute, so this is generous. */
 export const PAUSE_TOLERANCE = 75
@@ -68,17 +73,23 @@ export class SnapshotBuffer {
    * Add a state. `now` is server seconds at arrival, `sendRate` the sender's rate, which sets
    * how quickly the ping and jitter estimates follow (VehicleNet.js 189-191).
    * Returns false for a state older than one already held.
+   *
+   * `measure` false stores the state without updating ping and jitter. The caller passes that
+   * when its own main thread was stalled: states queued behind a long local frame arrive late
+   * through no fault of the network, and counting them once sent the delay to 790 ms after a
+   * 1.5 s stall, taking 20 s to recover.
    */
-  push(s: Snapshot, now: number, sendRate = 20): boolean {
+  push(s: Snapshot, now: number, sendRate = 20, measure = true): boolean {
     const head = this.states[0]
     if (head && s.t <= head.t) return false
     const age = now - s.t
     if (!head) {
       this.ping = age
-    } else {
+    } else if (measure) {
       const k = Math.min(1, 1 / sendRate)
-      this.jitter += (Math.abs(this.ping - age) - this.jitter) * k
-      this.ping += (age - this.ping) * k
+      const dev = Math.min(JITTER_SAMPLE_CAP, Math.abs(this.ping - age))
+      this.jitter += (dev - this.jitter) * k
+      this.ping += (Math.min(age, this.ping + JITTER_SAMPLE_CAP) - this.ping) * k
     }
     this.states.unshift(s)
     if (this.states.length > this.capacity) this.states.pop()
