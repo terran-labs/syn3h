@@ -180,6 +180,29 @@ export function swingStep(axis: SwingAxis, dt: number, held: boolean, low = -Inf
   if (Math.abs(view - aim) < SWING.rest * 0.1 && Math.abs(viewSpeed) < SWING.still) { view = aim; viewSpeed = 0 }
   return { aim, aimSpeed, view, viewSpeed }
 }
+/**
+ * The resting view. Left alone for a few seconds, the view tilts very slowly to look down on
+ * the system from a little above its plane, where every orbit reads as an ellipse and no world
+ * hides another for long. Any touch, key, wheel or stick ends it at once, from wherever it is.
+ */
+export const REST = {
+  /** Seconds without input before the view starts to settle. */
+  after: 4,
+  /** The tilt it settles at: about twenty degrees above the orbital plane. */
+  pitch: 20 * Math.PI / 180,
+  /** Seconds for the remaining tilt to fall by e: slow enough to read as drifting, not moving. */
+  ease: 5,
+} as const
+/**
+ * The tilt after dt seconds, given how long the view has been left alone. Before REST.after it
+ * is untouched; after, it closes on the resting tilt exponentially (exact at any frame rate)
+ * and lands on it exactly, so the lobby can go idle.
+ */
+export function restStep(pitch: number, idle: number, dt: number, rest: { after: number; pitch: number; ease: number } = REST): number {
+  if (idle < rest.after || pitch === rest.pitch) return pitch
+  const next = rest.pitch + (pitch - rest.pitch) * Math.exp(-Math.max(0, dt) / rest.ease)
+  return Math.abs(next - rest.pitch) < 2e-4 ? rest.pitch : next
+}
 /** Nothing left moving on this axis. */
 export const swingResting = (axis: SwingAxis) => axis.aimSpeed === 0 && axis.viewSpeed === 0 && axis.view === axis.aim
 /**
@@ -490,7 +513,8 @@ export class Galaxy {
   idle = 0
   // The view: an orbit round a point, which is the sun until a world is chosen.
   private yaw = 0.6
-  private pitch = 0.5
+  /** The first view is the resting view, so nothing has to move to reach it (reduced motion never moves by itself). */
+  private pitch: number = REST.pitch
   private framed = false
   /**
    * How bright the galaxy is: 1 as the lobby, lower as the backdrop of an open panel, so
@@ -505,7 +529,11 @@ export class Galaxy {
   private target: Vec = [0, 0, 0]
   /** The view's turn and tilt under the finger: see SWING. this.yaw and this.pitch are what is shown. */
   private swingYaw: SwingAxis = { aim: 0.6, aimSpeed: 0, view: 0.6, viewSpeed: 0 }
-  private swingPitch: SwingAxis = { aim: 0.5, aimSpeed: 0, view: 0.5, viewSpeed: 0 }
+  private swingPitch: SwingAxis = { aim: REST.pitch, aimSpeed: 0, view: REST.pitch, viewSpeed: 0 }
+  /** When the view was last handled (a pointer, key, wheel or stick, or a world chosen or left), on the frame clock. */
+  private handled = performance.now()
+  /** True while the view is settling to its resting tilt: frames are still owed. */
+  private resting = false
   /** The finger's unstretched tilt during a drag, and how fast it and the turn are moving. */
   private pull = { pitch: 0, yaw: 0 }
   /** The finger's recent unstretched turn and tilt, for its speed at release. */
@@ -586,10 +614,12 @@ export class Galaxy {
     if (value === this.active) return
     this.active = value
     this.syncPresence()
-    if (value) this.acquire(); else this.release()
+    // Each showing of the lobby fades the logo in afresh (a context restore, below, does not),
+    // and counts as handling the view, so the resting tilt waits its few seconds again.
+    if (value) { this.logoSeen = false; this.handled = performance.now(); this.acquire() } else this.release()
   }
   /** Back out to the whole system, for example after returning from a world's panel. */
-  home(): void { this.wake = 2; this.chosen = -1; this.arriving = 0; this.arrived = false; this.diving = false; this.dive = 0; this.flight = undefined; this.flightDone = false; this.blur = 0 }
+  home(): void { this.handled = performance.now(); this.wake = 2; this.chosen = -1; this.arriving = 0; this.arrived = false; this.diving = false; this.dive = 0; this.flight = undefined; this.flightDone = false; this.blur = 0 }
   /** The descent: fall toward a world until its air fills the view. Resolves when it has. `quick` for a player who has seen it. */
   descend(id: string, quick = false): Promise<void> {
     if (!this.gl) return Promise.resolve()
@@ -658,7 +688,7 @@ export class Galaxy {
     canvas.addEventListener('pointerdown', event => this.down(event), options)
     canvas.addEventListener('pointermove', event => this.move(event), options)
     for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, event => this.up(event, type === 'pointerup'), options)
-    canvas.addEventListener('wheel', event => { event.preventDefault(); this.wake = 2; if (this.chosen < 0) this.distance = Math.min(26, Math.max(6, this.distance * Math.exp(event.deltaY * 0.0012))) }, { signal, passive: false })
+    canvas.addEventListener('wheel', event => { event.preventDefault(); this.handled = performance.now(); this.wake = 2; if (this.chosen < 0) this.distance = Math.min(26, Math.max(6, this.distance * Math.exp(event.deltaY * 0.0012))) }, { signal, passive: false })
     // Held upright, a phone has height to spare and no width: look down more steeply so the
     // orbits open out into the height. Only for the first view; after that the player's stands.
     if (!this.framed) { this.framed = true; if (this.host.clientHeight > this.host.clientWidth * 1.2) this.pitch = 0.85 }
@@ -826,7 +856,7 @@ export class Galaxy {
     this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], perFrame(0.18, elapsed)) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
     // Held still, draw only while something is moving; the last frame stays on the canvas.
-    const moving = framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
+    const moving = this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
     if (still && !moving && this.wake <= 0) { this.idle++; return }
     this.wake = Math.max(0, this.wake - 1)
     gl.useProgram(this.program); this.upload(gl); gl.uniform1i(u.uCloseIndex, this.closeIndex)
@@ -854,6 +884,8 @@ export class Galaxy {
     if (logo && layout) {
       const budget = logoBudget(layout.level), held = this.reduced.matches || budget.still || this.backdrop < 1
       if (held) logo.skipIntro()
+      // Behind the loading veil the logo waits at nothing: its fade starts as the veil lifts.
+      else if (document.documentElement.dataset.boot === 'loading') logo.replayIntro()
       logo.setLook({ particles: Math.round(budget.particles * (1 - qualityShed(1) * 0.65)), sway: held ? 0 : 0.07, opacity: 1 - this.dive })
       const sx = this.canvas.width / this.host.clientWidth, sy = this.canvas.height / this.host.clientHeight, box = layout.box
       logo.draw(held ? STILL_SECONDS : time, { x: box.x * sx, y: box.y * sy, width: box.width * sx, height: box.height * sy })
@@ -872,7 +904,7 @@ export class Galaxy {
   }
   private screen: { id: string; x: number; y: number; radius: number; visible: boolean; depth: number }[] = []
   /** Fly to a world, as a tap on it does. */
-  choose(id: string): void {
+  choose(id: string): void { this.handled = performance.now();
     this.wake = 2; const index = this.options.worlds.findIndex(world => world.id === id)
     if (index < 0 || index >= MAX) return
     // Without a context there is no flight to wait for: arrive at once.
@@ -889,7 +921,7 @@ export class Galaxy {
   private focusIndex = -1
   /** The view controls are active only on the unobstructed galaxy. */
   private get controllable(): boolean { return this.active && this.backdrop === 1 && !this.flight && this.chosen < 0 }
-  private orbit(x: number, y: number, zoom: number): void {
+  private orbit(x: number, y: number, zoom: number): void { this.handled = performance.now();
     // Keys and sticks move the aim; the view eases after it as it does after a finger.
     this.wake = 2; this.adopt()
     const yaw = this.swingYaw, pitch = this.swingPitch
@@ -920,6 +952,14 @@ export class Galaxy {
     // Left alone, the view drifts very slowly round, aim and view together.
     if (drift) { const turn = 0.018 * Math.min(0.1, elapsed); this.swingYaw.aim += turn; this.swingYaw.view += turn }
     const dt = Math.min(0.25, elapsed), held = this.drag !== null
+    // Left alone on the whole system, the tilt settles to the resting view: aim and view
+    // together, as the drift moves them, so the spring stays at rest and nothing fights.
+    // Never under reduced motion, never round a chosen world, never while anything else moves.
+    this.resting = false
+    if (!this.reduced.matches && this.chosen < 0 && !this.flight && !held && this.pointers.size === 0 && this.backdrop === 1 && this.swingResting) {
+      const tilt = restStep(this.swingPitch.view, (performance.now() - this.handled) / 1000, dt)
+      if (tilt !== this.swingPitch.view) { this.swingPitch.aim = this.swingPitch.view = tilt; this.resting = true }
+    }
     if (this.reduced.matches) {
       // No spring, coast or stretch: the view is where the finger or key put it, within limits.
       const pitch = Math.min(PITCH_HIGH, Math.max(PITCH_LOW, this.swingPitch.aim))
@@ -967,7 +1007,7 @@ export class Galaxy {
     }
     this.padButtons = buttons
   }
-  private down(event: PointerEvent): void {
+  private down(event: PointerEvent): void { this.handled = performance.now();
     this.canvas.setPointerCapture(event.pointerId); this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
     if (this.pointers.size === 1) {
       // A finger stops a coast where it is, and picks up a stretched tilt where it shows.
@@ -981,7 +1021,8 @@ export class Galaxy {
   }
   private move(event: PointerEvent): void {
     const point = this.pointers.get(event.pointerId); if (!point) return
-    this.wake = 2
+    // A pointer that is down, not one merely passing over, counts as handling the view.
+    this.wake = 2; this.handled = performance.now()
     const dx = event.clientX - point.x, dy = event.clientY - point.y; point.x = event.clientX; point.y = event.clientY
     if (this.pointers.size === 2) {
       const [a, b] = [...this.pointers.values()], gap = Math.hypot(a.x - b.x, a.y - b.y)
@@ -1000,7 +1041,7 @@ export class Galaxy {
     if (this.reduced.matches) this.pull.pitch = Math.min(PITCH_HIGH, Math.max(PITCH_LOW, this.pull.pitch))
     pitch.aim = softLimit(this.pull.pitch, PITCH_LOW, PITCH_HIGH)
   }
-  private up(event: PointerEvent, tap: boolean): void {
+  private up(event: PointerEvent, tap: boolean): void { this.handled = performance.now();
     this.pointers.delete(event.pointerId)
     const drag = this.drag; if (!drag || drag.id !== event.pointerId) return
     this.drag = null
