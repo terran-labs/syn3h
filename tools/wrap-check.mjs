@@ -14,6 +14,7 @@
  *   PORT=8791 npm run server
  *   SYN3H_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://localhost:8794 npx vite --port 5183 --strictPort
  *   node tools/wrap-check.mjs
+ *   node tools/wrap-check.mjs https://www.syn3h.com/ --direct
  */
 import { spawn } from 'node:child_process'
 import { chromium } from 'playwright-core'
@@ -21,10 +22,10 @@ import { chromium } from 'playwright-core'
 const base = process.argv[2] ?? 'http://localhost:5183/'
 const WORLD = 'alpine.7~terrain.planetSize=0,world.curve=0.8'
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
-const proxy = spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'server/latency-proxy.ts', '--listen', '8794', '--target', 'http://127.0.0.1:8791', '--rtt', '40'], { stdio: 'ignore' })
+const proxy = process.argv.includes('--direct') ? null : spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'server/latency-proxy.ts', '--listen', '8794', '--target', 'http://127.0.0.1:8791', '--rtt', '40'], { stdio: 'ignore' })
 let finished = false
-proxy.on('exit', (code) => { if (!finished) { console.error(`latency proxy exited early (code ${code}); is port 8794 in use?`); process.exit(3) } })
-await wait(3000)
+proxy?.on('exit', (code) => { if (!finished) { console.error(`latency proxy exited early (code ${code}); is port 8794 in use?`); process.exit(3) } })
+if (proxy) await wait(3000)
 const room = `wrap${Date.now() % 100000}`
 const browsers = []
 const errors = []
@@ -215,7 +216,7 @@ try {
 } finally {
   finished = true
   await Promise.all(browsers.map((b) => b.close()))
-  proxy.kill()
+  proxy?.kill()
 }
 const ok = results.length >= 12 && results.every(Boolean)
 console.log(ok ? 'WRAP CHECK OK, screenshot /tmp/syn3h-wrap-cross.png' : 'WRAP CHECK FAILED')
