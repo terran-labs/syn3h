@@ -3,20 +3,23 @@ import { Vector3 } from 'three/webgpu'
 import { curveDrop, curveFactor, curveOffset, curveParam, curveRadius, planetRadius, updateCurve } from '../../src/world/curve'
 
 const SIZE = 2048
-const R = SIZE / (2 * Math.PI)
+const R = SIZE / (2 * Math.sqrt(Math.PI))
 
 describe('planet radius', () => {
-  it('is the radius of the sphere whose circumference is the world tile', () => {
+  it('is the radius of the sphere with the same surface area as the world tile', () => {
     expect(planetRadius(SIZE)).toBeCloseTo(R, 9)
-    expect(2 * Math.PI * planetRadius(4096)).toBeCloseTo(4096, 6)
+    expect(4 * Math.PI * planetRadius(4096) ** 2).toBeCloseTo(4096 * 4096, 3)
     expect(curveRadius(SIZE, 1)).toBeCloseTo(R, 9)
+    // Every point of the tile fits on the near side of the far pole, corners included.
+    expect(SIZE * Math.SQRT1_2).toBeLessThan(Math.PI * R)
   })
-  it('is flat at 0 and flatter than true below 1', () => {
+  it('is flat at 0, flatter than true below 1, and the tile-circumference ball at sqrt(pi)', () => {
     expect(curveRadius(SIZE, 0)).toBe(Infinity)
     expect(curveRadius(SIZE, NaN)).toBe(Infinity)
     expect(curveRadius(SIZE, 0.5)).toBeCloseTo(2 * R, 9)
+    expect(2 * Math.PI * curveRadius(SIZE, Math.sqrt(Math.PI))).toBeCloseTo(SIZE, 6)
     // Drawn larger than true by default, so the centre's mountain shows from the spawn pads.
-    expect(curveParam.def.default).toBe(0.4)
+    expect(curveParam.def.default).toBe(0.71)
   })
 })
 
@@ -44,11 +47,12 @@ describe('sphere mapping', () => {
       expect(Math.atan2(pz, px)).toBeCloseTo(Math.atan2(z, x), 9)
     }
     // Under the camera nothing moves; a quarter of the way round the ground is one radius down.
+    const QUARTER = (Math.PI / 2) * R
     expect(curveDrop(0, 0)).toBeCloseTo(0, 9)
-    expect(curveDrop(SIZE / 4, 0)).toBeCloseTo(R, 6)
+    expect(curveDrop(QUARTER, 0)).toBeCloseTo(R, 6)
     // Half way round, and anything beyond, is the far pole.
-    expect(curveDrop(SIZE / 2, 0)).toBeCloseTo(2 * R, 6)
-    expect(curveDrop(SIZE * 0.7, 0)).toBeCloseTo(2 * R, 6)
+    expect(curveDrop(Math.PI * R, 0)).toBeCloseTo(2 * R, 6)
+    expect(curveDrop(SIZE, 0)).toBeCloseTo(2 * R, 6)
     curveParam.value = curveParam.def.default
   })
 })

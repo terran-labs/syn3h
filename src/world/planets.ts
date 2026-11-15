@@ -36,7 +36,7 @@ export type IslandSize = keyof typeof ISLAND_SIZES
 
 const MARS: Record<string, ParamValue> = {
   ...SKY_PRESETS['Mars day'],
-  'terrain.kind': 0, 'world.seaKind': 0, 'world.lavaAltitude': 0,
+  'terrain.kind': 0, 'terrain.look': 0, 'world.seaKind': 0, 'world.lavaAltitude': 0,
   'terrain.islandRadius': 800, 'terrain.coastWobble': 0.2,
   'terrain.volcanoHeight': 540, 'terrain.volcanoRadius': 360, 'terrain.calderaSize': 62,
   'terrain.mesaHeight': 120, 'terrain.cragDensity': 0.34, 'terrain.spireHeight': 190,
@@ -57,7 +57,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
     values: {
       ...planetWeather('desert'),
       ...SKY_PRESETS['Earthlike'], 'sky.turbidity': 5, 'weather.cloudCoverage': 0.12, 'weather.fogDensity': 0.00022,
-      'terrain.kind': 1, 'world.seaKind': 1, 'world.lavaAltitude': 0,
+      'terrain.kind': 1, 'terrain.look': 1, 'world.seaKind': 1, 'world.lavaAltitude': 0,
       'terrain.islandRadius': 800, 'terrain.coastWobble': 0.26,
       'terrain.volcanoHeight': 230, 'terrain.volcanoRadius': 420, 'terrain.calderaSize': 70, 'terrain.treeCover': 0,
       'terrain.mesaHeight': 95, 'terrain.cragDensity': 0.22, 'terrain.spireHeight': 120,
@@ -71,14 +71,112 @@ export const PLANETS: readonly PlanetRecipe[] = [
     values: {
       ...planetWeather('alpine'),
       ...SKY_PRESETS['Earthlike'], 'weather.cloudCoverage': 0.45, 'weather.fogDensity': 0.0003,
-      'terrain.kind': 2, 'world.seaKind': 1, 'world.lavaAltitude': 0,
+      'terrain.kind': 2, 'terrain.look': 2, 'terrain.snowLine': 0.36, 'world.seaKind': 1, 'world.lavaAltitude': 0,
       'terrain.islandRadius': 800, 'terrain.coastWobble': 0.3,
       'terrain.volcanoHeight': 600, 'terrain.volcanoRadius': 380, 'terrain.calderaSize': 55,
       'terrain.mesaHeight': 330, 'terrain.cragDensity': 0.56, 'terrain.spireHeight': 0,
       'terrain.duneHeight': 0, 'terrain.roughness': 0.5, 'terrain.treeCover': 0,
     },
   },
+  {
+    id: 'archipelago', label: 'Archipelago', centre: 'A low green mesa over a turquoise lagoon',
+    blurb: 'A small world of sandy islands in turquoise shallows. Bring a hovercraft or a jet.',
+    swatch: [0xa6c95e, 0x58ecd8],
+    values: {
+      ...SKY_PRESETS['Earthlike'], 'weather.cloudCoverage': 0.3, 'weather.fogDensity': 0.00016,
+      'terrain.kind': 1, 'terrain.look': 3, 'world.seaKind': 1, 'world.lavaAltitude': 0,
+      'terrain.planetSize': 0, 'terrain.landShare': 0.3,
+      'terrain.islandRadius': 640, 'terrain.coastWobble': 0.35,
+      'terrain.volcanoHeight': 150, 'terrain.volcanoRadius': 300, 'terrain.calderaSize': 80,
+      'terrain.mesaHeight': 34, 'terrain.cragDensity': 0.14, 'terrain.spireHeight': 0,
+      'terrain.duneHeight': 3, 'terrain.roughness': 0.25, 'terrain.treeCover': 0,
+    },
+  },
+  {
+    id: 'ice', label: 'Ice moon', centre: 'A frozen horn with a tarn at its summit',
+    blurb: 'Blue-white ice plains and pale cliffs over a dark, cold sea, under a violet dusk.',
+    swatch: [0xd6e8f4, 0x1f5f8a],
+    values: {
+      ...SKY_PRESETS['Violet dusk'], 'weather.cloudCoverage': 0.2, 'sun.timeOfDay': 16.6,
+      'terrain.kind': 2, 'terrain.look': 4, 'terrain.snowLine': 0.03, 'world.seaKind': 1, 'world.lavaAltitude': 0,
+      'terrain.islandRadius': 800, 'terrain.coastWobble': 0.24,
+      'terrain.volcanoHeight': 520, 'terrain.volcanoRadius': 400, 'terrain.calderaSize': 70,
+      'terrain.mesaHeight': 240, 'terrain.cragDensity': 0.4, 'terrain.spireHeight': 90,
+      'terrain.duneHeight': 2, 'terrain.roughness': 0.45, 'terrain.treeCover': 0,
+      'terrain.groundCover': 0,
+    },
+  },
+  {
+    id: 'obsidian', label: 'Obsidian', centre: 'A glass volcano ringed by giant shards',
+    blurb: 'Black glass and needle spires veined with magenta, standing in a sea of lava.',
+    swatch: [0x262130, 0xff5a1a],
+    values: {
+      ...SKY_PRESETS['Violet dusk'], 'weather.cloudCoverage': 0.12, 'sun.timeOfDay': 16.3,
+      'terrain.kind': 0, 'terrain.look': 5, 'world.seaKind': 0, 'world.lavaAltitude': 0,
+      'terrain.islandRadius': 800, 'terrain.coastWobble': 0.28,
+      'terrain.volcanoHeight': 600, 'terrain.volcanoRadius': 330, 'terrain.calderaSize': 62,
+      'terrain.mesaHeight': 150, 'terrain.cragDensity': 0.3, 'terrain.spireHeight': 300,
+      'terrain.duneHeight': 0, 'terrain.roughness': 0.8, 'terrain.treeCover': 0,
+    },
+  },
+  {
+    id: 'badlands', label: 'Badlands', centre: 'The tallest butte, with a road spiralling up it',
+    blurb: 'Almost all land: a maze of banded red buttes and canyons, with rivers at the bottom.',
+    swatch: [0xd27a4a, 0x3fb0a0],
+    values: {
+      ...SKY_PRESETS['Mars day'], 'sky.turbidity': 4, 'weather.cloudCoverage': 0.2, 'sun.timeOfDay': 15.5,
+      'terrain.kind': 1, 'terrain.look': 6, 'world.seaKind': 1, 'world.lavaAltitude': 0,
+      'terrain.landShare': 0.85, 'terrain.fords': 1,
+      'terrain.islandRadius': 824, 'terrain.coastWobble': 0.3,
+      'terrain.volcanoHeight': 330, 'terrain.volcanoRadius': 400, 'terrain.calderaSize': 60,
+      'terrain.mesaHeight': 210, 'terrain.cragDensity': 0.58, 'terrain.spireHeight': 150,
+      'terrain.duneHeight': 2, 'terrain.roughness': 0.6, 'terrain.treeCover': 0,
+    },
+  },
+  {
+    id: 'moon', label: 'Moon', centre: 'A giant impact crater with a central peak',
+    blurb: 'Grey dust and craters under a black sky, in one sixth of the gravity. Jump.',
+    swatch: [0xa6a6a8, 0x3a3a3e],
+    values: {
+      'sky.rayleighR': 5.8, 'sky.rayleighG': 13.5, 'sky.rayleighB': 30, 'sky.rayleigh': 0,
+      'sky.turbidity': 0, 'sky.mieCoefficient': 0, 'sky.mieDirectionalG': 0.8,
+      'sky.nightBrightness': 3, 'weather.cloudCoverage': 0, 'weather.fogDensity': 0,
+      'sun.timeOfDay': 15.2,
+      // No sky to meter from: a black sky would push the auto exposure until the dust burns white.
+      'sky.autoExposure': 0, 'sky.exposure': 0.28,
+      'world.gravity': 1.62, 'world.atmosphere': 0,
+      'terrain.kind': 0, 'terrain.look': 7, 'terrain.dry': 1, 'terrain.craters': 0.7,
+      'world.seaKind': 1, 'world.lavaAltitude': -80,
+      'terrain.landShare': 0.7,
+      'terrain.islandRadius': 800, 'terrain.coastWobble': 0.2,
+      'terrain.volcanoHeight': 170, 'terrain.volcanoRadius': 460, 'terrain.calderaSize': 120,
+      'terrain.mesaHeight': 70, 'terrain.cragDensity': 0.12, 'terrain.spireHeight': 0,
+      'terrain.duneHeight': 0, 'terrain.roughness': 0.3, 'terrain.treeCover': 0,
+      'terrain.groundCover': 0,
+    },
+  },
+  {
+    id: 'swamp', label: 'Methane swamp', centre: 'A low plateau of gas vents in the mist',
+    blurb: 'Olive mud flats and low mesas drowned in green haze, round a teal sea.',
+    swatch: [0x8c8a3a, 0x2fa890],
+    values: {
+      ...SKY_PRESETS['Methane green'], 'weather.cloudCoverage': 0.7, 'weather.fogDensity': 0.0011,
+      'terrain.kind': 1, 'terrain.look': 8, 'world.seaKind': 1, 'world.lavaAltitude': 0,
+      'terrain.landShare': 0.6,
+      'terrain.islandRadius': 800, 'terrain.coastWobble': 0.35,
+      'terrain.volcanoHeight': 140, 'terrain.volcanoRadius': 440, 'terrain.calderaSize': 90,
+      'terrain.mesaHeight': 46, 'terrain.cragDensity': 0.3, 'terrain.spireHeight': 40,
+      'terrain.duneHeight': 1, 'terrain.roughness': 0.35, 'terrain.treeCover': 0,
+    },
+  },
 ]
+
+/**
+ * Every parameter any recipe sets. Picking a planet first puts all of these back to their
+ * registered defaults, so a slider one planet moves (the Moon's gravity, a small tile, a
+ * dry world) does not leak into the next planet, which never mentions it.
+ */
+const RECIPE_KEYS: readonly string[] = [...new Set(PLANETS.flatMap((p) => Object.keys(p.values)))]
 
 export function planetById(id: string | null | undefined): PlanetRecipe | undefined {
   return PLANETS.find((p) => p.id === id)
@@ -98,16 +196,22 @@ export function applyPlanet(
 ): number {
   const recipe = planetById(id) ?? PLANETS[0]
   const source = options.source ?? 'local'
-  params.applySnapshot(recipe.values, source)
+  // One snapshot: defaults for everything a recipe could have moved, then this recipe.
+  const values: Record<string, ParamValue> = {}
+  for (const id of RECIPE_KEYS) {
+    const def = params.get(id)?.def
+    if (def) values[id] = def.default as ParamValue
+  }
+  params.applySnapshot({ ...values, ...recipe.values }, source)
   if (options.size) params.set('terrain.islandRadius', ISLAND_SIZES[options.size], source)
   params.set(worldSeed.def.id, seed, source)
   return seed
 }
 
-/** The recipe whose kind matches the current world, for labels. */
+/** The recipe whose look matches the current world, for labels and share links. */
 export function currentPlanet(): PlanetRecipe {
-  const kind = params.get('terrain.kind')?.value
-  return PLANETS.find((p) => p.values['terrain.kind'] === kind) ?? PLANETS[0]
+  const look = params.get('terrain.look')?.value
+  return PLANETS.find((p) => p.values['terrain.look'] === look) ?? PLANETS[0]
 }
 
 // ---------------------------------------------------------------------------------------

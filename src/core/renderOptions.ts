@@ -101,3 +101,41 @@ export function deviceLostMessage(info: { api?: string; message?: string; reason
   const detail = info?.message && info.message !== 'Unknown reason' ? ` (${info.message})` : ''
   return `The ${api} was lost${detail}. Reload to keep playing.`
 }
+
+/**
+ * What the lobby is doing to the 3D view, from the shell's own state classes.
+ *
+ *  - 'playing': the world is the picture. Render every frame and judge the frame rate.
+ *  - 'lobby': a menu or the start screen is up but the world shows through or is about to
+ *    (the plain lobby, the attract tour, the descent from the galaxy). Render every frame,
+ *    but the frame rate says nothing about how the game will run, so do not judge it.
+ *  - 'covered': the opaque galaxy lobby hides the world entirely. Do not judge the frame
+ *    rate, and there is no point drawing a world nobody can see at full rate.
+ *
+ * Without a shell at all (a lab page, a test) the view is always 'playing'.
+ */
+export type ViewState = 'playing' | 'lobby' | 'covered'
+export function viewState(shell: { contains(name: string): boolean } | null | undefined): ViewState {
+  if (!shell || shell.contains('is-playing')) return 'playing'
+  return shell.contains('is-galaxy') && !shell.contains('is-descending') && !shell.contains('is-attract') ? 'covered' : 'lobby'
+}
+
+/**
+ * A post-processing chain, owned by the Post Effects lane (src/fx/post). When one is
+ * registered with `game.setPostChain`, it is handed each frame instead of the renderer being
+ * asked to draw it: the chain renders the scene itself, through whatever passes it likes,
+ * and puts the result on screen. Game knows nothing about any effect.
+ */
+export interface PostChain<Renderer = unknown, Scene = unknown, Camera = unknown> {
+  /** Draw this frame to the screen. `frameMs` is the time since the previous frame. */
+  render(renderer: Renderer, scene: Scene, camera: Camera, frameMs: number): void
+}
+
+/**
+ * Draw one frame: straight through the renderer when no chain is registered, exactly as
+ * before the hook existed, and through the chain alone when one is.
+ */
+export function drawFrame<R extends { render(scene: S, camera: C): unknown }, S, C>(renderer: R, scene: S, camera: C, chain: PostChain<R, S, C> | null, frameMs: number): void {
+  if (chain) chain.render(renderer, scene, camera, frameMs)
+  else renderer.render(scene, camera)
+}

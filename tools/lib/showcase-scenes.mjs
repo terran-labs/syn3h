@@ -70,6 +70,22 @@ export const SCENES = Object.freeze([
 
 export const SCENE_IDS = Object.freeze(SCENES.map((s) => s.id))
 
+/**
+ * The scenes a run captures when --only is not given: the eight published with the first
+ * releases. king-of-the-hill and other-world stay in SCENES for --only.
+ */
+export const DEFAULT_SCENE_IDS = Object.freeze([
+  'lobby', 'buggy-volcano', 'wings-glide', 'bots-pursuit', 'tag-beam', 'jet-flight', 'hovercraft-lava', 'lava-night',
+])
+
+/** The scenes for a run: the defaults, or the --only list in SCENES order. Unknown ids throw. */
+export function selectScenes(only) {
+  if (!only) return SCENES.filter((s) => DEFAULT_SCENE_IDS.includes(s.id))
+  const unknown = only.filter((id) => !SCENE_IDS.includes(id))
+  if (unknown.length || !only.length) throw new Error(`Unknown scene ${unknown.join(', ')}; known: ${SCENE_IDS.join(', ')}`)
+  return SCENES.filter((s) => only.includes(s.id))
+}
+
 /** Room name for one scene of one run. Fresh per run so nothing carries over between runs. */
 export function sceneRoom(sceneId, runTag) {
   const tag = String(runTag).toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 12)
@@ -142,24 +158,28 @@ export function judgeFrame(stats, limits = FRAME_LIMITS) {
 }
 
 /**
- * ffmpeg concat demuxer script holding each still for `hold` seconds. The GIF filter runs at
- * a fixed frame rate, which honours the last duration, so the last file is not repeated
- * (repeating it, the usual concat workaround, held the last still twice as long).
+ * Input frame rate that holds each still for `hold` seconds, as an exact fraction ffmpeg
+ * reads: 1.5 s gives 100/150, so every GIF frame carries a 150 centisecond delay.
  */
-export function concatScript(files, hold = 1.5) {
-  if (!files.length) throw new Error('No stills to assemble')
-  for (const f of files) if (/['\n\r]/.test(f)) throw new Error(`Unsafe file name for the concat script: ${f}`)
-  return files.map((f) => `file '${f}'\nduration ${hold}\n`).join('')
+export function holdFramerate(hold = 1.5) {
+  const cs = Math.round(hold * 100)
+  if (!(cs >= 2 && cs <= 6000)) throw new Error(`Hold must be between 0.02 and 60 seconds, not ${hold}`)
+  return `100/${cs}`
 }
 
-/** ffmpeg arguments for a looping GIF from a concat script, with a generated palette. */
-export function gifArgs({ list, output, width = 960, height = 540, fps = 10, colours = 192 }) {
+/**
+ * ffmpeg arguments for a looping GIF with exactly one frame per still. `pattern` is an
+ * image sequence such as /o/.seq/%d.png numbered from 1. Each frame gets its own palette
+ * (stats_mode=single, new=1), so a dark lobby and a bright desert do not share 256 colours.
+ * 832 px is the widest GitHub shows an image in a README, so a wider GIF only adds bytes.
+ */
+export function gifArgs({ pattern, output, hold = 1.5, width = 832, height = 468 }) {
   const filter =
-    `fps=${fps},scale=${width}:${height}:flags=lanczos,split[a][b];` +
-    `[a]palettegen=max_colors=${colours}:stats_mode=full[p];` +
-    `[b][p]paletteuse=dither=sierra2_4a`
-  return ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', list,
-    '-filter_complex', filter, '-loop', '0', output]
+    `scale=${width}:${height}:flags=lanczos,split[a][b];` +
+    '[a]palettegen=stats_mode=single:max_colors=256[p];' +
+    '[b][p]paletteuse=new=1:dither=sierra2_4a'
+  return ['-hide_banner', '-loglevel', 'error', '-y', '-framerate', holdFramerate(hold), '-start_number', '1',
+    '-i', pattern, '-filter_complex', filter, '-loop', '0', output]
 }
 
 export const MAX_GIF_BYTES = 10 * 1024 * 1024
@@ -174,7 +194,7 @@ export function buildManifest({ version, build, files, captured, skipped, browse
     buildNote: build.note,
     generatedAt,
     browser,
-    gif: { file: 'syn3h-showcase.gif', holdSeconds: hold, order: captured.map((c) => `${c.id}.png`) },
+    gif: { file: 'syn3h-showcase.gif', holdSeconds: hold, frames: captured.length, order: captured.map((c) => c.file ?? `${c.id}.png`) },
     captured,
     skipped,
     files: [...files].sort((a, b) => a.file.localeCompare(b.file)),

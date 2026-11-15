@@ -167,6 +167,8 @@ VARIANTS += [
 ]
 for v in VARIANTS:
     if v['id'] == 'r3-coilover': v['alsoIn'] = ['4']
+    # The owner's choice for the game, 14 November 2026.
+    if v['id'] == 'c2-box': v['ship'] = 'buggy-boxarm.glb'
 for v in VARIANTS:
     v.setdefault('views', ['front', 'rear', 'side'])
     if v.get('round') == 2: v['views'] = ['front', 'nose', 'top']

@@ -4,7 +4,9 @@
 assembles them into a looping GIF for the GitHub README. Each run writes, per release:
 
 - one PNG per scene, 1280 x 720, named `<scene>.png`
-- `syn3h-showcase.gif`, 960 x 540, each still held 1.5 seconds, looping forever
+- `syn3h-showcase.gif`, 832 x 468, looping forever, with exactly one frame per still. The
+  hold (1.5 seconds by default) is that frame's delay, and each frame has its own palette.
+  832 pixels is the widest GitHub shows an image in a README, so a wider GIF only adds bytes.
 - `manifest.json`: version, commit, build id, the byte size and SHA-256 of every file, the
   scenes captured, and the scenes skipped with the reason
 
@@ -14,7 +16,7 @@ storage, not into the repository.
 ## Run it
 
 ```sh
-tools/heavy.sh node tools/showcase.mjs \
+SYN3H_HEAVY_SLOTS=8 tools/heavy.sh node tools/showcase.mjs \
   --dir ../Syn3h-stable/20261114-200625-bc8cb48 --version v26.11.1401 --port 5348
 ```
 
@@ -22,6 +24,9 @@ The tool starts `tools/serve-stable.mjs` on the frozen copy, so the client and t
 server are the build being released, and stops that server when it finishes. Output goes to
 `/tmp/syn3h-showcase/<version>/` unless `--out` names another root. The version folder is
 cleared at the start of every run.
+
+Without `--only` a run captures the eight scenes published with the first releases.
+`king-of-the-hill` and `other-world` are captured only when named in `--only`.
 
 Other options: `--url` uses a server that is already running instead of `--dir`; `--only
 lobby,jet-flight` captures a subset while working on staging (the GIF then holds only those);
@@ -32,9 +37,21 @@ Chrome runs headed by default, with WebGPU and the Metal backend. Frame rate doe
 for stills, so a busy machine slows a run but does not spoil it. A full run of ten scenes
 takes about two and a half minutes.
 
+## Rebuild the GIF without capturing
+
+```sh
+node tools/showcase.mjs --rebuild-gif --version v26.11.1413 --out /tmp/syn3h-showcase
+```
+
+This reads `manifest.json` and the stills already in `<out>/<version>/` and writes a new
+GIF and manifest. It starts no server and no browser. Use it after removing a still that
+failed review, or to change `--hold`. A still deleted from the folder is dropped from the
+GIF. With `--only`, the other stills are listed in the manifest as left out, and a later
+rebuild without `--only` puts them back.
+
 ## The scenes
 
-In GIF order. Each opens in a fresh browser context and a fresh room with a fixed seed.
+In GIF order. The first eight are the default run. Each opens in a fresh browser context and a fresh room with a fixed seed.
 
 | Scene | What it shows | How it is staged |
 | --- | --- | --- |
@@ -46,8 +63,8 @@ In GIF order. Each opens in a fresh browser context and a fresh room with a fixe
 | `jet-flight` | The jet above the island | The jet placed 230 m up, nose toward the volcano, throttle (R) held |
 | `hovercraft-lava` | The hovercraft over lava | On the lava sea heading toward the island |
 | `lava-night` | Lava and headlights at night | 22:30 on a gentle beach of the lava sea, parked facing the lava |
-| `king-of-the-hill` | The rim with the match card | The room switched to King of the Hill, parked on the rim until the card shows 6 seconds held |
-| `other-world` | The alpine planet | Alpine seed 11, driving from the pad with the normal chase camera |
+| `king-of-the-hill` (only with `--only`) | The rim with the match card | The room switched to King of the Hill, parked on the rim until the card shows 6 seconds held |
+| `other-world` (only with `--only`) | The alpine planet | Alpine seed 11, driving from the pad with the normal chase camera |
 
 The scene list and every pure helper live in `tools/lib/showcase-scenes.mjs`. The staging,
 which runs in the page through `window.syn3h`, lives in `tools/showcase.mjs`.
@@ -104,7 +121,8 @@ at `releases/latest/download/syn3h-showcase.gif` are separate steps for whoever 
 node --test tools/showcase.test.mjs
 ```
 
-These cover the scene list and order, room names and URLs, feature skipping, the frame
-statistics and limits, the ffmpeg concat script and GIF arguments, the manifest and the
-argument parser. The browser staging is checked by running the tool and looking at the
+These cover the scene list, the default eight, room names and URLs, feature skipping, the
+frame statistics and limits, the GIF arguments, the manifest and the argument parser. When
+ffmpeg is installed, one test also builds GIFs from 1, 2 and 8 generated stills and checks
+that the frame count equals the still count and each frame is held for the hold. The browser staging is checked by running the tool and looking at the
 stills.
