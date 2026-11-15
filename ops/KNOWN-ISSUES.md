@@ -1,5 +1,31 @@
 # Known issues
 
+Current public release: release-4, v26.11.1500, accepted 15 November 2026 at 03:05 PST.
+The release record and `ops/STATE.md` identify the exact source and validation evidence.
+
+- Real phone/iPad performance, venue networking, QR entry and listening remain unverified
+  on the owner's hardware. Automated browser checks are not physical-device measurements.
+- Wide touch layouts can overlap the flight joystick and bottom-left minimap. A tested
+  correction is in the next batch, not the current public build.
+- Water is opaque from above. Depth colour does not reveal submerged geometry.
+- Aircraft Pester avoidance is unfinished. The response study produced two escapes and
+  two harmful catches; ground dodge and bot tool use remain independent delivered features.
+- Indirect light uses screen-space information. Offscreen surfaces cannot contribute.
+- Earlier loaded-host startup stale-state failures remain unexplained. The accepted seam
+  check verifies steady-state dry driving after bounded readiness, not every startup or sea route.
+- A public bot-start check failed on the first release-4 attempt. Unique test rooms now
+  prevent persisted fixture reuse, but reuse was not proven as that failure's cause.
+- Cloud volumes, temporal antialiasing, saved-world moons and the touch correction are
+  under combined next-batch validation. Tank and hovercraft study selection remains open.
+- Smooth near-camera terrain remains deferred. Current vehicle feel and sound still need
+  the owner's review; earlier buggy driving feedback was already addressed.
+
+## Historical record, not a current release checklist
+
+The following November 14 snapshot is retained for investigation. Its claims about defaults,
+public versions, UI behavior and untested owner driving must not be presented as current
+without fresh verification.
+
 Kept by the Orchestrator. Last revised Saturday 14 November, 8:15pm PST. These ship as known
 in the public release by the Foreman's decision, on the grounds that a fresh room opens on the
 volcanic world in paused daylight.
