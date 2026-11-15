@@ -46,6 +46,20 @@ export const roadCornerSpeed = number('roadCornerSpeed', 'Road corner speed (m/s
 export const freeSpirit = number('freeSpirit', 'Own agenda (0 always chases)', 0.6, 0, 1, 0.05)
 
 /**
+ * Baby duck mode (see duck.ts). How much of the time a bot with its own mind spends trailing
+ * after you, in a loose line that bends where you turn and gathers behind you when you stop.
+ * The rest is short distractions: a landmark, another bot. 0 turns it off and brings back the
+ * old split set by `bots.freeSpirit`. The ends of freeSpirit still win: 0 always chases, 1
+ * never does. Only while aggression is at or below RAM_AGGRESSION; above it bots hunt.
+ */
+export const followYou = number('followYou', 'Bots follow you', 0.8, 0, 1, 0.05)
+/**
+ * How much feeling a following bot shows: how loose the line is, how often it wiggles, nods
+ * or spins with joy on arriving, and how long a distraction lasts. 0 is a sober convoy.
+ */
+export const playfulness = number('playfulness', 'Playfulness', 0.7, 0, 1, 0.05)
+
+/**
  * Which vehicles bots drive. 0: buggies only. 1: mixed, every fourth bot a hovercraft and
  * every fourth a jet. Guests receive each bot's type, including after host takeover.
  */

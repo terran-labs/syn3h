@@ -7,6 +7,7 @@ import type { Terrain } from '../world/Terrain'
 import * as p from './params'
 import { isRoadFord } from './nav/fords'
 import { BotGearController, type BotGearHooks } from './gear'
+import { DuckFollower, GATHER_RADIUS } from './duck'
 import { roadWaypoint, type RoadTerrain, type RoadPoint } from './navigation'
 import type { Mind } from './mind/Mind'
 import { GROUND_PROFILE } from './pilot/ground'
@@ -91,6 +92,11 @@ export class BotBrain implements System {
   private readonly quaternion = new Quaternion()
   private targets: readonly Vehicle[] = []
   private peers: readonly Vehicle[] = []
+  /** Baby duck following, while chasing at a playful aggression. See duck.ts. */
+  readonly duck: DuckFollower
+  private duckClock = 0
+  /** Backing away from the target: out of its way as it reverses, or out of its lap when it stops. */
+  private backing = false
   setPeers(vehicles: readonly Vehicle[]) { this.peers = vehicles }
   constructor(private readonly game: Game, private readonly terrain: BotTerrain, readonly vehicle: Vehicle, private readonly localPlayer: Vehicle, readonly index = 0) {
     vehicle.isLocal = false
@@ -98,17 +104,34 @@ export class BotBrain implements System {
     // Original VhiclBot.cs:25 staggered checks randomly. Index gives repeatable staggering.
     this.strategyTime = (index * 0.61803398875 % 1) * p.strategyInterval.value
     this.random = seededRandom(hashString(`mood:${vehicle.id}:${index}`))
+    this.duck = new DuckFollower(vehicle, index)
+  }
+
+  /** May a bot stand here: dry, inside the world, not a cliff. */
+  private standable(x: number, z: number): boolean {
+    return isSafeGround(this.terrain, x, z) && (this.navigator?.passable(x, z, GROUND_PROFILE) ?? true)
+  }
+
+  /** Playful company rather than a hunt: at or below RAM_AGGRESSION, with following on. */
+  private get playful(): boolean {
+    return p.followYou.value > 0 && p.aggression.value <= p.RAM_AGGRESSION
   }
   /**
    * Chase or roam for the next while. Sociable bots chase more, and a player close by is
    * hard to ignore. Spells are long enough to get somewhere and short enough to surprise.
    */
   private chooseMood(distance: number) {
-    const free = p.freeSpirit.value
+    const free = p.freeSpirit.value, sociable = this.mind!.personality.sociability - 0.5
     // The ends of the slider are absolute: 0 is the original relentless pursuit, 1 never chases.
-    const chase = free <= 0 ? 1 : free >= 1 ? 0 : 1 - free + (this.mind!.personality.sociability - 0.5) * 0.4 + (distance < 60 ? 0.2 : 0)
+    // Between them a playful bot is a duckling: it follows most of the time and wanders off
+    // only briefly, for longer the more playful it is, then hurries back.
+    const duckling = this.playful
+    const chase = free <= 0 ? 1 : free >= 1 ? 0 : duckling ? (p.followYou.value >= 1 ? 1 : p.followYou.value + sociable * 0.2 + (distance < 60 ? 0.1 : 0)) : 1 - free + sociable * 0.4 + (distance < 60 ? 0.2 : 0)
     this.mood = this.random() < chase ? 'chase' : 'roam'
-    this.moodTime = this.mood === 'chase' ? 15 + this.random() * 20 : 30 + this.random() * 40
+    const spell = this.random()
+    this.moodTime = duckling
+      ? this.mood === 'chase' ? 20 + spell * 25 : (4 + spell * 8) * (0.5 + p.playfulness.value)
+      : this.mood === 'chase' ? 15 + spell * 20 : 30 + spell * 40
     this.mind!.reset(); this.reversing = false; this.immobileTime = 0; this.strategyTime = 0
     this.lastPosition.copy(this.vehicle.body.translation())
   }
@@ -149,6 +172,7 @@ export class BotBrain implements System {
   }
   /** Roaming: the mind drives. The brain only watches for the cases that need a rescue. */
   private roam(dt: number, input: InputState, here: { x: number; y: number; z: number }) {
+    this.duck.active = false
     const status = this.mind!.step(dt, input)
     const liquid = this.terrain.liquidHeightAt?.(here.x, here.z)
     const afloat = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(here.x, here.z) <= liquid + 0.5 && !isRoadFord(this.terrain, here.x, here.z)
@@ -159,6 +183,25 @@ export class BotBrain implements System {
     if (this.liquidTime >= p.recoveryTime.value || this.flippedTime >= p.recoveryTime.value / 2 || this.mind!.troubleFor >= p.recoveryTime.value || here.y < this.terrain.heightAt(here.x, here.z) - 10) {
       this.rescue(); this.mind!.reset()
     }
+  }
+  /**
+   * A little feeling, shown with the controls the vehicle already has. Drawn over the
+   * pursuit's own commands; the ground probe after this still has the last word.
+   *   wiggle  the wheels waggle side to side, standing or trotting
+   *   nod     a blip of throttle against the brakes: the nose dips and bobs
+   *   spin    a tight happy circle on arrival, only with room all round
+   */
+  private flourish(kind: 'wiggle' | 'nod' | 'spin', t: number, input: InputState, here: { x: number; z: number }, distance: number) {
+    if (kind === 'wiggle') { input.x = Math.sin(this.duckClock * 9) * 0.9; return }
+    if (kind === 'nod') { const on = t % 0.4 < 0.15; input.y = on ? 0.8 : 0; input.brakes = !on; return }
+    // Room for a spin: the target and every other bot at least a spin's width away.
+    if (distance < 9) return
+    for (const peer of this.peers) {
+      if (peer === this.vehicle || !peer.body.isValid()) continue
+      const q = this.imageOf(peer.body.translation(), here, this.peerImage)
+      if (Math.hypot(q.x - here.x, q.z - here.z) < 8) return
+    }
+    input.x = this.index % 2 ? 1 : -1; input.y = 0.55; input.brakes = false
   }
   setTargets(vehicles: readonly Vehicle[]) { this.targets = vehicles; this.targetTime = 2 }
   private selectTarget() {
@@ -246,6 +289,18 @@ export class BotBrain implements System {
     this.up.set(0, 1, 0).applyQuaternion(this.quaternion)
     const dx = there.x - here.x, dz = there.z - here.z, distance = Math.hypot(dx, dz)
     const velocity = this.vehicle.body.linvel(), speed = Math.hypot(velocity.x, velocity.z)
+    // A playful bot with a mind trails the target like a duckling instead of pursuing it. Not
+    // the one that is "it" in tag, which must catch someone, and not in a race.
+    const ducking = this.mind !== null && this.playful && !this.raceGoal && !(this.match?.mode === 'tag' && this.match.it === this.vehicle) && p.canDrive.value
+    if (ducking) this.duck.follow(this.target)
+    this.duck.active = ducking
+    const step = ducking ? this.duck.step(dt, here, there, p.playfulness.value, (x, z) => this.standable(x, z)) : null
+    // On a road the duckling steers as the pursuit does: the road waypoints are tuned for
+    // switchbacks and banks. The duck then only sets its speed, which is what keeps the line.
+    // Off road it heads for its place on the leader's track (the pursuit would aim ahead of
+    // a moving leader); gathering and giving way are always the duck's.
+    const duck = step && (step.mode !== 'line' || !this.waypoint) ? step : null
+    this.duckClock += dt
     // The pursuit below drives straight at the target. When a cliff or liquid lies on that
     // line and no road leads there, the mind takes the detour: it follows a planned route
     // with the same pilot that tours the island, then hands back once the way is clear.
@@ -259,7 +314,7 @@ export class BotBrain implements System {
     }
     const targetVelocity = this.target.body.linvel()
     const lead = Math.min(0.8, distance / 45) * p.aggression.value
-    let aimX = there.x + targetVelocity.x * lead, aimZ = there.z + targetVelocity.z * lead
+    let aimX = duck ? duck.x : there.x + targetVelocity.x * lead, aimZ = duck ? duck.z : there.z + targetVelocity.z * lead
     const liquid = this.terrain.liquidHeightAt?.(here.x, here.z)
     const afloat = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(here.x, here.z) <= liquid + 0.5 && !isRoadFord(this.terrain, here.x, here.z)
     this.liquidTime = afloat && p.canDrive.value ? this.liquidTime + dt : 0
@@ -289,11 +344,12 @@ export class BotBrain implements System {
       this.waypoint = found && w ? { ...found, x: nearestImage(found.x, here.x, w), z: nearestImage(found.z, here.z, w) } : found
       this.routeTime = 0.4
     }
-    const waypoint = !afloat && distance > 4 ? this.waypoint : null
+    // A duckling keeps to the target's own track, which is already the way the target drove.
+    const waypoint = !duck && !afloat && distance > 4 ? this.waypoint : null
     if (waypoint) { aimX = waypoint.x; aimZ = waypoint.z }
     // Stable per-bot lateral offsets fade out near contact so every bot can still ram.
     const spread = ((this.index * 0.61803398875 % 1) - 0.5) * p.approachSpread.value * Math.min(1, Math.max(0, distance - 8) / 20)
-    if (!afloat && distance > 0.1) {
+    if (!duck && !afloat && distance > 0.1) {
       const ax = aimX - here.x, az = aimZ - here.z, length = Math.hypot(ax, az) || 1
       const offset = waypoint ? Math.max(-1, Math.min(1, spread)) : spread
       aimX += az / length * offset; aimZ -= ax / length * offset
@@ -324,12 +380,16 @@ export class BotBrain implements System {
     // bot that is "it" must touch to pass it on: it may close all the way, but only at a
     // tap's speed. The limit rides on the traffic brake below, which also stops a bot
     // waiting politely from counting as stuck.
-    if (p.aggression.value <= p.RAM_AGGRESSION && distance > 0.1) {
+    // Getting out of a reversing target's way is the one time the gap must not hold a bot back.
+    // Only while heading toward it: a bot moving off to a place farther away is not closing.
+    const toward = (aimX - here.x) * dx + (aimZ - here.z) * dz > 0
+    if (p.aggression.value <= p.RAM_AGGRESSION && distance > 0.1 && duck?.mode !== 'give-way' && toward) {
       const tagging = this.match?.mode === 'tag' && this.match.it === this.vehicle
       const away = (targetVelocity.x * dx + targetVelocity.z * dz) / distance
       const allowed = tagging ? away + Math.max(TAP_SPEED, (distance - KEEP_GAP) * 0.8) : away + (distance - KEEP_GAP) * 0.8
       trafficLimit = Math.min(trafficLimit, Math.max(0, allowed))
     }
+    if (step) trafficLimit = Math.min(trafficLimit, step.limit)
     const error = steeringError(this.forward, { x: aimX - here.x, z: aimZ - here.z })
     // VhiclBot.cs:35-55 and VehicleBot.js:79-91: wrap yaw, divide by 20 degrees,
     // 2 degree dead zone, full steering within 15 metres, 0.6 clamp farther away.
@@ -346,6 +406,14 @@ export class BotBrain implements System {
         this.immobileTime = this.reversing ? this.immobileTime + this.strategyTime : 0
         this.strategyTime = 0; this.lastPosition.copy(here)
       }
+      // A duckling facing its target backs away rather than turning in front of it: when the
+      // target reverses towards it (swinging aside on full lock to the open side), and when it
+      // has ended up closer than the gathering arc after a stop (straight back). Facing away,
+      // it simply drives to its place.
+      const facing = dx * this.forward.x + dz * this.forward.z > 0
+      const backing = duck !== null && !afloat && facing && (duck.mode === 'give-way' || (duck.mode === 'gather' && distance < GATHER_RADIUS - 3))
+      if (backing) { this.reversing = true; this.reverseBrake = 0 } else if (this.backing) this.reversing = false
+      this.backing = backing
       if (afloat || trafficLimit < 1) {
         this.reversing = false
         if (!afloat) { this.immobileTime = 0; this.strategyTime = 0; this.lastPosition.copy(here) }
@@ -369,8 +437,18 @@ export class BotBrain implements System {
       if (trafficLimit < Infinity && !this.reversing && speed > trafficLimit) {
         input.y = 0; input.brakes ||= speed > trafficLimit + 0.5
       }
+      // Told to wait: hold still on the brakes rather than creep forward and brake by turns.
+      if (trafficLimit < 0.3 && !this.reversing) { input.y = 0; input.brakes = true }
+      if (duck?.flourish && !this.reversing && !afloat) this.flourish(duck.flourish, duck.flourishTime, input, here, distance)
       // Stop spinning wheels before asking the drivetrain to reverse.
       if (this.reverseBrake > 0) { input.brakes = true; this.reverseBrake = Math.max(0, this.reverseBrake - dt) }
+      if (this.backing) {
+        // Reversing on full lock swings the tail toward the side the wheel is turned: the
+        // driver's right for +1. Steer toward the side the place to go lies on.
+        const giveWay = duck!.mode === 'give-way', rx = -this.forward.z, rz = this.forward.x
+        input.brakes = false; input.y = -p.topThrottle.value * (giveWay ? 1 : 0.5)
+        input.x = giveWay ? ((duck!.x - here.x) * rx + (duck!.z - here.z) * rz >= 0 ? 1 : -1) : 0
+      }
       // Probe the intended travel direction. Reverse and steer away from water or world edges.
       const direction = this.reversing ? -1 : 1
       // Far enough ahead to stop in: reaction distance, or braking distance at about 7 m/s^2.
