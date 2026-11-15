@@ -23,11 +23,13 @@
   --halo-r: 16px;
   /* A tight halo on strokes; a dark under-shadow on text. */
   --halo-glow: 0 0 6px rgb(143 227 255 / .14);
-  --halo-under: 0 0 2px rgb(0 6 12 / .85), 0 1px 7px rgb(0 6 12 / .7), 0 0 18px rgb(0 6 12 / .45);
-  /* The falloff: darkest in the middle of a panel, lighter at its rim, and a soft dark
-     spread outside it, so the panel reads as light over a dimmed patch of world. */
-  --halo-fill: radial-gradient(120% 100% at 50% 50%, rgb(2 9 15 / .44), rgb(2 9 15 / .3) 70%, rgb(2 9 15 / .22));
-  --halo-spread: 0 0 34px rgb(0 6 12 / .22);
+  --halo-under: 0 0 1px rgb(0 6 12 / .95), 0 1px 9px rgb(0 6 12 / .7);
+  /* The falloff: a near-black blue at low alpha in the middle of a panel, fading to nothing
+     at its rim, so the world shows through only slightly dimmed. Never a lightening: a
+     grey or white mix reads as a milky slab over the day sky. The text under-shadow does
+     most of the work. */
+  --halo-fill: radial-gradient(farthest-side at 50% 50%, rgb(2 10 18 / .28), rgb(2 10 18 / .2) 55%, rgb(2 10 18 / 0));
+  --halo-spread: 0 0 0 transparent;
 }
 
 /* ---------- Panels ---------- */
@@ -42,13 +44,17 @@
   color: var(--s3-ink); text-shadow: var(--halo-under);
 }
 html[data-gfx] .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--halo-fill); }
+/* Nothing from the old glass may add light: no rim layer, no top highlight, no lifted body. */
+.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass::after, .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector::before, .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector::after { display: none; }
+.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass { --body: transparent; filter: none; }
+.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector :is(.wi-body, .wi-group, .wi-row:not(.is-selected), .rail-player-body) { background: none; }
 .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass::before { display: none; }
 .syn3h-shell.exploration-ui .world-inspector { font: 400 13.5px/1.4 'Barlow', sans-serif; color: var(--s3-ink); text-shadow: var(--halo-under); }
 .syn3h-shell.exploration-ui .world-inspector *, .syn3h-shell.exploration-ui .world-inspector :is(button, input, select) { -webkit-backdrop-filter: none; backdrop-filter: none; }
 /* The quick selectors and the players list float as panels of their own. */
 .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-quick { border-bottom: 1px solid var(--s3-line); }
 .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players { border-bottom: 1px solid var(--s3-line); }
-.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players > summary { background: rgb(3 11 18 / .72); border-radius: var(--halo-r) var(--halo-r) 0 0; }
+.syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players > summary { background: rgb(2 10 18 / .5); border-radius: var(--halo-r) var(--halo-r) 0 0; }
 .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .rail-players:not([open]) > summary { border-radius: var(--halo-r); background: none; }
 
 /* ---------- Generic buttons: hairline pills, no fill, no glowing text ---------- */
@@ -87,7 +93,7 @@ html[data-gfx] .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector 
 /* ---------- Cards ---------- */
 .syn3h-shell.exploration-ui .world-inspector .wi-head h3 { font: 500 11.5px/1 'Barlow', sans-serif; letter-spacing: .18em; text-transform: uppercase; color: var(--s3-ink); text-shadow: var(--halo-under); }
 .syn3h-shell.exploration-ui .world-inspector .wi-card.is-open > .wi-head h3 { color: #fff; text-shadow: var(--halo-under), 0 0 8px rgb(143 227 255 / .22); }
-.syn3h-shell.exploration-ui .world-inspector .wi-sum { font-size: 13px; color: var(--s3-dim); letter-spacing: 0; }
+.syn3h-shell.exploration-ui .world-inspector .wi-sum { font-size: 13px; color: rgb(234 245 251 / .9); letter-spacing: 0; }
 .syn3h-shell.exploration-ui .world-inspector .wi-chev { width: 6px; height: 6px; border-right: 1px solid var(--s3-soft); border-bottom: 1px solid var(--s3-soft); }
 .syn3h-shell.exploration-ui .world-inspector .wi-card > .wi-head:hover { background: none; box-shadow: none; }
 .syn3h-shell.exploration-ui .world-inspector .wi-card > .wi-head:hover h3 { color: #fff; }
