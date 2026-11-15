@@ -22,6 +22,18 @@ try {
   await page.waitForFunction(() => window.syn3h?.game?.tick > 40, null, { timeout: 120000 })
   await page.waitForTimeout(6500)
   const value = id => page.evaluate(id => window.syn3h.params.get(id).value, id)
+  // First view: nothing over the world. The cards are closed and the minimap is in its corner.
+  assert.equal(await page.evaluate(() => document.querySelector('.world-inspector').hidden), true)
+  const corner = () => page.evaluate(() => innerWidth - document.querySelector('.shell-minimap').getBoundingClientRect().right)
+  assert.ok(await corner() < 60, 'minimap is not in its corner on landing')
+  await page.screenshot({ path: `${out}/0-landing.png` })
+  // Capturing and then releasing the cursor, with Create untouched, surfaces the cards.
+  await page.mouse.click(500, 420); await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-focus'), null, { timeout: 5000 })
+  await page.evaluate(() => document.exitPointerLock()); await page.waitForFunction(() => !document.querySelector('.world-inspector').hidden, null, { timeout: 5000 })
+  assert.ok(await corner() > 300, 'minimap did not step aside for the open cards')
+  // Create closes them and the minimap goes back; Create opens them again.
+  await page.locator('.inspector-toggle').click(); assert.ok(await corner() < 60, 'minimap did not return')
+  await page.locator('.inspector-toggle').click(); await page.waitForTimeout(300)
   // Five cards, each with a summary, holding every registered property between them.
   assert.deepEqual(await page.locator('.wi-card').evaluateAll(cards => cards.map(c => c.dataset.section)), ['world', 'sky', 'game', 'vehicles', 'you'])
   assert.equal(await page.locator('.wi-row').count(), await page.evaluate(() => window.syn3h.params.all().length))

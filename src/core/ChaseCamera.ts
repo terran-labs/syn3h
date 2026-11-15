@@ -161,6 +161,7 @@ export class ChaseCamera implements System {
    * What the ride view hid, with each object's visibility before. A vehicle that tags parts
    * with `userData.hideInRide = true` (a cockpit canopy, say) loses only those, so the driver
    * sees their own body around them. A vehicle that tags nothing is hidden whole, as before.
+   * A vehicle whose object has `userData.cockpit === true` hides nothing at all.
    */
   private readonly hidden: { object: THREE.Object3D; wasVisible: boolean }[] = []
   private hidWhole = false
@@ -398,6 +399,9 @@ export class ChaseCamera implements System {
     this.restoreVisibility()
     this.hiddenTarget = target
     this.hideCheck = 0
+    // A vehicle modelled with a cockpit to sit in says so, and keeps every part: from its
+    // own seat the driver should see the tub, the canopy and the nose around them.
+    if (target.userData.cockpit === true) { this.hidWhole = false; return }
     target.traverse(o => { if (o.userData.hideInRide === true) this.hidden.push({ object: o, wasVisible: o.visible }) })
     this.hidWhole = this.hidden.length === 0
     if (this.hidWhole) this.hidden.push({ object: target, wasVisible: target.visible })

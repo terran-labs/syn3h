@@ -71,10 +71,12 @@ export function createGroundPilot(vehicle: Vehicle): Pilot {
           status.stuckFor += checkTime
           // Back out with the wheels turned the other way, braking first so the drivetrain
           // is not asked to reverse against spinning wheels.
-          if (reverseTime <= 0) { reverseTime = CHECK; brakeTime = 0.35 }
+          if (reverseTime <= 0 && !goal.noReverse) { reverseTime = CHECK; brakeTime = 0.35 }
         } else if (reverseTime <= 0) status.stuckFor = 0
         checkTime = 0; lastX = here.x; lastZ = here.z
       }
+      // Told mid manoeuvre that there is nothing safe behind: stop backing up at once.
+      if (goal.noReverse) reverseTime = 0
       if (reverseTime > 0) {
         reverseTime -= dt
         steer = approach(steer, clamp(-error / FULL_LOCK), 3 * dt); throttle = 0
