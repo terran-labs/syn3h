@@ -592,6 +592,26 @@ the renderer. No branding assets or logo design changed.
 safe particle count, context restoration, teardown and reopening in Chrome and WebKit.
 The galaxy caps its shared loop at 30 fps outside a drop, below the logo's desktop ceiling.
 
+## Exploration interface
+
+The in-game right-edge Interface tab opens the configuration rail. Exit world at its top
+returns to the solar system; Escape opens or closes the rail without returning to the lobby.
+Players, music, gear and the optional connection diagnostics live under Players & session.
+The old upper-left HUD is hidden. Speed and ground clearance use the exploration readouts;
+the minimap stays centred on the player at bottom left, with a generated radial vignette.
+On phones it sits above the driving thumb control.
+
+Section headers remain in view while expanded bodies share the available height and scroll
+internally. Desktop descriptions float to the left of the control. Narrow phones put the
+same tooltip above the control; tapping the tooltip or elsewhere dismisses it. Touch editing
+hides driving overlays and transient toasts so they cannot obscure the rail.
+
+`tests/ui/exploration.mjs` checks desktop Chrome and iPad, phone and landscape WebKit. It
+covers header visibility, internal body space, tooltip placement, optional diagnostics,
+Escape behavior and Exit world. `UX_VIEW=desktop|ipad|phone|landscape` selects one viewport.
+Run through the currently approved absolute heavy-job wrapper. Lobby drop, Custom planet,
+animated logo and cursor checks remain part of the regression gate after integration.
+
 ## Recipe population lights
 
 The lobby polls the public aggregate `/presence` feed every 30 seconds while visible,

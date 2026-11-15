@@ -71,6 +71,35 @@ function scene(){
  const world=()=>systems[0] as unknown as {marks:RibbonBatch,dust:ParticleBatch,update(dt:number):void}
  return {game,terrain,systems,effects,world}
 }
+
+describe('buggy headlights',()=>{
+ it('uses two lamp positions, shares the night intensity, and turns both off by day',()=>{
+  const s=scene(),v=stand()
+  const sky=Object.assign(new T.Object3D(),{sunDirection:{value:new T.Vector3(0,-1,0)}})
+  s.game.scene.add(sky)
+  const dispose=attachVehicleEffects(s.game,s.terrain,v as unknown as Vehicle,{local:true})
+  const beams:T.SpotLight[]=[]
+  v.object.traverse(o=>{if(o instanceof T.SpotLight)beams.push(o)})
+  expect(beams).toHaveLength(2)
+  expect(beams[0].position.x).toBeLessThan(0)
+  expect(beams[1].position.x).toBe(-beams[0].position.x)
+  for(const beam of beams){expect(beam.position.z).toBeLessThan(0);expect(beam.target.position.z).toBeLessThan(beam.position.z);expect(beam.castShadow).toBe(false)}
+  s.world().update(0)
+  expect(beams.map(b=>b.intensity)).toEqual([800,800])
+  sky.sunDirection.value.y=1;s.world().update(0)
+  expect(beams.map(b=>b.intensity)).toEqual([0,0])
+  let disposed=0
+  for(const beam of beams)beam.addEventListener('dispose',()=>disposed++)
+  dispose();dispose()
+  expect(disposed).toBe(2)
+  expect(v.object.getObjectByName('Vehicle effects')).toBeUndefined()
+ })
+ it('does not allocate road lights for remote vehicles',()=>{
+  const s=scene(),v=stand(),dispose=attachVehicleEffects(s.game,s.terrain,v as unknown as Vehicle,{local:false})
+  const beams:T.SpotLight[]=[];v.object.traverse(o=>{if(o instanceof T.SpotLight)beams.push(o)})
+  expect(beams).toHaveLength(0);dispose()
+ })
+})
 /** Drive a stand-in buggy 40 m along +X from x=180, shifting it back a tile at x=204 if asked. */
 function run(local:boolean,shift:boolean){
  const s=scene(),v=stand(),dispose=attachVehicleEffects(s.game,s.terrain,v as unknown as Vehicle,{local})

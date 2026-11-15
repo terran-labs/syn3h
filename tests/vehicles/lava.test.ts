@@ -1,8 +1,9 @@
 /** Legacy water behaviour on a flat bed with a water surface 2 m above the ground. */
-import { afterEach, describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { params } from '../../shared/params'
 import { buggyLavaFloat } from '../../src/vehicles/lava'
+import { waterSinking } from '../../src/vehicles/buoyancy'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
 import { makeBed } from './harness'
 
@@ -19,6 +20,8 @@ async function inLava(y = LAVA + 1, vz = 0) {
 afterEach(() => { for (const p of params.all()) params.set(p.def.id, p.def.default) })
 
 describe('legacy water buoyancy', () => {
+  // This suite verifies the retained float controller, not the default sinking model.
+  beforeEach(() => params.set(waterSinking.def.id, false))
   test('a slow buggy floats near the surface instead of sinking', async () => {
     const { bed, b } = await inLava()
     bed.run(6)

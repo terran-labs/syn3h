@@ -3,12 +3,12 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { chromium, webkit } from 'playwright-core'
-const css = await readFile(new URL('../../src/ui/inspector/inspector.css', import.meta.url), 'utf8')
+const css = await readFile(new URL('../../src/ui/inspector/inspector.css', import.meta.url), 'utf8') + await readFile(new URL('../../src/ui/exploration.css', import.meta.url), 'utf8')
 for (const [name, engine, options] of [['chrome', chromium, { channel: 'chrome' }], ['webkit', webkit, {}]]) {
   const browser = await engine.launch({ headless: true, ...options })
   try {
     const page = await browser.newPage()
-    await page.setContent(`<style>${css}</style><main class="syn3h-shell" data-glass="0"><div class="wi-glass">Readable controls</div></main>`)
+    await page.setContent(`<style>${css}</style><main class="syn3h-shell exploration-ui" data-glass="0"><div class="wi-glass">Readable controls</div></main>`)
     for (const level of ['2', '0']) for (const glass of ['0', '1', '2']) {
       const result = await page.evaluate(({ level, glass }) => {
         document.documentElement.dataset.gfx = level

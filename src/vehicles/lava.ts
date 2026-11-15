@@ -1,6 +1,6 @@
 /** Indestructible vehicles: viscous lava, cooling paint and legacy water buoyancy. */
 import * as THREE from 'three/webgpu'
-import { applyWaterForces, waterSinking } from './buoyancy'
+import { applyWaterForces, waterSinking, hasWaterContact } from './buoyancy'
 import { defineParam } from '../../shared/params'
 import type { RAPIER } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
@@ -33,7 +33,8 @@ export function applyLava(
 ): boolean {
   const terrain=liquidTerrains.get(ub.body)
   if (terrain && liquidKind(terrain,ub.pos.x,ub.pos.z)!=='water') return false
-  if (waterSinking.value) return false
+  // The shared hydrodynamic pass owns forces, but controllers still need contact for motor drag.
+  if (waterSinking.value) return terrain ? hasWaterContact(ub.body, terrain) : false
   if (!buggyLavaFloat.value) return false
   // The shared force field handles wing escape for both buggies, independent of mass.
   const state=liquidStates.get(ub.body)
@@ -172,7 +173,15 @@ export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terr
  if(!escape){state.wingLiftSurface=-Infinity;state.wingLiftSpeed=0;state.wingLaunchSpeed=0}
  if(!immersion&&!escape&&!(type==='water'&&waterSinking.value))return
  if(type==='water'){state.heat=0;state.heatHeight=-100}
- if(type==='water'&&waterSinking.value&&!escape){applyWaterForces(body,world,terrain,kind,dt);return}
+ if(type==='water'&&waterSinking.value&&!escape){
+  // An already flying field skips without hull drag, just as in the legacy water path.
+  // Keep its vertical support too; merely removing drag lets the skim fall underwater.
+  if(buggy&&wingsOpen&&state.fastWingContact&&liquidWingLift.value>0){
+   const velocity=body.linvel(),depth=Math.max(0,surface-p.y)
+   body.addForce({x:0,y:body.mass()*(-world.gravity.y+Math.max(0,-velocity.y)*8+depth*20),z:0},true)
+  }else applyWaterForces(body,world,terrain,kind,dt)
+  return
+ }
  if(type==='water'&&buggy&&!escape)return
  const lava=type==='lava',fraction=Math.min(1,immersion/.5)
  const v=body.linvel(),w=body.angvel(),r=body.rotation();liquidQ.set(r.x,r.y,r.z,r.w)

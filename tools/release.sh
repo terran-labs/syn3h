@@ -66,7 +66,9 @@ fi
 # Resolve the calendar label before building, so the UI and frozen metadata agree.
 CALVER="$(node tools/release-notes.mjs next)" || fail "could not compute the calendar version"
 export SYN3H_RELEASE_VERSION="$CALVER"
-PREV="$(tail -1 ../Syn3h-stable/releases.tsv 2>/dev/null | cut -f1)"
+# Attempt records include rolled-back deployments. Draft against the last accepted
+# production milestone, not the latest attempted release tag.
+PREV="$(awk -F '\t' '$5 == "production" { previous = $2 } END { print previous }' release-notes/history.tsv)"
 
 # --- Freeze ---------------------------------------------------------------------------------
 echo "Freezing $MILESTONE ($COMMIT)..."

@@ -36,7 +36,9 @@ try {
     assert.ok(!Object.keys(stored.world.values).some(key => key.startsWith('audio.')))
     await page.reload(); await readyPage(page)
     await page.waitForFunction(() => [...document.querySelectorAll('.saved-world-moon')].some(button => !button.hidden))
-    await page.waitForTimeout(1200) // The boot overlay fades after its done flag.
+    // The logo clock starts at its first draw and can advance slower than wall time.
+    await page.waitForFunction(() => window.syn3h.shell.galaxy.logo.introTime > 3.6, null, { timeout: 30000 })
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     await page.screenshot({ path: 'tests/ui/artifacts/saved-worlds/desktop.png' })
     assert.equal(await page.locator('.saved-world-moon').count(), 1)
     await page.evaluate(() => { window.syn3h.shell.stopAttract(); window.syn3h.params.set('world.seed', 888) })

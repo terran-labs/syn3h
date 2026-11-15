@@ -52,7 +52,10 @@ export class WaterEffects implements System {
           const half=verticalHalfExtent(h,c.rotation()),y=c.translation().y
           bottom=Math.min(bottom,y-half);top=Math.max(top,y+half)
         }
-        if(!Number.isFinite(bottom)){bottom=p.y-.5;top=p.y+.5}
+        // The shared water model displaces columns from body y-.5 to y+.5. A planing
+        // buggy's thin skid plate can already be dry while those columns still lift it.
+        // Include that same envelope so a supported skimming hull still makes spray.
+        bottom=Math.min(bottom,p.y-.5);top=Math.max(top,p.y+.5)
         const fraction=submergedFraction(bottom,top,surface)
         let id=this.ids.get(v);if(!id){id=`water-${++this.serial}`;this.ids.set(v,id)}
         const velocity=v.body.linvel();this.point.set(x,surface,z);this.velocity.set(velocity.x,velocity.y,velocity.z)

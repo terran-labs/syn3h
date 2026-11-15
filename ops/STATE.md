@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-15 01:52 PST. Demo deadline: Sunday noon Pacific.
+Last verified: 2026-11-15 03:44 PST. Demo deadline: Sunday noon Pacific.
 
 ## Authority
 
@@ -20,24 +20,29 @@ condition. Water transparency from above is unimplemented, not an accepted water
 
 ## Production
 
-Release 2 remains the last verified public build: bc8cb48, Worker
-747d2041-ba63-403a-818f-77834ae9951a. Explicit rollback target is release-2.
-Release 3 was attempted and rolled back twice. First public scoring snapshots failed;
-no scoring regression was demonstrated and the cause remains unproven. Retry failed with
-resource 404s before initialization. Rollback network checks passed. Never infer production
-from the newest release tag or TSV row.
+Release 5 is accepted live at https://www.syn3h.com/ as of 03:38 PST:
+version v26.11.1501, source 5e38ef6, Worker e9f20f19-4194-40c2-8e6b-a8becb6190a0,
+frozen copy 20261115-032406-5e38ef6. Worker and primary multiplayer, exact assets and
+all eight public vehicle checks passed with no page errors. Acceptance marker and log:
+/tmp/astra-release5-accepted and /tmp/astra-release5-publish.log.
+Release 4 remains a tested fallback. Release 5 is now the target for any future rollback.
+The current pinned release-5 supervisor restores release-4 and must be revised before reuse.
+The deployment supervisor exited successfully after capturing all eight showcase scenes.
+The reviewed five-scene GIF and stills are published with the release notes; all six
+attachment URLs pass. Original captures are preserved, including excluded weak frames.
 
-Evidence: /tmp/astra-release3-domain.log, /tmp/astra-release3-retry.log,
-/tmp/astra-release3-retry-rollback2.log and /tmp/astra-public2-diagnostic.log.
-R3 frozen41743f6 includes the speed cap,904tests,dryrun,net3,vehicle8 and both seam checks.
-R4 frozen c72b0cb has975tests including one targeted timeout rerun,dryrun,net3,vehicle8,
-solo seam and multiplayer wrap checks. Both are preserved fallback candidates; neither
-validates the newer normal-entry build. A deliberate new frozen candidate is required.
+The first release-4 attempt failed the primary site's default-bot wait and rolled back to
+release-2; both rollback addresses passed. The test used a repeating room namespace.
+Unique timestamp/random rooms now prevent fixture reuse; the earlier cause is unproven.
+All waits and assertions were retained. Preserved evidence: /tmp/astra-release4-attempt1.
+Release 3 was attempted and rolled back twice. Never infer acceptance from tags alone.
+The release-4 rollback history is retained as evidence, not the current rollback selection.
 
-Release automation now checks exact identity, HTML and linked entry JS/CSS before gameplay,
-and checks the primary www domain before recording success. Runtime lazy assets still need
-browser acceptance. Notes/showcase failures stay nonfatal after acceptance; no automatic
-publication. Actual showcase capture and calendar reconciliation remain owed.
+Release automation checks exact identity, HTML and entry assets, then primary gameplay
+and the eight-vehicle matrix before recording acceptance. Notes and captures are nonfatal
+post-acceptance artifacts. Release 4 retains its reviewed three-scene showcase. Release 5
+adds the settled lobby and gliding wings to the curated selection; the obsolete lobby
+capture selector is fixed with historical card behavior preserved.
 
 ## Integrated evidence and current queue
 
@@ -51,31 +56,52 @@ Evidence: /tmp/astra-corrected-integration.log, /tmp/astra-gearwater-integration
 
 Trunk fda6438 integrated canonical races, main/UI hooks, mixed bots, animated lobby logo
 and the terrain import-cycle fix. Limiter rollout 752a16c followed after all old wrappers
-and queued waiters drained. The current root source remains that accepted baseline.
+and queued waiters drained. These are included in the current accepted source below.
 
-Unaccepted combined candidate c736963 is on fast: new Buggy and Jet models, Water66fdf14
-plus correction c28eafb and legacy test setup24d121b, stable Post19cc879, GI7e4303e,
-UX3873abc, and Hover/Tank lab studies. Typecheck passes; full suite1124pass/1fail.
-The remaining failure is ice jet bot safety (9.94 seconds inverted, bound below3), assigned
-to Bots against this exact source. Water wing/Zorb tests now pass unchanged bounds.
-Evidence: /tmp/astra-defaults-combined-suite.log. Final combined browser checks are running
-in /tmp/astra-defaults-browser.log. Earlier91b73c3 passed60 lab tests and8 tick-bound vehicle
-runs, which do not validate the later candidate. No new release is frozen or public.
+Current accepted source is da5a89c, tagged m16-default-on and pushed to trunk.
+It includes the new Buggy and Jet models, corrected water contact/wing/Zorb support,
+stable lighting and half-resolution GI, the fine-line UX redesign, aggregate player lights,
+and Hover/Tank lab studies. Typecheck and all 1,143 tests across 146 files pass.
+Evidence: /tmp/astra-defaults-final-suite.log.
 
-Race lifecycle passes on fda6438 plus getter correction: staged eligible encounter,
-automatic countdown/result, guest controls, held host return and expiry/takeover.
-Natural idle-spawn100s runs had no nearby ground bot within60m and no race proposal.
-Evidence: /tmp/syn3h-astra-races-encounter-v7.log. New UX Exit world selector needs combined
-coverage. Presence0780403 includes canonical serverd247487 and validated UI; pending root
-integration. Saved-seed moons remain contract work. Temporal AA, volumetric clouds, aerial
-Pester evasion and above-water transparency remain unfinished. GI is in the unaccepted batch.
+The jet pilot now transforms angular acceleration through the actual principal inertia
+frame and bounds its final descent lean. Original gains and safety assertions remain.
+Combined race testing also found and fixed a removed-leader physics read. The corrected
+combined browser run passes automatic countdown, actual winner, guest restrictions,
+Exit world eligibility, host drop/rejoin and expiry/takeover with no errors.
+Evidence: /tmp/astra-combined-races-fixed.log. This stages an eligible nearby encounter;
+idle-spawn discovery is not guaranteed. Presence passes combined live endpoint checks.
+
+Frozen validation passed: full suite 1,143 tests, direct and 150 ms latency network,
+three consecutive network runs, eight vehicles, WebGPU/WebGL entry and solo seams.
+The dry two-player seam fixture passed all 17 checks, including actual far-side contact,
+tag transfer and shove. It uses supported dry terrain, bounded readiness and unchanged
+original gameplay assertions. Earlier intermittent startup stale states remain unexplained;
+the dry steady-state result does not prove wet or rough-terrain behavior.
+Evidence: /tmp/syn3h-frozen-wrap-grade05.log and .json. Tooling fixes are on fast1b2cc25.
+
+The next batch is integrated from integration/next-visuals after typecheck, all 1,156 tests
+across 150 files and a production build passed. Combined WebGPU/WebGL entry, four touch
+and desktop layouts, and saved-world browser checks pass. The browser wrapper failed
+only at cleanup with EPERM; all owned ports were verified closed. The settled logo is complete.
+Evidence: /tmp/astra-next-visuals-full-gate.log and /tmp/astra-next-visuals-browser.log.
+Cloud volumes, temporal antialiasing, saved moons and touch clearance passed the new
+frozen and public checks and are live in release 5.
+Temporal rejects history on procedural position/sprite materials, including water/grass;
+GI is screen-space, clouds have no ground shadows, real-device performance is unmeasured.
+
+Aircraft Pester evasion16df9a6 remains rejected. Research7ec2630 completed99 measurements
+and independent Weapons review, with two escapes and two harmful catches. No safe side
+selection or forward-flight benefit established. No further runtime implementation approved.
+Ground dodge and all-bot gear remain delivered. Water transparency remains unimplemented;
+smooth near-camera terrain remains deferred and tank/hover study selection remains open.
 
 ## Operations
 
 All heavy jobs use absolute /Users/vtn/dev/Syn3h/tools/heavy.sh: kernel-lock v2,
 strict three slots, one job per lane, maximum two test workers. Migration barrier completed,
-all14 lanes cleared; no current hold. Root sentinel is paused until this batch is accepted,
-then resume the existing script, now using the absolute helper for tests and smoke.
+all14 lanes cleared; no current hold. The existing root sentinel resumed with da5a89c as its baseline and uses the absolute
+helper for tests and smoke on subsequent trunk changes.
 Do not restart old wrappers or bypass the limiter. Current browser job and peer completion
 notifications are active. Existing continuation heartbeat remains in place.
 

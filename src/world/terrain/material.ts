@@ -34,6 +34,7 @@ export const terrainSurfaceResponse = defineParam({ ...R, id: 'terrain.surfaceRe
 export const terrainMacroColour = defineParam({ ...R, id: 'terrain.macroColour', label: 'Ground: large colour variation' })
 /** One accent colour per planet, used sparingly. */
 export const terrainAccent = defineParam({ ...R, id: 'terrain.accent', label: 'Ground: accent colour' })
+export const terrainRelief = defineParam({ ...R, id: 'terrain.relief', label: 'Ground: relief strength', default: 0.2 })
 const RICH = [terrainDetailNormal, terrainSurfaceResponse, terrainMacroColour, terrainAccent]
 
 export interface TerrainMaterial {
@@ -103,6 +104,7 @@ export function createTerrainMaterial(): TerrainMaterial {
   const uResponse = uniform(terrainSurfaceResponse.value)
   const uMacro = uniform(terrainMacroColour.value)
   const uAccent = uniform(terrainAccent.value)
+  const uRelief = uniform(terrainRelief.value)
   const accent = U(0)
   // x: 1 when this look has an accent; y: 1 for a shore margin, 0 for cliff streaks; z: sand glitter.
   const accentMode = uniform(new THREE.Vector3(0, 0, 0))
@@ -265,15 +267,23 @@ export function createTerrainMaterial(): TerrainMaterial {
   // relief is in real metres. It fades with distance, where the fine noise would shimmer.
   const buildNormal = () => Fn(() => {
     const fade = smoothstep(220, 40, camDist)
-    let height = mid.mul(0.5).add(fine.mul(0.1)).mul(fade)
+    // Suppress frequencies smaller than a pixel, especially across the long footprint
+    // of a grazing view. Distance alone cannot detect that anisotropic undersampling.
+    const footprint = max(p.dFdx().length(), p.dFdy().length())
+    const resolved = (frequency: number) => float(1).sub(smoothstep(0.25, 0.75, footprint.mul(frequency)))
+    let height = mid.mul(0.5).add(fine.mul(0.1).mul(resolved(0.7))).mul(fade)
     if (rich) {
       // Grain from 30 cm down to 4 cm, near the camera only.
-      const close = mx_noise_float(p.mul(3.1)).mul(0.05).add(mx_noise_float(p.mul(8.7)).mul(0.02)).add(mx_noise_float(p.mul(23)).mul(0.008))
+      const close = mx_noise_float(p.mul(3.1)).mul(0.05).mul(resolved(3.1))
+        .add(mx_noise_float(p.mul(8.7)).mul(0.02).mul(resolved(8.7)))
+        .add(mx_noise_float(p.mul(23)).mul(0.008).mul(resolved(23)))
       // Wind ripples on loose sand, half a metre apart, bent by the 10 m noise.
       const ripple = sin(p.x.mul(9.2).add(p.z.mul(7.6)).add(mid.mul(14)).add(mx_noise_float(p.mul(0.35)).mul(5))).mul(0.007).mul(accentMode.z).mul(float(1).sub(cliff)).mul(float(1).sub(rockAmount))
-      height = height.add(close.add(ripple.mul(float(1).sub(paved))).mul(smoothstep(60, 6, camDist)).mul(uDetail))
+      height = height.add(close.add(ripple.mul(float(1).sub(paved)).mul(resolved(2))).mul(smoothstep(60, 6, camDist)).mul(uDetail))
     }
-    const dH = vec2(height.dFdx(), height.dFdy())
+    // The old metre-scale amplitudes tilt normals enough to paint broad black bands
+    // under low sunlight. Keep relief subtle; 1 on the slider restores the old amplitude.
+    const dH = vec2(height.dFdx(), height.dFdy()).mul(uRelief)
     const sx = positionView.dFdx()
     const sy = positionView.dFdy()
     const n = normalView
@@ -297,6 +307,7 @@ export function createTerrainMaterial(): TerrainMaterial {
     material.needsUpdate = true
   }
   params.onChange((id) => {
+    if (id === terrainRelief.def.id) { uRelief.value = terrainRelief.value; return }
     if (!RICH.some((r) => r.def.id === id)) return
     uDetail.value = terrainDetailNormal.value
     uResponse.value = terrainSurfaceResponse.value

@@ -1,6 +1,6 @@
 # Automatic landmark race UI review
 
-Design review only. No race UI is implemented. The Bots lead proposes host-managed races
+The race display is implemented and locally validated. Integrated host/guest acceptance remains pending. The Bots lead proposes host-managed races
 with a five-second countdown, a two-minute limit, an eight-second result and at least
 ninety seconds between races. Nearby ground bots target a reachable dry landmark while
 the player remains free to drive elsewhere.

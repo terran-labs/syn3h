@@ -1,4 +1,4 @@
-/** Opt-in water forces. Native controllers and Rapier seabed contacts retain ownership of drive. */
+/** Shared water forces. Native controllers and Rapier seabed contacts retain ownership of drive. */
 import * as THREE from 'three/webgpu'
 import { defineParam, worldLavaAltitude } from '../../shared/params'
 import type { RAPIER } from '../core/physics'
@@ -17,7 +17,20 @@ function tuning(kind:string, buoyancy:number, planing:number) {
 // Sealed craft displace more than their weight; dense tracked armour has no reserve lift.
 export const waterProfiles = { buggy:tuning('buggy',.85,8), tank:tuning('tank',0,100), hovercraft:tuning('hovercraft',1.1,16), jet:tuning('jet',.65,24), zorb:tuning('zorb',2,100) }
 const point=new THREE.Vector3(),q=new THREE.Quaternion(),flow={x:0,z:0},slope={x:0,z:0}
-/** A box's four vertical displacement columns, or a sealed sphere's displaced volume. */
+/** Match the four hull columns used by the force pass, including pitched contact. */
+export function hasWaterContact(body:RAPIER.RigidBody,terrain:Terrain):boolean {
+ const p=body.translation(),r=body.rotation();q.set(r.x,r.y,r.z,r.w)
+ for(let i=0;i<4;i++){
+  point.set(i&1?.8:-.8,0,i&2?1.2:-1.2).applyQuaternion(q).add(p)
+  if(terrain.liquidKindAt?.(point.x,point.z)==='water' &&
+     (terrain.liquidHeightAt?.(point.x,point.z)??-Infinity)>point.y-.5)return true
+ }
+ return false
+}
+// Match ZORB_FLOAT_DEPTH in zorb.ts: the generated force field rides on its base, rather
+// than displacing water like a solid sphere. Keep current-relative drag in the shared pass.
+const ZORB_SUPPORT_DEPTH=.4
+/** A box's four displacement columns, or the sealed field's shallow support envelope. */
 export function applyWaterForces(body:RAPIER.RigidBody,world:RAPIER.World,terrain:Terrain,kind:string,dt:number, radius=0,centre?:THREE.Vector3):void {
  if(body.isKinematic())return
  const profile=kind.includes('buggy')?waterProfiles.buggy:waterProfiles[kind as keyof typeof waterProfiles]??waterProfiles.hovercraft
@@ -29,8 +42,7 @@ export function applyWaterForces(body:RAPIER.RigidBody,world:RAPIER.World,terrai
   const surface=terrain.liquidHeightAt?.(point.x,point.z)??-Infinity
   if(!Number.isFinite(surface)||terrain.liquidKindAt?.(point.x,point.z)!=='water')continue
   const depth=surface-point.y
-  const wet=radius?THREE.MathUtils.clamp((depth+radius)/(2*radius),0,1):THREE.MathUtils.clamp(depth+.5,0,1)
-  const fraction=radius?wet*wet*(3-2*wet):wet
+  const fraction=radius?THREE.MathUtils.clamp((depth+radius)/(2*ZORB_SUPPORT_DEPTH),0,1):THREE.MathUtils.clamp(depth+.5,0,1)
   if(fraction<=0)continue
   flow.x=0;flow.z=0;terrain.liquidFlowAt?.(point.x,point.z,flow)
   const ground=terrain.heightAt(point.x,point.z)
