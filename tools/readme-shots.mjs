@@ -232,18 +232,17 @@ const SCENES = [
   {
     // Raymarched clouds at a low sun: a wide upward view with heavier cover, sun to the side.
     id: 'clouds-dusk', passage: 'Light that agrees with itself', planet: 'alpine', seed: 11, vehicle: 'buggy',
-    crop: { x: 0, y: 0, w: 960, h: 540 },
     params: { 'sun.timeOfDay': 17.6, 'weather.cloudCoverage': 0.55, 'weather.cloudDensity': 0.55 },
     async stage(page) {
       await page.evaluate(() => {
         const s = window.syn3h, h = window.vignette, t = s.terrain, top = window.vignette.centre()
         const sun = h.sun(), len = Math.hypot(sun.x, sun.z), ux = sun.x / len, uz = sun.z / len
         // Look 50 degrees off the sun so the clouds are side lit, over the peak.
-        const a = Math.atan2(uz, ux) + 0.9, lx = Math.cos(a), lz = Math.sin(a)
+        const a = Math.atan2(uz, ux) + 1.4, lx = Math.cos(a), lz = Math.sin(a)
         const x = top.x - lx * 800, z = top.z - lz * 800
         h.teleport(s.player, x, z, Math.atan2(-lx, -lz), 1.2)
         const y = h.ground(x, z)
-        h.shot({ x, y: y + 12, z }, { x: x + lx * 300, y: y + 140, z: z + lz * 300 }, 65)
+        h.shot({ x, y: y + 8, z }, { x: x + lx * 300, y: y + 105, z: z + lz * 300 }, 65)
       })
       await settle(page, 6000)
       return { ok: true }
