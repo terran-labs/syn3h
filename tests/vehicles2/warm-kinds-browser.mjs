@@ -71,9 +71,9 @@ try {
       for (let n = 0; n < 2; n++) {
         await page.evaluate(async kind => {
           const { createVehicle } = await import('/src/vehicles/index.ts')
-          const THREE = await import('three/webgpu')
-          const s = window.syn3h, cam = s.game.camera
-          const at = cam.getWorldPosition(new THREE.Vector3()).add(cam.getWorldDirection(new THREE.Vector3()).multiplyScalar(9))
+          // Bare module names do not resolve in page code: borrow the game's own Vector3.
+          const s = window.syn3h, cam = s.game.camera, V = cam.position.constructor
+          const at = cam.getWorldPosition(new V()).add(cam.getWorldDirection(new V()).multiplyScalar(9))
           window.__win.start()
           const v = window.__added = createVehicle(s.game, s.terrain, kind, at, 0)
           v.isLocal = false
