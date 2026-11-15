@@ -6,11 +6,12 @@
  *
  *   tools/heavy.sh node tests/ui/galaxy.mjs
  *
- * Needs the lane dev server on 5187.
+ * Needs a dev server; SYN3H_URL picks it (default http://127.0.0.1:5187/).
  */
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
+const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5187/'
 const out = 'tests/ui/artifacts/galaxy'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist'] })
@@ -21,7 +22,7 @@ try {
   for (const view of [{ name: 'desktop', viewport: { width: 1440, height: 900 } }, { name: 'phone', viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true }]) {
     const context = await browser.newContext(view), page = await context.newPage()
     page.on('pageerror', e => errors.push(`${view.name}: ${e.message}`)); page.on('console', m => { if (m.type() === 'error') errors.push(`${view.name}: ${m.text()}`) })
-    await page.goto(`http://127.0.0.1:5187/?room=galaxy-${view.name}-${Date.now()}`, { waitUntil: 'load' })
+    await page.goto(`${base}?room=galaxy-${view.name}-${Date.now()}`, { waitUntil: 'load' })
     await ready(page)
     // Headless Chrome draws slowly, and the game would step its graphics level down to the
     // lowest, which retires the galaxy. Hold the level so this checks the galaxy itself.
@@ -75,7 +76,7 @@ try {
   }
   // Without the option nothing changes.
   const plain = await browser.newPage({ viewport: { width: 1280, height: 720 } })
-  await plain.goto(`http://127.0.0.1:5187/?galaxy=0&room=galaxy-off-${Date.now()}`, { waitUntil: 'load' }); await ready(plain)
+  await plain.goto(`${base}?galaxy=0&room=galaxy-off-${Date.now()}`, { waitUntil: 'load' }); await ready(plain)
   assert.equal(await plain.evaluate(() => document.querySelector('.syn3h-shell').classList.contains('is-galaxy') || Boolean(window.syn3h.shell.galaxy)), false)
   await plain.close()
   console.log(JSON.stringify({ ok: true, errors }))
