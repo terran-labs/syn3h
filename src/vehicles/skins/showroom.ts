@@ -19,7 +19,7 @@
 import * as T from 'three/webgpu'
 import {
   Fn, abs, atan, attribute, clamp, cross, dFdx, dFdy, dot, faceDirection, float, floor, fract, fwidth, length,
-  max, mix, mod, normalLocal, normalView, normalize, positionLocal, positionView, positionViewDirection,
+  max, mix, mod, normalGeometry, normalLocal, normalView, normalize, positionGeometry, positionLocal, positionView, positionViewDirection,
   select, sign, sin, smoothstep, time, uniform, uv, vec2, vec3,
 } from 'three/tsl'
 import { defineParam, params } from '../../../shared/params'
@@ -160,12 +160,14 @@ function scaleHeight(cell: number, relief: number, lean: number): ScaleField {
  * groove, and fine radial ribs on the sidewall. Returns metres.
  */
 function tyreHeight(): N {
-  const p = positionLocal, angle = atan(p.y, p.z), radius = length(p.yz)
-  const sidewall = smoothstep(.5, .85, abs(normalLocal.x))
+  // Geometry attributes stay in the wheel frame; local nodes include instance transforms.
+  // Use the same frame for the footprint so filtering follows each rotating tyre too.
+  const p = positionGeometry, angle = atan(p.y, p.z), radius = length(p.yz)
+  const sidewall = smoothstep(.5, .85, abs(normalGeometry.x))
   const lug = abs(fract(angle.mul(26 / (Math.PI * 2)).add(abs(p.x).div(radius.max(.05)).mul(1.6))).sub(.5))
   const tread = smoothstep(.1, .2, lug).mul(smoothstep(.02, .07, abs(p.x).div(radius.max(.05))))
   const ribs = sin(angle.mul(96)).mul(.5).add(.5).mul(.25)
-  const footprint = length(fwidth(positionLocal)).div(radius.max(.05).mul(.12))
+  const footprint = length(fwidth(positionGeometry)).div(radius.max(.05).mul(.12))
   return mix(tread, ribs, sidewall).mul(radius.mul(.035)).mul(smoothstep(.6, .15, footprint))
 }
 
