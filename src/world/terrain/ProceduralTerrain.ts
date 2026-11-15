@@ -65,13 +65,14 @@ export class ProceduralTerrain implements Terrain {
     // Level of detail follows the camera once per frame, after the camera has moved.
     this.lodSystem = game.add({
       update: () => {
-        this.meshes.updateLod(game.camera.position)
-        this.look.setSea(worldLavaAltitude.value)
         // Curved horizon. Every material in the scene must take the same bend or its objects
         // float against the ground, so while the curve is on, the scene is walked every frame
         // (a few hundred objects) and anything new (a joined vehicle, rebuilt particles) is
         // bent too. The sky is left alone. Nothing is touched while the curve is 0.
         updateCurve(game.camera.position, this.size)
+        // After the curve: level of detail also hides chunks that are over the horizon.
+        this.meshes.updateLod(game.camera.position)
+        this.look.setSea(worldLavaAltitude.value)
         const round = curveParam.value > 0
         if (round || this.wasRound) {
           game.scene.traverse((o) => {

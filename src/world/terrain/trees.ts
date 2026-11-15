@@ -12,6 +12,7 @@
  * like the terrain chunks, so forest continues across the seam.
  */
 import * as THREE from 'three/webgpu'
+import { overHorizon } from '../curve'
 import type { System } from '../../core/Game'
 import { SPECIES, SPECIES_COUNT, TREE_STRIDE } from './forest'
 import { hash2 } from './noise'
@@ -296,7 +297,8 @@ export class Trees implements System {
         p.updateMatrix()
       }
       const dx = s.center.x + ox - c.x, dy = s.center.y - c.y, dz = s.center.z + oz - c.z
-      p.visible = Math.sqrt(dx * dx + dy * dy + dz * dz) - s.radius < this.drawDistance
+      p.visible = Math.sqrt(dx * dx + dy * dy + dz * dz) - s.radius < this.drawDistance &&
+        !overHorizon(s.center.x + ox, s.center.z + oz, s.radius, s.center.y + s.radius)
     }
   }
 

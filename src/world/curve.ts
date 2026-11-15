@@ -68,6 +68,37 @@ const curveState = uniform(new Vector3(0, 0, 0)).setGroup(renderGroup).onRenderU
 export function updateCurve(cameraPosition: Vector3, size: number): void {
   const R = curveRadius(size, curveParam.value)
   state.set(cameraPosition.x, cameraPosition.z, Number.isFinite(R) ? 1 / R : 0)
+  // How far round the planet the camera can see ground at sea level: the horizon.
+  const eye = cameraPosition.y > 1 ? cameraPosition.y : 1
+  eyeAngle = Number.isFinite(R) ? Math.acos(R / (R + eye)) : 0
+}
+
+let eyeAngle = 0
+
+/**
+ * Is something entirely behind the planet? On a round world most of the map is over the
+ * horizon, so this replaces frustum culling as the main way of not drawing things.
+ *
+ * The thing is given by a circle on the ground that contains it (centre and radius, at the
+ * image it is drawn at) and the height of its top above the sea. It is hidden when even
+ * its nearest edge is further round the planet than the camera's horizon plus the extra
+ * distance at which something that tall still pokes over it:
+ *
+ *   d / R  >  acos(R / (R + eye))  +  acos(R / (R + top))
+ *
+ * Exact for a sphere, and conservative: it never hides something that could be seen.
+ * Always false on a flat world.
+ */
+export function overHorizon(x: number, z: number, radius: number, top: number): boolean {
+  const invR = state.z
+  if (!(invR > 0)) return false
+  const dx = x - state.x
+  const dz = z - state.y
+  const d = Math.sqrt(dx * dx + dz * dz) - radius
+  if (d <= 0) return false
+  const R = 1 / invR
+  const t = top > 0 ? top + 2 : 2
+  return d * invR > eyeAngle + Math.acos(R / (R + t)) + 0.02
 }
 
 /** 1 / R in use, 0 when flat. For tests and tools. */
