@@ -4,7 +4,7 @@ import { Game, type System } from '../../src/core/Game'
 /** Exercise registration without constructing a renderer or physics world. */
 function harness() {
   const systems: System[] = []
-  const game = Object.assign(Object.create(Game.prototype) as Game, { systems, buildMark: 0 })
+  const game = Object.assign(Object.create(Game.prototype), { systems, buildMark: 0 }) as Game
   return { game, systems }
 }
 
