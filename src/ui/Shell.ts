@@ -13,6 +13,7 @@ import { wordmarkSvg } from './brand/logo'
 import { PlanetPicker } from './planets/PlanetPicker'
 import { planetOrbs } from './planets/PlanetOrbs'
 import { Galaxy, type GalaxyWorld } from './galaxy/Galaxy'
+import { createDaydreamControl } from '../bots/daydreamControl'
 import { qualityLevel } from './quality/ladder'
 import { Vector3 } from 'three/webgpu'
 import { PLANETS } from '../world/planets'
@@ -153,6 +154,10 @@ export class Shell implements System {
       const compact = slot.hasAttribute('data-compact')
       this.pickers.push(new PlanetPicker(slot, { compact, onPick: id => this.pickPlanet(id, compact), onCustom: () => this.openCustomPlanet() }))
     }
+    // Daydream: how long the game waits, left alone, before it starts driving itself. The
+    // control and its parameter are the Bots lane's; it sits with the first settings.
+    const daydream = createDaydreamControl()
+    this.element.querySelector('.settings-links')!.after(daydream); signal.addEventListener('abort', () => daydream.dispose())
     this.glass(signal)
     for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) slider.addEventListener('input', () => params.set(slider.dataset.param!, Number(slider.value)), { signal })
     this.startGalaxy()
