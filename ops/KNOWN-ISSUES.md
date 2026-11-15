@@ -1,6 +1,6 @@
 # Known issues
 
-Kept by the Orchestrator. Last revised Saturday 14 November, 6:35pm PST. These ship as known
+Kept by the Orchestrator. Last revised Saturday 14 November, 6:20pm PST. These ship as known
 in release 1 by the Foreman's decision, on the grounds that a fresh room opens on the
 volcanic world in paused daylight.
 
