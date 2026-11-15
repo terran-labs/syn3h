@@ -69,6 +69,10 @@ export interface RoomSnapshot {
   host: number
   locked: boolean
   zone?: HillZone | null
+  /** Server ms when an active (not parked) player was last seen; see IDLE_RESET_MS. */
+  activeAt?: number
+  /** The world was reset for being idle: the next player to join brings theirs. */
+  vacant?: boolean
 }
 
 interface Player {
@@ -85,6 +89,8 @@ interface Player {
   windowStart: number
   stateCount: number
   jsonCount: number
+  /** Server ms of joining; 0 for a player adopted after hibernation (not newly arrived). */
+  joinedAt: number
 }
 
 const ID_PATTERN = /^[A-Za-z0-9_.-]{1,64}$/
@@ -100,6 +106,20 @@ const RESPONDING_MS = 1500
 const BOT_CONTEST_SPEED = 2
 /** A bot the host has not updated for this long is gone (bot count lowered, or no host). */
 const BOT_EXPIRY_MS = 5000
+/**
+ * A room nobody is actually playing in forgets its world, so the next visitor does not inherit
+ * a stale night sky or someone's gravity. "Active" means connected and sending live (not
+ * parked) states, or joined in the last JOIN_GRACE_MS. With no active player for
+ * IDLE_RESET_MS (only hidden tabs left), or for LEFT_RESET_MS after the last active player
+ * left (long enough to survive a page reload), the world parameters and game state return to
+ * defaults and the next player to join brings their world, as into an empty room.
+ */
+export const IDLE_RESET_MS = 5 * 60_000
+export const LEFT_RESET_MS = 15_000
+const ACTIVE_STATE_MS = 5000
+const JOIN_GRACE_MS = 10_000
+/** How often, at most, a busy room persists "still active" for the Durable Object. */
+const ACTIVE_PERSIST_MS = 30_000
 
 export class Room {
   readonly name: string
@@ -125,18 +145,26 @@ export class Room {
   private lastTick = 0
   private scores: Record<number, number> = {}
   private nextId = 1
+  /** Server ms an active player was last seen. */
+  private activeAt: number
+  private activePersistedAt = 0
+  /** The last active player left; the shorter LEFT_RESET_MS applies. */
+  private activeLeft = false
+  /** Reset for idleness: the next hello brings its world, as into an empty room. */
+  private vacant = false
 
   constructor(name: string, opts: RoomOptions = {}) {
     this.name = name
     this.now = opts.now ?? Date.now
     this.maxPlayers = opts.maxPlayers ?? 16
     this.onPersist = opts.onPersist
-    for (const p of registry.all()) if (p.def.scope === 'world') this.values.set(p.def.id, p.def.default)
-    this.mode = this.paramNumber(gameMode.def)
+    this.setDefaults()
+    this.activeAt = this.now()
   }
 
   /** Advance time based rules. Called on every message; transports may also call it on a timer. */
   tick(): void {
+    this.tickIdle(this.now())
     this.tickKoth(this.now())
   }
 
@@ -159,7 +187,7 @@ export class Room {
 
   receive(peer: Peer, data: string | ArrayBuffer | Uint8Array): void {
     this.expireBots()
-    this.tickKoth(this.now())
+    this.tick()
     if (typeof data !== 'string') {
       const bytes = data instanceof Uint8Array ? data : new Uint8Array(data)
       const player = this.players.get(peer)
@@ -199,6 +227,10 @@ export class Room {
       case 'zone':
         this.onZone(player, msg.zone)
         break
+      case 'reset':
+        // Same permission as moving a shared slider.
+        if (!this.locked || player.info.id === this.host) this.resetWorld('host', player.info.id)
+        break
       case 'died':
         if (typeof msg.bot === 'number') {
           // Only the host simulates bots, so only the host can say one fell in.
@@ -215,7 +247,12 @@ export class Room {
     this.pending.delete(peer)
     const player = this.players.get(peer)
     if (!player) return
+    const wasActive = this.isActive(player, this.now())
     this.players.delete(peer)
+    if (wasActive && !this.anyActive(this.now())) {
+      this.activeLeft = true
+      this.activeAt = this.now()
+    }
     const id = player.info.id
     delete this.scores[id]
     this.broadcast({ type: 'leave', id })
@@ -239,7 +276,7 @@ export class Room {
   snapshot(): RoomSnapshot {
     return {
       params: Object.fromEntries(this.values), it: this.it, scores: { ...this.scores }, nextId: this.nextId,
-      host: this.host, locked: this.locked, zone: this.koth.zone,
+      host: this.host, locked: this.locked, zone: this.koth.zone, activeAt: this.activeAt, vacant: this.vacant,
     }
   }
 
@@ -255,6 +292,9 @@ export class Room {
     this.locked = Boolean(s.locked)
     this.mode = this.paramNumber(gameMode.def)
     this.koth.zone = s.zone ? cleanZone(s.zone) : null
+    // A snapshot from before activity was recorded counts as long idle.
+    this.activeAt = typeof s.activeAt === 'number' ? s.activeAt : 0
+    this.vacant = Boolean(s.vacant)
   }
 
   /** Re-attach a peer that was already joined before the process hibernated. No broadcast. */
@@ -263,7 +303,10 @@ export class Room {
       ...info, score: this.scores[info.id] ?? info.score ?? 0,
       kind: cleanKind(info.kind) ?? 'buggy', colors: cleanColors(info.colors) ?? [...DEFAULT_COLORS],
     }
-    this.players.set(peer, this.newPlayer(full))
+    const player = this.newPlayer(full)
+    // Not a new arrival: waking from hibernation must not make a parked room look active.
+    player.joinedAt = 0
+    this.players.set(peer, player)
     this.nextId = Math.max(this.nextId, info.id + 1)
   }
 
@@ -290,13 +333,17 @@ export class Room {
     this.pending.delete(peer)
 
     // The first player into an empty room brings the world, as the host did in the original.
-    if (this.players.size === 0 && msg.params && typeof msg.params === 'object') {
+    // So does the first into a room reset for idleness; parked players there are told.
+    const bringsWorld = this.players.size === 0 || this.vacant
+    if (bringsWorld && msg.params && typeof msg.params === 'object') {
       for (const id in msg.params) this.storeParam(id, msg.params[id])
       const mode = this.paramNumber(gameMode.def)
       if (mode !== this.mode) {
         this.mode = mode
         this.resetRound()
       }
+      this.vacant = false
+      if (this.players.size > 0) this.broadcast({ type: 'reset', reason: 'join', from: 0, params: Object.fromEntries(this.values), game: this.gameState() })
     }
 
     const used = new Set([...this.players.values()].map((p) => p.info.slot))
@@ -669,8 +716,61 @@ export class Room {
     const now = this.now()
     return {
       info, lastState: null, lastStateAt: 0, lastFireAt: -Infinity, shots: new Map(), lastTag: now,
-      windowStart: now, stateCount: 0, jsonCount: 0,
+      windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now,
     }
+  }
+
+  // -------------------------------------------------------------------------------------
+  // Idle rooms
+  // -------------------------------------------------------------------------------------
+
+  private isActive(p: Player, now: number): boolean {
+    if (now - p.joinedAt < JOIN_GRACE_MS) return true
+    return Boolean(p.lastState && !p.lastState.paused && now - p.lastStateAt < ACTIVE_STATE_MS)
+  }
+
+  private anyActive(now: number): boolean {
+    for (const p of this.players.values()) if (this.isActive(p, now)) return true
+    return false
+  }
+
+  private tickIdle(now: number): void {
+    if (this.anyActive(now)) {
+      this.activeAt = now
+      this.activeLeft = false
+      this.vacant = false
+      // Keep the Durable Object's copy roughly current, without writing on every message.
+      if (now - this.activePersistedAt > ACTIVE_PERSIST_MS) this.persist()
+      return
+    }
+    if (this.vacant) return
+    const limit = this.activeLeft ? LEFT_RESET_MS : IDLE_RESET_MS
+    if (now - this.activeAt >= limit) this.resetWorld('idle', 0)
+  }
+
+  /** World parameters to their defaults: those the server knows; others are forgotten. */
+  private setDefaults(): void {
+    this.values.clear()
+    this.unknownCount = 0
+    for (const p of registry.all()) if (p.def.scope === 'world') this.values.set(p.def.id, p.def.default)
+    this.mode = this.paramNumber(gameMode.def)
+  }
+
+  /**
+   * Return the room to a fresh one's world and game, keeping who is here. `idle`: nobody is
+   * playing, and the next player to join brings their world. `host`: someone allowed to edit
+   * the world asked for defaults. Everyone connected is told to reset their world sliders.
+   */
+  private resetWorld(reason: 'idle' | 'host', from: number): void {
+    this.setDefaults()
+    this.resetRound()
+    this.koth.zone = null
+    this.locked = false
+    this.activeLeft = false
+    this.vacant = reason === 'idle'
+    if (reason === 'idle') this.activeAt = this.now()
+    this.broadcast({ type: 'reset', reason, from, params: Object.fromEntries(this.values), game: this.gameState() })
+    this.persist()
   }
 
   private budget(player: Player, kind: 'state' | 'json'): boolean {
@@ -712,6 +812,7 @@ export class Room {
   }
 
   private persist(): void {
+    this.activePersistedAt = this.now()
     this.onPersist?.(this.snapshot())
   }
 }

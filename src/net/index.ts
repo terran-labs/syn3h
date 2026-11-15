@@ -47,7 +47,7 @@ import { Connection, serverUrl } from './Connection'
 import { NameTags } from './NameTags'
 import { netExtrapolate, netInterpDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
-import { bodyAlive, liveBots } from './bots'
+import { audibleVehicles, bodyAlive, liveBots } from './bots'
 
 /** The slice of GameAudio (src/audio) networking uses. */
 export interface NetAudio {
@@ -304,6 +304,22 @@ export class NetClient implements System {
     return !this.connected || !this.game.locked || this.isHost
   }
 
+  /**
+   * "Reset world to defaults" for the menu: every shared (world) parameter back to its default,
+   * for everyone in the room, and a fresh round. Allowed when `canEditWorld` is (host, or
+   * anyone while sliders are unlocked). Offline it resets this client's own world.
+   * Returns false when not allowed.
+   */
+  resetWorld(): boolean {
+    if (!this.canEditWorld) return false
+    if (this.connected) {
+      this.send({ type: 'reset' })
+    } else {
+      for (const p of params.all()) if (p.def.scope === 'world') params.set(p.def.id, p.def.default, 'local')
+    }
+    return true
+  }
+
   /** Announce a new vehicle kind or colours (the local vehicle itself is main.ts's to swap). */
   setProfile(p: { kind?: VehicleKind; colors?: PlayerColors }): void {
     if (p.kind) this.kind = cleanKind(p.kind) ?? this.kind
@@ -468,6 +484,20 @@ export class NetClient implements System {
   // -------------------------------------------------------------------------------------
   // Vehicles and roles
   // -------------------------------------------------------------------------------------
+
+  private audible: Vehicle[] = []
+
+  /**
+   * Other vehicles that should make sound: remote players, bots (replicas or our own), minus
+   * anyone out of a King of the Hill round. For `audio.setVehicles(() => net.audibleVehicles())`.
+   * The returned array is reused between calls.
+   */
+  audibleVehicles(): readonly Vehicle[] {
+    const out = this.mode === MODE_KOTH && this.connected ? this.game.koth.out : {}
+    const own = this.bots && !this.bots.remote ? this.bots.vehicles : []
+    const remotes = [...this.remotes].map(([id, r]): [number, Vehicle] => [id, r.vehicle])
+    return audibleVehicles(remotes, out, own, this.ctx.game.world, this.audible)
+  }
 
   /** The vehicle that stands for an id on this client, if any. */
   vehicleOf(id: number): Vehicle | undefined {
@@ -768,6 +798,16 @@ export class NetClient implements System {
       case 'game':
         this.onGame(msg)
         break
+      case 'reset': {
+        // Defaults first, so parameters the server does not know also go back; then the room's.
+        for (const p of params.all()) if (p.def.scope === 'world') params.set(p.def.id, p.def.default, 'remote')
+        params.applySnapshot(msg.params, 'remote')
+        this.zoneTimer = 0
+        this.onGame({ type: 'game', game: msg.game })
+        this.event(msg.reason === 'host' ? `${this.nameOf(msg.from)} reset the world to defaults`
+          : msg.reason === 'join' ? 'A new player brought their world' : 'The room was idle: world reset to defaults')
+        break
+      }
       case 'error':
         this.event(`Server: ${msg.message}`)
         if (msg.message.includes('protocol')) reloadForNewProtocol()
