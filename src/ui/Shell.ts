@@ -414,6 +414,7 @@ export class Shell implements System {
   play(descend = false): void {
     this.stopAttract()
     if (this.started) { this.closeMenu(); return }
+    this.requestEntryCursor()
     this.unlockAudio(); this.begin()
     if (descend && this.galaxy?.live && this.menuVisible && !matchMedia('(prefers-reduced-motion: reduce)').matches) { this.onPlay?.(); void this.descent(currentPlanet().id); return }
     this.closeMenu(); this.showHelp(false); this.onPlay?.()
@@ -424,14 +425,9 @@ export class Shell implements System {
   }
   /** The session starts: the name is kept and the choices that cannot change in play are fixed. */
   private begin(): void {
-    // Entering a world is the start of driving, by whichever route (Play, a world in the
-    // galaxy, a saved world). Ask for the cursor now, while the click or key press that got
-    // here still counts as a gesture; a refusal just leaves the cursor free and the panels open.
-    // An automatic start (a reload after switching vehicle, ?autoplay=1) has no gesture. Some
-    // browsers would grant the cursor anyway and others refuse, so it is not asked for: such
-    // a start always arrives with the cursor free and the panels open.
-    const gesture = (navigator as { userActivation?: { isActive: boolean } }).userActivation?.isActive ?? true
-    if (!this.started && this.capturesCursor && gesture) void this.captureCursor(true)
+    // Play has begun: from here the cursor request made at the entering gesture (if any) is
+    // judged like any other.
+    this.enteringByGesture = false
     try { localStorage.setItem('syn3h.playerName', this.playerName) } catch { /* Playing does not require storage. */ }
     this.started = true; this.worldDirty = true; this.nameInput.disabled = true; this.roomInput.disabled = true
     this.element.querySelector<HTMLButtonElement>('.shell-play')!.textContent = 'Return to Game ›'
@@ -454,7 +450,7 @@ export class Shell implements System {
       if (this.started) this.closeMenu(); else this.play()
       return true
     }
-    if (!this.started) this.unlockAudio()
+    if (!this.started) { this.requestEntryCursor(); this.unlockAudio() }
     void this.descent(galaxyId, () => {
       // Under the light, where a hitch cannot be seen: the world is built and the room joined.
       if (id !== currentPlanet().id) applyPlanet(id)
@@ -528,7 +524,7 @@ export class Shell implements System {
       if (!landed) camera?.clearCinematicPose()
       this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity'); root.classList.remove('is-descending')
       if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter') }
-      this.dropping = false
+      this.dropping = false; this.enteringByGesture = false
       if (this.started) { this.closeMenu(); this.showHelp(false) } else { this.releaseCursor(); this.overlay.inert = false; this.galaxy?.home() }
     }
   }
@@ -575,6 +571,23 @@ export class Shell implements System {
   }
   private performancePanel!: PerformancePanel
   configurePerformance(source: PerformanceSource): void { this.performancePanel.configure(source) }
+  /** True from the click or key press that enters a world until play begins or the entry is abandoned. */
+  private enteringByGesture = false
+  /**
+   * Entering a world is the start of driving. The cursor is asked for here, inside the click
+   * or key press itself, and held through the descent. Play begins seconds later, under the
+   * descent, and by then a browser may no longer count the gesture: asking at that point made
+   * the result depend on how long the descent took. An automatic start (?autoplay=1, the
+   * reload after a vehicle switch) has no gesture and is not asked for, so it always arrives
+   * with the cursor free and the panels open, in every browser.
+   */
+  private requestEntryCursor(): void {
+    if (this.started || !this.capturesCursor) return
+    const gesture = (navigator as { userActivation?: { isActive: boolean } }).userActivation?.isActive ?? true
+    if (!gesture) return
+    this.enteringByGesture = true
+    void this.captureCursor(true)
+  }
   /** Touch only: the panels are showing rather than the driving view. Never stored. */
   private touchPanels = false
   /** Panels are wanted exactly when the cursor is free (or, on touch, when the menu state is on). */
@@ -653,7 +666,8 @@ export class Shell implements System {
     // A drive key means the player wants to drive, unless it is being typed into a field or
     // moving a slider or select. A focused button or summary does not count: it only owns
     // Space and Enter, and focus rests on one after any click on the panels.
-    const typing = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName))
+    const field = (element: unknown) => element instanceof HTMLElement && (element.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(element.tagName))
+    const typing = field(event.target) || field(document.activeElement)
     if (!typing && !event.repeat && this.started && !this.menuVisible && DRIVE_KEYS.has(event.code) && this.capturesCursor && document.pointerLockElement !== this.game.canvas) void this.captureCursor()
     if (event.code === 'Escape') {
       if (event.target instanceof HTMLSelectElement) return
@@ -811,6 +825,7 @@ export class Shell implements System {
         params.applySnapshot(plan, 'local'); applied = true
         if (!this.started) { this.begin(); this.onPlay?.() }
       }
+      this.requestEntryCursor()
       if (!this.galaxy?.live || matchMedia('(prefers-reduced-motion: reduce)').matches) {
         apply(); this.closeMenu()
       } else {
@@ -988,8 +1003,9 @@ export class Shell implements System {
     if (this.cursorPending) return
     this.cursorPending = true
     const requestId = ++this.cursorRequest
-    // While entering a world the menu is still up and the descent is running: started is enough.
-    const active = () => requestId === this.cursorRequest && !this.abort.signal.aborted && this.started && (entering ? !this.userPaused : !this.menuVisible && !this.game.input.suspended)
+    // While entering a world the menu is still up and the descent is running, and play may not
+    // have begun yet: the entry itself is enough to keep the cursor.
+    const active = () => requestId === this.cursorRequest && !this.abort.signal.aborted && (entering ? (this.started || this.enteringByGesture) && !this.userPaused : this.started && !this.menuVisible && !this.game.input.suspended)
     try {
       try {
         await (this.game.canvas.requestPointerLock as (options?: { unadjustedMovement?: boolean }) => Promise<void> | void).call(this.game.canvas, { unadjustedMovement: true })

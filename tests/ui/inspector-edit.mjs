@@ -35,8 +35,8 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     // Newer shells open the rail whenever the cursor is free and drop the desktop toggle.
     // Panels show when the cursor is free; touch has one switch for them.
-    if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
-    if (!await page.locator('.world-inspector').isVisible()) await page.locator('.inspector-toggle').click()
+    if (await page.evaluate(() => !!document.pointerLockElement)) { await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.pointerLockElement) }
+    if (await page.locator('.inspector-toggle').isVisible() && await page.locator('.world-inspector').isHidden()) await page.locator('.inspector-toggle').click()
     await page.locator('.world-inspector').waitFor({ state: 'visible' })
     await page.locator('.world-inspector').waitFor({ state: 'visible' })
     const press = async locator => touch ? locator.tap() : locator.click()

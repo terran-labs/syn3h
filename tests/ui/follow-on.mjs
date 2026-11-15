@@ -26,7 +26,7 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
       syn3h.shell.configurePerformance(f.source)
     })
     assert.equal(await page.evaluate(()=>fixture.listeners.size),1,'reconfigure replaces subscription')
-    if(await page.evaluate(()=>!!document.pointerLockElement))await page.keyboard.press('Escape');if(await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'}); await page.locator('.performance-toggle').click()
+    if(await page.evaluate(()=>!!document.pointerLockElement)){await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.pointerLockElement)}if(await page.locator('.inspector-toggle').isVisible()&&await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'}); await page.locator('.performance-toggle').click()
     assert.equal(await page.locator('.performance-panel').isVisible(),true)
     assert.equal(await page.locator('.performance-chart polyline').evaluate(el=>el.getAttribute('points').split(' ').length),120)
     assert.match(await page.locator('.performance-body').innerText(),/Unavailable/)
@@ -79,7 +79,7 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
         if(calls!==2)throw new Error(`Expected raw and fallback, got ${calls}`)
       })
     }
-    if(await page.evaluate(()=>!!document.pointerLockElement))await page.keyboard.press('Escape');if(await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'})
+    if(await page.evaluate(()=>!!document.pointerLockElement)){await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.pointerLockElement)}if(await page.locator('.inspector-toggle').isVisible()&&await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'})
     await page.locator('.exit-world').click(); await page.waitForFunction(()=>!syn3h.shell.playing)
     await page.locator('.galaxy-label.is-current').focus();await page.keyboard.press('Enter')
     await page.waitForFunction(()=>syn3h.shell.playing&&!syn3h.shell.dropping,null,{timeout:60000})

@@ -16,7 +16,7 @@ for(const mode of ['desktop','phone']){
   await page.locator('.galaxy-label.is-current').focus();await page.keyboard.press('Enter')
   await page.waitForFunction(()=>syn3h.shell.playing&&syn3hNet.connected&&!syn3h.shell.dropping,null,{timeout:120000})
   assert.ok(sockets.includes(`ws://127.0.0.1:${process.env.UX_ROOM_PORT??'5298'}/ws?room=${room}`),'connected to the room server started for this run')
-  if(await page.evaluate(()=>!!document.pointerLockElement))await page.keyboard.press('Escape');if(await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'})
+  if(await page.evaluate(()=>!!document.pointerLockElement)){await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.pointerLockElement)}if(await page.locator('.inspector-toggle').isVisible()&&await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'})
   const vehicle=page.getByRole('combobox',{name:'Vehicle (reloads and respawns)'}),gear=page.getByRole('combobox',{name:'Gear',exact:true}),gi=page.getByRole('button',{name:'GI lighting'})
   for(const control of [vehicle,gear,gi]){
    assert.ok(await control.isVisible())
@@ -50,7 +50,7 @@ for(const mode of ['desktop','phone']){
   assert.ok(await strength.isDisabled())
   // Switching still reloads and respawns for now. Each of the other three vehicles in turn on
   // the desktop, one on the phone, always landing in the same room near a spawn pad.
-  const openPanels=async()=>{if(await page.evaluate(()=>!!document.pointerLockElement))await page.keyboard.press('Escape');if(await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'})}
+  const openPanels=async()=>{if(await page.evaluate(()=>!!document.pointerLockElement)){await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.pointerLockElement)}if(await page.locator('.inspector-toggle').isVisible()&&await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'})}
   for(const kind of mode==='desktop'?['hovercraft','tank','jet']:['hovercraft']){
    const timeOrigin=await page.evaluate(()=>performance.timeOrigin)
    await page.getByRole('combobox',{name:'Vehicle (reloads and respawns)'}).selectOption(kind)
