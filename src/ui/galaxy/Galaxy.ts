@@ -69,7 +69,7 @@ const PITCH_LOW = -0.2, PITCH_HIGH = 1.25
  * The system's scale. An ordinary planet's radius; the innermost orbit; the clear space kept
  * between the surfaces of worlds on neighbouring orbits; the innermost world's turn per second.
  */
-const PLANET = 0.5, INNER = 2.2, CLEAR = 0.14, RATE = 0.07
+const PLANET = 0.5, INNER = 1.4, CLEAR = 0.08, RATE = 0.07
 /** The view's half angle on the short side of the screen, as a tangent. */
 const VIEW_TAN = 0.62
 /**
@@ -105,6 +105,11 @@ export function orbitLayout(bodies: readonly PlanetBody[], time: number): OrbitP
 /** The camera distance at which the whole system fits the short side of the screen, with a margin. */
 export function fitDistance(bodies: readonly PlanetBody[]): number {
   return Math.max(...orbitLayout(bodies, 0).map(place => place.orbit + place.radius), INNER) * 1.08 / VIEW_TAN
+}
+/** Portrait phones start closer so the planets read; a pinch can reveal the outer orbits. */
+export function openingDistance(bodies: readonly PlanetBody[], width: number, height: number): number {
+  const portraitPhone = width > 0 && width <= 600 && height > width * 1.2
+  return fitDistance(bodies) * (portraitPhone ? 0.8 : 1)
 }
 /** The body a galaxy world is laid out as: its recipe's, or an ordinary planet's. */
 export function bodyOf(world: GalaxyWorld): PlanetBody {
@@ -738,7 +743,11 @@ export class Galaxy {
     canvas.addEventListener('wheel', event => { event.preventDefault(); this.handled = performance.now(); this.wake = 2; if (this.chosen < 0) this.distance = Math.min(this.farthest, Math.max(6, this.distance * Math.exp(event.deltaY * 0.0012))) }, { signal, passive: false })
     // Held upright, a phone has height to spare and no width: look down more steeply so the
     // orbits open out into the height. Only for the first view; after that the player's stands.
-    if (!this.framed) { this.framed = true; if (this.host.clientHeight > this.host.clientWidth * 1.2) this.pitch = 0.85 }
+    if (!this.framed) {
+      this.framed = true
+      this.distance = this.reach = openingDistance(this.options.worlds.map(bodyOf), this.host.clientWidth, this.host.clientHeight)
+      if (this.host.clientHeight > this.host.clientWidth * 1.2 && !this.reduced.matches) this.pitch = 0.85
+    }
     this.paintMaps(); this.resize(); this.loop(0)
   }
   private release(): void {
