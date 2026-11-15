@@ -78,11 +78,8 @@ describe.each(KINDS)('%s materializes',kind=>{
     // Under ordinary physics again: it comes down from the hold.
     const top=v.body.translation().y
     step(120)
-    // The jet's own hover hold (Jet.ts, jet.hoverHold) keeps its height above 2.6 m with no
-    // input, so it stays where it materialized instead of dropping: steady, neither climbing nor
-    // falling. Every other kind comes down from the hold.
-    if(kind==='jet')expect(Math.abs(v.body.translation().y-top),'hovers steady').toBeLessThan(.3)
-    else expect(v.body.translation().y,'dropped').toBeLessThan(top-.3)
+    // The jet releases automatic altitude hold too, so every kind drops after the cloud.
+    expect(v.body.translation().y,'dropped').toBeLessThan(top-.3)
     v.dispose();h.world.free()
   })
 
