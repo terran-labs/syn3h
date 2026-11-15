@@ -350,3 +350,16 @@ Measured on this Mac in headless Chrome at four times throttle: lobby usable in 
 second, taps answered in 0.3 to 0.65 seconds, starfield 11 to 13 frames a second with the
 game rendering underneath. Those are emulation figures, not a phone's.
 
+
+## Hints for a player who seems stuck
+
+`PlayHints.ts` watches the player's vehicle and returns one line when they appear stuck;
+the shell shows it in the controls card with a lit edge, and on touch the button it names
+pulses. It has no DOM in it, so `tests/ui/hints.test.ts` covers the rules directly.
+
+The jet: throttle is R and F (`src/core/Input.ts`); W only tips the nose and does nothing
+on the ground. Every jet controls text leads with "Hold R to lift off" (touch: "Hold THR +
+to lift off"). After two seconds of pushing W or the stick on a parked jet with no
+throttle, the hint says so again, at most three times, twelve seconds apart, and never
+once the throttle has been used. `tools/heavy.sh node tests/ui/jet-hint.mjs` plays it on a
+desktop and a landscape phone and checks that following the hint lifts the jet.

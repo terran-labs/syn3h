@@ -628,16 +628,20 @@
   ],
   "knownIssues": [
     {
-      "title": "Steep shores on water worlds",
-      "detail": "On desert and alpine worlds a vehicle that falls in the sea lands fine on a gentle beach but slides back off a steep bank. The owner chose wild shores; open wings are to lift a buggy out of water and lava. That lift is being built."
+      "title": "Wings lift needs two fixes",
+      "detail": "Open wings now lift a buggy out of lava and off any shore. Two problems remain: a fast wings-open touch on water is grabbed instead of skipping, and after lifting out the buggy only hovers slowly instead of flying away. Fixes are in progress."
+    },
+    {
+      "title": "Rear-ending a moving car gives no shove",
+      "detail": "The tag passes, but the car in front feels nothing on its own screen. Rams into parked or oncoming cars do shove. Queued for release 2."
+    },
+    {
+      "title": "The jet does nothing on W alone",
+      "detail": "R is throttle and lifts off; W is pitch. The controls card does not make that obvious yet."
     },
     {
       "title": "Bots crowd the summit",
       "detail": "Bots reach the top on every world, then ram each other and some drive off the edge. On the alpine world one of four left the road at the last bend."
-    },
-    {
-      "title": "Tag beams look nearly white at night",
-      "detail": "They are green by day. The fix is coded and awaiting night captures."
     },
     {
       "title": "Changing vehicle in the lobby reloads the page",
@@ -646,6 +650,10 @@
     {
       "title": "Not yet done by a person",
       "detail": "Nobody has driven the game by hand, heard the sound, or tried it on a real phone."
+    },
+    {
+      "title": "Network study is thin",
+      "detail": "Loss and stall results come from one run per condition on a loaded Mac. Nothing was measured on a phone, venue wifi or mobile data."
     }
   ]
 }

@@ -148,7 +148,7 @@ describe('Syn3hBuggy', () => {
     expect(speed(b)).toBeLessThan(0.01)
   })
 
-  test('next-gen brakes stop it on the tyres at about 1 g, then it holds', async () => {
+  test('next-gen brakes stop it on the tyres at well over 1 g, then it holds', async () => {
     const { bed, b } = await spawn()
     bed.run(1)
     b.input.y = 1
@@ -162,9 +162,10 @@ describe('Syn3hBuggy', () => {
       bed.run(0.02)
       t += 0.02
     }
-    // Faster than sliding friction alone (0.75 g) and no faster than grip allows (1.2 g).
-    expect(v0 / t).toBeGreaterThan(0.75 * 9.81)
-    expect(v0 / t).toBeLessThan(1.25 * 9.81)
+    // Harder than low speed grip alone (1.2 g), since grip rises with speed, and no harder
+    // than the high speed grip allows (3 g).
+    expect(v0 / t).toBeGreaterThan(1.2 * 9.81)
+    expect(v0 / t).toBeLessThan(3 * 9.81)
     bed.run(2)
     const p0 = pos(b)
     bed.run(1)
@@ -502,6 +503,25 @@ describe('Syn3hBuggy', () => {
     b.input.y = 1
     bed.run(3)
     expect(planar(pos(b), p0)).toBeGreaterThan(10)
+  })
+
+  test.each([25, 35, 45])('next-gen changes course at %i m/s at least as fast as classic in the first second', async (v) => {
+    const turn = async (nextGen: boolean) => {
+      params.set(buggyNextGen.def.id, nextGen)
+      const { bed, b } = await cruise(v)
+      const course = () => Math.atan2(b.body.linvel().x, -b.body.linvel().z)
+      const c0 = course()
+      b.input.x = 1
+      bed.run(1)
+      const after1 = Math.abs(course() - c0) * THREE.MathUtils.RAD2DEG
+      bed.run(1)
+      return { after1, upright: axis(b, 0, 1, 0).y }
+    }
+    const classic = await turn(false)
+    const next = await turn(true)
+    expect(next.after1).toBeGreaterThan(classic.after1 * 0.9)
+    expect(next.after1).toBeGreaterThan(20)
+    expect(next.upright).toBeGreaterThan(0.95)
   })
 
   test('wheel rays ignore other vehicles', async () => {
