@@ -1,6 +1,7 @@
 import {hotExposureNode} from './hotExposure'
 import {addLavaGlow} from './lavaGlow'
 import {addNightReadability} from './nightReadability'
+import {applyShowroom,setRole} from './showroom'
 import * as THREE from 'three/webgpu'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { abs, attribute, clamp, dot, float, instancedBufferAttribute, length, min, normalView, positionGeometry, positionViewDirection, sin, smoothstep, time, uniform, vec2 } from 'three/tsl'
@@ -130,6 +131,7 @@ export class LoadedBuggySkin implements BuggySkin {
   readonly ownLamps: boolean
   private disposed = false
   private detachDetail=()=>{}
+  private detachShowroom=()=>{}
   private axleBatch?:THREE.InstancedMesh
   private readonly simpleWheels:THREE.Group[]=[]
   private readonly highWheels:THREE.Object3D[]=[]
@@ -206,8 +208,10 @@ export class LoadedBuggySkin implements BuggySkin {
       // Preserve Syn3h's separate trim and light materials; classic has one tinted shell.
       const materials = Array.isArray(o.material) ? o.material : [o.material]
       for (const m of materials) if (m instanceof THREE.MeshStandardMaterial) {
-        if (classic || /body|material/i.test(m.name)) this.bodyMaterials.push(m)
-        else if (/accent/i.test(m.name)) this.accentMaterials.push(m)
+        if (classic || /body|material/i.test(m.name)) { this.bodyMaterials.push(m); setRole(m, 'paint') }
+        else if (/accent/i.test(m.name)) { this.accentMaterials.push(m); setRole(m, 'accent') }
+        else if (/chrome/i.test(m.name)) setRole(m, 'chrome')
+        else if (/light/i.test(m.name)) setRole(m, 'lamp')
         m.roughness = .36; m.metalness = .3
         // Syn3h lamps are faces of the Body mesh itself. Emission from terra.buggy.prefab; values
         // above 1 are deliberate (no bloom here, so they survive tone mapping as a hot core).
@@ -222,7 +226,8 @@ export class LoadedBuggySkin implements BuggySkin {
     const cockpitTransform = transform.clone()
     if (!classic) cockpitTransform.multiply(new THREE.Matrix4().makeRotationX(Math.PI / 2))
     const cockpit = extract(scene.getObjectByName('Cockpit')!, cockpitTransform)
-    cockpit.traverse(o => { if (o instanceof THREE.Mesh) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose(); o.material = new THREE.MeshStandardMaterial({color: classic ? 0xad58ff : 0x192c44, metalness: .65, roughness: .18}) } })
+    cockpit.traverse(o => { if (o instanceof THREE.Mesh) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose(); // Tagged as glass and kept out of the plain body merge, so the showroom tiers can blend it.
+      const glass = setRole(new THREE.MeshStandardMaterial({color: classic ? 0xad58ff : 0x192c44, metalness: .65, roughness: .18}), 'glass'); glass.name = 'Cockpit'; glass.userData.separate = true; o.material = glass } })
     // Syn3h: the canopy stays its own mesh (both halves merged together, one draw), outside the
     // body merge, tagged so the first person ride camera can hide it and only it.
     const canopy = classic ? staticBody : new THREE.Group()
@@ -231,7 +236,7 @@ export class LoadedBuggySkin implements BuggySkin {
     const headlights = scene.getObjectByName('Headlights')
     if (headlights) {
       const lights = extract(headlights, transform)
-      lights.traverse(o => { if (o instanceof THREE.Mesh) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose(); o.material = new THREE.MeshStandardMaterial({color: 0xfff4bc, emissive: 0xffe899, emissiveIntensity: 2}) } })
+      lights.traverse(o => { if (o instanceof THREE.Mesh) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose(); o.material = setRole(new THREE.MeshStandardMaterial({color: 0xfff4bc, emissive: 0xffe899, emissiveIntensity: 2}), 'lamp') } })
       staticBody.add(lights)
     }
     mergeStatic(staticBody,true)
@@ -250,7 +255,7 @@ export class LoadedBuggySkin implements BuggySkin {
     wheel.traverse(o => { if (o instanceof THREE.Mesh) {
       o.geometry.translate(-center.x, -center.y, -center.z).scale(scale * this.layout.wheelWidth, scale, scale)
       const accent = /beadlock|plane_2/i.test(o.name)
-      for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose(); o.material = new THREE.MeshStandardMaterial({color: accent ? this.accentColor : /rubber|^plane$/i.test(o.name) ? 0x171b20 : 0x89949f, roughness: accent ? .35 : .7, metalness: accent ? .55 : .15})
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose(); const rubber = /rubber|^plane$/i.test(o.name); o.material = setRole(new THREE.MeshStandardMaterial({color: accent ? this.accentColor : rubber ? 0x171b20 : 0x89949f, roughness: accent ? .35 : .7, metalness: accent ? .55 : .15}), accent ? 'accent' : rubber ? 'tyre' : 'chrome')
       if (accent) this.accentMaterials.push(o.material)
     } })
     mergeStatic(wheel,true)
@@ -346,8 +351,7 @@ export class LoadedBuggySkin implements BuggySkin {
       const cast=!remote||distance<(level===2?20:0)
       shadows.forEach(m=>{m.castShadow=cast})
     })
-    addNightReadability(this.object)
-    addLavaGlow(this.object)
+    this.detachShowroom = applyShowroom(this.object, root => { addNightReadability(root); addLavaGlow(root) })
     this.object.visible = true
   }
 
@@ -514,6 +518,7 @@ export class LoadedBuggySkin implements BuggySkin {
     if (this.disposed) return
     this.disposed = true
     this.detachDetail()
+    this.detachShowroom()
     this.object.removeFromParent()
     release(this.object)
     this.object.clear()

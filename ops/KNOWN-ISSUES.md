@@ -16,7 +16,7 @@ fixed on trunk for release 2).
 |---|---|---|
 | syn3h.com (the apex) still points at the old host, which is what redirects it to www. If that hosting account lapses the apex stops working. Fix after the demo: attach the apex to the Worker | Production | Orchestrator, owner's word |
 | Release 1 has no absolute share card address, so link previews show no image until release 2 | Production | Fixed on trunk |
-| Black screen on the owner's real iPad Pro in Safari; not reproducible in Playwright WebKit on this Mac. `?webgl=1` forces WebGL | iPadOS Safari, possibly all iOS | QA, top priority |
+| About half a minute of black before the first frame on the owner's iPad Pro over the preview link (firstDrawSubmittedMs 32637), then 61 fps on WebGPU with no errors. Cause of the delay and whether production shares it: being measured | iPadOS Safari, probably every phone | QA, top priority |
 | The synthesised score is the default music on trunk and nobody has listened to it; it ships as default in release 2 only on the owner's word after hearing it | Music | Soundscape thread, owner |
 | Bots reach every summit, then ram each other and some drive off the edge; one of four left the alpine road at the last bend | Summits, alpine road | Bots and QA |
 | Joining a room stored by an older build could give a hybrid world. Fixed on trunk after m13; release 1 (m13) relies on fresh room names | Rooms that outlive a release | Multiplayer |

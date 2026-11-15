@@ -613,40 +613,36 @@
   ],
   "knownIssues": [
     {
-      "title": "Black screen on a real iPad",
-      "detail": "The live preview shows black in Safari on the owner's iPad Pro. It draws correctly in the same browser engine on this Mac, so the cause is specific to the device. Adding ?webgl=1 to the address forces the other graphics path. Under investigation, top priority."
+      "title": "Half a minute of black before the first frame on an iPad",
+      "detail": "Seen on the preview; not yet measured on the public build. Nothing tells the visitor it is loading. Being measured now."
     },
     {
-      "title": "New default music has not been heard",
-      "detail": "A synthesised score that follows the driving is the default on the preview. It must be listened to before it ships; release 1 keeps the recorded default."
-    },
-    {
-      "title": "Wings lift needs two fixes",
-      "detail": "Open wings now lift a buggy out of lava and off any shore. Two problems remain: a fast wings-open touch on water is grabbed instead of skipping, and after lifting out the buggy only hovers slowly instead of flying away. Fixes are in progress."
+      "title": "Wings do not lift a buggy out of lava or off steep shores",
+      "detail": "On desert and alpine worlds a buggy in the sea can slide back off a steep bank. Fixed on the preview."
     },
     {
       "title": "Rear-ending a moving car gives no shove",
-      "detail": "The tag passes, but the car in front feels nothing on its own screen. Rams into parked or oncoming cars do shove. Queued for release 2."
+      "detail": "The tag passes but the car in front feels nothing. Fixed on the preview."
+    },
+    {
+      "title": "Tag beams look nearly white at night",
+      "detail": "Fixed on the preview."
     },
     {
       "title": "The jet does nothing on W alone",
-      "detail": "R is throttle and lifts off; W is pitch. The controls card does not make that obvious yet."
+      "detail": "R lifts off. The controls card does not say so plainly. Fixed on the preview."
     },
     {
-      "title": "Bots crowd the summit",
-      "detail": "Bots reach the top on every world, then ram each other and some drive off the edge. On the alpine world one of four left the road at the last bend."
+      "title": "Link previews show no image",
+      "detail": "The share card address was not absolute. Fixed on the preview."
     },
     {
-      "title": "Changing vehicle in the lobby reloads the page",
-      "detail": "A shortcut taken to keep the demo safe."
+      "title": "syn3h.com without www depends on the old host",
+      "detail": "The old hosting account is what redirects it to www. Attaching it to the game is the fix after the demo."
     },
     {
       "title": "Not yet done by a person",
-      "detail": "Nobody has driven the game by hand, heard the sound, or tried it on a real phone."
-    },
-    {
-      "title": "Network study is thin",
-      "detail": "Loss and stall results come from one run per condition on a loaded Mac. Nothing was measured on a phone, venue wifi or mobile data."
+      "detail": "Nobody has joined from a phone by QR code on the public address or listened on the demo speakers."
     }
   ],
   "links": [
@@ -778,6 +774,36 @@
           "url": "https://vorton-previews.tail285f88.ts.net:32783/planets.html"
         }
       ]
+    }
+  ],
+  "knownIssuesTrunk": [
+    {
+      "title": "Half a minute of black before the first frame on an iPad",
+      "detail": "Seen over the preview link: the game then runs at 61 frames a second with no errors. Where the time goes, and whether the public build is as slow, is being measured now."
+    },
+    {
+      "title": "The jet throws an error in Safari's engine on the WebGL path",
+      "detail": "A texture arrives empty. The buggy does not. Under investigation."
+    },
+    {
+      "title": "New and unseen by the owner",
+      "detail": "The retuned score as default music, the buggy's original lights, struts and wheel stators, the alpine world's new look, the loading screen from terranlabs.com, and the tablet touch layout."
+    },
+    {
+      "title": "Bots crowd the summit",
+      "detail": "Bots reach the top on every world, then ram each other and some drive off the edge."
+    },
+    {
+      "title": "Head-on rams at high speed are chaotic",
+      "detail": "Two cars closing at over 40 m/s can be thrown hard. Measured once."
+    },
+    {
+      "title": "Changing vehicle in the lobby reloads the page",
+      "detail": "A shortcut taken to keep the demo safe."
+    },
+    {
+      "title": "Network study is thin",
+      "detail": "One run per condition on a loaded Mac. Nothing measured on a phone, venue wifi or mobile data."
     }
   ]
 }
