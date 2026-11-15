@@ -64,6 +64,8 @@ const VIEWS: Record<ViewName, THREE.Vector3> = {
   Side: new THREE.Vector3(1, .14, 0),
   Top: new THREE.Vector3(.001, 1, .08),
   Low: new THREE.Vector3(.62, .045, -.78),
+  // From below the floor, which fades out as the camera comes down to it (see Studio.fade).
+  Under: new THREE.Vector3(.5, -.62, -.6),
 }
 
 /** Paint swatches: [label, body, accent]. Own colours restores what each design was built with. */
@@ -120,7 +122,8 @@ async function main(): Promise<void> {
   controls.enableDamping = true
   const orbitLimits = () => {
     controls.minDistance = 1.5; controls.maxDistance = 150
-    controls.maxPolarAngle = Math.PI / 2 - .02; controls.minPolarAngle = 0
+    // Past level and on under the floor, to look up at a vehicle's underside.
+    controls.maxPolarAngle = Math.PI * .88; controls.minPolarAngle = 0
     controls.enableZoom = controls.enablePan = true
     controls.rotateSpeed = 1
     camera.near = .1; camera.updateProjectionMatrix()
@@ -792,6 +795,7 @@ async function main(): Promise<void> {
     stepCockpit(dt)
     if (controls.enabled) controls.update()
     if (lodChoice < 0) applyLod()
+    studio.fade(camera.position.y)
     // Per model stats are cheap tree walks; a few times a second is plenty for a readout.
     if (++statFrame % 15 === 1) { for (const e of entries) if (e.model) countStats(e.model.object, e.stats); writeStats() }
     const t0 = performance.now()
