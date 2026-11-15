@@ -397,25 +397,28 @@ export function anemone(): THREE.BufferGeometry {
   const b = new Builder(0.2)
   const soil = C(0x2a1a18)
   const deep = C(0x303030), body = C(0x8a8a8a), tip = C(0xe0e0e0)
-  const H = 0.85
-  stem(b, [[0, 0, 0], [0.05, H * 0.45, 0.02], [-0.02, H, 0.03]], 0.045, 0.026, soil, soil, { earth: 0.75, s1: 0.6 })
+  // A short, thick stalk: the crown sits low, so the plant reads as a bloom on the ground,
+  // never as a little palm.
+  const H = 0.22
+  stem(b, [[0, 0, 0], [0.03, H * 0.5, 0.01], [-0.02, H, 0.03]], 0.055, 0.04, soil, soil, { earth: 0.75, s1: 0.6 })
   const hx = -0.02, hz = 0.03
   // The heart: a small glowing bud where the arms meet.
   for (const [wx, wz] of [[1, 0], [0, 1]]) {
     const w = 0.05
     b.tri([hx - wx * w, H - 0.02, hz - wz * w], [hx + wx * w, H - 0.02, hz + wz * w], [hx, H + 0.09, hz], [body, body, tip], [0.6, 0.6, 0.6], 1, [0.6, 0.6, 1])
   }
-  const ARMS = 6
+  const ARMS = 8
   const SEG = 4
   for (let k = 0; k < ARMS; k++) {
     const a = (k / ARMS) * Math.PI * 2 + 0.3 + 0.25 * r01(k, 17)
     const ox = Math.cos(a), oz = Math.sin(a), sx = -oz, sz = ox
-    const len = 0.46 + 0.16 * r01(k, 23)
+    const len = 0.42 + 0.14 * r01(k, 23)
     const pts: number[][] = []
     for (let i = 0; i <= SEG; i++) {
       const t = i / SEG
       const r = len * (t * 0.9 + 0.1 * t * t)
-      const y = H + 0.3 * Math.sin(t * 2.6) - 0.24 * t * t
+      // Up a little, then curling down to rest near the ground.
+      const y = Math.max(0.03, H + 0.14 * Math.sin(t * 2.6) - 0.3 * t * t)
       pts.push([hx + ox * r, y, hz + oz * r])
     }
     for (let i = 0; i < SEG; i++) {

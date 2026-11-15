@@ -44,6 +44,21 @@ export const groundCoverShade = defineParam({
   id: 'terrain.groundCoverShade', label: 'Ground darkened under grass', group: 'Terrain', scope: 'world', default: 1, min: 0, max: 1, step: 0.05,
 })
 
+/**
+ * No plant on any world stands taller than this, in metres, whatever its shape or scale:
+ * the owner's rule is grass and small flowers only, nothing that reads as a tree, palm,
+ * shrub or cactus. Enforced where plants are placed, so a new shape cannot break it.
+ */
+export const MAX_PLANT_HEIGHT = 0.6
+
+/** The highest point of a plant shape at scale 1, in metres. */
+export function plantTop(geometry: THREE.BufferGeometry): number {
+  const p = geometry.getAttribute('position')
+  let top = 0
+  for (let i = 0; i < p.count; i++) top = Math.max(top, p.getY(i))
+  return top
+}
+
 /** Nothing grows within this height of the sea level: the largest wave crest plus 0.3 m. */
 const SHORE_MARGIN = 1.8
 
@@ -91,6 +106,8 @@ class Layer {
     x: 0, z: 0, y: 0, patch: 0, region: 0, rock: 0, flow: 0, clumpD: 0, clump: 0, outX: 0, outZ: 0, treeLine: 0,
   }
   private filled = false
+  /** The largest scale this layer's shape may take and stay under MAX_PLANT_HEIGHT. */
+  private readonly maxScale: number
 
   constructor(
     private readonly spec: LayerSpec, private readonly sampler: HeightSampler, private readonly seed: number,
@@ -99,6 +116,7 @@ class Layer {
     private readonly cover: Uint8Array | null,
   ) {
     const count = spec.n * spec.n
+    this.maxScale = MAX_PLANT_HEIGHT / Math.max(1e-3, plantTop(spec.geometry))
     const g = spec.geometry as THREE.InstancedBufferGeometry
     g.instanceCount = 0
     this.geometry = g
@@ -214,7 +232,9 @@ class Layer {
     p.scale = 0; p.lx = 0; p.lz = 0
     this.spec.grow(g, h, p)
     if (!(p.scale > 0)) return
-    P[s * 4 + 1] = p.scale
+    // Soft cap: small plants keep their size, tall ones are pressed under the limit
+    // gradually, so a layer near the cap keeps its variety instead of all stopping at it.
+    P[s * 4 + 1] = this.maxScale * Math.tanh(p.scale / this.maxScale)
     P[s * 4 + 2] = p.lx
     P[s * 4 + 3] = p.lz
     const T = this.slotTint

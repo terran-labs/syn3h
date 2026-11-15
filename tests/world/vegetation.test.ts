@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu'
 import { describe, expect, it } from 'vitest'
 import { FLORA, type Ground, type Plant, setTint } from '../../src/world/terrain/flora'
-import { flowAt } from '../../src/world/terrain/groundcover'
+import { MAX_PLANT_HEIGHT, flowAt, plantTop } from '../../src/world/terrain/groundcover'
 import { generateTerrain } from '../../src/world/terrain/generate'
 import { HeightSampler } from '../../src/world/terrain/sampler'
 import { defaultTerrainSettings } from '../../src/world/terrain/settings'
@@ -42,6 +42,27 @@ describe('vegetation', () => {
         expect(l.geometry.getAttribute('position').count % 3).toBe(0)
       }
     }
+  })
+
+  it('keeps every plant on every planet under the height cap, and most well under it', () => {
+    const report: string[] = []
+    for (const kind of KINDS) {
+      FLORA[kind].layers(100).forEach((l, i) => {
+        const top = plantTop(l.geometry)
+        let most = 0
+        for (let h = 0; h < 20000; h++) {
+          for (const flow of [0, 1]) {
+            const p = plant()
+            l.grow(ground({ flow, patch: (h % 10) / 10, region: (h % 7) / 7 }), (h * 2654435761) >>> 0, p)
+            most = Math.max(most, p.scale)
+          }
+        }
+        const capped = top * Math.min(most, MAX_PLANT_HEIGHT / top)
+        report.push(`${kind}.${i} ${(top * most).toFixed(2)}->${capped.toFixed(2)}`)
+        expect(capped).toBeLessThanOrEqual(MAX_PLANT_HEIGHT + 1e-6)
+      })
+    }
+    process.stdout.write(`plant heights (look.layer uncapped->capped, m): ${report.join(' ')}\n`)
   })
 
   it('decides what grows from the ground and the cell alone', () => {
