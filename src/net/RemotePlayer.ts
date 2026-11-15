@@ -4,11 +4,11 @@
  * dynamic body, nudged toward the snapshot pose and given the snapshot's velocities, so
  * collisions with us are real physics. Farther away it is kinematic and placed exactly.
  */
+import { nearestImage } from '../../shared/wrap'
 import * as THREE from 'three/webgpu'
 import type { PlayerInfo, WireState } from '../../shared/protocol'
 import { RAPIER } from '../core/physics'
 import type { Vehicle } from '../vehicles/Vehicle'
-import { nearestImage } from '../../shared/wrap'
 import { emptySample, type Sample, SnapshotBuffer } from './SnapshotBuffer'
 
 /** A dynamic proxy farther than this from its target is snapped, not blended. */
@@ -38,7 +38,7 @@ export class RemotePlayer {
    *     tile at once, not blended or snapped: its motion relative to us is unbroken.
    */
   wrapSize = 0
-  /** The body was moved by a whole tile this step: its drawn position must not interpolate. */
+  /** The body was moved by a whole tile on the last step (for tests and diagnostics). */
   jumped = false
   /** Removes this vehicle's effects; call before removing the vehicle. */
   disposeEffects: () => void = () => {}
@@ -82,8 +82,9 @@ export class RemotePlayer {
       pz = nearestImage(pz, localPos.z, this.wrapSize)
       cur = { x: nearestImage(at.x, px, this.wrapSize), y: at.y, z: nearestImage(at.z, pz, this.wrapSize) }
       if (cur.x !== at.x || cur.z !== at.z) {
-        // A whole tile, in one move, with no velocity implied and nothing blended.
-        body.setTranslation(cur, true)
+        // A whole tile, in one move, with no velocity implied and nothing blended. shiftBy
+        // moves the drawn position with the body, so nothing streaks across the world.
+        this.vehicle.shiftBy(cur.x - at.x, cur.z - at.z)
         this.jumped = true
       }
     }
@@ -104,6 +105,19 @@ export class RemotePlayer {
     body.setRotation(this.q, true)
     body.setLinvel({ x: s.v[0], y: s.v[1], z: s.v[2] }, true)
     body.setAngvel({ x: s.w[0], y: s.w[1], z: s.w[2] }, true)
+  }
+
+  /**
+   * Keep the vehicle at the image nearest the local player between physics steps. The local
+   * player's own whole-tile shift happens after a step; without this a neighbour would be
+   * drawn a world away for the frame before the next one.
+   */
+  reimage(localPos: { x: number; z: number }): void {
+    if (!(this.wrapSize > 0)) return
+    const at = this.vehicle.body.translation()
+    const dx = nearestImage(at.x, localPos.x, this.wrapSize) - at.x
+    const dz = nearestImage(at.z, localPos.z, this.wrapSize) - at.z
+    if (dx !== 0 || dz !== 0) this.vehicle.shiftBy(dx, dz)
   }
 
   setPhysical(physical: boolean): void {

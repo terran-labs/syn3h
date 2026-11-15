@@ -10,7 +10,8 @@
  * Systems register with `game.add(system)`. Order of registration is order of execution.
  */
 import * as THREE from 'three/webgpu'
-import { installRenderDiagnostics } from './diagnostics'
+import { installRenderDiagnostics, recordStartupPhase, showRendererLost, startupTiming, timeStartup } from './diagnostics'
+import { gpuDeadlineMs, startRenderer } from './renderOptions'
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
 import { QualityController, reportLoading, type FrameMetrics } from './quality'
@@ -27,6 +28,11 @@ export interface System {
 }
 
 const MAX_STEPS_PER_FRAME = 5
+
+// ES modules are all fetched before any of them runs, and this one runs once three, Rapier
+// and their dependencies have run. On the unbundled dev server the gap from navigation
+// start to here is mostly module requests.
+recordStartupPhase('fetch and run modules up to Game.ts', 0)
 
 export class Game {
   readonly scene = new THREE.Scene()
@@ -52,12 +58,21 @@ export class Game {
   private averageFrameMs = 1000 / 60
 
   private readonly observeRenderer: (() => void) | undefined
-  constructor(readonly canvas: HTMLCanvasElement) { this.observeRenderer = installRenderDiagnostics(this) }
+  /** Start of the phase being timed between `game.add` calls while main builds the world. */
+  private buildMark = 0
+  private startupFrames = 0
+  private loopStart = 0
+  constructor(public canvas: HTMLCanvasElement) {
+    // From Game.ts running to here: the rest of the modules main.ts imports run.
+    recordStartupPhase('run remaining modules to main()', startupTiming.phases.at(-1)?.endMs ?? 0)
+    this.observeRenderer = installRenderDiagnostics(this)
+    this.quality.onTerrain = () => this.markTerrainBuilt()
+  }
 
   async init(): Promise<void> {
-    await this.quality.initialize()
+    await timeStartup('quality initialise (WebGPU adapter probe)', () => this.quality.initialize())
     reportLoading('physics', 0.15)
-    await initPhysics()
+    await timeStartup('physics init (Rapier WASM)', () => initPhysics())
     this.world = createWorld(worldGravity.value)
     params.onChange((id, value) => {
       if (id === worldGravity.def.id) this.world.gravity = { x: 0, y: -(value as number), z: 0 }
@@ -67,10 +82,22 @@ export class Game {
     // `?webgl=1` forces the WebGL 2 backend: a way round a WebGPU implementation that
     // initialises but draws nothing (first seen as a black screen on iPadOS Safari).
     const forceWebGL = new URLSearchParams(location.search).has('webgl')
-    this.renderer = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: true, forceWebGL })
-    this.observeRenderer?.()
-    await this.renderer.init()
+    // WebGPU startup is bounded: a stall, a rejection or a missing adapter ends in WebGL 2
+    // with the reason recorded in diagnostics, never a hang. Healthy devices are unchanged.
+    const probe = this.quality.adapterProbe
+    const started = await timeStartup('renderer.init (adapter, device, context)', () => startRenderer((webgl, freshCanvas) => {
+      if (freshCanvas) this.replaceCanvas()
+      this.renderer = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: true, forceWebGL: webgl })
+      this.observeRenderer?.()
+      return this.renderer
+    }, { forceWebGL, deadlineMs: gpuDeadlineMs(location.search), probe, skipWebGPU: probe === 'timeout' ? 'the WebGPU adapter probe stalled; started WebGL 2' : undefined }))
+    this.renderer = started.renderer
+    if (started.fallbackReason) { startupTiming.fallbackReason = started.fallbackReason; console.warn(`Syn3h: ${started.fallbackReason}`) }
     this.backend = (this.renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'webgpu' : 'webgl'
+    startupTiming.backend = this.backend
+    // Device or context loss leaves a frozen canvas; tell the player and offer a reload.
+    const lost = this.renderer.onDeviceLost
+    this.renderer.onDeviceLost = info => { lost.call(this.renderer, info); showRendererLost(info) }
     this.quality.attachRenderer(this.renderer)
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping
     this.renderer.shadowMap.enabled = true
@@ -85,10 +112,30 @@ export class Game {
     window.addEventListener('resize', resize)
     resize()
     reportLoading('world', 0.7)
+    this.buildMark = performance.now()
+  }
+
+  /** Swap in a clean canvas, for a WebGL 2 start after a WebGPU attempt may have claimed this one. */
+  private replaceCanvas(): void {
+    const fresh = this.canvas.cloneNode(false) as HTMLCanvasElement
+    this.canvas.replaceWith(fresh)
+    this.canvas = fresh
+  }
+
+  /**
+   * Called by quality.attachTerrain, right after main builds the terrain. main.ts is not
+   * this lane's file, so the world build is timed from the calls it already makes here.
+   */
+  markTerrainBuilt(): void {
+    if (this.buildMark) this.buildMark = recordStartupPhase('build until terrain attached to quality', this.buildMark)
   }
 
   add<T extends System>(system: T): T {
     this.systems.push(system)
+    // Before the loop starts, each add closes the phase that built the system. In order,
+    // main adds environment and sky, the player vehicle, bots, the chase camera, then the
+    // HUD after the shell and lobby are built.
+    if (this.buildMark) this.buildMark = recordStartupPhase(`build until add ${this.systems.length}: ${systemName(system)}`, this.buildMark)
     return system
   }
 
@@ -99,12 +146,16 @@ export class Game {
   }
 
   start(): void {
+    if (this.buildMark) recordStartupPhase('param panel and wiring to game.start', this.buildMark)
+    this.buildMark = 0
+    this.loopStart = performance.now()
     this.last = performance.now()
     this.renderer.setAnimationLoop(() => this.frame())
   }
 
   private frame(): void {
     const now = performance.now()
+    if (this.loopStart) { recordStartupPhase('game.start to first animation frame', this.loopStart); this.loopStart = 0 }
     const frameMs = now - this.last
     const frameDt = Math.min(0.25, frameMs / 1000)
     this.last = now
@@ -132,8 +183,11 @@ export class Game {
 
     this.performance.physicsMs = performance.now() - physicsStart
     const alpha = this.accumulator / FIXED_DT
+    const updateStart = performance.now()
     for (const s of this.systems) s.update?.(frameDt, alpha)
+    const renderStart = performance.now()
     this.renderer.render(this.scene, this.camera)
+    if (this.startupFrames < 3) this.recordStartupFrame(updateStart, renderStart)
     const metrics = this.performance
     metrics.fps = this.fps
     metrics.frameMs = frameMs
@@ -142,4 +196,31 @@ export class Game {
     if (metrics.firstFrameMs === null && metrics.drawCalls > 0) metrics.firstFrameMs = performance.now()
     this.quality.frame(metrics)
   }
+
+  /**
+   * The first frames compile every shader and pipeline in the scene. Time the update and the
+   * render call apart, count pipelines, and record when the GPU and the next animation
+   * frame confirm the first frame was presented.
+   */
+  private recordStartupFrame(updateStart: number, renderStart: number): void {
+    const n = ++this.startupFrames
+    recordStartupPhase(`frame ${n} systems update`, updateStart, undefined, renderStart)
+    const drawn = recordStartupPhase(`frame ${n} render call (shader and pipeline compile)`, renderStart, `${this.renderer.info.render.drawCalls} draws`)
+    const pipelines = (this.renderer as unknown as { _pipelines?: { caches?: Map<unknown, { isComputePipeline?: boolean }>; programs?: { vertex: Map<unknown, unknown>; fragment: Map<unknown, unknown> } } })._pipelines
+    if (pipelines?.caches && pipelines.programs) {
+      let compute = 0
+      for (const p of pipelines.caches.values()) if (p.isComputePipeline) compute++
+      startupTiming.pipelines = { render: pipelines.caches.size - compute, compute, vertexShaders: pipelines.programs.vertex.size, fragmentShaders: pipelines.programs.fragment.size }
+    }
+    if (n !== 1) return
+    requestAnimationFrame(() => recordStartupPhase('frame 1 render end to next animation frame', drawn))
+    const device = (this.renderer.backend as unknown as { device?: GPUDevice }).device
+    device?.queue.onSubmittedWorkDone().then(() => recordStartupPhase('frame 1 render end to GPU work done', drawn), () => {})
+  }
+}
+
+/** A readable name for a system in the startup table. Minified builds may shorten it. */
+function systemName(system: System): string {
+  const name = (system as { constructor?: { name?: string } }).constructor?.name
+  return name && name !== 'Object' ? name : Object.keys(system).slice(0, 3).join(',') || 'object'
 }

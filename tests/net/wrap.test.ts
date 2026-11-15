@@ -31,7 +31,11 @@ describe('RemotePlayer on a wrapping world', () => {
   function remote(wrapSize: number, dynamic = false) {
     const world = new RAPIER.World({ x: 0, y: 0, z: 0 })
     const body = world.createRigidBody(dynamic ? RAPIER.RigidBodyDesc.dynamic() : RAPIER.RigidBodyDesc.kinematicPositionBased())
-    const vehicle = { body, input: emptyInputLike(), isLocal: true, id: '', name: '' }
+    const vehicle = {
+      body, input: emptyInputLike(), isLocal: true, id: '', name: '', shifts: 0,
+      // The real Vehicle.shiftBy also moves the drawn position; the body is what matters here.
+      shiftBy(dx: number, dz: number) { const t = body.translation(); body.setTranslation({ x: t.x + dx, y: t.y, z: t.z + dz }, true); this.shifts++ },
+    }
     const r = new RemotePlayer(info, vehicle as never)
     r.wrapSize = wrapSize
     return { r, body, world }
@@ -100,6 +104,21 @@ describe('RemotePlayer on a wrapping world', () => {
     o.r.steer(1.05, 1, local, 40, 0.1)
     expect(o.r.jumped).toBe(false)
     expect(o.body.translation().x).toBeCloseTo(500 - SIZE, 1)
+  })
+
+  it('follows the local player\'s shift before the next step, for the frame in between', () => {
+    const o = remote(SIZE, true)
+    o.body.setTranslation({ x: 500, y: 5, z: -100 }, true)
+    o.r.reimage({ x: 505, z: -100 })
+    expect(o.body.translation().x).toBe(500)
+    o.r.reimage({ x: 505 - SIZE, z: -100 + SIZE })
+    expect(o.body.translation().x).toBe(500 - SIZE)
+    expect(o.body.translation().z).toBe(-100 + SIZE)
+    // And never on a world that does not wrap.
+    const flat = remote(0, true)
+    flat.body.setTranslation({ x: 500, y: 5, z: 0 }, true)
+    flat.r.reimage({ x: -500, z: 0 })
+    expect(flat.body.translation().x).toBe(500)
   })
 
   it('blends a physical copy toward its target across the seam without snapping', () => {

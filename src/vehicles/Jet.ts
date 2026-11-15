@@ -21,6 +21,11 @@ export const jetHoverHold = defineParam<number>({id:'jet.hoverHold',label:'Hover
 // terra.jet.prefab flightThrustFactor=2: full throttle pushes at twice the jet's weight, and
 // Syn3h's drag barely opposes it, so speed keeps building. Lower this for a slower jet.
 export const jetFlightThrust = defineParam<number>({id:'jet.flightThrust',label:'Flight thrust',group:'Jet',scope:'world',default:2,min:.25,max:3,step:.05})
+// How far the main nozzle swivels, as a share of VhiclJet.cs 161-162 (20 degrees of pitch at a
+// standstill, easing to 5 at speed). Below stall speed the wings have little authority, so this
+// is what steers the jet there. It is separate from jet.controlResponse, which only scales the
+// aerodynamic control torques.
+export const jetVectorResponse = defineParam<number>({id:'jet.vectorResponse',label:'Thrust vectoring',group:'Jet',scope:'world',default:.3,min:.1,max:1,step:.05})
 const clamp = THREE.MathUtils.clamp
 const lerp = (a:number,b:number,t:number)=>THREE.MathUtils.lerp(a,b,clamp(t,0,1))
 const hullVertices = new Float32Array([-1.086619, -0.316382, -1.978747, 0.0, 0.543169, -2.110775, 0.0, -0.324233, -3.398361, 0.0, 0.482615, 1.50864, -3.851598, 0.125607, 1.143191, 0.0, -0.589476, -2.522558, 0.0, -0.636839, 0.479384, 0.0, -0.166176, 2.98234, -2.551439, 0.855675, 3.431675, 1.086619, -0.316382, -1.978747, 3.851598, 0.125607, 1.143191, 2.551439, 0.855675, 3.431675])
@@ -107,6 +112,7 @@ export class Jet extends Vehicle {
     // Vhicl.cs 269 smooths all four axes at fixedDeltaTime * 10.
     this.smoothed.lerp(new THREE.Vector4(this.input.x,this.input.y,this.input.z,this.input.w),Math.min(1,dt*10))
     const input=this.smoothed.clone()
+    const vector=this.smoothed.clone().multiplyScalar(jetVectorResponse.value)
     // Keep source force equations; scale digital control authority for demo keyboard use.
     if(!this.hoverMode){input.x*=jetControlResponse.value;input.y*=jetControlResponse.value;input.w*=jetControlResponse.value}
     this.gearAmount=clamp(this.gearAmount+(this.hoverMode?dt:-dt),0,1)
@@ -146,8 +152,8 @@ export class Jet extends Vehicle {
       this.atmosDensity=position.y<15240?lerp(1.225,.18756,position.y/15240):lerp(.18756,.017102,position.y/30480)
       const aoa=speed>1e-8?local.y/speed:0
       this.stallFactor=speed<jetStall.value?lerp(1,0,((speed-jetStall.value*.8)/jetStall.value)*10):clamp(Math.abs(aoa)-.65,0,.1)*10
-      const thrustPitch=-input.y*lerp(20,5,speed/(jetStall.value*5))*Math.PI/180
-      const thrustYaw=(-input.x+clamp(-local.x*(input.w===0?1:.5),-10,10)-input.w*15)*Math.PI/180
+      const thrustPitch=-vector.y*lerp(20,5,speed/(jetStall.value*5))*Math.PI/180
+      const thrustYaw=(-vector.x+clamp(-local.x*(vector.w===0?1:.5),-10,10)-vector.w*15)*Math.PI/180
       // Mirror Unity's local quaternion: axial X and Y signs reverse in our frame.
       const thrustRotation=new THREE.Quaternion().setFromEuler(new THREE.Euler(-thrustPitch,-thrustYaw,0,'YXZ'))
       const thrust=new THREE.Vector3(0,0,-1).applyQuaternion(thrustRotation).applyQuaternion(q).multiplyScalar((this.input.brakes?0:input.z)*jetFlightThrust.value*weight*.99)

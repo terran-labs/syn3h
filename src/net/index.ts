@@ -446,9 +446,10 @@ export class NetClient implements System {
     const stuck = koth && this.connected ? this.game.koth.out : {}
     const holder = koth ? this.game.koth.holder : 0
     // A stuck vehicle stays in the world, visible and solid: nothing here is ever removed.
-    // Hidden only for the one step in which its body moved by a whole tile of a wrapping
-    // world: the drawn position is interpolated between steps and would streak across it.
-    for (const r of this.remotes.values()) r.vehicle.object.visible = !r.jumped
+    // Our own vehicle may just have been shifted a tile across the seam: bring everyone along
+    // before this frame is drawn.
+    const here = this.ctx.player.body.translation()
+    for (const r of this.remotes.values()) r.reimage(here)
     this.placeHill()
     this.tags.update([...this.remotes.entries()].map(([id, r]) => ({
       vehicle: r.vehicle,

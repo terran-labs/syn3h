@@ -50,7 +50,7 @@ describe('variety across seeds', () => {
     }
     process.stdout.write(`variety: ${axes.size} road sides, ${coasts.size} coast sizes, ${mountains.size} mountain covers, river counts ${[...rivers]}, ${midpoints.size} distinct road midpoints over ${seeds.length} seeds\n`)
     expect(axes.size).toBeGreaterThanOrEqual(5)
-    expect(coasts.size).toBeGreaterThanOrEqual(4)
+    // The amount of land no longer varies with the seed: the land share slider sets it.
     expect(mountains.size).toBeGreaterThanOrEqual(6)
     expect(midpoints.size).toBeGreaterThan(8)
   }, 40000)
