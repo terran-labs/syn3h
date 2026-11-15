@@ -67,6 +67,10 @@ describe('lava and vents', () => {
     expect(drops[0].height).toBeGreaterThan(DROP_FALL)
     expect(drops[0].start).toBeLessThanOrEqual(3)
     expect(drops[0].end).toBeGreaterThanOrEqual(5)
+    // The steepest 12 m is the 6 m fall in the middle, inside the drop.
+    expect(drops[0].steepest.height).toBeCloseTo(6, 6)
+    expect(drops[0].steepest.start).toBeGreaterThanOrEqual(drops[0].start)
+    expect(drops[0].steepest.end).toBeLessThanOrEqual(drops[0].end)
     expect(findDrops(pts.map((p, i) => ({ ...p, y: 50 - i * 0.5 })))).toEqual([])
     // Every generated river carries the field, with indices inside its points.
     for (const seed of SEEDS) {
