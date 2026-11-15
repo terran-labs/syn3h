@@ -33,7 +33,7 @@ export const DESCRIPTIONS: Record<string, string> = {
   'bots.tagBeams': 'Whether computer drivers use Plasma Tag.',
   'camera.mode': 'Where you watch from: behind the vehicle, inside the cockpit, circling it, from a fixed spot, or flying free.',
   'camera.sensitivity': 'How far the view turns for each movement of the mouse.',
-  'gfx.level': 'How much detail is drawn. Lower it if the picture stutters; the game also lowers it by itself when it must.',
+  'gfx.quality': 'How much the game draws, in six levels from Minimal to Cinematic. Choosing a level sets every graphics preference that belongs to it; you can fine-tune each one afterwards. With Auto on, the game moves between levels by itself to keep the picture smooth.',
   'gfx.shadowQuality': 'How sharp and far-reaching shadows are.',
   'daydream.seconds': 'How long the game waits, left alone, before it starts driving itself.',
   'paint.gloss': 'How shiny the vehicle\'s paint is.',
