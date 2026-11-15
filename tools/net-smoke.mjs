@@ -91,11 +91,16 @@ try {
   const d2 = (p, q) => Math.hypot(p[0] - q[0], p[2] - q[2])
 
   // 2. Drive A forward and watch it on B.
+  // Both pages share one headless Chrome, and a page that is still loading starves the other
+  // of frames: wait until B's game is running before asking A to drive, and drive until A
+  // has covered ground (up to 10 s), not for a fixed time that a busy machine can eat.
+  await b.waitForFunction(() => window.syn3h.game.time > 1.5, null, { timeout: 30000 }).catch(() => {})
   const before = await remoteOfA()
   const realBefore = await realA()
+  const startA = realBefore
   await a.bringToFront()
   await a.keyboard.down('KeyW')
-  await wait(3000)
+  await a.waitForFunction(([x, z]) => { const t = window.syn3h.player.body.translation(); return Math.hypot(t.x - x, t.z - z) > 12 }, [startA[0], startA[2]], { timeout: 10000 }).catch(() => {})
   await a.keyboard.up('KeyW')
   // The buggy coasts; compare once it has stopped and B's playback has caught up.
   await a.keyboard.down('ShiftLeft')
@@ -111,6 +116,26 @@ try {
   for (let i = 0; i < 50 && !(d2(before, after) > 3 && d2(after, truth) < 2); i++) { await wait(200); after = await remoteOfA() }
   check('A moves on B', d2(before, after) > 3, { before, after, moved: +d2(before, after).toFixed(2) })
   check('B tracks A within 2 m once settled', d2(after, truth) < 2, { remote: after, real: truth, error: +d2(after, truth).toFixed(2) })
+
+  // The sea runs on the room's clock, so both screens show the same wave at the same moment.
+  // Read through the dev server's module; a production build has no such path, so skip there.
+  const seaTime = (page) => page.evaluate(async () => {
+    try {
+      const m = await import('/src/world/water/seaWaves.ts')
+      return { water: m.waterTime(), room: window.syn3hNet.clock.now(), game: window.syn3h.game.time, at: Date.now() }
+    } catch {
+      return null
+    }
+  })
+  const [seaA, seaB] = await Promise.all([seaTime(a), seaTime(b)])
+  if (seaA && seaB) {
+    // Each was read at its own instant; compare after allowing for that.
+    const apart = Math.abs((seaA.water - seaA.at / 1000) - (seaB.water - seaB.at / 1000))
+    check('the sea runs on the shared room clock on both screens', Math.abs(seaA.water - seaA.room) < 0.05 && Math.abs(seaB.water - seaB.room) < 0.05 && apart < 0.15 && Math.abs(seaA.water - seaA.game) > 1,
+      { apartSeconds: +apart.toFixed(3), aWaterMinusRoom: +(seaA.water - seaA.room).toFixed(3), bWaterMinusRoom: +(seaB.water - seaB.room).toFixed(3) })
+  } else {
+    console.log('SKIP sea clock: not a dev server')
+  }
 
   // 3. Shared slider, clamped by the server.
   await a.evaluate(() => window.syn3h.params.set('laser.speed', 250))
