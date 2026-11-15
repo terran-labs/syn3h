@@ -2,6 +2,8 @@
 
 Prepared during the 15 November overnight run. This is a working draft, not the 8am
 report. Recheck production, integration and lane evidence before delivering it.
+Evidence snapshot: 1:44am Pacific. Production identity below was last checked directly
+at 1:28am; it is not a fresh deployment verdict.
 
 ## Public build
 
@@ -11,19 +13,25 @@ tests do not establish public acceptance. The first failure concerned score disp
 the retry failed resource loading. Neither cause has been conclusively established.
 
 The next release must verify exact frozen HTML and entry assets, normal gameplay on
-the primary public domain, and the combined browser cases. The asset check is prepared
-in the integration branch; primary-domain release wiring is still being completed.
+the primary public domain, and the combined browser cases. Exact asset and primary-domain
+gameplay checks now run before the release script records success.
 Occupied lobbies no longer block deployment. Failed public checks still require rollback.
 
 ## What has reached integration
 
-At trunk `3e18b00`, inspected from the live checkout:
+At trunk `752a16c`, inspected from the live checkout:
 
 - Rich terrain and river fords default on.
 - Aerial perspective defaults on.
 - Custom planet maps refresh from slider snapshots and reject stale worker results.
 - Procedural ground cover, original-hovercraft procedural materials, transparent
   plain-tier canopies and corrected instanced tyre relief are landed.
+- Generated-only wind, score layers, default-on water switches, all four gear tools
+  and same-player reconnect are landed. Stored explicit off choices remain intact.
+- Canonical race networking, display and normal-play hooks are landed. Host/guest,
+  reconnect and lobby-return acceptance remain separate checks.
+- The job limiter now holds inherited kernel locks. Old wrappers drained before
+  rollout; lanes use the absolute trunk helper with three shared slots and two workers.
 
 These are integration facts, not claims that those changes are public. Exact lane
 revisions and remaining checks are in `DEFAULTS-AUDIT.md`.
@@ -31,12 +39,17 @@ revisions and remaining checks are in `DEFAULTS-AUDIT.md`.
 ## Tested handoffs still requiring combined acceptance
 
 - Jet Mk2: lead reports 314 vehicle tests, browser checks and game smoke passing.
-- Gear: lead reports 222 tests and ordinary-entry two-browser checks passing. Bots
-  use all four tools; Pester evasion currently covers wheeled bots only.
-- Reconnect: default-on change has unit and local Cloudflare runtime evidence,
-  including explicit and stored opt-outs. Public acceptance remains open.
-- Map fidelity: sea depth and snow threshold corrections have 19 passing tests.
-  The map still approximates terrain noise, slope and remote islets.
+- Water correction `c28eafb`: typecheck, 70 regression tests and paired diagnostics
+  pass; independent Vehicles review found no blocking issue. Wing skims retain about
+  31.6 m/s, Zorb ride height matches the approved original, and submerged motor damping
+  receives real contact state. Combine with the five legacy fixture corrections.
+- Stable Post Effects `19cc879`: lane reports typecheck, 30 focused tests, both
+  rendering backends and HTTPS smoke passing. This excludes unfinished renderer work.
+- Presence `d247487`: 193 network tests, build and dev/Cloudflare runtime checks pass.
+  Independent source review confirms aggregate privacy and expiry. Lobby UI acceptance
+  and production verification remain open.
+- Buggy procedural tyres and distance models have lane rendering and driving evidence.
+  A guarded six-contact ram test passes; it is not rough-terrain or performance proof.
 
 The combined multiplayer check must include host dropout and return with bots, gear
 and races active. Holding host identity clears server bots, so isolated reconnect
@@ -44,20 +57,26 @@ tests alone do not establish the complete player experience.
 
 ## Work still underway
 
-- Water defaults, wakes, spray and falling sheets need their final combined visual,
-  controller and resource-cost checks. Transparency from above remains an explicit
-  acceptance requirement.
-- Post Effects is finishing stable lighting. Temporal motion vectors have a known
+- Water wakes, spray and falling sheets have lane visual checks. Their combined source
+  gate must include the physics correction above. **Transparency from above is
+  unimplemented:** the sea/river material is opaque; shallow colouring does not reveal
+  submerged objects or ground. Two-client wave visuals and real-mobile cost are unverified.
+- Stable lighting is ready for combined acceptance. Temporal motion vectors have a known
   defect; volumetric clouds and GI remain authorized unfinished work.
-- UX is validating generated-only wind and normal-entry behavior, enabling existing
-  score layers while preserving recorded music choice, and completing race display.
-- Bots still have flight stability and aerial Pester evasion work.
+- The separately authorized UX redesign adds the right rail, Exit world, internal
+  panel scrolling, contextual tooltips and a bottom-left minimap vignette. Source review
+  found music-selector keys leaking into driving and inconsistent Escape state; both
+  are corrected in the lane, with final keyboard/touch/cursor validation underway.
+- Bots still have host/guest race acceptance and aerial Pester evasion work. Wheeled
+  bots already evade Pesters; all four gear tools have combined browser evidence.
 - Showcase capture remains owed. Release notes and capture failures must not turn a
   successful gameplay deployment into a failed release.
 
 The later performance, diagnostics and cursor-UX queue remains pending until current
 assignments finish. It includes the FPS history panel, hardware and rendering failure
-information, one low-FPS recommendation control, adjustable tiers and minimap vignettes.
+information, one low-FPS recommendation control and adjustable tiers. Reuse the current
+owner-authorized minimap and rail work rather than implementing them twice. Connection
+diagnostics in that rail are not the requested FPS, hardware and failure diagnostics.
 
 ## Fifteen-minute owner viewing list
 
