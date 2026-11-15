@@ -40,7 +40,7 @@ audio.play('laserHit', position)
 audio.impact(impactSpeed, position)
 ```
 
-`impact` expects a nonnegative speed-like strength, reaches full gain at 20 and clamps above that. These three sounds are synthesised (`src/audio/Cues.ts`); `audio.play('materialize', position, { seconds })` stretches the building swoosh to a spawn hold. Spawn audio plays when Play unlocks audio. All audio mix parameters have client scope. The generated score is the only music, in the lobby and in play; there is no track choice. `audio.setMuted(boolean)` controls the master bus, `audio.outputLevel` reads the final mix in dBFS for checks, and `audio.errors` reports failures without stopping the game.
+`impact` expects speed lost in metres per second: contacts at or below 2 are silent, and 20 reaches full strength. Network contacts ring the local hull; landings use the terrain surface beneath the vehicle. A fixed-step detector also hears sudden velocity changes during grounded local driving, suppressing duplicate contact and landing sounds. Remote interpolation does not drive that detector. Zorb mode, pause and the lobby suppress impacts. All impacts are synthesized by `src/audio/Impacts.ts`. These three sounds are synthesised (`src/audio/Cues.ts`); `audio.play('materialize', position, { seconds })` stretches the building swoosh to a spawn hold. Spawn audio plays when Play unlocks audio. All audio mix parameters have client scope. The generated score is the only music, in the lobby and in play; there is no track choice. `audio.setMuted(boolean)` controls the master bus, `audio.outputLevel` reads the final mix in dBFS for checks, and `audio.errors` reports failures without stopping the game.
 
 The engine bridge uses the player's speed and drive input. Airborne detection currently uses terrain clearance above two metres because the shared Vehicle interface has no wheel contacts. Replace that fallback with the buggy's contact state during integration if available. Audio assets and keyboard/gamepad mappings remain unchanged. The only change outside assigned audio/UI/asset/test files is an additive `Input.external` field and input merging, plus enforcing its existing `suspended` flag in `poll()`. There is no index.html change.
 
@@ -144,3 +144,5 @@ run and a corrected Chrome destination-node spelling assertion. `teardown.json`
 contains the subsequent cleanup check. The earlier retained-handle report is
 preserved as `lifecycle-before-cleanup.json`. Touchdown events are sampled on fixed
 physics steps so a low frame rate cannot hide the landing pulse.
+
+Run `tools/heavy.sh node tests/audio/run-impacts-gate.mjs` to render the production impact paths and all nine voices, exercise the lab controls, and run the driving smoke test. The runner owns and closes a temporary dev server and room server.
