@@ -3,7 +3,7 @@
  */
 import { chromium } from 'playwright-core'
 import { mkdirSync, writeFileSync } from 'node:fs'
-const [base, out, backend = 'webgpu'] = process.argv.slice(2)
+const [base, out, backend = 'webgpu', mode = 'normal'] = process.argv.slice(2)
 mkdirSync(out, { recursive: true })
 const report = { backend, errors: [], shots: [], frames: [] }
 const browser = await chromium.launch({ channel: 'chrome', headless: true,
@@ -52,7 +52,7 @@ try {
     // Keep the renderer animation clock advancing so cached scene/post passes redraw.
     s.game.renderer.setAnimationLoop(() => window.isoRender())
     const sea = s.terrain.volcanics.newSea.material
-    return { spot, level,
+    return { spot, level, waves: s.params.get('water.waves').value, builtNew: s.terrain.volcanics.builtNew, seaMaterials: s.terrain.volcanics.sea.map(({mesh}) => ({ material: mesh.material.uuid, newSea: mesh.material === sea, visible: mesh.visible, y: mesh.position.y })),
       sea: { transparent: sea.transparent, side: sea.side, depthWrite: sea.depthWrite, forceSinglePass: sea.forceSinglePass, envMap: !!sea.envMap, envMapIntensity: sea.envMapIntensity },
       children: s.game.scene.children.map(o => ({ type: o.type, name: o.name, renderOrder: o.renderOrder, visible: o.visible, transparent: o.material?.transparent, depthWrite: o.material?.depthWrite, sky: !!(o.sunDirection && o.betaR), kids: o.children.length })) }
   })
@@ -89,6 +89,27 @@ try {
   await shot('f-up', () => { window.iso.pitch = 40 })
   await shot('g-above', () => { window.iso.depth = -2; window.iso.pitch = 6 })
   await shot('h-above-clouds-off', () => window.syn3h.params.set('post.clouds', 0))
+  if (mode === 'surface') {
+    await page.evaluate(async () => {
+      const source = await (await fetch('/src/world/water/surface.ts')).text()
+      window.isoTsl = await import(source.match(/from ["']([^"']*three_tsl[^"']*)["']/)[1])
+      const v = window.syn3h.terrain.volcanics
+      window.isoMaterials = [...new Set(v.group.children.filter(m => m.material).map(m => m.material))]
+      window.isoOriginal = window.isoMaterials.map(m => ({ m, output: m.outputNode, ao: m.aoNode }))
+      window.iso.depth = 2; window.iso.pitch = 6
+      window.syn3h.params.set('post.clouds', 1)
+    })
+    await shot('i-face-red-front-blue-back', () => {
+      const { vec3, vec4, mix, faceDirection } = window.isoTsl
+      for (const m of window.isoMaterials) {
+        m.outputNode = vec4(mix(vec3(0,0,1), vec3(1,0,0), faceDirection.mul(.5).add(.5)), 1)
+        m.needsUpdate = true
+      }
+    }, () => { for (const {m, output} of window.isoOriginal) { m.outputNode = output; m.needsUpdate = true } })
+    await shot('j-zero-ao-both-faces', () => {
+      for (const m of window.isoMaterials) { m.aoNode = window.isoTsl.float(0); m.needsUpdate = true }
+    }, () => { for (const {m, ao} of window.isoOriginal) { m.aoNode = ao; m.needsUpdate = true } })
+  }
   const normal = report.frames.find(f => f.name === 'a-normal')
   const isolated = report.frames.find(f => f.name === 'a-clouds-off')
   if (JSON.stringify(normal.camera) !== JSON.stringify(isolated.camera)) throw Error('Camera changed in cloud comparison')

@@ -115,7 +115,7 @@ function seaChunkGeometry(ground: Ground, cx: number, cz: number, chunks: number
 }
 
 /** Apron: a square ring from the edge of a tile-sized hole out to the horizon. Deep everywhere. */
-function apronGeometry(ground: Ground): THREE.BufferGeometry {
+export function apronGeometry(ground: Ground): THREE.BufferGeometry {
   const half = ground.size / 2
   const far = half + SEA_REACH
   const positions: number[] = []
@@ -129,7 +129,9 @@ function apronGeometry(ground: Ground): THREE.BufferGeometry {
     positions.push(ax * half, 0, az * half, bx * half, 0, bz * half, bx * far, 0, bz * far, ax * far, 0, az * far)
     depth.push(-100, -100, -100, -100)
     const [a, b, c, d] = [base, base + 1, base + 2, base + 3]
-    index.push(a, d, b, b, d, c)
+    // Match the upward-facing sea tiles. Reversed winding gives the underwater apron
+    // top-side sky reflection and culls the horizon on front-sided lava materials.
+    index.push(a, b, d, b, c, d)
   }
   return finishSea(positions, depth, index)
 }
