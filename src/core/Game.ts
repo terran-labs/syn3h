@@ -62,7 +62,10 @@ export class Game {
     })
 
     reportLoading('renderer', 0.4)
-    this.renderer = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: true })
+    // `?webgl=1` forces the WebGL 2 backend: a way round a WebGPU implementation that
+    // initialises but draws nothing (first seen as a black screen on iPadOS Safari).
+    const forceWebGL = new URLSearchParams(location.search).has('webgl')
+    this.renderer = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: true, forceWebGL })
     await this.renderer.init()
     this.backend = (this.renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'webgpu' : 'webgl'
     this.quality.attachRenderer(this.renderer)
