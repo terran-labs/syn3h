@@ -74,6 +74,8 @@ export class ScoreSynth {
    * organ and the bell. Alone, those parts are silent.
    */
   convoy: readonly { level: number; pan: number }[] | null = null
+  /** 0 calm to 1 gale, from the game's weather. The score's own wind layer gives way to the real one, so two winds never blow at once. */
+  wind = 0
   /** Pitch ratio applied to the telemetry beep: above 1 when something is closing on the listener. */
   doppler = 1
   /** Resolves when the worklets (plucked strings, sung choir, shimmer) have loaded or failed to; the score plays without them meanwhile. */
@@ -477,7 +479,7 @@ export class ScoreSynth {
     // The climb's drum roll and the release's heartbeat sound however calm the play is.
     to(this.drumBus.gain, Math.max(level.drums, arc.tension > 0.5 ? 0.6 : 0, arc.release * 0.7) * 0.8 * trim.drums)
     to(this.leadBus.gain, Math.max(level.lead, arc.release) * 0.2 * trim.theremin, 1)
-    to(this.airBus.gain, level.air * 0.1 * trim.air, 2)
+    to(this.airBus.gain, level.air * 0.1 * trim.air * (1 - 0.8 * unit(this.wind)), 2)
     to(this.pluckBus.gain, 0.5 * trim.pluck)
     to(this.brassBus.gain, 0.45 * trim.brass * carried(1))
     to(this.bellBus.gain, 0.6 * trim.bells * carried(2))

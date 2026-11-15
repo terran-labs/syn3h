@@ -34,6 +34,16 @@ try {
       const small = await page.evaluate(() => [...document.querySelectorAll('input, select, textarea')].filter(el => el.offsetParent !== null && !['range', 'checkbox', 'radio', 'color'].includes(el.type) && parseFloat(getComputedStyle(el).fontSize) < 16).map(el => `${el.className || el.id || el.tagName} ${getComputedStyle(el).fontSize}`))
       assert.deepEqual(small, [], `${name}: fields under 16px in ${panel}`)
     }
+    // Settings: the Daydream slider is there, fits the screen, and using it does not scale the page.
+    await page.evaluate(() => window.syn3h.shell.showPanel('settings'))
+    await page.waitForFunction(() => { const p = document.querySelector('.lobby-panels'); return p.dataset.activePanel === 'settings' && p.dataset.busy === 'false' })
+    const daydream = await page.evaluate(() => { const el = document.querySelector('.daydream-control'); if (!el) return null; const r = el.getBoundingClientRect(), input = el.querySelector('input'); return { left: r.left, right: r.right, width: r.width, text: el.textContent.trim(), type: input?.type, view: innerWidth } })
+    assert.ok(daydream, `${name}: Settings has the Daydream control`)
+    assert.ok(daydream.width > 120 && daydream.left >= 0 && daydream.right <= daydream.view, `${name}: the Daydream control fits (${Math.round(daydream.left)} to ${Math.round(daydream.right)} of ${daydream.view})`)
+    assert.equal(daydream.type, 'range'); assert.match(daydream.text, /Daydream/)
+    await page.locator('.daydream-control input').scrollIntoViewIfNeeded(); await page.locator('.daydream-control input').tap()
+    assert.ok(await page.evaluate(() => (window.visualViewport?.scale ?? 1) <= 1.01), `${name}: using the Daydream slider does not scale the page`)
+    await page.screenshot({ path: `tests/ui/artifacts/settings-${name.replace(/\W+/g, '-')}.png` })
     // Typing a name does not leave the page scaled.
     await page.evaluate(() => window.syn3h.shell.showPanel('explore'))
     await page.locator('#shell-name').tap(); await page.keyboard.type('Zoomless')

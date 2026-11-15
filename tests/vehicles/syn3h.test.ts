@@ -287,37 +287,63 @@ describe('Syn3hBuggy', () => {
     return { hop, roll, strikes }
   }
 
-  test('next-gen suspension soaks up a 0.4 m bump at 42 m/s where classic is thrown', async () => {
-    const run = async (nextGen: boolean) => {
-      params.set(buggyNextGen.def.id, nextGen)
-      const { bed, b } = await cruise(42)
-      ridge(bed, b, -50, 50, 0.4, 6)
-      const r = ride(bed, b, 4)
-      return { ...r, upright: axis(b, 0, 1, 0).y }
-    }
-    const classic = await run(false)
-    const next = await run(true)
-    expect(classic.hop).toBeGreaterThan(1.5)
-    expect(next.hop).toBeLessThan(0.7)
-    expect(next.upright).toBeGreaterThan(0.95)
+  test('a 0.4 m bump at 42 m/s throws next-gen into the air, and it comes down on its wheels', async () => {
+    const { bed, b } = await cruise(42)
+    ridge(bed, b, -50, 50, 0.4, 6)
+    const r = ride(bed, b, 6)
+    // The owner wants hills to launch it, as the original did (about 2 m here), not skip over.
+    expect(r.hop).toBeGreaterThan(1.5)
+    expect(axis(b, 0, 1, 0).y).toBeGreaterThan(0.9)
   })
 
-  test('next-gen stays flat when only the left wheels hit a bump at 42 m/s', async () => {
+  test('the planted suspension settings still soak the same bump up', async () => {
+    params.set('buggy.rebound', 3); params.set('buggy.rideHeight', 0.25); params.set('buggy.bumpStop', 1.5)
+    const { bed, b } = await cruise(42)
+    ridge(bed, b, -50, 50, 0.4, 6)
+    const r = ride(bed, b, 4)
+    expect(r.hop).toBeLessThan(0.7)
+    expect(axis(b, 0, 1, 0).y).toBeGreaterThan(0.95)
+  })
+
+  test('a one sided bump at 42 m/s tips next-gen but it recovers upright', async () => {
     const { bed, b } = await cruise(42)
     ridge(bed, b, -50, 0, 0.4, 6)
-    const r = ride(bed, b, 4)
-    expect(r.roll).toBeLessThan(10)
-    expect(r.strikes).toBe(0)
-    expect(b.isInverted).toBe(false)
+    const r = ride(bed, b, 6)
+    expect(r.roll).toBeGreaterThan(15)
+    expect(axis(b, 0, 1, 0).y).toBeGreaterThan(0.9)
   })
 
-  test('next-gen bump stop lands a 4 m drop at 30 m/s without the body striking the ground', async () => {
+  test('landing broadside at speed, next-gen slides on instead of gripping to a stop', async () => {
+    const slide = async (sideGrip?: number) => {
+      if (sideGrip !== undefined) params.set('buggy.sideGrip', sideGrip)
+      const { bed, b } = await spawn()
+      bed.run(3)
+      const x0 = pos(b).x
+      b.body.setLinvel({ x: 20, y: 0, z: 0 }, true)
+      let t = 0, stopped = -1
+      bed.run(6, () => { t += 0.02; const v = b.body.linvel(); if (stopped < 0 && Math.hypot(v.x, v.z) < 3) stopped = t })
+      return { distance: pos(b).x - x0, stopped, upright: axis(b, 0, 1, 0).y }
+    }
+    const slides = await slide()
+    // With broadside grip as high as steering grip it stops in about a second (the old behaviour).
+    const bites = await slide(4)
+    expect(bites.stopped).toBeLessThan(1.4)
+    expect(slides.stopped).toBeGreaterThan(1.8)
+    expect(slides.distance).toBeGreaterThan(bites.distance * 1.8)
+    expect(slides.upright).toBeGreaterThan(0.9)
+  })
+
+  test.each([[false, 1], [true, 0]])('next-gen lands a 4 m drop at 30 m/s on its wheels (planted settings %s: at most %i body strike)', async (planted, strikes) => {
+    // The launch-happy defaults let the body touch down once and bounce; the planted settings
+    // (firmer stop, more travel) keep it off the ground altogether.
+    if (planted) { params.set('buggy.rebound', 3); params.set('buggy.rideHeight', 0.25); params.set('buggy.bumpStop', 1.5) }
     const { bed, b } = await cruise(30)
     const p = pos(b)
     b.body.setTranslation({ x: p.x, y: p.y + 4, z: p.z }, true)
     const r = ride(bed, b, 4)
-    expect(r.strikes).toBe(0)
+    expect(r.strikes).toBeLessThanOrEqual(strikes)
     expect(b.wheelsGrounded).toBe(4)
+    expect(axis(b, 0, 1, 0).y).toBeGreaterThan(0.95)
   })
 
   /**
