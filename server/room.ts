@@ -114,6 +114,8 @@ interface Player {
   shoved: Map<number, number>
   /** The room last relayed this player's Bungee cord as attached. */
   cordOn: boolean
+  /** The vehicle that cord is tied to, or null for a ground anchor, so it can be let go when that vehicle goes. */
+  cordTo: number | null
   /** The vehicle this player is carrying with Yoink, and since when (server ms). */
   carry: { to: number; at: number } | null
   /** Server ms of this player's last relayed grab or fling, and of its last gust per target. */
@@ -424,6 +426,8 @@ export class Room {
     // Its owner is not there to let go of it: a held place holds no cord and carries nobody.
     this.dropCord(player)
     this.endCarry(player)
+    // Nor is it there to be pulled or carried: its vehicle is frozen where it was last seen.
+    this.releaseTiesTo(player.info.id)
     if (player.info.id === this.host) this.clearBots()
     if (wasActive && !this.anyActive(this.now())) {
       this.activeLeft = true
@@ -483,6 +487,7 @@ export class Room {
     const wasActive = this.isActive(player, this.now())
     this.endCarry(player)
     this.players.delete(peer)
+    this.releaseTiesTo(player.info.id)
     if (wasActive && !this.anyActive(this.now())) {
       this.activeLeft = true
       this.activeAt = this.now()
@@ -778,9 +783,7 @@ export class Room {
     this.withdrawRace(id)
     this.dropCord(bot)
     this.endCarry(bot)
-    for (const holder of [...this.players.values(), ...this.bots.values()]) {
-      if (holder.carry?.to === id) this.endCarry(holder)
-    }
+    this.releaseTiesTo(id)
     this.bots.delete(id)
     delete this.scores[id]
     this.broadcast({ type: 'leave', id })
@@ -1019,8 +1022,9 @@ export class Room {
       // matters most: that vehicle's own client is what pulls it, so an unchecked tie would
       // let anyone drag anyone from across the world.
       const other = cord.to !== undefined ? this.byId(cord.to) : undefined
-      if (cord.to !== undefined && (!this.paramBool(bungeeVehicles.def) || cord.to === player.info.id || !other)) return
-      const anchor = other ? other.lastState?.p : cord.at
+      if (cord.to !== undefined && (!this.paramBool(bungeeVehicles.def) || cord.to === player.info.id)) return
+      // A vehicle that left, or whose place is held, has no anchor: its copy is a frozen ghost.
+      const anchor = cord.to === undefined ? cord.at : other && !other.heldUntil ? other.lastState?.p : undefined
       if (!st || !anchor || this.dist(anchor, st.p) > reach) {
         // Out of reach (or not yet placed). If this was the refresh of a cord the room has
         // already relayed, the others must not keep pulling on it: tell them it is off.
@@ -1029,6 +1033,7 @@ export class Room {
       }
     }
     player.cordOn = cord.s === 'on'
+    player.cordTo = cord.s === 'on' ? cord.to ?? null : null
     this.broadcast({ type: 'cord', from: player.info.id, cord, t: this.now() / 1000 }, peer)
   }
 
@@ -1059,7 +1064,7 @@ export class Room {
     const theirs = other?.lastState
     if (!other || other === player || !theirs || !mine) return
     if (mine.paused || theirs.paused || now - player.lastStateAt > RESPONDING_MS) return
-    if (now - other.lastStateAt > (other.info.bot ? BOT_EXPIRY_MS : RESPONDING_MS)) return
+    if (other.heldUntil || now - other.lastStateAt > (other.info.bot ? BOT_EXPIRY_MS : RESPONDING_MS)) return
     if (this.dist(theirs.p, mine.p) > this.yoinkReach()) return
     const carrying = player.carry?.to === y.to
     // The recharge between uses, with a little slack for timing; never less than a quarter second.
@@ -1124,7 +1129,19 @@ export class Room {
   private dropCord(player: Player, except?: Peer): void {
     if (!player.cordOn) return
     player.cordOn = false
+    player.cordTo = null
     this.broadcast({ type: 'cord', from: player.info.id, cord: { s: 'off' }, t: this.now() / 1000 }, except)
+  }
+
+  /**
+   * A vehicle left, was held for a rejoin or was removed: end every cord tied to it and every
+   * carry of it, telling everyone, owners included, so nobody keeps pulling on its last copy.
+   */
+  private releaseTiesTo(id: number): void {
+    for (const p of [...this.players.values(), ...this.bots.values()]) {
+      if (p.cordTo === id) this.dropCord(p)
+      if (p.carry?.to === id) this.endCarry(p)
+    }
   }
 
   /** The victim reports a hit on itself. The room checks the shot really happened. */
@@ -1305,7 +1322,7 @@ export class Room {
     // Joining counts as a tag so a newcomer cannot be tagged in their first seconds.
     const now = this.now()
     return {
-      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, carry: null, yoinkAt: -Infinity, gusted: new Map(), token: null, heldUntil: 0, lastFireAt: -Infinity, lastRedAt: -Infinity, pesters: new Map(), pesterTargets: new Map(), lastPesterAt: -Infinity, shots: new Map(), lastTag: now,
+      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, cordTo: null, carry: null, yoinkAt: -Infinity, gusted: new Map(), token: null, heldUntil: 0, lastFireAt: -Infinity, lastRedAt: -Infinity, pesters: new Map(), pesterTargets: new Map(), lastPesterAt: -Infinity, shots: new Map(), lastTag: now,
       windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now, raceDriving: false,
     }
   }

@@ -116,3 +116,41 @@ describe('Room cords tied to vehicles', () => {
     expect(b.peer.cords().map((c) => (c as { n: number[] }).n)).toEqual([[0, 1, 0], [0, 0.6, 0.8]])
   })
 })
+
+describe('Room cords whose other end goes away', () => {
+  /** A ties to B, C watches. */
+  function tied(params: Record<string, number | boolean> = {}) {
+    const a = join('A', { ...world, ...params })
+    const b = join('B', {}, { resume: 'b'.repeat(32) })
+    const c = join('C')
+    room.receive(a.peer, state([0, 0, 0]))
+    room.receive(b.peer, state([0, 0, -30]))
+    room.receive(c.peer, state([5, 0, 0]))
+    send(a.peer, { type: 'cord', cord: { s: 'on', to: b.id, r: 30 } })
+    return { a, b, c }
+  }
+
+  it('drops a cord tied to a player whose place is being held, and refuses its refresh', () => {
+    const { a, b, c } = tied({ 'game.rejoin': true })
+    room.disconnect(b.peer)
+    expect(room.heldCount).toBe(1)
+    // Everyone, the owner too: its game must stop pulling toward a vehicle frozen in place.
+    expect(c.peer.cords()).toEqual([{ s: 'on', to: b.id, r: 30 }, { s: 'off' }])
+    expect(a.peer.cords()).toEqual([{ s: 'off' }])
+    // The owner's next refresh, sent before it heard, ties nothing to the held place.
+    send(a.peer, { type: 'cord', cord: { s: 'on', to: b.id, r: 30 } })
+    room.tick()
+    expect(c.peer.cords()).toHaveLength(2)
+  })
+
+  it('drops a cord tied to a player who left, said once', () => {
+    const { a, b, c } = tied({ 'game.rejoin': false })
+    room.disconnect(b.peer)
+    expect(room.heldCount).toBe(0)
+    expect(c.peer.cords()).toEqual([{ s: 'on', to: b.id, r: 30 }, { s: 'off' }])
+    expect(a.peer.cords()).toEqual([{ s: 'off' }])
+    send(a.peer, { type: 'cord', cord: { s: 'on', to: b.id, r: 30 } })
+    expect(c.peer.cords()).toHaveLength(2)
+  })
+
+})
