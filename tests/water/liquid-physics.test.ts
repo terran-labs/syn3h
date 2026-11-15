@@ -5,7 +5,7 @@ import { initPhysics, RAPIER, groups, GROUP_TERRAIN, GROUP_ALL } from '../../src
 import { params } from '../../shared/params'
 import { createVehicle } from '../../src/vehicles'
 import { applyWaterForces, planingShare } from '../../src/vehicles/buoyancy'
-import { lavaVelocityStep, liquidWetness, wingLiquidAcceleration, liquidWingLift, lavaCrawlPower, lavaViscosity } from '../../src/vehicles/lava'
+import { lavaVelocityStep, liquidWetness, wingLiquidAcceleration, wingAttitudeHold, liquidWingLift, lavaCrawlPower, lavaViscosity } from '../../src/vehicles/lava'
 import { harness } from '../vehicles2/harness'
 beforeAll(initPhysics)
 afterEach(() => { for (const p of params.all()) params.set(p.def.id, p.def.default) })
@@ -51,6 +51,54 @@ describe('wings in liquid', () => {
       } finally { v.dispose(); h.world.free() }
     }
   })
+})
+
+describe('wing attitude in liquid', () => {
+  const start = (kind: 'buggy' | 'buggy-classic', liquid: 'water' | 'lava', pitch: number) => {
+    const surface = liquid === 'water' ? 8 : 4
+    const h = harness(); h.terrain.liquidHeightAt = () => surface; h.terrain.liquidKindAt = () => liquid
+    const v = createVehicle(h.game, h.terrain, kind, new THREE.Vector3(0, surface - (liquid === 'water' ? 1 : .45), 0)); v.isLocal = false
+    v.body.setRotation(pitched(pitch), true); v.input.special = true
+    return { h, v, surface }
+  }
+  it('the hold pulls pitch and roll rates to the command and leaves yaw', () => {
+    const right = new THREE.Vector3(1, 0, 0), fwd = new THREE.Vector3(0, 0, -1), out = new THREE.Vector3()
+    const w = new THREE.Vector3(-2, .5, 1)
+    for (let i = 0; i < 120; i++) wingAttitudeHold(w, right, fwd, 0, 1, 1 / 60, out), w.copy(out)
+    expect(Math.abs(w.x)).toBeLessThan(1e-4); expect(Math.abs(w.z)).toBeLessThan(1e-4); expect(w.y).toBe(.5)
+    // Forward input lowers the nose; no wetness, no hold.
+    for (let i = 0; i < 120; i++) wingAttitudeHold(w, right, fwd, 1, 1, 1 / 60, out), w.copy(out)
+    expect(w.x).toBeLessThan(-.9)
+    expect(wingAttitudeHold(new THREE.Vector3(3, 0, 0), right, fwd, 0, 0, 1 / 60, out).x).toBe(3)
+  })
+  for (const kind of ['buggy', 'buggy-classic'] as const) for (const [liquid, limit] of [['water', 3], ['lava', 5]] as const) {
+    it(`${kind}: 20 degrees nose up climbs out of ${liquid} within ${limit} s, without a jolt`, () => {
+      const { h, v, surface } = start(kind, liquid, 20)
+      try {
+        let clear = -1, last = v.body.linvel(), lastA = new THREE.Vector3(), end = limit * 60
+        const change: number[] = []
+        for (let i = 1; i <= end; i++) {
+          h.step(v); const l = v.body.linvel(), a = new THREE.Vector3(l.x - last.x, l.y - last.y, l.z - last.z).multiplyScalar(60); last = l
+          change.push(a.distanceTo(lastA)); lastA.copy(a)
+          if (clear < 0 && v.body.translation().y > surface + .25) { clear = i; end = Math.min(end, i + 30) }
+        }
+        expect(clear).toBeGreaterThan(0)
+        // The handover: from a quarter second before the hull leaves to half a second after.
+        // A jolt is a jump in acceleration between steps. (The flight controller's own snap of
+        // velocity onto the nose at 4 m/s, earlier in the climb, is outside this pass.)
+        const jolt = Math.max(...change.slice(Math.max(0, clear - 16), clear + 30))
+        console.log(kind, liquid, 'clear', clear / 60, 'handover jolt', jolt)
+        expect(jolt).toBeLessThan(20)
+        // It went along the nose, not straight up.
+        expect(-v.body.translation().z).toBeGreaterThan(v.body.translation().y - surface)
+      } finally { v.dispose(); h.world.free() }
+    })
+    it(`${kind}: nose down drives deeper into ${liquid}`, () => {
+      const { h, v, surface } = start(kind, liquid, -20)
+      const y0 = v.body.translation().y
+      try { h.step(v, 120); expect(v.body.translation().y).toBeLessThan(y0 - .3); expect(v.body.translation().y).toBeLessThan(surface) } finally { v.dispose(); h.world.free() }
+    })
+  }
 })
 
 describe('continuity', () => {

@@ -122,6 +122,8 @@ export function floatPoints(halfWidth: number, halfLength: number, yLow: number,
 export const liquidWingLift=defineParam({id:'liquid.wingLift',label:'Wing push in liquid (m/s²)',group:'Liquid',scope:'world',default:18,min:0,max:40,step:1})
 export const liquidWingPushSpeed=defineParam({id:'liquid.wingPushSpeed',label:'Wing push fades out by (m/s)',group:'Liquid',scope:'world',default:12,min:2,max:40,step:1})
 export const liquidWingEffect=defineParam({id:'liquid.wingEffect',label:'Wing lift in liquid (share of weight)',group:'Liquid',scope:'world',default:.6,min:0,max:1.5,step:.05})
+export const liquidWingPitchRate=defineParam({id:'liquid.wingPitchRate',label:'Wing pitch rate in liquid (rad/s)',group:'Liquid',scope:'world',default:1,min:0,max:4,step:.1})
+export const lavaWingPush=defineParam({id:'lava.wingPush',label:'Wing push in lava (times the liquid push)',group:'Lava',scope:'world',default:3,min:0,max:6,step:.1})
 export const liquidWingLiftSpeed=defineParam({id:'liquid.wingLiftSpeed',label:'Speed for full wing lift in liquid (m/s)',group:'Liquid',scope:'world',default:12,min:2,max:40,step:1})
 
 // Lava is wadeable: a viscous drag that grows with depth and speed, and a crawl push that
@@ -152,7 +154,7 @@ export function liquidWetness(immersion:number):number {
  * the square of forward speed. At rest the result is purely along the nose.
  */
 export function wingLiquidAcceleration(forward:THREE.Vector3,up:THREE.Vector3,forwardSpeed:number,wetness:number,gravity:number,out:THREE.Vector3,
- push=liquidWingLift.value,pushSpeed=liquidWingPushSpeed.value,effect=liquidWingEffect.value,liftSpeed=liquidWingLiftSpeed.value):THREE.Vector3 {
+ push:number=liquidWingLift.value,pushSpeed:number=liquidWingPushSpeed.value,effect:number=liquidWingEffect.value,liftSpeed:number=liquidWingLiftSpeed.value):THREE.Vector3 {
  const s=Math.max(0,forwardSpeed)
  const thrust=push*wetness*Math.max(0,1-s/Math.max(.1,pushSpeed))
  const lift=effect*gravity*wetness*Math.min(1,(s/Math.max(.1,liftSpeed))**2)
@@ -180,6 +182,20 @@ export function lavaVelocityStep(v:{x:number;y:number;z:number},forward:{x:numbe
  return out
 }
 
+/**
+ * Attitude while wings are open in a liquid. The liquid resists the hull turning, so pitch and
+ * roll rates are pulled toward what the player commands (throttle pitches, as in flight:
+ * forward dives) instead of what the stalled wing's torque would do. Yaw is left alone.
+ * `right`, `forward` are the body's unit axes in world space; returns the new angular velocity.
+ */
+export function wingAttitudeHold(w:THREE.Vector3,right:THREE.Vector3,fwd:THREE.Vector3,pitchInput:number,wetness:number,dt:number,out:THREE.Vector3,rate:number=liquidWingPitchRate.value):THREE.Vector3 {
+ const k=1-Math.exp(-12*wetness*dt)
+ const pitch=w.dot(right),roll=w.dot(fwd)
+ // Positive rotation about the body's right axis raises the nose; forward input lowers it.
+ const target=-THREE.MathUtils.clamp(pitchInput,-1,1)*rate
+ return out.copy(w).addScaledVector(right,(target-pitch)*k).addScaledVector(fwd,-roll*k)
+}
+
 export interface LiquidState {
  lavaDepth:number
  entrySpeed:number
@@ -200,6 +216,16 @@ export interface LiquidState {
  heatHeight:number
 }
 export function createLiquidState():LiquidState {return {entrySpeed:0,wasImmersed:false,wingWasOpen:false,fastWingContact:false,wingLaunchSpeed:0,wingLiftSpeed:0,wingLiftAvailable:false,wingLiftSurface:-Infinity,lavaDepth:0,stuck:false,heat:0,heatNormal:new THREE.Vector3(0,1,0),heatHeight:-100}}
+const rightAxis=new THREE.Vector3(),angIn=new THREE.Vector3(),angOut=new THREE.Vector3()
+/** With wings open, the wet share of the controller's torque (the stalled wing's pitch-down) gives way to the liquid's hold. */
+function holdWingAttitude(body:RAPIER.RigidBody,pitchInput:number,wetness:number,dt:number):void {
+ body.userTorque(userT);body.resetTorques(true)
+ const keep=1-wetness
+ if(keep>0)body.addTorque({x:userT.x*keep,y:userT.y*keep,z:userT.z*keep},true)
+ const w=body.angvel();angIn.set(w.x,w.y,w.z)
+ wingAttitudeHold(angIn,rightAxis,forward,pitchInput,wetness,dt,angOut)
+ body.setAngvel(angOut,true)
+}
 const liquidQ=new THREE.Quaternion(),inverseQ=new THREE.Quaternion(),forward=new THREE.Vector3(),flat=new THREE.Vector3(),angular=new THREE.Vector3(),upAxis=new THREE.Vector3(),wetNormal=new THREE.Vector3(),globalUp=new THREE.Vector3(0,1,0),wing=new THREE.Vector3(),userF=new THREE.Vector3(),userT=new THREE.Vector3(),nextV={x:0,y:0,z:0}
 
 /** Runs after each vehicle controller, so wheel, wing and jet forces cannot skim through lava. */
@@ -220,11 +246,12 @@ export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terr
  if(!immersion&&!(type==='water'&&waterSinking.value))return
  const wetness=liquidWetness(immersion)
  const r=body.rotation();liquidQ.set(r.x,r.y,r.z,r.w)
- forward.set(0,0,-1).applyQuaternion(liquidQ);upAxis.set(0,1,0).applyQuaternion(liquidQ)
+ forward.set(0,0,-1).applyQuaternion(liquidQ);upAxis.set(0,1,0).applyQuaternion(liquidQ);rightAxis.set(1,0,0).applyQuaternion(liquidQ)
  const wings=buggy&&wingsOpen&&liquidWingLift.value>0&&immersion>0&&!body.isKinematic()
  if(wings){
   const v=body.linvel()
-  wingLiquidAcceleration(forward,upAxis,v.x*forward.x+v.y*forward.y+v.z*forward.z,wetness,-world.gravity.y,wing)
+  const push=liquidWingLift.value*(type==='lava'?lavaWingPush.value:1)
+  wingLiquidAcceleration(forward,upAxis,v.x*forward.x+v.y*forward.y+v.z*forward.z,wetness,-world.gravity.y,wing,push)
  }else wing.set(0,0,0)
  if(type==='water'){
   state.heat=0;state.heatHeight=-100
@@ -242,10 +269,7 @@ export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terr
   if(skim<1)applyWaterForces(body,world,terrain,kind,dt,0,undefined,1-skim)
   // Water resists the hull turning: with wings open the attitude is held, so a raised nose
   // stays raised against the stalled wing's pitch-down torque.
-  if(wings){
-   const w=body.angvel(),k=Math.exp(-4*wetness*dt)
-   body.setAngvel({x:w.x*k,y:w.y,z:w.z*k},true)
-  }
+  if(wings)holdWingAttitude(body,input.y,wetness,dt)
   return
  }
  if(type!=='lava'||!immersion)return
@@ -278,6 +302,9 @@ export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terr
  const drag=lavaViscosity.value*wetness*(1+Math.min(2,state.lavaDepth))
  const turn=-input.x*lavaTurnRate.value*Math.max(.35,Math.abs(throttle))
  const angularBlend=(1-Math.exp(-Math.max(2,drag)*dt))*wetness
- const ax=wings?0:angular.x,az=wings?0:angular.z
- body.setAngvel({x:THREE.MathUtils.lerp(w.x,ax,angularBlend),y:THREE.MathUtils.lerp(w.y,turn,angularBlend),z:THREE.MathUtils.lerp(w.z,az,angularBlend)},true)
+ if(wings){
+  // Controller torques were already faded above; hold the commanded attitude, steer with yaw.
+  body.setAngvel({x:w.x,y:THREE.MathUtils.lerp(w.y,turn,angularBlend),z:w.z},true)
+  holdWingAttitude(body,input.y,wetness,dt)
+ }else body.setAngvel({x:THREE.MathUtils.lerp(w.x,angular.x,angularBlend),y:THREE.MathUtils.lerp(w.y,turn,angularBlend),z:THREE.MathUtils.lerp(w.z,angular.z,angularBlend)},true)
 }
