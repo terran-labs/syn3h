@@ -27,12 +27,11 @@
 import * as THREE from 'three/webgpu'
 import {
   Fn, If, Loop, abs, sin, clamp, dot, exp, float, interleavedGradientNoise, length, max, min, mix, pass,
-  renderOutput, rtt, screenCoordinate, screenUV, smoothstep, step, mrt, normalView, builtinAOContext, builtinShadowContext, uniform, uv, vec2, vec3, vec4,
+  renderOutput, rtt, screenCoordinate, smoothstep, step,  uniform, uv, vec2, vec3, vec4,
 } from 'three/tsl'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { ao } from 'three/addons/tsl/display/GTAONode.js'
 import { sss } from 'three/addons/tsl/display/SSSNode.js'
-import { applyHaze } from './atmosphere'
 import { motionBlurred } from './motion'
 import { graphicsLevel } from '../../core/quality'
 import { params } from '../../../shared/params'
@@ -125,15 +124,6 @@ export class PostChain {
     motionAmount: uniform(0),
     motionNear: uniform(14),
     motionMax: uniform(0.04),
-    // Atmosphere.
-    sunDir: uniform(new THREE.Vector3(0, 1, 0)),
-    sunColor: uniform(new THREE.Vector3(1, 1, 1)),
-    horizon: uniform(new THREE.Vector3(0.5, 0.5, 0.5)),
-    hazeTint: uniform(new THREE.Vector3(1, 1, 1)),
-    hazeDensity: uniform(0),
-    hazeFalloff: uniform(1 / 140),
-    hazeBase: uniform(0),
-    hazeSun: uniform(1),
   }
   private readonly prevView = new THREE.Matrix4()
   private readonly prevProj = new THREE.Matrix4()
@@ -155,7 +145,7 @@ export class PostChain {
     let tier = postTier({ on: P.postOn.value, level: graphicsLevel.value, deviceLevel: this.host.quality.deviceLevel, tablets: P.postTablets.value, shed })
     this.tier = tier
     // Anything the governor could shed: everything but the colour look itself.
-    this.reportActive(tier !== 'off' && [P.postBloom, P.postShafts, P.postFlare, P.postAO, P.postContact, P.postMotionBlur, P.postHaze].some(p => p.value > 0))
+    this.reportActive(tier !== 'off' && [P.postBloom, P.postShafts, P.postFlare, P.postAO, P.postContact, P.postMotionBlur].some(p => p.value > 0))
     if (tier === 'off') {
       this.release()
       renderer.render(scene, camera)
@@ -166,12 +156,12 @@ export class PostChain {
     const glowOn = tier === 'full' && P.postBloom.value > 0
     const shaftsOn = tier !== 'base' && (P.postShafts.value > 0 || P.postFlare.value > 0)
     const flareOn = tier === 'full' && P.postFlare.value > 0
-    const hazeOn = P.postHaze.value > 0
     const aoOn = tier === 'full' && P.postAO.value > 0
     const light = tier === 'full' && P.postContact.value > 0 ? findSun(scene) : null
     const toneMap = TONE_MAPS[Math.round(P.postToneMap.value)] ?? renderer.toneMapping
-    const key = `${tier}|${glowOn}|${shaftsOn}|${flareOn}|${hazeOn}|${aoOn}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
-    if (this.built?.key !== key) this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, hazeOn, aoOn, light, toneMap)
+    const debug = Math.round(P.postDebug.value)
+    const key = `${debug}|${tier}|${glowOn}|${shaftsOn}|${flareOn}|${aoOn}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
+    if (this.built?.key !== key) this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug)
 
     const u = this.u
     u.exposure.value = Math.max(1e-4, renderer.toneMappingExposure)
@@ -193,7 +183,6 @@ export class PostChain {
     u.grain.value = P.postGrain.value * (tier === 'base' ? 1 : 1)
     u.seed.value = (u.seed.value + 61.7) % 4096
     this.updateCamera(camera as THREE.PerspectiveCamera, tier === 'full' ? P.postMotionBlur.value * fade : 0)
-    this.updateAtmosphere()
     const b = this.built!
     if (b.aoNode) { b.aoNode.radius.value = P.postAORadius.value; b.aoNode.scale.value = P.postAO.value * fade }
     if (b.sssNode) b.sssNode.shadowIntensity.value = P.postContact.value * fade
@@ -252,24 +241,6 @@ export class PostChain {
     this.hasPrev = true
   }
 
-  /** Sun, sky and haze settings for the atmosphere pass. */
-  private updateAtmosphere(): void {
-    const u = this.u
-    ;(u.sunDir.value as THREE.Vector3).copy(this.sun.sunDirection)
-    const sc = this.sun.sunColor, hc = this.sun.horizonColor
-    if (sc) (u.sunColor.value as THREE.Vector3).set(sc.r, sc.g, sc.b)
-    if (hc) (u.horizon.value as THREE.Vector3).set(hc.r, hc.g, hc.b)
-    // Extinction in the sky's own scattering ratios, normalised to a mean of 1.
-    const r = Number(params.get('sky.rayleighR')?.value ?? 5.8), gg = Number(params.get('sky.rayleighG')?.value ?? 13.6), bb = Number(params.get('sky.rayleighB')?.value ?? 30.3)
-    const mean = Math.max(1e-3, (r + gg + bb) / 3)
-    // Pulled halfway to grey: full Rayleigh ratios turn far terrain one hue.
-    ;(u.hazeTint.value as THREE.Vector3).set(0.5 + 0.5 * r / mean, 0.5 + 0.5 * gg / mean, 0.5 + 0.5 * bb / mean)
-    u.hazeDensity.value = P.postHaze.value / 4000
-    u.hazeFalloff.value = 1 / Math.max(1, P.postHazeHeight.value)
-    u.hazeBase.value = P.postHazeBase.value
-    u.hazeSun.value = P.postHazeSun.value
-  }
-
   /**
    * The plunge: a brief soft blur and a wash of the liquid's colour when the vehicle breaks a
    * liquid surface, so the moment registers. It does not linger: driving through lava or
@@ -307,7 +278,7 @@ export class PostChain {
     return sunScreenFade(su, sv, inFront) * sunHeightFactor(sun.y, P.postLowSun.value)
   }
 
-  private build(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, key: string, tier: PostTier, glowOn: boolean, shaftsOn: boolean, flareOn: boolean, hazeOn: boolean, aoOn: boolean, light: THREE.DirectionalLight | null, toneMap: THREE.ToneMapping): void {
+  private build(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, key: string, tier: PostTier, glowOn: boolean, shaftsOn: boolean, flareOn: boolean, aoOn: boolean, light: THREE.DirectionalLight | null, toneMap: THREE.ToneMapping, debug = 0): void {
     this.release()
     const u = this.u as Record<keyof PostChain['u'], N>
     const disposables: Built['disposables'] = []
@@ -315,41 +286,34 @@ export class PostChain {
     let raysRef: N = null
     const scenePass = pass(scene, camera)
     disposables.push(scenePass as never)
-    // Ambient occlusion and contact shadows need depth (and normals) before the lit pass, so
-    // they come from a cheap pre-pass that writes view normals only (no lighting, no MSAA).
-    // The occlusion is handed to the lit pass's materials as context: it darkens only their
-    // indirect light (sky fill and bounce), never the sun, as in Unreal. Contact shadows
-    // likewise multiply only the sun's shadow term.
-    let aoNode: N = null
-    let sssNode: N = null
-    if (aoOn || light) {
-      const prePass = pass(scene, camera, { samples: 0 })
-      prePass.setMRT(mrt({ output: normalView }))
-      disposables.push(prePass as never)
-      const preNormal: N = prePass.getTextureNode()
-      const preDepth: N = prePass.getTextureNode('depth')
-      let context: N = null
-      if (aoOn) {
-        aoNode = ao(preDepth, preNormal, camera)
-        aoNode.resolutionScale = 0.5
-        aoNode.samples.value = 12
-        disposables.push(aoNode)
-        context = builtinAOContext(aoNode.getTextureNode().sample(screenUV).r)
-      }
-      if (light) {
-        sssNode = sss(preDepth, camera, light)
-        sssNode.resolutionScale = 0.5
-        sssNode.maxDistance.value = 0.6
-        sssNode.thickness.value = 0.25
-        disposables.push(sssNode)
-        const shadow = sssNode.getTextureNode().sample(screenUV).r
-        context = context ? builtinShadowContext(shadow, light, context) : builtinShadowContext(shadow, light)
-      }
-      scenePass.contextNode = context
-    }
     const color: N = scenePass.getTextureNode('output')
     const depth: N = scenePass.getTextureNode('depth')
     const hot: N = u.bloomThreshold.mul(HOT_CLAMP)
+
+    // Ambient occlusion and contact shadows, from the lit pass's own depth (normals rebuilt
+    // from depth), at half resolution. They darken the frame where geometry crowds a point or
+    // something small stands between it and the sun. A pre-pass that would let occlusion
+    // touch only the ambient light was tried: it re-rendered every object and corrupted the
+    // sun's nearest shadow cascade (shadow maps render at the first pass of a frame).
+    let aoNode: N = null
+    let sssNode: N = null
+    let shade: N = float(1)
+    if (aoOn) {
+      aoNode = ao(depth, null as never, camera)
+      aoNode.resolutionScale = 0.5
+      aoNode.samples.value = 12
+      disposables.push(aoNode)
+      shade = shade.mul(aoNode.getTextureNode().sample(uv()).r)
+    }
+    if (light) {
+      sssNode = sss(depth, camera, light)
+      sssNode.resolutionScale = 0.5
+      sssNode.maxDistance.value = 0.6
+      sssNode.thickness.value = 0.25
+      disposables.push(sssNode)
+      // Contact shadows only matter where the sun lights a surface; leave some fill.
+      shade = shade.mul(mix(float(1), sssNode.getTextureNode().sample(uv()).r, 0.75))
+    }
 
     // The scene colour as the eye sees it this frame: heat shimmer bends where it reads from,
     // camera motion blur smears it, and the plunge softens and tints it.
@@ -382,7 +346,7 @@ export class PostChain {
       return c
     })
     let hdr: N = tier === 'full' ? base() : color.rgb
-    if (hazeOn) hdr = applyHaze(hdr, depth.sample(uv()).r, uv(), { projInv: u.projInv, camWorld: u.camWorld, camPos: u.camPos, sunDir: u.sunDir, sunColor: u.sunColor, horizon: u.horizon, tint: u.hazeTint, density: u.hazeDensity, falloff: u.hazeFalloff, base: u.hazeBase, sunGlow: u.hazeSun })
+    if (aoOn || light) hdr = hdr.mul(shade)
 
     if (glowOn) {
       // Geometry only: open sky (depth at the far plane) never feeds the glow. Facing a low
@@ -481,7 +445,11 @@ export class PostChain {
       return vec4(c, 1)
     })
 
-    const pipeline = new THREE.RenderPipeline(renderer, graded())
+    let out: N = graded()
+    // Debug views: the raw occlusion or contact shadow buffers, white is unoccluded.
+    if (debug === 1 && aoNode) out = vec4(vec3(aoNode.getTextureNode().sample(uv()).r), 1)
+    if (debug === 2 && sssNode) out = vec4(vec3(sssNode.getTextureNode().sample(uv()).r), 1)
+    const pipeline = new THREE.RenderPipeline(renderer, out)
     pipeline.outputColorTransform = false
     this.built = { key, pipeline, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode }
     this.builds++
