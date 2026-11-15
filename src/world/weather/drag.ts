@@ -1,14 +1,22 @@
 /**
- * Wind on a body: aerodynamic drag on the air moving past it.
+ * Wind on a body: drag on the air moving past it.
  *
- * Drag is 0.5 * rho * CdA * |r| r, where r is the air velocity relative to the body. Every
- * vehicle already has its own still-air handling (its original port's drag and damping), so
- * what the wind adds is the difference between drag in this wind and drag in still air:
+ * Drag on the air relative to a body, r = w - v, is 0.5 * rho * CdA * |r| r. Taken whole, that
+ * would also add still-air drag to every vehicle and change how each one drives with no wind
+ * at all. Subtracting the still-air part (|r| r + |v| v) fixes that only for a vehicle that
+ * already models its own air drag: a zorb ball does not, and with that form a ball rolling
+ * with the wind was pushed ever faster (3 g in a browser gale). So the wind's force here is
+ * the relative-air drag with its coefficient taken at the wind's own speed:
  *
- *   F = 0.5 * rho * CdA * (|w - v| (w - v) - |v| (-v))
+ *   F = 0.5 * rho * CdA * |w| (w - v)
  *
- * With no wind that is exactly zero, so physics is unchanged. It is also why a headwind
- * matters more the faster you go, as it does on a real bicycle.
+ *  - no wind: exactly zero, so physics is unchanged;
+ *  - a body at rest: 0.5 rho CdA |w| w, the full quadratic drag of the wind;
+ *  - a body moving with the wind at its speed: zero, so wind can carry a ball but never
+ *    push it faster than the air;
+ *  - a headwind grows with your speed, as on a bicycle.
+ *
+ * Horizontal only (see below).
  *
  * Exposure is CdA, in square metres, per vehicle kind, so vehicles differ without special
  * cases. A zorb ball uses its real current radius.
@@ -65,12 +73,12 @@ export function windAcceleration<T extends Vec3Like>(
 ): T {
   out.x = 0; out.y = 0; out.z = 0
   if (mass <= 0 || cda <= 0 || air <= 0 || (w.x === 0 && w.y === 0 && w.z === 0)) return out
-  const rx = w.x - v.x, ry = w.y - v.y, rz = w.z - v.z
-  const r = Math.hypot(rx, ry, rz)
-  const s = Math.hypot(v.x, v.y, v.z)
-  const k = 0.5 * GAME_AIR_DENSITY * air * cda / mass
-  out.x = k * (r * rx + s * v.x)
-  out.y = k * (r * ry + s * v.y)
-  out.z = k * (r * rz + s * v.z)
+  const ws = Math.hypot(w.x, w.y, w.z)
+  const k = 0.5 * GAME_AIR_DENSITY * air * cda * ws / mass
+  out.x = k * (w.x - v.x)
+  // Horizontal only: the field has no vertical air, and damping falls and climbs would
+  // change jumps and flight in any wind.
+  out.y = 0
+  out.z = k * (w.z - v.z)
   return out
 }

@@ -106,6 +106,17 @@ describe('wind force', () => {
     expect(small.z).toBe(0)
   })
 
+  it('never pushes a body faster than the air, and holds back one that outruns it', () => {
+    const w = { x: 10, y: 0, z: 0 }
+    const along = windAcceleration(w, { x: 10, y: -3, z: 0 }, 40, 30, 1, { x: 0, y: 0, z: 0 })
+    expect([along.x, along.y, along.z]).toEqual([0, 0, 0])
+    expect(windAcceleration(w, { x: 25, y: 0, z: 0 }, 40, 30, 1, { x: 0, y: 0, z: 0 }).x).toBeLessThan(0)
+    // A headwind costs more the faster you go into it.
+    const slow = windAcceleration(w, { x: -5, y: 0, z: 0 }, 2, 30, 1, { x: 0, y: 0, z: 0 })
+    const fast = windAcceleration(w, { x: -25, y: 0, z: 0 }, 2, 30, 1, { x: 0, y: 0, z: 0 })
+    expect(fast.x).toBeGreaterThan(slow.x)
+  })
+
   it('uses the zorb ball real radius', () => {
     const ball = { kind: 'buggy', wingsOpen: false, zorbed: true, zorb: { radius: 5.25 } }
     expect(exposureOf(ball)).toBeCloseTo(0.47 * Math.PI * 5.25 * 5.25, 6)
