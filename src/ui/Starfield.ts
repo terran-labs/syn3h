@@ -2,7 +2,12 @@
  * The lobby sky: a deep blue nebula and three depths of drifting stars, generated in one
  * fragment shader. No images are loaded. The look comes from a seed and a few numbers, so
  * it can follow the world seed or a player's taste, and it costs one small WebGL 2 context
- * that draws at most thirty times a second and not at all while the game is on screen.
+ * that draws at most thirty times a second.
+ *
+ * It keeps out of the game's way. Disabling it (Play was pressed) gives the context back,
+ * because phones allow only a few live ones; enabling it makes a new one. It does not draw
+ * while the tab is hidden. At the lowest graphics level, or for people who ask for reduced
+ * motion, it draws one still frame: stars and clouds, no drift.
  *
  * The 2017 Unity lobby used a baked plasma skybox and a particle system drifting down at
  * 0.009 units a second; this keeps that direction and mood without the bitmap.
@@ -65,7 +70,9 @@ void main() {
 }`
 
 export class Starfield {
-  readonly canvas = document.createElement('canvas')
+  canvas = document.createElement('canvas')
+  /** Frames drawn, for the phone checks. */
+  frames = 0
   private gl: WebGL2RenderingContext | null = null
   private uniforms: Record<string, WebGLUniformLocation | null> = {}
   private look: StarfieldLook
@@ -73,18 +80,33 @@ export class Starfield {
   private frame = 0
   private lastDraw = 0
   private active = true
+  private wasMoving = false
+  private recheck?: ReturnType<typeof setTimeout>
   private readonly started = performance.now()
   private readonly resizeObserver: ResizeObserver
   private readonly reduced = matchMedia('(prefers-reduced-motion: reduce)')
 
-  constructor(private readonly host: HTMLElement, look: Partial<StarfieldLook> = {}) {
+  /** `still` is asked each frame: true draws one frame and stops (lowest graphics level). */
+  constructor(private readonly host: HTMLElement, look: Partial<StarfieldLook> = {}, private readonly still: () => boolean = () => false) {
     this.look = { ...DEFAULT_LOOK, ...look }
-    this.canvas.className = 'lobby-starfield'; this.canvas.setAttribute('aria-hidden', 'true'); host.prepend(this.canvas)
-    this.canvas.addEventListener('webglcontextlost', event => { event.preventDefault(); this.gl = null })
-    this.canvas.addEventListener('webglcontextrestored', () => { this.setup(); this.draw() })
-    this.setup()
     this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(host)
-    this.resize(); this.loop(0)
+    document.addEventListener('visibilitychange', this.onVisibility)
+    this.acquire()
+  }
+  private readonly onVisibility = (): void => { cancelAnimationFrame(this.frame); clearTimeout(this.recheck); if (this.active && !document.hidden) this.loop(0) }
+  private get motionless(): boolean { return this.still() || this.reduced.matches }
+  /** A fresh canvas and context. */
+  private acquire(): void {
+    const canvas = this.canvas = document.createElement('canvas')
+    canvas.className = 'lobby-starfield'; canvas.setAttribute('aria-hidden', 'true'); this.host.prepend(canvas)
+    canvas.addEventListener('webglcontextlost', event => { event.preventDefault(); if (this.canvas === canvas) this.gl = null })
+    canvas.addEventListener('webglcontextrestored', () => { if (this.canvas === canvas) { this.setup(); this.draw() } })
+    this.setup(); this.resize(); this.loop(0)
+  }
+  /** Give the context back to the browser and take the canvas out of the page. */
+  private release(): void {
+    cancelAnimationFrame(this.frame); clearTimeout(this.recheck)
+    this.gl?.getExtension('WEBGL_lose_context')?.loseContext(); this.gl = null; this.canvas.remove()
   }
   /** False when WebGL 2 is unavailable; the CSS background behind the canvas shows instead. */
   get generated(): boolean { return this.gl !== null }
@@ -92,8 +114,9 @@ export class Starfield {
   /** Pointer position, -1 to 1 on each axis, for parallax between the star depths. */
   setShift(x: number, y: number): void { this.shift = [x, y] }
   set enabled(value: boolean) {
-    this.active = value; cancelAnimationFrame(this.frame)
-    if (value) this.loop(0)
+    if (value === this.active) return
+    this.active = value
+    if (value) this.acquire(); else this.release()
   }
   private setup(): void {
     const gl = this.canvas.getContext('webgl2', { antialias: false, alpha: false, depth: false, stencil: false, powerPreference: 'low-power' })
@@ -117,9 +140,17 @@ export class Starfield {
     this.draw()
   }
   private loop = (now: number): void => {
-    if (!this.active) return
+    if (!this.active || document.hidden) return
+    // Still mode: the one frame drawn on resize stays up. Look again in a second in case the
+    // graphics level or the motion preference has changed.
+    if (this.motionless) {
+      if (this.wasMoving) { this.wasMoving = false; this.draw() }
+      clearTimeout(this.recheck); this.recheck = setTimeout(() => { this.frame = requestAnimationFrame(this.loop) }, 1000)
+      return
+    }
+    this.wasMoving = true
     // Thirty frames a second is smooth for a slow drift and leaves the GPU to the game.
-    if (now - this.lastDraw >= 33 && !this.reduced.matches) { this.lastDraw = now; this.draw() }
+    if (now - this.lastDraw >= 33) { this.lastDraw = now; this.draw() }
     this.frame = requestAnimationFrame(this.loop)
   }
   private draw(): void {
@@ -127,15 +158,15 @@ export class Starfield {
     if (!gl) return
     gl.viewport(0, 0, this.canvas.width, this.canvas.height)
     gl.uniform2f(u.uSize, this.canvas.width, this.canvas.height)
-    gl.uniform1f(u.uTime, this.reduced.matches ? 0 : (performance.now() - this.started) / 1000)
+    gl.uniform1f(u.uTime, this.motionless ? 0 : (performance.now() - this.started) / 1000)
     gl.uniform1f(u.uSeed, this.look.seed % 1000)
     gl.uniform2f(u.uShift, this.shift[0], this.shift[1])
     gl.uniform3f(u.uTint, ...this.look.tint)
     gl.uniform1f(u.uNebula, this.look.nebula); gl.uniform1f(u.uDensity, this.look.density)
-    gl.drawArrays(gl.TRIANGLES, 0, 3)
+    gl.drawArrays(gl.TRIANGLES, 0, 3); this.frames++
   }
   dispose(): void {
-    this.active = false; cancelAnimationFrame(this.frame); this.resizeObserver.disconnect()
-    this.gl?.getExtension('WEBGL_lose_context')?.loseContext(); this.canvas.remove()
+    this.active = false; this.resizeObserver.disconnect(); document.removeEventListener('visibilitychange', this.onVisibility)
+    this.release()
   }
 }

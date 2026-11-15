@@ -320,3 +320,31 @@ their descriptions. Adding a recipe there adds a card; nothing here changes.
 
 `tools/heavy.sh node tests/ui/planets.mjs` checks all of that in a browser.
 
+## Phones: a guest's first run, and the lowest graphics level
+
+The audience arrives by QR code on phones, so `phone-layout.mjs` also plays that arrival at
+390 by 844 and 844 by 390 with touch and the CPU throttled four times: open
+`?room=...&world=alpine.90210`, look round the lobby, enter the world, drive. It fails if
+the guest lands on any other world, is offered another before joining, waits more than a
+second for a tap to be answered while the planets are painted, sees the starfield fall
+under eight frames a second, finds a panel or the QR code wider or taller than the
+screen, or if the lobby keeps a graphics context once the game is on screen.
+
+What makes that hold:
+
+- Planet maps are painted in a worker (`planets/planetMapWorker.ts`), one at a time, and
+  only for cards that are on screen. Without workers they are painted in idle moments.
+- Play releases the starfield's context and the planets' context and worker at once; the
+  menu makes new ones. iOS allows only a few live WebGL contexts.
+- The starfield does not draw in a hidden tab.
+- At `gfx.level` 0 the starfield draws one still frame and the planets are plain discs in
+  their two colours: no shader, no worker, no painting.
+- A guest who arrives by a link that names a world sees that world only, with the other
+  kinds, Custom and the seed controls disabled, until they are in the room. There the
+  host's lock decides.
+- On a short, wide screen the QR view puts the code on the left at full height.
+
+Measured on this Mac in headless Chrome at four times throttle: lobby usable in about one
+second, taps answered in 0.3 to 0.65 seconds, starfield 11 to 13 frames a second with the
+game rendering underneath. Those are emulation figures, not a phone's.
+
