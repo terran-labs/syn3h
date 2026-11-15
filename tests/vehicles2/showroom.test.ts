@@ -4,7 +4,7 @@ import {uniform} from 'three/tsl'
 import {params} from '../../shared/params'
 import {vehicleShading} from '../../src/core/quality'
 import {LOD_FAR,LOD_NEAR,detailLevel,mergeStatic,mergedSurfaces} from '../../src/vehicles/skins/mergeStatic'
-import {applyShowroom,paintFlakes,paintScaleDepth,paintScaleSize,paintSeams,roleOf,setRole} from '../../src/vehicles/skins/showroom'
+import {applyShowroom,paintCanopy,paintFlakes,paintScaleDepth,paintScaleSize,paintSeams,roleOf,setRole} from '../../src/vehicles/skins/showroom'
 
 const box=()=>new T.BoxGeometry(1,1,1)
 const std=(name:string,color=0x336699)=>{const m=new T.MeshStandardMaterial({color});m.name=name;return m}
@@ -42,8 +42,8 @@ describe('showroom vehicle shading',()=>{
   const lit=body.material as T.Material
   expect(lit).toBeInstanceOf(T.MeshStandardNodeMaterial);expect(lit).not.toBeInstanceOf(T.MeshPhysicalNodeMaterial)
   expect((lit as T.MeshStandardNodeMaterial).normalNode).not.toBeNull()
-  // The canopy is a see-through force field from the first tier up, drawn on both faces in one pass.
-  expect((canopy.material as T.Material).transparent).toBe(true);expect((canopy.material as T.Material).side).toBe(T.DoubleSide);expect((canopy.material as T.Material).depthWrite).toBe(false)
+  // A canopy still tagged `glass` stays opaque until the clear coat tier, as before.
+  expect((canopy.material as T.Material).transparent).toBe(false)
   params.set(vehicleShading.def.id,2)
   expect(body.material).toBeInstanceOf(T.MeshPhysicalNodeMaterial);expect((canopy.material as T.Material).transparent).toBe(true)
   params.set(vehicleShading.def.id,3)
@@ -137,5 +137,18 @@ describe('showroom vehicle shading',()=>{
   expect(detailLevel(27,true,1)).toBe(1);expect(detailLevel(24,true,1)).toBe(0)
   expect(detailLevel(117,true,2)).toBe(2);expect(detailLevel(114,true,2)).toBe(1)
   expect([LOD_NEAR,LOD_FAR]).toEqual([30,120])
+ })
+ it('previews the force field on glass canopies with one switch, and puts the glass back',()=>{
+  params.set(vehicleShading.def.id,2)
+  const root=new T.Group(),canopy=new T.Mesh(box(),setRole(std('Cockpit'),'glass'));root.add(canopy)
+  const dispose=applyShowroom(root,()=>{})
+  const glass=canopy.material as T.Material
+  expect(glass).toBeInstanceOf(T.MeshPhysicalNodeMaterial)
+  params.set(paintCanopy.def.id,true)
+  const field=canopy.material as T.Material
+  expect(field).toBeInstanceOf(T.MeshBasicNodeMaterial);expect(field.side).toBe(T.DoubleSide);expect(field.depthWrite).toBe(false)
+  params.set(paintCanopy.def.id,false)
+  expect(canopy.material).toBeInstanceOf(T.MeshPhysicalNodeMaterial)
+  dispose()
  })
 })

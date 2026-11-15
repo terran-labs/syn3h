@@ -36,6 +36,11 @@ export const paintScaleSize = defineParam({ id: 'paint.scaleSize', label: 'Scale
 export const paintScaleDepth = defineParam({ id: 'paint.scaleDepth', label: 'Scale depth', group: 'Vehicle paint', scope: 'client', default: .45, min: 0, max: 2, step: .05 })
 export const paintSeams = defineParam({ id: 'paint.seams', label: 'Seam darkness', group: 'Vehicle paint', scope: 'client', default: .35, min: 0, max: 1, step: .05 })
 export const paintFlakes = defineParam({ id: 'paint.flakes', label: 'Metal flakes', group: 'Vehicle paint', scope: 'client', default: .6, min: 0, max: 2, step: .05 })
+/**
+ * Preview switch: draw canopies still tagged `glass` as the shared force field. Off by default,
+ * so nothing changes for a vehicle until its lead tags the canopy `canopy`.
+ */
+export const paintCanopy = defineParam({ id: 'paint.forceFieldCanopy', label: 'Force field canopy (preview)', group: 'Vehicle paint', scope: 'client', default: false })
 export const paintGloss = defineParam({ id: 'paint.gloss', label: 'Sky reflection', group: 'Vehicle paint', scope: 'client', default: .42, min: 0, max: 1.5, step: .02 })
 const live = (param: { value: number; def: { id: string } }): N => {
   const node = uniform(param.value)
@@ -46,7 +51,7 @@ const live = (param: { value: number; def: { id: string } }): N => {
 let controls: { size: N; depth: N; seams: N; flakes: N } | null = null
 const paintControls = () => controls ??= { size: live(paintScaleSize), depth: live(paintScaleDepth), seams: live(paintSeams), flakes: live(paintFlakes) }
 
-/** `glass` is the old name for `canopy` and is drawn the same way. */
+/** `canopy` is the shared force field. `glass` is the first version's reflective canopy, kept until each vehicle moves over. */
 export type SurfaceRole = 'paint' | 'accent' | 'chrome' | 'frame' | 'canopy' | 'glass' | 'glow' | 'tyre' | 'lamp' | 'trim'
 export type ShadingTier = 0 | 1 | 2 | 3
 
@@ -187,7 +192,9 @@ const hash3 = Fn(([c]: [N]) => fract(sin(vec3(dot(c, vec3(127.1, 311.7, 74.7)), 
 function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, meshName: string, authoredEmission: N | null, accent: T.Color | null): T.Material {
   const roles = sources.map(s => roleOf(s, meshName))
   // The cockpit canopy is its own draw (see `separate` in mergeStatic), so it can blend.
-  if (!merged && (roles[0] === 'canopy' || roles[0] === 'glass')) return buildCanopy(sources[0], tier, accent)
+  if (!merged && (roles[0] === 'canopy' || (roles[0] === 'glass' && paintCanopy.value))) return buildCanopy(sources[0], tier, accent)
+  // Canopies still tagged `glass` keep the reflective glass of the first version from the clear coat tier up.
+  if (!merged && roles[0] === 'glass' && tier >= 2) return buildGlass(sources[0])
   if (!merged && roles[0] === 'glow') return buildGlow(sources[0], accent)
   const physical = tier >= 2
   const material = physical ? new T.MeshPhysicalNodeMaterial() : new T.MeshStandardNodeMaterial()
@@ -279,8 +286,9 @@ function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, m
  * picked: keep the hue, lift it to full brightness, and add a little white.
  */
 function glowTint(color: T.Color, white: number): N {
-  const hue: N = uniform(color)
-  return mix(hue.div(max(max(hue.r, hue.g), max(hue.b, .02))), vec3(1), white)
+  const hue: N = vec3(uniform(color) as N)
+  const brightest: N = max(max(hue.x, hue.y), max(hue.z, float(.02)))
+  return mix(hue.div(brightest), vec3(1), white)
 }
 
 /**
@@ -303,9 +311,9 @@ function buildGlow(source: Standard, accent: T.Color | null): T.Material {
 const GLOW_GAIN = 3
 
 /** Strength of the canopy's own light, for our tone mapped frame. */
-const CANOPY_GAIN = 3.2
+const CANOPY_GAIN = 5
 /** How much of the scene behind it the brightest parts of the canopy hold back. */
-const CANOPY_COVER = .9
+const CANOPY_COVER = .55
 
 /**
  * The cockpit canopy every vehicle shares: a force field, in the vehicle's accent colour.
@@ -329,7 +337,7 @@ function buildCanopy(source: Standard, tier: 1 | 2 | 3, accent: T.Color | null):
   material.forceSinglePass = true
   // The tint is the owner vehicle's accent Color object where there is one, so it follows
   // setColors; a model shown alone falls back to the colour it was authored with.
-  const tint = glowTint(accent ?? source.color, .14)
+  const tint = glowTint(accent ?? source.color, .34)
   const facing = clamp(abs(dot(normalView, positionViewDirection)), 0, 1)
   const rim = float(1).sub(facing).pow(2.5)
   // faceDirection is 1 on the outside and -1 seen from within.
@@ -351,12 +359,38 @@ function buildCanopy(source: Standard, tier: 1 | 2 | 3, accent: T.Color | null):
   material.blending = T.CustomBlending
   material.blendSrc = T.OneFactor; material.blendDst = T.OneMinusSrcAlphaFactor
   material.blendSrcAlpha = T.OneFactor; material.blendDstAlpha = T.OneMinusSrcAlphaFactor
-  material.colorNode = tint.mul(strength).mul(CANOPY_GAIN).mul(hotExposureNode())
+  // Not dimmed with the night exposure as the wings and thrusters are: the canopy is faint to
+  // begin with, and that dimming (measured at 0.15 at 23:00) removed it altogether.
+  material.colorNode = tint.mul(strength).mul(CANOPY_GAIN)
   material.opacityNode = clamp(strength.mul(CANOPY_COVER), 0, .6).mul(outside.mul(.8).add(.2))
   return material
 }
 /** Size of one cell of the canopy lattice, in metres. */
 const CANOPY_CELL = .11
+
+/**
+ * Canopy glass after the original `GlassGlowing` shader: alpha = 0.9 - 0.5 * (N.V), colour
+ * leaning from the tint toward the reflection as the view grazes. Here the reflection comes
+ * from the lit, clear coated surface and the live sky map instead of a baked cube map.
+ */
+function buildGlass(source: Standard): T.Material {
+  const material = new T.MeshPhysicalNodeMaterial()
+  material.name = `${source.name || 'canopy'} glass`
+  material.transparent = true
+  // Glass mirrors the sky a little more strongly than paint (see `refresh`).
+  material.userData.glass = true
+  const facing = clamp(abs(dot(normalView, positionViewDirection)), 0, 1)
+  const fresnel = float(.9).sub(facing.mul(.5))
+  // The 2011 canopy reads as pale lavender over the tint, so lift the tint toward white.
+  material.colorNode = mix(uniform(source.color), vec3(.85, .7, 1), .35)
+  material.emissiveNode = uniform(source.emissive).mul(source.emissiveIntensity)
+  material.opacityNode = fresnel
+  material.roughnessNode = float(.04)
+  material.metalnessNode = float(.6)
+  material.clearcoatNode = float(1)
+  material.clearcoatRoughnessNode = float(.03)
+  return material
+}
 
 /** Runs the shared night and lava passes over whatever materials the meshes currently hold. */
 export type Decorate = (root: T.Object3D) => void
@@ -417,11 +451,18 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
       const std = m as Standard
       if (std.envMap !== environment) { std.envMap = environment; std.needsUpdate = true }
       // The live sky map is captured for a subdued scene fill (0.15); paint reflects it at its own strength.
-      std.envMapIntensity = paintGloss.value
+      std.envMapIntensity = paintGloss.value * (std.userData.glass ? 1.3 : 1)
     }
   }
   const detach = registerVehicleDetail(root, (d, isRemote) => { distance = d; remote = isRemote; refresh() })
-  const unsubscribe = params.onChange(id => { if (id === vehicleShading.def.id || id === paintGloss.def.id) refresh() })
+  const unsubscribe = params.onChange(id => {
+    if (id === paintCanopy.def.id) {
+      // The switch changes which material a canopy gets, so the built tiers are stale.
+      use(0)
+      for (let tier = 1; tier < tiers.length; tier++) { for (const m of tiers[tier]?.values() ?? []) m.dispose(); tiers[tier] = undefined }
+      refresh()
+    } else if (id === vehicleShading.def.id || id === paintGloss.def.id) refresh()
+  })
   refresh()
   return () => {
     detach(); unsubscribe()
