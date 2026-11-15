@@ -712,6 +712,16 @@
       ]
     },
     {
+      "group": "UX preview",
+      "note": "Latest UX branch, verified by the UX lane on normal entry.",
+      "items": [
+        {
+          "title": "Inspect the latest interface",
+          "url": "https://vorton-previews.tail285f88.ts.net:32796/"
+        }
+      ]
+    },
+    {
       "group": "Labs on trunk (port 32782)",
       "note": "Workbench pages; not part of public releases.",
       "items": [
