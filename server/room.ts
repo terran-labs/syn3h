@@ -7,6 +7,7 @@
  * client says (parameter changes, shots, hits, rams) is validated against what the room
  * already knows before it changes shared state.
  */
+import { recipeIdForLook } from '../shared/recipes'
 import { type ParamDef, params as registry, sanitize } from '../shared/params'
 import {
   type ClientMessage,
@@ -267,6 +268,13 @@ export class Room {
     this.tickTag(this.now())
     this.tickKoth(this.now())
     this.tickRace()
+  }
+
+  /** Authoritative current world, not the first hello or the mutable global registry. */
+  presence() {
+    const value = (id: string) => this.values.get(id) ?? registry.get(id)?.def.default
+    return { players: this.playerCount - this.heldCount,
+      recipeId: recipeIdForLook(value('terrain.look')), seed: value('world.seed') ?? null }
   }
 
   get playerCount(): number {
