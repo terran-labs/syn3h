@@ -267,7 +267,9 @@ export class ClassicBuggy extends Vehicle {
 
     // Self righting, Buggy.js 487-495. Unity runs OnCollisionStay after the physics step; the
     // contacts Rapier kept from the last step are the same information, read one step later.
-    this.selfRight()
+    // Buggy.js 488: no self righting inside a zorb ball.
+    if (this.zorbed) this.isInverted = false
+    else this.selfRight()
 
     let wheelsAreTouchingGround = false
 
