@@ -545,3 +545,26 @@ Cues `bungeeLaunch`, `bungeeAttach` and `bungeeRelease` exist in `src/audio/Cues
 Bungee's `cue` hook in `src/net/index.ts` still has to call `audio.cue(name, at)`.
 
 Check: `node tests/ui/gear.mjs` (Chrome desktop and WebKit iPhone landscape).
+
+`galaxy-controls.mjs` checks arrow-key rotation, plus/minus zoom, standard gamepad
+stick movement, D-pad world selection and A-button entry. It also verifies that an
+open panel blocks these controls. The gamepad is simulated through `getGamepads`;
+physical controller mapping still needs a device check. Tab and Enter use the world's
+normal button focus and activation.
+
+## Custom planet preview
+
+Choosing Custom starts a live map of the current sanitized world settings. Slider changes
+queue a repaint after 120 ms without changes. The worker receives the snapshot, its values
+form part of the cache identity, and obsolete responses are discarded. The last uploaded
+map remains visible until its replacement arrives. Leaving and reopening the galaxy keeps
+the latest snapshot.
+
+`customMap.test.ts` checks unchanged recipe behavior, zero overrides, recipe immutability,
+sanitized terrain settings, cache refresh and stale responses. `custom-planet.mjs` checks
+Custom entry and updated map uploads in Chrome and WebKit.
+
+The map is an approximation of the island on a globe, not an exact view of the whole
+wrapping world. Existing painter limits include shoreline shading based on absolute
+height rather than height above sea level, and a snow threshold that differs from the
+terrain renderer. Terrain owns those corrections; this change only supplies live settings.

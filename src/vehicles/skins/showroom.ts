@@ -19,7 +19,7 @@
 import * as T from 'three/webgpu'
 import {
   Fn, abs, atan, attribute, clamp, cross, dFdx, dFdy, dot, faceDirection, float, floor, fract, fwidth, length,
-  max, mix, mod, normalLocal, normalView, normalize, positionLocal, positionView, positionViewDirection,
+  max, mix, mod, normalGeometry, normalLocal, normalView, normalize, positionGeometry, positionLocal, positionView, positionViewDirection,
   select, sign, sin, smoothstep, time, uniform, uv, vec2, vec3,
 } from 'three/tsl'
 import { defineParam, params } from '../../../shared/params'
@@ -37,10 +37,10 @@ export const paintScaleDepth = defineParam({ id: 'paint.scaleDepth', label: 'Sca
 export const paintSeams = defineParam({ id: 'paint.seams', label: 'Seam darkness', group: 'Vehicle paint', scope: 'client', default: .35, min: 0, max: 1, step: .05 })
 export const paintFlakes = defineParam({ id: 'paint.flakes', label: 'Metal flakes', group: 'Vehicle paint', scope: 'client', default: .6, min: 0, max: 2, step: .05 })
 /**
- * Preview switch: draw canopies still tagged `glass` as the shared force field. Off by default,
- * so nothing changes for a vehicle until its lead tags the canopy `canopy`.
+ * Draw canopies still tagged `glass` as the shared force field by default. Players may
+ * restore reflective glass; shading tier 0 uses a simple transparent tint.
  */
-export const paintCanopy = defineParam({ id: 'paint.forceFieldCanopy', label: 'Force field canopy (preview)', group: 'Vehicle paint', scope: 'client', default: false })
+export const paintCanopy = defineParam({ id: 'paint.forceFieldCanopy', label: 'Force field canopy', group: 'Vehicle paint', scope: 'client', default: true })
 export const paintGloss = defineParam({ id: 'paint.gloss', label: 'Sky reflection', group: 'Vehicle paint', scope: 'client', default: .42, min: 0, max: 1.5, step: .02 })
 const live = (param: { value: number; def: { id: string } }): N => {
   const node = uniform(param.value)
@@ -160,12 +160,14 @@ function scaleHeight(cell: number, relief: number, lean: number): ScaleField {
  * groove, and fine radial ribs on the sidewall. Returns metres.
  */
 function tyreHeight(): N {
-  const p = positionLocal, angle = atan(p.y, p.z), radius = length(p.yz)
-  const sidewall = smoothstep(.5, .85, abs(normalLocal.x))
+  // Geometry attributes stay in the wheel frame; local nodes include instance transforms.
+  // Use the same frame for the footprint so filtering follows each rotating tyre too.
+  const p = positionGeometry, angle = atan(p.y, p.z), radius = length(p.yz)
+  const sidewall = smoothstep(.5, .85, abs(normalGeometry.x))
   const lug = abs(fract(angle.mul(26 / (Math.PI * 2)).add(abs(p.x).div(radius.max(.05)).mul(1.6))).sub(.5))
   const tread = smoothstep(.1, .2, lug).mul(smoothstep(.02, .07, abs(p.x).div(radius.max(.05))))
   const ribs = sin(angle.mul(96)).mul(.5).add(.5).mul(.25)
-  const footprint = length(fwidth(positionLocal)).div(radius.max(.05).mul(.12))
+  const footprint = length(fwidth(positionGeometry)).div(radius.max(.05).mul(.12))
   return mix(tread, ribs, sidewall).mul(radius.mul(.035)).mul(smoothstep(.6, .15, footprint))
 }
 
@@ -486,6 +488,7 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
   for (const e of entries) authored.set(e.source, (e.source as unknown as T.MeshStandardNodeMaterial).emissiveNode ?? null)
   const tiers: (Map<T.Mesh, T.Material> | undefined)[] = []
   const built = new Set<T.Material>()
+  const plainCanopies = new Map<T.Mesh, T.Material>()
   let current = -1, far = false, remote = false, distance = 0
   const use = (tier: ShadingTier): void => {
     if (tier === current) return
@@ -512,13 +515,32 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
     current = tier
   }
   const refresh = (): void => {
-    // The frame governor caps this by graphics level (safe 0, mobile 2, desktop 3) and sheds it
+    // The frame governor caps this by graphics level (safe 0, mobile 0, desktop 3) and sheds it
     // under load. A value the player set by hand is honoured as it is.
     let tier = Math.max(0, Math.min(3, Math.round(vehicleShading.value))) as ShadingTier
     far = remote && distance > (far ? FAR_IN : FAR_OUT)
     if (remote) tier = far ? 0 : Math.min(tier, 2) as ShadingTier
     use(tier)
-    if (tier === 0) return
+    if (tier === 0) {
+      // Plain paint must not turn the cockpit into an opaque box. Keep the safe canopy
+      // transparent without compiling the procedural rim, lattice or paint shaders.
+      for (const e of entries) {
+        if (mergedSurfaces.has(e.source)) continue
+        const role = roleOf(e.source, e.mesh.name)
+        if (role !== 'canopy' && role !== 'glass') continue
+        if (role === 'glass' && !paintCanopy.value) { e.mesh.material = tiers[0]!.get(e.mesh)!; continue }
+        let canopy = plainCanopies.get(e.mesh)
+        if (!canopy) {
+          const tint = new T.MeshBasicMaterial({ transparent: true, opacity: .08, depthWrite: false, side: T.DoubleSide, fog: false })
+          tint.name = `${e.source.name || 'canopy'} plain force field`
+          tint.color = accent ?? e.source.color
+          tint.forceSinglePass = true
+          canopy = tint; plainCanopies.set(e.mesh, canopy); built.add(canopy)
+        }
+        e.mesh.material = canopy
+      }
+      return
+    }
     // Reflect the scene's own sky map at paint strength. It appears a moment after start,
     // and a standalone viewer may have none.
     let scene: T.Object3D = root

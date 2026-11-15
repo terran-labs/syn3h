@@ -1,7 +1,7 @@
 {
   "tagline": "Syn3h, rebuilt native in the browser: its vehicles, its physics, its lobby and its look.",
   "deadline": "Demo: Sunday noon Pacific, Coeur d'Alene",
-  "headline": "Release 2 is public. Release 3 passes 904 tests, three consecutive two-player checks and all four vehicles in Chrome and WebKit; it waits for the public room to empty. Trunk includes nine planets, the galaxy lobby, wind and fog, the world inspector, worn tracks, and opt-in water, post effects and new tag gear.",
+  "headline": "Release 2 is public after rollback. Release 3 passed frozen-build checks but failed public verification; investigation continues. Release 4 is being validated. Lane testing has resumed through a shared three-job limit.",
   "previews": [
     {
       "title": "Play the current build",
@@ -708,6 +708,16 @@
         {
           "title": "Galaxy lobby (prototype)",
           "url": "https://vorton-previews.tail285f88.ts.net:32782/?galaxy=1"
+        }
+      ]
+    },
+    {
+      "group": "UX preview",
+      "note": "Latest UX branch, verified by the UX lane on normal entry.",
+      "items": [
+        {
+          "title": "Inspect the latest interface",
+          "url": "https://vorton-previews.tail285f88.ts.net:32796/"
         }
       ]
     },
