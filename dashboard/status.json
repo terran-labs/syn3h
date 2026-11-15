@@ -704,6 +704,10 @@
         {
           "title": "Tiny wrapping planet",
           "url": "https://vorton-previews.tail285f88.ts.net:32782/?world=alpine.7~terrain.planetSize=0,world.wrap=true&room=tiny-planet"
+        },
+        {
+          "title": "Galaxy lobby (prototype)",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/?galaxy=1"
         }
       ]
     },
@@ -719,6 +723,11 @@
         {
           "title": "Vehicle lab: in-game skins",
           "url": "https://vorton-previews.tail285f88.ts.net:32782/vehicle-lab.html?vehicle=game-skins"
+        },
+        {
+          "title": "Jet design lab",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/jetlab.html",
+          "page": "jetlab.html"
         },
         {
           "title": "Terrain generator",
