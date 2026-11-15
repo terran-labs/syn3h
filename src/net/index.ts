@@ -53,7 +53,7 @@ import { RemotePlayer } from './RemotePlayer'
 import { type BotMatchInfo, audibleVehicles, bodyAlive, hillHold, liveBots } from './bots'
 import { ShoveQueue, cleanShove, shoveFor } from './shove'
 import { nearestImage, wrapCoord, wrapDistance } from '../../shared/wrap'
-import { setWaterClock } from '../world/water/seaWaves'
+import { setWaterClock, waterTime } from '../world/water/seaWaves'
 
 /** The slice of GameAudio (src/audio) networking uses. */
 export interface NetAudio {
@@ -631,18 +631,35 @@ export class NetClient implements System {
   }
 
   private clockShared = false
+  private readonly clockUsers: ((now: () => number) => void)[] = [(now) => setWaterClock(now)]
 
   /**
-   * Once our estimate of the room's clock is good (the first ping has come back), hand it to
-   * everything that must look the same on every screen at the same moment: the sea's waves
-   * today. Until then, and in single player, those run on the game's own time. The switch
-   * happens once per page; the sea steps to the shared time at that moment. The clock keeps
+   * Ask for the room's clock: seconds that every player in the room agrees on. `use` is
+   * called once, with a function that reads it, as soon as our estimate is good (the first
+   * ping has come back), or at once if it already is. For anything that must look the same
+   * on every screen at the same moment: the sea's waves, the wind.
+   *
+   * Until then, and in single player, such things run on their own time, so each steps once
+   * to the shared time at that moment. Handing the clock out before it has synced would be
+   * worse: it reads as seconds since the page loaded, then leaps by decades. The clock keeps
    * running through a dropout, so nothing steps again on reconnecting.
    */
+  onRoomClock(use: (now: () => number) => void): void {
+    if (this.clockShared) use(this.roomNow)
+    else this.clockUsers.push(use)
+  }
+
+  private readonly roomNow = (): number => this.clock.now()
+
+  /** For checks: the time the sea is running on right now, as this page's sea sees it. */
+  get seaTime(): number {
+    return waterTime()
+  }
+
   private shareClock(): void {
     if (this.clockShared || !this.clock.synced) return
     this.clockShared = true
-    setWaterClock(() => this.clock.now())
+    for (const use of this.clockUsers.splice(0)) use(this.roomNow)
   }
 
   private botMatchKey = 'unset'
