@@ -9,7 +9,6 @@ This is source reachability and GLB inspection, not a fresh browser request trac
 | buggy-boxarm.glb | 293012 | LoadedBuggySkin Syn3h body |
 | buggy-classic.glb | 84644 | LoadedBuggySkin classic body |
 | buggy-classic-wheel.glb | 484624 | LoadedBuggySkin classic wheels |
-| hovercraft.glb | 38828 | Hovercraft game model and VehiclePreview chooser |
 | tank.glb | 12556 | Tank game hull |
 | tanktread.glb | 115204 | Tank game tracks |
 | jet.glb | 335568 | VehiclePreview chooser; recovered geometry regression |
