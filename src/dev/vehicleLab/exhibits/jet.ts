@@ -26,7 +26,8 @@ export const jet: LabExhibit = {
   async build(info) {
     const design = JET_DESIGNS.find(d => d.id === info.id)!
     if (design.id === 'hex-mk2') {
-      const jet = new GameJet(); jet.attach()
+      // The lab measures a model when it is built, so the close level must exist by then.
+      const jet = new GameJet(); jet.attach(); jet.setLevel(0)
       let gearDown = true, gear = 1
       return {
         object: jet.object,
