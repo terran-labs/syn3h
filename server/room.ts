@@ -25,6 +25,7 @@ import {
   DEFAULT_COLORS,
   type HillZone,
   type KothState,
+  MODE_EXPLORE,
   MODE_KOTH,
   MODE_TAG,
   MAX_NAME_LENGTH,
@@ -57,7 +58,7 @@ import { bigRedAllowed, bigRedCooldown } from '../src/weapons/bigRedParams'
 import { pesterAllowed, pesterCooldown, pesterLife, pesterMax, pesterRange } from '../src/weapons/pester/params'
 import { yoinkAllowed, yoinkCooldown, yoinkFling, yoinkHoldDistance, yoinkHoldTime, yoinkPunt, yoinkPuntRange, yoinkRange } from '../src/weapons/yoink/params'
 import {
-  KNOCK_WINDOW, WIN_PAUSE, gameMode, kothKnockBonus, kothRespawnDelay, kothTargetScore, tagCooldown, tagRamReach,
+  KNOCK_WINDOW, WIN_PAUSE, raceAuto, gameMode, kothKnockBonus, kothRespawnDelay, kothTargetScore, tagCooldown, tagRamReach,
   REJOIN_GRACE, gameRejoin,
 } from '../src/modes/params'
 
@@ -88,6 +89,12 @@ export interface RoomSnapshot {
   activeAt?: number
   /** The world was reset for being idle: the next player to join brings theirs. */
   vacant?: boolean
+  /**
+   * 2 once Explore exists. A snapshot without it was stored when Tag was the default and
+   * every room was a game of Tag whether or not anyone chose one: its mode 0 is read as
+   * Explore, so a room that outlives the release does not start a game nobody asked for.
+   */
+  modes?: number
   /**
    * With `game.rejoin` on: who was in the room, by their rejoin secret, so that a room
    * rebuilt from storage (a release reset it, everyone dropped at once) can hold their
@@ -231,7 +238,7 @@ export class Room {
   private raceCooldownUntil = 0
   private lastRaceId = ''
   private locked = false
-  private mode = MODE_TAG
+  private mode: number = MODE_EXPLORE
   private koth: KothState = emptyKoth()
   /** Fractions of a point earned on the hill, per player. */
   private readonly holdFrac = new Map<number, number>()
@@ -523,7 +530,7 @@ export class Room {
   snapshot(): RoomSnapshot {
     return {
       params: Object.fromEntries(this.values), it: this.it, scores: { ...this.scores }, nextId: this.nextId,
-      host: this.host, locked: this.locked, zone: this.koth.zone, activeAt: this.activeAt, vacant: this.vacant,
+      host: this.host, locked: this.locked, zone: this.koth.zone, activeAt: this.activeAt, vacant: this.vacant, modes: 2,
       ...(this.rejoinOn() ? { roster: this.roster() } : {}),
       race: { state: this.race, deadline: this.raceDeadline, cooldownUntil: this.raceCooldownUntil, lastId: this.lastRaceId },
     }
@@ -539,6 +546,8 @@ export class Room {
       const v = this.validateParam(id, s.params[id])
       if (v !== null) this.values.set(id, v)
     }
+    // See RoomSnapshot.modes: an old room's Tag was the default, not a choice.
+    if (s.modes !== 2 && this.values.get(gameMode.def.id) === MODE_TAG) this.values.set(gameMode.def.id, MODE_EXPLORE)
     this.it = s.it
     this.scores = { ...s.scores }
     this.nextId = Math.max(this.nextId, s.nextId)
@@ -546,6 +555,7 @@ export class Room {
     this.locked = Boolean(s.locked)
     this.mode = this.paramNumber(gameMode.def)
     this.koth.zone = s.zone ? cleanZone(s.zone) : null
+    if (this.mode === MODE_EXPLORE) this.resetRound()
     // A snapshot from before activity was recorded counts as long idle.
     this.activeAt = typeof s.activeAt === 'number' ? s.activeAt : 0
     this.vacant = Boolean(s.vacant)
@@ -644,7 +654,12 @@ export class Room {
     // So does the first into a room reset for idleness; parked players there are told.
     const bringsWorld = this.players.size === 0 || this.vacant
     if (bringsWorld && msg.params && typeof msg.params === 'object') {
-      for (const id in msg.params) this.storeParam(id, msg.params[id])
+      for (const id in msg.params) {
+        // Frozen protocol-2 clients send Tag as a default, not an explicit choice.
+        // They can still choose Tag later through the existing param message.
+        if (id === gameMode.def.id && msg.modes !== 2 && msg.params[id] === MODE_TAG) continue
+        this.storeParam(id, msg.params[id])
+      }
       const mode = this.paramNumber(gameMode.def)
       if (mode !== this.mode) {
         this.mode = mode
@@ -684,7 +699,8 @@ export class Room {
 
     this.welcome(peer, player)
     this.broadcast({ type: 'join', player: info }, peer)
-    this.broadcast({ type: 'game', game: this.gameState(), event: this.it === info.id ? 'default' : undefined, actor: this.it })
+    // Being "it" by default is news only while a game of tag is on.
+    this.broadcast({ type: 'game', game: this.gameState(), event: this.mode === MODE_TAG && this.it === info.id ? 'default' : undefined, actor: this.mode === MODE_TAG ? this.it : 0 })
     this.persist()
   }
 
@@ -832,6 +848,7 @@ export class Room {
     // sender's slider snaps to what the room actually uses.
     this.broadcast({ type: 'param', id, value, from: player.info.id })
     this.persist()
+    if (id === raceAuto.def.id && value === false) this.cancelRace('Automatic races disabled')
     if (id === gameMode.def.id && value !== this.mode) {
       this.mode = value as number
       this.resetRound()
@@ -1483,7 +1500,7 @@ export class Room {
   }
 
   private onRace(sender: Player, raw: unknown): void {
-    if (sender.info.id !== this.host || sender.heldUntil) return
+    if (!this.paramBool(raceAuto.def) || sender.info.id !== this.host || sender.heldUntil) return
     const update = cleanRaceUpdate(raw)
     if (!update) return
     const now = this.now()
@@ -1565,7 +1582,9 @@ export class Room {
 
   private gameState(): GameState {
     return {
-      it: this.it, scores: { ...this.scores }, host: this.host, locked: this.locked,
+      // "It" exists only in tag. The room keeps track of a player for the role all the time,
+      // so choosing Tag has somebody to start with, but tells nobody outside a game of tag.
+      it: this.mode === MODE_TAG ? this.it : 0, scores: { ...this.scores }, host: this.host, locked: this.locked,
       mode: this.mode, koth: { ...this.koth, out: { ...this.koth.out } },
     }
   }

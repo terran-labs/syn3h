@@ -180,9 +180,19 @@ export interface PlayerInfo {
   bot?: boolean
 }
 
-/** Game modes, the value of the shared parameter `game.mode`. */
+/**
+ * Game modes, the value of the shared parameter `game.mode`.
+ *
+ * Explore is the default: no game is running. Nobody is "it", there is no hill, and nothing
+ * scores; the tools still push things about as toys. Tag and King of the Hill run only when
+ * a player chooses them. Explore took a new number so that 0 and 1 keep meaning what they
+ * always did. Protocol 2 is retained: frozen clients tolerate numeric mode 2, though
+ * their older interface may label it incorrectly. The optional hello modes field marks
+ * clients whose initial Tag setting is a choice rather than the retired default.
+ */
 export const MODE_TAG = 0
 export const MODE_KOTH = 1
+export const MODE_EXPLORE = 2
 
 /**
  * The King of the Hill zone: a ring (or, with inner 0, a disc) around a centre, between two
@@ -330,7 +340,7 @@ export type ClientMessage =
    * on, a player who drops and says hello again with the same secret within the grace time
    * carries on as the same player. It is never sent to other players.
    */
-  | { type: 'hello'; v: number; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string]; resume?: string }
+  | { type: 'hello'; v: number; modes?: 2; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string]; resume?: string }
   /** Change vehicle kind or colours after joining. */
   | { type: 'profile'; kind?: string; colors?: [string, string] }
   | { type: 'ping'; t: number }

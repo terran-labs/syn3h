@@ -16,7 +16,7 @@ let room: Room
 function join(name: string, params: Record<string, number | boolean> = {}) {
   const peer = new FakePeer()
   room.connect(peer)
-  room.receive(peer, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, name, params }))
+  room.receive(peer, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, modes: 2, name, params }))
   return { peer, id: peer.all('welcome')[0]!.id }
 }
 function state(p: [number, number, number], v: [number, number, number] = [0, 0, 0]): Uint8Array {
@@ -30,7 +30,8 @@ describe('Pesters in the room', () => {
   beforeEach(() => { clock = 100_000; room = new Room('test', { now: () => clock }) })
 
   function three() {
-    const a = join('A', { 'pester.allowed': true })
+    // The first player chose Tag: a catch scores only in a game of tag.
+    const a = join('A', { 'pester.allowed': true, 'game.mode': 0 })
     const b = join('B')
     const c = join('C')
     clock += 10_000

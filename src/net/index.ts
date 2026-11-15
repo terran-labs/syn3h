@@ -16,6 +16,7 @@ import {
   type GameState,
   type HillZone,
   MAX_BOTS,
+  MODE_EXPLORE,
   MODE_KOTH,
   MODE_TAG,
   type PlayerInfo,
@@ -50,7 +51,7 @@ import { bigRedAllowed, bigRedPush } from '../weapons/bigRedParams'
 import { BoundsGuard } from '../modes/Tag'
 // The "it" marker: one draw, and shown over the local player's own vehicle too.
 import { ItMarker as TagMarker } from './ItMarker'
-import { gameMode, kothKnockBonus, kothLaserPush, kothRespawnDelay, kothTargetScore, kothZoneRadius } from '../modes/params'
+import { raceAuto, gameMode, kothKnockBonus, kothLaserPush, kothRespawnDelay, kothTargetScore, kothZoneRadius } from '../modes/params'
 import { type HillTerrain, computeHillZone } from '../modes/hill'
 import { HillMarker } from '../modes/HillMarker'
 import { LocalRescue, StuckTimer, inStickyLiquid } from '../modes/Koth'
@@ -208,7 +209,7 @@ export class NetClient implements System {
   id = 0
   slot = 0
   game: GameState = {
-    it: 0, scores: {}, host: 0, locked: false, mode: MODE_TAG,
+    it: 0, scores: {}, host: 0, locked: false, mode: MODE_EXPLORE,
     koth: { zone: null, holder: 0, contested: false, winner: 0, resetAt: 0, out: {} },
   }
   /** Counts for automated checks. */
@@ -276,7 +277,7 @@ export class NetClient implements System {
       role: () => ({ id: this.id, host: this.isHost, connected: this.connected }),
       synced: () => this.clock.synced,
       bots: () => this.bots,
-      candidates: () => [
+      candidates: () => !raceAuto.value ? [] : [
         { id: this.id, vehicle: this.ctx.player, active: this.raceBridge.driving && !document.hidden, human: true },
         ...liveBots(this.bots?.vehicles ?? [], this.ctx.game.world).map(([id, vehicle]) => ({ id, vehicle, active: !document.hidden, human: false })),
       ],
@@ -302,8 +303,9 @@ export class NetClient implements System {
             const m = body.mass() * bigRedPush.value
             body.applyImpulse({ x: dir.x * m, y: dir.y * m + m * 0.25, z: dir.z * m }, true)
           }
-        } else if (this.mode === MODE_KOTH && kothLaserPush.value > 0) {
-          // On the hill a laser shoves. The judging client owns the victim, so it applies it.
+        } else if (this.mode !== MODE_TAG && kothLaserPush.value > 0) {
+          // On the hill, and in Explore where the beam is a toy, a beam shoves; in tag it
+          // tags instead. The judging client owns the victim, so it applies it.
           const body = this.vehicleOf(victim)?.body
           if (body) {
             const m = body.mass() * kothLaserPush.value
@@ -420,7 +422,7 @@ export class NetClient implements System {
 
     this.conn.onOpen = () => {
       this.send({
-        type: 'hello', v: PROTOCOL_VERSION, name: playerName(), params: params.snapshot('world'),
+        type: 'hello', v: PROTOCOL_VERSION, modes: 2, name: playerName(), params: params.snapshot('world'),
         kind: this.kind, colors: this.colors, resume: rejoinSecret(this.ctx.room),
       })
     }
@@ -1026,7 +1028,8 @@ export class NetClient implements System {
   private syncBotMatch(): void {
     const bots = this.bots
     if (!bots?.setMatch) return
-    const on = this.connected && this.isHost
+    // In Explore there is no game to tell them about: free play, as when off line.
+    const on = this.connected && this.isHost && this.mode !== MODE_EXPLORE
     const koth = this.mode === MODE_KOTH
     const zone = on && koth ? this.game.koth.zone : null
     const it = on && !koth && this.game.it ? (this.vehicleOf(this.game.it) ?? null) : null
@@ -1461,7 +1464,7 @@ export class NetClient implements System {
       case 'leave': if (msg.game.it && msg.game.it !== this.id) this.event(`${this.nameOf(msg.game.it)} is it`); break
       case 'lock': this.event(msg.game.locked ? 'Host locked shared sliders' : 'Host unlocked shared sliders'); break
       case 'host': this.event(msg.actor === this.id ? 'You are now host' : `${a} is now host`); break
-      case 'mode': this.event(msg.game.mode === MODE_KOTH ? 'King of the Hill: get to the rim and hold it' : 'Tag: ram or beam whoever is it'); break
+      case 'mode': this.event(msg.game.mode === MODE_KOTH ? 'King of the Hill: get to the rim and hold it' : msg.game.mode === MODE_TAG ? 'Tag game: ram or beam whoever is it' : 'Explore: no game running'); break
       case 'capture': this.event(`${a} ${msg.actor === this.id ? 'hold' : 'holds'} the hill`); break
       case 'contest': this.event('The hill is contested'); break
       case 'stuck': this.event(`${a} ${is(a)} stuck in the lava`); break
@@ -1532,7 +1535,8 @@ export class NetClient implements System {
   private pushMatch(): void {
     const set = this.ctx.setMatchState
     if (!set) return
-    const state = this.connected ? this.matchState() : null
+    // In Explore there is no match to show: the shell hides its match display on null.
+    const state = this.connected && this.game.mode !== MODE_EXPLORE ? this.matchState() : null
     const key = JSON.stringify(state)
     if (key === this.lastMatchKey) return
     this.lastMatchKey = key
@@ -1574,6 +1578,7 @@ export class NetClient implements System {
 
   private modeLines(): string[] {
     const g = this.game
+    if (g.mode === MODE_EXPLORE) return ['mode: Explore']
     if (g.mode !== MODE_KOTH) return ['mode: Tag   ram or beam whoever is it']
     const k = g.koth
     const target = kothTargetScore.value
@@ -1653,7 +1658,7 @@ function reloadForNewProtocol(): void {
 /** Fill fields an older room server does not send, so a mismatch degrades instead of throwing. */
 function normalizeGame(g: Partial<GameState>): GameState {
   return {
-    it: g.it ?? 0, scores: g.scores ?? {}, host: g.host ?? 0, locked: Boolean(g.locked), mode: g.mode ?? MODE_TAG,
+    it: g.it ?? 0, scores: g.scores ?? {}, host: g.host ?? 0, locked: Boolean(g.locked), mode: g.mode ?? MODE_EXPLORE,
     koth: { zone: null, holder: 0, contested: false, winner: 0, resetAt: 0, out: {}, ...g.koth },
   }
 }

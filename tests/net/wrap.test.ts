@@ -172,7 +172,7 @@ describe('Room on a wrapping world', () => {
   const join = (name: string, params: Record<string, number | boolean> = {}) => {
     const peer = new FakePeer()
     room.connect(peer)
-    room.receive(peer, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, name, params }))
+    room.receive(peer, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, modes: 2, name, params }))
     return { peer, id: peer.last('welcome')!.id }
   }
   const state = (p: [number, number, number], v: [number, number, number] = [0, 0, 0], extra: Partial<WireState> = {}) =>
@@ -187,7 +187,7 @@ describe('Room on a wrapping world', () => {
   })
 
   it('passes "it" by a ram across the seam, and relays the shove', () => {
-    const a = join('A', world(true))
+    const a = join('A', { ...world(true), 'game.mode': 0 })
     const b = join('B')
     clock += 3100
     // 6 m apart across the seam at x = 512: 1018 m apart in plain coordinates.
@@ -236,7 +236,7 @@ describe('Room on a wrapping world', () => {
   })
 
   it('reads the tile from the room\'s planet size', () => {
-    const a = join('A', { 'terrain.planetSize': 2 })
+    const a = join('A', { 'terrain.planetSize': 2, 'game.mode': 0 })
     const b = join('B')
     clock += 3100
     // On the large planet the seam is at 2048, so the small planet's seam is open ground:

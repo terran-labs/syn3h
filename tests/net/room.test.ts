@@ -30,7 +30,7 @@ let room: Room
 function join(name: string, params: Record<string, number | boolean> = {}, extra: object = {}): { peer: FakePeer; id: number } {
   const peer = new FakePeer()
   room.connect(peer)
-  room.receive(peer, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, name, params, ...extra }))
+  room.receive(peer, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, modes: 2, name, params, ...extra }))
   const welcome = peer.last('welcome')!
   return { peer, id: welcome.id }
 }
@@ -49,7 +49,7 @@ beforeEach(() => {
 
 describe('Room', () => {
   it('assigns ids and slots and tells everyone about joins', () => {
-    const a = join('Ann')
+    const a = join('Ann', { 'game.mode': 0 })
     const b = join('Bob')
     expect(a.id).not.toBe(b.id)
     expect(a.peer.last('welcome')!.slot).toBe(0)
@@ -128,7 +128,7 @@ describe('Room', () => {
   })
 
   it('passes "it" on by ramming, with a cooldown, and checks distance', () => {
-    const a = join('A')
+    const a = join('A', { 'game.mode': 0 })
     const b = join('B')
     expect(a.peer.last('game')!.game.it).toBe(a.id)
     room.receive(a.peer, state([0, 0, 0]))
@@ -160,7 +160,7 @@ describe('Room', () => {
   })
 
   it('validates laser shots and applies the tag rules on hits reported by the victim', () => {
-    const a = join('A') // it
+    const a = join('A', { 'game.mode': 0 }) // it
     const b = join('B')
     clock += 3100
     room.receive(a.peer, state([0, 0, 0]))
@@ -220,7 +220,7 @@ describe('Room', () => {
   })
 
   it('hands "it" on and announces when a player leaves', () => {
-    const a = join('A')
+    const a = join('A', { 'game.mode': 0 })
     const b = join('B')
     room.disconnect(a.peer)
     expect(b.peer.last('leave')).toEqual({ type: 'leave', id: a.id })
@@ -237,7 +237,7 @@ describe('Room', () => {
   })
 
   it('survives a snapshot and restore', () => {
-    const a = join('A')
+    const a = join('A', { 'game.mode': 0 })
     send(a.peer, { type: 'param', id: 'laser.speed', value: 300 })
     const snap = room.snapshot()
     const again = new Room('test', { now: () => clock })
@@ -247,7 +247,7 @@ describe('Room', () => {
     expect(again.playerCount).toBe(1)
     const late = new FakePeer()
     again.connect(late)
-    again.receive(late, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, name: 'L', params: {} }))
+    again.receive(late, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, modes: 2, name: 'L', params: {} }))
     const w = late.last('welcome')!
     expect(w.params['laser.speed']).toBe(300)
     expect(w.game.it).toBe(a.id)
@@ -333,7 +333,7 @@ describe('Room bots', () => {
   })
 
   it('counts rams and laser hits against bots, judged by the host', () => {
-    const host = join('Host') // it
+    const host = join('Host', { 'game.mode': 0 }) // it
     const b = join('B')
     clock += 3100
     room.receive(host.peer, state([0, 0, 0]))
@@ -356,7 +356,7 @@ describe('Room bots', () => {
   })
 
   it('expires bots the host stops sending and passes "it" back to a person', () => {
-    const host = join('Host')
+    const host = join('Host', { 'game.mode': 0 })
     const b = join('B')
     clock += 3100
     room.receive(host.peer, state([0, 0, 0]))
@@ -417,7 +417,7 @@ describe('Room mixed bot fleets', () => {
 
 describe('Room paused players', () => {
   it('relays heartbeats but a paused player cannot ram or be rammed', () => {
-    const a = join('A')
+    const a = join('A', { 'game.mode': 0 })
     const b = join('B')
     clock += 3100
     room.receive(a.peer, state([0, 0, 0], [0, 0, 0], { paused: true }))
@@ -453,7 +453,7 @@ describe('Room King of the Hill', () => {
   }
 
   it('switches rule sets on game.mode and resets scores', () => {
-    const host = join('Host')
+    const host = join('Host', { 'game.mode': 0 })
     const b = join('B')
     clock += 3100
     room.receive(host.peer, state([0, 0, 0]))
@@ -652,7 +652,8 @@ describe('Room idle reset', () => {
     send(a.peer, { type: 'lock', locked: true })
     for (let t = 0; t < 6 * 60; t++) { clock += 1000; parked(a.peer) }
     const g = a.peer.last('reset')!.game
-    expect(g.mode).toBe(0)
+    // Back to the default, which is Explore: an idle room does not restart a game.
+    expect(g.mode).toBe(2)
     expect(g.locked).toBe(false)
     expect(g.koth.zone).toBeNull()
   })
@@ -688,7 +689,7 @@ describe('Room idle reset', () => {
     again.adopt(hidden, room.info(a.peer)!)
     const late = new FakePeer()
     again.connect(late)
-    again.receive(late, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, name: 'L', params: { 'world.gravity': 7 } }))
+    again.receive(late, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, modes: 2, name: 'L', params: { 'world.gravity': 7 } }))
     expect(late.last('welcome')!.params['world.gravity']).toBe(7)
     expect(hidden.last('reset')).toMatchObject({ reason: 'join' })
     // A snapshot that recent activity keeps fresh still restores.
@@ -698,7 +699,7 @@ describe('Room idle reset', () => {
     busy.adopt(p2, room.info(a.peer)!)
     const late2 = new FakePeer()
     busy.connect(late2)
-    busy.receive(late2, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, name: 'M', params: { 'world.gravity': 7 } }))
+    busy.receive(late2, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, modes: 2, name: 'M', params: { 'world.gravity': 7 } }))
     expect(late2.last('welcome')!.params['world.gravity']).toBe(3)
   })
 })
@@ -813,7 +814,7 @@ describe('Room rejoin as the same player (game.rejoin)', () => {
   })
 
   it('passes "it" on from a held place after eight seconds, like any absent player', () => {
-    const a = join('A', on, { resume: SECRET_A })
+    const a = join('A', { ...on, 'game.mode': 0 }, { resume: SECRET_A })
     const b = join('B', {}, { resume: SECRET_B })
     for (let t = 0; t < 11; t++) { clock += 1000; room.receive(a.peer, here()); room.receive(b.peer, here()) }
     room.disconnect(a.peer)
@@ -1034,7 +1035,7 @@ describe('Room with strangers', () => {
     expect(new Set(players.map((p) => p.peer.last('welcome')!.slot)).size).toBe(16)
     const late = new FakePeer()
     room.connect(late)
-    room.receive(late, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, name: 'Late', params: {} }))
+    room.receive(late, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, modes: 2, name: 'Late', params: {} }))
     expect(late.last('error')).toEqual({ type: 'error', message: 'room is full' })
     expect(late.closed).toBe(true)
     expect(late.last('welcome')).toBeUndefined()
@@ -1062,7 +1063,7 @@ describe('Room with strangers', () => {
   })
 
   it('passes "it" on when its holder parks for eight seconds, and not before', () => {
-    const a = join('A')
+    const a = join('A', { 'game.mode': 0 })
     const b = join('B')
     const c = join('C')
     expect(b.peer.last('game')?.game.it ?? a.id).toBe(a.id)
@@ -1079,7 +1080,7 @@ describe('Room with strangers', () => {
   })
 
   it('keeps "it" with a holder who is back within eight seconds, or when nobody else is playing', () => {
-    const a = join('A')
+    const a = join('A', { 'game.mode': 0 })
     const b = join('B')
     run(11, [[a.peer, here], [b.peer, here]])
     run(6, [[a.peer, parked], [b.peer, here]])
@@ -1092,7 +1093,7 @@ describe('Room with strangers', () => {
   })
 
   it('passes "it" on from a holder whose states simply stop', () => {
-    const a = join('A')
+    const a = join('A', { 'game.mode': 0 })
     const b = join('B')
     run(11, [[a.peer, here], [b.peer, here]])
     run(15, [[b.peer, here]])
@@ -1168,7 +1169,7 @@ describe('Room does not believe absurd speeds', () => {
   })
 
   it('does not pass "it" by a ram from across the world, nor relay its shove', () => {
-    const a = join('A')
+    const a = join('A', { 'game.mode': 0 })
     const b = join('B')
     clock += 3100
     room.receive(a.peer, state([0, 0, 0], liar))
