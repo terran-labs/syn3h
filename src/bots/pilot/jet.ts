@@ -267,7 +267,10 @@ export function createJetPilot(vehicle: Vehicle, terrain: Terrain): Pilot {
       else if (Number.isNaN(heldHeading)) heldHeading = Math.atan2(-fx, -fz)
       const err = headingError(fx, fz, -Math.sin(heldHeading), -Math.cos(heldHeading))
       // Positive error turns right, which is a negative rotation about +Y.
-      yawRate = -clamp(err * tune.headingGain, -tune.maxYawRate, tune.maxYawRate)
+      // A hard yaw while tilted consumes the same coupled controls that level the hull.
+      // Give the attitude loop priority before a sharp turn can roll a hovering jet over.
+      const yawLimit = tune.maxYawRate * clamp((up.y - .6) / .35, 0, 1)
+      yawRate = -clamp(err * tune.headingGain, -yawLimit, yawLimit)
     }
     // Spin about the craft's own up axis.
     const localYawRate = angvel.dot(up)
