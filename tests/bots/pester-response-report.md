@@ -81,3 +81,41 @@ The single authorized job on `13f2d071778aadf5fc0c3a9b8fbe81080d49ba4e` exited 1
 The measurement command was conditional on successful type checking and never started. No new output directory or results file was created, so no comparison of old outcome fields or observation analysis is possible. The original 99-run evidence remains preserved. No harness correction, tuning or retry was performed. A typing correction and another run require renewed authorization.
 
 Command: `/Users/vtn/dev/Syn3h/tools/heavy.sh sh -c 'npm run typecheck && npx vitest run tests/bots/pester-response.test.ts --maxWorkers=2'`. Log: `/tmp/syn3h-pester-observations-v1.log`. Intended output: `/tmp/syn3h-pester-observations-v1/results.json` (not created).
+
+## Cleared replacement observation measurement
+
+Measured source `fda553241a907239f496dd891534ac2eeb813c6f` completed the newly authorized replacement job with exit 0: typecheck passed and all 99 runs completed. The sole harness correction after the failed attempt was the explicitly reviewed nullable annotation on the returned decision field. The earlier failed log and report remain preserved; there was no tuning or further retry.
+
+Comparison against the original results found zero differences in every preexisting per-run field, including outcomes, catch times, separations, safety metrics, activation, goals, traces and before-reaction samples. All original configuration fields and case order also match exactly. The two escapes, two harmful conversions and lack of demonstrated forward-flight benefit are unchanged. This equality establishes instrumentation neutrality in these deterministic cases, not runtime evasion acceptance.
+
+All 99 decision records occur at iteration time 0.60s. Live shots have actual source age 0.6200000000000002s, consistent with the disclosed orb-first update order. In each mode, ten of the eleven case triplets have a live shot at decision; the short-warning triplet is already caught and records no orb or fabricated estimates. None/left/right decision records match exactly for all 33 triplets.
+
+Ranges below cover the ten live decision snapshots per mode, including safety fixtures. Positive closing speed means approaching; negative means separating at that sample. Lateral geometry is signed orb displacement on the vehicle's instantaneous horizontal travel-right axis, not distance gained by maneuvering.
+
+| Mode | Range (m) | Catch clearance (m) | Closing speed (m/s) | Instantaneous lateral geometry (m) | Closest-time estimate in past |
+| --- | --- | --- | --- | --- | --- |
+| Hovering jet | 4.202 to 65.605 | 1.802 to 63.205 | -21.734 to 37.400 | -32.205 to 62.651 | 1 of 10 |
+| Forward jet | 11.697 to 62.874 | 9.297 to 60.474 | -42.348 to 61.792 | -31.867 to 62.527 | 3 of 10 |
+| Hovercraft | 2.847 to 66.272 | 0.447 to 63.872 | -15.722 to 34.990 | -32.204 to 62.672 | 1 of 10 |
+
+The other live decision estimates fall within remaining shot lifetime under the instantaneous constant-velocity assumption. That does not predict production homing success. The caught-before-reaction records have undefined estimates, not zero-valued estimates. No side-selection rule is inferred from these observations or their eventual labels.
+
+Each run records 80 pre-control observations from 0.0 through 15.8s at 0.2s intervals. Once the production shot is removed, shot-relative geometry remains unavailable; the separate retrospective vehicle-to-baseline series continues through route return. Across all 22 arc runs per mode, including safety fixtures, maximum absolute paired lateral displacement and final sampled displacement are:
+
+| Mode | Peak paired lateral displacement (m) | Maximum final sampled displacement at 15.8s (m) |
+| --- | --- | --- |
+| Hovering jet | 17.925 | 8.152 |
+| Forward jet | 35.085 | 29.372 |
+| Hovercraft | 14.005 | 12.829 |
+
+These values measure response relative to the ordinary no-op trajectory on its fixed decision-time travel-right axis. They are neither orb miss distances nor the earlier absolute route cross-track metric. Final sampling precedes the end of the 16s run by one observation interval. Remaining offsets reinforce the distinction between restoring an ordinary goal and recovering its path.
+
+Artifacts: `/tmp/syn3h-pester-observations-v2/results.json`, `/tmp/syn3h-pester-observations-v2/comparison.json`; log `/tmp/syn3h-pester-observations-replacement-v2.log`. Original artifact SHA-256 remains `a4ae8bc4928e39d002085e6b79fcae97ce7d593c4d4c0eb8e92b2e77e9a9f1ce`.
+
+Executed command:
+
+```sh
+PESTER_RESPONSE_OUT=/tmp/syn3h-pester-observations-v2 /Users/vtn/dev/Syn3h/tools/heavy.sh sh -c 'npm run typecheck && npx vitest run tests/bots/pester-response.test.ts --maxWorkers=2'
+```
+
+The evidence remains discrete, operator-ordered, nonwrapping and offline. It adds observable state without establishing safe side selection, CPU feasibility or a deployable policy. These cases are now observed; a later design still requires independent review, fresh held-out perturbations and protection of already-safe encounters. Production aircraft evasion remains excluded.
