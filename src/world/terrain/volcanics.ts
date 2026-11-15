@@ -13,7 +13,7 @@
  * the camera has moved an eighth of a tile.
  */
 import * as THREE from 'three/webgpu'
-import { attribute, cameraPosition, cameraViewMatrix, normalize, color, float, mix, mx_noise_float, positionWorld, smoothstep, time, uniform, vec3 } from 'three/tsl'
+import { attribute, cameraPosition, cameraViewMatrix, normalize, color, float, mix, mx_noise_float, positionWorld, positionGeometry, smoothstep, time, uniform, vec3 } from 'three/tsl'
 import { worldGravity, worldLavaAltitude } from '../../../shared/params'
 import { nearestImage } from '../../../shared/wrap'
 import { overHorizon } from '../curve'
@@ -25,12 +25,12 @@ import type { TerrainData } from './generate'
 import { CHUNK_CELLS } from './mesh'
 import type { HeightSampler } from './sampler'
 import { KIND_VOLCANIC, worldSeaKind } from './settings'
-import { riverSpeed } from './lava'
+import { type RiverDrop, riverSpeed } from './lava'
 import { waterRiverMaxSpeed, waterWaves } from '../water/params'
 import { SEA_GRID } from '../water/seaWaves'
-import { buildRiverSurface, buildStillSurface, createWaterSurface } from '../water/surface'
+import { buildBedTexture, buildRiverSurface, buildStillSurface, createWaterSurface, configureWaterBlending, waterOpacityNode, type WaterBed } from '../water/surface'
 import { WaterfallMist, fallsFromRivers } from '../water/mist'
-import { buildFallSheet, createFallMaterial } from '../water/falls'
+import { createFallMaterial, riverPieces } from '../water/falls'
 import { paletteFor } from './palettes'
 
 interface Liquid {
@@ -47,6 +47,9 @@ function createWaterMaterial(shore: boolean): Liquid {
   const level = uniform(0)
   const p = positionWorld
   const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.14, metalness: 0, side: THREE.DoubleSide })
+  configureWaterBlending(material)
+  const depth = (shore ? level : positionGeometry.y).sub(attribute<'float'>('groundHeight', 'float'))
+  material.opacityNode = waterOpacityNode(depth, float(0))
   // The surface is flat: light it as facing straight up, whatever the mesh winding.
   material.normalNode = normalize(cameraViewMatrix.transformDirection(vec3(0, 1, 0)))
   const drift = time.mul(0.25)
@@ -56,9 +59,9 @@ function createWaterMaterial(shore: boolean): Liquid {
   const near = smoothstep(500, 60, p.sub(cameraPosition).length())
   const shade = swell.mul(0.1).add(ripple.mul(0.08).mul(near)).add(1)
   if (shore) {
-    const depth = level.sub(attribute<'float'>('groundHeight', 'float'))
     const water = mix(color(0x2fc4bd), color(0x0a3562), smoothstep(0.5, 22, depth))
     const foam = smoothstep(1.3, 0.15, depth.add(ripple.mul(0.5))).mul(smoothstep(-0.6, 0.1, depth))
+    material.opacityNode = waterOpacityNode(depth, foam)
     material.colorNode = mix(water.mul(shade), color(0xf4fbff), foam.mul(0.85))
   } else {
     material.colorNode = mix(color(0x1f8fa6), color(0x135f86), swell.mul(0.5).add(0.5)).mul(shade)
@@ -184,6 +187,8 @@ export class Volcanics implements System {
   private readonly newSea = createWaterSurface('sea')
   private readonly newStill = createWaterSurface('still')
   private readonly newRiver = createWaterSurface('river')
+  /** The height field under every water surface, rebuilt with the terrain. */
+  private bed: WaterBed | null = null
   /** Whether the current meshes were built for the new water. */
   private builtNew = false
   private builtGravity = worldGravity.value
@@ -236,7 +241,9 @@ export class Volcanics implements System {
     this.builtRiverSpeed = waterRiverMaxSpeed.value
     const palette = paletteFor(data.settings.look)
     this.fallMaterial.color.set(palette.seaShallow)
-    for (const w of [this.newSea, this.newStill, this.newRiver]) w.setColours(palette.seaShallow, palette.seaDeep)
+    this.bed?.texture.dispose()
+    this.bed = buildBedTexture(data, worldLavaAltitude.value)
+    for (const w of [this.newSea, this.newStill, this.newRiver]) { w.setColours(palette.seaShallow, palette.seaDeep); w.setBed(this.bed) }
     const seaMaterial = this.seaMaterial()
     // A dry world (the Moon) drains its sea below every valley: draw none of it.
     const chunks = data.settings.dry ? 0 : seaChunks(data)
@@ -267,33 +274,37 @@ export class Volcanics implements System {
       const still = this.newStill.material
       if (lava.lake) add(buildStillSurface(ground, lava.lake.x, lava.lake.surface, lava.lake.z, lava.lake.radius), still, true)
       for (const p of lava.pools) add(buildStillSurface(ground, p.x, p.surface, p.z, p.radius), still, true)
+      // Receiving water for a river's mouth: the lake, a pool or the sea, never a river.
+      const seaLevel = data.settings.dry ? -Infinity : worldLavaAltitude.value
+      const waterAt = (x: number, z: number) => {
+        let y = seaLevel
+        for (const b of lava.lake ? [lava.lake, ...lava.pools] : lava.pools) {
+          if ((x - b.x) ** 2 + (z - b.z) ** 2 < b.radius ** 2) y = Math.max(y, b.surface)
+        }
+        return y
+      }
+      const drawn: { points: { x: number; y: number; z: number }[]; drops: RiverDrop[] }[] = []
       for (const r of lava.rivers) {
         if (r.points.length < 2) continue
-        add(buildRiverSurface(ground, r.points, r.width + 1.5, (slope) => riverSpeed(slope, waterRiverMaxSpeed.value)), this.newRiver.material, false)
-        for (const drop of r.drops) {
-          const s = drop.steepest
-          // A long steep run may contain a short ledge, without enough current to leap
-          // the whole run. Prefer the full arc, then try its individual ledges, tallest first.
-          const ledges = Array.from({ length: s.end - s.start }, (_, i) => [s.start + i, s.start + i + 1] as const)
-            .sort(([a, b], [c, d]) => (r.points[c].y - r.points[d].y) - (r.points[a].y - r.points[b].y))
-          for (const [a, b] of [[s.start, s.end], ...ledges]) {
-            const sheet = buildFallSheet(ground, r.points[a], r.points[b], r.width, worldGravity.value, waterRiverMaxSpeed.value)
-            if (sheet) { add(sheet, this.fallMaterial, false); break }
-          }
-        }
+        // Drawn where the water is held up; off a lip it falls (falls.ts drapeRiver).
+        const pieces = riverPieces(ground, r.points, r.width, waterAt, worldGravity.value, waterRiverMaxSpeed.value)
+        if (pieces.points.length < 2) continue
+        add(buildRiverSurface(ground, pieces.points, r.width + 1.5, (slope) => riverSpeed(slope, waterRiverMaxSpeed.value)), this.newRiver.material, false)
+        for (const sheet of pieces.sheets) add(sheet, this.fallMaterial, false)
+        drawn.push(pieces)
       }
-      this.mist.set(fallsFromRivers(lava.rivers), data.size)
+      this.mist.set(fallsFromRivers(drawn), data.size)
       this.placedVents = []
       this.place()
       return
     }
     const still = (hot ? this.lavaStill : this.waterStill).material
-    if (lava.lake) add(discGeometry(lava.lake.x, lava.lake.surface, lava.lake.z, lava.lake.radius), still, true)
-    for (const p of lava.pools) add(discGeometry(p.x, p.surface, p.z, p.radius), still, true)
+    if (lava.lake) add(hot ? discGeometry(lava.lake.x, lava.lake.surface, lava.lake.z, lava.lake.radius) : buildStillSurface(ground, lava.lake.x, lava.lake.surface, lava.lake.z, lava.lake.radius), still, true)
+    for (const p of lava.pools) add(hot ? discGeometry(p.x, p.surface, p.z, p.radius) : buildStillSurface(ground, p.x, p.surface, p.z, p.radius), still, true)
     for (const r of lava.rivers) {
       if (r.points.length < 2) continue
       // A little wider than the planned surface so the ribbon tucks into the channel banks.
-      add(buildRibbonGeometry(ground, r.points, r.width + 1.5), (hot ? this.lavaRiver : this.waterStill).material, false)
+      add(hot ? buildRibbonGeometry(ground, r.points, r.width + 1.5) : buildRiverSurface(ground, r.points, r.width + 1.5, (slope) => riverSpeed(slope, waterRiverMaxSpeed.value)), (hot ? this.lavaRiver : this.waterStill).material, false)
     }
     this.placedVents = []
     this.place()
@@ -391,6 +402,7 @@ export class Volcanics implements System {
     this.waterSea.update(dt, level)
     if (this.builtNew) {
       this.mist.update(dt, this.camera?.position.x ?? 0, this.camera?.position.z ?? 0, this.camera?.position.y ?? 0)
+      for (const w of [this.newSea, this.newStill, this.newRiver]) w.setEnvironment(this.scene.environment)
       this.newSea.update(level)
       this.newStill.update(0)
       this.newRiver.update(0)
@@ -424,6 +436,7 @@ export class Volcanics implements System {
   dispose(): void {
     this.clear()
     this.fallMaterial.dispose()
+    this.bed?.texture.dispose()
     this.emitters.dispose()
     this.scene.remove(this.group)
     for (const l of [this.lavaSea, this.waterSea, this.lavaStill, this.lavaRiver, this.waterStill, this.newSea, this.newStill, this.newRiver]) l.material.dispose()

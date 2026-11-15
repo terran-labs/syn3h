@@ -13,7 +13,7 @@
  *    glow, because Preetham's sky goes black two degrees after sunset.
  *  - The ratio betaTheta / beta is guarded so zeroing every channel cannot produce NaN.
  */
-import { BackSide, BoxGeometry, Mesh, NodeMaterial, Vector2, Vector3 } from 'three/webgpu'
+import { BackSide, BoxGeometry, Mesh, NodeMaterial, Vector2, Vector3, type Camera } from 'three/webgpu'
 import {
   Fn, If, acos, add, cameraPosition, clamp, cos, dot, exp, float, floor, fract, length, max, min, mix,
   modelViewProjection, mul, normalize, positionWorld, pow, renderGroup, smoothstep, sub, time, uniform, vec2, vec3, vec4,
@@ -49,6 +49,14 @@ export class AlienSkyMesh extends Mesh {
   /** Camera fallback only. Reflection captures temporarily enable this layer. */
   cloudLayerVisible = true
   private readonly cloudVisibility = uniform(1).setGroup(renderGroup).onRenderUpdate(() => this.cloudLayerVisible ? 1 : 0)
+
+  /** Camera-only water attenuation. The shared PMREM proxy uses other cameras. */
+  underwaterCamera: Camera | null = null
+  underwaterAmount = 0
+  private readonly underwaterColor = new Vector3(.018, .16, .21)
+  readonly underwaterTint = uniform(this.underwaterColor).setGroup(renderGroup).onRenderUpdate(() => this.underwaterColor)
+  private readonly underwaterMix = uniform(0).setGroup(renderGroup).onRenderUpdate(frame =>
+    frame.camera === this.underwaterCamera ? this.underwaterAmount : 0)
 
   constructor() {
     const material = new NodeMaterial()
@@ -200,7 +208,7 @@ export class AlienSkyMesh extends Mesh {
         texColor.assign(mix(texColor, cloudAerial, alpha))
       })
 
-      return vec4(max(texColor, vec3(0.0)), 1.0)
+      return vec4(mix(max(texColor, vec3(0.0)), this.underwaterTint, this.underwaterMix), 1.0)
     })()
 
     material.side = BackSide

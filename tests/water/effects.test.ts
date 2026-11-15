@@ -11,7 +11,7 @@ describe('underwater attenuation',()=>{
  it('darkens with depth and raises fog extinction',()=>{const a=underwaterLook(1),b=underwaterLook(30);expect(b.transmission).toBeLessThan(a.transmission);expect(b.blue).toBeLessThan(a.blue);expect(b.extinction).toBeGreaterThan(a.extinction);expect(b.green).toBeGreaterThan(b.red)})
 })
 
-import { Scene, PerspectiveCamera, DirectionalLight, HemisphereLight } from 'three/webgpu'
+import { Scene, PerspectiveCamera, DirectionalLight, HemisphereLight, Vector3 } from 'three/webgpu'
 import { Underwater, waterUnderwater } from '../../src/world/water/underwater'
 import type { Game } from '../../src/core/Game'
 import type { Terrain } from '../../src/world/Terrain'
@@ -41,7 +41,7 @@ describe('underwater restoration',()=>{
  })
  it('does not compound attenuation and respects Environment writes',()=>{
   const s=setup();waterUnderwater.value=true
-  try{s.effect.update(.1);const first=s.sun.intensity;s.effect.update(.1);expect(s.sun.intensity).toBe(first);s.sun.intensity=4;s.effect.update(.1);expect(s.sun.intensity).toBeCloseTo(4*waterTransmission(3));waterUnderwater.value=false;s.effect.update(.1);expect(s.sun.intensity).toBe(4)}finally{s.effect.dispose();waterUnderwater.value=false}
+  try{for(let i=0;i<5;i++)s.effect.update(.1);const first=s.sun.intensity;s.effect.update(.1);expect(s.sun.intensity).toBe(first);s.sun.intensity=4;s.effect.update(.1);expect(s.sun.intensity).toBeCloseTo(4*waterTransmission(3));waterUnderwater.value=false;s.effect.update(.1);expect(s.sun.intensity).toBe(4)}finally{s.effect.dispose();waterUnderwater.value=false}
  })
 })
 
@@ -50,4 +50,30 @@ it('allows ripple nodes and updates before renderer attachment',()=>{
  const field=new Ripples()
  waterRipples.value=true
  try{expect(()=>{field.update(1/60,0,0);field.disturb(0,0,2,.1);field.dispose()}).not.toThrow()}finally{waterRipples.value=false}
+})
+
+import { underwaterRamp } from '../../src/world/water/waterEffectsMath'
+describe('underwater look arrives with the lens',()=>{
+ it('ramps over depth and time, not in one frame',()=>{
+  expect(underwaterRamp(0)).toBe(0);expect(underwaterRamp(.225)).toBeCloseTo(.5);expect(underwaterRamp(2)).toBe(1)
+  const scene=new Scene(),camera=new PerspectiveCamera();camera.position.y=-3
+  const effect=new Underwater({scene,camera} as Game,{liquidKindAt:()=> 'water',liquidHeightAt:()=>0} as unknown as Terrain)
+  waterUnderwater.value=true
+  try{
+   const seen:number[]=[];for(let i=0;i<30;i++){effect.update(1/60);seen.push(effect.amount)}
+   for(let i=1;i<seen.length;i++)expect(seen[i]).toBeGreaterThanOrEqual(seen[i-1])
+   expect(seen[0]).toBeLessThan(.1);expect(seen.at(-1)).toBe(1)
+   camera.position.y=.3;effect.update(1/60,1);expect(effect.amount).toBeGreaterThan(.5)
+   for(let i=0;i<60;i++)effect.update(1/60,0);expect(effect.amount).toBe(0)
+  }finally{effect.dispose();waterUnderwater.value=false}
+ })
+ it('drives the sky seam for the player camera only and clears it on disposal',()=>{
+  const scene=new Scene(),camera=new PerspectiveCamera();camera.position.y=-3
+  const sky=Object.assign(new Scene(),{sunDirection:{},betaR:{},underwaterTint:{value:new Vector3()},underwaterAmount:0,underwaterCamera:null as unknown})
+  scene.add(sky)
+  const effect=new Underwater({scene,camera} as Game,{liquidKindAt:()=> 'water',liquidHeightAt:()=>0} as unknown as Terrain)
+  waterUnderwater.value=true
+  try{for(let i=0;i<30;i++)effect.update(1/60);expect(sky.underwaterCamera).toBe(camera);expect(sky.underwaterAmount).toBe(1);expect(sky.underwaterTint.value.z).toBeGreaterThan(0)
+   effect.dispose();expect(sky.underwaterAmount).toBe(0);expect(sky.underwaterCamera).toBe(null)}finally{effect.dispose();waterUnderwater.value=false}
+ })
 })
