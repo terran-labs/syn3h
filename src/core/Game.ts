@@ -11,7 +11,7 @@
  */
 import * as THREE from 'three/webgpu'
 import { installRenderDiagnostics, recordStartupPhase, showRendererLost, startupTiming, timeStartup } from './diagnostics'
-import { gpuDeadlineMs, startRenderer, viewState } from './renderOptions'
+import { drawFrame, gpuDeadlineMs, startRenderer, viewState, type PostChain } from './renderOptions'
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
 import { QualityController, reportLoading, type FrameMetrics } from './quality'
@@ -191,7 +191,7 @@ export class Game {
     // The first frames always draw: loading ends, and shaders compile, on a real frame.
     const view = this.view()
     const draw = view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500
-    if (draw) { this.renderer.render(this.scene, this.camera); this.lastDraw = now }
+    if (draw) { drawFrame(this.renderer, this.scene, this.camera, this.postChain, frameMs); this.lastDraw = now }
     if (this.startupFrames < 3) this.recordStartupFrame(updateStart, renderStart)
     const metrics = this.performance
     metrics.fps = this.fps
@@ -203,6 +203,13 @@ export class Game {
     this.quality.frame(metrics, view === 'playing')
   }
 
+  private postChain: PostChain<THREE.WebGPURenderer, THREE.Scene, THREE.PerspectiveCamera> | null = null
+  /**
+   * Hand every frame to a post-processing chain, or pass null to draw straight through the
+   * renderer again. With no chain the frame is `renderer.render(scene, camera)`, unchanged.
+   * The chain is not called on frames Game skips (the world hidden behind the galaxy lobby).
+   */
+  setPostChain(chain: PostChain<THREE.WebGPURenderer, THREE.Scene, THREE.PerspectiveCamera> | null): void { this.postChain = chain }
   private lastDraw = 0
   private shell: Element | null = null
   /** See viewState. The shell element is looked up until it exists, then kept. */

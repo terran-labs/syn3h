@@ -119,3 +119,23 @@ export function viewState(shell: { contains(name: string): boolean } | null | un
   if (!shell || shell.contains('is-playing')) return 'playing'
   return shell.contains('is-galaxy') && !shell.contains('is-descending') && !shell.contains('is-attract') ? 'covered' : 'lobby'
 }
+
+/**
+ * A post-processing chain, owned by the Post Effects lane (src/fx/post). When one is
+ * registered with `game.setPostChain`, it is handed each frame instead of the renderer being
+ * asked to draw it: the chain renders the scene itself, through whatever passes it likes,
+ * and puts the result on screen. Game knows nothing about any effect.
+ */
+export interface PostChain<Renderer = unknown, Scene = unknown, Camera = unknown> {
+  /** Draw this frame to the screen. `frameMs` is the time since the previous frame. */
+  render(renderer: Renderer, scene: Scene, camera: Camera, frameMs: number): void
+}
+
+/**
+ * Draw one frame: straight through the renderer when no chain is registered, exactly as
+ * before the hook existed, and through the chain alone when one is.
+ */
+export function drawFrame<R extends { render(scene: S, camera: C): unknown }, S, C>(renderer: R, scene: S, camera: C, chain: PostChain<R, S, C> | null, frameMs: number): void {
+  if (chain) chain.render(renderer, scene, camera, frameMs)
+  else renderer.render(scene, camera)
+}
