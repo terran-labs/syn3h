@@ -21,10 +21,10 @@
  * not be bent.
  */
 import { Vector3, type Material } from 'three/webgpu'
-import { cameraViewMatrix, float, modelWorldMatrix, positionLocal, uniform, vec2, vec3, vec4 } from 'three/tsl'
+import { cameraViewMatrix, float, modelWorldMatrix, positionLocal, renderGroup, uniform, vec2, vec3, vec4 } from 'three/tsl'
 import { defineParam } from '../../shared/params'
 
-export const curveParam = defineParam({
+export const curveParam = defineParam<number>({
   id: 'world.curve', label: 'Planet curve', group: 'World', scope: 'world',
   default: 0, min: 0, max: 1, step: 0.01,
 })
@@ -43,23 +43,30 @@ export function curveRadius(size: number, curve: number): number {
   return size / (2 * Math.PI) / (curve * curve)
 }
 
-/** Camera x, camera z and 1 / 2R (0 when flat). Shared by every bent material. */
-const curveState = uniform(new Vector3(0, 0, 0))
+/** Camera x, camera z and 1 / 2R (0 when flat). Written by updateCurve. */
+const state = new Vector3(0, 0, 0)
+/**
+ * The same, as one uniform shared by every bent material. A plain object-group uniform
+ * stayed frozen at its first upload on static instanced meshes (the trees) in r187, so this
+ * is a render-group uniform refreshed on every render, the pattern Environment.ts uses for
+ * the fog. One upload per render, not per object.
+ */
+const curveState = uniform(new Vector3(0, 0, 0)).setGroup(renderGroup).onRenderUpdate(() => state)
 
 /** Call once per frame before rendering, with the camera's world position. */
 export function updateCurve(cameraPosition: Vector3, size: number): void {
   const R = curveRadius(size, curveParam.value)
-  curveState.value.set(cameraPosition.x, cameraPosition.z, Number.isFinite(R) ? 1 / (2 * R) : 0)
+  state.set(cameraPosition.x, cameraPosition.z, Number.isFinite(R) ? 1 / (2 * R) : 0)
 }
 
 /** The current bend factor, 1 / 2R, for tests and tools. */
 export function curveFactor(): number {
-  return curveState.value.z
+  return state.z
 }
 
 /** How far a point at world (x, z) is drawn below where it really is, in metres. */
 export function curveDrop(x: number, z: number): number {
-  const s = curveState.value
+  const s = state
   const dx = x - s.x
   const dz = z - s.y
   return (dx * dx + dz * dz) * s.z
