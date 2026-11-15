@@ -495,6 +495,53 @@ function spireField(x: number, z: number, spacing: number, seed: number): number
   return best
 }
 
+/**
+ * Impact craters at one scale, as a height in metres: a parabolic bowl with a raised rim
+ * and a short apron, one per occupied cell of a lattice that repeats at the tile's width.
+ * Overlapping craters add, so old ones are dented by new ones.
+ */
+function craterField(x: number, z: number, spacing: number, seed: number, fill: number): number {
+  const count = cells(1 / spacing)
+  const cell = TILE / count
+  const gx = x / cell
+  const gz = z / cell
+  const cx = Math.floor(gx)
+  const cz = Math.floor(gz)
+  let sum = 0
+  for (let j = -1; j <= 1; j++) {
+    for (let i = -1; i <= 1; i++) {
+      const h = phash2(cx + i, cz + j, seed, count)
+      if ((h & 255) > fill) continue
+      const px = cx + i + 0.2 + 0.6 * (((h >>> 8) & 1023) / 1023)
+      const pz = cz + j + 0.2 + 0.6 * (((h >>> 18) & 1023) / 1023)
+      // Radius in cells: 0.16 to 0.42, so a crater and its apron stay within the 3 by 3 search.
+      const radius = 0.16 + 0.26 * (((h >>> 28) & 15) / 15)
+      const ddx = gx - px
+      const ddz = gz - pz
+      const d2 = (ddx * ddx + ddz * ddz) / (radius * radius)
+      if (d2 >= 2.56) continue
+      const metres = radius * cell
+      if (d2 < 1) {
+        sum += metres * (-0.2 * (1 - d2) + 0.055 * d2 * d2)
+      } else {
+        const out = smoothstep(1.6, 1.0, Math.sqrt(d2))
+        sum += metres * 0.055 * out * out
+      }
+    }
+  }
+  return sum
+}
+
+/** Three scales of crater, from basins hundreds of metres across to pits the size of a pad. */
+function craters(x: number, z: number, seed: number, amount: number): number {
+  const fill = 40 + 190 * amount
+  return amount * (
+    craterField(x, z, 520, seed, fill * 0.6) +
+    craterField(x + 91, z - 57, 210, seed + 1, fill) +
+    craterField(x - 33, z + 141, 84, seed + 2, fill)
+  )
+}
+
 /** Stepped version of a 0..1 value: `steps` terraces with soft risers. */
 function terrace(v: number, steps: number, steepness: number): number {
   if (steps <= 0) return v
@@ -534,8 +581,10 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
   let h = -SEA_DEPTH * smoothstep(1.0, 1.4, rr) + SPAWN_LEVEL * land
   if (rr > 1.16) {
     // Open sea: only the floor, which nobody sees under the liquid. Skipping every other
-    // layer here saves a third of the time.
+    // layer here saves a third of the time. On a dry world the floor is in plain view, so
+    // it keeps its craters.
     shapeVolcanic = 0
+    if (s.craters > 0 && s.dry > 0) h += craters(x, z, S.spire + 77, s.craters)
     return h
   }
   const fine = tnoise(x, z, 0.05, S.detail)
@@ -655,6 +704,12 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
   }
   h += 0.9 * fine * (0.3 + 0.7 * land)
 
+  // --- Impact craters on open ground, clear of the centre feature and its ring road -------
+  if (s.craters > 0) {
+    const open = (s.dry > 0 ? 1 : land) * smoothstep(1.02, 1.3, t)
+    if (open > 0) h += craters(x, z, S.spire + 77, s.craters) * open
+  }
+
   // --- Summit: a flat top for the rim road, a crown of rock fangs, and the crater -------
   // The cone is cut off where the rim road runs, leaving a flat summit to fight on. A
   // broken crown stands round the crater edge with gaps between the fangs, so a rammed
@@ -688,6 +743,8 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
         // Inside: a steep wall from the edge down to the floor.
         const edge = h + crown * 0.25
         h = edge + (v.floorHeight - edge) * smoothstep(1.0, 0.74, sN)
+        // An impact crater, not a caldera: a central peak stands on the empty floor.
+        if (s.craters > 0 && s.dry > 0) h += 0.42 * rc * smoothstep(0.42, 0.0, sN) * smoothstep(0.42, 0.0, sN)
       }
     }
   }
@@ -712,7 +769,7 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
   // The ground crosses the liquid surface steeply, so the coast is a crisp line with a low
   // bank above it and no wide shelf lying a few centimetres under the surface. A monotone
   // piecewise linear remap, continuous at both ends.
-  if (h > -6 && h < 8 && t >= 1) {
+  if (h > -6 && h < 8 && t >= 1 && s.dry === 0) {
     if (h < -1) h = -6 + (h + 6) * 0.4
     else if (h < 1) h = -4 + (h + 1) * 2.8
     else h = 1.6 + (h - 1) * (6.4 / 7)
