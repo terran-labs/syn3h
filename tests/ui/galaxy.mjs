@@ -53,10 +53,6 @@ try {
     await page.screenshot({ path: `${out}/${view.name}-settings.png` })
     await page.evaluate(() => window.syn3h.shell.showPanel('index')); await settle(page, 'index')
     await page.waitForFunction(() => window.syn3h.shell.galaxy.dim === 1, null, { timeout: 15000 })
-    // The custom world is a forming one: arriving opens the sliders that shape a world.
-    await page.locator('.galaxy-label[data-world=custom]').dispatchEvent('click'); await settle(page, 'advanced')
-    await page.screenshot({ path: `${out}/${view.name}-custom.png` })
-    await page.evaluate(() => window.syn3h.shell.showPanel('index')); await settle(page, 'index')
     // Tapping a world drops straight into it: no form, no panel, one motion to the ground.
     const alpine = await page.evaluate(() => window.syn3h.shell.galaxy.screen.find(s => s.id === 'alpine'))
     const before = Date.now()

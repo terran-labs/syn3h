@@ -15,7 +15,7 @@ try {
   await page.goto(process.env.SYN3H_URL ?? 'http://127.0.0.1:5193/')
   console.log('loaded', await page.evaluate(() => ({ boot: document.documentElement.dataset.boot, shell: !!window.syn3h?.shell, labels: document.querySelectorAll('.galaxy-label').length })))
   const label = page.locator('.galaxy-label[data-world="alpine"] .galaxy-population')
-  await page.waitForFunction(() => document.querySelector('[data-world="alpine"] .galaxy-population')?.textContent === '3 connected across 2 rooms', null, { timeout: 120000 }).catch(async error => { console.log('state', await page.evaluate(() => ({ boot: document.documentElement.dataset.boot, fatal: document.querySelector('#fatal')?.textContent, labels: document.querySelectorAll('.galaxy-label').length, hidden: document.hidden, galaxy: window.syn3h?.shell?.galaxy ? { active: window.syn3h.shell.galaxy.active, feed: window.syn3h.shell.galaxy.presence.active, menu: window.syn3h.shell.menuOpen, attract: window.syn3h.shell.attracting } : null }))); throw error })
+  await page.waitForFunction(() => document.querySelector('[data-world="alpine"] .galaxy-population')?.textContent === '3 online', null, { timeout: 120000 }).catch(async error => { console.log('state', await page.evaluate(() => ({ boot: document.documentElement.dataset.boot, fatal: document.querySelector('#fatal')?.textContent, labels: document.querySelectorAll('.galaxy-label').length, hidden: document.hidden, galaxy: window.syn3h?.shell?.galaxy ? { active: window.syn3h.shell.galaxy.active, feed: window.syn3h.shell.galaxy.presence.active, menu: window.syn3h.shell.menuOpen, attract: window.syn3h.shell.attracting } : null }))); throw error })
   assert.equal(await page.evaluate(() => window.syn3h.shell.galaxy.population.get('alpine').players), 3)
   assert.equal(await page.locator('[data-world="custom"] .galaxy-population').count(), 0)
   const change = async value => {
@@ -24,12 +24,16 @@ try {
   }
   await change('stale')
   await page.waitForTimeout(150)
-  assert.equal(await label.textContent(), 'Population unknown')
+  assert.equal(await label.textContent(), '')
+  assert.equal(await label.isVisible(), false)
+  assert.match(await page.locator('[data-world="alpine"]').getAttribute('aria-label'), /Population unknown/)
   await change('empty')
-  await page.waitForFunction(() => document.querySelector('[data-world="alpine"] .galaxy-population').textContent === '0 connected across 0 rooms')
+  await page.waitForFunction(() => document.querySelector('[data-world="alpine"] .galaxy-population').textContent === '')
+  await page.waitForFunction(() => document.querySelector('[data-world="alpine"]').getAttribute('aria-label').includes('0 connected across 0 rooms'))
+  assert.equal(await label.isVisible(), false)
   await change('error')
   await page.waitForTimeout(150)
-  assert.equal(await label.textContent(), 'Population unknown')
+  assert.equal(await label.textContent(), '')
   mode = 'populated'
   await page.evaluate(() => window.syn3h.shell.play())
   const inPlay = calls
@@ -37,7 +41,7 @@ try {
   assert.equal(calls, inPlay)
   assert.equal(await page.evaluate(() => window.syn3h.shell.galaxy.presence.active), false)
   await page.evaluate(() => window.syn3h.shell.openMenu())
-  await page.waitForFunction(() => document.querySelector('[data-world="alpine"] .galaxy-population').textContent === '3 connected across 2 rooms')
+  await page.waitForFunction(() => document.querySelector('[data-world="alpine"] .galaxy-population').textContent === '3 online')
   assert.match(await page.locator('[data-world="alpine"]').getAttribute('aria-label'), /Counts span separate rooms/)
   // Population display must not route planet taps into an enumerated room.
   const room = await page.evaluate(() => window.syn3h.shell.roomInput.value)
