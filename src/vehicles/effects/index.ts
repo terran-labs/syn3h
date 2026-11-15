@@ -123,10 +123,12 @@ class VehicleEffects {
   constructor(private readonly world:EffectWorld,private readonly terrain:Terrain,private readonly vehicle:EffectsVehicle,local:boolean){
     this.buggy=vehicle.kind.startsWith('buggy')
     this.root.name='Vehicle effects';vehicle.object.add(this.root);this.lastPosition.copy(vehicle.object.position)
-    const jet=vehicle.kind==='jet',hover=vehicle.kind==='hovercraft',width=jet?1:.584,front=jet?3.2756:hover?1.4:1.775
+    // Hovercraft points are for the generated Lowwing body (hovergen h4-low), from its lead: lamps
+    // on the nose bar at (+/-.6,.215,-2.03) and the stern bars at (+/-.6,.35,1.7).
+    const jet=vehicle.kind==='jet',hover=vehicle.kind==='hovercraft',width=jet?1:hover?.6:.584,front=jet?3.2756:hover?2.03:1.775
     for(const sign of [-1,1]){
-      const head=new T.Object3D();head.position.set(sign*width,jet?-.423:.036,-front);this.root.add(head);this.lampPoints.push(head)
-      const tail=new T.Object3D();tail.scale.set(1.7,.6,.5);tail.position.set(sign*width,.12,jet?2.7:hover?1.3:1.7);this.root.add(tail);this.lampPoints.push(tail)
+      const head=new T.Object3D();head.position.set(sign*width,jet?-.423:hover?.215:.036,-front);this.root.add(head);this.lampPoints.push(head)
+      const tail=new T.Object3D();tail.scale.set(1.7,.6,.5);tail.position.set(sign*width,hover?.35:.12,jet?2.7:1.7);this.root.add(tail);this.lampPoints.push(tail)
     }
     if(local){
       // Syn3h prefab range50, cone60 degrees. Unity intensity is not candela.
@@ -234,7 +236,8 @@ class VehicleEffects {
         const count=Math.min(12,Math.floor(this.exhaustTimer*rate));this.exhaustTimer=0
         for(let i=0;i<count;i++){
           // terra.jet main: life .3,size1,speed10; Hovercraft: .3,.8,7.
-          this.point(jet?0:.00962,jet?0:.672562,jet?2.971839:1.357518,at)
+          // Hovercraft: the centre of the duct lip on the generated body.
+          this.point(0,jet?0:.395,jet?2.971839:2,at)
           const throttle=hover?.1:Math.max(.05,this.throttle)
           velocity.set(0,0,(jet?10:7)*throttle).applyQuaternion(this.q).add(rawVelocity)
           w.energy.emit(at,velocity,.3,(jet?1:.8)*Math.max(.2,throttle),-.95,this.color)
