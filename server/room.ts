@@ -17,6 +17,8 @@ import {
   type ShotInfo,
   type CordWire,
   type YoinkWire,
+  type RaceState, type RaceUpdate,
+  RACE_COUNTDOWN_MS, RACE_RUNNING_MS, RACE_RESULT_MS, RACE_COOLDOWN_MS,
   type TagEvent,
   BOT_ID_BASE,
   DEFAULT_COLORS,
@@ -47,6 +49,7 @@ import {
 // ids pass through with a basic type check instead.
 import { MIN_CLOSING, SHOVE_SHARE, cleanShove } from '../src/net/shove'
 import { wrapDistance } from '../shared/wrap'
+import { TERRAIN_PARAM_IDS } from '../src/world/terrain/settings'
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
 import { bungeeAllowed, bungeeLength, bungeeSnap, bungeeVehicles } from '../src/weapons/bungee/params'
 import { bigRedAllowed, bigRedCooldown } from '../src/weapons/bigRedParams'
@@ -90,9 +93,12 @@ export interface RoomSnapshot {
    * places. `at` is server ms when the entry was written.
    */
   roster?: { token: string; info: PlayerInfo; at: number }[]
+  race?: { state: RaceState | null; deadline: number; cooldownUntil: number; lastId: string }
 }
 
 interface Player {
+  /** Explicit local driving state, independent of hidden-tab heartbeats. */
+  raceDriving: boolean
   info: PlayerInfo
   lastState: WireState | null
   /** Server ms when lastState arrived. */
@@ -217,6 +223,10 @@ export class Room {
   private unknownCount = 0
   private it = 0
   private host = 0
+  private race: RaceState | null = null
+  private raceDeadline = 0
+  private raceCooldownUntil = 0
+  private lastRaceId = ''
   private locked = false
   private mode = MODE_TAG
   private koth: KothState = emptyKoth()
@@ -256,6 +266,7 @@ export class Room {
     this.tickIdle(this.now())
     this.tickTag(this.now())
     this.tickKoth(this.now())
+    this.tickRace()
   }
 
   get playerCount(): number {
@@ -298,6 +309,22 @@ export class Room {
     switch (msg.type) {
       case 'ping':
         if (typeof msg.t === 'number') this.sendTo(peer, { type: 'pong', t: msg.t, serverTime: this.now() / 1000 })
+        break
+      case 'race-ready':
+        if (typeof msg.driving === 'boolean') {
+          player.raceDriving = msg.driving
+          if (!msg.driving) this.withdrawRace(player.info.id)
+        }
+        break
+      case 'race': {
+        const before = this.race
+        this.onRace(player, msg.race)
+        // A rejected proposal still needs an acknowledgment, including a null snapshot.
+        if (this.race === before) this.sendTo(peer, { type: 'race', race: this.raceView() })
+        break
+      }
+      case 'race-leave':
+        if (msg.id === this.race?.id) this.withdrawRace(player.info.id)
         break
       case 'param':
         this.onParam(player, msg.id, msg.value)
@@ -382,6 +409,9 @@ export class Room {
   private hold(peer: Peer, player: Player, until = this.now() + REJOIN_GRACE * 1000): void {
     const wasActive = this.isActive(player, this.now())
     player.heldUntil = until
+    player.raceDriving = false
+    if (player.info.id === this.host) this.cancelRace('Host disconnected')
+    else this.withdrawRace(player.info.id)
     this.rekey(peer, { send() {}, close() {} }, player)
     // Its owner is not there to let go of it: a held place holds no cord and carries nobody.
     this.dropCord(player)
@@ -440,6 +470,8 @@ export class Room {
   }
 
   private leave(peer: Peer, player: Player): void {
+    if (player.info.id === this.host) this.cancelRace('Host disconnected')
+    else this.withdrawRace(player.info.id)
     const wasActive = this.isActive(player, this.now())
     this.endCarry(player)
     this.players.delete(peer)
@@ -477,6 +509,7 @@ export class Room {
       params: Object.fromEntries(this.values), it: this.it, scores: { ...this.scores }, nextId: this.nextId,
       host: this.host, locked: this.locked, zone: this.koth.zone, activeAt: this.activeAt, vacant: this.vacant,
       ...(this.rejoinOn() ? { roster: this.roster() } : {}),
+      race: { state: this.race, deadline: this.raceDeadline, cooldownUntil: this.raceCooldownUntil, lastId: this.lastRaceId },
     }
   }
 
@@ -516,6 +549,15 @@ export class Room {
         this.nextId = Math.max(this.nextId, entry.info.id + 1)
         this.hold({ send() {}, close() {} }, player, now + REJOIN_GRACE * 1000)
       }
+    }
+    if (s.race) {
+      this.race = s.race.state
+      this.raceDeadline = s.race.deadline
+      this.raceCooldownUntil = s.race.cooldownUntil
+      this.lastRaceId = s.race.lastId
+      // Host simulation cannot be reconstructed from a room snapshot.
+      this.cancelRace('Room restarted')
+      if (this.race && this.raceDeadline <= this.now()) this.race = null
     }
   }
 
@@ -642,6 +684,7 @@ export class Room {
       params: Object.fromEntries(this.values),
       game: this.gameState(),
       serverTime: this.now() / 1000,
+      race: this.raceView(),
     })
     // Show the newcomer where everyone already is, even players who are standing still.
     for (const other of this.players.values()) {
@@ -724,6 +767,7 @@ export class Room {
   }
 
   private removeBot(id: number, bot: Player): void {
+    this.withdrawRace(id)
     this.dropCord(bot)
     this.endCarry(bot)
     for (const holder of [...this.players.values(), ...this.bots.values()]) {
@@ -766,8 +810,10 @@ export class Room {
       if (current !== undefined && peer) this.sendTo(peer, { type: 'param', id, value: current, from: 0 })
       return
     }
+    const previous = this.values.get(id)
     const value = this.storeParam(id, raw)
     if (value === null) return
+    if (value !== previous && (TERRAIN_PARAM_IDS.has(id) || ['world.lavaAltitude', 'world.seaKind', 'world.gravity'].includes(id))) this.cancelRace('World changed')
     // Everyone, including the sender, gets the stored value: if the server clamped it, the
     // sender's slider snaps to what the room actually uses.
     this.broadcast({ type: 'param', id, value, from: player.info.id })
@@ -1252,7 +1298,7 @@ export class Room {
     const now = this.now()
     return {
       info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, carry: null, yoinkAt: -Infinity, gusted: new Map(), token: null, heldUntil: 0, lastFireAt: -Infinity, lastRedAt: -Infinity, pesters: new Map(), pesterTargets: new Map(), lastPesterAt: -Infinity, shots: new Map(), lastTag: now,
-      windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now,
+      windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now, raceDriving: false,
     }
   }
 
@@ -1342,6 +1388,7 @@ export class Room {
    * the world asked for defaults. Everyone connected is told to reset their world sliders.
    */
   private resetWorld(reason: 'idle' | 'host', from: number): void {
+    this.cancelRace('World reset')
     this.setDefaults()
     this.resetRound()
     this.koth.zone = null
@@ -1351,6 +1398,119 @@ export class Room {
     if (reason === 'idle') this.activeAt = this.now()
     this.broadcast({ type: 'reset', reason, from, params: Object.fromEntries(this.values), game: this.gameState() })
     this.persist()
+  }
+
+  private raceActive(): boolean {
+    return this.race?.phase === 'countdown' || this.race?.phase === 'running'
+  }
+
+  private raceView(): RaceState | null {
+    return this.race ? { ...this.race, remainingMs: Math.max(0, this.raceDeadline - this.now()), updatedAt: this.now() / 1000 } : null
+  }
+
+  private publishRace(): void {
+    this.broadcast({ type: 'race', race: this.raceView() })
+    this.persist()
+  }
+
+  private eligibleRacer(p: Player): boolean {
+    return !p.heldUntil && p.info.kind !== 'jet' && p.info.kind !== 'hovercraft' && Boolean(p.lastState && !p.lastState.paused)
+      && this.now() - p.lastStateAt <= RESPONDING_MS && (Boolean(p.info.bot) || p.raceDriving)
+  }
+
+  private cancelRace(reason: string): void {
+    if (!this.raceActive() || !this.race) return
+    this.race = { ...this.race, revision: this.race.revision + 1, phase: 'cancelled', winnerId: null, winnerName: null, reason }
+    this.raceDeadline = this.now() + RACE_RESULT_MS
+    this.raceCooldownUntil = this.now() + RACE_COOLDOWN_MS
+    this.publishRace()
+  }
+
+  private withdrawRace(id: number): void {
+    if (!this.raceActive() || !this.race) return
+    const p = this.race.participants.find((p) => p.id === id)
+    if (!p || p.status !== 'racing') return
+    this.race = { ...this.race, revision: this.race.revision + 1, participants: this.race.participants.map((p) => p.id === id ? { ...p, status: 'withdrawn' } : p) }
+    if (this.race.participants.filter((p) => p.status !== 'withdrawn').length < 2) this.cancelRace('Too few racers')
+    else this.publishRace()
+  }
+
+  private tickRace(): void {
+    if (!this.race) return
+    if (this.raceActive()) {
+      for (const participant of this.race.participants) {
+        const player = this.byId(participant.id)
+        if (!player || !this.eligibleRacer(player)) this.withdrawRace(participant.id)
+      }
+      if (this.raceActive() && this.now() >= this.raceDeadline + (this.race.phase === 'countdown' ? RACE_RUNNING_MS : 0)) {
+        this.race = { ...this.race, revision: this.race.revision + 1, phase: 'finished', winnerId: null, winnerName: null, reason: 'Time expired' }
+        this.raceDeadline = this.now() + RACE_RESULT_MS
+        this.raceCooldownUntil = this.now() + RACE_COOLDOWN_MS
+        this.publishRace()
+      }
+    } else if (this.now() >= this.raceDeadline) {
+      this.race = null
+      this.publishRace()
+    }
+  }
+
+  private onRace(sender: Player, raw: unknown): void {
+    if (sender.info.id !== this.host || sender.heldUntil) return
+    const update = cleanRaceUpdate(raw)
+    if (!update) return
+    const now = this.now()
+    const current = this.race
+    if (!current) {
+      if (now < this.raceCooldownUntil || update.id === this.lastRaceId || update.phase !== 'countdown'
+        || update.winnerId !== null || update.participants.length < 2 || update.participants.some((p) => p.status !== 'racing')) return
+      const players = update.participants.map((p) => this.byId(p.id))
+      // Initial release enrolls only the host human plus nearby bots. Guests observe.
+      if (!players.some((p) => p === sender) || players.some((p) => !p || !this.eligibleRacer(p) || (!p.info.bot && p !== sender))) return
+      if (players.some((p) => this.dist(p!.lastState!.p, sender.lastState!.p) > 250)) return
+      const d = update.destination
+      const distance = this.dist([sender.lastState!.p[0], 0, sender.lastState!.p[2]], [d.x, 0, d.z])
+      if (distance < 80 || distance > 250) return
+      this.race = { ...update, participants: update.participants.map((p, i) => ({ ...p, name: players[i]!.info.name })), winnerName: null, updatedAt: now / 1000 }
+      this.raceDeadline = now + RACE_COUNTDOWN_MS
+      this.lastRaceId = update.id
+      this.publishRace()
+      return
+    }
+    if (!this.raceActive() || update.id !== current.id || update.revision <= current.revision) return
+    const a = update.destination, b = current.destination
+    if (a.label !== b.label || a.x !== b.x || a.y !== b.y || a.z !== b.z || a.radius !== b.radius) return
+    if (update.participants.length !== current.participants.length) return
+    const participants = [] as RaceState['participants']
+    for (const prior of current.participants) {
+      const next = update.participants.find((p) => p.id === prior.id)
+      if (!next || (prior.status !== 'racing' && next.status !== prior.status)) return
+      if (next.status === 'finished' && update.phase !== 'finished') return
+      participants.push({ ...next, name: prior.name })
+    }
+    if (update.phase === 'cancelled') { this.cancelRace(update.reason ?? 'Host cancelled'); return }
+    if (participants.filter((p) => p.status !== 'withdrawn').length < 2) { this.cancelRace('Too few racers'); return }
+    let deadline = this.raceDeadline
+    let winnerName: string | null = null
+    if (update.phase === 'running') {
+      if (current.phase === 'countdown') {
+        if (now < deadline) return
+        deadline += RACE_RUNNING_MS
+      }
+      if (update.winnerId !== null || now >= deadline) return
+    } else if (update.phase === 'finished') {
+      if (current.phase !== 'running' || now >= deadline) return
+      const winner = participants.find((p) => p.id === update.winnerId && p.status === 'finished')
+      const player = winner ? this.byId(winner.id) : undefined
+      // The host judges swept finish crossings; a later state can be past the circle.
+      if (!winner || !player || !this.eligibleRacer(player)) return
+      winnerName = winner.name
+      deadline = now + RACE_RESULT_MS
+      this.raceCooldownUntil = now + RACE_COOLDOWN_MS
+    } else if (update.phase !== 'countdown' || current.phase !== 'countdown' || update.winnerId !== null) return
+    // remainingMs is advisory input. Revisions cannot extend a phase's server deadline.
+    this.raceDeadline = deadline
+    this.race = { ...update, participants, winnerName, updatedAt: now / 1000 }
+    this.publishRace()
   }
 
   private budget(player: Player, kind: 'state' | 'json', stateLimit = MAX_STATES_PER_SECOND): boolean {
@@ -1454,6 +1614,33 @@ function cleanYoink(y: unknown): YoinkWire | null {
   if (o.s === 'grab' || o.s === 'drop') return { s: o.s, to: o.to }
   if (o.s === 'fling' && isVec3(o.v)) return { s: 'fling', to: o.to, v: o.v }
   return null
+}
+
+/** Rebuild a bounded race proposal; participant names are replaced from the room roster. */
+function cleanRaceUpdate(raw: unknown): RaceUpdate | null {
+  if (!raw || typeof raw !== 'object') return null
+  const r = raw as RaceUpdate
+  if (typeof r.id !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(r.id)
+    || !Number.isSafeInteger(r.revision) || r.revision < 0 || r.revision >= Number.MAX_SAFE_INTEGER - 1000
+    || !['countdown', 'running', 'finished', 'cancelled'].includes(r.phase)
+    || !Number.isFinite(r.remainingMs) || r.remainingMs < 0 || r.remainingMs > RACE_RUNNING_MS
+    || (r.winnerId !== null && (!Number.isSafeInteger(r.winnerId) || r.winnerId <= 0))) return null
+  const d = r.destination
+  if (!d || typeof d.label !== 'string' || d.label.length < 1 || d.label.length > 80
+    || ![d.x, d.y, d.z].every((n) => Number.isFinite(n) && Math.abs(n) <= 100000)
+    || !Number.isFinite(d.radius) || d.radius < 1 || d.radius > 50) return null
+  if (!Array.isArray(r.participants) || r.participants.length < 1 || r.participants.length > 16 + MAX_BOTS) return null
+  const ids = new Set<number>()
+  const participants: RaceUpdate['participants'] = []
+  for (const p of r.participants) {
+    if (!p || !Number.isSafeInteger(p.id) || p.id <= 0 || ids.has(p.id) || !['racing', 'finished', 'withdrawn'].includes(p.status)) return null
+    ids.add(p.id)
+    participants.push({ id: p.id, name: '', status: p.status })
+  }
+  if (r.reason !== undefined && (typeof r.reason !== 'string' || r.reason.length > 120)) return null
+  return { id: r.id, revision: r.revision, phase: r.phase, remainingMs: r.remainingMs,
+    destination: { label: d.label, x: d.x, y: d.y, z: d.z, radius: d.radius }, participants,
+    winnerId: r.winnerId, ...(r.reason === undefined ? {} : { reason: r.reason }) }
 }
 
 function isShot(s: unknown): s is ShotInfo {
