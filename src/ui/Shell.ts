@@ -829,13 +829,6 @@ export class Shell implements System {
    * fresh seed, through the shared sliders; the kind already in play is left as it is. From
    * the index either choice leads on to the name and room form.
    */
-  private pickPlanet(id: string, thenExplore: boolean): void {
-    if (id !== currentPlanet().id) {
-      if (!canEditWorld()) { this.say('The host has locked this world.'); return }
-      applyPlanet(id)
-    }
-    if (thenExplore) this.showPanel('explore')
-  }
   /** True after Custom is first opened; later world edits keep its preview current. */
   private shapingCustom = false
   private suspendCustomRefresh = false
@@ -1009,7 +1002,10 @@ export class Shell implements System {
         }
         if (this.invited && !this.started && id !== currentPlanet().id) { this.say('You were invited to another world. You can change it once you are in, if the host allows.'); this.galaxy?.home(); return }
         if (!canEditWorld() && id !== currentPlanet().id) { this.say('The host has locked this world.'); this.galaxy?.home(); return }
-        this.pickPlanet(id, true)
+        // Arriving at a world never opens a form (the owner, 15 November 2026): it goes
+        // straight in. Taps are already drops (tapWorld); this covers the paths that are not.
+        if (id !== currentPlanet().id) applyPlanet(id)
+        if (this.started) this.closeMenu(); else this.play()
       },
       onLayout: (places, chosen) => {
         this.savedMoons?.layout(places, { width: innerWidth, top: this.brandBottom ?? 220, bottom: this.linksTop ?? innerHeight - 128 }, !!chosen || this.dropping || this.panels.active !== 'index')
