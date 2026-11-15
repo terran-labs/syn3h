@@ -6,9 +6,9 @@ import { defineParam } from '../../../shared/params'
 
 const group = 'Gear: Pesters'
 
-/** Off until the owner has tried it (protocol rule 5). */
+/** Available on the normal entry; the host can still turn it off for the room. */
 export const pesterAllowed = defineParam({
-  id: 'pester.allowed', label: 'Pesters', group, scope: 'world', default: false,
+  id: 'pester.allowed', label: 'Pesters', group, scope: 'world', default: true,
 })
 
 /** Top speed, m/s. Below a buggy's, so a good driver can outrun one. */

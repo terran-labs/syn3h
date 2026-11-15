@@ -24,7 +24,7 @@ import { nearestImage, wrapDelta } from '../../../shared/wrap'
 import type { Game, System } from '../../core/Game'
 import { GROUP_ALL, GROUP_LIQUID, GROUP_PROJECTILE, RAPIER, groups } from '../../core/physics'
 import { hotExposureDim } from '../../vehicles/skins/hotExposure'
-import { aimFrom, castAim } from '../aim'
+import { aimFrom, castAim, type GearControl } from '../aim'
 import {
   bungeeAllowed, bungeeCooldown, bungeeDamping, bungeeHookSpeed, bungeeLength, bungeeMaxPull, bungeeMinLength,
   bungeeReelSpeed, bungeeSnap, bungeeStiffness, bungeeTimeout, bungeeVehicles,
@@ -41,6 +41,10 @@ export interface BungeeVehicle {
 }
 
 export interface BungeeHooks {
+  control?(): GearControl
+  /** Bots can send fewer reel updates while local cord physics still runs every step. */
+  reportInterval?: number
+
   /** The local player's id. */
   self(): number
   vehicleOf(id: number): BungeeVehicle | undefined
@@ -93,8 +97,8 @@ const EARTH_G = 9.81
 /** Roof hitch above a vehicle's centre, metres. Forces act at the centre, so nothing spins. */
 const HITCH = 0.9
 /** Muzzle, in the vehicle's frame. The hook leaves from the roof. */
-const MUZZLE_UP = 1.1
-const MUZZLE_AHEAD = 1.2
+export const BUNGEE_MUZZLE_UP = 1.1
+export const BUNGEE_MUZZLE_AHEAD = 1.2
 /** Straight ahead aim tilts up this much (radians) so a free cursor still reaches ledges. */
 const LIFT = 0.12
 const DOUBLE_TAP = 0.35
@@ -196,6 +200,7 @@ export class Bungee implements System {
     this.reticle.visible = false
     this.reticle.renderOrder = 10
     game.scene.add(this.reticle)
+    if (hooks.control) return
     target.addEventListener('keydown', (e) => {
       if (e.repeat || game.input.suspended) return
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
@@ -242,7 +247,7 @@ export class Bungee implements System {
   launch(direction?: [number, number, number]): boolean {
     const me = this.hooks.vehicleOf(this.hooks.self())
     if (!me || !bungeeAllowed.value || this.mine || this.game.time < this.readyAt) return false
-    const aim = aimFrom(this.game, me.body, bungeeLength.value, MUZZLE_UP, MUZZLE_AHEAD, LIFT)
+    const aim = aimFrom(this.game, me.body, bungeeLength.value, BUNGEE_MUZZLE_UP, BUNGEE_MUZZLE_AHEAD, LIFT, !this.hooks.control)
     if (direction) aim.d.set(...direction).normalize()
     const v = me.body.linvel()
     // The hook inherits the vehicle's velocity, so it leaves cleanly at speed.
@@ -266,9 +271,20 @@ export class Bungee implements System {
     this.hooks.send?.({ s: 'off' })
   }
 
+  /** Drop the cord and clear the input edge when a controller is interrupted. */
+  cancel(): void {
+    this.letGo()
+    this.fireWas = false
+    this.lastPress = -Infinity
+    this.wheel = 0
+  }
+
   /** Another player's cord, as relayed. `age` is seconds since it was sent. */
   applyRemote(from: number, wire: CordWire, age = 0): void {
-    if (from === this.hooks.self()) return
+    if (from === this.hooks.self()) {
+      if (wire.s === 'off') { this.remove(from); this.readyAt = this.game.time + bungeeCooldown.value }
+      return
+    }
     if (wire.s === 'off') { this.remove(from); return }
     if (wire.s === 'hook') {
       this.remove(from)
@@ -335,10 +351,11 @@ export class Bungee implements System {
   private controls(dt: number): void {
     const input = this.game.input.state
     const inHand = this.hooks.inHand()
-    const fire = inHand && input.fire
+    const control = this.hooks.control?.()
+    const fire = inHand && (control?.fire ?? input.fire)
     const pressed = fire && !this.fireWas
     this.fireWas = fire
-    const pad = navigator.getGamepads?.().find((p) => p && p.connected)
+    const pad = this.hooks.control ? null : navigator.getGamepads?.().find((p) => p && p.connected)
     const padOut = Boolean(pad?.buttons[4]?.pressed)
     const padRelease = Boolean(pad?.buttons[5]?.pressed)
     if (padRelease && !this.padWas.release) this.letGo('released')
@@ -347,7 +364,7 @@ export class Bungee implements System {
     const c = this.mine
     if (!c) {
       this.wheel = 0
-      if (pressed) { this.launch(); this.lastPress = this.game.time }
+      if (pressed) { this.launch(control?.direction); this.lastPress = this.game.time }
       return
     }
     if (c.hook) return
@@ -544,7 +561,7 @@ export class Bungee implements System {
     const c = this.mine
     if (!c || c.hook) return
     const now = this.game.time
-    if (Math.abs(c.rest - this.sentRest) > 0.05 && now - this.sentAt > SEND_GAP) this.send(c, false)
+    if (Math.abs(c.rest - this.sentRest) > 0.05 && now - this.sentAt > (this.hooks.reportInterval ?? SEND_GAP)) this.send(c, false)
     else if (now - this.sentAt > RESEND) this.send(c, false)
   }
 
@@ -634,9 +651,9 @@ export class Bungee implements System {
   /** The landing ring: where the hook would catch, shown while the Bungee is in hand. */
   private drawReticle(dim: number, camPos: THREE.Vector3): void {
     const me = this.hooks.vehicleOf(this.hooks.self())
-    const show = bungeeAllowed.value && this.hooks.inHand() && !this.mine && me
+    const show = !this.hooks.control && bungeeAllowed.value && this.hooks.inHand() && !this.mine && me
     if (!show) { this.reticle.visible = false; return }
-    const aim = aimFrom(this.game, me.body, bungeeLength.value, MUZZLE_UP, MUZZLE_AHEAD, LIFT)
+    const aim = aimFrom(this.game, me.body, bungeeLength.value, BUNGEE_MUZZLE_UP, BUNGEE_MUZZLE_AHEAD, LIFT, !this.hooks.control)
     // The aim may pass the camera's target; check what the hook itself would meet first.
     const path = castAim(this.game, aim.o, aim.d, bungeeLength.value, me.body)
     if (!path) { this.reticle.visible = false; return }

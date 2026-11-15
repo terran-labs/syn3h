@@ -30,7 +30,7 @@ describe('Big Red in the room', () => {
   beforeEach(() => { clock = 100_000; room = new Room('test', { now: () => clock }) })
 
   it('is refused while off, and any unknown kind always is', () => {
-    const a = join('A')
+    const a = join('A', { 'bigRed.allowed': false })
     const b = join('B')
     room.receive(a.peer, state([0, 0, 0]))
     send(a.peer, { type: 'fire', shot: shot(1, 'red') })
