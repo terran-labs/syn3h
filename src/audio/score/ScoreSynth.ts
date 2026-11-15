@@ -439,6 +439,9 @@ export class ScoreSynth {
   setLevels(level: Levels, depth: number, reverb: number, arc: Arc = { tension: 0, release: 0 }): void {
     const now = this.context.currentTime, to = (param: AudioParam, value: number, tau = 0.5) => param.setTargetAtTime(value, now, tau)
     if (!this.parked && now > this.parkAt) { this.out.disconnect(); this.parked = true }
+    // While unplugged nothing reads these parameters, so nothing clears what is scheduled on them.
+    // Scheduling every frame regardless would pile up events for as long as the score stayed silent.
+    if (this.parked) return
     const trim = this.trim, bright = unit(level.brightness + 0.3 * arc.tension + 0.2 * arc.release)
     this.brightness = bright; this.drums = level.drums
     to(this.swell.gain, 0.72 + 0.1 * arc.tension + 0.33 * arc.release, 0.3)
