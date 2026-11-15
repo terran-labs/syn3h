@@ -350,12 +350,14 @@ export class NetClient implements System {
       inHand: () => this.gear.current === 'yoink',
       responding: (id) => this.remotes.get(id)?.responding ?? true,
       heldElsewhere: (id) => [...this.botGear.values()].some(g => g.yoink.holderOf(id) !== null),
+      cue: (name, at) => this.gearCue(name, at),
       send: (y) => { if (this.connected) this.send({ type: 'yoink', y }) },
     })
     this.bigRed = new BigRed(game, {
       body: () => this.ctx.player.body,
       object: () => this.ctx.player.object,
       inHand: () => this.gear.current === 'red',
+      cue: (name, at) => this.gearCue(name, at),
       fire: (d) => this.fire(d, undefined, 'red'),
     })
     this.pesters = new Pesters(game, {
@@ -380,7 +382,7 @@ export class NetClient implements System {
           body.applyImpulse({ x: dir.x * m, y: m * 0.5, z: dir.z * m }, true)
         }
         this.stats.hitsJudged++
-        this.ctx.audio?.play('laserHit', at)
+        this.gearCue('pesterCatch', at)
         if (!this.connected) return
         this.send(victim === this.id ? { type: 'hit', shooter, shot } : { type: 'hit', shooter, shot, victim })
       },
@@ -666,7 +668,7 @@ export class NetClient implements System {
     shot.d = this.pesters.launchDirection(this.ctx.player.body)
     shot.boost = 0
     this.pesters.spawn(this.id, shot)
-    this.ctx.audio?.play('laserShot', { x: shot.o[0], y: shot.o[1], z: shot.o[2] })
+    this.gearCue('pesterLaunch', { x: shot.o[0], y: shot.o[1], z: shot.o[2] })
     if (this.connected) this.send({ type: 'fire', shot: { ...shot, o: this.canonical(shot.o) } })
     return true
   }
@@ -681,9 +683,15 @@ export class NetClient implements System {
       shot.d = [direction[0] / len, direction[1] / len, direction[2] / len]
     }
     this.lasers.spawn(this.id, shot)
-    this.ctx.audio?.play('laserShot', { x: shot.o[0], y: shot.o[1], z: shot.o[2] })
+    if (kind === 'red') this.gearCue('thunderFire', { x: shot.o[0], y: shot.o[1], z: shot.o[2] })
+    else this.ctx.audio?.play('laserShot', { x: shot.o[0], y: shot.o[1], z: shot.o[2] })
     this.stats.shotsFired++
     if (this.connected) this.send({ type: 'fire', shot: { ...shot, o: this.canonical(shot.o) } })
+  }
+
+  private gearCue(name: string, at: { x: number; y: number; z: number }): void {
+    // Cosmetic audio must not interrupt a gear action if an older audio implementation is used.
+    try { this.ctx.audio?.cue?.(name, at) } catch { /* unavailable cue */ }
   }
 
   postPhysics(dt: number): void {
