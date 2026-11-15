@@ -46,7 +46,7 @@ async function main(): Promise<void> {
   game.quality.attachTerrain(terrain)
   const environment = game.add(createEnvironment(game, terrain))
   // Post effects (src/fx/post): off by default; ?post=1 or Settings > Advanced > Post.
-  game.setPostChain(createPostChain(game, environment))
+  game.setPostChain(createPostChain(game, environment, () => player))
 
   const spawn = terrain.spawnPoint(0)
   // The vehicle comes from ?vehicle=..., else the choice saved by the lobby, else the Syn3h buggy.

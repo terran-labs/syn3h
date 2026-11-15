@@ -54,6 +54,12 @@ export interface PostChainHost {
   readonly quality: { readonly deviceLevel: number; readonly postBudget?: number; setPostActive?(on: boolean): void }
 }
 export interface SunSource { readonly sunDirection: THREE.Vector3 }
+/** The watched vehicle, for the plunge when it goes under a liquid surface. */
+export interface PlungeSource { readonly liquidState: { readonly wasImmersed: boolean; readonly lavaDepth: number } }
+
+/** Plunge tints: lava's hot amber and water's deep teal, in linear colour. */
+const LAVA_TINT = new THREE.Vector3(1.0, 0.42, 0.12)
+const WATER_TINT = new THREE.Vector3(0.12, 0.42, 0.5)
 
 interface Built {
   key: string
@@ -91,7 +97,12 @@ export class PostChain {
     grain: uniform(0.35),
     seed: uniform(0),
     motion: uniform(0),
+    plunge: uniform(0),
+    plungeTint: uniform(new THREE.Vector3(1, 1, 1)),
   }
+  /** 0 to 1, jumps to 1 when the watched vehicle goes under and decays over about 0.7 s. */
+  private plunge = 0
+  private wasUnder = false
   /** Smoothed camera speed in metres a second, for the speed streaks. */
   private speed = 0
   private readonly lastCam = new THREE.Vector3()
@@ -100,7 +111,7 @@ export class PostChain {
   private readonly tmp = new THREE.Vector3()
   private readonly forward = new THREE.Vector3()
 
-  constructor(private readonly host: PostChainHost, private readonly sun: SunSource) {}
+  constructor(private readonly host: PostChainHost, private readonly sun: SunSource, private readonly focus?: () => PlungeSource | null | undefined) {}
 
   render(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, _frameMs?: number): void {
     const budget = this.host.quality.postBudget
@@ -140,6 +151,7 @@ export class PostChain {
     u.grain.value = P.postGrain.value * (tier === 'base' ? 1 : 1)
     u.seed.value = (u.seed.value + 61.7) % 4096
     u.motion.value = tier === 'full' ? this.updateMotion(camera) * fade : 0
+    u.plunge.value = tier === 'full' ? this.updatePlunge() : 0
     // The shaft passes cost nothing while the sun is out of view: their stale contents are
     // multiplied by a sun visibility of 0, so they are simply not redrawn.
     const built = this.built!
@@ -183,6 +195,28 @@ export class PostChain {
     return amount * P.postStreaks.value
   }
 
+  /**
+   * The plunge: a brief soft blur and a wash of the liquid's colour when the vehicle breaks a
+   * liquid surface, so the moment registers. It does not linger: driving through lava or
+   * wading is not a reason to blur the screen.
+   */
+  private updatePlunge(): number {
+    const state = this.focus?.()?.liquidState
+    const under = !!state?.wasImmersed
+    const now = performance.now()
+    if (under && !this.wasUnder) {
+      this.plunge = 1
+      ;(this.u.plungeTint.value as THREE.Vector3).copy(state!.lavaDepth > 0 ? LAVA_TINT : WATER_TINT)
+    }
+    this.wasUnder = under
+    const dt = Math.min(0.1, Math.max(0, (now - this.plungeAt) / 1000))
+    this.plungeAt = now
+    this.plunge = Math.max(0, this.plunge - dt / 0.7)
+    const t = this.plunge
+    return t * t * P.postPlunge.value
+  }
+  private plungeAt = 0
+
   /** Sun position on screen (top-left origin, as the post quad's uv) and its visibility. */
   private updateSun(camera: THREE.Camera, renderer: THREE.WebGPURenderer): number {
     const sun = this.sun.sunDirection
@@ -215,6 +249,18 @@ export class PostChain {
     const base = Fn(() => {
       const p = uv()
       const c = color.sample(p).rgb.toVar()
+      If(u.plunge.greaterThan(0.001), () => {
+        // A soft 8-tap ring and the liquid's colour, both fading with the pulse.
+        const r = u.plunge.mul(0.012)
+        const acc = c.toVar()
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2
+          acc.addAssign(color.sample(p.add(vec2(Math.cos(a), Math.sin(a)).mul(r).mul(vec2(1, u.aspect)))).rgb)
+        }
+        const soft = acc.div(9)
+        const lum = dot(soft, vec3(0.2126, 0.7152, 0.0722))
+        c.assign(mix(soft, u.plungeTint.mul(lum).mul(1.6), u.plunge.mul(0.45)))
+      })
       If(u.motion.greaterThan(0.001), () => {
         const out = p.sub(0.5).mul(u.motion.mul(0.05))
         const acc = c.toVar()
@@ -332,6 +378,6 @@ export class PostChain {
 }
 
 /** Build the chain for this game. Register it with `game.setPostChain`. */
-export function createPostChain(host: PostChainHost, sun: SunSource): PostChain {
-  return new PostChain(host, sun)
+export function createPostChain(host: PostChainHost, sun: SunSource, focus?: () => PlungeSource | null | undefined): PostChain {
+  return new PostChain(host, sun, focus)
 }
