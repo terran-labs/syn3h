@@ -117,24 +117,35 @@ function run(variant: 'old' | 'new', senderFps: number, receiverFps: number, one
 }
 
 describe('remote vehicle path, old timing against new', () => {
+  // sender fps, receiver fps, one way latency in seconds
   const cases: [number, number, number][] = [
-    // sender fps, receiver fps, one way latency in seconds
-    [60, 60, 0.02], [60, 60, 0.04], [30, 60, 0.04], [60, 30, 0.04], [45, 24, 0.04], [120, 60, 0.02], [60, 60, 0.08], [30, 30, 0.08],
+    [60, 60, 0.02], [60, 60, 0.04], [120, 60, 0.02], [60, 120, 0.02], [45, 60, 0.04], [60, 45, 0.04], [60, 60, 0.08],
+    // Devices that are not keeping up, as sender, as receiver, and both. Two browsers on a
+    // loaded machine measured a sender at 11 frames a second pushing the delay to its cap.
+    [30, 60, 0.04], [60, 30, 0.04], [45, 24, 0.04], [24, 60, 0.02], [15, 60, 0.02], [11, 16, 0.02], [10, 60, 0.02],
+    [8, 60, 0.02], [6, 60, 0.02], [60, 10, 0.02], [10, 10, 0.02], [30, 30, 0.08],
   ]
-  const rows: string[] = []
   for (const [sf, rf, lag] of cases) {
-    it(`sender ${sf} fps, receiver ${rf} fps, ${lag * 1000} ms one way: no noisier, and not pinned at the delay cap`, () => {
+    it(`sender ${sf} fps, receiver ${rf} fps, ${lag * 1000} ms one way: no noisier and no later than the old timing`, () => {
       const o = run('old', sf, rf, lag)
       const n = run('new', sf, rf, lag)
       const f = (x: number) => x.toFixed(3)
-      rows.push(`${sf}/${rf} fps ${lag * 1000} ms | noise rms m old ${f(o.rms)} new ${f(n.rms)} | peak m old ${f(o.peak)} new ${f(n.peak)} | worst step jump m old ${f(o.stepJump)} new ${f(n.stepJump)} | delay ms mean old ${Math.round(o.delayMean * 1000)} new ${Math.round(n.delayMean * 1000)} max old ${Math.round(o.delayMax * 1000)} new ${Math.round(n.delayMax * 1000)} | states/s old ${o.states.toFixed(1)} new ${n.states.toFixed(1)}`)
-      console.log(rows[rows.length - 1])
-      expect(n.rms).toBeLessThanOrEqual(o.rms)
-      expect(n.peak).toBeLessThanOrEqual(o.peak)
-      expect(n.stepJump).toBeLessThanOrEqual(o.stepJump)
-      expect(n.states).toBeGreaterThan(19.5)
-      // At demo pings the automatic delay must not sit at its cap.
-      if (lag <= 0.04) expect(n.delayMean).toBeLessThan(CAP - 0.01)
+      console.log(`${sf}/${rf} fps ${lag * 1000} ms | noise rms m old ${f(o.rms)} new ${f(n.rms)} | peak m old ${f(o.peak)} new ${f(n.peak)} | worst step jump m old ${f(o.stepJump)} new ${f(n.stepJump)} | delay ms mean old ${Math.round(o.delayMean * 1000)} new ${Math.round(n.delayMean * 1000)} max old ${Math.round(o.delayMax * 1000)} new ${Math.round(n.delayMax * 1000)} | states/s old ${o.states.toFixed(1)} new ${n.states.toFixed(1)}`)
+      // Never noisier. Slow devices keep the old stamps but send 20 states a second where
+      // they sent 16.7, so their numbers differ by which poses happen to be sent: 10% slack.
+      expect(n.rms).toBeLessThanOrEqual(o.rms * 1.1 + 0.01)
+      expect(n.stepJump).toBeLessThanOrEqual(o.stepJump * 1.1 + 0.01)
+      // The playback delay is what every watcher pays: never more than a few ms over the old.
+      expect(n.delayMean).toBeLessThanOrEqual(o.delayMean + 0.005)
+      expect(n.delayMax).toBeLessThanOrEqual(o.delayMax + 0.008)
+      // A sender that cannot run every physics step has fewer poses to send; never fewer than before.
+      expect(n.states).toBeGreaterThanOrEqual(o.states)
+      if (sf >= 50) expect(n.states).toBeGreaterThan(19.5)
+      // Where both ends run a frame for every physics step, the noise is essentially gone.
+      if (sf >= 50 && rf >= 50) {
+        expect(n.rms).toBeLessThan(0.01)
+        expect(n.stepJump).toBeLessThan(0.02)
+      }
     })
   }
 })

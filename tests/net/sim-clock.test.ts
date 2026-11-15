@@ -39,7 +39,7 @@ function replay(fps: number, seconds: number, opts: { roomAhead?: number; stallA
 const spread = (xs: number[]) => Math.max(...xs) - Math.min(...xs)
 
 describe('SimClock', () => {
-  for (const fps of [24, 30, 45, 60, 120]) {
+  for (const fps of [60, 120]) {
     it(`gives each physics step an evenly spaced room time at ${fps} frames a second`, () => {
       const steps = replay(fps, 20).slice(100)
       // What stamping with the wall clock did: an error that swings by most of a step or more.
@@ -55,6 +55,18 @@ describe('SimClock', () => {
       expect(Math.max(...advance)).toBeLessThan(STEP + 0.0005)
     })
 
+  }
+
+  for (const fps of [24, 30, 45]) {
+    it(`leaves a device at ${fps} frames a second on the plain room clock, as before`, () => {
+      // Below the physics rate states leave in bursts; exact stamps there made every watcher's
+      // playback delay rise to its cap (measured in two browsers), so the old timing is kept.
+      const steps = replay(fps, 20).slice(100)
+      for (const s of steps) expect(s.stamp).toBe(s.wall + 1000)
+    })
+  }
+
+  for (const fps of [24, 30, 45, 60, 120]) {
     it(`stays centred on the wall clock at ${fps} frames a second`, () => {
       // So latency estimates are not biased, and a client that still stamps wall time and
       // one that stamps simulation time agree on average.
@@ -79,13 +91,42 @@ describe('SimClock', () => {
     // One frame of 1.5 s at 60 frames a second: the loop simulates five steps and drops the
     // rest, so simulation time falls about 0.15 s behind the wall clock for good.
     const steps = replay(60, 20, { stallAt: 600, stall: 1.5 })
-    const after = steps.filter((s) => s.wall > 600 / 60 + 1.6)
+    // A hitch counts as slow frames for about a second (plain room clock), then even again.
+    const after = steps.filter((s) => s.wall > 600 / 60 + 1.5 + 3)
     const before = steps.filter((s) => s.wall < 600 / 60)
     const drift = (after[0].stamp - after[0].sim) - (before[before.length - 1].stamp - before[before.length - 1].sim)
     expect(drift).toBeGreaterThan(0.1)
     expect(spread(after.map((s) => s.stamp - s.sim))).toBeLessThan(0.0005)
     // And never behind the wall clock by more than a frame and a step once past it.
     for (const s of after) expect(Math.abs(s.stamp - 1000 - s.wall)).toBeLessThan(1 / 60 + STEP)
+  })
+
+  it('switches with hysteresis, so a device near the line does not flap', () => {
+    const c = new SimClock()
+    let sim = 0
+    const run = (frame: number, n: number) => { for (let i = 0; i < n; i++) c.observe(1000 + (sim += frame), sim, frame) }
+    run(1 / 60, 200)
+    expect(c.steady).toBe(true)
+    // Exactly the physics rate sits between the two thresholds: it keeps whichever state it had.
+    run(1 / 50, 400)
+    expect(c.steady).toBe(true)
+    run(1 / 30, 200)
+    expect(c.steady).toBe(false)
+    run(1 / 50, 400)
+    expect(c.steady).toBe(false)
+    run(1 / 60, 200)
+    expect(c.steady).toBe(true)
+  })
+
+  it('adopts simulation time falling behind at once, not over half a second', () => {
+    const c = new SimClock()
+    let sim = 0
+    let wall = 0
+    for (let i = 0; i < 200; i++) { wall += 1 / 60; sim += 1 / 60; c.observe(1000 + wall, sim, 1 / 60) }
+    // One frame in which 60 ms of simulation was dropped.
+    wall += 1 / 60 + 0.06; sim += 1 / 60
+    c.observe(1000 + wall, sim, 1 / 60)
+    expect(c.at(sim, STEP, 0) - sim).toBeCloseTo(1000 + wall - sim + STEP / 2, 6)
   })
 
   it('follows a room clock resync: a jump at once, a small correction smoothly', () => {
