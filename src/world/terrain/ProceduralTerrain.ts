@@ -21,9 +21,14 @@ import { Trees } from './trees'
 import { Volcanics } from './volcanics'
 
 export class ProceduralTerrain implements Terrain {
-  readonly size: number
-  /** The world is one tile of a torus this many metres on a side. */
-  readonly wrapSize: number
+  /** Side of the current tile in metres. Changes with the planet size setting. */
+  get size(): number {
+    return this.data.size
+  }
+  /** The world is one tile of a torus this many metres on a side: the current size. */
+  get wrapSize(): number {
+    return this.data.size
+  }
   /** Largest height change (m) sealing the tile's seam made on the last generation. */
   lastSeamCorrection = 0
   /** Increments on every regeneration. */
@@ -32,7 +37,9 @@ export class ProceduralTerrain implements Terrain {
   /** Milliseconds the last generation took (generation only, not upload). */
   lastGenerateMs = 0
   private readonly sampler: HeightSampler
-  private readonly meshes: TerrainMeshes
+  private meshes: TerrainMeshes
+  /** The last render quality request, re-applied when the meshes are rebuilt. */
+  private lod: [number, number] | null = null
   private readonly look: TerrainMaterial
   private collider: RAPIER.Collider
   private readonly listeners = new Set<() => void>()
@@ -45,8 +52,6 @@ export class ProceduralTerrain implements Terrain {
 
   constructor(private readonly game: Game, private seed: number) {
     this.data = this.generate()
-    this.size = this.data.size
-    this.wrapSize = this.data.size
     this.sampler = new HeightSampler(this.data)
     this.look = createTerrainMaterial()
     this.look.setSummit(this.summitHeight())
@@ -112,9 +117,19 @@ export class ProceduralTerrain implements Terrain {
 
   /** Rebuild heights, mesh and collider in place, then notify listeners. */
   regenerate(): void {
+    const old = this.data
     this.data = this.generate()
     this.sampler.data = this.data
-    this.meshes.update(this.data)
+    if (this.data.size === old.size && this.data.resolution === old.resolution) {
+      this.meshes.update(this.data)
+    } else {
+      // A new planet size: the chunk grid is sized from the tile, so build it afresh.
+      this.game.scene.remove(this.meshes.group)
+      this.meshes.dispose()
+      this.meshes = createTerrainMeshes(this.data, this.look.material)
+      if (this.lod) this.meshes.setLodDistances(this.lod[0], this.lod[1])
+      this.game.scene.add(this.meshes.group)
+    }
     this.look.setSummit(this.summitHeight())
     this.lightLake()
     this.game.world.removeCollider(this.collider, true)
@@ -211,6 +226,7 @@ export class ProceduralTerrain implements Terrain {
     // Full detail shrinks with the square of the detail share: 250 m, 140 m, 62 m.
     const near = LOD_NEAR * detail * detail
     const far = Math.max(near, Math.min(LOD_FAR * detail, quality.drawDistance * 0.6))
+    this.lod = [near, far]
     this.meshes.setLodDistances(near, far)
     // Forest out to the level's draw distance: 700 m on the weakest phones.
     this.trees.setDrawDistance(Math.min(1800, quality.drawDistance))

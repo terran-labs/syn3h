@@ -63,21 +63,6 @@ export interface Terrain {
   /** Side length in metres. The terrain is centred on the origin. */
   readonly size: number
   /**
-   * Side of the wrapping tile in metres, if the world wraps (a torus): leaving by one edge
-   * arrives at the opposite one. Undefined means the world does not wrap. See shared/wrap.ts.
-   */
-  readonly wrapSize?: number
-  /**
-   * Bring `p` into the canonical tile [-wrapSize / 2, wrapSize / 2) in place. Returns true
-   * if it moved. Only x and z are touched.
-   */
-  wrapPosition?(p: { x: number; z: number }): boolean
-  /**
-   * Write into `out` the image of (x, z) nearest the reference (refX, refZ): use it to draw
-   * or aim at something across the seam. Returns `out`.
-   */
-  nearestTo?(x: number, z: number, refX: number, refZ: number, out: { x: number; z: number }): { x: number; z: number }
-  /**
    * Ground height in metres at a world position. Must match the physics collider. On a
    * wrapping terrain any x and z are accepted and the result repeats every `wrapSize`.
    */

@@ -21,6 +21,7 @@ import { Emitters } from '../../fx/Emitters'
 import { buildRibbonGeometry } from '../../fx/LavaFlow'
 import { createLavaMaterial } from '../../fx/material'
 import type { TerrainData } from './generate'
+import { CHUNK_CELLS } from './mesh'
 import type { HeightSampler } from './sampler'
 import { KIND_VOLCANIC, worldSeaKind } from './settings'
 
@@ -62,8 +63,8 @@ function createWaterMaterial(shore: boolean): Liquid {
 const SEA_REACH = 24000
 /** Sea grid resolution over the island: fine enough for the glowing shoreline to follow the coast. */
 const SEA_SEGMENTS = 192
-/** Sea chunks per side, matching the terrain's 8 x 8 chunks so both wrap in step. */
-const SEA_CHUNKS = 8
+/** Sea chunks per side: the terrain's chunk count (one per 64 cells), so both wrap in step. */
+const seaChunks = (data: TerrainData) => Math.max(1, Math.round((data.resolution - 1) / CHUNK_CELLS))
 
 type Ground = { size: number; heightAt(x: number, z: number): number }
 
@@ -72,10 +73,10 @@ type Ground = { size: number; heightAt(x: number, z: number): number }
  * under each vertex (the lava material brightens where the two meet, which draws the
  * glowing shoreline). `uv` is world metres and is rewritten when the chunk moves.
  */
-function seaChunkGeometry(ground: Ground, cx: number, cz: number): THREE.BufferGeometry {
+function seaChunkGeometry(ground: Ground, cx: number, cz: number, chunks: number): THREE.BufferGeometry {
   const half = ground.size / 2
-  const segs = SEA_SEGMENTS / SEA_CHUNKS
-  const step = ground.size / SEA_SEGMENTS
+  const segs = Math.max(1, Math.round(SEA_SEGMENTS / chunks))
+  const step = ground.size / (segs * chunks)
   const positions: number[] = []
   const depth: number[] = []
   const index: number[] = []
@@ -208,9 +209,10 @@ export class Volcanics implements System {
     const ground: Ground = { size: data.size, heightAt: (x, z) => this.sampler.heightAt(x, z) }
 
     const seaMaterial = (this.seaIsLava ? this.lavaSea : this.waterSea).material
-    for (let cz = 0; cz < SEA_CHUNKS; cz++) {
-      for (let cx = 0; cx < SEA_CHUNKS; cx++) {
-        const mesh = new THREE.Mesh(seaChunkGeometry(ground, cx, cz), seaMaterial)
+    const chunks = seaChunks(data)
+    for (let cz = 0; cz < chunks; cz++) {
+      for (let cx = 0; cx < chunks; cx++) {
+        const mesh = new THREE.Mesh(seaChunkGeometry(ground, cx, cz, chunks), seaMaterial)
         this.sea.push({ mesh, cx, cz })
         this.group.add(mesh)
       }
@@ -248,7 +250,7 @@ export class Volcanics implements System {
     const camX = cam?.x ?? 0
     const camZ = cam?.z ?? 0
     const near = (v: number, ref: number) => size * Math.round((ref - v) / size)
-    const chunk = size / SEA_CHUNKS
+    const chunk = size / seaChunks(this.sampler.data)
     // The chunks form a tile-sized window round the camera; the apron's hole follows it.
     let lowX = Infinity
     let lowZ = Infinity

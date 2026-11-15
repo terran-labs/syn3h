@@ -32,7 +32,8 @@ describe('wrapping terrain', () => {
       expect(h[(n - 1) * n + i]).toBe(h[i])
     }
     process.stdout.write(`seam correction: ${correction.toExponential(2)} m\n`)
-    expect(correction).toBeLessThan(5)
+    // The generator is periodic; edges agree to a fraction of a metre before sealing.
+    expect(correction).toBeLessThan(1)
   })
 
   it('heightAt and normalAt repeat every size metres on both axes', () => {
