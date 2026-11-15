@@ -39,6 +39,7 @@
  *
  * The ram scenarios report:
  *   ramA, ramB        how many rams each client detected
+ *   relayedB          pushes B applied from A's ram report because its own physics felt nothing
  *   gapMs             B's detection time minus A's (how late the other side feels it)
  *   speedA            A's speed just before its contact, m/s
  *   keptA             fraction of that speed A still has 0.3 s later (0 = hit a wall)
@@ -108,7 +109,7 @@ const record = (page, other) => page.evaluate((other) => {
     log.push({
       t: Date.now(), p: [p.x, p.y, p.z], s: Math.hypot(v.x, v.z), rp: rp ? [rp.x, rp.y, rp.z] : null,
       delay: r?.delay ?? 0, newest: r?.buffer.newest?.t ?? 0, mode: r?.sample.mode ?? 'empty',
-      rams: net.stats.rams, it: net.game.it,
+      rams: net.stats.rams, shoves: net.stats.shoves ?? 0, it: net.game.it,
     })
   }, 10)
 }, other)
@@ -161,6 +162,7 @@ function analyseRam(logA, logB) {
   const out = {
     ramA: logA.at(-1).rams - logA[0].rams,
     ramB: logB.at(-1).rams - logB[0].rams,
+    relayedB: logB.at(-1).shoves - logB[0].shoves,
     delayA: round(at(logA, Math.min(t0, end)).delay * 1000, 0),
     delayB: round(at(logB, Math.min(t0, end)).delay * 1000, 0),
     settleA: round(d2(logA.at(-1).rp, logB.at(-1).p)),

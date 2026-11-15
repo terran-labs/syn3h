@@ -108,3 +108,93 @@ describe('applyRoomWorld', () => {
     defaults()
   })
 })
+
+import { FELT_WINDOW, MAX_SHOVE, SHOVE_MARGIN, SHOVE_SHARE, ShoveQueue, cleanShove, shoveFor } from '../../src/net/shove'
+
+describe('shoveFor', () => {
+  it('pushes the rammed vehicle along the line between them, by a share of the closing speed', () => {
+    // A at the origin doing 20 m/s toward B, 3 m ahead on -Z and standing still.
+    const push = shoveFor([0, 1, 0], [0, 1, -3], [0, 0, -20], [0, 0, 0])!
+    expect(push[0]).toBeCloseTo(0)
+    expect(push[1]).toBe(0)
+    expect(push[2]).toBeCloseTo(-20 * SHOVE_SHARE)
+    // A chase: B is already moving away at 10 m/s, so only the difference counts.
+    expect(shoveFor([0, 1, 0], [0, 1, -3], [0, 0, -22], [0, 0, -10])![2]).toBeCloseTo(-12 * SHOVE_SHARE)
+    // A glancing approach: only the part of the speed toward B counts.
+    expect(Math.hypot(...shoveFor([0, 1, 0], [3, 1, -3], [0, 0, -20], [0, 0, 0])!)).toBeCloseTo(20 * Math.SQRT1_2 * SHOVE_SHARE)
+  })
+  it('gives nothing when not closing, barely closing, or on top of each other', () => {
+    expect(shoveFor([0, 1, 0], [0, 1, -3], [0, 0, 20], [0, 0, 0])).toBe(null)
+    expect(shoveFor([0, 1, 0], [0, 1, -3], [0, 0, -1], [0, 0, 0])).toBe(null)
+    expect(shoveFor([0, 1, 0], [0, 1, -3], [0, 0, -10], [0, 0, -10])).toBe(null)
+    expect(shoveFor([0, 1, 0], [0, 5, 0], [0, 0, -20], [0, 0, 0])).toBe(null)
+  })
+  it('never exceeds the limit', () => {
+    expect(Math.hypot(...shoveFor([0, 1, 0], [0, 1, -3], [0, 0, -500], [0, 0, 0])!)).toBeCloseTo(MAX_SHOVE)
+  })
+})
+
+describe('cleanShove', () => {
+  it('accepts three finite numbers and clamps the length', () => {
+    expect(cleanShove([1, 0, -2])).toEqual([1, 0, -2])
+    expect(Math.hypot(...cleanShove([300, 0, 400])!)).toBeCloseTo(MAX_SHOVE)
+    for (const junk of [undefined, null, 'x', [1, 2], [1, 2, 3, 4], [1, NaN, 2], [1, Infinity, 2], ['1', 2, 3], [0, 0, 0], { 0: 1, 1: 2, 2: 3 }]) expect(cleanShove(junk)).toBe(null)
+  })
+})
+
+describe('ShoveQueue', () => {
+  const never = () => -Infinity
+  const still: [number, number, number] = [0, 0, 0]
+  it('holds a push until playback has reached the ram, then hands it over once, in full', () => {
+    const q = new ShoveQueue()
+    q.add(7, [0, 0, -13], 10, 0.15, still)
+    expect(q.take(10.1, never, still)).toEqual([])
+    expect(q.take(10.15 + SHOVE_MARGIN - 0.01, never, still)).toEqual([])
+    expect(q.take(10.15 + SHOVE_MARGIN, never, still)).toEqual([{ from: 7, push: [0, 0, -13] }])
+    expect(q.take(11, never, still)).toEqual([])
+    expect(q.size).toBe(0)
+  })
+  it('drops a push our own physics delivered while it waited', () => {
+    const q = new ShoveQueue()
+    q.add(7, [0, 0, -13], 10, 0.15, still)
+    // The rammer's copy arrived and shoved us to 12.5 m/s in the meantime.
+    expect(q.take(10.3, () => 10.2, [0, 0, -12.5])).toEqual([])
+    expect(q.size).toBe(0)
+  })
+  it('drops a push our own physics delivered just before it arrived', () => {
+    const q = new ShoveQueue()
+    // We were standing; our physics felt the ram and we are already doing 13 m/s when the
+    // report arrives. Judged against our velocity from before the contact, nothing is owed.
+    q.add(7, [0, 0, -13], 10, 0.15, [0, 0, -13], still)
+    expect(q.take(10.3, () => 9.8, [0, 0, -12.5])).toEqual([])
+    // Without that earlier contact the same velocities would mean a fresh ram, owed in full.
+    q.add(7, [0, 0, -13], 20, 0.15, [0, 0, -13], still)
+    expect(q.take(20.3, never, [0, 0, -13])[0].push[2]).toBeCloseTo(-13)
+    // A contact long before does not count either.
+    q.add(7, [0, 0, -13], 30, 0.15, [0, 0, -13], still)
+    expect(q.take(30.3, () => 30 - FELT_WINDOW - 0.5, [0, 0, -13])[0].push[2]).toBeCloseTo(-13)
+  })
+  it('tops up a ram our physics felt only in part: a graze', () => {
+    const q = new ShoveQueue()
+    q.add(7, [0, 0, -13], 10, 0.15, still)
+    const out = q.take(10.3, () => 10.25, [0, 0, -4])
+    expect(out.length).toBe(1)
+    expect(out[0].push[2]).toBeCloseTo(-9)
+    // Slowing down meanwhile never earns more than the push itself.
+    q.add(7, [0, 0, -13], 20, 0.15, [0, 0, -10])
+    expect(q.take(20.3, never, [0, 0, -8])[0].push[2]).toBeCloseTo(-13)
+    // A shortfall under 1 m/s is not worth a jolt.
+    q.add(7, [0, 0, -13], 30, 0.15, still)
+    expect(q.take(30.3, never, [0, 0, -12.5])).toEqual([])
+  })
+  it('keeps one push per rammer and judges each on its own', () => {
+    const q = new ShoveQueue()
+    q.add(7, [1, 0, 0], 10, 0.1, still)
+    q.add(7, [5, 0, 0], 10.05, 0.1, still)
+    q.add(8, [0, 0, 6], 10.05, 0.1, still)
+    expect(q.size).toBe(2)
+    // We gained 6 m/s along +Z (rammer 8's doing) and nothing along +X.
+    const out = q.take(10.3, never, [0, 0, 6])
+    expect(out).toEqual([{ from: 7, push: [5, 0, 0] }])
+  })
+})
