@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { generateTerrain } from '../../src/world/terrain/generate'
-import { ROAD_CLEARANCE, lavaSurfaceAt } from '../../src/world/terrain/lava'
+import { DROP_FALL, ROAD_CLEARANCE, findDrops, lavaSurfaceAt } from '../../src/world/terrain/lava'
 import { distanceToPolyline } from '../../src/world/terrain/raster'
 import { HeightSampler } from '../../src/world/terrain/sampler'
 import { defaultTerrainSettings } from '../../src/world/terrain/settings'
@@ -53,6 +53,34 @@ describe('lava and vents', () => {
         expect(r.pool.surface).toBeLessThanOrEqual(end.y)
         // The pool basin holds its lava.
         expect(s.heightAt(r.pool.x, r.pool.z)).toBeLessThan(r.pool.surface)
+      }
+    }
+  }, 20000)
+
+  it('marks steep runs of a river as drops', () => {
+    // A bed that falls gently, then 6 m in 12 m, then gently again.
+    const ys = [50, 49.5, 49, 48.5, 45, 42.5, 42, 41.5, 41]
+    const pts = ys.map((y, i) => ({ x: i * 6, y, z: 0 }))
+    const drops = findDrops(pts)
+    expect(drops.length).toBe(1)
+    expect(pts[drops[0].start].y - pts[drops[0].end].y).toBeCloseTo(drops[0].height, 6)
+    expect(drops[0].height).toBeGreaterThan(DROP_FALL)
+    expect(drops[0].start).toBeLessThanOrEqual(3)
+    expect(drops[0].end).toBeGreaterThanOrEqual(5)
+    // The steepest 12 m is the 6 m fall in the middle, inside the drop.
+    expect(drops[0].steepest.height).toBeCloseTo(6, 6)
+    expect(drops[0].steepest.start).toBeGreaterThanOrEqual(drops[0].start)
+    expect(drops[0].steepest.end).toBeLessThanOrEqual(drops[0].end)
+    expect(findDrops(pts.map((p, i) => ({ ...p, y: 50 - i * 0.5 })))).toEqual([])
+    // Every generated river carries the field, with indices inside its points.
+    for (const seed of SEEDS) {
+      for (const r of generateTerrain(seed, settings).lava.rivers) {
+        for (const d of r.drops) {
+          expect(d.start).toBeGreaterThanOrEqual(0)
+          expect(d.end).toBeLessThan(r.points.length)
+          expect(d.end).toBeGreaterThan(d.start)
+          expect(d.height).toBeGreaterThan(DROP_FALL)
+        }
       }
     }
   }, 20000)

@@ -58,6 +58,26 @@ try {
     assert.equal(solo.bad, 0); // The sub drop and the swell are not layers, so they set the loudest second; judge the layer by the sustained release that follows.
     assert.ok(late > floor, `${layer} is silent`); assert.ok(solo.peak < 1, `${layer} clips`)
   }
+  // The four experiments, each soloed so only its own contribution is measured.
+  const experiment = (scene, only, options) => page.evaluate(async ([scene, only, options]) => {
+    const { renderScene, SCENES } = await import('/src/audio/score/demo.ts')
+    const r = await renderScene({ ...SCENES.Soaring, ...scene }, 24, 1234, 44100, undefined, only, false, false, options)
+    return { late: r.envelope.slice(-6).reduce((a, b) => a + b, 0) / 6, envelope: r.envelope, peak: r.peak, bad: r.bad }
+  }, [scene, only, options])
+  const tagsOff = await experiment({}, ['tags'], []), tagsOn = await experiment({}, ['tags'], ['audio.score.tagNotes'])
+  const weatherOff = await experiment({}, ['weather'], []), weatherOn = await experiment({}, ['weather'], ['audio.score.weather'])
+  const alone = await experiment({ neighbours: 0 }, ['strings', 'brass', 'organ', 'bells'], ['audio.score.convoy'])
+  const together = await experiment({ neighbours: 3, gap: 20 }, ['strings', 'brass', 'organ', 'bells'], ['audio.score.convoy'])
+  const ordinary = await experiment({ neighbours: 0 }, ['strings', 'brass', 'organ', 'bells'], [])
+  const show = r => r.late.toFixed(4)
+  console.log(`tag notes off ${show(tagsOff)} on ${show(tagsOn)} | weather off ${show(weatherOff)} on ${show(weatherOn)} | convoy alone ${show(alone)} with three ${show(together)} switch off ${show(ordinary)}`)
+  for (const r of [tagsOn, weatherOn, together]) { assert.equal(r.bad, 0); assert.ok(r.peak < 1) }
+  assert.ok(tagsOn.late > tagsOff.late * 3 && tagsOn.late > 0.004, 'tag beams should play notes when the switch is on')
+  const sweeps = weatherOn.envelope.filter((v, second) => v - weatherOff.envelope[second] > 0.003).length
+  console.log(`space weather: sweeps audible in ${sweeps} of 24 seconds`)
+  assert.ok(sweeps >= 3, 'space weather should sound when the switch is on')
+  assert.ok(alone.late < together.late * 0.3, 'alone in a convoy the carried parts should be silent')
+  assert.ok(together.late > ordinary.late * 0.6, 'three vehicles close by should bring the whole arrangement')
   // The lighter tier for phones plays the same passage: audible, unclipped, a release that still lands.
   const lite = await page.evaluate(async () => {
     const { renderScene } = await import('/src/audio/score/demo.ts')

@@ -3,13 +3,21 @@
  * input the game feeds the score has a slider here, and the scene buttons set them all at
  * once. `renderScene` renders a scene offline for the browser check in tests/audio.
  */
-import { Score, scoreLite, scoreNetworkHall, type ScoreInput } from './Score'
+import { Score, scoreConvoy, scoreLite, scoreNetworkHall, scoreTagNotes, scoreTerrain, scoreWeather, type ScoreInput } from './Score'
 import { params } from '../../../shared/params'
 import type { Role } from './Composer'
 import { applySubmerge, LAYERS } from './ScoreSynth'
 
-export interface Scene extends ScoreInput { /** Combat heat held at this level, 0..1. */ heat: number; holding: boolean; contested: boolean; progress: number }
-const base: Scene = { playing: true, speed: 0, throttle: 0, airborne: false, clearance: 0, altitude: 20, submerged: 0, lava: 0, heat: 0, holding: false, contested: false, progress: 0 }
+export interface Scene extends ScoreInput { /** Combat heat held at this level, 0..1. */ heat: number; holding: boolean; contested: boolean; progress: number; /** Lab only: vehicles nearby and how far, for convoy harmony. */ neighbours: number; gap: number; /** Lab only: which skyline lies ahead, for terrain as melody. */ ground: number }
+/** Skylines for the lab: sixteen heights ahead. */
+export const GROUNDS: Record<string, readonly number[]> = {
+  Flat: Array(16).fill(0),
+  Hills: Array.from({ length: 16 }, (_, i) => 12 * Math.sin(i * 0.8)),
+  'A climb': Array.from({ length: 16 }, (_, i) => i * 4),
+  Mountain: Array.from({ length: 16 }, (_, i) => 60 - Math.abs(i - 8) * 7.5),
+  Canyon: Array.from({ length: 16 }, (_, i) => i > 5 && i < 10 ? -40 : (i % 3) * 3),
+}
+const base: Scene = { playing: true, speed: 0, throttle: 0, airborne: false, clearance: 0, altitude: 20, submerged: 0, lava: 0, heat: 0, holding: false, contested: false, progress: 0, neighbours: 0, gap: 40, ground: 0 }
 export const SCENES: Record<string, Scene> = {
   Lobby: { ...base, playing: false },
   Parked: { ...base },
@@ -26,13 +34,15 @@ export const SCENES: Record<string, Scene> = {
 function drive(score: Score, scene: Scene): void {
   score.setMatch({ holding: scene.holding, contested: scene.contested, progress: scene.progress })
   score.mood.heat = Math.max(score.mood.heat, scene.heat)
-  score.update(scene)
+  const sides = [-0.8, 0.8, 0]
+  score.update({ ...scene, convoy: Array.from({ length: Math.round(scene.neighbours) }, (_, n) => ({ distance: scene.gap + n * 15, pan: sides[n], closing: n === 0 ? 20 : 0 })), relief: Object.values(GROUNDS)[Math.round(scene.ground)] })
 }
 
 /** Render a scene offline and measure it. Used by tests/audio/score-render.mjs. */
-export async function renderScene(name: string, seconds = 16, seed = 1234, rate = 44100, cue?: Role | 'surge', only?: readonly string[], lite = false, network = false) {
+export async function renderScene(name: string | Scene, seconds = 16, seed = 1234, rate = 44100, cue?: Role | 'surge', only?: readonly string[], lite = false, network = false, options: readonly string[] = []) {
   params.set(scoreLite.def.id, lite); params.set(scoreNetworkHall.def.id, network)
-  const context = new OfflineAudioContext(2, rate * seconds, rate), scene = SCENES[name]
+  for (const param of [scoreTagNotes, scoreConvoy, scoreTerrain, scoreWeather]) params.set(param.def.id, options.includes(param.def.id))
+  const context = new OfflineAudioContext(2, rate * seconds, rate), scene = typeof name === 'string' ? SCENES[name] : name
   const filter = context.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 20000; filter.connect(context.destination)
   const score = new Score(context, filter, seed)
   await score.synth.ready
@@ -41,7 +51,7 @@ export async function renderScene(name: string, seconds = 16, seed = 1234, rate 
   score.setActive(true, 0.3)
   if (cue) score.cue(cue)
   const roles: Role[] = []
-  const tick = () => { drive(score, scene); applySubmerge(filter, score.mood.depth, context.currentTime); roles[Math.floor(context.currentTime)] = score.role }
+  const tick = () => { if (scoreTagNotes.value) score.combat(0.14); drive(score, scene); applySubmerge(filter, score.mood.depth, context.currentTime); roles[Math.floor(context.currentTime)] = score.role }
   tick()
   const ticks: Promise<void>[] = []
   // Whole-numbered ticks, stopping short of the end: a pause that lands on the last render
@@ -60,7 +70,7 @@ export async function renderScene(name: string, seconds = 16, seed = 1234, rate 
   const count = buffer.length - from
   // Loudness second by second, to see a build, a breath and a release.
   const envelope = Array.from({ length: seconds }, (_, second) => { let sum = 0; for (let i = second * rate; i < (second + 1) * rate; i++) sum += ((left[i] + right[i]) / 2) ** 2; return Math.sqrt(sum / rate) })
-  return { name, envelope, roles, peak, rms: Math.sqrt(square / count), width: Math.sqrt(side / count), bad, /** Hz. RMS of the slope over RMS of the signal: where the energy sits in the spectrum. */ brightness: Math.sqrt(slope / square) * rate / (2 * Math.PI), mode: score.mode, tempo: score.tempo, mood: { ...score.mood }, nodes: score.synth.nodeCount, left, right, rate }
+  return { name: typeof name === 'string' ? name : 'custom', envelope, roles, peak, rms: Math.sqrt(square / count), width: Math.sqrt(side / count), bad, /** Hz. RMS of the slope over RMS of the signal: where the energy sits in the spectrum. */ brightness: Math.sqrt(slope / square) * rate / (2 * Math.PI), mode: score.mode, tempo: score.tempo, mood: { ...score.mood }, nodes: score.synth.nodeCount, left, right, rate }
 }
 
 /** Pluck one modelled string offline and measure the pitch it actually sounds, in Hz. */
@@ -99,14 +109,16 @@ function mount(): void {
   const sliders: [keyof Scene, string, number, number, number][] = [
     ['speed', 'Speed (m/s)', 0, 60, 1], ['heat', 'Tag beams nearby', 0, 1, 0.01], ['clearance', 'Height above ground (m)', 0, 200, 1], ['altitude', 'Altitude (m)', 0, 600, 5],
     ['submerged', 'Depth under water (m)', 0, 5, 0.1], ['lava', 'Lava nearby', 0, 1, 0.01], ['progress', 'Your share of the winning score', 0, 1, 0.01],
+    ['neighbours', 'Convoy: vehicles nearby', 0, 3, 1], ['gap', 'Convoy: how far away (m)', 0, 320, 5], ['ground', `Terrain ahead: ${Object.keys(GROUNDS).join(', ')}`, 0, Object.keys(GROUNDS).length - 1, 1],
   ]
   const toggles: [keyof Scene, string][] = [['playing', 'In play (off is the lobby)'], ['airborne', 'Airborne'], ['holding', 'Holding the hill'], ['contested', 'Hill contested']]
   root.innerHTML = `<h1>SYN3H / ADAPTIVE SCORE</h1><p>Everything you hear is synthesised live from a seed. Nothing is a recording.</p>
-    <button id="power">Start the score</button> <label>Theme seed <input id="seed" type="number" value="1234" min="1" max="999999"></label> <button id="reseed">New theme</button> <button id="shot">Tag beam nearby</button> <button id="accent">Capture</button> <button id="climax">Play the climb and release</button> <button id="surge">Surge (as on take-off)</button> <button id="win">Release now (as on a win)</button>
+    <button id="power">Start the score</button> <label>Theme seed <input id="seed" type="number" value="1234" min="1" max="999999"></label> <button id="reseed">New theme</button> <button id="shot">Tag beam nearby</button> <button id="burst">Six tag beams</button> <button id="accent">Capture</button> <button id="climax">Play the climb and release</button> <button id="surge">Surge (as on take-off)</button> <button id="win">Release now (as on a win)</button>
     <div id="scenes">${Object.keys(SCENES).map(name => `<button data-scene="${name}">${name}</button>`).join('')}</div>
     ${sliders.map(([key, label, min, max, step]) => `<label>${label} <output data-out="${key}"></output><input data-key="${key}" type="range" min="${min}" max="${max}" step="${step}"></label>`).join('')}
     <div id="toggles">${toggles.map(([key, label]) => `<label><input data-toggle="${key}" type="checkbox"> ${label}</label>`).join('')}</div>
     <div id="layers"><strong>Layers</strong> ${LAYERS.map(name => `<label><input data-layer="${name}" type="checkbox" checked> ${name}</label>`).join('')}</div>
+    <div id="options"><strong>Experiments</strong> ${([[scoreTagNotes, 'Tag beams play notes'], [scoreConvoy, 'Convoy harmony'], [scoreTerrain, 'Terrain as melody'], [scoreWeather, 'Space weather']] as const).map(([param, label]) => `<label><input data-option="${param.def.id}" type="checkbox"> ${label}</label>`).join('')}</div>
     <label style="display:inline-block"><input id="lite" type="checkbox"> Lighter score (for phones)</label> <label style="display:inline-block"><input id="network" type="checkbox"> Algorithmic hall (cheaper)</label>
     <label>Volume <input id="volume" type="range" min="0" max="1" step="0.01" value="0.6"></label>
     <pre id="readout">Stopped</pre><canvas id="scope" width="640" height="120"></canvas>`
@@ -137,6 +149,7 @@ function mount(): void {
     const input = event.target as HTMLInputElement
     if (input.dataset.key) (state as unknown as Record<string, number>)[input.dataset.key] = Number(input.value)
     if (input.dataset.layer && score) score.synth.trim[input.dataset.layer as (typeof LAYERS)[number]] = input.checked ? 1 : 0
+    if (input.dataset.option) params.set(input.dataset.option, input.checked)
     if (input.dataset.toggle) (state as unknown as Record<string, boolean>)[input.dataset.toggle] = input.checked
     sync()
   })
@@ -147,6 +160,7 @@ function mount(): void {
   root.querySelector('#reseed')!.addEventListener('click', () => { seed.value = String(1 + Math.floor(Math.random() * 999998)); score?.setSeed(Number(seed.value)) })
   seed.addEventListener('change', () => score?.setSeed(Number(seed.value)))
   root.querySelector('#shot')!.addEventListener('click', () => score?.combat(0.2))
+  root.querySelector('#burst')!.addEventListener('click', () => { for (let n = 0; n < 6; n++) setTimeout(() => score?.combat(0.14), n * 90) })
   root.querySelector<HTMLInputElement>('#lite')!.addEventListener('change', event => { params.set(scoreLite.def.id, (event.target as HTMLInputElement).checked); for (const box of root.querySelectorAll<HTMLInputElement>('[data-layer]')) box.checked = true })
   root.querySelector<HTMLInputElement>('#network')!.addEventListener('change', event => { params.set(scoreNetworkHall.def.id, (event.target as HTMLInputElement).checked); for (const box of root.querySelectorAll<HTMLInputElement>('[data-layer]')) box.checked = true })
   root.querySelector('#accent')!.addEventListener('click', () => score?.accent())

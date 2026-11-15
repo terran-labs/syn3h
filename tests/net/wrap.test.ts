@@ -178,8 +178,8 @@ describe('Room on a wrapping world', () => {
   const state = (p: [number, number, number], v: [number, number, number] = [0, 0, 0], extra: Partial<WireState> = {}) =>
     encodeState({ id: 0, t: clock / 1000, p, q: [0, 0, 0, 1], v, w: [0, 0, 0], input: emptyInputLike(), ...extra })
   const send = (peer: Peer, msg: object) => room.receive(peer, JSON.stringify(msg))
-  /** A small wrapping planet (tile 1024 m), or the same world without the wrap. */
-  const world = (wrap: boolean) => ({ 'world.wrap': wrap, 'terrain.planetSize': 0 })
+  /** A small planet (tile 1024 m). Every world wraps. */
+  const world = (_wrap = true) => ({ 'terrain.planetSize': 0 })
 
   beforeEach(() => {
     clock = 100_000
@@ -196,17 +196,6 @@ describe('Room on a wrapping world', () => {
     send(a.peer, { type: 'ram', other: b.id, push: [13, 0, 0] })
     expect(b.peer.last('game')).toMatchObject({ event: 'ram', game: { it: b.id } })
     expect(b.peer.last('shove')).toEqual({ type: 'shove', from: a.id, push: [13, 0, 0] })
-  })
-
-  it('refuses the same ram when the world does not wrap', () => {
-    const a = join('A', world(false))
-    const b = join('B')
-    clock += 3100
-    room.receive(a.peer, state([HALF - 3, 0, 0], [20, 0, 0]))
-    room.receive(b.peer, state([-HALF + 3, 0, 0]))
-    send(a.peer, { type: 'ram', other: b.id, push: [13, 0, 0] })
-    expect(b.peer.last('game')?.game.it ?? a.id).toBe(a.id)
-    expect(b.peer.all('shove')).toEqual([])
   })
 
   it('still refuses a ram from far away on a wrapping world', () => {
@@ -228,14 +217,6 @@ describe('Room on a wrapping world', () => {
     // The muzzle is 2 m ahead of the vehicle, which puts it across the seam: canonical -511.
     send(a.peer, { type: 'fire', shot: { id: 1, o: [-HALF + 1, 1, 0], d: [1, 0, 0], boost: 0, t: clock / 1000 } })
     expect(b.peer.last('fire')).toMatchObject({ from: a.id })
-    // The same origin on a flat world is a thousand metres from the shooter: refused.
-    room = new Room('flat', { now: () => clock })
-    const c = join('C', world(false))
-    const d = join('D')
-    clock += 3100
-    room.receive(c.peer, state([HALF - 1, 0, 0]))
-    send(c.peer, { type: 'fire', shot: { id: 1, o: [-HALF + 1, 1, 0], d: [1, 0, 0], boost: 0, t: clock / 1000 } })
-    expect(d.peer.last('fire')).toBeUndefined()
   })
 
   it('counts a player on the hill across the seam from its centre', () => {
@@ -255,7 +236,7 @@ describe('Room on a wrapping world', () => {
   })
 
   it('reads the tile from the room\'s planet size', () => {
-    const a = join('A', { 'world.wrap': true, 'terrain.planetSize': 2 })
+    const a = join('A', { 'terrain.planetSize': 2 })
     const b = join('B')
     clock += 3100
     // On the large planet the seam is at 2048, so the small planet's seam is open ground:
