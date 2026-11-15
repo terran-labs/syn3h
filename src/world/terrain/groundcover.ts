@@ -410,7 +410,7 @@ export class GroundCover implements System {
     this.disposeLayers()
     this.clearCover()
     const data = this.sampler.data
-    const flora = FLORA[data.settings.kind] ?? FLORA[0]
+    const flora = FLORA[data.settings.look] ?? { layers: () => [], shade: 0xffffff }
     this.treeLine = data.layout.summitHeight * 0.3
     shadeTint.value.setHex(flora.shade)
     const specs = flora.layers(this.treeLine)

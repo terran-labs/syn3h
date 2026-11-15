@@ -4,9 +4,11 @@ import { FLORA, type Ground, type Plant, setTint } from '../../src/world/terrain
 import { flowAt } from '../../src/world/terrain/groundcover'
 import { generateTerrain } from '../../src/world/terrain/generate'
 import { HeightSampler } from '../../src/world/terrain/sampler'
-import { KIND_ALPINE, KIND_DESERT, KIND_VOLCANIC, defaultTerrainSettings } from '../../src/world/terrain/settings'
+import { defaultTerrainSettings } from '../../src/world/terrain/settings'
 
-const KINDS = [KIND_VOLCANIC, KIND_DESERT, KIND_ALPINE]
+/** Looks that grow something: all but ice (4) and the moon (7). */
+const KINDS = [0, 1, 2, 3, 5, 6, 8]
+const KIND_VOLCANIC = 0
 
 function ground(over: Partial<Ground> = {}): Ground {
   return {
@@ -18,7 +20,12 @@ function ground(over: Partial<Ground> = {}): Ground {
 const plant = (): Plant => ({ scale: 0, r: 1, g: 1, b: 1, lx: 0, lz: 0 })
 
 describe('vegetation', () => {
-  it('gives every kind of world layers whose shapes fit in eight vertex buffers', () => {
+  it('leaves ice and the moon bare', () => {
+    expect(FLORA[4].layers(100)).toEqual([])
+    expect(FLORA[7].layers(100)).toEqual([])
+  })
+
+  it('gives every planet that grows something layers whose shapes fit in eight vertex buffers', () => {
     for (const kind of KINDS) {
       const layers = FLORA[kind].layers(100)
       expect(layers.length).toBeGreaterThan(1)

@@ -8,16 +8,20 @@
  *              a few sunset-coloured blooms and pebbles
  *  - volcanic: dark blades with ember tips, alien anemones and tube clumps in one ember,
  *              red and magenta family with a rare cold cyan, thickest near the lava
+ *  - obsidian: the volcanic plants in magenta, violet and ember red on black glass
+ *  - badlands: the desert's plants on red clay
+ *  - archipelago: short lush turf, sea oats along the shore, tropical blooms in drifts
+ *  - swamp:    olive sedge, reed beds along the water, glowcaps lit from beneath
+ *  - ice and moon: bare
  *
  * Every plant fades from the ground's own colour at its root to its own colour at the tip,
  * so it grows out of the ground instead of sitting on it. Nothing here is large: no trees,
  * bushes or cacti.
  *
- * To add a kind of world, add a `Flora` to FLORA. Layers are plain data: a shape, a grid
- * and a `grow` rule that reads the ground at a cell.
+ * To add a planet, add a `Flora` to FLORA under its look (terrain.look). Layers are plain
+ * data: a shape, a grid and a `grow` rule that reads the ground at a cell.
  */
 import * as THREE from 'three/webgpu'
-import { KIND_ALPINE, KIND_DESERT, KIND_VOLCANIC } from './settings'
 
 // ---------------------------------------------------------------------------------------
 // The ground at a cell, and what grows there
@@ -462,6 +466,58 @@ export function tubes(): THREE.BufferGeometry {
   return b.build()
 }
 
+/**
+ * Reeds: a stand of tall, narrow, bending leaves with a few seed spikes among them, like
+ * bulrushes at the edge of a marsh. Leaves take the plant's tint.
+ */
+export function reeds(): THREE.BufferGeometry {
+  const b = new Builder(0.25)
+  const root = C(0x2a3014), tip = C(0x8a9a4a), spike = C(0x4a2e18)
+  for (let i = 0; i < 7; i++) {
+    const a = i * 2.4 + 0.2
+    const ox = Math.cos(a), oz = Math.sin(a)
+    const h = 0.9 + 0.5 * r01(i, 37)
+    const out = 0.03 + 0.08 * r01(i, 13)
+    const lean = 0.1 + 0.18 * r01(i, 59)
+    const p0 = [ox * out, 0, oz * out]
+    const p1 = [ox * (out + h * lean * 0.3), h * 0.55, oz * (out + h * lean * 0.3)]
+    const p2 = [ox * (out + h * lean), h, oz * (out + h * lean)]
+    ribbon(b, p0, p1, 0.022, 0.016, root, root.clone().lerp(tip, 0.6), 0, 0.5, { tint: 1 })
+    ribbon(b, p1, p2, 0.016, 0.002, root.clone().lerp(tip, 0.6), tip, 0.5, 1, { tint: 1 })
+  }
+  // Three seed spikes standing straight among the leaves.
+  for (let i = 0; i < 3; i++) {
+    const a = i * 2.1 + 1
+    const x = Math.cos(a) * 0.06, z = Math.sin(a) * 0.06
+    const h = 1.1 + 0.25 * r01(i, 17)
+    stem(b, [[x, 0, z], [x + 0.02, h - 0.2, z]], 0.006, 0.005, root, root, { s1: 0.8 })
+    stem(b, [[x + 0.02, h - 0.2, z], [x + 0.025, h, z]], 0.022, 0.018, spike, spike, { s0: 0.8, s1: 0.9 })
+  }
+  return b.build()
+}
+
+/**
+ * Glowcaps: a cluster of short soil-coloured stalks, each topped with a flat cap that is lit
+ * from beneath in the plant's colour. Faint by day, the swamp's lanterns at night.
+ */
+export function glowcaps(): THREE.BufferGeometry {
+  const b = new Builder(0.06)
+  const soil = C(0x2a2418), cap = C(0xffffff), rim = C(0xb0b0b0)
+  for (let i = 0; i < 6; i++) {
+    const a = i * 2.4 + 0.3, r = 0.04 + 0.12 * r01(i, 29)
+    const x = Math.cos(a) * r, z = Math.sin(a) * r
+    const h = 0.07 + 0.16 * r01(i, 41)
+    stem(b, [[x, 0, z], [x + 0.01, h, z]], 0.008, 0.006, soil, soil, { earth: 0.6, s1: 0.3 })
+    const R = 0.03 + 0.03 * r01(i, 7)
+    for (let k = 0; k < 5; k++) {
+      const a0 = (k / 5) * Math.PI * 2, a1 = ((k + 1) / 5) * Math.PI * 2
+      b.tri([x + 0.01, h + 0.012, z], [x + 0.01 + Math.cos(a0) * R, h - 0.006, z + Math.sin(a0) * R],
+        [x + 0.01 + Math.cos(a1) * R, h - 0.006, z + Math.sin(a1) * R], [cap, rim, rim], [0.3, 0.3, 0.3], 1, [1, 0.7, 0.7])
+    }
+  }
+  return b.build()
+}
+
 // ---------------------------------------------------------------------------------------
 // What grows where
 // ---------------------------------------------------------------------------------------
@@ -649,13 +705,17 @@ function desertLayers(): LayerSpec[] {
   ]
 }
 
-/** An ember, red or magenta for the plant, or one time in twenty the cold accent. */
-function ember(c: Ground, h: number, out: Plant, vary: number): void {
+// Obsidian: black glass with magenta seams, so its plants lean magenta and violet with
+// ember red, and the same rare cold accent.
+const SEAMS = [0xd8206e, 0x9c1048, 0xb030c0, 0xc41c12, 0x7a18a8]
+
+/** One of the palette's colours for the plant, or one time in twenty the cold accent. */
+function ember(c: Ground, h: number, out: Plant, vary: number, palette: number[]): void {
   if (unit(h, 4) < 0.05) { setTint(out, CYAN, vary, h); return }
-  setTint(out, EMBERS[(Math.floor(c.region * 13) + ((h >>> 6) % 2)) % EMBERS.length], vary, h)
+  setTint(out, palette[(Math.floor(c.region * 13) + ((h >>> 6) % 2)) % palette.length], vary, h)
 }
 
-function volcanicLayers(): LayerSpec[] {
+function volcanicLayers(palette: number[]): LayerSpec[] {
   return [
     {
       // Dark blades with ember tips, in clumps, curling over. Thickest near the lava.
@@ -679,7 +739,7 @@ function volcanicLayers(): LayerSpec[] {
         if (c.rock > 0.9 && c.flow < 0.3) return
         if (unit(h, 22) > 0.03 + 0.4 * smooth(0.62, 0.8, c.patch) + 0.6 * c.flow) return
         out.scale = (0.55 + 0.6 * unit(h, 2)) * (1 + 0.35 * c.flow)
-        ember(c, h, out, 0.12)
+        ember(c, h, out, 0.12, palette)
       },
     },
     {
@@ -690,15 +750,101 @@ function volcanicLayers(): LayerSpec[] {
         if (c.rock > 0.9 && c.flow < 0.3) return
         if (unit(h, 22) > 0.025 + 0.35 * smooth(0.42, 0.22, c.patch) + 0.4 * c.flow) return
         out.scale = (0.7 + 1.0 * unit(h, 2)) * (1 + 0.3 * c.flow)
-        ember(c, h, out, 0.12)
+        ember(c, h, out, 0.12, palette)
       },
     },
   ]
 }
 
-/** What grows on each kind of world. */
+// Archipelago: coral, white and sunny yellow blooms on bright green.
+const ISLE_BLOOMS = [0xffffff, 0xff7a5a, 0xffd23a, 0xff5a8a, 0xffffff]
+
+function archipelagoLayers(): LayerSpec[] {
+  return [
+    {
+      // Short lush turf in clumps, greenest inland, sparse and salt-bleached at the shore.
+      n: 176, spacing: 0.8, shade: true, geometry: tuft(7, 0.4, 0x2e6a1c, 0xb8e070, { width: 0.034 }),
+      grow(c, h, out) {
+        const k = clumped(c, h, out, 2.4)
+        if (!k) return
+        const salt = smooth(0.6, 1, c.flow) * smooth(0.6, 0.3, c.region)
+        out.scale = (0.9 + 0.7 * smooth(0.3, 0.7, c.region)) * k * (1 - 0.3 * salt)
+        const v = 0.85 + 0.3 * c.clump
+        out.r = v * (1 + 0.5 * salt); out.g = v; out.b = v * (1 - 0.3 * salt)
+      },
+    },
+    {
+      // Sea oats: pale seed heads leaning in the wind, in a band along the shore.
+      n: 80, spacing: 1.6, geometry: seedGrass(5, 0.7, 0x9a9a5a, 0xf0e2b0, 0.2),
+      grow(c, h, out) {
+        if (unit(h, 22) > 0.03 + 0.6 * smooth(0.5, 0.9, c.flow)) return
+        out.scale = 0.8 + 0.5 * unit(h, 2)
+        setTint(out, 0xf4e8c0, 0.15, h)
+      },
+    },
+    {
+      // Tropical blooms in drifts.
+      n: 80, spacing: 1.6, geometry: daisy(0.32, 6, 0.12, 0x2e6a1c, 0xffd23a),
+      grow(c, h, out) {
+        const band = Math.floor(c.patch * 9)
+        if (unit(h, 22) > (band % 2 === 1 ? 0.6 : 0.05)) return
+        out.scale = 0.8 + 0.6 * unit(h, 2)
+        setTint(out, ISLE_BLOOMS[(band + (unit(h, 4) < 0.15 ? 1 : 0)) % ISLE_BLOOMS.length], 0.08, h)
+      },
+    },
+  ]
+}
+
+function swampLayers(): LayerSpec[] {
+  return [
+    {
+      // Low olive sedge in clumps over the mud.
+      n: 176, spacing: 0.8, shade: true, geometry: tuft(6, 0.36, 0x262a10, 0x8a9440, { width: 0.026, curl: 0.1 }),
+      grow(c, h, out) {
+        if (unit(h, 2) > 0.6 + 0.4 * Math.max(smooth(0.4, 0.7, c.patch), c.flow)) return
+        const k = clumped(c, h, out, 2.2)
+        if (!k) return
+        out.scale = (0.9 + 0.6 * c.flow) * k
+        const v = 0.8 + 0.4 * c.clump
+        out.r = v; out.g = v; out.b = v * 0.9
+      },
+    },
+    {
+      // Reed beds, thickest along the water.
+      n: 80, spacing: 1.6, geometry: reeds(),
+      grow(c, h, out) {
+        if (unit(h, 22) > 0.06 + 0.85 * smooth(0.2, 0.8, c.flow) + 0.35 * smooth(0.55, 0.8, c.patch)) return
+        out.scale = 0.75 + 0.6 * unit(h, 2)
+        setTint(out, unit(h, 4) < 0.3 ? 0xc8b060 : 0xffffff, 0.2, h)
+      },
+    },
+    {
+      // Glowcaps in the damp hollows: teal like the sea, now and then a sickly green.
+      n: 80, spacing: 1.6, geometry: glowcaps(),
+      grow(c, h, out) {
+        if (unit(h, 22) > 0.05 + 0.5 * smooth(0.5, 0.25, c.patch) * (0.5 + 0.5 * c.flow)) return
+        out.scale = 1.5 + 1.2 * unit(h, 2)
+        setTint(out, unit(h, 4) < 0.2 ? 0x9aff4a : 0x2ae8c8, 0.15, h)
+      },
+    },
+  ]
+}
+
+/** Nothing grows: ice and the moon. */
+const BARE: Flora = { layers: () => [], shade: 0xffffff }
+
+/**
+ * What grows on each planet, by its look (terrain.look: see the list in settings.ts). A
+ * look missing here grows nothing.
+ */
 export const FLORA: Record<number, Flora> = {
-  [KIND_VOLCANIC]: { layers: () => volcanicLayers(), shade: 0x4a2a2a },
-  [KIND_DESERT]: { layers: () => desertLayers(), shade: 0xa08a68 },
-  [KIND_ALPINE]: { layers: (treeLine) => alpineLayers(treeLine), shade: 0x7a9060 },
+  0: { layers: () => volcanicLayers(EMBERS), shade: 0x4a2a2a },
+  1: { layers: () => desertLayers(), shade: 0xa08a68 },
+  2: { layers: (treeLine) => alpineLayers(treeLine), shade: 0x7a9060 },
+  3: { layers: () => archipelagoLayers(), shade: 0x6a9058 },
+  4: BARE,
+  5: { layers: () => volcanicLayers(SEAMS), shade: 0x605a70 },
+  6: { layers: () => desertLayers(), shade: 0x8a6050 },
+  7: BARE,
+  8: { layers: () => swampLayers(), shade: 0x6a6a48 },
 }
