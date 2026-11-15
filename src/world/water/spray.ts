@@ -3,11 +3,12 @@ import { defineParam } from '../../../shared/params'
 import { ParticleBatch } from '../../vehicles/effects/ParticleBatch'
 import { RibbonBatch } from '../../vehicles/effects/RibbonBatch'
 import type { Sprite } from '../../vehicles/effects/sprites'
-import { float, mx_fractal_noise_float, smoothstep, vec3 } from 'three/tsl'
+import { float, mx_fractal_noise_float, smoothstep, uv, vec3 } from 'three/tsl'
 import { applyCurve } from '../curve'
 import type { Ripples } from './ripples'
 import { emission } from './sprayMath'
 export const waterSpray=defineParam<boolean>({id:'water.spray',label:'Spray and wakes',group:'Water',scope:'client',default:true})
+export const waterSprayScale=defineParam({id:'water.sprayScale',label:'Spray size',group:'Water',scope:'client',default:1,min:.25,max:3,step:.05})
 /**
  * Spray: a burst of droplets rather than a soft puff. Fractal noise thresholded into specks
  * inside a round body, so each particle reads as a handful of drops, white with a cool tint
@@ -19,7 +20,7 @@ const spraySprite: Sprite = (p, seed, age, octaves) => {
   const drops = smoothstep(.05, .35, n)
   return { rgb: vec3(n.mul(.15).add(.92)), alpha: body.mul(drops.mul(.75).add(.25)).mul(.7) }
 }
-interface State {submerged:number;carry:number;last:T.Vector3;seen:number}
+interface State {submerged:number;carry:number;wakeCarry:number;last:T.Vector3;seen:number}
 /** Call update once, then vehicle for each wet or recently wet vehicle each frame. */
 export class Spray {
   private particles:ParticleBatch|null=null
@@ -31,6 +32,10 @@ export class Spray {
   constructor(private scene:T.Scene,private ripples:Ripples){}
   private allocate(){
     this.particles=new ParticleBatch(2048,spraySprite);this.ribbons=new RibbonBatch(2048)
+    // Fade both ends as well as the sides. Shared ribbons only fade across their width,
+    // which makes overlapping wake arms end in a straight bright cut across the sea.
+    const ends=smoothstep(0,.2,uv().y).mul(float(1).sub(smoothstep(.65,1,uv().y)))
+    this.ribbons.mesh.material.opacityNode=ends.mul(this.ribbons.mesh.material.opacityNode as typeof ends)
     for(const mesh of [this.particles.mesh,this.ribbons.mesh]){applyCurve(mesh.material);this.scene.add(mesh)}
   }
   update(dt:number){
@@ -45,7 +50,7 @@ export class Spray {
     if(!this.particles)this.allocate()
     const sub=Math.max(0,Math.min(1,submergedFraction)), speed=Math.hypot(velocity.x,velocity.z)
     let s=this.states.get(id)
-    if(!s){s={submerged:0,carry:0,last:position.clone(),seen:this.time};this.states.set(id,s)}
+    if(!s){s={submerged:0,carry:0,wakeCarry:0,last:position.clone(),seen:this.time};this.states.set(id,s)}
     const entering=sub-s.submerged>.2
     const e=emission(speed,sub,dt,s.carry);s.carry=e.carry
     const direction=new T.Vector3(velocity.x,0,velocity.z).normalize(),side=new T.Vector3(-direction.z,0,direction.x)
@@ -54,14 +59,18 @@ export class Spray {
       const sign=i%2?1:-1, spread=.5+Math.random()*1.5
       const p=position.clone().addScaledVector(side,sign).addScaledVector(direction,1)
       const v=side.clone().multiplyScalar(sign*spread).addScaledVector(direction,speed*.15);v.y=entering?2+Math.random()*3:.5+speed*.08
-      this.particles!.emit(p,v,.35+Math.random()*.4,.12,.3,this.white)
+      this.particles!.emit(p,v,.5+Math.random()*.4,.3*waterSprayScale.value,.5*waterSprayScale.value,this.white)
     }
     if(sub>0&&speed>1){
       this.ripples.disturb(position.x,position.z,1.5,Math.min(.15,speed*.004)*Math.min(.1,Math.max(0,dt))*60)
-      if(s.last.distanceToSquared(position)<400){
+      // Bound overlap at high frame rates. Twenty stamps per second also keeps a long
+      // wake from consuming the whole ring when several vehicles skim together.
+      s.wakeCarry+=Math.min(.1,Math.max(0,dt))*20
+      if(s.wakeCarry>=1&&s.last.distanceToSquared(position)<400){
         const trail=position.clone().addScaledVector(direction,-Math.min(5,speed*.3))
-        for(const sign of [-1,1])this.ribbons!.add(position,trail.clone().addScaledVector(side,sign*2),side,.5,3,.35,this.white)
+        for(const sign of [-1,1])this.ribbons!.add(position,trail.clone().addScaledVector(side,sign*2),side,.5,3,.18,this.white)
       }
+      s.wakeCarry%=1
     }
     if(entering)this.ripples.disturb(position.x,position.z,2,Math.min(.5,Math.abs(velocity.y)*.05+.1))
     s.submerged=sub;s.last.copy(position);s.seen=this.time
