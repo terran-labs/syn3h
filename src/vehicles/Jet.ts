@@ -76,6 +76,8 @@ export class Jet extends Vehicle {
     this.object.add(this.model.object)
     this.ridePosition.position.copy(this.model.eye)
     this.object.userData.cockpit = true
+    // The Mk2 has no lamp fittings; the old positions float beside its cockpit.
+    this.object.userData.ownLamps = true
     this.model.attach()
     this.applyColors()
   }
@@ -105,7 +107,7 @@ export class Jet extends Vehicle {
     const vector=this.smoothed.clone().multiplyScalar(jetVectorResponse.value)
     // Keep source force equations; scale digital control authority for demo keyboard use.
     if(!this.hoverMode){input.x*=jetControlResponse.value;input.y*=jetControlResponse.value;input.w*=jetControlResponse.value}
-    this.gearAmount=clamp(this.gearAmount+(this.hoverMode?dt:-dt),0,1)
+    this.gearAmount=clamp(this.gearAmount+(this.hoverMode&&!this.zorbed?dt:-dt),0,1)
     if(this.body.isKinematic()) return
     const q=new THREE.Quaternion().copy(this.body.rotation()), inv=q.clone().invert()
     const velocity=new THREE.Vector3().copy(this.body.linvel()), speed=velocity.length()
@@ -182,7 +184,9 @@ export class Jet extends Vehicle {
     // Visual only: the ring's surfaces follow the smoothed stick in both modes, signed like the
     // nozzle petals. Pulling back (y below 0) is nose up; x is roll right; w is yaw right.
     this.controls.set(-this.smoothed.y, this.smoothed.x, this.smoothed.w)
-    this.model.update(this.gearAmount, this.vectorPitch, this.vectorYaw, Math.max(0, this.smoothed.z), this.controls)
+    this.model.update(this.gearAmount, this.vectorPitch, this.vectorYaw, Math.max(0, this.smoothed.z), this.controls, this.hoverMode)
+    // A ball carries its vehicle; even idle thrust must stay dark inside it.
+    this.model.plume.mesh.visible = !this.zorbed
   }
   protected override applyColors():void {
     this.model?.setColors(this.colors.body, this.colors.accent)

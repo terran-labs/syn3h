@@ -100,6 +100,50 @@ describe('Syn3h camera', () => {
     for (let i = 0; i < 300; i++) chase.update(0.02)
     expect(camera.fov).toBeCloseTo(70, 0)
   })
+  it('eases from a director shot into the chase view when the player takes the controls back', () => {
+    const { camera, target, chase } = harness()
+    chase.setVehicle({ object: target, body: { isValid: () => true, linvel: () => ({ x: 0, y: 0, z: 0 }) } } as unknown as CameraVehicle)
+    for (const shot of ['orbit', 'crane', 'low', 'flyby'] as const) {
+      chase.director.start()
+      // Jump to the shot under test, as the sequence would reach it.
+      Object.assign(chase.director as unknown as { index: number; shot: string; shotTime: number; placed: boolean }, { index: ({ orbit: 1, flyby: 3, crane: 4, low: 5 })[shot], shot, shotTime: 0, placed: shot === 'flyby' })
+      for (let i = 0; i < 150; i++) chase.update(0.02)
+      expect(chase.director.shot, shot).toBe(shot)
+      const from = camera.position.clone()
+      expect(from.distanceTo(new Vector3(0, 1 + 9.25 * 0.15, 9.25)), `${shot} is away from the chase pose`).toBeGreaterThan(3)
+      // The player touches a control: Daydream stops the director.
+      chase.director.stop(); chase.update(0.02)
+      expect(camera.position.distanceTo(from), `${shot}: no jump on the first frame`).toBeLessThan(0.5)
+      let last = camera.position.clone(), worst = 0
+      let turn = camera.quaternion.clone()
+      for (let i = 0; i < 60; i++) {
+        chase.update(0.02); worst = Math.max(worst, camera.position.distanceTo(last)); last = camera.position.clone()
+        expect(camera.quaternion.angleTo(turn) * 180 / Math.PI / 0.02, `${shot}: turn speed`).toBeLessThan(250)
+        turn.copy(camera.quaternion)
+      }
+      expect(worst, `${shot}: largest step on the way back`).toBeLessThan(1.5)
+      expect(camera.position.z, shot).toBeCloseTo(9.25); expect(camera.position.y, shot).toBeCloseTo(1 + 9.25 * 0.15)
+    }
+  })
+  it('gives the camera to a pose set from outside at once, whatever shot the director is on', () => {
+    const { camera, target, chase } = harness()
+    chase.setVehicle({ object: target, body: { isValid: () => true, linvel: () => ({ x: 0, y: 0, z: 0 }) } } as unknown as CameraVehicle)
+    chase.director.start()
+    Object.assign(chase.director as unknown as { index: number; shot: string; shotTime: number }, { index: 1, shot: 'orbit', shotTime: 0 })
+    for (let i = 0; i < 100; i++) chase.update(0.02)
+    const orbiting = camera.position.clone()
+    // The descent into a world begins while the director still thinks it has the camera.
+    const top = new Vector3(0, 520, 40), down = new Vector3(0, 0, 0)
+    chase.setCinematicPose(top, down, 64); chase.update(0.02)
+    expect(camera.position.distanceTo(orbiting)).toBeLessThan(25)
+    let height = camera.position.y
+    for (let i = 0; i < 400; i++) { chase.setCinematicPose(top, down, 64); chase.update(0.02); expect(camera.position.y).toBeGreaterThanOrEqual(height - 1e-6); height = camera.position.y }
+    // It went to the outside pose and stayed: the director took none of those frames and started no shot.
+    expect(camera.position.distanceTo(top)).toBeLessThan(0.5)
+    expect(chase.director.shot).toBe('orbit')
+    expect(camera.position.distanceTo(new Vector3(0, 5.5, 0))).toBeGreaterThan(400)
+    chase.director.stop()
+  })
   it('uses the ride point, restores visibility, and supports explicit flight binding', () => {
     const { camera, target, chase } = harness(), ride = new Object3D()
     ride.position.set(0, 2, 0); target.add(ride); target.updateMatrixWorld(true)

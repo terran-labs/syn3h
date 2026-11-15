@@ -100,6 +100,7 @@ class VehicleEffects {
   private readonly lampPoints:T.Object3D[]=[]
   private readonly lampMatrix=new T.Matrix4()
   private readonly spots:T.SpotLight[]=[]
+  private readonly ownsSpots:boolean
   // Last tyre mark and wing tip positions, kept in place; the flags say which are live.
   private readonly previousMarks=[new T.Vector3(),new T.Vector3(),new T.Vector3(),new T.Vector3()]
   private readonly hasMark=[false,false,false,false]
@@ -120,7 +121,8 @@ class VehicleEffects {
   private readonly unlisten?:()=>void
   private readonly onTileShift:(e:TileShiftEvent)=>void
   private readonly buggy:boolean
-  constructor(private readonly world:EffectWorld,private readonly terrain:Terrain,private readonly vehicle:EffectsVehicle,local:boolean){
+  constructor(private readonly world:EffectWorld,private readonly terrain:Terrain,private readonly vehicle:EffectsVehicle,local:boolean,sharedSpots?:T.SpotLight[]){
+    this.ownsSpots=!sharedSpots
     this.buggy=vehicle.kind.startsWith('buggy')
     this.root.name='Vehicle effects';vehicle.object.add(this.root);this.lastPosition.copy(vehicle.object.position)
     // Hovercraft points are for the generated Lowwing body (hovergen h4-low), from its lead: lamps
@@ -136,10 +138,10 @@ class VehicleEffects {
       // Each buggy lamp casts its own beam. Split the old total intensity between them
       // so the overlap on the road does not double the exposure. Other vehicles keep
       // their existing central beam until their individual lighting is tuned.
-      for(const x of this.buggy?[-width,width]:[0]){
-        const spot=new T.SpotLight(new T.Color(1,.9965517,.875),0,50,Math.PI/6,.45,2)
+      for(const [i,x] of (sharedSpots?[-width,width]:this.buggy?[-width,width]:[0]).entries()){
+        const spot=sharedSpots?.[i]??new T.SpotLight(new T.Color(1,.9965517,.875),0,50,Math.PI/6,.45,2)
         spot.name=this.buggy?(x<0?'Left headlight':'Right headlight'):'Headlight'
-        spot.position.set(x,this.buggy?.036:.35,-front);spot.target.position.set(x,-.8,-22);spot.castShadow=false
+        spot.position.set(x,hover?.23:this.buggy?.036:.35,hover?-1.85:-front);spot.target.position.set(x,-.8,-22);spot.castShadow=false
         this.spots.push(spot);this.root.add(spot,spot.target)
       }
     }
@@ -260,7 +262,7 @@ class VehicleEffects {
       }
     }else if(!trails)this.hasTip.fill(false)
   }
-  dispose(){this.unlisten?.();this.events.removeEventListener('tileshift',this.onTileShift);this.root.removeFromParent();this.headMaterial.dispose();this.tailMaterial.dispose();for(const spot of this.spots)spot.dispose()}
+  dispose(){this.unlisten?.();this.events.removeEventListener('tileshift',this.onTileShift);this.root.removeFromParent();this.headMaterial.dispose();this.tailMaterial.dispose();if(this.ownsSpots)for(const spot of this.spots)spot.dispose()}
 }
 
 /**
@@ -285,10 +287,10 @@ export function hideUnusedLamps(batch:T.InstancedMesh,index:number):void {
 }
 
 /** Attach after game.add(vehicle). Call the returned idempotent disposer BEFORE vehicle.dispose(). */
-export function attachVehicleEffects(game:Game,terrain:Terrain,vehicle:Vehicle,options:{local:boolean}):()=>void{
+export function attachVehicleEffects(game:Game,terrain:Terrain,vehicle:Vehicle,options:{local:boolean;spots?:T.SpotLight[]}):()=>void{
   const world=worldFor(game)
   if(world.vehicles.has(vehicle))throw new Error('Vehicle effects already attached')
-  const effects=new VehicleEffects(world,terrain,vehicle,options.local);world.vehicles.set(vehicle,effects);world.lamps.count=Math.min(512,world.vehicles.size*4);world.retain()
+  const effects=new VehicleEffects(world,terrain,vehicle,options.local,options.spots);world.vehicles.set(vehicle,effects);world.lamps.count=Math.min(512,world.vehicles.size*4);world.retain()
   let disposed=false
   return()=>{if(disposed)return;disposed=true;effects.dispose();world.vehicles.delete(vehicle);world.lamps.count=Math.min(512,world.vehicles.size*4);world.release()}
 }

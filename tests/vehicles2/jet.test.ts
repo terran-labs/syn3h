@@ -125,4 +125,22 @@ describe('Jet hover and flight',()=>{
   expect(Math.abs(bot.body.angvel().y)).toBeGreaterThan(.05);expect(bot.input.w).toBe(1)
   bot.dispose();h.world.free()
  })
+ it('opts out of shared lamp blobs because the Mk2 has no lamp fittings',()=>{
+  const h=harness();const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,30,0));v.isLocal=false
+  expect(v.object.userData.ownLamps).toBe(true)
+  v.dispose();h.world.free()
+ })
+ it('stows landing gear and hides all generated thrust inside Zorb, restoring it on exit',()=>{
+  const h=harness();const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,3,0));v.isLocal=false
+  const model=(v as unknown as {model:import('../../src/vehicles/jetgen/GameJet').GameJet}).model
+  h.step(v,100);v.update(1/60,1)
+  expect(model.near.gearAmount).toBe(1);expect(model.plume.mesh.visible).toBe(true)
+  v.input.zorb=true;v.input.z=1;h.step(v,100);v.update(1/60,1)
+  expect(v.zorbed).toBe(true);expect(model.near.gearAmount).toBe(0);expect(model.plume.mesh.visible).toBe(false)
+  for(let i=0;i<3;i++){v.input.special=!v.input.special;h.step(v,60);v.update(1/60,1);expect(model.plume.mesh.visible).toBe(false);expect(model.near.gearAmount).toBe(0)}
+  v.input.zorb=false;v.input.special=false;v.input.z=0;h.step(v,300);v.update(1/60,1)
+  expect(v.zorbed).toBe(false);expect(model.plume.mesh.visible).toBe(true);expect(model.near.gearAmount).toBe(1)
+  v.dispose();h.world.free()
+ })
+
 })
