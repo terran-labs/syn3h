@@ -21,6 +21,14 @@ export interface Snapshot {
   paused?: boolean
 }
 
+/** The least automatic interpolation delay, seconds (VehicleNet.js 79). */
+export const DELAY_FLOOR = 0.1
+
+/** The most one state can move the jitter estimate, seconds. A single late state (a Wi-Fi
+ * hiccup, a garbage collection pause) must not make every remote vehicle lag by half a second
+ * for the next twenty; sustained jitter still raises the estimate to its true size. */
+export const JITTER_SAMPLE_CAP = 0.1
+
 /** How long a paused player may go between heartbeats before counting as gone. Chrome
  * throttles timers in long hidden tabs to once a minute, so this is generous. */
 export const PAUSE_TOLERANCE = 75
@@ -56,7 +64,7 @@ export class SnapshotBuffer {
   /** Smoothed variation of that age, seconds. */
   jitter = 0
   /** The automatic interpolation delay, seconds. */
-  autoDelay = 0.1
+  autoDelay = DELAY_FLOOR
 
   constructor(readonly capacity = 32) {}
 
@@ -64,35 +72,67 @@ export class SnapshotBuffer {
     return this.states[0]
   }
 
+  /** States measured since the estimate was (re)started. */
+  private measured = 0
+
   /**
-   * Add a state. `now` is server seconds at arrival, `sendRate` the sender's rate, which sets
-   * how quickly the ping and jitter estimates follow (VehicleNet.js 189-191).
+   * Add a state. `now` is server seconds at arrival. `sendRate` is the sender's nominal rate;
+   * the estimates follow with a one second time constant measured in the sender's own time,
+   * which is VehicleNet.js 189-191's weight of 1/sendRate per state at the nominal rate, and
+   * stays right when states come slower (a hidden tab's heartbeat arrives once a second).
    * Returns false for a state older than one already held.
+   *
+   * `measure` false stores the state without updating ping and jitter. The caller passes that
+   * when its own main thread was stalled: states queued behind a long local frame arrive late
+   * through no fault of the network, and counting them once sent the delay to 790 ms after a
+   * 1.5 s stall, taking 20 s to recover.
+   *
+   * The first state after a (re)start is never measured: on joining, the server replays each
+   * player's last stored state, which for a hidden tab may be a second or a minute old. Seeding
+   * the ping from it showed a 1 s delay for a player whose states arrived 30 ms old.
    */
-  push(s: Snapshot, now: number, sendRate = 20): boolean {
+  push(s: Snapshot, now: number, sendRate = 20, measure = true): boolean {
     const head = this.states[0]
     if (head && s.t <= head.t) return false
     const age = now - s.t
-    if (!head) {
-      this.ping = age
-    } else {
-      const k = Math.min(1, 1 / sendRate)
-      this.jitter += (Math.abs(this.ping - age) - this.jitter) * k
-      this.ping += (age - this.ping) * k
+    if (head && measure) {
+      if (this.measured === 0) {
+        this.ping = age
+        this.jitter = 0
+      } else {
+        const k = Math.min(1, Math.max(1 / sendRate, s.t - head.t))
+        const dev = Math.min(JITTER_SAMPLE_CAP, Math.abs(this.ping - age))
+        this.jitter += (dev - this.jitter) * k
+        this.ping += (Math.min(age, this.ping + JITTER_SAMPLE_CAP) - this.ping) * k
+      }
+      this.measured++
     }
     this.states.unshift(s)
     if (this.states.length > this.capacity) this.states.pop()
     return true
   }
 
+  /** Forget the latency estimate (our tab was hidden, the clock jumped): re-seed from the next
+   * two states and start the delay again from its floor. */
+  restartEstimate(): void {
+    this.measured = 0
+    this.ping = 0
+    this.jitter = 0
+    this.autoDelay = DELAY_FLOOR
+  }
+
   /**
    * The delay to play back at. `override` > 0 forces it; otherwise it eases toward
-   * max(0.1, ping * 1.5 + jitter * 8) as in VehicleNet.js 79.
+   * max(0.1, ping * 1.5 + jitter * 8) as in VehicleNet.js 79. It rises slowly, as in the
+   * original, but falls with a two second time constant so a passing disturbance does not
+   * leave every vehicle lagging for half a minute.
    */
   delay(dt: number, override = 0): number {
     if (override > 0) return override
-    const target = this.ping * 1.5 + this.jitter * 8
-    this.autoDelay = Math.max(0.1, this.autoDelay + (target - this.autoDelay) * Math.min(1, dt * 0.15))
+    if (this.measured < 2) return this.autoDelay
+    const target = Math.max(DELAY_FLOOR, this.ping * 1.5 + this.jitter * 8)
+    const rate = target < this.autoDelay ? 0.5 : 0.15
+    this.autoDelay = Math.max(DELAY_FLOOR, this.autoDelay + (target - this.autoDelay) * Math.min(1, dt * rate))
     return this.autoDelay
   }
 
