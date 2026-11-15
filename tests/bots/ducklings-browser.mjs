@@ -25,7 +25,11 @@ try {
   assert.equal(defaults['bots.tagBeams'], false)
   assert.equal(defaults['bots.aggression'], 1)
   assert.ok(defaults['bots.followYou'] > 0)
-  // A fresh single-player room assigns the human as "it". Inspect real networking wiring.
+  // Explore is the normal entry. Explicitly select Tag to verify its local marker,
+  // then return to Explore for the default following capture.
+  assert.equal(await page.evaluate(() => window.syn3h.params.get('game.mode').value), 2)
+  await page.evaluate(() => window.syn3h.params.set('game.mode', 0))
+  await page.waitForFunction(() => { const n = window.syn3hNet; return n.game.mode === 0 && n.marker.target === window.syn3h.player && n.marker.mesh.visible }, null, { timeout: 30000 })
   const marker = await page.evaluate(() => {
     const n = window.syn3hNet, s = window.syn3h
     return { id: n.id, it: n.game.it, local: n.marker.local === s.player, targetLocal: n.marker.target === s.player, visible: n.marker.mesh.visible }
@@ -42,8 +46,12 @@ try {
       if (s.bots.vehicles.some(b => b.input.fire)) r.firing++
     } })
   })
+  if (!process.env.BOTS_STAY_TAG) {
+    await page.evaluate(() => window.syn3h.params.set('game.mode', 2))
+    await page.waitForFunction(() => window.syn3hNet.game.mode === 2)
+  }
   const samples = []
-  for (const [phase, key, seconds] of [['gather', null, 8], ['follow', 'KeyW', 6], ['stop', 'ShiftLeft', 8]]) {
+  for (const [phase, key, seconds] of [['gather', null, 8], ['follow', 'KeyW', 2], ['stop', 'ShiftLeft', 16]]) {
     if (key) await page.keyboard.down(key)
     const start = await page.evaluate(() => window.syn3h.game.tick)
     for (let i = 1; i <= seconds; i++) {
@@ -65,6 +73,7 @@ try {
   assert.ok(frames.following > 0)
   assert.equal(frames.firing, 0)
   assert.deepEqual(errors, [])
+  assert.ok(samples.at(-1).bots.filter(b => b.distance < 40).length >= 2, 'at least two followers gather near the stopped player')
   assert.ok(samples.some(s => s.bots.some(b => b.duck)), 'at least one bot visibly follows')
   assert.ok(samples.every(s => s.bots.every(b => !b.firing)), 'default bots never fire')
   assert.ok(marker.local, 'marker follows local player slot')
