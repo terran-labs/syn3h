@@ -352,7 +352,11 @@ try {
       await wait(3000)
       const score = await b.evaluate((id) => window.syn3hNet.game.scores[id] ?? 0, idA)
       await a.evaluate(() => window.syn3h.params.set('game.mode', 0))
-      return { zoneOnB: true, zoneMs, captureSeenOnB: held, captureMs, scoreAfter3s: score }
+      const seen = await a.evaluate(() => {
+        const p = window.syn3h.player.body.translation(), k = window.syn3hNet.game.koth
+        return { p: [p.x, p.y, p.z].map((n) => +n.toFixed(1)), r: +Math.hypot(p.x - k.zone.x, p.z - k.zone.z).toFixed(1), zone: k.zone, holder: k.holder, contested: k.contested, stuck: k.out }
+      })
+      return { zoneOnB: true, zoneMs, captureSeenOnB: held, captureMs, scoreAfter3s: score, spot, seen }
     },
   }
 

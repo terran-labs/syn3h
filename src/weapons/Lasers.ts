@@ -14,6 +14,7 @@ import type { ShotInfo } from '../../shared/protocol'
 import type { Game, System } from '../core/Game'
 import { FIXED_DT, GROUP_ALL, GROUP_LIQUID, GROUP_PROJECTILE, RAPIER, groups } from '../core/physics'
 import { createWeaponEffects } from '../vehicles/effects'
+import { hotExposureDim } from '../vehicles/skins/hotExposure'
 import { laserGravity, laserLifetime, laserRicochet, laserSpeed } from './params'
 
 export interface LaserHooks {
@@ -49,6 +50,11 @@ const TRAIL = 10
 /** A shot younger than this is fresh: it gets a muzzle flash. Replayed old shots do not. */
 const FRESH = 0.15
 
+/** The beam's colours at daytime exposure, linear RGB: core, additive halo, blended tint. */
+const CORE_RGB = [0.9, 4, 1.4] as const
+const HALO_RGB = [0.25, 1.6, 0.45] as const
+const TINT_RGB = [0.1, 0.75, 0.25] as const
+
 export class Lasers implements System {
   private readonly shots: Projectile[] = []
   // Syn3h's LaserAuto look: plasma green. +Z is the direction of travel after rotateX.
@@ -56,15 +62,15 @@ export class Lasers implements System {
   /** Halo that tapers from 0.25 m at the head to 0.1 m at the tail, trailing behind. */
   private readonly haloGeo = new THREE.CylinderGeometry(0.25, 0.1, TRAIL, 8, 1).rotateX(Math.PI / 2).translate(0, 0, -TRAIL / 2 + LENGTH / 2)
   // Colours above 1 survive tone mapping as a hot, near white core: the glow without bloom.
-  private readonly coreMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.9, 4, 1.4) })
+  private readonly coreMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...CORE_RGB) })
   private readonly haloMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(0.25, 1.6, 0.45), transparent: true, opacity: 0.5,
+    color: new THREE.Color(...HALO_RGB), transparent: true, opacity: 0.5,
     blending: THREE.AdditiveBlending, depthWrite: false,
   })
   // The wing material's recipe: additive light washes out to white over a sunlit desert, so a
   // normally blended tint underneath keeps the green readable at noon.
   private readonly tintMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(0.1, 0.75, 0.25), transparent: true, opacity: 0.3, depthWrite: false,
+    color: new THREE.Color(...TINT_RGB), transparent: true, opacity: 0.3, depthWrite: false,
   })
   private readonly effects: ReturnType<typeof createWeaponEffects> | null
   /** Shots that already showed their impact here, so a later server confirmation does not repeat it. */
@@ -151,6 +157,13 @@ export class Lasers implements System {
   }
 
   update(dt: number, alpha: number): void {
+    // The sky raises the exposure at night, which would bleach these unlit HDR colours toward
+    // white. Scale each from its own constant every frame; never from the current colour,
+    // which would compound.
+    const dim = hotExposureDim(this.game.renderer.toneMappingExposure)
+    this.coreMat.color.setRGB(CORE_RGB[0] * dim, CORE_RGB[1] * dim, CORE_RGB[2] * dim)
+    this.haloMat.color.setRGB(HALO_RGB[0] * dim, HALO_RGB[1] * dim, HALO_RGB[2] * dim)
+    this.tintMat.color.setRGB(TINT_RGB[0] * dim, TINT_RGB[1] * dim, TINT_RGB[2] * dim)
     for (const p of this.shots) {
       p.mesh.visible = true
       p.mesh.position.lerpVectors(p.prev, p.pos, alpha)
