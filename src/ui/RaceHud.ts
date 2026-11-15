@@ -1,7 +1,6 @@
 import type { RaceState } from '../../shared/protocol'
 import { raceDirection, raceView, type RacePosition, type RaceRole } from './raceModel'
 export type { RaceRole } from './raceModel'
-const text = (element: HTMLElement, value: string) => { if (element.textContent !== value) element.textContent = value }
 
 /** Presentation of canonical snapshots only. No countdown timers, input capture or audio. */
 export class RaceHud {
@@ -19,6 +18,19 @@ export class RaceHud {
   private readonly cancel = document.createElement('button')
   private readonly hide = document.createElement('button')
   private readonly abort = new AbortController()
+  // What was last written to the page. update() runs every frame, usually with no race on, so
+  // it compares against these and touches the DOM only when something changed: no reads at all.
+  private shown = false
+  private captured: boolean | undefined
+  private collapsedShown: boolean | undefined
+  private leaveHidden: boolean | undefined
+  private cancelHidden: boolean | undefined
+  private arrowShown: boolean | undefined
+  private arrowDegrees: number | undefined
+  private statusShown = ''
+  private destinationShown = ''
+  private detailRole = ''
+  private detailMetres: number | undefined
 
   constructor(private readonly parent: HTMLElement, actions: { leave(): void; cancel(): void }) {
     this.element.className = 'race-hud'; this.element.hidden = true
@@ -43,28 +55,39 @@ export class RaceHud {
     this.render()
   }
   private view() { return this.snapshot ? raceView(this.snapshot, this.role, this.roomNow()) : null }
-  private render(): void {
-    const view = this.view()
+  private render(view = this.view()): void {
     if (!view || !this.snapshot) return
-    // Keep countdown updates quiet and avoid replacing unchanged text every frame.
-    text(this.status, view.status)
-    text(this.destination, this.snapshot.destination.label)
-    this.leave.hidden = this.collapsed || !view.leave; this.cancel.hidden = this.collapsed || !view.cancel
-    text(this.hide, this.collapsed ? 'Show race' : 'Hide')
-    this.hide.setAttribute('aria-expanded', String(!this.collapsed))
-    this.element.classList.toggle('is-collapsed', this.collapsed)
+    if (view.status !== this.statusShown) { this.statusShown = view.status; this.status.textContent = view.status }
+    const destination = this.snapshot.destination.label
+    if (destination !== this.destinationShown) { this.destinationShown = destination; this.destination.textContent = destination }
+    const leaveHidden = this.collapsed || !view.leave, cancelHidden = this.collapsed || !view.cancel
+    if (leaveHidden !== this.leaveHidden) { this.leaveHidden = leaveHidden; this.leave.hidden = leaveHidden }
+    if (cancelHidden !== this.cancelHidden) { this.cancelHidden = cancelHidden; this.cancel.hidden = cancelHidden }
+    if (this.collapsed !== this.collapsedShown) {
+      this.collapsedShown = this.collapsed
+      this.hide.textContent = this.collapsed ? 'Show race' : 'Hide'
+      this.hide.setAttribute('aria-expanded', String(!this.collapsed))
+      this.element.classList.toggle('is-collapsed', this.collapsed)
+    }
   }
   update(visible: boolean, captured: boolean, self?: RacePosition, size = 0): void {
-    this.element.hidden = !visible || !this.role.connected || !this.snapshot
-    this.parent.classList.toggle('has-landmark-race', !this.element.hidden)
-    if (this.element.hidden) return
-    this.render()
-    this.element.classList.toggle('is-captured', captured)
+    const show = visible && this.role.connected && !!this.snapshot
+    if (show !== this.shown) { this.shown = show; this.element.hidden = !show; this.parent.classList.toggle('has-landmark-race', show) }
+    if (!show) return
     const view = this.view()!
+    this.render(view)
+    if (captured !== this.captured) { this.captured = captured; this.element.classList.toggle('is-captured', captured) }
     const direction = self && size > 0 && view.active ? raceDirection(this.snapshot!, self, size) : null
-    this.arrow.hidden = !direction
-    if (direction) this.arrow.style.transform = `rotate(${direction.degrees}deg)`
-    text(this.detail, `${view.role}${direction ? ` · ${direction.metres} m` : ''}`)
+    const arrowShown = direction !== null
+    if (arrowShown !== this.arrowShown) { this.arrowShown = arrowShown; this.arrow.hidden = !arrowShown }
+    // Half a degree is finer than the eye can tell on this arrow, and saves a style write on most frames.
+    const degrees = direction ? Math.round(direction.degrees * 2) / 2 : undefined
+    if (degrees !== undefined && degrees !== this.arrowDegrees) { this.arrowDegrees = degrees; this.arrow.style.transform = `rotate(${degrees}deg)` }
+    const metres = direction?.metres
+    if (view.role !== this.detailRole || metres !== this.detailMetres) {
+      this.detailRole = view.role; this.detailMetres = metres
+      this.detail.textContent = `${view.role}${direction ? ` · ${direction.metres} m` : ''}`
+    }
   }
   dispose(): void { this.abort.abort(); this.parent.classList.remove('has-landmark-race'); this.element.remove() }
 }

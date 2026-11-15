@@ -37,6 +37,24 @@ export class FocusHud {
   readonly element = document.createElement('div')
   private readonly started = performance.now()
   private readonly text = new Map<string, HTMLElement[]>()
+  // update() runs every frame. Everything below remembers what was last written, as plain
+  // numbers and strings, so a frame in which nothing changed builds no strings and neither
+  // reads nor writes the page.
+  private readonly written = new Map<string, string>()
+  private speedArc!: SVGPathElement
+  private altitudeArc!: SVGPathElement
+  private tape!: SVGGElement
+  private styleShown = -1
+  private reticleShown = -1
+  private mphShown = -1
+  private altitudeShown = -1
+  private degreesShown = -1
+  private minuteShown = -1
+  private elapsedShown = -1
+  private worldShown: string | undefined
+  private speedArcShown = -1
+  private altitudeArcShown = -1
+  private tapeShown = NaN
   constructor(parent: HTMLElement) {
     this.element.className = 'focus-hud'; this.element.setAttribute('aria-hidden', 'true')
     const ticks = Array.from({ length: 49 }, (_, i) => `<path class="${i % 3 ? 'fh-faint' : 'fh-line'}" d="M${(i - 24) * 30} ${i % 3 ? -6 : -11}V0"/>`).join('')
@@ -56,25 +74,46 @@ export class FocusHud {
     <div class="fh-read fh-corner fh-bl" data-style="2"><small>VELOCITY</small><b data-t="speed3"></b><small>MPH</small></div>
     <div class="fh-read fh-corner fh-br" data-style="2"><small>HEADING</small><b data-t="heading"></b><small>ALT <span data-t="altitude4"></span> M</small></div>`
     for (const node of this.element.querySelectorAll<HTMLElement>('[data-t]')) { const key = node.dataset.t!; this.text.set(key, [...(this.text.get(key) ?? []), node]) }
+    this.speedArc = this.element.querySelector<SVGPathElement>('[data-arc=speed]')!
+    this.altitudeArc = this.element.querySelector<SVGPathElement>('[data-arc=altitude]')!
+    this.tape = this.element.querySelector<SVGGElement>('[data-tape]')!
     parent.append(this.element)
   }
-  private set(key: string, value: string): void { for (const node of this.text.get(key) ?? []) if (node.textContent !== value) node.textContent = value }
+  private set(key: string, value: string): void {
+    if (this.written.get(key) === value) return
+    this.written.set(key, value)
+    for (const node of this.text.get(key) ?? []) node.textContent = value
+  }
   /** Call every frame; it does nothing unless the display is on screen. */
   update(visible: boolean, t: Telemetry): void {
-    const style = String(Math.round(focusStyle.value)), reticle = String(Math.round(reticleStyle.value))
-    if (this.element.dataset.showStyle !== style) this.element.dataset.showStyle = style
-    if (this.element.dataset.showReticle !== reticle) this.element.dataset.showReticle = reticle
+    const style = Math.round(focusStyle.value), reticle = Math.round(reticleStyle.value)
+    if (style !== this.styleShown) { this.styleShown = style; this.element.dataset.showStyle = String(style) }
+    if (reticle !== this.reticleShown) { this.reticleShown = reticle; this.element.dataset.showReticle = String(reticle) }
     if (!visible) return
-    const mph = Math.abs(t.speed) * 2.23694, degrees = bearing(t.heading), seconds = (performance.now() - this.started) / 1000
-    this.set('speed', String(Math.round(mph))); this.set('speed3', pad(mph, 3)); this.set('altitude', String(Math.max(0, Math.round(t.altitude)))); this.set('altitude4', pad(t.altitude, 4))
-    this.set('heading', `${pad(degrees, 3)}° ${compassPoint(degrees)}`); this.set('world', t.world); this.set('clock', clock(t.hour))
-    this.set('elapsed', `${pad(Math.floor(seconds / 60), 2)}:${pad(seconds % 60, 2)}`)
-    if (style === '0') {
-      this.element.querySelector<SVGPathElement>('[data-arc=speed]')!.style.strokeDashoffset = String(100 - Math.min(100, (mph / 140) * 100))
-      this.element.querySelector<SVGPathElement>('[data-arc=altitude]')!.style.strokeDashoffset = String(100 - Math.min(100, (Math.max(0, t.altitude) / 600) * 100))
-    } else if (style === '1') {
+    const mph = Math.abs(t.speed) * 2.23694, degrees = bearing(t.heading)
+    // Each readout is keyed on the whole number it shows, so its text is built only when that changes.
+    const mphWhole = Math.round(mph)
+    if (mphWhole !== this.mphShown) { this.mphShown = mphWhole; this.set('speed', String(mphWhole)); this.set('speed3', pad(mph, 3)) }
+    const altitudeWhole = Math.max(0, Math.round(t.altitude))
+    if (altitudeWhole !== this.altitudeShown) { this.altitudeShown = altitudeWhole; this.set('altitude', String(altitudeWhole)); this.set('altitude4', pad(t.altitude, 4)) }
+    // The compass point changes only at half-degree boundaries, so the whole degree decides both.
+    const degreesWhole = Math.round(degrees)
+    if (degreesWhole !== this.degreesShown) { this.degreesShown = degreesWhole; this.set('heading', `${pad(degrees, 3)}° ${compassPoint(degrees)}`) }
+    if (t.world !== this.worldShown) { this.worldShown = t.world; this.set('world', t.world) }
+    const minute = Math.floor(t.hour) * 60 + Math.floor((t.hour % 1) * 60)
+    if (minute !== this.minuteShown) { this.minuteShown = minute; this.set('clock', clock(t.hour)) }
+    const seconds = (performance.now() - this.started) / 1000, elapsed = Math.floor(seconds / 60) * 100 + Math.round(seconds % 60)
+    if (elapsed !== this.elapsedShown) { this.elapsedShown = elapsed; this.set('elapsed', `${pad(Math.floor(seconds / 60), 2)}:${pad(seconds % 60, 2)}`) }
+    if (style === 0) {
+      // A tenth of a percent of the arc is under a quarter of a pixel: finer steps are not drawn.
+      const speedArc = Math.round((100 - Math.min(100, (mph / 140) * 100)) * 10) / 10
+      if (speedArc !== this.speedArcShown) { this.speedArcShown = speedArc; this.speedArc.style.strokeDashoffset = String(speedArc) }
+      const altitudeArc = Math.round((100 - Math.min(100, (Math.max(0, t.altitude) / 600) * 100)) * 10) / 10
+      if (altitudeArc !== this.altitudeArcShown) { this.altitudeArcShown = altitudeArc; this.altitudeArc.style.strokeDashoffset = String(altitudeArc) }
+    } else if (style === 1) {
       // The tape is marked every 5 degrees (30 units); slide it so the bearing sits at the pointer.
-      this.element.querySelector<SVGGElement>('[data-tape]')!.setAttribute('transform', `translate(${(-(degrees % 15) * 6).toFixed(1)} 0)`)
+      const shift = -(degrees % 15) * 6, tenths = Math.round(shift * 10)
+      if (tenths !== this.tapeShown) { this.tapeShown = tenths; this.tape.setAttribute('transform', `translate(${shift.toFixed(1)} 0)`) }
     }
   }
   dispose(): void { this.element.remove() }
