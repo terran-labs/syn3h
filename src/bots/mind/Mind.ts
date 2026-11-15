@@ -374,9 +374,9 @@ export class Mind {
    */
   private steerClear(here: { x: number; y: number; z: number }, aimX: number, aimZ: number, speed: number): { x: number; z: number; swerved: boolean } | null {
     const profile = this.pilot.profile
-    if (profile.flies) return { x: aimX, z: aimZ, swerved: false }
     const dx = aimX - here.x, dz = aimZ - here.z, d = Math.hypot(dx, dz) || 1
-    const reach = Math.max(8, Math.min(24, speed * 1.2)), base = Math.atan2(dz, dx)
+    // An aircraft looks much further: what matters is a wall it cannot out-climb.
+    const reach = profile.flies ? 70 : Math.max(8, Math.min(24, speed * 1.2)), base = Math.atan2(dz, dx)
     for (const swerve of SWERVES) {
       // Try the side it last chose first, so it does not dither between two ways round.
       const angle = base + swerve * this.swerveSide, cx = Math.cos(angle), cz = Math.sin(angle)
@@ -393,6 +393,12 @@ export class Mind {
   /** May this vehicle travel from a to b: dry (or floating), inside the world, not too steep. */
   private crossable(ax: number, az: number, bx: number, bz: number): boolean {
     const profile = this.pilot.profile
+    if (profile.flies) {
+      // Fly over what rises gently and round what towers: a mesa, a spire or a crag face
+      // that stands far above the aircraft within a few seconds' flight is a wall.
+      if (Math.abs(bx) > this.terrain.size / 2 - 3 || Math.abs(bz) > this.terrain.size / 2 - 3) return false
+      return this.surface(bx, bz) - this.vehicle.body.translation().y < 22
+    }
     if (this.options.navigator) { if (!this.options.navigator.passable(bx, bz, profile)) return false }
     else if (profile.liquid === 'blocked' ? !isSafeGround(this.terrain, bx, bz) : Math.abs(bx) > this.terrain.size / 2 - 3 || Math.abs(bz) > this.terrain.size / 2 - 3) return false
     const run = Math.hypot(bx - ax, bz - az) || 1

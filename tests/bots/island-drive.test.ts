@@ -18,9 +18,9 @@ beforeAll(initPhysics)
 const DT = 0.02
 
 /** Drive the real island for `seconds` and report where the mind went and how it fared. */
-export function drive(seed: string, seconds: number, verbose = false, vehicleKind: 'buggy' | 'jet' | 'hovercraft' = 'buggy') {
+export function drive(seed: string, seconds: number, verbose = false, vehicleKind: 'buggy' | 'jet' | 'hovercraft' = 'buggy', world_ = 0) {
   const world = createWorld(9.81)
-  const terrain = island(world, 1)
+  const terrain = island(world, 1, { kind: world_ })
   const game = { world, scene: new Scene(), tick: 0, input: { state: emptyInput() } } as unknown as Game
   const spawn = terrain.spawnPoint(0)
   const buggy = vehicleKind === 'jet' ? new Jet(game, terrain, spawn.position, spawn.heading) : vehicleKind === 'hovercraft' ? new Hovercraft(game, terrain, spawn.position, spawn.heading) : new Syn3hBuggy(game, terrain, spawn.position, spawn.heading); buggy.isLocal = false
@@ -70,5 +70,15 @@ describe('fliers and floaters on the real island', () => {
     const r = drive(seed, 300, false, 'hovercraft')
     appendFileSync('/tmp/syn3h-island-drive.log', `hovercraft ${seed} ${JSON.stringify(Object.fromEntries(Object.entries(r).map(([k, v]) => [k, Math.round(v)])))}\n`)
     expect(r.flipped).toBeLessThan(2); expect(r.path).toBeGreaterThan(1800); expect(r.cells).toBeGreaterThan(20); expect(r.slow).toBeLessThan(45)
+  })
+})
+
+describe('other worlds', () => {
+  it.each([[1, 'desert', 'buggy'], [2, 'alpine', 'buggy'], [1, 'desert', 'jet'], [2, 'alpine', 'jet'], [2, 'alpine', 'hovercraft']] as const)('world %i (%s): a %s tours for five minutes', (kind, name, vehicle) => {
+    const r = drive('a', 300, process.env.BOT_VERBOSE === '1', vehicle, kind)
+    appendFileSync('/tmp/syn3h-island-drive.log', `${name} ${vehicle} ${JSON.stringify(Object.fromEntries(Object.entries(r).map(([k, v]) => [k, Math.round(v)])))}\n`)
+    expect(r.flipped).toBeLessThan(3); expect(r.path).toBeGreaterThan(1500); expect(r.slow).toBeLessThan(60)
+    if (vehicle === 'buggy') expect(r.wet).toBeLessThan(1)
+    if (vehicle === 'jet') expect(r.low).toBeGreaterThan(2)
   })
 })
