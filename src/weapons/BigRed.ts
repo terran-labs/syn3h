@@ -11,6 +11,7 @@ import { hotExposureDim } from '../vehicles/skins/hotExposure'
 import { aimFrom, type GearControl } from './aim'
 import { bigRedAllowed, bigRedCharge, bigRedCooldown } from './bigRedParams'
 import { sharedLook, warmGear } from './warm'
+import { ChargeMotes } from './chargeMotes'
 
 export interface BigRedHooks {
   control?(): GearControl
@@ -56,6 +57,7 @@ export class BigRed implements System {
   private readyAt = 0
   private readonly glow: THREE.Mesh
   private readonly core: THREE.Mesh
+  private readonly motes: ChargeMotes
   private readonly shared: { look: BigRedLook; release(): void }
   private readonly offset = new THREE.Vector3()
   stats = { sent: 0, fizzled: 0 }
@@ -63,8 +65,10 @@ export class BigRed implements System {
   constructor(private readonly game: Game, private readonly hooks: BigRedHooks) {
     this.shared = sharedLook(game, 'red', () => new BigRedLook(game))
     const look = this.shared.look
+    this.motes = new ChargeMotes(game, look.mat)
     this.glow = new THREE.Mesh(look.geo, look.mat)
     this.glow.visible = false
+    this.motes.hide()
     this.core = new THREE.Mesh(look.geo, look.coreMat)
     this.core.scale.setScalar(0.6)
     this.core.renderOrder = -1
@@ -126,23 +130,26 @@ export class BigRed implements System {
     this.cancel()
     this.readyAt = 0
     this.glow.visible = false
+    this.motes.hide()
   }
 
   update(): void {
     const o = this.hooks.object()
+    this.motes.update(o ? this.offset.set(0, 1.9, -1.2).applyQuaternion(o.quaternion).add(o.position) : this.offset.set(0, 0, 0), o ? this.charge : -1, this.game.time)
     if (this.charge < 0 || !o) { this.glow.visible = false; return }
     const dim = hotExposureDim(this.game.renderer.toneMappingExposure)
     this.shared.look.mat.color.setRGB(GLOW_RGB[0] * dim, GLOW_RGB[1] * dim, GLOW_RGB[2] * dim)
     const t = this.game.time
     // Grows while charging, then throbs when ready.
     const pulse = this.charge >= 1 ? 1 + 0.18 * Math.sin(t * 22) : 1 + 0.05 * Math.sin(t * 40)
-    this.glow.scale.setScalar((0.25 + 0.85 * this.charge) * pulse)
+    this.glow.scale.setScalar((0.16 + 0.34 * this.charge) * pulse)
     this.glow.position.copy(o.position).add(this.offset.set(0, 1.9, -1.2).applyQuaternion(o.quaternion))
     this.glow.visible = true
   }
 
   dispose(): void {
     this.game.scene.remove(this.glow)
+    this.motes.dispose()
     this.shared.release()
   }
 }

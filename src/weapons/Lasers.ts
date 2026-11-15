@@ -18,6 +18,8 @@ import { hotExposureDim } from '../vehicles/skins/hotExposure'
 import { laserGravity, laserLifetime, laserRicochet, laserSpeed } from './params'
 import { bigRedRadius, bigRedSpeed } from './bigRedParams'
 import { warmGear } from './warm'
+import { ImpactPulses } from './pulse'
+import { tagBlastRadius, thunderBlastRadius } from './blastParams'
 
 export interface LaserHooks {
   /** Body of a player's (or bot's) vehicle, local or remote, if it exists here. */
@@ -97,6 +99,7 @@ export class Lasers implements System {
     name: 'gear red tint', color: new THREE.Color(...RED_TINT_RGB), transparent: true, opacity: 0.35, depthWrite: false,
   })
   private readonly effects: ReturnType<typeof createWeaponEffects> | null
+  private readonly pulses: ImpactPulses
   /** Shots that already showed their impact here, so a later server confirmation does not repeat it. */
   private readonly impacted = new Set<string>()
   private readonly ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })
@@ -107,6 +110,7 @@ export class Lasers implements System {
   private readonly unwarm: () => void
 
   constructor(private readonly game: Game, private readonly hooks: LaserHooks) {
+    this.pulses = new ImpactPulses(game)
     let effects: ReturnType<typeof createWeaponEffects> | null = null
     try {
       effects = createWeaponEffects(game)
@@ -166,6 +170,7 @@ export class Lasers implements System {
     tint.renderOrder = -1
     p.mesh.add(new THREE.Mesh(this.coreGeo, red ? this.redCoreMat : this.coreMat), tint, new THREE.Mesh(this.haloGeo, red ? this.redHaloMat : this.haloMat))
     if (red) p.mesh.scale.set(...RED_SCALE)
+    else p.mesh.scale.set(0.5, 0.5, 1)
     if (age < FRESH) this.effects?.muzzle(p.pos.clone(), new THREE.Vector3(...shot.d).normalize(), red)
     p.mesh.position.copy(p.pos)
     p.mesh.visible = false
@@ -191,6 +196,7 @@ export class Lasers implements System {
   /** Remove every shot in flight: for a world change or leaving it. Impact effects fade on their own. */
   reset(): void {
     while (this.shots.length) this.kill(this.shots.length - 1)
+    this.pulses.reset()
   }
 
   fixedUpdate(dt: number): void {
@@ -202,6 +208,7 @@ export class Lasers implements System {
   }
 
   update(dt: number, alpha: number): void {
+    this.pulses.update(dt)
     // The sky raises the exposure at night, which would bleach these unlit HDR colours toward
     // white. Scale each from its own constant every frame; never from the current colour,
     // which would compound.
@@ -222,6 +229,7 @@ export class Lasers implements System {
   dispose(): void {
     while (this.shots.length) this.kill(this.shots.length - 1)
     this.effects?.dispose()
+    this.pulses.dispose()
     this.unwarm()
     this.coreGeo.dispose(); this.haloGeo.dispose()
     for (const m of [this.coreMat, this.haloMat, this.tintMat, this.redCoreMat, this.redHaloMat, this.redTintMat]) m.dispose()
@@ -333,6 +341,11 @@ export class Lasers implements System {
     this.impacted.add(key)
     if (this.impacted.size > 256) this.impacted.delete(this.impacted.values().next().value as string)
     this.effects?.impact(at.clone(), normal ?? new THREE.Vector3(0, 1, 0), red)
+    this.pulses.emit(at, normal ?? new THREE.Vector3(0, 1, 0), {
+      radius: Math.max(1.5, red ? thunderBlastRadius.value : tagBlastRadius.value),
+      seconds: red ? 0.9 : 0.55,
+      color: new THREE.Color(...(red ? RED_CORE_RGB : CORE_RGB)),
+    })
     this.hooks.onImpact?.(at, red)
   }
 
