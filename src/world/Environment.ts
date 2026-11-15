@@ -21,6 +21,7 @@ import {
   sunE, sunlightColor, wrapHour, advanceHour, type RGB, type Vec3,
 } from './sky/skyMath'
 import * as P from './sky/skyParams'
+import { applyBounce, lightSkyReflection } from './lightRig'
 import { heightFog } from './weather/fog'
 
 export interface Environment extends System {
@@ -102,6 +103,8 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
 
   const hemi = new THREE.HemisphereLight(0xffffff, 0xffffff, 1)
   scene.add(hemi)
+  const skyGround = new THREE.Color()
+  let reflectionSet = lightSkyReflection.value
 
   // Fog: coloured by the horizon in the direction you look ----------------------------------
   // Uniforms in the scene fog node stayed frozen at their first upload in r187 when left in
@@ -219,7 +222,12 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
       z[0] * amb + MOON_TINT[0] * moonAmb, z[1] * amb + MOON_TINT[1] * moonAmb, z[2] * amb + MOON_TINT[2] * moonAmb,
       THREE.LinearSRGBColorSpace,
     )
-    hemi.groundColor.setRGB(m[0] * amb * 0.5, m[1] * amb * 0.5, m[2] * amb * 0.5, THREE.LinearSRGBColorSpace)
+    skyGround.setRGB(m[0] * amb * 0.5, m[1] * amb * 0.5, m[2] * amb * 0.5, THREE.LinearSRGBColorSpace)
+    // Warm bounce off the ground and the sky reflection strength (src/world/lightRig.ts);
+    // both at their defaults leave this exactly as before.
+    applyBounce(hemi.groundColor, skyGround, sunColor, light.position.y / Math.max(1e-6, light.position.length()))
+    // Written only when the slider moves, so the underwater look can still set its own.
+    if (lightSkyReflection.value !== reflectionSet) { reflectionSet = lightSkyReflection.value; scene.environmentIntensity = reflectionSet }
     hemi.intensity = 1
     horizonColor.setRGB(m[0], m[1], m[2], THREE.LinearSRGBColorSpace)
 
