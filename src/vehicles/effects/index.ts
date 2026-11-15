@@ -40,7 +40,7 @@ class EffectWorld implements System {
     this.dustMap=load('/models/effects/dust.png');this.exhaustMap=load('/models/textures/thruster-glow.png');this.plasmaMap=load('/models/effects/plasma-green.png');this.redPlasmaMap=load('/models/effects/plasma-red.png')
     this.marks=new RibbonBatch(1024,load('/models/effects/skidmark.png'));this.trails=new RibbonBatch(256,undefined,true)
     this.lamps.frustumCulled=false;this.lamps.count=0
-    this.lamps.onBeforeRender=()=>{this.lamps.material.color.setScalar(hotExposureDim(game.renderer.toneMappingExposure));let index=0;for(const e of this.vehicles.values())index=e.writeLamps(this.lamps,index);this.lamps.instanceMatrix.needsUpdate=true;if(this.lamps.instanceColor)this.lamps.instanceColor.needsUpdate=true}
+    this.lamps.onBeforeRender=()=>{this.lamps.material.color.setScalar(hotExposureDim(game.renderer.toneMappingExposure));let index=0;for(const e of this.vehicles.values())index=e.writeLamps(this.lamps,index);hideUnusedLamps(this.lamps,index);this.lamps.instanceMatrix.needsUpdate=true;if(this.lamps.instanceColor)this.lamps.instanceColor.needsUpdate=true}
     game.scene.add(this.lamps,this.marks.mesh,this.trails.mesh);this.rebudget();game.scene.userData.vehicleEffects=this.stats
   }
   retain(){this.references++}
@@ -117,12 +117,7 @@ class VehicleEffects {
   }
   writeLamps(batch:T.InstancedMesh,index:number):number {
     this.root.updateWorldMatrix(true,true)
-    for(let i=0;i<this.lampPoints.length&&index<512;i++,index++){
-      this.lampMatrix.copy(this.lampPoints[i].matrixWorld)
-      if(!this.vehicle.object.visible)this.lampMatrix.makeScale(0,0,0)
-      batch.setMatrixAt(index,this.lampMatrix);batch.setColorAt(index,i%2?this.tailMaterial.color:this.headMaterial.color)
-    }
-    return index
+    return writeVehicleLamps(batch,index,this.vehicle.object,this.lampPoints,this.headMaterial.color,this.tailMaterial.color,this.lampMatrix)
   }
   captureLanding(){if(this.vehicle.landedThisStep)this.pendingLanding=Math.max(this.pendingLanding,this.vehicle.landingImpact)}
   private reset(){this.pendingLanding=0;this.previousMarks.fill(null);this.previousTips.fill(null);this.wasGrounded=false}
@@ -211,6 +206,27 @@ class VehicleEffects {
     }else if(!trails)this.previousTips.fill(null)
   }
   dispose(){this.unlisten?.();this.root.removeFromParent();this.headMaterial.dispose();this.tailMaterial.dispose();this.spot?.dispose()}
+}
+
+/**
+ * Write one vehicle's lamp blobs into the shared batch and return the next free slot.
+ * A skin whose own mesh carries emissive headlight and tail light faces sets
+ * `object.userData.ownLamps = true`; such a vehicle writes no blobs. The flag is read every
+ * frame because skins set it after their model loads. The road spotlight is separate and stays.
+ */
+export function writeVehicleLamps(batch:T.InstancedMesh,index:number,object:T.Object3D,points:readonly T.Object3D[],head:T.Color,tail:T.Color,scratch=new T.Matrix4()):number {
+  if(object.userData.ownLamps===true)return index
+  for(let i=0;i<points.length&&index<512;i++,index++){
+    scratch.copy(points[i].matrixWorld)
+    if(!object.visible)scratch.makeScale(0,0,0)
+    batch.setMatrixAt(index,scratch);batch.setColorAt(index,i%2?tail:head)
+  }
+  return index
+}
+const noLamp=new T.Matrix4().makeScale(0,0,0)
+/** The batch draws four slots per attached vehicle. Collapse the ones no vehicle wrote this frame. */
+export function hideUnusedLamps(batch:T.InstancedMesh,index:number):void {
+  for(let i=index;i<batch.count;i++)batch.setMatrixAt(i,noLamp)
 }
 
 /** Attach after game.add(vehicle). Call the returned idempotent disposer BEFORE vehicle.dispose(). */
