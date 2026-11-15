@@ -28,10 +28,10 @@ export class ChargeMotes {
     for (let i = 0; i < this.mesh.count; i++) {
       // Golden-angle spacing keeps the swarm evenly distributed at either particle count.
       const phase = (time * 0.7 + i * 0.618034 + this.seed * 0.013) % 1
-      const radius = (0.2 + phase * 2.4) * (1 - Math.max(0, charge) * 0.65)
+      const radius = (0.2 + (1 - phase) * 2.4) * (1 - Math.max(0, charge) * 0.65)
       const angle = i * 2.399963 + time * (1.2 + charge)
       this.transform.position.set(Math.cos(angle) * radius, Math.sin(angle * 1.7) * radius * 0.65, Math.sin(angle) * radius)
-      this.transform.scale.setScalar(active ? 0.5 + (1 - phase) * (0.7 + charge) : 0)
+      this.transform.scale.setScalar(active ? 0.5 + phase * (0.7 + charge) : 0)
       this.transform.updateMatrix()
       this.mesh.setMatrixAt(i, this.transform.matrix)
     }

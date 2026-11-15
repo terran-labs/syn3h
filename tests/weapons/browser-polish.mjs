@@ -87,6 +87,14 @@ try {
     const muzzle = await page.evaluate(() => window.syn3hNet.bigRed.glow.position.toArray())
     await shot(`${tag}-thunder-charge`, muzzle)
     await page.keyboard.up('KeyL')
+    await place(); await page.waitForTimeout(500)
+    await page.evaluate(() => {
+      window.syn3h.params.set('laser.speed', 20)
+      window.syn3hNet.fire([1, .1, 0])
+    })
+    await page.waitForFunction(() => window.syn3hNet.lasers.shots.length > 0)
+    await shot(`${tag}-tag-thread`, await page.evaluate(() => window.syn3hNet.lasers.shots.at(-1).pos.toArray()))
+    await page.evaluate(() => window.syn3h.params.set('laser.speed', 180))
     for (const red of [false, true]) {
       await place(); await page.waitForTimeout(500)
       await page.evaluate(red => { window.__holdRing = true; window.syn3hNet.fire([.7, -1, 0], undefined, red ? 'red' : undefined) }, red)
