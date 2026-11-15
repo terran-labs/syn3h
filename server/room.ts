@@ -15,6 +15,7 @@ import {
   type PlayerInfo,
   type ServerMessage,
   type ShotInfo,
+  type CordWire,
   type TagEvent,
   BOT_ID_BASE,
   DEFAULT_COLORS,
@@ -46,6 +47,7 @@ import {
 import { MIN_CLOSING, SHOVE_SHARE, cleanShove } from '../src/net/shove'
 import { wrapDistance } from '../shared/wrap'
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
+import { bungeeAllowed, bungeeLength, bungeeSnap, bungeeVehicles } from '../src/weapons/bungee/params'
 import {
   KNOCK_WINDOW, WIN_PAUSE, gameMode, kothKnockBonus, kothRespawnDelay, kothTargetScore, tagCooldown, tagRamReach,
   REJOIN_GRACE, gameRejoin,
@@ -280,6 +282,9 @@ export class Room {
         break
       case 'bot':
         this.onBotKind(player, msg.id, msg.kind)
+        break
+      case 'cord':
+        this.onCord(peer, player, msg.cord)
         break
       case 'stuck':
       case 'died': // the name older bundles send
@@ -812,6 +817,30 @@ export class Room {
     this.broadcast({ type: 'fire', from: player.info.id, shot }, peer)
   }
 
+  /**
+   * A player's Bungee cord (Weapons lane). Checked and relayed; the room keeps no cord state,
+   * since owners resend every two seconds while attached. A hook must leave from near the
+   * sender, an anchor must be within the cord's reach, and a cord can tie only to a vehicle
+   * that is in the room.
+   */
+  private onCord(peer: Peer, player: Player, raw: unknown): void {
+    if (!this.paramBool(bungeeAllowed.def)) return
+    const cord = cleanCord(raw)
+    if (!cord) return
+    const st = player.lastState
+    const reach = this.paramNumber(bungeeLength.def) * this.paramNumber(bungeeSnap.def) + 10
+    if (cord.s === 'hook') {
+      if (!st || this.dist(cord.o, st.p) > 8 + Math.hypot(...st.v) * 0.5) return
+      cord.t = Math.min(this.now() / 1000, Math.max(this.now() / 1000 - 1, cord.t))
+    } else if (cord.s === 'on') {
+      if (cord.to !== undefined) {
+        if (!this.paramBool(bungeeVehicles.def) || cord.to === player.info.id || !this.byId(cord.to)) return
+      } else if (!cord.at || (st && this.dist(cord.at, st.p) > reach)) return
+      if (cord.r < 0 || cord.r > this.paramNumber(bungeeLength.def) + 1) return
+    }
+    this.broadcast({ type: 'cord', from: player.info.id, cord, t: this.now() / 1000 }, peer)
+  }
+
   /** The victim reports a hit on itself. The room checks the shot really happened. */
   private onHit(reporter: Player, shooterId: unknown, shotId: unknown, victimId?: unknown): void {
     if (typeof shooterId !== 'number' || typeof shotId !== 'number') return
@@ -1157,6 +1186,24 @@ function cleanColors(raw: unknown): [string, string] | null {
 
 function dist(a: readonly number[], b: readonly number[]): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
+}
+
+/** A well formed cord message, rebuilt from only the fields it should have; null otherwise. */
+function cleanCord(c: unknown): CordWire | null {
+  if (!c || typeof c !== 'object') return null
+  const o = c as Record<string, unknown>
+  const num = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+  const vec = (v: unknown): v is [number, number, number] => isVec3(v)
+  if (o.s === 'off') return { s: 'off' }
+  if (o.s === 'hook') {
+    if (!vec(o.o) || !vec(o.d) || !num(o.t) || Math.hypot(...o.d) > 2000) return null
+    return { s: 'hook', o: o.o, d: o.d, t: o.t }
+  }
+  if (o.s === 'on' && num(o.r)) {
+    if (num(o.to) && Number.isInteger(o.to)) return { s: 'on', to: o.to, r: o.r }
+    if (vec(o.at)) return { s: 'on', at: o.at, n: vec(o.n) ? o.n : [0, 1, 0], r: o.r }
+  }
+  return null
 }
 
 function isShot(s: unknown): s is ShotInfo {
