@@ -166,7 +166,7 @@ function run(kind: Kind, action: Action, scenario: Case) {
     expect(lastExecuted).toEqual(lastOrdinary)
     expect(activation===null||activation+1e-8>=REACTION).toBe(true)
     const pairedLateralResponse: {time:number; separation:number|null; unavailable:string|null}[]=[]
-    const result={kind,action,scenario,caught,firstCatch,minimumSeparation,activation,firstTurn,appliedSeconds:applied*FIXED_DT,refusedSteps:refused,minimumClearance,flipped,flightSeconds,startSpeed:startVelocity.length(),returnCrossTrack:Math.abs(vehicle.body.translation().x-x0),routeRestored:true,decision,observations,pairedLateralResponse,trace,beforeReaction}
+    const result={kind,action,scenario,caught,firstCatch,minimumSeparation,activation,firstTurn,appliedSeconds:applied*FIXED_DT,refusedSteps:refused,minimumClearance,flipped,flightSeconds,startSpeed:startVelocity.length(),returnCrossTrack:Math.abs(vehicle.body.translation().x-x0),routeRestored:true,decision: decision as Observation | null,observations,pairedLateralResponse,trace,beforeReaction}
     return result
   } finally { pesters!?.dispose();vehicle.dispose();world.free() }
 }
