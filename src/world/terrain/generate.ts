@@ -22,12 +22,14 @@
  * Rapier or the DOM, so it runs in tests, a worker or a server unchanged. See noise.ts for
  * the determinism rules this file must follow.
  */
-import { fbm, hash2, perlin, ridged, rng, smoothstep, subSeed } from './noise'
+import { hash2, perlin, pfbm, phash2, pperlin, pridged, ridged, rng, smoothstep, subSeed } from './noise'
 import { type LavaFeatures, type Vent, lavaPass, ventsPass } from './lava'
 import { forestPass } from './forest'
 import { type Road, roadsPass } from './roads'
-import { KIND_DESERT, KIND_VOLCANIC, type TerrainSettings } from './settings'
+import { KIND_ALPINE, KIND_DESERT, KIND_VOLCANIC, type TerrainSettings } from './settings'
 
+/** Tile sides in metres for planet size 0 (small), 1 (medium) and 2 (large). */
+export const PLANET_SIZES = [1024, 2048, 4096] as const
 export const DEFAULT_WORLD_SIZE = 2048
 /** Samples per side. 513 gives 4 m cells; see the report in tests/world for timings. */
 export const DEFAULT_RESOLUTION = 513
@@ -109,6 +111,8 @@ export interface LowFields {
   n: number
   half: number
   coast: Float32Array
+  /** Where land lies beyond the main island. */
+  continent: Float32Array
   warpX: Float32Array
   warpZ: Float32Array
   roll: Float32Array
@@ -118,24 +122,61 @@ export interface LowFields {
 
 const FIELD_STEP = 16
 
+/**
+ * The tile's side in metres for the world being generated. Every noise layer is asked for
+ * a wavelength in metres and snapped to a whole number of repeats across the tile, so the
+ * terrain repeats exactly at the tile's width and the world can wrap.
+ */
+let TILE = 2048
+
+/** Whole number of noise cells across the tile for a frequency in cycles per metre. */
+function cells(frequency: number): number {
+  const c = Math.round(TILE * frequency)
+  return c < 1 ? 1 : c
+}
+
+/** Periodic Perlin noise at about `frequency` cycles per metre. */
+function tnoise(x: number, z: number, frequency: number, seed: number): number {
+  const c = cells(frequency)
+  const k = c / TILE
+  return pperlin(x * k, z * k, seed, c, c)
+}
+
+function tfbm(x: number, z: number, frequency: number, seed: number, octaves: number): number {
+  const c = cells(frequency)
+  const k = c / TILE
+  return pfbm(x * k, z * k, seed, octaves, c, c)
+}
+
+function tridged(x: number, z: number, frequency: number, seed: number, octaves: number): number {
+  const c = cells(frequency)
+  const k = c / TILE
+  return pridged(x * k, z * k, seed, octaves, c, c)
+}
+
 function computeFields(size: number, S: TerrainLayout['seeds']): LowFields {
   const half = size / 2
-  const n = Math.floor(size / FIELD_STEP) + 2
+  // One lattice point more than a whole tile: the last row and column repeat the first.
+  const n = Math.round(size / FIELD_STEP) + 1
   const make = () => new Float32Array(n * n)
-  const F: LowFields = { step: FIELD_STEP, n, half, coast: make(), warpX: make(), warpZ: make(), roll: make(), mask: make(), duneWarp: make() }
+  const F: LowFields = {
+    step: size / (n - 1), n, half, coast: make(), continent: make(), warpX: make(), warpZ: make(), roll: make(), mask: make(), duneWarp: make(),
+  }
   for (let iz = 0; iz < n; iz++) {
-    const z = -half + iz * FIELD_STEP
+    const z = -half + iz * F.step
     for (let ix = 0; ix < n; ix++) {
-      const x = -half + ix * FIELD_STEP
+      const x = -half + ix * F.step
       const i = iz * n + ix
-      F.coast[i] = fbm(x * 0.0017, z * 0.0017, S.coast, 2)
-      const wx = 60 * perlin(x * 0.0024, z * 0.0024, S.warpX)
-      const wz = 60 * perlin(x * 0.0024, z * 0.0024, S.warpZ)
+      F.coast[i] = tfbm(x, z, 0.0017, S.coast, 2)
+      // Continents: broad shapes, two or three across a medium tile, with ragged edges.
+      F.continent[i] = tfbm(x, z, 0.0011, S.continent, 3)
+      const wx = 60 * tnoise(x, z, 0.0024, S.warpX)
+      const wz = 60 * tnoise(x, z, 0.0024, S.warpZ)
       F.warpX[i] = wx
       F.warpZ[i] = wz
-      F.roll[i] = fbm((x + wx) * 0.0021, (z + wz) * 0.0021, S.roll, 2)
-      F.mask[i] = perlin(x * 0.0031, z * 0.0031, S.cragMask)
-      F.duneWarp[i] = perlin((x + wx) * 0.004, (z + wz) * 0.004, S.dune + 3)
+      F.roll[i] = tfbm(x + wx, z + wz, 0.0021, S.roll, 2)
+      F.mask[i] = tnoise(x, z, 0.0031, S.cragMask)
+      F.duneWarp[i] = tnoise(x + wx, z + wz, 0.004, S.dune + 3)
     }
   }
   return F
@@ -177,6 +218,8 @@ export interface TerrainLayout {
   mesas: Mesa[]
   /** Mean radius of the coastline. */
   islandRadius: number
+  /** Continent noise above this is land. Lower means more land. */
+  continentLevel: number
   /** Radius of the ring the spawn pads sit on. */
   spawnRadius: number
   /** Height of the flat summit the rim road runs on. */
@@ -190,7 +233,7 @@ export interface TerrainLayout {
   fields: LowFields
   seeds: {
     warpX: number; warpZ: number; coast: number; roll: number; ridge: number; crag: number; cragMask: number
-    spire: number; dune: number; detail: number; gully: number; rim: number; approach: number
+    spire: number; dune: number; detail: number; gully: number; rim: number; approach: number; continent: number
   }
 }
 
@@ -260,13 +303,19 @@ export function approachMeander(along: number, seed: number): number {
 export function computeLayout(seed: number, s: TerrainSettings, size: number): TerrainLayout {
   const next = rng(seed)
   const half = size / 2
-  // The island has to fit inside the simulated square with sea all round it.
-  const islandRadius = Math.min(s.islandRadius, half - 200)
+  TILE = size
+  // Sizes are given for the medium tile (2048 m) and scale with the tile. The main island
+  // stays well inside the tile, so open sea or continents, never its own coast, cross the
+  // edges.
+  const k = size / 2048
+  const islandRadius = Math.min(s.islandRadius * k, half * 0.66)
 
   const [gx, gz] = randomDirection(next)
-  const R = Math.min(s.volcanoRadius, islandRadius * 0.55)
-  const H = s.volcanoHeight
-  const rc = Math.min(s.calderaSize, R * 0.4)
+  // The centre keeps its proportions: a smaller island gets a smaller, lower mountain of
+  // the same steepness.
+  const R = Math.min(s.volcanoRadius * (k > 1.25 ? 1.25 : k), islandRadius * 0.6)
+  const H = s.volcanoHeight * (R / s.volcanoRadius)
+  const rc = Math.min(s.calderaSize * (k < 0.7 ? 0.7 : k > 1.2 ? 1.2 : k), R * 0.4)
   const volcano: Volcano = {
     x: 0, z: 0, height: H, radius: R, gentleX: gx, gentleZ: gz, gentleStretch: 0.3,
     calderaRadius: rc, lipHeight: 0, floorHeight: 0,
@@ -295,10 +344,13 @@ export function computeLayout(seed: number, s: TerrainSettings, size: number): T
     warpX: subSeed(seed, 1), warpZ: subSeed(seed, 2), coast: subSeed(seed, 3), roll: subSeed(seed, 4),
     ridge: subSeed(seed, 5), crag: subSeed(seed, 6), cragMask: subSeed(seed, 7), spire: subSeed(seed, 8),
     dune: subSeed(seed, 9), detail: subSeed(seed, 10), gully: subSeed(seed, 11), rim: subSeed(seed, 12),
-    approach: subSeed(seed, 13),
+    approach: subSeed(seed, 13), continent: subSeed(seed, 14),
   }
   return {
     half, volcano, cones: [], mesas: [], islandRadius, spawnRadius: ringR, summitHeight, spawns,
+    // The share of the tile that is land sets how high the continent noise must reach. The
+    // constants were fitted so the slider reads true to within a few percent (see tests).
+    continentLevel: 0.62 - 1.05 * ((s.landShare - 0.04) / 1.09),
     windX, windZ, fields: computeFields(size, seeds), seeds,
   }
 }
@@ -324,8 +376,13 @@ export function coneProfile(t: number): number {
  *  - desert: a great mesa. A low apron of scree, then cliffs up to a broad flat top.
  */
 export function centreProfile(kind: number, t: number): number {
-  if (kind !== KIND_DESERT) return coneProfile(t)
   if (t >= 1) return 0
+  if (kind === KIND_ALPINE) {
+    // A horn: long gentle skirts for forest and meadow, then a wall of rock to the summit.
+    const u = 1 - t
+    return 0.1 * u + 0.2 * u * u + 0.7 * u * u * u * u
+  }
+  if (kind !== KIND_DESERT) return coneProfile(t)
   // Two cliff bands with a bench between them, so it reads as stacked sandstone and the
   // spiral road gets a ledge to run along.
   return 0.16 * (1 - t) + 0.4 * smoothstep(0.93, 0.74, t) + 0.44 * smoothstep(0.62, 0.45, t)
@@ -351,15 +408,17 @@ export function volcanoT(v: Volcano, x: number, z: number): number {
  * points, so it draws peaks separated by a network of sharp valleys. Returns about 0..1.
  */
 function cellular(x: number, z: number, spacing: number, seed: number): number {
-  const gx = x / spacing
-  const gz = z / spacing
+  // A whole number of cells across the tile, so the pattern wraps.
+  const count = cells(1 / spacing)
+  const gx = (x * count) / TILE
+  const gz = (z * count) / TILE
   const cx = Math.floor(gx)
   const cz = Math.floor(gz)
   let d1 = 9
   let d2 = 9
   for (let j = -1; j <= 1; j++) {
     for (let i = -1; i <= 1; i++) {
-      const h = hash2(cx + i, cz + j, seed)
+      const h = phash2(cx + i, cz + j, seed, count)
       const px = cx + i + 0.15 + 0.7 * ((h & 1023) / 1023)
       const pz = cz + j + 0.15 + 0.7 * (((h >>> 10) & 1023) / 1023)
       const ddx = gx - px
@@ -384,14 +443,15 @@ function massifField(x: number, z: number, spacing: number, seed: number): numbe
 
 /** Lone spires: sparse Voronoi points, each a narrow pointed peak. Returns 0..1. */
 function spireField(x: number, z: number, spacing: number, seed: number): number {
-  const gx = x / spacing
-  const gz = z / spacing
+  const count = cells(1 / spacing)
+  const gx = (x * count) / TILE
+  const gz = (z * count) / TILE
   const cx = Math.floor(gx)
   const cz = Math.floor(gz)
   let best = 0
   for (let j = -1; j <= 1; j++) {
     for (let i = -1; i <= 1; i++) {
-      const h = hash2(cx + i, cz + j, seed)
+      const h = phash2(cx + i, cz + j, seed, count)
       if ((h & 255) > 96) continue // most cells are empty
       const px = cx + i + 0.25 + 0.5 * (((h >>> 8) & 1023) / 1023)
       const pz = cz + j + 0.25 + 0.5 * (((h >>> 18) & 1023) / 1023)
@@ -430,16 +490,25 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
   // --- Island mask: a radial form, wobbled into capes and bays ---------------------------
   const F = L.fields
   locate(F, x, z)
-  const rr = r / L.islandRadius - s.coastWobble * field(F.coast)
+  // The main island is a radial form, wobbled into capes and bays. Beyond it, continents
+  // rise wherever a broad periodic noise clears a threshold set by the land share, so land
+  // and sea both cross the edges of the tile seamlessly. `rr` is 1 at the waterline and
+  // falls inland, whichever landmass this is.
+  const wobble = field(F.coast)
+  let rr = r / L.islandRadius - s.coastWobble * wobble
+  const cont = 1 - (field(F.continent) + 0.12 * wobble - L.continentLevel) * 4
+  // Continents keep clear of the volcano and its ring road.
+  const strait = cont + smoothstep(L.islandRadius * 0.75, L.islandRadius * 0.45, r) * 2
+  if (strait < rr) rr = strait
   const land = smoothstep(1.0, 0.7, rr) // 1 inland, 0 at the waterline
   let h = -SEA_DEPTH * smoothstep(1.0, 1.4, rr) + SPAWN_LEVEL * land
   if (rr > 1.16) {
     // Open sea: only the floor, which nobody sees under the liquid. Skipping every other
     // layer here saves a third of the time.
     shapeVolcanic = 0
-    return sinkEdge(L, x, z, h)
+    return h
   }
-  const fine = perlin(x * 0.05, z * 0.05, S.detail)
+  const fine = tnoise(x, z, 0.05, S.detail)
 
   // Domain warp keeps every layer from looking round or grid aligned.
   const wx = x + field(F.warpX)
@@ -502,16 +571,27 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
     }
     if (clear > 0 && s.mesaHeight > 0) {
       // Where massifs stand: a low frequency mask with a hard edge, so they rise as cliffs.
-      const m = field(F.mask) + 0.35 * perlin(x * 0.009, z * 0.009, S.cragMask + 9)
+      const m = field(F.mask) + 0.35 * tnoise(x, z, 0.009, S.cragMask + 9)
       const edge0 = 0.52 - s.cragDensity * 1.15
       const mask = smoothstep(edge0, edge0 + 0.11, m) * band * clear
       if (mask > 0) {
         let relief = massifField(wx, wz, 150, S.crag)
-        // Desert mountains are buttes: the peaks are sliced off into flat tops.
-        if (s.kind === KIND_DESERT) relief = relief > 0.5 ? 1 : relief * 2
-        relief = terrace(relief, 9, 0.5)
+        if (s.kind === KIND_ALPINE) {
+          // Alpine ranges: knife ridges and branching spurs from ridged noise, lifted
+          // where the cellular peaks are, with no terracing. They read as mountains, not
+          // lumps.
+          const ridge = tridged(wx, wz, 0.0052, S.ridge + 11, 3)
+          relief = 0.3 * relief + 0.7 * ridge * (0.55 + 0.45 * relief)
+          relief *= relief * 1.25
+          if (relief > 1) relief = 1
+        } else {
+          // Desert mountains are buttes: the peaks are sliced off into flat tops.
+          if (s.kind === KIND_DESERT) relief = relief > 0.5 ? 1 : relief * 2
+          relief = terrace(relief, 9, 0.5)
+        }
         // A cliff base from the mask edge, then the peaks on top.
-        const body = 0.34 * smoothstep(0, 0.6, mask) + 0.66 * relief * mask
+        const base = s.kind === KIND_ALPINE ? 0.12 : 0.34
+        const body = base * smoothstep(0, 0.6, mask) + (1 - base) * relief * mask
         h += s.mesaHeight * body * (0.75 + 0.45 * smoothstep(-0.2, 0.6, m))
         if (mask * 0.35 > volcanic) volcanic = mask * 0.35
       }
@@ -521,7 +601,7 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
       if (sp > 0) {
         // Pointed, with a flared foot and a ragged ridge.
         sp = 0.45 * sp + 0.55 * sp * sp
-        sp *= 0.7 + 0.6 * ridged(wx * 0.014, wz * 0.014, S.ridge + 5, 2)
+        sp *= 0.7 + 0.6 * tridged(wx, wz, 0.014, S.ridge + 5, 2)
         h += s.spireHeight * sp * band * clear
         const cv = smoothstep(0.1, 0.5, sp) * 0.35
         if (cv > volcanic) volcanic = cv
@@ -532,10 +612,14 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
   // --- Dunes and grain on open ground ----------------------------------------------------
   const calm = (1 - volcanic) * land
   if (s.duneHeight > 0 && calm > 0.05) {
-    // Crests run across the wind: stretch the noise along the crest direction.
-    const u = x * L.windX + z * L.windZ
-    const w = -x * L.windZ + z * L.windX
-    let d = 1 - Math.abs(perlin(u * 0.017 + 0.6 * field(F.duneWarp), w * 0.005, S.dune))
+    // Crests run across the wind: the noise is stretched along the crest direction. The
+    // wind is snapped to the nearer axis so the dune field repeats across the tile.
+    const alongX = L.windX * L.windX > L.windZ * L.windZ
+    const cu = cells(0.017)
+    const cw = cells(0.005)
+    const u = ((alongX ? x : z) * cu) / TILE
+    const w = ((alongX ? z : x) * cw) / TILE
+    let d = 1 - Math.abs(pperlin(u + 0.6 * field(F.duneWarp), w, S.dune, cu, cw))
     d *= d
     h += s.duneHeight * d * calm
   }
@@ -558,13 +642,16 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
     const lip = rho + SUMMIT_MARGIN - 8
     if (r > lip - 9 && r < lip + 9) {
       const fin = smoothstep(0.0, 0.45, perlin(ux * 5.2, uz * 5.2, S.rim + 5) + 0.3 * perlin(ux * 13, uz * 13, S.rim + 6))
-      h += s.roughness * 84 * fin * smoothstep(lip - 9, lip - 2, r) * smoothstep(lip + 9, lip + 1, r)
+      h += s.roughness * (s.kind === KIND_ALPINE ? 130 : 84) * fin * smoothstep(lip - 9, lip - 2, r) * smoothstep(lip + 9, lip + 1, r)
     }
     const sN = r / rc
     if (sN < 1.24) {
       const fang = smoothstep(0.02, 0.5, perlin(ux * 3.4, uz * 3.4, S.rim) + 0.25 * perlin(ux * 9, uz * 9, S.rim + 1))
       // Only a volcano has a tall tooth; a mesa or a horn keeps a lower, broken edge.
-      const crown = s.roughness * 56 * fang + (s.kind === KIND_VOLCANIC ? 60 : 22) * smoothstep(0.72, 0.97, gentle)
+      // An alpine peak is crowned with tall pinnacles round its tarn, one of them the true
+      // summit, so from below it is a horn and not a table.
+      const crown = s.roughness * (s.kind === KIND_ALPINE ? 150 : 56) * fang +
+        (s.kind === KIND_VOLCANIC ? 60 : s.kind === KIND_ALPINE ? 120 : 22) * smoothstep(0.72, 0.97, gentle)
       if (sN >= 1) {
         h += crown * smoothstep(1.24, 1.1, sN) * smoothstep(0.98, 1.05, sN)
       } else {
@@ -602,18 +689,6 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
   }
 
   shapeVolcanic = volcanic
-  return sinkEdge(L, x, z, h)
-}
-
-/** The simulated square must end under the liquid on every side. */
-function sinkEdge(L: TerrainLayout, x: number, z: number, h: number): number {
-  const ax = x < 0 ? -x : x
-  const az = z < 0 ? -z : z
-  const edge = L.half - (ax > az ? ax : az)
-  if (edge < 150) {
-    const deep = -SEA_DEPTH * 0.6
-    if (h > deep) h += (deep - h) * smoothstep(150, 30, edge)
-  }
   return h
 }
 
@@ -647,8 +722,10 @@ function now(): number {
 }
 
 export function generateTerrain(seed: number, settings: TerrainSettings, options: GenerateOptions = {}): TerrainData {
-  const size = options.size ?? DEFAULT_WORLD_SIZE
-  const resolution = options.resolution ?? DEFAULT_RESOLUTION
+  // The planet size setting picks the tile: 1, 2 or 4 km, always at 4 m cells.
+  const tier = settings.planetSize <= 0 ? 0 : settings.planetSize >= 2 ? 2 : 1
+  const size = options.size ?? PLANET_SIZES[tier]
+  const resolution = options.resolution ?? Math.round(size / 4) + 1
   const timings: Record<string, number> = {}
   let t = now()
   const layout = computeLayout(seed | 0, settings, size)

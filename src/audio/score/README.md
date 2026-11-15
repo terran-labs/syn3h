@@ -15,16 +15,30 @@ in the first bundle and costs no download.
 
 | Game state | Where it comes from | What it does to the music |
 |---|---|---|
-| Speed, throttle | the local vehicle | Intensity: arpeggio, then bass and kick, then hats and snare; tempo rises from 88 to 128 |
+| Speed, throttle | the local vehicle | Intensity: arpeggio, then bass and kick, then a half-time low drum; tempo rises from 60 to 100 |
 | Tag beams | beams sent and landed near the listener, being tagged | Heat that decays over about nine seconds; raises intensity and turns the harmony dark |
-| Altitude, height above ground | the local vehicle | Lift: choir, brighter filters, the arpeggio an octave up, lydian harmony |
+| Altitude, height above ground | the local vehicle | Lift: choir, brighter filters, the sequencer line an octave up, dorian harmony |
 | Lava nearby | `lavaProximity` | Phrygian harmony, a growling bass when it is also intense |
 | Submersion | vehicle below `liquidHeightAt` | A lowpass on the whole mix, engine and effects included, and a bigger hall |
 | Match | `Shell.setMatchState` | Holding the hill is triumph (bells and choir forward), a contested hill is tension |
 | World seed | `worldSeed`, or `audio.score.seed` | Key, chord progressions, arpeggio shapes and melody |
 
 The harmony changes mode at the next chord boundary, at most two bars away, and lands the
-change with a sub drop. Sections are eight bars; a busy one ends in a riser and a fill.
+change with a sub drop.
+
+## The arc
+
+A steady texture never raises a hair, so sections of eight bars follow a four-part cycle:
+
+| Section | What happens |
+|---|---|
+| theme | The theremin states a melody: a pickup, a leap to a long held note, a stepwise fall. |
+| still | The melody rests. Pads, drone and pulse only. |
+| build | The bass holds the dominant under moving chords, the filters open, a halo and a noise swell grow, then half a bar of near silence. |
+| release | The key lifts a minor third. The theme returns an octave up; pipe organ and high choir enter; the level rises about 5 dB. |
+
+Every second chord arrives with its third suspended and resolves a bar later. `Score.cue('build')`
+starts a build on demand; the lab has a button for it.
 
 ## Tuning
 

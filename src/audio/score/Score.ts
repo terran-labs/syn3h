@@ -12,7 +12,7 @@
  *  - the match               holding the hill is triumph, a contested hill is tension
  */
 import { defineParam } from '../../../shared/params'
-import { Composer, levels, unit, type Mood } from './Composer'
+import { Composer, levels, unit, type Mood, type Role } from './Composer'
 import { ScoreSynth } from './ScoreSynth'
 
 const tune = (id: string, label: string, value: number, min: number, max: number, step = 0.01) => defineParam({ id: `audio.score.${id}`, label, group: 'Adaptive score', scope: 'client', default: value, min, max, step })
@@ -58,6 +58,7 @@ export class Score {
   private active = false
   private match: MatchMood = { holding: false, contested: false, progress: 0 }
   private tension = 0
+  private release = 0
 
   constructor(private readonly context: BaseAudioContext, output: AudioNode, seed: number) {
     this.seed = seed
@@ -67,6 +68,10 @@ export class Score {
   get playing(): boolean { return this.active }
   get tempo(): number { return this.bpm }
   get mode(): string { return this.composer.mode }
+  /** Where the music is in its theme, still, build, release arc. */
+  get role(): Role { return this.composer.role }
+  /** Jump the arc: `build` starts the long swell toward a release about eight bars away. */
+  cue(role: Role): void { this.composer.cue(role) }
 
   /** Fade the score in or out. It keeps no audio scheduled while inactive. */
   setActive(active: boolean, seconds = 2): void {
@@ -100,7 +105,9 @@ export class Score {
 
     const level = levels(m)
     this.bpm = follow(this.bpm, level.bpm * scoreTempo.value, 4, dt)
-    this.synth.setLevels(level, m.depth, scoreReverb.value)
+    // The release arrives at once and fades over the section that follows it.
+    this.release = follow(this.release, this.composer.role === 'release' && this.active ? 1 : 0, this.composer.role === 'release' ? 0.4 : 5, dt)
+    this.synth.setLevels(level, m.depth, scoreReverb.value, { tension: this.composer.tension, release: this.release })
     if (!this.active) return
     // After a stall (a hidden tab, a long frame) start again from now; never play catch-up.
     if (this.nextTime < now - 0.05) this.nextTime = now + 0.06

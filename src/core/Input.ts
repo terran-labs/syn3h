@@ -3,6 +3,7 @@
  *
  * Original mapping (VehicleMe.js): input.x Horizontal, input.y Vertical, input.z Throttle,
  * input.w Yaw, Space toggles the special ability (buggy wings, jet hover), Shift brakes.
+ * X toggles zorb mode, the original "/x" command (Messaging.js 67, Settings.js 423).
  */
 
 export interface InputState {
@@ -18,16 +19,18 @@ export interface InputState {
   /** Toggled ability: buggy wings, jet hover mode. */
   special: boolean
   fire: boolean
+  /** Toggled: ride inside a zorb ball (src/vehicles/zorb.ts). */
+  zorb: boolean
 }
 
 export function emptyInput(): InputState {
-  return { x: 0, y: 0, z: 0, w: 0, brakes: false, special: false, fire: false }
+  return { x: 0, y: 0, z: 0, w: 0, brakes: false, special: false, fire: false, zorb: false }
 }
 
 export class Input {
   readonly state: InputState = emptyInput()
-  /** Additive UI controls. Special remains a toggle on state.special. */
-  readonly external: Partial<Omit<InputState, 'special'>> = {}
+  /** Additive UI controls. Special and zorb remain toggles on state; see `toggleZorb`. */
+  readonly external: Partial<Omit<InputState, 'special' | 'zorb'>> = {}
   private readonly keys = new Set<string>()
   /** Set true by UI code (chat, text fields) to stop driving while typing. */
   suspended = false
@@ -41,6 +44,7 @@ export class Input {
         this.state.special = !this.state.special
         e.preventDefault()
       }
+      if (e.code === 'KeyX') this.toggleZorb()
     })
     target.addEventListener('keyup', (e) => this.keys.delete(e.code))
     target.addEventListener('blur', () => this.keys.clear())
@@ -58,7 +62,7 @@ export class Input {
     const s = this.state
     if (this.suspended) {
       this.keys.clear()
-      Object.assign(s, emptyInput(), { special: s.special })
+      Object.assign(s, emptyInput(), { special: s.special, zorb: s.zorb })
       return s
     }
     s.x = this.axis(['KeyA', 'ArrowLeft'], ['KeyD', 'ArrowRight'])
@@ -89,6 +93,11 @@ export class Input {
     s.brakes ||= this.external.brakes ?? false
     s.fire ||= this.external.fire ?? false
     return s
+  }
+
+  /** Switch zorb mode. For the X key and a future touch button. */
+  toggleZorb(): void {
+    this.state.zorb = !this.state.zorb
   }
 
   /** Set by the game when the pointer is held on the canvas. */

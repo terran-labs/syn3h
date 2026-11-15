@@ -15,9 +15,10 @@ import type { Game, System } from '../core/Game'
 import { type InputState, emptyInput } from '../core/Input'
 import { FIXED_DT, GROUP_ALL, GROUP_TERRAIN, GROUP_VEHICLE, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
-import { graphicsLevel } from '../core/quality'
+import { graphicsLevel, levelNumber } from '../core/quality'
 import type { VehicleDetail } from './skins/mergeStatic'
 import type { VehicleKind } from './index'
+import { ZORB_CHEAP_DISTANCE, ZORB_DEFAULT_CAM_OFFSET, ZorbBall, ZorbShield, zorbSpeed } from './zorb'
 
 /** Everything needed to reproduce a vehicle on another client. Plain numbers for the wire. */
 export interface VehicleState {
@@ -74,6 +75,20 @@ export abstract class Vehicle implements System {
   landedThisStep = false
   /** Downward speed in m/s at the last touchdown (valid when `landedThisStep`). For effects. */
   landingImpact = 0
+  /**
+   * Zorb mode ball (see zorb.ts). Its collider exists while `input.zorb` is on and the world's
+   * zorb.speed is above zero, on local and remote copies alike.
+   */
+  readonly zorb: ZorbBall
+  /**
+   * Camera rotation the zorb drive is relative to (VehicleMe.js 80-87). The owner copies the
+   * game camera here each step; remote copies leave it null and are never driven; headless
+   * tests set it directly.
+   */
+  zorbView: THREE.Quaternion | null = null
+  private zorbShield: ZorbShield | null = null
+  /** True while the zorb ball collider exists. Controllers skip self righting while it does. */
+  get zorbed(): boolean { return this.zorb.active }
 
   /**
    * Optional: per wheel contact state from the last fixed step, for skidmarks and dust. Returns
@@ -112,7 +127,7 @@ export abstract class Vehicle implements System {
         .setCanSleep(false)
         .setCcdEnabled(true),
     )
-    registerLiquidTerrain(this.body,terrain)
+    registerLiquidTerrain(this.body,terrain,this.liquidState)
     this.object.userData.vehicleHeat=this.liquidState
     this.currPos.copy(position)
     this.prevPos.copy(position)
@@ -120,6 +135,7 @@ export abstract class Vehicle implements System {
     this.prevQuat.copy(q)
     this.object.position.copy(position)
     this.object.quaternion.copy(q)
+    this.zorb = new ZorbBall(game.world, this.body, () => (this as { camOffset?: number }).camOffset ?? ZORB_DEFAULT_CAM_OFFSET)
     this.object.userData.registerVehicleDetail=(fn:VehicleDetail)=>{this.visualDetails.add(fn);return()=>this.visualDetails.delete(fn)}
     game.scene.add(this.object)
   }
@@ -135,12 +151,25 @@ export abstract class Vehicle implements System {
   fixedUpdate(dt: number): void {
     if (this.isLocal) {
       Object.assign(this.input, this.game.input.state)
+      this.zorbView = this.game.camera?.quaternion ?? null
       this.localSafety()
     }
     this.body.resetForces(true)
     this.body.resetTorques(true)
-    this.applyForces(dt)
-    applyVehicleLiquid(this.body,this.game.world,this.terrain,this.input,this.kind,this.liquidState,dt,this.wingsOpen)
+    // Before the controller, so its guards see this step's ball. Messaging.js 67: no zorbing
+    // while zorbSpeed is 0.
+    this.zorb.sync(this.input.zorb && zorbSpeed.value > 0, dt)
+    const entryVelocity=this.body.linvel()
+    this.liquidState.entrySpeed=Math.hypot(entryVelocity.x,entryVelocity.z)
+    // Forward means launch thrust while the escape field owns motion. Feeding it
+    // into the flight pitch filter would leave a nose-down command at handover.
+    const escapeThrottle=this.input.y
+    if(Number.isFinite(this.liquidState.wingLiftSurface))this.input.y=0
+    try {this.applyForces(dt)} finally {this.input.y=escapeThrottle}
+    if (this.zorbView) this.zorb.drive(this.input, this.zorbView, dt)
+    // A zorb ball floats on liquid as a whole; the vehicle inside is shielded (zorb.ts float).
+    if(this.zorbed)this.zorb.float(this.terrain,this.liquidState,dt)
+    else applyVehicleLiquid(this.body,this.game.world,this.terrain,this.input,this.kind,this.liquidState,dt,this.wingsOpen)
     if(this.lavaDepth>0 && 'inLiquid' in this)(this as unknown as {inLiquid:boolean}).inLiquid=true
   }
 
@@ -187,7 +216,9 @@ export abstract class Vehicle implements System {
     }
     const v = b.linvel()
     if (v.x * v.x + v.y * v.y + v.z * v.z > 500 * 500) b.setLinvel({ x: v.x * 0.5, y: v.y * 0.5, z: v.z * 0.5 }, true)
-    this.uprightRescue()
+    // A zorbed vehicle tumbles with its ball by design; do not set it upright.
+    if (this.zorbed) this.stuckSteps = 0
+    else this.uprightRescue()
   }
 
   /** Fixed steps spent stuck on the roof or side; see `uprightRescue`. */
@@ -222,20 +253,39 @@ export abstract class Vehicle implements System {
     this.teleport(new THREE.Vector3(t.x, Math.max(t.y, ground) + 1.5, t.z), heading)
   }
 
-  postPhysics(_dt: number): void {
+  postPhysics(dt: number): void {
     this.prevPos.copy(this.currPos)
     this.prevQuat.copy(this.currQuat)
     const t = this.body.translation()
     const r = this.body.rotation()
     this.currPos.set(t.x, t.y, t.z)
     this.currQuat.set(r.x, r.y, r.z, r.w)
+    if (this.zorb.active) {
+      const v = this.body.isKinematic() ? this.zorbVelocity.subVectors(this.currPos, this.prevPos).divideScalar(dt) : this.zorbVelocity.copy(this.body.linvel())
+      this.zorb.observe(v, this.zorb.centre(this.zorbCentre), this.game.world.gravity, dt, this.terrain)
+    }
   }
+  private readonly zorbVelocity = new THREE.Vector3()
+  private readonly zorbCentre = new THREE.Vector3()
 
-  update(_dt: number, alpha: number): void {
+  update(dt: number, alpha: number): void {
     this.object.position.lerpVectors(this.prevPos, this.currPos, alpha)
     this.object.quaternion.slerpQuaternions(this.prevQuat, this.currQuat, alpha)
     const distance=this.game.camera?.position.distanceTo(this.object.position)??0
     for(const detail of this.visualDetails)detail(distance,!this.isLocal,graphicsLevel.value)
+    this.updateZorbShield(dt,distance)
+  }
+
+  /** One shield mesh per zorbed vehicle; level 0 and far remote copies get the fresnel-only one. */
+  private updateZorbShield(dt:number,distance:number):void {
+    if(!this.zorbShield){
+      if(!this.zorb.active)return
+      this.zorbShield=new ZorbShield(this.game.scene)
+    }
+    const cheap=levelNumber(graphicsLevel.value)===0||(!this.isLocal&&distance>ZORB_CHEAP_DISTANCE)
+    if(!this.zorbShield.update(dt,this.zorb,this.object,this.colors.accent,cheap)){
+      this.zorbShield.dispose();this.zorbShield=null
+    }
   }
 
   /** Teleport, clearing motion and interpolation history. */
@@ -243,6 +293,10 @@ export abstract class Vehicle implements System {
     this.liquidState.wingLiftSurface=-Infinity
     this.liquidState.wingLiftSpeed=0
     this.liquidState.wingLiftAvailable=false
+    this.liquidState.wasImmersed=false
+    this.liquidState.wingWasOpen=this.wingsOpen
+    this.liquidState.fastWingContact=false
+    this.liquidState.wingLaunchSpeed=0
     const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), heading)
     this.body.setTranslation(position, true)
     this.body.setRotation(q, true)
@@ -269,6 +323,9 @@ export abstract class Vehicle implements System {
   }
 
   dispose(): void {
+    this.zorbShield?.dispose()
+    this.zorbShield = null
+    this.zorb.remove()
     this.visualDetails.clear()
     this.game.scene.remove(this.object)
     this.game.world.removeRigidBody(this.body)

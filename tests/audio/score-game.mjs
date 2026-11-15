@@ -26,7 +26,7 @@ try {
   const fight = await page.evaluate(() => syn3h.audio.diagnostics.score)
   console.log('fight', fight)
   assert.ok(fight.mood.heat > 0.4 && fight.mood.intensity > 0.5, 'combat should drive the score')
-  assert.ok(['aeolian', 'phrygian'].includes(fight.mode), `combat should darken the mode, got ${fight.mode}`)
+  assert.ok(['harmonic', 'phrygian'].includes(fight.mode), `combat should darken the mode, got ${fight.mode}`)
   assert.ok(fight.tempo > lobby.tempo + 10)
   // A recording still works and silences the score.
   await page.evaluate(() => syn3h.audio.setTrack('Classic'))

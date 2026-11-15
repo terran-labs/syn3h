@@ -189,7 +189,8 @@ export class ChaseCamera implements System {
     this.speed = THREE.MathUtils.lerp(this.speed, speed, ease(dt, camVelocitySmoothing.value))
     this.distance = THREE.MathUtils.lerp(this.distance, camDistance.value, ease(dt, camDistanceSmoothing.value))
     this.pivot.copy(target.position)
-    const offset = vehicle?.camOffset ?? camOffset.value
+    // A zorb ball is a larger clearance: keep the camera outside it (src/vehicles/zorb.ts).
+    const offset = Math.max(vehicle?.camOffset ?? camOffset.value, vehicle?.zorb?.radius ?? 0)
     let distance = offset + this.distance * (1 + (camSpeedDistance.value ? this.speed * camSpeedMultiplier.value : 0))
     if (first) {
       const ride = vehicle?.ridePosition ?? vehicle?.ridePos

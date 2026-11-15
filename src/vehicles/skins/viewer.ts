@@ -1,6 +1,9 @@
 import * as THREE from 'three/webgpu'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { ClassicBuggySkin, Syn3hBuggySkin } from './index'
+import { params } from '../../../shared/params'
+import { vehicleShading } from '../../core/quality'
 
 async function main() {
   const renderer = new THREE.WebGPURenderer({antialias: true})
@@ -18,6 +21,10 @@ async function main() {
   const controls = new OrbitControls(camera, renderer.domElement)
   controls.target.set(0, .5, 0)
   controls.update()
+  // A neutral studio map so the paint and glass have something to reflect.
+  const room = new RoomEnvironment(), pmrem = new THREE.PMREMGenerator(renderer)
+  scene.environment = pmrem.fromScene(room, .04).texture; scene.environmentIntensity = .5
+  room.dispose(); pmrem.dispose()
   scene.add(new THREE.HemisphereLight(0xb8dcff, 0x50463a, 2.2))
   const sun = new THREE.DirectionalLight(0xffdfbc, 4)
   sun.position.set(-4, 10, -6); sun.castShadow = true
@@ -28,6 +35,8 @@ async function main() {
   scene.add(sun)
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({color: 0x283441, roughness: .85}))
   ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground)
+  // The viewer has no frame governor, so ask for the full showroom shading here.
+  params.set(vehicleShading.def.id, 3)
   const skins = [new ClassicBuggySkin(), new Syn3hBuggySkin()]
   // Camera faces +Z, so positive X appears on the left of the comparison.
   skins.forEach((skin, i) => { skin.object.position.set(i ? -4.6 : 4.6, .65, 0); skin.setColors(i ? 0xe96d26 : 0x2375d1, i ? 0xffb94a : 0x3ce5ff); scene.add(skin.object) })
@@ -44,7 +53,7 @@ async function main() {
   // Wheel rest positions per skin: classic layout, and Syn3h WheelPos (1.1, 0.1, 1.3) with the
   // tyre's 0.5 m radius under the ray, as Syn3hBuggy places them at rest.
   const rest = [new THREE.Vector3(.7, -.3, .8), new THREE.Vector3(1.1, -.2, 1.3)]
-  const api = {skins, renderer, ready: true,
+  const api = {skins, renderer, camera, controls, ready: true,
     focus(index: number) { const p = skins[index].object.position; controls.target.copy(p); camera.position.copy(p).add(new THREE.Vector3(3, 2.5, -4.5)); controls.update() },
     /** Free camera for screenshots: offsets relative to skin `index`. */
     view(index: number, eye: [number, number, number], target: [number, number, number]) { const p = skins[index].object.position; controls.target.copy(p).add(new THREE.Vector3(...target)); camera.position.copy(p).add(new THREE.Vector3(...eye)); controls.update() },

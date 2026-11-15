@@ -4,7 +4,8 @@
  * once. `renderScene` renders a scene offline for the browser check in tests/audio.
  */
 import { Score, type ScoreInput } from './Score'
-import { applySubmerge } from './ScoreSynth'
+import type { Role } from './Composer'
+import { applySubmerge, LAYERS } from './ScoreSynth'
 
 export interface Scene extends ScoreInput { /** Combat heat held at this level, 0..1. */ heat: number; holding: boolean; contested: boolean; progress: number }
 const base: Scene = { playing: true, speed: 0, throttle: 0, airborne: false, clearance: 0, altitude: 20, submerged: 0, lava: 0, heat: 0, holding: false, contested: false, progress: 0 }
@@ -28,16 +29,20 @@ function drive(score: Score, scene: Scene): void {
 }
 
 /** Render a scene offline and measure it. Used by tests/audio/score-render.mjs. */
-export async function renderScene(name: string, seconds = 16, seed = 1234, rate = 44100) {
+export async function renderScene(name: string, seconds = 16, seed = 1234, rate = 44100, cue?: Role) {
   const context = new OfflineAudioContext(2, rate * seconds, rate), scene = SCENES[name]
   const filter = context.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 20000; filter.connect(context.destination)
   const score = new Score(context, filter, seed)
   score.setActive(true, 0.3)
-  const tick = () => { drive(score, scene); applySubmerge(filter, score.mood.depth, context.currentTime) }
+  if (cue) score.cue(cue)
+  const roles: Role[] = []
+  const tick = () => { drive(score, scene); applySubmerge(filter, score.mood.depth, context.currentTime); roles[Math.floor(context.currentTime)] = score.role }
   tick()
   const ticks: Promise<void>[] = []
-  for (let t = 0.05; t < seconds; t += 0.05) ticks.push(context.suspend(t).then(() => { tick(); return context.resume() }))
-  const buffer = await context.startRendering(); await Promise.all(ticks)
+  // Whole-numbered ticks, stopping short of the end: a pause that lands on the last render
+  // quantum never fires and would leave the render waiting for ever.
+  for (let n = 1; n * 0.05 < seconds - 0.1; n++) ticks.push(context.suspend(n * 0.05).then(() => { tick(); return context.resume() }))
+  const buffer = await context.startRendering(); await Promise.allSettled(ticks)
   // Measure the second half, after the mood has settled.
   const from = Math.floor(buffer.length / 2), left = buffer.getChannelData(0), right = buffer.getChannelData(1)
   let peak = 0, square = 0, bad = 0, slope = 0, side = 0
@@ -48,7 +53,9 @@ export async function renderScene(name: string, seconds = 16, seed = 1234, rate 
     if (i > from) slope += (mono - (left[i - 1] + right[i - 1]) / 2) ** 2
   }
   const count = buffer.length - from
-  return { name, peak, rms: Math.sqrt(square / count), width: Math.sqrt(side / count), bad, /** Hz. RMS of the slope over RMS of the signal: where the energy sits in the spectrum. */ brightness: Math.sqrt(slope / square) * rate / (2 * Math.PI), mode: score.mode, tempo: score.tempo, mood: { ...score.mood }, nodes: score.synth.nodeCount, left, right, rate }
+  // Loudness second by second, to see a build, a breath and a release.
+  const envelope = Array.from({ length: seconds }, (_, second) => { let sum = 0; for (let i = second * rate; i < (second + 1) * rate; i++) sum += ((left[i] + right[i]) / 2) ** 2; return Math.sqrt(sum / rate) })
+  return { name, envelope, roles, peak, rms: Math.sqrt(square / count), width: Math.sqrt(side / count), bad, /** Hz. RMS of the slope over RMS of the signal: where the energy sits in the spectrum. */ brightness: Math.sqrt(slope / square) * rate / (2 * Math.PI), mode: score.mode, tempo: score.tempo, mood: { ...score.mood }, nodes: score.synth.nodeCount, left, right, rate }
 }
 
 /** 16-bit stereo WAV, for saving a render to listen to. */
@@ -71,10 +78,11 @@ function mount(): void {
   ]
   const toggles: [keyof Scene, string][] = [['playing', 'In play (off is the lobby)'], ['airborne', 'Airborne'], ['holding', 'Holding the hill'], ['contested', 'Hill contested']]
   root.innerHTML = `<h1>SYN3H / ADAPTIVE SCORE</h1><p>Everything you hear is synthesised live from a seed. Nothing is a recording.</p>
-    <button id="power">Start the score</button> <label>Theme seed <input id="seed" type="number" value="1234" min="1" max="999999"></label> <button id="reseed">New theme</button> <button id="shot">Tag beam nearby</button> <button id="accent">Capture</button>
+    <button id="power">Start the score</button> <label>Theme seed <input id="seed" type="number" value="1234" min="1" max="999999"></label> <button id="reseed">New theme</button> <button id="shot">Tag beam nearby</button> <button id="accent">Capture</button> <button id="climax">Play the build and release</button>
     <div id="scenes">${Object.keys(SCENES).map(name => `<button data-scene="${name}">${name}</button>`).join('')}</div>
     ${sliders.map(([key, label, min, max, step]) => `<label>${label} <output data-out="${key}"></output><input data-key="${key}" type="range" min="${min}" max="${max}" step="${step}"></label>`).join('')}
     <div id="toggles">${toggles.map(([key, label]) => `<label><input data-toggle="${key}" type="checkbox"> ${label}</label>`).join('')}</div>
+    <div id="layers"><strong>Layers</strong> ${LAYERS.map(name => `<label><input data-layer="${name}" type="checkbox" checked> ${name}</label>`).join('')}</div>
     <label>Volume <input id="volume" type="range" min="0" max="1" step="0.01" value="0.6"></label>
     <pre id="readout">Stopped</pre><canvas id="scope" width="640" height="120"></canvas>`
   const sync = () => {
@@ -103,6 +111,7 @@ function mount(): void {
   root.addEventListener('input', event => {
     const input = event.target as HTMLInputElement
     if (input.dataset.key) (state as unknown as Record<string, number>)[input.dataset.key] = Number(input.value)
+    if (input.dataset.layer && score) score.synth.trim[input.dataset.layer as (typeof LAYERS)[number]] = input.checked ? 1 : 0
     if (input.dataset.toggle) (state as unknown as Record<string, boolean>)[input.dataset.toggle] = input.checked
     sync()
   })
@@ -114,13 +123,14 @@ function mount(): void {
   seed.addEventListener('change', () => score?.setSeed(Number(seed.value)))
   root.querySelector('#shot')!.addEventListener('click', () => score?.combat(0.2))
   root.querySelector('#accent')!.addEventListener('click', () => score?.accent())
+  root.querySelector('#climax')!.addEventListener('click', () => score?.cue('build'))
   const readout = root.querySelector('#readout')!, canvas = root.querySelector<HTMLCanvasElement>('#scope')!, g = canvas.getContext('2d')!, bins = new Uint8Array(1024)
   const frame = () => {
     requestAnimationFrame(frame)
     if (!score || !context || !filter) return
     drive(score, state); applySubmerge(filter, score.mood.depth, context.currentTime)
     const m = score.mood, pct = (v: number) => `${Math.round(v * 100)}%`.padStart(4)
-    readout.textContent = `mode ${score.mode.padEnd(8)}  tempo ${Math.round(score.tempo)} bpm\nintensity ${pct(m.intensity)}  heat ${pct(m.heat)}  lift ${pct(m.lift)}  darkness ${pct(m.darkness)}  triumph ${pct(m.triumph)}  submerged ${pct(m.depth)}`
+    readout.textContent = `mode ${score.mode.padEnd(8)}  section ${score.role.padEnd(7)}  tempo ${Math.round(score.tempo)} bpm\nintensity ${pct(m.intensity)}  heat ${pct(m.heat)}  lift ${pct(m.lift)}  darkness ${pct(m.darkness)}  triumph ${pct(m.triumph)}  submerged ${pct(m.depth)}`
     analyser!.getByteFrequencyData(bins)
     g.fillStyle = '#0b0d14'; g.fillRect(0, 0, canvas.width, canvas.height); g.fillStyle = '#5fd4ff'
     // Log frequency axis, so bass and treble each get room.
