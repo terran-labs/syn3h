@@ -22,9 +22,13 @@ export const camRideRotation = number('rideRotation', 'Ride rotation smoothing',
 export const camDistanceSmoothing = number('distanceSmoothing', 'Distance smoothing', 4, 0.1, 20)
 export const camVelocitySmoothing = number('velocitySmoothing', 'Speed smoothing', 0.2, 0.1, 10)
 export const camFovSmoothing = number('fovSmoothing', 'FOV smoothing', 7, 0.1, 20)
-export const camClearance = number('clearance', 'Terrain clearance', 0.5, 0.1, 3)
+// 0.5 in the original. On steep ground half a metre at one point under the lens still lets
+// the corners of the view dip into the hillside.
+export const camClearance = number('clearance', 'Terrain clearance', 1.2, 0.1, 3)
 export const camAutoDelay = number('autoDelay', 'Resume chase after look', 3, 0, 10)
-export const camPitchDamping = number('pitchDamping', 'Travel pitch response', 1, 0, 1)
+// 1 in the original: the view pitched with every bump the car took. A camera operator
+// follows the slope of the hill, not the suspension.
+export const camPitchDamping = number('pitchDamping', 'Travel pitch response', 0.45, 0, 1)
 export const camSpeedDistance = boolean('speedDistance', 'Enable repaired speed distance', false)
 export const camSpeedMultiplier = number('speedMultiplier', 'Speed distance multiplier', 0.05, 0, 0.1, 0.005)
 export const camFlight = boolean('flight', 'Flight camera', true)
@@ -57,7 +61,7 @@ function surfaceHeight(terrain: CameraTerrain, x: number, z: number): number {
 }
 
 /** Sample the camera arm so hills cannot hide the car; stay above liquid too. */
-export function constrainCamera(terrain: CameraTerrain, pivot: THREE.Vector3, desired: THREE.Vector3, clearance: number): THREE.Vector3 {
+export function constrainCamera(terrain: CameraTerrain, pivot: THREE.Vector3, desired: THREE.Vector3, clearance: number, from = 0): THREE.Vector3 {
   const start = pivot.clone(), result = desired.clone()
   // Lift a submerged arm instead of collapsing it onto the vehicle at the shore.
   // Existing rotation easing still controls the chase; the surface is a hard lower bound.
@@ -65,7 +69,9 @@ export function constrainCamera(terrain: CameraTerrain, pivot: THREE.Vector3, de
   result.y = Math.max(result.y, liquidHeight(terrain, result.x, result.z) + clearance)
   const distance = start.distanceTo(result)
   const steps = Math.min(160, Math.max(1, Math.ceil(distance / 0.25)))
-  for (let i = 1; i <= steps; i++) {
+  // `from` skips the start of the arm: on a road cut into a hillside the ground beside the
+  // car is above the arm's first metre, and that is the car's own ground, not an obstacle.
+  for (let i = Math.max(1, Math.ceil(steps * from)); i <= steps; i++) {
     const t = i / steps, x = THREE.MathUtils.lerp(start.x, result.x, t), z = THREE.MathUtils.lerp(start.z, result.z, t)
     const y = THREE.MathUtils.lerp(start.y, result.y, t)
     if (y < surfaceHeight(terrain, x, z) + clearance) { result.lerpVectors(start, result, Math.max(0, (i - 1) / steps)); break }
@@ -73,6 +79,32 @@ export function constrainCamera(terrain: CameraTerrain, pivot: THREE.Vector3, de
   // Essential after collision shortening, teleports and interpolation.
   result.y = Math.max(result.y, surfaceHeight(terrain, result.x, result.z) + clearance)
   return result
+}
+
+/**
+ * How far the far end of the camera arm must rise for the whole arm to clear the ground and
+ * any liquid between the car and the lens. Rising over a hill keeps the car in frame at the
+ * same distance; the old answer, shortening the arm, snapped the view metres closer in one
+ * frame. The first fifth of the arm is not tested: the ground the car stands on is not in
+ * the way. Capped, so a cliff face behind the car still falls back to shortening.
+ */
+export function armLift(terrain: CameraTerrain, pivot: THREE.Vector3, desired: THREE.Vector3, clearance: number, cap = 10): number {
+  const length = pivot.distanceTo(desired)
+  const steps = Math.min(48, Math.max(4, Math.ceil(length / 0.75)))
+  let lift = 0
+  for (let i = Math.ceil(steps * 0.2); i <= steps; i++) {
+    const t = i / steps, x = THREE.MathUtils.lerp(pivot.x, desired.x, t), z = THREE.MathUtils.lerp(pivot.z, desired.z, t)
+    const need = surfaceHeight(terrain, x, z) + clearance - THREE.MathUtils.lerp(pivot.y, desired.y, t)
+    if (need > 0) lift = Math.max(lift, need / t)
+  }
+  return Math.min(cap, lift)
+}
+
+/** The highest ground or liquid in a small ring round a point: what the lens has to stay above. */
+function ringHeight(terrain: CameraTerrain, x: number, z: number, radius: number): number {
+  let top = surfaceHeight(terrain, x, z)
+  for (let a = 0; a < 6; a++) top = Math.max(top, surfaceHeight(terrain, x + Math.cos(a * Math.PI / 3) * radius, z + Math.sin(a * Math.PI / 3) * radius))
+  return top
 }
 
 export class ChaseCamera implements System {
@@ -90,6 +122,16 @@ export class ChaseCamera implements System {
   private readonly direction = new THREE.Vector3()
   private readonly keys = new Set<string>()
   private readonly unbind: (() => void)[] = []
+  /** Smoothed copies: the car's height without its suspension bounce, its velocity without the bumps. */
+  private pivotY = NaN
+  private readonly steady = new THREE.Vector3()
+  /** How far the arm is currently raised over ground in its way. Rises fast, settles slowly. */
+  private lift = 0
+  private readonly aheadPivot = new THREE.Vector3()
+  private readonly aheadDesired = new THREE.Vector3()
+  /** Share of the full arm length in use, 1 unless something forced the camera in. */
+  private arm = 1
+  private readonly nose = new THREE.Vector3()
   private yaw = 0
   private pitch = 0
   private distance = camDistance.value
@@ -217,6 +259,11 @@ export class ChaseCamera implements System {
       this.rotation.setFromEuler(this.euler.set(0, this.yaw, 0)); this.velocity.set(0, 0, 0)
       this.distance = camDistance.value; this.speed = 0; this.lastManual = -Infinity
     }
+    // Aim by a steadier velocity than the body's own: a wheel over a rock kicks the true one
+    // about, and the view should not twitch with it. At walking pace the car's own nose is
+    // a better guide than a velocity that is mostly noise.
+    if (reset) { this.steady.copy(this.velocity); this.pivotY = NaN; this.lift = 0 }
+    else this.steady.lerp(this.velocity, ease(dt, 5))
     this.previousTarget = target; this.previousPosition.copy(target.position)
     const speed = this.velocity.length(), mode = Math.round(camMode.value), first = mode === 1 || this.scopeHeld
     const flight = camFlight.value && Boolean(vehicle?.wingsOpen || vehicle?.wingOpen || vehicle?.kind === 'jet')
@@ -231,11 +278,24 @@ export class ChaseCamera implements System {
       if (ride) ride.getWorldPosition(this.pivot)
       else this.pivot.add(this.direction.set(0, camRideHeight.value, 0).applyQuaternion(target.quaternion))
       distance = 0
-    } else this.pivot.y += distance * camHeight.value
+    } else {
+      // Follow the car's height through a soft spring: the body bounces on its suspension
+      // several times a second and the camera should ride over that, not with it.
+      this.pivotY = Number.isFinite(this.pivotY) ? THREE.MathUtils.lerp(this.pivotY, target.position.y, ease(dt, 7)) : target.position.y
+      // Never let the spring leave the car far out of frame on a big drop or climb.
+      this.pivotY = clamp(this.pivotY, target.position.y - 2.5, target.position.y + 2.5)
+      this.pivot.y = this.pivotY + distance * camHeight.value
+    }
 
     // CoreCamera.cs:642-703: delay manual recentering, follow velocity above 1m/s.
     if ((mode === 0 || first) && this.elapsed - this.lastManual > camAutoDelay.value && speed > 1 && (first || flight || Math.hypot(this.velocity.x, this.velocity.z) > 1)) {
-      this.direction.copy(first || flight ? this.direction.set(0, 0, -1).applyQuaternion(target.quaternion) : this.velocity).normalize()
+      if (first || flight) this.direction.set(0, 0, -1).applyQuaternion(target.quaternion)
+      else {
+        const slow = clamp(1 - (Math.hypot(this.steady.x, this.steady.z) - 1) / 4, 0, 1)
+        this.direction.copy(this.steady).normalize()
+        if (slow > 0) this.direction.lerp(this.nose.set(0, 0, -1).applyQuaternion(target.quaternion), slow * 0.6)
+      }
+      this.direction.normalize()
       const wantedYaw = Math.atan2(-this.direction.x, -this.direction.z)
       const wantedPitch = Math.asin(clamp(this.direction.y, -1, 1)) * (first || flight ? 1 : camPitchDamping.value)
       this.autoTarget.setFromEuler(this.euler.set(wantedPitch, wantedYaw, 0))
@@ -255,7 +315,32 @@ export class ChaseCamera implements System {
       this.desired.copy(camera.position).addScaledVector(this.direction, dt * camRoamSpeed.value * (this.keys.has('ShiftLeft') ? 10 : 1))
     } else if (mode === 3 && !first && !reset) this.desired.copy(camera.position)
     else this.desired.set(0, 0, distance).applyQuaternion(this.rotation).add(this.pivot)
-    camera.position.copy(constrainCamera(this.terrain, mode === 4 ? camera.position : this.pivot, this.desired, camClearance.value))
+    const clearance = camClearance.value
+    if (mode !== 4 && !first) {
+      // Rise over what is in the way. Up quickly, because the ground will not wait; back
+      // down slowly, so cresting a hill does not make the view bob.
+      // Look where the arm will be in a third of a second as well as where it is: the lift
+      // then starts before the bank or crest arrives, instead of the arm being caught by it.
+      this.aheadPivot.copy(this.pivot).addScaledVector(this.steady, 0.35); this.aheadDesired.copy(this.desired).addScaledVector(this.steady, 0.35)
+      const wanted = Math.max(armLift(this.terrain, this.pivot, this.desired, clearance), armLift(this.terrain, this.aheadPivot, this.aheadDesired, clearance))
+      this.lift = reset ? wanted : THREE.MathUtils.lerp(this.lift, wanted, ease(dt, wanted > this.lift ? 12 : 1.5))
+      this.desired.y += this.lift
+    }
+    camera.position.copy(constrainCamera(this.terrain, mode === 4 ? camera.position : this.pivot, this.desired, clearance, mode === 4 || first ? 0 : 0.2))
+    if (mode !== 4 && !first) {
+      // If the arm still has to shorten (a cliff face behind the car), pull in quickly and
+      // let out slowly, so the distance never snaps and never flutters.
+      const full = this.pivot.distanceTo(this.desired), ratio = full > 1e-3 ? camera.position.distanceTo(this.pivot) / full : 1
+      this.arm = reset ? ratio : THREE.MathUtils.lerp(this.arm, Math.min(1, ratio), ease(dt, ratio < this.arm ? 10 : 2))
+      camera.position.lerpVectors(this.pivot, this.desired, this.arm)
+    }
+    // The hard floor: clear of the highest ground in a ring round the lens, and of where the
+    // lens will be a quarter of a second from now, so the corners of the view stay out of a
+    // hillside. This is what stops the void showing through.
+    if (!first) {
+      const floor = Math.max(ringHeight(this.terrain, camera.position.x, camera.position.z, 1.2), surfaceHeight(this.terrain, camera.position.x + this.steady.x * 0.25, camera.position.z + this.steady.z * 0.25)) + clearance
+      if (camera.position.y < floor) { this.lift += floor - camera.position.y; camera.position.y = floor }
+    }
     if (mode === 3 && !first) { camera.up.set(0, 1, 0); camera.lookAt(this.pivot) }
     else camera.quaternion.copy(this.rotation)
     // CoreCamera.cs:409,525,529,773: fixed mode FOV, no speed-based FOV change.
