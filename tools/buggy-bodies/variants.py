@@ -129,6 +129,44 @@ VARIANTS += [
     round3('r5-delta', 'Delta', ['Linkage: a stub delta wing, narrow at the wheel and broad at the body, with an accent spine', 'Body: paint coloured fairings that swell out to meet the wing roots', 'Tail lights: a full width bar joining two kites'],
            'delta', 'fairing', lambda kite, grown: [{'poly': [(-0.62, CZ - 0.012), (0.62, CZ - 0.012), (0.62, CZ + 0.03), (-0.62, CZ + 0.03)], 'material': 'TailLights', 'centre': True}, {'poly': kite(1.5, 1.6, 0.12), 'material': 'TailLights'}]),
 ]
+
+# ---- Round 4: the owner picked the round 3 Coilover. Asked for: larger lower suspension
+# members, shock attach points thought through on the body, cleaner tail lights that do not
+# cross other geometry, more prominent headlights, and tidier geometry overall.
+#
+# Tail lights stay inside the flat rear panel between the centre stripe and the rear corner
+# (x 0.30 to 0.66, z 0.36 to 0.50), so they never cross the stripe, the corner or the spoiler.
+# Headlights: the original lamp sits in a chrome duct centred near (0.62, 0.33) in the front view.
+HX, HZ = 0.62, 0.33
+
+
+def round4(id, name, notes, strut, tail, head, socket_size=1.25):
+    from build import capsule, ellipse, grown
+    return {'id': id, 'name': name, 'notes': notes, 'round': 4, 'game': True, 'basedOn': 'Coilover',
+            'shape': {**WIDE, 'scallop': 0.3}, 'spoiler': {'height': 1.1, 'span': 1.14}, 'trim': {'scoop': 'Dark'}, 'paint': WIDE_PAINT,
+            'strut': strut, 'socket': 'pod', 'socket_size': socket_size, 'clean': {'sharp': 42},
+            'tail': {'shapes': tail(capsule, ellipse, grown)}, 'lamps': head,
+            'views': ['front', 'tail', 'corner', 'face']}
+
+
+
+
+VARIANTS += [
+    round4('c1-aarm', 'A-arm', ['Lower member: a broad A-arm, two deep arms and a web, about three times the old blade', 'One coilover from the arm to a tower raised from the fender', 'Tail lights: one rounded bar each side, inside the rear panel', 'Headlights: a domed lens in a chrome bezel over each nose duct, about twice the old lamp'],
+           'co-aarm', lambda capsule, ellipse, grown: [{'poly': capsule(0.30, 0.66, 0.40, 0.47), 'material': 'TailLights'}],
+           {'rx': 0.14, 'rz': 0.12}),
+    round4('c2-box', 'Box arm', ['Lower member: a heavy tapered box section with an accent rib', 'One large coilover to a fender tower', 'Tail lights: two slim stacked bars each side', 'Headlights: larger lens with a chrome halo ring'],
+           'co-box', lambda capsule, ellipse, grown: [{'poly': capsule(0.30, 0.66, 0.445, 0.49), 'material': 'TailLights'}, {'poly': capsule(0.30, 0.60, 0.375, 0.42), 'material': 'TailLights'}],
+           {'rx': 0.15, 'rz': 0.125, 'halo': True}),
+    round4('c3-twin', 'Twin shock', ['Lower member: a large aerofoil arm, broad at the body', 'Two slimmer shocks per wheel, each to its own tower', 'Tail lights: a slanted bar in a chrome surround', 'Headlights: wide oval lenses'],
+           'co-twin', lambda capsule, ellipse, grown: [{'poly': grown(capsule(0.31, 0.65, 0.4, 0.47, slant=0.05), 1.16), 'material': 'Chrome'}, {'poly': capsule(0.31, 0.65, 0.4, 0.47, slant=0.05), 'material': 'TailLights'}],
+           {'rx': 0.19, 'rz': 0.105}),
+    round4('c4-fork', 'Fork', ['Lower member: two thick tubes forking from the hub to the body, cross braced', 'One big coilover standing between them', 'Tail lights: a tall rounded lamp each side', 'Headlights: the largest lenses, with a halo ring'],
+           'co-fork', lambda capsule, ellipse, grown: [{'poly': ellipse(0.47, 0.43, 0.15, 0.07), 'material': 'TailLights'}],
+           {'rx': 0.17, 'rz': 0.145, 'halo': True}),
+]
+for v in VARIANTS:
+    if v['id'] == 'r3-coilover': v['alsoIn'] = ['4']
 for v in VARIANTS:
     v.setdefault('views', ['front', 'rear', 'side'])
     if v.get('round') == 2: v['views'] = ['front', 'nose', 'top']
