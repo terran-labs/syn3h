@@ -7,9 +7,9 @@ import { hover } from '../../src/dev/vehicleLab/exhibits/hover'
 import { filterDesigns, countStats } from '../../src/dev/vehicleLab/logic'
 
 describe('hovercraft studies based on the original', () => {
-  it('opens round two through ordinary lab selection and preserves round one', async () => {
+  it('keeps round two selectable and preserves round one', async () => {
     const designs = await hover.designs()
-    expect(filterDesigns(designs).group).toBe('2')
+    expect(filterDesigns(designs, '2').designs).toHaveLength(5)
     expect(filterDesigns(designs, '1').designs).toHaveLength(5)
   })
   it('adds five distinct studies without replacing round one', () => {

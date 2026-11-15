@@ -2,12 +2,12 @@ import { Builder, type Mat } from '../jetgen/shapes'
 
 /**
  * Next-generation hovercraft design studies, round one. Appearance only: the game's hovercraft
- * is still Hovercraft.ts with hovercraft.glb, and no physics reads these.
+ * was Hovercraft.ts with hovercraft.glb when these were drawn, and no physics reads these.
  *
  * Every design is generated from the numbers below with the jet lane's shape kit
  * (jetgen/shapes.ts), so a design ships as parameters, not a model file (AGENTS.md).
  *
- * What each design keeps from the current body, so any of them could replace hovercraft.glb
+ * What each design keeps from that body, so any of them could have replaced hovercraft.glb
  * without touching Hovercraft.ts:
  * - It fits the assisted collision hull (ENVELOPE): 2.54 m wide, 1.03 m tall, 3.18 m long.
  * - A lift port in each quadrant of the hover footprint (Hovercraft.ts samples the ground at
@@ -41,7 +41,7 @@ export interface HoverDesign {
   build(b: Builder): void
 }
 
-/** The assisted collision hull in Hovercraft.ts configureChassis(), which matches hovercraft.glb. */
+/** The assisted collision hull Hovercraft.ts used for the original mesh (hovercraft.glb, since removed). */
 export const ENVELOPE = { minX: -1.27, maxX: 1.27, minY: 0, maxY: 1.03, minZ: -1.65, maxZ: 1.53 }
 /** Hovercraft.prefab RideCamera, as Hovercraft.ts places it. */
 export const EYE: [number, number, number] = [0, .56284, -.497794]
