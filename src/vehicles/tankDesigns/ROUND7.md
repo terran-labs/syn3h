@@ -7,7 +7,7 @@ window openings cut into it. They are appearance studies, not replacements for t
 ## Brief carried forward
 
 - Exploration, no visible cannons or other weapons.
-- The original tank's six independent tread assemblies and broad stance. The owner also
+- Six independent tread assemblies and a broad stance. The owner also
   specified roughly twice the buggy's size; these studies target about 5.4 m wide and 8 m long.
 - A deep, substantial body. Retain the Rover's generous proportions without its floating bumper.
 - A front cockpit tall enough to occupy, integrated into the hull's roofline.
@@ -33,7 +33,7 @@ window openings cut into it. They are appearance studies, not replacements for t
 
 ## Reference and implementation
 
-The original game tank establishes the six-pod arrangement; the early red and purple studies
+The six-pod arrangement is carried forward; the early red and purple studies
 establish the owner's preference for triangular treads, fender flares and a heavy central body.
 The [Lun reference the owner supplied](https://en.wikipedia.org/wiki/Lun-class_ekranoplan)
 informs Caspian's keel and upper-deck proportions. [NASA's rover concepts](https://www.nasa.gov/reference/jsc-rovers/)

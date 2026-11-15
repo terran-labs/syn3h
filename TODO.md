@@ -3,18 +3,16 @@
 Work deliberately left out of the MVP, with enough context to pick it up later. The
 weekend push is tracked in `ops/BACKLOG.md`; this file is for what comes after.
 
-## Classic Mars Explorer buggy
+## Classic buggy
 
 Left off the MVP by the owner on 14 November 2026. The code stays in the tree as the kind
 `buggy-classic`, and it is still the second choice in the lobby.
 
 ### Where it stands
 
-- `src/vehicles/ClassicBuggy.ts` is a close port of the original `Buggy.js`, cited line by
-  line: raycast wheels, the "modified Yoggy" motor, four wheel steering, suspension, wings
+- `src/vehicles/ClassicBuggy.ts`: raycast wheels, the "modified Yoggy" motor, four wheel steering, suspension, wings
   with stall, airbrakes and lava thermals, self righting, and lava floating.
-- The model is the original geometry, recovered from the fan fork's `Buggy2.fbx`
-  (`public/models/buggy-classic.glb`, `buggy-classic-wheel.glb`).
+- The model is `public/models/buggy-classic.glb` with `buggy-classic-wheel.glb`.
 - Unit tests in `tests/vehicles/classic.test.ts` cover direction, braking, wings and self
   righting.
 - Nobody has driven it by hand yet. Feel is the real acceptance test.
@@ -33,21 +31,20 @@ at 7 s, D at 12 s) threw no errors and showed:
   frame width. The camera belongs to the Bots, Performance and QA lane, so the fix is
   likely a per vehicle camera distance there, not a change to the buggy.
 
-### Known quirks inherited from the original
+### Known quirks
 
 - Top speed runs far past the Speed slider, about 100 m/s at the default, because the
-  original motor equations divide by `buggySpeed * 10`.
+  motor equations divide by `buggySpeed * 10`.
 - It creeps forward with no input unless `buggy.idleHold` is on.
-- The paint only approximates the original reflective cubemap shader.
 
 ### Ideas, in the order I would try them
 
 1. Have the owner drive it with the sliders open (Power, Speed, Traction, Shocks,
    Stability (CG), Idle hold) and turn his words into slider values before touching code.
 2. If it still rolls too easily, try Stability (CG) toward -0.7 first, then a lower
-   Traction, before any change that departs from the source.
+   Traction, before any change to the equations.
 3. Ask the camera owner for a closer chase distance for small vehicles.
-4. Consider a cap on top speed behind a slider that defaults off, so the original behaviour
+4. Consider a cap on top speed behind a slider that defaults off, so the current behaviour
    stays available.
 5. Fix the stale header comment in `ClassicBuggy.ts`, which still says the wings and
    buoyancy "come later". Both are implemented.

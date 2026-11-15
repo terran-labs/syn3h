@@ -15,7 +15,7 @@ The base exposes `lavaDepth`, `stuck` and `liquidState`. `stuck` means body dept
 
 `liquidKindAt` distinguishes water from lava. If the method is absent, liquid is treated as lava. Null means no liquid at that location. Both buggies retain their existing water float and paddle path, including the historical `buggy.lavaFloat` parameter ID for compatibility; its displayed label now says water. Other kinds receive shared buoyancy and paddling in water. Water produces no heat, depth or sticky state, and immersion quenches any remaining lava coating.
 
-The old `applyLava` helper looks up the body's registered terrain and only applies its legacy forces in water. No Syn3hBuggy.ts change is needed to suppress legacy lava buoyancy. Its `inLiquid` flag is maintained for submerged lava after the class controller returns. The lead can update its old floating comments separately. No individual vehicle class is edited here.
+The old `applyLava` helper looks up the body's registered terrain and only applies its float forces in water. No Syn3hBuggy.ts change is needed to suppress its lava buoyancy. Its `inLiquid` flag is maintained for submerged lava after the class controller returns. The lead can update its old floating comments separately. No individual vehicle class is edited here.
 
 Heat is an emissive coating on existing materials, with a wet-plane mask in vehicle coordinates so the hotter band follows the car as it turns. It reaches full heat while immersed and cools after exit. The mask approximates the deepest wetted plane; it is not a full thermal simulation of repeated tumbling. Paint colour references and existing maps are preserved when standard materials become node materials. There are no added meshes, lights or draw calls, and no explosion effect. Existing landing dust and small sparks remain.
 
@@ -31,7 +31,7 @@ Volcanic seed 1 at noon and 23:00:
 - Crawling out reaches dry ground in seven simulated seconds, clears stuck, and retains cooling heat. The capture applies brakes after reaching dry ground so it does not drive into another inlet.
 - Zero browser errors. Same-pose cold/hot scene submissions are 90/90 by day and 89/89 at night.
 
-Alpine seed 7 uses water throughout sea entry. The buggy floats around the surface and paddles at about 8 m/s, with heat 0, lavaDepth 0 and stuck false. The extra water exit attempt turns back into open water under the retained legacy paddle controller; it is not claimed as a verified water escape. No water behavior was retuned.
+Alpine seed 7 uses water throughout sea entry. The buggy floats around the surface and paddles at about 8 m/s, with heat 0, lavaDepth 0 and stuck false. The extra water exit attempt turns back into open water under the retained paddle controller; it is not claimed as a verified water escape. No water behavior was retuned.
 
 Evidence inspected:
 

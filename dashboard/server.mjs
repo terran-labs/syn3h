@@ -19,8 +19,6 @@ const port = Number(portArg > 0 ? process.argv[portArg + 1] : process.env.PASEO_
 const DOCS = [
   ['PROPOSAL', 'docs/PROPOSAL.md', 'Proposal'],
   ['ROADMAP', 'docs/ROADMAP.md', 'Roadmap'],
-  ['mars-explorer', 'docs/architecture/mars-explorer.md', 'Mars Explorer architecture'],
-  ['syn3h', 'docs/architecture/syn3h.md', 'Syn3h (Unity) architecture'],
   ['reference-games', 'docs/research/reference-games.md', 'Reference games'],
   ['real-world-cities', 'docs/research/real-world-cities.md', 'Real world cities'],
 ]

@@ -1,5 +1,5 @@
 {
-  "tagline": "Syn3h, rebuilt native in the browser: its vehicles, its physics, its lobby and its look.",
+  "tagline": "Syn3h, native in the browser: its vehicles, its physics, its lobby and its look.",
   "deadline": "Demo: Sunday noon Pacific, Coeur d'Alene",
   "headline": "Release 5 is live and verified. Clouds, temporal antialiasing, saved-world moons and touch minimap clearance are public. All 1,156 tests, frozen checks, primary-site multiplayer and eight public vehicle drives passed.",
   "previews": [
@@ -14,9 +14,9 @@
       "detail": "R thrust, Space switches hover and flight, S pulls up, A and D bank."
     },
     {
-      "title": "Classic Mars Explorer buggy",
+      "title": "Classic buggy",
       "url": "https://vorton-previews.tail285f88.ts.net:32782/?vehicle=buggy-classic",
-      "detail": "The original buggy and its own physics, kept as a second choice."
+      "detail": "A second buggy with its own physics, kept as a second choice."
     },
     {
       "title": "A different world",
@@ -28,7 +28,7 @@
     {
       "state": "done",
       "title": "Research and proposal",
-      "detail": "Original source studied, reference games dissected, stack chosen."
+      "detail": "Reference games dissected, stack chosen."
     },
     {
       "state": "done",
@@ -38,7 +38,7 @@
     {
       "state": "done",
       "title": "Milestone 1: buggy physics on Martian terrain",
-      "detail": "The original buggy handling, ported from source, driving on a procedural landscape. First preview link."
+      "detail": "Buggy handling, driving on a procedural landscape. First preview link."
     },
     {
       "state": "done",
@@ -122,8 +122,8 @@
     },
     {
       "state": "done",
-      "title": "Mars Explorer tank",
-      "detail": "Merged as a legacy vehicle, by URL only: ?vehicle=tank."
+      "title": "Tank",
+      "detail": "Merged as a vehicle by URL only: ?vehicle=tank."
     },
     {
       "state": "done",
@@ -143,7 +143,7 @@
     {
       "state": "done",
       "title": "Names, loading messages, share card, credits",
-      "detail": "New seeded names and 40 loading messages (originals were not recoverable). Share image and icons ready; need the public address."
+      "detail": "New seeded names and 40 loading messages. Share image and icons ready; need the public address."
     },
     {
       "state": "done",
@@ -153,7 +153,7 @@
     {
       "state": "done",
       "title": "Hovercraft handling",
-      "detail": "Merged. Assisted glide holds clearance over dunes, slopes, lava and sea with zero hull-through-ground samples. The original controller is one slider away."
+      "detail": "Merged. Assisted glide holds clearance over dunes, slopes, lava and sea with zero hull-through-ground samples. The unassisted controller is one slider away."
     },
     {
       "state": "done",
@@ -168,7 +168,7 @@
     {
       "state": "done",
       "title": "Public repository",
-      "detail": "github.com/terran-labs/syn3h is public with eight milestone tags. The nine old Syn3h repos are renamed legacy-unity-*."
+      "detail": "github.com/terran-labs/syn3h is public with eight milestone tags."
     },
     {
       "state": "done",
@@ -220,7 +220,7 @@
     {
       "state": "active",
       "name": "Syn3h :: UX",
-      "detail": "Phone landscape layout, then the lobby restyle from your 2017 screenshots."
+      "detail": "Phone landscape layout, then the lobby restyle."
     },
     {
       "state": "active",
@@ -287,10 +287,6 @@
   ],
   "strategy": [
     {
-      "title": "Port, do not reinvent",
-      "detail": "The original vehicles are one rigid body, raycasts and hand applied forces. That code ports to Rapier nearly line for line, so the handling comes with it."
-    },
-    {
       "title": "Four seams, four builders",
       "detail": "Terrain, vehicles, networking and environment each sit behind one small interface, so they are built in parallel worktrees and merged without collisions."
     },
@@ -303,7 +299,7 @@
       "detail": "Each milestone ends in a preview link. If time runs out, what is left over is polish."
     },
     {
-      "title": "Mars Explorer's own netcode",
+      "title": "Owner-authoritative netcode",
       "detail": "Each player simulates their own vehicle. Nearby remote vehicles stay physical, which is what makes ramming work."
     }
   ],
@@ -330,23 +326,23 @@
       "name": "Syn3h buggy",
       "role": "Primary vehicle, default in the lobby",
       "overall": "done",
-      "summary": "Your model at full size on physics ported from Syn3h. Drives, jumps, glides on its wings and lands. Needs your hands on it.",
+      "summary": "Full size. Drives, jumps, glides on its wings and lands. Needs your hands on it.",
       "url": "https://vorton-previews.tail285f88.ts.net:32782/?vehicle=buggy-syn3h",
       "aspects": [
         {
           "state": "done",
           "name": "Model",
-          "detail": "Syn3h Buggy.blend, unscaled, with its wheels, axles and wing surface. Body and accent colours apply."
+          "detail": "Full size, with its wheels, axles and wing surface. Body and accent colours apply."
         },
         {
           "state": "done",
           "name": "Physics",
-          "detail": "Ported from VhiclBuggy.cs with the prefab's values. A next-gen tyre model is now on by default (grip up to a limit, then sliding; ABS; speed-limited steering); buggy.nextGen off restores the Syn3h equations exactly."
+          "detail": "A next-gen tyre model is now on by default (grip up to a limit, then sliding; ABS; speed-limited steering); buggy.nextGen off restores the simpler equations exactly."
         },
         {
           "state": "done",
           "name": "Wings",
-          "detail": "Flight model ported, including stall, the flight-slip and powered-loop options and gear retract. Wings glow in the accent colour."
+          "detail": "Flight model with stall, the flight-slip and powered-loop options and gear retract. Wings glow in the accent colour."
         },
         {
           "state": "done",
@@ -356,7 +352,7 @@
         {
           "state": "done",
           "name": "Effects",
-          "detail": "Tyre tracks, wheel dust, landing puffs, headlights at night. Wing trails are new, not from Syn3h."
+          "detail": "Tyre tracks, wheel dust, landing puffs, headlights at night."
         },
         {
           "state": "waiting",
@@ -376,7 +372,7 @@
         {
           "state": "waiting",
           "name": "Known issues",
-          "detail": "The rightward pull under throttle is gone with the new tyre model. Syn3h had lava floating switched off; ours is on. Changing vehicle in the lobby reloads the page. The new tyre model has not been driven by hand."
+          "detail": "The rightward pull under throttle is gone with the new tyre model. Lava floating is on. Changing vehicle in the lobby reloads the page. The new tyre model has not been driven by hand."
         }
       ]
     },
@@ -384,18 +380,18 @@
       "name": "Syn3h jet",
       "role": "In the lobby",
       "overall": "done",
-      "summary": "Your model with chrome and the purple cockpit. Takes off in hover, transitions to flight, lands on its gear. Flown for over a minute including two crashes.",
+      "summary": "Chrome and the purple cockpit. Takes off in hover, transitions to flight, lands on its gear. Flown for over a minute including two crashes.",
       "url": "https://vorton-previews.tail285f88.ts.net:32782/?vehicle=jet",
       "aspects": [
         {
           "state": "done",
           "name": "Model",
-          "detail": "Syn3h Core Jet.blend at true size, with paint, chrome, cockpit glass and animated landing gear. Sky reflections on the metal."
+          "detail": "True size, with paint, chrome, cockpit glass and animated landing gear. Sky reflections on the metal."
         },
         {
           "state": "done",
           "name": "Physics",
-          "detail": "Ported from VhiclJet.cs with terra.jet.prefab values: mass 200, hover and flight thrust, the prefab's hull and nozzle position. Syn3h's drag of 0.0001."
+          "detail": "Mass 200, hover and flight thrust, hull and nozzle position, drag of 0.0001."
         },
         {
           "state": "done",
@@ -405,12 +401,12 @@
         {
           "state": "waiting",
           "name": "Control response",
-          "detail": "Softened to 0.3 for keyboards: at your original authority a half-second tap pitched the nose about 100 degrees. Set jet.controlResponse to 1 for the original."
+          "detail": "Softened to 0.3 for keyboards: at full authority a half-second tap pitched the nose about 100 degrees. Set jet.controlResponse to 1 for full authority."
         },
         {
           "state": "done",
           "name": "Effects",
-          "detail": "Main thruster glow and exhaust by throttle, hover thrusters, dust near the ground. The source's particle controller was commented out, so values come from the prefab."
+          "detail": "Main thruster glow and exhaust by throttle, hover thrusters, dust near the ground."
         },
         {
           "state": "waiting",
@@ -430,7 +426,7 @@
         {
           "state": "waiting",
           "name": "Known issues",
-          "detail": "Unity's weather and depth shader effects are approximated. Flying controls are not guessable without the help panel (H)."
+          "detail": "Flying controls are not guessable without the help panel (H)."
         }
       ]
     },
@@ -438,18 +434,13 @@
       "name": "Syn3h hovercraft",
       "role": "In the lobby",
       "overall": "done",
-      "summary": "Your model, gliding about 2.5 m above ground, lava and sea. The easy vehicle. Syn3h had no hovercraft script, so the physics started from Mars Explorer.",
+      "summary": "Glides about 2.5 m above ground, lava and sea. The easy vehicle.",
       "url": "https://vorton-previews.tail285f88.ts.net:32782/?vehicle=hovercraft",
       "aspects": [
         {
           "state": "done",
           "name": "Model",
-          "detail": "Syn3h's hovercraft decoded from its original file, with spoilers, cockpit and rear glow. The main paint material was missing from all three repos, so Syn3h's standard vehicle paint is used."
-        },
-        {
-          "state": "waiting",
-          "name": "Physics source",
-          "detail": "Mars Explorer's Hovercraft.js. The Syn3h prefab points at that same script and no Syn3h version exists."
+          "detail": "Spoilers, cockpit and rear glow, in the standard vehicle paint."
         },
         {
           "state": "done",
@@ -458,8 +449,8 @@
         },
         {
           "state": "done",
-          "name": "Original mode",
-          "detail": "hover.assist 0 restores the source controller, with two port errors corrected. It still clips steep slopes, as the original would."
+          "name": "Unassisted mode",
+          "detail": "hover.assist 0 turns the assistance off. It still clips steep slopes."
         },
         {
           "state": "done",
@@ -484,26 +475,26 @@
       ]
     },
     {
-      "name": "Classic Mars Explorer buggy",
+      "name": "Classic buggy",
       "role": "In the lobby, second choice",
       "overall": "done",
-      "summary": "The original buggy mesh, recovered, on a port of the original Buggy.js. Kept for the nostalgia. Twitchier than the Syn3h buggy at speed.",
+      "summary": "A second buggy with its own physics. Twitchier than the Syn3h buggy at speed.",
       "url": "https://vorton-previews.tail285f88.ts.net:32782/?vehicle=buggy-classic",
       "aspects": [
         {
           "state": "done",
           "name": "Model",
-          "detail": "The original geometry, recovered from the fan fork's Buggy2.fbx, which carries the same mesh names. Not a recreation."
+          "detail": "Its own body and wheels."
         },
         {
           "state": "done",
           "name": "Physics",
-          "detail": "Ported from Buggy.js with the original prefab's wheel positions, hull and material. Wheel radius 0.30, wheelbase 1.6 m."
+          "detail": "Wheel radius 0.30, wheelbase 1.6 m."
         },
         {
           "state": "done",
           "name": "Wings",
-          "detail": "Mars Explorer's glide ported: stall, airbrakes, self-levelling, lava thermals."
+          "detail": "Glide with stall, airbrakes, self-levelling, lava thermals."
         },
         {
           "state": "done",
@@ -528,7 +519,7 @@
         {
           "state": "waiting",
           "name": "Known issues",
-          "detail": "Rolls over in hard turns at speed; our ground gripped harder than Unity's, which is fixed, but it remains lively. Top speed runs far past the speed slider, as the original equations do. The paint only approximates the original reflective shader."
+          "detail": "Rolls over in hard turns at speed; ground grip was reduced, but it remains lively. Top speed runs far past the speed slider."
         },
         {
           "state": "waiting",
@@ -538,21 +529,21 @@
       ]
     },
     {
-      "name": "Mars Explorer tank",
+      "name": "Tank",
       "role": "By link only, not in the lobby",
       "overall": "waiting",
-      "summary": "Syn3h never had a tank, so this is the Mars Explorer one, ported last and kept out of the lobby until you ask for it.",
+      "summary": "Added last and kept out of the lobby until you ask for it.",
       "url": "https://vorton-previews.tail285f88.ts.net:32782/?vehicle=tank",
       "aspects": [
         {
           "state": "done",
           "name": "Model",
-          "detail": "The original hull and tread meshes with the original track texture."
+          "detail": "Hull and tread meshes with a track texture."
         },
         {
           "state": "waiting",
           "name": "Physics",
-          "detail": "The source's motor, grip, skid steering and braking equations. The six jointed track bodies are replaced by six contact casts on one body, so mass, inertia and suspension are approximations."
+          "detail": "Motor, grip, skid steering and braking equations. The six jointed track bodies are replaced by six contact casts on one body, so mass, inertia and suspension are approximations."
         },
         {
           "state": "done",
@@ -583,30 +574,6 @@
           "state": "waiting",
           "name": "Lead's first look",
           "detail": "It climbs walls: six tracks push about five times its weight, and it pitched to 68 degrees on a ridge and stayed. Track pods dangle when they leave the ground. Lane paused for the night."
-        }
-      ]
-    },
-    {
-      "name": "Not ported",
-      "role": "Found in the Syn3h repos",
-      "overall": "next",
-      "summary": "Other actors that exist in Syn3h. None can be brought in as they stand.",
-      "url": "",
-      "aspects": [
-        {
-          "state": "next",
-          "name": "Android",
-          "detail": "A model with no driver script and no prefab."
-        },
-        {
-          "state": "next",
-          "name": "WeasleyMobile and Nightmaragog",
-          "detail": "Prefabs whose source assets are missing from all three repos."
-        },
-        {
-          "state": "next",
-          "name": "Sea Monster",
-          "detail": "A scene creature with no controller found."
         }
       ]
     }

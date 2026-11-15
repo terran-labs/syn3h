@@ -11,11 +11,11 @@ This is source reachability and GLB inspection, not a fresh browser request trac
 | buggy-classic-wheel.glb | 484624 | LoadedBuggySkin classic wheels |
 | tank.glb | 12556 | Tank game hull |
 | tanktread.glb | 115204 | Tank game tracks |
-| jet.glb | 335568 | VehiclePreview chooser; recovered geometry regression |
+| jet.glb | 335568 | VehiclePreview chooser; geometry regression |
 
 All eight GLBs declare zero images and zero textures. Live mesh geometry remains an
 owner-authorized exception. The game jet uses procedural GameJet, but the chooser still
-loads the old jet through its dynamic vehicle-kind path. Classic remains in the supported
+loads jet.glb through its dynamic vehicle-kind path. Classic remains in the supported
 factory, chooser, resume and wire kinds. Removing those selectors is a separate product
 change; neither classic GLB nor the chooser jet is dead.
 

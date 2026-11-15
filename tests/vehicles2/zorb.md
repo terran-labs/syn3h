@@ -1,31 +1,30 @@
 # Zorb mode
 
 Press X to ride inside a force-field ball; press it again to get out. Code is in
-`src/vehicles/zorb.ts`, wired through `Vehicle.ts`. Sources are cited in that file.
+`src/vehicles/zorb.ts`, wired through `Vehicle.ts`.
 
-## What was recovered from the original
+## Size and look
 
-- Radius: `Vehicle.js` 225 sets the ORB scale to `ramoSpheres * 15 + camOffset`. A float scan of
-  the binary `ORB.prefab` found the sphere collider radius .5, so the radius is half the scale.
+- Radius: the ball's scale is `ramoSpheres * 15 + camOffset` and its radius is half the scale.
   At the default size .5 a buggy (clearance 3) gets 5.25 m, a jet (5) 6.25 m and a hovercraft
-  (2) 4.75 m. This matches the roughly 10 m ball in the legacy screenshots without calibration.
-- Colours: the same scan found `RamoSphere.tagColor` (.035, .565, 1, .278) and `ramColor`
-  (0, 1, 0, .2275). The zorb ball rests at ramColor's alpha .2275; its tint is the vehicle accent.
-- Physic material `XorbBall`: friction .1 and .1, bounciness .5 (`zorb.bounce` replaces it live).
-- `Ramp.png` sampled: 1 below facing ratio .08, falling to .14 by .78. `Plasma.png` is a grey
-  marble with thin bright ridges, tiled 4x4 in `RamoShield.mat`. Both are generated in the shader.
+  (2) 4.75 m.
+- Colours: tag colour (.035, .565, 1, .278) and ram colour (0, 1, 0, .2275). The zorb ball rests
+  at the ram colour's alpha .2275; its tint is the vehicle accent.
+- Physics material: friction .1 and .1, bounciness .5 (`zorb.bounce` sets it live).
+- Shading: a rim of 1 below facing ratio .08, falling to .14 by .78, over a grey marble with thin
+  bright ridges tiled 4x4. Both are generated in the shader.
 
 ## Direction
 
-Unity camera-local directions (x, y, z) become (x, y, -z) in a three.js camera frame. Torques
+Camera-local input directions (x, y, z) become (x, y, -z) in the three.js camera frame. Torques
 are axial and become (-x, -y, z), matching `unityTorque`. Tests check three camera headings:
 forward input moves away from the camera, right input to its right, back input toward it. The
-horizontal spin is about up x velocity, so the ball rolls the way it travels. The original torque
-used the full camera transform, so a camera pitched down also yaws the ball a little; kept.
+horizontal spin is about up x velocity, so the ball rolls the way it travels. The torque uses
+the full camera transform, so a camera pitched down also yaws the ball a little.
 
-## Deliberate changes
+## Behaviour
 
-- No one second delay before the ball appears.
+- The ball appears at once.
 - The ball centre sits .35 m above the vehicle's centre of mass. On the pivot, the buggy's mass
   .2 m ahead of it swung the car about 70 degrees nose down at rest.
 - Switching off shrinks the ball (ramping to 4 m/s, slower than gravity) and sets the car down
@@ -34,9 +33,9 @@ used the full camera transform, so a camera pitched down also yaws the ball a li
 - Liquids: the ball floats with its base .4 m under water or lava, drag 1.2 x .15 per second in
   water and lava viscosity x .15 in lava, and the vehicle inside neither heats nor sticks. The
   shared liquid pass measured immersion at the ball centre and held a ball in deep lava forever.
-- Controllers: no self righting (as in Buggy.js 488 and TankMe.js 27), no upright rescue, no jet
+- Controllers: no self righting, no upright rescue, no jet
   hover hold (it thrust along the tumbling jet's up axis), and the hovercraft rides passively (its
-  glide grip and drag cut the ball to a third of its speed; the legacy 15 m hover would float it).
+  glide grip and drag cut the ball to a third of its speed; its 15 m hover would float it).
 
 ## Evidence
 

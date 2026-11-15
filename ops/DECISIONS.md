@@ -23,7 +23,7 @@ because someone is in a lobby. Frozen-build validation, public checks and immedi
 rollback remain required. Occupancy is no longer a release gate.
 
 The owner answered the wind question: generated wind only. UX owns removing the recorded
-wind layer. This supersedes the recording-retention rule for wind only; original music
+wind layer. This supersedes the recording-retention rule for wind only; the music
 and laser recordings remain.
 
 ## Sunday 15 November, overnight: coordinated validation queue
@@ -180,7 +180,7 @@ The Foreman sweeps hourly overnight and has a morning brief ready by 8am.
 **Decided.** "Cut over ASAP." The owner gave his word for the domain switch without
 waiting to see release 1 on the workers.dev address first.
 
-**Why.** He wants the rebuilt game on the domain tonight. The Foreman had recommended he
+**Why.** He wants the game on the domain tonight. The Foreman had recommended he
 see release 1 first; he chose speed. Rollback takes about a minute.
 
 **What it changes.** As soon as Cloudflare access exists: ship release 1 from the current
@@ -242,7 +242,7 @@ his choice for those threads. Neither starts anything on Claude 2.
 tonight. (The owner's message said "synth.com"; the Foreman read that as syn3h.com and
 asked him to correct it if wrong.)
 
-**Why.** The owner wants the rebuilt game to be what the domain serves.
+**Why.** The owner wants the new game to be what the domain serves.
 
 **What it changes.** Production's address is syn3h.com, not only a workers.dev address.
 Facts checked at 5:00pm: the domain's DNS is already on Cloudflare; the apex redirects to
@@ -308,11 +308,9 @@ what is playable, broken, or waiting on him. The coordination rules are in
 `ops/PROTOCOL.md` and the lane map is in `ops/LANES.md`. The chain of command in
 `FOREMAN-BRIEF.md` stands: the Foreman directs the Orchestrator only.
 
-## Saturday 14 November, 4:24pm Pacific: publish the new repo, rename the old ones
+## Saturday 14 November, 4:24pm Pacific: publish the repo
 
-**Decided** (in the Orchestrator's thread). The new `syn3h` repository goes public now. The
-nine old repositories are renamed to `legacy-unity-` followed by their original name.
+**Decided** (in the Orchestrator's thread). The `syn3h` repository goes public now.
 
-**What it changes.** The earlier `syn3h-unity-*` naming proposal is dead. The Orchestrator
-is carrying this out. The API keys committed in two of the old public repositories still
-need revoking by the owner; renaming does not remove them from history.
+**What it changes.** The Orchestrator is carrying this out. The API keys committed in two
+other public repositories still need revoking by the owner.

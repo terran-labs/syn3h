@@ -1,7 +1,7 @@
 # Force field wings lift buggies out of liquid
 
 Both buggies now get a shared, mass-independent escape field after opening wings while
-immersed. It replaces sticky drag and legacy water lift, levels the vehicle, and clears
+immersed. It replaces sticky drag and the water wing lift, levels the vehicle, and clears
 stuck. Vertical and horizontal field speeds are capped at 6 m/s. The field rises toward
 10 m above the entry liquid surface, or 3 m above the bank under it, whichever is higher.
 It stays active until wings close. Wings opened away from liquid retain ordinary flight.
@@ -10,7 +10,7 @@ do not activate this field. Lava coating still heats and cools normally; water a
 
 World parameter: `liquid.wingLift`, Liquid group, default 18 m/s², range 0 to 40, step 1.
 It sets the acceleration toward the field's desired climb rate. Zero disables this escape
-assist and restores the prior liquid behaviour, including the legacy water wing lift.
+assist and restores the prior liquid behaviour, including the water wing lift.
 
 The field keeps its climb rate separately because both flight controllers can redirect
 vertical velocity into forward motion. It also caps horizontal speed to prevent that

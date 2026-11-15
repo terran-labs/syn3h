@@ -19,8 +19,8 @@ Every selection rewrites the URL, so copying the address bar reproduces the view
   vehicles as the game builds them.
 
 Old links keep working. `/buggy-bodies.html?round=N` opens round N of the design studies.
-`?vehicle=game-skins` opens the in-game Syn3h buggy, and `&design=classic` opens the Mars
-Explorer buggy instead.
+`?vehicle=game-skins` opens the in-game Syn3h buggy, and `&design=classic` opens the classic
+buggy instead.
 
 ## Every vehicle shows up by itself
 
