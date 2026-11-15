@@ -43,8 +43,8 @@ try {
     assert.ok(swung.labels.some(l => { const before = first.labels.find(b => b.id === l.id); return before && Math.hypot(l.x - before.x, l.y - before.y) > 25 }), `${view.name}: the view swung`)
     await page.screenshot({ path: `${out}/${view.name}-swung.png` })
     // Tapping a world: the camera flies to it, it becomes the world, and the name form follows.
-    const alpine = (await state()).labels.find(l => l.id === 'alpine')
-    await page.mouse.click(alpine.x, alpine.y - 18)
+    const alpine = await page.evaluate(() => window.syn3h.shell.galaxy.screen.find(s => s.id === 'alpine'))
+    await page.mouse.click(alpine.x, alpine.y)
     await page.waitForTimeout(900); await page.screenshot({ path: `${out}/${view.name}-flying.png` })
     await settle(page, 'explore')
     assert.equal(await page.evaluate(() => window.syn3h.planets.currentPlanet().id), 'alpine')
