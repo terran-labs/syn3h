@@ -4,7 +4,7 @@ Written by the Orchestrator. Refreshed at each milestone tag. A fresh or compact
 Orchestrator should be able to resume from this file, `ops/BACKLOG.md`, `ops/LANES.md` and
 `ops/PROTOCOL.md` alone. Times are Pacific; read the clock with `date`, never from memory.
 
-Last refreshed: Saturday 14 November, 5:22pm PST. Demo: Sunday noon PST.
+Last refreshed: Saturday 14 November, 5:35pm PST. Demo: Sunday noon PST.
 
 ## Where things are
 
@@ -62,7 +62,7 @@ survive a new Orchestrator thread, and their roles have moved to the peer lanes.
 | Jet | e73e5ed4-a32d-468e-a2cc-cfda3c196288 | `.../2jg65r8u/veh-jet`, `veh/jet` | 5202 | New. |
 | Hovercraft | 43191a2c-f8f5-4da4-b147-423a10dff345 | `.../2jg65r8u/veh-hovercraft`, `veh/hovercraft` | 5203 | New. |
 | Classic buggy | 25c9c763-6966-410d-a9f9-0714245088d6 | `.../2jg65r8u/veh-classic-buggy`, `veh/classic-buggy` | 5204 | CLOSED by the owner Saturday about 5:10pm: off the MVP. Left a post-MVP TODO.md at the repo root. No code changes. Notes: twitchy at speed, tiny in the chase camera. |
-| Tank | 1e12b353-8e53-4aaa-8784-7d148ebf9c28 | `.../2jg65r8u/veh-tank`, `veh/tank` | 5205 | PAUSED by the owner Saturday 4:57pm for the night. No code changes. Notes: climbs walls (tracks push about 5x its weight), pods dangle when airborne, spiral climb untested. |
+| Tank | 1e12b353-8e53-4aaa-8784-7d148ebf9c28 | `.../2jg65r8u/veh-tank`, `veh/tank` | 5205 | RUNNING again: the owner wrote to it himself at 5:08pm, which supersedes the pause. Earlier notes: No code changes. Notes: climbs walls (tracks push about 5x its weight), pods dangle when airborne, spiral climb untested. |
 
 Retired in-process subagents (work merged): buggy `af96d3463a8b76592`, multiplayer
 `a1eae81e1306386c5`, terrain `a299bf2f70ffc6287`, sky `a9fb1d017a64aab40`. Retired branches:
@@ -76,8 +76,8 @@ Retired in-process subagents (work merged): buggy `af96d3463a8b76592`, multiplay
   m11-rc1 (direct and through 150 ms latency). `tools/rollback.sh` puts the previous one back.
 - Blocked on the owner: Cloudflare access (`npx wrangler whoami` says not authenticated), a
   workers.dev subdomain name, confirming no existing Worker is named `syn3h`, and free or
-  paid plan (free = 100,000 Durable Object requests a day; about 2.3 hours for 8 players and
-  4 bots). Recommended to him: pay the 5 USD.
+  the plan. DECIDED 5:32pm: Workers Paid (5 USD a month); he upgrades the account himself.
+  Keep the WebSocket relay; no WebRTC tonight.
 - syn3h.com: `tools/domain.sh` and `docs/CUTOVER.md`. Never part of a normal release. Needs
   the owner's explicit word after he has seen release 1. Recommended: attach www only.
 - Local verification while previews are down: `npx vite --host 127.0.0.1 --port 5173 --strictPort`
@@ -96,6 +96,13 @@ Retired in-process subagents (work merged): buggy `af96d3463a8b76592`, multiplay
   confirmed by him: the owner himself has switched the UX, jet and hovercraft threads to
   Claude 2. Threads he switches may stay there.
 
+## First fix for release 2
+
+The teleport defect: a Syn3h buggy returned with `vehicle.teleport(...)` can sit immobile on
+its skid plate with the motor spinning. Every lava rescue and return-to-pad uses teleport.
+With the buggy lead (12abdd19), whose process exited at 5:36pm with code 143 and may need the
+owner to restart it. Evidence: /tmp/syn3h-island-final/trace.json, bots 9 and 11 from t=120.
+
 ## Rules that have bitten us
 
 - Machine load reached 69 on Saturday at 4:53pm with ten lanes active. Every heavy job goes
@@ -106,7 +113,11 @@ Retired in-process subagents (work merged): buggy `af96d3463a8b76592`, multiplay
 - Account rule from the owner: Claude 1 and Codex 1, 2, 3 only. Never Claude 2. This thread
   cannot launch workers (its preset is pinned to Claude 2); the owner or Foreman starts
   threads and the Orchestrator directs them by message.
-- Never `pkill` by name: it once killed the preview's room server. Stop by PID.
+- `pkill` and `killall` are forbidden outright, for every lane. Twice on Saturday a name-based
+  kill did damage: once it took down the preview's room server, and at 5:30pm a malformed
+  `pkill -f` (macOS treats every extra word as another pattern) terminated every lane's dev
+  and room servers plus the owner's Chrome, Claude app and the Vorteo host daemons. Stop a
+  process with `kill <pid>` after finding the PID with `lsof -nP -iTCP:<port> -sTCP:LISTEN -t`.
 - Headless Chrome frame rates are misleading (84 ms headless against 8 ms headed for the
   same scene). Do not report them as game performance.
 - Merge conflicts in `src/audio/index.ts` and `src/ui/Shell.ts` have gone to the UX lane's

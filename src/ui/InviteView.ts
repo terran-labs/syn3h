@@ -1,3 +1,4 @@
+import { wordmarkSvg } from './brand/logo'
 import { qrSvg } from './QrCode'
 export function inviteUrl(origin:string, room:string):string {
   const url=new URL('/',origin);url.searchParams.set('room',room);return url.href
@@ -7,7 +8,7 @@ export class InviteView {
   private url=''
   constructor(parent:HTMLElement, close:()=>void, copy:()=>void) {
     this.element.className='join-view';this.element.hidden=true;this.element.setAttribute('role','dialog');this.element.setAttribute('aria-modal','true');this.element.setAttribute('aria-label','Join this room')
-    this.element.innerHTML='<img src="/brand/syn3h.png" alt="Syn3h"><h1>Join this room</h1><p class="join-room"></p><div class="invite-qr"></div><p class="invite-link"></p><p class="join-count"></p><div><button class="join-copy">Copy invite</button><button class="join-close">Back · J</button></div>'
+    this.element.innerHTML=wordmarkSvg()+'<h1>Join this room</h1><p class="join-room"></p><div class="invite-qr"></div><p class="invite-link"></p><p class="join-count"></p><div><button class="join-copy">Copy invite</button><button class="join-close">Back · J</button></div>'
     this.element.querySelector('.join-close')!.addEventListener('click',close);this.element.querySelector('.join-copy')!.addEventListener('click',copy);parent.append(this.element)
   }
   update(url:string,room:string,count:number):void {

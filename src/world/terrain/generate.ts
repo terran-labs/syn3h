@@ -24,8 +24,9 @@
  */
 import { fbm, hash2, perlin, ridged, rng, smoothstep, subSeed } from './noise'
 import { type LavaFeatures, type Vent, lavaPass, ventsPass } from './lava'
+import { forestPass } from './forest'
 import { type Road, roadsPass } from './roads'
-import type { TerrainSettings } from './settings'
+import { KIND_DESERT, KIND_VOLCANIC, type TerrainSettings } from './settings'
 
 export const DEFAULT_WORLD_SIZE = 2048
 /** Samples per side. 513 gives 4 m cells; see the report in tests/world for timings. */
@@ -215,6 +216,8 @@ export interface TerrainData {
   lava: LavaFeatures
   /** Fire, ember and smoke emitter positions, filled by the vents pass. See lava.ts. */
   vents: Vent[]
+  /** Trees, four numbers each: x, y, z, scale. Filled by the forest pass. See forest.ts. */
+  trees: Float32Array
   /** Milliseconds spent in each pass, for profiling. */
   timings: Record<string, number>
 }
@@ -269,7 +272,7 @@ export function computeLayout(seed: number, s: TerrainSettings, size: number): T
     calderaRadius: rc, lipHeight: 0, floorHeight: 0,
   }
   // The cone is cut flat where the rim road runs, and the crater drops from that summit.
-  const summitHeight = SPAWN_LEVEL + H * coneProfile((rimRadius(volcano) + SUMMIT_MARGIN) / R)
+  const summitHeight = SPAWN_LEVEL + H * centreProfile(s.kind, (rimRadius(volcano) + SUMMIT_MARGIN) / R)
   volcano.floorHeight = summitHeight - CRATER_DEPTH
 
   // Spawn pads: an even ring, pad 0 on the gentle axis where the volcano road starts.
@@ -313,6 +316,17 @@ export function coneProfile(t: number): number {
   if (t >= 1) return 0
   const u = 1 - t
   return 0.2 * u + 0.34 * u * u + 0.46 * u * u * u
+}
+
+/**
+ * Height fraction of the centre feature for a kind of world.
+ *  - volcanic and alpine: the concave cone above (a volcano, or a horn peak)
+ *  - desert: a great mesa. A low apron of scree, then cliffs up to a broad flat top.
+ */
+export function centreProfile(kind: number, t: number): number {
+  if (kind !== KIND_DESERT) return coneProfile(t)
+  if (t >= 1) return 0
+  return 0.2 * (1 - t) + 0.8 * smoothstep(0.94, 0.52, t)
 }
 
 /**
@@ -441,7 +455,7 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
   const t = r / radius
   let volcanic = 0
   if (t < 1) {
-    let cone = v.height * coneProfile(t)
+    let cone = v.height * centreProfile(s.kind, t)
     // Radial gullies down the flanks, shallower on the side the road climbs.
     const gn = perlin(ux * 4 + r * 0.003, uz * 4 - r * 0.003, S.gully)
     let valley = 1 - Math.abs(gn)
@@ -490,7 +504,10 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
       const edge0 = 0.52 - s.cragDensity * 1.15
       const mask = smoothstep(edge0, edge0 + 0.11, m) * band * clear
       if (mask > 0) {
-        const relief = terrace(massifField(wx, wz, 150, S.crag), 9, 0.5)
+        let relief = massifField(wx, wz, 150, S.crag)
+        // Desert mountains are buttes: the peaks are sliced off into flat tops.
+        if (s.kind === KIND_DESERT) relief = relief > 0.5 ? 1 : relief * 2
+        relief = terrace(relief, 9, 0.5)
         // A cliff base from the mask edge, then the peaks on top.
         const body = 0.34 * smoothstep(0, 0.6, mask) + 0.66 * relief * mask
         h += s.mesaHeight * body * (0.75 + 0.45 * smoothstep(-0.2, 0.6, m))
@@ -544,7 +561,8 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
     const sN = r / rc
     if (sN < 1.24) {
       const fang = smoothstep(0.02, 0.5, perlin(ux * 3.4, uz * 3.4, S.rim) + 0.25 * perlin(ux * 9, uz * 9, S.rim + 1))
-      const crown = s.roughness * 56 * fang + 60 * smoothstep(0.72, 0.97, gentle)
+      // Only a volcano has a tall tooth; a mesa or a horn keeps a lower, broken edge.
+      const crown = s.roughness * 56 * fang + (s.kind === KIND_VOLCANIC ? 60 : 22) * smoothstep(0.72, 0.97, gentle)
       if (sN >= 1) {
         h += crown * smoothstep(1.24, 1.1, sN) * smoothstep(0.98, 1.05, sN)
       } else {
@@ -618,7 +636,7 @@ export const shapePass: TerrainPass = {
  * import this one: resolving at call time keeps the import cycle harmless.
  */
 export function defaultPasses(): TerrainPass[] {
-  return [shapePass, roadsPass, lavaPass, ventsPass]
+  return [shapePass, roadsPass, lavaPass, ventsPass, forestPass]
 }
 
 /** Only for profiling: never feeds into heights. */
@@ -638,7 +656,7 @@ export function generateTerrain(seed: number, settings: TerrainSettings, options
     heights: new Float32Array(resolution * resolution),
     volcanic: new Float32Array(resolution * resolution),
     roadDist: new Float32Array(resolution * resolution).fill(ROAD_DIST_CAP),
-    roads: [], lava: { lake: null, rivers: [], pools: [] }, vents: [],
+    roads: [], lava: { lake: null, rivers: [], pools: [] }, vents: [], trees: new Float32Array(0),
     layout, timings,
   }
   for (const pass of options.passes ?? defaultPasses()) {

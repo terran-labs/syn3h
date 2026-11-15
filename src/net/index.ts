@@ -37,10 +37,10 @@ import type { Terrain } from '../world/Terrain'
 import { Lasers } from '../weapons/Lasers'
 import { laserInterval, lasersAllowed } from '../weapons/params'
 import { BoundsGuard, TagMarker } from '../modes/Tag'
-import { gameMode, kothKnockBonus, kothLaserPush, kothTargetScore, kothZoneRadius } from '../modes/params'
+import { gameMode, kothKnockBonus, kothLaserPush, kothRespawnDelay, kothTargetScore, kothZoneRadius } from '../modes/params'
 import { type HillTerrain, computeHillZone } from '../modes/hill'
 import { HillMarker } from '../modes/HillMarker'
-import { LocalLife, inDeadlyLiquid } from '../modes/Koth'
+import { LocalRescue, StuckTimer, inStickyLiquid } from '../modes/Koth'
 import { attachVehicleEffects } from '../vehicles/effects'
 import { ServerClock } from './Clock'
 import { Connection, serverUrl } from './Connection'
@@ -164,7 +164,7 @@ export class NetClient implements System {
     koth: { zone: null, holder: 0, contested: false, winner: 0, resetAt: 0, out: {} },
   }
   /** Counts for automated checks. */
-  stats = { deaths: 0, statesSent: 0, statesReceived: 0, rams: 0, hitsTaken: 0, hitsJudged: 0, shotsFired: 0, heartbeats: 0, botStatesSent: 0 }
+  stats = { stuck: 0, statesSent: 0, statesReceived: 0, rams: 0, hitsTaken: 0, hitsJudged: 0, shotsFired: 0, heartbeats: 0, botStatesSent: 0 }
 
   private kind: WireVehicleKind
   private colors: [string, string]
@@ -185,7 +185,7 @@ export class NetClient implements System {
   private readonly bounds: BoundsGuard
   private readonly tags: NameTags
   private readonly hill: HillMarker
-  private readonly life: LocalLife
+  private readonly rescue: LocalRescue
   private zoneTimer = 0
   private mapTimer = 0
   private localZone: HillZone | null = null
@@ -221,18 +221,22 @@ export class NetClient implements System {
     this.marker = new TagMarker(game)
     this.marker.local = player
     this.bounds = new BoundsGuard(player, ctx.terrain)
-    this.bounds.onReset = () => this.event('You fell off the planet')
+    this.bounds.onReset = () => this.event('Returned to your pad')
     this.tags = new NameTags(game.camera)
     this.hill = new HillMarker(game, ctx.terrain)
-    this.life = new LocalLife(game, ctx.terrain, player)
-    this.life.onDied = (cause) => {
-      this.stats.deaths++
-      this.event(cause === 'lava' ? 'You fell in the lava' : 'You fell off the world')
-      if (this.connected) this.send({ type: 'died', cause })
+    this.rescue = new LocalRescue(game, ctx.terrain, player)
+    this.rescue.onStuck = () => {
+      this.stats.stuck++
+      this.event('You are stuck in the lava')
+      if (this.connected) this.send({ type: 'stuck' })
     }
-    this.life.onRespawn = () => {
-      const p = this.ctx.player.body.translation()
-      this.ctx.audio?.play('materialize', p)
+    this.rescue.onFreed = (by) => {
+      this.event(by === 'crawled' ? 'You crawled free of the lava' : 'Returned to your pad')
+      if (by === 'returned') this.ctx.audio?.play('materialize', this.ctx.player.body.translation())
+    }
+    this.rescue.onReturned = () => {
+      this.event('Returned to your pad')
+      this.ctx.audio?.play('materialize', this.ctx.player.body.translation())
     }
 
     this.conn.onOpen = () => {
@@ -383,11 +387,11 @@ export class NetClient implements System {
   }
 
   postPhysics(dt: number): void {
-    if (this.mode === MODE_KOTH) this.life.check()
-    else this.life.revive()
-    this.life.slot = this.slot
+    this.rescue.slot = this.slot
+    if (this.mode === MODE_KOTH) this.rescue.check()
+    else this.rescue.release()
     if (!this.connected) return
-    if (this.isHost && this.mode === MODE_KOTH) this.checkBotDeaths()
+    if (this.isHost && this.mode === MODE_KOTH) this.checkBotsStuck()
     this.detectRams()
     this.sendTimer += dt
     // While hidden the heartbeat timer speaks for us (rendering may still tick in some cases).
@@ -416,28 +420,27 @@ export class NetClient implements System {
     this.updateHill(dt, koth)
     const it = koth ? 0 : this.game.it
     this.marker.target = it ? (this.vehicleOf(it) ?? null) : null
-    const out = koth && this.connected ? this.game.koth.out : {}
+    const stuck = koth && this.connected ? this.game.koth.out : {}
     const holder = koth ? this.game.koth.holder : 0
-    for (const [id, r] of this.remotes) r.vehicle.object.visible = !out[id]
-    this.tags.update([...this.remotes.entries()].filter(([id]) => !out[id]).map(([id, r]) => ({
+    // A stuck vehicle stays in the world, visible and solid: nothing here is ever removed.
+    this.tags.update([...this.remotes.entries()].map(([id, r]) => ({
       vehicle: r.vehicle,
       name: this.displayName(id),
       it: id === it || id === holder,
-      note: [id === it ? 'IT' : '', id === holder ? 'KING' : '', r.paused ? 'paused' : !r.responding ? 'not responding' : ''].filter(Boolean).join(' '),
+      note: [id === it ? 'IT' : '', id === holder ? 'KING' : '', stuck[id] ? 'stuck' : '', r.paused ? 'paused' : !r.responding ? 'not responding' : ''].filter(Boolean).join(' '),
     })))
     this.mapTimer -= dt
     if (this.ctx.setMapEntities && this.mapTimer <= 0) {
       this.mapTimer = 0.2
-      this.ctx.setMapEntities(this.mapMarkers(out))
+      this.ctx.setMapEntities(this.mapMarkers())
     }
     this.ctx.setStatus(this.status())
     this.pushMatch()
   }
 
-  private mapMarkers(out: Record<number, number>): MapMarker[] {
+  private mapMarkers(): MapMarker[] {
     const list: MapMarker[] = []
     for (const [id, r] of this.remotes) {
-      if (out[id]) continue
       const p = r.vehicle.object.position
       const q = r.vehicle.object.quaternion
       // Heading from the forward (-Z) axis: atan2(-fx, -fz).
@@ -488,15 +491,14 @@ export class NetClient implements System {
   private audible: Vehicle[] = []
 
   /**
-   * Other vehicles that should make sound: remote players, bots (replicas or our own), minus
-   * anyone out of a King of the Hill round. For `audio.setVehicles(() => net.audibleVehicles())`.
+   * Other vehicles that should make sound: remote players and bots (replicas or our own).
+   * For `audio.setVehicles(() => net.audibleVehicles())`.
    * The returned array is reused between calls.
    */
   audibleVehicles(): readonly Vehicle[] {
-    const out = this.mode === MODE_KOTH && this.connected ? this.game.koth.out : {}
     const own = this.bots && !this.bots.remote ? this.bots.vehicles : []
     const remotes = [...this.remotes].map(([id, r]): [number, Vehicle] => [id, r.vehicle])
-    return audibleVehicles(remotes, out, own, this.ctx.game.world, this.audible)
+    return audibleVehicles(remotes, own, this.ctx.game.world, this.audible)
   }
 
   /** The vehicle that stands for an id on this client, if any. */
@@ -545,14 +547,23 @@ export class NetClient implements System {
     }
   }
 
-  /** Bots in the lava, reported once per fall so whoever pushed them gets the knock-in. */
-  private readonly botsInLava = new WeakSet<Vehicle>()
-  private checkBotDeaths(): void {
+  /**
+   * The host's bots follow the players' lava rule: reported stuck once, so whoever pushed
+   * them in gets the dunk, then left to crawl out or lifted back to a pad. Never removed.
+   */
+  private readonly botTimers = new WeakMap<Vehicle, StuckTimer>()
+  private checkBotsStuck(): void {
+    const time = this.ctx.game.time
     for (const [id, bot] of liveBots(this.bots?.vehicles ?? [], this.ctx.game.world)) {
-      const dead = inDeadlyLiquid(this.ctx.terrain, bot.body.translation())
-      if (dead && !this.botsInLava.has(bot)) this.send({ type: 'died', cause: 'lava', bot: id })
-      if (dead) this.botsInLava.add(bot)
-      else this.botsInLava.delete(bot)
+      let timer = this.botTimers.get(bot)
+      if (!timer) this.botTimers.set(bot, (timer = new StuckTimer()))
+      const what = timer.step(time, inStickyLiquid(this.ctx.terrain, bot.body.translation()), kothRespawnDelay.value)
+      if (what === 'stuck') this.send({ type: 'stuck', bot: id })
+      else if (what === 'returned') {
+        // The pads the bot manager itself uses (BotBrain): one past the bot's index.
+        const s = this.ctx.terrain.spawnPoint(id - BOT_ID_BASE + 1)
+        bot.teleport(s.position, s.heading)
+      }
     }
   }
 
@@ -606,7 +617,7 @@ export class NetClient implements System {
     this.ctx.audio?.impact(Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z), p)
     this.event(`Ram: you and ${this.nameOf(id)}`)
     // In tag only contact involving "it" means anything; on the hill every touch may be the
-    // push that knocks someone in. The server checks again anyway.
+    // push that dunks someone. The server checks again anyway.
     if (this.game.mode === MODE_KOTH || this.game.it === this.id || this.game.it === id) this.send({ type: 'ram', other: id })
   }
 
@@ -828,17 +839,17 @@ export class NetClient implements System {
     const is = (name: string) => (name === 'You' ? 'are' : 'is')
     switch (msg.event) {
       case 'ram': this.event(`${a} rammed ${b} and ${is(a)} it`); break
-      case 'laser': this.event(`${a} shot ${b} and ${is(a)} it`); break
+      case 'laser': this.event(`${a} tagged ${b} with a beam and ${is(a)} it`); break
       case 'score': this.event(`${a} tagged ${b}`); break
       case 'default': if (msg.actor !== this.id) this.event(`${a} is it`); break
       case 'leave': if (msg.game.it && msg.game.it !== this.id) this.event(`${this.nameOf(msg.game.it)} is it`); break
       case 'lock': this.event(msg.game.locked ? 'Host locked shared sliders' : 'Host unlocked shared sliders'); break
       case 'host': this.event(msg.actor === this.id ? 'You are now host' : `${a} is now host`); break
-      case 'mode': this.event(msg.game.mode === MODE_KOTH ? 'King of the Hill: get to the rim and hold it' : 'Tag: ram or shoot whoever is it'); break
+      case 'mode': this.event(msg.game.mode === MODE_KOTH ? 'King of the Hill: get to the rim and hold it' : 'Tag: ram or beam whoever is it'); break
       case 'capture': this.event(`${a} ${msg.actor === this.id ? 'hold' : 'holds'} the hill`); break
       case 'contest': this.event('The hill is contested'); break
-      case 'died': this.event(`${a} fell in`); break
-      case 'knock': this.event(`${a} knocked ${b} in: +${kothKnockBonus.value}`); break
+      case 'stuck': this.event(`${a} ${is(a)} stuck in the lava`); break
+      case 'dunk': this.event(`${a} dunked ${b}: +${kothKnockBonus.value}`); break
       case 'win':
         this.event(`${a} ${msg.actor === this.id ? 'win' : 'wins'} the hill!`)
         this.ctx.audio?.play('materialize', this.vehicleOf(msg.actor ?? 0)?.object.position)
@@ -928,7 +939,7 @@ export class NetClient implements System {
 
   private modeLines(): string[] {
     const g = this.game
-    if (g.mode !== MODE_KOTH) return ['mode: Tag   ram or shoot whoever is it']
+    if (g.mode !== MODE_KOTH) return ['mode: Tag   ram or beam whoever is it']
     const k = g.koth
     const target = kothTargetScore.value
     const lines = [`mode: King of the Hill   first to ${target}`]
@@ -945,8 +956,7 @@ export class NetClient implements System {
     } else {
       lines.push('hill: free')
     }
-    const out = k.out[this.id]
-    if (out) lines.push(`you are out: respawn in ${Math.max(0, Math.ceil(out - now))} s`)
+    if (this.rescue.stuck) lines.push(`stuck in the lava: crawl free, or back to your pad in ${this.rescue.secondsLeft} s`)
     return lines
   }
 
@@ -970,7 +980,7 @@ export class NetClient implements System {
           this.game.mode === MODE_TAG && p.id === this.game.it ? '[IT]' : '',
           p.id === this.id ? '(you)' : '',
           p.id === this.game.host ? '(host)' : '',
-          this.game.mode === MODE_KOTH && this.game.koth.out[p.id] ? '(out)' : '',
+          this.game.mode === MODE_KOTH && this.game.koth.out[p.id] ? '(stuck)' : '',
           this.game.mode === MODE_KOTH && this.game.koth.holder === p.id ? '[KING]' : '',
           r?.paused ? '(paused)' : r && !r.responding ? '(not responding)' : '',
         ].filter(Boolean).join(' ')

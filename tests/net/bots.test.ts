@@ -35,16 +35,16 @@ describe('bot replication safety', () => {
     expect(liveBots(many, world).length).toBe(MAX_BOTS)
   })
 
-  it('lists remote players and live own bots for audio, minus anyone knocked out', () => {
+  it('lists remote players and live own bots for audio, stuck in the lava or not', () => {
     const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 })
     const [p2, p3] = [vehicle(world), vehicle(world)]
     const bots = [vehicle(world), vehicle(world), vehicle(world)]
     world.removeRigidBody(bots[2].body)
     const into: { body: RAPIER.RigidBody }[] = []
-    const list = audibleVehicles([[2, p2], [3, p3]], { 3: 1, [BOT_ID_BASE + 1]: 1 }, bots, world, into)
+    const list = audibleVehicles([[2, p2], [3, p3]], bots, world, into)
     expect(list).toBe(into)
-    expect(list).toEqual([p2, bots[0]])
+    expect(list).toEqual([p2, p3, bots[0], bots[1]])
     // A client that does not simulate bots passes none of its own (it hears the replicas).
-    expect(audibleVehicles([[2, p2]], {}, [], world)).toEqual([p2])
+    expect(audibleVehicles([[2, p2]], [], world)).toEqual([p2])
   })
 })
