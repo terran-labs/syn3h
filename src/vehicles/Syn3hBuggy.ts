@@ -89,6 +89,8 @@ const REVERSE_SPEED = 0.5
 const THROTTLE_DEADZONE = 0.05
 /** Regen force allowed beyond its nominal deceleration, to cover slopes and bumps. */
 const REGEN_TORQUE_MARGIN = 1.25
+/** A contact point closer than this (m) is touching; further ones are only predicted. */
+const CONTACT_TOUCH = 0.01
 /**
  * Next-gen bump stop (see suspensionForce()). The skid plate meets flat ground when a wheel ray
  * is about 0.185 m long, so the stop works over ray lengths BUMP_START down to BUMP_END, and
@@ -707,7 +709,13 @@ export class Syn3hBuggy extends Vehicle {
     }
   }
 
-  /** Self righting, VB 545-562, over the contacts Rapier kept from the last step. */
+  /**
+   * Self righting, VB 545-562, over the contacts Rapier kept from the last step. Unity's contact
+   * normal points into this body. Rapier's points from the pair's first collider to its second
+   * and tells us when that order is swapped. Only contacts that actually touch count: the
+   * manifold also lists points still inside the prediction margin. numSolverContacts() reads 0
+   * against a triangle mesh, which is what the terrain is, so count the geometric contacts.
+   */
   private selfRight(dt: number, speedSq: number): void {
     const world = this.game.world
     const n = this.v1
@@ -715,16 +723,13 @@ export class Syn3hBuggy extends Vehicle {
     const angSq = w.x * w.x + w.y * w.y + w.z * w.z
     for (const collider of [this.hull, this.skid]) {
       world.contactPairsWith(collider, (other) => {
-        world.contactPair(collider, other, (manifold) => {
-          const count = manifold.numSolverContacts()
+        world.contactPair(collider, other, (manifold, flipped) => {
+          let count = 0
+          for (let c = manifold.numContacts() - 1; c >= 0; c--) if (manifold.contactDist(c) < CONTACT_TOUCH) count++
           if (count === 0) return
-          // Unity's contact normal points into this body. Rapier's sign depends on the pair's
-          // internal order, so orient it from the contact point toward our centre of mass.
           const mn = manifold.normal()
           n.set(mn.x, mn.y, mn.z)
-          const cp = manifold.solverContactPoint(0)
-          const com = this.body.worldCom()
-          if (cp && n.x * (com.x - cp.x) + n.y * (com.y - cp.y) + n.z * (com.z - cp.z) < 0) n.negate()
+          if (!flipped) n.negate()
           const angle = this.up.angleTo(n) * DEG
           for (let c = 0; c < count; c++) {
             if (this.isInverted && angle < 50) this.isInverted = false
@@ -736,6 +741,36 @@ export class Syn3hBuggy extends Vehicle {
           }
         })
       })
+    }
+  }
+
+  /**
+   * A teleport is a fresh start: besides the pose and velocities the base clears, drop every
+   * piece of drivetrain, suspension and tyre state, so nothing from before (a spinning motor,
+   * the inverted flag, wound up tyres, open wings) acts on the buggy where it lands.
+   */
+  override teleport(position: THREE.Vector3, heading = 0): void {
+    super.teleport(position, heading)
+    this.isInverted = false
+    this.stuckSteps = 0
+    this.motorSpeed = this.motorStep = 0
+    this.motorInputSmoothed = 0
+    this.brakePower = 0
+    this.regenForce = 0
+    this.drive = 'hold'
+    this.inputSmoothed.set(0, 0, 0, 0)
+    this.wingState = 0
+    this.areWingsOpen = this.wingsOpen = false
+    // Rest length, so it lands on its wheels and not on its skid plate.
+    this.suspensionRange = 0.4
+    this.updateMassProperties()
+    this.wheelsGrounded = 0
+    for (let i = 0; i < 4; i++) {
+      this.windX[i] = this.windZ[i] = 0
+      this.sliding[i] = false
+      this.hitDistance[i] = -1
+      this.hitCompress[i] = 0
+      this.hitVelocity[i].set(0, 0, 0)
     }
   }
 

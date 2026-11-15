@@ -319,6 +319,103 @@ describe('Syn3hBuggy', () => {
     expect(b.wheelsGrounded).toBe(4)
   })
 
+  /**
+   * Flat triangle mesh ground at height y, like the game terrain. Rapier reports contacts with
+   * a mesh differently from a box, which once hid them from the self righting check.
+   */
+  const meshGround = (bed: Bed, y: number) => {
+    const n = 40, size = 400
+    const v: number[] = [], idx: number[] = []
+    for (let i = 0; i <= n; i++) for (let j = 0; j <= n; j++) v.push((i / n - 0.5) * size, y, (j / n - 0.5) * size)
+    for (let i = 0; i < n; i++) {
+      for (let j = 0; j < n; j++) {
+        const a = i * (n + 1) + j, c = a + n + 1
+        idx.push(a, a + 1, c, a + 1, c + 1, c)
+      }
+    }
+    bed.game.world.createCollider(
+      RAPIER.ColliderDesc.trimesh(new Float32Array(v), new Uint32Array(idx)).setFriction(1).setCollisionGroups(groups(GROUP_TERRAIN, GROUP_ALL)),
+    )
+  }
+  const onMesh = async () => {
+    const bed = await makeBed()
+    meshGround(bed, 50)
+    const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 51.5, 0), 0))
+    b.isLocal = false
+    bed.run(3)
+    return { bed, b }
+  }
+  const planar = (a: THREE.Vector3, b: THREE.Vector3) => Math.hypot(a.x - b.x, a.z - b.z)
+
+  test.each([true, false])('drives off after a teleport from its roof on mesh ground (next-gen %s)', async (nextGen) => {
+    params.set(buggyNextGen.def.id, nextGen)
+    const { bed, b } = await onMesh()
+    // On its roof with the throttle held, as a bot that keeps trying.
+    b.input.y = 1
+    b.body.setRotation(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI), true)
+    b.body.setTranslation({ x: 0, y: 51.5, z: 0 }, true)
+    bed.run(0.5)
+    expect(b.isInverted).toBe(true)
+    b.teleport(new THREE.Vector3(20, 51.2, 20), 1)
+    expect(b.isInverted).toBe(false)
+    expect(b.motorSpeed).toBe(0)
+    const p0 = pos(b)
+    bed.run(4)
+    expect(b.isInverted).toBe(false)
+    expect(planar(pos(b), p0)).toBeGreaterThan(20)
+  })
+
+  test('a wrongly set inverted flag clears on mesh ground instead of stranding it on its skid plate', async () => {
+    const { bed, b } = await onMesh()
+    b.isInverted = true
+    bed.run(1.5)
+    expect(b.isInverted).toBe(false)
+    // Back up on its suspension: the skid plate bottom (y -0.085) well clear of the ground.
+    expect(pos(b).y - 50 - 0.085).toBeGreaterThan(0.3)
+    const p0 = pos(b)
+    b.input.y = 1
+    bed.run(3)
+    expect(planar(pos(b), p0)).toBeGreaterThan(20)
+  })
+
+  test('rights itself from upside down on mesh ground', async () => {
+    const { bed, b } = await onMesh()
+    b.body.setRotation(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI * 0.9), true)
+    b.body.setTranslation({ x: 0, y: 52, z: 0 }, true)
+    bed.run(0.5)
+    expect(b.isInverted).toBe(true)
+    bed.run(3)
+    expect(axis(b, 0, 1, 0).y).toBeGreaterThan(0.95)
+    expect(b.isInverted).toBe(false)
+  })
+
+  test.each(['drive', 'regen', 'coast', 'hold', 'wings'])('teleport while in %s returns it to a just spawned state', async (state) => {
+    const { bed, b } = await onMesh()
+    b.input.y = 1
+    bed.run(3)
+    if (state === 'regen') b.input.y = -1
+    if (state === 'coast') b.input.y = 0
+    if (state === 'hold') { b.input.y = 0; b.input.brakes = true; bed.run(3); b.input.brakes = false }
+    if (state === 'wings') b.input.special = true
+    bed.run(0.5)
+    if (state !== 'wings') expect(b.drive).toBe(state)
+    b.input.y = 0
+    b.input.special = false
+    b.teleport(new THREE.Vector3(-30, 51.2, 30), 2)
+    expect(b.motorSpeed).toBe(0)
+    expect(b.wingsOpen).toBe(false)
+    expect(b.suspensionRange).toBeCloseTo(0.4, 5)
+    bed.run(2)
+    // Parked where it landed, on its wheels.
+    expect(b.wheelsGrounded).toBe(4)
+    expect(planar(pos(b), new THREE.Vector3(-30, 0, 30))).toBeLessThan(0.3)
+    expect(pos(b).y - 50 - 0.085).toBeGreaterThan(0.3)
+    const p0 = pos(b)
+    b.input.y = 1
+    bed.run(3)
+    expect(planar(pos(b), p0)).toBeGreaterThan(20)
+  })
+
   test('wheel rays ignore other vehicles', async () => {
     const { bed, b } = await spawn()
     bed.run(3)
