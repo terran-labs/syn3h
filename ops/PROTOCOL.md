@@ -2,8 +2,8 @@
 
 How the Syn3h lanes work together during the Saturday night push (4:30pm to 9:30pm Pacific)
 and through to the demo on Sunday at noon Pacific. Written by the Foreman on Saturday 14
-November. The Orchestrator adopted all ten rules at 4:40pm. Rule 6 is adopted but blocked: the
-stable preview has no link yet. Rule 10 awaits the owner.
+November. The Orchestrator adopted all ten rules at 4:40pm. Rule 6 was rewritten at 4:45pm after the owner chose
+Cloudflare as the stable channel; it is blocked on Cloudflare access. Rule 10 awaits the owner.
 
 ## 1. One trunk, one merger
 
@@ -44,11 +44,14 @@ Anything not ready for an audience merges behind a URL parameter or a slider tha
 off, the way the tank already does. This keeps branches short lived without putting half
 built features in front of the room.
 
-## 6. Two channels: live and stable
+## 6. Two channels: live and production
 
-The live preview follows every merge. The stable channel changes only when the Orchestrator
-promotes a tagged, green milestone. The demo runs on stable. Promote at least once before
-the night ends so a known good build exists before anyone sleeps.
+The live preview follows every merge. Production is served from Cloudflare and changes only
+when the Orchestrator ships a production release: a tagged, green milestone, frozen with
+`tools/promote-stable.sh`, deployed from the frozen copy, then verified with
+`tools/net-smoke.mjs` against the public address. Each release gets a `release-N` tag and a
+line in the digest. The demo runs on production. Ship the first release as soon as
+Cloudflare access exists, and one more at tonight's freeze.
 
 ## 7. Handoffs and digests have a fixed shape
 

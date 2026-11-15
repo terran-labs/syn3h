@@ -2,6 +2,22 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Saturday 14 November, 4:45pm Pacific: the stable channel is production on Cloudflare
+
+**Decided.** The frozen demo build is called the production release and is served from
+Cloudflare. Cloudflare is updated each time a new production release ships. There is no
+separate stable preview link.
+
+**Why.** The preview service would not start a third link, and a Cloudflare deployment was
+needed anyway so the audience can join from phones. One channel does both jobs.
+
+**What it changes.** Protocol rule 6 now reads live preview and production. The Orchestrator
+ships production releases: a green, tagged milestone, frozen with the promotion script,
+deployed from that frozen copy, then checked with the multiplayer smoke test against the
+public address. The Multiplayer lead prepares and verifies the deployment. This decision is
+the owner's go ahead to deploy production releases. It is blocked until Cloudflare access
+exists on the machine: `wrangler whoami` reported not authenticated at 4:46pm.
+
 ## Saturday 14 November, 4:33pm Pacific: start all six empty lanes
 
 **Decided.** Start threads now for Multiplayer and all five vehicle leads (Syn3h buggy,

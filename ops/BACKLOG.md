@@ -7,8 +7,9 @@ decisions in `ops/DECISIONS.md` or from standing direction in `FOREMAN-BRIEF.md`
 
 ## Now
 
-1. **Promote a stable build.** Check: the stable preview serves milestone 8 or later, shows
-   its build id, and survives a merge to the live build without changing.
+1. **Ship production release 1 to Cloudflare.** Blocked on the owner's Cloudflare access.
+   Check: the public address serves a tagged build with its build id, a phone on mobile
+   data joins a room by QR code, and a later merge to the live build does not change it.
 2. **Merge the Bots, Performance and QA lane's two waiting commits.** Check: live demos keep
    running until players choose to reload; full suite green; milestone tagged.
 3. **Write `ops/STATE.md`** (protocol rule 8). Check: a fresh thread can name every lane,
@@ -25,8 +26,7 @@ decisions in `ops/DECISIONS.md` or from standing direction in `FOREMAN-BRIEF.md`
    read clearly in the first five seconds. (proposed: default to golden hour)
 7. **Network delay reads 342 ms on a local room with a 19 ms ping.** Check: either the
    interpolation delay drops to what the ping justifies, or the reason is documented.
-8. **Public hosting on Cloudflare.** Blocked on the owner's Cloudflare access. Check: a
-   phone on mobile data joins a room by QR code.
+8. (Merged into item 1.)
 9. **Multiplayer lane, started 4:35pm.** Check: branch merged up to date, deployment
    prepared to the point of one command, first handoff through the gate.
 10. **Five vehicle leads, started 4:35pm.** Check: each has merged `build/weekend`, looked at
