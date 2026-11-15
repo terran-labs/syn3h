@@ -111,6 +111,21 @@ try {
     assert.ok(rest, 'it settles still again after the flight')
     await page.close()
   }
+  // A returning player: the descent is shorter, and a key lands at once.
+  {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+    await page.addInitScript(() => localStorage.setItem('syn3h.descents', '3'))
+    await page.goto(`${base}?room=galaxy-skip-${Date.now()}`, { waitUntil: 'load' }); await ready(page)
+    await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
+    await page.locator('.galaxy-label[data-world=desert]').dispatchEvent('click'); await settle(page, 'explore')
+    await page.locator('.shell-play').click()
+    await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-descending'), null, { timeout: 3000 })
+    await page.waitForTimeout(400); const pressed = Date.now(); await page.keyboard.press('w')
+    await page.waitForFunction(() => { const s = document.querySelector('.syn3h-shell'); return s.classList.contains('is-playing') && !s.classList.contains('is-descending') }, null, { timeout: 15000 })
+    assert.ok(Date.now() - pressed < 1500, `a key took ${Date.now() - pressed} ms to land`)
+    assert.equal(await page.evaluate(() => localStorage.getItem('syn3h.descents')), '4')
+    await page.close()
+  }
   // There is no other lobby. Where the galaxy's shader will not start, its world names stay
   // as a row of buttons and a tap still leads to the name form.
   const flat = await browser.newPage({ viewport: { width: 390, height: 844 } })
