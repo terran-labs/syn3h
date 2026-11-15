@@ -26,6 +26,17 @@ The owner answered the wind question: generated wind only. UX owns removing the 
 wind layer. This supersedes the recording-retention rule for wind only; original music
 and laser recordings remain.
 
+## Sunday 15 November, 8:55am Pacific: classic buggy removed; live models stay for noon
+
+**Decided** by the owner, answering the Foreman's question on the 1.7 MB of vehicle models.
+
+**What it changes.** The classic buggy leaves the game now, with its model files; old room
+links and saved sessions that name it fall back to the Syn3h buggy. Unused model files and
+the two dead textures are deleted. Models the game still loads (Syn3h buggy, tank and
+treads, hovercraft) stay for the noon release on an explicit approved list and are replaced
+by generated vehicles after the demo. Questions on the install icons, the share card and the
+Barlow font are still open with him.
+
 ## Sunday 15 November, 8:20am Pacific: no recorded audio or baked textures ship
 
 **Decided** by the owner: "There shouldn't be any pre-generated textures, audio files, or
