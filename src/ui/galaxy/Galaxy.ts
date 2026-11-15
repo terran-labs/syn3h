@@ -22,13 +22,15 @@ export interface GalaxyWorld {
   seed: number
   /** A world still forming: molten, its crust shifting. It has no map. The custom planet. */
   forming?: boolean
+  /** The planet recipe its map is painted from, when that is not its id. */
+  recipe?: string
 }
 export interface GalaxyOptions {
   worlds: readonly GalaxyWorld[]
   /** A world was tapped and the camera has arrived at it. */
   onArrive(id: string): void
   /** Called every frame with where each world is on screen, for labels. */
-  onLayout?(places: readonly { id: string; x: number; y: number; radius: number; visible: boolean }[]): void
+  onLayout?(places: readonly { id: string; x: number; y: number; radius: number; visible: boolean }[], chosen?: string): void
   /**
    * Asked each frame. True holds the system still: the worlds stop in their orbits and a frame
    * is drawn only while something moves (a drag, a flight, a dive). For the lowest graphics
@@ -36,7 +38,20 @@ export interface GalaxyOptions {
    */
   still?(): boolean
 }
-const MAX = 4
+/**
+ * The most worlds the galaxy draws, the sun aside. The trace costs little per world (a ray
+ * against a sphere, a shadow cut through the shafts); the limit is the screen and the maps.
+ */
+export const GALAXY_MAX = 12
+const MAX = GALAXY_MAX
+/** Orbits round the sun; more worlds than this share them. */
+const RINGS = 4
+/**
+ * Level of detail for the maps: every world wears a small one (512 by 256, about 40 ms to
+ * paint on a desktop, half a megabyte on the GPU) from one texture array; the world being
+ * flown to, and dived into, is repainted at full size (1024 by 512, about 130 ms).
+ */
+const SMALL = [512, 256] as const, CLOSE = [1024, 512] as const
 const VERTEX = `#version 300 es
 void main() { vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`
 const FRAGMENT = `#version 300 es
@@ -45,12 +60,13 @@ uniform vec2 uSize; uniform float uTime; uniform float uScale;
 uniform vec2 uShed;                 // quality ladder: x sheds post effects, y shader cost
 uniform float uAmbience;            // 1 keeps twinkle and drifting cloud, 0 sheds them
 uniform float uDive;                // 0 in orbit, 1 through the atmosphere of the chosen world
+uniform float uDim;                 // 1 as the lobby itself; lower behind an open panel
 uniform vec3 uEye, uRight, uUp, uForward; uniform float uTan;
 uniform int uCount;
 uniform vec4 uWorld[${MAX}];        // xyz position, w radius
 uniform vec3 uLand[${MAX}], uSea[${MAX}];
 uniform vec4 uKind[${MAX}];         // x glow, y has map, z spin, w seed
-uniform sampler2D uMap0, uMap1, uMap2, uMap3;
+uniform highp sampler2DArray uMaps; uniform sampler2D uClose; uniform int uCloseIndex;
 out vec4 color;
 float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
 float noise(vec3 x) {
@@ -70,7 +86,7 @@ float fbm(vec3 p) {
 const vec3 SPACE = vec3(0.004, 0.008, 0.039);
 const vec3 WARM = vec3(1.0, 0.77, 0.5);
 const vec3 ACCENT_B = vec3(0.56, 0.48, 1.0);
-vec4 mapAt(int i, vec2 uv) { return i == 0 ? texture(uMap0, uv) : i == 1 ? texture(uMap1, uv) : i == 2 ? texture(uMap2, uv) : texture(uMap3, uv); }
+vec4 mapAt(int i, vec2 uv) { return i == uCloseIndex ? texture(uClose, uv) : texture(uMaps, vec3(uv, float(i))); }
 // Where a point in space lands on screen, in the same units as q below. z is depth.
 vec3 toScreen(vec3 p) { vec3 d = p - uEye; float z = dot(d, uForward); return vec3(dot(d, uRight), dot(d, uUp), z) / vec3(max(z, 0.0001) * uTan, max(z, 0.0001) * uTan, 1.0); }
 void main() {
@@ -194,7 +210,7 @@ void main() {
   c *= 1.0 - dot(corner, corner) * 0.85;
   c += (hash(vec3(gl_FragCoord.xy, floor(uTime * 24.0))) - 0.5) * 0.028 * (1.0 - uShed.x);
   c += (hash(vec3(gl_FragCoord.xy, 7.0)) - 0.5) / 255.0;
-  color = vec4(c, 1.0);
+  color = vec4(c * uDim, 1.0);
 }`
 const rgb = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
 type Vec = [number, number, number]
@@ -210,8 +226,17 @@ export class Galaxy {
   frames = 0
   private gl: WebGL2RenderingContext | null = null
   private uniforms: Record<string, WebGLUniformLocation | null> = {}
-  private readonly maps = new Map<string, { data: Uint8ClampedArray; width: number; height: number; texture?: WebGLTexture }>()
+  /** Painted maps by `recipe:seed:size`, kept across context loss so they upload again. */
+  private readonly maps = new Map<string, { data: Uint8ClampedArray; width: number; height: number }>()
+  /** Which small map each texture array layer holds, and which map the close texture holds. */
+  private layers: (string | undefined)[] = []
+  private closeKey?: string
+  private closeIndex = -1
+  private array: WebGLTexture | null = null
+  private close: WebGLTexture | null = null
   private worker: Worker | null = null
+  private readonly queue: { key: string; id: string; seed: number; width: number; height: number }[] = []
+  private painting = false
   private frame = 0
   private last = 0
   private active = false
@@ -228,6 +253,13 @@ export class Galaxy {
   // The view: an orbit round a point, which is the sun until a world is chosen.
   private yaw = 0.6
   private pitch = 0.5
+  private framed = false
+  /**
+   * How bright the galaxy is: 1 as the lobby, lower as the backdrop of an open panel, so
+   * text on glass reads even where the browser's frost is weak (WebKit's is).
+   */
+  backdrop = 1
+  private dim = 1
   private distance = 13
   private target: Vec = [0, 0, 0]
   private spinVelocity = 0
@@ -251,7 +283,8 @@ export class Galaxy {
   static supported(): boolean { try { return Boolean(document.createElement('canvas').getContext('webgl2')) } catch { return false } }
   get live(): boolean { return this.gl !== null }
   /** Worlds whose painted maps have arrived. */
-  get painted(): number { return this.maps.size }
+  get painted(): number { return this.options.worlds.filter(world => this.maps.has(this.mapKey(world, SMALL))).length }
+  private mapKey(world: GalaxyWorld, size: readonly [number, number]): string { return `${world.recipe ?? world.id}:${world.seed}:${size[0]}` }
   set enabled(value: boolean) {
     if (value === this.active) return
     this.active = value
@@ -275,31 +308,77 @@ export class Galaxy {
     gl.linkProgram(program)
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { console.warn('Syn3h galaxy shader failed.', gl.getProgramInfoLog(program)); return }
     gl.useProgram(program); gl.bindVertexArray(gl.createVertexArray())
-    for (const name of ['uShed', 'uAmbience', 'uDive', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMap0', 'uMap1', 'uMap2', 'uMap3']) this.uniforms[name] = gl.getUniformLocation(program, name)
-    for (const map of this.maps.values()) map.texture = undefined
+    for (const name of ['uShed', 'uAmbience', 'uDive', 'uDim', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex']) this.uniforms[name] = gl.getUniformLocation(program, name)
+    // One array of small maps on unit 0, the close map on unit 1.
+    const linear = (target: number) => { gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE) }
+    gl.activeTexture(gl.TEXTURE0); this.array = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.array)
+    gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, gl.RGBA8, SMALL[0], SMALL[1], MAX); linear(gl.TEXTURE_2D_ARRAY)
+    gl.activeTexture(gl.TEXTURE1); this.close = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, this.close)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); linear(gl.TEXTURE_2D)
+    gl.uniform1i(this.uniforms.uMaps, 0); gl.uniform1i(this.uniforms.uClose, 1)
+    this.layers = []; this.closeKey = undefined; this.closeIndex = -1
     this.gl = gl
     const signal = this.abort.signal, options = { signal }
     canvas.addEventListener('pointerdown', event => this.down(event), options)
     canvas.addEventListener('pointermove', event => this.move(event), options)
     for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, event => this.up(event, type === 'pointerup'), options)
     canvas.addEventListener('wheel', event => { event.preventDefault(); this.wake = 2; if (this.chosen < 0) this.distance = Math.min(26, Math.max(6, this.distance * Math.exp(event.deltaY * 0.0012))) }, { signal, passive: false })
+    // Held upright, a phone has height to spare and no width: look down more steeply so the
+    // orbits open out into the height. Only for the first view; after that the player's stands.
+    if (!this.framed) { this.framed = true; if (this.host.clientHeight > this.host.clientWidth * 1.2) this.pitch = 0.85 }
     this.paintMaps(); this.resize(); this.loop(0)
   }
   private release(): void {
-    cancelAnimationFrame(this.frame); this.worker?.terminate(); this.worker = null
+    cancelAnimationFrame(this.frame); this.worker?.terminate(); this.worker = null; this.queue.length = 0; this.painting = false
+    this.array = this.close = null
     this.gl?.getExtension('WEBGL_lose_context')?.loseContext(); this.gl = null; this.canvas.remove(); this.pointers.clear(); this.drag = null
   }
-  /** Each world's real map, painted off the main thread, one after another. */
+  /** Each world's small map, painted off the main thread, one after another. */
   private paintMaps(): void {
-    const wanted = this.options.worlds.filter(world => !world.forming && !this.maps.has(`${world.id}:${world.seed}`))
-    if (!wanted.length || typeof Worker !== 'function') return
+    for (const world of this.options.worlds.slice(0, MAX)) if (!world.forming) this.request(world, SMALL)
+  }
+  /** Ask for a map. `first` jumps the queue: the world being flown to. */
+  private request(world: GalaxyWorld, size: readonly [number, number], first = false): void {
+    const key = this.mapKey(world, size)
+    if (this.maps.has(key) || this.queue.some(job => job.key === key)) return
+    const job = { key, id: world.recipe ?? world.id, seed: world.seed, width: size[0], height: size[1] }
+    if (first) this.queue.unshift(job); else this.queue.push(job)
+    this.next()
+  }
+  private next(): void {
+    if (this.painting || typeof Worker !== 'function') return
+    const job = this.queue.shift()
+    if (!job) { this.worker?.terminate(); this.worker = null; return }
     try {
-      const worker = this.worker = new Worker(new URL('../planets/planetMapWorker.ts', import.meta.url), { type: 'module' })
-      worker.onmessage = event => { const { key, data, width, height } = event.data; this.maps.set(key, { data, width, height }); this.wake = 2; next() }
-      worker.onerror = () => { worker.terminate(); this.worker = null }
-      const next = () => { const world = wanted.shift(); if (world) worker.postMessage({ key: `${world.id}:${world.seed}`, id: world.id, seed: world.seed, width: 1024, height: 512 }); else { worker.terminate(); this.worker = null } }
-      next()
-    } catch { this.worker = null }
+      if (!this.worker) {
+        const worker = this.worker = new Worker(new URL('../planets/planetMapWorker.ts', import.meta.url), { type: 'module' })
+        worker.onmessage = event => { const { key, data, width, height } = event.data; this.maps.set(key, { data, width, height }); this.painting = false; this.wake = 2; this.next() }
+        worker.onerror = () => { worker.terminate(); this.worker = null; this.painting = false; this.queue.length = 0 }
+      }
+      this.painting = true; this.worker.postMessage(job)
+    } catch { this.worker = null; this.painting = false }
+  }
+  /** Upload what has been painted: small maps into their layers, the chosen world's close map. */
+  private upload(gl: WebGL2RenderingContext): void {
+    const worlds = this.options.worlds
+    for (const [i, world] of worlds.slice(0, MAX).entries()) {
+      const key = this.mapKey(world, SMALL), map = this.maps.get(key)
+      if (!map || this.layers[i] === key || map.width !== SMALL[0] || map.height !== SMALL[1]) continue
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.array)
+      gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, i, SMALL[0], SMALL[1], 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(map.data.buffer, map.data.byteOffset, map.data.byteLength))
+      this.layers[i] = key
+    }
+    const world = this.chosen >= 0 ? worlds[this.chosen] : undefined
+    const key = world && !world.forming ? this.mapKey(world, CLOSE) : undefined, map = key ? this.maps.get(key) : undefined
+    if (map && key !== this.closeKey) {
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.close)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, map.width, map.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(map.data.buffer, map.data.byteOffset, map.data.byteLength))
+      this.closeKey = key
+      // Keep the CPU copies of close maps few: the newest two.
+      const closes = [...this.maps.keys()].filter(k => k.endsWith(`:${CLOSE[0]}`) && k !== key)
+      for (const old of closes.slice(0, Math.max(0, closes.length - 1))) this.maps.delete(old)
+    }
+    this.closeIndex = map && key === this.closeKey ? this.chosen : -1
   }
   private resize(): void {
     if (!this.gl) return
@@ -308,10 +387,17 @@ export class Galaxy {
     this.shownScale = qualityScale(); this.wake = 2
     this.canvas.width = Math.max(1, Math.round(this.host.clientWidth * scale)); this.canvas.height = Math.max(1, Math.round(this.host.clientHeight * scale))
   }
-  /** Where the worlds are now: slow circular orbits in one plane, each at its own pace. */
+  /**
+   * Where the worlds are now: slow circular orbits, each at its own pace. There are at most
+   * four orbits, at the original spacing; with more than four worlds they share them, spread
+   * evenly round each one and moving together, so ten worlds keep the size four had and the
+   * system still fits a phone held upright.
+   */
   private places(time: number): { position: Vec; radius: number }[] {
+    const count = Math.min(MAX, this.options.worlds.length), rings = Math.min(RINGS, count)
     return this.options.worlds.slice(0, MAX).map((_, i) => {
-      const orbit = 2.9 + i * 1.45, angle = 0.9 + i * 1.9 + time * 0.045 / Math.sqrt(orbit / 2.9)
+      const ring = i % rings, slot = Math.floor(i / rings), sharing = Math.ceil((count - ring) / rings)
+      const orbit = 2.9 + ring * 1.45, angle = 0.9 + ring * 1.9 + slot * Math.PI * 2 / sharing + time * 0.045 / Math.sqrt(orbit / 2.9)
       return { position: [Math.cos(angle) * orbit, 0, Math.sin(angle) * orbit] as Vec, radius: 0.7 + (i % 2) * 0.12 }
     })
   }
@@ -344,7 +430,9 @@ export class Galaxy {
     const gl = this.gl, u = this.uniforms
     if (!gl) return
     if (this.shownScale !== qualityScale()) this.resize()
-    const still = Boolean(this.options.still?.()) || this.reduced.matches, wall = performance.now()
+    // Behind an open panel the galaxy is a backdrop: dimmed, and held still once it has dimmed.
+    this.dim = Math.abs(this.dim - this.backdrop) < 0.01 ? this.backdrop : mix(this.dim, this.backdrop, 0.18)
+    const still = Boolean(this.options.still?.()) || this.reduced.matches || this.backdrop < 1, wall = performance.now()
     if (!still) this.clock += Math.min(0.25, (wall - this.lastClock) / 1000)
     this.lastClock = wall
     const time = this.clock; this.holding = still
@@ -352,26 +440,18 @@ export class Galaxy {
     if (!this.drag) { this.yaw += this.spinVelocity; this.spinVelocity *= 0.93; if (Math.abs(this.spinVelocity) < 1e-5) this.spinVelocity = 0; if (this.chosen < 0 && !still) this.yaw += 0.0006 }
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
     // Held still, draw only while something is moving; the last frame stays on the canvas.
-    const moving = this.drag !== null || this.pointers.size > 0 || this.spinVelocity !== 0 || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
+    const moving = this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || this.spinVelocity !== 0 || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
     if (still && !moving && this.wake <= 0) { this.idle++; return }
     this.wake = Math.max(0, this.wake - 1)
-    for (const [i, world] of worlds.slice(0, MAX).entries()) {
-      const map = this.maps.get(`${world.id}:${world.seed}`)
-      if (map && !map.texture) {
-        map.texture = gl.createTexture()!; gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, map.texture)
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, map.width, map.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(map.data.buffer, map.data.byteOffset, map.data.byteLength))
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-      }
-      gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, map?.texture ?? null); gl.uniform1i(u[`uMap${i}`], i)
-    }
+    this.upload(gl); gl.uniform1i(u.uCloseIndex, this.closeIndex)
     gl.viewport(0, 0, this.canvas.width, this.canvas.height)
     gl.uniform2f(u.uSize, this.canvas.width, this.canvas.height); gl.uniform1f(u.uTime, time); gl.uniform1f(u.uScale, this.canvas.width / Math.max(1, this.host.clientWidth))
     gl.uniform3f(u.uEye, ...view.eye); gl.uniform3f(u.uRight, ...view.right); gl.uniform3f(u.uUp, ...view.up); gl.uniform3f(u.uForward, ...view.forward); gl.uniform1f(u.uTan, view.tan)
-    gl.uniform2f(u.uShed, qualityShed(2), qualityShed(3)); gl.uniform1f(u.uAmbience, 1 - qualityShed(1)); gl.uniform1f(u.uDive, this.dive)
+    gl.uniform2f(u.uShed, qualityShed(2), qualityShed(3)); gl.uniform1f(u.uAmbience, 1 - qualityShed(1)); gl.uniform1f(u.uDive, this.dive); gl.uniform1f(u.uDim, this.dim)
     gl.uniform1i(u.uCount, Math.min(MAX, worlds.length))
     gl.uniform4fv(u.uWorld, places.flatMap(p => [...p.position, p.radius]))
     gl.uniform3fv(u.uLand, worlds.slice(0, MAX).flatMap(w => rgb(w.land))); gl.uniform3fv(u.uSea, worlds.slice(0, MAX).flatMap(w => rgb(w.sea)))
-    gl.uniform4fv(u.uKind, worlds.slice(0, MAX).flatMap((w, i) => [w.forming ? 2 : w.glow ? 1 : 0, this.maps.get(`${w.id}:${w.seed}`)?.texture ? 1 : 0, time * 0.05 + i * 2.1, (w.seed % 97) + i * 3.1]))
+    gl.uniform4fv(u.uKind, worlds.slice(0, MAX).flatMap((w, i) => [w.forming ? 2 : w.glow ? 1 : 0, this.layers[i] || i === this.closeIndex ? 1 : 0, time * 0.05 + i * 2.1, (w.seed % 97) + i * 3.1]))
     gl.drawArrays(gl.TRIANGLES, 0, 3); this.frames++
     // Tell the labels where the worlds are, and notice arrival.
     const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height)
@@ -379,7 +459,7 @@ export class Galaxy {
       const d = sub(place.position, view.eye), z = dot(d, view.forward)
       return { id: worlds[i].id, x: width / 2 + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height / 2 - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0 }
     })
-    this.options.onLayout?.(this.screen)
+    this.options.onLayout?.(this.screen, this.chosen >= 0 ? worlds[this.chosen].id : undefined)
     if (this.chosen >= 0 && !this.arrived && ++this.arriving > 45) { this.arrived = true; this.options.onArrive(worlds[this.chosen].id) }
   }
   private screen: { id: string; x: number; y: number; radius: number; visible: boolean }[] = []
@@ -390,6 +470,9 @@ export class Galaxy {
     // Without a context there is no flight to wait for: arrive at once.
     if (!this.gl) { this.options.onArrive(id); return }
     this.chosen = index; this.arriving = 0; this.arrived = false
+    // Its full-size map, ahead of anything else waiting, for the close view and the dive.
+    const world = this.options.worlds[index]
+    if (!world.forming) this.request(world, CLOSE, true)
   }
   private down(event: PointerEvent): void {
     this.canvas.setPointerCapture(event.pointerId); this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })

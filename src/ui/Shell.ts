@@ -9,7 +9,8 @@ import { TouchControls } from './TouchControls'
 import { readVehicleChoice, saveVehicleChoice, VehiclePreview, type VehicleChoice } from './VehicleChoice'
 import { SlidingPanels } from './SlidingPanels'
 import { wordmarkSvg } from './brand/logo'
-import { Galaxy, type GalaxyWorld } from './galaxy/Galaxy'
+import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
+import { placeLabels } from './galaxy/labels'
 import { createDaydreamControl } from '../bots/daydreamControl'
 import { Inspector } from './inspector/Inspector'
 import { FocusHud } from './inspector/FocusHud'
@@ -504,7 +505,11 @@ export class Shell implements System {
     // No WebGL 2: the game cannot draw here either, so the index says so plainly.
     if (!Galaxy.supported()) { this.element.querySelector<HTMLElement>('.lobby-unsupported')!.hidden = false; return }
     const current = currentPlanet().id, labels = this.element.querySelector<HTMLElement>('.galaxy-labels')!
-    const worlds: GalaxyWorld[] = PLANETS.slice(0, 3).map((recipe, i) => ({ id: recipe.id, label: recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current ? worldSeed.value : i + 1 }))
+    // Every planet recipe, up to the galaxy's limit with room for Custom. In development,
+    // ?worlds=N repeats the recipes to rehearse a crowded system before new ones land.
+    const rehearse = import.meta.env.DEV ? Number(new URLSearchParams(location.search).get('worlds')) || 0 : 0
+    const recipes = Array.from({ length: Math.max(PLANETS.length, rehearse - 1) }, (_, i) => ({ recipe: PLANETS[i % PLANETS.length], copy: Math.floor(i / PLANETS.length) })).slice(0, GALAXY_MAX - 1)
+    const worlds: GalaxyWorld[] = recipes.map(({ recipe, copy }, i) => ({ id: copy ? `${recipe.id}~${copy}` : recipe.id, recipe: recipe.id, label: copy ? `${recipe.label} ${copy + 1}` : recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current && !copy ? worldSeed.value : i + 1 }))
     // The custom planet is a world still forming: tap it to shape it with the sliders.
     worlds.push({ id: 'custom', label: 'Custom', land: 0x31507a, sea: 0x0a1630, glow: false, seed: 7, forming: true })
     const chips = this.galaxyChips
@@ -518,7 +523,8 @@ export class Shell implements System {
     this.galaxy = new Galaxy(this.overlay, {
       worlds,
       still: () => levelNumber(graphicsLevel.value) === 0,
-      onArrive: id => {
+      onArrive: chosen => {
+        const id = chosen.split('~')[0]
         if (id === 'custom') {
           if (!canEditWorld() || (this.invited && !this.started)) { this.say('This world is not yours to reshape yet.'); this.galaxy?.home(); return }
           this.openCustomPlanet(); return
@@ -527,25 +533,45 @@ export class Shell implements System {
         if (!canEditWorld() && id !== currentPlanet().id) { this.say('The host has locked this world.'); this.galaxy?.home(); return }
         this.pickPlanet(id, true)
       },
-      onLayout: places => { for (const place of places) { const chip = chips.get(place.id)!; chip.hidden = !place.visible; 
-        // Under its world, but always wholly on the screen and clear of the links.
-        const x = Math.min(innerWidth - 62, Math.max(62, place.x)), y = Math.min(innerHeight - 128, Math.max(8, place.y + place.radius + 10))
-        chip.style.translate = `${x.toFixed(1)}px ${y.toFixed(1)}px` } },
+      onLayout: (places, chosen) => {
+        // Each label near its world, on the screen, clear of the links and of each other.
+        for (const [id, chip] of chips) if (!this.labelSizes.has(id) && !chip.hidden) this.labelSizes.set(id, { width: chip.offsetWidth, height: chip.offsetHeight })
+        // Clear of the wordmark too. While flying to a world, only its label stays.
+        if (!this.brandBottom) {
+          this.brandBottom = this.element.querySelector('.lobby-brand')?.getBoundingClientRect().bottom ?? 0
+          const hint = this.element.querySelector('.galaxy-hint')?.getBoundingClientRect().top ?? 0
+          this.linksTop = hint > innerHeight / 2 ? hint - 4 : innerHeight - 128
+        }
+        const shown = chosen ? places.filter(place => place.id === chosen) : places
+        const spots = placeLabels(shown, this.labelSizes, { width: innerWidth, height: innerHeight, bottom: this.linksTop, top: this.brandBottom + 4 }, { first: chosen ?? currentPlanet().id, previous: this.labelSpots })
+        if (chosen) for (const place of places) if (place.id !== chosen) chips.get(place.id)!.classList.add('is-crowded')
+        for (const place of places) chips.get(place.id)!.hidden = !place.visible
+        for (const spot of spots) {
+          const chip = chips.get(spot.id)!; this.labelSpots.set(spot.id, spot.spot)
+          chip.style.translate = `${spot.x.toFixed(1)}px ${spot.y.toFixed(1)}px`; chip.classList.toggle('is-crowded', spot.crowded)
+        }
+      },
     })
+    addEventListener('resize', () => { this.brandBottom = undefined }, { signal: this.abort.signal })
     this.element.classList.add('is-galaxy'); this.galaxy.enabled = true
     // WebGL 2 exists but the galaxy would not start (a shader the driver refuses): the world
     // names stay, as a row of buttons, so a visitor can still choose one and play.
     this.element.classList.toggle('galaxy-flat', !this.galaxy.live)
     this.galaxyFor(this.panels.active || 'index')
   }
-  /** The galaxy's world labels, by world id. */
+  /** The galaxy's world labels, by world id, with their measured sizes and last spots. */
   private readonly galaxyChips = new Map<string, HTMLButtonElement>()
+  private readonly labelSizes = new Map<string, { width: number; height: number }>()
+  private readonly labelSpots = new Map<string, number>()
+  /** Where the wordmark ends, measured once per window size. */
+  private brandBottom?: number
+  private linksTop = 0
   /** Labels follow the world in play: its generated name, and which worlds can be chosen now. */
   private refreshGalaxyLabels(open: boolean): void {
     const current = currentPlanet().id
     for (const [id, chip] of this.galaxyChips) {
       const small = chip.querySelector('small')!, text = id === 'custom' ? small.textContent : id === current ? planetName(worldSeed.value) : ''
-      if (small.textContent !== text) small.textContent = text
+      if (small.textContent !== text) { small.textContent = text; this.labelSizes.delete(id) }
       chip.classList.toggle('is-current', id === current)
       chip.classList.toggle('is-locked', !open && id !== current)
     }
@@ -557,6 +583,9 @@ export class Shell implements System {
     this.element.classList.toggle('galaxy-open', open)
     this.element.querySelector<HTMLElement>('.galaxy-ui')!.hidden = !open
     if (open) this.galaxy.home()
+    // Behind a panel the galaxy dims and holds still; behind the name form a little less,
+    // since the world just chosen is the picture there.
+    this.galaxy.backdrop = open ? 1 : panel === 'explore' ? 0.7 : 0.35
   }
   /** What the lobby's own graphics are doing, for the phone checks. */
   get graphics(): { galaxyLive: boolean; galaxyFrames: number; planetMaps: number } {
