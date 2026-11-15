@@ -4,7 +4,7 @@ Written by the Orchestrator. Refreshed at each milestone tag. A fresh or compact
 Orchestrator should be able to resume from this file, `ops/BACKLOG.md`, `ops/LANES.md` and
 `ops/PROTOCOL.md` alone. Times are Pacific; read the clock with `date`, never from memory.
 
-Last refreshed: Saturday 14 November, 4:35pm PST. Demo: Sunday noon PST.
+Last refreshed: Saturday 14 November, 5:06pm PST. Demo: Sunday noon PST.
 
 ## Where things are
 
@@ -29,6 +29,19 @@ Scripts are in `paseo.json`.
 | `stable` | none | BLOCKED. `tools/promote-stable.sh "note"` builds a frozen snapshot in `../Syn3h-stable/<id>` and `tools/serve-stable.mjs` serves it (29 net checks pass), but the broker answers `failed: CalledProcessError` when asked to start a third service for this workspace. Cause unknown; possibly a per workspace limit. Do not work around the broker. |
 
 Terrain Lab runs its own preview on port 32783.
+
+## OUTAGE: all previews down since Saturday 5:00pm PST
+
+Dashboard (:32781) and game (:32782) answer 502. The broker's log
+(`~/.local/share/vorteo-native-preview/https-broker.stderr.log`) repeats "HTTPS broker check
+failed: Tailnet access scope changed; administrator review required". This is a deliberate
+safety stop: the owner or the Host administrator must review the tailnet scope. Do not work
+around it and do not run broker commands meanwhile: `start`, `restart` and `status` hang.
+When it clears: `paseo-preview.mjs start dashboard` and `start game` for workspace
+`wks_cfcb37521a420b78`, then the smoke test. Told the Foreman at 5:05pm.
+
+Unverified because of the outage: the sound crash fix (cd0fe52) in a browser. The sequence
+is eight bots, then `gfx.level` 1 and `bots.count` 0, repeated; the world must keep stepping.
 
 ## Lanes
 
