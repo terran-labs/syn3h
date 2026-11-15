@@ -91,6 +91,8 @@ const THROTTLE_DEADZONE = 0.05
 const REGEN_TORQUE_MARGIN = 1.25
 /** A contact point closer than this (m) is touching; further ones are only predicted. */
 const CONTACT_TOUCH = 0.01
+/** How fast (1/s) water drags the wheels toward the body's speed while floating. */
+const WATER_MOTOR_DRAG = 6
 /**
  * Next-gen bump stop (see suspensionForce()). The skid plate meets flat ground when a wheel ray
  * is about 0.185 m long, so the stop works over ray lengths BUMP_START down to BUMP_END, and
@@ -417,9 +419,12 @@ export class Syn3hBuggy extends Vehicle {
     // and moves it at the lava crawl power, so no wheel force reaches it. The wheels churn in
     // the same goo: drag the motor toward the body's speed so it cannot spin up unloaded and
     // lurch when the tyres bite again at the shore.
-    if (this.lavaDepth > 0) {
+    // Water does the same more gently, so the wheels are not at full speed when they touch
+    // the beach. inLiquid is last step's value here.
+    if (this.lavaDepth > 0 || this.inLiquid) {
       const vf = ub.inverseTransformDirectionUnity(ub.velocity, this.v1).z
-      this.motorSpeed = vf + (this.motorSpeed - vf) * Math.exp(-lavaViscosity.value * dt)
+      const drag = this.lavaDepth > 0 ? lavaViscosity.value : WATER_MOTOR_DRAG
+      this.motorSpeed = vf + (this.motorSpeed - vf) * Math.exp(-drag * dt)
     }
     // Next-gen updates the motor from all four wheels at once (Jacobi). Updating it wheel by
     // wheel, as VB 323 does, favours the left wheels and pulls the buggy right.

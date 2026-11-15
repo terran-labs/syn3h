@@ -466,6 +466,23 @@ describe('Syn3hBuggy', () => {
     expect(-pos(b).z).toBeGreaterThan(3)
   })
 
+  test('the motor stays near the body speed while paddling in water', async () => {
+    const bed = await makeBed()
+    bed.terrain.liquidHeightAt = () => 4
+    bed.terrain.liquidKindAt = () => 'water'
+    const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, 5, 0), 0))
+    b.isLocal = false
+    bed.run(3)
+    expect(b.inLiquid).toBe(true)
+    b.input.y = 1
+    let motorMax = 0
+    bed.run(10, () => { motorMax = Math.max(motorMax, Math.abs(b.motorSpeed)) })
+    // Paddling still works, and the wheels are not racing when they reach a beach.
+    expect(-pos(b).z).toBeGreaterThan(40)
+    // Unloaded it used to reach 114 m/s.
+    expect(motorMax).toBeLessThan(40)
+  })
+
   test('wheel rays ignore other vehicles', async () => {
     const { bed, b } = await spawn()
     bed.run(3)
