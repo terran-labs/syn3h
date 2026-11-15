@@ -140,7 +140,7 @@ export class Room {
   private koth: KothState = emptyKoth()
   /** Fractions of a point earned on the hill, per player. */
   private readonly holdFrac = new Map<number, number>()
-  /** Who last touched each vehicle, and when (server ms), for knock-in credit. */
+  /** Who last touched each vehicle, and when (server ms), for dunk credit. */
   private readonly lastContact = new Map<number, { by: number; at: number }>()
   private lastTick = 0
   private scores: Record<number, number> = {}
@@ -231,13 +231,14 @@ export class Room {
         // Same permission as moving a shared slider.
         if (!this.locked || player.info.id === this.host) this.resetWorld('host', player.info.id)
         break
-      case 'died':
+      case 'stuck':
+      case 'died': // the name older bundles send
         if (typeof msg.bot === 'number') {
-          // Only the host simulates bots, so only the host can say one fell in.
+          // Only the host simulates bots, so only the host can say one is stuck.
           const bot = this.bots.get(msg.bot)
-          if (bot && player.info.id === this.host) this.onDied(bot)
+          if (bot && player.info.id === this.host) this.onStuck(bot)
         } else {
-          this.onDied(player)
+          this.onStuck(player)
         }
         break
     }
@@ -486,8 +487,12 @@ export class Room {
     this.broadcastGame(undefined)
   }
 
-  /** A client says its vehicle fell in. Credit whoever touched it last, within the window. */
-  private onDied(player: Player): void {
+  /**
+   * A client says its vehicle is stuck in the lava. It sits out of the hill count for the
+   * return delay (by then it has crawled out or been lifted back to its pad), and whoever
+   * touched it last, within the window, is credited with a dunk.
+   */
+  private onStuck(player: Player): void {
     if (this.mode !== MODE_KOTH) return
     const id = player.info.id
     const now = this.now()
@@ -498,10 +503,10 @@ export class Room {
     const by = contact && now - contact.at <= KNOCK_WINDOW * 1000 ? this.byId(contact.by) : undefined
     if (by && !by.info.bot && by.info.id !== id) {
       this.addScore(by.info.id, this.paramNumber(kothKnockBonus.def))
-      this.broadcastGame('knock', by.info.id, id)
+      this.broadcastGame('dunk', by.info.id, id)
       this.checkWin(by.info.id, now)
     } else {
-      this.broadcastGame('died', id)
+      this.broadcastGame('stuck', id)
     }
   }
 
@@ -605,7 +610,7 @@ export class Room {
     shooter.shots.delete(shotId)
     this.broadcast({ type: 'hit', shooter: shooter.info.id, victim: victim.info.id, shot: shotId })
     if (this.mode !== MODE_TAG) {
-      // On the hill a laser is a shove, and counts as contact for knock-ins.
+      // On the hill a tag beam is a shove, and counts as contact for dunks.
       this.lastContact.set(victim.info.id, { by: shooter.info.id, at: now })
       return
     }

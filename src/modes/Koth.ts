@@ -1,18 +1,26 @@
 /**
- * King of the Hill, the local side: notices when this client's vehicle touches lava or falls
- * off the world, takes it out of play, and brings it back at its spawn point after the
- * respawn delay. The server keeps score; see server/room.ts.
+ * King of the Hill, the local side. Nothing in this world can be destroyed: lava is thick and
+ * sticky, and a vehicle that sinks into it is stuck. It may crawl out under its own power;
+ * if it is still in the lava when the return delay ends it is lifted back to its spawn pad.
+ * A vehicle that leaves the world is returned to its pad at once. The server keeps score and
+ * leaves a stuck vehicle out of the hill count; see server/room.ts.
+ *
+ * The drag and the glow of a vehicle in lava belong to the vehicle code (src/vehicles/lava.ts).
  */
-import { RAPIER } from '../core/physics'
 import type { Game } from '../core/Game'
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
 import { kothRespawnDelay } from './params'
 
-export type DeathCause = 'lava' | 'fell'
+/** How a stuck vehicle got free: under its own power, or lifted back to its pad. */
+export type FreedBy = 'crawled' | 'returned'
 
 /** Touching counts a little above the surface: wheels dip in before the body does. */
 const LAVA_MARGIN = 0.3
+
+/** Seconds clear of the lava before a stuck vehicle counts as having crawled out, so a
+ * vehicle bobbing at the surface does not flip between stuck and free. */
+const CLEAR_TIME = 0.5
 
 /** The terrain methods this reads. `liquidKindAt` is optional and newer than the rest. */
 type LiquidTerrain = Pick<Terrain, 'liquidHeightAt'> & {
@@ -20,60 +28,101 @@ type LiquidTerrain = Pick<Terrain, 'liquidHeightAt'> & {
 }
 
 /**
- * True if a vehicle at `p` is in a liquid that eliminates. Where the terrain can tell lava
- * from water, only lava does (water floats); where it cannot, any liquid does.
+ * True if a vehicle at `p` is in a liquid that sticks. Where the terrain can tell lava from
+ * water, only lava does (water never sticks); where it cannot, any liquid does.
  */
-export function inDeadlyLiquid(terrain: LiquidTerrain, p: { x: number; y: number; z: number }): boolean {
+export function inStickyLiquid(terrain: LiquidTerrain, p: { x: number; y: number; z: number }): boolean {
   const surface = terrain.liquidHeightAt?.(p.x, p.z) ?? -Infinity
   if (!Number.isFinite(surface) || p.y >= surface + LAVA_MARGIN) return false
   if (!terrain.liquidKindAt) return true
   return terrain.liquidKindAt(p.x, p.z) === 'lava'
 }
 
-export class LocalLife {
-  /** Game time when the vehicle comes back, or 0 while alive. */
-  private outUntil = 0
+/**
+ * Stuck-in-lava bookkeeping for one vehicle, free of the game so it can be tested and shared
+ * by the local player and the host's bots. Feed it the game time and whether the vehicle is
+ * in the lava each step; it answers what just happened.
+ */
+export class StuckTimer {
+  /** Game time when the vehicle is lifted back to its pad, or 0 while free. */
+  until = 0
+  private clearSince = 0
+
+  get stuck(): boolean {
+    return this.until > 0
+  }
+
+  step(time: number, inLava: boolean, delay: number): 'stuck' | FreedBy | null {
+    if (!this.until) {
+      if (!inLava) return null
+      this.until = time + Math.max(0.05, delay)
+      this.clearSince = 0
+      return 'stuck'
+    }
+    if (inLava) {
+      this.clearSince = 0
+      if (time < this.until) return null
+      this.until = 0
+      return 'returned'
+    }
+    if (!this.clearSince) this.clearSince = time
+    if (time - this.clearSince < CLEAR_TIME) return null
+    this.until = 0
+    return 'crawled'
+  }
+
+  clear(): void {
+    this.until = 0
+    this.clearSince = 0
+  }
+}
+
+export class LocalRescue {
   slot = 0
-  onDied: (cause: DeathCause) => void = () => {}
-  onRespawn: () => void = () => {}
+  /** The vehicle just sank into the lava. */
+  onStuck: () => void = () => {}
+  /** It is free again: it crawled out, or was lifted back to its pad. */
+  onFreed: (by: FreedBy) => void = () => {}
+  /** It left the world and was put back on its pad. */
+  onReturned: () => void = () => {}
+  private readonly timer = new StuckTimer()
 
   constructor(private readonly game: Game, private readonly terrain: Terrain, private readonly player: Vehicle) {}
 
-  get out(): boolean {
-    return this.outUntil > 0
+  get stuck(): boolean {
+    return this.timer.stuck
+  }
+
+  /** Whole seconds until a stuck vehicle is lifted back to its pad. */
+  get secondsLeft(): number {
+    return this.timer.stuck ? Math.max(0, Math.ceil(this.timer.until - this.game.time)) : 0
   }
 
   /** Run after each physics step while King of the Hill is on. */
   check(): void {
-    if (this.outUntil) {
-      if (this.game.time >= this.outUntil) this.respawn()
-      return
-    }
     const p = this.player.body.translation()
     const half = this.terrain.size * 0.5
-    if (inDeadlyLiquid(this.terrain, p)) this.die('lava')
-    else if (p.y < -250 || Math.abs(p.x) > half * 1.5 || Math.abs(p.z) > half * 1.5) this.die('fell')
+    if (p.y < -250 || Math.abs(p.x) > half * 1.5 || Math.abs(p.z) > half * 1.5) {
+      this.timer.clear()
+      this.toPad()
+      this.onReturned()
+      return
+    }
+    const what = this.timer.step(this.game.time, inStickyLiquid(this.terrain, p), kothRespawnDelay.value)
+    if (what === 'stuck') this.onStuck()
+    else if (what) {
+      if (what === 'returned') this.toPad()
+      this.onFreed(what)
+    }
   }
 
-  /** The mode ended or the round reset: come back now if out. */
-  revive(): void {
-    if (this.outUntil) this.respawn()
+  /** The mode ended: forget any countdown. The vehicle stays where it is. */
+  release(): void {
+    this.timer.clear()
   }
 
-  private die(cause: DeathCause): void {
-    this.outUntil = this.game.time + Math.max(0.05, kothRespawnDelay.value)
-    // Parked and invisible: frozen where it fell, out of everyone's way.
-    this.player.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true)
-    this.player.object.visible = false
-    this.onDied(cause)
-  }
-
-  private respawn(): void {
-    this.outUntil = 0
-    this.player.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true)
+  private toPad(): void {
     const s = this.terrain.spawnPoint(this.slot)
     this.player.teleport(s.position, s.heading)
-    this.player.object.visible = true
-    this.onRespawn()
   }
 }
