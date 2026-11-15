@@ -16,6 +16,7 @@ import { FIXED_DT, GROUP_ALL, GROUP_LIQUID, GROUP_PROJECTILE, RAPIER, groups } f
 import { createWeaponEffects } from '../vehicles/effects'
 import { hotExposureDim } from '../vehicles/skins/hotExposure'
 import { laserGravity, laserLifetime, laserRicochet, laserSpeed } from './params'
+import { bigRedRadius, bigRedSpeed } from './bigRedParams'
 
 export interface LaserHooks {
   /** Body of a player's (or bot's) vehicle, local or remote, if it exists here. */
@@ -27,8 +28,8 @@ export interface LaserHooks {
   judgedId(handle: number): number | null
   /** True if the body belongs to some vehicle simulated elsewhere. */
   isVehicleBody(handle: number): boolean
-  /** A shot hit a vehicle this client judges. `dir` is the shot's unit direction. */
-  onHit(shooter: number, shot: number, victim: number, at: THREE.Vector3, dir: THREE.Vector3): void
+  /** A shot hit a vehicle this client judges. `dir` is the shot's unit direction; `red` for Big Red. */
+  onHit(shooter: number, shot: number, victim: number, at: THREE.Vector3, dir: THREE.Vector3, red: boolean): void
 }
 
 interface Projectile {
@@ -40,6 +41,8 @@ interface Projectile {
   age: number
   life: number
   mesh: THREE.Group
+  /** Big Red: fat, slow, no drop, no bounce, catches vehicles within its width. */
+  red: boolean
 }
 
 /** The longest a late shot is replayed; older ones are mostly gone anyway. */
@@ -54,6 +57,14 @@ const FRESH = 0.15
 const CORE_RGB = [0.9, 4, 1.4] as const
 const HALO_RGB = [0.25, 1.6, 0.45] as const
 const TINT_RGB = [0.1, 0.75, 0.25] as const
+/** Big Red's colours, the same recipe in red. */
+const RED_CORE_RGB = [4, 0.55, 0.35] as const
+const RED_HALO_RGB = [1.8, 0.18, 0.1] as const
+const RED_TINT_RGB = [0.8, 0.05, 0.03] as const
+/** Big Red's look: this much fatter, and a little longer. */
+const RED_SCALE = [3, 3, 1.6] as const
+/** Offsets around the centre line Big Red checks for vehicles, as fractions of its radius. */
+const RED_RING = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]] as const
 
 export class Lasers implements System {
   private readonly shots: Projectile[] = []
@@ -71,6 +82,14 @@ export class Lasers implements System {
   // normally blended tint underneath keeps the green readable at noon.
   private readonly tintMat = new THREE.MeshBasicMaterial({
     color: new THREE.Color(...TINT_RGB), transparent: true, opacity: 0.3, depthWrite: false,
+  })
+  private readonly redCoreMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...RED_CORE_RGB) })
+  private readonly redHaloMat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(...RED_HALO_RGB), transparent: true, opacity: 0.55,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  })
+  private readonly redTintMat = new THREE.MeshBasicMaterial({
+    color: new THREE.Color(...RED_TINT_RGB), transparent: true, opacity: 0.35, depthWrite: false,
   })
   private readonly effects: ReturnType<typeof createWeaponEffects> | null
   /** Shots that already showed their impact here, so a later server confirmation does not repeat it. */
@@ -112,7 +131,8 @@ export class Lasers implements System {
 
   /** Start a shot. `age` is how long ago it was fired, in seconds; that much is replayed. */
   spawn(shooter: number, shot: ShotInfo, age = 0): void {
-    const speed = laserSpeed.value + shot.boost
+    const red = shot.k === 'red'
+    const speed = (red ? bigRedSpeed.value : laserSpeed.value) + shot.boost
     const p: Projectile = {
       shooter,
       id: shot.id,
@@ -120,13 +140,16 @@ export class Lasers implements System {
       prev: new THREE.Vector3(...shot.o),
       vel: new THREE.Vector3(...shot.d).normalize().multiplyScalar(speed),
       age: 0,
+      // The room checks hits against this same lifetime, so Big Red keeps it too.
       life: laserLifetime(laserSpeed.value),
       mesh: new THREE.Group(),
+      red,
     }
-    const tint = new THREE.Mesh(this.haloGeo, this.tintMat)
+    const tint = new THREE.Mesh(this.haloGeo, red ? this.redTintMat : this.tintMat)
     tint.renderOrder = -1
-    p.mesh.add(new THREE.Mesh(this.coreGeo, this.coreMat), tint, new THREE.Mesh(this.haloGeo, this.haloMat))
-    if (age < FRESH) this.effects?.muzzle(p.pos.clone(), new THREE.Vector3(...shot.d).normalize(), false)
+    p.mesh.add(new THREE.Mesh(this.coreGeo, red ? this.redCoreMat : this.coreMat), tint, new THREE.Mesh(this.haloGeo, red ? this.redHaloMat : this.haloMat))
+    if (red) p.mesh.scale.set(...RED_SCALE)
+    if (age < FRESH) this.effects?.muzzle(p.pos.clone(), new THREE.Vector3(...shot.d).normalize(), red)
     p.mesh.position.copy(p.pos)
     p.mesh.visible = false
     this.game.scene.add(p.mesh)
@@ -144,7 +167,7 @@ export class Lasers implements System {
     const i = this.shots.findIndex((s) => s.shooter === shooter && s.id === shot)
     const p = i >= 0 ? this.shots[i] : null
     const where = at ?? p?.pos
-    if (where) this.impact(shooter, shot, where, p ? p.vel.clone().normalize().negate() : undefined)
+    if (where) this.impact(shooter, shot, where, p ? p.vel.clone().normalize().negate() : undefined, p?.red ?? false)
     if (i >= 0) this.kill(i)
   }
 
@@ -164,6 +187,9 @@ export class Lasers implements System {
     this.coreMat.color.setRGB(CORE_RGB[0] * dim, CORE_RGB[1] * dim, CORE_RGB[2] * dim)
     this.haloMat.color.setRGB(HALO_RGB[0] * dim, HALO_RGB[1] * dim, HALO_RGB[2] * dim)
     this.tintMat.color.setRGB(TINT_RGB[0] * dim, TINT_RGB[1] * dim, TINT_RGB[2] * dim)
+    this.redCoreMat.color.setRGB(RED_CORE_RGB[0] * dim, RED_CORE_RGB[1] * dim, RED_CORE_RGB[2] * dim)
+    this.redHaloMat.color.setRGB(RED_HALO_RGB[0] * dim, RED_HALO_RGB[1] * dim, RED_HALO_RGB[2] * dim)
+    this.redTintMat.color.setRGB(RED_TINT_RGB[0] * dim, RED_TINT_RGB[1] * dim, RED_TINT_RGB[2] * dim)
     for (const p of this.shots) {
       p.mesh.visible = true
       p.mesh.position.lerpVectors(p.prev, p.pos, alpha)
@@ -182,8 +208,8 @@ export class Lasers implements System {
       this.kill(this.shots.indexOf(p))
       return
     }
-    // Rocket.js 71: laserGrav * 20 metres per second squared.
-    p.vel.y -= laserGravity.value * 20 * dt
+    // Rocket.js 71: laserGrav * 20 metres per second squared. Big Red flies flat.
+    if (!p.red) p.vel.y -= laserGravity.value * 20 * dt
     const dist = p.vel.length() * dt
     if (dist < 1e-6) return
     const dir = this.tmp.copy(p.vel).normalize()
@@ -205,6 +231,17 @@ export class Lasers implements System {
         return !this.hooks.isVehicleBody(parent.handle)
       },
     )
+    const parent0 = hit?.collider.parent()
+    // Big Red is fat: if its centre line meets no vehicle we judge, look around the centre.
+    if (p.red && !(parent0 && this.hooks.judgedId(parent0.handle) !== null)) {
+      const wide = this.wideCatch(p, dir, hit ? hit.timeOfImpact : dist, shooterBody)
+      if (wide) {
+        this.hooks.onHit(p.shooter, p.id, wide.victim, wide.point, dir.clone(), true)
+        this.impact(p.shooter, p.id, wide.point, dir.clone().negate(), true)
+        this.kill(this.shots.indexOf(p))
+        return
+      }
+    }
     if (!hit) {
       p.pos.addScaledVector(dir, dist)
       return
@@ -213,15 +250,15 @@ export class Lasers implements System {
     const parent = hit.collider.parent()
     const victim = parent ? this.hooks.judgedId(parent.handle) : null
     if (victim !== null) {
-      this.hooks.onHit(p.shooter, p.id, victim, point, dir.clone())
-      this.impact(p.shooter, p.id, point, dir.clone().negate())
+      this.hooks.onHit(p.shooter, p.id, victim, point, dir.clone(), p.red)
+      this.impact(p.shooter, p.id, point, dir.clone().negate(), p.red)
       this.kill(this.shots.indexOf(p))
       return
     }
-    const rico = laserRicochet.value
+    const rico = p.red ? 0 : laserRicochet.value
     const isBody = parent && !parent.isFixed()
     if (isBody || rico === 0) {
-      this.impact(p.shooter, p.id, point, new THREE.Vector3(hit.normal.x, hit.normal.y, hit.normal.z))
+      this.impact(p.shooter, p.id, point, new THREE.Vector3(hit.normal.x, hit.normal.y, hit.normal.z), p.red)
       this.kill(this.shots.indexOf(p))
       return
     }
@@ -233,13 +270,44 @@ export class Lasers implements System {
     p.pos.copy(point).addScaledVector(n, 0.05)
   }
 
+  /**
+   * Big Red's width: rays parallel to the centre line, around it, that see only vehicles this
+   * client judges, up to `reach` along the path. The nearest such vehicle, if any.
+   */
+  private wideCatch(p: Projectile, dir: THREE.Vector3, reach: number, shooterBody?: RAPIER.RigidBody): { victim: number; point: THREE.Vector3 } | null {
+    const r = bigRedRadius.value
+    if (!(r > 0) || !(reach > 0)) return null
+    const side = new THREE.Vector3().crossVectors(dir, Math.abs(dir.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0)).normalize()
+    const up = new THREE.Vector3().crossVectors(side, dir).normalize()
+    let best: { victim: number; point: THREE.Vector3; toi: number } | null = null
+    for (const [a, b] of RED_RING) {
+      const o = p.pos.clone().addScaledVector(side, a * r).addScaledVector(up, b * r)
+      this.ray.origin = { x: o.x, y: o.y, z: o.z }
+      this.ray.dir = { x: dir.x, y: dir.y, z: dir.z }
+      const hit = this.game.world.castRay(
+        this.ray, reach, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, groups(GROUP_PROJECTILE, GROUP_ALL & ~GROUP_LIQUID),
+        undefined, shooterBody,
+        (c) => {
+          const parent = c.parent()
+          if (!parent || (shooterBody && parent.handle === shooterBody.handle)) return false
+          const judged = this.hooks.judgedId(parent.handle)
+          return judged !== null && judged !== p.shooter
+        },
+      )
+      if (!hit || (best && hit.timeOfImpact >= best.toi)) continue
+      const victim = this.hooks.judgedId(hit.collider.parent()!.handle)!
+      best = { victim, toi: hit.timeOfImpact, point: o.addScaledVector(dir, hit.timeOfImpact) }
+    }
+    return best
+  }
+
   /** Sparks where a shot ended, once per shot. */
-  private impact(shooter: number, shot: number, at: THREE.Vector3, normal?: THREE.Vector3): void {
+  private impact(shooter: number, shot: number, at: THREE.Vector3, normal?: THREE.Vector3, red = false): void {
     const key = `${shooter}:${shot}`
     if (this.impacted.has(key)) return
     this.impacted.add(key)
     if (this.impacted.size > 256) this.impacted.delete(this.impacted.values().next().value as string)
-    this.effects?.impact(at.clone(), normal ?? new THREE.Vector3(0, 1, 0), false)
+    this.effects?.impact(at.clone(), normal ?? new THREE.Vector3(0, 1, 0), red)
   }
 
   private kill(i: number): void {

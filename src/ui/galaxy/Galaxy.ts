@@ -5,10 +5,11 @@
  * libraries and no images: each world is lit from where the sun really is, wears its real
  * generated map once that has been painted, and throws a shadow through the sun's shafts.
  *
- * The sun, shafts, flare and stars are terranlabs.com's (see Starfield.ts). Like the other
+ * The sun, shafts, flare and stars are terranlabs.com's (src/concepts/descent/PlanetGL.tsx there). Like the other
  * lobby graphics it draws at most thirty times a second, stops in a hidden tab, and gives
  * its WebGL context back when disabled.
  */
+import type { ParamValue } from '../../../shared/params'
 import { qualityFrame, qualityScale, qualityShed } from '../quality/ladder'
 
 export interface GalaxyWorld {
@@ -22,29 +23,60 @@ export interface GalaxyWorld {
   seed: number
   /** A world still forming: molten, its crust shifting. It has no map. The custom planet. */
   forming?: boolean
+  /** The planet recipe its map is painted from, when that is not its id. */
+  recipe?: string
+  /** Sanitized registry snapshot for the live Custom map. */
+  overrides?: Record<string, ParamValue>
+  mapVariant?: string
 }
 export interface GalaxyOptions {
   worlds: readonly GalaxyWorld[]
   /** A world was tapped and the camera has arrived at it. */
   onArrive(id: string): void
+  /** A world was tapped. Return true to take it from here (a drop); otherwise the camera flies to it. */
+  onTap?(id: string): boolean
   /** Called every frame with where each world is on screen, for labels. */
-  onLayout?(places: readonly { id: string; x: number; y: number; radius: number; visible: boolean }[]): void
+  onLayout?(places: readonly { id: string; x: number; y: number; radius: number; visible: boolean }[], chosen?: string): void
+  /**
+   * Asked each frame. True holds the system still: the worlds stop in their orbits and a frame
+   * is drawn only while something moves (a drag, a flight, a dive). For the lowest graphics
+   * level, so weak devices keep the galaxy at almost no cost. Reduced motion does the same.
+   */
+  still?(): boolean
+  /** Focus the label selected with a controller, so its normal activation stays accessible. */
+  onFocus?(id: string): void
 }
-const MAX = 4
+/**
+ * The most worlds the galaxy draws, the sun aside. The trace costs little per world (a ray
+ * against a sphere, a shadow cut through the shafts); the limit is the screen and the maps.
+ */
+export const GALAXY_MAX = 12
+const MAX = GALAXY_MAX
+/** Each world's axis leans this far. */
+const TILT = 0.38
+/** Orbits round the sun; more worlds than this share them. */
+const RINGS = 4
+/**
+ * Level of detail for the maps: every world wears a small one (512 by 256, about 40 ms to
+ * paint on a desktop, half a megabyte on the GPU) from one texture array; the world being
+ * flown to, and dived into, is repainted at full size (1024 by 512, about 130 ms).
+ */
+const SMALL = [512, 256] as const, CLOSE = [1024, 512] as const
 const VERTEX = `#version 300 es
 void main() { vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`
 const FRAGMENT = `#version 300 es
 precision highp float;
-uniform vec2 uSize; uniform float uTime; uniform float uScale;
+uniform vec2 uSize; uniform vec3 uFrame; uniform float uTime; uniform float uScale;
 uniform vec2 uShed;                 // quality ladder: x sheds post effects, y shader cost
 uniform float uAmbience;            // 1 keeps twinkle and drifting cloud, 0 sheds them
 uniform float uDive;                // 0 in orbit, 1 through the atmosphere of the chosen world
+uniform float uDim;                 // 1 as the lobby itself; lower behind an open panel
 uniform vec3 uEye, uRight, uUp, uForward; uniform float uTan;
-uniform int uCount;
+uniform int uCount; uniform int uOnly;
 uniform vec4 uWorld[${MAX}];        // xyz position, w radius
 uniform vec3 uLand[${MAX}], uSea[${MAX}];
 uniform vec4 uKind[${MAX}];         // x glow, y has map, z spin, w seed
-uniform sampler2D uMap0, uMap1, uMap2, uMap3;
+uniform highp sampler2DArray uMaps; uniform sampler2D uClose; uniform int uCloseIndex;
 out vec4 color;
 float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
 float noise(vec3 x) {
@@ -64,12 +96,12 @@ float fbm(vec3 p) {
 const vec3 SPACE = vec3(0.004, 0.008, 0.039);
 const vec3 WARM = vec3(1.0, 0.77, 0.5);
 const vec3 ACCENT_B = vec3(0.56, 0.48, 1.0);
-vec4 mapAt(int i, vec2 uv) { return i == 0 ? texture(uMap0, uv) : i == 1 ? texture(uMap1, uv) : i == 2 ? texture(uMap2, uv) : texture(uMap3, uv); }
+vec4 mapAt(int i, vec2 uv) { return i == uCloseIndex ? texture(uClose, uv) : texture(uMaps, vec3(uv, float(i))); }
 // Where a point in space lands on screen, in the same units as q below. z is depth.
 vec3 toScreen(vec3 p) { vec3 d = p - uEye; float z = dot(d, uForward); return vec3(dot(d, uRight), dot(d, uUp), z) / vec3(max(z, 0.0001) * uTan, max(z, 0.0001) * uTan, 1.0); }
 void main() {
   float minSide = min(uSize.x, uSize.y);
-  vec2 q = (gl_FragCoord.xy - 0.5 * uSize) / minSide * 2.0;           // -1..1 on the short side
+  vec2 q = (gl_FragCoord.xy - uFrame.xy * uSize) / (minSide * uFrame.z) * 2.0;           // -1..1 on the short side
   vec3 ray = normalize(uForward + (q.x * uRight + q.y * uUp) * uTan);
   vec3 c = SPACE;
   // Stars, fixed to the sky so they turn as the view does.
@@ -84,6 +116,7 @@ void main() {
   float nearest = 1e9; int found = -1; vec3 normal = vec3(0.0); float halo = 0.0; vec3 haloTint = vec3(0.0);
   for (int i = 0; i < ${MAX}; i++) {
     if (i >= uCount) break;
+    if (uOnly >= 0 && i != uOnly) continue;
     vec3 oc = uEye - uWorld[i].xyz; float r = uWorld[i].w;
     float b = dot(oc, ray), cc = dot(oc, oc) - r * r, disc = b * b - cc;
     if (disc > 0.0) { float t = -b - sqrt(disc); if (t > 0.0 && t < nearest) { nearest = t; found = i; normal = normalize(oc + ray * t); } }
@@ -138,7 +171,7 @@ void main() {
     vec3 light = normalize(-centre);                         // the sun is at the origin
     float lit = clamp(dot(normal, light), 0.0, 1.0);
     // Turn the world on its tilted axis.
-    float tilt = 0.38, ct = cos(tilt), st = sin(tilt); vec3 g = vec3(normal.x, ct * normal.y - st * normal.z, st * normal.y + ct * normal.z);
+    float tilt = ${TILT}, ct = cos(tilt), st = sin(tilt); vec3 g = vec3(normal.x, ct * normal.y - st * normal.z, st * normal.y + ct * normal.z);
     float spin = uKind[found].z; g = vec3(cos(spin) * g.x + sin(spin) * g.z, g.y, -sin(spin) * g.x + cos(spin) * g.z);
     vec3 surface; float land; float molten = 0.0; float dry = 1.0;   // dry: ground a settlement could stand on
     if (uKind[found].x > 1.5) {
@@ -179,8 +212,9 @@ void main() {
   // The dive: streaks rushing outward, then the brightness of air as the world fills the view.
   if (uDive > 0.0) {
     float rush = pow(noise(vec3(normalize(q + 0.0001) * 11.0, uTime * 3.2)), 3.0) * smoothstep(0.15, 1.3, length(q));
-    c += vec3(0.7, 0.86, 1.0) * rush * uDive * 0.9;
-    c = mix(c, vec3(0.72, 0.87, 1.0), smoothstep(0.5, 1.0, uDive) * 0.92);
+    // Air, never a flat sheet: the streaks keep rushing through it to the last frame.
+    c = mix(c, vec3(0.62, 0.8, 1.0), smoothstep(0.5, 1.0, uDive) * 0.68);
+    c += vec3(0.8, 0.92, 1.0) * rush * uDive * 1.3;
   }
   // Grade: roll the highlights off, a vignette to hold the eye in the middle, fine film grain.
   c = c / (1.0 + 0.3 * max(max(c.r, c.g), c.b));
@@ -188,8 +222,26 @@ void main() {
   c *= 1.0 - dot(corner, corner) * 0.85;
   c += (hash(vec3(gl_FragCoord.xy, floor(uTime * 24.0))) - 0.5) * 0.028 * (1.0 - uShed.x);
   c += (hash(vec3(gl_FragCoord.xy, 7.0)) - 0.5) / 255.0;
-  color = vec4(c, 1.0);
+  color = vec4(c * uDim, 1.0);
 }`
+/**
+ * Motion blur for the flight and the dive: the traced frame is smeared along the line to the
+ * centre of the view, the way a fast zoom smears, in proportion to how fast the camera is
+ * closing. Twelve taps, jittered per pixel so the smear has no steps. Off when nothing is
+ * moving fast, when the frame is drawn straight to the screen.
+ */
+const BLUR = `#version 300 es
+precision highp float;
+uniform sampler2D uScene; uniform float uBlur; uniform vec2 uSize;
+out vec4 color;
+void main() {
+  vec2 uv = gl_FragCoord.xy / uSize, d = (uv - 0.5) * uBlur;
+  float jitter = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+  vec3 c = vec3(0.0);
+  for (int i = 0; i < 12; i++) c += texture(uScene, uv - d * ((float(i) + jitter) / 12.0)).rgb;
+  color = vec4(c / 12.0, 1.0);
+}`
+const smootherstep = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * t * (t * (t * 6 - 15) + 10) }
 const rgb = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
 type Vec = [number, number, number]
 const sub = (a: Vec, b: Vec): Vec => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
@@ -197,6 +249,8 @@ const dot = (a: Vec, b: Vec) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 const cross = (a: Vec, b: Vec): Vec => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
 const unit = (a: Vec): Vec => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l] }
 const mix = (a: number, b: number, t: number) => a + (b - a) * t
+/** The shortest signed turn from angle a to angle b. */
+const turn = (a: number, b: number) => { const d = (b - a) % (Math.PI * 2); return d > Math.PI ? d - Math.PI * 2 : d < -Math.PI ? d + Math.PI * 2 : d }
 
 export class Galaxy {
   canvas = document.createElement('canvas')
@@ -204,15 +258,49 @@ export class Galaxy {
   frames = 0
   private gl: WebGL2RenderingContext | null = null
   private uniforms: Record<string, WebGLUniformLocation | null> = {}
-  private readonly maps = new Map<string, { data: Uint8ClampedArray; width: number; height: number; texture?: WebGLTexture }>()
+  /** Painted maps keyed by world, recipe, seed, snapshot and size; kept across context loss. */
+  private readonly maps = new Map<string, { data: Uint8ClampedArray; width: number; height: number }>()
+  /** Which small map each texture array layer holds, and which map the close texture holds. */
+  private layers: (string | undefined)[] = []
+  private closeKey?: string
+  private closeIndex = -1
+  private array: WebGLTexture | null = null
+  private program: WebGLProgram | null = null
+  private blurProgram: WebGLProgram | null = null
+  private readonly blurUniforms: Record<string, WebGLUniformLocation | null> = {}
+  private fbo: WebGLFramebuffer | null = null
+  /** The frame drawn off screen for the blur pass, the size of the canvas. */
+  private target2: WebGLTexture | null = null
+  private close: WebGLTexture | null = null
   private worker: Worker | null = null
+  private readonly queue: { key: string; worldId: string; id: string; seed: number; width: number; height: number; overrides?: Record<string, ParamValue> }[] = []
+  private painting = false
   private frame = 0
   private last = 0
   private active = false
-  private readonly started = performance.now()
+  // Seconds of orbit shown. It advances only while the system is not held still.
+  private clock = 0
+  private lastClock = performance.now()
+  /** Frames still owed after a change (a tap, a resize, a map arriving), in still mode. */
+  private wake = 2
+  private settled = false
+  private holding = false
+  private readonly reduced = matchMedia('(prefers-reduced-motion: reduce)')
+  /** Frames skipped because nothing moved, for the checks. */
+  idle = 0
   // The view: an orbit round a point, which is the sun until a world is chosen.
   private yaw = 0.6
   private pitch = 0.5
+  private framed = false
+  /**
+   * How bright the galaxy is: 1 as the lobby, lower as the backdrop of an open panel, so
+   * text on glass reads even where the browser's frost is weak (WebKit's is).
+   */
+  backdrop = 1
+  /** Leave room for the Custom sliders without covering their planet. */
+  editing = false
+  private framing: Vec = [0.5, 0.5, 1]
+  private dim = 1
   private distance = 13
   private target: Vec = [0, 0, 0]
   private spinVelocity = 0
@@ -229,24 +317,56 @@ export class Galaxy {
   private readonly resizeObserver: ResizeObserver
 
   constructor(private readonly host: HTMLElement, private readonly options: GalaxyOptions) {
+    addEventListener('keydown', event => this.key(event), { signal: this.abort.signal })
     this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(host)
     document.addEventListener('visibilitychange', () => { cancelAnimationFrame(this.frame); if (this.active && !document.hidden) this.loop(0) }, { signal: this.abort.signal })
   }
   /** False when WebGL 2 is not available: the caller keeps the ordinary lobby. */
   static supported(): boolean { try { return Boolean(document.createElement('canvas').getContext('webgl2')) } catch { return false } }
   get live(): boolean { return this.gl !== null }
+  /** Worlds whose painted maps have arrived. */
+  get painted(): number { return this.options.worlds.filter(world => this.maps.has(this.mapKey(world, SMALL))).length }
+  private mapKey(world: GalaxyWorld, size: readonly [number, number]): string { return `${world.id}:${world.recipe ?? world.id}:${world.seed}:${world.mapVariant ?? ''}:${size[0]}` }
+  /** Snapshot values have already passed the parameter registry's sanitizers. */
+  updateCustom(recipe: string, seed: number, values: Record<string, ParamValue>): void {
+    const world = this.options.worlds.find(w => w.id === 'custom')
+    if (!world) return
+    const overrides = Object.fromEntries(Object.entries(values).sort(([a], [b]) => a.localeCompare(b)))
+    const variant = JSON.stringify(overrides)
+    if (!world.forming && world.recipe === recipe && world.seed === seed && world.mapVariant === variant) return
+    world.recipe = recipe; world.seed = seed; world.overrides = overrides; world.mapVariant = variant
+    world.forming = false; world.glow = overrides['world.seaKind'] === 0
+    // Keep only the latest pending slider snapshot. An older in-flight result is rejected below.
+    for (let i = this.queue.length - 1; i >= 0; i--) if (this.queue[i].worldId === world.id) this.queue.splice(i, 1)
+    for (const key of this.maps.keys()) if (key.startsWith('custom:')) this.maps.delete(key)
+    this.wake = 2
+    if (this.active) {
+      this.request(world, SMALL, true)
+      if (this.options.worlds[this.chosen] === world) this.request(world, CLOSE, true)
+    }
+  }
   set enabled(value: boolean) {
     if (value === this.active) return
     this.active = value
     if (value) this.acquire(); else this.release()
   }
   /** Back out to the whole system, for example after returning from a world's panel. */
-  home(): void { this.chosen = -1; this.arriving = 0; this.arrived = false; this.diving = false; this.dive = 0 }
-  /** The descent: fall toward a world until its air fills the view. Resolves when it has. */
-  descend(id: string): Promise<void> {
-    this.choose(id); this.arrived = true; this.diving = true
-    return new Promise(resolve => { const wait = () => { if (!this.active || this.dive >= 0.995) resolve(); else setTimeout(wait, 50) }; wait() })
+  home(): void { this.wake = 2; this.chosen = -1; this.arriving = 0; this.arrived = false; this.diving = false; this.dive = 0; this.flight = undefined; this.flightDone = false; this.blur = 0 }
+  /** The descent: fall toward a world until its air fills the view. Resolves when it has. `quick` for a player who has seen it. */
+  descend(id: string, quick = false): Promise<void> {
+    if (!this.gl) return Promise.resolve()
+    this.choose(id); this.arrived = true; this.diving = true; this.wake = 2
+    // One timed path from wherever the view is now, so a slow frame never makes it lurch:
+    // across the system to the world, round to its lit side, and down into its air.
+    this.flightDone = false
+    this.flight = { start: performance.now(), duration: quick ? 1700 : 2400, from: [...this.target], reach: this.reach, yaw: this.yaw, pitch: this.pitch, last: this.reach, at: performance.now() }
+    return new Promise(resolve => { const wait = () => { if (!this.active || !this.flight || this.flightDone) resolve(); else setTimeout(wait, 30) }; wait() })
   }
+  /** The drop in progress: where it started and when. */
+  private flight?: { start: number; duration: number; from: Vec; reach: number; yaw: number; pitch: number; last: number; at: number }
+  private flightDone = false
+  /** How hard the frame is smeared toward the centre this frame (0 for none). */
+  private blur = 0
 
   private acquire(): void {
     const canvas = this.canvas = document.createElement('canvas')
@@ -258,43 +378,117 @@ export class Galaxy {
     gl.linkProgram(program)
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { console.warn('Syn3h galaxy shader failed.', gl.getProgramInfoLog(program)); return }
     gl.useProgram(program); gl.bindVertexArray(gl.createVertexArray())
-    for (const name of ['uShed', 'uAmbience', 'uDive', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMap0', 'uMap1', 'uMap2', 'uMap3']) this.uniforms[name] = gl.getUniformLocation(program, name)
-    for (const map of this.maps.values()) map.texture = undefined
+    for (const name of ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex']) this.uniforms[name] = gl.getUniformLocation(program, name)
+    // One array of small maps on unit 0, the close map on unit 1.
+    const linear = (target: number) => { gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE) }
+    gl.activeTexture(gl.TEXTURE0); this.array = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.array)
+    gl.texStorage3D(gl.TEXTURE_2D_ARRAY, 1, gl.RGBA8, SMALL[0], SMALL[1], MAX); linear(gl.TEXTURE_2D_ARRAY)
+    gl.activeTexture(gl.TEXTURE1); this.close = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, this.close)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); linear(gl.TEXTURE_2D)
+    gl.uniform1i(this.uniforms.uMaps, 0); gl.uniform1i(this.uniforms.uClose, 1)
+    this.layers = []; this.closeKey = undefined; this.closeIndex = -1
+    this.program = program; this.blurProgram = null
+    const blur = gl.createProgram()!
+    for (const [type, source] of [[gl.VERTEX_SHADER, VERTEX], [gl.FRAGMENT_SHADER, BLUR]] as const) { const shader = gl.createShader(type)!; gl.shaderSource(shader, source); gl.compileShader(shader); gl.attachShader(blur, shader) }
+    gl.linkProgram(blur)
+    if (gl.getProgramParameter(blur, gl.LINK_STATUS)) {
+      this.blurProgram = blur
+      for (const name of ['uScene', 'uBlur', 'uSize']) this.blurUniforms[name] = gl.getUniformLocation(blur, name)
+      this.target2 = gl.createTexture(); gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.target2)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+      this.fbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.target2, 0); gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+      gl.useProgram(blur); gl.uniform1i(this.blurUniforms.uScene, 2); gl.useProgram(program)
+    }
     this.gl = gl
     const signal = this.abort.signal, options = { signal }
     canvas.addEventListener('pointerdown', event => this.down(event), options)
     canvas.addEventListener('pointermove', event => this.move(event), options)
     for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, event => this.up(event, type === 'pointerup'), options)
-    canvas.addEventListener('wheel', event => { event.preventDefault(); if (this.chosen < 0) this.distance = Math.min(26, Math.max(6, this.distance * Math.exp(event.deltaY * 0.0012))) }, { signal, passive: false })
+    canvas.addEventListener('wheel', event => { event.preventDefault(); this.wake = 2; if (this.chosen < 0) this.distance = Math.min(26, Math.max(6, this.distance * Math.exp(event.deltaY * 0.0012))) }, { signal, passive: false })
+    // Held upright, a phone has height to spare and no width: look down more steeply so the
+    // orbits open out into the height. Only for the first view; after that the player's stands.
+    if (!this.framed) { this.framed = true; if (this.host.clientHeight > this.host.clientWidth * 1.2) this.pitch = 0.85 }
     this.paintMaps(); this.resize(); this.loop(0)
   }
   private release(): void {
-    cancelAnimationFrame(this.frame); this.worker?.terminate(); this.worker = null
+    // A finished or abandoned drop does not outlive the context: the next showing starts clean.
+    this.home()
+    cancelAnimationFrame(this.frame); this.worker?.terminate(); this.worker = null; this.queue.length = 0; this.painting = false
+    this.array = this.close = null; this.fbo = null; this.target2 = null; this.program = null; this.blurProgram = null
     this.gl?.getExtension('WEBGL_lose_context')?.loseContext(); this.gl = null; this.canvas.remove(); this.pointers.clear(); this.drag = null
   }
-  /** Each world's real map, painted off the main thread, one after another. */
+  /** Each world's small map, painted off the main thread, one after another. */
   private paintMaps(): void {
-    const wanted = this.options.worlds.filter(world => !world.forming && !this.maps.has(`${world.id}:${world.seed}`))
-    if (!wanted.length || typeof Worker !== 'function') return
+    for (const world of this.options.worlds.slice(0, MAX)) if (!world.forming) this.request(world, SMALL)
+  }
+  /** Ask for a map. `first` jumps the queue: the world being flown to. */
+  private request(world: GalaxyWorld, size: readonly [number, number], first = false): void {
+    const key = this.mapKey(world, size)
+    if (this.maps.has(key) || this.queue.some(job => job.key === key)) return
+    const job = { key, worldId: world.id, id: world.recipe ?? world.id, seed: world.seed, width: size[0], height: size[1], overrides: world.overrides }
+    if (first) this.queue.unshift(job); else this.queue.push(job)
+    this.next()
+  }
+  private next(): void {
+    if (this.painting || typeof Worker !== 'function') return
+    const job = this.queue.shift()
+    if (!job) { this.worker?.terminate(); this.worker = null; return }
     try {
-      const worker = this.worker = new Worker(new URL('../planets/planetMapWorker.ts', import.meta.url), { type: 'module' })
-      worker.onmessage = event => { const { key, data, width, height } = event.data; this.maps.set(key, { data, width, height }); next() }
-      worker.onerror = () => { worker.terminate(); this.worker = null }
-      const next = () => { const world = wanted.shift(); if (world) worker.postMessage({ key: `${world.id}:${world.seed}`, id: world.id, seed: world.seed, width: 1024, height: 512 }); else { worker.terminate(); this.worker = null } }
-      next()
-    } catch { this.worker = null }
+      if (!this.worker) {
+        const worker = this.worker = new Worker(new URL('../planets/planetMapWorker.ts', import.meta.url), { type: 'module' })
+        worker.onmessage = event => {
+          if (this.worker !== worker) return
+          const { key, data, width, height } = event.data
+          if (this.options.worlds.some(world => !world.forming && this.mapKey(world, [width, height]) === key)) this.maps.set(key, { data, width, height })
+          this.painting = false; this.wake = 2; this.next()
+        }
+        worker.onerror = () => { if (this.worker !== worker) return; worker.terminate(); this.worker = null; this.painting = false; this.queue.length = 0 }
+      }
+      this.painting = true; this.worker.postMessage(job)
+    } catch { this.worker = null; this.painting = false }
+  }
+  /** Upload what has been painted: small maps into their layers, the chosen world's close map. */
+  private upload(gl: WebGL2RenderingContext): void {
+    const worlds = this.options.worlds
+    for (const [i, world] of worlds.slice(0, MAX).entries()) {
+      const key = this.mapKey(world, SMALL), map = this.maps.get(key)
+      if (!map || this.layers[i] === key || map.width !== SMALL[0] || map.height !== SMALL[1]) continue
+      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.array)
+      gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, i, SMALL[0], SMALL[1], 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(map.data.buffer, map.data.byteOffset, map.data.byteLength))
+      this.layers[i] = key
+    }
+    const world = this.chosen >= 0 ? worlds[this.chosen] : undefined
+    const key = world && !world.forming ? this.mapKey(world, CLOSE) : undefined, map = key ? this.maps.get(key) : undefined
+    if (map && key !== this.closeKey) {
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.close)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, map.width, map.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(map.data.buffer, map.data.byteOffset, map.data.byteLength))
+      this.closeKey = key
+      // Keep the CPU copies of close maps few: the newest two.
+      const closes = [...this.maps.keys()].filter(k => k.endsWith(`:${CLOSE[0]}`) && k !== key)
+      for (const old of closes.slice(0, Math.max(0, closes.length - 1))) this.maps.delete(old)
+    }
+    this.closeIndex = map && key === this.closeKey ? this.chosen : -1
   }
   private resize(): void {
     if (!this.gl) return
     // The ladder's render scale: whole steps, applied with the redraw so no blank frame shows.
     const scale = Math.min(devicePixelRatio || 1, 1.5) * qualityScale()
-    this.shownScale = qualityScale()
+    this.shownScale = qualityScale(); this.wake = 2
     this.canvas.width = Math.max(1, Math.round(this.host.clientWidth * scale)); this.canvas.height = Math.max(1, Math.round(this.host.clientHeight * scale))
+    if (this.target2) { const gl = this.gl; gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.target2); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.canvas.width, this.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null) }
   }
-  /** Where the worlds are now: slow circular orbits in one plane, each at its own pace. */
+  /**
+   * Where the worlds are now: slow circular orbits, each at its own pace. There are at most
+   * four orbits, at the original spacing; with more than four worlds they share them, spread
+   * evenly round each one and moving together, so ten worlds keep the size four had and the
+   * system still fits a phone held upright.
+   */
   private places(time: number): { position: Vec; radius: number }[] {
+    const count = Math.min(MAX, this.options.worlds.length), rings = Math.min(RINGS, count)
     return this.options.worlds.slice(0, MAX).map((_, i) => {
-      const orbit = 2.9 + i * 1.45, angle = 0.9 + i * 1.9 + time * 0.045 / Math.sqrt(orbit / 2.9)
+      const ring = i % rings, slot = Math.floor(i / rings), sharing = Math.ceil((count - ring) / rings)
+      const orbit = 2.9 + ring * 1.45, angle = 0.9 + ring * 1.9 + slot * Math.PI * 2 / sharing + time * 0.045 / Math.sqrt(orbit / 2.9)
       return { position: [Math.cos(angle) * orbit, 0, Math.sin(angle) * orbit] as Vec, radius: 0.7 + (i % 2) * 0.12 }
     })
   }
@@ -303,10 +497,30 @@ export class Galaxy {
     const goal: Vec = this.chosen >= 0 ? places[this.chosen].position : [0, 0, 0]
     const ease = this.chosen >= 0 ? 0.08 : 0.06
     this.target = [mix(this.target[0], goal[0], ease), mix(this.target[1], goal[1], ease), mix(this.target[2], goal[2], ease)]
-    const wantDistance = this.chosen >= 0 ? places[this.chosen].radius * (this.diving ? 1.12 : 3.1) : this.distance
+    const wantDistance = this.chosen >= 0 ? places[this.chosen].radius * (this.diving ? 1.03 : 3.1) : this.distance
     this.reach = mix(this.reach, wantDistance, this.diving ? 0.075 : this.chosen >= 0 ? 0.05 : 0.12)
-    // The dive runs about a second and a half.
-    this.dive = this.diving ? Math.min(1, this.dive + 0.022) : Math.max(0, this.dive - 0.05)
+    const latitude = this.face()
+    if (this.flight) {
+      // The drop, by the clock: across to the world in the first three quarters, round to its
+      // lit side on the way, and in toward its air the whole time, faster at the end. The
+      // dive's light rises over the last third.
+      const f = this.flight, now = performance.now(), t = Math.min(1, (now - f.start) / f.duration)
+      const travel = smootherstep(t / 0.75), close = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
+      this.target = [mix(f.from[0], goal[0], travel), mix(f.from[1], goal[1], travel), mix(f.from[2], goal[2], travel)]
+      this.reach = Math.exp(mix(Math.log(f.reach), Math.log(wantDistance), close))
+      this.yaw = f.yaw + turn(f.yaw, this.facing) * travel; this.pitch = mix(f.pitch, latitude, travel)
+      this.dive = smootherstep((t - 0.66) / 0.34)
+      // Smear in proportion to how fast the view is closing: the change in log distance per second.
+      const seconds = Math.max(0.001, (now - f.at) / 1000)
+      this.blur = mix(this.blur, Math.min(0.16, Math.abs(Math.log(f.last / this.reach)) / seconds * 0.05), 0.5)
+      f.last = this.reach; f.at = now
+      if (t >= 1) this.flightDone = true
+    }
+    // Close enough that a held-still view can stop drawing; it snaps the last step so the
+    // frame left on screen is where the camera was going.
+    this.settled = Math.abs(this.reach - wantDistance) < 0.01 * wantDistance && Math.hypot(...sub(this.target, goal)) < 0.01 * wantDistance
+    if (this.settled && this.holding) { this.target = goal; this.reach = wantDistance }
+    if (!this.flight) this.dive = Math.max(0, this.dive - 0.05)
     const cp = Math.cos(this.pitch), eye: Vec = [this.target[0] + Math.sin(this.yaw) * cp * this.reach, this.target[1] + Math.sin(this.pitch) * this.reach, this.target[2] + Math.cos(this.yaw) * cp * this.reach]
     const forward = unit(sub(this.target, eye)), right = unit(cross(forward, [0, 1, 0])), up = cross(right, forward)
     return { eye, forward, right, up, // The short side of the screen always spans the same slice of space, so the system fills
@@ -314,49 +528,148 @@ export class Galaxy {
     tan: 0.62 }
   }
   private reach = 13
+  /** Extra turn of each world on its axis: how a chosen world brings its island round. */
+  private readonly spinOffset: number[] = []
+  /** Where the camera settles round a chosen world: an angle, a quarter turn off the sun. */
+  private facing = 0
+  private facingSettled = true
+  private spin(i: number, time: number): number { return time * 0.05 + i * 2.1 + (this.spinOffset[i] ?? 0) }
+  /**
+   * Flying to a world, the camera swings round to its lit side, a little off the sun so the
+   * shafts still stand behind it, and the world turns on its axis to bring its island (the
+   * map's longitude 0, latitude 0, where the game spawns) to face the camera. The dive then
+   * falls onto the island, so orbit and ground line up.
+   */
+  private face(): number {
+    this.facingSettled = true
+    if (this.chosen < 0 || this.options.worlds[this.chosen].forming) return this.pitch
+    const i = this.chosen, ct = Math.cos(TILT), st = Math.sin(TILT)
+    // The island's direction from the world's centre for a spin s is (-sin s, st cos s, ct cos s).
+    const want = Math.atan2(-ct * Math.sin(this.facing), Math.cos(this.facing)), now = this.spin(i, this.clock)
+    const spinStep = turn(now, want), latitude = Math.asin(st * Math.cos(want))
+    this.spinOffset[i] = (this.spinOffset[i] ?? 0) + spinStep * 0.07
+    if (!this.drag && !this.flight) { const y = turn(this.yaw, this.facing), p = latitude - this.pitch; this.yaw += y * 0.07; this.pitch += p * 0.07; this.facingSettled = Math.abs(y) < 0.003 && Math.abs(p) < 0.003 && Math.abs(spinStep) < 0.003 }
+    else this.facingSettled = Math.abs(spinStep) < 0.003
+    return latitude
+  }
   private loop = (now: number): void => {
     if (!this.active || document.hidden) return
     this.frame = requestAnimationFrame(this.loop)
     qualityFrame(now)
-    if (now - this.last < 33) return
+    // Thirty frames a second is plenty for a slow orbit; the drop gets every frame there is.
+    if (!this.flight && now - this.last < 33) return
+    const elapsed = Math.min(0.1, Math.max(0, (now - this.last) / 1000))
     this.last = now
+    this.controller(elapsed)
     const gl = this.gl, u = this.uniforms
     if (!gl) return
     if (this.shownScale !== qualityScale()) this.resize()
-    const time = (performance.now() - this.started) / 1000
+    // Behind an open panel the galaxy is a backdrop: dimmed, and held still once it has dimmed.
+    this.dim = Math.abs(this.dim - this.backdrop) < 0.01 ? this.backdrop : mix(this.dim, this.backdrop, 0.18)
+    const still = Boolean(this.options.still?.()) || this.reduced.matches || this.backdrop < 1, wall = performance.now()
+    if (!still) this.clock += Math.min(0.25, (wall - this.lastClock) / 1000)
+    this.lastClock = wall
+    const time = this.clock; this.holding = still
     // The view keeps a little of the last drag's swing, and drifts very slowly when left alone.
-    if (!this.drag) { this.yaw += this.spinVelocity; this.spinVelocity *= 0.93; if (this.chosen < 0) this.yaw += 0.0006 }
+    if (!this.drag) { this.yaw += this.spinVelocity; this.spinVelocity *= 0.93; if (Math.abs(this.spinVelocity) < 1e-5) this.spinVelocity = 0; if (this.chosen < 0 && !still) this.yaw += 0.0006 }
+    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : [0.5, 0.5, 1]
+    const framingMoves = this.framing.some((v, i) => Math.abs(v - frameGoal[i]) > 0.001)
+    this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], 0.18) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
-    for (const [i, world] of worlds.slice(0, MAX).entries()) {
-      const map = this.maps.get(`${world.id}:${world.seed}`)
-      if (map && !map.texture) {
-        map.texture = gl.createTexture()!; gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, map.texture)
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, map.width, map.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(map.data.buffer, map.data.byteOffset, map.data.byteLength))
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-      }
-      gl.activeTexture(gl.TEXTURE0 + i); gl.bindTexture(gl.TEXTURE_2D, map?.texture ?? null); gl.uniform1i(u[`uMap${i}`], i)
-    }
+    // Held still, draw only while something is moving; the last frame stays on the canvas.
+    const moving = framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || this.spinVelocity !== 0 || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
+    if (still && !moving && this.wake <= 0) { this.idle++; return }
+    this.wake = Math.max(0, this.wake - 1)
+    gl.useProgram(this.program); this.upload(gl); gl.uniform1i(u.uCloseIndex, this.closeIndex)
     gl.viewport(0, 0, this.canvas.width, this.canvas.height)
+    gl.uniform3f(u.uFrame, ...this.framing)
     gl.uniform2f(u.uSize, this.canvas.width, this.canvas.height); gl.uniform1f(u.uTime, time); gl.uniform1f(u.uScale, this.canvas.width / Math.max(1, this.host.clientWidth))
     gl.uniform3f(u.uEye, ...view.eye); gl.uniform3f(u.uRight, ...view.right); gl.uniform3f(u.uUp, ...view.up); gl.uniform3f(u.uForward, ...view.forward); gl.uniform1f(u.uTan, view.tan)
-    gl.uniform2f(u.uShed, qualityShed(2), qualityShed(3)); gl.uniform1f(u.uAmbience, 1 - qualityShed(1)); gl.uniform1f(u.uDive, this.dive)
+    gl.uniform2f(u.uShed, qualityShed(2), qualityShed(3)); gl.uniform1f(u.uAmbience, 1 - qualityShed(1)); gl.uniform1f(u.uDive, this.dive); gl.uniform1f(u.uDim, this.dim)
+    gl.uniform1i(u.uOnly, this.editing ? this.chosen : -1)
     gl.uniform1i(u.uCount, Math.min(MAX, worlds.length))
     gl.uniform4fv(u.uWorld, places.flatMap(p => [...p.position, p.radius]))
     gl.uniform3fv(u.uLand, worlds.slice(0, MAX).flatMap(w => rgb(w.land))); gl.uniform3fv(u.uSea, worlds.slice(0, MAX).flatMap(w => rgb(w.sea)))
-    gl.uniform4fv(u.uKind, worlds.slice(0, MAX).flatMap((w, i) => [w.forming ? 2 : w.glow ? 1 : 0, this.maps.get(`${w.id}:${w.seed}`)?.texture ? 1 : 0, time * 0.05 + i * 2.1, (w.seed % 97) + i * 3.1]))
-    gl.drawArrays(gl.TRIANGLES, 0, 3); this.frames++
+    gl.uniform4fv(u.uKind, worlds.slice(0, MAX).flatMap((w, i) => [w.forming ? 2 : w.glow ? 1 : 0, this.layers[i] || i === this.closeIndex ? 1 : 0, this.spin(i, time), (w.seed % 97) + i * 3.1]))
+    const smear = this.flight && this.blurProgram && this.blur > 0.003 && qualityShed(2) < 1
+    if (smear) gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo)
+    gl.drawArrays(gl.TRIANGLES, 0, 3)
+    if (smear) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.useProgram(this.blurProgram)
+      gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.target2)
+      gl.uniform1f(this.blurUniforms.uBlur, this.blur); gl.uniform2f(this.blurUniforms.uSize, this.canvas.width, this.canvas.height)
+      gl.drawArrays(gl.TRIANGLES, 0, 3); gl.useProgram(this.program)
+    }
+    this.frames++
     // Tell the labels where the worlds are, and notice arrival.
-    const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height)
+    const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]
     this.screen = places.map((place, i) => {
       const d = sub(place.position, view.eye), z = dot(d, view.forward)
-      return { id: worlds[i].id, x: width / 2 + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height / 2 - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0 }
+      return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0 }
     })
-    this.options.onLayout?.(this.screen)
+    this.options.onLayout?.(this.screen, this.chosen >= 0 ? worlds[this.chosen].id : undefined)
     if (this.chosen >= 0 && !this.arrived && ++this.arriving > 45) { this.arrived = true; this.options.onArrive(worlds[this.chosen].id) }
   }
   private screen: { id: string; x: number; y: number; radius: number; visible: boolean }[] = []
   /** Fly to a world, as a tap on it does. */
-  choose(id: string): void { const index = this.options.worlds.findIndex(world => world.id === id); if (index >= 0 && index < MAX) { this.chosen = index; this.arriving = 0; this.arrived = false } }
+  choose(id: string): void {
+    this.wake = 2; const index = this.options.worlds.findIndex(world => world.id === id)
+    if (index < 0 || index >= MAX) return
+    // Without a context there is no flight to wait for: arrive at once.
+    if (!this.gl) { this.options.onArrive(id); return }
+    this.chosen = index; this.arriving = 0; this.arrived = false
+    // Settle on the lit side, a quarter turn off the sun, on whichever side the view is now.
+    const at = this.places(this.clock)[index].position, sun = Math.atan2(-at[0], -at[2])
+    this.facing = sun + 0.6 * (turn(sun, this.yaw) >= 0 ? 1 : -1)
+    // Its full-size map, ahead of anything else waiting, for the close view and the dive.
+    const world = this.options.worlds[index]
+    if (!world.forming) this.request(world, CLOSE, true)
+  }
+  private padButtons: boolean[] = []
+  private focusIndex = -1
+  /** The view controls are active only on the unobstructed galaxy. */
+  private get controllable(): boolean { return this.active && this.backdrop === 1 && !this.flight && this.chosen < 0 }
+  private orbit(x: number, y: number, zoom: number): void {
+    this.wake = 2; this.spinVelocity = 0
+    this.yaw += x
+    this.pitch = Math.min(1.25, Math.max(-0.2, this.pitch + y))
+    this.distance = Math.min(26, Math.max(6, this.distance * Math.exp(zoom)))
+  }
+  private key(event: KeyboardEvent): void {
+    if (!this.controllable || event.altKey || event.ctrlKey || event.metaKey) return
+    const target = event.target
+    if (target instanceof HTMLElement && (target.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(target.tagName))) return
+    const moves: Record<string, [number, number, number]> = {
+      ArrowLeft: [-0.08, 0, 0], ArrowRight: [0.08, 0, 0],
+      ArrowUp: [0, 0.06, 0], ArrowDown: [0, -0.06, 0],
+      '+': [0, 0, -0.08], '=': [0, 0, -0.08], '-': [0, 0, 0.08],
+    }
+    const move = moves[event.key]
+    if (move) { event.preventDefault(); this.orbit(...move) }
+  }
+  private controller(seconds: number): void {
+    const pad = navigator.getGamepads?.().find(p => p?.connected && p.mapping === 'standard')
+    if (!pad) { this.padButtons = []; return }
+    const buttons = pad.buttons.map(button => button.pressed)
+    const pressed = (index: number) => buttons[index] && !this.padButtons[index]
+    if (this.controllable) {
+      const axis = (index: number) => { const v = pad.axes[index] ?? 0; return Math.abs(v) > 0.18 ? v : 0 }
+      const x = axis(0), y = axis(1), zoom = axis(3)
+      if (x || y || zoom) this.orbit(x * seconds * 1.6, -y * seconds * 1.2, zoom * seconds)
+      const count = Math.min(MAX, this.options.worlds.length)
+      if (count && (pressed(14) || pressed(15) || pressed(4) || pressed(5))) {
+        const next = pressed(15) || pressed(5)
+        this.focusIndex = this.focusIndex < 0 ? (next ? 0 : count - 1) : (this.focusIndex + (next ? 1 : -1) + count) % count
+        for (let tries = 0; tries < count - 1 && !this.screen.find(p => p.id === this.options.worlds[this.focusIndex].id)?.visible; tries++) this.focusIndex = (this.focusIndex + (next ? 1 : -1) + count) % count
+        this.options.onFocus?.(this.options.worlds[this.focusIndex].id)
+      }
+      if (count && pressed(0)) {
+        const index = this.focusIndex < 0 ? 0 : this.focusIndex, id = this.options.worlds[index].id
+        if (!this.options.onTap?.(id)) this.choose(id)
+      }
+    }
+    this.padButtons = buttons
+  }
   private down(event: PointerEvent): void {
     this.canvas.setPointerCapture(event.pointerId); this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
     if (this.pointers.size === 1) { this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false }; this.spinVelocity = 0 }
@@ -364,6 +677,7 @@ export class Galaxy {
   }
   private move(event: PointerEvent): void {
     const point = this.pointers.get(event.pointerId); if (!point) return
+    this.wake = 2
     const dx = event.clientX - point.x, dy = event.clientY - point.y; point.x = event.clientX; point.y = event.clientY
     if (this.pointers.size === 2) {
       const [a, b] = [...this.pointers.values()], gap = Math.hypot(a.x - b.x, a.y - b.y)
@@ -384,7 +698,7 @@ export class Galaxy {
     // A tap: the nearest world under the finger, with a generous margin on small screens.
     const box = this.canvas.getBoundingClientRect(), x = event.clientX - box.left, y = event.clientY - box.top
     const found = this.screen.filter(s => s.visible).map(s => ({ s, d: Math.hypot(s.x - x, s.y - y) - s.radius })).filter(e => e.d < 22).sort((a, b) => a.d - b.d)[0]
-    if (found) this.choose(found.s.id); else if (this.chosen >= 0) this.home()
+    if (found) { if (!this.options.onTap?.(found.s.id)) this.choose(found.s.id) } else if (this.chosen >= 0 && !this.flight) this.home()
   }
   dispose(): void { this.active = false; this.abort.abort(); this.resizeObserver.disconnect(); this.release() }
 }

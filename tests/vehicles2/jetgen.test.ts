@@ -5,9 +5,9 @@ import { NextJet } from '../../src/vehicles/jetgen/NextJet'
 import { GROUND_Y } from '../../src/vehicles/jetgen/shapes'
 
 describe('generated next-generation jets', () => {
-  it('offers twenty-four distinct designs in five rounds', () => {
-    expect(JET_DESIGNS).toHaveLength(24)
-    expect(new Set(JET_DESIGNS.map(d => d.id)).size).toBe(24)
+  it('offers twenty-nine distinct designs in six rounds', () => {
+    expect(JET_DESIGNS).toHaveLength(29)
+    expect(new Set(JET_DESIGNS.map(d => d.id)).size).toBe(29)
   })
   for (const design of JET_DESIGNS) {
     it(`${design.name} builds, fits the current jet's envelope and keeps its functions`, () => {
@@ -42,6 +42,13 @@ describe('generated next-generation jets', () => {
       expect(low.triangles()).toBeLessThan(jet.triangles() * (design.hard ? .8 : .5))
       expect(low.hover).toHaveLength(3); expect(low.thruster.children).toHaveLength(4)
       low.dispose()
+      // Designs with a real cockpit keep the pilot's eye clear of every surface (PATTERN.md rule 3).
+      if (jet.ridePosition) {
+        expect(jet.clearance).toBeGreaterThanOrEqual(.25)
+        expect(jet.object.userData.cockpit).toBe(true)
+        expect(jet.object.getObjectByName('jet-trim')).toBeTruthy()
+        expect(low.ridePosition).toBeTruthy()
+      } else expect(jet.object.userData.cockpit).toBeUndefined()
       jet.setGear(0)
       expect(jet.gear.visible).toBe(false)
       for (const y of jet.footHeights()) expect(y).toBeGreaterThan(GROUND_Y + .5)

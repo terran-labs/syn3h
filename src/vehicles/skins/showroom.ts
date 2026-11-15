@@ -8,8 +8,9 @@
  *
  * Cost is tiered through `gfx.vehicleShading` (see `core/quality.ts`):
  *   0  the plain materials the vehicle was built with, unchanged
- *   1  scales, knurl and tread as lit bump detail on a standard material
- *   2  adds the clear coat and see-through canopy glass
+ *   1  scales, knurl, tread and track lugs as lit bump detail on a standard material, and the
+ *      cockpit canopy as a plain force field
+ *   2  adds the clear coat and the lattice on the force field canopy
  *   3  adds metal flakes and the colour flip
  * Materials for a tier are built the first time that tier is used, so a phone that never
  * leaves tier 0 pays nothing. Remote vehicles drop to tier 0 beyond 30 m, where the detail is
@@ -18,11 +19,12 @@
 import * as T from 'three/webgpu'
 import {
   Fn, abs, atan, attribute, clamp, cross, dFdx, dFdy, dot, faceDirection, float, floor, fract, fwidth, length,
-  max, mix, mod, normalLocal, normalView, normalize, positionLocal, positionView, positionViewDirection,
-  select, sign, sin, smoothstep, uniform, vec2, vec3,
+  max, mix, mod, normalGeometry, normalLocal, normalView, normalize, positionGeometry, positionLocal, positionView, positionViewDirection,
+  select, sign, sin, smoothstep, time, uniform, uv, vec2, vec3,
 } from 'three/tsl'
 import { defineParam, params } from '../../../shared/params'
 import { vehicleShading } from '../../core/quality'
+import { hotExposureNode } from './hotExposure'
 import { mergedSurfaces, registerVehicleDetail } from './mergeStatic'
 
 /**
@@ -34,6 +36,11 @@ export const paintScaleSize = defineParam({ id: 'paint.scaleSize', label: 'Scale
 export const paintScaleDepth = defineParam({ id: 'paint.scaleDepth', label: 'Scale depth', group: 'Vehicle paint', scope: 'client', default: .45, min: 0, max: 2, step: .05 })
 export const paintSeams = defineParam({ id: 'paint.seams', label: 'Seam darkness', group: 'Vehicle paint', scope: 'client', default: .35, min: 0, max: 1, step: .05 })
 export const paintFlakes = defineParam({ id: 'paint.flakes', label: 'Metal flakes', group: 'Vehicle paint', scope: 'client', default: .6, min: 0, max: 2, step: .05 })
+/**
+ * Draw canopies still tagged `glass` as the shared force field by default. Players may
+ * restore reflective glass; shading tier 0 uses a simple transparent tint.
+ */
+export const paintCanopy = defineParam({ id: 'paint.forceFieldCanopy', label: 'Force field canopy', group: 'Vehicle paint', scope: 'client', default: true })
 export const paintGloss = defineParam({ id: 'paint.gloss', label: 'Sky reflection', group: 'Vehicle paint', scope: 'client', default: .42, min: 0, max: 1.5, step: .02 })
 const live = (param: { value: number; def: { id: string } }): N => {
   const node = uniform(param.value)
@@ -44,7 +51,8 @@ const live = (param: { value: number; def: { id: string } }): N => {
 let controls: { size: N; depth: N; seams: N; flakes: N } | null = null
 const paintControls = () => controls ??= { size: live(paintScaleSize), depth: live(paintScaleDepth), seams: live(paintSeams), flakes: live(paintFlakes) }
 
-export type SurfaceRole = 'paint' | 'accent' | 'chrome' | 'glass' | 'tyre' | 'lamp' | 'trim'
+/** `canopy` is the shared force field. `glass` is the first version's reflective canopy, kept until each vehicle moves over. */
+export type SurfaceRole = 'paint' | 'accent' | 'chrome' | 'frame' | 'canopy' | 'glass' | 'glow' | 'tyre' | 'track' | 'lamp' | 'trim'
 export type ShadingTier = 0 | 1 | 2 | 3
 
 /** Tag a source material with what it represents. Untagged materials are inferred or left as trim. */
@@ -79,8 +87,14 @@ const LOOK: Record<SurfaceRole, Look> = {
   paint: { roughness: .3, metalness: .8, coat: 1, cell: .03, relief: .1, lean: .35 },
   accent: { roughness: .26, metalness: .85, coat: 1, cell: .062, relief: .09, lean: .5 },
   chrome: { roughness: .14, metalness: 1, coat: 0, cell: .012, relief: .1, lean: 0 },
+  // Dark structural metal: suspension arms, struts, sockets. The vehicle gives the colour only.
+  frame: { roughness: .38, metalness: .85, coat: 0, cell: 0, relief: 0, lean: 0 },
+  glow: { roughness: 1, metalness: 0, coat: 0, cell: 0, relief: 0, lean: 0 },
   glass: { roughness: .05, metalness: .2, coat: 1, cell: 0, relief: 0, lean: 0 },
+  canopy: { roughness: .05, metalness: .2, coat: 1, cell: 0, relief: 0, lean: 0 },
   tyre: { roughness: .86, metalness: 0, coat: 0, cell: 0, relief: 0, lean: 0 },
+  // A rubber belt; its lugs are TRACK_LUGS below.
+  track: { roughness: .84, metalness: 0, coat: 0, cell: 0, relief: 0, lean: 0 },
   lamp: { roughness: .3, metalness: 0, coat: 0, cell: 0, relief: 0, lean: 0 },
   trim: { roughness: .5, metalness: .3, coat: 0, cell: 0, relief: 0, lean: 0 },
 }
@@ -96,6 +110,8 @@ export function roleOf(material: T.Material, meshName = ''): SurfaceRole {
   const name = `${meshName} ${material.name}`
   if (/cockpit|canopy|glass/i.test(name)) return 'glass'
   if (/chrome|silver|spoiler/i.test(name)) return 'chrome'
+  // Before tyre: a "rubber belt" is a track.
+  if (/tread|track|belt/i.test(name)) return 'track'
   if (/tire|tyre|rubber/i.test(name)) return 'tyre'
   if (/headlight|tail ?light|lamp/i.test(name)) return 'lamp'
   if (/accent/i.test(name)) return 'trim'
@@ -144,13 +160,55 @@ function scaleHeight(cell: number, relief: number, lean: number): ScaleField {
  * groove, and fine radial ribs on the sidewall. Returns metres.
  */
 function tyreHeight(): N {
-  const p = positionLocal, angle = atan(p.y, p.z), radius = length(p.yz)
-  const sidewall = smoothstep(.5, .85, abs(normalLocal.x))
+  // Geometry attributes stay in the wheel frame; local nodes include instance transforms.
+  // Use the same frame for the footprint so filtering follows each rotating tyre too.
+  const p = positionGeometry, angle = atan(p.y, p.z), radius = length(p.yz)
+  const sidewall = smoothstep(.5, .85, abs(normalGeometry.x))
   const lug = abs(fract(angle.mul(26 / (Math.PI * 2)).add(abs(p.x).div(radius.max(.05)).mul(1.6))).sub(.5))
   const tread = smoothstep(.1, .2, lug).mul(smoothstep(.02, .07, abs(p.x).div(radius.max(.05))))
   const ribs = sin(angle.mul(96)).mul(.5).add(.5).mul(.25)
-  const footprint = length(fwidth(positionLocal)).div(radius.max(.05).mul(.12))
+  const footprint = length(fwidth(positionGeometry)).div(radius.max(.05).mul(.12))
   return mix(tread, ribs, sidewall).mul(radius.mul(.035)).mul(smoothstep(.6, .15, footprint))
+}
+
+/**
+ * The lug pattern of the `track` role: chevron lugs moulded across a rubber belt. The role owns
+ * these, not the vehicle, so every tracked vehicle reads as the same make of track.
+ *   pitch    metres from one lug to the next, along the belt
+ *   depth    metres of relief
+ *   chevron  degrees the lug arms sweep back from straight across, toward +v
+ *   fill     fraction of the pitch the lug's top covers
+ *   width    belt width in metres, used only to turn the chevron angle into a sweep across a
+ *            0 to 1 u. A vehicle may give its own with `material.userData.trackWidth`.
+ */
+export const TRACK_LUGS = { pitch: .16, depth: .022, chevron: 28, fill: .42, width: .6 } as const
+
+/**
+ * Track lug relief from the belt's own coordinates: `uv` u runs across the belt 0 to 1, v along
+ * it in metres. `scroll` is how far the belt has moved, in metres: the lugs sit at v - scroll, so
+ * a positive scroll carries them toward +v. Returns the height in metres and `fade`, which falls
+ * from 1 to 0 as the lug pitch shrinks from about seven pixels to three, so a distant track is
+ * plain rubber rather than a shimmer. `raised` is 1 on a lug and 0 in the gap between.
+ */
+function trackHeight(scroll: N, width: number): { height: N; raised: N; fade: N } {
+  const { pitch, depth, chevron, fill } = TRACK_LUGS
+  const across = uv().x, along = uv().y.sub(scroll)
+  // Lug phase: the arms sweep back from the centre line by the chevron angle.
+  const sweep = width * Math.tan(chevron * Math.PI / 180)
+  const phase = along.add(abs(across.sub(.5)).mul(sweep)).div(pitch)
+  const half = fill * .5
+  // Sloped walls, a flat top, and a plain margin along both edges of the belt.
+  const raised = smoothstep(half + .07, half - .03, abs(fract(phase).sub(.5)))
+    .mul(smoothstep(0, .06, across)).mul(smoothstep(1, .94, across))
+  // The relief lives in the lug walls, a tenth of the pitch, so it fades sooner than the
+  // scales do: full down to about seven pixels per lug, gone at about three.
+  const fade = smoothstep(.35, .15, fwidth(phase))
+  return { height: raised.mul(depth).mul(fade), raised, fade }
+}
+/** A scroll value wrapped to one lug pitch, which is exact for the pattern and keeps float precision. */
+export function wrapTrackScroll(metres: number): number {
+  const p = TRACK_LUGS.pitch, r = metres % p
+  return r < 0 ? r + p : r
 }
 
 /**
@@ -177,28 +235,41 @@ const hash3 = Fn(([c]: [N]) => fract(sin(vec3(dot(c, vec3(127.1, 311.7, 74.7)), 
  * emission node the mesh's material already had, if any: a skin may add its own glow to it after
  * merging (the Syn3h stator tips do), and every tier must keep that.
  */
-function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, meshName: string, authoredEmission: N | null): T.Material {
+function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, meshName: string, authoredEmission: N | null, accent: T.Color | null, instancedScroll = false): T.Material {
   const roles = sources.map(s => roleOf(s, meshName))
-  // Canopy glass is its own draw (see `separate` in mergeStatic), so it can blend.
+  // The cockpit canopy is its own draw (see `separate` in mergeStatic), so it can blend.
+  if (!merged && (roles[0] === 'canopy' || (roles[0] === 'glass' && paintCanopy.value))) return buildCanopy(sources[0], tier, accent)
+  // Canopies still tagged `glass` keep the reflective glass of the first version from the clear coat tier up.
   if (!merged && roles[0] === 'glass' && tier >= 2) return buildGlass(sources[0])
+  if (!merged && roles[0] === 'glow') return buildGlow(sources[0], accent)
   const physical = tier >= 2
   const material = physical ? new T.MeshPhysicalNodeMaterial() : new T.MeshStandardNodeMaterial()
   const first = sources[0]
   material.name = `${first.name || meshName} showroom ${tier}`
   material.side = first.side; material.transparent = first.transparent; material.opacity = first.opacity
+  // Faceted panels are a property of the surface, not a look: carried into every tier.
+  material.flatShading = first.flatShading
   const id = merged ? attribute<'float'>('surfaceId', 'float').round() : null
   let color: N = vec3(0), emission: N = vec3(0), roughness: N = float(0), metalness: N = float(0)
   let coat: N = float(0), coatRoughness: N = float(0), height: N = float(0), flake: N = float(0), flip: N = float(0)
   // 1 everywhere except in the seams between scales.
   let lit: N = float(1)
+  // Shading for track lug gaps, 1 elsewhere. Built once however many sources are tracks.
+  let groove: N = float(1), track: { height: N; raised: N; fade: N } | null = null
   const heights = new Map<string, N>(), scales = new Map<string, ScaleField>()
   sources.forEach((source, i) => {
     const role = roles[i], look = LOOK[role]
     const mask: N = id ? id.equal(i).select(1, 0) : float(1)
     // Authored physical materials and unclassified trim keep their own response.
+    // `trim` is the one role where the vehicle supplies its own roughness and metalness.
     const own = source instanceof T.MeshPhysicalMaterial || role === 'trim' || role === 'lamp'
     const authoredCoat = source instanceof T.MeshPhysicalMaterial ? source.clearcoat : 0
-    color = color.add(uniform(source.color).mul(mask))
+    // Livery without an authored look: a paint surface whose geometry carries a per-vertex
+    // `accentMask` (0 to 1) blends from its own colour to the vehicle's accent by it. Scales,
+    // coat and flakes carry on across the boundary. Opt in with `userData.accentMask = true`.
+    const own_colour: N = uniform(source.color)
+    color = color.add((role === 'paint' && source.userData.accentMask === true && accent
+      ? mix(own_colour, uniform(accent), clamp(attribute<'float'>('accentMask', 'float'), 0, 1)) : own_colour).mul(mask))
     emission = emission.add(uniform(source.emissive).mul(source.emissiveIntensity).mul(mask))
     roughness = roughness.add(mask.mul(own ? source.roughness : look.roughness))
     metalness = metalness.add(mask.mul(own ? source.metalness : look.metalness))
@@ -208,6 +279,24 @@ function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, m
       const key = 'tyre'
       if (!heights.has(key)) heights.set(key, tyreHeight())
       height = height.add(heights.get(key).mul(mask))
+    } else if (role === 'track') {
+      if (!track) {
+        // Per object by default: a uniform refreshed from `userData.trackScroll` as each mesh
+        // draws, so treads at different speeds share this material. With `instancedScroll`, a
+        // per-instance `trackScroll` attribute instead, so many treads can be one instanced draw.
+        const scroll: N = instancedScroll
+          ? mod(attribute<'float'>('trackScroll', 'float'), TRACK_LUGS.pitch)
+          : uniform(0).onObjectUpdate(({ object }) => wrapTrackScroll(Number(object?.userData.trackScroll ?? 0)))
+        material.userData.trackScrollNode = scroll
+        material.userData.instancedScroll = instancedScroll
+        track = trackHeight(scroll, Number(source.userData.trackWidth ?? TRACK_LUGS.width))
+        heights.set('track', track.height)
+      }
+      height = height.add(track.height.mul(mask))
+      // Gaps between lugs a shade darker; past the fade, the pattern's average.
+      groove = groove.sub(float(1).sub(mix(.92, mix(.78, 1, track.raised), track.fade)).mul(mask))
+      // Lugs too small to resolve still scatter light: a little rougher, as the scales do.
+      roughness = roughness.add(float(1).sub(track.fade).mul(.08).mul(mask))
     } else if (look.cell > 0) {
       const key = `${look.cell}`
       if (!scales.has(key)) { const field = scaleHeight(look.cell, look.relief, look.lean); scales.set(key, field); heights.set(key, field.height) }
@@ -241,6 +330,7 @@ function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, m
     // pattern reads as bright wire instead of dark seams between scales.
     material.aoNode = mix(float(1).sub(seams.mul(.9)), 1, lit)
   }
+  if (track) color = color.mul(groove)
   material.colorNode = color
   material.emissiveNode = authoredEmission ?? emission
   material.roughnessNode = clamp(roughness, .04, 1)
@@ -256,6 +346,94 @@ function build(sources: readonly Standard[], merged: boolean, tier: 1 | 2 | 3, m
   }
   return material
 }
+
+/**
+ * A colour for things that emit light. An accent can be very dark (a deep navy is nearly
+ * black in linear light) and a force field or a nozzle has to glow whatever the player
+ * picked: keep the hue, lift it to full brightness, and add a little white.
+ */
+function glowTint(color: T.Color, white: number): N {
+  const hue: N = vec3(uniform(color) as N)
+  const brightest: N = max(max(hue.x, hue.y), max(hue.z, float(.02)))
+  return mix(hue.div(brightest), vec3(1), white)
+}
+
+/**
+ * Light with no surface: nozzle throats, hover ports, lift fans. Unlit, additive, in the
+ * accent hue, dimmed with the night exposure like every other hot colour. The vehicle sets
+ * `mesh.userData.glow` each frame (0 off, 1 nominal, more for an afterburner); the shader
+ * reads it per object, so parts at different strengths share this one material.
+ */
+function buildGlow(source: Standard, accent: T.Color | null): T.Material {
+  const material = new T.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: T.DoubleSide, blending: T.AdditiveBlending })
+  material.name = `${source.name || 'glow'} glow`
+  material.fog = false
+  material.forceSinglePass = true
+  const level = uniform(1).onObjectUpdate(({ object }) => Number(object?.userData.glow ?? 1))
+  // Hottest where the view looks straight into it, thinner toward the lip.
+  const core = clamp(abs(dot(normalView, positionViewDirection)), 0, 1).pow(.6).mul(.75).add(.25)
+  material.colorNode = glowTint(accent ?? source.color, .3).mul(core).mul(level).mul(GLOW_GAIN).mul(hotExposureNode())
+  return material
+}
+const GLOW_GAIN = 3
+
+/** Strength of the canopy's own light, for our tone mapped frame. */
+const CANOPY_GAIN = 5
+/** How much of the scene behind it the brightest parts of the canopy hold back. */
+const CANOPY_COVER = .55
+
+/**
+ * The cockpit canopy every vehicle shares: a force field, in the vehicle's accent colour.
+ *
+ * From outside it is brightest at the rim, where the view grazes it, with a fine hexagonal
+ * lattice and a band of light that sweeps along the vehicle. From inside (the back faces,
+ * which is what a camera at the driver's eye sees) it is almost clear: a faint rim and a
+ * trace of the lattice as the band passes, so the driver looks out through it and still
+ * knows it is there. One draw, both faces in a single pass, no depth write. Like the zorb
+ * shield it adds light and holds back a little of what is behind it, so the tint survives
+ * in daylight. Tier 1 leaves out the lattice and the band.
+ *
+ * The original used a reflective glass shader (`GlassGlowing`). The owner chose a force field
+ * for every cockpit on 14 November 2026, matching the wings.
+ */
+function buildCanopy(source: Standard, tier: 1 | 2 | 3, accent: T.Color | null): T.Material {
+  const material = new T.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: T.DoubleSide })
+  material.name = `${source.name || 'canopy'} force field`
+  material.fog = false
+  // Additive light does not depend on draw order, so both faces go in one pass.
+  material.forceSinglePass = true
+  // The tint is the owner vehicle's accent Color object where there is one, so it follows
+  // setColors; a model shown alone falls back to the colour it was authored with.
+  const tint = glowTint(accent ?? source.color, .34)
+  const facing = clamp(abs(dot(normalView, positionViewDirection)), 0, 1)
+  const rim = float(1).sub(facing).pow(2.5)
+  // faceDirection is 1 on the outside and -1 seen from within.
+  const outside = faceDirection.mul(.5).add(.5)
+  let strength: N
+  if (tier === 1) strength = mix(rim.mul(.3), rim.mul(1.1).add(.07), outside)
+  else {
+    const n = abs(normalLocal), w4 = n.mul(n).mul(n).mul(n), w = w4.div(w4.x.add(w4.y).add(w4.z))
+    const p = positionLocal.div(CANOPY_CELL)
+    const edge: N = hexCell(p.zy).x.mul(w.x).add(hexCell(p.xz).x.mul(w.y)).add(hexCell(p.xy).x.mul(w.z))
+    const footprint = length(fwidth(positionLocal)).div(CANOPY_CELL)
+    const lattice = float(1).sub(smoothstep(0, .07, edge)).mul(smoothstep(.7, .3, footprint))
+    // A band of light travelling from nose to tail about every three seconds.
+    const band = sin(positionLocal.z.mul(2.4).add(time.mul(2.1))).mul(.5).add(.5).pow(6)
+    const seenOut = rim.mul(1.1).add(lattice.mul(band.mul(.9).add(.22))).add(.06)
+    const seenIn = rim.mul(.3).add(lattice.mul(band).mul(.12))
+    strength = mix(seenIn, seenOut, outside)
+  }
+  material.blending = T.CustomBlending
+  material.blendSrc = T.OneFactor; material.blendDst = T.OneMinusSrcAlphaFactor
+  material.blendSrcAlpha = T.OneFactor; material.blendDstAlpha = T.OneMinusSrcAlphaFactor
+  // Not dimmed with the night exposure as the wings and thrusters are: the canopy is faint to
+  // begin with, and that dimming (measured at 0.15 at 23:00) removed it altogether.
+  material.colorNode = tint.mul(strength).mul(CANOPY_GAIN)
+  material.opacityNode = clamp(strength.mul(CANOPY_COVER), 0, .6).mul(outside.mul(.8).add(.2))
+  return material
+}
+/** Size of one cell of the canopy lattice, in metres. */
+const CANOPY_CELL = .11
 
 /**
  * Canopy glass after the original `GlassGlowing` shader: alpha = 0.9 - 0.5 * (N.V), colour
@@ -281,6 +459,16 @@ function buildGlass(source: Standard): T.Material {
   return material
 }
 
+/**
+ * Whether a mesh's `track` surfaces read their scroll per instance: when its material sets
+ * `userData.instancedScroll = true`, or its geometry carries a `trackScroll` attribute. Either
+ * way the attribute must be an InstancedBufferAttribute of one float per instance. Without it
+ * the scroll is `mesh.userData.trackScroll`.
+ */
+function scrolls(mesh: T.Mesh, source: Standard): boolean {
+  return source.userData.instancedScroll === true || mesh.geometry.hasAttribute('trackScroll')
+}
+
 /** Runs the shared night and lava passes over whatever materials the meshes currently hold. */
 export type Decorate = (root: T.Object3D) => void
 
@@ -292,24 +480,30 @@ export type Decorate = (root: T.Object3D) => void
 export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void {
   const entries: { mesh: T.Mesh; source: Standard }[] = []
   root.traverse(o => { if (o instanceof T.Mesh && !Array.isArray(o.material) && isStandard(o.material)) entries.push({ mesh: o, source: o.material }) })
+  // The owner vehicle publishes its live colours (see Vehicle.setColors); a viewer has none.
+  let accent: T.Color | null = null
+  for (let o: T.Object3D | null = root; o; o = o.parent) { const c = o.userData.vehicleColors as { accent?: T.Color } | undefined; if (c?.accent) { accent = c.accent; break } }
   // Read before anything is decorated: tier 0 decoration wraps these nodes in place.
   const authored = new Map<T.Material, N | null>()
   for (const e of entries) authored.set(e.source, (e.source as unknown as T.MeshStandardNodeMaterial).emissiveNode ?? null)
   const tiers: (Map<T.Mesh, T.Material> | undefined)[] = []
   const built = new Set<T.Material>()
+  const plainCanopies = new Map<T.Mesh, T.Material>()
   let current = -1, far = false, remote = false, distance = 0
   const use = (tier: ShadingTier): void => {
     if (tier === current) return
     let set = tiers[tier]
     if (set) for (const e of entries) e.mesh.material = set.get(e.mesh)!
     else {
-      const cache = new Map<T.Material, T.Material>()
+      // Keyed by source, and apart for meshes that scroll a track per instance (see `scrolls`).
+      const cache = new Map<T.Material, T.Material>(), instancedCache = new Map<T.Material, T.Material>()
       for (const e of entries) {
-        let variant = tier === 0 ? e.source : cache.get(e.source)
+        const instanced = scrolls(e.mesh, e.source), shared = instanced ? instancedCache : cache
+        let variant = tier === 0 ? e.source : shared.get(e.source)
         if (!variant) {
           const packed = mergedSurfaces.get(e.source)
-          variant = build(packed ?? [e.source], Boolean(packed), tier as 1 | 2 | 3, e.mesh.name, authored.get(e.source) ?? null)
-          cache.set(e.source, variant); built.add(variant)
+          variant = build(packed ?? [e.source], Boolean(packed), tier as 1 | 2 | 3, e.mesh.name, authored.get(e.source) ?? null, accent, instanced)
+          shared.set(e.source, variant); built.add(variant)
         }
         e.mesh.material = variant
       }
@@ -321,13 +515,32 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
     current = tier
   }
   const refresh = (): void => {
-    // The frame governor caps this by graphics level (safe 0, mobile 2, desktop 3) and sheds it
+    // The frame governor caps this by graphics level (safe 0, mobile 0, desktop 3) and sheds it
     // under load. A value the player set by hand is honoured as it is.
     let tier = Math.max(0, Math.min(3, Math.round(vehicleShading.value))) as ShadingTier
     far = remote && distance > (far ? FAR_IN : FAR_OUT)
     if (remote) tier = far ? 0 : Math.min(tier, 2) as ShadingTier
     use(tier)
-    if (tier === 0) return
+    if (tier === 0) {
+      // Plain paint must not turn the cockpit into an opaque box. Keep the safe canopy
+      // transparent without compiling the procedural rim, lattice or paint shaders.
+      for (const e of entries) {
+        if (mergedSurfaces.has(e.source)) continue
+        const role = roleOf(e.source, e.mesh.name)
+        if (role !== 'canopy' && role !== 'glass') continue
+        if (role === 'glass' && !paintCanopy.value) { e.mesh.material = tiers[0]!.get(e.mesh)!; continue }
+        let canopy = plainCanopies.get(e.mesh)
+        if (!canopy) {
+          const tint = new T.MeshBasicMaterial({ transparent: true, opacity: .08, depthWrite: false, side: T.DoubleSide, fog: false })
+          tint.name = `${e.source.name || 'canopy'} plain force field`
+          tint.color = accent ?? e.source.color
+          tint.forceSinglePass = true
+          canopy = tint; plainCanopies.set(e.mesh, canopy); built.add(canopy)
+        }
+        e.mesh.material = canopy
+      }
+      return
+    }
     // Reflect the scene's own sky map at paint strength. It appears a moment after start,
     // and a standalone viewer may have none.
     let scene: T.Object3D = root
@@ -341,7 +554,14 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
     }
   }
   const detach = registerVehicleDetail(root, (d, isRemote) => { distance = d; remote = isRemote; refresh() })
-  const unsubscribe = params.onChange(id => { if (id === vehicleShading.def.id || id === paintGloss.def.id) refresh() })
+  const unsubscribe = params.onChange(id => {
+    if (id === paintCanopy.def.id) {
+      // The switch changes which material a canopy gets, so the built tiers are stale.
+      use(0)
+      for (let tier = 1; tier < tiers.length; tier++) { for (const m of tiers[tier]?.values() ?? []) m.dispose(); tiers[tier] = undefined }
+      refresh()
+    } else if (id === vehicleShading.def.id || id === paintGloss.def.id) refresh()
+  })
   refresh()
   return () => {
     detach(); unsubscribe()

@@ -18,7 +18,7 @@ import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import {
   buggyBumpStop, buggyCG, buggyCoastDrag, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightSlip, buggyGrip,
-  buggyGripFade, buggyIdleHold, buggyNextGen, buggyPower, buggyRebound, buggyRegen, buggyRideHeight, buggyShocks, buggySlide, buggySpeed, buggySteerLimit,
+  buggyGripFade, buggyIdleHold, buggyNextGen, buggyPower, buggyRebound, buggyRegen, buggyRideHeight, buggyShocks, buggySideGrip, buggySlide, buggySpeed, buggySteerLimit,
   buggyTraction,
 } from './buggyParams'
 import { applyLava, floatPoints, lavaViscosity } from './lava'
@@ -44,6 +44,12 @@ const RAY_OUTSET = 0.22
 /** Front to rear axle distance from WheelPos, for the next-gen steering limit. */
 const WHEELBASE = WHEEL_POS.z * 2
 export const AXEL_POS = { x: 0.55, y: 0.15, z: 1.2 }
+/**
+ * The driver's eye above the origin. The Unity prefab's RideCam sat at 0.95, a hand's width
+ * under the canopy. With the cockpit tub the seat is lower: 0.8 is half a metre above the tub
+ * floor and a quarter of a metre clear of the canopy.
+ */
+const RIDE_HEIGHT = 0.8
 /** Prefab WingOpenSpeed. */
 const WING_OPEN_SPEED = 12
 /** Vhicl prefab InputSmoothingFactor. */
@@ -83,6 +89,12 @@ const TYRE_OMEGA = 15
 const SLIP_GRIP = 1
 const SLIP_SLIDE = 4
 const SLIDE_RATIO = 0.8
+/** Tyre slip angles (degrees) between which grip falls to buggy.sideGrip; see tyre(). */
+const SIDE_ANGLE_GRIP = 40
+const SIDE_ANGLE_SLIDE = 70
+/** Speeds (m/s) over which that takes effect, so low speed handling keeps its grip. */
+const SIDE_SPEED_MIN = 6
+const SIDE_SPEED_FULL = 14
 /** Next-gen steering limit at rest, as a multiple of grip; see buggy.steerLimit. */
 const STEER_LIMIT_SLOW = 1.1
 /** Next-gen drivetrain (see drivetrain()): below HOLD_SPEED (m/s) with no throttle it parks. */
@@ -171,6 +183,9 @@ export class Syn3hBuggy extends Vehicle {
   private motorStep = 0
 
 
+  /** The driver's eye, for the ride camera (see RIDE_HEIGHT). */
+  override readonly ridePosition = new THREE.Object3D()
+
   /** Vehicle.getWheelEffects: persistent FL, FR, RL, RR entries from the last fixed step. */
   readonly wheelEffects: readonly WheelEffect[] = createWheelEffects(4)
   getWheelEffects(): readonly WheelEffect[] {
@@ -239,6 +254,10 @@ export class Syn3hBuggy extends Vehicle {
     this.updateMassProperties()
 
     this.ub = new UnityBody(this.body, world, PREFAB_DRAG, PREFAB_ANGULAR_DRAG)
+    this.ridePosition.position.set(0, RIDE_HEIGHT, 0)
+    this.object.add(this.ridePosition)
+    // A vehicle with a cockpit: the ride camera sits in it and hides nothing (PATTERN.md rule 3).
+    this.object.userData.cockpit = true
 
     this.fbBody = new THREE.MeshStandardMaterial({ color: this.colors.body, roughness: 0.4, metalness: 0.3 })
     this.buildFallback()
@@ -608,7 +627,17 @@ export class Syn3hBuggy extends Vehicle {
     // so a tyre that has let go keeps most of its bite while it is only just sliding. ABS
     // keeps braking at the peak.
     const slip = Math.hypot(slipX, slipZ)
-    const mu = locked ? grip : grip * lerp(1, SLIDE_RATIO, THREE.MathUtils.smoothstep(slip, SLIP_GRIP, SLIP_SLIDE))
+    let mu = locked ? grip : grip * lerp(1, SLIDE_RATIO, THREE.MathUtils.smoothstep(slip, SLIP_GRIP, SLIP_SLIDE))
+    // A tyre dragged sideways lets go. Steering works the tyre at a modest angle to its travel
+    // (the buggy drifts at 20 to 40 degrees), and there it keeps its full grip. Past that, as
+    // when the buggy lands or spins broadside, friction falls to buggy.sideGrip, so it slides
+    // and bounces on instead of stopping dead. Only at speed: a parked or crawling tyre holds.
+    const travel = Math.hypot(slipX, hv.z)
+    if (travel > SIDE_SPEED_MIN) {
+      const angle = Math.atan2(Math.abs(slipX), Math.abs(hv.z)) * DEG
+      const broadside = THREE.MathUtils.smoothstep(angle, SIDE_ANGLE_GRIP, SIDE_ANGLE_SLIDE) * THREE.MathUtils.smoothstep(travel, SIDE_SPEED_MIN, SIDE_SPEED_FULL)
+      mu = Math.min(mu, lerp(mu, buggySideGrip.value, broadside))
+    }
     const cap = mu * traction * load
     const n = Math.hypot(fx, fz)
     this.sliding[i] = n > cap

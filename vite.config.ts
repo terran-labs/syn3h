@@ -29,6 +29,7 @@ function roomServer(): Plugin {
 
 /** Shown in the lobby as the build version: the nearest tag and commit, read at build time. */
 function buildLabel(): string {
+  if (process.env.SYN3H_RELEASE_VERSION) return process.env.SYN3H_RELEASE_VERSION
   try { return execSync('git describe --tags --always', { encoding: 'utf8' }).trim() } catch { return 'dev' }
 }
 

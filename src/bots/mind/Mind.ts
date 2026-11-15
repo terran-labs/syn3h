@@ -84,6 +84,7 @@ export class Mind {
   private lastKind: ActivityKind = 'pause'
   private bestDistance = Infinity
   private leaderIdle = 0
+  private readonly slide: NavPoint = { x: 0, z: 0 }
   private fleeTime = 0
   private holdRadius = 10
   private lastX = NaN
@@ -198,7 +199,9 @@ export class Mind {
     }
     const destination = a.destination
     const distance = destination ? Math.hypot(destination.x - here.x, destination.z - here.z) : Infinity
-    const arrived = destination !== null && a.kind !== 'follow' && a.kind !== 'hold' && a.kind !== 'flee' && distance < 10
+    // A shore is admired from a little way back, not from the waterline.
+    const near = a.kind === 'visit' && this.sight?.kind === 'shore' ? 28 : 10
+    const arrived = destination !== null && a.kind !== 'follow' && a.kind !== 'hold' && a.kind !== 'flee' && distance < near
     // Give up on a place it has stopped getting closer to: 12 seconds without gaining 5 m.
     if (destination && a.kind !== 'follow' && a.kind !== 'hold' && a.kind !== 'flee') {
       if (distance < this.bestDistance - 5) { this.bestDistance = distance; this.bestTime = this.time }
@@ -216,6 +219,10 @@ export class Mind {
 
     const goal = this.goal
     goal.special = false; goal.stopWithin = undefined; goal.altitude = undefined
+    // What is behind matters to a pilot that backs out of trouble: look two lengths back and
+    // one, and forbid reversing onto anything this vehicle cannot stand on.
+    const flatF = Math.hypot(this.forward.x, this.forward.z) || 1, bx = -this.forward.x / flatF, bz = -this.forward.z / flatF
+    goal.noReverse = !this.pilot.profile.flies && (!this.standable(here.x + bx * 5, here.z + bz * 5) || !this.standable(here.x + bx * 10, here.z + bz * 10))
     const act = this.activity
     if (act.kind === 'pause') {
       goal.x = here.x + this.forward.x * 10; goal.z = here.z + this.forward.z * 10; goal.speed = 0; goal.stopWithin = 1e6
@@ -224,6 +231,9 @@ export class Mind {
       goal.x = here.x + this.forward.x * 2 - this.forward.z * 6 * this.swerveSide
       goal.z = here.z + this.forward.z * 2 + this.forward.x * 6 * this.swerveSide
       goal.speed = 9
+      // A donut drifts. If it has wandered to within a few lengths of anything it cannot
+      // stand on, that is the end of the show.
+      for (let i = 0; i < 6; i++) if (!this.standable(here.x + Math.cos(i * Math.PI / 3) * 12, here.z + Math.sin(i * Math.PI / 3) * 12)) { act.until = 0; break }
     } else {
       // A follow chosen this step has no offset point yet: aim at the leader itself for now.
       const target = act.destination ?? act.leader?.body.translation() ?? here
@@ -256,6 +266,7 @@ export class Mind {
         const h = this.surface(here.x + dx / d * reach, here.z + dz / d * reach)
         top = Math.max(top, h); grade = Math.max(grade, (h - base) / reach)
       }
+      // Enough to clear a steep cone ahead. Towers are kept out of it by never being a destination and by the wall check.
       goal.altitude = this.pilot.profile.cruiseAltitude + Math.min(60, top - base)
       if (grade > 0.2) goal.speed = Math.max(3, Math.min(goal.speed, 3 / grade))
     }
@@ -299,7 +310,7 @@ export class Mind {
       return this.begin('pause', null, null, 1.5 + r() * 2.5)
     }
     const flat = this.terrain.normalAt(here.x, here.z, this.normal).y > 0.96
-    const roomy = flat && [0, 1, 2, 3, 4, 5].every(i => isSafeGround(this.terrain, here.x + Math.cos(i * Math.PI / 3) * 16, here.z + Math.sin(i * Math.PI / 3) * 16))
+    const roomy = flat && [0, 1, 2, 3, 4, 5].every(i => this.standable(here.x + Math.cos(i * Math.PI / 3) * 28, here.z + Math.sin(i * Math.PI / 3) * 28))
     const leader = this.pickLeader(here)
     const road = this.pickRoadPoint(here)
     const summit = this.pickSummit()
@@ -426,7 +437,9 @@ export class Mind {
 
   /** Refresh the look ahead point: along a planned route, else along the roads, else direct. */
   private aimFor(here: { x: number; y: number; z: number }, target: NavPoint, speed: number, dt: number): void {
-    const look = Math.max(8, Math.min(18, speed * 0.7))
+    // Look further ahead the faster it goes, as a driver does: a near aim point at speed
+    // means sawing at the wheel.
+    const look = Math.max(10, Math.min(30, speed * 1.2))
     const navigator = this.options.navigator
     if (navigator) {
       this.routeTime -= dt
@@ -442,7 +455,15 @@ export class Mind {
       const points = this.route?.points
       if (points?.length) {
         while (this.routeIndex < points.length - 1 && Math.hypot(points[this.routeIndex].x - here.x, points[this.routeIndex].z - here.z) < look) this.routeIndex++
-        this.waypoint = points[this.routeIndex]
+        // Aim at the spot on the route that is `look` metres away, sliding along it, rather
+        // than at the next waypoint: a waypoint aim jumps each time one is passed, and every
+        // jump is a twitch at the wheel.
+        const b = points[this.routeIndex], a = this.routeIndex > 0 ? points[this.routeIndex - 1] : null
+        const db = Math.hypot(b.x - here.x, b.z - here.z), da = a ? Math.hypot(a.x - here.x, a.z - here.z) : db
+        if (a && db > look && da < look) {
+          const t = (look - da) / (db - da)
+          this.slide.x = a.x + (b.x - a.x) * t; this.slide.z = a.z + (b.z - a.z) * t; this.waypoint = this.slide
+        } else this.waypoint = b
         return
       }
     }
@@ -469,13 +490,15 @@ export class Mind {
     const profile = this.pilot.profile
     const dx = aimX - here.x, dz = aimZ - here.z, d = Math.hypot(dx, dz) || 1
     // An aircraft looks much further: what matters is a wall it cannot out-climb.
-    const reach = profile.flies ? 70 : Math.max(8, Math.min(24, speed * 1.2)), base = Math.atan2(dz, dx)
+    // A driver who turns the wheel smoothly has to see trouble earlier: about two seconds ahead.
+    const reach = profile.flies ? 70 : Math.max(10, Math.min(36, speed * 2)), base = Math.atan2(dz, dx)
     for (const swerve of SWERVES) {
       // Try the side it last chose first, so it does not dither between two ways round.
       const angle = base + swerve * this.swerveSide, cx = Math.cos(angle), cz = Math.sin(angle)
       const midX = here.x + cx * reach * 0.5, midZ = here.z + cz * reach * 0.5
       const endX = here.x + cx * reach, endZ = here.z + cz * reach
-      if (!this.crossable(here.x, here.z, midX, midZ) || !this.crossable(midX, midZ, endX, endZ)) continue
+      const nearX = here.x + cx * reach * 0.25, nearZ = here.z + cz * reach * 0.25
+      if (!this.crossable(here.x, here.z, nearX, nearZ) || !this.crossable(nearX, nearZ, midX, midZ) || !this.crossable(midX, midZ, endX, endZ)) continue
       if (this.parkedInWay(here, endX, endZ)) continue
       if (swerve === 0) return { x: aimX, z: aimZ, swerved: false }
       if (swerve * this.swerveSide < 0) this.swerveSide = -this.swerveSide
@@ -512,10 +535,18 @@ export class Mind {
     const profile = this.pilot.profile
     if (profile.flies) {
       // Fly over what rises gently and round what towers: a mesa, a spire or a crag face
-      // that stands far above the aircraft within a few seconds' flight is a wall.
+      // that stands far above the aircraft within a few seconds' flight is a wall. Sample
+      // the whole leg, and a wing's width to each side: a shard of glass a few metres wide
+      // slips between two samples taken thirty metres apart.
       // An aircraft cannot stop in three metres: turn back well before the world's edge.
-      if (Math.abs(bx) > this.terrain.size / 2 - 40 || Math.abs(bz) > this.terrain.size / 2 - 40) return false
-      return this.surface(bx, bz) - this.vehicle.body.translation().y < 22
+      if (!this.terrain.wrapSize && (Math.abs(bx) > this.terrain.size / 2 - 40 || Math.abs(bz) > this.terrain.size / 2 - 40)) return false
+      const ceiling = this.vehicle.body.translation().y + 22, dx = bx - ax, dz = bz - az, length = Math.hypot(dx, dz) || 1
+      const sx = -dz / length * 5, sz = dx / length * 5
+      for (let t = 6; t <= length; t += 6) {
+        const x = ax + dx / length * t, z = az + dz / length * t
+        if (this.surface(x, z) > ceiling || this.surface(x + sx, z + sz) > ceiling || this.surface(x - sx, z - sz) > ceiling) return false
+      }
+      return true
     }
     if (this.options.navigator) { if (!this.options.navigator.passable(bx, bz, profile)) return false }
     else if (profile.liquid === 'blocked' ? !isSafeGround(this.terrain, bx, bz) : Math.abs(bx) > this.terrain.size / 2 - 3 || Math.abs(bz) > this.terrain.size / 2 - 3) return false
@@ -529,6 +560,15 @@ export class Mind {
 
   private standable(x: number, z: number): boolean {
     const profile = this.pilot.profile
+    if (profile.flies) {
+      // An aircraft can hover anywhere, but a place on top of a tower (a spire, a shard, a
+      // butte) can only be reached by climbing its face, and that is how jets crash. Somewhere
+      // is a destination only if the ground round it is not far below it.
+      if (!this.terrain.wrapSize && (Math.abs(x) > this.terrain.size / 2 - 40 || Math.abs(z) > this.terrain.size / 2 - 40)) return false
+      const top = this.surface(x, z)
+      for (let a = 0; a < 8; a++) if (top - this.surface(x + Math.cos(a * Math.PI / 4) * 50, z + Math.sin(a * Math.PI / 4) * 50) > 40) return false
+      return true
+    }
     if (this.options.navigator) return this.options.navigator.passable(x, z, profile)
     if (profile.liquid !== 'blocked') return Math.abs(x) < this.terrain.size / 2 - 3 && Math.abs(z) < this.terrain.size / 2 - 3
     return isSafeGround(this.terrain, x, z) && this.terrain.normalAt(x, z, this.normal).y > 0.85

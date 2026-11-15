@@ -10,16 +10,20 @@ import { createTerrainCollider } from '../../src/world/terrain/collider'
 import { generateTerrain } from '../../src/world/terrain/generate'
 import { lavaSurfaceAt } from '../../src/world/terrain/lava'
 import { HeightSampler } from '../../src/world/terrain/sampler'
-import { defaultTerrainSettings, type TerrainSettings } from '../../src/world/terrain/settings'
+import { currentTerrainSettings, defaultTerrainSettings, type TerrainSettings } from '../../src/world/terrain/settings'
+import { applyPlanet } from '../../src/world/planets'
+import { worldGravity, worldLavaAltitude } from '../../shared/params'
 import { spawnPointAt } from '../../src/world/terrain/spawn'
 
-export function island(world: RAPIER.World, seed = 1, settings: Partial<TerrainSettings> = {}, seaLevel = 0): BotTerrain {
+export function island(world: RAPIER.World, seed = 1, settings: Partial<TerrainSettings> = {}, seaLevel = 0, wrap = false): BotTerrain {
   const data = generateTerrain(seed, { ...defaultTerrainSettings(), ...settings })
   const sampler = new HeightSampler(data)
   createTerrainCollider(world, data)
   const rim = data.roads.find(r => r.kind === 'rim'), v = data.layout.volcano
   return {
     size: data.size,
+    // The game's worlds always wrap now; tests opt in, so the plain island stays available.
+    ...(wrap ? { wrapSize: data.size } : {}),
     heightAt: (x, z) => sampler.heightAt(x, z),
     normalAt: (x, z, out) => sampler.normalAt(x, z, out),
     liquidHeightAt: (x, z) => lavaSurfaceAt(data.lava, x, z, seaLevel),
@@ -34,3 +38,15 @@ export function island(world: RAPIER.World, seed = 1, settings: Partial<TerrainS
     dispose() {},
   } as BotTerrain
 }
+
+/**
+ * A named planet as the game builds it: its recipe applied through the parameter registry
+ * (terrain shape, sea, gravity), then the island generated from the resulting settings.
+ * Returns the gravity too, for the physics world. Call `resetPlanet()` afterwards so the
+ * next test starts from the default world.
+ */
+export function applyPlanetForTest(id: string, seed: number): { settings: TerrainSettings; gravity: number; seaLevel: number } {
+  applyPlanet(id, seed, { source: 'preset' })
+  return { settings: currentTerrainSettings(), gravity: worldGravity.value, seaLevel: worldLavaAltitude.value }
+}
+export function resetPlanet(): void { applyPlanet('volcanic', 1, { source: 'preset' }) }

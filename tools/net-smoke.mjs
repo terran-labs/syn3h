@@ -43,7 +43,9 @@ async function open(name, extra = '') {
   const ctx = await browser.newContext({ viewport: { width: 960, height: 540 } })
   const page = await ctx.newPage()
   page.on('pageerror', (e) => errors.push(`${name} pageerror: ${e.message}`))
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(`${name} console: ${m.text()}`) })
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(`${name} console: ${m.text()} at ${m.location().url}`) })
+  page.on('response', (r) => { if (r.status() >= 400) console.log(`HTTP ${r.status()} ${r.url()}`) })
+  page.on('requestfailed', (r) => console.log(`REQUEST FAILED ${r.url()} ${r.failure()?.errorText}`))
   await page.goto(`${base}?room=${room}&name=${name}&autoplay=1${extra}`, { waitUntil: 'load' })
   // ?autoplay=1 joins the room but leaves the start screen's input suspension on, so press
   // Play as a person would (it is idempotent with autoplay's join).
@@ -91,20 +93,56 @@ try {
   const d2 = (p, q) => Math.hypot(p[0] - q[0], p[2] - q[2])
 
   // 2. Drive A forward and watch it on B.
+  // Both pages share one headless Chrome, and a page that is still loading starves the other
+  // of frames: wait until B's game is running before asking A to drive, and drive until A
+  // has covered ground (up to 10 s), not for a fixed time that a busy machine can eat.
+  await b.waitForFunction(() => window.syn3h.game.time > 1.5, null, { timeout: 30000 }).catch(() => {})
   const before = await remoteOfA()
+  const realBefore = await realA()
+  const startA = realBefore
   await a.bringToFront()
   await a.keyboard.down('KeyW')
-  await wait(3000)
+  await a.waitForFunction(([x, z]) => { const t = window.syn3h.player.body.translation(); return Math.hypot(t.x - x, t.z - z) > 12 }, [startA[0], startA[2]], { timeout: 10000 }).catch(() => {})
   await a.keyboard.up('KeyW')
   // The buggy coasts; compare once it has stopped and B's playback has caught up.
   await a.keyboard.down('ShiftLeft')
   await a.waitForFunction(() => { const v = window.syn3h.player.body.linvel(); return Math.hypot(v.x, v.z) < 0.3 }, null, { timeout: 8000 }).catch(() => {})
   await a.keyboard.up('ShiftLeft')
-  await wait(600)
-  const after = await remoteOfA()
+  // Two separate questions, so a slow buggy and a starved copy are told apart: did A itself
+  // drive (read on A), and did B's copy of A follow (read on B). B's page is in the background
+  // while A is driven, and under load its playback lags, so wait for the copy to move instead
+  // of sleeping a fixed time: up to 10 s for the 3 m that 3 s of throttle exceeds tenfold.
   const truth = await realA()
+  check('A itself drives', d2(realBefore, truth) > 10, { before: realBefore, after: truth, moved: +d2(realBefore, truth).toFixed(2) })
+  let after = await remoteOfA()
+  for (let i = 0; i < 50 && !(d2(before, after) > 3 && d2(after, truth) < 2); i++) { await wait(200); after = await remoteOfA() }
   check('A moves on B', d2(before, after) > 3, { before, after, moved: +d2(before, after).toFixed(2) })
   check('B tracks A within 2 m once settled', d2(after, truth) < 2, { remote: after, real: truth, error: +d2(after, truth).toFixed(2) })
+
+  // Releases cut before the shared room clock existed have neither `seaTime` nor `onRoomClock`
+  // on the network client: skip these two checks there instead of failing the release.
+  const hasRoomClock = await a.evaluate(() => typeof window.syn3hNet?.onRoomClock === 'function' && window.syn3hNet.seaTime !== undefined)
+  if (!hasRoomClock) console.log('SKIP shared room clock checks: this build predates them')
+  else {
+    // The sea runs on the room's clock, so both screens show the same wave at the same moment;
+    // the wind is handed the same clock through the same hook. Read through the network client
+    // (importing the modules by path can give a second copy of them on a dev server). The sea
+    // takes the room clock a moment after it syncs, calming the swell across the change.
+    await Promise.all([a, b].map((p) => p.waitForFunction(() => Math.abs(window.syn3hNet.seaTime - window.syn3hNet.clock.now()) < 0.05, null, { timeout: 8000 }).catch(() => {})))
+    const clocks = (page) => page.evaluate(() => {
+      const n = window.syn3hNet
+      let handed = null
+      n.onRoomClock((now) => { handed = now() })
+      return { sea: n.seaTime, room: n.clock.now(), game: window.syn3h.game.time, handed, at: Date.now() }
+    })
+    const [seaA, seaB] = await Promise.all([clocks(a), clocks(b)])
+    // Each was read at its own instant; compare after allowing for that.
+    const apart = Math.abs((seaA.sea - seaA.at / 1000) - (seaB.sea - seaB.at / 1000))
+    check('the sea runs on the shared room clock on both screens', Math.abs(seaA.sea - seaA.room) < 0.05 && Math.abs(seaB.sea - seaB.room) < 0.05 && apart < 0.15 && Math.abs(seaA.sea - seaA.game) > 1,
+      { apartSeconds: +apart.toFixed(3), aSeaMinusRoom: +(seaA.sea - seaA.room).toFixed(3), bSeaMinusRoom: +(seaB.sea - seaB.room).toFixed(3) })
+    check('onRoomClock hands a later asker the room clock at once', seaA.handed !== null && Math.abs(seaA.handed - seaA.room) < 0.05 && seaB.handed !== null && Math.abs(seaB.handed - seaB.room) < 0.05,
+      { aHandedMinusRoom: seaA.handed === null ? null : +(seaA.handed - seaA.room).toFixed(3), bHandedMinusRoom: seaB.handed === null ? null : +(seaB.handed - seaB.room).toFixed(3) })
+  }
 
   // 3. Shared slider, clamped by the server.
   await a.evaluate(() => window.syn3h.params.set('laser.speed', 250))
@@ -294,9 +332,13 @@ try {
     const score = (id) => a.evaluate((id) => window.syn3hNet.game.scores[id] ?? 0, id)
     const parkedA = await park(a, 0.3)
     await b.evaluate(() => { const s = window.syn3h.terrain.spawnPoint(1); window.syn3h.player.teleport(s.position, 0) })
-    await wait(4000)
+    // Wait for the server's result, rather than starting a four-second timer while a
+    // loaded browser may still be delivering the teleport. Keep the scoring threshold.
+    const scoringStart = Date.now()
+    await a.waitForFunction((id) => window.syn3hNet.game.koth.holder === id && (window.syn3hNet.game.scores[id] ?? 0) >= 2, idA, { timeout: 15000 }).catch(() => {})
     const [holder, scoreA] = [await a.evaluate(() => window.syn3hNet.game.koth.holder), await score(idA)]
-    check('A alone on the hill holds it and scores', holder === idA && scoreA >= 2, { holder, scoreA, parkedA })
+    check('A alone on the hill holds it and scores', holder === idA && scoreA >= 2, { holder, scoreA, parkedA, elapsedMs: Date.now() - scoringStart })
+    await b.waitForFunction(() => window.__match.at(-1)?.scores.some((x) => x.name === 'Alice' && x.score >= 2), null, { timeout: 5000 }).catch(() => {})
     const held = await b.evaluate(() => window.__match.at(-1))
     check('match display: A holds, scores in seconds, target 60', held?.mode === 'koth' && held.holderName === 'Alice' && !held.holderIsYou && held.target === 60 && held.scores.find((x) => x.name === 'Alice')?.score >= 2 && held.scores.some((x) => x.you), held)
     await b.screenshot({ path: '/tmp/syn3h-koth-far.png' })

@@ -1,7 +1,7 @@
 {
   "tagline": "Syn3h, rebuilt native in the browser: its vehicles, its physics, its lobby and its look.",
   "deadline": "Demo: Sunday noon Pacific, Coeur d'Alene",
-  "headline": "Release 2 is live at www.syn3h.com: wings that lift a buggy out of lava and water, rear-end shoves, tag beams that stay green at night, the buggy's original lights and wheel struts, jet lift-off hints, a loading screen, and fixes for a jet black screen in Safari and for the buggy rolling backward under throttle. On the preview and not yet public: round planets, Zorb mode, new paint, the Dark Star look, Daydream and the generated score.",
+  "headline": "Release 2 is public after rollback. Release 3 passed frozen-build checks but failed public verification; investigation continues. Release 4 is being validated. Lane testing has resumed through a shared three-job limit.",
   "previews": [
     {
       "title": "Play the current build",
@@ -712,25 +712,27 @@
       ]
     },
     {
+      "group": "UX preview",
+      "note": "Latest UX branch, verified by the UX lane on normal entry.",
+      "items": [
+        {
+          "title": "Inspect the latest interface",
+          "url": "https://vorton-previews.tail285f88.ts.net:32796/"
+        }
+      ]
+    },
+    {
       "group": "Labs on trunk (port 32782)",
       "note": "Workbench pages; not part of public releases.",
       "items": [
         {
-          "title": "Vehicle lab",
-          "url": "https://vorton-previews.tail285f88.ts.net:32782/vehicle-lab.html?vehicle=buggy",
+          "title": "Vehicle lab (live, every vehicle and round)",
+          "url": "https://vorton-previews.tail285f88.ts.net:32795/vehicle-lab.html"
+        },
+        {
+          "title": "Vehicle lab on trunk",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/vehicle-lab.html",
           "page": "vehicle-lab.html"
-        },
-        {
-          "title": "Vehicle lab: in-game skins",
-          "url": "https://vorton-previews.tail285f88.ts.net:32782/vehicle-lab.html?vehicle=game-skins"
-        },
-        {
-          "title": "Vehicle lab: jet designs",
-          "url": "https://vorton-previews.tail285f88.ts.net:32782/vehicle-lab.html?vehicle=jet"
-        },
-        {
-          "title": "Vehicle lab: tank designs",
-          "url": "https://vorton-previews.tail285f88.ts.net:32782/vehicle-lab.html?vehicle=tank"
         },
         {
           "title": "Jet design lab",
@@ -773,6 +775,11 @@
           "page": "skins.html"
         },
         {
+          "title": "Animated logo",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/logo.html",
+          "page": "logo.html"
+        },
+        {
           "title": "Buggy body variations",
           "url": "https://vorton-previews.tail285f88.ts.net:32782/buggy-bodies.html",
           "page": "buggy-bodies.html"
@@ -790,6 +797,11 @@
           "title": "Tank design studies (own page)",
           "url": "https://vorton-previews.tail285f88.ts.net:32782/tank-designs.html",
           "page": "tank-designs.html"
+        },
+        {
+          "title": "Water lab",
+          "url": "https://vorton-previews.tail285f88.ts.net:32782/water-lab.html",
+          "page": "water-lab.html"
         }
       ]
     },

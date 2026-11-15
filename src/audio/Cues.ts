@@ -1,5 +1,5 @@
-export type Cue = 'capture'|'contested'|'lost'|'win'|'tick'|'tag'|'join'|'leave'|'click'|'deploy'|'retract'|'lava'|'splash'
-const notes:Record<Cue,readonly number[]>={capture:[330,440,660],contested:[220,233,220],lost:[330,220],win:[262,330,392,523],tick:[660],tag:[520,260,780],join:[392,523],leave:[392,294],click:[880],deploy:[110,440],retract:[440,110],lava:[150,64,58,205],splash:[320,170]}
+export type Cue = 'capture'|'contested'|'lost'|'win'|'tick'|'tag'|'join'|'leave'|'click'|'deploy'|'retract'|'lava'|'splash'|'bungeeLaunch'|'bungeeAttach'|'bungeeRelease'
+const notes:Record<Cue,readonly number[]>={capture:[330,440,660],contested:[220,233,220],lost:[330,220],win:[262,330,392,523],tick:[660],tag:[520,260,780],join:[392,523],leave:[392,294],click:[880],deploy:[110,440],retract:[440,110],lava:[150,64,58,205],splash:[320,170],bungeeLaunch:[196,392,587],bungeeAttach:[147,98,196],bungeeRelease:[392,294,147]}
 /** A bounded one-shot graph. The returned cleanup also supports immediate shutdown. */
 export function synthCue(context:BaseAudioContext,output:AudioNode,cue:Cue,noise:AudioBuffer,onEnd:()=>void=()=>{}):()=>void {
   const now=context.currentTime,sequence=notes[cue],step=cue==='win'?.18:cue==='lava'?.16:cue==='click'?.025:cue==='tick'?.045:.09

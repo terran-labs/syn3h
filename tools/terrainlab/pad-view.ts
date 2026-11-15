@@ -28,7 +28,7 @@ for (const p of PLANETS) {
     const eye = s.heightAt(d.layout.spawns[0].x, d.layout.spawns[0].z) + EYE
     const R = planetRadius(d.size)
     let best = 0
-    for (let c = 1; c > 0.005; c -= 0.005) if (sees(pad, R / c, eye, top)) { best = c; break }
+    for (let c = 1.8; c > 0.005; c -= 0.005) if (sees(pad, R / c, eye, top)) { best = c; break }
     // How close a pad would have to be for the summit to show at the true radius.
     let reach = 0
     for (let x = pad; x > 0; x -= 2) if (sees(x, R, eye, top)) { reach = x; break }

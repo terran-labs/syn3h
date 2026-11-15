@@ -853,6 +853,40 @@ describe('Room rejoin as the same player (game.rejoin)', () => {
     expect([host.id, b.id]).not.toContain(c.id)
   })
 
+  it('after hibernation, connected players take their places: nobody is listed twice', () => {
+    let stored = room.snapshot()
+    room = new Room('test', { now: () => clock, onPersist: (s) => { stored = s } })
+    const host = join('Host', on, { resume: SECRET_A })
+    const b = join('B', {}, { resume: SECRET_B })
+    send(host.peer, { type: 'lock', locked: true })
+    const infoHost = room.info(host.peer)!
+    const infoB = room.info(b.peer)!
+    // The object hibernates and wakes: a new Room, restored, then the live sockets adopted
+    // with the info and secret kept in their attachments.
+    clock += 20_000
+    room = new Room('test', { now: () => clock, onPersist: (s) => { stored = s } })
+    room.restore(stored)
+    expect(room.heldCount).toBe(2)
+    const hostPeer = new FakePeer()
+    const bPeer = new FakePeer()
+    room.adopt(hostPeer, infoHost, SECRET_A)
+    room.adopt(bPeer, infoB, SECRET_B)
+    expect(room.heldCount).toBe(0)
+    expect(room.playerCount).toBe(2)
+    // The host drops and returns: still the host, and the list has exactly two players.
+    room.disconnect(hostPeer)
+    expect(room.heldCount).toBe(1)
+    const back = join('Host', {}, { resume: SECRET_A })
+    expect(back.id).toBe(infoHost.id)
+    expect(back.peer.last('welcome')!.players.map((p) => p.id).sort()).toEqual([infoHost.id, infoB.id].sort())
+    expect(back.peer.last('welcome')!.game).toMatchObject({ host: infoHost.id, locked: true })
+    expect(bPeer.all('leave')).toEqual([])
+    // Thirty seconds later nothing lingers.
+    for (let t = 0; t < 35; t++) { clock += 1000; room.receive(bPeer, state([0, 0, 0])); room.receive(back.peer, state([1, 0, 0])) }
+    expect(room.heldCount).toBe(0)
+    expect(room.playerCount).toBe(2)
+  })
+
   it('does not hold places from a roster older than the grace time', () => {
     let stored = room.snapshot()
     room = new Room('test', { now: () => clock, onPersist: (s) => { stored = s } })
@@ -1079,5 +1113,65 @@ describe('Room with strangers', () => {
     expect(c.peer.last('game')!.game.koth.zone).toEqual(zone)
     send(b.peer, { type: 'zone', zone: { ...zone, x: 50 } })
     expect(c.peer.last('game')!.game.koth.zone).toMatchObject({ x: 50 })
+  })
+})
+
+describe('Room does not believe absurd speeds', () => {
+  // A modified client's state can claim any velocity. Checks that give leeway for speed must
+  // not turn that claim into reach.
+  const liar: [number, number, number] = [0, 0, -10_000]
+
+  it('refuses a tag beam whose origin is far from its sender, whatever speed the sender claims', () => {
+    const a = join('A')
+    const b = join('B')
+    clock += 3100
+    room.receive(a.peer, state([0, 0, 0], liar))
+    room.receive(b.peer, state([0, 0, -800]))
+    // Beside B, 800 m from A: inside "8 m plus half a second of travel" only if 10 km/s is believed.
+    send(a.peer, { type: 'fire', shot: { id: 1, o: [0, 1, -795], d: [0, 0, -1], boost: 0, t: clock / 1000 } })
+    expect(b.peer.last('fire')).toBeUndefined()
+    // Nor may it add thousands of m/s to the beam.
+    send(a.peer, { type: 'fire', shot: { id: 2, o: [0, 1, -2], d: [0, 0, -1], boost: 5000, t: clock / 1000 } })
+    expect(b.peer.last('fire')).toBeUndefined()
+    // A fast vehicle still gets its honest leeway: 100 m/s allows 58 m and a boost of 150.
+    send(a.peer, { type: 'fire', shot: { id: 3, o: [0, 1, -50], d: [0, 0, -1], boost: 140, t: clock / 1000 } })
+    expect(b.peer.last('fire')).toMatchObject({ from: a.id, shot: { id: 3 } })
+  })
+
+  it('does not pass "it" by a ram from across the world, nor relay its shove', () => {
+    const a = join('A')
+    const b = join('B')
+    clock += 3100
+    room.receive(a.peer, state([0, 0, 0], liar))
+    room.receive(b.peer, state([0, 0, -800]))
+    send(a.peer, { type: 'ram', other: b.id, push: [0, 0, -30] })
+    expect(b.peer.last('game')?.game.it ?? a.id).toBe(a.id)
+    expect(b.peer.all('shove')).toEqual([])
+    // Within what 100 m/s allows (10 + 30 m) it still counts.
+    room.receive(b.peer, state([0, 0, -35]))
+    send(a.peer, { type: 'ram', other: b.id, push: [0, 0, -30] })
+    expect(b.peer.last('game')).toMatchObject({ event: 'ram', game: { it: b.id } })
+    // And the relayed shove is bounded by the believed speed: 100 x 0.65 is over the 30 cap.
+    expect(Math.hypot(...b.peer.last('shove')!.push)).toBeLessThanOrEqual(30.001)
+  })
+
+  it('applies the same to Big Red, which also keeps its own switch and its own clock', () => {
+    const a = join('A', { 'bigRed.allowed': true })
+    const b = join('B')
+    clock += 3100
+    room.receive(a.peer, state([0, 0, 0], liar))
+    room.receive(b.peer, state([0, 0, -800]))
+    const red = (id: number, o: [number, number, number]) => send(a.peer, { type: 'fire', shot: { id, o, d: [0, 0, -1], boost: 0, t: clock / 1000, k: 'red' } })
+    red(1, [0, 1, -795])
+    expect(b.peer.last('fire')).toBeUndefined()
+    red(2, [0, 1, -2])
+    expect(b.peer.all('fire')).toHaveLength(1)
+    // A second one inside the recharge (2.5 s) is refused; an ordinary beam is not held back by it.
+    red(3, [0, 1, -2])
+    send(a.peer, { type: 'fire', shot: { id: 4, o: [0, 1, -2], d: [0, 0, -1], boost: 0, t: clock / 1000 } })
+    expect(b.peer.all('fire').map((m) => [m.shot.id, m.shot.k ?? 'beam'])).toEqual([[2, 'red'], [4, 'beam']])
+    // An unknown kind is refused outright.
+    send(a.peer, { type: 'fire', shot: { id: 5, o: [0, 1, -2], d: [0, 0, -1], boost: 0, t: clock / 1000, k: 'blue' } })
+    expect(b.peer.all('fire')).toHaveLength(2)
   })
 })

@@ -7,6 +7,8 @@ import { WorldAudio, lavaProximity, type AudioTerrain } from './WorldAudio'
 import type { Vehicle } from '../vehicles/Vehicle'
 import { Score, scoreSeed, type MatchMood } from './score/Score'
 import { applySubmerge } from './score/ScoreSynth'
+import { WeatherWind } from './weatherWind'
+import { senseConvoy, senseRelief, type ConvoyVoice } from './scoreSenses'
 import { cuesVolume, worldVolume, remoteVolume, crossfade, lobbyFade, effectsVolume, masterVolume, musicVolume, muted } from './params'
 
 export type Sound = 'laserShot' | 'laserHit' | 'materialize'
@@ -14,6 +16,9 @@ export type Sound = 'laserShot' | 'laserHit' | 'materialize'
 export const MUSIC_TRACKS = { Score: 'Adaptive score (generated)', SpaceStation: 'Space Station', Classic: 'Classic (Mars Explorer)', Carefree: 'Carefree (Mars Explorer)', Ambient: 'Ambient (legacy)' } as const
 export type MusicTrack = keyof typeof MUSIC_TRACKS
 export interface Position { x: number; y: number; z: number }
+// Two winds: the owner's recorded clip follows the vehicle's own speed (Engine.setWind), and
+// the generated voice (weatherWind.ts) carries the weather at the camera. AGENTS.md: the
+// recorded originals stay unless the owner says otherwise.
 const files: Record<Sound | 'wind', string> = { laserShot: 'LaserShot.mp3', laserHit: 'LaserHit.mp3', materialize: 'Materialize.mp3', wind: 'Wind.wav' }
 interface Deck { element: HTMLAudioElement; source: MediaElementAudioSourceNode; gain: GainNode; stopTimer?: ReturnType<typeof setTimeout> }
 
@@ -27,10 +32,20 @@ export class GameAudio implements System {
   private worldBus?: GainNode
   private remoteBus?: GainNode
   private world?: WorldAudio
+  private weatherWind?: WeatherWind
   private score?: Score
   /** Lowpass on the whole mix, closed while the player's vehicle is under a liquid surface. */
   private submerge?: BiquadFilterNode
   private local?: Vehicle
+  // What the score hears beyond the player's own motion (scoreSenses.ts). Sampled every
+  // tenth frame into arrays that are kept, so nothing is allocated while the game runs.
+  private readonly convoy: ConvoyVoice[] = []
+  private readonly reliefHeights: number[] = []
+  private relief: number[] | undefined
+  private readonly convoyMemory = new WeakMap<Vehicle, number>()
+  private readonly others: Vehicle[] = []
+  private senseFrame = 0
+  private sensedAt = 0
   private terrain?: AudioTerrain
   private vehicleSource: () => readonly Vehicle[] = () => []
   private readonly remote = new Map<Vehicle, {engine:Engine;panner:PannerNode}>()
@@ -94,6 +109,7 @@ export class GameAudio implements System {
       this.remoteBus=context.createGain();this.remoteBus.connect(this.master)
       this.engine = new Engine(context, this.master)
       this.world = new WorldAudio(context,this.worldBus,this.engine.noise)
+      this.weatherWind = new WeatherWind(context, this.master)
       this.score = new Score(context, this.music, scoreSeed.value || worldSeed.value)
       this.score.setMatch(this.match)
       this.syncMix()
@@ -190,8 +206,14 @@ export class GameAudio implements System {
       this.score?.combat((sound === 'laserHit' ? 0.3 : 0.14) * near)
     }
     const source = this.context.createBufferSource(), output = this.output(position)
-    source.buffer = buffer; source.connect(output.node); this.voices.add(source)
-    source.onended = () => { source.disconnect(); output.dispose(); this.voices.delete(source) }
+    // When the score plays a note for each tag beam, the recorded beam ducks under it by
+    // about 9 dB: the note carries the music, the recording still says where it came from.
+    // The "tagged" sound stays at full level, since it is the confirmation.
+    const duck = sound === 'laserShot' && params.get('audio.score.tagNotes')?.value ? this.context.createGain() : null
+    if (duck) duck.gain.value = 0.35
+    source.buffer = buffer; if (duck) source.connect(duck).connect(output.node); else source.connect(output.node)
+    this.voices.add(source)
+    source.onended = () => { source.disconnect(); duck?.disconnect(); output.dispose(); this.voices.delete(source) }
     source.start()
   }
   impact(strength: number, position?: Position): void {
@@ -208,6 +230,16 @@ export class GameAudio implements System {
   setVehicles(source:()=>readonly Vehicle[]):void {this.vehicleSource=source}
   /** The match as the score hears it: holding the hill is triumph, a contested hill is tension. */
   setMatch(match:MatchMood|null):void {this.match=match;this.score?.setMatch(match)}
+  /** The other vehicles and the ground ahead, for the score. Removed vehicles are never read. */
+  private sense():void {
+    const now=this.context!.currentTime,seconds=now-this.sensedAt;this.sensedAt=now
+    this.others.length=0
+    if(this.enabled)for(const v of this.vehicleSource())if(v!==this.local&&alive(v)&&!this.others.includes(v))this.others.push(v)
+    // Remote vehicles are already placed at their nearest image on a wrapping world.
+    senseConvoy(this.convoy,this.position,this.forward,this.up,this.others,v=>v.object.position,this.convoyMemory,seconds)
+    const local=this.local
+    this.relief=this.enabled&&local&&alive(local)&&this.terrain?senseRelief(this.reliefHeights,local.object.position,local.body.linvel(),(x,z)=>this.terrain!.heightAt(x,z)):undefined
+  }
   /** Metres the local vehicle sits below a liquid surface; zero or less when dry. */
   private submersion():number {
     if(!this.enabled||!this.local||!alive(this.local))return 0
@@ -223,7 +255,7 @@ export class GameAudio implements System {
     stop=synthCue(this.context,out.node,cue,this.engine!.noise,()=>{this.cueStops.delete(stop);out.dispose()})
     this.cueStops.add(stop)
   }
-  get diagnostics(){return {state:this.state,score:this.score?{playing:this.score.playing,mode:this.score.mode,tempo:Math.round(this.score.tempo),mood:{...this.score.mood},nodes:this.score.synth.nodeCount}:null,remoteVoices:this.remote.size,engineNodes:(this.engine?.nodeCount??0)+[...this.remote.values()].reduce((n,v)=>n+v.engine.nodeCount,0),oneShots:this.voices.size+this.cueStops.size,trackedVehicles:this.events.size}}
+  get diagnostics(){return {state:this.state,score:this.score?{playing:this.score.playing,mode:this.score.mode,tempo:Math.round(this.score.tempo),mood:{...this.score.mood},nodes:this.score.synth.nodeCount}:null,remoteVoices:this.remote.size,engineNodes:(this.engine?.nodeCount??0)+(this.weatherWind?.nodeCount??0)+[...this.remote.values()].reduce((n,v)=>n+v.engine.nodeCount,0),oneShots:this.voices.size+this.cueStops.size,trackedVehicles:this.events.size}}
   private readVehicle(v:Vehicle):MotionAudio {
     const velocity=v.body.linvel(),p=v.object.position,ground=this.terrain?.heightAt(p.x,p.z)??p.y
     return {kind:v.kind,speed:Math.hypot(velocity.x,velocity.y,velocity.z),throttle:v.kind==='jet'?v.input.z:v.input.y,airborne:v.wheelsGrounded===0,wings:v.wingsOpen,slip:Math.max(0,...(v.getWheelEffects?.()??[]).filter(w=>w.grounded).map(w=>w.slip)),altitude:Math.max(0,p.y),clearance:Math.max(0,p.y-ground)}
@@ -265,7 +297,11 @@ export class GameAudio implements System {
     for(const [v,voice] of this.remote){const p=v.object.position;voice.panner.positionX.value=p.x;voice.panner.positionY.value=p.y;voice.panner.positionZ.value=p.z;voice.engine.update(this.readVehicle(v),this.enabled);this.vehicleEvents(v)}
     this.world!.update(this.lavaNear,this.enabled)
     const m=this.motion,submerged=this.submersion()
-    this.score!.update({playing:this.enabled,speed:m.speed,throttle:m.throttle,airborne:m.airborne,clearance:m.clearance??0,altitude:m.altitude??0,submerged,lava:this.lavaNear})
+    if(this.senseFrame++%10===0)this.sense()
+    const wind=this.weatherWind!.update(this.position,this.rotation,this.context.currentTime,this.enabled)
+    // `convoy` and `relief` are optional inputs the score reads only when its toggles are on.
+    const heard={playing:this.enabled,speed:m.speed,throttle:m.throttle,airborne:m.airborne,clearance:m.clearance??0,altitude:m.altitude??0,submerged,lava:this.lavaNear,convoy:this.convoy,relief:this.relief,wind}
+    this.score!.update(heard)
     applySubmerge(this.submerge!,this.score!.mood.depth,this.context.currentTime)
     const l = this.context.listener, p = this.position, f = this.forward, u = this.up
     if (l.positionX) {
@@ -278,7 +314,7 @@ export class GameAudio implements System {
     for (const source of this.voices) source.stop()
     for(const stop of [...this.cueStops])stop()
     for(const voice of this.remote.values()){voice.engine.dispose(true);voice.panner.disconnect()}
-    this.remote.clear();this.events.clear();this.world?.dispose();this.score?.dispose();this.score=undefined;this.submerge?.disconnect();this.submerge=undefined
+    this.remote.clear();this.events.clear();this.world?.dispose();this.weatherWind?.dispose();this.weatherWind=undefined;this.score?.dispose();this.score=undefined;this.submerge?.disconnect();this.submerge=undefined
     this.engine?.dispose(true); this.engine=undefined; this.world=undefined
     for(const bus of [this.master,this.music,this.effects,this.cueBus,this.worldBus,this.remoteBus])bus?.disconnect()
     this.master=this.music=this.effects=this.cueBus=this.worldBus=this.remoteBus=undefined

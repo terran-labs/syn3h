@@ -265,7 +265,34 @@ export interface ShotInfo {
   boost: number
   /** Server clock seconds at the moment of firing. */
   t: number
+  /**
+   * Kind: absent for the tag beam, 'red' for Big Red (src/weapons/bigRedParams.ts), 'pester'
+   * for a Pester (src/weapons/pester), which chases vehicle `to`.
+   */
+  k?: 'red' | 'pester'
+  to?: number
 }
+
+/**
+ * A player's Bungee cord (src/weapons/bungee). Sent by its owner whenever it changes and
+ * every two seconds while attached; the room checks and relays it. Positions are canonical.
+ * `hook`: launched from `o` with velocity `d` (m/s) at server time `t`. `on`: attached to
+ * vehicle `to`, or to the ground at `at` with surface normal `n`, with `r` metres of cord out.
+ */
+export type CordWire =
+  | { s: 'hook'; o: [number, number, number]; d: [number, number, number]; t: number }
+  | { s: 'on'; to?: number; at?: [number, number, number]; n?: [number, number, number]; r: number }
+  | { s: 'off' }
+
+/**
+ * Yoink (src/weapons/yoink): `grab` starts carrying vehicle `to` in front of the sender;
+ * `fling` gives `to` the velocity change `v` (m/s) and ends any carry, and is also a gust's
+ * shove; `drop` ends a carry with no fling. The carried vehicle's own client does the pushing.
+ */
+export type YoinkWire =
+  | { s: 'grab'; to: number }
+  | { s: 'fling'; to: number; v: [number, number, number] }
+  | { s: 'drop'; to: number }
 
 export type ClientMessage =
   /**
@@ -278,7 +305,8 @@ export type ClientMessage =
   | { type: 'profile'; kind?: string; colors?: [string, string] }
   | { type: 'ping'; t: number }
   | { type: 'param'; id: string; value: ParamWireValue }
-  | { type: 'fire'; shot: ShotInfo }
+  /** Optional bot actor: only the current host may act for a live bot it simulates. */
+  | { type: 'fire'; shot: ShotInfo; bot?: number }
   /**
    * Sent by the victim's own client: "shot `shot` from `shooter` hit me". The host also
    * reports hits on bots, naming the bot as `victim`.
@@ -302,6 +330,10 @@ export type ClientMessage =
   | { type: 'reset' }
   /** Host only: which vehicle bot `id` is, so guests build the same kind (mixed bot fleets). */
   | { type: 'bot'; id: number; kind: string }
+  /** My Bungee cord changed. */
+  | { type: 'cord'; cord: CordWire; bot?: number }
+  /** I grabbed, flung or dropped a vehicle with Yoink. */
+  | { type: 'yoink'; y: YoinkWire; bot?: number }
 
 export type TagEvent =
   | 'default' | 'ram' | 'laser' | 'score' | 'leave' | 'lock' | 'host'
@@ -330,6 +362,10 @@ export type ServerMessage =
   | { type: 'hit'; shooter: number; victim: number; shot: number }
   /** Player `from` rammed you: the velocity change to apply if your own physics missed it. */
   | { type: 'shove'; from: number; push: [number, number, number] }
+  /** Player `from`'s Bungee cord, relayed at server time `t`. */
+  | { type: 'cord'; from: number; cord: CordWire; t: number }
+  /** Player `from` used Yoink on vehicle `y.to`. */
+  | { type: 'yoink'; from: number; y: YoinkWire }
   | { type: 'game'; game: GameState; event?: TagEvent; actor?: number; target?: number }
   /**
    * The room's world was replaced: set every world parameter to its default, then apply

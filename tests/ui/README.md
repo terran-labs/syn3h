@@ -282,10 +282,9 @@ ago"). Source: /Users/vtn/dev/terranlabs.com at 68c1e06.
   not glass. `.is-primary` is the accent-filled variant. Frost is dropped on the in-play
   menu row and thumb buttons and at graphics level 0, because it re-blurs the moving world
   every frame.
-- Sky: `Starfield.ts` is that site's Planetfall opening as a lobby background: deep
-  space, wheeling stars, a world's limb with its atmosphere along the bottom, and the sun
-  clearing the limb with shifting shafts, a lens streak and ghosts. The sun, shaft, flare
-  and star formulas are PlanetGL.tsx's, unchanged. A faint nebula remains as an option.
+- Sky: the galaxy (see "The galaxy lobby") carries that site's sun, shafts, lens streak,
+  ghosts and stars, from PlanetGL.tsx. The earlier `Starfield.ts` background went with the
+  panel lobby on 14 November.
 - Panel: a sheet of frosted glass with Dark Star's 18 px radius and hairline border.
 - Loading: that site's veil, see "The loading veil".
 - Logo: still the Syn3h wordmark as one vector path, lit in Dark Star's blue.
@@ -310,22 +309,19 @@ does it, for everyone in the room when connected.
 
 ## Planets
 
-The lobby index offers the worlds as destinations, as the 2017 lobby did: one card per
-recipe in `src/world/planets.ts` plus Custom. The Worlds panel shows the same cards with
-their descriptions. Adding a recipe there adds a card; nothing here changes.
+Worlds are chosen in the galaxy: one world per recipe in `src/world/planets.ts` plus
+Custom. The planet cards went on 14 November by the owner's choice; the Worlds panel keeps
+the world's name and story, its seed and the bots.
 
-- `planets/PlanetOrbs.ts` draws every card's sphere with one shared WebGL 2 context:
-  lighting, limb haze, drifting generated cloud, lava that glows on the night side. A
-  sphere uses its real map from `paintPlanetMap` once painted (in an idle moment, 512 by
-  256, one kept per kind) and the recipe's swatch colours until then.
 - Picking another kind calls `applyPlanet(id)`, so the shared sliders carry it to the room.
-  The kind in play is not re-rolled. From the index a pick leads to the name form.
+  The kind in play is not re-rolled. Arriving at a world leads to the name form.
 - Custom opens the Advanced panel limited to World, Sky, Sun, Weather, Terrain and Lava.
-- The card in play shows `planetName(seed)`. Invite links and QR codes carry
+- The label of the world in play shows `planetName(seed)`. Invite links and QR codes carry
   `world=<encodeWorld()>` as well as the room.
-- When the host has locked the world, the other kinds are disabled for guests.
+- When the host has locked the world, or a guest came by an invite naming one, the other
+  labels dim and arriving at another world is refused, with a notice.
 
-`tools/heavy.sh node tests/ui/planets.mjs` checks all of that in a browser.
+`SYN3H_URL=<dev server> tools/heavy.sh node tests/ui/planets.mjs` checks all of that.
 
 ## Phones: a guest's first run, and the lowest graphics level
 
@@ -333,19 +329,18 @@ The audience arrives by QR code on phones, so `phone-layout.mjs` also plays that
 390 by 844 and 844 by 390 with touch and the CPU throttled four times: open
 `?room=...&world=alpine.90210`, look round the lobby, enter the world, drive. It fails if
 the guest lands on any other world, is offered another before joining, waits more than a
-second for a tap to be answered while the planets are painted, sees the starfield fall
+second for a tap to be answered while the planets are painted, sees the galaxy fall
 under eight frames a second, finds a panel or the QR code wider or taller than the
 screen, or if the lobby keeps a graphics context once the game is on screen.
 
 What makes that hold:
 
-- Planet maps are painted in a worker (`planets/planetMapWorker.ts`), one at a time, and
-  only for cards that are on screen. Without workers they are painted in idle moments.
-- Play releases the starfield's context and the planets' context and worker at once; the
-  menu makes new ones. iOS allows only a few live WebGL contexts.
-- The starfield does not draw in a hidden tab.
-- At `gfx.level` 0 the starfield draws one still frame and the planets are plain discs in
-  their two colours: no shader, no worker, no painting.
+- Planet maps are painted in a worker (`planets/planetMapWorker.ts`), one at a time.
+- Play releases the galaxy's context and worker at once; the menu makes new ones. iOS
+  allows only a few live WebGL contexts.
+- The galaxy does not draw in a hidden tab.
+- At `gfx.level` 0 the galaxy is held still: the worlds stop in their orbits and a frame
+  is drawn only while something moves (a drag, a flight, the dive).
 - A guest who arrives by a link that names a world sees that world only, with the other
   kinds, Custom and the seed controls disabled, until they are in the room. There the
   host's lock decides.
@@ -353,7 +348,11 @@ What makes that hold:
 
 Measured on this Mac in headless Chrome at four times throttle: lobby usable in about one
 second, taps answered in 0.3 to 0.65 seconds, starfield 11 to 13 frames a second with the
-game rendering underneath. Those are emulation figures, not a phone's.
+game rendering underneath (with the old starfield lobby). Those are emulation figures, not
+a phone's. With the galaxy and its nine planets, at a load average of 5 to 8 (15
+November, 12am): lobby usable in 1.7 to 1.9 s, taps answered in 0.3 to 0.6 s, the galaxy
+at 10 frames a second on the open lobby. Its frame rate is measured on the galaxy itself,
+since behind a panel it stops on purpose.
 
 
 ## Hints for a player who seems stuck
@@ -418,12 +417,41 @@ out, tap a world or its label to fly to it. Arriving makes it the world (through
 Back returns to the whole system. Every other panel opens over it as glass. The owner
 asked for this to replace the panel lobby on 14 November 2026.
 
-- One fragment shader traces the sun and up to four spheres: no meshes, libraries or
+- One fragment shader traces the sun and the spheres: no meshes, libraries or
   images. Each world is lit from where the sun is, wears its real map from
   `paintPlanetMap`, shows settlement lights on its night side, and cuts a shadow through
   the sun's shafts. The sun, shafts, flare and stars are terranlabs.com's.
+- Many worlds: every planet recipe appears, up to `GALAXY_MAX` (12) bodies with Custom. Up
+  to four orbits at the original spacing; more worlds share them, spread evenly round each,
+  so ten keep the size four had. Each world wears a small map (512 by 256, about 40 ms to
+  paint on this Mac) from one texture array; the world being flown to is repainted at
+  1024 by 512 (about 130 ms) for the close view and the dive. Held upright, a phone looks
+  down more steeply so the orbits use its height.
+- Labels (`galaxy/labels.ts`) try under, over, right and left of their world and take the
+  first spot clear of other labels, other worlds, the wordmark and the links; the world in
+  play is placed first and always named. One with no room fades (its world still answers a
+  tap); labels of worlds off the screen are not pinned to its edge; while flying to a world
+  only its label stays.
 - The custom planet is a world still forming: plates of crust drifting on magma. Arriving
   at it opens the sliders that shape a world.
+- Flying to a world, the camera swings to its sunlit side a little off the sun, and the
+  world turns on its axis to bring its island (map longitude 0, latitude 0, where the game
+  spawns) to face the camera, so the dive falls onto the island. Behind an open panel the
+  galaxy dims (35 percent, 70 behind the name form) and stops drawing: WebKit's frost is
+  weak, and nothing behind glass needs to move.
+- A tap on a world is the drop (the owner's instruction, 15 November): no name form, no
+  panel, one motion from the solar system into the follow camera. The galaxy flies a timed
+  path (not per-frame easing, so a slow frame cannot make it lurch) across the system, round
+  to the lit side and down into the air, drawing every frame with a radial motion blur pass
+  in proportion to how fast the view is closing. Under the light the world is built and the
+  room joined, where a hitch cannot be seen; the game appears through the rushing light,
+  its camera falling from 520 m with the field of view easing to the follow camera's, and
+  `ChaseCamera.clearCinematicPose(0.8)` blends into the follow camera. Custom still flies
+  to its world and opens its sliders. `drop.mjs` records every frame gap from tap to ground.
+- The descent holds in the light until the room has answered (up to 5 s), since a slow
+  join can rebuild the world and move the spawn point; the camera path is taken after
+  that. A returning player (`localStorage` `syn3h.descents`) gets a quicker dive and a
+  1.4 s fall; a tap, click or key during the descent lands at once.
 - The descent: Enter World from the name form dives toward the chosen world until its air
   fills the view, then the game's camera comes down from 520 m above the spawn point to its
   place behind the vehicle while the blur clears (`Shell.descent`, using the camera's
@@ -435,15 +463,22 @@ asked for this to replace the panel lobby on 14 November 2026.
   gaps and sheds, in order: twinkle and drifting cloud; flare, ghosts, grain, the worlds'
   shadows and frost on glass; noise octaves and night lights; then render scale 0.86, 0.73,
   0.6. It has no imports, so the game's renderer can call it and share the one state.
-- Fallbacks: without WebGL 2, at `gfx.level` 0, or with `?galaxy=0`, the panel lobby and its
-  starfield are used. If the level falls to 0 during a session the galaxy is retired the
-  next time the player is not looking at it.
+- There is no other lobby (the owner's choice, 14 November). At `gfx.level` 0, and with
+  reduced motion, the galaxy is held still and draws only while something moves. Without
+  WebGL 2 the index says the browser cannot run Syn3h; the game cannot draw there either.
+  If WebGL 2 exists but the galaxy's shader will not start, its world names stay as a row
+  of buttons (`.galaxy-flat`) so a visitor can still choose and play.
 
 Known gaps: no keyboard way to swing the view (the labels and links are all reachable by
 keyboard); frame cost unmeasured on real devices; the game measures its own frame rate
 while the lobby is on screen, so a slow lobby can lower `gfx.level` before play starts.
 `tools/heavy.sh node tests/ui/galaxy.mjs` checks the galaxy, the custom world and the
-descent on desktop and phone; `planets.mjs` checks the panel lobby with `?galaxy=0`.
+descent on desktop and phone, the still mode, the row of names and the missing-WebGL 2
+notice; `planets.mjs` checks choosing worlds through it; `galaxy-crowd.mjs` rehearses ten
+worlds (`?worlds=10`, development builds only) at desktop, phone portrait and landscape and
+in WebKit at iPad size. All take `SYN3H_URL`. Its GPU timings on this Mac (median ms per
+frame, four worlds then ten): desktop 2.7 and 3.0, portrait 1.9 and 2.6, landscape 1.9 and
+2.0; labels shown with ten worlds: 10, 6 and 7. Comparisons, not a phone's figures.
 
 ## The page never zooms
 
@@ -466,3 +501,70 @@ for a game whose controls are fixed to the screen edges.
 
 The Vehicle panel carries the paint sliders (`paint.*`, client scope) built from the
 registry, with a link to all sliders for vehicle shading.
+
+## Cursor capture
+
+On a desktop the first click in play captures the cursor (pointer lock) and sends no beam.
+From then on moving the mouse swings the camera round the vehicle (`ChaseCamera` already
+reads a locked pointer), a click sends a tag beam, and right-click still switches cockpit
+and chase. Escape releases the cursor, which the browser does itself, so the first Escape
+releases and the next opens the menu; opening the menu any other way releases it too.
+Touch devices never capture. `tools/heavy.sh node tests/ui/cursor.mjs` checks all of it.
+Aiming a beam where the camera looks is the Weapons lane's.
+
+## World inspector and focus display
+
+`src/ui/inspector/`: the Create button opens five frosted cards (World, Sky & weather, Game,
+Vehicles, You). Each card is an accordion of groups; every registered property is a row with
+its guardrails and a detail pane. Copy world and Paste world move the shared values as JSON
+(`{ "syn3h": "world", "version": 1, "values": { id: value } }`); pasted numbers are clamped
+to their limits and personal settings are left out unless the You section is pasted.
+
+While the cursor is captured the cards, HUD and minimap fade out and the focus display fades
+in. Three settings in You, Interface choose the look: Focus display (Arc, Horizon,
+Telemetry), Reticle (Dot, Ring, Bracket) and Glass (Clear, Frosted, Deep).
+
+On touch the cards start closed, and while open the minimap and drive controls step aside.
+
+Checks (dev servers on 5187 and 8797):
+
+- `npx vitest run tests/ui/inspector.test.ts`: tree, limits, JSON round trip, clamping.
+- `node tests/ui/inspector.mjs`: Chrome; cards, accordion, search, copy, paste, glass,
+  pointer lock fade and the three focus looks. Screenshots in `artifacts/inspector/`.
+- `node tests/ui/inspector-touch.mjs`: WebKit at iPad, iPhone and iPhone landscape sizes.
+
+Known limits: about 35 of the 218 properties have a written description, the rest show
+their limits only; switching vehicle reloads the page and respawns you.
+
+## Gear chip and Bungee controls
+
+While the host allows more than one kind of gear, a chip under the speed reads
+"Gear: Tag beam" or "Gear: Bungee"; tapping it or pressing T switches. The help card gains
+the gear lines. On touch, LET OUT (holds V) and LET GO show only while a cord is attached.
+Cues `bungeeLaunch`, `bungeeAttach` and `bungeeRelease` exist in `src/audio/Cues.ts`; the
+Bungee's `cue` hook in `src/net/index.ts` still has to call `audio.cue(name, at)`.
+
+Check: `node tests/ui/gear.mjs` (Chrome desktop and WebKit iPhone landscape).
+
+`galaxy-controls.mjs` checks arrow-key rotation, plus/minus zoom, standard gamepad
+stick movement, D-pad world selection and A-button entry. It also verifies that an
+open panel blocks these controls. The gamepad is simulated through `getGamepads`;
+physical controller mapping still needs a device check. Tab and Enter use the world's
+normal button focus and activation.
+
+## Custom planet preview
+
+Choosing Custom starts a live map of the current sanitized world settings. Slider changes
+queue a repaint after 120 ms without changes. The worker receives the snapshot, its values
+form part of the cache identity, and obsolete responses are discarded. The last uploaded
+map remains visible until its replacement arrives. Leaving and reopening the galaxy keeps
+the latest snapshot.
+
+`customMap.test.ts` checks unchanged recipe behavior, zero overrides, recipe immutability,
+sanitized terrain settings, cache refresh and stale responses. `custom-planet.mjs` checks
+Custom entry and updated map uploads in Chrome and WebKit.
+
+The map is an approximation of the island on a globe, not an exact view of the whole
+wrapping world. Existing painter limits include shoreline shading based on absolute
+height rather than height above sea level, and a snow threshold that differs from the
+terrain renderer. Terrain owns those corrections; this change only supplies live settings.

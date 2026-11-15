@@ -1,0 +1,43 @@
+/**
+ * Plain-language descriptions for the properties people reach for most. A lane can put a
+ * `description` on its own definition and that wins; this table covers the rest for now.
+ * Keys are property ids. Keep each to a sentence or two and say what changes on screen.
+ */
+export const DESCRIPTIONS: Record<string, string> = {
+  'world.seed': 'The number the whole planet grows from. The same seed and settings always make the same world, on every device.',
+  'world.gravity': 'How hard the planet pulls. Lower it and vehicles float over jumps; raise it and they hug the ground.',
+  'world.lavaAltitude': 'How high the sea stands. Raise it and the coast floods; lower it and more land appears.',
+  'world.seaKind': 'What fills the sea: glowing, sticky lava or ordinary water.',
+  'terrain.kind': 'The kind of planet: volcanic, desert or alpine. It decides the land, its colours and what stands at the centre.',
+  'terrain.islandRadius': 'How far the coast lies from the centre of the island.',
+  'terrain.volcanoHeight': 'How tall the mountain at the centre stands.',
+  'terrain.treeCover': 'How much of the land is wooded.',
+  'sun.timeOfDay': 'The hour on this world. The sun, shadows, sky colour and fog all follow it.',
+  'sun.dayLength': 'How many real seconds a full day takes. Zero stops the clock so the light stays as it is.',
+  'sun.tilt': 'How far the noon sun leans from straight overhead, as latitude does on Earth.',
+  'sun.azimuth': 'Turns the sun\'s whole path round the compass, so sunrise and sunset fall where you want them.',
+  'sun.intensity': 'How strong direct sunlight is.',
+  'sun.ambient': 'How much light the sky itself gives to the shade.',
+  'sun.moonIntensity': 'How bright the night is under the moon.',
+  'sky.exposure': 'How bright the whole picture is, like a camera\'s exposure.',
+  'sky.autoExposure': 'How much the view adapts to dusk and night, the way eyes do.',
+  'sky.stars': 'How many stars show at night.',
+  'sky.turbidity': 'How hazy the air is. More haze gives a whiter sky and a softer sun.',
+  'weather.cloudCoverage': 'How much of the sky the clouds fill.',
+  'weather.fogDensity': 'How quickly the distance fades into the air.',
+  'game.mode': 'What everyone in the room is playing: Tag, or King of the Hill on the summit.',
+  'koth.targetScore': 'How many seconds on the hill win a round of King of the Hill.',
+  'koth.zoneRadius': 'How wide the hill is.',
+  'bots.count': 'How many computer drivers share the world with you.',
+  'bots.canFire': 'Whether computer drivers send tag beams.',
+  'camera.mode': 'Where you watch from: behind the vehicle, inside the cockpit, circling it, from a fixed spot, or flying free.',
+  'camera.sensitivity': 'How far the view turns for each movement of the mouse.',
+  'gfx.level': 'How much detail is drawn. Lower it if the picture stutters; the game also lowers it by itself when it must.',
+  'gfx.shadowQuality': 'How sharp and far-reaching shadows are.',
+  'daydream.seconds': 'How long the game waits, left alone, before it starts driving itself.',
+  'paint.gloss': 'How shiny the vehicle\'s paint is.',
+  'paint.flakes': 'How much metallic sparkle is in the paint.',
+  'hud.focusStyle': 'The look of the minimal display you see while the mouse is captured: Arc, Horizon or Telemetry.',
+  'hud.reticle': 'The mark at the centre of the view while the mouse is captured: dot, ring or bracket.',
+  'hud.glass': 'How heavy the frosted glass of these cards is.',
+}

@@ -65,6 +65,11 @@ export interface DriveGoal {
   altitude?: number
   /** When set, come to rest within this many metres of the point instead of driving through. */
   stopWithin?: number
+  /**
+   * The ground behind is not safe to back onto (water, a drop, the world's edge). A pilot that
+   * would reverse out of trouble must find another way: the mind can see behind, it cannot.
+   */
+  noReverse?: boolean
   /** Ask for the vehicle's special mode (buggy wings, jet forward flight) where the pilot supports it. */
   special?: boolean
 }
