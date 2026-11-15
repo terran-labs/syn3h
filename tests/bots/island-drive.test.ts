@@ -10,7 +10,7 @@ import { Mind } from '../../src/bots/mind/Mind'
 import { createPilot } from '../../src/bots/pilot'
 import { Hovercraft } from '../../src/vehicles/Hovercraft'
 import { Jet } from '../../src/vehicles/Jet'
-import { island } from './island'
+import { applyPlanetForTest, island, resetPlanet } from './island'
 import { createNavigator, pointsOfInterest } from '../../src/bots/nav'
 import '../../src/bots/params'
 
@@ -18,9 +18,13 @@ beforeAll(initPhysics)
 const DT = 0.02
 
 /** Drive the real island for `seconds` and report where the mind went and how it fared. */
-export function drive(seed: string, seconds: number, verbose = false, vehicleKind: 'buggy' | 'jet' | 'hovercraft' = 'buggy', world_ = 0) {
-  const world = createWorld(9.81)
-  const terrain = island(world, 1, { kind: world_ })
+export function drive(seed: string, seconds: number, verbose = false, vehicleKind: 'buggy' | 'jet' | 'hovercraft' = 'buggy', world_: number | string = 0) {
+  // A number is one of the three original world kinds with default settings; a name is a
+  // planet recipe, applied as the game applies it, with its own gravity and sea.
+  const planet = typeof world_ === 'string' ? applyPlanetForTest(world_, 1) : null
+  const world = createWorld(planet?.gravity ?? 9.81)
+  const terrain = planet ? island(world, 1, planet.settings, planet.seaLevel, true) : island(world, 1, { kind: world_ as number })
+  if (planet) resetPlanet()
   const game = { world, scene: new Scene(), tick: 0, input: { state: emptyInput() } } as unknown as Game
   const spawn = terrain.spawnPoint(0), sights = pointsOfInterest(terrain), navigator = createNavigator(terrain)
   const buggy = vehicleKind === 'jet' ? new Jet(game, terrain, spawn.position, spawn.heading) : vehicleKind === 'hovercraft' ? new Hovercraft(game, terrain, spawn.position, spawn.heading) : new Syn3hBuggy(game, terrain, spawn.position, spawn.heading); buggy.isLocal = false
@@ -88,4 +92,16 @@ describe('minds on the real generated worlds', () => {
       for (const r of runs) expect(safe(r, vehicle), JSON.stringify(r)).toBe(true)
       expect(runs.filter(r => lively(r, 300)).length, JSON.stringify(runs)).toBeGreaterThanOrEqual(2)
     }, 60000)
+})
+
+describe('minds on the newer planets', () => {
+  const planets = ['archipelago', 'ice', 'obsidian', 'badlands', 'moon', 'swamp'] as const
+  it.each(planets.flatMap(planet => (['buggy', 'hovercraft', 'jet'] as const).map(vehicle => [planet, vehicle] as const)))(
+    '%s: a %s tours for five minutes, safely on every seed and lively on most', (planet, vehicle) => {
+      const runs = ['a', 'b', 'c'].map(seed => { const r = drive(seed, 300, false, vehicle, planet); record(`${planet} ${vehicle} ${seed}`, r); return r })
+      const unsafe = runs.filter(r => !safe(r, vehicle)).length, dull = runs.filter(r => !lively(r, 300)).length
+      appendFileSync('/tmp/syn3h-planets.log', `${planet} ${vehicle}: unsafe ${unsafe}/3 dull ${dull}/3 ${runs.map(r => `[path ${Math.round(r.path)} wet ${Math.round(r.wet)} flipped ${Math.round(r.flipped)} low ${Math.round(r.low)} slow ${Math.round(r.slow)} cells ${r.cells}/${r.reachable}]`).join(' ')}\n`)
+      for (const r of runs) expect(safe(r, vehicle), JSON.stringify(r)).toBe(true)
+      expect(runs.filter(r => lively(r, 300)).length, JSON.stringify(runs)).toBeGreaterThanOrEqual(2)
+    }, 120000)
 })
