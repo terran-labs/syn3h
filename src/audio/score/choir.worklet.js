@@ -16,6 +16,14 @@
 const MEN = { oo: [350, 600, 2400, 2675, 2950], ooGain: [1, 0.12, 0.04, 0.04, 0.02], ah: [600, 1040, 2250, 2450, 2750], ahGain: [1, 0.45, 0.35, 0.3, 0.1], width: [60, 70, 110, 120, 130] }
 const WOMEN = { oo: [325, 700, 2530, 3500, 4950], ooGain: [1, 0.25, 0.04, 0.02, 0.01], ah: [800, 1150, 2900, 3900, 4950], ahGain: [1, 0.5, 0.1, 0.1, 0.03], width: [80, 90, 120, 130, 140] }
 
+// The glottal pulse, tabulated once: open slowly, shut fast, stay shut. 0.32 is its average,
+// removed so the voice carries no constant offset. A table is far cheaper than two cosines a sample.
+const PULSE = new Float32Array(4096)
+for (let i = 0; i < PULSE.length; i++) {
+  const phase = i / PULSE.length
+  PULSE[i] = (phase < 0.45 ? 0.5 - 0.5 * Math.cos(phase * 6.981317) : phase < 0.6 ? Math.cos((phase - 0.45) * 10.471976) : 0) - 0.32
+}
+
 class Choir extends AudioWorkletProcessor {
   static get parameterDescriptors() {
     return ['men', 'women', 'open'].map(name => ({ name, defaultValue: name === 'open' ? 0.3 : 0, minValue: 0, maxValue: 1, automationRate: 'k-rate' }))
@@ -53,6 +61,8 @@ class Choir extends AudioWorkletProcessor {
     if (men < 0.0005 && women < 0.0005) return true
     for (const sum of this.sums) sum.fill(0, 0, frames)
     for (const singer of this.singers) {
+      // A section that is not singing costs nothing.
+      if ((singer.part < 2 ? men : women) < 0.0005) { singer.hz = singer.target; continue }
       // Pitch, vibrato and the breathing swell move slowly, so once per block is enough.
       singer.hz += (singer.target - singer.hz) * this.glide
       singer.vibrato += 2 * Math.PI * singer.rate * frames / sampleRate
@@ -63,9 +73,7 @@ class Choir extends AudioWorkletProcessor {
       let phase = singer.phase
       for (let i = 0; i < frames; i++) {
         phase += singer.step; if (phase >= 1) phase -= 1
-        // The glottal pulse: open slowly, shut fast, stay shut. 0.32 is its average, removed.
-        const flow = phase < 0.45 ? 0.5 - 0.5 * Math.cos(phase * 6.981317) : phase < 0.6 ? Math.cos((phase - 0.45) * 10.471976) : 0
-        sum[i] += (flow - 0.32) * singer.loud
+        sum[i] += PULSE[(phase * 4096) | 0] * singer.loud
       }
       singer.phase = phase
     }

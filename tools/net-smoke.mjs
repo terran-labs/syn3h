@@ -109,7 +109,10 @@ try {
   // 3. Shared slider, clamped by the server.
   await a.evaluate(() => window.syn3h.params.set('laser.speed', 250))
   await a.evaluate(() => window.syn3h.params.set('world.gravity', 500))
-  await wait(500)
+  // Wait for the values to arrive, up to 5 s: a fixed half second was sometimes too short on
+  // a public address just after a deploy. The checks below still fail if they never do.
+  await b.waitForFunction(() => window.syn3h.params.get('laser.speed').value === 250 && window.syn3h.params.get('world.gravity').value === 18.81, null, { timeout: 5000 }).catch(() => {})
+  await a.waitForFunction(() => window.syn3h.params.get('world.gravity').value === 18.81, null, { timeout: 5000 }).catch(() => {})
   const [speedB, gravB, gravA] = await b.evaluate(() => [window.syn3h.params.get('laser.speed').value, window.syn3h.params.get('world.gravity').value]).then(async (r) => [...r, await a.evaluate(() => window.syn3h.params.get('world.gravity').value)])
   check('shared slider reaches B', speedB === 250, { speedB })
   check('server clamps a shared slider for everyone', gravB === 18.81 && gravA === 18.81, { gravA, gravB })
