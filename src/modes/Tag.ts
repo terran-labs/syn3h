@@ -65,7 +65,9 @@ export class BoundsGuard implements System {
     const b = this.player.body
     const p = b.translation()
     const half = this.terrain.size / 2 + 200
-    if (p.y < -300 || Math.abs(p.x) > half * 4 || Math.abs(p.z) > half * 4 || !Number.isFinite(p.y)) {
+    // A wrapping world has no edge to leave by: only falling through it counts.
+    const outside = !this.terrain.wrapSize && (Math.abs(p.x) > half * 4 || Math.abs(p.z) > half * 4)
+    if (p.y < -300 || outside || !Number.isFinite(p.y)) {
       const s = this.terrain.spawnPoint(this.slot)
       this.player.teleport(s.position, s.heading)
       this.onReset()

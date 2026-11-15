@@ -44,7 +44,7 @@ export const terrainPlanetSize = defineParam({
   ...P, id: 'terrain.planetSize', label: 'Planet size: 0 small, 1 medium, 2 large', default: 1, min: 0, max: 2, step: 1,
 })
 export const terrainTreeCover = defineParam({
-  ...P, id: 'terrain.treeCover', label: 'Plant cover', default: 0.5, min: 0, max: 1, step: 0.01,
+  ...P, id: 'terrain.treeCover', label: 'Plant cover (off: no worlds grow trees or cacti)', default: 0, min: 0, max: 1, step: 0.01,
 })
 /**
  * What kind of world this is: it picks the shape of the centre, what fills its lake, and

@@ -37,11 +37,13 @@ import {
   isVec3,
   parseJson,
   stampStateId,
+  WRAP_SIZES,
 } from '../shared/protocol'
 // Imported for their side effect of defining world parameters, so the server knows their
 // ranges. Modules that define parameters next to Three.js code cannot be imported here; their
 // ids pass through with a basic type check instead.
 import { MIN_CLOSING, SHOVE_SHARE, cleanShove } from '../src/net/shove'
+import { wrapDistance } from '../shared/wrap'
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
 import {
   KNOCK_WINDOW, WIN_PAUSE, gameMode, kothKnockBonus, kothRespawnDelay, kothTargetScore, tagCooldown, tagRamReach,
@@ -594,7 +596,7 @@ export class Room {
       const st = p.lastState
       const fresh = now - p.lastStateAt <= (p.info.bot ? BOT_EXPIRY_MS : RESPONDING_MS)
       const counts = !p.info.bot || (st !== null && Math.hypot(...st.v) > BOT_CONTEST_SPEED)
-      if (st && fresh && !st.paused && !k.out[p.info.id] && inZone(zone, st.p) && counts) inside.push(p)
+      if (st && fresh && !st.paused && !k.out[p.info.id] && inZone(zone, st.p, this.wrapSize()) && counts) inside.push(p)
     }
     const holder = inside.length === 1 && !inside[0].info.bot ? inside[0].info.id : 0
     const contested = inside.length >= 2
@@ -627,7 +629,7 @@ export class Room {
     const st = player.lastState
     if (!st || st.paused || now - player.lastStateAt > RESPONDING_MS) return
     const speed = Math.hypot(...st.v)
-    if (dist(shot.o, st.p) > 8 + speed * 0.5) return
+    if (this.dist(shot.o, st.p) > 8 + speed * 0.5) return
     if (shot.boost < 0 || shot.boost > Math.max(5, speed * 1.5)) return
     // Never let a client claim a firing time far from now: projectiles are replayed from it.
     shot.t = Math.min(now / 1000, Math.max(now / 1000 - 1, shot.t))
@@ -690,7 +692,7 @@ export class Room {
     if (!a || !b || a.paused || b.paused || now - reporter.lastStateAt > RESPONDING_MS || now - other.lastStateAt > RESPONDING_MS) return
     // Both states are slightly old, so allow for how far fast vehicles travel meanwhile.
     const reach = this.paramNumber(tagRamReach.def) + (Math.hypot(...a.v) + Math.hypot(...b.v)) * 0.3
-    if (dist(a.p, b.p) > reach) return
+    if (this.dist(a.p, b.p) > reach) return
     // Pass the rammer's push on to the rammed player, whose client applies it if its own
     // physics missed the hit. Bots are simulated by the host, where the rammer's copy already
     // pushes them, so they get none.
@@ -708,6 +710,25 @@ export class Room {
     const wasIt = this.it
     const newIt = wasIt === reporter.info.id ? other.info.id : reporter.info.id
     this.setIt(newIt, 'ram', wasIt)
+  }
+
+  /**
+   * Side of the world's tile in metres when the room's world wraps, else 0. Positions arrive
+   * canonical, inside one tile, so two vehicles a few metres apart across the seam are a
+   * whole tile apart in plain coordinates: every range check here measures around the wrap.
+   * The room does not register the terrain's parameters; it reads the stored values.
+   */
+  private wrapSize(): number {
+    if (this.values.get('world.wrap') !== true) return 0
+    const tier = Number(this.values.get('terrain.planetSize') ?? 1)
+    return WRAP_SIZES[tier <= 0 ? 0 : tier >= 2 ? 2 : 1]
+  }
+
+  /** Distance between two positions, the short way round on a wrapping world. */
+  private dist(a: readonly number[], b: readonly number[]): number {
+    const size = this.wrapSize()
+    if (!(size > 0)) return dist(a, b)
+    return Math.hypot(wrapDistance(a[0], a[2], b[0], b[2], size), a[1] - b[1])
   }
 
   /**

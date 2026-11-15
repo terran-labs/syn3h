@@ -1,4 +1,41 @@
-# Pursuit bots
+# Bots and Daydream
+
+Self-driving comes in three layers, shared by bots and by the player's own vehicle:
+
+| Layer | File | Job |
+|---|---|---|
+| Mind | `mind/Mind.ts`, `mind/personality.ts` | Chooses what to do, by seeded personality: take a road, climb to the summit, strike out for unseen ground, tail another vehicle, donuts, weaving, a pause for the view. Checks the ground ahead and steers round liquid, cliffs and the world edge. Gives up on a place it cannot reach. Never teleports. |
+| Navigator | `nav/` (route planner), `navigation.ts` (road graph) | Turns "from here to there" into a route this kind of vehicle can travel. |
+| Pilot | `pilot/` | Turns "head for this point at this speed" into the vehicle's own controls. One per kind of vehicle. Writes an `InputState` and nothing else. |
+
+The contracts are in `pilot/types.ts`.
+
+## Daydream
+
+`Daydream.ts`. After `daydream.seconds` (default 30, 0 is off) with no key, touch, click,
+wheel or gamepad input while playing, a Mind takes the player's controls. Any input hands
+them straight back, with the wings or hover mode as the player left them. It writes to
+`game.input` where the keyboard and touch stick write, so physics, networking and replay
+see an ordinary player. It is idle in the lobby, in menus and in a hidden tab. The bot
+manager owns it (`bots.daydream`), so the composition root needs no wiring.
+
+- `?daydream=5` sets the idle time from the URL, for a quick look or an automated check.
+- A `syn3h:daydream` event on `window` (`detail.active`) announces each change. The chase
+  camera listens and runs `core/CameraDirector.ts`: chase, orbit, fly-by, crane and low
+  tracking shots, cutting away when a hill hides the car. `camera.daydreamShots` turns the
+  shots off.
+- The settings slider is `createDaydreamControl()` in `daydreamControl.ts`: 10 seconds at the
+  far left, 5 minutes at the last stop before the right end, off at the far right.
+- Capture: `node tools/drive-capture.mjs --scenario tools/scenarios/daydream.json`.
+
+## Bot character
+
+Each bot gets a `Personality` from the world seed and its id (boldness, curiosity,
+sociability, mischief, patience) and a Mind. `bots.freeSpirit` sets the share of time it
+follows its own agenda instead of chasing: 0 is the original relentless pursuit, 1 never
+chases. `brain.mood` says which it is doing; `brain.mind.caption` says what.
+
+# Pursuit
 
 Add these lines to the composition root after creating the local player:
 
