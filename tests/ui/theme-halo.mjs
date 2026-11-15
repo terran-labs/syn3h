@@ -66,7 +66,8 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
       await num.scrollIntoViewIfNeeded(); await num.click()
       await page.locator('.wi-num-edit').first().waitFor({ state: 'visible' })
       await page.screenshot({ path: `${shots}/desktop-day-editing.png` })
-      await page.keyboard.press('Escape')
+      // Enter keeps the same value and leaves the field; Escape here could reach the game.
+      await page.keyboard.press('Enter')
       // A tooltip: hover a row in the open card.
       const row = page.locator('.wi-card[data-section="you"] .wi-row:visible').first()
       await row.hover(); await page.locator('.wi-tooltip').waitFor({ state: 'visible', timeout: 5000 }).catch(() => {})
@@ -78,8 +79,12 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
       await page.waitForTimeout(4000)
       await page.screenshot({ path: `${shots}/desktop-night.png` })
       // Paused: Escape once with the cursor free.
-      await page.locator('body').press('Escape')
-      await page.locator('.pause-veil').waitFor({ state: 'visible', timeout: 5000 }).catch(() => {})
+      // Escape pauses only with the cursor free; if it is captured, the first Escape frees it.
+      await page.evaluate(() => document.activeElement?.blur())
+      if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
+      await page.waitForFunction(() => !document.pointerLockElement)
+      await page.keyboard.press('Escape')
+      await page.locator('.pause-veil').waitFor({ state: 'visible', timeout: 5000 })
       await page.waitForTimeout(500)
       await page.screenshot({ path: `${shots}/desktop-paused.png` })
     }
