@@ -281,11 +281,11 @@ export class BotBrain implements System {
       const w = this.terrain.wrapSize
       const from = w ? { x: wrapCoord(here.x, w), y: here.y, z: wrapCoord(here.z, w) } : here
       const to = w ? { x: wrapCoord(there.x, w), y: there.y, z: wrapCoord(there.z, w) } : there
-      const found = !afloat && distance > 18 ? roadWaypoint(this.terrain, from, to, Math.max(8, Math.min(16, speed * 0.6))) : null
+      const found = !afloat && distance > 4 ? roadWaypoint(this.terrain, from, to, Math.max(8, Math.min(16, speed * 0.6))) : null
       this.waypoint = found && w ? { ...found, x: nearestImage(found.x, here.x, w), z: nearestImage(found.z, here.z, w) } : found
       this.routeTime = 0.4
     }
-    const waypoint = !afloat && distance > 18 ? this.waypoint : null
+    const waypoint = !afloat && distance > 4 ? this.waypoint : null
     if (waypoint) { aimX = waypoint.x; aimZ = waypoint.z }
     // Stable per-bot lateral offsets fade out near contact so every bot can still ram.
     const spread = ((this.index * 0.61803398875 % 1) - 0.5) * p.approachSpread.value * Math.min(1, Math.max(0, distance - 8) / 20)
@@ -299,6 +299,20 @@ export class BotBrain implements System {
       if (peer === this.vehicle || peer === this.target || !peer.body.isValid()) continue
       const pos = this.imageOf(peer.body.translation(), here, this.peerImage), px = here.x - pos.x, pz = here.z - pos.z, separation = Math.hypot(px, pz)
       if (separation > 0.1 && separation < 7) { aimX += px / separation * (7 - separation) * (waypoint ? 0.25 : 2); aimZ += pz / separation * (7 - separation) * (waypoint ? 0.25 : 2) }
+    }
+    // On a road, queue behind traffic instead of steering around it toward the edge.
+    // Include the pursued player: catching a slow leader is not permission to ram on a bend.
+    let trafficLimit = Infinity
+    const roadAhead = (aimX - here.x) * this.forward.x + (aimZ - here.z) * this.forward.z
+    if (waypoint && roadAhead > Math.hypot(aimX - here.x, aimZ - here.z) * 0.8) for (const peer of new Set([...this.peers, this.target])) {
+      if (peer === this.vehicle || !peer.body.isValid()) continue
+      const pos = this.imageOf(peer.body.translation(), here, this.peerImage)
+      const px = pos.x - here.x, pz = pos.z - here.z
+      const ahead = px * this.forward.x + pz * this.forward.z
+      const side = Math.abs(px * this.forward.z - pz * this.forward.x)
+      if (ahead <= 3 || ahead > 25 || side > 4 || Math.abs(pos.y - here.y) > 6) continue
+      const v = peer.body.linvel(), along = Math.max(0, v.x * this.forward.x + v.z * this.forward.z)
+      trafficLimit = Math.min(trafficLimit, Math.max(0, along + (ahead - 6 - speed * 0.7) * 0.8))
     }
     const error = steeringError(this.forward, { x: aimX - here.x, z: aimZ - here.z })
     // VhiclBot.cs:35-55 and VehicleBot.js:79-91: wrap yaw, divide by 20 degrees,
@@ -316,7 +330,10 @@ export class BotBrain implements System {
         this.immobileTime = this.reversing ? this.immobileTime + this.strategyTime : 0
         this.strategyTime = 0; this.lastPosition.copy(here)
       }
-      if (afloat) this.reversing = false
+      if (afloat || trafficLimit < 1) {
+        this.reversing = false
+        if (!afloat) { this.immobileTime = 0; this.strategyTime = 0; this.lastPosition.copy(here) }
+      }
       input.x = this.reversing ? clamp(-rotation) : Math.abs(rotation) < 0.1 ? 0 : clamp(rotation * p.aggression.value, waypoint || distance < 15 ? 1 : 0.6)
       if (waypoint && !this.reversing) {
         // Four-wheel steering needs a gentle curvature command on narrow roads.
@@ -332,6 +349,9 @@ export class BotBrain implements System {
       const roadLimit = Math.max(p.roadCornerSpeed.value, p.roadSpeed.value * (1 - Math.min(1, Math.abs(error))))
       if (waypoint && !this.reversing && speed > roadLimit) {
         input.y = Math.min(input.y, 0.15); input.brakes ||= speed > roadLimit * 1.2
+      }
+      if (trafficLimit < Infinity && !this.reversing && speed > trafficLimit) {
+        input.y = 0; input.brakes ||= speed > trafficLimit + 0.5
       }
       // Stop spinning wheels before asking the drivetrain to reverse.
       if (this.reverseBrake > 0) { input.brakes = true; this.reverseBrake = Math.max(0, this.reverseBrake - dt) }
