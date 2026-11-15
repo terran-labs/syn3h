@@ -21,7 +21,7 @@ mark.start()
 const toHex = (c: readonly number[]) => '#' + c.map(v => Math.round(v * 255).toString(16).padStart(2, '0')).join('')
 const toRgb = (hex: string): [number, number, number] => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255) as [number, number, number]
 function add(label: string, input: HTMLElement): void { const l = document.createElement('label'); l.append(label, input); controls.append(l) }
-function range(label: string, key: 'particles' | 'glowWidth' | 'plasmaSize' | 'flowSpeed' | 'glowStrength' | 'timeScale' | 'seed', min: number, max: number, step: number): void {
+function range(label: string, key: 'markFade' | 'glowGap' | 'glowFade' | 'particles' | 'glowWidth' | 'plasmaSize' | 'flowSpeed' | 'glowStrength' | 'timeScale' | 'seed', min: number, max: number, step: number): void {
   const input = Object.assign(document.createElement('input'), { type: 'range', min, max, step, value: String(mark.options[key]) })
   const out = document.createElement('output'); out.value = String(mark.options[key])
   input.oninput = () => { out.value = input.value; mark.setOptions({ [key]: Number(input.value) }) }
@@ -44,6 +44,9 @@ range('Size', 'plasmaSize', 0.03, 0.5, 0.005)
 range('Flow', 'flowSpeed', 0, 3, 0.05)
 range('Strength', 'glowStrength', 0, 3, 0.05)
 range('Speed', 'timeScale', 0, 3, 0.05)
+range('Mark fade', 'markFade', 0, 6, 0.1)
+range('Glow gap', 'glowGap', 0, 4, 0.1)
+range('Glow fade', 'glowFade', 0, 8, 0.1)
 colour('Glow', 'glow'); colour('Edge', 'glowEdge'); colour('Face', 'face')
 toggle('Space', mark.options.space, on => mark.setOptions({ space: on }))
 toggle('Still', mark.options.still, on => { mark.setOptions({ still: on }); if (!on) mark.start() })

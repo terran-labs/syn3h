@@ -12,7 +12,10 @@
  *      computed in the vertex shader, so the CPU does nothing per frame but set uniforms;
  *   4. the wordmark itself, flat: a face of one colour with a pale line inside its edge.
  *
- * The whole mark fades in once (INTRO_SECONDS); there is no other intro.
+ * It fades in in two stages, both eased at both ends: first the dark silhouette with its edge
+ * (`markFade`), then, after `glowGap`, the blue glow more slowly still (`glowFade`). Nothing
+ * shows on the first frame. Whenever the caller's opacity has been zero and comes back, the
+ * fade starts again, so a logo hidden and shown again arrives the same way each time.
  *
  * Layout: the caller gives a box in pixels. The wordmark covers that box exactly, as the
  * SVG wordmark (viewBox 962 by 226) covers its element, so the two can be laid over each
@@ -43,8 +46,14 @@ export interface LogoLook {
   glowStrength: number
   /** Deep space and stars behind everything (true), or only the logo, over what is there. */
   space: boolean
-  /** Overall opacity, for cross-fading with the SVG wordmark. */
+  /** Overall opacity, for cross-fading with the SVG wordmark. Back from zero, the fade replays. */
   opacity: number
+  /** Seconds the silhouette (the face and its edge line) takes to fade in. */
+  markFade: number
+  /** Seconds between the silhouette arriving and the glow starting to fade in. */
+  glowGap: number
+  /** Seconds the glow (the field and its particles) takes to fade in. */
+  glowFade: number
   /**
    * Inert. The mark used to turn by itself; it is flat now. Kept because the lobby galaxy
    * (src/ui/galaxy/Galaxy.ts) still sets it.
@@ -53,15 +62,17 @@ export interface LogoLook {
 }
 export const DEFAULT_LOGO_LOOK: LogoLook = {
   seed: 1, glow: [0.34, 0.42, 1.0], glowEdge: [0.52, 0.28, 0.98], glowWidth: 0.26, face: [0.008, 0.016, 0.039],
-  particles: 160, plasmaSize: 0.3, flowSpeed: 1, glowStrength: 1, space: false, opacity: 1, sway: 0,
+  particles: 160, plasmaSize: 0.3, flowSpeed: 1, glowStrength: 1, space: false, opacity: 1, markFade: 1.5, glowGap: 0, glowFade: 3, sway: 0,
 }
 /** A box in pixels, measured from the top left of the viewport. */
 export interface PixelRect { x: number; y: number; width: number; height: number }
 /** A GL viewport: pixels, from the bottom left of the drawing buffer. */
 export interface GlViewport { x: number; y: number; width: number; height: number }
 
-/** Seconds the fade in takes. */
-export const INTRO_SECONDS = 1
+/** Seconds the whole fade in takes with the default look: silhouette, gap, then glow. */
+export const INTRO_SECONDS = DEFAULT_LOGO_LOOK.markFade + DEFAULT_LOGO_LOOK.glowGap + DEFAULT_LOGO_LOOK.glowFade
+/** Where skipIntro puts the start of the fade: long enough ago for any fade to have ended. */
+const SKIPPED = -1e6
 /** The particle count the glow strength is designed at; other counts share the same light. */
 const DESIGN_PARTICLES = 160
 
@@ -264,6 +275,8 @@ export class LogoRenderer {
   /** Particle attribute locations, looked up once when the programs are built. */
   private particleAttributes: [number, number][] = []
   private introStart: number | null = null
+  /** The caller's opacity was zero at the last draw: when it returns, the fade replays. */
+  private hidden = false
 
   constructor(private readonly gl: WebGL2RenderingContext, look: Partial<LogoLook> = {}) {
     this.look = { ...DEFAULT_LOGO_LOOK, ...look }
@@ -319,10 +332,10 @@ export class LogoRenderer {
   }
 
   setLook(look: Partial<LogoLook>): void { this.look = { ...this.look, ...look } }
-  /** Starts the fade in again at the next draw (or at `atSeconds` on the draw clock). */
+  /** Starts both stages of the fade in again at the next draw (or at `atSeconds` on the draw clock). */
   replayIntro(atSeconds?: number): void { this.introStart = atSeconds ?? null }
-  /** Skips the fade in: the next draw shows the whole logo. */
-  skipIntro(): void { this.introStart = -1e6 }
+  /** Skips the fade in: the next draw shows the whole logo at once, with no fade at all. */
+  skipIntro(): void { this.introStart = SKIPPED }
   /** Seconds into the fade in at the last draw; at least INTRO_SECONDS once it has finished. */
   introTime = 0
 
@@ -368,14 +381,19 @@ export class LogoRenderer {
     if (!this.ok || gl.isContextLost()) return
     const view = viewport ?? { x: 0, y: 0, width: gl.drawingBufferWidth, height: gl.drawingBufferHeight }
     if (view.width < 1 || view.height < 1 || box.height <= 0) return
+    const look = this.look
+    // Shown again after being hidden: the fade starts over, unless the caller has skipped it.
+    if (look.opacity <= 0) this.hidden = true
+    else if (this.hidden) { this.hidden = false; if (this.introStart !== SKIPPED) this.introStart = null }
     if (this.introStart === null) this.introStart = seconds
     const intro = this.introTime = Math.max(0, seconds - this.introStart)
-    const look = this.look
     try {
       this.fillParticles()
       const centre: [number, number] = [box.x + box.width / 2, box.y + box.height / 2], height = box.height
-      // The whole mark fades in at once, eased at both ends.
-      const opacity = look.opacity * smooth(0, INTRO_SECONDS, intro)
+      // The silhouette fades in first, then the glow, more slowly; each eased at both ends.
+      const glowStart = look.markFade + look.glowGap
+      const markOpacity = look.opacity * smooth(0, look.markFade, intro)
+      const glowOpacity = look.opacity * smooth(glowStart, glowStart + look.glowFade, intro)
       // A slow breath in the plasma's brightness, the same for every particle.
       const breath = 0.92 + 0.08 * Math.sin(seconds * 0.5)
 
@@ -384,7 +402,7 @@ export class LogoRenderer {
       for (const cap of [gl.DEPTH_TEST, gl.CULL_FACE, gl.STENCIL_TEST, gl.RASTERIZER_DISCARD, gl.SAMPLE_ALPHA_TO_COVERAGE, gl.SCISSOR_TEST]) gl.disable(cap)
       gl.blendEquation(gl.FUNC_ADD)
 
-      const common = (program: WebGLProgram) => {
+      const common = (program: WebGLProgram, opacity: number) => {
         gl.useProgram(program)
         gl.uniform2f(this.location(program, 'uTarget'), view.width, view.height)
         gl.uniform3f(this.location(program, 'uBox'), centre[0], centre[1], height)
@@ -394,7 +412,7 @@ export class LogoRenderer {
 
       // 1. Space, opaque, over the whole viewport: only for icons and cards.
       if (look.space) {
-        common(this.space!)
+        common(this.space!, markOpacity)
         const u = (name: string) => this.location(this.space!, name)
         gl.uniform2f(u('uOrigin'), view.x, view.y); gl.uniform1f(u('uTime'), seconds); gl.uniform1f(u('uSeed'), look.seed % 1000)
         gl.disable(gl.BLEND)
@@ -404,7 +422,7 @@ export class LogoRenderer {
 
       // 2. The plasma's body. Where its band overlaps itself the brighter wins (MAX), so
       // corners and close letters glow no harder than anywhere else.
-      common(this.field!)
+      common(this.field!, glowOpacity)
       gl.uniform1f(this.location(this.field!, 'uWidth'), look.glowWidth)
       gl.uniform1f(this.location(this.field!, 'uFlow'), seconds * look.flowSpeed)
       gl.uniform1f(this.location(this.field!, 'uStrength'), 0.9 * look.glowStrength * breath)
@@ -416,7 +434,7 @@ export class LogoRenderer {
       // 3. The particles, screened on: it brightens what is there but never past white, so where
       // many overlap it saturates gently instead of blowing out.
       const count = Math.min(Math.round(look.particles), this.builtParticles)
-      common(this.plasma!)
+      common(this.plasma!, glowOpacity)
       const u = (name: string) => this.location(this.plasma!, name)
       gl.uniform1f(u('uFlow'), seconds * look.flowSpeed)
       gl.uniform1f(u('uMinPoint'), 1.6)
@@ -431,7 +449,7 @@ export class LogoRenderer {
       gl.bindVertexArray(this.plasmaVao); gl.drawArrays(gl.POINTS, 0, count)
 
       // 4. The wordmark: face, then the edge line over it (see buildWordmarkMesh).
-      common(this.mark!)
+      common(this.mark!, markOpacity)
       gl.uniform3f(this.location(this.mark!, 'uFace'), ...look.face)
       // About 2.7 path units wide, but never thinner than one and a half pixels.
       gl.uniform1f(this.location(this.mark!, 'uEdge'), Math.max(0.012, 1.5 / height))
@@ -451,4 +469,8 @@ export class LogoRenderer {
   }
 }
 
-function smooth(from: number, to: number, x: number): number { const t = Math.min(1, Math.max(0, (x - from) / (to - from))); return t * t * (3 - 2 * t) }
+/** 0 before `from`, 1 after `to`, eased at both ends between; a zero-length span is a step. */
+function smooth(from: number, to: number, x: number): number {
+  if (to <= from) return x >= to ? 1 : 0
+  const t = Math.min(1, Math.max(0, (x - from) / (to - from))); return t * t * (3 - 2 * t)
+}
