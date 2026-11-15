@@ -219,6 +219,14 @@ export class LoadedBuggySkin implements BuggySkin {
     const body = next ? new THREE.Group() : extract(scene.getObjectByName('Body')!, transform)
     // Box arm: the body and its fittings (strut sockets, shock towers, headlight lenses).
     if (next) for (const name of ['Body', 'Sockets']) body.add(...extract(nodeNamed(next, name)).children)
+    // The exported paint carries a clear coat, which loads as a physical material and would
+    // keep each part out of the body merge. The shared shading supplies every look from the
+    // role, so reduce each to a plain material that only carries its name and colour.
+    if (next) body.traverse(o => { if (o instanceof THREE.Mesh) {
+      const src = o.material as THREE.MeshStandardMaterial
+      const plain = new THREE.MeshStandardMaterial({color: src.color}); plain.name = src.name
+      src.dispose(); o.material = plain
+    } })
     body.traverse(o => {
       if (!(o instanceof THREE.Mesh)) return
       // Preserve Syn3h's separate trim and light materials; classic has one tinted shell.
