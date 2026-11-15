@@ -51,14 +51,20 @@ describe('Jet hover and flight',()=>{
   try{const half=run();expect(half).toBeGreaterThan(0);expect(half).toBeLessThan(full*.7)}
   finally{jetFlightThrust.value=2}
  })
- it('hover hold is off by default and holds altitude with no throttle key when enabled',()=>{
-  expect(jetHoverHold.value).toBe(0)
+ it('hover hold lets go near the ground so a landed jet keeps its weight',()=>{
+  const h=harness(9.81,false);const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,1.4,0));v.isLocal=false
+  h.step(v,25);expect(v.body.linvel().y).toBeLessThan(-3)
+  v.dispose();h.world.free()
+ })
+ it('hover hold is on by default, holds altitude with no throttle key, and 0 restores the original fall',()=>{
+  expect(jetHoverHold.value).toBe(1)
   const h=harness(9.81,false);const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,100,0));v.isLocal=false
-  h.step(v,50);expect(v.body.linvel().y).toBeLessThan(-5)
-  jetHoverHold.value=1
-  try{h.step(v,250);expect(Math.abs(v.body.linvel().y)).toBeLessThan(.5)
+  jetHoverHold.value=0
+  try{h.step(v,50);expect(v.body.linvel().y).toBeLessThan(-5)
+   jetHoverHold.value=1
+   h.step(v,250);expect(Math.abs(v.body.linvel().y)).toBeLessThan(.5)
    const y=v.body.translation().y;h.step(v,100);expect(Math.abs(v.body.translation().y-y)).toBeLessThan(1)
    v.input.z=1;h.step(v,25);expect(v.body.linvel().y).toBeGreaterThan(0)}
-  finally{jetHoverHold.value=0;v.dispose();h.world.free()}
+  finally{jetHoverHold.value=1;v.dispose();h.world.free()}
  })
 })

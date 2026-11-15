@@ -9,6 +9,7 @@ import { TouchControls } from './TouchControls'
 import { readVehicleChoice, saveVehicleChoice, VehiclePreview, type VehicleChoice } from './VehicleChoice'
 import { SlidingPanels } from './SlidingPanels'
 import { Starfield } from './Starfield'
+import { wordmarkSvg } from './brand/logo'
 import { AttractMode, type CinematicCamera } from './AttractMode'
 import { InviteView, inviteUrl, renderQr } from './InviteView'
 import { Scoreboard, parseScoreRow } from './Scoreboard'
@@ -23,7 +24,10 @@ import { renderHelp, touchHelp } from './VehicleHelp'
 import type { VehicleKind } from '../vehicles'
 import './shell.css'
 
-const back = '<button type="button" class="panel-back" data-goto="index">‹ Back</button>'
+const back = '<button type="button" class="panel-back link-button" data-goto="index">Back</button>'
+/** `__SYN3H_BUILD__` is an optional build-time constant (a date or tag) from the bundler. */
+declare const __SYN3H_BUILD__: string | undefined
+const buildLine = typeof __SYN3H_BUILD__ === 'string' && __SYN3H_BUILD__ ? `build version : ${__SYN3H_BUILD__}` : 'browser edition'
 const heading = (text: string) => `<h2 tabindex="-1">${text}</h2>`
 
 export class Shell implements System {
@@ -65,11 +69,14 @@ export class Shell implements System {
     this.previousSuspended = game.input.suspended; game.input.suspended = true
     this.element.className = 'syn3h-shell'
     this.element.innerHTML = `<section class="shell-overlay" role="dialog" aria-modal="true" aria-label="Syn3h lobby">
-      <header class="lobby-brand"><img class="shell-logo" src="/brand/syn3h.png" alt="Syn3h" width="512" height="256"></header>
+      <div class="lobby-stage">
+      <header class="lobby-brand">${wordmarkSvg('shell-logo')}</header>
       <div class="lobby-panels">
         <section data-panel="index" class="lobby-index">
-          <div class="lobby-message"><h1 tabindex="-1">Explore. Create. Connect.</h1><p>Choose your vehicle and explore a world together.</p><p class="lobby-room-label"></p><div class="invite-qr menu-qr"></div><p class="invite-link"></p><button class="shell-invite">Copy invite link</button><div class="lobby-links"><button data-goto="about">About</button><button data-goto="settings">Settings</button><button data-goto="multiplayer">Community</button></div></div>
-          <nav class="lobby-destinations" aria-label="Lobby"><button data-goto="explore">Explore</button><button data-goto="vehicle">Vehicle</button><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR · J</button><button class="return-game" data-resume hidden>Return to Game</button></nav>
+          <h1 tabindex="-1">Welcome to the future.</h1>
+          <div class="lobby-message"><p>You’ve discovered a community where all are welcome, and new ideas are celebrated.</p><p class="lobby-room-label"></p><div class="invite-qr menu-qr"></div><p class="invite-link"></p><button class="shell-invite link-button">Copy invite link</button></div>
+          <nav class="lobby-destinations" aria-label="Lobby"><button class="is-primary" data-goto="explore">Explore</button><button data-goto="vehicle">Vehicle</button><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR</button><button data-goto="settings">Settings</button><button class="return-game is-primary" data-resume hidden>Return to Game</button></nav>
+          <div class="lobby-links"><button data-goto="about">About Syn3h</button><button data-goto="multiplayer">Community</button></div>
         </section>
         <section data-panel="explore">${heading('Prepare to Explore')}
           <form class="shell-form"><label for="shell-name">Player name</label><input id="shell-name" name="playerName" maxlength="24" autocomplete="nickname" placeholder="Explorer">
@@ -92,7 +99,8 @@ export class Shell implements System {
         <section data-panel="advanced">${heading('Advanced Settings')}<p class="world-lock-note" hidden>Sliders locked by host.</p><div class="advanced-host"></div>${back}</section>
         <section data-panel="about">${heading('About Syn3h')}${creditsHtml}${back}</section>
       </div>
-      <footer class="lobby-footer"><span>Syn3h</span><span class="shell-message" role="status" aria-live="polite"></span><span>Browser edition</span></footer>
+      <footer class="lobby-footer"><span class="shell-message" role="status" aria-live="polite"></span><span class="build-line">${buildLine}</span></footer>
+      </div>
     </section>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button" aria-label="Open menu">☰<span class="nav-label"> Menu</span></button><button data-open="multiplayer">Players</button><button data-open="worlds">Create</button></nav>
@@ -105,11 +113,12 @@ export class Shell implements System {
     this.nameInput = this.element.querySelector('#shell-name')!; this.roomInput = this.element.querySelector('#shell-room')!
     this.speed = this.element.querySelector('.shell-speed strong')!
     this.panels = new SlidingPanels(this.element.querySelector('.lobby-panels')!)
-    this.starfield = new Starfield(this.overlay)
+    this.starfield = new Starfield(this.overlay, { seed: worldSeed.value })
     this.board = new Scoreboard(this.element.querySelector('.shell-scoreboard')!, text => {this.toast(text);if(/joined/i.test(text))audio.cue('join');else if(/left/i.test(text))audio.cue('leave');else if(/tagged| is it/i.test(text))audio.cue('tag')})
     this.hudBoard = new Scoreboard(this.element.querySelector('.hud-scoreboard')!, () => {})
     this.touch = new TouchControls(game.input); this.element.classList.toggle('has-touch', this.touch.available)
     const signal = this.abort.signal
+    this.followPointer(signal)
     try { this.nameInput.value = localStorage.getItem('syn3h.playerName') || '' } catch { /* Storage is optional. */ }
     if (!this.nameInput.value.trim()) {
       let seed = ''
@@ -301,6 +310,25 @@ export class Shell implements System {
     const url = new URL(inviteUrl(location.origin, this.room))
     try { await navigator.clipboard.writeText(url.href); this.toast('Invite link copied.'); this.invite.element.querySelector('.join-copy')!.textContent = 'Copied' }
     catch { this.element.querySelector('.shell-message')!.textContent = `Invite link: ${url.href}` }
+  }
+  /**
+   * The 2017 lobby hung in 3D and leaned toward the cursor. Here the pointer sets two CSS
+   * variables that tilt the stage a degree or two and slides the star depths against each
+   * other. Mouse only, and not at all for people who ask for reduced motion.
+   */
+  private followPointer(signal: AbortSignal): void {
+    const stage = this.element.querySelector<HTMLElement>('.lobby-stage')!
+    let frame = 0, x = 0, y = 0
+    this.overlay.addEventListener('pointermove', event => {
+      if (event.pointerType !== 'mouse' || matchMedia('(prefers-reduced-motion: reduce)').matches) return
+      x = event.clientX / innerWidth * 2 - 1; y = event.clientY / innerHeight * 2 - 1
+      if (frame) return
+      frame = requestAnimationFrame(() => {
+        frame = 0
+        stage.style.setProperty('--tilt-y', `${(x * 1.6).toFixed(2)}deg`); stage.style.setProperty('--tilt-x', `${(-y * 1.2).toFixed(2)}deg`)
+        this.starfield.setShift(x, -y)
+      })
+    }, { signal, passive: true })
   }
   private updateHelp(): void {
     renderHelp(this.element.querySelector('.vehicle-help')!, this.choice.vehicleKind)
