@@ -193,7 +193,7 @@ describe('bots with a mind', () => {
     const { game, step } = harness(), terrain = flat(800)
     const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); player.isLocal = false
     player.body.setBodyType(RAPIER.RigidBodyType.Fixed, true)
-    params.set('bots.freeSpirit', free); params.set('bots.count', 4); params.set('bots.canFire', false)
+    params.set('bots.freeSpirit', free); params.set('bots.count', 4); params.set('bots.tagBeams', false)
     const manager = game.add(new BotManager(game, terrain, player)); manager.update()
     expect(manager.vehicles).toHaveLength(4)
     let nearest = Infinity, farthest = 0
@@ -217,7 +217,7 @@ describe('mixed fleet', () => {
     const { BotManager } = await import('../../src/bots/BotManager')
     const { game, step } = harness(), terrain = flat(800)
     const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); player.isLocal = false
-    params.set('bots.fleet', 1); params.set('bots.count', 4); params.set('bots.canFire', false); params.set('bots.freeSpirit', 0.5)
+    params.set('bots.fleet', 1); params.set('bots.count', 4); params.set('bots.tagBeams', false); params.set('bots.freeSpirit', 0.5)
     const manager = game.add(new BotManager(game, terrain, player)); manager.update()
     expect(manager.vehicles.map(v => v.kind)).toEqual(['buggy', 'hovercraft', 'buggy', 'jet'])
     const start = manager.vehicles.map(v => new Vector3().copy(v.body.translation()))
@@ -250,7 +250,7 @@ describe('chasing with the route planner', () => {
     const target = new Syn3hBuggy(game, terrain, new Vector3(0, 1, -100)); target.isLocal = false
     target.body.setBodyType(RAPIER.RigidBodyType.Fixed, true)
     const bot = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); bot.isLocal = false
-    params.set('bots.canFire', false)
+    params.set('bots.tagBeams', false)
     const brain = game.add(new BotBrain(game, terrain, bot, target)); game.add(bot)
     brain.navigator = createNavigator(terrain)
     brain.mind = new Mind(bot, terrain, createGroundPilot(bot), { seed: 'chaser', navigator: brain.navigator })
@@ -271,7 +271,7 @@ describe('bots that know the game', () => {
     const h = harness(), terrain = flat(800)
     const player = new Syn3hBuggy(h.game, terrain, new Vector3(0, 1, 0)); player.isLocal = false
     player.body.setBodyType(RAPIER.RigidBodyType.Fixed, true)
-    params.set('bots.count', count); params.set('bots.canFire', false)
+    params.set('bots.count', count); params.set('bots.tagBeams', false)
     const manager = h.game.add(new BotManager(h.game, terrain, player)); manager.update()
     return { ...h, player, manager }
   }
