@@ -6,7 +6,9 @@
  *
  * A shot is `name=query@az,el,dist` or `name=query@x,y,z>x,y,z` (camera position, then the
  * point it looks at, in metres) or `name=query` for the query's own view. `query` is the
- * lab's URL query without `still=1`, which is added. Example:
+ * lab's URL query without `still=1`, which is added. Append `~id:value` (repeatable) to set the
+ * exhibit's own controls first and `~wait:seconds` to let it settle, as in
+ * `wings=vehicle=game-buggy@30,25,16~game.special:1~wait:1.5`. Example:
  *
  *   node tools/lab-shot.mjs http://127.0.0.1:5201/ /tmp/shots \
  *     'under=vehicle=game&design=buggy-syn3h@30,-40,7' 'corner=vehicle=game&design=buggy-syn3h@-2.2,.9,-2.6>-1,.3,-1.3'
@@ -37,9 +39,15 @@ try {
   } else {
     mkdirSync(out, { recursive: true })
     for (const shot of shots) {
-      const eq = shot.indexOf('='), at = shot.lastIndexOf('@')
-      const name = shot.slice(0, eq), query = shot.slice(eq + 1, at < 0 ? undefined : at), cam = at < 0 ? '' : shot.slice(at + 1)
+      const [head, ...extras] = shot.split('~')
+      const eq = head.indexOf('='), at = head.lastIndexOf('@')
+      const name = head.slice(0, eq), query = head.slice(eq + 1, at < 0 ? undefined : at), cam = at < 0 ? '' : head.slice(at + 1)
       await open(query)
+      for (const extra of extras) {
+        const [id, value] = extra.split(':')
+        if (id === 'wait') await page.waitForTimeout(Number(value) * 1000)
+        else await page.evaluate(({ id, value }) => window.vehicleLab.control(id, value === 'true' ? true : value === 'false' ? false : Number(value)), { id, value })
+      }
       await page.evaluate(async (cam) => {
         const lab = window.vehicleLab
         if (cam.includes('>')) {
