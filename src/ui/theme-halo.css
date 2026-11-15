@@ -196,6 +196,21 @@ html[data-gfx] .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector 
 body #syn3h-build-notice, body .build-banner { border: 1px solid rgb(205 240 255 / .55); border-radius: 999px; background: rgb(3 11 19 / .34); box-shadow: 0 0 6px rgb(143 227 255 / .14), 0 0 34px rgb(0 6 12 / .22); color: #f3fbff; font: 400 13.5px/1.2 'Barlow', system-ui, sans-serif; letter-spacing: .03em; text-shadow: 0 0 1px rgb(0 8 14 / .9), 0 1px 2px rgb(0 8 14 / .55); -webkit-backdrop-filter: none; backdrop-filter: none; }
 body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(198 241 255 / .9); }
 
+/* ---------- Landing next: the exit confirmation and the vehicle tint swatches ----------
+   Base rules live in exploration.css (feat/ux-exit, feat/ux-tint); these only give them the
+   Halo material and keep exploration.css's all-buttons hover from tinting them. Sizes stay. */
+.syn3h-shell.exploration-ui .exit-confirm .exit-confirm-card { border: 1px solid var(--s3-line); border-radius: var(--halo-r); background: var(--halo-fill); box-shadow: var(--halo-glow); -webkit-backdrop-filter: none; backdrop-filter: none; text-shadow: var(--halo-under); }
+.syn3h-shell.exploration-ui .exit-confirm { -webkit-backdrop-filter: none; backdrop-filter: none; }
+.syn3h-shell.exploration-ui .exit-confirm button { text-shadow: var(--halo-under); }
+.syn3h-shell.exploration-ui .exit-confirm button:hover { background: rgb(143 227 255 / .07); border-color: var(--s3-line); box-shadow: var(--halo-glow); }
+/* Stay is the safe, selected choice: shown as light. Leave stays quiet until hovered. */
+.syn3h-shell.exploration-ui .exit-confirm .exit-stay, .syn3h-shell.exploration-ui .exit-confirm .exit-stay:hover { color: #fff; border-color: rgb(198 241 255 / .85); background: rgb(143 227 255 / .08); box-shadow: inset 0 0 8px rgb(143 227 255 / .18), var(--halo-glow); }
+.syn3h-shell.exploration-ui .exit-confirm .exit-leave { color: var(--s3-dim); }
+.syn3h-shell.exploration-ui .exit-confirm .exit-leave:hover { color: var(--s3-ink); }
+/* Colour swatches: a hairline ring around the colour, no field styling of any kind. */
+.syn3h-shell.exploration-ui .world-inspector .wi-swatch input[type=color] { border: 1px solid var(--s3-line); background: none; box-shadow: var(--halo-glow); text-shadow: none; }
+.syn3h-shell.exploration-ui .world-inspector .wi-swatch:hover input[type=color] { border-color: rgb(198 241 255 / .9); }
+
 /* Short landscape screens tuck the quick selectors into the top block's spare space
    (exploration.css): there they are not a panel, and their captions stay hidden. */
 @media (max-height: 500px) {
