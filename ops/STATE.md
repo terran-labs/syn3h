@@ -6,13 +6,15 @@ This record replaces the obsolete Saturday evening freezes and release holds.
 ## Current authority and ownership
 
 The owner authorized overnight releases without reviewing each one and removed earlier
-cutoffs. Each release still needs the frozen-build checks, an empty production room,
-and immediate rollback if public checks fail. Integration and deployment belong to this
+cutoffs. Each release still needs frozen-build checks and immediate rollback if public checks fail.
+At 00:31 PST the owner explicitly removed the occupied-lobby hold and said to keep
+deployments rolling. Do not wait for lobby occupancy to clear or ask again. Integration and deployment belong to this
 Orchestrator alone. The Foreman coordinates owner decisions and lane recovery.
 
 The owner switched this thread to Astra after Claude exhausted its weekly quota and said
 to proceed. Do not retry exhausted Claude profiles. Existing recordings supplied by the
-owner stay, including wind. The generated-only wind question remains unanswered.
+owner stay, except wind: the owner explicitly chose generated wind only through the Foreman at
+00:33 PST. UX owns the scoped playback change; music and laser originals stay.
 The smooth near-camera ground request remains deferred: the owner said to backlog it,
 not start it now. Tank round six is a design study awaiting the owner's choice.
 
@@ -40,13 +42,14 @@ origin and boost, cord hook origin, ram reach and shove speed memory. It also in
 the Bungee reach checks, 0.6 m plant cap, ten-world galaxy, recorded music default and
 five-minute Daydream. Yoink, Big Red and Pesters are absent.
 
-At recovery the public lobby still had one person. Do not deploy while occupied.
+At recovery the public lobby had one person; the owner subsequently waived that hold.
 Use `node tools/production-occupied.mjs https://www.syn3h.com` from release3:
 its protocol version matches release 2. Public release 2 has no aggregate status endpoint;
 the fallback sees the named lobby only. Unknown named rooms are a limitation.
-The owner question is open. Two-minute follow-up heartbeat `5a712e85` restores supervision.
+The owner answered the question. Five-minute release follow-up heartbeat `3ac4c3a6`
+replaces occupancy supervision.
 
-Before shipping: resolve the occupancy gate, finish evidence verification, notify Foreman,
+Before shipping: finish evidence verification, notify Foreman,
 then run `tools/release.sh 3 "release note"` from release3 with the existing Cloudflare
 credential in the environment. Never print the credential. Touch only Worker `syn3h`.
 After deployment check the public domain, network test, every vehicle and WebKit.
