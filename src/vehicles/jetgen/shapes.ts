@@ -137,7 +137,7 @@ export class Builder {
    * @param hard straight-edged, faceted wings and fins with square tips, for the angular military
    *   designs. Hulls stay smooth curves so the body shades cleanly.
    */
-  constructor(readonly detail = 1, readonly hard = false) {}
+  constructor(readonly detail = 1, readonly hard = false, readonly smooth = false) {}
   private segs(n: number): number { return Math.max(1, Math.round(n * this.detail)) }
   private ring(n: number): number { return Math.max(6, 2 * Math.round(n * this.detail / 2)) }
 
@@ -377,9 +377,24 @@ export class Builder {
       const k = o.tipFrom === undefined ? rings.length - 1 : Math.max(1, t.findIndex(v => v >= o.tipFrom!))
       // Angular designs keep their wings and fins faceted. The flat normals live in the geometry,
       // so the shared paint needs no faceted variant of its own.
-      const facet = (g: THREE.BufferGeometry) => { if (!this.hard) return g; const f = g.toNonIndexed(); g.dispose(); f.computeVertexNormals(); return f }
-      this.add(o.mat ?? (this.hard ? 'panel' : 'paint'), facet(loft(rings.slice(0, k + 1), true, k === rings.length - 1)))
-      if (k < rings.length - 1) this.add(o.tip ?? 'chrome', facet(loft(rings.slice(k), false, true)))
+      const facet = (g: THREE.BufferGeometry) => { if (!this.hard || this.smooth) return g; const f = g.toNonIndexed(); g.dispose(); f.computeVertexNormals(); return f }
+      // Shade a colour split as one continuous surface, without a seam in its normals.
+      const whole = this.smooth && k < rings.length - 1 ? loft(rings) : undefined
+      const piece = (start: number, end: number, capStart: boolean, capEnd: boolean) => {
+        const geometry = loft(rings.slice(start, end + 1), capStart, capEnd)
+        if (whole) {
+          const source = whole.attributes.normal, target = geometry.attributes.normal
+          const width = rings[0].length + 1
+          for (let i = 0; i < (end - start + 1) * width; i++) {
+            const j = start * width + i
+            target.setXYZ(i, source.getX(j), source.getY(j), source.getZ(j))
+          }
+        }
+        return facet(geometry)
+      }
+      this.add(o.mat ?? (this.hard ? 'panel' : 'paint'), piece(0, k, true, k === rings.length - 1))
+      if (k < rings.length - 1) this.add(o.tip ?? 'chrome', piece(k, rings.length - 1, false, true))
+      whole?.dispose()
     }
   }
 

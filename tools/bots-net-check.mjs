@@ -16,8 +16,11 @@
 import { spawn } from 'node:child_process'
 import { chromium } from 'playwright-core'
 
+const base = process.env.BOTS_TEST_URL ?? 'http://localhost:5183/'
+const proxyPort = process.env.BOTS_PROXY_PORT ?? '8794'
+const roomPort = process.env.BOTS_ROOM_PORT ?? '8791'
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
-const proxy = spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'server/latency-proxy.ts', '--listen', '8794', '--target', 'http://127.0.0.1:8791', '--rtt', '40'], { stdio: 'ignore' })
+const proxy = spawn(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'server/latency-proxy.ts', '--listen', proxyPort, '--target', `http://127.0.0.1:${roomPort}`, '--rtt', '40'], { stdio: 'ignore' })
 let finished = false
 proxy.on('exit', (code) => { if (!finished) { console.error(`latency proxy exited early (code ${code}); is port 8794 in use?`); process.exit(3) } })
 await wait(3000)
@@ -29,10 +32,10 @@ async function open(name) {
   browsers.push(br)
   const page = await (await br.newContext({ viewport: { width: 800, height: 450 } })).newPage()
   page.on('pageerror', (e) => errors.push(`${name}: ${e.message}`))
-  await page.goto(`http://localhost:5183/?room=${room}&name=${name}&autoplay=1`)
+  await page.goto(`${base}?room=${room}&name=${name}&autoplay=1&daydream=0`)
   await page.waitForFunction(() => window.syn3h?.shell && window.syn3hNet?.connected, null, { timeout: 90000 })
   // No lowering of the graphics level here: the lowest level caps how many bots a client runs.
-  await page.evaluate(() => { window.syn3h.shell.play() })
+  await page.evaluate(() => { window.syn3h.params.set('gfx.auto', false); window.syn3h.params.set('gfx.level', 2); window.syn3h.shell.play() })
   return page
 }
 const results = []
@@ -78,18 +81,24 @@ try {
   // 3. The match.
   const tag1 = { host: await matchOf(a), guest: await matchOf(b), it: await a.evaluate(() => window.syn3hNet.game.it) }
   check('3. tag: the host\'s bots are told which vehicle is "it"; the guest\'s are told nothing', tag1.host?.mode === 'tag' && tag1.host.it === (tag1.it === idA ? 'the host player' : tag1.host.it) && tag1.host.it !== null && tag1.guest === null, tag1)
-  // "It" changes hands by a ram: put Bob beside whoever is "it" and have the holder report it.
-  const itBefore = tag1.it
-  await wait(3500) // the tag cooldown after joining
-  await a.evaluate(() => { const s = window.syn3h.terrain.spawnPoint(0); window.syn3h.player.teleport(s.position, s.heading) })
+  // Exercise a real contact, including fresh replicated positions and the room cooldown.
+  // A synthetic ram beside the spawn can be rejected when the sloping pad separates cars.
+  await a.evaluate(() => window.syn3h.params.set('bots.count', 0))
+  await a.waitForFunction(() => window.syn3h.bots.vehicles.length === 0)
+  await wait(3500)
+  const itBefore = await a.evaluate(() => window.syn3hNet.game.it)
+  await a.evaluate(() => { const s = window.syn3h.terrain.spawnPoint(0); window.syn3h.player.teleport(s.position, 0) })
   await b.evaluate(() => {
     const s = window.syn3h.terrain.spawnPoint(0), { terrain, player } = window.syn3h
-    player.teleport(player.object.position.clone().set(s.position.x + 4, terrain.heightAt(s.position.x + 4, s.position.z) + 1.5, s.position.z), 0)
+    s.position.z -= 7
+    s.position.y = terrain.heightAt(s.position.x, s.position.z) + 1.5
+    player.teleport(s.position, 0)
   })
   await wait(1500)
-  await (itBefore === idA ? a : b).evaluate((other) => window.syn3hNet.send({ type: 'ram', other }), itBefore === idA ? idB : idA)
-  await a.waitForFunction((it) => window.syn3hNet.game.it !== it, itBefore, { timeout: 5000 }).catch(() => {})
-  await wait(500)
+  await a.bringToFront()
+  await a.keyboard.down('KeyW')
+  await a.waitForFunction((it) => window.syn3hNet.game.it !== it, itBefore, { timeout: 12000 }).catch(() => {})
+  await a.keyboard.up('KeyW')
   const tag2 = { host: await matchOf(a), it: await a.evaluate(() => window.syn3hNet.game.it) }
   check('3. tag: told again when "it" changes hands', tag2.it !== itBefore && tag2.host?.mode === 'tag' && tag2.host.it !== tag1.host?.it, { before: tag1.host, after: tag2 })
 
@@ -106,6 +115,20 @@ try {
   await a.evaluate(() => window.syn3h.params.set('game.mode', 0))
   await a.waitForFunction(() => window.syn3h.bots.match?.mode === 'tag', null, { timeout: 10000 }).catch(() => {})
   check('3. back to tag when the mode changes back', (await matchOf(a))?.mode === 'tag', await matchOf(a))
+  // Graphics caps apply to a mixed fleet, including after the guest takes over hosting.
+  await a.evaluate(() => { const p = window.syn3h.params; p.set('bots.fleet', 1); p.set('bots.count', 8); p.set('gfx.level', 0) })
+  await a.waitForFunction(() => window.syn3h.bots.vehicles.length === 2)
+  await b.waitForFunction(() => [...window.syn3hNet.remotes.keys()].filter(id => id >= 0xff00).length === 2)
+  check('4. safe graphics caps the mixed fleet at two', (await hostKinds(a)).length === 2, await hostKinds(a))
+  await a.evaluate(() => { window.syn3h.params.set('gfx.level', 1); window.syn3h.params.set('bots.count', 4) })
+  await a.waitForFunction(() => window.syn3h.bots.vehicles.length === 4)
+  await b.waitForFunction(() => [...window.syn3hNet.remotes.keys()].filter(id => id >= 0xff00).length === 4)
+  await a.close()
+  await b.waitForFunction(() => window.syn3hNet.isHost && !window.syn3h.bots.remote && window.syn3h.bots.vehicles.length === 4, null, { timeout: 20000 })
+  const c = await open('Charlie')
+  await c.waitForFunction(() => [...window.syn3hNet.remotes.keys()].filter(id => id >= 0xff00).length === 4, null, { timeout: 20000 })
+  const takeover = { host: await hostKinds(b), guest: await guestKinds(c) }
+  check('5. host takeover preserves mixed types for a new guest', new Set(takeover.host).size === 3 && JSON.stringify(takeover.host) === JSON.stringify(takeover.guest), takeover)
   check('no page errors', errors.length === 0, errors)
 } finally {
   finished = true

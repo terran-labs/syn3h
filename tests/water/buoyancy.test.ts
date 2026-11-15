@@ -3,10 +3,14 @@ import * as THREE from 'three/webgpu'
 import { initPhysics, RAPIER } from '../../src/core/physics'
 import { ClassicBuggy } from '../../src/vehicles/ClassicBuggy'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { Tank } from '../../src/vehicles/Tank'
+import { Hovercraft } from '../../src/vehicles/Hovercraft'
+import { Jet } from '../../src/vehicles/Jet'
 import { harness } from '../vehicles2/harness'
+import { ZORB_FLOAT_DEPTH } from '../../src/vehicles/zorb'
 import { waterSinking, applyWaterForces } from '../../src/vehicles/buoyancy'
 beforeAll(initPhysics)
-afterEach(()=>{waterSinking.value=false})
+afterEach(()=>{waterSinking.value=waterSinking.def.default})
 function setup(){
  waterSinking.value=true
  const h=harness();h.terrain.liquidHeightAt=()=>10;h.terrain.liquidKindAt=()=> 'water'
@@ -50,10 +54,21 @@ function bodyTrial(kind:string,y:number,seconds:number,speed=0,flow=0,radius=0){
 }
 it('buggy at 12 m/s planes near the surface',()=>{expect(bodyTrial('buggy',10,15,12).p.y).toBeGreaterThan(9.3)})
 it('tank plunges to the bed',()=>{expect(bodyTrial('tank',10,15).p.y).toBeLessThan(1)})
-it('sealed ball floats',()=>{expect(bodyTrial('zorb',5,20,0,0,2).p.y).toBeCloseTo(10,0)})
+it('sealed field floats on its base',()=>{expect(bodyTrial('zorb',5,20,0,0,2).p.y).toBeCloseTo(10+2-ZORB_FLOAT_DEPTH,0)})
 it('river current carries a submerged hull downstream',()=>{
  const result=bodyTrial('buggy',5,6,0,3)
  expect(result.p.x).toBeGreaterThan(5);expect(result.v.x).toBeGreaterThan(1)
+})
+
+it.each([['tank',Tank],['hovercraft',Hovercraft],['jet',Jet]] as const)('%s controller stays finite in deep water',(kind,Kind)=>{
+ const h=setup(),v=new Kind(h.game,h.terrain,new THREE.Vector3(0,9,0));v.isLocal=false
+ try{
+  h.step(v,900)
+  const p=v.body.translation(),speed=v.body.linvel()
+  expect([p.x,p.y,p.z,speed.x,speed.y,speed.z].every(Number.isFinite)).toBe(true)
+  if(kind==='tank')expect(p.y).toBeLessThan(3)
+  if(kind==='hovercraft')expect(p.y).toBeGreaterThan(8)
+ }finally{v.dispose();h.world.free()}
 })
 
 it('actual zorbed buggy floats in the shared model and follows current',()=>{
@@ -62,7 +77,7 @@ it('actual zorbed buggy floats in the shared model and follows current',()=>{
  try{
   h.step(v,1800)
   expect(v.zorb.active).toBe(true)
-  expect(v.zorb.centre(new THREE.Vector3()).y).toBeCloseTo(10,0)
+  expect(v.zorb.centre(new THREE.Vector3()).y).toBeCloseTo(10+v.zorb.radius-ZORB_FLOAT_DEPTH,0)
   expect(v.body.translation().x).toBeGreaterThan(10)
  }finally{v.dispose();h.world.free()}
 })

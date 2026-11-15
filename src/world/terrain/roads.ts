@@ -27,6 +27,9 @@ import {
 import { hash2, smoothstep } from './noise'
 import { TURN_GENTLE, normalize2, sq, steer, visitNearPolyline } from './raster'
 import { HeightSampler } from './sampler'
+import { ROAD_WIDTH, ROAD_FLAT_HALF, ROAD_SHOULDER, MAX_GRADE } from './roadConstants'
+// Preserve existing callers while keeping eager dimension reads outside the pass cycle.
+export { FORD_DEPTH, ROAD_WIDTH, ROAD_FLAT_HALF, ROAD_SHOULDER, MAX_GRADE } from './roadConstants'
 
 export interface RoadPoint {
   x: number
@@ -45,9 +48,6 @@ export interface RoadFord {
   depth: number
 }
 
-/** Water depth over the road that a ford is built to. */
-export const FORD_DEPTH = 0.35
-
 export interface Road {
   kind: RoadKind
   closed: boolean
@@ -57,17 +57,6 @@ export interface Road {
   fords: RoadFord[]
 }
 
-/** Painted width. */
-export const ROAD_WIDTH = 11
-/**
- * Half width of the perfectly level strip. Wider than the paint because the collider is
- * a 4 m triangle grid: a point 3.5 m off centre interpolates samples up to ~9 m out.
- */
-export const ROAD_FLAT_HALF = 9.5
-/** Blend from the level strip back to natural ground. */
-export const ROAD_SHOULDER = 12
-/** Longitudinal grade cap of the road profile: 0.2 is about 11.3 degrees. */
-export const MAX_GRADE = 0.2
 /** Grade the volcano road is planned at, leaving room under the cap to smooth bumps. */
 const TRACE_GRADE = 0.14
 const STEP = 4

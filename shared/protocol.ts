@@ -294,6 +294,36 @@ export type YoinkWire =
   | { s: 'fling'; to: number; v: [number, number, number] }
   | { s: 'drop'; to: number }
 
+export interface RaceParticipant {
+  id: number
+  name: string
+  status: 'racing' | 'finished' | 'withdrawn'
+}
+
+/** Host simulation proposal. The room supplies canonical names and bounds phase deadlines. */
+export interface RaceUpdate {
+  id: string
+  revision: number
+  phase: 'countdown' | 'running' | 'finished' | 'cancelled'
+  remainingMs: number
+  destination: { label: string; x: number; y: number; z: number; radius: number }
+  participants: RaceParticipant[]
+  winnerId: number | null
+  reason?: string
+}
+
+export interface RaceState extends RaceUpdate {
+  /** Room-clock seconds corresponding to remainingMs. */
+  updatedAt: number
+  /** Preserved when the winner leaves or changes their name. */
+  winnerName: string | null
+}
+
+export const RACE_COUNTDOWN_MS = 5000
+export const RACE_RUNNING_MS = 120000
+export const RACE_RESULT_MS = 8000
+export const RACE_COOLDOWN_MS = 90000
+
 export type ClientMessage =
   /**
    * `resume` is a random secret this tab keeps for this room. In a room with `game.rejoin`
@@ -305,7 +335,8 @@ export type ClientMessage =
   | { type: 'profile'; kind?: string; colors?: [string, string] }
   | { type: 'ping'; t: number }
   | { type: 'param'; id: string; value: ParamWireValue }
-  | { type: 'fire'; shot: ShotInfo }
+  /** Optional bot actor: only the current host may act for a live bot it simulates. */
+  | { type: 'fire'; shot: ShotInfo; bot?: number }
   /**
    * Sent by the victim's own client: "shot `shot` from `shooter` hit me". The host also
    * reports hits on bots, naming the bot as `victim`.
@@ -330,9 +361,14 @@ export type ClientMessage =
   /** Host only: which vehicle bot `id` is, so guests build the same kind (mixed bot fleets). */
   | { type: 'bot'; id: number; kind: string }
   /** My Bungee cord changed. */
-  | { type: 'cord'; cord: CordWire }
+  | { type: 'cord'; cord: CordWire; bot?: number }
   /** I grabbed, flung or dropped a vehicle with Yoink. */
-  | { type: 'yoink'; y: YoinkWire }
+  | { type: 'yoink'; y: YoinkWire; bot?: number }
+  /** A human announces their own driving state; lobby spectators default to ineligible. */
+  | { type: 'race-ready'; driving: boolean }
+  | { type: 'race'; race: RaceUpdate }
+  /** A participant withdraws themselves, never another vehicle. */
+  | { type: 'race-leave'; id: string }
 
 export type TagEvent =
   | 'default' | 'ram' | 'laser' | 'score' | 'leave' | 'lock' | 'host'
@@ -350,6 +386,7 @@ export type ServerMessage =
       params: Record<string, ParamWireValue>
       game: GameState
       serverTime: number
+      race?: RaceState | null
     }
   | { type: 'pong'; t: number; serverTime: number }
   | { type: 'join'; player: PlayerInfo }
@@ -365,6 +402,7 @@ export type ServerMessage =
   | { type: 'cord'; from: number; cord: CordWire; t: number }
   /** Player `from` used Yoink on vehicle `y.to`. */
   | { type: 'yoink'; from: number; y: YoinkWire }
+  | { type: 'race'; race: RaceState | null }
   | { type: 'game'; game: GameState; event?: TagEvent; actor?: number; target?: number }
   /**
    * The room's world was replaced: set every world parameter to its default, then apply

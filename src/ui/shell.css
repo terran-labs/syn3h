@@ -201,7 +201,7 @@
 .lobby-footer { position: relative; display: flex; flex-direction: column; justify-content: center; align-items: center; width: min(1000px,100%); flex: 0 0 38px; font-size: 12px; color: var(--s3-soft); }
 .shell-message { overflow-wrap: anywhere; font-size: 13px; }
 .syn3h-shell label:not(.syn3h-advanced *) { display: block; text-align: left; margin: 14px 0 6px; font-size: 17px; }
-.syn3h-shell input:not(.syn3h-advanced *):not([type=radio]):not([type=checkbox]):not([type=color]):not([type=range]) { display: block; width: 100%; background: rgb(255 255 255 / .06); color: var(--s3-ink); border: 1px solid var(--s3-line); border-radius: var(--s3-radius-small); font: 400 19px 'Barlow',sans-serif; padding: 11px 13px; min-height: 46px; transition: border-color .18s, box-shadow .18s; }
+.syn3h-shell input:where(:not(.syn3h-advanced *):not([type=radio]):not([type=checkbox]):not([type=color]):not([type=range])) { display: block; width: 100%; background: rgb(255 255 255 / .06); color: var(--s3-ink); border: 1px solid var(--s3-line); border-radius: var(--s3-radius-small); font: 400 19px 'Barlow',sans-serif; padding: 11px 13px; min-height: 46px; transition: border-color .18s, box-shadow .18s; }
 .syn3h-shell input:not(.syn3h-advanced *):focus { outline: none; border-color: var(--theme-focus-ring); box-shadow: 0 0 0 3px rgb(41 151 255 / .25); }
 .syn3h-shell input:not(.syn3h-advanced *)[type=range] { display: block; width: 100%; accent-color: var(--s3-accent); min-height: 34px; margin: 5px 0 20px; }
 .syn3h-shell input:not(.syn3h-advanced *)[type=radio], .syn3h-shell input:not(.syn3h-advanced *)[type=checkbox] { accent-color: var(--s3-accent); width: 20px; height: 20px; margin: 0; vertical-align: middle; }
@@ -554,3 +554,35 @@
 .syn3h-shell.has-touch .shell-hud .gear-chip { min-height: 40px; padding: 6px 16px; }
 
 .syn3h-shell .galaxy-label:focus { outline: 2px solid var(--s3-accent-2); border-radius: 6px; }
+
+/* Custom keeps its generated planet in view while the player shapes it. */
+.is-shaping-world .lobby-brand { flex-basis: 100px; }
+.is-shaping-world .shell-logo { width: 260px; }
+.is-shaping-world .lobby-panels { width: min(42vw, 520px); align-self: flex-end; }
+.is-shaping-world .lobby-panels > section { padding: 20px 14px; }
+@media (max-width: 700px) {
+  .is-shaping-world .lobby-brand { flex-basis: 65px; }
+  .is-shaping-world .shell-logo { width: 180px; }
+  .is-shaping-world .lobby-panels { width: 100%; margin-top: auto; flex: 0 1 52vh; }
+}
+
+/* Automatic races remain a quiet status cue while the player drives. */
+.race-hud { position: fixed; z-index: 12; bottom: 24px; left: 50%; transform: translateX(-50%); width: min(320px, calc(100vw - 32px)); padding: 10px 14px; border: 1px solid rgb(190 225 255 / .3); border-radius: 14px; background: rgb(14 26 42 / .85); color: #edf6ff; box-shadow: 0 5px 24px rgb(0 0 0 / .15); text-align: center; pointer-events: auto; }
+.race-hud[hidden], .race-hud [hidden] { display: none; }
+.race-status, .race-destination, .race-detail { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.race-status { font-size: 15px; }
+.race-destination { font-size: 14px; margin-top: 2px; }
+.race-detail { font-size: 12px; color: #c5d9e9; }
+.race-arrow { display: inline-block; position: absolute; left: 10px; top: 12px; font-size: 22px; }
+.race-hud:has(.race-arrow:not([hidden])) { padding-inline: 34px; }
+.race-controls { display: flex; gap: 4px; justify-content: center; margin-top: 6px; }
+.syn3h-shell .race-controls button { font: inherit; font-size: 12px; min-height: 32px; padding: 4px 9px; border-radius: 8px; }
+.race-hud.is-captured { background: rgb(10 20 34 / .5); border-color: rgb(190 225 255 / .18); pointer-events: none; }
+.race-hud.is-captured .race-controls { display: none; }
+.race-hud.is-collapsed .race-destination, .race-hud.is-collapsed .race-detail, .race-hud.is-collapsed .race-arrow { display: none; }
+.has-touch .race-controls button { min-height: 44px; }
+@media (max-width: 700px) { .race-hud { top: 168px; bottom: auto; width: min(280px, calc(100vw - 32px)); } .syn3h-shell.is-playing.has-landmark-race .shell-toast { top: auto; bottom: 200px; } }
+@media (max-height: 500px) and (orientation: landscape) { .race-hud { top: 10px; bottom: auto; width: 250px; padding-block: 5px; } .has-match .race-hud { top: 110px; } }
+
+/* The SVG retains its box and accessible name while Galaxy draws the same mark. */
+.has-animated-logo .shell-logo { opacity: 0; animation: none; }

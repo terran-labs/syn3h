@@ -1,3 +1,5 @@
+import { cleanRecipeId, type RecipeId } from '../shared/recipes'
+import type { PresenceSnapshot } from '../shared/presence'
 /**
  * How many people are playing, across every room: the answer /status gives, so a release is
  * not deployed under anyone (a deploy resets occupied rooms; see docs/CUTOVER.md).
@@ -20,6 +22,10 @@ export const STALE_MS = 10 * 60_000
 /** A room with traffic repeats its count at least this often, ms. */
 export const REFRESH_MS = 2 * 60_000
 
+export const PRESENCE_REFRESH_MS = 30_000
+export const PRESENCE_TTL_MS = 90_000
+export interface RegistryEntry { players: number; at: number; recipeId?: RecipeId | null }
+
 export interface Totals {
   /** Rooms with at least one connected player. */
   rooms: number
@@ -29,19 +35,19 @@ export interface Totals {
 
 export class RoomRegistry {
   /** Room name to its last reported count and when (ms). */
-  private readonly entries = new Map<string, { players: number; at: number }>()
+  private readonly entries = new Map<string, RegistryEntry>()
 
-  constructor(saved?: Record<string, { players: number; at: number }>) {
+  constructor(saved?: Record<string, RegistryEntry>) {
     for (const [room, e] of Object.entries(saved ?? {})) {
-      if (e && Number.isInteger(e.players) && e.players > 0 && Number.isFinite(e.at)) this.entries.set(room, { players: e.players, at: e.at })
+      if (e && Number.isInteger(e.players) && e.players > 0 && Number.isFinite(e.at)) this.entries.set(room, { players: e.players, at: e.at, recipeId: cleanRecipeId(e.recipeId) })
     }
   }
 
   /** A room says how many players are connected. Zero forgets the room. */
-  report(room: string, players: number, now: number): void {
+  report(room: string, players: number, now: number, recipeId?: unknown): void {
     if (typeof room !== 'string' || !room || room.length > 128) return
     if (!Number.isInteger(players) || players <= 0) this.entries.delete(room)
-    else this.entries.set(room, { players: Math.min(players, 1000), at: now })
+    else this.entries.set(room, { players: Math.min(players, 1000), at: now, recipeId: cleanRecipeId(recipeId) })
   }
 
   totals(now: number): Totals {
@@ -58,8 +64,23 @@ export class RoomRegistry {
     return { rooms, players }
   }
 
+  /** Presence expires independently; do not shorten the conservative release status TTL. */
+  presence(now: number): PresenceSnapshot {
+    this.totals(now) // Prune only after the longer status TTL.
+    const groups = new Map<RecipeId | null, PresenceSnapshot['byRecipe'][number]>()
+    for (const e of this.entries.values()) {
+      if (now - e.at >= PRESENCE_TTL_MS || e.at > now) continue
+      const id = cleanRecipeId(e.recipeId)
+      const g = groups.get(id) ?? { recipeId: id, rooms: 0, players: 0, oldestReportAt: e.at }
+      g.rooms++; g.players += e.players; g.oldestReportAt = Math.min(g.oldestReportAt, e.at)
+      groups.set(id, g)
+    }
+    return { version: 1, generatedAt: now, ttlMs: PRESENCE_TTL_MS,
+      byRecipe: [...groups.values()].sort((a, b) => (a.recipeId ?? '').localeCompare(b.recipeId ?? '')) }
+  }
+
   /** For storage, so the counts survive the registry object being evicted. */
-  save(): Record<string, { players: number; at: number }> {
+  save(): Record<string, RegistryEntry> {
     return Object.fromEntries(this.entries)
   }
 }

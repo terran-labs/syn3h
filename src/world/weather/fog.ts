@@ -57,9 +57,10 @@ export const hazeTintAmount = defineParam({ id: 'weather.hazeTintAmount', label:
 /**
  * Aerial perspective: a second, thin, high layer that makes distant ridges separate into
  * layers and shift toward the sky's own hue. 0 leaves the picture exactly as it was. Asked
- * for by the Post Effects lane for the owner's cinematic look.
+ * for by the Post Effects lane for the owner's cinematic look. Enabled at unit strength
+ * for ordinary play; the slider still allows players to turn it off.
  */
-export const aerial = defineParam({ id: 'weather.aerial', label: 'Aerial perspective', group, scope: w, default: 0, min: 0, max: 3, step: 0.01 })
+export const aerial = defineParam({ id: 'weather.aerial', label: 'Aerial perspective', group, scope: w, default: 1, min: 0, max: 3, step: 0.01 })
 /** Extinction per metre at sea level of the aerial layer at weather.aerial 1, and its scale height. */
 export const AERIAL_DENSITY = 0.0001
 export const AERIAL_HEIGHT = 1600

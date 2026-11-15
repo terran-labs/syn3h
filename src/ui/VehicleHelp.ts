@@ -7,8 +7,21 @@ export function vehicleHelp(kind: VehicleKind): string[] {
   return ['W / S or arrows: drive · A / D: steer', 'Shift: brake · Space: force field wings', 'With wings: W / S pitch · A / D roll', 'L or click: tag beam · X: zorb ball']
 }
 /** Shown only while the host allows more than one kind of gear. Wording agreed with the Weapons lane. */
-export const gearHelp = ['T: switch gear · Bungee: hold L or click to reel in · V or wheel: let out · G: let go', 'Gamepad: D-pad left and right: switch gear · LB: let out · RB: let go']
-export const gearTouchHelp = 'Tap the Gear chip to switch gear. With the Bungee: hold TAG to reel in, LET OUT to pay out, LET GO to drop it.'
+export const gearHelp = [
+  'T: switch gear · L or left mouse: use gear',
+  'Bungee: hold to reel in · V or wheel: let out · G: let go',
+  'Yoink: aim at a vehicle and hold to grab; release to fling. With no target, press for a gust.',
+  'Big Red: hold until fully charged, then release. Letting go early fizzles.',
+  'Pesters: aim at a vehicle and press to send a chasing tag.',
+  'Gamepad: D-pad left and right: switch gear · LB: let out · RB: let go',
+]
+export const gearTouchHelp = [
+  'Tap the Gear chip to switch gear. TAG uses the selected gear.',
+  'Bungee: hold TAG to reel in, LET OUT to pay out, LET GO to drop it.',
+  'Yoink: aim at a vehicle and hold TAG to grab; release to fling. With no target, tap TAG for a gust.',
+  'Big Red: hold TAG until fully charged, then release. Letting go early fizzles.',
+  'Pesters: aim at a vehicle and tap TAG to send a chasing tag.',
+]
 export const cameraHelp = ['Click: capture the mouse, then move it to look round · Esc: release', 'C: chase, cockpit, orbit, stationary, roam · Right click: cockpit', 'Wheel or + / −: distance · Z: scope']
 export function touchHelp(kind: VehicleKind): string {
   return kind === 'jet' ? 'Hold THR + to lift off, THR − to come down. Left thumb: pitch and bank. MODE: hover or flight. BRAKE: slow down. ZORB: ride in a ball.' : kind === 'hovercraft' ? 'Left thumb: thrust, turn and pitch. BRAKE: slow down. ZORB: ride in a ball.' : 'Left thumb: drive and steer. WINGS: deploy wings. BRAKE: slow down. TAG: send a tag beam. ZORB: ride in a ball.'
@@ -28,6 +41,6 @@ export function quickHelp(kind: VehicleKind, touch = false): string[] {
 }
 export function renderHelp(element: HTMLElement, kind: VehicleKind, touch = false, quick = false, gear = false): void {
   element.replaceChildren()
-  const lines = quick ? quickHelp(kind, touch) : touch ? [touchHelp(kind), ...(gear ? [gearTouchHelp] : [])] : [...vehicleHelp(kind), ...(gear ? gearHelp : []), ...cameraHelp]
+  const lines = quick ? quickHelp(kind, touch) : touch ? [touchHelp(kind), ...(gear ? gearTouchHelp : [])] : [...vehicleHelp(kind), ...(gear ? gearHelp : []), ...cameraHelp]
   for (const text of lines) { const line = document.createElement('div'); line.textContent = text; element.append(line) }
 }

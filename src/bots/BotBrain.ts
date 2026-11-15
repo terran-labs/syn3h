@@ -5,6 +5,8 @@ import { GROUP_PROJECTILE, GROUP_TERRAIN, RAPIER, groups } from '../core/physics
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
 import * as p from './params'
+import { isRoadFord } from './nav/fords'
+import { BotGearController, type BotGearHooks } from './gear'
 import { roadWaypoint, type RoadTerrain, type RoadPoint } from './navigation'
 import type { Mind } from './mind/Mind'
 import { GROUND_PROFILE } from './pilot/ground'
@@ -21,7 +23,7 @@ export function isSafeGround(terrain: BotTerrain, x: number, z: number): boolean
   // A wrapping world has no edge to stay away from: the far side of the seam is more ground.
   if (!terrain.wrapSize && (Math.abs(x) > terrain.size / 2 - 3 || Math.abs(z) > terrain.size / 2 - 3)) return false
   const ground = terrain.heightAt(x, z), liquid = terrain.liquidHeightAt?.(x, z)
-  return Number.isFinite(ground) && (liquid == null || !Number.isFinite(liquid) || ground > liquid + 0.5)
+  return Number.isFinite(ground) && (liquid == null || !Number.isFinite(liquid) || ground > liquid + 0.5 || isRoadFord(terrain, x, z))
 }
 export interface BotMatch {
   mode: 'tag' | 'hill'
@@ -32,6 +34,18 @@ export interface BotMatch {
 }
 export class BotBrain implements System {
   remote = false
+  private gear: BotGearController | null = null
+  setGear(hooks: BotGearHooks | null) {
+    if (hooks && !this.gear) this.gear = new BotGearController(this.vehicle, () => this.terrain.wrapSize, target => {
+      const here = this.vehicle.body.translation(), there = this.imageOf(target.body.translation(), here)
+      const delta = new Vector3(there.x - here.x, there.y - here.y, there.z - here.z), length = delta.length()
+      if (length < 0.01) return false
+      delta.multiplyScalar(1 / length)
+      return !this.game.world.castRay(new RAPIER.Ray(here, delta), length, true, undefined, groups(GROUP_PROJECTILE, GROUP_TERRAIN))
+    }, (x, z) => isSafeGround(this.terrain, x, z) && (this.navigator?.passable(x, z, GROUND_PROFILE) ?? this.terrain.normalAt(x, z, new Vector3()).y > 0.85))
+    this.gear?.setHooks(hooks)
+  }
+  dispose() { this.gear?.setHooks(null) }
   requestRecovery?: () => boolean
   target: Vehicle | null = null
   /**
@@ -40,6 +54,8 @@ export class BotBrain implements System {
    */
   mind: Mind | null = null
   /** What it is doing now: 'chase' is the original pursuit, 'roam' is the mind's choice. */
+  raceGoal: { countdown: boolean; destination: { x: number; y: number; z: number; radius: number } } | null = null
+  private racing = false
   mood: 'chase' | 'roam' = 'chase'
   private moodTime = 0
   private steer = 0
@@ -131,7 +147,7 @@ export class BotBrain implements System {
   private roam(dt: number, input: InputState, here: { x: number; y: number; z: number }) {
     const status = this.mind!.step(dt, input)
     const liquid = this.terrain.liquidHeightAt?.(here.x, here.z)
-    const afloat = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(here.x, here.z) <= liquid + 0.5
+    const afloat = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(here.x, here.z) <= liquid + 0.5 && !isRoadFord(this.terrain, here.x, here.z)
     // Being over liquid is trouble only for wheels: a hovercraft rides on it and a jet is above it.
     const wheeled = this.vehicle.kind !== 'jet' && this.vehicle.kind !== 'hovercraft'
     this.liquidTime = afloat && wheeled ? this.liquidTime + dt : 0
@@ -172,6 +188,11 @@ export class BotBrain implements System {
     }
   }
   fixedUpdate(dt: number) {
+    if (this.remote) { this.gear?.cancel(); return }
+    this.drive(dt)
+    this.gear?.step(dt, this.target, this.vehicle.input, p.canFire.value, p.canDrive.value)
+  }
+  private drive(dt: number) {
     // Do not even clear input: network playback owns this state.
     if (this.remote) return
     const input = this.vehicle.input
@@ -179,6 +200,12 @@ export class BotBrain implements System {
     this.targetTime += dt; this.fireTime += dt
     // VehicleBot.js:11 refreshes enemies every two seconds; invalid targets refresh immediately.
     if (this.targetTime >= 2 || !this.target?.body.isValid()) { this.selectTarget(); this.targetTime = 0 }
+    if (this.raceGoal && this.mind && p.canDrive.value && p.topThrottle.value > 0) {
+      if (this.raceGoal.countdown) { input.brakes = true; return }
+      if (!this.racing) { this.mind.hold(this.raceGoal.destination, Math.max(1, this.raceGoal.destination.radius / 2), 125); this.racing = true }
+      this.roam(dt, input, this.vehicle.body.translation()); return
+    }
+    if (this.racing) { this.mind?.reset(); this.racing = false; this.moodTime = 0 }
     if (this.mind && p.canDrive.value && p.topThrottle.value > 0) {
       const here = this.vehicle.body.translation(), there = this.target ? this.imageOf(this.target.body.translation(), here) : undefined
       const match = this.match
@@ -230,7 +257,7 @@ export class BotBrain implements System {
     const lead = Math.min(0.8, distance / 45) * p.aggression.value
     let aimX = there.x + targetVelocity.x * lead, aimZ = there.z + targetVelocity.z * lead
     const liquid = this.terrain.liquidHeightAt?.(here.x, here.z)
-    const afloat = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(here.x, here.z) <= liquid + 0.5
+    const afloat = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(here.x, here.z) <= liquid + 0.5 && !isRoadFord(this.terrain, here.x, here.z)
     this.liquidTime = afloat && p.canDrive.value ? this.liquidTime + dt : 0
     if (afloat) {
       // Bots try to crawl toward dry ground before requesting a return to their pad.
@@ -254,11 +281,11 @@ export class BotBrain implements System {
       const w = this.terrain.wrapSize
       const from = w ? { x: wrapCoord(here.x, w), y: here.y, z: wrapCoord(here.z, w) } : here
       const to = w ? { x: wrapCoord(there.x, w), y: there.y, z: wrapCoord(there.z, w) } : there
-      const found = !afloat && distance > 18 ? roadWaypoint(this.terrain, from, to, Math.max(8, Math.min(16, speed * 0.6))) : null
+      const found = !afloat && distance > 4 ? roadWaypoint(this.terrain, from, to, Math.max(8, Math.min(16, speed * 0.6))) : null
       this.waypoint = found && w ? { ...found, x: nearestImage(found.x, here.x, w), z: nearestImage(found.z, here.z, w) } : found
       this.routeTime = 0.4
     }
-    const waypoint = !afloat && distance > 18 ? this.waypoint : null
+    const waypoint = !afloat && distance > 4 ? this.waypoint : null
     if (waypoint) { aimX = waypoint.x; aimZ = waypoint.z }
     // Stable per-bot lateral offsets fade out near contact so every bot can still ram.
     const spread = ((this.index * 0.61803398875 % 1) - 0.5) * p.approachSpread.value * Math.min(1, Math.max(0, distance - 8) / 20)
@@ -272,6 +299,20 @@ export class BotBrain implements System {
       if (peer === this.vehicle || peer === this.target || !peer.body.isValid()) continue
       const pos = this.imageOf(peer.body.translation(), here, this.peerImage), px = here.x - pos.x, pz = here.z - pos.z, separation = Math.hypot(px, pz)
       if (separation > 0.1 && separation < 7) { aimX += px / separation * (7 - separation) * (waypoint ? 0.25 : 2); aimZ += pz / separation * (7 - separation) * (waypoint ? 0.25 : 2) }
+    }
+    // On a road, queue behind traffic instead of steering around it toward the edge.
+    // Include the pursued player: catching a slow leader is not permission to ram on a bend.
+    let trafficLimit = Infinity
+    const roadAhead = (aimX - here.x) * this.forward.x + (aimZ - here.z) * this.forward.z
+    if (waypoint && roadAhead > Math.hypot(aimX - here.x, aimZ - here.z) * 0.8) for (const peer of new Set([...this.peers, this.target])) {
+      if (peer === this.vehicle || !peer.body.isValid()) continue
+      const pos = this.imageOf(peer.body.translation(), here, this.peerImage)
+      const px = pos.x - here.x, pz = pos.z - here.z
+      const ahead = px * this.forward.x + pz * this.forward.z
+      const side = Math.abs(px * this.forward.z - pz * this.forward.x)
+      if (ahead <= 3 || ahead > 25 || side > 4 || Math.abs(pos.y - here.y) > 6) continue
+      const v = peer.body.linvel(), along = Math.max(0, v.x * this.forward.x + v.z * this.forward.z)
+      trafficLimit = Math.min(trafficLimit, Math.max(0, along + (ahead - 6 - speed * 0.7) * 0.8))
     }
     const error = steeringError(this.forward, { x: aimX - here.x, z: aimZ - here.z })
     // VhiclBot.cs:35-55 and VehicleBot.js:79-91: wrap yaw, divide by 20 degrees,
@@ -289,7 +330,10 @@ export class BotBrain implements System {
         this.immobileTime = this.reversing ? this.immobileTime + this.strategyTime : 0
         this.strategyTime = 0; this.lastPosition.copy(here)
       }
-      if (afloat) this.reversing = false
+      if (afloat || trafficLimit < 1) {
+        this.reversing = false
+        if (!afloat) { this.immobileTime = 0; this.strategyTime = 0; this.lastPosition.copy(here) }
+      }
       input.x = this.reversing ? clamp(-rotation) : Math.abs(rotation) < 0.1 ? 0 : clamp(rotation * p.aggression.value, waypoint || distance < 15 ? 1 : 0.6)
       if (waypoint && !this.reversing) {
         // Four-wheel steering needs a gentle curvature command on narrow roads.
@@ -305,6 +349,9 @@ export class BotBrain implements System {
       const roadLimit = Math.max(p.roadCornerSpeed.value, p.roadSpeed.value * (1 - Math.min(1, Math.abs(error))))
       if (waypoint && !this.reversing && speed > roadLimit) {
         input.y = Math.min(input.y, 0.15); input.brakes ||= speed > roadLimit * 1.2
+      }
+      if (trafficLimit < Infinity && !this.reversing && speed > trafficLimit) {
+        input.y = 0; input.brakes ||= speed > trafficLimit + 0.5
       }
       // Stop spinning wheels before asking the drivetrain to reverse.
       if (this.reverseBrake > 0) { input.brakes = true; this.reverseBrake = Math.max(0, this.reverseBrake - dt) }

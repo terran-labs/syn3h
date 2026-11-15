@@ -89,8 +89,8 @@ export class Pesters implements System {
   }
 
   /** Every live Pester, for checks: shooter, target and position. */
-  list(): { shooter: number; to: number | null; pos: [number, number, number] }[] {
-    return this.orbs.filter((o) => o.popped < 0).map((o) => ({ shooter: o.shooter, to: o.to, pos: [o.pos.x, o.pos.y, o.pos.z] }))
+  list(): { id: number; shooter: number; to: number | null; pos: [number, number, number]; velocity: [number, number, number] }[] {
+    return this.orbs.filter((o) => o.popped < 0).map((o) => ({ id: o.id, shooter: o.shooter, to: o.to, pos: [o.pos.x, o.pos.y, o.pos.z], velocity: [o.vel[0], o.vel[1], o.vel[2]] }))
   }
 
   /**

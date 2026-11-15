@@ -14,12 +14,20 @@ import { Mind } from './mind/Mind'
 import { createPilot } from './pilot'
 import { createNavigator, pointsOfInterest, type PointOfInterest } from './nav'
 import type { Navigator } from './pilot/types'
+import type { BotGearHooks } from './gear'
+import { BotRaces, type BotRaceHooks } from './races'
+import type { RaceState } from '../../shared/protocol'
 /** Slot by slot: half buggies, a quarter hovercraft, a quarter jets. */
 const MIXED_FLEET = ['buggy', 'hovercraft', 'buggy', 'jet'] as const
 export class BotManager implements System {
   private readonly bots: Vehicle[] = []
   private readonly brains: BotBrain[] = []
   private readonly effects = new Map<Vehicle, () => void>()
+  private gearHooks: BotGearHooks | null = null
+  setGear(hooks: BotGearHooks | null) {
+    this.gearHooks = hooks
+    for (const brain of this.brains) brain.setGear(this.remote ? null : hooks)
+  }
   private nextBotId = 0
   private targets: readonly Vehicle[]
   private disposed = false
@@ -28,11 +36,14 @@ export class BotManager implements System {
   get remote() { return this.isRemote }
   set remote(value: boolean) {
     this.isRemote = value
-    if (value) this.clearBots()
+    if (value) { this.races.setHooks(null); this.clearBots() }
   }
   get vehicles(): readonly Vehicle[] { return this.bots }
   /** The player's own vehicle driving itself after a spell of no input. See Daydream.ts. */
   readonly daydream: Daydream
+  readonly races: BotRaces
+  setRaces(hooks: BotRaceHooks | null) { this.races.setHooks(this.remote ? null : hooks) }
+  applyRace(state: RaceState | null) { this.races.apply(state) }
   readonly navigator: Navigator & { dispose?(): void }
   /** Places worth driving to, found once per world and shared by every mind. */
   private sights: PointOfInterest[] | null = null
@@ -43,10 +54,17 @@ export class BotManager implements System {
     // the player, the terrain and every vehicle a daydreaming driver might tail.
     // One route planner per terrain, shared by every mind: its caches are megabytes.
     this.navigator = createNavigator(terrain)
-    terrain.onRegenerate?.(() => { this.sights = null })
+    this.races = new BotRaces(terrain, this.navigator, this.places)
+    terrain.onRegenerate?.(() => { this.sights = null; this.races.cancel('world-changed') })
     this.daydream = new Daydream(game, terrain, player, { navigator: this.navigator, places: this.places, others: () => [...this.targets, ...this.bots] })
   }
-  fixedUpdate(dt: number) { this.daydream.fixedUpdate(dt) }
+  fixedUpdate(dt: number) {
+    this.daydream.fixedUpdate(dt)
+    if (!this.remote) {
+      this.races.update()
+      for (const brain of this.brains) brain.raceGoal = this.races.goal(brain.vehicle)
+    }
+  }
   setTargets(vehicles: readonly Vehicle[]) {
     this.targets = [...vehicles]
     for (const brain of this.brains) brain.setTargets(this.targets)
@@ -95,6 +113,7 @@ export class BotManager implements System {
       const pilot = createPilot(bot, this.terrain)
       if (pilot) brain.mind = new Mind(bot, this.terrain, pilot, { seed: `${worldSeed.value}:${bot.id}`, navigator: this.navigator, places: this.places, others: () => [...this.targets, ...this.bots] })
       brain.navigator = this.navigator
+      brain.setGear(this.gearHooks)
       brain.match = this.match
       brain.remote = this.remote
       brain.setTargets(this.targets)
@@ -129,6 +148,7 @@ export class BotManager implements System {
   }
   dispose() {
     this.disposed = true
+    this.races.setHooks(null)
     this.daydream.dispose(); this.navigator.dispose?.()
     this.clearBots()
   }

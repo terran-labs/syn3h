@@ -3,12 +3,13 @@
  * 65 to 84 ms on a desktop and several times that on a phone: here it can never hold up a
  * tap or a frame. One request at a time, answered with the pixels as a transferred buffer.
  */
+import type { ParamValue } from '../../../shared/params'
 import { paintPlanetMap } from '../../world/planetMap'
 
-interface Request { key: string; id: string; seed: number; width: number; height: number }
+interface Request { key: string; id: string; seed: number; width: number; height: number; overrides?: Record<string, ParamValue> }
 const scope = self as unknown as { onmessage: ((event: MessageEvent<Request>) => void) | null; postMessage(message: unknown, transfer: Transferable[]): void }
 scope.onmessage = event => {
-  const { key, id, seed, width, height } = event.data
-  const map = paintPlanetMap(id, seed, width, height)
+  const { key, id, seed, width, height, overrides } = event.data
+  const map = paintPlanetMap(id, seed, width, height, overrides)
   scope.postMessage({ key, width: map.width, height: map.height, data: map.data }, [map.data.buffer])
 }

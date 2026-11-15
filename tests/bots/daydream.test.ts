@@ -50,7 +50,7 @@ describe('Daydream slider', () => {
     let last = 0
     for (let p = 0; p < DAYDREAM_OFF_POSITION; p++) { const s = daydreamSecondsAt(p); expect(s).toBeGreaterThanOrEqual(last); last = s }
   })
-  it('shows the default 30 seconds a third of the way along and round trips', () => {
+  it('maps 30 seconds a third of the way along and round trips', () => {
     expect(daydreamSecondsAt(daydreamPositionFor(30))).toBe(30)
     expect(daydreamPositionFor(30)).toBeGreaterThan(25); expect(daydreamPositionFor(30)).toBeLessThan(40)
     expect(daydreamPositionFor(0)).toBe(DAYDREAM_OFF_POSITION)
@@ -96,6 +96,21 @@ describe('ground pilot', () => {
 })
 
 describe('mind', () => {
+  it('abandons a removed leader before reading its physics body', () => {
+    const { game } = harness(), terrain = flat(400)
+    const follower = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0))
+    const leader = new Syn3hBuggy(game, terrain, new Vector3(40, 1, 0))
+    const mind = new Mind(follower, terrain, createGroundPilot(follower), { seed: 'removed-leader', others: () => [leader] })
+    mind.pursue(leader, 30)
+    world.removeRigidBody(leader.body)
+    // Trap the invalid read without poisoning Rapier's WASM borrow state for later tests.
+    const translation = vi.spyOn(leader.body, 'translation').mockImplementation(() => { throw new Error('Read removed leader') })
+    expect(() => mind.step(DT, follower.input)).not.toThrow()
+    expect(translation).not.toHaveBeenCalled()
+    expect(mind.activity.leader).not.toBe(leader)
+    expect(() => world.step()).not.toThrow()
+    translation.mockRestore()
+  })
   it.each(['a', 'b', 'c'])('explores for 90 seconds without entering liquid or leaving the world (seed %s)', seed => {
     const { game, step } = harness()
     const terrain = flat(400, { liquidHeightAt: (x: number) => x > 70 ? 2 : -Infinity })
