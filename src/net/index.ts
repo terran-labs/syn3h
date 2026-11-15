@@ -58,6 +58,7 @@ import { Connection, serverUrl } from './Connection'
 import { NameTags, type TagInfo } from './NameTags'
 import { applyRoomWorld, netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
+import { announcedKind, needsRebuild } from './kinds'
 import { SendPacer, SimClock } from './SimClock'
 import { type BotMatchInfo, audibleVehicles, bodyAlive, hillHold, liveBots } from './bots'
 import { ShoveQueue, cleanShove, shoveFor } from './shove'
@@ -252,7 +253,7 @@ export class NetClient implements System {
 
   constructor(private readonly ctx: NetContext) {
     const { game, player } = ctx
-    this.kind = cleanKind(ctx.kind) ?? cleanKind((player as VehicleExtras).kind) ?? 'buggy'
+    this.kind = cleanKind(announcedKind(ctx.kind)) ?? cleanKind((player as VehicleExtras).kind) ?? 'buggy'
     this.colors = [cleanColor(ctx.colors?.body) ?? DEFAULT_COLORS[0], cleanColor(ctx.colors?.accent) ?? DEFAULT_COLORS[1]]
     this.bots = ctx.bots ?? null
     if (this.bots) this.bots.remote = true
@@ -473,7 +474,7 @@ export class NetClient implements System {
 
   /** Announce a new vehicle kind or colours (the local vehicle itself is main.ts's to swap). */
   setProfile(p: { kind?: VehicleKind; colors?: PlayerColors }): void {
-    if (p.kind) this.kind = cleanKind(p.kind) ?? this.kind
+    if (p.kind) this.kind = cleanKind(announcedKind(p.kind)) ?? this.kind
     if (p.colors) {
       this.colors = [cleanColor(p.colors.body) ?? this.colors[0], cleanColor(p.colors.accent) ?? this.colors[1]]
     }
@@ -1143,7 +1144,7 @@ export class NetClient implements System {
     if (!r) return
     r.info = info
     const extras = r.vehicle as VehicleExtras
-    if (r.owned && extras.kind !== undefined && extras.kind !== info.kind) {
+    if (r.owned && needsRebuild(extras.kind, info.kind)) {
       const t = r.vehicle.body.translation()
       const q = r.vehicle.body.rotation()
       r.disposeEffects()
