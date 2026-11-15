@@ -4,6 +4,7 @@ export const creditsHtml = `<p>Syn3h is a browser-native world for driving, flyi
 <details class="shell-credits"><summary>Credits & licences</summary>
 <p>Original Syn3h and Mars Explorer game, logos and vehicle assets: Aubrey Falconer. Original assets are used with the owner's permission.</p>
 <ul><li>Three.js authors: rendering and model loaders, <a href="/brand/licenses/three.txt" target="_blank" rel="noopener">MIT</a>.</li>
+<li>Project Nayuki: QR format reference and test vectors, <a href="/brand/licenses/qr.txt" target="_blank" rel="noopener">MIT</a>.</li>
 <li>Dimforge contributors: Rapier physics, <a href="/brand/licenses/rapier.txt" target="_blank" rel="noopener">Apache 2.0</a>.</li>
 <li>cocopon: Tweakpane controls, <a href="/brand/licenses/tweakpane.txt" target="_blank" rel="noopener">MIT</a>.</li>
 <li>Łukasz Dziedzic: Lato Thin, <a href="/brand/licenses/lato.txt" target="_blank" rel="noopener">SIL OFL 1.1</a>.</li>
