@@ -8,6 +8,7 @@ import { params } from '../../shared/params'
 import { createVehicle } from '../../src/vehicles'
 import { buggyIdleHold, buggyNextGen } from '../../src/vehicles/buggyParams'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
+import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../../src/core/physics'
 import { type Bed, makeBed } from './harness'
 
 const speed = (b: Syn3hBuggy) => {
@@ -67,7 +68,11 @@ describe('Syn3hBuggy', () => {
     expect(b.drive).toBe('hold')
     const p0 = pos(b)
     bed.run(2)
-    expect(speed(b)).toBeLessThan(1e-3)
+    // No creep along the ground. The body is still rising a millimetre a second while the
+    // smart suspension finishes extending to its rest length.
+    const v = b.body.linvel()
+    expect(Math.hypot(v.x, v.z)).toBeLessThan(1e-3)
+    expect(Math.abs(v.y)).toBeLessThan(3e-3)
     expect(pos(b).distanceTo(p0)).toBeLessThan(0.01)
     // Body well clear of the ground: skid plate bottom (y -0.085) above it.
     expect(p0.y - 0.085).toBeGreaterThan(0.3)
@@ -238,6 +243,80 @@ describe('Syn3hBuggy', () => {
     expect(slip).toBeLessThan(3)
     // Lateral acceleration v * yaw rate: at least half a g.
     expect(speed(b) * Math.abs(b.body.angvel().y)).toBeGreaterThan(0.5 * 9.81)
+  })
+
+  /** Cruise at v (m/s) long enough for the smart suspension to settle at its speed setting. */
+  const cruise = async (v: number) => {
+    const { bed, b } = await spawn()
+    bed.run(1)
+    b.input.y = 1
+    b.motorSpeed = v
+    bed.run(4, () => {
+      const l = b.body.linvel()
+      b.body.setLinvel({ x: 0, y: l.y, z: -v }, true)
+    })
+    return { bed, b }
+  }
+  /** Half sine ridge, `height` by `length` m, across x0..x1, starting 6 m ahead of the buggy. */
+  const ridge = (bed: Bed, b: Syn3hBuggy, x0: number, x1: number, height: number, length: number) => {
+    const z = pos(b).z - 6
+    const pts: number[] = []
+    for (let i = 0; i <= 16; i++) {
+      for (const x of [x0, x1]) pts.push(x, height * Math.sin((Math.PI * i) / 16), z - (length * i) / 16, x, -0.5, z - (length * i) / 16)
+    }
+    bed.game.world.createCollider(
+      RAPIER.ColliderDesc.convexHull(new Float32Array(pts))!.setFriction(1).setCollisionGroups(groups(GROUP_TERRAIN, GROUP_ALL)),
+    )
+  }
+  /** Run and report the highest hop above the starting height, the worst roll and body strikes. */
+  const ride = (bed: Bed, b: Syn3hBuggy, seconds: number) => {
+    const y0 = pos(b).y
+    const w = bed.game.world
+    let hop = 0, roll = 0, strikes = 0, touching = false
+    bed.run(seconds, () => {
+      hop = Math.max(hop, pos(b).y - y0)
+      roll = Math.max(roll, Math.abs(Math.asin(axis(b, 1, 0, 0).y)) * THREE.MathUtils.RAD2DEG)
+      let c = false
+      for (const col of [b.hull, b.skid]) {
+        w.contactPairsWith(col, (o) => w.contactPair(col, o, (m) => { if (m.numSolverContacts() > 0) c = true }))
+      }
+      if (c && !touching) strikes++
+      touching = c
+    })
+    return { hop, roll, strikes }
+  }
+
+  test('next-gen suspension soaks up a 0.4 m bump at 42 m/s where classic is thrown', async () => {
+    const run = async (nextGen: boolean) => {
+      params.set(buggyNextGen.def.id, nextGen)
+      const { bed, b } = await cruise(42)
+      ridge(bed, b, -50, 50, 0.4, 6)
+      const r = ride(bed, b, 4)
+      return { ...r, upright: axis(b, 0, 1, 0).y }
+    }
+    const classic = await run(false)
+    const next = await run(true)
+    expect(classic.hop).toBeGreaterThan(1.5)
+    expect(next.hop).toBeLessThan(0.7)
+    expect(next.upright).toBeGreaterThan(0.95)
+  })
+
+  test('next-gen stays flat when only the left wheels hit a bump at 42 m/s', async () => {
+    const { bed, b } = await cruise(42)
+    ridge(bed, b, -50, 0, 0.4, 6)
+    const r = ride(bed, b, 4)
+    expect(r.roll).toBeLessThan(10)
+    expect(r.strikes).toBe(0)
+    expect(b.isInverted).toBe(false)
+  })
+
+  test('next-gen bump stop lands a 4 m drop at 30 m/s without the body striking the ground', async () => {
+    const { bed, b } = await cruise(30)
+    const p = pos(b)
+    b.body.setTranslation({ x: p.x, y: p.y + 4, z: p.z }, true)
+    const r = ride(bed, b, 4)
+    expect(r.strikes).toBe(0)
+    expect(b.wheelsGrounded).toBe(4)
   })
 
   test('wheel rays ignore other vehicles', async () => {
