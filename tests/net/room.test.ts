@@ -651,6 +651,96 @@ describe('Room idle reset', () => {
   })
 })
 
+describe('Room relayed shoves', () => {
+  it('passes a rammer\'s push to the rammed player only, clamped, in any mode', () => {
+    const a = join('A')
+    const b = join('B')
+    const c = join('C')
+    clock += 3100
+    room.receive(a.peer, state([0, 0, 0], [0, 0, -20]))
+    room.receive(b.peer, state([0, 0, -3]))
+    room.receive(c.peer, state([50, 0, 0]))
+    send(a.peer, { type: 'ram', other: b.id, push: [0, 0, -13] })
+    expect(b.peer.last('shove')).toEqual({ type: 'shove', from: a.id, push: [0, 0, -13] })
+    expect(a.peer.last('shove')).toBeUndefined()
+    expect(c.peer.last('shove')).toBeUndefined()
+  })
+
+  it('caps a push at what the two speeds allow, remembering the speed from before the impact', () => {
+    const a = join('A')
+    const b = join('B')
+    clock += 3100
+    room.receive(a.peer, state([0, 0, 0], [0, 0, -20]))
+    room.receive(b.peer, state([0, 0, -3]))
+    // A's next state is from after the impact: it has stopped. The push is still judged
+    // against the 20 m/s it had a moment ago: at most 20 * 0.65 = 13 m/s.
+    clock += 100
+    room.receive(a.peer, state([0, 0, -1], [0, 0, 0]))
+    send(a.peer, { type: 'ram', other: b.id, push: [0, 0, -900] })
+    const push = b.peer.last('shove')!.push
+    expect(push[0]).toBeCloseTo(0)
+    expect(push[2]).toBeCloseTo(-13)
+    // Half a second on, that speed is forgotten: two vehicles at rest cannot shove.
+    clock += 700
+    room.receive(a.peer, state([0, 0, -1], [0, 0, 0]))
+    room.receive(b.peer, state([0, 0, -3]))
+    send(a.peer, { type: 'ram', other: b.id, push: [0, 0, -900] })
+    expect(b.peer.all('shove').length).toBe(1)
+    // A chase: both moving, the cap is on the sum of their speeds.
+    room.receive(a.peer, state([0, 0, -1], [0, 0, -22]))
+    room.receive(b.peer, state([0, 0, -3], [0, 0, -10]))
+    send(a.peer, { type: 'ram', other: b.id, push: [0, 0, -7.8] })
+    expect(b.peer.last('shove')!.push[2]).toBeCloseTo(-7.8)
+  })
+
+  it('relays one push per pair in half a second', () => {
+    const a = join('A')
+    const b = join('B')
+    const c = join('C')
+    clock += 3100
+    room.receive(a.peer, state([0, 0, 0], [0, 0, -20]))
+    room.receive(b.peer, state([0, 0, -3]))
+    room.receive(c.peer, state([3, 0, 0]))
+    for (let i = 0; i < 5; i++) send(a.peer, { type: 'ram', other: b.id, push: [0, 0, -13] })
+    expect(b.peer.all('shove').length).toBe(1)
+    // Another pair is not held back by the first.
+    send(a.peer, { type: 'ram', other: c.id, push: [13, 0, 0] })
+    expect(c.peer.all('shove').length).toBe(1)
+    clock += 400
+    room.receive(a.peer, state([0, 0, 0], [0, 0, -20]))
+    send(a.peer, { type: 'ram', other: b.id, push: [0, 0, -13] })
+    expect(b.peer.all('shove').length).toBe(1)
+    clock += 200
+    room.receive(a.peer, state([0, 0, 0], [0, 0, -20]))
+    send(a.peer, { type: 'ram', other: b.id, push: [0, 0, -13] })
+    expect(b.peer.all('shove').length).toBe(2)
+  })
+
+  it('relays nothing without a valid push, from too far away, to a parked player or to a bot', () => {
+    const a = join('A')
+    const b = join('B')
+    clock += 3100
+    room.receive(a.peer, state([0, 0, 0], [0, 0, -20]))
+    room.receive(b.peer, state([0, 0, -3]))
+    send(a.peer, { type: 'ram', other: b.id })
+    send(a.peer, { type: 'ram', other: b.id, push: [1, NaN, 0] })
+    send(a.peer, { type: 'ram', other: b.id, push: 'hard' })
+    expect(b.peer.all('shove')).toEqual([])
+    // Out of reach: the server does not believe the ram at all.
+    room.receive(b.peer, state([0, 0, -300]))
+    send(a.peer, { type: 'ram', other: b.id, push: [0, 0, -13] })
+    expect(b.peer.all('shove')).toEqual([])
+    // Parked (hidden tab): frozen on its owner's screen, so it is not pushed.
+    room.receive(b.peer, state([0, 0, -3], [0, 0, 0], { paused: true }))
+    send(a.peer, { type: 'ram', other: b.id, push: [0, 0, -13] })
+    expect(b.peer.all('shove')).toEqual([])
+    // A bot is pushed where it is simulated, by the rammer's copy on the host.
+    room.receive(a.peer, state([0, 0, -3], [0, 0, 0], { id: BOT_ID_BASE, bot: true }))
+    send(b.peer, { type: 'ram', other: BOT_ID_BASE, push: [0, 0, -13] })
+    expect(a.peer.all('shove')).toEqual([])
+  })
+})
+
 describe('Room with strangers', () => {
   /** Advance the clock one second at a time, each listed peer sending its state every step. */
   function run(seconds: number, states: [FakePeer, () => Uint8Array][]) {

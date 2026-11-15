@@ -261,8 +261,12 @@ export type ClientMessage =
    * reports hits on bots, naming the bot as `victim`.
    */
   | { type: 'hit'; shooter: number; shot: number; victim?: number }
-  /** Sent by a client whose vehicle touched another player's vehicle. */
-  | { type: 'ram'; other: number }
+  /**
+   * Sent by a client whose vehicle touched another player's vehicle. `push` is the velocity
+   * change, m/s, the rammer's client worked out for the other vehicle; the server relays it
+   * to that player as `shove`. See src/net/shove.ts.
+   */
+  | { type: 'ram'; other: number; push?: [number, number, number] }
   /** Host only: lock or unlock shared parameters for everyone else. */
   | { type: 'lock'; locked: boolean }
   /** Host only: the King of the Hill zone it computed from the terrain. */
@@ -299,6 +303,8 @@ export type ServerMessage =
   | { type: 'param'; id: string; value: ParamWireValue; from: number }
   | { type: 'fire'; from: number; shot: ShotInfo }
   | { type: 'hit'; shooter: number; victim: number; shot: number }
+  /** Player `from` rammed you: the velocity change to apply if your own physics missed it. */
+  | { type: 'shove'; from: number; push: [number, number, number] }
   | { type: 'game'; game: GameState; event?: TagEvent; actor?: number; target?: number }
   /**
    * The room's world was replaced: set every world parameter to its default, then apply
