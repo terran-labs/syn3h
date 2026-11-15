@@ -6,9 +6,12 @@
  * enters the game normally, uses each gear item twice and records, for each use, how many
  * render pipelines were created and the longest main-thread stall.
  *
- * Pipeline counts are exact and must be zero: the gear compiles its materials while the
- * world appears (src/weapons/warm.ts), and again after a graphics level change, which this
- * check also forces. Stall times depend on how busy the machine is, so they are reported
+ * Pipeline counts are exact. Gear materials are named "gear ...", so a pipeline can be
+ * traced to the gear that needed it, and none may be built during a use: the gear compiles
+ * its materials while the world appears (src/weapons/warm.ts), and again after a graphics
+ * level change, which this check also forces. Pipelines built in the same window for
+ * anything else (a vehicle's materials, the post chain) are reported, not asserted: they
+ * are not the gear's. Stall times depend on how busy the machine is, so they are reported
  * but never asserted. Automatic quality is switched off so the governor cannot rebuild the
  * scene in the middle of a measurement. Set SYN3H_GEAR_PIPELINES_MAX to allow some, for
  * measuring a build without the warm-up.
@@ -126,10 +129,20 @@ try {
   assert.deepEqual(errors, [])
   assert.ok(report.stats.bungee.launched > 0, 'the Bungee launched')
   assert.ok(report.stats.yoink.grabs + report.stats.yoink.gusts > 0, 'the Yoink was used')
-  for (const [phase, uses] of [['first use', report.gear], ['after a level change', report.afterLevelChange]]) {
-    for (const [gear, rounds] of Object.entries(uses)) {
-      for (const r of rounds) assert.ok(r.pipelines <= limit, `${gear}, ${phase}: ${r.pipelines} pipelines built on use; the limit is ${limit}`)
-    }
+  // Walk the log: which pipelines were built between each use's start and end marks.
+  report.windows = []
+  let open = null
+  for (const line of report.labels) {
+    const [, mark] = /^\d+ == (.+)$/.exec(line) ?? []
+    if (mark === 'end') { if (open) report.windows.push(open); open = null }
+    else if (mark) open = /^level/.test(mark) ? null : { gear: mark, gearPipelines: [], other: 0 }
+    else if (open) { if (/renderPipeline_gear /.test(line)) open.gearPipelines.push(line); else open.other++ }
   }
+  console.log(JSON.stringify(report.windows))
+  assert.equal(report.windows.length, 20, 'every use was logged')
+  for (const w of report.windows) assert.ok(w.gearPipelines.length <= limit, `${w.gear}: built ${w.gearPipelines.join(', ')} on use; the limit is ${limit}`)
+  // The warm-up really ran, twice: at the start and for the level changes.
+  assert.ok(report.labels.some(l => /renderPipeline_gear /.test(l)), 'gear pipelines were built by the warm-up')
+  assert.ok(report.warm.after.armed >= 2, 'the warm-up ran again after the level change')
   console.log('GEAR HITCH CHECK OK')
 } finally { await browser.close() }
