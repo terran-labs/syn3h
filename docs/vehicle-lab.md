@@ -63,7 +63,12 @@ counts) and continues with collapsible sections. Each remembers whether it was o
   mirror floor, a real reflection pass, so it shows animation and lamps) or **Shadow** (a matte
   floor that shows the contact shadow and costs nothing).
 - **Lights**: **Night** darkens the studio and turns the headlights on, **Headlights** switches
-  the lamps (at night the beams light the floor), **Brake** holds the brake.
+  the lamps (at night the beams light the floor), **Brake** holds the brake. **Motor sound**
+  plays the game's engine voice for the vehicle on show, alone, as if the wheels were off the
+  ground; **Revs** runs it from idle to flat out, and with Motion on the revs follow the throttle.
+- **Bump sounds**: one button for this vehicle running into another vehicle and one for each
+  kind of ground (rock, sand, snow, ice, glass, dust, mud, soil), from `src/audio/Impacts.ts`.
+  **Force** runs from a touch to a wreck. The hull that rings is the vehicle on show.
 - **Detail**: **Level** is Auto or a named level. Auto picks by camera distance with the
   exhibit's thresholds, as the game would. Below it are the live counts and **Stress copies**:
   ×10, ×25 or ×50 copies of the design on a grid, with total counts, frame time and render call
@@ -149,6 +154,8 @@ total for all copies. Counts cover visible meshes only:
 | `orbit(az, el, dist?)` | Camera by angles in degrees; distance defaults to a fit. |
 | `look(position, target)` | Camera at `[x, y, z]` looking at `[x, y, z]`. |
 | `setNight(on)`, `setHeadlights(on)`, `setBraking(on)` | Lights. |
+| `setMotor(on)`, `setRevs(0..1)` | Motor sound and its revs. `motor` reports its state, kind and revs, or null. |
+| `bump(kind)`, `setForce(0..1)` | Plays a bump sound (`'vehicle'` or a surface) at that force. `bumps` counts them. |
 | `setMotion(on)`, `setTurntable(on)`, `setFloor('Gloss' \| 'Shadow')` | As the buttons. |
 | `setIdle(seconds)`, `idle()` | Set the wait before the idle show (0 is off), and read whether it is running. |
 | `setLod(i)` | Detail level index, or -1 for Auto. |

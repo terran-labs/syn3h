@@ -76,6 +76,20 @@ export function filterDesigns(designs: LabDesignInfo[], group?: string | null): 
 }
 
 /** Auto detail: level i + 1 begins at distances[i]. Missing distances default to 30 m steps. */
+/**
+ * Which of the game's engine voices (voiceProfile in src/audio/Engine.ts) an exhibit plays for
+ * the lab's Motor sound switch. Takes the exhibit's family or id: 'game-jet', 'hover',
+ * 'tank-archive', 'buggy' and so on.
+ */
+export function motorKind(family: string): string {
+  const name = family.replace(/^game-/, '')
+  if (name.startsWith('tank')) return 'tank'
+  if (name.startsWith('hover')) return 'hovercraft'
+  if (name.startsWith('jet')) return 'jet'
+  if (name === 'buggy-classic') return 'buggy-classic'
+  return 'buggy'
+}
+
 export function pickAutoLod(distance: number, levels: number, distances?: number[]): number {
   let level = 0
   for (let i = 0; i < levels - 1; i++) if (distance >= (distances?.[i] ?? 30 * (i + 1))) level = i + 1
