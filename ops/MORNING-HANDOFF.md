@@ -2,8 +2,8 @@
 
 Prepared during the 15 November overnight run. This is a working draft, not the 8am
 report. Recheck production, integration and lane evidence before delivering it.
-Evidence snapshot: 1:44am Pacific. Production identity below was last checked directly
-at 1:28am; it is not a fresh deployment verdict.
+Evidence snapshot: 2:13am Pacific. Production identity below was last checked directly
+at 1:57am; it is not a fresh deployment verdict.
 
 ## Public build
 
@@ -19,56 +19,64 @@ Occupied lobbies no longer block deployment. Failed public checks still require 
 
 ## What has reached integration
 
-At trunk `752a16c`, inspected from the live checkout:
+The integrator reports trunk and main pushed at `da5a89c`, tagged `m16-default-on`.
+The exact combined suite log confirms typecheck and all 1,143 tests across 146 files pass.
+This candidate is closed to new features while release checks run.
 
-- Rich terrain and river fords default on.
-- Aerial perspective defaults on.
-- Custom planet maps refresh from slider snapshots and reject stale worker results.
-- Procedural ground cover, original-hovercraft procedural materials, transparent
-  plain-tier canopies and corrected instanced tyre relief are landed.
-- Generated-only wind, score layers, default-on water switches, all four gear tools
-  and same-player reconnect are landed. Stored explicit off choices remain intact.
-- Canonical race networking, display and normal-play hooks are landed. Host/guest,
-  reconnect and lobby-return acceptance remain separate checks.
-- The job limiter now holds inherited kernel locks. Old wrappers drained before
-  rollout; lanes use the absolute trunk helper with three shared slots and two workers.
+- Terrain detail, river fords, aerial perspective and ground cover run on normal entry.
+- Custom maps refresh from slider snapshots; player lights show aggregate presence.
+- Generated-only wind, score layers, all four gear tools, water effects and same-player
+  reconnect default on. Stored explicit off choices and quality tiers remain intact.
+- Jet Mk2, buggy tyres and distance models, procedural hovercraft materials and
+  transparent plain-tier canopies are integrated.
+- The right rail, Exit world, internally scrolling panels, contextual tooltips and
+  bottom-left minimap vignette are integrated. Music-selector keyboard leakage and
+  Escape state inconsistencies found in review are corrected.
+- Stable lighting and screen-space GI are integrated. GI does not account for offscreen
+  geometry and is not a claim of full global illumination.
+- Water correction preserves wing skim speed and the approved Zorb ride height, while
+  restoring submerged motor damping through truthful contact state.
+- Jet safety correction uses the actual principal inertia frame and bounds descent
+  tilt. Independent source review, 26 pilot tests and 27 five-minute jet drives pass,
+  with original gains and safety bounds unchanged.
 
-These are integration facts, not claims that those changes are public. Exact lane
-revisions and remaining checks are in `DEFAULTS-AUDIT.md`.
+The combined race/rejoin gate passes on the newer interface after fixing a removed
+leader-body read. It covers a staged eligible encounter, countdown, an actual bot finish,
+guest display, host dropout, rejoin and host transfer with no page errors. Natural race
+frequency remains unmeasured: earlier idle runs never met the nearby-bot prerequisite.
 
-## Tested handoffs still requiring combined acceptance
+Earlier combined checks cover four interface viewports, both rendering backends and
+all eight vehicle/browser combinations. The final frozen copy still needs its own
+release gates. Its identity is `20261115-021120-da5a89c`, version `v26.11.1500`.
+The deploy wrapper must preserve those artifacts without rebuilding between acceptance
+and deployment. Public acceptance is not established by source tests or a dry run.
 
-- Jet Mk2: lead reports 314 vehicle tests, browser checks and game smoke passing.
-- Water correction `c28eafb`: typecheck, 70 regression tests and paired diagnostics
-  pass; independent Vehicles review found no blocking issue. Wing skims retain about
-  31.6 m/s, Zorb ride height matches the approved original, and submerged motor damping
-  receives real contact state. Combine with the five legacy fixture corrections.
-- Stable Post Effects `19cc879`: lane reports typecheck, 30 focused tests, both
-  rendering backends and HTTPS smoke passing. This excludes unfinished renderer work.
-- Presence `d247487`: 193 network tests, build and dev/Cloudflare runtime checks pass.
-  Independent source review confirms aggregate privacy and expiry. Lobby UI acceptance
-  and production verification remain open.
-- Buggy procedural tyres and distance models have lane rendering and driving evidence.
-  A guarded six-contact ram test passes; it is not rough-terrain or performance proof.
+The kernel-lock limiter uses three shared slots, one job per lane and at most two test
+workers. The sentinel has resumed from the passing candidate baseline, per the integrator.
 
-The combined multiplayer check must include host dropout and return with bots, gear
-and races active. Holding host identity clears server bots, so isolated reconnect
-tests alone do not establish the complete player experience.
+## Ready for the next batch
+
+These handoffs are excluded from the closed release candidate and are not public:
+
+- Procedural cloud volumes `35c0167`: lane reports typecheck, 16 tests, both-backend
+  cloud cases, wrap/weather/reflection invariants, normal entry and HTTPS smoke passing.
+  Lower tiers retain fallback clouds. Physical iPad cost remains unmeasured.
+- Saved-world moons `873e408`: lane reports typecheck, 122 UI tests, Chrome/WebKit
+  direct-entry and storage/permission cases, final smoke and independent UX seam review.
+  Saves are local bookmarks, not new rooms. Room authority can override restored settings;
+  the interface reports that outcome. Cross-tab storage is best effort, not transactional.
 
 ## Work still underway
 
-- Water wakes, spray and falling sheets have lane visual checks. Their combined source
-  gate must include the physics correction above. **Transparency from above is
-  unimplemented:** the sea/river material is opaque; shallow colouring does not reveal
-  submerged objects or ground. Two-client wave visuals and real-mobile cost are unverified.
-- Stable lighting is ready for combined acceptance. Temporal motion vectors have a known
-  defect; volumetric clouds and GI remain authorized unfinished work.
-- The separately authorized UX redesign adds the right rail, Exit world, internal
-  panel scrolling, contextual tooltips and a bottom-left minimap vignette. Source review
-  found music-selector keys leaking into driving and inconsistent Escape state; both
-  are corrected in the lane, with final keyboard/touch/cursor validation underway.
-- Bots still have host/guest race acceptance and aerial Pester evasion work. Wheeled
-  bots already evade Pesters; all four gear tools have combined browser evidence.
+- Temporal antialiasing has a known motion-vector defect under investigation.
+- Hovercraft and jet Pester evasion remain unfinished. The bounded overlay experiment
+  converted none of eight caught cases into escapes; its draft is excluded from integration
+  and needs a different reviewed design. Wheeled bots already evade Pesters; all four gear
+  tools have combined browser evidence.
+- **Water transparency from above is unimplemented:** the sea/river material is opaque.
+  Shallow colouring does not reveal submerged objects or ground. Transparent falling
+  sheets do not satisfy this requirement. Two-client wave visuals and real-mobile cost
+  remain unverified.
 - Showcase capture remains owed. Release notes and capture failures must not turn a
   successful gameplay deployment into a failed release.
 
