@@ -68,7 +68,7 @@ export const pesterHue = defineParam({
 /** How big the cloud is, metres from its centre to the edge of the swarm. Looks only. */
 export const pesterSize = defineParam({
   id: 'pester.size', label: 'Chaser size', group, scope: 'world',
-  default: 1.1, min: 0.4, max: 3, step: 0.05,
+  default: 1.5, min: 0.4, max: 3, step: 0.05,
 })
 
 /** How bright the cloud glows. */

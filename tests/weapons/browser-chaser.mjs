@@ -38,13 +38,18 @@ try {
   await page.waitForFunction(() => window.syn3h.bots.vehicles.length === 1)
   // The bot hangs `rise` metres above the player's height, 28 m ahead; the player `lift`
   // metres above the ground. A high bot puts the Chasers against the sky.
-  const place = (lift, rise) => page.evaluate(({ lift, rise }) => {
+  const place = (lift, rise) => page.evaluate(async ({ lift, rise }) => {
     const s = window.syn3h, bot = s.bots.vehicles[0], p = s.player.body.translation()
-    const y = Math.max(s.terrain.heightAt(p.x, p.z), s.terrain.heightAt(p.x, p.z - 28)) + lift
-    for (const [v, z, h] of [[s.player, p.z, y], [bot, p.z - 28, y + rise]]) {
-      v.teleport(s.player.object.position.clone().set(p.x, h, z), 0)
+    // Along the way the camera already looks, so the Chasers fly into the picture.
+    const f = s.game.camera.getWorldDirection(s.player.object.position.clone()); f.y = 0; f.normalize()
+    const heading = Math.atan2(-f.x, -f.z)
+    const bx = p.x + f.x * 20, bz = p.z + f.z * 20
+    const y = Math.max(s.terrain.heightAt(p.x, p.z), s.terrain.heightAt(bx, bz)) + lift
+    for (const [v, x, z, h] of [[s.player, p.x, p.z, y], [bot, bx, bz, y + rise]]) {
+      v.teleport(s.player.object.position.clone().set(x, h, z), heading)
       v.body.setGravityScale(0, true); v.body.setLinvel({ x: 0, y: 0, z: 0 }, true); v.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
     }
+    return { heading, forward: [f.x, f.z] }
   }, { lift, rise })
   const clear = () => page.evaluate(() => { const n = window.syn3hNet; for (const o of n.pesters.list()) n.pesters.confirmHit(o.shooter, o.id) })
   const launch = async count => {
@@ -60,19 +65,34 @@ try {
   const scene = async (name, lift, rise) => {
     await clear()
     await place(lift, rise)
+    await page.waitForTimeout(2500)
+    // Again once the camera has settled behind the vehicle.
+    await place(lift, rise)
     await page.waitForTimeout(800)
     await launch(3)
     await page.waitForTimeout(600)
     await page.screenshot({ path: `${out}/${name}.png` })
-    report.shots.push(name)
+    // Where the Chasers are on screen, so an empty picture is caught here and not by eye.
+    const seen = await page.evaluate(async () => {
+      const cam = window.syn3h.game.camera
+      return window.syn3hNet.pesters.list().map(o => { const v = window.syn3h.player.object.position.clone().set(...o.pos).project(cam); return [Math.round(v.x * 100) / 100, Math.round(v.y * 100) / 100, v.z < 1] })
+    })
+    // A close-up around the middle Chaser, three times life size.
+    const mid = seen.filter(v => v[2]).sort((a, b) => a[1] - b[1])[Math.floor(seen.length / 2)]
+    if (mid) {
+      const cx = (mid[0] + 1) * 640, cy = (1 - mid[1]) * 400
+      await page.screenshot({ path: `${out}/${name}-close.png`, clip: { x: Math.max(0, Math.min(1280 - 360, cx - 180)), y: Math.max(0, Math.min(800 - 240, cy - 120)), width: 360, height: 240 }, scale: 'css' })
+    }
+    report.shots.push({ name, seen })
+    assert.ok(seen.some(([x, y, front]) => front && Math.abs(x) < 0.9 && Math.abs(y) < 0.9), `${name}: a Chaser is in the picture`)
   }
-  await scene('sky-post-on', 6, 22)
+  await scene('sky-post-on', 6, 14)
   report.pipelinesOnFirstLaunch = await page.evaluate(() => window.__pipelines()) - before
   report.labelsOnFirstLaunch = await page.evaluate(() => window.__labels ?? [])
   await scene('ground-post-on', 14, -10)
   await page.evaluate(() => window.syn3h.params.set('post.on', false))
   await page.waitForTimeout(3000)
-  await scene('sky-post-off', 6, 22)
+  await scene('sky-post-off', 6, 14)
   await scene('ground-post-off', 14, -10)
   // The scatter when one ends.
   await clear()
@@ -80,7 +100,7 @@ try {
   await page.screenshot({ path: `${out}/scatter.png` })
   await page.evaluate(() => { window.syn3h.params.set('post.on', true); window.syn3h.params.set('gfx.level', 0) })
   await page.waitForTimeout(6000)
-  await scene('sky-level-0', 6, 22)
+  await scene('sky-level-0', 6, 14)
   await scene('ground-level-0', 14, -10)
   report.launched = await page.evaluate(() => window.syn3hNet.pesters.stats.launched)
   report.errors = errors

@@ -104,27 +104,32 @@ export class PesterCloud {
 
     const light = new THREE.SpriteNodeMaterial({ name: 'gear pester light', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })
     light.positionNode = isCore.select(centre.xyz, centre.xyz.add(wander.mul(reach)).add(wake))
-    const moteSize = this.size.mul(a.mul(0.2).add(0.14)).mul(float(1).sub(lag.mul(0.5)))
-    const coreSize = this.size.mul(1.7).mul(breathe).mul(scatter.mul(1.5).add(1))
+    const moteSize = this.size.mul(a.mul(0.28).add(0.2)).mul(float(1).sub(lag.mul(0.5)))
+    const coreSize = this.size.mul(2.6).mul(breathe).mul(scatter.mul(1.5).add(1))
     const side = isCore.select(coreSize, moteSize).mul(live)
     light.scaleNode = vec2(side, side)
     const r = uv().mul(2).sub(1).length().clamp(0, 1)
     const soft = float(1).sub(r)
     // The core is a wide soft glow with a small hot heart; a mote is a tight soft dot.
-    const coreLook = soft.pow(3).mul(0.55).add(soft.pow(12).mul(0.9))
+    const coreLook = soft.pow(2).mul(0.75).add(soft.pow(8).mul(0.6))
     const moteLook = soft.mul(soft).mul(twinkle).mul(float(1).sub(lag.mul(0.6)))
     const bright = energy.mul(0.7).add(0.5)
-    light.colorNode = this.color.mul(isCore.select(coreLook, moteLook)).mul(bright).mul(fade).mul(hotExposureNode())
-    light.opacityNode = float(1)
+    // The falloff goes in the opacity, as the effect sprites do it: additive blending scales
+    // the colour by it, and a pixel outside the glow then writes nothing at all. With the
+    // falloff in the colour and an opacity of one, the whole square showed as a pale box.
+    light.colorNode = this.color.mul(bright).mul(hotExposureNode())
+    light.opacityNode = isCore.select(coreLook, moteLook).mul(fade).clamp(0, 1)
 
     const haze = new THREE.SpriteNodeMaterial({ name: 'gear pester haze', transparent: true, depthWrite: false })
     const hazeCentre: N = attribute('pcCentre', 'vec4'), hazeMotion: N = attribute('pcMotion', 'vec4')
     haze.positionNode = hazeCentre.xyz
-    const hazeSide = this.size.mul(1.5).mul(hazeCentre.w.greaterThan(0).select(1, 0)).mul(hazeMotion.w.mul(1.5).add(1))
+    const hazeSide = this.size.mul(2.4).mul(hazeCentre.w.greaterThan(0).select(1, 0)).mul(hazeMotion.w.mul(1.5).add(1))
     haze.scaleNode = vec2(hazeSide, hazeSide)
     // A deeper shade of the same colour, so the cloud keeps its hue over a pale sky.
-    haze.colorNode = this.color.mul(0.09)
-    haze.opacityNode = soft.mul(soft).mul(0.5).mul(float(1).sub(hazeMotion.w))
+    // Normally blended, so it tints what is behind it blue where additive light would only
+    // brighten it: over a bright orange sky that is what keeps the cloud blue.
+    haze.colorNode = this.color.mul(0.45)
+    haze.opacityNode = soft.pow(1.5).mul(0.6).mul(float(1).sub(hazeMotion.w))
 
     this.light = new THREE.Mesh(lightGeo, light)
     this.haze = new THREE.Mesh(hazeGeo, haze)
@@ -170,7 +175,8 @@ export class PesterCloud {
     if (this.hue !== pesterHue.value || this.glow !== pesterGlow.value) {
       this.hue = pesterHue.value
       this.glow = pesterGlow.value
-      this.color.value.setHSL(this.hue / 360, 0.9, 0.6).multiplyScalar(3 * this.glow)
+      // Full saturation and a modest brightness: brighter than this tone maps to white, not blue.
+      this.color.value.setHSL(this.hue / 360, 1, 0.55).multiplyScalar(1.5 * this.glow)
     }
     if (this.level !== levelNumber(graphicsLevel.value)) this.retier()
     const orbs = this.used.lastIndexOf(true) + 1
