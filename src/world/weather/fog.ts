@@ -40,12 +40,12 @@ const group = 'Weather'
 /** Extinction per metre at sea level. 0.001 hides about two thirds of a hill 1 km away at the shore. */
 export const hazeDensity = defineParam({
   id: 'weather.hazeDensity', label: 'Haze at sea level', group, scope: w,
-  default: 0.0009, min: 0, max: 0.006, step: 0.00001,
+  default: 0.0024, min: 0, max: 0.006, step: 0.00001,
 })
 /** Metres over which the haze thins to a third. Low for valley mist, high for a dust storm. */
 export const hazeHeight = defineParam({
   id: 'weather.hazeHeight', label: 'Haze height (m)', group, scope: w,
-  default: 35, min: 5, max: 400, step: 1,
+  default: 40, min: 5, max: 400, step: 1,
 })
 /** Haze colour as a hue shift of the sky's own fog colour, so night stays dark. */
 export const hazeTintR = defineParam({ id: 'weather.hazeTintR', label: 'Haze tint red', group, scope: w, default: 0.72, min: 0, max: 1, step: 0.01 })
