@@ -374,6 +374,12 @@ export class Shell implements System {
   get room(): string { return this.roomInput.value.trim().slice(0, 64) || 'lobby' }
   get playing(): boolean { return this.started && !this.menuVisible }
   get menuOpen(): boolean { return this.menuVisible }
+  /** Idle driving must not take control while the player uses panels or enters text. */
+  get daydreamBlocked(): boolean {
+    const focused = document.activeElement
+    const editing = focused instanceof HTMLElement && (focused.matches('input, textarea, select') || focused.isContentEditable)
+    return !this.playing || this.panelsWanted || this.userPaused || this.inviteOpen || this.exitAsking || editing
+  }
   get activePanel(): string { return this.panels.active }
   get presentation(): boolean { return this.element.classList.contains('is-presentation') }
   setPresentation(enabled: boolean): void { this.element.classList.toggle('is-presentation', enabled); this.element.querySelector('.presentation-toggle')!.setAttribute('aria-pressed', String(enabled)) }
