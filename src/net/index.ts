@@ -61,6 +61,10 @@ import { setWaterClock, waterTime } from '../world/water/seaWaves'
 export interface NetAudio {
   play(sound: 'laserShot' | 'laserHit' | 'materialize', position?: { x: number; y: number; z: number }): void
   impact(strength: number, position?: { x: number; y: number; z: number }): void
+  /** Short synthesised cues (src/audio/Cues.ts); optional so older audio builds still fit. */
+  // Method syntax on purpose: the audio's own cue list is checked bivariantly, so this fits
+  // before and after the Bungee cue names land there.
+  cue?(name: string, position?: { x: number; y: number; z: number }): void
 }
 
 /**
@@ -266,6 +270,8 @@ export class NetClient implements System {
       wrapSize: () => this.wrapSize,
       now: () => this.clock.now(),
       inHand: () => this.gear.current === 'bungee',
+      // Sound is cosmetic: an audio build without these cue names must never stop the Bungee.
+      cue: (name, at) => { try { this.ctx.audio?.cue?.(name, at) } catch { /* no such cue yet */ } },
       // Positions go on the wire inside the tile, like every other position.
       send: (cord) => {
         if (!this.connected) return
