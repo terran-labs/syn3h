@@ -2,8 +2,8 @@
 
 Prepared during the 15 November overnight run. This is a working draft, not the 8am
 report. Recheck production, integration and lane evidence before delivering it.
-Evidence snapshot: 2:13am Pacific. Production identity below was last checked directly
-at 1:57am; it is not a fresh deployment verdict.
+Evidence snapshot: 2:35am Pacific. Production identity below was last checked directly
+at 2:28am; it is not a fresh deployment verdict.
 
 ## Public build
 
@@ -46,8 +46,11 @@ guest display, host dropout, rejoin and host transfer with no page errors. Natur
 frequency remains unmeasured: earlier idle runs never met the nearby-bot prerequisite.
 
 Earlier combined checks cover four interface viewports, both rendering backends and
-all eight vehicle/browser combinations. The final frozen copy still needs its own
-release gates. Its identity is `20261115-021120-da5a89c`, version `v26.11.1500`.
+all eight vehicle/browser combinations. The frozen copy passed direct and simulated-latency dry runs, three consecutive
+multiplayer checks, eight fresh-room vehicle checks and the solo seam check. Its
+two-player seam run failed stale-replica and ram assertions, so acceptance remains open.
+The wet fixture and new sinking behavior need diagnosis; no assertion limits were relaxed.
+Its identity is `20261115-021120-da5a89c`, version `v26.11.1500`.
 The deploy wrapper must preserve those artifacts without rebuilding between acceptance
 and deployment. Public acceptance is not established by source tests or a dry run.
 
@@ -66,9 +69,15 @@ These handoffs are excluded from the closed release candidate and are not public
   Saves are local bookmarks, not new rooms. Room authority can override restored settings;
   the interface reports that outcome. Cross-tab storage is best effort, not transactional.
 
-## Work still underway
+- Temporal antialiasing `8edddad`: final both-backend motion, camera reset, reflection,
+  normal-entry and driving evidence passes bounded independent review. Actual vehicle
+  body and instanced-wheel motion are covered. Water, grass and particles reject history
+  to avoid ghosting; physical-device performance remains unmeasured.
+- Touch minimap clearance `b30fe51`: source review and tablet screenshot confirm the
+  map clears the joystick. Four layout checks pass per UX; desktop rules are unchanged.
+  No dedicated jet or physical-device run is claimed.
 
-- Temporal antialiasing has a known motion-vector defect under investigation.
+## Work still underway
 - Hovercraft and jet Pester evasion remain unfinished. The bounded overlay experiment
   converted none of eight caught cases into escapes; its draft is excluded from integration
   and needs a different reviewed design. Wheeled bots already evade Pesters; all four gear
