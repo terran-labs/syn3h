@@ -5,7 +5,7 @@
  * libraries and no images: each world is lit from where the sun really is, wears its real
  * generated map once that has been painted, and throws a shadow through the sun's shafts.
  *
- * The sun, shafts, flare and stars are terranlabs.com's (see Starfield.ts). Like the other
+ * The sun, shafts, flare and stars are terranlabs.com's (src/concepts/descent/PlanetGL.tsx there). Like the other
  * lobby graphics it draws at most thirty times a second, stops in a hidden tab, and gives
  * its WebGL context back when disabled.
  */
@@ -29,6 +29,12 @@ export interface GalaxyOptions {
   onArrive(id: string): void
   /** Called every frame with where each world is on screen, for labels. */
   onLayout?(places: readonly { id: string; x: number; y: number; radius: number; visible: boolean }[]): void
+  /**
+   * Asked each frame. True holds the system still: the worlds stop in their orbits and a frame
+   * is drawn only while something moves (a drag, a flight, a dive). For the lowest graphics
+   * level, so weak devices keep the galaxy at almost no cost. Reduced motion does the same.
+   */
+  still?(): boolean
 }
 const MAX = 4
 const VERTEX = `#version 300 es
@@ -209,7 +215,16 @@ export class Galaxy {
   private frame = 0
   private last = 0
   private active = false
-  private readonly started = performance.now()
+  // Seconds of orbit shown. It advances only while the system is not held still.
+  private clock = 0
+  private lastClock = performance.now()
+  /** Frames still owed after a change (a tap, a resize, a map arriving), in still mode. */
+  private wake = 2
+  private settled = false
+  private holding = false
+  private readonly reduced = matchMedia('(prefers-reduced-motion: reduce)')
+  /** Frames skipped because nothing moved, for the checks. */
+  idle = 0
   // The view: an orbit round a point, which is the sun until a world is chosen.
   private yaw = 0.6
   private pitch = 0.5
@@ -235,16 +250,18 @@ export class Galaxy {
   /** False when WebGL 2 is not available: the caller keeps the ordinary lobby. */
   static supported(): boolean { try { return Boolean(document.createElement('canvas').getContext('webgl2')) } catch { return false } }
   get live(): boolean { return this.gl !== null }
+  /** Worlds whose painted maps have arrived. */
+  get painted(): number { return this.maps.size }
   set enabled(value: boolean) {
     if (value === this.active) return
     this.active = value
     if (value) this.acquire(); else this.release()
   }
   /** Back out to the whole system, for example after returning from a world's panel. */
-  home(): void { this.chosen = -1; this.arriving = 0; this.arrived = false; this.diving = false; this.dive = 0 }
+  home(): void { this.wake = 2; this.chosen = -1; this.arriving = 0; this.arrived = false; this.diving = false; this.dive = 0 }
   /** The descent: fall toward a world until its air fills the view. Resolves when it has. */
   descend(id: string): Promise<void> {
-    this.choose(id); this.arrived = true; this.diving = true
+    this.choose(id); this.arrived = true; this.diving = true; this.wake = 2
     return new Promise(resolve => { const wait = () => { if (!this.active || this.dive >= 0.995) resolve(); else setTimeout(wait, 50) }; wait() })
   }
 
@@ -265,7 +282,7 @@ export class Galaxy {
     canvas.addEventListener('pointerdown', event => this.down(event), options)
     canvas.addEventListener('pointermove', event => this.move(event), options)
     for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, event => this.up(event, type === 'pointerup'), options)
-    canvas.addEventListener('wheel', event => { event.preventDefault(); if (this.chosen < 0) this.distance = Math.min(26, Math.max(6, this.distance * Math.exp(event.deltaY * 0.0012))) }, { signal, passive: false })
+    canvas.addEventListener('wheel', event => { event.preventDefault(); this.wake = 2; if (this.chosen < 0) this.distance = Math.min(26, Math.max(6, this.distance * Math.exp(event.deltaY * 0.0012))) }, { signal, passive: false })
     this.paintMaps(); this.resize(); this.loop(0)
   }
   private release(): void {
@@ -278,7 +295,7 @@ export class Galaxy {
     if (!wanted.length || typeof Worker !== 'function') return
     try {
       const worker = this.worker = new Worker(new URL('../planets/planetMapWorker.ts', import.meta.url), { type: 'module' })
-      worker.onmessage = event => { const { key, data, width, height } = event.data; this.maps.set(key, { data, width, height }); next() }
+      worker.onmessage = event => { const { key, data, width, height } = event.data; this.maps.set(key, { data, width, height }); this.wake = 2; next() }
       worker.onerror = () => { worker.terminate(); this.worker = null }
       const next = () => { const world = wanted.shift(); if (world) worker.postMessage({ key: `${world.id}:${world.seed}`, id: world.id, seed: world.seed, width: 1024, height: 512 }); else { worker.terminate(); this.worker = null } }
       next()
@@ -288,7 +305,7 @@ export class Galaxy {
     if (!this.gl) return
     // The ladder's render scale: whole steps, applied with the redraw so no blank frame shows.
     const scale = Math.min(devicePixelRatio || 1, 1.5) * qualityScale()
-    this.shownScale = qualityScale()
+    this.shownScale = qualityScale(); this.wake = 2
     this.canvas.width = Math.max(1, Math.round(this.host.clientWidth * scale)); this.canvas.height = Math.max(1, Math.round(this.host.clientHeight * scale))
   }
   /** Where the worlds are now: slow circular orbits in one plane, each at its own pace. */
@@ -305,6 +322,10 @@ export class Galaxy {
     this.target = [mix(this.target[0], goal[0], ease), mix(this.target[1], goal[1], ease), mix(this.target[2], goal[2], ease)]
     const wantDistance = this.chosen >= 0 ? places[this.chosen].radius * (this.diving ? 1.12 : 3.1) : this.distance
     this.reach = mix(this.reach, wantDistance, this.diving ? 0.075 : this.chosen >= 0 ? 0.05 : 0.12)
+    // Close enough that a held-still view can stop drawing; it snaps the last step so the
+    // frame left on screen is where the camera was going.
+    this.settled = Math.abs(this.reach - wantDistance) < 0.01 * wantDistance && Math.hypot(...sub(this.target, goal)) < 0.01 * wantDistance
+    if (this.settled && this.holding) { this.target = goal; this.reach = wantDistance }
     // The dive runs about a second and a half.
     this.dive = this.diving ? Math.min(1, this.dive + 0.022) : Math.max(0, this.dive - 0.05)
     const cp = Math.cos(this.pitch), eye: Vec = [this.target[0] + Math.sin(this.yaw) * cp * this.reach, this.target[1] + Math.sin(this.pitch) * this.reach, this.target[2] + Math.cos(this.yaw) * cp * this.reach]
@@ -323,10 +344,17 @@ export class Galaxy {
     const gl = this.gl, u = this.uniforms
     if (!gl) return
     if (this.shownScale !== qualityScale()) this.resize()
-    const time = (performance.now() - this.started) / 1000
+    const still = Boolean(this.options.still?.()) || this.reduced.matches, wall = performance.now()
+    if (!still) this.clock += Math.min(0.25, (wall - this.lastClock) / 1000)
+    this.lastClock = wall
+    const time = this.clock; this.holding = still
     // The view keeps a little of the last drag's swing, and drifts very slowly when left alone.
-    if (!this.drag) { this.yaw += this.spinVelocity; this.spinVelocity *= 0.93; if (this.chosen < 0) this.yaw += 0.0006 }
+    if (!this.drag) { this.yaw += this.spinVelocity; this.spinVelocity *= 0.93; if (Math.abs(this.spinVelocity) < 1e-5) this.spinVelocity = 0; if (this.chosen < 0 && !still) this.yaw += 0.0006 }
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
+    // Held still, draw only while something is moving; the last frame stays on the canvas.
+    const moving = this.drag !== null || this.pointers.size > 0 || this.spinVelocity !== 0 || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
+    if (still && !moving && this.wake <= 0) { this.idle++; return }
+    this.wake = Math.max(0, this.wake - 1)
     for (const [i, world] of worlds.slice(0, MAX).entries()) {
       const map = this.maps.get(`${world.id}:${world.seed}`)
       if (map && !map.texture) {
@@ -356,7 +384,13 @@ export class Galaxy {
   }
   private screen: { id: string; x: number; y: number; radius: number; visible: boolean }[] = []
   /** Fly to a world, as a tap on it does. */
-  choose(id: string): void { const index = this.options.worlds.findIndex(world => world.id === id); if (index >= 0 && index < MAX) { this.chosen = index; this.arriving = 0; this.arrived = false } }
+  choose(id: string): void {
+    this.wake = 2; const index = this.options.worlds.findIndex(world => world.id === id)
+    if (index < 0 || index >= MAX) return
+    // Without a context there is no flight to wait for: arrive at once.
+    if (!this.gl) { this.options.onArrive(id); return }
+    this.chosen = index; this.arriving = 0; this.arrived = false
+  }
   private down(event: PointerEvent): void {
     this.canvas.setPointerCapture(event.pointerId); this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
     if (this.pointers.size === 1) { this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false }; this.spinVelocity = 0 }
@@ -364,6 +398,7 @@ export class Galaxy {
   }
   private move(event: PointerEvent): void {
     const point = this.pointers.get(event.pointerId); if (!point) return
+    this.wake = 2
     const dx = event.clientX - point.x, dy = event.clientY - point.y; point.x = event.clientX; point.y = event.clientY
     if (this.pointers.size === 2) {
       const [a, b] = [...this.pointers.values()], gap = Math.hypot(a.x - b.x, a.y - b.y)

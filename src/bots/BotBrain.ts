@@ -42,6 +42,7 @@ export class BotBrain implements System {
   /** What it is doing now: 'chase' is the original pursuit, 'roam' is the mind's choice. */
   mood: 'chase' | 'roam' = 'chase'
   private moodTime = 0
+  private steer = 0
   /**
    * The game being played, when networking tells the manager. In tag, the bot that is "it"
    * hunts the nearest vehicle and the others run from it when it is close; on the hill, most
@@ -321,6 +322,10 @@ export class BotBrain implements System {
         input.y = -direction * p.topThrottle.value * 0.5
         input.x = (this.index % 2 ? -1 : 1) * -direction
       }
+      // Whatever the pursuit asked for, the wheel gets there at the rate hands can move it:
+      // quick when crawling, slower at speed. The original snapped lock to lock every step.
+      const rate = (speed < 20 ? 3.6 - speed * 0.09 : 1.8) * dt
+      this.steer += Math.max(-rate, Math.min(rate, input.x - this.steer)); input.x = this.steer
       if (this.liquidTime >= p.recoveryTime.value || this.immobileTime >= p.recoveryTime.value || this.flippedTime >= p.recoveryTime.value / 2 || here.y < this.terrain.heightAt(here.x, here.z) - 10) this.rescue()
     } else {
       // VehicleBot.js:118-120 disables driving. Pausing must not trigger a rescue.

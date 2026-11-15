@@ -2,24 +2,35 @@ import * as T from 'three/webgpu'
 import { defineParam } from '../../../shared/params'
 import { ParticleBatch } from '../../vehicles/effects/ParticleBatch'
 import { RibbonBatch } from '../../vehicles/effects/RibbonBatch'
+import type { Sprite } from '../../vehicles/effects/sprites'
+import { float, mx_fractal_noise_float, smoothstep, vec3 } from 'three/tsl'
 import { applyCurve } from '../curve'
 import type { Ripples } from './ripples'
 import { emission } from './sprayMath'
 export const waterSpray=defineParam<boolean>({id:'water.spray',label:'Spray and wakes',group:'Water',scope:'client',default:false})
+/**
+ * Spray: a burst of droplets rather than a soft puff. Fractal noise thresholded into specks
+ * inside a round body, so each particle reads as a handful of drops, white with a cool tint
+ * from the caller. Generated, like the shared effect sprites.
+ */
+const spraySprite: Sprite = (p, seed, age, octaves) => {
+  const n = mx_fractal_noise_float(vec3(p.mul(3.4).add(seed.mul(37)), age.mul(1.3)), octaves, 2, .55)
+  const body = float(1).sub(smoothstep(.2, .95, p.length()))
+  const drops = smoothstep(.05, .35, n)
+  return { rgb: vec3(n.mul(.15).add(.92)), alpha: body.mul(drops.mul(.75).add(.25)).mul(.7) }
+}
 interface State {submerged:number;carry:number;last:T.Vector3;seen:number}
 /** Call update once, then vehicle for each wet or recently wet vehicle each frame. */
 export class Spray {
   private particles:ParticleBatch|null=null
   private ribbons:RibbonBatch|null=null
-  private map:T.DataTexture|null=null
   private states=new Map<string,State>()
   private time=0
   // Above 1: spray is sunlit white water and should read brighter than the sea after tone mapping.
   private white=new T.Color(1.5,1.6,1.7)
   constructor(private scene:T.Scene,private ripples:Ripples){}
   private allocate(){
-    this.map=new T.DataTexture(new Uint8Array([255,255,255,255]),1,1);this.map.needsUpdate=true
-    this.particles=new ParticleBatch(2048,this.map);this.ribbons=new RibbonBatch(2048)
+    this.particles=new ParticleBatch(2048,spraySprite);this.ribbons=new RibbonBatch(2048)
     for(const mesh of [this.particles.mesh,this.ribbons.mesh]){applyCurve(mesh.material);this.scene.add(mesh)}
   }
   update(dt:number){
@@ -55,5 +66,10 @@ export class Spray {
     if(entering)this.ripples.disturb(position.x,position.z,2,Math.min(.5,Math.abs(velocity.y)*.05+.1))
     s.submerged=sub;s.last.copy(position);s.seen=this.time
   }
-  dispose(){this.particles?.dispose();this.ribbons?.dispose();this.map?.dispose();this.particles=null;this.ribbons=null;this.map=null;this.states.clear()}
+  /** The world moved by a whole tile under the player: move what spray has left behind with it. */
+  shift(dx:number,dz:number){
+    this.particles?.shift(dx,dz);this.ribbons?.shift(dx,dz)
+    for(const s of this.states.values()){s.last.x+=dx;s.last.z+=dz}
+  }
+  dispose(){this.particles?.dispose();this.ribbons?.dispose();this.particles=null;this.ribbons=null;this.states.clear()}
 }

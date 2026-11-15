@@ -1,13 +1,12 @@
 #!/usr/bin/env node
-// Calendar versions, release notes and GitHub releases for Syn3h production releases.
-// See release-notes/README.md for the workflow.
+// Calendar versions, release notes and GitHub releases for Syn3h. See release-notes/README.md.
 //
 //   node tools/release-notes.mjs next [--date <ISO time>]
 //   node tools/release-notes.mjs versions
 //   node tools/release-notes.mjs draft <version> <from-tag> <to-tag> [--force]
-//   node tools/release-notes.mjs render <version>
-//   node tools/release-notes.mjs publish <version> --assets <dir> --dry-run
-//   node tools/release-notes.mjs publish <version> --assets <dir> --yes-publish
+//   node tools/release-notes.mjs render <version> [--assets <dir>]
+//   node tools/release-notes.mjs publish <version> [--assets <dir>] [--latest] --dry-run
+//   node tools/release-notes.mjs publish <version> [--assets <dir>] [--latest] --yes-publish
 //
 // `publish` is the only subcommand that changes anything outside this checkout. It refuses
 // to run without --yes-publish, and --dry-run prints every command it would run instead.
@@ -17,34 +16,58 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFile
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { compareVersions, isVersion, nextVersion, parseVersion, releasesFromTsv } from './lib/release-version.mjs'
+import { compareVersions, isVersion, kindLine, matchReleases, nextVersion, parseHistory, parseVersion, releasesFromTsv } from './lib/release-version.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const NOTES_DIR = join(REPO, 'release-notes', 'releases')
+const HISTORY = join(REPO, 'release-notes', 'history.tsv')
 const GITHUB_REPO = process.env.SYN3H_GITHUB_REPO || 'terran-labs/syn3h'
 const PLAY_URL = 'https://www.syn3h.com/'
+const MANIFEST = 'manifest.json'
 
-/** Screenshots every release's notes link, captured from that release's frozen build. */
-export const SHOWCASE = 'syn3h-showcase.gif'
-export const SCREENSHOTS = [
-  'lobby.png', 'buggy-volcano.png', 'wings-glide.png', 'bots-pursuit.png', 'tag-beam.png',
-  'jet-flight.png', 'hovercraft-lava.png', 'lava-night.png', 'king-of-the-hill.png', 'other-world.png',
-]
+/** Sections in the order a notes file has them. Play only in production notes. */
+const SECTIONS = ['The story so far', 'Features', 'Fixes', 'Play', 'Known issues']
+const REQUIRED = ['The story so far', 'Features']
 
 export function assetUrl(tag, name, repo = GITHUB_REPO) {
   return `https://github.com/${repo}/releases/download/${tag}/${name}`
 }
 
-/** The ### Screenshots section, the GIF first, then one image per still. */
-export function screenshotSection(tag, repo = GITHUB_REPO) {
-  const title = (name) => name.replace(/\.(png|gif)$/, '').replace(/-/g, ' ')
-  return [
-    '### Screenshots',
-    '',
-    `![Syn3h showcase](${assetUrl(tag, SHOWCASE, repo)})`,
-    '',
-    ...SCREENSHOTS.map((name) => `![${title(name)}](${assetUrl(tag, name, repo)})`),
-  ].join('\n')
+/**
+ * Read an assets directory's manifest.json, written by the capture worker:
+ * {"images":[{"file":"01-lobby.png","caption":"..."}], "gif":"syn3h-showcase.gif" or null}.
+ * No directory, or no manifest, means no screenshots.
+ */
+export function readManifest(dir) {
+  if (!dir) return { images: [], gif: null }
+  const path = join(dir, MANIFEST)
+  if (!existsSync(path)) throw new Error(`no ${MANIFEST} in ${dir}`)
+  return parseManifest(readFileSync(path, 'utf8'))
+}
+
+export function parseManifest(text) {
+  let data
+  try { data = JSON.parse(text) } catch (error) { throw new Error(`${MANIFEST} is not JSON: ${error.message}`) }
+  const images = data?.images ?? []
+  if (!Array.isArray(images)) throw new Error(`${MANIFEST}: images must be a list`)
+  const safe = (name) => typeof name === 'string' && /^[A-Za-z0-9._-]+$/.test(name) && name !== MANIFEST
+  for (const [i, image] of images.entries()) {
+    if (!safe(image?.file)) throw new Error(`${MANIFEST}: images[${i}].file must be a plain file name`)
+    if (typeof image.caption !== 'string' || !image.caption.trim()) throw new Error(`${MANIFEST}: images[${i}] has no caption`)
+    if (/[\[\]\n]/.test(image.caption)) throw new Error(`${MANIFEST}: images[${i}].caption may not contain brackets or line breaks`)
+  }
+  const gif = data?.gif ?? null
+  if (gif !== null && !safe(gif)) throw new Error(`${MANIFEST}: gif must be a plain file name or null`)
+  return { images: images.map((i) => ({ file: i.file, caption: i.caption.trim() })), gif }
+}
+
+/** The ### Screenshots section from a manifest, or '' when it has nothing to show. */
+export function screenshotSection(tag, manifest, repo = GITHUB_REPO) {
+  if (!manifest.gif && manifest.images.length === 0) return ''
+  const lines = ['### Screenshots', '']
+  if (manifest.gif) lines.push(`![Syn3h showcase](${assetUrl(tag, manifest.gif, repo)})`, '')
+  for (const { file, caption } of manifest.images) lines.push(`![${caption}](${assetUrl(tag, file, repo)})`, `_${caption}_`, '')
+  return lines.join('\n').trimEnd()
 }
 
 /** Commit subjects between two refs, oldest first, merges left out. */
@@ -57,13 +80,14 @@ function commitSubjects(from, to) {
  * A notes file skeleton. The commit list sits in an HTML comment, which `render` strips, so
  * an unedited draft cannot publish commit subjects as release notes by accident.
  */
-export function draftNotes(tag, from, to, commits) {
+export function draftNotes(row, from, to, commits) {
+  const production = row.channel === 'production'
   return [
-    '(AI Generated)',
-    '',
-    `## Syn3h ${tag}`,
+    `## Syn3h ${row.version}`,
     '',
     'TODO: one line deck, the most meaningful outcomes, as "X, Y and Z"',
+    '',
+    kindLine(row),
     '',
     `<!-- Draft from git log ${from}..${to}, ${commits.length} commits. Rewrite these as shipped`,
     'behaviour for players, merge related lines, and delete this comment. Wording rule: tag',
@@ -71,6 +95,10 @@ export function draftNotes(tag, from, to, commits) {
     '',
     ...commits.map((c) => `- ${c.replace(/--/g, '- -')}`),
     '-->',
+    '',
+    '### The story so far',
+    '',
+    'TODO: three to six plain sentences on what happened in this stretch: what was decided, what went wrong, what changed direction',
     '',
     '### Features',
     '',
@@ -80,40 +108,43 @@ export function draftNotes(tag, from, to, commits) {
     '',
     '- TODO',
     '',
-    '### Play',
-    '',
-    `Open ${PLAY_URL} in a browser, choose a vehicle and press Play.`,
-    '',
-    '- TODO: the controls that matter for this release',
-    '',
+    ...(production ? ['### Play', '', `Open ${PLAY_URL} in a browser, choose a vehicle and press Play.`, '', '- TODO: the controls that matter for this release', ''] : []),
     '### Known issues',
     '',
-    '- TODO: from ops/KNOWN-ISSUES.md as it stood when this release shipped',
-    '',
-    screenshotSection(tag),
+    '- TODO: from ops/KNOWN-ISSUES.md as it stood when this was built',
     '',
   ].join('\n')
 }
 
 /**
- * The GitHub release body from a notes file: HTML comments removed, blank runs collapsed.
- * Throws if the file is not in the agreed shape or still holds a TODO.
+ * The GitHub release body: the notes file with HTML comments removed and blank runs
+ * collapsed, then the Screenshots section built from the manifest. Throws if the notes are
+ * not in the agreed shape for the version's history row, or still hold a TODO.
  */
-export function renderNotes(text, tag) {
-  const body = text.replace(/<!--[\s\S]*?-->/g, '').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim() + '\n'
-  const lines = body.split('\n')
+export function renderNotes(text, row, manifest = { images: [], gif: null }) {
+  const tag = row.version
+  const notes = text.replace(/<!--[\s\S]*?-->/g, '').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim()
+  const lines = notes.split('\n')
   const problems = []
-  if (lines[0] !== '(AI Generated)') problems.push('the first line must be exactly "(AI Generated)"')
-  if (lines[1] !== '') problems.push('a blank line must follow "(AI Generated)"')
-  if (lines[2] !== `## Syn3h ${tag}`) problems.push(`the heading must be "## Syn3h ${tag}"`)
-  if (!lines[4] || lines[4].startsWith('#')) problems.push('a one line deck must follow the heading')
-  for (const section of ['Features', 'Fixes', 'Play', 'Known issues', 'Screenshots']) {
-    if (!lines.includes(`### ${section}`)) problems.push(`missing "### ${section}"`)
-  }
-  if (/\bTODO\b/.test(body)) problems.push('the notes still contain TODO')
-  if (/[–—]/.test(body)) problems.push('the notes contain an en or em dash')
+  // The owner's instruction of 14 November 2026: no "(AI Generated)" line; the body opens on the heading.
+  if (lines[0] !== `## Syn3h ${tag}`) problems.push(`the first line must be the heading "## Syn3h ${tag}"`)
+  if (lines[1] !== '' || !lines[2] || lines[2].startsWith('#')) problems.push('a one line deck must follow the heading after a blank line')
+  if (lines[4] !== kindLine(row)) problems.push(`the line under the deck must be "${kindLine(row)}"`)
+  const found = lines.filter((l) => l.startsWith('### ')).map((l) => l.slice(4))
+  for (const name of found) if (!SECTIONS.includes(name)) problems.push(`unexpected section "### ${name}"${name === 'Screenshots' ? ' (it is built from the assets manifest)' : ''}`)
+  for (const name of REQUIRED) if (!found.includes(name)) problems.push(`missing "### ${name}"`)
+  const order = found.filter((n) => SECTIONS.includes(n))
+  if (order.join() !== SECTIONS.filter((n) => order.includes(n)).join()) problems.push(`sections must run in the order ${SECTIONS.join(', ')}`)
+  if (found[0] !== 'The story so far') problems.push('"### The story so far" must be the first section')
+  if (row.channel === 'production' && !found.includes('Play')) problems.push('production notes need "### Play"')
+  if (row.channel !== 'production' && found.includes('Play')) problems.push('"### Play" belongs only in production notes')
+  if (/\bTODO\b/.test(notes)) problems.push('the notes still contain TODO')
+  if (/[–—]/.test(notes)) problems.push('the notes contain an en or em dash')
+  const banned = notes.match(/\b(lasers?|fire[sd]?|firing|shoot\w*|shot|weapons?|hit|hits|kill\w*|destroy\w*|death|dies?|died)\b/gi)
+  if (banned) problems.push(`wording rule: ${[...new Set(banned.map((w) => w.toLowerCase()))].join(', ')}`)
   if (problems.length) throw new Error(`Notes for ${tag} are not ready:\n  ${problems.join('\n  ')}`)
-  return body
+  const shots = screenshotSection(tag, manifest)
+  return `${notes}\n${shots ? `\n${shots}\n` : ''}`
 }
 
 /** Every release-download URL the body links for this tag, by file name. */
@@ -130,32 +161,36 @@ function notesPath(tag) {
   return join(NOTES_DIR, `${tag}.md`)
 }
 
-function asTag(text) {
-  return parseVersion(text).tag
+function history() {
+  return existsSync(HISTORY) ? parseHistory(readFileSync(HISTORY, 'utf8')) : []
+}
+
+function historyRow(tag) {
+  const row = history().find((r) => r.version === tag)
+  if (!row) throw new Error(`${tag} is not in release-notes/history.tsv; add its row first`)
+  return row
 }
 
 function releasesTsvPath() {
   return process.env.SYN3H_RELEASES_TSV || resolve(REPO, '..', 'Syn3h-stable', 'releases.tsv')
 }
 
-/** releases.tsv rows with their versions, or [] if this checkout has no record beside it. */
+/** releases.tsv rows, or null if this checkout has no record beside it. */
 function recordedReleases() {
   const path = releasesTsvPath()
-  if (!existsSync(path)) return []
-  return releasesFromTsv(readFileSync(path, 'utf8'))
+  return existsSync(path) ? releasesFromTsv(readFileSync(path, 'utf8')) : null
 }
 
-/** Every version known: local v tags, notes files and releases.tsv, newest last. */
+/** Every version known: history.tsv, local v tags and notes files, oldest first. */
 function knownVersions() {
   const tags = execFileSync('git', ['tag', '--list', 'v*'], { cwd: REPO, encoding: 'utf8' }).split('\n')
   const notes = existsSync(NOTES_DIR) ? readdirSync(NOTES_DIR).map((f) => f.replace(/\.md$/, '')) : []
-  const record = recordedReleases().map((r) => r.version)
-  const all = new Set([...tags, ...notes, ...record].filter(isVersion).map(asTag))
+  const all = new Set([...history().map((r) => r.version), ...tags, ...notes].filter(isVersion).map((v) => parseVersion(v).tag))
   return [...all].sort(compareVersions)
 }
 
-function run(cmd, args, options = {}) {
-  return execFileSync(cmd, args, { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...options })
+function run(cmd, args) {
+  return execFileSync(cmd, args, { cwd: REPO, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
 }
 
 function shellQuote(arg) {
@@ -167,61 +202,79 @@ function commitOf(ref) {
   try { return run('git', ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]).trim() } catch { return null }
 }
 
-/** Ask a URL for its headers, following redirects. Returns the final status. */
 async function headStatus(url) {
   const response = await fetch(url, { method: 'HEAD', redirect: 'follow' })
   return response.status
 }
 
-async function publish(tag, { assetsDir, dryRun, yes }) {
+async function publish(tag, { assetsDir, dryRun, yes, latest }) {
   if (!dryRun && !yes) {
     throw new Error('publish creates a public GitHub release. Pass --dry-run to see the plan, or --yes-publish to do it.')
   }
-  if (!assetsDir) throw new Error('publish needs --assets <dir>')
-  const dir = resolve(assetsDir)
-  if (!existsSync(dir) || !statSync(dir).isDirectory()) throw new Error(`no assets directory at ${dir}`)
-  const assets = readdirSync(dir).filter((f) => !f.startsWith('.') && statSync(join(dir, f)).isFile()).sort()
-  const body = renderNotes(readFileSync(notesPath(tag), 'utf8'), tag)
+  const row = historyRow(tag)
+  const dir = assetsDir ? resolve(assetsDir) : null
+  if (dir && (!existsSync(dir) || !statSync(dir).isDirectory())) throw new Error(`no assets directory at ${dir}`)
+  const manifest = readManifest(dir)
+  const body = renderNotes(readFileSync(notesPath(tag), 'utf8'), row, manifest)
+  const assets = [...(manifest.gif ? [manifest.gif] : []), ...manifest.images.map((i) => i.file)]
 
-  // Every image the notes link must be uploaded, or the release page shows broken images.
-  const missing = referencedAssets(body, tag).filter((name) => !assets.includes(name))
-  const problems = missing.map((name) => `the notes link ${name}, which is not in ${dir}`)
-  for (const name of assets) if (statSync(join(dir, name)).size === 0) problems.push(`${name} is empty`)
-
-  // The commit: the version tag if it exists here, else the release-N commit from releases.tsv.
-  const record = recordedReleases().find((r) => r.version === tag)
-  const tagCommit = commitOf(tag)
-  const recordCommit = record ? commitOf(record.commit) : null
-  const commit = tagCommit || recordCommit
-  if (!commit) problems.push(`no local tag ${tag} and no releases.tsv row with a commit for it`)
-  if (tagCommit && recordCommit && tagCommit !== recordCommit) {
-    problems.push(`tag ${tag} is ${tagCommit.slice(0, 7)} but releases.tsv says ${record.release} is ${recordCommit.slice(0, 7)}`)
+  const problems = []
+  for (const name of assets) {
+    const path = join(dir, name)
+    if (!existsSync(path)) problems.push(`${MANIFEST} lists ${name}, which is not in ${dir}`)
+    else if (statSync(path).size === 0) problems.push(`${name} is empty`)
+  }
+  for (const name of referencedAssets(body, tag)) if (!assets.includes(name)) problems.push(`the body links ${name}, which is not uploaded`)
+  if (dir) {
+    const extra = readdirSync(dir).filter((f) => !f.startsWith('.') && f !== MANIFEST && !assets.includes(f))
+    if (extra.length) problems.push(`not in ${MANIFEST}, so not uploaded: ${extra.join(', ')}`)
   }
 
-  const notesFile = dryRun ? `<temporary file holding the body below>` : join(mkdtempSync(join(tmpdir(), 'syn3h-notes-')), 'body.md')
+  // The commit comes from history.tsv. An existing tag must already point at it.
+  const commit = commitOf(row.commit)
+  const tagCommit = commitOf(`refs/tags/${tag}`)
+  if (!commit) problems.push(`history.tsv says ${tag} is ${row.commit}, which is not in this repository`)
+  if (tagCommit && commit && tagCommit !== commit) {
+    problems.push(`tag ${tag} points at ${tagCommit.slice(0, 7)} but history.tsv says ${row.commit}; delete the old tag and release first (release-notes/README.md)`)
+  }
+  let release = null
+  if (row.channel === 'production') {
+    const releases = recordedReleases()
+    if (!releases) problems.push(`production, but there is no releases.tsv at ${releasesTsvPath()} to check it against`)
+    else {
+      const { pairs, problems: mismatches } = matchReleases(history(), releases)
+      release = pairs.find((p) => p.version === tag) ?? null
+      problems.push(...mismatches.filter((m) => m.startsWith(tag)))
+    }
+  }
+
+  const notesFile = dryRun ? '<temporary file holding the body below>' : join(mkdtempSync(join(tmpdir(), 'syn3h-notes-')), 'body.md')
   const steps = []
   if (!tagCommit && commit) {
-    const message = record ? `Syn3h ${tag} (${record.release}, ${record.milestone})` : `Syn3h ${tag}`
+    const message = `Syn3h ${tag} (${row.milestone}${release ? `, ${release.release}` : ''})`
     steps.push(['git', 'tag', '-a', tag, commit, '-m', message])
   }
   steps.push(['git', 'push', 'origin', `refs/tags/${tag}`])
-  steps.push(['gh', 'release', 'create', tag, '--repo', GITHUB_REPO, '--verify-tag', '--title', `Syn3h ${tag}`, '--notes-file', notesFile,
-    ...assets.map((name) => join(dir, name))])
+  steps.push(['gh', 'release', 'create', tag, '--repo', GITHUB_REPO, '--verify-tag', '--title', `Syn3h ${tag}`,
+    '--notes-file', notesFile, latest ? '--latest' : '--latest=false', ...assets.map((name) => join(dir, name))])
 
   const print = (line) => process.stdout.write(`${line}\n`)
   print(`${dryRun ? 'DRY RUN: ' : ''}publish Syn3h ${tag} to https://github.com/${GITHUB_REPO}/releases/tag/${tag}`)
-  print(`Commit: ${commit ?? 'unknown'}${record ? ` (${record.release}, ${record.milestone}, shipped ${record.shipped})` : ''}`)
+  print(`Commit: ${commit ?? row.commit} (${row.milestone}, ${row.channel}, ${row.time}${release ? `, ${release.release}` : ''})`)
+  print(`Marked Latest: ${latest ? 'yes' : 'no'}`)
   print(`Notes: ${notesPath(tag)}`)
-  print(`Assets (${assets.length}) from ${dir}:`)
-  for (const name of assets) print(`  ${name}  ${statSync(join(dir, name)).size} bytes`)
+  print(assets.length ? `Assets (${assets.length}) from ${dir}:` : 'Assets: none, so no Screenshots section')
+  for (const name of assets) print(`  ${name}  ${existsSync(join(dir, name)) ? statSync(join(dir, name)).size : 'missing'} bytes`)
   if (problems.length) {
     print('Problems:')
     for (const p of problems) print(`  ${p}`)
   }
   print('Commands:')
   for (const step of steps) print(`  ${step.map(shellQuote).join(' ')}`)
-  print('Then check that each of these answers 200:')
-  for (const name of assets) print(`  ${assetUrl(tag, name)}`)
+  if (assets.length) {
+    print('Then check that each of these answers 200:')
+    for (const name of assets) print(`  ${assetUrl(tag, name)}`)
+  }
   if (dryRun) {
     print('Release body:')
     print('-----')
@@ -232,13 +285,9 @@ async function publish(tag, { assetsDir, dryRun, yes }) {
   }
   if (problems.length) throw new Error('publish stopped before any command; see Problems above')
 
-  // gh refuses to create a release that exists; check first for a clear message.
-  try {
-    run('gh', ['release', 'view', tag, '--repo', GITHUB_REPO, '--json', 'tagName'])
-    throw new Error(`a GitHub release for ${tag} already exists`)
-  } catch (error) {
-    if (String(error.message).includes('already exists')) throw error
-  }
+  let exists = false
+  try { run('gh', ['release', 'view', tag, '--repo', GITHUB_REPO, '--json', 'tagName']); exists = true } catch { /* not there: good */ }
+  if (exists) throw new Error(`a GitHub release for ${tag} already exists`)
   writeFileSync(notesFile, body)
   for (const step of steps) {
     print(`$ ${step.map(shellQuote).join(' ')}`)
@@ -267,39 +316,43 @@ async function main(argv) {
   switch (command) {
     case 'next': {
       const when = option(args, '--date')
-      const date = when ? new Date(when) : new Date()
-      console.log(nextVersion(date, knownVersions()))
+      console.log(nextVersion(when ? new Date(when) : new Date(), knownVersions()))
       return 0
     }
     case 'versions': {
-      const record = new Map(recordedReleases().map((r) => [r.version, r]))
-      for (const v of knownVersions()) {
-        const r = record.get(v)
-        console.log(r ? `${v}\t${r.release}\t${r.milestone}\t${r.commit}\t${r.shipped}` : v)
+      const releases = recordedReleases()
+      const pairs = releases ? matchReleases(history(), releases) : { pairs: [], problems: [] }
+      for (const r of history()) {
+        const p = pairs.pairs.find((x) => x.version === r.version)
+        console.log([r.version, r.milestone, r.commit, r.time, r.channel, p?.release ?? ''].join('\t').trimEnd())
       }
+      for (const problem of pairs.problems) console.error(`warning: ${problem}`)
       return 0
     }
     case 'draft': {
       const [version, from, to] = positional
       if (!version || !from || !to) throw new Error('usage: draft <version> <from-tag> <to-tag> [--force]')
-      const tag = asTag(version)
-      const path = notesPath(tag)
+      const row = historyRow(parseVersion(version).tag)
+      const path = notesPath(row.version)
       if (existsSync(path) && !args.includes('--force')) throw new Error(`${path} exists; pass --force to replace it`)
-      writeFileSync(path, draftNotes(tag, from, to, commitSubjects(from, to)))
+      writeFileSync(path, draftNotes(row, from, to, commitSubjects(from, to)))
       console.log(`Wrote ${path}`)
       return 0
     }
     case 'render': {
       const [version] = positional
-      if (!version) throw new Error('usage: render <version>')
-      const tag = asTag(version)
-      process.stdout.write(renderNotes(readFileSync(notesPath(tag), 'utf8'), tag))
+      if (!version) throw new Error('usage: render <version> [--assets <dir>]')
+      const row = historyRow(parseVersion(version).tag)
+      const assets = option(args, '--assets')
+      process.stdout.write(renderNotes(readFileSync(notesPath(row.version), 'utf8'), row, readManifest(assets && resolve(assets))))
       return 0
     }
     case 'publish': {
       const [version] = positional
-      if (!version) throw new Error('usage: publish <version> --assets <dir> (--dry-run | --yes-publish)')
-      return publish(asTag(version), { assetsDir: option(args, '--assets'), dryRun: args.includes('--dry-run'), yes: args.includes('--yes-publish') })
+      if (!version) throw new Error('usage: publish <version> [--assets <dir>] [--latest] (--dry-run | --yes-publish)')
+      return publish(parseVersion(version).tag, {
+        assetsDir: option(args, '--assets'), dryRun: args.includes('--dry-run'), yes: args.includes('--yes-publish'), latest: args.includes('--latest'),
+      })
     }
     default:
       console.error('usage: node tools/release-notes.mjs <next | versions | draft | render | publish> ...')
@@ -313,4 +366,3 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     process.exitCode = 1
   })
 }
-

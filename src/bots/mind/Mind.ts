@@ -84,6 +84,7 @@ export class Mind {
   private lastKind: ActivityKind = 'pause'
   private bestDistance = Infinity
   private leaderIdle = 0
+  private readonly slide: NavPoint = { x: 0, z: 0 }
   private fleeTime = 0
   private holdRadius = 10
   private lastX = NaN
@@ -224,6 +225,9 @@ export class Mind {
       goal.x = here.x + this.forward.x * 2 - this.forward.z * 6 * this.swerveSide
       goal.z = here.z + this.forward.z * 2 + this.forward.x * 6 * this.swerveSide
       goal.speed = 9
+      // A donut drifts. If it has wandered to within a few lengths of anything it cannot
+      // stand on, that is the end of the show.
+      for (let i = 0; i < 6; i++) if (!this.standable(here.x + Math.cos(i * Math.PI / 3) * 12, here.z + Math.sin(i * Math.PI / 3) * 12)) { act.until = 0; break }
     } else {
       // A follow chosen this step has no offset point yet: aim at the leader itself for now.
       const target = act.destination ?? act.leader?.body.translation() ?? here
@@ -299,7 +303,7 @@ export class Mind {
       return this.begin('pause', null, null, 1.5 + r() * 2.5)
     }
     const flat = this.terrain.normalAt(here.x, here.z, this.normal).y > 0.96
-    const roomy = flat && [0, 1, 2, 3, 4, 5].every(i => isSafeGround(this.terrain, here.x + Math.cos(i * Math.PI / 3) * 16, here.z + Math.sin(i * Math.PI / 3) * 16))
+    const roomy = flat && [0, 1, 2, 3, 4, 5].every(i => this.standable(here.x + Math.cos(i * Math.PI / 3) * 28, here.z + Math.sin(i * Math.PI / 3) * 28))
     const leader = this.pickLeader(here)
     const road = this.pickRoadPoint(here)
     const summit = this.pickSummit()
@@ -426,7 +430,9 @@ export class Mind {
 
   /** Refresh the look ahead point: along a planned route, else along the roads, else direct. */
   private aimFor(here: { x: number; y: number; z: number }, target: NavPoint, speed: number, dt: number): void {
-    const look = Math.max(8, Math.min(18, speed * 0.7))
+    // Look further ahead the faster it goes, as a driver does: a near aim point at speed
+    // means sawing at the wheel.
+    const look = Math.max(10, Math.min(30, speed * 1.2))
     const navigator = this.options.navigator
     if (navigator) {
       this.routeTime -= dt
@@ -442,7 +448,15 @@ export class Mind {
       const points = this.route?.points
       if (points?.length) {
         while (this.routeIndex < points.length - 1 && Math.hypot(points[this.routeIndex].x - here.x, points[this.routeIndex].z - here.z) < look) this.routeIndex++
-        this.waypoint = points[this.routeIndex]
+        // Aim at the spot on the route that is `look` metres away, sliding along it, rather
+        // than at the next waypoint: a waypoint aim jumps each time one is passed, and every
+        // jump is a twitch at the wheel.
+        const b = points[this.routeIndex], a = this.routeIndex > 0 ? points[this.routeIndex - 1] : null
+        const db = Math.hypot(b.x - here.x, b.z - here.z), da = a ? Math.hypot(a.x - here.x, a.z - here.z) : db
+        if (a && db > look && da < look) {
+          const t = (look - da) / (db - da)
+          this.slide.x = a.x + (b.x - a.x) * t; this.slide.z = a.z + (b.z - a.z) * t; this.waypoint = this.slide
+        } else this.waypoint = b
         return
       }
     }
@@ -469,13 +483,15 @@ export class Mind {
     const profile = this.pilot.profile
     const dx = aimX - here.x, dz = aimZ - here.z, d = Math.hypot(dx, dz) || 1
     // An aircraft looks much further: what matters is a wall it cannot out-climb.
-    const reach = profile.flies ? 70 : Math.max(8, Math.min(24, speed * 1.2)), base = Math.atan2(dz, dx)
+    // A driver who turns the wheel smoothly has to see trouble earlier: about two seconds ahead.
+    const reach = profile.flies ? 70 : Math.max(10, Math.min(36, speed * 2)), base = Math.atan2(dz, dx)
     for (const swerve of SWERVES) {
       // Try the side it last chose first, so it does not dither between two ways round.
       const angle = base + swerve * this.swerveSide, cx = Math.cos(angle), cz = Math.sin(angle)
       const midX = here.x + cx * reach * 0.5, midZ = here.z + cz * reach * 0.5
       const endX = here.x + cx * reach, endZ = here.z + cz * reach
-      if (!this.crossable(here.x, here.z, midX, midZ) || !this.crossable(midX, midZ, endX, endZ)) continue
+      const nearX = here.x + cx * reach * 0.25, nearZ = here.z + cz * reach * 0.25
+      if (!this.crossable(here.x, here.z, nearX, nearZ) || !this.crossable(nearX, nearZ, midX, midZ) || !this.crossable(midX, midZ, endX, endZ)) continue
       if (this.parkedInWay(here, endX, endZ)) continue
       if (swerve === 0) return { x: aimX, z: aimZ, swerved: false }
       if (swerve * this.swerveSide < 0) this.swerveSide = -this.swerveSide

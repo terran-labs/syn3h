@@ -17,7 +17,7 @@ try{
   await page.waitForTimeout(5000)
   for(const hour of hours)for(const tier of tiers){
    await page.evaluate(({hour,tier})=>{const s=window.syn3h;s.params.set('sun.timeOfDay',hour);s.params.set('gfx.vehicleShading',tier)},{hour,tier})
-   for(const [shot,f,r,u,tf,tu] of [['wide',4.2,3.2,2.2,0,.2],['close',1.9,1.5,1.5,.5,.45],['rear',-4,2.6,2,0,.3]]){
+   for(const [shot,f,r,u,tf,tu] of [['wide',4.2,3.2,2.2,0,.2],['close',1.9,1.5,1.5,.5,.45],['rear',-4,2.6,2,0,.3],['inside',Number(process.env.EYE_F??-.15),0,Number(process.env.EYE_U??.62),6,.5]]){
     await page.evaluate(({f,r,u,tf,tu})=>{const s=window.syn3h,o=s.player.object,T=o.position.constructor
      const fw=new T(0,0,-1).applyQuaternion(o.quaternion),rt=new T(1,0,0).applyQuaternion(o.quaternion),up=new T(0,1,0)
      const pos=o.position.clone().addScaledVector(fw,f).addScaledVector(rt,r).addScaledVector(up,u),target=o.position.clone().addScaledVector(fw,tf).addScaledVector(up,tu)

@@ -49,6 +49,15 @@ export function mergeStatic(root:T.Object3D,flatten=false):void {
 }
 
 export type VehicleDetail=(distance:number,remote:boolean,level:number)=>void
+/** Distances at which another player's vehicle steps down a level of detail, in metres (PATTERN.md rule 4). */
+export const LOD_NEAR=30,LOD_FAR=120
+/** 0 full, 1 reduced, 2 silhouette. The player's own vehicle is always 0. Hysteresis is the caller's, keyed on its last level. */
+export function detailLevel(distance:number,remote:boolean,last:0|1|2=0):0|1|2 {
+  if(!remote)return 0
+  // Five metres of slack on the way back in, so a vehicle pacing the boundary does not flicker.
+  const near=LOD_NEAR-(last>0?5:0),far=LOD_FAR-(last>1?5:0)
+  return distance>far?2:distance>near?1:0
+}
 /** Models register after loading, when their parent vehicle already exists. Viewers retain full detail. */
 export function registerVehicleDetail(root:T.Object3D,callback:VehicleDetail):()=>void {
   for(let p:T.Object3D|null=root;p;p=p.parent){const register=p.userData.registerVehicleDetail as ((fn:VehicleDetail)=>()=>void)|undefined;if(register)return register(callback)}

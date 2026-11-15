@@ -1,8 +1,9 @@
+import * as THREE from 'three/webgpu'
 import { Vector3 } from 'three/webgpu'
 import type { Game, System } from '../../core/Game'
 import type { Terrain } from '../Terrain'
 import { applyWaterQuery } from './params'
-import type { Vehicle } from '../../vehicles/Vehicle'
+import type { Vehicle, VehicleObjectEvents } from '../../vehicles/Vehicle'
 import { net } from '../../net'
 import { nearestImage } from '../../../shared/wrap'
 import { Ripples, rippleField, waterRipples } from './ripples'
@@ -22,7 +23,11 @@ export class WaterEffects implements System {
   private velocity=new Vector3()
   constructor(private game:Game,private terrain:Terrain,private player:Vehicle,private bots:{readonly vehicles:readonly Vehicle[]}){
     this.ripples=rippleField;this.ripples.attach(game.renderer);this.spray=new Spray(game.scene,this.ripples);this.underwater=new Underwater(game,terrain)
+    // A world seam moves the player a whole tile and the world is redrawn round it: spray left
+    // behind moves the same way. (The ripple field wraps at the tile, so it needs nothing.)
+    ;(player.object as THREE.Object3D<VehicleObjectEvents>).addEventListener('tileshift',this.onTileShift)
   }
+  private onTileShift=({dx,dz}:{dx:number;dz:number})=>this.spray.shift(dx,dz)
   /** `?water=1` preview switch: applied once play has begun, after any room state lands. */
   private queryApplied=false
   update(dt:number){
@@ -59,5 +64,5 @@ export class WaterEffects implements System {
     this.ripples.update(dt,game.camera.position.x,game.camera.position.z)
     this.underwater.update()
   }
-  dispose(){this.underwater.dispose();this.spray.dispose();this.ripples.dispose()}
+  dispose(){(this.player.object as THREE.Object3D<VehicleObjectEvents>).removeEventListener('tileshift',this.onTileShift);this.underwater.dispose();this.spray.dispose();this.ripples.dispose()}
 }
