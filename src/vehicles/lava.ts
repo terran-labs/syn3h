@@ -127,9 +127,9 @@ export const liquidWingLiftSpeed=defineParam({id:'liquid.wingLiftSpeed',label:'S
 // Lava is wadeable: a viscous drag that grows with depth and speed, and a crawl push that
 // always beats it at low speed. Full throttle at the resting depth settles near
 // crawlPower / (viscosity * (1 + sinkDepth)), 3 m/s with these defaults.
-export const lavaViscosity=defineParam({id:'lava.viscosity',label:'Viscosity',group:'Lava',scope:'world',default:2.5,min:0,max:20,step:.1})
+export const lavaViscosity=defineParam({id:'lava.viscosity',label:'Viscosity',group:'Lava',scope:'world',default:6,min:0,max:20,step:.1})
 export const lavaSinkDepth=defineParam({id:'lava.sinkDepth',label:'Sink depth (m)',group:'Lava',scope:'world',default:.45,min:.1,max:2,step:.05})
-export const lavaCrawlPower=defineParam({id:'lava.crawlPower',label:'Crawl power (m/s²)',group:'Lava',scope:'world',default:11,min:0,max:30,step:.5})
+export const lavaCrawlPower=defineParam({id:'lava.crawlPower',label:'Crawl power (m/s²)',group:'Lava',scope:'world',default:26,min:0,max:40,step:.5})
 export const lavaTurnRate=defineParam({id:'lava.turnRate',label:'Turn rate (rad/s)',group:'Lava',scope:'world',default:.6,min:.1,max:2,step:.05})
 export const lavaCoolingTime=defineParam({id:'lava.coolingTime',label:'Cooling time (s)',group:'Lava',scope:'world',default:20,min:1,max:120,step:1})
 const liquidTerrains=new WeakMap<RAPIER.RigidBody,Terrain>()

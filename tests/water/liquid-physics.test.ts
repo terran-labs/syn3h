@@ -5,7 +5,7 @@ import { initPhysics, RAPIER, groups, GROUP_TERRAIN, GROUP_ALL } from '../../src
 import { params } from '../../shared/params'
 import { createVehicle } from '../../src/vehicles'
 import { applyWaterForces, planingShare } from '../../src/vehicles/buoyancy'
-import { lavaVelocityStep, liquidWetness, wingLiquidAcceleration, liquidWingLift } from '../../src/vehicles/lava'
+import { lavaVelocityStep, liquidWetness, wingLiquidAcceleration, liquidWingLift, lavaCrawlPower, lavaViscosity } from '../../src/vehicles/lava'
 import { harness } from '../vehicles2/harness'
 beforeAll(initPhysics)
 afterEach(() => { for (const p of params.all()) params.set(p.def.id, p.def.default) })
@@ -70,9 +70,9 @@ describe('continuity', () => {
       const s = { x: 0, y: 0, z: 0 }
       let peak = 0
       for (let t = 0; t < 10; t += dt) { lavaVelocityStep(s, { x: 0, z: -1 }, 1, 1, .45, 0, wing, dt, s); peak = Math.max(peak, -s.z) }
-      // Terminal speed is crawl / (viscosity (1 + depth)) = 11 / 3.625, with no overshoot at any step.
-      expect(-s.z).toBeCloseTo(11 / 3.625, 2)
-      expect(peak).toBeLessThanOrEqual(11 / 3.625 + 1e-6)
+      // Terminal speed is crawl / (viscosity (1 + depth)), 3 m/s, with no overshoot at any step.
+      expect(-s.z).toBeCloseTo(lavaCrawlPower.value / (lavaViscosity.value * 1.45), 2)
+      expect(peak).toBeLessThanOrEqual(lavaCrawlPower.value / (lavaViscosity.value * 1.45) + 1e-6)
     }
   })
   it('planing share is continuous in speed', () => {
