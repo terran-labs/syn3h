@@ -9,6 +9,7 @@ import { DAYDREAM_PERSONALITY } from '../../src/bots/Daydream'
 import { Mind } from '../../src/bots/mind/Mind'
 import { createGroundPilot } from '../../src/bots/pilot/ground'
 import { island } from './island'
+import { createNavigator } from '../../src/bots/nav'
 import '../../src/bots/params'
 
 beforeAll(initPhysics)
@@ -21,7 +22,7 @@ export function drive(seed: string, seconds: number, verbose = false) {
   const game = { world, scene: new Scene(), tick: 0, input: { state: emptyInput() } } as unknown as Game
   const spawn = terrain.spawnPoint(0)
   const buggy = new Syn3hBuggy(game, terrain, spawn.position, spawn.heading); buggy.isLocal = false
-  const mind = new Mind(buggy, terrain, createGroundPilot(buggy), { seed, personality: DAYDREAM_PERSONALITY })
+  const mind = new Mind(buggy, terrain, createGroundPilot(buggy), { seed, personality: DAYDREAM_PERSONALITY, navigator: createNavigator(terrain) })
   let path = 0, wet = 0, flipped = 0, slow = 0, far = 0, kind = ''
   const last = spawn.position.clone(), cells = new Set<string>(), up = new Vector3(), q = new Quaternion()
   for (let i = 0; i < seconds / DT; i++) {

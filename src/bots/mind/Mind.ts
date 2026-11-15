@@ -221,13 +221,28 @@ export class Mind {
     for (const o of options) { if (o[0] === this.lastKind) o[1] *= o[0] === 'explore' ? 0.6 : 0.15; total += o[1] }
     let roll = r() * total, kind: ActivityKind = 'explore'
     for (const [k, w] of options) { roll -= w; if (roll <= 0) { kind = k; break } }
-    if (kind === 'road') return this.begin('road', road, null, 90)
-    if (kind === 'summit') return this.begin('summit', summit, null, 150)
+    if (kind === 'road' && this.reachable(here, road!)) return this.begin('road', road, null, 90)
+    if (kind === 'summit' && this.reachable(here, summit!)) return this.begin('summit', summit, null, 150)
     if (kind === 'follow') return this.begin('follow', null, leader, 20 + r() * 30)
     if (kind === 'donut') { this.swerveSide = r() < 0.5 ? 1 : -1; return this.begin('donut', null, null, 3.5 + r() * 3) }
-    const place = this.pickFrontier(here)
-    if (!place) return this.begin(road ? 'road' : 'pause', road, null, road ? 90 : 2)
-    this.begin(kind === 'weave' ? 'weave' : 'explore', place, null, kind === 'weave' ? 12 + r() * 10 : 75)
+    // A few tries at somewhere new that the planner agrees can be reached.
+    for (let i = 0; i < 3; i++) {
+      const place = this.pickFrontier(here)
+      if (place && this.reachable(here, place)) return this.begin(kind === 'weave' ? 'weave' : 'explore', place, null, kind === 'weave' ? 12 + r() * 10 : 75)
+    }
+    if (road && this.reachable(here, road)) return this.begin('road', road, null, 90)
+    this.begin('pause', null, null, 2)
+  }
+
+  /** Ask the planner before committing to a place, and keep the route if there is one. */
+  private reachable(here: { x: number; z: number }, place: NavPoint): boolean {
+    const navigator = this.options.navigator
+    if (!navigator) return true
+    const route = navigator.route(here, place, this.pilot.profile)
+    const end = route?.points[route.points.length - 1]
+    if (!route || !end || (!route.reached && Math.hypot(end.x - place.x, end.z - place.z) > 25)) return false
+    this.route = route; this.routeIndex = 0; this.routeTime = 4
+    return true
   }
 
   private begin(kind: ActivityKind, destination: NavPoint | null, leader: Vehicle | null, seconds: number): void {
@@ -304,6 +319,11 @@ export class Mind {
       if (!this.route || this.routeTime <= 0) {
         this.route = navigator.route(here, target, this.pilot.profile); this.routeIndex = 0
         this.routeTime = this.activity.kind === 'follow' ? 1.5 : 4
+        // The planner says there is no way there: do not spend a minute proving it by driving.
+        if (this.route && !this.route.reached && this.activity.kind !== 'follow' && this.activity.kind !== 'retreat') {
+          const end = this.route.points[this.route.points.length - 1]
+          if (!end || Math.hypot(end.x - target.x, end.z - target.z) > 25) { this.abandoned++; this.activity.until = 0 }
+        }
       }
       const points = this.route?.points
       if (points?.length) {
