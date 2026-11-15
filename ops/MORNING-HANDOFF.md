@@ -1,9 +1,14 @@
-# Morning handoff draft
+# Morning handoff
 
-Prepared during the 15 November overnight run. This is a working draft, not the 8am
-report. Recheck production, integration and lane evidence before delivering it.
-Evidence snapshot: 3:38am Pacific. Release 5 is accepted publicly; aircraft evasion
-and the conditional performance, diagnostics and transparent-water work remain unfinished.
+Delivered at 8am Pacific on 15 November. A fresh public identity check still serves
+release 5, accepted at 3:38am. The game, vehicle lab, UX and Post Effects previews and
+published release story return HTTP 200; these are reachability checks, not new gameplay
+tests. Performance, diagnostics, cursor UX and transparent water are now assigned to
+existing lanes under the owner's ordering exception. Aircraft evasion remains blocked.
+
+Use the accepted public release for the demo. The new work is not yet accepted or live.
+The published release story and showcase provide a static backup for presentation;
+they do not demonstrate a live multiplayer connection.
 
 ## Public build
 
@@ -20,7 +25,7 @@ Future deployment supervisors must now select release 5 as their rollback target
 Release 5 notes and the curated five-scene showcase are published. All six attachment
 URLs and the README latest-GIF link verify; original captures are preserved.
 
-The first attempt failed its primary-site bot-roster check and restored verified
+Release 4's first attempt failed its primary-site bot-roster check and restored verified
 release 2. Unique-room diagnostics passed on the unchanged frozen build before this
 successful retry. That success does not prove the cause of the previous failure.
 Earlier release 3 score-display and resource-loading failures remain unexplained.
@@ -115,7 +120,8 @@ supervisor. Public acceptance subsequently passed on the same frozen build at 3:
   side-or-no-op rule and warning-time feasibility bound, fresh unseen scenarios with
   perturbation margins, no new catches in previously safe cases, and route recovery.
   The current report establishes none of those selection guarantees. This technical
-  blocker does not complete the assignment or clear the owner's follow-on condition.
+  blocker does not complete the assignment. The owner separately cleared the ordering
+  condition for independent follow-on work.
   The measurement-only follow-up passed typecheck and all 99 cases. Every original
   result field is unchanged; independent review verified 2,045 live projectile
   observations. This closes the instrumentation gap, not the unsafe-selection gap.
@@ -143,14 +149,15 @@ remain missing. Both wave and still-water fallback materials need transparency w
 
 ## Fifteen-minute owner viewing list
 
-Use the final accepted build selected at 8am, not an unverified preview address.
+Use public release 5, verified at 8am, rather than an unverified preview address.
 
 1. Three minutes: enter normally on the Mac, capture the cursor, drive and press Escape.
    Check that controls and the minimap leave the road visible.
 2. Four minutes: join the same room from a real phone over mobile data using the QR code.
    Confirm movement, gear interaction and return after briefly backgrounding the phone.
 3. Three minutes: inspect shallow water from above and below, then change rendering tier.
-   Check visibility, responsiveness and whether the tier controls are understandable.
+   Record the current opaque-water limitation, responsiveness and whether the tier
+   controls are understandable. Transparency work is underway, not live.
 4. Two minutes: listen on the demo speakers. Judge generated wind, recorded music,
    engines and gear cues; automated audio lifecycle tests cannot judge the mix.
 5. Three minutes: inspect the tank and hovercraft studies and name any direction worth
@@ -166,5 +173,4 @@ The requested handoff is the public address and repository:
 - https://www.syn3h.com/
 - https://github.com/terran-labs/syn3h
 
-Before delivery, replace this draft's snapshot with current production identity,
-accepted checks, remaining visible limitations and any unresolved owner choices.
+Recheck production identity before the noon delivery if another release is accepted.
