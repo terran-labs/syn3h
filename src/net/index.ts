@@ -47,7 +47,7 @@ import { Connection, serverUrl } from './Connection'
 import { NameTags } from './NameTags'
 import { netExtrapolate, netInterpDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
-import { bodyAlive, liveBots } from './bots'
+import { audibleVehicles, bodyAlive, liveBots } from './bots'
 
 /** The slice of GameAudio (src/audio) networking uses. */
 export interface NetAudio {
@@ -468,6 +468,20 @@ export class NetClient implements System {
   // -------------------------------------------------------------------------------------
   // Vehicles and roles
   // -------------------------------------------------------------------------------------
+
+  private audible: Vehicle[] = []
+
+  /**
+   * Other vehicles that should make sound: remote players, bots (replicas or our own), minus
+   * anyone out of a King of the Hill round. For `audio.setVehicles(() => net.audibleVehicles())`.
+   * The returned array is reused between calls.
+   */
+  audibleVehicles(): readonly Vehicle[] {
+    const out = this.mode === MODE_KOTH && this.connected ? this.game.koth.out : {}
+    const own = this.bots && !this.bots.remote ? this.bots.vehicles : []
+    const remotes = [...this.remotes].map(([id, r]): [number, Vehicle] => [id, r.vehicle])
+    return audibleVehicles(remotes, out, own, this.ctx.game.world, this.audible)
+  }
 
   /** The vehicle that stands for an id on this client, if any. */
   vehicleOf(id: number): Vehicle | undefined {
