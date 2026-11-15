@@ -1,5 +1,6 @@
-export type Cue = 'capture'|'contested'|'lost'|'win'|'tick'|'tag'|'join'|'leave'|'click'|'deploy'|'retract'|'lava'|'splash'|'bungeeLaunch'|'bungeeAttach'|'bungeeRelease'|'beam'|'tagged'|'materialize'
-const notes:Record<Exclude<Cue,'beam'|'tagged'|'materialize'>,readonly number[]>={capture:[330,440,660],contested:[220,233,220],lost:[330,220],win:[262,330,392,523],tick:[660],tag:[520,260,780],join:[392,523],leave:[392,294],click:[880],deploy:[110,440],retract:[440,110],lava:[150,64,58,205],splash:[320,170],bungeeLaunch:[196,392,587],bungeeAttach:[147,98,196],bungeeRelease:[392,294,147]}
+export type GearCue = 'yoinkGrab' | 'yoinkFling' | 'yoinkGust' | 'bigRedCharge' | 'bigRedReady' | 'bigRedFizzle' | 'pesterLaunch' | 'pesterCatch' | 'thunderFire'
+export type Cue = 'capture'|'contested'|'lost'|'win'|'tick'|'tag'|'join'|'leave'|'click'|'deploy'|'retract'|'lava'|'splash'|'bungeeLaunch'|'bungeeAttach'|'bungeeRelease'|'beam'|'tagged'|'materialize'|GearCue
+const notes:Record<Exclude<Cue,'beam'|'tagged'|'materialize'|GearCue>,readonly number[]>={capture:[330,440,660],contested:[220,233,220],lost:[330,220],win:[262,330,392,523],tick:[660],tag:[520,260,780],join:[392,523],leave:[392,294],click:[880],deploy:[110,440],retract:[440,110],lava:[150,64,58,205],splash:[320,170],bungeeLaunch:[196,392,587],bungeeAttach:[147,98,196],bungeeRelease:[392,294,147]}
 /** Seconds the materialize swoosh builds for when the caller does not say. */
 export const MATERIALIZE_SECONDS = 1.4
 export interface CueOptions {
@@ -11,6 +12,7 @@ export interface CueOptions {
 }
 /** A bounded one-shot graph. The returned cleanup also supports immediate shutdown. */
 export function synthCue(context:BaseAudioContext,output:AudioNode,cue:Cue,noise:AudioBuffer,onEnd:()=>void=()=>{},options:CueOptions={}):()=>void {
+  if(isGearCue(cue))return synthGearCue(context,output,cue,noise,onEnd)
   if(cue==='beam'||cue==='tagged'||cue==='materialize')return voiced(context,output,cue,noise,onEnd,options)
   const now=context.currentTime,sequence=notes[cue],step=cue==='win'?.18:cue==='lava'?.16:cue==='click'?.025:cue==='tick'?.045:.09
   const nodes:AudioNode[]=[],sources:AudioScheduledSourceNode[]=[]
@@ -83,4 +85,68 @@ function voiced(context:BaseAudioContext,output:AudioNode,cue:'beam'|'tagged'|'m
   // An offline render never reaches this timer and is discarded whole; a live context cleans up here.
   const timer=setTimeout(clean,Math.max(0,(end-now)*1000+80))
   return ()=>{for(const source of sources){try{source.stop()}catch{ /* A completed source is already silent. */ }}clean()}
+}
+
+
+interface GearVoice { seconds: number; from: number; to: number; tone: OscillatorType; gain: number; air: number }
+/** Short event cues. Charge is a pickup sound; the ready cue marks the actual full charge. */
+const gearVoices: Record<GearCue, GearVoice> = {
+  yoinkGrab: { seconds: .48, from: 110, to: 440, tone: 'sine', gain: .2, air: .04 },
+  yoinkFling: { seconds: .32, from: 540, to: 130, tone: 'triangle', gain: .2, air: .12 },
+  yoinkGust: { seconds: .3, from: 350, to: 90, tone: 'sine', gain: .1, air: .25 },
+  bigRedCharge: { seconds: .55, from: 65, to: 196, tone: 'triangle', gain: .18, air: .03 },
+  bigRedReady: { seconds: .4, from: 392, to: 587, tone: 'sine', gain: .18, air: .02 },
+  bigRedFizzle: { seconds: .28, from: 180, to: 45, tone: 'triangle', gain: .12, air: .13 },
+  pesterLaunch: { seconds: .45, from: 660, to: 990, tone: 'sine', gain: .11, air: .08 },
+  pesterCatch: { seconds: .4, from: 880, to: 1760, tone: 'sine', gain: .12, air: .15 },
+  thunderFire: { seconds: .7, from: 145, to: 38, tone: 'sine', gain: .36, air: .28 },
+}
+function isGearCue(cue: Cue): cue is GearCue { return Object.hasOwn(gearVoices, cue) }
+
+/** Three bounded sources per event. The final source owns cleanup, including offline renders. */
+function synthGearCue(context: BaseAudioContext, output: AudioNode, cue: GearCue, noise: AudioBuffer, onEnd: () => void): () => void {
+  const voice = gearVoices[cue], now = context.currentTime, end = now + voice.seconds
+  const nodes: AudioNode[] = [], sources: AudioScheduledSourceNode[] = []
+  const keep = <T extends AudioNode>(node: T): T => { nodes.push(node); return node }
+  const envelope = (level: number): GainNode => {
+    const gain = keep(context.createGain())
+    gain.connect(output)
+    gain.gain.setValueAtTime(0, now)
+    gain.gain.linearRampToValueAtTime(level, now + .012)
+    gain.gain.exponentialRampToValueAtTime(.0001, end)
+    return gain
+  }
+  const body = envelope(voice.gain)
+  const fundamental = keep(context.createOscillator())
+  fundamental.type = voice.tone
+  fundamental.frequency.setValueAtTime(voice.from, now)
+  fundamental.frequency.exponentialRampToValueAtTime(voice.to, end - .02)
+  fundamental.connect(body)
+  const harmonicGain = keep(context.createGain())
+  harmonicGain.gain.value = .22
+  harmonicGain.connect(body)
+  const harmonic = keep(context.createOscillator())
+  harmonic.type = 'sine'
+  harmonic.frequency.setValueAtTime(voice.from * 2.01, now)
+  harmonic.frequency.exponentialRampToValueAtTime(voice.to * 2, end - .02)
+  harmonic.connect(harmonicGain)
+  const air = envelope(voice.air), filter = keep(context.createBiquadFilter())
+  filter.type = cue === 'thunderFire' ? 'lowpass' : 'bandpass'
+  filter.Q.value = .7
+  filter.frequency.setValueAtTime(cue === 'thunderFire' ? 650 : voice.from * 3, now)
+  filter.frequency.exponentialRampToValueAtTime(cue === 'thunderFire' ? 110 : Math.max(100, voice.to * 2), end)
+  filter.connect(air)
+  const hiss = keep(context.createBufferSource())
+  hiss.buffer = noise
+  hiss.loop = true
+  hiss.connect(filter)
+  sources.push(fundamental, harmonic, hiss)
+  let ended = false
+  const clean = () => { if (ended) return; ended = true; for (const node of nodes) node.disconnect(); onEnd() }
+  hiss.onended = clean
+  for (const source of sources) { source.start(now); source.stop(end + .02) }
+  return () => {
+    for (const source of sources) { try { source.stop() } catch { /* Already silent. */ } }
+    clean()
+  }
 }

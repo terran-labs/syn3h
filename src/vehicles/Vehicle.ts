@@ -206,10 +206,23 @@ export abstract class Vehicle implements System {
     return groups(GROUP_VEHICLE, GROUP_ALL)
   }
 
+  /** Controllers with altitude hold can release it so materialization ends in a drop. */
+  releaseHoverHold?(): void
+
   /** The port of the original FixedUpdate. Called once per fixed step for every vehicle. */
   protected abstract applyForces(dt: number): void
 
   fixedUpdate(dt: number): void {
+    // Ignore all new input while held, including rescue and mechanism toggles. The current
+    // wing and zorb state stays intact; only the materialization system moves the body.
+    if (this.object.userData.materializing === true) {
+      this.input.x = this.input.y = this.input.z = this.input.w = 0
+      this.input.fire = false
+      this.body.resetForces(false)
+      this.body.resetTorques(false)
+      this.releaseHoverHold?.()
+      return
+    }
     if (this.isLocal) {
       Object.assign(this.input, this.game.input.state)
       this.zorbView = this.game.camera?.quaternion ?? null

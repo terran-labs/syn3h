@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
-import { initPhysics } from '../../src/core/physics'
+import { initPhysics, RAPIER } from '../../src/core/physics'
 import { Jet, JET_LIFT_KEYS, jetDrag, jetFlightThrust, jetHoverHold, jetVectorResponse } from '../../src/vehicles/Jet'
 import { harness } from './harness'
 
@@ -140,6 +140,35 @@ describe('Jet hover and flight',()=>{
   for(let i=0;i<3;i++){v.input.special=!v.input.special;h.step(v,60);v.update(1/60,1);expect(model.plume.mesh.visible).toBe(false);expect(model.near.gearAmount).toBe(0)}
   v.input.zorb=false;v.input.special=false;v.input.z=0;h.step(v,300);v.update(1/60,1)
   expect(v.zorbed).toBe(false);expect(model.plume.mesh.visible).toBe(true);expect(model.near.gearAmount).toBe(1)
+  v.dispose();h.world.free()
+ })
+
+ it('settles onto its gear after materializing in the air, then holds altitude again once flown',()=>{
+  const h=harness();const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,2.8,0));v.isLocal=false
+  // Without the release it would hang here: 2.8 m is above the height where the hold lets go.
+  h.step(v,120);expect(v.body.translation().y).toBeGreaterThan(2.5)
+  // Held in the air by the materializer, then let go: it drops and rests on its gear.
+  v.object.userData.materializing=true;h.step(v,5);v.object.userData.materializing=false
+  h.step(v,300);expect(v.body.translation().y).toBeLessThan(1.6);expect(Math.abs(v.body.linvel().y)).toBeLessThan(.05)
+  // The method does the same as the flag.
+  v.teleport(new THREE.Vector3(0,2.8,0));v.releaseHoverHold();h.step(v,300);expect(v.body.translation().y).toBeLessThan(1.6)
+  // The player lifts off and lets go: the hold is back.
+  v.input.z=1;h.step(v,150);v.input.z=0;h.step(v,250)
+  expect(v.body.translation().y).toBeGreaterThan(3);expect(Math.abs(v.body.linvel().y)).toBeLessThan(.5)
+  // Lift input in mid-air also ends the release at once.
+  v.teleport(new THREE.Vector3(0,40,0));v.releaseHoverHold();v.input.z=.5;h.step(v,5);v.input.z=0;h.step(v,250)
+  expect(v.body.translation().y).toBeGreaterThan(30)
+  v.dispose();h.world.free()
+ })
+ it('observes the kinematic materialization flag and does not rearm hold on descend',()=>{
+  const h=harness();const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,30,0));v.isLocal=false
+  v.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased,true)
+  v.object.userData.materializing=true;h.step(v,2)
+  delete v.object.userData.materializing
+  v.body.setBodyType(RAPIER.RigidBodyType.Dynamic,true)
+  v.input.z=-1;h.step(v,10);v.input.z=0;h.step(v,60)
+  expect(v.body.linvel().y).toBeLessThan(-3)
+  expect((v as unknown as {holdReleased:boolean}).holdReleased).toBe(true)
   v.dispose();h.world.free()
  })
 

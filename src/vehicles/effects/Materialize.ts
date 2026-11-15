@@ -15,16 +15,16 @@
  * ground or liquid under it, level, with its heading kept, and its body is switched to
  * kinematic until the hold time has passed. Every controller (Jet, Hovercraft, Tank, the
  * liquid pass, wind, buoyancy and the ground guard) already skips a kinematic body: it is how
- * a far remote copy is placed exactly (net/RemotePlayer.ts). Nothing in Vehicle.ts or a
- * controller is edited, and gravity and drive forces cannot act on it. A kinematic body is not
+ * a far remote copy is placed exactly (net/RemotePlayer.ts). Vehicle.fixedUpdate skips player input and controller forces during the hold,
+ * so gravity and drive forces cannot act on it. A kinematic body is not
  * shoved by anything. Each step it is put back at the hold point with no velocity, so neither
  * order of this system against the vehicle in `game.add` matters. On release the body type it
  * had is restored with zero velocity, and it drops under ordinary physics.
  *
- * Input and tagging. Vehicle.ts copies the player's input every step and there is no existing
- * "ignore input" or tag immunity flag on a vehicle. Input cannot move a held body, but other
- * systems that read input (weapons, tagging) should consult `isHeld(vehicle)` or the
- * `vehicle.object.userData.materializing` flag, which is true only while held.
+ * Input and tagging. Vehicle.fixedUpdate ignores new controls while the
+ * `vehicle.object.userData.materializing` flag is true. Networking uses the same flag to
+ * suppress locally judged tags, firing and shoves. Remote authoritative ram reports still
+ * need a synchronized signal for complete immunity.
  *
  * The cloud. A soft luminous white cloud with a light blue rim gathers round the vehicle over
  * about 0.2 s, stays through the hold, and on release billows outward and upward and thins
@@ -217,7 +217,7 @@ export class Materialize implements System {
       const hold=this.holds[i]
       if(!this.alive(hold)){this.finish(hold);continue}
       hold.elapsed+=dt
-      // Half a step of tolerance, so a 1 s hold is exactly 60 held steps despite rounding.
+      // Half a step of tolerance, so a 1 s hold is exactly 50 held steps despite rounding.
       if(hold.elapsed>=hold.seconds-dt*.5)this.release(hold,true)
       else if(hold.holds)this.pin(hold)
     }
