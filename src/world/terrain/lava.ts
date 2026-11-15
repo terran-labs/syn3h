@@ -433,6 +433,14 @@ export const RIVER_MANNING_N = 0.035
 const RIVER_HYDRAULIC_RADIUS = 1.4
 
 /**
+ * Mean speed of a river down a bed of the given slope (fall over run), m/s: Manning's
+ * formula, with a trickle where the bed is level so a river never stands still, capped.
+ */
+export function riverSpeed(slope: number, maxSpeed: number): number {
+  return Math.min(maxSpeed, Math.max(0.3, (RIVER_HYDRAULIC_RADIUS ** (2 / 3) * Math.sqrt(Math.max(0, slope))) / RIVER_MANNING_N))
+}
+
+/**
  * Velocity of the liquid at (x, z) in metres per second, written to `out`: along the river
  * where (x, z) is on one, from Manning's formula and the local slope of the surface; zero in
  * the sea, the lake and the pools. Uses the same segment test as `lavaSurfaceAt`, taking the
@@ -464,9 +472,7 @@ export function liquidFlowAt(
       if (sy <= best) continue
       best = sy
       const len = Math.sqrt(len2)
-      const slope = Math.max(0, a.y - c.y) / len
-      // A trickle even where the bed is level, so a river never stands still.
-      const speed = Math.min(maxSpeed, Math.max(0.3, (RIVER_HYDRAULIC_RADIUS ** (2 / 3) * Math.sqrt(slope)) / RIVER_MANNING_N))
+      const speed = riverSpeed(Math.max(0, a.y - c.y) / len, maxSpeed)
       out.x = (dx / len) * speed
       out.z = (dz / len) * speed
     }
