@@ -142,6 +142,8 @@
       <div id="workers"></div>
       <h2 style="margin-top:22px">Needs you</h2>
       <div id="decisions"></div>
+      <h2 style="margin-top:22px">Known issues</h2>
+      <div id="known"></div>
     </section>
 
     <section class="card">
@@ -202,6 +204,7 @@ async function refresh() {
     $('milestones').innerHTML = ms.map((m) => row(m.state, m.title, m.detail)).join('')
     $('workers').innerHTML = (s.workers ?? []).map((w) => row(w.state, w.name, w.detail)).join('') || '<div class="muted">None running.</div>'
     $('decisions').innerHTML = (s.decisions ?? []).map((d) => row(d.state ?? 'waiting', d.title, d.detail)).join('') || '<div class="muted">Nothing right now.</div>'
+    $('known').innerHTML = (s.knownIssues ?? []).map((k) => `<div class="row"><div><div class="t">${esc(k.title)}</div><div class="d">${esc(k.detail)}</div></div></div>`).join('') || '<div class="muted">None recorded.</div>'
     $('strategy').innerHTML = (s.strategy ?? []).map((p) => `<div class="row"><div><div class="t">${esc(p.title)}</div><div class="d">${esc(p.detail)}</div></div></div>`).join('')
     $('accounts').innerHTML = (s.accounts ?? []).map((a) => row(a.state, a.name, a.detail)).join('')
     $('vehiclesNote').textContent = (s.vehiclesNote ?? '') + (s.vehiclesUpdated ? ' Updated ' + s.vehiclesUpdated + '.' : '')
