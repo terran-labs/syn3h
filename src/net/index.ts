@@ -52,6 +52,7 @@ import { RemotePlayer } from './RemotePlayer'
 import { type BotMatchInfo, audibleVehicles, bodyAlive, hillHold, liveBots } from './bots'
 import { ShoveQueue, cleanShove, shoveFor } from './shove'
 import { nearestImage, wrapCoord, wrapDistance } from '../../shared/wrap'
+import { setWaterClock } from '../world/water/seaWaves'
 
 /** The slice of GameAudio (src/audio) networking uses. */
 export interface NetAudio {
@@ -475,6 +476,7 @@ export class NetClient implements System {
     for (const r of this.remotes.values()) r.reimage(here)
     this.placeHill()
     this.syncBotMatch()
+    this.shareClock()
     this.tags.update([...this.remotes.entries()].map(([id, r]) => ({
       vehicle: r.vehicle,
       name: this.displayName(id),
@@ -595,6 +597,21 @@ export class NetClient implements System {
     // Take over: drop our replicas of the old host's bots; our own manager simulates them now.
     for (const [id] of [...this.remotes]) if (isBotId(id)) this.removeRemote(id)
     if (this.bots?.vehicles.length) this.event('You are host: simulating bots')
+  }
+
+  private clockShared = false
+
+  /**
+   * Once our estimate of the room's clock is good (the first ping has come back), hand it to
+   * everything that must look the same on every screen at the same moment: the sea's waves
+   * today. Until then, and in single player, those run on the game's own time. The switch
+   * happens once per page; the sea steps to the shared time at that moment. The clock keeps
+   * running through a dropout, so nothing steps again on reconnecting.
+   */
+  private shareClock(): void {
+    if (this.clockShared || !this.clock.synced) return
+    this.clockShared = true
+    setWaterClock(() => this.clock.now())
   }
 
   private botMatchKey = 'unset'
