@@ -121,7 +121,7 @@ describe('spray simulation', () => {
     expect(sim.throttle).toBeLessThan(.6)
     expect(sim.dropletCount).toBeLessThanOrEqual(c.droplets)
     // Once the throttle has settled the pool is rarely at its limit and refusals stop growing.
-    expect(full).toBeLessThan(150)
+    expect(full).toBeLessThan(60)
     const refused = sim.refused
     for (let i = 0; i < 300; i++) { sim.step(1 / 60); for (let v = 0; v < 4; v++) sim.vehicle(`v${v}`, (1200 + i) * .4, 0, v * 20, 24, 0, 0, .8, 1 / 60) }
     expect(sim.refused - refused).toBeLessThan(60)
@@ -142,17 +142,24 @@ describe('spray simulation', () => {
   })
 
   it('fades strips through bends tighter than their width instead of folding', () => {
-    const sim = new SpraySim(cap, sea), r = 4, w = 15 / r
+    const sim = new SpraySim(cap, sea), r = 2.5, w = 15 / r
     for (let i = 0; i < 240; i++) {
       const t = i / 60, x = r * Math.sin(w * t), z = r * Math.cos(w * t)
       sim.step(1 / 60); sim.vehicle('a', x, 0, z, 15 * Math.cos(w * t), 0, -15 * Math.sin(w * t), .5, 1 / 60)
     }
     const n = cap.vehicles * ARMS * cap.points + cap.rings, A = new Float32Array(n * 4), B = new Float32Array(n * 4), S = new Float32Array(n * 4), L = new Float32Array(n * 4)
     const m = sim.packSurface(A, B, S, L)
-    let washMax = 0
-    for (let i = 0; i < m; i++) if (Math.hypot(S[i * 4], S[i * 4 + 1]) > 1.5) washMax = Math.max(washMax, L[i * 4 + 1])
-    // A 4 m circle is far tighter than the wash: it must fade almost entirely.
-    expect(washMax).toBeLessThan(.3)
+    // Wherever a segment is wider than the bend it sits on, it must have faded out rather than
+    // cross itself. Bend radius from the turn between the two end sides, as the strip is drawn.
+    let tight = 0, loose = 0
+    for (let i = 0; i < m; i++) {
+      const o = i * 4, ax = S[o], az = S[o + 1], bx = S[o + 2], bz = S[o + 3], la = Math.hypot(ax, az), lb = Math.hypot(bx, bz)
+      if (la < .5) continue
+      const turn = Math.acos(Math.max(-1, Math.min(1, (ax * bx + az * bz) / la / lb)))
+      const radius = Math.hypot(B[o] - A[o], B[o + 2] - A[o + 2]) / Math.max(turn, 1e-6), half = Math.max(A[o + 3], B[o + 3])
+      if (half > radius) { tight++; expect(Math.max(L[o], L[o + 1])).toBeLessThan(.01) } else if (half < radius * .5) loose++
+    }
+    expect(tight).toBeGreaterThan(0); expect(loose).toBeGreaterThan(0)
   })
 
   it('ignores bad input', () => {

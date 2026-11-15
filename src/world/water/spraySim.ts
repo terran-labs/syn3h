@@ -204,8 +204,13 @@ export class SpraySim {
     s.touching = sub > 0
     if (sub > 0 && dt > 0) {
       // Bow spray: rate grows with speed; a slow wade sheds only the odd drop.
+      // Demand is measured before throttling; measuring after it would chase its own tail.
       const want = this.throttle
-      const bowRate = want * Math.min(this.cap.droplets * 1.5, speed * speed * 2 + speed * 8) * sub * (speed > .8 ? 1 : 0)
+      const rawBow = Math.min(this.cap.droplets * 1.5, speed * speed * 2 + speed * 8) * sub * (speed > .8 ? 1 : 0)
+      const rawTail = speed > 7 ? Math.min(this.cap.droplets, (speed - 7) * 18) * sub : 0
+      const rawMist = speed > 5 ? Math.min(50, (speed - 5) * 3) * sub : 0
+      this.requested += (rawBow + rawTail + rawMist) * dt
+      const bowRate = want * rawBow
       let n = due(bowRate, dt, s.bow); s.bow = carried
       for (let i = 0; i < n; i++) {
         const sign = i % 2 ? 1 : -1, out = .4 + this.random() * 1.2, up = .5 + this.random() * 1.5
@@ -214,14 +219,14 @@ export class SpraySim {
         this.drop(x + ox, y + .05, z + oz, vx * .6 + sx * sign * out * k * 1.7, up * k * 2.2, vz * .6 + sz * sign * out * k * 1.7, .007 + this.random() * .012, y, 0, scale)
       }
       // Rooster tail: a column thrown up behind a fast hull, falling back into its own wake.
-      const tailRate = speed > 7 ? want * Math.min(this.cap.droplets, (speed - 7) * 18) * sub : 0
+      const tailRate = want * rawTail
       n = due(tailRate, dt, s.tail); s.tail = carried
       for (let i = 0; i < n; i++) {
         const k = speed * (.22 + this.random() * .2), j = (this.random() - .5) * .9
         this.drop(x - fx * 1.6 + sx * j * .4, y + .1, z - fz * 1.6 + sz * j * .4, vx * .35 + sx * j * 1.2, k, vz * .35 + sz * j * 1.2, .015 + this.random() * .02, y, 0, scale)
       }
       // A low, soft sheet of mist along the hull at speed.
-      const mistRate = speed > 5 ? want * Math.min(50, (speed - 5) * 3) * sub : 0
+      const mistRate = want * rawMist
       n = due(mistRate, dt, s.mist); s.mist = carried
       for (let i = 0; i < n; i++) {
         const sign = i % 2 ? 1 : -1, along = (this.random() - .5) * 2.4
@@ -237,7 +242,6 @@ export class SpraySim {
 
   private drop(x: number, y: number, z: number, vx: number, vy: number, vz: number, size: number, floor: number, kind: number, scale: number) {
     // When full, overwrite a random live droplet rather than dropping new spray on the floor.
-    this.requested++
     if (this.dropletCount >= this.cap.droplets) { this.refused++; return }
     const i = this.dropletCount++, d = this.droplets, o = i * D
     d[o + DX] = x; d[o + DY] = y; d[o + DZ] = z; d[o + DVX] = vx; d[o + DVY] = vy; d[o + DVZ] = vz
@@ -385,7 +389,7 @@ export class SpraySim {
     // radius from the turn between the two end sides and fade the segment as it approaches that.
     const turn = Math.acos(Math.max(-1, Math.min(1, side[n * 4] * side[n * 4 + 2] + side[n * 4 + 1] * side[n * 4 + 3])))
     const length = Math.hypot(s[12] - s[6], s[14] - s[8]), half = Math.max(s[9], s[15])
-    const fold = turn > 1e-3 ? Math.max(0, Math.min(1, (length / turn / Math.max(half, 1e-3) - .6) / .6)) : 1
+    const fold = turn > 1e-3 ? Math.max(0, Math.min(1, (length / turn / Math.max(half, 1e-3) - 1) / .5)) : 1
     // Side vectors of length two mark the centre wash for the shader; rings have none.
     if (arm % ARMS === 2) for (let j = 0; j < 4; j++) side[n * 4 + j] *= 2
     a[n * 4] = s[6]; a[n * 4 + 1] = s[7]; a[n * 4 + 2] = s[8]; a[n * 4 + 3] = s[9]

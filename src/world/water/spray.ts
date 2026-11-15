@@ -84,9 +84,9 @@ function dropletMaterial(light: N, tint: N) {
   // A drop is mostly transparent water tinted like the sea, with a bright rim and a small
   // highlight. The tinted body reads against a pale sky, the bright rim against dark water.
   const body = float(1).sub(smoothstep(.6, 1, r))
-  const rim = smoothstep(.35, .75, r).mul(float(1).sub(smoothstep(.75, 1, r)))
+  const rim = smoothstep(.55, .85, r).mul(float(1).sub(smoothstep(.85, 1, r)))
   const glint = float(1).sub(smoothstep(0, .3, q.sub(vec2(-.25, .35)).length()))
-  const bead = body.mul(.45).add(rim.mul(.5)).add(glint.mul(.5)).min(1)
+  const bead = body.mul(.65).add(rim.mul(.25)).add(glint.mul(.5)).min(1)
   const n = mx_fractal_noise_float(vec3(q.mul(1.7).add(centre.xz.mul(.37)), 0), 2, 2, .5).mul(.5).add(.5)
   const puff = float(1).sub(smoothstep(.15, 1, r.add(n.mul(.35)))).mul(n.mul(.6).add(.4))
   // Drops passing right by the lens would fill the screen with blobs: fade them out up close.
