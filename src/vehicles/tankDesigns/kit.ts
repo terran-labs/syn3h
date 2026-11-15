@@ -8,15 +8,18 @@
  */
 import * as THREE from 'three/webgpu'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
+import { abs, float, fract, length, max, min, mix, normalLocal, oneMinus, positionLocal, smoothstep, uniform, vec3 } from 'three/tsl'
 
-export interface Mats { paint: THREE.Material; accent: THREE.Material; chrome: THREE.Material; tail: THREE.Material; glass: THREE.Material; rubber: THREE.Material; dark: THREE.Material; glow: THREE.Material }
+export interface Mats { paint: THREE.Material; accent: THREE.Material; chrome: THREE.Material; tail: THREE.Material; glass: THREE.Material; rubber: THREE.Material; dark: THREE.Material; glow: THREE.Material; /** Body colour, shared by every skin() of one design so a swatch can repaint it. */ paintU: { value: THREE.Color } }
 
 export function makeMats(color: number, accent = 0xff5a12): Mats {
   const side = THREE.DoubleSide
   return {
     paint: new THREE.MeshPhysicalMaterial({ color, metalness: .8, roughness: .3, clearcoat: 1, clearcoatRoughness: .03, side }),
     accent: new THREE.MeshPhysicalMaterial({ color: accent, metalness: .6, roughness: .4, clearcoat: 1, clearcoatRoughness: .1, side }),
-    chrome: new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 1, roughness: .05, side }),
+    // Satin alloy, not mirror chrome: the owner asked for NASA hardware, not jewellery.
+    chrome: new THREE.MeshStandardMaterial({ color: 0xc4c8ce, metalness: 1, roughness: .3, side }),
+    paintU: uniform(new THREE.Color(color)),
     glass: new THREE.MeshPhysicalMaterial({ color: 0x020305, metalness: .3, roughness: .04, clearcoat: 1, clearcoatRoughness: 0, side }),
     rubber: new THREE.MeshStandardMaterial({ color: 0x0b0b0c, metalness: 0, roughness: .82, side }),
     dark: new THREE.MeshStandardMaterial({ color: 0x1a1c20, metalness: .8, roughness: .42, side }),
@@ -37,7 +40,6 @@ const cr = (a: number, b: number, c: number, d: number, t: number) =>
  */
 /** Reshapes a loft point: takes (x, y, z) and returns the moved [x, y]. */
 export type Sculpt = (x: number, y: number, z: number) => [number, number]
-const bell = (u: number) => Math.exp(-u * u)
 /** Apply several sculpts in order. */
 export const sculpts = (...fs: Sculpt[]): Sculpt => (x, y, z) => { for (const f of fs) [x, y] = f(x, y, z); return [x, y] }
 /** Press a scoop into both flanks, like the buggy's side intakes. */
@@ -222,3 +224,89 @@ export function mirrored(parent: THREE.Object3D, part: THREE.Object3D) {
 
 export const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z)
 export const at = <T extends THREE.Object3D>(o: T, x: number, y: number, z: number, rx = 0, ry = 0, rz = 0) => { o.position.set(x, y, z); o.rotation.set(rx, ry, rz); return o }
+
+// ---------------------------------------------------------------------------------------------
+// Blended bodies. One closed surface per vehicle, so hull, cabin and fenders are a single
+// sculpted shape rather than parts stuck together. The surface is a rim curve in plan (half
+// width W at each z) with a top and a bottom skin hung from it:
+//   y = C(x, z) + T(x, z) * r     on top        r = (1 - |x / W|^p)^(1/p) rounds the rim
+//   y = C(x, z) - B(x, z) * r     underneath
+// C lifts the rim (arches over the pods), T and B are thickness above and below it.
+// ---------------------------------------------------------------------------------------------
+
+export const bell = (u: number) => Math.exp(-u * u)
+/** Smooth step from 0 at a to 1 at b. */
+export const sm = (v: number, a: number, b: number) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t) }
+/** Flat topped bump: 1 at the centre, falling off round |u| = 1. Higher k is boxier. */
+export const hump = (u: number, k = 6) => 1 / (1 + Math.abs(u) ** k)
+/** Rounded end profile for |u| in 0..1. */
+export const plan = (u: number, q = 4) => Math.max(0, 1 - Math.min(1, Math.abs(u)) ** q) ** (1 / q)
+
+export interface BodySpec { z0: number; z1: number; W(z: number): number; C(x: number, z: number): number; T(x: number, z: number): number; B(x: number, z: number): number; rim?: number; rings?: number; segs?: number }
+
+export function bodyGeometry(b: BodySpec): THREE.BufferGeometry {
+  const rings = b.rings ?? 120, segs = b.segs ?? 160, p = b.rim ?? 5, pos: number[] = [], idx: number[] = []
+  for (let i = 0; i <= rings; i++) {
+    // Cosine spacing puts more rings where the nose and tail curve in.
+    const z = b.z0 + (b.z1 - b.z0) * (.5 - .5 * Math.cos(Math.PI * i / rings)), W = Math.max(.004, b.W(z))
+    for (let j = 0; j < segs; j++) {
+      const a = j / segs * Math.PI * 2, u = Math.cos(a), x = W * u, r = Math.max(0, 1 - Math.abs(u) ** p) ** (1 / p)
+      pos.push(x, b.C(x, z) + (Math.sin(a) >= 0 ? b.T(x, z) : -b.B(x, z)) * r, z)
+    }
+  }
+  // Wound so normals point outward: skin() tells the underside from the top by normal.
+  for (let i = 0; i < rings; i++) for (let j = 0; j < segs; j++) {
+    const a = i * segs + j, c = i * segs + (j + 1) % segs, d = a + segs, e = c + segs
+    idx.push(a, c, d, c, e, d)
+  }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals()
+  const top = (Math.floor(rings / 2) * segs + Math.floor(segs / 4)) * 3 + 1
+  if (g.getAttribute('normal').array[top] < 0) { g.setIndex(idx.map((_, k) => idx[k - k % 3 + [0, 2, 1][k % 3]])); g.computeVertexNormals() }
+  return g
+}
+
+/** A rectangular region of glazing or solar cells cut into the skin. x is |x|. Omitted bounds are open. */
+export interface Pane { kind: 'glass' | 'solar'; z: [number, number]; y: [number, number]; x?: [number, number]; pitchZ?: number; pitchX?: number; gap?: number }
+/** A round mark at [|x|, y, z]: porthole, lamp, intake. */
+export interface Spot { kind: 'glass' | 'glow' | 'tail' | 'dark'; at: [number, number, number]; r: number }
+/** A hoop round the body at z, half width w. */
+export interface Stripe { z: number; w: number; color: number }
+export interface Livery { lower: number; lowerMetal?: number; lowerRough?: number; glass?: number; panes?: Pane[]; spots?: Spot[]; stripes?: Stripe[] }
+
+/**
+ * Material for a blended body. Everything is decided per pixel from position and normal, so
+ * windows, stripes and the underside are crisp and flush with no textures and no extra geometry.
+ */
+export function skin(m: Mats, l: Livery) {
+  // Shader graph nodes: the TSL types are too loose to be worth threading through.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  type N = any
+  const p = positionLocal, ax = abs(p.x), e = .006
+  const inside = (v: N, lo: number, hi: number): N => smoothstep(lo - e, lo + e, v).mul(oneMinus(smoothstep(hi - e, hi + e, v)))
+  const mullion = (v: N, pitch: number, gap: number): N => smoothstep(gap / 2 - e, gap / 2 + e, abs(fract(v.div(pitch)).sub(.5)).mul(pitch))
+  const rgb = (hex: number): N => { const c = new THREE.Color(hex); return vec3(c.r, c.g, c.b) }
+  const under: N = oneMinus(smoothstep(-.45, -.2, normalLocal.y))
+  let color: N = mix(m.paintU as N, rgb(l.lower), under), rough: N = mix(float(.36), float(l.lowerRough ?? .45), under), metal: N = mix(float(.15), float(l.lowerMetal ?? .2), under)
+  let glow: N = vec3(0, 0, 0)
+  for (const s of l.stripes ?? []) { const k = oneMinus(smoothstep(s.w - e, s.w + e, abs(p.z.sub(s.z)))).mul(oneMinus(under)); color = mix(color, rgb(s.color), k) }
+  const put = (k: N, hex: number, r: number, mt: number) => { color = mix(color, rgb(hex), k); rough = mix(rough, float(r), k); metal = mix(metal, float(mt), k) }
+  for (const w of l.panes ?? []) {
+    let k: N = inside(p.z, w.z[0], w.z[1]).mul(inside(p.y, w.y[0], w.y[1]))
+    if (w.x) k = k.mul(inside(ax, w.x[0], w.x[1]))
+    if (w.pitchZ) k = k.mul(mullion(p.z, w.pitchZ, w.gap ?? .06))
+    if (w.pitchX) k = k.mul(mullion(p.x, w.pitchX, w.gap ?? .06))
+    if (w.kind === 'glass') put(k, l.glass ?? 0x05070a, .05, .6); else put(k, 0x0a1838, .22, .7)
+  }
+  for (const s of l.spots ?? []) {
+    const k: N = oneMinus(smoothstep(s.r - e, s.r + e, length(vec3(ax.sub(s.at[0]), p.y.sub(s.at[1]), p.z.sub(s.at[2])))))
+    if (s.kind === 'glass') put(k, l.glass ?? 0x05070a, .05, .6)
+    else if (s.kind === 'dark') put(k, 0x0c0d10, .6, .3)
+    else { put(k, 0x111111, .3, 0); glow = max(glow, rgb(s.kind === 'glow' ? 0xfff2d2 : 0xff2414).mul(k)) }
+  }
+  const mat = new THREE.MeshPhysicalNodeMaterial({ side: THREE.DoubleSide, clearcoat: .5, clearcoatRoughness: .15 })
+  mat.colorNode = color; mat.roughnessNode = min(rough, float(1)); mat.metalnessNode = metal; mat.emissiveNode = glow
+  return mat
+}
+
+export const body = (m: Mats, spec: BodySpec, livery: Livery) => shadow(new THREE.Mesh(bodyGeometry(spec), skin(m, livery)))

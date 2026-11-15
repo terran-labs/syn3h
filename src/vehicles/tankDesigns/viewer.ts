@@ -76,23 +76,28 @@ async function main() {
     const b = document.createElement('button'); b.innerHTML = `<b>${t.n || '★'}</b>${t.name}`; b.onclick = () => show(i - 1); tabs.append(b)
   })
   const colors = $('colors')
-  ;[['Own', -1], ['Blue', 0x0d1cae], ['Red', 0x9c0a16], ['Orange', 0xd4560f], ['Violet', 0x45209a], ['Green', 0x08783f], ['Graphite', 0x2a2d33], ['White', 0xd9dde2]].forEach(([label, hex]) => {
+  ;[['Own', -1], ['White', 0xeceef0], ['Grey', 0xa9b0b8], ['Orange', 0xd4560f], ['Blue', 0x0d1cae], ['Violet', 0x45209a], ['Green', 0x08783f], ['Graphite', 0x2a2d33]].forEach(([label, hex]) => {
     const b = document.createElement('button'); b.title = String(label)
     if (hex === -1) b.textContent = 'Own colours'; else { b.className = 'sw'; b.style.background = '#' + (hex as number).toString(16).padStart(6, '0') }
-    b.onclick = () => built.forEach(x => (x.mats.paint as THREE.MeshPhysicalMaterial).color.setHex(hex === -1 ? x.d.color : hex as number)); colors.append(b)
+    b.onclick = () => built.forEach(x => x.mats.paintU.value.setHex(hex === -1 ? x.d.color : hex as number)); colors.append(b)
   })
   const turn = document.createElement('button'); turn.textContent = 'Turntable: on'; turn.onclick = () => { spin = !spin; turn.textContent = `Turntable: ${spin ? 'on' : 'off'}` }; colors.append(turn)
   const d = query.get('d'); show(d === null || d === 'all' ? -1 : Math.max(0, Math.min(designs.length - 1, Number(d))))
 
-  const timer = new THREE.Timer(), pods: THREE.Object3D[] = []
+  const timer = new THREE.Timer(), arms: THREE.Object3D[] = []
   let elapsed = 0
-  stage.traverse(o => { if (o.userData.pod) pods.push(o) })
+  stage.traverse(o => { if (o.userData.arm) arms.push(o) })
   let frames = 0
   renderer.setAnimationLoop(() => {
     timer.update(); const dt = Math.min(timer.getDelta(), .05)
     if (spin && current >= 0) stage.rotation.y += dt * .35
-    // Each tread rocks about its sprocket, out of step with its neighbours, to show the articulation.
-    elapsed += dt; for (const pod of pods) pod.rotation.x = Math.sin(elapsed * 1.6 + pod.userData.phase) * (still ? 0 : .14)
+    // Suspension demo: each arm swings on its boss and the pod stays level on the arm's end.
+    elapsed += dt
+    for (const arm of arms) {
+      const swing = arm.userData.arm + (still ? 0 : Math.sin(elapsed * 1.5 + arm.userData.phase) * .13)
+      arm.rotation.x = swing
+      for (const c of arm.children) if (c.userData.pod) c.rotation.x = -swing + (still ? 0 : Math.sin(elapsed * 1.1 + arm.userData.phase * 2) * .05)
+    }
     controls.update(); renderer.render(scene, camera); frames++
     Object.assign(window, { tankDesigns: { ready: frames > 3, show, frame, built } })
   })
