@@ -21,7 +21,7 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
 const errors = []
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
 page.on('console', (m) => { if (m.type() === 'error') errors.push(`console: ${m.text()}`) })
-await page.goto(`${base}?autoplay=1`, { waitUntil: 'load' })
+await page.goto(`${base}?autoplay=1${process.env.QUERY ? `&${process.env.QUERY}` : ""}`, { waitUntil: "load" })
 await page.waitForFunction(() => window.syn3h?.game?.tick > 25, null, { timeout: 30000 })
 
 // Pin the camera: wrap render so the chase camera cannot move it back.

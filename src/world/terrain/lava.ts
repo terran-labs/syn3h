@@ -34,6 +34,7 @@ import {
   type TerrainData, type TerrainPass, SPAWN_BLEND_RADIUS, randomDirection, volcanoT,
 } from './generate'
 import { perlin, rng, smoothstep, subSeed } from './noise'
+import { KIND_VOLCANIC } from './settings'
 import { TURN_GENTLE, distanceToPolyline, normalize2, sq, steer, visitNearPolyline } from './raster'
 import { ROAD_FLAT_HALF, ROAD_SHOULDER, rimRoadRadius } from './roads'
 import { HeightSampler } from './sampler'
@@ -303,6 +304,8 @@ export const lavaPass: TerrainPass = {
 export const ventsPass: TerrainPass = {
   name: 'vents',
   run(data) {
+    // Only volcanic worlds burn. Elsewhere the lake and rivers are water and nothing vents.
+    if (data.settings.kind !== KIND_VOLCANIC) { data.vents = []; return }
     const next = rng(subSeed(data.seed, 60))
     const s = new HeightSampler(data)
     const { lake, rivers, pools } = data.lava

@@ -16,12 +16,19 @@ import { type VehicleKind, createVehicle } from './vehicles'
 import { attachVehicleEffects } from './vehicles/effects'
 import { createEnvironment } from './world/Environment'
 import { createTerrain } from './world'
+import * as planets from './world/planets'
+import { applyPlanet, decodeWorld } from './world/planets'
 
 async function main(): Promise<void> {
   const canvas = document.getElementById('game') as HTMLCanvasElement
   const hud = document.getElementById('hud') as HTMLDivElement
   const query = new URLSearchParams(location.search)
-  if (query.has('seed')) params.set(worldSeed.def.id, query.get('seed'), 'preset')
+  // ?world=... opens a shared world exactly; ?planet=alpine picks a kind (with ?seed= or a
+  // fresh seed). Both go through the parameter registry, so the room shares them.
+  const shared = query.get('world')
+  if (shared && decodeWorld(shared)) { /* applied */ }
+  else if (query.has('planet')) applyPlanet(query.get('planet')!, query.has('seed') ? Number(query.get('seed')) : undefined, { source: 'preset' })
+  else if (query.has('seed')) params.set(worldSeed.def.id, query.get('seed'), 'preset')
 
   const saved = prepareResume(query)
   if (saved && !query.has('room')) {
@@ -117,7 +124,7 @@ async function main(): Promise<void> {
   })
 
   // Handles for debugging and automated checks.
-  Object.assign(window, { syn3h: { game, terrain, player, params, panel, shell, audio, bots, camera } })
+  Object.assign(window, { syn3h: { planets, game, terrain, player, params, panel, shell, audio, bots, camera } })
   game.start()
 }
 
