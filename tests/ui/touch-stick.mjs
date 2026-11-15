@@ -53,7 +53,7 @@ try {
     const hint = page.locator('.touch-stick-hint')
     await hint.waitFor({ state: 'visible', timeout: 20000 })
     await page.waitForTimeout(400)
-    assert.match(await hint.innerText(), /Drag anywhere to drive/)
+    assert.match(await hint.innerText(), /Drag on the left to drive/)
     const hintBox = await hint.boundingBox(), map = await page.locator('.shell-minimap').boundingBox()
     assert.ok(hintBox.x >= 0 && hintBox.y >= 0 && hintBox.x + hintBox.width <= width && hintBox.y + hintBox.height <= height, 'hint on screen')
     assert.ok(!overlaps(hintBox, map), `hint clears the minimap ${JSON.stringify([hintBox, map])}`)

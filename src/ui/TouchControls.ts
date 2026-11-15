@@ -62,7 +62,7 @@ export class TouchControls {
     this.element.setAttribute('aria-label', 'Touch driving controls')
     this.element.hidden = true
     if (!this.available) return
-    this.element.innerHTML = `<div class="touch-stick touch-float" aria-hidden="true"><span class="touch-knob"></span></div><div class="touch-stick-hint" hidden><span class="touch-stick-ghost"><span></span></span><span class="touch-stick-label">Drag anywhere to drive</span></div><div class="touch-actions"><button type="button" data-action="throttleUp" hidden>THR +</button><button type="button" data-action="throttleDown" hidden>THR −</button><button type="button" data-action="special" aria-pressed="false">WINGS</button><button type="button" data-action="brakes">BRAKE</button><button type="button" data-action="zorb" aria-pressed="false">ZORB</button><button type="button" data-action="letOut" hidden>LET OUT</button><button type="button" data-action="letGo" hidden>LET GO</button><button type="button" class="touch-fire" data-action="fire">TAG</button></div>`
+    this.element.innerHTML = `<div class="touch-stick touch-float" aria-hidden="true"><span class="touch-knob"></span></div><div class="touch-stick-hint" hidden><span class="touch-stick-ghost"><span></span></span><span class="touch-stick-label">Drag on the left to drive</span></div><div class="touch-actions"><button type="button" data-action="throttleUp" hidden>THR +</button><button type="button" data-action="throttleDown" hidden>THR −</button><button type="button" data-action="special" aria-pressed="false">WINGS</button><button type="button" data-action="brakes">BRAKE</button><button type="button" data-action="zorb" aria-pressed="false">ZORB</button><button type="button" data-action="letOut" hidden>LET OUT</button><button type="button" data-action="letGo" hidden>LET GO</button><button type="button" class="touch-fire" data-action="fire">TAG</button></div>`
     parent.append(this.element)
     const signal = this.abort.signal
     this.hint = this.element.querySelector<HTMLElement>('.touch-stick-hint')!
@@ -109,10 +109,8 @@ export class TouchControls {
    *   the radius the base is dragged along behind the finger. Lifting fades it out in 150 ms.
    * - Only one stick at a time: while one is active or pending, further touches in the region
    *   are ignored by the stick (they still reach whatever is under them).
-   * - Touches on the canvas in the drive region never tag. The network layer treats any canvas
-   *   press as the mouse button, which would hold the tag beam for a whole drive; the stick
-   *   clears it in the bubble phase, after that listener has run. Touches on the right side
-   *   behave as they always have: the action buttons, and a canvas press holding the beam.
+   * - The network layer excludes touch pointers from mouse tagging; the right thumb owns
+   *   the action buttons while the left drives.
    * - There is no touch drag-to-look today (ChaseCamera only orbits with the middle button,
    *   Alt-drag or pointer lock), so there is nothing on the right to coexist with. A second
    *   finger anywhere is independent: the right thumb keeps the buttons while the left drives.
@@ -123,7 +121,7 @@ export class TouchControls {
     const knob = base.querySelector<HTMLElement>('.touch-knob')!
     // Reused for every event: the move handler allocates nothing but the transform strings.
     const origin: StickPoint = { x: 0, y: 0 }, down: StickPoint = { x: 0, y: 0 }, vector: StickPoint = { x: 0, y: 0 }
-    let pending: number | null = null, pointer: number | null = null, radius = 0, half = 0, quiet = false
+    let pending: number | null = null, pointer: number | null = null, radius = 0, half = 0
     const place = () => { base.style.transform = `translate3d(${origin.x - half}px,${origin.y - half}px,0)` }
     const release = () => {
       if (pointer !== null && base.hasPointerCapture?.(pointer)) try { base.releasePointerCapture(pointer) } catch { /* Already gone. */ }
@@ -155,14 +153,10 @@ export class TouchControls {
       return true
     }
     addEventListener('pointerdown', (event) => {
-      quiet = false
       if (!this.active || input.suspended || !candidate(event)) return
-      quiet = true
       if (pending !== null || pointer !== null) return
       pending = event.pointerId; down.x = event.clientX; down.y = event.clientY
     }, { capture: true, signal })
-    // After the canvas's own listeners: a drive-region touch does not hold the tag beam.
-    addEventListener('pointerdown', () => { if (quiet) { quiet = false; input.mouseFire = false } }, { signal })
     addEventListener('pointermove', (event) => {
       const id = event.pointerId
       if (id === pending) { if (!isDrag(down.x, down.y, event.clientX, event.clientY)) return; start(event) }
@@ -183,7 +177,7 @@ export class TouchControls {
     const special = this.element.querySelector<HTMLButtonElement>('[data-action="special"]')
     if (special) { special.textContent = kind === 'jet' ? 'MODE' : 'WINGS'; special.hidden = kind === 'hovercraft' }
     const label = this.element.querySelector('.touch-stick-label')
-    if (label) label.textContent = kind === 'jet' ? 'Drag anywhere to fly' : 'Drag anywhere to drive'
+    if (label) label.textContent = kind === 'jet' ? 'Drag on the left to fly' : 'Drag on the left to drive'
   }
   set enabled(value: boolean) {
     this.active = value; this.element.hidden = !value || !this.available
