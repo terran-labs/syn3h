@@ -101,6 +101,7 @@ def make_materials(v):
         'Headlights': material('Headlights', (1, 0.96, 0.75), emission=((1, 0.92, 0.6), 3)),
         'TailLights': material('TailLights', (0.9, 0.02, 0.02), 0.2, 0.3, emission=((1, 0.03, 0.02), 2.5)),
         'Dark': material('Dark', (0.012, 0.014, 0.018), 0.3, 0.6),
+        'StrutMetal': material('StrutMetal', (0.1, 0.11, 0.125), 0.9, 0.28),
     }
 
 
@@ -148,6 +149,14 @@ def deform(co, v):
         # the bulge grows above them, as a fender over the wheel, and stays slim lower down.
         x += side * f.get('out', 0) * w * smoothstep(0.3, 0.75, abs(x)) * smoothstep(0.3, 0.7, h)
         z += f.get('up', 0) * w * bump(abs(x), f.get('crest', 0.62), 0.5) * smoothstep(0.3, 0.9, h)
+    # Wheel scallops: draw the lower body in beside each wheel, under the fender line, so the
+    # linkage between body and wheel is in the open instead of hidden in a 3 cm gap. The strut
+    # mounts sit at x 0.55, so the body is not drawn in past about 0.58 there.
+    sc = s.get('scallop', 0)
+    if sc:
+        w = max(bump(u, 0.165, 0.17), bump(u, 0.82, 0.17)) * (1 - smoothstep(0.38, 0.62, h))
+        side = 1 if x >= 0 else -1
+        x = side * max(min(abs(x), 0.58), abs(x) * (1 - sc * w)) if abs(x) > 0.58 else x
     # Hood valley: drop the centre of the hood between the front fenders.
     z -= s.get('hood_valley', 0) * bump(u, 0.2, 0.25) * bump(x, 0, 0.38) * smoothstep(0.4, 0.9, h)
     # Roundness: push the mid height outward a little for a fuller, more inflated section.
@@ -207,23 +216,55 @@ def inside(poly, p):
     return hit
 
 
-def grow_tail_lights(me, t, tail_slot):
+def cut_rear(bm, poly, side, slot):
+    """
+    Cut the rear of the body along a polygon drawn in the rear view and give the faces inside
+    it a material. `poly` is (x, z) in metres; side 1 or -1 mirrors it onto that side, side 0
+    uses it as drawn (for shapes that cross the centre line).
+    """
+    sign = side or 1
+    rear = lambda f: f.calc_center_median().y > 1.25 and f.normal.y > 0.05 and (side == 0 or f.calc_center_median().x * side > 0)
+    for (x1, z1), (x2, z2) in zip(poly, poly[1:] + poly[:1]):
+        faces = [f for f in bm.faces if rear(f)]
+        geom = list({v for f in faces for v in f.verts}) + list({e for f in faces for e in f.edges}) + faces
+        # Each edge is a line in the rear view, so a plane parallel to the car's length.
+        along = Vector((sign * (x2 - x1), 0, z2 - z1))
+        bmesh.ops.bisect_plane(bm, geom=geom, dist=1e-5, plane_co=Vector((sign * x1, 0, z1)), plane_no=Vector((0, 1, 0)).cross(along).normalized(), clear_inner=False, clear_outer=False)
+    # Cuts leave many-sided faces whose centre can fall outside them: split before testing.
+    bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if rear(f) and len(f.verts) > 3])
+    for f in bm.faces:
+        c = f.calc_center_median()
+        if rear(f) and inside(poly, (sign * c.x, c.z)): f.material_index = slot
+
+
+def kite(long=1.0, tall=1.0, shift=0.0, lift=0.0):
+    """The original tail light outline, scaled about its centre, as a rear view polygon."""
+    return [(TAIL_CENTRE.x + a * long + shift, TAIL_CENTRE.z + b * tall + lift) for a, b in TAIL_KITE]
+
+
+def grown(poly, by):
+    """A polygon enlarged about its centroid, for a trim surround."""
+    cx = sum(p[0] for p in poly) / len(poly); cz = sum(p[1] for p in poly) / len(poly)
+    return [(cx + (x - cx) * by, cz + (z - cz) * by) for x, z in poly]
+
+
+def grow_tail_lights(me, t, slot_of):
+    """
+    `t` is either {'long', 'tall', 'shift', 'lift'} (the original kite, scaled) or
+    {'shapes': [{'poly': [...], 'material': name, 'centre': bool}, ...]} applied in order, so a
+    chrome surround goes first and the lamp is cut inside it.
+    """
     if not t: return
-    sx, sz = t.get('long', 1), t.get('tall', 1)
-    kite = [(a * sx + t.get('shift', 0), b * sz + t.get('lift', 0)) for a, b in TAIL_KITE]
+    shapes = t.get('shapes') or [{'poly': kite(t.get('long', 1), t.get('tall', 1), t.get('shift', 0), t.get('lift', 0)), 'material': 'TailLights'}]
     bm = bmesh.new(); bm.from_mesh(me)
-    rear = lambda f, side: f.calc_center_median().y > 1.25 and f.calc_center_median().x * side > 0 and f.normal.y > 0.05
-    for side in (1, -1):
-        # Each kite edge is a line in the rear view, so a plane parallel to the car's length.
-        for (a1, b1), (a2, b2) in zip(kite, kite[1:] + kite[:1]):
-            faces = [f for f in bm.faces if rear(f, side)]
-            geom = list({v for f in faces for v in f.verts}) + list({e for f in faces for e in f.edges}) + faces
-            co = Vector((side * (TAIL_CENTRE.x + a1), 0, TAIL_CENTRE.z + b1))
-            along = Vector((side * (a2 - a1), 0, b2 - b1))
-            bmesh.ops.bisect_plane(bm, geom=geom, dist=1e-5, plane_co=co, plane_no=Vector((0, 1, 0)).cross(along).normalized(), clear_inner=False, clear_outer=False)
+    if t.get('shapes'):
+        # New outlines replace the original kite instead of merging with it.
+        old, paint = slot_of('TailLights'), slot_of('Body')
         for f in bm.faces:
-            c = f.calc_center_median()
-            if rear(f, side) and inside(kite, (side * c.x - TAIL_CENTRE.x, c.z - TAIL_CENTRE.z)): f.material_index = tail_slot
+            if f.material_index == old: f.material_index = paint
+    for shape in shapes:
+        for side in ((0,) if shape.get('centre') else (1, -1)):
+            cut_rear(bm, shape['poly'], side, slot_of(shape['material']))
     bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
     bm.to_mesh(me); bm.free()
 
@@ -327,6 +368,187 @@ def fix_outward(obj, body_obj):
     bm.to_mesh(me); bm.free(); bm_body.free()
 
 
+# ---- suspension linkages -------------------------------------------------------------------
+#
+# The game places one strut per wheel with a single matrix: its origin on the wheel hub, its
+# span running to the body mount (and a little past it, into the body), its thickness axis as
+# near vertical as it can be, and it never spins or steers. A strut is modelled here in that
+# frame: Blender Z is the span (hub at 0), Blender Y points up, X is the chord (fore and aft).
+# Designs are symmetric fore and aft so the same mesh serves all four corners.
+
+MOUNT = Vector((0.55, -1.2, 0.15))   # front right body mount (the prefab's AxelPos)
+HUB = Vector((1.1, -1.3, -0.19))     # front right wheel centre at ride height
+STRUT_SPAN = 0.83                    # the original Axle mesh's length
+
+
+def loft(bm, stations, n=8, cap=True):
+    """
+    Skin a lens shaped section through `stations`: (span, chord, thickness, chord offset, up
+    offset). Returns nothing; adds faces to bm. n points round the section.
+    """
+    rings = []
+    for z, c, th, ox, oy in stations:
+        ring = []
+        for k in range(n):
+            a = 2 * math.pi * k / n
+            sx, sy = math.cos(a), math.sin(a)
+            ring.append(bm.verts.new((ox + c / 2 * sx, oy + th / 2 * (abs(sy) ** 0.8) * (1 if sy >= 0 else -1), z)))
+        rings.append(ring)
+    for a, b in zip(rings, rings[1:]):
+        for k in range(n):
+            bm.faces.new((a[k], a[(k + 1) % n], b[(k + 1) % n], b[k]))
+    if cap:
+        bm.faces.new(rings[0][::-1]); bm.faces.new(rings[-1])
+
+
+def tube(bm, p0, p1, r0, r1, n=6):
+    """A round bar between two points in the strut frame."""
+    axis = (Vector(p1) - Vector(p0)); length = axis.length; axis.normalize()
+    side = axis.cross(Vector((1, 0, 0))); side = side.normalized() if side.length > 1e-3 else Vector((0, 1, 0))
+    other = axis.cross(side)
+    rings = []
+    for p, r in ((Vector(p0), r0), (Vector(p1), r1)):
+        rings.append([bm.verts.new(p + (side * math.cos(2 * math.pi * k / n) + other * math.sin(2 * math.pi * k / n)) * r) for k in range(n)])
+    for k in range(n): bm.faces.new((rings[0][k], rings[0][(k + 1) % n], rings[1][(k + 1) % n], rings[1][k]))
+    bm.faces.new(rings[0][::-1]); bm.faces.new(rings[1])
+
+
+def make_strut(kind, mats):
+    """One strut in the strut frame, as a mesh with material slots [StrutMetal, Chrome, Accent]."""
+    L = STRUT_SPAN
+    parts = []   # (bmesh builder, material name)
+
+    def piece(material, build):
+        bm = bmesh.new(); build(bm); parts.append((bm, material))
+
+    if kind == 'blade':
+        # The original idea, cleaned up: a slim aerofoil that swells where it meets the body.
+        piece('StrutMetal', lambda bm: loft(bm, [(0.02, 0.15, 0.07, 0, 0), (0.2, 0.15, 0.055, 0, 0), (0.5, 0.24, 0.06, 0, 0), (L, 0.44, 0.1, 0, 0)]))
+        piece('Chrome', lambda bm: loft(bm, [(-0.03, 0.2, 0.11, 0, 0), (0.04, 0.2, 0.11, 0, 0)]))
+    elif kind == 'wishbone':
+        # A double wishbone seen from above: two slim arms spread at the body, joined at the hub.
+        for sx in (-1, 1):
+            piece('StrutMetal', lambda bm, sx=sx: loft(bm, [(0.03, 0.08, 0.06, sx * 0.03, 0), (0.45, 0.09, 0.05, sx * 0.14, 0), (L, 0.11, 0.07, sx * 0.24, 0)], n=6))
+        piece('Chrome', lambda bm: loft(bm, [(-0.03, 0.2, 0.12, 0, 0), (0.06, 0.2, 0.12, 0, 0)]))
+        piece('Chrome', lambda bm: tube(bm, (-0.17, 0, 0.52), (0.17, 0, 0.52), 0.018, 0.018))
+    elif kind == 'coilover':
+        # A slim lower blade carrying the load, with a spring and damper standing above it.
+        piece('StrutMetal', lambda bm: loft(bm, [(0.02, 0.14, 0.06, 0, -0.02), (0.4, 0.17, 0.05, 0, -0.02), (L, 0.3, 0.07, 0, -0.02)]))
+        piece('Chrome', lambda bm: loft(bm, [(-0.03, 0.2, 0.12, 0, 0), (0.05, 0.2, 0.12, 0, 0)]))
+        piece('Chrome', lambda bm: tube(bm, (0, 0.05, 0.12), (0, 0.2, 0.72), 0.02, 0.02))
+        piece('Accent', lambda bm: tube(bm, (0, 0.085, 0.26), (0, 0.17, 0.6), 0.05, 0.05, n=8))
+    elif kind == 'frame':
+        # An open frame: leading and trailing spars with a brace, light and see-through.
+        for sx in (-1, 1):
+            piece('StrutMetal', lambda bm, sx=sx: loft(bm, [(0.03, 0.05, 0.07, sx * 0.06, 0), (L, 0.06, 0.09, sx * 0.21, 0)], n=6))
+        piece('StrutMetal', lambda bm: tube(bm, (-0.085, 0, 0.2), (0.16, 0, 0.6), 0.016, 0.016))
+        piece('StrutMetal', lambda bm: tube(bm, (0.085, 0, 0.2), (-0.16, 0, 0.6), 0.016, 0.016))
+        piece('Chrome', lambda bm: loft(bm, [(-0.03, 0.2, 0.12, 0, 0), (0.06, 0.2, 0.12, 0, 0)]))
+    elif kind == 'delta':
+        # A stub delta wing: narrow at the wheel, broad at the body, so the body seems to reach out.
+        piece('StrutMetal', lambda bm: loft(bm, [(0.02, 0.14, 0.06, 0, 0), (0.3, 0.26, 0.055, 0, 0), (0.6, 0.48, 0.07, 0, 0), (L, 0.66, 0.11, 0, 0)]))
+        piece('Accent', lambda bm: loft(bm, [(0.1, 0.03, 0.068, 0, 0), (0.62, 0.05, 0.08, 0, 0)], n=6, cap=False))
+        piece('Chrome', lambda bm: loft(bm, [(-0.03, 0.2, 0.11, 0, 0), (0.04, 0.2, 0.11, 0, 0)]))
+    else:
+        raise ValueError(kind)
+    names = ['StrutMetal', 'Chrome', 'Accent']
+    out = bmesh.new()
+    me = bpy.data.meshes.new('Strut')
+    for n in names: me.materials.append(mats[n])
+    for bm, material in parts:
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+        for f in bm.faces: f.material_index = names.index(material)
+        tmp = bpy.data.meshes.new('tmp'); bm.to_mesh(tmp); bm.free()
+        out.from_mesh(tmp); bpy.data.meshes.remove(tmp)
+    # from_mesh drops material indices across datablocks unless the slots match, so set again.
+    out.to_mesh(me); out.free()
+    for p in me.polygons: p.use_smooth = True
+    return me
+
+
+def strut_matrix(hub, mount):
+    """Where the game puts a strut, in this file's frame (see the header of this section)."""
+    span = (mount - hub).normalized()
+    up = Vector((0, 0, 1))
+    y = (up - span * up.dot(span)).normalized()
+    x = y.cross(span)
+    m = Matrix((x, y, span)).transposed().to_4x4(); m.translation = hub
+    return m
+
+
+def corners():
+    for sx in (1, -1):
+        for sy in (1, -1):
+            flip = Vector((sx, sy, 1))
+            yield Vector((MOUNT.x * sx, MOUNT.y * sy, MOUNT.z)), Vector((HUB.x * sx, HUB.y * sy, HUB.z))
+
+
+def make_sockets(kind, body_obj, mats):
+    """
+    Where each strut meets the body: a fitting on the body side so the linkage reads as bolted
+    to the structure, not poked through the paint. Found by casting from the wheel hub toward
+    the mount onto the finished body, so it follows whatever shape the body has.
+    """
+    tree, bm_body = bvh_of(body_obj)
+    names = ['Chrome', 'Dark', 'Body', 'Accent']
+    me = bpy.data.meshes.new('Sockets')
+    for n in names: me.materials.append(mats[n])
+    bm = bmesh.new()
+
+    def ellipse_ring(centre, d, chord, e, a, b, n=12):
+        return [bm.verts.new(centre + chord * (a * math.cos(2 * math.pi * k / n)) + e * (b * math.sin(2 * math.pi * k / n))) for k in range(n)]
+
+    def skin(r0, r1, material):
+        n = len(r0)
+        for k in range(n):
+            f = bm.faces.new((r0[k], r0[(k + 1) % n], r1[(k + 1) % n], r1[k])); f.material_index = names.index(material)
+
+    def disc(ring, material, reverse=False):
+        f = bm.faces.new(ring[::-1] if reverse else ring); f.material_index = names.index(material)
+
+    for mount, hub in corners():
+        d = (hub - mount).normalized()
+        hit, normal, _, _ = tree.ray_cast(hub, -d)
+        if hit is None: continue
+        chord = Vector((0, 1, 0)); chord = (chord - d * chord.dot(d)).normalized()
+        e = d.cross(chord)
+        if kind == 'collar':
+            # A chrome collar the strut passes through.
+            a, b = 0.27, 0.12
+            r0 = ellipse_ring(hit - d * 0.06, d, chord, e, a, b); r1 = ellipse_ring(hit + d * 0.03, d, chord, e, a, b)
+            r2 = ellipse_ring(hit + d * 0.03, d, chord, e, a - 0.035, b - 0.035); r3 = ellipse_ring(hit - d * 0.06, d, chord, e, a - 0.035, b - 0.035)
+            skin(r0, r1, 'Chrome'); skin(r1, r2, 'Chrome'); skin(r2, r3, 'Dark')
+        elif kind == 'slot':
+            # A dark recess with a chrome rim, wide enough for both wishbone arms.
+            a, b = 0.34, 0.11
+            rim0 = ellipse_ring(hit + d * 0.012, d, chord, e, a + 0.03, b + 0.03); rim1 = ellipse_ring(hit + d * 0.02, d, chord, e, a, b)
+            well = ellipse_ring(hit - d * 0.05, d, chord, e, a - 0.02, b - 0.02)
+            skin(rim0, rim1, 'Chrome'); skin(rim1, well, 'Dark'); disc(well, 'Dark')
+        elif kind == 'pod':
+            # A chrome cone reaching out from the body toward the wheel, as in the studio renders.
+            base = ellipse_ring(hit - d * 0.08, d, chord, e, 0.26, 0.17); mid = ellipse_ring(hit + d * 0.07, d, chord, e, 0.19, 0.12)
+            tip = ellipse_ring(hit + d * 0.17, d, chord, e, 0.13, 0.085); mouth = ellipse_ring(hit + d * 0.15, d, chord, e, 0.1, 0.06)
+            skin(base, mid, 'Chrome'); skin(mid, tip, 'Chrome'); skin(tip, mouth, 'Dark'); disc(mouth, 'Dark')
+        elif kind == 'pocket':
+            # A deep dark pocket with a slim chrome edge: the frame disappears into the body.
+            a, b = 0.3, 0.13
+            rim0 = ellipse_ring(hit + d * 0.01, d, chord, e, a + 0.018, b + 0.018); rim1 = ellipse_ring(hit + d * 0.016, d, chord, e, a, b)
+            well = ellipse_ring(hit - d * 0.09, d, chord, e, a - 0.05, b - 0.04)
+            skin(rim0, rim1, 'Chrome'); skin(rim1, well, 'Dark'); disc(well, 'Dark')
+        elif kind == 'fairing':
+            # A body coloured blister that swells out to meet the wing root, with an accent lip.
+            base = ellipse_ring(hit - d * 0.1, d, chord, e, 0.46, 0.2); mid = ellipse_ring(hit + d * 0.05, d, chord, e, 0.4, 0.15)
+            lip = ellipse_ring(hit + d * 0.13, d, chord, e, 0.35, 0.095); mouth = ellipse_ring(hit + d * 0.115, d, chord, e, 0.32, 0.07)
+            skin(base, mid, 'Body'); skin(mid, lip, 'Body'); skin(lip, mouth, 'Accent'); disc(mouth, 'Dark')
+        else:
+            raise ValueError(kind)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
+    bm.to_mesh(me); bm.free(); bm_body.free()
+    for p in me.polygons: p.use_smooth = True
+    return me
+
+
 # ---- scene, render, export -----------------------------------------------------------------
 
 def studio():
@@ -362,6 +584,8 @@ VIEWS = {
     'top': ((0, 0.02, 1), (0, 0, 0.25), 3.3),
     'tail': ((0.35, 1.0, 0.3), (0.0, 1.7, 0.4), 1.6),
     'nose': ((0.0, -1.0, 0.22), (0, 0, 0.3), 3.0),
+    'link': ((0.0, -1.0, 0.1), (0.72, -1.3, 0.02), 0.55),
+    'linktop': ((0.5, -0.5, 1.0), (0.85, -1.3, 0.0), 0.8),
 }
 
 
@@ -419,9 +643,11 @@ def build(v):
         elif p.material_index == tail_i and 'tail' in trim:
             p.material_index = slot(trim['tail'])
     if v.get('tail'):
-        grow_tail_lights(body_me, v['tail'], slot(trim.get('tail', 'TailLights')) if 'tail' in trim else tail_i)
+        grow_tail_lights(body_me, v['tail'], lambda name: tail_i if name == 'TailLights' else slot(name))
     apply_shape(body_me, v)
-    refine(body_me, v.get('refine', {}))
+    # GAME=1 skips the subdivision: the shape changes are smooth deformations of the original
+    # game-resolution mesh, so the body keeps its form at the original triangle count.
+    if not (os.environ.get('GAME') or v.get('game')): refine(body_me, v.get('refine', {}))
     body = bpy.data.objects.new('Body', body_me); scene.collection.objects.link(body)
     for p in body_me.polygons: p.use_smooth = True
     mirror_x(canopy_me)
@@ -430,6 +656,11 @@ def build(v):
     for p in canopy_me.polygons: p.use_smooth = True
     canopy = bpy.data.objects.new('Canopy', canopy_me); scene.collection.objects.link(canopy)
     parts = [body, canopy]
+    if v.get('socket'):
+        o = bpy.data.objects.new('Sockets', make_sockets(v['socket'], body, mats)); scene.collection.objects.link(o); parts.append(o)
+    if v.get('strut'):
+        strut = bpy.data.objects.new('Strut', make_strut(v['strut'], mats)); scene.collection.objects.link(strut)
+        strut['own_frame'] = True; parts.append(strut)
     for extra in v.get('extras', []):
         kind = extra['kind']
         if kind == 'ribbon':
@@ -445,11 +676,13 @@ def export(parts, path):
     # The game's nose points to -Z, which is +Y here after the Y up conversion: turn half a turn.
     turn = Matrix.Rotation(math.pi, 4, 'Z')
     for o in parts:
-        o.data.transform(turn @ o.matrix_world); o.matrix_world = Matrix.Identity(4)
+        # The strut is exported in its own frame; the game places it per wheel.
+        if not o.get('own_frame'): o.data.transform(turn @ o.matrix_world); o.matrix_world = Matrix.Identity(4)
         o.select_set(True)
     bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', use_selection=True, export_yup=True, export_apply=True, export_materials='EXPORT')
     back = turn.inverted()
-    for o in parts: o.data.transform(back)
+    for o in parts:
+        if not o.get('own_frame'): o.data.transform(back)
 
 
 def main():
@@ -462,13 +695,22 @@ def main():
         if PREVIEW:
             os.makedirs(PREVIEW, exist_ok=True)
             studio(); wheels_for_preview(mats)
+            placed = []
+            for o in parts:
+                if not o.get('own_frame'): continue
+                o.hide_render = True
+                for mount, hub in corners():
+                    c = bpy.data.objects.new('strutPreview', o.data); c.matrix_world = strut_matrix(hub, mount)
+                    bpy.context.scene.collection.objects.link(c); placed.append(c)
             render_views(os.path.join(PREVIEW, v['id']), {k: VIEWS[k] for k in v.get('views', VIEWS)})
-        for o in bpy.context.scene.objects:
-            if o.name.startswith('wheelPreview') or o.name in ('floor', 'key', 'cam'): o.hide_render = True
+        for o in list(bpy.context.scene.objects):
+            if o.name.startswith('strutPreview'): bpy.data.objects.remove(o)
+            elif o.name.startswith('wheelPreview') or o.name in ('floor', 'key', 'cam'): o.hide_render = True
+        for o in parts: o.hide_render = False
         export(parts, os.path.join(OUT, v['id'] + '.glb'))
         tris = sum(len(p.vertices) - 2 for o in parts for p in o.data.polygons)
         print('BUILT', v['id'], 'triangles', tris)
-        manifest.append({'id': v['id'], 'name': v['name'], 'notes': v.get('notes', []), 'file': v['id'] + '.glb', 'triangles': tris, 'round': v.get('round', 1)})
+        manifest.append({'id': v['id'], 'name': v['name'], 'notes': v.get('notes', []), 'file': v['id'] + '.glb', 'triangles': tris, 'round': v.get('round', 1), 'gameResolution': bool(v.get('game') or os.environ.get('GAME'))})
     if not ONLY or ONLY == ['round2']:
         import json
         with open(os.path.join(OUT, 'index.json'), 'w') as f: json.dump(manifest, f, indent=1)

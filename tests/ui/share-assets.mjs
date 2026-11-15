@@ -5,10 +5,10 @@ const browser = await chromium.launch({ channel: 'chrome', headless: true })
 try {
   const page = await browser.newPage()
   const logo = `data:image/png;base64,${(await readFile('public/brand/syn3h.png')).toString('base64')}`
-  const font = (await readFile('public/fonts/Lato-Thin.ttf')).toString('base64')
+  const font = (await readFile('public/fonts/barlow-condensed-600-latin.woff2')).toString('base64')
   const assets = await page.evaluate(async ({ logo, font }) => {
     const image = new Image(); image.src = logo; await image.decode()
-    const face = new FontFace('Syn3h', `url(data:font/ttf;base64,${font})`); await face.load(); document.fonts.add(face)
+    const face = new FontFace('Syn3h', `url(data:font/woff2;base64,${font})`); await face.load(); document.fonts.add(face)
     const make = (w, h, icon = false) => {
       const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h
       const ctx = canvas.getContext('2d'), gradient = ctx.createRadialGradient(w*.5,h*.35,0,w*.5,h*.5,w*.7)
