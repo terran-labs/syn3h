@@ -32,6 +32,7 @@ for (const world of worlds) {
     s.player.body.setRotation({ x: 0, y: Math.sin(heading / 2), z: 0, w: Math.cos(heading / 2) }, true)
     s.player.body.setLinvel({ x: 0, y: 0, z: 0 }, true)
     s.params.set('sun.dayLength', 0)
+    s.params.set('daydream.seconds', 0)
   }, [Number(process.env.PAD ?? 2), Number(process.env.SIDE ?? 45)])
   // Hide the controls card and the update toast: they cover the plants nearest the camera.
   await page.evaluate(() => {

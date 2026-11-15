@@ -230,25 +230,27 @@ export function daisy(height: number, petals: number, radius: number, stemCol: n
  * mountain. The blossoms take the plant's colour; green shows between them.
  */
 export function cushion(): THREE.BufferGeometry {
-  const b = new Builder(0.06)
-  const leaf = C(0x3a5a26)
-  const pale = C(0xffffff), deep = C(0xd0d0d0)
-  // The dome's green body: a low fan.
-  const R = 0.2, H = 0.1
+  const b = new Builder(0.05)
+  const leaf = C(0x2e4c1e), leafTop = C(0x4a6e2c)
+  const pale = C(0xffffff), deep = C(0xc0c0c0)
+  // The dome's green body: a low fan, lighter on top.
+  const R = 0.24, H = 0.11
   for (let k = 0; k < 7; k++) {
     const a0 = (k / 7) * Math.PI * 2, a1 = ((k + 1) / 7) * Math.PI * 2
-    b.tri([0, H, 0], [Math.cos(a0) * R, 0.0, Math.sin(a0) * R], [Math.cos(a1) * R, 0.0, Math.sin(a1) * R], [leaf, leaf, leaf], [0.2, 0, 0])
+    b.tri([0, H, 0], [Math.cos(a0) * R, 0.0, Math.sin(a0) * R], [Math.cos(a1) * R, 0.0, Math.sin(a1) * R], [leafTop, leaf, leaf], [0.2, 0, 0])
   }
-  // Blossoms scattered over the dome, each a tiny five-pointed star facing up and out.
-  for (let i = 0; i < 9; i++) {
-    const a = i * 2.4, rr = R * 0.85 * Math.sqrt((i + 0.5) / 9)
+  // Blossoms packed over the dome, each two petals crossed into a small four-pointed star
+  // facing up and out. Together they cover most of the green.
+  for (let i = 0; i < 11; i++) {
+    const a = i * 2.4, rr = R * 0.9 * Math.sqrt((i + 0.5) / 11)
     const x = Math.cos(a) * rr, z = Math.sin(a) * rr
-    const y = H * (1 - (rr / R) ** 2) + 0.012
-    const s = 0.035
-    for (let p = 0; p < 3; p++) {
-      const q = (p / 3) * Math.PI * 2 + i
-      b.tri([x, y + 0.004, z], [x + Math.cos(q) * s, y, z + Math.sin(q) * s], [x + Math.cos(q + 1.1) * s, y, z + Math.sin(q + 1.1) * s],
-        [deep, pale, pale], [0.3, 0.3, 0.3], 1)
+    const y = H * (1 - (rr / R) ** 2) + 0.015
+    const s = 0.05
+    for (let p = 0; p < 2; p++) {
+      const q = p * Math.PI / 2 + i
+      const ux = Math.cos(q) * s, uz = Math.sin(q) * s, vx = -uz * 0.35, vz = ux * 0.35
+      b.tri([x - ux, y, z - uz], [x + vx, y + 0.006, z + vz], [x + ux, y, z + uz], [pale, deep, pale], [0.3, 0.3, 0.3], 1)
+      b.tri([x - ux, y, z - uz], [x + ux, y, z + uz], [x - vx, y + 0.006, z - vz], [pale, pale, deep], [0.3, 0.3, 0.3], 1)
     }
   }
   return b.build()
@@ -268,14 +270,25 @@ export function seedGrass(stalks: number, height: number, stalkCol: number, plum
     const lean = 0.12 + 0.1 * r01(i, 13)
     const top = [ox * (0.04 + h * lean), h, oz * (0.04 + h * lean)]
     stem(b, [[ox * 0.03, 0, oz * 0.03], top], 0.009, 0.006, cs, cs, { s1: 0.9 })
-    // The plume: a spindle of four thin bristled panes around the stalk's end.
+    // The head: the stalk runs on through it, set with small spikelets in two
+    // alternating rows that angle up and out, like an ear of wild grain. No closed outline,
+    // so it never reads as a diamond.
     const len = plumeLen * (0.8 + 0.4 * r01(i, 7))
-    const end = [top[0] + ox * len * 0.5, h + len, top[2] + oz * len * 0.5]
-    for (const [wx, wz] of [[1, 0], [0, 1]]) {
-      const w = 0.022
-      const mid = [(top[0] + end[0]) / 2, (top[1] + end[1]) / 2, (top[2] + end[2]) / 2]
-      b.tri(top, [mid[0] - wx * w, mid[1], mid[2] - wz * w], end, [cp, cp, cp], [0.9, 1, 1.05], 1)
-      b.tri(top, end, [mid[0] + wx * w, mid[1], mid[2] + wz * w], [cp, cp, cp], [0.9, 1.05, 1], 1)
+    const dir = [ox * 0.35, 1, oz * 0.35]
+    const end = [top[0] + dir[0] * len, h + len, top[2] + dir[2] * len]
+    stem(b, [top, end], 0.006, 0.003, cs, cp, { s0: 0.9, s1: 1.05 })
+    const K = 7
+    for (let k = 0; k < K; k++) {
+      const t = (k + 0.5) / K
+      const side = k % 2 ? 1 : -1
+      const q = [top[0] + dir[0] * len * t, h + len * t, top[2] + dir[2] * len * t]
+      // Spikelets alternate across the head, crossing the stalk's lean.
+      const sx = -oz * side, sz = ox * side
+      const sl = 0.045 * (1 - 0.45 * t)
+      const tip = [q[0] + sx * sl * 0.55, q[1] + sl, q[2] + sz * sl * 0.55]
+      const w = 0.012 * (1 - 0.4 * t)
+      b.tri([q[0] - dir[0] * 0.01, q[1] - 0.01, q[2] - dir[2] * 0.01], [q[0] + sx * w, q[1] + w * 0.5, q[2] + sz * w], tip,
+        [cp, cp, cp], [0.9 + 0.15 * t, 0.9 + 0.15 * t, 1.05], 1)
     }
   }
   return b.build()
@@ -316,26 +329,29 @@ export function lupin(): THREE.BufferGeometry {
  * colour, so it reads as bedded in the soil rather than set down on it.
  */
 export function stone(): THREE.BufferGeometry {
-  const b = new Builder(0.16)
-  const top = C(0xb0aea6), side = C(0x86837c), low = C(0x5a5752)
-  const ring: number[][] = []
+  const b = new Builder(0.14)
+  const top = C(0x8e8c86), side = C(0x6e6c67), low = C(0x46443f)
+  // Two irregular rings and a low cap: a rounded, weathered lump rather than a pyramid.
   const N = 7
+  const lowRing: number[][] = [], highRing: number[][] = []
   for (let k = 0; k < N; k++) {
     const a = (k / N) * Math.PI * 2
-    const r = 0.24 + 0.12 * r01(k, 7)
-    ring.push([Math.cos(a) * r, 0.07 + 0.06 * r01(k, 3), Math.sin(a) * r * 0.8])
+    const r = 0.26 + 0.1 * r01(k, 7)
+    lowRing.push([Math.cos(a) * r, 0.05 + 0.04 * r01(k, 3), Math.sin(a) * r * 0.8])
+    const r2 = r * (0.62 + 0.12 * r01(k, 5))
+    highRing.push([Math.cos(a + 0.2) * r2, 0.16 + 0.05 * r01(k, 11), Math.sin(a + 0.2) * r2 * 0.8])
   }
-  // A ridge rather than a single apex, so the top is not a pyramid.
-  const ridge = [[-0.08, 0.2, 0.01], [0.09, 0.18, -0.03]]
+  const cap = [0.02, 0.22, -0.01]
   for (let k = 0; k < N; k++) {
-    const p = ring[k], q = ring[(k + 1) % N]
-    const apex = (p[0] + q[0]) < 0 ? ridge[0] : ridge[1]
-    b.tri(apex, p, q, [top, k % 2 ? side : top, side], [0, 0, 0])
-    b.tri(p, [p[0] * 1.18, -0.06, p[2] * 1.18], q, [side, low, side], [0, 0, 0])
-    b.tri(q, [p[0] * 1.18, -0.06, p[2] * 1.18], [q[0] * 1.18, -0.06, q[2] * 1.18], [side, low, low], [0, 0, 0])
+    const p = lowRing[k], q = lowRing[(k + 1) % N], P = highRing[k], Q = highRing[(k + 1) % N]
+    b.tri(cap, P, Q, [top, top, top], [0, 0, 0])
+    b.tri(p, Q, P, [side, top, top], [0, 0, 0])
+    b.tri(p, q, Q, [side, side, top], [0, 0, 0])
+    // The skirt, down into the ground.
+    const ps = [p[0] * 1.15, -0.06, p[2] * 1.15], qs = [q[0] * 1.15, -0.06, q[2] * 1.15]
+    b.tri(p, ps, q, [side, low, side], [0, 0, 0])
+    b.tri(q, ps, qs, [side, low, low], [0, 0, 0])
   }
-  b.tri(ridge[0], ridge[1], ring[0], [top, top, top], [0, 0, 0])
-  b.tri(ridge[1], ridge[0], ring[Math.floor(N / 2)], [top, top, top], [0, 0, 0])
   return b.build()
 }
 
@@ -347,7 +363,7 @@ export function stone(): THREE.BufferGeometry {
 export function rosette(): THREE.BufferGeometry {
   const b = new Builder(0.04)
   const base = C(0x5e6a32), keel = C(0x8a9450), tip = C(0xffffff)
-  const rings = [{ n: 8, len: 0.3, rise: 0.09, w: 0.07, a0: 0 }, { n: 6, len: 0.2, rise: 0.16, w: 0.06, a0: 0.4 }, { n: 4, len: 0.1, rise: 0.2, w: 0.045, a0: 0.9 }]
+  const rings = [{ n: 8, len: 0.26, rise: 0.17, w: 0.065, a0: 0 }, { n: 6, len: 0.18, rise: 0.26, w: 0.055, a0: 0.4 }, { n: 4, len: 0.09, rise: 0.3, w: 0.04, a0: 0.9 }]
   for (const r of rings) {
     for (let k = 0; k < r.n; k++) {
       const a = r.a0 + (k / r.n) * Math.PI * 2
@@ -522,7 +538,7 @@ function alpineLayers(treeLine: number): LayerSpec[] {
     },
     {
       // Seed-head grasses standing above the turf where the grass is tall.
-      n: 80, spacing: 1.6, geometry: seedGrass(4, 0.62, 0x5a7a34, 0xd8d0a0),
+      n: 80, spacing: 1.6, geometry: seedGrass(4, 0.62, 0x8a8a4a, 0xd8d0a0),
       grow(c, h, out) {
         if (c.y > treeLine * 0.85) return
         if (unit(h, 22) > 0.55 * smooth(0.45, 0.7, c.region) * smooth(0.3, 0.6, c.patch)) return
@@ -545,7 +561,7 @@ function alpineLayers(treeLine: number): LayerSpec[] {
     },
     {
       // Cushion flowers, low and tight, where the grass thins: up toward the tree line.
-      n: 80, spacing: 1.6, geometry: cushion(),
+      n: 56, spacing: 1.6, geometry: cushion(),
       grow(c, h, out) {
         if (c.y > treeLine * 1.15) return
         const high = smooth(treeLine * 0.45, treeLine * 0.95, c.y)
@@ -567,12 +583,12 @@ function alpineLayers(treeLine: number): LayerSpec[] {
     },
     {
       // Stones, scattered and in small fields, more of them toward the heights.
-      n: 64, spacing: 3.2, geometry: stone(),
+      n: 48, spacing: 3.2, geometry: stone(),
       grow(c, h, out) {
         const high = smooth(treeLine * 0.4, treeLine * 1.3, c.y)
         if (unit(h, 22) > 0.04 + 0.3 * smooth(0.7, 0.9, c.patch) + 0.3 * high) return
         out.scale = 0.5 + 2.2 * unit(h, 2) * unit(h, 12)
-        setTint(out, 0xffffff, 0.3, h)
+        setTint(out, 0xe0e0dc, 0.3, h)
       },
     },
   ]
@@ -623,11 +639,11 @@ function desertLayers(): LayerSpec[] {
     },
     {
       // Pebbles on the stony ground.
-      n: 64, spacing: 3.2, geometry: stone(),
+      n: 48, spacing: 3.2, geometry: stone(),
       grow(c, h, out) {
         if (unit(h, 22) > 0.03 + 0.4 * c.rock + 0.15 * smooth(0.75, 0.9, c.patch)) return
         out.scale = 0.4 + 1.4 * unit(h, 2) * unit(h, 12)
-        setTint(out, 0xe8c8a0, 0.25, h)
+        setTint(out, 0xffd8a8, 0.25, h)
       },
     },
   ]
@@ -645,7 +661,7 @@ function volcanicLayers(): LayerSpec[] {
       // Dark blades with ember tips, in clumps, curling over. Thickest near the lava.
       n: 176, spacing: 0.8, shade: true, geometry: tuft(6, 0.5, 0x1a0e10, 0xd0402a, { glow: 0.45, curl: 0.25, width: 0.036 }),
       grow(c, h, out) {
-        if (c.rock > 0.85) return
+        if (c.rock > 0.85 && c.flow < 0.3) return
         const fed = Math.max(smooth(0.5, 0.75, c.patch) * 0.7, c.flow)
         if (unit(h, 2) > 0.15 + 0.85 * fed) return
         const k = clumped(c, h, out, 1.9)
@@ -659,7 +675,8 @@ function volcanicLayers(): LayerSpec[] {
       // Anemones, in groves that share a colour, densest along the lava.
       n: 48, spacing: 3.2, geometry: anemone(),
       grow(c, h, out) {
-        if (c.rock > 0.9) return
+        // Bare rock grows nothing, unless lava runs close by and feeds it.
+        if (c.rock > 0.9 && c.flow < 0.3) return
         if (unit(h, 22) > 0.03 + 0.4 * smooth(0.62, 0.8, c.patch) + 0.6 * c.flow) return
         out.scale = (0.55 + 0.6 * unit(h, 2)) * (1 + 0.35 * c.flow)
         ember(c, h, out, 0.12)
@@ -669,7 +686,8 @@ function volcanicLayers(): LayerSpec[] {
       // Tube clumps, where the anemones are not, and in rings round the pools.
       n: 64, spacing: 3.2, geometry: tubes(),
       grow(c, h, out) {
-        if (c.rock > 0.9) return
+        // Bare rock grows nothing, unless lava runs close by and feeds it.
+        if (c.rock > 0.9 && c.flow < 0.3) return
         if (unit(h, 22) > 0.025 + 0.35 * smooth(0.42, 0.22, c.patch) + 0.4 * c.flow) return
         out.scale = (0.7 + 1.0 * unit(h, 2)) * (1 + 0.3 * c.flow)
         ember(c, h, out, 0.12)

@@ -76,8 +76,15 @@ class Layer {
   private readonly param: THREE.InstancedBufferAttribute
   private readonly tintAttr: THREE.InstancedBufferAttribute
   private readonly groundAttr: THREE.InstancedBufferAttribute
+  // What each slot holds, by slot. Only slots where something grows are copied to the
+  // instance attributes, so empty cells cost nothing to draw: most layers are sparse.
+  private readonly slotOrigin: Float32Array
+  private readonly slotParam: Float32Array
+  private readonly slotTint: Float32Array
+  private readonly slotGround: Float32Array
   private readonly cellX: Int32Array
   private readonly cellZ: Int32Array
+  private readonly geometry: THREE.InstancedBufferGeometry
   private readonly plant: Plant = { scale: 0, r: 1, g: 1, b: 1, lx: 0, lz: 0 }
   private readonly ground: Ground = {
     x: 0, z: 0, y: 0, patch: 0, region: 0, rock: 0, flow: 0, clumpD: 0, clump: 0, outX: 0, outZ: 0, treeLine: 0,
@@ -92,7 +99,12 @@ class Layer {
   ) {
     const count = spec.n * spec.n
     const g = spec.geometry as THREE.InstancedBufferGeometry
-    g.instanceCount = count
+    g.instanceCount = 0
+    this.geometry = g
+    this.slotOrigin = new Float32Array(count * 3)
+    this.slotParam = new Float32Array(count * 4)
+    this.slotTint = new Float32Array(count * 3)
+    this.slotGround = new Float32Array(count * 4)
     this.origin = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3)
     this.param = new THREE.InstancedBufferAttribute(new Float32Array(count * 4), 4)
     this.tintAttr = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3)
@@ -127,14 +139,34 @@ class Layer {
       }
     }
     this.filled = true
-    if (changed) {
-      this.origin.needsUpdate = true
-      this.param.needsUpdate = true
-      this.tintAttr.needsUpdate = true
-      this.groundAttr.needsUpdate = true
-    }
+    if (changed) this.compact()
     return changed
   }
+
+  /** Copy the slots where something grows into the instance attributes, and draw only those. */
+  private compact(): void {
+    const sP = this.slotParam, sO = this.slotOrigin, sT = this.slotTint, sG = this.slotGround
+    const O = this.origin.array as Float32Array, P = this.param.array as Float32Array
+    const T = this.tintAttr.array as Float32Array, G = this.groundAttr.array as Float32Array
+    let k = 0
+    for (let s = 0, n = sP.length / 4; s < n; s++) {
+      if (!(sP[s * 4 + 1] > 0)) continue
+      O[k * 3] = sO[s * 3]; O[k * 3 + 1] = sO[s * 3 + 1]; O[k * 3 + 2] = sO[s * 3 + 2]
+      P[k * 4] = sP[s * 4]; P[k * 4 + 1] = sP[s * 4 + 1]; P[k * 4 + 2] = sP[s * 4 + 2]; P[k * 4 + 3] = sP[s * 4 + 3]
+      T[k * 3] = sT[s * 3]; T[k * 3 + 1] = sT[s * 3 + 1]; T[k * 3 + 2] = sT[s * 3 + 2]
+      G[k * 4] = sG[s * 4]; G[k * 4 + 1] = sG[s * 4 + 1]; G[k * 4 + 2] = sG[s * 4 + 2]; G[k * 4 + 3] = sG[s * 4 + 3]
+      k++
+    }
+    this.geometry.instanceCount = k
+    for (const a of [this.origin, this.param, this.tintAttr, this.groundAttr]) {
+      a.clearUpdateRanges()
+      a.addUpdateRange(0, Math.max(1, k) * a.itemSize)
+      a.needsUpdate = true
+    }
+  }
+
+  /** How many plants this layer draws now. */
+  get drawn(): number { return this.geometry.instanceCount }
 
   private plantCell(s: number, cx: number, cz: number, amount: number, treeLine: number): void {
     const data = this.sampler.data
@@ -143,13 +175,13 @@ class Layer {
     const h = phash2(cx, cz, this.seed, cells)
     const x = (cx + 0.1 + 0.8 * unit(h, 0)) * spacing
     const z = (cz + 0.1 + 0.8 * unit(h, 10)) * spacing
-    const P = this.param.array as Float32Array
+    const P = this.slotParam
     P[s * 4] = unit(h, 5) * Math.PI * 2
     P[s * 4 + 1] = 0
     P[s * 4 + 2] = 0
     P[s * 4 + 3] = 0
     if (this.cover) this.cover[s] = 0
-    const O = this.origin.array as Float32Array
+    const O = this.slotOrigin
     O[s * 3] = x
     O[s * 3 + 2] = z
     if (unit(phash2(cx, cz, this.seed + 3, cells), 3) > amount) return
@@ -184,9 +216,9 @@ class Layer {
     P[s * 4 + 1] = p.scale
     P[s * 4 + 2] = p.lx
     P[s * 4 + 3] = p.lz
-    const T = this.tintAttr.array as Float32Array
+    const T = this.slotTint
     T[s * 3] = p.r; T[s * 3 + 1] = p.g; T[s * 3 + 2] = p.b
-    const G = this.groundAttr.array as Float32Array
+    const G = this.slotGround
     G[s * 4] = nrm.x; G[s * 4 + 1] = nrm.y; G[s * 4 + 2] = nrm.z; G[s * 4 + 3] = g.rock
     if (this.cover) this.cover[s] = Math.min(255, Math.round(180 * Math.min(1.4, p.scale)))
   }
