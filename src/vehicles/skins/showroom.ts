@@ -528,7 +528,7 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
   const plainCanopies = new Map<T.Mesh, T.Material>()
   let current = -1, far = false, remote = false, distance = 0
   // Warming state (see the note beside WARM_FRAMES); declared here because `use` must know of the proxies.
-  let warm: Warm | null = null, warmed = '', level = -1
+  let warm: Warm | null = null, warmed = '', lastKey = '', level = -1
   /** The scene this model is in, or null for a model that is not in one (a viewer mid-build). */
   const sceneOf = (): T.Scene | null => {
     let top: T.Object3D = root
@@ -592,6 +592,9 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
   const stepWarm = (): void => {
     const tier = nearTier(), key = `${tier}:${level}`
     if (warm && warm.key !== key) endWarm('cancelled')
+    // Any change of tier or graphics level, even away and back, replaces render targets and
+    // with them every pipeline: what was warmed before no longer counts.
+    if (key !== lastKey) { lastKey = key; warmed = '' }
     if (tier === 0 || warmed === key) return
     // Not in a scene (a viewer mid-build): nothing would draw the proxies, so do not take a turn.
     const scene = sceneOf()
