@@ -1,3 +1,4 @@
+import {hotExposureNode} from './hotExposure'
 import * as T from 'three/webgpu'
 import type Node from 'three/src/nodes/core/Node.js'
 import {positionWorld,renderGroup,smoothstep,uniform,vec3} from 'three/tsl'
@@ -18,7 +19,7 @@ export function addLavaGlow(root:T.Object3D):void {
  })
  const heat=uniform(0).setGroup(renderGroup).onRenderUpdate(()=>state.heat)
  const wet=smoothstep(.15,-.15,positionWorld.dot(plane.xyz).add(plane.w))
- const glow=vec3(.9,.055,.002).mul(heat.mul(heat)).mul(wet)
+ const glow=vec3(.9,.055,.002).mul(heat.mul(heat)).mul(wet).mul(hotExposureNode())
  const converted=new Map<T.Material,T.Material>()
  const convert=(source:T.Material):T.Material=>{
   const cached=converted.get(source);if(cached)return cached

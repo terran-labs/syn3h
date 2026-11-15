@@ -536,16 +536,17 @@ export class ClassicBuggy extends Vehicle {
     const w = this.body.angvel()
     const angSq = w.x * w.x + w.y * w.y + w.z * w.z
     world.contactPairsWith(this.collider, (other) => {
-      world.contactPair(this.collider, other, (manifold) => {
-        const count = manifold.numSolverContacts()
+      world.contactPair(this.collider, other, (manifold, flipped) => {
+        // Buggy.js 487-495 needs touching contacts. Rapier's solver count is zero for
+        // terrain triangle meshes, so use geometric contacts within one centimetre.
+        let count = 0
+        for (let c = 0; c < manifold.numContacts(); c++) if (manifold.contactDist(c) < 0.01) count++
         if (count === 0) return
-        // Unity's contact normal points into this body. Rapier's sign depends on the pair's
-        // internal order, so orient it from the contact point toward our centre of mass.
+        // Unity's normal points into this body. Rapier exposes its internal pair order
+        // through flipped, including for triangle meshes with no solver contact point.
         const mn = manifold.normal()
         n.set(mn.x, mn.y, mn.z)
-        const cp = manifold.solverContactPoint(0)
-        const com = this.body.worldCom()
-        if (cp && n.x * (com.x - cp.x) + n.y * (com.y - cp.y) + n.z * (com.z - cp.z) < 0) n.negate()
+        if (!flipped) n.negate()
         const angleToNormal = this.up.angleTo(n) * DEG
         for (let c = 0; c < count; c++) {
           if (this.isInverted && angleToNormal < 50) this.isInverted = false

@@ -628,20 +628,24 @@
   ],
   "knownIssues": [
     {
-      "title": "The lava sea is too bright at night",
-      "detail": "At 11pm it can wash out the scene. The game opens at 4:30pm with the clock paused, so this only shows if someone drags the time slider."
+      "title": "Steep shores on water worlds",
+      "detail": "On desert and alpine worlds a vehicle that falls in the sea lands fine on a gentle beach, but on a steep bank it climbs a few metres and slides back in. The default world is volcanic."
     },
     {
-      "title": "Getting out of water is not verified",
-      "detail": "On the desert and alpine worlds a floating vehicle turned back into open water in one capture. The default world is volcanic."
+      "title": "Bots crowd the summit",
+      "detail": "Bots reach the top on every world, then ram each other and some drive off the edge. On the alpine world one of four left the road at the last bend."
     },
     {
-      "title": "The alpine summit road",
-      "detail": "An autopilot flipped on it once and passed once. Being checked."
+      "title": "Tag beams look nearly white at night",
+      "detail": "They are green by day. A fix is queued."
     },
     {
       "title": "The chase camera clips under the shoreline",
       "detail": "In some frames while crawling out of lava."
+    },
+    {
+      "title": "Changing vehicle in the lobby reloads the page",
+      "detail": "A shortcut taken to keep the demo safe."
     },
     {
       "title": "Not yet done by a person",

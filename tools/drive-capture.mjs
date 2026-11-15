@@ -11,6 +11,8 @@
  * Teleport y defaults to terrain height plus clearance. landmark:"dune" finds a
  * deterministic local crest and places the car on its approach; inspect the trace to
  * confirm this vehicle actually leaves the ground. This is not a guaranteed jump.
+ * Other landmarks: pad (optional index), summit (rim), lava or "lava lake", sea,
+ * and slope (one quarter up the summit road). Unavailable landmarks are errors.
  * roadFollow:true drives a bounded road-following controller for volcano chase QA.
  * Input events use browser timers independent of screenshot latency. Trace timestamps
  * record actual time and simulation tick; late captures are labelled, not disguised.
@@ -20,6 +22,7 @@
  * use --network true to capture multiplayer.
  * No image libraries required: Chrome canvas builds the timestamped contact sheet.
  */
+import { resolveCaptureTeleport } from './capture-landmarks.mjs'
 import { chromium } from 'playwright-core'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
@@ -32,6 +35,7 @@ const scenario = JSON.parse(await readFile(options.scenario ?? 'tools/scenarios/
 const interval = Number(options.interval ?? scenario.captureEveryMs ?? 500)
 if (!(interval >= 50) || !(scenario.durationMs > 0) || scenario.durationMs > 120000) throw new Error('Interval must be >=50ms and duration <=120000ms')
 for (const event of scenario.events) if (!(event.atMs >= 0 && event.atMs <= scenario.durationMs)) throw new Error('Event outside scenario duration')
+for (const event of scenario.events) if (event.teleport?.landmark != null && !['dune','slope','sea','lava','lava lake','summit','pad'].includes(event.teleport.landmark)) throw new Error(`Unknown capture landmark: ${event.teleport.landmark}`)
 const output = resolve(options.out ?? '/tmp/syn3h-drive')
 await mkdir(output, { recursive: true })
 const kinds = options.compare ? options.compare.split(',') : [options.vehicle ?? 'current']
@@ -55,31 +59,13 @@ try {
     await page.evaluate(() => { window.syn3h.shell?.play(); document.activeElement?.blur?.() })
     if (options.network !== 'true') await page.evaluate(() => { window.syn3h.bots.remote = false })
     await page.waitForTimeout(scenario.settleMs ?? 1000)
+    await page.addScriptTag({ content: `window.resolveCaptureTeleport = ${resolveCaptureTeleport.toString()}` })
     await page.evaluate(scenario => {
       const s = window.syn3h
       const pressed = new Set(), applied = []
       const key = (code, down) => {
         window.dispatchEvent(new KeyboardEvent(down ? 'keydown' : 'keyup', { code, bubbles: true }))
         if (down) pressed.add(code); else pressed.delete(code)
-      }
-      function dune() {
-        let best = null, score = -Infinity
-        // Search actual heights rather than relying on coordinates tied to one seed.
-        for (let x = -280; x <= 280; x += 40) for (let z = -280; z <= 280; z += 40) {
-          if (Math.hypot(x, z) < 100) continue
-          for (let a = 0; a < 16; a++) {
-            const heading = a * Math.PI / 8, dx = -Math.sin(heading), dz = -Math.cos(heading)
-            const h = d => s.terrain.heightAt(x + dx * d, z + dz * d)
-            const rise = h(0) - h(-25), fall = h(0) - h(25)
-            const liquid = s.terrain.liquidHeightAt?.(x, z) ?? -Infinity
-            if (rise > 1 && rise < 8 && fall > 2 && fall < 12 && h(-45) > liquid + 2) {
-              const value = rise + fall
-              if (value > score) { score = value; best = { x: x - dx * 45, z: z - dz * 45, heading, clearance: 2 } }
-            }
-          }
-        }
-        if (!best) throw new Error('No suitable dune approach for this terrain seed')
-        return best
       }
       let roadTimer = null
       if (scenario.roadFollow) {
@@ -108,9 +94,9 @@ try {
           s.params.set(id, value)
         }
         if (event.teleport) {
-          const t = event.teleport.landmark === 'dune' ? dune() : event.teleport
-          const position = { x: t.x, y: t.y ?? s.terrain.heightAt(t.x, t.z) + (t.clearance ?? 2), z: t.z }
-          s.player.teleport(position, t.heading ?? 0)
+          const t = window.resolveCaptureTeleport(s.terrain, event.teleport)
+          const position = { x: t.x, y: t.y, z: t.z }
+          s.player.teleport(position, t.heading)
           applied.push({ teleport: { ...position, heading: t.heading ?? 0 }, atMs: performance.now() - start })
         }
         for (const code of event.up ?? []) key(code, false)
@@ -135,6 +121,7 @@ try {
         const roll = Math.abs(m23) < 0.9999999 ? Math.atan2(m21, m22) : 0
         return { actualMs: performance.now() - window.driveCapture.start, tick: s.game.tick, simulatedSeconds: s.game.time, position: { ...p }, speedMps: Math.hypot(v.x, v.y, v.z), quaternion: { ...q }, orientationDegrees: { pitch: pitch * 180 / Math.PI, yaw: yaw * 180 / Math.PI, roll: roll * 180 / Math.PI }, heightAboveTerrain: p.y - s.terrain.heightAt(p.x, p.z), wheelsGrounded: s.player.wheelsGrounded ?? null, camera: { position: s.game.camera.position.toArray(), clearance: s.game.camera.position.y - s.terrain.heightAt(s.game.camera.position.x, s.game.camera.position.z), distance: s.game.camera.position.distanceTo(s.player.object.position), fov: s.game.camera.fov }, backend: s.game.backend, bots: s.bots?.vehicles.map(bot => { const b = bot.body.translation(), v = bot.body.linvel(); return { id: bot.id, position: { ...b }, speedMps: Math.hypot(v.x, v.y, v.z), distance: Math.hypot(b.x-p.x, b.y-p.y, b.z-p.z), wheelsGrounded: bot.wheelsGrounded } }) ?? [] }
       })
+      if (![...Object.values(trace.position), trace.speedMps, ...Object.values(trace.quaternion)].every(Number.isFinite)) throw new Error(`Non-finite vehicle state at ${requestedMs}ms`)
       const name = `${kind}-${String(frames.length).padStart(3, '0')}.png`
       const png = await page.screenshot({ path: join(output, name) })
       images.push(png.toString('base64')); frames.push({ requestedMs, ...trace, file: name })

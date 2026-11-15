@@ -1,3 +1,4 @@
+import {hotExposureNode} from '../skins/hotExposure'
 import * as T from 'three/webgpu'
 import {attribute,float,smoothstep,uniform,uv,vec2,texture} from 'three/tsl'
 
@@ -25,6 +26,7 @@ export class ParticleBatch {
     const size=cfg.z.add(cfg.w.mul(age.max(0))).max(0)
     m.scaleNode=vec2(size,size)
     m.colorNode=attribute('fxTint','vec3').mul(texture(map,uv()).rgb)
+    if(additive)m.colorNode=m.colorNode.mul(hotExposureNode())
     // Original particle five-key alpha: near zero, .707, 1, .707, zero.
     m.opacityNode=texture(map,uv()).a.mul(unit.mul(Math.PI).sin().max(0).mul(age.greaterThanEqual(0).select(1,0)).mul(age.lessThan(cfg.y).select(1,0)).mul(additive?.8:.4).mul(float(1).sub(smoothstep(.42,.5,uv().sub(.5).length()))))
     this.mesh=new T.Mesh(g,m);this.mesh.frustumCulled=false;this.mesh.renderOrder=additive?4:3

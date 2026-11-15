@@ -1,5 +1,7 @@
 # Island bot QA, November 14
 
+Historical pre-fix results. The current acceptance results are in [island-acceptance.md](island-acceptance.md). Vehicles found that triangle-mesh ground contacts did not clear the inverted flag; the suspension stayed disabled. The later fix also resets vehicle state on teleport.
+
 The four-bot summit gate fails. Two bots climbed from 15 m to 227 m without recovery; two left the road and remained immobile after returning to their pads. Do not call this a completed summit chase.
 
 Source: `9ecb5a2` plus the accompanying bot changes. One headed Chrome, Metal, 960 x 540, graphics level 1, seed 42, four bots, positional audio enabled. The run started at 5:31:29 PM Pacific, after the host process incident. The interrupted 5:29 run is discarded. All heavy jobs use `tools/heavy.sh`.

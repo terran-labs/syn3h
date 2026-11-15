@@ -21,7 +21,7 @@ import {
   buggyGripFade, buggyIdleHold, buggyNextGen, buggyPower, buggyRebound, buggyRegen, buggyRideHeight, buggyShocks, buggySlide, buggySpeed, buggySteerLimit,
   buggyTraction,
 } from './buggyParams'
-import { applyLava, floatPoints } from './lava'
+import { applyLava, floatPoints, lavaViscosity } from './lava'
 import type { BuggySkin } from './skins/BuggySkin'
 import { DEG, UnityBody, lerp, signedAngle, unityEulerAngles } from './unityBody'
 import { Vehicle, type WheelEffect, createWheelEffects } from './Vehicle'
@@ -91,6 +91,8 @@ const THROTTLE_DEADZONE = 0.05
 const REGEN_TORQUE_MARGIN = 1.25
 /** A contact point closer than this (m) is touching; further ones are only predicted. */
 const CONTACT_TOUCH = 0.01
+/** How fast (1/s) water drags the wheels toward the body's speed while floating. */
+const WATER_MOTOR_DRAG = 6
 /**
  * Next-gen bump stop (see suspensionForce()). The skid plate meets flat ground when a wheel ray
  * is about 0.185 m long, so the stop works over ray lengths BUMP_START down to BUMP_END, and
@@ -138,7 +140,7 @@ export class Syn3hBuggy extends Vehicle {
   areWingsOpen = false
   isInverted = false
   totalSuspensionCompression = 0
-  /** In lava or water this step. */
+  /** Floating in water this step, or immersed in lava (set by the base class). */
   inLiquid = false
   /** Vhicl.InputSmoothed and the mapped raw Input (Me 9-20). */
   readonly inputSmoothed = new THREE.Vector4()
@@ -282,7 +284,7 @@ export class Syn3hBuggy extends Vehicle {
     )
   }
 
-  /** Height of lava or sea under a point (Unity layer 4 raycasts). */
+  /** Surface height of the lava or water at a point (Unity layer 4 raycasts). */
   private liquidAt(x: number, z: number): number {
     return this.terrain.liquidHeightAt?.(x, z) ?? worldLavaAltitude.value
   }
@@ -413,6 +415,17 @@ export class Syn3hBuggy extends Vehicle {
       this.motorSpeed += (smoothed.y * this.motorAccel) / MOTOR_MASS * dt
       this.motorSpeed += (-this.motorSpeed * (this.brakes ? 50 : MOTOR_DRAG)) / this.motorTorque * dt
     }
+    // Sticky lava (see applyVehicleLiquid in lava.ts) takes over the body while it is immersed
+    // and moves it at the lava crawl power, so no wheel force reaches it. The wheels churn in
+    // the same goo: drag the motor toward the body's speed so it cannot spin up unloaded and
+    // lurch when the tyres bite again at the shore.
+    // Water does the same more gently, so the wheels are not at full speed when they touch
+    // the beach. inLiquid is last step's value here.
+    if (this.lavaDepth > 0 || this.inLiquid) {
+      const vf = ub.inverseTransformDirectionUnity(ub.velocity, this.v1).z
+      const drag = this.lavaDepth > 0 ? lavaViscosity.value : WATER_MOTOR_DRAG
+      this.motorSpeed = vf + (this.motorSpeed - vf) * Math.exp(-drag * dt)
+    }
     // Next-gen updates the motor from all four wheels at once (Jacobi). Updating it wheel by
     // wheel, as VB 323 does, favours the left wheels and pulls the buggy right.
     this.motorStep = this.motorSpeed
@@ -511,7 +524,9 @@ export class Syn3hBuggy extends Vehicle {
       }
     }
 
-    // Lava and water (Mars Explorer Buggy.js 435-475, see lava.ts), after drag like the original.
+    // Water: float and paddle (Mars Explorer Buggy.js 435-475, see lava.ts), after drag like the
+    // original. applyLava does nothing in lava, which is sticky instead: the base class applies
+    // that after this controller and sets inLiquid, lavaDepth and stuck.
     this.inLiquid = applyLava(ub, FLOAT_POINTS, (x, z) => this.liquidAt(x, z), {
       x: smoothed.x, y: smoothed.y, wingsOpen: this.areWingsOpen,
     })
