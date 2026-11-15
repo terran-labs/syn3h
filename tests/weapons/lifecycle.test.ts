@@ -223,7 +223,8 @@ describe('relayed cords that cannot belong here', () => {
     const { b, close } = bungee()
     try {
       b.applyRemote(2, { s: 'on', at: [0, 0, -40], n: [0, 1, 0], r: 30 })
-      expect(b.count).toBe(1)
+      // The shared renderer reserves the cord and its anchor immediately.
+      expect(b.count).toBe(2)
     } finally { close() }
   })
 
@@ -235,7 +236,8 @@ describe('relayed cords that cannot belong here', () => {
       expect(b.count).toBe(0)
       // And a good cord that later turns implausible is removed, not kept at its old anchor.
       b.applyRemote(2, { s: 'on', at: [0, 0, -40], n: [0, 1, 0], r: 30 })
-      expect(b.count).toBe(1)
+      // The shared renderer reserves the cord and its anchor immediately.
+      expect(b.count).toBe(2)
       b.applyRemote(2, { s: 'on', at: [0, 900, -10], n: [0, 1, 0], r: 30 })
       expect(b.count).toBe(0)
     } finally { close() }

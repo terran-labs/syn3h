@@ -13,11 +13,13 @@
  * - `warmGear` draws each geometry and material pair for a few frames while the world is
  *   still appearing, too small and too close to the camera to cover a pixel. The pipelines
  *   are then built along with the rest of the scene. It does so again after a graphics level
- *   change, which replaces the render targets and with them every pipeline.
+ *   change or a change to the post effects, either of which replaces the render targets and
+ *   with them every pipeline.
  *
  * Measured by tests/weapons/browser-gear-hitch.mjs.
  */
 import * as THREE from 'three/webgpu'
+import { params } from '../../shared/params'
 import type { Game, System } from '../core/Game'
 import { graphicsLevel } from '../core/quality'
 
@@ -37,12 +39,16 @@ class GearWarm implements System {
   left = 0
   private drawn = false
   private level = graphicsLevel.value
+  private readonly unlisten: () => void
   /** Counts for automated checks. */
   stats = { armed: 0, frames: 0 }
 
   constructor(private readonly game: Game) {
     this.group.scale.setScalar(SCALE)
     this.arm(START_FRAMES)
+    // Graphics and post effect settings rebuild the render chain. Arming costs a few
+    // zero-pixel draws for a second or so, so any of them is reason enough.
+    this.unlisten = params.onChange((id) => { if (id.startsWith('post.') || id.startsWith('gfx.')) this.arm(CHANGE_FRAMES) })
   }
 
   add(pairs: readonly WarmPair[]): THREE.Mesh[] {
@@ -79,6 +85,7 @@ class GearWarm implements System {
   }
 
   dispose(): void {
+    this.unlisten()
     this.game.scene.remove(this.group)
     this.group.clear()
     this.each.clear()
