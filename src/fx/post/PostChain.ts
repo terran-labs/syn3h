@@ -27,7 +27,7 @@
 import * as THREE from 'three/webgpu'
 import {
   Fn, If, Loop, abs, screenSize, sin, clamp, dot, exp, float, interleavedGradientNoise, length, max, min, mix, pass,
-  renderOutput, rtt, screenCoordinate, smoothstep, step,  uniform, uv, vec2, vec3, vec4,
+  builtinAOContext, builtinShadowContext, context, mrt, normalView, screenUV, renderOutput, rtt, screenCoordinate, smoothstep, step,  uniform, uv, vec2, vec3, vec4,
 } from 'three/tsl'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
 import { ao } from 'three/addons/tsl/display/GTAONode.js'
@@ -294,24 +294,32 @@ export class PostChain {
     const depth: N = scenePass.getTextureNode('depth')
     const hot: N = u.bloomThreshold.mul(HOT_CLAMP)
 
-    // Ambient occlusion and contact shadows, from the lit pass's own depth (normals rebuilt
-    // from depth), at half resolution. They darken the frame where geometry crowds a point or
-    // something small stands between it and the sun. A pre-pass that would let occlusion
-    // touch only the ambient light was tried: it re-rendered every object and corrupted the
-    // sun's nearest shadow cascade (shadow maps render at the first pass of a frame).
+    // AO belongs in indirect lighting, before direct light, emissive and fog are added.
+    // Keep prepass lighting separate and disabled: otherwise the normals pass updates the
+    // sun's shadow maps before the beauty pass and can poison the nearest cascade.
     let aoNode: N = null
     let sssNode: N = null
-    let shade: N = float(1)
     let contactTex: N = null
+    let prePass: ReturnType<typeof pass> | null = null
+    if (aoOn || light) {
+      prePass = pass(scene, camera)
+      prePass.name = 'Occlusion normals and depth'
+      prePass.transparent = false
+      prePass.setMRT(mrt({ output: normalView }))
+      const unlit = new THREE.Lighting()
+      unlit.enabled = false
+      prePass.lighting = unlit
+      disposables.push(prePass as never, unlit)
+    }
     if (aoOn) {
-      aoNode = ao(depth, null as never, camera)
+      aoNode = ao(prePass!.getTextureNode('depth'), prePass!.getTextureNode('output'), camera)
       aoNode.resolutionScale = 0.5
       aoNode.samples.value = 12
       disposables.push(aoNode)
-      shade = shade.mul(aoNode.getTextureNode().sample(uv()).r)
+      scenePass.contextNode = builtinAOContext(aoNode.getTextureNode().sample(screenUV).r)
     }
     if (light) {
-      sssNode = sss(depth, camera, light)
+      sssNode = sss(prePass!.getTextureNode('depth'), camera, light)
       sssNode.resolutionScale = 0.5
       sssNode.maxDistance.value = 0.5
       sssNode.thickness.value = 0.12
@@ -322,7 +330,7 @@ export class PostChain {
       // go back to 1; a real contact shadow, solid under a tyre, stays dark.
       const raw: N = sssNode.getTextureNode()
       const blurAt = Fn(() => {
-        const p = uv()
+        const p = screenUV
         const px = vec2(3, 3).div(screenSize)
         const sum = float(0).toVar()
         for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) sum.addAssign(raw.sample(p.add(px.mul(vec2(x, y)))).r)
@@ -330,8 +338,12 @@ export class PostChain {
       })
       const contact = blurAt()
       contactTex = contact
-      // Leave some fill: contact shadows only darken what the sun lit.
-      shade = shade.mul(mix(float(1), contact, 0.6))
+      // Apply contact occlusion only to this light. Ambient fill, headlights, emissive
+      // lava and atmospheric fog must not be darkened by the sun's contact shadows.
+      scenePass.contextNode = context({
+        ...(scenePass.contextNode?.value as object | undefined),
+        ...(builtinShadowContext(mix(float(1), contact, 0.6), light).value as object),
+      })
     }
 
     // The scene colour as the eye sees it this frame: heat shimmer bends where it reads from,
@@ -365,7 +377,6 @@ export class PostChain {
       return c
     })
     let hdr: N = tier === 'full' ? base() : color.rgb
-    if (aoOn || light) hdr = hdr.mul(shade)
 
     if (glowOn) {
       // Geometry only: open sky (depth at the far plane) never feeds the glow. Facing a low

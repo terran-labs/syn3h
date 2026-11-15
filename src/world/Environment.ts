@@ -21,7 +21,7 @@ import {
   sunE, sunlightColor, wrapHour, advanceHour, type RGB, type Vec3,
 } from './sky/skyMath'
 import * as P from './sky/skyParams'
-import { applyBounce, lightSkyReflection } from './lightRig'
+import { applyBounce, lightSkyReflection, shadowSoftness, shadowStrength } from './lightRig'
 import { heightFog, weatherFogNode } from './weather/fog'
 import { advanceCloudDrift } from './weather/clouds'
 
@@ -261,14 +261,20 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
       csmAspect = cam.aspect
       csmFov = cam.fov
       csm.updateFrustums()
-      // A far cascade texel can be a metre wide, so one normal bias for all cascades
-      // either peter-pans the near one or leaves acne on the far ones. Scale it per texel.
+      // Scale the normal offset with each cascade's texel footprint.
       for (const l of csm.lights) {
         const sh = l.shadow
         if (!sh) continue
         const texel = (sh.camera.right - sh.camera.left) / sh.mapSize.width
         sh.normalBias = Math.max(0.02, texel * 1.5)
       }
+    }
+    light.shadow.radius = shadowSoftness.value
+    light.shadow.intensity = shadowStrength.value
+    if (csm) for (const l of csm.lights) {
+      if (!l.shadow) continue
+      l.shadow.radius = shadowSoftness.value
+      l.shadow.intensity = shadowStrength.value
     }
   }
 
