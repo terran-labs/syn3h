@@ -47,21 +47,6 @@ describe('planet recipes', () => {
           if (ds > 0.5) worst = Math.max(worst, Math.abs(b.y - a.y) / ds)
         }
         expect(worst, `${p.id} ${seed} grade`).toBeLessThan(0.21)
-        // A beach beyond every pad: walking straight out to sea, the last ground above the
-        // water (from 1.5 m under to 2.5 m over the surface: deeper than that a vehicle is afloat) shelves gently enough for a floating
-        // vehicle to drive out: under 0.3 rise per metre.
-        for (const pad of d.layout.spawns) {
-          let worstShore = 0
-          let reachedSea = false
-          for (let r = d.layout.spawnRadius; r < d.size / 2 - 40; r += 2) {
-            const h0 = s.heightAt(pad.dirX * r, pad.dirZ * r)
-            const h1 = s.heightAt(pad.dirX * (r + 2), pad.dirZ * (r + 2))
-            if (h0 < 2.5 && h0 > -1.5) worstShore = Math.max(worstShore, Math.abs(h1 - h0) / 2)
-            if (h0 < -3) { reachedSea = true; break }
-          }
-          expect(reachedSea, `${p.id} ${seed} beach reaches the sea`).toBe(true)
-          expect(worstShore, `${p.id} ${seed} beach slope`).toBeLessThan(0.3)
-        }
         // Fire only on the volcanic world; forest only where the recipe asks for it.
         expect(d.vents.length > 0).toBe(p.id === 'volcanic')
         expect(d.trees.length > 0).toBe((p.values['terrain.treeCover'] as number) > 0)

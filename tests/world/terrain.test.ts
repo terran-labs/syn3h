@@ -70,8 +70,7 @@ describe('terrain generation', () => {
       }
       expect(land / h.length).toBeGreaterThan(0.3)
       expect(land / h.length).toBeLessThan(0.65)
-      // Beaches shelve gently by design, so a few percent of the square is shallows.
-      expect(shelf / h.length).toBeLessThan(0.06)
+      expect(shelf / h.length).toBeLessThan(0.03)
     }
   }, 20000)
 

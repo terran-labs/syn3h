@@ -445,35 +445,10 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
   const wx = x + field(F.warpX)
   const wz = z + field(F.warpZ)
 
-  // An open approach from every spawn pad to the volcano: the way in is never walled off,
-  // and it is where that pad's road runs. The corridor carries on past the pad to the sea
-  // as that pad's beach: open ground shelving gently into the water, so there is always a
-  // place to drive out within sight, one for each pad, spaced evenly round the island.
-  let clear = 1
-  let beach = 0
-  if (r > v.radius * 0.9) {
-    const pr = L.spawnRadius
-    for (let i = 0; i < L.spawns.length; i++) {
-      const p = L.spawns[i]
-      const ap = x * p.dirX + z * p.dirZ
-      if (ap <= 0) continue
-      const lp = -x * p.dirZ + z * p.dirX - approachMeander(pr - ap, S.approach + 31 * i)
-      const a = lp < 0 ? -lp : lp
-      const lane = smoothstep(150, 80, a)
-      clear *= 1 - lane
-      if (ap > pr && lane > beach) beach = lane
-      const dx = x - p.x
-      const dz = z - p.z
-      const d2 = dx * dx + dz * dz
-      if (d2 < 150 * 150) clear *= smoothstep(70, 150, Math.sqrt(d2))
-    }
-  }
-
   // --- Plains: rolling, lightly stepped ground -------------------------------------------
   let roll = 0.5 + 0.5 * field(F.roll)
   roll = terrace(roll, 6, 0.35)
-  // On a beach the rolling ground settles toward the shore.
-  h += (4 + 12 * s.roughness) * 2 * (roll - 0.35) * land * (1 - 0.85 * beach * smoothstep(0.62, 0.86, rr))
+  h += (4 + 12 * s.roughness) * 2 * (roll - 0.35) * land
 
   // --- Volcano ------------------------------------------------------------------------------
   let gentle = ux * v.gentleX + uz * v.gentleZ
@@ -507,6 +482,24 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
   const foot = radius * FOOT_RING
   const band = smoothstep(foot + 45, foot + 115, r) * smoothstep(1.12, 0.9, rr)
   if (band > 0) {
+    // An open approach from every spawn pad to the volcano: the way in is never walled
+    // off, and it is where that pad's road runs.
+    let clear = 1
+    for (let i = 0; i < L.spawns.length; i++) {
+      const p = L.spawns[i]
+      const ap = x * p.dirX + z * p.dirZ
+      if (ap <= 0) continue
+      const pr = L.spawnRadius
+      const lp = -x * p.dirZ + z * p.dirX - approachMeander(pr - ap, S.approach + 31 * i)
+      const a = lp < 0 ? -lp : lp
+      // A corridor inward of the pad, and a round clearing at the pad itself.
+      const inward = smoothstep(pr + 70, pr + 20, ap)
+      clear *= 1 - inward * smoothstep(150, 80, a)
+      const dx = x - p.x
+      const dz = z - p.z
+      const d2 = dx * dx + dz * dz
+      if (d2 < 150 * 150) clear *= smoothstep(70, 150, Math.sqrt(d2))
+    }
     if (clear > 0 && s.mesaHeight > 0) {
       // Where massifs stand: a low frequency mask with a hard edge, so they rise as cliffs.
       const m = field(F.mask) + 0.35 * perlin(x * 0.009, z * 0.009, S.cragMask + 9)
@@ -544,8 +537,7 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
     const w = -x * L.windZ + z * L.windX
     let d = 1 - Math.abs(perlin(u * 0.017 + 0.6 * field(F.duneWarp), w * 0.005, S.dune))
     d *= d
-    // Dunes die away before the shore, so beaches shelve smoothly into the sea.
-    h += s.duneHeight * d * calm * smoothstep(0.97, 0.76, rr)
+    h += s.duneHeight * d * calm
   }
   h += 0.9 * fine * (0.3 + 0.7 * land)
 
@@ -604,13 +596,9 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
   // bank above it and no wide shelf lying a few centimetres under the surface. A monotone
   // piecewise linear remap, continuous at both ends.
   if (h > -6 && h < 8 && t >= 1) {
-    // The bank is up to 2.2 times the natural slope across the waterline: firm enough to
-    // read as a coast. On a beach it eases to the natural slope, so a floating vehicle can
-    // always drive out there.
-    const g = 2.2 - 1.2 * beach
-    if (h < -1) h = -6 + (h + 6) * ((6 - g) / 5)
-    else if (h < 1) h = (h + 1) * g - g
-    else h = g + (h - 1) * ((8 - g) / 7)
+    if (h < -1) h = -6 + (h + 6) * 0.4
+    else if (h < 1) h = -4 + (h + 1) * 2.8
+    else h = 1.6 + (h - 1) * (6.4 / 7)
   }
 
   shapeVolcanic = volcanic
