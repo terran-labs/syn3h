@@ -3,8 +3,8 @@ import * as T from 'three/webgpu'
 import {uniform} from 'three/tsl'
 import {params} from '../../shared/params'
 import {vehicleShading} from '../../src/core/quality'
-import {mergeStatic,mergedSurfaces} from '../../src/vehicles/skins/mergeStatic'
-import {applyShowroom,paintFlakes,paintScaleDepth,paintScaleSize,paintSeams,roleOf,setRole} from '../../src/vehicles/skins/showroom'
+import {LOD_FAR,LOD_NEAR,detailLevel,mergeStatic,mergedSurfaces} from '../../src/vehicles/skins/mergeStatic'
+import {applyShowroom,paintCanopy,paintFlakes,paintScaleDepth,paintScaleSize,paintSeams,roleOf,setRole} from '../../src/vehicles/skins/showroom'
 
 const box=()=>new T.BoxGeometry(1,1,1)
 const std=(name:string,color=0x336699)=>{const m=new T.MeshStandardMaterial({color});m.name=name;return m}
@@ -42,7 +42,7 @@ describe('showroom vehicle shading',()=>{
   const lit=body.material as T.Material
   expect(lit).toBeInstanceOf(T.MeshStandardNodeMaterial);expect(lit).not.toBeInstanceOf(T.MeshPhysicalNodeMaterial)
   expect((lit as T.MeshStandardNodeMaterial).normalNode).not.toBeNull()
-  // Glass stays opaque until the clear coat tier.
+  // A canopy still tagged `glass` stays opaque until the clear coat tier, as before.
   expect((canopy.material as T.Material).transparent).toBe(false)
   params.set(vehicleShading.def.id,2)
   expect(body.material).toBeInstanceOf(T.MeshPhysicalNodeMaterial);expect((canopy.material as T.Material).transparent).toBe(true)
@@ -113,6 +113,42 @@ describe('showroom vehicle shading',()=>{
    params.set(param.def.id,param.def.default)
   }
   expect(body.material).toBe(built)
+  dispose()
+ })
+ it('gives every vehicle the same canopy, glow and frame from a role tag alone',()=>{
+  params.set(vehicleShading.def.id,3)
+  const owner=new T.Group(),root=new T.Group();owner.add(root)
+  const accent=new T.Color(0x000040);owner.userData.vehicleColors={accent}
+  const canopy=new T.Mesh(box(),setRole(std('Whatever'),'canopy')),nozzle=new T.Mesh(box(),setRole(std('Nozzle'),'glow')),arm=new T.Mesh(box(),setRole(std('Arm',0x222222),'frame')),fin=new T.Mesh(box(),setRole(std('Fin'),'paint'))
+  ;(fin.material as T.MeshStandardMaterial).flatShading=true
+  root.add(canopy,nozzle,arm,fin)
+  const dispose=applyShowroom(root,()=>{})
+  const uses=(m:T.Material,value:unknown)=>{let found=false;for(const node of [(m as T.MeshBasicNodeMaterial).colorNode])node?.traverse(n=>{if((n as unknown as {value?:unknown}).value===value)found=true});return found}
+  // Canopy and glow take the owner vehicle's live accent colour, not a colour the vehicle authored.
+  expect(uses(canopy.material as T.Material,accent)).toBe(true);expect(uses(nozzle.material as T.Material,accent)).toBe(true)
+  expect((nozzle.material as T.Material).blending).toBe(T.AdditiveBlending);expect((nozzle.material as T.Material).depthWrite).toBe(false)
+  expect(arm.material).toBeInstanceOf(T.MeshPhysicalNodeMaterial)
+  expect((fin.material as T.Material as T.MeshStandardMaterial).flatShading).toBe(true)
+  dispose()
+ })
+ it('picks detail levels at the shared distances, with slack on the way back in',()=>{
+  expect(detailLevel(500,false)).toBe(0)
+  expect([detailLevel(29,true),detailLevel(31,true),detailLevel(119,true),detailLevel(121,true)]).toEqual([0,1,1,2])
+  expect(detailLevel(27,true,1)).toBe(1);expect(detailLevel(24,true,1)).toBe(0)
+  expect(detailLevel(117,true,2)).toBe(2);expect(detailLevel(114,true,2)).toBe(1)
+  expect([LOD_NEAR,LOD_FAR]).toEqual([30,120])
+ })
+ it('previews the force field on glass canopies with one switch, and puts the glass back',()=>{
+  params.set(vehicleShading.def.id,2)
+  const root=new T.Group(),canopy=new T.Mesh(box(),setRole(std('Cockpit'),'glass'));root.add(canopy)
+  const dispose=applyShowroom(root,()=>{})
+  const glass=canopy.material as T.Material
+  expect(glass).toBeInstanceOf(T.MeshPhysicalNodeMaterial)
+  params.set(paintCanopy.def.id,true)
+  const field=canopy.material as T.Material
+  expect(field).toBeInstanceOf(T.MeshBasicNodeMaterial);expect(field.side).toBe(T.DoubleSide);expect(field.depthWrite).toBe(false)
+  params.set(paintCanopy.def.id,false)
+  expect(canopy.material).toBeInstanceOf(T.MeshPhysicalNodeMaterial)
   dispose()
  })
 })
