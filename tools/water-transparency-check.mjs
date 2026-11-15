@@ -205,11 +205,11 @@ try {
           const below=phase%2===1
           window.waterClear.depth=below?2:-2
           for(let frame=0;frame<35;frame++){
-            const before={...window.crossCounts},fog=g.scene.fogNode?.id
+            const before={...window.crossCounts},fog=g.scene.fogNode?.id,postBuilds=g.postChain?.builds??0
             await new Promise(requestAnimationFrame)
             const now=performance.now()
             const e=g.systems.find(x=>x.underwater),cp=g.camera.position
-            rows.push({lensDepth:+(window.syn3h.terrain.liquidHeightAt(cp.x,cp.z)-cp.y).toFixed(3),blend:+e.underwater.amount.toFixed(3),bubbles:e.bubbles.mesh.geometry.instanceCount,phase,below,frame,rafMs:now-last,gameMs:g.performance.frameMs,pipelines:window.crossCounts.pipelines-before.pipelines,programs:window.crossCounts.programs-before.programs,fogBefore:fog,fogAfter:g.scene.fogNode?.id})
+            rows.push({lensDepth:+(window.syn3h.terrain.liquidHeightAt(cp.x,cp.z)-cp.y).toFixed(3),blend:+e.underwater.amount.toFixed(3),bubbles:e.bubbles.mesh.geometry.instanceCount,phase,below,frame,rafMs:now-last,gameMs:g.performance.frameMs,pipelines:window.crossCounts.pipelines-before.pipelines,programs:window.crossCounts.programs-before.programs,fogBefore:fog,fogAfter:g.scene.fogNode?.id,postBuilds:(g.postChain?.builds??0)-postBuilds})
             last=now
           }
         }
@@ -217,6 +217,10 @@ try {
       })
       report.cases.push({tier,trace})
       writeFileSync(`${out}/report.json`,JSON.stringify(report,null,2))
+      const crossings = trace.filter(x => x.phase > 0)
+      assert.ok(crossings.every(x => x.pipelines === 0 && x.programs === 0 && x.postBuilds === 0), `Tier ${tier}: crossing rebuilt pipelines or post graph`)
+      assert.ok(crossings.every(x => x.fogBefore === x.fogAfter), `Tier ${tier}: fog graph changed`)
+      assert.ok(crossings.filter(x => x.frame === 34).every(x => x.below ? x.lensDepth > 0 && x.blend === 1 : x.lensDepth < 0 && x.blend === 0), `Tier ${tier}: camera did not cross and settle`)
       console.log(JSON.stringify({tier,crossings:trace.filter(x=>x.phase>0&&x.frame<3),maxMs:Math.max(...trace.map(x=>x.rafMs))}))
     }
   }
