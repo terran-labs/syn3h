@@ -249,3 +249,40 @@ describe('chasing with the route planner', () => {
     expect(wetTime).toBeLessThan(0.5); expect(nearest).toBeLessThan(6); expect(brain.rescues).toBe(0)
   })
 })
+
+describe('bots that know the game', () => {
+  const setup = async (count: number) => {
+    const { BotManager } = await import('../../src/bots/BotManager')
+    const h = harness(), terrain = flat(800)
+    const player = new Syn3hBuggy(h.game, terrain, new Vector3(0, 1, 0)); player.isLocal = false
+    player.body.setBodyType(RAPIER.RigidBodyType.Fixed, true)
+    params.set('bots.count', count); params.set('bots.canFire', false)
+    const manager = h.game.add(new BotManager(h.game, terrain, player)); manager.update()
+    return { ...h, player, manager }
+  }
+  const far = (v: { body: RAPIER.RigidBody }, x = 0, z = 0) => { const p = v.body.translation(); return Math.hypot(p.x - x, p.z - z) }
+  it('tag: bots run from whoever is it, and a bot that is it hunts the nearest vehicle', async () => {
+    const { step, player, manager } = await setup(3)
+    manager.setMatch({ mode: 'tag', it: player })
+    for (let i = 0; i < 1000; i++) step()
+    // They spawned 24 m from the player; twenty seconds later every one has put distance between them.
+    for (const bot of manager.vehicles) expect(far(bot)).toBeGreaterThan(60)
+    const hunter = manager.vehicles[0]
+    manager.setMatch({ mode: 'tag', it: hunter })
+    let nearest = Infinity
+    for (let i = 0; i < 2000; i++) {
+      step()
+      for (const other of [player, ...manager.vehicles]) if (other !== hunter) { const p = other.body.translation(), q = hunter.body.translation(); nearest = Math.min(nearest, Math.hypot(p.x - q.x, p.z - q.z)) }
+    }
+    expect(nearest).toBeLessThan(6)
+    manager.dispose()
+  })
+  it('hill: most bots go to the zone and stay in it', async () => {
+    const { step, manager } = await setup(3)
+    const zone = { x: 90, z: -70, radius: 14 }
+    manager.setMatch({ mode: 'hill', zone })
+    for (let i = 0; i < 2500; i++) step()
+    expect(manager.vehicles.filter(bot => far(bot, zone.x, zone.z) < zone.radius).length, manager.vehicles.map(bot => far(bot, zone.x, zone.z).toFixed(0)).join(' ')).toBeGreaterThanOrEqual(2)
+    manager.setMatch(null); manager.dispose()
+  })
+})
