@@ -278,6 +278,16 @@ export type CordWire =
   | { s: 'on'; to?: number; at?: [number, number, number]; n?: [number, number, number]; r: number }
   | { s: 'off' }
 
+/**
+ * Yoink (src/weapons/yoink): `grab` starts carrying vehicle `to` in front of the sender;
+ * `fling` gives `to` the velocity change `v` (m/s) and ends any carry, and is also a gust's
+ * shove; `drop` ends a carry with no fling. The carried vehicle's own client does the pushing.
+ */
+export type YoinkWire =
+  | { s: 'grab'; to: number }
+  | { s: 'fling'; to: number; v: [number, number, number] }
+  | { s: 'drop'; to: number }
+
 export type ClientMessage =
   /**
    * `resume` is a random secret this tab keeps for this room. In a room with `game.rejoin`
@@ -315,6 +325,8 @@ export type ClientMessage =
   | { type: 'bot'; id: number; kind: string }
   /** My Bungee cord changed. */
   | { type: 'cord'; cord: CordWire }
+  /** I grabbed, flung or dropped a vehicle with Yoink. */
+  | { type: 'yoink'; y: YoinkWire }
 
 export type TagEvent =
   | 'default' | 'ram' | 'laser' | 'score' | 'leave' | 'lock' | 'host'
@@ -345,6 +357,8 @@ export type ServerMessage =
   | { type: 'shove'; from: number; push: [number, number, number] }
   /** Player `from`'s Bungee cord, relayed at server time `t`. */
   | { type: 'cord'; from: number; cord: CordWire; t: number }
+  /** Player `from` used Yoink on vehicle `y.to`. */
+  | { type: 'yoink'; from: number; y: YoinkWire }
   | { type: 'game'; game: GameState; event?: TagEvent; actor?: number; target?: number }
   /**
    * The room's world was replaced: set every world parameter to its default, then apply
