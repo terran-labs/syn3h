@@ -24,8 +24,19 @@ export const postShaftReach = defineParam({ id: 'post.shaftReach', label: 'Sun s
 export const postLowSun = defineParam({ id: 'post.lowSun', label: 'Extra shafts at low sun', group: g, scope: c, default: 0.6, min: 0, max: 3, step: 0.05 })
 export const postFlare = defineParam({ id: 'post.flare', label: 'Lens streak and ghosts', group: g, scope: c, default: 0.5, min: 0, max: 2, step: 0.05 })
 
-export const postStreaks = defineParam({ id: 'post.streaks', label: 'Speed streaks', group: g, scope: c, default: 0.6, min: 0, max: 2, step: 0.05 })
-export const postStreakSpeed = defineParam({ id: 'post.streakSpeed', label: 'Speed streaks start at (m/s)', group: g, scope: c, default: 45, min: 10, max: 200, step: 5 })
+export const postMotionBlur = defineParam({ id: 'post.motionBlur', label: 'Motion blur (shutter)', group: g, scope: c, default: 0.5, min: 0, max: 1.5, step: 0.05 })
+export const postMotionNear = defineParam({ id: 'post.motionNear', label: 'Motion blur starts past (m)', group: g, scope: c, default: 14, min: 2, max: 60, step: 1 })
+
+export const postHaze = defineParam({ id: 'post.haze', label: 'Atmosphere: haze density', group: g, scope: c, default: 1, min: 0, max: 4, step: 0.05 })
+export const postHazeHeight = defineParam({ id: 'post.hazeHeight', label: 'Atmosphere: haze layer height (m)', group: g, scope: c, default: 140, min: 20, max: 800, step: 10 })
+export const postHazeBase = defineParam({ id: 'post.hazeBase', label: 'Atmosphere: haze floor height (m)', group: g, scope: c, default: 0, min: -100, max: 300, step: 5 })
+export const postHazeSun = defineParam({ id: 'post.hazeSun', label: 'Atmosphere: sunlight in the haze', group: g, scope: c, default: 1, min: 0, max: 4, step: 0.05 })
+
+export const postAO = defineParam({ id: 'post.ao', label: 'Ambient occlusion', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.05 })
+export const postAORadius = defineParam({ id: 'post.aoRadius', label: 'Ambient occlusion radius (m)', group: g, scope: c, default: 1.5, min: 0.2, max: 6, step: 0.1 })
+export const postContact = defineParam({ id: 'post.contact', label: 'Contact shadows', group: g, scope: c, default: 1, min: 0, max: 1, step: 0.05 })
+
+export const postToneMap = defineParam({ id: 'post.toneMap', label: 'Tone mapping: 0 ACES, 1 AgX, 2 Neutral', group: g, scope: c, default: 0, min: 0, max: 2, step: 1 })
 
 export const postPlunge = defineParam({ id: 'post.plunge', label: 'Splash blur when a vehicle goes under', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.05 })
 
