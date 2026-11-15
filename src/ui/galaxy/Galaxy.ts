@@ -39,6 +39,8 @@ export interface GalaxyOptions {
    * level, so weak devices keep the galaxy at almost no cost. Reduced motion does the same.
    */
   still?(): boolean
+  /** Focus the label selected with a controller, so its normal activation stays accessible. */
+  onFocus?(id: string): void
 }
 /**
  * The most worlds the galaxy draws, the sun aside. The trace costs little per world (a ray
@@ -307,6 +309,7 @@ export class Galaxy {
   private readonly resizeObserver: ResizeObserver
 
   constructor(private readonly host: HTMLElement, private readonly options: GalaxyOptions) {
+    addEventListener('keydown', event => this.key(event), { signal: this.abort.signal })
     this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(host)
     document.addEventListener('visibilitychange', () => { cancelAnimationFrame(this.frame); if (this.active && !document.hidden) this.loop(0) }, { signal: this.abort.signal })
   }
@@ -524,7 +527,9 @@ export class Galaxy {
     qualityFrame(now)
     // Thirty frames a second is plenty for a slow orbit; the drop gets every frame there is.
     if (!this.flight && now - this.last < 33) return
+    const elapsed = Math.min(0.1, Math.max(0, (now - this.last) / 1000))
     this.last = now
+    this.controller(elapsed)
     const gl = this.gl, u = this.uniforms
     if (!gl) return
     if (this.shownScale !== qualityScale()) this.resize()
@@ -583,6 +588,51 @@ export class Galaxy {
     // Its full-size map, ahead of anything else waiting, for the close view and the dive.
     const world = this.options.worlds[index]
     if (!world.forming) this.request(world, CLOSE, true)
+  }
+  private padButtons: boolean[] = []
+  private focusIndex = -1
+  /** The view controls are active only on the unobstructed galaxy. */
+  private get controllable(): boolean { return this.active && this.backdrop === 1 && !this.flight && this.chosen < 0 }
+  private orbit(x: number, y: number, zoom: number): void {
+    this.wake = 2; this.spinVelocity = 0
+    this.yaw += x
+    this.pitch = Math.min(1.25, Math.max(-0.2, this.pitch + y))
+    this.distance = Math.min(26, Math.max(6, this.distance * Math.exp(zoom)))
+  }
+  private key(event: KeyboardEvent): void {
+    if (!this.controllable || event.altKey || event.ctrlKey || event.metaKey) return
+    const target = event.target
+    if (target instanceof HTMLElement && (target.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(target.tagName))) return
+    const moves: Record<string, [number, number, number]> = {
+      ArrowLeft: [-0.08, 0, 0], ArrowRight: [0.08, 0, 0],
+      ArrowUp: [0, 0.06, 0], ArrowDown: [0, -0.06, 0],
+      '+': [0, 0, -0.08], '=': [0, 0, -0.08], '-': [0, 0, 0.08],
+    }
+    const move = moves[event.key]
+    if (move) { event.preventDefault(); this.orbit(...move) }
+  }
+  private controller(seconds: number): void {
+    const pad = navigator.getGamepads?.().find(p => p?.connected && p.mapping === 'standard')
+    if (!pad) { this.padButtons = []; return }
+    const buttons = pad.buttons.map(button => button.pressed)
+    const pressed = (index: number) => buttons[index] && !this.padButtons[index]
+    if (this.controllable) {
+      const axis = (index: number) => { const v = pad.axes[index] ?? 0; return Math.abs(v) > 0.18 ? v : 0 }
+      const x = axis(0), y = axis(1), zoom = axis(3)
+      if (x || y || zoom) this.orbit(x * seconds * 1.6, -y * seconds * 1.2, zoom * seconds)
+      const count = Math.min(MAX, this.options.worlds.length)
+      if (count && (pressed(14) || pressed(15) || pressed(4) || pressed(5))) {
+        const next = pressed(15) || pressed(5)
+        this.focusIndex = this.focusIndex < 0 ? (next ? 0 : count - 1) : (this.focusIndex + (next ? 1 : -1) + count) % count
+        for (let tries = 0; tries < count - 1 && !this.screen.find(p => p.id === this.options.worlds[this.focusIndex].id)?.visible; tries++) this.focusIndex = (this.focusIndex + (next ? 1 : -1) + count) % count
+        this.options.onFocus?.(this.options.worlds[this.focusIndex].id)
+      }
+      if (count && pressed(0)) {
+        const index = this.focusIndex < 0 ? 0 : this.focusIndex, id = this.options.worlds[index].id
+        if (!this.options.onTap?.(id)) this.choose(id)
+      }
+    }
+    this.padButtons = buttons
   }
   private down(event: PointerEvent): void {
     this.canvas.setPointerCapture(event.pointerId); this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
