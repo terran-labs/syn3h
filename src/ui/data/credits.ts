@@ -12,6 +12,6 @@ export const creditsHtml = `<p>Syn3h is a browser-native world for driving, flyi
 <li>Barlow Project Authors: bundled Barlow fonts, <a href="/brand/licenses/barlow.txt" target="_blank" rel="noopener">SIL OFL 1.1</a>.</li>
 <li>Marked contributors: dashboard Markdown, <a href="/brand/licenses/marked.txt" target="_blank" rel="noopener">MIT notices</a>.</li>
 <li>ws contributors: development room server, <a href="/brand/licenses/ws.txt" target="_blank" rel="noopener">MIT</a>.</li></ul>
-<p>Music: Space Station, Classic, Carefree and Ambient. Effects: LaserShot, LaserHit, Materialize and Wind. These supplied game assets are reused with the owner's authorization; no separate public music licence or composer credit was recovered. Engine and impact synthesis are new for this edition.</p>
+<p>Music: Space Station, Classic, Carefree and Ambient. Effects: the tag beam, tagged, materialize and wind sounds. These supplied game assets are reused with the owner's authorization; no separate public music licence or composer credit was recovered. Engine and impact synthesis are new for this edition.</p>
 <p>Kai Engel's Chance is not included because its redistribution licence was not recovered. <a href="/audio/README.md" target="_blank" rel="noopener">Audio provenance</a>.</p>
 <p>The generated names and loading jokes are new browser-edition writing. The original online message list was not recovered.</p></details>`
