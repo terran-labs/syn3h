@@ -17,9 +17,8 @@
  * and the limiter all apply. `level` follows the existing "Wind volume" slider (audio.wind).
  * Per frame: one wind lookup and a handful of AudioParam targets, nothing allocated.
  *
- * Replaces the recorded Wind.wav, which followed the vehicle's speed and altitude only. With
- * the camera's own motion in the airspeed, the generated voice covers the rush of speed as
- * well as the weather, so the clip added nothing and is no longer downloaded (1.2 MB).
+ * Plays alongside the owner's recorded Wind.wav, which follows the vehicle's own speed and
+ * altitude. To keep the two from doubling, the camera's motion counts here at OWN_MOTION.
  */
 import type * as THREE from 'three/webgpu'
 import { atmosphereValue } from '../world/weather/params'
@@ -34,6 +33,14 @@ export const WIND_LOUD = 32
 const CAMERA_SMOOTH = 0.15
 /** Faster than this between frames is a teleport or a seam crossing, not motion. */
 const MAX_CAMERA_SPEED = 400
+/**
+ * How much of the camera's own motion counts as airspeed. The recorded wind clip already
+ * plays the rush of the vehicle's speed (Engine.motionMix), so at full weight the two would
+ * double up into a constant roar while driving. At 0.35 a buggy at 30 m/s in still air adds
+ * only a faint hiss here, a headwind still sounds stronger than a tailwind, and a gale on
+ * the summit is unchanged because the weather itself is never scaled.
+ */
+export const OWN_MOTION = 0.35
 
 /** Loudness 0..1, body cutoff and whistle frequency (Hz) and whistle level for an airspeed. */
 export function windVoice(airspeed: number, air: number) {
@@ -112,7 +119,7 @@ export class WeatherWind {
 
     const w = windDrift(position.x, position.y, position.z, this.wind)
     const rel = this.rel
-    rel.x = w.x - v.x; rel.y = w.y - v.y; rel.z = w.z - v.z
+    rel.x = w.x - v.x * OWN_MOTION; rel.y = w.y - v.y * OWN_MOTION; rel.z = w.z - v.z * OWN_MOTION
     this.airspeed = Math.hypot(rel.x, rel.y, rel.z)
     const air = atmosphereValue()
     const voice = windVoice(this.airspeed, air)

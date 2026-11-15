@@ -27,11 +27,10 @@ page.on('close', () => console.log('PAGE CLOSED'))
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
 page.on('console', (m) => { if ((m.type() === 'error' || m.type() === 'warning') && !/AudioContext|index count of 0/.test(m.text())) errors.push(`${m.type()}: ${m.text()}`.slice(0, 400)) })
 const url = `${base}${base.includes('?') ? '&' : '?'}autoplay=1&post=1&room=postfx-${Date.now().toString(36)}${webgl ? '&webgl=1' : ''}`
-await page.goto(url, { waitUntil: 'load' })
+await page.goto(url, { waitUntil: 'load', timeout: 120000 })
 await page.waitForFunction(() => window.syn3h?.game?.tick > 25, null, { timeout: 45000 }).catch(() => {})
 await page.locator('.shell-play').click({ timeout: 3000 }).catch(() => {})
 await page.waitForFunction(() => window.syn3h?.game?.tick > 25, null, { timeout: 30000 }).catch(async () => { console.log(JSON.stringify({ stuck: true, errors }, null, 2)); await page.screenshot({ path: `${out}/stuck.png` }); process.exit(1) })
-await page.evaluate((sets) => { for (const [k, v] of sets) window.syn3h.params.set(k, isNaN(Number(v)) ? v === 'true' : Number(v)) }, sets)
 // --volcano <distance>: park the vehicle that far from the summit, facing it.
 const volcano = flag('--volcano')
 if (volcano) {
@@ -77,12 +76,18 @@ const results = []
 for (const hour of hours) {
   await page.evaluate((h) => window.syn3h.params.set('sun.timeOfDay', h), hour)
   for (const view of views) {
-    await page.evaluate((on) => window.syn3h.params.set('post.on', on), view !== 'off')
+    // 'off' is today's game; 'on' is the post chain plus any --set values (applied only to
+    // 'on'; each is reset to its default for 'off').
+    await page.evaluate(({ on, sets }) => {
+      const p = window.syn3h.params
+      p.set('post.on', on)
+      for (const [k, v] of sets) p.set(k, on ? (isNaN(Number(v)) ? v === 'true' : Number(v)) : p.get(k).def.default)
+    }, { on: view !== 'off', sets })
     await page.waitForTimeout(2500)
     const state = await page.evaluate(() => {
       const g = window.syn3h.game
       const chain = g.postChain
-      return { speed: +(chain?.speed ?? 0).toFixed(1), motion: chain ? +chain.u.motion.value.toFixed(3) : null, backend: g.backend, tier: chain?.tier, builds: chain?.builds, draws: g.renderer.info.render.drawCalls, exposure: +g.renderer.toneMappingExposure.toFixed(3), level: window.syn3h.params.get('gfx.level').value, sunUv: chain ? [chain.u.sunUv.value.x, chain.u.sunUv.value.y].map((n) => +n.toFixed(3)) : null, sunVis: chain ? +chain.u.sunVis.value.toFixed(3) : null }
+      return { motion: chain ? +chain.u.motionAmount.value.toFixed(3) : null, backend: g.backend, tier: chain?.tier, builds: chain?.builds, draws: g.renderer.info.render.drawCalls, exposure: +g.renderer.toneMappingExposure.toFixed(3), level: window.syn3h.params.get('gfx.level').value, sunUv: chain ? [chain.u.sunUv.value.x, chain.u.sunUv.value.y].map((n) => +n.toFixed(3)) : null, sunVis: chain ? +chain.u.sunVis.value.toFixed(3) : null }
     })
     const shot = `${out}/${webgl ? 'webgl' : 'webgpu'}-h${hour}-${view}.png`
     await page.screenshot({ path: shot })

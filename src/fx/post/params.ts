@@ -24,8 +24,15 @@ export const postShaftReach = defineParam({ id: 'post.shaftReach', label: 'Sun s
 export const postLowSun = defineParam({ id: 'post.lowSun', label: 'Extra shafts at low sun', group: g, scope: c, default: 0.6, min: 0, max: 3, step: 0.05 })
 export const postFlare = defineParam({ id: 'post.flare', label: 'Lens streak and ghosts', group: g, scope: c, default: 0.5, min: 0, max: 2, step: 0.05 })
 
-export const postStreaks = defineParam({ id: 'post.streaks', label: 'Speed streaks', group: g, scope: c, default: 0.6, min: 0, max: 2, step: 0.05 })
-export const postStreakSpeed = defineParam({ id: 'post.streakSpeed', label: 'Speed streaks start at (m/s)', group: g, scope: c, default: 45, min: 10, max: 200, step: 5 })
+export const postMotionBlur = defineParam({ id: 'post.motionBlur', label: 'Motion blur (shutter)', group: g, scope: c, default: 0.5, min: 0, max: 1.5, step: 0.05 })
+export const postMotionNear = defineParam({ id: 'post.motionNear', label: 'Motion blur starts past (m)', group: g, scope: c, default: 14, min: 2, max: 60, step: 1 })
+
+export const postAO = defineParam({ id: 'post.ao', label: 'Ambient occlusion', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.05 })
+export const postAORadius = defineParam({ id: 'post.aoRadius', label: 'Ambient occlusion radius (m)', group: g, scope: c, default: 1.5, min: 0.2, max: 6, step: 0.1 })
+export const postContact = defineParam({ id: 'post.contact', label: 'Contact shadows', group: g, scope: c, default: 1, min: 0, max: 1, step: 0.05 })
+
+export const postDebug = defineParam({ id: 'post.debug', label: 'Debug view: 0 off, 1 occlusion, 2 contact shadows', group: g, scope: c, default: 0, min: 0, max: 2, step: 1 })
+export const postToneMap = defineParam({ id: 'post.toneMap', label: 'Tone mapping: 0 ACES, 1 AgX, 2 Neutral', group: g, scope: c, default: 0, min: 0, max: 2, step: 1 })
 
 export const postPlunge = defineParam({ id: 'post.plunge', label: 'Splash blur when a vehicle goes under', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.05 })
 
@@ -44,7 +51,24 @@ export function postOverride(search: string): boolean | undefined {
   if (value === null) return undefined
   return value !== '0' && value !== 'false' && value !== 'off'
 }
+/**
+ * The cinematic look in one switch, for the owner to compare: the post chain plus the
+ * light rig's ground bounce, the Weather Lab's aerial perspective and the Terrain Lab's
+ * material sliders. Each lane's own default stays off; this only sets them for the page.
+ */
+export const CINEMATIC: Readonly<Record<string, number | boolean>> = {
+  'post.on': true, 'light.bounce': 1, 'weather.aerial': 1,
+  'terrain.detailNormal': 1, 'terrain.surfaceResponse': 1, 'terrain.macroColour': 1, 'terrain.accent': 1,
+}
+
 if (typeof location !== 'undefined') {
   const on = postOverride(location.search)
   if (on !== undefined) params.set(postOn.def.id, on)
+  // ?cinematic=1. Applied after every module has registered its sliders (unknown ids are
+  // ignored by params.set, so the order of imports cannot drop one silently: retry once).
+  if (new URLSearchParams(location.search).has('cinematic')) {
+    const apply = () => { for (const [id, v] of Object.entries(CINEMATIC)) params.set(id, v) }
+    apply()
+    setTimeout(apply, 0)
+  }
 }
