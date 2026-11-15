@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-15 03:08 PST. Demo deadline: Sunday noon Pacific.
+Last verified: 2026-11-15 03:24 PST. Demo deadline: Sunday noon Pacific.
 
 ## Authority
 
@@ -36,7 +36,7 @@ The current pinned supervisor still targets release-2 and must not be reused bli
 
 Release automation checks exact identity, HTML and entry assets, then primary gameplay
 and the eight-vehicle matrix before recording acceptance. Notes and captures are nonfatal
-post-acceptance artifacts. Showcase generation is still running; review its results.
+post-acceptance artifacts. The reviewed three-scene showcase, GIF and release notes are published on GitHub. All four attachment URLs passed; the README describes the selected scenes. The lobby capture timed out on an obsolete test selector and is excluded from those artifacts.
 
 ## Integrated evidence and current queue
 
@@ -74,11 +74,13 @@ original gameplay assertions. Earlier intermittent startup stale states remain u
 the dry steady-state result does not prove wet or rough-terrain behavior.
 Evidence: /tmp/syn3h-frozen-wrap-grade05.log and .json. Tooling fixes are on fast1b2cc25.
 
-Next batch is isolated in /Users/vtn/dev/Syn3h-wt/next-visuals, integration/next-visuals:
-cloud35c0167, temporal8edddad, saved moons873e408 minimal dependencies, touchb30fe51.
-Combined typecheck and146 focused tests pass. Saved-world Chrome/WebKit checks pass;
-settled logo capture, combined rendering and touch checks remain. Current3c66c1b changes
-only capture timing after that successful saved-world run. No next-batch public claim.
+The next batch is integrated from integration/next-visuals after typecheck, all 1,156 tests
+across 150 files and a production build passed. Combined WebGPU/WebGL entry, four touch
+and desktop layouts, and saved-world browser checks pass. The browser wrapper failed
+only at cleanup with EPERM; all owned ports were verified closed. The settled logo is complete.
+Evidence: /tmp/astra-next-visuals-full-gate.log and /tmp/astra-next-visuals-browser.log.
+Cloud volumes, temporal antialiasing, saved moons and touch clearance now await a new
+frozen release and public checks. Release 4 remains live and is the required rollback target.
 Temporal rejects history on procedural position/sprite materials, including water/grass;
 GI is screen-space, clouds have no ground shadows, real-device performance is unmeasured.
 
