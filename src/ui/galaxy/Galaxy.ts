@@ -769,21 +769,22 @@ export class Galaxy {
   private spin(i: number, time: number): number { return time * 0.05 + i * 2.1 + (this.spinOffset[i] ?? 0) }
   /**
    * Flying to a world, the camera swings round to its lit side, a little off the sun so the
-   * shafts still stand behind it, and the world turns on its axis to bring its island (the
-   * map's longitude 0, latitude 0, where the game spawns) to face the camera. The dive then
-   * falls onto the island, so orbit and ground line up.
+   * shafts still stand behind it, and tilts as if the world's island were turned to face it.
+   * The world does not turn to meet the camera.
    */
   private face(): number {
     this.facingSettled = true
     if (this.chosen < 0 || this.options.worlds[this.chosen].forming) return this.pitch
-    const i = this.chosen, ct = Math.cos(TILT), st = Math.sin(TILT)
+    const ct = Math.cos(TILT), st = Math.sin(TILT)
     // The island's direction from the world's centre for a spin s is (-sin s, st cos s, ct cos s).
-    const want = Math.atan2(-ct * Math.sin(this.facing), Math.cos(this.facing)), now = this.spin(i, this.clock)
-    const spinStep = turn(now, want), latitude = Math.asin(st * Math.cos(want))
+    const want = Math.atan2(-ct * Math.sin(this.facing), Math.cos(this.facing))
+    const latitude = Math.asin(st * Math.cos(want))
     const share = perFrame(0.07, this.step)
-    this.spinOffset[i] = (this.spinOffset[i] ?? 0) + spinStep * share
-    if (!this.drag && !this.flight) { const y = turn(this.yaw, this.facing), p = latitude - this.pitch; this.yaw += y * share; this.pitch += p * share; this.facingSettled = Math.abs(y) < 0.003 && Math.abs(p) < 0.003 && Math.abs(spinStep) < 0.003 }
-    else this.facingSettled = Math.abs(spinStep) < 0.003
+    // The world itself is left alone (the owner, 15 November 2026: "Planets shouldn't spin
+    // when clicked... the camera should spin slightly in a gravitational deorbit"). Only the
+    // camera moves: it swings round to the lit side as it falls, and the world keeps its
+    // own slow turn.
+    if (!this.drag && !this.flight) { const y = turn(this.yaw, this.facing), p = latitude - this.pitch; this.yaw += y * share; this.pitch += p * share; this.facingSettled = Math.abs(y) < 0.003 && Math.abs(p) < 0.003 }
     return latitude
   }
   private loop = (now: number): void => {
