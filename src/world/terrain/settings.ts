@@ -38,7 +38,7 @@ export const terrainSpireHeight = defineParam({
 })
 
 export const terrainTreeCover = defineParam({
-  ...P, id: 'terrain.treeCover', label: 'Forest cover', default: 0, min: 0, max: 1, step: 0.01,
+  ...P, id: 'terrain.treeCover', label: 'Plant cover', default: 0.5, min: 0, max: 1, step: 0.01,
 })
 /**
  * What kind of world this is: it picks the shape of the centre, what fills its lake, and
