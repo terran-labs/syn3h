@@ -28,7 +28,7 @@ import { KIND_VOLCANIC, worldSeaKind } from './settings'
 import { riverSpeed } from './lava'
 import { waterRiverMaxSpeed, waterWaves } from '../water/params'
 import { SEA_GRID } from '../water/seaWaves'
-import { buildRiverSurface, buildStillSurface, createWaterSurface, configureWaterBlending, waterOpacityNode } from '../water/surface'
+import { buildBedTexture, buildRiverSurface, buildStillSurface, createWaterSurface, configureWaterBlending, waterOpacityNode, type WaterBed } from '../water/surface'
 import { WaterfallMist, fallsFromRivers } from '../water/mist'
 import { buildFallSheet, createFallMaterial } from '../water/falls'
 import { paletteFor } from './palettes'
@@ -187,6 +187,8 @@ export class Volcanics implements System {
   private readonly newSea = createWaterSurface('sea')
   private readonly newStill = createWaterSurface('still')
   private readonly newRiver = createWaterSurface('river')
+  /** The height field under every water surface, rebuilt with the terrain. */
+  private bed: WaterBed | null = null
   /** Whether the current meshes were built for the new water. */
   private builtNew = false
   private builtGravity = worldGravity.value
@@ -239,7 +241,9 @@ export class Volcanics implements System {
     this.builtRiverSpeed = waterRiverMaxSpeed.value
     const palette = paletteFor(data.settings.look)
     this.fallMaterial.color.set(palette.seaShallow)
-    for (const w of [this.newSea, this.newStill, this.newRiver]) w.setColours(palette.seaShallow, palette.seaDeep)
+    this.bed?.texture.dispose()
+    this.bed = buildBedTexture(data, worldLavaAltitude.value)
+    for (const w of [this.newSea, this.newStill, this.newRiver]) { w.setColours(palette.seaShallow, palette.seaDeep); w.setBed(this.bed) }
     const seaMaterial = this.seaMaterial()
     // A dry world (the Moon) drains its sea below every valley: draw none of it.
     const chunks = data.settings.dry ? 0 : seaChunks(data)
@@ -394,6 +398,7 @@ export class Volcanics implements System {
     this.waterSea.update(dt, level)
     if (this.builtNew) {
       this.mist.update(dt, this.camera?.position.x ?? 0, this.camera?.position.z ?? 0, this.camera?.position.y ?? 0)
+      for (const w of [this.newSea, this.newStill, this.newRiver]) w.setEnvironment(this.scene.environment)
       this.newSea.update(level)
       this.newStill.update(0)
       this.newRiver.update(0)
@@ -427,6 +432,7 @@ export class Volcanics implements System {
   dispose(): void {
     this.clear()
     this.fallMaterial.dispose()
+    this.bed?.texture.dispose()
     this.emitters.dispose()
     this.scene.remove(this.group)
     for (const l of [this.lavaSea, this.waterSea, this.lavaStill, this.lavaRiver, this.waterStill, this.newSea, this.newStill, this.newRiver]) l.material.dispose()
