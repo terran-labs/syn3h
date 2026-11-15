@@ -349,8 +349,10 @@ What makes that hold:
 Measured on this Mac in headless Chrome at four times throttle: lobby usable in about one
 second, taps answered in 0.3 to 0.65 seconds, starfield 11 to 13 frames a second with the
 game rendering underneath (with the old starfield lobby). Those are emulation figures, not
-a phone's. The galaxy's figures are still to be taken on a quiet machine: the first run,
-at a load average of 32, gave taps in 2.1 to 3.6 s and 6 to 10 frames a second.
+a phone's. With the galaxy and its nine planets, at a load average of 5 to 8 (15
+November, 12am): lobby usable in 1.7 to 1.9 s, taps answered in 0.3 to 0.6 s, the galaxy
+at 10 frames a second on the open lobby. Its frame rate is measured on the galaxy itself,
+since behind a panel it stops on purpose.
 
 
 ## Hints for a player who seems stuck
