@@ -55,7 +55,8 @@ export function applyWaterForces(body:RAPIER.RigidBody,world:RAPIER.World,terrai
   const plane=kind==='tank'||radius?0:mass*g/n*Math.min(1.2,Math.max(0,(horizontal/profile.planing.value)**2-1))*fraction*Math.max(0,1-Math.max(0,depth))
   // Heave damping: water resists a hull bobbing up and down far more than drag along it.
   // About critical for the buoyancy spring (omega = sqrt(lift per metre / mass) ~ 4.5 /s).
-  const heave=6*fraction*mass/n
+  // Only while the hull is crossing the surface: fully under, it sinks at its drag speed.
+  const heave=6*4*fraction*(1-fraction)*mass/n
   body.addForceAtPoint({x:-vx*drag-buoy*slope.x,y:buoy+plane-vy*drag-vy*heave,z:-vz*drag-buoy*slope.z},point,true)
  }
 }

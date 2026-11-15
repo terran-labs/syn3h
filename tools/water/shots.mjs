@@ -59,7 +59,17 @@ const spots = await page.evaluate(() => {
     river = { x: p.x - dx / len * 12 + dz / len * 6, z: p.z - dz / len * 12 - dx / len * 6, heading: Math.atan2(-dx, -dz) }
     river.y = t.heightAt(river.x, river.z)
   }
-  const deep = { x: coast.x + Math.cos(coast.a) * 160, z: coast.z + Math.sin(coast.a) * 160, heading: coast.heading }
+  // Deep water: anywhere on the tile with 12 m of water under a 120 m run in some direction.
+  let deep = null
+  for (let gx = -size / 2; gx < size / 2 && !deep; gx += 32) {
+    for (let gz = -size / 2; gz < size / 2 && !deep; gz += 32) {
+      for (const a of [0, Math.PI / 2, Math.PI, -Math.PI / 2]) {
+        let clear = true
+        for (let k = 0; k <= 120 && clear; k += 8) clear = t.heightAt(gx + Math.cos(a) * k, gz + Math.sin(a) * k) < sea - 12
+        if (clear) { deep = { x: gx, z: gz, heading: Math.atan2(-Math.cos(a), -Math.sin(a)) }; break }
+      }
+    }
+  }
   deep.y = sea + 0.3
   return { coast, river, deep, sea }
 })
@@ -90,14 +100,27 @@ for (const [name, spot, values, speed] of shots) {
   if (speed) {
     // Hold a speed along the heading for a few seconds: a skimming run.
     const end = Date.now() + 3000
+    const trace = []
     while (Date.now() < end) {
-      await page.evaluate(([v, h]) => {
-        const b = window.syn3h.player.body, l = b.linvel()
+      trace.push(await page.evaluate(([v, h]) => {
+        const b = window.syn3h.player.body, l = b.linvel(), p = b.translation(), t = window.syn3h.terrain
         b.setLinvel({ x: -Math.sin(h) * v, y: l.y, z: -Math.cos(h) * v }, true)
-      }, [speed, spot.heading])
+        return [+(p.y - t.liquidHeightAt(p.x, p.z)).toFixed(2), +t.heightAt(p.x, p.z).toFixed(1), +l.y.toFixed(1)]
+      }, [speed, spot.heading]))
       await page.waitForTimeout(100)
     }
-  } else await page.waitForTimeout(name.startsWith('deep-sink') || name === 'under-all' ? 9000 : 3500)
+    report.trace = trace
+  } else if (name === 'under-all' || name === 'deep-sink') {
+    const trace = []
+    for (let i = 0; i < 30; i++) {
+      trace.push(await page.evaluate(() => {
+        const b = window.syn3h.player.body, l = b.linvel(), p = b.translation(), t = window.syn3h.terrain
+        return [+(p.y - t.liquidHeightAt(p.x, p.z)).toFixed(2), +l.y.toFixed(2)]
+      }))
+      await page.waitForTimeout(500)
+    }
+    report[name + 'Trace'] = trace
+  } else await page.waitForTimeout(3500)
   const state = await page.evaluate(() => {
     const b = window.syn3h.player.body.translation(), t = window.syn3h.terrain
     return { y: b.y, surface: t.liquidHeightAt(b.x, b.z), ground: t.heightAt(b.x, b.z) }
