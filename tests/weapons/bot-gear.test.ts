@@ -30,7 +30,8 @@ function setup() {
   // The human is looking sideways while the bot's target is straight ahead.
   const camera = new THREE.PerspectiveCamera()
   camera.lookAt(100, 0, 0); camera.updateMatrixWorld()
-  vi.stubGlobal('window', {})
+  // Rapier reads window.performance when a browser global is present.
+  vi.stubGlobal('window', { performance })
   vi.stubGlobal('document', { pointerLockElement: canvas })
   const game = { world, scene: new THREE.Scene(), camera, canvas, time: 0, input: { state: { fire: true } } } as unknown as Game
   const cords: CordWire[] = [], yoinks: YoinkWire[] = [], shots: number[][] = []
