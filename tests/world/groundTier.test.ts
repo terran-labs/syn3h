@@ -8,8 +8,8 @@ import { QUALITY } from '../../src/core/quality'
 import { createTerrainMaterial, groundTier, terrainDetailNormal } from '../../src/world/terrain/material'
 
 describe('ground shading by performance level', () => {
-  it('maps the current levels: safe plain, mobile colour only, desktop everything', () => {
-    expect(QUALITY.map((q) => groundTier(q.detail))).toEqual([0, 1, 2])
+  it('maps six levels: Minimal plain, Low and Medium colour, High through Cinematic full', () => {
+    expect(QUALITY.map((q) => groundTier(q.detail))).toEqual([0, 1, 1, 2, 2, 2])
   })
 
   it('is monotone in the detail share, so any number of levels maps onto it', () => {
