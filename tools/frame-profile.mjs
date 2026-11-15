@@ -1,5 +1,7 @@
 /** GPU-backed profiling with one change per case, fresh contexts, fixed quality and pixel ratio.
- * node tools/frame-profile.mjs [URL] [output JSON] [headed|headless] [all|probe|verify]
+ * node tools/frame-profile.mjs [URL] [output JSON] [headed|headless] [all|probe|verify|round]
+ * round: the round planet against the same world drawn flat, back to back at 1920 x 1080,
+ * parked, moving and with eight bots; the first pair is repeated at the end to show drift.
  * Set PROFILER_WAIT_QUIET=1 to gate launch on host load below 3 and run unchanged terrain tests.
  * Otherwise host load is recorded and paired measurements run immediately.
  * CPU submission time, GPU timestamp time and RAF interval are separate measurements.
@@ -22,8 +24,8 @@ if(process.argv[5]!=='probe'&&process.env.PROFILER_WAIT_QUIET==='1'){
 const browser=await chromium.launch({channel:'chrome',headless,args:['--enable-unsafe-webgpu','--enable-features=Vulkan','--use-angle=metal','--ignore-gpu-blocklist']})
 const cases=['baseline','shadow0','shadow1','shadow3','terrainLow','terrainMedium','skyOff','cloudZero','effectsOff','moving','movingEffectsOff','night','nightHeadlightOff','bots4','bots8','koth','koth4','koth8','kothMarkerOff','minimapOff','tags8','domOff','lobby','pixel075','pixel15','pixel2','uniformSweep','baselineEnd']
 try {
- for(const [width,height] of process.argv[5]==='probe'?[[1280,720]]:process.argv[5]==='verify'?[[1920,1080],[390,844]]:[[1280,720],[1920,1080],[390,844]]) {
-  for(const variant of process.argv[5]==='probe'?['baseline']:process.argv[5]==='verify'?(width===390?['qualityMobile4','qualitySafe2']:['qualityDesktop8']):width===390?['phone0','phone1','phone2']:cases){
+ for(const [width,height] of process.argv[5]==='probe'?[[1280,720]]:process.argv[5]==='round'?[[1920,1080]]:process.argv[5]==='verify'?[[1920,1080],[390,844]]:[[1280,720],[1920,1080],[390,844]]) {
+  for(const variant of process.argv[5]==='probe'?['baseline']:process.argv[5]==='round'?['round','flat','roundMoving','flatMoving','roundBots8','flatBots8','round','flat']:process.argv[5]==='verify'?(width===390?['qualityMobile4','qualitySafe2']:['qualityDesktop8']):width===390?['phone0','phone1','phone2']:cases){
    const context=await browser.newContext({viewport:{width,height},deviceScaleFactor:width===390?3:process.argv[5]==='verify'?2:1})
    await context.routeWebSocket(/\/ws(?:\?|$)/,socket=>socket.close())
    const page=await context.newPage(), errors=[]
@@ -57,6 +59,8 @@ try {
     if(variant==='night'||variant==='nightHeadlightOff')s.params.set('sun.timeOfDay',0)
     if(variant==='nightHeadlightOff')g.scene.traverse(o=>{if(o.isSpotLight)o.visible=false})
     if(variant==='bots4'||variant==='bots8')s.params.set('bots.count',Number(variant.slice(4)))
+    // Round planet against the same world drawn flat: world.curve 0.71 is the default, 0 is flat.
+    if(variant.startsWith('round')||variant.startsWith('flat')){s.params.set('world.curve',variant.startsWith('flat')?0:0.71);if(variant.endsWith('Bots8')){s.params.set('bots.freeSpirit',0);s.params.set('bots.count',8)}}
     if(variant.startsWith('koth')){
       s.params.set('game.mode',1)
       const summit=s.terrain.summit(),x=summit.x+summit.rimRadius,z=summit.z
@@ -92,7 +96,7 @@ try {
       for(const key of Object.keys(cpu))cpu[key]=0;renderMs=0;pipelines=0;lastTick=g.tick
       if(r.backend.trackTimestamp&&!gpuPending){gpuPending=true;r.resolveTimestampsAsync().then(value=>{lastGpu=value}).finally(()=>{gpuPending=false})}
     }
-    window.frameProfile={samples,start(){samples.length=0;collecting=true;if(variant==='moving'||variant==='movingEffectsOff')g.input.external.y=1},stop(){collecting=false;return {samples,terrain:s.terrain.triangleStats?.(),pixelRatio:r.getPixelRatio(),drawingBuffer:[r.domElement.width,r.domElement.height],devicePixelRatio:window.devicePixelRatio,rendererMemory:r.info.memory,botCount:s.bots.vehicles.length}}}
+    window.frameProfile={samples,start(){samples.length=0;collecting=true;if(variant==='moving'||variant==='movingEffectsOff'||variant.endsWith('Moving'))g.input.external.y=1},stop(){collecting=false;return {samples,terrain:s.terrain.triangleStats?.(),pixelRatio:r.getPixelRatio(),drawingBuffer:[r.domElement.width,r.domElement.height],devicePixelRatio:window.devicePixelRatio,rendererMemory:r.info.memory,botCount:s.bots.vehicles.length}}}
     return {adapter:{vendor:i.vendor,architecture:i.architecture,description:i.description,fallback:i.isFallbackAdapter},timestampQueries:r.backend.trackTimestamp,backend:g.backend}
    },variant)
    await page.waitForTimeout(2500)

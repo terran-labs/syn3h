@@ -48,9 +48,10 @@ describe('planet recipes', () => {
         }
         expect(worst, `${p.id} ${seed} grade`).toBeLessThan(0.21)
         // Fire only on the volcanic world; forest only where the recipe asks for it.
-        expect(d.vents.length > 0).toBe(p.id === 'volcanic')
+        const dry = (p.values['terrain.dry'] ?? 0) === 1
+        expect(d.vents.length > 0).toBe(p.values['terrain.kind'] === 0 && !dry)
         expect(d.trees.length > 0).toBe((p.values['terrain.treeCover'] as number) > 0)
-        expect(d.lava.lake).not.toBeNull()
+        expect(d.lava.lake === null).toBe(dry)
       }
     }
     applyPlanet('volcanic', 1)
@@ -67,6 +68,29 @@ describe('planet recipes', () => {
     for (const p of params.all()) if (p.def.scope === 'world') params.set(p.def.id, p.def.default)
     params.applySnapshot(PLANETS[0].values, 'preset')
     expect(encodeWorld()).toBe(`volcanic.${worldSeed.value}`)
+  })
+
+  it('picking a planet resets what the last planet moved', () => {
+    applyPlanet('moon', 5)
+    expect(params.get('world.gravity')!.value).toBe(1.62)
+    expect(params.get('terrain.dry')!.value).toBe(1)
+    expect(params.get('world.lavaAltitude')!.value).toBe(-80)
+    applyPlanet('archipelago', 5)
+    expect(params.get('terrain.planetSize')!.value).toBe(0)
+    applyPlanet('alpine', 5)
+    expect(params.get('world.gravity')!.value).toBe(9.81)
+    expect(params.get('terrain.dry')!.value).toBe(0)
+    expect(params.get('terrain.craters')!.value).toBe(0)
+    expect(params.get('terrain.planetSize')!.value).toBe(1)
+    expect(params.get('terrain.snowLine')!.value).toBe(0.36)
+    expect(params.get('world.lavaAltitude')!.value).toBe(0)
+    applyPlanet('volcanic', 1)
+    expect(params.get('terrain.snowLine')!.value).toBe(2)
+  })
+
+  it('every planet has its own look, so a world can be named from its sliders', () => {
+    const looks = PLANETS.map((p) => p.values['terrain.look'])
+    expect(new Set(looks).size).toBe(PLANETS.length)
   })
 
   it('names are pronounceable, stable and varied', () => {

@@ -79,10 +79,10 @@ async function main() {
     /** For captures: hold the main nozzle at a fixed deflection, or pass null to resume the sweep. */
     vector: null as [number, number] | null,
     /** For captures: fix the gear, the height above the floor and the camera. */
-    pose(g: number, lift: number, dir: [number, number, number], distance: number) {
+    pose(g: number, lift: number, dir: [number, number, number], distance: number, offset: [number, number, number] = [0, 0, 0]) {
       autoGear = false; gear = gearTarget = g; hoverLift = lift
       const target = all ? new THREE.Vector3(0, lift * .5, 5) : jets[current].object.position.clone().setY(lift - .1)
-      jets.forEach(j => { j.object.position.y = lift }); view(new THREE.Vector3(...dir), distance, target)
+      jets.forEach(j => { j.object.position.y = lift }); view(new THREE.Vector3(...dir), distance, target.add(new THREE.Vector3(...offset)))
     },
   }
   build(); document.querySelector('#status')!.textContent = ''
@@ -92,8 +92,8 @@ async function main() {
     timer.update(); const dt = Math.min(timer.getDelta(), .05); elapsed += dt
     if (autoGear) { gearTarget = Math.floor(elapsed / 5) % 2; hoverLift = 1 }
     gear += Math.sign(gearTarget - gear) * Math.min(Math.abs(gearTarget - gear), dt * .7)
-    // Sweep the main nozzle through its travel so the thrust vectoring is visible.
-    const v = api.vector ?? [Math.sin(elapsed * 1.6) * .35, Math.cos(elapsed * 1.6) * .35]
+    // Work the vectoring vanes gently: pitch, with a slower yaw over it.
+    const v = api.vector ?? [Math.sin(elapsed * .9) * .22, Math.sin(elapsed * .45) * .22]
     jets.forEach(j => { j.setGear(gear); j.setThrottle(1 - gear * .7); j.setVector(v[0], v[1]); if (autoGear || gearTarget !== gear) j.object.position.y = hoverLift * (1 - gear) * 1.6 })
     controls.update(); renderer.render(scene, camera)
   })

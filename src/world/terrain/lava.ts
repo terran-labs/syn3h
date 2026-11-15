@@ -36,7 +36,7 @@ import {
 import { perlin, rng, smoothstep, subSeed } from './noise'
 import { KIND_VOLCANIC } from './settings'
 import { TURN_GENTLE, distanceToPolyline, normalize2, sq, steer, visitNearPolyline } from './raster'
-import { ROAD_FLAT_HALF, ROAD_SHOULDER, rimRoadRadius } from './roads'
+import { FORD_DEPTH, ROAD_FLAT_HALF, ROAD_SHOULDER, type RoadFord, rimRoadRadius } from './roads'
 import { HeightSampler } from './sampler'
 
 export interface LavaLake {
@@ -60,10 +60,58 @@ export interface LavaRiverPoint {
   z: number
 }
 
+export interface RiverDrop {
+  start: number
+  end: number
+  height: number
+  /**
+   * The steepest DROP_RUN of travel inside the drop: where a free-falling sheet belongs, with
+   * the rest of the drop a cascade. Indices into `points`, and the fall between them.
+   */
+  steepest: { start: number; end: number; height: number }
+}
+
+/** A run counts as a drop when the bed falls more than this many metres ... */
+export const DROP_FALL = 4
+/** ... over this many metres of travel. */
+export const DROP_RUN = 12
+
+/** Steep runs along a river's points (see LavaRiver.drops). */
+export function findDrops(points: readonly LavaRiverPoint[]): RiverDrop[] {
+  const drops: RiverDrop[] = []
+  for (let i = 0; i < points.length - 1; i++) {
+    // Walk forward until DROP_RUN of travel is covered.
+    let run = 0
+    let j = i
+    while (j < points.length - 1 && run < DROP_RUN - 1e-6) {
+      run += Math.sqrt(sq(points[j + 1].x - points[j].x) + sq(points[j + 1].z - points[j].z))
+      j++
+    }
+    if (run < DROP_RUN - 1e-6) break
+    if (points[i].y - points[j].y <= DROP_FALL) continue
+    const last = drops[drops.length - 1]
+    if (last && i <= last.end) last.end = Math.max(last.end, j)
+    else drops.push({ start: i, end: j, height: 0, steepest: { start: i, end: j, height: 0 } })
+    // Keep the steepest window seen so far within this drop.
+    const d = drops[drops.length - 1]
+    const fall = points[i].y - points[j].y
+    if (fall > d.steepest.height) d.steepest = { start: i, end: j, height: fall }
+  }
+  for (const d of drops) d.height = points[d.start].y - points[d.end].y
+  return drops
+}
+
 export interface LavaRiver {
   points: LavaRiverPoint[]
   width: number
   pool: LavaPool
+  /**
+   * Steep runs of the river: places for a waterfall. `start` and `end` are indices into
+   * `points` and `height` is how far the bed falls between them, in metres. A run is steep
+   * where the bed falls more than DROP_FALL over DROP_RUN of travel; overlapping runs are
+   * merged. Often empty: most rivers descend smoothly.
+   */
+  drops: RiverDrop[]
   bounds: { minX: number; maxX: number; minZ: number; maxZ: number }
 }
 
@@ -82,6 +130,14 @@ export interface Vent {
   kind: VentKind
   size: number
 }
+
+/** Fords exist only where asked for and only on water worlds: lava does not ford. */
+function fordsOn(data: TerrainData): boolean {
+  return data.settings.fords > 0 && data.settings.kind !== KIND_VOLCANIC
+}
+
+/** Half the width of a ford along the river: the road's level strip plus 2 m each side. */
+const FORD_HALF = ROAD_FLAT_HALF + 2
 
 /** Lake surface above the flat caldera floor. */
 export const LAKE_DEPTH = 1.5
@@ -111,8 +167,15 @@ function planRivers(data: TerrainData, s: HeightSampler): Planned[] {
   const startR = rimRoadRadius(data) + ROAD_CLEARANCE + 4
   const meanderSeed = subSeed(data.seed, 51)
 
+  const fords = fordsOn(data)
   const roadClear = (x: number, z: number) => {
-    for (const r of data.roads) if (distanceToPolyline(r.points, r.closed, x, z) < ROAD_CLEARANCE) return false
+    // With fords a river crosses the level roads of the plain (the ring round the mountain's
+    // foot and the approaches). It still stops at the road that climbs the mountain: that
+    // road rises along its length, and water cannot lie level across a slope.
+    for (const r of data.roads) {
+      if (fords && r.kind === 'plain') continue
+      if (distanceToPolyline(r.points, r.closed, x, z) < ROAD_CLEARANCE) return false
+    }
     return L.spawns.every((p) => sq(x - p.x) + sq(z - p.z) > sq(SPAWN_BLEND_RADIUS + 30))
   }
   const accepted: Planned[] = []
@@ -171,7 +234,14 @@ function planRivers(data: TerrainData, s: HeightSampler): Planned[] {
         const gx = (s.heightAt(x + 6, z) - s.heightAt(x - 6, z)) / 12
         const gz = (s.heightAt(x, z + 6) - s.heightAt(x, z - 6)) / 12
         const slope = Math.sqrt(gx * gx + gz * gz)
-        const [ddx, ddz] = normalize2(-gx, -gz)
+        let [ddx, ddz] = normalize2(-gx, -gz)
+        // A forded river keeps going for the coast: where the ground is nearly level it
+        // heads outward from the mountain instead of stopping.
+        if (fords && slope < 0.05) {
+          const [ox, oz] = normalize2(x - v.x, z - v.z)
+          const k = slope / 0.05
+          ;[ddx, ddz] = normalize2(ddx * k + ox * (1 - k), ddz * k + oz * (1 - k))
+        }
         const m = 0.25 * perlin(length * 0.012, accepted.length * 7.3, meanderSeed)
         const [wx, wz] = normalize2(hx * 0.55 + ddx * 0.45 - hz * m, hz * 0.55 + ddz * 0.45 + hx * m)
         ;[hx, hz] = steer(hx, hz, wx, wz, TURN_GENTLE)
@@ -179,14 +249,14 @@ function planRivers(data: TerrainData, s: HeightSampler): Planned[] {
         const nz = z + hz * RIVER_STEP
         const edge = half - Math.max(Math.abs(nx), Math.abs(nz))
         if (edge < 200 || !roadClear(nx, nz) || !riverClear(nx, nz) || !featureClear(nx, nz)) break
-        if (s.heightAt(nx, nz) > s.heightAt(x, z) + 0.5) break
+        if (s.heightAt(nx, nz) > s.heightAt(x, z) + (fords ? 1.5 : 0.5)) break
         // Reached the sea: the river ends at the shore.
         if (s.heightAt(nx, nz) < 2) break
         x = nx
         z = nz
         length += RIVER_STEP
         pts.push({ x, z })
-        if (volcanoT(v, x, z) > 1.0 && slope < 0.03) break
+        if (!fords && volcanoT(v, x, z) > 1.0 && slope < 0.03) break
       }
       // Long enough to read as a river.
       if (length < MIN_RIVER_LENGTH) continue
@@ -222,6 +292,8 @@ function scorch(data: TerrainData, i: number, d: number): void {
 export const lavaPass: TerrainPass = {
   name: 'lava',
   run(data) {
+    // A dry world (the Moon) has nothing that flows: an empty crater and bare ground.
+    if (data.settings.dry > 0) { data.lava = { lake: null, rivers: [], pools: [] }; return }
     const s = new HeightSampler(data)
     const v = data.layout.volcano
     const lake: LavaLake = {
@@ -251,12 +323,37 @@ export const lavaPass: TerrainPass = {
         else pts = pts.slice(0, pts.length - 3)
       }
       if (!pool) continue
+      // A forded river that ran down to the shore ends in the sea: its mouth pool lies at
+      // sea level, under the sea's own surface.
+      const mouth = pts[pts.length - 1]
+      if (fordsOn(data) && s.heightAt(mouth.x, mouth.z) < 4) pool.surface = Math.min(pool.surface, 0)
 
       // Bed follows the ground down, never rising, so the lava always flows downhill.
       const points: LavaRiverPoint[] = []
       let bed = Infinity
+      const fording = fordsOn(data)
       for (const p of pts) {
-        bed = Math.min(s.heightAt(p.x, p.z) - CHANNEL_DEPTH, bed - 0.05)
+        // Toward a road the channel shallows, so the water arrives level with the road and
+        // crosses it as a ford instead of in a trench.
+        let target = s.heightAt(p.x, p.z) - CHANNEL_DEPTH
+        if (fording) {
+          // The nearest point of any road, and the road's height there.
+          let near = Infinity
+          let roadY = 0
+          for (const r of data.roads) {
+            if (r.kind !== 'plain') continue
+            for (const q of r.points) {
+              const d2 = sq(q.x - p.x) + sq(q.z - p.z)
+              if (d2 < near) { near = d2; roadY = q.y }
+            }
+          }
+          near = Math.sqrt(near)
+          // Over the road the water lies level with the road it crosses; the carve then
+          // lowers the road by FORD_DEPTH under it.
+          if (near < FORD_HALF) target = roadY - RIVER_LAVA_DEPTH
+          else target = s.heightAt(p.x, p.z) - (RIVER_LAVA_DEPTH + (CHANNEL_DEPTH - RIVER_LAVA_DEPTH) * smoothstep(FORD_HALF, FORD_HALF + 20, near))
+        }
+        bed = Math.min(target, bed - 0.05)
         points.push({ x: p.x, y: bed + RIVER_LAVA_DEPTH, z: p.z })
       }
       pool.surface = Math.min(pool.surface, points[points.length - 1].y)
@@ -270,12 +367,14 @@ export const lavaPass: TerrainPass = {
         // Where the parabolic channel crosses the lava surface.
         width: 2 * CHANNEL_HALF * Math.sqrt(RIVER_LAVA_DEPTH / CHANNEL_DEPTH),
         pool,
+        drops: findDrops(points),
         bounds: { minX, maxX, minZ, maxZ },
       })
       pools.push(pool)
     }
 
     // Carve after planning, so every river was traced on the same ground.
+    const fording = fordsOn(data)
     for (const r of rivers) {
       const pts = r.points
       visitNearPolyline(data, pts, false, SCORCH_RADIUS, (i, d, seg, t) => {
@@ -283,8 +382,14 @@ export const lavaPass: TerrainPass = {
         if (d > CHANNEL_HALF * 1.6) return
         const a = pts[seg]
         const b = pts[seg + 1]
-        const bedY = a.y + (b.y - a.y) * t - RIVER_LAVA_DEPTH
-        const target = bedY + CHANNEL_DEPTH * (d / CHANNEL_HALF) * (d / CHANNEL_HALF)
+        const surface = a.y + (b.y - a.y) * t
+        // On a road the river is a ford: a flat floor FORD_DEPTH under the water across the
+        // channel, with eased banks, deepening back to the full channel beyond the road.
+        const onRoad = fording ? smoothstep(FORD_HALF + 6, FORD_HALF, data.roadDist[i]) : 0
+        const floor = RIVER_LAVA_DEPTH + (FORD_DEPTH - RIVER_LAVA_DEPTH) * onRoad
+        const flat = CHANNEL_HALF * onRoad
+        const out = d > flat ? (d - flat) / CHANNEL_HALF : 0
+        const target = surface - floor + CHANNEL_DEPTH * out * out
         if (target < h[i]) h[i] = target
       })
     }
@@ -298,6 +403,23 @@ export const lavaPass: TerrainPass = {
       })
     }
     data.lava = { lake, rivers, pools }
+    // Record where roads now run under water, so drivers and bots know a ford from a river.
+    if (fording) {
+      const after = new HeightSampler(data)
+      for (const road of data.roads) {
+        const fords: RoadFord[] = []
+        let open: RoadFord | null = null
+        road.points.forEach((p, i) => {
+          const depth = lavaSurfaceAt(data.lava, p.x, p.z, -1e9) - after.heightAt(p.x, p.z)
+          if (depth > 0.05) {
+            if (!open) { open = { start: i, end: i, depth }; fords.push(open) }
+            open.end = i
+            if (depth > open.depth) open.depth = depth
+          } else open = null
+        })
+        road.fords = fords
+      }
+    }
   },
 }
 
@@ -305,7 +427,7 @@ export const ventsPass: TerrainPass = {
   name: 'vents',
   run(data) {
     // Only volcanic worlds burn. Elsewhere the lake and rivers are water and nothing vents.
-    if (data.settings.kind !== KIND_VOLCANIC) { data.vents = []; return }
+    if (data.settings.kind !== KIND_VOLCANIC || data.settings.dry > 0) { data.vents = []; return }
     const next = rng(subSeed(data.seed, 60))
     const s = new HeightSampler(data)
     const { lake, rivers, pools } = data.lava

@@ -1,0 +1,8 @@
+{
+  "name": "Daydream: nobody touches the controls and the vehicle explores by itself",
+  "durationMs": 120000,
+  "captureEveryMs": 4000,
+  "events": [
+    { "atMs": 0, "params": { "daydream.seconds": 2, "bots.count": 3, "bots.canFire": false } }
+  ]
+}

@@ -47,8 +47,9 @@ import { Connection, serverUrl } from './Connection'
 import { NameTags } from './NameTags'
 import { applyRoomWorld, netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
-import { audibleVehicles, bodyAlive, liveBots } from './bots'
+import { type BotMatchInfo, audibleVehicles, bodyAlive, hillHold, liveBots } from './bots'
 import { ShoveQueue, cleanShove, shoveFor } from './shove'
+import { nearestImage, wrapCoord, wrapDistance } from '../../shared/wrap'
 
 /** The slice of GameAudio (src/audio) networking uses. */
 export interface NetAudio {
@@ -66,6 +67,8 @@ export interface NetAudio {
 export interface NetBots {
   readonly vehicles: readonly Vehicle[]
   remote?: boolean
+  /** Tell the bots what game is on (the host's manager acts on it). Null is free play. */
+  setMatch?(match: BotMatchInfo<Vehicle> | null): void
 }
 
 export interface PlayerColors {
@@ -258,7 +261,7 @@ export class NetClient implements System {
     this.conn.onOpen = () => {
       this.send({
         type: 'hello', v: PROTOCOL_VERSION, name: playerName(), params: params.snapshot('world'),
-        kind: this.kind, colors: this.colors,
+        kind: this.kind, colors: this.colors, resume: rejoinSecret(this.ctx.room),
       })
     }
     this.conn.onText = (text) => {
@@ -374,6 +377,8 @@ export class NetClient implements System {
         continue
       }
       r.delay = r.buffer.delay(dt, netInterpDelay.value, netMaxDelay.value)
+      r.wrapSize = this.wrapSize
+      r.groundAt = this.groundAt
       r.steer(now - r.delay, maxEx, lp, radius, blend)
     }
     this.applyShoves()
@@ -404,7 +409,7 @@ export class NetClient implements System {
     this.lasers.spawn(this.id, shot)
     this.ctx.audio?.play('laserShot', { x: shot.o[0], y: shot.o[1], z: shot.o[2] })
     this.stats.shotsFired++
-    if (this.connected) this.send({ type: 'fire', shot })
+    if (this.connected) this.send({ type: 'fire', shot: { ...shot, o: this.canonical(shot.o) } })
   }
 
   postPhysics(dt: number): void {
@@ -444,6 +449,12 @@ export class NetClient implements System {
     const stuck = koth && this.connected ? this.game.koth.out : {}
     const holder = koth ? this.game.koth.holder : 0
     // A stuck vehicle stays in the world, visible and solid: nothing here is ever removed.
+    // Our own vehicle may just have been shifted a tile across the seam: bring everyone along
+    // before this frame is drawn.
+    const here = this.ctx.player.body.translation()
+    for (const r of this.remotes.values()) r.reimage(here)
+    this.placeHill()
+    this.syncBotMatch()
     this.tags.update([...this.remotes.entries()].map(([id, r]) => ({
       vehicle: r.vehicle,
       name: this.displayName(id),
@@ -548,22 +559,59 @@ export class NetClient implements System {
     if (host === this.wasHost) return
     this.wasHost = host
     if (this.bots) this.bots.remote = !host
+    // A new host, or a new connection, must announce its bots' kinds afresh.
+    this.botKinds.clear()
     if (!host) return
     // Take over: drop our replicas of the old host's bots; our own manager simulates them now.
     for (const [id] of [...this.remotes]) if (isBotId(id)) this.removeRemote(id)
     if (this.bots?.vehicles.length) this.event('You are host: simulating bots')
   }
 
+  private botMatchKey = 'unset'
+  private botMatchIt: Vehicle | null = null
+
+  /**
+   * Keep the host's bots told what game is on: the mode, the vehicle that is "it", the hill.
+   * Networking owns the rules; this only lets the bots play along. Told again whenever any
+   * of it changes, including when the vehicle behind "it" is replaced (a remote that changed
+   * kind). Off line, or when another client hosts, the bots are in free play.
+   */
+  private syncBotMatch(): void {
+    const bots = this.bots
+    if (!bots?.setMatch) return
+    const on = this.connected && this.isHost
+    const koth = this.mode === MODE_KOTH
+    const zone = on && koth ? this.game.koth.zone : null
+    const it = on && !koth && this.game.it ? (this.vehicleOf(this.game.it) ?? null) : null
+    const key = !on ? '' : koth ? `hill:${JSON.stringify(zone)}` : `tag:${this.game.it}`
+    if (key === this.botMatchKey && it === this.botMatchIt) return
+    this.botMatchKey = key
+    this.botMatchIt = it
+    if (!on) bots.setMatch(null)
+    else if (koth) bots.setMatch({ mode: 'hill', zone: zone ? hillHold(zone, this.ctx.player.body.translation()) : null })
+    else bots.setMatch({ mode: 'tag', it })
+  }
+
+  /** The vehicle kind last announced to the room for each of our bots, by bot id. */
+  private readonly botKinds = new Map<number, string>()
+
   private sendState(): void {
     const s = this.ctx.player.getState()
-    this.conn.send(encodeState({ id: 0, t: this.clock.now(), ...s }) as Uint8Array<ArrayBuffer>)
+    this.conn.send(encodeState({ id: 0, t: this.clock.now(), ...s, p: this.canonical(s.p) }) as Uint8Array<ArrayBuffer>)
     this.stats.statesSent++
   }
 
   private sendBots(): void {
     const t = this.clock.now()
     for (const [id, bot] of liveBots(this.bots?.vehicles ?? [], this.ctx.game.world)) {
-      this.conn.send(encodeState({ id, t, ...bot.getState(), bot: true }) as Uint8Array<ArrayBuffer>)
+      // Say which vehicle it is before its first state, and again if the slot changes kind
+      // (a mixed fleet), so guests build the same one.
+      if (this.botKinds.get(id) !== bot.kind) {
+        this.botKinds.set(id, bot.kind)
+        this.send({ type: 'bot', id, kind: bot.kind })
+      }
+      const s = bot.getState()
+      this.conn.send(encodeState({ id, t, ...s, p: this.canonical(s.p), bot: true }) as Uint8Array<ArrayBuffer>)
       this.stats.botStatesSent++
     }
   }
@@ -631,6 +679,40 @@ export class NetClient implements System {
     return touching
   }
 
+  /** On a wrapping world the hill is drawn at the image nearest us, like everything else. */
+  private placeHill(): void {
+    const zone = this.zone
+    const size = this.wrapSize
+    if (!zone || !(size > 0)) {
+      this.hill.setImage(0, 0)
+      return
+    }
+    const me = this.ctx.player.body.translation()
+    this.hill.setImage(nearestImage(zone.x, me.x, size) - zone.x, nearestImage(zone.z, me.z, size) - zone.z)
+  }
+
+  /** A beam sent from across the seam starts at the image of its origin nearest us. */
+  private nearShot<T extends { o: [number, number, number] }>(shot: T): T {
+    const size = this.wrapSize
+    if (!(size > 0)) return shot
+    const me = this.ctx.player.body.translation()
+    return { ...shot, o: [nearestImage(shot.o[0], me.x, size), shot.o[1], nearestImage(shot.o[2], me.z, size)] }
+  }
+
+  /** The terrain's height, as remote vehicles use it to stay out of the hills. */
+  private readonly groundAt = (x: number, z: number): number => this.ctx.terrain.heightAt(x, z)
+
+  /** Side of the wrapping world in metres, or 0 when the world does not wrap. */
+  private get wrapSize(): number {
+    return this.ctx.terrain.wrapSize ?? 0
+  }
+
+  /** A position as it goes on the wire: inside the one tile everyone agrees on. */
+  private canonical(p: readonly [number, number, number] | number[]): [number, number, number] {
+    const size = this.wrapSize
+    return size > 0 ? [wrapCoord(p[0], size), p[1], wrapCoord(p[2], size)] : [p[0], p[1], p[2]]
+  }
+
   /** Apply relayed pushes whose ram our own physics did not feel; see shove.ts. */
   private applyShoves(): void {
     const now = this.ctx.player.body.linvel()
@@ -642,7 +724,8 @@ export class NetClient implements System {
       if (!remote || !remote.responding) continue
       const me = body.translation()
       const it = remote.vehicle.body.translation()
-      if (Math.hypot(it.x - me.x, it.y - me.y, it.z - me.z) > SHOVE_REACH) continue
+      const flat = this.wrapSize > 0 ? wrapDistance(me.x, me.z, it.x, it.z, this.wrapSize) : Math.hypot(it.x - me.x, it.z - me.z)
+      if (Math.hypot(flat, it.y - me.y) > SHOVE_REACH) continue
       const v = body.linvel()
       body.setLinvel({ x: v.x + push[0], y: v.y + push[1], z: v.z + push[2] }, true)
       this.stats.shoves++
@@ -678,6 +761,7 @@ export class NetClient implements System {
     const [body, accent] = isBotId(info.id) ? botColors(info.id - BOT_ID_BASE) : info.colors
     ;(vehicle as VehicleExtras).setColors?.(body, accent)
     const r = new RemotePlayer(info, vehicle)
+    r.groundAt = this.groundAt
     r.disposeEffects = this.attachEffects(vehicle)
     this.remotes.set(info.id, r)
     this.ctx.audio?.play('materialize', { x: s.p[0], y: s.p[1], z: s.p[2] })
@@ -718,13 +802,16 @@ export class NetClient implements System {
       v.body.setRotation(q, true)
       this.ctx.game.add(v)
       const next = new RemotePlayer(info, v)
+      next.groundAt = this.groundAt
+      next.clearance = r.clearance
       next.disposeEffects = this.attachEffects(v)
       for (const s of [...r.buffer.states].reverse()) next.buffer.push(s, s.t, netSendRate.value)
       this.remotes.set(info.id, next)
-      ;(v as VehicleExtras).setColors?.(info.colors[0], info.colors[1])
+      const [body, accent] = isBotId(info.id) ? botColors(info.id - BOT_ID_BASE) : info.colors
+      ;(v as VehicleExtras).setColors?.(body, accent)
       return
     }
-    extras.setColors?.(info.colors[0], info.colors[1])
+    if (!isBotId(info.id)) extras.setColors?.(info.colors[0], info.colors[1])
   }
 
   private onTerrainRegenerated(): void {
@@ -758,7 +845,7 @@ export class NetClient implements System {
   private sendHeartbeat(): void {
     if (!this.connected) return
     const s = this.ctx.player.getState()
-    this.conn.send(encodeState({ id: 0, t: this.clock.now(), ...s, v: [0, 0, 0], w: [0, 0, 0], paused: true }) as Uint8Array<ArrayBuffer>)
+    this.conn.send(encodeState({ id: 0, t: this.clock.now(), ...s, p: this.canonical(s.p), v: [0, 0, 0], w: [0, 0, 0], paused: true }) as Uint8Array<ArrayBuffer>)
     this.stats.heartbeats++
   }
 
@@ -807,6 +894,7 @@ export class NetClient implements System {
         // The room's world replaces ours entirely, gaps included; see applyRoomWorld.
         applyRoomWorld(msg.params)
         this.welcomed = true
+        this.botKinds.clear()
         this.bounds.slot = msg.slot
         if (!this.everWelcomed) {
           // Spread players out; on a reconnect, stay where we are.
@@ -840,7 +928,7 @@ export class NetClient implements System {
         break
       case 'fire':
         if (this.players.has(msg.from)) {
-          this.lasers.spawn(msg.from, msg.shot, this.clock.now() - msg.shot.t)
+          this.lasers.spawn(msg.from, this.nearShot(msg.shot), this.clock.now() - msg.shot.t)
           const [x, y, z] = msg.shot.o
           this.ctx.audio?.play('laserShot', { x, y, z })
         }
@@ -1080,6 +1168,27 @@ function normalizeGame(g: Partial<GameState>): GameState {
 
 /** Name chosen on the start screen, when there is one. */
 let preferredName = ''
+
+/**
+ * This tab's secret for one room: in a room with `game.rejoin` on, saying hello again with it
+ * after a dropout carries on as the same player. Kept for the tab's lifetime (so a reload
+ * rejoins too) and never shown or sent to other players. Each tab has its own.
+ */
+function rejoinSecret(room: string): string | undefined {
+  const key = `syn3h.rejoin.${room}`
+  try {
+    let secret = sessionStorage.getItem(key)
+    if (!secret) {
+      const bytes = crypto.getRandomValues(new Uint8Array(16))
+      secret = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
+      sessionStorage.setItem(key, secret)
+    }
+    return secret
+  } catch {
+    // No session storage (private mode, an embedded frame): this tab simply cannot rejoin.
+    return undefined
+  }
+}
 
 function playerName(): string {
   // An explicit ?name= wins, so links and automated checks can name players.

@@ -8,6 +8,7 @@
  */
 import type { PlayerInfo } from '../shared/protocol'
 import { type Peer, Room, type RoomSnapshot } from './room'
+import { REJOIN_GRACE } from '../src/modes/params'
 import { roomName } from './util'
 
 interface DurableObjectId {}
@@ -25,6 +26,7 @@ interface DurableObjectStorage {
   get<T>(key: string): Promise<T | undefined>
   put(key: string, value: unknown): Promise<void>
   deleteAll(): Promise<void>
+  setAlarm(at: number): Promise<void>
 }
 /** Hibernation capable sockets carry a small serialisable attachment. */
 interface HibernatingWebSocket extends WebSocket {
@@ -47,6 +49,8 @@ interface Env {
 interface Attachment {
   room: string
   info?: PlayerInfo
+  /** The player's rejoin secret (game.rejoin), so it survives hibernation with the socket. */
+  token?: string | null
 }
 
 export default {
@@ -93,7 +97,7 @@ export class RoomDO {
     const att = ws.deserializeAttachment() as Attachment
     if (!att.info) {
       const info = room.info(peer)
-      if (info) ws.serializeAttachment({ ...att, info } satisfies Attachment)
+      if (info) ws.serializeAttachment({ ...att, info, token: room.token(peer) } satisfies Attachment)
     }
   }
 
@@ -118,6 +122,21 @@ export class RoomDO {
     if (room.connectionCount === 0) {
       this.state.storage.deleteAll()
       this.snapshot = undefined
+    } else if (room.heldCount === room.connectionCount) {
+      // Nobody is connected, but places are held for players who may rejoin (game.rejoin).
+      // Keep the storage for them, and come back when the holds have run out to tidy up:
+      // with no sockets there are no messages to make the room notice the time.
+      void this.state.storage.setAlarm(Date.now() + (REJOIN_GRACE + 2) * 1000)
+    }
+  }
+
+  /** The holds have run out: if nobody came back, the room is empty and forgets its world. */
+  async alarm(): Promise<void> {
+    const room = this.room
+    room?.tick()
+    if (!room || room.connectionCount === 0) {
+      await this.state.storage.deleteAll()
+      this.snapshot = undefined
     }
   }
 
@@ -134,7 +153,7 @@ export class RoomDO {
     if (this.snapshot) room.restore(this.snapshot)
     for (const ws of this.state.getWebSockets()) {
       const att = ws.deserializeAttachment() as Attachment | null
-      if (att?.info) room.adopt(this.peer(ws), att.info)
+      if (att?.info) room.adopt(this.peer(ws), att.info, att.token)
       else room.connect(this.peer(ws))
     }
     this.room = room

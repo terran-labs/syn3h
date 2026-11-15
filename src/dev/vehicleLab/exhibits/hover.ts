@@ -20,6 +20,7 @@ const BANK = 12 * Math.PI / 180
 export const hover: LabExhibit = {
   id: 'hover',
   title: 'Syn3h hovercraft',
+  section: 'Design studies',
   groupLabel: 'Round',
   heading: () => 'Syn3h hovercraft: round 1, five bodies on the current hull\'s footprint',
   async designs() {

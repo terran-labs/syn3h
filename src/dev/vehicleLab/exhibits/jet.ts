@@ -1,5 +1,5 @@
 /**
- * Jet exhibit: the generated next-generation jet designs from src/vehicles/jetgen, in three
+ * Jet exhibit: the generated next-generation jet designs from src/vehicles/jetgen, in five
  * review rounds. Each design is built twice, at full and reduced polygon count, as its two
  * detail levels. The materials are the designs' own (candy or military finish).
  */
@@ -9,14 +9,16 @@ import { NextJet } from '../../../vehicles/jetgen/NextJet'
 import { GROUND_Y } from '../../../vehicles/jetgen/shapes'
 import type { LabExhibit } from '../types'
 
-const ROUNDS = ['1', '2', '3']
-const ROUND_TITLES = ['first designs after the red reference', 'forward-swept wings with arch tails', 'military hybrids of Scimitar and Halo']
+const ROUNDS = ['1', '2', '3', '4', '5']
+const ROUND_TITLES = ['first designs after the red reference', 'forward-swept wings with arch tails', 'military hybrids of Scimitar and Halo', 'Vanguard with intakes around the fuselage', 'variations on the Vanguard Quad']
 
 export const jet: LabExhibit = {
+  // Listed with the other design studies in the lab's sidebar.
+  section: 'Design studies',
   id: 'jet',
   title: 'Syn3h jet',
   groupLabel: 'Round',
-  heading: group => `Syn3h jet: round ${group ?? 3}, ${ROUND_TITLES[Number(group ?? 3) - 1] ?? ''}`,
+  heading: group => `Syn3h jet: round ${group ?? 5}, ${ROUND_TITLES[Number(group ?? 5) - 1] ?? ''}`,
   async designs() {
     return JET_DESIGNS.map((d, i) => ({ id: d.id, name: d.name, notes: [d.blurb], group: ROUNDS[Math.floor(i / 5)] }))
   },
@@ -40,7 +42,7 @@ export const jet: LabExhibit = {
         gear += Math.sign(target - gear) * Math.min(Math.abs(target - gear), dt * .7)
         for (const j of levels) {
           j.setGear(gear); j.setThrottle(state.animate ? state.throttle : .4)
-          j.setVector(state.animate ? Math.sin(state.time * 1.6) * .3 : 0, state.steer * .4)
+          j.setVector(state.animate ? Math.sin(state.time * .9) * .22 : 0, state.steer * .27)
         }
       },
       controls: [{ kind: 'toggle', id: 'jet.gear', label: 'Landing gear', value: true, onChange: on => { gearDown = on } }],

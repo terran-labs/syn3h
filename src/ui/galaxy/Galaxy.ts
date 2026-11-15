@@ -9,6 +9,8 @@
  * lobby graphics it draws at most thirty times a second, stops in a hidden tab, and gives
  * its WebGL context back when disabled.
  */
+import { qualityFrame, qualityScale, qualityShed } from '../quality/ladder'
+
 export interface GalaxyWorld {
   id: string
   label: string
@@ -18,6 +20,8 @@ export interface GalaxyWorld {
   /** A lava sea glows on the night side. */
   glow: boolean
   seed: number
+  /** A world still forming: molten, its crust shifting. It has no map. The custom planet. */
+  forming?: boolean
 }
 export interface GalaxyOptions {
   worlds: readonly GalaxyWorld[]
@@ -32,6 +36,9 @@ void main() { vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); gl_Positio
 const FRAGMENT = `#version 300 es
 precision highp float;
 uniform vec2 uSize; uniform float uTime; uniform float uScale;
+uniform vec2 uShed;                 // quality ladder: x sheds post effects, y shader cost
+uniform float uAmbience;            // 1 keeps twinkle and drifting cloud, 0 sheds them
+uniform float uDive;                // 0 in orbit, 1 through the atmosphere of the chosen world
 uniform vec3 uEye, uRight, uUp, uForward; uniform float uTan;
 uniform int uCount;
 uniform vec4 uWorld[${MAX}];        // xyz position, w radius
@@ -45,7 +52,15 @@ float noise(vec3 x) {
   return mix(mix(mix(hash(i), hash(i + vec3(1, 0, 0)), f.x), mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), f.x), f.y),
              mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)), f.x), mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
 }
-float fbm(vec3 p) { float t = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { t += a * noise(p); p = p * 2.03 + 11.7; a *= 0.5; } return t; }
+float fbm(vec3 p) {
+  float t = 0.0, a = 0.5;
+  for (int i = 0; i < 5; i++) {
+    // At lower quality the two finest octaves fade out, then are skipped.
+    if (i < 3 || uShed.y <= 0.0) t += a * noise(p); else { if (uShed.y >= 1.0) break; t += a * noise(p) * (1.0 - uShed.y); }
+    p = p * 2.03 + 11.7; a *= 0.5;
+  }
+  return t;
+}
 const vec3 SPACE = vec3(0.004, 0.008, 0.039);
 const vec3 WARM = vec3(1.0, 0.77, 0.5);
 const vec3 ACCENT_B = vec3(0.56, 0.48, 1.0);
@@ -60,18 +75,18 @@ void main() {
   // Stars, fixed to the sky so they turn as the view does.
   vec3 cell = floor(ray * 420.0);
   float star = step(0.9965, hash(cell)), bright = step(0.99955, hash(floor(ray * 260.0) + 5.0));
-  float twinkle = 0.55 + 0.45 * sin(uTime * 1.3 + hash(cell + 2.0) * 40.0);
+  float twinkle = mix(0.8, 0.55 + 0.45 * sin(uTime * 1.3 + hash(cell + 2.0) * 40.0), uAmbience);
   vec3 sky = vec3(0.97, 0.98, 0.99) * (star * 0.5 + bright * 1.2) * twinkle;
   // A faint band of cloud along the orbital plane's far side, for depth.
-  sky += vec3(0.02, 0.06, 0.24) * smoothstep(0.38, 0.8, fbm(ray * 2.2 + 7.0)) * 0.5;
+  if (uAmbience > 0.0) sky += vec3(0.02, 0.06, 0.24) * smoothstep(0.38, 0.8, fbm(ray * 2.2 + 7.0)) * 0.5 * uAmbience;
 
   // The nearest world along this ray.
-  float nearest = 1e9; int hit = -1; vec3 normal = vec3(0.0); float halo = 0.0; vec3 haloTint = vec3(0.0);
+  float nearest = 1e9; int found = -1; vec3 normal = vec3(0.0); float halo = 0.0; vec3 haloTint = vec3(0.0);
   for (int i = 0; i < ${MAX}; i++) {
     if (i >= uCount) break;
     vec3 oc = uEye - uWorld[i].xyz; float r = uWorld[i].w;
     float b = dot(oc, ray), cc = dot(oc, oc) - r * r, disc = b * b - cc;
-    if (disc > 0.0) { float t = -b - sqrt(disc); if (t > 0.0 && t < nearest) { nearest = t; hit = i; normal = normalize(oc + ray * t); } }
+    if (disc > 0.0) { float t = -b - sqrt(disc); if (t > 0.0 && t < nearest) { nearest = t; found = i; normal = normalize(oc + ray * t); } }
     else if (b < 0.0) {
       // Just outside the limb: a thin shell of air, brighter toward the sun.
       float miss = sqrt(max(0.0, cc + r * r - b * b)) - r;          // how far the ray passes outside the limb
@@ -96,7 +111,7 @@ void main() {
   // Each world stands in the light: behind it, as seen from the sun, the shafts are cut.
   float shade = 1.0;
   for (int i = 0; i < ${MAX}; i++) {
-    if (i >= uCount) break;
+    if (i >= uCount || uShed.x >= 1.0) break;
     vec3 w = toScreen(uWorld[i].xyz);
     if (w.z <= 0.0) continue;
     vec2 centre = w.xy * 0.5 - sunP.xy * 0.5;                // from the sun, on screen
@@ -105,34 +120,54 @@ void main() {
       float off = length(centre - sunDirection * along);
       // The shadow widens a little and softens with distance behind the world.
       float spread = size * (1.0 + (length(toSun) - along) * 0.6);
-      shade *= 1.0 - (1.0 - smoothstep(spread * 0.7, spread * 1.25, off)) * 0.85;
+      shade *= 1.0 - (1.0 - smoothstep(spread * 0.7, spread * 1.25, off)) * 0.85 * (1.0 - uShed.x);
     }
   }
   sunLight += mix(vec3(1.0, 0.86, 0.66), WARM, 0.3) * shafts * reach * 0.95 * shade;
+  // Lens: a horizontal streak and three ghosts toward the centre. Post effects, shed first.
   vec3 flare = vec3(0.55, 0.75, 1.0) * exp(-abs(toSun.y) * 120.0) * exp(-abs(toSun.x) * 2.6) * 0.5;
+  vec2 view = q * 0.5, sunView = sunP.xy * 0.5;
+  float ghostA = 1.0 - smoothstep(0.035, 0.05, length(view - sunView * 0.45));
+  float ghostB = 1.0 - smoothstep(0.012, 0.022, length(view + sunView * 0.25));
+  float ghostC = (1.0 - smoothstep(0.07, 0.09, length(view + sunView * 0.8))) * smoothstep(0.045, 0.07, length(view + sunView * 0.8));
+  flare += vec3(0.4, 0.7, 1.0) * ghostA * 0.07 + vec3(1.0, 0.6, 0.3) * ghostB * 0.12 + vec3(0.6, 1.0, 0.8) * ghostC * 0.035;
+  flare *= (1.0 - uShed.x) * step(0.0, sunP.z);
 
-  if (hit >= 0) {
-    vec3 at = uEye + ray * nearest, centre = uWorld[hit].xyz;
+  if (found >= 0) {
+    vec3 at = uEye + ray * nearest, centre = uWorld[found].xyz;
     vec3 light = normalize(-centre);                         // the sun is at the origin
     float lit = clamp(dot(normal, light), 0.0, 1.0);
     // Turn the world on its tilted axis.
     float tilt = 0.38, ct = cos(tilt), st = sin(tilt); vec3 g = vec3(normal.x, ct * normal.y - st * normal.z, st * normal.y + ct * normal.z);
-    float spin = uKind[hit].z; g = vec3(cos(spin) * g.x + sin(spin) * g.z, g.y, -sin(spin) * g.x + cos(spin) * g.z);
-    vec3 surface; float land;
-    if (uKind[hit].y > 0.5) {
-      vec4 m = mapAt(hit, vec2(atan(g.x, g.z) / 6.2831853 + 0.5, 0.5 - asin(clamp(g.y, -1.0, 1.0)) / 3.1415927));
+    float spin = uKind[found].z; g = vec3(cos(spin) * g.x + sin(spin) * g.z, g.y, -sin(spin) * g.x + cos(spin) * g.z);
+    vec3 surface; float land; float molten = 0.0; float dry = 1.0;   // dry: ground a settlement could stand on
+    if (uKind[found].x > 1.5) {
+      // A world still forming: plates of dark crust drifting on magma, never the same twice.
+      float plates = fbm(g * 2.4 + vec3(0.0, uTime * 0.05, uKind[found].w)), cracks = fbm(g * 6.0 + vec3(uTime * 0.11, 0.0, 3.0));
+      molten = smoothstep(0.42, 0.6, plates * 0.65 + cracks * 0.5 + 0.08 * sin(uTime * 0.7 + plates * 9.0));
+      surface = mix(vec3(0.07, 0.05, 0.06), vec3(1.0, 0.42, 0.08), molten) + vec3(1.0, 0.85, 0.5) * pow(molten, 6.0) * 0.6; land = 1.0;
+    } else if (uKind[found].y > 0.5) {
+      vec4 m = mapAt(found, vec2(atan(g.x, g.z) / 6.2831853 + 0.5, 0.5 - asin(clamp(g.y, -1.0, 1.0)) / 3.1415927));
       surface = m.rgb; land = 1.0 - clamp((m.r - m.b * 1.6 - 0.25) * 2.2, 0.0, 1.0);
+      // The painted map is opaque: open water is where blue leads the other two.
+      dry = 1.0 - smoothstep(0.02, 0.14, m.b - max(m.r, m.g));
     } else {
-      float h = fbm(g * 2.1 + uKind[hit].w), detail = fbm(g * 7.0);
+      float h = fbm(g * 2.1 + uKind[found].w), detail = fbm(g * 7.0);
       land = smoothstep(0.5, 0.54, h + (detail - 0.5) * 0.12);
-      surface = mix(uSea[hit] * (0.8 + 0.4 * detail), uLand[hit] * (0.62 + 0.75 * detail), land);
+      surface = mix(uSea[found] * (0.8 + 0.4 * detail), uLand[found] * (0.62 + 0.75 * detail), land); dry = land;
     }
-    float cloud = (1.0 - uKind[hit].x) * 0.5 * smoothstep(0.5, 0.72, fbm(g * 3.2 + vec3(uTime * 0.02, 0.0, uTime * 0.013) + 9.0));
+    float cloud = uAmbience > 0.0 && uKind[found].x < 0.5 ? 0.5 * uAmbience * smoothstep(0.5, 0.72, fbm(g * 3.2 + vec3(uTime * 0.02, 0.0, uTime * 0.013) + 9.0)) : 0.0;
     surface = mix(surface, vec3(0.93, 0.96, 1.0), cloud);
     // A little fill, so a world seen from its night side is still a world and not a hole.
     vec3 world = surface * (0.11 + 1.1 * pow(lit, 0.85));
-    world += mix(uSea[hit], surface, uKind[hit].y) * uKind[hit].x * (1.0 - land) * 0.6;   // lava glows in the dark
-    vec3 air = mix(uSea[hit], vec3(0.35, 0.6, 1.0), 0.45);
+    world += mix(uSea[found], surface, uKind[found].y) * step(0.5, uKind[found].x) * step(uKind[found].x, 1.5) * (1.0 - land) * 0.6;   // lava glows in the dark
+    world += surface * molten * 0.9;                                              // and magma lights itself
+    // Night side of a watered world: the lights of settlements on the land.
+    if (uKind[found].x < 0.5 && uShed.y < 1.0) {
+      vec3 lampCell = floor(g * 46.0); float lamp = step(0.93, hash(lampCell)) * smoothstep(0.35, 0.0, lit) * dry;
+      world += vec3(1.0, 0.75, 0.42) * lamp * 0.55 * (1.0 - uShed.y);
+    }
+    vec3 air = mix(uSea[found], vec3(0.35, 0.6, 1.0), 0.45);
     world += air * pow(1.0 - clamp(dot(normal, -ray), 0.0, 1.0), 3.0) * (0.15 + 0.7 * lit);
     c = world;
     // The sun is hidden behind a world that stands in front of it.
@@ -140,8 +175,18 @@ void main() {
   } else {
     c += sky * smoothstep(0.08, 0.5, sunDistance) + haloTint * halo;
   }
-  c += sunLight + flare * (hit >= 0 ? 0.2 : 1.0);
+  c += sunLight + flare * (found >= 0 ? 0.2 : 1.0);
+  // The dive: streaks rushing outward, then the brightness of air as the world fills the view.
+  if (uDive > 0.0) {
+    float rush = pow(noise(vec3(normalize(q + 0.0001) * 11.0, uTime * 3.2)), 3.0) * smoothstep(0.15, 1.3, length(q));
+    c += vec3(0.7, 0.86, 1.0) * rush * uDive * 0.9;
+    c = mix(c, vec3(0.72, 0.87, 1.0), smoothstep(0.5, 1.0, uDive) * 0.92);
+  }
+  // Grade: roll the highlights off, a vignette to hold the eye in the middle, fine film grain.
   c = c / (1.0 + 0.3 * max(max(c.r, c.g), c.b));
+  vec2 corner = gl_FragCoord.xy / uSize - 0.5;
+  c *= 1.0 - dot(corner, corner) * 0.85;
+  c += (hash(vec3(gl_FragCoord.xy, floor(uTime * 24.0))) - 0.5) * 0.028 * (1.0 - uShed.x);
   c += (hash(vec3(gl_FragCoord.xy, 7.0)) - 0.5) / 255.0;
   color = vec4(c, 1.0);
 }`
@@ -168,10 +213,13 @@ export class Galaxy {
   // The view: an orbit round a point, which is the sun until a world is chosen.
   private yaw = 0.6
   private pitch = 0.5
-  private distance = 12
+  private distance = 13
   private target: Vec = [0, 0, 0]
   private spinVelocity = 0
   private chosen = -1
+  private diving = false
+  private dive = 0
+  private shownScale = 0
   private arriving = 0
   private arrived = false
   private drag: { id: number; x: number; y: number; moved: boolean } | null = null
@@ -193,7 +241,12 @@ export class Galaxy {
     if (value) this.acquire(); else this.release()
   }
   /** Back out to the whole system, for example after returning from a world's panel. */
-  home(): void { this.chosen = -1; this.arriving = 0; this.arrived = false }
+  home(): void { this.chosen = -1; this.arriving = 0; this.arrived = false; this.diving = false; this.dive = 0 }
+  /** The descent: fall toward a world until its air fills the view. Resolves when it has. */
+  descend(id: string): Promise<void> {
+    this.choose(id); this.arrived = true; this.diving = true
+    return new Promise(resolve => { const wait = () => { if (!this.active || this.dive >= 0.995) resolve(); else setTimeout(wait, 50) }; wait() })
+  }
 
   private acquire(): void {
     const canvas = this.canvas = document.createElement('canvas')
@@ -205,7 +258,7 @@ export class Galaxy {
     gl.linkProgram(program)
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { console.warn('Syn3h galaxy shader failed.', gl.getProgramInfoLog(program)); return }
     gl.useProgram(program); gl.bindVertexArray(gl.createVertexArray())
-    for (const name of ['uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMap0', 'uMap1', 'uMap2', 'uMap3']) this.uniforms[name] = gl.getUniformLocation(program, name)
+    for (const name of ['uShed', 'uAmbience', 'uDive', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMap0', 'uMap1', 'uMap2', 'uMap3']) this.uniforms[name] = gl.getUniformLocation(program, name)
     for (const map of this.maps.values()) map.texture = undefined
     this.gl = gl
     const signal = this.abort.signal, options = { signal }
@@ -221,7 +274,7 @@ export class Galaxy {
   }
   /** Each world's real map, painted off the main thread, one after another. */
   private paintMaps(): void {
-    const wanted = this.options.worlds.filter(world => !this.maps.has(`${world.id}:${world.seed}`))
+    const wanted = this.options.worlds.filter(world => !world.forming && !this.maps.has(`${world.id}:${world.seed}`))
     if (!wanted.length || typeof Worker !== 'function') return
     try {
       const worker = this.worker = new Worker(new URL('../planets/planetMapWorker.ts', import.meta.url), { type: 'module' })
@@ -233,13 +286,15 @@ export class Galaxy {
   }
   private resize(): void {
     if (!this.gl) return
-    const scale = Math.min(devicePixelRatio || 1, 1.5)
+    // The ladder's render scale: whole steps, applied with the redraw so no blank frame shows.
+    const scale = Math.min(devicePixelRatio || 1, 1.5) * qualityScale()
+    this.shownScale = qualityScale()
     this.canvas.width = Math.max(1, Math.round(this.host.clientWidth * scale)); this.canvas.height = Math.max(1, Math.round(this.host.clientHeight * scale))
   }
   /** Where the worlds are now: slow circular orbits in one plane, each at its own pace. */
   private places(time: number): { position: Vec; radius: number }[] {
     return this.options.worlds.slice(0, MAX).map((_, i) => {
-      const orbit = 3.2 + i * 1.9, angle = 0.9 + i * 1.9 + time * 0.045 / Math.sqrt(orbit / 3.4)
+      const orbit = 2.9 + i * 1.45, angle = 0.9 + i * 1.9 + time * 0.045 / Math.sqrt(orbit / 2.9)
       return { position: [Math.cos(angle) * orbit, 0, Math.sin(angle) * orbit] as Vec, radius: 0.7 + (i % 2) * 0.12 }
     })
   }
@@ -248,22 +303,26 @@ export class Galaxy {
     const goal: Vec = this.chosen >= 0 ? places[this.chosen].position : [0, 0, 0]
     const ease = this.chosen >= 0 ? 0.08 : 0.06
     this.target = [mix(this.target[0], goal[0], ease), mix(this.target[1], goal[1], ease), mix(this.target[2], goal[2], ease)]
-    const wantDistance = this.chosen >= 0 ? places[this.chosen].radius * 3.1 : this.distance
-    this.reach = mix(this.reach, wantDistance, this.chosen >= 0 ? 0.05 : 0.12)
+    const wantDistance = this.chosen >= 0 ? places[this.chosen].radius * (this.diving ? 1.12 : 3.1) : this.distance
+    this.reach = mix(this.reach, wantDistance, this.diving ? 0.075 : this.chosen >= 0 ? 0.05 : 0.12)
+    // The dive runs about a second and a half.
+    this.dive = this.diving ? Math.min(1, this.dive + 0.022) : Math.max(0, this.dive - 0.05)
     const cp = Math.cos(this.pitch), eye: Vec = [this.target[0] + Math.sin(this.yaw) * cp * this.reach, this.target[1] + Math.sin(this.pitch) * this.reach, this.target[2] + Math.cos(this.yaw) * cp * this.reach]
     const forward = unit(sub(this.target, eye)), right = unit(cross(forward, [0, 1, 0])), up = cross(right, forward)
     return { eye, forward, right, up, // The short side of the screen always spans the same slice of space, so the system fills
     // a phone held upright as well as it fills a wide monitor.
     tan: 0.62 }
   }
-  private reach = 12
+  private reach = 13
   private loop = (now: number): void => {
     if (!this.active || document.hidden) return
     this.frame = requestAnimationFrame(this.loop)
+    qualityFrame(now)
     if (now - this.last < 33) return
     this.last = now
     const gl = this.gl, u = this.uniforms
     if (!gl) return
+    if (this.shownScale !== qualityScale()) this.resize()
     const time = (performance.now() - this.started) / 1000
     // The view keeps a little of the last drag's swing, and drifts very slowly when left alone.
     if (!this.drag) { this.yaw += this.spinVelocity; this.spinVelocity *= 0.93; if (this.chosen < 0) this.yaw += 0.0006 }
@@ -280,10 +339,11 @@ export class Galaxy {
     gl.viewport(0, 0, this.canvas.width, this.canvas.height)
     gl.uniform2f(u.uSize, this.canvas.width, this.canvas.height); gl.uniform1f(u.uTime, time); gl.uniform1f(u.uScale, this.canvas.width / Math.max(1, this.host.clientWidth))
     gl.uniform3f(u.uEye, ...view.eye); gl.uniform3f(u.uRight, ...view.right); gl.uniform3f(u.uUp, ...view.up); gl.uniform3f(u.uForward, ...view.forward); gl.uniform1f(u.uTan, view.tan)
+    gl.uniform2f(u.uShed, qualityShed(2), qualityShed(3)); gl.uniform1f(u.uAmbience, 1 - qualityShed(1)); gl.uniform1f(u.uDive, this.dive)
     gl.uniform1i(u.uCount, Math.min(MAX, worlds.length))
     gl.uniform4fv(u.uWorld, places.flatMap(p => [...p.position, p.radius]))
     gl.uniform3fv(u.uLand, worlds.slice(0, MAX).flatMap(w => rgb(w.land))); gl.uniform3fv(u.uSea, worlds.slice(0, MAX).flatMap(w => rgb(w.sea)))
-    gl.uniform4fv(u.uKind, worlds.slice(0, MAX).flatMap((w, i) => [w.glow ? 1 : 0, this.maps.get(`${w.id}:${w.seed}`)?.texture ? 1 : 0, time * 0.05 + i * 2.1, (w.seed % 97) + i * 3.1]))
+    gl.uniform4fv(u.uKind, worlds.slice(0, MAX).flatMap((w, i) => [w.forming ? 2 : w.glow ? 1 : 0, this.maps.get(`${w.id}:${w.seed}`)?.texture ? 1 : 0, time * 0.05 + i * 2.1, (w.seed % 97) + i * 3.1]))
     gl.drawArrays(gl.TRIANGLES, 0, 3); this.frames++
     // Tell the labels where the worlds are, and notice arrival.
     const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height)

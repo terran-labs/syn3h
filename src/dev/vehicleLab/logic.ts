@@ -191,3 +191,20 @@ export function stressGrid(count: number, spacingX: number, spacingZ: number): [
   }
   return slots
 }
+
+/** Bounds of the visible meshes only: hidden detail levels and idle effects do not count. */
+export function visibleBounds(root: THREE.Object3D): THREE.Box3 {
+  const box = new THREE.Box3(), part = new THREE.Box3()
+  root.updateWorldMatrix(true, true)
+  root.traverseVisible(o => {
+    const mesh = o as THREE.Mesh
+    if (!mesh.isMesh) return
+    if ((mesh as THREE.InstancedMesh).isInstancedMesh) (mesh as THREE.InstancedMesh).computeBoundingBox()
+    else mesh.geometry.computeBoundingBox()
+    const local = (mesh as THREE.InstancedMesh).isInstancedMesh ? (mesh as THREE.InstancedMesh).boundingBox! : mesh.geometry.boundingBox!
+    box.union(part.copy(local).applyMatrix4(mesh.matrixWorld))
+  })
+  // Into the root's parent frame, where the lab places it.
+  if (root.parent) box.applyMatrix4(root.parent.matrixWorld.clone().invert())
+  return box
+}

@@ -5,9 +5,9 @@ import { NextJet } from '../../src/vehicles/jetgen/NextJet'
 import { GROUND_Y } from '../../src/vehicles/jetgen/shapes'
 
 describe('generated next-generation jets', () => {
-  it('offers fifteen distinct designs in three rounds', () => {
-    expect(JET_DESIGNS).toHaveLength(15)
-    expect(new Set(JET_DESIGNS.map(d => d.id)).size).toBe(15)
+  it('offers twenty-four distinct designs in five rounds', () => {
+    expect(JET_DESIGNS).toHaveLength(24)
+    expect(new Set(JET_DESIGNS.map(d => d.id)).size).toBe(24)
   })
   for (const design of JET_DESIGNS) {
     it(`${design.name} builds, fits the current jet's envelope and keeps its functions`, () => {
@@ -29,14 +29,18 @@ describe('generated next-generation jets', () => {
       jet.setGear(1)
       expect(jet.gear.visible).toBe(true)
       for (const y of jet.footHeights()) expect(y).toBeCloseTo(GROUND_Y, 2)
-      // The main nozzle is its own part and swivels about its pivot.
-      expect(jet.thruster.children.length).toBeGreaterThan(0)
+      // Four vanes hinge on the main thruster and deflect within 20 degrees.
+      expect(jet.thruster.children).toHaveLength(4)
       jet.setVector(.3, -.2)
-      expect(jet.thruster.rotation.x).toBeCloseTo(.3); expect(jet.thruster.rotation.y).toBeCloseTo(.2)
+      expect(jet.vector.x).toBeCloseTo(.3); expect(jet.vector.y).toBeCloseTo(-.2)
+      const top = jet.thruster.children[0].rotation.x; jet.setVector(-.3, 0)
+      expect(jet.thruster.children[0].rotation.x).toBeGreaterThan(top)
+      jet.setVector(2, -2)
+      expect(jet.vector.x).toBeCloseTo(.35); expect(jet.vector.y).toBeCloseTo(-.35)
       // The reduced version keeps every function at well under half the triangles.
       const low = new NextJet(design, .5)
       expect(low.triangles()).toBeLessThan(jet.triangles() * (design.hard ? .8 : .5))
-      expect(low.hover).toHaveLength(3); expect(low.thruster.children.length).toBeGreaterThan(0)
+      expect(low.hover).toHaveLength(3); expect(low.thruster.children).toHaveLength(4)
       low.dispose()
       jet.setGear(0)
       expect(jet.gear.visible).toBe(false)

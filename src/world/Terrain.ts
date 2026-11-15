@@ -26,6 +26,12 @@ export interface TerrainRoadPath {
   /** Paved width in metres. */
   width: number
   points: readonly { x: number; y: number; z: number }[]
+  /**
+   * Stretches of this road under shallow water where a river fords it: `start` and `end` are
+   * indices into `points`, `depth` the deepest water over the road in metres (built to
+   * 0.35). Drivable. Empty or absent unless the world has fords.
+   */
+  fords?: readonly { start: number; end: number; depth: number }[]
 }
 
 /** A place where fire, embers or smoke rise: for effects and for sound. */
@@ -102,8 +108,9 @@ export interface Terrain {
   /** Reduce or restore render detail (level of detail distances). Visual only. */
   setRenderQuality?(quality: TerrainRenderQuality): void
   /**
-   * Side of the wrapping tile in metres, when the world wraps: leaving by one edge arrives at
-   * the opposite one. Undefined means the world does not wrap. Positions are canonical in
+   * Side of the wrapping tile in metres: leaving by one edge arrives at the opposite one.
+   * Every procedural world wraps; there is no switch. Only a stand-in terrain (tests, demo
+   * pages) leaves this undefined. Positions are canonical in
    * [-wrapSize / 2, wrapSize / 2); compare positions with shared/wrap.ts.
    */
   readonly wrapSize?: number
