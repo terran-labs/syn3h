@@ -4,7 +4,7 @@ Written by the Orchestrator. Refreshed at each milestone tag. A fresh or compact
 Orchestrator should be able to resume from this file, `ops/BACKLOG.md`, `ops/LANES.md` and
 `ops/PROTOCOL.md` alone. Times are Pacific; read the clock with `date`, never from memory.
 
-Last refreshed: Saturday 14 November, 5:22pm PST. Demo: Sunday noon PST.
+Last refreshed: Saturday 14 November, 5:35pm PST. Demo: Sunday noon PST.
 
 ## Where things are
 
@@ -106,7 +106,11 @@ Retired in-process subagents (work merged): buggy `af96d3463a8b76592`, multiplay
 - Account rule from the owner: Claude 1 and Codex 1, 2, 3 only. Never Claude 2. This thread
   cannot launch workers (its preset is pinned to Claude 2); the owner or Foreman starts
   threads and the Orchestrator directs them by message.
-- Never `pkill` by name: it once killed the preview's room server. Stop by PID.
+- `pkill` and `killall` are forbidden outright, for every lane. Twice on Saturday a name-based
+  kill did damage: once it took down the preview's room server, and at 5:30pm a malformed
+  `pkill -f` (macOS treats every extra word as another pattern) terminated every lane's dev
+  and room servers plus the owner's Chrome, Claude app and the Vorteo host daemons. Stop a
+  process with `kill <pid>` after finding the PID with `lsof -nP -iTCP:<port> -sTCP:LISTEN -t`.
 - Headless Chrome frame rates are misleading (84 ms headless against 8 ms headed for the
   same scene). Do not report them as game performance.
 - Merge conflicts in `src/audio/index.ts` and `src/ui/Shell.ts` have gone to the UX lane's
