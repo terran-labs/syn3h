@@ -6,7 +6,7 @@ import type { Game, System } from '../core/Game'
 import { qualityBudget } from '../core/quality'
 import { createVehicle } from '../vehicles'
 import type { Vehicle } from '../vehicles/Vehicle'
-import { BotBrain, isSafeGround, type BotTerrain } from './BotBrain'
+import { BotBrain, isSafeGround, type BotMatch, type BotTerrain } from './BotBrain'
 import { botCount, fleet, spawnRadius } from './params'
 import { Daydream } from './Daydream'
 import { overHorizon } from '../world/curve'
@@ -51,6 +51,16 @@ export class BotManager implements System {
     this.targets = [...vehicles]
     for (const brain of this.brains) brain.setTargets(this.targets)
   }
+  private match: BotMatch | null = null
+  /**
+   * Tell the bots what game is on: who is "it" in tag, or where the hill is. Call whenever
+   * it changes, with null for free play. Networking owns the rules; this only shapes how
+   * the host's bots behave. Remote managers ignore it, as they hold no bots.
+   */
+  setMatch(match: BotMatch | null) {
+    this.match = match
+    for (const brain of this.brains) brain.match = match
+  }
   private removeLast() {
     const bot = this.bots.pop()!
     this.effects.get(bot)?.(); this.effects.delete(bot)
@@ -84,6 +94,7 @@ export class BotManager implements System {
       const pilot = createPilot(bot, this.terrain)
       if (pilot) brain.mind = new Mind(bot, this.terrain, pilot, { seed: `${worldSeed.value}:${bot.id}`, navigator: this.navigator, places: this.places, others: () => [...this.targets, ...this.bots] })
       brain.navigator = this.navigator
+      brain.match = this.match
       brain.remote = this.remote
       brain.setTargets(this.targets)
       // Register brain first so its input reaches the vehicle in the same physics step.

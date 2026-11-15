@@ -3,7 +3,7 @@
  * input the game feeds the score has a slider here, and the scene buttons set them all at
  * once. `renderScene` renders a scene offline for the browser check in tests/audio.
  */
-import { Score, scoreLite, type ScoreInput } from './Score'
+import { Score, scoreLite, scoreNetworkHall, type ScoreInput } from './Score'
 import { params } from '../../../shared/params'
 import type { Role } from './Composer'
 import { applySubmerge, LAYERS } from './ScoreSynth'
@@ -30,8 +30,8 @@ function drive(score: Score, scene: Scene): void {
 }
 
 /** Render a scene offline and measure it. Used by tests/audio/score-render.mjs. */
-export async function renderScene(name: string, seconds = 16, seed = 1234, rate = 44100, cue?: Role | 'surge', only?: readonly string[], lite = false) {
-  params.set(scoreLite.def.id, lite)
+export async function renderScene(name: string, seconds = 16, seed = 1234, rate = 44100, cue?: Role | 'surge', only?: readonly string[], lite = false, network = false) {
+  params.set(scoreLite.def.id, lite); params.set(scoreNetworkHall.def.id, network)
   const context = new OfflineAudioContext(2, rate * seconds, rate), scene = SCENES[name]
   const filter = context.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 20000; filter.connect(context.destination)
   const score = new Score(context, filter, seed)
@@ -107,7 +107,7 @@ function mount(): void {
     ${sliders.map(([key, label, min, max, step]) => `<label>${label} <output data-out="${key}"></output><input data-key="${key}" type="range" min="${min}" max="${max}" step="${step}"></label>`).join('')}
     <div id="toggles">${toggles.map(([key, label]) => `<label><input data-toggle="${key}" type="checkbox"> ${label}</label>`).join('')}</div>
     <div id="layers"><strong>Layers</strong> ${LAYERS.map(name => `<label><input data-layer="${name}" type="checkbox" checked> ${name}</label>`).join('')}</div>
-    <label style="display:inline-block"><input id="lite" type="checkbox"> Lighter score (for phones)</label>
+    <label style="display:inline-block"><input id="lite" type="checkbox"> Lighter score (for phones)</label> <label style="display:inline-block"><input id="network" type="checkbox"> Algorithmic hall (cheaper)</label>
     <label>Volume <input id="volume" type="range" min="0" max="1" step="0.01" value="0.6"></label>
     <pre id="readout">Stopped</pre><canvas id="scope" width="640" height="120"></canvas>`
   const sync = () => {
@@ -148,6 +148,7 @@ function mount(): void {
   seed.addEventListener('change', () => score?.setSeed(Number(seed.value)))
   root.querySelector('#shot')!.addEventListener('click', () => score?.combat(0.2))
   root.querySelector<HTMLInputElement>('#lite')!.addEventListener('change', event => { params.set(scoreLite.def.id, (event.target as HTMLInputElement).checked); for (const box of root.querySelectorAll<HTMLInputElement>('[data-layer]')) box.checked = true })
+  root.querySelector<HTMLInputElement>('#network')!.addEventListener('change', event => { params.set(scoreNetworkHall.def.id, (event.target as HTMLInputElement).checked); for (const box of root.querySelectorAll<HTMLInputElement>('[data-layer]')) box.checked = true })
   root.querySelector('#accent')!.addEventListener('click', () => score?.accent())
   root.querySelector('#climax')!.addEventListener('click', () => score?.cue('climb'))
   root.querySelector('#surge')!.addEventListener('click', () => score?.cue('surge'))
