@@ -62,6 +62,12 @@ export abstract class Vehicle implements System {
   readonly input: InputState = emptyInput()
   /** True when this client simulates and owns the vehicle. */
   isLocal = true
+  /**
+   * Wind acceleration in m/s^2, applied at the centre of mass at the end of each fixed step.
+   * Zero by default. The weather system (src/world/weather) sets it on the vehicles this
+   * client simulates; remote copies keep zero because their owner already applied it.
+   */
+  readonly wind = new THREE.Vector3()
   /** Display name and stable id, set by whoever spawns it. */
   id = ''
   name = ''
@@ -171,6 +177,10 @@ export abstract class Vehicle implements System {
     if(this.zorbed)this.zorb.float(this.terrain,this.liquidState,dt)
     else applyVehicleLiquid(this.body,this.game.world,this.terrain,this.input,this.kind,this.liquidState,dt,this.wingsOpen)
     if(this.lavaDepth>0 && 'inLiquid' in this)(this as unknown as {inLiquid:boolean}).inLiquid=true
+    // Last, so the controllers and the liquid pass are untouched and the force still reaches
+    // the integrator. A force, never a velocity write: buggies integrate their own accelerations.
+    const w=this.wind
+    if((w.x!==0||w.y!==0||w.z!==0)&&!this.body.isKinematic()){const m=this.body.mass();this.body.addForce({x:w.x*m,y:w.y*m,z:w.z*m},true)}
   }
 
   /**
