@@ -19,7 +19,7 @@ describe('adaptive score composer', () => {
       let scale = new Set<number>()
       for (const step of steps) {
         if (step.chord) scale = new Set(MODES[step.chord.mode].map(n => (n + step.chord!.tonic) % 12))
-        const pitches = [...(step.chord?.pad ?? []), ...(step.resolve ?? []), ...(step.chord ? [step.chord.root] : []), step.arp?.midi, step.bass?.midi, step.lead?.midi, step.beep].filter((n): n is number => n !== undefined)
+        const pitches = [...(step.chord?.pad ?? []), ...(step.resolve ?? []), ...(step.chord ? [step.chord.root] : []), step.arp?.midi, step.bass?.midi, step.lead?.midi, step.beep, step.pluck?.midi, step.bell?.midi, step.brass?.midi].filter((n): n is number => n !== undefined)
         for (const midi of pitches) expect(scale.has(((midi % 12) + 12) % 12), `seed ${seed} midi ${midi}`).toBe(true)
       }
     }
@@ -39,6 +39,8 @@ describe('adaptive score composer', () => {
     const quiet = run(3, calm, STEPS_PER_SECTION).steps, mid = run(3, cruise, STEPS_PER_SECTION).steps, loud = run(3, fight, STEPS_PER_SECTION).steps
     for (const key of ['kick', 'snare', 'hat', 'bass', 'arp', 'riser', 'impact'] as const) expect(count(quiet, key), key).toBe(0)
     expect(count(quiet, 'lead')).toBeGreaterThan(0)
+    // With the sequencer silent a plucked string keeps the pulse, one note to a beat.
+    expect(count(quiet, 'pluck')).toBe(STEPS_PER_SECTION / 4)
     expect(count(mid, 'arp')).toBe(STEPS_PER_SECTION / 2)
     expect(count(mid, 'kick')).toBe(STEPS_PER_SECTION / 16)
     expect(count(mid, 'hat')).toBe(0)
@@ -71,6 +73,9 @@ describe('adaptive score composer', () => {
     expect(steps[0].impact).toBeUndefined()
     expect(Math.min(...release.filter(s => s.lead).map(s => s.lead!.midi))).toBeGreaterThanOrEqual(65 + 12)
     expect(c.role).toBe('release')
+    expect(release[0].bell?.velocity).toBe(1)
+    expect(count(release, 'brass')).toBe(count(release, 'lead'))
+    expect(count(section(0), 'brass')).toBe(0)
     // A quiet mood still gets its swell and its arrival.
     const quiet = run(11, calm, STEPS_PER_SECTION * 3 + 1).steps
     expect(quiet[2 * STEPS_PER_SECTION + 96].riser).toBe(24)
