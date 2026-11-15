@@ -58,6 +58,15 @@ try {
     assert.equal(solo.bad, 0); // The sub drop and the swell are not layers, so they set the loudest second; judge the layer by the sustained release that follows.
     assert.ok(late > floor, `${layer} is silent`); assert.ok(solo.peak < 1, `${layer} clips`)
   }
+  // The lighter tier for phones plays the same passage: audible, unclipped, a release that still lands.
+  const lite = await page.evaluate(async () => {
+    const { renderScene } = await import('/src/audio/score/demo.ts')
+    const r = await renderScene('Cruise', 30, 1234, 44100, 'surge', undefined, true)
+    return { envelope: r.envelope, peak: r.peak, bad: r.bad, nodes: r.nodes }
+  })
+  const liteRelease = Math.max(...lite.envelope.slice(8, 20)), liteStart = lite.envelope[2]
+  console.log(`lighter tier: ${lite.nodes} nodes, start ${liteStart.toFixed(3)}, release ${liteRelease.toFixed(3)}, peak ${lite.peak.toFixed(2)}`)
+  assert.equal(lite.bad, 0); assert.ok(lite.peak < 1, 'the lighter tier clips'); assert.ok(liteRelease > liteStart * 1.2, 'the lighter tier should still land its release')
   // The modelled string must sound the pitch it is asked for.
   for (const hz of [130.81, 220, 440, 523.25]) {
     const pitch = await page.evaluate(async hz => (await import('/src/audio/score/demo.ts')).pluckPitch(hz), hz)
