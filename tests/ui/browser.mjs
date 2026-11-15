@@ -21,7 +21,7 @@ try {
       await page.evaluate(id => syn3h.shell.showPanel(id), id)
       await page.waitForFunction(id => document.querySelector('.lobby-panels').dataset.activePanel === id && document.querySelector('.lobby-panels').dataset.busy === 'false', id)
     }
-    assert.equal(await page.evaluate(() => syn3h.audio.track), 'Score')
+    assert.equal(await page.evaluate(() => syn3h.audio.track), 'SpaceStation')
     await shot('index')
     await page.locator('.galaxy-links [data-goto=vehicle]').click()
     await page.waitForFunction(() => document.querySelector('.lobby-panels').dataset.activePanel === 'vehicle')
