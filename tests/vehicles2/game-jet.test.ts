@@ -37,6 +37,7 @@ describe('approved Mk2 game model', () => {
     const jet = new GameJet()
     expect(jet.near.clearance).toBeGreaterThanOrEqual(.25)
     expect(jet.near.object.userData.cockpit).toBe(true)
+    expect(jet.near.ridePosition!.position.toArray()).toEqual(jet.eye.toArray())
     expect(roleOf(jet.near.materials.glass)).toBe('canopy')
     expect(roleOf(jet.near.materials.glow)).toBe('glow')
     jet.update(1, .2, -.2, 1)
@@ -73,9 +74,31 @@ it('switches remote models with hysteresis and unregisters on disposal', () => {
   const move = (distance: number, remote = true) => callbacks.forEach(f => f(distance, remote, 3))
   move(150); expect(jet.far.visible).toBe(true)
   move(118); expect(jet.far.visible).toBe(true)
-  move(110); expect(jet.medium[0].object.visible).toBe(true)
-  move(28); expect(jet.medium[0].object.visible).toBe(true)
+  move(110); expect(jet.medium(0).object.visible).toBe(true)
+  move(28); expect(jet.medium(0).object.visible).toBe(true)
   move(24); expect(jet.near.object.visible).toBe(true)
   move(500, false); expect(jet.near.object.visible).toBe(true)
   jet.dispose(); expect(callbacks.size).toBe(0)
+})
+
+it('builds a detail level only when it is first shown', () => {
+  const jet = new GameJet()
+  expect(jet.built()).toEqual([false, false, false, false])
+  // A jet that spawns far away costs one small outline, in the player's colour.
+  jet.setColors('#123456', '#abcdef'); jet.setLevel(2); jet.update(0, 0, 0, .5)
+  expect(jet.built()).toEqual([false, false, false, true])
+  expect((jet.far.material as THREE.MeshStandardMaterial).color.getHexString()).toBe('123456')
+  // Closing in builds the medium pose in use, then the close model with the gear state so far.
+  jet.setLevel(1); expect(jet.built()).toEqual([false, true, false, true])
+  jet.update(1, 0, 0, .5); expect(jet.built()).toEqual([false, true, true, true])
+  jet.setLevel(0)
+  expect(jet.near.gearAmount).toBe(1)
+  expect((jet.near.materials.paint as THREE.MeshStandardMaterial).color.getHexString()).toBe('123456')
+  // Hidden close model does no gear work; it catches up when it is shown again.
+  jet.setLevel(2); jet.update(0, 0, 0, 0); expect(jet.near.gearAmount).toBe(1)
+  jet.setLevel(0); expect(jet.near.gearAmount).toBe(0)
+  let visible = 0
+  for (const o of jet.object.children) if (o.visible && (o instanceof THREE.Mesh || o.children.length)) visible++
+  expect(visible).toBe(1)
+  jet.dispose()
 })

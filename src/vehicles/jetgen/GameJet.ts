@@ -1,64 +1,125 @@
 import * as THREE from 'three/webgpu'
-import { JET_DESIGNS } from './designs'
+import { JET_DESIGNS, VANGUARD_EYE } from './designs'
 import { NextJet } from './NextJet'
 import { buildJetSilhouette } from './JetSilhouette'
 import { detailLevel, mergeStatic, registerVehicleDetail } from '../skins/mergeStatic'
 
-/** The approved Mk2: close cockpit model, two gear poses at medium distance, one far outline. */
+type Level = 0 | 1 | 2
+
+/**
+ * The approved Mk2: close cockpit model, two gear poses at medium distance, one far outline.
+ *
+ * Each level is generated the first time it is shown, not when the jet is created. The player's
+ * own jet only ever shows the close model, and a jet that spawns far away may never need it, so
+ * building all three up front doubled the spawn cost (about 10 ms against 5 ms, measured warm
+ * in Node) and held geometry on the GPU that was never drawn. Hidden levels also do no per-frame
+ * work: the close model's gear vertices are only moved while it is the level on screen.
+ */
 export class GameJet {
   readonly object = new THREE.Group()
   readonly design = JET_DESIGNS.find(d => d.id === 'hex-mk2')!
-  readonly near = new NextJet(this.design, .6)
-  readonly medium = [new NextJet(this.design, .1), new NextJet(this.design, .1)]
-  readonly far = buildJetSilhouette(this.design)
-  private level: 0 | 1 | 2 = 0
+  /** The pilot's eye in the jet's frame. Known without building the close model. */
+  readonly eye = new THREE.Vector3(...VANGUARD_EYE)
+  private nearModel?: NextJet
+  private readonly mediumModels: [NextJet | undefined, NextJet | undefined] = [undefined, undefined]
+  private farModel?: THREE.Mesh
+  private level: Level = 0
   private gear = 0
+  private pitch = 0
+  private yaw = 0
+  private throttle = 0
+  private body: THREE.ColorRepresentation = this.design.paint
+  private accent: THREE.ColorRepresentation = this.design.accent
   private detachDetail = () => {}
   private attached = false
 
-  constructor() {
-    this.near.optimize()
-    this.object.add(this.near.object, ...this.medium.map(j => j.object), this.far)
-    this.medium.forEach((j, i) => {
-      j.setGear(i)
+  /** Close model: full cockpit, animated gear and vectoring petals. Built on first use. */
+  get near(): NextJet {
+    if (!this.nearModel) {
+      const jet = this.nearModel = new NextJet(this.design, .6)
+      jet.optimize()
+      this.adopt(jet)
+    }
+    return this.nearModel
+  }
+
+  /** Medium model in one of two fixed gear poses: 0 is gear up, 1 is gear down. Built on first use. */
+  medium(pose: 0 | 1): NextJet {
+    let jet = this.mediumModels[pose]
+    if (!jet) {
+      jet = this.mediumModels[pose] = new NextJet(this.design, .1)
+      jet.setGear(pose)
       // At 30 m the fixed nozzle lip carries the silhouette; omit its four tiny moving petals.
-      j.thruster.removeFromParent()
-      if (i === 0) j.gear.removeFromParent()
-      mergeStatic(j.object, true)
-    })
-    this.setLevel(0)
+      jet.thruster.removeFromParent()
+      if (pose === 0) jet.gear.removeFromParent()
+      mergeStatic(jet.object, true)
+      this.adopt(jet)
+    }
+    return jet
+  }
+
+  /** Far outline: one opaque draw. Built on first use. */
+  get far(): THREE.Mesh {
+    if (!this.farModel) {
+      this.farModel = buildJetSilhouette(this.design)
+      ;(this.farModel.material as THREE.MeshStandardMaterial).color.set(this.body)
+      this.farModel.visible = false
+      this.object.add(this.farModel)
+    }
+    return this.farModel
+  }
+
+  /** Which levels exist so far: close, medium gear up, medium gear down, far. For tests. */
+  built(): [boolean, boolean, boolean, boolean] {
+    return [!!this.nearModel, !!this.mediumModels[0], !!this.mediumModels[1], !!this.farModel]
+  }
+
+  private adopt(jet: NextJet): void {
+    jet.object.visible = false
+    jet.setColors(this.body, this.accent)
+    this.object.add(jet.object)
+    if (this.attached) jet.showroom()
   }
 
   /** Call after attaching to the vehicle so shading and detail callbacks find their owner. */
   attach(): void {
     if (this.attached) return
     this.attached = true
-    this.near.showroom(); this.medium.forEach(j => j.showroom())
+    this.nearModel?.showroom(); this.mediumModels.forEach(j => j?.showroom())
     this.detachDetail = registerVehicleDetail(this.object, (distance, remote) => this.setLevel(detailLevel(distance, remote, this.level)))
   }
 
-  setLevel(level: 0 | 1 | 2): void {
+  setLevel(level: Level): void {
     this.level = level
-    this.near.object.visible = level === 0
-    this.medium.forEach((j, i) => { j.object.visible = level === 1 && i === (this.gear >= .5 ? 1 : 0) })
-    this.far.visible = level === 2
+    this.show()
   }
 
   update(gear: number, pitch: number, yaw: number, throttle: number): void {
-    this.gear = gear
-    this.near.setGear(gear); this.near.setVector(pitch, yaw); this.near.setThrottle(throttle)
-    this.medium.forEach(j => j.setThrottle(throttle))
-    this.setLevel(this.level)
+    this.gear = gear; this.pitch = pitch; this.yaw = yaw; this.throttle = throttle
+    this.show()
+  }
+
+  /** Build the level on screen if needed, bring it up to date and hide the others. */
+  private show(): void {
+    const pose = this.gear >= .5 ? 1 : 0
+    if (this.level === 0) {
+      const jet = this.near
+      jet.setGear(this.gear); jet.setVector(this.pitch, this.yaw); jet.setThrottle(this.throttle)
+    } else if (this.level === 1) this.medium(pose).setThrottle(this.throttle)
+    else void this.far
+    if (this.nearModel) this.nearModel.object.visible = this.level === 0
+    this.mediumModels.forEach((j, i) => { if (j) j.object.visible = this.level === 1 && i === pose })
+    if (this.farModel) this.farModel.visible = this.level === 2
   }
 
   setColors(body: THREE.ColorRepresentation, accent: THREE.ColorRepresentation): void {
-    this.near.setColors(body, accent); this.medium.forEach(j => j.setColors(body, accent))
-    const paint = this.far.material as THREE.MeshStandardMaterial
-    paint.color.set(body)
+    this.body = body; this.accent = accent
+    this.nearModel?.setColors(body, accent); this.mediumModels.forEach(j => j?.setColors(body, accent))
+    if (this.farModel) (this.farModel.material as THREE.MeshStandardMaterial).color.set(body)
   }
 
   dispose(): void {
-    this.detachDetail(); this.near.dispose(); this.medium.forEach(j => j.dispose())
-    this.far.geometry.dispose(); (this.far.material as THREE.Material).dispose()
+    this.detachDetail(); this.nearModel?.dispose(); this.mediumModels.forEach(j => j?.dispose())
+    if (this.farModel) { this.farModel.geometry.dispose(); (this.farModel.material as THREE.Material).dispose() }
   }
 }
