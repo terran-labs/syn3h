@@ -7,7 +7,7 @@ import { float, mx_fractal_noise_float, smoothstep, vec3 } from 'three/tsl'
 import { applyCurve } from '../curve'
 import type { Ripples } from './ripples'
 import { emission } from './sprayMath'
-export const waterSpray=defineParam<boolean>({id:'water.spray',label:'Spray and wakes',group:'Water',scope:'client',default:false})
+export const waterSpray=defineParam<boolean>({id:'water.spray',label:'Spray and wakes',group:'Water',scope:'client',default:true})
 /**
  * Spray: a burst of droplets rather than a soft puff. Fractal noise thresholded into specks
  * inside a round body, so each particle reads as a handful of drops, white with a cool tint
