@@ -4,9 +4,7 @@ import type { Terrain } from '../world/Terrain'
 import { RAPIER, unityTorque } from '../core/physics'
 import { defineParam } from '../../shared/params'
 import { Vehicle } from './Vehicle'
-import { VehicleModel } from './skins/VehicleModel'
-import { setRole } from './skins/showroom'
-import { hotExposureDim } from './skins/hotExposure'
+import { GameJet } from './jetgen/GameJet'
 
 export const jetHoverDrag = defineParam({id:'jet.hoverDrag',label:'Hover drag',group:'Jet',scope:'world',default:.01,min:.005,max:.015,step:.0001})
 export const jetDrag = defineParam({id:'jet.drag',label:'Flight drag',group:'Jet',scope:'world',default:.0001,min:.00005,max:.00015,step:.00001})
@@ -26,6 +24,12 @@ export const jetFlightThrust = defineParam<number>({id:'jet.flightThrust',label:
 // is what steers the jet there. It is separate from jet.controlResponse, which only scales the
 // aerodynamic control torques.
 export const jetVectorResponse = defineParam<number>({id:'jet.vectorResponse',label:'Thrust vectoring',group:'Jet',scope:'world',default:.3,min:.1,max:1,step:.05})
+/**
+ * Q and E work the jet's lift and thrust axis: lift and lower in hover mode, more and less
+ * forward thrust in flight mode, the same axis R and F drive. 1 is E up and Q down, matching the
+ * roam camera; -1 swaps them. The owner asked for these keys on 15 November 2026.
+ */
+export const JET_LIFT_KEYS: 1 | -1 = 1
 const clamp = THREE.MathUtils.clamp
 const lerp = (a:number,b:number,t:number)=>THREE.MathUtils.lerp(a,b,clamp(t,0,1))
 const hullVertices = new Float32Array([-1.086619, -0.316382, -1.978747, 0.0, 0.543169, -2.110775, 0.0, -0.324233, -3.398361, 0.0, 0.482615, 1.50864, -3.851598, 0.125607, 1.143191, 0.0, -0.589476, -2.522558, 0.0, -0.636839, 0.479384, 0.0, -0.166176, 2.98234, -2.551439, 0.855675, 3.431675, 1.086619, -0.316382, -1.978747, 3.851598, 0.125607, 1.143191, 2.551439, 0.855675, 3.431675])
@@ -36,24 +40,17 @@ export class Jet extends Vehicle {
   readonly kind = 'jet' as const
   readonly camOffset = 5
   readonly ridePosition = new THREE.Object3D()
-  private readonly model: VehicleModel
-  private gear?: THREE.Object3D
+  private readonly model: GameJet
   private gearAmount = 0
+  /** The gear amount the collider was last shaped for; -1 forces the first update. */
+  private colliderGear = -1
   private readonly gearCollider: RAPIER.Collider
   private readonly smoothed = new THREE.Vector4()
-  private readonly thruster = new THREE.Group()
-  private readonly hoverGlows: THREE.Mesh[] = []
-  /** Undimmed glow colour. update() rescales from this each frame, never cumulatively. */
-  private readonly glowBase = new THREE.Color(0x66ddff)
-  private readonly glowMaterial = new THREE.MeshBasicMaterial({color:0x66ddff,transparent:true,opacity:.65,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide})
-  // The vehicle pattern (PATTERN.md): the jet authors no look. Each surface is tagged with a role
-  // and the shared showroom shading builds scales, clear coat, canopy, night fill and lava glow,
-  // as on every other vehicle. Colours are the prefab's; the numbers are only shading tier 0.
-  private readonly paint = setRole(new THREE.MeshStandardMaterial({color:new THREE.Color(.09088451,.15540954,.30147058),metalness:.8,roughness:.3}),'paint')
-  private readonly chrome = setRole(new THREE.MeshStandardMaterial({color:new THREE.Color(.78676474,.78676474,.78676474),metalness:1,roughness:.14}),'chrome')
-  private readonly cockpit = setRole(new THREE.MeshStandardMaterial({color:0x892ba7,metalness:.65,roughness:.18}),'glass')
-  private readonly accent = setRole(new THREE.MeshStandardMaterial({color:0x515151,metalness:.85,roughness:.26}),'accent')
-  get modelReady(): Promise<void> {return this.model.ready}
+  private vectorPitch = 0
+  private vectorYaw = 0
+  /** Stick deflection shown on the tail ring's control surfaces: pitch, roll, yaw. */
+  private readonly controls = new THREE.Vector3()
+  readonly modelReady = Promise.resolve()
   /** Input defaults false, so false means the original startup hover mode. */
   get hoverMode(): boolean {return !this.input.special}
   atmosDensity = 1.225
@@ -61,8 +58,7 @@ export class Jet extends Vehicle {
 
   constructor(game:Game,terrain:Terrain,position:THREE.Vector3,heading=0) {
     super(game,terrain,position,heading)
-    // terra.jet.prefab RideCamera, reflected from Unity +Z forward.
-    this.ridePosition.position.set(0,.383,-2.085);this.object.add(this.ridePosition)
+    this.object.add(this.ridePosition)
     // Prefab MeshCollider uses the original convex Collider mesh at Y=-.1.
     const hull=RAPIER.ColliderDesc.convexHull(hullVertices)
     if(!hull) throw new Error('Invalid Syn3h jet collider')
@@ -76,35 +72,32 @@ export class Jet extends Vehicle {
     // The prefab's landing-gear cube is 3.5 x 1 x 3.5, under the animated gear transform.
     this.gearCollider=this.game.world.createCollider(RAPIER.ColliderDesc.cuboid(1.75,.5,1.75).setTranslation(0,-.783,-.3).setDensity(0).setCollisionGroups(Vehicle.chassisGroups()),this.body)
     this.gearCollider.setEnabled(false)
-    const modelRoot=new THREE.Group();this.object.add(modelRoot)
-    this.model=new VehicleModel(modelRoot,'/models/jet.glb',scene=>{
-      scene.traverse(o=>{
-        if(!(o instanceof THREE.Mesh)) return
-        if(/collider/i.test(o.name)){o.visible=false;return}
-        const old=Array.isArray(o.material)?o.material:[o.material]
-        const material=/cockpit/i.test(o.name)?this.cockpit:/chrome/i.test(o.name)?this.chrome:/main/i.test(o.name)?this.paint:/_1$/.test(o.name)?this.chrome:this.accent
-        old.forEach(m=>m.dispose());o.material=material
-      })
-      this.gear=scene.getObjectByName('Landing_Gear')
-      if(this.gear){this.gear.visible=false}
-    })
-    // No image files: the paint's scales come from the shared shading and the glow is plain colour.
-    // The canopy stays its own draw so the shared shading can make it see-through.
-    this.cockpit.name='Cockpit';this.cockpit.userData.separate=true
-    this.glowBase.setRGB(3,3,4)
-    this.thruster.position.copy(nozzlePosition);this.object.add(this.thruster)
-    const glow=new THREE.Mesh(new THREE.CircleGeometry(.42,32),this.glowMaterial)
-    this.thruster.add(glow)
-    const cone=new THREE.Mesh(new THREE.ConeGeometry(.38,1.5,24,1,true),this.glowMaterial)
-    cone.rotation.x=Math.PI/2;cone.position.z=.75;this.thruster.add(cone)
-    for(const p of [[-1.544781,-1.256482,1.170159],[0,-1.256482,-1.735762],[1.455346,-1.256482,1.153567]]){
-      const flare=new THREE.Mesh(new THREE.ConeGeometry(.18,.7,16,1,true),this.glowMaterial)
-      flare.position.fromArray(p);flare.position.y-=.35;flare.rotation.z=Math.PI
-      this.hoverGlows.push(flare);this.object.add(flare)
-    }
+    this.model = new GameJet()
+    this.object.add(this.model.object)
+    this.ridePosition.position.copy(this.model.eye)
+    this.object.userData.cockpit = true
+    this.model.attach()
+    this.applyColors()
+  }
+
+  /**
+   * For the player's own jet, Q and E are lift and thrust, not yaw. The shared input puts those
+   * keys on the yaw axis (w), which a gamepad's right stick and the bot pilot also use, so the
+   * keys are read directly and their yaw is taken back out. The input is rewritten in place:
+   * what is sent to other players is then what this jet flew.
+   */
+  private liftKeys():void {
+    const held=(this.game.input as {held?:(code:string)=>boolean}).held
+    if(!held) return
+    const up=held.call(this.game.input,'KeyE'),down=held.call(this.game.input,'KeyQ')
+    if(!up&&!down) return
+    // With either key down the shared yaw axis holds only their value, never the gamepad's.
+    this.input.w=0
+    this.input.z=clamp(this.input.z+JET_LIFT_KEYS*((up?1:0)-(down?1:0)),-1,1)
   }
 
   protected applyForces(dt:number):void {
+    if(this.isLocal) this.liftKeys()
     this.wingsOpen=!this.hoverMode
     // Vhicl.cs 269 smooths all four axes at fixedDeltaTime * 10.
     this.smoothed.lerp(new THREE.Vector4(this.input.x,this.input.y,this.input.z,this.input.w),Math.min(1,dt*10))
@@ -121,13 +114,18 @@ export class Jet extends Vehicle {
     const weight=Math.max(0,-this.game.world.gravity.y)*mass
     const torque=(x:number,y:number,z:number)=>this.body.addTorque(new THREE.Vector3().copy(unityTorque(x,y,z)).applyQuaternion(q),true)
     let drag=0,angularDrag=3
-    this.gearCollider.setEnabled(this.gearAmount>0)
-    if(this.gearAmount>0){
-      this.gearCollider.setShape(new RAPIER.Cuboid(1.75*this.gearAmount,.5*this.gearAmount,1.75))
-      this.gearCollider.setTranslationWrtParent({x:0,y:-.083-.7*this.gearAmount,z:-.3})
+    // Reshape the gear collider only while the gear moves. Replacing the shape every step made
+    // Rapier rebuild a resting jet's ground contacts sixty times a second.
+    if(this.gearAmount!==this.colliderGear){
+      this.colliderGear=this.gearAmount
+      this.gearCollider.setEnabled(this.gearAmount>0)
+      if(this.gearAmount>0){
+        this.gearCollider.setShape(new RAPIER.Cuboid(1.75*this.gearAmount,.5*this.gearAmount,1.75))
+        this.gearCollider.setTranslationWrtParent({x:0,y:-.083-.7*this.gearAmount,z:-.3})
+      }
     }
     if(this.hoverMode){
-      this.thruster.quaternion.identity()
+      this.vectorPitch = this.vectorYaw = 0
       // Not inside a zorb ball: the hold would thrust along the tumbling jet's up axis and carry
       // the ball off sideways or into the air. Manual throttle still works there.
       if(this.input.z===0&&jetHoverHold.value>0&&!this.zorbed){
@@ -154,7 +152,8 @@ export class Jet extends Vehicle {
       // Mirror Unity's local quaternion: axial X and Y signs reverse in our frame.
       const thrustRotation=new THREE.Quaternion().setFromEuler(new THREE.Euler(-thrustPitch,-thrustYaw,0,'YXZ'))
       const thrust=new THREE.Vector3(0,0,-1).applyQuaternion(thrustRotation).applyQuaternion(q).multiplyScalar((this.input.brakes?0:input.z)*jetFlightThrust.value*weight*.99)
-      this.thruster.quaternion.copy(thrustRotation)
+      // The force equations stay original; only the four nozzle petals move visually.
+      this.vectorPitch = thrustPitch; this.vectorYaw = -thrustYaw
       const nozzle=nozzlePosition.clone().applyQuaternion(q).add(position)
       this.body.addForceAtPoint(thrust,nozzle,true)
       const authority=lerp(0,1,speed/jetStall.value*.7)*this.atmosDensity*(local.z<0?1:-1)
@@ -180,23 +179,17 @@ export class Jet extends Vehicle {
   }
   override update(dt:number,alpha:number):void {
     super.update(dt,alpha)
-    if(this.gear){this.gear.visible=this.gearAmount>0;this.gear.scale.x=this.gear.scale.y=Math.max(.001,this.gearAmount)}
-    this.thruster.scale.set(1,1,this.hoverMode?.18:Math.max(.15,this.smoothed.z))
-    // Night auto exposure would bleach this hot additive glow to white; dim it as the lava sea does.
-    const exposure=this.game.renderer?.toneMappingExposure
-    this.glowMaterial.color.copy(this.glowBase).multiplyScalar(exposure===undefined?1:hotExposureDim(exposure))
-    this.glowMaterial.opacity=this.hoverMode?.35:Math.max(.15,this.smoothed.z)*.7
-    this.hoverGlows.forEach(g=>{g.visible=this.hoverMode;g.scale.y=Math.max(.08,this.smoothed.z)})
+    // Visual only: the ring's surfaces follow the smoothed stick in both modes, signed like the
+    // nozzle petals. Pulling back (y below 0) is nose up; x is roll right; w is yaw right.
+    this.controls.set(-this.smoothed.y, this.smoothed.x, this.smoothed.w)
+    this.model.update(this.gearAmount, this.vectorPitch, this.vectorYaw, Math.max(0, this.smoothed.z), this.controls)
   }
   protected override applyColors():void {
-    this.paint.color.set(this.colors.body);this.accent.color.set(this.colors.accent)
-    this.glowBase.set(this.colors.accent).multiplyScalar(3)
+    this.model?.setColors(this.colors.body, this.colors.accent)
   }
   override teleport(position:THREE.Vector3,heading=0):void {super.teleport(position,heading);this.smoothed.set(0,0,0,0)}
   override dispose():void {
     this.model.dispose()
-    this.object.traverse(o=>{if(o instanceof THREE.Mesh)o.geometry.dispose()})
-    this.paint.dispose();this.chrome.dispose();this.cockpit.dispose();this.accent.dispose();this.glowMaterial.dispose()
     super.dispose()
   }
 }

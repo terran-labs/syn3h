@@ -188,8 +188,21 @@ const HIDE_LOBBY_INVITE = '.lobby-room-label, .invite-qr, .invite-link, .shell-i
 // the screenshot; ok false means the intended pose was not reached and the frame is retried.
 const STAGES = {
   async lobby(page) {
-    await page.waitForFunction(() => document.querySelectorAll('.planet-card canvas').length >= 3, null, { timeout: 30000 })
-    await page.waitForTimeout(4000)
+    // Current releases draw planets in one galaxy context. Historical builds used cards.
+    await page.waitForFunction(() => {
+      const galaxy = window.syn3h?.shell?.galaxy
+      if (!galaxy) return document.querySelectorAll('.planet-card canvas').length >= 3
+      if (!galaxy.live || document.documentElement.dataset.boot !== 'done') return false
+      if (galaxy.logo && galaxy.logo.introTime < 3.6) return false
+      return [...document.querySelectorAll('.galaxy-label')].filter(label => {
+        const box = label.getBoundingClientRect(), style = getComputedStyle(label)
+        return box.width > 0 && box.height > 0 && style.visibility !== 'hidden' && Number(style.opacity) > 0
+      }).length >= 3
+    }, null, { timeout: 30000 })
+    // Historical card maps still need their original loading allowance.
+    if (!await page.evaluate(() => Boolean(window.syn3h?.shell?.galaxy))) await page.waitForTimeout(4000)
+    // The current reveal clock advances with rendering, not elapsed wall time.
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     return { ok: true }
   },
 

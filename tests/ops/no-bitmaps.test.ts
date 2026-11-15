@@ -7,7 +7,8 @@
  * go stale.
  *
  * Files that platforms insist are raster (the share card, install icons) are generated at
- * build time from the vector logo, not checked in. Screenshots and captures belong in /tmp
+ * export time from the vector logo. Existing platform fallbacks remain checked in until
+ * a browser-free build path is available. Screenshots and captures belong in /tmp
  * or a release artefact, not in the repository.
  */
 import { execFileSync } from 'node:child_process'
@@ -22,21 +23,15 @@ const ALLOWED = new Map<string, string>([
   ['dashboard/assets/syn3h-logo-sun-1024x512.png', 'Orchestrator'],
   ['dashboard/assets/terran-labs-logo.png', 'Orchestrator'],
   ['dashboard/assets/terran-labs-wordmark.png', 'Orchestrator'],
-  // UX lane: favicon as inline SVG; share card and icons generated at build time from the
-  // vector logo; the two logo bitmaps replaced by the traced wordmark paths.
+  // UX: explicit vector exports retained as platform fallbacks. Ordinary builds
+  // must not require Chrome; remove these once a browser-free export path exists.
   ['public/brand/apple-touch-icon.png', 'UX'],
-  ['public/brand/favicon-32.png', 'UX'],
   ['public/brand/icon-192.png', 'UX'],
   ['public/brand/icon-512.png', 'UX'],
-  ['public/brand/marsxplr.png', 'UX'],
   ['public/brand/share.png', 'UX'],
-  ['public/brand/syn3h.png', 'UX'],
-  // Jet and hovercraft leads: go when those vehicles move to the shared materials (PATTERN.md).
-  ['public/models/textures/armor-scales.jpg', 'Jet and hovercraft leads'],
-  ['public/models/textures/thruster-glow.png', 'Jet and hovercraft leads'],
 ])
 /** The list may never be longer than it was on the day it was written. */
-const CEILING = 13
+const CEILING = 8
 
 const tracked = (): string[] =>
   execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).split('\0').filter((f) => IMAGE.test(f))

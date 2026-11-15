@@ -19,5 +19,10 @@ export interface BuggySkin {
   setDrive?(index: number, effort: number, regen?: boolean): void
   /** Brake lamps on while braking or regenerating. Optional: only mesh lamps need it. */
   setLights?(braking: boolean): void
+  /**
+   * The vehicle took a blow at `worldPoint` (0.2 a knock to 1 a hard hit). Skins with force
+   * fields show it: a flash and a ring across the field (see forceField.ts). Optional.
+   */
+  fieldHit?(worldPoint: THREE.Vector3, strength: number): void
   dispose(): void
 }

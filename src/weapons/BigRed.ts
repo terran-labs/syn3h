@@ -8,10 +8,13 @@ import * as THREE from 'three/webgpu'
 import type { Game, System } from '../core/Game'
 import type { RAPIER } from '../core/physics'
 import { hotExposureDim } from '../vehicles/skins/hotExposure'
-import { aimFrom } from './aim'
+import { aimFrom, type GearControl } from './aim'
 import { bigRedAllowed, bigRedCharge, bigRedCooldown } from './bigRedParams'
+import { sharedLook, warmGear } from './warm'
 
 export interface BigRedHooks {
+  control?(): GearControl
+
   body(): RAPIER.RigidBody | undefined
   object(): THREE.Object3D | undefined
   inHand(): boolean
@@ -25,25 +28,44 @@ const GLOW_RGB = [2.4, 0.12, 0.06] as const
 /** Short pause after a fizzle, so a mashed button does not stutter. */
 const FIZZLE_PAUSE = 0.2
 
+/** The charge glow's geometry and materials: one set per game, for the player and every bot. */
+class BigRedLook {
+  readonly geo = new THREE.SphereGeometry(1, 20, 14)
+  readonly mat = new THREE.MeshBasicMaterial({
+    name: 'gear red glow', color: new THREE.Color(...GLOW_RGB), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false,
+  })
+  // The tag beam's recipe: additive light alone washes to salmon over an orange sky, so a
+  // normally blended deep red core keeps it reading red at noon.
+  readonly coreMat = new THREE.MeshBasicMaterial({ name: 'gear red glow core', color: new THREE.Color(0.55, 0.01, 0.01), transparent: true, opacity: 0.75, depthWrite: false })
+  private readonly unwarm: () => void
+
+  constructor(game: Game) {
+    this.unwarm = warmGear(game, [[this.geo, this.mat], [this.geo, this.coreMat]])
+  }
+
+  dispose(): void {
+    this.unwarm()
+    this.geo.dispose(); this.mat.dispose(); this.coreMat.dispose()
+  }
+}
+
 export class BigRed implements System {
   /** 0 to 1 while charging; -1 when not. */
   charge = -1
   private fireWas = false
   private readyAt = 0
   private readonly glow: THREE.Mesh
-  private readonly mat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(...GLOW_RGB), transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false,
-  })
-  // The tag beam's recipe: additive light alone washes to salmon over an orange sky, so a
-  // normally blended deep red core keeps it reading red at noon.
   private readonly core: THREE.Mesh
-  private readonly coreMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0.55, 0.01, 0.01), transparent: true, opacity: 0.75, depthWrite: false })
+  private readonly shared: { look: BigRedLook; release(): void }
+  private readonly offset = new THREE.Vector3()
   stats = { sent: 0, fizzled: 0 }
 
   constructor(private readonly game: Game, private readonly hooks: BigRedHooks) {
-    this.glow = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), this.mat)
+    this.shared = sharedLook(game, 'red', () => new BigRedLook(game))
+    const look = this.shared.look
+    this.glow = new THREE.Mesh(look.geo, look.mat)
     this.glow.visible = false
-    this.core = new THREE.Mesh(this.glow.geometry, this.coreMat)
+    this.core = new THREE.Mesh(look.geo, look.coreMat)
     this.core.scale.setScalar(0.6)
     this.core.renderOrder = -1
     this.glow.add(this.core)
@@ -56,7 +78,7 @@ export class BigRed implements System {
   }
 
   fixedUpdate(dt: number): void {
-    const fire = bigRedAllowed.value && this.hooks.inHand() && this.game.input.state.fire
+    const fire = bigRedAllowed.value && this.hooks.inHand() && (this.hooks.control?.().fire ?? this.game.input.state.fire)
     const pressed = fire && !this.fireWas
     const released = !fire && this.fireWas
     this.fireWas = fire
@@ -85,30 +107,42 @@ export class BigRed implements System {
       if (o) this.hooks.cue?.('bigRedFizzle', o.position)
       return false
     }
-    const aim = aimFrom(this.game, body, 400)
+    const aim = aimFrom(this.game, body, 400, 0.4, 2.4, 0, !this.hooks.control)
+    if (this.hooks.control) aim.d.set(...this.hooks.control().direction).normalize()
     this.hooks.fire([aim.d.x, aim.d.y, aim.d.z])
     this.stats.sent++
     this.readyAt = this.game.time + bigRedCooldown.value
     return true
   }
 
+  /** Cancel without firing when authority, target or selected gear changes. */
+  cancel(): void {
+    this.charge = -1
+    this.fireWas = false
+  }
+
+  /** Drop a charge without firing or fizzling, for a world change or leaving the world. */
+  reset(): void {
+    this.cancel()
+    this.readyAt = 0
+    this.glow.visible = false
+  }
+
   update(): void {
     const o = this.hooks.object()
     if (this.charge < 0 || !o) { this.glow.visible = false; return }
     const dim = hotExposureDim(this.game.renderer.toneMappingExposure)
-    this.mat.color.setRGB(GLOW_RGB[0] * dim, GLOW_RGB[1] * dim, GLOW_RGB[2] * dim)
+    this.shared.look.mat.color.setRGB(GLOW_RGB[0] * dim, GLOW_RGB[1] * dim, GLOW_RGB[2] * dim)
     const t = this.game.time
     // Grows while charging, then throbs when ready.
     const pulse = this.charge >= 1 ? 1 + 0.18 * Math.sin(t * 22) : 1 + 0.05 * Math.sin(t * 40)
     this.glow.scale.setScalar((0.25 + 0.85 * this.charge) * pulse)
-    this.glow.position.copy(o.position).add(new THREE.Vector3(0, 1.9, -1.2).applyQuaternion(o.quaternion))
+    this.glow.position.copy(o.position).add(this.offset.set(0, 1.9, -1.2).applyQuaternion(o.quaternion))
     this.glow.visible = true
   }
 
   dispose(): void {
     this.game.scene.remove(this.glow)
-    this.glow.geometry.dispose()
-    this.mat.dispose()
-    this.coreMat.dispose()
+    this.shared.release()
   }
 }

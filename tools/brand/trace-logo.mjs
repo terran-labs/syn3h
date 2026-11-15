@@ -5,7 +5,7 @@
  * found as "opaque and dark", then contoured with marching squares at sub-pixel precision
  * and simplified.
  *
- *   node tools/brand/trace-logo.mjs public/brand/syn3h.png src/ui/brand/wordmarkPath.ts
+ *   node tools/brand/trace-logo.mjs /path/to/original-syn3h.png src/ui/brand/wordmarkPath.ts
  *
  * Needs ffmpeg to decode the PNG. No other dependencies.
  */

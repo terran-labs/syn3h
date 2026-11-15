@@ -1,9 +1,8 @@
 # Coordination protocol
 
-How the Syn3h lanes work together during the Saturday night push (4:30pm to 9:30pm Pacific)
-and through to the demo on Sunday at noon Pacific. Written by the Foreman on Saturday 14
-November. The Orchestrator adopted all ten rules at 4:40pm. Rule 6 was rewritten at 4:45pm after the owner chose
-Cloudflare as the stable channel; it is blocked on Cloudflare access. Rule 10 awaits the owner.
+How the Syn3h lanes work together through the Sunday noon handoff. Updated by the
+Foreman on 15 November 2026 to reflect the owner's overnight and default-on directions.
+Later explicit owner decisions take precedence over historical notes.
 
 ## 1. One trunk, one merger
 
@@ -27,10 +26,18 @@ A handoff is ready when, on the lane branch with `build/weekend` merged in first
 2. The lane's own test folder passes (`npx vitest run tests/<lane>`).
 3. `node tools/smoke.mjs <lane preview url>` prints `SMOKE OK`.
 
-Lanes run only their own tests. The Orchestrator runs the full suite once per merge batch.
-Ten lanes each running 230 tests and a headless Chrome on one twelve core machine starve
-each other and make the timing tests lie. Load average was already 8 to 11 with four
-threads active.
+Lanes run their own tests; the Orchestrator owns combined acceptance. Every heavy job
+uses the updated integration `tools/heavy.sh`: three machine-wide slots, no load-based
+bypass or slot overrides. Run one heavy job per lane, with at most two test workers
+during the restart wave. Release jobs share the slots. Do not restart redundant previews.
+
+Replace preview configuration atomically. When editing `paseo.json`, write a complete
+temporary sibling file, parse it successfully, then rename it over the destination. Do not
+truncate the live file while writing: the broker can read invalid JSON, fail closed and
+remove every affected HTTPS mapping even while its backend continues running. The service
+owner handles recovery through one scoped broker start, or restart if the definition changed,
+then verifies both the HTTPS response and rendered content. Old ready receipts do not prove
+current availability. Query one service when needed, not every reservation with bare status.
 
 ## 4. Merge in batches, tag what is good
 
@@ -38,11 +45,18 @@ The Orchestrator merges ready handoffs in a batch, runs the full suite and the s
 once, fixes seam breakage, tags a milestone, and updates the dashboard. A batch that cannot
 be made green in fifteen minutes is reverted and returned to its lane.
 
-## 5. Land unfinished work dark
+## 5. Features default on in normal play
 
-Anything not ready for an audience merges behind a URL parameter or a slider that defaults
-off, the way the tank already does. This keeps branches short lived without putting half
-built features in front of the room.
+The owner superseded the default-off policy. Developed features must work through normal
+entry without special URLs. Keep user off controls, mutually exclusive choices, biome
+rules and hardware quality tiers. Report unfinished or broken exceptions explicitly,
+with the work needed to validate them; do not silently hide them behind a flag.
+
+The Orchestrator owns shared defaults in `shared/params.ts` and composition in
+`src/main.ts`. Lanes may change their own parameter modules and send shared wiring
+hunks. Validate the combined default experience, including fresh rooms and deliberate
+off choices. Stored room values lack provenance: preserve them rather than guessing
+which false values were old defaults and which were host choices.
 
 ## 6. Two channels: live and production
 
@@ -50,8 +64,10 @@ The live preview follows every merge. Production is served from Cloudflare and c
 when the Orchestrator ships a production release: a tagged, green milestone, frozen with
 `tools/promote-stable.sh`, deployed from the frozen copy, then verified with
 `tools/net-smoke.mjs` against the public address. Each release gets a `release-N` tag and a
-line in the digest. The demo runs on production. Ship the first release as soon as
-Cloudflare access exists, and one more at tonight's freeze.
+line in the digest. The demo runs on production. Overnight releases are authorized
+without prior owner viewing. Occupied lobbies do not block deployment. Validate public
+assets and gameplay after deployment and roll back immediately on failed live checks.
+Keep tested fallback builds; results from one frozen commit do not validate another.
 
 ## 7. Handoffs and digests have a fixed shape
 
@@ -88,12 +104,18 @@ When the owner gives a lead an instruction in its own thread, the lead follows i
 the Orchestrator one line saying what changed and whether it touches a shared seam. The
 Foreman reads lead threads on each sweep and records owner decisions in `ops/DECISIONS.md`.
 
-## 10. Freeze before the demo
+## 10. Continue overnight and prepare the morning handoff
 
-Proposed, awaiting the owner: new features stop when tonight's push ends. Sunday morning is
-fixes, a hand driven rehearsal on the demo hardware and network, and one final promotion to
-stable. Nothing merges after 10am Sunday without the owner saying so. After the freeze, lanes may
-still merge work that is off by default (rule 5).
+The owner chose continued overnight development and will decide the cutoff in the morning.
+Prepare an 8am Pacific brief with verified build choices, known issues and a fifteen-minute
+viewing list. The noon handoff is the public address and GitHub repository link.
+
+Finish current assignments first. After every current assignment finishes, the owner's
+follow-on priorities are measured performance tiers, toggleable FPS/history/hardware/failure
+diagnostics, sustained-low-FPS recommendations, richer cursor-locked UX with minimap-edge
+vignettes, complete gear and playful bots, multiplayer playtesting, and transparent water.
+Preserve explicit holds such as deferred smooth-ground interpolation. The later default-on
+directive applies now and does not wait for that follow-on queue.
 
 ## 11. Never kill processes by name
 

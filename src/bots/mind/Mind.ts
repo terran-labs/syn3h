@@ -15,6 +15,7 @@ import { isSafeGround, type BotTerrain } from '../BotBrain'
 import { roadPaths, roadWaypoint } from '../navigation'
 import { jetForwardFlight, roadSpeed } from '../params'
 import type { DriveGoal, Navigator, NavPoint, Pilot, PilotStatus, Route } from '../pilot/types'
+import { planningBudget, type PlanningBudget } from '../nav/budget'
 import { hashString, seededRandom } from '../random'
 import { nearestImage, wrapDistance } from '../../../shared/wrap'
 import { type Personality, personalityFor } from './personality'
@@ -65,6 +66,9 @@ const VISIT_CELL = 64
 /** Candidate headings relative to the wanted one, nearest first, radians. */
 const SWERVES = [0, 0.3, -0.3, 0.6, -0.6, 1, -1, 1.5, -1.5]
 
+/** A reachability test: the route it found (null without a navigator), or null when unreachable. */
+type Reach = { route: Route | null } | null
+
 export class Mind {
   readonly personality: Personality
   activity: Activity = { kind: 'pause', destination: null, leader: null, until: 0 }
@@ -98,6 +102,13 @@ export class Mind {
   private readonly forward = new Vector3()
   private readonly normal = new Vector3()
   private readonly idle: PilotStatus = { stuckFor: 0, airborne: false, flipped: false }
+  /**
+   * Route searches are rationed across every mind on the navigator (see nav/budget.ts). A
+   * choice that has to test more places than this step allows is resumed next step: this
+   * holds it, and the old activity carries on meanwhile.
+   */
+  private readonly budget: PlanningBudget | null
+  private deciding: Generator<void, void, void> | null = null
 
   constructor(
     readonly vehicle: Vehicle,
@@ -107,6 +118,7 @@ export class Mind {
   ) {
     this.personality = options.personality ?? personalityFor(options.seed)
     this.random = seededRandom(hashString(`mind:${options.seed}`))
+    this.budget = options.navigator ? planningBudget(options.navigator) : null
   }
 
   /** A short phrase for what it is doing now. */
@@ -140,7 +152,7 @@ export class Mind {
   /** Forget the current plan: after a teleport, a regenerated world, or a handover. */
   reset(): void {
     this.activity = { kind: 'pause', destination: null, leader: null, until: 0 }
-    this.route = null; this.waypoint = null; this.troubleFor = 0; this.bestDistance = Infinity
+    this.route = null; this.waypoint = null; this.troubleFor = 0; this.bestDistance = Infinity; this.deciding = null
     this.pilot.reset()
   }
 
@@ -149,6 +161,7 @@ export class Mind {
     const body = this.vehicle.body
     if (!body.isValid()) return this.idle
     this.time += dt
+    this.budget?.enter(this)
     const here = body.translation(), v = body.linvel(), speed = Math.hypot(v.x, v.z)
     this.q.copy(body.rotation()); this.forward.set(0, 0, -1).applyQuaternion(this.q)
     // A jump in one step is a teleport. Across the seam of a wrapping world it is a whole
@@ -167,7 +180,10 @@ export class Mind {
     if (!crumb || Math.hypot(crumb.x - here.x, crumb.z - here.z) > 8) { this.trail.push({ x: here.x, z: here.z }); if (this.trail.length > 48) this.trail.shift() }
 
     const a = this.activity
-    if (a.kind === 'follow' && !a.leader?.body.isValid()) a.until = 0
+    if (a.kind === 'follow' && !a.leader?.body.isValid()) {
+      // Expiring the plan alone still reaches the follow read below in this step.
+      a.until = 0; a.leader = null
+    }
     if (a.kind === 'follow' && a.leader) {
       // Sit a few lengths behind the leader, on a side that is stable for this driver.
       // On a wrapping world, tail the nearest image of the leader: it may be just over the seam.
@@ -203,18 +219,22 @@ export class Mind {
     const near = a.kind === 'visit' && this.sight?.kind === 'shore' ? 28 : 10
     const arrived = destination !== null && a.kind !== 'follow' && a.kind !== 'hold' && a.kind !== 'flee' && distance < near
     // Give up on a place it has stopped getting closer to: 12 seconds without gaining 5 m.
-    if (destination && a.kind !== 'follow' && a.kind !== 'hold' && a.kind !== 'flee') {
+    if (destination && a.kind !== 'follow' && a.kind !== 'hold' && a.kind !== 'flee' && !this.deciding) {
       if (distance < this.bestDistance - 5) { this.bestDistance = distance; this.bestTime = this.time }
       else if (this.time - this.bestTime > 12) { this.abandoned++; a.until = 0 }
     }
-    if (this.time >= a.until || arrived || this.troubleFor > 6) {
-      const trouble = this.troubleFor > 6
-      if (trouble) this.abandoned++
-      // In trouble, do not pick another place from the same bad spot: first go back the way
-      // it came, which is ground it has already driven, and choose again from there.
-      const back = trouble && a.kind !== 'retreat' ? this.wayBack(here) : null
-      if (back) { this.clearPlan(); this.begin('retreat', back, null, 10) }
-      else this.choose(here, speed, arrived)
+    if (this.deciding || this.time >= a.until || arrived || this.troubleFor > 6) {
+      if (!this.deciding) {
+        const trouble = this.troubleFor > 6
+        if (trouble) this.abandoned++
+        // In trouble, do not pick another place from the same bad spot: first go back the way
+        // it came, which is ground it has already driven, and choose again from there.
+        const back = trouble && a.kind !== 'retreat' ? this.wayBack(here) : null
+        if (back) { this.clearPlan(); this.begin('retreat', back, null, 10) }
+        else this.deciding = this.choose(here, speed, arrived)
+      }
+      // Usually done at once; when the planning budget is spent, resumed on a later step.
+      if (this.deciding?.next().done) this.deciding = null
     }
 
     const goal = this.goal
@@ -271,7 +291,17 @@ export class Mind {
       if (grade > 0.2) goal.speed = Math.max(3, Math.min(goal.speed, 3 / grade))
     }
     // Wings for a long straight leg, where the pilot has them and the owner allows it.
-    if (this.pilot.profile.flies && jetForwardFlight.value && distance > 400 && act.kind !== 'follow' && act.kind !== 'pause') goal.special = true
+    if (this.pilot.profile.flies && jetForwardFlight.value && destination && distance > 400 && act.kind !== 'follow' && act.kind !== 'pause') {
+      // The ordinary route aim is only 10 to 30 metres away. Passing that to the jet
+      // permanently selected its arrival/hover mode, even with forward flight enabled.
+      // Offer a long aim only when the whole corridor is clear and the nose is aligned.
+      const dx = destination.x - here.x, dz = destination.z - here.z, d = Math.hypot(dx, dz) || 1
+      const reach = Math.min(d, 260), x = here.x + dx / d * reach, z = here.z + dz / d * reach
+      const aligned = (this.forward.x * dx + this.forward.z * dz) / d > 0.85
+      if (aligned && this.crossable(here.x, here.z, x, z)) {
+        goal.x = x; goal.z = z; goal.altitude = Math.max(30, goal.altitude ?? 0); goal.special = true
+      }
+    }
     const status = this.pilot.drive(goal, input, dt)
     if (status.stuckFor > 3 || status.flipped) this.troubleFor += dt
     return status
@@ -285,12 +315,13 @@ export class Mind {
     // Destinations may be shared objects (a road point, a place of interest): move a copy.
     if (this.activity.destination) this.activity.destination = { ...this.activity.destination, x: this.activity.destination.x + dx, z: this.activity.destination.z + dz }
     for (const p of this.trail) move(p)
-    // Routes and road waypoints are asked for again rather than moved: they are cheap.
-    this.route = null; this.waypoint = null; this.waypointTime = 0
+    // Routes and road waypoints are asked for again rather than moved: they are cheap. A
+    // choice still being made weighed places in the old frame: make it again.
+    this.route = null; this.waypoint = null; this.waypointTime = 0; this.deciding = null
   }
 
   private clearPlan(): void {
-    this.route = null; this.waypoint = null; this.troubleFor = 0; this.bestDistance = Infinity; this.bestTime = this.time
+    this.deciding = null; this.route = null; this.waypoint = null; this.troubleFor = 0; this.bestDistance = Infinity; this.bestTime = this.time
   }
 
   /** A point about 40 m back along its own trail, or null if it has barely moved. */
@@ -302,12 +333,16 @@ export class Mind {
     return null
   }
 
-  private choose(here: { x: number; z: number }, speed: number, arrived: boolean): void {
+  /**
+   * Pick the next activity. A generator: each place it weighs is checked with a route search,
+   * and when this step's share of searches is spent it yields and is resumed next step, with
+   * the same random draws in the same order. The old activity carries on until it commits.
+   */
+  private *choose(here: { x: number; z: number }, speed: number, arrived: boolean): Generator<void, void, void> {
     const p = this.personality, r = this.random
-    this.clearPlan()
     // Having got somewhere, the patient stop to look; the restless do not.
     if (arrived && this.lastKind !== 'pause' && r() < 0.25 + p.patience * 0.5) {
-      return this.begin('pause', null, null, 1.5 + r() * 2.5)
+      return this.commit('pause', null, null, 1.5 + r() * 2.5)
     }
     const flat = this.terrain.normalAt(here.x, here.z, this.normal).y > 0.96
     const roomy = flat && [0, 1, 2, 3, 4, 5].every(i => this.standable(here.x + Math.cos(i * Math.PI / 3) * 28, here.z + Math.sin(i * Math.PI / 3) * 28))
@@ -326,34 +361,50 @@ export class Mind {
     ]
     let total = 0
     for (const o of options) { if (o[0] === this.lastKind) o[1] *= o[0] === 'explore' ? 0.6 : 0.15; total += o[1] }
-    let roll = r() * total, kind: ActivityKind = 'explore'
+    let roll = r() * total, kind: ActivityKind = 'explore', found: Reach
     for (const [k, w] of options) { roll -= w; if (roll <= 0) { kind = k; break } }
-    if (kind === 'road' && this.reachable(here, road!)) return this.begin('road', road, null, 90)
-    if (kind === 'summit' && this.reachable(here, summit!)) return this.begin('summit', summit, null, 150)
+    if (kind === 'road' && (found = yield* this.reachable(here, road!))) return this.commit('road', road, null, 90, found.route)
+    if (kind === 'summit' && (found = yield* this.reachable(here, summit!))) return this.commit('summit', summit, null, 150, found.route)
     if (kind === 'visit') {
       const sight = this.pickSight(here)
-      if (sight && this.reachable(here, sight)) { this.sight = sight; return this.begin('visit', sight, null, 120) }
+      if (sight && (found = yield* this.reachable(here, sight))) { this.commit('visit', sight, null, 120, found.route); this.sight = sight; return }
     }
-    if (kind === 'follow') return this.begin('follow', null, leader, 20 + r() * 30)
-    if (kind === 'donut') { this.swerveSide = r() < 0.5 ? 1 : -1; return this.begin('donut', null, null, 3.5 + r() * 3) }
+    if (kind === 'follow') return this.commit('follow', null, leader, 20 + r() * 30)
+    if (kind === 'donut') { this.swerveSide = r() < 0.5 ? 1 : -1; return this.commit('donut', null, null, 3.5 + r() * 3) }
     // A few tries at somewhere new that the planner agrees can be reached.
     for (let i = 0; i < 3; i++) {
       const place = this.pickFrontier(here)
-      if (place && this.reachable(here, place)) return this.begin(kind === 'weave' ? 'weave' : 'explore', place, null, kind === 'weave' ? 12 + r() * 10 : 75)
+      if (place && (found = yield* this.reachable(here, place))) return this.commit(kind === 'weave' ? 'weave' : 'explore', place, null, kind === 'weave' ? 12 + r() * 10 : 75, found.route)
     }
-    if (road && this.reachable(here, road)) return this.begin('road', road, null, 90)
-    this.begin('pause', null, null, 2)
+    if (road && (found = yield* this.reachable(here, road))) return this.commit('road', road, null, 90, found.route)
+    this.commit('pause', null, null, 2)
   }
 
-  /** Ask the planner before committing to a place, and keep the route if there is one. */
-  private reachable(here: { x: number; z: number }, place: NavPoint): boolean {
+  /**
+   * Ask the planner before committing to a place, and return the route if there is one so
+   * it is not searched for again. Waits for a share of the planning budget first.
+   */
+  private *reachable(here: { x: number; z: number }, place: NavPoint): Generator<void, Reach, void> {
     const navigator = this.options.navigator
-    if (!navigator) return true
+    if (!navigator) return { route: null }
+    // Waiting moves the vehicle a little: plan from where it is when the search runs.
+    while (!this.mayPlan()) { yield; here = this.vehicle.body.translation() }
     const route = navigator.route(here, place, this.pilot.profile)
     const end = route?.points[route.points.length - 1]
-    if (!route || !end || (!route.reached && Math.hypot(end.x - place.x, end.z - place.z) > 25)) return false
-    this.route = route; this.routeIndex = 0; this.routeTime = 4
-    return true
+    if (!route || !end || (!route.reached && Math.hypot(end.x - place.x, end.z - place.z) > 25)) return null
+    return { route }
+  }
+
+  /** May this mind run a route search now? Aircraft routes are straight lines, never searched. */
+  private mayPlan(): boolean {
+    return this.pilot.profile.flies || !this.budget || this.budget.take()
+  }
+
+  /** Drop the old plan and start a new activity, keeping the route the choice found. */
+  private commit(kind: ActivityKind, destination: NavPoint | null, leader: Vehicle | null, seconds: number, route: Route | null = null): void {
+    this.clearPlan()
+    if (route) { this.route = route; this.routeIndex = 0; this.routeTime = 4 }
+    this.begin(kind, destination, leader, seconds)
   }
 
   private begin(kind: ActivityKind, destination: NavPoint | null, leader: Vehicle | null, seconds: number): void {
@@ -443,7 +494,10 @@ export class Mind {
     const navigator = this.options.navigator
     if (navigator) {
       this.routeTime -= dt
-      if (!this.route || this.routeTime <= 0) {
+      // Refresh the route every few seconds, when this step's planning budget allows: if it
+      // is spent, keep the route it has (or steer by the roads) and ask again next step. Not
+      // while a new choice is being made: the old target is about to be dropped.
+      if ((!this.route || this.routeTime <= 0) && !this.deciding && this.mayPlan()) {
         this.route = navigator.route(here, target, this.pilot.profile); this.routeIndex = 0
         this.routeTime = this.activity.kind === 'follow' ? 1.5 : 4
         // The planner says there is no way there: do not spend a minute proving it by driving.

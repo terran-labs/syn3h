@@ -45,7 +45,7 @@ export interface LabExhibit {
   groupLabel?: string
   /** Heading for a group, for example 'Syn3h buggy: round 2, built on Wide body'. Defaults to title. */
   heading?(group: string | undefined): string
-  /** Designs shown when the page opens, by id. Defaults to the first design of the group. */
+  /** Design shown when the page opens, by id, or 'all' to open side by side. Defaults to the first design of the group. */
   defaultDesign?(group: string | undefined): string | undefined
 }
 
@@ -92,11 +92,21 @@ export interface LabState {
   night: boolean
   headlights: boolean
   braking: boolean
-  /** -1 full reverse to 1 flat out. Cycles gently while `animate` is on, otherwise 0. */
+  /** -1 full reverse to 1 flat out. Cycles gently while `animate` is on, or follows the keys or gamepad. */
   throttle: number
-  /** -1 full left to 1 full right. Cycles gently while `animate` is on, otherwise 0. */
+  /** -1 full left to 1 full right. Cycles gently while `animate` is on, or follows the keys or gamepad. */
   steer: number
-  /** Motion toggle: animate suspension, wheels, gear and so on. */
+  /**
+   * -1 stick back (nose up) to 1 stick forward, as the game's input.y. Aircraft read this where
+   * ground vehicles read `throttle`. Cycles gently while `animate` is on, otherwise 0.
+   */
+  pitch: number
+  /** -1 yaw left to 1 yaw right, as the game's input.w. Cycles gently while `animate` is on, otherwise 0. */
+  yaw: number
+  /**
+   * True while anything is moving the controls: the Motion toggle, a key or gamepad held by a
+   * person, or the lab running by itself after a spell without input.
+   */
   animate: boolean
 }
 

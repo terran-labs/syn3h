@@ -9,7 +9,11 @@
  * lobby graphics it draws at most thirty times a second, stops in a hidden tab, and gives
  * its WebGL context back when disabled.
  */
+import { PresenceFeed, type Populations } from './presence'
+import { LogoRenderer, type PixelRect } from '../brand/logoRenderer'
+import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
 import type { ParamValue } from '../../../shared/params'
+import { ORDINARY_BODY, planetById, type PlanetBody } from '../../world/planets'
 import { qualityFrame, qualityScale, qualityShed } from '../quality/ladder'
 
 export interface GalaxyWorld {
@@ -35,8 +39,8 @@ export interface GalaxyOptions {
   onArrive(id: string): void
   /** A world was tapped. Return true to take it from here (a drop); otherwise the camera flies to it. */
   onTap?(id: string): boolean
-  /** Called every frame with where each world is on screen, for labels. */
-  onLayout?(places: readonly { id: string; x: number; y: number; radius: number; visible: boolean }[], chosen?: string): void
+  /** Called every frame with where each world is on screen, for labels. depth is the distance along the view: smaller is nearer. */
+  onLayout?(places: readonly { id: string; x: number; y: number; radius: number; visible: boolean; depth: number }[], chosen?: string): void
   /**
    * Asked each frame. True holds the system still: the worlds stop in their orbits and a frame
    * is drawn only while something moves (a drag, a flight, a dive). For the lowest graphics
@@ -45,6 +49,11 @@ export interface GalaxyOptions {
   still?(): boolean
   /** Focus the label selected with a controller, so its normal activation stays accessible. */
   onFocus?(id: string): void
+  /** Logo box in CSS pixels relative to this host, plus the existing graphics tier. */
+  logo?(): { box: PixelRect; level: number } | undefined
+  onLogo?(drawn: boolean): void
+  onPresence?(values: Populations): void
+  presenceVisible?(): boolean
 }
 /**
  * The most worlds the galaxy draws, the sun aside. The trace costs little per world (a ray
@@ -54,8 +63,168 @@ export const GALAXY_MAX = 12
 const MAX = GALAXY_MAX
 /** Each world's axis leans this far. */
 const TILT = 0.38
-/** Orbits round the sun; more worlds than this share them. */
-const RINGS = 4
+/** How far the view can tilt: a little under the orbital plane, most of the way over the top. */
+const PITCH_LOW = -0.2, PITCH_HIGH = 1.25
+/**
+ * The system's scale. An ordinary planet's radius; the innermost orbit; the clear space kept
+ * between the surfaces of worlds on neighbouring orbits; the innermost world's turn per second.
+ */
+const PLANET = 0.5, INNER = 2.2, CLEAR = 0.14, RATE = 0.07
+/** The view's half angle on the short side of the screen, as a tangent. */
+const VIEW_TAN = 0.62
+/**
+ * A world's radius in the lobby from its size. Slightly compressed, so the ratios read true
+ * (a moon is plainly a moon) while the smallest world is still something to tap on a phone.
+ */
+export const worldRadius = (size: number) => PLANET * Math.pow(Math.min(1.6, Math.max(0.3, size)), 0.85)
+export interface OrbitPlace { position: [number, number, number]; radius: number; orbit: number }
+/**
+ * Where the worlds are at a time. Every world has an orbit of its own, a circle round the sun
+ * in one plane. The orbits are ordered by heat, the hottest world nearest the sun and the
+ * frozen ones farthest out, and each lies beyond the last by both worlds' radii plus a clear
+ * space. Two worlds' centres are never nearer than the difference of their orbits, so no two
+ * can touch wherever they are in their years: it holds by construction, not by timing.
+ *
+ * The years are Kepler's: a world's turn per second falls as its orbit to the power 3/2, so
+ * the inner worlds visibly overtake the outer ones. Each starts a golden angle on from the
+ * last, which never lines the system up. Places are returned in the order the bodies came.
+ */
+export function orbitLayout(bodies: readonly PlanetBody[], time: number): OrbitPlace[] {
+  const count = Math.min(MAX, bodies.length), places: OrbitPlace[] = new Array(count)
+  const order = Array.from({ length: count }, (_, i) => i).sort((a, b) => bodies[b].heat - bodies[a].heat || a - b)
+  let orbit = INNER, last = 0
+  order.forEach((index, lane) => {
+    const radius = worldRadius(bodies[index].size)
+    if (lane > 0) orbit += last + radius + CLEAR
+    last = radius
+    const angle = 0.9 + lane * 2.399963 + time * RATE * Math.pow(INNER / orbit, 1.5)
+    places[index] = { position: [Math.cos(angle) * orbit, 0, Math.sin(angle) * orbit], radius, orbit }
+  })
+  return places
+}
+/** The camera distance at which the whole system fits the short side of the screen, with a margin. */
+export function fitDistance(bodies: readonly PlanetBody[]): number {
+  return Math.max(...orbitLayout(bodies, 0).map(place => place.orbit + place.radius), INNER) * 1.08 / VIEW_TAN
+}
+/** The body a galaxy world is laid out as: its recipe's, or an ordinary planet's. */
+export function bodyOf(world: GalaxyWorld): PlanetBody {
+  // A world still forming is molten: it belongs close in, among the hot worlds.
+  if (world.forming) return { size: 1, heat: 0.95 }
+  return planetById(world.recipe ?? world.id.split('~')[0])?.body ?? ORDINARY_BODY
+}
+/**
+ * The world a tap at (x, y) means. On a disc, the nearest disc there: the one that is seen,
+ * since a tap is a drop and must never land on a world hidden behind it. Just off every disc,
+ * a generous margin on small screens picks the closest edge.
+ */
+export function pickWorld(screen: readonly { id: string; x: number; y: number; radius: number; visible: boolean; depth: number }[], x: number, y: number, margin = 22): string | undefined {
+  const shown = screen.filter(s => s.visible).map(s => ({ s, d: Math.hypot(s.x - x, s.y - y) - s.radius }))
+  const on = shown.filter(e => e.d < 0).sort((a, b) => a.s.depth - b.s.depth)[0]
+  return (on ?? shown.filter(e => e.d < margin).sort((a, b) => a.d - b.d)[0])?.s.id
+}
+/**
+ * The feel of the view under a finger. The finger moves an aim; what is shown follows the aim
+ * on a critically damped spring, quick enough to stay under the finger (a frame or two) but
+ * weighted. Let go and the aim coasts on, slowing the way a flicked list does on a phone. The
+ * view's tilt has soft limits: past them a drag meets rising resistance, as iOS scrolling does
+ * at the end of a page, and on release the aim springs back onto the limit without bouncing.
+ * Everything is in closed form against real elapsed time: the aim's coast and spring back are
+ * exact at any step, the view follows it within two milliradians whether at 30 frames a second or
+ * 120, and one long frame after a stall cannot blow up.
+ */
+export const SWING = {
+  /** How tightly the view follows the aim, radians per second: critically damped. */
+  follow: 45,
+  /** How fast a tilt past its limit springs back. */
+  back: 11,
+  /** Seconds for a coast to slow by e, about iOS's normal deceleration. */
+  coast: 0.45,
+  /** Most a tilt can be pulled past its limit (10 degrees), and iOS's resistance. */
+  stretch: 10 * Math.PI / 180, resistance: 0.55,
+  /** Below these the motion is over, and the lobby may go idle again. */
+  rest: 1e-4, still: 1e-3,
+} as const
+/**
+ * One step of a critically damped spring toward a target that starts at `target` and moves
+ * at `speed` through the step. Exact for any dt, so a view following a coasting aim lags it
+ * the same at 30 frames a second as at 120. Following a steady target it trails by 2 speed / omega.
+ */
+export function springStep(x: number, v: number, target: number, omega: number, dt: number, speed = 0): [number, number] {
+  const trail = -2 * speed / omega, offset = x - target - trail, fade = Math.exp(-omega * dt), lead = v - speed + omega * offset
+  return [target + speed * dt + trail + (offset + lead * dt) * fade, speed + (v - speed - omega * lead * dt) * fade]
+}
+/** How far past a limit a pull of `over` shows: iOS's rubber band, rising toward but never reaching `most`. */
+export function rubberBand(over: number, most = SWING.stretch, resistance = SWING.resistance): number {
+  return Math.sign(over) * (1 - 1 / (Math.abs(over) * resistance / most + 1)) * most
+}
+/** The pull that shows as `shown` past the limit: the band's inverse, for picking up a stretched view. */
+export function rubberPull(shown: number, most = SWING.stretch, resistance = SWING.resistance): number {
+  const t = Math.min(Math.abs(shown) / most, 0.999)
+  return Math.sign(shown) * (most / resistance) * (1 / (1 - t) - 1)
+}
+/** A finger's position on an axis with soft limits: inside them as it is, past them stretched. */
+export function softLimit(pull: number, low: number, high: number): number {
+  return pull > high ? high + rubberBand(pull - high) : pull < low ? low + rubberBand(pull - low) : pull
+}
+/**
+ * One axis of the view: aim and shown position, each with a velocity. While held, the finger
+ * sets the aim and its speed; let go, the aim coasts, or springs back onto a limit it is past.
+ */
+export interface SwingAxis { aim: number; aimSpeed: number; view: number; viewSpeed: number }
+export function swingStep(axis: SwingAxis, dt: number, held: boolean, low = -Infinity, high = Infinity): SwingAxis {
+  let { aim, aimSpeed, view, viewSpeed } = axis
+  const from = aim
+  if (!held) {
+    const limit = aim > high ? high : aim < low ? low : null
+    if (limit !== null) {
+      // Past a limit: back onto it. Critically damped, so it eases in and never crosses.
+      ;[aim, aimSpeed] = springStep(aim, aimSpeed, limit, SWING.back, dt)
+      if ((aim - limit) * (axis.aim - limit) <= 0 || (Math.abs(aim - limit) < SWING.rest && Math.abs(aimSpeed) < SWING.still)) { aim = limit; aimSpeed = 0 }
+    } else if (aimSpeed !== 0) {
+      // Coasting, slowing smoothly.
+      const fade = Math.exp(-dt / SWING.coast), travel = aimSpeed * SWING.coast * (1 - fade), edge = aimSpeed > 0 ? high : low
+      if ((aim + travel - edge) * Math.sign(aimSpeed) > 0) {
+        // It reaches a limit within this step. Coast exactly to it, then let the spring back
+        // take the rest of the step, keeping only the speed the spring can turn within the
+        // stretch (it peaks at speed / (back e)). Solved at the crossing, not at the step's
+        // end, so the stretch is the same at any frame rate.
+        const into = -SWING.coast * Math.log(1 - (edge - aim) / (aimSpeed * SWING.coast)), most = SWING.stretch * SWING.back * Math.E
+        const speed = Math.max(-most, Math.min(most, aimSpeed * Math.exp(-into / SWING.coast)))
+        ;[aim, aimSpeed] = springStep(edge, speed, edge, SWING.back, dt - into)
+      } else { aim += travel; aimSpeed *= fade }
+      if (Math.abs(aimSpeed) < SWING.still && aim <= high && aim >= low) aimSpeed = 0
+    }
+  }
+  // The view chases the aim as it moved through this step, not where it ended.
+  ;[view, viewSpeed] = springStep(view, viewSpeed, from, SWING.follow, dt, dt > 0 ? (aim - from) / dt : 0)
+  if (Math.abs(view - aim) < SWING.rest * 0.1 && Math.abs(viewSpeed) < SWING.still) { view = aim; viewSpeed = 0 }
+  return { aim, aimSpeed, view, viewSpeed }
+}
+/**
+ * The resting view. Left alone for a few seconds, the view tilts very slowly to look down on
+ * the system from a little above its plane, where every orbit reads as an ellipse and no world
+ * hides another for long. Any touch, key, wheel or stick ends it at once, from wherever it is.
+ */
+export const REST = {
+  /** Seconds without input before the view starts to settle. */
+  after: 4,
+  /** The tilt it settles at: about twenty degrees above the orbital plane. */
+  pitch: 20 * Math.PI / 180,
+  /** Seconds for the remaining tilt to fall by e: slow enough to read as drifting, not moving. */
+  ease: 5,
+} as const
+/**
+ * The tilt after dt seconds, given how long the view has been left alone. Before REST.after it
+ * is untouched; after, it closes on the resting tilt exponentially (exact at any frame rate)
+ * and lands on it exactly, so the lobby can go idle.
+ */
+export function restStep(pitch: number, idle: number, dt: number, rest: { after: number; pitch: number; ease: number } = REST): number {
+  if (idle < rest.after || pitch === rest.pitch) return pitch
+  const next = rest.pitch + (pitch - rest.pitch) * Math.exp(-Math.max(0, dt) / rest.ease)
+  return Math.abs(next - rest.pitch) < 2e-4 ? rest.pitch : next
+}
+/** Nothing left moving on this axis. */
+export const swingResting = (axis: SwingAxis) => axis.aimSpeed === 0 && axis.viewSpeed === 0 && axis.view === axis.aim
 /**
  * Level of detail for the maps: every world wears a small one (512 by 256, about 40 ms to
  * paint on a desktop, half a megabyte on the GPU) from one texture array; the world being
@@ -73,6 +242,7 @@ uniform float uDive;                // 0 in orbit, 1 through the atmosphere of t
 uniform float uDim;                 // 1 as the lobby itself; lower behind an open panel
 uniform vec3 uEye, uRight, uUp, uForward; uniform float uTan;
 uniform int uCount; uniform int uOnly;
+uniform float uPopulation[${MAX}];
 uniform vec4 uWorld[${MAX}];        // xyz position, w radius
 uniform vec3 uLand[${MAX}], uSea[${MAX}];
 uniform vec4 uKind[${MAX}];         // x glow, y has map, z spin, w seed
@@ -113,11 +283,15 @@ void main() {
   if (uAmbience > 0.0) sky += vec3(0.02, 0.06, 0.24) * smoothstep(0.38, 0.8, fbm(ray * 2.2 + 7.0)) * 0.5 * uAmbience;
 
   // The nearest world along this ray.
-  float nearest = 1e9; int found = -1; vec3 normal = vec3(0.0); float halo = 0.0; vec3 haloTint = vec3(0.0);
+  // Where this ray meets the orbital plane, for the faint trace of each orbit. One line a
+  // pixel wide however far off; it fades toward the horizon, where a pixel spans many orbits.
+  float planeT = -uEye.y / (abs(ray.y) > 1e-4 ? ray.y : 1e-4), planeR = length((uEye + ray * planeT).xz), planeW = fwidth(planeR), trace = 0.0;
+  float nearest = 1e9; int found = -1; vec3 normal = vec3(0.0); float halo = 0.0; vec3 haloTint = vec3(0.0); float haloNear = 1e9; vec3 haloFront = vec3(0.0);
   for (int i = 0; i < ${MAX}; i++) {
     if (i >= uCount) break;
     if (uOnly >= 0 && i != uOnly) continue;
     vec3 oc = uEye - uWorld[i].xyz; float r = uWorld[i].w;
+    trace += 1.0 - smoothstep(0.0, planeW * 1.5 + 1e-5, abs(planeR - length(uWorld[i].xz)));
     float b = dot(oc, ray), cc = dot(oc, oc) - r * r, disc = b * b - cc;
     if (disc > 0.0) { float t = -b - sqrt(disc); if (t > 0.0 && t < nearest) { nearest = t; found = i; normal = normalize(oc + ray * t); } }
     else if (b < 0.0) {
@@ -125,7 +299,10 @@ void main() {
       float miss = sqrt(max(0.0, cc + r * r - b * b)) - r;          // how far the ray passes outside the limb
       vec3 air = mix(uSea[i], vec3(0.35, 0.6, 1.0), 0.45);
       float toward = 0.3 + 0.7 * clamp(dot(normalize(-uWorld[i].xyz), normalize(oc + ray * (-b))) * 0.5 + 0.5, 0.0, 1.0);
-      halo += pow(clamp(1.0 - miss / (r * 0.14), 0.0, 1.0), 2.5) * toward * 0.6; haloTint = air;
+      // Tint and strength add up, so where two halos overlap the colour blends, not switches.
+      float h = pow(clamp(1.0 - miss / (r * 0.14), 0.0, 1.0), 2.5) * toward * 0.6; halo += h; haloTint += air * h;
+      // The nearest halo on this ray is kept apart: it also shows over a world farther off.
+      if (h > 0.0 && -b < haloNear) { haloNear = -b; haloFront = air * h; }
     }
   }
   // The sun at the centre, as a light in the sky: core, bloom and haze by angle from it.
@@ -135,28 +312,45 @@ void main() {
   vec2 sunDirection = toSun / max(length(toSun), 0.00001);
   vec3 sunLight = vec3(1.0, 0.98, 0.94) * exp(-sunDistance * 42.0) * 2.4;
   sunLight += mix(WARM, vec3(1.0, 0.8, 0.55), 0.5) * exp(-sunDistance * 11.0) * 0.8;
-  sunLight += mix(WARM, ACCENT_B, 0.35) * exp(-sunDistance * 2.8) * 0.22;
+  // The wide haze and the shafts are kept apart from the sun itself: a world beyond the sun
+  // still has the sun in front of it, but must not have the whole glow painted over it.
+  vec3 sunHaze = mix(WARM, ACCENT_B, 0.35) * exp(-sunDistance * 2.8) * 0.22;
   float shafts =
     pow(noise(vec3(sunDirection * 2.4, uTime * 0.09)), 2.0) * 0.9 +
     pow(noise(vec3(sunDirection * 6.5 + 3.0, uTime * 0.15)), 3.0) * 0.8 +
     pow(noise(vec3(sunDirection * 17.0 + 9.0, uTime * 0.24)), 4.0) * 0.6;
   float reach = exp(-sunDistance * 1.7) * smoothstep(0.015, 0.14, sunDistance);
   // Each world stands in the light: behind it, as seen from the sun, the shafts are cut.
+  // Every edge of the cut is a ramp, never a switch: it starts across the world's limb along
+  // the ray, its sides soften with distance, and it fades out as the world slides over the
+  // sun, where the direction from the sun to the world means nothing and would flip.
   float shade = 1.0;
   for (int i = 0; i < ${MAX}; i++) {
     if (i >= uCount || uShed.x >= 1.0) break;
     vec3 w = toScreen(uWorld[i].xyz);
     if (w.z <= 0.0) continue;
     vec2 centre = w.xy * 0.5 - sunP.xy * 0.5;                // from the sun, on screen
-    float along = dot(centre, sunDirection), size = uWorld[i].w / (w.z * uTan) * 0.5;
-    if (along > 0.0 && length(toSun) > along) {
-      float off = length(centre - sunDirection * along);
-      // The shadow widens a little and softens with distance behind the world.
-      float spread = size * (1.0 + (length(toSun) - along) * 0.6);
-      shade *= 1.0 - (1.0 - smoothstep(spread * 0.7, spread * 1.25, off)) * 0.85 * (1.0 - uShed.x);
-    }
+    float along = dot(centre, sunDirection), size = uWorld[i].w / (w.z * uTan) * 0.5, past = length(toSun) - along;
+    // Most pixels lie where every ramp below is exactly zero: skip them, as cheaply as the old
+    // hard gate did, without making an edge (the skipped value is the computed one).
+    bool far = dot(centre, centre) >= size * size * 2.56;
+    if (far && (along <= 0.0 || past <= -size)) continue;
+    // Distance from this pixel's ray (from the sun outward) to the world: the ray starts at
+    // the sun, so on the far side of the sun it is the distance to the sun itself.
+    float off = length(centre - sunDirection * max(along, 0.0));
+    float behind = max(past, 0.0), soft = clamp(behind * 1.5, 0.0, 1.0);
+    // The shadow widens a little with distance behind the world, and its sides soften.
+    float spread = size * (1.0 + behind * 0.6);
+    if (far && off >= spread * mix(1.25, 1.7, soft)) continue;
+    float cut = (1.0 - smoothstep(spread * mix(0.7, 0.35, soft), spread * mix(1.25, 1.7, soft), off))
+      * smoothstep(-size, size, past)                        // in across the limb, not at its centre line
+      * smoothstep(0.0, size, along);                         // only on the world's side of the sun
+    // Over the sun the cut gives way to an even dimming of every shaft, for a world in front.
+    float clear = smoothstep(size * 0.5, size * 1.6, length(centre));
+    cut = mix(0.45 * clamp((sunP.z - w.z) / uWorld[i].w * 0.5 + 0.5, 0.0, 1.0), cut, clear);
+    shade *= 1.0 - cut * 0.85 * (1.0 - uShed.x);
   }
-  sunLight += mix(vec3(1.0, 0.86, 0.66), WARM, 0.3) * shafts * reach * 0.95 * shade;
+  vec3 sunShafts = mix(vec3(1.0, 0.86, 0.66), WARM, 0.3) * shafts * reach * 0.95 * shade;
   // Lens: a horizontal streak and three ghosts toward the centre. Post effects, shed first.
   vec3 flare = vec3(0.55, 0.75, 1.0) * exp(-abs(toSun.y) * 120.0) * exp(-abs(toSun.x) * 2.6) * 0.5;
   vec2 view = q * 0.5, sunView = sunP.xy * 0.5;
@@ -203,18 +397,43 @@ void main() {
     vec3 air = mix(uSea[found], vec3(0.35, 0.6, 1.0), 0.45);
     world += air * pow(1.0 - clamp(dot(normal, -ray), 0.0, 1.0), 3.0) * (0.15 + 0.7 * lit);
     c = world;
-    // The sun is hidden behind a world that stands in front of it.
-    if (sunP.z > nearest) sunLight *= 0.06;
+    // The air of a nearer world, where its limb crosses this one: not cut off at this disc.
+    if (haloNear < nearest) c += haloFront;
+    // A world is solid. One in front of the sun hides it, all but a trace. One beyond the sun
+    // has the sun and its near glow in front of it, but only a veil of the wide haze and
+    // almost none of the shafts: painted on in full, they made a far world look like glass.
+    // The change across the sun's depth is a ramp the width of the world, never a switch.
+    // Judged at the world's centre, not at each point of its surface: the surface nearest the
+    // eye and its limb lie at different depths, and judging each pixel drew the plane at the
+    // sun's depth across the sphere as a disc inside it.
+    float before = smoothstep(-2.0 * uWorld[found].w, 2.0 * uWorld[found].w, sunP.z - toScreen(uWorld[found].xyz).z);
+    sunLight *= mix(1.0, 0.06, before); sunHaze *= mix(0.35, 0.06, before); sunShafts *= mix(0.12, 0.0, before);
   } else {
-    c += sky * smoothstep(0.08, 0.5, sunDistance) + haloTint * halo;
+    c += sky * smoothstep(0.08, 0.5, sunDistance) + haloTint;
+    if (planeT > 0.01 && uOnly < 0) c += vec3(0.45, 0.62, 0.9) * min(trace, 1.0) * clamp(1.0 - planeW * 2.5, 0.0, 1.0) * 0.1 * (1.0 - uShed.y) * (1.0 - uDive);
   }
-  c += sunLight + flare * (found >= 0 ? 0.2 : 1.0);
+  c += sunLight + sunHaze + sunShafts + flare * (found >= 0 ? 0.2 : 1.0);
   // The dive: streaks rushing outward, then the brightness of air as the world fills the view.
   if (uDive > 0.0) {
     float rush = pow(noise(vec3(normalize(q + 0.0001) * 11.0, uTime * 3.2)), 3.0) * smoothstep(0.15, 1.3, length(q));
     // Air, never a flat sheet: the streaks keep rushing through it to the last frame.
     c = mix(c, vec3(0.62, 0.8, 1.0), smoothstep(0.5, 1.0, uDive) * 0.68);
     c += vec3(0.8, 0.92, 1.0) * rush * uDive * 1.3;
+  }
+  // Connected humans by recipe: at most twelve lights; the label carries the exact total.
+  for (int i = 0; i < ${MAX}; i++) {
+    if (i >= uCount) break;
+    if (uPopulation[i] <= 0.0 || uOnly >= 0) continue;
+    vec3 p = toScreen(uWorld[i].xyz);
+    if (p.z <= 0.0 || (found >= 0 && found != i)) continue;
+    float ring = uWorld[i].w / (p.z * uTan) * 1.28;
+    vec2 d = q - p.xy;
+    float count = min(12.0, uPopulation[i]);
+    float angle = atan(d.y, d.x) + 3.14159265 - uTime * 0.08;
+    float arc = (fract(angle / 6.2831853 * count + 0.5) - 0.5) * 6.2831853 / count * ring;
+    float distanceToLight = length(vec2(length(d) - ring, arc));
+    float size = 4.0 / (minSide * uFrame.z);
+    c += vec3(0.3, 0.85, 1.0) * exp(-distanceToLight * distanceToLight / (size * size)) * (1.0 - uDive);
   }
   // Grade: roll the highlights off, a vignette to hold the eye in the middle, fine film grain.
   c = c / (1.0 + 0.3 * max(max(c.r, c.g), c.b));
@@ -249,13 +468,62 @@ const dot = (a: Vec, b: Vec) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 const cross = (a: Vec, b: Vec): Vec => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
 const unit = (a: Vec): Vec => { const l = Math.hypot(...a) || 1; return [a[0] / l, a[1] / l, a[2] / l] }
 const mix = (a: number, b: number, t: number) => a + (b - a) * t
+/**
+ * An easing written as a share per frame at thirty frames a second, for a step of dt seconds.
+ * The galaxy draws every frame there is while it is being handled, and thirty a second while
+ * idle; this keeps every ease the same speed at either rate, and exactly as it was at thirty.
+ */
+const perFrame = (share: number, dt: number) => 1 - Math.pow(1 - share, dt * 30)
+/**
+ * Whether a frame is due. Idle, thirty a second is plenty for a slow orbit. While the view is
+ * being handled or is settling (a finger down, a drag, a coast or spring still moving, a flight
+ * or arrival), every frame there is, so a 60 or 120 Hz screen shows the motion at its own rate.
+ */
+export function frameDue(sinceLast: number, busy: boolean): boolean { return busy || sinceLast >= 33 }
+/**
+ * The finger's speed at release, per second: the distance covered over about the last 60 ms,
+ * measured from the newest sample at least that old. Robust to any pointer rate, from a 60 Hz
+ * touch screen to a 1000 Hz mouse, and a finger that paused before letting go gives little or none.
+ */
+export function releaseSpeed(samples: readonly { t: number; value: number }[], at: number, window = 60): number {
+  if (samples.length < 2) return 0
+  const last = samples[samples.length - 1]
+  let base = samples[0]
+  for (const sample of samples) if (sample.t <= at - window) base = sample
+  const span = (at - base.t) / 1000
+  return span > 0.008 ? (last.value - base.value) / span : 0
+}
 /** The shortest signed turn from angle a to angle b. */
 const turn = (a: number, b: number) => { const d = (b - a) % (Math.PI * 2); return d > Math.PI ? d - Math.PI * 2 : d < -Math.PI ? d + Math.PI * 2 : d }
+/**
+ * Where the camera settles round a chosen world, as a bearing from the world and a tilt. `sun`
+ * is the bearing of the sun from the world, `spin` the world's turn on its axis now, `from`
+ * the camera's bearing now. The camera goes to the side the world's island is on, so the dive
+ * falls as near the island as it can, but never to the night side: it stays between half a
+ * radian off the sun (so the shafts stand behind the world, not the camera) and 1.35 radians
+ * (the edge of the lit side). With the island on the night side it takes that limit on the
+ * island's side. The world is not turned: the camera does all the moving.
+ */
+export function approach(sun: number, spin: number, from: number, keep?: 1 | -1): { facing: number; latitude: number; side: 1 | -1 } {
+  const ct = Math.cos(TILT), st = Math.sin(TILT)
+  // The island's direction from the world's centre for a spin s is (-sin s, st cos s, ct cos s).
+  const island = Math.atan2(-Math.sin(spin), ct * Math.cos(spin)), off = turn(sun, island)
+  // Dead behind the world the island favours neither side: keep to the side the camera is on.
+  // Once a side is taken it is kept (`keep`), so the camera never swings across the sun to
+  // chase an island that has turned round the back of its world.
+  const side = keep ?? (Math.abs(Math.abs(off) - Math.PI) < 0.2 ? (turn(sun, from) >= 0 ? 1 : -1) : off >= 0 ? 1 : -1)
+  const round = off * side >= 0 ? Math.abs(off) : Math.PI * 2 - Math.abs(off)   // the island's angle from the sun, going round by that side
+  return { facing: sun + side * Math.min(1.35, Math.max(0.5, round)), latitude: Math.asin(st * Math.cos(spin)), side }
+}
 
 export class Galaxy {
   canvas = document.createElement('canvas')
   /** Frames drawn, for the checks. */
   frames = 0
+  private readonly presence: PresenceFeed
+  private population: Populations = new Map()
+  private logo: LogoRenderer | null = null
+  private logoSeen = false
   private gl: WebGL2RenderingContext | null = null
   private uniforms: Record<string, WebGLUniformLocation | null> = {}
   /** Painted maps keyed by world, recipe, seed, snapshot and size; kept across context loss. */
@@ -290,7 +558,8 @@ export class Galaxy {
   idle = 0
   // The view: an orbit round a point, which is the sun until a world is chosen.
   private yaw = 0.6
-  private pitch = 0.5
+  /** The first view is the resting view, so nothing has to move to reach it (reduced motion never moves by itself). */
+  private pitch: number = REST.pitch
   private framed = false
   /**
    * How bright the galaxy is: 1 as the lobby, lower as the backdrop of an open panel, so
@@ -303,7 +572,17 @@ export class Galaxy {
   private dim = 1
   private distance = 13
   private target: Vec = [0, 0, 0]
-  private spinVelocity = 0
+  /** The view's turn and tilt under the finger: see SWING. this.yaw and this.pitch are what is shown. */
+  private swingYaw: SwingAxis = { aim: 0.6, aimSpeed: 0, view: 0.6, viewSpeed: 0 }
+  private swingPitch: SwingAxis = { aim: REST.pitch, aimSpeed: 0, view: REST.pitch, viewSpeed: 0 }
+  /** When the view was last handled (a pointer, key, wheel or stick, or a world chosen or left), on the frame clock. */
+  private handled = performance.now()
+  /** True while the view is settling to its resting tilt: frames are still owed. */
+  private resting = false
+  /** The finger's unstretched tilt during a drag, and how fast it and the turn are moving. */
+  private pull = { pitch: 0, yaw: 0 }
+  /** The finger's recent unstretched turn and tilt, for its speed at release. */
+  private trail: { t: number; yaw: number; pitch: number }[] = []
   private chosen = -1
   private diving = false
   private dive = 0
@@ -317,13 +596,18 @@ export class Galaxy {
   private readonly resizeObserver: ResizeObserver
 
   constructor(private readonly host: HTMLElement, private readonly options: GalaxyOptions) {
+    // The first view frames every orbit.
+    this.distance = this.reach = fitDistance(options.worlds.map(bodyOf))
+    const recipes = [...new Set(options.worlds.filter(w => w.id !== 'custom').map(w => w.recipe ?? w.id))]
+    this.presence = new PresenceFeed(recipes, values => { this.population = values; this.wake = 2; options.onPresence?.(values) })
+    this.reduced.addEventListener('change', () => { this.wake = 2 }, { signal: this.abort.signal })
     addEventListener('keydown', event => this.key(event), { signal: this.abort.signal })
     this.resizeObserver = new ResizeObserver(() => this.resize()); this.resizeObserver.observe(host)
-    document.addEventListener('visibilitychange', () => { cancelAnimationFrame(this.frame); if (this.active && !document.hidden) this.loop(0) }, { signal: this.abort.signal })
+    document.addEventListener('visibilitychange', () => { this.syncPresence(); cancelAnimationFrame(this.frame); if (this.active && !document.hidden) this.loop(0) }, { signal: this.abort.signal })
   }
   /** False when WebGL 2 is not available: the caller keeps the ordinary lobby. */
   static supported(): boolean { try { return Boolean(document.createElement('canvas').getContext('webgl2')) } catch { return false } }
-  get live(): boolean { return this.gl !== null }
+  get live(): boolean { return this.gl !== null && !this.gl.isContextLost() }
   /** Worlds whose painted maps have arrived. */
   get painted(): number { return this.options.worlds.filter(world => this.maps.has(this.mapKey(world, SMALL))).length }
   private mapKey(world: GalaxyWorld, size: readonly [number, number]): string { return `${world.id}:${world.recipe ?? world.id}:${world.seed}:${world.mapVariant ?? ''}:${size[0]}` }
@@ -345,13 +629,44 @@ export class Galaxy {
       if (this.options.worlds[this.chosen] === world) this.request(world, CLOSE, true)
     }
   }
+  private savedTarget = false
+  /** Borrow a recipe's existing slot for one saved-world flight. Custom is never touched. */
+  savedWorldTarget(recipe: string, seed: number, values: Record<string, ParamValue>, identity: string): () => void {
+    if (this.savedTarget) throw new Error('A saved-world flight is already active.')
+    const index = this.options.worlds.findIndex(world => world.id === recipe)
+    const world = this.options.worlds[index]
+    if (!world) throw new Error('The saved recipe is unavailable.')
+    const original = { ...world }
+    const overrides = Object.fromEntries(Object.entries(values).sort(([a], [b]) => a.localeCompare(b)))
+    Object.assign(world, { recipe, seed, overrides, forming: false, glow: overrides['world.seaKind'] === 0, mapVariant: `saved:${identity}:${JSON.stringify(overrides)}` })
+    const keys = [this.mapKey(world, SMALL), this.mapKey(world, CLOSE)]
+    this.savedTarget = true; this.layers[index] = ''; this.closeIndex = -1; this.wake = 2
+    this.request(world, SMALL, true); this.request(world, CLOSE, true)
+    let restored = false
+    return () => {
+      if (restored) return
+      restored = true
+      for (const key of Object.keys(world) as (keyof GalaxyWorld)[]) if (!(key in original)) delete world[key]
+      Object.assign(world, original)
+      for (let i = this.queue.length - 1; i >= 0; i--) if (keys.includes(this.queue[i].key)) this.queue.splice(i, 1)
+      for (const key of keys) this.maps.delete(key)
+      this.layers[index] = ''; this.closeIndex = -1
+      if (this.closeKey && keys.includes(this.closeKey)) this.closeKey = ''
+      this.savedTarget = false; this.home()
+      if (this.active) this.request(world, SMALL, true)
+    }
+  }
+  private syncPresence(): void { this.presence.setActive(this.active && !document.hidden && (this.options.presenceVisible?.() ?? true)) }
   set enabled(value: boolean) {
     if (value === this.active) return
     this.active = value
-    if (value) this.acquire(); else this.release()
+    this.syncPresence()
+    // Each showing of the lobby fades the logo in afresh (a context restore, below, does not),
+    // and counts as handling the view, so the resting tilt waits its few seconds again.
+    if (value) { this.logoSeen = false; this.handled = performance.now(); this.acquire() } else this.release()
   }
   /** Back out to the whole system, for example after returning from a world's panel. */
-  home(): void { this.wake = 2; this.chosen = -1; this.arriving = 0; this.arrived = false; this.diving = false; this.dive = 0; this.flight = undefined; this.flightDone = false; this.blur = 0 }
+  home(): void { this.handled = performance.now(); this.wake = 2; this.chosen = -1; this.arriving = 0; this.arrived = false; this.diving = false; this.dive = 0; this.flight = undefined; this.flightDone = false; this.blur = 0 }
   /** The descent: fall toward a world until its air fills the view. Resolves when it has. `quick` for a player who has seen it. */
   descend(id: string, quick = false): Promise<void> {
     if (!this.gl) return Promise.resolve()
@@ -378,7 +693,7 @@ export class Galaxy {
     gl.linkProgram(program)
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { console.warn('Syn3h galaxy shader failed.', gl.getProgramInfoLog(program)); return }
     gl.useProgram(program); gl.bindVertexArray(gl.createVertexArray())
-    for (const name of ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex']) this.uniforms[name] = gl.getUniformLocation(program, name)
+    for (const name of ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex']) this.uniforms[name] = gl.getUniformLocation(program, name)
     // One array of small maps on unit 0, the close map on unit 1.
     const linear = (target: number) => { gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE) }
     gl.activeTexture(gl.TEXTURE0); this.array = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.array)
@@ -401,11 +716,26 @@ export class Galaxy {
       gl.useProgram(blur); gl.uniform1i(this.blurUniforms.uScene, 2); gl.useProgram(program)
     }
     this.gl = gl
+    if (this.options.logo) {
+      this.logo = new LogoRenderer(gl, { particles: logoBudget(this.options.logo()?.level ?? 0).particles })
+      if (!this.logo.ok) { this.logo.dispose(); this.logo = null }
+      else if (this.logoSeen || this.reduced.matches || this.options.still?.()) this.logo.skipIntro()
+    }
     const signal = this.abort.signal, options = { signal }
+    canvas.addEventListener('webglcontextlost', event => {
+      if (this.canvas !== canvas || this.gl !== gl) return
+      event.preventDefault(); cancelAnimationFrame(this.frame); this.options.onLogo?.(false)
+    }, options)
+    canvas.addEventListener('webglcontextrestored', () => {
+      if (!this.active || this.canvas !== canvas || this.gl !== gl) return
+      const selected = this.options.worlds[this.chosen]?.id
+      this.release(); this.acquire()
+      if (selected) this.choose(selected)
+    }, options)
     canvas.addEventListener('pointerdown', event => this.down(event), options)
     canvas.addEventListener('pointermove', event => this.move(event), options)
     for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, event => this.up(event, type === 'pointerup'), options)
-    canvas.addEventListener('wheel', event => { event.preventDefault(); this.wake = 2; if (this.chosen < 0) this.distance = Math.min(26, Math.max(6, this.distance * Math.exp(event.deltaY * 0.0012))) }, { signal, passive: false })
+    canvas.addEventListener('wheel', event => { event.preventDefault(); this.handled = performance.now(); this.wake = 2; if (this.chosen < 0) this.distance = Math.min(this.farthest, Math.max(6, this.distance * Math.exp(event.deltaY * 0.0012))) }, { signal, passive: false })
     // Held upright, a phone has height to spare and no width: look down more steeply so the
     // orbits open out into the height. Only for the first view; after that the player's stands.
     if (!this.framed) { this.framed = true; if (this.host.clientHeight > this.host.clientWidth * 1.2) this.pitch = 0.85 }
@@ -414,6 +744,7 @@ export class Galaxy {
   private release(): void {
     // A finished or abandoned drop does not outlive the context: the next showing starts clean.
     this.home()
+    this.logo?.dispose(); this.logo = null; this.options.onLogo?.(false)
     cancelAnimationFrame(this.frame); this.worker?.terminate(); this.worker = null; this.queue.length = 0; this.painting = false
     this.array = this.close = null; this.fbo = null; this.target2 = null; this.program = null; this.blurProgram = null
     this.gl?.getExtension('WEBGL_lose_context')?.loseContext(); this.gl = null; this.canvas.remove(); this.pointers.clear(); this.drag = null
@@ -466,7 +797,7 @@ export class Galaxy {
       this.closeKey = key
       // Keep the CPU copies of close maps few: the newest two.
       const closes = [...this.maps.keys()].filter(k => k.endsWith(`:${CLOSE[0]}`) && k !== key)
-      for (const old of closes.slice(0, Math.max(0, closes.length - 1))) this.maps.delete(old)
+      if (!this.savedTarget) for (const old of closes.slice(0, Math.max(0, closes.length - 1))) this.maps.delete(old)
     }
     this.closeIndex = map && key === this.closeKey ? this.chosen : -1
   }
@@ -478,27 +809,19 @@ export class Galaxy {
     this.canvas.width = Math.max(1, Math.round(this.host.clientWidth * scale)); this.canvas.height = Math.max(1, Math.round(this.host.clientHeight * scale))
     if (this.target2) { const gl = this.gl; gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.target2); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.canvas.width, this.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null) }
   }
-  /**
-   * Where the worlds are now: slow circular orbits, each at its own pace. There are at most
-   * four orbits, at the original spacing; with more than four worlds they share them, spread
-   * evenly round each one and moving together, so ten worlds keep the size four had and the
-   * system still fits a phone held upright.
-   */
+  /** Where the worlds are now: see orbitLayout. */
   private places(time: number): { position: Vec; radius: number }[] {
-    const count = Math.min(MAX, this.options.worlds.length), rings = Math.min(RINGS, count)
-    return this.options.worlds.slice(0, MAX).map((_, i) => {
-      const ring = i % rings, slot = Math.floor(i / rings), sharing = Math.ceil((count - ring) / rings)
-      const orbit = 2.9 + ring * 1.45, angle = 0.9 + ring * 1.9 + slot * Math.PI * 2 / sharing + time * 0.045 / Math.sqrt(orbit / 2.9)
-      return { position: [Math.cos(angle) * orbit, 0, Math.sin(angle) * orbit] as Vec, radius: 0.7 + (i % 2) * 0.12 }
-    })
+    return orbitLayout(this.options.worlds.map(bodyOf), time)
   }
+  /** The farthest the view may pull back: far enough to see the whole system with room round it. */
+  private get farthest(): number { return Math.max(26, fitDistance(this.options.worlds.map(bodyOf)) * 1.5) }
   private camera(places: { position: Vec; radius: number }[]) {
     // Ease toward the chosen world; arriving is the camera settling close above it.
     const goal: Vec = this.chosen >= 0 ? places[this.chosen].position : [0, 0, 0]
-    const ease = this.chosen >= 0 ? 0.08 : 0.06
+    const ease = perFrame(this.chosen >= 0 ? 0.08 : 0.06, this.step)
     this.target = [mix(this.target[0], goal[0], ease), mix(this.target[1], goal[1], ease), mix(this.target[2], goal[2], ease)]
     const wantDistance = this.chosen >= 0 ? places[this.chosen].radius * (this.diving ? 1.03 : 3.1) : this.distance
-    this.reach = mix(this.reach, wantDistance, this.diving ? 0.075 : this.chosen >= 0 ? 0.05 : 0.12)
+    this.reach = mix(this.reach, wantDistance, perFrame(this.diving ? 0.075 : this.chosen >= 0 ? 0.05 : 0.12, this.step))
     const latitude = this.face()
     if (this.flight) {
       // The drop, by the clock: across to the world in the first three quarters, round to its
@@ -520,64 +843,70 @@ export class Galaxy {
     // frame left on screen is where the camera was going.
     this.settled = Math.abs(this.reach - wantDistance) < 0.01 * wantDistance && Math.hypot(...sub(this.target, goal)) < 0.01 * wantDistance
     if (this.settled && this.holding) { this.target = goal; this.reach = wantDistance }
-    if (!this.flight) this.dive = Math.max(0, this.dive - 0.05)
+    if (!this.flight) this.dive = Math.max(0, this.dive - 1.5 * this.step)
     const cp = Math.cos(this.pitch), eye: Vec = [this.target[0] + Math.sin(this.yaw) * cp * this.reach, this.target[1] + Math.sin(this.pitch) * this.reach, this.target[2] + Math.cos(this.yaw) * cp * this.reach]
     const forward = unit(sub(this.target, eye)), right = unit(cross(forward, [0, 1, 0])), up = cross(right, forward)
     return { eye, forward, right, up, // The short side of the screen always spans the same slice of space, so the system fills
     // a phone held upright as well as it fills a wide monitor.
-    tan: 0.62 }
+    tan: VIEW_TAN }
   }
   private reach = 13
-  /** Extra turn of each world on its axis: how a chosen world brings its island round. */
-  private readonly spinOffset: number[] = []
+  /** Seconds since the last drawn frame, for the eases. */
+  private step = 1 / 30
   /** Where the camera settles round a chosen world: an angle, a quarter turn off the sun. */
   private facing = 0
   private facingSettled = true
-  private spin(i: number, time: number): number { return time * 0.05 + i * 2.1 + (this.spinOffset[i] ?? 0) }
+  /** The side of the sun the camera took round the chosen world, kept until another is chosen. */
+  private facingSide: 1 | -1 = 1
+  /** Each world's slow turn on its axis. Nothing else turns a world. */
+  private spin(i: number, time: number): number { return time * 0.05 + i * 2.1 }
   /**
-   * Flying to a world, the camera swings round to its lit side, a little off the sun so the
-   * shafts still stand behind it, and the world turns on its axis to bring its island (the
-   * map's longitude 0, latitude 0, where the game spawns) to face the camera. The dive then
-   * falls onto the island, so orbit and ground line up.
+   * Flying to a world, only the camera moves: the world keeps its own slow turn and is never
+   * turned to meet the view. The camera swings round the world as it falls, a curving,
+   * deorbiting approach, toward the side its island is on (the map's longitude 0, latitude 0,
+   * where the game spawns), kept within the lit side: see approach.
    */
   private face(): number {
     this.facingSettled = true
     if (this.chosen < 0 || this.options.worlds[this.chosen].forming) return this.pitch
-    const i = this.chosen, ct = Math.cos(TILT), st = Math.sin(TILT)
-    // The island's direction from the world's centre for a spin s is (-sin s, st cos s, ct cos s).
-    const want = Math.atan2(-ct * Math.sin(this.facing), Math.cos(this.facing)), now = this.spin(i, this.clock)
-    const spinStep = turn(now, want), latitude = Math.asin(st * Math.cos(want))
-    this.spinOffset[i] = (this.spinOffset[i] ?? 0) + spinStep * 0.07
-    if (!this.drag && !this.flight) { const y = turn(this.yaw, this.facing), p = latitude - this.pitch; this.yaw += y * 0.07; this.pitch += p * 0.07; this.facingSettled = Math.abs(y) < 0.003 && Math.abs(p) < 0.003 && Math.abs(spinStep) < 0.003 }
-    else this.facingSettled = Math.abs(spinStep) < 0.003
+    // The island turns slowly with its world and the world moves along its orbit: follow both.
+    const at = this.places(this.clock)[this.chosen].position
+    const { facing, latitude } = approach(Math.atan2(-at[0], -at[2]), this.spin(this.chosen, this.clock), this.yaw, this.facingSide)
+    // A flight keeps the bearing it set out for: the island moves a few degrees in that time,
+    // and a bearing that changed under it would bend the fall.
+    if (!this.flight) this.facing = facing
+    const share = perFrame(0.07, this.step)
+    if (!this.drag && !this.flight) { const y = turn(this.yaw, this.facing), p = latitude - this.pitch; this.yaw += y * share; this.pitch += p * share; this.facingSettled = Math.abs(y) < 0.003 && Math.abs(p) < 0.003 }
     return latitude
   }
   private loop = (now: number): void => {
+    this.syncPresence()
     if (!this.active || document.hidden) return
     this.frame = requestAnimationFrame(this.loop)
     qualityFrame(now)
-    // Thirty frames a second is plenty for a slow orbit; the drop gets every frame there is.
-    if (!this.flight && now - this.last < 33) return
+    const busy = !!this.flight || this.drag !== null || this.pointers.size > 0 || !this.swingResting || (this.chosen >= 0 && !this.arrived)
+    if (!frameDue(now - this.last, busy)) return
     const elapsed = Math.min(0.1, Math.max(0, (now - this.last) / 1000))
-    this.last = now
+    this.last = now; this.step = elapsed
     this.controller(elapsed)
     const gl = this.gl, u = this.uniforms
-    if (!gl) return
+    if (!gl || gl.isContextLost()) return
     if (this.shownScale !== qualityScale()) this.resize()
     // Behind an open panel the galaxy is a backdrop: dimmed, and held still once it has dimmed.
-    this.dim = Math.abs(this.dim - this.backdrop) < 0.01 ? this.backdrop : mix(this.dim, this.backdrop, 0.18)
+    this.dim = Math.abs(this.dim - this.backdrop) < 0.01 ? this.backdrop : mix(this.dim, this.backdrop, perFrame(0.18, elapsed))
     const still = Boolean(this.options.still?.()) || this.reduced.matches || this.backdrop < 1, wall = performance.now()
     if (!still) this.clock += Math.min(0.25, (wall - this.lastClock) / 1000)
     this.lastClock = wall
+    if (still !== this.holding) this.wake = 2
     const time = this.clock; this.holding = still
     // The view keeps a little of the last drag's swing, and drifts very slowly when left alone.
-    if (!this.drag) { this.yaw += this.spinVelocity; this.spinVelocity *= 0.93; if (Math.abs(this.spinVelocity) < 1e-5) this.spinVelocity = 0; if (this.chosen < 0 && !still) this.yaw += 0.0006 }
+    this.swing(elapsed, !this.drag && this.chosen < 0 && !still)
     const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : [0.5, 0.5, 1]
     const framingMoves = this.framing.some((v, i) => Math.abs(v - frameGoal[i]) > 0.001)
-    this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], 0.18) : frameGoal[i]) as Vec
+    this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], perFrame(0.18, elapsed)) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
     // Held still, draw only while something is moving; the last frame stays on the canvas.
-    const moving = framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || this.spinVelocity !== 0 || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
+    const moving = this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
     if (still && !moving && this.wake <= 0) { this.idle++; return }
     this.wake = Math.max(0, this.wake - 1)
     gl.useProgram(this.program); this.upload(gl); gl.uniform1i(u.uCloseIndex, this.closeIndex)
@@ -587,10 +916,11 @@ export class Galaxy {
     gl.uniform3f(u.uEye, ...view.eye); gl.uniform3f(u.uRight, ...view.right); gl.uniform3f(u.uUp, ...view.up); gl.uniform3f(u.uForward, ...view.forward); gl.uniform1f(u.uTan, view.tan)
     gl.uniform2f(u.uShed, qualityShed(2), qualityShed(3)); gl.uniform1f(u.uAmbience, 1 - qualityShed(1)); gl.uniform1f(u.uDive, this.dive); gl.uniform1f(u.uDim, this.dim)
     gl.uniform1i(u.uOnly, this.editing ? this.chosen : -1)
+    gl.uniform1fv(u.uPopulation, worlds.slice(0, MAX).map(w => w.id === 'custom' || w.mapVariant?.startsWith('saved:') ? -1 : this.population.get(w.recipe ?? w.id)?.players ?? -1))
     gl.uniform1i(u.uCount, Math.min(MAX, worlds.length))
     gl.uniform4fv(u.uWorld, places.flatMap(p => [...p.position, p.radius]))
     gl.uniform3fv(u.uLand, worlds.slice(0, MAX).flatMap(w => rgb(w.land))); gl.uniform3fv(u.uSea, worlds.slice(0, MAX).flatMap(w => rgb(w.sea)))
-    gl.uniform4fv(u.uKind, worlds.slice(0, MAX).flatMap((w, i) => [w.forming ? 2 : w.glow ? 1 : 0, this.layers[i] || i === this.closeIndex ? 1 : 0, this.spin(i, time), (w.seed % 97) + i * 3.1]))
+    gl.uniform4fv(u.uKind, worlds.slice(0, MAX).flatMap((w, i) => [w.forming ? 2 : w.glow ? 1 : 0, this.layers[i] === this.mapKey(w, SMALL) || i === this.closeIndex ? 1 : 0, this.spin(i, time), (w.seed % 97) + i * 3.1]))
     const smear = this.flight && this.blurProgram && this.blur > 0.003 && qualityShed(2) < 1
     if (smear) gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo)
     gl.drawArrays(gl.TRIANGLES, 0, 3)
@@ -600,27 +930,39 @@ export class Galaxy {
       gl.uniform1f(this.blurUniforms.uBlur, this.blur); gl.uniform2f(this.blurUniforms.uSize, this.canvas.width, this.canvas.height)
       gl.drawArrays(gl.TRIANGLES, 0, 3); gl.useProgram(this.program)
     }
+    const logo = this.logo, layout = this.options.logo?.()
+    if (logo && layout) {
+      const budget = logoBudget(layout.level), held = this.reduced.matches || budget.still || this.backdrop < 1
+      if (held) logo.skipIntro()
+      // Behind the loading veil the logo waits at nothing: its fade starts as the veil lifts.
+      else if (document.documentElement.dataset.boot === 'loading') logo.replayIntro()
+      logo.setLook({ particles: Math.round(budget.particles * (1 - qualityShed(1) * 0.65)), sway: held ? 0 : 0.07, opacity: 1 - this.dive })
+      const sx = this.canvas.width / this.host.clientWidth, sy = this.canvas.height / this.host.clientHeight, box = layout.box
+      logo.draw(held ? STILL_SECONDS : time, { x: box.x * sx, y: box.y * sy, width: box.width * sx, height: box.height * sy })
+      this.logoSeen = true; this.options.onLogo?.(true)
+    }
     this.frames++
     // Tell the labels where the worlds are, and notice arrival.
     const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]
     this.screen = places.map((place, i) => {
       const d = sub(place.position, view.eye), z = dot(d, view.forward)
-      return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0 }
+      return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0, depth: z }
     })
     this.options.onLayout?.(this.screen, this.chosen >= 0 ? worlds[this.chosen].id : undefined)
-    if (this.chosen >= 0 && !this.arrived && ++this.arriving > 45) { this.arrived = true; this.options.onArrive(worlds[this.chosen].id) }
+    // Arrival: a second and a half after choosing, whatever the frame rate.
+    if (this.chosen >= 0 && !this.arrived && (this.arriving += this.step) > 1.5) { this.arrived = true; this.options.onArrive(worlds[this.chosen].id) }
   }
-  private screen: { id: string; x: number; y: number; radius: number; visible: boolean }[] = []
+  private screen: { id: string; x: number; y: number; radius: number; visible: boolean; depth: number }[] = []
   /** Fly to a world, as a tap on it does. */
-  choose(id: string): void {
+  choose(id: string): void { this.handled = performance.now();
     this.wake = 2; const index = this.options.worlds.findIndex(world => world.id === id)
     if (index < 0 || index >= MAX) return
     // Without a context there is no flight to wait for: arrive at once.
     if (!this.gl) { this.options.onArrive(id); return }
-    this.chosen = index; this.arriving = 0; this.arrived = false
+    this.chosen = index; this.arriving = 0; this.arrived = false; this.settleTilt()
     // Settle on the lit side, a quarter turn off the sun, on whichever side the view is now.
     const at = this.places(this.clock)[index].position, sun = Math.atan2(-at[0], -at[2])
-    this.facing = sun + 0.6 * (turn(sun, this.yaw) >= 0 ? 1 : -1)
+    const settle = approach(sun, this.spin(index, this.clock), this.yaw); this.facing = settle.facing; this.facingSide = settle.side
     // Its full-size map, ahead of anything else waiting, for the close view and the dive.
     const world = this.options.worlds[index]
     if (!world.forming) this.request(world, CLOSE, true)
@@ -629,11 +971,56 @@ export class Galaxy {
   private focusIndex = -1
   /** The view controls are active only on the unobstructed galaxy. */
   private get controllable(): boolean { return this.active && this.backdrop === 1 && !this.flight && this.chosen < 0 }
-  private orbit(x: number, y: number, zoom: number): void {
-    this.wake = 2; this.spinVelocity = 0
-    this.yaw += x
-    this.pitch = Math.min(1.25, Math.max(-0.2, this.pitch + y))
-    this.distance = Math.min(26, Math.max(6, this.distance * Math.exp(zoom)))
+  private orbit(x: number, y: number, zoom: number): void { this.handled = performance.now();
+    // Keys and sticks move the aim; the view eases after it as it does after a finger.
+    this.wake = 2; this.adopt()
+    const yaw = this.swingYaw, pitch = this.swingPitch
+    yaw.aim += x; yaw.aimSpeed = 0
+    pitch.aim = Math.min(PITCH_HIGH, Math.max(PITCH_LOW, pitch.aim + y)); pitch.aimSpeed = 0
+    this.distance = Math.min(this.farthest, Math.max(6, this.distance * Math.exp(zoom)))
+  }
+  /** Shown turn and tilt as last stepped: anything else that writes them is in control. */
+  private shown = { yaw: NaN, pitch: NaN }
+  /**
+   * Take over the view as it is if something else moved it since the last step: a flight, the
+   * settle round a chosen world, the first framing. Whatever was coasting stops, so the spring
+   * never fights the camera's own moves.
+   */
+  private adopt(): void {
+    if (this.yaw === this.shown.yaw && this.pitch === this.shown.pitch) return
+    this.swingYaw = { aim: this.yaw, aimSpeed: 0, view: this.yaw, viewSpeed: 0 }
+    this.swingPitch = { aim: this.pitch, aimSpeed: 0, view: this.pitch, viewSpeed: 0 }
+    this.shown = { yaw: this.yaw, pitch: this.pitch }
+  }
+  /** Stop any coast; a tilt left past its limit still springs back onto it. */
+  private settleTilt(): void { this.swingYaw.aimSpeed = 0; this.swingPitch.aimSpeed = 0 }
+  private get swingResting(): boolean { return swingResting(this.swingYaw) && swingResting(this.swingPitch) }
+  /** Step the view's spring and coast by the real time since the last frame. */
+  private swing(elapsed: number, drift: boolean): void {
+    // A flight or the settle round a chosen world writes the view itself; adopt() hands it over.
+    this.adopt()
+    // Left alone, the view drifts very slowly round, aim and view together.
+    if (drift) { const turn = 0.018 * Math.min(0.1, elapsed); this.swingYaw.aim += turn; this.swingYaw.view += turn }
+    const dt = Math.min(0.25, elapsed), held = this.drag !== null
+    // Left alone on the whole system, the tilt settles to the resting view: aim and view
+    // together, as the drift moves them, so the spring stays at rest and nothing fights.
+    // Never under reduced motion, never round a chosen world, never while anything else moves.
+    this.resting = false
+    if (!this.reduced.matches && this.chosen < 0 && !this.flight && !held && this.pointers.size === 0 && this.backdrop === 1 && this.swingResting) {
+      const tilt = restStep(this.swingPitch.view, (performance.now() - this.handled) / 1000, dt)
+      if (tilt !== this.swingPitch.view) { this.swingPitch.aim = this.swingPitch.view = tilt; this.resting = true }
+    }
+    if (this.reduced.matches) {
+      // No spring, coast or stretch: the view is where the finger or key put it, within limits.
+      const pitch = Math.min(PITCH_HIGH, Math.max(PITCH_LOW, this.swingPitch.aim))
+      this.swingYaw = { aim: this.swingYaw.aim, aimSpeed: 0, view: this.swingYaw.aim, viewSpeed: 0 }
+      this.swingPitch = { aim: pitch, aimSpeed: 0, view: pitch, viewSpeed: 0 }
+    } else if (!this.swingResting) {
+      this.swingYaw = swingStep(this.swingYaw, dt, held)
+      this.swingPitch = swingStep(this.swingPitch, dt, held, PITCH_LOW, PITCH_HIGH)
+    }
+    this.yaw = this.swingYaw.view; this.pitch = this.swingPitch.view
+    this.shown = { yaw: this.yaw, pitch: this.pitch }
   }
   private key(event: KeyboardEvent): void {
     if (!this.controllable || event.altKey || event.ctrlKey || event.metaKey) return
@@ -670,35 +1057,58 @@ export class Galaxy {
     }
     this.padButtons = buttons
   }
-  private down(event: PointerEvent): void {
+  private down(event: PointerEvent): void { this.handled = performance.now();
     this.canvas.setPointerCapture(event.pointerId); this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
-    if (this.pointers.size === 1) { this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false }; this.spinVelocity = 0 }
-    else if (this.pointers.size === 2) { const [a, b] = [...this.pointers.values()]; this.pinch = Math.hypot(a.x - b.x, a.y - b.y); this.drag = null }
+    if (this.pointers.size === 1) {
+      // A finger stops a coast where it is, and picks up a stretched tilt where it shows.
+      this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false }; this.adopt()
+      const pitch = this.swingPitch; pitch.aim = pitch.view; pitch.aimSpeed = 0; this.swingYaw.aim = this.swingYaw.view; this.swingYaw.aimSpeed = 0
+      const edge = pitch.aim > PITCH_HIGH ? PITCH_HIGH : pitch.aim < PITCH_LOW ? PITCH_LOW : pitch.aim
+      this.pull = { pitch: edge + rubberPull(pitch.aim - edge), yaw: 0 }
+      this.trail = [{ t: event.timeStamp, yaw: 0, pitch: this.pull.pitch }]
+    }
+    else if (this.pointers.size === 2) { const [a, b] = [...this.pointers.values()]; this.pinch = Math.hypot(a.x - b.x, a.y - b.y); this.drag = null; this.settleTilt() }
   }
   private move(event: PointerEvent): void {
     const point = this.pointers.get(event.pointerId); if (!point) return
-    this.wake = 2
+    // A pointer that is down, not one merely passing over, counts as handling the view.
+    this.wake = 2; this.handled = performance.now()
     const dx = event.clientX - point.x, dy = event.clientY - point.y; point.x = event.clientX; point.y = event.clientY
     if (this.pointers.size === 2) {
       const [a, b] = [...this.pointers.values()], gap = Math.hypot(a.x - b.x, a.y - b.y)
-      if (this.pinch > 0 && this.chosen < 0) this.distance = Math.min(26, Math.max(6, this.distance * this.pinch / Math.max(1, gap)))
+      if (this.pinch > 0 && this.chosen < 0) this.distance = Math.min(this.farthest, Math.max(6, this.distance * this.pinch / Math.max(1, gap)))
       this.pinch = gap; return
     }
     if (!this.drag || this.drag.id !== event.pointerId) return
     if (Math.hypot(event.clientX - this.drag.x, event.clientY - this.drag.y) > 7) this.drag.moved = true
     if (!this.drag.moved) return
-    this.yaw -= dx * 0.006; this.spinVelocity = -dx * 0.006 * 0.6
-    this.pitch = Math.min(1.25, Math.max(-0.2, this.pitch + dy * 0.005))
+    this.adopt()
+    const yaw = this.swingYaw, pitch = this.swingPitch, turn = -dx * 0.006, tilt = dy * 0.005
+    this.pull.pitch += tilt; this.pull.yaw += turn; yaw.aim += turn
+    // Where the finger has been lately, for its speed when it lets go.
+    this.trail.push({ t: event.timeStamp, yaw: this.pull.yaw, pitch: this.pull.pitch })
+    while (this.trail.length > 2 && this.trail[1].t < event.timeStamp - 150) this.trail.shift()
+    if (this.reduced.matches) this.pull.pitch = Math.min(PITCH_HIGH, Math.max(PITCH_LOW, this.pull.pitch))
+    pitch.aim = softLimit(this.pull.pitch, PITCH_LOW, PITCH_HIGH)
   }
-  private up(event: PointerEvent, tap: boolean): void {
+  private up(event: PointerEvent, tap: boolean): void { this.handled = performance.now();
     this.pointers.delete(event.pointerId)
     const drag = this.drag; if (!drag || drag.id !== event.pointerId) return
     this.drag = null
+    // Let go: the aim coasts at the finger's speed, faded if the finger had paused. Past a
+    // tilt limit it springs back instead. Reduced motion has no coast.
+    if (drag.moved && !this.reduced.matches) {
+      const at = event.timeStamp, pitch = this.swingPitch
+      const yawSpeed = releaseSpeed(this.trail.map(s => ({ t: s.t, value: s.yaw })), at), pitchSpeed = releaseSpeed(this.trail.map(s => ({ t: s.t, value: s.pitch })), at)
+      this.swingYaw.aimSpeed = Math.max(-8, Math.min(8, yawSpeed * 0.7))
+      const inside = pitch.aim <= PITCH_HIGH && pitch.aim >= PITCH_LOW
+      pitch.aimSpeed = inside ? Math.max(-4, Math.min(4, pitchSpeed * 0.7)) : 0
+    }
     if (drag.moved || !tap) return
     // A tap: the nearest world under the finger, with a generous margin on small screens.
     const box = this.canvas.getBoundingClientRect(), x = event.clientX - box.left, y = event.clientY - box.top
-    const found = this.screen.filter(s => s.visible).map(s => ({ s, d: Math.hypot(s.x - x, s.y - y) - s.radius })).filter(e => e.d < 22).sort((a, b) => a.d - b.d)[0]
-    if (found) { if (!this.options.onTap?.(found.s.id)) this.choose(found.s.id) } else if (this.chosen >= 0 && !this.flight) this.home()
+    const found = pickWorld(this.screen, x, y)
+    if (found) { if (!this.options.onTap?.(found)) this.choose(found) } else if (this.chosen >= 0 && !this.flight) this.home()
   }
-  dispose(): void { this.active = false; this.abort.abort(); this.resizeObserver.disconnect(); this.release() }
+  dispose(): void { this.presence.dispose(); this.active = false; this.abort.abort(); this.resizeObserver.disconnect(); this.release() }
 }

@@ -50,7 +50,7 @@ describe('Daydream slider', () => {
     let last = 0
     for (let p = 0; p < DAYDREAM_OFF_POSITION; p++) { const s = daydreamSecondsAt(p); expect(s).toBeGreaterThanOrEqual(last); last = s }
   })
-  it('shows the default 30 seconds a third of the way along and round trips', () => {
+  it('maps 30 seconds a third of the way along and round trips', () => {
     expect(daydreamSecondsAt(daydreamPositionFor(30))).toBe(30)
     expect(daydreamPositionFor(30)).toBeGreaterThan(25); expect(daydreamPositionFor(30)).toBeLessThan(40)
     expect(daydreamPositionFor(0)).toBe(DAYDREAM_OFF_POSITION)
@@ -96,6 +96,21 @@ describe('ground pilot', () => {
 })
 
 describe('mind', () => {
+  it('abandons a removed leader before reading its physics body', () => {
+    const { game } = harness(), terrain = flat(400)
+    const follower = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0))
+    const leader = new Syn3hBuggy(game, terrain, new Vector3(40, 1, 0))
+    const mind = new Mind(follower, terrain, createGroundPilot(follower), { seed: 'removed-leader', others: () => [leader] })
+    mind.pursue(leader, 30)
+    world.removeRigidBody(leader.body)
+    // Trap the invalid read without poisoning Rapier's WASM borrow state for later tests.
+    const translation = vi.spyOn(leader.body, 'translation').mockImplementation(() => { throw new Error('Read removed leader') })
+    expect(() => mind.step(DT, follower.input)).not.toThrow()
+    expect(translation).not.toHaveBeenCalled()
+    expect(mind.activity.leader).not.toBe(leader)
+    expect(() => world.step()).not.toThrow()
+    translation.mockRestore()
+  })
   it.each(['a', 'b', 'c'])('explores for 90 seconds without entering liquid or leaving the world (seed %s)', seed => {
     const { game, step } = harness()
     const terrain = flat(400, { liquidHeightAt: (x: number) => x > 70 ? 2 : -Infinity })
@@ -178,7 +193,7 @@ describe('bots with a mind', () => {
     const { game, step } = harness(), terrain = flat(800)
     const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); player.isLocal = false
     player.body.setBodyType(RAPIER.RigidBodyType.Fixed, true)
-    params.set('bots.freeSpirit', free); params.set('bots.count', 4); params.set('bots.canFire', false)
+    params.set('bots.freeSpirit', free); params.set('bots.count', 4); params.set('bots.tagBeams', false)
     const manager = game.add(new BotManager(game, terrain, player)); manager.update()
     expect(manager.vehicles).toHaveLength(4)
     let nearest = Infinity, farthest = 0
@@ -202,7 +217,7 @@ describe('mixed fleet', () => {
     const { BotManager } = await import('../../src/bots/BotManager')
     const { game, step } = harness(), terrain = flat(800)
     const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); player.isLocal = false
-    params.set('bots.fleet', 1); params.set('bots.count', 4); params.set('bots.canFire', false); params.set('bots.freeSpirit', 0.5)
+    params.set('bots.fleet', 1); params.set('bots.count', 4); params.set('bots.tagBeams', false); params.set('bots.freeSpirit', 0.5)
     const manager = game.add(new BotManager(game, terrain, player)); manager.update()
     expect(manager.vehicles.map(v => v.kind)).toEqual(['buggy', 'hovercraft', 'buggy', 'jet'])
     const start = manager.vehicles.map(v => new Vector3().copy(v.body.translation()))
@@ -235,18 +250,20 @@ describe('chasing with the route planner', () => {
     const target = new Syn3hBuggy(game, terrain, new Vector3(0, 1, -100)); target.isLocal = false
     target.body.setBodyType(RAPIER.RigidBodyType.Fixed, true)
     const bot = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); bot.isLocal = false
-    params.set('bots.canFire', false)
+    params.set('bots.tagBeams', false)
     const brain = game.add(new BotBrain(game, terrain, bot, target)); game.add(bot)
     brain.navigator = createNavigator(terrain)
     brain.mind = new Mind(bot, terrain, createGroundPilot(bot), { seed: 'chaser', navigator: brain.navigator })
     params.set('bots.freeSpirit', 0)
     let wetTime = 0, nearest = Infinity
-    for (let i = 0; i < 3000 && nearest > 6; i++) {
+    // At default aggression a bot stops a polite gap short of its target (KEEP_GAP, 7 m
+    // centre to centre) instead of ramming it: arriving is getting within 10 m.
+    for (let i = 0; i < 3000 && nearest > 10; i++) {
       step(); const p = bot.body.translation()
       if (depth(p.x, p.z) > 0.3) wetTime += DT
       nearest = Math.min(nearest, Math.hypot(p.x, p.z + 100))
     }
-    expect(wetTime).toBeLessThan(0.5); expect(nearest).toBeLessThan(6); expect(brain.rescues).toBe(0)
+    expect(wetTime).toBeLessThan(0.5); expect(nearest).toBeLessThan(10); expect(brain.rescues).toBe(0)
   })
 })
 
@@ -256,7 +273,7 @@ describe('bots that know the game', () => {
     const h = harness(), terrain = flat(800)
     const player = new Syn3hBuggy(h.game, terrain, new Vector3(0, 1, 0)); player.isLocal = false
     player.body.setBodyType(RAPIER.RigidBodyType.Fixed, true)
-    params.set('bots.count', count); params.set('bots.canFire', false)
+    params.set('bots.count', count); params.set('bots.tagBeams', false)
     const manager = h.game.add(new BotManager(h.game, terrain, player)); manager.update()
     return { ...h, player, manager }
   }

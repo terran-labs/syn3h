@@ -64,6 +64,43 @@ export function setRole<M extends T.Material>(material: M, role: SurfaceRole): M
 /** Remote vehicles beyond this drop to plain materials; the lower bound is the way back in. */
 const FAR_OUT = 30, FAR_IN = 25
 
+// ---------------------------------------------------------------------------------------
+// Warming a far vehicle's close-up materials
+// ---------------------------------------------------------------------------------------
+//
+// A remote vehicle (another player, or a bot) wears plain materials beyond FAR_OUT and the
+// procedural ones inside FAR_IN. The renderer builds a material's shader and pipeline the
+// first time something wearing it is drawn, so the frame a bot first came within 25 m, or was
+// reeled in by a Yoink, used to stall while a dozen pipelines compiled.
+//
+// Now each far vehicle builds its close-up set ahead of need and draws it for a few frames on
+// proxies: copies of its own meshes, a thousandth of their size, at its own position. The
+// pipelines are built while the vehicle is a speck, and the crossing only swaps references.
+// The proxies hang from the scene, not from the model: a far vehicle hides its close-up model
+// (it shows a distance model instead), and anything under a hidden parent is never drawn.
+// They cast shadows, so the shadow pass meets the close-up geometry now as well.
+//
+// The proxies are kept after warming, out of the scene and never drawn again. The renderer
+// counts the objects using each pipeline and frees a pipeline when the last one goes, so
+// disposing the proxies would hand back exactly what they were made to build. They are
+// released when the vehicle is, or when a later warm-up replaces them.
+// It happens again after a graphics level change, which replaces the render targets and with
+// them every pipeline, and when the shading tier changes.
+//
+// Vehicles take turns, so a fleet arriving at once spreads its compiling over many frames.
+// The same pattern as the gear's warm-up (src/weapons/warm.ts).
+
+/** Drawn frames a vehicle's proxies stay in the scene. The first draw compiles; the rest are slack for passes that join late. */
+const WARM_FRAMES = 3
+/** Updates a vehicle may hold the turn without being drawn (hidden, or the world is behind the lobby) before it yields. */
+const WARM_PATIENCE = 180
+const WARM_SCALE = 1e-3
+interface Warm { key: string; group: T.Group | null; drawn: boolean; frames: number; waited: number }
+/** Vehicles waiting to warm, in order. Only the first one acts. */
+const warmQueue: Warm[] = []
+/** Counts for automated checks: sets warmed, turns given up or cancelled, and proxies now in a scene. */
+export const showroomWarm = { warmed: 0, abandoned: 0, cancelled: 0, proxies: 0 }
+
 // TSL node types do not compose through arithmetic chains, so shader values stay loosely typed.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any
@@ -123,7 +160,7 @@ export function roleOf(material: T.Material, meshName = ''): SurfaceRole {
  * Distance to the nearest edge of a hexagonal tiling with unit spacing, with the offset from
  * the cell centre: (edge distance 0 to 0.5, offset y). Pointy-top cells on a (1, sqrt 3) lattice.
  */
-const hexCell = Fn(([p]: [N]) => {
+export const hexCell = Fn(([p]: [N]) => {
   const r = vec2(1, 1.7320508), h = r.mul(.5)
   const a = mod(p, r).sub(h), b = mod(p.sub(h), r).sub(h)
   const g = select(dot(a, a).lessThan(dot(b, b)), a, b)
@@ -490,6 +527,15 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
   const built = new Set<T.Material>()
   const plainCanopies = new Map<T.Mesh, T.Material>()
   let current = -1, far = false, remote = false, distance = 0
+  // Warming state (see the note beside WARM_FRAMES); declared here because `use` must know of the proxies.
+  let warm: Warm | null = null, warmed = '', lastKey = '', level = -1
+  /** The scene this model is in, or null for a model that is not in one (a viewer mid-build). */
+  const sceneOf = (): T.Scene | null => {
+    let top: T.Object3D = root
+    while (top.parent) top = top.parent
+    return (top as Partial<T.Scene>).isScene ? top as T.Scene : null
+  }
+  const environment = (): T.Texture | null => sceneOf()?.environment ?? null
   const use = (tier: ShadingTier): void => {
     if (tier === current) return
     let set = tiers[tier]
@@ -511,8 +557,85 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
       set = new Map(entries.map(e => [e.mesh, e.mesh.material as T.Material]))
       for (const m of set.values()) built.add(m)
       tiers[tier] = set
+      // Give a new set the sky map before it is first drawn. Setting it afterwards, as
+      // `refresh` must when the map itself is replaced, costs a second compile.
+      if (tier > 0) { const sky = environment(); for (const m of set.values()) (m as Standard).envMap = sky }
     }
     current = tier
+  }
+
+  // --- Warming (see the note beside WARM_FRAMES) -------------------------------------------
+  /** The tier this vehicle will wear when it comes close, or 0 when there is nothing to warm. */
+  const nearTier = (): ShadingTier => (remote && far ? Math.min(2, Math.max(0, Math.round(vehicleShading.value))) : 0) as ShadingTier
+  /** Proxies from the last finished warm-up, out of the scene, holding their pipelines in the renderer's cache. */
+  let kept: T.Group | null = null
+  const releaseKept = (): void => {
+    if (!kept) return
+    for (const proxy of kept.children) (proxy as Partial<T.InstancedMesh>).dispose?.()
+    kept = null
+  }
+  const endWarm = (outcome: 'warmed' | 'abandoned' | 'cancelled'): void => {
+    if (!warm) return
+    if (warm.group) {
+      warm.group.removeFromParent()
+      showroomWarm.proxies -= warm.group.children.length
+      // A finished warm-up keeps its proxies alive (see the note above); any other outcome frees them.
+      if (outcome === 'warmed') { releaseKept(); kept = warm.group }
+      else for (const proxy of warm.group.children) (proxy as Partial<T.InstancedMesh>).dispose?.()
+    }
+    const at = warmQueue.indexOf(warm); if (at >= 0) warmQueue.splice(at, 1)
+    // Abandoned counts as done for this tier and level: a vehicle nobody can see must not hold the queue for ever.
+    if (outcome !== 'cancelled') warmed = warm.key
+    showroomWarm[outcome]++
+    warm = null
+  }
+  const stepWarm = (): void => {
+    const tier = nearTier(), key = `${tier}:${level}`
+    if (warm && warm.key !== key) endWarm('cancelled')
+    // Any change of tier or graphics level, even away and back, replaces render targets and
+    // with them every pipeline: what was warmed before no longer counts.
+    if (key !== lastKey) { lastKey = key; warmed = '' }
+    if (tier === 0 || warmed === key) return
+    // Not in a scene (a viewer mid-build): nothing would draw the proxies, so do not take a turn.
+    const scene = sceneOf()
+    if (!scene) { endWarm('cancelled'); return }
+    if (!warm) { warm = { key, group: null, drawn: false, frames: 0, waited: 0 }; warmQueue.push(warm) }
+    if (warmQueue[0] !== warm) return
+    const job = warm
+    if (!job.group) {
+      try {
+        if (!tiers[tier]) {
+          // Building a set dresses the meshes in it (decoration reads them there); put the
+          // plain materials straight back, in the same update, before anything is drawn.
+          use(tier); current = -1; refresh()
+        }
+        const set = tiers[tier]!, group = new T.Group(), seen = new Set<string>()
+        group.name = 'Showroom warm'; group.scale.setScalar(WARM_SCALE)
+        for (const e of entries) {
+          const material = set.get(e.mesh)
+          // One proxy per distinct pipeline: the same geometry and material on the same kind of mesh.
+          const pair = `${e.mesh.geometry.uuid}:${material?.uuid}:${(e.mesh as Partial<T.InstancedMesh>).isInstancedMesh ? 'i' : 'm'}`
+          if (!material || seen.has(pair)) continue
+          seen.add(pair)
+          const proxy = e.mesh.clone(false)
+          proxy.material = material; proxy.visible = true; proxy.frustumCulled = false; proxy.castShadow = true
+          // Only frames that really draw count: the world is not rendered behind the lobby.
+          proxy.onBeforeRender = () => { job.drawn = true }
+          group.add(proxy); showroomWarm.proxies++
+        }
+        job.group = group; root.getWorldPosition(group.position); scene.add(group)
+      } catch (error) {
+        // Warming is an optimisation. If a skin's meshes cannot be copied, the vehicle
+        // simply compiles on arrival, as it did before.
+        console.warn('Vehicle materials not warmed', error)
+        job.group ??= new T.Group(); endWarm('abandoned')
+      }
+      return
+    }
+    // Stay with the vehicle, so the proxies are lit and shadowed as it will be.
+    root.getWorldPosition(job.group.position)
+    if (job.drawn) { job.drawn = false; if (++job.frames >= WARM_FRAMES) endWarm('warmed') }
+    else if (++job.waited > WARM_PATIENCE) endWarm('abandoned')
   }
   const refresh = (): void => {
     // The frame governor caps this by graphics level (safe 0, mobile 0, desktop 3) and sheds it
@@ -542,29 +665,29 @@ export function applyShowroom(root: T.Object3D, decorate: Decorate): () => void 
       return
     }
     // Reflect the scene's own sky map at paint strength. It appears a moment after start,
-    // and a standalone viewer may have none.
-    let scene: T.Object3D = root
-    while (scene.parent) scene = scene.parent
-    const environment = (scene as T.Scene).environment ?? null
+    // and a standalone viewer may have none. A set is given the map when it is built (`use`),
+    // so this recompiles only when the map itself is a different texture.
+    const sky = environment()
     for (const m of tiers[tier]!.values()) {
       const std = m as Standard
-      if (std.envMap !== environment) { std.envMap = environment; std.needsUpdate = true }
+      if (std.envMap !== sky) { std.envMap = sky; std.needsUpdate = true }
       // The live sky map is captured for a subdued scene fill (0.15); paint reflects it at its own strength.
       std.envMapIntensity = paintGloss.value * (std.userData.glass ? 1.3 : 1)
     }
   }
-  const detach = registerVehicleDetail(root, (d, isRemote) => { distance = d; remote = isRemote; refresh() })
+  const detach = registerVehicleDetail(root, (d, isRemote, graphics) => { distance = d; remote = isRemote; level = graphics; refresh(); stepWarm() })
   const unsubscribe = params.onChange(id => {
     if (id === paintCanopy.def.id) {
       // The switch changes which material a canopy gets, so the built tiers are stale.
       use(0)
+      endWarm('cancelled'); releaseKept(); warmed = ''
       for (let tier = 1; tier < tiers.length; tier++) { for (const m of tiers[tier]?.values() ?? []) m.dispose(); tiers[tier] = undefined }
       refresh()
     } else if (id === vehicleShading.def.id || id === paintGloss.def.id) refresh()
   })
   refresh()
   return () => {
-    detach(); unsubscribe()
+    detach(); unsubscribe(); endWarm('cancelled'); releaseKept()
     const live = new Set<T.Material>()
     root.traverse(o => { if (o instanceof T.Mesh) for (const m of Array.isArray(o.material) ? o.material : [o.material]) live.add(m) })
     // The owner releases whatever is still attached; drop the tiers that are not.

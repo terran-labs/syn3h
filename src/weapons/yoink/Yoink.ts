@@ -18,8 +18,9 @@ import type { YoinkWire } from '../../../shared/protocol'
 import { wrapDelta } from '../../../shared/wrap'
 import type { Game, System } from '../../core/Game'
 import { hotExposureDim } from '../../vehicles/skins/hotExposure'
-import { aimFrom } from '../aim'
+import { aimFrom, type GearControl } from '../aim'
 import { CordView, SEGMENTS } from '../bungee/Bungee'
+import { sharedLook, warmGear } from '../warm'
 import { gustPush, holdAccel, type V3 } from './hold'
 import {
   yoinkAllowed, yoinkCone, yoinkCooldown, yoinkFling, yoinkGrip, yoinkHoldDistance, yoinkHoldHeight, yoinkHoldTime,
@@ -34,6 +35,10 @@ export interface YoinkVehicle {
 }
 
 export interface YoinkHooks {
+  control?(): GearControl
+  /** Prevent competing local controllers from grabbing the same vehicle. */
+  heldElsewhere?(id: number): boolean
+
   self(): number
   vehicleOf(id: number): YoinkVehicle | undefined
   /** Every vehicle here, by id: ours, remote players and bots. */
@@ -74,29 +79,82 @@ const OWN_SPEED = 60
 const BEAM_RGB = [3, 1.5, 0.25] as const
 const TINT_RGB = [0.5, 0.25, 0.04] as const
 
+const BEAM_WIDTHS = [0.5, 1.4, 0.18]
+/** Gust rings ready to show at once, for the whole game. A gust lasts a third of a second. */
+const WAVES = 6
+
+interface Wave { mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial; age: number; busy: boolean }
+
+/**
+ * Everything a Yoink draws with. One per game, shared by the player's Yoink and every bot's,
+ * and compiled before anyone uses it (see warm.ts). Gust rings fade on their own, so each
+ * has its own material; they are made once and reused, never cloned per gust.
+ */
+class YoinkLook {
+  readonly coreMat = new THREE.MeshBasicMaterial({ name: 'gear yoink core', color: new THREE.Color(...BEAM_RGB), side: THREE.DoubleSide, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })
+  readonly haloMat = new THREE.MeshBasicMaterial({
+    name: 'gear yoink halo', color: new THREE.Color(...BEAM_RGB), transparent: true, opacity: 0.25, side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  })
+  readonly tintMat = new THREE.MeshBasicMaterial({
+    name: 'gear yoink tint', color: new THREE.Color(...TINT_RGB), transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false,
+  })
+  private readonly waveGeo = new THREE.RingGeometry(0.6, 1, 40)
+  private readonly waves: Wave[] = []
+  private readonly proxy: CordView
+  private readonly unwarm: () => void
+
+  constructor(game: Game) {
+    for (let i = 0; i < WAVES; i++) {
+      const mat = new THREE.MeshBasicMaterial({
+        name: 'gear yoink wave', color: new THREE.Color(...BEAM_RGB), transparent: true, opacity: 0.8, side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      })
+      this.waves.push({ mesh: new THREE.Mesh(this.waveGeo, mat), mat, age: 0, busy: false })
+    }
+    this.proxy = new CordView(this.beamMats(), BEAM_WIDTHS)
+    this.unwarm = warmGear(game, [
+      ...this.proxy.group.children.map((m) => [(m as THREE.Mesh).geometry, (m as THREE.Mesh).material as THREE.Material] as const),
+      ...this.waves.map((w) => [this.waveGeo, w.mat] as const),
+    ])
+  }
+
+  beamMats(): THREE.Material[] {
+    return [this.tintMat, this.haloMat, this.coreMat]
+  }
+
+  /** A free gust ring, or null when every one is on screen: that gust goes unseen. */
+  takeWave(): Wave | null {
+    const w = this.waves.find((x) => !x.busy)
+    if (!w) return null
+    w.busy = true
+    w.age = 0
+    return w
+  }
+
+  dispose(): void {
+    this.unwarm()
+    this.proxy.dispose()
+    for (const w of this.waves) { w.mesh.removeFromParent(); w.mat.dispose() }
+    this.coreMat.dispose(); this.haloMat.dispose(); this.tintMat.dispose(); this.waveGeo.dispose()
+  }
+}
+
 export class Yoink implements System {
   /** Every carry in the room, by carried vehicle id. */
   private readonly carries = new Map<number, Carry>()
-  private readonly coreMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...BEAM_RGB), side: THREE.DoubleSide, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })
-  private readonly haloMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(...BEAM_RGB), transparent: true, opacity: 0.25, side: THREE.DoubleSide,
-    blending: THREE.AdditiveBlending, depthWrite: false,
-  })
-  private readonly tintMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(...TINT_RGB), transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false,
-  })
-  private readonly waveGeo = new THREE.RingGeometry(0.6, 1, 40)
-  private readonly waveMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(...BEAM_RGB), transparent: true, opacity: 0.8, side: THREE.DoubleSide,
-    blending: THREE.AdditiveBlending, depthWrite: false,
-  })
-  private readonly waves: { mesh: THREE.Mesh; age: number }[] = []
+  private readonly shared: { look: YoinkLook; release(): void }
+  private readonly look: YoinkLook
+  private readonly waves: Wave[] = []
   private fireWas = false
   private readyAt = 0
   /** Counts for automated checks. */
   stats = { grabs: 0, flings: 0, drops: 0, gusts: 0, gusted: 0, carried: 0 }
 
-  constructor(private readonly game: Game, private readonly hooks: YoinkHooks) {}
+  constructor(private readonly game: Game, private readonly hooks: YoinkHooks) {
+    this.shared = sharedLook(game, 'yoink', () => new YoinkLook(game))
+    this.look = this.shared.look
+  }
 
   /** The vehicle the local player is carrying, or null. */
   get holding(): number | null {
@@ -117,7 +175,9 @@ export class Yoink implements System {
   press(): 'grab' | 'gust' | null {
     const me = this.hooks.vehicleOf(this.hooks.self())
     if (!me || !yoinkAllowed.value || this.game.time < this.readyAt || this.holding !== null) return null
-    const aim = aimFrom(this.game, me.body, yoinkRange.value)
+    const aim = aimFrom(this.game, me.body, yoinkRange.value, 0.4, 2.4, 0, !this.hooks.control)
+    const control = this.hooks.control?.()
+    if (control) aim.d.set(...control.direction).normalize()
     const target = this.pick(aim.o, aim.d, yoinkRange.value, yoinkCone.value)
     if (target !== null) {
       this.grab(this.hooks.self(), target)
@@ -136,7 +196,8 @@ export class Yoink implements System {
     const to = this.holding
     if (to === null) return
     const me = this.hooks.vehicleOf(this.hooks.self())
-    const aim = me ? aimFrom(this.game, me.body, yoinkRange.value) : null
+    const aim = me ? aimFrom(this.game, me.body, yoinkRange.value, 0.4, 2.4, 0, !this.hooks.control) : null
+    if (aim && this.hooks.control) aim.d.set(...this.hooks.control().direction).normalize()
     const d = aim?.d ?? new THREE.Vector3(0, 0.3, -1).normalize()
     // A little lift, so a flat aim still sails.
     const dir = d.clone().add(new THREE.Vector3(0, 0.15, 0)).normalize()
@@ -159,6 +220,36 @@ export class Yoink implements System {
     this.hooks.send?.({ s: 'drop', to })
     this.stats.drops++
     this.readyAt = this.game.time + yoinkCooldown.value
+  }
+
+  /** Drop gently and clear the input edge when a controller is interrupted. */
+  cancel(): void {
+    this.drop()
+    this.fireWas = false
+  }
+
+  /**
+   * Drop every carry, the player's and everyone else's, clear gust rings and held input.
+   * For a world change, leaving the world or the room, or the vehicle being replaced. The
+   * player's own carry is reported dropped so the room and the others end it too. No
+   * cooldown: this is not a drop the player chose. Shared materials are kept (see warm.ts).
+   */
+  reset(): void {
+    const mine = this.holding
+    for (const to of [...this.carries.keys()]) this.endCarry(to)
+    if (mine !== null) this.hooks.send?.({ s: 'drop', to: mine })
+    for (const w of this.waves) {
+      this.game.scene.remove(w.mesh)
+      w.busy = false
+    }
+    this.waves.length = 0
+    this.fireWas = false
+    this.readyAt = 0
+  }
+
+  /** Live carries and gust rings, for automated checks. */
+  get count(): number {
+    return this.carries.size + this.waves.length
   }
 
   /** Another player's Yoink, as relayed. */
@@ -197,10 +288,10 @@ export class Yoink implements System {
 
   update(dt: number): void {
     const dim = hotExposureDim(this.game.renderer.toneMappingExposure)
-    this.coreMat.color.setRGB(BEAM_RGB[0] * dim, BEAM_RGB[1] * dim, BEAM_RGB[2] * dim)
-    this.haloMat.color.setRGB(BEAM_RGB[0] * dim, BEAM_RGB[1] * dim, BEAM_RGB[2] * dim)
-    this.tintMat.color.setRGB(TINT_RGB[0] * dim, TINT_RGB[1] * dim, TINT_RGB[2] * dim)
-    this.waveMat.color.setRGB(BEAM_RGB[0] * dim, BEAM_RGB[1] * dim, BEAM_RGB[2] * dim)
+    const look = this.look
+    look.coreMat.color.setRGB(BEAM_RGB[0] * dim, BEAM_RGB[1] * dim, BEAM_RGB[2] * dim)
+    look.haloMat.color.setRGB(BEAM_RGB[0] * dim, BEAM_RGB[1] * dim, BEAM_RGB[2] * dim)
+    look.tintMat.color.setRGB(TINT_RGB[0] * dim, TINT_RGB[1] * dim, TINT_RGB[2] * dim)
     const cam = this.game.camera.getWorldPosition(new THREE.Vector3())
     for (const [to, c] of this.carries) this.drawBeam(to, c, cam)
     for (let i = this.waves.length - 1; i >= 0; i--) {
@@ -208,10 +299,11 @@ export class Yoink implements System {
       w.age += dt
       const k = w.age / GUST_LIFE
       w.mesh.scale.setScalar(1 + k * yoinkPuntRange.value * 0.35)
-      ;(w.mesh.material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - k)
+      w.mat.opacity = 0.8 * Math.max(0, 1 - k)
+      w.mat.color.setRGB(BEAM_RGB[0] * dim, BEAM_RGB[1] * dim, BEAM_RGB[2] * dim)
       if (k >= 1) {
         this.game.scene.remove(w.mesh)
-        ;(w.mesh.material as THREE.Material).dispose()
+        w.busy = false
         this.waves.splice(i, 1)
       }
     }
@@ -219,14 +311,18 @@ export class Yoink implements System {
 
   dispose(): void {
     for (const to of [...this.carries.keys()]) this.endCarry(to)
-    for (const w of this.waves) this.game.scene.remove(w.mesh)
-    this.coreMat.dispose(); this.haloMat.dispose(); this.tintMat.dispose(); this.waveMat.dispose(); this.waveGeo.dispose()
+    for (const w of this.waves) {
+      this.game.scene.remove(w.mesh)
+      w.busy = false
+    }
+    this.waves.length = 0
+    this.shared.release()
   }
 
   // ---------------------------------------------------------------------------------------
 
   private controls(): void {
-    const fire = this.hooks.inHand() && this.game.input.state.fire
+    const fire = this.hooks.inHand() && (this.hooks.control?.().fire ?? this.game.input.state.fire)
     const pressed = fire && !this.fireWas
     const released = !fire && this.fireWas
     this.fireWas = fire
@@ -248,7 +344,7 @@ export class Yoink implements System {
     let best: number | null = null
     let bestScore = Infinity
     for (const id of this.hooks.vehicleIds()) {
-      if (id === self) continue
+      if (id === self || this.hooks.heldElsewhere?.(id)) continue
       const to = this.offset(o, id)
       if (!to) continue
       const dist = to.length()
@@ -314,7 +410,7 @@ export class Yoink implements System {
   private grab(holder: number, to: number): void {
     if (to === holder) return
     this.endCarry(to)
-    const view = new CordView([this.tintMat, this.haloMat, this.coreMat], [0.5, 1.4, 0.18])
+    const view = new CordView(this.look.beamMats(), BEAM_WIDTHS)
     view.group.visible = false
     this.game.scene.add(view.group)
     this.carries.set(to, { holder, since: this.game.time, view })
@@ -403,11 +499,14 @@ export class Yoink implements System {
   }
 
   private addWave(o: THREE.Vector3, d: THREE.Vector3): void {
-    const mesh = new THREE.Mesh(this.waveGeo, this.waveMat.clone())
-    mesh.position.copy(o).addScaledVector(d, 2)
-    mesh.lookAt(mesh.position.clone().add(d))
-    this.game.scene.add(mesh)
-    this.waves.push({ mesh, age: 0 })
+    const w = this.look.takeWave()
+    if (!w) return
+    w.mesh.position.copy(o).addScaledVector(d, 2)
+    w.mesh.lookAt(w.mesh.position.clone().add(d))
+    w.mesh.scale.setScalar(1)
+    w.mat.opacity = 0.8
+    this.game.scene.add(w.mesh)
+    this.waves.push(w)
   }
 }
 

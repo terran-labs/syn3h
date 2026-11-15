@@ -22,18 +22,20 @@ try {
   await page.waitForFunction(() => window.syn3h?.game?.tick > 40, null, { timeout: 120000 })
   await page.waitForTimeout(6500)
   const value = id => page.evaluate(id => window.syn3h.params.get(id).value, id)
-  // First view: nothing over the world. The cards are closed and the minimap is in its corner.
-  assert.equal(await page.evaluate(() => document.querySelector('.world-inspector').hidden), true)
-  const corner = () => page.evaluate(() => innerWidth - document.querySelector('.shell-minimap').getBoundingClientRect().right)
+  // On arrival the browser may or may not have granted the cursor. Either way the panels
+  // show exactly when it is free; free it here to look at them.
+  assert.equal(await page.evaluate(() => document.querySelector('.world-inspector').hidden), await page.evaluate(() => !!document.pointerLockElement))
+  if (await page.evaluate(() => !!document.pointerLockElement)) { await page.keyboard.press('Escape'); await page.waitForFunction(() => !document.querySelector('.world-inspector').hidden) }
+  const corner = () => page.evaluate(() => document.querySelector('.shell-minimap').getBoundingClientRect().left)
   assert.ok(await corner() < 60, 'minimap is not in its corner on landing')
   await page.screenshot({ path: `${out}/0-landing.png` })
   // Capturing and then releasing the cursor, with Create untouched, surfaces the cards.
   await page.mouse.click(500, 420); await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-focus'), null, { timeout: 5000 })
   await page.evaluate(() => document.exitPointerLock()); await page.waitForFunction(() => !document.querySelector('.world-inspector').hidden, null, { timeout: 5000 })
-  assert.ok(await corner() > 300, 'minimap did not step aside for the open cards')
-  // Create closes them and the minimap goes back; Create opens them again.
-  await page.locator('.inspector-toggle').click(); assert.ok(await corner() < 60, 'minimap did not return')
-  await page.locator('.inspector-toggle').click(); await page.waitForTimeout(300)
+  assert.ok(await corner() < 60, 'minimap must remain bottom left with the rail open')
+  // Closing and reopening the rail leaves the map in its bottom-left position.
+  await page.locator('.rail-close').click(); await page.waitForFunction(() => document.pointerLockElement === syn3h.game.canvas); assert.ok(await corner() < 60, 'minimap moved when the panels closed')
+  await page.evaluate(() => document.exitPointerLock()); await page.waitForFunction(() => !document.querySelector('.world-inspector').hidden)
   // Five cards, each with a summary, holding every registered property between them.
   assert.deepEqual(await page.locator('.wi-card').evaluateAll(cards => cards.map(c => c.dataset.section)), ['world', 'sky', 'game', 'vehicles', 'you'])
   assert.equal(await page.locator('.wi-row').count(), await page.evaluate(() => window.syn3h.params.all().length))
@@ -77,7 +79,7 @@ try {
   await page.locator('.wi-row[data-id="hud.glass"] button', { hasText: 'Frosted' }).click()
   // The Vehicles card offers the vehicles and marks the one in use.
   await page.locator('.wi-card[data-section=vehicles] .wi-head').click()
-  assert.ok(await page.locator('[data-vehicle]').count() >= 4); assert.equal(await page.locator('[data-vehicle].is-on').count(), 1)
+  assert.ok(await page.locator('.wi-vehicle-select option').count() >= 4); assert.ok(await page.locator('.wi-vehicle-select').inputValue())
   // Capture the cursor: the cards fade away and the focus display fades in, in three looks.
   await page.mouse.click(500, 420)
   await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-focus'), null, { timeout: 5000 })
@@ -92,11 +94,15 @@ try {
     await page.screenshot({ path: `${out}/6-focus-${name}.png` })
   }
   await page.keyboard.up('w')
+  // Suspended input hides the aiming display even if the browser still holds the cursor.
+  await page.evaluate(() => { window.syn3h.game.input.suspended = true })
+  await page.waitForFunction(() => !document.querySelector('.syn3h-shell').classList.contains('is-focus'))
+  await page.evaluate(() => { window.syn3h.game.input.suspended = false })
+  await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-focus'))
   // Letting the cursor go brings the full interface back.
   await page.evaluate(() => document.exitPointerLock())
   await page.waitForFunction(() => !document.querySelector('.syn3h-shell').classList.contains('is-focus'))
-  await page.waitForTimeout(700)
-  assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.world-inspector')).opacity), '1')
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.world-inspector')).opacity === '1')
   console.log(JSON.stringify({ ok: true, properties: await page.locator('.wi-row').count(), errors }))
 } finally { await browser.close() }
 if (errors.length) { console.log(errors); process.exitCode = 1 }

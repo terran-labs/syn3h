@@ -1,5 +1,5 @@
 import {expect,it} from 'vitest'
-import {voiceProfile,motionMix} from '../../src/audio/Engine'
+import {voiceProfile,motionMix,motorLevel} from '../../src/audio/Engine'
 import {lavaProximity,type AudioTerrain} from '../../src/audio/WorldAudio'
 it('gives the five families distinct spectra and a flight roar for the jet',()=>{
  const base={speed:25,throttle:.8,airborne:false}
@@ -14,4 +14,13 @@ it('finds lava coastlines and optional vents but excludes water and distant alti
  expect(lavaProximity(t,{x:0,y:200,z:0})).toBe(0)
  t.liquidKindAt=()=> 'water';expect(lavaProximity(t,{x:0,y:2,z:0})).toBe(0)
  t.vents=()=>[{x:3,y:2,z:0,kind:'flame' as const,size:4}];expect(lavaProximity(t,{x:0,y:2,z:0})).toBeGreaterThan(.9)
+})
+it('silences the buggy motor while its wings are out, and nothing else',()=>{
+ const base={speed:30,throttle:1,airborne:true}
+ expect(motorLevel({...base,kind:'buggy-syn3h',wings:true})).toBe(0)
+ expect(motorLevel({...base,kind:'buggy',wings:true})).toBe(0)
+ expect(motorLevel({...base,kind:'buggy-syn3h',wings:false})).toBe(1)
+ expect(motorLevel({...base,kind:'buggy-syn3h'})).toBe(1)
+ // The jet flies on its engines; a wing state on any other vehicle changes nothing.
+ for(const kind of ['jet','hovercraft','tank'])expect(motorLevel({...base,kind,wings:true})).toBe(1)
 })

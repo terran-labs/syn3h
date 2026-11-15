@@ -21,7 +21,7 @@ export interface HintState {
 export interface Hint { text: string; touchAction?: 'throttleUp' | 'special' }
 
 /** The jet's lift-off control, by input method. Throttle is R and F (src/core/Input.ts). */
-export const liftOffHint = (touch: boolean): Hint => touch ? { text: 'Hold THR + to lift off', touchAction: 'throttleUp' } : { text: 'Hold R to lift off' }
+export const liftOffHint = (touch: boolean): Hint => touch ? { text: 'Hold THR + to lift off', touchAction: 'throttleUp' } : { text: 'Hold E to lift off' }
 
 /** The wings lift a buggy out of lava or water. Space on a keyboard, the WINGS button on touch. */
 export const wingsHint = (touch: boolean): Hint => touch ? { text: 'WINGS: lift out', touchAction: 'special' } : { text: 'Space: wings to lift out' }

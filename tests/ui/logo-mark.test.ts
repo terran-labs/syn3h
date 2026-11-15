@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { buildWordmarkMesh, evenOddArea, FLOATS_PER_VERTEX, insidePolygon, sampleOutline, triangleArea, triangulateFace, wordmarkContours, type Contour, type Point } from '../../src/ui/brand/wordmarkMesh'
+import { buildGlowBand, buildWordmarkMesh, evenOddArea, FLOATS_PER_VERTEX, GLOW_FLOATS_PER_VERTEX, insidePolygon, sampleOutline, triangleArea, triangulateFace, wordmarkContours, type Contour, type Point } from '../../src/ui/brand/wordmarkMesh'
 import { LogoMark, logoBox, logoBudget, logoSvg } from '../../src/ui/brand/LogoMark'
-import { LogoRenderer } from '../../src/ui/brand/logoRenderer'
+import { INTRO_SECONDS, LogoRenderer } from '../../src/ui/brand/logoRenderer'
 import { WORDMARK_HEIGHT, WORDMARK_WIDTH } from '../../src/ui/brand/wordmarkPath'
 
 const filled = (p: Point, contours: Contour[]) => contours.filter(c => insidePolygon(p, c.points)).length % 2 === 1
@@ -34,21 +34,23 @@ describe('wordmark geometry', () => {
       expect(filled(centroid, contours)).toBe(true)
     }
   })
-  it('builds the extruded, chamfered mesh over the exact face', () => {
+  it('builds the flat mesh: the exact face and an edge line inside it', () => {
     const mesh = buildWordmarkMesh()
-    expect(mesh.triangles).toBe(1646)
-    expect(mesh.vertices.length).toBe((mesh.wallVertices + mesh.bevelVertices + mesh.faceVertices) * FLOATS_PER_VERTEX)
-    // The face is the exact outline triangulation; the chamfer's inner ring lies inside the letters.
-    const faceStart = mesh.wallVertices * FLOATS_PER_VERTEX
-    const faceArea = triangleArea(mesh.vertices.subarray(faceStart), Array.from({ length: mesh.faceVertices }, (_, k) => k), FLOATS_PER_VERTEX)
+    expect(mesh.triangles).toBe(982)
+    expect(mesh.vertices.length).toBe((mesh.faceVertices + mesh.edgeVertices) * FLOATS_PER_VERTEX)
+    // The face is the exact outline triangulation, with no inset; the edge's inner ring,
+    // pushed in by an edge width, lies inside the letters.
+    const faceArea = triangleArea(mesh.vertices, Array.from({ length: mesh.faceVertices }, (_, k) => k), FLOATS_PER_VERTEX)
     expect(Math.abs(faceArea - evenOddArea(contours)) / evenOddArea(contours)).toBeLessThan(1e-4)
-    const bevelStart = (mesh.wallVertices + mesh.faceVertices) * FLOATS_PER_VERTEX
+    for (let k = 0; k < mesh.faceVertices; k++) expect([mesh.vertices[k * FLOATS_PER_VERTEX + 2], mesh.vertices[k * FLOATS_PER_VERTEX + 3], mesh.vertices[k * FLOATS_PER_VERTEX + 4]]).toEqual([0, 0, 0])
+    const edgeStart = mesh.faceVertices * FLOATS_PER_VERTEX, width = 0.006
     let inner = 0, outside = 0
-    for (let k = 0; k < mesh.bevelVertices; k++) {
-      const at = bevelStart + k * FLOATS_PER_VERTEX
-      if (mesh.vertices[at + 2] !== 0) continue
+    for (let k = 0; k < mesh.edgeVertices; k++) {
+      const at = edgeStart + k * FLOATS_PER_VERTEX
+      expect(mesh.vertices[at + 4]).toBe(1)
+      if (mesh.vertices[at + 2] === 0 && mesh.vertices[at + 3] === 0) continue
       inner++
-      if (!filled([mesh.vertices[at], mesh.vertices[at + 1]], contours)) outside++
+      if (!filled([mesh.vertices[at] + mesh.vertices[at + 2] * width, mesh.vertices[at + 1] + mesh.vertices[at + 3] * width], contours)) outside++
     }
     // Bar a few at the sharpest traced corners.
     expect(outside / inner).toBeLessThan(0.02)
@@ -57,6 +59,22 @@ describe('wordmark geometry', () => {
     for (let i = 0; i < mesh.vertices.length; i += FLOATS_PER_VERTEX) { minX = Math.min(minX, mesh.vertices[i]); maxX = Math.max(maxX, mesh.vertices[i]); minY = Math.min(minY, mesh.vertices[i + 1]); maxY = Math.max(maxY, mesh.vertices[i + 1]) }
     expect(maxX - minX).toBeCloseTo(WORDMARK_WIDTH / WORDMARK_HEIGHT, 1)
     expect(maxY - minY).toBeCloseTo(1, 2)
+  })
+  it('grows the glow band outward from the outline, with whole contours of arc length', () => {
+    const band = buildGlowBand(contours), v = band.vertices, n = v.length / GLOW_FLOATS_PER_VERTEX
+    expect(n % 3).toBe(0)
+    let rim = 0, outward = 0
+    for (let k = 0; k < n; k++) {
+      const at = k * GLOW_FLOATS_PER_VERTEX, offset = Math.hypot(v[at + 2], v[at + 3])
+      // Either on the outline (no offset) or on the rim (a unit offset).
+      expect(Math.min(offset, Math.abs(offset - 1))).toBeLessThan(1e-5)
+      expect(v[at + 4]).toBeGreaterThanOrEqual(0); expect(v[at + 4]).toBeLessThanOrEqual(1)
+      if (offset < 0.5) continue
+      rim++
+      if (!filled([v[at] + v[at + 2] * 0.004, v[at + 1] + v[at + 3] * 0.004], contours)) outward++
+    }
+    // Rim directions point away from the letters (bar the sharpest traced corners).
+    expect(outward / rim).toBeGreaterThan(0.97)
   })
   it('seeds every particle on the outline with a unit normal pointing out of the letters', () => {
     const samples = sampleOutline(4000, 3)
@@ -93,6 +111,8 @@ describe('layout and budgets', () => {
   it('budgets by graphics level, lowest still', () => {
     expect(logoBudget(0).still).toBe(true)
     expect(logoBudget(1).particles).toBeLessThan(logoBudget(2).particles)
+    // A field carries the glow; the particles over it are few and large.
+    expect(logoBudget(2).particles).toBeLessThanOrEqual(500)
   })
 })
 
@@ -105,13 +125,16 @@ function fakeGl(options: { link?: boolean } = {}) {
   const gl: Record<string | symbol, unknown> = {
     drawingBufferWidth: 640, drawingBufferHeight: 480,
     getExtension: (name: string) => name === 'WEBGL_lose_context' ? { loseContext } : null,
-    getParameter: (name: string) => state[name] ?? 'ONE',
-    isEnabled: (cap: string) => enabled.has(cap), enable: (cap: string) => { enabled.add(cap); calls.push(`enable ${cap}`) }, disable: (cap: string) => { enabled.delete(cap); calls.push(`disable ${cap}`) },
-    getProgramParameter: () => options.link ?? true, getProgramInfoLog: () => 'fake', getAttribLocation: () => 0, isContextLost: () => false,
+    getParameter: (name: string) => { calls.push('query getParameter'); return state[name] ?? 'ONE' },
+    isEnabled: (cap: string) => { calls.push('query isEnabled'); return enabled.has(cap) }, enable: (cap: string) => { enabled.add(cap); calls.push(`enable ${cap}`) }, disable: (cap: string) => { enabled.delete(cap); calls.push(`disable ${cap}`) },
+    getProgramParameter: () => { calls.push('query getProgramParameter'); return options.link ?? true }, getProgramInfoLog: () => 'fake',
+    getAttribLocation: () => { calls.push('query getAttribLocation'); return 0 }, isContextLost: () => false,
     useProgram: (p: unknown) => { state.CURRENT_PROGRAM = p; calls.push('useProgram') },
     bindVertexArray: (v: unknown) => { state.VERTEX_ARRAY_BINDING = v }, bindBuffer: (_: unknown, b: unknown) => { state.ARRAY_BUFFER_BINDING = b },
     viewport: (...v: number[]) => { state.VIEWPORT = new Int32Array(v) }, scissor: (...v: number[]) => { state.SCISSOR_BOX = new Int32Array(v) },
     drawArrays: (mode: string, first: number, count: number) => calls.push(`draw ${mode} ${count}`),
+    // Locations are the fake's own { args: [program, name] }, so a value can be read back by name.
+    uniform1f: (at: { args: unknown[] } | null, value: number) => calls.push(`uniform ${String(at?.args[1])} ${value}`),
   }
   const proxy = new Proxy(gl, {
     get(target, key) {
@@ -137,10 +160,14 @@ describe('LogoMark lifecycle', () => {
     expect(mark.generated).toBe(true)
     fake.calls.length = 0
     mark.renderStill()
-    expect(fake.calls.filter(c => c.startsWith('draw'))).toEqual(['draw TRIANGLES 3', 'draw POINTS 500', 'draw TRIANGLES 4938'])
+    // No sky behind the lobby logo: plasma, then the flat wordmark.
+    const band = `draw TRIANGLES ${buildGlowBand().vertices.length / GLOW_FLOATS_PER_VERTEX}`
+    expect(fake.calls.filter(c => c.startsWith('draw'))).toEqual([band, 'draw POINTS 500', 'draw TRIANGLES 2946'])
+    mark.setOptions({ space: true }); fake.calls.length = 0; mark.renderStill()
+    expect(fake.calls.filter(c => c.startsWith('draw'))).toEqual(['draw TRIANGLES 3', band, 'draw POINTS 500', 'draw TRIANGLES 2946'])
     mark.dispose()
     expect(fake.loseContext).toHaveBeenCalledTimes(1)
-    expect(fake.calls.filter(c => c === 'deleteProgram')).toHaveLength(3)
+    expect(fake.calls.filter(c => c === 'deleteProgram')).toHaveLength(4)
     expect(mark.generated).toBe(false)
     // A canvas it was given stays in the page; one it made would be removed.
     expect(canvas.remove).not.toHaveBeenCalled()
@@ -172,6 +199,65 @@ describe('LogoMark lifecycle', () => {
     renderer.dispose()
     expect(fake.loseContext).not.toHaveBeenCalled()
   })
+  it('queries no GL state while drawing: each query stalls the host until the GPU drains', () => {
+    const fake = fakeGl(), renderer = new LogoRenderer(fake.gl, { particles: 200 })
+    fake.calls.length = 0
+    for (let i = 0; i < 3; i++) renderer.draw(5 + i, { x: 100, y: 100, width: 426, height: 100 })
+    // Growing the particle buffer mid-flight must not query either.
+    renderer.setLook({ particles: 900 }); renderer.draw(9, { x: 100, y: 100, width: 426, height: 100 })
+    expect(fake.calls.filter(c => c.startsWith('query'))).toEqual([])
+    expect(fake.calls.filter(c => c.startsWith('draw')).length).toBeGreaterThan(0)
+    // The host's program, vertex array and scissor are still put back, from the copy read at creation.
+    expect(fake.state.CURRENT_PROGRAM).toBe('host-program')
+    expect(fake.state.VERTEX_ARRAY_BINDING).toBe('host-vao')
+    expect([...fake.enabled]).toEqual(['SCISSOR_TEST'])
+    renderer.dispose()
+  })
+})
+
+/** The uOpacity each draw call was made with, in draw order. */
+function drawOpacities(calls: string[]): number[] {
+  let opacity = Number.NaN
+  const out: number[] = []
+  for (const call of calls) {
+    if (call.startsWith('uniform uOpacity ')) opacity = Number(call.split(' ')[2])
+    else if (call.startsWith('draw')) out.push(opacity)
+  }
+  return out
+}
+
+describe('two-stage fade in', () => {
+  const box = { x: 100, y: 100, width: 426, height: 100 }
+  // Draws are the glow field, the glow particles, then the wordmark: [glow, glow, mark].
+  const frame = (renderer: LogoRenderer, fake: ReturnType<typeof fakeGl>, seconds: number) => { fake.calls.length = 0; renderer.draw(seconds, box); return drawOpacities(fake.calls) }
+  it('shows nothing at first, then the silhouette, then the glow more slowly', () => {
+    const fake = fakeGl(), renderer = new LogoRenderer(fake.gl, { particles: 50 })
+    expect(renderer.look.markFade).toBe(1.5); expect(renderer.look.glowFade).toBe(3)
+    expect(frame(renderer, fake, 10)).toEqual([0, 0, 0])
+    const half = frame(renderer, fake, 10.75)
+    expect(half[2]).toBeCloseTo(0.5, 5); expect(half[0]).toBe(0); expect(half[1]).toBe(0)
+    expect(frame(renderer, fake, 11.5)).toEqual([0, 0, 1])
+    const glowing = frame(renderer, fake, 13)
+    expect(glowing[0]).toBeCloseTo(0.5, 5); expect(glowing[1]).toBeCloseTo(0.5, 5); expect(glowing[2]).toBe(1)
+    expect(frame(renderer, fake, 14.5)).toEqual([1, 1, 1])
+    expect(renderer.introTime).toBeGreaterThanOrEqual(INTRO_SECONDS)
+    // The gap holds the glow back after the silhouette has arrived.
+    renderer.setLook({ glowGap: 1 }); renderer.replayIntro()
+    frame(renderer, fake, 20)
+    expect(frame(renderer, fake, 22.4)).toEqual([0, 0, 1])
+    expect(frame(renderer, fake, 22.6)[0]).toBeGreaterThan(0)
+  })
+  it('replays when shown again after being hidden, unless skipped', () => {
+    const fake = fakeGl(), renderer = new LogoRenderer(fake.gl, { particles: 50 })
+    frame(renderer, fake, 0); expect(frame(renderer, fake, 10)).toEqual([1, 1, 1])
+    renderer.setLook({ opacity: 0 }); expect(frame(renderer, fake, 11)).toEqual([0, 0, 0])
+    renderer.setLook({ opacity: 1 }); expect(frame(renderer, fake, 12)).toEqual([0, 0, 0])
+    expect(frame(renderer, fake, 12.75)[2]).toBeCloseTo(0.5, 5)
+    // Skipped (reduced motion, a held lobby): the finished logo at once, also after hiding.
+    renderer.skipIntro(); expect(frame(renderer, fake, 13)).toEqual([1, 1, 1])
+    renderer.setLook({ opacity: 0 }); frame(renderer, fake, 14)
+    renderer.setLook({ opacity: 1 }); expect(frame(renderer, fake, 15)).toEqual([1, 1, 1])
+  })
 })
 
 describe('no assets', () => {
@@ -186,6 +272,8 @@ describe('no assets', () => {
     expect(forbidden).not.toHaveBeenCalled()
     // The SVG references only its own gradients and filters.
     expect(svg).not.toMatch(/<image|href=|url\((?!#)|@font-face|<text/)
+    // Flat: no sun and no gloss gradient on the letters.
+    expect(logoSvg()).not.toMatch(/corona|disc|gloss|<circle/)
     for (const file of ['LogoMark.ts', 'logoRenderer.ts', 'wordmarkMesh.ts']) {
       const source = readFileSync(new URL(`../../src/ui/brand/${file}`, import.meta.url), 'utf8')
       expect(source).not.toMatch(/fetch\(|new Image|XMLHttpRequest|FontFace|\.woff|import\(|url\((?!#)|createImageBitmap|texImage/)

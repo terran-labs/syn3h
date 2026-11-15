@@ -15,8 +15,8 @@
  * in world x and z across steps except a hook in flight, which is re-imaged each step.
  *
  * Networking: `send` reports this player's cord as a CordWire whenever it changes, and
- * `applyRemote` takes another player's. Until the room relays cords, a cord to a remote
- * player pulls only you, like a winch on a moving post.
+ * `applyRemote` takes another player's. The room relays and checks cords, so a cord to
+ * another player pulls both vehicles: each client pulls the end it simulates.
  */
 import * as THREE from 'three/webgpu'
 import type { CordWire } from '../../../shared/protocol'
@@ -24,7 +24,8 @@ import { nearestImage, wrapDelta } from '../../../shared/wrap'
 import type { Game, System } from '../../core/Game'
 import { GROUP_ALL, GROUP_LIQUID, GROUP_PROJECTILE, RAPIER, groups } from '../../core/physics'
 import { hotExposureDim } from '../../vehicles/skins/hotExposure'
-import { aimFrom, castAim } from '../aim'
+import { aimFrom, castAim, type GearControl } from '../aim'
+import { sharedLook, warmGear } from '../warm'
 import {
   bungeeAllowed, bungeeCooldown, bungeeDamping, bungeeHookSpeed, bungeeLength, bungeeMaxPull, bungeeMinLength,
   bungeeReelSpeed, bungeeSnap, bungeeStiffness, bungeeTimeout, bungeeVehicles,
@@ -41,6 +42,10 @@ export interface BungeeVehicle {
 }
 
 export interface BungeeHooks {
+  control?(): GearControl
+  /** Bots can send fewer reel updates while local cord physics still runs every step. */
+  reportInterval?: number
+
   /** The local player's id. */
   self(): number
   vehicleOf(id: number): BungeeVehicle | undefined
@@ -93,8 +98,8 @@ const EARTH_G = 9.81
 /** Roof hitch above a vehicle's centre, metres. Forces act at the centre, so nothing spins. */
 const HITCH = 0.9
 /** Muzzle, in the vehicle's frame. The hook leaves from the roof. */
-const MUZZLE_UP = 1.1
-const MUZZLE_AHEAD = 1.2
+export const BUNGEE_MUZZLE_UP = 1.1
+export const BUNGEE_MUZZLE_AHEAD = 1.2
 /** Straight ahead aim tilts up this much (radians) so a free cursor still reaches ledges. */
 const LIFT = 0.12
 const DOUBLE_TAP = 0.35
@@ -157,24 +162,73 @@ export class CordView {
   }
 }
 
-export class Bungee implements System {
-  private readonly cords = new Map<number, Cord>()
-  private readonly coreMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...SLACK_RGB), side: THREE.DoubleSide })
-  private readonly haloMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(...SLACK_RGB), transparent: true, opacity: 0.35, side: THREE.DoubleSide,
+const CORD_WIDTHS = [0.28, 0.5, 0.11]
+
+/**
+ * Everything a Bungee draws with. One per game, shared by the player's Bungee and every
+ * bot's, and compiled before anyone fires (see warm.ts).
+ */
+class BungeeLook {
+  readonly coreMat = new THREE.MeshBasicMaterial({ name: 'gear bungee core', color: new THREE.Color(...SLACK_RGB), side: THREE.DoubleSide })
+  readonly haloMat = new THREE.MeshBasicMaterial({
+    name: 'gear bungee halo', color: new THREE.Color(...SLACK_RGB), transparent: true, opacity: 0.35, side: THREE.DoubleSide,
     blending: THREE.AdditiveBlending, depthWrite: false,
   })
   // As the tag beam does: a normally blended tint under the additive light keeps the cord
   // readable over a sunlit desert, where additive colour alone washes out to white.
-  private readonly tintMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(...TINT_RGB), transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false,
+  readonly tintMat = new THREE.MeshBasicMaterial({
+    name: 'gear bungee tint', color: new THREE.Color(...TINT_RGB), transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false,
   })
-  private readonly hookGeo = new THREE.OctahedronGeometry(0.35, 0)
-  private readonly ringGeo = new THREE.RingGeometry(0.7, 1, 32)
-  private readonly ringMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(...SLACK_RGB), transparent: true, opacity: 0.8, side: THREE.DoubleSide,
+  readonly hookGeo = new THREE.OctahedronGeometry(0.35, 0)
+  readonly ringGeo = new THREE.RingGeometry(0.7, 1, 32)
+  readonly ringMat = new THREE.MeshBasicMaterial({
+    name: 'gear bungee ring', color: new THREE.Color(...SLACK_RGB), transparent: true, opacity: 0.8, side: THREE.DoubleSide,
     blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false,
   })
+  /** The game time at which the player's own cord last set the colours; it outranks bots. */
+  private ledAt = -1
+  private readonly proxy: CordView
+  private readonly unwarm: () => void
+
+  constructor(private readonly game: Game) {
+    this.proxy = new CordView(this.cordMats(), CORD_WIDTHS)
+    this.unwarm = warmGear(game, [
+      ...this.proxy.group.children.map((m) => [(m as THREE.Mesh).geometry, (m as THREE.Mesh).material as THREE.Material] as const),
+      [this.hookGeo, this.coreMat], [this.ringGeo, this.haloMat], [this.ringGeo, this.ringMat],
+    ])
+  }
+
+  cordMats(): THREE.Material[] {
+    return [this.tintMat, this.haloMat, this.coreMat]
+  }
+
+  /**
+   * Colour every cord from one cord's glow. All cords share the materials, so one cord
+   * leads: the player's own when it has one, otherwise whichever asked last.
+   */
+  setGlow(glow: number, dim: number, lead: boolean): void {
+    if (!lead && this.ledAt === this.game.time) return
+    if (lead) this.ledAt = this.game.time
+    const r = SLACK_RGB[0] + (TAUT_RGB[0] - SLACK_RGB[0]) * glow
+    const g = SLACK_RGB[1] + (TAUT_RGB[1] - SLACK_RGB[1]) * glow
+    const b = SLACK_RGB[2] + (TAUT_RGB[2] - SLACK_RGB[2]) * glow
+    this.coreMat.color.setRGB(r * dim, g * dim, b * dim)
+    this.haloMat.color.setRGB(r * dim * 0.6, g * dim * 0.6, b * dim * 0.6)
+    this.tintMat.color.setRGB(TINT_RGB[0] * dim, TINT_RGB[1] * dim, TINT_RGB[2] * dim)
+  }
+
+  dispose(): void {
+    this.unwarm()
+    this.proxy.dispose()
+    this.coreMat.dispose(); this.haloMat.dispose(); this.tintMat.dispose(); this.ringMat.dispose()
+    this.hookGeo.dispose(); this.ringGeo.dispose()
+  }
+}
+
+export class Bungee implements System {
+  private readonly cords = new Map<number, Cord>()
+  private readonly shared: { look: BungeeLook; release(): void }
+  private readonly look: BungeeLook
   private readonly hookMeshes = new Map<number, THREE.Mesh>()
   private readonly anchorMeshes = new Map<number, THREE.Mesh>()
   private readonly reticle: THREE.Mesh
@@ -188,14 +242,19 @@ export class Bungee implements System {
   private padWas = { release: false }
   private sentAt = -Infinity
   private sentRest = 0
+  /** Reel held from a button (see setReel): -1 reels in, 1 lets out, 0 does neither. */
+  reel: -1 | 0 | 1 = 0
   /** Counts for automated checks. */
   stats = { launched: 0, attachedGround: 0, attachedVehicle: 0, released: 0, snapped: 0, timedOut: 0 }
 
   constructor(private readonly game: Game, private readonly hooks: BungeeHooks, target: Window = window) {
-    this.reticle = new THREE.Mesh(this.ringGeo, this.ringMat)
+    this.shared = sharedLook(game, 'bungee', () => new BungeeLook(game))
+    this.look = this.shared.look
+    this.reticle = new THREE.Mesh(this.look.ringGeo, this.look.ringMat)
     this.reticle.visible = false
     this.reticle.renderOrder = 10
     game.scene.add(this.reticle)
+    if (hooks.control) return
     target.addEventListener('keydown', (e) => {
       if (e.repeat || game.input.suspended) return
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
@@ -231,6 +290,20 @@ export class Bungee implements System {
     return this.attached ? this.mine!.rest : 0
   }
 
+  /** 0 to 1: how hard the local player's attached cord pulls. For sound and the HUD. */
+  get tension(): number {
+    const c = this.mine
+    return c && !c.hook ? cordGlow(c.pull, c.mass, this.tuning()) : 0
+  }
+
+  /**
+   * Hold the reel from a button: -1 reels in, 1 lets out, 0 stops. Never touches the tag
+   * control, so a touch button can never launch a new hook. Cleared when the cord goes.
+   */
+  setReel(direction: -1 | 0 | 1): void {
+    this.reel = direction
+  }
+
   private tuning(): CordTuning {
     return { omega: bungeeStiffness.value, zeta: bungeeDamping.value, maxAccel: bungeeMaxPull.value * EARTH_G }
   }
@@ -242,7 +315,7 @@ export class Bungee implements System {
   launch(direction?: [number, number, number]): boolean {
     const me = this.hooks.vehicleOf(this.hooks.self())
     if (!me || !bungeeAllowed.value || this.mine || this.game.time < this.readyAt) return false
-    const aim = aimFrom(this.game, me.body, bungeeLength.value, MUZZLE_UP, MUZZLE_AHEAD, LIFT)
+    const aim = aimFrom(this.game, me.body, bungeeLength.value, BUNGEE_MUZZLE_UP, BUNGEE_MUZZLE_AHEAD, LIFT, !this.hooks.control)
     if (direction) aim.d.set(...direction).normalize()
     const v = me.body.linvel()
     // The hook inherits the vehicle's velocity, so it leaves cleanly at speed.
@@ -266,9 +339,47 @@ export class Bungee implements System {
     this.hooks.send?.({ s: 'off' })
   }
 
+  /** Drop the cord and clear the input edge when a controller is interrupted. */
+  cancel(): void {
+    this.letGo()
+    this.fireWas = false
+    this.lastPress = -Infinity
+    this.wheel = 0
+  }
+
+  /**
+   * Drop every live cord and hook, the player's and everyone else's, and forget held input.
+   * For a world change, leaving the world or the room, or the vehicle being replaced: a
+   * ground anchor is a point in the old world and means nothing in the next one. The
+   * player's own cord is reported off so the room and the others drop it too. No cooldown:
+   * this is not a release the player chose. Shared materials are kept (see warm.ts).
+   */
+  reset(): void {
+    const had = this.mine !== undefined
+    for (const id of [...this.cords.keys()]) this.remove(id)
+    if (had) this.hooks.send?.({ s: 'off' })
+    this.fireWas = false
+    this.lastPress = -Infinity
+    this.readyAt = 0
+    this.wheel = 0
+    this.keys.clear()
+    this.padWas.release = false
+    this.sentAt = -Infinity
+    this.sentRest = 0
+    this.reticle.visible = false
+  }
+
+  /** Live cords and hooks, by owner, for automated checks. */
+  get count(): number {
+    return this.cords.size + this.hookMeshes.size + this.anchorMeshes.size
+  }
+
   /** Another player's cord, as relayed. `age` is seconds since it was sent. */
   applyRemote(from: number, wire: CordWire, age = 0): void {
-    if (from === this.hooks.self()) return
+    if (from === this.hooks.self()) {
+      if (wire.s === 'off') { this.remove(from); this.readyAt = this.game.time + bungeeCooldown.value }
+      return
+    }
     if (wire.s === 'off') { this.remove(from); return }
     if (wire.s === 'hook') {
       this.remove(from)
@@ -281,6 +392,7 @@ export class Bungee implements System {
       hook.prev.copy(hook.pos)
       return
     }
+    if (!this.plausible(from, wire)) { this.remove(from); return }
     let c = this.cords.get(from)
     if (!c) c = this.makeCord(from)
     c.hook = null
@@ -291,6 +403,28 @@ export class Bungee implements System {
       if (c.rest === 0) { c.twang = 1; c.since = this.game.time }
       c.rest = wire.r
     }
+  }
+
+  /**
+   * A relayed attached cord we are willing to draw and pull on. The room checks reach
+   * against where it last saw the sender, but a cord can still arrive from before a world
+   * change, or from a client on a stale world. Anything non-finite, longer than the longest
+   * cord the sliders allow, or anchored further from its owner than that cord could stretch
+   * before snapping, is dropped. The bound is deliberately generous: it rejects nonsense,
+   * not a cord that is merely taut.
+   */
+  private plausible(from: number, wire: Extract<CordWire, { s: 'on' }>): boolean {
+    const longest = bungeeLength.def.max ?? bungeeLength.value
+    if (!Number.isFinite(wire.r) || wire.r < 0 || wire.r > longest + 1) return false
+    if (wire.n && !wire.n.every(Number.isFinite)) return false
+    if (wire.to !== undefined) return Number.isFinite(wire.to)
+    if (!wire.at || !wire.at.every(Number.isFinite)) return false
+    const owner = this.hooks.vehicleOf(from)
+    // Not here yet: nothing to measure from, and nothing is pulled or drawn until it is.
+    if (!owner) return true
+    const t = owner.body.translation()
+    const a = new THREE.Vector3(t.x, t.y, t.z)
+    return this.nearestTo(new THREE.Vector3(...wire.at), a).distanceTo(a) <= longest * bungeeSnap.value
   }
 
   /** A player left: drop their cord, and any cord tied to them. */
@@ -326,8 +460,7 @@ export class Bungee implements System {
   dispose(): void {
     for (const id of [...this.cords.keys()]) this.remove(id)
     this.game.scene.remove(this.reticle)
-    this.coreMat.dispose(); this.haloMat.dispose(); this.tintMat.dispose(); this.ringMat.dispose()
-    this.hookGeo.dispose(); this.ringGeo.dispose()
+    this.shared.release()
   }
 
   // ---------------------------------------------------------------------------------------
@@ -335,10 +468,11 @@ export class Bungee implements System {
   private controls(dt: number): void {
     const input = this.game.input.state
     const inHand = this.hooks.inHand()
-    const fire = inHand && input.fire
+    const control = this.hooks.control?.()
+    const fire = inHand && (control?.fire ?? input.fire)
     const pressed = fire && !this.fireWas
     this.fireWas = fire
-    const pad = navigator.getGamepads?.().find((p) => p && p.connected)
+    const pad = this.hooks.control ? null : navigator.getGamepads?.().find((p) => p && p.connected)
     const padOut = Boolean(pad?.buttons[4]?.pressed)
     const padRelease = Boolean(pad?.buttons[5]?.pressed)
     if (padRelease && !this.padWas.release) this.letGo('released')
@@ -347,7 +481,8 @@ export class Bungee implements System {
     const c = this.mine
     if (!c) {
       this.wheel = 0
-      if (pressed) { this.launch(); this.lastPress = this.game.time }
+      this.reel = 0
+      if (pressed) { this.launch(control?.direction); this.lastPress = this.game.time }
       return
     }
     if (c.hook) return
@@ -362,8 +497,8 @@ export class Bungee implements System {
     // against a stuck load waits instead of storing an ever larger spring.
     const deepest = Math.max(bungeeMinLength.value, length - (t.maxAccel / (t.omega * t.omega)) * 1.1)
     let rest = c.rest
-    if (fire) rest = Math.max(deepest, rest - bungeeReelSpeed.value * dt)
-    if (inHand && (this.keys.has('KeyV') || padOut)) rest += bungeeReelSpeed.value * dt
+    if (fire || (inHand && this.reel < 0)) rest = Math.max(deepest, rest - bungeeReelSpeed.value * dt)
+    if (inHand && (this.keys.has('KeyV') || padOut || this.reel > 0)) rest += bungeeReelSpeed.value * dt
     if (this.wheel) {
       rest = this.wheel > 0 ? rest + this.wheel * WHEEL_STEP : Math.max(deepest, rest + this.wheel * WHEEL_STEP)
       this.wheel = 0
@@ -378,7 +513,7 @@ export class Bungee implements System {
   private startHook(owner: number, o: THREE.Vector3, vel: THREE.Vector3): Cord {
     const c = this.makeCord(owner)
     c.hook = { pos: o.clone(), prev: o.clone(), vel: vel.clone(), travelled: 0 }
-    const mesh = new THREE.Mesh(this.hookGeo, this.coreMat)
+    const mesh = new THREE.Mesh(this.look.hookGeo, this.look.coreMat)
     mesh.position.copy(o)
     this.game.scene.add(mesh)
     this.hookMeshes.set(owner, mesh)
@@ -387,7 +522,7 @@ export class Bungee implements System {
 
   private makeCord(owner: number): Cord {
     this.remove(owner)
-    const view = new CordView([this.tintMat, this.haloMat, this.coreMat], [0.28, 0.5, 0.11])
+    const view = new CordView(this.look.cordMats(), CORD_WIDTHS)
     view.group.visible = false
     this.game.scene.add(view.group)
     const c: Cord = {
@@ -544,7 +679,7 @@ export class Bungee implements System {
     const c = this.mine
     if (!c || c.hook) return
     const now = this.game.time
-    if (Math.abs(c.rest - this.sentRest) > 0.05 && now - this.sentAt > SEND_GAP) this.send(c, false)
+    if (Math.abs(c.rest - this.sentRest) > 0.05 && now - this.sentAt > (this.hooks.reportInterval ?? SEND_GAP)) this.send(c, false)
     else if (now - this.sentAt > RESEND) this.send(c, false)
   }
 
@@ -608,21 +743,16 @@ export class Bungee implements System {
     c.view.draw(camPos)
     c.view.group.visible = true
 
-    const r = SLACK_RGB[0] + (TAUT_RGB[0] - SLACK_RGB[0]) * glow
-    const g = SLACK_RGB[1] + (TAUT_RGB[1] - SLACK_RGB[1]) * glow
-    const bl = SLACK_RGB[2] + (TAUT_RGB[2] - SLACK_RGB[2]) * glow
-    // One material set for every cord: the local cord's glow drives the colour, others share it.
+    // One material set for every cord: the player's own cord drives the colour, others share it.
     if (c.owner === this.hooks.self() || this.cords.size === 1) {
-      this.coreMat.color.setRGB(r * dim, g * dim, bl * dim)
-      this.haloMat.color.setRGB(r * dim * 0.6, g * dim * 0.6, bl * dim * 0.6)
-      this.tintMat.color.setRGB(TINT_RGB[0] * dim, TINT_RGB[1] * dim, TINT_RGB[2] * dim)
+      this.look.setGlow(glow, dim, !this.hooks.control && c.owner === this.hooks.self())
     }
   }
 
   private drawAnchor(c: Cord, at: THREE.Vector3): void {
     let mesh = this.anchorMeshes.get(c.owner)
     if (!mesh) {
-      mesh = new THREE.Mesh(this.ringGeo, this.haloMat)
+      mesh = new THREE.Mesh(this.look.ringGeo, this.look.haloMat)
       mesh.scale.setScalar(0.6)
       this.game.scene.add(mesh)
       this.anchorMeshes.set(c.owner, mesh)
@@ -634,16 +764,16 @@ export class Bungee implements System {
   /** The landing ring: where the hook would catch, shown while the Bungee is in hand. */
   private drawReticle(dim: number, camPos: THREE.Vector3): void {
     const me = this.hooks.vehicleOf(this.hooks.self())
-    const show = bungeeAllowed.value && this.hooks.inHand() && !this.mine && me
+    const show = !this.hooks.control && bungeeAllowed.value && this.hooks.inHand() && !this.mine && me
     if (!show) { this.reticle.visible = false; return }
-    const aim = aimFrom(this.game, me.body, bungeeLength.value, MUZZLE_UP, MUZZLE_AHEAD, LIFT)
+    const aim = aimFrom(this.game, me.body, bungeeLength.value, BUNGEE_MUZZLE_UP, BUNGEE_MUZZLE_AHEAD, LIFT, !this.hooks.control)
     // The aim may pass the camera's target; check what the hook itself would meet first.
     const path = castAim(this.game, aim.o, aim.d, bungeeLength.value, me.body)
     if (!path) { this.reticle.visible = false; return }
     const vehicle = path.handle !== null && this.hooks.idOfBody(path.handle) !== null
     const ok = !vehicle || bungeeVehicles.value
     const k = ok ? dim : dim * 0.25
-    this.ringMat.color.setRGB((vehicle ? TAUT_RGB[0] : SLACK_RGB[0]) * k, (vehicle ? TAUT_RGB[1] : SLACK_RGB[1]) * k, (vehicle ? TAUT_RGB[2] : SLACK_RGB[2]) * k)
+    this.look.ringMat.color.setRGB((vehicle ? TAUT_RGB[0] : SLACK_RGB[0]) * k, (vehicle ? TAUT_RGB[1] : SLACK_RGB[1]) * k, (vehicle ? TAUT_RGB[2] : SLACK_RGB[2]) * k)
     this.reticle.position.copy(path.point).addScaledVector(path.normal, 0.08)
     this.reticle.lookAt(path.point.clone().add(path.normal))
     this.reticle.scale.setScalar(Math.max(0.6, camPos.distanceTo(path.point) * 0.018))

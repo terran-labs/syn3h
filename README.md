@@ -8,7 +8,7 @@ with a beam or a nudge, and change the world's gravity, sky and physics while yo
 
 **Play it now at [www.syn3h.com](https://www.syn3h.com/).**
 
-![Scenes from the latest Syn3h release: the lobby, the buggy and the volcano, wings in a glide, bots in pursuit, a tag beam, the jet, the hovercraft over lava, and lava at night](https://github.com/terran-labs/syn3h/releases/latest/download/syn3h-showcase.gif)
+![Scenes from the latest Syn3h release: the galaxy lobby, the buggy and volcano, wings in a glide, the jet above the island, and lava at night](https://github.com/terran-labs/syn3h/releases/latest/download/syn3h-showcase.gif)
 
 The animation is captured from each production release and follows the latest one. Notes
 and screenshots for every release are on the
@@ -39,3 +39,10 @@ second player.
 
 Three.js on WebGPU with a WebGL fallback, Rapier physics, TypeScript and Vite. Every world
 is generated on your machine from a shared seed, so there is nothing to download.
+
+## Licence
+
+Syn3h is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE.md):
+you are welcome to play with it, change it, extend it and share what you make, for any
+noncommercial purpose. Commercial use needs a licence from Terran Labs; see
+[NOTICE.md](NOTICE.md). Third-party components keep their own licences.

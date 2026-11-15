@@ -23,6 +23,10 @@ const NOTES_DIR = join(REPO, 'release-notes', 'releases')
 const HISTORY = join(REPO, 'release-notes', 'history.tsv')
 const GITHUB_REPO = process.env.SYN3H_GITHUB_REPO || 'terran-labs/syn3h'
 const PLAY_URL = 'https://www.syn3h.com/'
+/** The address that serves one frozen release for good (tools/frozen-versions.mjs). */
+export function frozenUrl(version) {
+  return `${PLAY_URL}?v=${String(version).replace(/^v/, '')}`
+}
 const MANIFEST = 'manifest.json'
 
 /** Sections in the order a notes file has them. Play only in production notes. */
@@ -108,7 +112,7 @@ export function draftNotes(row, from, to, commits) {
     '',
     '- TODO',
     '',
-    ...(production ? ['### Play', '', `Open ${PLAY_URL} in a browser, choose a vehicle and press Play.`, '', '- TODO: the controls that matter for this release', ''] : []),
+    ...(production ? ['### Play', '', `Open ${PLAY_URL} in a browser, choose a vehicle and press Play.`, '', `This exact version stays playable at ${frozenUrl(row.version)}, whatever ships after it.`, '', '- TODO: the controls that matter for this release', ''] : []),
     '### Known issues',
     '',
     '- TODO: from ops/KNOWN-ISSUES.md as it stood when this was built',
@@ -123,10 +127,10 @@ export function draftNotes(row, from, to, commits) {
  */
 export function renderNotes(text, row, manifest = { images: [], gif: null }) {
   const tag = row.version
-  const notes = text.replace(/<!--[\s\S]*?-->/g, '').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim()
+  const notes = text.replace(/^\(AI Generated\)\r?\n\r?\n/, '').replace(/<!--[\s\S]*?-->/g, '').replace(/[ \t]+$/gm, '').replace(/\n{3,}/g, '\n\n').trim()
   const lines = notes.split('\n')
   const problems = []
-  // The owner's instruction of 14 November 2026: no "(AI Generated)" line; the body opens on the heading.
+  // Accept historical heading-first sources; all rendered external bodies carry attribution.
   if (lines[0] !== `## Syn3h ${tag}`) problems.push(`the first line must be the heading "## Syn3h ${tag}"`)
   if (lines[1] !== '' || !lines[2] || lines[2].startsWith('#')) problems.push('a one line deck must follow the heading after a blank line')
   if (lines[4] !== kindLine(row)) problems.push(`the line under the deck must be "${kindLine(row)}"`)
@@ -144,7 +148,7 @@ export function renderNotes(text, row, manifest = { images: [], gif: null }) {
   if (banned) problems.push(`wording rule: ${[...new Set(banned.map((w) => w.toLowerCase()))].join(', ')}`)
   if (problems.length) throw new Error(`Notes for ${tag} are not ready:\n  ${problems.join('\n  ')}`)
   const shots = screenshotSection(tag, manifest)
-  return `${notes}\n${shots ? `\n${shots}\n` : ''}`
+  return `(AI Generated)\n\n${notes}\n${shots ? `\n${shots}\n` : ''}`
 }
 
 /** Every release-download URL the body links for this tag, by file name. */

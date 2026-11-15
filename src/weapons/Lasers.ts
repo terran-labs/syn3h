@@ -17,6 +17,7 @@ import { createWeaponEffects } from '../vehicles/effects'
 import { hotExposureDim } from '../vehicles/skins/hotExposure'
 import { laserGravity, laserLifetime, laserRicochet, laserSpeed } from './params'
 import { bigRedRadius, bigRedSpeed } from './bigRedParams'
+import { warmGear } from './warm'
 
 export interface LaserHooks {
   /** Body of a player's (or bot's) vehicle, local or remote, if it exists here. */
@@ -30,6 +31,8 @@ export interface LaserHooks {
   isVehicleBody(handle: number): boolean
   /** A shot hit a vehicle this client judges. `dir` is the shot's unit direction; `red` for Big Red. */
   onHit(shooter: number, shot: number, victim: number, at: THREE.Vector3, dir: THREE.Vector3, red: boolean): void
+  /** A shot ended at `at`, on anything; once per shot on every client. For the impact push. */
+  onImpact?(at: THREE.Vector3, red: boolean): void
 }
 
 interface Projectile {
@@ -52,6 +55,8 @@ const LENGTH = 4
 const TRAIL = 10
 /** A shot younger than this is fresh: it gets a muzzle flash. Replayed old shots do not. */
 const FRESH = 0.15
+/** How far under the camera the sparks are compiled, metres: under any terrain. */
+const SPARK_WARM_DEPTH = 4000
 
 /** The beam's colours at daytime exposure, linear RGB: core, additive halo, blended tint. */
 const CORE_RGB = [0.9, 4, 1.4] as const
@@ -73,23 +78,23 @@ export class Lasers implements System {
   /** Halo that tapers from 0.25 m at the head to 0.1 m at the tail, trailing behind. */
   private readonly haloGeo = new THREE.CylinderGeometry(0.25, 0.1, TRAIL, 8, 1).rotateX(Math.PI / 2).translate(0, 0, -TRAIL / 2 + LENGTH / 2)
   // Colours above 1 survive tone mapping as a hot, near white core: the glow without bloom.
-  private readonly coreMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...CORE_RGB) })
+  private readonly coreMat = new THREE.MeshBasicMaterial({ name: 'gear beam core', color: new THREE.Color(...CORE_RGB) })
   private readonly haloMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(...HALO_RGB), transparent: true, opacity: 0.5,
+    name: 'gear beam halo', color: new THREE.Color(...HALO_RGB), transparent: true, opacity: 0.5,
     blending: THREE.AdditiveBlending, depthWrite: false,
   })
   // The wing material's recipe: additive light washes out to white over a sunlit desert, so a
   // normally blended tint underneath keeps the green readable at noon.
   private readonly tintMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(...TINT_RGB), transparent: true, opacity: 0.3, depthWrite: false,
+    name: 'gear beam tint', color: new THREE.Color(...TINT_RGB), transparent: true, opacity: 0.3, depthWrite: false,
   })
-  private readonly redCoreMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...RED_CORE_RGB) })
+  private readonly redCoreMat = new THREE.MeshBasicMaterial({ name: 'gear red core', color: new THREE.Color(...RED_CORE_RGB) })
   private readonly redHaloMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(...RED_HALO_RGB), transparent: true, opacity: 0.55,
+    name: 'gear red halo', color: new THREE.Color(...RED_HALO_RGB), transparent: true, opacity: 0.55,
     blending: THREE.AdditiveBlending, depthWrite: false,
   })
   private readonly redTintMat = new THREE.MeshBasicMaterial({
-    color: new THREE.Color(...RED_TINT_RGB), transparent: true, opacity: 0.35, depthWrite: false,
+    name: 'gear red tint', color: new THREE.Color(...RED_TINT_RGB), transparent: true, opacity: 0.35, depthWrite: false,
   })
   private readonly effects: ReturnType<typeof createWeaponEffects> | null
   /** Shots that already showed their impact here, so a later server confirmation does not repeat it. */
@@ -99,6 +104,7 @@ export class Lasers implements System {
   private readonly look = new THREE.Vector3()
   /** Shots fired here, counted for ids. */
   private nextShotId = 1
+  private readonly unwarm: () => void
 
   constructor(private readonly game: Game, private readonly hooks: LaserHooks) {
     let effects: ReturnType<typeof createWeaponEffects> | null = null
@@ -109,6 +115,17 @@ export class Lasers implements System {
       console.warn('tag beam effects unavailable', err)
     }
     this.effects = effects
+    // The sparks are instanced batches that draw nothing until a particle exists, so the
+    // only way to compile them early is one short flash far below the ground.
+    const below = new THREE.Vector3(), ahead = new THREE.Vector3(0, 0, -1)
+    this.unwarm = warmGear(game, [
+      [this.coreGeo, this.coreMat], [this.haloGeo, this.tintMat], [this.haloGeo, this.haloMat],
+      [this.coreGeo, this.redCoreMat], [this.haloGeo, this.redTintMat], [this.haloGeo, this.redHaloMat],
+    ], () => {
+      game.camera.getWorldPosition(below).y -= SPARK_WARM_DEPTH
+      this.effects?.muzzle(below, ahead, false)
+      this.effects?.muzzle(below, ahead, true)
+    })
   }
 
   get count(): number {
@@ -171,6 +188,11 @@ export class Lasers implements System {
     if (i >= 0) this.kill(i)
   }
 
+  /** Remove every shot in flight: for a world change or leaving it. Impact effects fade on their own. */
+  reset(): void {
+    while (this.shots.length) this.kill(this.shots.length - 1)
+  }
+
   fixedUpdate(dt: number): void {
     for (let i = this.shots.length - 1; i >= 0; i--) {
       const p = this.shots[i]
@@ -200,6 +222,9 @@ export class Lasers implements System {
   dispose(): void {
     while (this.shots.length) this.kill(this.shots.length - 1)
     this.effects?.dispose()
+    this.unwarm()
+    this.coreGeo.dispose(); this.haloGeo.dispose()
+    for (const m of [this.coreMat, this.haloMat, this.tintMat, this.redCoreMat, this.redHaloMat, this.redTintMat]) m.dispose()
   }
 
   private step(p: Projectile, dt: number): void {
@@ -308,6 +333,7 @@ export class Lasers implements System {
     this.impacted.add(key)
     if (this.impacted.size > 256) this.impacted.delete(this.impacted.values().next().value as string)
     this.effects?.impact(at.clone(), normal ?? new THREE.Vector3(0, 1, 0), red)
+    this.hooks.onImpact?.(at, red)
   }
 
   private kill(i: number): void {

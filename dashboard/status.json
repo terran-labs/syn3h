@@ -1,7 +1,7 @@
 {
   "tagline": "Syn3h, rebuilt native in the browser: its vehicles, its physics, its lobby and its look.",
   "deadline": "Demo: Sunday noon Pacific, Coeur d'Alene",
-  "headline": "Release 2 is public after rollback. Release 3 passed frozen-build checks but failed public verification; investigation continues. Release 4 is being validated. Lane testing has resumed through a shared three-job limit.",
+  "headline": "Release 5 is live and verified. Clouds, temporal antialiasing, saved-world moons and touch minimap clearance are public. All 1,156 tests, frozen checks, primary-site multiplayer and eight public vehicle drives passed.",
   "previews": [
     {
       "title": "Play the current build",
@@ -613,37 +613,29 @@
   ],
   "knownIssues": [
     {
-      "title": "Not yet done by a person",
-      "detail": "Nobody has joined from a phone by QR code on the public address or listened on the demo speakers."
+      "title": "Physical devices still need review",
+      "detail": "Automated Chrome and WebKit checks do not establish performance, listening quality or QR entry on the owner’s phone or iPad."
     },
     {
-      "title": "The loading screen is a dim ring with no words",
-      "detail": "A slow connection can still read as a black screen for a few seconds. Being reworded on the preview."
+      "title": "Water is opaque from above",
+      "detail": "Depth colour does not reveal submerged ground or objects."
     },
     {
-      "title": "syn3h.com without www depends on the old host",
-      "detail": "The old hosting account is what redirects it to www. Attaching it to the game is the fix after the demo."
+      "title": "Aircraft avoidance is unfinished",
+      "detail": "The response study produced two escapes and two harmful catches. Ground dodge and bot gear remain available."
     },
     {
-      "title": "Bots crowd the summit",
-      "detail": "Bots reach the top on every world, then ram each other and some drive off the edge."
+      "title": "Screen-space lighting has limits",
+      "detail": "Surfaces outside the view cannot contribute to indirect light."
     },
     {
-      "title": "Head-on rams at high speed are chaotic",
-      "detail": "Two cars closing at over 40 m/s can be thrown hard. Measured once."
-    },
-    {
-      "title": "Changing vehicle in the lobby reloads the page",
-      "detail": "A shortcut taken to keep the demo safe."
-    },
-    {
-      "title": "Network study is thin",
-      "detail": "One run per condition on a loaded Mac. Nothing measured on a phone, venue wifi or mobile data."
+      "title": "Startup timing remains under observation",
+      "detail": "Earlier stale-state failures under heavy load remain unexplained. Accepted dry seam checks cover steady-state driving after bounded readiness."
     }
   ],
   "links": [
     {
-      "group": "Public (release 2, frozen)",
+      "group": "Public (release 5, verified)",
       "note": "What the world sees. Changes only when a release ships.",
       "items": [
         {
@@ -826,20 +818,12 @@
   ],
   "knownIssuesTrunk": [
     {
-      "title": "The preview link loads slowly on phones and tablets",
-      "detail": "About half a minute on an iPad, because the development server sends 28 MB uncompressed. The public site sends about 2 MB and starts in a few seconds. Demo from the public site, not this link."
+      "title": "Rendering limits",
+      "detail": "Clouds do not cast terrain shadows. Water, grass and particles skip temporal history to avoid ghosting."
     },
     {
-      "title": "New and unseen by the owner",
-      "detail": "Zorb mode (X), the new vehicle paint, the Dark Star look, Daydream (the vehicle drives itself after 30 idle seconds), bots with personalities, continents and planet sizes."
-    },
-    {
-      "title": "Round planets are not finished",
-      "detail": "Driving past the edge of the world still falls off: the wrap needs work in the vehicle, multiplayer and bot code before it can ship."
-    },
-    {
-      "title": "The generated score is not yet good enough to be the default",
-      "detail": "The owner's verdict on the retune: fairly good, not there yet. It is selectable; a version with an arc and new instruments is on the preview."
+      "title": "Appearance choices remain open",
+      "detail": "Tank and hovercraft studies still need the owner’s selection. Smooth near-camera terrain remains deferred."
     }
   ]
 }

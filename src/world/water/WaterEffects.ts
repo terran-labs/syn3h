@@ -4,11 +4,15 @@ import type { Game, System } from '../../core/Game'
 import type { Terrain } from '../Terrain'
 import { applyWaterQuery } from './params'
 import type { Vehicle, VehicleObjectEvents } from '../../vehicles/Vehicle'
+import type { PlayerSlot } from '../../vehicles/PlayerSlot'
 import { net } from '../../net'
 import { nearestImage } from '../../../shared/wrap'
 import { Ripples, rippleField, waterRipples } from './ripples'
 import { Spray, waterSpray } from './spray'
-import { Underwater } from './underwater'
+import { Underwater, waterUnderwater } from './underwater'
+import { UnderwaterBubbles } from './bubbles'
+import { lensWash, newLensState, stepLens } from './underwaterCamera'
+import { camMode } from '../../core/ChaseCamera'
 import { submergedFraction, verticalHalfExtent } from './waterEffectsMath'
 
 /** Register after Environment and ChaseCamera. The live net binding includes later joins. */
@@ -16,16 +20,19 @@ export class WaterEffects implements System {
   readonly ripples:Ripples
   readonly spray:Spray
   readonly underwater:Underwater
+  readonly bubbles:UnderwaterBubbles
   private size=-1
   private ids=new WeakMap<Vehicle,string>()
   private serial=0
   private point=new Vector3()
   private velocity=new Vector3()
-  constructor(private game:Game,private terrain:Terrain,private player:Vehicle,private bots:{readonly vehicles:readonly Vehicle[]}){
-    this.ripples=rippleField;this.ripples.attach(game.renderer);this.spray=new Spray(game.scene,this.ripples);this.underwater=new Underwater(game,terrain)
+  constructor(private game:Game,private terrain:Terrain,private slot:PlayerSlot,private bots:{readonly vehicles:readonly Vehicle[]}){
+    this.ripples=rippleField;this.ripples.attach(game.renderer);this.spray=new Spray(game.scene,this.ripples,terrain);this.underwater=new Underwater(game,terrain);this.bubbles=new UnderwaterBubbles(game.scene,terrain,game.camera)
     // A world seam moves the player a whole tile and the world is redrawn round it: spray left
     // behind moves the same way. (The ripple field wraps at the tile, so it needs nothing.)
-    ;(player.object as THREE.Object3D<VehicleObjectEvents>).addEventListener('tileshift',this.onTileShift)
+    this.listen(slot.current,true)
+    // The player changed vehicle: follow the seam shifts of the new one.
+    this.unfollow=slot.onChange((next,previous)=>{this.listen(previous,false);this.listen(next,true)})
   }
   private onTileShift=({dx,dz}:{dx:number;dz:number})=>this.spray.shift(dx,dz)
   /** `?water=1` preview switch: applied once play has begun, after any room state lands. */
@@ -65,7 +72,36 @@ export class WaterEffects implements System {
       }
     }
     this.ripples.update(dt,game.camera.position.x,game.camera.position.z)
-    this.underwater.update()
+    this.applyLens(dt)
+    this.underwater.update(dt,lensWash(this.lens))
+    this.trailBubbles(dt)
+    this.bubbles.update(dt,waterUnderwater.value)
   }
-  dispose(){(this.player.object as THREE.Object3D<VehicleObjectEvents>).removeEventListener('tileshift',this.onTileShift);this.underwater.dispose();this.spray.dispose();this.ripples.dispose()}
+  /** Water-owned lens rule, applied after the chase camera has placed the lens. */
+  readonly lens=newLensState()
+  private applyLens(dt:number){
+    const {terrain}=this,p=this.game.camera.position
+    // Roam mode moves the lens from its own last position, so the rule would trap it at
+    // the surface; the free camera crosses as the player flies it.
+    const surface=waterUnderwater.value&&Math.round(camMode.value)!==4&&terrain.liquidKindAt?.(p.x,p.z)==='water'
+      ?terrain.liquidHeightAt?.(p.x,p.z)??-Infinity:-Infinity
+    p.y=stepLens(this.lens,p.y,surface,dt)
+  }
+  /** A moving submerged player vehicle trails bubbles. */
+  private trailBubbles(dt:number){
+    if(!waterUnderwater.value)return
+    const {terrain}=this,body=this.player.body
+    if(!this.game.world.getRigidBody(body.handle))return
+    const p=body.translation()
+    if(terrain.liquidKindAt?.(p.x,p.z)!=='water'||!((terrain.liquidHeightAt?.(p.x,p.z)??-Infinity)>p.y+.4))return
+    const v=body.linvel()
+    this.bubbles.trail(p.x-v.x*.08,p.y,p.z-v.z*.08,Math.hypot(v.x,v.y,v.z),dt)
+  }
+  private readonly unfollow:()=>void
+  private get player():Vehicle {return this.slot.current}
+  private listen(vehicle:Vehicle,on:boolean){
+    const object=vehicle.object as THREE.Object3D<VehicleObjectEvents>
+    if(on)object.addEventListener('tileshift',this.onTileShift);else object.removeEventListener('tileshift',this.onTileShift)
+  }
+  dispose(){this.unfollow();this.listen(this.player,false);this.underwater.dispose();this.bubbles.dispose();this.spray.dispose();this.ripples.dispose()}
 }

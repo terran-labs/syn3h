@@ -196,6 +196,21 @@ describe('Room', () => {
     expect(b.peer.last('game')).toMatchObject({ event: 'laser', game: { it: b.id } })
   })
 
+  it('relays no tag beam while the host has switched beams off', () => {
+    const a = join('A', { 'laser.allowed': false })
+    const b = join('B')
+    clock += 3100
+    room.receive(a.peer, state([0, 0, 0]))
+    room.receive(b.peer, state([0, 0, -50]))
+    send(a.peer, { type: 'fire', shot: { id: 1, o: [0, 0.5, -2], d: [0, 0, -1], boost: 0, t: clock / 1000 } })
+    send(b.peer, { type: 'fire', shot: { id: 1, o: [0, 0.5, -48], d: [0, 0, 1], boost: 0, t: clock / 1000 } })
+    expect(a.peer.all('fire')).toEqual([])
+    expect(b.peer.all('fire')).toEqual([])
+    // A shot the room never relayed cannot be claimed as a hit.
+    send(b.peer, { type: 'hit', shooter: a.id, shot: 1 })
+    expect(a.peer.all('hit')).toEqual([])
+  })
+
   it('rejects shots fired from somewhere the shooter is not', () => {
     const a = join('A')
     const b = join('B')
@@ -590,6 +605,7 @@ describe('Room idle reset', () => {
     const a = join('A')
     send(a.peer, { type: 'param', id: 'sun.timeOfDay', value: 23 })
     send(a.peer, { type: 'param', id: 'world.gravity', value: 3 })
+    send(a.peer, { type: 'param', id: 'game.rejoin', value: false })
     // A's tab is hidden: heartbeats only.
     for (let t = 0; t < 4 * 60; t++) { clock += 1000; parked(a.peer) }
     expect(a.peer.last('reset')).toBeUndefined()
@@ -598,6 +614,7 @@ describe('Room idle reset', () => {
     const reset = a.peer.last('reset')!
     expect(reset.reason).toBe('idle')
     expect(reset.params['world.gravity']).toBe(GRAVITY_DEFAULT())
+    expect(reset.params['game.rejoin']).toBe(true)
     expect(reset.params['sun.timeOfDay']).toBeUndefined()
     // Only once per idle spell.
     for (let t = 0; t < 400; t++) { clock += 1000; parked(a.peer) }
@@ -721,8 +738,8 @@ describe('Room rejoin as the same player (game.rejoin)', () => {
   const on = { 'game.rejoin': true }
   const here = () => state([0, 0, 0])
 
-  it('is off by default: a secret changes nothing and a dropout is a leave', () => {
-    const a = join('A', {}, { resume: SECRET_A })
+  it('can be switched off: a secret changes nothing and a dropout is a leave', () => {
+    const a = join('A', { 'game.rejoin': false }, { resume: SECRET_A })
     const b = join('B', {}, { resume: SECRET_B })
     room.disconnect(a.peer)
     expect(b.peer.last('leave')).toEqual({ type: 'leave', id: a.id })
@@ -733,8 +750,20 @@ describe('Room rejoin as the same player (game.rejoin)', () => {
     expect(room.snapshot().roster).toBeUndefined()
   })
 
+  it('preserves a stored explicit opt-out when the room wakes', () => {
+    join('A', { 'game.rejoin': false }, { resume: SECRET_A })
+    const saved = room.snapshot()
+    room = new Room('test', { now: () => clock })
+    room.restore(saved)
+    const back = join('A', {}, { resume: SECRET_A })
+    expect(back.peer.last('welcome')!.params['game.rejoin']).toBe(false)
+    room.disconnect(back.peer)
+    expect(room.heldCount).toBe(0)
+  })
+
   it('holds a dropped player\'s place and gives it back to the same secret, telling nobody', () => {
-    const a = join('A', on, { resume: SECRET_A })
+    // Fresh rooms preserve the same player without any URL flag or slider change.
+    const a = join('A', {}, { resume: SECRET_A })
     const b = join('B', {}, { resume: SECRET_B })
     send(a.peer, { type: 'lock', locked: true })
     send(a.peer, { type: 'param', id: 'game.mode', value: 1 })

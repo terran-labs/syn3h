@@ -13,10 +13,10 @@
  *    glow, because Preetham's sky goes black two degrees after sunset.
  *  - The ratio betaTheta / beta is guarded so zeroing every channel cannot produce NaN.
  */
-import { BackSide, BoxGeometry, Mesh, NodeMaterial, Vector2, Vector3 } from 'three/webgpu'
+import { BackSide, BoxGeometry, Mesh, NodeMaterial, Vector2, Vector3, type Camera } from 'three/webgpu'
 import {
   Fn, If, acos, add, cameraPosition, clamp, cos, dot, exp, float, floor, fract, length, max, min, mix,
-  modelViewProjection, mul, normalize, positionWorld, pow, smoothstep, sub, time, uniform, vec2, vec3, vec4,
+  modelViewProjection, mul, normalize, positionWorld, pow, renderGroup, smoothstep, sub, time, uniform, vec2, vec3, vec4,
 } from 'three/tsl'
 import { BETA_EPSILON, MIE_ZENITH_LENGTH, RAYLEIGH_ZENITH_LENGTH, SKY_FLOOR, SKY_SCALE } from './skyMath'
 
@@ -46,6 +46,17 @@ export class AlienSkyMesh extends Mesh {
   readonly cloudCoverage = uniform(0.4)
   readonly cloudDensity = uniform(0.4)
   readonly cloudElevation = uniform(0.5)
+  /** Camera fallback only. Reflection captures temporarily enable this layer. */
+  cloudLayerVisible = true
+  private readonly cloudVisibility = uniform(1).setGroup(renderGroup).onRenderUpdate(() => this.cloudLayerVisible ? 1 : 0)
+
+  /** Camera-only water attenuation. The shared PMREM proxy uses other cameras. */
+  underwaterCamera: Camera | null = null
+  underwaterAmount = 0
+  private readonly underwaterColor = new Vector3(.018, .16, .21)
+  readonly underwaterTint = uniform(this.underwaterColor).setGroup(renderGroup).onRenderUpdate(() => this.underwaterColor)
+  private readonly underwaterMix = uniform(0).setGroup(renderGroup).onRenderUpdate(frame =>
+    frame.camera === this.underwaterCamera ? this.underwaterAmount : 0)
 
   constructor() {
     const material = new NodeMaterial()
@@ -158,7 +169,7 @@ export class AlienSkyMesh extends Mesh {
 
       const coverage = this.cloudCoverage as N
       const elevationU = this.cloudElevation as N
-      If(direction.y.greaterThan(0.0).and(coverage.greaterThan(0.0)), () => {
+      If(direction.y.greaterThan(0.0).and(coverage.greaterThan(0.0)).and(this.cloudVisibility.greaterThan(0)), () => {
         const elevation = mix(1.0, 0.1, elevationU)
         const cloudUV = direction.xz.div(direction.y.mul(elevation)).toVar() as N
         cloudUV.mulAssign(this.cloudScale)
@@ -197,7 +208,7 @@ export class AlienSkyMesh extends Mesh {
         texColor.assign(mix(texColor, cloudAerial, alpha))
       })
 
-      return vec4(max(texColor, vec3(0.0)), 1.0)
+      return vec4(mix(max(texColor, vec3(0.0)), this.underwaterTint, this.underwaterMix), 1.0)
     })()
 
     material.side = BackSide

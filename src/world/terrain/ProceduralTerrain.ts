@@ -19,7 +19,9 @@ import { type TerrainMaterial, createTerrainMaterial } from './material'
 import { LOD_FAR, LOD_NEAR, type TerrainMeshes, type TriangleStats, createTerrainMeshes } from './mesh'
 import { rimRoadRadius } from './roads'
 import { HeightSampler, sealSeam } from './sampler'
-import { KIND_VOLCANIC, TERRAIN_PARAM_IDS, currentTerrainSettings, worldSeaKind } from './settings'
+import { KIND_VOLCANIC, TERRAIN_PARAM_IDS, currentTerrainSettings, terrainRoadStyle, worldSeaKind } from './settings'
+import { paletteFor } from './palettes'
+import { type SurfaceKind, classifySurface, sampleGrid } from './surface'
 import { spawnPointAt } from './spawn'
 import { GroundCover } from './groundcover'
 import { Trees } from './trees'
@@ -54,6 +56,7 @@ export class ProceduralTerrain implements Terrain {
   /** Milliseconds the last generation took (generation only, not upload). */
   lastGenerateMs = 0
   private readonly sampler: HeightSampler
+  private readonly surfaceNormal = { x: 0, y: 1, z: 0 }
   private meshes: TerrainMeshes
   /** The last render quality request, re-applied when the meshes are rebuilt. */
   private lod: [number, number] | null = null
@@ -239,9 +242,34 @@ export class ProceduralTerrain implements Terrain {
     else this.look.setLake(0, 0, 0, -1000)
     // Snow starts at a share of the summit's height set by the recipe: alpine worlds carry
     // it from a third of the way up, an ice moon from the shore, most worlds not at all.
+    this.look.setLook(this.data.settings.look, worldSeaKind.value === 0, hot && !!lake, this.snowHeight())
+  }
+
+  /** Height where snow starts, or a huge number on a world with none. */
+  private snowHeight(): number {
     const line = this.data.settings.snowLine
-    const snow = line >= 2 ? 1e6 : this.data.layout.summitHeight * line
-    this.look.setLook(this.data.settings.look, worldSeaKind.value === 0, hot && !!lake, snow)
+    return line >= 2 ? 1e6 : this.data.layout.summitHeight * line
+  }
+
+  /**
+   * What the ground is made of at (x, z): the CPU's reading of the rules the material draws
+   * with (see surface.ts). Two grid reads, a height and a normal; no allocation.
+   */
+  surfaceAt(x: number, z: number): SurfaceKind {
+    const look = this.data.settings.look
+    const style = terrainRoadStyle.value as number
+    return classifySurface({
+      look,
+      slope: 1 - this.sampler.normalAt(x, z, this.surfaceNormal).y,
+      height: this.sampler.heightAt(x, z),
+      sea: worldLavaAltitude.value,
+      lavaSea: worldSeaKind.value === 0,
+      snowHeight: this.snowHeight(),
+      volcanic: sampleGrid(this.data, this.data.volcanic, x, z),
+      roadDist: sampleGrid(this.data, this.data.roadDist, x, z),
+      // Same rule as the material's applyRoadStyle: 1 forces made roads, 2 forces tracks.
+      madeRoad: style === 1 || (style === 0 && paletteFor(look).track === 0),
+    })
   }
 
   /** Rebuild heights, mesh and collider in place, then notify listeners. */
@@ -376,8 +404,11 @@ export class ProceduralTerrain implements Terrain {
     this.meshes.setLodDistances(near, far)
     // Forest out to the level's draw distance: 700 m on the weakest phones.
     this.trees.setDrawDistance(Math.min(1800, quality.drawDistance))
-    // Grass and flowers cost a few hundred thousand triangles: desktop level only for now.
-    this.cover.setEnabled(quality.level >= 2)
+    // The ground shader sheds its close-up grain and glitter first, then its colour extras.
+    this.look.setDetail(quality.detail)
+    // Grass and flowers: everything on desktop, a thinner and nearer cover on phones and
+    // tablets, nothing at the safe level.
+    this.cover.setLevel(quality.level)
   }
 
   /** Terrain triangles in view at the current levels of detail, versus at full detail. */

@@ -1,6 +1,8 @@
 /** Local rendering budgets. World parameters and physics resolution are never changed here. */
 import { type AdapterProbe, gpuDeadlineMs, graphicsOverride, probeAdapter } from './renderOptions'
 import { defineParam, params } from '../../shared/params'
+import { PerformanceHistory, RECOMMENDATION_IGNORE_KEY } from './performanceHistory'
+import type { PerformanceEnvironment, PerformanceSnapshot } from './performance'
 import type { WebGPURenderer } from 'three/webgpu'
 export type GraphicsLevel = 0 | 1 | 2
 export const graphicsLevel = defineParam({ id: 'gfx.level', label: 'Graphics: 0 safe, 1 mobile, 2 desktop', group: 'Graphics', scope: 'client', default: 2, min: 0, max: 2, step: 1 })
@@ -338,6 +340,14 @@ export class QualityGovernor {
   }
   /** The player set the level by hand. It becomes the pinned level and the ladder restarts at its top. */
   setManualLevel(level: GraphicsLevel) { this.levelPinned = true; return this.reset(level, 'manual') }
+  /** Explicit recommendation action: a lower level must not restore cost already shed. */
+  lowerManualLevel(): GovernorChange | null {
+    if(this.level===0)return null
+    const from=this.settings
+    this.levelPinned=true;this.level=(this.level-1) as GraphicsLevel
+    this.ladder=this.ladderFor(this.level);this.rung=this.mapRung(from);this.probe=null
+    return this.change('manual',GOVERNOR.manualSettleMs)
+  }
   /** The player set vehicle shading by hand, or null to hand it back to the governor. Other rung values are kept. */
   setShadingPin(value: number | null) {
     const from = this.settings
@@ -423,7 +433,9 @@ export class QualityGovernor {
 }
 
 export interface QualityTerrain { setRenderQuality?(options: { level: GraphicsLevel; drawDistance: number; detail: number }): void }
-export interface FrameMetrics { fps: number; frameMs: number; physicsMs: number; drawCalls: number; triangles: number; firstFrameMs: number | null }
+export interface FrameMetrics { fps: number; frameMs: number; physicsMs: number; drawCalls: number; triangles: number; firstFrameMs: number | null
+  /** Renderer pipeline cache this frame: live size and objects not seen before. Absent or null where unreadable. */
+  pipelinesLive?: number | null; pipelinesFresh?: number | null }
 /** Values the cascade has actually applied, for consumers that need more than the level budget. */
 export interface EffectiveQuality extends RungSettings { level: GraphicsLevel; rung: number; rungs: number; auto: boolean; targetFps: number }
 let effective: EffectiveQuality = { ...buildLadder(2)[0], level: 2, rung: 0, rungs: buildLadder(2).length, auto: true, targetFps: 60 }
@@ -449,6 +461,7 @@ export const MANUAL_KEY = 'syn3h.graphics.manual'
  */
 export class QualityController {
   private storage: StorageLike | null = null
+  private ignoreStorage: StorageLike | null = null
   private renderer: WebGPURenderer | null = null
   private terrain: QualityTerrain | null = null
   private hud: HTMLPreElement | null = null
@@ -461,19 +474,62 @@ export class QualityController {
   private written: { level: number; shadows: number; particles: number; shading: number; terrain: boolean } = { level: -1, shadows: -1, particles: -1, shading: -1, terrain: false }
   private lastReason: GovernorReason | 'start' = 'start'
   readonly governor: QualityGovernor
+  private readonly history = new PerformanceHistory()
+  private readonly performanceListeners = new Set<(snapshot: PerformanceSnapshot) => void>()
+  private diagnosticsVisible = false
+  private disposed = false
+  private displayFrame: number | null = null
+  private environment: (() => PerformanceEnvironment) | null = null
+  private readonly onVisibility = () => { this.history.resetEvidence(); this.publishPerformance() }
   private readonly onKey = (event: KeyboardEvent) => {
     if (event.code !== 'F3' || event.repeat) return
-    event.preventDefault()
+    event.preventDefault(); this.toggleDiagnostics()
+  }
+  setPerformanceEnvironment(read: () => PerformanceEnvironment) { if(this.disposed)return;this.environment = read; this.publishPerformance() }
+  getPerformanceSnapshot(): PerformanceSnapshot {
+    const g = this.governor
+    return Object.freeze({ visible: this.diagnosticsVisible,
+      quality: Object.freeze({...g.settings,level:g.level,rung:g.rung,rungs:g.ladder.length,auto:g.auto,targetFps:Math.round(1000/g.targetMs)}),
+      levelPinned:g.levelPinned,history:this.history.history,recommendation:this.history.recommendation,
+      pipelines:this.history.pipelines,longFrames:this.history.longFrames,
+      environment:Object.freeze(this.environment?.() ?? {backend:'initializing',adapter:null,memoryGB:null,maxTextureSize:null,fallbackReason:null,deviceLost:null}) })
+  }
+  subscribePerformance(listener: (snapshot: PerformanceSnapshot) => void): () => void {
+    if (this.disposed) return () => {}
+    this.performanceListeners.add(listener); this.syncLegacyHud(); listener(this.getPerformanceSnapshot())
+    return () => { this.performanceListeners.delete(listener); this.syncLegacyHud() }
+  }
+  private publishPerformance() {
+    if (this.disposed) return
+    const snapshot = this.getPerformanceSnapshot()
+    for (const listener of this.performanceListeners) listener(snapshot)
+  }
+  private syncLegacyHud() {
+    if (typeof document === 'undefined' || this.disposed) return
+    if (this.performanceListeners.size || !this.diagnosticsVisible) { if(this.hud)this.hud.hidden=true; return }
     if (!this.hud) {
-      this.hud = document.createElement('pre'); this.hud.id = 'frame-time-hud'
-      this.hud.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:10000;padding:10px;background:#100e16e8;color:#d9f4dc;font:12px monospace;pointer-events:none;margin:0'
+      this.hud=document.createElement('pre');this.hud.id='frame-time-hud'
+      this.hud.style.cssText='position:fixed;right:12px;bottom:12px;z-index:10000;padding:10px;background:#100e16e8;color:#d9f4dc;font:12px monospace;pointer-events:none;margin:0'
       document.body.append(this.hud)
-    } else this.hud.hidden = !this.hud.hidden
+    }
+    this.hud.hidden=false
+  }
+  setDiagnosticsVisible(visible: boolean) { this.diagnosticsVisible=visible;this.syncLegacyHud();this.publishPerformance() }
+  toggleDiagnostics() { this.setDiagnosticsVisible(!this.diagnosticsVisible) }
+  ignoreRecommendation() { this.history.ignore();storageWrite(this.ignoreStorage,RECOMMENDATION_IGNORE_KEY,'1');this.publishPerformance() }
+  lowerRecommendedTier(): boolean {
+    const offer=this.history.recommendation,g=this.governor
+    if(!offer || offer.level!==g.level || g.level===0 || this.disposed)return false
+    // Identical authority to an explicit tier selection: retain auto, pin the new level.
+    storageWrite(this.storage,LEVEL_KEY,String(offer.targetLevel));storageWrite(this.storage,MANUAL_KEY,'1')
+    g.lowerManualLevel();this.lastReason='manual';this.apply();return true
   }
   constructor() {
     if (typeof window === 'undefined') { this.governor = new QualityGovernor({ level: levelNumber(graphicsLevel.value) }); return }
     // Session storage survives a tab reload without making another tab look crashed.
     try { this.storage = window.sessionStorage } catch { try { this.storage = window.localStorage } catch { /* No storage available. */ } }
+    try { this.ignoreStorage=window.sessionStorage } catch { /* Ignore stays in memory when session storage is unavailable. */ }
+    this.history.ignored = storageRead(this.ignoreStorage, RECOMMENDATION_IGNORE_KEY) === '1'
     const nav = navigator as Navigator & { deviceMemory?: number }
     this.detected = classifyDevice({ userAgent: nav.userAgent, touchPoints: nav.maxTouchPoints, memoryGB: nav.deviceMemory })
     const pending = storageRead(this.storage, LOAD_KEY)
@@ -492,7 +548,9 @@ export class QualityController {
     reportLoading('device', 0.05)
     this.probeDisplay()
     window.addEventListener('keydown', this.onKey)
+    document.addEventListener('visibilitychange', this.onVisibility)
     this.unsubscribe = params.onChange((id, value) => {
+      if(params.get(id)?.def.scope==='world'){this.history.resetEvidence();this.publishPerformance()}
       if (id === graphicsLevel.def.id) {
         storageWrite(this.storage, LEVEL_KEY, String(levelNumber(graphicsLevel.value)))
         if (this.loading) storageWrite(this.storage, LOAD_KEY, String(levelNumber(graphicsLevel.value)))
@@ -515,11 +573,11 @@ export class QualityController {
     if (typeof requestAnimationFrame === 'undefined') return
     let last = -1
     const tick = (now: number) => {
-      if (!this.loading) return
+      if (!this.loading || this.disposed) return
       if (last >= 0 && !document.hidden) this.governor.noteInterval(now - last)
-      last = now; requestAnimationFrame(tick)
+      last = now; this.displayFrame = requestAnimationFrame(tick)
     }
-    requestAnimationFrame(tick)
+    this.displayFrame = requestAnimationFrame(tick)
   }
   /** Parameter writes made by the cascade, so the change listener does not treat them as the player's. */
   private write(id: string, value: number) { this.writing++; try { params.set(id, value) } finally { this.writing-- } }
@@ -543,6 +601,7 @@ export class QualityController {
   /** Startup timing hook: main calls attachTerrain right after building the terrain. */
   onTerrain: (() => void) | null = null
   private apply() {
+    this.history.resetEvidence()
     const g = this.governor, level = g.level, budget = QUALITY[level], s = g.settings
     if (graphicsLevel.value !== level) this.write(graphicsLevel.def.id, level)
     const levelChanged = this.written.level !== level
@@ -553,7 +612,8 @@ export class QualityController {
     if (this.terrain && (levelChanged || !this.written.terrain)) { this.terrain.setRenderQuality?.({ level, drawDistance: budget.drawDistance, detail: budget.detail }); this.written.terrain = true }
     this.written = { ...this.written, level, shadows: s.shadows, particles: s.particles, shading: s.vehicleShading }
     effective = { ...s, level, rung: g.rung, rungs: g.ladder.length, auto: g.auto, targetFps: Math.round(1000 / g.targetMs) }
-    window.dispatchEvent(new CustomEvent('syn3h:quality', { detail: { ...budget, ...effective, budget, reason: this.lastReason } }))
+    if(typeof window !== 'undefined')window.dispatchEvent(new CustomEvent('syn3h:quality', { detail: { ...budget, ...effective, budget, reason: this.lastReason } }))
+    this.publishPerformance()
   }
   private budget = 1
   private postOn() { return this.governor.ladder[0].post > 0 }
@@ -576,6 +636,9 @@ export class QualityController {
    * down before the player has started. Evidence gathered so far is dropped too.
    */
   frame(metrics: FrameMetrics, judge = true) {
+    if(this.disposed)return
+    const wasLoading=this.loading
+    const counted=this.history.observe(metrics,!document.hidden)
     if (this.loading && metrics.drawCalls > 0) {
       this.loading = false; finishLoad(this.storage); reportLoading('ready', 1)
     }
@@ -584,6 +647,9 @@ export class QualityController {
       const change = this.governor.sample(metrics.frameMs, judge && !document.hidden) ?? moved
       if (change) { this.lastReason = change.reason; this.apply() }
     }
+    const g=this.governor
+    const eligible=!wasLoading&&!this.loading&&judge&&!document.hidden
+    if(this.history.sample(metrics,eligible,{...g.settings,level:g.level,rung:g.rung,rungs:g.ladder.length,auto:g.auto,targetFps:Math.round(1000/g.targetMs)})||counted)this.publishPerformance()
     // Ease toward the rung's budget: full while effects are not shed (or none are active).
     const wanted = this.governor.settings.kind === 'base' || this.governor.settings.post > 0 || !this.postOn() ? 1 : 0
     const step = Math.min(1, Math.max(0, metrics.frameMs) / 500)
@@ -597,5 +663,11 @@ export class QualityController {
         + `Frame ${metrics.frameMs.toFixed(1)} ms${g.last ? ` / p90 ${g.last.p90.toFixed(1)}` : ''}\nPhysics ${metrics.physicsMs.toFixed(2)} ms\nDraws ${metrics.drawCalls} / triangles ${metrics.triangles.toLocaleString()}`
     }
   }
-  dispose() { this.unsubscribe?.(); window.removeEventListener('keydown', this.onKey); this.hud?.remove() }
+  dispose() {
+    this.disposed=true;this.unsubscribe?.();this.performanceListeners.clear();this.environment=null
+    if(typeof window!=='undefined')window.removeEventListener('keydown',this.onKey)
+    if(typeof document!=='undefined')document.removeEventListener('visibilitychange',this.onVisibility)
+    if(this.displayFrame!==null&&typeof cancelAnimationFrame!=='undefined')cancelAnimationFrame(this.displayFrame)
+    this.hud?.remove()
+  }
 }

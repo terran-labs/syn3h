@@ -143,3 +143,17 @@ describe('helpers', () => {
     expect(stressGrid(1, 5, 5)).toEqual([[0, 0]])
   })
 })
+
+import { FLOOR_FADE, floorOpacity } from '../../src/dev/vehicleLab/logic'
+
+it('the floor is solid from a viewing height, fades near it and is gone at and below it', () => {
+  expect(floorOpacity(3)).toBe(1)
+  expect(floorOpacity(FLOOR_FADE.solid)).toBe(1)
+  const mid = floorOpacity((FLOOR_FADE.clear + FLOOR_FADE.solid) / 2)
+  expect(mid).toBeGreaterThan(0)
+  expect(mid).toBeLessThan(1)
+  expect(floorOpacity(.6)).toBeLessThan(floorOpacity(1))
+  expect(floorOpacity(FLOOR_FADE.clear)).toBe(0)
+  expect(floorOpacity(0)).toBe(0)
+  expect(floorOpacity(-2)).toBe(0)
+})

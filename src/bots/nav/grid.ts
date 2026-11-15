@@ -28,6 +28,7 @@
 import type { NavPoint, NavProfile, Navigator, Route } from '../pilot/types'
 import type { Terrain } from '../../world/Terrain'
 import { NodeHeap } from './heap'
+import { isRoadFord } from './fords'
 
 /** Coarse cell size in metres. Twice the terrain sample spacing; see the report in tests/bots/nav. */
 export const CELL = 8
@@ -197,7 +198,7 @@ export function createNavigator(terrain: Terrain, options: NavigatorOptions = {}
     if (!inside(x, z)) return false
     const k = fz * nf + fx
     load(k)
-    if (L.mode === LIQUID_BLOCKED && ground[k] < liquid[k] + WET_CLEARANCE) return false
+    if (L.mode === LIQUID_BLOCKED && ground[k] < liquid[k] + WET_CLEARANCE && !isRoadFord(terrain, x, z)) return false
     const x0 = clampF(fx - 1), x1 = clampF(fx + 1), z0 = clampF(fz - 1), z1 = clampF(fz + 1)
     gradX = (surface(fz * nf + x1, L.mode) - surface(fz * nf + x0, L.mode)) / ((x1 - x0) * FINE)
     gradZ = (surface(z1 * nf + fx, L.mode) - surface(z0 * nf + fx, L.mode)) / ((z1 - z0) * FINE)
@@ -317,7 +318,7 @@ export function createNavigator(terrain: Terrain, options: NavigatorOptions = {}
       if (!stand(fineIndex(x), fineIndex(z), L)) return Infinity
       if (L.mode === LIQUID_BLOCKED) {
         const h = terrain.heightAt(x, z)
-        if (h < liquidAt(x, z) + WET_CLEARANCE) return Infinity
+        if (h < liquidAt(x, z) + WET_CLEARANCE && !isRoadFord(terrain, x, z)) return Infinity
       }
       const y = exactSurface(x, z, L.mode)
       const f = factor((y - prev) / run, ux, uz, L)
@@ -556,7 +557,7 @@ export function createNavigator(terrain: Terrain, options: NavigatorOptions = {}
     if (!inside(x, z)) return false
     if (profile.flies) return true
     const L = limitsFor(profile)
-    if (L.mode === LIQUID_BLOCKED && terrain.heightAt(x, z) < liquidAt(x, z) + WET_CLEARANCE) return false
+    if (L.mode === LIQUID_BLOCKED && terrain.heightAt(x, z) < liquidAt(x, z) + WET_CLEARANCE && !isRoadFord(terrain, x, z)) return false
     const e = FINE
     const gx = (exactSurface(x + e, z, L.mode) - exactSurface(x - e, z, L.mode)) / (2 * e)
     const gz = (exactSurface(x, z + e, L.mode) - exactSurface(x, z - e, L.mode)) / (2 * e)

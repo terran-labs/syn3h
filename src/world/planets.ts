@@ -9,6 +9,7 @@
  *
  * No renderer imports: the lobby, the server and tests can all use this file.
  */
+import { recipeIdForLook } from '../../shared/recipes'
 import { params, type ParamSource, type ParamValue, worldSeed } from '../../shared/params'
 import { SKY_PRESETS } from './sky/presets'
 // Imported for their side effect: they register the sliders the recipes set.
@@ -16,6 +17,15 @@ import './sky/skyParams'
 import './terrain/settings'
 import { planetWeather } from './weather/planetWeather'
 
+/**
+ * A world as a body in the lobby's solar system. Both are read by the galaxy to lay the
+ * system out, so a new recipe takes its place by what it is, not by its name.
+ *  - size: its radius relative to an ordinary planet (1). A moon is well under half.
+ *  - heat: 0 for a frozen world to 1 for a molten one. Orbits are ordered by it, hottest
+ *    nearest the sun, so the icy worlds are the farthest out.
+ */
+export interface PlanetBody { size: number; heat: number }
+export const ORDINARY_BODY: PlanetBody = { size: 1, heat: 0.5 }
 export interface PlanetRecipe {
   id: string
   /** Shown in the lobby. */
@@ -26,6 +36,8 @@ export interface PlanetRecipe {
   centre: string
   /** Two colours for a lobby sphere before the real map is painted: land, sea. */
   swatch: [number, number]
+  /** The body as the lobby's solar system shows it. Left out, it is an ordinary temperate planet. */
+  body?: PlanetBody
   /** Parameter values by id. Anything not listed keeps its default. */
   values: Record<string, ParamValue>
 }
@@ -48,12 +60,12 @@ export const PLANETS: readonly PlanetRecipe[] = [
   {
     id: 'volcanic', label: 'Volcanic', centre: 'A volcano with a lava lake in its crater',
     blurb: 'Rust plains and black spires round a live volcano, in a sea of glowing lava.',
-    swatch: [0xc24a22, 0xff7a1a], values: MARS,
+    swatch: [0xc24a22, 0xff7a1a], body: { size: 0.9, heat: 1.0 }, values: MARS,
   },
   {
     id: 'desert', label: 'Desert', centre: 'A great mesa with an oasis on top',
     blurb: 'Gold dunes and sandstone buttes round a towering mesa, in a warm shallow sea.',
-    swatch: [0xe6b866, 0x2fb7b0],
+    swatch: [0xe6b866, 0x2fb7b0], body: { size: 1.0, heat: 0.75 },
     values: {
       ...planetWeather('desert'),
       ...SKY_PRESETS['Earthlike'], 'sky.turbidity': 5, 'weather.cloudCoverage': 0.12, 'weather.fogDensity': 0.00022,
@@ -67,7 +79,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
   {
     id: 'alpine', label: 'Alpine', centre: 'A snow peak with a tarn at its summit',
     blurb: 'Pine forest and granite ranges under a snow peak, in a cold blue sea.',
-    swatch: [0x5f8a3a, 0x1c5f9a],
+    swatch: [0x5f8a3a, 0x1c5f9a], body: { size: 1.0, heat: 0.4 },
     values: {
       ...planetWeather('alpine'),
       ...SKY_PRESETS['Earthlike'], 'weather.cloudCoverage': 0.45, 'weather.fogDensity': 0.0003,
@@ -81,7 +93,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
   {
     id: 'archipelago', label: 'Archipelago', centre: 'A low green mesa over a turquoise lagoon',
     blurb: 'A small world of sandy islands in turquoise shallows. Bring a hovercraft or a jet.',
-    swatch: [0xa6c95e, 0x58ecd8],
+    swatch: [0xa6c95e, 0x58ecd8], body: { size: 0.9, heat: 0.5 },
     values: {
       ...planetWeather('archipelago'),
       ...SKY_PRESETS['Earthlike'], 'weather.cloudCoverage': 0.3, 'weather.fogDensity': 0.00016,
@@ -96,7 +108,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
   {
     id: 'ice', label: 'Ice moon', centre: 'A frozen horn with a tarn at its summit',
     blurb: 'Blue-white ice plains and pale cliffs over a dark, cold sea, under a violet dusk.',
-    swatch: [0xd6e8f4, 0x1f5f8a],
+    swatch: [0xd6e8f4, 0x1f5f8a], body: { size: 0.5, heat: 0.05 },
     values: {
       ...planetWeather('ice'),
       ...SKY_PRESETS['Violet dusk'], 'weather.cloudCoverage': 0.2, 'sun.timeOfDay': 16.6,
@@ -111,7 +123,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
   {
     id: 'obsidian', label: 'Obsidian', centre: 'A glass volcano ringed by giant shards',
     blurb: 'Black glass and needle spires veined with magenta, standing in a sea of lava.',
-    swatch: [0x262130, 0xff5a1a],
+    swatch: [0x262130, 0xff5a1a], body: { size: 0.8, heat: 0.9 },
     values: {
       ...planetWeather('obsidian'),
       ...SKY_PRESETS['Violet dusk'], 'weather.cloudCoverage': 0.12, 'sun.timeOfDay': 16.3,
@@ -125,7 +137,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
   {
     id: 'badlands', label: 'Badlands', centre: 'The tallest butte, with a road spiralling up it',
     blurb: 'Almost all land: a maze of banded red buttes and canyons, with rivers at the bottom.',
-    swatch: [0xd27a4a, 0x3fb0a0],
+    swatch: [0xd27a4a, 0x3fb0a0], body: { size: 1.05, heat: 0.65 },
     values: {
       ...planetWeather('badlands'),
       ...SKY_PRESETS['Mars day'], 'sky.turbidity': 4, 'weather.cloudCoverage': 0.2, 'sun.timeOfDay': 15.5,
@@ -140,7 +152,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
   {
     id: 'moon', label: 'Moon', centre: 'A giant impact crater with a central peak',
     blurb: 'Grey dust and craters under a black sky, in one sixth of the gravity. Jump.',
-    swatch: [0xa6a6a8, 0x3a3a3e],
+    swatch: [0xa6a6a8, 0x3a3a3e], body: { size: 0.42, heat: 0.32 },
     values: {
       ...planetWeather('moon'),
       'sky.rayleighR': 5.8, 'sky.rayleighG': 13.5, 'sky.rayleighB': 30, 'sky.rayleigh': 0,
@@ -163,7 +175,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
   {
     id: 'swamp', label: 'Methane swamp', centre: 'A low plateau of gas vents in the mist',
     blurb: 'Olive mud flats and low mesas drowned in green haze, round a teal sea.',
-    swatch: [0x8c8a3a, 0x2fa890],
+    swatch: [0x8c8a3a, 0x2fa890], body: { size: 1.25, heat: 0.2 },
     values: {
       ...planetWeather('swamp'),
       ...SKY_PRESETS['Methane green'], 'weather.cloudCoverage': 0.7, 'weather.fogDensity': 0.0011,
@@ -217,7 +229,7 @@ export function applyPlanet(
 /** The recipe whose look matches the current world, for labels and share links. */
 export function currentPlanet(): PlanetRecipe {
   const look = params.get('terrain.look')?.value
-  return PLANETS.find((p) => p.values['terrain.look'] === look) ?? PLANETS[0]
+  return PLANETS.find((p) => p.id === recipeIdForLook(look)) ?? PLANETS[0]
 }
 
 // ---------------------------------------------------------------------------------------

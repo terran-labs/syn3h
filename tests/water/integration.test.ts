@@ -2,7 +2,6 @@ import { afterEach, beforeAll, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { initPhysics } from '../../src/core/physics'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
-import { ClassicBuggy } from '../../src/vehicles/ClassicBuggy'
 import { createVehicle } from '../../src/vehicles'
 import { waterSinking } from '../../src/vehicles/buoyancy'
 import { ZORB_FLOAT_DEPTH } from '../../src/vehicles/zorb'
@@ -12,7 +11,7 @@ beforeAll(initPhysics)
 afterEach(() => { waterSinking.value = waterSinking.def.default })
 
 for (const sinking of [true, false]) {
-  for (const [name, Kind] of [['syn3h', Syn3hBuggy], ['classic', ClassicBuggy]] as const) {
+  for (const [name, Kind] of [['syn3h', Syn3hBuggy]] as const) {
     it(`${name} preserves wing skim speed and support with sinking=${sinking}`, () => {
       waterSinking.value = sinking
       const h = harness()

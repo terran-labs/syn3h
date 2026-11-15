@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
-import { ClassicBuggySkin, Syn3hBuggySkin } from './index'
+import { Syn3hBuggySkin } from './index'
 import { params } from '../../../shared/params'
 import { vehicleShading } from '../../core/quality'
 
@@ -37,9 +37,9 @@ async function main() {
   ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground)
   // The viewer has no frame governor, so ask for the full showroom shading here.
   params.set(vehicleShading.def.id, 3)
-  const skins = [new ClassicBuggySkin(), new Syn3hBuggySkin()]
+  const skins = [new Syn3hBuggySkin()]
   // Camera faces +Z, so positive X appears on the left of the comparison.
-  skins.forEach((skin, i) => { skin.object.position.set(i ? -4.6 : 4.6, .65, 0); skin.setColors(i ? 0xe96d26 : 0x2375d1, i ? 0xffb94a : 0x3ce5ff); scene.add(skin.object) })
+  skins.forEach((skin, i) => { skin.object.position.set(0, .65, 0); skin.setColors(0xe96d26, 0xffb94a); scene.add(skin.object) })
   await Promise.all(skins.map(s => s.ready))
   document.querySelector('#status')!.textContent = ''
   let auto = true, open = 0
@@ -50,9 +50,9 @@ async function main() {
   // and brake lamps) and rests, on a 10 s loop. `drive` and `braking` override it for checks.
   let drive: number | null = null, braking: boolean | null = null
   const timer = new THREE.Timer()
-  // Wheel rest positions per skin: classic layout, and Syn3h WheelPos (1.1, 0.1, 1.3) with the
+  // Wheel rest position: Syn3h WheelPos (1.1, 0.1, 1.3) with the
   // tyre's 0.5 m radius under the ray, as Syn3hBuggy places them at rest.
-  const rest = [new THREE.Vector3(.7, -.3, .8), new THREE.Vector3(1.1, -.2, 1.3)]
+  const rest = [new THREE.Vector3(1.1, -.2, 1.3)]
   const api = {skins, renderer, camera, controls, ready: true,
     focus(index: number) { const p = skins[index].object.position; controls.target.copy(p); camera.position.copy(p).add(new THREE.Vector3(3, 2.5, -4.5)); controls.update() },
     /** Free camera for screenshots: offsets relative to skin `index`. */

@@ -10,6 +10,9 @@ for (const { engine, name, viewport } of [{ engine: chromium, name: 'desktop', v
     page.on('pageerror', e => errors.push(e.message))
     await page.goto(process.env.SYN3H_URL ?? 'http://127.0.0.1:5193/')
     await page.waitForFunction(() => window.syn3h?.shell?.galaxy?.live && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
+    // The lobby hides the Custom planet for now (OFFER_CUSTOM_PLANET in src/ui/Shell.ts). This
+    // check is kept for when it returns and has nothing to look at until then.
+    if (!await page.evaluate(() => window.syn3h.shell.galaxy.options.worlds.some(world => world.id === 'custom'))) { console.log(`${name}: the Custom planet is hidden; nothing to check`); continue }
     await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
     await page.locator('.galaxy-label[data-world="custom"]').dispatchEvent('click')
     await page.waitForFunction(() => document.querySelector('.lobby-panels').dataset.activePanel === 'advanced', null, { timeout: 15000 })

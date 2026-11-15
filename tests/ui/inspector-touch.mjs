@@ -1,4 +1,4 @@
-// World inspector on touch devices in WebKit: closed until Create is tapped, then usable
+// World inspector on touch devices in WebKit: closed until the rail tab is tapped, then usable
 // and inside the screen. Needs the dev servers from tests/ui/README.md (5187 and 8797).
 import { devices, webkit } from 'playwright-core'
 import { mkdirSync } from 'node:fs'
@@ -21,7 +21,7 @@ for (const [name, device] of [['ipad', devices['iPad Pro 11 landscape']], ['ipho
   const box = await page.evaluate(() => { const r = document.querySelector('.world-inspector').getBoundingClientRect(); const rows = document.querySelectorAll('.wi-card[data-section="sky"] .wi-row').length; return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, vw: innerWidth, vh: innerHeight, rows } })
   const inside = box.left >= 0 && box.right <= box.vw + 1 && box.top >= 0 && box.bottom <= box.vh + 1
   await page.screenshot({ path: `${out}touch-${name}.png` })
-  await page.locator('.inspector-toggle').tap()
+  await page.locator('.rail-close').tap()
   const reclosed = await page.evaluate(() => document.querySelector('.world-inspector')?.hasAttribute('hidden'))
   results.push({ name, closed, inside, rows: box.rows, reclosed })
   if (!closed || !inside || !box.rows || !reclosed) errors.push(`${name}: ${JSON.stringify({ closed, inside, reclosed, box })}`)

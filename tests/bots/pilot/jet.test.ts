@@ -6,6 +6,9 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { FIXED_DT, initPhysics } from '../../../src/core/physics'
 import { Jet } from '../../../src/vehicles/Jet'
+import { Mind } from '../../../src/bots/mind/Mind'
+import { createNavigator } from '../../../src/bots/nav'
+import { params } from '../../../shared/params'
 import { createJetPilot } from '../../../src/bots/pilot/jet'
 import type { DriveGoal, Pilot, PilotStatus } from '../../../src/bots/pilot/types'
 import { ridge, surfaceOf, testWorld, type HeightFn, type TestWorld } from './world'
@@ -199,4 +202,49 @@ describe('jet pilot, hover mode', () => {
     }
     expect(run()).toEqual(run())
   })
+})
+
+
+it('a planned long leg actually uses forward flight', () => {
+  const w = testWorld(() => 0, 2400, 12)
+  const v = new Jet(w.game, w.terrain, new THREE.Vector3(0, 2, 0), 0); v.isLocal = false
+  const navigator = createNavigator(w.terrain), pilot = createJetPilot(v, w.terrain)
+  const mind = new Mind(v, w.terrain, pilot, { seed: 'flight-route', navigator })
+  const before = params.get('bots.jetForwardFlight')!.value
+  params.set('bots.jetForwardFlight', true)
+  mind.hold({ x: 0, z: -950 }, 8, 120)
+  let flying = 0, flipped = 0
+  try {
+    for (let i = 0; i < 4000; i++) {
+      mind.step(FIXED_DT, v.input); v.fixedUpdate(FIXED_DT); w.world.step(); v.postPhysics(FIXED_DT)
+      if (v.input.special) flying += FIXED_DT
+      if (new THREE.Vector3(0, 1, 0).applyQuaternion(v.body.rotation()).y < 0.2) flipped += FIXED_DT
+    }
+    expect(flying).toBeGreaterThan(1)
+    expect(flipped).toBe(0)
+    expect(Math.hypot(v.body.translation().x, v.body.translation().z + 950)).toBeLessThan(20)
+  } finally { params.set('bots.jetForwardFlight', before); navigator.dispose(); w.free() }
+}, 30000)
+
+
+it('commands the same torque for equivalent principal inertia bases', () => {
+  const f = launch(() => 0, new THREE.Vector3(0, 14, 0), 0)
+  try {
+    f.v.body.setRotation(new THREE.Quaternion().setFromEuler(new THREE.Euler(.04, .02, -.03)), true)
+    const body = f.v.body, moments = body.principalInertia()
+    const frame = new THREE.Quaternion().copy(body.principalInertiaLocalFrame())
+      .multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2))
+    // Permuting principal axes changes the representation, not the physical body.
+    const equivalent = new Proxy(body, { get(target, key) {
+      if (key === 'principalInertia') return () => ({ x: moments.y, y: moments.x, z: moments.z })
+      if (key === 'principalInertiaLocalFrame') return () => frame
+      const value = Reflect.get(target, key)
+      return typeof value === 'function' ? value.bind(target) : value
+    } })
+    const other = createJetPilot({ body: equivalent } as Jet, f.w.terrain)
+    const first = { ...f.v.input }, second = { ...f.v.input }
+    const goal = { x: 1, z: -20, speed: 3, altitude: 14 }
+    f.pilot.drive(goal, first, FIXED_DT); other.drive(goal, second, FIXED_DT)
+    for (const axis of ['x', 'y', 'z', 'w'] as const) expect(second[axis]).toBeCloseTo(first[axis], 8)
+  } finally { f.w.free() }
 })

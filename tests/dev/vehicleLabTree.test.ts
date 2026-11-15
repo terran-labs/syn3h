@@ -78,7 +78,8 @@ describe('selection and the URL', () => {
   it('reads round as a group and maps the retired game-skins exhibit', () => {
     expect(selectionFromSearch('?vehicle=buggy&round=1').group).toBe('1')
     expect(selectionFromSearch('?vehicle=game-skins')).toEqual({ vehicle: 'game-buggy' })
-    expect(selectionFromSearch('?vehicle=game-skins&design=classic')).toEqual({ vehicle: 'game-buggy-classic' })
+    expect(selectionFromSearch('?vehicle=game-skins&design=classic')).toEqual({ vehicle: 'game-buggy' })
+    expect(selectionFromSearch('?vehicle=game-buggy-classic')).toEqual({ vehicle: 'game-buggy' })
   })
 })
 

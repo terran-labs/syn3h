@@ -36,7 +36,8 @@ import {
 import { perlin, rng, smoothstep, subSeed } from './noise'
 import { KIND_VOLCANIC } from './settings'
 import { TURN_GENTLE, distanceToPolyline, normalize2, sq, steer, visitNearPolyline } from './raster'
-import { FORD_DEPTH, ROAD_FLAT_HALF, ROAD_SHOULDER, type RoadFord, rimRoadRadius } from './roads'
+import { type RoadFord, rimRoadRadius } from './roads'
+import { FORD_DEPTH, ROAD_FLAT_HALF, ROAD_SHOULDER } from './roadConstants'
 import { HeightSampler } from './sampler'
 
 export interface LavaLake {

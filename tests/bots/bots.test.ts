@@ -45,7 +45,8 @@ function stationaryTarget(game: Game, position = new Vector3(0, 0.5, 0)) {
   return target
 }
 describe('bot pursuit', () => {
-  it.each(['placeholder', 'syn3h'])('%s closes distance and makes real Rapier contact with a stationary target', kind => {
+  it.each(['placeholder', 'syn3h'])('%s closes distance and makes real Rapier contact with a stationary target when aggression allows ramming', kind => {
+    params.set('bots.aggression', 2)
     const { game, step } = harness(), target = stationaryTarget(game)
     const bot = kind === 'syn3h' ? new Syn3hBuggy(game, terrain, new Vector3(0, 1, 25)) : new PlaceholderVehicle(game, terrain, new Vector3(0, 0.5, 25))
     const brain = game.add(new BotBrain(game, terrain, bot, target)); game.add(bot)
@@ -75,10 +76,10 @@ describe('bot pursuit', () => {
     const bot = new PlaceholderVehicle(game, terrain, new Vector3(0, 0.5, 0))
     const brain = new BotBrain(game, terrain, bot, player)
     brain.setTargets([bot, player, remote]); params.set('bots.targetMode', 1)
-    params.set('bots.canDrive', false); params.set('bots.canFire', false)
+    params.set('bots.canDrive', false); params.set('bots.tagBeams', false)
     brain.fixedUpdate(2)
     expect(brain.target).toBe(remote); expect(bot.input.x).toBe(0); expect(bot.input.y).toBe(0); expect(bot.input.fire).toBe(false)
-    params.set('bots.canFire', true); world.step(); brain.fixedUpdate(0.02)
+    params.set('bots.tagBeams', true); world.step(); brain.fixedUpdate(0.02)
     expect(bot.input.fire).toBe(true)
   })
   it('reverses when stuck and rescues only after the recovery interval', () => {
@@ -152,6 +153,39 @@ describe('bot population', () => {
     } finally { manager.dispose(); params.set('gfx.level', 2) }
   })
 
+  it('follows the player into a vehicle swapped in place: targets, spawn centre and daydream', () => {
+    const { game, systems, step } = harness()
+    const old = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); game.add(old)
+    const manager = game.add(new BotManager(game, terrain, old))
+    try {
+      params.set('bots.count', 2); params.set('daydream.seconds', 1); manager.update()
+      for (let i = 0; i < 10; i++) step()
+      // Idle long enough to start daydreaming in the old vehicle.
+      for (let i = 0; i < 4; i++) manager.update(0.5)
+      expect(manager.daydream.active).toBe(true)
+      const brains = systems.filter((s): s is BotBrain => s instanceof BotBrain)
+      expect(brains.length).toBe(2)
+      expect(brains.every(b => b.target === old)).toBe(true)
+
+      const next = new Syn3hBuggy(game, terrain, new Vector3(60, 1, 60)); game.add(next)
+      manager.setPlayer(next)
+      // At once: every bot chases the new vehicle, and the daydream built for the old one ends.
+      expect(brains.every(b => b.target === next)).toBe(true)
+      expect(manager.daydream.active).toBe(false)
+      // And it stays so after the bots' own target refresh.
+      for (let i = 0; i < 150; i++) step()
+      expect(brains.every(b => b.target === next)).toBe(true)
+      // New bots spawn round the new vehicle, not the old.
+      params.set('bots.count', 3); manager.update()
+      const fresh = manager.vehicles[2].body.translation()
+      expect(Math.hypot(fresh.x - 60, fresh.z - 60)).toBeLessThan(40)
+      // The daydream picks up again, driving the new vehicle.
+      for (let i = 0; i < 4; i++) manager.update(0.5)
+      expect(manager.daydream.active).toBe(true)
+      expect(manager.daydream.mind?.vehicle).toBe(next)
+    } finally { manager.dispose(); params.set('daydream.seconds', 300) }
+  })
+
   it('owns no vehicles remotely and creates fresh named bots on takeover', () => {
     const { game, systems } = harness(), player = stationaryTarget(game)
     const manager = new BotManager(game, terrain, player)
@@ -195,7 +229,7 @@ describe('wrapping world', () => {
     // Heading 0 faces -Z; -PI/2 about +Y faces +X, toward the seam.
     const bot = new PlaceholderVehicle(game, wrapping, new Vector3(190, 0.5, 0), -Math.PI / 2)
     const brain = new BotBrain(game, wrapping, bot, near)
-    brain.setTargets([near, far]); params.set('bots.targetMode', 1); params.set('bots.canFire', false); params.set('bots.approachSpread', 0)
+    brain.setTargets([near, far]); params.set('bots.targetMode', 1); params.set('bots.tagBeams', false); params.set('bots.approachSpread', 0)
     brain.fixedUpdate(0.02)
     expect(brain.target).toBe(near)
     // Straight ahead through the seam: full throttle, no turn back toward the far image.

@@ -66,13 +66,18 @@ fi
 # Resolve the calendar label before building, so the UI and frozen metadata agree.
 CALVER="$(node tools/release-notes.mjs next)" || fail "could not compute the calendar version"
 export SYN3H_RELEASE_VERSION="$CALVER"
-PREV="$(tail -1 ../Syn3h-stable/releases.tsv 2>/dev/null | cut -f1)"
+# Attempt records include rolled-back deployments. Draft against the last accepted
+# production milestone, not the latest attempted release tag.
+PREV="$(awk -F '\t' '$5 == "production" { previous = $2 } END { print previous }' release-notes/history.tsv)"
 
 # --- Freeze ---------------------------------------------------------------------------------
 echo "Freezing $MILESTONE ($COMMIT)..."
 ID="$(tools/promote-stable.sh "release-$N: $NOTE" | tail -1)"
 DEST="$(cd ../Syn3h-stable/"$ID" && pwd)"
 printf '*.map\n' > "$DEST/dist/.assetsignore"
+# Every deploy carries each earlier release, and this one, under dist/v/ so that
+# https://www.syn3h.com/?v=<version> keeps serving it. A deploy without them breaks those links.
+node tools/frozen-versions.mjs carry "$DEST" "$CALVER" || fail "could not carry the frozen versions into the build"
 echo "Frozen copy: $DEST"
 echo "Assets: $(find "$DEST/dist" -type f ! -name '*.map' ! -name .assetsignore | wc -l | tr -d ' ') files, $(du -sh "$DEST/dist" | cut -f1) with maps"
 
@@ -123,7 +128,22 @@ else
   echo "Public address: $URL (version $VERSION)"
   # A new workers.dev name can take a moment to resolve.
   wait_http "$URL" 120 || fail "$URL did not answer within two minutes"
+  # An HTTP 200 can still be an older edge deployment. Wait for this exact entry bundle
+  # before gameplay acceptance, retaining every mismatch for rollout diagnostics.
+  tries=0
+  until node tools/check-public-build.mjs "$URL" "$DEST" >>"$LOG-assets.log" 2>&1; do
+    tries=$((tries + 1))
+    [ "$tries" -lt 30 ] || { cat "$LOG-assets.log"; fail "public entry bundle did not match frozen build"; }
+    sleep 2
+  done
+  tail -1 "$LOG-assets.log"
 fi
+
+# --- Frozen versions ------------------------------------------------------------------------
+# Each frozen release's page and every one of its files, as that page asks for them.
+node tools/frozen-versions.mjs check "$URL" "$DEST" >"$LOG-frozen.log" 2>&1 \
+  || { cat "$LOG-frozen.log"; fail "frozen version links are broken at $URL (see $LOG-frozen.log)"; }
+tail -1 "$LOG-frozen.log"
 
 # --- Smoke test -----------------------------------------------------------------------------
 echo "Smoke testing $URL ..."
@@ -143,9 +163,34 @@ if [ -n "$DRY" ]; then
   exit 0
 fi
 
+# --- Primary public acceptance ---------------------------------------------------------------
+# A workers.dev pass does not establish that the owner-facing domain serves the same assets.
+PRIMARY_URL="https://www.syn3h.com/"
+tries=0
+until node tools/check-public-build.mjs "$PRIMARY_URL" "$DEST" >>"$LOG-primary-assets.log" 2>&1; do
+  tries=$((tries + 1))
+  [ "$tries" -lt 30 ] || { cat "$LOG-primary-assets.log"; fail "primary entry bundle did not match frozen build"; }
+  sleep 2
+done
+tail -1 "$LOG-primary-assets.log"
+if ! tools/domain.sh check www.syn3h.com >"$LOG-primary.log" 2>&1; then
+  cat "$LOG-primary.log"
+node tools/frozen-versions.mjs check "$PRIMARY_URL" "$DEST" >"$LOG-primary-frozen.log" 2>&1 \
+  || { cat "$LOG-primary-frozen.log"; fail "frozen version links are broken on the primary domain; roll back the deployment"; }
+tail -1 "$LOG-primary-frozen.log"
+  fail "primary domain acceptance failed; roll back the deployment"
+fi
+cat "$LOG-primary.log"
+node tools/frozen-versions.mjs check "$PRIMARY_URL" "$DEST" >"$LOG-primary-frozen.log" 2>&1 \
+  || { cat "$LOG-primary-frozen.log"; fail "frozen version links are broken on the primary domain; roll back the deployment"; }
+tail -1 "$LOG-primary-frozen.log"
+
 # --- Record ---------------------------------------------------------------------------------
 WHEN="$(TZ=America/Los_Angeles date '+%Y-%m-%d %H:%M %Z')"
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "release-$N" "$WHEN" "$URL" "$MILESTONE" "$COMMIT" "$VERSION" "$ID" >> ../Syn3h-stable/releases.tsv
+# Accepted: keep this release so every later deploy carries it. A failure here must be
+# repaired before the next release, but does not undo a verified one.
+node tools/frozen-versions.mjs archive "$DEST" "$CALVER" || echo "Warning: release is live but $CALVER was not archived; run tools/frozen-versions.mjs archive before the next release."
 git tag -a "release-$N" -m "release-$N: $NOTE ($URL, version $VERSION)"
 echo
 echo "RELEASE OK: release-$N is live at $URL"

@@ -11,8 +11,9 @@ import { defineParam, params } from '../../../shared/params'
 const g = 'Post'
 const c = 'client' as const
 
-export const postOn = defineParam({ id: 'post.on', label: 'Post effects on', group: g, scope: c, default: false })
-export const postTablets = defineParam({ id: 'post.tablets', label: 'Post effects on phones and tablets (unmeasured)', group: g, scope: c, default: false })
+export const postOn = defineParam({ id: 'post.on', label: 'Post effects on', group: g, scope: c, default: true })
+export const postTablets = defineParam({ id: 'post.tablets', label: 'Post effects on phones and tablets', group: g, scope: c, default: true })
+export const postTemporal = defineParam({ id: 'post.temporal', label: 'Temporal antialiasing', group: g, scope: c, default: true })
 
 export const postBloom = defineParam({ id: 'post.bloom', label: 'Glow strength', group: g, scope: c, default: 0.5, min: 0, max: 1.5, step: 0.05 })
 export const postBloomThreshold = defineParam({ id: 'post.bloomThreshold', label: 'Glow threshold (on-screen brightness)', group: g, scope: c, default: 3, min: 0.5, max: 6, step: 0.05 })
@@ -28,6 +29,11 @@ export const postMotionBlur = defineParam({ id: 'post.motionBlur', label: 'Motio
 export const postMotionNear = defineParam({ id: 'post.motionNear', label: 'Motion blur starts past (m)', group: g, scope: c, default: 14, min: 2, max: 60, step: 1 })
 
 export const postAO = defineParam({ id: 'post.ao', label: 'Ambient occlusion', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.05 })
+export const postGI = defineParam({ id: 'post.gi', label: 'Indirect light from visible surfaces', group: g, scope: c, default: 1, min: 0, max: 4, step: 0.1 })
+export const postGIRadius = defineParam({ id: 'post.giRadius', label: 'Indirect light reach (m)', group: g, scope: c, default: 6, min: 1, max: 20, step: 0.5 })
+export const postClouds = defineParam({ id: 'post.clouds', label: 'Volumetric clouds', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.1 })
+export const postCloudBase = defineParam({ id: 'post.cloudBase', label: 'Cloud base height (m)', group: g, scope: c, default: 300, min: 50, max: 1500, step: 10 })
+export const postCloudDepth = defineParam({ id: 'post.cloudDepth', label: 'Cloud layer thickness (m)', group: g, scope: c, default: 160, min: 20, max: 500, step: 10 })
 export const postAORadius = defineParam({ id: 'post.aoRadius', label: 'Ambient occlusion radius (m)', group: g, scope: c, default: 1.5, min: 0.2, max: 6, step: 0.1 })
 export const postContact = defineParam({ id: 'post.contact', label: 'Contact shadows', group: g, scope: c, default: 1, min: 0, max: 1, step: 0.05 })
 
@@ -54,7 +60,7 @@ export function postOverride(search: string): boolean | undefined {
 /**
  * The cinematic look in one switch, for the owner to compare: the post chain plus the
  * light rig's ground bounce, the Weather Lab's aerial perspective and the Terrain Lab's
- * material sliders. Each lane's own default stays off; this only sets them for the page.
+ * material sliders. Normal entry uses these defaults too; this remains a comparison preset.
  */
 export const CINEMATIC: Readonly<Record<string, number | boolean>> = {
   'post.on': true, 'light.bounce': 1, 'weather.aerial': 1,
