@@ -178,6 +178,8 @@ export class NetClient implements System {
   private lastFire = -Infinity
   /** performance.now() at the start of the latest frame, to spot local main thread stalls. */
   private frameAt = 0
+  /** Until this performance.now(), states are still the backlog of a stall the frame loop saw. */
+  private stallUntil = 0
   private heartbeat: ReturnType<typeof setInterval> | null = null
   private readonly marker: TagMarker
   private readonly bounds: BoundsGuard
@@ -381,7 +383,11 @@ export class NetClient implements System {
   }
 
   update(dt: number): void {
-    this.frameAt = performance.now()
+    const frameAt = performance.now()
+    // After a long task the browser often renders before it delivers the queued messages, so
+    // the gap check in onState alone misses them: also distrust the next moment after a gap.
+    if (frameAt - this.frameAt > LOCAL_STALL_MS) this.stallUntil = frameAt + LOCAL_STALL_MS
+    this.frameAt = frameAt
     this.pingTimer -= dt
     if (this.conn.state === 'open' && this.pingTimer <= 0) {
       // Quick pings at first to sync the clock, then a slow heartbeat.
@@ -689,7 +695,8 @@ export class NetClient implements System {
     const r = this.remotes.get(s.id) ?? this.spawnRemote(info, s)
     // A state handled long after our last frame waited behind a local stall (terrain rebuild,
     // shader compile, a hidden tab): its age says nothing about the network.
-    const measure = performance.now() - this.frameAt < LOCAL_STALL_MS
+    const at = performance.now()
+    const measure = at - this.frameAt < LOCAL_STALL_MS && at > this.stallUntil
     r.push(s, this.clock.now(), netSendRate.value, measure)
     this.stats.statesReceived++
   }
