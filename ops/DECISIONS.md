@@ -2,6 +2,22 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Saturday 14 November, 5:00pm Pacific: production replaces the current syn3h.com tonight
+
+**Decided.** The production release of the new game replaces the site now at syn3h.com,
+tonight. (The owner's message said "synth.com"; the Foreman read that as syn3h.com and
+asked him to correct it if wrong.)
+
+**Why.** The owner wants the rebuilt game to be what the domain serves.
+
+**What it changes.** Production's address is syn3h.com, not only a workers.dev address.
+Facts checked at 5:00pm: the domain's DNS is already on Cloudflare; the apex redirects to
+www; www serves a page titled "Syn3h - A Community of Creators"; the domain receives email
+through Google, so mail records must not be touched. Order of work: ship release 1 to the
+workers.dev address and verify it, record the existing DNS records for rollback, then
+attach syn3h.com and www to the Worker. Blocked on Cloudflare access. The cutover itself
+waits for the owner's word after he has seen release 1.
+
 ## Saturday 14 November, 4:57pm Pacific: pause the classic buggy and tank leads
 
 **Decided.** The classic buggy and tank lead threads are paused for tonight. Their branches
