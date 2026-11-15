@@ -42,6 +42,8 @@ const STRUT_SPAN = .828
 /** The body the owner chose on 14 November 2026: round 4, Box arm. Built by tools/buggy-bodies. */
 const BOX_ARM_BODY = '/models/buggy-boxarm.glb'
 const TAIL_LAMP = .6
+/** Cockpit glow spots: emission as a multiple of the vehicle's accent colour. */
+const COCKPIT_GLOW = 1.6
 const BRAKE_LAMP = 1.5
 
 /** Small deterministic generator, so sparks do not differ between identical runs. */
@@ -137,7 +139,7 @@ function planformOutline(meshes: THREE.Mesh[]): THREE.Vector2[] {
 
 /** Reused per frame so setWheel and setDrive allocate nothing. */
 const scratch = {
-  matrix: new THREE.Matrix4(), span: new THREE.Vector3(), thick: new THREE.Vector3(), chord: new THREE.Vector3(),
+  matrix: new THREE.Matrix4(), shock: new THREE.Matrix4(), foot: new THREE.Vector3(), axis: new THREE.Vector3(), side: new THREE.Vector3(), span: new THREE.Vector3(), thick: new THREE.Vector3(), chord: new THREE.Vector3(),
   point: new THREE.Vector3(), velocity: new THREE.Vector3(), color: new THREE.Color(), white: new THREE.Color(1, 1, 1), dt: 0,
 }
 
@@ -160,6 +162,14 @@ export class LoadedBuggySkin implements BuggySkin {
   private readonly rollers = Array.from({length: 4}, () => new THREE.Group())
   // Syn3h hub motors: wing struts, stators (near and far detail), glow and sparks.
   private struts?: THREE.InstancedMesh
+  /**
+   * Shock absorbers, one per wheel: each runs from its foot on the swinging arm (`shockFoot`,
+   * in the arm's frame) to an anchor fixed inside the body (`shockTops`), and is scaled along
+   * its length, so the spring closes up as the wheel rises. Both come with the model.
+   */
+  private shocks?: THREE.InstancedMesh
+  private readonly shockFoot = new THREE.Vector3()
+  private readonly shockTops: THREE.Vector3[] = []
   private stators: THREE.InstancedMesh[] = []
   /** Per wheel emissive colour of the stator tips, premultiplied by effort. */
   private readonly statorGlow = new THREE.InstancedBufferAttribute(new Float32Array(12), 3).setUsage(THREE.DynamicDrawUsage)
@@ -180,6 +190,8 @@ export class LoadedBuggySkin implements BuggySkin {
   private accentColor = new THREE.Color(0x49e6ff)
   private readonly bodyMaterials: THREE.MeshStandardMaterial[] = []
   private readonly accentMaterials: THREE.MeshStandardMaterial[] = []
+  /** Cockpit glow spots: lit in the accent colour (see COCKPIT_GLOW). */
+  private readonly glowMaterials: THREE.MeshStandardMaterial[] = []
   private readonly energyColor = uniform(this.accentColor)
   private readonly wheels = Array.from({length: 4}, () => new THREE.Group())
   private readonly axles: THREE.Mesh[] = []
@@ -229,7 +241,8 @@ export class LoadedBuggySkin implements BuggySkin {
     transform.multiply(new THREE.Matrix4().makeRotationY(Math.PI))
     const body = next ? new THREE.Group() : extract(scene.getObjectByName('Body')!, transform)
     // Box arm: the body and its fittings (strut sockets, shock towers, headlight lenses).
-    // Interior: the cockpit tub under the force field canopy (sills, floor, seat, dash).
+    // Interior: the smooth cockpit bowl under the force field canopy, with its glow spots.
+    // Sockets also carries the skid plate and the swellings that take the arms and shocks.
     if (next) for (const name of ['Body', 'Sockets', 'Interior']) body.add(...extract(nodeNamed(next, name)).children)
     // The exported paint carries a clear coat, which loads as a physical material and would
     // keep each part out of the body merge. The shared shading supplies every look from the
@@ -245,6 +258,7 @@ export class LoadedBuggySkin implements BuggySkin {
       const materials = Array.isArray(o.material) ? o.material : [o.material]
       for (const m of materials) if (m instanceof THREE.MeshStandardMaterial) {
         if (classic || /body|material/i.test(m.name)) { this.bodyMaterials.push(m); setRole(m, 'paint') }
+        else if (/glow/i.test(m.name)) { this.glowMaterials.push(m); setRole(m, 'accent') }
         else if (/accent/i.test(m.name)) { this.accentMaterials.push(m); setRole(m, 'accent') }
         else if (/chrome/i.test(m.name)) setRole(m, 'chrome')
         else if (/light/i.test(m.name)) setRole(m, 'lamp')
@@ -419,6 +433,7 @@ export class LoadedBuggySkin implements BuggySkin {
         staticBody.visible = canopy.visible = wingGroup.visible = near
         this.tyreBatch!.visible = near
         this.struts!.visible = near
+        if (this.shocks) this.shocks.visible = near
         this.stators.forEach((s, i) => { s.visible = near && i === 0 })
         midBody!.visible = this.midTyres!.visible = this.midArms!.visible = mid
         farBody!.visible = lastDetail === 2
@@ -465,6 +480,16 @@ export class LoadedBuggySkin implements BuggySkin {
       this.strutMatrix(localPosition, mount, scratch.matrix)
       this.struts.setMatrixAt(index, scratch.matrix); this.struts.instanceMatrix.needsUpdate = true
       if (this.midArms) { this.midArms.setMatrixAt(index, scratch.matrix); this.midArms.instanceMatrix.needsUpdate = true }
+      if (this.shocks) {
+        // Foot carried by the arm, top fixed in the body; unit length along +Y in between.
+        const foot = scratch.foot.copy(this.shockFoot).applyMatrix4(scratch.matrix)
+        const axis = scratch.axis.copy(this.shockTops[index]).sub(foot)
+        const side = scratch.side.set(0, 0, 1).cross(axis)
+        if (side.lengthSq() < 1e-8) side.set(1, 0, 0)
+        side.normalize()
+        scratch.shock.makeBasis(side, axis, scratch.span.crossVectors(side, axis).normalize()).setPosition(foot)
+        this.shocks.setMatrixAt(index, scratch.shock); this.shocks.instanceMatrix.needsUpdate = true
+      }
     }
     // Rotor speed for the spark direction, from successive spin angles.
     this.spinRate[index] = spinAngle - this.lastSpin[index]
@@ -550,6 +575,27 @@ export class LoadedBuggySkin implements BuggySkin {
     this.struts.castShadow = this.struts.receiveShadow = true
     this.struts.frustumCulled = false
     this.object.add(this.struts)
+    // The shock: chrome rod and collar, spring in the accent colour, one instanced draw.
+    const shockNode = nodeNamed(next, 'Shock')
+    const foot = shockNode.userData.foot as number[] | undefined, tops = shockNode.userData.tops as number[] | undefined
+    if (!foot || !tops || tops.length !== 12) throw new Error('Buggy model has no shock anchors')
+    this.shockFoot.fromArray(foot)
+    for (let i = 0; i < 4; i++) this.shockTops.push(new THREE.Vector3().fromArray(tops, i * 3))
+    const shock = extract(shockNode)
+    shock.traverse(o => { if (o instanceof THREE.Mesh) {
+      const src = o.material as THREE.MeshStandardMaterial
+      const accent = /accent/i.test(src.name)
+      const m = accent ? setRole(new THREE.MeshStandardMaterial({color: this.accentColor, roughness: .35, metalness: .55}), 'accent') : setRole(chrome(), 'chrome')
+      if (accent) this.accentMaterials.push(m)
+      src.dispose(); o.material = m
+    } })
+    mergeStatic(shock, true)
+    const spring = shock.children[0] as THREE.Mesh
+    this.shocks = new THREE.InstancedMesh(spring.geometry, spring.material, 4)
+    this.shocks.name = 'Shocks'
+    this.shocks.castShadow = this.shocks.receiveShadow = true
+    this.shocks.frustumCulled = false
+    this.object.add(this.shocks)
     this.sparks = new MotorSparks(8, 48)
     this.object.add(this.sparks.mesh)
     this.wheels.forEach((w, i) => this.setWheel(i, w.position, w.rotation.y, this.rollers[i].rotation.x))
@@ -611,6 +657,7 @@ export class LoadedBuggySkin implements BuggySkin {
     this.bodyColor.set(body); this.accentColor.set(accent)
     this.bodyMaterials.forEach(m => m.color.copy(this.bodyColor))
     this.accentMaterials.forEach(m => m.color.copy(this.accentColor))
+    this.glowMaterials.forEach(m => { m.color.copy(this.accentColor); m.emissive.copy(this.accentColor).multiplyScalar(COCKPIT_GLOW) })
   }
   dispose(): void {
     if (this.disposed) return

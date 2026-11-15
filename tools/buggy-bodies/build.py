@@ -103,6 +103,7 @@ def make_materials(v):
         'Dark': material('Dark', (0.012, 0.014, 0.018), 0.3, 0.6),
         'StrutMetal': material('StrutMetal', (0.1, 0.11, 0.125), 0.9, 0.28),
         'Interior': material('Interior', (0.035, 0.038, 0.045), 0.1, 0.75),
+        'Glow': material('Glow', paint.get('accent', (0.75, 0.03, 0.03)), emission=(paint.get('accent', (0.75, 0.03, 0.03)), 2.5)),
     }
 
 
@@ -429,8 +430,8 @@ def fix_outward(obj, body_obj):
 #
 # The canopy is a force field, nearly clear, and the camera sits inside it, so what lies under
 # it is on show from both sides. The original body has only a flat deck there. This opens the
-# deck and sinks a tub into the body: sills, a floor, a dash cowl ahead and a seat back behind,
-# as inward-facing geometry of its own ('Interior', the shared system's trim role).
+# deck and sinks a smooth bowl into the body, as inward-facing geometry of its own ('Interior',
+# the shared system's trim role), with a few glowing spots ('Glow', the vehicle's accent light).
 
 TUB = {'y': 0.02, 'half_len': 0.66, 'half_wid': 0.4, 'floor': 0.3, 'eye': 0.8}
 
@@ -467,62 +468,76 @@ def cut_cockpit(me):
 
 
 def make_tub(body_obj, mats):
-    """The cockpit interior, built to the opening cut_cockpit made. Faces point into the cabin."""
+    """
+    The cockpit interior, built to the opening cut_cockpit made: one smooth bowl from a chrome
+    lip on the deck down to a flat bottom, with a few glowing spots set into it. No seat and no
+    dash: nobody sits here. Faces point into the cabin, and the bowl is one unbroken surface, so
+    it walls the cabin off from the inside of the hull.
+    """
     tree, bm_body = bvh_of(body_obj)
     me = bpy.data.meshes.new('Interior')
-    names = ['Interior', 'Accent', 'Chrome']
+    names = ['Interior', 'Glow', 'Chrome']
     for n in names: me.materials.append(mats[n])
     bm = bmesh.new()
     n = 20
-    def ring(grow, z=None, drop=0.0):
-        vs = []
-        for x, y in tub_outline(n, grow):
-            if z is None:
-                # On the deck: cast down from above the canopy.
-                hit, _, _, _ = tree.ray_cast(Vector((x * 1.04, TUB['y'] + (y - TUB['y']) * 1.04, 3)), Vector((0, 0, -1)))
-                vs.append(bm.verts.new((x, y, (hit.z if hit is not None else 0.7) - drop)))
-            else:
-                vs.append(bm.verts.new((x, y, z)))
-        return vs
+    outline = tub_outline(n)
+    deck = []
+    for x, y in outline:
+        # On the deck: cast down from above the canopy, a little outside the opening.
+        hit, _, _, _ = tree.ray_cast(Vector((x * 1.04, TUB['y'] + (y - TUB['y']) * 1.04, 3)), Vector((0, 0, -1)))
+        deck.append(hit.z if hit is not None else 0.7)
+    floor = TUB['floor'] + 0.12
+    def surface(k, g):
+        """The bowl at outline point k (may be fractional), g of the way out from the centre."""
+        k0 = int(math.floor(k)) % n; k1 = (k0 + 1) % n; f = k - math.floor(k)
+        x = (outline[k0][0] * (1 - f) + outline[k1][0] * f) * g
+        y = TUB['y'] + ((outline[k0][1] * (1 - f) + outline[k1][1] * f) - TUB['y']) * g
+        top = deck[k0] * (1 - f) + deck[k1] * f - 0.03
+        # A steep wall under the lip easing into a flat bottom: depth falls with g to the fourth.
+        return Vector((x, y, floor + (top - floor) * g ** 4))
+    def ring(g, lift=0.0):
+        return [bm.verts.new(surface(k, g) + Vector((0, 0, lift))) for k in range(n)]
     def skin(a, b, material):
         for k in range(n):
-            f = bm.faces.new((a[k], b[k], b[(k + 1) % n], a[(k + 1) % n])); f.material_index = names.index(material)
-    rim, lip = ring(1.0, drop=-0.004), ring(0.96, drop=0.03)
-    sill, foot = ring(0.9, z=TUB['floor'] + 0.16), ring(0.8, z=TUB['floor'])
-    skin(rim, lip, 'Chrome'); skin(lip, sill, 'Interior'); skin(sill, foot, 'Interior')
-    f = bm.faces.new(foot[::-1]); f.material_index = 0
-    # Seat: a reclined back against the rear of the tub and a squab on the floor.
-    def box(c, sx, sy, sz, material, lean=0.0):
-        vs = []
-        for dz in (-1, 1):
-            for dx, dy in ((-1, -1), (1, -1), (1, 1), (-1, 1)):
-                vs.append(bm.verts.new((c[0] + dx * sx, c[1] + dy * sy + lean * (dz + 1) / 2, c[2] + dz * sz)))
-        for idx in ((0, 1, 2, 3), (7, 6, 5, 4), (0, 4, 5, 1), (1, 5, 6, 2), (2, 6, 7, 3), (3, 7, 4, 0)):
-            face = bm.faces.new([vs[i] for i in idx]); face.material_index = names.index(material)
-    back_y = TUB['y'] + TUB['half_len'] * 0.62
-    box((0, back_y, TUB['floor'] + 0.27), 0.24, 0.05, 0.25, 'Interior', lean=0.12)
-    box((0, back_y - 0.26, TUB['floor'] + 0.05), 0.24, 0.22, 0.05, 'Interior')
-    box((0, back_y + 0.06, TUB['floor'] + 0.5), 0.1, 0.03, 0.04, 'Accent', lean=0.02)
-    # Dash cowl: a low shelf across the front with an accent strip, below the sight line.
-    front_y = TUB['y'] - TUB['half_len'] * 0.8
-    box((0, front_y, TUB['floor'] + 0.2), 0.3, 0.07, 0.035, 'Interior')
-    box((0, front_y + 0.075, TUB['floor'] + 0.2), 0.26, 0.008, 0.012, 'Accent')
+            f = bm.faces.new((a[k], a[(k + 1) % n], b[(k + 1) % n], b[k])); f.material_index = names.index(material)
+    rim = [bm.verts.new((x, y, z + 0.004)) for (x, y), z in zip(outline, deck)]
+    rings = [ring(g) for g in (0.96, 0.88, 0.74, 0.52, 0.26)]
+    skin(rim, rings[0], 'Chrome')
+    for a, b in zip(rings, rings[1:]): skin(a, b, 'Interior')
+    centre = bm.verts.new(surface(0, 0))
+    for k in range(n):
+        f = bm.faces.new((rings[-1][k], rings[-1][(k + 1) % n], centre)); f.material_index = 0
+    # Glowing spots: small lenses lying on the bowl, a large one at the centre and a ring of
+    # small ones on the wall, all below the driver's sight line.
+    spots = []
+    def spot(k, g, r, m=8):
+        c = surface(k, g)
+        du = surface(k + 0.5, g) - surface(k - 0.5, g); dv = surface(k, min(1, g + 0.03)) - surface(k, max(0, g - 0.03))
+        if du.length < 1e-6: du = Vector((1, 0, 0))
+        if dv.length < 1e-6: dv = Vector((0, 1, 0))
+        du.normalize(); nrm = du.cross(dv); nrm.normalize(); dv = nrm.cross(du)
+        if nrm.z < 0: nrm = -nrm
+        edge = [bm.verts.new(c + (du * math.cos(2 * math.pi * j / m) + dv * math.sin(2 * math.pi * j / m)) * r + nrm * 0.003) for j in range(m)]
+        crown = [bm.verts.new(c + (du * math.cos(2 * math.pi * j / m) + dv * math.sin(2 * math.pi * j / m)) * r * 0.55 + nrm * (0.003 + r * 0.22)) for j in range(m)]
+        top = bm.verts.new(c + nrm * (0.003 + r * 0.3))
+        for j in range(m):
+            f = bm.faces.new((edge[j], edge[(j + 1) % m], crown[(j + 1) % m], crown[j])); f.material_index = names.index('Glow'); spots.append((f, nrm))
+            f = bm.faces.new((crown[j], crown[(j + 1) % m], top)); f.material_index = names.index('Glow'); spots.append((f, nrm))
+    spot(0, 0, 0.1, m=10)
+    # High on the wall, so the row ahead sits at the bottom edge of the driver's view.
+    for k in (1.5, 5, 8.5, 11.5, 15, 18.5): spot(k, 0.86, 0.036, m=6)
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
-    # recalc makes closed shells face outward; the tub wall and floor must face the cabin (up/in).
-    for f in bm.faces:
-        c = f.calc_center_median()
-        if f.material_index != names.index('Accent') and len(f.verts) != 4: continue
-    floor_faces = [f for f in bm.faces if all(abs(v.co.z - TUB['floor']) < 1e-4 for v in f.verts) and len(f.verts) > 4]
-    for f in floor_faces:
-        if f.normal.z < 0: f.normal_flip()
-    centre = Vector((0, TUB['y'], TUB['floor'] + 0.3))
-    for f in bm.faces:
-        vs_ = set(f.verts)
-        if vs_ & set(rim + lip + sill + foot) and f not in floor_faces:
-            if f.normal.dot(centre - f.calc_center_median()) < 0: f.normal_flip()
-    bmesh.ops.triangulate(bm, faces=[f for f in bm.faces if len(f.verts) > 4])
+    # recalc decides one way for the whole open shell; the bowl must face up into the cabin.
+    spot_faces = {f for f, _ in spots}
+    if sum(f.normal.z * f.calc_area() for f in bm.faces if f not in spot_faces) < 0:
+        for f in bm.faces:
+            if f not in spot_faces: f.normal_flip()
+    # Each lens faces out of the bowl, whatever recalc chose for its little island.
+    for f, nrm in spots:
+        f.normal_update()
+        if f.normal.dot(nrm) < 0: f.normal_flip()
     bm.to_mesh(me); bm.free(); bm_body.free()
-    for p in me.polygons: p.use_smooth = len(p.vertices) == 3 or True
+    for p in me.polygons: p.use_smooth = True
     return me
 
 
@@ -584,9 +599,48 @@ def coilover(piece, bottom, top, spring=0.058, rod=0.022, coils=5):
 
 # Top of each shock in the strut frame, per design: the body fitting for it is built there.
 SHOCK_TOPS = {}
+# Where the box arm carries its shock, in the strut frame.
+SHOCK_FOOT = (0, 0.07, 0.2)
 
 
-def make_strut(kind, mats):
+def make_shock(mats):
+    """
+    A shock absorber in its own frame: foot at the origin, one unit long along +Z. The game
+    places one per wheel from the foot on the swinging arm to a fixed anchor inside the body,
+    scaling it along its length, so the spring closes up as the wheel rises. Its top end is
+    plain: it is always buried in the body.
+    """
+    names = ['Chrome', 'Accent']
+    me = bpy.data.meshes.new('Shock')
+    for n in names: me.materials.append(mats[n])
+    bm = bmesh.new()
+    def mark(start, material):
+        for f in bm.faces[start:]: f.material_index = names.index(material)
+    tube(bm, (0, 0, 0), (0, 0, 1), 0.026, 0.026, n=8)
+    tube(bm, (0, 0, 0.05), (0, 0, 0.11), 0.088, 0.088, n=10)
+    bm.faces.ensure_lookup_table(); mark(0, 'Chrome')
+    # The spring: a helix of wire, four and a half turns.
+    start = len(bm.faces)
+    turns, per, R, r, z0, z1 = 4.5, 8, 0.066, 0.019, 0.12, 0.97
+    stations = []
+    count = int(turns * per)
+    for k in range(count + 1):
+        a = 2 * math.pi * k / per
+        c = Vector((R * math.cos(a), R * math.sin(a), z0 + (z1 - z0) * k / count))
+        out = Vector((math.cos(a), math.sin(a), 0)); up = Vector((0, 0, 1))
+        # Triangular wire: a flat face outward, where it is seen.
+        stations.append([bm.verts.new(c + out * r * 0.6 + up * r), bm.verts.new(c + out * r * 0.6 - up * r), bm.verts.new(c - out * r)])
+    for a, b in zip(stations, stations[1:]):
+        for j in range(3): bm.faces.new((a[j], a[(j + 1) % 3], b[(j + 1) % 3], b[j]))
+    bm.faces.new(stations[0][::-1]); bm.faces.new(stations[-1])
+    bm.faces.ensure_lookup_table(); mark(start, 'Accent')
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    bm.to_mesh(me); bm.free()
+    for p in me.polygons: p.use_smooth = True
+    return me
+
+
+def make_strut(kind, mats, shock=True):
     """One strut in the strut frame, as a mesh with material slots [StrutMetal, Chrome, Accent]."""
     L = STRUT_SPAN
     parts = []   # (bmesh builder, material name)
@@ -637,7 +691,10 @@ def make_strut(kind, mats):
         piece('StrutMetal', lambda bm: loft(bm, [(0.02, 0.24, 0.13, 0, -0.02), (0.3, 0.3, 0.12, 0, -0.02), (0.6, 0.46, 0.12, 0, -0.02), (L, 0.6, 0.14, 0, -0.02)], n=8))
         piece('Accent', lambda bm: loft(bm, [(0.12, 0.05, 0.15, 0, -0.01), (0.7, 0.07, 0.15, 0, -0.01)], n=6))
         piece('Chrome', lambda bm: loft(bm, [(-0.04, 0.3, 0.17, 0, 0), (0.06, 0.3, 0.17, 0, 0)]))
-        tops.append((0, 0.35, 0.58)); coilover(piece, (0, 0.07, 0.2), tops[-1], spring=0.07, rod=0.026)
+        tops.append((0, 0.35, 0.58))
+        # shock=False: the shock is its own part, anchored in the body (see make_shock).
+        if shock: coilover(piece, SHOCK_FOOT, tops[-1], spring=0.07, rod=0.026)
+        else: piece('Chrome', lambda bm: tube(bm, (-0.11, SHOCK_FOOT[1], SHOCK_FOOT[2]), (0.11, SHOCK_FOOT[1], SHOCK_FOOT[2]), 0.04, 0.04, n=8))
     elif kind == 'co-twin':
         # A large aerofoil lower arm with a pair of shocks, one ahead of and one behind the axle.
         piece('StrutMetal', lambda bm: loft(bm, [(0.02, 0.28, 0.1, 0, -0.02), (0.28, 0.3, 0.09, 0, -0.02), (0.55, 0.5, 0.1, 0, -0.02), (L, 0.72, 0.13, 0, -0.02)]))
@@ -686,7 +743,72 @@ def corners():
             yield Vector((MOUNT.x * sx, MOUNT.y * sy, MOUNT.z)), Vector((HUB.x * sx, HUB.y * sy, HUB.z))
 
 
-def make_sockets(kind, body_obj, mats, towers=(), size=1.0, lamps=None):
+def swell(bm, tree, centre, out, along, a, b, height, material_index, rings=4, seg=12, sink=0.012):
+    """
+    A smooth swelling of the body: a bell `height` tall over an ellipse (`a` along `along`, `b`
+    across) on the body surface at `centre`, rising along `out`. Its rim lies on the body, just
+    under the paint, and leaves it at a grazing angle, so it reads as the body's own surface
+    reaching out to carry a part and not as a fitting stuck on. Parts may run into it anywhere.
+    """
+    u = (along - out * along.dot(out)).normalized(); w = out.cross(u)
+    def at(s, j):
+        ang = 2 * math.pi * j / seg
+        flat = centre + u * (a * s * math.cos(ang)) + w * (b * s * math.sin(ang))
+        hit, _, _, _ = tree.ray_cast(flat + out * 0.5, -out, 1.0)
+        if hit is None: hit, _, _, _ = tree.find_nearest(flat)
+        f = (1 - s * s) ** 2
+        # The rim follows the body exactly; the crown is a clean dome over the tangent plane.
+        return hit.lerp(flat, f) + out * (-sink + (height + sink) * f)
+    loops = [[bm.verts.new(at(1 - k / rings, j)) for j in range(seg)] for k in range(rings)]
+    for r0, r1 in zip(loops, loops[1:]):
+        for j in range(seg):
+            f = bm.faces.new((r0[j], r0[(j + 1) % seg], r1[(j + 1) % seg], r1[j])); f.material_index = material_index
+    top = bm.verts.new(at(0, 0))
+    for j in range(seg):
+        f = bm.faces.new((loops[-1][j], loops[-1][(j + 1) % seg], top)); f.material_index = material_index
+
+
+def skid_plate(bm, tree, material_index):
+    """
+    The underside as one smooth metal skid plate: a shallow belly running the length of the
+    floor, turned up at the nose and tail like a sled, its edges tucked up into the body. It
+    hangs just under the original floor, whose inset panel it covers.
+    """
+    def under(x, y):
+        hit, _, _, _ = tree.ray_cast(Vector((x, y, -2)), Vector((0, 0, 1)))
+        return None if hit is None else hit.z
+    stations = []
+    y = -1.8
+    while y <= 1.56:
+        mid = under(0, y)
+        if mid is not None:
+            # The floor ends where the underside climbs into a wheel arch or the body side.
+            w = 0.3
+            while w < 1.0 and (under(w + 0.03, y) or 9) < mid + 0.1: w += 0.03
+            stations.append((y, w, min(under(x, y) or 9 for x in (0, w * 0.5, -w * 0.5, w * 0.9, -w * 0.9))))
+        y += 0.24
+    # Smooth the width and the keel line so the plate is fair, not a copy of the old floor.
+    def smooth(vals):
+        return [vals[i] if i in (0, len(vals) - 1) else (vals[i - 1] + 2 * vals[i] + vals[i + 1]) / 4 for i in range(len(vals))]
+    ws = smooth(smooth([w for _, w, _ in stations])); zs = smooth([z for _, _, z in stations])
+    m = 8
+    rows = []
+    for i, (y, _, _) in enumerate(stations):
+        end = i in (0, len(stations) - 1)
+        w = ws[i] * (0.8 if end else 1.0)
+        row = []
+        for k in range(m + 1):
+            t = -1 + 2 * k / m
+            # Ends and edges sit inside the body; the belly hangs a little below the old floor.
+            z = zs[i] - 0.012 - 0.03 * (1 - t * t) + (0.05 * t ** 4 if not end else 0.05)
+            row.append(bm.verts.new((w * t, y, z)))
+        rows.append(row)
+    for r0, r1 in zip(rows, rows[1:]):
+        for k in range(m):
+            f = bm.faces.new((r0[k], r1[k], r1[k + 1], r0[k + 1])); f.material_index = material_index
+
+
+def make_sockets(kind, body_obj, mats, towers=(), size=1.0, lamps=None, blend=None):
     """
     Where each strut meets the body: a fitting on the body side so the linkage reads as bolted
     to the structure, not poked through the paint. Found by casting from the wheel hub toward
@@ -740,7 +862,24 @@ def make_sockets(kind, body_obj, mats, towers=(), size=1.0, lamps=None):
                 # A thin chrome ring standing on the lens, a halo around the bright centre.
                 h0, h1, h2 = lens_ring(0.62, 0.05), lens_ring(0.56, 0.062), lens_ring(0.5, 0.054)
                 skin(h0, h1, 'Chrome'); skin(h1, h2, 'Chrome')
-    for mount, hub in corners():
+    if blend is not None:
+        # The shipped body: no separate fittings. The body itself swells out to take each arm
+        # root and each shock, and wears one skid plate underneath.
+        for mount, hub in corners():
+            d = (hub - mount).normalized()
+            hit, normal, _, _ = tree.ray_cast(hub, -d)
+            if hit is None: continue
+            swell(bm, tree, hit, d, Vector((0, 1, 0)), 0.4, 0.16, 0.11, names.index('Body'))
+            # The shock runs from its foot on the arm toward where the rigid coilover's top
+            # stood at ride height. Its anchor is the body point nearest that, a little inside.
+            m = strut_matrix(hub, mount)
+            T = m @ Vector(towers[0])
+            p, n, _, _ = tree.find_nearest(T)
+            if (T - p).dot(n) < 0: n = -n
+            blend.append({'corner': (mount.x, mount.y), 'top': p - n * 0.05})
+            swell(bm, tree, p, n, d, 0.2, 0.17, 0.085, names.index('Body'))
+        skid_plate(bm, tree, names.index('Chrome'))
+    for mount, hub in ([] if blend is not None else corners()):
         d = (hub - mount).normalized()
         hit, normal, _, _ = tree.ray_cast(hub, -d)
         if hit is None: continue
@@ -924,11 +1063,22 @@ def build(v):
     # The strut first: its shock tops decide where the body's towers go.
     strut = None
     if v.get('strut'):
-        strut = bpy.data.objects.new('Strut', make_strut(v['strut'], mats)); scene.collection.objects.link(strut)
+        strut = bpy.data.objects.new('Strut', make_strut(v['strut'], mats, shock=not v.get('blend'))); scene.collection.objects.link(strut)
         strut['own_frame'] = True
     if v.get('socket'):
-        o = bpy.data.objects.new('Sockets', make_sockets(v['socket'], body, mats, towers=SHOCK_TOPS.get(v.get('strut'), ()), size=v.get('socket_size', 1.0), lamps=v.get('lamps')))
+        anchors = [] if v.get('blend') else None
+        o = bpy.data.objects.new('Sockets', make_sockets(v['socket'], body, mats, towers=SHOCK_TOPS.get(v.get('strut'), ()), size=v.get('socket_size', 1.0), lamps=v.get('lamps'), blend=anchors))
         scene.collection.objects.link(o); parts.append(o)
+        if anchors:
+            shock = bpy.data.objects.new('Shock', make_shock(mats)); scene.collection.objects.link(shock)
+            shock['own_frame'] = True
+            # For the game, in its own axes (glTF: +Y up, nose toward -Z, after export's half
+            # turn): the foot in the strut's frame and each wheel's anchor in the body's, in
+            # the game's wheel order (front left, front right, rear left, rear right).
+            shock['foot'] = [SHOCK_FOOT[0], SHOCK_FOOT[2], -SHOCK_FOOT[1]]
+            order = sorted(anchors, key=lambda a: (a['corner'][1] > 0, a['corner'][0] < 0))
+            shock['tops'] = [c for a in order for c in (-a['top'].x, a['top'].z, a['top'].y)]
+            parts.append(shock)
     if strut: parts.append(strut)
     for extra in v.get('extras', []):
         kind = extra['kind']
@@ -948,7 +1098,7 @@ def export(parts, path):
         # The strut is exported in its own frame; the game places it per wheel.
         if not o.get('own_frame'): o.data.transform(turn @ o.matrix_world); o.matrix_world = Matrix.Identity(4)
         o.select_set(True)
-    bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', use_selection=True, export_yup=True, export_apply=True, export_materials='EXPORT')
+    bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', use_selection=True, export_yup=True, export_apply=True, export_materials='EXPORT', export_extras=True)
     back = turn.inverted()
     for o in parts:
         if not o.get('own_frame'): o.data.transform(back)
@@ -978,7 +1128,8 @@ def main():
         for o in parts: o.hide_render = False
         export(parts, os.path.join(OUT, v['id'] + '.glb'))
         # The chosen body also goes to public/, where the game loads it.
-        if v.get('ship') and not ONLY:
+        # SHIP=1 ships a body built on its own (with variant ids given), leaving the review rounds alone.
+        if v.get('ship') and (not ONLY or os.environ.get('SHIP')):
             export(parts, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'public', 'models', v['ship']))
             print('SHIPPED', v['id'], v['ship'])
         tris = sum(len(p.vertices) - 2 for o in parts for p in o.data.polygons)

@@ -55,7 +55,7 @@ marked "pick". A vehicle with one design is a single entry.
 Under the tree, the **Options** tree starts with an info panel (heading, design name, notes, live
 counts) and continues with collapsible sections. Each remembers whether it was open:
 
-- **View**: Front, Rear, Side, Top and Low presets (Front and Rear are three quarter views; when
+- **View**: Front, Rear, Side, Top, Low and Under presets (Under looks up from below the floor; dragging also takes the camera under it, and the floor fades out as the camera comes down to it; Front and Rear are three quarter views; when
   comparing they become near head on so no car hides another), **Turntable**, **Cockpit** and
   **Floor**. Cockpit eases the camera to the driver's eye, looking forward, and hides the canopy.
   Drag to look around from the seat; switch it off to ease back out. It shows only when the model
@@ -117,7 +117,7 @@ total for all copies. Counts cover visible meshes only:
 | `vehicle=<id>` | Exhibit id (or an alias), default the first in the sidebar. |
 | `design=<id or n or all>` | A design by id or 1 based position; `all` for side by side. |
 | `group=<name>` | Design group, default the last. `round=` is read as `group=`. |
-| `view=Front\|Rear\|Side\|Top\|Low` | Camera preset. |
+| `view=Front\|Rear\|Side\|Top\|Low\|Under` | Camera preset. |
 | `az=<deg>&el=<deg>&dist=<m>` | Camera azimuth from the nose toward +X, elevation, distance. Each is optional; they override `view`. |
 | `lod=auto\|<name>\|<n>` | Detail level by name (`Far`) or 0 based index. |
 | `night=1` | Night studio, headlights on. |

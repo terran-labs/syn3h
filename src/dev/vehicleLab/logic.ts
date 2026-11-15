@@ -82,8 +82,20 @@ export function pickAutoLod(distance: number, levels: number, distances?: number
   return level
 }
 
-export type ViewName = 'Front' | 'Rear' | 'Side' | 'Top' | 'Low'
-export const VIEW_NAMES: ViewName[] = ['Front', 'Rear', 'Side', 'Top', 'Low']
+export type ViewName = 'Front' | 'Rear' | 'Side' | 'Top' | 'Low' | 'Under'
+export const VIEW_NAMES: ViewName[] = ['Front', 'Rear', 'Side', 'Top', 'Low', 'Under']
+
+/** Camera heights (m above the floor) between which the floor fades in; see floorOpacity(). */
+export const FLOOR_FADE = { clear: .2, solid: 1.4 }
+/**
+ * How solid the floor is drawn for a camera at this height above it. Opaque from a normal
+ * viewing height, fading as the camera comes down to it, and gone at and below floor level,
+ * so the camera can pass under the floor and look up at a vehicle's underside.
+ */
+export function floorOpacity(cameraHeight: number): number {
+  const t = Math.min(1, Math.max(0, (cameraHeight - FLOOR_FADE.clear) / (FLOOR_FADE.solid - FLOOR_FADE.clear)))
+  return t * t * (3 - 2 * t)
+}
 export type FloorName = 'Gloss' | 'Shadow'
 export const FLOOR_NAMES: FloorName[] = ['Gloss', 'Shadow']
 export const STRESS_COUNTS = [1, 10, 25, 50]
