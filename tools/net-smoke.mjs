@@ -117,25 +117,24 @@ try {
   check('A moves on B', d2(before, after) > 3, { before, after, moved: +d2(before, after).toFixed(2) })
   check('B tracks A within 2 m once settled', d2(after, truth) < 2, { remote: after, real: truth, error: +d2(after, truth).toFixed(2) })
 
-  // The sea runs on the room's clock, so both screens show the same wave at the same moment.
-  // Read through the dev server's module; a production build has no such path, so skip there.
-  const seaTime = (page) => page.evaluate(async () => {
-    try {
-      const m = await import('/src/world/water/seaWaves.ts')
-      return { water: m.waterTime(), room: window.syn3hNet.clock.now(), game: window.syn3h.game.time, at: Date.now() }
-    } catch {
-      return null
-    }
+  // The sea runs on the room's clock, so both screens show the same wave at the same moment;
+  // the wind is handed the same clock through the same hook. Read through the network client
+  // (importing the modules by path can give a second copy of them on a dev server). The sea
+  // takes the room clock a moment after it syncs, calming the swell across the change.
+  await Promise.all([a, b].map((p) => p.waitForFunction(() => Math.abs(window.syn3hNet.seaTime - window.syn3hNet.clock.now()) < 0.05, null, { timeout: 8000 }).catch(() => {})))
+  const clocks = (page) => page.evaluate(() => {
+    const n = window.syn3hNet
+    let handed = null
+    n.onRoomClock((now) => { handed = now() })
+    return { sea: n.seaTime, room: n.clock.now(), game: window.syn3h.game.time, handed, at: Date.now() }
   })
-  const [seaA, seaB] = await Promise.all([seaTime(a), seaTime(b)])
-  if (seaA && seaB) {
-    // Each was read at its own instant; compare after allowing for that.
-    const apart = Math.abs((seaA.water - seaA.at / 1000) - (seaB.water - seaB.at / 1000))
-    check('the sea runs on the shared room clock on both screens', Math.abs(seaA.water - seaA.room) < 0.05 && Math.abs(seaB.water - seaB.room) < 0.05 && apart < 0.15 && Math.abs(seaA.water - seaA.game) > 1,
-      { apartSeconds: +apart.toFixed(3), aWaterMinusRoom: +(seaA.water - seaA.room).toFixed(3), bWaterMinusRoom: +(seaB.water - seaB.room).toFixed(3) })
-  } else {
-    console.log('SKIP sea clock: not a dev server')
-  }
+  const [seaA, seaB] = await Promise.all([clocks(a), clocks(b)])
+  // Each was read at its own instant; compare after allowing for that.
+  const apart = Math.abs((seaA.sea - seaA.at / 1000) - (seaB.sea - seaB.at / 1000))
+  check('the sea runs on the shared room clock on both screens', Math.abs(seaA.sea - seaA.room) < 0.05 && Math.abs(seaB.sea - seaB.room) < 0.05 && apart < 0.15 && Math.abs(seaA.sea - seaA.game) > 1,
+    { apartSeconds: +apart.toFixed(3), aSeaMinusRoom: +(seaA.sea - seaA.room).toFixed(3), bSeaMinusRoom: +(seaB.sea - seaB.room).toFixed(3) })
+  check('onRoomClock hands a later asker the room clock at once', seaA.handed !== null && Math.abs(seaA.handed - seaA.room) < 0.05 && seaB.handed !== null && Math.abs(seaB.handed - seaB.room) < 0.05,
+    { aHandedMinusRoom: seaA.handed === null ? null : +(seaA.handed - seaA.room).toFixed(3), bHandedMinusRoom: seaB.handed === null ? null : +(seaB.handed - seaB.room).toFixed(3) })
 
   // 3. Shared slider, clamped by the server.
   await a.evaluate(() => window.syn3h.params.set('laser.speed', 250))
