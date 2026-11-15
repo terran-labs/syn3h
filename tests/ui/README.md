@@ -243,3 +243,25 @@ say. New defaults reach a room only once it has emptied or its host moves the sl
 The short card is `quickHelp` in `VehicleHelp.ts`. `shell.showHelp()` still opens the full
 list; `shell.showHelp(false)` is the short card used after Play and after a vehicle change.
 
+## Phones
+
+There are two phone layouts, chosen by shape and pointer and not by width alone: portrait
+(any screen up to 700 px wide) and landscape (a touch screen under 500 px tall). A phone on
+its side is 844 px wide, so the old width-only breakpoint gave it the desktop layout.
+
+- Portrait: speed top left, menu row and minimap top right over sky, messages under the
+  HUD, the controls line above the thumb stick.
+- Landscape: HUD top left above the stick, minimap top right above the action buttons,
+  messages along the bottom between the thumbs.
+- King of the Hill on either: one strip (holder, time to win, top three and you) replaces
+  both the score rows and the large hill card. The Players button still lists everyone.
+- The Menu button shows only its icon on phones. Below 350 px the Create shortcut is
+  dropped; it is still in the menu.
+
+`tools/heavy.sh node tests/ui/phone-layout.mjs <label>` walks the lobby, vehicle panel,
+buggy and jet in game, hill held, contested and won, the join QR view and the menu at
+390 by 844 and 844 by 390 with touch. In every in-game state it measures the stick, each
+action button, minimap, HUD, strip, menu row, controls card, toast, announcement and the
+vehicle's place on screen, and fails if any two overlap. Match states are fixtures, so it
+needs only the lane dev server.
+
