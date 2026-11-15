@@ -128,13 +128,8 @@ export class Shell implements System {
     this.element.innerHTML = `<section class="shell-overlay" role="dialog" aria-modal="true" aria-label="Syn3h lobby">
       <div class="lobby-stage">
       <header class="lobby-brand">${wordmarkSvg('shell-logo')}</header>
-      <div class="lobby-panels">
-        <section data-panel="index" class="lobby-index">
-          <h1 tabindex="-1">Welcome to the future.</h1>
-          <div class="lobby-message"><p>You’ve discovered a community where all are welcome, and new ideas are celebrated.</p><p class="lobby-room-label"></p><div class="invite-qr menu-qr"></div><p class="invite-link"></p><button class="shell-invite link-button">Copy invite link</button></div>
-          <p class="lobby-unsupported" hidden>Syn3h needs WebGL 2, which this browser does not offer. A current Safari, Chrome, Firefox or Edge will run it.</p><nav class="lobby-destinations" aria-label="Worlds"><button class="return-game is-primary" data-resume hidden>Return to Game</button></nav>
-          <div class="lobby-links">${LOBBY_LINKS}</div>
-        </section>
+      <p class="lobby-unsupported" hidden>Syn3h needs WebGL 2. A current Safari, Chrome, Firefox or Edge will run it.</p>
+      <div class="lobby-panels" hidden>
         <section data-panel="explore">${heading('Prepare to Explore')}
           <form class="shell-form"><label for="shell-name">Player name</label><input id="shell-name" name="playerName" maxlength="24" autocomplete="nickname" placeholder="Explorer">
           <label for="shell-room">Room</label><div class="input-action"><input id="shell-room" name="room" maxlength="64" autocomplete="off"><button class="shell-invite" type="button">Copy invite</button></div>
@@ -261,9 +256,12 @@ export class Shell implements System {
     this.roomInput.value = new URL(location.href).searchParams.get('room')?.trim().slice(0, 64) || 'lobby'
     this.roomInput.addEventListener('input', () => this.updateRoomLabels(), { signal }); this.updateRoomLabels()
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-goto]')) button.addEventListener('click', () => this.showPanel(button.dataset.goto!), { signal })
+    this.overlay.addEventListener('click', event => {
+      const target = event.target as Element
+      if (this.panels.active !== 'index' && !target.closest('.lobby-panels, .galaxy-links') && !this.inviteOpen) this.showPanel('index')
+    }, { signal })
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-open]')) button.addEventListener('click', () => this.openMenu(button.dataset.open!), { signal })
     for (const button of this.element.querySelectorAll('[data-join]')) button.addEventListener('click', () => this.openJoin(), { signal })
-    this.element.querySelector('[data-resume]')!.addEventListener('click', () => this.closeMenu(), { signal })
     this.element.querySelector('form')!.addEventListener('submit', event => { event.preventDefault(); this.play(true) }, { signal })
     for (const button of this.element.querySelectorAll('.shell-invite')) button.addEventListener('click', () => { void this.copyInvite() }, { signal })
     this.element.querySelector('.presentation-toggle')!.addEventListener('click', () => this.setPresentation(!this.presentation), { signal })
@@ -332,7 +330,6 @@ export class Shell implements System {
     void this.panels.show('index', true); this.update()
   }
   private updateRoomLabels(): void {
-    this.element.querySelector('.lobby-room-label')!.textContent = `Room: ${this.room}`
     this.element.querySelector('.multiplayer-room')!.textContent = `Room: ${this.room}`
     this.updateInvite()
   }
@@ -452,13 +449,18 @@ export class Shell implements System {
   showPanel(id: string): void {
     if(id!==this.panels.active)this.audio.cue('click')
     this.lastActivity = performance.now()
-    this.galaxyFor(id)
+    if (id !== 'index') this.galaxyFor(id)
     if (id !== 'advanced') this.advancedGroups = undefined
     if (id === 'advanced') {
       const panel = this.paramPanel ?? (window as unknown as { syn3h?: { panel?: ParamPanel } }).syn3h?.panel
       panel?.show(this.element.querySelector('.advanced-host')!); panel?.setGroups(this.advancedGroups); this.paramPanel = panel
     } else this.paramPanel?.hide()
-    void this.panels.show(id)
+    void this.panels.show(id).then(() => {
+      if (this.panels.active === id && id === 'index') {
+        this.galaxyFor(id)
+        this.element.querySelector<HTMLElement>('.galaxy-links button')?.focus({ preventScroll: true })
+      }
+    })
   }
   /**
    * Enter the world. From the lobby's own button (`descend`), with the galaxy up, the entry is
@@ -488,7 +490,6 @@ export class Shell implements System {
     try { localStorage.setItem('syn3h.playerName', this.playerName) } catch { /* Playing does not require storage. */ }
     this.started = true; this.worldDirty = true; this.nameInput.disabled = true; this.roomInput.disabled = true
     this.element.querySelector<HTMLButtonElement>('.shell-play')!.textContent = 'Return to Game ›'
-    this.element.querySelector<HTMLElement>('[data-resume]')!.hidden = false
   }
   /**
    * A world tapped in the galaxy. Any world but Custom is a drop, straight from the tap: no
@@ -1026,7 +1027,8 @@ export class Shell implements System {
         if (!this.brandBottom) {
           this.brandBottom = this.element.querySelector('.lobby-brand')?.getBoundingClientRect().bottom ?? 0
           const hint = this.element.querySelector('.galaxy-hint')?.getBoundingClientRect().top ?? 0
-          this.linksTop = hint > innerHeight / 2 ? hint - 4 : innerHeight - 128
+          this.linksTop = hint > innerHeight / 2 ? hint - 24 : innerHeight - 152
+          this.element.style.setProperty('--lobby-footer-space', `${innerHeight - this.linksTop}px`)
         }
         const shown = chosen ? places.filter(place => place.id === chosen) : places
         const spots = placeLabels(shown, this.labelSizes, { width: innerWidth, height: innerHeight, bottom: this.linksTop, top: this.brandBottom + 4 }, { first: chosen ?? currentPlanet().id, previous: this.labelSpots })
@@ -1069,7 +1071,7 @@ export class Shell implements System {
     this.element.classList.toggle('is-shaping-world', editing)
     this.galaxy.editing = editing
     this.element.classList.toggle('galaxy-open', open)
-    this.element.querySelector<HTMLElement>('.galaxy-ui')!.hidden = !open
+    this.element.querySelector<HTMLElement>('.galaxy-ui')!.hidden = false
     if (open) this.galaxy.home()
     // Behind a panel the galaxy dims and holds still; behind the name form a little less,
     // since the world just chosen is the picture there.

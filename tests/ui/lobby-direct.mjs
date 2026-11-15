@@ -1,0 +1,50 @@
+import { chromium, webkit, devices } from 'playwright-core'
+import assert from 'node:assert/strict'
+import { mkdir } from 'node:fs/promises'
+const out = 'tests/ui/artifacts/lobby-direct'
+await mkdir(out, { recursive: true })
+for (const mode of ['desktop', 'phone', 'landscape']) {
+  const browser = await (mode === 'desktop' ? chromium.launch({ channel: 'chrome', headless: true }) : webkit.launch())
+  try {
+    const page = await browser.newPage(mode === 'desktop' ? { viewport: { width: 1440, height: 1000 } } : devices[mode === 'phone' ? 'iPhone 14' : 'iPhone 14 landscape'])
+    const errors = []; page.on('pageerror', e => errors.push(e.message))
+    await page.goto(`${process.env.SYN3H_URL}?room=lobby-direct-${Date.now()}`)
+    await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
+    const nav = page.locator('.galaxy-links')
+    await nav.waitFor({ state: 'visible' })
+    if (process.env.UX_BEFORE === '1') {
+      await nav.locator('[data-goto=settings]').click()
+      await page.waitForTimeout(200)
+      await page.screenshot({ path: `${out}/${mode}-before.png` })
+      continue
+    }
+    assert.equal(await page.locator('.lobby-index, .lobby-message').count(), 0)
+    await page.waitForTimeout(600)
+    const spacing = await page.evaluate(() => {
+      const hint = document.querySelector('.galaxy-hint').getBoundingClientRect(), nav = document.querySelector('.galaxy-links').getBoundingClientRect()
+      const labels = [...document.querySelectorAll('.galaxy-label')].filter(el => !el.hidden && !el.classList.contains('is-crowded')).map(el => el.getBoundingClientRect().bottom)
+      return { gap: nav.top - hint.bottom, above: hint.top - Math.max(0, ...labels), bottom: innerHeight - nav.bottom }
+    })
+    console.log(`${mode} spacing ${JSON.stringify(spacing)}`)
+    assert.ok(spacing.gap >= 24 && spacing.gap <= 28 && spacing.above >= 23 && spacing.bottom >= 16)
+    await page.screenshot({ path: `${out}/${mode}-lobby.png` })
+    for (const reducedMotion of ['no-preference', 'reduce']) {
+      await page.emulateMedia({ reducedMotion })
+      for (const name of ['multiplayer', 'settings', 'about', 'settings', 'multiplayer']) {
+        await nav.locator(`[data-goto=${name}]`).click()
+        // The requested panel is the only visible section from the first paint onward.
+        assert.deepEqual(await page.locator('.lobby-panels > section:visible').evaluateAll(es => es.map(el => el.dataset.panel)), [name])
+        await page.waitForFunction(() => document.querySelector('.lobby-panels').dataset.busy === 'false')
+        await page.screenshot({ path: `${out}/${mode}-${name}-${reducedMotion}.png` })
+      }
+      await page.keyboard.press('Escape')
+      await page.locator('.lobby-panels').waitFor({ state: 'hidden' })
+      await nav.locator('[data-goto=about]').click()
+      await page.waitForFunction(() => document.querySelector('.lobby-panels').dataset.busy === 'false')
+      await page.mouse.click(4, 4)
+      await page.locator('.lobby-panels').waitFor({ state: 'hidden' })
+    }
+    assert.deepEqual(errors, [])
+    console.log(`${mode}: direct lobby PASS`)
+  } finally { await browser.close() }
+}
