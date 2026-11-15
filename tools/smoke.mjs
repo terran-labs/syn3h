@@ -43,9 +43,13 @@ const read = () => page.evaluate(() => {
 await page.locator('.shell-play').click({ timeout: 3000 }).catch(() => {})
 await page.waitForTimeout(500)
 const before = await read()
+// The jet starts in hover, where W is pitch and R is throttle, so it needs both to travel.
+const jet = url.includes('vehicle=jet')
+if (jet) await page.keyboard.down('KeyR')
 await page.keyboard.down('KeyW')
 await page.waitForTimeout(3000)
 await page.keyboard.up('KeyW')
+if (jet) await page.keyboard.up('KeyR')
 const after = await read()
 await page.screenshot({ path: shot })
 await browser.close()
