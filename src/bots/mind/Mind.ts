@@ -199,7 +199,9 @@ export class Mind {
     }
     const destination = a.destination
     const distance = destination ? Math.hypot(destination.x - here.x, destination.z - here.z) : Infinity
-    const arrived = destination !== null && a.kind !== 'follow' && a.kind !== 'hold' && a.kind !== 'flee' && distance < 10
+    // A shore is admired from a little way back, not from the waterline.
+    const near = a.kind === 'visit' && this.sight?.kind === 'shore' ? 28 : 10
+    const arrived = destination !== null && a.kind !== 'follow' && a.kind !== 'hold' && a.kind !== 'flee' && distance < near
     // Give up on a place it has stopped getting closer to: 12 seconds without gaining 5 m.
     if (destination && a.kind !== 'follow' && a.kind !== 'hold' && a.kind !== 'flee') {
       if (distance < this.bestDistance - 5) { this.bestDistance = distance; this.bestTime = this.time }
@@ -217,6 +219,10 @@ export class Mind {
 
     const goal = this.goal
     goal.special = false; goal.stopWithin = undefined; goal.altitude = undefined
+    // What is behind matters to a pilot that backs out of trouble: look two lengths back and
+    // one, and forbid reversing onto anything this vehicle cannot stand on.
+    const flatF = Math.hypot(this.forward.x, this.forward.z) || 1, bx = -this.forward.x / flatF, bz = -this.forward.z / flatF
+    goal.noReverse = !this.pilot.profile.flies && (!this.standable(here.x + bx * 5, here.z + bz * 5) || !this.standable(here.x + bx * 10, here.z + bz * 10))
     const act = this.activity
     if (act.kind === 'pause') {
       goal.x = here.x + this.forward.x * 10; goal.z = here.z + this.forward.z * 10; goal.speed = 0; goal.stopWithin = 1e6
@@ -260,6 +266,7 @@ export class Mind {
         const h = this.surface(here.x + dx / d * reach, here.z + dz / d * reach)
         top = Math.max(top, h); grade = Math.max(grade, (h - base) / reach)
       }
+      // Enough to clear a steep cone ahead. Towers are kept out of it by never being a destination and by the wall check.
       goal.altitude = this.pilot.profile.cruiseAltitude + Math.min(60, top - base)
       if (grade > 0.2) goal.speed = Math.max(3, Math.min(goal.speed, 3 / grade))
     }
@@ -528,10 +535,18 @@ export class Mind {
     const profile = this.pilot.profile
     if (profile.flies) {
       // Fly over what rises gently and round what towers: a mesa, a spire or a crag face
-      // that stands far above the aircraft within a few seconds' flight is a wall.
+      // that stands far above the aircraft within a few seconds' flight is a wall. Sample
+      // the whole leg, and a wing's width to each side: a shard of glass a few metres wide
+      // slips between two samples taken thirty metres apart.
       // An aircraft cannot stop in three metres: turn back well before the world's edge.
-      if (Math.abs(bx) > this.terrain.size / 2 - 40 || Math.abs(bz) > this.terrain.size / 2 - 40) return false
-      return this.surface(bx, bz) - this.vehicle.body.translation().y < 22
+      if (!this.terrain.wrapSize && (Math.abs(bx) > this.terrain.size / 2 - 40 || Math.abs(bz) > this.terrain.size / 2 - 40)) return false
+      const ceiling = this.vehicle.body.translation().y + 22, dx = bx - ax, dz = bz - az, length = Math.hypot(dx, dz) || 1
+      const sx = -dz / length * 5, sz = dx / length * 5
+      for (let t = 6; t <= length; t += 6) {
+        const x = ax + dx / length * t, z = az + dz / length * t
+        if (this.surface(x, z) > ceiling || this.surface(x + sx, z + sz) > ceiling || this.surface(x - sx, z - sz) > ceiling) return false
+      }
+      return true
     }
     if (this.options.navigator) { if (!this.options.navigator.passable(bx, bz, profile)) return false }
     else if (profile.liquid === 'blocked' ? !isSafeGround(this.terrain, bx, bz) : Math.abs(bx) > this.terrain.size / 2 - 3 || Math.abs(bz) > this.terrain.size / 2 - 3) return false
@@ -545,6 +560,15 @@ export class Mind {
 
   private standable(x: number, z: number): boolean {
     const profile = this.pilot.profile
+    if (profile.flies) {
+      // An aircraft can hover anywhere, but a place on top of a tower (a spire, a shard, a
+      // butte) can only be reached by climbing its face, and that is how jets crash. Somewhere
+      // is a destination only if the ground round it is not far below it.
+      if (!this.terrain.wrapSize && (Math.abs(x) > this.terrain.size / 2 - 40 || Math.abs(z) > this.terrain.size / 2 - 40)) return false
+      const top = this.surface(x, z)
+      for (let a = 0; a < 8; a++) if (top - this.surface(x + Math.cos(a * Math.PI / 4) * 50, z + Math.sin(a * Math.PI / 4) * 50) > 40) return false
+      return true
+    }
     if (this.options.navigator) return this.options.navigator.passable(x, z, profile)
     if (profile.liquid !== 'blocked') return Math.abs(x) < this.terrain.size / 2 - 3 && Math.abs(z) < this.terrain.size / 2 - 3
     return isSafeGround(this.terrain, x, z) && this.terrain.normalAt(x, z, this.normal).y > 0.85

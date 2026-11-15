@@ -73,6 +73,17 @@ describe('Syn3h camera', () => {
     for (let i = 0; i < 300; i++) chase.update(0.02)
     expect(camera.getWorldDirection(new Vector3()).y).toBeGreaterThan(0.3)
   })
+  it('ride view hides nothing on a vehicle that declares a cockpit, tagged parts included', () => {
+    const { target, chase } = harness(), canopy = new Object3D(), ride = new Object3D()
+    canopy.userData.hideInRide = true; target.add(canopy, ride); target.userData.cockpit = true
+    chase.setVehicle({ object: target, ridePosition: ride, body: { linvel: () => ({ x: 0, y: 0, z: 0 }) } } as unknown as CameraVehicle)
+    params.set('camera.mode', 1)
+    for (let i = 0; i < 40; i++) chase.update(0.02)
+    expect(target.visible).toBe(true); expect(canopy.visible).toBe(true)
+    // Without the flag the same vehicle loses its tagged canopy, as before.
+    target.userData.cockpit = false; params.set('camera.mode', 0); chase.update(0.02); params.set('camera.mode', 1); chase.update(0.02)
+    expect(target.visible).toBe(true); expect(canopy.visible).toBe(false)
+  })
   it('ride view hides only tagged parts, the whole vehicle when nothing is tagged, and restores both', () => {
     const { target, chase } = harness()
     const body = new Object3D(), canopy = new Object3D(); canopy.userData.hideInRide = true
