@@ -4,7 +4,7 @@ const mix = (id: string, label: string, value: number) => defineParam({
   id: `audio.${id}`, label, group: 'Audio', scope: 'client', default: value, min: 0, max: 1, step: 0.01,
 })
 export const masterVolume = mix('master', 'Master volume', 0.8)
-export const musicVolume = mix('music', 'Music volume', 0.35)
+export const musicVolume = mix('music', 'Music volume', 0.22)
 export const effectsVolume = mix('effects', 'Effects volume', 0.7)
 export const engineVolume = mix('engine', 'Engine volume', 0.24)
 export const dirtVolume = mix('dirt', 'Ground rumble', 0.22)
@@ -15,3 +15,6 @@ export const engineIdle = defineParam({ id: 'audio.engineIdle', label: 'Engine i
 export const engineRange = defineParam({ id: 'audio.engineRange', label: 'Engine pitch range', group: 'Audio', scope: 'client', default: 95, min: 20, max: 180, step: 1 })
 
 export const lobbyFade = defineParam({ id: 'audio.lobbyFade', label: 'Lobby fade (s)', group: 'Audio', scope: 'client', default: 10, min: 0.1, max: 20, step: 0.1 })
+export const worldVolume = mix('world', 'World ambience', 0.45)
+export const cuesVolume = mix('cues', 'Game and UI cues', 0.5)
+export const remoteVolume = mix('remote', 'Other vehicles', 0.65)

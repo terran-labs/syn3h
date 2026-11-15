@@ -38,10 +38,19 @@ describe('device quality', () => {
   })
   it('reduces local particle and bot budgets with graphics level', () => {
     params.set('gfx.level', 0); expect(qualityBudget().particles).toBe(240); expect(qualityBudget().bots).toBe(2)
-    params.set('gfx.level', 1); expect(qualityBudget().pixelRatio).toBe(1.25); expect(qualityBudget().bots).toBe(4)
+    params.set('gfx.level', 1); expect(qualityBudget().pixelRatio).toBe(1); expect(qualityBudget().bots).toBe(4)
   })
 })
 describe('sustained frame pressure', () => {
+  it('steps down sustained 45 fps at the desktop target but not the mobile target', () => {
+    const desktop = new FrameBudgetMonitor(), mobile = new FrameBudgetMonitor()
+    let desktopDrops = 0, mobileDrops = 0
+    for (let i = 0; i < 900; i++) {
+      if (desktop.sample(1000 / 45, true, 54)) desktopDrops++
+      if (mobile.sample(1000 / 45, true, 28)) mobileDrops++
+    }
+    expect(desktopDrops).toBe(1); expect(mobileDrops).toBe(0)
+  })
   it('ignores warmup, short spikes and hidden tabs, then steps down once for sustained pressure', () => {
     const monitor = new FrameBudgetMonitor()
     let drops = 0

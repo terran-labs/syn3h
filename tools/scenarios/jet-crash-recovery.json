@@ -1,0 +1,81 @@
+{
+  "durationMs": 30000,
+  "captureEveryMs": 2000,
+  "settleMs": 1000,
+  "events": [
+    {
+      "atMs": 0,
+      "params": {
+        "bots.count": 0,
+        "gfx.level": 0
+      },
+      "teleport": {
+        "landmark": "volcano-crash"
+      },
+      "velocity": {
+        "x": -80,
+        "y": 0,
+        "z": 0
+      },
+      "down": [
+        "Space",
+        "KeyR"
+      ]
+    },
+    {
+      "atMs": 100,
+      "up": [
+        "Space"
+      ]
+    },
+    {
+      "atMs": 3000,
+      "down": [
+        "Space"
+      ]
+    },
+    {
+      "atMs": 3100,
+      "up": [
+        "Space"
+      ]
+    },
+    {
+      "atMs": 14000,
+      "teleport": {
+        "landmark": "sea",
+        "clearance": 8
+      },
+      "velocity": {
+        "x": 0,
+        "y": -20,
+        "z": -35
+      },
+      "up": [
+        "KeyR"
+      ],
+      "down": [
+        "Space"
+      ]
+    },
+    {
+      "atMs": 14100,
+      "up": [
+        "Space"
+      ]
+    },
+    {
+      "atMs": 17000,
+      "down": [
+        "Space",
+        "KeyR"
+      ]
+    },
+    {
+      "atMs": 17100,
+      "up": [
+        "Space"
+      ]
+    }
+  ]
+}

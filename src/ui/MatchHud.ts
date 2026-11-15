@@ -33,8 +33,9 @@ export class MatchHud {
   private timer?: ReturnType<typeof setTimeout>
   private signature = ''
   private roundEnds = 0
+  private lastTick = -1
   private roundTimer?: ReturnType<typeof setInterval>
-  constructor(private readonly parent: HTMLElement) {
+  constructor(private readonly parent: HTMLElement, private readonly countdownTick: () => void = () => {}) {
     this.element.className = 'match-hud'; this.element.hidden = true
     this.element.setAttribute('aria-label', 'King of the Hill match')
     this.announcement.className = 'match-announcement'; this.announcement.hidden = true
@@ -51,7 +52,7 @@ export class MatchHud {
     const signature = JSON.stringify(next)
     if (signature === this.signature) return
     if (next.winner) {
-      if (next.winner !== this.previous?.winner) this.roundEnds = performance.now() + 6000
+      if (next.winner !== this.previous?.winner) {this.roundEnds = performance.now() + 6000;this.lastTick=-1}
       if (typeof next.nextRoundIn === 'number' && Number.isFinite(next.nextRoundIn)) this.roundEnds = performance.now() + Math.max(0, next.nextRoundIn) * 1000
     } else { if (this.previous?.winner) { this.announcement.hidden = true; this.parent.classList.remove('match-announcing') } clearInterval(this.roundTimer); this.announcement.classList.remove('round-end'); this.announcement.style.removeProperty('--winner-color') }
     this.signature = signature; this.parent.classList.add('has-match'); this.element.hidden = false
@@ -77,7 +78,7 @@ export class MatchHud {
       this.announcement.style.setProperty('--winner-color', CSS.supports('color', next.winnerColor ?? '') ? next.winnerColor! : '#8dbce5')
       const title = document.createElement('strong'); title.textContent = `${next.winner} wins!`
       const count = document.createElement('small'); this.announcement.replaceChildren(title, count)
-      const tick = () => { const seconds = Math.max(0, Math.ceil((this.roundEnds - performance.now()) / 1000)); count.textContent = seconds ? `Next round in ${seconds}` : 'Waiting for the next round' }
+      const tick = () => { const seconds = Math.max(0, Math.ceil((this.roundEnds - performance.now()) / 1000)); if(seconds>0&&seconds<=5&&seconds!==this.lastTick){this.lastTick=seconds;this.countdownTick()} count.textContent = seconds ? `Next round in ${seconds}` : 'Waiting for the next round' }
       clearInterval(this.roundTimer); tick(); this.roundTimer = setInterval(tick, 100)
     } else if (message) {
       this.announcement.textContent = message; this.announcement.hidden = false; this.parent.classList.add('match-announcing')

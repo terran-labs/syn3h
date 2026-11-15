@@ -6,7 +6,7 @@ import * as THREE from 'three/webgpu'
 import { params, worldLavaAltitude, worldSeed } from '../../../shared/params'
 import type { Game, System } from '../../core/Game'
 import type { RAPIER } from '../../core/physics'
-import type { SpawnPoint, Terrain, TerrainRenderQuality, TerrainRoadPath, TerrainSummit } from '../Terrain'
+import type { SpawnPoint, Terrain, TerrainRenderQuality, TerrainRoadPath, TerrainSummit, TerrainVent } from '../Terrain'
 import { createTerrainCollider } from './collider'
 import { lavaSurfaceAt } from './lava'
 import { type TerrainData, generateTerrain } from './generate'
@@ -121,6 +121,11 @@ export class ProceduralTerrain implements Terrain {
   /** Road centrelines from the roads pass: the volcano road, the rim ring, plain roads. */
   roadPaths(): readonly TerrainRoadPath[] {
     return this.data.roads
+  }
+
+  /** Emitter anchors from the vents pass: in the lake, at river sources, along rivers, at pools. */
+  vents(): readonly TerrainVent[] {
+    return this.data.vents
   }
 
   /** Caldera centre, the rim ring road (radius and mean height) and the lava lake. */

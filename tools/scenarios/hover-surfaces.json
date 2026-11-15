@@ -1,0 +1,56 @@
+{
+  "durationMs": 32000,
+  "captureEveryMs": 2000,
+  "settleMs": 1000,
+  "events": [
+    {
+      "atMs": 0,
+      "params": {
+        "bots.count": 0,
+        "gfx.level": 0
+      },
+      "teleport": {
+        "landmark": "slope"
+      },
+      "down": [
+        "KeyW"
+      ]
+    },
+    {
+      "atMs": 7000,
+      "teleport": {
+        "x": 280,
+        "z": 280,
+        "clearance": 25,
+        "heading": 3.14
+      }
+    },
+    {
+      "atMs": 14000,
+      "teleport": {
+        "landmark": "lava"
+      }
+    },
+    {
+      "atMs": 20000,
+      "up": [
+        "KeyW"
+      ],
+      "down": [
+        "ShiftLeft"
+      ]
+    },
+    {
+      "atMs": 24000,
+      "teleport": {
+        "landmark": "sea"
+      },
+      "up": [
+        "ShiftLeft"
+      ],
+      "down": [
+        "KeyW"
+      ]
+    }
+  ]
+}

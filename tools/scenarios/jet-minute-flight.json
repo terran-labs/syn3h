@@ -1,0 +1,53 @@
+{
+  "durationMs": 75000,
+  "captureEveryMs": 5000,
+  "settleMs": 1000,
+  "events": [
+    {
+      "atMs": 0,
+      "params": {
+        "bots.count": 0,
+        "gfx.level": 0
+      },
+      "teleport": {
+        "x": 280,
+        "z": 280,
+        "clearance": 100
+      },
+      "down": [
+        "KeyR",
+        "Space"
+      ]
+    },
+    {
+      "atMs": 100,
+      "up": [
+        "Space"
+      ]
+    },
+    {
+      "atMs": 18000,
+      "down": [
+        "KeyD"
+      ]
+    },
+    {
+      "atMs": 19000,
+      "up": [
+        "KeyD"
+      ]
+    },
+    {
+      "atMs": 35000,
+      "down": [
+        "KeyA"
+      ]
+    },
+    {
+      "atMs": 36000,
+      "up": [
+        "KeyA"
+      ]
+    }
+  ]
+}

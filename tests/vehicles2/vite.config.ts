@@ -6,6 +6,8 @@ const effectsTest:Plugin={
  name:'vehicle-effects-test-injection',
  transform(code,id){
   if(!id.endsWith('/src/main.ts'))return
+  const attached='attachVehicleEffects(game, terrain, player, { local: true })'
+  if(code.includes(attached))return {code:code.replace(attached,`Object.assign(window,{disposeTestEffects:${attached}})`),map:null}
   return {code:"import {attachVehicleEffects} from './vehicles/effects';\n"+code.replace('game.add(player)','game.add(player); Object.assign(window,{disposeTestEffects:attachVehicleEffects(game,terrain,player,{local:true})})'),map:null}
  },
 }
