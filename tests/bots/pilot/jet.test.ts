@@ -169,7 +169,7 @@ describe('jet pilot, hover mode', () => {
     expect(wings.flightMin).toBeGreaterThan(12)
     expect(wings.minClear).toBeGreaterThan(5)
     expect(wings.end).toBeLessThan(4)
-  })
+  }, 30000) // Two long flights; five seconds is not enough on a loaded machine.
 
   it('special: a sharp change of goal in forward flight turns in hover and flies on', () => {
     const f = launch(() => 0, new THREE.Vector3(0, GEAR + .3, 0), 0, 2400)

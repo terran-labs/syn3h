@@ -429,7 +429,8 @@ export class Mind {
     if (profile.flies) {
       // Fly over what rises gently and round what towers: a mesa, a spire or a crag face
       // that stands far above the aircraft within a few seconds' flight is a wall.
-      if (Math.abs(bx) > this.terrain.size / 2 - 3 || Math.abs(bz) > this.terrain.size / 2 - 3) return false
+      // An aircraft cannot stop in three metres: turn back well before the world's edge.
+      if (Math.abs(bx) > this.terrain.size / 2 - 40 || Math.abs(bz) > this.terrain.size / 2 - 40) return false
       return this.surface(bx, bz) - this.vehicle.body.translation().y < 22
     }
     if (this.options.navigator) { if (!this.options.navigator.passable(bx, bz, profile)) return false }

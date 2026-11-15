@@ -8,7 +8,7 @@ import * as p from './params'
 import { roadWaypoint, type RoadTerrain, type RoadPoint } from './navigation'
 import type { Mind } from './mind/Mind'
 import { GROUND_PROFILE } from './pilot/ground'
-import type { Navigator, NavPoint } from './pilot/types'
+import type { Navigator } from './pilot/types'
 import { hashString, seededRandom } from './random'
 export type BotTerrain = Terrain & RoadTerrain & { liquidHeightAt?(x: number, z: number): number | null | undefined }
 const clamp = (x: number, max = 1) => Math.max(-max, Math.min(max, x))
@@ -35,9 +35,8 @@ export class BotBrain implements System {
   private moodTime = 0
   /** Route planner for open ground, shared by every bot. Without it the chase is by sight. */
   navigator: Navigator | null = null
-  private plan: NavPoint[] | null = null
-  private planTime = 0
-  private detour: NavPoint | null = null
+  private lineClear = true
+  private lineTime = 0
   private random: () => number = () => 0.5
   reversing = false
   rescues = 0
@@ -76,6 +75,17 @@ export class BotBrain implements System {
     this.moodTime = this.mood === 'chase' ? 15 + this.random() * 20 : 30 + this.random() * 40
     this.mind!.reset(); this.reversing = false; this.immobileTime = 0; this.strategyTime = 0
     this.lastPosition.copy(this.vehicle.body.translation())
+  }
+  /** True when a vehicle can drive straight from a to b with two metres to spare each side. */
+  private clearLine(a: { x: number; z: number }, b: { x: number; z: number }): boolean {
+    const dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz)
+    if (d < 1) return true
+    const nx = -dz / d * 2, nz = dx / d * 2
+    for (let t = 2; t <= Math.min(d, 90); t += 2) {
+      const x = a.x + dx / d * t, z = a.z + dz / d * t
+      for (const side of [-1, 0, 1]) if (!this.navigator!.passable(x + nx * side, z + nz * side, GROUND_PROFILE)) return false
+    }
+    return true
   }
   /** Roaming: the mind drives. The brain only watches for the cases that need a rescue. */
   private roam(dt: number, input: InputState, here: { x: number; y: number; z: number }) {
@@ -144,6 +154,17 @@ export class BotBrain implements System {
     this.up.set(0, 1, 0).applyQuaternion(this.quaternion)
     const dx = there.x - here.x, dz = there.z - here.z, distance = Math.hypot(dx, dz)
     const velocity = this.vehicle.body.linvel(), speed = Math.hypot(velocity.x, velocity.z)
+    // The pursuit below drives straight at the target. When a cliff or liquid lies on that
+    // line and no road leads there, the mind takes the detour: it follows a planned route
+    // with the same pilot that tours the island, then hands back once the way is clear.
+    if (this.mind && this.navigator && p.canDrive.value && p.topThrottle.value > 0) {
+      this.lineTime -= dt
+      if (this.lineTime <= 0) { this.lineClear = distance < 18 || this.clearLine(here, there); this.lineTime = 0.5 }
+      if (!this.lineClear && !this.waypoint) {
+        if (this.mind.activity.leader !== this.target || this.mind.activity.kind !== 'follow') this.mind.pursue(this.target, 30)
+        this.roam(dt, input, here); return
+      }
+    }
     const targetVelocity = this.target.body.linvel()
     const lead = Math.min(0.8, distance / 45) * p.aggression.value
     let aimX = there.x + targetVelocity.x * lead, aimZ = there.z + targetVelocity.z * lead
@@ -169,19 +190,9 @@ export class BotBrain implements System {
     if (this.routeTime <= 0) {
       this.waypoint = !afloat && distance > 18 ? roadWaypoint(this.terrain, here, there, Math.max(8, Math.min(16, speed * 0.6))) : null
       this.routeTime = 0.4
-      // Off the roads, ask the planner for a way round cliffs and liquid instead of heading
-      // straight at the target. Once a second is plenty, and each bot asks on its own beat.
-      this.detour = null
-      if (!this.waypoint && !afloat && distance > 18 && this.navigator) {
-        this.planTime -= 0.4
-        if (this.planTime <= 0 || !this.plan) { this.plan = this.navigator.route(here, there, GROUND_PROFILE)?.points ?? null; this.planTime = 1 + (this.index % 5) * 0.1 }
-        const look = Math.max(10, Math.min(20, speed))
-        this.detour = this.plan?.find(point => Math.hypot(point.x - here.x, point.z - here.z) > look) ?? null
-      } else this.plan = null
     }
     const waypoint = !afloat && distance > 18 ? this.waypoint : null
     if (waypoint) { aimX = waypoint.x; aimZ = waypoint.z }
-    else if (this.detour && !afloat && distance > 18) { aimX = this.detour.x; aimZ = this.detour.z }
     // Stable per-bot lateral offsets fade out near contact so every bot can still ram.
     const spread = ((this.index * 0.61803398875 % 1) - 0.5) * p.approachSpread.value * Math.min(1, Math.max(0, distance - 8) / 20)
     if (!afloat && distance > 0.1) {
@@ -232,7 +243,10 @@ export class BotBrain implements System {
       if (this.reverseBrake > 0) { input.brakes = true; this.reverseBrake = Math.max(0, this.reverseBrake - dt) }
       // Probe the intended travel direction. Reverse and steer away from water or world edges.
       const direction = this.reversing ? -1 : 1
-      const lookAhead = Math.max(4, Math.min(16, speed * 0.7))
+      // Far enough ahead to stop in: reaction distance, or braking distance at about 7 m/s^2.
+      // Far enough ahead to stop in off road; on a road the bends make a long probe see
+      // the bank it is about to turn away from.
+      const lookAhead = waypoint ? Math.max(4, Math.min(16, speed * 0.7)) : Math.max(4, Math.min(45, Math.max(speed * 0.7, speed * speed / 14)))
       const probeX = here.x + this.forward.x * direction * lookAhead, probeZ = here.z + this.forward.z * direction * lookAhead
       // On a road the bank beside a bend is steep but the road is fine, so the cliff check
       // applies only off road; the liquid and world edge check applies everywhere.
