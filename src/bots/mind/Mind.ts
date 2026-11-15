@@ -18,7 +18,7 @@ import type { DriveGoal, Navigator, NavPoint, Pilot, PilotStatus, Route } from '
 import { hashString, seededRandom } from '../random'
 import { type Personality, personalityFor } from './personality'
 
-export type ActivityKind = 'road' | 'summit' | 'explore' | 'follow' | 'donut' | 'weave' | 'pause'
+export type ActivityKind = 'road' | 'summit' | 'explore' | 'follow' | 'donut' | 'weave' | 'pause' | 'retreat'
 
 export interface Activity {
   kind: ActivityKind
@@ -43,7 +43,7 @@ export interface MindOptions {
 /** What the vehicle is up to, for a label on screen. */
 const CAPTIONS: Record<ActivityKind, string> = {
   road: 'cruising the road', summit: 'heading for the summit', explore: 'exploring', follow: 'tagging along',
-  donut: 'doing donuts', weave: 'carving', pause: 'taking in the view',
+  donut: 'doing donuts', weave: 'carving', pause: 'taking in the view', retreat: 'finding another way',
 }
 
 const VISIT_CELL = 64
@@ -69,6 +69,8 @@ export class Mind {
   private lastKind: ActivityKind = 'pause'
   private bestDistance = Infinity
   private leaderIdle = 0
+  /** Where it has been, one point every few metres, newest last: the proven way back out. */
+  private readonly trail: NavPoint[] = []
   private bestTime = 0
   private readonly goal: DriveGoal = { x: 0, z: 0, speed: 0 }
   private readonly q = new Quaternion()
@@ -114,6 +116,8 @@ export class Mind {
     this.q.copy(body.rotation()); this.forward.set(0, 0, -1).applyQuaternion(this.q)
     const cell = this.cellOf(here.x, here.z)
     this.visits.set(cell, (this.visits.get(cell) ?? 0) + dt)
+    const crumb = this.trail[this.trail.length - 1]
+    if (!crumb || Math.hypot(crumb.x - here.x, crumb.z - here.z) > 8) { this.trail.push({ x: here.x, z: here.z }); if (this.trail.length > 48) this.trail.shift() }
 
     const a = this.activity
     if (a.kind === 'follow' && !a.leader?.body.isValid()) a.until = 0
@@ -135,8 +139,13 @@ export class Mind {
       else if (this.time - this.bestTime > 12) { this.abandoned++; a.until = 0 }
     }
     if (this.time >= a.until || arrived || this.troubleFor > 6) {
-      if (this.troubleFor > 6) this.abandoned++
-      this.choose(here, speed, arrived)
+      const trouble = this.troubleFor > 6
+      if (trouble) this.abandoned++
+      // In trouble, do not pick another place from the same bad spot: first go back the way
+      // it came, which is ground it has already driven, and choose again from there.
+      const back = trouble && a.kind !== 'retreat' ? this.wayBack(here) : null
+      if (back) { this.clearPlan(); this.begin('retreat', back, null, 10) }
+      else this.choose(here, speed, arrived)
     }
 
     const goal = this.goal
@@ -159,7 +168,7 @@ export class Mind {
         aimX += dz / d * swing; aimZ -= dx / d * swing
       }
       goal.speed = this.cruiseSpeed(act, distance)
-      const clear = this.steerClear(here, aimX, aimZ, speed)
+      const clear = act.kind === 'retreat' ? { x: aimX, z: aimZ, swerved: true } : this.steerClear(here, aimX, aimZ, speed)
       if (clear) { goal.x = clear.x; goal.z = clear.z; if (clear.swerved) goal.speed = Math.min(goal.speed, 7) }
       else {
         // Nothing ahead is drivable: stop, let the pilot back out, and count the trouble.
@@ -175,9 +184,22 @@ export class Mind {
 
   // ---- choosing what to do -----------------------------------------------------------
 
+  private clearPlan(): void {
+    this.route = null; this.waypoint = null; this.troubleFor = 0; this.bestDistance = Infinity; this.bestTime = this.time
+  }
+
+  /** A point about 40 m back along its own trail, or null if it has barely moved. */
+  private wayBack(here: { x: number; z: number }): NavPoint | null {
+    for (let i = this.trail.length - 1; i >= 0; i--) {
+      const c = this.trail[i]
+      if (Math.hypot(c.x - here.x, c.z - here.z) > 40) { this.trail.length = i + 1; return c }
+    }
+    return null
+  }
+
   private choose(here: { x: number; z: number }, speed: number, arrived: boolean): void {
     const p = this.personality, r = this.random
-    this.route = null; this.waypoint = null; this.troubleFor = 0; this.bestDistance = Infinity; this.bestTime = this.time
+    this.clearPlan()
     // Having got somewhere, the patient stop to look; the restless do not.
     if (arrived && this.lastKind !== 'pause' && r() < 0.25 + p.patience * 0.5) {
       return this.begin('pause', null, null, 1.5 + r() * 2.5)
@@ -338,7 +360,10 @@ export class Mind {
     else if (profile.liquid === 'blocked' ? !isSafeGround(this.terrain, bx, bz) : Math.abs(bx) > this.terrain.size / 2 - 3 || Math.abs(bz) > this.terrain.size / 2 - 3) return false
     const run = Math.hypot(bx - ax, bz - az) || 1
     const grade = (this.surface(bx, bz) - this.surface(ax, az)) / run
-    return grade <= profile.maxGrade && grade >= -profile.maxGrade * 1.5
+    if (grade > profile.maxGrade || grade < -profile.maxGrade * 1.5) return false
+    // Gentle along the line of travel can still be a steep side slope: a traverse across a
+    // flank rolls a wheeled vehicle. Reject ground tilted past the descent limit any way.
+    return profile.liquid !== 'blocked' || this.terrain.normalAt(bx, bz, this.normal).y >= 1 / Math.hypot(1, profile.maxGrade * 1.5)
   }
 
   private standable(x: number, z: number): boolean {
