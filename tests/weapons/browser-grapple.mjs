@@ -40,6 +40,17 @@ try {
       device[name] = d => { made++; (window.__labels ??= []).push(d.label); return real(d) }
     }
     window.__pipelines = () => made
+    // Side view during captures exposes the cord and travelling beads instead of hiding
+    // them behind the player's roof. Gameplay and aiming keep the ordinary chase camera.
+    window.syn3h.game.add({ update() {
+      const at = window.__captureTarget
+      if (!at) return
+      const s = window.syn3h, [fx, fz] = window.__forward
+      s.game.camera.position.set(at[0] + fz * 16, at[1] + 7, at[2] - fx * 16)
+      s.game.camera.lookAt(...at)
+      s.game.camera.updateMatrixWorld()
+      window.syn3hNet.bungee.update(0)
+    } })
   })
   await page.waitForFunction(() => window.syn3h.bots.vehicles.length === 1)
 
@@ -85,6 +96,10 @@ try {
   const report = { backend, shots: [] }
   const shoot = async (name, what) => {
     const points = await subject(what)
+    await page.evaluate(points => {
+      window.__captureTarget = points.at(-1)
+    }, points)
+    await page.waitForTimeout(150)
     await page.screenshot({ path: `${out}/${name}.png` })
     const seen = await page.evaluate(points => {
       const cam = window.syn3h.game.camera, v = window.syn3h.player.object.position.clone()
@@ -97,6 +112,7 @@ try {
     const [x, y] = inside[0]
     const cx = (x + 1) * W / 2, cy = (1 - y) * H / 2
     await page.screenshot({ path: `${out}/${name}-close.png`, clip: { x: Math.max(0, Math.min(W - 360, cx - 180)), y: Math.max(0, Math.min(H - 240, cy - 120)), width: 360, height: 240 }, scale: 'css' })
+    await page.evaluate(() => { window.__captureTarget = null })
     return extra
   }
 
@@ -120,10 +136,18 @@ try {
     await page.waitForTimeout(600)
     await shoot(`${tag}-ground-slack`, 'ground')
     // The same cord reeled in hard: hold the reel so tension rises, photograph while held.
-    await page.evaluate(() => window.syn3hNet.bungee.setReel(-1))
-    await page.waitForTimeout(2200)
+    // Pin the player for this visual fixture. Otherwise reeling correctly pulls it toward
+    // the anchor and releases the tension before a slow screenshot can observe it.
+    await page.evaluate(() => {
+      window.syn3h.player.body.setEnabledTranslations(false, false, false, true)
+      window.syn3hNet.bungee.setReel(-1)
+    })
+    await page.waitForFunction(() => window.syn3hNet.bungee.tension > 0.25, null, { timeout: 10000 })
     const taut = await shoot(`${tag}-ground-taut`, 'ground')
-    await page.evaluate(() => window.syn3hNet.bungee.setReel(0))
+    await page.evaluate(() => {
+      window.syn3hNet.bungee.setReel(0)
+      window.syn3h.player.body.setEnabledTranslations(true, true, true, true)
+    })
     assert.ok(taut.tension > 0.2, `${tag}: the reeled cord is under tension (${taut.tension})`)
     // A cord to the bot, above: against the sky, reeled a little.
     await letGo(); await settle(6, 10)
