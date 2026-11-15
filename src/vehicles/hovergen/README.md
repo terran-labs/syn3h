@@ -82,7 +82,19 @@ The see-through thruster came from the shape kit: a nozzle ends in a transparent
 additive glow with nothing opaque behind it, so the eye went on into the hull. Round
 three's nozzles now get the same disc.
 
-`GameHover` and the `hover.body` parameter (commit 7e1b2ff) let the game's hovercraft
-wear a round two study. The owner then ruled that the game ships one approved design
-per vehicle with no selector. Branch `veh/hovercraft-single` holds that version (one
-generated body, no model file), parked until he approves a design.
+## In the game
+
+On 15 November 2026 the owner approved round four's Lowwing ("black and green hovercraft
+is good enough to ship. Go with this one for now"). He had ruled that the game ships one
+approved design per vehicle with no selector, so `Hovercraft.ts` builds exactly that
+design through `GameHover`: no model file, no loading state, the cockpit flag set, three
+detail levels, and a collision hull and clearance guard that follow the body's bounds.
+Mass, inertia and the glide are those of the original. An earlier `hover.body` selector
+(commit 7e1b2ff) was removed for that ruling.
+
+Craft of the same design share generated geometry (`levelCache` in `Round3Hover.ts`).
+The first builds each level, 15 to 40 ms in Node on a loaded desktop; later ones reuse
+it with their own materials, about half a millisecond each. The lab does not use the
+cache. Spawn cost on a phone has not been measured.
+
+"For now" is the owner's: the design is open to change after the demo.
