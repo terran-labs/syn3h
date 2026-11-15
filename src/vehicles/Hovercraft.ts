@@ -38,9 +38,10 @@ export const hoverBank = defineParam({id:'hover.bank',label:'Glide bank angle (d
 /**
  * The hovercraft's body: one generated design from round four (src/vehicles/hovergen), with
  * its cockpit and three detail levels. Nothing is loaded; the body is built from parameters
- * when the vehicle is created. The owner picks the design; the game ships exactly one.
+ * when the vehicle is created. The game ships exactly one design: Lowwing, which the owner
+ * approved on 15 Nov 2026 as "good enough to ship" for now.
  */
-const design = R4_DESIGNS.find(d => d.id === 'h4-ember')!
+const design = R4_DESIGNS.find(d => d.id === 'h4-low')!
 export const HOVER_DESIGN: HoverSpec = { id: design.id, paint: design.paint, accent: design.accent, build: detail => buildRound4(design, detail), far: () => round4Far(design) }
 
 /** Hull envelope in the craft's frame: x and z start and extent, floor and roof height, in metres. */
