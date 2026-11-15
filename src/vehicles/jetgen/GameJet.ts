@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu'
-import { SHIPPED_JET, VANGUARD_EYE } from './shipped'
+import { MK2_FITTINGS, SHIPPED_JET, VANGUARD_EYE } from './shipped'
+import { JetPlume } from './JetPlume'
 import { NextJet } from './NextJet'
 import { buildJetSilhouette } from './JetSilhouette'
 import { detailLevel, mergeStatic, registerVehicleDetail } from '../skins/mergeStatic'
@@ -20,6 +21,8 @@ export class GameJet {
   readonly design = SHIPPED_JET
   /** The pilot's eye in the jet's frame. Known without building the close model. */
   readonly eye = new THREE.Vector3(...VANGUARD_EYE)
+  /** Thrust cones behind the nozzles and under the hover ports: one draw, shown at every level. */
+  readonly plume = new JetPlume(MK2_FITTINGS)
   private nearModel?: NextJet
   private readonly mediumModels: [NextJet | undefined, NextJet | undefined] = [undefined, undefined]
   private farModel?: THREE.Mesh
@@ -33,6 +36,8 @@ export class GameJet {
   private accent: THREE.ColorRepresentation = this.design.accent
   private detachDetail = () => {}
   private attached = false
+
+  constructor() { this.plume.setColor(this.accent); this.object.add(this.plume.mesh) }
 
   /** Close model: full cockpit, animated gear and vectoring petals. Built on first use. */
   get near(): NextJet {
@@ -99,10 +104,12 @@ export class GameJet {
    * @param pitch, yaw nozzle deflection in radians (NextJet.setVector).
    * @param controls stick deflection -1..1 for the tail ring's control surfaces: x pitch (nose up
    *   positive), y roll (right wing down positive), z yaw (nose right positive).
+   * @param hover whether the belly ports carry the jet (their plumes show) or the rear nozzles do.
    */
-  update(gear: number, pitch: number, yaw: number, throttle: number, controls?: THREE.Vector3): void {
+  update(gear: number, pitch: number, yaw: number, throttle: number, controls?: THREE.Vector3, hover = gear >= .5): void {
     this.gear = gear; this.pitch = pitch; this.yaw = yaw; this.throttle = throttle
     if (controls) this.controls.copy(controls)
+    this.plume.set(throttle, hover)
     this.show()
   }
 
@@ -122,12 +129,13 @@ export class GameJet {
 
   setColors(body: THREE.ColorRepresentation, accent: THREE.ColorRepresentation): void {
     this.body = body; this.accent = accent
+    this.plume.setColor(accent)
     this.nearModel?.setColors(body, accent); this.mediumModels.forEach(j => j?.setColors(body, accent))
     if (this.farModel) (this.farModel.material as THREE.MeshStandardMaterial).color.set(body)
   }
 
   dispose(): void {
-    this.detachDetail(); this.nearModel?.dispose(); this.mediumModels.forEach(j => j?.dispose())
+    this.plume.dispose(); this.detachDetail(); this.nearModel?.dispose(); this.mediumModels.forEach(j => j?.dispose())
     if (this.farModel) { this.farModel.geometry.dispose(); (this.farModel.material as THREE.Material).dispose() }
   }
 }

@@ -399,6 +399,14 @@ export abstract class Vehicle implements System {
   private readonly zorbVelocity = new THREE.Vector3()
   private readonly zorbCentre = new THREE.Vector3()
 
+  /** Park a cached player body without releasing its shaders or stepping its controller. */
+  setParked(parked: boolean): void {
+    this.body.setEnabled(!parked)
+    if (parked) this.object.removeFromParent()
+    else this.game.scene.add(this.object)
+    if (this.zorbShield) this.zorbShield.mesh.visible = !parked
+  }
+
   update(dt: number, alpha: number): void {
     this.object.position.lerpVectors(this.prevPos, this.currPos, alpha)
     this.object.quaternion.slerpQuaternions(this.prevQuat, this.currQuat, alpha)
