@@ -33,6 +33,42 @@ import { KIND_ALPINE, KIND_DESERT } from './settings'
 import { terrainGroundCover } from './settings'
 export const groundCover = terrainGroundCover
 
+/**
+ * No plant on any world stands taller than this, in metres, whatever its shape or scale:
+ * the owner's rule is grass and small flowers only, nothing that reads as a tree, palm,
+ * shrub or cactus. Enforced where plants are placed, so a new shape cannot break it.
+ */
+export const MAX_PLANT_HEIGHT = 0.6
+
+/** The highest point of a plant shape at scale 1, in metres. */
+export function plantTop(geometry: THREE.BufferGeometry): number {
+  const p = geometry.getAttribute('position')
+  let top = 0
+  for (let i = 0; i < p.count; i++) top = Math.max(top, p.getY(i))
+  return top
+}
+
+/**
+ * For each ground cover layer on a kind of world: its tallest plant before and after the
+ * height cap, sampled over many cells. For tests and reports.
+ */
+export function coverHeights(kind: number, treeLine = 100): { top: number; tallest: number; capped: number }[] {
+  return layersFor(kind, treeLine).map((spec) => {
+    const top = plantTop(spec.geometry)
+    const cap = MAX_PLANT_HEIGHT / top
+    let most = 0
+    const out: Plant = { scale: 0, r: 1, g: 1, b: 1 }
+    for (let h = 0; h < 30000; h++) {
+      for (const patch of [0.2, 0.5, 0.7, 0.9]) {
+        out.scale = 0
+        spec.grow({ x: 0, z: 0, y: 1, patch, region: patch, rock: 0 }, (h * 2654435761) >>> 0, out)
+        most = Math.max(most, out.scale)
+      }
+    }
+    return { top, tallest: top * most, capped: top * Math.min(most, cap) }
+  })
+}
+
 /** Nothing grows within this height of the sea level: the largest wave crest plus 0.3 m. */
 const SHORE_MARGIN = 1.8
 
@@ -442,9 +478,12 @@ class Layer {
   private readonly plant: Plant = { scale: 0, r: 1, g: 1, b: 1 }
   private readonly ground: Ground = { x: 0, z: 0, y: 0, patch: 0, region: 0, rock: 0 }
   private filled = false
+  /** The largest scale this layer's shape may take and stay under MAX_PLANT_HEIGHT. */
+  private readonly maxScale: number
 
   constructor(private readonly spec: LayerSpec, private readonly sampler: HeightSampler, private readonly seed: number) {
     const count = spec.n * spec.n
+    this.maxScale = MAX_PLANT_HEIGHT / Math.max(1e-3, plantTop(spec.geometry))
     const g = spec.geometry as THREE.InstancedBufferGeometry
     g.instanceCount = count
     this.origin = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3)
@@ -523,7 +562,7 @@ class Layer {
     p.scale = 0
     this.spec.grow(g, h, p)
     if (!(p.scale > 0)) return
-    P[s * 2 + 1] = p.scale
+    P[s * 2 + 1] = Math.min(p.scale, this.maxScale)
     const T = this.tintAttr.array as Float32Array
     T[s * 3] = p.r; T[s * 3 + 1] = p.g; T[s * 3 + 2] = p.b
   }
