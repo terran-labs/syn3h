@@ -613,8 +613,8 @@
   ],
   "knownIssues": [
     {
-      "title": "Black screen on a real iPad",
-      "detail": "Safari on the owner's iPad Pro showed black on the preview. Not reproduced on this Mac's copy of the same browser engine, so the cause is unknown. Release 1 has no compatibility switch."
+      "title": "Half a minute of black before the first frame on an iPad",
+      "detail": "Seen on the preview; not yet measured on the public build. Nothing tells the visitor it is loading. Being measured now."
     },
     {
       "title": "Wings do not lift a buggy out of lava or off steep shores",
@@ -778,8 +778,8 @@
   ],
   "knownIssuesTrunk": [
     {
-      "title": "Black screen on a real iPad",
-      "detail": "Still unexplained. Adding ?webgl=1 forces the other graphics path and ?diag=1 shows a diagnostics panel. A start that cannot hang silently is being built."
+      "title": "Half a minute of black before the first frame on an iPad",
+      "detail": "Seen over the preview link: the game then runs at 61 frames a second with no errors. Where the time goes, and whether the public build is as slow, is being measured now."
     },
     {
       "title": "The jet throws an error in Safari's engine on the WebGL path",
