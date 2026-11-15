@@ -82,7 +82,9 @@ export abstract class Vehicle implements System {
   /**
    * The driver's eye, for the ride camera: an Object3D parented to `object`, inside the
    * canopy and at least 0.25 m from any surface (PATTERN.md rule 3). A vehicle without one
-   * is viewed from 0.95 m above its origin, the Unity prefab's RideCam.
+   * is viewed from 0.95 m above its origin, the Unity prefab's RideCam. A vehicle modelled to
+   * be sat in also sets `this.object.userData.cockpit = true`, and the ride camera then hides
+   * none of it; without that flag the camera hides the vehicle from its own seat.
    */
   readonly ridePosition?: THREE.Object3D
   /** True when this client simulates and owns the vehicle. */
