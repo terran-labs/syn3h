@@ -46,6 +46,15 @@ The engine bridge uses the player's speed and drive input. Airborne detection cu
 
 ## Verification
 
+New visitors start with Space Station. Explicit music selections persist in
+`syn3h.musicTrack`; invalid or unavailable storage falls back to Space Station. Score
+remains selectable, with tag notes, convoy, terrain and weather layers enabled by default.
+Their switches and the lighter instrument mode remain independent. Switching music retains
+the existing crossfade and mute behavior. Wind uses the generated camera/weather voice only.
+
+`tests/audio/score-game.mjs <origin>` checks these defaults, restored choices, switching,
+mute and lighter mode in the real browser. Run all checks through `tools/heavy.sh`.
+
 From this worktree, run `npx tsc --noEmit`, `npx vitest run`, and start Vite with `npx vite --port 5187 --strictPort`. In another terminal run `node tests/audio/browser.mjs`. Stop Vite afterwards.
 
 The browser smoke dynamically imports the initializer into the existing running scene, so it does not need a composition-root edit. It verifies name persistence, invite copying, suspended input, keyboard driving, gamepad and touch input composition, mouse fire, real multi-touch drive/fire, cancellation and blur cleanup, wings, brakes, audio unlock and decode, streamed track changes and old-deck shutdown, mute, and teardown. It also renders the real engine graph offline and checks for silence and clipping.

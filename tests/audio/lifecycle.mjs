@@ -13,6 +13,8 @@ try{
  assert.equal(audioRequests.some(url=>url.endsWith('/Wind.wav')),false,'recorded wind must not load')
  assert.equal(await page.evaluate(()=>syn3h.audio.loadedSounds),3,'original tag and materialize recordings still load')
  assert.equal(await page.evaluate(()=>!!syn3h.audio.weatherWind),true,'generated wind remains connected')
+ // Exercise the generated arrangement with all default layers during the teardown gate.
+ await page.evaluate(()=>syn3h.audio.setTrack('Score'))
  await page.evaluate(async()=>{syn3h.shell.showPanel('music');await document.fonts.ready});await page.waitForTimeout(600);await page.screenshot({path:'tests/audio/artifacts/phone-mix.png'})
  await page.evaluate(()=>{syn3h.params.set('bots.count',0);syn3h.shell.stopAttract();syn3h.shell.onPlay=()=>{};syn3h.shell.play();syn3h.game.remove(syn3h.camera)})
  await page.waitForTimeout(6000)

@@ -27,7 +27,7 @@ export const scoreReverb = tune('reverb', 'Hall size', 0.9, 0, 1.5)
 export const scoreLite = defineParam({ id: 'audio.score.lite', label: 'Lighter score (for phones)', group: 'Adaptive score', scope: 'client', default: false })
 /** The feedback-delay-network hall in place of the convolution: about a quarter of the cost. The lighter tier always uses it. */
 export const scoreNetworkHall = defineParam({ id: 'audio.score.networkHall', label: 'Algorithmic hall (cheaper)', group: 'Adaptive score', scope: 'client', default: false })
-const option = (id: string, label: string) => defineParam({ id: `audio.score.${id}`, label, group: 'Adaptive score', scope: 'client', default: false })
+const option = (id: string, label: string) => defineParam({ id: `audio.score.${id}`, label, group: 'Adaptive score', scope: 'client', default: true })
 /** Tag beams near you become notes: each lands on the next sixteenth, pitched from the chord, climbing as they come. */
 export const scoreTagNotes = option('tagNotes', 'Tag beams play notes')
 /** Nearby vehicles each carry part of the arrangement, heard from their side. Alone you hear only your own line. */

@@ -59,7 +59,7 @@ export class GameAudio implements System {
   private readonly up = new THREE.Vector3()
   private readonly position = new THREE.Vector3()
   private readonly rotation = new THREE.Quaternion()
-  private selected: MusicTrack = 'Score'
+  private selected: MusicTrack = 'SpaceStation'
   private lobbyVisible = true
   private disposed = false
   private loads?: Promise<void>
@@ -71,6 +71,11 @@ export class GameAudio implements System {
   motion: MotionAudio = { speed: 0, throttle: 0, airborne: false }
 
   constructor(private readonly camera: THREE.Camera) {
+    // Restore only an explicit selection; new visitors hear the original title music.
+    try {
+      const saved = localStorage.getItem('syn3h.musicTrack')
+      if (saved && Object.hasOwn(MUSIC_TRACKS, saved)) this.selected = saved as MusicTrack
+    } catch { /* Audio does not require storage. */ }
     const unlock = () => { void this.unlock().catch((error) => this.errors.push(String(error))) }
     window.addEventListener('pointerdown', unlock, { signal: this.gestures.signal })
     window.addEventListener('keydown', unlock, { signal: this.gestures.signal })
@@ -133,6 +138,7 @@ export class GameAudio implements System {
   }
   async setTrack(track: MusicTrack): Promise<void> {
     this.selected = track
+    try { localStorage.setItem('syn3h.musicTrack', track) } catch { /* Storage is optional. */ }
     this.syncMix()
     if (this.context) await this.startTrack(track)
   }

@@ -34,9 +34,8 @@ const CAMERA_SMOOTH = 0.15
 /** Faster than this between frames is a teleport or a seam crossing, not motion. */
 const MAX_CAMERA_SPEED = 400
 /**
- * How much of the camera's own motion counts as airspeed. The recorded wind clip already
- * plays the rush of the vehicle's speed (Engine.motionMix), so at full weight the two would
- * double up into a constant roar while driving. At 0.35 a buggy at 30 m/s in still air adds
+ * How much of the camera's own motion counts as airspeed. Keep the restrained driving
+ * mix after removing the recorded wind. At 0.35 a buggy at 30 m/s in still air adds
  * only a faint hiss here, a headwind still sounds stronger than a tailwind, and a gale on
  * the summit is unchanged because the weather itself is never scaled.
  */
