@@ -144,7 +144,7 @@ export class Shell implements System {
         </section>
         <section data-panel="settings">${heading('Settings')}<div class="settings-links"><button data-goto="music">Music & sound</button>${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">World & sky</button><button data-goto="advanced">Advanced sliders</button>' : ''}<button class="presentation-toggle" aria-pressed="false">Presentation · P</button></div><fieldset class="host-controls"><legend>Host</legend><label class="host-lock" hidden><input type="checkbox" id="host-lock"> Lock shared sliders</label><p class="host-note"></p><button class="world-reset" type="button">Reset world to defaults</button></fieldset>${back}</section>
         <section data-panel="music">${heading('Music & Sound')}<label for="music-volume">Music volume <output id="music-volume-value"></output></label><input id="music-volume" type="range" min="0" max="1" step="0.01">${[masterVolume,effectsVolume,engineVolume,dirtVolume,windVolume,worldVolume,remoteVolume,cuesVolume].map(p=>`<label>${p.def.label}<input data-audio-param="${p.def.id}" type="range" min="0" max="1" step="0.01" value="${p.value}"></label>`).join('')}<button class="shell-mute" aria-pressed="false">Mute all audio</button><p class="panel-note">The music is generated as you play and follows what you do. It starts with your first click or key press.</p>${back}</section>
-        <section data-panel="multiplayer">${heading('Multiplayer')}<label class="mode-control" hidden>Game mode<select id="game-mode"><option value="0">Tag</option><option value="1">King of the Hill</option></select></label><p class="multiplayer-room"></p><div class="invite-qr"></div><p class="invite-link"></p><button class="shell-invite">Copy invite link</button><button data-join>Show on screen · J</button><div class="shell-scoreboard" aria-label="Player scores"></div>${back}</section>
+        <section data-panel="multiplayer">${heading('Multiplayer')}<label class="mode-control" hidden>Game mode<select id="game-mode"><option value="2">Explore</option><option value="0">Tag game</option><option value="1">King of the Hill</option></select></label><p class="multiplayer-room"></p><div class="invite-qr"></div><p class="invite-link"></p><button class="shell-invite">Copy invite link</button><button data-join>Show on screen · J</button><div class="shell-scoreboard" aria-label="Player scores"></div>${back}</section>
         <section data-panel="advanced">${heading('Advanced Settings')}<p class="world-lock-note" hidden>Sliders locked by host.</p><div class="advanced-host"></div>${back}</section>
         <section data-panel="about">${heading('About Syn3h')}${creditsHtml}${back}</section>
       </div>
@@ -408,7 +408,7 @@ export class Shell implements System {
   private inspectorSummary(id: string): string {
     if (id === 'world') return `${currentPlanet().label} · ${planetName(worldSeed.value)}`
     if (id === 'sky') { const hour = Number(params.get('sun.timeOfDay')?.value ?? 0); return `${String(Math.floor(hour) % 24).padStart(2, '0')}:${String(Math.floor((hour % 1) * 60)).padStart(2, '0')}` }
-    if (id === 'game') { const bots = Number(params.get('bots.count')?.value ?? 0); return `${Number(params.get('game.mode')?.value ?? 0) === 1 ? 'King of the Hill' : 'Tag'}${bots ? ` · ${bots} ${bots === 1 ? 'bot' : 'bots'}` : ''}` }
+    if (id === 'game') { const bots = Number(params.get('bots.count')?.value ?? 0); const playing = Number(params.get('game.mode')?.value ?? 2); return `${playing === 1 ? 'King of the Hill' : playing === 0 ? 'Tag game' : 'Explore'}${bots ? ` · ${bots} ${bots === 1 ? 'bot' : 'bots'}` : ''}` }
     if (id === 'vehicles') { const current = this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind; return PLAY_VEHICLES.find(vehicle => vehicle.id === current)?.label ?? '' }
     return id === 'you' ? 'yours only' : ''
   }
@@ -1307,6 +1307,8 @@ export class Shell implements System {
     const mode = params.get('game.mode'), modeSelect = this.element.querySelector<HTMLSelectElement>('#game-mode')!
     this.element.querySelector<HTMLElement>('.mode-control')!.hidden = !mode
     modeSelect.disabled = !editable; if (mode) modeSelect.value = String(mode.value)
+    // Explore is the default and has no game: no scores, nobody "it". The player list stays.
+    this.element.classList.toggle('is-explore', !mode || Number(mode.value) === 2)
     const bots = params.get('bots.count'), botsRow = this.element.querySelector<HTMLElement>('.bots-control')!
     botsRow.hidden = !bots
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }

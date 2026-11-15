@@ -290,3 +290,7 @@ body.has-game-shell:has(.syn3h-shell.has-touch.is-playing) :is(#syn3h-build-noti
   .syn3h-shell.exploration-ui .rail-foot .wi-actions button { padding: 3px; font-size: 9px; min-height: 24px; }
   .syn3h-shell.exploration-ui .world-inspector .rail-foot .exit-world { min-height: 24px; padding-block: 2px; font-size: 10px; }
 }
+
+/* Explore has no game, so the player list shows who is here and no score column. */
+.syn3h-shell.is-explore .score-row { grid-template-columns: minmax(0,1fr) auto; }
+.syn3h-shell.is-explore .score-row strong { display: none; }
