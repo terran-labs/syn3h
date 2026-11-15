@@ -2,6 +2,23 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Saturday 14 November, 10:40pm Pacific: releases tell the story of the build; one GIF frame per scene
+
+**Decided.** The GitHub releases should tell the story of the project from its start, in
+more granular steps than the two public releases. The owner allowed deleting and
+recreating the existing ones. The showcase GIF holds exactly one frame per composed scene.
+
+**What it changes.** Fourteen releases, one per chapter of the day: twelve milestone
+builds, each marked as not released publicly, then the two public releases, renumbered
+v26.11.1412 and v26.11.1413. Each has a short narrative of what happened in that stretch
+and screenshots of the game as it was then. The GIF is rebuilt with eight frames.
+
+## Saturday 14 November, about 10:30pm Pacific: the pointer steers the camera
+
+**Decided** (UX thread, relayed by the Orchestrator). "Our interface should capture the
+cursor. Moving the cursor around should orbit the camera while driving, unless Escape is
+tapped."
+
 ## Saturday 14 November, evening: four decisions made in lead threads
 
 Relayed by the Orchestrator at 9:30pm with the owner's words as the leads quoted them.
