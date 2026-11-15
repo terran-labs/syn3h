@@ -18,6 +18,16 @@ export const hoverAssist = defineParam({id:'hover.assist',label:'Glide assistanc
 export const hoverClearance = defineParam({id:'hover.clearance',label:'Glide clearance',group:'Hovercraft',scope:'world',default:2.5,min:.5,max:10,step:.1})
 export const hoverStability = defineParam({id:'hover.stability',label:'Glide stability',group:'Hovercraft',scope:'world',default:8,min:0,max:15,step:.1})
 export const hoverBrakeTime = defineParam({id:'hover.brakeTime',label:'Brake time to 90% stop',group:'Hovercraft',scope:'world',default:1,min:.3,max:3,step:.1})
+// Glide handling constants, exposed so feel can be tuned live. Defaults are the values the
+// glide shipped with; like the rest of the glide they are a demo adaptation, not Unity code.
+/** Yaw rate the craft settles at with full steering, in degrees per second. */
+export const hoverTurnRate = defineParam({id:'hover.turnRate',label:'Glide turn rate (deg/s)',group:'Hovercraft',scope:'world',default:46,min:20,max:140,step:1})
+/** Sideways velocity damping per second: low slides like a puck, high tracks like a car. */
+export const hoverGrip = defineParam({id:'hover.grip',label:'Glide sideways grip',group:'Hovercraft',scope:'world',default:.8,min:0,max:6,step:.1})
+/** Horizontal air drag per second. Top speed is thrust / (mass * drag). */
+export const hoverDrag = defineParam({id:'hover.drag',label:'Glide air drag',group:'Hovercraft',scope:'world',default:.12,min:.02,max:.6,step:.01})
+/** Lean into a turn at full steering, in degrees. */
+export const hoverBank = defineParam({id:'hover.bank',label:'Glide bank angle (deg)',group:'Hovercraft',scope:'world',default:12,min:0,max:35,step:1})
 
 /** Hovercraft.js 12-61, with world-down probing and Unity's explicit damping rule. */
 export class Hovercraft extends Vehicle {
@@ -166,19 +176,19 @@ export class Hovercraft extends Vehicle {
       u.setVelocity(new THREE.Vector3(v.x*decay,v.y,v.z*decay))
     }else{
       u.addForce(forward.clone().multiplyScalar(Math.max(0,this.input.y)*hoverThrust.value))
-      u.addForce(right.clone().multiplyScalar(-horizontal.dot(right)*mass*.8))
-      u.addForce(horizontal.multiplyScalar(-mass*.12))
+      u.addForce(right.clone().multiplyScalar(-horizontal.dot(right)*mass*hoverGrip.value))
+      u.addForce(horizontal.multiplyScalar(-mass*hoverDrag.value))
     }
-    // Follow gentle terrain pitch and bank at most 12 degrees into a turn, even over a jump.
+    // Follow gentle terrain pitch and bank into a turn (12 degrees by default), even over a jump.
     const pitch=under?THREE.MathUtils.clamp(((heights[2]+heights[3])-(heights[0]+heights[1]))/5.2,-.3,.3):0
-    const desiredUp=new THREE.Vector3(0,1,0).addScaledVector(forward,pitch).addScaledVector(right,this.input.x*.21).normalize()
+    const desiredUp=new THREE.Vector3(0,1,0).addScaledVector(forward,pitch).addScaledVector(right,this.input.x*Math.tan(hoverBank.value*Math.PI/180)).normalize()
     const up=new THREE.Vector3(0,1,0).applyQuaternion(q),w=new THREE.Vector3().copy(this.body.angvel())
     const error=up.clone().cross(desiredUp)
     // The antiparallel case has no cross product; choose a deterministic recovery axis.
     if(up.dot(desiredUp)<-.95)error.copy(right)
     const strength=hoverStability.value
     const acceleration=error.multiplyScalar(strength*2).add(new THREE.Vector3(-w.x*strength*.7,0,-w.z*strength*.7))
-    acceleration.y=(-this.input.x*.8-w.y)*4
+    acceleration.y=(-this.input.x*hoverTurnRate.value*Math.PI/180-w.y)*4
     u.addTorqueAcceleration(acceleration,dt)
     u.drag=0;u.angularDrag=0;u.flush(dt)
   }
