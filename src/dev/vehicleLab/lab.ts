@@ -14,10 +14,11 @@
  * ships in the game. See docs/vehicle-lab.md for every control, parameter and API call.
  */
 import * as THREE from 'three/webgpu'
+import { Engine, type MotionAudio } from '../../audio/Engine'
 import { classifyDevice, SHADING_CAP, vehicleShading } from '../../core/quality'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { params as gameParams, type ParamDef } from '../../../shared/params'
-import { countStats, FLOOR_NAMES, parseLabParams, pickAutoLod, resolveLod, RollingAverage, STRESS_COUNTS, stressGrid, VIEW_NAMES, visibleBounds, type FloorName, type ViewName } from './logic'
+import { countStats, FLOOR_NAMES, motorKind, parseLabParams, pickAutoLod, resolveLod, RollingAverage, STRESS_COUNTS, stressGrid, VIEW_NAMES, visibleBounds, type FloorName, type ViewName } from './logic'
 import { exhibits, failures } from './registry'
 import { Studio } from './studio'
 import { buildTree, resolveSelection, selectionFromSearch, selectionToSearch, vehicleParams, type ListedExhibit, type Selection, type TreeSection, type Wanted } from './tree'
@@ -146,6 +147,23 @@ async function main(): Promise<void> {
   // Lab state. `state` is what models see each frame.
   const state: LabState = { time: 0, night: false, headlights: false, braking: params.brake, throttle: 0, steer: 0, animate: params.motion ?? false }
   let session: Session | null = null
+  // Motor sound: the game's own engine voice (src/audio/Engine.ts) for the vehicle on show, so
+  // each vehicle's motor can be judged here without driving it. `revs` is 0 at idle, 1 flat out.
+  // It plays the motor alone, as if the wheels were off the ground: no ground rumble, no tyre squeal.
+  let motor: { context: AudioContext; engine: Engine } | null = null
+  let revs = .5
+  const motorMotion: MotionAudio = { speed: 0, throttle: 0, airborne: true, clearance: 2, wings: false }
+  function setMotor(on: boolean): void {
+    if (on && !motor) {
+      const context = new AudioContext(), out = context.createGain()
+      // The game runs the engine quietly under music and effects. Alone in the lab it needs lifting.
+      out.gain.value = 2.5; out.connect(context.destination)
+      motor = { context, engine: new Engine(context, out) }
+      void context.resume()
+    } else if (!on && motor) {
+      motor.engine.dispose(true); void motor.context.close(); motor = null
+    }
+  }
   let selection: Selection | null = null
   let entries: Entry[] = []
   let current = 0
@@ -302,6 +320,8 @@ async function main(): Promise<void> {
     detail: null as ReturnType<typeof ui.segmented> | null,
     stress: null as ReturnType<typeof ui.segmented> | null,
     motion: null as ReturnType<typeof ui.toggle> | null,
+    motor: null as ReturnType<typeof ui.toggle> | null,
+    revs: null as ReturnType<typeof ui.slider> | null,
     swatches: [] as HTMLButtonElement[],
     own: null as HTMLButtonElement | null,
     body: null as ReturnType<typeof ui.colour> | null,
@@ -352,7 +372,10 @@ async function main(): Promise<void> {
     handles.night = ui.toggle('Night', state.night, on => api.setNight(on))
     handles.headlights = ui.toggle('Headlights', state.headlights, on => api.setHeadlights(on))
     handles.brake = ui.toggle('Brake', state.braking, on => api.setBraking(on))
-    lights.body.append(handles.night.root, handles.headlights.root, handles.brake.root)
+    handles.motor = ui.toggle('Motor sound', !!motor, on => api.setMotor(on))
+    handles.revs = ui.slider('Revs', { min: 0, max: 1, step: .01, value: revs }, v => api.setRevs(v))
+    lights.body.append(handles.night.root, handles.headlights.root, handles.brake.root, handles.motor.root, handles.revs.root,
+      ui.el('div', 'note', 'Motor sound plays the game\u2019s engine voice for this vehicle. Revs runs from idle to flat out; with Motion on, the revs follow the throttle.'))
     optionsBox.append(lights.root)
 
     // Detail: levels, live counts, stress copies.
@@ -463,6 +486,7 @@ async function main(): Promise<void> {
     handles.detail?.set(lodChoice + 1)
     handles.stress?.set(STRESS_COUNTS.indexOf(stress))
     handles.motion?.set(state.animate)
+    handles.motor?.set(!!motor); handles.revs?.set(revs)
     handles.own?.setAttribute('aria-pressed', String(!paint))
     handles.swatches.forEach((b, i) => b.setAttribute('aria-pressed', String(!!paint && PAINTS[i][1] === paint[0] && PAINTS[i][2] === paint[1])))
     if (paint) { handles.body?.set(hex(paint[0])); handles.accent?.set(hex(paint[1])) }
@@ -724,6 +748,12 @@ async function main(): Promise<void> {
     setHeadlights(on: boolean) { state.headlights = on; refresh() },
     setBraking(on: boolean) { state.braking = on; refresh() },
     setMotion(on: boolean) { state.animate = on; refresh() },
+    /** Plays or stops the game's engine voice for the vehicle on show. Needs a click or key press first, as all browser audio does. */
+    setMotor(on: boolean) { setMotor(on); refresh() },
+    /** Engine revs for Motor sound: 0 idle to 1 flat out. Ignored while Motion is on. */
+    setRevs(value: number) { revs = Math.min(1, Math.max(0, value)); refresh() },
+    /** For checks: whether the motor is sounding, as what kind, and at what revs. */
+    get motor() { return motor ? { state: motor.context.state, kind: motorMotion.kind, revs: motorMotion.throttle } : null },
     setFloor(name: FloorName) { studio.setFloor(name); refresh() },
     setTurntable(on: boolean) { turntable = on; refresh() },
     /** Shows or hides the sidebar (on a phone, opens or closes the sheet). */
@@ -789,6 +819,12 @@ async function main(): Promise<void> {
     } else { state.throttle = 0; state.steer = 0 }
     if (turntable && !cockpit.on && !params.still) stage.rotation.y += dt * .35
     for (const e of entries) if (e.model && e.root.visible) e.model.update?.(dt, state)
+    if (motor) {
+      const r = state.animate ? Math.abs(state.throttle) : revs
+      motorMotion.kind = motorKind(session?.exhibit.family ?? session?.exhibit.id ?? '')
+      motorMotion.speed = r * 55; motorMotion.throttle = r
+      motor.engine.update(motorMotion)
+    }
     stepCockpit(dt)
     if (controls.enabled) controls.update()
     if (lodChoice < 0) applyLod()
@@ -804,6 +840,7 @@ async function main(): Promise<void> {
   addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); viewport(); refit() })
   addEventListener('pagehide', () => {
     renderer.setAnimationLoop(null)
+    setMotor(false)
     unsubscribe()
     teardown()
     studio.dispose(); controls.dispose(); renderer.dispose()
