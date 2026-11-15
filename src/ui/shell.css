@@ -27,7 +27,6 @@
 .shell-overlay { position: fixed; inset: 0; z-index: 30; display: flex; padding: max(12px, env(safe-area-inset-top)) 24px max(12px, env(safe-area-inset-bottom)); background: var(--s3-space); overflow: hidden; touch-action: pan-y; perspective: 1500px; }
 /* Everything in the lobby hangs on one stage that leans a degree or two toward the pointer. */
 .lobby-stage { position: relative; flex: 1; min-width: 0; min-height: 0; display: flex; align-items: center; flex-direction: column; transform: rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)); transition: transform .7s cubic-bezier(.2,.7,.2,1); }
-.lobby-starfield { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .lobby-brand { flex: 0 0 clamp(120px, 24vh, 250px); width: 100%; display: flex; align-items: center; justify-content: center; position: relative; pointer-events: none; perspective: 600px; }
 .shell-logo { width: min(600px, 72vw); max-height: 80%; animation: logo-enter 2.75s cubic-bezier(.333,0,.667,1) both; }
 /* Logo Idle.anim contains no keys. Keep its settled glow rather than inventing a pulse. */
@@ -464,33 +463,12 @@
 .syn3h-shell .world-reset { display: block; width: 100%; margin-top: 12px; font-size: 17px; }
 .syn3h-shell .world-reset.is-confirming { color: #ffd19e; border-color: rgb(255 190 120 / .5); }
 
-/* Planets: one card per kind of world. The orb is drawn by PlanetOrbs; the card is a button. */
-.planet-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
-.syn3h-shell .planet-card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 14px 10px 12px; text-align: center; min-height: 0; border-radius: var(--s3-radius); }
-.planet-orb { width: 96px; aspect-ratio: 1; flex: none; display: block; transition: scale .25s cubic-bezier(.2,.7,.2,1); }
-.planet-card:is(:hover, :focus-visible):not(:disabled) .planet-orb { scale: 1.08; }
-.planet-text { display: grid; gap: 2px; min-width: 0; }
-.planet-text strong { font: 600 22px/1.1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: 0.01em; }
-.planet-text small { font-size: 13px; line-height: 1.35; color: var(--s3-dim); text-wrap: balance; }
-.planet-card.is-primary .planet-text small { color: var(--s3-ink); }
-/* Lobby index: orb beside the name, two to a row, as the 2017 lobby listed its worlds. */
-.planet-picker.is-compact { grid-template-columns: 1fr 1fr; }
-.syn3h-shell .is-compact .planet-card { flex-direction: row; justify-content: flex-start; gap: 12px; padding: 8px 14px 8px 10px; text-align: left; min-height: clamp(58px, 9.5vh, 86px); }
-.is-compact .planet-orb { width: clamp(44px, 7vh, 62px); }
-.is-compact .planet-text small:empty { display: none; }
-.lobby-destinations { grid-template-columns: 1fr; }
+/* The Worlds panel: the world's name and story, its seed and bots. Worlds are chosen in the galaxy. */
 .planet-current { color: var(--s3-dim); font-size: 15px; }
 @media (max-width: 700px) {
-  .planet-picker { grid-template-columns: 1fr 1fr; gap: 8px; }
-  .planet-orb { width: 72px; }
-  .syn3h-shell .is-compact .planet-card { padding: 6px 8px; gap: 8px; min-height: 58px; }
-  .is-compact .planet-orb { width: 42px; }
-  .is-compact .planet-text strong { font-size: 18px; }
   .lobby-links { gap: 4px 22px; }
 }
 @media (max-height: 550px) {
-  .syn3h-shell .is-compact .planet-card { min-height: 46px; padding: 4px 10px; }
-  .is-compact .planet-orb { width: 36px; }
   .lobby-links { gap: 0 26px; }
 }
 /* Join view on a short, wide screen: the QR code takes the full height on the left and the
@@ -530,7 +508,7 @@
   .has-touch .round-end small { font-size: 18px; margin-top: 4px; }
 }
 
-/* The galaxy lobby (prototype, ?galaxy=1). The worlds are drawn by Galaxy.ts on a canvas that
+/* The galaxy lobby. The worlds are drawn by Galaxy.ts on a canvas that
    fills the overlay; in place of the index panel there are only labels under the worlds, a
    line of help and the quiet links. Other panels open over it as glass. */
 .galaxy-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
@@ -544,7 +522,13 @@
 .galaxy-label strong { font: 600 20px/1.1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: 0.04em; text-transform: uppercase; }
 .galaxy-label small { font-size: 13px; color: var(--s3-accent-2); }
 .galaxy-label small:empty { display: none; }
+.syn3h-shell .galaxy-label.is-locked { opacity: .45; }
 .syn3h-shell .galaxy-hint { margin: 0 0 6px; font-size: 15px; color: var(--s3-dim); text-shadow: 0 1px 6px #000; text-align: center; }
+.lobby-unsupported { max-width: 420px; margin: 0 auto; font-size: 17px; line-height: 1.4; text-align: center; color: var(--s3-ink); }
+/* The galaxy would not start: its labels become a row of buttons above the help line. */
+.galaxy-flat .galaxy-labels { position: static; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px 18px; margin-bottom: 14px; pointer-events: auto; overflow: visible; }
+.syn3h-shell.galaxy-flat .galaxy-label { position: static; translate: none; transform: none; }
+.galaxy-flat .galaxy-hint { display: none; }
 .galaxy-links { padding: 6px 18px; border-radius: 999px; background: rgb(10 12 18 / .5); }
 
 /* The descent: the lobby's words and glass fall away, the galaxy blurs as it dives, and the

@@ -28,9 +28,9 @@ try {
     // lowest, which retires the galaxy. Hold the level so this checks the galaxy itself.
     await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
     await page.waitForTimeout(4000)
-    const state = () => page.evaluate(() => { const g = window.syn3h.shell.galaxy; return { open: document.querySelector('.syn3h-shell').classList.contains('galaxy-open'), live: g.live, frames: g.frames, labels: [...document.querySelectorAll('.galaxy-label:not([hidden])')].map(l => { const r = l.getBoundingClientRect(); return { id: l.dataset.world, x: r.left + r.width / 2, y: r.top } }), starfield: window.syn3h.shell.graphics.starfieldLive } })
+    const state = () => page.evaluate(() => { const g = window.syn3h.shell.galaxy; return { open: document.querySelector('.syn3h-shell').classList.contains('galaxy-open'), live: g.live, frames: g.frames, labels: [...document.querySelectorAll('.galaxy-label:not([hidden])')].map(l => { const r = l.getBoundingClientRect(); return { id: l.dataset.world, x: r.left + r.width / 2, y: r.top } }) } })
     const first = await state()
-    assert.equal(first.open, true); assert.equal(first.live, true); assert.equal(first.starfield, false, 'one sky at a time')
+    assert.equal(first.open, true); assert.equal(first.live, true)
     assert.deepEqual(first.labels.map(l => l.id).sort(), ['alpine', 'custom', 'desert', 'volcanic'], `${view.name}: a label for each world and the custom one`)
     for (const label of first.labels) assert.ok(label.x > 0 && label.x < view.viewport.width && label.y > 0 && label.y < view.viewport.height, `${view.name}: ${label.id} is on screen`)
     await page.screenshot({ path: `${out}/${view.name}-home.png` })
@@ -98,11 +98,26 @@ try {
     assert.ok(rest, 'it settles still again after the flight')
     await page.close()
   }
-  // Without the option nothing changes.
-  const plain = await browser.newPage({ viewport: { width: 1280, height: 720 } })
-  await plain.goto(`${base}?galaxy=0&room=galaxy-off-${Date.now()}`, { waitUntil: 'load' }); await ready(plain)
-  assert.equal(await plain.evaluate(() => document.querySelector('.syn3h-shell').classList.contains('is-galaxy') || Boolean(window.syn3h.shell.galaxy)), false)
-  await plain.close()
+  // There is no other lobby. Where the galaxy's shader will not start, its world names stay
+  // as a row of buttons and a tap still leads to the name form.
+  const flat = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  await flat.addInitScript(() => { const get = HTMLCanvasElement.prototype.getContext; HTMLCanvasElement.prototype.getContext = function (kind, ...rest) { return this.className === 'galaxy-canvas' ? null : get.call(this, kind, ...rest) } })
+  await flat.goto(`${base}?room=galaxy-flat-${Date.now()}`, { waitUntil: 'load' }); await ready(flat)
+  assert.equal(await flat.evaluate(() => document.querySelector('.syn3h-shell').classList.contains('galaxy-flat')), true)
+  assert.equal(await flat.locator('.planet-card').count(), 0)
+  await flat.screenshot({ path: `${out}/flat.png` })
+  await flat.locator('.galaxy-label[data-world=desert]').click(); await settle(flat, 'explore')
+  assert.equal(await flat.evaluate(() => window.syn3h.planets.currentPlanet().id), 'desert')
+  await flat.close()
+  // Without WebGL 2 at all the lobby says so plainly (the game cannot draw there either).
+  const bare = await browser.newPage({ viewport: { width: 390, height: 844 } })
+  await bare.addInitScript(() => { const get = HTMLCanvasElement.prototype.getContext; HTMLCanvasElement.prototype.getContext = function (kind, ...rest) { return kind === 'webgl2' && !this.isConnected ? null : get.call(this, kind, ...rest) } })
+  await bare.goto(`${base}?room=galaxy-bare-${Date.now()}`, { waitUntil: 'load' })
+  await bare.waitForSelector('.lobby-unsupported:not([hidden])', { timeout: 120000 })
+  assert.equal(await bare.evaluate(() => Boolean(window.syn3h?.shell?.galaxy)), false)
+  await bare.waitForFunction(() => document.documentElement.dataset.boot === 'done', null, { timeout: 120000 }); await bare.waitForTimeout(1500)
+  await bare.screenshot({ path: `${out}/no-webgl2.png` })
+  await bare.close()
   console.log(JSON.stringify({ ok: true, errors }))
 } finally { await browser.close() }
 if (errors.length) { console.log(errors); process.exitCode = 1 }

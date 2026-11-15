@@ -5,7 +5,7 @@
  * libraries and no images: each world is lit from where the sun really is, wears its real
  * generated map once that has been painted, and throws a shadow through the sun's shafts.
  *
- * The sun, shafts, flare and stars are terranlabs.com's (see Starfield.ts). Like the other
+ * The sun, shafts, flare and stars are terranlabs.com's (src/concepts/descent/PlanetGL.tsx there). Like the other
  * lobby graphics it draws at most thirty times a second, stops in a hidden tab, and gives
  * its WebGL context back when disabled.
  */
@@ -250,6 +250,8 @@ export class Galaxy {
   /** False when WebGL 2 is not available: the caller keeps the ordinary lobby. */
   static supported(): boolean { try { return Boolean(document.createElement('canvas').getContext('webgl2')) } catch { return false } }
   get live(): boolean { return this.gl !== null }
+  /** Worlds whose painted maps have arrived. */
+  get painted(): number { return this.maps.size }
   set enabled(value: boolean) {
     if (value === this.active) return
     this.active = value
@@ -382,7 +384,13 @@ export class Galaxy {
   }
   private screen: { id: string; x: number; y: number; radius: number; visible: boolean }[] = []
   /** Fly to a world, as a tap on it does. */
-  choose(id: string): void { this.wake = 2; const index = this.options.worlds.findIndex(world => world.id === id); if (index >= 0 && index < MAX) { this.chosen = index; this.arriving = 0; this.arrived = false } }
+  choose(id: string): void {
+    this.wake = 2; const index = this.options.worlds.findIndex(world => world.id === id)
+    if (index < 0 || index >= MAX) return
+    // Without a context there is no flight to wait for: arrive at once.
+    if (!this.gl) { this.options.onArrive(id); return }
+    this.chosen = index; this.arriving = 0; this.arrived = false
+  }
   private down(event: PointerEvent): void {
     this.canvas.setPointerCapture(event.pointerId); this.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY })
     if (this.pointers.size === 1) { this.drag = { id: event.pointerId, x: event.clientX, y: event.clientY, moved: false }; this.spinVelocity = 0 }
