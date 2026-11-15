@@ -11,7 +11,7 @@ import { botCount, fleet, spawnRadius } from './params'
 import { Daydream } from './Daydream'
 import { Mind } from './mind/Mind'
 import { createPilot } from './pilot'
-import { createNavigator } from './nav'
+import { createNavigator, pointsOfInterest, type PointOfInterest } from './nav'
 import type { Navigator } from './pilot/types'
 /** Slot by slot: half buggies, a quarter hovercraft, a quarter jets. */
 const MIXED_FLEET = ['buggy', 'hovercraft', 'buggy', 'jet'] as const
@@ -33,13 +33,17 @@ export class BotManager implements System {
   /** The player's own vehicle driving itself after a spell of no input. See Daydream.ts. */
   readonly daydream: Daydream
   readonly navigator: Navigator & { dispose?(): void }
+  /** Places worth driving to, found once per world and shared by every mind. */
+  private sights: PointOfInterest[] | null = null
+  private readonly places = () => this.sights ??= pointsOfInterest(this.terrain)
   constructor(private readonly game: Game, private readonly terrain: BotTerrain, private readonly player: Vehicle) {
     this.targets = [player]
     // Owned here so the composition root needs no extra wiring: this manager already holds
     // the player, the terrain and every vehicle a daydreaming driver might tail.
     // One route planner per terrain, shared by every mind: its caches are megabytes.
     this.navigator = createNavigator(terrain)
-    this.daydream = new Daydream(game, terrain, player, { navigator: this.navigator, others: () => [...this.targets, ...this.bots] })
+    terrain.onRegenerate?.(() => { this.sights = null })
+    this.daydream = new Daydream(game, terrain, player, { navigator: this.navigator, places: this.places, others: () => [...this.targets, ...this.bots] })
   }
   fixedUpdate(dt: number) { this.daydream.fixedUpdate(dt) }
   setTargets(vehicles: readonly Vehicle[]) {
@@ -77,7 +81,7 @@ export class BotManager implements System {
       }
       // Each bot gets a character from the world seed and its own id, and a mind to act on it.
       const pilot = createPilot(bot, this.terrain)
-      if (pilot) brain.mind = new Mind(bot, this.terrain, pilot, { seed: `${worldSeed.value}:${bot.id}`, navigator: this.navigator, others: () => [...this.targets, ...this.bots] })
+      if (pilot) brain.mind = new Mind(bot, this.terrain, pilot, { seed: `${worldSeed.value}:${bot.id}`, navigator: this.navigator, places: this.places, others: () => [...this.targets, ...this.bots] })
       brain.navigator = this.navigator
       brain.remote = this.remote
       brain.setTargets(this.targets)

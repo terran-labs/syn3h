@@ -18,7 +18,7 @@ import type { DriveGoal, Navigator, NavPoint, Pilot, PilotStatus, Route } from '
 import { hashString, seededRandom } from '../random'
 import { type Personality, personalityFor } from './personality'
 
-export type ActivityKind = 'road' | 'summit' | 'explore' | 'follow' | 'donut' | 'weave' | 'pause' | 'retreat'
+export type ActivityKind = 'road' | 'summit' | 'explore' | 'follow' | 'donut' | 'weave' | 'pause' | 'retreat' | 'visit'
 
 export interface Activity {
   kind: ActivityKind
@@ -30,12 +30,25 @@ export interface Activity {
   until: number
 }
 
+export interface Place extends NavPoint { kind: string; name?: string }
+
+/** How a visit to each kind of place reads on screen. */
+const SIGHTS: Record<string, string> = {
+  peak: 'climbing to a lookout', vent: 'going to see the fire', shore: 'heading for the shore',
+  spawn: 'dropping by a landing pad', 'road-end': 'seeing where the road ends',
+}
+
 export interface MindOptions {
   /** Seeds the personality and every choice. Same seed, same terrain, same start: same drive. */
   seed: string
   personality?: Personality
   /** Route planner for open ground. Without one it follows roads and steers by sight. */
   navigator?: Navigator
+  /**
+   * Places worth a visit: peaks, vents, shores, pads. Read fresh each time it chooses, so a
+   * regenerated world is picked up. See `pointsOfInterest` in nav/explore.ts.
+   */
+  places?: () => readonly Place[]
   /** Other vehicles it may tail. Read fresh each time it chooses. */
   others?: () => readonly Vehicle[]
 }
@@ -43,7 +56,7 @@ export interface MindOptions {
 /** What the vehicle is up to, for a label on screen. */
 const CAPTIONS: Record<ActivityKind, string> = {
   road: 'cruising the road', summit: 'heading for the summit', explore: 'exploring', follow: 'tagging along',
-  donut: 'doing donuts', weave: 'carving', pause: 'taking in the view', retreat: 'finding another way',
+  donut: 'doing donuts', weave: 'carving', pause: 'taking in the view', retreat: 'finding another way', visit: 'sightseeing',
 }
 
 const VISIT_CELL = 64
@@ -69,6 +82,7 @@ export class Mind {
   private lastKind: ActivityKind = 'pause'
   private bestDistance = Infinity
   private leaderIdle = 0
+  private sight: Place | null = null
   /** Where it has been, one point every few metres, newest last: the proven way back out. */
   private readonly trail: NavPoint[] = []
   private bestTime = 0
@@ -91,6 +105,7 @@ export class Mind {
   /** A short phrase for what it is doing now. */
   get caption(): string {
     const name = this.activity.kind === 'follow' ? this.activity.leader?.name : ''
+    if (this.activity.kind === 'visit' && this.sight) return SIGHTS[this.sight.kind] ?? CAPTIONS.visit
     return name ? `following ${name}` : CAPTIONS[this.activity.kind]
   }
 
@@ -233,6 +248,7 @@ export class Mind {
       ['explore', 1 + p.curiosity * 1.5],
       ['road', road ? 0.8 + p.patience : 0],
       ['summit', summit ? 0.3 + p.boldness * 0.8 : 0],
+      ['visit', this.options.places ? 0.7 + p.curiosity : 0],
       ['follow', leader ? p.sociability * 1.6 : 0],
       // Stunts are for wheels and skirts; an aircraft showing off near a mountain ends badly.
       ['donut', roomy && speed < 12 && !this.pilot.profile.flies ? p.mischief * 0.7 : 0],
@@ -244,6 +260,10 @@ export class Mind {
     for (const [k, w] of options) { roll -= w; if (roll <= 0) { kind = k; break } }
     if (kind === 'road' && this.reachable(here, road!)) return this.begin('road', road, null, 90)
     if (kind === 'summit' && this.reachable(here, summit!)) return this.begin('summit', summit, null, 150)
+    if (kind === 'visit') {
+      const sight = this.pickSight(here)
+      if (sight && this.reachable(here, sight)) { this.sight = sight; return this.begin('visit', sight, null, 120) }
+    }
     if (kind === 'follow') return this.begin('follow', null, leader, 20 + r() * 30)
     if (kind === 'donut') { this.swerveSide = r() < 0.5 ? 1 : -1; return this.begin('donut', null, null, 3.5 + r() * 3) }
     // A few tries at somewhere new that the planner agrees can be reached.
@@ -304,6 +324,19 @@ export class Mind {
         const score = 1 / (1 + (this.visits.get(this.cellOf(point.x, point.z)) ?? 0) * 0.2) + this.random() * 0.6 - d / 4000 + ahead * 0.4
         if (score > bestScore) { bestScore = score; best = point }
       }
+    }
+    return best
+  }
+
+  /** A place of interest at a sensible distance that it has not been to. */
+  private pickSight(here: { x: number; z: number }): Place | null {
+    let best: Place | null = null, bestScore = -Infinity
+    for (const place of this.options.places?.() ?? []) {
+      if (place.kind === 'summit' || place.kind === 'road-mid') continue
+      const d = Math.hypot(place.x - here.x, place.z - here.z)
+      if (d < 90 || d > 700) continue
+      const score = 1 / (1 + (this.visits.get(this.cellOf(place.x, place.z)) ?? 0)) + this.random() * 0.8 - Math.abs(d - 300) / 800
+      if (score > bestScore) { bestScore = score; best = place }
     }
     return best
   }

@@ -15,7 +15,7 @@ import type { Game, System } from '../core/Game'
 import { emptyInput } from '../core/Input'
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { BotTerrain } from './BotBrain'
-import { Mind } from './mind/Mind'
+import { Mind, type MindOptions } from './mind/Mind'
 import type { Personality } from './mind/personality'
 import { daydreamSeconds } from './params'
 import { createPilot } from './pilot'
@@ -30,6 +30,8 @@ export interface DaydreamOptions {
   /** Other vehicles it may tail. */
   others?: () => readonly Vehicle[]
   navigator?: Navigator
+  /** Places worth a visit; see MindOptions.places. */
+  places?: MindOptions['places']
   /** Replace the pilot lookup, for tests. */
   pilot?: Pilot | null
 }
@@ -109,7 +111,7 @@ export class Daydream implements System {
     // A fresh mind each time, seeded so no two daydreams in a session take the same drive.
     this.mind = new Mind(this.player, this.terrain, this.pilot!, {
       seed: `${worldSeed.value}:daydream:${this.engagements++}:${this.game.tick}`,
-      personality: DAYDREAM_PERSONALITY, navigator: this.options.navigator, others: this.options.others,
+      personality: DAYDREAM_PERSONALITY, navigator: this.options.navigator, places: this.options.places, others: this.options.others,
     })
     this.pilot!.reset()
     if (typeof document !== 'undefined') {
