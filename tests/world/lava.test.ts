@@ -86,10 +86,10 @@ describe('lava and vents', () => {
     }
   }, 20000)
 
-  it('fords: off by default; on, rivers cross the level roads shallow and some reach the sea', () => {
-    expect(settings.fords).toBe(0)
-    for (const seed of SEEDS) for (const r of generateTerrain(seed, settings).roads) expect(r.fords).toEqual([])
-    const water = { ...settings, kind: 2, fords: 1 }
+  it('fords: on by default for water rivers, optional, shallow and some reach the sea', () => {
+    expect(settings.fords).toBe(1)
+    const water = { ...settings, kind: 2 }
+    for (const seed of SEEDS) for (const r of generateTerrain(seed, { ...water, fords: 0 }).roads) expect(r.fords).toEqual([])
     let fords = 0
     let toSea = 0
     for (const seed of SEEDS) {
