@@ -16,6 +16,9 @@ export const jetControlResponse = defineParam({id:'jet.controlResponse',label:'C
 // Not in Syn3h: its Throttle axis was momentary (VhiclMe.cs 16), so keyboard hover was climb or fall.
 // 0 is the original; 1 holds altitude when no throttle key is down. Dark until the owner judges it.
 export const jetHoverHold = defineParam<number>({id:'jet.hoverHold',label:'Hover altitude hold',group:'Jet',scope:'world',default:0,min:0,max:1,step:.05})
+// terra.jet.prefab flightThrustFactor=2: full throttle pushes at twice the jet's weight, and
+// Syn3h's drag barely opposes it, so speed keeps building. Lower this for a slower jet.
+export const jetFlightThrust = defineParam<number>({id:'jet.flightThrust',label:'Flight thrust',group:'Jet',scope:'world',default:2,min:.25,max:3,step:.05})
 const clamp = THREE.MathUtils.clamp
 const lerp = (a:number,b:number,t:number)=>THREE.MathUtils.lerp(a,b,clamp(t,0,1))
 const hullVertices = new Float32Array([-1.086619, -0.316382, -1.978747, 0.0, 0.543169, -2.110775, 0.0, -0.324233, -3.398361, 0.0, 0.482615, 1.50864, -3.851598, 0.125607, 1.143191, 0.0, -0.589476, -2.522558, 0.0, -0.636839, 0.479384, 0.0, -0.166176, 2.98234, -2.551439, 0.855675, 3.431675, 1.086619, -0.316382, -1.978747, 3.851598, 0.125607, 1.143191, 2.551439, 0.855675, 3.431675])
@@ -136,7 +139,7 @@ export class Jet extends Vehicle {
       const thrustYaw=(-input.x+clamp(-local.x*(input.w===0?1:.5),-10,10)-input.w*15)*Math.PI/180
       // Mirror Unity's local quaternion: axial X and Y signs reverse in our frame.
       const thrustRotation=new THREE.Quaternion().setFromEuler(new THREE.Euler(-thrustPitch,-thrustYaw,0,'YXZ'))
-      const thrust=new THREE.Vector3(0,0,-1).applyQuaternion(thrustRotation).applyQuaternion(q).multiplyScalar((this.input.brakes?0:input.z)*2*weight*.99)
+      const thrust=new THREE.Vector3(0,0,-1).applyQuaternion(thrustRotation).applyQuaternion(q).multiplyScalar((this.input.brakes?0:input.z)*jetFlightThrust.value*weight*.99)
       this.thruster.quaternion.copy(thrustRotation)
       const nozzle=nozzlePosition.clone().applyQuaternion(q).add(position)
       this.body.addForceAtPoint(thrust,nozzle,true)
