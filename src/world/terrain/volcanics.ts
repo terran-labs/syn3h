@@ -25,12 +25,12 @@ import type { TerrainData } from './generate'
 import { CHUNK_CELLS } from './mesh'
 import type { HeightSampler } from './sampler'
 import { KIND_VOLCANIC, worldSeaKind } from './settings'
-import { riverSpeed } from './lava'
+import { type RiverDrop, riverSpeed } from './lava'
 import { waterRiverMaxSpeed, waterWaves } from '../water/params'
 import { SEA_GRID } from '../water/seaWaves'
 import { buildBedTexture, buildRiverSurface, buildStillSurface, createWaterSurface, configureWaterBlending, waterOpacityNode, type WaterBed } from '../water/surface'
 import { WaterfallMist, fallsFromRivers } from '../water/mist'
-import { buildFallSheet, createFallMaterial } from '../water/falls'
+import { createFallMaterial, riverPieces } from '../water/falls'
 import { paletteFor } from './palettes'
 
 interface Liquid {
@@ -274,22 +274,26 @@ export class Volcanics implements System {
       const still = this.newStill.material
       if (lava.lake) add(buildStillSurface(ground, lava.lake.x, lava.lake.surface, lava.lake.z, lava.lake.radius), still, true)
       for (const p of lava.pools) add(buildStillSurface(ground, p.x, p.surface, p.z, p.radius), still, true)
+      // Receiving water for a river's mouth: the lake, a pool or the sea, never a river.
+      const seaLevel = data.settings.dry ? -Infinity : worldLavaAltitude.value
+      const waterAt = (x: number, z: number) => {
+        let y = seaLevel
+        for (const b of lava.lake ? [lava.lake, ...lava.pools] : lava.pools) {
+          if ((x - b.x) ** 2 + (z - b.z) ** 2 < b.radius ** 2) y = Math.max(y, b.surface)
+        }
+        return y
+      }
+      const drawn: { points: { x: number; y: number; z: number }[]; drops: RiverDrop[] }[] = []
       for (const r of lava.rivers) {
         if (r.points.length < 2) continue
-        add(buildRiverSurface(ground, r.points, r.width + 1.5, (slope) => riverSpeed(slope, waterRiverMaxSpeed.value)), this.newRiver.material, false)
-        for (const drop of r.drops) {
-          const s = drop.steepest
-          // A long steep run may contain a short ledge, without enough current to leap
-          // the whole run. Prefer the full arc, then try its individual ledges, tallest first.
-          const ledges = Array.from({ length: s.end - s.start }, (_, i) => [s.start + i, s.start + i + 1] as const)
-            .sort(([a, b], [c, d]) => (r.points[c].y - r.points[d].y) - (r.points[a].y - r.points[b].y))
-          for (const [a, b] of [[s.start, s.end], ...ledges]) {
-            const sheet = buildFallSheet(ground, r.points[a], r.points[b], r.width, worldGravity.value, waterRiverMaxSpeed.value)
-            if (sheet) { add(sheet, this.fallMaterial, false); break }
-          }
-        }
+        // Drawn where the water is held up; off a lip it falls (falls.ts drapeRiver).
+        const pieces = riverPieces(ground, r.points, r.width, waterAt, worldGravity.value, waterRiverMaxSpeed.value)
+        if (pieces.points.length < 2) continue
+        add(buildRiverSurface(ground, pieces.points, r.width + 1.5, (slope) => riverSpeed(slope, waterRiverMaxSpeed.value)), this.newRiver.material, false)
+        for (const sheet of pieces.sheets) add(sheet, this.fallMaterial, false)
+        drawn.push(pieces)
       }
-      this.mist.set(fallsFromRivers(lava.rivers), data.size)
+      this.mist.set(fallsFromRivers(drawn), data.size)
       this.placedVents = []
       this.place()
       return
