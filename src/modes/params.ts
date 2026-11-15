@@ -57,11 +57,11 @@ export const kothLaserPush = defineParam({
 /**
  * Whether a player who drops out (wifi, a locked phone, a release resetting the room) and
  * comes back within REJOIN_GRACE seconds carries on as the same player: same place in the
- * list, score, host role. Off by default: with it off a dropout is a leave and a new join.
+ * list, score, host role. On by default; players can opt out with the shared room slider.
  */
 export const gameRejoin = defineParam({
   id: 'game.rejoin', label: 'Rejoin as the same player after a dropout', group: 'Game', scope: 'world',
-  default: false,
+  default: true,
 })
 
 /** Seconds a dropped player's place is held when `game.rejoin` is on. */
