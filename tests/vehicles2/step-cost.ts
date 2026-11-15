@@ -10,7 +10,9 @@
  *
  *   tools/heavy.sh node --expose-gc --max-semi-space-size=256 --import tsx tests/vehicles2/step-cost.ts
  *
- * It prints one JSON line per vehicle kind. It is a measurement, not a test: nothing here
+ * It prints one JSON line per scenario. `bodyDigest` hashes every body's position, rotation and
+ * velocities after every step, and `effectsDigest` every effect buffer at the end: two builds
+ * with equal digests simulated and drew exactly the same thing. It is a measurement, not a test: nothing here
  * asserts a budget, because desktop Node timings do not transfer to a phone. Compare before
  * and after on the same machine.
  */
@@ -86,12 +88,17 @@ function measure(kind:VehicleKind,special=false){
  const bytes={fixed:0,post:0,frame:0,effects:0}
  const timed=(key:keyof typeof ms,fn:()=>void,alloc?:keyof typeof bytes)=>{const h=alloc?heap():0,t=performance.now();fn();ms[key].push(performance.now()-t);if(alloc){const d=heap()-h;if(d>0)bytes[alloc]+=d}}
  gc?.()
+ let bodies=0x811c9dc5
+ const f64=new Float64Array(13),u8=new Uint8Array(f64.buffer)
  for(let i=0;i<STEPS;i++){
   timed('fixed',fixed,'fixed');timed('rapier',()=>l.world.step());timed('post',post,'post');timed('frame',frame,'frame');timed('effects',effects,'effects')
   if(i%120===0)steer()
+  // Outside the timed windows: fold every body's full state into the physics digest.
+  for(const v of vehicles){const p=v.body.translation(),r=v.body.rotation(),lv=v.body.linvel(),av=v.body.angvel()
+   f64.set([p.x,p.y,p.z,r.x,r.y,r.z,r.w,lv.x,lv.y,lv.z,av.x,av.y,av.z]);for(let k=0;k<u8.length;k++){bodies^=u8[k];bodies=Math.imul(bodies,0x01000193)}}
  }
  const speed=vehicles.reduce((s,v)=>{const q=v.body.linvel();return s+Math.hypot(q.x,q.y,q.z)},0)/COUNT
- const out={kind,special,vehicles:COUNT,meanSpeed:round(speed,1),effectsDigest:digest(l.game.scene),
+ const out={kind,special,vehicles:COUNT,meanSpeed:round(speed,1),bodyDigest:(bodies>>>0).toString(16),effectsDigest:digest(l.game.scene),
   msPerStep:{controllers:round(median(ms.fixed)),rapier:round(median(ms.rapier)),postPhysics:round(median(ms.post))},
   msPerFrame:{vehicleUpdate:round(median(ms.frame)),effects:round(median(ms.effects))},
   bytesPerStep:{controllers:Math.round(bytes.fixed/STEPS),postPhysics:Math.round(bytes.post/STEPS)},
