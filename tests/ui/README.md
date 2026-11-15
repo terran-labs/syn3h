@@ -439,6 +439,15 @@ asked for this to replace the panel lobby on 14 November 2026.
   spawns) to face the camera, so the dive falls onto the island. Behind an open panel the
   galaxy dims (35 percent, 70 behind the name form) and stops drawing: WebKit's frost is
   weak, and nothing behind glass needs to move.
+- A tap on a world is the drop (the owner's instruction, 15 November): no name form, no
+  panel, one motion from the solar system into the follow camera. The galaxy flies a timed
+  path (not per-frame easing, so a slow frame cannot make it lurch) across the system, round
+  to the lit side and down into the air, drawing every frame with a radial motion blur pass
+  in proportion to how fast the view is closing. Under the light the world is built and the
+  room joined, where a hitch cannot be seen; the game appears through the rushing light,
+  its camera falling from 520 m with the field of view easing to the follow camera's, and
+  `ChaseCamera.clearCinematicPose(0.8)` blends into the follow camera. Custom still flies
+  to its world and opens its sliders. `drop.mjs` records every frame gap from tap to ground.
 - The descent holds in the light until the room has answered (up to 5 s), since a slow
   join can rebuild the world and move the spawn point; the camera path is taken after
   that. A returning player (`localStorage` `syn3h.descents`) gets a quicker dive and a

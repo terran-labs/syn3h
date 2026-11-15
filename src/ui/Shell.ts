@@ -20,6 +20,7 @@ import { qualityLevel } from './quality/ladder'
 import { Vector3 } from 'three/webgpu'
 import { PLANETS } from '../world/planets'
 import { graphicsLevel, levelNumber } from '../core/quality'
+import { camDistance, camFov, camHeight, camOffset } from '../core/ChaseCamera'
 import { applyPlanet, currentPlanet, encodeWorld, planetName } from '../world/planets'
 import { AttractMode, type CinematicCamera } from './AttractMode'
 import { InviteView, inviteUrl, renderQr } from './InviteView'
@@ -379,16 +380,50 @@ export class Shell implements System {
   play(descend = false): void {
     this.stopAttract()
     if (this.started) { this.closeMenu(); return }
+    this.unlockAudio(); this.begin()
+    if (descend && this.galaxy?.live && this.menuVisible && !matchMedia('(prefers-reduced-motion: reduce)').matches) { this.onPlay?.(); void this.descent(currentPlanet().id); return }
+    this.closeMenu(); this.showHelp(false); this.onPlay?.()
+  }
+  /** Audio may only start inside a tap or a key press: call this from one. */
+  private unlockAudio(): void {
     void this.audio.unlock().then(async () => { await this.audio.ready(); this.audio.play('materialize') }).catch(() => this.toast('Audio is unavailable. You can still play.'))
+  }
+  /** The session starts: the name is kept and the choices that cannot change in play are fixed. */
+  private begin(): void {
     try { localStorage.setItem('syn3h.playerName', this.playerName) } catch { /* Playing does not require storage. */ }
     this.started = true; this.worldDirty = true; this.nameInput.disabled = true; this.roomInput.disabled = true
     this.element.querySelector<HTMLButtonElement>('.shell-play')!.textContent = 'Return to Game ›'
     this.element.querySelector<HTMLElement>('[data-resume]')!.hidden = false
     for (const input of this.element.querySelectorAll<HTMLInputElement>('.shell-vehicle input')) input.disabled = true
     this.element.querySelector('.vehicle-note')!.textContent = 'Vehicle selection is fixed for this session.'
-    if (descend && this.galaxy?.live && this.menuVisible && !matchMedia('(prefers-reduced-motion: reduce)').matches) { this.onPlay?.(); void this.descent(); return }
-    this.closeMenu(); this.showHelp(false); this.onPlay?.()
   }
+  /**
+   * A world tapped in the galaxy. Any world but Custom is a drop, straight from the tap: no
+   * form, no pause. Returns true when the tap is dealt with here (a drop, or a refusal).
+   */
+  private tapWorld(galaxyId: string): boolean {
+    const id = galaxyId.split('~')[0], current = currentPlanet().id
+    if (this.dropping) return true
+    if (id === 'custom') return false
+    if (this.invited && !this.started && id !== current) { this.say('You were invited to another world. You can change it once you are in, if the host allows.'); return true }
+    if (!canEditWorld() && id !== current) { this.say('The host has locked this world.'); return true }
+    this.stopAttract()
+    // No galaxy to fly through (or no motion wanted): straight in.
+    if (!this.galaxy?.live || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      if (id !== current) applyPlanet(id)
+      if (this.started) this.closeMenu(); else this.play()
+      return true
+    }
+    if (!this.started) this.unlockAudio()
+    void this.descent(galaxyId, () => {
+      // Under the light, where a hitch cannot be seen: the world is built and the room joined.
+      if (id !== currentPlanet().id) applyPlanet(id)
+      if (!this.started) { this.begin(); this.onPlay?.() }
+    })
+    return true
+  }
+  /** True from a drop's tap until the player is on the ground. */
+  private dropping = false
   openMenu(panel = 'index'): void {
     if (!this.started) return
     this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; if (this.galaxy) this.galaxy.enabled = true
@@ -397,55 +432,84 @@ export class Shell implements System {
     this.audio.enabled = false; this.audio.setLobbyVisible(true); this.element.classList.remove('is-playing'); this.showPanel(panel)
   }
   /**
-   * The descent. The galaxy dives onto the island, holds in the light until the room has
-   * answered (a slow join can rebuild the world and move the spawn point), then the game
-   * arrives blurred, its camera falling from 520 m to its place behind the vehicle. A player
-   * who has seen it before gets a shorter fall; a tap, click or key at any point lands at once.
+   * The drop, one unbroken motion. The galaxy flies across the system to the world and down
+   * into its air, with motion blur (Galaxy.descend). Under the light at the bottom of the
+   * dive `underLight` builds the world and joins the room, and the drop holds there only as
+   * long as the room takes to answer (a slow join can rebuild the world and move the spawn
+   * point). Then the game shows through, blurred, its camera falling from 520 m and easing
+   * into the follow camera's own place behind the vehicle, which takes over from there. A
+   * player who has seen it before gets a quicker drop; a tap, click or key lands at once.
    */
-  private async descent(): Promise<void> {
+  private async descent(galaxyId: string, underLight?: () => void): Promise<void> {
     const wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms))
+    const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
     const game = document.getElementById('game'), root = this.element, camera = this.cinematic
-    root.classList.add('is-descending'); this.overlay.inert = true
+    this.dropping = true; root.classList.add('is-descending'); this.overlay.inert = true
     let seen = 0
     try { seen = Number(localStorage.getItem('syn3h.descents')) || 0; localStorage.setItem('syn3h.descents', String(seen + 1)) } catch { /* Storage is optional. */ }
     let skip = false
     const skipping = new AbortController()
-    for (const type of ['pointerdown', 'keydown'] as const) addEventListener(type, () => { skip = true }, { signal: skipping.signal, capture: true })
-    const until = async (done: () => boolean, ms: number) => { const end = performance.now() + ms; while (!done() && !skip && performance.now() < end) await wait(50) }
-    // While the lobby still covers it, lift the game's camera high over the spawn point.
-    let pose = this.descentPose(); pose(0)
+    // Listen from the next frame, so the tap that started the drop does not also end it.
+    requestAnimationFrame(() => { for (const type of ['pointerdown', 'keydown'] as const) addEventListener(type, () => { skip = true }, { signal: skipping.signal, capture: true }) })
+    const until = async (done: () => boolean, ms: number) => { const end = performance.now() + ms; while (!done() && !skip && performance.now() < end) await frame() }
+    // While the lobby still covers it, put the game's camera high over the spawn point.
+    const view = (this.game as unknown as { camera?: { position: Vector3 } }).camera
+    const lift = () => { pose(0); if (view && this.descentTop) view.position.copy(this.descentTop) }
+    let pose = this.descentPose(); lift()
     let dived = false
-    void this.galaxy!.descend(currentPlanet().id, seen > 0).then(() => { dived = true })
-    await until(() => dived, 2600)
+    void this.galaxy!.descend(galaxyId, seen > 0).then(() => { dived = true })
+    await until(() => dived, 4000)
+    underLight?.()
     await until(() => Boolean((window as { syn3hNet?: { connected?: boolean } }).syn3hNet?.connected), 5000)
-    // The spawn point may have moved with the room's world: aim at where the player is now.
-    pose = this.descentPose(); pose(0)
+    // The spawn point may have moved with the room's world: start from over where the player is now.
+    pose = this.descentPose(); lift()
     // Through the air: the lobby fades off the top of the game, which arrives blurred and clears.
-    const length = skip ? 0 : seen > 0 ? 1400 : 2400
-    if (game) { game.style.transition = 'none'; game.style.filter = skip ? 'none' : 'blur(18px) brightness(1.5)' }
-    this.overlay.style.transition = `opacity ${skip ? 0.2 : 0.9}s ease`; this.overlay.style.opacity = '0'
-    await wait(60)
-    if (game && !skip) { game.style.transition = `filter ${(length * 0.9 / 1000).toFixed(2)}s cubic-bezier(.2,.6,.2,1)`; game.style.filter = 'none' }
+    const length = skip ? 0 : seen > 0 ? 1700 : 2400
+    if (game) { game.style.transition = 'none'; game.style.filter = skip ? 'none' : 'blur(12px) brightness(1.3)' }
+    this.overlay.style.transition = `opacity ${skip ? 0.2 : 0.6}s ease-out`; this.overlay.style.opacity = '0'
+    await frame()
+    if (game && !skip) { game.style.transition = `filter ${(length * 0.7 / 1000).toFixed(2)}s cubic-bezier(.1,.6,.3,1)`; game.style.filter = 'none' }
     const started = performance.now()
     await new Promise<void>(resolve => { const step = () => { const t = skip || length === 0 ? 1 : Math.min(1, (performance.now() - started) / length); pose(t); if (t < 1) requestAnimationFrame(step); else resolve() }; step() })
-    if (skip) { await wait(200); if (game) game.style.filter = 'none' }
+    // The camera eases along the path a little behind it: let it settle into the follow
+    // camera's place, then hand over with a blend (an instant cut where that is not offered).
+    const end = this.descentEnd
+    if (view && end && !skip) await until(() => view.position.distanceTo(end) < 0.15, 1200)
+    if (skip && game) game.style.filter = 'none'
     skipping.abort()
-    camera?.clearCinematicPose()
+    if (camera) (camera.clearCinematicPose as (blendSeconds?: number) => void).call(camera, skip ? 0 : 0.8)
     this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity'); root.classList.remove('is-descending')
     if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter') }
+    this.dropping = false
     this.closeMenu(); this.showHelp(false)
   }
-  /** The descent's camera path over where the player is now: t from 0 (520 m up) to 1 (behind the vehicle). */
+  /** The first and last points of the descent's camera path, for waiting on the camera. */
+  private descentTop?: Vector3
+  private descentEnd?: Vector3
+  /**
+   * The descent's camera path over where the player is now: t from 0 (520 m up, looking down
+   * at the spawn point) to 1 (where the follow camera sits: behind the vehicle by its arm,
+   * raised by its height ratio, looking level along the vehicle's heading). It falls fast at
+   * first, carrying on the dive's speed, and slows into place.
+   */
   private descentPose(): (t: number) => void {
     const self = this.self, ground = this.ground, camera = this.cinematic
-    if (!self || !camera) return () => {}
-    const at = new Vector3(self.x, ground?.heightAt(self.x, self.z) ?? 0, self.z)
+    if (!self || !camera) { this.descentTop = this.descentEnd = undefined; return () => {} }
+    const floor = ground?.heightAt(self.x, self.z) ?? 0, at = new Vector3(self.x, floor, self.z)
     const ahead = new Vector3(-Math.sin(self.heading), 0, -Math.cos(self.heading))
+    const arm = camOffset.value + camDistance.value, body = floor + Math.max(0.5, this.telemetry.altitude)
+    const end = new Vector3(at.x - ahead.x * arm, body + arm * camHeight.value, at.z - ahead.z * arm)
+    const endLook = end.clone().addScaledVector(ahead, 60)
+    const startHeight = 520, endHeight = Math.max(1.5, end.y - floor)
+    this.descentTop = new Vector3(at.x - ahead.x * 40, floor + startHeight, at.z - ahead.z * 40); this.descentEnd = end
+    const position = new Vector3(), look = new Vector3()
     return t => {
-      // From 520 m up and a little behind, looking down, to the chase position.
-      const e = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
-      const height = 520 * (1 - e) + 4.5 * e, back = 60 * (1 - e) + 10 * e
-      camera.setCinematicPose(new Vector3(at.x - ahead.x * back, at.y + height, at.z - ahead.z * back), new Vector3(at.x + ahead.x * 8 * e, at.y + 1.5, at.z + ahead.z * 8 * e))
+      const fall = 1 - (1 - t) ** 2.4, turnTo = t * t * t * (t * (t * 6 - 15) + 10)
+      const height = Math.exp(Math.log(startHeight) + (Math.log(endHeight) - Math.log(startHeight)) * fall), back = 40 + (arm - 40) * fall
+      position.set(at.x - ahead.x * back, floor + height, at.z - ahead.z * back)
+      look.copy(at).lerp(endLook, turnTo)
+      // The field of view goes from about the galaxy's (64 degrees) to the follow camera's own.
+      ;(camera.setCinematicPose as (position: Vector3, target: Vector3, fov?: number) => void).call(camera, position.clone(), look.clone(), 64 + (camFov.value - 64) * fall)
     }
   }
   private ground?: Terrain
@@ -551,12 +615,13 @@ export class Shell implements System {
       const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
       chip.innerHTML = '<strong></strong><small></small>'; chip.querySelector('strong')!.textContent = world.label
       chip.querySelector('small')!.textContent = world.forming ? 'Shape your own' : world.id === current ? planetName(world.seed) : ''
-      chip.addEventListener('click', () => this.galaxy?.choose(world.id))
+      chip.addEventListener('click', () => { if (!this.tapWorld(world.id)) this.galaxy?.choose(world.id) })
       labels.append(chip); chips.set(world.id, chip)
     }
     this.galaxy = new Galaxy(this.overlay, {
       worlds,
       still: () => levelNumber(graphicsLevel.value) === 0,
+      onTap: chosen => this.tapWorld(chosen),
       onArrive: chosen => {
         const id = chosen.split('~')[0]
         if (id === 'custom') {

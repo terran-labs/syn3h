@@ -29,6 +29,8 @@ export interface GalaxyOptions {
   worlds: readonly GalaxyWorld[]
   /** A world was tapped and the camera has arrived at it. */
   onArrive(id: string): void
+  /** A world was tapped. Return true to take it from here (a drop); otherwise the camera flies to it. */
+  onTap?(id: string): boolean
   /** Called every frame with where each world is on screen, for labels. */
   onLayout?(places: readonly { id: string; x: number; y: number; radius: number; visible: boolean }[], chosen?: string): void
   /**
@@ -203,8 +205,9 @@ void main() {
   // The dive: streaks rushing outward, then the brightness of air as the world fills the view.
   if (uDive > 0.0) {
     float rush = pow(noise(vec3(normalize(q + 0.0001) * 11.0, uTime * 3.2)), 3.0) * smoothstep(0.15, 1.3, length(q));
-    c += vec3(0.7, 0.86, 1.0) * rush * uDive * 0.9;
-    c = mix(c, vec3(0.72, 0.87, 1.0), smoothstep(0.5, 1.0, uDive) * 0.92);
+    // Air, never a flat sheet: the streaks keep rushing through it to the last frame.
+    c = mix(c, vec3(0.62, 0.8, 1.0), smoothstep(0.5, 1.0, uDive) * 0.68);
+    c += vec3(0.8, 0.92, 1.0) * rush * uDive * 1.3;
   }
   // Grade: roll the highlights off, a vignette to hold the eye in the middle, fine film grain.
   c = c / (1.0 + 0.3 * max(max(c.r, c.g), c.b));
@@ -214,6 +217,24 @@ void main() {
   c += (hash(vec3(gl_FragCoord.xy, 7.0)) - 0.5) / 255.0;
   color = vec4(c * uDim, 1.0);
 }`
+/**
+ * Motion blur for the flight and the dive: the traced frame is smeared along the line to the
+ * centre of the view, the way a fast zoom smears, in proportion to how fast the camera is
+ * closing. Twelve taps, jittered per pixel so the smear has no steps. Off when nothing is
+ * moving fast, when the frame is drawn straight to the screen.
+ */
+const BLUR = `#version 300 es
+precision highp float;
+uniform sampler2D uScene; uniform float uBlur; uniform vec2 uSize;
+out vec4 color;
+void main() {
+  vec2 uv = gl_FragCoord.xy / uSize, d = (uv - 0.5) * uBlur;
+  float jitter = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+  vec3 c = vec3(0.0);
+  for (int i = 0; i < 12; i++) c += texture(uScene, uv - d * ((float(i) + jitter) / 12.0)).rgb;
+  color = vec4(c / 12.0, 1.0);
+}`
+const smootherstep = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * t * (t * (t * 6 - 15) + 10) }
 const rgb = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
 type Vec = [number, number, number]
 const sub = (a: Vec, b: Vec): Vec => [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
@@ -237,6 +258,12 @@ export class Galaxy {
   private closeKey?: string
   private closeIndex = -1
   private array: WebGLTexture | null = null
+  private program: WebGLProgram | null = null
+  private blurProgram: WebGLProgram | null = null
+  private readonly blurUniforms: Record<string, WebGLUniformLocation | null> = {}
+  private fbo: WebGLFramebuffer | null = null
+  /** The frame drawn off screen for the blur pass, the size of the canvas. */
+  private target2: WebGLTexture | null = null
   private close: WebGLTexture | null = null
   private worker: Worker | null = null
   private readonly queue: { key: string; id: string; seed: number; width: number; height: number }[] = []
@@ -270,8 +297,6 @@ export class Galaxy {
   private chosen = -1
   private diving = false
   private dive = 0
-  /** How much of the dive each frame covers: a returning player's is quicker. */
-  private diveRate = 0.022
   private shownScale = 0
   private arriving = 0
   private arrived = false
@@ -297,12 +322,21 @@ export class Galaxy {
     if (value) this.acquire(); else this.release()
   }
   /** Back out to the whole system, for example after returning from a world's panel. */
-  home(): void { this.wake = 2; this.chosen = -1; this.arriving = 0; this.arrived = false; this.diving = false; this.dive = 0 }
+  home(): void { this.wake = 2; this.chosen = -1; this.arriving = 0; this.arrived = false; this.diving = false; this.dive = 0; this.flight = undefined; this.flightDone = false; this.blur = 0 }
   /** The descent: fall toward a world until its air fills the view. Resolves when it has. `quick` for a player who has seen it. */
   descend(id: string, quick = false): Promise<void> {
-    this.choose(id); this.arrived = true; this.diving = true; this.wake = 2; this.diveRate = quick ? 0.04 : 0.022
-    return new Promise(resolve => { const wait = () => { if (!this.active || this.dive >= 0.995) resolve(); else setTimeout(wait, 50) }; wait() })
+    if (!this.gl) return Promise.resolve()
+    this.choose(id); this.arrived = true; this.diving = true; this.wake = 2
+    // One timed path from wherever the view is now, so a slow frame never makes it lurch:
+    // across the system to the world, round to its lit side, and down into its air.
+    this.flight = { start: performance.now(), duration: quick ? 1700 : 2400, from: [...this.target], reach: this.reach, yaw: this.yaw, pitch: this.pitch, last: this.reach, at: performance.now() }
+    return new Promise(resolve => { const wait = () => { if (!this.active || !this.flight || this.flightDone) resolve(); else setTimeout(wait, 30) }; wait() })
   }
+  /** The drop in progress: where it started and when. */
+  private flight?: { start: number; duration: number; from: Vec; reach: number; yaw: number; pitch: number; last: number; at: number }
+  private flightDone = false
+  /** How hard the frame is smeared toward the centre this frame (0 for none). */
+  private blur = 0
 
   private acquire(): void {
     const canvas = this.canvas = document.createElement('canvas')
@@ -323,6 +357,19 @@ export class Galaxy {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); linear(gl.TEXTURE_2D)
     gl.uniform1i(this.uniforms.uMaps, 0); gl.uniform1i(this.uniforms.uClose, 1)
     this.layers = []; this.closeKey = undefined; this.closeIndex = -1
+    this.program = program; this.blurProgram = null
+    const blur = gl.createProgram()!
+    for (const [type, source] of [[gl.VERTEX_SHADER, VERTEX], [gl.FRAGMENT_SHADER, BLUR]] as const) { const shader = gl.createShader(type)!; gl.shaderSource(shader, source); gl.compileShader(shader); gl.attachShader(blur, shader) }
+    gl.linkProgram(blur)
+    if (gl.getProgramParameter(blur, gl.LINK_STATUS)) {
+      this.blurProgram = blur
+      for (const name of ['uScene', 'uBlur', 'uSize']) this.blurUniforms[name] = gl.getUniformLocation(blur, name)
+      this.target2 = gl.createTexture(); gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.target2)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, null)
+      this.fbo = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.target2, 0); gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+      gl.useProgram(blur); gl.uniform1i(this.blurUniforms.uScene, 2); gl.useProgram(program)
+    }
     this.gl = gl
     const signal = this.abort.signal, options = { signal }
     canvas.addEventListener('pointerdown', event => this.down(event), options)
@@ -336,7 +383,7 @@ export class Galaxy {
   }
   private release(): void {
     cancelAnimationFrame(this.frame); this.worker?.terminate(); this.worker = null; this.queue.length = 0; this.painting = false
-    this.array = this.close = null
+    this.array = this.close = null; this.fbo = null; this.target2 = null; this.program = null; this.blurProgram = null
     this.gl?.getExtension('WEBGL_lose_context')?.loseContext(); this.gl = null; this.canvas.remove(); this.pointers.clear(); this.drag = null
   }
   /** Each world's small map, painted off the main thread, one after another. */
@@ -392,6 +439,7 @@ export class Galaxy {
     const scale = Math.min(devicePixelRatio || 1, 1.5) * qualityScale()
     this.shownScale = qualityScale(); this.wake = 2
     this.canvas.width = Math.max(1, Math.round(this.host.clientWidth * scale)); this.canvas.height = Math.max(1, Math.round(this.host.clientHeight * scale))
+    if (this.target2) { const gl = this.gl; gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.target2); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.canvas.width, this.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null) }
   }
   /**
    * Where the worlds are now: slow circular orbits, each at its own pace. There are at most
@@ -412,15 +460,30 @@ export class Galaxy {
     const goal: Vec = this.chosen >= 0 ? places[this.chosen].position : [0, 0, 0]
     const ease = this.chosen >= 0 ? 0.08 : 0.06
     this.target = [mix(this.target[0], goal[0], ease), mix(this.target[1], goal[1], ease), mix(this.target[2], goal[2], ease)]
-    const wantDistance = this.chosen >= 0 ? places[this.chosen].radius * (this.diving ? 1.12 : 3.1) : this.distance
+    const wantDistance = this.chosen >= 0 ? places[this.chosen].radius * (this.diving ? 1.03 : 3.1) : this.distance
     this.reach = mix(this.reach, wantDistance, this.diving ? 0.075 : this.chosen >= 0 ? 0.05 : 0.12)
+    const latitude = this.face()
+    if (this.flight) {
+      // The drop, by the clock: across to the world in the first three quarters, round to its
+      // lit side on the way, and in toward its air the whole time, faster at the end. The
+      // dive's light rises over the last third.
+      const f = this.flight, now = performance.now(), t = Math.min(1, (now - f.start) / f.duration)
+      const travel = smootherstep(t / 0.75), close = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
+      this.target = [mix(f.from[0], goal[0], travel), mix(f.from[1], goal[1], travel), mix(f.from[2], goal[2], travel)]
+      this.reach = Math.exp(mix(Math.log(f.reach), Math.log(wantDistance), close))
+      this.yaw = f.yaw + turn(f.yaw, this.facing) * travel; this.pitch = mix(f.pitch, latitude, travel)
+      this.dive = smootherstep((t - 0.66) / 0.34)
+      // Smear in proportion to how fast the view is closing: the change in log distance per second.
+      const seconds = Math.max(0.001, (now - f.at) / 1000)
+      this.blur = mix(this.blur, Math.min(0.16, Math.abs(Math.log(f.last / this.reach)) / seconds * 0.05), 0.5)
+      f.last = this.reach; f.at = now
+      if (t >= 1) this.flightDone = true
+    }
     // Close enough that a held-still view can stop drawing; it snaps the last step so the
     // frame left on screen is where the camera was going.
     this.settled = Math.abs(this.reach - wantDistance) < 0.01 * wantDistance && Math.hypot(...sub(this.target, goal)) < 0.01 * wantDistance
     if (this.settled && this.holding) { this.target = goal; this.reach = wantDistance }
-    this.face()
-    // The dive runs about a second and a half.
-    this.dive = this.diving ? Math.min(1, this.dive + this.diveRate) : Math.max(0, this.dive - 0.05)
+    if (!this.flight) this.dive = Math.max(0, this.dive - 0.05)
     const cp = Math.cos(this.pitch), eye: Vec = [this.target[0] + Math.sin(this.yaw) * cp * this.reach, this.target[1] + Math.sin(this.pitch) * this.reach, this.target[2] + Math.cos(this.yaw) * cp * this.reach]
     const forward = unit(sub(this.target, eye)), right = unit(cross(forward, [0, 1, 0])), up = cross(right, forward)
     return { eye, forward, right, up, // The short side of the screen always spans the same slice of space, so the system fills
@@ -440,22 +503,24 @@ export class Galaxy {
    * map's longitude 0, latitude 0, where the game spawns) to face the camera. The dive then
    * falls onto the island, so orbit and ground line up.
    */
-  private face(): void {
+  private face(): number {
     this.facingSettled = true
-    if (this.chosen < 0 || this.options.worlds[this.chosen].forming) return
+    if (this.chosen < 0 || this.options.worlds[this.chosen].forming) return this.pitch
     const i = this.chosen, ct = Math.cos(TILT), st = Math.sin(TILT)
     // The island's direction from the world's centre for a spin s is (-sin s, st cos s, ct cos s).
     const want = Math.atan2(-ct * Math.sin(this.facing), Math.cos(this.facing)), now = this.spin(i, this.clock)
     const spinStep = turn(now, want), latitude = Math.asin(st * Math.cos(want))
     this.spinOffset[i] = (this.spinOffset[i] ?? 0) + spinStep * 0.07
-    if (!this.drag) { const y = turn(this.yaw, this.facing), p = latitude - this.pitch; this.yaw += y * 0.07; this.pitch += p * 0.07; this.facingSettled = Math.abs(y) < 0.003 && Math.abs(p) < 0.003 && Math.abs(spinStep) < 0.003 }
+    if (!this.drag && !this.flight) { const y = turn(this.yaw, this.facing), p = latitude - this.pitch; this.yaw += y * 0.07; this.pitch += p * 0.07; this.facingSettled = Math.abs(y) < 0.003 && Math.abs(p) < 0.003 && Math.abs(spinStep) < 0.003 }
     else this.facingSettled = Math.abs(spinStep) < 0.003
+    return latitude
   }
   private loop = (now: number): void => {
     if (!this.active || document.hidden) return
     this.frame = requestAnimationFrame(this.loop)
     qualityFrame(now)
-    if (now - this.last < 33) return
+    // Thirty frames a second is plenty for a slow orbit; the drop gets every frame there is.
+    if (!this.flight && now - this.last < 33) return
     this.last = now
     const gl = this.gl, u = this.uniforms
     if (!gl) return
@@ -473,7 +538,7 @@ export class Galaxy {
     const moving = !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || this.spinVelocity !== 0 || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
     if (still && !moving && this.wake <= 0) { this.idle++; return }
     this.wake = Math.max(0, this.wake - 1)
-    this.upload(gl); gl.uniform1i(u.uCloseIndex, this.closeIndex)
+    gl.useProgram(this.program); this.upload(gl); gl.uniform1i(u.uCloseIndex, this.closeIndex)
     gl.viewport(0, 0, this.canvas.width, this.canvas.height)
     gl.uniform2f(u.uSize, this.canvas.width, this.canvas.height); gl.uniform1f(u.uTime, time); gl.uniform1f(u.uScale, this.canvas.width / Math.max(1, this.host.clientWidth))
     gl.uniform3f(u.uEye, ...view.eye); gl.uniform3f(u.uRight, ...view.right); gl.uniform3f(u.uUp, ...view.up); gl.uniform3f(u.uForward, ...view.forward); gl.uniform1f(u.uTan, view.tan)
@@ -482,7 +547,16 @@ export class Galaxy {
     gl.uniform4fv(u.uWorld, places.flatMap(p => [...p.position, p.radius]))
     gl.uniform3fv(u.uLand, worlds.slice(0, MAX).flatMap(w => rgb(w.land))); gl.uniform3fv(u.uSea, worlds.slice(0, MAX).flatMap(w => rgb(w.sea)))
     gl.uniform4fv(u.uKind, worlds.slice(0, MAX).flatMap((w, i) => [w.forming ? 2 : w.glow ? 1 : 0, this.layers[i] || i === this.closeIndex ? 1 : 0, this.spin(i, time), (w.seed % 97) + i * 3.1]))
-    gl.drawArrays(gl.TRIANGLES, 0, 3); this.frames++
+    const smear = this.flight && this.blurProgram && this.blur > 0.003 && qualityShed(2) < 1
+    if (smear) gl.bindFramebuffer(gl.FRAMEBUFFER, this.fbo)
+    gl.drawArrays(gl.TRIANGLES, 0, 3)
+    if (smear) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.useProgram(this.blurProgram)
+      gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.target2)
+      gl.uniform1f(this.blurUniforms.uBlur, this.blur); gl.uniform2f(this.blurUniforms.uSize, this.canvas.width, this.canvas.height)
+      gl.drawArrays(gl.TRIANGLES, 0, 3); gl.useProgram(this.program)
+    }
+    this.frames++
     // Tell the labels where the worlds are, and notice arrival.
     const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height)
     this.screen = places.map((place, i) => {
@@ -535,7 +609,7 @@ export class Galaxy {
     // A tap: the nearest world under the finger, with a generous margin on small screens.
     const box = this.canvas.getBoundingClientRect(), x = event.clientX - box.left, y = event.clientY - box.top
     const found = this.screen.filter(s => s.visible).map(s => ({ s, d: Math.hypot(s.x - x, s.y - y) - s.radius })).filter(e => e.d < 22).sort((a, b) => a.d - b.d)[0]
-    if (found) this.choose(found.s.id); else if (this.chosen >= 0) this.home()
+    if (found) { if (!this.options.onTap?.(found.s.id)) this.choose(found.s.id) } else if (this.chosen >= 0 && !this.flight) this.home()
   }
   dispose(): void { this.active = false; this.abort.abort(); this.resizeObserver.disconnect(); this.release() }
 }

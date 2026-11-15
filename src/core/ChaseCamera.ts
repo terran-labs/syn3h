@@ -230,21 +230,56 @@ export class ChaseCamera implements System {
    * External pose override for cinematic shots (attract mode). While set, the camera eases
    * to this pose instead of following the vehicle; parameters and modes are left untouched.
    */
-  setCinematicPose(position: THREE.Vector3, target: THREE.Vector3): void {
+  setCinematicPose(position: THREE.Vector3, target: THREE.Vector3, fov?: number): void {
     if (!this.cinematic) this.cinematic = { position: new THREE.Vector3(), target: new THREE.Vector3(), look: target.clone() }
-    this.cinematic.position.copy(position); this.cinematic.target.copy(target)
+    this.cinematic.position.copy(position); this.cinematic.target.copy(target); this.cinematic.fov = fov
+    this.blend = null
   }
-  clearCinematicPose(): void { this.cinematic = null; this.previousTarget = null }
-  private cinematic: { position: THREE.Vector3; target: THREE.Vector3; look: THREE.Vector3 } | null = null
+  /**
+   * Back to following the vehicle. With `blendSeconds` above 0 the view does not cut: it eases
+   * from wherever the camera is (position, orientation and field of view) into the live chase
+   * pose over that time, so a scripted shot can land in the follow camera without a jump
+   * (the lobby's descent does). With 0, as before, the chase pose is taken at once.
+   */
+  clearCinematicPose(blendSeconds = 0): void {
+    this.cinematic = null; this.previousTarget = null
+    const camera = this.game.camera
+    this.blend = blendSeconds > 0 ? { from: camera.position.clone(), turn: camera.quaternion.clone(), fov: camera.fov, time: 0, length: blendSeconds, own: null } : null
+  }
+  private cinematic: { position: THREE.Vector3; target: THREE.Vector3; look: THREE.Vector3; fov?: number } | null = null
+  /**
+   * A blend out of a cinematic pose: where the camera was, and the chase camera's own last
+   * pose (kept apart from the blended one shown, so the chase camera's smoothing runs on its
+   * own values and the blend never feeds back into it).
+   */
+  private blend: { from: THREE.Vector3; turn: THREE.Quaternion; fov: number; time: number; length: number; own: { position: THREE.Vector3; turn: THREE.Quaternion; fov: number } | null } | null = null
 
   /** Follow the target across the seam of a wrapping world: move everything by a whole tile. */
   shift(dx: number, dz: number): void {
     for (const v of [this.previousPosition, this.pivot, this.desired, this.game.camera.position]) { v.x += dx; v.z += dz }
     if (this.cinematic) for (const v of [this.cinematic.position, this.cinematic.target, this.cinematic.look]) { v.x += dx; v.z += dz }
+    if (this.blend) for (const v of [this.blend.from, this.blend.own?.position]) if (v) { v.x += dx; v.z += dz }
     this.director.shift(dx, dz)
   }
 
   update(dt: number): void {
+    const blend = this.blend, camera = this.game.camera
+    // Give the chase camera back its own last pose before it updates.
+    if (blend?.own) { camera.position.copy(blend.own.position); camera.quaternion.copy(blend.own.turn); camera.fov = blend.own.fov }
+    this.follow(dt)
+    if (!blend || this.blend !== blend) return
+    if (this.cinematic) { this.blend = null; return }
+    blend.own = { position: camera.position.clone(), turn: camera.quaternion.clone(), fov: camera.fov }
+    blend.time += clamp(dt, 0, 0.25)
+    const t = clamp(blend.time / blend.length, 0, 1), w = t * t * (3 - 2 * t)
+    camera.position.lerpVectors(blend.from, blend.own.position, w)
+    // A straight line between two clear points can still cut a hill: keep the floor.
+    camera.position.y = Math.max(camera.position.y, surfaceHeight(this.terrain, camera.position.x, camera.position.z) + camClearance.value)
+    camera.quaternion.slerpQuaternions(blend.turn, blend.own.turn, w)
+    camera.fov = THREE.MathUtils.lerp(blend.fov, blend.own.fov, w); camera.updateProjectionMatrix()
+    if (t >= 1) this.blend = null
+  }
+  private follow(dt: number): void {
     // The round mapping is refreshed after this by terrain.afterCamera() (wired in main.ts),
     // so the world is bent about this frame's camera, not the last one's.
     this.direct(dt)
@@ -260,7 +295,7 @@ export class ChaseCamera implements System {
       // position: aim at where it appears. No effect on a flat world or on close shots.
       curveOffset(c.look.x, c.look.y, c.look.z, this.bend)
       camera.up.set(0, 1, 0); camera.lookAt(this.lookAt.set(c.look.x + this.bend.x, c.look.y + this.bend.y, c.look.z + this.bend.z))
-      camera.fov = THREE.MathUtils.lerp(camera.fov, 55, k); camera.updateProjectionMatrix()
+      camera.fov = THREE.MathUtils.lerp(camera.fov, c.fov ?? 55, k); camera.updateProjectionMatrix()
       return
     }
     const target = this.target

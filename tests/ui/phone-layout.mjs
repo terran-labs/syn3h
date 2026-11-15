@@ -164,14 +164,14 @@ for (const view of [{ name: 'portrait', viewport: { width: 390, height: 844 } },
   const qr = await page.evaluate(() => { const r = document.querySelector('.join-view .invite-qr').getBoundingClientRect(); return { top: r.top, bottom: r.bottom, height: innerHeight } })
   check(qr.top >= 0 && qr.bottom <= qr.height, `${view.name}: the QR code does not fit the screen (${Math.round(qr.top)} to ${Math.round(qr.bottom)} of ${qr.height})`)
   await fits('join-qr'); await page.evaluate(() => window.syn3h.shell.closeJoin())
-  // On to driving: the world's label, the name form, Enter World.
+  // On to driving: a tap on the world's label drops straight in.
   await page.evaluate(() => window.syn3h.shell.showPanel('index')); await settle('index'); await fits('index')
   // The index is the galaxy: every world's label and the links are on the screen.
   await page.waitForTimeout(1500)
   const off = await page.evaluate(() => [...document.querySelectorAll('.galaxy-label:not([hidden]), .galaxy-links button')].filter(el => { const r = el.getBoundingClientRect(); return r.left < 0 || r.right > innerWidth || r.top < 0 || r.bottom > innerHeight }).map(el => el.textContent.trim()))
   check(off.length === 0, `${view.name}: off the screen in the galaxy: ${off.join(', ')}`)
-  await page.locator('.galaxy-label[data-world=alpine]').dispatchEvent('click'); await settle('explore')
-  await page.locator('.shell-play').tap()
+  // A tap on the world is the whole way in: no form between the galaxy and the ground.
+  await page.locator('.galaxy-label[data-world=alpine]').dispatchEvent('click')
   await page.waitForFunction(() => document.querySelector('.syn3h-shell').classList.contains('is-playing') && window.syn3hNet?.connected, null, { timeout: 60000 })
   await page.waitForTimeout(2500)
   const playing = await g(), driving = await world()
