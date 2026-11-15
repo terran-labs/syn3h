@@ -954,6 +954,8 @@ export class Shell implements System {
     renderHelp(this.element.querySelector('.shell-controls')!, this.choice.vehicleKind)
   }
   /** Call after an actual spawn so query overrides and future respawns show the right controls. */
+  private muteShown: boolean | undefined
+  private gearSelect?: HTMLSelectElement
   private gearWired = false
   private gearShown = ''
   /**
@@ -962,8 +964,8 @@ export class Shell implements System {
    */
   private updateGear(): void {
     const net = (window as unknown as { syn3hNet?: { gear?: GearRack; bungee?: { attached: boolean; letGo(): void } } }).syn3hNet
-    const select = this.element.querySelector<HTMLSelectElement>('.gear-select')!
-    if (!net?.gear) { select.disabled = true; return }
+    const select = this.gearSelect ??= this.element.querySelector<HTMLSelectElement>('.gear-select')!
+    if (!net?.gear) { if (!select.disabled) select.disabled = true; return }
     if (!this.gearWired && net.bungee) {
       this.gearWired = true
       this.touch.setGear({ attached: () => net.bungee!.attached, letGo: () => net.bungee!.letGo() })
@@ -973,8 +975,8 @@ export class Shell implements System {
       this.gearShown = signature; select.replaceChildren()
       for (const id of list) { const option = document.createElement('option'); option.value = id; option.textContent = GEAR_LABELS[id]; select.append(option) }
     }
-    if (document.activeElement !== select) select.value = net.gear.current
-    this.hasSeveralGear = list.length > 1; select.disabled = !this.hasSeveralGear
+    if (select.value !== net.gear.current && document.activeElement !== select) select.value = net.gear.current
+    this.hasSeveralGear = list.length > 1; if (select.disabled === this.hasSeveralGear) select.disabled = !this.hasSeveralGear
   }
   private updateGI(): void {
     const value = Number(params.get('post.gi')?.value ?? 0)
@@ -1038,7 +1040,9 @@ export class Shell implements System {
     const hint = this.element.querySelector<HTMLElement>('.spawn-help')!
     if (!hint.hidden && hint.classList.contains('is-full')) this.hideHelp(); else this.showHelp()
   }
-  setStatus(lines: readonly string[]): void { this.board.setStatus(lines); this.hudBoard.setStatus(lines); const players = (window as unknown as {syn3hNet?:{players?:Map<number,{bot?:boolean}>}}).syn3hNet?.players; this.playerCount = players ? [...players.values()].filter(player => !player.bot).length : lines.filter(line => parseScoreRow(line)).length; this.updateInvite() }
+  setStatus(lines: readonly string[]): void { this.board.setStatus(lines); this.hudBoard.setStatus(lines); const players = (window as unknown as {syn3hNet?:{players?:Map<number,{bot?:boolean}>}}).syn3hNet?.players; const count = players ? [...players.values()].filter(player => !player.bot).length : lines.filter(line => parseScoreRow(line)).length
+    // The status arrives every frame; the invite only depends on it through the player count.
+    if (count !== this.playerCount) { this.playerCount = count; this.updateInvite() } }
   setSpeed(metresPerSecond: number): void { this.speed.textContent = String(Math.round(Math.abs(metresPerSecond) * 2.23694)) }
   update(dt = 0): void {
     if (this.attract && !this.attract.ready) {
@@ -1056,7 +1060,8 @@ export class Shell implements System {
     if (buildNotice && !this.inspector.element.contains(buildNotice)) this.inspector.element.querySelector('.wi-top')!.append(buildNotice)
     this.element.classList.toggle('show-diagnostics', diagnostics.value)
     this.element.querySelector<HTMLInputElement>('.rail-diagnostics input')!.checked = diagnostics.value
-    this.element.querySelector('.rail-mute')!.textContent = this.audio.isMuted ? 'Unmute' : 'Mute'
+    // Per-frame: touch the DOM only when the label changes.
+    if (this.audio.isMuted !== this.muteShown) { this.muteShown = this.audio.isMuted; this.element.querySelector('.rail-mute')!.textContent = this.muteShown ? 'Unmute' : 'Mute' }
     this.updateGear()
     if (this.inspector.open) this.updateGI()
     if (this.started && !this.menuVisible) {

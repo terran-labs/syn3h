@@ -7,6 +7,8 @@ export function inviteUrl(origin:string, room:string, world?:string):string {
 export class InviteView {
   readonly element=document.createElement('section')
   private url=''
+  private room:string|undefined
+  private count=-1
   constructor(parent:HTMLElement, close:()=>void, copy:()=>void) {
     this.element.className='join-view';this.element.hidden=true;this.element.setAttribute('role','dialog');this.element.setAttribute('aria-modal','true');this.element.setAttribute('aria-label','Join this room')
     this.element.innerHTML=wordmarkSvg()+'<h1>Join this room</h1><p class="join-room"></p><div class="invite-qr"></div><p class="invite-link"></p><p class="join-count"></p><div><button class="join-copy">Copy invite</button><button class="join-close">Back · J</button></div>'
@@ -14,8 +16,9 @@ export class InviteView {
   }
   update(url:string,room:string,count:number):void {
     if(url!==this.url){this.url=url;renderQr(this.element.querySelector('.invite-qr')!,url);this.element.querySelector('.invite-link')!.textContent=url}
-    this.element.querySelector('.join-room')!.textContent=room
-    this.element.querySelector('.join-count')!.textContent=`${count} ${count===1?'player':'players'} in this room`
+    // Called often; write the DOM only when the text changes.
+    if(room!==this.room){this.room=room;this.element.querySelector('.join-room')!.textContent=room}
+    if(count!==this.count){this.count=count;this.element.querySelector('.join-count')!.textContent=`${count} ${count===1?'player':'players'} in this room`}
   }
   show():void {this.element.hidden=false;this.element.querySelector<HTMLButtonElement>('.join-close')!.focus()}
   hide():void {this.element.hidden=true}
