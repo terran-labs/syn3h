@@ -3,8 +3,16 @@
 Off-road sci-fi vehicles on procedural volcanic islands, with multiplayer, running native in
 the browser.
 
-Drive a buggy with force field wings, a jet or a hovercraft up a volcano, ram your friends
-into the lava, and change the world's gravity, sky and physics while you play.
+Drive a buggy with force field wings, a jet or a hovercraft up a volcano, tag your friends
+with a beam or a nudge, and change the world's gravity, sky and physics while you play.
+
+**Play it now at [www.syn3h.com](https://www.syn3h.com/).**
+
+![Scenes from the latest Syn3h release: the lobby, the buggy and the volcano, wings in a glide, bots in pursuit, a tag beam, the jet, the hovercraft over lava, and lava at night](https://github.com/terran-labs/syn3h/releases/latest/download/syn3h-showcase.gif)
+
+The animation is captured from each production release and follows the latest one. Notes
+and screenshots for every release are on the
+[releases page](https://github.com/terran-labs/syn3h/releases).
 
 ## Run it
 
@@ -23,7 +31,7 @@ second player.
 | Drive | W A S D or arrows |
 | Wings, or hover and flight on the jet | Space |
 | Brake | Shift |
-| Fire | L or click |
+| Tag beam | L or click |
 | Camera | C |
 | Help | H |
 
