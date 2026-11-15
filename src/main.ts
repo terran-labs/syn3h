@@ -109,8 +109,8 @@ async function main(): Promise<void> {
   audio.setVehicles(() => bots.vehicles)
   let netStatus: string[] = []
   let joined = false
-  /** Set once the room is joined. Its `setProfile` tells the other players the new kind. */
-  let room: (NetHandle & { setProfile(p: { kind?: VehicleKind }): void }) | null = null
+  /** Set once the room is joined. Its `setPlayer` rebinds networking and tells the other players the new kind. */
+  let room: NetHandle | null = null
   type NetHandle = { setPlayer?: (vehicle: Vehicle) => void }
   /**
    * Change the player's vehicle where they are, without a reload: the one entry point for the
@@ -131,7 +131,6 @@ async function main(): Promise<void> {
     if (next === previous) return next
     botsHandle.setPlayer(next)
     room?.setPlayer?.(next)
-    room?.setProfile({ kind: next.kind })
     return next
   }
   const join = () => {
@@ -173,7 +172,7 @@ async function main(): Promise<void> {
       setMatchState: (m) => shell.setMatchState(m),
       names: (seed, kind) => generateName(seed, kind),
     })
-    room = connection as typeof room
+    room = connection as unknown as NetHandle
     connection.configureRaces({
       isDriving: () => shell.playing,
       setRace: (snapshot, roomNow, role) => shell.setRace(snapshot, roomNow, role),
