@@ -80,7 +80,7 @@ try {
     for (let z = zOnly ?? -half + 40; z < (zOnly === null ? half - 40 : zOnly + 1); z += 16) {
       let lo = Infinity, hi = -Infinity, wet = false, slope = 0, maxLiquid = -Infinity, nonfinite = 0, minClearance = Infinity
       const heights = []
-      for (let x = half - 90; x <= half + 240; x += 3) for (const dz of [-10, -5, 0, 6, 11, 16]) {
+      for (let x = half - 90; x <= half + 132; x += 3) for (const dz of [-10, -5, 0, 6, 11, 16]) {
         const y = t.heightAt(x, z + dz), liquid = t.liquidHeightAt(x, z + dz)
         heights.push(y)
         maxLiquid = Math.max(maxLiquid, liquid)
@@ -230,7 +230,7 @@ try {
   }
   const saveStage = (name, left, right) => {
     raw.stages.push({ name, left, right })
-    const valid = [left, right].every(log => log.length > 1 && log.every(e => e.teleports === log[0].teleports && e.ground > e.liquid + 1 && Math.abs(wrapDelta(lane.z, e.z)) < 20))
+    const valid = [left, right].every(log => log.length > 1 && log.every(e => e.teleports === log[0].teleports && e.ground > e.liquid + 1 && wrapDelta(half, e.x) >= -90 && wrapDelta(half, e.x) <= 130 && wrapDelta(lane.z, e.z) >= -10 && wrapDelta(lane.z, e.z) <= 16))
     check(`${name}. fixture stayed dry without recovery teleports or lane escape`, valid, {})
   }
 
