@@ -21,9 +21,12 @@ describe('indestructible viscous lava',()=>{
   h.step(v,250)
   expect(v.body.translation().y).toBeCloseTo(3.55,1)
   expect(Math.abs(v.body.linvel().y)).toBeLessThan(.1)
-  expect(Math.abs(v.body.linvel().z)).toBeLessThan(2)
-  expect(v.lavaDepth).toBeGreaterThan(.3);expect(v.stuck).toBe(true)
+ // Owner, 15 November 2026: "I should be able to drive in lava. It should feel slow and sticky, but not like it's trapping me."
+ // Was: under 2 m/s and stuck at full throttle. Now a slow wade (2 to 4 m/s), stuck only once the throttle is released.
+  expect(Math.abs(v.body.linvel().z)).toBeGreaterThan(2);expect(Math.abs(v.body.linvel().z)).toBeLessThan(4)
+  expect(v.lavaDepth).toBeGreaterThan(.3);expect(v.stuck).toBe(false)
   const z=v.body.translation().z;h.step(v,100);expect(v.body.translation().z).toBeLessThan(z-.1)
+  v.input.y=0;v.input.z=0;h.step(v,60);expect(v.stuck).toBe(true)
   expect(v.liquidState.heat).toBe(1)
   v.dispose();h.world.free()
  })

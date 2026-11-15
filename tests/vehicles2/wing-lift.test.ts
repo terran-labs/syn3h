@@ -7,19 +7,23 @@ import {harness} from './harness'
 beforeAll(initPhysics)
 afterEach(()=>{for(const p of params.all())params.set(p.def.id,p.def.default)})
 for(const [name,Kind] of [['syn3h',Syn3hBuggy]] as const)for(const liquid of ['lava','water'] as const){
- it(`${name} wings escape deep ${liquid}, retaining lava heat`,()=>{
+ it(`${name} wings push along the nose in deep ${liquid}, retaining lava heat`,()=>{
   const h=harness();h.terrain.liquidHeightAt=()=>10;h.terrain.liquidKindAt=()=>liquid
   const v=new Kind(h.game,h.terrain,new T.Vector3(0,7,0));v.isLocal=false
   try{
    h.step(v,100);expect(v.canLiftOut).toBe(true)
    v.input.special=true;let peak=-Infinity;for(let i=0;i<150;i++){h.step(v);peak=Math.max(peak,v.body.translation().y);if(Number.isFinite(v.liquidState.wingLiftSurface)){const velocity=v.body.linvel();expect(Math.hypot(velocity.x,velocity.z)).toBeLessThanOrEqual(6.01)}}
    expect(v.wingsOpen).toBe(true);expect(v.canLiftOut).toBe(false)
-   expect(peak).toBeGreaterThan(16)
-   expect(v.body.translation().y).toBeGreaterThan(11)
+   // Owner, 15 November 2026: "Tapping spacebar to lift out of water or lava shouldn't automatically hover me straight up. It should instead push me in whatever direction my vehicle is facing."
+   // Was: peak above 16 and above 11 after 3 s (a vertical lift to 10 m above the surface). Now a level buggy surges forward and stays in or near the liquid.
+   expect(-v.body.translation().z).toBeGreaterThan(4)
+   expect(peak).toBeLessThan(11)
    expect(v.stuck).toBe(false)
    if(liquid==='water')expect(v.liquidState.heat).toBe(0)
    if(liquid==='lava')expect(v.liquidState.heat).toBeGreaterThan(.8)
-   h.step(v,250);expect(v.body.translation().y).toBeGreaterThan(19);expect(v.body.translation().y).toBeLessThan(21)
+   // Owner, 15 November 2026: "Tapping spacebar to lift out of water or lava shouldn't automatically hover me straight up. It should instead push me in whatever direction my vehicle is facing."
+   // Was: held between 19 and 21 m (the field's hover height). Now no hover: still below 1 m above the surface.
+   h.step(v,250);expect(v.body.translation().y).toBeLessThan(11)
    v.teleport(new T.Vector3(0,25,0));expect(v.liquidState.wingLiftSurface).toBe(-Infinity)
   }finally{v.dispose();h.world.free()}
  })

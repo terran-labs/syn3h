@@ -497,7 +497,9 @@ describe('Syn3hBuggy', () => {
     for (let i = 0; i < 2; i++) {
       const z0 = pos(b).z
       b.input.y = 1
-      bed.run(5)
+      // Owner, 15 November 2026: "I should be able to drive in lava. It should feel slow and sticky, but not like it's trapping me."
+      // Was: 5 s of throttle per push, which at the old 0.4 m/s crawl stayed inside this 30 m pool; at about 3 m/s two pushes of 2 s do.
+      bed.run(2)
       expect(z0 - pos(b).z).toBeGreaterThan(1)
       b.input.y = 0
       bed.run(3)
@@ -510,7 +512,9 @@ describe('Syn3hBuggy', () => {
     expect(b.wheelsGrounded).toBe(0)
     b.input.y = 1
     let motorMax = 0
-    bed.run(20, () => { motorMax = Math.max(motorMax, Math.abs(b.motorSpeed)) })
+    // Owner, 15 November 2026: "I should be able to drive in lava. It should feel slow and sticky, but not like it's trapping me."
+    // Was: 20 s of throttle, which at about 3 m/s carries it out of this 30 m pool onto dry ground; 4 s keeps it floating in the lava.
+    bed.run(4, () => { motorMax = Math.max(motorMax, Math.abs(b.motorSpeed)) })
     expect(motorMax).toBeLessThan(15)
     expect(-pos(b).z).toBeGreaterThan(3)
   })

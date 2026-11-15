@@ -18,14 +18,16 @@ describe.each(GRAVITIES)('shared vehicle behaviour under %s gravity',(_name,g)=>
     expect(low,`${kind} afterwards`).toBeGreaterThan(-.3)}finally{v.dispose();h.world.free()}
   }
  })
- it('wings lift a buggy clear of water and hold it about ten metres up',()=>{
+ it('wings push a nose-up buggy clear of water along its nose',()=>{
   const h=harness(g);h.terrain.liquidHeightAt=()=>10;h.terrain.liquidKindAt=()=>'water'
   const v=createVehicle(h.game,h.terrain,'buggy',new T.Vector3(0,9.5,0),0);v.isLocal=false
-  try{h.step(v,100);v.input.special=true
-   let clearAt=-1,peak=-Infinity;for(let i=0;i<400;i++){h.step(v);const y=v.body.translation().y;if(clearAt<0&&y>11)clearAt=i;if(i>250)peak=Math.max(peak,y)}
-   // Clear of the surface by a metre within a second, then held near the field's height, not drifting off.
-   expect(clearAt).toBeGreaterThan(-1);expect(clearAt*.02).toBeLessThan(1)
-   expect(peak).toBeGreaterThan(18);expect(peak).toBeLessThan(22)}finally{v.dispose();h.world.free()}
+  try{h.step(v,100);v.body.setRotation(new T.Quaternion().setFromAxisAngle(new T.Vector3(1,0,0),20*Math.PI/180),true);v.input.special=true
+   let clearAt=-1,peak=-Infinity,clearZ=0;for(let i=0;i<400;i++){h.step(v);const y=v.body.translation().y;if(clearAt<0&&y>11){clearAt=i;clearZ=-v.body.translation().z};if(i>250)peak=Math.max(peak,y)}
+   // Owner, 15 November 2026: "Tapping spacebar to lift out of water or lava shouldn't automatically hover me straight up. It should instead push me in whatever direction my vehicle is facing."
+   // Was: level buggy clear by a metre within 1 s, then held 18 to 22 m up by the field. Now raised 20 degrees: clear within 3 s, moving forward more than up, and not held at the old field height.
+   expect(clearAt).toBeGreaterThan(-1);expect(clearAt*.02).toBeLessThan(3)
+   expect(clearZ).toBeGreaterThan(1)
+   expect(peak).toBeLessThan(18)}finally{v.dispose();h.world.free()}
  })
  it('a buggy stuck on its roof is set upright after three seconds',()=>{
   const h=harness(g),v=createVehicle(h.game,h.terrain,'buggy',new T.Vector3(0,1.2,0),0);v.isLocal=true

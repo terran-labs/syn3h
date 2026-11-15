@@ -69,14 +69,15 @@ describe('a whole tile shift at a seam leaves a vehicle undisturbed',()=>{
   const h=harness(),v=make(h,'buggy',40);v.input.special=true
   try{const r=cross(h,v,0,TILE,40);expect(r.before.wings).toBe(true);expectUndisturbed('wings',r,0,TILE)}finally{v.dispose();h.world.free()}
  })
- for(const liquid of ['water','lava'] as const)it(`a buggy lifting out of ${liquid} on its wings keeps the field's surface and climb`,()=>{
+ for(const liquid of ['water','lava'] as const)it(`a buggy pushing through ${liquid} on its wings crosses undisturbed`,()=>{
   const h=harness();h.terrain.liquidHeightAt=()=>10;h.terrain.liquidKindAt=()=>liquid
   const v=make(h,'buggy',9.5)
   try{
-   // The field owns the buggy's motion: at most 6 m/s, along its nose. So cross the seam it
-   // is facing (north, -Z), from close by.
+   // Open wings push along the nose, so cross the seam it is facing (north, -Z), from close by.
    const r=cross(h,v,0,TILE,100,()=>{v.input.special=true;v.input.y=1;h.step(v,12)},1)
-   expect(Number.isFinite(r.before.lift),'field armed before the seam').toBe(true)
+   // Owner, 15 November 2026: "Tapping spacebar to lift out of water or lava shouldn't automatically hover me straight up. It should instead push me in whatever direction my vehicle is facing."
+   // Was: the vertical escape field armed before the seam. Now: wings open with the hull in the liquid.
+   expect(r.before.wings,'wings open before the seam').toBe(true);expect(r.before.y,'in the liquid before the seam').toBeLessThan(10.25)
    expect(r.after.lift).toBe(r.before.lift);expect(Math.abs(r.after.liftSpeed-r.before.liftSpeed)).toBeLessThan(.6)
    expectUndisturbed(`lift ${liquid}`,r,0,TILE)
   }finally{v.dispose();h.world.free()}
