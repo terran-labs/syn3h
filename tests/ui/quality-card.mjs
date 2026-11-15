@@ -85,8 +85,8 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     await press(auto); await page.waitForFunction(was => syn3h.game.quality.getQualityState().auto !== was, autoBefore)
     assert.equal(await auto.isChecked(), !autoBefore)
     // Card summaries refresh on the next shell frame, after the control subscription.
-    await page.waitForFunction(expected => /· Auto$/.test(document.querySelector('.wi-card[data-section=performance] .wi-head .wi-sum').textContent) === expected, !autoBefore)
-    assert.equal(/· Auto$/.test(await card.locator('.wi-head .wi-sum').innerText()), !autoBefore, 'the summary says Auto when automatic')
+    await page.waitForFunction(expected => /· Auto on/.test(document.querySelector('.wi-card[data-section=performance] .wi-head .wi-sum').textContent) === expected, !autoBefore)
+    assert.equal(/· Auto on/.test(await card.locator('.wi-head .wi-sum').innerText()), !autoBefore, 'the summary says Auto when automatic')
     if (!autoBefore) { await press(auto); await page.waitForFunction(() => !syn3h.game.quality.getQualityState().auto) }
     // Hold the level for the rest of the checks, so the governor cannot move it underneath them.
     if ((await state(page)).auto) { await press(auto); await page.waitForFunction(() => !syn3h.game.quality.getQualityState().auto) }

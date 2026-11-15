@@ -6,8 +6,6 @@ import type { PropertyDef } from './inspector/model'
 
 const number = (value: number | undefined, digits = 1) => value !== undefined && Number.isFinite(value) ? value.toFixed(digits) : 'Unavailable'
 
-/** What the governor is easing inside a level, in the player's words. */
-const EASING = { post: 'easing post effects', resolution: 'easing resolution' } as const
 /** The level row and Auto drive these; they never appear as rows of their own. */
 const LEVEL_IDS = ['gfx.quality', 'gfx.auto', 'gfx.level']
 /** Two chevrons, drawn as one stroked path: pointing down for a lower level, up for a higher one. */
@@ -44,7 +42,7 @@ export class PerformancePanel {
   private readonly select: HTMLSelectElement
   private readonly diagnostics: HTMLDetailsElement
 
-  constructor(parent: HTMLElement, private readonly openRail: () => void, quality?: QualitySource, private readonly inspector?: Inspector) {
+  constructor(_parent: HTMLElement, private readonly openRail: () => void, quality?: QualitySource, private readonly inspector?: Inspector) {
     const signal = this.abort.signal
     this.element.className = 'performance-card'
     this.element.innerHTML = `<div class="wi-level" role="group" aria-label="Quality level">
@@ -64,7 +62,7 @@ export class PerformancePanel {
     this.recommendation.className = 'performance-recommendation'; this.recommendation.hidden = true
     this.recommendation.setAttribute('role', 'status')
     this.recommendation.innerHTML = '<p></p><button type="button" data-performance="ignore">Ignore</button><button type="button" data-performance="lower">Lower level</button>'
-    parent.append(this.recommendation)
+    this.element.querySelector('.performance-quality')!.after(this.recommendation)
     this.select.addEventListener('change', () => this.quality?.setLevel(Number(this.select.value)), { signal })
     this.element.querySelector('.wi-auto input')!.addEventListener('change', event => this.quality?.setAuto((event.target as HTMLInputElement).checked), { signal })
     this.element.querySelector('[data-quality=down]')!.addEventListener('click', () => this.quality?.stepDown(), { signal })
@@ -76,7 +74,7 @@ export class PerformancePanel {
     this.recommendation.querySelector('[data-performance=lower]')!.addEventListener('click', () => this.source?.lowerRecommendedTier(), { signal })
     this.element.querySelector('[data-performance=reload]')!.addEventListener('click', () => location.reload(), { signal })
     if (quality) this.configureQuality(quality)
-    inspector?.addCard(PerformancePanel.CARD, 'Performance', this.element, () => this.state ? `${this.state.name}${this.state.auto ? ' · Auto' : ''}` : '',
+    inspector?.addCard(PerformancePanel.CARD, 'Performance', this.element, () => this.state ? `${this.state.name} · Auto ${this.state.auto ? 'on' : 'off'}${this.snapshot?.recommendation ? ' · Running slow' : ''}` : '',
       { after: 'sky', owns: () => this.owned(), fill: () => this.fill() })
   }
 
@@ -167,13 +165,16 @@ export class PerformancePanel {
     return this.quality?.qualityLevels.find(level => level.index === index)?.name ?? QUALITY[index]?.name ?? `Level ${index + 1}`
   }
 
-  /** "Ultra, easing resolution · 60 fps target · chosen level". */
+  /** Show the chosen level, automation and reductions without requiring the diagnostics fold. */
   private renderStatus(): void {
-    const state = this.state, target = this.snapshot?.quality.targetFps
-    const name = state ? `${state.name}${state.easing ? `, ${EASING[state.easing]}` : ''}` : this.snapshot ? this.levelName(this.snapshot.quality.level) : ''
-    // A chosen level is pinned: the governor eases inside it but never leaves it.
-    const how = state ? state.pinned ? 'chosen level' : state.auto ? 'automatic' : '' : this.snapshot?.levelPinned ? 'chosen level' : ''
-    this.element.querySelector('.performance-quality')!.textContent = [name, target ? `${target} fps target` : '', how].filter(Boolean).join(' · ')
+    const state = this.state, snapshot = this.snapshot
+    const name = state?.name ?? (snapshot ? this.levelName(snapshot.quality.level) : '')
+    const auto = state?.auto ?? snapshot?.quality.auto
+    const pinned = state?.pinned ?? snapshot?.levelPinned
+    const easing = state?.easing ?? (snapshot && snapshot.quality.rung > 0 ? snapshot.quality.kind : null)
+    const reduction = easing === 'post' ? 'Post effects reduced automatically' : easing === 'resolution' ? 'Resolution reduced automatically' : 'Full resolution and post budget'
+    this.element.querySelector('.performance-quality')!.textContent = [name, auto === undefined ? '' : `Auto ${auto ? 'on' : 'off'}`, pinned === undefined ? '' : pinned ? 'Pinned' : 'Not pinned', reduction, snapshot ? `${snapshot.quality.targetFps} fps target` : ''].filter(Boolean).join(' · ')
+
   }
 
   private showRecommendation(): void {
@@ -189,7 +190,11 @@ export class PerformancePanel {
     this.wasVisible = snapshot.visible
     this.showRecommendation()
     const offer = snapshot.recommendation
-    if (offer) this.recommendation.querySelector('p')!.textContent = `Rendering is slow (${number(offer.observedFps, 0)} fps). Try the ${this.levelName(offer.targetLevel)} level?`
+    if (offer) {
+      this.recommendation.querySelector('p')!.textContent = `Running slow at ${this.levelName(offer.level)} (${number(offer.observedFps, 0)} fps). Switch to ${this.levelName(offer.targetLevel)}?`
+      this.recommendation.querySelector('[data-performance=lower]')!.textContent = `Switch to ${this.levelName(offer.targetLevel)}`
+      this.recommendation.querySelector('[data-performance=ignore]')!.textContent = `Keep ${this.levelName(offer.level)}`
+    }
     this.renderStatus()
     if (!snapshot.visible) return
     const { environment } = snapshot

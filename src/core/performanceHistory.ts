@@ -1,7 +1,7 @@
 import type { EffectiveQuality, FrameMetrics, GraphicsLevel } from './quality'
 import type { PerformanceLongFrames, PerformancePipelines, PerformancePoint, PerformanceRecommendation } from './performance'
 
-export const PERFORMANCE_POLICY = Object.freeze({ historyPoints: 120, windowMs: 1000, warmupMs: 5000, slowMs: 12000, slowRatio: .8, interruptedMs: 1000, maxWindowFrames: 2048 })
+export const PERFORMANCE_POLICY = Object.freeze({ historyPoints: 120, windowMs: 1000, warmupMs: 5000, slowMs: 10000, slowRatio: .8, interruptedMs: 1000, maxWindowFrames: 2048 })
 export const RECOMMENDATION_IGNORE_KEY = 'syn3h.performance.ignore'
 /**
  * Counts pipeline objects by identity from the renderer's own cache, read once per frame. A size
@@ -93,8 +93,11 @@ export class PerformanceHistory {
     if (this.points.length > PERFORMANCE_POLICY.historyPoints) this.points.shift()
     this.warmup += this.elapsed
     const fps = 1000/point.frameMs
-    if (this.warmup > PERFORMANCE_POLICY.warmupMs) this.slow = fps < quality.targetFps*PERFORMANCE_POLICY.slowRatio ? this.slow+this.elapsed : 0
-    this.recommendation = !this.ignored && quality.level > 0 && this.slow >= PERFORMANCE_POLICY.slowMs
+    // Match the governor's p90 pressure test. Let Auto exhaust its cheap sheds first.
+    const exhausted = !quality.auto || quality.rung === quality.rungs - 1
+    const slow = point.p90Ms > 1000 / quality.targetFps / PERFORMANCE_POLICY.slowRatio
+    this.slow = exhausted && slow ? this.slow + this.elapsed : 0
+    this.recommendation = !this.ignored && quality.level > 0 && this.warmup >= PERFORMANCE_POLICY.warmupMs && this.slow >= PERFORMANCE_POLICY.slowMs
       ? Object.freeze({ level: quality.level, targetLevel: (quality.level-1) as GraphicsLevel, observedFps: fps }) : null
     this.frames = []; this.elapsed = this.physics = this.draws = this.triangles = this.stalls = 0
     this.pipelineWindow = this.pipelines ? 0 : null
