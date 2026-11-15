@@ -3,23 +3,18 @@
   "inProgress": [
     {
       "state": "active",
-      "title": "Interface and lobby redesign",
-      "detail": "The owner's fine-line interface and lobby redesign is underway in the UX lane."
+      "title": "Performance controls",
+      "detail": "The direct lobby panels are live. The governor and clearer slow-rendering prompt are being validated separately."
     },
     {
       "state": "active",
-      "title": "Tank and hovercraft designs",
-      "detail": "Ten new tank studies are authorised after round six was rejected. No tank or hovercraft production design is selected yet."
-    },
-    {
-      "state": "waiting",
-      "title": "Changes withdrawn with v26.11.1507",
-      "detail": "The materialization hold, Jet settling and gear changes stay out of releases while their diagnosis continues."
+      "title": "Restoring switch and gear effects",
+      "detail": "Both control and withdrawn builds passed twice on a quiet machine. The restored assembly now needs its full gate and public acceptance."
     },
     {
       "state": "next",
-      "title": "Deferred",
-      "detail": "Smooth near-camera ground. Water transparency from above is not implemented."
+      "title": "Vehicle and world follow-ups",
+      "detail": "Jet throttle and motion, bot formation, satellites, liquid physics and post effects remain separate tested handoffs."
     }
   ],
   "decisions": [
@@ -37,7 +32,7 @@
   "knownIssues": [
     {
       "title": "Physical devices still need review",
-      "detail": "Automated Chrome and WebKit checks do not establish performance, listening quality or QR entry on the owner’s phone or iPad."
+      "detail": "Automated Chrome and WebKit checks do not establish performance, listening quality or QR entry on the owner\u2019s phone or iPad."
     },
     {
       "title": "Water is opaque from above",

@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-15 15:30 PST. The owner withdrew the afternoon cutoff.
+Last verified: 2026-11-15 15:45 PST. The owner withdrew the afternoon cutoff.
 
 ## Authority and release order
 
@@ -17,11 +17,11 @@ GIF before marking a release Latest; publish notes with the frozen playable link
 
 ## Production
 
-Accepted release: v26.11.1511 (release-15), source cb1fd0d, at https://www.syn3h.com/.
-The idle volcano tour is deleted. Typecheck and 404 UI/core tests passed. Both public
-addresses passed exact, multiplayer and frozen checks. The galaxy remained visible for
-forty seconds without input, then a planet tap landed successfully. The trailing Chrome
-and WebKit vehicle matrix passed all eight cases. Notes, GIF, tags and trunk are published.
+Accepted release: v26.11.1512 (release-16), source 84932bd9, at https://www.syn3h.com/.
+Lobby buttons open their target panels directly, with corrected footer spacing. Typecheck
+and 407 UI/core tests passed. Both public addresses passed exact, multiplayer and frozen
+checks. The Chrome and WebKit vehicle matrix passed all eight cases without errors.
+The idle volcano tour remains deleted.
 
 v26.11.1510 was live and superseded without its own vehicle matrix by explicit owner
 waiver; the trailing 1511 matrix covers its sidebar and wingtip changes. Do not infer
@@ -29,13 +29,11 @@ acceptance from a tag alone. The showcase still predates the Tank paint and side
 
 ## Current queue
 
-1. v26.11.1512: direct lobby panels and spacing. Include governor/default changes only
-   if independently green, without delaying the lobby fix.
-2. v26.11.1513: restore materialization hold/drop, Jet settling, local input/tag guards,
+1. v26.11.1513: restore materialization hold/drop, Jet settling, local input/tag guards,
    gear visuals and cues, remote cosmetic arrival, and switch/Zorb audio if its game check
    passes. Vehicles and Weapons recheck the assembly. Run local network smoke on the
    frozen candidate before deployment, then the full public gate with automatic rollback.
-3. Ship later owner-visible handoffs on demand: Jet throttle and motion, duckling formation,
+2. Ship later owner-visible handoffs on demand: Jet throttle and motion, duckling formation,
    controls/FPS, room-full fallback, satellites, liquid physics and Post single-pass work.
 
 The withdrawn 1507 build and the accepted 1506 control each passed two quiet local network

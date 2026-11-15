@@ -1,71 +1,71 @@
 {
-  "generatedAt": "2026-11-15T23:30:43.996Z",
+  "generatedAt": "2026-11-15T23:44:01.964Z",
   "commits": {
-    "total": 1482,
-    "last48h": 1482,
-    "merges": 454
+    "total": 1487,
+    "last48h": 1487,
+    "merges": 455
   },
   "pullRequests": {
     "count": 0,
     "merged": 0,
-    "mergedDirectly": 454,
+    "mergedDirectly": 455,
     "note": "Lanes merge branches directly; few changes went through pull requests."
   },
   "releases": {
-    "production": 13,
-    "today": 11,
+    "production": 14,
+    "today": 12,
     "withdrawn": 1,
-    "newest": "v26.11.1511",
-    "newestAt": "2026-11-15 15:17 PST"
+    "newest": "v26.11.1512",
+    "newestAt": "2026-11-15 15:44 PST"
   },
   "code": {
     "sourceFiles": 314,
-    "lines": 59003,
-    "testFiles": 214,
+    "lines": 59006,
+    "testFiles": 215,
     "params": 301
   },
   "tokens": {
     "stale": false,
-    "countedAt": "2026-11-15T23:30:43.996Z",
+    "countedAt": "2026-11-15T23:44:01.964Z",
     "claude": {
-      "input": 28284,
-      "output": 14054602,
-      "cacheRead": 3762470717,
-      "cacheWrite": 39467612,
-      "total": 3816021215,
+      "input": 28452,
+      "output": 14077232,
+      "cacheRead": 3781387159,
+      "cacheWrite": 39513353,
+      "total": 3835006196,
       "sessions": 99,
-      "messages": 12348
+      "messages": 12405
     },
     "codex": {
-      "input": 20401961,
-      "output": 3501178,
-      "cacheRead": 1526403456,
+      "input": 21424958,
+      "output": 3543657,
+      "cacheRead": 1552739968,
       "cacheWrite": 0,
-      "reasoning": 860851,
-      "total": 1550306595,
+      "reasoning": 869652,
+      "total": 1577708583,
       "sessions": 39
     },
-    "total": 5366327810,
+    "total": 5412714779,
     "firstSessionAt": "2026-11-14T21:41:39.778Z",
-    "hours": 25.8,
-    "perHour": 207853490
+    "hours": 26,
+    "perHour": 207865573
   },
   "price": {
-    "low": 1542,
-    "high": 1739,
+    "low": 1547,
+    "high": 1744,
     "currency": "USD",
     "models": [
       {
         "model": "Claude Opus 5.5",
-        "tokens": 807599182,
-        "low": 325,
-        "high": 365
+        "tokens": 813845565,
+        "low": 327,
+        "high": 367
       },
       {
         "model": "Claude Fable 5.2",
-        "tokens": 3008422033,
-        "low": 1217,
-        "high": 1375
+        "tokens": 3021160631,
+        "low": 1220,
+        "high": 1378
       }
     ],
     "unpricedTokens": 0,
