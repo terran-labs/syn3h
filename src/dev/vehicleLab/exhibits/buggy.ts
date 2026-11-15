@@ -23,8 +23,11 @@ import type { LabControl, LabDesignInfo, LabExhibit, LabModel, LabState } from '
 
 const MODELS = '/labs/buggy-bodies'
 const WHEEL_INDEX = '/labs/buggy-wheels/index.json'
-/** The round 1 body the owner picked as the base for round 2. */
-const PICKED = 'v4-widebody'
+/**
+ * The round 1 body the owner picked as the base for round 2. Older index files mark no picks, so
+ * it carries into later rounds by rule; see carryOver.
+ */
+const LEGACY_PICK = 'v4-widebody'
 
 /** Wheel hubs at rest in the game frame (nose at -Z): Syn3hBuggy WHEEL_POS at ride height. */
 const HUBS = [[-1.1, -.19, -1.3], [1.1, -.19, -1.3], [-1.1, -.19, 1.3], [1.1, -.19, 1.3]].map(p => new THREE.Vector3(...p))
@@ -40,7 +43,13 @@ const EYE = new THREE.Vector3(0, .95, 0)
 /** Suspension travel shown by Motion, metres either side of rest (the game allows 0.4 m in all). */
 const TRAVEL = .12
 
-interface BodyEntry { id: string; name: string; notes: string[]; file: string; triangles: number; round: number; gameResolution?: boolean }
+export interface BodyEntry {
+  id: string; name: string; notes: string[]; file: string; triangles: number; round: number; gameResolution?: boolean
+  /** Later rounds this body also appears in, first in the list: the pick those rounds build on. */
+  alsoIn?: (string | number)[]
+  /** The body this one was built on, by id (or a plain name). Shown in the notes and the round heading. */
+  basedOn?: string
+}
 interface WheelEntry { id: string; name: string; file: string; notes?: string[] }
 
 const loader = new GLTFLoader()
@@ -326,6 +335,32 @@ class WheelSet {
 let index: Promise<BodyEntry[]> | undefined
 const bodies = () => index ??= fetch(`${MODELS}/index.json`).then(r => r.json() as Promise<BodyEntry[]>)
 
+/**
+ * Which picks carry into which rounds, and what each round was built on. An entry's `alsoIn`
+ * names the rounds it carries into. Without any marks the legacy pick (Wide body) carries into
+ * every later round before the first round that has a marked pick of its own. A round's basis
+ * is the name of the body its entries are `basedOn`, else the name of the pick carried into it.
+ */
+export function carryOver(entries: BodyEntry[]): { alsoIn: Map<string, string[]>; basis: Map<string, string> } {
+  const alsoIn = new Map<string, string[]>()
+  for (const e of entries) if (e.alsoIn?.length) alsoIn.set(e.id, e.alsoIn.map(String))
+  const legacy = entries.find(e => e.id === LEGACY_PICK)
+  if (legacy && !legacy.alsoIn) {
+    const marked = [...alsoIn.values()].flat().map(Number).filter(Number.isFinite)
+    const stop = marked.length ? Math.min(...marked) : Infinity
+    const later = [...new Set(entries.map(e => e.round))].filter(r => r > legacy.round && r < stop).sort((a, b) => a - b)
+    if (later.length) alsoIn.set(legacy.id, later.map(String))
+  }
+  const basis = new Map<string, string>()
+  const nameOf = (id: string) => entries.find(e => e.id === id)?.name ?? id
+  for (const e of entries) if (e.basedOn && !basis.has(String(e.round))) basis.set(String(e.round), nameOf(e.basedOn))
+  for (const [id, rounds] of alsoIn) for (const r of rounds) if (!basis.has(r)) basis.set(r, nameOf(id))
+  return { alsoIn, basis }
+}
+
+/** Set by designs(): the carry-over plan, for the heading and the default design. */
+let plan: { entries: BodyEntry[]; basis: Map<string, string> } | undefined
+
 /** Headlight centres left and right, from the lamp faces' vertices. */
 function lampCentres(root: THREE.Object3D, materials: THREE.Material[]): THREE.Vector3[] {
   const sums = [new THREE.Vector3(), new THREE.Vector3()], counts = [0, 0], v = new THREE.Vector3()
@@ -340,23 +375,31 @@ function lampCentres(root: THREE.Object3D, materials: THREE.Material[]): THREE.V
 
 export const buggy: LabExhibit = {
   id: 'buggy',
-  title: 'Syn3h buggy bodies',
+  title: 'Next Syn3h buggy',
+  section: 'Design studies',
+  order: 1,
   groupLabel: 'Round',
-  heading: group => group === '1' || group === undefined ? 'Syn3h buggy: five body variations' : `Syn3h buggy: round ${group}, built on Wide body`,
-  // Open on the first new design of a round, not on the carried-over pick.
-  defaultDesign: group => group === '3' ? 'r1-blade' : group === '2' ? 'w1-flared' : undefined,
+  // Body studies, not the game's buggy: the in-game physics parameters do nothing here.
+  paramGroups: [],
+  heading(group) {
+    const basis = group === undefined ? undefined : plan?.basis.get(group)
+    return basis ? `Next Syn3h buggy: round ${group}, built on ${basis}` : `Next Syn3h buggy: round ${group ?? 1} body studies`
+  },
+  // A round opens on its first new design, not on the pick carried into it.
+  defaultDesign: group => plan?.entries.find(e => String(e.round) === group)?.id,
 
   async designs(): Promise<LabDesignInfo[]> {
     const all = await bodies()
-    const latest = Math.max(...all.map(b => b.round))
+    const { alsoIn, basis } = carryOver(all)
+    plan = { entries: all, basis }
+    const nameOf = (id: string) => all.find(e => e.id === id)?.name ?? id
     return all.map(b => {
       const notes = [...b.notes]
+      if (b.basedOn) notes.unshift(`Built on ${nameOf(b.basedOn)}`)
       if (b.gameResolution !== undefined) notes.push(`${b.triangles.toLocaleString('en-GB')} body triangles: ${b.gameResolution ? 'ships at this detail' : 'smoothed for review, not game detail'}`)
-      if (b.id === PICKED) notes.unshift('Your round 1 pick; later rounds build on it')
-      return {
-        id: b.id, name: b.name, notes, group: String(b.round),
-        alsoIn: b.id === PICKED ? Array.from({ length: latest - b.round }, (_, i) => String(b.round + i + 1)) : undefined,
-      }
+      const carried = alsoIn.get(b.id)
+      if (carried) notes.unshift(`Your round ${b.round} pick; round ${carried.join(', ')} ${carried.length > 1 ? 'build' : 'builds'} on it`)
+      return { id: b.id, name: b.name, notes, group: String(b.round), alsoIn: carried }
     })
   },
 
@@ -402,11 +445,11 @@ export const buggy: LabExhibit = {
     let lastState: LabState | undefined
 
     const canopyControl: LabControl = {
-      kind: 'cycle', id: 'buggy.canopy', label: 'Canopy', options: ['Force field', 'Glass'], index: 0,
+      kind: 'cycle', id: 'buggy.canopy', label: 'Canopy', group: 'Canopy', options: ['Force field', 'Glass'], index: 0,
       onChange(i) { setCanopy(i === 0) },
     }
     const controls: LabControl[] = wheelChoices.length < 2 ? [canopyControl] : [canopyControl, {
-      kind: 'cycle', id: 'buggy.wheels', label: 'Wheels', options: wheelChoices.map(w => w.name), index: choice,
+      kind: 'cycle', id: 'buggy.wheels', label: 'Tyres', group: 'Wheels', options: wheelChoices.map(w => w.name), index: choice,
       onChange(i) {
         choice = i
         void wheelChoices[i].load().then(parts => {
