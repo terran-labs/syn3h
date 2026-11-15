@@ -3,11 +3,10 @@ import * as T from 'three/webgpu'
 import {initPhysics} from '../../src/core/physics'
 import {params} from '../../shared/params'
 import {Syn3hBuggy} from '../../src/vehicles/Syn3hBuggy'
-import {ClassicBuggy} from '../../src/vehicles/ClassicBuggy'
 import {harness} from './harness'
 beforeAll(initPhysics)
 afterEach(()=>{for(const p of params.all())params.set(p.def.id,p.def.default)})
-for(const [name,Kind] of [['syn3h',Syn3hBuggy],['classic',ClassicBuggy]] as const)for(const liquid of ['lava','water'] as const){
+for(const [name,Kind] of [['syn3h',Syn3hBuggy]] as const)for(const liquid of ['lava','water'] as const){
  it(`${name} wings escape deep ${liquid}, retaining lava heat`,()=>{
   const h=harness();h.terrain.liquidHeightAt=()=>10;h.terrain.liquidKindAt=()=>liquid
   const v=new Kind(h.game,h.terrain,new T.Vector3(0,7,0));v.isLocal=false

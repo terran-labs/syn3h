@@ -19,7 +19,7 @@ try{
  const start=Date.now(),samples=[]
  for(let i=0;Date.now()-start<Number(process.env.AUDIO_TEST_MS??300000);i++){
   await page.evaluate(i=>{
-   const {audio,terrain,game}=syn3h,kinds=['buggy-syn3h','buggy-classic','jet','hovercraft','tank']
+   const {audio,terrain,game}=syn3h,kinds=['buggy-syn3h','jet','hovercraft','tank']
    const fake=(index)=>({kind:kinds[(i+index)%kinds.length],object:{position:game.camera.position.clone().addScalar(index*3)},body:{isValid:()=>true,linvel:()=>({x:20,y:0,z:10})},input:{y:1,z:.8},wheelsGrounded:i%3?4:0,wingsOpen:i%3===0,landedThisStep:false,landingImpact:8,getWheelEffects:()=>[{grounded:true,slip:5}]})
    audio.setPlayer(fake(0),terrain);audio.setVehicles(()=>Array.from({length:12},(_,n)=>fake(n+1)));audio.enabled=true
    for(const cue of ['capture','contested','lost','win','tick','tag','join','leave','click','deploy','retract','lava'])audio.cue(cue)

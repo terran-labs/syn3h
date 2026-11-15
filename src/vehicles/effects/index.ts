@@ -120,14 +120,13 @@ class VehicleEffects {
   private readonly unlisten?:()=>void
   private readonly onTileShift:(e:TileShiftEvent)=>void
   private readonly buggy:boolean
-  private readonly classic:boolean
   constructor(private readonly world:EffectWorld,private readonly terrain:Terrain,private readonly vehicle:EffectsVehicle,local:boolean){
-    this.buggy=vehicle.kind.startsWith('buggy');this.classic=vehicle.kind==='buggy-classic'
+    this.buggy=vehicle.kind.startsWith('buggy')
     this.root.name='Vehicle effects';vehicle.object.add(this.root);this.lastPosition.copy(vehicle.object.position)
-    const jet=vehicle.kind==='jet',hover=vehicle.kind==='hovercraft',width=jet?1:this.classic?.45:.584,front=jet?3.2756:hover?1.4:this.classic?1.05:1.775
+    const jet=vehicle.kind==='jet',hover=vehicle.kind==='hovercraft',width=jet?1:.584,front=jet?3.2756:hover?1.4:1.775
     for(const sign of [-1,1]){
       const head=new T.Object3D();head.position.set(sign*width,jet?-.423:.036,-front);this.root.add(head);this.lampPoints.push(head)
-      const tail=new T.Object3D();tail.scale.set(1.7,.6,.5);tail.position.set(sign*width,.12,jet?2.7:hover?1.3:this.classic?1:1.7);this.root.add(tail);this.lampPoints.push(tail)
+      const tail=new T.Object3D();tail.scale.set(1.7,.6,.5);tail.position.set(sign*width,.12,jet?2.7:hover?1.3:1.7);this.root.add(tail);this.lampPoints.push(tail)
     }
     if(local){
       // Syn3h prefab range50, cone60 degrees. Unity intensity is not candela.
@@ -200,7 +199,7 @@ class VehicleEffects {
       const contacts=v.getWheelEffects?.()
       for(let i=0;i<4;i++){
         const contact=contacts?.[i]
-        if(contact)wp.copy(contact.point);else this.point((i%2?1:-1)*(this.classic?.7:1.1),0,(i<2?-1:1)*(this.classic?.8:1.3),wp)
+        if(contact)wp.copy(contact.point);else this.point((i%2?1:-1)*1.1,0,(i<2?-1:1)*1.3,wp)
         const y=this.terrain.heightAt(wp.x,wp.z)
         const touching=contact?.grounded??(grounded&&wp.y-y<1.4&&wp.y-y>-.3)
         if(!touching||!this.dry(wp)||speed<.5){this.hasMark[i]=false;continue}
@@ -216,7 +215,7 @@ class VehicleEffects {
           const style=TREADS[this.terrain.surfaceAt?.(wp.x,wp.z)as SurfaceKind]??DEFAULT_TREAD
           const sliding=slip>Math.abs(this.localVelocity.z)*.3?clamp(Math.max(Math.abs(v.input.y),v.input.brakes?1:0),0,1):0
           side.copy(wp).sub(prev).cross(normal).normalize()
-          w.marks.add(prev,wp,side,(this.classic?.3:.5)*style.width,style.life,T.MathUtils.lerp(style.roll,style.slip,sliding),markColor.setRGB(style.tint[0],style.tint[1],style.tint[2]),style.tread);prev.copy(wp)
+          w.marks.add(prev,wp,side,.5*style.width,style.life,T.MathUtils.lerp(style.roll,style.slip,sliding),markColor.setRGB(style.tint[0],style.tint[1],style.tint[2]),style.tread);prev.copy(wp)
         }
         if(this.dustTimer>=1/(25*rateScale)&&speed>2){
           velocity.set(raw.x*-.08+(w.noise()-.5)*slip*.3,.6+w.noise(),raw.z*-.08)
@@ -252,7 +251,7 @@ class VehicleEffects {
       this.trailTimer=0
       for(let i=0;i<2;i++){
         // These snapshots lack vehicle TrailRenderers. Reconstructed tips, width .1, lifetime .8.
-        const prev=this.previousTips[i];this.point((i?1:-1)*(this.buggy?(this.classic?3.6:4.2):3.85),this.buggy?.1:.13,this.buggy?1.2:1.14,tip)
+        const prev=this.previousTips[i];this.point((i?1:-1)*(this.buggy?4.2:3.85),this.buggy?.1:.13,this.buggy?1.2:1.14,tip)
         if(this.hasTip[i]){side.copy(tip).sub(prev).cross(toCamera.copy(w.game.camera.position).sub(tip)).normalize();w.trails.add(prev,tip,side,.1,.8,.22,trailColor.copy(this.color).multiplyScalar(2))}
         prev.copy(tip);this.hasTip[i]=true
       }

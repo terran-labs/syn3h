@@ -107,6 +107,6 @@ await initPhysics()
 // the same dust and the digests are comparable.
 setWeatherClock(()=>1000)
 if(!gc)console.error('Run with --expose-gc for stable allocation figures.')
-for(const kind of ['buggy','buggy-classic','jet','hovercraft','tank'] as const)console.log(JSON.stringify(measure(kind)))
+for(const kind of ['buggy','jet','hovercraft','tank'] as const)console.log(JSON.stringify(measure(kind)))
 // Wings open and the jet in forward flight: the wing tip trail path.
 for(const kind of ['buggy','jet'] as const)console.log(JSON.stringify(measure(kind,true)))

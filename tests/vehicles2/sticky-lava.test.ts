@@ -4,14 +4,13 @@ import {params} from '../../shared/params'
 import {initPhysics} from '../../src/core/physics'
 import {Syn3hBuggy} from '../../src/vehicles/Syn3hBuggy'
 import {waterSinking} from '../../src/vehicles/buoyancy'
-import {ClassicBuggy} from '../../src/vehicles/ClassicBuggy'
 import {Jet} from '../../src/vehicles/Jet'
 import {Hovercraft} from '../../src/vehicles/Hovercraft'
 import {Tank} from '../../src/vehicles/Tank'
 import {harness} from './harness'
 beforeAll(initPhysics)
 afterEach(()=>{for(const p of params.all())params.set(p.def.id,p.def.default)})
-const kinds=[Syn3hBuggy,ClassicBuggy,Jet,Hovercraft,Tank]
+const kinds=[Syn3hBuggy,Jet,Hovercraft,Tank]
 describe('indestructible viscous lava',()=>{
  it.each(kinds)('%s settles without skimming and can crawl',Kind=>{
   const h=harness();h.terrain.liquidHeightAt=()=>4;h.terrain.liquidKindAt=()=> 'lava'
