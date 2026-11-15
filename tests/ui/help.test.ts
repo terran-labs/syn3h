@@ -4,7 +4,8 @@ import { sanitizeVehicleChoice } from '../../src/ui/VehicleChoice'
 describe('vehicle controls', () => {
   it('keeps jet and hovercraft choices and describes their different axes', () => {
     for (const vehicleKind of ['jet', 'hovercraft'] as const) expect(sanitizeVehicleChoice({ vehicleKind }).vehicleKind).toBe(vehicleKind)
-    expect(vehicleHelp('jet').join(' ')).toContain('Q / E: yaw')
+    expect(vehicleHelp('jet').join(' ')).toContain('Hold E to lift off')
+    expect(vehicleHelp('jet').join(' ')).not.toContain('yaw')
     expect(vehicleHelp('hovercraft').join(' ')).not.toContain('wings')
     expect(touchHelp('jet')).toContain('THR')
     expect(vehicleHelp('buggy')).toEqual(vehicleHelp('buggy-syn3h'))
