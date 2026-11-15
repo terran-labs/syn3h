@@ -18,12 +18,13 @@ try{
   const weapons=createWeaponEffects(s.game),p=s.player.object.position.clone()
   weapons.muzzle(p,new T.Vector3(0,0,1));weapons.impact(p,new T.Vector3(0,1,0),true);await wait(200)
   const lights=()=>{let n=0;s.player.object.traverse(o=>{if(o.isSpotLight)n++});return n}
-  const localLights=lights();weapons.dispose();window.disposeTestEffects();window.disposeTestEffects()
-  const cleaned=!s.game.scene.userData.vehicleEffects&&lights()===0
+  const localLights=lights();weapons.dispose();window.disposeTestEffects();window.disposeTestEffects();await wait(250)
+  // Integrated weapons may retain the shared effects world after the player detaches.
+  const cleaned=(s.game.scene.userData.vehicleEffects?.vehicles??0)===0&&lights()===0
   const remote=attachVehicleEffects(s.game,s.terrain,s.player,{local:false});await wait(200)
   const remoteLights=lights();params.set('gfx.level',0);await wait(500)
   const safe={...s.game.scene.userData.vehicleEffects};remote();await wait(100)
-  return {samples,localLights,remoteLights,cleaned,safe,finalClean:!s.game.scene.userData.vehicleEffects}
+  return {samples,localLights,remoteLights,cleaned,safe,finalClean:(s.game.scene.userData.vehicleEffects?.vehicles??0)===0}
  })
  if(!result.cleaned||!result.finalClean||result.localLights!==1||result.remoteLights!==0||result.safe.particles!==60||errors.length)throw new Error(JSON.stringify({result,errors}))
  await writeFile('/tmp/syn3h-vehicles2/effects-performance.json',JSON.stringify({result,errors},null,2))

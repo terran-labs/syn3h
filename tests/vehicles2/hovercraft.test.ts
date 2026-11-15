@@ -1,10 +1,13 @@
-import { beforeAll, describe, expect, it } from 'vitest'
+import { beforeAll, beforeEach, afterEach, describe, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { initPhysics, RAPIER } from '../../src/core/physics'
 import { Hovercraft } from '../../src/vehicles/Hovercraft'
 import { harness } from './harness'
 
+import { params } from '../../shared/params'
 beforeAll(initPhysics)
+beforeEach(()=>params.set('hover.assist',0))
+afterEach(()=>params.set('hover.assist',1))
 describe('Hovercraft original forces',()=>{
  it('has original mass, center of mass and inertia',()=>{
   const h=harness(); const v=new Hovercraft(h.game,h.terrain,new THREE.Vector3(0,10,0))
