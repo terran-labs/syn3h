@@ -161,7 +161,9 @@ touch icons and `/brand/manifest.webmanifest`. No public deployment origin was s
 so share image paths are root-relative. Before public announcement, replace both image
 meta values with the deployed absolute HTTPS URL and add `og:url` for that origin.
 Do this in served HTML, not a JavaScript update, because card crawlers may not run JS.
-No preview hostname is hardcoded. The manifest does not claim offline support.
+The share card tags name the public release address, https://syn3h.af-4e7.workers.dev, because
+crawlers need full addresses; `tests/ui/share.test.ts` keeps them on one https origin. Change
+all three if the address changes. The manifest does not claim offline support.
 
 `tests/ui/share-assets.mjs` reproduces the starfield artwork and icons with the supplied
 logo in a browser canvas. Credits use installed Three.js, Rapier, Marked and ws licence
