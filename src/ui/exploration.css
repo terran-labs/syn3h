@@ -140,3 +140,31 @@ html[data-gfx="0"] .syn3h-shell.exploration-ui[data-glass] .wi-glass { --body: r
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .syn3h-shell.exploration-ui.has-touch .shell-minimap { width: 96px; height: 96px; bottom: calc(max(18px,env(safe-area-inset-bottom)) + 124px + 16px); }
 }
+
+/* Diagnostics consume rail space; only their body scrolls. SVG reuses core history. */
+.syn3h-shell.exploration-ui .performance-panel { flex: 0 1 auto; min-height: 78px; max-height: 42%; display: flex; flex-direction: column; overflow: hidden; color: #dcedf6; background: rgb(6 21 33 / .94); border: 1px solid var(--s3-line); border-radius: 3px; }
+.performance-panel header { display: flex; align-items: center; justify-content: space-between; padding: 4px 9px; flex: 0 0 auto; }
+.performance-panel header strong { font-size: 12px; font-weight: 400; letter-spacing: .1em; }
+.performance-body { min-height: 0; overflow: auto; padding: 0 10px 10px; font-size: 12px; }
+.performance-body p { margin: 6px 0; }
+.performance-controls { display: flex; align-items: center; gap: 12px; }
+.performance-controls label { display: flex; align-items: center; gap: 6px; }
+.performance-body dl { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; margin: 8px 0; }
+.performance-body dt { color: #a6c7d8; }
+.performance-body dd { margin: 0; overflow-wrap: anywhere; text-align: right; }
+.performance-chart { display: block; width: 100%; height: 64px; margin-top: 8px; }
+.performance-chart path { stroke: #8dcce555; }
+.performance-chart polyline { stroke: #a2e4ff; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.performance-history { color: #a6c7d8; font-size: 11px; }
+.syn3h-shell.exploration-ui .performance-recommendation { position: fixed; left: 50%; top: 100px; transform: translateX(-50%); max-width: min(340px,calc(100vw - 32px)); padding: 10px 14px; background: rgb(6 21 33 / .96); border: 1px solid var(--s3-line); border-radius: 3px; pointer-events: auto; z-index: 40; font-size: 13px; }
+.performance-recommendation p { margin: 0 0 8px; }
+.performance-recommendation button + button { margin-left: 8px; }
+@media (pointer: coarse) { .syn3h-shell.exploration-ui .performance-controls select { font-size: 16px; } }
+@media (max-height: 500px) { .syn3h-shell.exploration-ui .performance-panel { max-height: 35%; min-height: 60px; } .syn3h-shell.exploration-ui .performance-recommendation { top: 12px; left: 16px; transform: none; max-width: 280px; } }
+.syn3h-shell.exploration-ui .performance-panel header button { width: 28px; height: 26px; min-height: 26px; padding: 0; font-size: 18px; }
+.syn3h-shell.exploration-ui .performance-controls label { display: flex; align-items: center; font-size: 12px; }
+.syn3h-shell.exploration-ui.has-touch:has(.world-inspector:not([hidden])) .spawn-help { display: none; }
+@media (max-height: 500px) {
+  .syn3h-shell.exploration-ui .performance-panel { min-height: 36px; }
+  .syn3h-shell.exploration-ui .wi-cards { min-height: 132px; }
+}

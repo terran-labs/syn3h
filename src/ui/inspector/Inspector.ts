@@ -71,7 +71,7 @@ export class Inspector {
     this.element.addEventListener('click', event => this.click(event))
     this.element.querySelector<HTMLInputElement>('.wi-search')!.addEventListener('input', event => this.search((event.target as HTMLInputElement).value))
     // Typing here must not drive the vehicle.
-    for (const type of ['keydown', 'keyup'] as const) this.element.addEventListener(type, event => { if ((event.target as Element).matches('input[type=search], textarea, input[type=number]')) event.stopPropagation() })
+    this.element.addEventListener('keydown', event => { if ((event.target as Element).matches('input[type=search], textarea, input[type=number]')) event.stopPropagation() })
   }
   get open(): boolean { return !this.element.hidden }
   set open(value: boolean) { this.element.hidden = !value; if (!value) this.hideTooltip() }
