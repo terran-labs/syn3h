@@ -11,7 +11,6 @@ along X (the frame the game's wheel uses); the lab keeps the original inner wing
 Blender frame here: X is the axle. The glTF export keeps X.
 """
 import bpy, bmesh, sys, os, math, json
-import numpy as np
 from mathutils import Vector
 
 argv = sys.argv[sys.argv.index('--') + 1:]
@@ -67,24 +66,6 @@ CARCASS_V = [0, 0, 0.04, 0.2, 0.8, 0.96, 1, 1]
 RING = [(-0.2, RING_OUT), (-0.19, RING_IN), (0.19, RING_IN), (0.2, RING_OUT)]
 
 
-def tread_normal_map(path, size=256):
-    """A chevron tread as a tangent space normal map, one lug per tile, tiling round the tyre."""
-    v, u = np.mgrid[0:size, 0:size] / size
-    d = np.abs(v - 0.5)
-    phase = (u + d * 0.9) % 1.0
-    lug = ((phase < 0.5) & (d < 0.46)).astype(np.float32)
-    # Soften the block edges so the lighting reads as a moulded shoulder, not a paper cut.
-    for _ in range(4):
-        lug = (lug + np.roll(lug, 1, 0) + np.roll(lug, -1, 0) + np.roll(lug, 1, 1) + np.roll(lug, -1, 1)) / 5
-    gu = (np.roll(lug, -1, 1) - np.roll(lug, 1, 1)) * 6
-    gv = (np.roll(lug, -1, 0) - np.roll(lug, 1, 0)) * 6
-    n = np.stack([-gu, -gv, np.ones_like(gu)], -1); n /= np.linalg.norm(n, axis=-1, keepdims=True)
-    rgba = np.concatenate([n * 0.5 + 0.5, np.ones((size, size, 1))], -1).astype(np.float32)
-    img = bpy.data.images.new('tread-normal', size, size, alpha=False); img.colorspace_settings.name = 'Non-Color'
-    img.pixels = rgba.ravel(); img.filepath_raw = path; img.file_format = 'PNG'; img.save()
-    return img
-
-
 def build(option):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     rubber = mat('Tire', (0.02, 0.02, 0.022), 0, 0.8); chrome = mat('Chrome', (0.9, 0.92, 0.95), 1, 0.06)
@@ -99,12 +80,8 @@ def build(option):
             a = 2 * math.pi * i / LUGS
             for sx in (-1, 1):
                 lug_box(bm, sx * 0.01, sx * 0.235, a, a + 0.2, 0.05, 0.035, 0)
-    elif kind == 'texture':
+    elif kind == 'smooth':
         revolve(bm, CARCASS, segs, 0, uv=CARCASS_V)
-        img = tread_normal_map(os.path.join(OUT, 'tread-normal.png'))
-        nt = rubber.node_tree; tex = nt.nodes.new('ShaderNodeTexImage'); tex.image = img
-        nm = nt.nodes.new('ShaderNodeNormalMap'); nm.inputs['Strength'].default_value = 1.5
-        nt.links.new(tex.outputs['Color'], nm.inputs['Color']); nt.links.new(nm.outputs['Normal'], nt.nodes['Principled BSDF'].inputs['Normal'])
     elif kind == 'band':
         # A smooth tyre with a recessed accent band round the middle of the tread.
         profile = [(-0.2, RING_OUT), (-HALF, 0.44), (-0.235, 0.5), (-0.13, R), (-0.045, R), (-0.04, R - 0.02), (0.04, R - 0.02), (0.045, R), (0.13, R), (0.235, 0.5), (HALF, 0.44), (0.2, RING_OUT)]
@@ -127,7 +104,7 @@ def build(option):
 
 OPTIONS = [
     {'id': 'lug', 'name': 'Chunky lugs', 'kind': 'lug', 'notes': ['14 big chevron blocks on a plain carcass', 'Reads as an off-road tyre at any distance']},
-    {'id': 'texture', 'name': 'Tread texture', 'kind': 'texture', 'notes': ['Smooth carcass; the tread is a small normal map, so it costs no triangles', 'One 256 pixel texture shared by every wheel in the game']},
+    {'id': 'smooth', 'name': 'Shader tread', 'kind': 'smooth', 'notes': ['Smooth carcass at the lowest triangle count', 'In the game the shared tyre shading draws the tread and sidewall ribs, so none is modelled', 'No image files: vehicles carry no bitmaps']},
     {'id': 'band', 'name': 'Accent band', 'kind': 'band', 'notes': ['Smooth tyre with a recessed band in your accent colour', 'Could glow with the motor like the stator tips']},
 ]
 

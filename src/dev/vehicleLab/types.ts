@@ -1,7 +1,6 @@
 /**
- * The contract between the vehicle lab (lab.ts) and the vehicles it shows. A vehicle lane adds
- * one file under exhibits/ that implements LabExhibit and one line in exhibits/index.ts; the lab
- * supplies the studio, camera, lights, detail switching, stats, paint, motion and capture.
+ * The contract between the vehicle lab (lab.ts) and the vehicles it shows. A vehicle lane drops
+ * one file under exhibits/ that exports a LabExhibit (registry.ts finds it); the lab supplies the studio, camera, lights, detail switching, stats, paint, motion and capture.
  *
  * Frame convention for every model: nose toward -Z, Y up, metres, origin at the vehicle origin
  * (where the game places the vehicle). The lab lifts the model so its ground contact sits on the
@@ -25,6 +24,19 @@ export interface LabExhibit {
   /** URL id: vehicle-lab.html?vehicle=<id>. */
   id: string
   title: string
+  /** Sidebar heading this vehicle is listed under, for example 'In the game'. Defaults to 'Vehicles'. */
+  section?: string
+  /** Sort key in the sidebar, lowest first; then by title. Defaults to 100. */
+  order?: number
+  /** Older URL ids that should open this exhibit. */
+  aliases?: string[]
+  /**
+   * Vehicle family for the Parameters section: parameters whose id prefix or group matches it
+   * belong to this vehicle (see vehicleParams in tree.ts). Defaults to the id.
+   */
+  family?: string
+  /** Overrides the family match: parameter groups or id prefixes to list. [] lists none. */
+  paramGroups?: string[]
   /** Designs to compare. Called once when the page opens. */
   designs(): Promise<LabDesignInfo[]>
   /** Builds one design. Called lazily, at most once per design, and again for stress copies only by cloning. */
@@ -41,6 +53,9 @@ export interface LabExhibit {
 export interface LabContext {
   /** Reports progress in the status line, for example 'Loading wheels'. */
   status(text: string): void
+  /** The lab's renderer and camera, for models that read exposure or camera distance. */
+  renderer: THREE.WebGPURenderer
+  camera: THREE.PerspectiveCamera
 }
 
 export interface LabModel {
@@ -86,13 +101,15 @@ export interface LabState {
 }
 
 /**
- * A control a model adds to the bar. `id` ties the same control across designs: in side by side
- * mode the lab applies a change to every model that has a control with that id.
+ * A control a model adds to the Options tree, under the heading `group` (default 'Vehicle').
+ * `id` ties the same control across designs: in side by side mode the lab applies a change to
+ * every model that has a control with that id.
  */
-export type LabControl =
-  | { kind: 'toggle'; id: string; label: string; value: boolean; onChange(value: boolean): void }
-  | { kind: 'cycle'; id: string; label: string; options: string[]; index: number; onChange(index: number): void }
-  | { kind: 'slider'; id: string; label: string; min: number; max: number; step: number; value: number; onChange(value: number): void }
+export type LabControl = { id: string; label: string; group?: string } & (
+  | { kind: 'toggle'; value: boolean; onChange(value: boolean): void }
+  | { kind: 'cycle'; options: string[]; index: number; onChange(index: number): void }
+  | { kind: 'slider'; min: number; max: number; step: number; value: number; onChange(value: number): void }
+)
 
 /** Triangles and draw calls the renderer is asked for, before frustum culling and shadow passes. */
 export interface LabStats { triangles: number; drawCalls: number }
