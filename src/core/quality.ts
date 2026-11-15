@@ -115,7 +115,9 @@ export class QualityController {
   }
   attachRenderer(renderer: WebGPURenderer) { this.renderer = renderer; this.apply() }
   /** Optional hook for terrain builders; no regeneration or physics changes are implied. */
-  attachTerrain(terrain: QualityTerrain) { this.terrain = terrain; this.apply() }
+  attachTerrain(terrain: QualityTerrain) { this.terrain = terrain; this.onTerrain?.(); this.apply() }
+  /** Startup timing hook: main calls attachTerrain right after building the terrain. */
+  onTerrain: (() => void) | null = null
   private apply() {
     const budget = qualityBudget()
     this.renderer?.setPixelRatio(Math.min(window.devicePixelRatio || 1, budget.pixelRatio))
