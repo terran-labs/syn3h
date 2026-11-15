@@ -195,6 +195,15 @@ html[data-gfx="0"] .syn3h-shell.exploration-ui[data-glass] .wi-glass { --body: r
 .syn3h-shell.exploration-ui:not(.has-touch) .hud-navigation { display: none; }
 .syn3h-shell.exploration-ui .rail-navigation .rail-pause { margin-left: auto; border: 0; background: none; letter-spacing: .13em; text-transform: uppercase; }
 
+/* Short landscape screens: the header row also carries the vehicle and gear selectors, so
+   Pause shrinks to a glyph (its name stays for assistive technology) and the selectors stop
+   short of it. */
+@media (max-height: 500px) {
+  .syn3h-shell.exploration-ui .rail-navigation .rail-pause { font-size: 0; letter-spacing: 0; min-width: 30px; padding-inline: 6px; }
+  .syn3h-shell.exploration-ui .rail-navigation .rail-pause::after { content: 'II'; font-size: 11px; letter-spacing: .18em; }
+  .syn3h-shell.exploration-ui .world-inspector .wi-quick { right: 84px; }
+}
+
 /* Paused: one floating message over the dimmed, still world. The whole veil is the button. */
 .syn3h-shell .pause-veil { position: fixed; inset: 0; z-index: 60; display: grid; place-content: center; justify-items: center; gap: 10px; margin: 0; padding: 24px; border: 0; border-radius: 0; background: rgb(2 8 14 / .46); color: var(--s3-ink); font: inherit; cursor: pointer; -webkit-backdrop-filter: blur(3px) saturate(.8); backdrop-filter: blur(3px) saturate(.8); animation: pause-in .25s ease-out; }
 .syn3h-shell .pause-veil[hidden] { display: none; }
