@@ -43,6 +43,14 @@ export const terrainLandShare = defineParam({
 export const terrainPlanetSize = defineParam({
   ...P, id: 'terrain.planetSize', label: 'Planet size: 0 small, 1 medium, 2 large', default: 1, min: 0, max: 2, step: 1,
 })
+/**
+ * Fords: on water worlds, rivers carry on across the roads as shallow fords and run down to
+ * the sea, instead of stopping in a pool above each road. Off by default: it reshapes the
+ * world's rivers, and lava rivers never ford.
+ */
+export const terrainFords = defineParam({
+  ...P, id: 'terrain.fords', label: 'Rivers ford the roads (0 off, 1 on)', default: 0, min: 0, max: 1, step: 1,
+})
 export const terrainTreeCover = defineParam({
   ...P, id: 'terrain.treeCover', label: 'Plant cover (off: no worlds grow trees or cacti)', default: 0, min: 0, max: 1, step: 0.01,
 })
@@ -83,6 +91,8 @@ export interface TerrainSettings {
   planetSize: number
   /** 0..1 share of the land in forest. */
   treeCover: number
+  /** 1 when rivers ford the roads and reach the sea (water worlds only). */
+  fords: number
 }
 
 export const TERRAIN_PARAMS: Record<keyof TerrainSettings, Param<number>> = {
@@ -100,6 +110,7 @@ export const TERRAIN_PARAMS: Record<keyof TerrainSettings, Param<number>> = {
   landShare: terrainLandShare,
   planetSize: terrainPlanetSize,
   treeCover: terrainTreeCover,
+  fords: terrainFords,
 }
 
 /** Param ids whose change regenerates the terrain. */
