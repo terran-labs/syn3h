@@ -50,7 +50,14 @@ async function open(name) {
   url.searchParams.set('room', room); url.searchParams.set('name', name); url.searchParams.set('autoplay', '1')
   await page.goto(url.href)
   await page.waitForFunction(() => window.syn3h?.shell && window.syn3hNet?.connected, null, { timeout: 60000 })
-  await page.evaluate(() => { window.syn3h.shell.play(); window.syn3h.params.set('gfx.level', 0) })
+  await page.evaluate(() => {
+    window.syn3h.shell.play()
+    window.syn3h.params.set('gfx.level', 0)
+    // Automation writes input.external rather than human events. Daydream would take
+    // over after 30 seconds and drive the supposedly parked target out of the fixture.
+    window.syn3h.params.set('daydream.seconds', 0)
+    window.syn3h.params.set('bots.count', 0)
+  })
   await page.evaluate(async flatPatch => {
     const s = window.syn3h
     const originalTeleport = s.player.teleport.bind(s.player)
@@ -81,6 +88,7 @@ const rows = []
 try {
   const a = await open('A')
   const b = await open('B')
+  const targetId = await b.evaluate(() => window.syn3hNet.id)
   await a.waitForFunction(() => window.syn3hNet.remotes.size === 1, null, { timeout: 20000 })
   // The flattest dry 125 m line near the origin: 30 m/s needs a long run up.
   const runway = flatPatch ? { ox: 0, oz: 0, h: 0, range: 0 } : await a.evaluate(() => {
@@ -155,14 +163,26 @@ try {
       window.__ramOutside = false; window.__ramMonitoring = true
       return window.__ramTeleports
     })))
-    await wait(3500)
+    if (process.env.TRACE_SETUP === '1') {
+      for (let sample = 0; sample < 15; sample++) {
+        const clients = await Promise.all([a, b].map(page => page.evaluate(() => {
+          const { player, game } = window.syn3h, net = window.syn3hNet
+          return { t: Date.now(), position: player.body.translation(), velocity: player.body.linvel(),
+            input: { ...game.input.state }, external: { ...game.input.external }, wind: { ...player.wind },
+            shoves: net.stats.shoves, rams: net.stats.rams,
+            touching: [...net.remotes.entries()].filter(([, r]) => r.touching).map(([id]) => id) }
+        })))
+        console.log('SETUP', JSON.stringify({ speed, side, sample, clients }))
+        if (sample < 14) await wait(250)
+      }
+    } else await wait(3500)
     if (flatPatch) {
       // Start at the requested collision speed; a long acceleration runway adds no
       // recovery coverage and lets a delayed remote copy escape the collision window.
-      await a.waitForFunction(({ gap }) => {
-        const remote = [...window.syn3hNet.remotes.values()][0]?.vehicle.body.translation()
+      await a.waitForFunction(({ gap, targetId }) => {
+        const remote = window.syn3hNet.remotes.get(targetId)?.vehicle.body.translation()
         return remote && Math.hypot(remote.x, remote.z + gap, remote.y - 1000.7) < 2
-      }, { gap }, { timeout: 20000 }).catch(async error => {
+      }, { gap, targetId }, { timeout: 20000 }).catch(async error => {
         const snapshots = await Promise.all([a, b].map(page => page.evaluate(() => ({
           local: window.syn3h.player.body.translation(),
           remotes: [...window.syn3hNet.remotes.entries()].map(([id, remote]) => ({ id, position: remote.vehicle.body.translation(), responding: remote.responding })),
