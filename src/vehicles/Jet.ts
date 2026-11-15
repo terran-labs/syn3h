@@ -184,7 +184,7 @@ export class Jet extends Vehicle {
     // Visual only: the ring's surfaces follow the smoothed stick in both modes, signed like the
     // nozzle petals. Pulling back (y below 0) is nose up; x is roll right; w is yaw right.
     this.controls.set(-this.smoothed.y, this.smoothed.x, this.smoothed.w)
-    this.model.update(this.gearAmount, this.vectorPitch, this.vectorYaw, Math.max(0, this.smoothed.z), this.controls)
+    this.model.update(this.gearAmount, this.vectorPitch, this.vectorYaw, Math.max(0, this.smoothed.z), this.controls, this.hoverMode)
   }
   protected override applyColors():void {
     this.model?.setColors(this.colors.body, this.colors.accent)

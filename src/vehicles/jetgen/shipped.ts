@@ -32,13 +32,31 @@ const BOOM = [[-1.9, .03, .03, .03, -.05, 1.4], [-1.0, .2, .2, .16, -.05, 1.5], 
 /** Four intakes round the pod, as rows of [angle, z0, z1, halfWidth, height]. */
 const INTAKES = [45, 135, 225, 315].map(a => [a, -.35, 1.25, .2, .13])
 
+const BOOM_X = 1.5
+/**
+ * Where thrust leaves the shipped jet, in its own frame, for code that must not build the model
+ * to find out (the thrust plume). Every entry is taken from the rows above or checked against
+ * the built model by
+ * tests/vehicles2/game-jet.test.ts, so a change of design cannot leave a plume hanging in space.
+ */
+export const MK2_FITTINGS = {
+  /** Rear nozzle exits: the pod's and the two booms'. */
+  nozzles: [
+    { x: 0, y: POD[POD.length - 1][4], z: POD[POD.length - 1][0], r: POD[POD.length - 1][1] },
+    { x: BOOM_X, y: BOOM[BOOM.length - 1][4], z: BOOM[BOOM.length - 1][0], r: BOOM[BOOM.length - 1][1] },
+    { x: -BOOM_X, y: BOOM[BOOM.length - 1][4], z: BOOM[BOOM.length - 1][0], r: BOOM[BOOM.length - 1][1] },
+  ],
+  /** Belly hover ports: under the nose and under each boom. */
+  ports: [{ x: 0, y: -.262, z: -1.74, r: .24 }, { x: BOOM_X, y: -.39, z: 1.16, r: .16 }, { x: -BOOM_X, y: -.39, z: 1.16, r: .16 }],
+} as const
+
 /**
  * A chined cockpit pod between twin booms with a six-sided ring tail. The pod and the booms are
  * each one lofted skin from nose to nozzle lip: the four intakes are bulges of the pod's skin
  * and the three thrusters are the open rear ends of their bodies.
  */
 function build(b: Builder): void {
-  const bx = 1.5, by = -.03
+  const bx = BOOM_X, by = -.03
   b.fuselage(POD, { intakes: INTAKES, exhaust: true })
   // A real cockpit: an opening in the hull, an interior tub and a bubble canopy over the pilot.
   b.cockpit(-2.9, -.7, .6, VANGUARD_EYE, { bulge: .2 })

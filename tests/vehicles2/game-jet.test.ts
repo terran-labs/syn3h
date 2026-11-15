@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { GameJet } from '../../src/vehicles/jetgen/GameJet'
 import { Builder, GROUND_Y } from '../../src/vehicles/jetgen/shapes'
+import { MK2_FITTINGS } from '../../src/vehicles/jetgen/shipped'
 import { roleOf } from '../../src/vehicles/skins/showroom'
 
 function visibleCost(root: THREE.Object3D) {
@@ -24,9 +25,14 @@ describe('approved Mk2 game model', () => {
       jet.update(gear, .3, -.2, .8)
       for (const level of [0, 1, 2] as const) {
         jet.setLevel(level)
+        // The model's own budget, then the thrust plume on top: an effect, one draw, under 400 triangles.
+        jet.plume.mesh.visible = false
         const cost = visibleCost(jet.object)
+        jet.plume.mesh.visible = true
         expect(cost.triangles).toBeLessThanOrEqual([12000, 2500, 500][level])
-        expect(cost.draws).toBeLessThanOrEqual([10, 3, 1][level])
+        expect(cost.draws).toBeLessThanOrEqual([9, 3, 1][level])
+        expect(visibleCost(jet.object).draws - cost.draws).toBe(1)
+        expect(visibleCost(jet.object).triangles - cost.triangles).toBeLessThanOrEqual(400)
       }
     }
     for (const y of jet.near.footHeights()) expect(y).toBeCloseTo(GROUND_Y, 2)
@@ -98,7 +104,7 @@ it('builds a detail level only when it is first shown', () => {
   jet.setLevel(2); jet.update(0, 0, 0, 0); expect(jet.near.gearAmount).toBe(1)
   jet.setLevel(0); expect(jet.near.gearAmount).toBe(0)
   let visible = 0
-  for (const o of jet.object.children) if (o.visible && (o instanceof THREE.Mesh || o.children.length)) visible++
+  for (const o of jet.object.children) if (o.visible && o !== jet.plume.mesh && (o instanceof THREE.Mesh || o.children.length)) visible++
   expect(visible).toBe(1)
   jet.dispose()
 })
@@ -135,6 +141,7 @@ describe('Mk2 moving parts and thrusters', () => {
     // Petals and flaps are one draw each: five in flight, eight with the gear down.
     let draws = 0; jet.near.object.traverseVisible(o => { if (o instanceof THREE.Mesh) draws++ })
     expect(draws).toBeLessThanOrEqual(5)
+    expect(jet.plume.mesh.parent).toBe(jet.object)
     jet.update(1, .2, .1, .5, controls.set(.5, 0, 0)); draws = 0
     jet.near.object.traverseVisible(o => { if (o instanceof THREE.Mesh) draws++ })
     expect(draws).toBeLessThanOrEqual(8)
@@ -191,4 +198,50 @@ it('ships only the approved Mk2: nothing the game jet loads imports the study de
     expect(source, file).not.toMatch(/from '\.\/(jetgen\/)?designs'/)
   }
   expect(new GameJet().design.id).toBe('hex-mk2')
+})
+
+describe('Mk2 thrust plume', () => {
+  it('starts every cone at a real nozzle or hover port of the built model', () => {
+    const jet = new GameJet(), b = new Builder(.6, true, true); jet.design.build(b)
+    // Reading the pieces builds the hull, which is when its nozzle is recorded.
+    void b.pieces
+    // Rear nozzles: the fittings are the model's own exits.
+    expect(MK2_FITTINGS.nozzles).toHaveLength(b.nozzles.length)
+    for (const n of MK2_FITTINGS.nozzles) {
+      const match = b.nozzles.find(m => Math.hypot(m.x - n.x, m.y - n.y, m.z - n.z) < .02)
+      expect(match, JSON.stringify(n)).toBeDefined(); expect(n.r).toBeCloseTo(match!.r, 2)
+    }
+    // Belly ports: Builder.hover is 12 cm below each port's face.
+    expect(MK2_FITTINGS.ports).toHaveLength(b.hover.length)
+    for (const p of MK2_FITTINGS.ports) expect(b.hover.some(([x, y, z]) => Math.hypot(x - p.x, y - p.y, z - p.z) < .03), JSON.stringify(p)).toBe(true)
+    // And the cones' first rings sit within the throat: no glow away from a fitting.
+    const position = jet.plume.mesh.geometry.attributes.position, where = jet.plume.mesh.geometry.attributes.plume
+    for (let i = 0; i < position.count; i++) if (where.getX(i) === 0) {
+      const v = new THREE.Vector3().fromBufferAttribute(position, i)
+      const fittings = where.getY(i) ? MK2_FITTINGS.ports : MK2_FITTINGS.nozzles
+      expect(fittings.some(f => Math.hypot(v.x - f.x, v.y - f.y, v.z - f.z) < f.r + .15)).toBe(true)
+    }
+    b.pieces.forEach(q => q.geometry.dispose()); b.flaps.forEach(f => f.geometry.dispose()); jet.dispose()
+  })
+
+  it('glows at idle, grows with throttle, flares at full, and follows hover or flight', () => {
+    const jet = new GameJet(), v = new THREE.Vector3()
+    jet.update(1, 0, 0, 0, v, true)
+    const idle = jet.plume.levels
+    // Hover at rest: the belly ports show a short glow and the rear nozzles idle.
+    expect(idle[3]).toBeGreaterThan(.3); expect(idle[1]).toBeGreaterThan(.2)
+    jet.update(1, 0, 0, .6, v, true); const lift = jet.plume.levels
+    expect(lift[2]).toBeGreaterThan(idle[2] * 2); expect(lift[3]).toBeGreaterThan(idle[3] * 2)
+    // Flight: the rear cones carry it and the ports are dark.
+    jet.update(0, 0, 0, .6, v, false); const cruise = jet.plume.levels
+    expect(cruise[3]).toBe(0); expect(cruise[0]).toBeCloseTo(lift[2], 5)
+    jet.update(0, 0, 0, 1, v, false); const full = jet.plume.levels
+    // The last 15 percent of throttle adds a flare beyond the straight line.
+    expect(full[1] - cruise[1]).toBeGreaterThan(1.1 * .4 + .5); expect(full[0]).toBeGreaterThan(1.2)
+    // One draw, never culled short, coloured by the player's accent.
+    expect(jet.plume.mesh.geometry.boundingSphere!.radius).toBeGreaterThan(8)
+    jet.setColors('#123456', '#00ff80')
+    expect((jet.plume.mesh.userData.plumeColor as THREE.Color).getHexString()).toBe('00ff80')
+    jet.dispose()
+  })
 })
