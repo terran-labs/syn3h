@@ -230,4 +230,16 @@ describe('Room Yoink carries whose other end goes away', () => {
     expect(c.peer.yoinks()).toHaveLength(2)
   })
 
+  it('drops a carry when the host switches Yoink off', () => {
+    const a = join('A', world)
+    const b = join('B')
+    const places: [Joined, [number, number, number]][] = [[a, [0, 0, 0]], [b, [0, 0, -20]]]
+    run(250, places)
+    send(a.peer, { type: 'yoink', y: { s: 'grab', to: b.id } })
+    send(a.peer, { type: 'param', id: 'yoink.allowed', value: false })
+    run(250, places)
+    expect(b.peer.yoinks().map((y) => y.s)).toEqual(['grab', 'drop'])
+    run(1000, places)
+    expect(b.peer.yoinks()).toHaveLength(2)
+  })
 })

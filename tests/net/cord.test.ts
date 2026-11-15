@@ -153,4 +153,15 @@ describe('Room cords whose other end goes away', () => {
     expect(c.peer.cords()).toHaveLength(2)
   })
 
+  it('ends every cord when the host switches the Bungee off', () => {
+    const { a, b, c } = tied()
+    send(a.peer, { type: 'param', id: 'bungee.allowed', value: false })
+    room.tick()
+    expect(b.peer.cords().at(-1)).toEqual({ s: 'off' })
+    expect(c.peer.cords()).toEqual([{ s: 'on', to: b.id, r: 30 }, { s: 'off' }])
+    expect(a.peer.cords()).toEqual([{ s: 'off' }])
+    // Said once.
+    room.tick()
+    expect(c.peer.cords()).toHaveLength(2)
+  })
 })

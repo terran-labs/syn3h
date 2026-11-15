@@ -264,6 +264,9 @@ export class Room {
     for (const bot of this.bots.values()) {
       if (!bot.lastState || bot.lastState.paused || this.now() - bot.lastStateAt > RESPONDING_MS) this.dropCord(bot)
     }
+    // Bungee switched off: refreshes are refused from now on, so say the live cords are off
+    // rather than leave them to each client's copy of the setting.
+    if (!this.paramBool(bungeeAllowed.def)) for (const p of [...this.players.values(), ...this.bots.values()]) this.dropCord(p)
     this.tickYoink(this.now())
     this.tickHeld(this.now())
     this.tickIdle(this.now())
