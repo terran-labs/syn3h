@@ -4,6 +4,7 @@
  */
 import * as THREE from 'three/webgpu'
 import { params, worldLavaAltitude, worldSeed } from '../../../shared/params'
+import { nearestImage, wrapCoord } from '../../../shared/wrap'
 import type { Game, System } from '../../core/Game'
 import type { RAPIER } from '../../core/physics'
 import type { SpawnPoint, Terrain, TerrainRenderQuality, TerrainRoadPath, TerrainSummit, TerrainVent } from '../Terrain'
@@ -13,7 +14,7 @@ import { type TerrainData, generateTerrain } from './generate'
 import { type TerrainMaterial, createTerrainMaterial } from './material'
 import { LOD_FAR, LOD_NEAR, type TerrainMeshes, type TriangleStats, createTerrainMeshes } from './mesh'
 import { rimRoadRadius } from './roads'
-import { HeightSampler } from './sampler'
+import { HeightSampler, sealSeam } from './sampler'
 import { KIND_ALPINE, KIND_VOLCANIC, TERRAIN_PARAM_IDS, currentTerrainSettings, worldSeaKind } from './settings'
 import { spawnPointAt } from './spawn'
 import { Trees } from './trees'
@@ -21,6 +22,10 @@ import { Volcanics } from './volcanics'
 
 export class ProceduralTerrain implements Terrain {
   readonly size: number
+  /** The world is one tile of a torus this many metres on a side. */
+  readonly wrapSize: number
+  /** Largest height change (m) sealing the tile's seam made on the last generation. */
+  lastSeamCorrection = 0
   /** Increments on every regeneration. */
   version = 0
   data: TerrainData
@@ -41,6 +46,7 @@ export class ProceduralTerrain implements Terrain {
   constructor(private readonly game: Game, private seed: number) {
     this.data = this.generate()
     this.size = this.data.size
+    this.wrapSize = this.data.size
     this.sampler = new HeightSampler(this.data)
     this.look = createTerrainMaterial()
     this.look.setSummit(this.summitHeight())
@@ -59,6 +65,7 @@ export class ProceduralTerrain implements Terrain {
       game.scene, this.sampler,
       () => game.renderer.toneMappingExposure,
       () => Number(params.get('sky.exposure')?.value ?? game.renderer.toneMappingExposure),
+      game.camera,
     ))
     this.trees = game.add(new Trees(game.scene, this.sampler, game.camera))
 
@@ -80,6 +87,9 @@ export class ProceduralTerrain implements Terrain {
   private generate(): TerrainData {
     const t = performance.now()
     const data = generateTerrain(this.seed, currentTerrainSettings())
+    // The far row and column are the image of the first: make them identical so the
+    // height field, mesh and collider are exactly periodic.
+    this.lastSeamCorrection = sealSeam(data)
     this.lastGenerateMs = performance.now() - t
     return data
   }
@@ -116,6 +126,21 @@ export class ProceduralTerrain implements Terrain {
     for (const l of this.listeners) l()
   }
 
+  wrapPosition(p: { x: number; z: number }): boolean {
+    const x = wrapCoord(p.x, this.wrapSize)
+    const z = wrapCoord(p.z, this.wrapSize)
+    if (x === p.x && z === p.z) return false
+    p.x = x
+    p.z = z
+    return true
+  }
+
+  nearestTo(x: number, z: number, refX: number, refZ: number, out: { x: number; z: number }): { x: number; z: number } {
+    out.x = nearestImage(x, refX, this.wrapSize)
+    out.z = nearestImage(z, refZ, this.wrapSize)
+    return out
+  }
+
   heightAt(x: number, z: number): number {
     return this.sampler.heightAt(x, z)
   }
@@ -126,7 +151,7 @@ export class ProceduralTerrain implements Terrain {
 
   /** Caldera lake, pools and rivers where present, else the global lava plane. */
   liquidHeightAt(x: number, z: number): number {
-    return lavaSurfaceAt(this.data.lava, x, z, worldLavaAltitude.value)
+    return lavaSurfaceAt(this.data.lava, wrapCoord(x, this.wrapSize), wrapCoord(z, this.wrapSize), worldLavaAltitude.value)
   }
 
   /**
@@ -135,6 +160,8 @@ export class ProceduralTerrain implements Terrain {
    */
   liquidKindAt(x: number, z: number): 'lava' | 'water' | null {
     const sea = worldLavaAltitude.value
+    x = wrapCoord(x, this.wrapSize)
+    z = wrapCoord(z, this.wrapSize)
     const surface = lavaSurfaceAt(this.data.lava, x, z, sea)
     if (surface <= this.sampler.heightAt(x, z)) return null
     // Above the sea level it is the lake, a river or a pool; otherwise it is the sea.

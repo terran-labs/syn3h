@@ -6,10 +6,16 @@
  * `liquidHeightAt` reports and what vehicles float in. Rebuilt whenever the terrain
  * regenerates. The sea is lava or water by `world.seaKind`; the lake and rivers are lava on
  * volcanic worlds and water elsewhere. The lava look and the particles live in src/fx.
+ *
+ * The world wraps. Like the terrain chunks, each sea chunk, lake, pool and river is drawn at
+ * the image of it nearest the camera, and the apron to the horizon follows the window those
+ * chunks make, so the sea never ends. Vents are re-placed at their nearest images whenever
+ * the camera has moved an eighth of a tile.
  */
 import * as THREE from 'three/webgpu'
 import { attribute, cameraPosition, cameraViewMatrix, normalize, color, float, mix, mx_noise_float, positionWorld, smoothstep, time, uniform, vec3 } from 'three/tsl'
 import { worldLavaAltitude } from '../../../shared/params'
+import { nearestImage } from '../../../shared/wrap'
 import type { System } from '../../core/Game'
 import { Emitters } from '../../fx/Emitters'
 import { buildRibbonGeometry } from '../../fx/LavaFlow'
@@ -56,59 +62,89 @@ function createWaterMaterial(shore: boolean): Liquid {
 const SEA_REACH = 24000
 /** Sea grid resolution over the island: fine enough for the glowing shoreline to follow the coast. */
 const SEA_SEGMENTS = 192
+/** Sea chunks per side, matching the terrain's 8 x 8 chunks so both wrap in step. */
+const SEA_CHUNKS = 8
 
 type Ground = { size: number; heightAt(x: number, z: number): number }
 
 /**
- * The sea: a grid over the simulated square carrying the ground height under each vertex
- * (the lava material brightens where the two meet, which draws the glowing shoreline), with
- * a wide apron round it that reaches the horizon.
+ * One square of the sea grid in canonical tile coordinates, carrying the ground height
+ * under each vertex (the lava material brightens where the two meet, which draws the
+ * glowing shoreline). `uv` is world metres and is rewritten when the chunk moves.
  */
-function seaGeometry(ground: Ground): THREE.BufferGeometry {
+function seaChunkGeometry(ground: Ground, cx: number, cz: number): THREE.BufferGeometry {
   const half = ground.size / 2
-  const n = SEA_SEGMENTS
+  const segs = SEA_SEGMENTS / SEA_CHUNKS
+  const step = ground.size / SEA_SEGMENTS
   const positions: number[] = []
-  const uvs: number[] = []
   const depth: number[] = []
   const index: number[] = []
-  const push = (x: number, z: number, g: number) => {
-    positions.push(x, 0, z)
-    // The lava pattern is in world metres, so it does not swim when the sea level moves.
-    uvs.push(x, z)
-    depth.push(g)
-    return positions.length / 3 - 1
-  }
-  for (let iz = 0; iz <= n; iz++) {
-    for (let ix = 0; ix <= n; ix++) {
-      const x = -half + (ix / n) * ground.size
-      const z = -half + (iz / n) * ground.size
-      push(x, z, ground.heightAt(x, z))
+  for (let iz = 0; iz <= segs; iz++) {
+    for (let ix = 0; ix <= segs; ix++) {
+      const x = -half + (cx * segs + ix) * step
+      const z = -half + (cz * segs + iz) * step
+      positions.push(x, 0, z)
+      // The height field is periodic, so this is the ground under every image of the vertex.
+      depth.push(ground.heightAt(x, z))
     }
   }
-  for (let iz = 0; iz < n; iz++) {
-    for (let ix = 0; ix < n; ix++) {
-      const a = iz * (n + 1) + ix
-      index.push(a, a + n + 1, a + 1, a + 1, a + n + 1, a + n + 2)
+  for (let iz = 0; iz < segs; iz++) {
+    for (let ix = 0; ix < segs; ix++) {
+      const a = iz * (segs + 1) + ix
+      index.push(a, a + segs + 1, a + 1, a + 1, a + segs + 1, a + segs + 2)
     }
   }
-  // Apron: four trapezoids from the edge of the grid out to the horizon. Deep everywhere.
+  return finishSea(positions, depth, index)
+}
+
+/** Apron: a square ring from the edge of a tile-sized hole out to the horizon. Deep everywhere. */
+function apronGeometry(ground: Ground): THREE.BufferGeometry {
+  const half = ground.size / 2
   const far = half + SEA_REACH
+  const positions: number[] = []
+  const depth: number[] = []
+  const index: number[] = []
   const corners: [number, number][] = [[-1, -1], [1, -1], [1, 1], [-1, 1]]
   for (let k = 0; k < 4; k++) {
     const [ax, az] = corners[k]
     const [bx, bz] = corners[(k + 1) % 4]
-    const a = push(ax * half, az * half, -100)
-    const b = push(bx * half, bz * half, -100)
-    const c = push(bx * far, bz * far, -100)
-    const d = push(ax * far, az * far, -100)
+    const base = positions.length / 3
+    positions.push(ax * half, 0, az * half, bx * half, 0, bz * half, bx * far, 0, bz * far, ax * far, 0, az * far)
+    depth.push(-100, -100, -100, -100)
+    const [a, b, c, d] = [base, base + 1, base + 2, base + 3]
     index.push(a, d, b, b, d, c)
   }
+  return finishSea(positions, depth, index)
+}
+
+function finishSea(positions: number[], depth: number[], index: number[]): THREE.BufferGeometry {
+  const uvs: number[] = []
+  // The lava pattern is in world metres, so it does not swim when the sea level moves.
+  for (let i = 0; i < positions.length; i += 3) uvs.push(positions[i], positions[i + 2])
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
   geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
   geometry.setAttribute('groundHeight', new THREE.Float32BufferAttribute(depth, 1))
   geometry.setIndex(index)
+  geometry.computeBoundingSphere()
   return geometry
+}
+
+/** Shift a mesh by whole tiles in x and z, keeping its world-metre uvs continuous. */
+function shiftTo(mesh: THREE.Mesh, ox: number, oz: number, worldUv: boolean): void {
+  const dx = ox - mesh.position.x
+  const dz = oz - mesh.position.z
+  if (dx === 0 && dz === 0) return
+  mesh.position.x = ox
+  mesh.position.z = oz
+  if (!worldUv) return
+  const uv = mesh.geometry.getAttribute('uv') as THREE.BufferAttribute
+  const a = uv.array as Float32Array
+  for (let i = 0; i < a.length; i += 2) {
+    a[i] += dx
+    a[i + 1] += dz
+  }
+  uv.needsUpdate = true
 }
 
 /** A flat disc of lava with its pattern in world metres. */
@@ -130,9 +166,14 @@ export class Volcanics implements System {
   private readonly lavaStill: Liquid = createLavaMaterial(false, false)
   private readonly lavaRiver: Liquid = createLavaMaterial(true)
   private readonly waterStill: Liquid = createWaterMaterial(false)
-  private seaMesh: THREE.Mesh | null = null
-  private readonly meshes: THREE.Mesh[] = []
+  /** Sea grid chunks and the apron round them, all sharing the sea material. */
+  private sea: { mesh: THREE.Mesh; cx: number; cz: number }[] = []
+  private apron: THREE.Mesh | null = null
+  /** Lake, pools and rivers, with their canonical centres and whether their uvs are world metres. */
+  private readonly meshes: { mesh: THREE.Mesh; x: number; z: number; worldUv: boolean }[] = []
   private readonly emitters: Emitters
+  /** Where each vent is drawn now; empty forces a placement. */
+  private placedVents: { x: number; z: number }[] = []
 
   /**
    * `exposure` reports the camera exposure in use (it rises at night) and `dayExposure` the
@@ -141,6 +182,8 @@ export class Volcanics implements System {
   constructor(
     private readonly scene: THREE.Scene, private readonly sampler: HeightSampler,
     private readonly exposure: () => number = () => 1, private readonly dayExposure: () => number = () => 1,
+    /** Wrapping follows this camera; without one everything stays in the canonical tile. */
+    private readonly camera?: THREE.Camera,
   ) {
     this.group.name = 'volcanics'
     scene.add(this.group)
@@ -164,28 +207,85 @@ export class Volcanics implements System {
     const data: TerrainData = this.sampler.data
     const ground: Ground = { size: data.size, heightAt: (x, z) => this.sampler.heightAt(x, z) }
 
-    this.seaMesh = new THREE.Mesh(seaGeometry(ground), (this.seaIsLava ? this.lavaSea : this.waterSea).material)
-    this.seaMesh.frustumCulled = false
-    this.group.add(this.seaMesh)
+    const seaMaterial = (this.seaIsLava ? this.lavaSea : this.waterSea).material
+    for (let cz = 0; cz < SEA_CHUNKS; cz++) {
+      for (let cx = 0; cx < SEA_CHUNKS; cx++) {
+        const mesh = new THREE.Mesh(seaChunkGeometry(ground, cx, cz), seaMaterial)
+        this.sea.push({ mesh, cx, cz })
+        this.group.add(mesh)
+      }
+    }
+    this.apron = new THREE.Mesh(apronGeometry(ground), seaMaterial)
+    this.apron.frustumCulled = false
+    this.group.add(this.apron)
 
     const lava = data.lava
     const hot = this.flowsAreLava
-    const add = (geometry: THREE.BufferGeometry, material: THREE.Material) => {
+    const add = (geometry: THREE.BufferGeometry, material: THREE.Material, worldUv: boolean) => {
       const mesh = new THREE.Mesh(geometry, material)
-      this.meshes.push(mesh)
+      geometry.computeBoundingSphere()
+      const c = geometry.boundingSphere!.center
+      this.meshes.push({ mesh, x: c.x, z: c.z, worldUv })
       this.group.add(mesh)
     }
     const still = (hot ? this.lavaStill : this.waterStill).material
-    if (lava.lake) add(discGeometry(lava.lake.x, lava.lake.surface, lava.lake.z, lava.lake.radius), still)
-    for (const p of lava.pools) add(discGeometry(p.x, p.surface, p.z, p.radius), still)
+    if (lava.lake) add(discGeometry(lava.lake.x, lava.lake.surface, lava.lake.z, lava.lake.radius), still, true)
+    for (const p of lava.pools) add(discGeometry(p.x, p.surface, p.z, p.radius), still, true)
     for (const r of lava.rivers) {
       if (r.points.length < 2) continue
       // A little wider than the planned surface so the ribbon tucks into the channel banks.
-      add(buildRibbonGeometry(ground, r.points, r.width + 1.5), (hot ? this.lavaRiver : this.waterStill).material)
+      add(buildRibbonGeometry(ground, r.points, r.width + 1.5), (hot ? this.lavaRiver : this.waterStill).material, false)
     }
-    for (const v of data.vents) {
+    this.placedVents = []
+    this.place()
+  }
+
+  /** Move everything to the images nearest the camera. Cheap when nothing changes. */
+  private place(): void {
+    const size = this.sampler.data.size
+    const half = size / 2
+    const cam = this.camera?.position
+    const camX = cam?.x ?? 0
+    const camZ = cam?.z ?? 0
+    const near = (v: number, ref: number) => size * Math.round((ref - v) / size)
+    const chunk = size / SEA_CHUNKS
+    // The chunks form a tile-sized window round the camera; the apron's hole follows it.
+    let lowX = Infinity
+    let lowZ = Infinity
+    for (const s of this.sea) {
+      const x0 = -half + s.cx * chunk
+      const z0 = -half + s.cz * chunk
+      const ox = near(x0 + chunk / 2, camX)
+      const oz = near(z0 + chunk / 2, camZ)
+      shiftTo(s.mesh, ox, oz, true)
+      lowX = Math.min(lowX, x0 + ox)
+      lowZ = Math.min(lowZ, z0 + oz)
+    }
+    if (this.apron) shiftTo(this.apron, lowX + half, lowZ + half, true)
+    for (const m of this.meshes) shiftTo(m.mesh, near(m.x, camX), near(m.z, camZ), m.worldUv)
+    // Re-adding restarts every vent's particles, so only do it once some vent is an eighth
+    // of a tile past its nearest image: the restart then happens rarely and the vent that
+    // forced it is far away.
+    const limit = half + size / 8
+    const vents = this.sampler.data.vents
+    let stale = this.placedVents.length !== vents.length
+    for (const v of this.placedVents) {
+      if (Math.abs(v.x - camX) > limit || Math.abs(v.z - camZ) > limit) stale = true
+    }
+    if (stale) this.placeVents(camX, camZ)
+  }
+
+  /** Re-add every vent at its image nearest (x, z). */
+  private placeVents(camX: number, camZ: number): void {
+    this.emitters.clear()
+    this.placedVents = []
+    const size = this.sampler.data.size
+    for (const v of this.sampler.data.vents) {
+      const x = nearestImage(v.x, camX, size)
+      const z = nearestImage(v.z, camZ, size)
+      this.placedVents.push({ x, z })
       this.emitters.addVent(
-        { x: v.x, y: v.y + 0.3, z: v.z },
+        { x, y: v.y + 0.3, z },
         {
           kind: v.kind,
           radius: v.kind === 'embers' ? Math.max(0.6, v.size * 0.4) : v.size * 0.5,
@@ -198,11 +298,16 @@ export class Volcanics implements System {
 
   update(dt: number): void {
     const level = worldLavaAltitude.value
-    if (this.seaMesh) {
-      this.seaMesh.position.y = level
-      // The sea kind is a live slider: swap the look the moment it changes.
-      const want = (this.seaIsLava ? this.lavaSea : this.waterSea).material
-      if (this.seaMesh.material !== want) this.seaMesh.material = want
+    this.place()
+    // The sea kind is a live slider: swap the look the moment it changes.
+    const want = (this.seaIsLava ? this.lavaSea : this.waterSea).material
+    for (const s of this.sea) {
+      s.mesh.position.y = level
+      if (s.mesh.material !== want) s.mesh.material = want
+    }
+    if (this.apron) {
+      this.apron.position.y = level
+      if (this.apron.material !== want) this.apron.material = want
     }
     // Hold lava at roughly its daytime brightness on screen, letting a little of the extra
     // exposure through so it still reads as the brightest thing at night.
@@ -216,14 +321,19 @@ export class Volcanics implements System {
   }
 
   private clear(): void {
-    if (this.seaMesh) {
-      this.group.remove(this.seaMesh)
-      this.seaMesh.geometry.dispose()
-      this.seaMesh = null
+    for (const s of this.sea) {
+      this.group.remove(s.mesh)
+      s.mesh.geometry.dispose()
     }
-    for (const m of this.meshes) {
-      this.group.remove(m)
-      m.geometry.dispose()
+    this.sea = []
+    if (this.apron) {
+      this.group.remove(this.apron)
+      this.apron.geometry.dispose()
+      this.apron = null
+    }
+    for (const { mesh } of this.meshes) {
+      this.group.remove(mesh)
+      mesh.geometry.dispose()
     }
     this.meshes.length = 0
     this.emitters.clear()
