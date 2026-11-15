@@ -121,8 +121,8 @@ them, which is the size of the noise.
 - With eight bots the round world draws slightly more than the flat one (385 against 365).
   The bots spawn around the player, none is over the horizon, and three's own frustum
   culling is off on round worlds, so bots behind the camera are submitted. Eight bots are
-  still the largest adjustable cost, as before: about 37 draw calls and 2 ms of render CPU
-  time for the eight. A behind-the-camera test for vehicles would recover that on round worlds.
+  still the largest adjustable cost, as before: about 37 draw calls each, and 2 ms of render CPU
+  time for all eight. A behind-the-camera test for vehicles would recover that on round worlds.
 - The curve follows the camera exactly: `tools/curve-lag-check.mjs` carries the jet at
   60 m/s and finds the curve's centre under the camera on all 240 frames sampled.
 - Not measured: a phone, mobile pixel ratios on the round world, or a quiet machine.
