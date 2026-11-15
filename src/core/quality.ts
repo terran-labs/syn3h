@@ -340,6 +340,14 @@ export class QualityGovernor {
   }
   /** The player set the level by hand. It becomes the pinned level and the ladder restarts at its top. */
   setManualLevel(level: GraphicsLevel) { this.levelPinned = true; return this.reset(level, 'manual') }
+  /** Explicit recommendation action: a lower level must not restore cost already shed. */
+  lowerManualLevel(): GovernorChange | null {
+    if(this.level===0)return null
+    const from=this.settings
+    this.levelPinned=true;this.level=(this.level-1) as GraphicsLevel
+    this.ladder=this.ladderFor(this.level);this.rung=this.mapRung(from);this.probe=null
+    return this.change('manual',GOVERNOR.manualSettleMs)
+  }
   /** The player set vehicle shading by hand, or null to hand it back to the governor. Other rung values are kept. */
   setShadingPin(value: number | null) {
     const from = this.settings
@@ -451,6 +459,7 @@ export const MANUAL_KEY = 'syn3h.graphics.manual'
  */
 export class QualityController {
   private storage: StorageLike | null = null
+  private ignoreStorage: StorageLike | null = null
   private renderer: WebGPURenderer | null = null
   private terrain: QualityTerrain | null = null
   private hud: HTMLPreElement | null = null
@@ -474,7 +483,7 @@ export class QualityController {
     if (event.code !== 'F3' || event.repeat) return
     event.preventDefault(); this.toggleDiagnostics()
   }
-  setPerformanceEnvironment(read: () => PerformanceEnvironment) { this.environment = read; this.publishPerformance() }
+  setPerformanceEnvironment(read: () => PerformanceEnvironment) { if(this.disposed)return;this.environment = read; this.publishPerformance() }
   getPerformanceSnapshot(): PerformanceSnapshot {
     const g = this.governor
     return Object.freeze({ visible: this.diagnosticsVisible,
@@ -488,7 +497,7 @@ export class QualityController {
     return () => { this.performanceListeners.delete(listener); this.syncLegacyHud() }
   }
   private publishPerformance() {
-    if (this.disposed || !this.performanceListeners.size) return
+    if (this.disposed) return
     const snapshot = this.getPerformanceSnapshot()
     for (const listener of this.performanceListeners) listener(snapshot)
   }
@@ -504,19 +513,20 @@ export class QualityController {
   }
   setDiagnosticsVisible(visible: boolean) { this.diagnosticsVisible=visible;this.syncLegacyHud();this.publishPerformance() }
   toggleDiagnostics() { this.setDiagnosticsVisible(!this.diagnosticsVisible) }
-  ignoreRecommendation() { this.history.ignore();storageWrite(this.storage,RECOMMENDATION_IGNORE_KEY,'1');this.publishPerformance() }
+  ignoreRecommendation() { this.history.ignore();storageWrite(this.ignoreStorage,RECOMMENDATION_IGNORE_KEY,'1');this.publishPerformance() }
   lowerRecommendedTier(): boolean {
     const offer=this.history.recommendation,g=this.governor
     if(!offer || offer.level!==g.level || g.level===0 || this.disposed)return false
     // Identical authority to an explicit tier selection: retain auto, pin the new level.
     storageWrite(this.storage,LEVEL_KEY,String(offer.targetLevel));storageWrite(this.storage,MANUAL_KEY,'1')
-    g.setManualLevel(offer.targetLevel);this.lastReason='manual';this.apply();return true
+    g.lowerManualLevel();this.lastReason='manual';this.apply();return true
   }
   constructor() {
     if (typeof window === 'undefined') { this.governor = new QualityGovernor({ level: levelNumber(graphicsLevel.value) }); return }
     // Session storage survives a tab reload without making another tab look crashed.
     try { this.storage = window.sessionStorage } catch { try { this.storage = window.localStorage } catch { /* No storage available. */ } }
-    this.history.ignored = storageRead(this.storage, RECOMMENDATION_IGNORE_KEY) === '1'
+    try { this.ignoreStorage=window.sessionStorage } catch { /* Ignore stays in memory when session storage is unavailable. */ }
+    this.history.ignored = storageRead(this.ignoreStorage, RECOMMENDATION_IGNORE_KEY) === '1'
     const nav = navigator as Navigator & { deviceMemory?: number }
     this.detected = classifyDevice({ userAgent: nav.userAgent, touchPoints: nav.maxTouchPoints, memoryGB: nav.deviceMemory })
     const pending = storageRead(this.storage, LOAD_KEY)
@@ -537,6 +547,7 @@ export class QualityController {
     window.addEventListener('keydown', this.onKey)
     document.addEventListener('visibilitychange', this.onVisibility)
     this.unsubscribe = params.onChange((id, value) => {
+      if(params.get(id)?.def.scope==='world'){this.history.resetEvidence();this.publishPerformance()}
       if (id === graphicsLevel.def.id) {
         storageWrite(this.storage, LEVEL_KEY, String(levelNumber(graphicsLevel.value)))
         if (this.loading) storageWrite(this.storage, LOAD_KEY, String(levelNumber(graphicsLevel.value)))

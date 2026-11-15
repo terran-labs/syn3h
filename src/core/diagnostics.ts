@@ -110,14 +110,33 @@ export function readPerformanceEnvironment(game: Game): PerformanceEnvironment {
  * Keep its URL alias, but use the same toggleable panel as F3 and the touch control.
  */
 export function installRenderDiagnostics(game: Game): () => void {
-  game.quality.setPerformanceEnvironment(()=>readPerformanceEnvironment(game))
+  const errors: string[]=[]
+  const read=(): PerformanceEnvironment=>{
+    const environment=readPerformanceEnvironment(game),r=game.renderer
+    // Bounded compatibility data for existing capture tools; no global hooks or timer.
+    ;(window as unknown as {syn3hDiagnostics:unknown}).syn3hDiagnostics={
+      ...environment,adapter:environment.adapter??'not exposed',maxTexture:environment.maxTextureSize,
+      canvas:`${game.canvas.width} x ${game.canvas.height}`,pixelRatio:r?.getPixelRatio(),
+      firstDrawSubmittedMs:game.performance.firstFrameMs,tick:game.tick,fps:game.fps,
+      draws:game.performance.drawCalls,errors:[...errors],startup:formatStartup(),
+      contextEvents:[],webglContexts:'not tracked',
+    }
+    return environment
+  }
+  game.quality.setPerformanceEnvironment(read)
   if(new URLSearchParams(location.search).get('diag')==='1')game.quality.setDiagnosticsVisible(true)
   const observed=new WeakSet<object>()
   return () => {
     const renderer=game.renderer
     if(observed.has(renderer))return
     observed.add(renderer)
-    const onLost=renderer.onDeviceLost
-    renderer.onDeviceLost=info=>{startupTiming.deviceLost=deviceLostMessage(info);game.quality.setPerformanceEnvironment(()=>readPerformanceEnvironment(game));onLost.call(renderer,info)}
+    const onLost=renderer.onDeviceLost,onError=renderer.onError
+    renderer.onError=message=>{errors.push(String(message));if(errors.length>12)errors.shift();onError.call(renderer,message);game.quality.setPerformanceEnvironment(read)}
+    renderer.onDeviceLost=info=>{
+      startupTiming.deviceLost=deviceLostMessage(info);onLost.call(renderer,info)
+      // Game wraps this callback and writes its detailed record after it returns.
+      // Publish after that stack completes, even if the animation loop has stopped.
+      queueMicrotask(()=>game.quality.setPerformanceEnvironment(read))
+    }
   }
 }

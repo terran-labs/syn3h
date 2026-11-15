@@ -71,3 +71,21 @@ it('subscribes once, shares F3 state, lowers via the governor and disposes liste
  for(let i=0;i<800;i++)restored.frame(metrics(100))
  expect(restored.getPerformanceSnapshot().recommendation).toBeNull();restored.dispose()
 })
+it('explicit lower preserves cheaper rungs across level boundaries without enabling auto',()=>{
+ const g=new QualityGovernor({level:1,auto:false,devicePixelRatio:2})
+ g.rung=g.ladder.length-1
+ const before={...g.settings}
+ expect(g.lowerManualLevel()?.level).toBe(0)
+ expect(g.settings.pixelRatio).toBeLessThanOrEqual(before.pixelRatio)
+ expect(g.settings.particles).toBeLessThanOrEqual(before.particles)
+ expect(g.levelPinned).toBe(true);expect(g.auto).toBe(false)
+ expect(g.lowerManualLevel()).toBeNull()
+})
+it('Ignore has no cross-tab localStorage fallback',()=>{
+ const entries=new Map<string,string>(),storage={getItem:(k:string)=>entries.get(k)??null,setItem:(k:string,v:string)=>entries.set(k,v),removeItem:(k:string)=>entries.delete(k)}
+ vi.stubGlobal('window',{get sessionStorage(){throw Error('blocked')},localStorage:storage,devicePixelRatio:1,addEventListener(){},removeEventListener(){},dispatchEvent(){}})
+ vi.stubGlobal('document',{hidden:false,addEventListener(){},removeEventListener(){}})
+ vi.stubGlobal('navigator',{userAgent:'Desktop',maxTouchPoints:0});vi.stubGlobal('location',{search:''})
+ const c=new QualityController();c.ignoreRecommendation()
+ expect(entries.has('syn3h.performance.ignore')).toBe(false);c.dispose()
+})

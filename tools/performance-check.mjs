@@ -12,7 +12,7 @@ const roomPort=await freePort(),port=await freePort(),origin=`http://127.0.0.1:$
 process.env.SYN3H_NO_ROOM_SERVER='1';process.env.VITE_SERVER_URL=`ws://127.0.0.1:${port}`
 const room=spawn(process.execPath,['--import','tsx','server/dev.ts'],{env:{...process.env,PORT:String(roomPort)},stdio:['ignore','pipe','pipe']})
 let roomLog='';room.stdout.on('data',x=>roomLog+=x);room.stderr.on('data',x=>roomLog+=x)
-let vite,browser;const results=[],errors=[]
+let vite,browser;const results=[],errors=[],consoleErrors=[],events=[]
 const pause=ms=>new Promise(r=>setTimeout(r,ms))
 const quantile=(a,q)=>{const s=a.slice().sort((x,y)=>x-y);return s[Math.min(s.length-1,Math.floor(s.length*q))]??null}
 try{
@@ -22,7 +22,7 @@ try{
  for(const scene of ['volcanic','archipelago','multiplayer']){
   const context=await browser.newContext({viewport:{width:1280,height:720},deviceScaleFactor:1}),roomName=`perf${Date.now()}`
   const open=async name=>{
-   const page=await context.newPage();page.on('pageerror',e=>errors.push(`${scene}/${name}: ${e.message}`))
+   const page=await context.newPage();page.on('pageerror',e=>errors.push(`${scene}/${name}: ${e.message}`));page.on('console',m=>{if(m.type()==='error'&&consoleErrors.length<40)consoleErrors.push({scene,name,at:Date.now(),text:m.text()})})
    page.on('websocket',ws=>{if(ws.url().includes('/ws?'))assert.ok(ws.url().startsWith(`ws://127.0.0.1:${port}/ws?`),'isolated endpoint')})
    await page.goto(`${origin}/?room=${roomName}&name=${name}`)
    await page.waitForFunction(()=>window.syn3h?.shell,null,{timeout:90000})
@@ -31,6 +31,7 @@ try{
    return page
   }
   const host=await open('PerfHost')
+  events.push({scene,event:'applyPlanet',at:Date.now()})
   await host.evaluate(async scene=>{const {applyPlanet}=await import('/src/world/planets.ts');applyPlanet(scene==='archipelago'?'archipelago':'volcanic',49731);const s=window.syn3h;s.params.set('gfx.auto',false);s.params.set('gfx.level',2)},scene)
   if(scene==='multiplayer')await open('PerfGuest')
   await host.waitForTimeout(5000)
@@ -72,8 +73,8 @@ try{
   }
   await host.screenshot({path:`${out}/${scene}.png`});await context.close()
  }
- assert.deepEqual(errors,[])
+ assert.deepEqual(errors,[]);assert.deepEqual(consoleErrors,[],'renderer console must be clean')
 }finally{
- await writeFile(`${out}/results.json`,JSON.stringify({source:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),results,errors,roomLog},null,2))
+ await writeFile(`${out}/results.json`,JSON.stringify({source:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),results,errors,consoleErrors,events,roomLog},null,2))
  await browser?.close();await vite?.close();room.kill('SIGTERM')
 }
