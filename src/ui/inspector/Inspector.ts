@@ -19,6 +19,8 @@ export interface InspectorOptions {
   /** The vehicles on offer and which is in use, for the switcher in the Vehicles card. */
   vehicles(): { options: readonly { id: string; label: string }[]; current: string }
   onVehicle(id: string): void
+  /** Capture a local bookmark. The caller owns storage and success or failure feedback. */
+  onSaveWorld?(): void
 }
 /** "Mode (0 tag, 1 hill)" or "Glass: 0 Clear, 1 Frosted" gives a name and named choices. */
 export function choicesOf(def: PropertyDef): { name: string; options: { value: number; label: string }[] } | null {
@@ -35,6 +37,9 @@ export class Inspector {
   private tree: SectionNode[] = []
   private known = 0
   private selected = ''
+  private tooltip!: HTMLElement
+  private tooltipTimer?: ReturnType<typeof setTimeout>
+  private readonly abort = new AbortController()
   private readonly rows = new Map<string, { row: HTMLElement; sync(value: ParamValue): void; def: PropertyDef }>()
   private readonly unsubscribe: () => void
   private editable = true
@@ -44,13 +49,23 @@ export class Inspector {
 
   constructor(parent: HTMLElement, private readonly options: InspectorOptions) {
     this.element.className = 'world-inspector'; this.element.setAttribute('aria-label', 'World inspector')
-    this.element.innerHTML = `<div class="wi-top wi-glass"><input class="wi-search" type="search" placeholder="Search every property" aria-label="Search every property" autocomplete="off" spellcheck="false">
+    this.element.innerHTML = `<div class="wi-top wi-glass"><input class="wi-search" type="search" placeholder="Find a setting" aria-label="Find a setting" autocomplete="off" spellcheck="false">
       <div class="wi-actions"><button type="button" data-wi="copy-world">Copy world</button><button type="button" data-wi="paste-world">Paste world</button><button type="button" data-wi="reset">Reset</button></div></div>
       <div class="wi-cards"></div>
       <div class="wi-detail wi-glass" hidden></div>
       <div class="wi-sheet wi-glass" hidden><strong></strong><textarea spellcheck="false" aria-label="World as JSON"></textarea><div class="wi-actions"><button type="button" data-wi="apply">Paste it in</button><button type="button" data-wi="close">Close</button></div></div>
       <p class="wi-status" role="status" aria-live="polite"></p>`
     parent.append(this.element)
+    this.tooltip = this.element.querySelector<HTMLElement>('.wi-detail')!
+    this.tooltip.classList.add('wi-tooltip'); this.tooltip.id = 'setting-tooltip'; this.tooltip.setAttribute('role', 'tooltip')
+    parent.append(this.tooltip)
+    const signal = this.abort.signal
+    this.tooltip.addEventListener('pointerenter', () => clearTimeout(this.tooltipTimer), { signal })
+    this.tooltip.addEventListener('pointerleave', () => this.hideTooltip(), { signal })
+    this.tooltip.addEventListener('pointerdown', event => { if (event.pointerType === 'touch') this.hideTooltip() }, { signal })
+    this.element.addEventListener('scroll', () => this.hideTooltip(), { capture: true, signal })
+    window.addEventListener('resize', () => this.hideTooltip(), { signal })
+    document.addEventListener('pointerdown', event => { if (!(event.target as Element).closest('.wi-row, .wi-tooltip')) this.hideTooltip() }, { signal })
     this.build()
     this.unsubscribe = params.onChange((id, value) => this.rows.get(id)?.sync(value))
     this.element.addEventListener('click', event => this.click(event))
@@ -59,7 +74,7 @@ export class Inspector {
     for (const type of ['keydown', 'keyup'] as const) this.element.addEventListener(type, event => { if ((event.target as Element).matches('input[type=search], textarea, input[type=number]')) event.stopPropagation() })
   }
   get open(): boolean { return !this.element.hidden }
-  set open(value: boolean) { this.element.hidden = !value }
+  set open(value: boolean) { this.element.hidden = !value; if (!value) this.hideTooltip() }
 
   /** Rebuild if properties have been defined since the last look; refresh summaries and locks. */
   update(): void {
@@ -91,6 +106,14 @@ export class Inspector {
       })
       const foot = document.createElement('div'); foot.className = 'wi-actions wi-foot'
       foot.innerHTML = '<button type="button" data-wi="copy-section">Copy JSON</button><button type="button" data-wi="paste-section">Paste</button>'
+      if (section.id === 'world' && this.options.onSaveWorld) {
+        const save = document.createElement('button'); save.type = 'button'; save.dataset.wi = 'save-world'; save.textContent = 'Save current world'
+        // Saving a local copy does not edit the shared world, even for a locked guest.
+        // Keep native keyboard activation, but do not send Enter/Space to driving input.
+        // Keyup still bubbles so a previously held driving key can be released here.
+        save.addEventListener('keydown', event => event.stopPropagation())
+        foot.append(save)
+      }
       body.append(foot); card.append(head, body); cards.append(card)
       if (open.has(section.id)) this.toggle(card, true)
     }
@@ -132,16 +155,26 @@ export class Inspector {
       sync = value => { if (document.activeElement !== input) input.value = String(value); output.textContent = show(value, def) }
     }
     sync(param.value)
-    row.addEventListener('pointerenter', () => this.detail(def)); row.addEventListener('focusin', () => this.detail(def))
+    row.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') this.detail(def) })
+    row.addEventListener('focusin', () => this.detail(def))
+    row.addEventListener('pointerdown', event => { if (event.pointerType === 'touch') this.detail(def) })
+    row.addEventListener('pointerleave', () => { this.tooltipTimer = setTimeout(() => this.hideTooltip(), 160) })
+    row.addEventListener('focusout', event => { if (!row.contains(event.relatedTarget as Node)) this.hideTooltip() })
+    for (const control of row.querySelectorAll('input, button')) control.setAttribute('aria-describedby', 'setting-tooltip')
     this.rows.set(def.id, { row, sync, def })
     return row
   }
-  /** The pane under the cards: what the property is for, where it sits in its limits, who it affects. */
+  hideTooltip(): void {
+    clearTimeout(this.tooltipTimer); this.tooltip.hidden = true; this.selected = ''
+    for (const { row } of this.rows.values()) row.classList.remove('is-selected')
+  }
+  /** A contextual tooltip beside the control, or above it when the viewport is narrow. */
   private detail(def: PropertyDef): void {
-    if (this.selected === def.id) return
+    clearTimeout(this.tooltipTimer)
+    if (this.selected === def.id && !this.tooltip.hidden) return
     this.selected = def.id
     for (const { row } of this.rows.values()) row.classList.toggle('is-selected', row.dataset.id === def.id)
-    const pane = this.element.querySelector<HTMLElement>('.wi-detail')!, value = params.get(def.id)?.value ?? def.default, at = fraction(def, value), home = fraction(def, def.default)
+    const pane = this.tooltip, value = params.get(def.id)?.value ?? def.default, at = fraction(def, value), home = fraction(def, def.default)
     const choices = choicesOf(def)
     pane.replaceChildren()
     const head = document.createElement('div'); head.className = 'wi-detail-head'
@@ -159,6 +192,13 @@ export class Inspector {
     }
     const small = document.createElement('small'); small.textContent = limits(def); pane.append(small)
     pane.hidden = false
+    const row = this.rows.get(def.id)!.row.getBoundingClientRect()
+    const width = Math.min(280, innerWidth - 24)
+    pane.style.width = `${width}px`
+    const height = pane.getBoundingClientRect().height
+    const fitsLeft = row.left > width + 24
+    pane.style.left = `${fitsLeft ? row.left - width - 16 : Math.max(12, Math.min(innerWidth - width - 12, row.left))}px`
+    pane.style.top = `${Math.max(12, Math.min(innerHeight - height - 12, fitsLeft ? row.top : row.top - height - 12))}px`
   }
   private toggle(card: HTMLElement, open = !card.classList.contains('is-open')): void {
     card.classList.toggle('is-open', open); card.querySelector<HTMLElement>('.wi-body')!.hidden = !open; card.querySelector('.wi-head')!.setAttribute('aria-expanded', String(open))
@@ -189,7 +229,9 @@ export class Inspector {
     }
     this.say(words.length ? `${[...this.rows.values()].filter(r => !r.row.hidden).length} found` : '')
   }
-  private say(text: string): void { this.element.querySelector('.wi-status')!.textContent = text }
+  /** Feedback stays visible while the inspector suppresses transient game toasts. */
+  setStatus(message: string): void { this.element.querySelector('.wi-status')!.textContent = message }
+  private say(text: string): void { this.setStatus(text) }
   private async click(event: Event): Promise<void> {
     const target = event.target as Element, vehicle = target.closest<HTMLElement>('[data-vehicle]')
     if (vehicle) { this.options.onVehicle(vehicle.dataset.vehicle!); return }
@@ -198,6 +240,7 @@ export class Inspector {
     const valueOf = (id: string) => params.get(id)?.value
     switch (button.dataset.wi) {
       case 'toggle': if (card) this.toggle(card); break
+      case 'save-world': this.options.onSaveWorld?.(); break
       case 'copy-world': await this.copy(JSON.stringify(exportWorld(params.all().map(p => p.def as PropertyDef), valueOf), null, 2), 'This world'); break
       case 'copy-section': if (section) await this.copy(JSON.stringify(exportSection(section, valueOf), null, 2), section.title); break
       case 'paste-world': await this.sheet('Paste a world', null); break
@@ -239,5 +282,5 @@ export class Inspector {
     this.element.querySelector<HTMLElement>('.wi-sheet')!.hidden = true
     const line = pasteSummary(result); this.say(line); return line
   }
-  dispose(): void { this.unsubscribe(); clearTimeout(this.armed); this.element.remove() }
+  dispose(): void { this.unsubscribe(); this.abort.abort(); clearTimeout(this.armed); clearTimeout(this.tooltipTimer); this.tooltip.remove(); this.element.remove() }
 }

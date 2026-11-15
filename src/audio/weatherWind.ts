@@ -17,8 +17,8 @@
  * and the limiter all apply. `level` follows the existing "Wind volume" slider (audio.wind).
  * Per frame: one wind lookup and a handful of AudioParam targets, nothing allocated.
  *
- * Plays alongside the owner's recorded Wind.wav, which follows the vehicle's own speed and
- * altitude. To keep the two from doubling, the camera's motion counts here at OWN_MOTION.
+ * The sole wind voice since the owner's 15 November 2026 choice. Camera motion still
+ * counts at OWN_MOTION to keep driving rush restrained; weather strength is unchanged.
  */
 import type * as THREE from 'three/webgpu'
 import { atmosphereValue } from '../world/weather/params'
@@ -34,9 +34,8 @@ const CAMERA_SMOOTH = 0.15
 /** Faster than this between frames is a teleport or a seam crossing, not motion. */
 const MAX_CAMERA_SPEED = 400
 /**
- * How much of the camera's own motion counts as airspeed. The recorded wind clip already
- * plays the rush of the vehicle's speed (Engine.motionMix), so at full weight the two would
- * double up into a constant roar while driving. At 0.35 a buggy at 30 m/s in still air adds
+ * How much of the camera's own motion counts as airspeed. Keep the restrained driving
+ * mix after removing the recorded wind. At 0.35 a buggy at 30 m/s in still air adds
  * only a faint hiss here, a headwind still sounds stronger than a tailwind, and a gale on
  * the summit is unchanged because the weather itself is never scaled.
  */

@@ -6,9 +6,9 @@ import { defineParam } from '../../../shared/params'
 
 const group = 'Gear: Bungee'
 
-/** Off until the owner has tried it (protocol rule 5). */
+/** Available on the normal entry; the host can still turn it off for the room. */
 export const bungeeAllowed = defineParam({
-  id: 'bungee.allowed', label: 'Bungee', group, scope: 'world', default: false,
+  id: 'bungee.allowed', label: 'Bungee', group, scope: 'world', default: true,
 })
 
 /** Longest the cord may be, and the hook's reach. */

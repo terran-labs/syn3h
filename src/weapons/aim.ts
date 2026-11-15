@@ -9,6 +9,13 @@
 import * as THREE from 'three/webgpu'
 import type { Game } from '../core/Game'
 import { GROUP_ALL, GROUP_LIQUID, GROUP_PROJECTILE, RAPIER, groups } from '../core/physics'
+import { laserLifetime, laserSpeed } from './params'
+
+/** Optional input supplied by a bot controller instead of the local keyboard and camera. */
+export interface GearControl {
+  fire: boolean
+  direction: [number, number, number]
+}
 
 export interface Aim {
   /** Muzzle: where the gear leaves the vehicle. */
@@ -27,6 +34,13 @@ const ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })
 /** True while the cursor is captured by the game canvas, so mouse movement aims. */
 export function cursorAims(game: Game): boolean {
   return typeof document !== 'undefined' && document.pointerLockElement === game.canvas
+}
+
+/** Only player input uses camera aim; scripted shots retain their explicit direction. */
+export function beamAimDirection(game: Game, body: RAPIER.RigidBody): [number, number, number] | undefined {
+  if (!cursorAims(game)) return undefined
+  const d = aimFrom(game, body, laserSpeed.value * laserLifetime(laserSpeed.value)).d
+  return [d.x, d.y, d.z]
 }
 
 /** Cast from `from` along unit `dir`, ignoring `skip`, water and lava surfaces, and sensors. */
@@ -52,14 +66,14 @@ export function castAim(game: Game, from: THREE.Vector3, dir: THREE.Vector3, ran
  * Aim from a vehicle body. `up` and `ahead` place the muzzle in the vehicle's frame, metres.
  * `lift` tilts the straight-ahead aim upward, radians, for gear that likes to reach high.
  */
-export function aimFrom(game: Game, body: RAPIER.RigidBody, range: number, up = 0.4, ahead = 2.4, lift = 0): Aim {
+export function aimFrom(game: Game, body: RAPIER.RigidBody, range: number, up = 0.4, ahead = 2.4, lift = 0, cameraAim = true): Aim {
   const r = body.rotation()
   const q = new THREE.Quaternion(r.x, r.y, r.z, r.w)
   const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(q)
   const upv = new THREE.Vector3(0, 1, 0).applyQuaternion(q)
   const t = body.translation()
   const o = new THREE.Vector3(t.x, t.y, t.z).addScaledVector(fwd, ahead).addScaledVector(upv, up)
-  if (cursorAims(game)) {
+  if (cameraAim && cursorAims(game)) {
     const cam = game.camera
     const from = cam.getWorldPosition(new THREE.Vector3())
     const look = cam.getWorldDirection(new THREE.Vector3())

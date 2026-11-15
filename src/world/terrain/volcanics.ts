@@ -14,7 +14,7 @@
  */
 import * as THREE from 'three/webgpu'
 import { attribute, cameraPosition, cameraViewMatrix, normalize, color, float, mix, mx_noise_float, positionWorld, smoothstep, time, uniform, vec3 } from 'three/tsl'
-import { worldLavaAltitude } from '../../../shared/params'
+import { worldGravity, worldLavaAltitude } from '../../../shared/params'
 import { nearestImage } from '../../../shared/wrap'
 import { overHorizon } from '../curve'
 import type { System } from '../../core/Game'
@@ -30,6 +30,7 @@ import { waterRiverMaxSpeed, waterWaves } from '../water/params'
 import { SEA_GRID } from '../water/seaWaves'
 import { buildRiverSurface, buildStillSurface, createWaterSurface } from '../water/surface'
 import { WaterfallMist, fallsFromRivers } from '../water/mist'
+import { buildFallSheet, createFallMaterial } from '../water/falls'
 import { paletteFor } from './palettes'
 
 interface Liquid {
@@ -185,7 +186,10 @@ export class Volcanics implements System {
   private readonly newRiver = createWaterSurface('river')
   /** Whether the current meshes were built for the new water. */
   private builtNew = false
+  private builtGravity = worldGravity.value
+  private builtRiverSpeed = waterRiverMaxSpeed.value
   private readonly mist = new WaterfallMist(this.group)
+  private readonly fallMaterial = createFallMaterial()
   /** Sea grid chunks and the apron round them, all sharing the sea material. */
   private sea: { mesh: THREE.Mesh; cx: number; cz: number }[] = []
   private apron: THREE.Mesh | null = null
@@ -228,7 +232,10 @@ export class Volcanics implements System {
     const ground: Ground = { size: data.size, heightAt: (x, z) => this.sampler.heightAt(x, z) }
 
     this.builtNew = waterWaves.value
+    this.builtGravity = worldGravity.value
+    this.builtRiverSpeed = waterRiverMaxSpeed.value
     const palette = paletteFor(data.settings.look)
+    this.fallMaterial.color.set(palette.seaShallow)
     for (const w of [this.newSea, this.newStill, this.newRiver]) w.setColours(palette.seaShallow, palette.seaDeep)
     const seaMaterial = this.seaMaterial()
     // A dry world (the Moon) drains its sea below every valley: draw none of it.
@@ -263,6 +270,17 @@ export class Volcanics implements System {
       for (const r of lava.rivers) {
         if (r.points.length < 2) continue
         add(buildRiverSurface(ground, r.points, r.width + 1.5, (slope) => riverSpeed(slope, waterRiverMaxSpeed.value)), this.newRiver.material, false)
+        for (const drop of r.drops) {
+          const s = drop.steepest
+          // A long steep run may contain a short ledge, without enough current to leap
+          // the whole run. Prefer the full arc, then try its individual ledges, tallest first.
+          const ledges = Array.from({ length: s.end - s.start }, (_, i) => [s.start + i, s.start + i + 1] as const)
+            .sort(([a, b], [c, d]) => (r.points[c].y - r.points[d].y) - (r.points[a].y - r.points[b].y))
+          for (const [a, b] of [[s.start, s.end], ...ledges]) {
+            const sheet = buildFallSheet(ground, r.points[a], r.points[b], r.width, worldGravity.value, waterRiverMaxSpeed.value)
+            if (sheet) { add(sheet, this.fallMaterial, false); break }
+          }
+        }
       }
       this.mist.set(fallsFromRivers(lava.rivers), data.size)
       this.placedVents = []
@@ -352,7 +370,8 @@ export class Volcanics implements System {
   update(dt: number): void {
     const level = worldLavaAltitude.value
     // The new water rebuilds the rivers and pools, so switching it rebuilds everything.
-    if (waterWaves.value !== this.builtNew) this.rebuild()
+    if (waterWaves.value !== this.builtNew || (this.builtNew &&
+      (worldGravity.value !== this.builtGravity || waterRiverMaxSpeed.value !== this.builtRiverSpeed))) this.rebuild()
     this.place()
     // The sea kind is a live slider: swap the look the moment it changes.
     const want = this.seaMaterial()
@@ -404,6 +423,7 @@ export class Volcanics implements System {
 
   dispose(): void {
     this.clear()
+    this.fallMaterial.dispose()
     this.emitters.dispose()
     this.scene.remove(this.group)
     for (const l of [this.lavaSea, this.waterSea, this.lavaStill, this.lavaRiver, this.waterStill, this.newSea, this.newStill, this.newRiver]) l.material.dispose()

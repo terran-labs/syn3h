@@ -79,6 +79,7 @@ test('malformed versions are rejected', () => {
 const TSV = [
   'release-1\t2026-11-14 19:08 PST\thttps://syn3h.af-4e7.workers.dev/\tm13.1-steering\tee73e41\t9c01cffa-51a2-4da8-bf00-27b3d1de8bb0\t20261114-190707-ee73e41',
   'release-2\t2026-11-14 20:07 PST\thttps://syn3h.af-4e7.workers.dev/\tm14.2-release2\tbc8cb48\t747d2041-ba63-403a-818f-77834ae9951a\t20261114-200625-bc8cb48',
+  'release-4\t2026-11-15 03:05 PST\thttps://syn3h.af-4e7.workers.dev/\tm16-default-on\tda5a89c\tef3e2f23-e868-41d6-9894-4b09e9b57db2\t20261115-021120-da5a89c',
   '',
 ].join('\n')
 
@@ -86,25 +87,26 @@ const TSV = [
 const HISTORY_TEXT = readFileSync(new URL('../../release-notes/history.tsv', import.meta.url), 'utf8')
 const HISTORY = parseHistory(HISTORY_TEXT)
 
-test('the checked-in history: fourteen builds of 14 November, two of them public', () => {
-  assert.equal(HISTORY.length, 14)
+test('the checked-in history: fifteen builds across two days, three accepted public releases', () => {
+  assert.equal(HISTORY.length, 15)
   assert.equal(HISTORY[0].version, 'v26.11.1400')
   assert.equal(HISTORY[0].milestone, 'm00-proposal')
-  assert.equal(HISTORY.at(-1).version, 'v26.11.1413')
+  assert.equal(HISTORY.at(-1).version, 'v26.11.1500')
   assert.deepEqual(HISTORY.filter((r) => r.channel === 'production').map((r) => [r.version, r.milestone, r.commit]), [
     ['v26.11.1412', 'm13.1-steering', 'ee73e41'],
     ['v26.11.1413', 'm14.2-release2', 'bc8cb48'],
+    ['v26.11.1500', 'm16-default-on', 'da5a89c'],
   ])
   assert.ok(!HISTORY.some((r) => /^m14\.[34]/.test(r.milestone)), 'unshipped candidates are not in the history')
   const { pairs, problems } = matchReleases(HISTORY, releasesFromTsv(TSV))
   assert.deepEqual(problems, [])
-  assert.deepEqual(pairs.map((p) => [p.release, p.version]), [['release-1', 'v26.11.1412'], ['release-2', 'v26.11.1413']])
+  assert.deepEqual(pairs.map((p) => [p.release, p.version]), [['release-1', 'v26.11.1412'], ['release-2', 'v26.11.1413'], ['release-4', 'v26.11.1500']])
 })
 
 test('next comes after the history', () => {
   const versions = HISTORY.map((r) => r.version)
   assert.equal(nextVersion(new Date('2026-11-15T05:30:00Z'), versions), 'v26.11.1414') // 9:30pm on the 14th
-  assert.equal(nextVersion(new Date('2026-11-15T18:00:00Z'), versions), 'v26.11.1500') // 10am on the 15th
+  assert.equal(nextVersion(new Date('2026-11-15T18:00:00Z'), versions), 'v26.11.1501') // 10am on the 15th
 })
 
 test('kind lines never call a milestone public', () => {
@@ -135,7 +137,7 @@ test('a bad history is rejected', () => {
 test('production versions and deployed builds must match', () => {
   const releases = releasesFromTsv(TSV + 'release-3\t2026-11-15 09:30 PST\tu\tm15\tabc1234\tid\tf\n')
   assert.deepEqual(matchReleases(HISTORY, releases).problems, ['release-3 (abc1234) has no production version in history.tsv'])
-  assert.deepEqual(matchReleases(HISTORY, releasesFromTsv(TSV.split('\n')[0])).problems, ['v26.11.1413 is production but no build of bc8cb48 is in releases.tsv'])
+  assert.deepEqual(matchReleases(HISTORY, releasesFromTsv(TSV.split('\n')[0])).problems, ['v26.11.1413 is production but no build of bc8cb48 is in releases.tsv', 'v26.11.1500 is production but no build of da5a89c is in releases.tsv'])
 })
 
 test('releases.tsv with a malformed row is rejected', () => {
@@ -168,7 +170,9 @@ test('render checks the shape for the channel', () => {
   assert.throws(() => renderNotes(notesFor(PRODUCTION, { play: false }), PRODUCTION), /production notes need/)
   assert.throws(() => renderNotes(notesFor(MILESTONE), HISTORY[3]), /must be the heading "## Syn3h v26.11.1403"/)
   assert.throws(() => renderNotes(notesFor(MILESTONE).replace(kindLine(MILESTONE), kindLine(PRODUCTION)), MILESTONE), /line under the deck/)
-  assert.throws(() => renderNotes(`(AI Generated)\n\n${notesFor(MILESTONE)}`, MILESTONE), /first line must be the heading/)
+  assert.match(body, /^\(AI Generated\)\n\n## Syn3h /)
+  assert.equal(renderNotes(`(AI Generated)\n\n${notesFor(MILESTONE)}`, MILESTONE), body)
+  assert.throws(() => renderNotes(`Unexpected preface\n\n${notesFor(MILESTONE)}`, MILESTONE), /first line must be the heading/)
   assert.throws(() => renderNotes(notesFor(MILESTONE).replace('- b', '- b — c'), MILESTONE), /dash/)
   assert.throws(() => renderNotes(notesFor(MILESTONE).replace('- b', '- the lasers fire'), MILESTONE), /wording rule: lasers, fire/)
   assert.throws(() => renderNotes(notesFor(MILESTONE, { extra: '### Screenshots\n\n![x](y)' }), MILESTONE), /built from the assets manifest/)

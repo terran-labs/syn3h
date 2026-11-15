@@ -1,6 +1,6 @@
 /**
- * Water Lab sliders. Every switch that changes behaviour defaults off, so with them off the
- * game is exactly as it was (ops/PROTOCOL.md rule 5).
+ * Water sliders. Enabled for normal entry; players and saved rooms can explicitly turn
+ * individual features off. Planet recipes retain ownership of water versus lava.
  */
 import { defineParam, params } from '../../../shared/params'
 import { WAVE_MAX_HEIGHT } from '../../../shared/water/waves'
@@ -8,7 +8,7 @@ import { WAVE_MAX_HEIGHT } from '../../../shared/water/waves'
 const P = { group: 'Water', scope: 'world' as const }
 
 /** Master switch for the new sea surface: waves, shoreline foam lines, the new water look. */
-export const waterWaves = defineParam({ ...P, id: 'water.waves', label: 'Sea waves', default: false })
+export const waterWaves = defineParam({ ...P, id: 'water.waves', label: 'Sea waves', default: true })
 /** Crest to trough height of the biggest possible swell, metres. */
 export const waterWaveHeight = defineParam({
   ...P, id: 'water.waveHeight', label: 'Wave height (m)', default: 0.8, min: 0, max: WAVE_MAX_HEIGHT, step: 0.05,

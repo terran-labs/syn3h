@@ -102,6 +102,9 @@ export function createJetPilot(vehicle: Vehicle, terrain: Terrain): Pilot {
   const error = new THREE.Vector3(), torque = new THREE.Vector3(), righting = new THREE.Vector3()
   const worldUp = new THREE.Vector3(0, 1, 0)
   const inertia = new THREE.Vector3()
+  const inertiaFrame = new THREE.Quaternion(), inverseInertiaFrame = new THREE.Quaternion()
+  // Rapier reports principal moments in their own frame, not the vehicle's XYZ axes.
+  const applyInertia = (acceleration: THREE.Vector3) => acceleration.applyQuaternion(inverseInertiaFrame).multiply(inertia).applyQuaternion(inertiaFrame)
   // Progress tracking for stuckFor.
   let best = Infinity, goalX = NaN, goalZ = NaN
   let heldHeading = NaN
@@ -147,6 +150,7 @@ export function createJetPilot(vehicle: Vehicle, terrain: Terrain): Pilot {
     up.set(0, 1, 0).applyQuaternion(q)
     forward.set(0, 0, -1).applyQuaternion(q)
     inertia.copy(body.principalInertia())
+    inertiaFrame.copy(body.principalInertiaLocalFrame()); inverseInertiaFrame.copy(inertiaFrame).invert()
     input.brakes = false
     input.fire = false
 
@@ -227,7 +231,10 @@ export function createJetPilot(vehicle: Vehicle, terrain: Terrain): Pilot {
     const ay = clamp((vyWant - vel.y) * 2.5, -6, 9)
 
     // Wanted up vector leans toward the horizontal acceleration.
-    wantUp.set(ax, g + Math.max(ay, -g * .5), az).normalize()
+    const vertical = g + Math.max(ay, -g * .5)
+    // Bound the actual attitude during descent too, when less vertical thrust is wanted.
+    const tiltScale = Math.min(1, vertical * Math.tan(tune.maxTilt * DEG) / Math.max(Math.hypot(ax, az), 1e-6))
+    wantUp.set(ax * tiltScale, vertical, az * tiltScale).normalize()
     // Lift: enough along the current up to produce the wanted vertical acceleration.
     const lift = (g + ay) / (2 * g * Math.max(up.y, .35))
     input.z = up.y > .2 ? clamp(lift, .001, 1) : .001
@@ -250,10 +257,6 @@ export function createJetPilot(vehicle: Vehicle, terrain: Terrain): Pilot {
     torque.applyQuaternion(inv)
     righting.applyQuaternion(inv)
     const authority = mass * STEER_PER_MASS
-    // Local torque from inputs (Jet.ts hover mode): x axis -y*A, y axis -(x+w)*A, z axis -x*A.
-    const tx = torque.x * inertia.x - righting.x, tz = torque.z * inertia.z - righting.z
-    const y = clamp(-tx / authority, -1, 1)
-    const x = clamp(-tz / authority, -1, 1)
 
     // Heading: face the wanted direction of travel; hold the last heading when nearly still.
     const wantSpeed = Math.hypot(vxWant, vzWant)
@@ -267,14 +270,22 @@ export function createJetPilot(vehicle: Vehicle, terrain: Terrain): Pilot {
       else if (Number.isNaN(heldHeading)) heldHeading = Math.atan2(-fx, -fz)
       const err = headingError(fx, fz, -Math.sin(heldHeading), -Math.cos(heldHeading))
       // Positive error turns right, which is a negative rotation about +Y.
-      yawRate = -clamp(err * tune.headingGain, -tune.maxYawRate, tune.maxYawRate)
+      // A hard yaw while tilted consumes the same coupled controls that level the hull.
+      // Give the attitude loop priority before a sharp turn can roll a hovering jet over.
+      const yawLimit = tune.maxYawRate * clamp((up.y - .6) / .35, 0, 1)
+      yawRate = -clamp(err * tune.headingGain, -yawLimit, yawLimit)
     }
     // Spin about the craft's own up axis.
     const localYawRate = angvel.dot(up)
-    const ty = (yawRate - localYawRate) * 6 * inertia.y
-    const sum = clamp(-ty / authority, -1, 1)
+    // Assemble all three acceleration axes before applying inertia: this hull's
+    // principal frame couples yaw and roll. Subtract the vehicle's righting torque
+    // afterward, in the same body-local frame as the control torques.
+    torque.y = (yawRate - localYawRate) * 6
+    applyInertia(torque).sub(righting)
+    const x = clamp(-torque.z / authority, -1, 1)
+    const sum = clamp(-torque.y / authority, -1, 1)
     input.x = x
-    input.y = y
+    input.y = clamp(-torque.x / authority, -1, 1)
     input.w = clamp(sum - x, -1, 1)
   }
 
@@ -318,10 +329,10 @@ export function createJetPilot(vehicle: Vehicle, terrain: Terrain): Pilot {
     localSpin.copy(angvel).applyQuaternion(inv)
     const authority = clamp(speed / 20 * .7, .05, 1)
     // Local torque from inputs (Jet.ts flight): x axis -y * pitch torque, z axis -x * roll torque.
-    const tx = (2 * e.x * 3 - localSpin.x * 1.5) * inertia.x
-    const tz = (2 * e.z * 5 - localSpin.z * 1.5) * inertia.z
-    input.y = clamp(-tx / (FLIGHT_PITCH_TORQUE * authority), -1, 1)
-    input.x = clamp(-tz / (FLIGHT_ROLL_TORQUE * authority), -1, 1)
+    torque.set(2 * e.x * 3 - localSpin.x * 1.5, 0, 2 * e.z * 5 - localSpin.z * 1.5)
+    applyInertia(torque)
+    input.y = clamp(-torque.x / (FLIGHT_PITCH_TORQUE * authority), -1, 1)
+    input.x = clamp(-torque.z / (FLIGHT_ROLL_TORQUE * authority), -1, 1)
     // Yaw only through thrust vectoring: a little, to keep the nose on the flight path.
     input.w = clamp(-(2 * e.y - localSpin.y) * 2, -1, 1)
     const cruise = Math.max(goal.speed, tune.flightSpeed)

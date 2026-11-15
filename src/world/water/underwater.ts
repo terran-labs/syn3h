@@ -4,7 +4,7 @@ import { defineParam } from '../../../shared/params'
 import type { Game } from '../../core/Game'
 import type { Terrain } from '../Terrain'
 import { underwaterLook } from './waterEffectsMath'
-export const waterUnderwater=defineParam<boolean>({id:'water.underwater',label:'Underwater camera',group:'Water',scope:'client',default:false})
+export const waterUnderwater=defineParam<boolean>({id:'water.underwater',label:'Underwater camera',group:'Water',scope:'client',default:true})
 interface LightState {light:T.Light;before:number;applied:number}
 /** Runs after Environment and the chase camera. Never advances or freezes the sky clock. */
 export class Underwater {

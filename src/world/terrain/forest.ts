@@ -24,7 +24,7 @@
 import { SPAWN_BLEND_RADIUS, type TerrainData, type TerrainPass } from './generate'
 import { fbm, hash2, smoothstep, subSeed } from './noise'
 import { distanceToPolyline } from './raster'
-import { ROAD_FLAT_HALF } from './roads'
+import { ROAD_FLAT_HALF } from './roadConstants'
 import { HeightSampler } from './sampler'
 import { KIND_ALPINE, KIND_DESERT } from './settings'
 

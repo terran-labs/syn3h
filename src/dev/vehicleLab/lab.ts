@@ -14,6 +14,7 @@
  * ships in the game. See docs/vehicle-lab.md for every control, parameter and API call.
  */
 import * as THREE from 'three/webgpu'
+import { classifyDevice, SHADING_CAP, vehicleShading } from '../../core/quality'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { params as gameParams, type ParamDef } from '../../../shared/params'
 import { countStats, FLOOR_NAMES, parseLabParams, pickAutoLod, resolveLod, RollingAverage, STRESS_COUNTS, stressGrid, VIEW_NAMES, visibleBounds, type FloorName, type ViewName } from './logic'
@@ -105,6 +106,11 @@ async function main(): Promise<void> {
   renderer.toneMappingExposure = 1.05
   $('view').append(renderer.domElement)
   await renderer.init()
+  // The standalone studio has no game QualityController. Start at the same device cap,
+  // while retaining the shading slider so reviewers can inspect every quality tier.
+  const nav = navigator as Navigator & { deviceMemory?: number }
+  const deviceLevel = classifyDevice({ userAgent: nav.userAgent, touchPoints: nav.maxTouchPoints, memoryGB: nav.deviceMemory })
+  gameParams.set(vehicleShading.def.id, SHADING_CAP[deviceLevel])
 
   const scene = new THREE.Scene()
   // Stills get a full resolution mirror; interactive use keeps it at half for speed.

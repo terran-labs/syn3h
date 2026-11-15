@@ -66,7 +66,9 @@ fi
 # Resolve the calendar label before building, so the UI and frozen metadata agree.
 CALVER="$(node tools/release-notes.mjs next)" || fail "could not compute the calendar version"
 export SYN3H_RELEASE_VERSION="$CALVER"
-PREV="$(tail -1 ../Syn3h-stable/releases.tsv 2>/dev/null | cut -f1)"
+# Attempt records include rolled-back deployments. Draft against the last accepted
+# production milestone, not the latest attempted release tag.
+PREV="$(awk -F '\t' '$5 == "production" { previous = $2 } END { print previous }' release-notes/history.tsv)"
 
 # --- Freeze ---------------------------------------------------------------------------------
 echo "Freezing $MILESTONE ($COMMIT)..."
@@ -123,6 +125,15 @@ else
   echo "Public address: $URL (version $VERSION)"
   # A new workers.dev name can take a moment to resolve.
   wait_http "$URL" 120 || fail "$URL did not answer within two minutes"
+  # An HTTP 200 can still be an older edge deployment. Wait for this exact entry bundle
+  # before gameplay acceptance, retaining every mismatch for rollout diagnostics.
+  tries=0
+  until node tools/check-public-build.mjs "$URL" "$DEST" >>"$LOG-assets.log" 2>&1; do
+    tries=$((tries + 1))
+    [ "$tries" -lt 30 ] || { cat "$LOG-assets.log"; fail "public entry bundle did not match frozen build"; }
+    sleep 2
+  done
+  tail -1 "$LOG-assets.log"
 fi
 
 # --- Smoke test -----------------------------------------------------------------------------
@@ -142,6 +153,22 @@ if [ -n "$DRY" ]; then
   echo "Note: this repointed ../Syn3h-stable/current at $ID."
   exit 0
 fi
+
+# --- Primary public acceptance ---------------------------------------------------------------
+# A workers.dev pass does not establish that the owner-facing domain serves the same assets.
+PRIMARY_URL="https://www.syn3h.com/"
+tries=0
+until node tools/check-public-build.mjs "$PRIMARY_URL" "$DEST" >>"$LOG-primary-assets.log" 2>&1; do
+  tries=$((tries + 1))
+  [ "$tries" -lt 30 ] || { cat "$LOG-primary-assets.log"; fail "primary entry bundle did not match frozen build"; }
+  sleep 2
+done
+tail -1 "$LOG-primary-assets.log"
+if ! tools/domain.sh check www.syn3h.com >"$LOG-primary.log" 2>&1; then
+  cat "$LOG-primary.log"
+  fail "primary domain acceptance failed; roll back the deployment"
+fi
+cat "$LOG-primary.log"
 
 # --- Record ---------------------------------------------------------------------------------
 WHEN="$(TZ=America/Los_Angeles date '+%Y-%m-%d %H:%M %Z')"
