@@ -218,7 +218,8 @@ export class LoadedBuggySkin implements BuggySkin {
     transform.multiply(new THREE.Matrix4().makeRotationY(Math.PI))
     const body = next ? new THREE.Group() : extract(scene.getObjectByName('Body')!, transform)
     // Box arm: the body and its fittings (strut sockets, shock towers, headlight lenses).
-    if (next) for (const name of ['Body', 'Sockets']) body.add(...extract(nodeNamed(next, name)).children)
+    // Interior: the cockpit tub under the force field canopy (sills, floor, seat, dash).
+    if (next) for (const name of ['Body', 'Sockets', 'Interior']) body.add(...extract(nodeNamed(next, name)).children)
     // The exported paint carries a clear coat, which loads as a physical material and would
     // keep each part out of the body merge. The shared shading supplies every look from the
     // role, so reduce each to a plain material that only carries its name and colour.
@@ -238,6 +239,7 @@ export class LoadedBuggySkin implements BuggySkin {
         else if (/light/i.test(m.name)) setRole(m, 'lamp')
         // Scoop interiors, socket wells: dark structural metal.
         else if (/dark/i.test(m.name)) setRole(m, 'frame')
+        else if (/interior/i.test(m.name)) setRole(m, 'trim')
         m.roughness = .36; m.metalness = .3
         // Syn3h lamps are faces of the Body mesh itself. Emission from terra.buggy.prefab; values
         // above 1 are deliberate (no bloom here, so they survive tone mapping as a hot core).
