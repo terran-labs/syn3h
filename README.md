@@ -37,15 +37,22 @@ second player.
 
 ## How it is made
 
+<img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1508/lobby.png" alt="The galaxy lobby: nine planets on their orbits around a sun, each labelled" width="420">
+
 **A world from a number.** Each planet is generated from a seed and shared settings:
 terraced ground, chains of cellular mountains, volcanic islands with lava lakes,
 and roads laid over what the terrain allows. No terrain model needs downloading. Your machine
 grows the same world as everyone else's in the room, and the globe you tap in the lobby is
-painted from that very island, so the preview is the place.
+painted from that very island, so the preview is the place. Terrain, sky, water, clouds,
+plants, sound and music all come from code at run time. What the game still downloads is
+its scripts, the physics engine, one interface font and the Buggy's model; the jet, the
+hovercraft and the tank are generated too.
 
 **A world without an edge.** The map is a tile that repeats exactly. Drive off one side and
 you arrive on the other. Cameras, bots, the minimap, the network and even the motion
 vectors of the antialiasing account for wrapping to keep the crossing continuous.
+
+<img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1508/lava-night.png" alt="A buggy at the shore of a glowing lava sea at night, a volcano on the horizon" width="420">
 
 **Light that agrees with itself.** The sky is physical scattering, evaluated twice: once in
 the shader that draws it and once in plain code that colours the sun, the ambient light and
@@ -57,17 +64,25 @@ falls back to WebGL.
 
 **Water that carries you.** The sea is a short sum of swells with one formula, written once
 for the physics and once for the shader. A floating vehicle rises on exactly the wave you
-see, using a shared room clock to keep the swells aligned.
+see, using a shared room clock to keep the swells aligned. The same habit runs through the
+project: waves, wrapping, sky maths and the parameter registry are single shared
+definitions read by the game, the room server and the tests, which keeps what you see,
+what you collide with and what the other player sees consistent.
+
+<img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1508/wings-glide.png" alt="The buggy gliding on its hexagonal force-field wings above the dunes" width="420"> <img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1508/jet-flight.png" alt="The jet climbing over the volcano at 229 metres" width="420">
 
 **Machines with opinions.** Rapier runs the physics at a fixed step, in its own compiled
 file that loads beside the lobby. A buggy that opens force-field wings and glides, a jet
 that hovers and flies, a hovercraft, a tank, and a Zorb ball any of them can roll inside.
-Switch between them in place, without leaving the world. Gravity, drag, buoyancy and some
-three hundred other parameters are live: change one and the whole room feels it.
+Switch between them in place, without leaving the world. Everything is a parameter:
+gravity, drag, buoyancy and some three hundred others are live sliders, change one and the
+whole room feels it, and a world's settings travel in its link.
 
 **Music nobody recorded.** A seeded composer writes the score a sixteenth note at a time
 from what you are doing, and a synthesiser built from Web Audio worklets plays it: pads,
 choir, plucks, bells, a hall. Engines, wind and impacts are synthesised too.
+
+<img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1508/bots-pursuit.png" alt="Three bots in different vehicles trailing the player across a red plain" width="420">
 
 **Company.** Bots have a mind that picks a purpose by seeded personality, a navigator that
 plans a route their kind of vehicle can travel, and a pilot that works the same controls
@@ -81,17 +96,8 @@ its connections. A phone joins by a QR code the game draws itself.
 [www.syn3h.com/?v=26.11.1503](https://www.syn3h.com/?v=26.11.1503) will serve that build
 exactly, however many follow it.
 
-### What is unusual about it
-
-- **It generates much of its world at run time.** Terrain, sky, water, clouds, plants,
-  sound and music come from code. The game still downloads its scripts, physics WebAssembly,
-  interface font and the Buggy's models; the jet, hovercraft and tank are generated in code.
-- **One definition, three readers.** Waves, wrapping, sky maths and the parameter registry
-  use shared definitions and tests to keep rendering, physics and multiplayer consistent.
-- **Everything is a parameter.** Worlds, vehicles and effects are tuned from a registry
-  with sliders, and a world's settings travel in its link.
-- **It was built in a weekend** by one person directing a team of AI agents, each with its
-  own lane, tests and browser checks, releasing to production through the night.
+**Built in a weekend.** One person directed a team of AI agents, each with its own lane,
+tests and browser checks, releasing to production through the night and the day after.
 
 Three.js, Rapier, TypeScript and Vite. No game engine.
 
