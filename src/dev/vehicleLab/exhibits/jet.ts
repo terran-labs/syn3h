@@ -1,7 +1,7 @@
 /**
  * Jet exhibit: the generated next-generation jet designs from src/vehicles/jetgen, in five
  * review rounds. Each design is built twice, at full and reduced polygon count, as its two
- * detail levels. The materials are the designs' own (candy or military finish).
+ * detail levels. They render through the shared vehicle shading, like every other vehicle.
  */
 import * as THREE from 'three/webgpu'
 import { JET_DESIGNS } from '../../../vehicles/jetgen/designs'
@@ -26,7 +26,7 @@ export const jet: LabExhibit = {
     const design = JET_DESIGNS.find(d => d.id === info.id)!
     const levels = [new NextJet(design, 1), new NextJet(design, .5)]
     const object = new THREE.Group()
-    levels.forEach((j, i) => { j.object.visible = i === 0; object.add(j.object) })
+    levels.forEach((j, i) => { j.object.visible = i === 0; object.add(j.object); j.showroom() })
     let gearDown = true, gear = 1
     return {
       object,

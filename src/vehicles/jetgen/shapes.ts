@@ -8,7 +8,7 @@ import * as THREE from 'three/webgpu'
  * A "body" is a loft of superellipse cross sections along Z. A "surface" (wing, fin, canard)
  * is a loft of aerofoil sections along a curved span.
  */
-/** 'panel' is the paint with faceted shading: the angular designs use it on wings and fins. */
+/** 'panel' is paint on the faceted wings and fins of the angular designs, kept as its own mesh. */
 export type Mat = 'paint' | 'chrome' | 'glass' | 'dark' | 'glow' | 'accent' | 'panel'
 export interface Piece { mat: Mat; geometry: THREE.BufferGeometry }
 /** A landing gear leg. `fold` says where the strut swings to when stowed. */
@@ -213,8 +213,11 @@ export class Builder {
       const end = keys[keys.length - 1], before = keys[keys.length - 2], dx = (end[0] - before[0]) * (m ? -1 : 1), dy = end[1] - before[1]
       if (o.mirror !== false && end[0] === 0 && Math.abs(dx) > 1e-6) for (const p of rings[rings.length - 1]) { p.y -= dy / dx * p.x; p.x = 0 }
       const k = o.tipFrom === undefined ? rings.length - 1 : Math.max(1, t.findIndex(v => v >= o.tipFrom!))
-      this.add(o.mat ?? (this.hard ? 'panel' : 'paint'), loft(rings.slice(0, k + 1), true, k === rings.length - 1))
-      if (k < rings.length - 1) this.add(o.tip ?? 'chrome', loft(rings.slice(k), false, true))
+      // Angular designs keep their wings and fins faceted. The flat normals live in the geometry,
+      // so the shared paint needs no faceted variant of its own.
+      const facet = (g: THREE.BufferGeometry) => { if (!this.hard) return g; const f = g.toNonIndexed(); g.dispose(); f.computeVertexNormals(); return f }
+      this.add(o.mat ?? (this.hard ? 'panel' : 'paint'), facet(loft(rings.slice(0, k + 1), true, k === rings.length - 1)))
+      if (k < rings.length - 1) this.add(o.tip ?? 'chrome', facet(loft(rings.slice(k), false, true)))
     }
   }
 

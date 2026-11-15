@@ -17,7 +17,7 @@ export interface JetDesign {
   id: string; name: string; blurb: string; paint: number; accent: number
   /** Straight-edged, faceted geometry instead of flowing curves. */
   hard?: boolean
-  /** 'military' swaps candy paint and chrome for satin paint, gunmetal trim and squadron-colour tips. */
+  /** Kept for reference only: every design now renders through the shared vehicle shading. */
   finish?: 'candy' | 'military'
   build(b: Builder): void
 }

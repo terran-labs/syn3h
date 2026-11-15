@@ -3,6 +3,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { JET_DESIGNS } from './designs'
 import { NextJet } from './NextJet'
 import { GROUND_Y } from './shapes'
+import { params } from '../../../shared/params'
+import { vehicleShading } from '../../core/quality'
 
 /** A grey studio sphere, generated: the backdrop and, blurred, the reflections on the metal. */
 function studio(withLights: boolean): THREE.Scene {
@@ -41,12 +43,14 @@ async function main() {
   const spacing = 9.5, query = new URLSearchParams(location.search)
   // ?detail=low shows the reduced polygon versions.
   let detail = query.get('detail') === 'low' ? .5 : 1
+  // Full showroom shading, as on a desktop in the game: scales, clear coat, flakes.
+  params.set(vehicleShading.def.id, Number(query.get('shading') ?? 3))
   let jets: NextJet[] = []
   const build = () => {
     jets.forEach(j => { scene.remove(j.object); j.dispose() })
     jets = JET_DESIGNS.map(d => new NextJet(d, detail))
     // Rows of five: the first round in front, each later round behind it.
-    jets.forEach((j, i) => { j.object.position.set((i % 5 - 2) * -spacing, 0, Math.floor(i / 5) * 12); scene.add(j.object) })
+    jets.forEach((j, i) => { j.object.position.set((i % 5 - 2) * -spacing, 0, Math.floor(i / 5) * 12); scene.add(j.object); j.showroom() })
     api.jets = jets
   }
   let current = 0, all = false, gearTarget = 0, gear = 0, autoGear = true, hoverLift = 1
