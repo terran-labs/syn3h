@@ -1,3 +1,7 @@
+Current wind choice: generated camera and weather wind only, per the owner on 15 November
+2026. The recorded wind is no longer fetched or connected. Music, laser and materialize
+recordings remain. The lifecycle check verifies those loading boundaries.
+
 Current shell integration and browser checks are documented in [the UI handoff](../ui/README.md). The notes below describe the initial audio delivery.
 
 # Audio and shell handoff
