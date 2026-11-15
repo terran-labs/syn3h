@@ -117,3 +117,11 @@ Do these at the venue, on the venue's network, with production still the plan:
 
 Put the public address back on the projector and ask guests to rescan. Stop the fallback
 server with Ctrl C. Nothing else needs undoing: it never touched Cloudflare or the domain.
+
+## Releases during the event
+
+Do not ship a release while people are playing. About five minutes after a release goes out,
+every room that has players in it is reset: everyone reconnects within about a second and the
+world stays as it was, but scores, the round, who is "it" and the host start again. Release
+before doors or between sessions, and start a fresh round afterwards. No release after 10am
+on demo day without the owner's word.
