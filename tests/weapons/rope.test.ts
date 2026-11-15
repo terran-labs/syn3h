@@ -37,7 +37,7 @@ function lagged(t: CordTuning, m1: number, m2: number, lag: number, seconds: num
   return peaks
 }
 
-const tuning = (omega: number, zeta: number, pull = bungeeMaxPull.def.default): CordTuning => ({ omega, zeta, maxAccel: pull * G })
+const tuning = (omega: number, zeta: number, pull: number = bungeeMaxPull.def.default): CordTuning => ({ omega, zeta, maxAccel: pull * G })
 
 describe('bungee cord', () => {
   it('only ever pulls', () => {
