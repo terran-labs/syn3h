@@ -8,7 +8,7 @@ with a beam or a nudge, and change the world's gravity, sky and physics while yo
 
 **Play it now at [www.syn3h.com](https://www.syn3h.com/).**
 
-![Scenes from the latest Syn3h release: the buggy and volcano, the jet above the island, and lava at night](https://github.com/terran-labs/syn3h/releases/latest/download/syn3h-showcase.gif)
+![Scenes from the latest Syn3h release: the galaxy lobby, the buggy and volcano, wings in a glide, the jet above the island, and lava at night](https://github.com/terran-labs/syn3h/releases/latest/download/syn3h-showcase.gif)
 
 The animation is captured from each production release and follows the latest one. Notes
 and screenshots for every release are on the

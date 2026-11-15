@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-15 03:39 PST. Demo deadline: Sunday noon Pacific.
+Last verified: 2026-11-15 03:44 PST. Demo deadline: Sunday noon Pacific.
 
 ## Authority
 
@@ -27,7 +27,9 @@ all eight public vehicle checks passed with no page errors. Acceptance marker an
 /tmp/astra-release5-accepted and /tmp/astra-release5-publish.log.
 Release 4 remains a tested fallback. Release 5 is now the target for any future rollback.
 The current pinned release-5 supervisor restores release-4 and must be revised before reuse.
-Showcase capture is running after acceptance; its outcome cannot undo verified gameplay.
+The deployment supervisor exited successfully after capturing all eight showcase scenes.
+The reviewed five-scene GIF and stills are published with the release notes; all six
+attachment URLs pass. Original captures are preserved, including excluded weak frames.
 
 The first release-4 attempt failed the primary site's default-bot wait and rolled back to
 release-2; both rollback addresses passed. The test used a repeating room namespace.
@@ -38,7 +40,9 @@ The release-4 rollback history is retained as evidence, not the current rollback
 
 Release automation checks exact identity, HTML and entry assets, then primary gameplay
 and the eight-vehicle matrix before recording acceptance. Notes and captures are nonfatal
-post-acceptance artifacts. The reviewed three-scene showcase, GIF and release notes are published on GitHub. All four attachment URLs passed; the README describes the selected scenes. The lobby capture timed out on an obsolete test selector and is excluded from those artifacts.
+post-acceptance artifacts. Release 4 retains its reviewed three-scene showcase. Release 5
+adds the settled lobby and gliding wings to the curated selection; the obsolete lobby
+capture selector is fixed with historical card behavior preserved.
 
 ## Integrated evidence and current queue
 
