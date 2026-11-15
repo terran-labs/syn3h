@@ -109,8 +109,13 @@ supervisor. Public acceptance subsequently passed on the same frozen build at 3:
   and needs a different reviewed design. The completed response-envelope report covers
   99 runs and found two escapes but also two harmful conversions. Independent Weapons
   review accepts the research only; no aircraft avoidance implementation is accepted.
-  One escape cleared the catch radius by only 7.8 centimetres. Fresh held-out cases,
-  robust margins and a safe selection rule are required for any next design. Wheeled bots already evade Pesters; all four gear
+  One escape cleared the catch radius by only 7.8 centimetres. The integrator has
+  stopped further runtime changes and constant sweeps. Reopening requires an observable
+  side-or-no-op rule and warning-time feasibility bound, fresh unseen scenarios with
+  perturbation margins, no new catches in previously safe cases, and route recovery.
+  The current report establishes none of those selection guarantees. This technical
+  blocker does not complete the assignment or clear the owner's follow-on condition.
+  Wheeled bots already evade Pesters; all four gear
   tools have combined browser evidence.
 - **Water transparency from above is unimplemented:** the sea/river material is opaque.
   Shallow colouring does not reveal submerged objects or ground. Transparent falling
