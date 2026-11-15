@@ -7,6 +7,7 @@ import { WorldAudio, lavaProximity, type AudioTerrain } from './WorldAudio'
 import type { Vehicle } from '../vehicles/Vehicle'
 import { Score, scoreSeed, type MatchMood } from './score/Score'
 import { applySubmerge } from './score/ScoreSynth'
+import { WeatherWind } from './weatherWind'
 import { senseConvoy, senseRelief, type ConvoyVoice } from './scoreSenses'
 import { cuesVolume, worldVolume, remoteVolume, crossfade, lobbyFade, effectsVolume, masterVolume, musicVolume, muted } from './params'
 
@@ -15,7 +16,8 @@ export type Sound = 'laserShot' | 'laserHit' | 'materialize'
 export const MUSIC_TRACKS = { Score: 'Adaptive score (generated)', SpaceStation: 'Space Station', Classic: 'Classic (Mars Explorer)', Carefree: 'Carefree (Mars Explorer)', Ambient: 'Ambient (legacy)' } as const
 export type MusicTrack = keyof typeof MUSIC_TRACKS
 export interface Position { x: number; y: number; z: number }
-const files: Record<Sound | 'wind', string> = { laserShot: 'LaserShot.mp3', laserHit: 'LaserHit.mp3', materialize: 'Materialize.mp3', wind: 'Wind.wav' }
+// The wind is generated now (weatherWind.ts); Wind.wav is no longer downloaded.
+const files: Record<Sound, string> = { laserShot: 'LaserShot.mp3', laserHit: 'LaserHit.mp3', materialize: 'Materialize.mp3' }
 interface Deck { element: HTMLAudioElement; source: MediaElementAudioSourceNode; gain: GainNode; stopTimer?: ReturnType<typeof setTimeout> }
 
 export class GameAudio implements System {
@@ -28,6 +30,7 @@ export class GameAudio implements System {
   private worldBus?: GainNode
   private remoteBus?: GainNode
   private world?: WorldAudio
+  private weatherWind?: WeatherWind
   private score?: Score
   /** Lowpass on the whole mix, closed while the player's vehicle is under a liquid surface. */
   private submerge?: BiquadFilterNode
@@ -104,6 +107,7 @@ export class GameAudio implements System {
       this.remoteBus=context.createGain();this.remoteBus.connect(this.master)
       this.engine = new Engine(context, this.master)
       this.world = new WorldAudio(context,this.worldBus,this.engine.noise)
+      this.weatherWind = new WeatherWind(context, this.master)
       this.score = new Score(context, this.music, scoreSeed.value || worldSeed.value)
       this.score.setMatch(this.match)
       this.syncMix()
@@ -124,7 +128,6 @@ export class GameAudio implements System {
         const buffer = await this.context!.decodeAudioData(await response.arrayBuffer())
         if (this.disposed) return
         this.buffers.set(name, buffer)
-        if (name === 'wind') this.engine!.setWind(buffer)
       } catch (error) { this.errors.push(String(error)) }
     }))
   }
@@ -249,7 +252,7 @@ export class GameAudio implements System {
     stop=synthCue(this.context,out.node,cue,this.engine!.noise,()=>{this.cueStops.delete(stop);out.dispose()})
     this.cueStops.add(stop)
   }
-  get diagnostics(){return {state:this.state,score:this.score?{playing:this.score.playing,mode:this.score.mode,tempo:Math.round(this.score.tempo),mood:{...this.score.mood},nodes:this.score.synth.nodeCount}:null,remoteVoices:this.remote.size,engineNodes:(this.engine?.nodeCount??0)+[...this.remote.values()].reduce((n,v)=>n+v.engine.nodeCount,0),oneShots:this.voices.size+this.cueStops.size,trackedVehicles:this.events.size}}
+  get diagnostics(){return {state:this.state,score:this.score?{playing:this.score.playing,mode:this.score.mode,tempo:Math.round(this.score.tempo),mood:{...this.score.mood},nodes:this.score.synth.nodeCount}:null,remoteVoices:this.remote.size,engineNodes:(this.engine?.nodeCount??0)+(this.weatherWind?.nodeCount??0)+[...this.remote.values()].reduce((n,v)=>n+v.engine.nodeCount,0),oneShots:this.voices.size+this.cueStops.size,trackedVehicles:this.events.size}}
   private readVehicle(v:Vehicle):MotionAudio {
     const velocity=v.body.linvel(),p=v.object.position,ground=this.terrain?.heightAt(p.x,p.z)??p.y
     return {kind:v.kind,speed:Math.hypot(velocity.x,velocity.y,velocity.z),throttle:v.kind==='jet'?v.input.z:v.input.y,airborne:v.wheelsGrounded===0,wings:v.wingsOpen,slip:Math.max(0,...(v.getWheelEffects?.()??[]).filter(w=>w.grounded).map(w=>w.slip)),altitude:Math.max(0,p.y),clearance:Math.max(0,p.y-ground)}
@@ -292,8 +295,9 @@ export class GameAudio implements System {
     this.world!.update(this.lavaNear,this.enabled)
     const m=this.motion,submerged=this.submersion()
     if(this.senseFrame++%10===0)this.sense()
+    const wind=this.weatherWind!.update(this.position,this.rotation,this.context.currentTime,this.enabled)
     // `convoy` and `relief` are optional inputs the score reads only when its toggles are on.
-    const heard={playing:this.enabled,speed:m.speed,throttle:m.throttle,airborne:m.airborne,clearance:m.clearance??0,altitude:m.altitude??0,submerged,lava:this.lavaNear,convoy:this.convoy,relief:this.relief}
+    const heard={playing:this.enabled,speed:m.speed,throttle:m.throttle,airborne:m.airborne,clearance:m.clearance??0,altitude:m.altitude??0,submerged,lava:this.lavaNear,convoy:this.convoy,relief:this.relief,wind}
     this.score!.update(heard)
     applySubmerge(this.submerge!,this.score!.mood.depth,this.context.currentTime)
     const l = this.context.listener, p = this.position, f = this.forward, u = this.up
@@ -307,7 +311,7 @@ export class GameAudio implements System {
     for (const source of this.voices) source.stop()
     for(const stop of [...this.cueStops])stop()
     for(const voice of this.remote.values()){voice.engine.dispose(true);voice.panner.disconnect()}
-    this.remote.clear();this.events.clear();this.world?.dispose();this.score?.dispose();this.score=undefined;this.submerge?.disconnect();this.submerge=undefined
+    this.remote.clear();this.events.clear();this.world?.dispose();this.weatherWind?.dispose();this.weatherWind=undefined;this.score?.dispose();this.score=undefined;this.submerge?.disconnect();this.submerge=undefined
     this.engine?.dispose(true); this.engine=undefined; this.world=undefined
     for(const bus of [this.master,this.music,this.effects,this.cueBus,this.worldBus,this.remoteBus])bus?.disconnect()
     this.master=this.music=this.effects=this.cueBus=this.worldBus=this.remoteBus=undefined

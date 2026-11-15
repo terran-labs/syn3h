@@ -371,13 +371,14 @@ export class Volcanics implements System {
     this.lavaSea.update(dt, level, dim)
     this.waterSea.update(dt, level)
     if (this.builtNew) {
-      this.mist.update(dt, this.camera?.position.x ?? 0, this.camera?.position.z ?? 0)
+      this.mist.update(dt, this.camera?.position.x ?? 0, this.camera?.position.z ?? 0, this.camera?.position.y ?? 0)
       this.newSea.update(level)
       this.newStill.update(0)
       this.newRiver.update(0)
     }
     this.lavaStill.update(dt, 0, dim)
     this.lavaRiver.update(dt, 0, dim)
+    if (this.camera) { this.emitters.listener.x = this.camera.position.x; this.emitters.listener.y = this.camera.position.y; this.emitters.listener.z = this.camera.position.z }
     this.emitters.update(dt)
   }
 
