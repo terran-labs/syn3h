@@ -91,3 +91,38 @@ A final current-island comparison after changing defaults recorded headed/headle
 Artifacts: `/tmp/syn3h-island-frame-profile.json` (full matrix), `/tmp/syn3h-quality-profile-after.json` (new budgets), `/tmp/syn3h-island-headed-final.json` and `/tmp/syn3h-island-headless-final.json` (final paired modes), `/tmp/syn3h-terrain-profile.log` (unchanged tests), and `/tmp/syn3h-profile-1280.png` and `/tmp/syn3h-profile-1920.png` (headed views).
 
 Validation after applying budgets: `npx tsc --noEmit` passed; `SYN3H_NO_ROOM_SERVER=1 npx vitest run --maxWorkers=2` passed all 219 tests across 33 files. The browser verification recorded the expected drawing buffer sizes and bot caps.
+
+## Round planet against the same world drawn flat, 14 November, 8:55pm PST
+
+Finding: the round planet costs nothing measurable and submits fewer draws. Every case held
+the display's 8.3 ms frame, round or flat.
+
+Source `e5f7323` plus the `round` mode added to `tools/frame-profile.mjs`. Headed Chrome on
+the Apple GPU, 1920 x 1080, pixel ratio 1, graphics level 2, default volcanic world (2 km
+tile, planet radius 326 m), buggy at the spawn pad. Each case is a fresh page, 5 seconds of
+samples. Host load average was 8 to 9 throughout, so read the pairs, not the absolutes: the
+first pair is repeated at the end and the flat GPU reading moved from 5.6 to 4.8 ms between
+them, which is the size of the noise.
+
+| Case | Draw calls | Triangles | Render CPU ms | GPU ms | Frame ms (median, p95) |
+|---|---:|---:|---:|---:|---|
+| Round, parked | 89 | 123,848 | 1.1 | 5.7 | 8.3, 9.7 |
+| Flat, parked | 164 | 195,844 | 1.7 | 5.6 | 8.3, 10.0 |
+| Round, driving | 91 | 131,238 | 1.2 | 5.4 | 8.3, 10.0 |
+| Flat, driving | 163 | 200,240 | 1.7 | 5.6 | 8.3, 10.0 |
+| Round, 8 bots | 385 | 570,496 | 3.3 | 5.4 | 8.3, 10.0 |
+| Flat, 8 bots | 365 | 519,623 | 3.8 | 6.4 | 8.3, 10.0 |
+| Round, parked (repeat) | 89 | 123,848 | 1.2 | 5.3 | 8.3, 10.1 |
+| Flat, parked (repeat) | 164 | 195,844 | 1.4 | 4.8 | 8.3, 10.0 |
+
+- Horizon culling removes about 45 percent of the draw calls and 35 percent of the
+  triangles from the driver's seat, and a third of the render CPU time. GPU time does not
+  change beyond noise: the culled ground was cheap to shade.
+- With eight bots the round world draws slightly more than the flat one (385 against 365).
+  The bots spawn around the player, none is over the horizon, and three's own frustum
+  culling is off on round worlds, so bots behind the camera are submitted. Eight bots are
+  still the largest adjustable cost, as before: about 37 draw calls and 2 ms of render CPU
+  time for the eight. A behind-the-camera test for vehicles would recover that on round worlds.
+- The curve follows the camera exactly: `tools/curve-lag-check.mjs` carries the jet at
+  60 m/s and finds the curve's centre under the camera on all 240 frames sampled.
+- Not measured: a phone, mobile pixel ratios on the round world, or a quiet machine.
