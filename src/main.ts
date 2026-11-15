@@ -172,7 +172,7 @@ async function main(): Promise<void> {
   })
 
   // Water effects follow their normal-entry defaults and explicit player controls.
-  game.add(new WaterEffects(game, terrain, slot.current, bots))
+  game.add(new WaterEffects(game, terrain, slot, bots))
 
   // Handles for debugging and automated checks.
   // The game does not run in a background tab: one controller, obeyed by the loop here. Audio
