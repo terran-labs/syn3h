@@ -1,6 +1,6 @@
 import { dirtVolume, engineIdle, engineRange, engineVolume, windVolume } from './params'
 
-export interface MotionAudio { speed: number; throttle: number; airborne: boolean; kind?: string; wings?: boolean; slip?: number; altitude?: number; clearance?: number }
+export interface MotionAudio { speed: number; throttle: number; airborne: boolean; kind?: string; wings?: boolean; slip?: number; altitude?: number; clearance?: number; zorbed?: boolean }
 export const unit = (v: number) => Math.min(1, Math.max(0, Number.isFinite(v) ? v : 0))
 export function motionMix(motion: MotionAudio) {
   const speed = unit(Math.abs(motion.speed) / 55), load = unit(Math.abs(motion.throttle))
@@ -61,10 +61,15 @@ export class Engine {
   private readonly pulseDepth: GainNode
   private readonly squealOsc: OscillatorNode
   private windSource?: AudioBufferSourceNode
+  private readonly vehicleGain: GainNode
+  private zorbed = false
   private disposed = false
   constructor(private readonly context: BaseAudioContext, output: AudioNode, readonly noise = noiseBuffer(context)) {
     const own = <T extends AudioNode>(node:T):T => { this.nodes.push(node); return node }
     const gain = (destination:AudioNode) => { const g=own(context.createGain());g.gain.value=0;g.connect(destination);return g }
+    // One bus fades every vehicle voice together, including modulation and road noise.
+    this.vehicleGain = own(context.createGain()); this.vehicleGain.connect(output)
+    output = this.vehicleGain
     this.tone=gain(output);this.roar=gain(output);this.dirt=gain(output);this.wind=gain(output);this.field=gain(output);this.squeal=gain(output)
     this.filter=own(context.createBiquadFilter());this.filter.type='lowpass';this.filter.Q.value=.6;this.filter.connect(this.roar)
     for (const ratio of [1,2.003]) { const o=own(context.createOscillator());o.type='triangle';o.frequency.value=36*ratio;const g=own(context.createGain());g.gain.value=ratio===1?.4:.1;o.connect(g).connect(this.tone);o.start();this.sources.push(o);this.oscillators.push(o) }
@@ -81,6 +86,12 @@ export class Engine {
   }
   update(motion: MotionAudio, enabled = true): void {
     if(this.disposed)return
+    if (Boolean(motion.zorbed) !== this.zorbed) {
+      this.zorbed = Boolean(motion.zorbed)
+      const now = this.context.currentTime
+      this.vehicleGain.gain.cancelAndHoldAtTime(now)
+      this.vehicleGain.gain.linearRampToValueAtTime(this.zorbed ? 0 : 1, now + .2)
+    }
     const m=motionMix(motion),p=voiceProfile(motion),now=this.context.currentTime,level=enabled?1:0
     const motor=motorLevel(motion)*level
     const smooth=(param:AudioParam,value:number,time=.12)=>param.setTargetAtTime(value,now,time)

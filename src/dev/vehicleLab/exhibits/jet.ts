@@ -43,7 +43,7 @@ export const jet: LabExhibit = {
           gear += Math.sign(target - gear) * Math.min(Math.abs(target - gear), dt * .7)
           // Stick back is nose up: the nozzle turns its exhaust up and the ring's surfaces rise.
           controls.set(-state.pitch, state.steer, state.yaw)
-          jet.update(gear, -state.pitch * .3, state.steer * .06 + state.yaw * .26, state.animate ? state.throttle : .4, controls)
+          jet.update(gear, -state.pitch * .3, state.steer * .06 + state.yaw * .26, state.animate ? Math.max(0, state.throttle) : .4, controls, gear >= .5)
         },
         cockpit: { eye: jet.eye.clone() },
         controls: [{ kind: 'toggle', id: 'jet.gear', label: 'Landing gear', value: true, onChange: on => { gearDown = on } }],
