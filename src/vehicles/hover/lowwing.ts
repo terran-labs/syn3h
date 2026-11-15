@@ -96,7 +96,11 @@ export function buildDuctHover(d: DuctDesign, detail: number): HoverBuild {
     })
     b.add('dark', loft(bodyRings(rows(.006, .5, d.head === 'wrap' ? .07 : .05), 0, 1, ring(40))))
     head.push(loft(bodyRings(rows(.015, .3, d.head === 'wrap' ? .042 : .022), 0, 1, ring(40))))
-    for (const x of [-.6, .6]) beams.push([x, b.at(from + .2)[3] + .03, from])
+    // Beam origins on the lamp itself: where the nose is as wide as the origin is far out. A
+    // fixed z put them in the air ahead of the nose, which tapers to a point.
+    let at = z0
+    while (b.at(at)[0] < .6) at += .01
+    for (const x of [-.6, .6]) beams.push([x, b.at(at)[3] + b.at(at)[1] * .2, at])
     anchors.push({ what: 'headlamp band', at: [0, b.at(from + .25)[3], from + .25] })
   }
 

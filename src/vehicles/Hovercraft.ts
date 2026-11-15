@@ -78,6 +78,10 @@ export class Hovercraft extends Vehicle {
     this.ridePosition.position.copy(study.eye)
     // The driver sits in a real cockpit, so the ride camera hides nothing (PATTERN.md rule 3).
     this.object.userData.cockpit=true
+    // The body carries its own lit headlamp bar and tail bars, so the shared effects must not
+    // add their white lamp spheres: those sit at points for a generic nose and hung in the air
+    // ahead of this one (the owner, 15 Nov 2026: "two balls floating in front of it").
+    this.object.userData.ownLamps=true
     // The collision hull and the clearance guard cover the body's whole outline.
     const b=study.bounds
     this.envelope={x:b.min.x,w:b.max.x-b.min.x,y0:Math.max(0,b.min.y),y1:b.max.y,z:b.min.z,l:b.max.z-b.min.z}

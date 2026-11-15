@@ -35,6 +35,8 @@ describe('the generated hovercraft body', () => {
     const v = new Hovercraft(h.game, h.terrain, new T.Vector3(0, 2.5, 0)); v.isLocal = false
     const s = study(v)
     expect(v.object.userData.cockpit).toBe(true)
+    // Its lamps are part of the body, so the shared effects add no lamp spheres of their own.
+    expect(v.object.userData.ownLamps).toBe(true)
     expect(v.ridePosition.position.toArray()).toEqual(R3_EYE)
     // The eye is inside the body and clear of every surface (PATTERN.md rule 3).
     expect(s.bounds.containsPoint(v.ridePosition.position)).toBe(true)
@@ -117,5 +119,25 @@ describe('shared hovercraft geometry', () => {
     first.dispose(); third.dispose()
     expect(disposed).toBe(0)
     second.dispose()
+  })
+})
+
+describe('hovercraft lights', () => {
+  it('has every lamp surface and beam origin on the body, never in the air beside it', async () => {
+    const { LOWWING, buildDuctHover } = await import('../../src/vehicles/hover/lowwing')
+    for (const detail of [.55, .4, .16]) {
+      const build = buildDuctHover(LOWWING, detail)
+      // On the body: inside the hull, or within 8 cm of it across or along the craft.
+      const near = (x: number, y: number, z: number) => [0, .04, .08].some(d => build.inside(x - Math.sign(x) * d, y, z) || build.inside(x, y, z + d) || build.inside(x, y, z - d) || build.inside(x, y - d, z) || build.inside(x, y + d, z))
+      let checked = 0
+      for (const lamp of [...build.head, ...build.tail]) {
+        const p = lamp.getAttribute('position')
+        for (let i = 0; i < p.count; i++) { checked++; expect(near(p.getX(i), p.getY(i), p.getZ(i)), `lamp vertex ${p.getX(i).toFixed(2)}, ${p.getY(i).toFixed(2)}, ${p.getZ(i).toFixed(2)} at detail ${detail}`).toBe(true) }
+      }
+      expect(checked).toBeGreaterThan(100)
+      expect(build.beams.length).toBe(2)
+      for (const [x, y, z] of build.beams) expect(near(x, y, z), `beam origin ${x}, ${y.toFixed(2)}, ${z.toFixed(2)}`).toBe(true)
+      for (const g of [...build.builder.pieces.map(q => q.geometry), ...build.head, ...build.tail]) g.dispose()
+    }
   })
 })
