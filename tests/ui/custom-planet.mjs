@@ -2,10 +2,10 @@ import { chromium, webkit } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 await mkdir('tests/ui/artifacts/custom', { recursive: true })
-for (const engine of [chromium, webkit]) {
+for (const { engine, name, viewport } of [{ engine: chromium, name: 'desktop', viewport: { width: 1280, height: 900 } }, { engine: chromium, name: 'phone', viewport: { width: 390, height: 844 } }, { engine: webkit, name: 'ipad', viewport: { width: 1024, height: 1366 } }]) {
   const browser = await engine.launch(engine === chromium ? { channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist'] } : {})
   try {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+    const page = await browser.newPage({ viewport })
     const errors = []
     page.on('pageerror', e => errors.push(e.message))
     await page.goto(process.env.SYN3H_URL ?? 'http://127.0.0.1:5193/')
@@ -27,8 +27,15 @@ for (const engine of [chromium, webkit]) {
     assert.equal(after.overrides['terrain.volcanoHeight'], 200)
     assert.notEqual(after.key, before.key)
     assert.notDeepEqual(after.data, before.data)
-    await page.screenshot({ path: `tests/ui/artifacts/custom/${engine.name()}.png` })
+    await page.waitForTimeout(500)
+    const exposed = await page.evaluate(() => {
+      const g = window.syn3h.shell.galaxy, planet = g.screen.find(p => p.id === 'custom')
+      const panel = document.querySelector('.lobby-panels').getBoundingClientRect()
+      return planet && (planet.x + planet.radius < panel.left || planet.y + planet.radius < panel.top)
+    })
+    assert.equal(exposed, true, 'the whole Custom planet stays clear of the sliders')
+    await page.screenshot({ path: `tests/ui/artifacts/custom/${name}.png` })
     assert.deepEqual(errors, [])
-    console.log(`${engine.name()}: CUSTOM MAP OK`)
+    console.log(`${name}: CUSTOM MAP OK`)
   } finally { await browser.close() }
 }

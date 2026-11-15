@@ -66,13 +66,13 @@ const VERTEX = `#version 300 es
 void main() { vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2); gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0); }`
 const FRAGMENT = `#version 300 es
 precision highp float;
-uniform vec2 uSize; uniform float uTime; uniform float uScale;
+uniform vec2 uSize; uniform vec3 uFrame; uniform float uTime; uniform float uScale;
 uniform vec2 uShed;                 // quality ladder: x sheds post effects, y shader cost
 uniform float uAmbience;            // 1 keeps twinkle and drifting cloud, 0 sheds them
 uniform float uDive;                // 0 in orbit, 1 through the atmosphere of the chosen world
 uniform float uDim;                 // 1 as the lobby itself; lower behind an open panel
 uniform vec3 uEye, uRight, uUp, uForward; uniform float uTan;
-uniform int uCount;
+uniform int uCount; uniform int uOnly;
 uniform vec4 uWorld[${MAX}];        // xyz position, w radius
 uniform vec3 uLand[${MAX}], uSea[${MAX}];
 uniform vec4 uKind[${MAX}];         // x glow, y has map, z spin, w seed
@@ -101,7 +101,7 @@ vec4 mapAt(int i, vec2 uv) { return i == uCloseIndex ? texture(uClose, uv) : tex
 vec3 toScreen(vec3 p) { vec3 d = p - uEye; float z = dot(d, uForward); return vec3(dot(d, uRight), dot(d, uUp), z) / vec3(max(z, 0.0001) * uTan, max(z, 0.0001) * uTan, 1.0); }
 void main() {
   float minSide = min(uSize.x, uSize.y);
-  vec2 q = (gl_FragCoord.xy - 0.5 * uSize) / minSide * 2.0;           // -1..1 on the short side
+  vec2 q = (gl_FragCoord.xy - uFrame.xy * uSize) / (minSide * uFrame.z) * 2.0;           // -1..1 on the short side
   vec3 ray = normalize(uForward + (q.x * uRight + q.y * uUp) * uTan);
   vec3 c = SPACE;
   // Stars, fixed to the sky so they turn as the view does.
@@ -116,6 +116,7 @@ void main() {
   float nearest = 1e9; int found = -1; vec3 normal = vec3(0.0); float halo = 0.0; vec3 haloTint = vec3(0.0);
   for (int i = 0; i < ${MAX}; i++) {
     if (i >= uCount) break;
+    if (uOnly >= 0 && i != uOnly) continue;
     vec3 oc = uEye - uWorld[i].xyz; float r = uWorld[i].w;
     float b = dot(oc, ray), cc = dot(oc, oc) - r * r, disc = b * b - cc;
     if (disc > 0.0) { float t = -b - sqrt(disc); if (t > 0.0 && t < nearest) { nearest = t; found = i; normal = normalize(oc + ray * t); } }
@@ -296,6 +297,9 @@ export class Galaxy {
    * text on glass reads even where the browser's frost is weak (WebKit's is).
    */
   backdrop = 1
+  /** Leave room for the Custom sliders without covering their planet. */
+  editing = false
+  private framing: Vec = [0.5, 0.5, 1]
   private dim = 1
   private distance = 13
   private target: Vec = [0, 0, 0]
@@ -374,7 +378,7 @@ export class Galaxy {
     gl.linkProgram(program)
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { console.warn('Syn3h galaxy shader failed.', gl.getProgramInfoLog(program)); return }
     gl.useProgram(program); gl.bindVertexArray(gl.createVertexArray())
-    for (const name of ['uShed', 'uAmbience', 'uDive', 'uDim', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex']) this.uniforms[name] = gl.getUniformLocation(program, name)
+    for (const name of ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex']) this.uniforms[name] = gl.getUniformLocation(program, name)
     // One array of small maps on unit 0, the close map on unit 1.
     const linear = (target: number) => { gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE) }
     gl.activeTexture(gl.TEXTURE0); this.array = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.array)
@@ -568,16 +572,21 @@ export class Galaxy {
     const time = this.clock; this.holding = still
     // The view keeps a little of the last drag's swing, and drifts very slowly when left alone.
     if (!this.drag) { this.yaw += this.spinVelocity; this.spinVelocity *= 0.93; if (Math.abs(this.spinVelocity) < 1e-5) this.spinVelocity = 0; if (this.chosen < 0 && !still) this.yaw += 0.0006 }
+    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : [0.5, 0.5, 1]
+    const framingMoves = this.framing.some((v, i) => Math.abs(v - frameGoal[i]) > 0.001)
+    this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], 0.18) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
     // Held still, draw only while something is moving; the last frame stays on the canvas.
-    const moving = !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || this.spinVelocity !== 0 || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
+    const moving = framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || this.spinVelocity !== 0 || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
     if (still && !moving && this.wake <= 0) { this.idle++; return }
     this.wake = Math.max(0, this.wake - 1)
     gl.useProgram(this.program); this.upload(gl); gl.uniform1i(u.uCloseIndex, this.closeIndex)
     gl.viewport(0, 0, this.canvas.width, this.canvas.height)
+    gl.uniform3f(u.uFrame, ...this.framing)
     gl.uniform2f(u.uSize, this.canvas.width, this.canvas.height); gl.uniform1f(u.uTime, time); gl.uniform1f(u.uScale, this.canvas.width / Math.max(1, this.host.clientWidth))
     gl.uniform3f(u.uEye, ...view.eye); gl.uniform3f(u.uRight, ...view.right); gl.uniform3f(u.uUp, ...view.up); gl.uniform3f(u.uForward, ...view.forward); gl.uniform1f(u.uTan, view.tan)
     gl.uniform2f(u.uShed, qualityShed(2), qualityShed(3)); gl.uniform1f(u.uAmbience, 1 - qualityShed(1)); gl.uniform1f(u.uDive, this.dive); gl.uniform1f(u.uDim, this.dim)
+    gl.uniform1i(u.uOnly, this.editing ? this.chosen : -1)
     gl.uniform1i(u.uCount, Math.min(MAX, worlds.length))
     gl.uniform4fv(u.uWorld, places.flatMap(p => [...p.position, p.radius]))
     gl.uniform3fv(u.uLand, worlds.slice(0, MAX).flatMap(w => rgb(w.land))); gl.uniform3fv(u.uSea, worlds.slice(0, MAX).flatMap(w => rgb(w.sea)))
@@ -593,10 +602,10 @@ export class Galaxy {
     }
     this.frames++
     // Tell the labels where the worlds are, and notice arrival.
-    const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height)
+    const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]
     this.screen = places.map((place, i) => {
       const d = sub(place.position, view.eye), z = dot(d, view.forward)
-      return { id: worlds[i].id, x: width / 2 + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height / 2 - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0 }
+      return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0 }
     })
     this.options.onLayout?.(this.screen, this.chosen >= 0 ? worlds[this.chosen].id : undefined)
     if (this.chosen >= 0 && !this.arrived && ++this.arriving > 45) { this.arrived = true; this.options.onArrive(worlds[this.chosen].id) }

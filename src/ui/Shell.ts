@@ -698,13 +698,15 @@ export class Shell implements System {
   /** The galaxy is the index; any other panel opens over it. */
   private galaxyFor(panel: string): void {
     if (!this.galaxy) return
-    const open = panel === 'index'
+    const open = panel === 'index', editing = panel === 'advanced' && this.shapingCustom && this.advancedGroups !== undefined
+    this.element.classList.toggle('is-shaping-world', editing)
+    this.galaxy.editing = editing
     this.element.classList.toggle('galaxy-open', open)
     this.element.querySelector<HTMLElement>('.galaxy-ui')!.hidden = !open
     if (open) this.galaxy.home()
     // Behind a panel the galaxy dims and holds still; behind the name form a little less,
     // since the world just chosen is the picture there.
-    this.galaxy.backdrop = open ? 1 : panel === 'explore' ? 0.7 : 0.35
+    this.galaxy.backdrop = open ? 1 : editing ? 0.85 : panel === 'explore' ? 0.7 : 0.35
   }
   /** What the lobby's own graphics are doing, for the phone checks. */
   get graphics(): { galaxyLive: boolean; galaxyFrames: number; planetMaps: number } {
