@@ -292,6 +292,8 @@ function scorch(data: TerrainData, i: number, d: number): void {
 export const lavaPass: TerrainPass = {
   name: 'lava',
   run(data) {
+    // A dry world (the Moon) has nothing that flows: an empty crater and bare ground.
+    if (data.settings.dry > 0) { data.lava = { lake: null, rivers: [], pools: [] }; return }
     const s = new HeightSampler(data)
     const v = data.layout.volcano
     const lake: LavaLake = {
@@ -425,7 +427,7 @@ export const ventsPass: TerrainPass = {
   name: 'vents',
   run(data) {
     // Only volcanic worlds burn. Elsewhere the lake and rivers are water and nothing vents.
-    if (data.settings.kind !== KIND_VOLCANIC) { data.vents = []; return }
+    if (data.settings.kind !== KIND_VOLCANIC || data.settings.dry > 0) { data.vents = []; return }
     const next = rng(subSeed(data.seed, 60))
     const s = new HeightSampler(data)
     const { lake, rivers, pools } = data.lava

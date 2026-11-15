@@ -17,6 +17,8 @@ import {
 } from 'three/tsl'
 import { ROAD_WIDTH } from './roads'
 import { applyCurve } from '../curve'
+import { paletteFor } from './palettes'
+import { LOOK_ALPINE } from './settings'
 
 export interface TerrainMaterial {
   material: THREE.MeshStandardNodeMaterial
@@ -25,10 +27,10 @@ export interface TerrainMaterial {
   /** Height of the sea surface: the shore is scorched and glows just above it. */
   setSea(level: number): void
   /**
-   * Recolour the ground for a kind of world. `lavaSea` and `lavaLake` say whether those glow
-   * and scorch; `snowHeight` is where snow starts (pass a huge number for none).
+   * Recolour the ground for a look (an index into palettes.ts). `lavaSea` and `lavaLake` say
+   * whether those glow and scorch; `snowHeight` is where snow starts (a huge number for none).
    */
-  setLook(kind: number, lavaSea: boolean, lavaLake: boolean, snowHeight: number): void
+  setLook(look: number, lavaSea: boolean, lavaLake: boolean, snowHeight: number): void
   /** Where the lava lake is, so the crater and its crown can glow. A radius of 0 turns it off. */
   setLake(x: number, z: number, radius: number, surface: number): void
   /**
@@ -51,37 +53,6 @@ export interface TerrainMaterial {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type GroundNode = any
 
-interface Palette {
-  groundDark: number; groundLight: number; rockDark: number; rockLight: number
-  /** The darker rock of the centre feature and the mountain tops. */
-  darkRockA: number; darkRockB: number
-  /** Ground at the waterline (overridden to scorched black round a lava sea). */
-  shore: number
-  roadDark: number; roadLight: number; roadLine: number
-}
-
-/** Ground colours by kind of world: 0 volcanic, 1 desert, 2 alpine. */
-const PALETTES: Palette[] = [
-  // Volcanic: saturated rust and basalt, the colour of Tholus and the Mars Explorer worlds.
-  {
-    groundDark: 0xa5351a, groundLight: 0xd9602c, rockDark: 0x7a2a14, rockLight: 0xa8431f,
-    darkRockA: 0x241715, darkRockB: 0x3f241c, shore: 0xc28a5a,
-    roadDark: 0x5e2d1d, roadLight: 0x74402b, roadLine: 0xc79670,
-  },
-  // Desert: gold sand, banded orange sandstone, a pale beach.
-  {
-    groundDark: 0xc98a3c, groundLight: 0xf0c878, rockDark: 0x9a4a22, rockLight: 0xd08040,
-    darkRockA: 0x8a4a26, darkRockB: 0xb86a34, shore: 0xf2deb0,
-    roadDark: 0x7a5230, roadLight: 0x93683f, roadLine: 0xf6e3b4,
-  },
-  // Alpine: meadow green, grey granite, shingle at the water.
-  {
-    groundDark: 0x3f5f26, groundLight: 0x86a04a, rockDark: 0x55555a, rockLight: 0x8a8782,
-    darkRockA: 0x3e4044, darkRockB: 0x63625f, shore: 0xb8b29c,
-    roadDark: 0x5a4a38, roadLight: 0x6e5c46, roadLine: 0xd8cfb8,
-  },
-]
-
 export function createTerrainMaterial(): TerrainMaterial {
   const summit = uniform(200)
   const sea = uniform(0)
@@ -103,8 +74,13 @@ export function createTerrainMaterial(): TerrainMaterial {
   const glow = uniform(1)
   // Snow lies above this height on ground that is not too steep. Far above the world: off.
   const snowLine = uniform(1e6)
-  // 1 on alpine worlds, 0 elsewhere.
+  // 1 on the alpine look, 0 elsewhere.
   const alpine = uniform(0)
+  const snowColour = U(0xeef2f6)
+  // Wet ice and volcanic glass are smoother than dust.
+  const gloss = uniform(0)
+  // Glowing seams in the rock; black turns them off.
+  const seam = U(0)
 
   /**
    * The ground's colour at a world position, from the palette and three scales of noise:
@@ -147,12 +123,12 @@ export function createTerrainMaterial(): TerrainMaterial {
     // Snow: above the snow line, thinning on steep faces, with a ragged lower edge.
     const snow = smoothstep(snowLine, snowLine.add(45), at.y.add(big.mul(22)).add(mid.mul(6)))
       .mul(smoothstep(0.5, 0.22, slope))
-    col = mix(col, color(0xeef2f6), snow)
-    return { col, cliff, mid, zone }
+    col = mix(col, snowColour, snow)
+    return { col, cliff, mid, big, zone }
   }
 
   const base = ground(p, normalGeometry.y, volcanic)
-  const { cliff, mid, zone } = base
+  const { cliff, mid, big, zone } = base
   const aboveSea = p.y.sub(sea)
   // Set by the ground cover: darkens and tints the ground under dense growth.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -199,8 +175,13 @@ export function createTerrainMaterial(): TerrainMaterial {
   const reach = smoothstep(lake.z.mul(2.6), lake.z.mul(0.9), lakeDist)
   const rise = smoothstep(lake.w.add(95), lake.w.add(4), p.y).mul(smoothstep(lake.w.sub(6), lake.w.add(1), p.y))
   const lakeGlow = reach.mul(rise).mul(facing.mul(0.85).add(0.15)).mul(0.55)
-  material.emissiveNode = vec3(1.0, 0.2, 0.02).mul(shoreGlow.add(lakeGlow)).mul(glow)
-  material.roughnessNode = max(float(0.78), float(0.97).sub(cliff.mul(0.1)).sub(paved.mul(0.15)))
+  // Seams: thin bright veins along a contour of the patch noise, broken up by a second
+  // contour so they come and go instead of drawing closed loops.
+  const vein = smoothstep(0.035, 0.0, big.add(mid.mul(0.12)).abs())
+    .mul(smoothstep(-0.25, 0.35, mx_noise_float(p.mul(0.004).add(17))))
+    .mul(float(1).sub(paved))
+  material.emissiveNode = vec3(1.0, 0.2, 0.02).mul(shoreGlow.add(lakeGlow)).mul(glow).add(seam.mul(vein).mul(0.9))
+  material.roughnessNode = max(float(0.78), float(0.97).sub(cliff.mul(0.1)).sub(paved.mul(0.15))).sub(gloss)
   // Bump from the same world noise: metre-scale relief the 4 m grid cannot hold. Three's
   // bumpMap() only perturbs textures (it re-samples at offset UVs), so this is Mikkelsen's
   // surface gradient method written out, with unnormalised screen derivatives so the
@@ -228,14 +209,17 @@ export function createTerrainMaterial(): TerrainMaterial {
     setSummit(height) {
       summit.value = Math.max(20, height)
     },
-    setLook(kind, lavaSea, lavaLake, snowHeight) {
-      const c = PALETTES[kind] ?? PALETTES[0]
-      for (const k in pal) pal[k as keyof typeof pal].value.setHex(c[k as keyof Palette])
+    setLook(look, lavaSea, lavaLake, snowHeight) {
+      const c = paletteFor(look)
+      for (const k in pal) pal[k as keyof typeof pal].value.setHex(c[k as keyof typeof pal])
+      snowColour.value.setHex(c.snow)
+      seam.value.setHex(c.seam)
+      gloss.value = c.gloss
       // A lava sea scorches its shore black; water leaves the palette's own beach colour.
       if (lavaSea) pal.shore.value.setHex(0x140a08)
       glow.value = lavaSea || lavaLake ? 1 : 0
       snowLine.value = snowHeight
-      alpine.value = kind === 2 ? 1 : 0
+      alpine.value = look === LOOK_ALPINE ? 1 : 0
     },
     groundColour(at, normalY, rockMask) {
       return ground(at, normalY, rockMask).col

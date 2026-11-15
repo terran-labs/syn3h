@@ -28,9 +28,10 @@ import { phash2, pperlin } from './noise'
 import type { HeightSampler } from './sampler'
 import { KIND_ALPINE, KIND_DESERT } from './settings'
 
-export const groundCover = defineParam({
-  id: 'terrain.groundCover', label: 'Grass and flowers', group: 'Terrain', scope: 'world', default: 1, min: 0, max: 1, step: 0.05,
-})
+// Registered in settings.ts, which has no renderer imports, so planet recipes, tests and
+// the server can set it without loading this file.
+import { terrainGroundCover } from './settings'
+export const groundCover = terrainGroundCover
 
 /** Nothing grows within this height of the sea level: the largest wave crest plus 0.3 m. */
 const SHORE_MARGIN = 1.8
