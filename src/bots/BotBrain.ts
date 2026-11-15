@@ -53,11 +53,6 @@ export class BotBrain implements System {
   dispose() { this.gear?.setHooks(null) }
   requestRecovery?: () => boolean
   target: Vehicle | null = null
-  /** The player changed vehicle in place: chase the new one where the old one was the target. */
-  setLocalPlayer(next: Vehicle): void {
-    if (this.target === this.localPlayer) this.target = next
-    this.localPlayer = next
-  }
   /**
    * The player changed vehicle in place: chase the new one where the old one was the target.
    * A duckling's line moves with it on its next step (DuckFollower.follow starts a fresh
