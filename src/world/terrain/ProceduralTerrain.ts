@@ -7,6 +7,8 @@ import { params, worldLavaAltitude, worldSeed } from '../../../shared/params'
 import { nearestImage, wrapCoord } from '../../../shared/wrap'
 import type { Game, System } from '../../core/Game'
 import type { RAPIER } from '../../core/physics'
+import { applyCurve, curveParam, updateCurve } from '../curve'
+import { AlienSkyMesh } from '../sky/AlienSkyMesh'
 import type { SpawnPoint, Terrain, TerrainRenderQuality, TerrainRoadPath, TerrainSummit, TerrainVent } from '../Terrain'
 import { createTerrainCollider } from './collider'
 import { lavaSurfaceAt } from './lava'
@@ -46,6 +48,7 @@ export class ProceduralTerrain implements Terrain {
   private readonly unsubscribe: () => void
   private pending = false
   private readonly lodSystem: System
+  private curveTick = 0
   /** The sea, lava lake, rivers and vents drawn from the generated data. */
   private readonly volcanics: Volcanics
   private readonly trees: Trees
@@ -64,6 +67,19 @@ export class ProceduralTerrain implements Terrain {
       update: () => {
         this.meshes.updateLod(game.camera.position)
         this.look.setSea(worldLavaAltitude.value)
+        // Curved horizon. Every material in the scene must take the same bend or its objects
+        // float against the ground, so while the curve is on, the scene is walked a few times
+        // a second and anything new (a joined vehicle, rebuilt particles, a loaded model) is
+        // bent too. The sky is left alone. Nothing is touched while the curve is 0.
+        updateCurve(game.camera.position, this.size)
+        if (curveParam.value > 0 && this.curveTick++ % 20 === 0) {
+          game.scene.traverse((o) => {
+            const m = (o as THREE.Mesh).material
+            if (!m || o instanceof AlienSkyMesh) return
+            if (Array.isArray(m)) for (const x of m) applyCurve(x)
+            else applyCurve(m)
+          })
+        }
       },
     })
     this.volcanics = game.add(new Volcanics(
