@@ -155,7 +155,7 @@ export function judgeHandback(trace, keyAt) {
     const a = after[i - 1], b = after[i], dt = Math.max(1 / 240, (b.at - a.at) / 1000)
     const step = Math.hypot(b.cam[0] - a.cam[0], b.cam[1] - a.cam[1], b.cam[2] - a.cam[2])
     const dot = Math.max(-1, Math.min(1, a.dir[0] * b.dir[0] + a.dir[1] * b.dir[1] + a.dir[2] * b.dir[2])), turn = Math.acos(dot) * 180 / Math.PI
-    // A hand-back covers at most a few tens of metres in 0.8 s: 80 m/s and 250 degrees/s are generous.
+    // A hand-back covers at most a few tens of metres in 1.2 s: 80 m/s and 250 degrees/s are generous.
     if (step - 80 * dt > worst.metres) worst = { metres: +(step - 80 * dt).toFixed(1), step: +step.toFixed(1), atMs: Math.round(b.at - keyAt), dtMs: Math.round(dt * 1000) }
     if (turn - 250 * dt > worstTurn.degrees) worstTurn = { degrees: Math.round(turn - 250 * dt), turn: Math.round(turn), atMs: Math.round(b.at - keyAt), dtMs: Math.round(dt * 1000) }
   }

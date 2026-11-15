@@ -115,7 +115,12 @@ describe('Syn3h camera', () => {
       chase.director.stop(); chase.update(0.02)
       expect(camera.position.distanceTo(from), `${shot}: no jump on the first frame`).toBeLessThan(0.5)
       let last = camera.position.clone(), worst = 0
-      for (let i = 0; i < 60; i++) { chase.update(0.02); worst = Math.max(worst, camera.position.distanceTo(last)); last = camera.position.clone() }
+      let turn = camera.quaternion.clone()
+      for (let i = 0; i < 60; i++) {
+        chase.update(0.02); worst = Math.max(worst, camera.position.distanceTo(last)); last = camera.position.clone()
+        expect(camera.quaternion.angleTo(turn) * 180 / Math.PI / 0.02, `${shot}: turn speed`).toBeLessThan(250)
+        turn.copy(camera.quaternion)
+      }
       expect(worst, `${shot}: largest step on the way back`).toBeLessThan(1.5)
       expect(camera.position.z, shot).toBeCloseTo(9.25); expect(camera.position.y, shot).toBeCloseTo(1 + 9.25 * 0.15)
     }

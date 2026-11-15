@@ -40,7 +40,7 @@ export const camScope = number('scope', 'Scope magnification', 3.25, 1.5, 5, 0.2
 export const camRoamSpeed = number('roamSpeed', 'Roam speed', 2, 0.25, 25)
 export const camRideHeight = number('rideHeight', 'Fallback ride height', 0.95, 0, 5)
 /** Seconds to ease from a director shot into the chase view when the player takes the controls back. */
-export const DIRECTOR_HANDBACK_SECONDS = 0.8
+export const DIRECTOR_HANDBACK_SECONDS = 1.2
 /** Cut between cinematic shots while the vehicle drives itself (Daydream). */
 export const camDaydreamShots = boolean('daydreamShots', 'Cinematic shots while daydreaming', true)
 
