@@ -6,13 +6,15 @@ This record replaces the obsolete Saturday evening freezes and release holds.
 ## Current authority and ownership
 
 The owner authorized overnight releases without reviewing each one and removed earlier
-cutoffs. Each release still needs the frozen-build checks, an empty production room,
-and immediate rollback if public checks fail. Integration and deployment belong to this
+cutoffs. Each release still needs frozen-build checks and immediate rollback if public checks fail.
+At 00:31 PST the owner explicitly removed the occupied-lobby hold and said to keep
+deployments rolling. Do not wait for lobby occupancy to clear or ask again. Integration and deployment belong to this
 Orchestrator alone. The Foreman coordinates owner decisions and lane recovery.
 
 The owner switched this thread to Astra after Claude exhausted its weekly quota and said
 to proceed. Do not retry exhausted Claude profiles. Existing recordings supplied by the
-owner stay, including wind. The generated-only wind question remains unanswered.
+owner stay, except wind: the owner explicitly chose generated wind only through the Foreman at
+00:33 PST. UX owns the scoped playback change; music and laser originals stay.
 The smooth near-camera ground request remains deferred: the owner said to backlog it,
 not start it now. Tank round six is a design study awaiting the owner's choice.
 
@@ -29,8 +31,10 @@ The working tree was clean at recovery. The final dry run passed direct and 150 
 latency checks: `/tmp/syn3h-dryrun-r3.log`. Three corrected network checks passed in
 `/tmp/release3-final-net-smoke-r3tmp-{1,2,3}.log`. Earlier similarly named logs contain
 superseded failures. A fresh full suite passed 904 tests in `/tmp/release3-astra-tests.log`.
-Prior thread reported Chrome 12/12, WebKit 6/6, lobby at three sizes and seam passing;
-captures survive as `/tmp/r3f-*`, but final matrix logs still need recovery or replacement.
+Fresh Chrome and iPad-sized WebKit driving checks passed all four vehicles with zero
+errors; results and captures: `/tmp/astra-release3-matrix`. Three fresh consecutive
+network checks passed against this exact frozen copy in `/tmp/astra-release3-net-*.log`.
+The earlier lobby captures and seam result were recovered and inspected.
 
 Release 3 includes the trusted-speed security patch as 17aa00e, equivalent to trunk
 b056c5c for the features on this branch. It caps speed allowance at 100 m/s for beam
@@ -38,13 +42,14 @@ origin and boost, cord hook origin, ram reach and shove speed memory. It also in
 the Bungee reach checks, 0.6 m plant cap, ten-world galaxy, recorded music default and
 five-minute Daydream. Yoink, Big Red and Pesters are absent.
 
-At recovery the public lobby still had one person. Do not deploy while occupied.
+At recovery the public lobby had one person; the owner subsequently waived that hold.
 Use `node tools/production-occupied.mjs https://www.syn3h.com` from release3:
 its protocol version matches release 2. Public release 2 has no aggregate status endpoint;
 the fallback sees the named lobby only. Unknown named rooms are a limitation.
-The owner question is open. Two-minute follow-up heartbeat `5a712e85` restores supervision.
+The owner answered the question. Five-minute release follow-up heartbeat `3ac4c3a6`
+replaces occupancy supervision.
 
-Before shipping: resolve the occupancy gate, finish evidence verification, notify Foreman,
+Before shipping: finish evidence verification, notify Foreman,
 then run `tools/release.sh 3 "release note"` from release3 with the existing Cloudflare
 credential in the environment. Never print the credential. Touch only Worker `syn3h`.
 After deployment check the public domain, network test, every vehicle and WebKit.
@@ -74,10 +79,13 @@ those changes. Water and post effects remain opt-in.
   worktree. Typecheck and 47 camera, generated-jet and operations tests passed.
 - Lobby dfd47d0 adds tap-to-drop and a camera blend. Review is in progress; the Lobby
   lane is checking repeat-drop state and exception cleanup before integration.
-- Recover the Pesters networking review. Multiplayer hit its quota before a final reply.
-  Treat it as a next-release review, not a release 3 blocker.
-- Integrate the existing release-notes/showcase hooks in `tools/release.sh`; their failure
-  must not invalidate a successful deployment. Refresh the dashboard and morning brief.
+- Pesters review found an unbounded speed allowance at launch and reusable live shot IDs.
+  Regression tests reproduced both; fixes passed all 183 network and gear tests.
+  This affects trunk only. Release 3 has no Pesters.
+- Release calendar labels, notes drafts and showcase hooks passed a dry run at 4273b06
+  including direct and delayed network checks. Three failure-path tests prove notes,
+  capture or tag failures do not fail an already live release. No notes are auto-published.
+  The dashboard headline is refreshed. The morning brief still needs the final release state.
 - Reconcile remaining handoffs with the Foreman. Do not infer acceptance from idle agents.
 - Phone QR join, vehicle feel and actual listening remain owner acceptance checks.
 

@@ -845,6 +845,8 @@ export class Room {
 
   private onFire(peer: Peer, player: Player, shot: unknown): void {
     if (!isShot(shot)) return
+    // A live id identifies one launch across all gear; reusing it would overwrite its target.
+    if (player.shots.has(shot.id) || player.pesters.has(shot.id)) return
     if (shot.k === 'pester') { this.onPester(peer, player, shot); return }
     // Big Red (shot.k 'red') has its own switch and its own, slower rate; any other kind is refused.
     const red = shot.k === 'red'
@@ -886,7 +888,7 @@ export class Room {
     if (player.pesters.size >= this.paramNumber(pesterMax.def)) return
     const st = player.lastState
     if (!st || st.paused || now - player.lastStateAt > RESPONDING_MS) return
-    if (this.dist(shot.o, st.p) > 8 + Math.hypot(...st.v) * 0.5) return
+    if (this.dist(shot.o, st.p) > 8 + leewaySpeed(st.v) * 0.5) return
     const target = typeof shot.to === 'number' ? this.byId(shot.to) : undefined
     if (!target || target === player || !target.lastState) return
     if (this.dist(target.lastState.p, st.p) > this.paramNumber(pesterRange.def) * 1.2 + 20) return

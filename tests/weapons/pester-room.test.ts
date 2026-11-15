@@ -19,8 +19,8 @@ function join(name: string, params: Record<string, number | boolean> = {}) {
   room.receive(peer, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, name, params }))
   return { peer, id: peer.all('welcome')[0]!.id }
 }
-function state(p: [number, number, number]): Uint8Array {
-  const s: WireState = { id: 0, t: clock / 1000, p, q: [0, 0, 0, 1], v: [0, 0, 0], w: [0, 0, 0], input: { x: 0, y: 0, z: 0, w: 0, brakes: false, special: false, fire: false } }
+function state(p: [number, number, number], v: [number, number, number] = [0, 0, 0]): Uint8Array {
+  const s: WireState = { id: 0, t: clock / 1000, p, q: [0, 0, 0, 1], v, w: [0, 0, 0], input: { x: 0, y: 0, z: 0, w: 0, brakes: false, special: false, fire: false } }
   return encodeState(s)
 }
 const send = (peer: Peer, msg: object) => room.receive(peer, JSON.stringify(msg))
@@ -75,6 +75,30 @@ describe('Pesters in the room', () => {
       send(a.peer, pester(i, b.id))
     }
     expect(b.peer.all('fire').map((m) => m.shot.id)).toEqual([1, 2, 3])
+  })
+
+  it('does not let a forged velocity place an orb beside its target', () => {
+    const { a, b } = three()
+    room.receive(a.peer, state([0, 0, 0], [10000, 0, 0]))
+    room.receive(b.peer, state([0, 0, -150]))
+    send(a.peer, pester(1, b.id, { o: [0, 1, -150] }))
+    expect(b.peer.all('fire')).toHaveLength(0)
+    send(a.peer, pester(2, b.id))
+    expect(b.peer.all('fire')).toHaveLength(1)
+  })
+
+  it('cannot reuse a live shot id to replace its target or evade the live count', () => {
+    const { a, b, c } = three()
+    send(a.peer, pester(1, b.id))
+    clock += 1500
+    room.receive(a.peer, state([0, 0, 0]))
+    room.receive(c.peer, state([0, 0, -30]))
+    send(a.peer, pester(1, c.id))
+    // Changing gear must not overwrite the same live shot either.
+    send(a.peer, { type: 'fire', shot: { id: 1, o: [0, 1, -2], d: [0, 0, -1], boost: 0, t: clock / 1000 } })
+    expect(b.peer.all('fire')).toHaveLength(1)
+    send(b.peer, { type: 'hit', shooter: a.id, shot: 1 })
+    expect(c.peer.all('hit')).toEqual([{ type: 'hit', shooter: a.id, victim: b.id, shot: 1 }])
   })
 
   it('counts a catch only by the vehicle it chased, within its own lifetime', () => {
