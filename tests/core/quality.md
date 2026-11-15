@@ -4,24 +4,24 @@
 
 | Budget | Safe | Mobile | Desktop |
 | --- | ---: | ---: | ---: |
-| Render pixel ratio cap | 1 | 1.25 | 2 |
-| Existing sky shadow quality | 0 | 1 | 2 |
+| Render pixel ratio cap | 1 | 1 | 1.5 |
+| Existing sky shadow quality | 0 | 0 | 1 |
 | Particle cap | 240 | 960 | 2400 |
-| Local bot cap | 2 | 4 | 16 |
+| Local bot cap | 2 | 4 | 8 |
 | Optional terrain distance | 700 m | 1400 m | 3000 m |
 | Optional terrain detail scale | 0.5 | 0.75 | 1 |
 
 Classification uses user agent, touch points (including iPad's desktop user agent), optional deviceMemory and WebGPU adapter availability/limits. Low-memory and software-adapter devices start safe. Phones with an adapter start mobile; phones without one start safe. Desktop WebGL fallback starts mobile. These are conservative heuristics, not measured memory guarantees.
 
-The client particle cap applies even when an emitter module is imported after initialization. A 50-vent safe-mode scene allocates four particles per vent, 200 total. The manager limits actual bots without changing the shared `bots.count` parameter. Instantiate it only on the multiplayer host. Local caps do not remove remote players or change physics/terrain generation.
+The client particle cap applies even when an emitter module is imported after initialization. A 50-vent safe-mode scene allocates four particles per vent, 200 total. The manager limits actual bots without changing the shared `bots.count` parameter. Managers may exist on every client, but `remote = true` holds no vehicles; networking owns remote copies. Local caps do not remove remote players or change physics/terrain generation.
 
-The controller offers `game.quality.attachTerrain(terrain)`. If terrain implements `setRenderQuality({level, drawDistance, detail})`, it receives the current budget and future changes. The currently merged terrain has internal distance-based LOD but no public setter; this hook is inactive until the terrain builder adds one. No terrain files were changed.
+The controller offers `game.quality.attachTerrain(terrain)`. If terrain implements `setRenderQuality({level, drawDistance, detail})`, it receives the current budget and future changes. The merged terrain implements that setter and the composition root attaches it, so graphics levels change visual LOD without changing the collider. No terrain files were changed.
 
 ## Recovery, loading and diagnostics
 
 Session storage records `syn3h.loading.level` when loading starts and clears it after a frame with draws. A surviving marker reduces the next attempt by one level, including repeated failures down to safe. A separate session value remembers a manually selected or automatically reduced level. Session storage avoids treating another tab's load as a crash; local storage is a fallback when session storage is unavailable. Storage denial does not prevent the game from starting.
 
-After five seconds of warmup, four consecutive two-second windows below 28 fps reduce quality by one level. Hidden tabs, invalid samples and pauses above one second do not count. A 15-second cooldown prevents rapid repeated reductions. Quality does not automatically increase.
+After five seconds of warmup, four consecutive two-second windows below 54 fps at desktop quality or 28 fps at mobile quality reduce quality by one level. Hidden tabs, invalid samples and pauses above one second do not count. A 15-second cooldown prevents rapid repeated reductions. Quality does not automatically increase.
 
 `window` emits `syn3h:loading` events with `{phase, progress, elapsedMs}`. Phases are device, physics, renderer, world and ready. Progress is an estimate, not download byte progress. Elapsed time is measured from navigation. `loadingProgress` exports the latest state for UI code that subscribes after initialization. `syn3h:quality` carries the selected level and budgets.
 

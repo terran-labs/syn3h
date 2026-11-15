@@ -9,7 +9,7 @@ const bots = game.add(new BotManager(game, terrain, player))
 bots.setTargets([player])
 ```
 
-Include `bots` in the `window.syn3h` debug handles if desired. The module registers the Bots parameters; `params.set('bots.count', 5)` spawns five bots on the next rendered frame. Count defaults to zero and is capped at sixteen. Import `src/bots/params.ts` on a server that validates shared parameters, or move those declarations into shared code during integration.
+Include `bots` in the `window.syn3h` debug handles if desired. The module registers the Bots parameters; `params.set('bots.count', 5)` spawns five bots on the next rendered frame. Count defaults to zero. The slider accepts up to sixteen, while local graphics budgets cap active host bots at two, four or eight. Import `src/bots/params.ts` on a server that validates shared parameters, or move those declarations into shared code during integration.
 
 Every client may create a manager. Networking must set `manager.remote = true` on non-hosts before simulation; this immediately disposes all managed effects, brains and vehicles. Remote managers never spawn bots. Networking owns its separate remote copies. Host takeover spawns fresh vehicles on the next update. `isLocal = false` prevents keyboard reads here; it does not prevent the vehicle's forces from running. Do not give a host-owned bot a remote interpolation controller on the same host.
 
@@ -35,4 +35,4 @@ Spawns use deterministic index/tick offsets around the player, reject steep slop
 
 Run `npx vitest run tests/bots` for headless Rapier tests. With Vite on port 5186, `node src/bots/smoke.mjs` sets five bots through the public parameter API, waits for real contact, captures screenshots, then clears the population.
 
-Host bots attach shared vehicle effects with `local: false`; effects are disposed before the body. A monotonic lifetime ID supplies `generateName(`${worldSeed.value}:${bot.id}`, 'bot')`, so removing and replacing an array slot does not reuse the old identity.
+Host bots attach shared vehicle effects with `local: false`; effects are disposed before the body. A monotonic lifetime ID and the world seed supply `generateName`, so removing and replacing an array slot does not reuse the old identity.

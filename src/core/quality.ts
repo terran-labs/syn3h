@@ -3,10 +3,12 @@ import { defineParam, params } from '../../shared/params'
 import type { WebGPURenderer } from 'three/webgpu'
 export type GraphicsLevel = 0 | 1 | 2
 export const graphicsLevel = defineParam({ id: 'gfx.level', label: 'Graphics: 0 safe, 1 mobile, 2 desktop', group: 'Graphics', scope: 'client', default: 2, min: 0, max: 2, step: 1 })
+// Headed Metal profiling found resolution and bot draw submission dominate these budgets.
+// Keep phone pixel density bounded; physical phone timing still needs validation.
 export const QUALITY = [
   { name: 'safe', pixelRatio: 1, shadows: 0, particles: 240, bots: 2, drawDistance: 700, detail: 0.5 },
-  { name: 'mobile', pixelRatio: 1.25, shadows: 1, particles: 960, bots: 4, drawDistance: 1400, detail: 0.75 },
-  { name: 'desktop', pixelRatio: 2, shadows: 2, particles: 2400, bots: 16, drawDistance: 3000, detail: 1 },
+  { name: 'mobile', pixelRatio: 1, shadows: 0, particles: 960, bots: 4, drawDistance: 1400, detail: 0.75 },
+  { name: 'desktop', pixelRatio: 1.5, shadows: 1, particles: 2400, bots: 8, drawDistance: 3000, detail: 1 },
 ] as const
 export const levelNumber = (value: number): GraphicsLevel => Math.max(0, Math.min(2, Math.round(Number.isFinite(value) ? value : 0))) as GraphicsLevel
 export function qualityBudget() { return QUALITY[levelNumber(graphicsLevel.value)] }
@@ -40,7 +42,7 @@ export class FrameBudgetMonitor {
   private frames = 0
   private slow = 0
   private cooldown = 0
-  sample(frameMs: number, visible = true): boolean {
+  sample(frameMs: number, visible = true, minimumFps = 28): boolean {
     if (!visible || !Number.isFinite(frameMs) || frameMs <= 0 || frameMs > 1000) { this.elapsed = this.frames = this.slow = 0; return false }
     this.warmup += frameMs
     if (this.warmup < 5000) return false
@@ -48,7 +50,7 @@ export class FrameBudgetMonitor {
     this.elapsed += frameMs; this.frames++
     if (this.elapsed < 2000) return false
     const fps = this.frames * 1000 / this.elapsed
-    this.slow = fps < 28 ? this.slow + this.elapsed : 0
+    this.slow = fps < minimumFps ? this.slow + this.elapsed : 0
     this.elapsed = this.frames = 0
     if (this.slow < 8000) return false
     this.slow = 0; this.cooldown = 15000
@@ -123,7 +125,7 @@ export class QualityController {
     if (this.loading && metrics.drawCalls > 0) {
       this.loading = false; finishLoad(this.storage); reportLoading('ready', 1)
     }
-    if (!this.loading && this.monitor.sample(metrics.frameMs, !document.hidden) && graphicsLevel.value > 0) params.set(graphicsLevel.def.id, levelNumber(graphicsLevel.value) - 1)
+    if (!this.loading && this.monitor.sample(metrics.frameMs, !document.hidden, graphicsLevel.value === 2 ? 54 : 28) && graphicsLevel.value > 0) params.set(graphicsLevel.def.id, levelNumber(graphicsLevel.value) - 1)
     this.hudElapsed += metrics.frameMs
     if (this.hud && !this.hud.hidden && this.hudElapsed >= 250) {
       this.hudElapsed = 0
