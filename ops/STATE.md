@@ -82,7 +82,7 @@ only capture timing after that successful saved-world run. No next-batch public 
 Temporal rejects history on procedural position/sprite materials, including water/grass;
 GI is screen-space, clouds have no ground shadows, real-device performance is unmeasured.
 
-Aircraft Pester evasion16df9a6 remains rejected. Research7ec2630 passed99 measurements
+Aircraft Pester evasion16df9a6 remains rejected. Research7ec2630 completed99 measurements
 and independent Weapons review, with two escapes and two harmful catches. No safe side
 selection or forward-flight benefit established. No further runtime implementation approved.
 Ground dodge and all-bot gear remain delivered. Water transparency remains unimplemented;
