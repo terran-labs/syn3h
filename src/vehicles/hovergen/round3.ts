@@ -60,7 +60,7 @@ export const R3_DESIGNS: Round3Design[] = [
 ]
 
 /** Hull stations [z, halfWidth, top, bottom, centreY, exponent], the original's at buggy scale. */
-export function round3Hull(d: Round3Design): number[][] {
+export function round3Hull(d: Pick<Round3Design, 'shoulder' | 'waist' | 'rear' | 'nose' | 'reach' | 'deck' | 'box' | 'tail'>): number[][] {
   const e = d.box, k = d.deck
   return [
     [-1.63 - d.reach, .035, .035, .025, .08, 2.4],
@@ -171,7 +171,7 @@ export function buildRound3(d: Round3Design, detail: number): Round3Build {
   const spine = () => b.body('chrome', [[.43, .06, .055, .045, .60, 2.5], [.85, .16, .13, .08, .75, 2.5], [1.34, .23, .18, .13, .84, 2.6]], { seg: 5, around: 20 })
   if (d.thruster === 'stalk' || d.thruster === 'hex') {
     // The original's chrome spine rising behind the canopy to the central nozzle.
-    spine(); b.nozzle(1.36, .84, .22, .18, 0, 2.6)
+    spine(); b.nozzle(1.36, .84, .22, .18, 0, 2.6); plugNozzle(b, 1.36, .84, .22, .18, 0, 2.6)
     b.add('glow', new T.CircleGeometry(.13, Math.max(8, Math.round(20 * detail))).translate(0, .84, 1.64))
     anchors.push({ what: 'thruster spine', at: [0, .5, .9] })
     // The jet's ring: a six-sided accent collar the nozzle passes through.
@@ -180,13 +180,13 @@ export function buildRound3(d: Round3Design, detail: number): Round3Build {
     // Two booms lofted out of the rear quarters, each ending in its own nozzle.
     const x = .74 * d.rear, y = b.at(1.2)[3] + b.at(1.2)[1] * .62
     b.body('paint', [[-.1, .04, .04, .04, y - .14, 2.4], [.55, .27, .2, .2, y - .02, 2.5], [1.2, .29, .22, .22, y, 2.5], [1.6, .25, .2, .2, y, 2.5]], { x, mirror: true, seg: 7, around: 20 })
-    b.nozzle(1.52, y, .2, .17, x, 2.5)
+    b.nozzle(1.52, y, .2, .17, x, 2.5); plugNozzle(b, 1.52, y, .2, .17, x, 2.5)
     anchors.push({ what: 'boom', at: [x, y - .2, 1.0] }, { what: 'boom', at: [-x, y - .2, 1.0] })
   } else {
     // The thruster leaves through the stern itself: a short cowl grown from the deck, no stalk.
     const y = b.at(1.5)[3] + .1
     b.body('paint', [[.7, .1, .06, .06, y + .08, 2.5], [1.2, .3, .2, .2, y + .02, 2.6], [1.56, .31, .22, .22, y, 2.6]], { seg: 6, around: 20 })
-    b.nozzle(1.56, y, .25, .19, 0, 2.6)
+    b.nozzle(1.56, y, .25, .19, 0, 2.6); plugNozzle(b, 1.56, y, .25, .19, 0, 2.6)
     b.add('glow', new T.CircleGeometry(.15, Math.max(8, Math.round(20 * detail))).translate(0, y, 1.84))
     anchors.push({ what: 'stern cowl', at: [0, y - .12, 1.3] })
   }
@@ -250,6 +250,19 @@ export function buildRound3(d: Round3Design, detail: number): Round3Build {
   if (d.chine !== 'none') b.body(d.chine, hull.map(([z, w, , , y, e]) => [z, w + .04, .018, .018, Math.max(.055, y - .14), e]), { seg: 10, around: 24 })
   b.body('dark', hull.map(([z, w, , , y, e]) => [z * .97, w * .94, .035, .03, Math.max(.045, y - .17), e]), { seg: 8, around: 20 })
   return { builder: b, head, tail, beams, anchors, inside }
+}
+
+/**
+ * Close a thruster's throat. The shape kit lines a nozzle with a dark inner wall and ends it
+ * in a glow, and the glow is see-through, so from astern the eye went past it to the inside
+ * of the hull (the owner, 15 Nov 2026: "I shouldn't be able to see inside the thruster").
+ * This adds a solid dark disc just ahead of the glow's rear face, never in its plane.
+ * `kind` says which kit part made the nozzle: nozzle(), or a duct (a body ending in an
+ * exhaust), where the disc sits 10 cm inside the lip and the caller adds a glow on it.
+ */
+export function plugNozzle(b: Builder, z: number, y: number, halfWidth: number, halfHeight: number, x = 0, exponent = 2.2, kind: 'nozzle' | 'duct' = 'nozzle'): void {
+  const k = (dz: number, f: number) => [z + dz, halfWidth * f, halfHeight * f, halfHeight * f, y, exponent]
+  b.body('dark', kind === 'nozzle' ? [k(-.11, .64), k(.05, .64)] : [k(-.16, .8), k(-.1, .8)], { x, mirror: x !== 0, seg: 1, around: 28 })
 }
 
 /** Anchors that are not inside the hull: fittings that would hang in the air. Empty when all is attached. */

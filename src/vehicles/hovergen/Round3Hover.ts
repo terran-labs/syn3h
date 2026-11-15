@@ -10,7 +10,11 @@ export const R3_BUDGET = [12000, 2500, 500] as const
 const DETAILS = [[.55, .5, .45, .4], [.16, .13, .1]]
 const count = (g: T.BufferGeometry) => (g.index?.count ?? g.attributes.position.count) / 3
 
-/** A round three study at one detail level, on the shared vehicle materials. */
+/** Anything that can be built at a detail setting and outlined for the far level. Round four provides this directly. */
+export interface HoverSpec { id: string; paint: number; accent: number; build(detail: number): Round3Build; far(): T.BufferGeometry[] }
+const specOf = (d: Round3Design | HoverSpec): HoverSpec => 'build' in d ? d : { id: d.id, paint: d.paint, accent: d.accent, build: detail => buildRound3(d, detail), far: () => round3Far(d) }
+
+/** A round three or four study at one detail level, on the shared vehicle materials. */
 export class Round3Hover {
   readonly object = new T.Group()
   readonly thruster = new T.Group()
@@ -28,7 +32,8 @@ export class Round3Hover {
   private readonly glowMeshes: T.Mesh[] = []
   private detach = () => {}
 
-  constructor(readonly design: Round3Design, readonly level: 0 | 1 | 2) {
+  constructor(readonly design: Round3Design | HoverSpec, readonly level: 0 | 1 | 2) {
+    const spec = specOf(design)
     this.paint = setRole(new T.MeshStandardMaterial({ color: design.paint, metalness: .8, roughness: .24 }), 'paint')
     this.accent = setRole(new T.MeshStandardMaterial({ color: design.accent, roughness: .4 }), 'accent')
     this.glow = setRole(new T.MeshStandardMaterial({ color: design.accent, emissive: design.accent, emissiveIntensity: 2, transparent: true, depthWrite: false, side: T.DoubleSide, blending: T.AdditiveBlending }), 'glow')
@@ -36,14 +41,14 @@ export class Round3Hover {
     this.sources.push(this.paint, this.accent, this.glow, this.head, this.tail)
     this.object.userData.vehicleColors = { body: this.paint.color, accent: this.accent.color }
     if (level === 2) {
-      const pieces = round3Far(design), merged = mergeGeometries(pieces.map(g => { const n = g.toNonIndexed(); n.deleteAttribute('uv'); g.dispose(); return n }))
+      const pieces = spec.far(), merged = mergeGeometries(pieces.map(g => { const n = g.toNonIndexed(); n.deleteAttribute('uv'); g.dispose(); return n }))
       this.object.add(new T.Mesh(merged, this.paint))
       return
     }
     // Step the generator's detail down until the level fits its budget, fittings included.
     let built!: Round3Build
     for (const detail of DETAILS[level]) {
-      built = buildRound3(design, detail); this.detail = detail
+      built = spec.build(detail); this.detail = detail
       const total = [...built.builder.pieces.map(p => p.geometry), ...built.head, ...built.tail].reduce((n, g) => n + count(g), 0)
       if (total + 80 <= R3_BUDGET[level]) break
       for (const g of [...built.builder.pieces.map(p => p.geometry), ...built.head, ...built.tail]) g.dispose()
@@ -73,8 +78,9 @@ export class Round3Hover {
       // Two rudder vanes in the exhaust of a central thruster.
       this.thruster.position.set(0, b.gimbal.y, b.gimbal.z)
       for (const x of [-.08, .08]) {
-        const vane = new T.Mesh(new T.BoxGeometry(.018, .25, .12), chrome)
-        vane.position.set(x, 0, .02); this.thruster.add(vane)
+        const vane = new T.Mesh(new T.BoxGeometry(.018, Math.min(.25, b.gimbal.halfHeight * 1.7), .09), chrome)
+        // Inside the lip, so they read as part of the nozzle and not as blocks behind it.
+        vane.position.set(x, 0, -.045); this.thruster.add(vane)
       }
       this.object.add(this.thruster)
     }

@@ -1,7 +1,8 @@
 # Hovercraft studies
 
 Round one stays in `designs.ts` and `NextHover.ts`. Round two lives in `heritage.ts`
-and `HeritageHover.ts`, round three in `round3.ts` and `Round3Hover.ts`. All three
+and `HeritageHover.ts`, round three in `round3.ts` and `Round3Hover.ts`, round four in
+`round4.ts` (it reuses `Round3Hover`). All four
 appear under the hovercraft in the shared vehicle lab; a round is never deleted.
 
 The owner rejected round one's proportions and requested five variants closer to
@@ -61,6 +62,27 @@ accent plates, twin booms, drooped accent tips.
 `Round3Hover` steps the generator's detail down until a level fits its triangle budget,
 so a design with more fittings spends fewer triangles on its hull, not more in total.
 
-`GameHover` and the `hover.body` parameter let the game's hovercraft wear a study with
-its cockpit and detail levels. They currently cover round two. The original mesh stays
-the default until the owner picks a design.
+## Round four
+
+The owner did not pick from round three. He named what he liked: the red Ducktail's air
+intakes and stern thrust duct, and the silver Arrow's wing whose tips dip down on the
+outside. He asked for the thrust pads, headlights and motor flares to be much better
+integrated, for the body to curve up at the edges of the cockpit so the canopy is part
+of the body's shape, and for a thruster he cannot see into from behind. Round four is
+five variations on that: Ember, Gull, Vee, Lowwing, Kite.
+
+What every round four design does: a coaming strip lifts the deck to a lip inside the
+canopy's foot; headlamps are bands on the nose outline (wrapped round each corner, or
+one bar across); each lift port sits in a belly blister with its ring 8 mm proud; the
+thruster is the open end of a cowl grown from the deck, closed 10 cm inside the lip by
+a solid disc that carries the glow (`plugNozzle`). "Motor flares" was read as the
+chrome collar round the old nozzle; that reading is the lead's, not confirmed.
+
+The see-through thruster came from the shape kit: a nozzle ends in a transparent
+additive glow with nothing opaque behind it, so the eye went on into the hull. Round
+three's nozzles now get the same disc.
+
+`GameHover` and the `hover.body` parameter (commit 7e1b2ff) let the game's hovercraft
+wear a round two study. The owner then ruled that the game ships one approved design
+per vehicle with no selector. Branch `veh/hovercraft-single` holds that version (one
+generated body, no model file), parked until he approves a design.

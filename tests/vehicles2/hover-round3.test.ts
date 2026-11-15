@@ -8,10 +8,9 @@ import { hover } from '../../src/dev/vehicleLab/exhibits/hover'
 import { filterDesigns, countStats } from '../../src/dev/vehicleLab/logic'
 
 describe('hovercraft round three', () => {
-  it('opens by default in the lab and keeps rounds one and two', async () => {
+  it('stays selectable in the lab and keeps rounds one and two', async () => {
     const designs = await hover.designs()
-    expect(filterDesigns(designs).group).toBe('3')
-    expect(filterDesigns(designs).designs).toHaveLength(10)
+    expect(filterDesigns(designs, '3').designs).toHaveLength(10)
     expect(filterDesigns(designs, '2').designs).toHaveLength(5)
     expect(filterDesigns(designs, '1').designs).toHaveLength(5)
     expect(new Set([...HOVER_DESIGNS, ...HERITAGE_DESIGNS, ...R3_DESIGNS].map(d => d.id)).size).toBe(20)
