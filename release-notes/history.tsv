@@ -1,0 +1,17 @@
+# Every Syn3h version, oldest first. Milestones use their commit time; production uses the time
+# it went live (releases.tsv). Read by tools/release-notes.mjs; see release-notes/README.md.
+# version	milestone tag	commit	Pacific time	channel	preview (optional, default yes)
+v26.11.1400	m00-proposal	83c69bb	2026-11-14 14:06 PST	milestone	no
+v26.11.1401	m01-foundation	0d864b0	2026-11-14 14:29 PST	milestone	no
+v26.11.1402	m02-first-playable	ff974dd	2026-11-14 14:50 PST	milestone
+v26.11.1403	m03-syn3h-buggy	9eef3aa	2026-11-14 15:12 PST	milestone
+v26.11.1404	m04-syn3h-lobby	ac1404f	2026-11-14 15:17 PST	milestone
+v26.11.1405	m05-king-of-the-hill	387a04e	2026-11-14 15:42 PST	milestone
+v26.11.1406	m06-island	2280f6f	2026-11-14 15:51 PST	milestone
+v26.11.1407	m07-demo-features	4b9ff10	2026-11-14 16:14 PST	milestone
+v26.11.1408	m08-sound-and-spiral-road	47b4045	2026-11-14 16:27 PST	milestone
+v26.11.1409	m10-nextgen-buggy-golden-hour	ab1945a	2026-11-14 16:49 PST	milestone
+v26.11.1410	m11-rc1	28d0adc	2026-11-14 17:16 PST	milestone
+v26.11.1411	m12-sticky-lava-planets	87e9e34	2026-11-14 17:43 PST	milestone
+v26.11.1412	m13.1-steering	ee73e41	2026-11-14 19:08 PST	production
+v26.11.1413	m14.2-release2	bc8cb48	2026-11-14 20:07 PST	production
