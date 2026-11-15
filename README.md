@@ -87,8 +87,8 @@ exactly, however many follow it.
 - **It ships formulas, not files.** Terrain, sky, water, clouds, plants, sound and music
   are generated at run time. The main script is about 2.3 MB and the physics engine about
   3.1 MB before compression. The only binaries the running game still loads are the
-  interface font and the models for two vehicles, which are being replaced by generated
-  ones.
+  interface font and the Buggy's model, which a generated one will replace. The hovercraft
+  and the tank are already generated in code.
 - **One definition, three readers.** Waves, wrapping, sky maths and the parameter registry
   are plain shared code read by the client, the server and the tests, so what you see,
   what you collide with and what the other player sees cannot drift apart.
