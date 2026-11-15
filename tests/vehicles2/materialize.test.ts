@@ -112,7 +112,7 @@ describe('materialize lifecycle',()=>{
     await Promise.resolve()
     expect(first&&second).toBe(true)
     expect(v.body.bodyType()).toBe(RAPIER.RigidBodyType.Dynamic)
-    expect(cues.map(c=>c.cue)).toEqual(['materializeStart','materializeStart','materializeRelease'])
+    expect(cues.map(c=>c.cue)).toEqual(['materializeStart','materializeCancel','materializeStart','materializeRelease'])
     v.dispose();h.world.free()
   })
 
@@ -126,12 +126,12 @@ describe('materialize lifecycle',()=>{
     await done
     expect(m.isHeld(v)).toBe(false)
     expect(snapshot(v)).toEqual(before)
-    expect(cues.map(c=>c.cue)).toEqual(['materializeStart'])
+    expect(cues.map(c=>c.cue)).toEqual(['materializeStart','materializeCancel'])
     v.dispose();h.world.free()
   })
 
   it('cancel releases at once; a vehicle removed while held is let go without touching its freed body',async()=>{
-    const {h,v,m,step}=bed('jet')
+    const {h,v,m,cues,step}=bed('jet')
     step(5)
     m.begin(v);step(5);m.cancel(v)
     expect(m.isHeld(v)).toBe(false);expect(v.body.bodyType()).toBe(RAPIER.RigidBodyType.Dynamic)
@@ -140,6 +140,8 @@ describe('materialize lifecycle',()=>{
     m.fixedUpdate(FIXED_DT)
     await done
     expect(m.isMaterializing(v)).toBe(false)
+    expect(cues.map(c=>c.cue)).toEqual(['materializeStart','materializeCancel','materializeStart','materializeCancel'])
+    expect(cues.at(-1)?.y).toBe(cues.at(-2)?.y)
     h.world.free()
   })
 

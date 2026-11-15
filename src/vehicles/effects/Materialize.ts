@@ -52,7 +52,7 @@ import {ParticleBatch} from './ParticleBatch'
 import type {Sprite} from './sprites'
 import {materializeArcs,materializeBrightness,materializeCloudSize,materializeHold,materializeHover} from './materializeParams'
 
-export type MaterializeCue='materializeStart'|'materializeRelease'
+export type MaterializeCue='materializeStart'|'materializeRelease'|'materializeCancel'
 export type MaterializeCueHandler=(cue:MaterializeCue,position:T.Vector3,holdSeconds:number,vehicle:Vehicle)=>void
 
 export interface MaterializeOptions {
@@ -185,6 +185,7 @@ export class Materialize implements System {
     const hover=Math.max(0,options.hover??materializeHover.value)
     const body=vehicle.body
     let hold=this.find(vehicle)
+    if(hold)this.cue('materializeCancel',hold)
     if(!hold){
       hold={vehicle,type:body.bodyType(),holds:options.hold??true,point:new T.Vector3(),rotation:new T.Quaternion(),elapsed:0,seconds,done:[],owed:0,shown:0}
       this.holds.push(hold)
@@ -314,10 +315,12 @@ export class Materialize implements System {
       this.cloud.mesh.visible=true
       this.cue('materializeRelease',hold)
     }
-    this.finish(hold)
+    this.finish(hold,cue)
   }
 
-  private finish(hold:Hold):void {
+  private finish(hold:Hold,released=false):void {
+    // Every interrupted hold must stop its looping sound, including removed bodies.
+    if(!released)this.cue('materializeCancel',hold)
     const i=this.holds.indexOf(hold)
     if(i>=0)this.holds.splice(i,1)
     if(hold.holds)delete hold.vehicle.object.userData.materializing
@@ -327,7 +330,7 @@ export class Materialize implements System {
 
   private cue(kind:MaterializeCue,hold:Hold):void {
     if(!this.onCue)return
-    const t=hold.vehicle.body.translation()
+    const t=this.alive(hold)?hold.vehicle.body.translation():hold.point
     this.onCue(kind,cuePoint.set(t.x,t.y,t.z),hold.seconds,hold.vehicle)
   }
 }
