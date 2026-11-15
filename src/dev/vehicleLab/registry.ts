@@ -7,6 +7,7 @@
  * commit, reviewed or not, so one lane's broken file must not blank the lab for the others:
  * a file that fails to load is listed in `failures` and the rest carry on.
  */
+import { present } from './presentation'
 import { collectExhibits } from './tree'
 
 export interface ExhibitFailure { file: string; error: string }
@@ -23,4 +24,5 @@ await Promise.all(Object.entries(loaders).map(async ([path, load]) => {
   }
 }))
 
-export const exhibits = collectExhibits(modules)
+// Named and ordered by the lab's own rules, whatever each lane's file calls itself.
+export const exhibits = present(collectExhibits(modules))

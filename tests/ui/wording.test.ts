@@ -20,6 +20,15 @@ const WORDS = /\b(fire|fires|fired|firing|shot|shots|hit|hits|dead|died|dies|die
 /** Anywhere in a word, so "LaserShot" and "killer" fail too. */
 const STEMS = /laser|weapon|shoot|kill|eliminat|destroy|destruct|explod|explos/i
 const banned = (text: string) => WORDS.exec(text)?.[0] ?? STEMS.exec(text)?.[0] ?? null
+/**
+ * Names the owner retired on 15 November 2026. The gear is Plasma Tag, Plasma Thunder,
+ * Chaser, Grapple and Yoink; the buggy is just "Buggy". Ids, parameter ids and saved keys
+ * keep their old spellings and are not text a player reads.
+ */
+const RETIRED = /Syn3h Buggy|\bClassic\b|\btag beams?\b|\bBig Red\b|\bPesters?\b|\bBungee\b/i
+/** The inspector still lists the gear lane's old parameter group until that lane renames it. */
+const RETIRED_ALLOWED = new Set(['Tag beams'])
+const retired = (text: string) => RETIRED_ALLOWED.has(text) ? null : RETIRED.exec(text)?.[0] ?? null
 
 const files = (dir: string): string[] => readdirSync(dir).flatMap(name => {
   const path = join(dir, name)
@@ -43,6 +52,10 @@ describe('player-visible wording', () => {
   for (const path of [...files('src/ui'), ...files('src/audio')]) {
     it(`${path} has no death, violence or weapon words`, () => {
       const hits = visibleText(readFileSync(path, 'utf8')).map(text => ({ text, word: banned(text) })).filter(hit => hit.word)
+      expect(hits).toEqual([])
+    })
+    it(`${path} uses no retired gear or vehicle name`, () => {
+      const hits = visibleText(readFileSync(path, 'utf8')).map(text => ({ text, word: retired(text) })).filter(hit => hit.word)
       expect(hits).toEqual([])
     })
   }

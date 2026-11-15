@@ -55,7 +55,7 @@ marked "pick". A vehicle with one design is a single entry.
 Under the tree, the **Options** tree starts with an info panel (heading, design name, notes, live
 counts) and continues with collapsible sections. Each remembers whether it was open:
 
-- **View**: Front, Rear, Side, Top and Low presets (Front and Rear are three quarter views; when
+- **View**: Front, Rear, Side, Top, Low and Under presets (Under looks up from below the floor; dragging also takes the camera under it, and the floor fades out as the camera comes down to it; Front and Rear are three quarter views; when
   comparing they become near head on so no car hides another), **Turntable**, **Cockpit** and
   **Floor**. Cockpit eases the camera to the driver's eye, looking forward, and hides the canopy.
   Drag to look around from the seat; switch it off to ease back out. It shows only when the model
@@ -117,7 +117,7 @@ total for all copies. Counts cover visible meshes only:
 | `vehicle=<id>` | Exhibit id (or an alias), default the first in the sidebar. |
 | `design=<id or n or all>` | A design by id or 1 based position; `all` for side by side. |
 | `group=<name>` | Design group, default the last. `round=` is read as `group=`. |
-| `view=Front\|Rear\|Side\|Top\|Low` | Camera preset. |
+| `view=Front\|Rear\|Side\|Top\|Low\|Under` | Camera preset. |
 | `az=<deg>&el=<deg>&dist=<m>` | Camera azimuth from the nose toward +X, elevation, distance. Each is optional; they override `view`. |
 | `lod=auto\|<name>\|<n>` | Detail level by name (`Far`) or 0 based index. |
 | `night=1` | Night studio, headlights on. |
@@ -126,6 +126,7 @@ total for all copies. Counts cover visible meshes only:
 | `floor=gloss\|shadow` | Floor. |
 | `color=<hex>[,<hex>]` | Body colour and optional accent, for example `color=b3140f,101014`. |
 | `motion=1` | Start with Motion on. |
+| `idle=<seconds>` | Seconds without input before the lab runs by itself (default 15; 0 turns it off). Scripted browsers and `still=1` default to off. |
 | `cockpit=1` | Start in the cockpit. |
 | `stress=10\|25\|50` | Start with stress copies. |
 | `still=1` | Hide the interface, stop motion and the turntable, render the mirror at full resolution. |
@@ -149,6 +150,7 @@ total for all copies. Counts cover visible meshes only:
 | `look(position, target)` | Camera at `[x, y, z]` looking at `[x, y, z]`. |
 | `setNight(on)`, `setHeadlights(on)`, `setBraking(on)` | Lights. |
 | `setMotion(on)`, `setTurntable(on)`, `setFloor('Gloss' \| 'Shadow')` | As the buttons. |
+| `setIdle(seconds)`, `idle()` | Set the wait before the idle show (0 is off), and read whether it is running. |
 | `setLod(i)` | Detail level index, or -1 for Auto. |
 | `sidebar(open)` | Shows or hides the sidebar (on a phone, opens or closes the sheet). |
 | `param(id, value?)` | Sets a game parameter; with no value, resets it. |
@@ -279,3 +281,18 @@ seconds of any of them moving, with no merge queue in between. So:
 - Never delete or overwrite a round. Every version stays viewable: add a new group (round) and
   leave the old ones in place. Old rounds are tagged "older" and collapsed in the sidebar.
 - Put design studies under `section: 'Design studies'` so they sit together.
+
+## Driving the controls, and the idle show
+
+The lab reads the keyboard and the first connected gamepad with the game's own mapping
+(`src/core/Input.ts`): A/D or left/right steer, W/S or up/down drive (pitch for aircraft),
+Q/E yaw, R/F the jet's throttle; on a gamepad the left stick, the triggers and the right stick.
+Models see the result in `LabState` as `steer`, `throttle`, `pitch` and `yaw`, eased so parts
+move smoothly, with `animate` true while anything is moving them.
+
+Left alone for 15 seconds, the lab runs by itself: the stage turns slowly, the controls cycle
+gently and now and then the camera rises or dips. Any key, pointer movement, touch, wheel or
+gamepad input stops it at once and leaves the camera where it is. Scripted captures are exempt:
+a browser driven by Playwright (`navigator.webdriver`) or opened with `still=1` never starts the
+show unless `idle=<seconds>` or `setIdle()` asks for it. The Turntable toggle still forces a
+constant turn.

@@ -102,3 +102,93 @@ it('builds a detail level only when it is first shown', () => {
   expect(visible).toBe(1)
   jet.dispose()
 })
+
+describe('Mk2 moving parts and thrusters', () => {
+  /** Mean position of the trailing edge (the rearmost vertices) of the flap vertices that pass `pick`. */
+  function trailingEdge(jet: GameJet, pick: (x: number, y: number) => boolean) {
+    const batch = jet.near.object.getObjectByName('jet-flap-batch') as THREE.Mesh
+    const p = batch.geometry.attributes.position, points: THREE.Vector3[] = []
+    for (let i = 0; i < p.count; i++) if (pick(p.getX(i), p.getY(i))) points.push(new THREE.Vector3().fromBufferAttribute(p, i))
+    const rear = Math.max(...points.map(v => v.z)), edge = points.filter(v => v.z > rear - .03)
+    return edge.reduce((a, v) => a.add(v), new THREE.Vector3()).divideScalar(edge.length)
+  }
+  const upperRight = (x: number, y: number) => x > .1 && y > .7, upperLeft = (x: number, y: number) => x < -.1 && y > .7
+  const flankRight = (x: number, y: number) => x > .7 && Math.abs(y - .05) < .3
+
+  it('deflects the tail ring like control surfaces and draws them in one batch', () => {
+    const jet = new GameJet(), controls = new THREE.Vector3()
+    const pose = (pitch: number, roll: number, yaw: number) => { jet.update(0, 0, 0, .5, controls.set(pitch, roll, yaw)); return { ur: trailingEdge(jet, upperRight), ul: trailingEdge(jet, upperLeft), fr: trailingEdge(jet, flankRight) } }
+    const rest = pose(0, 0, 0)
+    // Nose up: both upper trailing edges rise together; the vertical flanks do not move.
+    const up = pose(1, 0, 0)
+    expect(up.ur.y - rest.ur.y).toBeGreaterThan(.03); expect(up.ul.y - rest.ul.y).toBeCloseTo(up.ur.y - rest.ur.y, 4)
+    expect(up.fr.distanceTo(rest.fr)).toBeLessThan(1e-4)
+    // Roll right: right side up, left side down.
+    const roll = pose(0, 1, 0)
+    expect(roll.ur.y - rest.ur.y).toBeGreaterThan(.03); expect(roll.ul.y - rest.ul.y).toBeLessThan(-.03)
+    // Nose right: the flank's trailing edge swings right, like a rudder.
+    const yaw = pose(0, 0, 1)
+    expect(yaw.fr.x - rest.fr.x).toBeGreaterThan(.03)
+    // Never more than 20 degrees, whatever the inputs add up to.
+    const most = pose(1, 1, 1)
+    expect(most.ur.distanceTo(rest.ur)).toBeLessThan(.75 * .38 * 2 * Math.sin(.35 / 2) + .01)
+    // Petals and flaps are one draw each: five in flight, eight with the gear down.
+    let draws = 0; jet.near.object.traverseVisible(o => { if (o instanceof THREE.Mesh) draws++ })
+    expect(draws).toBeLessThanOrEqual(5)
+    jet.update(1, .2, .1, .5, controls.set(.5, 0, 0)); draws = 0
+    jet.near.object.traverseVisible(o => { if (o instanceof THREE.Mesh) draws++ })
+    expect(draws).toBeLessThanOrEqual(8)
+    jet.dispose()
+  })
+
+  it('walls every thruster off from the inside of the hull', () => {
+    const b = new Builder(.6, true, true); new GameJet().design.build(b)
+    const opaque = new THREE.Group(), front = new THREE.MeshBasicMaterial()
+    for (const piece of b.pieces) if (piece.mat === 'dark') opaque.add(new THREE.Mesh(piece.geometry, front))
+    opaque.updateMatrixWorld(true)
+    expect(b.nozzles).toHaveLength(3)
+    for (const n of b.nozzles) for (const [dx, dy] of [[0, 0], [.3, 0], [-.3, 0], [0, .3], [0, -.3]]) {
+      // Looking straight up the throat from behind: an aft-facing dark surface must stop the ray.
+      const origin = new THREE.Vector3(n.x + dx * n.r, n.y + dy * n.r, n.z + 1)
+      const hits = new THREE.Raycaster(origin, new THREE.Vector3(0, 0, -1), 0, 2).intersectObject(opaque)
+      expect(hits.length).toBeGreaterThan(0)
+      expect(hits[0].face!.normal.z).toBeGreaterThan(.5)
+      expect(hits[0].point.z).toBeGreaterThan(n.z - .5)
+    }
+    b.pieces.forEach(p => p.geometry.dispose()); b.flaps.forEach(f => f.geometry.dispose())
+  })
+
+  it('sweeps each side of the cockpit rim as one smooth tube that ends in a fine point', () => {
+    const b = new Builder(.6, true, true); new GameJet().design.build(b)
+    // The rim pieces are the dark ones that run the length of the canopy opening.
+    const rims = b.pieces.filter(p => p.mat === 'dark').map(p => { p.geometry.computeBoundingBox(); return p.geometry }).filter(g => g.boundingBox!.max.z - g.boundingBox!.min.z > 1.5)
+    expect(rims).toHaveLength(2)
+    // One on each side, and slim: nowhere thicker than 6 cm, under a centimetre at the ends.
+    expect(rims[0].boundingBox!.min.x * rims[1].boundingBox!.min.x).toBeLessThan(0)
+    const rim = rims[0], p = rim.attributes.position, box = rim.boundingBox!
+    let tip = 0
+    for (let i = 0; i < p.count; i++) if (p.getZ(i) < box.min.z + .004) tip = Math.max(tip, Math.abs(p.getX(i)) - Math.abs(box.min.x > 0 ? box.min.x : box.max.x))
+    expect(tip).toBeLessThan(.012)
+    // Welded and smooth: no vertex normal disagrees with a face it belongs to by more than 75 degrees.
+    const index = rim.index!, n = rim.attributes.normal, a = new THREE.Vector3(), c = new THREE.Vector3(), d = new THREE.Vector3(), v = new THREE.Vector3()
+    let worst = 1
+    for (let i = 0; i < index.count; i += 3) {
+      a.fromBufferAttribute(p, index.getX(i)); c.fromBufferAttribute(p, index.getX(i + 1)).sub(a); d.fromBufferAttribute(p, index.getX(i + 2)).sub(a)
+      const face = c.cross(d); if (face.lengthSq() < 1e-14) continue
+      face.normalize()
+      for (let k = 0; k < 3; k++) worst = Math.min(worst, face.dot(v.fromBufferAttribute(n, index.getX(i + k))))
+    }
+    expect(worst).toBeGreaterThan(Math.cos(80 * Math.PI / 180))
+    b.pieces.forEach(q => q.geometry.dispose()); b.flaps.forEach(f => f.geometry.dispose())
+  })
+})
+
+it('ships only the approved Mk2: nothing the game jet loads imports the study designs', async () => {
+  const { readFileSync } = await import('node:fs')
+  // Everything Jet.ts pulls in from the jet generator. designs.ts is the lab's catalogue.
+  for (const file of ['Jet.ts', 'jetgen/GameJet.ts', 'jetgen/NextJet.ts', 'jetgen/JetSilhouette.ts', 'jetgen/MovingBatch.ts', 'jetgen/shapes.ts', 'jetgen/shipped.ts']) {
+    const source = readFileSync(new URL(`../../src/vehicles/${file}`, import.meta.url), 'utf8')
+    expect(source, file).not.toMatch(/from '\.\/(jetgen\/)?designs'/)
+  }
+  expect(new GameJet().design.id).toBe('hex-mk2')
+})

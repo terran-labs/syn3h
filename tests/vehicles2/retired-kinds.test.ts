@@ -57,6 +57,6 @@ describe('the retired classic buggy',()=>{
   expect(existsSync(new URL('public/models/buggy-classic.glb',root))).toBe(false)
   expect(existsSync(new URL('public/models/buggy-classic-wheel.glb',root))).toBe(false)
   // Everything under public/ is copied into the build as is: converters and notes live in tools/models.
-  expect(readdirSync(new URL('public/models',root)).sort()).toEqual(['buggy-boxarm.glb','buggy.glb','hovercraft.glb','tank.glb','tanktread.glb'])
+  expect(readdirSync(new URL('public/models',root)).sort()).toEqual(['buggy-boxarm.glb','buggy.glb','tank.glb','tanktread.glb'])
  })
 })

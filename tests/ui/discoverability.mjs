@@ -11,14 +11,36 @@ for(const mode of ['desktop','phone']){
   const room=`ux-discover-${mode}-${Date.now()}`
   await page.goto(`${base}?room=${room}`)
   await page.locator('.boot-veil').waitFor({state:'hidden',timeout:120000})
+  // The lobby offers planets, not vehicles: no vehicle control, panel or preview anywhere in it.
+  assert.equal(await page.locator('[data-goto=vehicle], [data-panel=vehicle], [name=vehicle], .shell-vehicle, .shell-vehicle-preview, canvas[aria-label="Selected vehicle preview"]').count(),0,'the lobby shows no vehicle control')
+  // The lobby lists the planet recipes and nothing else: "Shape your own" is hidden for now.
+  const lobbyWorlds=await page.evaluate(()=>({labels:[...document.querySelectorAll('.galaxy-label')].map(chip=>chip.dataset.world),forming:syn3h.shell.galaxy.options.worlds.filter(world=>world.forming).length,text:document.querySelector('.galaxy-labels').textContent}))
+  assert.ok(lobbyWorlds.labels.length>0&&!lobbyWorlds.labels.includes('custom')&&lobbyWorlds.forming===0,'the lobby lists only the planet recipes')
+  assert.doesNotMatch(lobbyWorlds.text,/shape your own/i)
   await page.locator('.galaxy-label.is-current').focus();await page.keyboard.press('Enter')
   await page.waitForFunction(()=>syn3h.shell.playing&&syn3hNet.connected&&!syn3h.shell.dropping,null,{timeout:120000})
-  assert.ok(sockets.includes(`ws://127.0.0.1:54671/ws?room=${room}`))
-  await page.getByRole('button',{name:'Open configuration rail'}).click()
+  assert.ok(sockets.includes(`ws://127.0.0.1:${process.env.UX_ROOM_PORT??'5298'}/ws?room=${room}`),'connected to the room server started for this run')
+  if(await page.evaluate(()=>!!document.pointerLockElement)){await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.pointerLockElement)}if(await page.locator('.inspector-toggle').isVisible()&&await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'})
   const vehicle=page.getByRole('combobox',{name:'Vehicle (reloads and respawns)'}),gear=page.getByRole('combobox',{name:'Gear',exact:true}),gi=page.getByRole('button',{name:'GI lighting'})
   for(const control of [vehicle,gear,gi]){
    assert.ok(await control.isVisible())
    assert.ok(await control.evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&document.elementFromPoint(r.x+r.width/2,r.y+r.height/2)===el}),'top controls actually exposed')
+  }
+  assert.deepEqual(await vehicle.locator('option').allInnerTexts(),['Buggy','Jet','Hovercraft','Tank'],'the in-play selector offers the four vehicles')
+  // Vehicle colours are chosen in play, beside the selector: the vehicle repaints at once with
+  // no reload, and the choice is saved and announced to the room once the picker settles.
+  if(mode==='desktop'||await page.locator('.wi-swatch input[data-tint=body]').isVisible()){
+   const loadedAt=await page.evaluate(()=>performance.timeOrigin)
+   await page.evaluate(()=>{window.__profiles=[];const net=window.syn3hNet,announce=net.setProfile.bind(net);net.setProfile=profile=>{window.__profiles.push(profile);return announce(profile)}})
+   assert.equal(await page.locator('.wi-swatch input[data-tint=body]').inputValue(),await page.evaluate(()=>syn3h.player.colors.body),'the swatch shows the vehicle\'s colour')
+   await page.locator('.wi-swatch input[data-tint=body]').fill('#ff00aa')
+   await page.waitForFunction(()=>syn3h.player.colors.body==='#ff00aa',null,{timeout:5000})
+   await page.locator('.wi-swatch input[data-tint=accent]').fill('#00ffcc')
+   await page.waitForFunction(()=>syn3h.player.colors.accent==='#00ffcc',null,{timeout:5000})
+   await page.waitForFunction(()=>window.__profiles.some(p=>p.colors?.body==='#ff00aa'&&p.colors?.accent==='#00ffcc')&&JSON.parse(localStorage.getItem('syn3h.vehicle')??'{}').accentColor==='#00ffcc',null,{timeout:5000})
+   assert.ok(await page.evaluate(()=>window.__profiles.length)<=2,'the room is told once the picker settles, not on every step')
+   assert.equal(await page.evaluate(()=>performance.timeOrigin),loadedAt,'changing colour does not reload the page')
+   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-tint.png`})
   }
   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-selectors.png`})
   await gear.selectOption('bungee');await page.waitForFunction(()=>syn3hNet.gear.current==='bungee')
@@ -45,17 +67,23 @@ for(const mode of ['desktop','phone']){
   await page.evaluate(()=>{syn3h.game.quality.budget=0;const q=syn3h.game.quality;q.governor.rung=q.governor.ladder.length-1})
   await page.waitForFunction(()=>document.querySelector('.wi-gi-status').textContent.includes('automatic quality'),null,{timeout:10000})
   assert.ok(await strength.isDisabled())
-  // Full reload/respawn is the existing vehicle action and must remain explicit.
-  const timeOrigin=await page.evaluate(()=>performance.timeOrigin)
-  await vehicle.selectOption('hovercraft')
-  await page.waitForFunction(origin=>performance.timeOrigin!==origin&&window.syn3h?.player.kind==='hovercraft'&&window.syn3hNet?.connected,timeOrigin,{timeout:120000})
-  assert.equal(new URL(page.url()).searchParams.get('room'),room)
-  assert.equal(new URL(page.url()).searchParams.get('vehicle'),null,'no sticky vehicle override left in the URL')
-  assert.ok(await page.evaluate(()=>{const p=syn3h.player.body.translation(),s=syn3h.terrain.spawnPoint(0).position;return Math.hypot(p.x-s.x,p.z-s.z)<50}),'vehicle respawns near spawn pad')
-  await page.locator('.boot-veil').waitFor({state:'hidden',timeout:120000})
-  await page.getByRole('button',{name:'Open configuration rail'}).click()
-  assert.equal(await page.getByRole('combobox',{name:'Vehicle (reloads and respawns)'}).inputValue(),'hovercraft')
+  // Switching still reloads and respawns for now. Each of the other three vehicles in turn on
+  // the desktop, one on the phone, always landing in the same room near a spawn pad.
+  const openPanels=async()=>{if(await page.evaluate(()=>!!document.pointerLockElement)){await page.keyboard.press('Escape');await page.waitForFunction(()=>!document.pointerLockElement)}if(await page.locator('.inspector-toggle').isVisible()&&await page.locator('.world-inspector').isHidden())await page.locator('.inspector-toggle').click();await page.locator('.world-inspector').waitFor({state:'visible'})}
+  for(const kind of mode==='desktop'?['hovercraft','tank','jet']:['hovercraft']){
+   const timeOrigin=await page.evaluate(()=>performance.timeOrigin)
+   await page.getByRole('combobox',{name:'Vehicle (reloads and respawns)'}).selectOption(kind)
+   await page.waitForFunction(([origin,kind])=>performance.timeOrigin!==origin&&window.syn3h?.player.kind===kind&&window.syn3hNet?.connected,[timeOrigin,kind],{timeout:120000})
+   assert.equal(new URL(page.url()).searchParams.get('room'),room)
+   assert.equal(new URL(page.url()).searchParams.get('vehicle'),null,'no sticky vehicle override left in the URL')
+   assert.ok(await page.evaluate(()=>{const p=syn3h.player.body.translation(),s=syn3h.terrain.spawnPoint(0).position;return Math.hypot(p.x-s.x,p.z-s.z)<50}),`${kind} respawns near spawn pad`)
+   await page.locator('.boot-veil').waitFor({state:'hidden',timeout:120000})
+   await openPanels()
+   assert.equal(await page.getByRole('combobox',{name:'Vehicle (reloads and respawns)'}).inputValue(),kind)
+  }
+  // A returning player lands in the vehicle last chosen in play; a new one lands in the Buggy.
+  assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('syn3h.vehicle')).vehicleKind),mode==='desktop'?'jet':'hovercraft')
   assert.deepEqual(errors,[])
-  console.log(`${mode}: exposed selectors, actual gear/GI pipeline and vehicle reload/respawn passed`)
+  console.log(`${mode}: planets-only lobby, four vehicles in the selector, gear and GI controls, vehicle switching passed`)
  }finally{await browser.close()}
 }

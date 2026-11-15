@@ -404,6 +404,8 @@ export class ProceduralTerrain implements Terrain {
     this.meshes.setLodDistances(near, far)
     // Forest out to the level's draw distance: 700 m on the weakest phones.
     this.trees.setDrawDistance(Math.min(1800, quality.drawDistance))
+    // The ground shader sheds its close-up grain and glitter first, then its colour extras.
+    this.look.setDetail(quality.detail)
     // Grass and flowers: everything on desktop, a thinner and nearer cover on phones and
     // tablets, nothing at the safe level.
     this.cover.setLevel(quality.level)

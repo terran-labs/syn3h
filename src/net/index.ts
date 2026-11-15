@@ -46,7 +46,9 @@ import { BigRed } from '../weapons/BigRed'
 import { Pesters } from '../weapons/pester/Pesters'
 import { pesterAllowed, pesterBump, pesterCooldown, pesterMax } from '../weapons/pester/params'
 import { bigRedAllowed, bigRedPush } from '../weapons/bigRedParams'
-import { BoundsGuard, TagMarker } from '../modes/Tag'
+import { BoundsGuard } from '../modes/Tag'
+// The "it" marker: one draw, and shown over the local player's own vehicle too.
+import { ItMarker as TagMarker } from './ItMarker'
 import { gameMode, kothKnockBonus, kothLaserPush, kothRespawnDelay, kothTargetScore, kothZoneRadius } from '../modes/params'
 import { type HillTerrain, computeHillZone } from '../modes/hill'
 import { HillMarker } from '../modes/HillMarker'
@@ -57,6 +59,9 @@ import { Connection, serverUrl } from './Connection'
 import { NameTags, type TagInfo } from './NameTags'
 import { applyRoomWorld, netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
+import { pressHoldsFire } from './pointerFire'
+import { PausedHeartbeat } from './PausedHeartbeat'
+import { announcedKind, needsRebuild } from './kinds'
 import { type BotMatchInfo, audibleVehicles, bodyAlive, hillHold, liveBots } from './bots'
 import { ShoveQueue, cleanShove, shoveFor } from './shove'
 import { nearestImage, wrapCoord, wrapDistance } from '../../shared/wrap'
@@ -209,6 +214,8 @@ export class NetClient implements System {
   private colors: [string, string]
   private bots: NetBots | null
   private wasHost = false
+  /** The shell's play state last frame: leaving play (Exit world) drops the gear. */
+  private wasDriving = false
   private welcomed = false
   private everWelcomed = false
   private sendTimer = 0
@@ -220,7 +227,13 @@ export class NetClient implements System {
   private frameAt = 0
   /** Until this performance.now(), states are still the backlog of a stall the frame loop saw. */
   private stallUntil = 0
-  private heartbeat: ReturnType<typeof setInterval> | null = null
+  /** Speaks for us while the game is paused or the page hidden; see PausedHeartbeat.ts. */
+  private readonly heartbeat = new PausedHeartbeat({
+    interval: HEARTBEAT_MS,
+    send: () => this.sendHeartbeat(),
+    // Whatever we measured while paused (or before) says nothing about now: start over.
+    resumed: () => { for (const r of this.remotes.values()) r.buffer.restartEstimate() },
+  })
   private readonly marker: TagMarker
   private readonly bounds: BoundsGuard
   private readonly tags: NameTags
@@ -247,7 +260,7 @@ export class NetClient implements System {
 
   constructor(private readonly ctx: NetContext) {
     const { game, player } = ctx
-    this.kind = cleanKind(ctx.kind) ?? cleanKind((player as VehicleExtras).kind) ?? 'buggy'
+    this.kind = cleanKind(announcedKind(ctx.kind)) ?? cleanKind((player as VehicleExtras).kind) ?? 'buggy'
     this.colors = [cleanColor(ctx.colors?.body) ?? DEFAULT_COLORS[0], cleanColor(ctx.colors?.accent) ?? DEFAULT_COLORS[1]]
     this.bots = ctx.bots ?? null
     if (this.bots) this.bots.remote = true
@@ -354,6 +367,7 @@ export class NetClient implements System {
         this.send(victim === this.id ? { type: 'hit', shooter, shot } : { type: 'hit', shooter, shot, victim })
       },
     })
+    this.gear.bind({ bungee: this.bungee, yoink: this.yoink, bigRed: this.bigRed, pesters: this.pesters, nameOf: (id) => this.displayName(id) })
     this.bots?.setGear?.(this.botDecisionHooks)
     this.marker = new TagMarker(game)
     this.marker.local = player
@@ -369,9 +383,13 @@ export class NetClient implements System {
     }
     this.rescue.onFreed = (by) => {
       this.event(by === 'crawled' ? 'You crawled free of the lava' : 'Returned to your pad')
-      if (by === 'returned') this.ctx.audio?.play('materialize', this.ctx.player.body.translation())
+      if (by === 'returned') {
+        this.resetGear('own')
+        this.ctx.audio?.play('materialize', this.ctx.player.body.translation())
+      }
     }
     this.rescue.onReturned = () => {
+      this.resetGear('own')
       this.event('Returned to your pad')
       this.ctx.audio?.play('materialize', this.ctx.player.body.translation())
     }
@@ -396,7 +414,7 @@ export class NetClient implements System {
 
     // The original fired with the mouse; nothing else uses a canvas click yet.
     const canvas = game.renderer.domElement
-    canvas.addEventListener('pointerdown', (e) => { if (e.button === 0) game.input.mouseFire = true })
+    canvas.addEventListener('pointerdown', (e) => { if (pressHoldsFire(e)) game.input.mouseFire = true })
     window.addEventListener('pointerup', () => { game.input.mouseFire = false })
     window.addEventListener('blur', () => { game.input.mouseFire = false })
   }
@@ -466,9 +484,38 @@ export class NetClient implements System {
     return true
   }
 
+  /**
+   * Drop live gear state: cords, carries, charges, Pesters and shots in flight. The one place
+   * gear is reset, so no path that moves the player to another world forgets a system.
+   *
+   * 'all' is for a new world or leaving one (world change, Exit world, room leave): every
+   * system and every bot's gear is cleared, other players' cords included, since a ground
+   * anchor or a shot belongs to the old world. The player's own cord and carry are reported
+   * off on the existing wires, and so are the bots' when we host them.
+   *
+   * 'own' is for the player alone being moved or replaced (back to the pad, a new vehicle):
+   * only what the player has out is let go, and everyone else's gear is left alone.
+   */
+  resetGear(scope: 'all' | 'own' = 'all'): void {
+    if (scope === 'own') {
+      this.bungee.letGo('released')
+      this.yoink.drop()
+      this.bigRed.reset()
+      return
+    }
+    this.lasers.reset()
+    this.bungee.reset()
+    this.yoink.reset()
+    this.bigRed.reset()
+    this.pesters.reset()
+    for (const controller of this.botGear.values()) controller.reset()
+  }
+
   /** Announce a new vehicle kind or colours (the local vehicle itself is main.ts's to swap). */
   setProfile(p: { kind?: VehicleKind; colors?: PlayerColors }): void {
-    if (p.kind) this.kind = cleanKind(p.kind) ?? this.kind
+    const kind = p.kind ? cleanKind(announcedKind(p.kind)) : null
+    if (kind && kind !== this.kind) this.resetGear('own')
+    if (kind) this.kind = kind
     if (p.colors) {
       this.colors = [cleanColor(p.colors.body) ?? this.colors[0], cleanColor(p.colors.accent) ?? this.colors[1]]
     }
@@ -577,8 +624,8 @@ export class NetClient implements System {
     if (this.isHost && this.mode === MODE_KOTH) this.checkBotsStuck()
     this.detectRams()
     this.sendTimer += dt
-    // While hidden the heartbeat timer speaks for us (rendering may still tick in some cases).
-    if (this.sendTimer >= 1 / netSendRate.value && !document.hidden) {
+    // While paused or hidden the heartbeat timer speaks for us (rendering may still tick in some cases).
+    if (this.sendTimer >= 1 / netSendRate.value && !this.heartbeat.paused && !document.hidden) {
       this.sendTimer = 0
       this.sendState()
       if (this.isHost) this.sendBots()
@@ -587,6 +634,10 @@ export class NetClient implements System {
 
   update(dt: number): void {
     this.raceBridge.update()
+    // Exit world opens the lobby over a still running game: let go of everything on the way out.
+    const driving = this.raceBridge.driving
+    if (this.wasDriving && !driving) this.resetGear()
+    this.wasDriving = driving
     for (const controller of this.botGear.values()) controller.update(dt)
     const frameAt = performance.now()
     // After a long task the browser often renders before it delivers the queued messages, so
@@ -698,12 +749,13 @@ export class NetClient implements System {
   }
 
   dispose(): void {
+    this.resetGear()
     this.raceBridge.disconnect()
     this.bots?.setGear?.(null)
     for (const controller of this.botGear.values()) controller.dispose()
     this.botGear.clear()
     this.conn.close()
-    this.stopHeartbeat()
+    this.heartbeat.stop()
     for (const id of [...this.remotes.keys()]) this.removeRemote(id)
     this.tags.dispose()
   }
@@ -1131,7 +1183,7 @@ export class NetClient implements System {
     if (!r) return
     r.info = info
     const extras = r.vehicle as VehicleExtras
-    if (r.owned && extras.kind !== undefined && extras.kind !== info.kind) {
+    if (r.owned && needsRebuild(extras.kind, info.kind)) {
       const t = r.vehicle.body.translation()
       const q = r.vehicle.body.rotation()
       r.disposeEffects()
@@ -1153,6 +1205,10 @@ export class NetClient implements System {
   }
 
   private onTerrainRegenerated(): void {
+    // A new world (another planet, a new seed, the room's world on joining) is built in place,
+    // under the same gear systems: a cord anchored in the old ground would hang in the new
+    // sky, and a carry or shot would continue in a world it never belonged to.
+    this.resetGear()
     // The summit moved with the world: recompute the hill now, and the host resends it.
     this.zoneTimer = 0
     if (this.everWelcomed) {
@@ -1167,17 +1223,20 @@ export class NetClient implements System {
   // Hidden tabs
   // -------------------------------------------------------------------------------------
 
+  /**
+   * The game paused or resumed, for either reason (the player's own pause, or a hidden
+   * page). Call from the one pause subscription (src/core/pause.ts). While paused a
+   * once-a-second heartbeat tells the room we are parked, not lost; on resuming the latency
+   * estimates start afresh. Once this has been called, the page's visibility alone no
+   * longer starts or stops the heartbeat.
+   */
+  setPaused(paused: boolean): void {
+    this.heartbeat.setPaused(paused)
+  }
+
+  /** Fallback for a page that never calls setPaused: a hidden page counts as paused. */
   private onVisibility(): void {
-    if (document.hidden) {
-      if (this.heartbeat) return
-      // The render loop stops in a hidden tab; a timer still runs about once a second.
-      this.heartbeat = setInterval(() => this.sendHeartbeat(), HEARTBEAT_MS)
-      this.sendHeartbeat()
-    } else {
-      this.stopHeartbeat()
-      // Whatever we measured while hidden (or before) says nothing about now: start over.
-      for (const r of this.remotes.values()) r.buffer.restartEstimate()
-    }
+    this.heartbeat.visibility(document.hidden)
   }
 
   private sendHeartbeat(): void {
@@ -1185,11 +1244,6 @@ export class NetClient implements System {
     const s = this.ctx.player.getState()
     this.conn.send(encodeState({ id: 0, t: this.clock.now(), ...s, p: this.canonical(s.p), v: [0, 0, 0], w: [0, 0, 0], paused: true }) as Uint8Array<ArrayBuffer>)
     this.stats.heartbeats++
-  }
-
-  private stopHeartbeat(): void {
-    if (this.heartbeat) clearInterval(this.heartbeat)
-    this.heartbeat = null
   }
 
   // -------------------------------------------------------------------------------------
@@ -1364,6 +1418,9 @@ export class NetClient implements System {
   }
 
   private onDisconnect(): void {
+    // The room drops our cord and carry when it loses us; drop everything here too, since a
+    // reconnect may land in a world that has changed meanwhile.
+    this.resetGear()
     this.welcomed = false
     this.raceBridge.disconnect()
     this.clock.reset()

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { buildWordmarkMesh, evenOddArea, FLOATS_PER_VERTEX, insidePolygon, sampleOutline, triangleArea, triangulateFace, wordmarkContours, type Contour, type Point } from '../../src/ui/brand/wordmarkMesh'
+import { buildGlowBand, buildWordmarkMesh, evenOddArea, FLOATS_PER_VERTEX, GLOW_FLOATS_PER_VERTEX, insidePolygon, sampleOutline, triangleArea, triangulateFace, wordmarkContours, type Contour, type Point } from '../../src/ui/brand/wordmarkMesh'
 import { LogoMark, logoBox, logoBudget, logoSvg } from '../../src/ui/brand/LogoMark'
 import { LogoRenderer } from '../../src/ui/brand/logoRenderer'
 import { WORDMARK_HEIGHT, WORDMARK_WIDTH } from '../../src/ui/brand/wordmarkPath'
@@ -34,21 +34,23 @@ describe('wordmark geometry', () => {
       expect(filled(centroid, contours)).toBe(true)
     }
   })
-  it('builds the extruded, chamfered mesh over the exact face', () => {
+  it('builds the flat mesh: the exact face and an edge line inside it', () => {
     const mesh = buildWordmarkMesh()
-    expect(mesh.triangles).toBe(1646)
-    expect(mesh.vertices.length).toBe((mesh.wallVertices + mesh.bevelVertices + mesh.faceVertices) * FLOATS_PER_VERTEX)
-    // The face is the exact outline triangulation; the chamfer's inner ring lies inside the letters.
-    const faceStart = mesh.wallVertices * FLOATS_PER_VERTEX
-    const faceArea = triangleArea(mesh.vertices.subarray(faceStart), Array.from({ length: mesh.faceVertices }, (_, k) => k), FLOATS_PER_VERTEX)
+    expect(mesh.triangles).toBe(982)
+    expect(mesh.vertices.length).toBe((mesh.faceVertices + mesh.edgeVertices) * FLOATS_PER_VERTEX)
+    // The face is the exact outline triangulation, with no inset; the edge's inner ring,
+    // pushed in by an edge width, lies inside the letters.
+    const faceArea = triangleArea(mesh.vertices, Array.from({ length: mesh.faceVertices }, (_, k) => k), FLOATS_PER_VERTEX)
     expect(Math.abs(faceArea - evenOddArea(contours)) / evenOddArea(contours)).toBeLessThan(1e-4)
-    const bevelStart = (mesh.wallVertices + mesh.faceVertices) * FLOATS_PER_VERTEX
+    for (let k = 0; k < mesh.faceVertices; k++) expect([mesh.vertices[k * FLOATS_PER_VERTEX + 2], mesh.vertices[k * FLOATS_PER_VERTEX + 3], mesh.vertices[k * FLOATS_PER_VERTEX + 4]]).toEqual([0, 0, 0])
+    const edgeStart = mesh.faceVertices * FLOATS_PER_VERTEX, width = 0.006
     let inner = 0, outside = 0
-    for (let k = 0; k < mesh.bevelVertices; k++) {
-      const at = bevelStart + k * FLOATS_PER_VERTEX
-      if (mesh.vertices[at + 2] !== 0) continue
+    for (let k = 0; k < mesh.edgeVertices; k++) {
+      const at = edgeStart + k * FLOATS_PER_VERTEX
+      expect(mesh.vertices[at + 4]).toBe(1)
+      if (mesh.vertices[at + 2] === 0 && mesh.vertices[at + 3] === 0) continue
       inner++
-      if (!filled([mesh.vertices[at], mesh.vertices[at + 1]], contours)) outside++
+      if (!filled([mesh.vertices[at] + mesh.vertices[at + 2] * width, mesh.vertices[at + 1] + mesh.vertices[at + 3] * width], contours)) outside++
     }
     // Bar a few at the sharpest traced corners.
     expect(outside / inner).toBeLessThan(0.02)
@@ -57,6 +59,22 @@ describe('wordmark geometry', () => {
     for (let i = 0; i < mesh.vertices.length; i += FLOATS_PER_VERTEX) { minX = Math.min(minX, mesh.vertices[i]); maxX = Math.max(maxX, mesh.vertices[i]); minY = Math.min(minY, mesh.vertices[i + 1]); maxY = Math.max(maxY, mesh.vertices[i + 1]) }
     expect(maxX - minX).toBeCloseTo(WORDMARK_WIDTH / WORDMARK_HEIGHT, 1)
     expect(maxY - minY).toBeCloseTo(1, 2)
+  })
+  it('grows the glow band outward from the outline, with whole contours of arc length', () => {
+    const band = buildGlowBand(contours), v = band.vertices, n = v.length / GLOW_FLOATS_PER_VERTEX
+    expect(n % 3).toBe(0)
+    let rim = 0, outward = 0
+    for (let k = 0; k < n; k++) {
+      const at = k * GLOW_FLOATS_PER_VERTEX, offset = Math.hypot(v[at + 2], v[at + 3])
+      // Either on the outline (no offset) or on the rim (a unit offset).
+      expect(Math.min(offset, Math.abs(offset - 1))).toBeLessThan(1e-5)
+      expect(v[at + 4]).toBeGreaterThanOrEqual(0); expect(v[at + 4]).toBeLessThanOrEqual(1)
+      if (offset < 0.5) continue
+      rim++
+      if (!filled([v[at] + v[at + 2] * 0.004, v[at + 1] + v[at + 3] * 0.004], contours)) outward++
+    }
+    // Rim directions point away from the letters (bar the sharpest traced corners).
+    expect(outward / rim).toBeGreaterThan(0.97)
   })
   it('seeds every particle on the outline with a unit normal pointing out of the letters', () => {
     const samples = sampleOutline(4000, 3)
@@ -93,6 +111,8 @@ describe('layout and budgets', () => {
   it('budgets by graphics level, lowest still', () => {
     expect(logoBudget(0).still).toBe(true)
     expect(logoBudget(1).particles).toBeLessThan(logoBudget(2).particles)
+    // A field carries the glow; the particles over it are few and large.
+    expect(logoBudget(2).particles).toBeLessThanOrEqual(500)
   })
 })
 
@@ -138,10 +158,14 @@ describe('LogoMark lifecycle', () => {
     expect(mark.generated).toBe(true)
     fake.calls.length = 0
     mark.renderStill()
-    expect(fake.calls.filter(c => c.startsWith('draw'))).toEqual(['draw TRIANGLES 3', 'draw POINTS 500', 'draw TRIANGLES 4938'])
+    // No sky behind the lobby logo: plasma, then the flat wordmark.
+    const band = `draw TRIANGLES ${buildGlowBand().vertices.length / GLOW_FLOATS_PER_VERTEX}`
+    expect(fake.calls.filter(c => c.startsWith('draw'))).toEqual([band, 'draw POINTS 500', 'draw TRIANGLES 2946'])
+    mark.setOptions({ space: true }); fake.calls.length = 0; mark.renderStill()
+    expect(fake.calls.filter(c => c.startsWith('draw'))).toEqual(['draw TRIANGLES 3', band, 'draw POINTS 500', 'draw TRIANGLES 2946'])
     mark.dispose()
     expect(fake.loseContext).toHaveBeenCalledTimes(1)
-    expect(fake.calls.filter(c => c === 'deleteProgram')).toHaveLength(3)
+    expect(fake.calls.filter(c => c === 'deleteProgram')).toHaveLength(4)
     expect(mark.generated).toBe(false)
     // A canvas it was given stays in the page; one it made would be removed.
     expect(canvas.remove).not.toHaveBeenCalled()
@@ -201,6 +225,8 @@ describe('no assets', () => {
     expect(forbidden).not.toHaveBeenCalled()
     // The SVG references only its own gradients and filters.
     expect(svg).not.toMatch(/<image|href=|url\((?!#)|@font-face|<text/)
+    // Flat: no sun and no gloss gradient on the letters.
+    expect(logoSvg()).not.toMatch(/corona|disc|gloss|<circle/)
     for (const file of ['LogoMark.ts', 'logoRenderer.ts', 'wordmarkMesh.ts']) {
       const source = readFileSync(new URL(`../../src/ui/brand/${file}`, import.meta.url), 'utf8')
       expect(source).not.toMatch(/fetch\(|new Image|XMLHttpRequest|FontFace|\.woff|import\(|url\((?!#)|createImageBitmap|texImage/)

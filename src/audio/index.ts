@@ -203,12 +203,45 @@ export class GameAudio implements System {
   async ready(): Promise<void> { await this.unlocking }
   /** The score plays in the lobby and in play alike; it hears which through `enabled`. */
   setLobbyVisible(_visible: boolean): void {}
+  private paused = false
+  private pauseTimer?: ReturnType<typeof setTimeout>
+  get isPaused(): boolean { return this.paused }
+  /**
+   * The game is paused (a second Escape, or the tab went to the background): fade the whole
+   * mix to silence, then stop the audio clock, which also stops the score's worklets from
+   * using any processor time. Everything sounds through the one master gain, so nothing leaks.
+   */
+  pause(seconds = 0.5): void {
+    if (this.paused || this.disposed) return
+    this.paused = true
+    const context = this.context
+    if (!context || !this.master) return
+    const now = context.currentTime
+    this.master.gain.cancelScheduledValues(now); this.master.gain.setValueAtTime(this.master.gain.value, now)
+    this.master.gain.linearRampToValueAtTime(0, now + seconds)
+    clearTimeout(this.pauseTimer)
+    this.pauseTimer = setTimeout(() => { if (this.paused && !this.disposed) void context.suspend() }, seconds * 1000 + 60)
+  }
+  /** Back from a pause: start the clock, then bring the mix up from silence. */
+  resume(seconds = 0.3): void {
+    if (!this.paused || this.disposed) return
+    this.paused = false; clearTimeout(this.pauseTimer)
+    const context = this.context
+    if (!context || !this.master) return
+    void context.resume().then(() => {
+      if (this.paused || this.disposed || !this.master) return
+      const now = context.currentTime
+      this.master.gain.cancelScheduledValues(now); this.master.gain.setValueAtTime(0, now)
+      this.master.gain.linearRampToValueAtTime(muted.value ? 0 : masterVolume.value, now + seconds)
+    })
+  }
   /** Whether the last mix was set for play or for the lobby. */
   private mixedFor = false
   private syncMix(): void {
     if (!this.context) return
     const now = this.context.currentTime
-    this.master!.gain.setTargetAtTime(muted.value ? 0 : masterVolume.value, now, 0.03)
+    // A pause owns the master gain until it ends; the other buses can still follow their sliders.
+    if (!this.paused) this.master!.gain.setTargetAtTime(muted.value ? 0 : masterVolume.value, now, 0.03)
     this.music!.gain.cancelAndHoldAtTime(now)
     this.music!.gain.setTargetAtTime(musicVolume.value * (this.enabled ? 1 : LOBBY_LIFT), now, this.mixedFor === this.enabled ? 0.03 : 0.8)
     this.mixedFor = this.enabled
@@ -304,12 +337,13 @@ export class GameAudio implements System {
   }
   fixedUpdate(): void {
     // A landing flag may clear before the next rendered frame on a slow device.
-    if(!this.context || this.disposed)return
+    if(!this.context || this.disposed || this.paused)return
     if(this.local)this.vehicleEvents(this.local)
     for(const vehicle of this.remote.keys())this.vehicleEvents(vehicle)
   }
   update(): void {
-    if (!this.context || this.disposed) return
+    // Nothing is scheduled onto a paused clock: it would all fire at once on resume.
+    if (!this.context || this.disposed || this.paused) return
     if (this.enabled !== this.mixedFor) this.syncMix()
     if(this.local&&alive(this.local)){this.motion=this.readVehicle(this.local);this.vehicleEvents(this.local)}
     this.engine!.update(this.motion, this.enabled)
@@ -341,7 +375,7 @@ export class GameAudio implements System {
   }
   dispose(): void {
     this.disposed = true; this.gestures.abort(); this.unsubscribe(); document.removeEventListener('visibilitychange', this.onVisibility)
-    cancelIdle(this.idle)
+    cancelIdle(this.idle); clearTimeout(this.pauseTimer)
     this.dropGraph()
     this.local=undefined;this.terrain=undefined;this.vehicleSource=()=>[]
     void this.context?.close(); void this.pending?.close(); this.pending = undefined

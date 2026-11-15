@@ -98,6 +98,15 @@ async function main(): Promise<void> {
   shell.setAttractCamera(camera, () => bots.vehicles)
   // Nearby bots are audible, positioned in space. Remote players join this list later.
   audio.setVehicles(() => bots.vehicles)
+  // Two triggers, one state (src/core/pause.ts): the page being hidden, and the player's own
+  // pause from the shell. The loop stops while either holds.
+  const pause = new PauseState()
+  pause.subscribe((paused) => { if (paused) game.pause(); else game.resume() })
+  const lifecycle = new PageLifecycle()
+  lifecycle.onChange((state) => { if (state === 'hidden') pause.pause('hidden'); else pause.resume('hidden') })
+  if (lifecycle.hidden) pause.pause('hidden')
+  // The shell owns the Escape trigger, the overlay and the audio fade, all from this control.
+  ;(shell as unknown as { setPauseControl?: (control: PauseControl) => void }).setPauseControl?.(pause)
   let netStatus: string[] = []
   let joined = false
   const join = () => {
@@ -146,6 +155,10 @@ async function main(): Promise<void> {
     // Every client reads the wind from the room's clock, so gusts agree between players.
     // Handed over by networking once that clock has synced (the sea gets it the same way).
     connection.onRoomClock((now) => setWeatherClock(now))
+    // The room hears about a pause for either reason: the paused heartbeat (one message a
+    // second) is the one thing that keeps running, so others see "paused", not a dropout.
+    pause.subscribe((paused) => connection.setPaused(paused))
+    connection.setPaused(pause.paused)
     // Remote players and bots are audible, positioned in space.
     audio.setVehicles(() => connection.audibleVehicles())
     game.add(new ResumeSession({ game, terrain, player, room: shell.room || query.get('room') || 'lobby', saved, network: connection }))
@@ -169,15 +182,6 @@ async function main(): Promise<void> {
   // Handles for debugging and automated checks.
   // The game does not run in a background tab: one controller, obeyed by the loop here. Audio
   // and the lobby follow the same controller from their own modules.
-  // Two triggers, one state (src/core/pause.ts): the page being hidden, and the player's own
-  // pause from the shell. The loop stops while either holds.
-  const pause = new PauseState()
-  pause.subscribe((paused) => { if (paused) game.pause(); else game.resume() })
-  const lifecycle = new PageLifecycle()
-  lifecycle.onChange((state) => { if (state === 'hidden') pause.pause('hidden'); else pause.resume('hidden') })
-  if (lifecycle.hidden) pause.pause('hidden')
-  // The shell owns the Escape trigger, the overlay and the audio fade, all from this control.
-  ;(shell as unknown as { setPauseControl?: (control: PauseControl) => void }).setPauseControl?.(pause)
   Object.assign(window, { syn3h: { planets, game, terrain, player, params, panel, shell, audio, bots, camera, lifecycle, pause } })
   game.start()
 }
@@ -186,5 +190,14 @@ main().catch((err) => {
   console.error(err)
   const el = document.getElementById('fatal')!
   el.style.display = 'flex'
+  el.style.flexDirection = 'column'
+  el.style.gap = '16px'
+  // The game never started, so nothing runs behind this: the only way on is a reload.
   el.textContent = `Syn3h failed to start: ${err?.message ?? err}`
+  const reload = document.createElement('button')
+  reload.type = 'button'
+  reload.textContent = 'Reload'
+  reload.style.cssText = 'font: inherit; padding: 10px 22px; border-radius: 8px; border: 1px solid #e8e6e3; background: transparent; color: inherit; cursor: pointer;'
+  reload.addEventListener('click', () => location.reload())
+  el.append(reload)
 })

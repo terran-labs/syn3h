@@ -11,6 +11,7 @@ import {applyVehicleLiquid,createLiquidState,registerLiquidTerrain} from './lava
  * which is why all control state lives in `input` and `getState`/`setState` here.
  */
 import * as THREE from 'three/webgpu'
+import { params } from '../../shared/params'
 import type { Game, System } from '../core/Game'
 import { type InputState, emptyInput } from '../core/Input'
 import { FIXED_DT, GROUP_ALL, GROUP_TERRAIN, GROUP_VEHICLE, RAPIER, groups } from '../core/physics'
@@ -67,6 +68,22 @@ const GUARD_LIFT = 0.35
 const GUARD_MAX_STEP = 25
 /** Ground the collider still covers past the tile edge, a little inside its 128 m margin. */
 const GUARD_EDGE = 120
+
+/**
+ * How high each vehicle's origin sits above level ground when it rests on what carries it:
+ * the buggy on its tyres, the tank on its tracks, the jet on its landing gear, the hovercraft
+ * on its cushion. Used by `heightAboveSurface`, so a parked vehicle reads 0 m and not the
+ * height of its own body. Measured, not designed: tests/vehicles2/height-above-surface.test.ts
+ * settles each vehicle and fails if its stance has moved more than a few centimetres from
+ * these, which is the cue to update the number.
+ *
+ * The jet's figure is the bottom of its lowered landing gear (Jet.ts: a 0.5 m half height box
+ * centred 0.783 m under the origin). The hovercraft floats at the `hover.clearance` slider,
+ * 2.5 m by default; `heightAboveSurface` reads the slider, and this is only the fallback.
+ */
+export const REST_HEIGHT: Readonly<Record<string, number>> = { buggy: .69, 'buggy-syn3h': .69, jet: 1.283, hovercraft: 2.5, tank: .69 }
+/** The hovercraft's cushion height slider, looked up once it is first needed (it is defined in Hovercraft.ts). */
+let hoverClearance: { value: unknown } | null | undefined
 
 export abstract class Vehicle implements System {
   readonly object = new THREE.Group()
@@ -398,6 +415,30 @@ export abstract class Vehicle implements System {
     if(!this.zorbShield.update(dt,this.zorb,this.object,this.colors.accent,cheap)){
       this.zorbShield.dispose();this.zorbShield=null
     }
+  }
+
+  /**
+   * Metres between this vehicle's lowest contact surface (tyres, tracks, landing gear, hover
+   * cushion, or the ball in zorb mode) and what is beneath it: the ground, or the liquid for
+   * a vehicle that rides on it. 0 while resting on it, never negative. For the HUD.
+   *
+   * Cheap enough for every frame and allocates nothing: it reads the position from the last
+   * physics step. It works from the origin and the vehicle's measured resting height, so on a
+   * steep slope, or for a jet with its gear up, it is a few tenths of a metre generous.
+   */
+  heightAboveSurface(): number {
+    const p = this.currPos
+    let surface = this.terrain.heightAt(p.x, p.z)
+    // The hovercraft's cushion and a zorb ball ride on liquid; everything else sinks to the bed.
+    if (this.kind === 'hovercraft' || this.zorb.active) surface = Math.max(surface, this.terrain.liquidHeightAt?.(p.x, p.z) ?? -Infinity)
+    let rest = REST_HEIGHT[this.kind] ?? 0
+    if (this.kind === 'hovercraft') {
+      if (hoverClearance === undefined) hoverClearance = params.get('hover.clearance') ?? null
+      const slider = Number(hoverClearance?.value)
+      if (Number.isFinite(slider)) rest = slider
+    }
+    const lowest = this.zorb.active ? this.zorb.centre(this.zorbCentre).y - this.zorb.radius : p.y - rest
+    return Math.max(0, lowest - surface)
   }
 
   /** Teleport, clearing motion and interpolation history. */

@@ -19,6 +19,7 @@ import type { Game, System } from '../../core/Game'
 import { FIXED_DT, type RAPIER } from '../../core/physics'
 import { hotExposureDim } from '../../vehicles/skins/hotExposure'
 import { aimFrom } from '../aim'
+import { warmGear } from '../warm'
 import { pesterAllowed, pesterLife, pesterMax, pesterRadius, pesterRange, pesterSpeed, pesterTurn } from './params'
 import { steer, type V3 } from './steer'
 
@@ -80,7 +81,11 @@ export class Pesters implements System {
   private nextSeed = 1
   stats = { launched: 0, caught: 0, popped: 0 }
 
-  constructor(private readonly game: Game, private readonly hooks: PesterHooks) {}
+  private readonly unwarm: () => void
+
+  constructor(private readonly game: Game, private readonly hooks: PesterHooks) {
+    this.unwarm = warmGear(game, [this.tintMat, this.haloMat, this.coreMat, this.eyeMat, this.pupilMat].map((m) => [this.sphere, m] as const))
+  }
 
   /** Pesters the local player has out. */
   get mine(): number {
@@ -159,6 +164,18 @@ export class Pesters implements System {
     for (const o of this.orbs) if (o.shooter === id && o.popped < 0) this.pop(o)
   }
 
+  /** Pesters here, in flight or popping, for automated checks. */
+  get count(): number {
+    return this.orbs.length
+  }
+
+  /** Remove every Pester in flight, popping or not, at once: for a world change or leaving it. */
+  reset(): void {
+    for (const o of this.orbs) this.game.scene.remove(o.mesh)
+    this.orbs.length = 0
+    this.fireWas = false
+  }
+
   fixedUpdate(dt: number): void {
     if (!pesterAllowed.value) {
       for (const o of this.orbs) if (o.popped < 0) this.pop(o)
@@ -208,6 +225,7 @@ export class Pesters implements System {
   dispose(): void {
     for (const o of this.orbs) this.game.scene.remove(o.mesh)
     this.orbs.length = 0
+    this.unwarm()
     this.sphere.dispose()
     for (const m of [this.coreMat, this.haloMat, this.tintMat, this.eyeMat, this.pupilMat]) m.dispose()
   }

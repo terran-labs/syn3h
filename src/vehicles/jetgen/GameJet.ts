@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu'
-import { JET_DESIGNS, VANGUARD_EYE } from './designs'
+import { SHIPPED_JET, VANGUARD_EYE } from './shipped'
 import { NextJet } from './NextJet'
 import { buildJetSilhouette } from './JetSilhouette'
 import { detailLevel, mergeStatic, registerVehicleDetail } from '../skins/mergeStatic'
@@ -17,7 +17,7 @@ type Level = 0 | 1 | 2
  */
 export class GameJet {
   readonly object = new THREE.Group()
-  readonly design = JET_DESIGNS.find(d => d.id === 'hex-mk2')!
+  readonly design = SHIPPED_JET
   /** The pilot's eye in the jet's frame. Known without building the close model. */
   readonly eye = new THREE.Vector3(...VANGUARD_EYE)
   private nearModel?: NextJet
@@ -28,6 +28,7 @@ export class GameJet {
   private pitch = 0
   private yaw = 0
   private throttle = 0
+  private readonly controls = new THREE.Vector3()
   private body: THREE.ColorRepresentation = this.design.paint
   private accent: THREE.ColorRepresentation = this.design.accent
   private detachDetail = () => {}
@@ -94,8 +95,14 @@ export class GameJet {
     this.show()
   }
 
-  update(gear: number, pitch: number, yaw: number, throttle: number): void {
+  /**
+   * @param pitch, yaw nozzle deflection in radians (NextJet.setVector).
+   * @param controls stick deflection -1..1 for the tail ring's control surfaces: x pitch (nose up
+   *   positive), y roll (right wing down positive), z yaw (nose right positive).
+   */
+  update(gear: number, pitch: number, yaw: number, throttle: number, controls?: THREE.Vector3): void {
     this.gear = gear; this.pitch = pitch; this.yaw = yaw; this.throttle = throttle
+    if (controls) this.controls.copy(controls)
     this.show()
   }
 
@@ -105,6 +112,7 @@ export class GameJet {
     if (this.level === 0) {
       const jet = this.near
       jet.setGear(this.gear); jet.setVector(this.pitch, this.yaw); jet.setThrottle(this.throttle)
+      jet.setControls(this.controls.x, this.controls.y, this.controls.z)
     } else if (this.level === 1) this.medium(pose).setThrottle(this.throttle)
     else void this.far
     if (this.nearModel) this.nearModel.object.visible = this.level === 0

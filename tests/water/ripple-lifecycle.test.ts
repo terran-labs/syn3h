@@ -20,7 +20,9 @@ function harness() {
     render: () => { draws.push(!!target && (field as any).source.value === target.texture) },
   }
   field.attach(renderer as unknown as T.WebGPURenderer)
-  const step = (count: number) => { for (let i = 0; i < count; i++) field.update(0, 0, 0) }
+  // The field sleeps until something disturbs the water, and a sleeping field draws nothing.
+  // This test is about the awake field, so every step makes a splash first.
+  const step = (count: number) => { for (let i = 0; i < count; i++) { field.disturb(0, 0, 2, 1); field.update(1 / 60, 0, 0) } }
   return { field, draws, step }
 }
 

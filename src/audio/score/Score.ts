@@ -29,7 +29,7 @@ export const scoreLite = defineParam({ id: 'audio.score.lite', label: 'Lighter s
 export const scoreNetworkHall = defineParam({ id: 'audio.score.networkHall', label: 'Algorithmic hall (cheaper)', group: 'Adaptive score', scope: 'client', default: false })
 const option = (id: string, label: string) => defineParam({ id: `audio.score.${id}`, label, group: 'Adaptive score', scope: 'client', default: true })
 /** Tag beams near you become notes: each lands on the next sixteenth, pitched from the chord, climbing as they come. */
-export const scoreTagNotes = option('tagNotes', 'Tag beams play notes')
+export const scoreTagNotes = option('tagNotes', 'Plasma Tag plays notes')
 /** Nearby vehicles each carry part of the arrangement, heard from their side. Alone you hear only your own line. */
 export const scoreConvoy = option('convoy', 'Convoy harmony')
 /** The sequencer and plucked strings trace the skyline ahead of your vehicle. */
