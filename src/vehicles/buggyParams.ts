@@ -102,3 +102,13 @@ export const buggySteerLimit = defineParam({
   id: 'buggy.steerLimit', label: 'Steering limit (x grip)', group: 'Buggy', scope: 'world',
   default: 1.1, min: 0.5, max: 4, step: 0.05,
 })
+/** Next-gen regen braking on the reverse key while rolling forward, in g at full key. */
+export const buggyRegen = defineParam({
+  id: 'buggy.regen', label: 'Regen braking (g)', group: 'Buggy', scope: 'world',
+  default: 0.6, min: 0.1, max: 1.2, step: 0.01,
+})
+/** Next-gen drivetrain drag when coasting off throttle, per second of motor speed. */
+export const buggyCoastDrag = defineParam({
+  id: 'buggy.coastDrag', label: 'Coast drag', group: 'Buggy', scope: 'world',
+  default: 0.2, min: 0, max: 2, step: 0.01,
+})

@@ -17,8 +17,8 @@ import type { Game } from '../core/Game'
 import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import {
-  buggyCG, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightSlip, buggyGrip,
-  buggyGripFade, buggyIdleHold, buggyNextGen, buggyPower, buggyShocks, buggySlide, buggySpeed, buggySteerLimit,
+  buggyCG, buggyCoastDrag, buggyFlightAgility, buggyFlightDrag, buggyFlightLooPower, buggyFlightSlip, buggyGrip,
+  buggyGripFade, buggyIdleHold, buggyNextGen, buggyPower, buggyRegen, buggyShocks, buggySlide, buggySpeed, buggySteerLimit,
   buggyTraction,
 } from './buggyParams'
 import { applyLava, floatPoints } from './lava'
@@ -80,6 +80,19 @@ const TYRE_OMEGA = 15
 /** Slip speeds (m/s) over which friction falls from grip to slide. */
 const SLIP_GRIP = 1
 const SLIP_SLIDE = 4
+/** Next-gen drivetrain (see drivetrain()): below HOLD_SPEED (m/s) with no throttle it parks. */
+const HOLD_SPEED = 1.5
+/** How fast (m/s^2) the hold eases the wheels to a stop, so it settles instead of snapping. */
+const HOLD_DECEL = 3
+/** Below this speed the reverse key reverses instead of regenerating. */
+const REVERSE_SPEED = 0.5
+const THROTTLE_DEADZONE = 0.05
+/** Regen force allowed beyond its nominal deceleration, to cover slopes and bumps. */
+const REGEN_TORQUE_MARGIN = 1.25
+
+function moveToward(v: number, target: number, step: number): number {
+  return v > target ? Math.max(target, v - step) : Math.min(target, v + step)
+}
 
 const UP = new THREE.Vector3(0, 1, 0)
 /** Float points over the Syn3h hull footprint (half width 1.37, half length 2.1). */
@@ -132,6 +145,9 @@ export class Syn3hBuggy extends Vehicle {
   readonly sliding = [false, false, false, false]
   private readonly windX = [0, 0, 0, 0]
   private readonly windZ = [0, 0, 0, 0]
+  /** Next-gen drivetrain state this step (see drivetrain()). */
+  drive: 'drive' | 'coast' | 'regen' | 'hold' = 'hold'
+  private regenForce = 0
   /** Motor speed at the start of this step's wheel pass (next-gen). */
   private motorStep = 0
 
@@ -275,7 +291,8 @@ export class Syn3hBuggy extends Vehicle {
     }
     // Me 22-30: the Interact button brakes, and so does doing nothing at walking pace.
     const idle = raw.x === 0 && raw.y === 0 && raw.z === 0 && raw.w === 0
-    this.brakes = i.brakes || (buggyIdleHold.value && idle && speedSq < AUTO_BRAKE_V2)
+    // Next-gen replaces the auto brake with the drivetrain hold (see drivetrain()).
+    this.brakes = i.brakes || (!buggyNextGen.value && buggyIdleHold.value && idle && speedSq < AUTO_BRAKE_V2)
     // Vhicl 266-270.
     this.inputSmoothed.lerp(raw, Math.min(1, dt * INPUT_SMOOTHING))
     this.shouldWingsBeOpen = i.special
@@ -379,13 +396,13 @@ export class Syn3hBuggy extends Vehicle {
       lerp(buggyPower.value * 5, 0, this.motorSpeed / top) * Math.abs(this.areWingsOpen ? 0 : smoothed.y),
     )
     this.motorAccel = lerp(MAX_ACCELERATION, 0, this.motorSpeed / top)
-    this.motorSpeed += (smoothed.y * this.motorAccel) / MOTOR_MASS * dt
-    this.motorSpeed += (-this.motorSpeed * (this.brakes ? 50 : MOTOR_DRAG)) / this.motorTorque * dt
-
-    // Next-gen brakes lock the wheels and let the tyres stop the car (no drag states below).
     const nextGen = buggyNextGen.value
     const mass = b.mass()
-    if (nextGen && this.brakes) this.motorSpeed = 0
+    if (nextGen) this.drivetrain(dt, smoothed.y)
+    else {
+      this.motorSpeed += (smoothed.y * this.motorAccel) / MOTOR_MASS * dt
+      this.motorSpeed += (-this.motorSpeed * (this.brakes ? 50 : MOTOR_DRAG)) / this.motorTorque * dt
+    }
     // Next-gen updates the motor from all four wheels at once (Jacobi). Updating it wheel by
     // wheel, as VB 323 does, favours the left wheels and pulls the buggy right.
     this.motorStep = this.motorSpeed
@@ -511,7 +528,8 @@ export class Syn3hBuggy extends Vehicle {
     const slipX = hv.x
     const slipZ = hv.z - this.motorStep
     // Each wheel drives a quarter of the motor; all four see the same motor speed this step.
-    const motorMass = this.brakes ? Infinity : this.motorTorque / 4
+    const locked = this.brakes || this.drive === 'regen' || this.drive === 'hold'
+    const motorMass = locked ? Infinity : this.motorTorque / 4
     const longMass = 1 / (1 / TYRE_MASS + 1 / motorMass)
     const damp = TYRE_DAMP / dt
     const k = TYRE_OMEGA * TYRE_OMEGA
@@ -523,10 +541,12 @@ export class Syn3hBuggy extends Vehicle {
     // so a tyre that has let go keeps most of its bite while it is only just sliding. ABS
     // keeps braking at the peak.
     const slip = Math.hypot(slipX, slipZ)
-    const mu = this.brakes ? grip : lerp(grip, slide, THREE.MathUtils.smoothstep(slip, SLIP_GRIP, SLIP_SLIDE))
+    const mu = locked ? grip : lerp(grip, slide, THREE.MathUtils.smoothstep(slip, SLIP_GRIP, SLIP_SLIDE))
     const cap = mu * traction * load
     const n = Math.hypot(fx, fz)
     this.sliding[i] = n > cap
+    // Regen is torque limited: past its force the wheel turns with the ground, not the motor.
+    const regenCap = this.drive === 'regen' && !this.brakes ? this.regenForce / 4 : Infinity
     if (this.sliding[i]) {
       // Saturated: the brush cannot wind up any further than the friction it can carry.
       const f = cap / n
@@ -535,10 +555,58 @@ export class Syn3hBuggy extends Vehicle {
       this.windX[i] *= f
       this.windZ[i] *= f
     }
+    if (Math.abs(fz) > regenCap) {
+      const f = regenCap / Math.abs(fz)
+      fz *= f
+      this.windZ[i] *= f
+    }
     this.v2.set(fx, 0, -fz).applyQuaternion(this.qWheel)
     this.ub.addForceAtPosition(this.v2, this.hitPoint)
-    if (!this.brakes) this.motorSpeed -= (fz * dt) / this.motorTorque
+    if (!locked) this.motorSpeed -= (fz * dt) / this.motorTorque
     eff.slip = this.sliding[i] ? slip : 0
+  }
+
+  /**
+   * Next-gen electric drivetrain, modelled on a one-pedal EV but with coasting at speed so a
+   * tapped throttle holds a speed:
+   * - drive: throttle along the direction of travel (or from rest) runs the classic motor.
+   * - coast: no throttle above HOLD_SPEED. The motor freewheels with buggy.coastDrag.
+   * - regen: throttle against the direction of travel. The motor decelerates the wheels at
+   *   buggy.regen g, torque limited, until the buggy is nearly stopped; then the key reverses.
+   * - hold: no throttle below HOLD_SPEED. The motor eases to zero and stays there, and the
+   *   tyres' static friction parks the buggy, slopes included. No brake drag freeze.
+   * In regen and hold the motor is a fixed reference the tyres pull the body toward.
+   */
+  private drivetrain(dt: number, y: number): void {
+    const vf = this.ub.inverseTransformDirectionUnity(this.ub.velocity, this.v1).z
+    const throttle = Math.abs(y) > THROTTLE_DEADZONE
+    if (this.brakes) {
+      this.drive = 'hold'
+      this.motorSpeed = 0
+      return
+    }
+    if (!throttle) {
+      this.drive = buggyIdleHold.value && Math.abs(vf) < HOLD_SPEED && this.wheelsGrounded > 0 ? 'hold' : 'coast'
+    } else if (Math.sign(y) !== Math.sign(vf) && Math.abs(vf) > REVERSE_SPEED) {
+      this.drive = 'regen'
+    } else this.drive = 'drive'
+
+    if (this.drive === 'hold') {
+      this.motorSpeed = moveToward(this.motorSpeed, 0, HOLD_DECEL * dt)
+    } else if (this.drive === 'regen') {
+      const decel = buggyRegen.value * 9.81 * Math.abs(y)
+      // Start from the wheels' actual speed so a motor still spinning from wheelspin cannot
+      // read as regen, then pull it toward zero.
+      if (Math.sign(this.motorSpeed) !== Math.sign(vf) || Math.abs(this.motorSpeed) > Math.abs(vf)) this.motorSpeed = vf
+      this.motorSpeed = moveToward(this.motorSpeed, 0, decel * dt)
+      this.regenForce = MASS * decel * REGEN_TORQUE_MARGIN
+    } else if (this.drive === 'coast') {
+      this.motorTorque = 1
+      this.motorSpeed -= this.motorSpeed * buggyCoastDrag.value * dt
+    } else {
+      this.motorSpeed += (y * this.motorAccel) / MOTOR_MASS * dt
+      this.motorSpeed -= (this.motorSpeed * MOTOR_DRAG) / this.motorTorque * dt
+    }
   }
 
   /** Flight, VB 389-480. Runs on the wish to fly (`_shouldWingsBeOpen`), as in the source. */

@@ -14,6 +14,8 @@ import type { Game, System } from '../core/Game'
 import { type InputState, emptyInput } from '../core/Input'
 import { FIXED_DT, GROUP_ALL, GROUP_TERRAIN, GROUP_VEHICLE, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
+import { graphicsLevel } from '../core/quality'
+import type { VehicleDetail } from './skins/mergeStatic'
 import type { VehicleKind } from './index'
 
 /** Everything needed to reproduce a vehicle on another client. Plain numbers for the wire. */
@@ -47,6 +49,7 @@ export function createWheelEffects(count = 4): WheelEffect[] {
 
 export abstract class Vehicle implements System {
   readonly object = new THREE.Group()
+  private readonly visualDetails=new Set<VehicleDetail>()
   readonly body: RAPIER.RigidBody
   /** Control state for this step. Written by the player or by the network layer. */
   readonly input: InputState = emptyInput()
@@ -109,6 +112,7 @@ export abstract class Vehicle implements System {
     this.prevQuat.copy(q)
     this.object.position.copy(position)
     this.object.quaternion.copy(q)
+    this.object.userData.registerVehicleDetail=(fn:VehicleDetail)=>{this.visualDetails.add(fn);return()=>this.visualDetails.delete(fn)}
     game.scene.add(this.object)
   }
 
@@ -220,6 +224,8 @@ export abstract class Vehicle implements System {
   update(_dt: number, alpha: number): void {
     this.object.position.lerpVectors(this.prevPos, this.currPos, alpha)
     this.object.quaternion.slerpQuaternions(this.prevQuat, this.currQuat, alpha)
+    const distance=this.game.camera?.position.distanceTo(this.object.position)??0
+    for(const detail of this.visualDetails)detail(distance,!this.isLocal,graphicsLevel.value)
   }
 
   /** Teleport, clearing motion and interpolation history. */
@@ -250,6 +256,7 @@ export abstract class Vehicle implements System {
   }
 
   dispose(): void {
+    this.visualDetails.clear()
     this.game.scene.remove(this.object)
     this.game.world.removeRigidBody(this.body)
   }

@@ -42,6 +42,7 @@ export class ProceduralTerrain implements Terrain {
     this.sampler = new HeightSampler(this.data)
     this.look = createTerrainMaterial()
     this.look.setSummit(this.summitHeight())
+    this.lightLake()
     this.meshes = createTerrainMeshes(this.data, this.look.material)
     game.scene.add(this.meshes.group)
     this.collider = createTerrainCollider(game.world, this.data)
@@ -78,12 +79,19 @@ export class ProceduralTerrain implements Terrain {
     return this.data.layout.summitHeight
   }
 
+  private lightLake(): void {
+    const lake = this.data.lava.lake
+    if (lake) this.look.setLake(lake.x, lake.z, lake.radius, lake.surface)
+    else this.look.setLake(0, 0, 0, -1000)
+  }
+
   /** Rebuild heights, mesh and collider in place, then notify listeners. */
   regenerate(): void {
     this.data = this.generate()
     this.sampler.data = this.data
     this.meshes.update(this.data)
     this.look.setSummit(this.summitHeight())
+    this.lightLake()
     this.game.world.removeCollider(this.collider, true)
     this.collider = createTerrainCollider(this.game.world, this.data)
     this.volcanics.rebuild()
