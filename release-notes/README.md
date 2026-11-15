@@ -109,9 +109,9 @@ publishing a run of versions in order leaves the one you choose on top. A real r
 
 ## Notes files
 
-`release-notes/releases/v<version>.md`, in Freed's shape adapted to a game. By the owner's
-instruction of 14 November 2026 there is no "(AI Generated)" line: the body opens on the
-heading, and `render` refuses anything above it.
+`release-notes/releases/v<version>.md`, in Freed's shape adapted to a game. Current external-post instructions require an "(AI Generated)" first line.
+`render` adds it exactly once, accepting either attributed source or historical heading-first
+source. Other prefaces remain invalid; the heading, deck and section checks are unchanged.
 
 ```markdown
 ## Syn3h v26.11.1412

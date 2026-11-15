@@ -12,8 +12,9 @@
  * `light.skyReflection` is the strength of the sky's reflection in every surface
  * (scene.environmentIntensity), until now fixed at 0.15.
  *
- * Both sliders default to today's picture exactly: bounce 0 adds nothing and leaves the old
- * ground colour untouched, and the reflection default is the old 0.15.
+ * Ground bounce is enabled by default. Setting bounce to 0 restores the old ground colour;
+ * the reflection default remains 0.15.
+ * Shadow softness and strength control the existing cascades without rebuilding shaders.
  */
 import * as THREE from 'three/webgpu'
 import { defineParam, params } from '../../shared/params'
@@ -22,8 +23,10 @@ import { paletteFor } from './terrain/palettes'
 const g = 'Light'
 const c = 'client' as const
 
-export const lightBounce = defineParam({ id: 'light.bounce', label: 'Ground bounce light (warm fill from below)', group: g, scope: c, default: 0, min: 0, max: 2, step: 0.05 })
+export const lightBounce = defineParam({ id: 'light.bounce', label: 'Ground bounce light (warm fill from below)', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.05 })
 export const lightSkyReflection = defineParam({ id: 'light.skyReflection', label: 'Sky reflection strength', group: g, scope: c, default: 0.15, min: 0, max: 1, step: 0.01 })
+export const shadowSoftness = defineParam({ id: 'light.shadowSoftness', label: 'Sun shadow softness', group: g, scope: c, default: 2, min: 1, max: 4, step: 0.1 })
+export const shadowStrength = defineParam({ id: 'light.shadowStrength', label: 'Sun shadow strength', group: g, scope: c, default: 0.85, min: 0, max: 1, step: 0.01 })
 
 const albedo = new THREE.Color()
 const dark = new THREE.Color()

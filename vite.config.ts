@@ -11,6 +11,8 @@ const origin = process.env.PASEO_PREVIEW_ORIGIN ? new URL(process.env.PASEO_PREV
  * Starts the multiplayer room server beside the dev server, so one command gives a working
  * multiplayer game. Skipped when SYN3H_NO_ROOM_SERVER is set (tests that run their own).
  */
+const roomPort = process.env.SYN3H_ROOM_PORT ?? '8787'
+
 function roomServer(): Plugin {
   let child: ChildProcess | null = null
   return {
@@ -19,7 +21,7 @@ function roomServer(): Plugin {
     configureServer(server) {
       // Vitest starts a Vite server too; tests must not spawn (and fight over) a room server.
       if (process.env.SYN3H_NO_ROOM_SERVER || process.env.VITEST) return
-      child = spawn('npx', ['tsx', 'server/dev.ts'], { stdio: 'inherit', env: { ...process.env, PORT: '8787' } })
+      child = spawn('npx', ['tsx', 'server/dev.ts'], { stdio: 'inherit', env: { ...process.env, PORT: roomPort } })
       const stop = () => child?.kill()
       server.httpServer?.once('close', stop)
       process.once('exit', stop)
@@ -42,7 +44,7 @@ export default defineConfig({
     port: 5173,
     allowedHosts: origin ? [origin.hostname] : true,
     // Same-origin /ws keeps HTTPS previews working: a secure page cannot open ws://.
-    proxy: { '/ws': { target: 'ws://127.0.0.1:8787', ws: true } },
+    proxy: { '/presence': { target: `http://127.0.0.1:${roomPort}` }, '/ws': { target: `ws://127.0.0.1:${roomPort}`, ws: true } },
     hmr: origin ? { protocol: 'wss', host: origin.hostname, clientPort: Number(origin.port || 443) } : undefined,
   },
   build: { target: 'es2022', sourcemap: true },

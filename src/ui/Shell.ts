@@ -1,3 +1,5 @@
+import { SavedWorldStore, SAVED_WORLDS_KEY, savedWorldPlan, worldIdentity, type SavedWorld } from './galaxy/savedWorlds'
+import { SavedMoons } from './galaxy/SavedMoons'
 import type { Game, System } from '../core/Game'
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
@@ -8,13 +10,16 @@ import { applySkyPreset, SKY_PRESET_NAMES, type SkyPresetName } from '../world/s
 import { TouchControls } from './TouchControls'
 import { readVehicleChoice, saveVehicleChoice, VehiclePreview, type VehicleChoice } from './VehicleChoice'
 import { SlidingPanels } from './SlidingPanels'
+import { populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
 import { placeLabels } from './galaxy/labels'
 import { createDaydreamControl } from '../bots/daydreamControl'
 import { Inspector } from './inspector/Inspector'
 import { FocusHud } from './inspector/FocusHud'
-import { glassStyle } from './inspector/params'
+import { RaceHud, type RaceRole } from './RaceHud'
+import type { RaceState } from '../../shared/protocol'
+import { glassStyle, diagnostics } from './inspector/params'
 import { RESUME_KEY } from '../core/resume'
 import { qualityLevel } from './quality/ladder'
 import { Vector3 } from 'three/webgpu'
@@ -36,6 +41,7 @@ import { renderHelp, touchHelp } from './VehicleHelp'
 import { PlayHints, type Hint } from './PlayHints'
 import type { VehicleKind } from '../vehicles'
 import './shell.css'
+import './exploration.css'
 
 const back = '<button type="button" class="panel-back link-button" data-goto="index">Back</button>'
 /** `__SYN3H_BUILD__` is an optional build-time constant (a date or tag) from the bundler. */
@@ -83,6 +89,9 @@ export class Shell implements System {
   private worldDirty = true
   private readonly inspector: Inspector
   private readonly focusHud: FocusHud
+  private readonly raceHud: RaceHud
+  onRaceLeave?: () => void
+  onRaceCancel?: () => void
   private telemetry = { speed: 0, altitude: 0 }
   /** The 3D galaxy: the lobby. Absent only where WebGL 2 is, and then the game cannot draw either. */
   private galaxy?: Galaxy
@@ -100,7 +109,7 @@ export class Shell implements System {
 
   constructor(private readonly game: Game, readonly audio: GameAudio) {
     this.previousSuspended = game.input.suspended; game.input.suspended = true
-    this.element.className = 'syn3h-shell'
+    this.element.className = 'syn3h-shell exploration-ui'
     this.element.innerHTML = `<section class="shell-overlay" role="dialog" aria-modal="true" aria-label="Syn3h lobby">
       <div class="lobby-stage">
       <header class="lobby-brand">${wordmarkSvg('shell-logo')}</header>
@@ -137,7 +146,7 @@ export class Shell implements System {
       <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby"><button data-goto="vehicle">Vehicle</button><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR</button><button data-goto="settings">Settings</button><button data-goto="about">About</button></nav></div>
     </section>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><button type="button" class="gear-chip" hidden></button><div class="hud-scoreboard"></div></aside>
-    <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button" aria-label="Open menu">☰<span class="nav-label"> Menu</span></button><button data-open="multiplayer">Players</button><button class="inspector-toggle" type="button" aria-pressed="false">Create</button></nav>
+    <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open configuration rail" aria-pressed="false"><span aria-hidden="true">≡</span><span class="nav-label"> Interface</span></button></nav>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
     document.body.append(this.element); document.body.classList.add('has-game-shell')
@@ -163,29 +172,52 @@ export class Shell implements System {
       summary: id => this.inspectorSummary(id),
       vehicles: () => ({ options: [...this.element.querySelectorAll<HTMLInputElement>('[name="vehicle"]')].map(radio => ({ id: radio.value, label: radio.parentElement!.textContent!.trim() })), current: this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind }),
       onVehicle: id => this.switchVehicle(id as VehicleKind),
+      onSaveWorld: () => this.saveWorld(),
     })
     // A visitor's first view of the world has nothing over it: the cards start closed on every
     // device and open from Create. On a desktop, once the player has captured the cursor to
     // drive, releasing it with Escape brings the full interface up (the owner's design: full
     // cards with the cursor free, the focus display with it captured), unless Create closed them.
     this.inspector.open = false
+    const railTop = this.inspector.element.querySelector('.wi-top')!
+    const navigation = document.createElement('div'); navigation.className = 'rail-navigation'
+    navigation.innerHTML = '<button type="button" class="exit-world">↗ Exit world</button><button type="button" class="rail-close" aria-label="Close configuration rail">×</button>'
+    railTop.prepend(navigation)
+    const players = document.createElement('details'); players.className = 'rail-players'
+    players.innerHTML = '<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><label class="rail-diagnostics"><input type="checkbox"> Connection diagnostics</label></div>'
+    players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
+    railTop.after(players)
+    const gear = this.element.querySelector('.gear-chip')!; players.querySelector('.rail-player-body')!.append(gear)
+    navigation.querySelector('.exit-world')!.addEventListener('click', () => this.openMenu(), { signal })
+    players.querySelector('.rail-invite')!.addEventListener('click', () => this.openJoin(), { signal })
+    players.querySelector('input')!.addEventListener('change', event => params.set(diagnostics.def.id, (event.target as HTMLInputElement).checked), { signal })
+    const music = document.createElement('div'); music.className = 'rail-music'
+    music.innerHTML = `<label>Music<select aria-label="Music track">${Object.entries(MUSIC_TRACKS).map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select></label><button type="button" class="rail-mute">Mute</button>`
+    players.querySelector('.rail-player-body')!.append(music)
+    // Preserve native select keys while keeping them out of gameplay. Keyup must still
+    // reach Input so a driving key released after focus changes cannot get stuck.
+    music.querySelector('select')!.addEventListener('keydown', event => event.stopPropagation(), { signal })
+    music.querySelector('select')!.addEventListener('change', event => { void this.audio.setTrack((event.target as HTMLSelectElement).value as MusicTrack) }, { signal })
+    music.querySelector('button')!.addEventListener('click', () => this.audio.setMuted(!this.audio.isMuted), { signal })
     this.focusHud = new FocusHud(this.element)
+    this.raceHud = new RaceHud(this.element, { leave: () => this.onRaceLeave?.(), cancel: () => this.onRaceCancel?.() })
     const toggle = this.element.querySelector<HTMLButtonElement>('.inspector-toggle')!
-    let chosen: boolean | undefined
-    const setCards = (open: boolean) => { this.inspector.open = open; toggle.setAttribute('aria-pressed', String(open)) }
-    toggle.addEventListener('click', () => { chosen = !this.inspector.open; setCards(chosen) }, { signal })
+    toggle.addEventListener('click', () => this.setInspectorOpen(!this.inspector.open, true), { signal })
+    navigation.querySelector('.rail-close')!.addEventListener('click', () => { this.setInspectorOpen(false, true); toggle.focus() }, { signal })
     toggle.setAttribute('aria-pressed', String(this.inspector.open))
     // Focus: the cursor is captured, so the player is driving. The full interface fades away.
     let wasLocked = false
     document.addEventListener('pointerlockchange', () => {
       const locked = document.pointerLockElement === game.canvas
       this.element.classList.toggle('is-focus', locked)
-      if (!locked && wasLocked && chosen !== false && !this.menuVisible) setCards(true)
+      if (!locked && wasLocked && this.inspectorChosen !== false && !this.menuVisible) this.setInspectorOpen(true)
       wasLocked = locked
     }, { signal })
     this.glass(signal)
     for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) slider.addEventListener('input', () => params.set(slider.dataset.param!, Number(slider.value)), { signal })
     this.startGalaxy()
+    this.mountSavedWorlds()
+    window.addEventListener('storage', event => { if (event.key === SAVED_WORLDS_KEY || event.key === null) this.refreshSavedWorlds() }, { signal })
     const unsubscribeWorld = params.onChange(id => { if (params.get(id)?.def.scope === 'world') { this.worldDirty = true; this.refreshCustomPlanet() } })
     signal.addEventListener('abort', unsubscribeWorld)
     try { this.nameInput.value = localStorage.getItem('syn3h.playerName') || '' } catch { /* Storage is optional. */ }
@@ -208,7 +240,6 @@ export class Shell implements System {
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-goto]')) button.addEventListener('click', () => this.showPanel(button.dataset.goto!), { signal })
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-open]')) button.addEventListener('click', () => this.openMenu(button.dataset.open!), { signal })
     for (const button of this.element.querySelectorAll('[data-join]')) button.addEventListener('click', () => this.openJoin(), { signal })
-    this.element.querySelector('.shell-menu-button')!.addEventListener('click', () => this.openMenu(), { signal })
     this.element.querySelector('[data-resume]')!.addEventListener('click', () => this.closeMenu(), { signal })
     this.element.querySelector('form')!.addEventListener('submit', event => { event.preventDefault(); this.play(true) }, { signal })
     for (const button of this.element.querySelectorAll('.shell-invite')) button.addEventListener('click', () => { void this.copyInvite() }, { signal })
@@ -288,7 +319,7 @@ export class Shell implements System {
     this.stopAttract()
     if (this.inviteOpen) return
     this.inviteFromGame = this.started && !this.menuVisible
-    if (this.inviteFromGame) this.openMenu()
+    if (this.inviteFromGame) { this.releaseCursor(); this.game.input.suspended = true; this.game.input.mouseFire = false; this.touch.enabled = false }
     this.inviteOpen = true; this.overlay.inert = true; this.invite.show(); this.updateInvite()
   }
   closeJoin(): void {
@@ -303,13 +334,16 @@ export class Shell implements System {
   get accentColor(): string { return this.choice.accentColor }
   get playerName(): string { return this.nameInput.value.trim().slice(0, 24) || 'Explorer' }
   get room(): string { return this.roomInput.value.trim().slice(0, 64) || 'lobby' }
-  get playing(): boolean { return this.started }
+  get playing(): boolean { return this.started && !this.menuVisible }
   get menuOpen(): boolean { return this.menuVisible }
   get activePanel(): string { return this.panels.active }
   get presentation(): boolean { return this.element.classList.contains('is-presentation') }
   setPresentation(enabled: boolean): void { this.element.classList.toggle('is-presentation', enabled); this.element.querySelector('.presentation-toggle')!.setAttribute('aria-pressed', String(enabled)) }
   setPlayerCount(count: number): void { this.playerCount = Math.max(0, Math.floor(count)); this.updateInvite() }
   private lastMatch: MatchState | null = null
+  setRace(snapshot: Readonly<RaceState> | null, roomNow: () => number, role: Readonly<RaceRole>): void {
+    this.raceHud.setState(snapshot, roomNow, role)
+  }
   setMatchState(state: MatchState | null): void {
     const prev=this.lastMatch
     if(state?.mode==='koth'){
@@ -533,6 +567,13 @@ export class Shell implements System {
     this.element.querySelector<HTMLElement>('.hud-navigation')!.hidden = false
     this.element.querySelector<HTMLButtonElement>('.shell-menu-button')!.focus({ preventScroll: true })
   }
+  private inspectorChosen: boolean | undefined
+  private setInspectorOpen(open: boolean, intentional = false): void {
+    if (intentional) this.inspectorChosen = open
+    this.inspector.hideTooltip()
+    this.inspector.open = open
+    this.element.querySelector('.inspector-toggle')!.setAttribute('aria-pressed', String(open))
+  }
   private keydown(event: KeyboardEvent): void {
     const editing = event.target instanceof HTMLElement && (event.target.isContentEditable || /INPUT|TEXTAREA|SELECT/.test(event.target.tagName))
     if (!editing && !event.repeat && event.code === 'KeyP') { event.preventDefault(); event.stopImmediatePropagation(); this.setPresentation(!this.presentation); return }
@@ -542,11 +583,15 @@ export class Shell implements System {
       if (event.key === 'Tab') { event.preventDefault(); const buttons = [...this.invite.element.querySelectorAll<HTMLButtonElement>('button')]; buttons[document.activeElement === buttons[0] ? 1 : 0].focus() }
       return
     }
-    if (this.started && !this.menuVisible && !event.repeat && (event.code === 'KeyH' || event.key === '?')) { event.preventDefault(); this.toggleHelp(); return }
+    if (!editing && this.started && !this.menuVisible && !event.repeat && (event.code === 'KeyH' || event.key === '?')) { event.preventDefault(); this.toggleHelp(); return }
     if (event.code === 'Escape') {
+      if (event.target instanceof HTMLSelectElement) return
       event.preventDefault(); event.stopImmediatePropagation()
       if (this.menuVisible && this.panels.active !== 'index') this.showPanel('index')
-      else if (this.started) this.menuVisible ? this.closeMenu() : this.openMenu()
+      else if (this.started) {
+        if (this.menuVisible) this.closeMenu()
+        else this.setInspectorOpen(!this.inspector.open, true)
+      }
     } else if (this.menuVisible && event.key === 'Tab') {
       const targets = [...this.overlay.querySelectorAll<HTMLElement>('button, input, select, summary, a[href], [tabindex="0"]')].filter(el => !el.closest('[hidden], [inert]') && !(el as HTMLInputElement).disabled)
       const first = targets[0], last = targets[targets.length - 1]
@@ -597,14 +642,16 @@ export class Shell implements System {
   }
   /** True after Custom is first opened; later world edits keep its preview current. */
   private shapingCustom = false
+  private suspendCustomRefresh = false
   private customMapTimer?: ReturnType<typeof setTimeout>
   private refreshCustomPlanet(): void {
-    if (!this.shapingCustom) return
+    if (!this.shapingCustom || this.suspendCustomRefresh) return
     clearTimeout(this.customMapTimer)
     this.customMapTimer = setTimeout(() => this.galaxy?.updateCustom(currentPlanet().id, worldSeed.value, params.snapshot('world')), 120)
   }
   /** Terraform mode: only the sliders that shape a world, opened. */
   private openCustomPlanet(): void {
+    this.suspendCustomRefresh = false
     this.shapingCustom = true
     this.refreshCustomPlanet()
     this.advancedGroups = ['Terrain', 'World', 'Sky', 'Sun', 'Weather', 'Lava']
@@ -618,6 +665,103 @@ export class Shell implements System {
    * other panels open over it as before. Needs WebGL 2. At the lowest graphics level the system
    * is held still and redrawn only while it moves, so weak devices keep it at almost no cost.
    */
+  private readonly savedWorlds = new SavedWorldStore(() => params.all().map(p => p.def))
+  private savedMoons?: SavedMoons
+  private savedList?: HTMLElement
+  private saveWorld(): void {
+    try {
+      const result = this.savedWorlds.save(params.snapshot('world'))
+      this.refreshSavedWorlds()
+      this.inspector.setStatus(result.duplicate ? 'This world is already saved on this device.' : 'World saved on this device.')
+    } catch (error) { this.inspector.setStatus(`World was not saved. ${error instanceof Error ? error.message : 'Storage is unavailable.'}`) }
+  }
+  private mountSavedWorlds(): void {
+    const section = document.createElement('section'); section.className = 'saved-worlds'
+    const title = document.createElement('h3'); title.textContent = 'Saved on this device'
+    this.savedList = document.createElement('div'); this.savedList.setAttribute('aria-label', 'Saved worlds')
+    section.append(title, this.savedList)
+    this.element.querySelector('[data-panel="worlds"]')!.append(section)
+    this.savedMoons = new SavedMoons(this.element.querySelector('.galaxy-ui')!, entry => { void this.enterSavedWorld(entry) })
+    this.refreshSavedWorlds()
+  }
+  private refreshSavedWorlds(): void {
+    if (!this.savedList) return
+    this.savedList.replaceChildren()
+    try {
+      const library = this.savedWorlds.read()
+      this.savedMoons?.set(library.entries)
+      if (!library.entries.length || library.notice) {
+        const note = document.createElement('p'); note.textContent = library.notice ?? 'Use Save current world in the World card.'
+        this.savedList.append(note)
+      }
+      for (const entry of library.entries) {
+        const row = document.createElement('div'); row.className = 'input-action'
+        const enter = document.createElement('button'); enter.type = 'button'; enter.dataset.savedWorld = entry.id
+        enter.textContent = `${planetName(entry.seed)} · ${entry.recipeId}`
+        enter.addEventListener('click', () => { void this.enterSavedWorld(entry) })
+        const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Delete'
+        remove.setAttribute('aria-label', `Delete saved ${planetName(entry.seed)}`)
+        remove.addEventListener('click', () => {
+          try { this.savedWorlds.remove(entry.id); this.refreshSavedWorlds(); this.say('Saved world deleted from this device.') }
+          catch { this.say('The saved world could not be deleted. Storage is unavailable.') }
+        })
+        row.append(enter, remove); this.savedList.append(row)
+      }
+    } catch {
+      this.savedMoons?.set([])
+      this.savedList.textContent = 'Saved worlds could not be read. Existing storage has been left unchanged.'
+    }
+    if (this.galaxy && !this.dropping && !this.savedEntering) this.galaxy.home()
+  }
+  private savedEntering = false
+  private async enterSavedWorld(entry: SavedWorld): Promise<void> {
+    if (this.dropping || this.savedEntering) return
+    this.savedEntering = true
+    this.savedOutcomeStop?.()
+    let applied = false, release: (() => void) | undefined
+    try {
+      // Read again: another tab may have deleted or changed the record after rendering it.
+      const latest = this.savedWorlds.read().entries.find(saved => saved.id === entry.id)
+      if (!latest) { this.say('That saved world is no longer available.'); this.refreshSavedWorlds(); return }
+      const plan = savedWorldPlan(latest, params.all().map(p => p.def))
+      const allowed = () => worldIdentity(plan) === worldIdentity(params.snapshot('world')) || (canEditWorld() && !(this.invited && !this.started))
+      if (!allowed()) { this.say('This room controls its world settings. The saved world was not applied.'); return }
+      this.stopAttract()
+      this.suspendCustomRefresh = true; clearTimeout(this.customMapTimer)
+      const apply = () => {
+        if (!allowed()) throw new Error('The room no longer allows changing this world.')
+        params.applySnapshot(plan, 'local'); applied = true
+        if (!this.started) { this.begin(); this.onPlay?.() }
+      }
+      if (!this.galaxy?.live || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        apply(); this.closeMenu()
+      } else {
+        if (!this.started) this.unlockAudio()
+        release = this.galaxy.savedWorldTarget(latest.recipeId, latest.seed, plan, latest.id)
+        await this.panels.show('index', true); this.galaxyFor('index')
+        await this.descent(latest.recipeId, apply)
+      }
+      if (applied) this.reportSavedOutcome(plan)
+    } catch (error) { this.say(`Saved world was not entered. ${error instanceof Error ? error.message : 'Please try again.'}`) }
+    finally { release?.(); this.savedEntering = false }
+  }
+  /** A room welcome can replace a local plan. Never claim a restore until authority settles. */
+  private savedOutcomeStop?: () => void
+  private reportSavedOutcome(plan: Record<string, import('../../shared/params').ParamValue>): void {
+    const report = () => {
+      const net = (window as { syn3hNet?: { connected?: boolean } }).syn3hNet
+      if (!net?.connected) return false
+      this.say(worldIdentity(params.snapshot('world')) === worldIdentity(plan)
+        ? 'Saved world settings applied.' : 'The current room’s settings replaced the saved world settings.')
+      return true
+    }
+    if (report()) return
+    this.say('Saved settings applied locally. Waiting for the room’s settings.')
+    const stop = () => { clearInterval(timer); this.abort.signal.removeEventListener('abort', stop); this.savedOutcomeStop = undefined }
+    const timer = setInterval(() => { if (report()) stop() }, 500)
+    this.savedOutcomeStop = stop
+    this.abort.signal.addEventListener('abort', stop, { once: true })
+  }
   private startGalaxy(): void {
     // No WebGL 2: the game cannot draw here either, so the index says so plainly.
     if (!Galaxy.supported()) { this.element.querySelector<HTMLElement>('.lobby-unsupported')!.hidden = false; return }
@@ -634,11 +778,28 @@ export class Shell implements System {
       const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
       chip.innerHTML = '<strong></strong><small></small>'; chip.querySelector('strong')!.textContent = world.label
       chip.querySelector('small')!.textContent = world.forming ? 'Shape your own' : world.id === current ? planetName(world.seed) : ''
+      if (world.id !== 'custom') { const count = document.createElement('small'); count.className = 'galaxy-population'; count.textContent = 'Population unknown'; chip.append(count) }
       chip.addEventListener('click', () => { if (!this.tapWorld(world.id)) this.galaxy?.choose(world.id) })
       labels.append(chip); chips.set(world.id, chip)
     }
     this.galaxy = new Galaxy(this.overlay, {
       worlds,
+      logo: () => {
+        const mark = this.element.querySelector<SVGElement>('.shell-logo')!, box = mark.getBoundingClientRect(), host = this.overlay.getBoundingClientRect()
+        return { box: { x: box.x - host.x, y: box.y - host.y, width: box.width, height: box.height }, level: levelNumber(graphicsLevel.value) }
+      },
+      presenceVisible: () => this.menuVisible && !this.attracting && !this.inviteOpen && !this.dropping,
+      onPresence: values => {
+        for (const world of worlds) {
+          if (world.id === 'custom') continue
+          const chip = chips.get(world.id)!, text = populationLabel(values.get(world.recipe ?? world.id) ?? null)
+          const count = chip.querySelector('.galaxy-population')!
+          if (count.textContent !== text) { count.textContent = text; this.labelSizes.delete(world.id) }
+          chip.title = `${text}. Counts span separate rooms; choosing this planet uses your current room.`
+          chip.setAttribute('aria-label', `${world.label}: ${chip.title}`)
+        }
+      },
+      onLogo: drawn => this.element.classList.toggle('has-animated-logo', drawn),
       still: () => levelNumber(graphicsLevel.value) === 0,
       onTap: chosen => this.tapWorld(chosen),
       onFocus: id => chips.get(id)?.focus({ preventScroll: true }),
@@ -653,6 +814,7 @@ export class Shell implements System {
         this.pickPlanet(id, true)
       },
       onLayout: (places, chosen) => {
+        this.savedMoons?.layout(places, { width: innerWidth, top: this.brandBottom ?? 220, bottom: this.linksTop ?? innerHeight - 128 }, !!chosen || this.dropping || this.panels.active !== 'index')
         // Each label near its world, on the screen, clear of the links and of each other.
         for (const [id, chip] of chips) if (!this.labelSizes.has(id) && !chip.hidden) this.labelSizes.set(id, { width: chip.offsetWidth, height: chip.offsetHeight })
         // Clear of the wordmark too. While flying to a world, only its label stays.
@@ -833,11 +995,21 @@ export class Shell implements System {
     if (!this.started && !this.inviteOpen && !this.attract?.active && (this.requestedAttract || performance.now() - this.lastActivity > 20000)) this.startAttract()
     this.attract?.update(dt)
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
+    // A captured cursor alone is insufficient while a menu or another flow suspends input.
+    this.element.classList.toggle('is-focus', this.started && !this.menuVisible && !this.game.input.suspended && document.pointerLockElement === this.game.canvas)
+    this.raceHud.update(this.started && !this.menuVisible && !this.game.input.suspended, this.element.classList.contains('is-focus'), this.self, this.ground?.size)
+    const buildNotice = document.getElementById('syn3h-build-notice')
+    if (buildNotice && !this.inspector.element.contains(buildNotice)) this.inspector.element.querySelector('.wi-top')!.append(buildNotice)
+    this.element.classList.toggle('show-diagnostics', diagnostics.value)
+    this.element.querySelector<HTMLInputElement>('.rail-diagnostics input')!.checked = diagnostics.value
+    const musicChoice = this.element.querySelector<HTMLSelectElement>('.rail-music select')!
+    if (document.activeElement !== musicChoice) musicChoice.value = this.audio.track
+    this.element.querySelector('.rail-mute')!.textContent = this.audio.isMuted ? 'Unmute' : 'Mute'
     this.updateGear()
     if (this.started && !this.menuVisible) {
       const focus = this.element.classList.contains('is-focus')
       if (!focus && this.inspector.open) this.inspector.update()
-      this.focusHud.update(focus, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, heading: this.self?.heading ?? 0, world: `${currentPlanet().label} · ${planetName(worldSeed.value)}`, hour: Number(params.get('sun.timeOfDay')?.value ?? 0) })
+      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, heading: this.self?.heading ?? 0, world: `${currentPlanet().label} · ${planetName(worldSeed.value)}`, hour: Number(params.get('sun.timeOfDay')?.value ?? 0) })
       const glass = String(Math.round(glassStyle.value)); if (this.element.dataset.glass !== glass) this.element.dataset.glass = glass
     }
     // The stylesheet drops frost at the lowest graphics level.
@@ -883,7 +1055,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.galaxy?.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }

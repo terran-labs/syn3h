@@ -9,6 +9,7 @@
  *
  * No renderer imports: the lobby, the server and tests can all use this file.
  */
+import { recipeIdForLook } from '../../shared/recipes'
 import { params, type ParamSource, type ParamValue, worldSeed } from '../../shared/params'
 import { SKY_PRESETS } from './sky/presets'
 // Imported for their side effect: they register the sliders the recipes set.
@@ -217,7 +218,7 @@ export function applyPlanet(
 /** The recipe whose look matches the current world, for labels and share links. */
 export function currentPlanet(): PlanetRecipe {
   const look = params.get('terrain.look')?.value
-  return PLANETS.find((p) => p.values['terrain.look'] === look) ?? PLANETS[0]
+  return PLANETS.find((p) => p.id === recipeIdForLook(look)) ?? PLANETS[0]
 }
 
 // ---------------------------------------------------------------------------------------

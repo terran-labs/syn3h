@@ -86,7 +86,7 @@ class VehicleEffects {
   private readonly tailMaterial=new T.MeshBasicMaterial({color:new T.Color(2,0,0)})
   private readonly lampPoints:T.Object3D[]=[]
   private readonly lampMatrix=new T.Matrix4()
-  private spot?:T.SpotLight
+  private readonly spots:T.SpotLight[]=[]
   private readonly previousMarks:(T.Vector3|null)[]=[null,null,null,null]
   private readonly previousTips:(T.Vector3|null)[]=[null,null]
   private readonly lastPosition=new T.Vector3()
@@ -116,9 +116,15 @@ class VehicleEffects {
     if(local){
       // Syn3h prefab range50, cone60 degrees. Unity intensity is not candela.
       // Aim farther down the road and use candela suitable for inverse-square falloff.
-      this.spot=new T.SpotLight(new T.Color(1,.9965517,.875),0,50,Math.PI/6,.45,2)
-      this.spot.position.set(0,.35,-front);this.spot.target.position.set(0,-.8,-22);this.spot.castShadow=false
-      this.root.add(this.spot,this.spot.target)
+      // Each buggy lamp casts its own beam. Split the old total intensity between them
+      // so the overlap on the road does not double the exposure. Other vehicles keep
+      // their existing central beam until their individual lighting is tuned.
+      for(const x of this.buggy?[-width,width]:[0]){
+        const spot=new T.SpotLight(new T.Color(1,.9965517,.875),0,50,Math.PI/6,.45,2)
+        spot.name=this.buggy?(x<0?'Left headlight':'Right headlight'):'Headlight'
+        spot.position.set(x,this.buggy?.036:.35,-front);spot.target.position.set(x,-.8,-22);spot.castShadow=false
+        this.spots.push(spot);this.root.add(spot,spot.target)
+      }
     }
     this.unlisten=terrain.onRegenerate?.(()=>{this.reset();world.marks.clear();world.trails.clear()})
     // A world seam. The terrain moves the local player a whole tile and redraws the world around
@@ -153,10 +159,11 @@ class VehicleEffects {
     this.throttle=T.MathUtils.lerp(this.throttle,Math.max(0,v.kind==='hovercraft'?v.input.y:v.input.z),Math.min(1,dt*10))
     this.color.set(v.colors.accent)
     this.tailMaterial.color.setRGB(v.input.brakes?5:2,0,0)
-    if(this.spot){
+    if(this.spots.length){
       const sky=w.game.scene.children.find(o=>'sunDirection' in o) as unknown as {sunDirection?:{value:T.Vector3}}|undefined
       const sunY=sky?.sunDirection?.value.y??1
-      this.spot.intensity=clamp((.08-sunY)/.18,0,1)*(v.kind==='jet'?1800:1600)
+      const intensity=clamp((.08-sunY)/.18,0,1)*(v.kind==='jet'?1800:1600)/this.spots.length
+      for(const spot of this.spots)spot.intensity=intensity
     }
     // Suppress distant emissions. Existing particles continue their bounded shader lifetime.
     if(p.distanceToSquared(w.game.camera.position)>qualityBudget().drawDistance**2)return
@@ -226,7 +233,7 @@ class VehicleEffects {
       }
     }else if(!trails)this.previousTips.fill(null)
   }
-  dispose(){this.unlisten?.();this.events.removeEventListener('tileshift',this.onTileShift);this.root.removeFromParent();this.headMaterial.dispose();this.tailMaterial.dispose();this.spot?.dispose()}
+  dispose(){this.unlisten?.();this.events.removeEventListener('tileshift',this.onTileShift);this.root.removeFromParent();this.headMaterial.dispose();this.tailMaterial.dispose();for(const spot of this.spots)spot.dispose()}
 }
 
 /**

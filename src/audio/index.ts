@@ -16,10 +16,8 @@ export type Sound = 'laserShot' | 'laserHit' | 'materialize'
 export const MUSIC_TRACKS = { Score: 'Adaptive score (generated)', SpaceStation: 'Space Station', Classic: 'Classic (Mars Explorer)', Carefree: 'Carefree (Mars Explorer)', Ambient: 'Ambient (legacy)' } as const
 export type MusicTrack = keyof typeof MUSIC_TRACKS
 export interface Position { x: number; y: number; z: number }
-// Two winds: the owner's recorded clip follows the vehicle's own speed (Engine.setWind), and
-// the generated voice (weatherWind.ts) carries the weather at the camera. AGENTS.md: the
-// recorded originals stay unless the owner says otherwise.
-const files: Record<Sound | 'wind', string> = { laserShot: 'LaserShot.mp3', laserHit: 'LaserHit.mp3', materialize: 'Materialize.mp3', wind: 'Wind.wav' }
+// Owner choice, 15 November 2026: generated wind only. Music and tag recordings stay.
+const files: Record<Sound, string> = { laserShot: 'LaserShot.mp3', laserHit: 'LaserHit.mp3', materialize: 'Materialize.mp3' }
 interface Deck { element: HTMLAudioElement; source: MediaElementAudioSourceNode; gain: GainNode; stopTimer?: ReturnType<typeof setTimeout> }
 
 export class GameAudio implements System {
@@ -61,7 +59,7 @@ export class GameAudio implements System {
   private readonly up = new THREE.Vector3()
   private readonly position = new THREE.Vector3()
   private readonly rotation = new THREE.Quaternion()
-  private selected: MusicTrack = 'Score'
+  private selected: MusicTrack = 'SpaceStation'
   private lobbyVisible = true
   private disposed = false
   private loads?: Promise<void>
@@ -73,6 +71,11 @@ export class GameAudio implements System {
   motion: MotionAudio = { speed: 0, throttle: 0, airborne: false }
 
   constructor(private readonly camera: THREE.Camera) {
+    // Restore only an explicit selection; new visitors hear the original title music.
+    try {
+      const saved = localStorage.getItem('syn3h.musicTrack')
+      if (saved && Object.hasOwn(MUSIC_TRACKS, saved)) this.selected = saved as MusicTrack
+    } catch { /* Audio does not require storage. */ }
     const unlock = () => { void this.unlock().catch((error) => this.errors.push(String(error))) }
     window.addEventListener('pointerdown', unlock, { signal: this.gestures.signal })
     window.addEventListener('keydown', unlock, { signal: this.gestures.signal })
@@ -130,12 +133,12 @@ export class GameAudio implements System {
         const buffer = await this.context!.decodeAudioData(await response.arrayBuffer())
         if (this.disposed) return
         this.buffers.set(name, buffer)
-        if (name === 'wind') this.engine!.setWind(buffer)
       } catch (error) { this.errors.push(String(error)) }
     }))
   }
   async setTrack(track: MusicTrack): Promise<void> {
     this.selected = track
+    try { localStorage.setItem('syn3h.musicTrack', track) } catch { /* Storage is optional. */ }
     this.syncMix()
     if (this.context) await this.startTrack(track)
   }

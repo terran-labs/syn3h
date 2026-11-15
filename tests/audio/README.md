@@ -1,3 +1,7 @@
+Current wind choice: generated camera and weather wind only, per the owner on 15 November
+2026. The recorded wind is no longer fetched or connected. Music, laser and materialize
+recordings remain. The lifecycle check verifies those loading boundaries.
+
 Current shell integration and browser checks are documented in [the UI handoff](../ui/README.md). The notes below describe the initial audio delivery.
 
 # Audio and shell handoff
@@ -41,6 +45,15 @@ audio.impact(impactSpeed, position)
 The engine bridge uses the player's speed and drive input. Airborne detection currently uses terrain clearance above two metres because the shared Vehicle interface has no wheel contacts. Replace that fallback with the buggy's contact state during integration if available. Audio assets and keyboard/gamepad mappings remain unchanged. The only change outside assigned audio/UI/asset/test files is an additive `Input.external` field and input merging, plus enforcing its existing `suspended` flag in `poll()`. There is no index.html change.
 
 ## Verification
+
+New visitors start with Space Station. Explicit music selections persist in
+`syn3h.musicTrack`; invalid or unavailable storage falls back to Space Station. Score
+remains selectable, with tag notes, convoy, terrain and weather layers enabled by default.
+Their switches and the lighter instrument mode remain independent. Switching music retains
+the existing crossfade and mute behavior. Wind uses the generated camera/weather voice only.
+
+`tests/audio/score-game.mjs <origin>` checks these defaults, restored choices, switching,
+mute and lighter mode in the real browser. Run all checks through `tools/heavy.sh`.
 
 From this worktree, run `npx tsc --noEmit`, `npx vitest run`, and start Vite with `npx vite --port 5187 --strictPort`. In another terminal run `node tests/audio/browser.mjs`. Stop Vite afterwards.
 

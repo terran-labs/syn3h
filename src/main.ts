@@ -121,6 +121,12 @@ async function main(): Promise<void> {
       setMatchState: (m) => shell.setMatchState(m),
       names: (seed, kind) => generateName(seed, kind),
     })
+    connection.configureRaces({
+      isDriving: () => shell.playing,
+      setRace: (snapshot, roomNow, role) => shell.setRace(snapshot, roomNow, role),
+    })
+    shell.onRaceLeave = () => connection.leaveRace()
+    shell.onRaceCancel = () => connection.cancelRace()
     // Every client reads the wind from the room's clock, so gusts agree between players.
     // Handed over by networking once that clock has synced (the sea gets it the same way).
     connection.onRoomClock((now) => setWeatherClock(now))
@@ -141,7 +147,7 @@ async function main(): Promise<void> {
     },
   })
 
-  // Water Lab: ripples, spray and the underwater look. Each is off until its slider is on.
+  // Water effects follow their normal-entry defaults and explicit player controls.
   game.add(new WaterEffects(game, terrain, player, bots))
 
   // Handles for debugging and automated checks.

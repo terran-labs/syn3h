@@ -2,7 +2,7 @@
  * Which post pipeline a frame gets. Pure, so tests can drive it.
  *
  *   off   plain renderer.render: post effects switched off, graphics level 0, or a phone or
- *         tablet (device class below desktop) that has not been opted in. Nothing allocated.
+ *         tablet (device class below desktop) whose post effects toggle is off. Nothing allocated.
  *   base  colour look, vignette and grain only: one full-screen pass. Used when the frame
  *         governor's post budget has reached 0.
  *   lite  base plus sun shafts with half the taps. Graphics level 1.
@@ -21,7 +21,7 @@ export interface PostGateInput {
   level: number
   /** The level the device was classified as at load; 2 is desktop class. */
   deviceLevel: number
-  /** The player chose to allow post effects on phones and tablets. */
+  /** Allow post effects on phones and tablets; enabled by default. */
   tablets: boolean
   /** 1 minus the governor's post budget: 0 keeps post effects, 1 has shed them. */
   shed: number

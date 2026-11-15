@@ -7,6 +7,7 @@ import * as THREE from 'three/webgpu'
 import { params } from '../../shared/params'
 import { createVehicle } from '../../src/vehicles'
 import { buggyIdleHold, buggyNextGen } from '../../src/vehicles/buggyParams'
+import { waterSinking } from '../../src/vehicles/buoyancy'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
 import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../../src/core/physics'
 import { type Bed, makeBed } from './harness'
@@ -493,7 +494,9 @@ describe('Syn3hBuggy', () => {
     expect(-pos(b).z).toBeGreaterThan(3)
   })
 
-  test('the motor stays near the body speed while paddling in water', async () => {
+  test('the motor stays near the body speed with legacy water paddling', async () => {
+    // Paddling belongs to the retained float controller, bypassed by sinking physics.
+    params.set(waterSinking.def.id, false)
     const bed = await makeBed()
     bed.terrain.liquidHeightAt = () => 4
     bed.terrain.liquidKindAt = () => 'water'

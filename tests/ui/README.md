@@ -542,9 +542,19 @@ While the host allows more than one kind of gear, a chip under the speed reads
 "Gear: Tag beam" or "Gear: Bungee"; tapping it or pressing T switches. The help card gains
 the gear lines. On touch, LET OUT (holds V) and LET GO show only while a cord is attached.
 Cues `bungeeLaunch`, `bungeeAttach` and `bungeeRelease` exist in `src/audio/Cues.ts`; the
-Bungee's `cue` hook in `src/net/index.ts` still has to call `audio.cue(name, at)`.
+Bungee's `cue` hook in `src/net/index.ts` calls `audio.cue(name, at)`.
 
 Check: `node tests/ui/gear.mjs` (Chrome desktop and WebKit iPhone landscape).
+
+## November 15 UX follow-up
+
+The inspector uses a cooler tint and less saturation over warm skies. Safari's dark backing
+and the safe graphics fallback now outrank all three glass weights. `node tests/ui/glass.mjs`
+checks those styles in Chrome and WebKit without loading a world.
+
+The existing center dot remains available for all gear. Suspended input hides the focus
+display even if pointer capture remains active; `inspector.mjs` checks that transition.
+Brand export commands, output sizes and failure behavior are in `tools/brand/README.md`.
 
 `galaxy-controls.mjs` checks arrow-key rotation, plus/minus zoom, standard gamepad
 stick movement, D-pad world selection and A-button entry. It also verifies that an
@@ -568,3 +578,84 @@ The map is an approximation of the island on a globe, not an exact view of the w
 wrapping world. Existing painter limits include shoreline shading based on absolute
 height rather than height above sea level, and a snow threshold that differs from the
 terrain renderer. Terrain owns those corrections; this change only supplies live settings.
+
+## Animated lobby logo
+
+Ordinary lobby entry uses the existing LogoRenderer inside Galaxy's WebGL2 context.
+It shares the galaxy clock and render scale, uses the existing particle budgets, and
+settles immediately for reduced motion, the safe tier or an open panel. The SVG retains
+its layout and accessible name, and becomes visible if the renderer fails or the context
+is lost. Leaving the lobby disposes the logo's GL resources; context restoration rebuilds
+the renderer. No branding assets or logo design changed.
+
+`lobby-logo.mjs` checks shared context identity, animation, panel settling, reduced motion,
+safe particle count, context restoration, teardown and reopening in Chrome and WebKit.
+The galaxy caps its shared loop at 30 fps outside a drop, below the logo's desktop ceiling.
+
+## Exploration interface
+
+The in-game right-edge Interface tab opens the configuration rail. Exit world at its top
+returns to the solar system; Escape opens or closes the rail without returning to the lobby.
+Players, music, gear and the optional connection diagnostics live under Players & session.
+The old upper-left HUD is hidden. Speed and ground clearance use the exploration readouts;
+the minimap stays centred on the player at bottom left, with a generated radial vignette.
+On phones it sits above the driving thumb control.
+
+Section headers remain in view while expanded bodies share the available height and scroll
+internally. Desktop descriptions float to the left of the control. Narrow phones put the
+same tooltip above the control; tapping the tooltip or elsewhere dismisses it. Touch editing
+hides driving overlays and transient toasts so they cannot obscure the rail.
+
+`tests/ui/exploration.mjs` checks desktop Chrome and iPad, phone and landscape WebKit. It
+covers header visibility, internal body space, tooltip placement, optional diagnostics,
+Escape behavior and Exit world. `UX_VIEW=desktop|ipad|phone|landscape` selects one viewport.
+Run through the currently approved absolute heavy-job wrapper. Lobby drop, Custom planet,
+animated logo and cursor checks remain part of the regression gate after integration.
+
+## Recipe population lights
+
+The lobby polls the public aggregate `/presence` feed every 30 seconds while visible,
+with one request in flight and a ten-second request timeout. It stops on tab hiding,
+play, descent, the join overlay and attract mode. Counts expire 90 seconds after the
+oldest report, independently of the polling schedule. Failed, invalid or stale data
+shows “Population unknown”; a fresh empty response means zero connected players.
+
+Lights represent connected humans across rooms using a recipe, including spectators.
+They do not represent bots or joinable room identities. At most twelve lights are drawn
+per planet; the label gives the exact “N connected across M rooms” total. Custom has no
+population of its own. Planet taps retain the existing room and direct descent.
+
+`presence.test.ts` covers payload validation, report freshness, cancellation and polling.
+`presence.mjs` supplies controlled public responses to check labels, display state,
+play/reopen behavior and unchanged room routing. It does not validate the server endpoint.
+
+`presence-live.mjs` starts an isolated, temporary Vite proxy and room server, connects
+humans in two separate Alpine rooms, and checks normal-entry counts in Chrome and WebKit.
+It uses the real same-origin endpoint and saves captures under `artifacts/presence`.
+Run every browser check through the absolute trunk heavy-job helper.
+
+## Saved-world moons
+
+Save current world in the World card stores a complete world snapshot on this device.
+Guests may save while editing is locked. The Worlds panel lists local saves with separate
+Delete buttons; deletion changes neither the running world nor its room. Twelve saves
+are allowed, with no silent eviction. Identical snapshots reuse the existing bookmark;
+the same seed with different settings creates another bookmark.
+
+Generated moons follow their recipe planets, with 44-pixel button targets. Crowded moons
+remain reachable through the Worlds list. A moon or list entry drops directly, preserving
+room selection and checking permission against all saved settings, including the seed.
+An existing room can replace local settings on welcome; a message reports that outcome.
+Worlds are snapshots of settings, not room invitations or guaranteed terrain across game
+updates. Removed settings are ignored with a notice; new settings use current defaults.
+
+The saved flight temporarily borrows its recipe planet slot. Its descriptor is restored
+and obsolete map results rejected on success or failure. Custom's descriptor and retained
+maps are preserved; its live snapshot updates resume when the Custom editor is reopened.
+No extra GPU context, texture assets, protocol changes or shared parameter edits are used.
+
+`savedWorlds.test.ts` covers strict storage validation, defaults, deduplication, limits,
+false/zero, deletion and failed writes. `saved-target.test.ts` checks cache/descriptor
+restoration and late worker results. `saved-worlds.mjs` uses an ephemeral real room server
+and same-origin proxy to check Chrome restore/reload/failure and phone WebKit authority,
+locked guests, deletion and keyboard entry. Captures are in `artifacts/saved-worlds`.

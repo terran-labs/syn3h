@@ -25,11 +25,11 @@ for (const [engine, browser] of engines) for (const [size, device] of sizes) for
     }
     await page.waitForFunction(() => document.querySelector('.syn3h-shell')?.classList.contains('is-playing') && window.syn3hNet?.connected, null, { timeout: 120000 })
     await page.waitForTimeout(4000)
-    const seen = await page.evaluate(() => { const cards = document.querySelector('.world-inspector'), map = document.querySelector('.shell-minimap'), r = map?.getBoundingClientRect(); return { cards: !cards.hidden, map: r && r.width > 0 && getComputedStyle(map).opacity !== '0' ? Math.round(innerWidth - r.right) : null } })
+    const seen = await page.evaluate(() => { const cards = document.querySelector('.world-inspector'), map = document.querySelector('.shell-minimap'), r = map?.getBoundingClientRect(); return { cards: !cards.hidden, map: r && r.width > 0 && getComputedStyle(map).opacity !== '0' ? Math.round(r.left) : null } })
     await page.screenshot({ path: `${out}${name}.png` })
     rows.push({ name, ...seen })
     if (seen.cards) errors.push(`${name}: cards open on landing`)
-    if (seen.map !== null && seen.map > 60) errors.push(`${name}: minimap ${seen.map}px from the right edge`)
+    if (seen.map !== null && seen.map > 60) errors.push(`${name}: minimap ${seen.map}px from the left edge`)
   } catch (error) { errors.push(`${name}: ${String(error).slice(0, 200)}`) }
   await context.close()
 }

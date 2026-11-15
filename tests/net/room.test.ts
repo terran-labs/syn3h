@@ -590,6 +590,7 @@ describe('Room idle reset', () => {
     const a = join('A')
     send(a.peer, { type: 'param', id: 'sun.timeOfDay', value: 23 })
     send(a.peer, { type: 'param', id: 'world.gravity', value: 3 })
+    send(a.peer, { type: 'param', id: 'game.rejoin', value: false })
     // A's tab is hidden: heartbeats only.
     for (let t = 0; t < 4 * 60; t++) { clock += 1000; parked(a.peer) }
     expect(a.peer.last('reset')).toBeUndefined()
@@ -598,6 +599,7 @@ describe('Room idle reset', () => {
     const reset = a.peer.last('reset')!
     expect(reset.reason).toBe('idle')
     expect(reset.params['world.gravity']).toBe(GRAVITY_DEFAULT())
+    expect(reset.params['game.rejoin']).toBe(true)
     expect(reset.params['sun.timeOfDay']).toBeUndefined()
     // Only once per idle spell.
     for (let t = 0; t < 400; t++) { clock += 1000; parked(a.peer) }
@@ -721,8 +723,8 @@ describe('Room rejoin as the same player (game.rejoin)', () => {
   const on = { 'game.rejoin': true }
   const here = () => state([0, 0, 0])
 
-  it('is off by default: a secret changes nothing and a dropout is a leave', () => {
-    const a = join('A', {}, { resume: SECRET_A })
+  it('can be switched off: a secret changes nothing and a dropout is a leave', () => {
+    const a = join('A', { 'game.rejoin': false }, { resume: SECRET_A })
     const b = join('B', {}, { resume: SECRET_B })
     room.disconnect(a.peer)
     expect(b.peer.last('leave')).toEqual({ type: 'leave', id: a.id })
@@ -733,8 +735,20 @@ describe('Room rejoin as the same player (game.rejoin)', () => {
     expect(room.snapshot().roster).toBeUndefined()
   })
 
+  it('preserves a stored explicit opt-out when the room wakes', () => {
+    join('A', { 'game.rejoin': false }, { resume: SECRET_A })
+    const saved = room.snapshot()
+    room = new Room('test', { now: () => clock })
+    room.restore(saved)
+    const back = join('A', {}, { resume: SECRET_A })
+    expect(back.peer.last('welcome')!.params['game.rejoin']).toBe(false)
+    room.disconnect(back.peer)
+    expect(room.heldCount).toBe(0)
+  })
+
   it('holds a dropped player\'s place and gives it back to the same secret, telling nobody', () => {
-    const a = join('A', on, { resume: SECRET_A })
+    // Fresh rooms preserve the same player without any URL flag or slider change.
+    const a = join('A', {}, { resume: SECRET_A })
     const b = join('B', {}, { resume: SECRET_B })
     send(a.peer, { type: 'lock', locked: true })
     send(a.peer, { type: 'param', id: 'game.mode', value: 1 })

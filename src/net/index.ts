@@ -61,6 +61,7 @@ import { type BotMatchInfo, audibleVehicles, bodyAlive, hillHold, liveBots } fro
 import { ShoveQueue, cleanShove, shoveFor } from './shove'
 import { nearestImage, wrapCoord, wrapDistance } from '../../shared/wrap'
 import { setWaterClock, waterTime } from '../world/water/seaWaves'
+import { RaceBridge, type RaceBots, type RacePresentation } from './races'
 
 /** The slice of GameAudio (src/audio) networking uses. */
 export interface NetAudio {
@@ -79,7 +80,7 @@ export interface NetAudio {
  * no vehicles (its local quality cap must not decide the bot set); networking spawns its own
  * replicas from the host's roster and never touches the manager's vehicles.
  */
-export interface NetBots {
+export interface NetBots extends RaceBots {
   readonly vehicles: readonly Vehicle[]
   remote?: boolean
   /** Tell the bots what game is on (the host's manager acts on it). Null is free play. */
@@ -178,6 +179,7 @@ interface VehicleExtras {
 
 export class NetClient implements System {
   readonly clock = new ServerClock()
+  private readonly raceBridge: RaceBridge
   readonly conn: Connection
   readonly lasers: Lasers
   /** Gear in hand (Weapons lane, src/weapons). With only the tag beam allowed, nothing changes. */
@@ -241,6 +243,17 @@ export class NetClient implements System {
     this.bots = ctx.bots ?? null
     if (this.bots) this.bots.remote = true
     this.conn = new Connection(serverUrl(ctx.room))
+    this.raceBridge = new RaceBridge({
+      now: this.roomNow,
+      role: () => ({ id: this.id, host: this.isHost, connected: this.connected }),
+      synced: () => this.clock.synced,
+      bots: () => this.bots,
+      candidates: () => [
+        { id: this.id, vehicle: this.ctx.player, active: this.raceBridge.driving && !document.hidden, human: true },
+        ...liveBots(this.bots?.vehicles ?? [], this.ctx.game.world).map(([id, vehicle]) => ({ id, vehicle, active: !document.hidden, human: false })),
+      ],
+      send: message => this.send(message),
+    })
     this.lasers = new Lasers(game, {
       bodyOf: (id) => this.vehicleOf(id)?.body,
       judgedId: (h) => this.judgedId(h),
@@ -453,6 +466,12 @@ export class NetClient implements System {
     if (this.connected) this.send({ type: 'profile', kind: this.kind, colors: this.colors })
   }
 
+  /** The shell supplies actual play state; connected lobby spectators cannot be drafted. */
+  configureRaces(presentation: RacePresentation): void { this.raceBridge.configure(presentation) }
+  get race() { return this.raceBridge.snapshot as Readonly<import('../../shared/protocol').RaceState> | null }
+  leaveRace(): void { this.raceBridge.leave() }
+  cancelRace(): void { this.raceBridge.cancel() }
+
   /** Attach the bot manager once it exists. */
   attachBots(bots: NetBots): void {
     this.bots?.setGear?.(null)
@@ -557,6 +576,7 @@ export class NetClient implements System {
   }
 
   update(dt: number): void {
+    this.raceBridge.update()
     for (const controller of this.botGear.values()) controller.update(dt)
     const frameAt = performance.now()
     // After a long task the browser often renders before it delivers the queued messages, so
@@ -640,6 +660,7 @@ export class NetClient implements System {
   }
 
   dispose(): void {
+    this.raceBridge.disconnect()
     this.bots?.setGear?.(null)
     for (const controller of this.botGear.values()) controller.dispose()
     this.botGear.clear()
@@ -824,7 +845,7 @@ export class NetClient implements System {
     else this.clockUsers.push(use)
   }
 
-  private readonly roomNow = (): number => this.clock.now()
+  readonly roomNow = (): number => this.clock.now()
 
   /** For checks: the time the sea is running on right now, as this page's sea sees it. */
   get seaTime(): number {
@@ -1157,6 +1178,9 @@ export class NetClient implements System {
 
   private onMessage(msg: ServerMessage): void {
     switch (msg.type) {
+      case 'race':
+        this.raceBridge.receive(msg.race)
+        break
       case 'welcome': {
         this.id = msg.id
         this.slot = msg.slot
@@ -1171,6 +1195,8 @@ export class NetClient implements System {
         // The room's world replaces ours entirely, gaps included; see applyRoomWorld.
         applyRoomWorld(msg.params)
         this.welcomed = true
+        this.raceBridge.receive(msg.race ?? null)
+        this.raceBridge.update()
         this.botKinds.clear()
         this.bounds.slot = msg.slot
         if (!this.everWelcomed) {
@@ -1297,6 +1323,7 @@ export class NetClient implements System {
 
   private onDisconnect(): void {
     this.welcomed = false
+    this.raceBridge.disconnect()
     this.clock.reset()
     this.pingsSent = 0
     for (const id of [...this.remotes.keys()]) this.removeRemote(id)

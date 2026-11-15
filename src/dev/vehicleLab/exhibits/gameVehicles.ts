@@ -93,7 +93,7 @@ function exhibitFor(entry: { kind: VehicleKind; name: string }, index: number): 
     aliases: kind === 'buggy' ? ['game-skins'] : undefined,
 
     async designs() {
-      return [{ id: 'game', name, notes: [`As the game builds it: createVehicle('${kind}')`, 'Far is what other players see beyond 30\u00a0m'] }]
+      return [{ id: 'game', name, notes: [`As the game builds it: createVehicle('${kind}')`, kind === 'buggy' ? 'Mid begins at 30 m; Far begins at 120 m for other players' : 'Far shows the distant model used for other players'] }]
     },
 
     async build(_design, ctx): Promise<LabModel> {
@@ -145,8 +145,8 @@ function exhibitFor(entry: { kind: VehicleKind; name: string }, index: number): 
       return {
         object,
         groundY: box.min.y,
-        lods: ['Near', 'Far'],
-        lodDistances: [graphicsLevel.value >= 2 ? 60 : 30],
+        lods: kind === 'buggy' ? ['Near', 'Mid', 'Far'] : ['Near', 'Far'],
+        lodDistances: kind === 'buggy' ? [30, 120] : [graphicsLevel.value >= 2 ? 60 : 30],
         setLod(i) { forced = i },
         setColors: (body, accent) => vehicle.setColors(body, accent),
         resetColors: () => vehicle.setColors(colors.body, colors.accent),
@@ -162,7 +162,7 @@ function exhibitFor(entry: { kind: VehicleKind; name: string }, index: number): 
           while (accumulator >= FIXED_DT) { step(); accumulator -= FIXED_DT }
           // The stand-in camera sits where the detail choice needs it, in the vehicle's frame.
           if (forced === 0) eye.position.copy(vehicle.object.position)
-          else if (forced > 0) eye.position.copy(vehicle.object.position).setX(FAR)
+          else if (forced > 0) eye.position.copy(vehicle.object.position).setX(kind === 'buggy' && forced === 1 ? 60 : FAR)
           else object.worldToLocal(ctx.camera.getWorldPosition(eye.position))
           vehicle.update(dt, accumulator / FIXED_DT)
           beams.update(state)
