@@ -629,7 +629,7 @@
   "knownIssues": [
     {
       "title": "Steep shores on water worlds",
-      "detail": "On desert and alpine worlds a vehicle that falls in the sea lands fine on a gentle beach, but on a steep bank it climbs a few metres and slides back in. The default world is volcanic."
+      "detail": "On desert and alpine worlds a vehicle that falls in the sea lands fine on a gentle beach but slides back off a steep bank. The owner chose wild shores; open wings are to lift a buggy out of water and lava. That lift is being built."
     },
     {
       "title": "Bots crowd the summit",
@@ -637,11 +637,7 @@
     },
     {
       "title": "Tag beams look nearly white at night",
-      "detail": "They are green by day. A fix is queued."
-    },
-    {
-      "title": "The chase camera clips under the shoreline",
-      "detail": "In some frames while crawling out of lava."
+      "detail": "They are green by day. The fix is coded and awaiting night captures."
     },
     {
       "title": "Changing vehicle in the lobby reloads the page",
