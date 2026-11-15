@@ -78,7 +78,12 @@ try {
   })
   await shot('a-clouds-off', () => window.syn3h.params.set('post.clouds', 0), () => window.syn3h.params.set('post.clouds', 1))
   await shot('b-water-hidden', () => { window.syn3h.terrain.volcanics.group.visible = false }, () => { window.syn3h.terrain.volcanics.group.visible = true })
-  await shot('c-no-reflection', () => window.syn3h.params.set('water.reflection', 0), () => window.syn3h.params.set('water.reflection', 1))
+  // Environment.update is paused, so set the material property directly for isolation.
+  await shot('c-no-reflection', () => {
+    const v = window.syn3h.terrain.volcanics
+    window.isoReflection = ['newSea', 'newStill', 'newRiver', 'waterSea', 'waterStill'].filter(k => v[k]).map(k => [v[k].material, v[k].material.envMapIntensity])
+    for (const [material] of window.isoReflection) material.envMapIntensity = 0
+  }, () => { for (const [material, intensity] of window.isoReflection) material.envMapIntensity = intensity })
   await shot('d-sky-hidden', () => { const sky = window.syn3h.game.scene.children.find(o => o.sunDirection && o.betaR); window.isoSky = sky; sky.visible = false }, () => { window.isoSky.visible = true })
   await shot('e-underwater-off', () => window.syn3h.params.set('water.underwater', false), () => window.syn3h.params.set('water.underwater', true))
   await shot('f-up', () => { window.iso.pitch = 40 })
