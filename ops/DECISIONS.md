@@ -2,6 +2,24 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Saturday 14 November, 10:25pm to 10:35pm Pacific: four decisions in the Foreman thread
+
+1. **Releases may go public overnight unseen.** "Yes. All new releases may go public
+   overnight without me looking at each one. Keep shipping as fast as you can." The
+   Orchestrator ships on its own checks, rolls back at once if a check on the live site
+   fails, and keeps the fixes only build ready.
+2. **The judges' hand-over at noon** is the public address https://www.syn3h.com/ and the
+   GitHub repository link. Nothing else needs preparing.
+3. **Weather is a go.** Wind as a real force on vehicles, zorb balls especially; a
+   generated wind sound heard relative to the camera, so a chase camera behind a fast jet
+   hears it too; and more fog on "pretty much all worlds, unless there's a world like a
+   moon that really doesn't need fog". A Weather Lab lane owns it. The owner authorised new
+   Codex workspaces, but the platform does not let the Foreman start Codex threads, so the
+   lane started on Claude 1 for him to move.
+4. **No "(AI Generated)" line on published releases,** "past, present, and future". It is
+   removed from the two live GitHub releases, the notes files and the tool. This is an
+   exception for release notes; his general rule for other posts stands.
+
 ## Saturday 14 November, about 10:15pm Pacific: no cut-off; build and ship as fast as possible; noon is the hand-over
 
 **Decided** (Terrain Lab thread, relayed by the Orchestrator). "Tell the Orchestrator to
