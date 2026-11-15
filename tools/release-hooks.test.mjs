@@ -55,3 +55,15 @@ for (const failure of ['none', 'assets', 'gameplay']) {
   })
 
 }
+
+test('notes compare with accepted history, not a later failed attempt', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'syn3h-notes-baseline-'))
+  try {
+    mkdirSync(join(dir, 'release-notes'))
+    writeFileSync(join(dir, 'release-notes/history.tsv'), 'v1\taccepted-release\tgood\ttime\tproduction\nv2\tunshipped-milestone\tnew\ttime\tmilestone\n')
+    const assignment = release.split('\n').find(line => line.startsWith('PREV='))
+    const result = spawnSync('/bin/sh', ['-eu', '-c', assignment + '\nprintf "%s" "$PREV"'], { cwd: dir, encoding: 'utf8' })
+    assert.equal(result.status, 0, result.stderr)
+    assert.equal(result.stdout, 'accepted-release')
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+})
