@@ -1,28 +1,28 @@
 # Hovercraft glide correction
 
-The Syn3h asset still uses the Mars Explorer controller as its reference because no Syn3h hovercraft controller survived in the checked repositories. `hover.assist = 0` selects that controller, with corrected Unity damping order and terrain liquid lookup. `hover.assist = 1` is the default demo adaptation.
+`hover.assist = 0` selects the unassisted controller, with corrected damping order and terrain liquid lookup. `hover.assist = 1` is the default demo adaptation.
 
 ## Diagnosis
 
-`Hovercraft/Components/Hovercraft.js` lines 14-18 explicitly set mass 50, COM y -.3 and inertia (15,15,15). Lines 22-30 use drag 1.5 above 5 m/s and 100 below it. At a .02 s step, the latter erases all velocity in one step. That abrupt stop is original behavior, not Rapier damping.
+The unassisted controller sets mass 50, COM y -.3 and inertia (15,15,15). It uses drag 1.5 above 5 m/s and 100 below it. At a .02 s step, the latter erases all velocity in one step. That abrupt stop is the controller's own behavior, not Rapier damping.
 
-Lines 32-49 use one world-down ray, body-up spring lift and a normal velocity change capped at 10 m/s. The port's mass-scaled impulse correctly represents VelocityChange; replacing it merely because it is an impulse would be wrong. The source ray cannot anticipate a nose or spoiler crossing a crest. Body-up lift also adds horizontal acceleration when tilted.
+It uses one world-down ray, body-up spring lift and a normal velocity change capped at 10 m/s. The mass-scaled impulse correctly represents a velocity change; replacing it merely because it is an impulse would be wrong. The single ray cannot anticipate a nose or spoiler crossing a crest. Body-up lift also adds horizontal acceleration when tilted.
 
-Lines 54-60 always add throttle pitch torque, with no angle limit (the intended limit is commented out). Above the 30 m probe range, angular drag falls from 4 to .5. Persistent pitch off jumps is therefore faithful. The previous port also damped the old velocity before adding forces; PhysX applies drag after force integration. The corrected source mode uses the existing `UnityBody` helper without modifying it.
+It always adds throttle pitch torque, with no angle limit. Above the 30 m probe range, angular drag falls from 4 to .5. Persistent pitch off jumps is therefore expected in this mode. An earlier version damped the old velocity before adding forces; drag now applies after force integration. The corrected unassisted mode uses the existing `UnityBody` helper without modifying it.
 
-The original collider is 2 x 1 x 3 at y .4. The Syn3h GLB extends x +/-1.2593, y .0167..1.0196, z -1.6346..1.5155. The collider misses the spoiler edges and nose. Inertia 15 on every axis is a deliberate old script override, not a shape-derived inertia tensor for this hull. The old global liquid plane was also wrong for the generated lake, rivers and sea.
+The unassisted collider is 2 x 1 x 3 at y .4. The Syn3h GLB extends x +/-1.2593, y .0167..1.0196, z -1.6346..1.5155. The collider misses the spoiler edges and nose. Inertia 15 on every axis is a fixed override, not a shape-derived inertia tensor for this hull. A single global liquid plane was also wrong for the generated lake, rivers and sea.
 
 ## Demo adaptation
 
 * Four footprint samples support a critically damped world-up spring. It targets `hover.clearance = 2.5` m and includes gravity compensation. Damping follows the vertical speed of the terrain beneath a moving craft, so climbing does not consume the spring clearance. Lift cannot turn into sideways thrust when banked.
-* Forward thrust remains the source 220 N default, projected onto the horizontal heading. Lateral damping and slight coast drag make the craft glide without unlimited acceleration.
+* Forward thrust remains the 220 N default, projected onto the horizontal heading. Lateral damping and slight coast drag make the craft glide without unlimited acceleration.
 * Pitch follows gentle terrain slopes. Pitch and roll are damped in the air, with a 12-degree target bank into turns. `hover.stability = 8` controls this assistance.
 * `hover.brakeTime = 1` (the default is now 1.5) means 90% horizontal speed loss in one second. Brakes do not cancel falling velocity.
-* The assisted cuboid encloses the Syn3h mesh. Its inertia derives from that cuboid; the lower COM helps stability. Source mode restores the original collider, COM and inertia when changed live.
-* A conservative hull-envelope guard handles narrow crests missed between support points. Its .4 m safety margin covers spacing between samples. It corrects body penetration after physics and checks the interpolated rendered pose separately, since two clear poses can interpolate through a ridge. This is a restrained positional safety net, not recovered source physics. `clearanceCorrections` counts activations for diagnostics.
+* The assisted cuboid encloses the Syn3h mesh. Its inertia derives from that cuboid; the lower COM helps stability. Unassisted mode restores the 2 x 1 x 3 collider, COM and inertia when changed live.
+* A conservative hull-envelope guard handles narrow crests missed between support points. Its .4 m safety margin covers spacing between samples. It corrects body penetration after physics and checks the interpolated rendered pose separately, since two clear poses can interpolate through a ridge. This is a restrained positional safety net. `clearanceCorrections` counts activations for diagnostics.
 * All support and safety samples use the larger of terrain and `terrain.liquidHeightAt`. Lava and water share support behavior. The island currently exposes lava only; water uses the same surface contract and is covered with a synthetic raised-liquid test.
 
-Turning assistance off disables the new spring, banking, braking, collider and clearance guard together. Original height, force, repel and thrust parameters remain available.
+Turning assistance off disables the new spring, banking, braking, collider and clearance guard together. The height, force, repel and thrust parameters remain available.
 
 ## Reproduction
 
@@ -34,13 +34,13 @@ Jet recovery uses an 80 m/s collision into the volcano, switches to hover with R
 
 ## Verified results
 
-On the island, the source-mode surface route records one negative hull sample on seed 1 (minimum -.017 m) and eleven on seed 42 (minimum -.560 m). The final assisted QA, dune and surface routes record **zero negative samples out of 7,153 physics/rendered samples**, with a minimum .39965 m. The QA route itself did not reproduce penetration in source mode, but the slope/drop route did. This distinction matters: the original QA screenshot is not claimed to have been reproduced at an identical pose.
+On the island, the unassisted surface route records one negative hull sample on seed 1 (minimum -.017 m) and eleven on seed 42 (minimum -.560 m). The final assisted QA, dune and surface routes record **zero negative samples out of 7,153 physics/rendered samples**, with a minimum .39965 m. The QA route itself did not reproduce penetration in unassisted mode, but the slope/drop route did. This distinction matters: the original QA screenshot is not claimed to have been reproduced at an identical pose.
 
 The assisted QA routes needed zero clearance corrections on seed 1 and ten on seed 42. The deliberately severe slope/drop/lake/sea routes still use the safety guard (102 and 159 corrections); it is not claimed that the support spring alone prevents every collision. The sustained planar-climb regression passes without frequent guard use.
 
 All 225 tests pass with two workers, including 11 hovercraft tests. Typecheck passes. Every final capture has zero browser errors. Screenshot roots are `/tmp/syn3h-vehicles2/`:
 
-| Case | Before/source mode | After/assisted |
+| Case | Before/unassisted | After/assisted |
 | --- | --- | --- |
 | QA seed 1 | `island-hover-qa-1-mode0/contact-sheet.png` | `island-hover-qa-1-mode1/contact-sheet.png` |
 | QA seed 42 | `island-hover-qa-42-mode0/contact-sheet.png` | `island-hover-qa-42-mode1/contact-sheet.png` |

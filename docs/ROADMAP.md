@@ -27,12 +27,12 @@ scattering colour produces a visibly non Earth sky.
 
 ### 3. The buggy
 
-Port `Buggy.js`: raycast suspension, virtual motor, friction curve, four wheel steering,
-self righting, wings and glide, lava buoyancy. Chase camera. All original buggy sliders.
+Raycast suspension, virtual motor, friction curve, four wheel steering, self righting,
+wings and glide, lava buoyancy. Chase camera. Buggy sliders.
 
-Done when: every input direction matches the original, the buggy climbs the volcano
-flank, slides when traction is turned down, glides with wings open, skips across lava, and
-each original slider has its expected effect across its original range.
+Done when: every input direction is right, the buggy climbs the volcano flank, slides when
+traction is turned down, glides with wings open, skips across lava, and each slider has its
+expected effect across its range.
 
 This is the minimum result worth having. If the weekend ends here, it was a good weekend.
 
@@ -49,10 +49,10 @@ Depends on the hosting decision in the proposal.
 
 ### 5. Hovercraft, tank, jet
 
-Port in that order, cheapest first. The tank uses shape cast tracks in place of jointed
+Build in that order, cheapest first. The tank uses shape cast tracks in place of jointed
 bodies. The jet gets both hover and flight modes. Vehicle switching in the UI.
 
-Done when: each vehicle drives over the volcano with its original sliders working, the tank
+Done when: each vehicle drives over the volcano with its sliders working, the tank
 can push a buggy uphill, and the jet can take off, stall, recover and land.
 
 ### 6. King of the Hill
@@ -62,14 +62,9 @@ target score slider.
 
 Done when: three players can play a full round to a winner.
 
-### 7. Sound and the original look
+### 7. Sound, vehicle models and phones
 
-Original music and effects, speed driven engine audio, converted original vehicle models,
-touch controls for phones.
-
-Done when: it sounds like Mars Explorer and the vehicles are recognisably yours.
-
-Depends on Blender for the model conversion.
+Speed driven engine audio, vehicle models, touch controls for phones.
 
 ### Stretch: Earth by jet
 
@@ -83,7 +78,7 @@ screen. Needs a Google Maps API key. Private use only until the collision questi
 ## Honest sizing
 
 It is Saturday afternoon as this is written. Steps 1 to 4 are a realistic weekend. Steps 5
-and 6 fit if the buggy port goes cleanly, because the other three vehicles are smaller than
+and 6 fit if the buggy goes cleanly, because the other three vehicles are smaller than
 the buggy. Step 7 and the stretch are likely to spill into the following week. The order is
 chosen so that what spills is polish, not the core.
 
@@ -94,10 +89,8 @@ chosen so that what spills is polish, not the core.
    same heightfield path.
 3. **Alien atmosphere, properly.** Evaluate precomputed atmospheric scattering for correct
    twilight and high altitude views.
-4. **Lasers and tag,** the original game mode.
+4. **Lasers and tag,** a game mode.
 5. **Public hosting,** one room per Durable Object or similar.
-6. **Original worlds.** Extract heightmaps from the Unity terrain assets for Freestyle,
-   Lava Racer and the rest.
-7. **Netcode upgrade** to WebTransport, and to server side physics only if cheating or
+6. **Netcode upgrade** to WebTransport, and to server side physics only if cheating or
    contested shoves become a real problem.
-8. **Cities,** by the routes compared in the research note.
+7. **Cities,** by the routes compared in the research note.

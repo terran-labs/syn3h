@@ -12,7 +12,7 @@ this brief. Do not start building before he answers the ownership and go-ahead q
 
 ## The project, in one paragraph
 
-A browser rebuild of Mars Explorer and Syn3h: Three.js r187 WebGPURenderer with TSL node
+A browser game: Three.js r187 WebGPURenderer with TSL node
 materials and a WebGL 2 fallback, Rapier 0.21, TypeScript, Vite, vitest. Every world is a
 procedurally generated planet built identically on every client from a shared seed and
 shared sliders. Read `TERRAIN-LAB-BRIEF.md`, `ops/PROTOCOL.md` (lanes, handoffs, the gate)
@@ -46,7 +46,7 @@ broker (read `~/.agents/skills/paseo-preview/SKILL.md`); add your own service to
 - **Queries**: `terrain.liquidHeightAt(x, z)` and `terrain.liquidKindAt(x, z)` return the
   surface and 'lava' | 'water' | null. Both accept any x, z (the world wraps).
 - **Vehicles in liquid** (`src/vehicles/lava.ts`, owned by the Vehicles lane): the buggy
-  floats and paddles on water, ported from Mars Explorer's Buggy.js, with a "skip" lift
+  floats and paddles on water, with a "skip" lift
   that grows with speed. Lava is sticky (viscous drag, a `stuck` flag, a cooling glow).
   Wings open lift a vehicle out of any liquid (`liquid.wingLift`). There is no sinking, and
   the float code is buggy only.

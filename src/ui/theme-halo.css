@@ -226,7 +226,7 @@ body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(198
   box-shadow: var(--halo-glow), 0 18px 60px rgb(0 0 0 / .45), inset 0 1px 0 rgb(190 235 255 / .06);
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
 }
-.syn3h-shell.exploration-ui .lobby-panels > section:not(.lobby-index) { max-width: 520px; }
+.syn3h-shell.exploration-ui .lobby-panels > section { max-width: 520px; }
 .syn3h-shell.exploration-ui .lobby-panels > section h2 { font: 500 13px/1.2 'Barlow', sans-serif; letter-spacing: .26em; text-indent: .26em; text-transform: uppercase; color: var(--s3-ink); }
 
 /* The footer remains reachable while the card stack scrolls on short screens. */
@@ -242,3 +242,22 @@ body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(198
 .syn3h-shell.exploration-ui.has-touch:has(.world-inspector:not([hidden])) .hud-navigation { visibility: visible; z-index: 65; }
 /* Leave the existing edge toggle outside the touch panel's hit area. */
 .syn3h-shell.exploration-ui.has-touch .world-inspector { right: max(42px, env(safe-area-inset-right)); width: min(352px, calc(100vw - 58px)); }
+
+/* Lobby navigation stays available while one requested panel opens directly. */
+.syn3h-shell.exploration-ui .lobby-panels { animation: none; width: min(520px, 100%); margin-bottom: 118px; }
+.syn3h-shell.exploration-ui .lobby-stage { pointer-events: none; }
+.syn3h-shell.exploration-ui .lobby-panels { pointer-events: auto; }
+.syn3h-shell.exploration-ui:not(.galaxy-open) .galaxy-labels,
+.syn3h-shell.exploration-ui:not(.galaxy-open) .galaxy-hint { visibility: hidden; }
+.syn3h-shell.exploration-ui:not(.galaxy-open) .galaxy-canvas { pointer-events: none; }
+.syn3h-shell.exploration-ui .galaxy-links { margin: 0; }
+.syn3h-shell.exploration-ui .galaxy-hint { margin: 24px 0 26px; }
+.syn3h-shell.exploration-ui.galaxy-open .galaxy-canvas { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--lobby-footer-space, 150px) - 48px), transparent calc(100% - var(--lobby-footer-space, 150px))); mask-image: linear-gradient(to bottom, #000 calc(100% - var(--lobby-footer-space, 150px) - 48px), transparent calc(100% - var(--lobby-footer-space, 150px))); }
+@media (max-height: 550px) {
+  .syn3h-shell.exploration-ui .lobby-panels { margin-bottom: 78px; }
+}
+/* Keep release/status text between the panel and the persistent lobby pills. */
+.syn3h-shell.exploration-ui .lobby-footer { position: absolute; bottom: calc(max(18px, env(safe-area-inset-bottom)) + 56px); height: auto; min-height: 22px; }
+@media (max-height: 550px) {
+  .syn3h-shell.exploration-ui .lobby-panels { margin-bottom: 110px; }
+}

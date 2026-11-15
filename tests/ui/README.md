@@ -1,11 +1,8 @@
 # Syn3h UI integration
 
-The reconstruction and its historical limits are documented in
-`docs/architecture/syn3h-ui.md`. The default lobby uses the verified Syn3h logo,
-Lato Thin and Roboto Thin, a slow starfield and the recovered two-second depth/fade
-screen transition. The empty historical idle clip is represented by a settled logo
-glow, not an invented pulse. Space Station replaces the unlicensed-in-this-checkout
-Kai Engel track; legacy music is optional. Title music fades over ten seconds when
+The default lobby uses the Syn3h logo, Lato Thin and Roboto Thin, a slow starfield
+and a two-second depth/fade screen transition. At idle the logo glow is settled, with
+no pulse. Title music fades over ten seconds when
 entering the world and returns when opening the menu.
 
 ## Composition root
@@ -38,7 +35,7 @@ the spawned vehicle; help and touch controls follow the actual spawned kind.
 
 Vehicle controls appear in the lobby and for 8.5 seconds on spawn, H or ?. Jet touch
 controls add independent thrust up and down buttons; opposite holds cancel and releasing
-one preserves the other. The vehicle GLB previews for Jet and Hovercraft show original
+one preserves the other. The vehicle GLB previews for Jet and Hovercraft show their own
 materials; the colour controls still save the colours applied by the actual vehicles.
 
 The loading cover mounts during module evaluation, before engine initialization. It
@@ -106,8 +103,7 @@ skins, host and guest lock states, the HUD and the in-game menu. It exercises sa
 choices, live preview colours, music/mute/volume, seed regeneration, sky controls,
 late-registered bots, score styling, invitation copying, Escape, multi-touch and
 input suspension. Generated evidence lives under `tests/ui/artifacts/` and is ignored
-by git. Historical reference screenshots are still needed for an exact visual match;
-physical Safari playback and hardware listening are not established by headless Chrome.
+by git. Physical Safari playback and hardware listening are not established by headless Chrome.
 
 The additional `node tests/ui/flight-loading-map.mjs` check holds GPU startup to
 capture both loading states, dispatches progress events, checks H and ? help, verifies
@@ -116,8 +112,8 @@ Its screenshots include desktop and phone loading covers and jet HUD layouts.
 
 ## Names, sharing and hill mode
 
-Recovery paths and the historical search are in `name-recovery.md`. The replacement
-vocabulary and 40 short loading messages are new writing, not recovered text.
+The name vocabulary and 40 short loading messages are newly written; see
+`name-recovery.md`.
 Names are deterministic for a seed and kind. They are display labels, not unique IDs.
 Use a stable bot identity shared by clients, rather than a client's array position:
 
@@ -129,7 +125,7 @@ const worldName = generateName(worldSeed.value, 'world')
 
 The lobby installs a generated player name when no saved name exists and persists its
 random seed locally. Existing saved names win. LoadingScreen uses the new data file
-with the recovered five-second rotation; `shell.setLoadingMessages` still overrides it.
+with a five-second rotation; `shell.setLoadingMessages` still overrides it.
 
 The match display accepts authoritative state independently of `setStatus(lines)`:
 
@@ -269,9 +265,8 @@ needs only the lane dev server.
 
 ## Art direction: Dark Star
 
-On 14 November 2026 the owner replaced the 2017 Syn3h look with the Dark Star theme of the
-new terranlabs.com ("it honestly just looks better than the design we lifted from a decade
-ago"). Source: /Users/vtn/dev/terranlabs.com at 68c1e06.
+On 14 November 2026 the owner chose the Dark Star theme of the new terranlabs.com for
+Syn3h. Source: /Users/vtn/dev/terranlabs.com at 68c1e06.
 
 - Colours and type: Dark Star's tokens (`--s3-*` and the few `--theme-*` names that site's
   CSS reads) and its two families, Barlow and Barlow Condensed, served from `public/fonts`
@@ -290,7 +285,7 @@ ago"). Source: /Users/vtn/dev/terranlabs.com at 68c1e06.
 - Logo: still the Syn3h wordmark as one vector path, lit in Dark Star's blue.
 
 `tools/heavy.sh node tests/ui/lobby-reference.mjs <label>` captures every lobby screen on
-a desktop and a phone. The owner's 2017 reference captures stay in the git-ignored
+a desktop and a phone. The owner's reference captures stay in the git-ignored
 `tests/ui/artifacts/reference/`.
 
 ## Wording

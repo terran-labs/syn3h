@@ -211,3 +211,11 @@ if ! node tools/showcase.mjs --dir "$DEST" --version "$CALVER" --headless >"$LOG
 else
   echo "Showcase ready at /tmp/syn3h-showcase/$CALVER. Review notes and images before publication."
 fi
+
+# Refresh aggregate dashboard tiles after the release record exists. The host supplies
+# SYN3H_SESSION_STATE; never store its value in the repository or published dashboard.
+if [ -f tools/dashboard-stats.mjs ]; then
+  if ! node tools/dashboard-stats.mjs >"$LOG-dashboard-stats.log" 2>&1; then
+    echo "Warning: release is live; dashboard statistics need refresh. See $LOG-dashboard-stats.log."
+  fi
+fi

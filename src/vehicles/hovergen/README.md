@@ -6,8 +6,8 @@ and `HeritageHover.ts`, round three in `round3.ts` and `Round3Hover.ts`, round f
 appear under the hovercraft in the shared vehicle lab; a round is never deleted.
 
 The owner rejected round one's proportions and requested five variants closer to
-the original hovercraft, including its rear spoiler, at roughly the buggy's size.
-The original mesh has broad shoulders, a pinched waist, rear haunches, an inset
+the hovercraft GLB, including its rear spoiler, at roughly the buggy's size.
+That mesh has broad shoulders, a pinched waist, rear haunches, an inset
 cockpit, a raised central chrome thruster and a spanning rear wing on swept supports.
 Round two uses those features rather than the first round's aircraft and lunar themes.
 
@@ -15,7 +15,7 @@ Reference measurements in metres, with forward along negative Z:
 
 | Reference | Width | Length | Height |
 | --- | --- | --- | --- |
-| Original hovercraft GLB | 2.519 | 3.150 | 1.003 |
+| Hovercraft GLB | 2.519 | 3.150 | 1.003 |
 | Approved Box arm buggy, including straight tyres | 2.690 | 4.009 | Suspension dependent |
 
 The buggy lead confirmed its approved details: sculpted flares, substantial box
@@ -26,7 +26,7 @@ The shared force field canopy and usable cockpit are owner requirements; the
 buggy's existing interior has not received separate visual approval.
 
 The five parameter sets are Original, Flare, Box, Arch and Sweep. All use the
-same original-derived hull stations. Shoulder width, waist width, rear width,
+same hull stations, derived from the GLB. Shoulder width, waist width, rear width,
 spoiler height and rake, chine lip, accent ribs and spoiler bridge are explicit
 parameters. Their colours remain editable in the lab. All geometry is generated;
 no new mesh or image files are loaded.
@@ -41,7 +41,7 @@ comparison and timing measurements must pass before this round is ready to publi
 
 On 15 November 2026 the owner accepted round two's proportions and rejected its
 fittings: the headlights and tail lamps sat at fixed coordinates and hung in the air
-beside the hull. He asked for ten explorations and reinterpretations of the original,
+beside the hull. He asked for ten explorations and reinterpretations of the GLB hovercraft,
 with styling from the approved jet and buggy.
 
 The rule for round three is that nothing is placed by coordinate. Each fitting asks
@@ -53,7 +53,7 @@ be inside the hull. `floating()` returns the anchors that are not, and
 `hover-round3.test.ts` requires none.
 
 A design is a recipe over one hull: nose lamps (socket, twin, visor), tail lamps (bars,
-band), thruster (the original stalk, the jet's hex ring, twin booms, through the
+band), thruster (the central stalk, the jet's hex ring, twin booms, through the
 stern), spoiler (classic, box, hex, fins, tee, arch, duck), vents, stripe and chine,
 plus hull multipliers. From the buggy: recessed lamps in dark sockets, centre stripe,
 flank vents, box supports with accent ribs. From the jet: the six-sided ring, faceted
@@ -89,7 +89,7 @@ is good enough to ship. Go with this one for now"). He had ruled that the game s
 approved design per vehicle with no selector, so `Hovercraft.ts` builds exactly that
 design through `GameHover`: no model file, no loading state, the cockpit flag set, three
 detail levels, and a collision hull and clearance guard that follow the body's bounds.
-Mass, inertia and the glide are those of the original. An earlier `hover.body` selector
+Mass, inertia and the glide are unchanged. An earlier `hover.body` selector
 (commit 7e1b2ff) was removed for that ruling.
 
 Craft of the same design share generated geometry (`levelCache` in `Round3Hover.ts`).
