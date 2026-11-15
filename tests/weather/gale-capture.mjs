@@ -1,6 +1,5 @@
 // Wind evidence in a browser: a zorb ball and a plain buggy left alone on the volcano's upper
-// slope, in still air and in a gale, with the weather system added to the running game the
-// way main.ts will add it. Writes screenshots and prints the drift.
+// slope, in still air and in a gale, with the weather system main.ts runs. Writes screenshots and prints the drift.
 //   SYN3H_NO_ROOM_SERVER=1 npx vite --port 5317 --strictPort
 //   node tests/weather/gale-capture.mjs [url] [outdir]
 import { chromium } from 'playwright-core'
@@ -23,7 +22,6 @@ try {
       s.params.set('bots.count', 0); s.params.set('sun.timeOfDay', 12); s.params.set('sun.dayLength', 0)
       const w = await import('/src/world/weather/index.ts')
       window.weather = w
-      s.game.add(new w.WeatherSystem(() => s.terrain, () => [s.player]))
     })
     // Two thirds of the way up the volcano road: steep, high, open.
     const spot = await page.evaluate(() => {
