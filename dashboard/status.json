@@ -31,7 +31,7 @@
     {
       "state": "waiting",
       "title": "Revoke three old API keys",
-      "detail": "Google Maps, Bing and WRLD keys are committed in the public legacy-unity-syn3h-client repo."
+      "detail": "Three third-party map service keys from earlier work need revoking. Details are kept out of this public page."
     }
   ],
   "knownIssues": [
