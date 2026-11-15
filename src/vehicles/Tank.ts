@@ -27,10 +27,10 @@ export const tankClimb=defineParam({id:'tank.climb',label:'Steepest climb, degre
 /**
  * The body the tank wears: the id of one design in tankDesigns (round9.ts, round8.ts), or null for the Mars
  * Explorer model. The game ships one approved design and offers no choice, so this is a
- * constant and not a parameter. It stays null until the owner gives final approval: he approved
- * the round nine Fork on 15 November 2026 and withdrew it within minutes of seeing it drive.
+ * constant and not a parameter. The owner gave final approval to round ten's Sherpa on
+ * 15 November 2026, after approving and then withdrawing the round nine Fork the same morning.
  */
-const APPROVED_BODY:string|null=null
+const APPROVED_BODY:string|null='r10-sherpa'
 // Development servers only: ?tankBody=r8-dart drives a candidate before it is approved.
 const TRIAL_BODY=import.meta.env.DEV&&typeof location!=='undefined'?new URLSearchParams(location.search).get('tankBody'):null
 /** Every body a tank can wear, latest round first. */
@@ -54,6 +54,9 @@ const POD_LENGTH=2.1,POD_HEIGHT=1.37
 // weighs 1 kg, so the pods ride level with the hull origin. The cast starts at CAST_Y and the support
 // spring is SPRING_LENGTH long, which rests the pod centre at hull-local 0 under the tank's weight.
 const CAST_Y=.115,SPRING_LENGTH=.6,SPRING=4000,DAMPER=450,POD_DROOP=.25
+// Longest half-length the chassis box takes from a body. Past this a 300 m/s dive needs the
+// ground guard (tests/vehicles2/ground-guard.test.ts); a longer nose overhangs the box a little.
+const BOX_LONGEST=3.4
 // Ground under a resting tank, below the body origin: half a pod. The generated bodies are
 // modelled standing on y = 0 and are hung this far down.
 const GROUND=POD_HEIGHT/2
@@ -123,7 +126,7 @@ export class Tank extends Vehicle {
     // generated body longer than that gets a box as long as it is: a nose that passes through
     // a wall would take the driver's eye with it. Width, height and clearance are the original's.
     const hull=design?.hull()
-    this.chassis=this.game.world.createCollider(RAPIER.ColliderDesc.cuboid(1.25,.75,Math.max(2.5,hull?.halfLength??0)).setTranslation(0,1,0).setDensity(0).setCollisionGroups(Vehicle.chassisGroups()),this.body)
+    this.chassis=this.game.world.createCollider(RAPIER.ColliderDesc.cuboid(1.25,.75,Math.min(BOX_LONGEST,Math.max(2.5,hull?.halfLength??0))).setTranslation(0,1,0).setDensity(0).setCollisionGroups(Vehicle.chassisGroups()),this.body)
     this.setMass()
     if(!design||!hull){this.legacy();return}
     const tank=new ExpeditionTank(hull,design.color,design.accent)
