@@ -23,19 +23,19 @@ function haze(density: number, height: number, tint: [number, number, number], a
 
 export const PLANET_WEATHER: Record<string, Record<string, ParamValue>> = {
   /** Ash haze: grey brown, over the plains, with the cone standing out of it. */
-  volcanic: haze(0.0009, 35, [0.72, 0.62, 0.56], 0.35),
+  volcanic: haze(0.0024, 40, [0.72, 0.62, 0.56], 0.35),
   /** Warm dust, low and thick over the dunes. */
-  desert: haze(0.001, 30, [1, 0.8, 0.55], 0.45),
+  desert: haze(0.0022, 35, [1, 0.8, 0.55], 0.45),
   /** Cool valley mist that the peak rises out of. */
-  alpine: haze(0.0014, 25, [0.84, 0.9, 1], 0.3),
+  alpine: haze(0.003, 30, [0.84, 0.9, 1], 0.3),
   /** Sea mist hugging the water between the islands. */
-  archipelago: haze(0.0011, 22, [0.8, 0.9, 0.95], 0.25),
+  archipelago: haze(0.0024, 26, [0.8, 0.9, 0.95], 0.25),
   /** Thin, bright ice crystal haze. */
-  ice: haze(0.0005, 40, [0.8, 0.9, 1], 0.4),
+  ice: haze(0.0012, 45, [0.8, 0.9, 1], 0.4),
   /** Dark smoke over black glass. */
-  obsidian: haze(0.001, 60, [0.45, 0.4, 0.52], 0.4),
+  obsidian: haze(0.002, 45, [0.45, 0.4, 0.52], 0.4),
   /** Ochre dust. */
-  badlands: haze(0.0008, 40, [1, 0.7, 0.45], 0.45),
+  badlands: haze(0.002, 45, [1, 0.7, 0.45], 0.45),
   /** Thick green methane murk, low over the water. */
   swamp: haze(0.0016, 30, [0.7, 0.9, 0.5], 0.5),
   /** No air: no haze. */
