@@ -9,7 +9,7 @@
  */
 import * as THREE from 'three/webgpu'
 import { attribute, float, fract, smoothstep, uniform, uv, vec2, vec3 } from 'three/tsl'
-import { windX, windZ } from '../../fx/params'
+import { windDrift } from '../weather'
 
 export interface Fall {
   /** Canonical tile position of the plunge pool. */
@@ -94,9 +94,13 @@ export class WaterfallMist {
     this.parent.add(this.mesh)
   }
 
-  update(dt: number, cameraX: number, cameraZ: number): void {
+  private readonly drift = { x: 0, y: 0, z: 0 }
+
+  update(dt: number, cameraX: number, cameraZ: number, cameraY = 0): void {
     this.clock.value += dt
-    this.wind.value.set(windX.value, windZ.value)
+    // The wind where the camera is: mist is only seen nearby, and one sample keeps it one draw.
+    windDrift(cameraX, cameraY, cameraZ, this.drift)
+    this.wind.value.set(this.drift.x, this.drift.z)
     this.camera.value.set(cameraX, cameraZ)
   }
 

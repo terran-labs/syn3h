@@ -22,8 +22,7 @@ import {
   abs, attribute, cameraPosition, cameraViewMatrix, color, cos, faceDirection, float, max, mix, modelWorldMatrix,
   mx_noise_float, normalize, positionGeometry, positionLocal, positionWorld, sin, smoothstep, time, uniform, uv, vec3, vec4,
 } from 'three/tsl'
-import { WAVE_COUNT } from '../../../shared/water/waves'
-import { seaWaves, waveScale } from './seaWaves'
+import { SEA_COMPONENTS as WAVE_COUNT, seaWaves, waveScale } from './seaWaves'
 import { rippleField } from './ripples'
 
 /** A float node that sums are folded into. TSL's operator typings do not narrow through a loop. */
