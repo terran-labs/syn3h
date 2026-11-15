@@ -105,8 +105,8 @@ async function main(): Promise<void> {
     ignoreRecommendation: () => game.quality.ignoreRecommendation(),
     lowerRecommendedTier: () => game.quality.lowerRecommendedTier(),
   })
-  // An idle lobby turns into a cinematic tour of the volcano, following a bot if there is one.
-  shell.setAttractCamera(camera, () => bots.vehicles)
+  // The descent from the galaxy poses this camera.
+  shell.setCinematicCamera(camera)
   // Nearby bots are audible, positioned in space. Remote players join this list later.
   audio.setVehicles(() => bots.vehicles)
   // Two triggers, one state (src/core/pause.ts): the page being hidden, and the player's own

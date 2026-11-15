@@ -10,10 +10,9 @@ describe('view state from the shell', () => {
     expect(viewState(shell('is-playing', 'is-galaxy'))).toBe('playing')
     // The plain lobby shows the world behind it.
     expect(viewState(shell())).toBe('lobby')
-    // The galaxy hides it, except while descending into it or touring it.
+    // The galaxy hides it, except while descending into it.
     expect(viewState(shell('is-galaxy'))).toBe('covered')
     expect(viewState(shell('is-galaxy', 'is-descending'))).toBe('lobby')
-    expect(viewState(shell('is-galaxy', 'is-attract'))).toBe('lobby')
   })
 })
 

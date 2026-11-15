@@ -36,7 +36,6 @@ import { graphicsLevel, levelNumber } from '../core/quality'
 import { camDistance, camFov, camHeight, camOffset } from '../core/ChaseCamera'
 import { arrivalPath } from '../core/arrival'
 import { applyPlanet, currentPlanet, encodeWorld, planetName } from '../world/planets'
-import { AttractMode, type CinematicCamera } from './AttractMode'
 import { InviteView, inviteUrl, renderQr } from './InviteView'
 import { Scoreboard, parseScoreRow } from './Scoreboard'
 import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
@@ -74,6 +73,11 @@ declare const __SYN3H_BUILD__: string | undefined
 const buildLine = typeof __SYN3H_BUILD__ === 'string' && __SYN3H_BUILD__ ? `build version : ${__SYN3H_BUILD__}` : 'browser edition'
 const heading = (text: string) => `<h2 tabindex="-1">${text}</h2>`
 
+/** A camera that can be posed from outside, used by the descent from the galaxy. */
+export interface CinematicCamera {
+  setCinematicPose(position: Vector3, target: Vector3): void
+  clearCinematicPose(): void
+}
 export class Shell implements System {
   readonly element = document.createElement('div')
   onPlay?: () => void
@@ -83,9 +87,7 @@ export class Shell implements System {
   private readonly overlay: HTMLElement
   private readonly speed: HTMLElement
   private readonly choice: VehicleChoice = readVehicleChoice()
-  private attract?: AttractMode
   private lastActivity = performance.now()
-  private requestedAttract = new URL(location.href).searchParams.get('attract') === '1'
   private readonly invite: InviteView
   private inviteOpen = false
   private inviteFromGame = false
@@ -298,7 +300,6 @@ export class Shell implements System {
     this.element.querySelector('#host-lock')!.addEventListener('change', event => { const net = hostControls(); if (net?.isHost) net.setLocked((event.target as HTMLInputElement).checked) }, { signal })
     const activity = (event: Event) => {
       this.lastActivity = performance.now()
-      if (this.attract?.active && event.type !== 'pointermove') { this.stopAttract(); event.preventDefault(); event.stopImmediatePropagation() }
     }
     for (const type of ['keydown', 'pointerdown', 'wheel', 'pointermove']) window.addEventListener(type, activity, { capture: true, signal, passive: false })
     window.addEventListener('keydown', event => this.keydown(event), { capture: true, signal })
@@ -393,11 +394,15 @@ export class Shell implements System {
     this.lastMatch=state?{...state}:null
     this.matchHud.setState(state)
   }
-  setTerrain(terrain: Terrain): void { this.ground = terrain; this.minimap?.dispose(); this.minimap = new Minimap(terrain, this.element); this.attract?.dispose(); this.attract = new AttractMode(terrain, this.element) }
-  setAttractCamera(camera: CinematicCamera, bots: () => readonly Vehicle[] = () => []): void { this.cinematic = camera; this.attract?.setCamera(camera, bots) }
-  startAttract(): void { if (!this.started && !this.inviteOpen) this.attract?.start() }
-  stopAttract(): void { this.attract?.stop(); this.lastActivity = performance.now(); this.requestedAttract = false }
-  get attracting(): boolean { return this.attract?.active ?? false }
+  setTerrain(terrain: Terrain): void { this.ground = terrain; this.minimap?.dispose(); this.minimap = new Minimap(terrain, this.element); }
+  /** The camera the descent from the galaxy drives. */
+  setCinematicCamera(camera: CinematicCamera): void { this.cinematic = camera }
+  /**
+   * The idle volcano tour is gone (owner, 15 November 2026: it must never show). These two
+   * remain only because browser test scripts still call them; remove both with those calls.
+   */
+  stopAttract(): void { this.lastActivity = performance.now() }
+  get attracting(): boolean { return false }
   setMapEntities(entities: readonly MapEntity[]): void { this.minimap?.setEntities(entities) }
   setMapSelf(entity: MapEntity): void { this.self = entity; this.minimap?.setSelf(entity) }
   /** The player's speed (m/s) and height above the ground (m), for the focus display. */
@@ -1231,12 +1236,6 @@ export class Shell implements System {
     if (count !== this.playerCount) { this.playerCount = count; this.updateInvite() } }
   setSpeed(metresPerSecond: number): void { this.speed.textContent = String(Math.round(Math.abs(metresPerSecond) * 2.23694)) }
   update(dt = 0): void {
-    if (this.attract && !this.attract.ready) {
-      const debug = (window as unknown as { syn3h?: { camera?: CinematicCamera; bots?: { vehicles: readonly Vehicle[] } } }).syn3h
-      if (debug?.camera?.setCinematicPose) this.setAttractCamera(debug.camera, () => debug.bots?.vehicles ?? [])
-    }
-    if (!this.started && !this.inviteOpen && !this.attract?.active && (this.requestedAttract || performance.now() - this.lastActivity > 20000)) this.startAttract()
-    this.attract?.update(dt)
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
     // A captured cursor alone is insufficient while a menu or another flow suspends input.
     this.syncPanels()
@@ -1301,7 +1300,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }
