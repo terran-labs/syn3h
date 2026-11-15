@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { defineConfig, type Plugin } from 'vite'
+import { type Plugin } from 'vite'
+import { defineConfig } from 'vitest/config'
+import { manualReload } from './tools/manual-reload.mjs'
 
 // When launched by the preview broker, PASEO_PREVIEW_ORIGIN is the HTTPS origin the owner
 // opens. Hot reload has to connect back through it over WSS.
@@ -26,7 +28,8 @@ function roomServer(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [roomServer()],
+  // manualReload: a merge shows a "new build available" notice instead of resetting the page.
+  plugins: [roomServer(), manualReload()],
   server: {
     host: '127.0.0.1',
     port: 5173,
@@ -36,4 +39,6 @@ export default defineConfig({
     hmr: origin ? { protocol: 'wss', host: origin.hostname, clientPort: Number(origin.port || 443) } : undefined,
   },
   build: { target: 'es2022', sourcemap: true },
+  // tools/*.test.mjs use node:test and are run with `node --test`, not vitest.
+  test: { exclude: ['**/node_modules/**', '**/dist/**', 'tools/**'] },
 })

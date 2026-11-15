@@ -2,6 +2,7 @@
  * Composition root. Builds the world from the four seams and starts the loop.
  * Keep this file small: features belong behind the seams, not here.
  */
+import { prepareResume, ResumeSession, RESUME_KEY } from './core/resume'
 import { params, worldSeed } from '../shared/params'
 import { BotManager } from './bots/BotManager'
 import { ChaseCamera } from './core/ChaseCamera'
@@ -10,7 +11,7 @@ import { startNetworking } from './net'
 import { ParamPanel } from './ui/ParamPanel'
 import { generateName } from './ui/data/names'
 import { initGameShell } from './ui/Shell'
-import { readVehicleChoice } from './ui/VehicleChoice'
+import { readVehicleChoice, saveVehicleChoice } from './ui/VehicleChoice'
 import { type VehicleKind, createVehicle } from './vehicles'
 import { attachVehicleEffects } from './vehicles/effects'
 import { createEnvironment } from './world/Environment'
@@ -22,6 +23,13 @@ async function main(): Promise<void> {
   const query = new URLSearchParams(location.search)
   if (query.has('seed')) params.set(worldSeed.def.id, query.get('seed'), 'preset')
 
+  const saved = prepareResume(query)
+  if (saved && !query.has('room')) {
+    query.set('room', saved.room)
+    const url = new URL(location.href)
+    url.searchParams.set('room', saved.room)
+    history.replaceState(null, '', url)
+  }
   const game = new Game(canvas)
   await game.init()
 
@@ -32,7 +40,8 @@ async function main(): Promise<void> {
 
   const spawn = terrain.spawnPoint(0)
   // The vehicle comes from ?vehicle=..., else the choice saved by the lobby, else the Syn3h buggy.
-  const choice = readVehicleChoice()
+  const choice = saved ? { vehicleKind: saved.kind, bodyColor: saved.colors.body, accentColor: saved.colors.accent } : readVehicleChoice()
+  if (saved) saveVehicleChoice(choice)
   const kind = (query.get('vehicle') ?? choice.vehicleKind ?? 'buggy') as VehicleKind
   const player = createVehicle(game, terrain, kind, spawn.position, spawn.heading)
   player.isLocal = true
@@ -58,6 +67,8 @@ async function main(): Promise<void> {
   const { shell, audio } = initGameShell(game, player, terrain)
   // An idle lobby turns into a cinematic tour of the volcano, following a bot if there is one.
   shell.setAttractCamera(camera, () => bots.vehicles)
+  // Nearby bots are audible, positioned in space. Remote players join this list later.
+  audio.setVehicles(() => bots.vehicles)
   let netStatus: string[] = []
   let joined = false
   const join = () => {
@@ -67,13 +78,19 @@ async function main(): Promise<void> {
     if (!query.has('vehicle') && shell.vehicleKind !== player.kind && !(shell.vehicleKind === 'buggy-syn3h' && player.kind === 'buggy')) {
       const url = new URL(location.href)
       url.searchParams.set('autoplay', '1')
+      // An explicit lobby vehicle change starts a new session.
+      try { sessionStorage.removeItem(RESUME_KEY) } catch {}
       location.replace(url)
       return
     }
     joined = true
     player.name = shell.playerName
     player.setColors?.(shell.bodyColor, shell.accentColor)
-    startNetworking({
+    const joinedRoom = shell.room || query.get('room') || 'lobby'
+    const joinedUrl = new URL(location.href)
+    joinedUrl.searchParams.set('room', joinedRoom)
+    history.replaceState(null, '', joinedUrl)
+    const connection = startNetworking({
       game, terrain, player, audio, bots,
       kind: player.kind,
       colors: { body: shell.bodyColor, accent: shell.accentColor },
@@ -84,6 +101,7 @@ async function main(): Promise<void> {
       setMatchState: (m) => shell.setMatchState(m),
       names: (seed, kind) => generateName(seed, kind),
     })
+    game.add(new ResumeSession({ game, terrain, player, room: shell.room || query.get('room') || 'lobby', saved, network: connection }))
   }
   shell.onPlay = join
   if (query.has('autoplay')) shell.play()
