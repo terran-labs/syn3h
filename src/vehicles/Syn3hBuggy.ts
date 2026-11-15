@@ -21,7 +21,7 @@ import {
   buggyGripFade, buggyIdleHold, buggyNextGen, buggyPower, buggyRebound, buggyRegen, buggyRideHeight, buggyShocks, buggySideGrip, buggySlide, buggySpeed, buggySteerLimit,
   buggyTraction,
 } from './buggyParams'
-import { applyLava, floatPoints, lavaViscosity } from './lava'
+import { type LavaInput, applyLava, floatPoints, lavaViscosity } from './lava'
 import type { BuggySkin } from './skins/BuggySkin'
 import { type MotorDriveInput, motorDrive, smoothEffort } from './skins/motorDrive'
 import { DEG, UnityBody, lerp, signedAngle, unityEulerAngles } from './unityBody'
@@ -319,6 +319,19 @@ export class Syn3hBuggy extends Vehicle {
   private liquidAt(x: number, z: number): number {
     return this.terrain.liquidHeightAt?.(x, z) ?? worldLavaAltitude.value
   }
+  /** Persistent liquidAt callback and input for applyLava, which keeps neither past the call. */
+  private readonly liquidAtFn = (x: number, z: number): number => this.liquidAt(x, z)
+  private readonly lavaInput: LavaInput = { x: 0, y: 0, wingsOpen: false }
+
+  /**
+   * UnityBody.velocity into a scratch vector: the same body.linvel() read at the same moment,
+   * without the fresh THREE.Vector3 the getter returns.
+   */
+  private readonly vel = new THREE.Vector3()
+  private velocityNow(): THREE.Vector3 {
+    const v = this.body.linvel()
+    return this.vel.set(v.x, v.y, v.z)
+  }
 
   // ---- input: Vhicl.FixedUpdate smoothing and VhiclMe mapping ----------------------------
 
@@ -460,7 +473,7 @@ export class Syn3hBuggy extends Vehicle {
     // Water does the same more gently, so the wheels are not at full speed when they touch
     // the beach. inLiquid is last step's value here.
     if (this.lavaDepth > 0 || this.inLiquid) {
-      const vf = ub.inverseTransformDirectionUnity(ub.velocity, this.v1).z
+      const vf = ub.inverseTransformDirectionUnity(this.velocityNow(), this.v1).z
       const drag = this.lavaDepth > 0 ? lavaViscosity.value : WATER_MOTOR_DRAG
       this.motorSpeed = vf + (this.motorSpeed - vf) * Math.exp(-drag * dt)
     }
@@ -566,9 +579,11 @@ export class Syn3hBuggy extends Vehicle {
     // Water: float and paddle (Mars Explorer Buggy.js 435-475, see lava.ts), after drag like the
     // original. applyLava does nothing in lava, which is sticky instead: the base class applies
     // that after this controller and sets inLiquid, lavaDepth and stuck.
-    this.inLiquid = applyLava(ub, FLOAT_POINTS, (x, z) => this.liquidAt(x, z), {
-      x: smoothed.x, y: smoothed.y, wingsOpen: this.areWingsOpen,
-    })
+    const lavaIn = this.lavaInput
+    lavaIn.x = smoothed.x
+    lavaIn.y = smoothed.y
+    lavaIn.wingsOpen = this.areWingsOpen
+    this.inLiquid = applyLava(ub, FLOAT_POINTS, this.liquidAtFn, lavaIn)
 
     ub.flush(dt)
   }
@@ -675,7 +690,7 @@ export class Syn3hBuggy extends Vehicle {
    * In regen and hold the motor is a fixed reference the tyres pull the body toward.
    */
   private drivetrain(dt: number, y: number): void {
-    const vf = this.ub.inverseTransformDirectionUnity(this.ub.velocity, this.v1).z
+    const vf = this.ub.inverseTransformDirectionUnity(this.velocityNow(), this.v1).z
     const throttle = Math.abs(y) > THROTTLE_DEADZONE
     if (this.brakes) {
       this.drive = 'hold'
@@ -732,7 +747,7 @@ export class Syn3hBuggy extends Vehicle {
     )
     const mis = this.motorInputSmoothed
     const stallSpeed = 16
-    const vel = ub.velocity
+    const vel = this.velocityNow()
     const locVel = ub.inverseTransformDirectionUnity(vel, this.v1)
     const e = unityEulerAngles(q, this.euler)
     const roll = signedAngle(e.z)
@@ -801,30 +816,42 @@ export class Syn3hBuggy extends Vehicle {
    * it) would otherwise switch the suspension and tyres off until a ground contact cleared it.
    */
   private selfRight(dt: number, speedSq: number): void {
-    const world = this.game.world
-    const n = this.v1
     const w = this.body.angvel()
-    const angSq = w.x * w.x + w.y * w.y + w.z * w.z
-    for (const collider of [this.hull, this.skid]) {
-      world.contactPairsWith(collider, (other) => {
-        world.contactPair(collider, other, (manifold, flipped) => {
-          let count = 0
-          for (let c = manifold.numContacts() - 1; c >= 0; c--) if (manifold.contactDist(c) < CONTACT_TOUCH) count++
-          if (count === 0) return
-          const mn = manifold.normal()
-          n.set(mn.x, mn.y, mn.z)
-          if (!flipped) n.negate()
-          const angle = this.up.angleTo(n) * DEG
-          for (let c = 0; c < count; c++) {
-            if (this.isInverted && angle < 50) this.isInverted = false
-            else if (!this.isInverted && angle > 90 && this.up.y < 0) this.isInverted = true
-            if (this.isInverted && angSq < 2 && speedSq < 8) {
-              this.v2.crossVectors(this.up, UP).multiplyScalar(this.up.angleTo(UP) * DEG * 0.5)
-              this.ub.addTorqueAcceleration(this.v2, dt)
-            }
-          }
-        })
-      })
+    this.srDt = dt
+    this.srSpeedSq = speedSq
+    this.srAngSq = w.x * w.x + w.y * w.y + w.z * w.z
+    // Hull, then skid plate, as before. The callbacks are persistent so a step allocates none.
+    this.srCollider = this.hull
+    this.game.world.contactPairsWith(this.hull, this.onContactPairWith)
+    this.srCollider = this.skid
+    this.game.world.contactPairsWith(this.skid, this.onContactPairWith)
+  }
+
+  // selfRight() state for its persistent callbacks below: the collider being walked and the
+  // step's inputs.
+  private srCollider: RAPIER.Collider | null = null
+  private srDt = 0
+  private srSpeedSq = 0
+  private srAngSq = 0
+  private readonly onContactPairWith = (other: RAPIER.Collider): void => {
+    this.game.world.contactPair(this.srCollider!, other, this.onContactManifold)
+  }
+  private readonly onContactManifold = (manifold: RAPIER.TempContactManifold, flipped: boolean): void => {
+    const n = this.v1
+    let count = 0
+    for (let c = manifold.numContacts() - 1; c >= 0; c--) if (manifold.contactDist(c) < CONTACT_TOUCH) count++
+    if (count === 0) return
+    const mn = manifold.normal()
+    n.set(mn.x, mn.y, mn.z)
+    if (!flipped) n.negate()
+    const angle = this.up.angleTo(n) * DEG
+    for (let c = 0; c < count; c++) {
+      if (this.isInverted && angle < 50) this.isInverted = false
+      else if (!this.isInverted && angle > 90 && this.up.y < 0) this.isInverted = true
+      if (this.isInverted && this.srAngSq < 2 && this.srSpeedSq < 8) {
+        this.v2.crossVectors(this.up, UP).multiplyScalar(this.up.angleTo(UP) * DEG * 0.5)
+        this.ub.addTorqueAcceleration(this.v2, this.srDt)
+      }
     }
   }
 
