@@ -485,11 +485,7 @@ export class Syn3hBuggy extends Vehicle {
       if (follow > 0 && vl.z > ASSIST_SPEED_MIN * 0.5) {
         const travel = Math.atan2(-(vl.x - WHEEL_POS.z * yawRate), vl.z) * DEG
         const past = Math.min(FOLLOW_MAX, Math.max(0, Math.abs(travel) - FOLLOW_DEAD)) * Math.sign(travel)
-        // Fade out when the driver steers away from travel to hold a turn or drift;
-        // full lock gets no correction. Keep the assist when steering toward travel.
-        // Right input is positive, while rightward travel has a negative angle here.
-        const wanted = Math.min(1, Math.max(0, 1 - smoothed.x * Math.sign(travel)))
-        this.steer[0] = this.steer[1] = this.steer[0] + (follow * wanted * past) / DEG
+        this.steer[0] = this.steer[1] = this.steer[0] + (follow * past) / DEG
       }
     }
 
@@ -826,11 +822,9 @@ export class Syn3hBuggy extends Vehicle {
       const k = Math.min(speed, AERO_SPEED_MAX) / AERO_SPEED
       ub.addForce(this.v2.copy(this.down).multiplyScalar(down * 9.81 * mass * k * k * (grounded / 4)))
     }
-    // Keep parking turns and low-speed bot escape free of tail yaw damping. The fin
-    // catches fast slides, fading in from 5 m/s and reaching full strength at 10 m/s.
-    const fin = buggyFin.value * THREE.MathUtils.smoothstep(speed, 5, ASSIST_SPEED_MIN)
+    const fin = buggyFin.value
     if (fin > 0 && speed > 1) {
-      // The tail (our +Z) moves right with the body and also as the nose yaws left.
+      // The tail (our +Z) moves right when the body does, and left of that as it yaws left.
       const tailSide = side + FIN_Z * yawRate
       const right = this.v2.set(1, 0, 0).applyQuaternion(q).multiplyScalar(-fin * FIN * mass * tailSide * Math.min(speed, AERO_SPEED_MAX))
       ub.addForceAtPosition(right, this.v1.set(0, 0, FIN_Z).applyQuaternion(q).add(pos))

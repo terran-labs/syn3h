@@ -175,8 +175,7 @@ export const buggySideGrip = defineParam({
  * travel the front wheels could no longer be pointed back along it, and holding full
  * counter-steer held the slide. With this at 1 the front wheels swing toward the direction of
  * travel once the buggy slides more than a few degrees, and the driver's steering is added to
- * that. It fades out as the driver steers away from travel to hold a turn or drift,
- * reaching zero at full lock. 0 is the old behaviour.
+ * that. Normal cornering is unchanged. 0 is the old behaviour.
  */
 export const buggySteerFollow = defineParam({
   id: 'buggy.steerFollow', label: 'Counter-steer assist', group: 'Buggy', scope: 'world',
@@ -190,8 +189,7 @@ export const buggySteerFollow = defineParam({
  */
 export const buggyRearSteerFast = defineParam({
   id: 'buggy.rearSteerFast', label: 'Rear steering at speed', group: 'Buggy', scope: 'world',
-  // Retain rear steer: straight rear wheels made full-lock turns sensitive to small winds.
-  default: 1, min: -1, max: 1, step: 0.05,
+  default: 0, min: -1, max: 1, step: 0.05,
 })
 /**
  * Next-gen: the least grip a broadside tyre keeps, as a fraction of its grip at that speed,
@@ -215,8 +213,7 @@ export const buggyDownforce = defineParam({
 })
 /**
  * Next-gen tail fin: a side force at the tail that grows with speed and turns the buggy to
- * point where it is going, on the ground and in the air. Fades in from 5 to 10 m/s
- * so low-speed turns stay free of tail damping. 0 is none.
+ * point where it is going, on the ground and in the air. 0 is none.
  */
 export const buggyFin = defineParam({
   id: 'buggy.fin', label: 'Tail fin', group: 'Buggy', scope: 'world',

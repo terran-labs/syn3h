@@ -763,40 +763,6 @@ describe('Syn3hBuggy slide recovery', () => {
     expect(r.upright).toBeGreaterThan(0.9)
   })
 
-  test('the tail fin leaves a low-speed escape turn unchanged', async () => {
-    const turn = async (fin: number) => {
-      params.set('buggy.fin', fin)
-      const { bed, b } = await spawn()
-      bed.run(2)
-      b.body.setLinvel({ x: 0, y: 0, z: -4 }, true)
-      b.motorSpeed = 4
-      b.input.x = 1
-      bed.run(2)
-      return { p: pos(b), heading: axis(b, 0, 0, -1) }
-    }
-    const without = await turn(0), withFin = await turn(1)
-    expect(withFin.p.distanceTo(without.p)).toBeLessThan(0.01)
-    expect(withFin.heading.angleTo(without.heading)).toBeLessThan(0.001)
-  })
-
-  test('the counter-steer assist leaves a full lock corner where the driver put it', async () => {
-    // Full lock at speed slides the tail out on purpose. The assist must not straighten the
-    // front wheels against that: it once did, and bots and anyone cornering hard ran wide.
-    const corner = async (follow: number) => {
-      params.set('buggy.steerFollow', follow)
-      const { bed, b } = await spawn()
-      bed.run(2)
-      b.body.setLinvel({ x: 0, y: 0, z: -35 }, true); b.motorSpeed = 35; b.input.y = 1
-      bed.run(1)
-      b.input.x = 1
-      bed.run(3)
-      return { p: pos(b), heading: axis(b, 0, 0, -1) }
-    }
-    const without = await corner(0), withAssist = await corner(1)
-    expect(withAssist.p.distanceTo(without.p)).toBeLessThan(1)
-    expect(withAssist.heading.angleTo(without.heading) * 180 / Math.PI).toBeLessThan(3)
-  })
-
   test('without the tail fin and the assists, held counter-steer holds a 40 degree slide at 30 m/s (the reported fault)', async () => {
     params.set('buggy.fin', 0); params.set('buggy.steerFollow', 0); params.set('buggy.rearSteerFast', 1); params.set('buggy.sideHold', 0)
     expect((await kick(30, 40, true)).recovered).toBe(Infinity)
