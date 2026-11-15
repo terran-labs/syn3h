@@ -61,6 +61,18 @@ export class ProceduralTerrain implements Terrain {
   private pending = false
   private readonly lodSystem: System
   private wasRound = false
+  private cameraLed = false
+  private followCamera: () => void = () => {}
+
+  /**
+   * Call once per frame after the camera has moved (register a system after the camera's).
+   * The round planet, levels of detail and horizon culling are all measured from the
+   * camera, so doing them before it moves would draw the world one frame behind it.
+   */
+  afterCamera(): void {
+    this.cameraLed = true
+    this.followCamera()
+  }
   /** The sea, lava lake, rivers and vents drawn from the generated data. */
   private readonly volcanics: Volcanics
   private readonly trees: Trees
@@ -79,7 +91,11 @@ export class ProceduralTerrain implements Terrain {
       // Before each physics step, and before the vehicles' own steps: carry things across
       // the seam and keep the ground under them.
       fixedUpdate: () => this.keepSeam(),
-      update: () => {
+      // Until something calls afterCamera() itself, do the camera-dependent work here.
+      update: () => { if (!this.cameraLed) this.followCamera() },
+    })
+    this.followCamera = () => {
+      {
         // Curved horizon. Every material in the scene must take the same bend or its objects
         // float against the ground, so while the curve is on, the scene is walked every frame
         // (a few hundred objects) and anything new (a joined vehicle, rebuilt particles) is
@@ -105,8 +121,8 @@ export class ProceduralTerrain implements Terrain {
           })
           this.wasRound = round
         }
-      },
-    })
+      }
+    }
     this.volcanics = game.add(new Volcanics(
       game.scene, this.sampler,
       () => game.renderer.toneMappingExposure,
