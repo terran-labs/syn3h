@@ -26,8 +26,8 @@
  * Storminess thickens it a little and lifts it a little.
  */
 import * as THREE from 'three/webgpu'
-import { abs, atan, cameraPosition, dot, exp, float, length, max, mix, positionWorld, renderGroup, select, sqrt, uniform, vec2, vec3 } from 'three/tsl'
-import { defineParam, worldLavaAltitude } from '../../../shared/params'
+import { Fn, abs, atan, cameraPosition, dot, exp, float, length, max, mix, normalize, output, positionWorld, pow, renderGroup, select, sqrt, uniform, vec2, vec3, vec4 } from 'three/tsl'
+import { defineParam, params, worldLavaAltitude } from '../../../shared/params'
 import { curveFactor } from '../curve'
 import { atmosphereValue, storminess } from './params'
 
@@ -40,12 +40,12 @@ const group = 'Weather'
 /** Extinction per metre at sea level. 0.001 hides about two thirds of a hill 1 km away at the shore. */
 export const hazeDensity = defineParam({
   id: 'weather.hazeDensity', label: 'Haze at sea level', group, scope: w,
-  default: 0.0009, min: 0, max: 0.006, step: 0.00001,
+  default: 0.0024, min: 0, max: 0.006, step: 0.00001,
 })
 /** Metres over which the haze thins to a third. Low for valley mist, high for a dust storm. */
 export const hazeHeight = defineParam({
   id: 'weather.hazeHeight', label: 'Haze height (m)', group, scope: w,
-  default: 35, min: 5, max: 400, step: 1,
+  default: 40, min: 5, max: 400, step: 1,
 })
 /** Haze colour as a hue shift of the sky's own fog colour, so night stays dark. */
 export const hazeTintR = defineParam({ id: 'weather.hazeTintR', label: 'Haze tint red', group, scope: w, default: 0.72, min: 0, max: 1, step: 0.01 })
@@ -53,6 +53,28 @@ export const hazeTintG = defineParam({ id: 'weather.hazeTintG', label: 'Haze tin
 export const hazeTintB = defineParam({ id: 'weather.hazeTintB', label: 'Haze tint blue', group, scope: w, default: 0.56, min: 0, max: 1, step: 0.01 })
 /** 0 the sky's colour, 1 the tint's hue at the sky's brightness. */
 export const hazeTintAmount = defineParam({ id: 'weather.hazeTintAmount', label: 'Haze tint amount', group, scope: w, default: 0.35, min: 0, max: 1, step: 0.01 })
+
+/**
+ * Aerial perspective: a second, thin, high layer that makes distant ridges separate into
+ * layers and shift toward the sky's own hue. 0 leaves the picture exactly as it was. Asked
+ * for by the Post Effects lane for the owner's cinematic look.
+ */
+export const aerial = defineParam({ id: 'weather.aerial', label: 'Aerial perspective', group, scope: w, default: 0, min: 0, max: 3, step: 0.01 })
+/** Extinction per metre at sea level of the aerial layer at weather.aerial 1, and its scale height. */
+export const AERIAL_DENSITY = 0.0001
+export const AERIAL_HEIGHT = 1600
+/** Strength of the aerial layer's forward glow around the sun. */
+export const AERIAL_SUN_GLOW = 0.25
+
+/**
+ * Per channel weights for the aerial layer: the sky's Rayleigh scattering (sky.rayleighR, G
+ * and B over their mean), pulled halfway to grey so far terrain does not all turn one hue.
+ */
+export function aerialWeights(out = new THREE.Vector3()): THREE.Vector3 {
+  const r = Number(params.get('sky.rayleighR')?.value ?? 1), g = Number(params.get('sky.rayleighG')?.value ?? 1), b = Number(params.get('sky.rayleighB')?.value ?? 1)
+  const mean = (r + g + b) / 3 || 1
+  return out.set(0.5 + 0.5 * r / mean, 0.5 + 0.5 * g / mean, 0.5 + 0.5 * b / mean)
+}
 
 /** How much a gale (storminess 1) thickens and lifts the haze, beyond the calm values. */
 export const STORM_THICKEN = 0.6
@@ -81,12 +103,32 @@ export function hazeDepth(h: { density: number; height: number; sea: number }, f
   return h.density * L * mean
 }
 
+/** The sun as the aerial layer's glow needs it, read at render time. */
+export interface FogSun {
+  direction: () => THREE.Vector3
+  color: () => THREE.Color
+}
+
+/** Mean of exp(-a) between two scaled heights, the closed form shared by both layers. */
+function meanExp(ac: N, ap: N): N {
+  const d = ap.sub(ac) as N
+  const ec = exp(ac.negate()) as N
+  return select(abs(d).lessThan(1e-3), ec.mul(float(1).sub(d.mul(0.5))), ec.sub(exp(ap.negate())).div(d))
+}
+
 /**
- * Fog colour and factor for the scene's `fog(color, factor)` node: `color` (the sky's directional fog colour) and `uniformDensity` (the
- * existing `weather.fogDensity` uniform) come from Environment. Uniforms update once per
- * render from the sliders; dragging one never recompiles.
+ * The scene fog node for a colour and a per channel factor. three's own `fog()` takes one
+ * factor for all channels; the aerial layer needs three.
  */
-export function heightFog(color: N, uniformDensity: N): { color: N; factor: N } {
+export const weatherFogNode = Fn(([color, factor]: [N, N]) => vec4(mix((output as N).rgb, color, factor), (output as N).a))
+
+/**
+ * Fog colour and per channel factor for `weatherFogNode`: `color` (the sky's directional fog
+ * colour) and `uniformDensity` (the existing `weather.fogDensity` uniform) come from
+ * Environment, and `sun` for the aerial layer's glow. Uniforms update once per render from
+ * the sliders; dragging one never recompiles.
+ */
+export function heightFog(color: N, uniformDensity: N, sun?: FogSun): { color: N; factor: N } {
   const state = hazeNow()
   const tint = new THREE.Vector3(1, 1, 1)
   let tintAmount = 0
@@ -110,16 +152,31 @@ export function heightFog(color: N, uniformDensity: N): { color: N; factor: N } 
   const L = sqrt(ground.mul(ground).add(rise.mul(rise))) as N
   const ac = max(cam.y.sub(sea), -5.0).div(height) as N
   const ap = max(y.sub(sea), -5.0).div(height) as N
-  const d = ap.sub(ac) as N
-  const ec = exp(ac.negate()) as N
-  const mean = select(abs(d).lessThan(1e-3), ec.mul(float(1).sub(d.mul(0.5))), ec.sub(exp(ap.negate())).div(d)) as N
   const dist = L.mul(uniformDensity) as N
-  const tau = (density as N).mul(L).mul(mean).add(dist.mul(dist)) as N
-  const factor = float(1).sub(exp(tau.negate()))
+  const tau = (density as N).mul(L).mul(meanExp(ac, ap)).add(dist.mul(dist)) as N
+
+  // The aerial layer, per channel. Zero when weather.aerial is 0 or there is no air.
+  const aerialDensity = live(0, () => AERIAL_DENSITY * aerial.value * Math.max(0, Math.min(1, atmosphereValue())))
+  const weights = live(new THREE.Vector3(1, 1, 1), () => aerialWeights(weightsValue))
+  const ah = float(1 / AERIAL_HEIGHT)
+  const tauA = (aerialDensity as N).mul(L).mul(meanExp(max(cam.y.sub(sea), -5.0).mul(ah), max(y.sub(sea), -5.0).mul(ah))) as N
+  const tauRGB = vec3(tau, tau, tau).add((weights as N).mul(tauA)) as N
+  const factor = vec3(1, 1, 1).sub(exp(tauRGB.negate()))
 
   // Shift the hue toward the tint and keep the sky colour's brightness.
   const lumW = vec3(0.2126, 0.7152, 0.0722)
   const lum = dot(color, lumW) as N
   const tinted = (tintU as N).mul(lum.div(max(dot(tintU, lumW), 0.05)))
-  return { color: mix(color, tinted, tintAmountU), factor }
+  let fogged = mix(color, tinted, tintAmountU) as N
+  if (sun) {
+    // A low sun fills the far air: a forward lobe, in the aerial layer's share of the fog only.
+    const sunDir = live(new THREE.Vector3(0, 1, 0), sun.direction)
+    const sunColor = live(new THREE.Color(), sun.color)
+    const view = normalize(bent.sub(cam)) as N
+    const lobe = pow(max(dot(view, sunDir), 0.0), 8.0) as N
+    const share = tauA.div(tau.add(tauA).add(1e-6)) as N
+    fogged = fogged.add(vec3(sunColor as N).mul(lobe.mul(share).mul(AERIAL_SUN_GLOW)))
+  }
+  return { color: fogged, factor }
 }
+const weightsValue = new THREE.Vector3()

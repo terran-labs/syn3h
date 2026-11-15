@@ -8,7 +8,7 @@
  * one never recompiles a shader. The one exception is shadow quality, which rebuilds the light.
  */
 import * as THREE from 'three/webgpu'
-import { cameraPosition, fog, max, normalize, positionWorld, pow, renderGroup, uniform, vec2, vec3 } from 'three/tsl'
+import { cameraPosition, max, normalize, positionWorld, pow, renderGroup, uniform, vec2, vec3 } from 'three/tsl'
 import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js'
 import { params } from '../../shared/params'
 import type { Game, System } from '../core/Game'
@@ -21,7 +21,9 @@ import {
   sunE, sunlightColor, wrapHour, advanceHour, type RGB, type Vec3,
 } from './sky/skyMath'
 import * as P from './sky/skyParams'
-import { heightFog } from './weather/fog'
+import { applyBounce, lightSkyReflection } from './lightRig'
+import { heightFog, weatherFogNode } from './weather/fog'
+import { advanceCloudDrift } from './weather/clouds'
 
 export interface Environment extends System {
   /** Unit vector pointing from the ground toward the sun. Other systems may read it. */
@@ -102,6 +104,8 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
 
   const hemi = new THREE.HemisphereLight(0xffffff, 0xffffff, 1)
   scene.add(hemi)
+  const skyGround = new THREE.Color()
+  let reflectionSet = lightSkyReflection.value
 
   // Fog: coloured by the horizon in the direction you look ----------------------------------
   // Uniforms in the scene fog node stayed frozen at their first upload in r187 when left in
@@ -129,8 +133,9 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   scene.fog = null
   // Height fog (src/world/weather/fog.ts): per planet haze that thins with altitude, plus the
   // uniform fog density above.
-  const haze = heightFog(max(fogColor, vec3(0.0)), fogDensityU)
-  ;(scene as unknown as { fogNode: unknown }).fogNode = fog(haze.color, haze.factor)
+  // The sun is read at render time, after the state below exists.
+  const haze = heightFog(max(fogColor, vec3(0.0)), fogDensityU, { direction: () => sunDirection, color: () => sunColor })
+  ;(scene as unknown as { fogNode: unknown }).fogNode = weatherFogNode(haze.color, haze.factor)
 
   // State ---------------------------------------------------------------------------------
   let hour = wrapHour(P.sunTimeOfDay.value)
@@ -171,6 +176,8 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   })
 
   const update = (dt: number) => {
+    // Clouds drift downwind (src/world/weather/clouds.ts).
+    advanceCloudDrift(sky.cloudOffset.value, P.cloudSpeed.value, dt, _terrain)
     hour = advanceHour(hour, dt, P.sunDayLength.value)
     sunDirectionAt(hour, P.sunTilt.value, P.sunAzimuth.value, sun)
     sunDirection.set(sun[0], sun[1], sun[2])
@@ -219,7 +226,12 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
       z[0] * amb + MOON_TINT[0] * moonAmb, z[1] * amb + MOON_TINT[1] * moonAmb, z[2] * amb + MOON_TINT[2] * moonAmb,
       THREE.LinearSRGBColorSpace,
     )
-    hemi.groundColor.setRGB(m[0] * amb * 0.5, m[1] * amb * 0.5, m[2] * amb * 0.5, THREE.LinearSRGBColorSpace)
+    skyGround.setRGB(m[0] * amb * 0.5, m[1] * amb * 0.5, m[2] * amb * 0.5, THREE.LinearSRGBColorSpace)
+    // Warm bounce off the ground and the sky reflection strength (src/world/lightRig.ts);
+    // both at their defaults leave this exactly as before.
+    applyBounce(hemi.groundColor, skyGround, sunColor, light.position.y / Math.max(1e-6, light.position.length()))
+    // Written only when the slider moves, so the underwater look can still set its own.
+    if (lightSkyReflection.value !== reflectionSet) { reflectionSet = lightSkyReflection.value; scene.environmentIntensity = reflectionSet }
     hemi.intensity = 1
     horizonColor.setRGB(m[0], m[1], m[2], THREE.LinearSRGBColorSpace)
 

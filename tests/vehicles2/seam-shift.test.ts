@@ -4,6 +4,8 @@ import {initPhysics} from '../../src/core/physics'
 import {createVehicle,type VehicleKind} from '../../src/vehicles'
 import type {Vehicle} from '../../src/vehicles/Vehicle'
 import {harness} from './harness'
+import {params} from '../../shared/params'
+import {WeatherSystem,storminess,type WindVehicle} from '../../src/world/weather'
 beforeAll(initPhysics)
 const TILE=400
 type H=ReturnType<typeof harness>
@@ -88,5 +90,16 @@ describe('a whole tile shift at a seam leaves a vehicle undisturbed',()=>{
  it('the upright rescue timer is neither reset nor fired by the shift',()=>{
   const h=harness(),v=make(h,'buggy');v.isLocal=true
   try{h.step(v,60);v.stuckSteps=77;const before=v.stuckSteps;v.shiftBy(-TILE,0);expect(v.stuckSteps).toBe(before)}finally{v.dispose();h.world.free()}
+ })
+ for(const zorb of [false,true])it(`a ${zorb?'zorbed ':''}buggy crossing in a gale is carried across as cleanly as in still air`,()=>{
+  // Wind is on by default in play. It is a force added at the end of the vehicle step, so a
+  // tile shift, which only moves positions, must leave it and its effect alone.
+  params.set(storminess.def.id,1)
+  const base=harness(),v=make(base,'buggy');v.input.zorb=zorb
+  const weather=new WeatherSystem(()=>base.terrain,()=>[v as unknown as WindVehicle])
+  let strongest=0
+  const h={...base,step(vehicle:Vehicle,n=1){for(let i=0;i<n;i++){weather.fixedUpdate();strongest=Math.max(strongest,vehicle.wind.length());base.step(vehicle)}}}
+  try{const r=cross(h,v,-TILE,0,zorb?250:150);expect(strongest,'the gale reached the vehicle').toBeGreaterThan(.002);expectUndisturbed(`gale ${zorb?'zorb':'buggy'}`,r,-TILE,0)}
+  finally{params.set(storminess.def.id,storminess.def.default);v.dispose();base.world.free()}
  })
 })

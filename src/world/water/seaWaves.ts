@@ -4,12 +4,28 @@
  * both read this one object, so what floats and what is drawn cannot drift apart.
  */
 import { worldGravity } from '../../../shared/params'
-import { buildWaves, shoalFactor, wavePhases, waveOffset, waveSlope, waveVerticalSpeed, type WaveSet } from '../../../shared/water/waves'
-import { windX, windZ } from '../../fx/params'
+import { WAVE_COUNT, buildWaves, shoalFactor, wavePhases, waveOffset, waveSlope, waveVerticalSpeed, type WaveComponent, type WaveSet } from '../../../shared/water/waves'
+import { prevailingWindHeading, prevailingWindStrength, weatherTime } from '../weather'
 import { waterWaveHeight, waterWaveLength, waterWaves, waterWaveTurn } from './params'
 
 /** Sea grid lines per tile side; must match SEA_SEGMENTS in terrain/volcanics.ts. */
 export const SEA_GRID = 192
+
+/**
+ * The sea follows the room's prevailing wind, which turns slowly. Wave vectors must fit the
+ * tile, so they cannot turn smoothly themselves; instead the sea is two fans of waves, each
+ * built for the wind's heading at a whole multiple of FAN_SECONDS of weather time, and the
+ * sea crossfades from one to the next over that interval. The mix is a pure function of the
+ * shared clocks, so every client and the physics see the same sea, and nothing ever steps.
+ */
+export const FAN_SECONDS = 20
+/** Components the sea material evaluates: both fans. */
+export const SEA_COMPONENTS = WAVE_COUNT * 2
+/**
+ * Swell remains without local wind (it comes from distant storms), so calm air keeps 35 per
+ * cent of the slider's height; a full gale gives all of it.
+ */
+const CALM_SWELL = 0.35
 
 /**
  * Seconds on the clock every client shares. Defaults to the game's simulated time, which is
@@ -17,16 +33,38 @@ export const SEA_GRID = 192
  * shows the same crest at the same moment (`setWaterClock`).
  */
 let clock: () => number = () => 0
+let previous: (() => number) | null = null
+let switchedAt = -Infinity
+/** Seconds to calm the sea before a clock change and to raise it after: half each. */
+export const CLOCK_SWITCH_SECONDS = 1.2
+const wall = () => (typeof performance === 'undefined' ? Date.now() : performance.now()) / 1000
+
+/**
+ * Change the clock the sea follows. The two clocks disagree by however long this client has
+ * been running, so switching outright would jump every crest at once and jolt anything afloat.
+ * Instead the swell calms to nothing on the old clock, the clock changes while the sea is
+ * flat, and the swell rises again on the new one (`waveScale`).
+ */
 export function setWaterClock(fn: () => number): void {
+  previous = clock
   clock = fn
+  switchedAt = wall()
 }
 export function waterTime(): number {
-  return clock()
+  const since = wall() - switchedAt
+  return previous && since < CLOCK_SWITCH_SECONDS / 2 ? previous() : clock()
+}
+/** 1 normally; eases to 0 and back to 1 across a clock change. Smoothstep each way. */
+export function waveScale(): number {
+  const x = Math.min(1, Math.abs(wall() - switchedAt - CLOCK_SWITCH_SECONDS / 2) / (CLOCK_SWITCH_SECONDS / 2))
+  return x * x * (3 - 2 * x)
 }
 
 class SeaWaves {
-  private set: WaveSet | null = null
   private key = ''
+  private readonly fans = new Map<number, WaveSet>()
+  private readonly merged: WaveSet = { components: [], amplitude: 0, dominantLength: 60 }
+  private mergedAt = Number.NaN
   private phases: number[] = []
   private phaseTime = Number.NaN
   private tileSize = 2048
@@ -44,25 +82,63 @@ class SeaWaves {
     return waterWaves.value
   }
 
-  /** The current wave set, rebuilt when a slider moves. */
-  get waves(): WaveSet {
-    const direction = Math.atan2(windZ.value, windX.value) + waterWaveTurn.value
-    const key = `${this.tileSize}|${this.seed}|${waterWaveHeight.value}|${waterWaveLength.value}|${direction}|${worldGravity.value}`
-    if (!this.set || key !== this.key) {
-      this.key = key
-      this.set = buildWaves({
+  /** The fan built for the wind heading at weather time k * FAN_SECONDS. */
+  private fan(k: number): WaveSet {
+    let set = this.fans.get(k)
+    if (!set) {
+      set = buildWaves({
         tileSize: this.tileSize,
         height: waterWaveHeight.value,
         length: waterWaveLength.value,
-        direction,
+        direction: prevailingWindHeading(k * FAN_SECONDS) + waterWaveTurn.value,
         gravity: worldGravity.value,
         seed: this.seed,
         // Four sea grid spacings: the shortest wave the mesh can draw without aliasing.
         minGeometricLength: (4 * this.tileSize) / SEA_GRID,
       })
+      this.fans.set(k, set)
+      // Keep only the fans in use and the next one.
+      for (const old of this.fans.keys()) if (old < k - 1) this.fans.delete(old)
+    }
+    return set
+  }
+
+  /**
+   * The current sea: both fans with their crossfade weights and the wind's strength folded
+   * into the amplitudes, as one list of SEA_COMPONENTS components.
+   */
+  get waves(): WaveSet {
+    const key = `${this.tileSize}|${this.seed}|${waterWaveHeight.value}|${waterWaveLength.value}|${waterWaveTurn.value}|${worldGravity.value}`
+    if (key !== this.key) {
+      this.key = key
+      this.fans.clear()
+      this.mergedAt = Number.NaN
       this.phaseTime = Number.NaN
     }
-    return this.set
+    const tw = weatherTime()
+    if (tw === this.mergedAt) return this.merged
+    this.mergedAt = tw
+    const k = Math.floor(tw / FAN_SECONDS)
+    const f = tw / FAN_SECONDS - k
+    const s = f * f * (3 - 2 * f)
+    const wind = CALM_SWELL + (1 - CALM_SWELL) * prevailingWindStrength()
+    const a = this.fan(k)
+    const b = this.fan(k + 1)
+    const out = this.merged.components
+    let total = 0
+    for (let i = 0; i < SEA_COMPONENTS; i++) {
+      const from: WaveComponent = i < WAVE_COUNT ? a.components[i] : b.components[i - WAVE_COUNT]
+      const weight = (i < WAVE_COUNT ? 1 - s : s) * wind
+      const c = (out[i] ??= { ...from })
+      Object.assign(c, from)
+      c.amplitude = from.amplitude * weight
+      if (!c.lightOnly) total += c.amplitude
+    }
+    this.merged.amplitude = total
+    this.merged.dominantLength = a.dominantLength
+    // Fans change their phases' frequencies: recompute phases for this sea.
+    this.phaseTime = Number.NaN
+    return this.merged
   }
 
   /** Phases at the shared time now. Recomputed once per distinct time. */
@@ -84,14 +160,14 @@ class SeaWaves {
     if (!waterWaves.value) return 0
     const set = this.waves
     if (set.amplitude <= 0) return 0
-    return shoalFactor(level - ground, set.dominantLength) * waveOffset(set, this.phasesNow(), x, z)
+    return waveScale() * shoalFactor(level - ground, set.dominantLength) * waveOffset(set, this.phasesNow(), x, z)
   }
 
   /** Vertical speed of the surface at (x, z), m/s, shoaled like the height. */
   verticalSpeedAt(x: number, z: number, ground: number, level: number): number {
     if (!waterWaves.value) return 0
     const set = this.waves
-    return shoalFactor(level - ground, set.dominantLength) * waveVerticalSpeed(set, this.phasesNow(), x, z)
+    return waveScale() * shoalFactor(level - ground, set.dominantLength) * waveVerticalSpeed(set, this.phasesNow(), x, z)
   }
 
   /** Surface slope in deep water (dh/dx, dh/dz), every component. */
@@ -101,7 +177,11 @@ class SeaWaves {
       out.z = 0
       return out
     }
-    return waveSlope(this.waves, this.phasesNow(), x, z, out)
+    waveSlope(this.waves, this.phasesNow(), x, z, out)
+    const k = waveScale()
+    out.x *= k
+    out.z *= k
+    return out
   }
 }
 

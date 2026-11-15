@@ -9,8 +9,13 @@ import { TouchControls } from './TouchControls'
 import { readVehicleChoice, saveVehicleChoice, VehiclePreview, type VehicleChoice } from './VehicleChoice'
 import { SlidingPanels } from './SlidingPanels'
 import { wordmarkSvg } from './brand/logo'
-import { Galaxy, type GalaxyWorld } from './galaxy/Galaxy'
+import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
+import { placeLabels } from './galaxy/labels'
 import { createDaydreamControl } from '../bots/daydreamControl'
+import { Inspector } from './inspector/Inspector'
+import { FocusHud } from './inspector/FocusHud'
+import { glassStyle } from './inspector/params'
+import { RESUME_KEY } from '../core/resume'
 import { qualityLevel } from './quality/ladder'
 import { Vector3 } from 'three/webgpu'
 import { PLANETS } from '../world/planets'
@@ -75,6 +80,9 @@ export class Shell implements System {
   /** Slider groups the advanced panel is limited to, when it was opened from the custom planet. */
   private advancedGroups?: readonly string[]
   private worldDirty = true
+  private readonly inspector: Inspector
+  private readonly focusHud: FocusHud
+  private telemetry = { speed: 0, altitude: 0 }
   /** The 3D galaxy: the lobby. Absent only where WebGL 2 is, and then the game cannot draw either. */
   private galaxy?: Galaxy
   /** Arrived by an invite link that names a world: that world is the one to enter. */
@@ -128,7 +136,7 @@ export class Shell implements System {
       <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby"><button data-goto="vehicle">Vehicle</button><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR</button><button data-goto="settings">Settings</button><button data-goto="about">About</button></nav></div>
     </section>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
-    <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button" aria-label="Open menu">☰<span class="nav-label"> Menu</span></button><button data-open="multiplayer">Players</button><button data-open="worlds">Create</button></nav>
+    <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button" aria-label="Open menu">☰<span class="nav-label"> Menu</span></button><button data-open="multiplayer">Players</button><button class="inspector-toggle" type="button" aria-pressed="false">Create</button></nav>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
     document.body.append(this.element); document.body.classList.add('has-game-shell')
@@ -145,6 +153,24 @@ export class Shell implements System {
     this.followPointer(signal)
     this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; if (this.galaxy) this.galaxy.enabled = true
     this.releaseCursor()
+    // Daydream: how long the game waits, left alone, before it starts driving itself. The
+    // control and its parameter are the Bots lane's; it sits with the first settings.
+    const daydream = createDaydreamControl()
+    this.element.querySelector('.settings-links')!.after(daydream); signal.addEventListener('abort', () => daydream.dispose())
+    // The world inspector and the display for when the cursor is captured (inspector/).
+    this.inspector = new Inspector(this.element, {
+      summary: id => this.inspectorSummary(id),
+      vehicles: () => ({ options: [...this.element.querySelectorAll<HTMLInputElement>('[name="vehicle"]')].map(radio => ({ id: radio.value, label: radio.parentElement!.textContent!.trim() })), current: this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind }),
+      onVehicle: id => this.switchVehicle(id as VehicleKind),
+    })
+    // On a desktop the cards are there whenever the cursor is free; on touch they open from Create.
+    this.inspector.open = !this.touch.available
+    this.focusHud = new FocusHud(this.element)
+    const toggle = this.element.querySelector<HTMLButtonElement>('.inspector-toggle')!
+    toggle.addEventListener('click', () => { this.inspector.open = !this.inspector.open; toggle.setAttribute('aria-pressed', String(this.inspector.open)) }, { signal })
+    toggle.setAttribute('aria-pressed', String(this.inspector.open))
+    // Focus: the cursor is captured, so the player is driving. The full interface fades away.
+    document.addEventListener('pointerlockchange', () => this.element.classList.toggle('is-focus', document.pointerLockElement === game.canvas), { signal })
     this.glass(signal)
     for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) slider.addEventListener('input', () => params.set(slider.dataset.param!, Number(slider.value)), { signal })
     this.startGalaxy()
@@ -294,6 +320,27 @@ export class Shell implements System {
   get attracting(): boolean { return this.attract?.active ?? false }
   setMapEntities(entities: readonly MapEntity[]): void { this.minimap?.setEntities(entities) }
   setMapSelf(entity: MapEntity): void { this.self = entity; this.minimap?.setSelf(entity) }
+  /** The player's speed (m/s) and height above the ground (m), for the focus display. */
+  setTelemetry(speed: number, altitude: number): void { this.telemetry.speed = speed; this.telemetry.altitude = altitude }
+  private inspectorSummary(id: string): string {
+    if (id === 'world') return `${currentPlanet().label} · ${planetName(worldSeed.value)}`
+    if (id === 'sky') { const hour = Number(params.get('sun.timeOfDay')?.value ?? 0); return `${String(Math.floor(hour) % 24).padStart(2, '0')}:${String(Math.floor((hour % 1) * 60)).padStart(2, '0')}` }
+    if (id === 'game') { const bots = Number(params.get('bots.count')?.value ?? 0); return `${Number(params.get('game.mode')?.value ?? 0) === 1 ? 'King of the Hill' : 'Tag'}${bots ? ` · ${bots} ${bots === 1 ? 'bot' : 'bots'}` : ''}` }
+    if (id === 'vehicles') return this.element.querySelector<HTMLInputElement>(`[name="vehicle"][value="${this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind}"]`)?.parentElement?.textContent?.trim() ?? ''
+    return id === 'you' ? 'yours only' : ''
+  }
+  /**
+   * Change vehicle in play. The game builds its vehicle once at start, so this saves the
+   * choice and reloads straight back into the same room, as the lobby does. The player
+   * starts again from a spawn pad.
+   */
+  private switchVehicle(kind: VehicleKind): void {
+    if (kind === this.activeVehicleKind || (kind === 'buggy-syn3h' && this.activeVehicleKind === 'buggy')) return
+    saveVehicleChoice({ ...this.choice, vehicleKind: kind })
+    try { sessionStorage.removeItem(RESUME_KEY) } catch { /* Storage is optional. */ }
+    const url = new URL(location.href); url.searchParams.delete('vehicle'); url.searchParams.set('autoplay', '1')
+    location.replace(url)
+  }
   setLoadingMessages(messages: string[]): void { bootLoading?.setMessages(messages) }
   setParamPanel(panel: ParamPanel): void { this.paramPanel = panel }
   showPanel(id: string): void {
@@ -458,7 +505,11 @@ export class Shell implements System {
     // No WebGL 2: the game cannot draw here either, so the index says so plainly.
     if (!Galaxy.supported()) { this.element.querySelector<HTMLElement>('.lobby-unsupported')!.hidden = false; return }
     const current = currentPlanet().id, labels = this.element.querySelector<HTMLElement>('.galaxy-labels')!
-    const worlds: GalaxyWorld[] = PLANETS.slice(0, 3).map((recipe, i) => ({ id: recipe.id, label: recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current ? worldSeed.value : i + 1 }))
+    // Every planet recipe, up to the galaxy's limit with room for Custom. In development,
+    // ?worlds=N repeats the recipes to rehearse a crowded system before new ones land.
+    const rehearse = import.meta.env.DEV ? Number(new URLSearchParams(location.search).get('worlds')) || 0 : 0
+    const recipes = Array.from({ length: Math.max(PLANETS.length, rehearse - 1) }, (_, i) => ({ recipe: PLANETS[i % PLANETS.length], copy: Math.floor(i / PLANETS.length) })).slice(0, GALAXY_MAX - 1)
+    const worlds: GalaxyWorld[] = recipes.map(({ recipe, copy }, i) => ({ id: copy ? `${recipe.id}~${copy}` : recipe.id, recipe: recipe.id, label: copy ? `${recipe.label} ${copy + 1}` : recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current && !copy ? worldSeed.value : i + 1 }))
     // The custom planet is a world still forming: tap it to shape it with the sliders.
     worlds.push({ id: 'custom', label: 'Custom', land: 0x31507a, sea: 0x0a1630, glow: false, seed: 7, forming: true })
     const chips = this.galaxyChips
@@ -472,7 +523,8 @@ export class Shell implements System {
     this.galaxy = new Galaxy(this.overlay, {
       worlds,
       still: () => levelNumber(graphicsLevel.value) === 0,
-      onArrive: id => {
+      onArrive: chosen => {
+        const id = chosen.split('~')[0]
         if (id === 'custom') {
           if (!canEditWorld() || (this.invited && !this.started)) { this.say('This world is not yours to reshape yet.'); this.galaxy?.home(); return }
           this.openCustomPlanet(); return
@@ -481,25 +533,45 @@ export class Shell implements System {
         if (!canEditWorld() && id !== currentPlanet().id) { this.say('The host has locked this world.'); this.galaxy?.home(); return }
         this.pickPlanet(id, true)
       },
-      onLayout: places => { for (const place of places) { const chip = chips.get(place.id)!; chip.hidden = !place.visible; 
-        // Under its world, but always wholly on the screen and clear of the links.
-        const x = Math.min(innerWidth - 62, Math.max(62, place.x)), y = Math.min(innerHeight - 128, Math.max(8, place.y + place.radius + 10))
-        chip.style.translate = `${x.toFixed(1)}px ${y.toFixed(1)}px` } },
+      onLayout: (places, chosen) => {
+        // Each label near its world, on the screen, clear of the links and of each other.
+        for (const [id, chip] of chips) if (!this.labelSizes.has(id) && !chip.hidden) this.labelSizes.set(id, { width: chip.offsetWidth, height: chip.offsetHeight })
+        // Clear of the wordmark too. While flying to a world, only its label stays.
+        if (!this.brandBottom) {
+          this.brandBottom = this.element.querySelector('.lobby-brand')?.getBoundingClientRect().bottom ?? 0
+          const hint = this.element.querySelector('.galaxy-hint')?.getBoundingClientRect().top ?? 0
+          this.linksTop = hint > innerHeight / 2 ? hint - 4 : innerHeight - 128
+        }
+        const shown = chosen ? places.filter(place => place.id === chosen) : places
+        const spots = placeLabels(shown, this.labelSizes, { width: innerWidth, height: innerHeight, bottom: this.linksTop, top: this.brandBottom + 4 }, { first: chosen ?? currentPlanet().id, previous: this.labelSpots })
+        if (chosen) for (const place of places) if (place.id !== chosen) chips.get(place.id)!.classList.add('is-crowded')
+        for (const place of places) chips.get(place.id)!.hidden = !place.visible
+        for (const spot of spots) {
+          const chip = chips.get(spot.id)!; this.labelSpots.set(spot.id, spot.spot)
+          chip.style.translate = `${spot.x.toFixed(1)}px ${spot.y.toFixed(1)}px`; chip.classList.toggle('is-crowded', spot.crowded)
+        }
+      },
     })
+    addEventListener('resize', () => { this.brandBottom = undefined }, { signal: this.abort.signal })
     this.element.classList.add('is-galaxy'); this.galaxy.enabled = true
     // WebGL 2 exists but the galaxy would not start (a shader the driver refuses): the world
     // names stay, as a row of buttons, so a visitor can still choose one and play.
     this.element.classList.toggle('galaxy-flat', !this.galaxy.live)
     this.galaxyFor(this.panels.active || 'index')
   }
-  /** The galaxy's world labels, by world id. */
+  /** The galaxy's world labels, by world id, with their measured sizes and last spots. */
   private readonly galaxyChips = new Map<string, HTMLButtonElement>()
+  private readonly labelSizes = new Map<string, { width: number; height: number }>()
+  private readonly labelSpots = new Map<string, number>()
+  /** Where the wordmark ends, measured once per window size. */
+  private brandBottom?: number
+  private linksTop = 0
   /** Labels follow the world in play: its generated name, and which worlds can be chosen now. */
   private refreshGalaxyLabels(open: boolean): void {
     const current = currentPlanet().id
     for (const [id, chip] of this.galaxyChips) {
       const small = chip.querySelector('small')!, text = id === 'custom' ? small.textContent : id === current ? planetName(worldSeed.value) : ''
-      if (small.textContent !== text) small.textContent = text
+      if (small.textContent !== text) { small.textContent = text; this.labelSizes.delete(id) }
       chip.classList.toggle('is-current', id === current)
       chip.classList.toggle('is-locked', !open && id !== current)
     }
@@ -511,6 +583,9 @@ export class Shell implements System {
     this.element.classList.toggle('galaxy-open', open)
     this.element.querySelector<HTMLElement>('.galaxy-ui')!.hidden = !open
     if (open) this.galaxy.home()
+    // Behind a panel the galaxy dims and holds still; behind the name form a little less,
+    // since the world just chosen is the picture there.
+    this.galaxy.backdrop = open ? 1 : panel === 'explore' ? 0.7 : 0.35
   }
   /** What the lobby's own graphics are doing, for the phone checks. */
   get graphics(): { galaxyLive: boolean; galaxyFrames: number; planetMaps: number } {
@@ -524,7 +599,7 @@ export class Shell implements System {
    */
   private glass(signal: AbortSignal): void {
     const buttons = [...this.element.querySelectorAll<HTMLElement>('button'), ...this.touch.element.querySelectorAll<HTMLElement>('button')]
-    for (const button of buttons) if (!button.matches('.link-button, .lobby-links *, .syn3h-advanced *')) button.classList.add('liquid-glass')
+    for (const button of buttons) if (!button.matches('.link-button, .lobby-links *, .syn3h-advanced *, .world-inspector *')) button.classList.add('liquid-glass')
     // Touch screens have no hover, so there is nothing to face.
     if (!matchMedia('(hover: hover)').matches) return
     const REST = 205
@@ -617,6 +692,12 @@ export class Shell implements System {
     if (!this.started && !this.inviteOpen && !this.attract?.active && (this.requestedAttract || performance.now() - this.lastActivity > 20000)) this.startAttract()
     this.attract?.update(dt)
     this.touch.update(); if (!this.menuVisible) this.minimap?.update()
+    if (this.started && !this.menuVisible) {
+      const focus = this.element.classList.contains('is-focus')
+      if (!focus && this.inspector.open) this.inspector.update()
+      this.focusHud.update(focus, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, heading: this.self?.heading ?? 0, world: `${currentPlanet().label} · ${planetName(worldSeed.value)}`, hour: Number(params.get('sun.timeOfDay')?.value ?? 0) })
+      const glass = String(Math.round(glassStyle.value)); if (this.element.dataset.glass !== glass) this.element.dataset.glass = glass
+    }
     // The stylesheet drops frost at the lowest graphics level.
     // Frost goes at the lowest graphics level, and when the quality ladder is shedding post effects.
     const gfx = qualityLevel() >= 2 ? '0' : String(levelNumber(graphicsLevel.value))
@@ -660,7 +741,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.galaxy?.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.galaxy?.dispose(); this.preview?.dispose(); this.attract?.dispose(); this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }
@@ -677,6 +758,7 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
     const q = activePlayer.body.rotation()
     const heading = Math.atan2(2 * (q.x * q.z + q.w * q.y), 1 - 2 * (q.x * q.x + q.y * q.y))
     shell.setMapSelf({ x: p.x, z: p.z, heading, color: activePlayer.colors.body, self: true })
+    shell.setTelemetry(speed, p.y - terrain.heightAt(p.x, p.z))
     audio.motion = { speed, throttle: activePlayer.kind === 'jet' ? activePlayer.input.z : activePlayer.input.y, airborne: p.y - terrain.heightAt(p.x, p.z) > 2 }
     const input = activePlayer.input
     const hint = hints.update(dt, { kind: activePlayer.kind, touch: shell.touch.available, altitude: p.y - terrain.heightAt(p.x, p.z), speed, steer: input.x, pitch: input.y, throttle: input.z, hoverMode: !input.special, canLiftOut: activePlayer.canLiftOut })

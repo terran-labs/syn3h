@@ -16,6 +16,7 @@ import {
   type ServerMessage,
   type ShotInfo,
   type CordWire,
+  type YoinkWire,
   type TagEvent,
   BOT_ID_BASE,
   DEFAULT_COLORS,
@@ -48,6 +49,7 @@ import { MIN_CLOSING, SHOVE_SHARE, cleanShove } from '../src/net/shove'
 import { wrapDistance } from '../shared/wrap'
 import { laserInterval, laserLifetime, laserSpeed, lasersAllowed } from '../src/weapons/params'
 import { bungeeAllowed, bungeeLength, bungeeSnap, bungeeVehicles } from '../src/weapons/bungee/params'
+import { yoinkAllowed, yoinkFling, yoinkHoldDistance, yoinkPunt, yoinkPuntRange, yoinkRange } from '../src/weapons/yoink/params'
 import {
   KNOCK_WINDOW, WIN_PAUSE, gameMode, kothKnockBonus, kothRespawnDelay, kothTargetScore, tagCooldown, tagRamReach,
   REJOIN_GRACE, gameRejoin,
@@ -101,6 +103,8 @@ interface Player {
   fastAt: number
   /** Server ms of the last push relayed from this player, by rammed player id. */
   shoved: Map<number, number>
+  /** The room last relayed this player's Bungee cord as attached. */
+  cordOn: boolean
   /** The secret this player may rejoin with, when it sent a valid one. */
   token: string | null
   /** Server ms until which a dropped player's place is held, or 0 while connected. */
@@ -286,6 +290,9 @@ export class Room {
       case 'cord':
         this.onCord(peer, player, msg.cord)
         break
+      case 'yoink':
+        this.onYoink(peer, player, msg.y)
+        break
       case 'stuck':
       case 'died': // the name older bundles send
         if (typeof msg.bot === 'number') {
@@ -330,6 +337,8 @@ export class Room {
     const wasActive = this.isActive(player, this.now())
     player.heldUntil = until
     this.rekey(peer, { send() {}, close() {} }, player)
+    // Its owner is not there to let go of it: a held place holds no cord.
+    this.dropCord(player)
     if (wasActive && !this.anyActive(this.now())) {
       this.activeLeft = true
       this.activeAt = this.now()
@@ -833,12 +842,51 @@ export class Room {
       if (!st || this.dist(cord.o, st.p) > 8 + Math.hypot(...st.v) * 0.5) return
       cord.t = Math.min(this.now() / 1000, Math.max(this.now() / 1000 - 1, cord.t))
     } else if (cord.s === 'on') {
-      if (cord.to !== undefined) {
-        if (!this.paramBool(bungeeVehicles.def) || cord.to === player.info.id || !this.byId(cord.to)) return
-      } else if (!cord.at || (st && this.dist(cord.at, st.p) > reach)) return
       if (cord.r < 0 || cord.r > this.paramNumber(bungeeLength.def) + 1) return
+      // Where the cord is tied: a vehicle in the room, or a point on the ground. Either must
+      // be within the cord's reach of the sender, measured round the wrap. A tie to a vehicle
+      // matters most: that vehicle's own client is what pulls it, so an unchecked tie would
+      // let anyone drag anyone from across the world.
+      const other = cord.to !== undefined ? this.byId(cord.to) : undefined
+      if (cord.to !== undefined && (!this.paramBool(bungeeVehicles.def) || cord.to === player.info.id || !other)) return
+      const anchor = other ? other.lastState?.p : cord.at
+      if (!st || !anchor || this.dist(anchor, st.p) > reach) {
+        // Out of reach (or not yet placed). If this was the refresh of a cord the room has
+        // already relayed, the others must not keep pulling on it: tell them it is off.
+        if (player.cordOn) this.dropCord(player, peer)
+        return
+      }
     }
+    player.cordOn = cord.s === 'on'
     this.broadcast({ type: 'cord', from: player.info.id, cord, t: this.now() / 1000 }, peer)
+  }
+
+  /**
+   * Yoink (Weapons lane). The vehicle acted on must be in the room, not the sender's own, and
+   * within reach of the sender round the wrap; a fling may be no faster than the room allows.
+   * The acted-on vehicle's own client applies it, so these checks are what stop a modified
+   * client from flinging anyone from anywhere.
+   */
+  private onYoink(peer: Peer, player: Player, raw: unknown): void {
+    if (!this.paramBool(yoinkAllowed.def)) return
+    const y = cleanYoink(raw)
+    if (!y) return
+    const other = this.byId(y.to)
+    if (!other || other === player || !other.lastState || !player.lastState) return
+    const reach = Math.max(this.paramNumber(yoinkRange.def), this.paramNumber(yoinkPuntRange.def), this.paramNumber(yoinkHoldDistance.def) * 2) * 1.5 + 10
+    if (this.dist(other.lastState.p, player.lastState.p) > reach) return
+    if (y.s === 'fling') {
+      const most = Math.max(this.paramNumber(yoinkFling.def), this.paramNumber(yoinkPunt.def) * 1.3) * 1.25 + Math.hypot(...player.lastState.v) + 5
+      if (Math.hypot(...y.v) > most) return
+    }
+    this.broadcast({ type: 'yoink', from: player.info.id, y }, peer)
+  }
+
+  /** Tell everyone a player's cord is gone: it stretched out of reach, or its owner dropped out. */
+  private dropCord(player: Player, except?: Peer): void {
+    if (!player.cordOn) return
+    player.cordOn = false
+    this.broadcast({ type: 'cord', from: player.info.id, cord: { s: 'off' }, t: this.now() / 1000 }, except)
   }
 
   /** The victim reports a hit on itself. The room checks the shot really happened. */
@@ -1013,7 +1061,7 @@ export class Room {
     // Joining counts as a tag so a newcomer cannot be tagged in their first seconds.
     const now = this.now()
     return {
-      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), token: null, heldUntil: 0, lastFireAt: -Infinity, shots: new Map(), lastTag: now,
+      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, token: null, heldUntil: 0, lastFireAt: -Infinity, shots: new Map(), lastTag: now,
       windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now,
     }
   }
@@ -1201,8 +1249,20 @@ function cleanCord(c: unknown): CordWire | null {
   }
   if (o.s === 'on' && num(o.r)) {
     if (num(o.to) && Number.isInteger(o.to)) return { s: 'on', to: o.to, r: o.r }
-    if (vec(o.at)) return { s: 'on', at: o.at, n: vec(o.n) ? o.n : [0, 1, 0], r: o.r }
+    // The surface normal is a direction: anything that is not about unit length is replaced.
+    const unit = vec(o.n) && Math.abs(Math.hypot(...o.n) - 1) < 0.05
+    if (vec(o.at)) return { s: 'on', at: o.at, n: unit ? (o.n as [number, number, number]) : [0, 1, 0], r: o.r }
   }
+  return null
+}
+
+/** A well formed Yoink message, rebuilt from only the fields it should have; null otherwise. */
+function cleanYoink(y: unknown): YoinkWire | null {
+  if (!y || typeof y !== 'object') return null
+  const o = y as Record<string, unknown>
+  if (typeof o.to !== 'number' || !Number.isInteger(o.to)) return null
+  if (o.s === 'grab' || o.s === 'drop') return { s: o.s, to: o.to }
+  if (o.s === 'fling' && isVec3(o.v)) return { s: 'fling', to: o.to, v: o.v }
   return null
 }
 
