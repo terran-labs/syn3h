@@ -7,12 +7,14 @@ import { qualityBudget } from '../core/quality'
 import { createVehicle } from '../vehicles'
 import type { Vehicle } from '../vehicles/Vehicle'
 import { BotBrain, isSafeGround, type BotTerrain } from './BotBrain'
-import { botCount, spawnRadius } from './params'
+import { botCount, fleet, spawnRadius } from './params'
 import { Daydream } from './Daydream'
 import { Mind } from './mind/Mind'
 import { createPilot } from './pilot'
 import { createNavigator } from './nav'
 import type { Navigator } from './pilot/types'
+/** Slot by slot: half buggies, a quarter hovercraft, a quarter jets. */
+const MIXED_FLEET = ['buggy', 'hovercraft', 'buggy', 'jet'] as const
 export class BotManager implements System {
   private readonly bots: Vehicle[] = []
   private readonly brains: BotBrain[] = []
@@ -60,7 +62,7 @@ export class BotManager implements System {
       if (!isSafeGround(this.terrain, x, z) || this.terrain.normalAt(x, z, new Vector3()).y < 0.65) continue
       if (this.bots.some(bot => { const p = bot.body.translation(); return Math.hypot(p.x - x, p.z - z) < 5 })) continue
       const heading = Math.atan2(x - center.x, z - center.z)
-      const bot = createVehicle(this.game, this.terrain, 'buggy', new Vector3(x, this.terrain.heightAt(x, z) + 2, z), heading)
+      const bot = createVehicle(this.game, this.terrain, Math.round(fleet.value) === 1 ? MIXED_FLEET[index % MIXED_FLEET.length] : 'buggy', new Vector3(x, this.terrain.heightAt(x, z) + 2, z), heading)
       bot.isLocal = false; bot.id = `bot-${this.nextBotId++}`; bot.name = generateName(`${worldSeed.value}:${bot.id}`, 'bot')
       bot.setColors(`hsl(${(index * 137.508 + 15) % 360}, 85%, 55%)`, '#ffffff')
       const brain = new BotBrain(this.game, this.terrain, bot, this.player, index)

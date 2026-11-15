@@ -196,3 +196,25 @@ describe('bots with a mind', () => {
     expect(roam.farthest).toBeGreaterThan(90)
   })
 })
+
+describe('mixed fleet', () => {
+  it('spawns buggies, a hovercraft and a jet, and each drives with its own pilot', async () => {
+    const { BotManager } = await import('../../src/bots/BotManager')
+    const { game, step } = harness(), terrain = flat(800)
+    const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); player.isLocal = false
+    params.set('bots.fleet', 1); params.set('bots.count', 4); params.set('bots.canFire', false); params.set('bots.freeSpirit', 0.5)
+    const manager = game.add(new BotManager(game, terrain, player)); manager.update()
+    expect(manager.vehicles.map(v => v.kind)).toEqual(['buggy', 'hovercraft', 'buggy', 'jet'])
+    const start = manager.vehicles.map(v => new Vector3().copy(v.body.translation()))
+    let jetTop = 0
+    for (let i = 0; i < 2500; i++) { step(); jetTop = Math.max(jetTop, manager.vehicles[3].body.translation().y) }
+    manager.vehicles.forEach((v, i) => {
+      const p = v.body.translation()
+      expect(Number.isFinite(p.x + p.y + p.z)).toBe(true)
+      expect(Math.abs(p.x)).toBeLessThan(400); expect(Math.abs(p.z)).toBeLessThan(400)
+      expect(start[i].distanceTo(new Vector3().copy(p))).toBeGreaterThan(5)
+    })
+    expect(jetTop).toBeGreaterThan(6)
+    manager.dispose()
+  })
+})

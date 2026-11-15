@@ -100,6 +100,11 @@ export class Mind {
     return this.visits.size / (side * side)
   }
 
+  /** Go after one vehicle for a while: how a bot that cannot ram still joins the chase. */
+  pursue(leader: Vehicle, seconds: number): void {
+    this.clearPlan(); this.begin('follow', null, leader, seconds)
+  }
+
   /** Forget the current plan: after a teleport, a regenerated world, or a handover. */
   reset(): void {
     this.activity = { kind: 'pause', destination: null, leader: null, until: 0 }

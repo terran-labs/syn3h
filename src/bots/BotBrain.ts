@@ -75,7 +75,9 @@ export class BotBrain implements System {
     const status = this.mind!.step(dt, input)
     const liquid = this.terrain.liquidHeightAt?.(here.x, here.z)
     const afloat = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(here.x, here.z) <= liquid + 0.5
-    this.liquidTime = afloat ? this.liquidTime + dt : 0
+    // Being over liquid is trouble only for wheels: a hovercraft rides on it and a jet is above it.
+    const wheeled = this.vehicle.kind !== 'jet' && this.vehicle.kind !== 'hovercraft'
+    this.liquidTime = afloat && wheeled ? this.liquidTime + dt : 0
     this.flippedTime = status.flipped ? this.flippedTime + dt : 0
     if (this.liquidTime >= p.recoveryTime.value || this.flippedTime >= p.recoveryTime.value / 2 || this.mind!.troubleFor >= p.recoveryTime.value || here.y < this.terrain.heightAt(here.x, here.z) - 10) {
       this.rescue(); this.mind!.reset()
@@ -122,7 +124,11 @@ export class BotBrain implements System {
       const here = this.vehicle.body.translation(), there = this.target?.body.translation()
       this.moodTime -= dt
       if (this.moodTime <= 0) this.chooseMood(there ? Math.hypot(there.x - here.x, there.z - here.z) : Infinity)
-      if (this.mood === 'roam' || !this.target) { this.roam(dt, input, here); return }
+      // The original pursuit below steers wheels. A hovercraft or a jet chases through its
+      // mind instead: it tails the target with its own pilot.
+      const wheeled = this.vehicle.kind !== 'jet' && this.vehicle.kind !== 'hovercraft'
+      if (!wheeled && this.mood === 'chase' && this.target && this.mind.activity.leader !== this.target) this.mind.pursue(this.target, this.moodTime)
+      if (this.mood === 'roam' || !this.target || !wheeled) { this.roam(dt, input, here); return }
     }
     if (!this.target) return
     const here = this.vehicle.body.translation(), there = this.target.body.translation()

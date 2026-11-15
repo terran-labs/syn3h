@@ -27,6 +27,12 @@ export const roadCornerSpeed = number('roadCornerSpeed', 'Road corner speed (m/s
 export const freeSpirit = number('freeSpirit', 'Own agenda (0 always chases)', 0.6, 0, 1, 0.05)
 
 /**
+ * Which vehicles bots drive. 0: buggies only. 1: mixed, every fourth bot a hovercraft and
+ * every fourth a jet. Off by default until guests are told each bot's vehicle (networking).
+ */
+export const fleet = number('fleet', 'Fleet: 0 buggies, 1 mixed', 0, 0, 1, 1)
+
+/**
  * Let a self-flying jet open its wings on long straight legs. Off by default: forward flight
  * is quicker but has only been proven on two courses, and hover mode is the safe way to
  * cross a mountain.
