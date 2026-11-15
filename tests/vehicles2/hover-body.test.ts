@@ -95,6 +95,38 @@ describe('the generated hovercraft body', () => {
     v.dispose(); h.world.free()
   })
 
+  it('keeps two moving duct fans inside the nozzle and stops them in the zorb', () => {
+    const s = new GameHover(HOVER_DESIGN), fan = s.levels[0].fan!
+    expect(fan.object.count).toBe(2)
+    expect(s.levels[1].fan).toBeUndefined()
+    const pose = () => Array.from(fan.object.instanceMatrix.array)
+    const first = pose()
+    s.update(0, 1, false, true, .02)
+    expect(pose()).not.toEqual(first)
+    const turning = pose()
+    s.update(1, 1, true, false, .1)
+    expect(pose()).toEqual(turning)
+    s.update(0, 0, false, true, .02)
+    expect(pose()).not.toEqual(turning)
+    // Check the swept geometry, not just the starting pose, against the duct lip.
+    const matrix = new T.Matrix4(), point = new T.Vector3(), p = fan.object.geometry.getAttribute('position')
+    for (let frame = 0; frame < 100; frame++) {
+      s.update(0, 1, false, true, .02)
+      for (let instance = 0; instance < 2; instance++) {
+        fan.object.getMatrixAt(instance, matrix)
+        for (let j = 0; j < p.count; j++) {
+          point.fromBufferAttribute(p, j).applyMatrix4(matrix).add(fan.object.position)
+          expect(Math.abs(point.x)).toBeLessThan(.38)
+          expect(Math.abs(point.y - fan.object.position.y)).toBeLessThan(.12)
+          expect(point.z).toBeGreaterThan(1.90)
+          expect(point.z).toBeLessThan(1.95)
+        }
+      }
+    }
+    expect(s.levels[0].triangles()).toBeLessThanOrEqual(12000)
+    s.dispose()
+  })
+
   it('keeps its whole hull clear of the ground through the island route', () => {
     const h = harness(9.81, false), data = generateTerrain(1, defaultTerrainSettings()), sampler = new HeightSampler(data)
     h.terrain.heightAt = (x, z) => sampler.heightAt(x, z); h.terrain.normalAt = (x, z, out) => sampler.normalAt(x, z, out)

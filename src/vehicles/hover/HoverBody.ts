@@ -8,6 +8,7 @@ import { applyShowroom, setRole } from '../skins/showroom'
 import { addLavaGlow } from '../skins/lavaGlow'
 import { addNightReadability } from '../skins/nightReadability'
 import type { HoverBuild } from './kit'
+import { DuctFan } from './DuctFan'
 
 /** Triangle budgets per detail level (PATTERN.md rule 4). */
 export const R3_BUDGET = [12000, 2500, 500] as const
@@ -50,6 +51,7 @@ function mergedMaterial(materials: T.MeshStandardMaterial[]): T.MeshStandardNode
 export class HoverBody {
   readonly object = new T.Group()
   readonly thruster = new T.Group()
+  readonly fan?: DuctFan
   ports: [number, number, number][] = []
   beams: [number, number, number][] = []
   cockpitClearance = Infinity
@@ -122,6 +124,13 @@ export class HoverBody {
         if (complete) levelCache.set(cacheKey, { meshes, ports: this.ports, beams: this.beams, clearance: this.cockpitClearance, detail: this.detail, thruster: this.thruster.position.clone() })
       }
     }
+    // Add after caching static geometry: instance poses belong to each craft.
+    if (level === 0 && spec.id === 'h4-low') {
+      this.fan = new DuctFan(chrome, game)
+      this.fan.object.position.copy(this.thruster.position)
+      this.fan.object.position.z -= .075
+      this.object.add(this.fan.object)
+    }
     this.object.traverse(o => { if (o instanceof T.Mesh && o.material === this.glow) this.glowMeshes.push(o) })
     if (!game) this.detach = applyShowroom(this.object, () => {})
     this.setLights(false, false)
@@ -135,7 +144,7 @@ export class HoverBody {
     for (const detail of DETAILS[level]) {
       built = spec.build(detail); this.detail = detail
       const total = [...built.builder.pieces.map(p => p.geometry), ...built.head, ...built.tail].reduce((n, g) => n + count(g), 0)
-      if (total + 80 <= R3_BUDGET[level]) break
+      if (total + (level === 0 && spec.id === 'h4-low' ? 328 : 80) <= R3_BUDGET[level]) break
       for (const g of [...built.builder.pieces.map(p => p.geometry), ...built.head, ...built.tail]) g.dispose()
     }
     const b = built.builder
@@ -191,10 +200,11 @@ export class HoverBody {
   }
   triangles(): number {
     let n = 0
-    this.object.traverse(o => { if (o instanceof T.Mesh) n += count(o.geometry) })
+    this.object.traverse(o => { if (o instanceof T.Mesh) n += count(o.geometry) * (o instanceof T.InstancedMesh ? o.count : 1) })
     return n
   }
   dispose(): void {
+    this.fan?.object.dispose()
     this.detach()
     const geometries = new Set<T.BufferGeometry>(), materials = new Set(this.sources)
     this.object.traverse(o => { if (o instanceof T.Mesh) { geometries.add(o.geometry); for (const m of Array.isArray(o.material) ? o.material : [o.material]) materials.add(m) } })
