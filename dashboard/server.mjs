@@ -45,7 +45,22 @@ function send(res, code, type, body) {
   res.end(body)
 }
 
-createServer((req, res) => {
+// Link liveness for the block at the top of the dashboard. Each link is probed at most once
+// every 30 s; a link that does not answer is shown as down, never left as a dead link.
+const probes = new Map()
+async function probe(url) {
+  const hit = probes.get(url)
+  if (hit && Date.now() - hit.at < 30000) return hit.up
+  let up = false
+  try { up = (await fetch(url, { method: 'GET', redirect: 'follow', signal: AbortSignal.timeout(4000) })).status < 500 } catch { up = false }
+  probes.set(url, { at: Date.now(), up })
+  return up
+}
+async function withLiveness(links) {
+  return Promise.all((links ?? []).map(async (g) => ({ ...g, items: await Promise.all(g.items.map(async (i) => ({ ...i, up: await probe(i.url) }))) })))
+}
+
+createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x')
   if (url.pathname === '/api/status') {
     let status = {}
@@ -56,6 +71,7 @@ createServer((req, res) => {
       status.updated = stamp
       if (status.vehicles) status.vehiclesUpdated = stamp
     } catch (e) { status = { error: String(e) } }
+    if (status.links) status.links = await withLiveness(status.links)
     return send(res, 200, TYPES['.json'], JSON.stringify({ ...status, git: gitState(), docs: DOCS.map(([id, , title]) => ({ id, title })), now: new Date().toISOString() }))
   }
   if (url.pathname.startsWith('/api/doc/')) {

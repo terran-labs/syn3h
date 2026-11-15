@@ -72,4 +72,29 @@ describe('Syn3h camera', () => {
     for (let i = 0; i < 300; i++) chase.update(0.02)
     expect(camera.getWorldDirection(new Vector3()).y).toBeGreaterThan(0.3)
   })
+  it('ride view hides only tagged parts, the whole vehicle when nothing is tagged, and restores both', () => {
+    const { target, chase } = harness()
+    const body = new Object3D(), canopy = new Object3D(); canopy.userData.hideInRide = true
+    target.add(body, canopy)
+    params.set('camera.mode', 1); chase.update(0.02)
+    expect(target.visible).toBe(true); expect(body.visible).toBe(true); expect(canopy.visible).toBe(false)
+    params.set('camera.mode', 0); chase.update(0.02)
+    expect(canopy.visible).toBe(true)
+    // Untagged vehicle: hidden whole, as before.
+    const plain = new Object3D(); plain.position.set(5, 1, 0); chase.target = plain
+    params.set('camera.mode', 1); chase.update(0.02)
+    expect(plain.visible).toBe(false)
+    // Switching vehicles while in ride view gives the old one back.
+    chase.setVehicle({ object: target, body: { linvel: () => ({ x: 0, y: 0, z: 0 }) } } as unknown as CameraVehicle); chase.update(0.02)
+    expect(plain.visible).toBe(true); expect(target.visible).toBe(true); expect(canopy.visible).toBe(false)
+    chase.dispose(); expect(canopy.visible).toBe(true)
+  })
+  it('ride view picks up tags that arrive after the model loads', () => {
+    const { target, chase } = harness()
+    params.set('camera.mode', 1); chase.update(0.02)
+    expect(target.visible).toBe(false)
+    const canopy = new Object3D(); canopy.userData.hideInRide = true; target.add(canopy)
+    for (let i = 0; i < 31; i++) chase.update(0.02)
+    expect(target.visible).toBe(true); expect(canopy.visible).toBe(false)
+  })
 })

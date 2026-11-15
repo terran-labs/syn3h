@@ -4,7 +4,7 @@ Written by the Orchestrator. Refreshed at each milestone tag. A fresh or compact
 Orchestrator should be able to resume from this file, `ops/BACKLOG.md`, `ops/LANES.md` and
 `ops/PROTOCOL.md` alone. Times are Pacific; read the clock with `date`, never from memory.
 
-Last refreshed: Saturday 14 November, 6:40pm PST. Demo: Sunday noon PST.
+Last refreshed: Saturday 14 November, 7:30pm PST. Demo: Sunday noon PST.
 
 ## Where things are
 
@@ -71,6 +71,31 @@ Retired in-process subagents (work merged): buggy `af96d3463a8b76592`, multiplay
 `feat/sky`, `feat/terrain`, `feat/buggy`.
 
 ## Releases
+
+- LIVE: release-1 = `m13.1-steering` (ee73e41, branch `release/1`, worktree
+  `/Users/vtn/dev/Syn3h-wt/release`): m13 plus the buggy steering and upright ram flag fixes.
+  https://www.syn3h.com/ (Custom Domain, attached 7:13pm PST) and
+  https://syn3h.af-4e7.workers.dev/. Worker `syn3h`, versions 9c01cffa (release) and bde1abd6
+  (with the domain). Frozen copy `../Syn3h-stable/20261114-190707-ee73e41`. DNS export
+  `../Syn3h-stable/dns/20261114-190836`. Undo the cutover (old site back at www), from this
+  checkout with the token in the environment:
+  `tools/domain.sh rollback ../Syn3h-stable/dns/20261114-190836 www.syn3h.com`.
+  There is no earlier Worker release to roll back to. Only www is attached; the apex still
+  points at the old host, which redirects it to www.
+- The token (`~/.config/syn3h/cloudflare-token`) expires Monday 16 November at midnight
+  Pacific and can edit every Worker in the account, including the owner's
+  `aubreyfalconer-com`: touch nothing but the Worker named `syn3h`.
+- Release 2 will be `m14` from trunk. Foreman's order of importance: iPad black screen
+  findings, wing-lift fixes, rear-end shove, share tags on www (all on trunk except an iPad
+  cause). New features stay out unless the owner has seen or heard them. Tell the Foreman
+  before shipping. Release from the integration checkout so the store is `../Syn3h-stable`
+  (releasing from the release worktree wrote to `Syn3h-wt/Syn3h-stable`; both copies exist).
+- Broker commands can take over a minute when lanes queue behind each other: wait up to
+  150 s before stopping a helper; stopping at 60 s left the dashboard half restarted.
+- Wrapping, curved world (owner's order via Terrain Lab, 7:20pm): lands in every lane behind
+  `terrain.wrapSize` and `world.curve`. Ships to the public only when complete in every lane,
+  the seam passes two-player, bot chase and ram checks, and the owner has driven across a
+  seam; otherwise the demo runs the last release without it. Decision point 9am Sunday.
 
 - `tools/release.sh <n> "note"` from a clean, tagged integration checkout: freezes the build,
   deploys from the frozen copy with wrangler, runs the two player network test against the

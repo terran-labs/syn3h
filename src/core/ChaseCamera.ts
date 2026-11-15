@@ -95,7 +95,14 @@ export class ChaseCamera implements System {
   private dragging = false
   private scopeHeld = false
   private hiddenTarget: THREE.Object3D | null = null
-  private hiddenWasVisible = true
+  /**
+   * What the ride view hid, with each object's visibility before. A vehicle that tags parts
+   * with `userData.hideInRide = true` (a cockpit canopy, say) loses only those, so the driver
+   * sees their own body around them. A vehicle that tags nothing is hidden whole, as before.
+   */
+  private readonly hidden: { object: THREE.Object3D; wasVisible: boolean }[] = []
+  private hidWhole = false
+  private hideCheck = 0
 
   constructor(private readonly game: Game, private readonly terrain: Terrain) {
     if (typeof window === 'undefined') return
@@ -137,7 +144,7 @@ export class ChaseCamera implements System {
     }) as EventListener, { passive: false })
   }
 
-  setVehicle(vehicle: CameraVehicle | null): void { this.vehicle = vehicle; this.target = vehicle?.object ?? null }
+  setVehicle(vehicle: CameraVehicle | null): void { this.restoreVisibility(); this.vehicle = vehicle; this.target = vehicle?.object ?? null }
 
   /**
    * External pose override for cinematic shots (attract mode). While set, the camera eases
@@ -222,9 +229,23 @@ export class ChaseCamera implements System {
     camera.fov = reset ? fov : THREE.MathUtils.lerp(camera.fov, fov, ease(dt, camFovSmoothing.value))
     camera.near = first ? 0.1 : Math.min(0.5, camClearance.value / 2)
     camera.updateProjectionMatrix()
-    if (first && this.hiddenTarget !== target) { this.restoreVisibility(); this.hiddenTarget = target; this.hiddenWasVisible = target.visible; target.visible = false }
+    // A vehicle's model loads after the vehicle exists, so its tags can appear while the whole
+    // target is already hidden: look again now and then until some are found.
+    if (first && (this.hiddenTarget !== target || (this.hidWhole && ++this.hideCheck >= 30))) this.hideForRide(target)
     else if (!first) this.restoreVisibility()
   }
-  private restoreVisibility() { if (this.hiddenTarget) this.hiddenTarget.visible = this.hiddenWasVisible; this.hiddenTarget = null }
+  private hideForRide(target: THREE.Object3D): void {
+    this.restoreVisibility()
+    this.hiddenTarget = target
+    this.hideCheck = 0
+    target.traverse(o => { if (o.userData.hideInRide === true) this.hidden.push({ object: o, wasVisible: o.visible }) })
+    this.hidWhole = this.hidden.length === 0
+    if (this.hidWhole) this.hidden.push({ object: target, wasVisible: target.visible })
+    for (const h of this.hidden) h.object.visible = false
+  }
+  private restoreVisibility() {
+    for (const h of this.hidden) h.object.visible = h.wasVisible
+    this.hidden.length = 0; this.hiddenTarget = null; this.hidWhole = false
+  }
   dispose() { this.restoreVisibility(); for (const off of this.unbind) off(); this.unbind.length = 0 }
 }

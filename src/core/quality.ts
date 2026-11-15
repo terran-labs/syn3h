@@ -1,4 +1,5 @@
 /** Local rendering budgets. World parameters and physics resolution are never changed here. */
+import { graphicsOverride } from './renderOptions'
 import { defineParam, params } from '../../shared/params'
 import type { WebGPURenderer } from 'three/webgpu'
 export type GraphicsLevel = 0 | 1 | 2
@@ -96,7 +97,9 @@ export class QualityController {
     try { this.storage = window.sessionStorage } catch { try { this.storage = window.localStorage } catch { /* No storage available. */ } }
     const nav = navigator as Navigator & { deviceMemory?: number }
     this.detected = classifyDevice({ userAgent: nav.userAgent, touchPoints: nav.maxTouchPoints, memoryGB: nav.deviceMemory })
-    params.set(graphicsLevel.def.id, beginLoad(this.storage, this.detected))
+    const initial = beginLoad(this.storage, this.detected)
+    params.set(graphicsLevel.def.id, graphicsOverride(location.search) ?? initial)
+    storageWrite(this.storage, LOAD_KEY, String(graphicsLevel.value))
     reportLoading('device', 0.05)
     window.addEventListener('keydown', this.onKey)
     this.unsubscribe = params.onChange(id => {

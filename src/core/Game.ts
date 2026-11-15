@@ -10,6 +10,7 @@
  * Systems register with `game.add(system)`. Order of registration is order of execution.
  */
 import * as THREE from 'three/webgpu'
+import { installRenderDiagnostics } from './diagnostics'
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
 import { QualityController, reportLoading, type FrameMetrics } from './quality'
@@ -50,7 +51,8 @@ export class Game {
   private last = 0
   private averageFrameMs = 1000 / 60
 
-  constructor(readonly canvas: HTMLCanvasElement) {}
+  private readonly observeRenderer: (() => void) | undefined
+  constructor(readonly canvas: HTMLCanvasElement) { this.observeRenderer = installRenderDiagnostics(this) }
 
   async init(): Promise<void> {
     await this.quality.initialize()
@@ -62,7 +64,11 @@ export class Game {
     })
 
     reportLoading('renderer', 0.4)
-    this.renderer = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: true })
+    // `?webgl=1` forces the WebGL 2 backend: a way round a WebGPU implementation that
+    // initialises but draws nothing (first seen as a black screen on iPadOS Safari).
+    const forceWebGL = new URLSearchParams(location.search).has('webgl')
+    this.renderer = new THREE.WebGPURenderer({ canvas: this.canvas, antialias: true, forceWebGL })
+    this.observeRenderer?.()
     await this.renderer.init()
     this.backend = (this.renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend ? 'webgpu' : 'webgl'
     this.quality.attachRenderer(this.renderer)

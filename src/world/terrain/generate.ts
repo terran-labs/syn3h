@@ -26,7 +26,7 @@ import { fbm, hash2, perlin, ridged, rng, smoothstep, subSeed } from './noise'
 import { type LavaFeatures, type Vent, lavaPass, ventsPass } from './lava'
 import { forestPass } from './forest'
 import { type Road, roadsPass } from './roads'
-import { KIND_DESERT, KIND_VOLCANIC, type TerrainSettings } from './settings'
+import { KIND_ALPINE, KIND_DESERT, KIND_VOLCANIC, type TerrainSettings } from './settings'
 
 export const DEFAULT_WORLD_SIZE = 2048
 /** Samples per side. 513 gives 4 m cells; see the report in tests/world for timings. */
@@ -324,8 +324,13 @@ export function coneProfile(t: number): number {
  *  - desert: a great mesa. A low apron of scree, then cliffs up to a broad flat top.
  */
 export function centreProfile(kind: number, t: number): number {
-  if (kind !== KIND_DESERT) return coneProfile(t)
   if (t >= 1) return 0
+  if (kind === KIND_ALPINE) {
+    // A horn: long gentle skirts for forest and meadow, then a wall of rock to the summit.
+    const u = 1 - t
+    return 0.1 * u + 0.2 * u * u + 0.7 * u * u * u * u
+  }
+  if (kind !== KIND_DESERT) return coneProfile(t)
   // Two cliff bands with a bench between them, so it reads as stacked sandstone and the
   // spiral road gets a ledge to run along.
   return 0.16 * (1 - t) + 0.4 * smoothstep(0.93, 0.74, t) + 0.44 * smoothstep(0.62, 0.45, t)
@@ -507,11 +512,22 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
       const mask = smoothstep(edge0, edge0 + 0.11, m) * band * clear
       if (mask > 0) {
         let relief = massifField(wx, wz, 150, S.crag)
-        // Desert mountains are buttes: the peaks are sliced off into flat tops.
-        if (s.kind === KIND_DESERT) relief = relief > 0.5 ? 1 : relief * 2
-        relief = terrace(relief, 9, 0.5)
+        if (s.kind === KIND_ALPINE) {
+          // Alpine ranges: knife ridges and branching spurs from ridged noise, lifted
+          // where the cellular peaks are, with no terracing. They read as mountains, not
+          // lumps.
+          const ridge = ridged(wx * 0.0052, wz * 0.0052, S.ridge + 11, 3)
+          relief = 0.3 * relief + 0.7 * ridge * (0.55 + 0.45 * relief)
+          relief *= relief * 1.25
+          if (relief > 1) relief = 1
+        } else {
+          // Desert mountains are buttes: the peaks are sliced off into flat tops.
+          if (s.kind === KIND_DESERT) relief = relief > 0.5 ? 1 : relief * 2
+          relief = terrace(relief, 9, 0.5)
+        }
         // A cliff base from the mask edge, then the peaks on top.
-        const body = 0.34 * smoothstep(0, 0.6, mask) + 0.66 * relief * mask
+        const base = s.kind === KIND_ALPINE ? 0.12 : 0.34
+        const body = base * smoothstep(0, 0.6, mask) + (1 - base) * relief * mask
         h += s.mesaHeight * body * (0.75 + 0.45 * smoothstep(-0.2, 0.6, m))
         if (mask * 0.35 > volcanic) volcanic = mask * 0.35
       }
@@ -558,13 +574,16 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
     const lip = rho + SUMMIT_MARGIN - 8
     if (r > lip - 9 && r < lip + 9) {
       const fin = smoothstep(0.0, 0.45, perlin(ux * 5.2, uz * 5.2, S.rim + 5) + 0.3 * perlin(ux * 13, uz * 13, S.rim + 6))
-      h += s.roughness * 84 * fin * smoothstep(lip - 9, lip - 2, r) * smoothstep(lip + 9, lip + 1, r)
+      h += s.roughness * (s.kind === KIND_ALPINE ? 130 : 84) * fin * smoothstep(lip - 9, lip - 2, r) * smoothstep(lip + 9, lip + 1, r)
     }
     const sN = r / rc
     if (sN < 1.24) {
       const fang = smoothstep(0.02, 0.5, perlin(ux * 3.4, uz * 3.4, S.rim) + 0.25 * perlin(ux * 9, uz * 9, S.rim + 1))
       // Only a volcano has a tall tooth; a mesa or a horn keeps a lower, broken edge.
-      const crown = s.roughness * 56 * fang + (s.kind === KIND_VOLCANIC ? 60 : 22) * smoothstep(0.72, 0.97, gentle)
+      // An alpine peak is crowned with tall pinnacles round its tarn, one of them the true
+      // summit, so from below it is a horn and not a table.
+      const crown = s.roughness * (s.kind === KIND_ALPINE ? 150 : 56) * fang +
+        (s.kind === KIND_VOLCANIC ? 60 : s.kind === KIND_ALPINE ? 120 : 22) * smoothstep(0.72, 0.97, gentle)
       if (sN >= 1) {
         h += crown * smoothstep(1.24, 1.1, sN) * smoothstep(0.98, 1.05, sN)
       } else {
