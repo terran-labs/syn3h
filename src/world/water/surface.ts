@@ -221,6 +221,8 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
 
 /** Sample count per metre of river when rebuilding a ribbon: fine enough for falls. */
 const RIVER_STEP = 3
+/** Highest a ribbon edge may stand above the bank under it, metres. */
+const RIVER_EDGE_CLEARANCE = 0.25
 
 /**
  * A ribbon at the river's true surface (`points[].y`), carrying for the water material: uv
@@ -271,9 +273,12 @@ export function buildRiverSurface(
     for (const side of [-1, 0, 1]) {
       const x = p.x - (dz / len) * (width / 2) * side
       const z = p.z + (dx / len) * (width / 2) * side
-      positions.push(x, p.y, z)
+      const g = ground.heightAt(x, z)
+      // A bank lower than the water would leave the edge hanging in the air: lay it on the
+      // bank instead, so the surface spills over rather than floating past it.
+      positions.push(x, side ? Math.min(p.y, g + RIVER_EDGE_CLEARANCE) : p.y, z)
       uvs.push((side * width) / 2, distance)
-      bed.push(ground.heightAt(x, z))
+      bed.push(g)
       speed.push(speedAt(slope))
       slopes.push(slope)
     }
