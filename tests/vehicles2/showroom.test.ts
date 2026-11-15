@@ -8,7 +8,7 @@ import {TRACK_LUGS,applyShowroom,paintCanopy,paintFlakes,paintScaleDepth,paintSc
 
 const box=()=>new T.BoxGeometry(1,1,1)
 const std=(name:string,color=0x336699)=>{const m=new T.MeshStandardMaterial({color});m.name=name;return m}
-afterEach(()=>params.set(vehicleShading.def.id,3))
+afterEach(()=>{params.set(vehicleShading.def.id,3);params.set(paintCanopy.def.id,paintCanopy.def.default)})
 
 describe('showroom vehicle shading',()=>{
  it('reads a tag first, then names, then an authored clear coat',()=>{
@@ -31,6 +31,7 @@ describe('showroom vehicle shading',()=>{
   expect(meshes.find(m=>m!==merged)!.material).toBe(glass)
  })
  it('swaps materials by tier, builds each tier once and decorates each tier once',()=>{
+  params.set(paintCanopy.def.id,false)
   params.set(vehicleShading.def.id,0)
   const root=new T.Group(),paint=setRole(std('Body'),'paint'),glass=setRole(std('Cockpit'),'glass')
   const body=new T.Mesh(box(),paint),canopy=new T.Mesh(box(),glass),wing=new T.Mesh(box(),new T.MeshBasicMaterial());root.add(body,canopy,wing)
@@ -138,17 +139,24 @@ describe('showroom vehicle shading',()=>{
   expect(detailLevel(117,true,2)).toBe(2);expect(detailLevel(114,true,2)).toBe(1)
   expect([LOD_NEAR,LOD_FAR]).toEqual([30,120])
  })
- it('previews the force field on glass canopies with one switch, and puts the glass back',()=>{
+ it('uses the force field by default, retains the glass toggle and respects the plain tier',()=>{
   params.set(vehicleShading.def.id,2)
   const root=new T.Group(),canopy=new T.Mesh(box(),setRole(std('Cockpit'),'glass'));root.add(canopy)
   const dispose=applyShowroom(root,()=>{})
-  const glass=canopy.material as T.Material
-  expect(glass).toBeInstanceOf(T.MeshPhysicalNodeMaterial)
-  params.set(paintCanopy.def.id,true)
   const field=canopy.material as T.Material
   expect(field).toBeInstanceOf(T.MeshBasicNodeMaterial);expect(field.side).toBe(T.DoubleSide);expect(field.depthWrite).toBe(false)
   params.set(paintCanopy.def.id,false)
   expect(canopy.material).toBeInstanceOf(T.MeshPhysicalNodeMaterial)
+  params.set(paintCanopy.def.id,true)
+  expect(canopy.material).toBeInstanceOf(T.MeshBasicNodeMaterial)
+  params.set(vehicleShading.def.id,0)
+  const plain=canopy.material as unknown as T.MeshBasicMaterial
+  expect(plain).toBeInstanceOf(T.MeshBasicMaterial)
+  expect(plain.transparent).toBe(true);expect(plain.opacity).toBeLessThan(.1);expect(plain.depthWrite).toBe(false)
+  params.set(paintCanopy.def.id,false)
+  expect(canopy.material).toBeInstanceOf(T.MeshStandardMaterial)
+  params.set(paintCanopy.def.id,true)
+  expect(canopy.material).toBe(plain)
   dispose()
  })
 
