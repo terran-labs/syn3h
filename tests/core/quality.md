@@ -17,6 +17,26 @@ The client particle cap applies even when an emitter module is imported after in
 
 The controller offers `game.quality.attachTerrain(terrain)`. If terrain implements `setRenderQuality({level, drawDistance, detail})`, it receives the current budget and future changes. The merged terrain implements that setter and the composition root attaches it, so graphics levels change visual LOD without changing the collider. No terrain files were changed.
 
+## Six quality levels (15 November 2026)
+
+This replaces the three tiers. Sections below that speak of three tiers, a device level or shading, particle and shadow rungs describe the earlier design and are kept for their measurements only.
+
+There are six levels for every device: Minimal, Low, Medium, High, Ultra and Cinematic (`gfx.quality`, 0 to 5). The earlier tiers carry over exactly as Minimal, Medium and Ultra. `LEVELS` in `src/core/quality.ts` holds each level's budget (pixel ratio cap, target rate, shadows, vehicle shading, particles, bot cap, draw distance, terrain detail, ground cover, effect rate, post tier). `PRESET_TABLE` holds the value each level sets for every local parameter it owns, each post effect and indirect light included. A level never writes a world parameter. Placement is by the kind of work a feature adds, not by timings; moving a feature is a one-line edit.
+
+**Fine-tuning.** Any owned parameter the player sets by hand is an override. It survives level changes made by the governor and is cleared when the player changes level. `clearOverride(id)` hands one value back.
+
+**Starting level.** No user agent or touch test. A first visit starts at High; at Medium on a texture limit under 8192 or two gigabytes of reported memory; with no WebGPU adapter (the WebGL 2 path) at Medium with Medium as the ceiling; on a software adapter at Minimal with the same ceiling. Later visits start at the saved level. An unfinished load starts the next one a level lower.
+
+**Governor.** Inside a level it eases only what builds no pipeline: the post budget fades, then resolution drops to 85 and 70 percent. After 8 seconds of slow windows at the bottom rung it gives up the level. Climbing a level needs 60 seconds of headroom with doubling backoff after a failed climb. Until the first shed of a session all climb waits are a quarter as long, so a strong device reaches Cinematic from High within three minutes of play, sooner with a menu visit.
+
+**Level climbs and shader builds.** A level change rebuilds the post pipeline and may recompile lit materials (the 15 November matrix counted 44 to 195 pipelines for a tier change). The controller cannot prebuild pipelines for materials other modules own, so a climb is held as pending until a covered moment: a frame while a lobby or menu is on screen, or a call to `noteCovered()` (a respawn or teleport should call it). If no covered moment comes within 20 seconds of continued headroom, the climb is taken during play and costs one hitch. Each level change is recorded in `quality.levelChanges` with who made it, whether it was covered and the pipelines created in the following two seconds. Drops are immediate: the frames are already slow.
+
+**Saved state.** `localStorage` key `syn3h.quality.v2` holds `{ level, auto, pinned, overrides }`. The earlier `syn3h.graphics.level` and `syn3h.graphics.manual` are read once, mapped 0, 1, 2 to 0, 2, 4, and removed after the first finished load. `syn3h.loading.level` stays tab scoped as the crash marker. `?gfx=0` to `?gfx=5` chooses a level for one page load and is not saved.
+
+**Interface.** `game.quality` implements `QualitySource`: `qualityLevels`, `getQualityState()` (the same frozen object until something changes), `setLevel`, `stepUp`, `stepDown`, `setAuto`, `clearOverride`, `clearOverrides` and `subscribeQuality` (called at once and after every change). State carries `easing` (`'post'`, `'resolution'` or null) so the card can say what is being eased.
+
+**Older three-step value.** `gfx.level` (0, 1, 2) follows the level (0; 1 and 2; 3 to 5) so existing consumers keep working, and setting it moves the level to 0, 2 or 4. Consumers should move to `qualityBudget()` fields and `quality.postTier`, after which it is deleted.
+
 ## Recovery, loading and diagnostics
 
 Session storage records `syn3h.loading.level` when loading starts and clears it after a frame with draws. A surviving marker reduces the next attempt by one level, including repeated failures down to safe. A separate session value remembers a manually selected or automatically reduced level. Session storage avoids treating another tab's load as a crash; local storage is a fallback when session storage is unavailable. Storage denial does not prevent the game from starting.

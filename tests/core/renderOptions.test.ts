@@ -11,9 +11,10 @@ describe('Safari fallback detection (not enabled)', () => {
     expect(isIOSOrIPadSafari('iPhone CriOS/140 Safari/605', 5)).toBe(false)
   })
 })
-it('accepts only explicit graphics levels', () => {
+it('accepts only explicit quality levels', () => {
   expect(graphicsOverride('?gfx=0')).toBe(0)
   expect(graphicsOverride('?gfx=1')).toBe(1)
   expect(graphicsOverride('?gfx=2')).toBe(2)
-  for (const value of ['', '?gfx=', '?gfx=3', '?gfx=NaN']) expect(graphicsOverride(value)).toBeUndefined()
+  expect(graphicsOverride('?gfx=5')).toBe(5)
+  for (const value of ['', '?gfx=', '?gfx=6', '?gfx=-1', '?gfx=2.5', '?gfx=NaN']) expect(graphicsOverride(value)).toBeUndefined()
 })
