@@ -12,7 +12,7 @@ try{
  const page=await browser.newPage({viewport:{width:1280,height:800}})
  page.on('pageerror',e=>report.errors.push(e.message))
  await page.goto(base+'/?autoplay=1&vehicle=buggy&room=hold-check',{waitUntil:'load'})
- await page.waitForFunction(()=>window.syn3h?.game.tick>90,null,{timeout:180000})
+ await page.waitForFunction(()=>window.syn3h?.game.tick>90&&window.syn3hNet?.connected,null,{timeout:180000})
  await page.evaluate(()=>{
   const s=window.syn3h;s.params.set('gfx.auto',false);s.params.set('bots.count',0)
   s.game.add({postPhysics(){const p=window.__holdProbe;if(!p)return;const v=s.player,b=v.body,t=b.translation(),q=b.rotation(),speed=b.linvel();const held=v.object.userData.materializing===true
@@ -22,8 +22,8 @@ try{
  })
  for(const kind of ['jet','hovercraft','tank','buggy']){
   await page.keyboard.down('KeyW')
-  const start=await page.evaluate(kind=>{window.__holdProbe={held:[],free:[]};const s=window.syn3h,v=s.swapVehicle(kind);return {kind:v.kind,tick:s.game.tick,held:v.object.userData.materializing===true,y:v.body.translation().y}},kind)
-  assert.equal(start.held,true)
+  const start=await page.evaluate(kind=>{window.__holdProbe={held:[],free:[]};const s=window.syn3h,v=s.swapVehicle(kind);const n=window.syn3hNet,shots=n.stats.shotsFired;n.fire();return {kind:v.kind,tick:s.game.tick,held:v.object.userData.materializing===true,y:v.body.translation().y,fireBlocked:n.stats.shotsFired===shots,hitIgnored:n.judgedId(v.body.handle)===null}},kind)
+  assert.equal(start.held,true);assert.equal(start.fireBlocked,true);assert.equal(start.hitIgnored,true)
   await page.waitForFunction(()=>window.__holdProbe.held.length>=15,null,{timeout:60000})
   await page.keyboard.up('KeyW')
   await page.screenshot({path:`/tmp/swap-hold-${kind}.png`})
@@ -33,6 +33,8 @@ try{
   assert.ok(result.held.length>=55&&result.held.length<=61,`${kind} held ${result.held.length} ticks`)
   for(const row of result.held){assert.ok(Math.abs(row.y-start.y)<.001);assert.ok(row.speed<.001);assert.ok(row.up>.999);assert.deepEqual(row.input,[0,0,0,0,false])}
   assert.ok(Math.min(...result.free.map(r=>r.y))<start.y-.1,`${kind} did not drop`)
+  const canFire=await page.evaluate(()=>{const n=window.syn3hNet,before=n.stats.shotsFired;n.fire();return n.stats.shotsFired===before+1})
+  assert.equal(canFire,true)
   report.steps.push({kind,heldTicks:result.held.length,startY:start.y,minFreeY:Math.min(...result.free.map(r=>r.y)),finalY:result.free.at(-1).y})
  }
  report.rapid=await page.evaluate(()=>{const s=window.syn3h,a=s.swapVehicle('jet'),same=s.swapVehicle('jet'),stillHeld=a.object.userData.materializing===true,b=s.swapVehicle('tank'),again=s.swapVehicle('jet');return {same:same===a,stillHeld,reused:again===a,tankDisabled:!b.body.isEnabled(),tankDynamic:!b.body.isKinematic(),tankClear:!b.object.userData.materializing,jetHeld:!!a.object.userData.materializing}})
