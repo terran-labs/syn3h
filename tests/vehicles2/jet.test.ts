@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { initPhysics } from '../../src/core/physics'
-import { Jet, jetDrag, jetHoverHold } from '../../src/vehicles/Jet'
+import { Jet, jetDrag, jetFlightThrust, jetHoverHold } from '../../src/vehicles/Jet'
 import { harness } from './harness'
 
 beforeAll(initPhysics)
@@ -42,6 +42,14 @@ describe('Jet hover and flight',()=>{
   for(let i=0;i<10;i++){v.input.special=!v.input.special;v.input.x=.2;h.step(v,50)}
   expect([...v.getState().p,...v.getState().q,...v.getState().v].every(Number.isFinite)).toBe(true)
   v.dispose();h.world.free()
+ })
+ it('flight thrust defaults to the prefab factor and a lower setting accelerates less',()=>{
+  expect(jetFlightThrust.value).toBe(2)
+  const run=()=>{const h=harness(9.81,false);const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,500,0));v.isLocal=false;v.input.special=true;v.input.z=1
+   h.step(v,100);const s=-v.body.linvel().z;v.dispose();h.world.free();return s}
+  const full=run();jetFlightThrust.value=1
+  try{const half=run();expect(half).toBeGreaterThan(0);expect(half).toBeLessThan(full*.7)}
+  finally{jetFlightThrust.value=2}
  })
  it('hover hold is off by default and holds altitude with no throttle key when enabled',()=>{
   expect(jetHoverHold.value).toBe(0)
