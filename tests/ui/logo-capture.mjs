@@ -1,9 +1,9 @@
 // Captures of the animated logo (logo.html) for review: the intro at several moments, the
 // settled loop at two times, the still frame, a phone-sized view, the hosted-free SVG
-// export and a side by side with the legacy bitmap. Also measures frame time.
+// export. Also measures frame time.
 //   tools/heavy.sh node tests/ui/logo-capture.mjs http://127.0.0.1:5208
 import { chromium } from 'playwright-core'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 const base = process.argv[2] ?? 'http://127.0.0.1:5208', out = process.argv[3] ?? '/tmp/syn3h-vehicles2/logo'
 await mkdir(out, { recursive: true })
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
@@ -46,11 +46,6 @@ try {
   await phone.evaluate(() => window.logoLab.mark.drawFrame(9, false)); await phone.screenshot({ path: `${out}/phone.png` })
   await phone.close()
 
-  // Side by side: the legacy bitmap and the generated still at the same wordmark size.
-  const side = await browser.newPage({ viewport: { width: 2048, height: 560 } })
-  const legacy = (await readFile('public/brand/syn3h.png')).toString('base64'), ours = (await readFile(`${out}/export/share.png`)).toString('base64')
-  await side.setContent(`<body style="margin:0;background:#03060b;display:flex"><img src="data:image/png;base64,${legacy}" style="width:1024px;height:512px;margin-top:24px"><img src="data:image/png;base64,${ours}" style="width:1024px;height:538px"></body>`)
-  await side.waitForTimeout(300); await side.screenshot({ path: `${out}/side-by-side.png` })
 } finally { await browser.close() }
 report.errors = [...new Set(errors)]; report.otherRequests = requests
 console.log(JSON.stringify(report, null, 1))
