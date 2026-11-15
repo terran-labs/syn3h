@@ -129,8 +129,12 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   if (mode === 'sea') {
     // Rolling lines running in to the shore: phase rises with depth so the bands travel toward
     // the coast, and they fade with depth and wherever the noise breaks them up.
-    const lines = smoothstep(0.82, 0.98, sin(depth.mul(2.4).add(time.mul(1.3))).mul(0.5).add(0.5))
-    foam = max(foam, lines.mul(smoothstep(4.5, 0.6, depth)).mul(smoothstep(0.25, 0.7, breakup)).mul(0.8))
+    // Depth is interpolated across a coarse grid, so its contours zigzag: warp it with
+    // smooth noise and keep the lines in the last couple of metres, where the grid is
+    // closest to the coast and the lines are short.
+    const warp = mx_noise_float(vec3(p.x.mul(0.045), p.z.mul(0.045), drift.mul(0.2))).mul(0.9)
+    const lines = smoothstep(0.88, 0.99, sin(depth.add(warp).mul(1.7).add(time.mul(1.1))).mul(0.5).add(0.5))
+    foam = max(foam, lines.mul(smoothstep(2.6, 0.5, depth)).mul(smoothstep(0.35, 0.75, breakup)).mul(0.7))
     // Whitecaps on the highest crests when the sea is rough.
     const rough = smoothstep(0.6, 2.2, ampTotal.mul(2))
     foam = max(foam, smoothstep(0.72, 0.95, crestN).mul(rough).mul(smoothstep(0.35, 0.8, breakup)))

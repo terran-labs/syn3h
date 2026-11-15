@@ -29,6 +29,7 @@ import { riverSpeed } from './lava'
 import { waterRiverMaxSpeed, waterWaves } from '../water/params'
 import { SEA_GRID } from '../water/seaWaves'
 import { buildRiverSurface, buildStillSurface, createWaterSurface } from '../water/surface'
+import { WaterfallMist, fallsFromRivers } from '../water/mist'
 
 interface Liquid {
   material: THREE.Material
@@ -183,6 +184,7 @@ export class Volcanics implements System {
   private readonly newRiver = createWaterSurface('river')
   /** Whether the current meshes were built for the new water. */
   private builtNew = false
+  private readonly mist = new WaterfallMist(this.group)
   /** Sea grid chunks and the apron round them, all sharing the sea material. */
   private sea: { mesh: THREE.Mesh; cx: number; cz: number }[] = []
   private apron: THREE.Mesh | null = null
@@ -256,6 +258,7 @@ export class Volcanics implements System {
         if (r.points.length < 2) continue
         add(buildRiverSurface(ground, r.points, r.width + 1.5, (slope) => riverSpeed(slope, waterRiverMaxSpeed.value)), this.newRiver.material, false)
       }
+      this.mist.set(fallsFromRivers(lava.rivers), data.size)
       this.placedVents = []
       this.place()
       return
@@ -362,6 +365,7 @@ export class Volcanics implements System {
     this.lavaSea.update(dt, level, dim)
     this.waterSea.update(dt, level)
     if (this.builtNew) {
+      this.mist.update(dt, this.camera?.position.x ?? 0, this.camera?.position.z ?? 0)
       this.newSea.update(level)
       this.newStill.update(0)
       this.newRiver.update(0)
@@ -388,6 +392,7 @@ export class Volcanics implements System {
     }
     this.meshes.length = 0
     this.emitters.clear()
+    this.mist.clear()
   }
 
   dispose(): void {
