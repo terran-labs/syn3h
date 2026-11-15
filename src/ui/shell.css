@@ -106,11 +106,16 @@
 .touch-controls [hidden] { display: none !important; }
 .shell-vehicle-options { flex-wrap: wrap; gap: 10px 18px; }
 .vehicle-help { text-align: left; font-size: 14px; line-height: 1.7; color: #c8d9ef; }
-.spawn-help { position: fixed; z-index: 14; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 12px 18px; max-width: 520px; background: #152337eb; border: 1px solid #536b8a; font-size: 14px; pointer-events: none; }
-.spawn-help strong { font-weight: 100; color: white; }
+/* Controls card: lower left, clear of the vehicle in the chase camera at every screen size. */
+.spawn-help { position: fixed; z-index: 14; left: max(20px,env(safe-area-inset-left)); bottom: max(20px,env(safe-area-inset-bottom)); max-width: 26em; padding: 8px 14px; background: #152337d9; border: 1px solid #536b8a; font-size: clamp(13px,0.9vw,18px); line-height: 1.55; pointer-events: none; }
+.spawn-help strong { font-weight: 100; color: white; display: none; }
+.spawn-help.is-full { max-width: 28em; padding: 12px 16px; font-size: clamp(14px,0.95vw,19px); }
+.spawn-help.is-full strong { display: block; }
 .spawn-help small { color: #9bb8db; }
+.spawn-help small:empty { display: none; }
+/* Touch: one slim line between the vehicle and the thumb controls. */
+.has-touch .spawn-help { left: 50%; right: auto; bottom: calc(max(30px,env(safe-area-inset-bottom)) + 160px); transform: translateX(-50%); max-width: calc(100% - 24px); padding: 5px 12px; white-space: nowrap; }
 .syn3h-shell:not(.is-playing) .spawn-help { display: none; }
-@media (max-width: 700px) { .spawn-help { left: 12px; right: 12px; bottom: 260px; transform: none; font-size: 13px; } }
 
 .syn3h-loading { position: fixed; inset: 0; z-index: 60; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: radial-gradient(ellipse at top,#172540,#03060c 75%); color: #cacaca; font: 100 18px 'Syn3h Roboto',sans-serif; padding: 24px; text-align: center; }
 .syn3h-loading[hidden] { display: none; }
@@ -125,7 +130,7 @@
 .shell-minimap canvas { display: block; width: 100%; height: 100%; opacity: .88; }
 .shell-minimap span { position: absolute; top: 0; left: 5px; color: white; font-size: 12px; text-shadow: 0 1px 2px black; }
 .syn3h-shell:not(.is-playing) .shell-minimap { display: none; }
-@media (max-width: 700px) { .shell-minimap { right: 12px; top: 190px; bottom: auto; width: 110px; height: 110px; } .syn3h-shell.is-playing .shell-toast { top: 310px; font-size: 14px; } }
+@media (max-width: 700px) { .shell-minimap { right: 12px; top: 190px; bottom: auto; width: 110px; height: 110px; } .syn3h-shell.is-playing .shell-toast { left: 12px; top: 112px; transform: none; width: calc(100% - 146px); font-size: 13px; padding: 6px 10px; text-align: left; } }
 .syn3h-loading progress { appearance: none; border: 0; background: #28374d; border-radius: 0; }
 .syn3h-loading progress::-webkit-progress-bar { background: #28374d; }
 .syn3h-loading progress::-webkit-progress-value { background: #7abaff; }
@@ -236,4 +241,69 @@
   .touch-actions { right: 12px; gap: 8px; grid-template-columns: 56px 56px; }
   .touch-actions button { height: 56px; font-size: 13px; }
   .match-hud .hill-holder { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+
+/* ---------------------------------------------------------------------------------------
+   Phones. Two layouts, chosen by shape and pointer, not by width alone. Portrait is any
+   narrow screen. Landscape is a touch screen under 500 px tall: a phone on its side is
+   844 px wide, past the 700 px breakpoint above, and used to get the desktop layout with
+   the minimap under the action buttons and the score panel over the thumb stick.
+   Both layouts keep the two thumb zones, the vehicle and the volcano's flank clear.
+   `tests/ui/phone-layout.mjs` measures every state in both and fails on any overlap.
+   --------------------------------------------------------------------------------------- */
+/* Both: in King of the Hill one strip replaces the score rows and the hill card. */
+@media (max-width: 700px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .syn3h-shell.has-match .hud-scoreboard { display: none; }
+  .match-hud { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: baseline; gap: 0 8px; padding: 6px 8px; max-height: none; overflow: hidden; }
+  .match-hud > strong { display: none; }
+  .syn3h-shell .match-hud .hill-holder { margin: 0; font-size: 13px; color: white; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .match-hud > small { font-size: 11px; white-space: nowrap; }
+  .match-race { grid-column: 1 / -1; gap: 3px; margin-top: 4px; }
+  .match-score { font-size: 11px; line-height: 1.25; }
+  .match-score progress { height: 3px; }
+  .hud-navigation .nav-label { display: none; }
+  .hud-navigation { flex-direction: row; gap: 5px; }
+  .syn3h-shell .hud-navigation button { padding: 6px 9px; font-size: 13px; min-height: 38px; }
+}
+/* Portrait: speed, then the strip, down the left; menu row and minimap in the top right,
+   over sky, so the map no longer covers the volcano's flank. */
+@media (max-width: 700px) {
+  .shell-hud { width: 176px; }
+  .shell-minimap { right: 12px; top: 58px; bottom: auto; width: 96px; height: 96px; }
+  .match-hud { left: 12px; top: 74px; width: calc(100% - 132px); transform: none; }
+  .syn3h-shell.is-playing .shell-toast { left: 12px; top: 176px; transform: none; width: auto; max-width: calc(100% - 24px); font-size: 13px; padding: 6px 10px; text-align: left; }
+  .syn3h-shell.has-match .shell-toast { top: 204px; }
+  .match-announcement, .match-announcement.round-end { top: 240px; }
+  /* Above the thumb stick, left of the action buttons, which reach higher for the jet. */
+  .has-touch .spawn-help { left: 12px; transform: none; bottom: calc(max(28px,env(safe-area-inset-bottom)) + 134px); }
+}
+@media (max-width: 350px) { .hud-navigation [data-open="worlds"] { display: none; } }
+/* Landscape: HUD top left above the stick, strip top centre, menu row and minimap top
+   right above the action buttons, messages along the bottom between the thumbs. */
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .shell-hud { left: max(12px,env(safe-area-inset-left)); top: 10px; width: 170px; padding: 6px 8px; }
+  .shell-speed { padding-bottom: 2px; }
+  .shell-speed strong { font-size: 28px; }
+  .hud-scoreboard { max-height: 72px; }
+  .hud-scoreboard .score-detail { display: none; }
+  .hud-scoreboard .score-row { font-size: 12px; padding: 2px 4px; }
+  .hud-navigation { right: max(12px,env(safe-area-inset-right)); top: 10px; }
+  .syn3h-shell .hud-navigation button { min-height: 36px; }
+  .shell-minimap { right: max(12px,env(safe-area-inset-right)); top: 54px; bottom: auto; width: 92px; height: 92px; }
+  .touch-stick { width: 124px; height: 124px; left: max(18px,env(safe-area-inset-left)); bottom: max(18px,env(safe-area-inset-bottom)); }
+  .touch-knob { left: 35px; top: 35px; }
+  .touch-actions { right: max(18px,env(safe-area-inset-right)); bottom: max(18px,env(safe-area-inset-bottom)); grid-template-columns: 56px 56px; gap: 8px; }
+  .touch-actions button { height: 56px; font-size: 13px; }
+  .match-hud { top: 10px; left: 50%; transform: translateX(-50%); width: min(300px, calc(100% - 420px)); }
+  .syn3h-shell.is-playing .shell-toast { top: auto; bottom: 46px; max-width: calc(100% - 400px); font-size: 13px; padding: 5px 12px; }
+  .has-touch .spawn-help { bottom: 12px; }
+  .match-announcement { top: 118px; width: min(420px, calc(100% - 400px)); font-size: 20px; padding: 6px 10px; }
+  .match-announcement.round-end { top: 114px; left: 200px; width: calc(100% - 400px); transform: none; padding: 8px 12px; border-width: 2px; }
+  .round-end strong { font-size: 24px; }
+  .round-end small { font-size: 14px; margin-top: 4px; }
+}
+/* Phones: the name matters more than its badges, so the badges give way first. */
+@media (max-width: 700px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .hud-scoreboard .score-row { grid-template-columns: minmax(58%,1fr) minmax(0,auto) auto; }
+  .hud-scoreboard .score-row small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }

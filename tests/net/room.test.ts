@@ -536,3 +536,115 @@ describe('Room King of the Hill with bots', () => {
     expect(host.peer.last('game')!.game.koth.out[BOT_ID_BASE]).toBeGreaterThan(0)
   })
 })
+
+describe('Room idle reset', () => {
+  const GRAVITY_DEFAULT = () => new Room('fresh').snapshot().params['world.gravity']
+  const parked = (p: Peer) => room.receive(p, state([0, 0, 0], [0, 0, 0], { paused: true }))
+  const live = (p: Peer) => room.receive(p, state([0, 0, 0]))
+
+  it('keeps the world while someone plays, even past the idle limit', () => {
+    const a = join('A')
+    send(a.peer, { type: 'param', id: 'sun.timeOfDay', value: 23 })
+    for (let t = 0; t < 7 * 60; t++) { clock += 1000; live(a.peer) }
+    expect(join('B').peer.last('welcome')!.params['sun.timeOfDay']).toBe(23)
+  })
+
+  it('forgets a world held only by a hidden tab, and the next visitor brings theirs', () => {
+    const a = join('A')
+    send(a.peer, { type: 'param', id: 'sun.timeOfDay', value: 23 })
+    send(a.peer, { type: 'param', id: 'world.gravity', value: 3 })
+    // A's tab is hidden: heartbeats only.
+    for (let t = 0; t < 4 * 60; t++) { clock += 1000; parked(a.peer) }
+    expect(a.peer.last('reset')).toBeUndefined()
+    // Five minutes from the end of the 10 s join grace.
+    for (let t = 0; t < 71; t++) { clock += 1000; parked(a.peer) }
+    const reset = a.peer.last('reset')!
+    expect(reset.reason).toBe('idle')
+    expect(reset.params['world.gravity']).toBe(GRAVITY_DEFAULT())
+    expect(reset.params['sun.timeOfDay']).toBeUndefined()
+    // Only once per idle spell.
+    for (let t = 0; t < 400; t++) { clock += 1000; parked(a.peer) }
+    expect(a.peer.all('reset')).toHaveLength(1)
+    // The next visitor brings their own world, and the parked player is told.
+    const b = join('B', { 'sun.timeOfDay': 12 })
+    expect(b.peer.last('welcome')!.params['sun.timeOfDay']).toBe(12)
+    expect(a.peer.last('reset')).toMatchObject({ reason: 'join', params: { 'sun.timeOfDay': 12 } })
+  })
+
+  it('resets 15 s after the last active player leaves, but not on a quick reload', () => {
+    const a = join('A')
+    const b = join('B')
+    send(a.peer, { type: 'param', id: 'world.gravity', value: 3 })
+    clock += 20_000
+    parked(b.peer)
+    live(a.peer)
+    room.disconnect(a.peer)
+    // A reloads within a few seconds and finds the world as it was.
+    clock += 3000
+    parked(b.peer)
+    const back = join('A2')
+    expect(back.peer.last('welcome')!.params['world.gravity']).toBe(3)
+    room.disconnect(back.peer)
+    for (let t = 0; t < 14; t++) { clock += 1000; parked(b.peer) }
+    expect(b.peer.last('reset')).toBeUndefined()
+    clock += 2000
+    parked(b.peer)
+    expect(b.peer.last('reset')!.params['world.gravity']).toBe(GRAVITY_DEFAULT())
+  })
+
+  it('resets mode, scores, lock and hill with the world', () => {
+    const a = join('A')
+    send(a.peer, { type: 'param', id: 'game.mode', value: 1 })
+    send(a.peer, { type: 'lock', locked: true })
+    for (let t = 0; t < 6 * 60; t++) { clock += 1000; parked(a.peer) }
+    const g = a.peer.last('reset')!.game
+    expect(g.mode).toBe(0)
+    expect(g.locked).toBe(false)
+    expect(g.koth.zone).toBeNull()
+  })
+
+  it('lets the host, or anyone while unlocked, reset the world to defaults', () => {
+    const a = join('A')
+    const b = join('B')
+    send(a.peer, { type: 'param', id: 'world.gravity', value: 3 })
+    send(a.peer, { type: 'lock', locked: true })
+    send(b.peer, { type: 'reset' })
+    expect(a.peer.last('reset')).toBeUndefined()
+    send(a.peer, { type: 'reset' })
+    expect(b.peer.last('reset')).toMatchObject({ reason: 'host', from: a.id })
+    expect(b.peer.last('reset')!.params['world.gravity']).toBe(GRAVITY_DEFAULT())
+    // A host reset is not an idle one: a newcomer gets the defaults, not their own world.
+    expect(join('C', { 'world.gravity': 9 }).peer.last('welcome')!.params['world.gravity']).toBe(GRAVITY_DEFAULT())
+    // Unlocked (the reset unlocks), anyone may.
+    send(b.peer, { type: 'reset' })
+    expect(a.peer.last('reset')).toMatchObject({ from: b.id })
+  })
+
+  it('a Durable Object woken tomorrow does not restore tonight\'s world', () => {
+    const a = join('A')
+    send(a.peer, { type: 'param', id: 'world.gravity', value: 3 })
+    live(a.peer)
+    parked(a.peer)
+    const snap = room.snapshot()
+    // Hibernated with a parked socket; a visitor arrives the next morning.
+    clock += 10 * 3600_000
+    const again = new Room('test', { now: () => clock })
+    again.restore(snap)
+    const hidden = new FakePeer()
+    again.adopt(hidden, room.info(a.peer)!)
+    const late = new FakePeer()
+    again.connect(late)
+    again.receive(late, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, name: 'L', params: { 'world.gravity': 7 } }))
+    expect(late.last('welcome')!.params['world.gravity']).toBe(7)
+    expect(hidden.last('reset')).toMatchObject({ reason: 'join' })
+    // A snapshot that recent activity keeps fresh still restores.
+    const busy = new Room('test', { now: () => clock })
+    busy.restore({ ...snap, activeAt: clock - 60_000 })
+    const p2 = new FakePeer()
+    busy.adopt(p2, room.info(a.peer)!)
+    const late2 = new FakePeer()
+    busy.connect(late2)
+    busy.receive(late2, JSON.stringify({ type: 'hello', v: PROTOCOL_VERSION, name: 'M', params: { 'world.gravity': 7 } }))
+    expect(late2.last('welcome')!.params['world.gravity']).toBe(3)
+  })
+})

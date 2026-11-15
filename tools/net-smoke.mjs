@@ -16,7 +16,8 @@
  *  6. sounds: spawns, shots, hits and rams reach the audio hooks
  *  7. identity: A's vehicle kind and colours reach B; B shows a name tag for A
  *  8. hidden tab: B hides, keeps a heartbeat, and A shows B as paused, not lost
- *  9. bots: A (host) owns a bot, B sees it and B's laser hit on it is judged by A
+ *  9. bots: A (host) owns a bot, B sees it, both list it for audio, and B's laser hit on it is
+ *     judged by A
  * 10. world seed: A changes it, B regenerates and stays on the ground; a late joiner with a
  *     different ?seed= gets the room's seed
  * 11. King of the Hill: A switches the mode, the host's zone reaches everyone, A alone on the
@@ -172,7 +173,9 @@ try {
 
   // 7. Identity and name tags.
   await a.evaluate(() => window.syn3hNet.setProfile({ kind: 'buggy-syn3h', colors: { body: '#FF2200', accent: '#00ffcc' } }))
-  await b.waitForFunction((id) => window.syn3hNet.players.get(id)?.kind === 'buggy-syn3h', idA, { timeout: 5000 }).catch(() => {})
+  // Wait for the colour: the kind is already the default, so waiting on it alone returned at
+  // once and read the old colours whenever the link had real latency.
+  await b.waitForFunction((id) => window.syn3hNet.players.get(id)?.colors[0] === '#ff2200', idA, { timeout: 5000 }).catch(() => {})
   const infoA = await b.evaluate((id) => window.syn3hNet.players.get(id), idA)
   check('vehicle kind and colours reach B', infoA?.kind === 'buggy-syn3h' && infoA.colors[0] === '#ff2200' && infoA.colors[1] === '#00ffcc', infoA)
   // Put B behind A, looking at it, so A's tag is on B's screen.
@@ -224,6 +227,9 @@ try {
     const botView = await b.evaluate((id) => { const r = window.syn3hNet.remotes.get(id); if (!r) return null; const t = r.vehicle.body.translation(); return [t.x, t.y, t.z] }, BOT)
     const botReal = await a.evaluate(() => { const t = window.__bots.vehicles[0].body.translation(); return [t.x, t.y, t.z] })
     check('B sees the host\'s bot where it is', botView && d2(botView, botReal) < 2, { botView, botReal })
+    // Audio hears the other player and the bot on both sides (replica on B, own bot on A).
+    const audible = await both(() => window.syn3hNet.audibleVehicles().length)
+    check('audio gets the other player and the bot', audible[0] === 2 && audible[1] === 2, { audible })
     const judgedBefore = await a.evaluate(() => window.syn3hNet.stats.hitsJudged)
     for (let i = 0; i < 6; i++) {
       await b.evaluate((id) => {
