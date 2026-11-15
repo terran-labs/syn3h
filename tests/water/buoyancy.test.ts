@@ -1,7 +1,6 @@
 import { beforeAll, afterEach, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { initPhysics, RAPIER } from '../../src/core/physics'
-import { ClassicBuggy } from '../../src/vehicles/ClassicBuggy'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
 import { Tank } from '../../src/vehicles/Tank'
 import { Hovercraft } from '../../src/vehicles/Hovercraft'
@@ -16,7 +15,7 @@ function setup(){
  const h=harness();h.terrain.liquidHeightAt=()=>10;h.terrain.liquidKindAt=()=> 'water'
  return h
 }
-it.each([['syn3h',Syn3hBuggy],['classic',ClassicBuggy]] as const)('%s sinks upright to the bed and drives on contacts',(_name,Kind)=>{
+it.each([['syn3h',Syn3hBuggy]] as const)('%s sinks upright to the bed and drives on contacts',(_name,Kind)=>{
  const h=setup(),v=new Kind(h.game,h.terrain,new THREE.Vector3(0,9,0));v.isLocal=false
  try{
   h.step(v,1800)

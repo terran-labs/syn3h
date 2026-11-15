@@ -36,6 +36,14 @@ export function voiceProfile(m: MotionAudio) {
     default: return { pitch: 95 + load * 110 + speed * 210, tone: .75, roar: .14 + speed * .15, cutoff: 600 + speed * 1700, pulse: 9, depth: .06 }
   }
 }
+/**
+ * How much of its motor a vehicle is heard to run, 0 to 1. A buggy with its wings out is
+ * gliding: the hub motors are off, and what is left is the wind and the hum of the wing
+ * fields. The jet's engines are what keep it up, so its wings change nothing here.
+ */
+export function motorLevel(m: MotionAudio): number {
+  return m.wings && m.kind?.startsWith('buggy') ? 0 : 1
+}
 /** A fixed graph avoids allocating or clicking when a respawn changes vehicle kind. */
 export class Engine {
   private readonly nodes: AudioNode[] = []
@@ -74,9 +82,10 @@ export class Engine {
   update(motion: MotionAudio, enabled = true): void {
     if(this.disposed)return
     const m=motionMix(motion),p=voiceProfile(motion),now=this.context.currentTime,level=enabled?1:0
+    const motor=motorLevel(motion)*level
     const smooth=(param:AudioParam,value:number,time=.12)=>param.setTargetAtTime(value,now,time)
     this.oscillators.forEach((o,i)=>smooth(o.frequency,p.pitch*(i?2.003:1),.18))
-    smooth(this.filter.frequency,p.cutoff);smooth(this.tone.gain,m.engine*p.tone*level);smooth(this.roar.gain,m.engine*p.roar*level)
+    smooth(this.filter.frequency,p.cutoff);smooth(this.tone.gain,m.engine*p.tone*motor);smooth(this.roar.gain,m.engine*p.roar*motor)
     const ground=m.dirt*(motion.kind==='tank'?1.35:1)*level
     smooth(this.dirt.gain,ground);smooth(this.pulse.frequency,p.pulse);smooth(this.pulseDepth.gain,ground*p.depth)
     smooth(this.dirtFilter.frequency,motion.kind==='tank'?330:180+unit(Math.abs(motion.speed)/55)*400)

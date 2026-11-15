@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { Builder, bodyRings, loft, surfRings, type Mat } from './shapes'
-import type { JetDesign } from './designs'
+import type { JetDesign } from './shipped'
 import { setRole } from '../skins/showroom'
 
 /** Far-distance geometry uses the design's outline, without intakes, joints or moving parts. */
@@ -44,7 +44,9 @@ export function buildJetSilhouette(design: JetDesign): THREE.Mesh {
   const builder = new SilhouetteBuilder(); design.build(builder)
   const parts = builder.pieces.map(p => p.geometry)
   const geometry = mergeGeometries(parts); parts.forEach(g => g.dispose())
-  const mesh = new THREE.Mesh(geometry, setRole(new THREE.MeshStandardMaterial({ color: design.paint }), 'paint'))
+  // The same plain numbers as the closer levels' paint, so the jet does not turn pale when it
+  // steps down to the outline at 120 metres.
+  const mesh = new THREE.Mesh(geometry, setRole(new THREE.MeshStandardMaterial({ color: design.paint, metalness: .8, roughness: .3 }), 'paint'))
   mesh.name = 'jet-silhouette'
   return mesh
 }

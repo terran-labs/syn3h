@@ -36,10 +36,14 @@ export class Jet extends Vehicle {
   readonly ridePosition = new THREE.Object3D()
   private readonly model: GameJet
   private gearAmount = 0
+  /** The gear amount the collider was last shaped for; -1 forces the first update. */
+  private colliderGear = -1
   private readonly gearCollider: RAPIER.Collider
   private readonly smoothed = new THREE.Vector4()
   private vectorPitch = 0
   private vectorYaw = 0
+  /** Stick deflection shown on the tail ring's control surfaces: pitch, roll, yaw. */
+  private readonly controls = new THREE.Vector3()
   readonly modelReady = Promise.resolve()
   /** Input defaults false, so false means the original startup hover mode. */
   get hoverMode(): boolean {return !this.input.special}
@@ -64,7 +68,7 @@ export class Jet extends Vehicle {
     this.gearCollider.setEnabled(false)
     this.model = new GameJet()
     this.object.add(this.model.object)
-    this.ridePosition.position.copy(this.model.near.ridePosition!.position)
+    this.ridePosition.position.copy(this.model.eye)
     this.object.userData.cockpit = true
     this.model.attach()
     this.applyColors()
@@ -87,10 +91,15 @@ export class Jet extends Vehicle {
     const weight=Math.max(0,-this.game.world.gravity.y)*mass
     const torque=(x:number,y:number,z:number)=>this.body.addTorque(new THREE.Vector3().copy(unityTorque(x,y,z)).applyQuaternion(q),true)
     let drag=0,angularDrag=3
-    this.gearCollider.setEnabled(this.gearAmount>0)
-    if(this.gearAmount>0){
-      this.gearCollider.setShape(new RAPIER.Cuboid(1.75*this.gearAmount,.5*this.gearAmount,1.75))
-      this.gearCollider.setTranslationWrtParent({x:0,y:-.083-.7*this.gearAmount,z:-.3})
+    // Reshape the gear collider only while the gear moves. Replacing the shape every step made
+    // Rapier rebuild a resting jet's ground contacts sixty times a second.
+    if(this.gearAmount!==this.colliderGear){
+      this.colliderGear=this.gearAmount
+      this.gearCollider.setEnabled(this.gearAmount>0)
+      if(this.gearAmount>0){
+        this.gearCollider.setShape(new RAPIER.Cuboid(1.75*this.gearAmount,.5*this.gearAmount,1.75))
+        this.gearCollider.setTranslationWrtParent({x:0,y:-.083-.7*this.gearAmount,z:-.3})
+      }
     }
     if(this.hoverMode){
       this.vectorPitch = this.vectorYaw = 0
@@ -147,7 +156,10 @@ export class Jet extends Vehicle {
   }
   override update(dt:number,alpha:number):void {
     super.update(dt,alpha)
-    this.model.update(this.gearAmount, this.vectorPitch, this.vectorYaw, Math.max(0, this.smoothed.z))
+    // Visual only: the ring's surfaces follow the smoothed stick in both modes, signed like the
+    // nozzle petals. Pulling back (y below 0) is nose up; x is roll right; w is yaw right.
+    this.controls.set(-this.smoothed.y, this.smoothed.x, this.smoothed.w)
+    this.model.update(this.gearAmount, this.vectorPitch, this.vectorYaw, Math.max(0, this.smoothed.z), this.controls)
   }
   protected override applyColors():void {
     this.model?.setColors(this.colors.body, this.colors.accent)

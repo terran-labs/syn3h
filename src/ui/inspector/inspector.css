@@ -150,4 +150,7 @@ html[data-gfx="0"] .syn3h-shell[data-glass] .wi-glass { -webkit-backdrop-filter:
 /* On touch the open cards are for editing, not driving: the minimap and the drive controls
    step aside until Create is tapped again, so nothing sits on top of a slider. */
 :root:has(.syn3h-shell.has-touch .world-inspector:not([hidden])) :is(.touch-controls, .shell-minimap) { opacity: 0; pointer-events: none; transition: opacity .3s ease; }
+/* The drive buttons set pointer-events: auto on themselves, so the faded buttons still took
+   taps meant for the rail (BRAKE sat over the Sea choice on a phone held sideways). */
+:root:has(.syn3h-shell.has-touch .world-inspector:not([hidden])) .touch-controls * { pointer-events: none; }
 @media (max-width: 700px), (max-height: 500px) { .syn3h-shell .world-inspector { top: 58px; right: max(10px, env(safe-area-inset-right)); width: min(340px, calc(100vw - 20px)); max-height: calc(100dvh - 68px); } }

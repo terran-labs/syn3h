@@ -2,23 +2,29 @@ import * as THREE from 'three/webgpu'
 import type { System } from '../core/Game'
 import { params, worldSeed } from '../../shared/params'
 import { Engine, unit, type MotionAudio } from './Engine'
-import { synthCue, type Cue } from './Cues'
+import { synthCue, type Cue, type CueOptions } from './Cues'
 import { WorldAudio, lavaProximity, type AudioTerrain } from './WorldAudio'
 import type { Vehicle } from '../vehicles/Vehicle'
 import { Score, scoreSeed, type MatchMood } from './score/Score'
 import { applySubmerge } from './score/ScoreSynth'
 import { WeatherWind } from './weatherWind'
 import { senseConvoy, senseRelief, type ConvoyVoice } from './scoreSenses'
-import { cuesVolume, worldVolume, remoteVolume, crossfade, lobbyFade, effectsVolume, masterVolume, musicVolume, muted } from './params'
+import { cuesVolume, worldVolume, remoteVolume, crossfade, effectsVolume, masterVolume, musicVolume, muted } from './params'
 
 export type Sound = 'laserShot' | 'laserHit' | 'materialize'
-/** `Score` is the generated adaptive score (src/audio/score); the rest are recordings. */
-export const MUSIC_TRACKS = { Score: 'Adaptive score (generated)', SpaceStation: 'Space Station', Classic: 'Classic (Mars Explorer)', Carefree: 'Carefree (Mars Explorer)', Ambient: 'Ambient (legacy)' } as const
-export type MusicTrack = keyof typeof MUSIC_TRACKS
 export interface Position { x: number; y: number; z: number }
-// Owner choice, 15 November 2026: generated wind only. Music and tag recordings stay.
-const files: Record<Sound, string> = { laserShot: 'LaserShot.mp3', laserHit: 'LaserHit.mp3', materialize: 'Materialize.mp3' }
-interface Deck { element: HTMLAudioElement; source: MediaElementAudioSourceNode; gain: GainNode; stopTimer?: ReturnType<typeof setTimeout> }
+// Owner's rule, 15 November 2026: no audio files ship. The generated score (src/audio/score)
+// is the only music, in the lobby and in play, and these three sounds are synthesised
+// (src/audio/Cues.ts). The names are the ones the networking and gear code already call.
+const cueFor: Record<Sound, Cue> = { laserShot: 'beam', laserHit: 'tagged', materialize: 'materialize' }
+/**
+ * In the lobby the score is the only thing sounding, and it plays its quiet opening state:
+ * measured at about -28 dBFS, too faint on a laptop or a phone. It is lifted 6 dB there and
+ * eases back over a couple of seconds when play begins and engines, wind and drums join.
+ */
+const LOBBY_LIFT = 2
+/** Storage key of the retired track selector. Removed on start so old choices cannot linger. */
+const RETIRED_TRACK_KEY = 'syn3h.musicTrack'
 
 export class GameAudio implements System {
   private context?: AudioContext
@@ -52,17 +58,15 @@ export class GameAudio implements System {
   private nextSpatial = 0
   private lavaNear = 0
   private match: MatchMood | null = null
-  private readonly buffers = new Map<string, AudioBuffer>()
-  private readonly decks = new Map<Exclude<MusicTrack, 'Score'>, Deck>()
   private readonly voices = new Set<AudioBufferSourceNode>()
+  /** Taps the final output so a check can prove the mix is audible. Never read during play. */
+  private meter?: AnalyserNode
+  private meterData?: Float32Array<ArrayBuffer>
   private readonly forward = new THREE.Vector3()
   private readonly up = new THREE.Vector3()
   private readonly position = new THREE.Vector3()
   private readonly rotation = new THREE.Quaternion()
-  private selected: MusicTrack = 'SpaceStation'
-  private lobbyVisible = true
   private disposed = false
-  private loads?: Promise<void>
   private readonly gestures = new AbortController()
   private readonly unsubscribe: () => void
   enabled = false
@@ -71,11 +75,8 @@ export class GameAudio implements System {
   motion: MotionAudio = { speed: 0, throttle: 0, airborne: false }
 
   constructor(private readonly camera: THREE.Camera) {
-    // Restore only an explicit selection; new visitors hear the original title music.
-    try {
-      const saved = localStorage.getItem('syn3h.musicTrack')
-      if (saved && Object.hasOwn(MUSIC_TRACKS, saved)) this.selected = saved as MusicTrack
-    } catch { /* Audio does not require storage. */ }
+    // The recorded tracks are gone, and with them the choice between them.
+    try { localStorage.removeItem(RETIRED_TRACK_KEY) } catch { /* Audio does not require storage. */ }
     const unlock = () => { void this.unlock().catch((error) => this.errors.push(String(error))) }
     window.addEventListener('pointerdown', unlock, { signal: this.gestures.signal })
     window.addEventListener('keydown', unlock, { signal: this.gestures.signal })
@@ -86,107 +87,164 @@ export class GameAudio implements System {
     // A hidden tab stops rendering frames, so nothing would schedule notes while the pads held
     // their last chord. Fade the score out until the tab is back.
     document.addEventListener('visibilitychange', this.onVisibility)
+    // Build the mix while the page is still loading, so the first tap has nothing to wait for.
+    this.idle = whenIdle(() => this.prepare())
   }
-  private readonly onVisibility = () => this.score?.synth.setLevel(document.hidden || this.selected !== 'Score' ? 0 : 1, 0.6)
+  private readonly idle: number
+  private readonly onVisibility = () => this.score?.synth.setLevel(document.hidden ? 0 : 1, 0.6)
   get state(): AudioContextState | 'locked' { return this.context?.state ?? 'locked' }
-  get track(): MusicTrack { return this.selected }
-  get loadedSounds(): number { return this.buffers.size }
+  /**
+   * Level of the final output over the last 2048 samples, in dBFS (RMS). -Infinity while
+   * locked or silent. For checks and the audition page; it costs nothing until it is read.
+   */
+  get outputLevel(): number {
+    if (!this.meter || !this.meterData) return -Infinity
+    this.meter.getFloatTimeDomainData(this.meterData)
+    let sum = 0
+    for (const sample of this.meterData) sum += sample * sample
+    return 10 * Math.log10(sum / this.meterData.length)
+  }
   get isMuted(): boolean { return muted.value }
   setMuted(value: boolean): void { params.set(muted.def.id, value) }
 
-  async unlock(): Promise<void> {
+  /**
+   * Called from the first click or key press, which must stay cheap: it is often the tap
+   * that enters a world. The context and the whole graph are built earlier, in idle time
+   * while the page loads (`prepare`), so the gesture only resumes the context, which Safari
+   * requires to happen inside it. If no idle time came first, the context is created here
+   * and the graph is built just after the gesture, a step at a time. `context` is published
+   * only once it is running with a complete graph, so nothing else sees a half-built mix
+   * and nothing schedules onto a suspended clock.
+   */
+  unlock(): Promise<void> {
+    if (this.disposed) return Promise.resolve()
+    if (this.context) return this.context.resume()
+    return this.unlocking ??= this.start().finally(() => { if (!this.context) this.unlocking = undefined })
+  }
+  private unlocking?: Promise<void>
+  /** A context made ahead of the gesture, still suspended, and the graph being built on it. */
+  private pending?: AudioContext
+  private graph?: Promise<void>
+  /**
+   * Main-thread milliseconds of the first unlock, for the performance lane: `gesture` is what
+   * the tap itself pays, `score` and `voices` are graph building (in idle time when `ahead`).
+   */
+  readonly unlockCost = { gesture: 0, voices: 0, score: 0, ahead: false }
+  /** Build the suspended context and graph before any gesture. Safe to call more than once. */
+  prepare(): void {
+    if (this.disposed || this.context || this.pending || this.unlocking) return
+    try { this.pending = new AudioContext() } catch { return }
+    this.unlockCost.ahead = true
+    this.graph = this.buildGraph(this.pending)
+  }
+  private async start(): Promise<void> {
+    const mark = performance.now()
+    const made = !this.pending
+    const context = this.pending ??= new AudioContext()
+    const resumed = context.resume()
+    this.unlockCost.gesture = performance.now() - mark
+    await (this.graph ??= this.buildGraph(context))
+    // A context made ahead of the gesture can be refused by a browser that wants it created
+    // inside one. Resume settles either way; give a refusal a moment, then start afresh.
+    await Promise.race([resumed.catch(() => {}), new Promise<void>(resolve => setTimeout(resolve, 1500))])
     if (this.disposed) return
-    if (!this.context) {
-      const context = this.context = new AudioContext()
-      const limiter = context.createDynamicsCompressor()
-      limiter.threshold.value = -6; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = .003; limiter.release.value = .15
-      const ceiling=context.createWaveShaper(),curve=new Float32Array(4097)
-      for(let i=0;i<curve.length;i++){const x=i/(curve.length-1)*2-1,a=Math.abs(x);curve[i]=Math.sign(x)*(a<=.8?a:.8+.15*(1-Math.exp(-(a-.8)/.15)))}
-      ceiling.curve=curve;ceiling.oversample='2x'
-      this.submerge = context.createBiquadFilter(); this.submerge.type = 'lowpass'; this.submerge.frequency.value = 20000
-      this.master = context.createGain(); this.master.connect(this.submerge).connect(limiter).connect(ceiling).connect(context.destination)
-      this.music = context.createGain(); this.music.connect(this.master)
-      this.effects = context.createGain(); this.effects.connect(this.master)
-      this.cueBus=context.createGain();this.cueBus.connect(this.master)
-      this.worldBus=context.createGain();this.worldBus.connect(this.master)
-      this.remoteBus=context.createGain();this.remoteBus.connect(this.master)
-      this.engine = new Engine(context, this.master)
-      this.world = new WorldAudio(context,this.worldBus,this.engine.noise)
-      this.weatherWind = new WeatherWind(context, this.master)
-      this.score = new Score(context, this.music, scoreSeed.value || worldSeed.value)
-      this.score.setMatch(this.match)
-      this.syncMix()
-      this.loads = this.loadBuffers()
-    }
-    // Both calls happen inside the gesture before awaiting either promise (Safari included).
-    const resumed = this.context.resume()
-    const music = this.startTrack(this.selected)
-    await Promise.all([resumed, music])
-    this.gestures.abort()
-  }
-  async ready(): Promise<void> { await this.loads }
-  private async loadBuffers(): Promise<void> {
-    await Promise.all(Object.entries(files).map(async ([name, file]) => {
-      try {
-        const response = await fetch(`/audio/${file}`)
-        if (!response.ok) throw new Error(`${file}: HTTP ${response.status}`)
-        const buffer = await this.context!.decodeAudioData(await response.arrayBuffer())
-        if (this.disposed) return
-        this.buffers.set(name, buffer)
-      } catch (error) { this.errors.push(String(error)) }
-    }))
-  }
-  async setTrack(track: MusicTrack): Promise<void> {
-    this.selected = track
-    try { localStorage.setItem('syn3h.musicTrack', track) } catch { /* Storage is optional. */ }
-    this.syncMix()
-    if (this.context) await this.startTrack(track)
-  }
-  private async startTrack(track: MusicTrack): Promise<void> {
-    const context = this.context!
-    this.score?.setActive(track === 'Score', crossfade.value)
-    if (track === 'Score') {
-      // Nothing to download: fade the recordings out and let the generated score take over.
-      for (const other of this.decks.values()) {
-        clearTimeout(other.stopTimer)
-        other.gain.gain.cancelAndHoldAtTime(context.currentTime)
-        other.gain.gain.linearRampToValueAtTime(0, context.currentTime + crossfade.value)
-        other.stopTimer = setTimeout(() => other.element.pause(), crossfade.value * 1000 + 100)
-      }
+    if (context.state !== 'running') {
+      if (made) return // Nothing better to try; the next gesture resumes this one again.
+      this.dropGraph(); void context.close(); this.pending = undefined; this.graph = undefined
       return
     }
-    let deck = this.decks.get(track)
-    if (!deck) {
-      const element = new Audio(`/audio/${track}.mp3`)
-      element.loop = true; element.preload = 'none'
-      const source = context.createMediaElementSource(element), gain = context.createGain()
-      gain.gain.value = 0; source.connect(gain).connect(this.music!)
-      deck = { element, source, gain }; this.decks.set(track, deck)
-    }
-    await deck.element.play()
-    if (this.disposed || this.selected !== track) { deck.element.pause(); return }
-    for (const [name, other] of this.decks) {
-      clearTimeout(other.stopTimer)
+    this.context = context; this.pending = undefined
+    this.syncMix()
+    // Nothing to download, so the lobby has music from the first click or key press.
+    this.score!.setActive(true, crossfade.value)
+    this.gestures.abort()
+  }
+  /** The mix, in three steps with the page given a turn between them so no frame is held up. */
+  private async buildGraph(context: AudioContext): Promise<void> {
+    let mark = performance.now()
+    const lap = () => { const now = performance.now(), took = now - mark; mark = now; return took }
+    const breathe = async () => { await new Promise<void>(resolve => setTimeout(resolve)); mark = performance.now() }
+    await breathe(); if (this.disposed || this.pending !== context) return
+    const limiter = context.createDynamicsCompressor()
+    limiter.threshold.value = -6; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = .003; limiter.release.value = .15
+    const ceiling=context.createWaveShaper(),curve=new Float32Array(4097)
+    for(let i=0;i<curve.length;i++){const x=i/(curve.length-1)*2-1,a=Math.abs(x);curve[i]=Math.sign(x)*(a<=.8?a:.8+.15*(1-Math.exp(-(a-.8)/.15)))}
+    ceiling.curve=curve;ceiling.oversample='2x'
+    this.submerge = context.createBiquadFilter(); this.submerge.type = 'lowpass'; this.submerge.frequency.value = 20000
+    this.meter = context.createAnalyser(); this.meter.fftSize = 2048; this.meterData = new Float32Array(this.meter.fftSize)
+    this.master = context.createGain(); this.master.connect(this.submerge).connect(limiter).connect(ceiling).connect(context.destination); ceiling.connect(this.meter)
+    this.music = context.createGain(); this.music.connect(this.master)
+    this.effects = context.createGain(); this.effects.connect(this.master)
+    this.cueBus=context.createGain();this.cueBus.connect(this.master)
+    this.worldBus=context.createGain();this.worldBus.connect(this.master)
+    this.remoteBus=context.createGain();this.remoteBus.connect(this.master)
+    // The score first: it is what the lobby plays, so it should be the first thing ready.
+    this.score = new Score(context, this.music, scoreSeed.value || worldSeed.value)
+    this.score.setMatch(this.match)
+    this.unlockCost.score = lap()
+    await breathe(); if (this.disposed || this.pending !== context) return
+    this.engine = new Engine(context, this.master)
+    this.world = new WorldAudio(context,this.worldBus,this.engine.noise)
+    this.weatherWind = new WeatherWind(context, this.master)
+    this.unlockCost.voices = lap()
+  }
+  /** Release every node of the mix. The context itself is closed by the caller. */
+  private dropGraph(): void {
+    for (const source of this.voices) source.stop()
+    for(const stop of [...this.cueStops])stop()
+    for(const voice of this.remote.values()){voice.engine.dispose(true);voice.panner.disconnect()}
+    this.remote.clear();this.events.clear();this.world?.dispose();this.weatherWind?.dispose();this.weatherWind=undefined;this.score?.dispose();this.score=undefined;this.submerge?.disconnect();this.submerge=undefined;this.meter?.disconnect();this.meter=undefined
+    this.engine?.dispose(true); this.engine=undefined; this.world=undefined
+    for(const bus of [this.master,this.music,this.effects,this.cueBus,this.worldBus,this.remoteBus])bus?.disconnect()
+    this.master=this.music=this.effects=this.cueBus=this.worldBus=this.remoteBus=undefined
+    this.voices.clear()
+  }
+  /** Resolves once the first unlock has built the mix. Nothing is downloaded or decoded. */
+  async ready(): Promise<void> { await this.unlocking }
+  /** The score plays in the lobby and in play alike; it hears which through `enabled`. */
+  setLobbyVisible(_visible: boolean): void {}
+  private paused = false
+  private pauseTimer?: ReturnType<typeof setTimeout>
+  get isPaused(): boolean { return this.paused }
+  /**
+   * The game is paused (a second Escape, or the tab went to the background): fade the whole
+   * mix to silence, then stop the audio clock, which also stops the score's worklets from
+   * using any processor time. Everything sounds through the one master gain, so nothing leaks.
+   */
+  pause(seconds = 0.5): void {
+    if (this.paused || this.disposed) return
+    this.paused = true
+    const context = this.context
+    if (!context || !this.master) return
+    const now = context.currentTime
+    this.master.gain.cancelScheduledValues(now); this.master.gain.setValueAtTime(this.master.gain.value, now)
+    this.master.gain.linearRampToValueAtTime(0, now + seconds)
+    clearTimeout(this.pauseTimer)
+    this.pauseTimer = setTimeout(() => { if (this.paused && !this.disposed) void context.suspend() }, seconds * 1000 + 60)
+  }
+  /** Back from a pause: start the clock, then bring the mix up from silence. */
+  resume(seconds = 0.3): void {
+    if (!this.paused || this.disposed) return
+    this.paused = false; clearTimeout(this.pauseTimer)
+    const context = this.context
+    if (!context || !this.master) return
+    void context.resume().then(() => {
+      if (this.paused || this.disposed || !this.master) return
       const now = context.currentTime
-      other.gain.gain.cancelAndHoldAtTime(now)
-      other.gain.gain.linearRampToValueAtTime(name === track ? 1 : 0, now + crossfade.value)
-      if (name !== track) other.stopTimer = setTimeout(() => other.element.pause(), crossfade.value * 1000 + 100)
-    }
+      this.master.gain.cancelScheduledValues(now); this.master.gain.setValueAtTime(0, now)
+      this.master.gain.linearRampToValueAtTime(muted.value ? 0 : masterVolume.value, now + seconds)
+    })
   }
-  /** CoreAudio fades title music at 0.1 volume units per second outside fullscreen UI. */
-  setLobbyVisible(visible: boolean): void {
-    this.lobbyVisible = visible
-    if (!this.context || !this.music || this.selected !== 'SpaceStation') return
-    const now = this.context.currentTime
-    this.music.gain.cancelAndHoldAtTime(now)
-    this.music.gain.linearRampToValueAtTime(visible ? musicVolume.value : 0, now + lobbyFade.value)
-  }
+  /** Whether the last mix was set for play or for the lobby. */
+  private mixedFor = false
   private syncMix(): void {
     if (!this.context) return
     const now = this.context.currentTime
-    this.master!.gain.setTargetAtTime(muted.value ? 0 : masterVolume.value, now, 0.03)
+    // A pause owns the master gain until it ends; the other buses can still follow their sliders.
+    if (!this.paused) this.master!.gain.setTargetAtTime(muted.value ? 0 : masterVolume.value, now, 0.03)
     this.music!.gain.cancelAndHoldAtTime(now)
-    this.music!.gain.setTargetAtTime(this.selected === 'SpaceStation' && !this.lobbyVisible ? 0 : musicVolume.value, now, 0.03)
+    this.music!.gain.setTargetAtTime(musicVolume.value * (this.enabled ? 1 : LOBBY_LIFT), now, this.mixedFor === this.enabled ? 0.03 : 0.8)
+    this.mixedFor = this.enabled
     this.effects!.gain.setTargetAtTime(effectsVolume.value, now, 0.03)
     this.cueBus!.gain.setTargetAtTime(cuesVolume.value,now,.03)
     this.worldBus!.gain.setTargetAtTime(worldVolume.value,now,.03)
@@ -200,24 +258,26 @@ export class GameAudio implements System {
     panner.connect(bus)
     return { node: panner, dispose: () => panner.disconnect() }
   }
-  play(sound: Sound, position?: Position): void {
-    const buffer = this.buffers.get(sound)
-    if (!buffer || this.context?.state !== 'running' || this.voices.size >= 32) return
-    // Laser fire near the listener is what the score hears as combat. A hit counts for more.
+  /**
+   * The tag beam, the tagged confirmation and a vehicle materializing. For materialize,
+   * `options.seconds` stretches the building swoosh to the length of the spawn hold.
+   */
+  play(sound: Sound, position?: Position, options?: CueOptions): void {
+    if (this.context?.state !== 'running' || this.cueStops.size >= 32) return
+    // A tag beam near the listener is what the score hears as a chase. A tag counts for more.
     if (this.enabled && sound !== 'materialize') {
       const near = position ? unit(1 - (Math.hypot(position.x - this.position.x, position.y - this.position.y, position.z - this.position.z) - 40) / 360) : 1
       this.score?.combat((sound === 'laserHit' ? 0.3 : 0.14) * near)
     }
-    const source = this.context.createBufferSource(), output = this.output(position)
-    // When the score plays a note for each tag beam, the recorded beam ducks under it by
-    // about 9 dB: the note carries the music, the recording still says where it came from.
-    // The "tagged" sound stays at full level, since it is the confirmation.
+    const output = this.output(position)
+    // When the score plays a note for each tag beam, the beam ducks under it by about 9 dB:
+    // the note carries the music, the beam still says where it came from. The tagged sound
+    // stays at full level, since it is the confirmation.
     const duck = sound === 'laserShot' && params.get('audio.score.tagNotes')?.value ? this.context.createGain() : null
-    if (duck) duck.gain.value = 0.35
-    source.buffer = buffer; if (duck) source.connect(duck).connect(output.node); else source.connect(output.node)
-    this.voices.add(source)
-    source.onended = () => { source.disconnect(); duck?.disconnect(); output.dispose(); this.voices.delete(source) }
-    source.start()
+    if (duck) { duck.gain.value = 0.35; duck.connect(output.node) }
+    let stop: () => void
+    stop = synthCue(this.context, duck ?? output.node, cueFor[sound], this.engine!.noise, () => { this.cueStops.delete(stop); duck?.disconnect(); output.dispose() }, options)
+    this.cueStops.add(stop)
   }
   impact(strength: number, position?: Position): void {
     if (!this.context || this.context.state !== 'running' || !Number.isFinite(strength) || strength <= 0 || this.voices.size >= 32) return
@@ -258,7 +318,7 @@ export class GameAudio implements System {
     stop=synthCue(this.context,out.node,cue,this.engine!.noise,()=>{this.cueStops.delete(stop);out.dispose()})
     this.cueStops.add(stop)
   }
-  get diagnostics(){return {state:this.state,score:this.score?{playing:this.score.playing,mode:this.score.mode,tempo:Math.round(this.score.tempo),mood:{...this.score.mood},nodes:this.score.synth.nodeCount}:null,remoteVoices:this.remote.size,engineNodes:(this.engine?.nodeCount??0)+(this.weatherWind?.nodeCount??0)+[...this.remote.values()].reduce((n,v)=>n+v.engine.nodeCount,0),oneShots:this.voices.size+this.cueStops.size,trackedVehicles:this.events.size}}
+  get diagnostics(){return {state:this.state,score:this.score?{playing:this.score.playing,mode:this.score.mode,tempo:Math.round(this.score.tempo),stalls:this.score.stalls,mood:{...this.score.mood},nodes:this.score.synth.nodeCount}:null,remoteVoices:this.remote.size,engineNodes:(this.engine?.nodeCount??0)+(this.weatherWind?.nodeCount??0)+[...this.remote.values()].reduce((n,v)=>n+v.engine.nodeCount,0),oneShots:this.voices.size+this.cueStops.size,trackedVehicles:this.events.size}}
   private readVehicle(v:Vehicle):MotionAudio {
     const velocity=v.body.linvel(),p=v.object.position,ground=this.terrain?.heightAt(p.x,p.z)??p.y
     return {kind:v.kind,speed:Math.hypot(velocity.x,velocity.y,velocity.z),throttle:v.kind==='jet'?v.input.z:v.input.y,airborne:v.wheelsGrounded===0,wings:v.wingsOpen,slip:Math.max(0,...(v.getWheelEffects?.()??[]).filter(w=>w.grounded).map(w=>w.slip)),altitude:Math.max(0,p.y),clearance:Math.max(0,p.y-ground)}
@@ -277,12 +337,14 @@ export class GameAudio implements System {
   }
   fixedUpdate(): void {
     // A landing flag may clear before the next rendered frame on a slow device.
-    if(!this.context || this.disposed)return
+    if(!this.context || this.disposed || this.paused)return
     if(this.local)this.vehicleEvents(this.local)
     for(const vehicle of this.remote.keys())this.vehicleEvents(vehicle)
   }
   update(): void {
-    if (!this.context || this.disposed) return
+    // Nothing is scheduled onto a paused clock: it would all fire at once on resume.
+    if (!this.context || this.disposed || this.paused) return
+    if (this.enabled !== this.mixedFor) this.syncMix()
     if(this.local&&alive(this.local)){this.motion=this.readVehicle(this.local);this.vehicleEvents(this.local)}
     this.engine!.update(this.motion, this.enabled)
     this.camera.getWorldPosition(this.position); this.camera.getWorldQuaternion(this.rotation)
@@ -313,17 +375,19 @@ export class GameAudio implements System {
   }
   dispose(): void {
     this.disposed = true; this.gestures.abort(); this.unsubscribe(); document.removeEventListener('visibilitychange', this.onVisibility)
-    for (const deck of this.decks.values()) { clearTimeout(deck.stopTimer); deck.element.pause(); deck.element.removeAttribute('src'); deck.element.load(); deck.source.disconnect(); deck.gain.disconnect() }
-    for (const source of this.voices) source.stop()
-    for(const stop of [...this.cueStops])stop()
-    for(const voice of this.remote.values()){voice.engine.dispose(true);voice.panner.disconnect()}
-    this.remote.clear();this.events.clear();this.world?.dispose();this.weatherWind?.dispose();this.weatherWind=undefined;this.score?.dispose();this.score=undefined;this.submerge?.disconnect();this.submerge=undefined
-    this.engine?.dispose(true); this.engine=undefined; this.world=undefined
-    for(const bus of [this.master,this.music,this.effects,this.cueBus,this.worldBus,this.remoteBus])bus?.disconnect()
-    this.master=this.music=this.effects=this.cueBus=this.worldBus=this.remoteBus=undefined
+    cancelIdle(this.idle); clearTimeout(this.pauseTimer)
+    this.dropGraph()
     this.local=undefined;this.terrain=undefined;this.vehicleSource=()=>[]
-    this.buffers.clear(); this.decks.clear(); this.voices.clear(); void this.context?.close()
+    void this.context?.close(); void this.pending?.close(); this.pending = undefined
   }
+}
+
+/** Idle time where the browser offers it (Safari does not), otherwise shortly after this task. */
+function whenIdle(run: () => void): number {
+  return typeof requestIdleCallback === 'function' ? requestIdleCallback(run, { timeout: 3000 }) : window.setTimeout(run, 300)
+}
+function cancelIdle(id: number): void {
+  if (typeof cancelIdleCallback === 'function') cancelIdleCallback(id); else clearTimeout(id)
 }
 
 /** True while the vehicle's Rapier body is still in the world. A removed body must never be read. */

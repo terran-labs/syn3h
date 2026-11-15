@@ -3,11 +3,7 @@
 // returns to the vehicle model folders, or if a generated map stops matching what its material
 // expects.
 //
-// One allowance, by name: the jet and hovercraft paint still use armor-scales.jpg and
-// thruster-glow.png (Jet.ts, Hovercraft.ts, and skins/textureViews.ts, which loads for Jet.ts).
-// The owner set those aside on 14 November 2026; they go when those vehicles move to the shared
-// vehicle materials system. Remove the allowance then. Anything else fails. The browser half of the check, that no request for /models/textures/ or
-// /models/effects/ is made while each vehicle kind drives, is tests/vehicles2/nobitmaps-capture.mjs.
+// No vehicle bitmap exceptions remain. Browser request checks live in nobitmaps-capture.mjs.
 import {readdirSync,readFileSync,statSync} from 'node:fs'
 import {join} from 'node:path'
 import {describe,expect,it} from 'vitest'
@@ -20,8 +16,6 @@ import {RibbonBatch} from '../../src/vehicles/effects/RibbonBatch'
 const root=new URL('../../',import.meta.url).pathname
 const files=(dir:string):string[]=>readdirSync(dir).flatMap(name=>{const p=join(dir,name);return statSync(p).isDirectory()?files(p):[p]})
 const IMAGE=/\.(png|jpe?g|webp|gif|bmp|avif|ktx2?|basis|dds|tga|exr|hdr)\b/i
-const ALLOWED_FILES=new Set(['src/vehicles/Jet.ts','src/vehicles/Hovercraft.ts','src/vehicles/skins/textureViews.ts'])
-const ALLOWED_IMAGES=['textures/armor-scales.jpg','textures/thruster-glow.png']
 const LOADER=/\b(TextureLoader|ImageLoader|ImageBitmapLoader|CubeTextureLoader|KTX2Loader|RGBELoader|EXRLoader|createImageBitmap)\b|new\s+Image\s*\(/
 
 describe('vehicles load no images',()=>{
@@ -31,19 +25,26 @@ describe('vehicles load no images',()=>{
    return readFileSync(f,'utf8').split('\n').map((line,i)=>({i,line})).filter(({line})=>{
     // Comments may mention the images that were replaced; code may not.
     let code=line.replace(/\/\/.*$/,'').replace(/^\s*\*.*$/,'').replace(/\/\*.*?\*\//g,'')
-    if(ALLOWED_FILES.has(rel)){
-     // Only the two allowed images, and only a loader that loads one of them (or textureViews).
-     for(const name of ALLOWED_IMAGES)code=code.split(`'/models/${name}'`).join("''")
-     if(rel==='src/vehicles/skins/textureViews.ts'||/''/.test(code))code=code.replace(new RegExp(LOADER.source,'g'),'')
-    }
     return LOADER.test(code)||(IMAGE.test(code)&&/['"`]/.test(code))
    }).map(({i,line})=>`${rel}:${i+1}: ${line.trim().slice(0,120)}`)})
   expect(offenders).toEqual([])
  })
  it('ships no image under the vehicle model folders',()=>{
   const images=files(join(root,'public/models')).filter(f=>IMAGE.test(f)).map(f=>f.slice(root.length))
-  expect(images.sort()).toEqual(ALLOWED_IMAGES.map(n=>'public/models/'+n).sort())
+  expect(images.sort()).toEqual([])
  })
+})
+
+// GLTFLoader can fetch image URIs hidden inside a GLB even when TypeScript names none.
+it('ships no embedded or external textures inside vehicle GLBs',()=>{
+ for(const file of files(join(root,'public/models')).filter(f=>f.endsWith('.glb'))){
+  const bytes=readFileSync(file)
+  expect(bytes.readUInt32LE(0)).toBe(0x46546c67)
+  expect(bytes.readUInt32LE(16)).toBe(0x4e4f534a)
+  const model=JSON.parse(bytes.subarray(20,20+bytes.readUInt32LE(12)).toString())
+  expect(model.images??[],file).toEqual([])
+  expect(model.textures??[],file).toEqual([])
+ }
 })
 
 describe('generated vehicle maps',()=>{

@@ -29,7 +29,7 @@ export const scoreLite = defineParam({ id: 'audio.score.lite', label: 'Lighter s
 export const scoreNetworkHall = defineParam({ id: 'audio.score.networkHall', label: 'Algorithmic hall (cheaper)', group: 'Adaptive score', scope: 'client', default: false })
 const option = (id: string, label: string) => defineParam({ id: `audio.score.${id}`, label, group: 'Adaptive score', scope: 'client', default: true })
 /** Tag beams near you become notes: each lands on the next sixteenth, pitched from the chord, climbing as they come. */
-export const scoreTagNotes = option('tagNotes', 'Tag beams play notes')
+export const scoreTagNotes = option('tagNotes', 'Plasma Tag plays notes')
 /** Nearby vehicles each carry part of the arrangement, heard from their side. Alone you hear only your own line. */
 export const scoreConvoy = option('convoy', 'Convoy harmony')
 /** The sequencer and plucked strings trace the skyline ahead of your vehicle. */
@@ -66,8 +66,15 @@ export interface ScoreInput {
 }
 export interface MatchMood { holding: boolean; contested: boolean; /** 0..1 share of the winning score. */ progress: number }
 
-/** Seconds of music scheduled ahead of the audio clock. Covers a dropped frame or three. */
-const LOOKAHEAD = 0.22
+/**
+ * Seconds of music scheduled ahead of the audio clock. Notes are scheduled from the frame
+ * loop, so a main-thread stall longer than this drops the notes inside it. 0.35 s rides out
+ * the usual hitches (a shader compile, a terrain rebuild step) and the mood still answers
+ * within a beat.
+ */
+const LOOKAHEAD = 0.35
+/** The lobby's intensity: enough for the arpeggio to move over the pads, below bass and drums. */
+const LOBBY_INTENSITY = 0.2
 /** Seconds between surges the game may trigger. A release that comes too often stops meaning anything. */
 const SURGE_COOLDOWN = 40
 /** Move `value` toward `target` with a time constant in seconds. */
@@ -123,6 +130,8 @@ export class Score {
   }
   /** The audio thread's last reported load (share of real time spent rendering) and underrun ratio, where the browser reports them. */
   load: { average: number; underruns: number } | null = null
+  /** Times the main thread stalled past the lookahead and the score restarted from now, dropping the notes in between. */
+  stalls = 0
   get playing(): boolean { return this.active }
   get tempo(): number { return this.bpm }
   get mode(): string { return this.composer.mode }
@@ -211,7 +220,7 @@ export class Score {
     m.lift = follow(m.lift, input.playing ? lift : 0.25, 2.5, dt)
     m.depth = follow(m.depth, input.playing ? depth : 0, 0.25, dt)
     m.triumph = follow(m.triumph, input.playing ? unit((this.match.holding ? 0.6 : 0) + this.match.progress * 0.5) : 0, 3, dt)
-    m.intensity = follow(m.intensity, input.playing ? unit((0.12 + 0.5 * m.energy + 0.8 * m.heat + 0.25 * this.tension) * scale) : 0, 1, dt)
+    m.intensity = follow(m.intensity, input.playing ? unit((0.12 + 0.5 * m.energy + 0.8 * m.heat + 0.25 * this.tension) * scale) : LOBBY_INTENSITY, 1, dt)
     m.darkness = follow(m.darkness, input.playing ? unit(0.34 + 0.6 * m.heat + 0.55 * unit(input.lava) + 0.2 * depth - 0.3 * m.lift - 0.25 * m.triumph) : 0.1, 2, dt)
 
     // Leaving the ground: after a moment of real flight the music surges toward a release.
@@ -244,7 +253,7 @@ export class Score {
     this.synth.setLevels(level, m.depth, scoreReverb.value, { tension: this.composer.tension, release: this.release })
     if (!this.active) return
     // After a stall (a hidden tab, a long frame) start again from now; never play catch-up.
-    if (this.nextTime < now - 0.05) this.nextTime = now + 0.06
+    if (this.nextTime < now - 0.05) { this.nextTime = now + 0.06; this.stalls++ }
     const duration = 15 / this.bpm
     while (this.nextTime < now + LOOKAHEAD) {
       const step = this.composer.step(m)

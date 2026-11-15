@@ -64,6 +64,8 @@ const VIEWS: Record<ViewName, THREE.Vector3> = {
   Side: new THREE.Vector3(1, .14, 0),
   Top: new THREE.Vector3(.001, 1, .08),
   Low: new THREE.Vector3(.62, .045, -.78),
+  // From below the floor, which fades out as the camera comes down to it (see Studio.fade).
+  Under: new THREE.Vector3(.5, -.62, -.6),
 }
 
 /** Paint swatches: [label, body, accent]. Own colours restores what each design was built with. */
@@ -120,7 +122,8 @@ async function main(): Promise<void> {
   controls.enableDamping = true
   const orbitLimits = () => {
     controls.minDistance = 1.5; controls.maxDistance = 150
-    controls.maxPolarAngle = Math.PI / 2 - .02; controls.minPolarAngle = 0
+    // Past level and on under the floor, to look up at a vehicle's underside.
+    controls.maxPolarAngle = Math.PI * .88; controls.minPolarAngle = 0
     controls.enableZoom = controls.enablePan = true
     controls.rotateSpeed = 1
     camera.near = .1; camera.updateProjectionMatrix()
@@ -144,7 +147,9 @@ async function main(): Promise<void> {
   const ctx = { status: (text: string) => { status.textContent = text }, renderer, camera }
 
   // Lab state. `state` is what models see each frame.
-  const state: LabState = { time: 0, night: false, headlights: false, braking: params.brake, throttle: 0, steer: 0, animate: params.motion ?? false }
+  const state: LabState = { time: 0, night: false, headlights: false, braking: params.brake, throttle: 0, steer: 0, pitch: 0, yaw: 0, animate: params.motion ?? false }
+  /** The Motion toggle. `state.animate` is also true while a person or the idle show moves the controls. */
+  let motionOn = params.motion ?? false
   let session: Session | null = null
   let selection: Selection | null = null
   let entries: Entry[] = []
@@ -245,6 +250,14 @@ async function main(): Promise<void> {
       for (const v of sec.vehicles) {
         const chosen = selection?.vehicle === v.id
         if (v.error) { treeBox.append(ui.el('div', 'tree-error', `${v.title}: could not list designs`)); continue }
+        // The comparison of the game's vehicles is one line that opens the whole set side by side.
+        // (Marked by presentation.ts on the exhibit itself, so this file needs no new import: several lanes edit its imports.)
+        if ((exhibits.find(e => e.id === v.id) as { compareOnly?: boolean } | undefined)?.compareOnly) {
+          const b = ui.button(v.title, () => void select({ vehicle: v.id, design: 'all' }), 'tree-item tree-leaf')
+          if (chosen) b.setAttribute('aria-current', 'true')
+          treeBox.append(b)
+          continue
+        }
         // A vehicle with one design is a leaf: selecting it shows that design.
         if (!v.groups.length && v.designs.length <= 1) {
           const b = ui.button(v.title, () => void select({ vehicle: v.id }), 'tree-item tree-leaf')
@@ -387,8 +400,8 @@ async function main(): Promise<void> {
 
     // Motion.
     const motion = ui.section('opt:motion', 'Motion')
-    handles.motion = ui.toggle('Motion', state.animate, on => api.setMotion(on))
-    motion.body.append(handles.motion.root, ui.el('div', 'note', 'Throttle and steering cycle gently; the vehicle animates what it can.'))
+    handles.motion = ui.toggle('Motion', motionOn, on => api.setMotion(on))
+    motion.body.append(handles.motion.root, ui.el('div', 'note', 'Throttle and steering cycle gently; the vehicle animates what it can. Arrow keys or WASD, Q and E, R and F, or a gamepad move the controls yourself. Left alone for 15 seconds, the lab turns the vehicle and works its controls by itself.'))
     optionsBox.append(motion.root)
 
     // The exhibit's own controls, under the headings it names.
@@ -462,7 +475,7 @@ async function main(): Promise<void> {
     handles.night?.set(state.night); handles.headlights?.set(state.headlights); handles.brake?.set(state.braking)
     handles.detail?.set(lodChoice + 1)
     handles.stress?.set(STRESS_COUNTS.indexOf(stress))
-    handles.motion?.set(state.animate)
+    handles.motion?.set(motionOn)
     handles.own?.setAttribute('aria-pressed', String(!paint))
     handles.swatches.forEach((b, i) => b.setAttribute('aria-pressed', String(!!paint && PAINTS[i][1] === paint[0] && PAINTS[i][2] === paint[1])))
     if (paint) { handles.body?.set(hex(paint[0])); handles.accent?.set(hex(paint[1])) }
@@ -723,8 +736,21 @@ async function main(): Promise<void> {
     setNight(on: boolean) { studio.setNight(on); state.night = on; state.headlights = on; refresh() },
     setHeadlights(on: boolean) { state.headlights = on; refresh() },
     setBraking(on: boolean) { state.braking = on; refresh() },
-    setMotion(on: boolean) { state.animate = on; refresh() },
+    setMotion(on: boolean) { motionOn = on; refresh() },
+    /** Seconds without input before the lab runs by itself; 0 turns that off. */
+    setIdle(seconds: number) { idleAfter = seconds; lastInput = performance.now() },
+    /** What the idle show is doing, for scripted checks. */
+    idle() { return { running: idleAmount > 0, amount: idleAmount, after: idleAfter } },
     setFloor(name: FloorName) { studio.setFloor(name); refresh() },
+    /** Set one of the exhibit's own controls by id: a toggle (boolean), a cycle (option index) or a slider (number). */
+    control(id: string, value: number | boolean) {
+      for (const c of entries.flatMap(e => e.model?.controls?.filter(x => x.id === id) ?? [])) {
+        if (c.kind === 'toggle') { c.value = Boolean(value); c.onChange(c.value) }
+        else if (c.kind === 'cycle') { c.index = Number(value); c.onChange(c.index) }
+        else { c.value = Number(value); c.onChange(c.value) }
+      }
+      refresh()
+    },
     setTurntable(on: boolean) { turntable = on; refresh() },
     /** Shows or hides the sidebar (on a phone, opens or closes the sheet). */
     sidebar(open: boolean) { setCollapsed(!open) },
@@ -771,8 +797,41 @@ async function main(): Promise<void> {
   else if (params.view) api.view(params.view)
   // Not awaited: the move eases over frames, and the render loop has not started yet.
   if (params.cockpit) void setCockpit(true)
-  if (params.still) state.animate = false
+  if (params.still) motionOn = false
   refresh()
+
+  // Human input. Keys and a gamepad work the vehicle's controls with the game's own mapping
+  // (src/core/Input.ts): A/D or left/right steer, W/S or up/down drive or pitch, Q/E yaw, R/F the
+  // jet's throttle. Any input also restarts the wait for the idle show.
+  const keys = new Set<string>()
+  const raw = { x: 0, y: 0, z: 0, w: 0 }, held = { x: 0, y: 0, z: 0, w: 0 }
+  const spherical = new THREE.Spherical()
+  // Scripted captures (Playwright sets navigator.webdriver) and stills must not start moving
+  // by themselves; `idle=<seconds>` in the URL or setIdle() overrides that.
+  let idleAfter = params.idle ?? (params.still || navigator.webdriver ? 0 : 15)
+  let lastInput = performance.now(), idleAmount = 0, idleTime = 0, idlePhi = 0
+  const touched = () => { lastInput = performance.now() }
+  const typing = (e: Event) => e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement
+  for (const type of ['pointerdown', 'pointermove', 'wheel', 'touchstart'] as const) addEventListener(type, touched, { passive: true })
+  addEventListener('keydown', e => { touched(); if (!typing(e) && !e.metaKey && !e.ctrlKey && !e.altKey) keys.add(e.code) })
+  addEventListener('keyup', e => keys.delete(e.code))
+  addEventListener('blur', () => keys.clear())
+  const key = (negative: string, negative2: string, positive: string, positive2: string) =>
+    (keys.has(positive) || (positive2 !== '' && keys.has(positive2)) ? 1 : 0) - (keys.has(negative) || (negative2 !== '' && keys.has(negative2)) ? 1 : 0)
+  const dead = (v: number) => Math.abs(v) < .15 ? 0 : v
+  function readInput() {
+    raw.x = key('KeyA', 'ArrowLeft', 'KeyD', 'ArrowRight'); raw.y = key('KeyS', 'ArrowDown', 'KeyW', 'ArrowUp')
+    raw.z = key('KeyF', '', 'KeyR', ''); raw.w = key('KeyQ', '', 'KeyE', '')
+    const pads = navigator.getGamepads?.()
+    if (pads) for (let i = 0; i < pads.length; i++) {
+      const pad = pads[i]; if (!pad?.connected) continue
+      const trigger = (pad.buttons[7]?.value ?? 0) - (pad.buttons[6]?.value ?? 0)
+      raw.x ||= dead(pad.axes[0] ?? 0); raw.y ||= Math.abs(trigger) > .05 ? trigger : -dead(pad.axes[1] ?? 0)
+      raw.w ||= dead(pad.axes[2] ?? 0); raw.z ||= -dead(pad.axes[3] ?? 0)
+      break
+    }
+    if (raw.x || raw.y || raw.z || raw.w) touched()
+  }
 
   // Frame loop. Nothing in here allocates: scratch vectors, a fixed ring for timings.
   const timer = new THREE.Timer()
@@ -782,16 +841,44 @@ async function main(): Promise<void> {
     frameTime.push(now - last); last = now
     timer.update()
     const dt = Math.min(timer.getDelta(), .05)
-    if (state.animate) {
-      state.time += dt
+    // Controls: a person's keys or gamepad first, then the gentle cycle, then rest.
+    readInput()
+    const idleNow = idleAfter > 0 && now - lastInput > idleAfter * 1000
+    const ease = 1 - Math.exp(-dt * 8)
+    held.x += (raw.x - held.x) * ease; held.y += (raw.y - held.y) * ease; held.z += (raw.z - held.z) * ease; held.w += (raw.w - held.w) * ease
+    const live = Math.abs(held.x) + Math.abs(held.y) + Math.abs(held.z) + Math.abs(held.w) > .01
+    state.animate = motionOn || idleNow || live
+    if (state.animate) state.time += dt
+    if (live) {
+      state.steer = held.x; state.pitch = held.y; state.yaw = held.w
+      // R and F (or the right stick) are the jet's throttle in the game; W and S drive the rest.
+      state.throttle = Math.abs(held.z) > .01 ? held.z : held.y
+    } else if (motionOn || idleNow) {
       state.throttle = .55 + .45 * Math.sin(state.time * .45)
       state.steer = .8 * Math.sin(state.time * .7)
-    } else { state.throttle = 0; state.steer = 0 }
-    if (turntable && !cockpit.on && !params.still) stage.rotation.y += dt * .35
+      state.pitch = .7 * Math.sin(state.time * .9)
+      state.yaw = .7 * Math.sin(state.time * .5)
+    } else { state.throttle = 0; state.steer = 0; state.pitch = 0; state.yaw = 0 }
+    // The idle show: a slow turn, and now and then the camera rises or dips. Any input ends it
+    // at once and leaves the camera where it is.
+    const showing = idleNow && !cockpit.on && controls.enabled
+    if (!showing) idleAmount = 0
+    else {
+      if (idleAmount === 0) { idleTime = 0; idlePhi = spherical.setFromVector3(scratch.a.subVectors(camera.position, controls.target)).phi }
+      idleAmount = Math.min(1, idleAmount + dt / 3)
+      idleTime += dt
+      // The cube of a sine stays near level most of the time, with one slow swing each way a cycle.
+      const wave = Math.sin(idleTime * Math.PI * 2 / 40) ** 3
+      spherical.setFromVector3(scratch.a.subVectors(camera.position, controls.target))
+      spherical.phi = Math.min(Math.PI / 2 - .06, Math.max(.35, idlePhi - wave * .3 * idleAmount))
+      camera.position.setFromSpherical(spherical).add(controls.target)
+    }
+    if (!cockpit.on && !params.still) stage.rotation.y += dt * ((turntable ? .35 : 0) + .2 * idleAmount * idleAmount * (3 - 2 * idleAmount))
     for (const e of entries) if (e.model && e.root.visible) e.model.update?.(dt, state)
     stepCockpit(dt)
     if (controls.enabled) controls.update()
     if (lodChoice < 0) applyLod()
+    studio.fade(camera.position.y)
     // Per model stats are cheap tree walks; a few times a second is plenty for a readout.
     if (++statFrame % 15 === 1) { for (const e of entries) if (e.model) countStats(e.model.object, e.stats); writeStats() }
     const t0 = performance.now()

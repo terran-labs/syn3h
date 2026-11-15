@@ -53,7 +53,9 @@ export class ParticleBatch {
     if(this.windShare>0&&this.drift){const g=this.gust;g.x=g.y=g.z=0;this.drift(position.x,position.y,position.z,g);if(Number.isFinite(g.x)&&Number.isFinite(g.z)){vx+=g.x*this.windShare;vz+=g.z*this.windShare}}
     this.origin.setXYZ(i,position.x,position.y,position.z);this.velocity.setXYZ(i,vx,velocity.y,vz)
     this.settings.setXYZW(i,this.clock.value,life,size,grow);this.tint.setXYZ(i,color.r,color.g,color.b)
-    for(const [a,n] of [[this.origin,3],[this.velocity,3],[this.settings,4],[this.tint,3]] as const){a.addUpdateRange(i*n,n);a.needsUpdate=true}
+    // Spelled out: a tuple list here allocated five arrays for every particle born.
+    this.origin.addUpdateRange(i*3,3);this.origin.needsUpdate=true;this.velocity.addUpdateRange(i*3,3);this.velocity.needsUpdate=true
+    this.settings.addUpdateRange(i*4,4);this.settings.needsUpdate=true;this.tint.addUpdateRange(i*3,3);this.tint.needsUpdate=true
   }
   /**
    * Move every stored birth position by (dx, dz), for a world seam: the world is redrawn one

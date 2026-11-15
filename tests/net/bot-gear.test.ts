@@ -98,6 +98,36 @@ describe('Host-authorized bot gear', () => {
     expect(guest.peer.all('yoink')).toEqual([])
   })
 
+  it('relays a plain tag beam from a host-owned bot, and refuses a guest claiming the bot for a beam or a Pester', () => {
+    const { host, guest } = setup()
+    const observer = join('Observer')
+    const beam = fire(1); delete (beam.shot as { k?: string }).k
+    const pester = fire(2, bot, { k: 'pester', to: host.id })
+    send(guest.peer, { ...beam })
+    send(guest.peer, { ...pester })
+    expect(observer.peer.all('fire')).toEqual([])
+    expect(host.peer.all('fire')).toEqual([])
+    send(host.peer, beam)
+    expect(observer.peer.all('fire')).toEqual([expect.objectContaining({ from: bot, shot: expect.objectContaining({ id: 1 }) })])
+    expect(observer.peer.all('fire')[0]!.shot.k).toBeUndefined()
+  })
+
+  it('scores nothing for a Pester whose bot went with its host, even when the successor brings the same bot back', () => {
+    const { host, guest } = setup()
+    const observer = join('Observer')
+    place(observer.peer, 25)
+    send(host.peer, fire(1, bot, { k: 'pester', to: guest.id }))
+    expect(guest.peer.all('fire')).toHaveLength(1)
+    room.disconnect(host.peer)
+    send(guest.peer, { type: 'hit', shooter: bot, shot: 1 })
+    // The guest is host now and simulates a bot with the same id: a new vehicle, no live Pesters.
+    place(guest.peer, 20, { bot: true, id: bot })
+    send(observer.peer, { type: 'hit', shooter: bot, shot: 1 })
+    send(guest.peer, { type: 'hit', shooter: bot, shot: 1 })
+    expect(observer.peer.all('hit')).toEqual([])
+    expect(observer.peer.all('game').filter((m) => m.event === 'score')).toEqual([])
+  })
+
   it('requires fresh unpaused bot state, even when its host keeps talking', () => {
     const { host, guest } = setup()
     place(host.peer, 0, { bot: true, id: bot, paused: true })

@@ -16,7 +16,7 @@ import { harness } from './harness'
 beforeAll(initPhysics)
 afterEach(() => { for (const id of ['zorb.size', 'zorb.speed', 'zorb.agility', 'zorb.bounce']) params.set(id, params.get(id)!.def.default) })
 
-const KINDS: VehicleKind[] = ['buggy', 'buggy-classic', 'jet', 'hovercraft', 'tank']
+const KINDS: VehicleKind[] = ['buggy', 'jet', 'hovercraft', 'tank']
 const UP = new THREE.Vector3(0, 1, 0)
 
 /** A chase camera at `yaw` (radians about world up) looking slightly down, as in play. */
@@ -169,7 +169,7 @@ describe('zorb ball physics', () => {
   })
 
   it('restores ordinary driving on the wheels after switching off', () => {
-    for (const kind of ['buggy', 'buggy-classic'] as const) {
+    for (const kind of ['buggy'] as const) {
       const { h, v, done } = spawn(kind)
       v.input.zorb = true; h.step(v, 250)
       // Roll about, then let the bottom-heavy ball settle before getting out.

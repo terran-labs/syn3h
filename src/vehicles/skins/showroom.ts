@@ -123,7 +123,7 @@ export function roleOf(material: T.Material, meshName = ''): SurfaceRole {
  * Distance to the nearest edge of a hexagonal tiling with unit spacing, with the offset from
  * the cell centre: (edge distance 0 to 0.5, offset y). Pointy-top cells on a (1, sqrt 3) lattice.
  */
-const hexCell = Fn(([p]: [N]) => {
+export const hexCell = Fn(([p]: [N]) => {
   const r = vec2(1, 1.7320508), h = r.mul(.5)
   const a = mod(p, r).sub(h), b = mod(p.sub(h), r).sub(h)
   const g = select(dot(a, a).lessThan(dot(b, b)), a, b)

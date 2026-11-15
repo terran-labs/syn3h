@@ -59,7 +59,8 @@ export function prepareResume(query: URLSearchParams, storage: Pick<Storage, 'ge
   params.set('camera.mode', saved.cameraMode)
   return saved
 }
-const normalizeKind = (kind: string) => kind === 'buggy-syn3h' ? 'buggy' : kind
+/** 'buggy-syn3h' is an alias, and the retired 'buggy-classic' now resumes as the Syn3h buggy. */
+const normalizeKind = (kind: string) => kind === 'buggy-syn3h' || kind === 'buggy-classic' ? 'buggy' : kind
 
 export function safeResumePosition(saved: ResumeSnapshot, terrain: Pick<Terrain, 'size' | 'heightAt' | 'liquidHeightAt'>): boolean {
   const [x, y, z] = saved.p

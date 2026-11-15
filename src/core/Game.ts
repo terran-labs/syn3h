@@ -15,6 +15,7 @@ import { drawFrame, gpuDeadlineMs, startRenderer, viewState, type PostChain } fr
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
 import { QualityController, reportLoading, type FrameMetrics } from './quality'
+import { PipelineCounter } from './performanceHistory'
 import { FIXED_DT, RAPIER, createWorld, initPhysics } from './physics'
 
 export interface System {
@@ -50,6 +51,7 @@ export class Game {
   fps = 0
 
   readonly quality = new QualityController()
+  private readonly pipelineCounter = new PipelineCounter()
   readonly performance: FrameMetrics = { fps: 0, frameMs: 0, physicsMs: 0, drawCalls: 0, triangles: 0, firstFrameMs: null }
 
   private readonly systems: System[] = []
@@ -70,13 +72,12 @@ export class Game {
   }
 
   async init(): Promise<void> {
+    // Physics starts first and is awaited only where the physics world is created, below: its
+    // WebAssembly downloads and compiles while the adapter probe and the renderer start.
+    const physics = timeStartup('physics init (Rapier WASM), beside the probe and renderer', () => initPhysics())
+    physics.catch(() => { /* Reported where it is awaited. */ })
     await timeStartup('quality initialise (WebGPU adapter probe)', () => this.quality.initialize())
     reportLoading('physics', 0.15)
-    await timeStartup('physics init (Rapier WASM)', () => initPhysics())
-    this.world = createWorld(worldGravity.value)
-    params.onChange((id, value) => {
-      if (id === worldGravity.def.id) this.world.gravity = { x: 0, y: -(value as number), z: 0 }
-    })
 
     reportLoading('renderer', 0.4)
     // `?webgl=1` forces the WebGL 2 backend: a way round a WebGPU implementation that
@@ -111,6 +112,13 @@ export class Game {
     }
     window.addEventListener('resize', resize)
     resize()
+    // Without physics there is no game: stop the one loop already running (the display probe)
+    // and let the failure reach the page, which asks for a reload. Nothing else has started.
+    try { await timeStartup('wait for physics after the renderer', () => physics) } catch (error) { this.quality.dispose(); throw error }
+    this.world = createWorld(worldGravity.value)
+    params.onChange((id, value) => {
+      if (id === worldGravity.def.id) this.world.gravity = { x: 0, y: -(value as number), z: 0 }
+    })
     reportLoading('world', 0.7)
     this.buildMark = performance.now()
   }
@@ -150,11 +158,51 @@ export class Game {
     this.buildMark = 0
     this.loopStart = performance.now()
     this.last = performance.now()
+    this.started = true
+    if (!this.paused) this.renderer.setAnimationLoop(() => this.frame())
+  }
+
+  private started = false
+  private paused = false
+  /** True while the loop is stopped because nobody can see the page. */
+  get isPaused(): boolean { return this.paused }
+
+  /**
+   * Stops everything the loop drives: physics steps, every system's updates and rendering.
+   * Called when the page is hidden (src/core/lifecycle.ts). Nothing is torn down, so no
+   * shader or pipeline is rebuilt on the way back. Safe before `start` and when already paused.
+   */
+  pause(): void {
+    if (this.paused) return
+    this.paused = true
+    if (!this.started) return
+    this.renderer.setAnimationLoop(null)
+    // Clearing the callback is not enough: three keeps requesting animation frames for its own
+    // bookkeeping (about 15 a second measured in a hidden page). Its animation object has the
+    // stop that the public method does not call; setAnimationLoop starts it again on resume.
+    ;(this.renderer as unknown as { _animation?: { stop?: () => void } })._animation?.stop?.()
+  }
+
+  /**
+   * Starts the loop again from now. The time spent paused is discarded, not simulated: the
+   * frame clock restarts and the leftover fraction of a step is dropped, so the first frame
+   * back takes at most one ordinary step and there is no catch-up burst.
+   */
+  resume(): void {
+    if (!this.paused) return
+    this.paused = false
+    if (!this.started) return
+    this.last = performance.now()
+    this.accumulator = 0
     this.renderer.setAnimationLoop(() => this.frame())
   }
 
+  /** Frames the loop has run since start, drawn or not. Stands still while paused. */
+  frames = 0
+
   private frame(): void {
     const now = performance.now()
+    this.frames++
     if (this.loopStart) { recordStartupPhase('game.start to first animation frame', this.loopStart); this.loopStart = 0 }
     const frameMs = now - this.last
     const frameDt = Math.min(0.25, frameMs / 1000)
@@ -198,6 +246,10 @@ export class Game {
     metrics.frameMs = frameMs
     metrics.drawCalls = this.renderer.info.render.drawCalls
     metrics.triangles = this.renderer.info.render.triangles
+    // Read-only look at the renderer's own pipeline cache, as recordStartupFrame does once.
+    const pipelines = this.pipelineCounter.scan((this.renderer as unknown as { _pipelines?: { caches?: Map<unknown, object> } })._pipelines?.caches)
+    metrics.pipelinesLive = pipelines?.live ?? null
+    metrics.pipelinesFresh = pipelines?.fresh ?? null
     if (metrics.firstFrameMs === null && metrics.drawCalls > 0) metrics.firstFrameMs = performance.now()
     // Frames in the lobby say how the lobby runs, not how the game will: only play is judged.
     this.quality.frame(metrics, view === 'playing')

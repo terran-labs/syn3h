@@ -17,7 +17,7 @@ try{
   const render=()=>{r.info.reset();r.render(g.scene,g.camera);return {draws:r.info.render.drawCalls,triangles:r.info.render.triangles}}
   const ready=async v=>{await(v.modelReady??v.skin?.ready);v.update(0,1)}
   const values=[]
-  for(const kind of ['buggy','buggy-classic','jet','hovercraft','tank']){
+  for(const kind of ['buggy','jet','hovercraft','tank']){
    const v=createVehicle(g,s.terrain,kind,center.clone());await ready(v)
    for(const local of [true,false]){
     v.isLocal=local;const dispose=attachVehicleEffects(g,s.terrain,v,{local:false})

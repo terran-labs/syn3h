@@ -4,9 +4,9 @@ The physical iPad failure is not reproduced on macOS Playwright WebKit 2388. Thi
 
 ## Device diagnostics
 
-Add `?diag=1` (or `&diag=1`) to the live URL after integration. The folding panel shows loading phase, backend, adapter information when exposed, texture limit, canvas backing and CSS sizes, device and renderer pixel ratios, graphics level, exposure, output color space, tone mapping, sample count, submitted first draw, tick, FPS and draw count. It records device errors and loss without replacing Three's normal handling. WebGL loss events are separate because the lobby deliberately loses its contexts on Play.
+Current diagnostics use the shared performance panel through F3 or the ordinary UI control. The old `?diag=1` spelling remains an alias, not a requirement. Backend, available adapter information, texture limit, fallback and loss details reuse the selected renderer and startup record. Memory, where exposed by the browser, is an estimate rather than measured GPU memory.
 
-`window.syn3hDiagnostics` contains the same snapshot for automation. Context tracking starts at Game construction, includes subsequently acquired detached canvases, and does not count contexts created earlier during module imports. It does not measure total GPU memory. Submitted draws do not prove visible pixels. An import failure before Game construction cannot show this panel.
+`window.syn3hDiagnostics` remains a bounded compatibility snapshot for capture tools. It updates from the existing quality frame feed and renderer error/loss callbacks, without a global context patch or extra timer. Renderer errors are capped at twelve entries. Context counts are now explicitly untracked, and there is no separate lobby-context event collection. Submitted draws do not prove visible pixels; failures before Game construction cannot be captured by this path. The historical device evidence below predates this replacement.
 
 `?webgl=1` retains the orchestrator's explicit backend override. `?gfx=0` now selects the safe quality budget; it previously was not parsed. Valid graphics URL values are 0, 1 and 2, still bounded by adapter classification and subsequent automatic step-down. Safari detection is exported and tested but unused: no automatic iOS backend change is enabled.
 

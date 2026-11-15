@@ -60,7 +60,9 @@ export class Ripples {
   private allocate() {
     this.targets=Array.from({length:2},()=>new T.RenderTarget(this.cells,this.cells,{type:T.HalfFloatType,format:T.RGBAFormat,minFilter:T.LinearFilter,magFilter:T.LinearFilter,depthBuffer:false}))
     this.flatten()
-    this.source.value=this.targets[0].texture
+    // Fresh targets restart the ping-pong. Keeping an old index of 1 made the next step
+    // render into targets[0] while sampling it.
+    this.source.value=this.targets[0].texture;this.index=0
     const p=uv().add(this.shift), d=1/this.cells
     const sample=(offset:any)=>this.source.sample(p.add(offset)).r
     const h=this.source.sample(p).r, previous=this.source.sample(p).g
