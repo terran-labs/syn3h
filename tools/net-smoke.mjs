@@ -332,7 +332,8 @@ try {
     window.syn3hNet.ctx.names = (seed, kind) => `${kind}-${seed}`
   })
   await a.evaluate(() => window.syn3h.params.set('game.mode', 1))
-  await b.waitForFunction(() => window.syn3hNet.game.mode === 1 && window.syn3hNet.game.koth.zone, null, { timeout: 8000 }).catch(() => {})
+  // Network state can arrive between frames; the marker updates on the next game step.
+  await b.waitForFunction(() => window.syn3hNet.game.mode === 1 && window.syn3hNet.game.koth.zone && window.syn3hNet.hill.visible, null, { timeout: 8000 }).catch(() => {})
   const zone = await b.evaluate(() => window.syn3hNet.game.koth.zone)
   const markerShown = await b.evaluate(() => window.syn3hNet.hill.visible)
   check('mode switch reaches B with the host\'s zone', zone && markerShown, { zone, markerShown })
