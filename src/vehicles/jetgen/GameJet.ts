@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu'
 import { MK2_FITTINGS, SHIPPED_JET, VANGUARD_EYE } from './shipped'
 import { JetPlume } from './JetPlume'
+import { JetTailLights } from './JetTailLights'
 import { NextJet } from './NextJet'
 import { buildJetSilhouette } from './JetSilhouette'
 import { detailLevel, mergeStatic, registerVehicleDetail } from '../skins/mergeStatic'
@@ -23,6 +24,7 @@ export class GameJet {
   readonly eye = new THREE.Vector3(...VANGUARD_EYE)
   /** Thrust cones behind the nozzles and under the hover ports: one draw, shown at every level. */
   readonly plume = new JetPlume(MK2_FITTINGS)
+  readonly tailLights = new JetTailLights()
   private nearModel?: NextJet
   private readonly mediumModels: [NextJet | undefined, NextJet | undefined] = [undefined, undefined]
   private farModel?: THREE.Mesh
@@ -37,7 +39,7 @@ export class GameJet {
   private detachDetail = () => {}
   private attached = false
 
-  constructor() { this.plume.setColor(this.accent); this.object.add(this.plume.mesh) }
+  constructor() { this.plume.setColor(this.accent); this.object.add(this.plume.mesh, this.tailLights.mesh) }
 
   /** Close model: full cockpit, animated gear and vectoring petals. Built on first use. */
   get near(): NextJet {
@@ -135,7 +137,7 @@ export class GameJet {
   }
 
   dispose(): void {
-    this.plume.dispose(); this.detachDetail(); this.nearModel?.dispose(); this.mediumModels.forEach(j => j?.dispose())
+    this.tailLights.dispose(); this.plume.dispose(); this.detachDetail(); this.nearModel?.dispose(); this.mediumModels.forEach(j => j?.dispose())
     if (this.farModel) { this.farModel.geometry.dispose(); (this.farModel.material as THREE.Material).dispose() }
   }
 }

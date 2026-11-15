@@ -25,14 +25,14 @@ describe('approved Mk2 game model', () => {
       jet.update(gear, .3, -.2, .8)
       for (const level of [0, 1, 2] as const) {
         jet.setLevel(level)
-        // The model's own budget, then the thrust plume on top: an effect, one draw, under 400 triangles.
-        jet.plume.mesh.visible = false
+        // Base model budget, then plume (<=400 triangles) and fitted tail lights (28), one draw each.
+        jet.plume.mesh.visible = false; jet.tailLights.mesh.visible = false
         const cost = visibleCost(jet.object)
-        jet.plume.mesh.visible = true
+        jet.plume.mesh.visible = true; jet.tailLights.mesh.visible = true
         expect(cost.triangles).toBeLessThanOrEqual([12000, 2500, 500][level])
         expect(cost.draws).toBeLessThanOrEqual([9, 3, 1][level])
-        expect(visibleCost(jet.object).draws - cost.draws).toBe(1)
-        expect(visibleCost(jet.object).triangles - cost.triangles).toBeLessThanOrEqual(400)
+        expect(visibleCost(jet.object).draws - cost.draws).toBe(2)
+        expect(visibleCost(jet.object).triangles - cost.triangles).toBeLessThanOrEqual(428)
       }
     }
     for (const y of jet.near.footHeights()) expect(y).toBeCloseTo(GROUND_Y, 2)
@@ -104,7 +104,7 @@ it('builds a detail level only when it is first shown', () => {
   jet.setLevel(2); jet.update(0, 0, 0, 0); expect(jet.near.gearAmount).toBe(1)
   jet.setLevel(0); expect(jet.near.gearAmount).toBe(0)
   let visible = 0
-  for (const o of jet.object.children) if (o.visible && o !== jet.plume.mesh && (o instanceof THREE.Mesh || o.children.length)) visible++
+  for (const o of jet.object.children) if (o.visible && o !== jet.plume.mesh && o !== jet.tailLights.mesh && (o instanceof THREE.Mesh || o.children.length)) visible++
   expect(visible).toBe(1)
   jet.dispose()
 })
@@ -244,4 +244,31 @@ describe('Mk2 thrust plume', () => {
     expect((jet.plume.mesh.userData.plumeColor as THREE.Color).getHexString()).toBe('00ff80')
     jet.dispose()
   })
+})
+
+
+describe('Mk2 fitted tail lights',()=>{
+ it('backs both red lenses with housings touching the outer nozzle lips',()=>{
+  const jet=new GameJet(),g=jet.tailLights.mesh.geometry,p=g.attributes.position,mask=g.attributes.tailLens
+  expect(g.index!.count/3).toBe(28)
+  for(const n of MK2_FITTINGS.nozzles.filter(n=>n.x!==0)){
+   const housing=new THREE.Box3(),lens=new THREE.Box3()
+   for(let i=0;i<p.count;i++){
+    const point=new THREE.Vector3().fromBufferAttribute(p,i)
+    if(Math.abs(point.x-n.x)>.2)continue
+    ;(mask.getX(i)>0?lens:housing).expandByPoint(point)
+   }
+   expect(housing.min.y).toBeLessThan(n.y+n.r)
+   expect(housing.max.y).toBeGreaterThan(n.y+n.r)
+   expect(housing.max.z).toBeCloseTo(n.z,5)
+   expect(lens.min.z-housing.max.z).toBeCloseTo(.002,5)
+   expect(lens.min.x).toBeGreaterThan(housing.min.x);expect(lens.max.x).toBeLessThan(housing.max.x)
+   expect(lens.min.y).toBeGreaterThan(housing.min.y);expect(lens.max.y).toBeLessThan(housing.max.y)
+  }
+  const colors=Array.from(g.attributes.color.array)
+  jet.setColors('#00ff00','#0000ff');jet.update(0,0,0,1)
+  expect(Array.from(g.attributes.color.array)).toEqual(colors)
+  for(const level of [0,1,2] as const){jet.setLevel(level);expect(jet.tailLights.mesh.visible).toBe(true)}
+  jet.dispose()
+ })
 })

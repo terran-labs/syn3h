@@ -92,7 +92,7 @@ export class Jet extends Vehicle {
     this.object.add(this.model.object)
     this.ridePosition.position.copy(this.model.eye)
     this.object.userData.cockpit = true
-    // The Mk2 has no lamp fittings; the old positions float beside its cockpit.
+    // The Mk2 owns its fitted tail lights; the shared lamp positions float beside its cockpit.
     this.object.userData.ownLamps = true
     this.model.attach()
     this.applyColors()
