@@ -13,7 +13,7 @@
  *   - Surfaces, strokes, type and colour only. Positions, sizes and the 44 px (48 px on touch)
  *     hit areas set by motion.css stay as they are; the visible ink inside them is finer.
  * Selectors start .syn3h-shell.exploration-ui and carry enough classes to beat the three
- * glass weights (data-glass 0, 1, 2) and html[data-gfx="0"] without !important.
+ * glass weights (data-glass 0, 1, 2) and html[data-gfx="0"], using !important only against an existing !important.
  */
 
 .syn3h-shell.exploration-ui {
