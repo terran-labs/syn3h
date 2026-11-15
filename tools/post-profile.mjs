@@ -18,7 +18,8 @@ const url = process.argv[2] ?? 'http://127.0.0.1:5207/'
 const output = process.argv[3] ?? '/tmp/post-profile.json'
 const sep = url.includes('?') ? '&' : '?'
 const giOnly = process.argv.includes('--gi')
-const cases = giOnly ? ['gi-off', 'gi-on', 'gi-on', 'gi-off'] : ['off', 'cinematic', 'cinematic', 'off']
+const cloudsOnly = process.argv.includes('--clouds')
+const cases = cloudsOnly ? ['clouds-off', 'clouds-on', 'clouds-on', 'clouds-off'] : giOnly ? ['gi-off', 'gi-on', 'gi-on', 'gi-off'] : ['off', 'cinematic', 'cinematic', 'off']
 const percentile = (values, p) => { const v = values.filter(Number.isFinite).sort((a, b) => a - b); return v.length ? v[Math.min(v.length - 1, Math.floor(p * v.length))] : null }
 const results = []
 const browser = await chromium.launch({ channel: 'chrome', headless: false, args: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-angle=metal', '--ignore-gpu-blocklist', '--disable-gpu-vsync', '--disable-frame-rate-limit'] })
@@ -37,6 +38,7 @@ try {
         g.quality.frame = () => {}; r.setPixelRatio(1)
         s.params.set('post.on', name !== 'off')
         if (name.startsWith('gi-')) s.params.set('post.gi', name === 'gi-on' ? 1 : 0)
+        if (name.startsWith('clouds-')) s.params.set('post.clouds', name === 'clouds-on' ? 1 : 0)
         // cinematic: the post chain plus the light rig, aerial perspective and terrain material.
         if (name === 'cinematic') for (const [k, v] of Object.entries({ 'light.bounce': 1, 'weather.aerial': 1, 'terrain.detailNormal': 1, 'terrain.surfaceResponse': 1, 'terrain.macroColour': 1, 'terrain.accent': 1 })) s.params.set(k, v)
         const chain = g.postChain
@@ -46,7 +48,7 @@ try {
         const samples = []; let collecting = false
         g.add({ update() { if (collecting) samples.push({ frameMs: g.performance.frameMs, drawMs, drawCalls: g.performance.drawCalls }); drawMs = 0 } })
         window.postProfile = { start() { samples.length = 0; collecting = true }, stop() { collecting = false; return samples } }
-        return { backend: g.backend, drawingBuffer: [r.domElement.width, r.domElement.height] }
+        return { backend: g.backend, drawingBuffer: [r.domElement.width, r.domElement.height], cloudCoverage: s.params.get('weather.cloudCoverage').value }
       }, name)
       await page.waitForTimeout(2500)
       await page.evaluate(() => window.postProfile.start())

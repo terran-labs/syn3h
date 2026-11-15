@@ -12,7 +12,7 @@ export class SkyEnvironmentMap {
   private readonly previous:THREE.Texture|null
   private readonly previousIntensity:number
   readonly stats={captures:0,lastCpuMs:0,totalCpuMs:0,size:64}
-  constructor(private readonly scene:THREE.Scene,renderer:THREE.WebGPURenderer,sky:AlienSkyMesh){
+  constructor(private readonly scene:THREE.Scene,renderer:THREE.WebGPURenderer,private readonly sky:AlienSkyMesh){
     this.previous=scene.environment
     this.previousIntensity=scene.environmentIntensity
     // The scene already has sky-derived hemisphere lighting; keep this fill subdued.
@@ -31,7 +31,15 @@ export class SkyEnvironmentMap {
     if(this.target&&this.elapsed<.5)return
     if(this.target&&!this.dirty&&hourDelta<.1)return
     const start=performance.now()
-    this.target=this.generator.fromScene(this.capture,0,.1,20000,{size:this.stats.size,renderTarget:this.target})
+    // A camera volume does not appear in the sky-only capture. Keep the existing layer
+    // in reflections without changing coverage, drift, or the capture schedule.
+    const visible=this.sky.cloudLayerVisible
+    this.sky.cloudLayerVisible=true
+    try {
+      this.target=this.generator.fromScene(this.capture,0,.1,20000,{size:this.stats.size,renderTarget:this.target})
+    } finally {
+      this.sky.cloudLayerVisible=visible
+    }
     this.scene.environment=this.target.texture
     this.stats.lastCpuMs=performance.now()-start;this.stats.totalCpuMs+=this.stats.lastCpuMs;this.stats.captures++
     this.elapsed=0;this.capturedHour=hour;this.dirty=false

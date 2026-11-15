@@ -24,12 +24,30 @@ import * as P from './sky/skyParams'
 import { applyBounce, lightSkyReflection, shadowSoftness, shadowStrength } from './lightRig'
 import { heightFog, weatherFogNode } from './weather/fog'
 import { advanceCloudDrift } from './weather/clouds'
+import { atmosphereValue } from './weather/params'
+
+/** Live sky settings. Offset is locally accumulated wind drift, not a shared room phase. */
+export interface CloudInputs {
+  readonly coverage: number
+  readonly density: number
+  readonly scale: number
+  readonly elevation: number
+  readonly speed: number
+  readonly offset: { readonly x: number; readonly y: number }
+  readonly atmosphere: number
+  readonly worldSize: number
+}
 
 export interface Environment extends System {
   /** Unit vector pointing from the ground toward the sun. Other systems may read it. */
   readonly sunDirection: THREE.Vector3
   /** Linear colour times intensity of the direct light (sun by day, moon by night). */
   readonly sunColor: THREE.Color
+  /** Direction toward whichever light supplies sunColor: sun by day, moon by night. */
+  readonly lightDirection: THREE.Vector3
+  readonly clouds: CloudInputs
+  /** Hide only the camera's flat cloud layer while a working volume replaces it. */
+  setVolumetricCloudsActive(active: boolean): void
   /** Linear sky colour at the horizon, averaged around the compass. Matches the fog. */
   readonly horizonColor: THREE.Color
   /** Current hour, 0 to 24. Advances on its own when the day length is non zero. */
@@ -141,6 +159,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   let hour = wrapHour(P.sunTimeOfDay.value)
   const sun: Vec3 = [0, 1, 0]
   const sunDirection = new THREE.Vector3()
+  const lightDirection = new THREE.Vector3()
   const sunColor = new THREE.Color()
   const horizonColor = new THREE.Color()
   const rgb: RGB = [0, 0, 0]
@@ -152,7 +171,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   const applyUniforms = () => {
     sky.mieDirectionalG.value = P.skyMieDirectionalG.value
     sky.showSunDisc.value = P.skySunDisc.value ? 1 : 0
-    sky.cloudCoverage.value = P.cloudCoverage.value
+    sky.cloudCoverage.value = atmosphereValue() > 0 ? P.cloudCoverage.value : 0
     sky.cloudDensity.value = P.cloudDensity.value
     sky.cloudScale.value = P.cloudScale.value
     sky.cloudSpeed.value = P.cloudSpeed.value
@@ -160,9 +179,19 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
     fogState.density = P.fogDensity.value
   }
   applyUniforms()
+  const clouds: CloudInputs = {
+    get coverage() { return sky.cloudCoverage.value },
+    get density() { return sky.cloudDensity.value },
+    get scale() { return sky.cloudScale.value },
+    get elevation() { return sky.cloudElevation.value },
+    get speed() { return sky.cloudSpeed.value },
+    offset: { get x() { return sky.cloudOffset.value.x }, get y() { return sky.cloudOffset.value.y } },
+    get atmosphere() { return Math.max(0, Math.min(1, atmosphereValue())) },
+    get worldSize() { return _terrain.size },
+  }
 
   const unlisten = params.onChange((id, value) => {
-    if (/^(sky|sun|weather)\./.test(id)) reflections.invalidate()
+    if (/^(sky|sun|weather)\./.test(id) || id === 'world.atmosphere') reflections.invalidate()
     if (id === P.sunTimeOfDay.def.id) hour = wrapHour(value as number)
     else if (id === P.shadowQuality.def.id) buildLight(value as number)
     else if (id === P.skyPresetPicker.def.id) {
@@ -202,6 +231,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
 
     // Direct light: the sun until it stops lighting the sky, then the moon opposite it.
     const moon = moonAmount(sun[1])
+    lightDirection.copy(sunDirection).multiplyScalar(moon > 0 ? -1 : 1)
     if (moon <= 0) {
       sanitizeRGB(sunlightColor(sun, sp, rgb), 1)
       const k = P.sunIntensity.value
@@ -281,6 +311,9 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   return {
     sunDirection,
     sunColor,
+    lightDirection,
+    clouds,
+    setVolumetricCloudsActive(active) { sky.cloudLayerVisible = !active },
     horizonColor,
     get hour() { return hour },
     update,

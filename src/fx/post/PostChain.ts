@@ -34,6 +34,8 @@ import { ao } from 'three/addons/tsl/display/GTAONode.js'
 import { sss } from 'three/addons/tsl/display/SSSNode.js'
 import { ssgi } from 'three/addons/tsl/display/SSGINode.js'
 import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
+import { cloudVolume, compositeClouds } from './clouds'
+import type { CloudInputs } from '../../world/Environment'
 import { motionBlurred } from './motion'
 import { graphicsLevel } from '../../core/quality'
 import { params } from '../../../shared/params'
@@ -60,6 +62,9 @@ export interface PostChainHost {
 }
 export interface SunSource {
   readonly sunDirection: THREE.Vector3
+  readonly lightDirection?: THREE.Vector3
+  readonly clouds?: CloudInputs
+  setVolumetricCloudsActive?(active: boolean): void
   /** Linear colour times intensity of the direct light, and the horizon sky colour. */
   readonly sunColor?: THREE.Color
   readonly horizonColor?: THREE.Color
@@ -83,6 +88,7 @@ interface Built {
   aoNode: N | null
   sssNode: N | null
   giNode: N | null
+  clouds: boolean
   pipeline: THREE.RenderPipeline
   disposables: Array<{ dispose?(): void; renderTarget?: { dispose(): void } }>
 }
@@ -148,7 +154,7 @@ export class PostChain {
     let tier = postTier({ on: P.postOn.value, level: graphicsLevel.value, deviceLevel: this.host.quality.deviceLevel, tablets: P.postTablets.value, shed })
     this.tier = tier
     // Anything the governor could shed: everything but the colour look itself.
-    this.reportActive(tier !== 'off' && [P.postBloom, P.postShafts, P.postFlare, P.postAO, P.postContact, P.postMotionBlur, P.postGI].some(p => p.value > 0))
+    this.reportActive(tier !== 'off' && [P.postBloom, P.postShafts, P.postFlare, P.postAO, P.postContact, P.postMotionBlur, P.postGI, P.postClouds].some(p => p.value > 0))
     if (tier === 'off') {
       this.release()
       renderer.render(scene, camera)
@@ -161,11 +167,13 @@ export class PostChain {
     const flareOn = tier === 'full' && P.postFlare.value > 0
     const aoOn = tier === 'full' && P.postAO.value > 0
     const giOn = tier === 'full' && P.postGI.value > 0
+    const clouds = this.sun.clouds
+    const cloudsOn = tier === 'full' && P.postClouds.value > 0 && !!clouds && clouds.coverage > 0 && clouds.density > 0 && clouds.atmosphere > 0
     const light = tier === 'full' && P.postContact.value > 0 ? findSun(scene) : null
     const toneMap = TONE_MAPS[Math.round(P.postToneMap.value)] ?? renderer.toneMapping
     const debug = Math.round(P.postDebug.value)
-    const key = `${debug}|${tier}|${glowOn}|${shaftsOn}|${flareOn}|${aoOn}|${giOn}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
-    if (this.built?.key !== key) this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn)
+    const key = `${debug}|${tier}|${glowOn}|${shaftsOn}|${flareOn}|${aoOn}|${giOn}|${cloudsOn}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
+    if (this.built?.key !== key) this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn, cloudsOn)
 
     const u = this.u
     u.exposure.value = Math.max(1e-4, renderer.toneMappingExposure)
@@ -204,11 +212,18 @@ export class PostChain {
     const sunLit = sunVis > 0.001
     if (built.maskTex) built.maskTex.autoUpdate = sunLit
     if (built.raysTex) built.raysTex.autoUpdate = sunLit && P.postShafts.value > 0
-    built.pipeline.render()
+    this.sun.setVolumetricCloudsActive?.(built.clouds)
+    try {
+      built.pipeline.render()
+    } catch (error) {
+      this.sun.setVolumetricCloudsActive?.(false)
+      throw error
+    }
   }
 
   /** Free the pipeline and every target it made. Safe to repeat. */
   release(): void {
+    this.sun.setVolumetricCloudsActive?.(false)
     if (!this.built) return
     this.built.pipeline.dispose()
     for (const d of this.built.disposables) { d.dispose?.(); d.renderTarget?.dispose() }
@@ -287,7 +302,7 @@ export class PostChain {
     return sunScreenFade(su, sv, inFront) * sunHeightFactor(sun.y, P.postLowSun.value)
   }
 
-  private build(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, key: string, tier: PostTier, glowOn: boolean, shaftsOn: boolean, flareOn: boolean, aoOn: boolean, light: THREE.DirectionalLight | null, toneMap: THREE.ToneMapping, debug = 0, giOn = false): void {
+  private build(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, key: string, tier: PostTier, glowOn: boolean, shaftsOn: boolean, flareOn: boolean, aoOn: boolean, light: THREE.DirectionalLight | null, toneMap: THREE.ToneMapping, debug = 0, giOn = false, cloudsOn = false): void {
     this.release()
     const u = this.u as Record<keyof PostChain['u'], N>
     const disposables: Built['disposables'] = []
@@ -295,7 +310,7 @@ export class PostChain {
     let raysRef: N = null
     const scenePass = pass(scene, camera)
     disposables.push(scenePass as never)
-    const color: N = scenePass.getTextureNode('output')
+    let color: N = scenePass.getTextureNode('output')
     const depth: N = scenePass.getTextureNode('depth')
     const hot: N = u.bloomThreshold.mul(HOT_CLAMP)
 
@@ -373,6 +388,13 @@ export class PostChain {
         ...(scenePass.contextNode?.value as object | undefined),
         ...(builtinShadowContext(mix(float(1), contact, 0.6), light).value as object),
       })
+    }
+
+    if (cloudsOn) {
+      const volume: N = cloudVolume(depth, u, this.sun as SunSource & { clouds: CloudInputs })
+      const composite: N = compositeClouds(color, volume, depth, u.projInv)
+      disposables.push(volume, composite)
+      color = composite
     }
 
     // The scene colour as the eye sees it this frame: heat shimmer bends where it reads from,
@@ -510,7 +532,7 @@ export class PostChain {
     if (debug === 2 && contactTex) out = vec4(vec3(contactTex), 1)
     const pipeline = new THREE.RenderPipeline(renderer, out)
     pipeline.outputColorTransform = false
-    this.built = { key, pipeline, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode }
+    this.built = { key, pipeline, disposables, maskTex: maskRef, raysTex: raysRef, aoNode, sssNode, giNode, clouds: cloudsOn }
     this.builds++
   }
 }
