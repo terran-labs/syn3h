@@ -96,6 +96,9 @@ export class Inspector {
       if (section.id === 'world' && this.options.onSaveWorld) {
         const save = document.createElement('button'); save.type = 'button'; save.dataset.wi = 'save-world'; save.textContent = 'Save current world'
         // Saving a local copy does not edit the shared world, even for a locked guest.
+        // Keep native keyboard activation, but do not send Enter/Space to driving input.
+        // Keyup still bubbles so a previously held driving key can be released here.
+        save.addEventListener('keydown', event => event.stopPropagation(), { signal: this.abort.signal })
         foot.append(save)
       }
       body.append(foot); card.append(head, body); cards.append(card)
@@ -196,7 +199,9 @@ export class Inspector {
     }
     this.say(words.length ? `${[...this.rows.values()].filter(r => !r.row.hidden).length} found` : '')
   }
-  private say(text: string): void { this.element.querySelector('.wi-status')!.textContent = text }
+  /** Feedback stays visible while the inspector suppresses transient game toasts. */
+  setStatus(message: string): void { this.element.querySelector('.wi-status')!.textContent = message }
+  private say(text: string): void { this.setStatus(text) }
   private async click(event: Event): Promise<void> {
     const target = event.target as Element, vehicle = target.closest<HTMLElement>('[data-vehicle]')
     if (vehicle) { this.options.onVehicle(vehicle.dataset.vehicle!); return }
