@@ -347,6 +347,33 @@ export class Bungee implements System {
     this.wheel = 0
   }
 
+  /**
+   * Drop every live cord and hook, the player's and everyone else's, and forget held input.
+   * For a world change, leaving the world or the room, or the vehicle being replaced: a
+   * ground anchor is a point in the old world and means nothing in the next one. The
+   * player's own cord is reported off so the room and the others drop it too. No cooldown:
+   * this is not a release the player chose. Shared materials are kept (see warm.ts).
+   */
+  reset(): void {
+    const had = this.mine !== undefined
+    for (const id of [...this.cords.keys()]) this.remove(id)
+    if (had) this.hooks.send?.({ s: 'off' })
+    this.fireWas = false
+    this.lastPress = -Infinity
+    this.readyAt = 0
+    this.wheel = 0
+    this.keys.clear()
+    this.padWas.release = false
+    this.sentAt = -Infinity
+    this.sentRest = 0
+    this.reticle.visible = false
+  }
+
+  /** Live cords and hooks, by owner, for automated checks. */
+  get count(): number {
+    return this.cords.size + this.hookMeshes.size + this.anchorMeshes.size
+  }
+
   /** Another player's cord, as relayed. `age` is seconds since it was sent. */
   applyRemote(from: number, wire: CordWire, age = 0): void {
     if (from === this.hooks.self()) {
@@ -365,6 +392,7 @@ export class Bungee implements System {
       hook.prev.copy(hook.pos)
       return
     }
+    if (!this.plausible(from, wire)) { this.remove(from); return }
     let c = this.cords.get(from)
     if (!c) c = this.makeCord(from)
     c.hook = null
@@ -375,6 +403,28 @@ export class Bungee implements System {
       if (c.rest === 0) { c.twang = 1; c.since = this.game.time }
       c.rest = wire.r
     }
+  }
+
+  /**
+   * A relayed attached cord we are willing to draw and pull on. The room checks reach
+   * against where it last saw the sender, but a cord can still arrive from before a world
+   * change, or from a client on a stale world. Anything non-finite, longer than the longest
+   * cord the sliders allow, or anchored further from its owner than that cord could stretch
+   * before snapping, is dropped. The bound is deliberately generous: it rejects nonsense,
+   * not a cord that is merely taut.
+   */
+  private plausible(from: number, wire: Extract<CordWire, { s: 'on' }>): boolean {
+    const longest = bungeeLength.def.max ?? bungeeLength.value
+    if (!Number.isFinite(wire.r) || wire.r < 0 || wire.r > longest + 1) return false
+    if (wire.n && !wire.n.every(Number.isFinite)) return false
+    if (wire.to !== undefined) return Number.isFinite(wire.to)
+    if (!wire.at || !wire.at.every(Number.isFinite)) return false
+    const owner = this.hooks.vehicleOf(from)
+    // Not here yet: nothing to measure from, and nothing is pulled or drawn until it is.
+    if (!owner) return true
+    const t = owner.body.translation()
+    const a = new THREE.Vector3(t.x, t.y, t.z)
+    return this.nearestTo(new THREE.Vector3(...wire.at), a).distanceTo(a) <= longest * bungeeSnap.value
   }
 
   /** A player left: drop their cord, and any cord tied to them. */

@@ -118,6 +118,18 @@ export class BotGear {
     this.red.cancel()
   }
 
+  /**
+   * Drop everything this bot has out (cord, carry, charge) and its intent, reporting the cord
+   * and carry off as the bot, for a world change or leaving the room. The controller stays.
+   */
+  reset(): void {
+    this.control.fire = false
+    this.selected = null
+    this.target = null
+    this.nextPester = 0
+    this.bungee.reset(); this.yoink.reset(); this.red.reset()
+  }
+
   dispose(): void {
     // Authority or roster already changed: remove local state without sending as a stale bot.
     this.bungee.dispose(); this.yoink.dispose(); this.red.dispose()

@@ -186,6 +186,11 @@ export class Lasers implements System {
     if (i >= 0) this.kill(i)
   }
 
+  /** Remove every shot in flight: for a world change or leaving it. Impact effects fade on their own. */
+  reset(): void {
+    while (this.shots.length) this.kill(this.shots.length - 1)
+  }
+
   fixedUpdate(dt: number): void {
     for (let i = this.shots.length - 1; i >= 0; i--) {
       const p = this.shots[i]
