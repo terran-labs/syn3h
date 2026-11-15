@@ -111,9 +111,9 @@ const HIDE_CSS = `
   .score-detail.is-developer, .build-line, .syn3h-nametags, .lobby-footer, .diagnostics, .syn3h-diagnostics,
   .race-hud, .match-hud { display: none !important; }
   * { cursor: none !important; }`
-const HIDE_HUD = '.shell-hud { display: none !important; }'
+const HIDE_HUD = '.shell-hud, .gear-selector, .zorb-toggle, .focus-hud, .syn3h-shell.is-playing > :not(.shell-minimap):not(canvas) { display: none !important; }'
 const HIDE_MINIMAP = '.shell-minimap { display: none !important; }'
-const HIDE_LOBBY_INVITE = '.lobby-room-label, .invite-qr, .invite-link, .shell-invite, .lobby-message p:not(:first-child) { display: none !important; }'
+const HIDE_LOBBY_INVITE = '.lobby-room-label, .invite-qr, .invite-link, .shell-invite, .lobby-message p:not(:first-child), .galaxy-population { display: none !important; }'
 
 // --- the scenes -------------------------------------------------------------------------
 // `passage` names the README passage each still illustrates. `stage(page)` poses the world
@@ -129,7 +129,7 @@ const SCENES = [
         if (g.logo && g.logo.introTime < 3.6) return false
         return document.querySelectorAll('.galaxy-label').length >= 3
       }, null, { timeout: 40000 })
-      await page.waitForTimeout(2500)
+      await settle(page, 2500)
       return { ok: true }
     },
   },
@@ -148,10 +148,10 @@ const SCENES = [
         const f = h.forward(heading)
         h.follow(() => {
           const p = h.pos()
-          return { from: { x: p.x - f.x * 9 + f.z * 5, y: p.y + 2.5, z: p.z - f.z * 9 - f.x * 5 }, to: { x: p.x + f.x * 120, y: p.y + 60, z: p.z + f.z * 120 } }
-        }, 0, 50)
+          return { from: { x: p.x - f.x * 8 + f.z * 3, y: p.y + 2.4, z: p.z - f.z * 8 - f.x * 3 }, to: { x: p.x + f.x * 40, y: p.y + 7, z: p.z + f.z * 40 } }
+        }, 0, 55)
       })
-      await page.waitForTimeout(4500)
+      await settle(page, 4500)
       return groundedNote(page)
     },
   },
@@ -162,17 +162,17 @@ const SCENES = [
     async stage(page) {
       await page.evaluate(() => {
         const s = window.syn3h, h = window.vignette, top = window.vignette.centre()
-        const spot = h.ring(top.x, top.z, [650, 560, 740], (x, z) => !h.isWater(x, z) && Math.abs(h.land(x + 4, z) - h.land(x - 4, z)) + Math.abs(h.land(x, z + 4) - h.land(x, z - 4)) < 1.5)
+        const spot = h.ring(top.x, top.z, [900, 820, 980, 740], (x, z) => !h.isWater(x, z) && Math.abs(h.land(x + 4, z) - h.land(x - 4, z)) + Math.abs(h.land(x, z + 4) - h.land(x, z - 4)) < 1.2)
         if (!spot) throw new Error('no ground near the peak')
         const heading = Math.atan2(spot.x - top.x, spot.z - top.z)
         h.teleport(s.player, spot.x, spot.z, heading, 1.2)
         const f = h.forward(heading)
         h.follow(() => {
           const p = h.pos()
-          return { from: { x: p.x - f.x * 9 - f.z * 5, y: p.y + 3, z: p.z - f.z * 9 + f.x * 5 }, to: { x: p.x + f.x * 120, y: p.y + 70, z: p.z + f.z * 120 } }
-        }, 0, 50)
+          return { from: { x: p.x - f.x * 8 - f.z * 3, y: p.y + 2.4, z: p.z - f.z * 8 + f.x * 3 }, to: { x: p.x + f.x * 40, y: p.y + 8, z: p.z + f.z * 40 } }
+        }, 0, 55)
       })
-      await page.waitForTimeout(4500)
+      await settle(page, 4500)
       return groundedNote(page)
     },
   },
@@ -194,7 +194,7 @@ const SCENES = [
           return { from: { x: p.x - f.x * 10 + f.z * 6, y: p.y + 5, z: p.z - f.z * 10 - f.x * 6 }, to: { x: p.x + f.x * 10, y: p.y, z: p.z + f.z * 10 } }
         })
       })
-      await page.waitForTimeout(2500)
+      await settle(page, 2500)
       return page.evaluate(() => {
         const s = window.syn3h, h = window.vignette, t = s.terrain, top = window.vignette.centre(), p = h.pos()
         h.key('KeyW', false)
@@ -206,8 +206,8 @@ const SCENES = [
   {
     // Low sun behind the volcano, camera on the far side so the cone eclipses it and the
     // shafts fan out round the summit. Placed from the sky's own sun direction.
-    id: 'sun-shafts', passage: 'Light that agrees with itself', planet: 'volcanic', seed: 7, vehicle: 'buggy',
-    params: { 'sun.timeOfDay': 17.9, 'post.shafts': 1, 'post.shaftLength': 1, 'weather.cloudCoverage': 0.35 },
+    id: 'sun-shafts', passage: 'Light that agrees with itself', planet: 'alpine', seed: 11, vehicle: 'buggy',
+    params: { 'sun.timeOfDay': 17.2, 'post.shafts': 1, 'post.shaftLength': 1, 'weather.cloudCoverage': 0.35 },
     async stage(page) {
       await page.evaluate(() => {
         const s = window.syn3h, h = window.vignette, t = s.terrain, top = window.vignette.centre()
@@ -215,7 +215,7 @@ const SCENES = [
         const len = Math.hypot(sun.x, sun.z), ux = sun.x / len, uz = sun.z / len
         // Away from the sun, about 900 m from the summit, on dry ground.
         let at = null
-        for (let r = 900; r > 300 && !at; r -= 50) {
+        for (let r = 550; r > 250 && !at; r -= 25) {
           const x = top.x - ux * r, z = top.z - uz * r
           if (!h.isWater(x, z) && !(h.liquid(x, z) > h.land(x, z))) at = { x, z }
         }
@@ -223,15 +223,16 @@ const SCENES = [
         const heading = Math.atan2(-ux, -uz)
         h.teleport(s.player, at.x, at.z, heading, 1.2)
         const peak = h.land(top.x, top.z)
-        h.shot({ x: at.x - ux * 14 + uz * 4, y: h.ground(at.x, at.z) + 4, z: at.z - uz * 14 - ux * 4 }, { x: top.x, y: peak + 40, z: top.z }, 55)
+        h.shot({ x: at.x - ux * 12 + uz * 4, y: h.ground(at.x, at.z) + 3, z: at.z - uz * 12 - ux * 4 }, { x: top.x, y: peak, z: top.z }, 55)
       })
-      await page.waitForTimeout(5000)
+      await settle(page, 5000)
       return page.evaluate(() => { const sun = window.vignette.sun(); return { ok: sun.y > 0.02, note: `sun elevation ${(Math.asin(sun.y) * 180 / Math.PI).toFixed(1)} deg` } })
     },
   },
   {
     // Raymarched clouds at a low sun: a wide upward view with heavier cover, sun to the side.
     id: 'clouds-dusk', passage: 'Light that agrees with itself', planet: 'alpine', seed: 11, vehicle: 'buggy',
+    crop: { x: 0, y: 0, w: 960, h: 540 },
     params: { 'sun.timeOfDay': 17.6, 'weather.cloudCoverage': 0.55, 'weather.cloudDensity': 0.55 },
     async stage(page) {
       await page.evaluate(() => {
@@ -242,9 +243,9 @@ const SCENES = [
         const x = top.x - lx * 800, z = top.z - lz * 800
         h.teleport(s.player, x, z, Math.atan2(-lx, -lz), 1.2)
         const y = h.ground(x, z)
-        h.shot({ x, y: y + 6, z }, { x: x + lx * 300, y: y + 160, z: z + lz * 300 }, 65)
+        h.shot({ x, y: y + 12, z }, { x: x + lx * 300, y: y + 140, z: z + lz * 300 }, 65)
       })
-      await page.waitForTimeout(6000)
+      await settle(page, 6000)
       return { ok: true }
     },
   },
@@ -261,48 +262,48 @@ const SCENES = [
         const f = h.forward(heading)
         h.follow(() => {
           const p = h.pos()
-          return { from: { x: p.x - f.x * 7 + f.z * 3, y: p.y + 1.8, z: p.z - f.z * 7 - f.x * 3 }, to: { x: p.x + f.x * 60, y: p.y + 25, z: p.z + f.z * 60 } }
+          return { from: { x: p.x - f.x * 8 + f.z * 3, y: p.y + 2.2, z: p.z - f.z * 8 - f.x * 3 }, to: { x: p.x + f.x * 40, y: p.y + 5, z: p.z + f.z * 40 } }
         }, 0, 60)
       })
-      await page.waitForTimeout(5000)
+      await settle(page, 5000)
       return groundedNote(page)
     },
   },
   {
     // The hovercraft riding the swells on the open sea, low side view so the waves read.
-    id: 'swells', passage: 'Water that carries you', planet: 'archipelago', seed: 5, vehicle: 'hovercraft',
+    id: 'swells', passage: 'Water that carries you', planet: 'desert', seed: 11, vehicle: 'hovercraft',
     params: { 'sun.timeOfDay': 16.8, 'water.waveHeight': 2.6, 'water.waveLength': 50 },
     async stage(page) {
       await openSea(page)
       await page.evaluate(() => {
         const s = window.syn3h, h = window.vignette
-        h.key('KeyW', true)
+        const sun = h.sun(), len = Math.hypot(sun.x, sun.z), ux = sun.x / len, uz = sun.z / len
         h.follow(() => {
           const p = h.pos(), f = h.forward(h.heading())
-          return { from: { x: p.x - f.x * 4 + f.z * 11, y: h.liquid(p.x, p.z) + 2.2, z: p.z - f.z * 4 - f.x * 11 }, to: { x: p.x + f.x * 3, y: p.y + 0.3, z: p.z + f.z * 3 } }
-        }, 0.5, 50)
+          return { from: { x: p.x + ux * 10 - f.x * 5, y: p.y + 4.5, z: p.z + uz * 10 - f.z * 5 }, to: { x: p.x, y: p.y - 0.5, z: p.z } }
+        }, 0, 50)
       })
-      await page.waitForTimeout(4000)
+      await settle(page, 4000)
       return page.evaluate(() => { const h = window.vignette, p = h.pos(); h.key('KeyW', false); return { ok: h.isWater(p.x, p.z), note: `on water, ${(p.y - h.liquid(p.x, p.z)).toFixed(1)} m above the mean surface` } })
     },
   },
   {
     // From just under the surface: the buggy sinks off the shore and the lens follows it down.
-    id: 'underwater', passage: 'Water that carries you', planet: 'archipelago', seed: 5, vehicle: 'buggy',
+    id: 'underwater', passage: 'Water that carries you', planet: 'desert', seed: 11, vehicle: 'buggy',
     params: { 'sun.timeOfDay': 13, 'water.underwater': true }, limits: { minLumaStdDev: 6 },
     async stage(page) {
-      await openSea(page, 6)
+      await openSea(page, 3, 6)
       await page.evaluate(() => {
         const s = window.syn3h, h = window.vignette, p = h.pos(), surface = h.liquid(p.x, p.z)
         // Sit the car a metre under the surface in shallow water, camera alongside it, looking
         // slightly up so the underside of the waves fills the top of the frame.
-        h.teleport(s.player, p.x, p.z, h.heading(), 0, Math.max(h.land(p.x, p.z) + 1, surface - 3))
+        h.teleport(s.player, p.x, p.z, h.heading(), 0, h.land(p.x, p.z) + 0.8)
         h.follow(() => {
           const q = h.pos(), f = h.forward(h.heading()), w = h.liquid(q.x, q.z)
-          return { from: { x: q.x - f.x * 6 + f.z * 3, y: w - 1.2, z: q.z - f.z * 6 - f.x * 3 }, to: { x: q.x, y: w + 0.5, z: q.z } }
+          return { from: { x: q.x - f.x * 6 + f.z * 4, y: w - 0.9, z: q.z - f.z * 6 - f.x * 4 }, to: { x: q.x, y: q.y + 0.4, z: q.z } }
         }, 0, 70)
       })
-      await page.waitForTimeout(3500)
+      await settle(page, 3500)
       return page.evaluate(() => {
         const s = window.syn3h, h = window.vignette, c = s.game.camera.position
         const under = c.y < h.liquid(c.x, c.z)
@@ -312,10 +313,10 @@ const SCENES = [
   },
   {
     // Four machines: the player in the tank plus three mixed-fleet bots, parked in a row.
-    id: 'lineup', passage: 'Machines with opinions', planet: 'desert', seed: 11, vehicle: 'tank',
+    id: 'lineup', passage: 'Machines with opinions', planet: 'desert', seed: 11, vehicle: 'tank', net: true,
     params: { 'sun.timeOfDay': 16.2, 'bots.count': 4, 'bots.fleet': 1, 'bots.canDrive': false },
     async stage(page) {
-      await page.waitForFunction(() => window.syn3h.bots.vehicles.length >= 4, null, { timeout: 20000 })
+      await page.waitForFunction(() => window.syn3h.bots.vehicles.length >= 4, null, { timeout: 45000 })
       await page.evaluate(() => {
         const s = window.syn3h, h = window.vignette
         const spawn = s.terrain.spawnPoint(0), heading = spawn.heading, f = h.forward(heading)
@@ -326,14 +327,14 @@ const SCENES = [
         for (const b of s.bots.vehicles) if (!picks.includes(b)) { b.teleport(new h.V(base.x + 400, h.ground(base.x + 400, base.z) + 2, base.z), heading) }
         const all = [s.player, ...picks]
         all.forEach((v, i) => {
-          const side = (i - (all.length - 1) / 2) * 7
+          const side = (i - (all.length - 1) / 2) * 8
           const x = base.x - f.z * side, z = base.z + f.x * side
           h.teleport(v, x, z, heading, v.kind === 'jet' ? 0.6 : 1.2)
         })
         window.vignette.lineup = all
-        h.shot({ x: base.x + f.x * 20 + f.z * 6, y: h.ground(base.x, base.z) + 4, z: base.z + f.z * 20 - f.x * 6 }, { x: base.x, y: h.ground(base.x, base.z) + 1, z: base.z }, 50)
+        h.shot({ x: base.x + f.x * 30, y: h.ground(base.x, base.z) + 5, z: base.z + f.z * 30 }, { x: base.x, y: h.ground(base.x, base.z) + 1.2, z: base.z }, 45)
       })
-      await page.waitForTimeout(3500)
+      await settle(page, 3500)
       return page.evaluate(() => {
         const kinds = window.vignette.lineup.map((v) => v.kind)
         return { ok: new Set(kinds).size >= 4, note: kinds.join(', ') }
@@ -357,7 +358,7 @@ const SCENES = [
           return { from: { x: p.x - f.x * 6 + f.z * 5, y: p.y + 2.5, z: p.z - f.z * 6 - f.x * 5 }, to: { x: p.x + f.x * 4, y: p.y - 1, z: p.z + f.z * 4 } }
         }, 0.25, 55)
       })
-      await page.waitForTimeout(2600)
+      await settle(page, 2600)
       return page.evaluate(() => {
         const s = window.syn3h, h = window.vignette, p = h.pos(), up = p.y - h.ground(p.x, p.z)
         return { ok: s.player.wingsOpen && up > 4, note: `wings ${s.player.wingsOpen ? 'open' : 'closed'}, ${up.toFixed(1)} m up` }
@@ -365,24 +366,28 @@ const SCENES = [
     },
   },
   {
-    // The jet low and fast, from behind and below so the thrust plume is in front of the lens.
-    id: 'jet-plume', passage: 'Machines with opinions', planet: 'volcanic', seed: 7, vehicle: 'jet',
-    params: { 'sun.timeOfDay': 16.8 },
+    // The jet low and fast over the desert, lit from behind the camera, plume toward the lens.
+    id: 'jet-plume', passage: 'Machines with opinions', planet: 'desert', seed: 11, vehicle: 'jet',
+    params: { 'sun.timeOfDay': 15.8 },
     async stage(page) {
       await page.evaluate(() => {
-        const s = window.syn3h, h = window.vignette, top = window.vignette.centre()
-        const x = top.x + 600, z = top.z + 200, heading = Math.atan2(x - top.x, z - top.z)
-        h.teleport(s.player, x, z, heading, 0, h.ground(x, z) + 70)
+        const s = window.syn3h, h = window.vignette, top = h.centre(), sun = h.sun()
+        const len = Math.hypot(sun.x, sun.z), ux = sun.x / len, uz = sun.z / len
+        // Fly across the sun line, so the camera behind and to the sun side sees a lit flank.
+        const heading = Math.atan2(uz, -ux)
+        const x = top.x - ux * 500, z = top.z - uz * 500
+        h.teleport(s.player, x, z, heading, 0, h.ground(x, z) + 45)
         const f = h.forward(heading)
-        s.player.body.setLinvel({ x: f.x * 45, y: 0, z: f.z * 45 }, true)
+        s.player.body.setLinvel({ x: f.x * 40, y: 0, z: f.z * 40 }, true)
+        s.game.input.state.special = true // forward flight: the plume follows throttle
         h.key('KeyR', true)
         h.follow(() => {
           const p = h.pos(), f = h.forward(h.heading())
-          return { from: { x: p.x - f.x * 11 + f.z * 3, y: p.y + 1.2, z: p.z - f.z * 11 - f.x * 3 }, to: { x: p.x + f.x * 6, y: p.y + 0.4, z: p.z + f.z * 6 } }
-        }, 0.5, 55)
+          return { from: { x: p.x - f.x * 13 + ux * 5, y: p.y + 2, z: p.z - f.z * 13 + uz * 5 }, to: { x: p.x + f.x * 4, y: p.y, z: p.z + f.z * 4 } }
+        }, 0.5, 50)
       })
-      await page.waitForTimeout(3000)
-      return page.evaluate(() => { const h = window.vignette, p = h.pos(); return { ok: p.y - h.ground(p.x, p.z) > 20, note: `${(p.y - h.ground(p.x, p.z)).toFixed(0)} m up` } })
+      await settle(page, 2000)
+      return page.evaluate(() => { const h = window.vignette, p = h.pos(); return { ok: p.y - h.ground(p.x, p.z) > 15, note: `${(p.y - h.ground(p.x, p.z)).toFixed(0)} m up` } })
     },
   },
   {
@@ -396,48 +401,46 @@ const SCENES = [
         h.teleport(s.player, spawn.position.x + f.x * 15, spawn.position.z + f.z * 15, spawn.heading, 1.5)
         s.game.input.toggleZorb?.() ?? (s.game.input.state.zorb = true)
       })
-      await page.waitForTimeout(2500)
+      await settle(page, 4500)
       await page.evaluate(() => {
         const h = window.vignette
-        h.key('KeyW', true)
+        h.key('KeyW', true); setTimeout(() => h.key('KeyW', false), 900)
         h.follow(() => {
           const p = h.pos(), f = h.forward(h.heading())
-          return { from: { x: p.x + f.x * 9 + f.z * 6, y: p.y + 2.2, z: p.z + f.z * 9 - f.x * 6 }, to: { x: p.x, y: p.y + 0.5, z: p.z } }
+          return { from: { x: p.x + f.x * 14 + f.z * 8, y: p.y + 3, z: p.z + f.z * 14 - f.x * 8 }, to: { x: p.x, y: p.y + 1, z: p.z } }
         }, 0.5, 55)
       })
-      await page.waitForTimeout(2200)
+      await settle(page, 2200)
       return page.evaluate(() => { const s = window.syn3h; window.vignette.key('KeyW', false); return { ok: s.game.input.state.zorb === true, note: `zorb ${s.game.input.state.zorb ? 'on' : 'off'}` } })
     },
   },
   {
     // Bots following the player across the desert, camera ahead looking back at the pack.
-    id: 'company', passage: 'Company', planet: 'desert', seed: 11, vehicle: 'buggy',
+    id: 'company', passage: 'Company', planet: 'desert', seed: 11, vehicle: 'buggy', net: true,
     params: { 'sun.timeOfDay': 16.4, 'bots.count': 5, 'bots.fleet': 1, 'bots.followYou': 1, 'bots.freeSpirit': 0 },
     async stage(page) {
-      await page.waitForFunction(() => window.syn3h.bots.vehicles.length >= 4, null, { timeout: 20000 })
+      await page.waitForFunction(() => window.syn3h.bots.vehicles.length >= 4, null, { timeout: 45000 })
+      // The player waits on level ground; the bots start 25 to 45 m away and drive up to it.
+      // The camera looks over the player's shoulder at the pack coming in.
       await page.evaluate(() => {
         const s = window.syn3h, h = window.vignette
         const spawn = s.terrain.spawnPoint(0), heading = spawn.heading, f = h.forward(heading)
         const start = { x: spawn.position.x + f.x * 20, z: spawn.position.z + f.z * 20 }
         h.teleport(s.player, start.x, start.z, heading, 1.2)
-        s.player.body.setLinvel({ x: f.x * 14, y: 0, z: f.z * 14 }, true)
+        h.still(s.player.body)
         s.bots.vehicles.forEach((bot, i) => {
-          const back = 10 + i * 6, side = (i % 2 ? 1 : -1) * (3 + 2 * i)
-          h.teleport(bot, start.x - f.x * back + f.z * side, start.z - f.z * back - f.x * side, heading, bot.kind === 'jet' ? 3 : 1.2)
-          bot.body.setLinvel({ x: f.x * 14, y: 0, z: f.z * 14 }, true)
+          const back = 25 + i * 5, side = (i % 2 ? 1 : -1) * (2 + 2.5 * i)
+          h.teleport(bot, start.x + f.x * back + f.z * side, start.z + f.z * back - f.x * side, heading + Math.PI, bot.kind === 'jet' ? 4 : 1.2)
+          bot.body.setLinvel({ x: -f.x * 10, y: 0, z: -f.z * 10 }, true)
         })
-        h.key('KeyW', true)
-        h.follow(() => {
-          const p = h.pos()
-          return { from: { x: p.x + f.x * 15 - f.z * 6, y: p.y + 6, z: p.z + f.z * 15 + f.x * 6 }, to: { x: p.x - f.x * 14, y: p.y, z: p.z - f.z * 14 } }
-        }, 0, 55)
+        const p = h.pos(), g = h.ground(p.x, p.z)
+        h.shot({ x: p.x - f.x * 9 + f.z * 3, y: g + 3.2, z: p.z - f.z * 9 - f.x * 3 }, { x: p.x + f.x * 25, y: g + 1, z: p.z + f.z * 25 }, 50)
       })
-      await page.waitForTimeout(2500)
+      await settle(page, 2200)
       return page.evaluate(() => {
         const s = window.syn3h, h = window.vignette, p = h.pos()
-        h.key('KeyW', false)
-        const near = s.bots.vehicles.filter((b) => { const t = b.body.translation(); return Math.hypot(t.x - p.x, t.z - p.z) < 45 }).length
-        return { ok: near >= 3, note: `${near} bots within 45 m` }
+        const near = s.bots.vehicles.filter((b) => { const t = b.body.translation(); return Math.hypot(t.x - p.x, t.z - p.z) < 40 }).length
+        return { ok: near >= 3, note: `${near} bots within 40 m` }
       })
     },
   },
@@ -446,10 +449,10 @@ const SCENES = [
     id: 'multiplayer-qr', passage: 'A room that sleeps', lobby: true, seed: 7, net: true, limits: { minMeanLuma: 6 },
     async stage(page) {
       await page.waitForFunction(() => document.documentElement.dataset.boot === 'done', null, { timeout: 40000 })
-      await page.waitForTimeout(2000)
+      await settle(page, 2000)
       await page.evaluate(() => window.syn3h.shell.showPanel('multiplayer'))
       await page.waitForFunction(() => document.querySelector('[data-panel="multiplayer"] .invite-qr svg, [data-panel="multiplayer"] .invite-qr canvas, [data-panel="multiplayer"] .invite-qr *'), null, { timeout: 15000 }).catch(() => {})
-      await page.waitForTimeout(1200)
+      await settle(page, 1200)
       return page.evaluate(() => {
         const qr = document.querySelector('[data-panel="multiplayer"] .invite-qr')
         const box = qr?.getBoundingClientRect()
@@ -459,6 +462,18 @@ const SCENES = [
   },
 ]
 
+/**
+ * Wait `ms` of wall time and at least as much game time (physics ticks at 60 Hz), so a
+ * busy machine that renders few frames still lets the scene settle. Capped at a minute.
+ */
+async function settle(page, ms) {
+  const start = await page.evaluate(() => window.syn3h?.game?.tick ?? null)
+  await page.waitForTimeout(ms)
+  if (start == null) return
+  await page.waitForFunction((t) => window.syn3h.game.tick >= t, start + Math.round(ms * 0.06), { timeout: 60000 }).catch(() => {})
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))))
+}
+
 async function groundedNote(page) {
   return page.evaluate(() => {
     const s = window.syn3h, q = s.player.body.rotation(), upright = 1 - 2 * (q.x * q.x + q.z * q.z)
@@ -467,15 +482,15 @@ async function groundedNote(page) {
 }
 
 /** Put the player on open water a few hundred metres out from the island, facing along the coast. */
-async function openSea(page, depth = 12) {
-  await page.evaluate((depth) => {
+async function openSea(page, depth = 12, maxDepth = Infinity) {
+  await page.evaluate(([depth, maxDepth]) => {
     const s = window.syn3h, h = window.vignette, top = window.vignette.centre()
-    const spot = h.ring(top.x, top.z, [500, 650, 800, 950, 1100], (x, z) => h.liquid(x, z) - h.land(x, z) > depth && h.liquid(x + 30, z) - h.land(x + 30, z) > depth)
+    const spot = h.ring(top.x, top.z, [700, 800, 900, 1000, 1100, 1200], (x, z) => { const d = h.liquid(x, z) - h.land(x, z), e = h.liquid(x + 30, z) - h.land(x + 30, z); return d > depth && e > depth && d < maxDepth && e < maxDepth }, 144)
     if (!spot) throw new Error('no open water')
     const heading = spot.a + Math.PI / 2
-    h.teleport(s.player, spot.x, spot.z, Math.atan2(-Math.cos(heading), -Math.sin(heading)), 1.5)
-  }, depth)
-  await page.waitForTimeout(1500)
+    h.teleport(s.player, spot.x, spot.z, Math.atan2(-Math.cos(heading), -Math.sin(heading)), 0.6)
+  }, [depth, maxDepth])
+  await settle(page, 1500)
 }
 
 // --- capture ----------------------------------------------------------------------------
@@ -533,7 +548,7 @@ async function captureScene(browser, scene) {
       await page.evaluate(() => window.syn3h.params.set('daydream.seconds', 0))
       if (!scene.lobby) {
         await page.evaluate(() => { window.syn3h.shell.play(); document.activeElement?.blur?.() })
-        await page.waitForTimeout(1500)
+        await settle(page, 1500)
       }
       if (scene.params) await page.evaluate((p) => { for (const [id, v] of Object.entries(p)) window.syn3h.params.set(id, v) }, scene.params)
     }
