@@ -1,11 +1,13 @@
 import { Quaternion, Vector3 } from 'three/webgpu'
 import type { Game, System } from '../core/Game'
-import { emptyInput } from '../core/Input'
+import { emptyInput, type InputState } from '../core/Input'
 import { GROUP_PROJECTILE, GROUP_TERRAIN, RAPIER, groups } from '../core/physics'
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
 import * as p from './params'
 import { roadWaypoint, type RoadTerrain, type RoadPoint } from './navigation'
+import type { Mind } from './mind/Mind'
+import { hashString, seededRandom } from './random'
 export type BotTerrain = Terrain & RoadTerrain & { liquidHeightAt?(x: number, z: number): number | null | undefined }
 const clamp = (x: number, max = 1) => Math.max(-max, Math.min(max, x))
 /** Positive means turn right. Our forward is -Z; positive Y rotation turns left. */
@@ -21,6 +23,15 @@ export class BotBrain implements System {
   remote = false
   requestRecovery?: () => boolean
   target: Vehicle | null = null
+  /**
+   * The bot's own mind, when it has one. With it the bot alternates between chasing and
+   * roaming on its own agenda, in the share set by `bots.freeSpirit`. Without it, it chases.
+   */
+  mind: Mind | null = null
+  /** What it is doing now: 'chase' is the original pursuit, 'roam' is the mind's choice. */
+  mood: 'chase' | 'roam' = 'chase'
+  private moodTime = 0
+  private random: () => number = () => 0.5
   reversing = false
   rescues = 0
   private reverseBrake = 0
@@ -44,6 +55,31 @@ export class BotBrain implements System {
     this.lastPosition.copy(vehicle.body.translation())
     // Original VhiclBot.cs:25 staggered checks randomly. Index gives repeatable staggering.
     this.strategyTime = (index * 0.61803398875 % 1) * p.strategyInterval.value
+    this.random = seededRandom(hashString(`mood:${vehicle.id}:${index}`))
+  }
+  /**
+   * Chase or roam for the next while. Sociable bots chase more, and a player close by is
+   * hard to ignore. Spells are long enough to get somewhere and short enough to surprise.
+   */
+  private chooseMood(distance: number) {
+    const free = p.freeSpirit.value
+    // The ends of the slider are absolute: 0 is the original relentless pursuit, 1 never chases.
+    const chase = free <= 0 ? 1 : free >= 1 ? 0 : 1 - free + (this.mind!.personality.sociability - 0.5) * 0.4 + (distance < 60 ? 0.2 : 0)
+    this.mood = this.random() < chase ? 'chase' : 'roam'
+    this.moodTime = this.mood === 'chase' ? 15 + this.random() * 20 : 30 + this.random() * 40
+    this.mind!.reset(); this.reversing = false; this.immobileTime = 0; this.strategyTime = 0
+    this.lastPosition.copy(this.vehicle.body.translation())
+  }
+  /** Roaming: the mind drives. The brain only watches for the cases that need a rescue. */
+  private roam(dt: number, input: InputState, here: { x: number; y: number; z: number }) {
+    const status = this.mind!.step(dt, input)
+    const liquid = this.terrain.liquidHeightAt?.(here.x, here.z)
+    const afloat = liquid != null && Number.isFinite(liquid) && this.terrain.heightAt(here.x, here.z) <= liquid + 0.5
+    this.liquidTime = afloat ? this.liquidTime + dt : 0
+    this.flippedTime = status.flipped ? this.flippedTime + dt : 0
+    if (this.liquidTime >= p.recoveryTime.value || this.flippedTime >= p.recoveryTime.value / 2 || this.mind!.troubleFor >= p.recoveryTime.value || here.y < this.terrain.heightAt(here.x, here.z) - 10) {
+      this.rescue(); this.mind!.reset()
+    }
   }
   setTargets(vehicles: readonly Vehicle[]) { this.targets = vehicles; this.targetTime = 2 }
   private selectTarget() {
@@ -82,6 +118,12 @@ export class BotBrain implements System {
     this.targetTime += dt; this.fireTime += dt
     // VehicleBot.js:11 refreshes enemies every two seconds; invalid targets refresh immediately.
     if (this.targetTime >= 2 || !this.target?.body.isValid()) { this.selectTarget(); this.targetTime = 0 }
+    if (this.mind && p.canDrive.value && p.topThrottle.value > 0) {
+      const here = this.vehicle.body.translation(), there = this.target?.body.translation()
+      this.moodTime -= dt
+      if (this.moodTime <= 0) this.chooseMood(there ? Math.hypot(there.x - here.x, there.z - here.z) : Infinity)
+      if (this.mood === 'roam' || !this.target) { this.roam(dt, input, here); return }
+    }
     if (!this.target) return
     const here = this.vehicle.body.translation(), there = this.target.body.translation()
     this.quaternion.copy(this.vehicle.body.rotation())

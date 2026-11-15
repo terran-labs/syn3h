@@ -9,6 +9,8 @@ import type { Vehicle } from '../vehicles/Vehicle'
 import { BotBrain, isSafeGround, type BotTerrain } from './BotBrain'
 import { botCount, spawnRadius } from './params'
 import { Daydream } from './Daydream'
+import { Mind } from './mind/Mind'
+import { createPilot } from './pilot'
 export class BotManager implements System {
   private readonly bots: Vehicle[] = []
   private readonly brains: BotBrain[] = []
@@ -66,6 +68,9 @@ export class BotManager implements System {
         }
         return false
       }
+      // Each bot gets a character from the world seed and its own id, and a mind to act on it.
+      const pilot = createPilot(bot, this.terrain)
+      if (pilot) brain.mind = new Mind(bot, this.terrain, pilot, { seed: `${worldSeed.value}:${bot.id}`, others: () => [...this.targets, ...this.bots] })
       brain.remote = this.remote
       brain.setTargets(this.targets)
       // Register brain first so its input reaches the vehicle in the same physics step.

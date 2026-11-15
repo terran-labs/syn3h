@@ -12,6 +12,8 @@ import { personalityFor } from '../../src/bots/mind/personality'
 import { createGroundPilot } from '../../src/bots/pilot/ground'
 import { params } from '../../shared/params'
 import '../../src/bots/params'
+import { vi } from 'vitest'
+vi.mock('../../src/vehicles/effects', () => ({ attachVehicleEffects: () => () => {} }))
 
 const DT = 0.02
 const flat = (size: number, extra: Partial<Terrain> = {}): Terrain => ({
@@ -167,5 +169,30 @@ describe('Daydream', () => {
     expect(daydream.active).toBe(true)
     input.suspended = true; daydream.update(DT)
     expect(daydream.active).toBe(false)
+  })
+})
+
+describe('bots with a mind', () => {
+  const run = async (free: number) => {
+    const { BotManager } = await import('../../src/bots/BotManager')
+    const { game, step } = harness(), terrain = flat(800)
+    const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); player.isLocal = false
+    player.body.setBodyType(RAPIER.RigidBodyType.Fixed, true)
+    params.set('bots.freeSpirit', free); params.set('bots.count', 4); params.set('bots.canFire', false)
+    const manager = game.add(new BotManager(game, terrain, player)); manager.update()
+    expect(manager.vehicles).toHaveLength(4)
+    let nearest = Infinity, farthest = 0
+    for (let i = 0; i < 3000; i++) {
+      step()
+      for (const bot of manager.vehicles) { const p = bot.body.translation(), d = Math.hypot(p.x, p.z); nearest = Math.min(nearest, d); if (i > 1500) farthest = Math.max(farthest, d) }
+    }
+    manager.dispose()
+    return { nearest, farthest }
+  }
+  it('chases relentlessly at 0 and wanders off on its own agenda at 1', async () => {
+    const chase = await run(0), roam = await run(1)
+    expect(chase.nearest).toBeLessThan(6)
+    expect(chase.farthest).toBeLessThan(60)
+    expect(roam.farthest).toBeGreaterThan(90)
   })
 })

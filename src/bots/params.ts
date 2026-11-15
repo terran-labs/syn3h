@@ -21,6 +21,12 @@ export const reverseBrakeTime = number('reverseBrakeTime', 'Brake before reverse
 export const roadCornerSpeed = number('roadCornerSpeed', 'Road corner speed (m/s)', 6, 2, 20)
 
 /**
+ * How much of the time a bot follows its own agenda (exploring, cruising roads, climbing,
+ * tailing, showing off) instead of chasing. 0 is the original relentless pursuit.
+ */
+export const freeSpirit = number('freeSpirit', 'Own agenda (0 always chases)', 0.6, 0, 1, 0.05)
+
+/**
  * Daydream: seconds without touching the controls before the player's own vehicle starts
  * driving itself. 0 turns it off. Personal, never sent to the room. The settings slider maps
  * its travel onto 10 seconds to 5 minutes with "off" at the far right (see daydreamControl.ts).
