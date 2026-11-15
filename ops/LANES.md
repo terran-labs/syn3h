@@ -17,7 +17,7 @@ refreshes the thread column on each sweep.
 | Jet | `veh/jet` | Running, with the owner | See its brief on `veh/jet` |
 | Hovercraft | `veh/hovercraft` | Not listed at 7:00pm | See its brief on `veh/hovercraft` |
 | Tank | `veh/tank` | Running, with the owner | See its brief on `veh/tank` |
-| Music | trunk | New thread started by the owner at 6:28pm; synthesised adaptive score merged as the default music | Soundtrack |
+| Soundscape | `feat/score` | Running, started by the owner at 6:28pm; synthesised adaptive score merged as the default music, unheard | Adaptive score, `score.html`; changes to UX-owned audio and shell files go through the Orchestrator |
 | Classic buggy | `veh/classic-buggy` | Closed by the owner. Off the MVP | See `TODO.md` at the repo root |
 
 Retired branches, fully merged and far behind: `feat/sky`, `feat/terrain`, `feat/buggy`.
