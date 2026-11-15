@@ -123,6 +123,15 @@ else
   echo "Public address: $URL (version $VERSION)"
   # A new workers.dev name can take a moment to resolve.
   wait_http "$URL" 120 || fail "$URL did not answer within two minutes"
+  # An HTTP 200 can still be an older edge deployment. Wait for this exact entry bundle
+  # before gameplay acceptance, retaining every mismatch for rollout diagnostics.
+  tries=0
+  until node tools/check-public-build.mjs "$URL" "$DEST" >>"$LOG-assets.log" 2>&1; do
+    tries=$((tries + 1))
+    [ "$tries" -lt 30 ] || { cat "$LOG-assets.log"; fail "public entry bundle did not match frozen build"; }
+    sleep 2
+  done
+  tail -1 "$LOG-assets.log"
 fi
 
 # --- Smoke test -----------------------------------------------------------------------------
