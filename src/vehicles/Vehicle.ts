@@ -60,6 +60,12 @@ export abstract class Vehicle implements System {
   readonly body: RAPIER.RigidBody
   /** Control state for this step. Written by the player or by the network layer. */
   readonly input: InputState = emptyInput()
+  /**
+   * The driver's eye, for the ride camera: an Object3D parented to `object`, inside the
+   * canopy and at least 0.25 m from any surface (PATTERN.md rule 3). A vehicle without one
+   * is viewed from 0.95 m above its origin, the Unity prefab's RideCam.
+   */
+  readonly ridePosition?: THREE.Object3D
   /** True when this client simulates and owns the vehicle. */
   isLocal = true
   /** Display name and stable id, set by whoever spawns it. */
@@ -103,8 +109,15 @@ export abstract class Vehicle implements System {
   setColors(body: THREE.ColorRepresentation, accent: THREE.ColorRepresentation): void {
     this.colors.body = `#${new THREE.Color(body).getHexString()}`
     this.colors.accent = `#${new THREE.Color(accent).getHexString()}`
+    this.liveColors.body.set(body); this.liveColors.accent.set(accent)
     this.applyColors()
   }
+
+  /**
+   * The same colours as live Color objects, published on `object.userData.vehicleColors` so
+   * shared shading (the force field canopy) can follow them without knowing the vehicle class.
+   */
+  private readonly liveColors = { body: new THREE.Color(this.colors.body), accent: new THREE.Color(this.colors.accent) }
 
   protected applyColors(): void {}
 
@@ -129,6 +142,7 @@ export abstract class Vehicle implements System {
     )
     registerLiquidTerrain(this.body,terrain,this.liquidState)
     this.object.userData.vehicleHeat=this.liquidState
+    this.object.userData.vehicleColors=this.liveColors
     this.currPos.copy(position)
     this.prevPos.copy(position)
     this.currQuat.copy(q)
