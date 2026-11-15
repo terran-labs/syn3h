@@ -33,9 +33,20 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     const page = await browser.newPage(touch ? { ...devices[mode === 'landscape' ? 'iPhone 14 landscape' : 'iPhone 14'] } : { viewport: { width: 1440, height: 1000 } })
     const errors = []
     page.on('pageerror', e => errors.push(e.message))
-    await page.goto(`${base}?autoplay=1&room=theme-halo-${mode}-${Date.now()}`)
-    await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
+    // Touch arrives with ?autoplay=1. On a desktop, ?autoplay=1 alone left the rail hidden, so
+    // enter the way a player does (a real gesture captures the cursor), then Escape frees it
+    // and the panels open, as in tests/ui/cursor-panels.mjs.
+    await page.goto(touch ? `${base}?autoplay=1&room=theme-halo-${mode}-${Date.now()}` : `${base}?room=theme-halo-${mode}-${Date.now()}`)
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
+    if (!touch) {
+      await page.locator('.galaxy-label.is-current').focus(); await page.keyboard.press('Enter')
+      await page.waitForFunction(() => syn3h.shell.playing && !syn3h.shell.dropping, null, { timeout: 120000 })
+      await page.waitForFunction(() => document.pointerLockElement === syn3h.game.canvas, null, { timeout: 10000 }).catch(() => {})
+      if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
+      await page.waitForFunction(() => !document.querySelector('.world-inspector').hidden, null, { timeout: 15000 })
+    } else {
+      await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
+    }
     await page.waitForTimeout(1500)
     const press = locator => touch ? locator.tap() : locator.click()
 
