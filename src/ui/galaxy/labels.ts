@@ -1,13 +1,34 @@
 /**
  * Where the galaxy's world labels go. With ten worlds on a phone they would pile up, so each
- * label tries a few spots round its world (under, over, right, left) and takes the first
- * that is on the screen and clear of the labels and worlds already placed. The world in play
- * goes first, then the nearer worlds. A label keeps last frame's spot while it still fits,
- * so labels do not hop as the worlds move. One that fits nowhere is marked crowded: the
- * caller fades it, and its world can still be tapped.
+ * label tries a few spots round its world (under, over, right, left, then the four corners)
+ * and takes the first that is on the screen and clear of the labels and worlds already
+ * placed. The world in play goes first, then the nearer worlds. A label keeps last frame's
+ * spot while it still fits, so labels do not hop as the worlds move. One that fits nowhere
+ * is marked crowded: the caller fades it, and its world can still be tapped.
+ *
+ * Labels are page elements over the canvas, so they cannot be tucked behind a world. Depth
+ * is kept by where they go instead: a label never covers a world nearer the eye than its
+ * own, and a world mostly hidden behind a nearer one has its label faded, not drawn over
+ * the world in front. That holds for the world in play too.
  */
-export interface LabelPlace { id: string; x: number; y: number; radius: number; visible: boolean }
+/** depth: distance from the eye along the view; smaller is nearer. Without it, no depth rule applies. */
+export interface LabelPlace { id: string; x: number; y: number; radius: number; visible: boolean; depth?: number }
 export interface LabelSpot { id: string; x: number; y: number; spot: number; crowded: boolean }
+type Box = { left: number; top: number; right: number; bottom: number }
+/** How much of disc a is covered by disc b, 0 to 1. */
+function covered(a: LabelPlace, b: LabelPlace): number {
+  const d = Math.hypot(a.x - b.x, a.y - b.y), r = a.radius, s = b.radius
+  if (r <= 0 || d >= r + s) return 0
+  if (d <= Math.abs(s - r)) return s >= r ? 1 : (s * s) / (r * r)
+  // The lens where two circles cross, as a share of the first circle's area.
+  const lens = r * r * Math.acos((d * d + r * r - s * s) / (2 * d * r)) + s * s * Math.acos((d * d + s * s - r * r) / (2 * d * s))
+    - 0.5 * Math.sqrt((-d + r + s) * (d + r - s) * (d - r + s) * (d + r + s))
+  return lens / (Math.PI * r * r)
+}
+const touches = (box: Box, disc: LabelPlace) => {
+  const nx = Math.min(box.right, Math.max(box.left, disc.x)), ny = Math.min(box.bottom, Math.max(box.top, disc.y))
+  return Math.hypot(nx - disc.x, ny - disc.y) < disc.radius
+}
 /** x is the label's centre, y its top edge: the way the stylesheet anchors `.galaxy-label`. */
 export function placeLabels(
   places: readonly LabelPlace[],
@@ -16,37 +37,46 @@ export function placeLabels(
   options: { first?: string; previous?: ReadonlyMap<string, number> } = {},
 ): LabelSpot[] {
   const margin = 8, pad = 4
-  const taken: { left: number; top: number; right: number; bottom: number }[] = []
+  const taken: Box[] = []
   const discs = places.filter(place => place.visible), top = Math.max(margin, bounds.top ?? 0)
+  // Nearer first; without depths, the bigger disc, which is usually the nearer.
+  const depth = (place: LabelPlace) => place.depth ?? -place.radius
   // A world off the screen keeps no label pinned to the edge. One behind the links or the
   // wordmark is still on the screen: its label is held clear of them.
   const onScreen = (place: LabelPlace) => place.x >= 0 && place.x <= bounds.width && place.y >= 0 && place.y <= bounds.height
-  const order = [...discs].sort((a, b) => (b.id === options.first ? 1 : 0) - (a.id === options.first ? 1 : 0) || b.radius - a.radius)
+  const order = [...discs].sort((a, b) => (b.id === options.first ? 1 : 0) - (a.id === options.first ? 1 : 0) || depth(a) - depth(b))
   const result: LabelSpot[] = []
   for (const place of order) {
     const size = sizes.get(place.id) ?? { width: 90, height: 24 }, w = size.width, h = size.height
-    const gap = place.radius + 6
+    const gap = place.radius + 6, slant = gap * 0.72 + 2
+    const nearer = place.depth === undefined ? [] : discs.filter(disc => disc.id !== place.id && disc.depth !== undefined && disc.depth < place.depth!)
+    // Spots 0 to 3 keep their old numbers, so a held spot means the same side as before.
     const spots = [
       [place.x, place.y + gap], [place.x, place.y - gap - h],
       [place.x + gap + 2 + w / 2, place.y - h / 2], [place.x - gap - 2 - w / 2, place.y - h / 2],
+      [place.x + slant + w / 2, place.y + slant - h / 2], [place.x - slant - w / 2, place.y + slant - h / 2],
+      [place.x + slant + w / 2, place.y - slant - h / 2], [place.x - slant - w / 2, place.y - slant - h / 2],
     ].map(([x, y]) => [Math.min(bounds.width - margin - w / 2, Math.max(margin + w / 2, x)), Math.min(bounds.bottom - h, Math.max(top, y))])
+    const boxAt = (i: number): Box => { const [x, y] = spots[i]; return { left: x - w / 2 - pad, top: y - pad, right: x + w / 2 + pad, bottom: y + h + pad } }
+    // Never over a world in front of this one: the one rule nothing overrides.
+    const behindNothing = (box: Box) => !nearer.some(disc => touches(box, disc))
     const fits = (i: number) => {
-      const [x, y] = spots[i], box = { left: x - w / 2 - pad, top: y - pad, right: x + w / 2 + pad, bottom: y + h + pad }
+      const box = boxAt(i)
       if (taken.some(t => box.left < t.right && box.right > t.left && box.top < t.bottom && box.bottom > t.top)) return null
-      // Clear of every other world's disc.
-      for (const disc of discs) {
-        if (disc.id === place.id) continue
-        const nx = Math.min(box.right, Math.max(box.left, disc.x)), ny = Math.min(box.bottom, Math.max(box.top, disc.y))
-        if (Math.hypot(nx - disc.x, ny - disc.y) < disc.radius) return null
-      }
+      // Clear of every other world's disc, nearer or farther.
+      for (const disc of discs) if (disc.id !== place.id && touches(box, disc)) return null
       return box
     }
     const before = options.previous?.get(place.id)
-    const tries = before !== undefined && before >= 0 ? [before, 0, 1, 2, 3] : [0, 1, 2, 3]
-    let chosen = -1, box = null
-    if (onScreen(place)) for (const i of tries) { box = fits(i); if (box) { chosen = i; break } }
-    // The world in play is always named, under it if nowhere is clear.
-    if (!box && place.id === options.first) { chosen = 0; const [x, y] = spots[0]; box = { left: x - w / 2 - pad, top: y - pad, right: x + w / 2 + pad, bottom: y + h + pad } }
+    const tries = [0, 1, 2, 3, 4, 5, 6, 7]
+    if (before !== undefined && before >= 0 && before < spots.length) tries.unshift(before)
+    // A world mostly behind a nearer one is not named over it.
+    const hidden = nearer.some(disc => covered(place, disc) > 0.5)
+    let chosen = -1, box: Box | null = null
+    if (onScreen(place) && !hidden) for (const i of tries) { box = fits(i); if (box) { chosen = i; break } }
+    // The world in play is named wherever a spot is clear of the worlds in front of it, even
+    // over farther worlds and other labels, under it by preference.
+    if (!box && place.id === options.first && !hidden) for (const i of tries) if (behindNothing(boxAt(i))) { chosen = i; box = boxAt(i); break }
     if (box) taken.push(box)
     const [x, y] = spots[Math.max(0, chosen)]
     result.push({ id: place.id, x, y, spot: chosen, crowded: chosen < 0 })

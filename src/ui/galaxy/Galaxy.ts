@@ -38,8 +38,8 @@ export interface GalaxyOptions {
   onArrive(id: string): void
   /** A world was tapped. Return true to take it from here (a drop); otherwise the camera flies to it. */
   onTap?(id: string): boolean
-  /** Called every frame with where each world is on screen, for labels. */
-  onLayout?(places: readonly { id: string; x: number; y: number; radius: number; visible: boolean }[], chosen?: string): void
+  /** Called every frame with where each world is on screen, for labels. depth is the distance along the view: smaller is nearer. */
+  onLayout?(places: readonly { id: string; x: number; y: number; radius: number; visible: boolean; depth: number }[], chosen?: string): void
   /**
    * Asked each frame. True holds the system still: the worlds stop in their orbits and a frame
    * is drawn only while something moves (a drag, a flight, a dive). For the lowest graphics
@@ -709,12 +709,12 @@ export class Galaxy {
     const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]
     this.screen = places.map((place, i) => {
       const d = sub(place.position, view.eye), z = dot(d, view.forward)
-      return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0 }
+      return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0, depth: z }
     })
     this.options.onLayout?.(this.screen, this.chosen >= 0 ? worlds[this.chosen].id : undefined)
     if (this.chosen >= 0 && !this.arrived && ++this.arriving > 45) { this.arrived = true; this.options.onArrive(worlds[this.chosen].id) }
   }
-  private screen: { id: string; x: number; y: number; radius: number; visible: boolean }[] = []
+  private screen: { id: string; x: number; y: number; radius: number; visible: boolean; depth: number }[] = []
   /** Fly to a world, as a tap on it does. */
   choose(id: string): void {
     this.wake = 2; const index = this.options.worlds.findIndex(world => world.id === id)
