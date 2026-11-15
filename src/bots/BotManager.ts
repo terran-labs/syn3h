@@ -14,12 +14,18 @@ import { Mind } from './mind/Mind'
 import { createPilot } from './pilot'
 import { createNavigator, pointsOfInterest, type PointOfInterest } from './nav'
 import type { Navigator } from './pilot/types'
+import type { BotGearHooks } from './gear'
 /** Slot by slot: half buggies, a quarter hovercraft, a quarter jets. */
 const MIXED_FLEET = ['buggy', 'hovercraft', 'buggy', 'jet'] as const
 export class BotManager implements System {
   private readonly bots: Vehicle[] = []
   private readonly brains: BotBrain[] = []
   private readonly effects = new Map<Vehicle, () => void>()
+  private gearHooks: BotGearHooks | null = null
+  setGear(hooks: BotGearHooks | null) {
+    this.gearHooks = hooks
+    for (const brain of this.brains) brain.setGear(this.remote ? null : hooks)
+  }
   private nextBotId = 0
   private targets: readonly Vehicle[]
   private disposed = false
@@ -95,6 +101,7 @@ export class BotManager implements System {
       const pilot = createPilot(bot, this.terrain)
       if (pilot) brain.mind = new Mind(bot, this.terrain, pilot, { seed: `${worldSeed.value}:${bot.id}`, navigator: this.navigator, places: this.places, others: () => [...this.targets, ...this.bots] })
       brain.navigator = this.navigator
+      brain.setGear(this.gearHooks)
       brain.match = this.match
       brain.remote = this.remote
       brain.setTargets(this.targets)
