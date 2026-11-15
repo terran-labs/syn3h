@@ -58,6 +58,7 @@ import { Connection, serverUrl } from './Connection'
 import { NameTags, type TagInfo } from './NameTags'
 import { applyRoomWorld, netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
+import { PausedHeartbeat } from './PausedHeartbeat'
 import { announcedKind, needsRebuild } from './kinds'
 import { SendPacer, SimClock } from './SimClock'
 import { type BotMatchInfo, audibleVehicles, bodyAlive, hillHold, liveBots } from './bots'
@@ -226,7 +227,13 @@ export class NetClient implements System {
   private frameAt = 0
   /** Until this performance.now(), states are still the backlog of a stall the frame loop saw. */
   private stallUntil = 0
-  private heartbeat: ReturnType<typeof setInterval> | null = null
+  /** Speaks for us while the game is paused or the page hidden; see PausedHeartbeat.ts. */
+  private readonly heartbeat = new PausedHeartbeat({
+    interval: HEARTBEAT_MS,
+    send: () => this.sendHeartbeat(),
+    // Whatever we measured while paused (or before) says nothing about now: start over.
+    resumed: () => { for (const r of this.remotes.values()) r.buffer.restartEstimate() },
+  })
   private readonly marker: TagMarker
   private readonly bounds: BoundsGuard
   private readonly tags: NameTags
@@ -584,8 +591,8 @@ export class NetClient implements System {
     if (!this.connected) return
     if (this.isHost && this.mode === MODE_KOTH) this.checkBotsStuck()
     this.detectRams()
-    // While hidden the heartbeat timer speaks for us (rendering may still tick in some cases).
-    if (document.hidden) {
+    // While paused or hidden the heartbeat timer speaks for us (rendering may still tick in some cases).
+    if (this.heartbeat.paused || document.hidden) {
       this.pacer.hold(dt, netSendRate.value)
     } else if (this.pacer.step(dt, netSendRate.value)) {
       // The pose is the one this step just produced: stamp it with that step's time. The
@@ -716,7 +723,7 @@ export class NetClient implements System {
     for (const controller of this.botGear.values()) controller.dispose()
     this.botGear.clear()
     this.conn.close()
-    this.stopHeartbeat()
+    this.heartbeat.stop()
     for (const id of [...this.remotes.keys()]) this.removeRemote(id)
     this.tags.dispose()
   }
@@ -1180,17 +1187,20 @@ export class NetClient implements System {
   // Hidden tabs
   // -------------------------------------------------------------------------------------
 
+  /**
+   * The game paused or resumed, for either reason (the player's own pause, or a hidden
+   * page). Call from the one pause subscription (src/core/pause.ts). While paused a
+   * once-a-second heartbeat tells the room we are parked, not lost; on resuming the latency
+   * estimates start afresh. Once this has been called, the page's visibility alone no
+   * longer starts or stops the heartbeat.
+   */
+  setPaused(paused: boolean): void {
+    this.heartbeat.setPaused(paused)
+  }
+
+  /** Fallback for a page that never calls setPaused: a hidden page counts as paused. */
   private onVisibility(): void {
-    if (document.hidden) {
-      if (this.heartbeat) return
-      // The render loop stops in a hidden tab; a timer still runs about once a second.
-      this.heartbeat = setInterval(() => this.sendHeartbeat(), HEARTBEAT_MS)
-      this.sendHeartbeat()
-    } else {
-      this.stopHeartbeat()
-      // Whatever we measured while hidden (or before) says nothing about now: start over.
-      for (const r of this.remotes.values()) r.buffer.restartEstimate()
-    }
+    this.heartbeat.visibility(document.hidden)
   }
 
   private sendHeartbeat(): void {
@@ -1198,11 +1208,6 @@ export class NetClient implements System {
     const s = this.ctx.player.getState()
     this.conn.send(encodeState({ id: 0, t: this.clock.now(), ...s, p: this.canonical(s.p), v: [0, 0, 0], w: [0, 0, 0], paused: true }) as Uint8Array<ArrayBuffer>)
     this.stats.heartbeats++
-  }
-
-  private stopHeartbeat(): void {
-    if (this.heartbeat) clearInterval(this.heartbeat)
-    this.heartbeat = null
   }
 
   // -------------------------------------------------------------------------------------
