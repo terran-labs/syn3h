@@ -196,6 +196,12 @@ export class GameAudio implements System {
     }
     this.events.set(v,{wings:v.wingsOpen,landed:v.landedThisStep,lava})
   }
+  fixedUpdate(): void {
+    // A landing flag may clear before the next rendered frame on a slow device.
+    if(!this.context || this.disposed)return
+    if(this.local)this.vehicleEvents(this.local)
+    for(const vehicle of this.remote.keys())this.vehicleEvents(vehicle)
+  }
   update(): void {
     if (!this.context || this.disposed) return
     if(this.local){this.motion=this.readVehicle(this.local);this.vehicleEvents(this.local)}
