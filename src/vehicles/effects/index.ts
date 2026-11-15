@@ -106,9 +106,10 @@ class VehicleEffects {
       const tail=new T.Object3D();tail.scale.set(1.7,.6,.5);tail.position.set(sign*width,.12,jet?2.7:hover?1.3:this.classic?1:1.7);this.root.add(tail);this.lampPoints.push(tail)
     }
     if(local){
-      // Syn3h prefab range50, cone60 degrees. Unity intensity is not candela; scale for Three.
+      // Syn3h prefab range50, cone60 degrees. Unity intensity is not candela.
+      // Aim farther down the road and use candela suitable for inverse-square falloff.
       this.spot=new T.SpotLight(new T.Color(1,.9965517,.875),0,50,Math.PI/6,.45,2)
-      this.spot.position.set(0,.12,-front);this.spot.target.position.set(0,-2,-22);this.spot.castShadow=false
+      this.spot.position.set(0,.35,-front);this.spot.target.position.set(0,-.8,-22);this.spot.castShadow=false
       this.root.add(this.spot,this.spot.target)
     }
     this.unlisten=terrain.onRegenerate?.(()=>{this.reset();world.marks.clear();world.trails.clear()})
@@ -138,7 +139,7 @@ class VehicleEffects {
     if(this.spot){
       const sky=w.game.scene.children.find(o=>'sunDirection' in o) as unknown as {sunDirection?:{value:T.Vector3}}|undefined
       const sunY=sky?.sunDirection?.value.y??1
-      this.spot.intensity=clamp((.08-sunY)/.18,0,1)*(v.kind==='jet'?100:80)
+      this.spot.intensity=clamp((.08-sunY)/.18,0,1)*(v.kind==='jet'?1800:1600)
     }
     // Suppress distant emissions. Existing particles continue their bounded shader lifetime.
     if(p.distanceToSquared(w.game.camera.position)>qualityBudget().drawDistance**2)return
