@@ -28,17 +28,37 @@ change with a sub drop.
 
 ## The arc
 
-A steady texture never raises a hair, so sections of eight bars follow a four-part cycle:
+A steady texture never raises a hair, so sections of eight bars follow a six-part cycle:
 
 | Section | What happens |
 |---|---|
-| theme | The theremin states a melody: a pickup, a leap to a long held note, a stepwise fall. |
+| theme | The world's theme is stated on the theremin. Each seed has one theme of four phrases and it never changes, so its return is recognised. |
 | still | The melody rests. Pads, drone and pulse only. |
-| build | The bass holds the dominant under moving chords, the filters open, a halo and a noise swell grow, then half a bar of near silence. |
-| release | The key lifts a minor third. The theme returns an octave up; pipe organ and high choir enter; the level rises about 5 dB. |
+| build | The bass holds the dominant under moving chords. A string section enters on the beat. |
+| climb | The strings double their pace, the theme's rising phrase repeats, an endless-rise tone and a noise swell grow, the choir opens its mouth, a drum roll, then half a bar where only the hall's tail is left. |
+| release | The key lifts a minor third and turns to the major (the relative major of a natural minor key). The full theme returns an octave up on brass and theremin, with organ, bell and the women of the choir, about 4 dB above the climb. A dark mood keeps its release in the minor. |
+| afterglow | The major lingers; only the theme's closing phrase is heard. |
 
-Every second chord arrives with its third suspended and resolves a bar later. `Score.cue('build')`
-starts a build on demand; the lab has a button for it.
+Every second chord arrives with its third suspended and resolves a bar later.
+
+Play can jump the arc. `Score.cue('surge')` starts the last two bars of a climb, so a release
+lands a few seconds later. Taking off does this by itself (after 1.2 s of real flight), a
+capture does it through `accent`, and a win brings the release at once. Surges are at least
+40 seconds apart: a release that comes too often stops meaning anything.
+
+## Instruments that are more than oscillators
+
+| Instrument | Technique | File |
+|---|---|---|
+| Plucked strings | Physical modelling (Karplus-Strong) | `pluck.worklet.js` |
+| Choir | Twenty glottal-pulse singers through five formants that move from "oo" to "ah" | `choir.worklet.js` |
+| Shimmer | Granular octave-up cascade into the hall | `shimmer.worklet.js` |
+| Bell | Modal synthesis: eight inharmonic partials | `ScoreSynth.ts` |
+| Pipe organ | Additive: drawbar harmonics in one periodic wave | `ScoreSynth.ts` |
+| Endless rise | Shepard and Risset: eight octave-spaced sines under a fixed envelope | `ScoreSynth.ts` |
+
+The worklets are plain JavaScript because the browser loads them as modules. Each loads on
+its own; if one fails the score plays on without it (the choir falls back to filtered saws).
 
 ## Tuning
 

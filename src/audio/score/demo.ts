@@ -29,11 +29,13 @@ function drive(score: Score, scene: Scene): void {
 }
 
 /** Render a scene offline and measure it. Used by tests/audio/score-render.mjs. */
-export async function renderScene(name: string, seconds = 16, seed = 1234, rate = 44100, cue?: Role) {
+export async function renderScene(name: string, seconds = 16, seed = 1234, rate = 44100, cue?: Role | 'surge', only?: readonly string[]) {
   const context = new OfflineAudioContext(2, rate * seconds, rate), scene = SCENES[name]
   const filter = context.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 20000; filter.connect(context.destination)
   const score = new Score(context, filter, seed)
   await score.synth.ready
+  // Solo some layers, to measure an instrument on its own.
+  if (only) for (const layer of LAYERS) score.synth.trim[layer] = only.includes(layer) ? 1 : 0
   score.setActive(true, 0.3)
   if (cue) score.cue(cue)
   const roles: Role[] = []
@@ -98,7 +100,7 @@ function mount(): void {
   ]
   const toggles: [keyof Scene, string][] = [['playing', 'In play (off is the lobby)'], ['airborne', 'Airborne'], ['holding', 'Holding the hill'], ['contested', 'Hill contested']]
   root.innerHTML = `<h1>SYN3H / ADAPTIVE SCORE</h1><p>Everything you hear is synthesised live from a seed. Nothing is a recording.</p>
-    <button id="power">Start the score</button> <label>Theme seed <input id="seed" type="number" value="1234" min="1" max="999999"></label> <button id="reseed">New theme</button> <button id="shot">Tag beam nearby</button> <button id="accent">Capture</button> <button id="climax">Play the build and release</button>
+    <button id="power">Start the score</button> <label>Theme seed <input id="seed" type="number" value="1234" min="1" max="999999"></label> <button id="reseed">New theme</button> <button id="shot">Tag beam nearby</button> <button id="accent">Capture</button> <button id="climax">Play the climb and release</button> <button id="surge">Surge (as on take-off)</button> <button id="win">Release now (as on a win)</button>
     <div id="scenes">${Object.keys(SCENES).map(name => `<button data-scene="${name}">${name}</button>`).join('')}</div>
     ${sliders.map(([key, label, min, max, step]) => `<label>${label} <output data-out="${key}"></output><input data-key="${key}" type="range" min="${min}" max="${max}" step="${step}"></label>`).join('')}
     <div id="toggles">${toggles.map(([key, label]) => `<label><input data-toggle="${key}" type="checkbox"> ${label}</label>`).join('')}</div>
@@ -143,7 +145,9 @@ function mount(): void {
   seed.addEventListener('change', () => score?.setSeed(Number(seed.value)))
   root.querySelector('#shot')!.addEventListener('click', () => score?.combat(0.2))
   root.querySelector('#accent')!.addEventListener('click', () => score?.accent())
-  root.querySelector('#climax')!.addEventListener('click', () => score?.cue('build'))
+  root.querySelector('#climax')!.addEventListener('click', () => score?.cue('climb'))
+  root.querySelector('#surge')!.addEventListener('click', () => score?.cue('surge'))
+  root.querySelector('#win')!.addEventListener('click', () => score?.accent(1))
   const readout = root.querySelector('#readout')!, canvas = root.querySelector<HTMLCanvasElement>('#scope')!, g = canvas.getContext('2d')!, bins = new Uint8Array(1024)
   const frame = () => {
     requestAnimationFrame(frame)

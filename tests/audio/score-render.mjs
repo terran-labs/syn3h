@@ -43,8 +43,21 @@ try {
   assert.ok(r['Flat out'].rms > r.Parked.rms, 'speed should raise the level')
   assert.ok(r['Tag chase'].rms > r.Cruise.rms * 1.2, 'a tag chase should be heavier than a cruise')
   assert.ok(r.Underwater.brightness < r.Cruise.brightness * 0.7, 'submersion should muffle the mix')
-  assert.equal(r['Tag chase'].mode, 'phrygian'); assert.equal(r['Lava field'].mode, 'phrygian'); assert.equal(r.Soaring.mode, 'dorian')
+  assert.equal(r['Tag chase'].mode, 'phrygian'); assert.equal(r['Lava field'].mode, 'phrygian'); // Taking off surges into a release, which arrives in the major.
+  assert.equal(r.Soaring.mode, 'major')
   assert.ok(r['Tag chase'].tempo > r.Parked.tempo + 20, 'a tag chase should raise the tempo')
+  // Each worklet instrument alone, in a release: it must sound, and the shimmer's feedback must not run away.
+  for (const [layer, floor] of [['choir', 0.04], ['shimmer', 0.05], ['strings', 0.01], ['pluck', 0.01]]) {
+    const solo = await page.evaluate(async layer => {
+      const { renderScene } = await import('/src/audio/score/demo.ts')
+      const r = await renderScene('Cruise', 30, 1234, 44100, 'surge', layer === 'shimmer' ? ['shimmer', 'pad', 'choir', 'bells'] : [layer])
+      return { envelope: r.envelope, peak: r.peak, bad: r.bad }
+    }, layer)
+    const loud = Math.max(...solo.envelope), late = solo.envelope.slice(-5).reduce((a, b) => a + b, 0) / 5
+    console.log(`solo ${layer.padEnd(8)} loudest second ${loud.toFixed(4)}  last five ${late.toFixed(4)}  peak ${solo.peak.toFixed(2)}`)
+    assert.equal(solo.bad, 0); // The sub drop and the swell are not layers, so they set the loudest second; judge the layer by the sustained release that follows.
+    assert.ok(late > floor, `${layer} is silent`); assert.ok(solo.peak < 1, `${layer} clips`)
+  }
   // The modelled string must sound the pitch it is asked for.
   for (const hz of [130.81, 220, 440, 523.25]) {
     const pitch = await page.evaluate(async hz => (await import('/src/audio/score/demo.ts')).pluckPitch(hz), hz)
@@ -56,7 +69,7 @@ try {
   // The arc: cue a build during a cruise and check the breath dips and the release lands above it.
   const arc = await page.evaluate(async () => {
     const { renderScene, wav } = await import('/src/audio/score/demo.ts')
-    const r = await renderScene('Cruise', 60, 1234, 44100, 'build')
+    const r = await renderScene('Cruise', 60, 1234, 44100, 'climb')
     const bytes = new Uint8Array(wav(r.left, r.right, r.rate))
     let text = ''; for (let i = 0; i < bytes.length; i += 32768) text += String.fromCharCode(...bytes.subarray(i, i + 32768))
     return { envelope: r.envelope, roles: r.roles, peak: r.peak, wav: btoa(text) }
