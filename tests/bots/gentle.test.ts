@@ -47,7 +47,7 @@ function touching(a: Vehicle, b: Vehicle): boolean {
  */
 function chase(player: 'still' | 'moving', seconds: number, match: (bots: Vehicle[], you: Vehicle) => BotMatch | null = () => null) {
   const game = { world, scene: new Scene(), tick: 0, input: { state: emptyInput() } } as unknown as Game
-  const you = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); you.id = 'player'
+  const you = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0)); you.id = 'player'; you.isLocal = false
   const bots: Syn3hBuggy[] = [], brains: BotBrain[] = []
   for (let i = 0; i < 3; i++) {
     const bot = new Syn3hBuggy(game, terrain, new Vector3(Math.cos(i * 2.1) * 40, 1, Math.sin(i * 2.1) * 40)); bot.id = `bot-${i}`
