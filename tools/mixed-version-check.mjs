@@ -55,7 +55,8 @@ async function open(kind,room) {
   browsers.push(browser)
   const page=await browser.newPage({viewport:{width:640,height:360}})
   let navigations=0
-  page.on('framenavigated',f=>{if(f===page.mainFrame())navigations++})
+  // Play uses history.replaceState; count document requests, not same-document URL changes.
+  page.on('request',req=>{if(req.isNavigationRequest() && req.frame()===page.mainFrame())navigations++})
   page.on('pageerror',e=>errors.push(`${kind}: ${e.message}`))
   page.on('websocket',ws=>ws.on('framereceived',({payload})=>{if(typeof payload==='string'){try{const m=JSON.parse(payload);if(m.type==='error')errors.push(`${kind}: ${payload}`)}catch{}}}))
   await page.goto(`${origins[kind]}?room=${room}&name=${kind}&autoplay=1`,{waitUntil:'load'})
