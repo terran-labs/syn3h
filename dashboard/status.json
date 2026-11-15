@@ -1,7 +1,7 @@
 {
   "tagline": "Syn3h, rebuilt native in the browser: its vehicles, its physics, its lobby and its look.",
   "deadline": "Demo: Sunday noon Pacific, Coeur d'Alene",
-  "headline": "Release 4 is live and verified. Release 5 adds clouds, temporal antialiasing, saved-world moons and touch minimap clearance. Its 1,156 tests and combined browser checks pass; frozen release checks are running before deployment.",
+  "headline": "Release 5 is live and verified. Clouds, temporal antialiasing, saved-world moons and touch minimap clearance are public. All 1,156 tests, frozen checks, primary-site multiplayer and eight public vehicle drives passed.",
   "previews": [
     {
       "title": "Play the current build",
@@ -625,10 +625,6 @@
       "detail": "The response study produced two escapes and two harmful catches. Ground dodge and bot gear remain available."
     },
     {
-      "title": "Touch minimap clearance is queued",
-      "detail": "Release 4 can overlap the joystick on wide touch screens. The correction passes in the frozen release 5 candidate."
-    },
-    {
       "title": "Screen-space lighting has limits",
       "detail": "Surfaces outside the view cannot contribute to indirect light."
     },
@@ -639,7 +635,7 @@
   ],
   "links": [
     {
-      "group": "Public (release 4, verified)",
+      "group": "Public (release 5, verified)",
       "note": "What the world sees. Changes only when a release ships.",
       "items": [
         {
@@ -821,10 +817,6 @@
     }
   ],
   "knownIssuesTrunk": [
-    {
-      "title": "Release 5 is not public yet",
-      "detail": "Clouds, temporal antialiasing, saved moons and touch clearance still require frozen and public acceptance."
-    },
     {
       "title": "Rendering limits",
       "detail": "Clouds do not cast terrain shadows. Water, grass and particles skip temporal history to avoid ghosting."

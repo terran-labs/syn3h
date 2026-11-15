@@ -1,12 +1,10 @@
 # Known issues
 
-Current public release: release-4, v26.11.1500, accepted 15 November 2026 at 03:05 PST.
+Current public release: release-5, v26.11.1501, accepted 15 November 2026 at 03:38 PST.
 The release record and `ops/STATE.md` identify the exact source and validation evidence.
 
 - Real phone/iPad performance, venue networking, QR entry and listening remain unverified
   on the owner's hardware. Automated browser checks are not physical-device measurements.
-- Wide touch layouts can overlap the flight joystick and bottom-left minimap. A tested
-  correction is in the next batch, not the current public build.
 - Water is opaque from above. Depth colour does not reveal submerged geometry.
 - Aircraft Pester avoidance is unfinished. The response study produced two escapes and
   two harmful catches; ground dodge and bot tool use remain independent delivered features.
@@ -15,8 +13,8 @@ The release record and `ops/STATE.md` identify the exact source and validation e
   check verifies steady-state dry driving after bounded readiness, not every startup or sea route.
 - A public bot-start check failed on the first release-4 attempt. Unique test rooms now
   prevent persisted fixture reuse, but reuse was not proven as that failure's cause.
-- Cloud volumes, temporal antialiasing, saved-world moons and the touch correction are
-  under combined next-batch validation. Tank and hovercraft study selection remains open.
+- Clouds do not cast terrain shadows. Procedural water, grass and particles skip temporal
+  history. Tank and hovercraft study selection remains open.
 - Smooth near-camera terrain remains deferred. Current vehicle feel and sound still need
   the owner's review; earlier buggy driving feedback was already addressed.
 

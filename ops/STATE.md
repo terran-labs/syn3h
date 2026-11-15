@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-15 03:24 PST. Demo deadline: Sunday noon Pacific.
+Last verified: 2026-11-15 03:39 PST. Demo deadline: Sunday noon Pacific.
 
 ## Authority
 
@@ -20,19 +20,21 @@ condition. Water transparency from above is unimplemented, not an accepted water
 
 ## Production
 
-Release 4 is accepted live at https://www.syn3h.com/ as of 03:05 PST:
-version v26.11.1500, source da5a89c, Worker ef3e2f23-e868-41d6-9894-4b09e9b57db2,
-frozen copy 20261115-021120-da5a89c. Exact entry assets, public multiplayer and eight
-Chrome/WebKit vehicle drives passed with no page errors. Acceptance marker and full log:
-/tmp/astra-release4-accepted and /tmp/astra-release4-publish-retry2.log.
+Release 5 is accepted live at https://www.syn3h.com/ as of 03:38 PST:
+version v26.11.1501, source 5e38ef6, Worker e9f20f19-4194-40c2-8e6b-a8becb6190a0,
+frozen copy 20261115-032406-5e38ef6. Worker and primary multiplayer, exact assets and
+all eight public vehicle checks passed with no page errors. Acceptance marker and log:
+/tmp/astra-release5-accepted and /tmp/astra-release5-publish.log.
+Release 4 remains a tested fallback. Release 5 is now the target for any future rollback.
+The current pinned release-5 supervisor restores release-4 and must be revised before reuse.
+Showcase capture is running after acceptance; its outcome cannot undo verified gameplay.
 
 The first release-4 attempt failed the primary site's default-bot wait and rolled back to
 release-2; both rollback addresses passed. The test used a repeating room namespace.
 Unique timestamp/random rooms now prevent fixture reuse; the earlier cause is unproven.
 All waits and assertions were retained. Preserved evidence: /tmp/astra-release4-attempt1.
 Release 3 was attempted and rolled back twice. Never infer acceptance from tags alone.
-For a future release, explicitly select the last accepted rollback target, now release-4.
-The current pinned supervisor still targets release-2 and must not be reused blindly.
+The release-4 rollback history is retained as evidence, not the current rollback selection.
 
 Release automation checks exact identity, HTML and entry assets, then primary gameplay
 and the eight-vehicle matrix before recording acceptance. Notes and captures are nonfatal
@@ -79,8 +81,8 @@ across 150 files and a production build passed. Combined WebGPU/WebGL entry, fou
 and desktop layouts, and saved-world browser checks pass. The browser wrapper failed
 only at cleanup with EPERM; all owned ports were verified closed. The settled logo is complete.
 Evidence: /tmp/astra-next-visuals-full-gate.log and /tmp/astra-next-visuals-browser.log.
-Cloud volumes, temporal antialiasing, saved moons and touch clearance now await a new
-frozen release and public checks. Release 4 remains live and is the required rollback target.
+Cloud volumes, temporal antialiasing, saved moons and touch clearance passed the new
+frozen and public checks and are live in release 5.
 Temporal rejects history on procedural position/sprite materials, including water/grass;
 GI is screen-space, clouds have no ground shadows, real-device performance is unmeasured.
 
