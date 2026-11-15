@@ -14,6 +14,7 @@ import { SKY_PRESETS } from './sky/presets'
 // Imported for their side effect: they register the sliders the recipes set.
 import './sky/skyParams'
 import './terrain/settings'
+import { planetWeather } from './weather/planetWeather'
 
 export interface PlanetRecipe {
   id: string
@@ -40,6 +41,7 @@ const MARS: Record<string, ParamValue> = {
   'terrain.volcanoHeight': 540, 'terrain.volcanoRadius': 360, 'terrain.calderaSize': 62,
   'terrain.mesaHeight': 120, 'terrain.cragDensity': 0.34, 'terrain.spireHeight': 190,
   'terrain.duneHeight': 4, 'terrain.roughness': 0.5, 'terrain.treeCover': 0,
+  ...planetWeather('volcanic'),
 }
 
 export const PLANETS: readonly PlanetRecipe[] = [
@@ -53,6 +55,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
     blurb: 'Gold dunes and sandstone buttes round a towering mesa, in a warm shallow sea.',
     swatch: [0xe6b866, 0x2fb7b0],
     values: {
+      ...planetWeather('desert'),
       ...SKY_PRESETS['Earthlike'], 'sky.turbidity': 5, 'weather.cloudCoverage': 0.12, 'weather.fogDensity': 0.00022,
       'terrain.kind': 1, 'world.seaKind': 1, 'world.lavaAltitude': 0,
       'terrain.islandRadius': 800, 'terrain.coastWobble': 0.26,
@@ -66,6 +69,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
     blurb: 'Pine forest and granite ranges under a snow peak, in a cold blue sea.',
     swatch: [0x5f8a3a, 0x1c5f9a],
     values: {
+      ...planetWeather('alpine'),
       ...SKY_PRESETS['Earthlike'], 'weather.cloudCoverage': 0.45, 'weather.fogDensity': 0.0003,
       'terrain.kind': 2, 'world.seaKind': 1, 'world.lavaAltitude': 0,
       'terrain.islandRadius': 800, 'terrain.coastWobble': 0.3,
