@@ -4,6 +4,7 @@ import { params, worldSeed } from '../../shared/params'
 import { Engine, unit, type MotionAudio } from './Engine'
 import { synthCue, type Cue, type CueOptions } from './Cues'
 import { CrashWatcher, impactStrength, synthImpact, type ImpactKind } from './Impacts'
+import { synthMaterialize, synthZorbPulse, type MaterializeVoice } from './VehicleCues'
 import type { SurfaceKind } from '../world/terrain/surface'
 import { WorldAudio, lavaProximity, type AudioTerrain } from './WorldAudio'
 import type { Vehicle } from '../vehicles/Vehicle'
@@ -62,6 +63,7 @@ export class GameAudio implements System {
   private readonly remote = new Map<Vehicle, {engine:Engine;panner:PannerNode}>()
   private readonly cueStops = new Set<() => void>()
   private readonly events = new Map<Vehicle,{wings:boolean;landed:boolean;liquid:'lava'|'water'|null}>()
+  private readonly materializing = new Map<object, MaterializeVoice>()
   private readonly crashes = new CrashWatcher()
   private impactSeed = 0
   private nextSpatial = 0
@@ -199,6 +201,7 @@ export class GameAudio implements System {
   }
   /** Release every node of the mix. The context itself is closed by the caller. */
   private dropGraph(): void {
+    for (const voice of [...this.materializing.values()]) voice.stop()
     for (const source of this.voices) source.stop()
     for(const stop of [...this.cueStops])stop()
     for(const voice of this.remote.values()){voice.engine.dispose(true);voice.panner.disconnect()}
@@ -288,6 +291,27 @@ export class GameAudio implements System {
     let stop: () => void
     stop = synthCue(this.context, duck ?? output.node, cueFor[sound], this.engine!.noise, () => { this.cueStops.delete(stop); duck?.disconnect(); output.dispose() }, options)
     this.cueStops.add(stop)
+  }
+  /** Called by the actual hop event, including nearby remote and bot hops. */
+  zorbPulse(position: Position): void {
+    if (this.disposed || this.paused || !this.enabled || this.context?.state !== 'running' || this.cueStops.size >= 32) return
+    const output = this.output(position)
+    let stop: () => void
+    stop = synthZorbPulse(this.context, output.node, () => { this.cueStops.delete(stop); output.dispose() })
+    this.cueStops.add(stop)
+  }
+  /** Follow the switch lifecycle; cancellation must not sound like a successful drop. */
+  materialize(cue: 'materializeStart' | 'materializeRelease' | 'materializeCancel', position: Position, vehicle: object): void {
+    const previous = this.materializing.get(vehicle)
+    if (cue === 'materializeCancel') { previous?.stop(); return }
+    if (cue === 'materializeRelease') { previous?.release(); return }
+    previous?.stop()
+    if (this.disposed || this.paused || !this.enabled || this.context?.state !== 'running' || this.cueStops.size >= 32) return
+    const output = this.output(position)
+    const voice = synthMaterialize(this.context, output.node, this.engine!.noise, () => {
+      this.materializing.delete(vehicle); this.cueStops.delete(voice.stop); output.dispose()
+    })
+    this.materializing.set(vehicle, voice); this.cueStops.add(voice.stop)
   }
   /** Network contacts use the hull clang; landings pass the surface beneath them. */
   impact(strength: number, position?: Position, kind: ImpactKind = 'vehicle', hull = this.local?.kind): void {

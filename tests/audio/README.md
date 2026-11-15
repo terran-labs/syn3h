@@ -146,3 +146,17 @@ preserved as `lifecycle-before-cleanup.json`. Touchdown events are sampled on fi
 physics steps so a low frame rate cannot hide the landing pulse.
 
 Run `tools/heavy.sh node tests/audio/run-impacts-gate.mjs` to render the production impact paths and all nine voices, exercise the lab controls, and run the driving smoke test. The runner owns and closes a temporary dev server and room server.
+
+Vehicle switching uses `audio.materialize(cue, position, vehicle)` with `materializeStart`,
+`materializeRelease` and `materializeCancel` from the visual hold. It gathers for 0.2 seconds,
+then holds a shimmer until the simulation drops the vehicle. Cancellation stops the voice
+without playing a drop. Voices are keyed by vehicle, bounded to 30 audio-clock seconds as a
+failsafe, and disposed with the audio graph. The existing spawn cue stays separate.
+
+`audio.zorbPulse(position)` plays the short shield pulse. Connect it once to `onZorbPulse`
+and unsubscribe when the game is disposed. It follows the effects volume and the normal
+pause/play guards, but intentionally remains audible while the vehicle's engine is zorbed.
+
+For isolated audio renders run `tools/heavy.sh node tests/audio/run-impacts-gate.mjs tests/audio/vehicle-cues-render.mjs`.
+After integrating the visual cancellation seam and main event bindings, add
+`tests/audio/vehicle-cues-game.mjs` to that command to verify real switches and a hop.

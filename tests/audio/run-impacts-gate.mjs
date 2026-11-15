@@ -10,7 +10,7 @@ const server = await createServer({ server: { host: '127.0.0.1', port: 0, strict
 try {
   await server.listen()
   const origin = `http://127.0.0.1:${server.httpServer.address().port}`
-  for (const script of ['tests/audio/impact-game-render.mjs', 'tests/audio/impacts-render.mjs', 'tools/smoke.mjs']) {
+  for (const script of (process.argv.length > 2 ? process.argv.slice(2) : ['tests/audio/impact-game-render.mjs', 'tests/audio/impacts-render.mjs', 'tools/smoke.mjs'])) {
     const code = await new Promise((resolve, reject) => {
       const child = spawn(process.execPath, [script, origin], { stdio: 'inherit' })
       child.once('error', reject); child.once('exit', resolve)
