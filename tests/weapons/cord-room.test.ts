@@ -36,7 +36,7 @@ beforeEach(() => {
 
 describe('Bungee cords in the room', () => {
   it('relays nothing while the Bungee is off', () => {
-    const a = join('A')
+    const a = join('A', { 'bungee.allowed': false })
     const b = join('B')
     room.receive(a.peer, state([0, 0, 0]))
     send(a.peer, { type: 'cord', cord: { s: 'on', to: b.id, r: 20 } })

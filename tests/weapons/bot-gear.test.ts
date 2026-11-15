@@ -30,7 +30,8 @@ function setup() {
   // The human is looking sideways while the bot's target is straight ahead.
   const camera = new THREE.PerspectiveCamera()
   camera.lookAt(100, 0, 0); camera.updateMatrixWorld()
-  vi.stubGlobal('window', {})
+  // Rapier reads window.performance when a browser global is present.
+  vi.stubGlobal('window', { performance })
   vi.stubGlobal('document', { pointerLockElement: canvas })
   const game = { world, scene: new THREE.Scene(), camera, canvas, time: 0, input: { state: { fire: true } } } as unknown as Game
   const cords: CordWire[] = [], yoinks: YoinkWire[] = [], shots: number[][] = []
@@ -109,6 +110,9 @@ describe('bot gear execution', () => {
     try {
       s.controller.act({ gear: 'bungee', target: s.target, phase: 'press' }); s.step()
       expect(s.cords[0].s).toBe('hook')
+      const hook = s.cords[0] as Extract<CordWire, { s: 'hook' }>
+      const ray = new THREE.Ray(new THREE.Vector3(...hook.o), new THREE.Vector3(...hook.d).normalize())
+      expect(ray.distanceToPoint(new THREE.Vector3(0, 5, -10))).toBeLessThan(0.1)
       expect(s.controller.bungee.mine).toBeDefined()
       s.controller.bungee.applyRemote(1000, { s: 'off' })
       expect(s.controller.bungee.mine).toBeUndefined()

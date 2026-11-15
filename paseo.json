@@ -27,6 +27,10 @@
     "lab": {
       "type": "service",
       "command": "exec node tools/lab-live.mjs --port \"$PASEO_PORT\""
+    },
+    "ux": {
+      "type": "service",
+      "command": "cd /Users/vtn/dev/Syn3h-wt/audio && SYN3H_NO_ROOM_SERVER=1 npx vite --host 127.0.0.1 --port $PASEO_PORT --strictPort"
     }
   }
 }

@@ -7,9 +7,9 @@ import { defineParam } from '../../shared/params'
 
 const group = 'Gear: Big Red'
 
-/** Off until the owner has tried it (protocol rule 5). */
+/** Available on the normal entry; the host can still turn it off for the room. */
 export const bigRedAllowed = defineParam({
-  id: 'bigRed.allowed', label: 'Big Red', group, scope: 'world', default: false,
+  id: 'bigRed.allowed', label: 'Big Red', group, scope: 'world', default: true,
 })
 
 /** Seconds of holding before it is ready. Letting go sooner fizzles. */

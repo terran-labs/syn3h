@@ -191,8 +191,9 @@ function islets(seed: number): Islet[] {
  * Paint a planet as an RGBA equirectangular texture: longitude across (column 0 at -180),
  * latitude down (row 0 at the north pole). Deterministic for the same inputs.
  */
-export function paintPlanetMap(recipeId: string, seed: number, width = 1024, height = 512): PlanetMap {
-  const recipe = planetById(recipeId) ?? PLANETS[0]
+export function paintPlanetMap(recipeId: string, seed: number, width = 1024, height = 512, overrides: PlanetRecipe['values'] = {}): PlanetMap {
+  const base = planetById(recipeId) ?? PLANETS[0]
+  const recipe = { ...base, values: { ...base.values, ...overrides } }
   const settings = settingsForRecipe(recipe)
   const data = generateTerrain(seed, settings, { resolution: MAP_RESOLUTION })
   const kind = settings.kind

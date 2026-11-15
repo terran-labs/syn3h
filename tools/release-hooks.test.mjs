@@ -23,3 +23,18 @@ for (const failure of ['draft', 'capture', 'tag']) {
     } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 }
+
+const rollback = readFileSync(new URL('./rollback.sh', import.meta.url), 'utf8')
+const rollbackCheck = rollback.slice(rollback.indexOf('# Preserve the check'))
+for (const status of [0, 1]) {
+  test(`rollback verification preserves smoke exit ${status}`, () => {
+    const dir = mkdtempSync(join(tmpdir(), 'syn3h-rollback-check-'))
+    try {
+      mkdirSync(join(dir, 'bin'))
+      writeFileSync(join(dir, 'bin/node'), `#!/bin/sh\necho '${status ? 'FAIL no page errors' : 'NET SMOKE OK'}'\nexit ${status}\n`, { mode: 0o755 })
+      const result = spawnSync('/bin/sh', ['-eu', '-c', rollbackCheck], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH, URL: 'https://example.test' } })
+      assert.equal(result.status, status, result.stderr)
+      if (status) assert.match(result.stderr, /verification failed/)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+}
