@@ -48,6 +48,11 @@ export class BotBrain implements System {
   dispose() { this.gear?.setHooks(null) }
   requestRecovery?: () => boolean
   target: Vehicle | null = null
+  /** The player changed vehicle in place: chase the new one where the old one was the target. */
+  setLocalPlayer(next: Vehicle): void {
+    if (this.target === this.localPlayer) this.target = next
+    this.localPlayer = next
+  }
   /**
    * The bot's own mind, when it has one. With it the bot alternates between chasing and
    * roaming on its own agenda, in the share set by `bots.freeSpirit`. Without it, it chases.
@@ -88,7 +93,7 @@ export class BotBrain implements System {
   private targets: readonly Vehicle[] = []
   private peers: readonly Vehicle[] = []
   setPeers(vehicles: readonly Vehicle[]) { this.peers = vehicles }
-  constructor(private readonly game: Game, private readonly terrain: BotTerrain, readonly vehicle: Vehicle, private readonly localPlayer: Vehicle, readonly index = 0) {
+  constructor(private readonly game: Game, private readonly terrain: BotTerrain, readonly vehicle: Vehicle, private localPlayer: Vehicle, readonly index = 0) {
     vehicle.isLocal = false
     this.lastPosition.copy(vehicle.body.translation())
     // Original VhiclBot.cs:25 staggered checks randomly. Index gives repeatable staggering.

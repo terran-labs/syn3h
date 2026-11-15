@@ -42,7 +42,7 @@ export class Daydream implements System {
   /** Seconds since the last human input while playing. */
   idleFor = 0
   mind: Mind | null = null
-  private readonly pilot: Pilot | null
+  private pilot: Pilot | null
   private readonly auto = emptyInput()
   private touched = false
   private specialBefore = false
@@ -54,7 +54,7 @@ export class Daydream implements System {
   constructor(
     private readonly game: Game,
     private readonly terrain: BotTerrain,
-    private readonly player: Vehicle,
+    private player: Vehicle,
     private readonly options: DaydreamOptions = {},
   ) {
     this.pilot = options.pilot !== undefined ? options.pilot : createPilot(player, terrain)
@@ -72,6 +72,20 @@ export class Daydream implements System {
 
   /** Call when a human did something this class cannot see for itself. */
   noteActivity(): void { this.touched = true }
+
+  /**
+   * The player changed vehicle in place. A daydream in progress ends, as if a control had been
+   * touched: its mind and pilot were built for the old vehicle. A pilot for the new kind is
+   * made now, and the idle clock starts again.
+   */
+  setPlayer(next: Vehicle): void {
+    if (next === this.player) return
+    if (this.active) this.release()
+    this.mind = null
+    this.player = next
+    this.pilot = this.options.pilot !== undefined ? this.options.pilot : createPilot(next, this.terrain)
+    this.idleFor = 0; this.touched = false
+  }
 
   update(dt: number): void {
     const input = this.game.input
