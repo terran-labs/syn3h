@@ -11,13 +11,15 @@ disposeEffects()
 
 In `main.ts`, insert the attach call immediately after `game.add(player)`. Remote-player creation and bot creation use the same call with `local: false`; retain the returned function with that actor and call it before removing the actor. No vehicle classes, factory, networking or weapon authority are modified here. The optional test Vite plugin wires only the local player for captures.
 
-All attached actors share capped buffers: 1,024 track quads, 256 trail quads, and 600 desktop, 240 mobile or 60 safe-level particle slots. Quality changes rebuild particle buffers. Seven shared draws cover the particle/ribbon buffers and one instanced lamp batch. Four lamp instances per vehicle add no per-vehicle draw calls; the batch is capped at 128 vehicles. Only local vehicles receive a spotlight, without shadows. Last-disposer cleanup removes the shared system and disposes geometry, materials and textures. Repeated disposal is safe. `game.scene.userData.vehicleEffects` exposes capacities, emitted count and CPU update timing, not GPU timing.
+All attached actors share capped buffers: 1,024 track quads, 256 trail quads, and 600 desktop, 240 mobile or 60 safe-level particle slots. Quality changes rebuild particle buffers. Seven shared draws cover the particle/ribbon buffers and one instanced lamp batch. Four lamp instances per vehicle add no per-vehicle draw calls; the batch is capped at 128 vehicles. Only local vehicles receive a spotlight, without shadows. Last-disposer cleanup removes the shared system and disposes geometry and materials. Repeated disposal is safe. `game.scene.userData.vehicleEffects` exposes capacities, emitted count and CPU update timing, not GPU timing.
 
 Buggy contacts use `getWheelEffects()` in FL, FR, RL, RR order. Each entry supplies grounded state, world point, world normal and absolute lateral slip. `landedThisStep` is sampled after every physics step, with `landingImpact` setting the puff strength. Fallback terrain projection supports older vehicles. Dust and tracks are suppressed over liquid; entering liquid emits one small capped splash/steam approximation. This is new behavior, not a recovered Syn3h effect.
 
 ## Source and adaptations
 
-Sources are the read-only Syn3h client Assets tree. Original textures were copied into `public/models/effects`; thruster glow uses the previously recovered HoverGlow texture.
+Sources are the read-only Syn3h client Assets tree. No effect loads an image. The original textures (dust, skid mark, green and red plasma, and the HoverGlow thruster glow as an exhaust particle) were measured and replaced by shader-generated looks in `sprites.ts`; the effect images are no longer shipped. Each particle gets its own noise pattern from its birth time and slot, and the pattern drifts as it ages. The noise uses one octave at the safe graphics level and two above it. `maps.ts` generates the tank tread map once at run time in place of `tank-track.png`. `tests/vehicles2/no-images.test.ts` fails if vehicle code loads an image again; its only allowance is the jet and hovercraft paint, which still use `armor-scales.jpg` and `thruster-glow.png` until those vehicles move to the shared vehicle materials system.
+
+Two deliberate differences from the images. Dust is now tinted: `dust.png` had black colour channels, so every puff drew black whatever tint was passed. Tyre marks now have soft shoulders, tread ribs and patchiness: `skidmark.png` had alpha 1 everywhere, so marks drew as flat bands.
 
 | Effect | Recovered values | Browser adaptation |
 | --- | --- | --- |
@@ -42,7 +44,7 @@ Particle alpha uses a smooth sine approximation to the original five-key fade. P
 * Both reference `_Core/Audio/LaserShot.mp3`, volume 1, attenuation range 1 to 500.
 * PlasmaSparks emits four particles, size .4 to .7, life .8, random lateral velocity 3, growth 2. This hook approximates its spread; it does not reproduce stretched billboards or gravity.
 
-Current `Lasers.ts` uses fixed three-metre red/orange cylinders and orange spherical impacts. To match Syn3h, replace those with additive textured green auto and red snipe trails using the prefab widths and lifetime, and use four textured impact sparks. Keep collision and networking authoritative. Do not change hit detection to follow the visible trail.
+Current `Lasers.ts` uses fixed three-metre red/orange cylinders and orange spherical impacts. To match Syn3h, replace those with additive green auto and red snipe plasma trails using the prefab widths and lifetime, and use four plasma impact sparks. Keep collision and networking authoritative. Do not change hit detection to follow the visible trail.
 
 ```ts
 const effects = createWeaponEffects(game)
@@ -52,7 +54,7 @@ effects.impact(worldHit, worldNormal, isSnipe)
 effects.dispose()
 ```
 
-Call muzzle only for fresh shots, including fresh replicated shots, rather than old replayed projectiles. Call impact once when an authoritative hit is accepted. The hook supplies green/red original plasma textures and bounded particles, but deliberately leaves sound and projectile ownership with the weapon system. The short muzzle flash is a new approximation. Impact sound was not established from these assets, so no substitute sound is claimed as original.
+Call muzzle only for fresh shots, including fresh replicated shots, rather than old replayed projectiles. Call impact once when an authoritative hit is accepted. The hook supplies generated green and red plasma sprites and bounded particles, but deliberately leaves sound and projectile ownership with the weapon system. The short muzzle flash is a new approximation. Impact sound was not established from these assets, so no substitute sound is claimed as original.
 
 ## Verification
 

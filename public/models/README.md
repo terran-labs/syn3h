@@ -93,6 +93,7 @@ recovered. See `tests/vehicles2/README.md` for the script GUID trace and scale e
 
 `Tank.ts` uses the already converted `tank.glb` and `tanktread.glb`. It rotates the
 hull into Y-up, hides the duplicated hull mesh, and normalizes each of six tread
-segments to 1 x 0.9 x 2.2 m. `textures/tank-track.png` is the original
-`Vehicles/Tank/Components/Materials/TankTrack.png`; its UV offset follows contact
-speed. This is the legacy Mars Explorer tank, not a recovered Syn3h vehicle.
+segments to 1 x 0.9 x 2.2 m. The tread map is generated at run time
+(`createTreadMap` in `src/vehicles/effects/maps.ts`) after the original
+`Vehicles/Tank/Components/Materials/TankTrack.png`, which is no longer shipped; its UV
+offset follows contact speed. This is the legacy Mars Explorer tank, not a recovered Syn3h vehicle.

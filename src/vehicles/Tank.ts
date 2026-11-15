@@ -5,6 +5,7 @@ import { RAPIER } from '../core/physics'
 import { defineParam } from '../../shared/params'
 import { Vehicle } from './Vehicle'
 import { VehicleModel } from './skins/VehicleModel'
+import { createTreadMap } from './effects/maps'
 
 export const tankPower=defineParam({id:'tank.power',label:'Power',group:'Tank',scope:'world',default:2000,min:500,max:3500,step:10})
 export const tankSpeed=defineParam({id:'tank.speed',label:'Speed',group:'Tank',scope:'world',default:25,min:10,max:40,step:.1})
@@ -64,7 +65,7 @@ export class Tank extends Vehicle {
         wrapper.scale.set(1/size.x,POD_LENGTH/size.z,POD_HEIGHT/size.y)
         wrapper.position.set(-center.x/size.x,-center.y*POD_HEIGHT/size.y,-center.z*POD_LENGTH/size.z)
         wrapper.traverse(o=>{if(o instanceof THREE.Mesh){o.material.dispose();const mat=new THREE.MeshStandardMaterial({color:0x343940,metalness:.6,roughness:.55});o.material=mat
-          if(o.name==='Mesh001'){const map=new THREE.TextureLoader().load('/models/textures/tank-track.png');map.wrapS=map.wrapT=THREE.RepeatWrapping;map.colorSpace=THREE.SRGBColorSpace;mat.map=map;this.treadMaps[i]=map}}})
+          if(o.name==='Mesh001'){const map=createTreadMap();mat.map=map;this.treadMaps[i]=map}}})
       }))
     }
     this.modelReady=Promise.all(this.models.map(m=>m.ready)).then(()=>{})
