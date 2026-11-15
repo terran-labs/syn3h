@@ -14,7 +14,7 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
     await page.locator('.boot-veil').waitFor({state:'hidden',timeout:120000})
     await page.locator('.galaxy-label.is-current').focus(); await page.keyboard.press('Enter')
     await page.waitForFunction(()=>window.syn3h?.shell.playing && window.syn3hNet?.connected && !syn3h.shell.dropping,null,{timeout:120000})
-    assert.ok(sockets.some(url=>url===`ws://127.0.0.1:54671/ws?room=${room}`),'known existing backend and disposable room')
+    assert.ok(sockets.some(url=>url===`ws://127.0.0.1:${process.env.UX_ROOM_PORT??'5298'}/ws?room=${room}`),'the room server started for this run, and a disposable room')
     // Fixture drives the presentation contract only. It does not claim core eligibility tests.
     await page.evaluate(async()=>{
       const {effectiveQuality}=await import('/src/core/quality.ts')
