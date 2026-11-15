@@ -63,7 +63,7 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     if (!touch) console.log(JSON.stringify(await page.evaluate(() => {
       const pick = (el, pseudo) => { const s = getComputedStyle(el, pseudo); return { content: s.content, display: s.display, background: s.backgroundImage + ' | ' + s.backgroundColor, boxShadow: s.boxShadow, filter: s.backdropFilter, opacity: s.opacity } }
       const out = {}
-      for (const [name, el] of [['wi-top', document.querySelector('.wi-top')], ['open card', document.querySelector('.wi-card.is-open')], ['open body', document.querySelector('.wi-card.is-open .wi-body')], ['inspector', document.querySelector('.world-inspector')]])
+      for (const [name, el] of [['rail-foot', document.querySelector('.rail-foot')], ['open card', document.querySelector('.wi-card.is-open')], ['open body', document.querySelector('.wi-card.is-open .wi-body')], ['inspector', document.querySelector('.world-inspector')]])
         if (el) out[name] = { self: pick(el), before: pick(el, '::before'), after: pick(el, '::after') }
       return out
     }), null, 1))

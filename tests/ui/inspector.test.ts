@@ -12,7 +12,7 @@ const values = new Map<string, number | boolean>(DEFS.map(d => [d.id, d.default]
 describe('the inspector tree', () => {
   const tree = buildTree(DEFS)
   it('puts every property in exactly one logical section', () => {
-    expect(tree.map(s => s.id)).toEqual(['world', 'sky', 'game', 'vehicles', 'you'])
+    expect(tree.map(s => s.id)).toEqual(['game', 'vehicles', 'world', 'sky', 'you'])
     expect(tree.reduce((n, s) => n + s.count, 0)).toBe(DEFS.length)
     expect(tree.find(s => s.id === 'sky')!.tree.map(g => g.name)).toEqual(['Sun', 'Sky'])
   })

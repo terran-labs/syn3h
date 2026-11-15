@@ -31,9 +31,9 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     await page.locator('.world-inspector').waitFor({ state: 'visible' })
     const press = locator => touch ? locator.tap() : locator.click()
 
-    // ---- A sixth card, after Vehicles, and no floating panel or header button. ----
+    // ---- A sixth card, after Sky, and no floating panel or header button. ----
     const sections = await page.locator('.wi-card').evaluateAll(cards => cards.map(card => card.dataset.section))
-    assert.equal(sections[sections.indexOf('vehicles') + 1], 'performance', `Performance follows Vehicles: ${sections}`)
+    assert.equal(sections[sections.indexOf('sky') + 1], 'performance', `Performance follows Sky: ${sections}`)
     assert.equal(await page.locator('.performance-toggle, .performance-panel').count(), 0, 'the old panel and its button are gone')
     const card = page.locator('.wi-card[data-section=performance]')
     await press(card.locator('.wi-head')); await settled(page)

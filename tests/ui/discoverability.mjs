@@ -58,10 +58,30 @@ for(const mode of ['desktop','phone']){
    assert.equal(await page.evaluate(()=>performance.timeOrigin),loadedAt,'vehicle switch does not reload')
    assert.equal(new URL(page.url()).searchParams.get('room'),room)
   }
-  await vehicle.focus();await page.keyboard.press('Tab')
-  assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('data-tint')),'body','keyboard order reaches body colour next')
-  await page.keyboard.press('Tab')
-  assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('data-tint')),'accent','then accent colour')
+  assert.deepEqual(await card.locator('.wi-vehicle select, .wi-vehicle input').evaluateAll(es=>es.map(el=>el.dataset.tint??'vehicle')),['vehicle','body','accent'],'vehicle and colours retain DOM focus order')
+  if(mode==='desktop'){
+   await vehicle.focus();await page.keyboard.press('Tab')
+   assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('data-tint')),'body','keyboard order reaches body colour next')
+   await page.keyboard.press('Tab')
+   assert.equal(await page.evaluate(()=>document.activeElement?.getAttribute('data-tint')),'accent','then accent colour')
+  }else{
+   // Mobile WebKit does not Tab through native colour pickers. Verify their actual touch
+   // hit areas; fill() above already proves both native inputs repaint, persist and announce.
+   for(const tint of ['body','accent']){
+    const input=card.locator(`input[data-tint=${tint}]`)
+    await input.scrollIntoViewIfNeeded()
+    const label=input.locator('..')
+    const hit=await label.evaluate(el=>{const r=el.getBoundingClientRect(), target=document.elementFromPoint(r.x+3,r.y+r.height/2);return {w:r.width,h:r.height,target:target?.tagName,hit:target===el||el.contains(target)}})
+    console.log(`${mode} ${tint} picker label: ${JSON.stringify(hit)}`)
+    assert.ok(hit.w>=44&&hit.h>=44&&hit.hit,`${tint} is a reachable 44px native picker: ${JSON.stringify(hit)}`)
+    // Tap the padding, not the small colour dot. Cancel only the picker dialog itself so
+    // automation can verify the label forwards a trusted activation to the native input.
+    await input.evaluate(el=>{window.__pickerActivated=false;el.addEventListener('click',event=>{window.__pickerActivated=event.isTrusted;event.preventDefault()},{once:true})})
+    await label.tap({position:{x:3,y:22}})
+    assert.ok(await page.evaluate(()=>window.__pickerActivated),`${tint} label activates its native picker`)
+
+   }
+  }
   // Rebuilding the inspector moves the existing widget and keeps its listeners and colours.
   await page.evaluate(()=>syn3h.shell.inspector.rebuild())
   assert.equal(await page.locator('.wi-vehicle-select').count(),1)

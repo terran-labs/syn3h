@@ -228,3 +228,17 @@ body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(198
 }
 .syn3h-shell.exploration-ui .lobby-panels > section:not(.lobby-index) { max-width: 520px; }
 .syn3h-shell.exploration-ui .lobby-panels > section h2 { font: 500 13px/1.2 'Barlow', sans-serif; letter-spacing: .26em; text-indent: .26em; text-transform: uppercase; color: var(--s3-ink); }
+
+/* The footer remains reachable while the card stack scrolls on short screens. */
+.syn3h-shell.exploration-ui .world-inspector .wi-cards { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.syn3h-shell.exploration-ui .world-inspector .rail-players { flex: 0 0 auto; max-height: none; min-height: 44px; }
+.syn3h-shell.exploration-ui .world-inspector .rail-players > summary { min-height: 44px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; }
+.syn3h-shell.exploration-ui .world-inspector .rail-foot { display: flex; flex-direction: column; align-items: stretch; flex: 0 0 auto; gap: 5px; padding: 6px 8px; }
+.syn3h-shell.exploration-ui .world-inspector .rail-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.syn3h-shell.exploration-ui .world-inspector .rail-tools .wi-search { width: 100%; min-width: 0; height: 44px; min-height: 44px; box-sizing: border-box; font-size: 16px; }
+.syn3h-shell.exploration-ui .world-inspector .rail-tools .rail-pause { min-height: 44px; padding: 6px 12px; }
+.syn3h-shell.exploration-ui .world-inspector .rail-foot .wi-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.syn3h-shell.exploration-ui .world-inspector .rail-foot .wi-actions button { min-height: 44px; min-width: 0; padding: 4px; margin: 0; font-size: 11px; white-space: normal; letter-spacing: 0; text-transform: none; }
+.syn3h-shell.exploration-ui.has-touch:has(.world-inspector:not([hidden])) .hud-navigation { visibility: visible; z-index: 65; }
+/* Leave the existing edge toggle outside the touch panel's hit area. */
+.syn3h-shell.exploration-ui.has-touch .world-inspector { right: max(42px, env(safe-area-inset-right)); width: min(352px, calc(100vw - 58px)); }

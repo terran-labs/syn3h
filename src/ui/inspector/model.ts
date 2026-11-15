@@ -18,12 +18,12 @@ export interface PropertyDef {
   description?: string
 }
 export interface SectionSpec { id: string; title: string; blurb: string; groups: readonly string[]; scope: 'world' | 'client' }
-/** Logical sections, in the order they are shown. Shared world first, personal settings last. */
+/** Logical sections, in the order they are shown. Game first, personal settings last. */
 export const SECTIONS: readonly SectionSpec[] = [
-  { id: 'world', title: 'World', blurb: 'The planet itself: its seed, land and seas.', groups: ['World', 'Terrain', 'Lava'], scope: 'world' },
-  { id: 'sky', title: 'Sky & weather', blurb: 'The sun, the hour, the air and the clouds.', groups: ['Sun', 'Sky', 'Weather'], scope: 'world' },
   { id: 'game', title: 'Game', blurb: 'What is being played, and who else is driving.', groups: ['Game', 'Tag', 'Plasma Tag', 'Tag beams', 'Zorb', 'Bots'], scope: 'world' },
   { id: 'vehicles', title: 'Vehicles', blurb: 'How each vehicle drives, flies and looks.', groups: ['Buggy', 'Jet', 'Hovercraft', 'Tank', 'Wheels', 'Canopy', 'Vehicle paint'], scope: 'world' },
+  { id: 'world', title: 'World', blurb: 'The planet itself: its seed, land and seas.', groups: ['World', 'Terrain', 'Lava'], scope: 'world' },
+  { id: 'sky', title: 'Sky & weather', blurb: 'The sun, the hour, the air and the clouds.', groups: ['Sun', 'Sky', 'Weather'], scope: 'world' },
   { id: 'you', title: 'You', blurb: 'Yours only: camera, sound, graphics and this display.', groups: ['Interface', 'Camera', 'Input', 'Daydream', 'Audio', 'Adaptive score', 'Graphics', 'Network'], scope: 'client' },
 ]
 export interface GroupNode { name: string; properties: PropertyDef[] }

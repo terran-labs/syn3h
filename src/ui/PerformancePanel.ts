@@ -77,7 +77,7 @@ export class PerformancePanel {
     this.element.querySelector('[data-performance=reload]')!.addEventListener('click', () => location.reload(), { signal })
     if (quality) this.configureQuality(quality)
     inspector?.addCard(PerformancePanel.CARD, 'Performance', this.element, () => this.state ? `${this.state.name}${this.state.auto ? ' · Auto' : ''}` : '',
-      { after: 'vehicles', owns: () => this.owned(), fill: () => this.fill() })
+      { after: 'sky', owns: () => this.owned(), fill: () => this.fill() })
   }
 
   /** Bind the level controls to the quality controller. Replaces any earlier binding. */

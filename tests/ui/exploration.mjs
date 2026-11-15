@@ -66,7 +66,9 @@ for (const mode of modes) {
     await page.locator('.rail-diagnostics input').uncheck()
     if (!touch) {
       // Any native select will do; the synthetic keys below never change its value.
+      await page.locator('[data-section=vehicles] .wi-head').click()
       const select = page.locator('.wi-vehicle-select')
+      await select.scrollIntoViewIfNeeded()
       await select.focus()
       // Check held keys before keyup: a leak can disappear before a frame assertion.
       for (const code of ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Enter']) {
@@ -94,13 +96,13 @@ for (const mode of modes) {
       await page.locator('.world-inspector').waitFor({ state: 'visible' })
     }
     if (touch) {
-      await page.locator('.rail-close').tap()
+      await page.locator('.inspector-toggle').tap(); await page.locator('.world-inspector').waitFor({ state: 'hidden' })
       assert.equal(await page.locator('.world-inspector').isHidden(), true, 'returning to driving hides the panels')
       await page.locator('.inspector-toggle').tap()
       await page.locator('.world-inspector').waitFor({ state: 'visible' })
     } else {
       // Returning to driving captures the cursor, and the panels go with it.
-      await page.locator('.rail-close').click()
+      await page.mouse.click(100, 150); await page.locator('.world-inspector').waitFor({ state: 'hidden' })
       await page.waitForFunction(() => document.pointerLockElement === syn3h.game.canvas)
       assert.equal(await page.locator('.world-inspector').isHidden(), true, 'panels are closed while the cursor is captured')
       // Escape frees the cursor: panels. Escape again: paused. Never back to the solar system.
