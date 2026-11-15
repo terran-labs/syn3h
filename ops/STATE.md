@@ -11,7 +11,7 @@ trunk. Completed features default on through normal entry, preserving explicit o
 quality tiers and mutually exclusive choices. Stored room values have no provenance and stay.
 
 Generated wind only; original music and laser stay. SpaceStation starts unless an explicit
-saved track overrides it. Daydream is five minutes. Jet adopts smooth Hexring Mk2; buggy
+saved track overrides it. Daydream starts after fifteen idle seconds. Jet adopts smooth Hexring Mk2; buggy
 uses smooth procedural tread. Tank round six rejected, ten new studies authorized; no tank
 or hovercraft production study has been selected. Smooth near-camera ground stays deferred.
 Finish existing assignments before conditional performance/UX follow-ons. The owner's newer
