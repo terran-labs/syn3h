@@ -14,8 +14,8 @@ export const jetStall = defineParam({id:'jet.stall',label:'Stall speed',group:'J
 // Digital keys otherwise demand a near-loop from a half-second tap in the full-size port.
 export const jetControlResponse = defineParam({id:'jet.controlResponse',label:'Control response',group:'Jet',scope:'world',default:.3,min:.1,max:1,step:.05})
 // Not in Syn3h: its Throttle axis was momentary (VhiclMe.cs 16), so keyboard hover was climb or fall.
-// 0 is the original; 1 holds altitude when no throttle key is down. Dark until the owner judges it.
-export const jetHoverHold = defineParam<number>({id:'jet.hoverHold',label:'Hover altitude hold',group:'Jet',scope:'world',default:0,min:0,max:1,step:.05})
+// 0 is the original; 1 holds altitude when no throttle key is down. On by default: the owner chose it for the demo.
+export const jetHoverHold = defineParam<number>({id:'jet.hoverHold',label:'Hover altitude hold',group:'Jet',scope:'world',default:1,min:0,max:1,step:.05})
 // terra.jet.prefab flightThrustFactor=2: full throttle pushes at twice the jet's weight, and
 // Syn3h's drag barely opposes it, so speed keeps building. Lower this for a slower jet.
 export const jetFlightThrust = defineParam<number>({id:'jet.flightThrust',label:'Flight thrust',group:'Jet',scope:'world',default:2,min:.25,max:3,step:.05})
@@ -122,7 +122,10 @@ export class Jet extends Vehicle {
       if(this.input.z===0&&jetHoverHold.value>0){
         // Half throttle balances weight (hoverThrustFactor 2); tilt and vertical speed correct it.
         const hold=clamp(.5/Math.max(.3,up.y)-velocity.y*.15,0,1)
-        input.z=lerp(input.z,hold,jetHoverHold.value);this.smoothed.z=input.z
+        // Fade the hold out near the ground. A jet resting on its gear (hull about 1.3 m up)
+        // must keep its weight, or it is frictionless and slides down any slope.
+        const nearGround=clamp((position.y-this.terrain.heightAt(position.x,position.z)-1.6)/1,0,1)
+        input.z=lerp(input.z,hold,jetHoverHold.value*nearGround);this.smoothed.z=input.z
       }
       // terra.jet.prefab: hoverThrustFactor=2, hoverSteerFactor=4, hoverAngDrag=2.
       this.body.addForce(up.clone().multiplyScalar(input.z*2*weight),true)
