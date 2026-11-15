@@ -74,6 +74,30 @@ try {
     await page.waitForTimeout(700); await page.screenshot({ path: `${out}/${view.name}-landed.png` })
     await context.close()
   }
+  // The lowest graphics level keeps the galaxy, held still: no frames while nothing moves, a
+  // drag draws, and a tap still flies to a world.
+  {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
+    page.on('pageerror', e => errors.push(`still: ${e.message}`))
+    await page.goto(`${base}?room=galaxy-still-${Date.now()}`, { waitUntil: 'load' }); await ready(page)
+    await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 0), 200) })
+    await page.waitForTimeout(2500)
+    const g = () => page.evaluate(() => { const g = window.syn3h.shell.galaxy; return { live: g?.live, frames: g?.frames, idle: g?.idle } })
+    const a = await g(); await page.waitForTimeout(1500); const b = await g()
+    assert.equal(b.live, true, 'level 0 keeps the galaxy')
+    assert.equal(b.frames, a.frames, `held still it drew ${b.frames - a.frames} frames while idle`)
+    assert.ok(b.idle > a.idle, 'and its loop is idling, not stopped')
+    await page.mouse.move(195, 140); await page.mouse.down(); await page.mouse.move(330, 170, { steps: 8 }); await page.mouse.up()
+    const c = await g(); assert.ok(c.frames > b.frames, 'a drag draws')
+    await page.screenshot({ path: `${out}/still-swung.png` })
+    await page.locator('.galaxy-label[data-world=desert]').click(); await settle(page, 'explore')
+    assert.equal(await page.evaluate(() => window.syn3h.planets.currentPlanet().id), 'desert')
+    // The flight eases in per frame, so a slow headless browser takes a while: wait for it to stop.
+    let rest = false
+    for (let i = 0; i < 20 && !rest; i++) { const d = await g(); await page.waitForTimeout(1000); rest = (await g()).frames === d.frames }
+    assert.ok(rest, 'it settles still again after the flight')
+    await page.close()
+  }
   // Without the option nothing changes.
   const plain = await browser.newPage({ viewport: { width: 1280, height: 720 } })
   await plain.goto(`${base}?galaxy=0&room=galaxy-off-${Date.now()}`, { waitUntil: 'load' }); await ready(plain)

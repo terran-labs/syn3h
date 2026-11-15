@@ -453,11 +453,11 @@ export class Shell implements System {
   /**
    * The galaxy lobby, the default (?galaxy=0 turns it off): in place of the index panel, the worlds orbit a
    * sun in 3D. Drag to look around, tap a world to fly to it, and the name form follows. The
-   * other panels open over it as before. Needs WebGL 2 and more than the lowest graphics
-   * level; otherwise the ordinary lobby stays.
+   * other panels open over it as before. Needs WebGL 2. At the lowest graphics level the system
+   * is held still and redrawn only while it moves, so weak devices keep it at almost no cost.
    */
   private startGalaxy(): void {
-    if (new URLSearchParams(location.search).get('galaxy') === '0' || levelNumber(graphicsLevel.value) === 0 || !Galaxy.supported()) return
+    if (new URLSearchParams(location.search).get('galaxy') === '0' || !Galaxy.supported()) return
     const current = currentPlanet().id, labels = this.element.querySelector<HTMLElement>('.galaxy-labels')!
     const worlds: GalaxyWorld[] = PLANETS.slice(0, 3).map((recipe, i) => ({ id: recipe.id, label: recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current ? worldSeed.value : i + 1 }))
     // The custom planet is a world still forming: tap it to shape it with the sliders.
@@ -472,6 +472,7 @@ export class Shell implements System {
     }
     this.galaxy = new Galaxy(this.overlay, {
       worlds,
+      still: () => levelNumber(graphicsLevel.value) === 0,
       onArrive: id => {
         if (id === 'custom') {
           if (!canEditWorld() || (this.invited && !this.started)) { this.say('This world is not yours to reshape yet.'); this.galaxy?.home(); return }
@@ -600,9 +601,6 @@ export class Shell implements System {
     // Frost goes at the lowest graphics level, and when the quality ladder is shedding post effects.
     const gfx = qualityLevel() >= 2 ? '0' : String(levelNumber(graphicsLevel.value))
     if (document.documentElement.dataset.gfx !== gfx) document.documentElement.dataset.gfx = gfx
-    // The lowest graphics level has no place for a traced galaxy: back to the panel lobby,
-    // but never out from under someone who is looking at it.
-    if (this.galaxy && levelNumber(graphicsLevel.value) === 0 && (!this.menuVisible || this.panels.active !== 'index')) this.stopGalaxy()
     if (!this.menuVisible) return
     const mute = this.element.querySelector<HTMLButtonElement>('.shell-mute')!
     mute.textContent = this.audio.isMuted ? 'Unmute audio' : 'Mute all audio'; mute.setAttribute('aria-pressed', String(this.audio.isMuted))
