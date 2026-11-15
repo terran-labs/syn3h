@@ -631,6 +631,8 @@ export class QualityController implements QualitySource {
   private transient = false
   private writing = 0
   private appliedLevel = -1
+  /** The player chose a level, perhaps the current one again: write its whole preset anyway. */
+  private reapply = false
   private appliedIds = new Set<string>()
   private terrainWritten = false
   private overrides: Record<string, ParamValue> = {}
@@ -720,7 +722,7 @@ export class QualityController implements QualitySource {
   setLevel(level: number) {
     if (this.disposed) return
     this.transient = false
-    this.governor.setManualLevel(levelNumber(level)); this.lastReason = 'manual'; this.appliedLevel = -1; this.apply('player')
+    this.governor.setManualLevel(levelNumber(level)); this.lastReason = 'manual'; this.reapply = true; this.apply('player')
   }
   stepUp(): boolean { if (this.governor.level >= 5) return false; this.setLevel(this.governor.level + 1); return true }
   stepDown(): boolean { if (this.governor.level <= 0) return false; this.setLevel(this.governor.level - 1); return true }
@@ -824,10 +826,11 @@ export class QualityController implements QualitySource {
   private apply(by: 'player' | 'governor' | 'start' = 'governor', covered = by !== 'governor') {
     this.history.resetEvidence()
     const g = this.governor, level = g.level, budget = LEVELS[level], s = g.settings
-    const levelChanged = this.appliedLevel !== level
+    const levelChanged = this.appliedLevel !== level || this.reapply
+    this.reapply = false
     if (levelChanged) {
       if (by === 'player') this.overrides = {}
-      if (this.appliedLevel >= 0) {
+      if (this.appliedLevel >= 0 && this.appliedLevel !== level) {
         const record: LevelChangeRecord = { from: this.appliedLevel as QualityLevel, to: level, by, covered, pipelinesCreated: null }
         this.levelChanges.push(record); if (this.levelChanges.length > 16) this.levelChanges.shift()
         this.counting = { record, leftMs: 2000 }

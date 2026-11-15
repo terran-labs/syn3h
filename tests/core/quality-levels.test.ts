@@ -132,6 +132,10 @@ describe('levels, fine-tuning and the governor', () => {
     expect(c.stepUp()).toBe(false)
     for (let level = 4; level >= 0; level--) { expect(c.stepDown()).toBe(true); expect(params.get('lava.particleBudget')!.value).toBe(LEVELS[level].particles) }
     expect(c.stepDown()).toBe(false); expect(c.getQualityState()).toMatchObject({ level: 0, postTier: 'off' })
+    // Every change the player made is on record, and choosing the same level again is not a change.
+    expect(c.levelChanges.map(r => [r.from, r.to, r.by, r.covered])).toEqual([[3, 5, 'player', true], [5, 4, 'player', true], [4, 3, 'player', true], [3, 2, 'player', true], [2, 1, 'player', true], [1, 0, 'player', true]])
+    params.set('post.on', true); c.setLevel(0)
+    expect(c.levelChanges).toHaveLength(6); expect(params.get('post.on')!.value).toBe(false); expect(c.getQualityState().overrides).toEqual({})
     expect(params.get('post.on')!.value).toBe(false)
     c.dispose()
   })
