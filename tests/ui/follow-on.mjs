@@ -56,6 +56,8 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
     assert.equal(await page.locator('.performance-chart polyline').evaluate(el=>el.getAttribute('points').split(' ').length),120)
     assert.match(await page.locator('.performance-body').innerText(),/Unavailable/)
     assert.match(await page.locator('.performance-body').innerText(),/Fallback/)
+    // Diagnostics can scroll the short landscape card. Verify the level row remains reachable.
+    await page.locator('.wi-level').scrollIntoViewIfNeeded()
     const fit=await page.locator('.wi-level').evaluate(el=>{const r=el.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight})
     assert.ok(fit,'level row inside viewport')
     for(const head of await page.locator('.wi-head').all())await head.click()
@@ -82,7 +84,7 @@ for (const mode of (process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop','ip
     assert.ok(await page.locator('.performance-recommendation').isVisible(),'notice remains visible while driving')
     const overlap=await page.locator('.performance-recommendation').evaluate(el=>{
       const r=el.getBoundingClientRect()
-      return [...document.querySelectorAll('.match-hud,.race-hud,.gear-selector,.gear-actions,.shell-minimap,.touch-actions,.touch-stick')].filter(other=>{
+      return [...document.querySelectorAll('.match-hud,.race-hud,.gear-selector,.gear-actions,.shell-minimap,.touch-actions,.touch-stick,.inspector-toggle')].filter(other=>{
         const style=getComputedStyle(other),b=other.getBoundingClientRect()
         return style.display!=='none'&&style.visibility!=='hidden'&&b.width>0&&b.height>0&&r.left<b.right&&r.right>b.left&&r.top<b.bottom&&r.bottom>b.top
       }).map(el=>el.className)
