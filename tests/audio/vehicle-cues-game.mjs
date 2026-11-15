@@ -7,8 +7,15 @@ try {
   page.on('pageerror', error => errors.push(error.message))
   await page.goto(`${process.argv[2]}/?autoplay=1&vehicle=buggy`)
   await page.waitForFunction(() => window.syn3h?.game.tick > 15, null, { timeout: 120000 })
+  // Autoplay has no trusted gesture. Let its unsuccessful unlock finish, then use a
+  // real key: the first canvas click is consumed by cursor capture before window handlers.
+  await page.waitForFunction(() => !syn3h.audio.unlocking, null, { timeout: 30000 })
   await page.mouse.click(10, 10)
-  await page.waitForFunction(() => syn3h.audio.state === 'running', null, { timeout: 30000 })
+  await page.keyboard.press('KeyH')
+  await page.waitForFunction(() => syn3h.audio.state === 'running', null, { timeout: 30000 }).catch(async error => {
+    console.log('Unlock failure', await page.evaluate(() => ({ state: syn3h.audio.state, paused: syn3h.audio.isPaused, enabled: syn3h.audio.enabled, pending: syn3h.audio.pending?.state, errors: syn3h.audio.errors, cost: syn3h.audio.unlockCost, tick: syn3h.game.tick })))
+    throw error
+  })
   await page.evaluate(() => {
     const { audio, params } = syn3h
     params.set('bots.count', 0)
