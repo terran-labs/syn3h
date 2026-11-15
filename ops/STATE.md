@@ -4,7 +4,7 @@ Written by the Orchestrator. Refreshed at each milestone tag. A fresh or compact
 Orchestrator should be able to resume from this file, `ops/BACKLOG.md`, `ops/LANES.md` and
 `ops/PROTOCOL.md` alone. Times are Pacific; read the clock with `date`, never from memory.
 
-Last refreshed: Saturday 14 November, 6:50pm PST. Demo: Sunday noon PST.
+Last refreshed: Saturday 14 November, 6:40pm PST. Demo: Sunday noon PST.
 
 ## Where things are
 
@@ -79,7 +79,7 @@ Retired in-process subagents (work merged): buggy `af96d3463a8b76592`, multiplay
 - Cloudflare: workers.dev subdomain is `af-4e7` (release 1 will be
   https://syn3h.af-4e7.workers.dev/), no Worker named `syn3h` exists, plan was free at 6:20pm
   and the owner is upgrading to Workers Paid. Access arrives as one API token in the file
-  `~/.config/syn3h/cloudflare-token` (mode 600), not there at 6:50pm. Read it into
+  `~/.config/syn3h/cloudflare-token` (mode 600), not there at 6:40pm. Read it into
   `CLOUDFLARE_API_TOKEN` for the release and domain commands only; never echo it or write it
   to a log, commit or this file. Keep the WebSocket relay; no WebRTC tonight.
 - CUTOVER ORDERED: the owner said "Cut over ASAP" at 6:25pm (relayed by the Foreman, recorded
