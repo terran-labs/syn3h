@@ -58,6 +58,13 @@ const GROUND=POD_HEIGHT/2
 // A pod pitches to lie along the ground under it, up to this many radians from the hull's own pitch.
 const ROCK_LIMIT=.35
 
+// Scratch for applyForces. One set serves every tank: the step is not re-entrant.
+const Q=new THREE.Quaternion(),INV=new THREE.Quaternion()
+const POSITION=new THREE.Vector3(),UP=new THREE.Vector3(),RIGHT=new THREE.Vector3(),DOWN=new THREE.Vector3(),VELOCITY=new THREE.Vector3(),ANGULAR=new THREE.Vector3()
+const ORIGIN=new THREE.Vector3(),NORMAL=new THREE.Vector3(),LIE=new THREE.Vector3(),POINT=new THREE.Vector3(),POINT_VELOCITY=new THREE.Vector3(),LOCAL=new THREE.Vector3()
+const FORCE=new THREE.Vector3(),FORWARD=new THREE.Vector3(),SIDE=new THREE.Vector3(),APPLICATION=new THREE.Vector3(),AXIS=new THREE.Vector3()
+const ZERO={x:0,y:0,z:0},RECOVERY_LIFT={x:0,y:5000,z:0},WORLD_UP=new THREE.Vector3(0,1,0)
+
 /**
  * The tank: the Mars Explorer controller (six tracks, each a shape cast with a spring) under a
  * generated exploration body. No tank exists in the supplied Syn3h snapshots.
@@ -72,6 +79,7 @@ export class Tank extends Vehicle {
   private readonly tracks:THREE.Group[]=[]
   private legacyHull?:THREE.Group
   private readonly shape=new RAPIER.Cuboid(.45,.3,1)
+  private readonly bellyRay=new RAPIER.Ray({x:0,y:0,z:0},{x:0,y:-1,z:0})
   /** Height of each pod above its rest position, in metres: positive when the ground pushes it up. */
   readonly podLift=new Float32Array(6)
   private readonly podRock=new Float32Array(6)
@@ -186,31 +194,32 @@ export class Tank extends Vehicle {
     const driven=!this.body.isKinematic()
     if(driven&&this.cg!==tankCG.value)this.setMass()
     this.lastLift.set(this.podLift);this.lastRock.set(this.podRock);this.lastRun.set(this.podRun)
-    const q=new THREE.Quaternion().copy(this.body.rotation()),inv=q.clone().invert(),position=new THREE.Vector3().copy(this.body.translation())
-    const up=new THREE.Vector3(0,1,0).applyQuaternion(q),right=new THREE.Vector3(1,0,0).applyQuaternion(q),down=up.clone().negate()
-    const velocity=new THREE.Vector3().copy(this.body.linvel()),speed=velocity.length()
+    // Scratch vectors throughout: this runs for every tank every step and creates nothing.
+    const q=Q.copy(this.body.rotation()),inv=INV.copy(q).invert(),position=POSITION.copy(this.body.translation())
+    const up=UP.set(0,1,0).applyQuaternion(q),right=RIGHT.set(1,0,0).applyQuaternion(q),down=DOWN.copy(up).negate()
+    const velocity=VELOCITY.copy(this.body.linvel()),speed=velocity.length()
     const parked=this.input.brakes&&speed<3
     // TankMe.js 7-19: stationary braking differs from the ordinary .01 drag and 2 angular drag.
     if(!driven){}
-    else if(parked){this.body.setLinvel({x:0,y:0,z:0},true);this.body.setAngvel({x:0,y:0,z:0},true)}
-    else{this.body.setLinvel(velocity.multiplyScalar(Math.max(0,1-.01*dt)),true);this.body.setAngvel(new THREE.Vector3().copy(this.body.angvel()).multiplyScalar(Math.max(0,1-2*dt)),true)}
+    else if(parked){this.body.setLinvel(ZERO,true);this.body.setAngvel(ZERO,true)}
+    else{this.body.setLinvel(velocity.multiplyScalar(Math.max(0,1-.01*dt)),true);this.body.setAngvel(ANGULAR.copy(this.body.angvel()).multiplyScalar(Math.max(0,1-2*dt)),true)}
     this.groundedTracks=0
     for(let i=0;i<6;i++){
-      const local=new THREE.Vector3(i%2?2:-2,CAST_Y,(Math.floor(i/2)-1)*2.5),origin=local.clone().applyQuaternion(q).add(position)
+      const origin=ORIGIN.set(i%2?2:-2,CAST_Y,(Math.floor(i/2)-1)*2.5).applyQuaternion(q).add(position)
       const hit=this.game.world.castShape(origin,q,down,this.shape,0,SPRING_LENGTH,true,RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,undefined,undefined,this.body)
-      const normal=hit?new THREE.Vector3().copy(hit.normal1).normalize():up
+      const normal=hit?NORMAL.copy(hit.normal1).normalize():NORMAL.copy(up)
+      const touching=!!hit&&normal.dot(up)>=.1
       // A pod off the ground droops a little and eases there, instead of snapping to a fixed offset.
-      const podTarget=hit&&normal.dot(up)>=.1?.5-hit.time_of_impact:-POD_DROOP
+      const podTarget=hit&&touching?.5-hit.time_of_impact:-POD_DROOP
       this.podLift[i]+=(podTarget-this.podLift[i])*Math.min(1,dt*(podTarget<this.podLift[i]?6:25))
       if(this.tracks[i])this.tracks[i].position.y=this.podLift[i]
-      const touching=!!hit&&normal.dot(up)>=.1
       // The pod turns on its arm to lie along the ground: the ground's slope in the hull's frame.
-      const lie=touching?normal.clone().applyQuaternion(inv):null
-      const rockTarget=lie?THREE.MathUtils.clamp(Math.atan2(lie.z,lie.y),-ROCK_LIMIT,ROCK_LIMIT):0
+      let rockTarget=0
+      if(touching){const lie=LIE.copy(normal).applyQuaternion(inv);rockTarget=THREE.MathUtils.clamp(Math.atan2(lie.z,lie.y),-ROCK_LIMIT,ROCK_LIMIT)}
       this.podRock[i]+=(rockTarget-this.podRock[i])*Math.min(1,dt*12)
       if(!hit||!touching)continue
       this.groundedTracks++
-      const point=new THREE.Vector3().copy(hit.witness1),pointVelocity=new THREE.Vector3().copy(this.body.velocityAtPoint(point)),v=pointVelocity.clone().applyQuaternion(inv).clampLength(0,1000)
+      const point=POINT.copy(hit.witness1),pointVelocity=POINT_VELOCITY.copy(this.body.velocityAtPoint(point)),v=LOCAL.copy(pointVelocity).applyQuaternion(inv).clampLength(0,1000)
       // The belt runs with the ground under it, as the original scrolled its tread texture.
       this.podRun[i]-=v.z*dt
       if(!driven)continue
@@ -218,28 +227,28 @@ export class Tank extends Vehicle {
       if(this.treadMaps[i])this.treadMaps[i].offset.y=(this.treadMaps[i].offset.y+dt*v.z*1.2)%1
       // Replaces joint/contact support with a damped spring. Force formula below stays original.
       const support=Math.max(0,(SPRING_LENGTH-hit.time_of_impact)*SPRING-pointVelocity.dot(normal)*DAMPER)
-      this.body.addForceAtPoint(normal.clone().multiplyScalar(support),point,true)
+      this.body.addForceAtPoint(FORCE.copy(normal).multiplyScalar(support),point,true)
       if(parked&&!this.input.y)continue
       const slope=Math.acos(THREE.MathUtils.clamp(normal.y,-1,1))*180/Math.PI
       const climb=tankClimb.value>=90?1:THREE.MathUtils.clamp(1-(slope-tankClimb.value)/CLIMB_FADE,0,1)
-      const motor=this.motor(i,-v.z,dt)*climb,forward=normal.clone().cross(right).normalize(),side=forward.clone().cross(normal).normalize()
+      const motor=this.motor(i,-v.z,dt)*climb,forward=FORWARD.copy(normal).cross(right).normalize(),side=SIDE.copy(forward).cross(normal).normalize()
       // TankTrack.js 102-109: sideways150, rolling50, lift10, raised application point.
       const force=side.multiplyScalar(-v.x*150).addScaledVector(normal,10).addScaledVector(forward,Math.abs(motor)>.1?motor:v.z*50)
-      const application=point.clone().addScaledVector(up,tankGrip.value)
-      this.body.addForceAtPoint(force,application,true)
+      this.body.addForceAtPoint(force,APPLICATION.copy(point).addScaledVector(up,tankGrip.value),true)
     }
     this.wheelsGrounded=this.groundedTracks
     if(!driven)return
     // TankMe.js 26-40: recovery only when the overturned hull touches terrain. TankMe.js 27
     // skips it inside a zorb ball.
     if(up.y>Math.cos(35*Math.PI/180)||this.zorbed)this.bellyUp=false
-    if(!this.zorbed&&up.y<Math.cos(130*Math.PI/180)&&speed*speed<20&&new THREE.Vector3().copy(this.body.angvel()).lengthSq()<5){
-      const hit=this.game.world.castRay(new RAPIER.Ray(position,{x:0,y:-1,z:0}),1.8,true,RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,undefined,undefined,this.body)
+    if(!this.zorbed&&up.y<Math.cos(130*Math.PI/180)&&speed*speed<20&&ANGULAR.copy(this.body.angvel()).lengthSq()<5){
+      this.bellyRay.origin=position
+      const hit=this.game.world.castRay(this.bellyRay,1.8,true,RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,undefined,undefined,this.body)
       if(hit)this.bellyUp=true
     }
     if(this.bellyUp){
-      this.body.addForce({x:0,y:5000,z:0},true)
-      const axis=up.clone().cross(new THREE.Vector3(0,1,0));if(axis.lengthSq()<1e-6)axis.set(1,0,0)
+      this.body.addForce(RECOVERY_LIFT,true)
+      const axis=AXIS.copy(up).cross(WORLD_UP);if(axis.lengthSq()<1e-6)axis.set(1,0,0)
       // Bound the original acceleration torque to avoid one-step flips with a single rigid body.
       this.body.addTorque(axis.multiplyScalar(20000),true)
     }
