@@ -43,8 +43,7 @@
 import * as THREE from 'three/webgpu'
 import {
   Fn, abs, dot, float, mix, mx_fractal_noise_float, mx_noise_vec3, normalView, positionLocal,
-  positionViewDirection, pow, sin, smoothstep, time, uniform, vec3,
-} from 'three/tsl'
+  positionViewDirection, pow, sin, smoothstep, time, uniform, vec3, clamp } from 'three/tsl'
 import { defineParam } from '../../shared/params'
 import { GROUP_ALL, GROUP_VEHICLE, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
@@ -303,7 +302,9 @@ export class ZorbBall {
 // ---------------------------------------------------------------------------------------------
 
 /** Brightness calibration for our tone mapped pipeline; Unity 2 drew it untonemapped. */
-const SHIELD_GAIN = 3
+const SHIELD_GAIN = 3.6
+/** How much of the scene behind the shield its brightest parts hold back, so the tint reads in daylight. */
+const SHIELD_COVER = 2.4
 /** ForceField _Offset advances .1 per second over a 4x tiled texture's v; on the unit sphere that
  * is about .1 * pi radians of latitude per second. */
 const SCROLL_RATE = 0.1 * Math.PI
@@ -353,7 +354,16 @@ function shieldMaterial(cheap: boolean): THREE.MeshBasicNodeMaterial {
   // Transparent double sided materials otherwise draw back faces then front faces. Additive
   // light without depth writes does not depend on that order, so one draw is enough.
   material.forceSinglePass = true
-  material.colorNode = tint.mul(colour).mul(alpha).mul(SHIELD_GAIN).mul(hotExposureNode())
+  // The original was pure additive in an untonemapped frame. Over a sunlit scene here that
+  // washes toward white, so the shield also holds back a little of what is behind it
+  // (premultiplied: source + destination * (1 - coverage)). The tint then survives at noon,
+  // and at night, where there is little behind it, the result is the additive look as before.
+  const strength = colour.mul(alpha)
+  material.blending = THREE.CustomBlending
+  material.blendSrc = THREE.OneFactor; material.blendDst = THREE.OneMinusSrcAlphaFactor
+  material.blendSrcAlpha = THREE.OneFactor; material.blendDstAlpha = THREE.OneMinusSrcAlphaFactor
+  material.colorNode = tint.mul(strength).mul(SHIELD_GAIN).mul(hotExposureNode())
+  material.opacityNode = clamp(strength.mul(SHIELD_COVER), 0, 0.7)
   material.name = cheap ? 'zorb-shield-cheap' : 'zorb-shield'
   return material
 }
