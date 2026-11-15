@@ -37,7 +37,7 @@ export class Ripples {
   rippleHeight(worldXZ:any):any {
     const delta=worldXZ.sub(this.origin).sub(this.extent.mul(.5))
     const tile=this.tileSize.max(1)
-    const local=this.tileSize.greaterThan(0).select(delta.sub(delta.div(tile).add(.5).floor().mul(tile)),delta)
+    const local: any=this.tileSize.greaterThan(0).select(delta.sub(delta.div(tile).add(.5).floor().mul(tile)),delta)
     const p=local.div(this.extent).add(.5)
     const edge=smoothstep(0,.06,p.x).mul(smoothstep(0,.06,p.y)).mul(smoothstep(0,.06,float(1).sub(p.x))).mul(smoothstep(0,.06,float(1).sub(p.y)))
     return this.source.sample(p).r.mul(edge).mul(this.active)
