@@ -167,7 +167,10 @@ export class Mind {
     if (!crumb || Math.hypot(crumb.x - here.x, crumb.z - here.z) > 8) { this.trail.push({ x: here.x, z: here.z }); if (this.trail.length > 48) this.trail.shift() }
 
     const a = this.activity
-    if (a.kind === 'follow' && !a.leader?.body.isValid()) a.until = 0
+    if (a.kind === 'follow' && !a.leader?.body.isValid()) {
+      // Expiring the plan alone still reaches the follow read below in this step.
+      a.until = 0; a.leader = null
+    }
     if (a.kind === 'follow' && a.leader) {
       // Sit a few lengths behind the leader, on a side that is stable for this driver.
       // On a wrapping world, tail the nearest image of the leader: it may be just over the seam.
