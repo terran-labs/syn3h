@@ -102,3 +102,13 @@ every lane, with no exceptions. Stop only processes you started, by the PID you 
 when you started them. At 5:30pm on Saturday a malformed `pkill` terminated every lane's
 servers, Chrome, the Claude app and the Vorteo host daemons. It was the second name based
 kill to cause damage that day.
+
+## 12. Every viewable page is linked from the top of the dashboard
+
+Set by the owner at 7:10pm on Saturday. The dashboard opens with one block of links to
+everything he can look at: the live game, production once it exists, each lab page (terrain,
+planets, score, effects, bots, skins) and each lane's own preview. A handoff that adds or
+moves a viewable page names its path in the handoff note, and the Orchestrator adds the
+link in the same merge. A check lists the HTML entry pages on trunk and fails if one is
+missing from the dashboard's link block, so the list cannot drift. Dead links come off, or
+are marked down, at each sweep.
