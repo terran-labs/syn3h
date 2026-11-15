@@ -1,3 +1,4 @@
+import {hotExposureNode} from '../skins/hotExposure'
 import * as T from 'three/webgpu'
 import {attribute,float,smoothstep,texture,uniform,uv} from 'three/tsl'
 
@@ -21,6 +22,7 @@ export class RibbonBatch {
     const m=new T.MeshBasicNodeMaterial({transparent:true,depthWrite:false,side:T.DoubleSide,blending:additive?T.AdditiveBlending:T.NormalBlending})
     const d=attribute('fxAge','vec3'),age=this.clock.sub(d.x).div(d.y)
     m.colorNode=attribute('fxColor','vec3')
+    if(additive)m.colorNode=m.colorNode.mul(hotExposureNode())
     let opacity=d.z.mul(float(1).sub(smoothstep(additive?0:.65,1,age))).mul(age.lessThan(1).select(1,0))
     opacity=opacity.mul(map?texture(map,uv()).a:float(1).sub(uv().x.sub(.5).abs().mul(2)).pow(2))
     m.opacityNode=opacity
