@@ -58,6 +58,7 @@ import { Connection, serverUrl } from './Connection'
 import { NameTags, type TagInfo } from './NameTags'
 import { applyRoomWorld, netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
+import { pressHoldsFire } from './pointerFire'
 import { PausedHeartbeat } from './PausedHeartbeat'
 import { announcedKind, needsRebuild } from './kinds'
 import { SendPacer, SimClock } from './SimClock'
@@ -416,7 +417,7 @@ export class NetClient implements System {
 
     // The original fired with the mouse; nothing else uses a canvas click yet.
     const canvas = game.renderer.domElement
-    canvas.addEventListener('pointerdown', (e) => { if (e.button === 0) game.input.mouseFire = true })
+    canvas.addEventListener('pointerdown', (e) => { if (pressHoldsFire(e)) game.input.mouseFire = true })
     window.addEventListener('pointerup', () => { game.input.mouseFire = false })
     window.addEventListener('blur', () => { game.input.mouseFire = false })
   }
