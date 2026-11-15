@@ -6,6 +6,7 @@ import { attachVehicleEffects } from './effects'
 import { canonicalVehicleKind, createVehicle, type VehicleKind } from './index'
 import type { PlayerSlot } from './PlayerSlot'
 import type { Vehicle } from './Vehicle'
+import { PlayerVehicleWarm } from './PlayerVehicleWarm'
 
 /** Metres the new vehicle starts above the old one's origin, and at least above the surface. */
 export const SWAP_LIFT = 0.5
@@ -40,6 +41,27 @@ export function createVehicleSwapper(
   const cache = new Map<string, Vehicle>([[canonicalVehicleKind(slot.current.kind), slot.current]])
   let detach = attachEffects(slot.current)
   let disposed = false
+  const warmer = new PlayerVehicleWarm(game)
+  const queue: VehicleKind[] = ['jet', 'hovercraft', 'tank', 'buggy']
+  const warmStats = { pending: true, current: null as string | null }
+  game.scene.userData.playerVehicleCache = warmStats
+  let idleSeconds = 0
+  const warmUpdate = (dt: number) => {
+    if (disposed || !game.renderer?.backend) return
+    idleSeconds += Math.min(dt, .1)
+    if (idleSeconds < 3) return
+    if (warmer.current) { warmer.update(); warmStats.current = warmer.current?.kind ?? null; return }
+    const kind = queue.shift()
+    if (!kind) { warmStats.pending = false; return }
+    const key = canonicalVehicleKind(kind)
+    if (cache.has(key)) return
+    const v = createVehicle(game, terrain, kind, slot.current.object.position, 0)
+    v.isLocal = true
+    v.setColors(slot.current.colors.body, slot.current.colors.accent)
+    cache.set(key, v)
+    warmer.begin(v)
+    warmStats.current = kind
+  }
   const swapper: VehicleSwapper = {
     swap(kind) {
       if (disposed) throw new Error('Vehicle swapper disposed')
@@ -60,6 +82,7 @@ export function createVehicleSwapper(
       const key = canonicalVehicleKind(kind)
       const next = cache.get(key) ?? createVehicle(game, terrain, kind, position, heading)
       cache.set(key, next)
+      if (warmer.current === next) warmer.finish()
       next.teleport(position, heading)
       next.setParked(false)
       next.isLocal = previous.isLocal
@@ -87,6 +110,8 @@ export function createVehicleSwapper(
     dispose() {
       if (disposed) return
       disposed = true
+      warmer.finish()
+      delete game.scene.userData.playerVehicleCache
       detach()
       for (const vehicle of cache.values()) if (vehicle !== slot.current) vehicle.dispose()
       cache.clear()
@@ -94,6 +119,6 @@ export function createVehicleSwapper(
       detach = () => {}
     },
   }
-  game.add({ dispose: () => swapper.dispose() })
+  game.add({ update: warmUpdate, dispose: () => swapper.dispose() })
   return swapper
 }
