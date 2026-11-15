@@ -201,7 +201,7 @@
 .lobby-footer { position: relative; display: flex; flex-direction: column; justify-content: center; align-items: center; width: min(1000px,100%); flex: 0 0 38px; font-size: 12px; color: var(--s3-soft); }
 .shell-message { overflow-wrap: anywhere; font-size: 13px; }
 .syn3h-shell label:not(.syn3h-advanced *) { display: block; text-align: left; margin: 14px 0 6px; font-size: 17px; }
-.syn3h-shell input:not(.syn3h-advanced *):not([type=radio]):not([type=checkbox]):not([type=color]):not([type=range]) { display: block; width: 100%; background: rgb(255 255 255 / .06); color: var(--s3-ink); border: 1px solid var(--s3-line); border-radius: var(--s3-radius-small); font: 400 19px 'Barlow',sans-serif; padding: 11px 13px; min-height: 46px; transition: border-color .18s, box-shadow .18s; }
+.syn3h-shell input:where(:not(.syn3h-advanced *):not([type=radio]):not([type=checkbox]):not([type=color]):not([type=range])) { display: block; width: 100%; background: rgb(255 255 255 / .06); color: var(--s3-ink); border: 1px solid var(--s3-line); border-radius: var(--s3-radius-small); font: 400 19px 'Barlow',sans-serif; padding: 11px 13px; min-height: 46px; transition: border-color .18s, box-shadow .18s; }
 .syn3h-shell input:not(.syn3h-advanced *):focus { outline: none; border-color: var(--theme-focus-ring); box-shadow: 0 0 0 3px rgb(41 151 255 / .25); }
 .syn3h-shell input:not(.syn3h-advanced *)[type=range] { display: block; width: 100%; accent-color: var(--s3-accent); min-height: 34px; margin: 5px 0 20px; }
 .syn3h-shell input:not(.syn3h-advanced *)[type=radio], .syn3h-shell input:not(.syn3h-advanced *)[type=checkbox] { accent-color: var(--s3-accent); width: 20px; height: 20px; margin: 0; vertical-align: middle; }

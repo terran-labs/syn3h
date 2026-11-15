@@ -24,7 +24,7 @@ try {
   const value = id => page.evaluate(id => window.syn3h.params.get(id).value, id)
   // First view: nothing over the world. The cards are closed and the minimap is in its corner.
   assert.equal(await page.evaluate(() => document.querySelector('.world-inspector').hidden), true)
-  const corner = () => page.evaluate(() => innerWidth - document.querySelector('.shell-minimap').getBoundingClientRect().right)
+  const corner = () => page.evaluate(() => document.querySelector('.shell-minimap').getBoundingClientRect().left)
   assert.ok(await corner() < 60, 'minimap is not in its corner on landing')
   await page.screenshot({ path: `${out}/0-landing.png` })
   // Capturing and then releasing the cursor, with Create untouched, surfaces the cards.

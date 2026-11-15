@@ -16,7 +16,7 @@ import { Inspector } from './inspector/Inspector'
 import { FocusHud } from './inspector/FocusHud'
 import { RaceHud, type RaceRole } from './RaceHud'
 import type { RaceState } from '../../shared/protocol'
-import { glassStyle } from './inspector/params'
+import { glassStyle, diagnostics } from './inspector/params'
 import { RESUME_KEY } from '../core/resume'
 import { qualityLevel } from './quality/ladder'
 import { Vector3 } from 'three/webgpu'
@@ -38,6 +38,7 @@ import { renderHelp, touchHelp } from './VehicleHelp'
 import { PlayHints, type Hint } from './PlayHints'
 import type { VehicleKind } from '../vehicles'
 import './shell.css'
+import './exploration.css'
 
 const back = '<button type="button" class="panel-back link-button" data-goto="index">Back</button>'
 /** `__SYN3H_BUILD__` is an optional build-time constant (a date or tag) from the bundler. */
@@ -105,7 +106,7 @@ export class Shell implements System {
 
   constructor(private readonly game: Game, readonly audio: GameAudio) {
     this.previousSuspended = game.input.suspended; game.input.suspended = true
-    this.element.className = 'syn3h-shell'
+    this.element.className = 'syn3h-shell exploration-ui'
     this.element.innerHTML = `<section class="shell-overlay" role="dialog" aria-modal="true" aria-label="Syn3h lobby">
       <div class="lobby-stage">
       <header class="lobby-brand">${wordmarkSvg('shell-logo')}</header>
@@ -142,7 +143,7 @@ export class Shell implements System {
       <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby"><button data-goto="vehicle">Vehicle</button><button data-goto="worlds">Worlds</button><button data-goto="multiplayer">Multiplayer</button><button data-join>Join by QR</button><button data-goto="settings">Settings</button><button data-goto="about">About</button></nav></div>
     </section>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><button type="button" class="gear-chip" hidden></button><div class="hud-scoreboard"></div></aside>
-    <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button" aria-label="Open menu">☰<span class="nav-label"> Menu</span></button><button data-open="multiplayer">Players</button><button class="inspector-toggle" type="button" aria-pressed="false">Create</button></nav>
+    <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open configuration rail" aria-pressed="false"><span aria-hidden="true">≡</span><span class="nav-label"> Interface</span></button></nav>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
     document.body.append(this.element); document.body.classList.add('has-game-shell')
@@ -174,12 +175,30 @@ export class Shell implements System {
     // drive, releasing it with Escape brings the full interface up (the owner's design: full
     // cards with the cursor free, the focus display with it captured), unless Create closed them.
     this.inspector.open = false
+    const railTop = this.inspector.element.querySelector('.wi-top')!
+    const navigation = document.createElement('div'); navigation.className = 'rail-navigation'
+    navigation.innerHTML = '<button type="button" class="exit-world">↗ Exit world</button><button type="button" class="rail-close" aria-label="Close configuration rail">×</button>'
+    railTop.prepend(navigation)
+    const players = document.createElement('details'); players.className = 'rail-players'
+    players.innerHTML = '<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><label class="rail-diagnostics"><input type="checkbox"> Connection diagnostics</label></div>'
+    players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
+    railTop.after(players)
+    const gear = this.element.querySelector('.gear-chip')!; players.querySelector('.rail-player-body')!.append(gear)
+    navigation.querySelector('.exit-world')!.addEventListener('click', () => this.openMenu(), { signal })
+    players.querySelector('.rail-invite')!.addEventListener('click', () => this.openJoin(), { signal })
+    players.querySelector('input')!.addEventListener('change', event => params.set(diagnostics.def.id, (event.target as HTMLInputElement).checked), { signal })
+    const music = document.createElement('div'); music.className = 'rail-music'
+    music.innerHTML = `<label>Music<select aria-label="Music track">${Object.entries(MUSIC_TRACKS).map(([id, label]) => `<option value="${id}">${label}</option>`).join('')}</select></label><button type="button" class="rail-mute">Mute</button>`
+    players.querySelector('.rail-player-body')!.append(music)
+    music.querySelector('select')!.addEventListener('change', event => { void this.audio.setTrack((event.target as HTMLSelectElement).value as MusicTrack) }, { signal })
+    music.querySelector('button')!.addEventListener('click', () => this.audio.setMuted(!this.audio.isMuted), { signal })
     this.focusHud = new FocusHud(this.element)
     this.raceHud = new RaceHud(this.element, { leave: () => this.onRaceLeave?.(), cancel: () => this.onRaceCancel?.() })
     const toggle = this.element.querySelector<HTMLButtonElement>('.inspector-toggle')!
     let chosen: boolean | undefined
     const setCards = (open: boolean) => { this.inspector.open = open; toggle.setAttribute('aria-pressed', String(open)) }
     toggle.addEventListener('click', () => { chosen = !this.inspector.open; setCards(chosen) }, { signal })
+    navigation.querySelector('.rail-close')!.addEventListener('click', () => { chosen = false; setCards(false); toggle.focus() }, { signal })
     toggle.setAttribute('aria-pressed', String(this.inspector.open))
     // Focus: the cursor is captured, so the player is driving. The full interface fades away.
     let wasLocked = false
@@ -214,7 +233,6 @@ export class Shell implements System {
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-goto]')) button.addEventListener('click', () => this.showPanel(button.dataset.goto!), { signal })
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-open]')) button.addEventListener('click', () => this.openMenu(button.dataset.open!), { signal })
     for (const button of this.element.querySelectorAll('[data-join]')) button.addEventListener('click', () => this.openJoin(), { signal })
-    this.element.querySelector('.shell-menu-button')!.addEventListener('click', () => this.openMenu(), { signal })
     this.element.querySelector('[data-resume]')!.addEventListener('click', () => this.closeMenu(), { signal })
     this.element.querySelector('form')!.addEventListener('submit', event => { event.preventDefault(); this.play(true) }, { signal })
     for (const button of this.element.querySelectorAll('.shell-invite')) button.addEventListener('click', () => { void this.copyInvite() }, { signal })
@@ -294,7 +312,7 @@ export class Shell implements System {
     this.stopAttract()
     if (this.inviteOpen) return
     this.inviteFromGame = this.started && !this.menuVisible
-    if (this.inviteFromGame) this.openMenu()
+    if (this.inviteFromGame) { this.releaseCursor(); this.game.input.suspended = true; this.game.input.mouseFire = false; this.touch.enabled = false }
     this.inviteOpen = true; this.overlay.inert = true; this.invite.show(); this.updateInvite()
   }
   closeJoin(): void {
@@ -309,7 +327,7 @@ export class Shell implements System {
   get accentColor(): string { return this.choice.accentColor }
   get playerName(): string { return this.nameInput.value.trim().slice(0, 24) || 'Explorer' }
   get room(): string { return this.roomInput.value.trim().slice(0, 64) || 'lobby' }
-  get playing(): boolean { return this.started }
+  get playing(): boolean { return this.started && !this.menuVisible }
   get menuOpen(): boolean { return this.menuVisible }
   get activePanel(): string { return this.panels.active }
   get presentation(): boolean { return this.element.classList.contains('is-presentation') }
@@ -551,11 +569,14 @@ export class Shell implements System {
       if (event.key === 'Tab') { event.preventDefault(); const buttons = [...this.invite.element.querySelectorAll<HTMLButtonElement>('button')]; buttons[document.activeElement === buttons[0] ? 1 : 0].focus() }
       return
     }
-    if (this.started && !this.menuVisible && !event.repeat && (event.code === 'KeyH' || event.key === '?')) { event.preventDefault(); this.toggleHelp(); return }
+    if (!editing && this.started && !this.menuVisible && !event.repeat && (event.code === 'KeyH' || event.key === '?')) { event.preventDefault(); this.toggleHelp(); return }
     if (event.code === 'Escape') {
       event.preventDefault(); event.stopImmediatePropagation()
       if (this.menuVisible && this.panels.active !== 'index') this.showPanel('index')
-      else if (this.started) this.menuVisible ? this.closeMenu() : this.openMenu()
+      else if (this.started) {
+        if (this.menuVisible) this.closeMenu()
+        else { this.inspector.hideTooltip(); this.inspector.open = !this.inspector.open }
+      }
     } else if (this.menuVisible && event.key === 'Tab') {
       const targets = [...this.overlay.querySelectorAll<HTMLElement>('button, input, select, summary, a[href], [tabindex="0"]')].filter(el => !el.closest('[hidden], [inert]') && !(el as HTMLInputElement).disabled)
       const first = targets[0], last = targets[targets.length - 1]
@@ -833,11 +854,18 @@ export class Shell implements System {
     // A captured cursor alone is insufficient while a menu or another flow suspends input.
     this.element.classList.toggle('is-focus', this.started && !this.menuVisible && !this.game.input.suspended && document.pointerLockElement === this.game.canvas)
     this.raceHud.update(this.started && !this.menuVisible && !this.game.input.suspended, this.element.classList.contains('is-focus'), this.self, this.ground?.size)
+    const buildNotice = document.getElementById('syn3h-build-notice')
+    if (buildNotice && !this.inspector.element.contains(buildNotice)) this.inspector.element.querySelector('.wi-top')!.append(buildNotice)
+    this.element.classList.toggle('show-diagnostics', diagnostics.value)
+    this.element.querySelector<HTMLInputElement>('.rail-diagnostics input')!.checked = diagnostics.value
+    const musicChoice = this.element.querySelector<HTMLSelectElement>('.rail-music select')!
+    if (document.activeElement !== musicChoice) musicChoice.value = this.audio.track
+    this.element.querySelector('.rail-mute')!.textContent = this.audio.isMuted ? 'Unmute' : 'Mute'
     this.updateGear()
     if (this.started && !this.menuVisible) {
       const focus = this.element.classList.contains('is-focus')
       if (!focus && this.inspector.open) this.inspector.update()
-      this.focusHud.update(focus, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, heading: this.self?.heading ?? 0, world: `${currentPlanet().label} · ${planetName(worldSeed.value)}`, hour: Number(params.get('sun.timeOfDay')?.value ?? 0) })
+      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, heading: this.self?.heading ?? 0, world: `${currentPlanet().label} · ${planetName(worldSeed.value)}`, hour: Number(params.get('sun.timeOfDay')?.value ?? 0) })
       const glass = String(Math.round(glassStyle.value)); if (this.element.dataset.glass !== glass) this.element.dataset.glass = glass
     }
     // The stylesheet drops frost at the lowest graphics level.

@@ -1,0 +1,126 @@
+/* Shared exploration instruments: a restrained light field, fine rules and no raised chrome. */
+:root { --s3-ink: #e3f2fc; --s3-dim: #a5c1d1; --s3-soft: #829eaf; --s3-accent: #83d9f5; --s3-accent-2: #b1eaff; --s3-line: rgb(173 224 247 / .28); --s3-line-quiet: rgb(173 224 247 / .15); --s3-panel: rgb(5 18 29 / .83); --s3-radius: 5px; --s3-radius-small: 3px; }
+.syn3h-shell.exploration-ui :is(button, .liquid-glass), .touch-controls button {
+  color: var(--s3-ink); background: rgb(8 29 42 / .36); background-image: none;
+  border: 1px solid rgb(175 226 247 / .3); border-radius: 3px;
+  box-shadow: inset 0 0 12px rgb(107 201 245 / .025), 0 0 9px rgb(107 201 245 / .04);
+  font-weight: 400; letter-spacing: .055em; text-shadow: 0 0 8px rgb(120 210 255 / .3);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  transition: border-color .2s, background-color .2s, box-shadow .2s;
+}
+.syn3h-shell.exploration-ui :is(button, .liquid-glass)::before, .touch-controls button::before { display: none; }
+.syn3h-shell.exploration-ui button:hover, .touch-controls button:active { background: rgb(44 112 145 / .17); border-color: rgb(185 235 255 / .65); box-shadow: 0 0 12px rgb(100 200 250 / .12); }
+.syn3h-shell.exploration-ui button:focus-visible, .syn3h-shell.exploration-ui input:focus-visible, .syn3h-shell.exploration-ui select:focus-visible { outline: 1px solid #b1eaff; outline-offset: 3px; }
+.syn3h-shell.exploration-ui :is(input:not([type=range]):not([type=checkbox]):not([type=color]), select, textarea) { color: #e3f2fc; background: rgb(4 17 28 / .58); border: 0; border-bottom: 1px solid rgb(180 225 245 / .4); border-radius: 0; box-shadow: none; }
+.syn3h-shell.exploration-ui select option { background: #091a28; }
+.syn3h-shell.exploration-ui input[type=range] { accent-color: #b1eaff; }
+.syn3h-shell.exploration-ui .lobby-panels { border-radius: 5px; border-color: var(--s3-line); background: var(--s3-panel); box-shadow: 0 0 30px rgb(80 180 240 / .06); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
+.syn3h-shell.exploration-ui :is(h1,h2,h3) { font-weight: 400; letter-spacing: .06em; text-shadow: 0 0 14px rgb(120 200 255 / .16); }
+.syn3h-shell.exploration-ui .lobby-links button { background: none; border: 0; border-bottom: 1px solid var(--s3-line-quiet); border-radius: 0; box-shadow: none; }
+.syn3h-shell.exploration-ui .shell-hud { display: none !important; }
+.syn3h-shell.exploration-ui .hud-navigation { top: 50%; right: 0; transform: translateY(-50%); width: 34px; display: block; }
+.syn3h-shell.exploration-ui .hud-navigation .inspector-toggle { writing-mode: vertical-rl; min-width: 34px; min-height: 114px; padding: 12px 6px; border-right: 0; border-radius: 4px 0 0 4px; font-size: 12px; }
+.syn3h-shell.exploration-ui .hud-navigation .nav-label { display: inline; }
+.syn3h-shell.exploration-ui:has(.world-inspector:not([hidden])) .hud-navigation { visibility: hidden; }
+
+/* The rail never scrolls as a whole. Headers stay visible; open bodies share its space. */
+.syn3h-shell.exploration-ui .world-inspector { top: max(16px,env(safe-area-inset-top)); bottom: max(16px,env(safe-area-inset-bottom)); right: max(16px,env(safe-area-inset-right)); width: min(352px, calc(100vw - 32px)); height: calc(100dvh - 32px); max-height: none; gap: 7px; }
+.syn3h-shell.exploration-ui .wi-glass { --body: rgb(6 21 33 / .76); --frost: 16px; border: 1px solid rgb(170 224 250 / .24); border-radius: 4px; background: var(--body); box-shadow: inset 0 1px rgb(180 230 255 / .06), 0 0 24px rgb(83 181 236 / .035); -webkit-backdrop-filter: blur(var(--frost)); backdrop-filter: blur(var(--frost)); }
+.syn3h-shell.exploration-ui .wi-glass::before { display: none; }
+.syn3h-shell.exploration-ui[data-glass="0"] .wi-glass { --body: rgb(6 21 33 / .55); --frost: 6px; }
+.syn3h-shell.exploration-ui[data-glass="2"] .wi-glass { --body: rgb(6 21 33 / .91); --frost: 22px; }
+.syn3h-shell.exploration-ui .wi-top { padding: 8px 10px; gap: 5px; border: 0; border-bottom: 1px solid var(--s3-line); background: linear-gradient(90deg,transparent,rgb(6 21 33 / .75)); }
+.syn3h-shell.exploration-ui .rail-navigation { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.syn3h-shell.exploration-ui .rail-navigation button { min-height: 34px; padding: 5px 9px; font-size: 12px; }
+.syn3h-shell.exploration-ui .rail-navigation .exit-world { border: 0; padding-left: 0; background: none; letter-spacing: .13em; text-transform: uppercase; }
+.syn3h-shell.exploration-ui .rail-navigation .rail-close { width: 32px; padding: 0; font-size: 23px; border: 0; background: none; }
+.syn3h-shell.exploration-ui .world-inspector .wi-search { min-height: 28px; height: 28px; padding: 3px 0; border: 0; border-bottom: 1px solid rgb(170 224 250 / .25); background: none; border-radius: 0; font: 400 12px 'Barlow',sans-serif; letter-spacing: .07em; }
+.syn3h-shell.exploration-ui .world-inspector .wi-search::placeholder { color: #a5c1d1; }
+.syn3h-shell.exploration-ui .world-inspector .wi-actions button, .syn3h-shell.exploration-ui .world-inspector .wi-switch button, .syn3h-shell.exploration-ui .world-inspector .wi-seg button { border: 1px solid var(--s3-line-quiet); border-radius: 2px; background: none; box-shadow: none; color: #cce6f4; font-weight: 400; }
+.syn3h-shell.exploration-ui .world-inspector .wi-actions button { padding: 4px 8px; font-size: 11px; }
+.syn3h-shell.exploration-ui .world-inspector .is-on, .syn3h-shell.exploration-ui .world-inspector .wi-actions [data-wi=copy-world] { background: rgb(100 200 245 / .1); border-color: rgb(170 224 250 / .45); box-shadow: none; }
+.syn3h-shell.exploration-ui .wi-cards { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; overflow: visible; padding: 0; margin: 0; gap: 7px; }
+.syn3h-shell.exploration-ui .wi-card { display: flex; flex-direction: column; min-height: 34px; flex: 0 0 34px; overflow: hidden; }
+.syn3h-shell.exploration-ui .wi-card.is-open { flex: 1 1 34px; }
+.syn3h-shell.exploration-ui .world-inspector .wi-head { flex: 0 0 33px; min-height: 33px; padding: 8px 11px; align-items: center; }
+.syn3h-shell.exploration-ui .wi-head h3 { font: 400 14px/1 'Barlow',sans-serif; letter-spacing: .12em; }
+.syn3h-shell.exploration-ui .wi-sum { font-size: 11px; }
+.syn3h-shell.exploration-ui .wi-body { flex: 1 1 auto; min-height: 0; padding: 0 9px 9px; overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: rgb(160 220 248 / .28) transparent; }
+.syn3h-shell.exploration-ui .wi-row { padding-left: 6px; border-radius: 0; grid-template-columns: minmax(0,1fr) 100px 43px; gap: 6px; }
+.syn3h-shell.exploration-ui .wi-row.is-choice { grid-template-columns: minmax(0,82px) 1fr; }
+.syn3h-shell.exploration-ui .wi-label { font-size: 12px; }
+.syn3h-shell.exploration-ui .wi-row.is-selected { background: rgb(100 200 245 / .075); box-shadow: inset 1px 0 rgb(170 225 250 / .65); }
+.syn3h-shell.exploration-ui .wi-group summary { font-size: 12px; letter-spacing: .04em; }
+.syn3h-shell.exploration-ui .wi-group summary::before { border-width: 3px; border-left-width: 4px; }
+.syn3h-shell.exploration-ui .wi-status:empty { display: none; }
+.syn3h-shell.exploration-ui .wi-status { min-height: 0; font-size: 11px; }
+.syn3h-shell.exploration-ui .wi-sheet { position: absolute; inset: 100px 0 0; z-index: 3; overflow: auto; align-content: start; }
+.syn3h-shell.exploration-ui .rail-players { flex: 0 1 auto; min-height: 32px; max-height: 30%; border-bottom: 1px solid var(--s3-line-quiet); background: rgb(6 21 33 / .7); overflow: auto; scrollbar-width: thin; }
+.syn3h-shell.exploration-ui .rail-players > summary { padding: 7px 11px; font-size: 12px; letter-spacing: .1em; cursor: pointer; list-style: none; }
+.syn3h-shell.exploration-ui .rail-players summary span { float: right; color: var(--s3-dim); }
+.syn3h-shell.exploration-ui .rail-player-body { padding: 5px 10px 10px; }
+.syn3h-shell.exploration-ui .rail-player-body .hud-scoreboard { max-height: none; overflow: visible; }
+.syn3h-shell.exploration-ui .rail-player-body .score-detail { display: none; }
+.syn3h-shell.exploration-ui.show-diagnostics .rail-player-body .score-detail { display: block; font: 11px/1.5 ui-monospace,monospace; color: #a5c1d1; overflow-wrap: anywhere; }
+.syn3h-shell.exploration-ui .rail-player-body .score-row { font-size: 12px; padding: 5px 0; background: none; border-bottom: 1px solid var(--s3-line-quiet); }
+.syn3h-shell.exploration-ui .rail-player-body button { min-height: 30px; padding: 5px 8px; font-size: 11px; margin: 5px 5px 5px 0; }
+.syn3h-shell.exploration-ui .rail-diagnostics, .syn3h-shell.exploration-ui .rail-music label { display: flex; align-items: center; gap: 8px; margin: 5px 0; font-size: 11px; }
+.syn3h-shell.exploration-ui .rail-diagnostics input { width: 14px; height: 14px; }
+.syn3h-shell.exploration-ui .rail-music select { min-height: 28px; width: 100%; padding: 2px; font-size: 11px; }
+/* Tooltips sit outside the rail so internal scroll containers cannot clip them. */
+.syn3h-shell.exploration-ui .wi-tooltip { position: fixed; z-index: 60; max-height: calc(100dvh - 24px); overflow: auto; padding: 12px; font: 12px/1.5 'Barlow',sans-serif; border-left: 1px solid #b1eaff; }
+.syn3h-shell.exploration-ui .wi-tooltip[hidden] { display: none; }
+.syn3h-shell.exploration-ui .wi-tooltip strong { font-weight: 500; font-size: 13px; }
+.syn3h-shell.exploration-ui .wi-tooltip p { font-size: 12px; margin: 7px 0; }
+.syn3h-shell.exploration-ui .wi-tooltip code { display: none; }
+.syn3h-shell.exploration-ui .wi-tooltip .wi-guard { height: 2px; }
+.syn3h-shell.exploration-ui .wi-tooltip .wi-chip { font-size: 10px; border: 0; padding: 0; }
+.syn3h-shell.exploration-ui.is-focus .wi-tooltip, .syn3h-shell.exploration-ui:not(.is-playing) .wi-tooltip { display: none; }
+
+/* A map fading into the world, centred on the player, with no rectangular backing. */
+.syn3h-shell.exploration-ui .shell-minimap, .syn3h-shell.exploration-ui:not(.has-touch):has(.world-inspector:not([hidden])) .shell-minimap { left: max(16px,env(safe-area-inset-left)); bottom: max(16px,env(safe-area-inset-bottom)); top: auto; right: auto; width: 210px; height: 210px; border: 0; background: none; box-shadow: none; pointer-events: none; }
+.syn3h-shell.exploration-ui .shell-minimap canvas { width: 100%; height: 100%; opacity: .78; -webkit-mask-image: radial-gradient(ellipse closest-side,#000 42%,rgb(0 0 0 / .8) 62%,transparent 100%); mask-image: radial-gradient(ellipse closest-side,#000 42%,rgb(0 0 0 / .8) 62%,transparent 100%); }
+.syn3h-shell.exploration-ui .shell-minimap::after { content: ''; position: absolute; inset: 24px; border: 1px solid rgb(175 225 250 / .2); border-radius: 50%; box-shadow: 0 0 14px rgb(100 200 250 / .06); }
+.syn3h-shell.exploration-ui .shell-minimap span { top: 13px; left: 50%; right: auto; color: #b1eaff; font: 10px 'Barlow',sans-serif; letter-spacing: .15em; text-shadow: 0 0 8px #6bc5f1; }
+.syn3h-shell.exploration-ui.is-playing .focus-hud { opacity: .7; }
+.syn3h-shell.exploration-ui.is-focus .focus-hud { opacity: 1; }
+.syn3h-shell.exploration-ui:not(.is-focus) .focus-hud [data-reticle] { display: none; }
+.syn3h-shell.exploration-ui.is-focus .shell-minimap { opacity: .6; }
+.syn3h-shell.exploration-ui .spawn-help { left: 240px; bottom: 20px; background: none; border: 0; font-size: 12px; text-shadow: 0 1px 5px #001019; }
+.syn3h-shell.exploration-ui :is(.shell-toast, .match-hud, .race-hud, .join-card) { border-radius: 3px; background: rgb(5 20 32 / .8); border: 1px solid var(--s3-line); box-shadow: 0 0 18px rgb(100 200 250 / .05); font-weight: 400; }
+.touch-controls .touch-stick { background: radial-gradient(circle,transparent 58%,rgb(145 220 250 / .09) 69%,transparent 71%); border: 1px solid rgb(175 225 250 / .25); box-shadow: none; }
+.touch-controls .touch-knob { background: rgb(130 215 250 / .08); border: 1px solid rgb(175 225 250 / .42); box-shadow: 0 0 14px rgb(130 215 250 / .06); }
+.touch-controls button { border-radius: 50%; font-size: 12px; }
+@media (max-width: 700px) { .syn3h-shell.exploration-ui .world-inspector { top: 10px; bottom: 10px; height: calc(100dvh - 20px); right: 10px; width: min(340px,calc(100vw - 20px)); } .syn3h-shell.exploration-ui .shell-minimap { width: 120px; height: 120px; bottom: 206px; left: 12px; } .syn3h-shell.exploration-ui .spawn-help { left: 12px; bottom: 184px; } .syn3h-shell.exploration-ui:not(.is-focus) .focus-hud { opacity: .45; } .syn3h-shell.exploration-ui .fh-left { right: auto; left: 18px; top: 30%; text-align: left; } .syn3h-shell.exploration-ui .fh-right { left: auto; right: 18px; top: 30%; } }
+@media (max-height: 500px) { .syn3h-shell.exploration-ui .world-inspector { top: 8px; bottom: 8px; height: calc(100dvh - 16px); gap: 3px; } .syn3h-shell.exploration-ui .wi-cards { gap: 3px; } .syn3h-shell.exploration-ui .wi-top { padding-block: 3px; gap: 2px; } .syn3h-shell.exploration-ui .wi-card { flex-basis: 28px; min-height: 28px; } .syn3h-shell.exploration-ui .world-inspector .wi-head { flex-basis: 27px; min-height: 27px; padding-block: 5px; } .syn3h-shell.exploration-ui .shell-minimap { width: 96px; height: 96px; bottom: 156px; } .syn3h-shell.exploration-ui .spawn-help { left: 180px; bottom: 12px; } }
+@media (prefers-reduced-motion: reduce) { .syn3h-shell.exploration-ui *, .touch-controls * { transition-duration: 0s !important; } }
+.syn3h-shell.exploration-ui .wi-top #syn3h-build-notice { position: static !important; inset: auto !important; width: 100% !important; padding: 4px 6px !important; min-height: 24px; font: 11px/1.3 'Barlow',sans-serif !important; border: 1px solid var(--s3-line-quiet) !important; border-radius: 2px !important; background: rgb(20 70 90 / .2) !important; box-shadow: none !important; }
+
+.syn3h-shell.exploration-ui .galaxy-label { background: rgb(5 20 32 / .35); border: 0; border-bottom: 1px solid rgb(175 225 250 / .32); border-radius: 0; box-shadow: none; padding: 8px 12px; }
+.syn3h-shell.exploration-ui .galaxy-label strong { font: 400 13px/1.4 'Barlow',sans-serif; letter-spacing: .12em; }
+.syn3h-shell.exploration-ui .galaxy-label small { font-size: 10px; letter-spacing: .08em; }
+.syn3h-shell.exploration-ui .world-inspector .wi-top .wi-search { font: 400 12px/1.2 'Barlow',sans-serif; height: 28px; min-height: 28px; padding: 3px 0; background: none; border: 0; border-bottom: 1px solid var(--s3-line); border-radius: 0; }
+.syn3h-shell.exploration-ui .world-inspector input[type=range] { appearance: none; -webkit-appearance: none; height: 24px; background: transparent; }
+.syn3h-shell.exploration-ui .world-inspector input[type=range]::-webkit-slider-runnable-track { height: 1px; background: rgb(175 225 250 / .45); }
+.syn3h-shell.exploration-ui .world-inspector input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 6px; height: 12px; margin-top: -5px; border: 1px solid #c7efff; border-radius: 1px; background: #b1eaff; box-shadow: 0 0 7px rgb(110 210 250 / .45); }
+.syn3h-shell.exploration-ui .world-inspector input[type=range]::-moz-range-track { height: 1px; background: rgb(175 225 250 / .45); }
+.syn3h-shell.exploration-ui .world-inspector input[type=range]::-moz-range-thumb { width: 4px; height: 10px; border: 1px solid #c7efff; border-radius: 1px; background: #b1eaff; }
+@supports (font: -apple-system-body) and (-webkit-appearance: none) { .syn3h-shell.exploration-ui[data-glass] .wi-glass { --body: rgb(6 21 33 / .86); } }
+html[data-gfx="0"] .syn3h-shell.exploration-ui[data-glass] .wi-glass { --body: rgb(6 21 33 / .9); -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+.syn3h-shell.exploration-ui:has(.world-inspector:not([hidden])) .shell-toast { opacity: 0; }
+.syn3h-shell.exploration-ui.has-touch:has(.world-inspector:not([hidden])) .focus-hud { opacity: 0; }
+.syn3h-shell.exploration-ui[data-glass] .wi-tooltip { --body: rgb(5 18 29 / .96); }
+@media (max-height: 500px) {
+  .syn3h-shell.exploration-ui .wi-top { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 2px 5px; }
+  .syn3h-shell.exploration-ui .rail-navigation { grid-column: 1 / -1; }
+  .syn3h-shell.exploration-ui .rail-navigation button { min-height: 24px; padding-block: 2px; }
+  .syn3h-shell.exploration-ui .wi-top > .wi-actions { flex-wrap: nowrap; gap: 3px; }
+  .syn3h-shell.exploration-ui .wi-top > .wi-actions button { padding: 3px; font-size: 9px; }
+  .syn3h-shell.exploration-ui .wi-top #syn3h-build-notice { grid-column: 1 / -1; min-height: 18px; padding-block: 2px !important; }
+  .syn3h-shell.exploration-ui .rail-players { min-height: 24px; }
+  .syn3h-shell.exploration-ui .rail-players > summary { padding-block: 4px; font-size: 11px; }
+  .syn3h-shell.exploration-ui .wi-card { flex-basis: 24px; min-height: 24px; }
+  .syn3h-shell.exploration-ui .world-inspector .wi-head { flex-basis: 23px; min-height: 23px; padding-block: 3px; }
+  .syn3h-shell.exploration-ui .wi-head h3 { font-size: 12px; }
+}
