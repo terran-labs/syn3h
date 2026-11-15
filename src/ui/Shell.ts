@@ -309,7 +309,7 @@ export class Shell implements System {
   get accentColor(): string { return this.choice.accentColor }
   get playerName(): string { return this.nameInput.value.trim().slice(0, 24) || 'Explorer' }
   get room(): string { return this.roomInput.value.trim().slice(0, 64) || 'lobby' }
-  get playing(): boolean { return this.started }
+  get playing(): boolean { return this.started && !this.menuVisible }
   get menuOpen(): boolean { return this.menuVisible }
   get activePanel(): string { return this.panels.active }
   get presentation(): boolean { return this.element.classList.contains('is-presentation') }
