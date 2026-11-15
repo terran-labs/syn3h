@@ -160,6 +160,22 @@ const SILENT_MS = 180_000
 const YOINK_MAX_CARRY_MS = 30_000
 /** Grace past the carry time limit before the room ends a carry itself, ms. */
 const YOINK_CARRY_SLACK_MS = 1500
+/**
+ * The most of a player's reported speed that the room believes when a check gives leeway for
+ * speed, m/s. Positions and velocities are each client's own word. Several checks rightly
+ * allow more distance to a faster vehicle (a beam leaves from "near" its sender, a ram
+ * reaches "about as far as the two travelled since their last states"), which made the
+ * allowance as large as a client cared to claim: a state saying 10,000 m/s let a beam start
+ * five kilometres away, beside anyone, and let a "ram" pass the tag across the whole world.
+ * No vehicle here approaches this; anything above it earns no more leeway.
+ */
+const TRUSTED_SPEED = 100
+
+/** A player's speed for the purpose of leeway: see TRUSTED_SPEED. */
+function leewaySpeed(v: readonly number[]): number {
+  return Math.min(TRUSTED_SPEED, Math.hypot(v[0], v[1], v[2]))
+}
+
 /** The most of a sender's own reported speed that counts toward its fling limit, m/s. */
 const YOINK_OWN_SPEED = 60
 /** At most one relayed push per rammer and rammed player in this time. */
@@ -627,7 +643,7 @@ export class Room {
     state.id = player.info.id
     player.lastState = state
     player.lastStateAt = this.now()
-    const speed = Math.hypot(...state.v)
+    const speed = leewaySpeed(state.v)
     if (speed >= player.fast || player.lastStateAt - player.fastAt > SHOVE_SPEED_MEMORY_MS) {
       player.fast = speed
       player.fastAt = player.lastStateAt
@@ -833,7 +849,7 @@ export class Room {
     if (now - (red ? player.lastRedAt : player.lastFireAt) < interval) return
     const st = player.lastState
     if (!st || st.paused || now - player.lastStateAt > RESPONDING_MS) return
-    const speed = Math.hypot(...st.v)
+    const speed = leewaySpeed(st.v)
     if (this.dist(shot.o, st.p) > 8 + speed * 0.5) return
     if (shot.boost < 0 || shot.boost > Math.max(5, speed * 1.5)) return
     // Never let a client claim a firing time far from now: projectiles are replayed from it.
@@ -860,7 +876,7 @@ export class Room {
     const st = player.lastState
     const reach = this.paramNumber(bungeeLength.def) * this.paramNumber(bungeeSnap.def) + 10
     if (cord.s === 'hook') {
-      if (!st || this.dist(cord.o, st.p) > 8 + Math.hypot(...st.v) * 0.5) return
+      if (!st || this.dist(cord.o, st.p) > 8 + leewaySpeed(st.v) * 0.5) return
       cord.t = Math.min(this.now() / 1000, Math.max(this.now() / 1000 - 1, cord.t))
     } else if (cord.s === 'on') {
       if (cord.r < 0 || cord.r > this.paramNumber(bungeeLength.def) + 1) return
@@ -1027,7 +1043,7 @@ export class Room {
     const b = other.lastState
     if (!a || !b || a.paused || b.paused || now - reporter.lastStateAt > RESPONDING_MS || now - other.lastStateAt > RESPONDING_MS) return
     // Both states are slightly old, so allow for how far fast vehicles travel meanwhile.
-    const reach = this.paramNumber(tagRamReach.def) + (Math.hypot(...a.v) + Math.hypot(...b.v)) * 0.3
+    const reach = this.paramNumber(tagRamReach.def) + (leewaySpeed(a.v) + leewaySpeed(b.v)) * 0.3
     if (this.dist(a.p, b.p) > reach) return
     // Pass the rammer's push on to the rammed player, whose client applies it if its own
     // physics missed the hit. Bots are simulated by the host, where the rammer's copy already
@@ -1076,7 +1092,7 @@ export class Room {
     if (!clean || !other.lastState) return null
     if (now - (reporter.shoved.get(other.info.id) ?? -Infinity) < SHOVE_REPEAT_MS) return null
     // The most they can have been closing at: the rammer's recent best plus the other's speed.
-    const closing = reporter.fast + Math.hypot(...other.lastState.v)
+    const closing = reporter.fast + leewaySpeed(other.lastState.v)
     const limit = closing * SHOVE_SHARE
     if (limit < MIN_CLOSING * SHOVE_SHARE) return null
     const len = Math.hypot(...clean)
