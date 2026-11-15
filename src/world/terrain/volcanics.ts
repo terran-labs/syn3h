@@ -63,8 +63,13 @@ function createWaterMaterial(shore: boolean): Liquid {
 const SEA_REACH = 24000
 /** Sea grid resolution over the island: fine enough for the glowing shoreline to follow the coast. */
 const SEA_SEGMENTS = 192
-/** Sea chunks per side: the terrain's chunk count (one per 64 cells), so both wrap in step. */
-const seaChunks = (data: TerrainData) => Math.max(1, Math.round((data.resolution - 1) / CHUNK_CELLS))
+/**
+ * Sea chunks per side: the terrain's chunk count (one per 64 cells) so both wrap in step, but
+ * at most 8, so the 4 km tile does not spend 256 draws on the sea. There the sea's window
+ * snaps to 512 m instead of 256 m, and a sliver at its far edge (over 1.7 km from the camera,
+ * inside the fog) is apron without the shoreline glow.
+ */
+const seaChunks = (data: TerrainData) => Math.min(8, Math.max(1, Math.round((data.resolution - 1) / CHUNK_CELLS)))
 
 type Ground = { size: number; heightAt(x: number, z: number): number }
 
