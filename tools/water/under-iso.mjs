@@ -49,6 +49,8 @@ try {
         postTier: g.postChain?.tier, clouds: g.postChain?.built?.clouds,
         builds: g.postChain?.builds, backend: g.backend }
     }
+    // Keep the renderer animation clock advancing so cached scene/post passes redraw.
+    s.game.renderer.setAnimationLoop(() => window.isoRender())
     const sea = s.terrain.volcanics.newSea.material
     return { spot, level,
       sea: { transparent: sea.transparent, side: sea.side, depthWrite: sea.depthWrite, forceSinglePass: sea.forceSinglePass, envMap: !!sea.envMap, envMapIntensity: sea.envMapIntensity },
