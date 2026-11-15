@@ -96,6 +96,10 @@ try {
   await place(80); await page.waitForTimeout(1500)
   await window_('5 graphics level change while far', () => page.evaluate(() => { const p = window.syn3h.params, now = Number(p.get('gfx.level').value); p.set('gfx.level', now === 1 ? 2 : 1) }), 12000)
   report.levelAfter = await page.evaluate(() => ({ level: window.syn3h.params.get('gfx.level')?.value, vehicleShading: window.syn3h.params.get('gfx.vehicleShading')?.value }))
+  // Back to the level where remote vehicles wear the procedural materials, still far: the
+  // render targets were replaced twice, so everything must be warmed again before the grab.
+  await window_('5b back to the first level while far (warm happens again here)', () => page.evaluate(level => window.syn3h.params.set('gfx.level', level), report.shading.level), 14000)
+  report.levelForGrab = await page.evaluate(() => ({ level: window.syn3h.params.get('gfx.level')?.value, vehicleShading: window.syn3h.params.get('gfx.vehicleShading')?.value }))
   await page.evaluate(() => window.syn3hNet.gear.select('yoink'))
   await place(18); await page.waitForTimeout(50)
   // The harness distance for gear is 18 m, inside FAR_IN, so the grab case is an arrival too:
