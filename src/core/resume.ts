@@ -10,6 +10,8 @@ export const RESUME_KEY = 'syn3h.resume.v1'
 export const RESUME_MAX_AGE = 10 * 60 * 1000
 export interface ResumeSnapshot {
   version: 1; savedAt: number; room: string; seed: number; wasHost: boolean
+  /** Seed in the page URL when saved, which may predate a host slider edit. */
+  entrySeed?: number | null
   world: Record<string, ParamValue>
   kind: VehicleKind; colors: { body: string; accent: string }
   p: number[]; q: number[]; v: number[]; w: number[]
@@ -32,6 +34,7 @@ export function parseResume(raw: string | null, room?: string, seed?: number, no
     if (!vector(s.p, 3, 1e6) || !vector(s.q, 4, 1) || Math.abs(Math.hypot(...s.q) - 1) > 0.01 || !vector(s.v, 3, 500) || !vector(s.w, 3, 100)) return null
     if (typeof s.wasHost !== 'boolean' || typeof s.wingsOpen !== 'boolean' || typeof s.special !== 'boolean') return null
     if (!finite(s.cameraMode) || s.cameraMode < 0 || s.cameraMode > 4 || !finite(s.timeOfDay) || s.timeOfDay < 0 || s.timeOfDay > 24) return null
+    if (s.entrySeed !== undefined && s.entrySeed !== null && !finite(s.entrySeed)) return null
     if (!s.world || typeof s.world !== 'object' || Array.isArray(s.world) || Object.keys(s.world).length > 1000) return null
     if (Object.values(s.world).some(v => typeof v !== 'boolean' && !finite(v))) return null
     return s
@@ -41,8 +44,10 @@ export function parseResume(raw: string | null, room?: string, seed?: number, no
 /** An explicit room, seed or different vehicle in the URL wins over the saved session. */
 export function prepareResume(query: URLSearchParams, storage: Pick<Storage, 'getItem'> = sessionStorage): ResumeSnapshot | null {
   let saved: ResumeSnapshot | null
-  try { saved = parseResume(storage.getItem(RESUME_KEY), query.get('room') ?? undefined, query.has('seed') ? Number(query.get('seed')) : undefined) } catch { return null }
+  try { saved = parseResume(storage.getItem(RESUME_KEY), query.get('room') ?? undefined) } catch { return null }
   if (!saved) return null
+  // The unchanged URL can still contain the seed from before a host edited it.
+  if (query.has('seed') && Number(query.get('seed')) !== saved.seed && Number(query.get('seed')) !== saved.entrySeed) return null
   const kind = query.get('vehicle')
   if (kind && normalizeKind(kind) !== normalizeKind(saved.kind)) return null
   // Before terrain creation and hello. Existing rooms still override these in welcome.
@@ -124,6 +129,7 @@ export class ResumeSession implements System {
     const o = this.options, state = o.player.getState()
     const saved: ResumeSnapshot = {
       version: 1, savedAt: Date.now(), room: this.room, seed: worldSeed.value,
+      entrySeed: typeof location !== 'undefined' && new URL(location.href).searchParams.has('seed') ? Number(new URL(location.href).searchParams.get('seed')) : null,
       wasHost: !o.network || o.network.isHost, world: { ...this.world },
       kind: o.player.kind, colors: { ...o.player.colors }, p: state.p, q: state.q, v: state.v, w: state.w,
       wingsOpen: o.player.wingsOpen, special: o.game.input.state.special,

@@ -19,7 +19,11 @@ export function integrateResume(code) {
   replace('      location.replace(url)', `      // An explicit lobby vehicle change starts a new session.
       try { sessionStorage.removeItem(RESUME_KEY) } catch {}
       location.replace(url)`);
-  replace('    startNetworking({', '    const connection = startNetworking({');
+  replace('    startNetworking({', `    const joinedRoom = shell.room || query.get('room') || 'lobby'
+    const joinedUrl = new URL(location.href)
+    joinedUrl.searchParams.set('room', joinedRoom)
+    history.replaceState(null, '', joinedUrl)
+    const connection = startNetworking({`);
   replace('  shell.onPlay = join', '  shell.onPlay = join');
   replace('      names: (seed, kind) => generateName(seed, kind),\n    })', `      names: (seed, kind) => generateName(seed, kind),
     })

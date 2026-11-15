@@ -28,6 +28,7 @@ describe('resume validation', () => {
     expect(prepareResume(new URLSearchParams('vehicle=jet'),storage)).toBeNull()
     expect(prepareResume(new URLSearchParams(),storage)?.seed).toBe(42)
     expect(worldSeed.value).toBe(42)
+    expect(prepareResume(new URLSearchParams('seed=1'), {getItem:()=>JSON.stringify({...s,entrySeed:1})})?.seed).toBe(42)
     expect(params.get('resume.test.client')?.value).toBe(0)
   })
   it('waits for welcome, restores once, then saves without replaying held throttle', () => {

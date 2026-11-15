@@ -34,7 +34,7 @@ The changes are:
 2. After parsing the query and applying its seed, call `const saved = prepareResume(query)` before creating terrain. If there is a saved room and no explicit room query, set that room in the query and URL using `history.replaceState`. This lets the lobby and networking use the same room.
 3. Initialize the vehicle choice from `saved.kind` and `saved.colors` when available, then save that choice before constructing the shell. An explicit different URL vehicle wins.
 4. Clear `RESUME_KEY` in the lobby's intentional vehicle-change reload branch. A deliberate choice must not be undone by recovery.
-5. Change `startNetworking(...)` to `const connection = startNetworking(...)`. Immediately after it, inside the Play callback, add:
+5. Record the selected room in the URL with `history.replaceState`, so a refresh rejoins the room selected in the lobby. Change `startNetworking(...)` to `const connection = startNetworking(...)`. Immediately after it, inside the Play callback, add:
 
 ```ts
 game.add(new ResumeSession({
@@ -44,7 +44,7 @@ game.add(new ResumeSession({
 }))
 ```
 
-Recovery waits for the network welcome because it applies the server's world and spawn slot. It then rechecks room, seed and vehicle, rejects positions below ground, in liquid or outside the terrain, and falls back to the assigned spawn pad. Existing room settings remain authoritative; saved host edits are applied before hello only. With networking omitted from the options, recovery runs immediately for offline play. With networking supplied but unavailable, recovery waits for welcome and does not overwrite the pending save.
+Recovery waits for the network welcome because it applies the server's world and spawn slot. It then rechecks room, seed and vehicle, rejects positions below ground, in liquid or outside the terrain, and falls back to the assigned spawn pad. A seed changed through the host slider also survives an unchanged URL; navigating to a different seed still wins. Existing room settings remain authoritative; saved host edits are applied before hello only. With networking omitted from the options, recovery runs immediately for offline play. With networking supplied but unavailable, recovery waits for welcome and does not overwrite the pending save.
 
 The public vehicle API exposes the wings command, not the internal animation fraction. Recovery restores that command and the wings flag; the vehicle resumes its normal wing animation. Camera mode is restored, not the orbit's transient mouse angle.
 
