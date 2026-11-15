@@ -26,7 +26,8 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
     // With ?autoplay=1 the cursor is free and the rail is open; older shells need the toggle.
-    if (!await page.locator('.world-inspector').isVisible()) await page.getByRole('button', { name: 'Open configuration rail' }).click()
+    if (touch && await page.locator('.world-inspector').isHidden()) await page.locator('.inspector-toggle').tap()
+    else if (!touch && await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
     await page.locator('.world-inspector').waitFor({ state: 'visible' })
     const press = locator => touch ? locator.tap() : locator.click()
 
@@ -45,7 +46,7 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     const [d, m, u] = await Promise.all([down.boundingBox(), select.boundingBox(), up.boundingBox()])
     assert.ok(d.x + d.width <= m.x && m.x + m.width <= u.x, 'down, level, up from left to right')
     for (const box of [d, u]) assert.ok(box.width >= 44 - .5 && box.height >= 44 - .5, 'arrow buttons are 44 px targets')
-    assert.ok(m.height >= 44 - .5, 'level dropdown is a 44 px target')
+    assert.ok(m.height >= 44 - .5, `level dropdown is a 44 px target (actual ${m.height})`)
     assert.deepEqual(await select.locator('option').allInnerTexts(), ['Minimal', 'Low', 'Medium', 'High', 'Ultra', 'Cinematic'])
     assert.doesNotMatch(await card.innerText(), RETIRED, 'no retired words in the card')
 
@@ -56,6 +57,7 @@ for (const mode of process.env.UX_VIEW ? [process.env.UX_VIEW] : ['desktop', 'ph
     assert.equal(await budget.count(), 1, 'a preset-owned property is a row in the card')
     assert.equal(await page.locator(`.wi-card:not([data-section=performance]) .wi-row[data-id="${BUDGET}"]`).count(), 0, 'and only there')
     await budget.evaluate(row => { row.closest('details').open = true }); await budget.scrollIntoViewIfNeeded()
+    assert.ok((await budget.locator('.wi-label').boundingBox()).width >= 90, 'fine-tune labels retain readable width')
     assert.equal(await budget.locator('.wi-num').innerText(), '960')
     assert.match(await card.locator('.wi-head .wi-sum').innerText(), /^Medium/)
 

@@ -94,7 +94,7 @@ try {
     await page.evaluate(top => { window.syn3h.game.quality.setLevel(top); window.__budget = 0 }, top)
     await page.waitForTimeout(1500); const spent = await read()
     await page.evaluate(() => { window.__budget = 1 })
-    await page.waitForTimeout(1500); const back = await read()
+    await page.waitForFunction(tier => window.syn3h.game.postChain.tier === tier, TIER[top], { timeout: 30000 }); const back = await read()
     report.budget = { top, spent: spent.tier, back: back.tier }
     assert.equal(spent.tier, 'base', 'a spent budget leaves the look alone')
     assert.equal(back.tier, TIER[top], 'the tier returns with the budget')
