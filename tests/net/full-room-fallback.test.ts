@@ -5,7 +5,7 @@ afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 describe('legacy full-room fallback', () => {
   it('handles the existing refusal with local bots and a persistent visible notice', () => {
     vi.useFakeTimers()
-    const bots = { remote: true }
+    const bots = { remote: true, vehicles: [] }
     const net = Object.create(NetClient.prototype)
     Object.assign(net, { ctx: { onJoinStatus: vi.fn() }, conn: { state: 'closed', close: vi.fn() },
       bots, botKinds: new Map(), remotes: new Map(), players: new Map([[1, {}]]),
