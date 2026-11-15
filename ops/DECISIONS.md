@@ -2,6 +2,23 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Saturday 14 November, 8:40pm Pacific: keep building overnight, decide the demo build in the morning
+
+**Decided.** No feature freeze tonight. Lanes keep building overnight. Which build runs the
+demo is decided on Sunday morning.
+
+**Why.** The owner wants as much of the vision as possible in front of the audience. The
+Foreman recommended a freeze at 9:30pm with one approved release by 10am; he chose to
+keep going.
+
+**What it changes.** Release 2 stays public overnight. Nothing deploys overnight, because
+the bar for release 3 needs the owner's eyes. So that the morning decision is a choice
+between tested things, the Orchestrator keeps three options ready: release 2 as it is; a
+fixes only build (release 2 plus the worded loading veil, the bounded start and any
+defect fixes); and full trunk. Standing limits: no release while anyone is playing, none
+after 10am Sunday without the owner's word, and the opening view must show the volcano.
+The Foreman sweeps hourly overnight and has a morning brief ready by 8am.
+
 ## Saturday 14 November, 6:25pm Pacific: cut over syn3h.com as soon as possible
 
 **Decided.** "Cut over ASAP." The owner gave his word for the domain switch without
