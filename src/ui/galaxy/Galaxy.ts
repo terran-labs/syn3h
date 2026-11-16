@@ -923,11 +923,8 @@ export class Galaxy {
     // The view keeps a little of the last drag's swing, and drifts very slowly when left alone.
     this.swing(elapsed, !this.drag && this.chosen < 0 && !still, wallElapsed)
     const inset = Math.min(0.3, Math.max(0, this.options.topInset?.() ?? 0) / Math.max(1, this.host.clientHeight))
-    // A tall or short phone screen frames the system a little smaller, so the nearest orbits
-    // stay above the hint and the lobby buttons. Desktop windows are unchanged. The short
-    // landscape layout (Shell, SHORT_LANDSCAPE) supplies its own frame.
-    const tall = this.host.clientHeight > this.host.clientWidth * 1.3 || this.host.clientHeight < 500
-    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : (this.options.frame?.() as Vec | undefined) ?? [0.5, 0.5 - inset / 2, (tall ? 0.85 : 1) * (1 - inset)]
+    // The short landscape layout (Shell, SHORT_LANDSCAPE) supplies its own frame.
+    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : (this.options.frame?.() as Vec | undefined) ?? [0.5, 0.5 - inset / 2, 1 - inset]
     const framingMoves = this.framing.some((v, i) => Math.abs(v - frameGoal[i]) > 0.001)
     this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], perFrame(0.18, elapsed)) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
