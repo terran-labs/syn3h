@@ -1,7 +1,7 @@
 # Release performance evidence v1
 
-This is a proposed source contract. No benchmark has run, no thresholds have been
-calibrated, and no performance improvement is claimed.
+This source contract has synthetic tests only. No benchmark has run, no production
+thresholds have been calibrated, and no performance improvement is claimed.
 
 The exact JSON shapes and exported pure API are in
 [contract.d.ts](../../tools/performance-release/contract.d.ts). The implementation entry
@@ -85,32 +85,55 @@ No correlated-frame significance test is used.
 
 Policy cell keys are `scene/phase`, for example `drive/steady`. Every applicable metric
 requires a reviewed tolerance entry. Relative tolerance is a fraction, not a percentage.
-The tolerance is the maximum of the absolute floor, baseline median times relative
-floor, and the calibrated baseline spread times noise multiplier. Baseline spread is
-the range of run-level values in the archived A/A calibration, in the metric's units.
-The policy hash binds these numeric thresholds and the calibration hash. Freeze it
-before any candidate measurement starts; reject a later frozen timestamp.
+The practical tolerance T is max(absolute floor, baseline run-median times relative
+floor). Recompute calibration noise N as the maximum absolute paired A/A difference
+for that metric from the archived calibration raw runs. For the candidate paired
+differences d, use the deterministic guard U = max(noiseMultiplier times N, range(d)/2).
+The reviewed multiplier must be at least one. This guard is not a statistical
+confidence interval, and makes no independent-frame assumption.
 
-A regression requires the median paired delta above tolerance and at least two thirds
-of pairs above tolerance, rounded up. Improvement uses the symmetric negative rule.
-Exactly equal paired values are unchanged. Other observations are inconclusive,
-including apparent deltas within measured noise. Opposing repeatable metric changes
-produce mixed status; any regressed metric blocks promotion even if the median improves.
-Invalid or missing evidence is not measured and blocks promotion. Inconclusive evidence
-also blocks ordinary performance acceptance. No automatic waiver is available.
+All pairs are practically equivalent, and classified unchanged, only when every
+abs(d) + U <= T. Regression requires median(d) - U > T and at least ceil(2n/3)
+pairs individually above T. Improvement uses median(d) + U < -T with the same
+count rule below -T. Everything else is inconclusive, including unstable samples
+whose dispersion prevents an equivalence conclusion. No numeric production tolerance
+is chosen by this module. Synthetic fixture tolerances are not recommendations.
+
+Any regression blocks ordinary promotion; opposing improved and regressed metrics
+produce mixed status. Any inconclusive metric blocks promotion unless a regression
+already determines the status. Qualified unchanged and improved reports are eligible.
+Missing or invalid evidence is not measured and blocked. Exceptions stay outside this
+report and never change its classification.
 
 ## Artifacts
 
-All generated names are content addressed:
+All generated names are content addressed. `rawSha256` is SHA-256 of UTF-8 canonical
+JSON for the entire run payload except `rawSha256` itself. Archived raw files contain
+that payload without the hash field. Validation recomputes each run hash, including
+calibration runs. The coordinator separately verifies uploaded bytes, not just names.
 
-- `report-<evidenceSha256>.json`
-- `chart-<evidenceSha256>.svg`
+Evidence embeds the fixture and calibration contents. Their canonical hashes must
+match independently trusted expectations. The fixture embeds each scene's input trace,
+phase durations, startup/transfer methods, and conditions except its own hash and the
+input-trace hash. Those two condition hashes are derived, avoiding circular references.
+Calibration contains its version, accepted baseline identity and complete A/A raw runs
+using the same fixture. Every calibration run must finish before the reviewed policy
+freeze, and comparison runs must begin after it.
+
+Report identity hashes the computed report content before adding derived report/chart
+filenames, including raw/fixture/calibration asset names. Canonical object keys are
+sorted, arrays preserve order, and nonfinite numbers and cycles are rejected.
+
+Generated names:
+
+- `report-<reportContentSha256>.json`
+- `chart-<reportContentSha256>.svg`
 - `raw-<rawSha256>.json` for each original run file
 - `fixture-<fixtureSha256>.json`
 - `calibration-<calibrationSha256>.json`
 
-The report hash refers to canonical input evidence, not to recursively hashing its own
-filename. The chart uses separate consistent zero-based axes for median and p99 across
+The evidence hash remains separately recorded; report identity includes validation
+issues and trusted build identities so rejected submissions cannot overwrite valid reports. The chart uses separate consistent zero-based axes for median and p99 across
 all scenes, milliseconds and lower-is-better labels, plus descriptive alt text. Numeric
 tables retain exact report values with deterministic display rounding and percent
 changes. Invalid comparisons render reasons instead of empty or zero bars. SVG is an
@@ -133,8 +156,7 @@ at publication; the numeric table remains readable without images.
 5. Validate and generate artifacts, then let the coordinator exercise upload and the
    same notes/PR section. The first real baseline has no invented historical delta.
 
-Fixture tests will cover wrong source, mismatched conditions, unreviewed or late policy,
+Synthetic fixture tests cover wrong source, mismatched conditions, unreviewed or late policy,
 missing/truncated pairs, hidden/invalid pacing, known regression, noisy inconclusive
-results, transition tails, zero baselines and chart/table agreement. Tests remain unrun
-until explicit allocation. The existing runner requires an exact-artifact collection
+results, transition tails, zero baselines and chart/table agreement. Only synthetic unit tests are authorized; real collection awaits explicit allocation. The existing runner requires an exact-artifact collection
 adapter before this plan can be executed; this report module is not that adapter.
