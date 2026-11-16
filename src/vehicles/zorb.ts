@@ -119,6 +119,45 @@ export function zorbRadius(size: number, camOffset: number): number {
   return 0.5 * (size * 15 + camOffset)
 }
 
+/** Exact on-state sync recurrence, also used to predict the next fixed-step increment. */
+export function nextZorbRadius(radius: number, target: number, dt: number): number {
+  if (radius === target) return radius
+  const next = radius + (target - radius) * Math.min(1, dt)
+  return Math.abs(next - target) < 0.005 ? target : next
+}
+
+type LiquidVector = { x: number; y: number; z: number }
+/** Pure COM-impulse calculation. A null impulse means ordinary float, never a capped skip. */
+export function zorbBoundaryResponse(input: {
+  centre: LiquidVector; com: LiquidVector; velocity: LiquidVector; omega: LiquidVector
+  normal: LiquidVector; surfaceVelocity: LiquidVector
+  radius: number; target: number; dt: number; mass: number; bounce: number
+}): { boundarySpeed: number; growthRate: number; impulse: number | null; budget: number } | null {
+  const { centre: c, com, velocity: v, omega: w, normal: n, surfaceVelocity: s, radius, target, dt, mass, bounce } = input
+  if (![radius, target, dt, mass, bounce, c.x,c.y,c.z,com.x,com.y,com.z,v.x,v.y,v.z,
+    w.x,w.y,w.z,n.x,n.y,n.z,s.x,s.y,s.z].every(Number.isFinite) ||
+    radius <= 0 || target <= 0 || dt <= 0 || dt > .1 || mass <= 0 || bounce < 0 || bounce > 1 ||
+    Math.abs(n.x*n.x+n.y*n.y+n.z*n.z-1) > 32*Number.EPSILON) return null
+  const rx=c.x-com.x, ry=c.y-com.y, rz=c.z-com.z
+  const offsetSpeed=(w.y*rz-w.z*ry)*n.x+(w.z*rx-w.x*rz)*n.y+(w.x*ry-w.y*rx)*n.z
+  const vn=v.x*n.x+v.y*n.y+v.z*n.z, sn=s.x*n.x+s.y*n.y+s.z*n.z
+  // This is a predicted interval average, not a derivative or the growth already applied by sync.
+  const growthRate=(nextZorbRadius(radius,target,dt)-radius)/dt
+  const boundarySpeed=vn+offsetSpeed-sn-growthRate
+  const candidate=-mass*(1+bounce)*boundarySpeed
+  // deltaK = J*vn + J²/(2m). Surface and prescribed growth may supply J*(sn+growthRate).
+  // Unchanged spin supplies no extra energy: reject J0 entirely if it exceeds this budget.
+  const budget=2*mass*(sn+growthRate-vn)
+  if (![offsetSpeed,vn,sn,growthRate,boundarySpeed,candidate,budget].every(Number.isFinite)) return null
+  let impulse: number | null = null
+  if (bounce > 0 && boundarySpeed < 0 && candidate > 0 && candidate <= budget) {
+    const after=boundarySpeed+candidate/mass, intended=-bounce*boundarySpeed
+    const roundoff=16*Number.EPSILON*Math.max(1,Math.abs(boundarySpeed),Math.abs(candidate/mass),intended)
+    if (Number.isFinite(after) && after >= 0 && Math.abs(after-intended) <= roundoff) impulse=candidate
+  }
+  return { boundarySpeed, growthRate, impulse, budget }
+}
+
 const tmpV = new THREE.Vector3()
 const tmpN = new THREE.Vector3()
 const tmpQ = new THREE.Quaternion()
@@ -242,8 +281,7 @@ export class ZorbBall {
     // Vehicle.js 175-176: Lerp(scale, target, fixedDeltaTime), then stop within .01 of scale
     // (.005 of radius).
     if (this.radius !== this.target) {
-      this.radius += (this.target - this.radius) * Math.min(1, dt)
-      if (Math.abs(this.radius - this.target) < 0.005) this.radius = this.target
+      this.radius = nextZorbRadius(this.radius, this.target, dt)
       this.collider.setRadius(Math.max(MIN_RADIUS, this.radius))
     }
     // Settings.js 1691: zorbPhysics.bounciness = zorbBounce, live.
@@ -444,20 +482,25 @@ export class ZorbBall {
     const relative = this.skipRelative.set(v.x - this.skipFlow.x, v.y - vertical, v.z - this.skipFlow.z)
     const normalSpeed = relative.dot(n)
     const tangentSpeed = Math.sqrt(Math.max(0, relative.lengthSq() - normalSpeed * normalSpeed))
+    const bounce = THREE.MathUtils.clamp(zorbBounce.value, 0, 1)
+    const response = zorbBoundaryResponse({ centre:p, com:this.body.worldCom(), velocity:v, omega:this.body.angvel(),
+      normal:n, surfaceVelocity:{x:this.skipFlow.x,y:vertical,z:this.skipFlow.z},
+      radius:this.radius, target:this.target, dt, mass:this.body.mass(), bounce })
+    if (!response) { this.resetLiquidContact(); return false }
     this.skipCooldown = Math.max(0, this.skipCooldown - dt)
     if (gap > SKIP_SEPARATION) { this.skipArmed = true; this.skipCoasting = false }
     if (this.skipCoasting) {
-      if (normalSpeed >= 0 && gap >= -ZORB_FLOAT_DEPTH) return true
+      if (response.boundarySpeed >= 0 && gap >= -ZORB_FLOAT_DEPTH) return true
       this.skipCoasting = false
     }
     const crossing = (previous.kind === null || previous.gap > 0) && gap <= 0
     if (!crossing) return false
     const armed = this.skipArmed
     this.skipArmed = false
-    const bounce = THREE.MathUtils.clamp(zorbBounce.value, 0, 1)
     if (!armed || this.skipCooldown > 0 || bounce <= 0 || gap < -ZORB_FLOAT_DEPTH || normalSpeed >= 0 ||
         tangentSpeed < zorbSkipSpeed.value || Math.atan2(-normalSpeed, tangentSpeed) > zorbSkipAngle.value * Math.PI / 180) return false
-    const impulse = -(1 + bounce) * normalSpeed * this.body.mass()
+    if (response.impulse === null) return false
+    const impulse = response.impulse
     this.body.applyImpulse({ x: n.x * impulse, y: n.y * impulse, z: n.z * impulse }, true)
     this.skips++
     this.skipCooldown = SKIP_COOLDOWN
