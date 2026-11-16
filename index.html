@@ -228,13 +228,18 @@
       html[data-intro="1"] .boot-wordmark, html[data-intro="2"] .boot-wordmark { visibility: hidden; }
       html[data-intro] .boot-point {
         display: block; position: fixed; left: 50%; top: 50%; width: 7px; height: 7px; margin: -3.5px 0 0 -3.5px; border-radius: 50%;
-        background: #fffaf0; opacity: calc(0.45 + var(--boot-progress, 0) * 0.55);
-        transform: scale(calc(0.55 + var(--boot-progress, 0) * 0.75));
-        box-shadow: 0 0 calc(4px + var(--boot-progress, 0) * 10px) calc(1px + var(--boot-progress, 0) * 2px) rgb(255 236 205 / 0.85), 0 0 calc(18px + var(--boot-progress, 0) * 30px) rgb(255 196 128 / calc(0.12 + var(--boot-progress, 0) * 0.3));
+        /* Gathering: from a faint speck to a bright point with a warm glow, plainly growing. */
+        background: #fffaf0; opacity: calc(0.3 + var(--boot-progress, 0) * 0.7);
+        transform: scale(calc(0.35 + var(--boot-progress, 0) * 1.55));
+        box-shadow: 0 0 calc(2px + var(--boot-progress, 0) * 9px) calc(var(--boot-progress, 0) * 2.5px) rgb(255 236 205 / calc(0.4 + var(--boot-progress, 0) * 0.5)), 0 0 calc(6px + var(--boot-progress, 0) * 34px) rgb(255 196 128 / calc(0.05 + var(--boot-progress, 0) * 0.4));
       }
       html[data-intro] .boot-status { position: fixed; left: 0; right: 0; top: calc(50% + 34px); margin: 0 auto; padding: 0 24px; }
       html[data-intro] .boot-still { position: fixed; left: 0; right: 0; top: calc(50% + 34px + 3.3em); }
       html[data-intro][data-boot="done"] .boot-veil { transition: opacity 0.3s ease, visibility 0s linear 0.3s; }
+      /* While the opening plays, the lobby's own controls wait; they fade in as it settles.
+         The galaxy sets data-opening (src/ui/galaxy/Galaxy.ts); a skip clears it at once. */
+      html[data-opening="playing"] :is(.galaxy-hint, .galaxy-links, .wordmark-switch) { opacity: 0; visibility: hidden; }
+      html[data-opening="settling"] :is(.galaxy-hint, .galaxy-links, .wordmark-switch) { transition: opacity 0.5s ease; }
     </style>
     <script>
       // Never select, part 2. Some engines start a selection or a drag in spite of the

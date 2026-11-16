@@ -61,6 +61,9 @@ try {
       bootLoading.setMessages(['<b>Bold</b> & <img src=x onerror="window.__owned=1">'])
       await new Promise(r => setTimeout(r, 400))
       const status = document.querySelector('.boot-status')
+      // Loading can still finish during the wait (the held module is not always the last to
+      // arrive); then the veil rightly stops rotating, and there is nothing to check.
+      if (document.documentElement.dataset.boot !== 'loading' || bootLoading.done) { bootLoading.setMessages([]); return null }
       const result = { text: status.textContent, children: status.children.length, owned: Boolean(window.__owned) }
       bootLoading.setMessages([])
       return result

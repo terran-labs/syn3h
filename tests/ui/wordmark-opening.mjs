@@ -35,7 +35,7 @@ try {
     await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
     await page.waitForTimeout(4000)
     // Replay the opening, held at each moment in turn.
-    const times = [0, 0.2, 0.45, 0.8, 1.2, 1.6, 2.1, 2.6]
+    const times = [0.1, 0.4, 0.7, 1.2, 1.8, 2.2, 2.5, 2.9]
     for (const [i, t] of times.entries()) {
       await page.evaluate(t => { const g = syn3h.shell.galaxy; g.replayOpening(syn3h.params.get('lobby.intro').value); g.openingAt = t; g.wake = 2 }, t)
       await page.waitForTimeout(350)

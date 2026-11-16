@@ -258,6 +258,8 @@ uniform float uDim;                 // 1 as the lobby itself; lower behind an op
 uniform float uMarkCrisp;           // 1 when the wordmark's letters are drawn by its own full-resolution pass
 uniform vec4 uReveal;               // the opening (opening.ts): sun, shafts' front, stars, orbit lines
 uniform float uRevealMark;          // the opening: how far the wordmark's reveal has swept from the sun
+uniform float uSunPoint;            // the opening: the sun's size as the point of light it starts as
+uniform float uArrive[${MAX}];      // the opening: each world's arrival, 0 to 1
 uniform vec3 uEye, uRight, uUp, uForward; uniform float uTan;
 uniform int uCount; uniform int uOnly;
 uniform float uPopulation[${MAX}];
@@ -340,7 +342,8 @@ void main() {
   float sunDistance = sunP.z > 0.0 ? length(toSun) : 9.0;
   vec2 sunDirection = toSun / max(length(toSun), 0.00001);
   // The opening (opening.ts): the sun grows from a point, flaring a little past itself.
-  float sunGrown = clamp(uReveal.x, 0.0, 1.0), sunSize = mix(0.11, 1.0, sunGrown), sunFlare = max(1.0, uReveal.x);
+  // As a point it matches the loading veil's point of light (index.html), in pixels.
+  float sunGrown = clamp(uReveal.x, 0.0, 1.0), sunSize = mix(uSunPoint, 1.0, sunGrown), sunFlare = max(1.0, uReveal.x);
   vec3 sunLight = vec3(1.0, 0.98, 0.94) * exp(-sunDistance * 42.0 / sunSize) * 2.4 * sunFlare;
   sunLight += mix(WARM, vec3(1.0, 0.8, 0.55), 0.5) * exp(-sunDistance * 11.0 / sunSize) * 0.8 * sunGrown * sunFlare;
   // The wide haze and the shafts are kept apart from the sun itself: a world beyond the sun
@@ -360,7 +363,7 @@ void main() {
   float shade = 1.0;
   for (int i = 0; i < ${MAX}; i++) {
     if (i >= uCount || uShed.x >= 1.0) break;
-    if (uWorld[i].w < 0.01) continue;                       // not yet arrived (the opening)
+    if (uArrive[i] < 0.01) continue;                       // not yet arrived (the opening)
     vec3 w = toScreen(uWorld[i].xyz);
     if (w.z <= 0.0) continue;
     vec2 centre = w.xy * 0.5 - sunP.xy * 0.5;                // from the sun, on screen
@@ -382,7 +385,8 @@ void main() {
     // Over the sun the cut gives way to an even dimming of every shaft, for a world in front.
     float clear = smoothstep(size * 0.5, size * 1.6, length(centre));
     cut = mix(0.45 * clamp((sunP.z - w.z) / uWorld[i].w * 0.5 + 0.5, 0.0, 1.0), cut, clear);
-    shade *= 1.0 - cut * 0.85 * (1.0 - uShed.x);
+    // An arriving world's shadow comes in with it.
+    shade *= 1.0 - cut * 0.85 * (1.0 - uShed.x) * smoothstep(0.3, 1.0, uArrive[i]);
   }
   vec3 sunShafts = mix(vec3(1.0, 0.86, 0.66), WARM, 0.3) * shafts * reach * 0.95 * shade;
   // Lens: a horizontal streak and three ghosts toward the centre. Post effects, shed first.
@@ -467,6 +471,7 @@ void main() {
       float flow = 0.6 + 0.4 * noise(vec3(markAt.xy * vec2(2.2, 3.1), uTime * 0.12));
       float halo = exp(-d / 0.06) * (1.0 - smoothstep(0.16, 0.29, d)) * flow * uMarkOpacity * resolved;
       c += mix(mix(vec3(1.0, 0.86, 0.66), WARM, 0.3), vec3(0.56, 0.89, 1.0), 0.15) * halo * (uMarkMode == 2 ? 0.5 : 0.38);
+      if (uRevealMark < 50.0) c += vec3(1.0, 0.86, 0.66) * halo * 1.6 * exp(-pow((sunDistance - (uRevealMark - 0.1)) / 0.08, 2.0));
     }
     if (cover > 0.0) {
       vec3 mark = vec3(0.008, 0.016, 0.039), rimColour = mix(vec3(1.0, 0.86, 0.66), WARM, 0.3);
@@ -498,6 +503,8 @@ void main() {
         mark += rimColour * rim * 1.6 + rimColour * 0.03; lineStrength = 0.3;
       }
       mark = mix(mark, vec3(1.0, 0.93, 0.84), line * lineStrength);
+      // The opening: the shafts' front lights the letters as it sweeps across them.
+      if (uRevealMark < 50.0) mark += rimColour * 2.2 * exp(-pow((sunDistance - (uRevealMark - 0.1)) / 0.06, 2.0));
       // Orbit lines nearer than the letters still cross them.
       if (planeT > 0.0 && planeT < markAt.z - 0.05) mark += orbitLines;
       markColour = mark; markCover = cover;
@@ -576,7 +583,7 @@ void main() {
   color = vec4(c / 12.0, 1.0);
 }`
 /** Every uniform the galaxy's fragment shader reads, looked up once per context. */
-const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uField', 'uFieldBounds', 'uFieldDecode'] as const
+const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uField', 'uFieldBounds', 'uFieldDecode'] as const
 const smootherstep = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * t * (t * (t * 6 - 15) + 10) }
 const rgb = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
 type Vec = [number, number, number]
@@ -852,7 +859,7 @@ export class Galaxy {
     // click, wheel or key goes straight to the settled lobby.
     const intro = Math.round(introMode.value)
     if (intro > 0 && !openingPlayed && !this.reduced.matches) { this.opening = { start: null, mode: intro as OpeningMode }; openingPlayed = true }
-    for (const type of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(type, () => { if (this.opening) { this.opening = null; this.wake = 2 } }, { capture: true, passive: true, signal })
+    for (const type of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(type, () => { if (this.opening) { this.opening = null; this.chrome(null); this.wake = 2 } }, { capture: true, passive: true, signal })
     canvas.addEventListener('webglcontextlost', event => {
       if (this.canvas !== canvas || this.gl !== gl) return
       event.preventDefault(); cancelAnimationFrame(this.frame); this.options.onLogo?.(false); this.markOverlay?.hide()
@@ -1079,6 +1086,10 @@ export class Galaxy {
       gl.uniform4fv(u.uWorld, places.flatMap((p, i) => [...p.position, Math.max(1e-3, p.radius * arrival[i])]))
       const settled = reveal === SETTLED
       gl.uniform4f(u.uReveal, reveal.sun, settled ? 99 : reveal.front, reveal.stars, reveal.orbits); gl.uniform1f(u.uRevealMark, settled ? 99 : reveal.markFront)
+      gl.uniform1fv(u.uArrive, arrival.length ? arrival : [1])
+      // The veil's point at full progress is about 6.6 CSS pixels in radius; the sun's core is
+      // half its peak at 0.0374 of its size in units of the short side.
+      gl.uniform1f(u.uSunPoint, Math.min(1, Math.max(0.02, 6.6 * (width / Math.max(1, this.host.clientWidth)) / (Math.min(width, height) * this.framing[2] * 0.0374))))
       gl.uniform3fv(u.uLand, worlds.slice(0, MAX).flatMap(w => rgb(w.land))); gl.uniform3fv(u.uSea, worlds.slice(0, MAX).flatMap(w => rgb(w.sea)))
       gl.uniform4fv(u.uKind, worlds.slice(0, MAX).flatMap((w, i) => [w.forming ? 2 : w.glow ? 1 : 0, this.layers[i] === this.mapKey(w, SMALL) || i === this.closeIndex ? 1 : 0, this.spin(i, time), (w.seed % 97) + i * 3.1]))
     }
@@ -1118,7 +1129,7 @@ export class Galaxy {
     const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]
     this.screen = places.map((place, i) => {
       const d = sub(place.position, view.eye), z = dot(d, view.forward)
-      return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0 && arrival[i] >= 0.6, depth: z }
+      return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0 && arrival[i] >= 0.6 && (reveal.labels[this.lanes(places)[i]] ?? true), depth: z }
     })
     this.options.onLayout?.(this.screen, this.chosen >= 0 ? worlds[this.chosen].id : undefined)
     // Arrival: a second and a half after choosing, whatever the frame rate.
@@ -1132,13 +1143,32 @@ export class Galaxy {
   openingAt: number | null = null
   /** Plays the opening again now, as the preview menu does. */
   replayOpening(mode: number): void { if (mode > 0 && !this.reduced.matches) { this.opening = { start: performance.now(), mode: mode as OpeningMode }; this.wake = 2 } }
+  /**
+   * Holds the lobby's own controls (the hint, the links, the preview menu) while the opening
+   * plays and fades them in as it settles: index.html's html[data-opening] rules. A skip
+   * shows them at once.
+   */
+  private chrome(state: 'playing' | 'settling' | null): void {
+    const root = document.documentElement
+    clearTimeout(this.chromeTimer)
+    if (state) { if (root.dataset.opening !== state) root.dataset.opening = state }
+    else delete root.dataset.opening
+  }
+  private chromeTimer: ReturnType<typeof setTimeout> | undefined
   private stepOpening(places: readonly { orbit: number }[]): OpeningState {
     const o = this.opening
     if (!o) return SETTLED
     if (o.start === null && document.documentElement.dataset.boot !== 'loading') o.start = performance.now()
     const at = this.openingAt ?? (o.start === null ? -1 : (performance.now() - o.start) / 1000)
     const state = openingState(at, o.mode, places.length)
-    if (state.done) { this.opening = null; return SETTLED }
+    if (state.done) {
+      this.opening = null
+      // Let the controls' fade in finish, then drop the attribute.
+      this.chromeTimer = setTimeout(() => this.chrome(null), 600)
+      return SETTLED
+    }
+    if (state.chrome > 0) { if (document.documentElement.dataset.opening !== 'settling') this.chrome('settling') }
+    else this.chrome('playing')
     return state
   }
   private laneCache: number[] = []
