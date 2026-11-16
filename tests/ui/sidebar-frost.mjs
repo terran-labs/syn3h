@@ -47,6 +47,11 @@ for (const mode of ['desktop', 'phone']) {
     for (const swatch of await me.locator('.wi-swatch').all()) { const r = await swatch.boundingBox(); assert.ok(r.width >= 44 && r.height >= 44) }
     await page.screenshot({ path: `${out}/${mode}-${planet}-me.png` })
    }
+   if (baseline) {
+    await page.evaluate(() => syn3h.shell.inspector.revealCard('vehicles'))
+    await rail.locator('[data-section=vehicles] .wi-head').scrollIntoViewIfNeeded()
+    await page.screenshot({ path: `${out}/${mode}-${planet}-vehicle.png` })
+   }
    results.push({ planet, hour, bounds, frost })
   }
   if (!baseline) {
