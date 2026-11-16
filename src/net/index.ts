@@ -7,6 +7,7 @@
  * works. Lasers, identity and the tag game ride on rare JSON messages.
  */
 import * as THREE from 'three/webgpu'
+import { joinedText } from '../ui/toastText'
 import { type ParamValue, params, worldSeed } from '../../shared/params'
 import {
   BOT_ID_BASE,
@@ -1409,7 +1410,7 @@ export class NetClient implements System {
           this.ctx.audio?.play('materialize', s.position)
         }
         this.everWelcomed = true
-        this.event(`Joined room ${msg.room} as ${this.players.get(msg.id)?.name}`)
+        this.event(joinedText(msg.room, this.players.get(msg.id)?.name))
         break
       }
       case 'pong':
