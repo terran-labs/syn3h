@@ -775,6 +775,7 @@ export class Syn3hBuggy extends Vehicle {
     this.updateMassProperties()
     for (let i = 0; i < 4; i++) rayOrigin(i, this.origins[i], g.x, g.z, g.widthScale)
     this.skin?.setTyreScale?.(next, g.widthScale)
+    for (const eff of this.wheelEffects) eff.width = g.widthScale
     for (const w of this.fbWheels) w.scale.set(g.widthScale, next, next)
     if (!snap && !kinematic && this.wheelsGrounded > 0) {
       const t = this.body.translation(), r = this.body.rotation()
@@ -1148,16 +1149,24 @@ export class Syn3hBuggy extends Vehicle {
     }
   }
 
+  /** The standard stance plus the extra tyre radius, so arrival and the height readout follow the tyres. */
+  override restHeight(): number {
+    return super.restHeight() + this.tyreExtra
+  }
+
   /**
    * A teleport is a fresh start: besides the pose and velocities the base clears, drop every
    * piece of drivetrain, suspension and tyre state, so nothing from before (a spinning motor,
    * the inverted flag, wound up tyres, open wings) acts on the buggy where it lands.
    */
   override teleport(position: THREE.Vector3, heading = 0): void {
-    // Take the new tyre size at once, and stand as much higher as the tyres are bigger, so it
-    // lands on its tyres at the height it would have with standard ones.
+    // Take the new tyre size at once. With non-standard tyres, never place the body lower than
+    // it rests on them (restHeight), so it cannot start with its tyres in the ground and be
+    // thrown up by its springs. Spawn points are already higher than that; a resumed or held
+    // position is about at it.
     this.updateTyres(0, false, true)
-    super.teleport(this.v4.copy(position).setY(position.y + this.tyreExtra), heading)
+    const floor = this.tyreExtra === 0 ? -Infinity : this.terrain.heightAt(position.x, position.z) + this.restHeight()
+    super.teleport(this.v4.copy(position).setY(Math.max(position.y, floor)), heading)
     this.isInverted = false
     this.stuckSteps = 0
     this.motorSpeed = this.motorStep = 0
@@ -1265,13 +1274,15 @@ export class Syn3hBuggy extends Vehicle {
       for (const m of this.fbMaterials) { m.opacity = 0.35 + 0.3 * pulse; m.emissiveIntensity = 0.4 + 0.8 * pulse }
     }
     // VB 135-149: wheels hang at full travel in the air; graphics spin at half the motor rate.
+    // A grounded wheel is drawn with its tread on the contact (TYRE_VISUAL_RADIUS), 2 cm above
+    // the 0.5 m physics radius at size 1, which used to leave the tyre sunk into the ground.
     // The motor is geared to the tread (m/s), so bigger tyres turn slower at the same speed.
     this.spin -= (this.motorSpeed / this.wheelRadius) * dt * 0.5
     for (let i = 0; i < 4; i++) {
       const d = this.hitDistance[i]
       this.wheelPos.set(
         this.hubX * (i % 2 ? 1 : -1),
-        WHEEL_POS.y - (d === -1 ? this.suspensionRange : d - this.wheelRadius),
+        WHEEL_POS.y - (d === -1 ? this.suspensionRange : d - TYRE_VISUAL_RADIUS * this.tyreSize),
         -this.hubZ * (i < 2 ? 1 : -1),
       )
       this.skin?.setWheel(i, this.wheelPos, this.steer[i], this.spin)

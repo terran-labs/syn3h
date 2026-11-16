@@ -8,7 +8,7 @@ import * as THREE from 'three/webgpu'
 import { params } from '../../shared/params'
 import { FIXED_DT, RAPIER } from '../../src/core/physics'
 import { REST_HEIGHT } from '../../src/vehicles/Vehicle'
-import { axis, cruise, pos, resetParams, spawn, speed } from './syn3hScenarios'
+import { arrive, axis, cruise, pos, resetParams, spawn, speed } from './syn3hScenarios'
 import type { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
 import type { Bed } from './harness'
 
@@ -90,6 +90,21 @@ describe('Syn3hBuggy tyre size', () => {
       expect(climb).toBeLessThan(2)
       expect(b.wheelsGrounded).toBe(4)
       expect(pos(b).y).toBeLessThan(REST_HEIGHT.buggy + b.wheelRadius)
+    })
+  }
+
+  for (const k of SIZES) {
+    test(`at tyre size ${k} it arrives resting: spawn, respawn, switch in place, remote`, async () => {
+      setSize(k)
+      for (const how of ['spawn', 'respawn', 'switch', 'remote'] as const) {
+        const r = await arrive(how)
+        // A rebound of a few centimetres, as standard tyres give after the 2 m spawn drop or the
+        // arrival cloud's hover (about 7 cm), and never a launch.
+        expect(r.hop, how).toBeLessThan(0.1)
+        expect(r.wheels, how).toBe(4)
+        // The height readout says it is on the ground.
+        expect(r.readout, how).toBeLessThan(0.05)
+      }
     })
   }
 

@@ -131,7 +131,7 @@ export function restHeight(vehicle:Vehicle):number {
     const slider=Number(hoverClearance?.value)
     if(Number.isFinite(slider))return slider
   }
-  return REST_HEIGHT[vehicle.kind]??.7
+  return vehicle.kind in REST_HEIGHT?vehicle.restHeight():.7
 }
 
 /** Heading of a body's nose projected on the ground, in the convention `teleport` takes. */
