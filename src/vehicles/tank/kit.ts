@@ -690,6 +690,8 @@ export interface TankHull {
   halfLength: number
   /** Headlamp centres, for beams and effects. */
   headlamps: T.Vector3[]
+  /** Mid-detail lenses may sit behind the near-detail bezel, along local +Z. */
+  headlampMidInset?: number
   /** Near (0) or mid (1) hull. Returns the driver's eye. */
   near(batch: Batch, level: 0 | 1): [number, number, number]
   /** Far silhouette hull, a few dozen faces. */
@@ -702,7 +704,8 @@ export function panelHull(spec: ExpeditionSpec): TankHull {
   return {
     trackWidth: spec.trackWidth ?? .93, fender: spec.fender, pivotX: PANEL_PIVOT,
     halfLength: Math.max(-nose[0], spec.sections.at(-1)![0]),
-    headlamps: [-1, 1].flatMap(sx => [.23, .65, 1.07].map(x => v(sx * x * Math.min(1, nose[1] / 1.3), y, nose[0] - .12))),
+    headlamps: [-1, 1].flatMap(sx => [.23, .65, 1.07].map(x => v(sx * x * Math.min(1, nose[1] / 1.3), y, nose[0] - .09 - .02))),
+    headlampMidInset: .02 - .004,
     near: (batch, level) => hull(batch, spec, level),
     far: batch => farHull(batch, spec),
   }
@@ -714,6 +717,18 @@ export class ExpeditionTank {
   readonly eye: [number, number, number]
   /** Headlamp centres in the model's frame, for beams and effects. */
   get headlamps(): T.Vector3[] { return this.hull.headlamps }
+  /** Copy the current lens centre and emitted linear RGB without allocating or exposing materials. */
+  sampleHeadlamp(index: number, position: T.Vector3, direction: T.Vector3, color: T.Color): boolean {
+    if (!Number.isInteger(index) || index < 0 || index >= this.headlamps.length) return false
+    position.copy(this.headlamps[index])
+    if (this.current === 1) position.z += this.hull.headlampMidInset ?? 0
+    direction.set(0, 0, -1)
+    color.copy(this.mats.by.head.emissive).multiplyScalar(this.mats.by.head.emissiveIntensity)
+    return true
+  }
+  /** The far silhouette omits the lens surfaces; near and mid already draw them. */
+  needsHeadlampGlow(): boolean { return this.current === 2 }
+
   private readonly mats: Surfaces
   private readonly built: (Built | undefined)[] = []
   private readonly geometries: T.BufferGeometry[] = []

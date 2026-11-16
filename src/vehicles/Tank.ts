@@ -93,6 +93,18 @@ export class Tank extends Vehicle {
     super(game,terrain,position,heading)
     this.object.add(this.ridePosition)
     this.rebuild()
+    const vehicle=this
+    // Shared effects own their output vectors. These samples stay in the vehicle frame,
+    // including the generated model's ground offset, regardless of world pose or LOD.
+    this.object.userData.headlights={
+      get count(){return vehicle.generated?.headlamps.length??0},
+      sample:(index:number,position:THREE.Vector3,direction:THREE.Vector3,color:THREE.Color):boolean=>{
+        if(!this.generated?.sampleHeadlamp(index,position,direction,color))return false
+        position.y-=GROUND
+        return true
+      },
+      needsGlow:()=>this.generated?.needsHeadlampGlow()??false,
+    }
     wearers.add(this.wear)
   }
   /** Build the current body, replacing whatever is there. Physics state is kept. */
@@ -252,5 +264,5 @@ export class Tank extends Vehicle {
     tank.pose()
   }
   override teleport(position:THREE.Vector3,heading=0){super.teleport(position,heading);this.motors.forEach(m=>{m.speed=m.velocity=0});this.bellyUp=false}
-  override dispose(){wearers.delete(this.wear);this.detachDetail();this.generated?.dispose();this.treadMaps.forEach(t=>t.dispose());this.models.forEach(m=>m.dispose());super.dispose()}
+  override dispose(){delete this.object.userData.headlights;wearers.delete(this.wear);this.detachDetail();this.generated?.dispose();this.generated=undefined;this.treadMaps.forEach(t=>t.dispose());this.models.forEach(m=>m.dispose());super.dispose()}
 }
