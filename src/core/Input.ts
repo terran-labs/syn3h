@@ -27,15 +27,58 @@ export function emptyInput(): InputState {
   return { x: 0, y: 0, z: 0, w: 0, brakes: false, special: false, fire: false, zorb: false }
 }
 
+export type ExternalFireOwner = object | symbol
+
 export class Input {
   readonly state: InputState = emptyInput()
   /** Additive UI controls. Special and zorb remain toggles on state; see `toggleZorb`. */
   readonly external: Partial<Omit<InputState, 'special' | 'zorb'>> = {}
   private readonly keys = new Set<string>()
+  private readonly fireOwners = new Map<ExternalFireOwner, boolean>()
+  private readonly rawFireKeys = new Set<string>()
+  private readonly blockedFireKeys = new Set<string>()
+  private readonly rawMouse = new Set<number>()
+  private readonly blockedMouse = new Set<number>()
+  private readonly blockedPads = new Set<number>()
+  private unknownMouseBlocked = false
+  private legacyFire = false
+  private legacyFireDisabled = false
   /** Set true by UI code (chat, text fields) to stop driving while typing. */
   suspended = false
 
   constructor(target: Window = window) {
+    // Legacy writes remain compatible until cancellation. A boolean cannot prove that a
+    // physical gesture ended: ALL external writers must migrate before modal delivery.
+    Object.defineProperty(this.external, 'fire', {
+      enumerable: true,
+      get: () => !this.suspended && (this.ownerFire() || (!this.legacyFireDisabled && this.legacyFire)),
+      set: (value: boolean) => { this.legacyFire = Boolean(value) },
+    })
+    target.addEventListener('keydown', (e) => {
+      if (e.code !== 'KeyL' && e.code !== 'Enter') return
+      this.rawFireKeys.add(e.code)
+      if (this.suspended || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)
+        this.blockedFireKeys.add(e.code)
+    }, true)
+    target.addEventListener('keyup', (e) => {
+      this.rawFireKeys.delete(e.code)
+      this.blockedFireKeys.delete(e.code)
+      this.keys.delete(e.code)
+    }, true)
+    target.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || e.pointerType === 'touch') return
+      this.rawMouse.add(e.pointerId)
+      if (this.suspended) this.blockedMouse.add(e.pointerId)
+    }, true)
+    const mouseEnd = (e: PointerEvent) => {
+      if (e.pointerType === 'touch' || (e.type === 'pointerup' && e.button !== 0)) return
+      this.rawMouse.delete(e.pointerId)
+      this.blockedMouse.delete(e.pointerId)
+      this.unknownMouseBlocked = false
+    }
+    target.addEventListener('pointerup', mouseEnd, true)
+    target.addEventListener('pointercancel', mouseEnd, true)
+    target.addEventListener('blur', () => this.cancelFireUntilNeutral(), true)
     target.addEventListener('keydown', (e) => {
       if (this.suspended || e.repeat) return
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
@@ -67,7 +110,9 @@ export class Input {
   /** Call once per rendered frame, before the fixed steps. */
   poll(): InputState {
     const s = this.state
+    const pad = this.samplePads()
     if (this.suspended) {
+      this.refreshFire(pad)
       this.keys.clear()
       Object.assign(s, emptyInput(), { special: s.special, zorb: s.zorb })
       return s
@@ -77,9 +122,7 @@ export class Input {
     s.z = this.axis(['KeyF'], ['KeyR'])
     s.w = this.axis(['KeyQ'], ['KeyE'])
     s.brakes = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')
-    s.fire = this.keys.has('KeyL') || this.keys.has('Enter') || this.mouseFire
-
-    const pad = navigator.getGamepads?.().find((p) => p && p.connected)
+    s.fire = false
     if (pad) {
       const dz = (v: number) => (Math.abs(v) < 0.12 ? 0 : v)
       const px = dz(pad.axes[0] ?? 0)
@@ -94,7 +137,6 @@ export class Input {
       const pz = -dz(pad.axes[3] ?? 0) || (pad.buttons[12]?.pressed ? 1 : 0) - (pad.buttons[13]?.pressed ? 1 : 0)
       if (pz !== 0) s.z = pz
       s.brakes = s.brakes || Boolean(pad.buttons[1]?.pressed)
-      s.fire = s.fire || Boolean(pad.buttons[0]?.pressed)
       const specialDown = Boolean(pad.buttons[3]?.pressed)
       if (specialDown && !this.padSpecialWasDown) s.special = !s.special
       this.padSpecialWasDown = specialDown
@@ -103,8 +145,75 @@ export class Input {
       s[axis] = Math.max(-1, Math.min(1, s[axis] + (this.external[axis] ?? 0)))
     }
     s.brakes ||= this.external.brakes ?? false
-    s.fire ||= this.external.fire ?? false
+    this.refreshFire(pad)
     return s
+  }
+
+  /** One token per real gesture. Reusing a suppressed token never rearms it. */
+  beginExternalFire(owner: ExternalFireOwner): void {
+    if (!this.fireOwners.has(owner)) this.fireOwners.set(owner, this.suspended)
+    this.refreshFire()
+  }
+
+  /** Only a real end/cancel retires identity, never UI teardown or blur. */
+  endExternalFire(owner: ExternalFireOwner): void {
+    if (!this.fireOwners.delete(owner)) return
+    this.refreshFire()
+  }
+
+  /** Suppress this holder without retiring it or interrupting other eligible holders.
+   * These APIs update state only. They never dispatch events or tick gameplay. */
+  suppressExternalFire(owner: ExternalFireOwner): void {
+    if (!this.fireOwners.has(owner)) return
+    this.fireOwners.set(owner, true)
+    this.refreshFire()
+  }
+
+  /** Call before clearing UI gestures or suspending input. Legacy boolean fire is
+   * permanently ignored afterwards: it cannot distinguish cleanup from real release. */
+  cancelFireUntilNeutral(): void {
+    for (const key of this.rawFireKeys) this.blockedFireKeys.add(key)
+    for (const id of this.rawMouse) this.blockedMouse.add(id)
+    if (this.mouseFire && this.rawMouse.size === 0) this.unknownMouseBlocked = true
+    this.samplePads(true)
+    for (const owner of this.fireOwners.keys()) this.fireOwners.set(owner, true)
+    this.legacyFireDisabled = true
+    this.legacyFire = false
+    this.state.fire = false
+  }
+
+  private ownerFire(): boolean {
+    for (const blocked of this.fireOwners.values()) if (!blocked) return true
+    return false
+  }
+
+  private samplePads(block = this.suspended): Gamepad | undefined {
+    const pads = navigator.getGamepads?.() ?? []
+    let first: Gamepad | undefined
+    for (const pad of pads) {
+      if (!pad?.connected) continue
+      first ??= pad
+      if (!pad.buttons[0]?.pressed) this.blockedPads.delete(pad.index)
+      else if (block) this.blockedPads.add(pad.index)
+    }
+    // Disconnection is not evidence of neutral. Reconnection while held stays blocked.
+    return first
+  }
+
+  private refreshFire(pad = this.samplePads()): void {
+    if (this.suspended) {
+      for (const key of this.rawFireKeys) this.blockedFireKeys.add(key)
+      for (const id of this.rawMouse) this.blockedMouse.add(id)
+      for (const owner of this.fireOwners.keys()) this.fireOwners.set(owner, true)
+      this.state.fire = false
+      return
+    }
+    const key = ['KeyL', 'Enter'].some(code => this.keys.has(code) && !this.blockedFireKeys.has(code))
+    const mouse = this.mouseFire && !this.unknownMouseBlocked &&
+      (this.rawMouse.size === 0 ? this.blockedMouse.size === 0 :
+        [...this.rawMouse].some(id => !this.blockedMouse.has(id)))
+    this.state.fire = key || mouse || Boolean(pad?.buttons[0]?.pressed && !this.blockedPads.has(pad.index)) ||
+      Boolean(this.external.fire)
   }
 
   /** Switch zorb mode. For the X key and a future touch button. */
