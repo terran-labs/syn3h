@@ -600,16 +600,16 @@ try {
   await installTerrainEvidence(a)
   let center = await a.evaluate(() => { const s = window.syn3h, p = s.terrain.spawnPoint(0).position; return { x: p.x, y: p.y, z: p.z } })
   let settlingSequence = 0
-  async function waitSettled(page, far, stageID) {
+  async function waitSettled(page, far, stageID, intended = null) {
     const record = !observationOnly && !surveyOnly && !poseOnly
-    const receipt = { stageID, far, primaryError: null, records: null, complete: false }
+    const receipt = { stageID, far, intended, primaryError: null, records: null, complete: false }
     let primary
     try {
-      await page.waitForFunction(({ far, stageID, record }) => {
+      await page.waitForFunction(({ far, stageID, record, intended }) => {
         // New receipt per wait, but never reset the persistent settling counter.
         const history = record ? (window.nameplateAcceptanceSettle?.stageID === stageID
           ? window.nameplateAcceptanceSettle
-          : (window.nameplateAcceptanceSettle = { stageID, records: [], overflow: false })) : null
+          : (window.nameplateAcceptanceSettle = { stageID, records: [], overflow: false, previouslyArrived: false, postArrivalCount: 0 })) : null
         if (history && history.records.length >= 180) { history.overflow = true; throw new Error('acceptance settling receipt bound exceeded') }
         const evaluated = {}
         // Only reached operands are recorded; &&, || and every keep their short circuit.
@@ -640,15 +640,35 @@ try {
           window.nameplatePoseHistory.push({ time: performance.now(), ...current, roster, nearRange, snapshot })
         }
         const pose = s.camera.cinematic
-        const result = seen('roster', roster) && seen('nearRange', nearRange) && seen('posePresent', pose ? true : pose) &&
+        const originalResult = seen('roster', roster) && seen('nearRange', nearRange) && seen('posePresent', pose ? true : pose) &&
           seen('cameraAtTarget', camera.position.distanceTo(pose.position) < .5) && seen('fovAtTarget', Math.abs(camera.fov - pose.fov) < .5) && seen('sixCount', current.count >= 6)
+        let arrival = null, result = originalResult
         if (history) {
+          // Reuse the fixture's 0.25 m spatial scale, not an invented transport error bound.
+          // Float32 targets reflect the wire; interpolation must actually reach this region.
+          const targets = intended.map(target => {
+            const remote = net.remotes.get(Number(target.id))
+            const vehicle = target.id === String(net.id) ? s.player : tags.entries.find(t => t.id === target.id)?.vehicle
+            const position = vehicle?.object.position
+            const dx = position ? position.x - Math.fround(target.x) : null
+            const dz = position ? position.z - Math.fround(target.z) : null
+            const error = position ? Math.hypot(dx, dz) : null
+            return { id: target.id, x: target.x, z: target.z, rendered: position ? position.toArray() : null,
+              dx, dz, error, arrived: Number.isFinite(error) && error < .25,
+              remoteAvailable: !!remote }
+          })
+          const arrived = targets.length === 7 && new Set(targets.map(t => t.id)).size === 7 && targets.every(t => t.arrived)
+          const countIn = history.postArrivalCount
+          history.postArrivalCount = arrived && history.previouslyArrived && stable ? countIn + 1 : 0
+          history.previouslyArrived = arrived
+          arrival = { targets, arrived, counterIn: countIn, counterOut: history.postArrivalCount }
+          result = originalResult && seen('postArrivalSix', history.postArrivalCount >= 6)
           const row = { stageID, wall: performance.now(), tick: s.game.tick, time: s.game.time,
             frames: s.game.frames, paused: s.game.isPaused,
             previous: previous ? { stamp: previous.stamp, eye: [...previous.eye], actors: previous.actors.map(v => [...v]), count: previous.count } : null,
             current: { ...current, eye: [...eye], actors: actors.map(v => [...v]) },
             counterIn: previous ? previous.count : null, counterOut: current.count,
-            stable: stable === undefined ? null : stable, evaluated, result: !!result,
+            stable: stable === undefined ? null : stable, evaluated, originalResult: !!originalResult, arrival, result: !!result,
             // Read-only arithmetic, not additional predicate evaluations or queries.
             cameraDelta: previous ? Math.hypot(...eye.map((n, i) => n - previous.eye[i])) : null,
             actorDeltas: actors.map((v, i) => previous?.actors[i]?.[0] === v[0]
@@ -668,7 +688,7 @@ try {
           }
         }
         return result
-      }, { far, stageID, record }, { timeout: remaining(15000), polling: 100 })
+      }, { far, stageID, record, intended }, { timeout: remaining(15000), polling: 100 })
     } catch (error) { primary = error; receipt.primaryError = String(error) }
     if (record) {
       report.settlingReceipts ??= []; report.settlingReceipts.push(receipt)
@@ -694,6 +714,8 @@ try {
   async function stage(far = false, curve = .71, hudOverlap = false, scene = 'default') {
     assert.ok(['default', 'volcanic-positive-near'].includes(scene), 'known staging scene required')
     const measuredPositive = scene === 'volcanic-positive-near'
+    const acceptance = !observationOnly && !surveyOnly && !poseOnly
+    const stageID = `stage-${++settlingSequence}:${scene}:far=${far}:curve=${curve}:hud=${hudOverlap}`
     if (measuredPositive) {
       assert.ok(!far && !hudOverlap && curve === .71 && !observationOnly && !surveyOnly && !poseOnly, 'measured scene is acceptance positive-near only')
       assert.equal(center.x, surveyReference.center.x); assert.equal(center.z, surveyReference.center.z)
@@ -703,14 +725,15 @@ try {
     }
     await installTerrainEvidence(a)
     await a.evaluate(curve => window.syn3h.params.set('world.curve', curve), curve)
-    const initialPose = await a.evaluate(({ p, fixedNear, fixedPose, positivePose }) => {
+    const initialPose = await a.evaluate(({ p, fixedNear, fixedPose, positivePose, record }) => {
       const s = window.syn3h, net = window.syn3hNet, localGround = s.terrain.heightAt(p.x, p.z + 18)
       const v = s.player.object.position.clone().set(p.x, localGround + 2, p.z + 18)
-      const pose = vehicle => ({ body: { ...vehicle.body.translation() }, rotation: { ...vehicle.body.rotation() }, rendered: vehicle.object.position.toArray() })
+      const pose = vehicle => ({ body: { ...vehicle.body.translation() }, rotation: { ...vehicle.body.rotation() }, rendered: vehicle.object.position.toArray(),
+        ...(record ? { wall: performance.now(), tick: s.game.tick, kind: vehicle.kind, velocity: { ...vehicle.body.linvel() }, input: { ...vehicle.input }, bodyType: vehicle.body.bodyType(), materializing: vehicle.object.userData.materializing ?? null } : {}) })
       const botPose = fixedPose ?? positivePose
-      const actors = [], localBefore = fixedPose ? pose(s.player) : null
+      const actors = [], localBefore = fixedPose || record ? pose(s.player) : null
       s.player.teleport(v, 0)
-      if (fixedPose) actors.push({ role: 'Observer', id: String(net.id), name: net.players.get(net.id)?.name,
+      if (fixedPose || record) actors.push({ role: 'Observer', id: String(net.id), name: net.players.get(net.id)?.name,
         x: p.x, z: p.z + 18, ground: localGround, requestedTeleportY: v.y, before: localBefore, after: pose(s.player) })
       let initial = null
       s.bots.vehicles.forEach((bot, i) => {
@@ -729,33 +752,35 @@ try {
             slope: { x: (samples[1] - samples[0]) / 2, z: (samples[3] - samples[2]) / 2 },
             before: { body: { ...bot.body.translation() }, rendered: bot.object.position.toArray() } }
         }
-        const before = fixedPose ? pose(bot) : null
+        const before = fixedPose || record ? pose(bot) : null
         bot.teleport(v.clone().set(x, y, z), 0)
-        if (fixedPose) actors.push({ role: `bot${i}`, index: i, id: net.tags.entries.find(entry => entry.vehicle === bot)?.id ?? null,
+        if (fixedPose || record) actors.push({ role: `bot${i}`, index: i, id: net.tags.entries.find(entry => entry.vehicle === bot)?.id ?? null,
           x, z, ground, requestedTeleportY: y, before, after: pose(bot) })
         if (fixedPose && i === 0) initial.after = { body: { ...bot.body.translation() }, rendered: bot.object.position.toArray() }
       })
       s.camera.setCinematicPose(v.clone().set(p.x, s.terrain.heightAt(p.x, p.z + 45) + 20, p.z + 45), v.clone().set(p.x, p.y + 4, p.z - 12), 60)
-      return fixedPose ? { ...initial, actors } : initial
-    }, { p: center, fixedNear: !far && !hudOverlap, fixedPose: poseOnly ? fixedPose : null, positivePose: measuredPositive ? fixedPose : null })
+      return fixedPose || record ? { ...initial, actors } : initial
+    }, { p: center, fixedNear: !far && !hudOverlap, fixedPose: poseOnly ? fixedPose : null, positivePose: measuredPositive ? fixedPose : null, record: acceptance })
     if (poseOnly) { report.pose.initial = initialPose; await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)) }
     const visitorInitial = await b.evaluate(({p, far, hudOverlap, record}) => {
       const s = window.syn3h, net = window.syn3hNet, z = p.z - (far ? 260 : 4), x = p.x - (far || hudOverlap ? 24 : 8)
       const ground = s.terrain.heightAt(x, z), requestedTeleportY = ground + 2
-      const pose = () => ({ body: { ...s.player.body.translation() }, rotation: { ...s.player.body.rotation() }, rendered: s.player.object.position.toArray() })
+      const pose = () => ({ body: { ...s.player.body.translation() }, rotation: { ...s.player.body.rotation() }, rendered: s.player.object.position.toArray(),
+        wall: performance.now(), tick: s.game.tick, kind: s.player.kind, velocity: { ...s.player.body.linvel() }, input: { ...s.player.input }, bodyType: s.player.body.bodyType(), materializing: s.player.object.userData.materializing ?? null })
       const before = record ? pose() : null
       s.player.teleport(s.player.object.position.clone().set(x, requestedTeleportY, z), 0)
       return record ? { role: 'Visitor', id: String(net.id), name: net.players.get(net.id)?.name, x, z, ground, requestedTeleportY, before, after: pose() } : null
-    }, { p: center, far, hudOverlap, record: poseOnly })
+    }, { p: center, far, hudOverlap, record: poseOnly || acceptance })
     if (poseOnly) { report.pose.initial.actors.push(visitorInitial); await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)) }
     const companionInitial = await c.evaluate(({p, far, hudOverlap, record}) => {
       const s = window.syn3h, net = window.syn3hNet, z = p.z - (far ? 190 : hudOverlap ? 12 : 4), x = p.x + (far || hudOverlap ? 24 : 8)
       const ground = s.terrain.heightAt(x, z), requestedTeleportY = ground + 2
-      const pose = () => ({ body: { ...s.player.body.translation() }, rotation: { ...s.player.body.rotation() }, rendered: s.player.object.position.toArray() })
+      const pose = () => ({ body: { ...s.player.body.translation() }, rotation: { ...s.player.body.rotation() }, rendered: s.player.object.position.toArray(),
+        wall: performance.now(), tick: s.game.tick, kind: s.player.kind, velocity: { ...s.player.body.linvel() }, input: { ...s.player.input }, bodyType: s.player.body.bodyType(), materializing: s.player.object.userData.materializing ?? null })
       const before = record ? pose() : null
       s.player.teleport(s.player.object.position.clone().set(x, requestedTeleportY, z), 0)
       return record ? { role: 'Companion', id: String(net.id), name: net.players.get(net.id)?.name, x, z, ground, requestedTeleportY, before, after: pose() } : null
-    }, { p: center, far, hudOverlap, record: poseOnly })
+    }, { p: center, far, hudOverlap, record: poseOnly || acceptance })
     if (poseOnly) {
       report.pose.initial.actors.push(companionInitial)
       // Save raw initialization before rejecting missing, duplicate or nonfinite evidence.
@@ -774,10 +799,27 @@ try {
       }
       assert.equal(actors.find(actor => actor.index === 0).id, '65280', 'fixed pose belongs to bot65280')
     }
+    let intended = null
+    if (acceptance) {
+      const boundary = { stageID, actors: [...initialPose.actors, visitorInitial, companionInitial] }
+      report.ownerBoundaries ??= []; report.ownerBoundaries.push(boundary)
+      // Save original values before checking identity, completeness or finite data.
+      await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+      assert.equal(boundary.actors.length, 7)
+      assert.equal(new Set(boundary.actors.map(t => t.id)).size, 7)
+      for (const actor of boundary.actors) {
+        assert.ok(typeof actor.id === 'string' && /^[1-9][0-9]*$/.test(actor.id))
+        if (actor.index !== undefined) assert.equal(actor.id, String(65280 + actor.index))
+        else assert.equal(actor.name, actor.role)
+        assert.ok([actor.x, actor.z, actor.requestedTeleportY, ...Object.values(actor.after.body),
+          ...actor.after.rendered, ...Object.values(actor.after.velocity), actor.after.wall, actor.after.tick].every(Number.isFinite))
+      }
+      intended = boundary.actors.map(({ id, x, z }) => ({ id, x, z }))
+    }
     // Record diagnostics even when settling fails. Never move the camera to skip occlusion.
     let stagingError
     try {
-      await waitSettled(a, far, `stage-${++settlingSequence}:${scene}:far=${far}:curve=${curve}:hud=${hudOverlap}`)
+      await waitSettled(a, far, stageID, intended)
     } catch (error) { stagingError = error }
     if (poseOnly) {
       report.pose.settled = !stagingError
