@@ -232,5 +232,23 @@ saved wasHost=true and world.seed=42; both WebKit normal cases saved wasHost=fal
 and an empty world object. The fixture asserted seed/entrySeed/kind, not host status
 or the changed-world entry. Thus the passing WebKit root case did not prove host
 world capture. Guest seed restoration is supported separately by prepareResume and
-cannot stand in for host-world replay. A host-isolation/precondition correction is
-proposed for review, not implemented in this document-cache change.
+cannot stand in for host-world replay. The subsequent host-precondition correction is prepared below; it has not run.
+
+
+## Host-save preconditions across browsers
+
+After every Chrome case and its context close succeeds, and Chrome itself closes
+successfully, one 31-second boundary precedes WebKit launch. It consumes the existing
+480-second fixture and 590-second supervisor budgets. Timing is persisted before
+and after; insufficient budget or any failure stops without extension or another wait.
+Default rejoin remains enabled and the frozen-path room remains literally `lobby`.
+No role, room storage or world state is privately rewritten.
+
+The boundary allows the server's 30-second disconnected-player hold to expire; it
+is not itself evidence of ownership. Each normal case records connected/isHost,
+player ID, actual host ID and seed immediately after entry and before editing the
+seed. It requires a connected host with matching positive IDs and seed 1; any other
+state fails without repair. Both periodic and synthetic-pagehide saved snapshots
+must contain wasHost=true and world.seed=42 alongside entrySeed=1, seed=42 and Jet.
+The missing-model case has no host-save claim. Prior phone URL/guest-seed evidence
+remains valid partial coverage, never host-world replay evidence.

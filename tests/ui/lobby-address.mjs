@@ -258,6 +258,18 @@ async function runCase(browser, mode, entry, missing = false) {
     })
     await persist('post-cleanup resource timing verified')
   }
+  async function requireHost(stage) {
+    const role = await page.evaluate(() => ({ connected: syn3hNet.connected,
+      isHost: syn3hNet.isHost, id: syn3hNet.id, host: syn3hNet.game.host,
+      seed: syn3h.params.get('world.seed').value }))
+    ;(result.hostSnapshots ??= []).push({ stage, ...role })
+    await persist(`host precondition: ${stage}`)
+    assert.equal(role.connected, true, 'connected host required')
+    assert.equal(role.isHost, true, 'host required; no role repair or second wait')
+    assert.ok(Number.isInteger(role.id) && role.id > 0, 'assigned player identity')
+    assert.equal(role.id, role.host, 'actual host identity')
+    assert.equal(role.seed, 1, 'entry seed must remain 1 before host edit')
+  }
   let caseFailure
   try {
     const url = new URL(entry.url)
@@ -292,6 +304,7 @@ async function runCase(browser, mode, entry, missing = false) {
       await verifyPostCleanupResources([m.missing.path], timeOrigin)
       result.checks.push('isolated missing Buggy fetch after cleanup uses frozen route with no latest retry during observed interval')
     } else {
+      await requireHost('initial connected entry')
       await leave(page); clean(page, url.pathname)
       await enter(page); playingURL(page, room)
       assert.equal(await page.evaluate(() => performance.timeOrigin), timeOrigin, 'already-joined reentry does not reload')
@@ -327,6 +340,7 @@ async function runCase(browser, mode, entry, missing = false) {
       const row = page.locator('.wi-row[data-id="world.seed"]')
       const fold = row.locator('..')
       if (!(await fold.getAttribute('open') !== null)) await fold.locator('summary').click()
+      await requireHost('immediately before seed edit')
       await row.locator('.wi-num').click()
       await row.locator('.wi-num-edit').fill('42'); await row.locator('.wi-num-edit').press('Enter')
       await page.waitForFunction(() => syn3h.params.get('world.seed').value === 42)
@@ -335,10 +349,16 @@ async function runCase(browser, mode, entry, missing = false) {
         const saved = JSON.parse(sessionStorage.getItem('syn3h.resume.v1') || 'null')
         return saved?.entrySeed === 1 && saved.seed === 42 && saved.kind === 'jet'
       })
+      result.periodicSaved = await page.evaluate(() => JSON.parse(sessionStorage.getItem('syn3h.resume.v1')))
+      await persist('periodic save captured before host assertions')
+      assert.equal(result.periodicSaved.wasHost, true)
+      assert.equal(result.periodicSaved.world['world.seed'], 42)
       // Exercise the registered lifecycle handler; this is explicitly synthetic pagehide.
       await persist('before synthetic pagehide')
       await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide')))
       result.saved = await page.evaluate(() => JSON.parse(sessionStorage.getItem('syn3h.resume.v1')))
+      await persist('lifecycle save captured before host assertions')
+      assert.equal(result.saved.wasHost, true); assert.equal(result.saved.world['world.seed'], 42)
       assert.equal(result.saved.entrySeed, 1); assert.equal(result.saved.seed, 42); assert.equal(result.saved.kind, 'jet')
       await persist('Jet resume snapshot verified; before invite/About navigation')
       await page.locator('.galaxy-links [data-goto=multiplayer]').click()
@@ -409,6 +429,24 @@ try {
       try { await bounded(browser.close(), 'browser close', 10000) } catch (error) { report.errors.push(String(error)); browserFailure ??= error }
     }
     if (browserFailure) throw browserFailure
+    if (mode === 'desktop') {
+      // Default REJOIN_GRACE is 30s. Keep normal rejoin and literal room=lobby.
+      // This boundary is not host proof: each entry separately asserts the real role.
+      assert.ok(remaining() > 31000, 'budget for single inter-browser boundary')
+      const boundary = report.interBrowserBoundary = { requestedMs: 31000,
+        startedAt: new Date().toISOString(), startMonotonicMs: performance.now() }
+      await persist('Chrome closed; before single rejoin grace boundary')
+      let timer
+      try {
+        await bounded(new Promise(resolve => { timer = setTimeout(resolve, 31000) }), 'inter-browser grace', 32000)
+      } finally {
+        clearTimeout(timer)
+        boundary.elapsedMs = performance.now() - boundary.startMonotonicMs
+        boundary.endedAt = new Date().toISOString()
+      }
+      await persist('inter-browser grace boundary finished')
+      assert.ok(boundary.elapsedMs >= 31000, 'full single grace boundary elapsed')
+    }
   }
   await provenance()
 } catch (error) { failure = error; report.errors.push(String(error)) }
