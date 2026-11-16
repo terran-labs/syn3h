@@ -24,7 +24,7 @@ export interface GearAction {
   /** Held actions run from start() until stop(); others are a single start(). */
   readonly hold: boolean
   start(): void
-  stop?(): void
+  stop?(reason?: 'end' | 'cleanup'): void
 }
 
 export interface GearControls {
@@ -119,7 +119,102 @@ export function hintSignature(hints: readonly Hint[]): string {
 
 interface Item { id: string; button: HTMLButtonElement; label: HTMLElement; offset: number }
 
-interface ActionButton { id: string; button: HTMLButtonElement; action: GearAction; held: GearAction | null; pointers: Set<number> }
+interface ActionButton { id: string; button: HTMLButtonElement; action: GearAction; held: GearAction | null }
+
+interface HoldRecord {
+  action: GearAction
+  pointers: Set<number>
+  keys: Set<string>
+  retired: boolean
+}
+
+/** Retains physical membership after a button disappears. Global end listeners live
+ * only while records exist, including after view disposal; cleanup is never neutral. */
+export class RetainedActionHolds {
+  private readonly records = new Set<HoldRecord>()
+  private readonly pointers = new Map<number, HoldRecord>()
+  private readonly keys = new Map<string, HoldRecord>()
+  private listening = false
+  private disposed = false
+  constructor(private readonly target: Window, private changed: () => void = () => {}) {}
+
+  pointer(action: GearAction, id: number): boolean {
+    if (this.disposed || this.pointers.has(id)) return false
+    const record = this.acquire(action)
+    record.pointers.add(id); this.pointers.set(id, record)
+    this.start(record)
+    return true
+  }
+  key(action: GearAction, code: string): boolean {
+    if (this.disposed || this.keys.has(code)) return false
+    const record = this.acquire(action)
+    record.keys.add(code); this.keys.set(code, record)
+    this.start(record)
+    return true
+  }
+  active(action: GearAction | null): boolean {
+    return [...this.records].some(r => r.action === action && !r.retired)
+  }
+  cleanup(action: GearAction): void {
+    for (const r of this.records) if (r.action === action && !r.retired) {
+      r.retired = true
+      r.action.stop?.('cleanup')
+    }
+    this.changed()
+  }
+  cleanupAll(): void {
+    for (const r of this.records) this.cleanup(r.action)
+  }
+  dispose(): void {
+    this.cleanupAll()
+    this.disposed = true
+    this.changed = () => {}
+    // End listeners retire suppressed tokens, then remove themselves. No DOM is retained.
+  }
+  private acquire(action: GearAction): HoldRecord {
+    let record = [...this.records].find(r => r.action === action)
+    if (!record) {
+      record = { action, pointers: new Set(), keys: new Set(), retired: false }
+      this.records.add(record)
+    }
+    return record
+  }
+  private start(record: HoldRecord): void {
+    if (!this.listening) {
+      this.listening = true
+      this.target.addEventListener('pointerup', this.pointerEnd, true)
+      this.target.addEventListener('pointercancel', this.pointerEnd, true)
+      this.target.addEventListener('keyup', this.keyEnd, true)
+    }
+    if (!record.retired && record.pointers.size + record.keys.size === 1) record.action.start()
+    this.changed()
+  }
+  private readonly pointerEnd = (event: PointerEvent): void => {
+    const record = this.pointers.get(event.pointerId)
+    if (!record) return
+    this.pointers.delete(event.pointerId); record.pointers.delete(event.pointerId)
+    this.finish(record)
+  }
+  private readonly keyEnd = (event: KeyboardEvent): void => {
+    const record = this.keys.get(event.code)
+    if (!record) return
+    this.keys.delete(event.code); record.keys.delete(event.code)
+    this.finish(record)
+  }
+  private finish(record: HoldRecord): void {
+    if (!record.pointers.size && !record.keys.size) {
+      this.records.delete(record)
+      record.action.stop?.('end')
+    }
+    if (!this.records.size && this.listening) {
+      this.target.removeEventListener('pointerup', this.pointerEnd, true)
+      this.target.removeEventListener('pointercancel', this.pointerEnd, true)
+      this.target.removeEventListener('keyup', this.keyEnd, true)
+      this.listening = false
+    }
+    this.changed()
+  }
+}
 
 export class GearSelector {
   readonly element = document.createElement('div')
@@ -149,6 +244,9 @@ export class GearSelector {
   private description = ''
   private actionsKey = ''
   private actionButtons: ActionButton[] = []
+  private readonly holds = new RetainedActionHolds(window, () => {
+    for (const entry of this.actionButtons) entry.button.classList.toggle('held', this.holds.active(entry.held))
+  })
 
   // Gesture state.
   private drag: { pointer: number; y: number; moved: boolean } | null = null
@@ -233,7 +331,7 @@ export class GearSelector {
   }
 
   dispose(): void {
-    this.releaseAll()
+    this.holds.dispose()
     this.abort.abort()
     this.element.remove()
     this.actionsElement.remove()
@@ -408,39 +506,33 @@ export class GearSelector {
     button.dataset.hold = String(action.hold)
     button.textContent = action.label
     button.setAttribute('aria-label', action.label)
-    const entry: ActionButton = { id: action.id, button, action, held: null, pointers: new Set() }
+    const entry: ActionButton = { id: action.id, button, action, held: null }
     const signal = this.abort.signal
     if (action.hold) {
       button.addEventListener('pointerdown', (event) => {
         event.preventDefault()
-        entry.pointers.add(event.pointerId)
-        this.press(entry)
+        const captured = this.holds.active(entry.held) ? entry.held! : entry.action
+        if (this.holds.pointer(captured, event.pointerId)) entry.held = captured
+        entry.button.classList.toggle('held', this.holds.active(entry.held))
+        this.refreshControls()
       }, { signal })
-      const up = (event: PointerEvent) => {
-        if (!entry.pointers.delete(event.pointerId)) return
-        if (!entry.pointers.size) this.release(entry)
-      }
-      for (const name of ['pointerup', 'pointercancel', 'pointerleave', 'lostpointercapture'] as const) button.addEventListener(name, up, { signal })
+      for (const name of ['pointerleave', 'lostpointercapture'] as const)
+        button.addEventListener(name, () => this.release(entry), { signal })
       button.addEventListener('keydown', (event) => {
         if (event.code !== 'Space' && event.code !== 'Enter') return
         event.preventDefault(); event.stopPropagation()
-        if (!event.repeat) this.press(entry)
+        if (event.repeat) return
+        const captured = this.holds.active(entry.held) ? entry.held! : entry.action
+        if (this.holds.key(captured, event.code)) entry.held = captured
+        entry.button.classList.toggle('held', this.holds.active(entry.held))
+        this.refreshControls()
       }, { signal })
-      button.addEventListener('keyup', (event) => { if (event.code === 'Space' || event.code === 'Enter') this.release(entry) }, { signal })
-      button.addEventListener('blur', () => { entry.pointers.clear(); this.release(entry) }, { signal })
+      button.addEventListener('blur', () => this.release(entry), { signal })
     } else {
       button.addEventListener('click', () => { entry.action.start(); this.refreshControls() }, { signal })
     }
     button.addEventListener('contextmenu', (event) => event.preventDefault(), { signal })
     return entry
-  }
-
-  private press(entry: ActionButton): void {
-    if (entry.held) return
-    entry.held = entry.action
-    entry.button.classList.add('held')
-    entry.action.start()
-    this.refreshControls()
   }
 
   /** After an action, show its new state now rather than on the next frame. */
@@ -450,15 +542,11 @@ export class GearSelector {
   }
 
   private release(entry: ActionButton): void {
-    const held = entry.held
-    if (!held) return
-    entry.held = null
-    entry.pointers.clear()
+    if (entry.held) this.holds.cleanup(entry.held)
     entry.button.classList.remove('held')
-    held.stop?.()
   }
 
-  private releaseAll(): void { for (const b of this.actionButtons) this.release(b) }
+  private releaseAll(): void { this.holds.cleanupAll() }
 
   // --- Picking gear -------------------------------------------------------------------
 

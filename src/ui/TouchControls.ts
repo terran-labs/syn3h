@@ -39,6 +39,66 @@ const DRIVEN_KEY = 'syn3h.touch.driven'
 function readDriven(): boolean { try { return localStorage.getItem(DRIVEN_KEY) === '1' } catch { return false } }
 function writeDriven(): void { try { localStorage.setItem(DRIVEN_KEY, '1') } catch { /* No storage: the hint returns next session. */ } }
 
+/** Fire gestures retain their identity until a real global end, even after teardown. */
+export class TouchFireHolds {
+  private readonly owners = new Map<string, { token: object; blocked: boolean }>()
+  private listening = false
+  private disposed = false
+  constructor(private readonly input: Input, private readonly target: Window,
+    private suppressed: () => void, private changed: () => void = () => {}) {}
+  get active(): boolean { return [...this.owners.values()].some(owner => !owner.blocked) }
+  pointer(id: number): void { this.begin(`pointer:${id}`) }
+  key(code: string): void { this.begin(`key:${code}`) }
+  private begin(id: string): void {
+    if (this.disposed || this.owners.has(id)) return
+    const owner = { token: {}, blocked: this.input.suspended }
+    this.owners.set(id, owner)
+    if (!this.listening) {
+      this.listening = true
+      this.target.addEventListener('pointerup', this.pointerEnd, true)
+      this.target.addEventListener('pointercancel', this.pointerEnd, true)
+      this.target.addEventListener('keyup', this.keyEnd, true)
+    }
+    this.input.beginExternalFire(owner.token)
+    this.changed()
+  }
+  cleanup(): void {
+    let wasLive = false
+    for (const owner of this.owners.values()) {
+      if (owner.blocked) continue
+      // Refresh native eligibility before checking whether this cleanup ends a hold.
+      this.input.beginExternalFire(owner.token)
+      wasLive ||= this.input.state.fire
+      owner.blocked = true
+      this.input.suppressExternalFire(owner.token)
+    }
+    if (wasLive && !this.input.state.fire) this.suppressed()
+    this.changed()
+  }
+  dispose(): void {
+    this.cleanup()
+    this.disposed = true
+    this.changed = () => {}
+    this.suppressed = () => {}
+    // Global end listeners persist only until the retained physical owners end.
+  }
+  private readonly pointerEnd = (event: PointerEvent): void => this.end(`pointer:${event.pointerId}`)
+  private readonly keyEnd = (event: KeyboardEvent): void => this.end(`key:${event.code}`)
+  private end(id: string): void {
+    const owner = this.owners.get(id)
+    if (!owner) return
+    this.owners.delete(id)
+    this.input.endExternalFire(owner.token)
+    if (!this.owners.size && this.listening) {
+      this.target.removeEventListener('pointerup', this.pointerEnd, true)
+      this.target.removeEventListener('pointercancel', this.pointerEnd, true)
+      this.target.removeEventListener('keyup', this.keyEnd, true)
+      this.listening = false
+    }
+    this.changed()
+  }
+}
+
 /** Each control owns its pointer so driving and tagging can happen simultaneously. */
 export interface TouchGear { attached(): boolean; letGo(): void }
 export class TouchControls {
@@ -50,6 +110,10 @@ export class TouchControls {
   /** Whether this device has driven with the stick, so the first-run hint can stay away. */
   private driven = readDriven()
   private hint?: HTMLElement
+  private fireHolds?: TouchFireHolds
+  /** Composition MUST bind this to GearRack.cancelFireActionsIfIdle before play.
+   * Called synchronously after direct TAG suppression; no release is dispatched. */
+  onFireSuppressed?: () => void
 
   constructor(private readonly input: Input, parent: HTMLElement = document.body) {
     this.element.className = 'touch-controls'
@@ -63,9 +127,29 @@ export class TouchControls {
     this.stick(signal)
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('button')) {
       const action = button.dataset.action as 'brakes' | 'special' | 'fire' | 'throttleUp' | 'throttleDown' | 'zorb' | 'letOut' | 'letGo'
+      if (action === 'fire') {
+        const fire = new TouchFireHolds(input, window, () => this.onFireSuppressed?.(),
+          () => button.classList.toggle('held', fire.active))
+        this.fireHolds = fire
+        this.resetters.push(() => fire.cleanup())
+        button.addEventListener('pointerdown', (event) => {
+          if (!this.active || input.suspended) return
+          event.preventDefault()
+          fire.pointer(event.pointerId)
+          try { button.setPointerCapture(event.pointerId) } catch { /* Global ends still retire the gesture. */ }
+        }, { signal })
+        button.addEventListener('keydown', (event) => {
+          if (event.code !== 'Space' && event.code !== 'Enter') return
+          event.preventDefault(); event.stopPropagation()
+          if (!event.repeat && this.active && !input.suspended) fire.key(event.code)
+        }, { signal })
+        for (const name of ['pointerleave', 'lostpointercapture', 'blur'] as const)
+          button.addEventListener(name, () => fire.cleanup(), { signal })
+        continue
+      }
       const pointers = new Set<number>()
       const throttle = action === 'throttleUp' || action === 'throttleDown'
-      const release = () => { pointers.clear(); if (throttle) { this.thrust.delete(action); this.syncThrust() } else if (action === 'letOut') this.key('keyup'); else if (action !== 'special' && action !== 'zorb' && action !== 'letGo') input.external[action] = false; button.classList.remove('held') }
+      const release = () => { pointers.clear(); if (throttle) { this.thrust.delete(action); this.syncThrust() } else if (action === 'letOut') this.key('keyup'); else if (action === 'brakes') input.external.brakes = false; button.classList.remove('held') }
       this.resetters.push(release)
       button.addEventListener('pointerdown', (event) => {
         if (!this.active || input.suspended) return
@@ -77,7 +161,7 @@ export class TouchControls {
         // Bungee: LET GO drops the cord; LET OUT pays it out for as long as it is held (the V key).
         else if (action === 'letGo') this.gear?.letGo()
         else if (action === 'letOut') this.key('keydown')
-        else input.external[action] = true
+        else if (action === 'brakes') input.external.brakes = true
         button.classList.add('held'); this.update()
       }, { signal })
       for (const name of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) {
@@ -196,5 +280,5 @@ export class TouchControls {
     for (const button of this.element.querySelectorAll<HTMLElement>('button')) button.classList.toggle('is-hinted', button.dataset.action === action)
   }
   private reset(): void { for (const reset of this.resetters) reset() }
-  dispose(): void { this.reset(); this.abort.abort(); this.element.remove() }
+  dispose(): void { this.reset(); this.fireHolds?.dispose(); this.abort.abort(); this.element.remove() }
 }
