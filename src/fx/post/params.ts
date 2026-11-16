@@ -39,7 +39,7 @@ export const postContact = defineParam({ id: 'post.contact', label: 'Contact sha
 export const postDebug = defineParam({ id: 'post.debug', label: 'Debug view: 0 off, 1 occlusion, 2 contact shadows', group: g, scope: c, default: 0, min: 0, max: 2, step: 1 })
 export const postToneMap = defineParam({ id: 'post.toneMap', label: 'Tone mapping: 0 ACES, 1 AgX, 2 Neutral', group: g, scope: c, default: 0, min: 0, max: 2, step: 1 })
 
-export const postPlunge = defineParam({ id: 'post.plunge', label: 'Splash blur when a vehicle goes under', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.05 })
+export const postPlunge = defineParam({ id: 'post.plunge', label: 'Splash blur when the camera touches water', group: g, scope: c, default: 1, min: 0, max: 2, step: 0.05 })
 
 export const postHeat = defineParam({ id: 'post.heat', label: 'Heat shimmer over lava', group: g, scope: c, default: 0.6, min: 0, max: 2, step: 0.05 })
 
