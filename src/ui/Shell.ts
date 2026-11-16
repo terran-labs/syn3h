@@ -1432,7 +1432,7 @@ export class Shell implements System {
     const invitedOnly = this.invited && !this.started
     if (this.worldDirty) {
       this.worldDirty = false
-      this.element.querySelector('.planet-current')!.textContent = `${currentWorldName()}, a ${planet.label.toLowerCase()} world. ${planet.centre}.${invitedOnly ? ' You were invited to this world.' : ''}`
+      this.element.querySelector('.planet-current')!.textContent = `${currentWorldName()}, ${/^[aeiou]/i.test(planet.label) ? 'an' : 'a'} ${planet.label.toLowerCase()} world. ${planet.centre}.${invitedOnly ? ' You were invited to this world.' : ''}`
       this.updateInvite()
     }
     this.refreshGalaxyLabels(editable && !invitedOnly)
