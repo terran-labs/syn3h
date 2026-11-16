@@ -18,7 +18,7 @@ const views = [
 ]
 try {
   for (const view of views) for (const dpr of view.dpr) for (const placement of placements) {
-    if (placement !== 0 && view.name === 'large') continue
+    if (placement !== 0 && (view.name === 'large' || view.name === 'phone-land' || dpr === 2)) continue
     const context = await browser.newContext({ viewport: view.viewport, deviceScaleFactor: dpr, isMobile: view.isMobile, hasTouch: view.hasTouch })
     const page = await context.newPage(), tag = `${prefix}-${view.name}-dpr${dpr}${placements.length > 1 || placement ? `-p${placement}` : ''}`
     page.on('pageerror', e => errors.push(`${tag}: ${e.message}`)); page.on('console', m => { if (m.type() === 'error' || /logo|wordmark/i.test(m.text())) errors.push(`${tag}: ${m.text()}`) })

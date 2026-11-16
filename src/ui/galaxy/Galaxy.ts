@@ -10,8 +10,9 @@
  * its WebGL context back when disabled.
  */
 import { PresenceFeed, type Populations } from './presence'
-import { LogoRenderer, type PixelRect } from '../brand/logoRenderer'
+import { FIELD_UNIT, LogoRenderer, type PixelRect } from '../brand/logoRenderer'
 import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
+import { placeWordmark, poseView, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkPlacement } from '../brand/wordmarkScene'
 import type { ParamValue } from '../../../shared/params'
 import { ORDINARY_BODY, planetById, type PlanetBody } from '../../world/planets'
 import { qualityFrame, qualityScale, qualityShed } from '../quality/ladder'
@@ -276,10 +277,15 @@ const vec3 ACCENT_B = vec3(0.56, 0.48, 1.0);
 vec4 mapAt(int i, vec2 uv) { return i == uCloseIndex ? texture(uClose, uv) : texture(uMaps, vec3(uv, float(i))); }
 // Where a point in space lands on screen, in the same units as q below. z is depth.
 vec3 toScreen(vec3 p) { vec3 d = p - uEye; float z = dot(d, uForward); return vec3(dot(d, uRight), dot(d, uUp), z) / vec3(max(z, 0.0001) * uTan, max(z, 0.0001) * uTan, 1.0); }
+// The wordmark standing in space, when lobby.wordmark places it there (src/ui/brand/wordmarkScene.ts).
+${WORDMARK_SCENE_GLSL}
 void main() {
   float minSide = min(uSize.x, uSize.y);
   vec2 q = (gl_FragCoord.xy - uFrame.xy * uSize) / (minSide * uFrame.z) * 2.0;           // -1..1 on the short side
   vec3 ray = normalize(uForward + (q.x * uRight + q.y * uUp) * uTan);
+  // Where this ray meets the wordmark's plane. Its footprint is taken here, in uniform flow.
+  vec3 markAt = uMarkMode > 0 ? markHit(uEye, ray) : vec3(0.0, 0.0, -1.0);
+  float markW = wordmarkFootprint(markAt.xy);
   vec3 c = SPACE;
   // Stars, fixed to the sky so they turn as the view does.
   vec3 cell = floor(ray * 420.0);
@@ -418,6 +424,53 @@ void main() {
   } else {
     c += sky * smoothstep(0.08, 0.5, sunDistance) + haloTint;
     if (planeT > 0.01 && uOnly < 0) c += vec3(0.45, 0.62, 0.9) * min(trace, 1.0) * clamp(1.0 - planeW * 2.5, 0.0, 1.0) * 0.1 * (1.0 - uShed.y) * (1.0 - uDive);
+  }
+  // The wordmark in space: hidden by any world nearer than it, and over everything farther.
+  if (uMarkMode > 0 && markAt.z > 0.0) {
+    float d = wordmarkDistance(markAt.xy), cover = markAt.z < nearest ? wordmarkCoverage(d, markW) * uMarkOpacity : 0.0;
+    vec3 at = uEye + ray * markAt.z;
+    if (cover > 0.0) {
+      vec3 mark = vec3(0.008, 0.016, 0.039), rimColour = mix(vec3(1.0, 0.86, 0.66), WARM, 0.3);
+      float line = 1.0 - wordmarkCoverage(d + max(0.012, 1.5 * markW), markW), lineStrength = 0.85;
+      if (uMarkMode != 2) {
+        // Behind the sun: its face is lit by it, warmest nearest, and worlds between throw shadows.
+        vec3 n = normalize(cross(uMarkRight, uMarkUp)); n *= -sign(dot(n, ray));
+        float far = length(at); vec3 l = -at / far;
+        float lit = max(0.0, dot(n, l)) * uMarkSun * uMarkSun / (far * far), shadow = 1.0;
+        for (int i = 0; i < ${MAX}; i++) {
+          if (i >= uCount) break;
+          vec3 oc = uWorld[i].xyz - at; float along = dot(oc, l);
+          if (along <= 0.0 || along >= far) continue;
+          shadow *= smoothstep(uWorld[i].w * 0.85, uWorld[i].w * 1.25, length(oc - l * along));
+        }
+        // A dark face with a warm sheen, so the pale edge line carries the name. Lit by the
+        // rays (3), the letters are a veil that catches the shafts and haze passing in front.
+        if (uMarkMode == 3) { mark += rimColour * 0.02 + sunShafts * 1.5 + sunHaze * 0.9 + rimColour * 0.12 * lit * shadow; lineStrength = 0.45; }
+        else mark += rimColour * (0.025 + 0.22 * lit * shadow);
+      } else {
+        // In front of the sun: backlit, dark, with a rim of light on the edges facing it.
+        vec2 sunAt = markHit(uEye, normalize(-uEye)).xy, toSun = sunAt - markAt.xy;
+        float e = 0.004;
+        vec2 g = vec2(wordmarkDistance(markAt.xy + vec2(e, 0.0)) - d, wordmarkDistance(markAt.xy + vec2(0.0, e)) - d);
+        float facing = max(0.0, dot(g / max(length(g), 1e-6), toSun / max(length(toSun), 1e-6)));
+        float rim = (1.0 - smoothstep(0.0, 0.03, -d)) * pow(facing, 2.0) * exp(-length(toSun) * 0.3);
+        mark += rimColour * rim * 1.6 + rimColour * 0.03; lineStrength = 0.3;
+      }
+      mark = mix(mark, vec3(1.0, 0.93, 0.84), line * lineStrength);
+      c = mix(c, mark, cover);
+      // In front of the sun the letters hide it, its glow and its shafts. Behind it they are
+      // only seen through the shafts, which are thinner over the letters than between them.
+      if (uMarkMode == 2) { sunLight *= 1.0 - cover; sunHaze *= 1.0 - cover; sunShafts *= 1.0 - cover; flare *= 1.0 - cover; }
+      else { sunShafts *= 1.0 - 0.55 * cover; sunHaze *= 1.0 - 0.35 * cover; }
+    }
+    // In front of the sun the letters also stop the shafts beyond them.
+    if (uMarkMode == 2 && uShed.x < 1.0) {
+      vec3 sunAt = markHit(uEye, normalize(-uEye));
+      if (sunAt.z > 0.0 && sunAt.z < length(uEye)) {
+        float cut = markShadow(sunAt.xy, markAt.xy) * uMarkOpacity * (1.0 - uShed.x);
+        sunShafts *= 1.0 - 0.92 * cut; sunHaze *= 1.0 - 0.45 * cut; flare *= 1.0 - 0.6 * cut;
+      }
+    }
   }
   c += sunLight + sunHaze + sunShafts + flare * (found >= 0 ? 0.2 : 1.0);
   // The dive: streaks rushing outward, then the brightness of air as the world fills the view.
@@ -700,7 +753,7 @@ export class Galaxy {
     gl.linkProgram(program)
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { console.warn('Syn3h galaxy shader failed.', gl.getProgramInfoLog(program)); return }
     gl.useProgram(program); gl.bindVertexArray(gl.createVertexArray())
-    for (const name of ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex']) this.uniforms[name] = gl.getUniformLocation(program, name)
+    for (const name of ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uField', 'uFieldBounds', 'uFieldDecode']) this.uniforms[name] = gl.getUniformLocation(program, name)
     // One array of small maps on unit 0, the close map on unit 1.
     const linear = (target: number) => { gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, gl.LINEAR); gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.LINEAR); gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.REPEAT); gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE) }
     gl.activeTexture(gl.TEXTURE0); this.array = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.array)
@@ -708,6 +761,8 @@ export class Galaxy {
     gl.activeTexture(gl.TEXTURE1); this.close = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, this.close)
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4)); linear(gl.TEXTURE_2D)
     gl.uniform1i(this.uniforms.uMaps, 0); gl.uniform1i(this.uniforms.uClose, 1)
+    // The wordmark's field has its own unit; a sampler left on unit 0 would clash with the maps.
+    gl.uniform1i(this.uniforms.uField, FIELD_UNIT)
     this.layers = []; this.closeKey = undefined; this.closeIndex = -1
     this.program = program; this.blurProgram = null
     const blur = gl.createProgram()!
@@ -753,6 +808,7 @@ export class Galaxy {
     this.paintMaps(); this.resize(); this.loop(0)
   }
   private release(): void {
+    this.markStart = null; this.markRig.pose = null
     // A finished or abandoned drop does not outlive the context: the next showing starts clean.
     this.home()
     this.logo?.dispose(); this.logo = null; this.options.onLogo?.(false)
@@ -917,11 +973,22 @@ export class Galaxy {
     const framingMoves = this.framing.some((v, i) => Math.abs(v - frameGoal[i]) > 0.001)
     this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], perFrame(0.18, elapsed)) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
+    const mark = this.stepMark(elapsed, still)
     // Held still, draw only while something is moving; the last frame stays on the canvas.
-    const moving = this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
+    const moving = mark.moving || this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
     if (still && !moving && this.wake <= 0) { this.idle++; return }
     this.wake = Math.max(0, this.wake - 1)
+    // The wordmark's field is baked (first, and if drawn much larger) before the frame starts.
+    if (mark.placement) this.logo!.distanceField!.ensure(mark.pixelsPerUnit, null)
     gl.useProgram(this.program); this.upload(gl); gl.uniform1i(u.uCloseIndex, this.closeIndex)
+    gl.uniform1i(u.uMarkMode, mark.placement ? mark.mode : 0)
+    if (mark.placement) {
+      const p = mark.placement
+      gl.uniform3f(u.uMarkCentre, ...p.centre); gl.uniform3f(u.uMarkRight, ...p.right); gl.uniform3f(u.uMarkUp, ...p.up)
+      gl.uniform1f(u.uMarkOpacity, mark.opacity * (1 - this.dive)); gl.uniform1f(u.uMarkSun, p.sunDistance)
+      this.logo!.distanceField!.bind(name => u[name])
+      gl.useProgram(this.program)
+    }
     gl.viewport(0, 0, this.canvas.width, this.canvas.height)
     gl.uniform3f(u.uFrame, ...this.framing)
     gl.uniform2f(u.uSize, this.canvas.width, this.canvas.height); gl.uniform1f(u.uTime, time); gl.uniform1f(u.uScale, this.canvas.width / Math.max(1, this.host.clientWidth))
@@ -943,7 +1010,8 @@ export class Galaxy {
       gl.drawArrays(gl.TRIANGLES, 0, 3); gl.useProgram(this.program)
     }
     const logo = this.logo, layout = this.options.logo?.()
-    if (logo && layout) {
+    if (mark.placement) this.options.onLogo?.(true)
+    else if (logo && layout) {
       const budget = logoBudget(layout.level), held = this.reduced.matches || budget.still || this.backdrop < 1
       if (held) logo.skipIntro()
       // Behind the loading veil the logo waits at nothing: its fade starts as the veil lifts.
@@ -965,6 +1033,36 @@ export class Galaxy {
     if (this.chosen >= 0 && !this.arrived && (this.arriving += this.step) > 1.5) { this.arrived = true; this.options.onArrive(worlds[this.chosen].id) }
   }
   private screen: { id: string; x: number; y: number; radius: number; visible: boolean; depth: number }[] = []
+  private readonly markRig = new WordmarkRig()
+  /** performance.now() when the in-space wordmark was first drawn this showing, for its fade in. */
+  private markStart: number | null = null
+  private markMode = 0
+  /**
+   * The wordmark in space (lobby.wordmark above 0): where it stands this frame, seen from a
+   * rig that trails the camera, how large it is on screen, and whether it is still moving
+   * (the rig catching up, or the fade in), which keeps frames coming.
+   */
+  private stepMark(elapsed: number, still: boolean): { mode: number; placement: ReturnType<typeof placeWordmark> | null; pixelsPerUnit: number; opacity: number; moving: boolean } {
+    const mode = Math.round(wordmarkPlacement.value), layout = this.options.logo?.()
+    const none = { mode: 0, placement: null, pixelsPerUnit: 0, opacity: 0, moving: false }
+    if (mode !== this.markMode) { this.markMode = mode; this.markStart = null; this.markRig.pose = null; this.wake = 2 }
+    if (mode <= 0 || !this.logo?.distanceField?.ok || !layout || !this.canvas) return none
+    const goal = { yaw: this.yaw, pitch: this.pitch, reach: this.reach, target: [...this.target] as [number, number, number] }
+    const held = still || this.reduced.matches
+    const rigMoving = this.markRig.step(goal, elapsed, held)
+    // The HTML logo box, in the shader's q units.
+    const sx = this.canvas.width / Math.max(1, this.host.clientWidth), sy = this.canvas.height / Math.max(1, this.host.clientHeight)
+    const minSide = Math.min(this.canvas.width, this.canvas.height) * this.framing[2], box = layout.box
+    const fx = (box.x + box.width / 2) * sx, fy = this.canvas.height - (box.y + box.height / 2) * sy
+    const screen = { x: (fx - this.framing[0] * this.canvas.width) / minSide * 2, y: (fy - this.framing[1] * this.canvas.height) / minSide * 2, unit: box.height * sy / minSide * 2 }
+    const placement = placeWordmark(mode, poseView(this.markRig.pose!, VIEW_TAN), screen)
+    const now = performance.now()
+    if (this.markStart === null) this.markStart = held ? now - 1e6 : now
+    const t = Math.min(1, (now - this.markStart) / 1500), opacity = t * t * (3 - 2 * t)
+    return { mode, placement, pixelsPerUnit: box.height * sy * 1.1, opacity, moving: rigMoving || opacity < 1 }
+  }
+  /** For tests and screenshots: the in-space wordmark's state. */
+  wordmarkStats() { const f = this.logo?.distanceField; return { mode: this.markMode, fieldDensity: f?.density ?? 0, fieldBakes: f?.bakes ?? 0, fieldBakeMs: f?.lastBakeMs ?? 0, rig: this.markRig.pose } }
   /** Fly to a world, as a tap on it does. */
   choose(id: string): void { this.handled = performance.now();
     this.wake = 2; const index = this.options.worlds.findIndex(world => world.id === id)

@@ -220,7 +220,7 @@ void main() {
   color = vec4(c, 1.0) * cover * uOpacity;
 }`
 /** The texture unit the field is bound on: well clear of the lobby galaxy's own (0 to 2). */
-const FIELD_UNIT = 7
+export const FIELD_UNIT = 7
 
 function compile(gl: WebGL2RenderingContext, vertex: string, fragment: string): WebGLProgram | null {
   const program = gl.createProgram()

@@ -26,3 +26,31 @@ try {
   })
   console.log(JSON.stringify(result, null, 1))
 } finally { await browser.close() }
+// The lobby frame with each wordmark placement: the galaxy's whole pass (the ray tracer with
+// the wordmark in it, or with the flat logo drawn after), timed to the GPU's finish.
+{
+  const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
+  try {
+    for (const view of [{ width: 1440, height: 900, deviceScaleFactor: 2 }, { width: 390, height: 844, deviceScaleFactor: 3 }]) {
+      const page = await browser.newPage({ viewport: { width: view.width, height: view.height }, deviceScaleFactor: view.deviceScaleFactor })
+      await page.goto(`${base}?room=wm-cost-${Date.now()}`)
+      await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
+      const row = {}
+      for (const mode of [0, 1, 2, 3]) {
+        row[mode] = await page.evaluate(async mode => {
+          syn3h.params.set('gfx.level', 2); syn3h.params.set('lobby.wordmark', mode)
+          await new Promise(r => setTimeout(r, 2500))
+          const g = syn3h.shell.galaxy, gl = g.gl, pixel = new Uint8Array(4), times = []
+          for (let i = 0; i < 40; i++) {
+            g.wake = 2; g.last = 0; gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel)
+            const t = performance.now(); g.loop(performance.now()); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel); times.push(performance.now() - t)
+          }
+          times.sort((a, b) => a - b)
+          return +times[20].toFixed(2)
+        }, mode)
+      }
+      console.log(`galaxy frame ms (median) ${view.width}x${view.height}@${view.deviceScaleFactor}, by lobby.wordmark:`, JSON.stringify(row))
+      await page.close()
+    }
+  } finally { await browser.close() }
+}

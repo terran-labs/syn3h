@@ -79,7 +79,8 @@ float wordmarkDistance(vec2 p) {
   vec2 uv = (p - uFieldBounds.xy) / uFieldBounds.zw;
   // Outside the baked rectangle the field only knows it is far: never inside a letter.
   if (any(lessThan(uv, vec2(0.0))) || any(greaterThan(uv, vec2(1.0)))) return 1.0;
-  return texture(uField, uv).r * uFieldDecode.x + uFieldDecode.y;
+  // No mipmaps, so level 0 explicitly: this may run in branches where derivatives are undefined.
+  return textureLod(uField, uv, 0.0).r * uFieldDecode.x + uFieldDecode.y;
 }
 // A box filter one pixel wide across the edge: exact for straight edges, a hair soft at corners.
 float wordmarkCoverage(float d, float w) { return clamp(0.5 - d / max(w, 1e-6), 0.0, 1.0); }
