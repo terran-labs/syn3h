@@ -51,7 +51,17 @@ is not usable play. Record transferred bytes from the frozen artifact manifest a
 network encoding method, not development-server source size.
 
 Blank-page controls before and after every run must each last at least three seconds
-and pass the existing `judgePacing` against 1000 / refreshHz. Historical headless runs
+and pass the existing `judgePacing` against 1000 / refreshHz. Each control supplies
+UTC `startedAt` and `endedAt`, monotonic `durationMs` and every consecutive gap.
+The control starts at the initial animation-frame callback, whose timestamp is the
+left boundary and contributes no interval. It ends at the final callback, whose gap
+is included. Sum of gaps must match duration within 0.002 ms per gap plus one boundary
+allowance. UTC elapsed time must match duration within 1.002 ms, allowing two endpoints
+rounded to milliseconds plus the sample rounding allowance. The before control ends
+no later than run start; the after control starts no earlier than run end. Entire
+before/run/after envelopes cannot overlap other scenes in either calibration or
+comparison. Calibration controls finish before policy freeze and comparison controls
+start after it. Historical headless runs
 with blank-page intervals of 67 to 133 ms are invalid baselines. Passing blank controls
 still does not establish physical-phone performance or GPU execution time.
 
@@ -61,10 +71,21 @@ All runs must match expected source and artifact identities and exact scene cond
 Fixture and collector hashes must match the trusted gate. Quality must stay fixed,
 errors must be empty, overflow false, and pages visible. Validate positive finite frame
 intervals and strictly increasing frame timestamps, the declared target interval,
-complete phase markers and requested phase duration. Frame coverage must agree with
-phase elapsed duration within one maximum observed frame interval; first and last
-samples must reach the phase boundaries within that same interval. This retains long
-frames instead of filtering them. Missing phases, null startup/bytes, missing pair
+complete phase markers and requested phase duration.
+
+All phase/sample timestamps share the run's monotonic millisecond origin. Phase start
+is the callback immediately preceding the first recorded interval; the first sample's
+`at - startedAtMs` must equal its `frameMs`. Each subsequent `at - previous.at` must
+equal its own `frameMs`. The final callback is the phase end, with its full interval
+included. Do not crop a first interval, discard an end interval, or include an interval
+that began before the phase. Requested duration may be exceeded only by the final
+interval that crosses it. An adapter must use this convention before collection.
+
+Timestamp and interval values may each be rounded independently to 0.001 ms. The
+per-interval consistency allowance is therefore 0.002 ms, covering two timestamp
+roundings and one duration rounding. The final endpoint uses the same allowance;
+summed durations allow that rounding budget per sample plus one endpoint. These are
+serialization allowances, not performance tolerance floors. Long frames remain intact. Missing phases, null startup/bytes, missing pair
 members, drift and truncation are explicit issues, never zeros.
 
 The collector must establish actual source, completeness, visibility and usable play;

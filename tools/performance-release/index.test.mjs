@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { canonicalJson, sha256, hashRun, validateEvidence, compareEvidence, classifyPairs, renderChart, renderPerformance } from './index.mjs'
-import { syntheticEvidence, phase, reseal } from './fixtures.mjs'
+import { syntheticEvidence, phase, reseal, control } from './fixtures.mjs'
 
 function invalid(edit, code, seal = true) {
   const { input, expected } = syntheticEvidence(); edit(input, expected)
@@ -133,6 +133,7 @@ test('transition stalls remain separate from steady observations and chart axes 
     const gap = input.runs.includes(r) && r.side === 'candidate' ? 50 : 20
     r.phases.push(phase('transition', 65000, 30000, gap))
     r.endedAt = new Date(Date.parse(r.startedAt) + 95000).toISOString()
+    r.pacingAfter = control(Date.parse(r.endedAt) + 1000)
     r.rawSha256 = hashRun(r)
   }
   expected.calibrationSha256 = sha256(input.calibration)
@@ -153,4 +154,57 @@ test('malformed structures produce validation issues rather than gate crashes', 
     assert.equal(validateEvidence(value, expected).valid, false)
     assert.equal(compareEvidence(value, expected).promotion, 'blocked')
   }
+})
+test('frame timestamps must match every interval, including the first boundary and final sample', () => {
+  invalid(i => { i.runs[0].phases[1].frames[100].frameMs += 5; i.runs[0].phases[1].frames[101].frameMs -= 5 }, 'frames')
+  invalid(i => { i.runs[0].phases[1].frames[0].at += 1 }, 'frames')
+  invalid(i => { i.runs[0].phases[1].frames.pop() }, 'truncated')
+  const { input, expected } = syntheticEvidence()
+  input.runs[0].phases[1].frames[10].at += .001
+  reseal(input)
+  assert.equal(validateEvidence(input, expected).valid, true)
+})
+test('pacing gaps must cover the real window and be placed around the run', () => {
+  invalid(i => { i.runs[0].pacingBefore.gaps = Array(1000).fill(20) }, 'pacing')
+  invalid(i => { i.runs[0].pacingBefore.startedAt = i.runs[0].startedAt }, 'pacing')
+  invalid(i => { i.runs[0].pacingAfter = control(Date.parse(i.runs[0].startedAt) + 1000) }, 'pacing')
+  invalid(i => { delete i.runs[0].pacingBefore.endedAt }, 'pacing')
+  invalid(i => { i.runs[0].pacingBefore.durationMs = 2000 }, 'pacing')
+})
+function twoSceneEvidence(overlapIn) {
+  const { input, expected } = syntheticEvidence()
+  input.fixture.scenes.lobby = structuredClone(input.fixture.scenes.drive)
+  expected.requiredScenes.push('lobby')
+  expected.fixtureSha256 = sha256(input.fixture)
+  input.conditions.lobby = structuredClone(input.conditions.drive)
+  input.policy.cells['lobby/steady'] = structuredClone(input.policy.cells['drive/steady'])
+  for (const c of Object.values(input.conditions)) c.fixtureSha256 = expected.fixtureSha256
+  for (const [label, runs] of [['calibration', input.calibration.runs], ['comparison', input.runs]]) {
+    const extra = structuredClone(runs)
+    for (const r of extra) {
+      r.id += '-lobby'; r.scene = 'lobby'
+      const offset = overlapIn === label ? 0 : 3600000
+      for (const obj of [r, r.pacingBefore, r.pacingAfter]) for (const key of ['startedAt', 'endedAt']) obj[key] = new Date(Date.parse(obj[key]) + offset).toISOString()
+    }
+    runs.push(...extra)
+    for (const r of runs) { r.conditions.fixtureSha256 = expected.fixtureSha256; r.rawSha256 = hashRun(r) }
+  }
+  expected.calibrationSha256 = sha256(input.calibration)
+  input.policy.calibrationSha256 = expected.calibrationSha256
+  expected.reviewedPolicySha256 = sha256(input.policy)
+  return { input, expected }
+}
+test('serial scenes include controls in global nonoverlap checks, separately for A/A and comparison', () => {
+  const good = twoSceneEvidence(null)
+  assert.equal(validateEvidence(good.input, good.expected).valid, true)
+  for (const label of ['calibration', 'comparison']) {
+    const { input, expected } = twoSceneEvidence(label)
+    assert.ok(validateEvidence(input, expected).issues.some(i => i.code === 'overlap'))
+    assert.equal(compareEvidence(input, expected).promotion, 'blocked')
+  }
+  invalid(i => { i.runs[1].pacingBefore = control(Date.parse(i.runs[0].endedAt) + 2000) }, 'overlap')
+})
+test('canonical block fits release notes without a heading rewrite', () => {
+  const { input, expected } = syntheticEvidence()
+  assert.ok(renderPerformance(compareEvidence(input, expected), { version: expected.candidate.version, assetBaseUrl: 'https://example.invalid/immutable' }).startsWith('### Performance\n'))
 })

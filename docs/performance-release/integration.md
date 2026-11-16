@@ -35,6 +35,17 @@ and hash its canonical JSON. Raw files contain canonical run payloads without
 The full submitted evidence must also be retained by the coordinator so the report can
 be recomputed. The report records its evidence and policy hashes.
 
+The canonical block starts with `### Performance` and is embedded without heading
+rewrites in both notes and PRs.
+
+Frozen artifact identity is compatible with the coordinator's proposed SHA-256 of
+canonical sorted `{path, sha256, size}` entries for frozen `dist/**` (excluding maps
+and `.assetsignore`), `server/**`, `shared/**` and `wrangler.toml`, including frozen
+`build.json` metadata. The coordinator defines and verifies the manifest, rejects
+symlinks and supplies the resulting exact hash; the comparator does not substitute
+source commits or placeholder hashes for artifact identity. Manifest bytes and actual
+response transfer bytes are different measurements and must remain labelled separately.
+
 The SVG has one consistent zero-based axis for each metric across scenes and phases.
 The Markdown table includes the same values, rounded to three decimal places for display;
 full precision remains in JSON. The chart is source-generated documentation only.

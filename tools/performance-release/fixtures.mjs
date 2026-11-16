@@ -24,7 +24,7 @@ export function syntheticEvidence() {
       const r = { id: `${calibration ? 'cal' : 'run'}-${pair}-${side}`, scene: 'drive', pair, position, side,
         startedAt: new Date(start).toISOString(), endedAt: new Date(start + 65000).toISOString(),
         observedBuild: calibration || side === 'baseline' ? baseline : candidate, conditions: structuredClone(conditions.drive),
-        pacingBefore: { durationMs: 3000, gaps: Array(150).fill(20) }, pacingAfter: { durationMs: 3000, gaps: Array(150).fill(20) },
+        pacingBefore: control(start - 4000), pacingAfter: control(start + 66000),
         phases: [phase('warmup', 0, 5000, 20), phase('steady', 5000, 60000, 20)],
         startup: { coldMs: 1000, warmMs: 500, method: 'synthetic usable-play predicate', coldCacheVerified: true, usablePlayVerified: true },
         transfer: { bytes: 1000000, method: 'synthetic gzip transfer', manifestSha256: (calibration || side === 'baseline' ? 'a' : 'b').repeat(64) },
@@ -49,3 +49,5 @@ export function phase(kind, start, duration, frameMs) {
   return { kind, startedAtMs: start, endedAtMs: start + duration, expectedDurationMs: duration, complete: true, frames }
 }
 export function reseal(input) { for (const r of input.runs) r.rawSha256 = hashRun(r) }
+
+export function control(start) { return { startedAt: new Date(start).toISOString(), endedAt: new Date(start + 3000).toISOString(), durationMs: 3000, gaps: Array(150).fill(20) } }
