@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { heightPixels, mapPoint } from '../../src/ui/Minimap'
+import { ARROW, RIM, UNITS, heightPixels, mapPoint, markColor, markLook, placeMark, rimFade, type MarkPlace } from '../../src/ui/Minimap'
+import { wrapDelta } from '../../shared/wrap'
+
 describe('minimap projection and terrain cache', () => {
   it('maps world center and corners without swapping north and east', () => {
     expect(mapPoint(0, 0, 600, 160)).toEqual([80, 80])
@@ -11,5 +13,69 @@ describe('minimap projection and terrain cache', () => {
     const pixels = heightPixels({ size: 600, heightAt(x) { calls++; return x } }, 8)
     expect(calls).toBe(64); expect(pixels.length).toBe(256)
     expect(pixels[28]).toBeGreaterThan(pixels[0]); expect(pixels[3]).toBe(255)
+  })
+})
+
+const size = 600, perMetre = UNITS / size, rim = RIM * size / 2, far = size * Math.SQRT1_2
+const place = (): MarkPlace => ({ x: 0, y: 0, distance: 0, bearing: 0, blend: 0 })
+const hue = (hex: string): number => {
+  const v = parseInt(hex.slice(1), 16), r = (v >> 16 & 255) / 255, g = (v >> 8 & 255) / 255, b = (v & 255) / 255
+  const max = Math.max(r, g, b), d = max - Math.min(r, g, b)
+  return (max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4) * 60
+}
+
+describe('people and bots on the minimap', () => {
+  it('draws a person larger and brighter than a bot at the same distance, on the map and off it', () => {
+    expect(ARROW.person).toBeGreaterThan(ARROW.bot)
+    for (const d of [rim * 1.01, (rim + far) / 2, far * .99]) {
+      const f = rimFade(d, rim, far), person = markLook('person', f), bot = markLook('bot', f)
+      expect(person.radius).toBeGreaterThan(bot.radius)
+      expect(person.alpha).toBeGreaterThan(bot.alpha)
+    }
+  })
+  it('draws an arrow inside the rim and a dot outside it, at the bearing toward the vehicle', () => {
+    const inside = placeMark(rim * .5, 0, perMetre, 10, place())
+    expect(inside.blend).toBe(0); expect(inside.x).toBeCloseTo(rim * .5 * perMetre)
+    for (const deg of [0, 37, 90, 200, 315]) {
+      const a = deg * Math.PI / 180, d = rim * 1.4
+      const p = placeMark(Math.cos(a) * d, Math.sin(a) * d, perMetre, 10, place())
+      expect(p.blend).toBe(1)
+      expect(Math.hypot(p.x, p.y)).toBeCloseTo(RIM * UNITS / 2 + 10)
+      expect(Math.atan2(p.y, p.x)).toBeCloseTo(Math.atan2(Math.sin(a), Math.cos(a)))
+    }
+  })
+  it('hands over smoothly across the rim', () => {
+    let last = -1, lastR = 0
+    for (let d = rim * .8; d < rim * 1.2; d += .5) {
+      const p = placeMark(d, 0, perMetre, 10, place()), r = Math.hypot(p.x, p.y)
+      expect(p.blend).toBeGreaterThanOrEqual(last)
+      if (last >= 0) expect(Math.abs(r - lastR)).toBeLessThan(1)
+      last = p.blend; lastR = r
+    }
+  })
+  it('fades dots with wrapped distance to almost nothing at the far side', () => {
+    let prev = { person: Infinity, bot: Infinity }
+    for (let d = rim; d <= far; d += 5) {
+      const f = rimFade(d, rim, far), person = markLook('person', f).alpha, bot = markLook('bot', f).alpha
+      expect(person).toBeLessThanOrEqual(prev.person); expect(bot).toBeLessThanOrEqual(prev.bot)
+      prev = { person, bot }
+    }
+    expect(markLook('bot', rimFade(far, rim, far)).alpha).toBeLessThan(.01)
+    const person = markLook('person', rimFade(far, rim, far)).alpha
+    expect(person).toBeGreaterThan(0); expect(person).toBeLessThan(.15)
+  })
+  it('takes the bearing the shortest way round the planet', () => {
+    // Just across the west seam from someone at the east edge: east of them, not a world away.
+    const dx = wrapDelta(size / 2 - 10, -size / 2 + 20, size), dz = wrapDelta(0, 0, size)
+    expect(dx).toBe(30)
+    const p = placeMark(dx, dz, perMetre, 10, place())
+    expect(p.distance).toBe(30); expect(p.bearing).toBeCloseTo(0)
+  })
+  it("keeps the hue of the vehicle's own tint, lifting only dark tints", () => {
+    for (const tint of ['#ff2a2a', '#22aa44', '#1030a0', '#6a1b9a', '#ffd400', '#0d0d40']) {
+      expect(Math.abs(hue(markColor(tint)) - hue(tint))).toBeLessThan(2)
+    }
+    expect(markColor('#ffd400')).toBe('#ffd400')
+    expect(markColor('#0d0d40')).not.toBe('#0d0d40')
   })
 })
