@@ -205,3 +205,24 @@ describe('zorb hop pulse', () => {
     owner.done(); remote.done()
   })
 })
+
+
+it('a pending manual liquid hop wins over passive shallow-entry contact', () => {
+  const { h, v, done } = zorbed('buggy')
+  h.terrain.liquidKindAt = () => 'water'
+  h.terrain.liquidHeightAt = () => 10
+  const place = (gap: number) => {
+    const c = v.zorb.centre(new THREE.Vector3()), p = v.body.translation()
+    v.body.setTranslation({ x: p.x, y: p.y + 10 + v.zorb.radius + gap - c.y, z: p.z }, true)
+  }
+  try {
+    place(.15); v.body.setLinvel({ x: 30, y: -3, z: 0 }, true)
+    v.zorb.float(h.terrain, v.liquidState, .02)
+    v.input.special = !v.input.special
+    v.zorb.hold(v.input, null, .02); v.zorb.release(v.input)
+    place(-.02); v.zorb.float(h.terrain, v.liquidState, .02)
+    expect(v.zorb.hops).toBe(1)
+    expect(v.zorb.skips).toBe(0)
+    expect(v.body.linvel().y).toBeGreaterThan(0)
+  } finally { done() }
+})

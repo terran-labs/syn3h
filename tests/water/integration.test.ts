@@ -76,3 +76,20 @@ it('hydrodynamic contact couples the motor while submerged and clears above wate
     expect(v.inLiquid).toBe(false)
   } finally { v.dispose(); h.world.free() }
 })
+
+
+for (const liquid of ['water', 'lava'] as const) {
+  it(`a slow Zorb settles on ${liquid} without passive skips`, () => {
+    const h = harness()
+    h.terrain.liquidHeightAt = () => 8
+    h.terrain.liquidKindAt = () => liquid
+    const v = createVehicle(h.game, h.terrain, 'buggy', new THREE.Vector3(0, 2, 0))
+    v.isLocal = false; v.input.zorb = true
+    try {
+      h.step(v, 400)
+      expect(v.zorb.skips).toBe(0)
+      expect(v.zorb.centre(new THREE.Vector3()).y).toBeCloseTo(8 + v.zorb.radius - ZORB_FLOAT_DEPTH, 0)
+      expect(v.liquidState.heat).toBe(0); expect(v.stuck).toBe(false)
+    } finally { v.dispose(); h.world.free() }
+  })
+}

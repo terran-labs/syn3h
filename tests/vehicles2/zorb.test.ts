@@ -4,17 +4,18 @@
  */
 import { afterEach, beforeAll, describe, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
-import { initPhysics } from '../../src/core/physics'
+import { RAPIER, initPhysics } from '../../src/core/physics'
 import { emptyInput } from '../../src/core/Input'
 import { createVehicle, type VehicleKind } from '../../src/vehicles'
 import type { Vehicle } from '../../src/vehicles/Vehicle'
 import { ZORB_FLOAT_DEPTH, zorbRadius } from '../../src/vehicles/zorb'
+import { waterSinking } from '../../src/vehicles/buoyancy'
 import { params } from '../../shared/params'
 import { FLAG_ZORB, decodeState, encodeState } from '../../shared/protocol'
 import { harness } from './harness'
 
 beforeAll(initPhysics)
-afterEach(() => { for (const id of ['zorb.size', 'zorb.speed', 'zorb.agility', 'zorb.bounce']) params.set(id, params.get(id)!.def.default) })
+afterEach(() => { for (const id of ['zorb.size', 'zorb.speed', 'zorb.agility', 'zorb.bounce', 'zorb.skipSpeed', 'zorb.skipAngle', 'water.sinking']) params.set(id, params.get(id)!.def.default) })
 
 const KINDS: VehicleKind[] = ['buggy', 'jet', 'hovercraft', 'tank']
 const UP = new THREE.Vector3(0, 1, 0)
@@ -286,4 +287,152 @@ describe('zorb input and replication', () => {
     expect(legacy.input.zorb).toBe(false)
     expect(legacy.input.fire).toBe(true)
   })
+})
+
+
+/** Contact response alone, with real Rapier integration and no vehicle drive forces. */
+function liquidSkipFixture(liquid: 'water' | 'lava', kind: VehicleKind = 'buggy') {
+  const h = harness(9.81, false)
+  h.terrain.liquidHeightAt = () => 10
+  h.terrain.liquidKindAt = () => liquid
+  const v = createVehicle(h.game, h.terrain, kind, new THREE.Vector3(0, 20, 0))
+  v.isLocal = false // Simulated bots participate; kinematic remote copies do not.
+  v.zorb.sync(true, 1)
+  v.body.recomputeMassPropertiesFromColliders()
+  v.body.setLinearDamping(0); v.body.setAngularDamping(0)
+  const place = (gap: number, x = 0) => {
+    const centre = v.zorb.centre(new THREE.Vector3()), body = v.body.translation()
+    v.body.setTranslation({ x: body.x + x - centre.x, y: body.y + 10 + v.zorb.radius + gap - centre.y, z: body.z }, true)
+  }
+  const force = () => {
+    v.body.resetForces(true); v.body.resetTorques(true)
+    v.zorb.float(h.terrain, v.liquidState, .02)
+  }
+  return { h, v, place, force, done() { v.dispose(); h.world.free() } }
+}
+
+describe('passive Zorb liquid skips', () => {
+  for (const liquid of ['water', 'lava'] as const) for (const sinking of [false, true]) {
+    it(`${liquid}, sinking=${sinking}: keeps tangent speed and spin over repeated contacts`, () => {
+      waterSinking.value = sinking; params.set('zorb.bounce', .8)
+      const f = liquidSkipFixture(liquid)
+      try {
+        f.place(.2); f.v.body.setLinvel({ x: 30, y: -4, z: 0 }, true)
+        // Spin about the local keel axis avoids moving the ball centre vertically.
+        f.v.body.setAngvel({ x: 0, y: 2, z: 0 }, true)
+        const contacts: number[] = []
+        let count = 0
+        for (let i = 0; i < 250 && contacts.length < 4; i++) {
+          f.force(); f.h.world.step()
+          if (f.v.zorb.skips !== count) {
+            count = f.v.zorb.skips
+            contacts.push(Math.hypot(f.v.body.linvel().x, f.v.body.linvel().z))
+          }
+          expect(Math.hypot(f.v.body.linvel().x, f.v.body.linvel().z)).toBeCloseTo(30, 3)
+          expect(f.v.body.angvel().y).toBeCloseTo(2, 4)
+        }
+        expect(contacts.length).toBe(4)
+        for (const speed of contacts) expect(speed).toBeCloseTo(30, 3)
+        expect(f.v.zorb.hops).toBe(0); expect(f.v.zorb.pulse).toBe(0)
+        expect(f.v.liquidState.heat).toBe(0); expect(f.v.liquidState.stuck).toBe(false)
+      } finally { f.done() }
+    })
+  }
+
+  it.each(KINDS)('%s responds along the sampled moving surface normal without tangent impulse', kind => {
+    const f = liquidSkipFixture('water', kind)
+    let t = 0
+    // Sloped travelling surface with a known normal and vertical velocity.
+    f.h.terrain.liquidHeightAt = x => 10 + .1 * x + t
+    const normal = new THREE.Vector3(-.1, 1, 0).normalize()
+    const tangent = new THREE.Vector3(1, .1, 0).normalize()
+    const incoming = tangent.clone().multiplyScalar(30).addScaledVector(normal, -3).add(new THREE.Vector3(0, 1, 0))
+    const place = (gap: number) => {
+      const centre = f.v.zorb.centre(new THREE.Vector3()), body = f.v.body.translation()
+      f.v.body.setTranslation({ x: body.x, y: body.y + 10 + .1 * centre.x + t + (f.v.zorb.radius + gap) / normal.y - centre.y, z: body.z }, true)
+    }
+    try {
+      place(.15); f.v.body.setLinvel(incoming, true); f.force()
+      t += .02; place(-.02); f.force()
+      expect(f.v.zorb.skips).toBe(1)
+      const relative = vec(f.v.body.linvel()).sub(new THREE.Vector3(0, 1, 0))
+      expect(relative.dot(tangent)).toBeCloseTo(30, 3)
+      expect(relative.dot(normal)).toBeCloseTo(1.5, 3)
+    } finally { f.done() }
+  })
+
+  it.each([[5, -1], [30, -20], [30, 2]])('does not skip slow, steep or separating approach (%s,%s)', (x, y) => {
+    const f = liquidSkipFixture('lava')
+    try {
+      f.place(.15); f.v.body.setLinvel({ x, y, z: 0 }, true); f.force()
+      f.place(-.02); f.force()
+      expect(f.v.zorb.skips).toBe(0)
+    } finally { f.done() }
+  })
+
+  it('does not turn initial immersion, teleport, remote ownership or shrink into a contact', () => {
+    const f = liquidSkipFixture('water')
+    try {
+      f.place(-.02); f.v.body.setLinvel({ x: 30, y: -3, z: 0 }, true); f.force()
+      expect(f.v.zorb.skips).toBe(0)
+      f.place(.15); f.force(); f.place(-.02, 100); f.force()
+      expect(f.v.zorb.skips).toBe(0)
+      f.v.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true)
+      f.place(.15); f.force(); f.place(-.02); f.force()
+      expect(f.v.zorb.skips).toBe(0)
+      f.v.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true)
+      f.v.zorb.sync(false, .02); f.place(.15); f.force(); f.place(-.02); f.force()
+      expect(f.v.zorb.skips).toBe(0)
+    } finally { f.done() }
+  })
+
+  it('requires separation and cooldown, and rejects shoreline-normal discontinuities', () => {
+    const f = liquidSkipFixture('water')
+    try {
+      const incoming = { x: 30, y: -3, z: 0 }
+      f.place(.15); f.v.body.setLinvel(incoming, true); f.force()
+      f.place(-.02); f.force(); expect(f.v.zorb.skips).toBe(1)
+      for (let i = 0; i < 10; i++) { f.v.body.setLinvel(incoming, true); f.force() }
+      expect(f.v.zorb.skips).toBe(1)
+      f.place(.15); f.force()
+      f.h.terrain.liquidKindAt = x => x > .1 ? null : 'water'
+      f.place(-.02); f.force(); expect(f.v.zorb.skips).toBe(1)
+    } finally { f.done() }
+  })
+})
+
+
+it('classifies relative to flowing water and samples the wave height, not a fixed sea level', () => {
+  const f = liquidSkipFixture('water')
+  let phase = 0
+  f.h.terrain.liquidHeightAt = (x, z) => 10 + Math.sin(x * .2 + phase) + Math.cos(z * .2) * .2
+  f.h.terrain.liquidFlowAt = (_x, _z, out) => { out.x = 25; out.z = 0; return out }
+  try {
+    // The body moves fast in world coordinates but is slow relative to this current.
+    const place = (gap: number) => {
+      const c = f.v.zorb.centre(new THREE.Vector3()), p = f.v.body.translation()
+      const slope = (f.h.terrain.liquidHeightAt!(c.x + .25, c.z) - f.h.terrain.liquidHeightAt!(c.x - .25, c.z)) / .5
+      const ny = 1 / Math.sqrt(1 + slope * slope)
+      f.v.body.setTranslation({ x: p.x, y: p.y + f.h.terrain.liquidHeightAt!(c.x, c.z) + (f.v.zorb.radius + gap) / ny - c.y, z: p.z }, true)
+    }
+    place(.15); f.v.body.setLinvel({ x: 30, y: 3, z: 0 }, true); f.force()
+    phase += .002; place(-.02); f.force()
+    expect(f.v.zorb.skips).toBe(0)
+  } finally { f.done() }
+})
+
+it('zero bounce leaves continuous flotation and cooldown prevents an immediate second skip', () => {
+  const f = liquidSkipFixture('lava')
+  try {
+    const enter = () => {
+      f.place(.15); f.v.body.setLinvel({ x: 30, y: -3, z: 0 }, true); f.force()
+      f.place(-.02); f.force()
+    }
+    params.set('zorb.bounce', 0); enter(); expect(f.v.zorb.skips).toBe(0)
+    params.set('zorb.bounce', .5); enter(); expect(f.v.zorb.skips).toBe(1)
+    enter(); expect(f.v.zorb.skips).toBe(1)
+    f.v.body.setEnabled(false); f.force()
+    f.v.body.setEnabled(true); f.place(-.02); f.force()
+    expect(f.v.zorb.skips).toBe(1)
+  } finally { f.done() }
 })
