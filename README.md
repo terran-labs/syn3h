@@ -24,10 +24,10 @@ phone. There is nothing to install and no account.
 2. **Take the controls.** On a computer, click once to capture the mouse, then drive with
    the keys and look around with the mouse. On a touch screen, steer with your left thumb
    and use the buttons on the right.
-3. **Open the panels.** Press Esc to free the mouse and the side panel slides in: game
-   mode, players, vehicles, world, sky, performance and your own settings. Click back into
+3. **Open the panels.** Press Esc to free the mouse and the side panel slides in: Me, Game,
+   Players & Session, Vehicles, World (including sky and weather), and Performance. Click back into
    the world and it slides away.
-4. **Change vehicle.** Open Vehicles in the side panel and choose a buggy, jet, hovercraft
+4. **Change vehicle.** Open Me in the side panel and choose a buggy, jet, hovercraft
    or tank. It swaps where you stand.
 5. **Bring a friend.** Share the address in your address bar. Everyone in the same room
    drives in the same world.
@@ -149,7 +149,7 @@ reductions, a notice offers the next lower level. Choose **Keep** to dismiss it 
 session. With the cursor captured, press Escape to reach the choices. The Performance
 card shows Auto, pinning and current automatic reductions.
 
-**How do I change the world?** Open World or Sky in the side panel. Gravity, time of day,
+**How do I change the world?** Open World in the side panel. Gravity, time of day,
 weather, water and a few hundred other settings are live sliders, and in a shared room
 everyone feels the change.
 

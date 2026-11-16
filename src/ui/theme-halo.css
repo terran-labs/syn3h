@@ -5,8 +5,8 @@
  *
  * The rules, so later edits keep to them:
  *   - One 1 px hairline per panel and a tight, faint halo (6 px or less). No stacked blooms.
- *   - No backdrop-filter and no fills beyond a soft dark falloff behind text, which is what
- *     keeps white type readable over the bright day sky without drawing a box.
+ *   - Sidebar and lobby cards use dark frosted glass so the world cannot compete with labels.
+ *     Open HUD instruments retain the light-field treatment.
  *   - One radius for every panel (--halo-r), pills fully round.
  *   - Line weight and colour match the speed and altitude crescents (.focus-hud), which this
  *     file leaves alone.
@@ -261,3 +261,32 @@ body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(198
 @media (max-height: 550px) {
   .syn3h-shell.exploration-ui .lobby-panels { margin-bottom: 110px; }
 }
+
+/* Readable cards over bright terrain. Inner controls stay unblurred; only card surfaces frost. */
+html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass,
+html .syn3h-shell.exploration-ui:is([data-glass], *) .lobby-panels {
+  background: rgb(3 11 19 / .65); background-image: none;
+  -webkit-backdrop-filter: blur(28px) saturate(.65); backdrop-filter: blur(28px) saturate(.65);
+}
+html .syn3h-shell.exploration-ui[data-ui-frost="off"] .world-inspector .wi-glass,
+html .syn3h-shell.exploration-ui[data-ui-frost="off"] .lobby-panels {
+  background: rgb(3 11 19 / .94); -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass,
+  html .syn3h-shell.exploration-ui:is([data-glass], *) .lobby-panels { background: rgb(3 11 19 / .94); }
+}
+.syn3h-shell.exploration-ui .world-inspector .wi-row[data-id="game.mode"] { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+.syn3h-shell.exploration-ui .world-inspector .wi-row[data-id="game.mode"] .wi-label { width: auto; }
+.syn3h-shell.exploration-ui .world-inspector .wi-row[data-id="game.mode"] .wi-seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; gap: 3px; }
+.syn3h-shell.exploration-ui .world-inspector .wi-row[data-id="game.mode"] .wi-seg button { min-width: 0; min-height: 44px; padding: 5px 2px; font-size: 11px; letter-spacing: 0; text-align: center; white-space: nowrap; }
+.syn3h-shell.exploration-ui .world-inspector [data-section="world"] .wi-sum { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Personal identity stays compact beside its two vehicle colour samples. */
+.syn3h-shell .wi-card[data-section="you"] .wi-head { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+.syn3h-shell .wi-colour-dots { display: inline-flex; gap: 5px; align-items: center; }
+.syn3h-shell .wi-colour-dots i { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgb(225 248 255 / .65); }
+.syn3h-shell .wi-person-name { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; margin: 8px 0; }
+.syn3h-shell .wi-person-name output { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.syn3h-shell .world-inspector [data-search][hidden] { display: none; }

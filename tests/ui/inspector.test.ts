@@ -12,13 +12,22 @@ const values = new Map<string, number | boolean>(DEFS.map(d => [d.id, d.default]
 describe('the inspector tree', () => {
   const tree = buildTree(DEFS)
   it('puts every property in exactly one logical section', () => {
-    expect(tree.map(s => s.id)).toEqual(['game', 'vehicles', 'world', 'sky', 'you'])
+    expect(tree.map(s => s.id)).toEqual(['you', 'game', 'vehicles', 'world'])
+    expect(tree[0].title).toBe('Me')
     expect(tree.reduce((n, s) => n + s.count, 0)).toBe(DEFS.length)
-    expect(tree.find(s => s.id === 'sky')!.tree.map(g => g.name)).toEqual(['Sun', 'Sky'])
+    expect(tree.find(s => s.id === 'world')!.tree.map(g => g.name)).toContain('Sky')
   })
   it('finds a home for groups nobody listed, by who they affect', () => {
-    expect(tree.find(s => s.id === 'world')!.tree.map(g => g.name)).toEqual(['World', 'Brand new group'])
+    expect(tree.find(s => s.id === 'world')!.tree.map(g => g.name)).toEqual(['World', 'Sun', 'Sky', 'Brand new group'])
     expect(tree.find(s => s.id === 'you')!.tree.map(g => g.name)).toEqual(['Camera', 'Another new group'])
+  })
+  it('nests game and sky groups without duplicating or changing their scopes', () => {
+    const groups = ['Game', 'Tag', 'Tag beams', 'Zorb', 'Sun', 'Sky', 'Weather']
+    const tree = buildTree(groups.map((group, i) => def(`nested.${i}`, group, 'world', 1)))
+    expect(tree.find(s => s.id === 'game')!.tree.map(g => g.name)).toEqual(groups.slice(0, 4))
+    expect(tree.find(s => s.id === 'world')!.tree.map(g => g.name)).toEqual(groups.slice(4))
+    expect(tree.flatMap(s => s.tree.flatMap(g => g.properties)).every(p => p.scope === 'world')).toBe(true)
+    expect(tree.reduce((n, s) => n + s.count, 0)).toBe(groups.length)
   })
   it('states the limits of each in plain words', () => {
     expect(limits(DEFS[1])).toBe('0 to 24 · default 16.5 · shared with everyone in the room')
