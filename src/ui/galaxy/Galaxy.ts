@@ -15,6 +15,7 @@ import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
 import { placementOf, placeWordmark, poseView, surfacePoint, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkCrispPass, wordmarkPlacement } from '../brand/wordmarkScene'
 import { ASPECT } from '../brand/wordmarkMesh'
 import { WordmarkOverlay } from '../brand/wordmarkOverlay'
+import { GLOW_GLSL, glowColour, GlowState, glowTarget, hoverGlowIntensity, hoverGlowSpeed } from './hoverGlow'
 import { introMode, LEAVING_SECONDS, leavingMark, openingState, SETTLED, type OpeningMode, type OpeningState } from './opening'
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
 let openingPlayed = false
@@ -297,6 +298,8 @@ vec4 mapAt(int i, vec2 uv) { return i == uCloseIndex ? texture(uClose, uv) : tex
 vec3 toScreen(vec3 p) { vec3 d = p - uEye; float z = dot(d, uForward); return vec3(dot(d, uRight), dot(d, uUp), z) / vec3(max(z, 0.0001) * uTan, max(z, 0.0001) * uTan, 1.0); }
 // The wordmark standing in space, when lobby.wordmark places it there (src/ui/brand/wordmarkScene.ts).
 ${WORDMARK_SCENE_GLSL}
+// The glow round the world under the pointer (hoverGlow.ts).
+${GLOW_GLSL}
 void main() {
   float minSide = min(uSize.x, uSize.y);
   vec2 q = (gl_FragCoord.xy - uFrame.xy * uSize) / (minSide * uFrame.z) * 2.0;           // -1..1 on the short side
@@ -540,6 +543,9 @@ void main() {
     c = mix(c, vec3(0.62, 0.8, 1.0), smoothstep(0.5, 1.0, uDive) * 0.68);
     c += vec3(0.8, 0.92, 1.0) * rush * uDive * 1.3;
   }
+  // The glow round the world under the pointer, in focus or pressed: over the shafts, under the grade.
+  vec4 glow = planetGlow(ray, nearest, found) * (1.0 - uDive);
+  c = mix(c, glow.rgb * 1.25, clamp(glow.a * 0.7, 0.0, 0.85)) + glow.rgb * glow.a * 0.6;
   // Connected humans by recipe: at most twelve lights; the label carries the exact total.
   for (int i = 0; i < ${MAX}; i++) {
     if (i >= uCount) break;
@@ -588,7 +594,7 @@ void main() {
   color = vec4(c / 12.0, 1.0);
 }`
 /** Every uniform the galaxy's fragment shader reads, looked up once per context. */
-const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uField', 'uFieldBounds', 'uFieldDecode'] as const
+const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uField', 'uFieldBounds', 'uFieldDecode'] as const
 const smootherstep = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * t * (t * (t * 6 - 15) + 10) }
 const rgb = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
 type Vec = [number, number, number]
@@ -876,6 +882,17 @@ export class Galaxy {
       if (selected) this.choose(selected)
     }, options)
     canvas.addEventListener('pointerdown', event => this.down(event), options)
+    // The planet glow: the pointer over a world (canvas offsets, no layout read) or its label,
+    // a label's keyboard focus, and on touch the world under the finger while it presses.
+    canvas.addEventListener('pointermove', event => { if (event.pointerType === 'mouse' && !this.drag) this.wantGlow('hoverId', pickWorld(this.screen, event.offsetX, event.offsetY, 6) ?? null) }, options)
+    canvas.addEventListener('pointerleave', () => this.wantGlow('hoverId', null), options)
+    canvas.addEventListener('pointerdown', event => { if (event.pointerType !== 'mouse') this.wantGlow('pressId', pickWorld(this.screen, event.offsetX, event.offsetY) ?? null) }, options)
+    for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, () => this.wantGlow('pressId', null), options)
+    const label = (event: Event) => (event.target as Element | null)?.closest?.<HTMLElement>('.galaxy-label')?.dataset.world ?? null
+    this.host.addEventListener('pointerover', event => { const id = label(event); if (id) this.wantGlow('hoverId', id) }, options)
+    this.host.addEventListener('pointerout', event => { if (label(event) && !label({ target: (event as PointerEvent).relatedTarget } as Event)) this.wantGlow('hoverId', null) }, options)
+    this.host.addEventListener('focusin', event => this.wantGlow('focusId', label(event)), options)
+    this.host.addEventListener('focusout', () => this.wantGlow('focusId', null), options)
     canvas.addEventListener('pointermove', event => this.move(event), options)
     for (const type of ['pointerup', 'pointercancel'] as const) canvas.addEventListener(type, event => this.up(event, type === 'pointerup'), options)
     canvas.addEventListener('wheel', event => { event.preventDefault(); this.handled = performance.now(); this.wake = 2; if (this.chosen < 0) this.distance = Math.min(this.farthest, Math.max(6, this.distance * Math.exp(event.deltaY * 0.0012))) }, { signal, passive: false })
@@ -890,6 +907,8 @@ export class Galaxy {
   }
   private release(): void {
     this.markStart = null; this.markRig.pose = null; this.leaving = null
+    // An opening cut short here must not leave the lobby's controls held back.
+    if (this.opening) { this.opening = null; this.chrome(null) }
     // A finished or abandoned drop does not outlive the context: the next showing starts clean.
     this.home()
     this.logo?.dispose(); this.logo = null; this.options.onLogo?.(false)
@@ -1047,18 +1066,22 @@ export class Galaxy {
     this.dim = Math.abs(this.dim - this.backdrop) < 0.01 ? this.backdrop : mix(this.dim, this.backdrop, perFrame(0.18, elapsed))
     const still = Boolean(this.options.still?.()) || this.reduced.matches || this.backdrop < 1, wall = performance.now()
     const wallElapsed = Math.max(0, (wall - this.lastClock) / 1000)
-    if (!still) this.clock += Math.min(0.25, wallElapsed)
+    if (!still && !this.clockHold) this.clock += Math.min(0.25, wallElapsed)
     this.lastClock = wall
     if (still !== this.holding) this.wake = 2
     const time = this.clock; this.holding = still
     // The view keeps a little of the last drag's swing, and drifts very slowly when left alone.
-    this.swing(elapsed, !this.drag && this.chosen < 0 && !still, wallElapsed)
+    this.swing(elapsed, !this.drag && this.chosen < 0 && !still && !this.clockHold, wallElapsed)
     const inset = Math.min(0.3, Math.max(0, this.options.topInset?.() ?? 0) / Math.max(1, this.host.clientHeight))
     const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : [0.5, 0.5 - inset / 2, 1 - inset]
     const framingMoves = this.framing.some((v, i) => Math.abs(v - frameGoal[i]) > 0.001)
     this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], perFrame(0.18, elapsed)) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
     // The continuous opening (opening.ts): held at the point of light while loading, then by the clock.
+    // The planet glow: none while the opening plays or behind a panel; the chosen world keeps its own.
+    const lobby = this.opening === null && this.backdrop >= 1 && hoverGlowIntensity.value > 0
+    const glowChanging = this.glow.step(lobby ? glowTarget({ pressed: this.pressId, hovered: this.hoverId, focused: this.focusId, chosen: this.chosen >= 0 ? worlds[this.chosen]?.id : null }) : null, elapsed)
+    const glowMoving = glowChanging || (this.glow.strength > 0 && !this.reduced.matches && hoverGlowSpeed.value > 0 && !this.glow.chosen)
     let reveal = this.stepOpening(places)
     if (this.leaving !== null) reveal = { ...reveal, ...leavingMark((performance.now() - this.leaving) / 1000) }
     if (reveal.reach !== 1) view.eye = [this.target[0] + (view.eye[0] - this.target[0]) * reveal.reach, this.target[1] + (view.eye[1] - this.target[1]) * reveal.reach, this.target[2] + (view.eye[2] - this.target[2]) * reveal.reach]
@@ -1066,7 +1089,7 @@ export class Galaxy {
     const mark = this.stepMark(elapsed, still)
     this.markView = view; this.markPlaced = mark.placement
     // Held still, draw only while something is moving; the last frame stays on the canvas.
-    const moving = this.opening !== null || (this.leaving !== null && performance.now() - this.leaving < LEAVING_SECONDS * 1000 + 100) || mark.moving || this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
+    const moving = glowMoving || this.opening !== null || (this.leaving !== null && performance.now() - this.leaving < LEAVING_SECONDS * 1000 + 100) || mark.moving || this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
     if (still && !moving && this.wake <= 0) { this.idle++; return }
     this.wake = Math.max(0, this.wake - 1)
     // The wordmark's field is baked (first, and if drawn much larger) before the frame starts.
@@ -1094,6 +1117,10 @@ export class Galaxy {
       const settled = reveal === SETTLED
       gl.uniform4f(u.uReveal, reveal.sun, settled ? 99 : reveal.front, reveal.stars, reveal.orbits); gl.uniform1f(u.uRevealMark, settled ? 99 : reveal.markFront)
       gl.uniform1fv(u.uArrive, arrival.length ? arrival : [1])
+      const glowAt = this.glow.id ? worlds.findIndex(w => w.id === this.glow.id) : -1, glowWorld = worlds[glowAt]
+      gl.uniform1i(u.uGlowIndex, glowAt < MAX ? glowAt : -1); gl.uniform1f(u.uGlowTime, (performance.now() / 1000) % 1000)
+      gl.uniform4f(u.uGlow, this.glow.strength, hoverGlowSpeed.value, this.reduced.matches ? 1 : this.glow.chosen ? 0.55 : 0, hoverGlowIntensity.value * (this.glow.chosen ? 1.25 : 1))
+      if (glowWorld) gl.uniform3f(u.uGlowColour, ...glowColour(glowWorld.land, glowWorld.sea, glowWorld))
       // The veil's point at full progress is about 6.6 CSS pixels in radius; the sun's core is
       // half its peak at 0.0374 of its size in units of the short side.
       gl.uniform1f(u.uSunPoint, Math.min(1, Math.max(0.02, 6.6 * (width / Math.max(1, this.host.clientWidth)) / (Math.min(width, height) * this.framing[2] * 0.0374))))
@@ -1144,6 +1171,14 @@ export class Galaxy {
   }
   private screen: { id: string; x: number; y: number; radius: number; visible: boolean; depth: number }[] = []
   private readonly markRig = new WordmarkRig()
+  /** The planet glow (hoverGlow.ts), and what asks for it: the pointer, keyboard focus, a finger. */
+  private readonly glow = new GlowState()
+  /** For screenshots only: holds the orbits where they are and the view's slow drift. */
+  clockHold = false
+  private hoverId: string | null = null
+  private focusId: string | null = null
+  private pressId: string | null = null
+  private wantGlow(kind: 'hoverId' | 'focusId' | 'pressId', id: string | null): void { if (this[kind] !== id) { this[kind] = id; this.wake = 2 } }
   /** performance.now() when a world was chosen, while the name un-reveals; null in the lobby. */
   private leaving: number | null = null
   /** The continuous opening, while it plays: started when loading ends (null until then). */
