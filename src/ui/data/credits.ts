@@ -7,7 +7,7 @@ export const creditsHtml = `<div class="about-intro"><p class="about-title">A wo
 <div><h3>Generated as you play</h3>
 <p>Terrain, skies and the galaxy are generated in the browser. The adaptive score and synthesised vehicle voices respond as you move through the world.</p>
 <p>Change gravity, sky and physics with the room’s controls. Share a room link to meet in the same world, with nothing to install.</p></div></div>
-<nav class="about-links" aria-label="About links"><a href="https://aubreyfalconer.com" target="_blank" rel="noopener">Aubrey Falconer ↗</a><a href="https://github.com/terran-labs/syn3h" target="_blank" rel="noopener">Explore the source ↗</a></nav>
+<nav class="about-links" aria-label="About links"><a href="https://aubreyfalconer.com" target="_blank" rel="noopener">Aubrey Falconer ↗</a><a href="https://terranlabs.com/" target="_blank" rel="noopener">Terran Labs ↗</a><a href="https://github.com/terran-labs/syn3h" target="_blank" rel="noopener">Explore the source ↗</a></nav>
 <details class="shell-credits"><summary>Credits & licences</summary>
 <p>Original Syn3h and Mars Explorer game, logos and vehicle assets: Aubrey Falconer. Original assets are used with the owner's permission.</p>
 <ul><li>Three.js authors: rendering and model loaders, <a href="/brand/licenses/three.txt" target="_blank" rel="noopener">MIT</a>.</li>
