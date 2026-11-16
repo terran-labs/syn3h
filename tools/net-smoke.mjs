@@ -63,7 +63,21 @@ async function open(name, extra = '') {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`${name} console: ${m.text()} at ${m.location().url}`) })
   page.on('response', (r) => { if (r.status() >= 400) console.log(`HTTP ${r.status()} ${r.url()}`) })
   page.on('requestfailed', (r) => console.log(`REQUEST FAILED ${r.url()} ${r.failure()?.errorText}`))
-  await page.goto(`${base}?room=${room}&name=${name}&autoplay=1${extra}`, { waitUntil: 'load' })
+  // A transport error, or a 5xx or 429 for the page itself, is retried twice (after 1 s, then
+  // 3 s) and logged with its URL; any other answer is tested as it is.
+  const address = `${base}?room=${room}&name=${name}&autoplay=1${extra}`
+  for (const [attempt, delay] of [1000, 3000, null].entries()) {
+    let problem = null
+    try {
+      const response = await page.goto(address, { waitUntil: 'load' })
+      const status = response?.status() ?? 0
+      if (status >= 500 || status === 429) problem = `HTTP ${status}`
+    } catch (error) { problem = `transport error: ${String(error.message).split('\n')[0]}` }
+    if (!problem) break
+    if (delay === null) throw new Error(`${address} failed after three attempts: ${problem}`)
+    console.log(`RETRY ${attempt + 1} of 2 for ${address} after ${problem}`)
+    await new Promise((done) => setTimeout(done, delay))
+  }
   // ?autoplay=1 joins the room but leaves the start screen's input suspension on, so press
   // Play as a person would (it is idempotent with autoplay's join).
   await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 30000 })

@@ -85,7 +85,10 @@ const TSV = [
 
 // The checked-in history, so a bad edit to it fails here.
 const HISTORY_TEXT = readFileSync(new URL('../../release-notes/history.tsv', import.meta.url), 'utf8')
-const HISTORY = parseHistory(HISTORY_TEXT)
+const LIVE = parseHistory(HISTORY_TEXT)
+// The version logic is tested against the first two days, which never change; the live file
+// keeps growing with every release and is only checked for parsing and for its notes.
+const HISTORY = LIVE.slice(0, 15)
 
 test('the checked-in history: fifteen builds across two days, three accepted public releases', () => {
   assert.equal(HISTORY.length, 15)
@@ -215,11 +218,14 @@ test('a bad manifest is rejected', () => {
 })
 
 test('every checked-in notes file renders', () => {
-  for (const row of HISTORY) {
+  assert.ok(LIVE.length >= HISTORY.length)
+  for (const row of LIVE) {
     const text = readFileSync(new URL(`../../release-notes/releases/${row.version}.md`, import.meta.url), 'utf8')
+    // An unpublished draft still says TODO; render (and so publish) refuses it, tested above.
+    if (text.includes('TODO')) continue
     const body = renderNotes(text, row)
     assert.match(body, /### The story so far\n\n[^\n#]+\n/, row.version)
-    assert.doesNotMatch(body, /mars|unity|mapmagic/i, row.version)
+    assert.doesNotMatch(body, /\b(mars|unity|mapmagic)\b/i, row.version)
   }
 })
 

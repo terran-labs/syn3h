@@ -108,16 +108,43 @@ export function archive(copy, version, dir = archiveDir()) {
 
 const sha = (bytes) => createHash('sha256').update(bytes).digest('hex')
 
+/** Pause the whole process: the check is synchronous, one curl at a time. */
+const sleepSync = (ms) => { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms) }
+/** Waits before the second and third attempts. */
+export const RETRY_DELAYS = [1000, 3000]
+
+/**
+ * Run one request, and again after a transport error (curl failed) or an HTTP 5xx or 429, up to
+ * three attempts. Anything else, a 404 included, is the answer: wrong content stays a hard
+ * failure. Every retry is logged with its URL, so a pattern would show.
+ */
+export function retrying(url, once, { delays = RETRY_DELAYS, sleep = sleepSync, log = (line) => console.error(line) } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    let result, error
+    try { result = once() } catch (e) { error = e }
+    const transient = error !== undefined || result.status >= 500 || result.status === 429
+    if (!transient || attempt >= delays.length) { if (error !== undefined) throw error; return result }
+    log(`frozen-versions: retry ${attempt + 1} of ${delays.length} for ${url} after ${error !== undefined ? `transport error: ${String(error.message).split('\n')[0]}` : `HTTP ${result.status}`}`)
+    sleep(delays[attempt])
+  }
+}
+
 /** curl, because fetch may not set Referer, and the Referer is what picks a frozen file. */
 function get(url, headers = {}) {
   const args = ['-s', '-m', '60', '-o', '-', '-w', '\n%{http_code}', ...Object.entries(headers).flatMap(([k, v]) => ['-H', `${k}: ${v}`]), url]
-  const out = execFileSync('curl', args, { maxBuffer: 256 * 1024 * 1024 })
-  const cut = out.lastIndexOf(10)
-  return { status: Number(out.subarray(cut + 1).toString()), body: out.subarray(0, cut) }
+  return retrying(url, () => {
+    const out = execFileSync('curl', args, { maxBuffer: 256 * 1024 * 1024 })
+    const cut = out.lastIndexOf(10)
+    return { status: Number(out.subarray(cut + 1).toString()), body: out.subarray(0, cut) }
+  })
 }
 function head(url) {
-  const out = execFileSync('curl', ['-s', '-m', '30', '-I', url], { encoding: 'utf8' })
-  return Object.fromEntries(out.split(/\r?\n/).map((line) => line.match(/^([^:]+):\s*(.*)$/)).filter(Boolean).map((m) => [m[1].toLowerCase(), m[2]]))
+  return retrying(url, () => {
+    const out = execFileSync('curl', ['-s', '-m', '30', '-I', url], { encoding: 'utf8' })
+    const lines = out.split(/\r?\n/)
+    const status = Number(lines[0]?.match(/^HTTP\/\S+\s+(\d{3})/)?.[1] ?? 0)
+    return { status, headers: Object.fromEntries(lines.map((line) => line.match(/^([^:]+):\s*(.*)$/)).filter(Boolean).map((m) => [m[1].toLowerCase(), m[2]])) }
+  }).headers
 }
 
 /**

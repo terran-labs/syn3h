@@ -25,6 +25,16 @@ VERSION="$(printf '%s' "$LINE" | cut -f6)"
 ID="$(printf '%s' "$LINE" | cut -f7)"
 echo "Rolling back to $REL (Worker version $VERSION, frozen copy $ID)..."
 (cd "../Syn3h-stable/$ID" && node "$(cd "$OLDPWD" && pwd)/node_modules/wrangler/bin/wrangler.js" rollback "$VERSION" --message "rollback to $REL" --yes </dev/null)
+# An HTTP 200 can still be the outgoing version at the edge for a few seconds. Wait for this
+# release's exact entry bundle before the smoke, as release.sh does after a deploy.
+tries=0
+ASSETS_LOG="$(mktemp /tmp/syn3h-rollback-assets.XXXXXX)"
+until node tools/check-public-build.mjs "$URL" "../Syn3h-stable/$ID" >>"$ASSETS_LOG" 2>&1; do
+  tries=$((tries + 1))
+  [ "$tries" -lt 30 ] || { cat "$ASSETS_LOG"; echo "Rollback deployed, but the public entry bundle did not match $REL's frozen build" >&2; exit 1; }
+  sleep 2
+done
+tail -1 "$ASSETS_LOG"
 echo "Smoke testing $URL ..."
 # Preserve the check's exit status: grep also succeeds when it finds a FAIL line.
 LOG="$(mktemp /tmp/syn3h-rollback-check.XXXXXX)"
