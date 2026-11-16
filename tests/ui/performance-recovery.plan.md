@@ -53,3 +53,18 @@ No WebGPU loss, physical device crash, phone/WebKit, performance benchmark, perf
 ## Source review correction after initial draft
 
 Initial draft 9828ce58 remains preserved. This correction changes only fixture and plan. Per-epoch request/commit/document identity, all six source receipts and every renderer chunk are now required separately. Exact source identity and content must agree at the same source-map index. Main-frame source evidence from the initial document cannot stand in for Reload. Failure and cleanup records retain the first primary error; later errors remain separately nonpass. Native controls, genuine WebGL extension loss, controlled sample limits and the 240-second total budget are unchanged. Timing fit, source-map representation and independent renderer-manifest production remain unvalidated prerequisites. No launcher or runtime is prepared or allocated here. WebGPU remains open.
+
+
+## Bounded evidence after runtime003
+
+Runtime003 remains failed: the recommendation predicate timed out, no control/recovery case passed, and adapter process cleanup did not prove an orderly adapter drain. Its report did not save the in-page final counters. No cause is inferred from the missing recommendation.
+
+The fixture now records installation context and bounded delivery observations around the existing stimulus. Scalar counters record calls, substitutions, pre-call judge/hidden/loading observations, first/last call and first exhaustion. Pre-call eligibility is an observation, not proof of internal eligibility or absence of resets. Installation/final context includes public tick/frames, pause/loading/visibility/playing state, ignore storage and a public performance snapshot reduced to quality scalars, history count/last point and recommendation.
+
+Public snapshot transitions use the existing subscription API, retain at most64 entries and report overflow as a secondary evidence failure. There is no per-frame history-array copy or private-field access. Observation exceptions are caught with a sticky total and at most16 fixed codes. The original frame call retains its exact this/argument forwarding, one call, return value and thrown exception; observation errors never cross that forwarding boundary. Subscription removal is attempted during restoration even if wrapper ownership validation fails.
+
+Success records a final snapshot and persists it before restoration. Failure independently attempts a final snapshot, partial persistence and restoration, followed by existing context/browser closure and response drains. Diagnostic failures remain secondary and cannot replace the original timeout or throw. An observation failure or overflow makes the final report nonpass even if behavior assertions otherwise succeed.
+
+The50ms stimulus,600-substitution cap, single original15-second recommendation predicate, native controls, overall240-second budget and final drain limits are unchanged. Policy still requires stable level:rung:auto:targetFps and sufficient eligible slow windows;200 eligible50ms samples are sufficient only under the stated stable-key, strict slow-threshold and nonignored conditions. No eligibility override, extra wait, forced recommendation or product repair is added. Instrumentation timing cannot prove the historical runtime003 cause.
+
+Source preparation only. Syntax and whitespace checks may run; browser validation requires separate source review and allocation. Launcher pins have not been updated.

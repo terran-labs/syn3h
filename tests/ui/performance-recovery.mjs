@@ -173,17 +173,61 @@ try {
       row.before = await state()
       row.stimulus = await page.evaluate(() => {
         const q = syn3h.game.quality, original = q.frame
-        const trace = { calls: 0, eligibleCalls: 0, substituted: 0, exhausted: false, tick: syn3h.game.tick }
+        const trace = { calls: 0, eligibleCalls: 0, substituted: 0, exhausted: false, tick: syn3h.game.tick,
+          judgeFalse: 0, hiddenCalls: 0, loadingCalls: 0, firstCall: null, lastCall: null, exhaustion: null,
+          observationErrors: [], observationErrorCount: 0, transitions: [], transitionOverflow: false }
+        const secondary = code => { trace.observationErrorCount++; if (trace.observationErrors.length < 16) trace.observationErrors.push(code) }
+        const observe = (code, read) => { try { return read() } catch { secondary(code); return null } }
+        const scalar = snapshot => ({ level: snapshot.quality.level, rung: snapshot.quality.rung,
+          auto: snapshot.quality.auto, targetFps: snapshot.quality.targetFps,
+          historyCount: snapshot.history.length, lastPoint: snapshot.history.at(-1) ?? null,
+          recommendation: snapshot.recommendation })
+        const context = () => ({ tick: syn3h.game.tick, frames: syn3h.game.frames, now: performance.now(),
+          paused: syn3h.game.paused, loading: q.isLoading, hidden: document.hidden, visibility: document.visibilityState,
+          playing: syn3h.shell.playing, shellClasses: document.querySelector('.syn3h-shell')?.className ?? null,
+          ignore: sessionStorage.getItem('syn3h.performance.ignore'), performance: scalar(q.getPerformanceSnapshot()) })
+        trace.installation = observe('installation snapshot', context)
+        let priorTransition, unsubscribe
+        // Published public snapshots only. Never copy history arrays on each frame.
+        observe('subscribe performance', () => {
+          unsubscribe = q.subscribePerformance(snapshot => observe('public snapshot transition', () => {
+            const state = scalar(snapshot), signature = JSON.stringify(state)
+            if (signature === priorTransition) return
+            priorTransition = signature
+            if (trace.transitions.length >= 64) { trace.transitionOverflow = true; return }
+            trace.transitions.push({ call: trace.calls, tick: syn3h.game.tick, now: performance.now(), state })
+          }))
+        })
         function wrapped(metrics, ...args) {
           trace.calls++
-          if (args[0] !== false && !document.hidden && !q.isLoading) trace.eligibleCalls++
+          observe('pre-call scalars', () => {
+            const hidden = document.hidden, loading = q.isLoading, judge = args[0] !== false
+            if (!judge) trace.judgeFalse++
+            if (hidden) trace.hiddenCalls++
+            if (loading) trace.loadingCalls++
+            if (judge && !hidden && !loading) trace.eligibleCalls++
+            const point = { call: trace.calls, tick: syn3h.game.tick, frames: syn3h.game.frames, now: performance.now() }
+            if (!trace.firstCall) trace.firstCall = point
+            trace.lastCall = point
+          })
           const use = trace.substituted < 600
-          if (use) trace.substituted++; else trace.exhausted = true
+          if (use) trace.substituted++
+          else {
+            trace.exhausted = true
+            if (!trace.exhaustion) trace.exhaustion = observe('exhaustion snapshot', () => ({ call: trace.calls, tick: syn3h.game.tick, now: performance.now() }))
+          }
+          // Observation cannot throw across this boundary. Original forwarding and throws stay intact.
           return Reflect.apply(original, this, [use ? { ...metrics, frameMs: 50, fps: 20 } : metrics, ...args])
         }
         q.frame = wrapped
-        window.__recoveryTest = { trace, restore() { if (q.frame !== wrapped) throw new Error('sample wrapper replaced'); q.frame = original } }
-        return { maximumCalls: 600, sampleMs: 50, startTick: trace.tick }
+        window.__recoveryTest = { trace,
+          snapshot() { trace.final = observe('final snapshot', context); return trace },
+          restore() {
+            try { if (q.frame !== wrapped) throw new Error('sample wrapper replaced'); q.frame = original }
+            finally { if (unsubscribe) unsubscribe() }
+          } }
+        return { maximumCalls: 600, sampleMs: 50, startTick: trace.tick, installation: trace.installation }
+
       })
       await wait(() => !!syn3h.game.quality.getPerformanceSnapshot().recommendation && !window.__recoveryTest.trace.exhausted)
       row.offer = await page.evaluate(() => syn3h.game.quality.getPerformanceSnapshot().recommendation)
@@ -204,7 +248,9 @@ try {
         assert.equal(await page.evaluate(() => syn3h.params.get('lava.particleBudget').value), 960)
       }
       row.after = await state()
-      row.samples = await page.evaluate(() => { const t = window.__recoveryTest; t.restore(); t.restored = true; return t.trace })
+      row.samples = await page.evaluate(() => window.__recoveryTest.snapshot())
+      await persist()
+      await page.evaluate(() => { const t = window.__recoveryTest; t.restore(); t.restored = true })
       assert.ok(row.samples.eligibleCalls >= 200); assert.equal(row.samples.exhausted, false)
       if (choice === 'switch-and-recover') {
         await drain(); assert.deepEqual(responseErrors, [])
@@ -252,6 +298,20 @@ try {
       row.status = 'passed'; await persist()
     } catch (e) { row.status = 'failed'; row.error = String(e); throw e }
     finally {
+      // Independent attempts ensure a snapshot or write failure cannot prevent restoration or replace primary.
+      await attempt('final stimulus snapshot', async () => {
+        if (!page.isClosed()) {
+          const samples = await bounded(page.evaluate(() => {
+            const t = window.__recoveryTest
+            return t && !t.restored ? t.snapshot() : null
+          }))
+          if (samples) row.samples = samples
+          if (row.samples?.observationErrorCount || row.samples?.transitionOverflow)
+            report.errors.push({ label: 'secondary stimulus observations', count: row.samples.observationErrorCount,
+              codes: row.samples.observationErrors, transitionOverflow: row.samples.transitionOverflow })
+        }
+      })
+      await attempt('pre-restore case receipt', persist)
       await attempt('restore stimulus', async () => { if (!page.isClosed()) await bounded(page.evaluate(() => { if (window.__recoveryTest && !window.__recoveryTest.restored) { window.__recoveryTest.restore(); window.__recoveryTest.restored = true } })) })
       await attempt('partial case receipt', persist)
       await attempt('context close', () => bounded(context.close(), 5000))
