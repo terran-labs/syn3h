@@ -73,7 +73,8 @@ export interface GearAction {
   /** True: acts while held, call `stop` on release. False: one press. */
   readonly hold: boolean
   start(): void
-  stop?(): void
+  /** Cleanup suppresses gameplay but retains ownership until the real end. */
+  stop?(reason?: 'end' | 'cleanup'): void
 }
 
 /** The live gear, given to the rack once networking has made it. */
@@ -103,7 +104,12 @@ export class GearRack implements System {
   private shownKey = { gear: '' as GearId | '', state: '', detail: NaN, bound: false }
   private actions: Partial<Record<string, readonly GearAction[]>> = {}
   /** A one press action raised the tag control; drop it once a step has seen it. */
-  private pulse = false
+  private pulse: symbol | null = null
+  private pulseSeen = false
+  private readonly fireOwners = new Map<symbol, GearId>()
+  /** Invalidates callbacks retained by UI controls across cancellation. */
+  private actionGeneration = 0
+  private reelOwner: symbol | null = null
 
   constructor(private readonly game: Game, target: Window = window) {
     this.last = this.current
@@ -150,9 +156,68 @@ export class GearRack implements System {
 
   /** Hand the rack the live gear. Networking calls this once, after making them. */
   bind(systems: GearSystems): void {
+    this.actionGeneration++
+    this.reelOwner = null
     this.systems = systems
     this.actions = {}
     this.shown = null
+  }
+
+  /**
+   * Cancel local pending actions before a modal suspends input or tears down gestures.
+   * The required Input callback must capture held owners and inhibit each until real
+   * neutral followed by a fresh press. Synthetic cleanup/suspension is not neutral.
+   * This rack cannot enforce native input rearming on its own.
+   *
+   * Already launched shots and remote/bot gear remain live. Existing cancel methods
+   * retain normal cooldown semantics; no reset or intentional release is performed.
+   * If the inhibitor throws, rack owners are suppressed and sampled fire is cleared,
+   * but the caller must not resume play assuming native rearming is guarded.
+   */
+  cancelActions(inhibitFireUntilNeutral: () => void): void {
+    const sys = this.systems
+    sys?.bigRed.cancel()
+    sys?.yoink.cancel()
+    sys?.bungee.cancel()
+    sys?.bungee.setReel(0)
+    this.cancelPendingInput(inhibitFireUntilNeutral)
+  }
+
+  /** Synchronous selection listener: cancel outgoing actions without severing the cord.
+   * Main must call this before any fixed step observes the changed selection. */
+  cancelSelectionActions(inhibitFireUntilNeutral: () => void): void {
+    this.systems?.bigRed.cancel()
+    this.systems?.yoink.cancel()
+    this.systems?.bungee.clearControlIntent()
+    this.cancelPendingInput(inhibitFireUntilNeutral)
+  }
+
+  private cancelPendingInput(inhibitFireUntilNeutral: () => void): void {
+    this.reelOwner = null
+    this.actionGeneration++
+    this.actions = {}
+    this.shown = null
+    try {
+      // Capture raw ownership before clearing the public fire outputs.
+      inhibitFireUntilNeutral()
+    } finally {
+      for (const owner of this.fireOwners.keys()) this.game.input.suppressExternalFire(owner)
+      if (this.pulse) {
+        this.game.input.suppressExternalFire(this.pulse)
+        this.game.input.endExternalFire(this.pulse)
+        this.pulse = null
+      }
+      this.pulseSeen = false
+      this.game.input.state.fire = false
+    }
+  }
+
+  /** After an external owner is suppressed, discard release-sensitive actions only
+   * when Input's synchronously recomputed aggregate has no eligible holder. */
+  cancelFireActionsIfIdle(): void {
+    if (this.game.input.state.fire) return
+    this.systems?.bigRed.cancel()
+    this.systems?.yoink.cancel()
   }
 
   /**
@@ -192,10 +257,15 @@ export class GearRack implements System {
   }
 
   fixedUpdate(): void {
-    // A one press action holds the tag control for exactly the step that sees it.
-    if (this.pulse && this.game.input.state.fire) {
-      this.pulse = false
-      this.game.input.external.fire = false
+    if (this.pulse && this.game.input.state.fire) this.pulseSeen = true
+  }
+
+  postPhysics(): void {
+    // Every fixedUpdate consumer must see the pulse before Input recomputes fire.
+    if (this.pulse && this.pulseSeen) {
+      this.game.input.endExternalFire(this.pulse)
+      this.pulse = null
+      this.pulseSeen = false
     }
   }
 
@@ -233,17 +303,84 @@ export class GearRack implements System {
     const made = this.actions[key]
     if (made) return made
     const input = this.game.input
-    // The tag control, as the touch TAG button drives it (Input.external.fire).
-    const press = () => { this.pulse = false; input.external.fire = true }
-    const unpress = () => { this.pulse = false; input.external.fire = false }
-    const tap = () => { input.external.fire = true; this.pulse = true }
-    const act = (a: GearAction) => Object.freeze(a)
+    const noop = () => {}
+    const tap = () => {
+      if (this.pulse) return
+      this.pulse = Symbol('gear pulse')
+      input.beginExternalFire(this.pulse)
+    }
+    const generation = this.actionGeneration
+    const act = (a: GearAction, fire = false): GearAction => {
+      let owner: symbol | null = null
+      let active = false
+      let retired = false
+      return Object.freeze({
+        ...a,
+        start: () => {
+          if (generation !== this.actionGeneration || gear !== this.current || input.suspended || active) return
+          if (a.hold) active = true
+          if (fire) {
+            owner = Symbol('gear hold')
+            this.fireOwners.set(owner, gear)
+            input.beginExternalFire(owner)
+          }
+          a.start()
+        },
+        ...(a.stop ? { stop: (reason: 'end' | 'cleanup' = 'end') => {
+          if (!active) return
+          const current = generation === this.actionGeneration
+          if (reason === 'cleanup') {
+            if (retired) return
+            retired = true
+            // Refresh the aggregate without rearming an already blocked owner.
+            if (owner) input.beginExternalFire(owner)
+            const hadFire = input.state.fire
+            if (owner) input.suppressExternalFire(owner)
+            // Input updates state synchronously but never dispatches gameplay.
+            // Cancel before the next step interprets the final false as release.
+            // An outgoing gear must also cancel: inHand becomes false independently
+            // of a fresh holder belonging to the newly selected gear.
+            if (current && fire) {
+              if (gear !== this.current) {
+                if (gear === 'red') sys.bigRed.cancel()
+                if (gear === 'yoink') sys.yoink.cancel()
+              } else if (hadFire) this.cancelFireActionsIfIdle()
+            }
+            if (current) a.stop!('cleanup')
+            return
+          }
+          if (owner) {
+            input.endExternalFire(owner)
+            this.fireOwners.delete(owner)
+            owner = null
+          }
+          active = false
+          if (current && !retired) a.stop!('end')
+          retired = false
+        } } : {}),
+      })
+    }
     const release = act({ id: 'release', label: 'Let go', keys: ['G', 'Double tap'], hold: false, start: () => sys.bungee.letGo('released') })
-    const reel = (d: -1 | 1) => () => { if (sys.bungee.reel === d) sys.bungee.setReel(0) }
+    const reelAction = (direction: -1 | 1, id: string, label: string, keys: readonly string[]) => {
+      let owner: symbol | null = null
+      return act({ id, label, keys, hold: true,
+        start: () => {
+          owner = Symbol('gear reel')
+          this.reelOwner = owner
+          sys.bungee.setReel(direction)
+        },
+        stop: () => {
+          if (owner !== null && this.reelOwner === owner) {
+            this.reelOwner = null
+            sys.bungee.setReel(0)
+          }
+        },
+      })
+    }
     let list: GearAction[]
     switch (`${gear}:${state}`) {
       case 'beam:idle':
-        list = [act({ id: 'fire', label: 'Tag', keys: ['Click', 'L'], hold: true, start: press, stop: unpress })]
+        list = [act({ id: 'fire', label: 'Tag', keys: ['Click', 'L'], hold: true, start: noop, stop: noop }, true)]
         break
       case 'pester:idle':
         list = [act({ id: 'launch', label: 'Send a Chaser', keys: ['Click', 'L'], hold: false, start: tap })]
@@ -258,25 +395,28 @@ export class GearRack implements System {
       case 'bungee:ground':
       case 'bungee:vehicle':
         list = [
-          act({ id: 'reelIn', label: 'Reel in', keys: ['Hold click', 'Wheel up'], hold: true, start: () => sys.bungee.setReel(-1), stop: reel(-1) }),
-          act({ id: 'payOut', label: 'Let out', keys: ['V', 'Wheel down'], hold: true, start: () => sys.bungee.setReel(1), stop: reel(1) }),
+          reelAction(-1, 'reelIn', 'Reel in', ['Hold click', 'Wheel up']),
+          reelAction(1, 'payOut', 'Let out', ['V', 'Wheel down']),
           release,
         ]
         break
       case 'yoink:idle':
-        list = [act({ id: 'grab', label: 'Grab', keys: ['Hold click', 'Hold L'], hold: true, start: press, stop: unpress })]
+        list = [act({ id: 'grab', label: 'Grab', keys: ['Hold click', 'Hold L'], hold: true, start: noop, stop: noop }, true)]
         break
       case 'yoink:holding':
-        // Letting go of the grab flings. As its own button, it lets go of the tag control and
-        // flings at once; a held key then lets go with nothing left to fling.
-        list = [act({ id: 'fling', label: 'Fling', keys: ['Let go of click'], hold: false, start: () => { unpress(); sys.yoink.release() } })]
+        // Explicit fling suppresses our grab owners without pretending their gestures ended.
+        list = [act({ id: 'grab', label: 'Hold', keys: ['Hold click', 'Hold L'], hold: true, start: noop, stop: noop }, true),
+          act({ id: 'fling', label: 'Fling', keys: ['Let go of click'], hold: false, start: () => {
+          for (const [owner, kind] of this.fireOwners) if (kind === 'yoink') input.suppressExternalFire(owner)
+          sys.yoink.release()
+        } })]
         break
       case 'red:idle':
       case 'red:charging':
-        list = [act({ id: 'charge', label: 'Charge', keys: ['Hold click', 'Hold L'], hold: true, start: press, stop: unpress })]
+        list = [act({ id: 'charge', label: 'Charge', keys: ['Hold click', 'Hold L'], hold: true, start: noop, stop: noop }, true)]
         break
       case 'red:ready':
-        list = [act({ id: 'fire', label: 'Let go to send', keys: ['Let go of click'], hold: true, start: press, stop: unpress })]
+        list = [act({ id: 'charge', label: 'Let go to send', keys: ['Let go of click'], hold: true, start: noop, stop: noop }, true)]
         break
       default:
         list = []

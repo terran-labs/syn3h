@@ -333,13 +333,14 @@ export class Shell implements System {
       // (Networking also listens for clicks here, after this listener; stop it hearing this one.)
       if (this.userPaused) return
       if (this.capturesCursor && document.pointerLockElement !== game.canvas) { void this.captureCursor(); event.stopImmediatePropagation(); return }
-      game.input.mouseFire = true
+      game.input.beginCanvasFire(event.pointerId)
       if (document.pointerLockElement !== game.canvas) game.canvas.setPointerCapture(event.pointerId)
     }, { signal })
     // Losing the capture (Escape, a switch of window) must not leave a beam held down.
-    document.addEventListener('pointerlockchange', () => { if (document.pointerLockElement !== game.canvas) game.input.mouseFire = false }, { signal })
-    for (const name of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) game.canvas.addEventListener(name, () => { game.input.mouseFire = false }, { signal })
-    window.addEventListener('blur', () => { game.input.mouseFire = false }, { signal })
+    document.addEventListener('pointerlockchange', () => { if (document.pointerLockElement !== game.canvas) game.input.suppressAllCanvasFire() }, { signal })
+    // Input capture owns physical up/cancel; lost capture is suppression, not neutral.
+    game.canvas.addEventListener('lostpointercapture', event => { game.input.suppressCanvasFire(event.pointerId) }, { signal })
+    window.addEventListener('blur', () => { game.input.suppressAllCanvasFire() }, { signal })
     this.updateHelp(); bootLoading?.finish()
     void this.panels.show('index', true); this.update()
   }
@@ -360,7 +361,8 @@ export class Shell implements System {
     this.stopAttract()
     if (this.inviteOpen) return
     this.inviteFromGame = this.started && !this.menuVisible
-    if (this.inviteFromGame) { this.releaseCursor(); this.game.input.suspended = true; this.game.input.mouseFire = false; this.touch.enabled = false }
+    if (this.inviteFromGame) this.cancelActions?.()
+    if (this.inviteFromGame) { this.releaseCursor(); this.game.input.suspended = true; this.game.input.suppressAllCanvasFire(); this.touch.enabled = false }
     this.inviteOpen = true; this.overlay.inert = true; this.invite.show(); this.updateInvite()
   }
   closeJoin(): void {
@@ -537,11 +539,12 @@ export class Shell implements System {
   private dropping = false
   openMenu(panel = 'index'): void {
     if (!this.started) return
+    this.cancelActions?.()
     this.lobbyAddress?.showLobby()
     if (this.exitAsking) { this.exitAsking = false; this.element.querySelector<HTMLElement>('.exit-confirm')!.hidden = true }
     this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; if (this.galaxy) this.galaxy.enabled = true
     this.releaseCursor()
-    this.game.input.suspended = true; this.game.input.mouseFire = false; this.game.input.poll(); this.touch.enabled = false
+    this.game.input.suspended = true; this.game.input.suppressAllCanvasFire(); this.game.input.poll(); this.touch.enabled = false
     this.audio.enabled = false; this.audio.setLobbyVisible(true); this.element.classList.remove('is-playing'); this.showPanel(panel)
   }
   /**
@@ -673,10 +676,11 @@ export class Shell implements System {
   /** Show "Leave this world?". Stay has the focus, so Enter, Escape and a click outside all stay. */
   private askExit(): void {
     if (!this.started || this.menuVisible || this.exitAsking || this.userPaused) return
+    this.cancelActions?.()
     this.exitAsking = true
     const dialog = this.element.querySelector<HTMLElement>('.exit-confirm')!
     dialog.hidden = false
-    this.game.input.suspended = true; this.game.input.mouseFire = false
+    this.game.input.suspended = true; this.game.input.suppressAllCanvasFire()
     dialog.querySelector<HTMLButtonElement>('.exit-stay')!.focus({ preventScroll: true })
   }
   private answerExit(leave: boolean): void {
@@ -745,6 +749,7 @@ export class Shell implements System {
   }
   private requestPause(): void {
     if (!this.started || this.menuVisible || this.inviteOpen) return
+    this.cancelActions?.()
     this.releaseCursor()
     if (this.pauseControl) this.pauseControl.pause('user'); else this.applyPause(true, 'user')
   }
@@ -755,6 +760,7 @@ export class Shell implements System {
     if (this.capturesCursor) void this.captureCursor(); else { this.touchPanels = false; this.syncPanels() }
   }
   private applyPause(paused: boolean, reason: 'user' | 'hidden' | null): void {
+    if (paused) this.cancelActions?.()
     if (paused) this.audio.pause(0.5); else this.audio.resume(0.3)
     const user = paused && reason === 'user'
     if (user === this.userPaused) return
@@ -763,7 +769,7 @@ export class Shell implements System {
     veil.hidden = !user; this.element.classList.toggle('is-paused', user)
     this.game.input.suspended = user || this.menuVisible || this.inviteOpen || this.exitAsking
     if (user) {
-      this.game.input.mouseFire = false
+      this.game.input.suppressAllCanvasFire()
       veil.querySelector('.pause-how')!.textContent = this.touch.available ? 'Tap to resume' : 'Click to resume'
       veil.querySelector('small')!.hidden = this.playerCount < 2
       veil.focus({ preventScroll: true })
@@ -1154,7 +1160,7 @@ export class Shell implements System {
   }
   private releaseCursor(): void {
     ++this.cursorRequest
-    this.game.input.mouseFire = false
+    this.game.input.suppressAllCanvasFire()
     if (document.pointerLockElement === this.game.canvas) document.exitPointerLock()
   }
   private updateHelp(): void {
@@ -1322,9 +1328,17 @@ export class Shell implements System {
     botsRow.hidden = !bots
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
+  private cancelActions?: () => void
+  /** Composition binds these before play; cleanup must never masquerade as fire release. */
+  setActionCancellation(cancel: () => void, fireSuppressed: () => void): void {
+    this.cancelActions = cancel
+    this.touch.onFireSuppressed = fireSuppressed
+  }
+
   dispose(): void {
+    this.cancelActions?.()
     this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
-    document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
+    document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.suppressAllCanvasFire()
   }
 }
 

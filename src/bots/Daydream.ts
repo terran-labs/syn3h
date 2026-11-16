@@ -107,7 +107,7 @@ export class Daydream implements System {
       if (this.active) this.release()
       return
     }
-    let human = this.touched || this.gamepadBusy()
+    let human = this.touched || this.gamepadBusy() || Boolean(input.state.fire || input.external?.fire)
     // While it is not driving, anything in the polled state is the player's own doing:
     // a key held down for a minute sends no new events but is certainly not idle.
     if (!this.active) {
@@ -127,6 +127,11 @@ export class Daydream implements System {
 
   fixedUpdate(dt: number): void {
     if (!this.active || !this.mind) return
+    // Eligible fire can arrive through an owner token without a physical capture event.
+    // Yield before writing auto input. The player runs before bots, so this cannot undo
+    // auto axes already consumed by the player's first fixed step in this frame.
+    const input = this.game.input
+    if (input.state.fire || input.external?.fire) { this.noteActivity(); return }
     // Physics runs before update. A pause or gamepad input must win on this step too.
     if (!(daydreamSeconds.value > 0) || this.game.input.suspended || this.blocked?.() || (typeof document !== 'undefined' && document.hidden) || this.gamepadBusy()) { this.noteActivity(); return }
     this.mind.step(dt, this.auto)
@@ -174,8 +179,9 @@ export class Daydream implements System {
   private write(x: number, y: number, z: number, w: number, brakes: boolean, special: boolean): void {
     const { state, external } = this.game.input, values = { x, y, z, w }
     for (const axis of AXES) { state[axis] = values[axis]; if (external) external[axis] = values[axis] }
-    state.brakes = brakes; state.fire = false; state.special = special
-    if (external) { external.brakes = brakes; external.fire = false }
+    state.brakes = brakes; state.special = special
+    if (external) external.brakes = brakes
+    // Fire belongs to Input and Gear. Never forward the pilot's fire or clear human owners.
   }
 
   private gamepadBusy(): boolean {

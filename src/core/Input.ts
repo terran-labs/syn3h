@@ -27,15 +27,75 @@ export function emptyInput(): InputState {
   return { x: 0, y: 0, z: 0, w: 0, brakes: false, special: false, fire: false, zorb: false }
 }
 
+export type ExternalFireOwner = object | symbol
+
+/** End observation only. Never use this to start a gesture from ordinary movement.
+ * Cleanup, lost capture and blur provide no physical button-state sample. */
+export function primaryPointerEnded(event: Pick<PointerEvent, 'type' | 'pointerType' | 'buttons'>): boolean {
+  if (event.type === 'pointercancel') return true
+  if (event.pointerType === 'touch') return event.type === 'pointerup'
+  return (event.pointerType === 'mouse' || event.pointerType === 'pen') &&
+    (event.type === 'pointermove' || event.type === 'pointerup') && (event.buttons & 1) === 0
+}
+
 export class Input {
   readonly state: InputState = emptyInput()
   /** Additive UI controls. Special and zorb remain toggles on state; see `toggleZorb`. */
   readonly external: Partial<Omit<InputState, 'special' | 'zorb'>> = {}
   private readonly keys = new Set<string>()
+  private readonly fireOwners = new Map<ExternalFireOwner, boolean>()
+  private readonly rawFireKeys = new Set<string>()
+  private readonly blockedFireKeys = new Set<string>()
+  private readonly rawMouse = new Set<number>()
+  private readonly blockedMouse = new Set<number>()
+  private readonly blockedPads = new Set<number>()
+  private readonly canvasFirePointers = new Set<number>()
+  private readonly canvasSuppressed = new Set<() => void>()
+  private legacyFire = false
+  private legacyFireDisabled = false
   /** Set true by UI code (chat, text fields) to stop driving while typing. */
   suspended = false
 
   constructor(target: Window = window) {
+    // Legacy writes remain compatible until cancellation. A boolean cannot prove that a
+    // physical gesture ended: ALL external writers must migrate before modal delivery.
+    Object.defineProperty(this.external, 'fire', {
+      enumerable: true,
+      get: () => !this.suspended && (this.ownerFire() || (!this.legacyFireDisabled && this.legacyFire)),
+      set: (value: boolean) => { this.legacyFire = Boolean(value) },
+    })
+    target.addEventListener('keydown', (e) => {
+      if (e.code !== 'KeyL' && e.code !== 'Enter') return
+      this.rawFireKeys.add(e.code)
+      if (this.suspended || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement)
+        this.blockedFireKeys.add(e.code)
+    }, true)
+    target.addEventListener('keyup', (e) => {
+      this.rawFireKeys.delete(e.code)
+      this.blockedFireKeys.delete(e.code)
+      this.keys.delete(e.code)
+    }, true)
+    target.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 || (e.pointerType !== 'mouse' && e.pointerType !== 'pen')) return
+      this.rawMouse.add(e.pointerId)
+      if (this.suspended) this.blockedMouse.add(e.pointerId)
+    }, true)
+    const mouseEnd = (e: PointerEvent) => {
+      if (!this.rawMouse.has(e.pointerId) || e.pointerType === 'touch' || !primaryPointerEnded(e)) return
+      // Cancellation suppresses and notifies before retiring the physical identity.
+      // An ordinary primary release remains an intentional release, including chords.
+      try {
+        if (e.type === 'pointercancel') this.suppressCanvasFire(e.pointerId)
+      } finally {
+        this.canvasFirePointers.delete(e.pointerId)
+        this.rawMouse.delete(e.pointerId)
+        this.blockedMouse.delete(e.pointerId)
+        this.refreshFire()
+      }
+    }
+    target.addEventListener('pointermove', mouseEnd, true)
+    target.addEventListener('pointerup', mouseEnd, true)
+    target.addEventListener('pointercancel', mouseEnd, true)
     target.addEventListener('keydown', (e) => {
       if (this.suspended || e.repeat) return
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
@@ -47,6 +107,9 @@ export class Input {
       if (e.code === 'KeyX') this.toggleZorb()
     })
     target.addEventListener('keyup', (e) => this.keys.delete(e.code))
+    // Raw fire identities survive blur. The composition owner must cancel Gear first,
+    // then call cancelFireUntilNeutral from its capture-phase blur handler. Dropping
+    // sampled fire here before Gear cancellation could release a charge or carry.
     target.addEventListener('blur', () => this.keys.clear())
   }
 
@@ -67,7 +130,9 @@ export class Input {
   /** Call once per rendered frame, before the fixed steps. */
   poll(): InputState {
     const s = this.state
+    const pad = this.samplePads()
     if (this.suspended) {
+      this.refreshFire(pad)
       this.keys.clear()
       Object.assign(s, emptyInput(), { special: s.special, zorb: s.zorb })
       return s
@@ -77,9 +142,7 @@ export class Input {
     s.z = this.axis(['KeyF'], ['KeyR'])
     s.w = this.axis(['KeyQ'], ['KeyE'])
     s.brakes = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')
-    s.fire = this.keys.has('KeyL') || this.keys.has('Enter') || this.mouseFire
-
-    const pad = navigator.getGamepads?.().find((p) => p && p.connected)
+    s.fire = false
     if (pad) {
       const dz = (v: number) => (Math.abs(v) < 0.12 ? 0 : v)
       const px = dz(pad.axes[0] ?? 0)
@@ -94,7 +157,6 @@ export class Input {
       const pz = -dz(pad.axes[3] ?? 0) || (pad.buttons[12]?.pressed ? 1 : 0) - (pad.buttons[13]?.pressed ? 1 : 0)
       if (pz !== 0) s.z = pz
       s.brakes = s.brakes || Boolean(pad.buttons[1]?.pressed)
-      s.fire = s.fire || Boolean(pad.buttons[0]?.pressed)
       const specialDown = Boolean(pad.buttons[3]?.pressed)
       if (specialDown && !this.padSpecialWasDown) s.special = !s.special
       this.padSpecialWasDown = specialDown
@@ -103,8 +165,107 @@ export class Input {
       s[axis] = Math.max(-1, Math.min(1, s[axis] + (this.external[axis] ?? 0)))
     }
     s.brakes ||= this.external.brakes ?? false
-    s.fire ||= this.external.fire ?? false
+    this.refreshFire(pad)
     return s
+  }
+
+  /** Called only by a guarded canvas pointerdown handler, after capture tracked it.
+   * UI presses are raw observations, never canvas fire without this explicit admission. */
+  beginCanvasFire(id: number): void {
+    if (!this.rawMouse.has(id)) return
+    this.canvasFirePointers.add(id)
+    if (this.suspended) this.blockedMouse.add(id)
+    this.refreshFire()
+  }
+
+  /** Cleanup retains the block until Input observes a real primary end. */
+  suppressCanvasFire(id: number): void {
+    if (!this.canvasFirePointers.has(id) || this.blockedMouse.has(id)) return
+    const wasEligible = !this.suspended
+    this.blockedMouse.add(id)
+    this.refreshFire()
+    if (wasEligible) for (const callback of this.canvasSuppressed) callback()
+  }
+
+  suppressAllCanvasFire(): void {
+    let wasEligible = false
+    for (const id of this.canvasFirePointers) {
+      wasEligible ||= !this.suspended && !this.blockedMouse.has(id)
+      this.blockedMouse.add(id)
+    }
+    this.refreshFire()
+    if (wasEligible) for (const callback of this.canvasSuppressed) callback()
+  }
+
+  /** Notification only: composition cancels charge/carry if no eligible holder remains.
+   * Runs synchronously after recomputation and before pointercancel retires identity. */
+  onCanvasFireSuppressed(callback: () => void): () => void {
+    this.canvasSuppressed.add(callback)
+    return () => { this.canvasSuppressed.delete(callback) }
+  }
+
+  /** One token per real gesture. Reusing a suppressed token never rearms it. */
+  beginExternalFire(owner: ExternalFireOwner): void {
+    if (!this.fireOwners.has(owner)) this.fireOwners.set(owner, this.suspended)
+    this.refreshFire()
+  }
+
+  /** Only a real end/cancel retires identity, never UI teardown or blur. */
+  endExternalFire(owner: ExternalFireOwner): void {
+    if (!this.fireOwners.delete(owner)) return
+    this.refreshFire()
+  }
+
+  /** Suppress this holder without retiring it or interrupting other eligible holders.
+   * These APIs update state only. They never dispatch events or tick gameplay. */
+  suppressExternalFire(owner: ExternalFireOwner): void {
+    if (!this.fireOwners.has(owner)) return
+    this.fireOwners.set(owner, true)
+    this.refreshFire()
+  }
+
+  /** Call before clearing UI gestures or suspending input. Legacy boolean fire is
+   * permanently ignored afterwards: it cannot distinguish cleanup from real release. */
+  cancelFireUntilNeutral(): void {
+    for (const key of this.rawFireKeys) this.blockedFireKeys.add(key)
+    for (const id of this.rawMouse) this.blockedMouse.add(id)
+    this.samplePads(true)
+    for (const owner of this.fireOwners.keys()) this.fireOwners.set(owner, true)
+    this.legacyFireDisabled = true
+    this.legacyFire = false
+    this.state.fire = false
+  }
+
+  private ownerFire(): boolean {
+    for (const blocked of this.fireOwners.values()) if (!blocked) return true
+    return false
+  }
+
+  private samplePads(block = this.suspended): Gamepad | undefined {
+    const pads = navigator.getGamepads?.() ?? []
+    let first: Gamepad | undefined
+    for (const pad of pads) {
+      if (!pad?.connected) continue
+      first ??= pad
+      if (!pad.buttons[0]?.pressed) this.blockedPads.delete(pad.index)
+      else if (block) this.blockedPads.add(pad.index)
+    }
+    // Disconnection is not evidence of neutral. Reconnection while held stays blocked.
+    return first
+  }
+
+  private refreshFire(pad = this.samplePads()): void {
+    if (this.suspended) {
+      for (const key of this.rawFireKeys) this.blockedFireKeys.add(key)
+      for (const id of this.rawMouse) this.blockedMouse.add(id)
+      for (const owner of this.fireOwners.keys()) this.fireOwners.set(owner, true)
+      this.state.fire = false
+      return
+    }
+    const key = ['KeyL', 'Enter'].some(code => this.keys.has(code) && !this.blockedFireKeys.has(code))
+    const mouse = [...this.canvasFirePointers].some(id => !this.blockedMouse.has(id))
+    this.state.fire = key || mouse || Boolean(pad?.buttons[0]?.pressed && !this.blockedPads.has(pad.index)) ||
+      Boolean(this.external.fire)
   }
 
   /** Switch zorb mode. For the X key and a future touch button. */
@@ -112,7 +273,5 @@ export class Input {
     this.state.zorb = !this.state.zorb
   }
 
-  /** Set by the game when the pointer is held on the canvas. */
-  mouseFire = false
   private padSpecialWasDown = false
 }
