@@ -164,3 +164,23 @@ any adaptation separately for review before executing it; this plan grants no sl
 
 Observed descendants remain the explicit ownership limit. No general process
 manager, new worker, runtime product change or launcher implementation is included.
+
+## HTML source and response receipts correction
+
+Gate001 failed before Chrome at the HTML raw-export assertion; no gameplay cases ran.
+Installed Vite 8.3.8 dispatches explicit import queries through module transforms,
+whereas plain `index.html?raw` reaches HTML middleware. Request `index.html?raw&import`
+for exact checkout-source equality. Retain HTML in the source inventory and retain
+separate actual browser document bytes, served comparison, TS source-map input checks,
+observer identity and cache/service-worker/HMR rejection. A Node refetch is not proof
+of what Chrome received.
+
+Before response assertions, save a unique partial response receipt with request/final
+URL, status and only content-type, content-length and ETag headers. Persist before
+body reading, then record body length, SHA-256 and the first 4096 bytes as diagnostic
+UTF-8 text with a truncation flag; a failed read records its error instead. Each
+write/read is bounded by the existing deadline. Receipt-write errors remain fatal,
+while the original read or assertion error retains priority. Per-response files avoid
+concurrent callbacks overwriting evidence. No cookies, authorization or full header
+dumps are collected. This is fixture-only source preparation, not a retry or acceptance
+of the failed gate.

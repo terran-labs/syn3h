@@ -44,23 +44,59 @@ const files = ['index.html', 'src/main.ts', 'src/core/Input.ts', 'src/core/Game.
   'src/weapons/yoink/Yoink.ts', 'src/weapons/yoink/params.ts', 'src/weapons/bigRedParams.ts',
   'src/weapons/bungee/Bungee.ts', 'src/weapons/aim.ts', 'src/bots/params.ts',
   'shared/params.ts', 'vite.config.ts', 'tests/ui/about-input.mjs', 'tests/ui/about-input-observers.mjs']
+// Each response has its own partial file, so concurrent browser callbacks cannot
+// overwrite one another. Receipt errors remain fatal without masking a read/assertion.
+let responseSequence = 0
+async function capturedBody(response, kind, requestedURL, readBody) {
+  const native = typeof response.status === 'number'
+  const headers = native ? response.headers : response.headers()
+  const selected = Object.fromEntries(['content-type', 'content-length', 'etag'].map(name =>
+    [name, native ? headers.get(name) : headers[name] ?? null]))
+  const receipt = { sequence: ++responseSequence, kind, requestedURL: String(requestedURL),
+    url: native ? response.url : response.url(), status: native ? response.status : response.status(),
+    headers: selected, body: null }
+  report.responseReceipts ??= []
+  report.responseReceipts.push(receipt)
+  const persist = async () => {
+    try {
+      await bounded(writeFile(`${out}/response-${receipt.sequence}.json`, JSON.stringify(receipt, null, 2)), 3000, 'partial response receipt')
+    } catch (error) {
+      const failure = `Response receipt ${receipt.sequence}: ${String(error)}`
+      report.errors.push(failure)
+      console.error(failure)
+    }
+  }
+  await persist()
+  try {
+    const bytes = Buffer.from(await bounded(readBody(), 10000, `${kind} body`))
+    receipt.body = { length: bytes.length, sha256: hash(bytes),
+      first4096Bytes: bytes.subarray(0, 4096).toString('utf8'), truncated: bytes.length > 4096 }
+    await persist()
+    return bytes
+  } catch (error) {
+    receipt.readFailure = String(error.stack ?? error)
+    await persist()
+    throw error
+  }
+}
 async function provenance() {
   assert.equal(git('rev-parse', 'HEAD'), expected)
   assert.equal(git('status', '--porcelain', '--untracked-files=all'), '')
   const manifest = []
   for (const path of files) {
     const local = await readFile(new URL(path, new URL('../../', import.meta.url)), 'utf8')
-    const response = await fetch(new URL(`/${path}?raw`, origin), { signal: AbortSignal.timeout(remaining(10000)), cache: 'no-store' })
+    const rawURL = new URL(`/${path}?raw${path === 'index.html' ? '&import' : ''}`, origin)
+    const response = await fetch(rawURL, { signal: AbortSignal.timeout(remaining(10000)), cache: 'no-store' })
+    const raw = (await capturedBody(response, 'source', rawURL, () => response.arrayBuffer())).toString('utf8')
     assert.equal(response.status, 200, path)
-    const raw = await bounded(response.text(), 10000, 'raw source body')
     const literal = raw.match(/^export default ("(?:[^"\\]|\\.)*")\s*;?/m)
     assert.ok(literal, `${path} raw export`)
     assert.equal(JSON.parse(literal[1]), local, `${path} served identity`)
     let transformedHash
     if (path.startsWith('src/') && path.endsWith('.ts')) {
       const transformed = await fetch(new URL(`/${path}`, origin), { signal: AbortSignal.timeout(remaining(10000)), cache: 'no-store' })
+      const module = (await capturedBody(transformed, 'transformed source', new URL(`/${path}`, origin), () => transformed.arrayBuffer())).toString('utf8')
       assert.equal(transformed.status, 200)
-      const module = await bounded(transformed.text(), 10000, 'transformed source body')
       const encoded = module.match(/sourceMappingURL=data:application\/json(?:;charset=[^;,]+)?;base64,([^\s]+)/)
       assert.ok(encoded, `${path} inline source map required`)
       const map = JSON.parse(Buffer.from(encoded[1], 'base64').toString('utf8'))
@@ -105,16 +141,17 @@ async function observeBrowser(page, context, name) {
     const url = new URL(response.url()), path = url.pathname.slice(1)
     if (url.origin !== new URL(origin).origin || !(response.request().resourceType() === 'document' || path.startsWith('src/') || path.startsWith('shared/') || path === 'tests/ui/about-input-observers.mjs')) return
     const work = (async () => {
+      const bytes = await capturedBody(response, 'actual browser', response.request().url(), () => response.body())
       assert.equal(response.status(), 200, `browser response ${url}`)
       assert.equal(response.fromServiceWorker(), false)
       assert.equal(url.searchParams.has('t'), false, 'HMR timestamp module')
-      const bytes = await bounded(response.body(), 10000, 'actual browser response body')
       const entry = { url: url.href, path, sha256: hash(bytes), resource: response.request().resourceType() }
       // Compare bytes actually delivered to Chrome with the isolated served module,
       // then tie TS input back to checkout. A Node refetch alone is not evidence.
       const expectedResponse = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(remaining(10000)) })
+      const comparison = await capturedBody(expectedResponse, 'served comparison', url, () => expectedResponse.arrayBuffer())
       assert.equal(expectedResponse.status, 200)
-      assert.equal(hash(Buffer.from(await bounded(expectedResponse.arrayBuffer(), 10000, 'comparison body'))), entry.sha256)
+      assert.equal(hash(comparison), entry.sha256)
       if (path === 'tests/ui/about-input-observers.mjs') {
         const local = await readFile(new URL(path, new URL('../../', import.meta.url)), 'utf8')
         assert.ok(bytes.toString().startsWith(local.trimEnd()), 'actual observer differs from checkout')
@@ -541,6 +578,7 @@ try {
   catch (error) { report.cleanupErrors.push(String(error)) }
   try { await verifyBrowserEvidence('closed browser capture boundary', true) }
   catch (error) { report.cleanupErrors.push(String(error.stack ?? error)) }
+  if (report.errors.length) report.cleanupErrors.push(...report.errors)
   report.browserResponses = responseReceipt()
   report.captureComplete = (!browser || browserDisconnected) && browserEvidence.every(e => e.closed && !e.openRequests.size)
     && report.cleanupErrors.length === 0
