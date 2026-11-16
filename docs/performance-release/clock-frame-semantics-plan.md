@@ -102,44 +102,80 @@ ordered. Require anchors bracketing all observations in each page navigation, an
 UTC anchors bracketing the entire run plus controls. Duplicate page/navigation keys or
 mixing hostClockId domains fail. No arbitrary synchronization error allowance is added.
 
-Assume the declared host and page monotonic clocks use the same millisecond rate for
-this bounded run. For every page anchor, the allowed constant page-to-host offset is:
+Clock observations need reviewed resolution and quantization evidence, not an assumption
+that an integer means nearest-millisecond rounding. Record a clock-profile artifact
+bound to runtime/browser version, privacy settings, clock source, units and observation
+method. For each source (host monotonic, host epoch, page performance.now, animation-frame
+timestamp, page Date.now and performance.timeOrigin), that profile must supply a supported
+outward observation interval function Q(value) = [lower, upper], or explicitly unavailable.
+The interval includes source quantization, documented coarsening/jitter and serialization
+uncertainty. Preflight samples can falsify a bound; observing a small minimum increment
+alone cannot prove a maximum error or eliminate privacy jitter. A bound needs a reviewed
+implementation guarantee and matching configuration, with supporting preflight evidence.
+
+For example, a *proven* truncation-to-q scheme requires an outward interval covering
+[value, value + q]; a *proven* nearest-q scheme requires [value - q/2, value + q/2].
+These are conditional mathematical examples, not claims about Date.now. A coarsened or
+jittered implementation requires its own justified enclosure. Unknown quantization,
+resolution or clock rate means the affected mapping is unavailable. Do not choose a
+larger arbitrary tolerance until a dataset happens to pass.
+
+For supported clocks with a reviewed constant-rate relation, derive page-to-host offsets
+from outward endpoint intervals. For an anchor, a conservative enclosure is:
 
 ```
-[hostSendMs - pageBeforeMs, hostReceiveMs - pageAfterMs]
+[Q(hostSendMs).lo - Q(pageBeforeMs).hi,
+ Q(hostReceiveMs).hi - Q(pageAfterMs).lo]
 ```
 
-Intersect those intervals across anchors. Reject an empty intersection, missing
-bracketing anchors or nonmonotonic clock observations. Keep the full surviving interval;
-do not treat a midpoint as precise time. If rate drift makes the intervals inconsistent,
-stop and request a reviewed clock model rather than fit a convenient skew.
+Intersect enclosures across bracketing anchors. Reject an empty intersection, missing
+bracketing anchors or observations inconsistent with the reviewed clock model. Preserve
+the whole surviving interval. A constant unit-rate relation is itself a reviewed
+prerequisite, not something a fitted offset proves; drift or an unsupported relation
+requires a new reviewed model or unavailable mapping, never a convenient fitted skew.
 
-For host epoch anchors, the UTC-minus-host offset interval is:
+For host epoch anchors the outward UTC-minus-host offset interval is:
 
 ```
-[utcMs - 0.5 - hostAfterMs, utcMs + 0.5 - hostBeforeMs]
+[Q(utcMs).lo - Q(hostAfterMs).hi,
+ Q(utcMs).hi - Q(hostBeforeMs).lo]
 ```
 
-The 0.5 ms terms account solely for Date.now rounding to milliseconds. Intersect these
-intervals too. For each page Date.now anchor, check its page-to-UTC interval
-`[dateNowMs - 0.5 - pageAfterMs, dateNowMs + 0.5 - pageBeforeMs]` against both
-page timeOriginMs and the composed page-to-host plus host-to-UTC intervals. Reject
-inconsistent epoch mappings or clock jumps. Existing 0.002 ms sample serialization
-rounding is retained when comparing independently serialized numeric endpoints; it is
-not a performance tolerance or permission to ignore broad clock uncertainty.
+The analogous page-to-UTC interval is:
 
-Map a page event p to host interval `p + pageToHostOffset`, then to run-relative interval
-by subtracting runOriginHostMs. Preserve the source values and the resulting interval.
-For deterministic existing scalar Run Frame.at fields, use the midpoint of the offset
-intersection. Differences within the same navigation do not depend on that offset.
-Recompute submitted scalar fields from this rule within serialization rounding; never
-use a submitted scalar as the source observation. Run UTC fields use the host epoch
-mapping midpoint, with uncertainty retained alongside them.
+```
+[Q(dateNowMs).lo - Q(pageAfterMs).hi,
+ Q(dateNowMs).hi - Q(pageBeforeMs).lo]
+```
 
-For order/nonoverlap, use full uncertainty intervals: latest possible end must be no
-later than earliest possible start. If uncertainty prevents proving separation, mark
-timing inconclusive/unqualified, not serial by midpoint. No new numeric uncertainty
-threshold is necessary. Actual clock comparability still needs collector preflight.
+Intersect the host epoch intervals only under the supported constant-offset model.
+Check page epoch intervals against both the outward timeOrigin interval and the
+composed page-to-host plus host-to-UTC intervals. Empty intersections, epoch drift,
+wall-clock steps or mismatched profiles invalidate epoch mapping. Until preflight and
+review establish supported enclosures, epoch mapping is explicitly unavailable. No
+qualified UTC run boundaries, UTC freeze-order claim or complete run acceptance follows
+from unqualified Date.now/timeOrigin values. Retain raw values as diagnostic evidence.
+
+Map a supported page event interval Q(p) to the host using interval addition, then
+subtract the outward run-origin host interval to obtain its run-relative interval.
+Preserve operands and uncertainty. A midpoint may populate a compatibility/display
+scalar only after a mapping is qualified; it never proves order. Existing raw phase
+intervals and sequences within one monotonic domain can be validated independently of
+epoch mapping when that monotonic clock profile supports the required precision.
+Cross-page monotonic ordering may likewise use a qualified page-to-host mapping without
+UTC. It must be reported as monotonic ordering only, not invented epoch evidence.
+
+The earlier 0.002 ms allowance describes the proposed collector's independent decimal
+serialization, not browser clock resolution or a Date.now guarantee. It cannot absorb
+unknown clock quantization. Source precision must support the frame consistency test,
+or the relevant timing result remains unavailable. Do not relax the existing frame
+comparison to accommodate unsupported clock precision in this planning stage.
+
+For order/nonoverlap, use full outward intervals: latest possible end must be no later
+than earliest possible start. If uncertainty prevents proving separation, mark timing
+inconclusive/unqualified, not serial by midpoint. Policy freeze uses UTC in the current
+contract, so unavailable epoch mapping keeps that check blocked even when monotonic
+phase durations are valid. No performance threshold or blanket timing waiver is added.
 
 ## Frame phases and first/last boundaries
 
@@ -229,6 +265,16 @@ Likewise do not compute a complete release decision from qualified frame metrics
   first-interval cropping, non-first duration crossing and missing final callback fail.
 - Wrong navigation/timeOrigin, backwards anchors, empty offset intersections or epoch
   jumps fail. Wide but consistent anchors that cannot prove separation remain unqualified.
+- Integer epoch values with no reviewed quantization profile keep UTC unavailable.
+  Truncated values must not pass using nearest-rounding bounds; nearest-rounded values
+  use their reviewed outward profile, not a hardcoded Date.now assumption.
+- Coarsened timestamps and privacy jitter outside a claimed profile invalidate it;
+  repeated timestamps cannot be repaired by inventing finer-grained samples.
+- A wall-clock step or slow epoch drift can invalidate UTC while same-domain monotonic
+  intervals remain valid. Neither those intervals nor midpoint ordering may bypass
+  the unavailable UTC policy-freeze check.
+- A measured minimum clock increment without supported maximum-error evidence does
+  not qualify an epoch profile. Missing or mismatched runtime/privacy profile blocks it.
 - Mutate supplied phase times or summary metrics without changing original callbacks:
   reject rather than trusting apparently improved values.
 - Contradictory pacing gaps, clipped control endpoints, overlapping controls/scenes,
