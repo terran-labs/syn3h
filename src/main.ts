@@ -104,13 +104,16 @@ async function main(): Promise<void> {
     if (actionRack) actionRack.cancelActions(inhibitFire)
     else inhibitFire()
   }
+  // Input suppresses a canceled canvas owner before retiring it. Cancel release-sensitive
+  // gear only when no other eligible source remains; preserve the Grapple cord.
+  const offCanvasFireSuppressed = game.input.onCanvasFireSuppressed(() => actionRack?.cancelFireActionsIfIdle())
   // Register before UI teardown listeners. Element focus blur is not window blur.
   const actionLifecycle = new AbortController()
   const actionSignal = actionLifecycle.signal
   window.addEventListener('blur', event => { if (event.target === window) cancelActions() }, { capture: true, signal: actionSignal })
   window.addEventListener('pagehide', cancelActions, { capture: true, signal: actionSignal })
   document.addEventListener('visibilitychange', () => { if (document.hidden) cancelActions() }, { capture: true, signal: actionSignal })
-  game.add({ dispose() { cancelActions(); offGearSelection?.(); actionLifecycle.abort() } })
+  game.add({ dispose() { cancelActions(); offGearSelection?.(); offCanvasFireSuppressed(); actionLifecycle.abort() } })
   const { shell, audio, setPlayer } = initGameShell(game, player, terrain)
   shell.setActionCancellation(cancelActions, () => actionRack?.cancelFireActionsIfIdle())
   bots.daydream.setBlocker(() => shell.daydreamBlocked)
