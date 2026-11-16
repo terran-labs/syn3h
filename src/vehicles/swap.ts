@@ -5,20 +5,75 @@ import type { Terrain } from '../world/Terrain'
 import { attachVehicleEffects } from './effects'
 import { canonicalVehicleKind, createVehicle, type VehicleKind } from './index'
 import type { PlayerSlot } from './PlayerSlot'
-import type { Vehicle } from './Vehicle'
+import { REST_HEIGHT, type Vehicle } from './Vehicle'
 import { PlayerVehicleWarm } from './PlayerVehicleWarm'
 
-/** Metres the new vehicle starts above the old one's origin, and at least above the surface. */
-export const SWAP_LIFT = 0.5
+/** Metres of air left under the new vehicle's resting height when it has to be lifted clear. */
+export const SWAP_CLEARANCE = 0.3
 
 /** Seconds the warm-up waits for a cached vehicle's real body before skipping it. */
 const WARM_WAIT = 30
 /** Vehicles that load a body (the buggy) say whether it has arrived; the rest are generated. */
 const bodyReady = (vehicle: Vehicle) => (vehicle as { bodyReady?: boolean }).bodyReady !== false
 
-const position = new THREE.Vector3()
+/** Where and how the old vehicle was moving when the player switched. */
+export interface SwapPose {
+  position: { x: number; y: number; z: number }
+  rotation: { x: number; y: number; z: number; w: number }
+  linvel: { x: number; y: number; z: number }
+  angvel: { x: number; y: number; z: number }
+}
+
+/** Where the new vehicle starts and how it is moving. */
+export interface SwapPlacement {
+  position: THREE.Vector3
+  heading: number
+  linvel: THREE.Vector3
+  angvel: THREE.Vector3
+  /** Metres the vehicle was raised to clear the ground or liquid (0 when it stayed put). */
+  lift: number
+}
+
+const finite = (n: number) => (Number.isFinite(n) ? n : 0)
 const forward = new THREE.Vector3()
 const rotation = new THREE.Quaternion()
+
+/**
+ * The placement rule for a switch, the owner's of 16 November 2026: "switch at their current
+ * location, velocity, etc., rather than dropping back into the home point".
+ *
+ *  - Same place. Raised only as far as the new body needs to clear the ground or the liquid
+ *    surface under it (its resting height plus SWAP_CLEARANCE), never lowered: a switch in
+ *    mid-air stays in mid-air and falls from there; one inside lava or water comes out on top.
+ *  - Same heading, level. The nose's heading carries over; pitch and roll do not, so a switch
+ *    while upside down or tumbling comes out the right way up, and a differently shaped body
+ *    is never rotated into the ground.
+ *  - Same velocity. All of it, except that a lifted vehicle does not keep sinking into what it
+ *    was lifted out of. Of the spin only the yaw rate carries; the rest belonged to a pose
+ *    that was just levelled.
+ */
+export function swapPlacement(pose: SwapPose, kind: string, terrain: Pick<Terrain, 'heightAt' | 'liquidHeightAt'>): SwapPlacement {
+  const t = pose.position, r = pose.rotation
+  // Heading from the nose projected on the ground; from the roof when the nose points
+  // straight up or down. The same rule as Vehicle.uprightRescue.
+  rotation.set(r.x, r.y, r.z, r.w)
+  forward.set(0, 0, -1).applyQuaternion(rotation)
+  if (forward.x * forward.x + forward.z * forward.z < 0.01) forward.set(0, 1, 0).applyQuaternion(rotation).negate()
+  const heading = Math.atan2(-forward.x, -forward.z)
+  const x = finite(t.x), z = finite(t.z)
+  const surface = Math.max(terrain.heightAt(x, z), terrain.liquidHeightAt?.(x, z) ?? -Infinity)
+  const floor = surface + (REST_HEIGHT[canonicalVehicleKind(kind)] ?? 0.7) + SWAP_CLEARANCE
+  const y = Number.isFinite(t.y) ? Math.max(t.y, floor) : floor
+  const lift = Number.isFinite(t.y) ? y - t.y : 0
+  const v = pose.linvel, w = pose.angvel
+  return {
+    position: new THREE.Vector3(x, y, z),
+    heading: Number.isFinite(heading) ? heading : 0,
+    linvel: new THREE.Vector3(finite(v.x), lift > 0 ? Math.max(0, finite(v.y)) : finite(v.y), finite(v.z)),
+    angvel: new THREE.Vector3(0, finite(w.y), 0),
+    lift,
+  }
+}
 
 export interface VehicleSwapper {
   /**
@@ -91,15 +146,13 @@ export function createVehicleSwapper(
       // Aliases and retired names all build the buggy: asking for one while driving it is no change.
       if (canonicalVehicleKind(kind) === canonicalVehicleKind(previous.kind)) return previous
       const body = previous.body
-      const t = body.translation(), r = body.rotation()
-      // Heading from the nose projected on the ground; from the roof when the nose points
-      // straight up or down. The same rule as Vehicle.uprightRescue.
-      rotation.set(r.x, r.y, r.z, r.w)
-      forward.set(0, 0, -1).applyQuaternion(rotation)
-      if (forward.x * forward.x + forward.z * forward.z < 0.01) forward.set(0, 1, 0).applyQuaternion(rotation).negate()
-      const heading = Math.atan2(-forward.x, -forward.z)
-      const surface = Math.max(terrain.heightAt(t.x, t.z), terrain.liquidHeightAt?.(t.x, t.z) ?? -Infinity)
-      position.set(t.x, Math.max(t.y, surface) + SWAP_LIFT, t.z)
+      // A held (kinematic) body reports no velocity of its own: it is carried, not moving.
+      const held = body.isKinematic()
+      const place = swapPlacement({
+        position: body.translation(), rotation: body.rotation(),
+        linvel: held ? { x: 0, y: 0, z: 0 } : body.linvel(), angvel: held ? { x: 0, y: 0, z: 0 } : body.angvel(),
+      }, kind, terrain)
+      const { position, heading } = place
 
       const key = canonicalVehicleKind(kind)
       const next = cache.get(key) ?? createVehicle(game, terrain, kind, position, heading)
@@ -115,7 +168,11 @@ export function createVehicleSwapper(
       next.setColors(previous.colors.body, previous.colors.accent)
       next.wind.copy(previous.wind)
       Object.assign(next.input, previous.input)
-      next.body.setLinvel({ x: 0, y: 0, z: 0 }, true)
+      next.body.setLinvel(place.linvel, true)
+      next.body.setAngvel(place.angvel, true)
+      // The old vehicle's zorb ball goes with it; the zorb toggle is the player's and carries in
+      // the input, so the new vehicle grows its own ball if the mode is still on.
+      previous.zorb.remove()
       // Preserve interpolation before the camera, including cached vehicle activation.
       game.add(next, previous)
       // Attach first so the shared effect world stays alive even when there are no bots.
