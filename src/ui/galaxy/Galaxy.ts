@@ -13,6 +13,8 @@ import { PresenceFeed, type Populations } from './presence'
 import { FIELD_UNIT, LogoRenderer, type PixelRect } from '../brand/logoRenderer'
 import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
 import { placeWordmark, poseView, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkPlacement } from '../brand/wordmarkScene'
+import { WordmarkOverlay } from '../brand/wordmarkOverlay'
+import { mountWordmarkSwitch, wordmarkSwitchEnabled, type WordmarkSwitch } from '../brand/wordmarkSwitch'
 import type { ParamValue } from '../../../shared/params'
 import { ORDINARY_BODY, planetById, type PlanetBody } from '../../world/planets'
 import { qualityFrame, qualityScale, qualityShed } from '../quality/ladder'
@@ -429,6 +431,13 @@ void main() {
   if (uMarkMode > 0 && markAt.z > 0.0) {
     float d = wordmarkDistance(markAt.xy), cover = markAt.z < nearest ? wordmarkCoverage(d, markW) * uMarkOpacity : 0.0;
     vec3 at = uEye + ray * markAt.z;
+    // A quiet cousin of the flat logo's plasma: a warm halo on the plane round the letters,
+    // flowing slowly, so the letterforms hold against the sky when the shafts move off them.
+    if (markAt.z < nearest && d > 0.0 && d < 0.3) {
+      float flow = 0.6 + 0.4 * noise(vec3(markAt.xy * vec2(2.2, 3.1), uTime * 0.12));
+      float halo = exp(-d / 0.06) * (1.0 - smoothstep(0.16, 0.29, d)) * flow * uMarkOpacity;
+      c += mix(mix(vec3(1.0, 0.86, 0.66), WARM, 0.3), vec3(0.56, 0.89, 1.0), 0.15) * halo * (uMarkMode == 2 ? 0.5 : 0.38);
+    }
     if (cover > 0.0) {
       vec3 mark = vec3(0.008, 0.016, 0.039), rimColour = mix(vec3(1.0, 0.86, 0.66), WARM, 0.3);
       float line = 1.0 - wordmarkCoverage(d + max(0.012, 1.5 * markW), markW), lineStrength = 0.85;
@@ -445,7 +454,7 @@ void main() {
         }
         // A dark face with a warm sheen, so the pale edge line carries the name. Lit by the
         // rays (3), the letters are a veil that catches the shafts and haze passing in front.
-        if (uMarkMode == 3) { mark += rimColour * 0.02 + sunShafts * 1.5 + sunHaze * 0.9 + rimColour * 0.12 * lit * shadow; lineStrength = 0.45; }
+        if (uMarkMode == 3) { mark += rimColour * 0.02 + sunShafts * 1.5 + sunHaze * 0.9 + rimColour * 0.12 * lit * shadow; lineStrength = 0.75; }
         else mark += rimColour * (0.025 + 0.22 * lit * shadow);
       } else {
         // In front of the sun: backlit, dark, with a rim of light on the edges facing it.
@@ -779,14 +788,19 @@ export class Galaxy {
     }
     this.gl = gl
     if (this.options.logo) {
-      this.logo = new LogoRenderer(gl, { particles: logoBudget(this.options.logo()?.level ?? 0).particles })
+      // The galaxy draws the glow; the mark itself is a vector over the canvas, at the
+      // screen's full resolution (see WordmarkOverlay).
+      this.logo = new LogoRenderer(gl, { particles: logoBudget(this.options.logo()?.level ?? 0).particles, drawMark: false })
+      this.markOverlay = new WordmarkOverlay(); canvas.after(this.markOverlay.element)
+      // ?wordmark= in the address: the owner's chip for flipping between placements.
+      if (wordmarkSwitchEnabled()) this.markSwitch = mountWordmarkSwitch(this.host)
       if (!this.logo.ok) { this.logo.dispose(); this.logo = null }
       else if (this.logoSeen || this.reduced.matches || this.options.still?.()) this.logo.skipIntro()
     }
     const signal = this.abort.signal, options = { signal }
     canvas.addEventListener('webglcontextlost', event => {
       if (this.canvas !== canvas || this.gl !== gl) return
-      event.preventDefault(); cancelAnimationFrame(this.frame); this.options.onLogo?.(false)
+      event.preventDefault(); cancelAnimationFrame(this.frame); this.options.onLogo?.(false); this.markOverlay?.hide()
     }, options)
     canvas.addEventListener('webglcontextrestored', () => {
       if (!this.active || this.canvas !== canvas || this.gl !== gl) return
@@ -812,6 +826,8 @@ export class Galaxy {
     // A finished or abandoned drop does not outlive the context: the next showing starts clean.
     this.home()
     this.logo?.dispose(); this.logo = null; this.options.onLogo?.(false)
+    this.markOverlay?.remove(); this.markOverlay = null
+    this.markSwitch?.element.remove(); this.markSwitch = null
     cancelAnimationFrame(this.frame); this.worker?.terminate(); this.worker = null; this.queue.length = 0; this.painting = false
     this.array = this.close = null; this.fbo = null; this.target2 = null; this.program = null; this.blurProgram = null
     this.gl?.getExtension('WEBGL_lose_context')?.loseContext(); this.gl = null; this.canvas.remove(); this.pointers.clear(); this.drag = null
@@ -1010,7 +1026,8 @@ export class Galaxy {
       gl.drawArrays(gl.TRIANGLES, 0, 3); gl.useProgram(this.program)
     }
     const logo = this.logo, layout = this.options.logo?.()
-    if (mark.placement) this.options.onLogo?.(true)
+    if (layout) this.markSwitch?.avoid(layout.box)
+    if (mark.placement) { this.options.onLogo?.(true); if (layout) this.markOverlay?.update(layout.box, 0) }
     else if (logo && layout) {
       const budget = logoBudget(layout.level), held = this.reduced.matches || budget.still || this.backdrop < 1
       if (held) logo.skipIntro()
@@ -1019,6 +1036,7 @@ export class Galaxy {
       logo.setLook({ particles: Math.round(budget.particles * (1 - qualityShed(1) * 0.65)), sway: held ? 0 : 0.07, opacity: 1 - this.dive })
       const sx = this.canvas.width / this.host.clientWidth, sy = this.canvas.height / this.host.clientHeight, box = layout.box
       logo.draw(held ? STILL_SECONDS : time, { x: box.x * sx, y: box.y * sy, width: box.width * sx, height: box.height * sy })
+      this.markOverlay?.update(box, logo.markOpacity)
       this.logoSeen = true; this.options.onLogo?.(true)
     }
     this.frames++
@@ -1034,6 +1052,9 @@ export class Galaxy {
   }
   private screen: { id: string; x: number; y: number; radius: number; visible: boolean; depth: number }[] = []
   private readonly markRig = new WordmarkRig()
+  /** The flat wordmark, drawn by the browser over the canvas (see WordmarkOverlay). */
+  private markOverlay: WordmarkOverlay | null = null
+  private markSwitch: WordmarkSwitch | null = null
   /** performance.now() when the in-space wordmark was first drawn this showing, for its fade in. */
   private markStart: number | null = null
   private markMode = 0
@@ -1046,7 +1067,10 @@ export class Galaxy {
     const mode = Math.round(wordmarkPlacement.value), layout = this.options.logo?.()
     const none = { mode: 0, placement: null, pixelsPerUnit: 0, opacity: 0, moving: false }
     if (mode !== this.markMode) { this.markMode = mode; this.markStart = null; this.markRig.pose = null; this.wake = 2 }
-    if (mode <= 0 || !this.logo?.distanceField?.ok || !layout || !this.canvas) return none
+    // In space needs exact distances and a bake this device can afford; otherwise the flat
+    // mark, which is the vector overlay and never needs the field, stands in.
+    const field = this.logo?.distanceField
+    if (mode <= 0 || !field?.ok || !field.precise || field.slow || !layout || !this.canvas) return none
     const goal = { yaw: this.yaw, pitch: this.pitch, reach: this.reach, target: [...this.target] as [number, number, number] }
     const held = still || this.reduced.matches
     const rigMoving = this.markRig.step(goal, elapsed, held)

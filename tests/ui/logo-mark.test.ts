@@ -157,6 +157,14 @@ describe('LogoMark lifecycle', () => {
     const throwing = { ...fakeCanvas(null), getContext: () => { throw new Error('blocked') } }
     expect(() => new LogoMark(throwing as unknown as HTMLCanvasElement).dispose()).not.toThrow()
   })
+  it('marks a bake slower than 50 ms, so the lobby keeps the flat vector mark', () => {
+    let now = 0
+    vi.spyOn(performance, 'now').mockImplementation(() => (now += 60))
+    const fake = fakeGl(), renderer = new LogoRenderer(fake.gl, { particles: 50 })
+    renderer.draw(5, { x: 100, y: 100, width: 426, height: 100 })
+    expect(renderer.distanceField!.slow).toBe(true)
+    vi.restoreAllMocks()
+  })
   it('hosted in another context, puts back the state it found', () => {
     const fake = fakeGl(), renderer = new LogoRenderer(fake.gl, { particles: 200 })
     expect(fake.state.CURRENT_PROGRAM).toBe('host-program')

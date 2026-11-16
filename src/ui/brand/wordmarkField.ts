@@ -16,8 +16,8 @@
  */
 import { ASPECT, wordmarkContours, type Contour } from './wordmarkMesh'
 
-/** Room round the box the field covers, in wordmark units: for antialiasing, rims and halos. */
-export const FIELD_PAD = 0.12
+/** Room round the box the field covers, in wordmark units: for antialiasing, rims and the in-space halo. */
+export const FIELD_PAD = 0.3
 /** The field's rectangle in wordmark units: min x, min y, width, height. */
 export const FIELD_BOUNDS = [-ASPECT / 2 - FIELD_PAD, -0.5 - FIELD_PAD, ASPECT + FIELD_PAD * 2, 1 + FIELD_PAD * 2] as const
 /** Distances an 8-bit field (the fallback without float render targets) can store, either side of the outline. */
@@ -26,6 +26,8 @@ const BYTE_RANGE = 0.1
 const MIN_DENSITY = 192, MAX_DENSITY = 640
 /** Texels per screen pixel the field is baked at, at least. */
 const OVERSAMPLE = 1.33
+/** A bake slower than this marks the device as one that should not draw the mark from the field. */
+export const SLOW_BAKE_MS = 50
 
 /** Every straight segment of the path, as x0, y0, x1, y1 in wordmark units. */
 export function wordmarkSegments(contours: Contour[] = wordmarkContours()): Float32Array {
@@ -90,8 +92,13 @@ float wordmarkFootprint(vec2 model) { vec2 x = dFdx(model), y = dFdy(model); ret
 export class WordmarkField {
   /** Texels per wordmark unit of the current bake; 0 before the first. */
   density = 0
-  /** Milliseconds the last bake took to submit on the CPU. The GPU work is measured in the browser (tests/ui/wordmark-shots.mjs). */
+  /**
+   * Milliseconds the last bake took, waited for to the end of the GPU work (one pixel read
+   * back), shader compile included. Measured on Apple GPUs only so far: unmeasured on phones.
+   */
   lastBakeMs = 0
+  /** A bake took longer than SLOW_BAKE_MS: callers with a cheaper way to draw should use it. */
+  slow = false
   bakes = 0
   private texture: WebGLTexture | null = null
   private segments: WebGLTexture | null = null
@@ -119,6 +126,8 @@ export class WordmarkField {
   }
 
   get ok(): boolean { return Boolean(this.program && this.texture) }
+  /** Distances are kept exactly (a half-float target); without it only the flat mark's range is kept. */
+  get precise(): boolean { return this.float }
   /** Multiply-add that turns a texel back into a distance. */
   get decode(): [number, number] { return this.float ? [1, 0] : [2 * BYTE_RANGE, -BYTE_RANGE] }
 
@@ -153,8 +162,11 @@ export class WordmarkField {
     gl.drawArrays(gl.TRIANGLES, 0, 3)
     gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer)
     gl.bindTexture(gl.TEXTURE_2D, this.texture)
+    // One pixel read back waits for the GPU, so the time is the real cost. Once per bake.
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4))
     this.density = want; this.bakes++
     this.lastBakeMs = performance.now() - started
+    if (this.lastBakeMs > SLOW_BAKE_MS) this.slow = true
     return true
   }
 

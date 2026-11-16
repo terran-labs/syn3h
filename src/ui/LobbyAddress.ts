@@ -17,7 +17,10 @@ export class LobbyAddress {
     if (!this.lobby) this.retained = new URL(this.location.href)
     this.lobby = true
     const clean = new URL(this.retained.href)
+    // The wordmark preview flag (src/ui/brand/wordmarkSwitch.ts) stays while it is present.
+    const wordmark = new URL(this.location.href).searchParams.get('wordmark') ?? clean.searchParams.get('wordmark')
     clean.search = ''; clean.hash = ''
+    if (wordmark !== null) clean.searchParams.set('wordmark', wordmark)
     this.replace(clean)
   }
 

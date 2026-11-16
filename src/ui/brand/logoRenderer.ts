@@ -62,11 +62,17 @@ export interface LogoLook {
    * (src/ui/galaxy/Galaxy.ts) still sets it.
    */
   sway: number
+  /**
+   * Draw the wordmark itself (pass 4). The lobby galaxy turns it off and lays a vector copy
+   * over its canvas instead (wordmarkOverlay.ts): its canvas is capped below the screen's
+   * pixel ratio, and the browser draws the vector at full resolution.
+   */
+  drawMark: boolean
 }
 export const DEFAULT_LOGO_LOOK: LogoLook = {
   // Galaxy sunShafts: mix([1,.86,.66], WARM [1,.77,.5], .3).
   seed: 1, glow: [1, 0.833, 0.612], glowEdge: [1, 0.77, 0.5], glowWidth: 0.26, face: [0.008, 0.016, 0.039],
-  particles: 160, plasmaSize: 0.3, flowSpeed: 1, glowStrength: 1, space: false, opacity: 1, markFade: 1.5, glowGap: 0, glowFade: 3, sway: 0,
+  particles: 160, plasmaSize: 0.3, flowSpeed: 1, glowStrength: 1, space: false, opacity: 1, markFade: 1.5, glowGap: 0, glowFade: 3, sway: 0, drawMark: true,
 }
 /** A box in pixels, measured from the top left of the viewport. */
 export interface PixelRect { x: number; y: number; width: number; height: number }
@@ -354,9 +360,11 @@ export class LogoRenderer {
   skipIntro(): void { this.introStart = SKIPPED }
   /** Seconds into the fade in at the last draw; at least INTRO_SECONDS once it has finished. */
   introTime = 0
+  /** The wordmark's opacity at the last draw (the silhouette stage of the fade), for a copy drawn elsewhere. */
+  markOpacity = 0
 
   get stats(): DrawStats {
-    return { drawCalls: (this.look.space ? 1 : 0) + 3, particles: Math.min(this.look.particles, this.builtParticles), triangles: this.triangles, fieldDensity: this.distanceField?.density ?? 0, fieldBakeMs: this.distanceField?.lastBakeMs ?? 0 }
+    return { drawCalls: (this.look.space ? 1 : 0) + (this.look.drawMark ? 3 : 2), particles: Math.min(this.look.particles, this.builtParticles), triangles: this.triangles, fieldDensity: this.distanceField?.density ?? 0, fieldBakeMs: this.distanceField?.lastBakeMs ?? 0 }
   }
 
   private location(program: WebGLProgram, name: string): WebGLUniformLocation | null {
@@ -410,11 +418,11 @@ export class LogoRenderer {
       // The field, baked (once, or again when drawn much larger) before anything is drawn.
       // The bake binds its own target, then the framebuffer the host had when this renderer
       // was made: the lobby and LogoMark both draw to the screen.
-      if (this.distanceField!.ensure(box.height, this.host.framebuffer)) gl.viewport(view.x, view.y, view.width, view.height)
+      if (look.drawMark && this.distanceField!.ensure(box.height, this.host.framebuffer)) gl.viewport(view.x, view.y, view.width, view.height)
       const centre: [number, number] = [box.x + box.width / 2, box.y + box.height / 2], height = box.height
       // The silhouette fades in first, then the glow, more slowly; each eased at both ends.
       const glowStart = look.markFade + look.glowGap
-      const markOpacity = look.opacity * smooth(0, look.markFade, intro)
+      const markOpacity = this.markOpacity = look.opacity * smooth(0, look.markFade, intro)
       const glowOpacity = look.opacity * smooth(glowStart, glowStart + look.glowFade, intro)
       // A slow breath in the plasma's brightness, the same for every particle.
       const breath = 0.92 + 0.08 * Math.sin(seconds * 0.5)
@@ -471,6 +479,7 @@ export class LogoRenderer {
       gl.bindVertexArray(this.plasmaVao); gl.drawArrays(gl.POINTS, 0, count)
 
       // 4. The wordmark: face and edge line in one quad, from the distance field.
+      if (!look.drawMark) return
       common(this.mark!, markOpacity)
       const mark = (name: string) => this.location(this.mark!, name)
       gl.uniform3f(mark('uFace'), ...look.face)

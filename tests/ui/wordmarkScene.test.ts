@@ -25,3 +25,13 @@ describe('wordmark in space', () => {
     }
   })
 })
+
+describe('wordmark preview switch', () => {
+  it('sets the placement from ?wordmark=, clamped, and does nothing without the flag', async () => {
+    const { applyWordmarkQuery, wordmarkSwitchEnabled } = await import('../../src/ui/brand/wordmarkSwitch')
+    const { wordmarkPlacement } = await import('../../src/ui/brand/wordmarkScene')
+    expect(applyWordmarkQuery('?room=a')).toBe(false); expect(wordmarkSwitchEnabled()).toBe(false); expect(wordmarkPlacement.value).toBe(0)
+    expect(applyWordmarkQuery('?wordmark=9')).toBe(true); expect(wordmarkPlacement.value).toBe(3); expect(wordmarkSwitchEnabled()).toBe(true)
+    applyWordmarkQuery('?wordmark=-2'); expect(wordmarkPlacement.value).toBe(0)
+  })
+})
