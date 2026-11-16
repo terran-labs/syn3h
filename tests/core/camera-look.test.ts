@@ -12,7 +12,7 @@ function harness() {
   const input = { suspended: false }, target = new Object3D()
   target.position.set(0, 10, 0)
   const game = { camera: new PerspectiveCamera(60), input } as unknown as Game
-  const chase = new ChaseCamera(game, { heightAt: () => 0 } as Terrain)
+  const chase = new ChaseCamera(game, { size: 1000, heightAt: () => 0, normalAt: (_x, _z, out) => out.set(0, 1, 0), spawnPoint: () => ({ position: target.position.clone(), heading: 0 }), dispose() {} } as Terrain)
   chase.target = target
   chase.update(0.02)
   // Observe input state separately from the rendered camera's smoothing spring.
