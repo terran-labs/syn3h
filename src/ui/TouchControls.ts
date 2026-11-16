@@ -85,12 +85,21 @@ export class TouchFireHolds {
   }
   private readonly pointerEnd = (event: PointerEvent): void => {
     if (!primaryPointerEnded(event)) return
-    this.end(`pointer:${event.pointerId}`)
+    this.end(`pointer:${event.pointerId}`, event.type === 'pointercancel')
   }
   private readonly keyEnd = (event: KeyboardEvent): void => this.end(`key:${event.code}`)
-  private end(id: string): void {
+  private end(id: string, interrupted = false): void {
     const owner = this.owners.get(id)
     if (!owner) return
+    if (interrupted && !owner.blocked) {
+      // Suppress only this contact. An eligible key, native source or other contact
+      // keeps the action alive; a stale blocked contact cannot cancel fresh gameplay.
+      this.input.beginExternalFire(owner.token)
+      const hadFire = this.input.state.fire
+      owner.blocked = true
+      this.input.suppressExternalFire(owner.token)
+      if (hadFire && !this.input.state.fire) this.suppressed()
+    }
     this.owners.delete(id)
     this.input.endExternalFire(owner.token)
     if (!this.owners.size && this.listening) {
