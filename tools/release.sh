@@ -147,7 +147,9 @@ tail -1 "$LOG-frozen.log"
 
 # --- Smoke test -----------------------------------------------------------------------------
 echo "Smoke testing $URL ..."
-node tools/net-smoke.mjs "$URL" 2>&1 | tee "$LOG-smoke.log" | grep -E "^(FAIL|NET SMOKE)" || true
+SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-normal.XXXXXX)" || fail "could not reserve smoke evidence directory"
+echo "Shot evidence: $SHOT_PARENT/evidence ($URL)"
+SYN3H_SHOT_EVIDENCE_DIR="$SHOT_PARENT/evidence" node tools/net-smoke.mjs "$URL" 2>&1 | tee "$LOG-smoke.log" | grep -E "^(FAIL|NET SMOKE)" || true
 grep -q "^NET SMOKE OK" "$LOG-smoke.log" || fail "net-smoke failed against $URL (see $LOG-smoke.log)"
 
 if [ -n "$DRY" ]; then
@@ -155,7 +157,9 @@ if [ -n "$DRY" ]; then
   PIDS="$PIDS $!"
   wait_http "http://127.0.0.1:$PROXY_PORT/" 30 || fail "latency proxy did not start"
   echo "Smoke testing through 150 ms round trip with 0 to 30 ms jitter each way..."
-  node tools/net-smoke.mjs "http://127.0.0.1:$PROXY_PORT/" 2>&1 | tee "$LOG-smoke-latency.log" | grep -E "^(FAIL|NET SMOKE)" || true
+  SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-latency.XXXXXX)" || fail "could not reserve latency evidence directory"
+  echo "Shot evidence: $SHOT_PARENT/evidence (latency)"
+  SYN3H_SHOT_EVIDENCE_DIR="$SHOT_PARENT/evidence" node tools/net-smoke.mjs "http://127.0.0.1:$PROXY_PORT/" 2>&1 | tee "$LOG-smoke-latency.log" | grep -E "^(FAIL|NET SMOKE)" || true
   grep -q "^NET SMOKE OK" "$LOG-smoke-latency.log" || fail "net-smoke failed with latency (see $LOG-smoke-latency.log)"
   echo
   echo "DRY RUN OK: $MILESTONE ($COMMIT) frozen as $ID is deployable. Nothing was deployed or tagged."

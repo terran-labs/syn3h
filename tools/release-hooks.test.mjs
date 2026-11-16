@@ -25,18 +25,13 @@ for (const failure of ['draft', 'capture', 'tag']) {
 }
 
 const rollback = readFileSync(new URL('./rollback.sh', import.meta.url), 'utf8')
-const rollbackCheck = rollback.slice(rollback.indexOf('# Preserve the check'))
+// Preserve the original rollback success/failure cases using the bounded fixture below.
 for (const status of [0, 1]) {
-  test(`rollback verification preserves smoke exit ${status}`, () => {
-    const dir = mkdtempSync(join(tmpdir(), 'syn3h-rollback-check-'))
-    try {
-      mkdirSync(join(dir, 'bin'))
-      writeFileSync(join(dir, 'bin/node'), `#!/bin/sh\necho '${status ? 'FAIL no page errors' : 'NET SMOKE OK'}'\nexit ${status}\n`, { mode: 0o755 })
-      const result = spawnSync('/bin/sh', ['-eu', '-c', rollbackCheck], { cwd: dir, encoding: 'utf8', env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH, URL: 'https://example.test' } })
-      assert.equal(result.status, status, result.stderr)
-      if (status) assert.match(result.stderr, /verification failed/)
-    } finally { rmSync(dir, { recursive: true, force: true }) }
-  })
+  test(`rollback verification preserves smoke exit ${status}`, () => callerFixture(invoke => {
+    const result = invoke('rollback', status ? 'fail' : 'success')
+    assert.equal(result.status, status, result.stderr)
+    if (status) assert.match(result.stderr, /verification failed/)
+  }))
 }
 
 const primaryCheck = release.slice(release.indexOf('# --- Primary public acceptance'), release.indexOf('# --- Record'))
@@ -67,3 +62,97 @@ test('notes compare with accepted history, not a later failed attempt', () => {
     assert.equal(result.stdout, 'accepted-release')
   } finally { rmSync(dir, { recursive: true, force: true }) }
 })
+
+// Execute actual caller sections, not a second implementation of their verdict logic.
+const domain = readFileSync(new URL('./domain.sh', import.meta.url), 'utf8')
+function section(source, start, end) {
+  const at = source.indexOf(start)
+  assert.ok(at >= 0 && source.indexOf(start, at + 1) < 0, `unique start: ${start}`)
+  const until = end === undefined ? source.length : source.indexOf(end, at)
+  assert.ok(until > at, `end: ${end}`)
+  return source.slice(at, until)
+}
+const smokeSections = {
+  normal: section(release, 'SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-normal.', '\n\nif [ -n "$DRY" ]'),
+  latency: section(release, '  SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-latency.', '\n  echo\n'),
+  domain: section(domain, '  SHOT_PARENT="$(mktemp -d "/tmp/syn3h-shot-domain-', '\n  ;;'),
+  rollback: section(rollback, '# Preserve the check'),
+}
+function callerFixture(fn) {
+  const dir = mkdtempSync(join(tmpdir(), 'syn3h-smoke-callers-'))
+  try {
+    mkdirSync(join(dir, 'bin'))
+    const calls = join(dir, 'calls')
+    writeFileSync(calls, '')
+    writeFileSync(join(dir, 'bin/mktemp'), `#!/bin/sh
+set -eu
+if [ "$1" = -d ]; then
+  [ "$CASE" != allocation ] || exit 1
+  shift
+  exec /usr/bin/mktemp -d "$FIXTURE/\${1##*/}"
+fi
+exec /usr/bin/mktemp "$FIXTURE/\${1##*/}"
+`, { mode: 0o755 })
+    writeFileSync(join(dir, 'bin/node'), `#!/bin/sh
+set -eu
+printf '%s\n' "$SYN3H_SHOT_EVIDENCE_DIR" >> "$CALLS"
+case "$SYN3H_SHOT_EVIDENCE_DIR" in "$FIXTURE"/*/evidence) ;; *) exit 91;; esac
+[ -d "\${SYN3H_SHOT_EVIDENCE_DIR%/*}" ] || exit 92
+[ ! -e "$SYN3H_SHOT_EVIDENCE_DIR" ] || exit 93
+mkdir "$SYN3H_SHOT_EVIDENCE_DIR"
+case "$CASE" in
+  success) echo 'NET SMOKE OK'; exit 0;;
+  fail) echo 'FAIL original gameplay'; echo 'NET SMOKE FAILED'; exit 1;;
+  incomplete) echo 'NET SMOKE FAILED (incomplete shot evidence)'; exit 1;;
+  exit-with-marker) echo 'NET SMOKE OK'; exit 7;;
+  zero-no-marker) echo 'FAIL fixture'; exit 0;;
+esac
+exit 94
+`, { mode: 0o755 })
+    const invoke = (kind, scenario = 'success', host = 'www.syn3h.com') => {
+      // Only relocate the fixed domain log into the fixture; preserve pipeline and checks.
+      const body = smokeSections[kind].replaceAll('/tmp/syn3h-domain-check.log', join(dir, 'domain.log'))
+      const result = spawnSync('/bin/sh', ['-eu', '-c', 'fail() { echo "$*" >&2; exit 1; }; die() { fail "$@"; };\n' + body], {
+        cwd: dir, encoding: 'utf8', timeout: 3000, maxBuffer: 1024 * 1024,
+        env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH,
+          FIXTURE: dir, CALLS: calls, CASE: scenario, H: host, URL: 'https://example.test/',
+          LOG: join(dir, 'same-log'), PROXY_PORT: '12345', SYN3H_SHOT_EVIDENCE_DIR: '/must-not-reuse/evidence' },
+      })
+      assert.equal(result.error, undefined, String(result.error))
+      return result
+    }
+    fn(invoke, () => readFileSync(calls, 'utf8').trim().split('\n').filter(Boolean))
+  } finally { rmSync(dir, { recursive: true, force: true }) }
+}
+for (const kind of Object.keys(smokeSections)) {
+  for (const scenario of ['success', 'fail', 'incomplete', 'allocation']) {
+    test(`${kind} caller preserves ${scenario} behavior`, () => callerFixture((invoke, calls) => {
+      const result = invoke(kind, scenario)
+      assert.equal(result.status, scenario === 'success' ? 0 : 1, result.stdout + result.stderr)
+      assert.equal(calls().length, scenario === 'allocation' ? 0 : 1)
+      if (scenario !== 'success') assert.doesNotMatch(result.stdout, /^NET SMOKE OK/m)
+      if (kind === 'rollback' && ['fail', 'incomplete'].includes(scenario))
+        assert.match(result.stderr, /verification failed/)
+    }))
+  }
+}
+test('repeated same-log calls reserve distinct absent children and override inherited evidence', () => callerFixture((invoke, calls) => {
+  for (const kind of Object.keys(smokeSections)) {
+    for (let i = 0; i < 2; i++) assert.equal(invoke(kind).status, 0)
+  }
+  assert.equal(invoke('domain', 'success', 'syn3h.com').status, 0)
+  const paths = calls()
+  assert.equal(paths.length, 9)
+  assert.equal(new Set(paths).size, 9)
+  for (const prefix of ['release-normal', 'release-latency', 'domain-www.syn3h.com', 'rollback'])
+    assert.equal(paths.filter(p => p.includes(`/syn3h-shot-${prefix}.`)).length, 2)
+  assert.equal(paths.filter(p => p.includes('/syn3h-shot-domain-syn3h.com.')).length, 1)
+}))
+test('rollback rejects a nonzero exit even when output contains a success marker', () => callerFixture(invoke => {
+  assert.equal(invoke('rollback', 'exit-with-marker').status, 1)
+}))
+for (const kind of ['normal', 'latency', 'domain']) {
+  test(`${kind} requires its marker even when Node exits zero`, () => callerFixture(invoke => {
+    assert.equal(invoke(kind, 'zero-no-marker').status, 1)
+  }))
+}

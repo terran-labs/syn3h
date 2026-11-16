@@ -1,0 +1,5 @@
+{
+  "tools/release.sh": "e462c4ebb35527e56aa29e00fd5e535c3a314799615045a7d68b64e837a88bb7",
+  "tools/domain.sh": "6394c134764dab8b109de6041b212676ba3e69a9df4dddec53a4495c412a158b",
+  "tools/rollback.sh": "29fe72698ebfa8721f84aed8af5bddcfd681ef601593feb13039eb3e099b465c"
+}

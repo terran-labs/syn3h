@@ -1,0 +1,26 @@
+--- a/tools/release.sh
++++ b/tools/release.sh
+@@ -150 +150,3 @@
+-node tools/net-smoke.mjs "$URL" 2>&1 | tee "$LOG-smoke.log" | grep -E "^(FAIL|NET SMOKE)" || true
++SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-normal.XXXXXX)" || fail "could not reserve smoke evidence directory"
++echo "Shot evidence: $SHOT_PARENT/evidence ($URL)"
++SYN3H_SHOT_EVIDENCE_DIR="$SHOT_PARENT/evidence" node tools/net-smoke.mjs "$URL" 2>&1 | tee "$LOG-smoke.log" | grep -E "^(FAIL|NET SMOKE)" || true
+@@ -158 +160,3 @@
+-  node tools/net-smoke.mjs "http://127.0.0.1:$PROXY_PORT/" 2>&1 | tee "$LOG-smoke-latency.log" | grep -E "^(FAIL|NET SMOKE)" || true
++  SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-latency.XXXXXX)" || fail "could not reserve latency evidence directory"
++  echo "Shot evidence: $SHOT_PARENT/evidence (latency)"
++  SYN3H_SHOT_EVIDENCE_DIR="$SHOT_PARENT/evidence" node tools/net-smoke.mjs "http://127.0.0.1:$PROXY_PORT/" 2>&1 | tee "$LOG-smoke-latency.log" | grep -E "^(FAIL|NET SMOKE)" || true
+--- a/tools/domain.sh
++++ b/tools/domain.sh
+@@ -117 +117,3 @@
+-  node tools/net-smoke.mjs "https://$H/" 2>&1 | grep -E "^(FAIL|NET SMOKE)" | tee /tmp/syn3h-domain-check.log
++  SHOT_PARENT="$(mktemp -d "/tmp/syn3h-shot-domain-$H.XXXXXX")" || die "could not reserve domain evidence directory"
++  echo "Shot evidence: $SHOT_PARENT/evidence (https://$H/)"
++  SYN3H_SHOT_EVIDENCE_DIR="$SHOT_PARENT/evidence" node tools/net-smoke.mjs "https://$H/" 2>&1 | grep -E "^(FAIL|NET SMOKE)" | tee /tmp/syn3h-domain-check.log
+--- a/tools/rollback.sh
++++ b/tools/rollback.sh
+@@ -30 +30,3 @@
+-if node tools/net-smoke.mjs "$URL" >"$LOG" 2>&1; then
++SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-rollback.XXXXXX)" || { echo "Rollback deployed, but evidence directory allocation failed" >&2; exit 1; }
++echo "Shot evidence: $SHOT_PARENT/evidence ($URL)"
++if SYN3H_SHOT_EVIDENCE_DIR="$SHOT_PARENT/evidence" node tools/net-smoke.mjs "$URL" >"$LOG" 2>&1; then

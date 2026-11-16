@@ -114,7 +114,9 @@ check)
     ws.on("open", () => { clearTimeout(t); console.log("WSS ok: upgrade to /ws"); ws.close(); process.exit(0) })
     ws.on("error", (e) => { console.error("WSS failed: " + e.message); process.exit(1) })
   ' "$H" "$REPO"
-  node tools/net-smoke.mjs "https://$H/" 2>&1 | grep -E "^(FAIL|NET SMOKE)" | tee /tmp/syn3h-domain-check.log
+  SHOT_PARENT="$(mktemp -d "/tmp/syn3h-shot-domain-$H.XXXXXX")" || die "could not reserve domain evidence directory"
+  echo "Shot evidence: $SHOT_PARENT/evidence (https://$H/)"
+  SYN3H_SHOT_EVIDENCE_DIR="$SHOT_PARENT/evidence" node tools/net-smoke.mjs "https://$H/" 2>&1 | grep -E "^(FAIL|NET SMOKE)" | tee /tmp/syn3h-domain-check.log
   grep -q "^NET SMOKE OK" /tmp/syn3h-domain-check.log || die "net-smoke failed on $H"
   ;;
 

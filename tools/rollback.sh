@@ -27,7 +27,9 @@ echo "Rolling back to $REL (Worker version $VERSION, frozen copy $ID)..."
 echo "Smoke testing $URL ..."
 # Preserve the check's exit status: grep also succeeds when it finds a FAIL line.
 LOG="$(mktemp /tmp/syn3h-rollback-check.XXXXXX)"
-if node tools/net-smoke.mjs "$URL" >"$LOG" 2>&1; then
+SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-rollback.XXXXXX)" || { echo "Rollback deployed, but evidence directory allocation failed" >&2; exit 1; }
+echo "Shot evidence: $SHOT_PARENT/evidence ($URL)"
+if SYN3H_SHOT_EVIDENCE_DIR="$SHOT_PARENT/evidence" node tools/net-smoke.mjs "$URL" >"$LOG" 2>&1; then
   grep -E "^(FAIL|NET SMOKE)" "$LOG" || true
 else
   cat "$LOG"
