@@ -52,8 +52,10 @@ try {
     await context.close()
   }
   // Safari on a phone and a tablet over a slow link: the bundle is held back.
-  // The veil must be unmistakably a loading screen the whole time: the name, a ring of real
-  // size, a word of status, and after eight seconds a line that says it is still working.
+  // The veil must be unmistakably a loading screen the whole time, and never show the name
+  // (the first Syn3h logo a player sees is in the solar system): a point of light where the
+  // sun will be, one line of status beneath it, and after ten seconds a plain line that
+  // counts the seconds and names the real step.
   const safari = await webkit.launch()
   for (const name of ['iPhone 14', 'iPad Pro 11 landscape']) {
     const context = await safari.newContext({ ...devices[name] }), page = await context.newPage()
@@ -67,22 +69,23 @@ try {
     await page.waitForTimeout(1500)
     const seen = () => page.evaluate(() => {
       const box = selector => { const el = document.querySelector(selector), r = el.getBoundingClientRect(), style = getComputedStyle(el); return { width: r.width, height: r.height, top: r.top, bottom: r.bottom, opacity: Number(style.opacity), text: el.textContent.trim(), inView: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth } }
-      return { wordmark: box('.boot-wordmark'), mark: box('.boot-mark'), status: box('.boot-status'), still: box('.boot-still'), game: Boolean(window.syn3h) }
+      return { wordmark: document.querySelector('.boot-veil svg[aria-label="Syn3h"], .boot-wordmark') !== null, point: box('.boot-point'), status: box('.boot-status'), still: box('.boot-still'), game: Boolean(window.syn3h) }
     })
     const first = await seen()
     assert.equal(first.game, false)
-    assert.ok(first.wordmark.width >= 180 && first.wordmark.inView, `${name}: the name is on the veil (${Math.round(first.wordmark.width)} px)`)
-    assert.ok(first.mark.width >= 100 && first.mark.opacity > 0.9 && first.mark.inView, `${name}: the ring is a real size (${Math.round(first.mark.width)} px)`)
+    assert.equal(first.wordmark, false, `${name}: no name on the loading view`)
+    assert.ok(first.point.width > 0 && first.point.opacity > 0.2 && first.point.inView, `${name}: the point of light is there`)
+    assert.ok(Math.abs(first.point.top + first.point.height / 2 - (await page.evaluate(() => innerHeight)) / 2) < 3, `${name}: at the centre, where the sun will be`)
     assert.ok(first.status.text.length > 10, `${name}: a line of status from the first paint`); assert.ok(first.status.inView && first.status.opacity > 0.9)
-    assert.ok(first.still.opacity < 0.1, `${name}: the still-working line waits`)
-    assert.ok(first.wordmark.bottom <= first.mark.top && first.mark.bottom <= first.status.top, `${name}: name, ring, status in that order without overlap`)
-    await page.waitForTimeout(7600)
+    assert.ok(first.point.bottom <= first.status.top, `${name}: the line sits beneath the point`)
+    assert.ok(first.still.opacity < 0.1, `${name}: the second line waits`)
+    await page.waitForTimeout(10000)
     const later = await seen()
     assert.equal(later.game, false, `${name}: still waiting for the bundle ${JSON.stringify(later)}`)
-    assert.ok(later.still.opacity > 0.9 && later.still.inView && /^Still (working|going|here)\./.test(later.still.text), `${name}: after eight seconds it says it is still working`)
-    // The bundle arrives: the line changes with the phases, then the veil lifts.
+    assert.equal(later.status.text, first.status.text, `${name}: one line for the whole load`)
+    assert.ok(later.still.opacity > 0.9 && later.still.inView && /^\d+ s \u00b7 Downloading the game\u2019s code/.test(later.still.text), `${name}: after ten seconds, the seconds and the real step (${later.still.text})`)
+    // The bundle arrives: the line stays, then the veil lifts.
     arrive()
-    await page.waitForFunction(first => document.querySelector('.boot-status').textContent !== first, first.status.text, { timeout: 30000 })
     await page.waitForFunction(() => document.documentElement.dataset.boot === 'done', null, { timeout: 90000 })
     await page.waitForTimeout(1300)
     assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.boot-veil')).visibility), 'hidden')
