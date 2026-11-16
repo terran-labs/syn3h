@@ -199,15 +199,22 @@ export class ChaseCamera implements System {
     listen(window, 'syn3h:daydream', ((event: CustomEvent<{ active: boolean }>) => { if (event.detail?.active) this.director.start(); else this.director.stop() }) as EventListener)
     listen(window, 'pointermove', ((event: PointerEvent) => {
       if ((!this.dragging && document.pointerLockElement !== game.canvas) || this.game.input.suspended) return
-      const sensitivity = camSensitivity.value * (this.scopeHeld ? 0.75 / 4 : 1) * Math.PI / 180 * 0.1
-      this.yaw -= event.movementX * sensitivity; this.pitch = clamp(this.pitch - event.movementY * sensitivity, -Math.PI * 0.49, Math.PI * 0.49)
-      this.lastManual = this.elapsed
+      this.look(event.movementX, event.movementY)
     }) as EventListener)
     listen(game.canvas, 'wheel', ((event: WheelEvent) => {
       event.preventDefault()
       const param = this.scopeHeld ? camScope : Math.round(camMode.value) === 4 ? camRoamSpeed : camDistance
       params.set(param.def.id, param.value + Math.sign(event.deltaY) * (this.scopeHeld ? -0.25 : 1))
     }) as EventListener, { passive: false })
+  }
+
+  /** Apply mouse or touch look in CSS pixels; mode updates retain their existing recenter delay. */
+  look(dx: number, dy: number): void {
+    if (this.game.input.suspended || !Number.isFinite(dx) || !Number.isFinite(dy)) return
+    const sensitivity = camSensitivity.value * (this.scopeHeld ? 0.75 / 4 : 1) * Math.PI / 180 * 0.1
+    this.yaw -= dx * sensitivity
+    this.pitch = clamp(this.pitch - dy * sensitivity, -Math.PI * 0.49, Math.PI * 0.49)
+    this.lastManual = this.elapsed
   }
 
   /** Chooses shots while the vehicle drives itself. Started and stopped by Daydream's event. */
