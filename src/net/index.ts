@@ -5,7 +5,6 @@
  * host, the bots) and sends their states 20 times a second; the room server relays them;
  * remote vehicles are played back from snapshot buffers and stay physical near us so ramming
  * works. Lasers, identity and the tag game ride on rare JSON messages.
- * See docs/architecture/mars-explorer.md, Networking.
  */
 import * as THREE from 'three/webgpu'
 import { type ParamValue, params, worldSeed } from '../../shared/params'

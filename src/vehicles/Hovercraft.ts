@@ -8,7 +8,7 @@ import { UnityBody } from './unityBody'
 import { GameHover } from './hover/GameHover'
 import { LOWWING_SPEC } from './hover/lowwing'
 
-// Settings.js slider defaults, documented in docs/architecture/mars-explorer.md. Thrust is the
+// Settings.js slider defaults. Thrust is the
 // exception: Settings.js has 220, raised to 320 with the livelier glide (see below). Set it back
 // to 220 together with hover.assist 0 for the source feel.
 export const hoverHeight = defineParam({id:'hover.height',label:'Height',group:'Hovercraft',scope:'world',default:15,min:5,max:25,step:.1})

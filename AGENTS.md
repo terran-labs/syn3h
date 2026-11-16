@@ -22,9 +22,12 @@ In practice:
   textures, sprites, image files and recordings.
 - Expose what you generate through the parameter registry (`shared/params.ts`) or plain
   options with a seed, so it can be tuned and shared.
-- A generated thing must earn its place: if a small asset genuinely looks or sounds better
-  and the generated version cannot match it, say so and keep the asset. Recorded originals
-  the owner supplied (music, the laser and wind clips) stay.
+- A generated thing must earn its place. Measure visual and audio quality as well as cost.
+  Preserve supplied originals as source material; retaining a file does not authorize a
+  runtime request. The later owner direction prohibits ordinary-play binary asset loading,
+  subject to accepted exceptions such as the permitted vehicle meshes. Curated About images
+  may load only after deliberate About entry, with zero image requests before that action.
+  Lazy loading alone does not satisfy this exception.
 - Use current web platform features (WebGPU, WebGL 2, modern CSS, Web Audio) to cut
   load time and improve visual quality. Choose implementation techniques for this
   browser experience and measure their results.
