@@ -11,6 +11,12 @@ const number = (id: string, label: string, value: number, min: number, max: numb
 const boolean = (id: string, label: string, value: boolean) => defineParam({ id: `camera.${id}`, label, group: 'Camera', scope: 'client', default: value })
 // _Runtime.prefab:8755-8795, terra.buggy.prefab:586, CoreCamera.cs:177.
 export const camDistance = number('distance', 'Orbit distance', 6.25, 0, 25, 0.25)
+export const camZoomSpeed = number('zoomSpeed', 'Zoom speed', 0.4, 0.05, 2, 0.05)
+/** One notch is 100 CSS pixels or one line/page; cap large wheel events. */
+export function cameraWheelNotches(deltaY: number, deltaMode: number): number {
+  if (!Number.isFinite(deltaY)) return 0
+  return Math.max(-1, Math.min(1, deltaY / (deltaMode === 0 ? 100 : 1)))
+}
 export const camHeight = number('height', 'Vertical bump ratio', 0.15, 0, 0.6, 0.01)
 export const camMode = number('mode', '0 chase 1 cockpit 2 orbit 3 stationary 4 roam', 0, 0, 4, 1)
 export const camOffset = number('offset', 'Vehicle clearance', 3, 0, 10)
@@ -185,7 +191,7 @@ export class ChaseCamera implements System {
         params.set(camMode.def.id, (Math.round(camMode.value) + 1) % 5); event.preventDefault()
       }
       if (event.code === 'KeyZ') this.scopeHeld = true
-      if (event.code === 'Equal' || event.code === 'Minus') params.set(camDistance.def.id, camDistance.value + (event.code === 'Minus' ? 1 : -1))
+      if (event.code === 'Equal' || event.code === 'Minus') params.set(camDistance.def.id, camDistance.value + (event.code === 'Minus' ? 1 : -1) * 2 * camZoomSpeed.value)
       if (Math.round(camMode.value) === 4 && ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'ShiftLeft'].includes(event.code)) { event.stopImmediatePropagation(); event.preventDefault() }
     }) as EventListener, { capture: true })
     listen(window, 'keyup', ((event: KeyboardEvent) => { this.keys.delete(event.code); if (event.code === 'KeyZ') this.scopeHeld = false }) as EventListener)
@@ -205,9 +211,15 @@ export class ChaseCamera implements System {
     }) as EventListener)
     listen(game.canvas, 'wheel', ((event: WheelEvent) => {
       event.preventDefault()
-      const param = this.scopeHeld ? camScope : Math.round(camMode.value) === 4 ? camRoamSpeed : camDistance
-      params.set(param.def.id, param.value + Math.sign(event.deltaY) * (this.scopeHeld ? -0.25 : 1))
+      this.zoom(event.deltaY, event.deltaMode)
     }) as EventListener, { passive: false })
+  }
+
+  /** Proportional wheel input, preserving scope and roam units and parameter ranges. */
+  zoom(deltaY: number, deltaMode = 0): void {
+    const param = this.scopeHeld ? camScope : Math.round(camMode.value) === 4 ? camRoamSpeed : camDistance
+    const step = this.scopeHeld ? -0.25 : param === camRoamSpeed ? 1 : camZoomSpeed.value
+    params.set(param.def.id, param.value + cameraWheelNotches(deltaY, deltaMode) * step)
   }
 
   /** Chooses shots while the vehicle drives itself. Started and stopped by Daydream's event. */
