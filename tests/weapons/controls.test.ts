@@ -33,7 +33,25 @@ function setup() {
   const me = make(0), other = make(-10)
   vi.stubGlobal('window', { performance })
   vi.stubGlobal('document', { pointerLockElement: null })
-  const input = { suspended: false, state: { fire: false }, external: {} as { fire?: boolean } }
+  // Contract double for the separately owned Input API. These tests exercise Gear;
+  // native source sampling and UI identity retention require composition coverage.
+  const owners = new Map<object | symbol, boolean>()
+  const input = {
+    suspended: false, state: { fire: false }, external: {} as { fire?: boolean },
+    beginExternalFire(owner: object | symbol) {
+      if (!owners.has(owner)) owners.set(owner, this.suspended)
+      refresh()
+    },
+    endExternalFire(owner: object | symbol) { owners.delete(owner); refresh() },
+    suppressExternalFire(owner: object | symbol) {
+      if (!owners.has(owner)) return
+      owners.set(owner, true); refresh()
+    },
+  }
+  const refresh = () => {
+    input.external.fire = [...owners.values()].some(blocked => !blocked)
+    input.state.fire = !input.suspended && input.external.fire
+  }
   const game = { world, scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(), canvas: {}, time: 0, input } as unknown as Game
   const rack = new GearRack(game, noTarget)
   const vehicleOf = (id: number) => (id === 1 ? me : id === 3 ? other : undefined)
@@ -51,6 +69,7 @@ function setup() {
       game.time += 0.02
       for (const s of [rack, bungee, yoink, bigRed]) s.fixedUpdate(0.02)
       world.step()
+      rack.postPhysics()
     }
   }
   const bind = () => rack.bind({ bungee, yoink, bigRed, pesters: {} as Pesters, nameOf: id => `Bot ${id}` })
@@ -324,6 +343,7 @@ describe('modal gear cancellation', () => {
     try {
       s.bind(); s.rack.select('beam')
       const staleHold = s.rack.controls().actions[0]
+      staleHold.start()
       s.rack.select('pester')
       const stalePulse = s.rack.controls().actions[0]
       stalePulse.start()
@@ -346,7 +366,8 @@ describe('modal gear cancellation', () => {
   it('cancels before binding and clears outputs if the required inhibitor fails', () => {
     const s = setup()
     try {
-      s.input.external.fire = true; s.input.state.fire = true
+      s.rack.cancelActions(() => {}) // Safe before live systems are bound.
+      s.bind(); s.rack.select('beam'); s.rack.controls().actions[0].start()
       expect(() => s.rack.cancelActions(() => { throw new Error('inhibitor failed') })).toThrow('inhibitor failed')
       expect(s.input.external.fire).toBe(false)
       expect(s.input.state.fire).toBe(false)
@@ -356,4 +377,72 @@ describe('modal gear cancellation', () => {
       expect(s.input.external.fire).toBe(true)
     } finally { s.close() }
   })
+
+  it('cleanup retains a blocked hold until its real end and never dispatches a release', () => {
+    const s = setup()
+    try {
+      s.bind(); s.rack.select('red')
+      const action = s.rack.controls().actions[0]
+      action.start(); s.step(501)
+      expect(s.bigRed.ready).toBe(true)
+      const release = vi.spyOn(s.bigRed, 'letGo')
+      action.stop!('cleanup')
+      expect(s.input.state.fire).toBe(false)
+      expect(s.bigRed.charge).toBe(-1)
+      expect(release).not.toHaveBeenCalled()
+      action.start(); s.step()
+      expect(s.input.state.fire).toBe(false)
+      expect(release).not.toHaveBeenCalled()
+      action.stop!('end'); action.start(); s.step()
+      expect(s.input.state.fire).toBe(true)
+      expect(s.bigRed.charge).toBeGreaterThanOrEqual(0)
+    } finally { s.close() }
+  })
+
+  it('cleanup preserves another eligible holder and stale cleanup/end cannot clear fresh fire', () => {
+    const s = setup()
+    try {
+      s.bind(); s.rack.select('red')
+      const old = s.rack.controls().actions[0]
+      old.start(); s.step(501)
+      const other = Symbol('independent touch')
+      s.input.beginExternalFire(other)
+      const cancel = vi.spyOn(s.bigRed, 'cancel')
+      old.stop!('cleanup')
+      expect(s.input.state.fire).toBe(true)
+      expect(s.bigRed.ready).toBe(true)
+      expect(cancel).not.toHaveBeenCalled()
+      // Modal all-owner inhibitor is supplied by Input/composition.
+      s.rack.cancelActions(() => s.input.suppressExternalFire(other))
+      const fresh = s.rack.controls().actions[0]
+      fresh.start()
+      const calls = cancel.mock.calls.length
+      old.stop!('cleanup'); old.stop!('end'); old.stop!('end')
+      expect(s.input.state.fire).toBe(true)
+      expect(cancel.mock.calls).toHaveLength(calls)
+      fresh.stop!('end')
+      expect(s.input.state.fire).toBe(false)
+    } finally { s.close() }
+  })
+
+
+  it('keeps the pulse visible to fixed consumers, then retires only its ephemeral owner', () => {
+    const s = setup()
+    try {
+      s.bind(); s.rack.select('pester')
+      const pulse = s.rack.controls().actions[0]
+      pulse.start()
+      s.rack.fixedUpdate()
+      expect(s.input.state.fire).toBe(true)
+      s.rack.postPhysics()
+      expect(s.input.state.fire).toBe(false)
+      const other = Symbol('held TAG')
+      s.input.beginExternalFire(other)
+      pulse.start(); s.rack.fixedUpdate(); s.rack.postPhysics()
+      expect(s.input.state.fire).toBe(true)
+      s.input.endExternalFire(other)
+      expect(s.input.state.fire).toBe(false)
+    } finally { s.close() }
+  })
+
 })
