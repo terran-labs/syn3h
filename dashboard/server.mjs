@@ -21,6 +21,7 @@ const port = Number(portArg > 0 ? process.argv[portArg + 1] : process.env.PASEO_
 
 const DOCS = [
   ['FUTURE-IDEAS', 'ops/FUTURE-IDEAS.md', 'Future Ideas'],
+  ['VEHICLE-STUDIO', 'ops/VEHICLE-STUDIO-RESEARCH.md', 'Vehicle studio research'],
   ['PROPOSAL', 'docs/PROPOSAL.md', 'Proposal'],
   ['ROADMAP', 'docs/ROADMAP.md', 'Roadmap'],
   ['reference-games', 'docs/research/reference-games.md', 'Reference games'],
@@ -117,7 +118,13 @@ createServer(async (req, res) => {
   if (url.pathname.startsWith('/api/doc/')) {
     const doc = DOCS.find(([id]) => id === url.pathname.slice(9))
     if (!doc || !existsSync(join(root, doc[1]))) return send(res, 404, 'text/plain', 'not found')
-    return send(res, 200, TYPES['.html'], marked.parse(readFileSync(join(root, doc[1]), 'utf8')))
+    let html = marked.parse(readFileSync(join(root, doc[1]), 'utf8'))
+    // Keep links between known documents inside the dashboard's document viewer.
+    for (const [id, path] of DOCS) {
+      const relative = path.slice(path.lastIndexOf('/') + 1)
+      html = html.replaceAll(`href="${relative}"`, `href="?doc=${id}"`)
+    }
+    return send(res, 200, TYPES['.html'], html)
   }
   const rel = url.pathname === '/' ? 'index.html' : normalize(url.pathname).replace(/^(\.\.[/\\])+/, '').replace(/^[/\\]/, '')
   const file = join(here, rel)
