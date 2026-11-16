@@ -33,7 +33,7 @@ try {
     for (const airborne of [false, true]) for (const wings of [false, true]) {
       const ctx = new OfflineAudioContext(1, 44100 * 3, 44100)
       const engine = new Engine(ctx, ctx.destination)
-      for (const name of ['field', 'wind', 'dirt', 'squeal']) engine[name].disconnect()
+      for (const name of ['field', 'wind', 'dirt', 'scrub']) engine[name].disconnect()
       engine.update({ kind: 'buggy-syn3h', speed: 30, throttle: 1, airborne, wings, slip: 0 })
       const buffer = await ctx.startRendering(), data = buffer.getChannelData(0)
       let sum = 0

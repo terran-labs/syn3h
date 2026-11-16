@@ -40,6 +40,8 @@ export type { CordWire }
 export interface BungeeVehicle {
   body: RAPIER.RigidBody
   object: THREE.Object3D
+  /** The centre as drawn this frame (Vehicle.drawnCentre); `object` may not have moved yet. */
+  drawnCentre?(alpha: number, out: THREE.Vector3): THREE.Vector3
 }
 
 export interface BungeeHooks {
@@ -399,7 +401,11 @@ export class Bungee implements System {
     this.report()
   }
 
-  update(dt: number): void {
+  /** Blend between physics steps for this frame, for drawing from vehicles not yet updated. */
+  private alpha = 1
+
+  update(dt: number, alpha = 1): void {
+    this.alpha = alpha
     const camPos = this.look.begin(this.game.camera, this.game.time)
     const t = this.tuning()
     for (const c of this.cords.values()) this.drawCord(c, dt, camPos, t)
@@ -639,10 +645,17 @@ export class Bungee implements System {
 
   // ---------------------------------------------------------------------------------------
 
-  /** Where a cord meets a vehicle: its roof hitch, as rendered, into `out`. */
-  private hitch(object: THREE.Object3D, out: THREE.Vector3): THREE.Vector3 {
-    return out.set(0, HITCH, 0).applyQuaternion(object.quaternion).add(object.position)
+  /**
+   * Where a cord meets a vehicle: its roof hitch, as rendered this frame, into `out`. Remote
+   * vehicles update after the gear does, so their `object` still holds last frame's place;
+   * the drawn centre is read from the vehicle itself.
+   */
+  private hitch(vehicle: BungeeVehicle, out: THREE.Vector3): THREE.Vector3 {
+    const object = vehicle.object
+    const centre = vehicle.drawnCentre ? vehicle.drawnCentre(this.alpha, this.drawC) : object.position
+    return out.set(0, HITCH, 0).applyQuaternion(object.quaternion).add(centre)
   }
+  private readonly drawC = new THREE.Vector3()
 
   private drawCord(c: Cord, dt: number, camPos: THREE.Vector3, t: CordTuning): void {
     const look = this.look
@@ -650,14 +663,14 @@ export class Bungee implements System {
     if (!owner || c.slot < 0) { look.hideCord(c.slot); return }
     // Drawn between the rendered (interpolated) vehicles, not the physics bodies, so the cord
     // stays on the roof at any frame rate.
-    const a = this.hitch(owner.object, this.drawA)
+    const a = this.hitch(owner, this.drawA)
     const b = this.drawB
     const size = this.hooks.wrapSize()
     if (c.hook) b.copy(c.hook.pos)
     else if (c.to !== null) {
       const other = this.hooks.vehicleOf(c.to)
       if (!other) { look.hideCord(c.slot); return }
-      this.hitch(other.object, b)
+      this.hitch(other, b)
       if (size > 0) { b.x = a.x + wrapDelta(a.x, b.x, size); b.z = a.z + wrapDelta(a.z, b.z, size) }
     } else if (c.at) {
       b.copy(c.at)

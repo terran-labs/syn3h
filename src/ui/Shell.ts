@@ -1,5 +1,6 @@
 import { frozenResourceURL } from '../core/frozenResources'
 import type { LobbyAddress } from './LobbyAddress'
+import { DEFAULT_ROOM, isDefaultRoom, roomFromQuery, roomLabel } from '../core/roomAddress'
 import { modeChoices, modeName } from './modeAvailability'
 import { GEAR_LABELS, type GearRack, type GearId } from '../weapons/Gear'
 import { GearSelector, type GearSource } from './gear/GearSelector'
@@ -122,7 +123,7 @@ export class Shell implements System {
   /** The 3D galaxy: the lobby. Absent only where WebGL 2 is, and then the game cannot draw either. */
   private galaxy?: Galaxy
   /** Arrived by an invite link that names a world: that world is the one to enter. */
-  private readonly invited = (() => { const query = new URLSearchParams(location.search); return query.has('room') && query.has('world') })()
+  private readonly invited = new URLSearchParams(location.search).has('world')
   private started = false
   private menuVisible = true
   private lobbyAddress?: LobbyAddress
@@ -153,7 +154,7 @@ export class Shell implements System {
       <div class="lobby-panels" hidden>
         <section data-panel="explore">${heading('Prepare to Explore')}
           <form class="shell-form"><label for="shell-name">Player name</label><input id="shell-name" name="playerName" maxlength="24" autocomplete="nickname" placeholder="Explorer">
-          <label for="shell-room">Room</label><div class="input-action"><input id="shell-room" name="room" maxlength="64" autocomplete="off"><button class="shell-invite" type="button">Copy invite</button></div>
+          <label for="shell-room">Room</label><div class="input-action"><input id="shell-room" name="room" maxlength="64" autocomplete="off" placeholder="Public room"><button class="shell-invite" type="button">Copy invite</button></div>
           <div class="shell-controls"><span><b>WASD / arrows</b> Drive</span><span><b>Space</b> Wings</span><span><b>Shift</b> Brake</span><span><b>L / click</b> Plasma Tag</span></div><p class="shell-touch-hint">Left thumb to drive. Right thumb for wings, brake and tag.</p>
           <button class="shell-play is-primary" type="submit">Enter World ›</button></form>${back}
         </section>
@@ -306,7 +307,9 @@ export class Shell implements System {
       if (!seed) { seed = String(crypto.getRandomValues(new Uint32Array(1))[0]); try { localStorage.setItem('syn3h.nameSeed', seed) } catch { /* Storage is optional. */ } }
       this.nameInput.value = generateName(seed, 'player')
     }
-    this.roomInput.value = new URL(location.href).searchParams.get('room')?.trim().slice(0, 64) || 'lobby'
+    // The public room is an empty field (placeholder "Public room"), never its internal name.
+    const entryRoom = roomFromQuery(new URL(location.href).searchParams)
+    this.roomInput.value = isDefaultRoom(entryRoom) ? '' : entryRoom
     this.roomInput.addEventListener('input', () => this.updateRoomLabels(), { signal }); this.updateRoomLabels()
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-goto]')) button.addEventListener('click', () => this.showPanel(button.dataset.goto!), { signal })
     this.overlay.addEventListener('click', event => {
@@ -380,7 +383,7 @@ export class Shell implements System {
     void this.panels.show('index', true); this.update()
   }
   private updateRoomLabels(): void {
-    this.element.querySelector('.multiplayer-room')!.textContent = `Room: ${this.room}`
+    this.element.querySelector('.multiplayer-room')!.textContent = `Room: ${roomLabel(this.room)}`
     this.updateInvite()
   }
   private updateInvite(): void {
@@ -471,7 +474,7 @@ export class Shell implements System {
   get bodyColor(): string { return this.choice.bodyColor }
   get accentColor(): string { return this.choice.accentColor }
   get playerName(): string { return this.nameInput.value.trim().slice(0, 24) || 'Explorer' }
-  get room(): string { return this.roomInput.value.trim().slice(0, 64) || 'lobby' }
+  get room(): string { return this.roomInput.value.trim().slice(0, 64) || DEFAULT_ROOM }
   get playing(): boolean { return this.started && !this.menuVisible }
   /** Keep world labels beside the inspector, but never over a modal or paused game. */
   get vehicleLabelsVisible(): boolean { return this.playing && !this.userPaused && !this.inviteOpen && !this.exitAsking }

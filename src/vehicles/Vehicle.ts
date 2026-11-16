@@ -423,6 +423,14 @@ export abstract class Vehicle implements System {
     if (this.zorbShield) this.zorbShield.mesh.visible = !parked
   }
 
+  /**
+   * The vehicle's centre as `update` draws it at blend `alpha`, written into `out`. For things
+   * drawn from the vehicle (the tag beam) by systems that may update before it does.
+   */
+  drawnCentre(alpha: number, out: THREE.Vector3): THREE.Vector3 {
+    return out.lerpVectors(this.prevPos, this.currPos, alpha)
+  }
+
   update(dt: number, alpha: number): void {
     this.object.position.lerpVectors(this.prevPos, this.currPos, alpha)
     this.object.quaternion.slerpQuaternions(this.prevQuat, this.currQuat, alpha)

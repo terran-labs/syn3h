@@ -8,6 +8,7 @@
  */
 import * as THREE from 'three/webgpu'
 import { joinedText } from '../ui/toastText'
+import { roomLabel } from '../core/roomAddress'
 import { type ParamValue, params, worldSeed } from '../../shared/params'
 import {
   BOT_ID_BASE,
@@ -112,7 +113,7 @@ export interface NetContext {
   player: Vehicle
   /** Player name from the start screen. Falls back to ?name= or a generated one. */
   name?: string
-  /** Room name from the URL (?room=name), or 'lobby'. */
+  /** Room name from the URL (?room=name). No parameter is the public room, internally 'lobby'. */
   room: string
   /** Visible notice when a full room falls back to local play. */
   onJoinStatus?(message: string): void
@@ -157,6 +158,9 @@ export interface MapMarker {
   z: number
   heading: number
   color: string
+  accent?: string
+  kind?: 'person' | 'bot' | 'zone'
+  it?: boolean
   self?: boolean
 }
 
@@ -308,6 +312,12 @@ export class NetClient implements System {
     this.lasers = new Lasers(game, {
       onImpact: (at, red) => this.blast.at(red ? 'thunder' : 'tag', at),
       bodyOf: (id) => this.vehicleOf(id)?.body,
+      centreOf: (id, alpha, out) => {
+        const v = this.vehicleOf(id)
+        if (!v) return false
+        v.drawnCentre(alpha, out)
+        return true
+      },
       judgedId: (h) => this.judgedId(h),
       isVehicleBody: (h) => [...this.remotes.values()].some((r) => r.vehicle.body.handle === h),
       onHit: (shooter, shot, victim, at, dir, red) => {
@@ -817,20 +827,26 @@ export class NetClient implements System {
 
   private mapMarkers(): MapMarker[] {
     const list: MapMarker[] = []
-    for (const [id, r] of this.remotes) {
-      const p = r.vehicle.object.position
-      const q = r.vehicle.object.quaternion
+    const it = this.game.mode === MODE_TAG ? this.game.it : 0
+    // Colour is identity: each vehicle's own paint, as '#rrggbb' (Vehicle.setColors normalizes it).
+    const add = (id: number, vehicle: Vehicle): void => {
+      const p = vehicle.object.position
+      const q = vehicle.object.quaternion
       // Heading from the forward (-Z) axis: atan2(-fx, -fz).
       const fx = -2 * (q.x * q.z + q.w * q.y)
       const fz = -(1 - 2 * (q.x * q.x + q.y * q.y))
-      const color = isBotId(id) ? botColors(id - BOT_ID_BASE)[0] : r.info.colors[0]
-      list.push({ x: p.x, z: p.z, heading: Math.atan2(-fx, -fz), color })
+      list.push({ x: p.x, z: p.z, heading: Math.atan2(-fx, -fz), color: vehicle.colors.body, accent: vehicle.colors.accent, kind: isBotId(id) ? 'bot' : 'person', it: Boolean(it) && id === it })
+    }
+    for (const [id, r] of this.remotes) add(id, r.vehicle)
+    // The bots this client simulates (the host's, or everyone's offline) are not remotes.
+    if (this.bots && !this.bots.remote) {
+      for (const [id, bot] of liveBots(this.bots.vehicles, this.ctx.game.world)) if (!this.remotes.has(id)) add(id, bot)
     }
     const zone = this.mode === MODE_KOTH ? this.zone : null
     if (zone) {
       const k = this.game.koth
       const color = k.contested ? '#bf26ff' : k.holder === this.id ? '#1aff40' : k.holder ? '#ff1f0d' : '#ffb814'
-      list.push({ x: zone.x, z: zone.z, heading: 0, color })
+      list.push({ x: zone.x, z: zone.z, heading: 0, color, kind: 'zone' })
     }
     return list
   }
@@ -1707,12 +1723,12 @@ export class NetClient implements System {
     if (this.joinStatus) lines.push(this.joinStatus)
     if (!this.connected) {
       const wait = Math.max(0, Math.ceil((this.conn.retryAt - performance.now()) / 1000))
-      if (!this.localAfterFull) lines.push(this.conn.state === 'connecting' ? `net: connecting to room ${this.ctx.room}` : `net: offline, retry in ${wait}s (room ${this.ctx.room})`)
+      if (!this.localAfterFull) lines.push(this.conn.state === 'connecting' ? `net: connecting to ${roomLabel(this.ctx.room)}` : `net: offline, retry in ${wait}s (${roomLabel(this.ctx.room)})`)
     } else {
       // A parked (hidden tab) player is held still, so its delay is not one anybody sees.
       const delays = [...this.remotes.values()].filter((r) => !r.paused).map((r) => r.delay)
       const delay = delays.length ? `${Math.round(Math.max(...delays) * 1000)} ms` : 'none'
-      lines.push(`net: room ${this.ctx.room}   ping ${Math.round(this.clock.rtt * 1000)} ms   delay ${delay}`)
+      lines.push(`net: ${roomLabel(this.ctx.room)}   ping ${Math.round(this.clock.rtt * 1000)} ms   delay ${delay}`)
       const host = this.game.host === this.id ? 'you' : this.nameOf(this.game.host)
       lines.push(`host: ${host}   shared sliders ${this.game.locked ? 'LOCKED (host only)' : 'open to all'}`)
       lines.push(...this.modeLines())

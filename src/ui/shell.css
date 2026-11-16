@@ -288,6 +288,7 @@
 
 .shell-minimap { position: fixed; right: 20px; bottom: 20px; z-index: 12; width: 162px; height: 162px; border: 1px solid rgb(84 84 88 / .72); background: #101826; pointer-events: none; }
 .shell-minimap canvas { display: block; width: 100%; height: 100%; opacity: .88; }
+.shell-minimap canvas.shell-minimap-marks { position: absolute; inset: 0; opacity: 1; }
 .shell-minimap span { position: absolute; top: 0; left: 5px; color: white; font-size: 12px; text-shadow: 0 1px 2px black; }
 .syn3h-shell:not(.is-playing) .shell-minimap { display: none; }
 @media (max-width: 700px) { .shell-minimap { right: 12px; top: 190px; bottom: auto; width: 110px; height: 110px; } .syn3h-shell.is-playing .shell-toast { left: 12px; top: 112px; transform: none; width: calc(100% - 146px); font-size: 13px; padding: 6px 10px; text-align: left; } }

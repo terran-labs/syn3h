@@ -81,8 +81,12 @@
 /* The owner wants the map at least 80% opaque in the centre. Opacity, this feathering mask
    and the focus fade below multiply, so the product is what counts: .94 here, .94 x .92 = .86
    with the cursor captured. tests/ui/minimap-opacity.mjs measures it from pixels. */
-.syn3h-shell.exploration-ui .shell-minimap canvas { width: 100%; height: 100%; opacity: .94; -webkit-mask-image: radial-gradient(ellipse closest-side,#000 52%,rgb(0 0 0 / .8) 70%,transparent 100%); mask-image: radial-gradient(ellipse closest-side,#000 52%,rgb(0 0 0 / .8) 70%,transparent 100%); }
-.syn3h-shell.exploration-ui .shell-minimap::after { content: ''; position: absolute; inset: 24px; border: 1px solid rgb(175 225 250 / .2); border-radius: 50%; box-shadow: 0 0 14px rgb(100 200 250 / .06); }
+/* The terrain ends at the rim ring; the band outside it holds the dots for vehicles beyond
+   the map, unmasked (.shell-minimap-marks). The ring's inset is a share of the size, so the band is
+   the same proportion at every size: Minimap.ts RIM = 1 - 2 * 11.5%. */
+.syn3h-shell.exploration-ui .shell-minimap canvas { width: 100%; height: 100%; opacity: .94; -webkit-mask-image: radial-gradient(ellipse closest-side,#000 52%,rgb(0 0 0 / .8) 68%,transparent 78%); mask-image: radial-gradient(ellipse closest-side,#000 52%,rgb(0 0 0 / .8) 68%,transparent 78%); }
+.syn3h-shell.exploration-ui .shell-minimap canvas.shell-minimap-marks { opacity: 1; -webkit-mask-image: none; mask-image: none; }
+.syn3h-shell.exploration-ui .shell-minimap::after { content: ''; position: absolute; inset: 11.5%; border: 1px solid rgb(175 225 250 / .2); border-radius: 50%; box-shadow: 0 0 14px rgb(100 200 250 / .06); }
 .syn3h-shell.exploration-ui .shell-minimap span { top: 13px; left: 50%; right: auto; color: #b1eaff; font: 10px 'Barlow',sans-serif; letter-spacing: .15em; text-shadow: 0 0 8px #6bc5f1; }
 .syn3h-shell.exploration-ui.is-playing .focus-hud { opacity: .7; }
 .syn3h-shell.exploration-ui.is-focus .focus-hud { opacity: 1; }

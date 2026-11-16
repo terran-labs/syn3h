@@ -85,20 +85,39 @@ export function requireDigest(version, repo = REPO) {
   }
 }
 
-export function buildFeed(repo = REPO, limit = LIMIT) {
+/** A time as history.tsv writes it: "2026-11-16 13:42 PST", in Pacific time. */
+export function pacificStamp(when) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZoneName: 'short',
+  }).formatToParts(when).map(p => [p.type, p.value]))
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute} ${parts.timeZoneName}`
+}
+
+/**
+ * The feed. `building` is the version this build is for (SYN3H_RELEASE_VERSION): release.sh
+ * writes its history row only after the deploy, so without this a release's own Updates would
+ * leave it out. It is listed first, dated now, with its digest, unless history already has it.
+ */
+export function buildFeed(repo = REPO, limit = LIMIT, building = process.env.SYN3H_RELEASE_VERSION, now = new Date()) {
   const dir = join(repo, 'release-notes', 'releases'), history = join(repo, 'release-notes', 'history.tsv')
   const dates = existsSync(history) ? productionDates(readFileSync(history, 'utf8')) : new Map()
   const files = existsSync(dir) ? readdirSync(dir).filter(name => /^v\d+\.\d+\.\d+\.md$/.test(name)) : []
-  const releases = files
-    .map(name => name.slice(1, -3))
+  const versions = new Set(files.map(name => name.slice(1, -3)))
+  if (building && VERSION.test(String(building)) && !dates.has(bare(building))) {
+    dates.set(bare(building), pacificStamp(now))
+    versions.add(bare(building))
+  }
+  const releases = [...versions]
     .filter(version => dates.has(version))
     .sort((a, b) => compare(b, a))
     .slice(0, limit)
     .map(version => {
       const digest = readDigest(repo, version)
+      const notes = join(dir, `v${version}.md`)
       return {
         version, date: dates.get(version),
-        summary: digest?.summary ?? notesSummary(readFileSync(join(dir, `v${version}.md`), 'utf8')),
+        summary: digest?.summary ?? (existsSync(notes) ? notesSummary(readFileSync(notes, 'utf8')) : ''),
         digest: digest?.digest ?? '',
         url: `${GITHUB}v${version}`,
       }

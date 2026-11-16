@@ -5,7 +5,12 @@ import { pathToFileURL } from 'node:url'
 import { createHash } from 'node:crypto'
 const hash = (bytes) => createHash('sha256').update(bytes).digest('hex')
 
-export async function checkPublicBuild(base, dir, fetcher = fetch) {
+/**
+ * With `feed`, also require the public Updates feed (/releases.json) to list this build's own
+ * version first, with a summary: a release must announce itself. Off for rollbacks, whose older
+ * builds predate the feed or omit themselves from it.
+ */
+export async function checkPublicBuild(base, dir, fetcher = fetch, { feed = false } = {}) {
   const dist = join(dir, 'dist')
   const expected = JSON.parse(await readFile(join(dist, 'build.json'), 'utf8'))
   const get = async (path) => {
@@ -29,12 +34,19 @@ export async function checkPublicBuild(base, dir, fetcher = fetch) {
     if (!local.startsWith(resolve(dist) + '/')) throw new Error(`Asset outside frozen build: ${asset}`)
     if (hash(await get(asset)) !== hash(await readFile(local))) throw new Error(`Public asset differs from frozen file: ${asset}`)
   }
+  if (feed) {
+    const want = String(expected.version ?? '').replace(/^v/, '')
+    if (!want) throw new Error('Frozen build.json names no version, so the Updates feed cannot be checked')
+    const first = JSON.parse((await get('/releases.json')).toString()).releases?.[0]
+    if (!first || String(first.version).replace(/^v/, '') !== want) throw new Error(`Public Updates feed lists v${first?.version ?? 'nothing'} first, not the deployed v${want}`)
+    if (!String(first.summary ?? '').trim()) throw new Error(`Public Updates feed has no summary for v${want}`)
+  }
   return { id: actual.id, commit: actual.commit, entryAssets: assets.length }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try {
-    if (!process.argv[2] || !process.argv[3]) throw new Error('Usage: node tools/check-public-build.mjs <public-url> <frozen-directory>')
-    console.log('PUBLIC BUILD OK', JSON.stringify(await checkPublicBuild(process.argv[2], process.argv[3])))
+    if (!process.argv[2] || !process.argv[3]) throw new Error('Usage: node tools/check-public-build.mjs <public-url> <frozen-directory> [--feed]')
+    console.log('PUBLIC BUILD OK', JSON.stringify(await checkPublicBuild(process.argv[2], process.argv[3], fetch, { feed: process.argv.includes('--feed') })))
   } catch (error) { console.error('PUBLIC BUILD FAILED:', error.message); process.exitCode = 1 }
 }
