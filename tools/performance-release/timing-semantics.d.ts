@@ -27,10 +27,10 @@ export interface ClockRecords {
   }> }>;
 }
 export interface ClockMaps {
-  hostClockId: string; runId: string; runOriginHostMs: number; runEndHostMs: number;
+  hostClockId: string; runId: string; runOriginHostMs: number; runEndHostMs: number; runCoverage: Interval | null;
   hostEpoch: Interval | null; hostEpochCoverage: Interval | null;
   sources: ClockProfile['sources']; profileId: string; runtimePolicySha256: string;
-  pages: Record<string, PageKey & { offset: Interval | null; epoch: Interval | null; pageCoverage: Interval }>;
+  pages: Record<string, PageKey & { offset: Interval | null; epoch: Interval | null; pageCoverage: Interval | null }>;
 }
 export interface PartialResult<T> {
   qualified: false; promotion: 'blocked'; issues: Array<{ code: string; message: string }>;
@@ -66,7 +66,7 @@ export interface PacingRecords { schemaVersion: 1; expectedIntervalMs: number; b
 export interface DerivedControl {
   gaps: number[]; durationMs: number; physicalAvailable: boolean;
   judged: { valid: boolean; reasons: string[]; [key: string]: unknown };
-  hostStart: Interval | null; hostEnd: Interval | null; utcStart: Interval | null; utcEnd: Interval | null;
+  hostStart: Interval | null; hostSampleEnd: Interval | null; hostEnd: Interval | null; utcStart: Interval | null; utcEnd: Interval | null;
 }
 export interface SerialRun {
   runId: string; hostClockId: string; collection: 'calibration' | 'comparison';
@@ -80,8 +80,8 @@ export declare function validateClockMappings(clockArtifact: ObservationArtifact
 export declare function deriveFramePhases(records: FrameRecords, clocks: ClockMaps,
   fixtureDurations: Partial<Record<PhaseKind, number>>): PartialResult<{ runId: string; hostClockId: string; phases: DerivedPhase[] }>;
 export declare function derivePacingControls(records: PacingRecords, clocks: ClockMaps,
-  requestedDuration?: number): PartialResult<{ runId: string; hostClockId: string; before: DerivedControl; after: DerivedControl }>;
-export declare function validateSerialIntervals(runs: SerialRun[], freezeUtc: Interval | null): PartialResult<{ serialAvailable: boolean; freezeAvailable: boolean }>;
+  trustedPacing: { expectedIntervalMs: number; requestedDurationMs: number }): PartialResult<{ runId: string; hostClockId: string; before: DerivedControl; after: DerivedControl }>;
+export declare function validateSerialIntervals(runs: SerialRun[], freezeUtc: Interval | null, requiredInventory: { runIds: string[]; scenes: string[] }): PartialResult<{ serialAvailable: boolean; freezeAvailable: boolean }>;
 export declare function deriveFrameMetrics(phases: DerivedPhase[]): PartialResult<{
   metrics: Array<{ kind: PhaseKind; physicalAvailable: boolean; label: 'observed-clock-arithmetic-only';
     medianMs: number; p95Ms: number; p99Ms: number; stalls: number; maxStallMs: number; samples: number; durationMs: number }>;

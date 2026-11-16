@@ -90,3 +90,37 @@ Proposed later pure command:
 ```sh
 /Users/vtn/dev/Syn3h/tools/heavy.sh node --test --test-concurrency=2 tools/performance-release/index.test.mjs tools/performance-release/observation-v2.test.mjs tools/performance-release/timing-semantics.test.mjs
 ```
+
+## Source-review corrections, unexecuted
+
+Pacing now requires an independently supplied trustedPacing argument with the reviewed
+expectedIntervalMs and requestedDurationMs. A record's claimed interval must match it;
+a slow control cannot choose its own target. The caller must obtain this argument from
+reviewed fixture/condition policy, never copy it from the submitted control record.
+
+Clock anchor coverage uses guaranteed interiors: the first anchor's outward upper end
+through the last anchor's outward lower start. Entire observation intervals must fit,
+not just nominal timestamps. Run containment uses the same interior convention; every
+frame start, callback entry and callback exit must fit. Epoch coverage encloses the
+outward run endpoints. Event intervals that may overlap phase/control intervals invalidate
+the observation, including a hidden/paused event whose nominal timestamp lies just outside.
+
+Pacing retains hostSampleEnd for the final animation timestamp and hostEnd for the final
+observed callback completion. Serial composition must use hostEnd, including its full
+uncertainty. observedNow must be ordered as well as animation timestamps. Sample duration
+still derives from animation timestamps; completion delay cannot be discarded from the
+serial envelope or smuggled into a frame interval.
+
+validateSerialIntervals now requires a separately reviewed complete run ID and scene
+inventory and demands both calibration and comparison for every scene. An empty or
+missing collection cannot pass by omission. Malformed or reversed UTC endpoint intervals
+invalidate serial/freeze success. Explicitly unavailable UTC retains blocked freeze status.
+
+Composition prerequisite: validate the v2 graph and profile bindings first; pass only
+those derived ClockMaps into frame/control helpers. Consume their issues and availability
+flags, and use observed completion endpoints when composing serial envelopes. Do not
+fabricate maps, serial endpoints, required inventory or trusted pacing from submitted
+aggregates. These pure helpers are not authentication boundaries; the future reviewed
+orchestrator must bind their inputs to original artifact records and required inventory.
+No successful partial helper result can qualify a measurement or bypass missing semantic
+stages. All new adversarial cases remain unrun; syntax checking alone is not validation.
