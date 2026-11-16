@@ -21,6 +21,11 @@ and screenshots for each release are on the
 
 ## Find your own expedition
 
+Syn3h's tiny worlds make altitude part of the adventure. A mountain fills the windscreen
+on the ground; climb above it in a jet and the landscape curves away beneath you. Take
+time to look back at the place you were driving a few minutes ago. Try the same ascent
+on another planet and see how its terrain, water and atmosphere change the view.
+
 Start with a small intention. Follow a shoreline until you find somewhere worth stopping.
 Take different vehicles to the same summit and compare the journey. Open the buggy's
 wings at a crest, then try the flight again with less gravity. Roll inside a Zorb and let
@@ -240,6 +245,11 @@ hovercraft and the tank are generated too.
 **A world without an edge.** The map is a tile that repeats exactly. Drive off one side and
 you arrive on the other. Cameras, bots, the minimap, the network and even the motion
 vectors of the antialiasing account for wrapping to keep the crossing continuous.
+
+**The tiny-world engine.** Rendering bends the landscape around the viewer and hides
+terrain beyond the curved horizon. The simulation keeps its wrapping coordinates;
+planet roundness controls the displayed curvature. This combination gives a small world
+a horizon you can climb above, while retaining a compact terrain and physics model.
 
 <img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1512/readme-night.jpg" alt="The buggy on the Ice Moon at night, its headlights lighting the ice under a violet sky" width="420"> <img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1508/lava-night.png" alt="A buggy at the shore of a glowing lava sea at night, a volcano on the horizon" width="420">
 
