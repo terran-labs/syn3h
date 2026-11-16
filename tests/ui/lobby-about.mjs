@@ -5,6 +5,14 @@ const out='tests/ui/artifacts/lobby-about'; await mkdir(out,{recursive:true})
 const report=[]
 // Persist before asserting so a failing path keeps its exact layout/projection evidence.
 async function measureBack(locator, mode, id) {
+ await locator.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+ await locator.page().waitForFunction(el => {
+  for (let node = el; node; node = node.parentElement) {
+   getComputedStyle(node).transform
+   if (node.getAnimations().some(a => a.playState === 'running' && Number.isFinite(a.effect?.getComputedTiming().endTime))) return false
+  }
+  return true
+ }, await locator.elementHandle(), {timeout:10000})
  const diagnostic = await locator.evaluate((el, id) => {
   const rect = el.getBoundingClientRect(), style = getComputedStyle(el)
   const ancestors = []
@@ -79,7 +87,17 @@ for(const mode of ['desktop','phone','short-phone']){
    await page.evaluate(id=>syn3h.shell.showPanel(id),id)
    await page.waitForFunction(()=>document.querySelector('.lobby-panels').dataset.busy==='false')
    const back=page.locator(`[data-panel=${id}] .panel-back`);await back.scrollIntoViewIfNeeded();await back.focus()
-   const r=await measureBack(back,mode,id);assert.ok(r.height>=44,`${id}: projected height >=44`);if(mode==='desktop')assert.ok(r.width>=160,`${id}: projected width >=160`)
+   const r=await measureBack(back,mode,id)
+   if(mode==='desktop') {
+    const samples=[]
+    for(const [x,y] of [[1,1],[1439,1],[1439,999],[1,999]]) {
+     await page.mouse.move(x,y)
+     samples.push(await measureBack(back,mode,`${id}-${x}-${y}`))
+    }
+    console.log(JSON.stringify({extremeBack:{mode,id,samples}}))
+    assert.ok(samples.every(r=>r.width>=160&&r.height>=44),`${id}: extreme projected width >=160 and height >=44`)
+   }
+   assert.ok(r.height>=44,`${id}: projected height >=44`);if(mode==='desktop')assert.ok(r.width>=160,`${id}: projected width >=160`)
    assert.equal(await back.locator('[aria-hidden=true]').innerText(),'←')
    await page.keyboard.press('Enter'); await page.locator('.lobby-panels').waitFor({state:'hidden'})
    assert.equal(await nav.locator('button').first().evaluate(el=>el===document.activeElement),true)
