@@ -1,9 +1,11 @@
-import type { Rect } from './layout'
+import type { Exclusion } from './layout'
 
 // The gear selector's own box reserves room for its detail pane even when that pane is empty,
 // and on a phone that box spans the screen's middle. Avoid only what is drawn: the drum and
 // each detail line while it is showing (empty lines carry [hidden] and are skipped below).
 const SELECTORS = '.world-inspector,.shell-minimap,.gear-selector .gs-drum,.gear-selector .gs-detail > *,.gear-actions,.zorb-toggle,.touch-actions,.touch-stick,.match-hud,.match-announcement,.race-hud,.performance-recommendation,.inspector-toggle,.spawn-help,.focus-hud .fh-read'
+/** Passive readouts: a label may cover these when no other slot is free. Everything else is hard. */
+const SOFT = '.focus-hud .fh-read'
 /** One read phase before plate writes. Never measure the plates themselves. */
 export class HudExclusions {
   private elements: Element[] = []
@@ -15,9 +17,9 @@ export class HudExclusions {
     })
     this.observer.observe(root.ownerDocument.body, { subtree: true, childList: true })
   }
-  read(width: number, height: number): Rect[] {
+  read(width: number, height: number): Exclusion[] {
     if (this.dirty) { this.elements = [...new Set([...this.root.querySelectorAll(SELECTORS), ...this.root.ownerDocument.querySelectorAll('.touch-actions,.touch-stick')])]; this.dirty = false }
-    const boxes: Rect[] = []
+    const boxes: Exclusion[] = []
     for (const element of this.elements) {
       let visible = true
       for (let p: Element | null = element; p; p = p.parentElement) {
@@ -26,7 +28,8 @@ export class HudExclusions {
       }
       if (!visible) continue
       const b = element.getBoundingClientRect()
-      const box = { left: Math.max(0, b.left - 6), top: Math.max(0, b.top - 6), right: Math.min(width, b.right + 6), bottom: Math.min(height, b.bottom + 6) }
+      const box: Exclusion = { left: Math.max(0, b.left - 6), top: Math.max(0, b.top - 6), right: Math.min(width, b.right + 6), bottom: Math.min(height, b.bottom + 6) }
+      if (element.matches(SOFT)) box.soft = true
       if (box.right > box.left && box.bottom > box.top) boxes.push(box)
     }
     return boxes

@@ -44,8 +44,10 @@ export interface Candidate {
   id: string; bot: boolean; x: number; y: number; depth: number
   width: number; height: number; opacity: number; tick: boolean
   previous?: number
+  /** Shown last frame, in slot `previous`. */
+  held?: boolean
 }
-export interface Placement extends Rect { id: string; x: number; y: number; spot: number; opacity: number; tick: boolean }
+export interface Placement extends Rect { id: string; x: number; y: number; leadX: number; leadY: number; spot: number; opacity: number; tick: boolean }
 export const overlaps = (a: Rect, b: Rect) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
 export function touchesDisc(box: Rect, disc: Disc): boolean {
   if (disc.proxy) return touchesProxy(box, disc.proxy)
@@ -57,35 +59,61 @@ export function appearance(distance: number, bot: boolean, presentation: boolean
   const fade = Math.max(0, Math.min(1, (far - distance) / (far - full)))
   return { opacity: fade * (bot ? .9 : .96), scale: presentation ? 1.25 : 1, tick: bot && distance > 100, visible: distance >= 0 && distance < far }
 }
-/** People are allocated first regardless of depth; bots yield every contested spot. */
-export function placeNameplates(candidates: readonly Candidate[], discs: readonly Disc[], exclusions: readonly Rect[], width: number, height: number,
+/** A HUD area. Soft areas are passive readouts a label may cover when nothing else is free. */
+export interface Exclusion extends Rect { soft?: boolean }
+/** The longest leader drawn, in pixels. A long diagonal reads worse than a tight side label. */
+export const LEADER_MAX = 60
+/** A label shown last frame keeps its slot until a blocker is this many pixels inside it. */
+export const HOLD_SLACK = 4
+const inset = (r: Rect, by: number): Rect => ({ left: r.left + by, top: r.top + by, right: r.right - by, bottom: r.bottom - by })
+/**
+ * People are allocated first regardless of depth; bots yield every contested spot. Slots, in
+ * order of leader length: directly above, beside (the leader leaves the plate's near corner),
+ * then higher above. The slot held last frame is tried first. A label never covers a hard HUD
+ * area; it covers a soft one only when every slot clear of soft areas is taken.
+ */
+export function placeNameplates(candidates: readonly Candidate[], discs: readonly Disc[], exclusions: readonly Exclusion[], width: number, height: number,
   terrainClear: (box: Rect, depth: number, candidate: Candidate) => boolean = () => true): Placement[] {
   const result: Placement[] = []
   const order = [...candidates].sort((a, b) => Number(a.bot) - Number(b.bot) || a.depth - b.depth || a.id.localeCompare(b.id))
   for (const c of order) {
     if (c.opacity <= 0 || c.depth <= 0 || !Number.isFinite(c.x + c.y + c.depth)) continue
-    // Anchors behind HUD never send leaders across it. Leaders stay inside the reserved box.
+    // Slots: 0 above, 1 higher above, 2 left, 3 right. Tried in order of leader length.
     const spots = [[0, -12], [0, -32], [-c.width / 2 - 12, -12], [c.width / 2 + 12, -12]]
-    const tries = [0, 1, 2, 3]
+    let tries = [0, 2, 3, 1]
     if (c.previous !== undefined && Number.isInteger(c.previous) && c.previous >= 0 && c.previous < spots.length) {
-      tries.splice(c.previous, 1)
+      tries.splice(tries.indexOf(c.previous), 1)
       tries.unshift(c.previous)
     }
-    for (const spot of tries) {
-      const [dx, dy] = spots[spot], x = c.x + dx, y = c.y + dy - c.height
-      const plate = { left: x - c.width / 2, top: y, right: x + c.width / 2, bottom: y + c.height }
-      const bounds = { left: Math.min(plate.left, c.x) - 3, top: plate.top - 3, right: Math.max(plate.right, c.x) + 3, bottom: c.y + 3 }
-      if (bounds.left < 8 || bounds.right > width - 8 || bounds.top < 8 || bounds.bottom > height - 8) continue
-      if (result.some(b => overlaps(bounds, b))) continue
-      // HUD and nearer vehicles are tested against what is drawn: the plate, and the leader's
-      // own strip from the plate down to the anchor, not the empty corner beside the leader.
-      const pad = { left: plate.left - 3, top: plate.top - 3, right: plate.right + 3, bottom: plate.bottom + 3 }
-      const leader = { left: Math.min(x, c.x) - 3, top: plate.bottom, right: Math.max(x, c.x) + 3, bottom: c.y + 3 }
-      if (exclusions.some(b => overlaps(pad, b) || overlaps(leader, b))) continue
-      if (discs.some(d => d.id !== c.id && d.depth < c.depth && (touchesDisc(pad, d) || touchesDisc(leader, d)))) continue
-      if (!terrainClear(plate, c.depth, c)) continue
-      result.push({ ...bounds, id: c.id, x, y, spot, opacity: c.opacity, tick: c.tick }); break
+    let placed: Placement | undefined
+    for (const avoidSoft of [true, false]) {
+      // The second pass retries only slots that a soft area alone ruled out.
+      const softOnly: number[] = []
+      for (const spot of tries) {
+        const [dx, dy] = spots[spot], x = c.x + dx, y = c.y + dy - c.height
+        const plate = { left: x - c.width / 2, top: y, right: x + c.width / 2, bottom: y + c.height }
+        // The leader leaves the point of the plate's lower edge nearest the anchor.
+        const leadX = Math.max(plate.left + 6, Math.min(plate.right - 6, c.x)), leadY = plate.bottom
+        if (Math.hypot(c.x - leadX, c.y - leadY) > LEADER_MAX) continue
+        const bounds = { left: Math.min(plate.left, c.x) - 3, top: plate.top - 3, right: Math.max(plate.right, c.x) + 3, bottom: c.y + 3 }
+        if (bounds.left < 8 || bounds.right > width - 8 || bounds.top < 8 || bounds.bottom > height - 8) continue
+        if (result.some(b => overlaps(bounds, b))) continue
+        // HUD and nearer vehicles are tested against what is drawn: the plate and the leader's
+        // own strip. A label already holding this slot gets HOLD_SLACK so it does not flicker.
+        const slack = spot === c.previous && c.held ? HOLD_SLACK : 0
+        const pad = inset({ left: plate.left - 3, top: plate.top - 3, right: plate.right + 3, bottom: plate.bottom + 3 }, slack)
+        const leader = inset({ left: Math.min(leadX, c.x) - 3, top: leadY, right: Math.max(leadX, c.x) + 3, bottom: c.y + 3 }, slack)
+        const covers = (b: Rect) => overlaps(pad, b) || overlaps(leader, b)
+        if (exclusions.some(b => !b.soft && covers(b))) continue
+        if (avoidSoft && exclusions.some(b => b.soft && covers(b))) { softOnly.push(spot); continue }
+        if (discs.some(d => d.id !== c.id && d.depth < c.depth && (touchesDisc(pad, d) || touchesDisc(leader, d)))) continue
+        if (!terrainClear(plate, c.depth, c)) continue
+        placed = { ...bounds, id: c.id, x, y, leadX, leadY, spot, opacity: c.opacity, tick: c.tick }; break
+      }
+      if (placed || !softOnly.length) break
+      tries = softOnly
     }
+    if (placed) result.push(placed)
   }
   return result
 }

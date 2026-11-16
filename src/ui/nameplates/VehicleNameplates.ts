@@ -16,9 +16,9 @@ const ANCHOR_GAP = .2
 /** A vehicle drawn smaller than this many pixels across is too small to label. */
 const MIN_PIXELS = 6
 /** Plate size limits in pixels. Past the widest, the name is cut with an ellipsis. */
-const PLATE_MIN = 72, PLATE_MAX = 200, PLATE_HEIGHT = 42
+const PLATE_MIN = 72, PLATE_MAX = 220, PLATE_HEIGHT = 42
 /** Must match nameplates.css: name and tag fonts, letter spacing in em, and padding plus border. */
-const NAME_FONT = '500 13px Barlow', NAME_SPACING = .08, TAG_FONT = '500 10px Barlow', TAG_SPACING = .16, PLATE_INSET = 26
+const NAME_FONT = '500 13px Barlow', NAME_SPACING = .08, TAG_FONT = '500 10px Barlow', TAG_SPACING = .16, PLATE_INSET = 30 // padding, border and 4 px for kerning
 
 let measure: CanvasRenderingContext2D | null | undefined
 const widths = new Map<string, number>()
@@ -31,7 +31,7 @@ function textWidth(text: string, font: string, spacing: number, px: number): num
   measure.font = `${font}, sans-serif`
   const width = measure.measureText(text.toUpperCase()).width + text.length * px * spacing
   // Until Barlow has loaded the fallback face is measured; do not keep that.
-  if (document.fonts?.check(font)) { if (widths.size > 512) widths.clear(); widths.set(key, width) }
+  if (document.fonts?.status === 'loaded' && document.fonts.check(font)) { if (widths.size > 512) widths.clear(); widths.set(key, width) }
   return width
 }
 
@@ -198,7 +198,7 @@ export class VehicleNameplates {
       // Sized to the name (or a longer tag) up to PLATE_MAX, where the name is cut short.
       const plateWidth = Math.round(Math.min(PLATE_MAX, Math.max(PLATE_MIN, PLATE_INSET + Math.max(
         textWidth(name, NAME_FONT, NAME_SPACING, 13), textWidth(note, TAG_FONT, TAG_SPACING, 10)))))
-      Object.assign(p.candidate, { bot: t.bot, x: p.lastX, y: p.lastY, depth: this.projected.z, width: style.tick ? 8 : plateWidth * style.scale, height: style.tick ? 5 : PLATE_HEIGHT * style.scale, opacity: style.opacity, tick: style.tick })
+      Object.assign(p.candidate, { held: p.shown, bot: t.bot, x: p.lastX, y: p.lastY, depth: this.projected.z, width: style.tick ? 8 : plateWidth * style.scale, height: style.tick ? 5 : PLATE_HEIGHT * style.scale, opacity: style.opacity, tick: style.tick })
       candidates.push(p.candidate)
       if (p.name.textContent !== name) p.name.textContent = name
       if (p.note.textContent !== note) p.note.textContent = note
@@ -223,7 +223,7 @@ export class VehicleNameplates {
       p.el.style.display = p.leader.style.display = 'block'
       p.el.style.opacity = String(at.opacity)
       p.el.style.transform = `translate(${at.x - c.width / 2}px,${at.y}px) scale(${p.el.dataset.scale})`
-      const startX = at.x, startY = at.y + c.height, dx = c.x - startX, dy = c.y - startY
+      const startX = at.leadX, startY = at.leadY, dx = c.x - startX, dy = c.y - startY
       p.leader.style.width = `${Math.hypot(dx, dy)}px`
       p.leader.style.opacity = String(at.opacity * .65)
       p.leader.style.transform = `translate(${startX}px,${startY}px) rotate(${Math.atan2(dy, dx)}rad)`

@@ -35,7 +35,7 @@ function placeAhead(page, which, ahead, side) {
     return true
   }, [which, ahead, side])
 }
-/** Shown labels, each with its vehicle's on-screen centre, and any label over a HUD control. */
+/** Shown labels, each with its vehicle's on-screen centre, and any label over a hard HUD control. */
 function labels(page) {
   return page.evaluate(() => {
     const tags = window.syn3hNet.tags, cam = window.syn3h.game.camera, w = innerWidth, h = innerHeight
@@ -45,13 +45,13 @@ function labels(page) {
       if (!p || p.el.hidden) continue
       const s = info.vehicle.object.getWorldPosition(cam.position.clone()).project(cam), r = p.el.getBoundingClientRect()
       shown.push({ name: info.name, bot: p.el.classList.contains('is-bot'), centre: [(s.x + 1) / 2 * w, (1 - s.y) / 2 * h],
-        overHud: hud.some(b => r.left < b.right && r.right > b.left && r.top < b.bottom && r.bottom > b.top) })
+        overHud: hud.some(b => !b.soft && r.left < b.right && r.right > b.left && r.top < b.bottom && r.bottom > b.top) })
     }
     return { shown, w, h }
   })
 }
 async function waitForLabel(view, page, want, place) {
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 20; i++) {
     if (i % 3 === 0) await place()
     await page.waitForTimeout(1000)
     const state = await labels(page)
@@ -60,7 +60,11 @@ async function waitForLabel(view, page, want, place) {
       assert.ok(x >= 0 && x <= state.w && y >= 0 && y <= state.h, `${view} ${l.name}: label shown for a vehicle off screen`)
       assert.ok(!l.overHud, `${view} ${l.name}: label covers a HUD control`)
     }
-    if (want(state.shown)) return state.shown
+    if (want(state.shown)) {
+      await page.waitForTimeout(1500) // let moved vehicles settle before the picture
+      const settled = (await labels(page)).shown
+      if (want(settled)) return settled
+    }
   }
   await page.screenshot({ path: `${out}/${view}-failed.png` })
   assert.fail(`${view}: no label appeared for a vehicle in view`)

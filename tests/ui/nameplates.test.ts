@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { appearance, overlaps, placeNameplates, touchesDisc, createScreenProxy, type Disc, type Candidate, type Rect } from '../../src/ui/nameplates/layout'
+import { appearance, overlaps, placeNameplates, LEADER_MAX, touchesDisc, createScreenProxy, type Disc, type Candidate, type Rect } from '../../src/ui/nameplates/layout'
 import { wrappedOccluded } from '../../src/ui/nameplates/occlusion'
 import { nameplateMode, PREFERENCE_KEY, restoreNameplatePreference, validMode } from '../../src/ui/nameplates/preferences'
 import { params } from '../../shared/params'
@@ -36,15 +36,41 @@ describe('vehicle label priority and protection', () => {
     expect(result[0].spot).toBe(2)
   })
 })
+describe('HUD hardness, leader length and hold', () => {
+  // Bug it catches: vehicles in the middle band lost labels to passive speed readouts.
+  it('covers a soft readout only when nothing else is free, and never a hard control', () => {
+    const everywhere: Rect = { left: 0, top: 0, right: 600, bottom: 600 }
+    expect(placeNameplates([candidate('a')], [], [{ ...everywhere, soft: true }], 600, 600)).toHaveLength(1)
+    expect(placeNameplates([candidate('a')], [], [everywhere], 600, 600)).toEqual([])
+    const above: Rect & { soft: boolean } = { left: 295, top: 200, right: 305, bottom: 262, soft: true } // over both slots above only
+    const [p] = placeNameplates([candidate('a')], [], [above], 600, 600)
+    expect([2, 3]).toContain(p.spot) // a clear side slot beats covering the readout
+  })
+  it('never draws a leader longer than LEADER_MAX', () => {
+    for (const [x, y] of [[300, 300], [40, 300], [560, 300], [300, 60]]) {
+      for (const p of placeNameplates([{ ...candidate('a', false, x, y), width: 220 }], [], [], 600, 600)) {
+        expect(Math.hypot(p.leadX - x, p.leadY - y)).toBeLessThanOrEqual(LEADER_MAX)
+      }
+    }
+  })
+  // Bug it catches: a label beside the player's car blinked on and off as it jittered by a pixel.
+  it('keeps a held slot until a blocker is clearly inside it', () => {
+    const [first] = placeNameplates([candidate('a')], [], [], 600, 600)
+    const edge: Rect = { left: first.right - 2, top: 0, right: 600, bottom: 600 } // 2 px into the plate's 3 px padding
+    const held = { ...candidate('a'), previous: first.spot, held: true }
+    expect(placeNameplates([held], [], [edge], 600, 600)[0]?.spot).toBe(first.spot)
+    expect(placeNameplates([{ ...held, held: false }], [], [edge], 600, 600)[0]?.spot).not.toBe(first.spot)
+  })
+})
 describe('distinct prior-spot terrain checks', () => {
   // Fixed fixture plate corners identify callback slots independently of attempt ordering.
   const corners = [[235, 250], [235, 230], [158, 250], [312, 250]]
   const slotOf = (box: Rect) => corners.findIndex(([left, top]) => box.left === left && box.top === top)
 
   it.each([
-    [0, [0, 1, 2, 3]], [1, [1, 0, 2, 3]],
-    [2, [2, 0, 1, 3]], [3, [3, 0, 1, 2]],
-  ] as const)('checks previous slot %i once, then the remaining slots in order', (previous, expected) => {
+    [0, [0, 2, 3, 1]], [1, [1, 0, 2, 3]],
+    [2, [2, 0, 3, 1]], [3, [3, 0, 2, 1]],
+  ] as const)('checks previous slot %i once, then the rest above, beside, higher', (previous, expected) => {
     const calls: number[] = []
     const placed = placeNameplates([{ ...candidate('a'), previous }], [], [], 600, 600, box => {
       calls.push(slotOf(box)); return false
@@ -60,7 +86,7 @@ describe('distinct prior-spot terrain checks', () => {
     expect(placeNameplates([{ ...candidate('a'), previous }], [], [], 600, 600, box => {
       calls.push(slotOf(box)); return false
     })).toEqual([])
-    expect(calls).toEqual([0, 1, 2, 3])
+    expect(calls).toEqual([0, 2, 3, 1])
   })
 
   it('stops at the first successful fallback and retains that placement next frame', () => {
@@ -68,7 +94,7 @@ describe('distinct prior-spot terrain checks', () => {
     const first = placeNameplates([{ ...candidate('a'), previous: 2 }], [], [], 600, 600, box => {
       const slot = slotOf(box); calls.push(slot); return slot === 1
     })
-    expect(calls).toEqual([2, 0, 1])
+    expect(calls).toEqual([2, 0, 3, 1])
     expect(first).toHaveLength(1)
     expect(first[0].spot).toBe(1)
     calls.length = 0
@@ -84,7 +110,7 @@ describe('distinct prior-spot terrain checks', () => {
     placeNameplates([{ ...candidate('bot', true), depth: 10, previous: 3 }, { ...candidate('person'), previous: 2 }], [], [], 600, 600, (box, _depth, c) => {
       calls.push(`${c.id}:${slotOf(box)}`); return false
     })
-    expect(calls).toEqual(['person:2', 'person:0', 'person:1', 'person:3', 'bot:3', 'bot:0', 'bot:1', 'bot:2'])
+    expect(calls).toEqual(['person:2', 'person:0', 'person:3', 'person:1', 'bot:3', 'bot:0', 'bot:2', 'bot:1'])
   })
 })
 describe('terrain budget fails hidden', () => {
@@ -472,7 +498,7 @@ describe('HUD exclusions', () => {
   it('avoids the gear drum and showing detail lines, not the empty reserved box', async () => {
     const { HudExclusions } = await import('../../src/ui/nameplates/HudExclusions')
     const el = (selector: string, left: number, right: number, hidden = false) => {
-      const e = { selector, hidden, parentElement: null, hasAttribute: (a: string) => a === 'hidden' && e.hidden,
+      const e = { selector, hidden, parentElement: null, matches: (s: string) => s.split(',').includes(selector), hasAttribute: (a: string) => a === 'hidden' && e.hidden,
         getBoundingClientRect: () => ({ left, right, top: 300, bottom: 480 }) }
       return e
     }
