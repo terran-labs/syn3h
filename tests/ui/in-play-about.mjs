@@ -22,7 +22,7 @@ const bounded = async (promise, cap = 10000) => {
   finally { clearTimeout(timer) }
 }
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
-const report = { source: expected, cases: [], errors: [], limits: ['No physical touch or gamepad-neutral proof', 'Held drive/touch at modal entry and close remain untested', 'Live Yoink modal cancellation remains untested', 'Own Grapple cancellation versus remote gear and launched-projectile survival remains untested', 'Prerequisite four-slice input coverage does not establish these modal-specific behaviors', 'No image assets added', 'Late pointer-lock promise race and real OS visibility require later native validation', 'Synthetic PauseState lifecycle transitions are not native OS visibility'] }
+const report = { source: expected, cases: [], errors: [], captureComplete: false, limits: ['No physical touch or gamepad-neutral proof', 'Held drive/touch at modal entry and close remain untested', 'Live Yoink modal cancellation remains untested', 'Own Grapple cancellation versus remote gear and launched-projectile survival remains untested', 'Prerequisite four-slice input coverage does not establish these modal-specific behaviors', 'No image assets added', 'Late pointer-lock promise race and real OS visibility require later native validation', 'Synthetic PauseState lifecycle transitions are not native OS visibility'] }
 let browser, primary
 const pages = [], pending = [], records = new Map()
 await mkdir(out, { recursive: true })
@@ -41,7 +41,7 @@ async function provenance() {
   assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', timeout: budget(5000) }).trim(), expected)
   assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8', timeout: budget(5000) }).trim(), '')
   const result = []
-  for (const path of ['src/ui/Shell.ts', 'src/ui/shell.css', 'src/ui/data/credits.ts', 'src/main.ts', 'src/core/Input.ts', 'src/weapons/Gear.ts']) {
+  for (const path of ['src/ui/Shell.ts', 'src/ui/shell.css', 'src/ui/data/credits.ts', 'src/main.ts', 'src/core/Input.ts', 'src/weapons/Gear.ts', 'tests/ui/about-input-observers.mjs']) {
     const local = await readFile(new URL(path, new URL('../../', import.meta.url)))
     const response = await fetch(new URL(`/${path}?raw`, origin), { signal: AbortSignal.timeout(budget(10000)) })
     assert.equal(response.status, 200)
@@ -81,7 +81,7 @@ try {
     page.on('request', request => { if (request.resourceType() === 'image') images.push(request.url()) })
     page.on('response', response => {
       const path = new URL(response.url()).pathname
-      if (response.request().resourceType() !== 'document' && path !== '/src/ui/Shell.ts') return
+      if (response.request().resourceType() !== 'document' && !['/src/ui/Shell.ts', '/tests/ui/about-input-observers.mjs'].includes(path)) return
       const attempt = { url: response.url(), status: response.status(), type: response.request().resourceType() }
       record.responseAttempts.push(attempt)
       const job = (async () => {
@@ -95,6 +95,11 @@ try {
           const map = bytes.toString().match(/sourceMappingURL=data:application\/json(?:;charset=[^;,]+)?;base64,([^\s]+)/)
           assert.ok(map); assert.ok(JSON.parse(Buffer.from(map[1], 'base64')).sourcesContent.includes(await readFile(new URL('../../src/ui/Shell.ts', import.meta.url), 'utf8')))
           modules.push({ url: response.url(), sha256: hash(bytes), sourceSha256: hash(await readFile(new URL('../../src/ui/Shell.ts', import.meta.url))) })
+        } else if (path === '/tests/ui/about-input-observers.mjs') {
+          assert.equal(response.request().resourceType(), 'script')
+          const source = await readFile(new URL('./about-input-observers.mjs', import.meta.url), 'utf8')
+          assert.ok(bytes.toString().startsWith(source.trimEnd()), 'executed observer source')
+          modules.push({ url: response.url(), sha256: hash(bytes), sourceSha256: hash(source) })
         } else {
           assert.ok(response.request().isNavigationRequest()); assert.equal(response.frame(), page.mainFrame())
           documents.push({ url: response.url(), sha256: hash(bytes), navigation: true })
@@ -133,40 +138,67 @@ try {
     await ready(page, () => syn3hNet.bigRed.ready)
     const before = await state(page), socketCount = sockets.length
     await checkpoint('charged-before-entry', { before, socketCount })
-    // Transparent call/return observer: each original is invoked once with this/args.
-    await page.evaluate(() => {
-      const restorers = [], order = []
-      for (const [object, key] of [[syn3hNet.gear, 'cancelActions'], [syn3h.game.input, 'cancelFireUntilNeutral']]) {
-        const own = Object.getOwnPropertyDescriptor(object, key), original = object[key]
-        object[key] = function (...args) { order.push({ key, suspended: syn3h.game.input.suspended }); return original.apply(this, args) }
-        restorers.push(() => own ? Object.defineProperty(object, key, own) : delete object[key])
+    // d58's exact reviewed observer retains first/terminal system identities.
+    // Zero bots are part of the entry recipe, not a mutation to repair a roster.
+    await ready(page, () => {
+      const rows = [...syn3hNet.players.values()].filter(player => player.bot)
+      if (!syn3hNet.isHost || syn3h.params.get('bots.count').value !== 0 || syn3h.bots.vehicles.length || rows.length) return false
+      const previous = window.guideSettledSystems, systems = [...syn3h.game.systems]
+      if (!previous || previous.systems.length !== systems.length || previous.systems.some((system, i) => system !== systems[i])) {
+        window.guideSettledSystems = { systems, frame: syn3h.game.frames }; return false
       }
-      window.guideTrace = { order, restore() { restorers.reverse().forEach(fn => fn()) } }
-      const last = [...syn3h.game.systems].reverse().find(system => typeof system.postPhysics === 'function')
-      if (!last) throw new Error('Normal post-physics hook unavailable')
-      const own = Object.getOwnPropertyDescriptor(last, 'postPhysics'), original = last.postPhysics
-      last.postPhysics = function (...args) {
-        const result = original.apply(this, args)
-        if (guideTrace.immediate && !guideTrace.firstStep) guideTrace.firstStep = {
-          sent: syn3hNet.bigRed.stats.sent, fizzled: syn3hNet.bigRed.stats.fizzled, fire: syn3h.game.input.state.fire }
-        return result
-      }
-      restorers.push(() => own ? Object.defineProperty(last, 'postPhysics', own) : delete last.postPhysics)
-      document.querySelector('.rail-about').addEventListener('click', () => queueMicrotask(() => {
-        guideTrace.immediate = { fire: syn3h.game.input.state.fire, sent: syn3hNet.bigRed.stats.sent, suspended: syn3h.game.input.suspended }
-      }), { once: true })
+      return syn3h.game.frames >= previous.frame + 2
     })
+    record.observerInstall = await page.evaluate(async () => {
+      const { installAboutInputObservers } = await import('/tests/ui/about-input-observers.mjs')
+      const settled = window.guideSettledSystems, systems = syn3h.game.systems
+      if (!settled || !syn3hNet.isHost || syn3h.params.get('bots.count').value !== 0 || syn3h.bots.vehicles.length ||
+          [...syn3hNet.players.values()].some(player => player.bot) || settled.systems.length !== systems.length ||
+          settled.systems.some((system, i) => system !== systems[i])) throw Error('Roster changed before observer install')
+      installAboutInputObservers()
+      delete window.guideSettledSystems
+      window.guideTrace = {
+        get order() { return aboutInputObserver.order },
+        get record() { return aboutInputObserver.records.find(record => record.label === 'about-open') },
+        get immediate() { return this.record?.immediate },
+        get firstStep() { return this.record?.firstStep },
+        diagnostics() { return aboutInputObserver.diagnostics() },
+        restore() { aboutInputObserver.restore() },
+      }
+      return aboutInputObserver.arm('about-open', 'releaseCursor')
+    })
+    assert.ok(record.observerInstall.ready && record.observerInstall.fire, 'real charge held before modal event')
+    await drain(casePending)
+    assert.ok(modules.some(item => new URL(item.url).pathname === '/tests/ui/about-input-observers.mjs'), 'executed observer evidence')
+    assert.deepEqual(report.errors, [])
+    await checkpoint('observer-armed')
     await entry.click(); await dialog.waitFor({ state: 'visible' })
-    const trace = await page.evaluate(() => ({ order: guideTrace.order, immediate: guideTrace.immediate }))
+    await ready(page, () => !!guideTrace.immediate)
+    const trace = await page.evaluate(() => guideTrace.record)
     await checkpoint('entry-event', { trace })
-    assert.deepEqual(trace.order.slice(0, 2).map(x => x.key), ['cancelActions', 'cancelFireUntilNeutral'])
-    assert.ok(trace.order.slice(0, 2).every(x => !x.suspended))
-    assert.equal(trace.immediate.fire, false); assert.equal(trace.immediate.sent, before.sent)
-    await ready(page, tick => syn3h.game.tick > tick, before.tick)
-    await ready(page, () => !!guideTrace.firstStep)
-    const firstStep = await page.evaluate(() => guideTrace.firstStep)
-    await checkpoint('first-step', { firstStep })
-    assert.deepEqual(firstStep, { sent: before.sent, fizzled: before.fizzled, fire: false })
+    assert.equal(trace.lifecycleFailure ?? null, null)
+    assert.equal(trace.immediate.fire, false); assert.equal(trace.immediate.red.sent, before.sent)
+    assert.equal(trace.immediate.suspended, true); assert.equal(trace.immediate.tick, trace.eventReturn.tick)
+    assert.ok(trace.transactions.length > 0, 'opening cancellation transaction')
+    for (const transaction of trace.transactions) {
+      const calls = transaction.calls.map(call => call.method)
+      assert.ok(calls.includes('BigRed.cancel') && calls.includes('Yoink.cancel') && calls.includes('Input.inhibit'))
+      assert.ok(calls.indexOf('BigRed.cancel') < calls.indexOf('Input.inhibit'))
+      assert.ok(calls.indexOf('Yoink.cancel') < calls.indexOf('Input.inhibit'))
+      assert.equal(transaction.before.suspended, false); assert.equal(transaction.returned.suspended, false)
+      assert.ok(transaction.calls.every(call => !call.before.suspended && !call.after.suspended))
+    }
+    await ready(page, () => !!guideTrace.firstStep || !!guideTrace.record?.lifecycleFailure)
+    const completed = await page.evaluate(() => ({ record: guideTrace.record, diagnostics: guideTrace.diagnostics() }))
+    await checkpoint('first-step', { completed })
+    assert.equal(completed.record.lifecycleFailure ?? null, null)
+    assert.deepEqual(completed.diagnostics.lifecycleFailures, [])
+    assert.equal(completed.diagnostics.droppedEvents, 0); assert.equal(completed.diagnostics.droppedLifecycle, 0); assert.equal(completed.diagnostics.droppedFailures, 0)
+    assert.equal(completed.record.stepEntry.tick, completed.record.firstStep.tick)
+    for (const phase of [completed.record.immediate, completed.record.stepEntry, completed.record.firstStep]) {
+      assert.equal(phase.fire, false); assert.equal(phase.red.sent, before.sent); assert.equal(phase.red.fizzled, before.fizzled)
+      assert.equal(phase.redCalls, record.observerInstall.redCalls)
+    }
     const opened = await state(page)
     await checkpoint('opened', { opened })
     assert.equal(opened.sent, before.sent); assert.equal(opened.fizzled, before.fizzled)
@@ -248,7 +280,9 @@ try {
     assert.equal(finalState.id, before.id); assert.equal(finalState.url, before.url)
     assert.ok(finalState.connected); assert.equal(sockets.length, socketCount)
     assert.deepEqual(images, [])
-    record.trace = await page.evaluate(() => ({ order: guideTrace.order, immediate: guideTrace.immediate, firstStep: guideTrace.firstStep }))
+    record.trace = await page.evaluate(() => ({ record: guideTrace.record, diagnostics: guideTrace.diagnostics() }))
+    assert.deepEqual(record.trace.diagnostics.lifecycleFailures, [])
+    for (const key of ['droppedEvents', 'droppedLifecycle', 'droppedFailures']) assert.equal(record.trace.diagnostics[key], 0)
     await page.evaluate(() => guideTrace.restore())
     await checkpoint('before-context-close', { finalState })
     await bounded(context.close())
@@ -266,8 +300,7 @@ try {
 finally {
   for (const page of pages) if (!page.isClosed()) {
     try {
-      records.get(page).trace = await page.evaluate(() => window.guideTrace ? ({ order: guideTrace.order,
-        immediate: guideTrace.immediate, firstStep: guideTrace.firstStep }) : null)
+      records.get(page).trace = await page.evaluate(() => window.guideTrace ? ({ record: guideTrace.record, diagnostics: guideTrace.diagnostics() }) : null)
       await persist()
     } catch (error) { report.errors.push(`Partial trace: ${error}`) }
     try { await page.evaluate(() => window.guideTrace?.restore()) } catch (error) { report.errors.push(String(error)) }
@@ -276,8 +309,9 @@ finally {
   // Browser closed: no new response callbacks should start; drain all queued work.
   try { await drain(pending) }
   catch (error) { report.errors.push(String(error)) }
+  report.captureComplete = !primary && report.errors.length === 0 && report.cases.length === 2 && report.cases.every(record => record.status === 'passed')
   try { await bounded(writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)), 3000) }
-  catch (error) { report.errors.push(String(error)); console.error(JSON.stringify(report)) }
+  catch (error) { report.captureComplete = false; report.errors.push(String(error)); console.error(JSON.stringify(report)) }
   if (primary) throw primary
   assert.deepEqual(report.errors, [])
 }
