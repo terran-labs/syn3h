@@ -1,5 +1,5 @@
 import * as T from 'three/webgpu'
-import { fog, float, mix, output, positionView, renderGroup, uniform } from 'three/tsl'
+import { fog, float, mix, output, positionView, renderGroup, screenUV, smoothstep, uniform } from 'three/tsl'
 import { defineParam } from '../../../shared/params'
 import type { Game } from '../../core/Game'
 import type { Terrain } from '../Terrain'
@@ -20,6 +20,7 @@ interface LightState {light:T.Light;before:number;applied:number}
 export class Underwater {
   private readonly cameraWater=new CameraWater()
   private registeredCamera:T.Camera|null=null
+  private readonly waterline=uniform(this.cameraWater.depths)
   private tint=uniform(new T.Color())
   private extinction=uniform(.085)
   private blend=uniform(0)
@@ -34,11 +35,17 @@ export class Underwater {
     this.tint.setGroup(renderGroup).onRenderUpdate(()=>this.tint.value)
     this.extinction.setGroup(renderGroup).onRenderUpdate(()=>this.extinction.value)
     this.blend.setGroup(renderGroup).onRenderUpdate(()=>this.blend.value)
+    this.waterline.setGroup(renderGroup).onRenderUpdate(()=>this.waterline.value)
     this.savedFog=game.scene.fogNode
     const water=fog(this.tint,float(1).sub(positionView.length().mul(this.extinction).negate().exp()))
     // Retain Environment's live air graph. Swapping its identity at the surface rebuilds
     // every affected material and GPU pipeline, even on the tenth crossing.
-    this.fogNode=mix((this.savedFog??output) as T.Node<'vec4'>,water,this.blend)
+    // Screen UV starts at the top left. Mask only the wet part of the near plane;
+    // a two-centimetre transition avoids a hard raster edge without fogging dry pixels.
+    const d=this.waterline
+    const depth=mix(mix(d.x,d.y,screenUV.x),mix(d.z,d.w,screenUV.x),screenUV.y)
+    const wetMask=smoothstep(0,.02,depth)
+    this.fogNode=mix((this.savedFog??output) as T.Node<'vec4'>,water,this.blend.mul(wetMask))
     game.scene.fogNode=this.fogNode
   }
   /** Restore light overrides without disturbing newer Environment writes. */
@@ -61,11 +68,8 @@ export class Underwater {
   }
   /** Current fog blend, for tests and evidence. */
   get amount(){return this.blend.value}
-  /**
-   * `wash` (0..1) is the lens rule's waterline moment: it briefly thickens the water fog
-   * round the crossing so the surface reads as a soft murky pass, not a cut.
-   */
-  update(dt=1/60,wash=0){
+  /** The legacy wash argument is ignored: lens animation cannot make a dry camera wet. */
+  update(dt=1/60,_wash=0){
     this.restore()
     if(this.registeredCamera!==this.game.camera){
       if(this.registeredCamera){cameraCoverage.delete(this.registeredCamera);cameraAmounts.delete(this.registeredCamera)}
@@ -77,20 +81,19 @@ export class Underwater {
     const p=this.game.camera.position
     const surface=waterUnderwater.value&&this.terrain.liquidKindAt?.(p.x,p.z)==='water'
       ?this.terrain.liquidHeightAt?.(p.x,p.z)??-Infinity:-Infinity
-    const depth=surface-p.y,wet=Number.isFinite(depth)&&depth>0
-    // The look deepens over the first 0.45 m below the lens, eased, and follows at a bounded
-    // rate, so it arrives with the camera during the one-second crossing.
-    const target=Math.max(wet?underwaterRamp(depth):0,Number.isFinite(depth)?wash*.6:0)
+    const depth=surface-p.y
+    const d=this.cameraWater.depths,coverage=this.cameraWater.coverage
+    const target=waterUnderwater.value&&coverage>0?underwaterRamp(Math.max(0,d.x,d.y,d.z,d.w)):0
     const step=Math.max(0,Math.min(.25,dt))/.25
-    this.blend.value+=Math.max(-step,Math.min(step,target-this.blend.value))
-    cameraAmounts.set(this.game.camera,this.blend.value)
+    // Dry exits clear immediately; easing must never drag the water look above the surface.
+    this.blend.value=target===0?0:this.blend.value+Math.max(-step,Math.min(step,target-this.blend.value))
+    cameraAmounts.set(this.game.camera,this.blend.value*coverage)
     const look=underwaterLook(Math.max(0,Number.isFinite(depth)?depth:0))
-    if(wet||wash>0){
-      this.tint.value.setRGB(look.red,look.green,look.blue);this.extinction.value=look.extinction+wash*.5
-    }
+    this.tint.value.setRGB(look.red,look.green,look.blue);this.extinction.value=look.extinction
     const sky=this.findSky()
-    if(sky){sky.underwaterCamera=this.game.camera;sky.underwaterAmount=this.blend.value;const c=this.tint.value;sky.underwaterTint.value.set(c.r,c.g,c.b)}
-    if(this.blend.value===0)return
+    if(sky){sky.underwaterCamera=this.game.camera;sky.underwaterAmount=coverage===1?this.blend.value:0;const c=this.tint.value;sky.underwaterTint.value.set(c.r,c.g,c.b)}
+    // Global lighting cannot be masked by screen region. Keep air lighting until fully wet.
+    if(this.blend.value===0||coverage<1)return
     const scene=this.game.scene
     const transmission=1+(look.transmission-1)*this.blend.value
     this.savedEnvironment=scene.environmentIntensity

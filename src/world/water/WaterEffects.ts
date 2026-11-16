@@ -11,7 +11,7 @@ import { Ripples, rippleField, waterRipples } from './ripples'
 import { Spray, waterSpray } from './spray'
 import { Underwater, waterUnderwater } from './underwater'
 import { UnderwaterBubbles } from './bubbles'
-import { lensWash, newLensState, stepLens } from './underwaterCamera'
+import { newLensState, stepLens } from './underwaterCamera'
 import { camMode } from '../../core/ChaseCamera'
 import { submergedFraction, verticalHalfExtent } from './waterEffectsMath'
 
@@ -73,7 +73,7 @@ export class WaterEffects implements System {
     }
     this.ripples.update(dt,game.camera.position.x,game.camera.position.z)
     this.applyLens(dt)
-    this.underwater.update(dt,lensWash(this.lens))
+    this.underwater.update(dt)
     this.trailBubbles(dt)
     this.bubbles.update(dt,waterUnderwater.value)
   }

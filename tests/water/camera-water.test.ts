@@ -28,10 +28,11 @@ describe('camera water coverage',()=>{
   const vehicle={liquidState:{wasImmersed:true},position:{y:-4}}
   const game={scene,camera,player:vehicle,vehicles:[vehicle,{liquidState:{wasImmersed:true}}]} as unknown as Game
   const effect=new Underwater(game,terrain)
+  waterUnderwater.value=true
   try{
-   camera.position.y=2;effect.update(.25);expect(cameraWaterCoverage(camera)).toBe(0)
+   camera.position.y=2;effect.update(.25);expect(cameraWaterCoverage(camera)).toBe(0);expect(effect.amount).toBe(0)
    vehicle.liquidState.wasImmersed=false;vehicle.position.y=5
-   camera.position.y=-2;effect.update(.25);expect(cameraWaterCoverage(camera)).toBe(1)
+   camera.position.y=-2;effect.update(.25);expect(cameraWaterCoverage(camera)).toBe(1);expect(effect.amount).toBeGreaterThan(0)
    waterUnderwater.value=false;effect.update(.25);expect(cameraWaterCoverage(camera)).toBe(1)
    expect(cameraWaterCoverage(new PerspectiveCamera())).toBe(0)
    camera.position.y=2;effect.update(0);expect(cameraWaterCoverage(camera)).toBe(0)

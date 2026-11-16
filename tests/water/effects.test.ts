@@ -84,7 +84,7 @@ describe('underwater look arrives with the lens',()=>{
    const seen:number[]=[];for(let i=0;i<30;i++){effect.update(1/60);seen.push(effect.amount)}
    for(let i=1;i<seen.length;i++)expect(seen[i]).toBeGreaterThanOrEqual(seen[i-1])
    expect(seen[0]).toBeLessThan(.1);expect(seen.at(-1)).toBe(1)
-   camera.position.y=.3;effect.update(1/60,1);expect(effect.amount).toBeGreaterThan(.5)
+   camera.position.y=.3;effect.update(1/60,1);expect(effect.amount).toBe(0)
    for(let i=0;i<60;i++)effect.update(1/60,0);expect(effect.amount).toBe(0)
   }finally{effect.dispose();waterUnderwater.value=false}
  })
