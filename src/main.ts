@@ -10,6 +10,7 @@ import { BotManager } from './bots/BotManager'
 import { ChaseCamera } from './core/ChaseCamera'
 import { Game } from './core/Game'
 import { startNetworking } from './net'
+import type { GearRack } from './weapons/Gear'
 import { ParamPanel } from './ui/ParamPanel'
 import { generateName } from './ui/data/names'
 import { initGameShell } from './ui/Shell'
@@ -96,7 +97,22 @@ async function main(): Promise<void> {
 
   // The start screen collects the name and unlocks audio. Networking joins on Play so the
   // room sees the chosen name. ?autoplay=1 skips the screen for automated checks.
+  let actionRack: GearRack | undefined
+  let offGearSelection: (() => void) | undefined
+  const inhibitFire = () => game.input.cancelFireUntilNeutral()
+  const cancelActions = () => {
+    if (actionRack) actionRack.cancelActions(inhibitFire)
+    else inhibitFire()
+  }
+  // Register before UI teardown listeners. Element focus blur is not window blur.
+  const actionLifecycle = new AbortController()
+  const actionSignal = actionLifecycle.signal
+  window.addEventListener('blur', event => { if (event.target === window) cancelActions() }, { capture: true, signal: actionSignal })
+  window.addEventListener('pagehide', cancelActions, { capture: true, signal: actionSignal })
+  document.addEventListener('visibilitychange', () => { if (document.hidden) cancelActions() }, { capture: true, signal: actionSignal })
+  game.add({ dispose() { cancelActions(); offGearSelection?.(); actionLifecycle.abort() } })
   const { shell, audio, setPlayer } = initGameShell(game, player, terrain)
+  shell.setActionCancellation(cancelActions, () => actionRack?.cancelFireActionsIfIdle())
   bots.daydream.setBlocker(() => shell.daydreamBlocked)
   // The HUD bridge, hints and the engine voice follow the slot.
   slot.onChange(setPlayer)
@@ -198,6 +214,10 @@ async function main(): Promise<void> {
       setMatchState: (m) => shell.setMatchState(m),
       names: (seed, kind) => generateName(seed, kind),
     })
+    actionRack = connection.gear
+    offGearSelection?.()
+    // Selection changes before the next fixed step; UI refresh comes too late.
+    offGearSelection = actionRack.onChange(() => actionRack?.cancelSelectionActions(inhibitFire))
     connection.configureRaces({
       isDriving: () => shell.playing,
       setRace: (snapshot, roomNow, role) => shell.setRace(snapshot, roomNow, role),

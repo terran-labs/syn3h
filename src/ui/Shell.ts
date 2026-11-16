@@ -347,6 +347,7 @@ export class Shell implements System {
     this.stopAttract()
     if (this.inviteOpen) return
     this.inviteFromGame = this.started && !this.menuVisible
+    if (this.inviteFromGame) this.cancelActions?.()
     if (this.inviteFromGame) { this.releaseCursor(); this.game.input.suspended = true; this.game.input.mouseFire = false; this.touch.enabled = false }
     this.inviteOpen = true; this.overlay.inert = true; this.invite.show(); this.updateInvite()
   }
@@ -524,6 +525,7 @@ export class Shell implements System {
   private dropping = false
   openMenu(panel = 'index'): void {
     if (!this.started) return
+    this.cancelActions?.()
     if (this.exitAsking) { this.exitAsking = false; this.element.querySelector<HTMLElement>('.exit-confirm')!.hidden = true }
     this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; if (this.galaxy) this.galaxy.enabled = true
     this.releaseCursor()
@@ -658,6 +660,7 @@ export class Shell implements System {
   /** Show "Leave this world?". Stay has the focus, so Enter, Escape and a click outside all stay. */
   private askExit(): void {
     if (!this.started || this.menuVisible || this.exitAsking || this.userPaused) return
+    this.cancelActions?.()
     this.exitAsking = true
     const dialog = this.element.querySelector<HTMLElement>('.exit-confirm')!
     dialog.hidden = false
@@ -730,6 +733,7 @@ export class Shell implements System {
   }
   private requestPause(): void {
     if (!this.started || this.menuVisible || this.inviteOpen) return
+    this.cancelActions?.()
     this.releaseCursor()
     if (this.pauseControl) this.pauseControl.pause('user'); else this.applyPause(true, 'user')
   }
@@ -740,6 +744,7 @@ export class Shell implements System {
     if (this.capturesCursor) void this.captureCursor(); else { this.touchPanels = false; this.syncPanels() }
   }
   private applyPause(paused: boolean, reason: 'user' | 'hidden' | null): void {
+    if (paused) this.cancelActions?.()
     if (paused) this.audio.pause(0.5); else this.audio.resume(0.3)
     const user = paused && reason === 'user'
     if (user === this.userPaused) return
@@ -1307,7 +1312,15 @@ export class Shell implements System {
     botsRow.hidden = !bots
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
+  private cancelActions?: () => void
+  /** Composition binds these before play; cleanup must never masquerade as fire release. */
+  setActionCancellation(cancel: () => void, fireSuppressed: () => void): void {
+    this.cancelActions = cancel
+    this.touch.onFireSuppressed = fireSuppressed
+  }
+
   dispose(): void {
+    this.cancelActions?.()
     this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
