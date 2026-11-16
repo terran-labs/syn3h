@@ -108,7 +108,7 @@ export class Inspector {
 
   constructor(parent: HTMLElement, private readonly options: InspectorOptions) {
     this.element.className = 'world-inspector'; this.element.setAttribute('aria-label', 'World inspector')
-    this.element.innerHTML = `<div class="wi-top wi-glass"><input class="wi-search" type="search" placeholder="Find a setting" aria-label="Find a setting" autocomplete="off" spellcheck="false">
+    this.element.innerHTML = `<div class="wi-top wi-glass"><input class="wi-search" type="search" placeholder="Search" aria-label="Find a setting" autocomplete="off" spellcheck="false">
       <div class="wi-actions"><button type="button" data-wi="copy-world">Copy world</button><button type="button" data-wi="paste-world">Paste world</button><button type="button" data-wi="reset">Reset</button></div></div>
       <div class="wi-cards"></div>
       <div class="wi-detail wi-glass" hidden></div>
