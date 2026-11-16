@@ -151,7 +151,8 @@ The fixture persists actual button/footer rectangles and descendant visibility,
 requires44px hit size and focus-outline viewport bounds, verifies no overlap with
 visible footer controls, and saves paused/focus captures. Hidden mobile footer must
 retain geometry and return visibly with search/actions after resume. Landscape844
-is outside the CSS breakpoint: real overlap fails rather than expanding the rule.
+is outside the width breakpoint; the later touch-state rule below covers its
+paused footer without changing desktop layout.
 Existing Escape/pause/cancellation assertions remain unchanged.
 
 All extra operations consume the existing480s fixture and590s supervisor limits.
@@ -218,3 +219,24 @@ replacing an earlier primary error. No product methods/promises are wrapped or
 private state written. These source changes are unrun and do not prove delayed-lock
 modal safety, physical touch or real OS visibility. Accepted004 and failed006/007
 receipts remain unchanged; budget fit requires a separately allocated gate.
+
+
+### Touch landscape footer after Gate008
+
+Gate008 remains failed on measured and screenshot-confirmed844x390 overlap. The
+original modal checks and desktop/390/320 layout rows passed;844 failed before its
+About/Back/Resume sequence. All13 captures and prior receipts are preserved.
+
+The narrow product correction adds .syn3h-shell.has-touch.is-paused .rail-foot
+visibility:hidden outside the width media query. Existing <=700 behavior and
+pauseAbout width, native focus, safe-area and desktop rules remain unchanged.
+Visibility preserves footer geometry; no inert/input or other UI state is changed.
+Removing is-paused restores the normal footer visibility on Resume.
+
+The existing fixture now requires hidden footer surfaces for every touch viewport,
+including844, as well as the existing narrow-width rule. Unchanged assertions
+require identical paused geometry, zero overlap with any visible footer surface,
+actual native Pause/keyboard/About/Back/Resume actions, and restored footer/search/
+actions after Resume. Four viewports and all modal assertions/timeouts remain.
+Source and syntax checks only; no runtime or full-modal safety claim. All operations
+remain within the existing480s fixture and590s supervisor allocation when authorized.

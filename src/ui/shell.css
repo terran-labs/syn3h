@@ -590,7 +590,8 @@
 .syn3h-shell .pause-about[hidden] { display: none; }
 .syn3h-shell .pause-about:focus-visible { outline: 2px solid var(--s3-accent, #8fe3ff); outline-offset: 3px; }
 
-/* Keep the paused phone action clear of the underlying Inspector footer. */
+/* Keep paused touch controls clear in portrait and landscape without moving the rail. */
+.syn3h-shell.has-touch.is-paused .rail-foot { visibility: hidden; }
 @media (max-width: 700px) {
   .syn3h-shell.is-paused .rail-foot { visibility: hidden; }
   .syn3h-shell .pause-about { width: min(320px, calc(100vw - 32px)); }

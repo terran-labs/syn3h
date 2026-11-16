@@ -193,7 +193,7 @@ async function pauseLayoutChecks(page, record, touch) {
       assert.ok(box.left >= outline && box.top >= outline && box.right + outline <= viewport.width && box.bottom + outline <= viewport.height)
       assert.ok(row.layout.focused); assert.ok(row.layout.focusVisible); assert.notEqual(row.layout.outline.style, 'none')
       for (const surface of row.layout.footerSurfaces) {
-        if (viewport.width <= 700) assert.equal(surface.visibility, 'hidden')
+        if (touch || viewport.width <= 700) assert.equal(surface.visibility, 'hidden')
         if (surface.visibility === 'visible' && surface.display !== 'none') assert.equal(surface.overlap, 0, 'pause About overlaps visible Inspector footer')
       }
       assert.deepEqual(row.layout.footer, row.footerBefore, 'paused footer retains geometry')
