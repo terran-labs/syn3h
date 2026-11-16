@@ -267,12 +267,12 @@ async function publish(tag, { assetsDir, dryRun, yes, latest }) {
   }
   steps.push(['git', 'push', 'origin', `refs/tags/${tag}`])
   steps.push(['gh', 'release', 'create', tag, '--repo', GITHUB_REPO, '--verify-tag', '--title', `Syn3h ${tag}`,
-    '--notes-file', notesFile, latest ? '--latest' : '--latest=false', ...assets.map((name) => join(dir, name))])
+    '--notes-file', notesFile, '--latest=false', ...assets.map((name) => join(dir, name))])
 
   const print = (line) => process.stdout.write(`${line}\n`)
   print(`${dryRun ? 'DRY RUN: ' : ''}publish Syn3h ${tag} to https://github.com/${GITHUB_REPO}/releases/tag/${tag}`)
   print(`Commit: ${commit ?? row.commit} (${row.milestone}, ${row.channel}, ${row.time}${release ? `, ${release.release}` : ''})`)
-  print(`Marked Latest: ${latest ? 'yes' : 'no'}`)
+  print(`Marked Latest: ${latest ? 'only after all asset URLs pass verification' : 'no'}`)
   print(`Notes: ${notesPath(tag)}`)
   print(assets.length ? `Assets (${assets.length}) from ${dir}:` : 'Assets: none, so no Screenshots section')
   for (const name of assets) print(`  ${name}  ${existsSync(join(dir, name)) ? statSync(join(dir, name)).size : 'missing'} bytes`)
@@ -286,6 +286,7 @@ async function publish(tag, { assetsDir, dryRun, yes, latest }) {
     print('Then check that each of these answers 200:')
     for (const name of assets) print(`  ${assetUrl(tag, name)}`)
   }
+  if (latest) print(`After successful asset verification: gh release edit ${tag} --repo ${GITHUB_REPO} --latest`)
   if (dryRun) {
     print('Release body:')
     print('-----')
@@ -312,6 +313,7 @@ async function publish(tag, { assetsDir, dryRun, yes, latest }) {
     if (status !== 200) failed++
   }
   if (failed) throw new Error(`${failed} asset URL(s) did not answer 200`)
+  if (latest) execFileSync('gh', ['release', 'edit', tag, '--repo', GITHUB_REPO, '--latest'], { cwd: REPO, stdio: 'inherit' })
   print(`PUBLISHED: https://github.com/${GITHUB_REPO}/releases/tag/${tag}`)
   return 0
 }
