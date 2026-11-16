@@ -117,26 +117,58 @@ try {
   await A.ctx.close(); await B.ctx.close()
 
   // Phones, as a third and fourth player: collapsed with a strip, then open.
-  for (const [name, viewport, hand] of [['phone-portrait', { width: 390, height: 844 }], ['phone-landscape', { width: 844, height: 390 }], ['phone-landscape-lefthand', { width: 844, height: 390 }, true]]) {
-    const P = await open(name.includes('portrait') ? 'Pip' : 'Lan', { viewport, isMobile: true, hasTouch: true, deviceScaleFactor: 2 })
+  // Layouts: collapsed with the strip and count, then open, with collision checks.
+  const layouts = [
+    ['desktop-1280', { viewport: { width: 1280, height: 800 } }],
+    ['desktop-1440', { viewport: { width: 1440, height: 900 } }],
+    ['phone-portrait', { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }],
+    ['phone-landscape', { viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }],
+    ['phone-landscape-lefthand', { viewport: { width: 844, height: 390 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 }, true],
+  ]
+  for (const [name, opts, hand] of layouts) {
+    const touch = Boolean(opts.hasTouch)
+    const P = await open(name.replace(/[^a-z]/g, '').slice(0, 10), opts)
     if (hand) await P.page.evaluate(() => window.syn3h.params.set('touch.leftHanded', true))
     if (withBots) {
-      // Wait for the bots to say something, so the strip and the unread count show.
       await P.page.waitForFunction(() => document.querySelectorAll('.chat-strip .chat-line').length > 0, null, { timeout: 90000 }).catch(() => {})
-      await P.page.waitForTimeout(1500)
+      await P.page.waitForTimeout(1200)
     } else {
       await P.page.evaluate(() => window.syn3hChat?.net?.chat.note('Chat check: a note from this screen.'))
     }
     await shot(P.page, `${name}-collapsed`)
-    const overlaps = await P.page.evaluate(() => {
-      const box = document.querySelector('.chat-toggle').getBoundingClientRect()
-      const hit = (r) => r.width > 0 && !(r.right <= box.left || r.left >= box.right || r.bottom <= box.top || r.top >= box.bottom)
-      return [...document.querySelectorAll('.touch-actions button, .touch-stick, .hud-navigation, .shell-minimap, .gear-selector .gs-item.is-active')].filter((e) => hit(e.getBoundingClientRect())).map((e) => e.className)
+    const collapsed = await P.page.evaluate(() => {
+      const hit = (a, b) => a.width > 0 && b.width > 0 && a.right > b.left && a.left < b.right && a.bottom > b.top && a.top < b.bottom
+      const rects = (sel) => [...document.querySelectorAll(sel)].map((e) => [e.className?.baseVal ?? e.className, e.getBoundingClientRect()])
+      const button = document.querySelector('.chat-toggle').getBoundingClientRect()
+      const lines = [...document.querySelectorAll('.chat-strip .chat-line')].map((e) => e.getBoundingClientRect())
+      const avoid = rects('.touch-actions button, .hud-navigation, .shell-minimap, .gear-selector .gs-item.is-active, .fh-read, .shell-toast:not([hidden]), #syn3h-build-notice, .build-banner')
+      const reticle = { left: innerWidth / 2 - 60, right: innerWidth / 2 + 60, top: innerHeight / 2 - 60, bottom: innerHeight / 2 + 60, width: 120 }
+      return {
+        button: avoid.filter(([, r]) => hit(button, r)).map(([c]) => c),
+        strip: lines.flatMap((l) => [...avoid.filter(([, r]) => hit(l, r)).map(([c]) => c), ...(hit(l, reticle) ? ['reticle'] : [])]),
+        lines: lines.length,
+      }
     })
-    check(overlaps.length === 0, `${name}: the chat button overlaps nothing (${overlaps.join(', ')})`)
-    await P.page.tap('.chat-toggle')
+    check(collapsed.button.length === 0, `${name}: the chat button overlaps nothing (${collapsed.button.join(', ')})`)
+    check(collapsed.strip.length === 0 && collapsed.lines <= 3, `${name}: the strip (${collapsed.lines} lines) clears readouts, reticle, toasts and banner (${collapsed.strip.join(', ')})`)
+    if (touch) await P.page.tap('.chat-toggle'); else await P.page.click('.chat-toggle')
     await P.page.waitForTimeout(500)
     await shot(P.page, `${name}-open`)
+    const sheetBox = await P.page.evaluate(() => {
+      const sheet = document.querySelector('.chat-sheet').getBoundingClientRect()
+      const buttons = [...document.querySelectorAll('.touch-actions button')].map((e) => e.getBoundingClientRect()).filter((r) => r.width > 0)
+      const field = document.querySelector('.chat-field').getBoundingClientRect()
+      return { right: sheet.right, left: sheet.left, top: sheet.top, height: sheet.height, w: innerWidth, h: innerHeight, overButtons: buttons.some((r) => r.right > sheet.left && r.left < sheet.right && r.bottom > sheet.top && r.top < sheet.bottom), fieldVisible: field.bottom <= innerHeight && field.top >= 0 }
+    })
+    if (!touch) check(sheetBox.right < sheetBox.w / 2 - 40, `${name}: the open log ends left of the screen centre (${Math.round(sheetBox.right)} of ${sheetBox.w})`)
+    else if (name.includes('portrait')) check(sheetBox.height <= sheetBox.h * 0.52 && sheetBox.fieldVisible, `${name}: the open sheet is the lower half (${Math.round(sheetBox.height)} of ${sheetBox.h}) with its field on screen`)
+    else check(!sheetBox.overButtons && sheetBox.right - sheetBox.left <= sheetBox.w * 0.5 + 1 && sheetBox.fieldVisible, `${name}: the open sheet is half width, clear of the action buttons, field on screen`)
+    // Closing returns the layout exactly.
+    const before = collapsed
+    if (touch) await P.page.tap('.chat-close'); else await P.page.click('.chat-close')
+    const after = await P.page.evaluate(() => ({ kb: document.querySelector('.chat-panel').style.getPropertyValue('--chat-kb'), open: document.querySelector('.chat-sheet').hidden, typing: window.syn3h.game.input.typing }))
+    check(after.kb === '' && after.open && after.typing === false, `${name}: closing restores the layout and driving (${JSON.stringify(after)})`)
+    void before
     await P.ctx.close()
   }
 } catch (e) {

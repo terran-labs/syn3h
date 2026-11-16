@@ -27,9 +27,9 @@ export interface ChatPanelOptions {
 }
 
 /** Newest lines shown in the collapsed strip. */
-const STRIP_LINES = 2
+const STRIP_LINES = 3
 /** A line stays in the strip this long, ms, then fades. */
-const STRIP_MS = 9000
+const STRIP_MS = 8000
 /** Key that opens chat. T cycles gear and Enter fires, so Y, the usual "say" key. */
 export const CHAT_KEY = 'KeyY'
 
@@ -135,6 +135,7 @@ export class ChatPanel {
     this.toggle.setAttribute('aria-expanded', String(open))
     this.sheet.hidden = !open
     this.renderStrip()
+    this.followKeyboard(open)
     if (open) {
       this.options.releaseCursor?.()
       this.renderLog()
@@ -148,7 +149,30 @@ export class ChatPanel {
     }
   }
 
+  /**
+   * While open, keep the sheet's bottom on top of the on-screen keyboard: the layout viewport
+   * does not shrink for it on every phone, the visual viewport does. Closing removes the
+   * offset, so the layout returns exactly to what it was.
+   */
+  private followKeyboard(on: boolean): void {
+    const vv = window.visualViewport
+    this.keyboardOff?.()
+    this.keyboardOff = undefined
+    this.element.style.removeProperty('--chat-kb')
+    if (!on || !vv) return
+    const sync = () => {
+      const covered = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop))
+      if (covered > 0) this.element.style.setProperty('--chat-kb', `${covered}px`)
+      else this.element.style.removeProperty('--chat-kb')
+    }
+    vv.addEventListener('resize', sync); vv.addEventListener('scroll', sync)
+    this.keyboardOff = () => { vv.removeEventListener('resize', sync); vv.removeEventListener('scroll', sync) }
+    sync()
+  }
+  private keyboardOff?: () => void
+
   dispose(): void {
+    this.keyboardOff?.()
     this.abort.abort()
     for (const u of this.unsubscribe) u()
     clearInterval(this.stripTimer)
@@ -255,7 +279,14 @@ export class ChatPanel {
   }
 
   private fadeStrip(): void {
-    if (this.open || !this.strip.children.length) return
+    if (this.open || !this.strip.children.length) { this.strip.classList.remove('is-yielding'); return }
+    // Step back when a vehicle's name label or a readout passes behind the strip.
+    const box = this.strip.getBoundingClientRect()
+    const under = [...document.querySelectorAll<HTMLElement>('.syn3h-nametags > *, .fh-read')].some((el) => {
+      const r = el.getBoundingClientRect()
+      return r.width > 0 && el.style.display !== 'none' && r.right > box.left && r.left < box.right && r.bottom > box.top && r.top < box.bottom
+    })
+    this.strip.classList.toggle('is-yielding', under)
     const now = performance.now()
     for (const child of [...this.strip.children] as HTMLElement[]) {
       const line = this.options.channel.lines.find((l) => String(l.seq) === child.dataset.seq)
