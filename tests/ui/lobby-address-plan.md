@@ -19,13 +19,13 @@ not permission for this lane to build another launcher:
 - A dedicated room origin reachable by the artifact's configured networking. The
   second entry uses the actual room name `lobby`; use a private server so this does
   not join the public lobby. The first uses another unique room name.
-- Exact expected frozen hashes for all four models and ten licences, with explicit
+- Exact expected frozen hashes for both Buggy models and ten licences, with explicit
   `/v/<version>/` URLs. Frozen and latest bytes may be identical. Optionally supply
   one independently prepared distinct resource and its latest hash to demonstrate
   byte discrimination. Existing permitted resources suffice; no new mesh asset
   project is required. No application response is mocked by Playwright.
 - A separate isolated missing-model origin with the same artifact and one frozen
-  Tank mesh absent (404), while the latest counterpart exists. All other resources
+  Buggy mesh absent (404), while the latest counterpart exists. All other resources
   work normally. Never remove files from a deployed version.
 - An independent build receipt mapping product source to the artifact, with SHA-256
   hashes of all browser-loaded document, script and stylesheet bodies. The fixture
@@ -43,19 +43,19 @@ Supply a JSON manifest using this schema (placeholders are not executable eviden
   "artifactReceipt": "independently supplied build receipt identity",
   "sourceFiles": { "src/main.ts": "sha256; include every source named in fixture" },
   "resources": {
-    "/models/tank.glb": { "frozen": "sha256" }
+    "/models/buggy.glb": { "frozen": "sha256" }
   },
   "entries": [
     { "url": "https://isolated-origin/", "room": "url-check", "roomSocket": "wss://isolated-room/ws", "requiredResponses": ["/", "/assets/index-HASH.js", "/assets/index-HASH.css"], "responses": { "/": "document sha256", "/assets/index-HASH.js": "bundle sha256", "/assets/index-HASH.css": "stylesheet sha256", "/assets/conditional-HASH.js": "conditional JS sha256" } },
     { "url": "https://isolated-origin/v/26.11.1520/", "room": "lobby", "roomSocket": "wss://isolated-room/ws", "requiredResponses": ["/v/26.11.1520/", "/assets/index-HASH.js", "/assets/index-HASH.css"], "responses": { "/v/26.11.1520/": "document sha256", "/assets/index-HASH.js": "bundle sha256", "/assets/index-HASH.css": "stylesheet sha256", "/assets/conditional-HASH.js": "conditional JS sha256" } }
   ],
-  "missing": { "isolated": true, "url": "https://isolated-missing-origin/", "path": "/models/tank.glb", "roomSocket": "wss://isolated-room/ws", "requiredResponses": ["/", "/assets/index-HASH.js", "/assets/index-HASH.css"], "responses": { "/": "document sha256", "/assets/index-HASH.js": "bundle sha256", "/assets/index-HASH.css": "stylesheet sha256", "/assets/conditional-HASH.js": "conditional JS sha256" } }
+  "missing": { "isolated": true, "url": "https://isolated-missing-origin/", "path": "/models/buggy.glb", "roomSocket": "wss://isolated-room/ws", "requiredResponses": ["/", "/assets/index-HASH.js", "/assets/index-HASH.css"], "responses": { "/": "document sha256", "/assets/index-HASH.js": "bundle sha256", "/assets/index-HASH.css": "stylesheet sha256", "/assets/conditional-HASH.js": "conditional JS sha256" } }
 }
 ```
 
-`resources` must include all four model paths and all ten licence paths enumerated
+`resources` must include both Buggy model paths and all ten licence paths enumerated
 in the fixture. Optional `distinctResource` is an object with `path` (one of those
-14 paths) and `latestSha256`, different from its frozen hash. If supplied, the normal
+12 paths) and `latestSha256`, different from its frozen hash. If supplied, the normal
 cases also fetch that root path with an unversioned Referer and verify the latest
 hash independently. Without it, results prove requested frozen paths and exact
 expected bytes, not discrimination between otherwise identical bytes. `responses`
@@ -126,13 +126,13 @@ activates the planet in both contexts; this does not claim physical touch covera
 - Initial lobby, confirmed Leave world and already-joined reentry preserve pathname,
   remove all lobby query/hash, restore intentional play room/seed/version, and do
   not reload on reentry. A room named `lobby` remains a real play room.
-- Jet in the asserted zero-bot shared world starts without mesh requests. All four
-  remain unrequested immediately before the Tank swap, and Buggy's pair remains
-  unrequested before the Buggy swap. Normal vehicle controls then cause all four
+- Jet in the asserted zero-bot shared world starts without mesh requests. Both Buggy
+  files remain unrequested immediately before the Tank swap and before the Buggy
+  swap. Normal vehicle controls then exercise both
   uncached late mesh requests after lobby cleanup. Each response must match frozen
   paths and expected hashes. Only an optional independently distinct resource can
   additionally demonstrate frozen/latest byte discrimination.
-- After the Tank/Buggy mesh checks, the normal selector returns to Jet before
+- After the generated Tank and Buggy mesh checks, the normal selector returns to Jet before
   save/reload, matching the original explicit vehicle query. The saved snapshot must
   have `kind: jet`, so a deliberate vehicle override cannot defeat resume selection.
   The normal seed editor changes the host world to 42. Periodic save and an explicitly
@@ -156,3 +156,37 @@ activates the planet in both contexts; this does not claim physical touch covera
 
 No browser or network acceptance, release approval, or deployment follows from source
 review or syntax checks alone.
+
+## Gate 03 source audit and corrected coverage
+
+Normal Tank construction selects the approved procedural Sherpa (`Tank.ts:25-31`,
+`rebuild` at 99-124). It sets public scene metadata `cockpit` and `ownLamps` true,
+creates geometry, and resolves `modelReady` without invoking `VehicleModel`.
+The legacy branch alone loads Tank GLBs (132-159). Its only body-selection control
+is the development lab lineup slider, outside this production fixture. No lab hook,
+private design mutation or invented production parameter is used. The fixture reads
+kind, modelReady, geometry count and those public scene flags after the actual Tank
+selector, and rejects legacy Tank requests throughout the case. Legacy VehicleModel
+runtime coverage is explicitly absent; existing source/unit evidence remains separate.
+
+The swap helper waits for active kind, not skin completion. Normal Tank is already
+constructed by then; its public ready promise is now observed explicitly. The recorded
+camera mode is diagnostic, not changed. Production swap caching and the background
+warmer remain enabled (`swap.ts:41-63,83,123`). They can construct a vehicle before its
+selection. Therefore the Buggy absence checks are retained before both swaps, and a
+run that warms those files earlier fails rather than claiming click causality. Passing
+checks establish requests after those boundaries, not a captured loader initiator.
+
+The missing-resource setup now removes only the frozen Buggy mesh, retains its root
+copy, and invokes the ordinary Buggy selector. LoadedBuggySkin loads the pair;
+Syn3hBuggy attaches a rejection handler to its ready promise. The existing 404 and
+no-root-retry assertions remain, with no suppression of page errors. Both actually
+used Buggy files plus all ten licences have runtime hash assertions; retained legacy
+Tank inventory hashes are archival metadata, not runtime coverage.
+
+The remaining source audit confirmed Me still uses internal section `you`, the seed
+row is a direct child of its details group, numeric Enter commits the edit, the
+multiplayer invitation and About licence markup match the selectors, and ResumeSession
+saves entrySearch independently of the cleared address. Those interactions still need
+runtime validation. Gate 03 recorded startup state only, not Tank design or cache state;
+its absent Tank requests alone were not proof of a network or selector failure.

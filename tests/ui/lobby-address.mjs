@@ -40,7 +40,8 @@ async function persist(stage) {
 }
 // decodeWorld applies these world-scoped values before Game/player/bot construction.
 const entryWorld = 'volcanic.1~bots.count=0'
-const models = ['/models/tank.glb', '/models/tanktread.glb', '/models/buggy.glb', '/models/buggy-boxarm.glb']
+const models = ['/models/buggy.glb', '/models/buggy-boxarm.glb']
+const legacyTankModels = ['/models/tank.glb', '/models/tanktread.glb']
 const licences = ['three.txt', 'qr.txt', 'rapier.txt', 'tweakpane.txt', 'lato.txt', 'roboto-apache.txt', 'roboto-notice.txt', 'barlow.txt', 'marked.txt', 'ws.txt'].map(n => '/brand/licenses/' + n)
 const sources = ['src/main.ts', 'src/core/frozenResources.ts', 'src/core/resume.ts', 'src/ui/LobbyAddress.ts', 'src/ui/Shell.ts',
   'src/vehicles/skins/VehicleModel.ts', 'src/vehicles/skins/LoadedBuggySkin.ts', 'src/ui/data/credits.ts', 'server/worker.ts', 'package-lock.json']
@@ -71,8 +72,9 @@ if (m.distinctResource) {
   assert.notEqual(m.resources[m.distinctResource.path].frozen, m.distinctResource.latestSha256)
 }
 report.resourceScope = m.distinctResource
-  ? { exactPathsAndHashes: 14, discriminationResource: m.distinctResource.path }
-  : { exactPathsAndHashes: 14, discriminationResource: null, limitation: 'Identical frozen/latest bytes cannot establish byte discrimination; exact frozen paths and expected hashes are checked.' }
+  ? { exactPathsAndHashes: 12, discriminationResource: m.distinctResource.path }
+  : { exactPathsAndHashes: 12, discriminationResource: null, limitation: 'Identical frozen/latest bytes cannot establish byte discrimination; exact frozen paths and expected hashes are checked.' }
+report.legacyTankCoverage = 'VehicleModel legacy Tank loader is not exercised by normal play; source and unit evidence only.'
 report.routingDeclaredByProducer = m.routing
 report.artifactReceipt = m.artifactReceipt
 
@@ -194,9 +196,9 @@ async function runCase(browser, mode, entry, missing = false) {
     await enter(page); playingURL(page, room)
     assert.ok(result.sockets.some(value => value === entry.roomSocket + '?room=' + room), 'dedicated room connection')
     if (missing) {
-      assert.ok(['/models/tank.glb', '/models/tanktread.glb'].includes(m.missing.path))
-      await swap(page, 'tank')
-      await page.waitForFunction(() => syn3h.player.kind === 'tank')
+      assert.ok(models.includes(m.missing.path))
+      assert.equal(result.requests.some(r => models.some(path => new URL(r.url).pathname.endsWith(path))), false, 'Buggy resources not requested before missing-model swap')
+      await swap(page, 'buggy-syn3h')
       // Await the actual failed model request, not a synthetic fetch or route fulfillment.
       const until = Date.now() + 15000
       while (!result.responses.some(r => new URL(r.url).pathname === `/v/${m.version}${m.missing.path}` && r.status === 404)) {
@@ -210,16 +212,30 @@ async function runCase(browser, mode, entry, missing = false) {
       await enter(page); playingURL(page, room)
       assert.equal(await page.evaluate(() => performance.timeOrigin), timeOrigin, 'already-joined reentry does not reload')
       assert.equal(await page.evaluate(() => syn3h.bots.vehicles.length), 0, 'no bot model loads before swaps')
-      assert.equal(result.requests.some(r => models.some(path => new URL(r.url).pathname.endsWith(path))), false, 'all four models remain unrequested before actual swaps')
+      assert.equal(result.requests.some(r => models.some(path => new URL(r.url).pathname.endsWith(path))), false, 'both Buggy models remain unrequested before actual swaps')
       await swap(page, 'tank')
-      assert.equal(result.requests.some(r => models.slice(2).some(path => new URL(r.url).pathname.endsWith(path))), false, 'Buggy models remain unrequested before Buggy swap')
+      result.tank = await bounded(page.evaluate(async () => {
+        const tank = syn3h.player
+        await tank.modelReady
+        let meshes = 0
+        tank.object.traverse(object => { if (object.isMesh) meshes++ })
+        return { kind: tank.kind, cockpit: tank.object.userData.cockpit,
+          ownLamps: tank.object.userData.ownLamps, meshes,
+          cameraMode: syn3h.params.get('camera.mode').value, timeOrigin: performance.timeOrigin }
+      }), 'generated Tank ready')
+      assert.equal(result.tank.kind, 'tank'); assert.equal(result.tank.cockpit, true)
+      assert.equal(result.tank.ownLamps, true); assert.ok(result.tank.meshes > 0, 'normal generated Tank has rendered geometry')
+      assert.equal(result.tank.timeOrigin, timeOrigin, 'Tank switch stays in this document')
+      assert.equal(result.requests.some(r => legacyTankModels.some(path => new URL(r.url).pathname.endsWith(path))), false, 'generated Tank does not request legacy meshes')
+      await persist('generated Tank verified; before Buggy swap')
+      assert.equal(result.requests.some(r => models.some(path => new URL(r.url).pathname.endsWith(path))), false, 'Buggy models remain unrequested before Buggy swap')
       await swap(page, 'buggy-syn3h')
       const until = Date.now() + 30000
       while (!models.every(path => result.responses.some(r => new URL(r.url).pathname === `/v/${m.version}${path}`))) {
-        assert.ok(Date.now() < until, 'all four late models'); await page.waitForTimeout(50)
+        assert.ok(Date.now() < until, 'both late Buggy models'); await page.waitForTimeout(50)
       }
       await drain()
-      result.checks.push('four late model responses')
+      result.checks.push('generated Tank without legacy requests', 'two late frozen Buggy model responses')
       await persist('late models verified; before returning to original Jet')
       await swap(page, 'jet')
       assert.equal(await page.evaluate(() => syn3h.player.kind), 'jet', 'save the original entry vehicle')
@@ -274,6 +290,7 @@ async function runCase(browser, mode, entry, missing = false) {
       assert.equal(await page.evaluate(() => syn3h.params.get('world.seed').value), 42, 'saved seed survives original entry URL')
       result.checks.push('initial/return/reentry addresses', 'ten licence hrefs and response bytes', 'invite retains room/version/world', 'periodic and synthetic lifecycle save retains entry seed', 'original entry reload resumes saved world seed')
     }
+    assert.equal(result.requests.some(r => legacyTankModels.some(path => new URL(r.url).pathname.endsWith(path))), false, 'no legacy Tank requests throughout case')
     await drain()
     for (const path of requiredBodies) assert.ok(seen.has(path), 'required browser response absent: ' + path)
     result.requiredResponses = requiredBodies
