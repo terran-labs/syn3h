@@ -23,6 +23,9 @@ import { bigRedAllowed } from './bigRedParams'
 import { pesterAllowed } from './pester/params'
 import { lasersAllowed } from './params'
 
+export type FireOwner = string | number | symbol
+type FireHold = { kind: 'hold' | 'deferred' | 'reelIn' | 'payOut'; blocked: boolean; consumed: boolean }
+
 export type GearId = 'beam' | 'bungee' | 'yoink' | 'red' | 'pester'
 
 /** Player-facing names. Kept here so the wording test sees them. */
@@ -104,9 +107,22 @@ export class GearRack implements System {
   private actions: Partial<Record<string, readonly GearAction[]>> = {}
   /** A one press action raised the tag control; drop it once a step has seen it. */
   private pulse = false
+  private stepFire = false
+  private physicalFire = false
+  private physicalBlocked = false
+  private deferred = false
+  private ownsReel = false
+  private readonly fireOwners = new Map<FireOwner, FireHold>()
+  private readonly actionOwner = Symbol('gear action')
+  private readonly reelOwner = Symbol('reel in')
+  private readonly payoutOwner = Symbol('pay out')
 
   constructor(private readonly game: Game, target: Window = window) {
     this.last = this.current
+    game.input.fireControl = {
+      poll: physical => this.pollFire(physical),
+      cancel: () => this.fireCancel(),
+    }
     target.addEventListener('keydown', (e) => {
       if (e.repeat || game.input.suspended) return
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return
@@ -191,12 +207,95 @@ export class GearRack implements System {
     return () => this.listeners.delete(listener)
   }
 
-  fixedUpdate(): void {
-    // A one press action holds the tag control for exactly the step that sees it.
-    if (this.pulse && this.game.input.state.fire) {
-      this.pulse = false
-      this.game.input.external.fire = false
+  /** Each touch owns a unique token. Only aim gestures defer Chaser and idle Grapple. */
+  fireBegin(owner: FireOwner, mode: 'aim' | 'hold' = 'hold'): void {
+    if (this.fireOwners.has(owner)) return
+    const gear = this.current
+    const kind = mode === 'aim' && (gear === 'pester' || (gear === 'bungee' && !this.systems?.bungee.mine))
+      ? 'deferred' : mode === 'aim' && gear === 'bungee' ? 'reelIn' : 'hold'
+    this.fireOwners.set(owner, { kind, blocked: false, consumed: this.hasImmediateFire() })
+    this.publishFire()
+  }
+
+  /** UX applies the final look delta before ending an intentional gesture. */
+  fireEnd(owner: FireOwner, intentional = true): void {
+    const held = this.fireOwners.get(owner)
+    if (!held) return
+    if (!intentional) { this.fireCancel(owner); return }
+    this.fireOwners.delete(owner)
+    if (held.kind === 'deferred' && !held.blocked && !held.consumed) this.deferred = true
+    if (!this.fireOwners.size && this.deferred) {
+      this.deferred = false
+      this.pulse = true
     }
+    this.publishFire()
+  }
+
+  /** Interruptions discard charges/carries, never synthesize an ordinary release. */
+  fireCancel(owner?: FireOwner): void {
+    if (owner !== undefined && !this.fireOwners.has(owner)) return
+    this.interruptFire()
+    if (owner === undefined) this.fireOwners.clear()
+    else this.fireOwners.delete(owner)
+    this.publishFire()
+  }
+
+  private interruptFire(): void {
+    this.systems?.bigRed.cancel()
+    this.systems?.yoink.cancel()
+    for (const held of this.fireOwners.values()) held.blocked = true
+    this.pulse = this.deferred = false
+    this.physicalBlocked = this.physicalFire
+    // A switch may happen between polling and physics; discard that sampled held value too.
+    this.game.input.state.fire = false
+  }
+
+  private hasImmediateFire(): boolean {
+    if (this.physicalFire && !this.physicalBlocked) return true
+    for (const held of this.fireOwners.values()) if (!held.blocked && held.kind === 'hold') return true
+    return false
+  }
+
+  private pollFire(physical: boolean): boolean {
+    this.physicalFire = physical
+    if (!physical) this.physicalBlocked = false
+    this.publishFire()
+    return Boolean(this.game.input.external.fire)
+  }
+
+  /** Publish the one fire level. Reel buttons share ownership but remain non-firing actions. */
+  private publishFire(): void {
+    const immediate = this.hasImmediateFire()
+    if (immediate) {
+      this.deferred = false
+      this.pulse = false
+      for (const held of this.fireOwners.values()) if (held.kind === 'deferred') held.consumed = true
+    }
+    let reel: -1 | 0 | 1 = 0
+    for (const held of this.fireOwners.values()) {
+      if (!held.blocked && held.kind === 'reelIn') reel = -1
+      if (!held.blocked && held.kind === 'payOut') reel = 1
+    }
+    if (reel || this.ownsReel) this.systems?.bungee.setReel(reel)
+    this.ownsReel = reel !== 0
+    this.game.input.external.fire = immediate || (this.pulse && !this.stepFire)
+  }
+
+  private tapFire(): void {
+    // A button tap cannot add an edge underneath another holder.
+    if (!this.hasImmediateFire()) this.pulse = true
+    for (const held of this.fireOwners.values()) if (held.kind === 'deferred') held.consumed = true
+    this.publishFire()
+  }
+
+  fixedUpdate(): void {
+    // A pulse survives frames with no physics. After consumption it needs a low step before
+    // another pulse can rise; multiple fixed steps in the same frame cannot duplicate it.
+    if (this.pulse && !this.stepFire && this.game.input.state.fire) {
+      this.pulse = false
+    }
+    this.stepFire = this.game.input.state.fire
+    this.publishFire()
   }
 
   update(): void {
@@ -232,14 +331,15 @@ export class GearRack implements System {
     const key = `${gear}:${state}`
     const made = this.actions[key]
     if (made) return made
-    const input = this.game.input
-    // The tag control, as the touch TAG button drives it (Input.external.fire).
-    const press = () => { this.pulse = false; input.external.fire = true }
-    const unpress = () => { this.pulse = false; input.external.fire = false }
-    const tap = () => { input.external.fire = true; this.pulse = true }
+    const press = () => this.fireBegin(this.actionOwner)
+    const unpress = () => this.fireEnd(this.actionOwner)
+    const tap = () => this.tapFire()
     const act = (a: GearAction) => Object.freeze(a)
     const release = act({ id: 'release', label: 'Let go', keys: ['G', 'Double tap'], hold: false, start: () => sys.bungee.letGo('released') })
-    const reel = (d: -1 | 1) => () => { if (sys.bungee.reel === d) sys.bungee.setReel(0) }
+    const reelStart = (owner: FireOwner, kind: 'reelIn' | 'payOut') => () => {
+      if (!this.fireOwners.has(owner)) this.fireOwners.set(owner, { kind, blocked: false, consumed: false })
+      this.publishFire()
+    }
     let list: GearAction[]
     switch (`${gear}:${state}`) {
       case 'beam:idle':
@@ -249,8 +349,8 @@ export class GearRack implements System {
         list = [act({ id: 'launch', label: 'Send a Chaser', keys: ['Click', 'L'], hold: false, start: tap })]
         break
       case 'bungee:idle':
-        // Straight to the launcher, not the tag control: nothing can be left held down.
-        list = [act({ id: 'launch', label: 'Launch', keys: ['Click', 'L'], hold: false, start: () => { sys.bungee.launch() } })]
+        // Use the same one-step launch edge as TAG and deferred aim.
+        list = [act({ id: 'launch', label: 'Launch', keys: ['Click', 'L'], hold: false, start: tap })]
         break
       case 'bungee:flying':
         list = [release]
@@ -258,8 +358,8 @@ export class GearRack implements System {
       case 'bungee:ground':
       case 'bungee:vehicle':
         list = [
-          act({ id: 'reelIn', label: 'Reel in', keys: ['Hold click', 'Wheel up'], hold: true, start: () => sys.bungee.setReel(-1), stop: reel(-1) }),
-          act({ id: 'payOut', label: 'Let out', keys: ['V', 'Wheel down'], hold: true, start: () => sys.bungee.setReel(1), stop: reel(1) }),
+          act({ id: 'reelIn', label: 'Reel in', keys: ['Hold click', 'Wheel up'], hold: true, start: reelStart(this.reelOwner, 'reelIn'), stop: () => this.fireEnd(this.reelOwner) }),
+          act({ id: 'payOut', label: 'Let out', keys: ['V', 'Wheel down'], hold: true, start: reelStart(this.payoutOwner, 'payOut'), stop: () => this.fireEnd(this.payoutOwner) }),
           release,
         ]
         break
@@ -269,7 +369,7 @@ export class GearRack implements System {
       case 'yoink:holding':
         // Letting go of the grab flings. As its own button, it lets go of the tag control and
         // flings at once; a held key then lets go with nothing left to fling.
-        list = [act({ id: 'fling', label: 'Fling', keys: ['Let go of click'], hold: false, start: () => { unpress(); sys.yoink.release() } })]
+        list = [act({ id: 'fling', label: 'Fling', keys: ['Let go of click'], hold: false, start: () => { sys.yoink.release(); this.fireCancel() } })]
         break
       case 'red:idle':
       case 'red:charging':
@@ -289,6 +389,8 @@ export class GearRack implements System {
   private notifyIfChanged(): void {
     const now = this.current
     if (now === this.last) return
+    this.interruptFire()
+    this.publishFire()
     this.last = now
     for (const l of this.listeners) l(now)
   }

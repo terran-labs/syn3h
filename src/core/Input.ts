@@ -31,6 +31,10 @@ export class Input {
   readonly state: InputState = emptyInput()
   /** Additive UI controls. Special and zorb remain toggles on state; see `toggleZorb`. */
   readonly external: Partial<Omit<InputState, 'special' | 'zorb'>> = {}
+  /** Touch play uses the camera for gear aim, including after a finger lifts. */
+  cameraAim = false
+  /** Optional gear-owned aggregation. Native inputs are sampled at their usual time. */
+  fireControl?: { poll(physicalFire: boolean): boolean; cancel(): void }
   private readonly keys = new Set<string>()
   /** Set true by UI code (chat, text fields) to stop driving while typing. */
   suspended = false
@@ -47,7 +51,7 @@ export class Input {
       if (e.code === 'KeyX') this.toggleZorb()
     })
     target.addEventListener('keyup', (e) => this.keys.delete(e.code))
-    target.addEventListener('blur', () => this.keys.clear())
+    target.addEventListener('blur', () => { this.fireControl?.cancel(); this.keys.clear() })
   }
 
   /**
@@ -68,6 +72,7 @@ export class Input {
   poll(): InputState {
     const s = this.state
     if (this.suspended) {
+      this.fireControl?.cancel()
       this.keys.clear()
       Object.assign(s, emptyInput(), { special: s.special, zorb: s.zorb })
       return s
@@ -103,7 +108,7 @@ export class Input {
       s[axis] = Math.max(-1, Math.min(1, s[axis] + (this.external[axis] ?? 0)))
     }
     s.brakes ||= this.external.brakes ?? false
-    s.fire ||= this.external.fire ?? false
+    s.fire = this.fireControl ? this.fireControl.poll(s.fire) : s.fire || (this.external.fire ?? false)
     return s
   }
 

@@ -2,7 +2,8 @@
  * Where gear points. With the cursor captured on desktop the chase camera orbits with the
  * mouse, and gear goes where the camera looks: a ray from the camera through the middle of
  * the screen finds the point, and the gear leaves its muzzle toward that point, so near and
- * far targets both line up. Otherwise (touch, gamepad, cursor free) it goes straight ahead.
+ * far targets both line up. Touch play opts into the same camera aim. Otherwise it goes
+ * straight ahead.
  *
  * Read only use of the camera: the camera itself belongs to the Bots, Performance and QA lane.
  */
@@ -31,9 +32,9 @@ export interface Aim {
 
 const ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })
 
-/** True while the cursor is captured by the game canvas, so mouse movement aims. */
+/** Camera aim for pointer lock or an explicitly enabled touch-play session. */
 export function cursorAims(game: Game): boolean {
-  return typeof document !== 'undefined' && document.pointerLockElement === game.canvas
+  return game.input?.cameraAim === true || (typeof document !== 'undefined' && document.pointerLockElement === game.canvas)
 }
 
 /** Only player input uses camera aim; scripted shots retain their explicit direction. */
