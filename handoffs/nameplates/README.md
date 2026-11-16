@@ -528,8 +528,9 @@ requested heights and immediate before/after owner body/rendered poses. Existing
 results are reused. The owner boundary copies timestamp, tick, velocity, input, kind, body
 type and materialization state through confirmed APIs. The two remote owners are read in
 separate existing evaluations; their timestamps are local and not synchronized. No owner
-polling, extra terrain queries or contact probes are added. Raw boundary data is persisted
-before finite/identity checks. Immediate rendered poses may still precede the teleport draw.
+polling, extra terrain queries or contact probes are added. Each completed owner boundary
+is persisted immediately after its existing evaluation, before the next owner evaluation
+and before finite/identity checks. Later owner failures retain earlier receipts. Immediate rendered poses may still precede the teleport draw.
 
 Source basis for the arrival criterion:
 
@@ -539,17 +540,17 @@ Source basis for the arrival criterion:
 - `RemotePlayer.steer` can blend a dynamic proxy, snap errors above15 m, or set the next
   kinematic pose. `reimage` preserves the local wrap image. None supplies a public teleport
   acknowledgement or a guaranteed fixed arrival latency.
-- The existing fixture already uses a strict0.25 m rendered movement scale for stability.
-  This proposal reuses that spatial scale as a horizontal arrival radius around each Float32
-  commanded x/z. It is an explicit scene-readiness criterion, NOT a claim that networking
-  guarantees error below0.25 m. Float32 error at these sub-kilometre coordinates is below
-  0.000031 m per axis, far below this scale. No tolerance is inferred from the15 m snap rule.
+- Strict0.25 m is a conservative fixed-scene arrival requirement, not a transport-error
+  bound or a mathematical consequence of the stability threshold. Float32 error at these
+  sub-kilometre coordinates is below0.000031 m per axis. Neither that error nor the15 m
+  snap rule guarantees arrival within this requirement.
 
-At each existing acceptance poll, all seven expected identities must resolve, and each
-rendered horizontal position must be finite and strictly within0.25 m of its commanded
-Float32 x/z. The same rendered tile is required; a wrap mismatch fails rather than hiding
-it with a camera-relative rewrap. This is conservative for these fixed scenes and may fail
-if ordinary horizontal drift leaves the region. It does not force positions or choose new ones.
+At each existing acceptance poll, all seven expected identities, including the local player,
+must resolve with finite commanded x/z and complete finite rendered XYZ. Malformed geometry
+is saved in the raw polling row before failing closed. Each rendered horizontal position
+must be strictly within0.25 m of its commanded Float32 x/z. The same rendered tile is
+required; drift or wrap disagreement fails. The requirement will not be loosened after a
+failure. It does not force positions or choose new ones.
 The intended list and per-identity errors are retained in the same polling receipt.
 
 The original persistent counter, comparisons, repeated-stamp resets and short-circuit result

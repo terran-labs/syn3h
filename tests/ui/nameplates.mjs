@@ -644,17 +644,20 @@ try {
           seen('cameraAtTarget', camera.position.distanceTo(pose.position) < .5) && seen('fovAtTarget', Math.abs(camera.fov - pose.fov) < .5) && seen('sixCount', current.count >= 6)
         let arrival = null, result = originalResult
         if (history) {
-          // Reuse the fixture's 0.25 m spatial scale, not an invented transport error bound.
+          // Conservative fixed-scene arrival requirement, not a transport error bound.
           // Float32 targets reflect the wire; interpolation must actually reach this region.
           const targets = intended.map(target => {
             const remote = net.remotes.get(Number(target.id))
             const vehicle = target.id === String(net.id) ? s.player : tags.entries.find(t => t.id === target.id)?.vehicle
             const position = vehicle?.object.position
+            const rendered = position ? position.toArray() : null
+            const geometryValid = Number.isFinite(target.x) && Number.isFinite(target.z) &&
+              Array.isArray(rendered) && rendered.length === 3 && rendered.every(Number.isFinite)
             const dx = position ? position.x - Math.fround(target.x) : null
             const dz = position ? position.z - Math.fround(target.z) : null
             const error = position ? Math.hypot(dx, dz) : null
-            return { id: target.id, x: target.x, z: target.z, rendered: position ? position.toArray() : null,
-              dx, dz, error, arrived: Number.isFinite(error) && error < .25,
+            return { id: target.id, x: target.x, z: target.z, rendered, geometryValid,
+              dx, dz, error, arrived: geometryValid && Number.isFinite(error) && error < .25,
               remoteAvailable: !!remote }
           })
           const arrived = targets.length === 7 && new Set(targets.map(t => t.id)).size === 7 && targets.every(t => t.arrived)
@@ -677,7 +680,8 @@ try {
             cameraTargetDistance: pose ? camera.position.distanceTo(pose.position) : null,
             fovError: pose ? Math.abs(camera.fov - pose.fov) : null,
             lifecycle: [] }
-          history.records.push(row) // Preserve the predicate receipt if lifecycle copying fails.
+          history.records.push(row) // Preserve raw geometry before validation or lifecycle copying fails.
+          if (!targets.every(t => t.geometryValid)) throw new Error('arrival target requires finite x/z and complete finite rendered XYZ')
           for (const t of tags.entries) {
             const remote = net.remotes.get(Number(t.id)), vehicle = t.vehicle
             row.lifecycle.push({ id: t.id, kind: vehicle.kind ?? null,
@@ -762,6 +766,11 @@ try {
       return fixedPose || record ? { ...initial, actors } : initial
     }, { p: center, fixedNear: !far && !hudOverlap, fixedPose: poseOnly ? fixedPose : null, positivePose: measuredPositive ? fixedPose : null, record: acceptance })
     if (poseOnly) { report.pose.initial = initialPose; await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)) }
+    const boundary = acceptance ? { stageID, actors: [...initialPose.actors] } : null
+    if (acceptance) {
+      report.ownerBoundaries ??= []; report.ownerBoundaries.push(boundary)
+      await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+    }
     const visitorInitial = await b.evaluate(({p, far, hudOverlap, record}) => {
       const s = window.syn3h, net = window.syn3hNet, z = p.z - (far ? 260 : 4), x = p.x - (far || hudOverlap ? 24 : 8)
       const ground = s.terrain.heightAt(x, z), requestedTeleportY = ground + 2
@@ -772,6 +781,7 @@ try {
       return record ? { role: 'Visitor', id: String(net.id), name: net.players.get(net.id)?.name, x, z, ground, requestedTeleportY, before, after: pose() } : null
     }, { p: center, far, hudOverlap, record: poseOnly || acceptance })
     if (poseOnly) { report.pose.initial.actors.push(visitorInitial); await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)) }
+    if (acceptance) { boundary.actors.push(visitorInitial); await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)) }
     const companionInitial = await c.evaluate(({p, far, hudOverlap, record}) => {
       const s = window.syn3h, net = window.syn3hNet, z = p.z - (far ? 190 : hudOverlap ? 12 : 4), x = p.x + (far || hudOverlap ? 24 : 8)
       const ground = s.terrain.heightAt(x, z), requestedTeleportY = ground + 2
@@ -781,6 +791,7 @@ try {
       s.player.teleport(s.player.object.position.clone().set(x, requestedTeleportY, z), 0)
       return record ? { role: 'Companion', id: String(net.id), name: net.players.get(net.id)?.name, x, z, ground, requestedTeleportY, before, after: pose() } : null
     }, { p: center, far, hudOverlap, record: poseOnly || acceptance })
+    if (acceptance) { boundary.actors.push(companionInitial); await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)) }
     if (poseOnly) {
       report.pose.initial.actors.push(companionInitial)
       // Save raw initialization before rejecting missing, duplicate or nonfinite evidence.
@@ -801,10 +812,7 @@ try {
     }
     let intended = null
     if (acceptance) {
-      const boundary = { stageID, actors: [...initialPose.actors, visitorInitial, companionInitial] }
-      report.ownerBoundaries ??= []; report.ownerBoundaries.push(boundary)
-      // Save original values before checking identity, completeness or finite data.
-      await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+      // Each completed owner evaluation was persisted before the next evaluation.
       assert.equal(boundary.actors.length, 7)
       assert.equal(new Set(boundary.actors.map(t => t.id)).size, 7)
       for (const actor of boundary.actors) {
