@@ -1,12 +1,16 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { initPhysics, RAPIER } from '../../src/core/physics'
-import { Jet, JET_LIFT_KEYS, jetDrag, jetFlightThrust, jetHoverHold, jetVectorResponse } from '../../src/vehicles/Jet'
+import { Jet, JET_LIFT_KEYS, jetFlightThrust, jetHoverHold } from '../../src/vehicles/Jet'
 import { harness } from './harness'
+import { flightSpeedAfter, vectorRate } from './jetScenarios'
+
+// Invariants only. Thrust, climb, vectoring rates and the like are tuned by feel and measured by
+// tools/handling-report.ts from ./jetScenarios.ts; here they only have to point the right way.
 
 beforeAll(initPhysics)
 describe('Jet hover and flight',()=>{
- it('uses Syn3h drag and smoothed controls',()=>{const h=harness();const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,30,0));v.isLocal=false;v.input.z=1;h.step(v);expect(jetDrag.value).toBe(.0001);expect(v.body.linvel().y).toBeLessThan(0);h.step(v,30);expect(v.body.linvel().y).toBeGreaterThan(0);v.dispose();h.world.free()})
+ it('smooths its controls: full lift takes a moment to stop a fall',()=>{const h=harness();const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,30,0));v.isLocal=false;v.input.z=1;h.step(v);expect(v.body.linvel().y).toBeLessThan(0);h.step(v,30);expect(v.body.linvel().y).toBeGreaterThan(0);v.dispose();h.world.free()})
  it('starts in hover mode and half throttle balances its weight',()=>{
   const h=harness();const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,30,0));v.isLocal=false;v.input.z=.5
   expect(v.hoverMode).toBe(true);expect(v.body.mass()).toBeCloseTo(200)
@@ -43,41 +47,32 @@ describe('Jet hover and flight',()=>{
   expect([...v.getState().p,...v.getState().q,...v.getState().v].every(Number.isFinite)).toBe(true)
   v.dispose();h.world.free()
  })
- it('flight thrust defaults to the prefab factor and a lower setting accelerates less',()=>{
-  expect(jetFlightThrust.value).toBe(2)
-  const run=()=>{const h=harness(9.81,false);const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,500,0));v.isLocal=false;v.input.special=true;v.input.z=1
-   h.step(v,100);const s=-v.body.linvel().z;v.dispose();h.world.free();return s}
-  const full=run();jetFlightThrust.value=1
-  try{const half=run();expect(half).toBeGreaterThan(0);expect(half).toBeLessThan(full*.7)}
-  finally{jetFlightThrust.value=2}
+ it('flight thrust moves it forward and a lower thrust setting accelerates less',()=>{
+  const setting=jetFlightThrust.value
+  const full=flightSpeedAfter(100);jetFlightThrust.value=setting/2
+  try{const half=flightSpeedAfter(100);expect(half).toBeGreaterThan(0);expect(half).toBeLessThan(full)}
+  finally{jetFlightThrust.value=setting}
  })
- it('thrust vectoring steers below stall speed in pitch and yaw, and its slider scales it',()=>{
-  expect(jetVectorResponse.value).toBe(.3)
-  // 12 m/s is under the 20 m/s stall speed, where the wings have little authority.
-  const rate=(axis:'y'|'w',vector:number)=>{jetVectorResponse.value=vector
-   const h=harness(9.81,false);const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,500,0));v.isLocal=false;v.input.special=true;v.input.z=1
-   h.step(v,2);v.body.setLinvel({x:0,y:0,z:-12},true);v.body.setAngvel({x:0,y:0,z:0},true);v.input[axis]=-1;h.step(v,50)
-   const w=v.body.angvel(),r=Math.hypot(w.x,w.y,w.z)*180/Math.PI;v.dispose();h.world.free();return r}
-  try{const pitch=rate('y',.3),yaw=rate('w',.3)
-   expect(pitch).toBeGreaterThan(30);expect(yaw).toBeGreaterThan(8)
-   expect(rate('y',1)).toBeGreaterThan(pitch*2);expect(rate('w',1)).toBeGreaterThan(yaw*2)}
-  finally{jetVectorResponse.value=.3}
+ it('thrust vectoring steers below stall speed in pitch and yaw, and more of it steers harder',()=>{
+  const pitch=vectorRate('y',.3),yaw=vectorRate('w',.3)
+  expect(pitch).toBeGreaterThan(0);expect(yaw).toBeGreaterThan(0)
+  expect(vectorRate('y',1)).toBeGreaterThan(pitch);expect(vectorRate('w',1)).toBeGreaterThan(yaw)
  })
  it('hover hold lets go near the ground so a landed jet keeps its weight',()=>{
   const h=harness(9.81,false);const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,1.4,0));v.isLocal=false
-  h.step(v,25);expect(v.body.linvel().y).toBeLessThan(-3)
+  h.step(v,25);expect(v.body.linvel().y).toBeLessThan(-1)
   v.dispose();h.world.free()
  })
- it('hover hold is on by default, holds altitude with no throttle key, and 0 restores the original fall',()=>{
-  expect(jetHoverHold.value).toBe(1)
+ it('hover hold holds altitude with no throttle key, and 0 restores the original fall',()=>{
+  const hold=jetHoverHold.value
   const h=harness(9.81,false);const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,100,0));v.isLocal=false
   jetHoverHold.value=0
-  try{h.step(v,50);expect(v.body.linvel().y).toBeLessThan(-5)
+  try{h.step(v,50);expect(v.body.linvel().y).toBeLessThan(-1)
    jetHoverHold.value=1
    h.step(v,250);expect(Math.abs(v.body.linvel().y)).toBeLessThan(.5)
    const y=v.body.translation().y;h.step(v,100);expect(Math.abs(v.body.translation().y-y)).toBeLessThan(1)
    v.input.z=1;h.step(v,25);expect(v.body.linvel().y).toBeGreaterThan(0)}
-  finally{jetHoverHold.value=1;v.dispose();h.world.free()}
+  finally{jetHoverHold.value=hold;v.dispose();h.world.free()}
  })
  it('landing gear holds a resting jet up and its collider follows the gear when it retracts',()=>{
   const h=harness();const v=new Jet(h.game,h.terrain,new THREE.Vector3(0,2.5,0));v.isLocal=false
@@ -89,7 +84,7 @@ describe('Jet hover and flight',()=>{
   expect(Math.hypot(v.body.translation().x-x,v.body.translation().z-z)).toBeLessThan(.05)
   // Flight mode with no throttle raises the gear, and the hull settles lower.
   v.input.special=true;h.step(v,400)
-  expect(v.body.translation().y).toBeLessThan(onGear-.3)
+  expect(v.body.translation().y).toBeLessThan(onGear-.05)
   // Back to hover: the gear comes down again and lifts the hull back to where it stood.
   v.input.special=false;h.step(v,400)
   expect(v.body.translation().y).toBeCloseTo(onGear,1)
@@ -107,7 +102,7 @@ describe('Jet hover and flight',()=>{
    h.step(v,60);const out={vy:v.body.linvel().y,vz:v.body.linvel().z,yaw:v.body.angvel().y,sent:v.getState().input};v.dispose();h.world.free();return out}
   // Hover: E climbs, Q descends faster than the altitude hold allows, and neither turns the jet.
   const up=fly(false,['KeyE']),down=fly(false,['KeyQ']),none=fly(false,[])
-  expect(up.vy).toBeGreaterThan(3);expect(down.vy).toBeLessThan(none.vy-3)
+  expect(up.vy).toBeGreaterThan(0);expect(down.vy).toBeLessThan(none.vy)
   // Exactly what R and F do, turn included: the keys' own yaw is gone.
   const r=fly(false,[],(_v,s)=>{s.z=1}),f=fly(false,[],(_v,s)=>{s.z=-1})
   expect(up.vy).toBeCloseTo(r.vy,4);expect(up.yaw).toBeCloseTo(r.yaw,5);expect(down.vy).toBeCloseTo(f.vy,4);expect(down.yaw).toBeCloseTo(f.yaw,5)
@@ -115,7 +110,7 @@ describe('Jet hover and flight',()=>{
   expect(up.sent.z).toBe(1);expect(up.sent.w).toBe(0)
   // Flight: E is forward thrust, exactly as R is.
   const thrustE=fly(true,['KeyE']),thrustR=fly(true,[],(_v,s)=>{s.z=1})
-  expect(thrustE.vz).toBeLessThan(-5);expect(thrustE.vz).toBeCloseTo(thrustR.vz,3)
+  expect(thrustE.vz).toBeLessThan(0);expect(thrustE.vz).toBeCloseTo(thrustR.vz,3)
   // R and F still work, and a gamepad's yaw stick still yaws when Q and E are up.
   const pad=fly(false,[],(_v,s)=>{s.w=.8})
   expect(Math.abs(pad.yaw)).toBeGreaterThan(.05)

@@ -45,6 +45,7 @@ import {
   stampStateId,
   WRAP_SIZES,
   MAX_BOTS, type WireVehicleKind,
+  CLOSE_REPLACED,
 } from '../shared/protocol'
 // Imported for their side effect of defining world parameters, so the server knows their
 // ranges. Modules that define parameters next to Three.js code cannot be imported here; their
@@ -130,6 +131,8 @@ interface Player {
   gusted: Map<number, number>
   /** The secret this player may rejoin with, when it sent a valid one. */
   token: string | null
+  /** The page load that holds this place (hello `page`): its own reconnect takes it back at once. */
+  page: string | null
   /** Server ms until which a dropped player's place is held, or 0 while connected. */
   heldUntil: number
   lastFireAt: number
@@ -486,6 +489,23 @@ export class Room {
     return undefined
   }
 
+  /**
+   * A connected place with this secret whose connection is dead but whose close has not reached
+   * us yet: the same page load reconnecting (it knows its old socket is gone), or a place that
+   * has said nothing for longer than RESPONDING_MS. A live place reached from another page (a
+   * duplicated tab, which shares the secret) is not returned, so two tabs never trade a place.
+   */
+  private quietFor(token: string | null, page: string | null): [Peer, Player] | undefined {
+    if (!token) return undefined
+    const now = this.now()
+    for (const entry of this.players) {
+      const p = entry[1]
+      if (p.token !== token || p.heldUntil || p.info.bot) continue
+      if ((page && p.page === page) || now - p.lastHeardAt > RESPONDING_MS) return entry
+    }
+    return undefined
+  }
+
   /** The rejoin secret of a connected player, so a transport can store it with the socket. */
   token(peer: Peer): string | null {
     return this.players.get(peer)?.token ?? null
@@ -627,14 +647,21 @@ export class Room {
       peer.close(4000, 'protocol')
       return
     }
-    // A dropped player coming back for its held place: the same player carries on.
+    // A dropped player coming back for its held place: the same player carries on. So does
+    // one whose hello beats the server's notice of its old connection closing (common on the
+    // public address): that place is still "connected" but has gone quiet, and is taken over.
     const token = isToken(msg.resume) ? msg.resume : null
-    const held = this.rejoinOn() ? this.heldFor(token) : undefined
+    const page = isToken(msg.page) ? msg.page : null
+    const held = this.rejoinOn() ? this.heldFor(token) ?? this.quietFor(token, page) : undefined
     if (held) {
       const [key, player] = held
       this.pending.delete(peer)
       this.rekey(key, peer, player)
+      // The replaced connection, if it was still open, is closed. Its close arrives with a
+      // peer that no longer has a place, so it does nothing: no hold, no leave, no new host.
+      if (!player.heldUntil) key.close(CLOSE_REPLACED, 'replaced')
       player.heldUntil = 0
+      player.page = page
       player.lastHeardAt = this.now()
       player.joinedAt = this.now()
       player.windowStart = this.now()
@@ -683,6 +710,7 @@ export class Room {
     // Two connections must never share a secret (a duplicated tab copies it): the second is
     // an ordinary new player with none.
     player.token = token && ![...this.players.values()].some((p) => p.token === token) ? token : null
+    player.page = player.token ? page : null
     this.players.set(peer, player)
     this.scores[info.id] = 0
 
@@ -1342,7 +1370,7 @@ export class Room {
     // Joining counts as a tag so a newcomer cannot be tagged in their first seconds.
     const now = this.now()
     return {
-      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, cordTo: null, carry: null, yoinkAt: -Infinity, gusted: new Map(), token: null, heldUntil: 0, lastFireAt: -Infinity, lastRedAt: -Infinity, pesters: new Map(), pesterTargets: new Map(), lastPesterAt: -Infinity, shots: new Map(), lastTag: now,
+      info, lastState: null, lastStateAt: 0, lastHeardAt: now, fast: 0, fastAt: 0, shoved: new Map(), cordOn: false, cordTo: null, carry: null, yoinkAt: -Infinity, gusted: new Map(), token: null, page: null, heldUntil: 0, lastFireAt: -Infinity, lastRedAt: -Infinity, pesters: new Map(), pesterTargets: new Map(), lastPesterAt: -Infinity, shots: new Map(), lastTag: now,
       windowStart: now, stateCount: 0, jsonCount: 0, joinedAt: now, raceDriving: false,
     }
   }

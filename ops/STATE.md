@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-16 04:25 PST. The owner withdrew the afternoon cutoff.
+Last verified: 2026-11-16 12:40 PST. The owner withdrew the afternoon cutoff.
 
 ## Authority and release order
 
@@ -12,24 +12,19 @@ and eight vehicle/browser cases with rollback. Verify notes and GIF before Lates
 
 ## Production
 
-Accepted release: v26.11.1602 (release-26), source 899c4217, at https://www.syn3h.com/.
-Grapple terrain clearance is live. Native launch, ground attachment and reeling passed;
-valid-contact endpoint measurements retain the strict 2 cm limit. Obscured endpoint
-captures leave visual quality open. Buried contacts use a visual clearance fallback;
-physical spring forces still act directly between anchors.
+Accepted release: v26.11.1605 (release-28), source 17a973a2, at https://www.syn3h.com/,
+live 16 November 2026 at 12:23 PST. Touch aiming and a left-handed setting, the About
+guide in play, the phone minimap docked top right, one-line messages, and the rejoin fix
+(a reconnect that beats the old close keeps its place; a replaced tab stops). Public
+build, frozen versions and net smoke passed on both addresses (9/9 steps, no drops), and
+three further production smokes passed 9/9 with no drops. Performance not measured.
 
-Both public addresses pass exact-build, multiplayer and all frozen-file checks; all
-eight Chrome/WebKit vehicle cases pass. Normal and latency checks used the same frozen
-payload, 20261116-040032-899c4217. Typecheck and build pass. Full comparison: 1,806 pass,
-one skip and three unchanged baseline failures in competitive fleeing, wind steering
-and dashboard links. All 45 added tests pass. Cleanup verified 2,562 recorded identities
-absent with no inspection errors; this covers observed processes, not universal containment.
+v26.11.1604 was withdrawn: its three deploys failed the public smoke on dropped
+connections (this machine's route to Cloudflare) and were rolled back. The smoke now
+rides through drops with bounded step retries and checks the rejoin rules after each.
 
-Release notes, peeled tag and downloaded GIF bytes were verified before promotion to
-Latest; the Latest endpoint and GIF download also match. The GIF is explicitly historical
-footage from v26.11.1508 and does not depict this Grapple correction. The frozen noon
-judging build and itch submission remain unchanged. No physical-device or desert-dune
-acceptance is claimed; procedural update averages are not full-frame performance.
+Next batch, v26.11.1606: about-updates, loading-fun, lobby-settings, the version button,
+player digests, the lost-setting resend and the per-page-load reconnect marker.
 
 ## Current queue
 

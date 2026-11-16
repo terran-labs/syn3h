@@ -112,7 +112,8 @@ exit 94
     const invoke = (kind, scenario = 'success', host = 'www.syn3h.com') => {
       // Only relocate the fixed domain log into the fixture; preserve pipeline and checks.
       const body = smokeSections[kind].replaceAll('/tmp/syn3h-domain-check.log', join(dir, 'domain.log'))
-      const result = spawnSync('/bin/sh', ['-eu', '-c', 'fail() { echo "$*" >&2; exit 1; }; die() { fail "$@"; };\n' + body], {
+      // The callers run the smoke through run_smoke (tools/smoke-run.sh), as the scripts source it.
+      const result = spawnSync('/bin/sh', ['-eu', '-c', 'fail() { echo "$*" >&2; exit 1; }; die() { fail "$@"; };\n' + readFileSync(new URL('./smoke-run.sh', import.meta.url), 'utf8') + '\n' + body], {
         cwd: dir, encoding: 'utf8', timeout: 3000, maxBuffer: 1024 * 1024,
         env: { ...process.env, PATH: join(dir, 'bin') + ':' + process.env.PATH,
           FIXTURE: dir, CALLS: calls, CASE: scenario, H: host, URL: 'https://example.test/',

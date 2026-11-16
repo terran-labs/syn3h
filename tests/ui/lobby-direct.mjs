@@ -13,7 +13,7 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     const nav = page.locator('.galaxy-links')
     await nav.waitFor({ state: 'visible' })
     if (process.env.UX_BEFORE === '1') {
-      await nav.locator('[data-goto=settings]').click()
+      await nav.locator('[data-goto=multiplayer]').click()
       await page.waitForTimeout(200)
       await page.screenshot({ path: `${out}/${mode}-before.png` })
       continue
@@ -51,7 +51,7 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     await page.screenshot({ path: `${out}/${mode}-lobby.png` })
     for (const reducedMotion of ['no-preference', 'reduce']) {
       await page.emulateMedia({ reducedMotion })
-      for (const name of ['multiplayer', 'settings', 'about', 'settings', 'multiplayer']) {
+      for (const name of ['multiplayer', 'about', 'multiplayer']) {
         await nav.locator(`[data-goto=${name}]`).click()
         // The requested panel is the only visible section from the first paint onward.
         assert.deepEqual(await page.locator('.lobby-panels > section:visible').evaluateAll(es => es.map(el => el.dataset.panel)), [name])

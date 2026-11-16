@@ -54,6 +54,8 @@ interface Attachment {
   info?: PlayerInfo
   /** The player's rejoin secret (game.rejoin), so it survives hibernation with the socket. */
   token?: string | null
+  // The hello's page marker is not kept here: after a hibernation wake, a same-page reconnect
+  // within 1.5 s of the place's last message falls back to the quiet rule (Room.quietFor).
 }
 
 export default {
@@ -292,7 +294,7 @@ export class RoomDO {
     return room
   }
 
-  private peer(ws: WebSocket): Peer {
+  private peer(ws: HibernatingWebSocket): Peer {
     let p = this.peers.get(ws)
     if (!p) {
       p = {
@@ -304,6 +306,15 @@ export class RoomDO {
           }
         },
         close(code, reason) {
+          // A socket the room closes (replaced by its own player's new connection, silent,
+          // full) must never be adopted as a player if the object hibernates and wakes before
+          // the close completes: forget who it was.
+          try {
+            const att = ws.deserializeAttachment() as Attachment | null
+            if (att?.info) ws.serializeAttachment({ room: att.room } satisfies Attachment)
+          } catch {
+            // No attachment API on this socket: nothing to forget.
+          }
           ws.close(code, reason)
         },
       }

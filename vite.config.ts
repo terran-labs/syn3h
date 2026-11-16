@@ -2,6 +2,7 @@ import { execSync, spawn, type ChildProcess } from 'node:child_process'
 import { type Plugin } from 'vite'
 import { defineConfig } from 'vitest/config'
 import { manualReload } from './tools/manual-reload.mjs'
+import { releaseFeed } from './tools/release-feed.mjs'
 import { rapierWasmAsset } from './tools/rapier-wasm.mjs'
 
 // When launched by the preview broker, PASEO_PREVIEW_ORIGIN is the HTTPS origin the owner
@@ -62,7 +63,7 @@ export default defineConfig({
   define: { __SYN3H_BUILD__: JSON.stringify(buildLabel()) },
   // manualReload: a merge shows a "new build available" notice instead of resetting the page.
   // rapierWasmAsset: the physics engine's WebAssembly ships as its own hashed file, preloaded.
-  plugins: [roomServer(), manualReload(), tweakpaneWithoutBitmap(), rapierWasmAsset()],
+  plugins: [roomServer(), manualReload(), releaseFeed(), tweakpaneWithoutBitmap(), rapierWasmAsset()],
   server: {
     host: '127.0.0.1',
     port: 5173,

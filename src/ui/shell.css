@@ -261,6 +261,9 @@
 @media (prefers-reduced-motion: reduce) { .lobby-panels { animation: none; } }
 
 .syn3h-shell:not(.is-playing) .shell-toast { display: none; }
+/* In play, below the focus HUD's heading line (34 px down, about 30 px tall), not over it.
+   Touch, match and race layouts place their toasts themselves. */
+.syn3h-shell.is-playing:not(.has-touch, .has-match, .has-landmark-race) .shell-toast { top: max(72px, env(safe-area-inset-top)); }
 .shell-message { max-height: 40px; overflow: hidden; text-align: center; }
 @media (max-width: 700px) { .syn3h-shell.is-playing .shell-toast { top: 190px; width: calc(100% - 40px); max-width: none; } }
 
@@ -278,7 +281,7 @@
 .has-touch .spawn-help { left: 50%; right: auto; bottom: calc(max(30px,env(safe-area-inset-bottom)) + 160px); transform: translateX(-50%); max-width: calc(100% - 24px); padding: 5px 12px; white-space: nowrap; }
 .syn3h-shell:not(.is-playing) .spawn-help { display: none; }
 
-/* The loading veil is in index.html. This is its status text, for screen readers only. */
+/* The loading veil is in index.html. LoadingScreen's polite live region: the plain loading phase, for screen readers only. */
 .syn3h-loading { position: fixed; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .syn3h-loading[hidden] { display: none; }
 #fatal { z-index: 100; }

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { archive, archivedVersions, bareVersion, carry } from './frozen-versions.mjs'
+import { archive, archivedVersions, bareVersion, carry, retrying } from './frozen-versions.mjs'
 import { findForbidden } from './check-shipped-assets.mjs'
 import { draftNotes, frozenUrl } from './release-notes.mjs'
 import { parseHistory } from './lib/release-version.mjs'
@@ -64,4 +64,26 @@ test('production notes link the playable frozen version', () => {
   assert.equal(frozenUrl('v26.11.1503'), 'https://www.syn3h.com/?v=26.11.1503')
   const [row] = parseHistory('v26.11.1600\tm20\tabc1234\t2026-11-16 09:00 PST\tproduction\n')
   assert.match(draftNotes(row, 'a', 'b', []), /https:\/\/www\.syn3h\.com\/\?v=26\.11\.1600/)
+})
+
+test('a transport error, a 5xx or a 429 is retried, at most three attempts', () => {
+  const answers = [() => { throw new Error('curl: (28) timed out') }, () => ({ status: 503 }), () => ({ status: 200 })]
+  const slept = [], logged = []
+  const got = retrying('https://x/a.js', () => answers.shift()(), { sleep: (ms) => slept.push(ms), log: (line) => logged.push(line) })
+  assert.equal(got.status, 200)
+  assert.deepEqual(slept, [1000, 3000])
+  assert.equal(logged.length, 2)
+  assert.ok(logged.every((line) => line.includes('https://x/a.js')))
+  // Still failing after three attempts: the last answer stands, or the last error is thrown.
+  assert.equal(retrying('u', () => ({ status: 429 }), { sleep() {}, log() {} }).status, 429)
+  assert.throws(() => retrying('u', () => { throw new Error('reset') }, { sleep() {}, log() {} }), /reset/)
+})
+
+test('a 404 or any other answer is final at once', () => {
+  let calls = 0
+  const slept = []
+  const got = retrying('u', () => { calls++; return { status: 404 } }, { sleep: (ms) => slept.push(ms), log() {} })
+  assert.equal(got.status, 404)
+  assert.equal(calls, 1)
+  assert.deepEqual(slept, [])
 })

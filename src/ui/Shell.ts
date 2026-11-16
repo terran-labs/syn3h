@@ -15,7 +15,8 @@ import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
 import { params, worldSeed } from '../../shared/params'
 import { GameAudio } from '../audio'
-import { masterVolume, effectsVolume, engineVolume, windVolume, dirtVolume, worldVolume, cuesVolume, remoteVolume, musicVolume } from '../audio/params'
+// Registers the audio settings the lobby's Sound card shows.
+import '../audio/params'
 import { applySkyPreset, SKY_PRESET_NAMES, type SkyPresetName } from '../world/sky/presets'
 import { TouchControls } from './TouchControls'
 import { readVehicleChoice, saveVehicleChoice, PLAY_VEHICLES, type VehicleChoice } from './VehicleChoice'
@@ -24,7 +25,7 @@ import { populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
 import { placeLabels } from './galaxy/labels'
-import { createDaydreamControl } from '../bots/daydreamControl'
+import { LobbySettings } from './LobbySettings'
 import { Inspector } from './inspector/Inspector'
 import { FocusHud } from './inspector/FocusHud'
 import { RaceHud, type RaceRole } from './RaceHud'
@@ -43,7 +44,8 @@ import { Scoreboard, parseScoreRow } from './Scoreboard'
 import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
 import { MatchHud, type MatchState } from './MatchHud'
-import { creditsHtml } from './data/credits'
+import { aboutHtml, showAboutTab, wireAbout, type AboutTab } from './updates/about'
+import { UpdateNotice } from './updates/UpdateNotice'
 import { generateName } from './data/names'
 import { Minimap, type MapEntity } from './Minimap'
 import { bootLoading } from './LoadingScreen'
@@ -64,15 +66,18 @@ const OFFER_CUSTOM_PLANET: boolean = false
 /** Keys that mean "I want to drive": they resume a pause and capture the cursor. */
 const DRIVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
 /**
- * The lobby's bottom buttons (the owner, 15 November 2026): Multiplayer, Settings and About,
- * nothing else. Join by QR lives inside Multiplayer ("Show on screen"), and shaping a world
+ * The lobby's bottom buttons (the owner, 15 November 2026): Multiplayer and About, nothing
+ * else; Settings is the gear in the lower right corner (LobbySettings, 16 November 2026). Join by QR lives inside Multiplayer ("Show on screen"), and shaping a world
  * returns with OFFER_CUSTOM_PLANET.
  */
-const LOBBY_LINKS = `${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''}<button data-goto="multiplayer">Multiplayer</button><button data-goto="settings">Settings</button><button data-goto="about">About</button>`
+const LOBBY_LINKS = `${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''}<button data-goto="multiplayer">Multiplayer</button><button data-goto="about">About</button>`
 const back = '<button type="button" class="panel-back link-button" data-goto="index"><span aria-hidden="true">←</span><span>Back</span></button>'
 /** `__SYN3H_BUILD__` is an optional build-time constant (a date or tag) from the bundler. */
 declare const __SYN3H_BUILD__: string | undefined
-const buildLine = typeof __SYN3H_BUILD__ === 'string' && __SYN3H_BUILD__ ? `build version : ${__SYN3H_BUILD__}` : 'browser edition'
+const build = typeof __SYN3H_BUILD__ === 'string' && __SYN3H_BUILD__ ? __SYN3H_BUILD__ : undefined
+/** Controls the shell wires, shown in the lobby settings panel (LobbySettings). */
+const presentationHtml = '<button type="button" class="presentation-toggle" aria-pressed="false">Presentation mode · P</button>'
+const hostHtml = '<fieldset class="host-controls"><legend>Host</legend><label class="host-lock" hidden><input type="checkbox" id="host-lock"> Lock shared sliders</label><p class="host-note"></p><button class="world-reset" type="button">Reset world to defaults</button></fieldset>'
 const heading = (text: string) => `<h2 tabindex="-1">${text}</h2>`
 
 /** A camera that can be posed from outside, used by the descent from the galaxy. */
@@ -104,12 +109,13 @@ export class Shell implements System {
   /** Slider groups the advanced panel is limited to, when it was opened from the custom planet. */
   private advancedGroups?: readonly string[]
   private worldDirty = true
+  private worldShown = ''
   private readonly inspector: Inspector
   private readonly focusHud: FocusHud
   private readonly raceHud: RaceHud
   onRaceLeave?: () => void
   onRaceCancel?: () => void
-  private telemetry = { speed: 0, altitude: 0 }
+  private telemetry: { speed: number; altitude: number; thrust?: number } = { speed: 0, altitude: 0 }
   /** The 3D galaxy: the lobby. Absent only where WebGL 2 is, and then the game cannot draw either. */
   private galaxy?: Galaxy
   /** Arrived by an invite link that names a world: that world is the one to enter. */
@@ -130,6 +136,9 @@ export class Shell implements System {
   private activeVehicleKind: VehicleKind = this.choice.vehicleKind
   private toastTimer?: ReturnType<typeof setTimeout>
   readonly touch: TouchControls
+  private readonly lobbySettings: LobbySettings
+  private readonly presentationToggle: HTMLButtonElement
+  private readonly hostControls: HTMLFieldSetElement
 
   constructor(private readonly game: Game, readonly audio: GameAudio) {
     this.previousSuspended = game.input.suspended; game.input.suspended = true
@@ -150,24 +159,24 @@ export class Shell implements System {
           <fieldset class="world-controls"><legend>Sky</legend><div class="sky-presets">${SKY_PRESET_NAMES.map(name => `<button type="button" data-sky="${name}">${name}</button>`).join('')}</div><label for="sky-time">Time of day <output id="sky-time-value"></output></label><input id="sky-time" type="range" min="0" max="24" step="0.05"></fieldset>
           <p class="world-lock-note" hidden>Sliders locked by host.</p><button data-goto="explore">Explore this world ›</button>${back}
         </section>
-        <section data-panel="settings">${heading('Settings')}<div class="settings-links"><button data-goto="music">Music & sound</button>${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">World & sky</button><button data-goto="advanced">Advanced sliders</button>' : ''}<button class="presentation-toggle" aria-pressed="false">Presentation · P</button></div><fieldset class="host-controls"><legend>Host</legend><label class="host-lock" hidden><input type="checkbox" id="host-lock"> Lock shared sliders</label><p class="host-note"></p><button class="world-reset" type="button">Reset world to defaults</button></fieldset>${back}</section>
-        <section data-panel="music">${heading('Music & Sound')}<label for="music-volume">Music volume <output id="music-volume-value"></output></label><input id="music-volume" type="range" min="0" max="1" step="0.01">${[masterVolume,effectsVolume,engineVolume,dirtVolume,windVolume,worldVolume,remoteVolume,cuesVolume].map(p=>`<label>${p.def.label}<input data-audio-param="${p.def.id}" type="range" min="0" max="1" step="0.01" value="${p.value}"></label>`).join('')}<button class="shell-mute" aria-pressed="false">Mute all audio</button><p class="panel-note">The music is generated as you play and follows what you do. It starts with your first click or key press.</p>${back}</section>
         <section data-panel="multiplayer">${heading('Multiplayer')}<label class="mode-control" hidden>Game mode<select id="game-mode">${modeChoices.map(mode => `<option value="${mode.value}">${mode.label}</option>`).join('')}</select></label><p class="multiplayer-room"></p><div class="invite-qr"></div><p class="invite-link"></p><button class="shell-invite">Copy invite link</button><button data-join>Show on screen · J</button><div class="shell-scoreboard" aria-label="Player scores"></div>${back}</section>
         <section data-panel="advanced">${heading('Advanced Settings')}<p class="world-lock-note" hidden>Sliders locked by host.</p><div class="advanced-host"></div>${back}</section>
-        <section data-panel="about">${heading('About Syn3h')}${creditsHtml}${back}</section>
+        <section data-panel="about">${heading('About Syn3h')}${aboutHtml()}${back}</section>
       </div>
-      <footer class="lobby-footer"><span class="shell-message" role="status" aria-live="polite"></span><span class="build-line">${buildLine}</span></footer>
+      <footer class="lobby-footer"><span class="shell-message" role="status" aria-live="polite"></span></footer>
       </div>
       <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby">${LOBBY_LINKS}</nav></div>
     </section>
+    <dialog class="in-play-about" aria-labelledby="in-play-about-title"><header><h2 id="in-play-about-title" tabindex="-1">About Syn3h</h2><button type="button" class="panel-back about-back" aria-label="Back to world"><span aria-hidden="true">←</span><span>Back<span class="about-back-long"> to world</span></span></button></header><div class="in-play-about-body">${aboutHtml()}</div></dialog>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open the panels" aria-pressed="false"><span aria-hidden="true">≡</span><span class="nav-label"> Panels</span></button></nav>
     <div class="exit-confirm" role="alertdialog" aria-modal="true" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-text" hidden><div class="exit-confirm-card"><strong id="exit-confirm-title">Leave this world?</strong><p id="exit-confirm-text">You will return to the galaxy.</p><div class="exit-confirm-actions"><button type="button" class="exit-stay">Stay</button><button type="button" class="exit-leave">Leave world</button></div></div></div>
+    <button type="button" class="pause-about" aria-haspopup="dialog" hidden>About &amp; how to play</button>
     <button type="button" class="pause-veil" hidden><strong>Paused</strong><span class="pause-how">Click to resume</span><small hidden>The world carries on without you.</small></button>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
-    // Rewrite only this credits disclosure, never invite or networking links.
-    for (const anchor of this.element.querySelectorAll<HTMLAnchorElement>('[data-panel="about"] a[href^="/brand/licenses/"]')) {
+    // Rewrite only the two guide disclosures, never invite or networking links.
+    for (const anchor of this.element.querySelectorAll<HTMLAnchorElement>('[data-panel="about"] a[href^="/brand/licenses/"], .in-play-about a[href^="/brand/licenses/"]')) {
       anchor.setAttribute('href', frozenResourceURL(anchor.getAttribute('href')!))
     }
     document.body.append(this.element); document.body.classList.add('has-game-shell')
@@ -194,10 +203,6 @@ export class Shell implements System {
     this.followPointer(signal)
     this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; if (this.galaxy) this.galaxy.enabled = true
     this.releaseCursor()
-    // Daydream: how long the game waits, left alone, before it starts driving itself. The
-    // control and its parameter are the Bots lane's; it sits with the first settings.
-    const daydream = createDaydreamControl()
-    this.element.querySelector('.settings-links')!.after(daydream); signal.addEventListener('abort', () => daydream.dispose())
     // The world inspector and the display for when the cursor is captured (inspector/).
     this.inspector = new Inspector(this.element, {
       summary: id => this.inspectorSummary(id),
@@ -216,19 +221,34 @@ export class Shell implements System {
     this.inspector.open = false
     const railTop = this.inspector.element.querySelector('.wi-top')!
     const players = document.createElement('details'); players.className = 'rail-players'
-    players.innerHTML = '<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><label class="rail-diagnostics"><input type="checkbox"> Connection diagnostics</label></div>'
+    players.innerHTML = '<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><button type="button" class="rail-about" aria-haspopup="dialog">About &amp; how to play</button><label class="rail-diagnostics"><input type="checkbox"> Connection diagnostics</label></div>'
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
     this.inspector.setSessionCard(players)
     // Performance follows World; its controls remain part of the searchable card stack.
     this.performancePanel = new PerformancePanel(this.element, () => this.showPanels(), this.game.quality, this.inspector)
+    // The lobby's settings: a gear in the lower right of the galaxy, with the running version
+    // beside it, opening the sidebar's cards for sound, graphics, controls and the room. The
+    // presentation toggle and host controls are built here and wired below, as before.
+    const holder = document.createElement('div'); holder.innerHTML = presentationHtml + hostHtml
+    this.presentationToggle = holder.querySelector('.presentation-toggle')!; this.hostControls = holder.querySelector('.host-controls')!
+    this.lobbySettings = new LobbySettings(this.element, {
+      quality: this.game.quality, presentation: this.presentationToggle, host: this.hostControls, build,
+      hostSummary: () => this.hostControls.querySelector('.host-note')!.textContent ?? '', inRoom: () => { const net = hostControls(); return !!net && (net.isHost || canEditWorld()) }, cue: () => this.audio.cue('click'),
+    })
+    this.element.querySelector('.galaxy-ui')!.append(this.lobbySettings.dock)
+    // The version beside the lobby's settings gear opens What's new.
+    this.lobbySettings.version.addEventListener('click', () => { this.audio.cue('click'); this.showUpdates() }, { signal })
     const foot = document.createElement('div'); foot.className = 'rail-foot wi-glass'
-    foot.innerHTML = '<div class="rail-tools"><button type="button" class="rail-pause">Pause</button></div>'
-    foot.querySelector('.rail-tools')!.prepend(railTop.querySelector('.wi-search')!)
+    // Header and footer stay outside the scrolling card stack.
+    const command = document.createElement('div'); command.className = 'rail-command wi-glass'
+    command.innerHTML = '<div class="rail-tools"><strong class="rail-world"></strong><button type="button" class="rail-pause">Pause</button></div>'
+    command.querySelector('.rail-world')!.after(railTop.querySelector('.wi-search')!)
     const actions = railTop.querySelector('.wi-actions')!
     actions.insertAdjacentHTML('beforeend', '<button type="button" class="exit-world">Leave world</button>')
     foot.append(actions)
     railTop.remove()
-    this.inspector.element.querySelector('.wi-cards')!.after(foot)
+    const cards = this.inspector.element.querySelector('.wi-cards')!
+    cards.before(command); cards.after(foot)
     // Exit world asks first (the owner, 15 November 2026): one stray click on the panels must
     // not throw the player back to the galaxy. Code that calls openMenu() itself is not asked.
     foot.querySelector('.exit-world')!.addEventListener('click', () => this.askExit(), { signal })
@@ -237,6 +257,22 @@ export class Shell implements System {
     exitConfirm.querySelector('.exit-stay')!.addEventListener('click', () => this.answerExit(false), { signal })
     exitConfirm.querySelector('.exit-leave')!.addEventListener('click', () => this.answerExit(true), { signal })
     players.querySelector('.rail-invite')!.addEventListener('click', () => this.openJoin(), { signal })
+    players.querySelector('.rail-about')!.addEventListener('click', () => this.openAbout(), { signal })
+    // About and Updates, the same content in the lobby panel and the in-play guide.
+    for (const about of this.element.querySelectorAll<HTMLElement>('[data-panel="about"], .in-play-about')) wireAbout(about, signal)
+    // A newer live version: a banner in the lobby, a chip in the sidebar in play. What's new
+    // opens About at Updates wherever the player is.
+    this.updateNotice = new UpdateNotice(() => this.showUpdates(), signal, () => { this.updateBand() })
+    // With the galaxy, so it goes when a panel opens, play starts or the descent begins. It
+    // sits just under the wordmark, and the galaxy leaves it that band (updateBand).
+    this.element.querySelector('.galaxy-ui')!.prepend(this.updateNotice.banner)
+    command.append(this.updateNotice.chip)
+    this.element.querySelector('.pause-about')!.addEventListener('click', () => this.openAbout(), { signal })
+    const guide = this.element.querySelector<HTMLDialogElement>('.in-play-about')!
+    guide.querySelector('.about-back')!.addEventListener('click', () => this.closeAbout(), { signal })
+    // The dialog's own Escape (cancel) and any other close route through closeAbout.
+    guide.addEventListener('cancel', event => { event.preventDefault(); this.closeAbout() }, { signal })
+    guide.addEventListener('close', () => this.closeAbout(), { signal })
     players.querySelector('input')!.addEventListener('change', event => params.set(diagnostics.def.id, (event.target as HTMLInputElement).checked), { signal })
     const music = document.createElement('div'); music.className = 'rail-music'
     music.innerHTML = `<span>Sound</span><button type="button" class="rail-mute">Mute</button>`
@@ -247,7 +283,7 @@ export class Shell implements System {
     // Touch has no cursor to capture, so one control switches between driving and the panels.
     const toggle = this.element.querySelector<HTMLButtonElement>('.inspector-toggle')!
     toggle.addEventListener('click', () => { this.touchPanels = !this.touchPanels; this.syncPanels() }, { signal })
-    foot.querySelector('.rail-pause')!.addEventListener('click', () => this.requestPause(), { signal })
+    command.querySelector('.rail-pause')!.addEventListener('click', () => this.requestPause(), { signal })
     this.element.querySelector('.pause-veil')!.addEventListener('click', () => this.requestResume(), { signal })
     // Follow the lock itself, not what was asked for: the browser can drop it on its own
     // (Escape, a switch of window, a system dialog) and can refuse a request.
@@ -272,17 +308,14 @@ export class Shell implements System {
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-goto]')) button.addEventListener('click', () => this.showPanel(button.dataset.goto!), { signal })
     this.overlay.addEventListener('click', event => {
       const target = event.target as Element
-      if (this.panels.active !== 'index' && !target.closest('.lobby-panels, .galaxy-links') && !this.inviteOpen) this.showPanel('index')
+      if (this.panels.active !== 'index' && !target.closest('.lobby-panels, .galaxy-links, .update-banner') && !this.inviteOpen) this.showPanel('index')
     }, { signal })
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-open]')) button.addEventListener('click', () => this.openMenu(button.dataset.open!), { signal })
     for (const button of this.element.querySelectorAll('[data-join]')) button.addEventListener('click', () => this.openJoin(), { signal })
     this.element.querySelector('form')!.addEventListener('submit', event => { event.preventDefault(); this.play(true) }, { signal })
     for (const button of this.element.querySelectorAll('.shell-invite')) button.addEventListener('click', () => { void this.copyInvite() }, { signal })
-    this.element.querySelector('.presentation-toggle')!.addEventListener('click', () => this.setPresentation(!this.presentation), { signal })
+    this.presentationToggle.addEventListener('click', () => this.setPresentation(!this.presentation), { signal })
     for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) if (document.activeElement !== slider) slider.value = String(params.get(slider.dataset.param!)?.value ?? 0)
-    for(const slider of this.element.querySelectorAll<HTMLInputElement>('[data-audio-param]'))slider.addEventListener('input',()=>params.set(slider.dataset.audioParam!,Number(slider.value)),{signal})
-    this.element.querySelector('.shell-mute')!.addEventListener('click', () => { audio.setMuted(!audio.isMuted); this.update() }, { signal })
-    this.element.querySelector('#music-volume')!.addEventListener('input', event => params.set(musicVolume.def.id, (event.target as HTMLInputElement).value), { signal })
     this.element.querySelector('#world-seed')!.setAttribute('value', String(worldSeed.value))
     this.element.querySelector('#world-seed')!.addEventListener('input', event => { (event.target as HTMLInputElement).dataset.dirty = 'true' }, { signal })
     this.element.querySelector('#new-world')!.addEventListener('click', () => {
@@ -297,7 +330,7 @@ export class Shell implements System {
     this.element.querySelector('#bots-count')!.addEventListener('input', event => { if (canEditWorld()) params.set('bots.count', (event.target as HTMLInputElement).value) }, { signal })
     this.element.querySelector('#game-mode')!.addEventListener('change', event => { if (canEditWorld() && params.get('game.mode') && modeChoices.some(mode => mode.value === Number((event.target as HTMLSelectElement).value))) params.set('game.mode', Number((event.target as HTMLSelectElement).value)) }, { signal })
     // Two presses: the first asks, the second (within four seconds) does it. No modal dialog.
-    const reset = this.element.querySelector<HTMLButtonElement>('.world-reset')!
+    const reset = this.hostControls.querySelector<HTMLButtonElement>('.world-reset')!
     let resetArmed: ReturnType<typeof setTimeout> | undefined
     const disarm = () => { clearTimeout(resetArmed); resetArmed = undefined; reset.textContent = 'Reset world to defaults'; reset.classList.remove('is-confirming') }
     reset.addEventListener('click', () => {
@@ -309,7 +342,7 @@ export class Shell implements System {
       disarm(); this.toast(resetWorld() ? 'World reset to defaults.' : 'Sliders locked by host.')
     }, { signal })
     signal.addEventListener('abort', () => clearTimeout(resetArmed))
-    this.element.querySelector('#host-lock')!.addEventListener('change', event => { const net = hostControls(); if (net?.isHost) net.setLocked((event.target as HTMLInputElement).checked) }, { signal })
+    this.hostControls.querySelector('#host-lock')!.addEventListener('change', event => { const net = hostControls(); if (net?.isHost) net.setLocked((event.target as HTMLInputElement).checked) }, { signal })
     const activity = (event: Event) => {
       this.lastActivity = performance.now()
     }
@@ -358,10 +391,72 @@ export class Shell implements System {
   }
   openJoin(): void {
     this.stopAttract()
-    if (this.inviteOpen) return
+    if (this.inviteOpen || this.aboutOpen) return
     this.inviteFromGame = this.started && !this.menuVisible
     if (this.inviteFromGame) { this.releaseCursor(); this.game.input.suspended = true; this.game.input.mouseFire = false; this.touch.enabled = false }
     this.inviteOpen = true; this.overlay.inert = true; this.invite.show(); this.updateInvite()
+  }
+  private aboutOpen = false
+  private aboutOpener?: HTMLElement
+  private cancelActions?: () => void
+  /** Main binds this before play: it drops charged or held gear without firing it. */
+  setActionCancellation(cancel: () => void): void { this.cancelActions = cancel }
+  /**
+   * The lobby's About guide, over the running world. The room, the URL and the pause state
+   * stay as they are. Gear in hand is cancelled first, so the input going quiet is not read
+   * as a release (a Big Red send or a Yoink fling); then input is suspended, which also drops
+   * held keys, so a key still down when the guide closes does nothing until pressed again.
+   */
+  readonly updateNotice: UpdateNotice
+  private bandTop = ''
+  /**
+   * Place the update banner just under the wordmark and return the height the galaxy keeps
+   * clear for it, so no world or label sits under it. Measured against the wordmark rather
+   * than the lobby buttons, so a moved wordmark or button row carries it along. 0 when the
+   * banner is not on screen.
+   */
+  private updateBand(): number {
+    const banner = this.updateNotice?.banner
+    if (!banner || banner.hidden || !this.menuVisible && this.started || banner.offsetParent === null) return 0
+    const logo = this.element.querySelector('.shell-logo')!.getBoundingClientRect(), host = banner.offsetParent.getBoundingClientRect()
+    const top = `${Math.round(logo.bottom - host.top + 10)}px`
+    if (top !== this.bandTop) { this.bandTop = top; banner.style.top = top }
+    return banner.offsetHeight + 20
+  }
+  /** About at Updates: the in-play guide while playing, else the lobby About panel. */
+  showUpdates(): void {
+    if (this.playing) { this.openAbout('updates'); return }
+    this.showPanel('about')
+    showAboutTab(this.element.querySelector<HTMLElement>('[data-panel="about"]')!, 'updates')
+  }
+  openAbout(tab?: AboutTab): void {
+    if (!this.playing || this.aboutOpen || this.inviteOpen || this.exitAsking || this.dropping) return
+    this.cancelActions?.()
+    this.aboutOpener = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
+    this.aboutOpen = true
+    this.releaseCursor()
+    this.game.input.suspended = true; this.game.input.poll(); this.touch.enabled = false
+    const guide = this.element.querySelector<HTMLDialogElement>('.in-play-about')!
+    if (tab) showAboutTab(guide, tab)
+    guide.showModal()
+    guide.scrollTop = 0
+    guide.querySelector<HTMLElement>('h2')!.focus({ preventScroll: true })
+    this.syncPanels()
+  }
+  closeAbout(): void {
+    if (!this.aboutOpen) return
+    this.aboutOpen = false
+    const guide = this.element.querySelector<HTMLDialogElement>('.in-play-about')!
+    if (guide.open) guide.close()
+    this.game.input.suspended = this.userPaused || this.menuVisible || this.inviteOpen || this.exitAsking
+    this.touch.enabled = !this.game.input.suspended
+    this.syncPanels()
+    // Back to where the player opened it. The cursor is not captured on this click or key:
+    // the next click on the world resumes driving, as after any panel.
+    const opener = this.aboutOpener
+    this.aboutOpener = undefined
+    const focus = opener?.isConnected && !opener.closest('[hidden], [inert]') ? opener : this.element.querySelector<HTMLElement>(this.userPaused ? '.pause-veil' : '.rail-about')
+    focus?.focus({ preventScroll: true })
   }
   closeJoin(): void {
     if (!this.inviteOpen) return
@@ -382,11 +477,11 @@ export class Shell implements System {
   get daydreamBlocked(): boolean {
     const focused = document.activeElement
     const editing = focused instanceof HTMLElement && (focused.matches('input, textarea, select') || focused.isContentEditable)
-    return !this.playing || this.panelsWanted || this.userPaused || this.inviteOpen || this.exitAsking || editing
+    return !this.playing || this.panelsWanted || this.userPaused || this.inviteOpen || this.exitAsking || this.aboutOpen || editing
   }
   get activePanel(): string { return this.panels.active }
   get presentation(): boolean { return this.element.classList.contains('is-presentation') }
-  setPresentation(enabled: boolean): void { this.element.classList.toggle('is-presentation', enabled); this.element.querySelector('.presentation-toggle')!.setAttribute('aria-pressed', String(enabled)) }
+  setPresentation(enabled: boolean): void { this.element.classList.toggle('is-presentation', enabled); this.presentationToggle.setAttribute('aria-pressed', String(enabled)) }
   setPlayerCount(count: number): void { this.playerCount = Math.max(0, Math.floor(count)); this.updateInvite() }
   private lastMatch: MatchState | null = null
   setRace(snapshot: Readonly<RaceState> | null, roomNow: () => number, role: Readonly<RaceRole>): void {
@@ -419,7 +514,7 @@ export class Shell implements System {
   setMapEntities(entities: readonly MapEntity[]): void { this.minimap?.setEntities(entities) }
   setMapSelf(entity: MapEntity): void { this.self = entity; this.minimap?.setSelf(entity) }
   /** The player's speed (m/s) and height above the ground (m), for the focus display. */
-  setTelemetry(speed: number, altitude: number): void { this.telemetry.speed = speed; this.telemetry.altitude = altitude }
+  setTelemetry(speed: number, altitude: number, thrust?: number): void { this.telemetry.speed = speed; this.telemetry.altitude = altitude; this.telemetry.thrust = thrust }
   private inspectorSummary(id: string): string {
     if (id === 'world') {
       const hour = Number(params.get('sun.timeOfDay')?.value ?? 0)
@@ -539,6 +634,7 @@ export class Shell implements System {
   private dropping = false
   openMenu(panel = 'index'): void {
     if (!this.started) return
+    this.closeAbout()
     this.lobbyAddress?.showLobby()
     if (this.exitAsking) { this.exitAsking = false; this.element.querySelector<HTMLElement>('.exit-confirm')!.hidden = true }
     this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; if (this.galaxy) this.galaxy.enabled = true
@@ -646,6 +742,7 @@ export class Shell implements System {
     if (!this.started) return
     this.lobbyAddress?.showPlay(this.room)
     this.menuVisible = false; this.overlay.hidden = true; this.overlay.inert = true; if (this.galaxy) this.galaxy.enabled = false
+    this.lobbySettings.close()
     this.game.input.suspended = false; this.touch.enabled = true; this.audio.enabled = true; this.audio.setLobbyVisible(false); this.paramPanel?.hide()
     this.element.classList.add('is-playing')
     this.element.querySelector<HTMLElement>('.shell-hud')!.hidden = false
@@ -674,7 +771,7 @@ export class Shell implements System {
   private exitAsking = false
   /** Show "Leave this world?". Stay has the focus, so Enter, Escape and a click outside all stay. */
   private askExit(): void {
-    if (!this.started || this.menuVisible || this.exitAsking || this.userPaused) return
+    if (!this.started || this.menuVisible || this.exitAsking || this.userPaused || this.aboutOpen) return
     this.exitAsking = true
     const dialog = this.element.querySelector<HTMLElement>('.exit-confirm')!
     dialog.hidden = false
@@ -746,12 +843,12 @@ export class Shell implements System {
     if (control.paused) this.applyPause(true, control.reason)
   }
   private requestPause(): void {
-    if (!this.started || this.menuVisible || this.inviteOpen) return
+    if (!this.started || this.menuVisible || this.inviteOpen || this.aboutOpen) return
     this.releaseCursor()
     if (this.pauseControl) this.pauseControl.pause('user'); else this.applyPause(true, 'user')
   }
   private requestResume(): void {
-    if (!this.userPaused) return
+    if (!this.userPaused || this.aboutOpen) return
     if (this.pauseControl) this.pauseControl.resume('user'); else this.applyPause(false, null)
     // The click, tap or key that resumes is a gesture: go straight back to driving.
     if (this.capturesCursor) void this.captureCursor(); else { this.touchPanels = false; this.syncPanels() }
@@ -763,16 +860,24 @@ export class Shell implements System {
     this.userPaused = user
     const veil = this.element.querySelector<HTMLButtonElement>('.pause-veil')!
     veil.hidden = !user; this.element.classList.toggle('is-paused', user)
-    this.game.input.suspended = user || this.menuVisible || this.inviteOpen || this.exitAsking
+    this.element.querySelector<HTMLButtonElement>('.pause-about')!.hidden = !user
+    this.game.input.suspended = user || this.menuVisible || this.inviteOpen || this.exitAsking || this.aboutOpen
     if (user) {
       this.game.input.mouseFire = false
       veil.querySelector('.pause-how')!.textContent = this.touch.available ? 'Tap to resume' : 'Click to resume'
       veil.querySelector('small')!.hidden = this.playerCount < 2
-      veil.focus({ preventScroll: true })
+      if (!this.aboutOpen) veil.focus({ preventScroll: true })
     }
     this.syncPanels()
   }
   private keydown(event: KeyboardEvent): void {
+    if (this.aboutOpen) {
+      // The guide owns the keyboard: Tab, links and disclosures work natively inside it, and
+      // no shortcut or driving key reaches the game. Escape closes it and does nothing else.
+      event.stopImmediatePropagation()
+      if (event.code === 'Escape') { event.preventDefault(); this.closeAbout() }
+      return
+    }
     const editing = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON|SUMMARY)$/.test(event.target.tagName))
     if (!editing && !event.repeat && event.code === 'KeyP') { event.preventDefault(); event.stopImmediatePropagation(); this.setPresentation(!this.presentation); return }
     if (!editing && !event.repeat && event.code === 'KeyJ') { event.preventDefault(); event.stopImmediatePropagation(); this.inviteOpen ? this.closeJoin() : this.openJoin(); return }
@@ -1024,6 +1129,7 @@ export class Shell implements System {
         }
       },
       onLogo: drawn => this.element.classList.toggle('has-animated-logo', drawn),
+      topInset: () => this.updateBand(),
       still: () => levelNumber(graphicsLevel.value) === 0,
       onTap: chosen => this.tapWorld(chosen),
       onFocus: id => chips.get(id)?.focus({ preventScroll: true }),
@@ -1110,7 +1216,7 @@ export class Shell implements System {
    */
   private glass(signal: AbortSignal): void {
     const buttons = [...this.element.querySelectorAll<HTMLElement>('button'), ...this.touch.element.querySelectorAll<HTMLElement>('button')]
-    for (const button of buttons) if (!button.matches('.link-button, .lobby-links *, .syn3h-advanced *, .world-inspector *, .exit-confirm *')) button.classList.add('liquid-glass')
+    for (const button of buttons) if (!button.matches('.link-button, .lobby-links *, .lobby-gear-dock *, .syn3h-advanced *, .world-inspector *, .exit-confirm *')) button.classList.add('liquid-glass')
     // Touch screens have no hover, so there is nothing to face.
     if (!matchMedia('(hover: hover)').matches) return
     const REST = 205
@@ -1135,7 +1241,7 @@ export class Shell implements System {
   private cursorRequest = 0
   private cursorPending = false
   private async captureCursor(entering = false): Promise<void> {
-    if (this.cursorPending) return
+    if (this.cursorPending || this.aboutOpen) return
     this.cursorPending = true
     const requestId = ++this.cursorRequest
     // While entering a world the menu is still up and the descent is running, and play may not
@@ -1277,7 +1383,12 @@ export class Shell implements System {
       const focus = this.element.classList.contains('is-focus')
       if (!focus && this.inspector.open) this.inspector.update()
       const world = `${currentPlanet().label} · ${planetName(worldSeed.value)}`
-      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, heading: this.self?.heading ?? 0, world, hour: Number(params.get('sun.timeOfDay')?.value ?? 0) })
+      if (world !== this.worldShown) {
+        this.worldShown = world
+        const label = this.element.querySelector<HTMLElement>('.rail-world')!
+        label.textContent = world; label.title = world
+      }
+      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, thrust: this.telemetry.thrust, heading: this.self?.heading ?? 0, world, hour: Number(params.get('sun.timeOfDay')?.value ?? 0) })
       const glass = String(Math.round(glassStyle.value)); if (this.element.dataset.glass !== glass) this.element.dataset.glass = glass
     }
     // The stylesheet drops frost at the lowest graphics level.
@@ -1287,11 +1398,7 @@ export class Shell implements System {
     if (this.element.dataset.uiFrost !== frost) this.element.dataset.uiFrost = frost
     if (document.documentElement.dataset.gfx !== gfx) document.documentElement.dataset.gfx = gfx
     if (!this.menuVisible) return
-    const mute = this.element.querySelector<HTMLButtonElement>('.shell-mute')!
-    mute.textContent = this.audio.isMuted ? 'Unmute audio' : 'Mute all audio'; mute.setAttribute('aria-pressed', String(this.audio.isMuted))
-    for(const slider of this.element.querySelectorAll<HTMLInputElement>('[data-audio-param]'))if(document.activeElement!==slider)slider.value=String(params.get(slider.dataset.audioParam!)?.value??0)
-    const volume = this.element.querySelector<HTMLInputElement>('#music-volume')!; volume.value = String(musicVolume.value)
-    this.element.querySelector('#music-volume-value')!.textContent = `${Math.round(musicVolume.value * 100)}%`
+    this.lobbySettings.update()
     const seed = this.element.querySelector<HTMLInputElement>('#world-seed')!
     if (document.activeElement !== seed && seed.dataset.dirty !== 'true') seed.value = String(worldSeed.value)
     const time = Number(params.get('sun.timeOfDay')?.value ?? 16.5)
@@ -1311,10 +1418,10 @@ export class Shell implements System {
     for (const input of this.element.querySelectorAll<HTMLInputElement | HTMLButtonElement>('.world-controls input, .world-controls button')) input.disabled = !editable || invitedOnly
     for (const note of this.element.querySelectorAll<HTMLElement>('.world-lock-note')) note.hidden = editable
     this.paramPanel?.setWorldEditable(editable)
-    this.element.querySelector<HTMLButtonElement>('.world-reset')!.disabled = !editable
-    const lock = this.element.querySelector<HTMLInputElement>('#host-lock')!; lock.checked = net?.locked ?? false
-    this.element.querySelector<HTMLElement>('.host-lock')!.hidden = !net?.isHost
-    this.element.querySelector('.host-note')!.textContent = !net ? 'Join a room to manage shared settings.' : !editable ? 'Sliders locked by host.' : net.isHost ? 'You are the host.' : 'Shared sliders are open.'
+    this.hostControls.querySelector<HTMLButtonElement>('.world-reset')!.disabled = !editable
+    const lock = this.hostControls.querySelector<HTMLInputElement>('#host-lock')!; lock.checked = net?.locked ?? false
+    this.hostControls.querySelector<HTMLElement>('.host-lock')!.hidden = !net?.isHost
+    this.hostControls.querySelector('.host-note')!.textContent = !net ? 'Join a room to manage shared settings.' : !editable ? 'Sliders locked by host.' : net.isHost ? 'You are the host.' : 'Shared sliders are open.'
     const mode = params.get('game.mode'), modeSelect = this.element.querySelector<HTMLSelectElement>('#game-mode')!
     this.element.querySelector<HTMLElement>('.mode-control')!.hidden = !mode
     modeSelect.disabled = !editable; if (mode) modeSelect.value = String(mode.value)
@@ -1325,7 +1432,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.lobbySettings.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }
@@ -1354,7 +1461,7 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
     const heading = Math.atan2(2 * (q.x * q.z + q.w * q.y), 1 - 2 * (q.x * q.x + q.y * q.y))
     shell.setMapSelf({ x: p.x, z: p.z, heading, color: activePlayer.colors.body, self: true })
     // Shown as metres above ground: measured from the contact surfaces, 0 when resting.
-    shell.setTelemetry(speed, height.read(activePlayer, p.y, terrain.heightAt(p.x, p.z)))
+    shell.setTelemetry(speed, height.read(activePlayer, p.y, terrain.heightAt(p.x, p.z)), activePlayer.kind === 'jet' && !activePlayer.zorbed ? activePlayer.input.z : undefined)
     audio.motion = { speed, throttle: activePlayer.kind === 'jet' ? activePlayer.input.z : activePlayer.input.y, airborne: p.y - terrain.heightAt(p.x, p.z) > 2 }
     const input = activePlayer.input
     const hint = hints.update(dt, { kind: activePlayer.kind, touch: shell.touch.available, altitude: p.y - terrain.heightAt(p.x, p.z), speed, steer: input.x, pitch: input.y, throttle: input.z, hoverMode: !input.special, canLiftOut: activePlayer.canLiftOut })

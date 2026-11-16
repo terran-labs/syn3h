@@ -27,6 +27,8 @@
 # made while nobody is playing.
 set -eu
 cd "$(dirname "$0")/.."
+. tools/cloudflare-token.sh
+. tools/smoke-run.sh
 # A release builds, runs wrangler and two Chromes: hold one machine-wide heavy slot throughout.
 if [ -z "${SYN3H_RELEASE_SLOT:-}" ] && [ -x tools/heavy.sh ]; then
   SYN3H_RELEASE_SLOT=1 exec tools/heavy.sh env SYN3H_RELEASE_SLOT=1 "$(pwd)/tools/release.sh" "$@"
@@ -59,7 +61,7 @@ WRANGLER="$REPO/node_modules/wrangler/bin/wrangler.js"
 [ -f "$WRANGLER" ] || fail "wrangler is not installed in node_modules"
 if [ -z "$DRY" ]; then
   if node "$WRANGLER" whoami 2>&1 | grep -qi "not authenticated"; then
-    fail "wrangler is not authenticated (npx wrangler login, or set CLOUDFLARE_API_TOKEN)"
+    fail "wrangler is not authenticated (put the token in $SYN3H_CLOUDFLARE_TOKEN_FILE, set CLOUDFLARE_API_TOKEN, or npx wrangler login)"
   fi
 fi
 
@@ -149,8 +151,9 @@ tail -1 "$LOG-frozen.log"
 echo "Smoke testing $URL ..."
 SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-normal.XXXXXX)" || fail "could not reserve smoke evidence directory"
 echo "Shot evidence: $SHOT_PARENT/evidence ($URL)"
-SYN3H_SHOT_EVIDENCE_DIR="$SHOT_PARENT/evidence" node tools/net-smoke.mjs "$URL" 2>&1 | tee "$LOG-smoke.log" | grep -E "^(FAIL|NET SMOKE)" || true
-grep -q "^NET SMOKE OK" "$LOG-smoke.log" || fail "net-smoke failed against $URL (see $LOG-smoke.log)"
+run_smoke "$URL" "$LOG-smoke.log" "$SHOT_PARENT/evidence" || fail "net-smoke failed against $URL (see $LOG-smoke.log)"
+# Steps passed, connection drops ridden through and step retries, for the release ledger.
+SMOKE_SUMMARY="$(grep '^NET SMOKE SUMMARY ' "$LOG-smoke.log" | tail -1 | sed 's/^NET SMOKE SUMMARY //')"
 
 if [ -n "$DRY" ]; then
   npx tsx server/latency-proxy.ts --listen "$PROXY_PORT" --target "http://127.0.0.1:$PORT" --rtt 150 --jitter 30 >"$LOG-proxy.log" 2>&1 &
@@ -159,8 +162,7 @@ if [ -n "$DRY" ]; then
   echo "Smoke testing through 150 ms round trip with 0 to 30 ms jitter each way..."
   SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-latency.XXXXXX)" || fail "could not reserve latency evidence directory"
   echo "Shot evidence: $SHOT_PARENT/evidence (latency)"
-  SYN3H_SHOT_EVIDENCE_DIR="$SHOT_PARENT/evidence" node tools/net-smoke.mjs "http://127.0.0.1:$PROXY_PORT/" 2>&1 | tee "$LOG-smoke-latency.log" | grep -E "^(FAIL|NET SMOKE)" || true
-  grep -q "^NET SMOKE OK" "$LOG-smoke-latency.log" || fail "net-smoke failed with latency (see $LOG-smoke-latency.log)"
+  run_smoke "http://127.0.0.1:$PROXY_PORT/" "$LOG-smoke-latency.log" "$SHOT_PARENT/evidence" || fail "net-smoke failed with latency (see $LOG-smoke-latency.log)"
   echo
   echo "DRY RUN OK: $MILESTONE ($COMMIT) frozen as $ID is deployable. Nothing was deployed or tagged."
   echo "Note: this repointed ../Syn3h-stable/current at $ID."
@@ -199,7 +201,7 @@ git tag -a "release-$N" -m "release-$N: $NOTE ($URL, version $VERSION)"
 echo
 echo "RELEASE OK: release-$N is live at $URL"
 echo "For ops/RELEASES.md:"
-echo "- release-$N, $WHEN: $URL from $MILESTONE ($COMMIT), Worker version $VERSION, frozen copy $ID. $NOTE"
+echo "- release-$N, $WHEN: $URL from $MILESTONE ($COMMIT), Worker version $VERSION, frozen copy $ID. $NOTE. Public smoke: ${SMOKE_SUMMARY:-no summary}."
 
 # These artifacts describe an already verified release. A capture or draft failure must
 # never turn a successful deploy into a failed release or trigger rollback.
