@@ -15,7 +15,8 @@ import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
 import { params, worldSeed } from '../../shared/params'
 import { GameAudio } from '../audio'
-import { masterVolume, effectsVolume, engineVolume, windVolume, dirtVolume, worldVolume, cuesVolume, remoteVolume, musicVolume } from '../audio/params'
+// Registers the audio settings the lobby's Sound card shows.
+import '../audio/params'
 import { applySkyPreset, SKY_PRESET_NAMES, type SkyPresetName } from '../world/sky/presets'
 import { TouchControls } from './TouchControls'
 import { readVehicleChoice, saveVehicleChoice, PLAY_VEHICLES, type VehicleChoice } from './VehicleChoice'
@@ -24,7 +25,7 @@ import { populationLabel } from './galaxy/presence'
 import { wordmarkSvg } from './brand/logo'
 import { Galaxy, GALAXY_MAX, type GalaxyWorld } from './galaxy/Galaxy'
 import { placeLabels } from './galaxy/labels'
-import { createDaydreamControl } from '../bots/daydreamControl'
+import { LobbySettings } from './LobbySettings'
 import { Inspector } from './inspector/Inspector'
 import { FocusHud } from './inspector/FocusHud'
 import { RaceHud, type RaceRole } from './RaceHud'
@@ -64,15 +65,18 @@ const OFFER_CUSTOM_PLANET: boolean = false
 /** Keys that mean "I want to drive": they resume a pause and capture the cursor. */
 const DRIVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
 /**
- * The lobby's bottom buttons (the owner, 15 November 2026): Multiplayer, Settings and About,
- * nothing else. Join by QR lives inside Multiplayer ("Show on screen"), and shaping a world
+ * The lobby's bottom buttons (the owner, 15 November 2026): Multiplayer and About, nothing
+ * else; Settings is the gear in the lower right corner (LobbySettings, 16 November 2026). Join by QR lives inside Multiplayer ("Show on screen"), and shaping a world
  * returns with OFFER_CUSTOM_PLANET.
  */
-const LOBBY_LINKS = `${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''}<button data-goto="multiplayer">Multiplayer</button><button data-goto="settings">Settings</button><button data-goto="about">About</button>`
+const LOBBY_LINKS = `${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''}<button data-goto="multiplayer">Multiplayer</button><button data-goto="about">About</button>`
 const back = '<button type="button" class="panel-back link-button" data-goto="index"><span aria-hidden="true">←</span><span>Back</span></button>'
 /** `__SYN3H_BUILD__` is an optional build-time constant (a date or tag) from the bundler. */
 declare const __SYN3H_BUILD__: string | undefined
-const buildLine = typeof __SYN3H_BUILD__ === 'string' && __SYN3H_BUILD__ ? `build version : ${__SYN3H_BUILD__}` : 'browser edition'
+const build = typeof __SYN3H_BUILD__ === 'string' && __SYN3H_BUILD__ ? __SYN3H_BUILD__ : undefined
+/** Controls the shell wires, shown in the lobby settings panel (LobbySettings). */
+const presentationHtml = '<button type="button" class="presentation-toggle" aria-pressed="false">Presentation mode · P</button>'
+const hostHtml = '<fieldset class="host-controls"><legend>Host</legend><label class="host-lock" hidden><input type="checkbox" id="host-lock"> Lock shared sliders</label><p class="host-note"></p><button class="world-reset" type="button">Reset world to defaults</button></fieldset>'
 const heading = (text: string) => `<h2 tabindex="-1">${text}</h2>`
 
 /** A camera that can be posed from outside, used by the descent from the galaxy. */
@@ -131,6 +135,9 @@ export class Shell implements System {
   private activeVehicleKind: VehicleKind = this.choice.vehicleKind
   private toastTimer?: ReturnType<typeof setTimeout>
   readonly touch: TouchControls
+  private readonly lobbySettings: LobbySettings
+  private readonly presentationToggle: HTMLButtonElement
+  private readonly hostControls: HTMLFieldSetElement
 
   constructor(private readonly game: Game, readonly audio: GameAudio) {
     this.previousSuspended = game.input.suspended; game.input.suspended = true
@@ -151,13 +158,11 @@ export class Shell implements System {
           <fieldset class="world-controls"><legend>Sky</legend><div class="sky-presets">${SKY_PRESET_NAMES.map(name => `<button type="button" data-sky="${name}">${name}</button>`).join('')}</div><label for="sky-time">Time of day <output id="sky-time-value"></output></label><input id="sky-time" type="range" min="0" max="24" step="0.05"></fieldset>
           <p class="world-lock-note" hidden>Sliders locked by host.</p><button data-goto="explore">Explore this world ›</button>${back}
         </section>
-        <section data-panel="settings">${heading('Settings')}<div class="settings-links"><button data-goto="music">Music & sound</button>${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">World & sky</button><button data-goto="advanced">Advanced sliders</button>' : ''}<button class="presentation-toggle" aria-pressed="false">Presentation · P</button></div><fieldset class="host-controls"><legend>Host</legend><label class="host-lock" hidden><input type="checkbox" id="host-lock"> Lock shared sliders</label><p class="host-note"></p><button class="world-reset" type="button">Reset world to defaults</button></fieldset>${back}</section>
-        <section data-panel="music">${heading('Music & Sound')}<label for="music-volume">Music volume <output id="music-volume-value"></output></label><input id="music-volume" type="range" min="0" max="1" step="0.01">${[masterVolume,effectsVolume,engineVolume,dirtVolume,windVolume,worldVolume,remoteVolume,cuesVolume].map(p=>`<label>${p.def.label}<input data-audio-param="${p.def.id}" type="range" min="0" max="1" step="0.01" value="${p.value}"></label>`).join('')}<button class="shell-mute" aria-pressed="false">Mute all audio</button><p class="panel-note">The music is generated as you play and follows what you do. It starts with your first click or key press.</p>${back}</section>
         <section data-panel="multiplayer">${heading('Multiplayer')}<label class="mode-control" hidden>Game mode<select id="game-mode">${modeChoices.map(mode => `<option value="${mode.value}">${mode.label}</option>`).join('')}</select></label><p class="multiplayer-room"></p><div class="invite-qr"></div><p class="invite-link"></p><button class="shell-invite">Copy invite link</button><button data-join>Show on screen · J</button><div class="shell-scoreboard" aria-label="Player scores"></div>${back}</section>
         <section data-panel="advanced">${heading('Advanced Settings')}<p class="world-lock-note" hidden>Sliders locked by host.</p><div class="advanced-host"></div>${back}</section>
         <section data-panel="about">${heading('About Syn3h')}${creditsHtml}${back}</section>
       </div>
-      <footer class="lobby-footer"><span class="shell-message" role="status" aria-live="polite"></span><span class="build-line">${buildLine}</span></footer>
+      <footer class="lobby-footer"><span class="shell-message" role="status" aria-live="polite"></span></footer>
       </div>
       <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby">${LOBBY_LINKS}</nav></div>
     </section>
@@ -197,10 +202,6 @@ export class Shell implements System {
     this.followPointer(signal)
     this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; if (this.galaxy) this.galaxy.enabled = true
     this.releaseCursor()
-    // Daydream: how long the game waits, left alone, before it starts driving itself. The
-    // control and its parameter are the Bots lane's; it sits with the first settings.
-    const daydream = createDaydreamControl()
-    this.element.querySelector('.settings-links')!.after(daydream); signal.addEventListener('abort', () => daydream.dispose())
     // The world inspector and the display for when the cursor is captured (inspector/).
     this.inspector = new Inspector(this.element, {
       summary: id => this.inspectorSummary(id),
@@ -224,6 +225,16 @@ export class Shell implements System {
     this.inspector.setSessionCard(players)
     // Performance follows World; its controls remain part of the searchable card stack.
     this.performancePanel = new PerformancePanel(this.element, () => this.showPanels(), this.game.quality, this.inspector)
+    // The lobby's settings: a gear in the lower right of the galaxy, with the running version
+    // beside it, opening the sidebar's cards for sound, graphics, controls and the room. The
+    // presentation toggle and host controls are built here and wired below, as before.
+    const holder = document.createElement('div'); holder.innerHTML = presentationHtml + hostHtml
+    this.presentationToggle = holder.querySelector('.presentation-toggle')!; this.hostControls = holder.querySelector('.host-controls')!
+    this.lobbySettings = new LobbySettings(this.element, {
+      quality: this.game.quality, presentation: this.presentationToggle, host: this.hostControls, build,
+      hostSummary: () => this.hostControls.querySelector('.host-note')!.textContent ?? '', cue: () => this.audio.cue('click'),
+    })
+    this.element.querySelector('.galaxy-ui')!.append(this.lobbySettings.dock)
     const foot = document.createElement('div'); foot.className = 'rail-foot wi-glass'
     // Header and footer stay outside the scrolling card stack.
     const command = document.createElement('div'); command.className = 'rail-command wi-glass'
@@ -291,11 +302,8 @@ export class Shell implements System {
     for (const button of this.element.querySelectorAll('[data-join]')) button.addEventListener('click', () => this.openJoin(), { signal })
     this.element.querySelector('form')!.addEventListener('submit', event => { event.preventDefault(); this.play(true) }, { signal })
     for (const button of this.element.querySelectorAll('.shell-invite')) button.addEventListener('click', () => { void this.copyInvite() }, { signal })
-    this.element.querySelector('.presentation-toggle')!.addEventListener('click', () => this.setPresentation(!this.presentation), { signal })
+    this.presentationToggle.addEventListener('click', () => this.setPresentation(!this.presentation), { signal })
     for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) if (document.activeElement !== slider) slider.value = String(params.get(slider.dataset.param!)?.value ?? 0)
-    for(const slider of this.element.querySelectorAll<HTMLInputElement>('[data-audio-param]'))slider.addEventListener('input',()=>params.set(slider.dataset.audioParam!,Number(slider.value)),{signal})
-    this.element.querySelector('.shell-mute')!.addEventListener('click', () => { audio.setMuted(!audio.isMuted); this.update() }, { signal })
-    this.element.querySelector('#music-volume')!.addEventListener('input', event => params.set(musicVolume.def.id, (event.target as HTMLInputElement).value), { signal })
     this.element.querySelector('#world-seed')!.setAttribute('value', String(worldSeed.value))
     this.element.querySelector('#world-seed')!.addEventListener('input', event => { (event.target as HTMLInputElement).dataset.dirty = 'true' }, { signal })
     this.element.querySelector('#new-world')!.addEventListener('click', () => {
@@ -310,7 +318,7 @@ export class Shell implements System {
     this.element.querySelector('#bots-count')!.addEventListener('input', event => { if (canEditWorld()) params.set('bots.count', (event.target as HTMLInputElement).value) }, { signal })
     this.element.querySelector('#game-mode')!.addEventListener('change', event => { if (canEditWorld() && params.get('game.mode') && modeChoices.some(mode => mode.value === Number((event.target as HTMLSelectElement).value))) params.set('game.mode', Number((event.target as HTMLSelectElement).value)) }, { signal })
     // Two presses: the first asks, the second (within four seconds) does it. No modal dialog.
-    const reset = this.element.querySelector<HTMLButtonElement>('.world-reset')!
+    const reset = this.hostControls.querySelector<HTMLButtonElement>('.world-reset')!
     let resetArmed: ReturnType<typeof setTimeout> | undefined
     const disarm = () => { clearTimeout(resetArmed); resetArmed = undefined; reset.textContent = 'Reset world to defaults'; reset.classList.remove('is-confirming') }
     reset.addEventListener('click', () => {
@@ -322,7 +330,7 @@ export class Shell implements System {
       disarm(); this.toast(resetWorld() ? 'World reset to defaults.' : 'Sliders locked by host.')
     }, { signal })
     signal.addEventListener('abort', () => clearTimeout(resetArmed))
-    this.element.querySelector('#host-lock')!.addEventListener('change', event => { const net = hostControls(); if (net?.isHost) net.setLocked((event.target as HTMLInputElement).checked) }, { signal })
+    this.hostControls.querySelector('#host-lock')!.addEventListener('change', event => { const net = hostControls(); if (net?.isHost) net.setLocked((event.target as HTMLInputElement).checked) }, { signal })
     const activity = (event: Event) => {
       this.lastActivity = performance.now()
     }
@@ -436,7 +444,7 @@ export class Shell implements System {
   }
   get activePanel(): string { return this.panels.active }
   get presentation(): boolean { return this.element.classList.contains('is-presentation') }
-  setPresentation(enabled: boolean): void { this.element.classList.toggle('is-presentation', enabled); this.element.querySelector('.presentation-toggle')!.setAttribute('aria-pressed', String(enabled)) }
+  setPresentation(enabled: boolean): void { this.element.classList.toggle('is-presentation', enabled); this.presentationToggle.setAttribute('aria-pressed', String(enabled)) }
   setPlayerCount(count: number): void { this.playerCount = Math.max(0, Math.floor(count)); this.updateInvite() }
   private lastMatch: MatchState | null = null
   setRace(snapshot: Readonly<RaceState> | null, roomNow: () => number, role: Readonly<RaceRole>): void {
@@ -697,6 +705,7 @@ export class Shell implements System {
     if (!this.started) return
     this.lobbyAddress?.showPlay(this.room)
     this.menuVisible = false; this.overlay.hidden = true; this.overlay.inert = true; if (this.galaxy) this.galaxy.enabled = false
+    this.lobbySettings.close()
     this.game.input.suspended = false; this.touch.enabled = true; this.audio.enabled = true; this.audio.setLobbyVisible(false); this.paramPanel?.hide()
     this.element.classList.add('is-playing')
     this.element.querySelector<HTMLElement>('.shell-hud')!.hidden = false
@@ -1169,7 +1178,7 @@ export class Shell implements System {
    */
   private glass(signal: AbortSignal): void {
     const buttons = [...this.element.querySelectorAll<HTMLElement>('button'), ...this.touch.element.querySelectorAll<HTMLElement>('button')]
-    for (const button of buttons) if (!button.matches('.link-button, .lobby-links *, .syn3h-advanced *, .world-inspector *, .exit-confirm *')) button.classList.add('liquid-glass')
+    for (const button of buttons) if (!button.matches('.link-button, .lobby-links *, .lobby-gear-dock *, .syn3h-advanced *, .world-inspector *, .exit-confirm *')) button.classList.add('liquid-glass')
     // Touch screens have no hover, so there is nothing to face.
     if (!matchMedia('(hover: hover)').matches) return
     const REST = 205
@@ -1351,11 +1360,7 @@ export class Shell implements System {
     if (this.element.dataset.uiFrost !== frost) this.element.dataset.uiFrost = frost
     if (document.documentElement.dataset.gfx !== gfx) document.documentElement.dataset.gfx = gfx
     if (!this.menuVisible) return
-    const mute = this.element.querySelector<HTMLButtonElement>('.shell-mute')!
-    mute.textContent = this.audio.isMuted ? 'Unmute audio' : 'Mute all audio'; mute.setAttribute('aria-pressed', String(this.audio.isMuted))
-    for(const slider of this.element.querySelectorAll<HTMLInputElement>('[data-audio-param]'))if(document.activeElement!==slider)slider.value=String(params.get(slider.dataset.audioParam!)?.value??0)
-    const volume = this.element.querySelector<HTMLInputElement>('#music-volume')!; volume.value = String(musicVolume.value)
-    this.element.querySelector('#music-volume-value')!.textContent = `${Math.round(musicVolume.value * 100)}%`
+    this.lobbySettings.update()
     const seed = this.element.querySelector<HTMLInputElement>('#world-seed')!
     if (document.activeElement !== seed && seed.dataset.dirty !== 'true') seed.value = String(worldSeed.value)
     const time = Number(params.get('sun.timeOfDay')?.value ?? 16.5)
@@ -1375,10 +1380,10 @@ export class Shell implements System {
     for (const input of this.element.querySelectorAll<HTMLInputElement | HTMLButtonElement>('.world-controls input, .world-controls button')) input.disabled = !editable || invitedOnly
     for (const note of this.element.querySelectorAll<HTMLElement>('.world-lock-note')) note.hidden = editable
     this.paramPanel?.setWorldEditable(editable)
-    this.element.querySelector<HTMLButtonElement>('.world-reset')!.disabled = !editable
-    const lock = this.element.querySelector<HTMLInputElement>('#host-lock')!; lock.checked = net?.locked ?? false
-    this.element.querySelector<HTMLElement>('.host-lock')!.hidden = !net?.isHost
-    this.element.querySelector('.host-note')!.textContent = !net ? 'Join a room to manage shared settings.' : !editable ? 'Sliders locked by host.' : net.isHost ? 'You are the host.' : 'Shared sliders are open.'
+    this.hostControls.querySelector<HTMLButtonElement>('.world-reset')!.disabled = !editable
+    const lock = this.hostControls.querySelector<HTMLInputElement>('#host-lock')!; lock.checked = net?.locked ?? false
+    this.hostControls.querySelector<HTMLElement>('.host-lock')!.hidden = !net?.isHost
+    this.hostControls.querySelector('.host-note')!.textContent = !net ? 'Join a room to manage shared settings.' : !editable ? 'Sliders locked by host.' : net.isHost ? 'You are the host.' : 'Shared sliders are open.'
     const mode = params.get('game.mode'), modeSelect = this.element.querySelector<HTMLSelectElement>('#game-mode')!
     this.element.querySelector<HTMLElement>('.mode-control')!.hidden = !mode
     modeSelect.disabled = !editable; if (mode) modeSelect.value = String(mode.value)
@@ -1389,7 +1394,7 @@ export class Shell implements System {
     if (bots) { const input = this.element.querySelector<HTMLInputElement>('#bots-count')!; input.min = String(bots.def.min ?? 0); input.max = String(bots.def.max ?? 16); input.value = String(bots.value); botsRow.querySelector('output')!.textContent = String(bots.value) }
   }
   dispose(): void {
-    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
+    this.abort.abort(); this.releaseCursor(); this.pauseUnsubscribe?.(); clearTimeout(this.tintTimer); this.performancePanel.dispose(); this.lobbySettings.dispose(); this.gearSelector.dispose(); clearTimeout(this.customMapTimer); clearTimeout(this.toastTimer); clearTimeout(this.helpTimer); this.helpInput?.abort(); this.inspector.dispose(); this.focusHud.dispose(); this.raceHud.dispose(); this.savedMoons?.dispose(); this.galaxy?.dispose();  this.matchHud.dispose(); this.invite.dispose(); this.minimap?.dispose(); this.panels.dispose(); this.touch.dispose(); this.element.remove()
     document.body.classList.remove('has-game-shell'); this.game.input.suspended = this.previousSuspended; this.game.input.mouseFire = false
   }
 }
