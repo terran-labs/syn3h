@@ -43,9 +43,9 @@ export function stepSetting(setting: number, orbitDay: number, direction: 1 | -1
   const next = direction > 0 ? stops.find(s => s > now + 1e-9) ?? stops.at(-1)! : [...stops].reverse().find(s => s < now - 1e-9) ?? 0
   return next === orbitDay ? ORBIT_DEFAULT : next
 }
-/** A day length as the card shows it: "5.0 min", "12 min", "45 s", "Stopped". */
+/** A day length as the card shows it: "5.0 min", "12 min", "45 s", "Off" (a stopped clock). */
 export function showDay(seconds: number): string {
-  if (!(seconds > 0)) return 'Stopped'
+  if (!(seconds > 0)) return 'Off'
   if (seconds < 60) return `${Math.round(seconds)} s`
   const minutes = seconds / 60
   return minutes < 10 ? `${minutes.toFixed(1)} min` : `${Math.round(minutes)} min`

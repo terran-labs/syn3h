@@ -13,7 +13,8 @@ import { canEditWorld, resetWorld } from '../worldPermissions'
 import { buildTree, describe, exportSection, exportWorld, fraction, limits, parseWorld, pasteSummary, show, type PropertyDef, type SectionNode } from './model'
 import './params'
 import { fillDayLengthRow } from './dayLength'
-import { sunDayLength } from '../../world/sky/skyParams'
+import { sunDayLength, sunTimeOfDay } from '../../world/sky/skyParams'
+import { currentHour } from '../../world/sky/dayCycle'
 import './inspector.css'
 import './motion.css'
 
@@ -201,6 +202,9 @@ export class Inspector {
       const text = extra ? extra.summary() : this.options.summary(id) || `${this.tree.find(s => s.id === id)?.count ?? 0} properties`
       if (sum.textContent !== text) sum.textContent = text
     }
+    // The stored hour is the day clock's anchor; the row shows the hour now (dayCycle.ts).
+    const clock = this.rows.get(sunTimeOfDay.def.id)
+    if (clock) clock.sync(Math.round(currentHour() * 100) / 100)
     const vehicles = this.options.vehicles()
     // Only the Me card carries the vehicle selector.
     const select = this.element.querySelector<HTMLSelectElement>('.wi-vehicle-select')
