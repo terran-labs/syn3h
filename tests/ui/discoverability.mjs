@@ -13,9 +13,9 @@ for(const mode of ['desktop','phone']){
   await page.locator('.boot-veil').waitFor({state:'hidden',timeout:120000})
   // The lobby offers planets, not vehicles: no vehicle control, panel or preview anywhere in it.
   assert.equal(await page.locator('[data-goto=vehicle], [data-panel=vehicle], [name=vehicle], .shell-vehicle, .shell-vehicle-preview, canvas[aria-label="Selected vehicle preview"]').count(),0,'the lobby shows no vehicle control')
-  // Three buttons at the bottom and no more; Settings stays simple, with no world shaping.
-  assert.deepEqual(await page.locator('.galaxy-links button').allInnerTexts().then(all=>all.map(text=>text.trim().toLowerCase())),['multiplayer','settings','about'],'the lobby has exactly three buttons')
-  assert.equal(await page.locator('[data-panel=settings] [data-goto=worlds], [data-panel=settings] [data-goto=advanced]').count(),0,'Settings offers no world shaping')
+  // Two buttons at the bottom and no more; Settings is the gear in the corner (LobbySettings).
+  assert.deepEqual(await page.locator('.galaxy-links button').allInnerTexts().then(all=>all.map(text=>text.trim().toLowerCase())),['multiplayer','about'],'the lobby has exactly two buttons')
+  assert.equal(await page.getByRole('button',{name:'Settings',exact:true}).count(),1,'the settings gear is there')
   await page.screenshot({path:`tests/ui/artifacts/discoverability/${mode}-lobby.png`})
   // The lobby lists the planet recipes and nothing else: "Shape your own" is hidden for now.
   const lobbyWorlds=await page.evaluate(()=>({labels:[...document.querySelectorAll('.galaxy-label')].map(chip=>chip.dataset.world),forming:syn3h.shell.galaxy.options.worlds.filter(world=>world.forming).length,text:document.querySelector('.galaxy-labels').textContent}))
