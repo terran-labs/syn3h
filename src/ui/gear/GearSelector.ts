@@ -196,7 +196,7 @@ export class RetainedActionHolds {
     const record = this.pointers.get(event.pointerId)
     if (!record) return
     this.pointers.delete(event.pointerId); record.pointers.delete(event.pointerId)
-    this.finish(record)
+    this.finish(record, event.type === 'pointercancel')
   }
   private readonly keyEnd = (event: KeyboardEvent): void => {
     const record = this.keys.get(event.code)
@@ -204,8 +204,14 @@ export class RetainedActionHolds {
     this.keys.delete(event.code); record.keys.delete(event.code)
     this.finish(record)
   }
-  private finish(record: HoldRecord): void {
+  private finish(record: HoldRecord, interrupted = false): void {
     if (!record.pointers.size && !record.keys.size) {
+      // Losing one member does not cancel the aggregate. Only its final interrupted
+      // member suppresses gameplay before retiring the captured action's identity.
+      if (interrupted && !record.retired) {
+        record.retired = true
+        record.action.stop?.('cleanup')
+      }
       this.records.delete(record)
       record.action.stop?.('end')
     }
