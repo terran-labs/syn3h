@@ -49,7 +49,8 @@ export class Input {
   private readonly rawMouse = new Set<number>()
   private readonly blockedMouse = new Set<number>()
   private readonly blockedPads = new Set<number>()
-  private unknownMouseBlocked = false
+  private readonly canvasFirePointers = new Set<number>()
+  private readonly canvasSuppressed = new Set<() => void>()
   private legacyFire = false
   private legacyFireDisabled = false
   /** Set true by UI code (chat, text fields) to stop driving while typing. */
@@ -75,19 +76,22 @@ export class Input {
       this.keys.delete(e.code)
     }, true)
     target.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0 || e.pointerType === 'touch') return
+      if (e.button !== 0 || (e.pointerType !== 'mouse' && e.pointerType !== 'pen')) return
       this.rawMouse.add(e.pointerId)
       if (this.suspended) this.blockedMouse.add(e.pointerId)
     }, true)
     const mouseEnd = (e: PointerEvent) => {
       if (!this.rawMouse.has(e.pointerId) || e.pointerType === 'touch' || !primaryPointerEnded(e)) return
-      this.rawMouse.delete(e.pointerId)
-      this.blockedMouse.delete(e.pointerId)
-      this.unknownMouseBlocked = false
-      // Net's last-button pointerup can arrive later in a chord. Do not let its stale
-      // boolean keep primary fire alive after this observed primary-neutral transition.
-      this.mouseFire = false
-      this.refreshFire()
+      // Cancellation suppresses and notifies before retiring the physical identity.
+      // An ordinary primary release remains an intentional release, including chords.
+      try {
+        if (e.type === 'pointercancel') this.suppressCanvasFire(e.pointerId)
+      } finally {
+        this.canvasFirePointers.delete(e.pointerId)
+        this.rawMouse.delete(e.pointerId)
+        this.blockedMouse.delete(e.pointerId)
+        this.refreshFire()
+      }
     }
     target.addEventListener('pointermove', mouseEnd, true)
     target.addEventListener('pointerup', mouseEnd, true)
@@ -165,6 +169,41 @@ export class Input {
     return s
   }
 
+  /** Called only by a guarded canvas pointerdown handler, after capture tracked it.
+   * UI presses are raw observations, never canvas fire without this explicit admission. */
+  beginCanvasFire(id: number): void {
+    if (!this.rawMouse.has(id)) return
+    this.canvasFirePointers.add(id)
+    if (this.suspended) this.blockedMouse.add(id)
+    this.refreshFire()
+  }
+
+  /** Cleanup retains the block until Input observes a real primary end. */
+  suppressCanvasFire(id: number): void {
+    if (!this.canvasFirePointers.has(id) || this.blockedMouse.has(id)) return
+    const wasEligible = !this.suspended
+    this.blockedMouse.add(id)
+    this.refreshFire()
+    if (wasEligible) for (const callback of this.canvasSuppressed) callback()
+  }
+
+  suppressAllCanvasFire(): void {
+    let wasEligible = false
+    for (const id of this.canvasFirePointers) {
+      wasEligible ||= !this.suspended && !this.blockedMouse.has(id)
+      this.blockedMouse.add(id)
+    }
+    this.refreshFire()
+    if (wasEligible) for (const callback of this.canvasSuppressed) callback()
+  }
+
+  /** Notification only: composition cancels charge/carry if no eligible holder remains.
+   * Runs synchronously after recomputation and before pointercancel retires identity. */
+  onCanvasFireSuppressed(callback: () => void): () => void {
+    this.canvasSuppressed.add(callback)
+    return () => { this.canvasSuppressed.delete(callback) }
+  }
+
   /** One token per real gesture. Reusing a suppressed token never rearms it. */
   beginExternalFire(owner: ExternalFireOwner): void {
     if (!this.fireOwners.has(owner)) this.fireOwners.set(owner, this.suspended)
@@ -190,7 +229,6 @@ export class Input {
   cancelFireUntilNeutral(): void {
     for (const key of this.rawFireKeys) this.blockedFireKeys.add(key)
     for (const id of this.rawMouse) this.blockedMouse.add(id)
-    if (this.mouseFire && this.rawMouse.size === 0) this.unknownMouseBlocked = true
     this.samplePads(true)
     for (const owner of this.fireOwners.keys()) this.fireOwners.set(owner, true)
     this.legacyFireDisabled = true
@@ -225,9 +263,7 @@ export class Input {
       return
     }
     const key = ['KeyL', 'Enter'].some(code => this.keys.has(code) && !this.blockedFireKeys.has(code))
-    const mouse = this.mouseFire && !this.unknownMouseBlocked &&
-      (this.rawMouse.size === 0 ? this.blockedMouse.size === 0 :
-        [...this.rawMouse].some(id => !this.blockedMouse.has(id)))
+    const mouse = [...this.canvasFirePointers].some(id => !this.blockedMouse.has(id))
     this.state.fire = key || mouse || Boolean(pad?.buttons[0]?.pressed && !this.blockedPads.has(pad.index)) ||
       Boolean(this.external.fire)
   }
@@ -237,7 +273,5 @@ export class Input {
     this.state.zorb = !this.state.zorb
   }
 
-  /** Set by the game when the pointer is held on the canvas. */
-  mouseFire = false
   private padSpecialWasDown = false
 }
