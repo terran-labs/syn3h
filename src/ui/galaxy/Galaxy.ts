@@ -690,8 +690,34 @@ export class Galaxy {
     this.flight = { start: performance.now(), duration: quick ? 1700 : 2400, from: [...this.target], reach: this.reach, yaw: this.yaw, pitch: this.pitch, last: this.reach, at: performance.now() }
     return new Promise(resolve => { const wait = () => { if (!this.active || !this.flight || this.flightDone) resolve(); else setTimeout(wait, 30) }; wait() })
   }
-  /** The drop in progress: where it started and when. */
-  private flight?: { start: number; duration: number; from: Vec; reach: number; yaw: number; pitch: number; last: number; at: number }
+  /**
+   * Leaving a world: the descent run backwards. The view starts in the world's air with the
+   * dive's light full, as the descent ended, and holds there until `launch` (the shell fades
+   * the galaxy in over the game first). Then it climbs out of the air, back across the system
+   * to the whole view at the resting tilt, and lets go there. `done` resolves when it has.
+   */
+  ascend(id: string, quick = false): { launch(): void; done: Promise<void> } {
+    const index = this.options.worlds.findIndex(world => world.id === id)
+    if (!this.gl || index < 0 || index >= MAX) { this.home(); return { launch() {}, done: Promise.resolve() } }
+    const yaw = this.yaw
+    this.choose(id); this.arrived = true; this.diving = true; this.wake = 2
+    const place = this.places(this.clock)[index]
+    // Start where the descent ends: on the world, in its air.
+    this.target = [...place.position]; this.reach = place.radius * 1.03; this.dive = 1
+    this.flightDone = false
+    const flight = this.flight = { start: Infinity, duration: quick ? 1700 : 2400, from: [0, 0, 0] as Vec, reach: this.distance, yaw, pitch: REST.pitch, last: this.reach, at: performance.now(), reverse: true }
+    const done = new Promise<void>(resolve => {
+      const wait = () => {
+        if (this.flight !== flight) resolve()
+        else if (!this.active || this.flightDone) { this.home(); resolve() }
+        else setTimeout(wait, 30)
+      }
+      wait()
+    })
+    return { launch: () => { if (this.flight === flight && flight.start === Infinity) { flight.start = flight.at = performance.now(); this.wake = 2 } }, done }
+  }
+  /** The drop in progress: where it started and when. `reverse` runs it backwards (ascend). */
+  private flight?: { start: number; duration: number; from: Vec; reach: number; yaw: number; pitch: number; last: number; at: number; reverse?: boolean }
   private flightDone = false
   /** How hard the frame is smeared toward the centre this frame (0 for none). */
   private blur = 0
@@ -844,7 +870,7 @@ export class Galaxy {
       // The drop, by the clock: across to the world in the first three quarters, round to its
       // lit side on the way, and in toward its air the whole time, faster at the end. The
       // dive's light rises over the last third.
-      const f = this.flight, now = performance.now(), t = Math.min(1, (now - f.start) / f.duration)
+      const f = this.flight, now = performance.now(), raw = Math.max(0, Math.min(1, (now - f.start) / f.duration)), t = f.reverse ? 1 - raw : raw
       const travel = smootherstep(t / 0.75), close = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
       this.target = [mix(f.from[0], goal[0], travel), mix(f.from[1], goal[1], travel), mix(f.from[2], goal[2], travel)]
       this.reach = Math.exp(mix(Math.log(f.reach), Math.log(wantDistance), close))
@@ -854,7 +880,7 @@ export class Galaxy {
       const seconds = Math.max(0.001, (now - f.at) / 1000)
       this.blur = mix(this.blur, Math.min(0.16, Math.abs(Math.log(f.last / this.reach)) / seconds * 0.05), 0.5)
       f.last = this.reach; f.at = now
-      if (t >= 1) this.flightDone = true
+      if (raw >= 1) this.flightDone = true
     }
     // Close enough that a held-still view can stop drawing; it snaps the last step so the
     // frame left on screen is where the camera was going.
