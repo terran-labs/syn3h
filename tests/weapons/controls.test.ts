@@ -502,4 +502,17 @@ describe('modal gear cancellation', () => {
     } finally { s.close() }
   })
 
+
+  it('cleanup after a gear switch cancels the old charge without firing it', () => {
+    const s = setup()
+    try {
+      s.bind(); s.rack.select('red')
+      const old = s.rack.controls().actions[0]
+      old.start(); s.step(501)
+      s.rack.select('beam'); old.stop!('cleanup'); s.step()
+      expect(s.bigRed.charge).toBe(-1)
+      expect(s.bigRed.stats.sent).toBe(0)
+    } finally { s.close() }
+  })
+
 })

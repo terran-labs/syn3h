@@ -317,7 +317,7 @@ export class GearRack implements System {
             if (owner) input.suppressExternalFire(owner)
             // Input updates state synchronously but never dispatches gameplay.
             // Cancel before the next step interprets the final false as release.
-            if (current && gear === this.current && fire && hadFire && !input.state.fire) {
+            if (current && fire && hadFire && !input.state.fire) {
               if (gear === 'red') sys.bigRed.cancel()
               if (gear === 'yoink') sys.yoink.cancel()
             }
