@@ -61,7 +61,7 @@ function failure(phase, error, sourceCode, sourcePath) {
     code: failureSequence <= 128 ? 'operation_failed' : 'failure_record_overflow' }
   if (phase === 'raw_source' && inventory.includes(sourcePath)) {
     entry.path = sourcePath
-    if (['fetch', 'read_body', 'persist_response', 'http_status', 'plan_bytes', 'js_export', 'js_decode', 'js_source'].includes(sourceCode)) entry.operation = sourceCode
+    if (['fetch', 'read_body', 'persist_response', 'http_status', 'direct_bytes', 'js_export', 'js_decode', 'js_source'].includes(sourceCode)) entry.operation = sourceCode
   }
   if (key) failureIds.set(key, entry)
   report.firstFailure ??= entry
@@ -90,6 +90,23 @@ function cleanSource() {
   assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', timeout: budget(5000) }).trim(), expected)
   assert.equal(execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: root, encoding: 'utf8', timeout: budget(5000) }).trim(), '')
 }
+function verifySourceRepresentation(path, bytes, local, mark = () => {}) {
+  const text = bytes.toString('utf8')
+  if (path === 'tests/ui/in-play-about-two-peer-plan.md' || path === 'package.json' || path === 'package-lock.json') {
+    mark('direct_bytes')
+    assert.ok(bytes.equals(local), 'direct bytes')
+    assert.equal(hash(bytes), hash(local), 'direct hash')
+    return
+  }
+  mark('js_export')
+  const literal = text.match(/^export default ("(?:[^"\\]|\\.)*")/m)
+  assert.ok(literal, `raw export ${path}`)
+  mark('js_decode')
+  const decoded = JSON.parse(literal[1])
+  mark('js_source')
+  assert.equal(decoded, local.toString(), path)
+}
+
 async function sourceProof(stage) {
   cleanSource()
   const rows = []; report[stage] = rows
@@ -106,26 +123,13 @@ async function sourceProof(stage) {
         headerHashes: Object.fromEntries(['content-type', 'content-length', 'etag'].map(k => [k, response.headers.has(k) ? hash(response.headers.get(k)) : null])) })
       sourceCode = 'read_body'
       const bytes = Buffer.from(await bounded(response.arrayBuffer()))
-      const text = bytes.toString('utf8')
       Object.assign(row, { bytes: bytes.length, sha256: hash(bytes),
-        representation: path === 'tests/ui/in-play-about-two-peer-plan.md' ? 'direct_bytes' : 'js_raw_export' })
+        representation: (path === 'tests/ui/in-play-about-two-peer-plan.md' || path === 'package.json' || path === 'package-lock.json') ? 'direct_bytes' : 'js_raw_export' })
       sourceCode = 'persist_response'
       await persist()
       sourceCode = 'http_status'
       assert.equal(response.status, 200, path)
-      if (path === 'tests/ui/in-play-about-two-peer-plan.md') {
-        sourceCode = 'plan_bytes'
-        assert.ok(bytes.equals(local), 'plan bytes')
-        assert.equal(hash(bytes), hash(local), 'plan hash')
-        continue
-      }
-      sourceCode = 'js_export'
-      const literal = text.match(/^export default ("(?:[^"\\]|\\.)*")/m)
-      assert.ok(literal, `raw export ${path}`)
-      sourceCode = 'js_decode'
-      const decoded = JSON.parse(literal[1])
-      sourceCode = 'js_source'
-      assert.equal(decoded, local.toString(), path)
+      verifySourceRepresentation(path, bytes, local, code => { sourceCode = code })
     } catch (error) {
       row.error = failure('raw_source', error, sourceCode, path)
       await attempt('partial raw-source receipt', persist)

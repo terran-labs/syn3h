@@ -65,3 +65,36 @@ This preparation supersedes the earlier statement that supervisor source is abse
 Live001 stopped before Chrome or fixture launch. Its plan response was HTTP 200 with the exact local Markdown byte hash. Both source gates now compare direct response bytes and SHA-256 only for `tests/ui/in-play-about-two-peer-plan.md`. Every other inventory entry still requires the existing JavaScript raw export decoding. No fallback, additional request or inventory omission is allowed. Both before and after checks remain.
 
 Source failures retain only an inventory path and a fixed operation code, alongside the existing opaque failure identity. Supervisor startup stages use fixed operation codes; no exception messages, stacks or payloads enter these records. The response receipt declares `direct_bytes` or `js_raw_export`. Prior live001 remains failed with zero capability cases. This correction has syntax and whitespace inspection only; no retry is allocated.
+
+
+### Full source inventory representation audit
+
+Source004 supersedes the earlier plan-only representation contract. Exact direct-byte and SHA-256 checks apply to package.json, package-lock.json and this plan only. All remaining paths retain the existing JavaScript decoder, and HTML retains its import query. Every request and before/after inventory check remains.
+
+Installed Vite source: node_modules/vite/dist/node/chunks/node.js. Lines 2183-2194 classify JS/import requests; line 20320 routes JS, CSS and explicit imports to transformation; lines 32522-32528 encode raw files as JavaScript string exports. Lines 17917-17947 serve non-HTML static paths, with middleware order at 25036-25043. These are source conclusions for the pinned installation and current requests, not a new runtime proof. Requests set no script destination header. Live002 directly recorded exact plain package.json bytes; package-lock follows the same static path by source inspection.
+
+| Path | Gate | Representation | Query | Source basis |
+| --- | --- | --- | --- | --- |
+| `index.html` | fixture | JS raw export | `?raw&import` | Explicit import, raw asset loader |
+| `src/main.ts` | fixture + supervisor | JS raw export | `?raw` | JS extension transform and raw asset loader |
+| `src/core/Game.ts` | fixture | JS raw export | `?raw` | JS extension transform and raw asset loader |
+| `src/core/Input.ts` | fixture | JS raw export | `?raw` | JS extension transform and raw asset loader |
+| `src/core/ChaseCamera.ts` | fixture | JS raw export | `?raw` | JS extension transform and raw asset loader |
+| `src/ui/Shell.ts` | fixture | JS raw export | `?raw` | JS extension transform and raw asset loader |
+| `src/weapons/Gear.ts` | fixture | JS raw export | `?raw` | JS extension transform and raw asset loader |
+| `src/weapons/bungee/Bungee.ts` | fixture | JS raw export | `?raw` | JS extension transform and raw asset loader |
+| `src/weapons/aim.ts` | fixture | JS raw export | `?raw` | JS extension transform and raw asset loader |
+| `src/net/index.ts` | fixture | JS raw export | `?raw` | JS extension transform and raw asset loader |
+| `src/ui/shell.css` | fixture | JS raw export | `?raw` | CSS transform and raw asset loader |
+| `src/world/planets.ts` | fixture | JS raw export | `?raw` | JS extension transform and raw asset loader |
+| `src/weapons/bungee/params.ts` | fixture | JS raw export | `?raw` | JS extension transform and raw asset loader |
+| `vite.config.ts` | fixture + supervisor | JS raw export | `?raw` | JS extension transform and raw asset loader |
+| `server/dev.ts` | fixture | JS raw export | `?raw` | JS extension transform and raw asset loader |
+| `package.json` | fixture | direct bytes + SHA | `?raw` | Static middleware; not JS/CSS/import |
+| `package-lock.json` | fixture | direct bytes + SHA | `?raw` | Static middleware; not JS/CSS/import |
+| `tests/ui/in-play-about-two-peer.mjs` | fixture + supervisor | JS raw export | `?raw` | JS extension transform and raw asset loader |
+| `tests/ui/in-play-about-two-peer-plan.md` | fixture + supervisor | direct bytes + SHA | `?raw` | Static middleware; not JS/CSS/import |
+
+Future closure summaries keep `sourceFailure` and `recorderFailure` separate from the unchanged `originalFailure`. Only whitelisted fixed source metadata can enter the source summary. The recorded fixture first failure is not replaced by missing protocol evidence, and missing protocol evidence remains a gate failure. Historical live002 receipts are immutable.
+
+Prepared pure checks extract the actual fixture decoder without importing or executing fixture startup. Every inventoried path gets valid-representation, wrong-format and wrong-byte checks. A separate Python AST extraction exercises the supervisor's actual served_identity over its four paths using in-memory fetch/file doubles. These checks do not prove HTTP routing, browser execution, source-map identity or cleanup. Both check sources are unrun; the unchanged 18 mocks are not rerun.
