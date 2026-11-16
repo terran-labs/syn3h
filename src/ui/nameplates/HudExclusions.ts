@@ -1,6 +1,9 @@
 import type { Rect } from './layout'
 
-const SELECTORS = '.world-inspector,.shell-minimap,.gear-selector,.gear-actions,.zorb-toggle,.touch-actions,.touch-stick,.match-hud,.match-announcement,.race-hud,.performance-recommendation,.inspector-toggle,.spawn-help,.focus-hud .fh-read'
+// The gear selector's own box reserves room for its detail pane even when that pane is empty,
+// and on a phone that box spans the screen's middle. Avoid only what is drawn: the drum and
+// each detail line while it is showing (empty lines carry [hidden] and are skipped below).
+const SELECTORS = '.world-inspector,.shell-minimap,.gear-selector .gs-drum,.gear-selector .gs-detail > *,.gear-actions,.zorb-toggle,.touch-actions,.touch-stick,.match-hud,.match-announcement,.race-hud,.performance-recommendation,.inspector-toggle,.spawn-help,.focus-hud .fh-read'
 /** One read phase before plate writes. Never measure the plates themselves. */
 export class HudExclusions {
   private elements: Element[] = []

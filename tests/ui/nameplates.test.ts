@@ -444,3 +444,28 @@ describe('clipped triangulated vehicle proxy', () => {
     expect(placeNameplates([bot, human], [{ ...hull, depth: 200 }], [], 160, 160).map(p => p.id)).toEqual(['human'])
   })
 })
+describe('HUD exclusions', () => {
+  // Bug it catches: on a phone the gear selector's reserved box (drum plus an empty detail
+  // pane) spans the screen's middle, so excluding the box itself rejected every label slot.
+  it('avoids the gear drum and showing detail lines, not the empty reserved box', async () => {
+    const { HudExclusions } = await import('../../src/ui/nameplates/HudExclusions')
+    const el = (selector: string, left: number, right: number, hidden = false) => {
+      const e = { selector, hidden, parentElement: null, hasAttribute: (a: string) => a === 'hidden' && e.hidden,
+        getBoundingClientRect: () => ({ left, right, top: 300, bottom: 480 }) }
+      return e
+    }
+    const all = [el('.gear-selector', 12, 380), el('.gear-selector .gs-drum', 12, 184),
+      el('.gear-selector .gs-detail > *', 176, 346), el('.gear-selector .gs-detail > *', 176, 346, true)]
+    const query = (selectors: string) => all.filter(e => selectors.split(',').includes(e.selector))
+    vi.stubGlobal('MutationObserver', class { observe() {} disconnect() {} })
+    vi.stubGlobal('getComputedStyle', () => ({ display: 'block', visibility: 'visible', opacity: '1' }))
+    try {
+      const doc = { body: {}, querySelectorAll: () => [] }
+      const hud = new HudExclusions({ ownerDocument: doc, querySelectorAll: query } as unknown as HTMLElement)
+      expect(hud.read(390, 844).map(b => [b.left, b.right])).toEqual([[6, 190], [170, 352]])
+      all[2].hidden = true // the detail pane empties: only the drum remains
+      expect(hud.read(390, 844).map(b => [b.left, b.right])).toEqual([[6, 190]])
+      hud.dispose()
+    } finally { vi.unstubAllGlobals() }
+  })
+})
