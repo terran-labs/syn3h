@@ -7,6 +7,9 @@ import { copyCurveState, overHorizon } from '../../world/curve'
 import { bendPoint, CurvedProjection, curvedTerrainOccluded } from './curvature'
 import { nameplateMode, restoreNameplatePreference } from './preferences'
 import { HudExclusions } from './HudExclusions'
+
+/** Half-height in metres of the player's own grounded vehicle when it hides labels behind it. */
+const LOCAL_RISE = 1.6
 import { renderedEnvelope } from './anchors'
 import { afterCameraFrame } from './renderHook'
 import './nameplates.css'
@@ -125,7 +128,12 @@ export class VehicleNameplates {
     // The local vehicle gets no nameplate, but its hull still occludes labels behind it.
     const local = this.options.localVehicle()
     const localRadius = renderedEnvelope(local, this.center, this.rotation, this.anchor)
-    this.projection.envelope(this.center, localRadius, this.bend, this.camera, w, h, this.localDisc)
+    // A grounded vehicle is long and low. Seen from the chase camera, a full-height box around
+    // it covers the screen above the roof, which on a phone is most of the view, and rejects
+    // every label behind the player. Keep its reach but only LOCAL_RISE of height. A jet banks
+    // and the zorb is a true ball, so both keep the full box.
+    const flat = local.kind !== 'jet' && !local.zorb.active
+    this.projection.envelope(this.center, localRadius, this.bend, this.camera, w, h, this.localDisc, flat ? Math.min(localRadius, LOCAL_RISE) : localRadius)
     discs.push(this.localDisc)
     for (const t of list) {
       const p = this.plates.get(t.id) ?? this.acquire(t.id)

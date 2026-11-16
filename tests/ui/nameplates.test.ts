@@ -362,6 +362,20 @@ describe('clipped triangulated vehicle proxy', () => {
     expect(touchesDisc(box(50, 45, 60, 55), out)).toBe(false) // old circumcircle covered this clear region
   })
 
+  // Bug it catches: the player's own car, seen from the chase camera, hid every label behind it
+  // on a phone because its envelope reached as high as it was long.
+  it('a lower rise keeps the hull below the space above the roof', async () => {
+    const { PerspectiveCamera, Vector3 } = await import('three/webgpu')
+    const { CurvedProjection } = await import('../../src/ui/nameplates/curvature')
+    // Phone portrait chase view: camera 9 m behind and 3 m above a 3.5 m-reach car.
+    const camera = new PerspectiveCamera(80, 390 / 664, .1, 100); camera.position.set(0, 3, 9); camera.updateMatrixWorld()
+    const hull = (rise: number) => { const d = disc(); new CurvedProjection().envelope(new Vector3(), 3.5, new Vector3(), camera, 390, 664, d, rise); return d }
+    const label = { left: 150, top: 310, right: 240, bottom: 370 } // above the car's roof on screen
+    expect(touchesDisc(label, hull(3.5))).toBe(true)
+    expect(touchesDisc(label, hull(1.6))).toBe(false)
+    expect(touchesDisc({ ...label, top: 440, bottom: 480 }, hull(1.6))).toBe(true) // the car itself stays protected
+  })
+
   it('clips near-plane crossings, keeps all-behind hulls empty, and blocks an enclosed camera', async () => {
     const { PerspectiveCamera, Vector3 } = await import('three/webgpu')
     const { CurvedProjection } = await import('../../src/ui/nameplates/curvature')
