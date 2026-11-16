@@ -61,3 +61,16 @@ body:has(.syn3h-shell.is-playing .spawn-help:not([hidden])) .touch-controls .tou
   .touch-controls .touch-stick-ghost { width: 72px; height: 72px; }
 }
 @media (prefers-reduced-motion: reduce) { .touch-controls .touch-stick-ghost > span { animation: none; transform: translate(10px, -12px); } }
+
+/* Mirror controls, not their text, for the player's chosen driving hand. */
+.touch-controls[data-hand="left"] .touch-actions { right: auto; left: max(24px, env(safe-area-inset-left)); direction: rtl; }
+.touch-controls[data-hand="left"] .touch-actions button { direction: ltr; }
+.touch-controls[data-hand="left"] .touch-stick-hint { left: auto; right: max(24px, env(safe-area-inset-right)); align-items: flex-end; }
+html[data-touch-hand="left"] .syn3h-shell.has-touch.exploration-ui .shell-minimap { left: auto; right: max(16px, env(safe-area-inset-right)); }
+@media (max-width: 700px) {
+  .touch-controls[data-hand="left"] .touch-actions { left: 18px; }
+  html[data-touch-hand="left"] .syn3h-shell.has-touch.exploration-ui .shell-minimap { right: 12px; }
+}
+@media (max-width: 700px) and (min-height: 501px) {
+  html[data-touch-hand="left"] .syn3h-shell.has-touch.exploration-ui .performance-recommendation:not([data-docked]) { right: auto; left: 46px; }
+}
