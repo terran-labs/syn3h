@@ -58,3 +58,10 @@ The fixture's direct JSON records now use bounded fixed phase/code metadata and 
 The fresh external revision /tmp/ux-about-natural-focus-source-002 prepares one supervisor adaptation, protocol redactor, binary-pipe capture helper and unrun mocked cases. The parser adds bounded finite parse_float handling, including rejection of1e400. The parent registers fixture/Chrome binary pipes before process inspection, redacts fixture stderr before storage, rejects stdout, and discards raw bytes after a failure through EOF. Chrome startup diagnostics are counted/discarded. Both Chrome direct handles, profiles, CDP listeners and cleanup remain independently owned; CDP disconnect is not an exit receipt.
 
 This preparation supersedes the earlier statement that supervisor source is absent. It does not authorize execution or establish safety: all mock cases, pipe behavior, cleanup injections and browser behavior are unrun. The reviewed590/510/480 bounds and original capability assertions remain unchanged. Source, AST and whitespace inspection only precede independent review; an explicit allocation is required even for the prepared pure mocked gate.
+
+
+### Exact plan representation correction
+
+Live001 stopped before Chrome or fixture launch. Its plan response was HTTP 200 with the exact local Markdown byte hash. Both source gates now compare direct response bytes and SHA-256 only for `tests/ui/in-play-about-two-peer-plan.md`. Every other inventory entry still requires the existing JavaScript raw export decoding. No fallback, additional request or inventory omission is allowed. Both before and after checks remain.
+
+Source failures retain only an inventory path and a fixed operation code, alongside the existing opaque failure identity. Supervisor startup stages use fixed operation codes; no exception messages, stacks or payloads enter these records. The response receipt declares `direct_bytes` or `js_raw_export`. Prior live001 remains failed with zero capability cases. This correction has syntax and whitespace inspection only; no retry is allocated.

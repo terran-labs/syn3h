@@ -53,12 +53,16 @@ const knownPhases = new Set(['raw_source', 'action', 'response', 'page_error', '
 for (const name of ['A', 'B']) for (const suffix of ['final observer', 'identity session detach',
   'page close', 'context close', 'browser close']) knownPhases.add(`${name} ${suffix}`)
 for (const name of ['A', 'B']) knownPhases.add(`failure snapshot ${name}`)
-function failure(phase, error) {
+function failure(phase, error, sourceCode, sourcePath) {
   const key = error && (typeof error === 'object' || typeof error === 'function') ? error : null
   if (key && failureIds.has(key)) return failureIds.get(key)
   // Never inspect error name/message/stack, assertion actual/expected or custom getters.
   const entry = { id: ++failureSequence, phase: knownPhases.has(phase) ? phase : 'unknown_phase',
     code: failureSequence <= 128 ? 'operation_failed' : 'failure_record_overflow' }
+  if (phase === 'raw_source' && inventory.includes(sourcePath)) {
+    entry.path = sourcePath
+    if (['fetch', 'read_body', 'persist_response', 'http_status', 'plan_bytes', 'js_export', 'js_decode', 'js_source'].includes(sourceCode)) entry.operation = sourceCode
+  }
   if (key) failureIds.set(key, entry)
   report.firstFailure ??= entry
   if (report.failureOrder.length < 129) report.failureOrder.push(entry)
@@ -95,18 +99,35 @@ async function sourceProof(stage) {
     const row = { path, localSha256: hash(local) }; rows.push(row)
     // HTML needs explicit import semantics. Browser navigation proof is separate.
     const url = new URL(`/${path}?raw${path === 'index.html' ? '&import' : ''}`, origin)
+    let sourceCode = 'fetch'
     try {
       const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(budget(10000)) })
       Object.assign(row, { url: url.href, status: response.status,
         headerHashes: Object.fromEntries(['content-type', 'content-length', 'etag'].map(k => [k, response.headers.has(k) ? hash(response.headers.get(k)) : null])) })
-      const text = await bounded(response.text())
-      Object.assign(row, { bytes: Buffer.byteLength(text), sha256: hash(text) })
+      sourceCode = 'read_body'
+      const bytes = Buffer.from(await bounded(response.arrayBuffer()))
+      const text = bytes.toString('utf8')
+      Object.assign(row, { bytes: bytes.length, sha256: hash(bytes),
+        representation: path === 'tests/ui/in-play-about-two-peer-plan.md' ? 'direct_bytes' : 'js_raw_export' })
+      sourceCode = 'persist_response'
       await persist()
+      sourceCode = 'http_status'
       assert.equal(response.status, 200, path)
+      if (path === 'tests/ui/in-play-about-two-peer-plan.md') {
+        sourceCode = 'plan_bytes'
+        assert.ok(bytes.equals(local), 'plan bytes')
+        assert.equal(hash(bytes), hash(local), 'plan hash')
+        continue
+      }
+      sourceCode = 'js_export'
       const literal = text.match(/^export default ("(?:[^"\\]|\\.)*")/m)
-      assert.ok(literal, `raw export ${path}`); assert.equal(JSON.parse(literal[1]), local.toString(), path)
+      assert.ok(literal, `raw export ${path}`)
+      sourceCode = 'js_decode'
+      const decoded = JSON.parse(literal[1])
+      sourceCode = 'js_source'
+      assert.equal(decoded, local.toString(), path)
     } catch (error) {
-      row.error = failure('raw_source', error)
+      row.error = failure('raw_source', error, sourceCode, path)
       await attempt('partial raw-source receipt', persist)
       throw error
     }
