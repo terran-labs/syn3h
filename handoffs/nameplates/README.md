@@ -267,3 +267,14 @@ hull/terrain clearance are all unrun. The negative stage adds work within the sa
 a timeout remains a failure, not grounds to shorten cost sampling or omit later cases.
 Only the fixture and this note change. Versioned external launcher pins are refreshed after
 commit; previous launcher versions and both failed receipt trees remain untouched.
+
+
+## Native-entry review correction
+
+The previous Enter World target belongs to a hidden Explore panel on the lobby index.
+After the unchanged worker proof, use the established visible current galaxy label instead:
+verify its data-world against the actual current planet, focus it, and send native Enter.
+Wait for connected play with descent finished. Record and assert world, seed and player name
+before/after, plus the actual allocated-room WebSocket. No private entry call, force click,
+HUD change or alternate panel navigation is added. Worker-map semantics remain under review;
+all prior failure receipts and source versions are preserved. This correction is unrun.

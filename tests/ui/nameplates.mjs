@@ -303,8 +303,28 @@ async function open(name, viewport) {
     }
   })
   await workerBeforePlay(page, name)
-  await page.locator('.shell-play').click({ timeout: remaining(15000) })
-  await page.waitForFunction(() => window.syn3hNet?.connected, null, { timeout: remaining(30000) })
+  await page.waitForFunction(() => window.syn3h.shell.galaxy?.live, null, { timeout: remaining(15000) })
+  const beforeEntry = await page.evaluate(async () => {
+    const { currentPlanet } = await import('/src/world/planets.ts')
+    return { world: currentPlanet().id, seed: window.syn3h.params.get('world.seed').value,
+      room: new URL(location.href).searchParams.get('room'), name: new URL(location.href).searchParams.get('name') }
+  })
+  assert.equal(beforeEntry.room, room); assert.equal(beforeEntry.name, name)
+  const currentLabel = page.locator('.galaxy-label.is-current')
+  await currentLabel.waitFor({ state: 'visible', timeout: remaining(15000) })
+  assert.equal(await currentLabel.getAttribute('data-world'), beforeEntry.world)
+  await currentLabel.focus(); await page.keyboard.press('Enter')
+  await page.waitForFunction(() => window.syn3hNet?.connected && window.syn3h.shell.playing && !window.syn3h.shell.dropping, null, { timeout: remaining(60000) })
+  const afterEntry = await page.evaluate(async () => {
+    const { currentPlanet } = await import('/src/world/planets.ts')
+    return { world: currentPlanet().id, seed: window.syn3h.params.get('world.seed').value,
+      name: window.syn3hNet.players.get(window.syn3hNet.id)?.name }
+  })
+  report.nativeEntry ??= []; report.nativeEntry.push({ name, before: beforeEntry, after: afterEntry, method: 'visible current galaxy label, focus and native Enter' })
+  await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+  assert.equal(afterEntry.world, beforeEntry.world); assert.equal(afterEntry.seed, beforeEntry.seed)
+  assert.equal(afterEntry.name, name)
+  assert.ok(browserEvidence.find(e => e.name === name).sockets.some(value => { const u = new URL(value); return u.pathname === '/ws' && u.host === new URL(origin).host && u.searchParams.get('room') === room }), 'native entry preserves allocated room')
   await page.waitForFunction(() => window.syn3hNet.players.size >= 1, null, { timeout: remaining(15000) })
   return page
 }
