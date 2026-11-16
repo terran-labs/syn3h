@@ -10,7 +10,7 @@ import { modeChoices } from '../modeAvailability'
  */
 import { params, type ParamValue } from '../../../shared/params'
 import { canEditWorld, resetWorld } from '../worldPermissions'
-import { buildTree, describe, exportSection, exportWorld, fraction, limits, parseWorld, pasteSummary, show, type PropertyDef, type SectionNode } from './model'
+import { buildTree, describe, shownDef, shownValue, storedValue, exportSection, exportWorld, fraction, limits, parseWorld, pasteSummary, show, type PropertyDef, type SectionNode } from './model'
 import './params'
 import './inspector.css'
 import './motion.css'
@@ -354,22 +354,25 @@ export class Inspector {
       sync = value => { box.checked = Boolean(value); output.textContent = show(Boolean(value)) }
     } else {
       label.textContent = def.label
-      const ranged = def.min !== undefined && def.max !== undefined
+      // A display mapping (ParamDef.display) puts the slider, number and typing in display
+      // units; what is stored and sent is converted back.
+      const view = shownDef(def), toShown = (value: ParamValue) => shownValue(def, Number(value))
+      const ranged = view.min !== undefined && view.max !== undefined
       const input = document.createElement('input'); input.type = ranged ? 'range' : 'number'; input.setAttribute('aria-label', def.label)
-      if (ranged) { input.min = String(Math.min(def.min!, def.max!)); input.max = String(Math.max(def.min!, def.max!)) }
-      input.step = String(def.step ?? 'any')
+      if (ranged) { input.min = String(Math.min(view.min!, view.max!)); input.max = String(Math.max(view.min!, view.max!)) }
+      input.step = String(view.step ?? 'any')
       // The number beside the slider is a button: press it and it becomes a field to type into.
       const number = document.createElement('button'); number.type = 'button'; number.className = 'wi-num'
       const display = (text: string) => { number.textContent = text; number.setAttribute('aria-label', `${def.label}: ${text}, edit`) }
       const percent = this.options.percent?.(def) ?? false
-      const shown = (value: ParamValue) => percent ? `${Math.round(Number(value) * 100)}%` : show(value, def)
+      const shown = (value: ParamValue) => percent ? `${Math.round(Number(value) * 100)}%` : show(toShown(value), view)
       number.addEventListener('click', () => this.edit(def, number))
       number.addEventListener('keydown', event => { if (event.key === 'F2') { event.preventDefault(); this.edit(def, number) } })
       // A property marked deferred (the terrain rebuilds) applies when the slider is let go.
-      input.addEventListener(def.deferred ? 'change' : 'input', () => params.set(def.id, Number(input.value), 'local'))
-      if (def.deferred) input.addEventListener('input', () => display(shown(Number(input.value))))
+      input.addEventListener(def.deferred ? 'change' : 'input', () => params.set(def.id, storedValue(def, Number(input.value)), 'local'))
+      if (def.deferred) input.addEventListener('input', () => display(shown(storedValue(def, Number(input.value)))))
       row.append(label, input, number)
-      sync = value => { if (document.activeElement !== input) input.value = String(value); display(shown(value)) }
+      sync = value => { if (document.activeElement !== input) input.value = String(toShown(value)); display(shown(value)) }
       if (percent) number.dataset.percent = ''
     }
     sync(param.value)
@@ -399,7 +402,7 @@ export class Inspector {
       if (commit) {
         // A percentage field holds the number without its sign; parseEdit reads "60%" as 0.6.
         const typed = percent && !/%\s*$/.test(field.value) ? `${field.value.trim()}%` : field.value
-        const value = parseEdit(typed, def)
+        const typedValue = parseEdit(typed, shownDef(def)), value = typedValue === null ? null : storedValue(def, typedValue)
         // Nothing readable: put the old number back. Pressing Enter keeps the field open to try again.
         if (value === null && refocus) { field.value = before; field.select(); mark(field); return }
         if (value === null) mark(number)
