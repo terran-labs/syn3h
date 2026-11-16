@@ -41,7 +41,13 @@
   display: flex; z-index: 60; bottom: auto; height: auto; max-height: calc(100dvh - 32px - 60px);
   padding: 8px; border-radius: 16px; background: rgb(3 10 18 / .82); box-shadow: 0 0 30px rgb(0 0 0 / .45);
 }
-.syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-cards { overflow-y: auto; min-height: 0; flex: 1 1 auto; }
+.syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-cards { overflow-y: auto; min-height: 0; flex: 1 1 auto; overscroll-behavior: contain; }
+/* Unlike the in-game rail, whose cards share its height, here every card takes its natural
+   height and the whole stack scrolls: an open card shows all its rows, on short screens too. */
+.syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-card, .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-card.is-open { flex: 0 0 auto; min-height: 0; }
+.syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-body { flex: none; overflow: visible; }
+/* A long label wraps to a second line rather than ending in an ellipsis. */
+.syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-label { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.2; }
 .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 4px 2px 14px; flex: 0 0 auto; }
 .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head h2 { margin: 0; padding: 0; font: 600 14px/1 'Barlow Condensed', sans-serif; letter-spacing: .22em; text-transform: uppercase; color: var(--s3-ink); }
 .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-close { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; padding: 0 12px; font: 500 13px 'Barlow', sans-serif; letter-spacing: .08em; }
@@ -59,10 +65,17 @@
     top: max(10px, env(safe-area-inset-top)); bottom: max(10px, env(safe-area-inset-bottom)); height: auto; max-height: none;
   }
   .lobby-gear-dock.is-open { visibility: hidden; }
-  /* Portrait: the version sits above the gear, which sits right of the lobby's buttons. */
-  .lobby-gear-dock { flex-direction: column-reverse; align-items: flex-end; gap: 2px; right: max(10px, env(safe-area-inset-right)); }
+  /* Portrait: the version sits above the gear, which sits right of the lobby's buttons; both
+     sit a little lower than the buttons' baseline to stay clear of the hint above them. */
+  .lobby-gear-dock { flex-direction: column-reverse; align-items: flex-end; gap: 0; right: max(10px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); }
+  /* Narrow enough to sit right of the About button; the title carries the full version. */
+  .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-version { min-height: 0; padding: 1px 2px; font-size: 10px; letter-spacing: .04em; max-width: 76px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
 @media (max-height: 500px) and (pointer: coarse) and (orientation: landscape) {
-  .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { left: auto; width: min(560px, calc(100vw - 20px)); }
+  .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { left: auto; width: min(560px, calc(100vw - 20px)); top: 6px; bottom: 6px; padding: 6px; gap: 4px; }
+  .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head { padding-block: 0; }
+  .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-close { min-height: 40px; min-width: 44px; }
+  /* The version line joins the header row, beside Close, to give the rows its height. */
+  .syn3h-shell.exploration-ui .world-inspector.lobby-settings .lobby-settings-foot { position: absolute; top: 20px; right: 130px; padding: 0; }
   .lobby-gear-dock { flex-direction: row-reverse; align-items: center; right: max(12px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); }
 }

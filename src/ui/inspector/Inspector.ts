@@ -34,6 +34,8 @@ export interface InspectorOptions {
    * passes [] and shows only cards it adds with addCard.
    */
   sections?: readonly string[]
+  /** Settings to show and edit as a percentage (a 0 to 1 value shown as 0% to 100%). */
+  percent?(def: PropertyDef): boolean
 }
 /** "Mode (0 tag, 1 hill)" or "Glass: 0 Clear, 1 Frosted" gives a name and named choices. */
 export function choicesOf(def: PropertyDef): { name: string; options: { value: number; label: string }[] } | null {
@@ -359,13 +361,16 @@ export class Inspector {
       // The number beside the slider is a button: press it and it becomes a field to type into.
       const number = document.createElement('button'); number.type = 'button'; number.className = 'wi-num'
       const display = (text: string) => { number.textContent = text; number.setAttribute('aria-label', `${def.label}: ${text}, edit`) }
+      const percent = this.options.percent?.(def) ?? false
+      const shown = (value: ParamValue) => percent ? `${Math.round(Number(value) * 100)}%` : show(value, def)
       number.addEventListener('click', () => this.edit(def, number))
       number.addEventListener('keydown', event => { if (event.key === 'F2') { event.preventDefault(); this.edit(def, number) } })
       // A property marked deferred (the terrain rebuilds) applies when the slider is let go.
       input.addEventListener(def.deferred ? 'change' : 'input', () => params.set(def.id, Number(input.value), 'local'))
-      if (def.deferred) input.addEventListener('input', () => display(show(Number(input.value), def)))
+      if (def.deferred) input.addEventListener('input', () => display(shown(Number(input.value))))
       row.append(label, input, number)
-      sync = value => { if (document.activeElement !== input) input.value = String(value); display(show(value, def)) }
+      sync = value => { if (document.activeElement !== input) input.value = String(value); display(shown(value)) }
+      if (percent) number.dataset.percent = ''
     }
     sync(param.value)
     row.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') this.detail(def) })
@@ -384,14 +389,17 @@ export class Inspector {
     const field = document.createElement('input'); field.type = 'text'; field.inputMode = 'decimal'; field.enterKeyHint = 'done'
     field.className = 'wi-num-edit'; field.autocomplete = 'off'; field.spellcheck = false
     field.setAttribute('aria-label', def.label); field.setAttribute('aria-describedby', 'setting-tooltip')
-    const before = number.textContent ?? ''
+    const percent = number.dataset.percent !== undefined
+    const before = (number.textContent ?? '').replace(/%$/, '')
     field.value = before
     let done = false, flash: ReturnType<typeof setTimeout> | undefined
     const mark = (element: HTMLElement) => { element.classList.remove('is-invalid'); void element.offsetWidth; element.classList.add('is-invalid'); clearTimeout(flash); flash = setTimeout(() => element.classList.remove('is-invalid'), 700) }
     const finish = (commit: boolean, refocus: boolean) => {
       if (done) return
       if (commit) {
-        const value = parseEdit(field.value, def)
+        // A percentage field holds the number without its sign; parseEdit reads "60%" as 0.6.
+        const typed = percent && !/%\s*$/.test(field.value) ? `${field.value.trim()}%` : field.value
+        const value = parseEdit(typed, def)
         // Nothing readable: put the old number back. Pressing Enter keeps the field open to try again.
         if (value === null && refocus) { field.value = before; field.select(); mark(field); return }
         if (value === null) mark(number)

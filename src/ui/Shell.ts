@@ -232,7 +232,7 @@ export class Shell implements System {
     this.presentationToggle = holder.querySelector('.presentation-toggle')!; this.hostControls = holder.querySelector('.host-controls')!
     this.lobbySettings = new LobbySettings(this.element, {
       quality: this.game.quality, presentation: this.presentationToggle, host: this.hostControls, build,
-      hostSummary: () => this.hostControls.querySelector('.host-note')!.textContent ?? '', cue: () => this.audio.cue('click'),
+      hostSummary: () => this.hostControls.querySelector('.host-note')!.textContent ?? '', inRoom: () => { const net = hostControls(); return !!net && (net.isHost || canEditWorld()) }, cue: () => this.audio.cue('click'),
     })
     this.element.querySelector('.galaxy-ui')!.append(this.lobbySettings.dock)
     const foot = document.createElement('div'); foot.className = 'rail-foot wi-glass'

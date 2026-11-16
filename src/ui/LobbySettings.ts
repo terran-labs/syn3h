@@ -56,6 +56,9 @@ export function cycleFocus<T>(focusable: readonly T[], current: T | null, back: 
   return focusable[(at + (back ? -1 : 1) + focusable.length) % focusable.length]!
 }
 
+/** A volume: an audio setting from 0 to 1, shown as a percentage like the card's summary. */
+export const isVolume = (def: PropertyDef) => def.group === 'Audio' && def.min === 0 && def.max === 1
+
 const percent = (id: string) => `${Math.round(Number(params.get(id)?.value ?? 0) * 100)}%`
 
 /** A gear outline drawn as one path: `teeth` square teeth around a ring, and a hub circle. */
@@ -76,6 +79,8 @@ export interface LobbySettingsOptions {
   presentation?: HTMLElement
   host?: HTMLElement
   hostSummary?(): string
+  /** Whether there is a room with something to act on (host, or open sliders); the Room card shows only then. */
+  inRoom?(): boolean
   /** The build constant; see versionLabel. */
   build?: string
   /** A click cue. */
@@ -99,6 +104,7 @@ export class LobbySettings {
   private shown = false
   private closing?: Animation
   private readonly advancedOpen = { value: false }
+  private roomCard?: HTMLElement
 
   constructor(private readonly parent: HTMLElement, private readonly options: LobbySettingsOptions = {}) {
     const signal = this.abort.signal
@@ -108,11 +114,11 @@ export class LobbySettings {
     this.gear.setAttribute('aria-label', 'Settings'); this.gear.setAttribute('aria-expanded', 'false'); this.gear.setAttribute('aria-controls', 'lobby-settings')
     this.gear.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${gearPath()}"/></svg>`
     this.version.type = 'button'; this.version.className = 'lobby-version'; this.version.dataset.lobbyVersion = ''
-    this.version.textContent = label; this.version.setAttribute('aria-label', `Version ${label}`)
+    this.version.textContent = label; this.version.title = `Version ${label}`; this.version.setAttribute('aria-label', `Version ${label}`)
     this.dock.append(this.gear, this.version)
 
     this.host.className = 'lobby-settings-host'
-    this.inspector = new Inspector(this.host, { summary: () => '', vehicles: () => ({ options: [], current: '' }), onVehicle() {}, sections: [] })
+    this.inspector = new Inspector(this.host, { summary: () => '', vehicles: () => ({ options: [], current: '' }), onVehicle() {}, sections: [], percent: isVolume })
     const panel = this.inspector.element
     panel.classList.add('lobby-settings'); panel.id = 'lobby-settings'
     panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-modal', 'true'); panel.setAttribute('aria-label', 'Settings')
@@ -162,7 +168,7 @@ export class LobbySettings {
     })
     if (options.host) {
       const room = document.createElement('div'); room.append(options.host)
-      this.inspector.addCard('room', 'Room', room, () => options.hostSummary?.() ?? '')
+      this.roomCard = this.inspector.addCard('room', 'Room', room, () => options.hostSummary?.() ?? '')
     }
 
     this.gear.addEventListener('click', () => { if (this.shown) this.close(); else this.open() }, { signal })
@@ -198,7 +204,7 @@ export class LobbySettings {
     this.shown = true; this.closing?.cancel(); this.closing = undefined
     this.options.cue?.()
     this.parent.append(this.host)
-    this.inspector.rebuild(); this.inspector.update()
+    this.inspector.rebuild(); this.update()
     this.gear.setAttribute('aria-expanded', 'true'); this.dock.classList.add('is-open')
     if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
       this.inspector.element.animate([{ opacity: 0, transform: 'translateX(24px)' }, { opacity: 1, transform: 'none' }], { duration: 220, easing: 'cubic-bezier(.2,.8,.2,1)' })
@@ -219,7 +225,12 @@ export class LobbySettings {
   }
 
   /** Refresh summaries while open; call from the shell's update. */
-  update(): void { if (this.shown) this.inspector.update() }
+  update(): void {
+    if (!this.shown) return
+    // Card styles set display, so the attribute alone would not hide it.
+    if (this.roomCard) { const hide = !(this.options.inRoom?.() ?? true); if (this.roomCard.hidden !== hide) { this.roomCard.hidden = hide; this.roomCard.style.display = hide ? 'none' : '' } }
+    this.inspector.update()
+  }
 
   dispose(): void { this.abort.abort(); this.performance.dispose(); this.inspector.dispose(); this.host.remove(); this.dock.remove() }
 }
