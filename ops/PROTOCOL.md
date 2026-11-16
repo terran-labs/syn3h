@@ -26,10 +26,11 @@ A handoff is ready when, on the lane branch with `build/weekend` merged in first
 2. The lane's own test folder passes (`npx vitest run tests/<lane>`).
 3. `node tools/smoke.mjs <lane preview url>` prints `SMOKE OK`.
 
-Lanes run their own tests; the Orchestrator owns combined acceptance. Every heavy job
-uses the updated integration `tools/heavy.sh`: three machine-wide slots, no load-based
-bypass or slot overrides. Run one heavy job per lane, with at most two test workers
-during the restart wave. Release jobs share the slots. Do not restart redundant previews.
+Lanes run their own tests; the Orchestrator owns combined acceptance. Heavy jobs
+(test runs, builds, headless browsers) go through the integration `tools/heavy.sh`, which
+allows three at once machine-wide. Unit tests and typechecks need no allocation or
+permission: run them. There is no separate runtime allocation, receipt or pin step; the
+testing principle in `AGENTS.md` sets how much checking a change needs.
 
 Replace preview configuration atomically. When editing `paseo.json`, write a complete
 temporary sibling file, parse it successfully, then rename it over the destination. Do not
@@ -43,7 +44,12 @@ current availability. Query one service when needed, not every reservation with 
 
 The Orchestrator merges ready handoffs in a batch, runs the full suite and the smoke test
 once, fixes seam breakage, tags a milestone, and updates the dashboard. A batch that cannot
-be made green in fifteen minutes is reverted and returned to its lane.
+be made green in fifteen minutes is reverted and returned to its lane. Green means the
+suite exits zero: there is no list of accepted failures.
+
+The Foreman sets priorities, assigns builders and accepts results. The Orchestrator is
+the single merger and release executor and acts on the Foreman's direction (the owner,
+16 November 2026). Owner-visible interface work goes first in every batch.
 
 ## 5. Features default on in normal play
 
