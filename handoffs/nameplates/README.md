@@ -238,3 +238,32 @@ and no new terminal reconciliation is implemented: missing completion/body remai
 Lifecycle overflow fails explicitly. Actual worker body/source-map and terminal coverage still
 need runtime evidence before any reconciliation can be justified. All browser coverage and
 this correction's syntax remain unrun pending review and allocation.
+
+
+## Browser 003 source proposal
+
+Near humans now use central x offsets of eight metres and the same front-row depth. Far
+positions retain their previous offsets. The positive capture computes all four allocator
+plate-plus-leader bounds from current curved candidates, records their HUD intersections,
+and requires an actual viewport/HUD-clear slot per human before the original visible-name
+and full-bot assertions. This precondition does not override hull or terrain rejection.
+The original overlap offsets are retained as a separate negative stage: all human slots
+must intersect visible HUD and both human labels must be hidden. Returning to the positive
+stage must restore both names. No HUD is hidden, no exclusions or product code change.
+
+Entry omits autoplay and waits in the genuine lobby for the actual matching worker response
+body, source-map input matching checkout, and page requestfinished for the same Request ID.
+Target destruction without body or terminal evidence receives a distinct failure verdict;
+it never clears the pending request or satisfies provenance. The wait is capped at twenty
+seconds per client inside the unchanged global deadline. Only then does a native click on
+the ordinary Enter World button invoke normal play. A missing or inaccessible button fails;
+there is no force-click, scripted play fallback or alternate entry path. Existing source-map
+proof now explicitly includes the worker_file response rather than only ordinary modules.
+
+Autoplay closing the lobby and terminating its worker remains a source-supported hypothesis
+for the historical failures, not a proven cause. The preserved runs do not gain retrospective
+acceptance. Worker source-map shape, terminal delivery, native entry/descent and central-stage
+hull/terrain clearance are all unrun. The negative stage adds work within the same budget;
+a timeout remains a failure, not grounds to shorten cost sampling or omit later cases.
+Only the fixture and this note change. Versioned external launcher pins are refreshed after
+commit; previous launcher versions and both failed receipt trees remain untouched.

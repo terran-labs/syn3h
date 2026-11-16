@@ -170,14 +170,14 @@ async function observeBrowser(page, context, name) {
       assert.equal(response.status(), 200, `browser response ${url}`)
       assert.equal(response.fromServiceWorker(), false)
       assert.equal(url.searchParams.has('t'), false, 'HMR timestamp module')
-      const entry = { url: url.href, path, sha256: hash(bytes), resource: response.request().resourceType() }
+      const entry = { requestId: requestId(response.request()), url: url.href, path, sha256: hash(bytes), resource: response.request().resourceType() }
       // Compare bytes actually delivered to Chrome with the isolated served module,
       // then tie TS input back to checkout. A Node refetch alone is not evidence.
       const expectedResponse = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(remaining(10000)) })
       const comparison = await capturedBody(expectedResponse, 'served comparison', url, () => expectedResponse.arrayBuffer())
       assert.equal(expectedResponse.status, 200)
       assert.equal(hash(comparison), entry.sha256)
-      if (files.includes(path) && path.endsWith('.ts')) {
+      if ((files.includes(path) || path === 'src/ui/planets/planetMapWorker.ts' && url.searchParams.has('worker_file')) && path.endsWith('.ts')) {
         const local = await readFile(new URL(path, new URL('../../', import.meta.url)), 'utf8')
         const encoded = bytes.toString().match(/sourceMappingURL=data:application\/json(?:;charset=[^;,]+)?;base64,([^\s]+)/)
         assert.ok(encoded, `${path} actual browser source map`)
@@ -236,6 +236,52 @@ async function verifyBrowserEvidence(boundary, closed = false) {
   }
   report.browserResponses = responseReceipt()
 }
+async function workerBeforePlay(page, name) {
+  const evidence = browserEvidence.find(e => e.name === name)
+  const workerPath = '/src/ui/planets/planetMapWorker.ts'
+  const matches = value => { const u = new URL(value); return u.origin === new URL(origin).origin && u.pathname === workerPath && u.searchParams.has('worker_file') }
+  const until = Date.now() + remaining(20000)
+  let rows = []
+  while (Date.now() < until) {
+    remaining(1)
+    assert.deepEqual(evidence.failures, [], 'worker provenance observer errors')
+    const requests = evidence.lifecycle.filter(e => e.owner === 'page' && e.event === 'request' && matches(e.url))
+    rows = requests.map(request => {
+      const body = evidence.responses.find(r => r.requestId === request.id && matches(r.url) && r.sourceSha256)
+      const terminal = evidence.lifecycle.find(e => e.owner === 'page' && e.id === request.id && ['requestfinished', 'requestfailed'].includes(e.event))
+      const raw = evidence.lifecycle.find(e => e.event === 'Network.requestWillBeSent' && e.url === request.url)
+      const target = evidence.lifecycle.find(e => e.event === 'Target.targetCreated' && e.target?.targetId === raw?.requestId)
+      const destroyed = target && evidence.lifecycle.find(e => e.event === 'Target.targetDestroyed' && e.targetId === target.target.targetId)
+      return { request, body: body ?? null, terminal: terminal ?? null, target: target ?? null, destroyed: destroyed ?? null,
+        verdict: body && terminal?.event === 'requestfinished' ? 'complete' : destroyed ? 'target destroyed; body or terminal unobserved' : 'pending body and terminal' }
+    })
+    if (rows.length && rows.every(r => r.verdict === 'complete')) break
+    if (rows.some(r => r.terminal?.event === 'requestfailed')) break
+    await bounded(new Promise(resolve => setTimeout(resolve, 50)), 1000, 'worker provenance wait')
+  }
+  report.workerEntry ??= []
+  report.workerEntry.push({ name, time: Date.now(), rows, graphics: await page.evaluate(() => window.syn3h.shell.graphics),
+    hypothesis: 'Autoplay may terminate the lobby worker early; historical cause not proved.' })
+  report.browserResponses = responseReceipt()
+  await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+  assert.ok(rows.length && rows.every(r => r.verdict === 'complete'), `${name}: worker body/source-map and terminal required before play: ${rows.map(r => r.verdict).join(', ') || 'no matching request'}`)
+}
+// Same four slot bounds as the allocator, evaluated against actual curved candidates.
+// This is a stage precondition only; real renderer visibility assertions still decide success.
+function hudSlots(state, expectedHidden = false) {
+  const overlap = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+  return state.diagnostic.entries.filter(e => !e.bot).map(entry => {
+    const c = entry.plate?.candidate
+    assert.ok(c && entry.plate.stamp === state.diagnostic.stamp, 'current human candidate required')
+    const slots = [[0, -12], [0, -32], [-c.width / 2 - 12, -12], [c.width / 2 + 12, -12]].map(([dx, dy]) => {
+      const x = c.x + dx, y = c.y + dy - c.height
+      const bounds = { left: Math.min(x - c.width / 2, c.x) - 3, top: y - 3, right: Math.max(x + c.width / 2, c.x) + 3, bottom: c.y + 3 }
+      const hits = state.exclusions.filter(box => overlap(bounds, box))
+      return { bounds, hits, clear: !hits.length && bounds.left >= 8 && bounds.top >= 8 && bounds.right <= state.diagnostic.viewport.width - 8 && bounds.bottom <= state.diagnostic.viewport.height - 8 }
+    })
+    return { id: entry.id, name: entry.name, expectedHidden, slots }
+  })
+}
 async function open(name, viewport) {
   remaining(1)
   const context = await bounded(browser.newContext({ viewport, serviceWorkers: 'block' }), 10000, 'context')
@@ -246,16 +292,18 @@ async function open(name, viewport) {
   page.on('console', message => { if (message.type() === 'error' && errors.length < 1000) errors.push(`${name}: console: ${message.text()}`) })
   page.on('crash', () => errors.push(`${name}: renderer crash`))
   page.on('pageerror', e => errors.push(`${name}: ${e.message}`))
-  await page.goto(`${origin}?room=${room}&name=${name}&autoplay=1`)
+  await page.goto(`${origin}?room=${room}&name=${name}`)
   await page.waitForFunction(() => window.syn3h?.shell && document.documentElement.dataset.boot === 'done', null, { timeout: remaining(90000) })
   await page.evaluate(() => {
     const s = window.syn3h
-    s.shell.play(); document.activeElement?.blur?.()
+    document.activeElement?.blur?.()
     for (const [id, value] of Object.entries({ 'gfx.auto': false, 'gfx.quality': 4, 'daydream.seconds': 0, 'sun.dayLength': 0 })) {
       if (!s.params.get(id)) throw new Error(`Missing fixture control: ${id}`)
       s.params.set(id, value)
     }
   })
+  await workerBeforePlay(page, name)
+  await page.locator('.shell-play').click({ timeout: remaining(15000) })
   await page.waitForFunction(() => window.syn3hNet?.connected, null, { timeout: remaining(30000) })
   await page.waitForFunction(() => window.syn3hNet.players.size >= 1, null, { timeout: remaining(15000) })
   return page
@@ -269,7 +317,7 @@ async function geometryEvidence(page) {
     const s = window.syn3h, net = window.syn3hNet, tags = net.tags, camera = s.game.camera
     const v = () => s.player.object.position.clone(), bend = v(), eye = v(), projection = new CurvedProjection()
     copyCurveState(bend); camera.getWorldPosition(eye)
-    return { tick: s.game.tick, stamp: tags.stamp, terrainBudget: tags.terrainBudget, stats: { ...tags.stats },
+    return { viewport: { width: innerWidth, height: innerHeight }, tick: s.game.tick, stamp: tags.stamp, terrainBudget: tags.terrainBudget, stats: { ...tags.stats },
       seed: s.params.get('world.seed')?.value, terrainKind: s.params.get('terrain.kind')?.value,
       camera: { eye: eye.toArray(), quaternion: camera.quaternion.toArray(), fov: camera.fov, matrix: camera.matrixWorld.toArray(), projection: camera.projectionMatrix.toArray(), cinematic: s.camera.cinematic },
       bend: bend.toArray(), roster: [...net.players].map(([id, info]) => ({ id, name: info.name, bot: id >= 0xff00 })),
@@ -398,7 +446,7 @@ try {
   await a.waitForFunction(() => window.syn3h.bots.vehicles.length >= 4, null, { timeout: 15000 })
   await installTerrainEvidence(a)
   let center = await a.evaluate(() => { const s = window.syn3h, p = s.terrain.spawnPoint(0).position; return { x: p.x, y: p.y, z: p.z } })
-  async function stage(far = false, curve = .71) {
+  async function stage(far = false, curve = .71, hudOverlap = false) {
     await installTerrainEvidence(a)
     await a.evaluate(curve => window.syn3h.params.set('world.curve', curve), curve)
     await a.evaluate(p => {
@@ -407,8 +455,8 @@ try {
       s.bots.vehicles.forEach((bot, i) => { const x = p.x + (i - 1.5) * 12, z = p.z - 8 - i * 6; bot.teleport(v.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) })
       s.camera.setCinematicPose(v.clone().set(p.x, s.terrain.heightAt(p.x, p.z + 45) + 20, p.z + 45), v.clone().set(p.x, p.y + 4, p.z - 12), 60)
     }, center)
-    await b.evaluate(({p, far}) => { const s = window.syn3h, z = p.z - (far ? 260 : 4), x = p.x - 24; s.player.teleport(s.player.object.position.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) }, { p: center, far })
-    await c.evaluate(({p, far}) => { const s = window.syn3h, z = p.z - (far ? 190 : 12), x = p.x + 24; s.player.teleport(s.player.object.position.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) }, { p: center, far })
+    await b.evaluate(({p, far, hudOverlap}) => { const s = window.syn3h, z = p.z - (far ? 260 : 4), x = p.x - (far || hudOverlap ? 24 : 8); s.player.teleport(s.player.object.position.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) }, { p: center, far, hudOverlap })
+    await c.evaluate(({p, far, hudOverlap}) => { const s = window.syn3h, z = p.z - (far ? 190 : hudOverlap ? 12 : 4), x = p.x + (far || hudOverlap ? 24 : 8); s.player.teleport(s.player.object.position.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) }, { p: center, far, hudOverlap })
     // Record diagnostics even when settling fails. Never move the camera to skip occlusion.
     let stagingError
     try {
@@ -444,6 +492,11 @@ try {
   }
   await stage()
   const near = await capture(a, 'desktop-near-day')
+  const positiveSlots = hudSlots(near)
+  report.placementPreconditions = [{ label: 'near-positive', entries: positiveSlots }]
+  await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+  assert.equal(positiveSlots.length, 2, 'two staged humans required')
+  assert.ok(positiveSlots.every(e => e.slots.some(s => s.clear)), 'each human has an actual curved viewport/HUD-clear slot')
   for (const name of ['Visitor', 'Companion']) assert.ok(near.labels.some(l => !l.bot && l.text.includes(name)), `${name}: both remote human names are visible`)
   const person = near.labels.find(l => !l.bot), bot = near.labels.find(l => l.bot && !l.tick)
   assert.ok(person && bot, 'human and full bot labels must be present for comparison')
@@ -452,6 +505,18 @@ try {
   assert.ok(bot.opacity < person.opacity, 'bot labels are fainter than human labels')
   assert.ok(near.labels.filter(l => l.bot && l.text.includes('BOT')).length >= 2, 'host-owned bots have smaller labels')
   await costDistribution(a, 'near-all-cost')
+  // Retain the original overlap geometry as an explicit negative case, without hiding HUD.
+  await stage(false, .71, true)
+  const hidden = await capture(a, 'expected-hidden-hud-overlap')
+  const hiddenSlots = hudSlots(hidden, true)
+  report.placementPreconditions.push({ label: 'expected-hidden-hud-overlap', entries: hiddenSlots })
+  await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+  assert.equal(hiddenSlots.length, 2)
+  assert.ok(hiddenSlots.every(e => e.slots.every(s => s.hits.length > 0)), 'all human slots intersect visible HUD in negative stage')
+  assert.ok(hiddenSlots.every(e => !hidden.labels.some(l => l.id === e.id)), 'HUD-overlapped humans must remain hidden')
+  await stage()
+  const restored = await capture(a, 'near-positive-restored')
+  for (const name of ['Visitor', 'Companion']) assert.ok(restored.labels.some(l => !l.bot && l.text.includes(name)), 'positive human visibility restored')
   await a.evaluate(() => window.syn3h.params.set('hud.nameplates', 1))
   assert.ok((await capture(a, 'people-only')).labels.every(l => !l.bot))
   await a.evaluate(() => window.syn3h.params.set('hud.nameplates', 2))
