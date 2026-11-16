@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-15 16:33 PST. The owner withdrew the afternoon cutoff.
+Last verified: 2026-11-15 16:53 PST. The owner withdrew the afternoon cutoff.
 
 ## Authority and release order
 
@@ -17,14 +17,13 @@ GIF before marking a release Latest; publish notes with the frozen playable link
 
 ## Production
 
-Accepted release: v26.11.1514 (release-18), source a905a649, at https://www.syn3h.com/.
-High quality default, sustained-load relief, named quality recommendations, switched
-camera update order and Jet tail lights are live. The combined gate has no new failure
-after an explicit-quality test setup correction; the known competitive-flee failure remains.
-Local normal and latency checks, exact-build, multiplayer and frozen-file checks on both
-addresses, and all eight Chrome/WebKit vehicle cases pass. Camera acceptance used earlier
-zero-lag traces under the Foreman's waiver; the last comparison failed before browser
-launch, and no claim of fixing all judder or achieving 60 fps is supported.
+Accepted release: v26.11.1515 (release-19), source 50c9eb77, at https://www.syn3h.com/.
+Human airborne Jet flight defaults to half throttle with Daydream ownership preserved.
+Ground, braking, pause, materialization, settling and Zorb suppress neutral thrust.
+The combined gate passes 1,036 tests with one skip and the exact known competitive-flee
+failure. Local normal/latency tests, both public addresses and all eight vehicle cases pass.
+The earlier quality controls, camera update order and tail lights remain live. The camera
+change retains its disclosed evidence waiver and does not establish a full judder fix.
 
 v26.11.1510 was live and superseded without its own vehicle matrix by explicit owner
 waiver; the trailing 1511 matrix covers its sidebar and wingtip changes. Do not infer
@@ -32,10 +31,10 @@ acceptance from a tag alone. The showcase still predates the Tank paint and side
 
 ## Current queue
 
-1. Ship Jet half-throttle with its tested Daydream ownership marker and README changes.
-2. Review the standalone room-full fallback, whose unit-only gate passed.
-3. Validate the withheld duckling formation and count-retention fixes before another browser.
-4. Ship later green controls/FPS, satellites, liquid physics and Post work on demand.
+1. Validate the expanded fixed-stick and sidebar handoff, keeping touch aiming separate.
+2. Review standalone room-full fallback and visible-bot retention when green.
+3. Validate camera look/zoom and coordinated touch aiming before composed acceptance.
+4. Formation remains withheld after the repeat recording; later world/Post handoffs stay separate.
 
 The withdrawn 1507 build and the accepted 1506 control each passed two quiet local network
 runs in 218 seconds. No failing half was isolated. The Foreman authorized restoration

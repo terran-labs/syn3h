@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-11-16T00:33:48.716Z",
+  "generatedAt": "2026-11-16T00:54:45.674Z",
   "commits": {
-    "total": 1542,
-    "last48h": 1542,
+    "total": 1550,
+    "last48h": 1550,
     "merges": 468
   },
   "pullRequests": {
@@ -12,47 +12,47 @@
     "note": "Lanes merge branches directly; few changes went through pull requests."
   },
   "releases": {
-    "production": 16,
-    "today": 14,
+    "production": 17,
+    "today": 15,
     "withdrawn": 1,
-    "newest": "v26.11.1514",
-    "newestAt": "2026-11-15 16:31 PST"
+    "newest": "v26.11.1515",
+    "newestAt": "2026-11-15 16:52 PST"
   },
   "code": {
     "sourceFiles": 319,
-    "lines": 59520,
-    "testFiles": 221,
+    "lines": 59552,
+    "testFiles": 222,
     "params": 301
   },
   "tokens": {
     "stale": false,
-    "countedAt": "2026-11-16T00:33:48.716Z",
+    "countedAt": "2026-11-16T00:54:45.674Z",
     "claude": {
-      "input": 28656,
-      "output": 14103974,
-      "cacheRead": 3818041718,
-      "cacheWrite": 39567505,
-      "total": 3871741853,
+      "input": 28744,
+      "output": 14122309,
+      "cacheRead": 3838864231,
+      "cacheWrite": 39601439,
+      "total": 3892616723,
       "sessions": 99,
-      "messages": 12470
+      "messages": 12497
     },
     "codex": {
-      "input": 22370102,
-      "output": 3643000,
-      "cacheRead": 1626504960,
+      "input": 23181080,
+      "output": 3733489,
+      "cacheRead": 1668959488,
       "cacheWrite": 0,
-      "reasoning": 884416,
-      "total": 1652518062,
+      "reasoning": 896166,
+      "total": 1695874057,
       "sessions": 39
     },
-    "total": 5524259915,
+    "total": 5588490780,
     "firstSessionAt": "2026-11-14T21:41:39.778Z",
-    "hours": 26.9,
-    "perHour": 205598615
+    "hours": 27.2,
+    "perHour": 205321048
   },
   "price": {
-    "low": 1556,
-    "high": 1753,
+    "low": 1561,
+    "high": 1759,
     "currency": "USD",
     "models": [
       {
@@ -63,9 +63,9 @@
       },
       {
         "model": "Claude Fable 5.2",
-        "tokens": 3054286276,
-        "low": 1228,
-        "high": 1386
+        "tokens": 3075161146,
+        "low": 1233,
+        "high": 1391
       }
     ],
     "unpricedTokens": 0,
