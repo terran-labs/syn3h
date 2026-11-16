@@ -58,6 +58,9 @@ function verifyWindows(trace) {
   assert.equal(trace.exhausted, false)
   assert.ok(trace.eligibleCalls >= 200, 'original minimum retained, not internal eligibility proof')
   assert.ok(trace.delivery && trace.delivery.call === 220, 'fixed ordinary-call boundary observed')
+  const counts = trace.delivery.counters
+  for (const field of ['judgeFalse', 'hiddenCalls', 'loadingCalls']) assert.equal(counts[field], 0, `delivery ${field}`)
+  assert.equal(counts.substituted, 220); assert.equal(counts.eligibleCalls, 220)
   assert.ok(trace.delivery.context.now - trace.installation.now <= 30000, 'delivery within 30 seconds')
   const key = state => `${state.level}:${state.rung}:${state.auto}:${state.targetFps}`
   const initial = trace.installation.performance, stableKey = key(initial)
@@ -286,17 +289,7 @@ try {
           playing: syn3h.shell.playing, shellClasses: document.querySelector('.syn3h-shell')?.className ?? null,
           ignore: sessionStorage.getItem('syn3h.performance.ignore'), performance: scalar(q.getPerformanceSnapshot()) })
         trace.installation = observe('installation snapshot', context)
-        let priorTransition, unsubscribe
-        // Published public snapshots only. Never copy history arrays on each frame.
-        observe('subscribe performance', () => {
-          unsubscribe = q.subscribePerformance(snapshot => observe('public snapshot transition', () => {
-            const state = scalar(snapshot), signature = JSON.stringify(state)
-            if (signature === priorTransition) return
-            priorTransition = signature
-            if (trace.transitions.length >= 64) { trace.transitionOverflow = true; return }
-            trace.transitions.push({ call: trace.calls, tick: syn3h.game.tick, now: performance.now(), state })
-          }))
-        })
+        let priorTransition, unsubscribe, installed = false
         function wrapped(metrics, ...args) {
           trace.calls++
           observe('pre-call scalars', () => {
@@ -317,22 +310,53 @@ try {
           }
           // Observation cannot throw across this boundary. Original forwarding and throws stay intact.
           const result = Reflect.apply(original, this, [use ? { ...metrics, frameMs: 50, fps: 20 } : metrics, ...args])
-          if (trace.calls === 220) trace.delivery = observe('fixed delivery boundary', () => ({ call: trace.calls, context: context() }))
+          if (trace.calls === 220) trace.delivery = observe('fixed delivery boundary', () => ({
+            call: trace.calls, context: context(), counters: Object.freeze({
+              judgeFalse: trace.judgeFalse, hiddenCalls: trace.hiddenCalls, loadingCalls: trace.loadingCalls,
+              substituted: trace.substituted, eligibleCalls: trace.eligibleCalls,
+            }),
+          }))
           return result
         }
-        q.frame = wrapped
         window.__recoveryTest = { trace,
           snapshot() { trace.final = observe('final snapshot', context); return trace },
           restore() {
-            try { if (q.frame !== wrapped) throw new Error('sample wrapper replaced'); q.frame = original }
+            try {
+              if (installed) {
+                if (q.frame !== wrapped) throw new Error('sample wrapper replaced')
+                q.frame = original; installed = false
+              }
+            }
             finally { if (unsubscribe) unsubscribe() }
           } }
+        // Register failure snapshot/restoration before any validation or subscription can fail.
+        const initial = trace.installation, quality = initial?.performance
+        if (!initial || !quality ||
+            ![initial.tick, initial.frames, initial.now, quality.level, quality.rung, quality.targetFps, quality.historyCount].every(Number.isFinite) ||
+            (quality.lastPoint !== null && !Number.isFinite(quality.lastPoint?.timeMs)) ||
+            initial.playing !== true || initial.paused !== false || initial.hidden !== false ||
+            initial.visibility !== 'visible' || initial.loading !== false ||
+            quality.level !== 3 || quality.auto !== false || quality.targetFps <= 0 || initial.ignore === '1')
+          throw new Error('invalid public stimulus installation state')
+        // Published public snapshots only. Never copy history arrays on each frame.
+        observe('subscribe performance', () => {
+          unsubscribe = q.subscribePerformance(snapshot => observe('public snapshot transition', () => {
+            const state = scalar(snapshot), signature = JSON.stringify(state)
+            if (signature === priorTransition) return
+            priorTransition = signature
+            if (trace.transitions.length >= 64) { trace.transitionOverflow = true; return }
+            trace.transitions.push({ call: trace.calls, tick: syn3h.game.tick, now: performance.now(), state })
+          }))
+        })
+        if (trace.observationErrorCount) throw new Error('stimulus subscription observation failed')
+        q.frame = wrapped; installed = true
         return { maximumCalls: 600, sampleMs: 50, startTick: trace.tick, installation: trace.installation }
 
       }))
       await wait(() => {
         const t = window.__recoveryTest.trace
-        if (t.exhausted || t.observationErrorCount || t.transitionOverflow) throw new Error('sample evidence failed')
+        if (t.exhausted || t.observationErrorCount || t.transitionOverflow ||
+            t.judgeFalse || t.hiddenCalls || t.loadingCalls) throw new Error('sample evidence failed')
         return !!t.delivery
       }, null, 30000)
       row.delivery = await bounded(() => page.evaluate(() => window.__recoveryTest.snapshot()))
