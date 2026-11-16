@@ -3,7 +3,7 @@
 // Serve the game first (see tests/ui/run-touch-stick.sh). Drags are synthetic PointerEvents sent
 // to the element under the point, as tests/ui/touch-stick.mjs does: WebKit automation has no
 // multi-touch drag. Screenshots of both hands in both orientations go to tests/ui/artifacts/touch-aim.
-import { webkit, devices } from 'playwright-core'
+import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 
@@ -93,7 +93,17 @@ try {
       const turned = (s.yaw - before.yaw) * 180 / Math.PI
       // Mouse convention: a drag to the right turns the view right (yaw falls).
       assert.ok(turned * dir < -20, `${hand}: the camera turns with the drag (${turned.toFixed(1)} deg)`)
+      // A toast as long as a real one gets (a cut room name and a long player name) shows in one
+      // line and covers nothing the player reads or touches.
+      await page.evaluate(() => window.syn3h.shell.toast('Joined room touch-aim-…794854727 as Bartholomew'))
       await page.waitForTimeout(150)
+      const toast = await box('.shell-toast')
+      assert.ok(toast && toast.height < 32, `${name} ${hand}: toast is one line ${JSON.stringify(toast)}`)
+      const covers = [['.shell-minimap', 'minimap'], ['.touch-actions', 'buttons'], ['.touch-stick', 'stick'], ['.inspector-toggle', 'Panels tab']]
+      for (const [selector, what] of covers) { const other = await box(selector); assert.ok(!overlaps(toast, other), `${name} ${hand}: toast clears the ${what} ${JSON.stringify([toast, other])}`) }
+      for (const [selector, what] of [['.gear-selector', 'gear selector'], ['.fh-top', 'heading'], ['.fh-left', 'speed readout'], ['.fh-right', 'height readout']]) {
+        const other = await ink(selector); assert.ok(other, what); assert.ok(!overlaps(toast, other), `${name} ${hand}: toast clears the ${what} ${JSON.stringify([toast, other])}`)
+      }
       await page.screenshot({ path: `${out}/${name}-${hand}-hand.png` })
       // The aiming finger does not move the stick, and the stick finger does not aim.
       const yaw = (await state()).yaw
@@ -129,6 +139,24 @@ try {
     await context.close()
     console.log(`${name}: ok`)
   }
+  // Desktop placement is unchanged; a toast there must still clear the speed and height readouts.
+  const desktop = await chromium.launch({ channel: 'chrome', headless: true })
+  try {
+    const page = await desktop.newPage({ viewport: { width: 1440, height: 900 } })
+    await page.goto(`${base}?autoplay=1&room=touch-aim-desktop-${Date.now()}`)
+    await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
+    await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
+    await page.evaluate(() => window.syn3h.shell.toast('Joined room touch-aim-…794854727 as Bartholomew'))
+    await page.waitForTimeout(150)
+    const toast = await page.locator('.shell-toast').boundingBox()
+    for (const selector of ['.fh-left', '.fh-right']) {
+      const other = await page.locator(selector).first().boundingBox()
+      assert.ok(!other || !overlaps(toast, other), `desktop: toast clears ${selector}`)
+    }
+    const heading = await page.locator('.fh-top').first().boundingBox()
+    console.log(`desktop: ok; toast ${JSON.stringify(toast)}, heading ${JSON.stringify(heading)}, overlaps heading: ${heading ? overlaps(toast, heading) : 'no heading'}`)
+    await page.screenshot({ path: `${out}/desktop-toast.png` })
+  } finally { await desktop.close() }
 } finally {
   await browser.close()
 }
