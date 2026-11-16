@@ -32,6 +32,8 @@ describe('loading lines', () => {
     for (let i = 0; i < pool.length + 5; i++) { previous = pickLoadingLine({ phase: 'world', general: loadingMessages, previous, shown, random }); shown.add(previous); seen.push(previous) }
     expect(new Set(seen.slice(0, pool.length))).toEqual(new Set(pool))
     for (const line of seen.slice(pool.length)) expect(loadingMessages).toContain(line)
+    // A line that says loading is finished never shows while it is not.
+    expect(loadingMessages).not.toContain('Sky attached. Ground attached. Off you go.')
     // A phase with no pool of its own goes straight to the general list.
     expect(loadingMessages).toContain(pickLoadingLine({ phase: 'toString', general: loadingMessages, random }))
   })
@@ -41,7 +43,8 @@ describe('loading lines', () => {
     expect(pickLoadingLine({ general: custom, previous: 'Plain claim' })).toBe('<b>Bold claim</b>')
   })
   it('keeps every line short, unique and complete', () => {
-    const all = [...loadingMessages, ...Object.values(phaseMessages).flat(), ...stillWorkingMessages]
+    const all = [...new Set([...loadingMessages, ...Object.values(phaseMessages).flat()]), ...stillWorkingMessages]
+    expect(new Set(loadingMessages).size).toBe(loadingMessages.length)
     expect(new Set(all).size).toBe(all.length)
     for (const line of all) { expect(line.length, line).toBeLessThanOrEqual(60); expect(line, line).toMatch(/^[A-Z].*\.$/) }
     for (const phase of ['device', 'physics', 'renderer', 'world', 'ready']) expect(phaseMessages[phase]?.length, phase).toBeGreaterThan(3)

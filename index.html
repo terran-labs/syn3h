@@ -311,15 +311,15 @@
         </g>
       </svg>
       <p class="boot-status" aria-hidden="true">Checking which way is down.</p>
-      <p class="boot-still">Still working. The first visit takes the longest.</p>
+      <p class="boot-still">Still working. First visits unpack the whole planet.</p>
       <script>
         // Fun lines from the first paint, a new one every 3.5 s (never the same twice running)
         // until LoadingScreen takes over and clears window.__bootLines. The markup above is the
         // no-script fallback. These lines are also in src/ui/data/loadingMessages.ts.
         (function(s, w, a, b, i, pick) {
           if (!s || !w) return;
-          a = ["Checking which way is down.", "Counting wheels. Recounting wheels.", "Asking gravity to hold this for a moment.", "Tightening the imaginary bolts.", "Packing a spare atmosphere.", "Confirming that the sky is attached.", "Giving the moon some personal space.", "Moving the mountain slightly to the left."];
-          b = ["Still working. The first visit takes the longest.", "Still going. First visits pack the whole planet.", "Still here. The next visit starts much quicker."];
+          a = ["Checking which way is down.", "Counting wheels. Recounting wheels.", "Asking gravity to hold this for a moment.", "Tightening the imaginary bolts.", "Packing a spare atmosphere.", "Confirming that the sky is attached.", "Giving the moon some personal space.", "Moving the mountain slightly to the left.", "Reminding every object that it has mass.", "Setting gravity to roughly one gravity."];
+          b = ["Still working. First visits unpack the whole planet.", "Still going. The first trip always packs the most.", "Still here. Next time the planet is already unpacked."];
           pick = function() { i = (i + 1 + Math.floor(Math.random() * (a.length - 1))) % a.length; return a[i]; };
           i = Math.floor(Math.random() * a.length); s.textContent = a[i];
           w.textContent = b[Math.floor(Math.random() * b.length)];

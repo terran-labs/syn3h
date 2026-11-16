@@ -40,7 +40,7 @@ materials; the colour controls still save the colours applied by the actual vehi
 
 The loading cover mounts during module evaluation, before engine initialization. It
 listens for `syn3h:loading` with `{ phase, progress, elapsedMs }`, where progress is 0 to 1.
-Missing progress displays an indeterminate bar. The Shell constructor ends startup
+The Shell constructor ends startup
 loading. `shell.setLoadingMessages(string[])` replaces the new browser-edition message list;
 for messages before Shell exists, use `bootLoading?.setMessages(messages)` from
 `./ui/LoadingScreen`. Synchronous terrain generation still blocks animation while it
@@ -105,14 +105,9 @@ late-registered bots, score styling, invitation copying, Escape, multi-touch and
 input suspension. Generated evidence lives under `tests/ui/artifacts/` and is ignored
 by git. Physical Safari playback and hardware listening are not established by headless Chrome.
 
-The additional `node tests/ui/flight-loading-map.mjs` check holds GPU startup to
-capture both loading states, dispatches progress events, checks H and ? help, verifies
-terrain map regeneration and exercises simultaneous jet banking and both thrust buttons.
-Its screenshots include desktop and phone loading covers and jet HUD layouts.
-
 ## Names, sharing and hill mode
 
-The name vocabulary and 40 short loading messages are newly written; see
+The name vocabulary and the loading lines are newly written; see
 `name-recovery.md`.
 Names are deterministic for a seed and kind. They are display labels, not unique IDs.
 Use a stable bot identity shared by clients, rather than a client's array position:
@@ -124,8 +119,8 @@ const worldName = generateName(worldSeed.value, 'world')
 ```
 
 The lobby installs a generated player name when no saved name exists and persists its
-random seed locally. Existing saved names win. LoadingScreen uses the new data file
-with a five-second rotation; `shell.setLoadingMessages` still overrides it.
+random seed locally. Existing saved names win. LoadingScreen rotates the loading lines
+from `src/ui/data/loadingMessages.ts`; `shell.setLoadingMessages` still overrides them.
 
 The match display accepts authoritative state independently of `setStatus(lines)`:
 
@@ -169,11 +164,6 @@ was read directly from the shipped fonts' name tables. OFL copies came from
 https://github.com/google/fonts/blob/main/ofl/lato/OFL.txt and
 https://github.com/google/fonts/blob/main/ofl/barlow/OFL.txt. The About panel links the
 local notices; audio provenance remains in `public/audio/README.md`.
-
-Run `node tests/ui/fans-hill.mjs` for generated and saved names, loading rotation,
-metadata/assets, credits, late mode registration, host lock and all four hill states
-at desktop and 390 by 844 phone sizes. Screenshots and its JSON report are under
-`tests/ui/artifacts/`.
 
 ## Game jam presentation
 
@@ -382,12 +372,13 @@ the no-script failsafe waits 60 (not 12), the lap is completed at the moment of 
 because a busy phone draws too few frames for the easing to get there, and the veil lifts
 at once on a script error, a rejected promise or the page's failure message.
 
-Nothing is written on the veil, so the phase and the loading messages are now only in a
-status region for screen readers. `tools/heavy.sh node tests/ui/boot-veil.mjs` checks the
-veil from first paint to lift, and that a startup failure is never hidden behind it.
-
-`fans-hill.mjs` and `flight-loading-map.mjs` are older checks that have gone stale in
-their later sections against other lanes' changes (they failed before the veil too).
+The veil's status line shows dry loading lines, rotated by index.html from the first
+paint and then by LoadingScreen, which prefers a pool for the current phase when a phase
+lasts long enough to show one. That line is aria-hidden; screen readers hear the plain
+phase once per phase from the `.syn3h-loading` live region.
+`tools/heavy.sh node tests/ui/boot-veil.mjs` checks the veil from first paint to lift, and
+that a startup failure is never hidden behind it. `tests/ui/loading-lines.mjs <url>` checks
+the rotation over a slow link and the longest line at 320 px.
 
 ## Touch tablets
 

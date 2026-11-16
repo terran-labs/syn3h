@@ -10,7 +10,7 @@
  */
 
 /** The general list: shown when a phase has used up its own lines, or has none. */
-export const loadingMessages = [
+const generalMessages = [
   'Checking which way is down.',
   'Tightening the imaginary bolts.',
   'Waiting for the dust to compile.',
@@ -76,7 +76,7 @@ export const phaseMessages: Readonly<Record<string, readonly string[]>> = {
   ],
   renderer: [
     'Compiling shaders. They like to take their time.',
-    'Mixing the sky a sensible shade of blue.',
+    'Mixing this planet a sky in its own colour.',
     'Scattering sunlight the long way round.',
     'Lowering the sun to a more flattering angle.',
     'Showing the shadows where to stand.',
@@ -106,9 +106,9 @@ export const phaseMessages: Readonly<Record<string, readonly string[]>> = {
 
 /** The "still working" line, shown after eight seconds. Honest: first visits are slowest. Copied inline in index.html. */
 export const stillWorkingMessages = [
-  'Still working. The first visit takes the longest.',
-  'Still going. First visits pack the whole planet.',
-  'Still here. The next visit starts much quicker.',
+  'Still working. First visits unpack the whole planet.',
+  'Still going. The first trip always packs the most.',
+  'Still here. Next time the planet is already unpacked.',
 ] as const
 
 /**
@@ -122,3 +122,16 @@ export function pickLoadingLine(options: { phase?: string; general: readonly str
   if (!pool.length) return general[0] ?? previous ?? ''
   return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))]
 }
+
+/**
+ * Once the bundle runs, every phase passes in well under a second on most devices (Game.ts
+ * reports physics and the renderer back to back, world building blocks painting, and ready
+ * lifts the veil), so phase lines would hardly ever be read. They all join the general
+ * rotation, which is what players read while the bundle downloads, and still lead in their
+ * own phase on a device slow enough to linger there. Lines that say loading has finished
+ * stay in the ready phase only.
+ */
+const READY_ONLY = new Set(['Sky attached. Ground attached. Off you go.', 'Handing you the keys to a small planet.'])
+
+/** Everything the general rotation draws on. */
+export const loadingMessages: readonly string[] = [...generalMessages, ...Object.values(phaseMessages).flat().filter(line => !READY_ONLY.has(line))]
