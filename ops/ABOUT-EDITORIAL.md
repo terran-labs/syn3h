@@ -35,8 +35,9 @@ rest of your gear. Give each experiment enough space to become a good story.
 **Explore.** Roam and experiment together, with no score, hill or player marked as it.
 Gear remains available as toys.
 
-**Tag.** A chase across the landscape. Pass the tag along using the room's chosen tag
-settings, and use your vehicle's abilities to find an escape route.
+**Tag.** Shoot the player who is it to take the role. While you are it, shooting someone
+earns a point and you keep the role; a ram passes it along. Use the landscape and your
+vehicle's abilities to find an escape route.
 
 **King of the Hill.** Reach the marked zone and hold it alone to score. More than one
 vehicle in the zone makes it contested, and scoring pauses until someone gains control.
@@ -87,6 +88,9 @@ Preserve the existing complete licence disclosure below these links.
 ## Delivery notes, not public copy
 
 - Source base: accepted release 1516. Mode semantics checked in shared/protocol.ts.
+  Tag direction corrected after independent review of server/room.ts. README panel names
+  target the pending sidebar integration; do not publish them ahead of that release.
+  Native held click reels the Grapple; touch Launch is one-shot, then use Reel in.
   Control reference is the current README; UX must verify against the integrated controls
   and use current panel names. Do not promise sidebar placement from an older build.
 - Historical context comes from the owner's original Syn3h backstory, previously read
