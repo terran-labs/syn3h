@@ -137,7 +137,7 @@ void main() {
   float d = min(1.0, vReach / (0.35 + 0.65 * b));
   float falloff = exp(-1.8 * d) * (1.0 - d * d * (3.0 - 2.0 * d));
   float a = clamp(uStrength * falloff * mix(0.3, 1.0, b), 0.0, 1.0) * uOpacity;
-  // An electric blue at the letters, never white, turning violet outward.
+  // Warm corona with blue highlights near the letters, warming toward the outer edge.
   vec3 c = mix(mix(uGlow, vec3(143.0, 227.0, 255.0) / 255.0, 0.25), uGlowEdge, smoothstep(0.0, 0.6, d));
   color = vec4(c * a, a);
 }`

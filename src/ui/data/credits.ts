@@ -1,8 +1,8 @@
 /** Story sources: README introduction/how to play; original attribution below; AGENTS.md generation principle. */
 export const creditsHtml = `<div class="about-intro"><p class="about-title">A world to drive, fly and make your own.</p>
 <p>Syn3h brings off-road sci-fi vehicles and shared procedural worlds to the browser. Choose a planet, land on it and bring a friend.</p></div>
-<div class="about-columns"><div><h3>From Mars Explorer to Syn3h</h3>
-<p>Syn3h comes from Aubrey Falconer, creator of Mars Explorer. This browser edition carries forward the original games’ vehicles and exploration, with worlds you can change while you play.</p>
+<div class="about-columns"><div><h3>Explore together</h3>
+<p>Created by Aubrey Falconer, Syn3h is a place to explore with friends, with worlds you can change while you play.</p>
 <p>Drive a buggy with force field wings, fly a jet, skim the ground in a hovercraft or take a tank across the island. Explore together or compete in Tag and King of the Hill.</p></div>
 <div><h3>Generated as you play</h3>
 <p>Terrain, skies and the galaxy are generated in the browser. The adaptive score and synthesised vehicle voices respond as you move through the world.</p>
