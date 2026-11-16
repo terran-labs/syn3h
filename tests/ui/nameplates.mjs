@@ -420,10 +420,68 @@ async function installViewObserver(page) {
     let active = null
     const installed = []
     const fault = error => { if (state.errors.length < 8) state.errors.push(String(error)); else state.droppedErrors++ }
-    const copyCamera = camera => ({ uuid: camera.uuid, active: camera === s.game.camera,
-      eye: camera.position.toArray(), quaternion: camera.quaternion.toArray(), fov: camera.fov,
-      near: camera.near, far: camera.far, matrix: camera.matrixWorld.toArray(),
-      inverse: camera.matrixWorldInverse.toArray(), projection: camera.projectionMatrix.toArray() })
+    const copyCamera = camera => {
+      const target = s.game.renderer._canvasTarget, view = camera.view
+      return { uuid: camera.uuid, active: camera === s.game.camera,
+        eye: camera.position.toArray(), quaternion: camera.quaternion.toArray(), fov: camera.fov,
+        near: camera.near, far: camera.far, aspect: camera.aspect, zoom: camera.zoom,
+        filmGauge: camera.filmGauge, filmOffset: camera.filmOffset, coordinateSystem: camera.coordinateSystem, reversedDepth: camera.reversedDepth,
+        temporal: s.params.get('post.temporal')?.value,
+        view: view === null ? null : { enabled: view.enabled, fullWidth: view.fullWidth, fullHeight: view.fullHeight,
+          offsetX: view.offsetX, offsetY: view.offsetY, width: view.width, height: view.height },
+        drawingBuffer: { width: Math.floor(target?._width * target?._pixelRatio), height: Math.floor(target?._height * target?._pixelRatio) },
+        matrix: camera.matrixWorld.toArray(), inverse: camera.matrixWorldInverse.toArray(), projection: camera.projectionMatrix.toArray() }
+    }
+    const scalarKeys = ['near', 'far', 'fov', 'aspect', 'zoom', 'filmGauge', 'filmOffset', 'coordinateSystem']
+    const viewKeys = ['fullWidth', 'fullHeight', 'offsetX', 'offsetY', 'width', 'height']
+    const exact = (a, b) => Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((v, i) => v === b[i])
+    // Detached arithmetic in installed PerspectiveCamera/Matrix4 order. No camera method calls.
+    const reconstruct = c => {
+      if (!scalarKeys.every(k => Number.isFinite(c[k])) || typeof c.reversedDepth !== 'boolean' || typeof c.temporal !== 'boolean' ||
+        ![2000, 2001].includes(c.coordinateSystem) || !(c.near > 0 && c.far > c.near && c.zoom > 0 && c.aspect > 0 && c.filmGauge > 0)) return null
+      if (!Number.isInteger(c.drawingBuffer.width) || !Number.isInteger(c.drawingBuffer.height) || c.drawingBuffer.width <= 0 || c.drawingBuffer.height <= 0) return null
+      if (c.view !== null && (typeof c.view?.enabled !== 'boolean' || !viewKeys.every(k => Number.isFinite(c.view[k])) ||
+        !['fullWidth', 'fullHeight', 'width', 'height'].every(k => c.view[k] > 0))) return null
+      const near = c.near
+      let top = near * Math.tan((Math.PI / 180) * 0.5 * c.fov) / c.zoom
+      let height = 2 * top, width = c.aspect * height, left = -0.5 * width
+      if (c.view !== null && c.view.enabled) {
+        const fullWidth = c.view.fullWidth, fullHeight = c.view.fullHeight
+        left += c.view.offsetX * width / fullWidth
+        top -= c.view.offsetY * height / fullHeight
+        width *= c.view.width / fullWidth
+        height *= c.view.height / fullHeight
+      }
+      const skew = c.filmOffset
+      if (skew !== 0) left += near * skew / (c.filmGauge * Math.min(c.aspect, 1))
+      const right = left + width, bottom = top - height, far = c.far
+      const x = 2 * near / (right - left), y = 2 * near / (top - bottom)
+      const a = (right + left) / (right - left), b = (top + bottom) / (top - bottom)
+      let z, w
+      if (c.reversedDepth) { z = near / (far - near); w = (far * near) / (far - near) }
+      else if (c.coordinateSystem === 2000) { z = -(far + near) / (far - near); w = (-2 * far * near) / (far - near) }
+      else { z = -far / (far - near); w = (-far * near) / (far - near) }
+      const values = [x, 0, 0, 0, 0, y, 0, 0, a, b, z, -1, 0, 0, w, 0]
+      return values.every(Number.isFinite) ? values : null
+    }
+    const correspondence = (draw, poll) => {
+      const result = { valid: false, relation: 'unknown', drawReconstruction: null, pollReconstruction: null }
+      if (!draw || !poll) return result
+      result.drawReconstruction = reconstruct(draw); result.pollReconstruction = reconstruct(poll)
+      if (!exact(result.drawReconstruction, draw.projection) || !exact(result.pollReconstruction, poll.projection) ||
+        draw.uuid !== poll.uuid || !draw.active || !poll.active || !scalarKeys.every(k => draw[k] === poll[k]) ||
+        draw.reversedDepth !== poll.reversedDepth || draw.temporal !== poll.temporal ||
+        draw.drawingBuffer.width !== poll.drawingBuffer.width || draw.drawingBuffer.height !== poll.drawingBuffer.height) return result
+      const sameView = draw.view === null && poll.view === null || draw.view !== null && poll.view !== null &&
+        draw.view.enabled === poll.view.enabled && viewKeys.every(k => draw.view[k] === poll.view[k])
+      if (sameView && exact(draw.projection, poll.projection)) { result.valid = true; result.relation = 'unchanged-view-exact-projection'; return result }
+      if (draw.temporal === true && draw.view?.enabled === true && poll.view?.enabled === false &&
+        viewKeys.every(k => draw.view[k] === poll.view[k]) && draw.view.fullWidth === draw.drawingBuffer.width &&
+        draw.view.fullHeight === draw.drawingBuffer.height && draw.view.width === draw.drawingBuffer.width && draw.view.height === draw.drawingBuffer.height) {
+        result.valid = true; result.relation = 'validated-enabled-to-disabled-view-offset-correspondence'
+      }
+      return result
+    }
     const install = (object, key, factory) => {
       const own = Object.getOwnPropertyDescriptor(object, key), original = object[key]
       if (typeof original !== 'function' || own && (!own.configurable || !('value' in own))) throw new Error(`unsupported descriptor ${key}`)
@@ -448,12 +506,14 @@ async function installViewObserver(page) {
     window.nameplateViewObserver = { state, restore, sample() {
       const camera = s.game.camera, net = window.syn3hNet
       const latest = state.latest ? structuredClone(state.latest) : null
+      const currentCamera = copyCamera(camera)
       const labels = [...tags.root.querySelectorAll('.vehicle-nameplate')].filter(el => !el.hidden && getComputedStyle(el).display !== 'none' && !el.closest('[hidden]')).map(el => {
         const b = el.getBoundingClientRect()
         return { id: el.dataset.vehicle, bot: el.classList.contains('is-bot'), tick: el.classList.contains('is-tick'), text: el.textContent,
           left: b.left, top: b.top, right: b.right, bottom: b.bottom }
       })
-      return { stamp: tags.stamp, wall: performance.now(), tick: s.game.tick, camera: copyCamera(camera),
+      return { stamp: tags.stamp, wall: performance.now(), tick: s.game.tick, camera: currentCamera, projectionCorrespondence: correspondence(latest?.camera, currentCamera),
+        envelopeCorrespondence: latest?.envelopes.map(e => correspondence(e.camera, latest.camera)) ?? [],
         observer: String(net.id), host: net.game.host, isHost: net.isHost, viewport: { width: innerWidth, height: innerHeight },
         mode: s.params.get('camera.mode').value, distance: s.params.get('camera.distance').value,
         cinematic: !!s.camera.cinematic, presentation: s.shell.presentation,
@@ -790,7 +850,7 @@ try {
             const ready = cameraValues.every(Number.isFinite) && o.camera.active && o.mode === 0 && !o.cinematic && o.distance === 25 && !o.presentation &&
               o.viewport.width === view.width && o.viewport.height === view.height && o.isHost === view.host && controlsOK
             const matched = o.latest?.completed && !o.latest.threw && o.latest.stamp === current.stamp && o.latest.camera.uuid === o.camera.uuid &&
-              o.latest.camera.matrix.every((v, i) => v === o.camera.matrix[i]) && o.latest.camera.projection.every((v, i) => v === o.camera.projection[i]) &&
+              o.latest.camera.matrix.every((v, i) => v === o.camera.matrix[i]) && o.projectionCorrespondence.valid &&
               o.latest.mode === 0 && o.latest.distance === 25 && !o.latest.cinematic && o.latest.viewport[0] === view.width && o.latest.viewport[1] === view.height
             const previousMatched = history.viewMatched === true
             history.viewComparisons = matched && previousMatched && arrived && history.viewArrived === true && stable ? (history.viewComparisons ?? 0) + 1 : 0
@@ -802,6 +862,9 @@ try {
             if (o.errors.length || o.droppedErrors || o.overflow) throw new Error('passive observer sticky failure')
             if (!ready) throw new Error('ordinary camera observation controls or finite geometry differ')
             if (o.actors.length !== 7 || new Set(o.actors.map(t => t.id)).size !== 7 || o.actors.some(t => ![...Object.values(t.body), ...t.rendered, ...t.quaternion].every(Number.isFinite))) throw new Error('incomplete seven actor observation')
+            if (o.envelopeCorrespondence.some(c => !c.valid || c.relation !== 'unchanged-view-exact-projection')) throw new Error('envelope/draw descriptor mismatch')
+            if (o.latest && o.latest.envelopes.some(e => e.stamp !== o.latest.stamp || e.camera.uuid !== o.latest.camera.uuid ||
+              !e.camera.matrix.every((v, i) => v === o.latest.camera.matrix[i]) || !e.camera.projection.every((v, i) => v === o.latest.camera.projection[i]))) throw new Error('envelope/draw exact camera mismatch')
             if (o.latest && o.latest.envelopes.some(e => ![...e.center, e.radius, ...e.bend, e.disc.x, e.disc.y, e.disc.radius, e.disc.depth, ...e.camera.eye, ...e.camera.quaternion, ...e.camera.matrix, ...e.camera.inverse, ...e.camera.projection, e.camera.fov].every(Number.isFinite))) throw new Error('nonfinite envelope receipt')
           }
           if (!targets.every(t => t.geometryValid)) throw new Error('arrival target requires finite x/z and complete finite rendered XYZ')
@@ -982,11 +1045,14 @@ try {
         assert.ok([...final.camera.eye, ...final.camera.quaternion, ...final.camera.matrix, ...final.camera.inverse, ...final.camera.projection,
           final.camera.fov, final.camera.near, final.camera.far, ...final.pivot, ...final.desiredAfterLift, ...final.final, final.arm, final.lift,
           ...final.actors.flatMap(t => [...Object.values(t.body), ...t.rendered, ...t.quaternion])].every(Number.isFinite))
-        assert.ok(final.camera.matrix.every((v, i) => v === final.latest.camera.matrix[i]) && final.camera.projection.every((v, i) => v === final.latest.camera.projection[i]))
+        assert.ok(final.camera.matrix.every((v, i) => v === final.latest.camera.matrix[i]) && final.projectionCorrespondence.valid)
         assert.ok(Array.isArray(final.latest.envelopes) && final.latest.envelopes.length <= 7, 'bounded final envelopes required')
         assert.deepEqual(final.latest.viewport, [view.width, view.height])
+        assert.equal(final.envelopeCorrespondence.length, final.latest.envelopes.length)
+        assert.ok(final.envelopeCorrespondence.every(c => c.valid && c.relation === 'unchanged-view-exact-projection'))
         for (const e of final.latest.envelopes) {
           assert.equal(e.stamp, final.latest.stamp, 'envelope belongs to completed draw')
+          assert.deepEqual(e.camera.matrix, final.latest.camera.matrix); assert.deepEqual(e.camera.projection, final.latest.camera.projection)
           assert.equal(e.width, view.width); assert.equal(e.height, view.height)
           assert.ok(e.outputIdentityMatched && e.camera.active && e.camera.uuid === final.camera.uuid, 'envelope camera and output identity required')
           assert.ok([...e.center, e.radius, ...e.bend, e.disc.x, e.disc.y, e.disc.radius, e.disc.depth,

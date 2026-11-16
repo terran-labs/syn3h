@@ -794,3 +794,48 @@ allocator's exclusion list: matching the draw stamp or camera alone does not pro
 layout remained unchanged. Treat them as contemporaneous sample context unless separate
 matching evidence establishes allocator-time equality. Do not certify exact prior HUD
 exclusion compliance from those rectangles alone.
+
+
+## Detached projection correspondence correction
+
+The failed view observation retains its timeout, zero phone labels and unreached follower.
+This correction is source preparation only, with no new launcher or runtime allocation.
+At the existing envelope, completed-draw and poll/final capture sites, the observer copies
+camera view fields, near/far/FOV/aspect/zoom/filmGauge/filmOffset, coordinateSystem,
+reversedDepth, temporal setting and drawing-buffer dimensions. Dimensions come from the
+existing renderer CanvasTarget width/height/pixel ratio with the same floor arithmetic as
+getDrawingBufferSize; no renderer method or GPU query runs.
+
+Detached arithmetic follows installed PerspectiveCamera.updateProjectionMatrix operation
+order, including view offsets, scaling and film skew, then Matrix4.makePerspective for all
+16 entries. Both saved projections must equal their reconstructed matrices exactly.
+Envelope descriptors and matrices must match the completed draw exactly. Poll correspondence
+permits only unchanged view with exact projection, or enabled draw view to disabled poll
+view with identical six descriptor fields, buffer dimensions and camera scalars. The latter
+also requires temporal enabled and full-buffer view dimensions. Unknown or nonfinite state
+fails closed. Actual draw-time projection remains the envelope geometry source.
+
+This proves only validated view-offset correspondence if collected successfully. It does
+not identify the pass owner or jitter index and does not establish TRAA causation. Temporal
+enabled alone is insufficient. No matrix substitution, epsilon, ignored entries, live
+projection update or temporal setting change is used. Raw matrices and correspondence
+results are persisted before validation; original staging failure remains primary.
+All existing pose, identity, stamp, viewport, arrival and stability checks remain, including
+six matched post-arrival comparisons and the unchanged 15-second/100-ms/180-row limits and
+362-sample ceiling. HUD rectangles remain poll-time context, not proven allocator snapshots.
+
+Arithmetic source references and SHA-256 identities, relative to node_modules/three:
+
+- src/cameras/PerspectiveCamera.js:206 and 353, film width and projection order:
+  1cc44938885f785649a978ecb6f57c444561381ddab24de19fc59b400009b111
+- src/math/Matrix4.js:1140, complete perspective matrix:
+  f37121b58e71b0b9fb05a69a2a8e5d76e7d1751fd24320d650bdf1a0c6f9ae83
+- src/math/MathUtils.js:8, DEG2RAD:
+  dcb68bacb1d970686b1f19504fbebbe2388b36494380cf946e375705789c90f4
+- src/constants.js:1648 and 1656, coordinate-system constants:
+  12ddef7a09bb9017953273371c5d3fa95268a7caae0baf90b9349f64a06a543d
+- src/renderers/common/CanvasTarget.js:113, buffer-size arithmetic:
+  86785fa70d60ff824a085254e8c38237180b553dd0114a2cd337b901c6804f30
+
+Syntax and whitespace checks only. Arithmetic equivalence and observation behavior remain
+unexecuted and require independent source review before launcher preparation.
