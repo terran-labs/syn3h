@@ -30,6 +30,7 @@ import {
   bungeeReelSpeed, bungeeSnap, bungeeStiffness, bungeeTimeout, bungeeVehicles,
 } from './params'
 import { cordGlow, cordPull, cordSag, predict, reducedMass, type CordTuning } from './rope'
+import { drapeCord, type CordSurface } from './drape'
 import { BEAD_SPACING, SLACK_RGB, TAUT_RGB, TETHER_SEGMENTS, TetherLook, tetherColor } from './tether'
 
 type Vec3 = [number, number, number]
@@ -42,6 +43,8 @@ export interface BungeeVehicle {
 }
 
 export interface BungeeHooks {
+  /** Local visual surface only; never changes the anchor or spring force. */
+  surface?: CordSurface
   control?(): GearControl
   /** Bots can send fewer reel updates while local cord physics still runs every step. */
   reportInterval?: number
@@ -682,8 +685,9 @@ export class Bungee implements System {
       const wobble = (c.twang * 0.7 + glow * 0.05) * Math.sin(Math.PI * u) * Math.sin(time * (18 + glow * 30))
       p.addScaledVector(side, wobble)
     }
+    if (this.hooks.surface) drapeCord(this.points, n + 1, this.hooks.surface)
     const rgb = tetherColor(glow, this.rgb)
-    look.writeCord(c.slot, this.points, glow, c.phase, rgb)
+    look.writeCord(c.slot, this.points, glow, c.phase, rgb, this.hooks.surface)
 
     const star = look.cordSpark(c.slot, 0), tail = look.cordSpark(c.slot, 1), anchor = look.cordSpark(c.slot, 2)
     if (c.hook) {

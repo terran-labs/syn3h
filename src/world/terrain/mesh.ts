@@ -16,6 +16,7 @@
  *    invisible: the heights are periodic and the seam row is shared (see `sealSeam`).
  */
 import * as THREE from 'three/webgpu'
+import { wrapCoord } from '../../../shared/wrap'
 import { overHorizon } from '../curve'
 import type { TerrainData } from './generate'
 
@@ -45,6 +46,8 @@ export interface TerrainMeshes {
   update(data: TerrainData): void
   /** Pick each chunk's level of detail for a camera position. */
   updateLod(camera: THREE.Vector3): void
+  /** Height of the currently drawn triangle, in the unbent periodic tile. */
+  heightAt(x: number, z: number): number
   /** Distances at which chunks drop to half and quarter detail. Defaults LOD_NEAR, LOD_FAR. */
   setLodDistances(near: number, far: number): void
   stats(camera?: THREE.Camera): TriangleStats
@@ -233,6 +236,24 @@ export function createTerrainMeshes(data: TerrainData, material: THREE.Material)
 
   return {
     group,
+    heightAt(x, z) {
+      const gx = (wrapCoord(x, size) + size / 2) / data.cell
+      const gz = (wrapCoord(z, size) + size / 2) / data.cell
+      const cx = Math.min(perSide - 1, Math.floor(gx / cells))
+      const cz = Math.min(perSide - 1, Math.floor(gz / cells))
+      const ch = chunks[cz * perSide + cx]
+      const stride = Math.min(STRIDES[ch.level], cells)
+      const lx = gx - ch.x0, lz = gz - ch.z0
+      const ix = Math.min(cells - stride, Math.floor(lx / stride) * stride)
+      const iz = Math.min(cells - stride, Math.floor(lz / stride) * stride)
+      const fx = (lx - ix) / stride, fz = (lz - iz) / stride
+      const positions = ch.base.getAttribute('position')
+      const row = cells + 1, i = iz * row + ix
+      const h00 = positions.getY(i), h10 = positions.getY(i + stride)
+      const h01 = positions.getY(i + stride * row), h11 = positions.getY(i + stride * (row + 1))
+      return fx + fz <= 1 ? h00 + (h10 - h00) * fx + (h01 - h00) * fz
+        : h11 + (h01 - h11) * (1 - fx) + (h10 - h11) * (1 - fz)
+    },
     update(next) {
       for (const ch of chunks) {
         fillChunk(ch.base, next, ch.x0, ch.z0, ch.cells)

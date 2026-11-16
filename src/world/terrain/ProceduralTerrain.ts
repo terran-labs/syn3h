@@ -326,6 +326,12 @@ export class ProceduralTerrain implements Terrain {
     return this.sampler.heightAt(x, z)
   }
 
+  renderHeightAt(x: number, z: number): number {
+    return this.meshes.heightAt(x, z)
+  }
+
+  get renderCellSize(): number { return this.data.cell }
+
   normalAt(x: number, z: number, out: THREE.Vector3): THREE.Vector3 {
     return this.sampler.normalAt(x, z, out)
   }
