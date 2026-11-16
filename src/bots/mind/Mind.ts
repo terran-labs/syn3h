@@ -515,8 +515,13 @@ export class Mind {
         const b = points[this.routeIndex], a = this.routeIndex > 0 ? points[this.routeIndex - 1] : null
         const db = Math.hypot(b.x - here.x, b.z - here.z), da = a ? Math.hypot(a.x - here.x, a.z - here.z) : db
         if (a && db > look && da < look) {
-          const t = (look - da) / (db - da)
-          this.slide.x = a.x + (b.x - a.x) * t; this.slide.z = a.z + (b.z - a.z) * t; this.waypoint = this.slide
+          // Where a circle of radius `look` round the vehicle crosses the segment, ahead of it.
+          // Interpolating by distance instead put the aim inside the turning circle once the
+          // vehicle was a few metres along a long segment, and it orbited the aim at full lock.
+          const ex = b.x - a.x, ez = b.z - a.z, length = Math.hypot(ex, ez) || 1, ux = ex / length, uz = ez / length
+          const s = (here.x - a.x) * ux + (here.z - a.z) * uz, off = da * da - s * s
+          const along = Math.min(length, s + Math.sqrt(Math.max(0, look * look - Math.max(0, off))))
+          this.slide.x = a.x + ux * along; this.slide.z = a.z + uz * along; this.waypoint = this.slide
         } else this.waypoint = b
         return
       }
