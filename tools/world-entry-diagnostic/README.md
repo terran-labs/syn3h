@@ -59,6 +59,12 @@ CSS and WASM response body against its archived path and SHA-256. Require the kn
 bundle. A mismatch invalidates the run even if the game appears normal. The archive build
 metadata must name full commit 214c3c9672b91571ea370fd80b13c85f1fcb4b6d.
 
+Before document assertions, save the decoded response bytes once, its URL and status,
+an explicit safe response-header subset, and actual/expected SHA-256 values. The assertion
+uses those same captured bytes without normalization or exceptions. No request headers,
+cookies or authentication headers are recorded. The first observer run saved only the
+mismatching document hash, not its body; this change cannot recover that missing evidence.
+
 This pins the client, not the current production room Worker. Use a unique diagnostic room
 with no other intentional clients; room latency remains an observed confound, not historical
 1518 backend evidence. No source, Vite, rewritten bundle or locally reconstructed Worker is
