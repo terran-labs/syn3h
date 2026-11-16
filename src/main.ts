@@ -10,7 +10,9 @@ import { params, worldSeed } from '../shared/params'
 import { BotManager } from './bots/BotManager'
 import { ChaseCamera } from './core/ChaseCamera'
 import { Game } from './core/Game'
-import { startNetworking } from './net'
+import { botColors, startNetworking } from './net'
+import { ChatPanel } from './ui/chat/ChatPanel'
+import { BOT_ID_BASE } from '../shared/protocol'
 import { ParamPanel } from './ui/ParamPanel'
 import { LobbyAddress } from './ui/LobbyAddress'
 import { generateName } from './ui/data/names'
@@ -223,6 +225,19 @@ async function main(): Promise<void> {
     // second) is the one thing that keeps running, so others see "paused", not a dropout.
     pause.subscribe((paused) => connection.setPaused(paused))
     connection.setPaused(pause.paused)
+    // Chat (src/ui/chat): the pill, strip and log, inside the shell so it shows only in play.
+    const chat = new ChatPanel(shell.element, {
+      channel: connection.chat,
+      input: game.input,
+      canOpen: () => shell.playing && !game.input.suspended,
+      releaseCursor: () => { if (document.pointerLockElement) document.exitPointerLock() },
+      roster: () => [...connection.players.values()].filter((p) => p.id !== connection.id).map((p) => ({
+        id: p.id, name: connection.displayName(p.id), bot: Boolean(p.bot),
+        color: p.bot ? botColors(p.id - BOT_ID_BASE)[0] : p.colors[0],
+      })),
+    })
+    // For automated checks (tools/chat-check.mjs). Join can run before window.syn3h exists.
+    Object.assign(window, { syn3hChat: { net: connection, panel: chat } })
     // Remote players and bots are audible, positioned in space.
     audio.setVehicles(() => connection.audibleVehicles())
     game.add(new ResumeSession({ game, terrain, get player() { return slot.current }, room: shell.room || query.get('room') || 'lobby', saved, network: connection, entrySearch: lobbyAddress.playURL().search }))

@@ -8,6 +8,7 @@
  */
 import * as THREE from 'three/webgpu'
 import { joinedText } from '../ui/toastText'
+import { ChatChannel } from './chat'
 import { type ParamValue, params, worldSeed } from '../../shared/params'
 import {
   BOT_ID_BASE,
@@ -213,6 +214,8 @@ export class NetClient implements System {
   readonly remotes = new Map<number, RemotePlayer>()
   readonly players = new Map<number, PlayerInfo>()
   readonly events: NetEvent[] = []
+  /** Chat lines, mutes and display rules (src/net/chat.ts). */
+  readonly chat: ChatChannel
   id = 0
   slot = 0
   game: GameState = {
@@ -285,6 +288,13 @@ export class NetClient implements System {
     this.bots = ctx.bots ?? null
     if (this.bots) this.bots.remote = true
     this.conn = new Connection(serverUrl(ctx.room))
+    this.chat = new ChatChannel({
+      selfId: () => this.id,
+      nameOf: (id) => this.displayName(id),
+      colorOf: (id) => isBotId(id) ? botColors(id - BOT_ID_BASE)[0] : this.players.get(id)?.colors[0] ?? DEFAULT_COLORS[0],
+      connected: () => this.connected,
+      send: (msg) => this.send(msg),
+    })
     this.raceBridge = new RaceBridge({
       now: this.roomNow,
       role: () => ({ id: this.id, host: this.isHost, connected: this.connected }),
@@ -1489,6 +1499,10 @@ export class NetClient implements System {
           : msg.reason === 'join' ? 'A new player brought their world' : 'The room was idle: world reset to defaults')
         break
       }
+      case 'chat':
+      case 'chat-refused':
+        this.chat.receive(msg)
+        break
       case 'error':
         if (msg.message === 'room is full') { this.onRoomFull(); break }
         this.event(`Server: ${msg.message}`)
@@ -1727,7 +1741,7 @@ export class NetClient implements System {
 }
 
 /** The bot manager's colours (BotManager.spawn), so a replica looks like the host's bot. */
-function botColors(index: number): [string, string] {
+export function botColors(index: number): [string, string] {
   return [`hsl(${(index * 137.508 + 15) % 360}, 85%, 55%)`, '#ffffff']
 }
 
