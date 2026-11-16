@@ -115,7 +115,8 @@ describe('shared fire ownership', () => {
     if (source === 'tag') s.rack.fireBegin('tag'); else s.input.mouseFire = true
     s.step(); expect(s.chasers).toHaveLength(1)
     if (source === 'tag') s.rack.fireEnd('tag'); else s.input.mouseFire = false
-    s.step(); s.rack.fireEnd('aim'); s.step(3); expect(s.chasers).toHaveLength(1)
+    s.step(); s.rack.fireBegin('another-aim', 'aim'); s.step()
+    s.rack.fireEnd('aim'); s.rack.fireEnd('another-aim'); s.step(3); expect(s.chasers).toHaveLength(1)
   }))
 
   it('keeps a deferred pulse through render polls without physics and separates rapid pulses', () => run(s => {

@@ -213,7 +213,8 @@ export class GearRack implements System {
     const gear = this.current
     const kind = mode === 'aim' && (gear === 'pester' || (gear === 'bungee' && !this.systems?.bungee.mine))
       ? 'deferred' : mode === 'aim' && gear === 'bungee' ? 'reelIn' : 'hold'
-    this.fireOwners.set(owner, { kind, blocked: false, consumed: this.hasImmediateFire() })
+    const consumed = this.hasImmediateFire() || [...this.fireOwners.values()].some(h => h.kind === 'deferred' && h.consumed)
+    this.fireOwners.set(owner, { kind, blocked: false, consumed })
     this.publishFire()
   }
 
