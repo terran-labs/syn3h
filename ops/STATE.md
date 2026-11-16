@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-15 19:08 PST. The owner withdrew the afternoon cutoff.
+Last verified: 2026-11-16 00:40 PST. The owner withdrew the afternoon cutoff.
 
 ## Authority and release order
 
@@ -12,26 +12,34 @@ and eight vehicle/browser cases with rollback. Verify notes and GIF before Lates
 
 ## Production
 
-Accepted release: v26.11.1518 (release-22), source 214c3c96, at https://www.syn3h.com/.
-The lobby has full-edge stars, a warm corona, responsive About and eight larger arrow Back controls.
-Desktop, phone and short-phone checks pass, including perspective corner probes and keyboard focus.
-Typecheck and build pass. Full suite: 1,730 pass, one skip, three unchanged baseline failures:
-competitive flee, wind steering and dashboard links. Both addresses pass exact-build,
-multiplayer and frozen checks; all eight vehicle/browser cases pass without page errors.
-Static logo glow is softer; logo lab/export did not receive separate browser captures.
-The short-phone Invite focus scroll clips a fraction of a pixel from the Back border.
+Accepted release: v26.11.1600 (release-24), source e945da1c, at https://www.syn3h.com/.
+Expanded lobby story and practical guide, Terran Labs link, clean lobby addresses and
+retained frozen-resource URLs are live. Both addresses pass exact-build, multiplayer and
+frozen-file checks; all eight vehicle/browser cases pass. Normal and latency dry checks
+also passed with complete matched-tag evidence and unchanged frozen payload.
+
+Typecheck and build pass. Full comparison: 1,757 pass, one skip, three unchanged baseline
+failures in competitive fleeing, wind steering and dashboard links. The deployment
+supervisor exhausted its cleanup inspection budget. A separate reconciliation verified
+all 3,154 recorded process identities absent in two snapshots; the original failure is
+preserved. This is observed-process evidence, not universal containment.
+
+Release notes, tag and GIF bytes are verified publicly before promotion to Latest.
+The GIF is explicitly historical footage from v26.11.1508; new captures remain pending.
+The frozen noon judging build and itch submission remain unchanged.
 
 ## Current queue
 
-1. Original About is accepted; expanded story and deliberate-open images remain separate.
+1. Expanded lobby About is published; in-play About and deliberate-open images remain separate.
 2. Validate Weather sky extraction and shafts-off scene/PMREM parity before Post adoption.
 3. Compose expanded About Input, Gear and retained UI gesture handling, then test as one unit.
-4. Verify and integrate admin Future Ideas and vehicle-studio research; editorial and captures follow.
+4. Admin Future Ideas and vehicle-studio research are integrated and locally validated; public link inventory remains open.
 5. Bot retention, camera/touch aiming, nameplates and showcase captures remain separate intakes.
 
 About input drafts require cancellation before blur/modal cleanup, real neutral before
 rearm and stale-callback isolation. Gear switching must preserve attached Grapple cords.
-No draft is runtime accepted. Sunrise experiments remain rejected; no ray capture is valid
+Input composition typechecks with 107 focused passes and one preserved baseline failure.
+Native gesture and modal validation remain pending. Sunrise experiments remain held; no ray capture is valid
 yet. The unresolved third domain stays omitted. Research pricing and scale are unconfirmed.
 
 The owner-authorized crash comparison and solo formation recording already ran. Formation
