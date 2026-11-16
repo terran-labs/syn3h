@@ -93,6 +93,11 @@ export interface Terrain {
    * water or lava, and ice where the sea is frozen. O(1) per call after a one-off bake.
    */
   mapColourAt?(x: number, z: number): number
+  /**
+   * What mapColourAt's picture depends on, as a string: it changes exactly when that picture
+   * would (a new world or seed, the sea level, the sea's kind, a freeze). Cheap, never bakes.
+   */
+  mapColourKey?(): string
   /** Horizontal water velocity in metres per second; writes into out. */
   liquidFlowAt?(x: number, z: number, out: { x: number; z: number }): { x: number; z: number }
   /**

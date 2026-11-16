@@ -382,11 +382,18 @@ export class ProceduralTerrain implements Terrain {
    * seed or a frozen sea is picked up on the next call.
    */
   mapColourAt(x: number, z: number): number {
-    const sea = worldLavaAltitude.value, kind = worldSeaKind.value as number, key = `${this.version}:${sea}:${kind}:${this.iceTop}`
-    if (key !== this.mapKey) { this.mapGrid = bakeMapColours(this.data, this.sampler, { sea, lava: kind === 0, frozen: this.iceTop > -Infinity, snow: this.snowHeight() }); this.mapKey = key }
+    const key = this.mapColourKey()
+    if (key !== this.mapKey) {
+      const sea = worldLavaAltitude.value, lava = (worldSeaKind.value as number) === 0
+      this.mapGrid = bakeMapColours(this.data, this.sampler, { sea, lava, frozen: this.iceTop > -Infinity, snow: this.snowHeight() }); this.mapKey = key
+    }
     const n = MAP_GRID, size = this.data.size
     const ix = Math.min(n - 1, Math.floor((wrapCoord(x, size) / size + 0.5) * n)), iz = Math.min(n - 1, Math.floor((wrapCoord(z, size) / size + 0.5) * n))
     return this.mapGrid![iz * n + ix]
+  }
+  /** See Terrain.mapColourKey: the inputs of mapColourAt's bake, read without baking. */
+  mapColourKey(): string {
+    return `${this.version}:${worldLavaAltitude.value}:${worldSeaKind.value}:${this.iceTop}`
   }
   private mapGrid: Uint32Array | null = null
   private mapKey = ''
