@@ -40,15 +40,31 @@ export function installAboutInputObservers() {
       pending.push(record)
     })
   }
-  const listen = (target, type, fn) => {
-    target.addEventListener(type, fn)
-    restorers.push(() => target.removeEventListener(type, fn))
+  const listen = (target, type, fn, options) => {
+    target.addEventListener(type, fn, options)
+    restorers.push(() => target.removeEventListener(type, fn, options))
   }
   const tag = document.querySelector('.touch-fire[data-action="fire"]')
   const describe = event => ({ type: event.type, pointerId: event.pointerId, pointerType: event.pointerType,
     button: event.button, buttons: event.buttons, code: event.code, trusted: event.isTrusted })
+  let droppedEvents = 0
+  const elementName = element => element instanceof Element
+    ? { tag: element.tagName, id: element.id, class: element.getAttribute('class'), action: element.getAttribute('data-action') } : null
+  const logEvent = (event, phase) => {
+    if (events.length >= 2000) { droppedEvents++; return }
+    events.push({ ...describe(event), phase, tick: game.tick, time: game.time,
+      target: elementName(event.target), relatedTarget: elementName(event.relatedTarget),
+      focus: elementName(document.activeElement), x: event.clientX, y: event.clientY,
+      tagHasCapture: typeof event.pointerId === 'number' ? tag?.hasPointerCapture(event.pointerId) ?? false : null,
+      fire: game.input.state.fire, holding: net.yoink.holding })
+  }
+  // Passive evidence only: capture precedes the TAG target cleanup; target observes its result.
+  for (const type of ['pointerleave', 'lostpointercapture', 'blur']) {
+    listen(document, type, event => { if (event.target === tag) logEvent(event, 'capture') }, { capture: true, passive: true })
+    if (tag) listen(tag, type, event => logEvent(event, 'after-tag-handler'), { passive: true })
+  }
   if (tag) for (const type of ['pointerup', 'pointercancel']) listen(tag, type, event => {
-    events.push(describe(event)); capture(type, describe(event))
+    logEvent(event, 'after-tag-handler'); capture(type, describe(event))
   })
   const preFling = event => {
     if (!armed || armed.kind !== 'fling' || !(event.target instanceof Element) || !event.target.closest('.gs-action[data-action=fling]')) return
@@ -59,10 +75,8 @@ export function installAboutInputObservers() {
   }
   document.addEventListener('click', preFling, true)
   restorers.push(() => document.removeEventListener('click', preFling, true))
-  for (const type of ['pointerdown', 'pointerup', 'pointercancel', 'keydown', 'keyup']) {
-    const log = event => { if (events.length < 2000) events.push(describe(event)) }
-    document.addEventListener(type, log, true)
-    restorers.push(() => document.removeEventListener(type, log, true))
+  for (const type of ['pointermove', 'pointerdown', 'pointerup', 'pointercancel', 'keydown', 'keyup']) {
+    listen(document, type, event => logEvent(event, 'capture'), { capture: true, passive: true })
   }
   listen(document, 'click', event => {
     if (event.target instanceof Element && event.target.closest('.gs-action[data-action=fling]'))
@@ -190,7 +204,7 @@ export function installAboutInputObservers() {
     snapshot, records, order, events, redCalls, yoinkSends, transactions,
     diagnostics() {
       validateHooks('diagnostic')
-      return { lifecycle, lifecycleFailures, droppedLifecycle, droppedFailures, invocations: { ...invocations },
+      return { lifecycle, lifecycleFailures, droppedLifecycle, droppedFailures, droppedEvents, invocations: { ...invocations },
         finalHooks: inspectHooks('final'), finalState: snapshot(),
         pending: pending.map(r => r.label), armed: armed?.label ?? null }
     },

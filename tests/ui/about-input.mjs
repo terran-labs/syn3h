@@ -434,6 +434,29 @@ try {
   const nativeRelease = await record(touch, 'tag-thunder-native-up')
   assert.equal(nativeRelease.detail.trusted, true); noRed(nativeBefore, nativeRelease.immediate); noRed(nativeBefore, nativeRelease.stepEntry); oneRed(nativeBefore, nativeRelease.firstStep)
 
+  // End the unrelated native mouse hover BEFORE any synthetic Yoink owner exists.
+  // This isolates the fixture; broad TAG cleanup with real mixed devices remains unverified.
+  const neutralMouse = await touch.evaluate(() => {
+    const s = aboutInputObserver.snapshot()
+    if (s.fire || s.holding !== null || s.rawPrimary.length || s.canvasOwners.length ||
+        document.querySelector('.touch-fire.held')) throw new Error('Cannot reposition mouse during an active hold')
+    const canvas = syn3h.game.canvas
+    for (const yf of [.25, .5, .75]) for (const xf of [.25, .5, .75]) {
+      const x = innerWidth * xf, y = innerHeight * yf
+      if (document.elementFromPoint(x, y) === canvas) return { x, y, before: s }
+    }
+    throw new Error('No neutral canvas point outside TAG')
+  })
+  await touch.mouse.move(neutralMouse.x, neutralMouse.y)
+  neutralMouse.after = await touch.evaluate(({ x, y }) => {
+    const hit = document.elementFromPoint(x, y), s = aboutInputObserver.snapshot()
+    if (hit !== syn3h.game.canvas || hit.closest('.touch-fire') || s.fire || s.holding !== null ||
+        s.rawPrimary.length || s.canvasOwners.length || document.querySelector('.touch-fire.held'))
+      throw new Error('Neutral mouse setup changed or an owner became active')
+    return s
+  }, neutralMouse)
+  report.tag.neutralMouse = neutralMouse
+
   // Slice 2: actual acquisition, not a seeded carry. No target movement while held.
   for (const [id, type] of [[201, 'pointerup'], [202, 'pointercancel'], [203, 'fling']]) {
     await select(touch, 'yoink')
@@ -592,7 +615,7 @@ try {
         remaining(1)
         await bounded(page.evaluate(() => {
           if (!window.aboutInputObserver) return null
-          const evidence = { records: aboutInputObserver.records, order: aboutInputObserver.order }
+          const evidence = { records: aboutInputObserver.records, order: aboutInputObserver.order, events: aboutInputObserver.events }
           try { evidence.diagnostics = aboutInputObserver.diagnostics() }
           catch (error) { evidence.diagnosticFailure = String(error) }
           finally { try { aboutInputObserver.restore() } catch (error) { evidence.restoreFailure = String(error) } }
