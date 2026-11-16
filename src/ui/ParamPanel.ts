@@ -57,7 +57,7 @@ export class ParamPanel {
   sync(): void {
     for (const p of params.all()) {
       const { id, group, label, min, max, step, deferred } = p.def
-      if (this.known.has(id)) continue
+      if (this.known.has(id) || p.def.hidden) continue
       this.known.add(id)
       let folder = this.folders.get(group)
       if (!folder) {

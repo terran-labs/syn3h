@@ -76,12 +76,6 @@ export function sunDirection(hour: number, tiltDeg: number, azimuthDeg = 0, out:
   return out
 }
 
-/** Advance an hour by `dt` real seconds when a full day lasts `dayLength` seconds (0 pauses). */
-export function advanceHour(hour: number, dt: number, dayLength: number): number {
-  if (!(dayLength > 0) || !Number.isFinite(dt)) return wrapHour(hour)
-  return wrapHour(hour + (dt * 24) / dayLength)
-}
-
 export function wrapHour(hour: number): number {
   if (!Number.isFinite(hour)) return 12
   const h = hour % 24

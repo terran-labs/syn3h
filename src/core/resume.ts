@@ -5,6 +5,7 @@ import type { Game, System } from './Game'
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { VehicleKind } from '../vehicles'
 import type { Terrain } from '../world/Terrain'
+import { currentHour } from '../world/sky/dayCycle'
 
 export const RESUME_KEY = 'syn3h.resume.v1'
 export const RESUME_MAX_AGE = 10 * 60 * 1000
@@ -137,7 +138,7 @@ export class ResumeSession implements System {
       wasHost: !o.network || o.network.isHost, world: { ...this.world },
       kind: o.player.kind, colors: { ...o.player.colors }, p: state.p, q: state.q, v: state.v, w: state.w,
       wingsOpen: o.player.wingsOpen, special: o.game.input.state.special,
-      cameraMode: Number(params.get('camera.mode')?.value ?? 0), timeOfDay: Number(params.get('sun.timeOfDay')?.value ?? 12),
+      cameraMode: Number(params.get('camera.mode')?.value ?? 0), timeOfDay: currentHour(),
     }
     try { (o.storage ?? sessionStorage).setItem(RESUME_KEY, JSON.stringify(saved)) } catch { /* Private browsing and full storage must not stop play. */ }
   }

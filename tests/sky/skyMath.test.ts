@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  EARTH_RAYLEIGH, advanceHour, horizonColors, moonAmount, nightAmount, sanitizeRGB, skyRadiance,
+  EARTH_RAYLEIGH, horizonColors, moonAmount, nightAmount, sanitizeRGB, skyRadiance,
   sunDirection, sunlightColor, wrapHour, type RGB, type SkyParams, type Vec3,
 } from '../../src/world/sky/skyMath'
 import { SKY_PRESETS } from '../../src/world/sky/presets'
@@ -65,13 +65,7 @@ describe('sunDirection', () => {
 })
 
 describe('time of day', () => {
-  it('advances a full day in dayLength seconds and wraps', () => {
-    expect(advanceHour(10, 60, 240)).toBeCloseTo(16, 9)
-    expect(advanceHour(23, 30, 240)).toBeCloseTo(2, 9)
-  })
-  it('pauses at day length 0 and survives bad input', () => {
-    expect(advanceHour(7.5, 10, 0)).toBe(7.5)
-    expect(advanceHour(7.5, Number.NaN, 100)).toBe(7.5)
+  it('wraps and survives bad input', () => {
     expect(wrapHour(-1)).toBe(23)
     expect(wrapHour(Number.POSITIVE_INFINITY)).toBe(12)
   })

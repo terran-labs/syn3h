@@ -13,7 +13,7 @@ export const DESCRIPTIONS: Record<string, string> = {
   'terrain.volcanoHeight': 'How tall the mountain at the centre stands.',
   'terrain.treeCover': 'How much of the land is wooded.',
   'sun.timeOfDay': 'The hour on this world. The sun, shadows, sky colour and fog all follow it.',
-  'sun.dayLength': 'How many real seconds a full day takes. Zero stops the clock so the light stays as it is.',
+  'sun.dayLength': 'How long a full day and night lasts. By default it follows the planet\'s distance from the sun: inner worlds spin faster. Stop it to hold the light where it is.',
   'sun.tilt': 'How far the noon sun leans from straight overhead, as latitude does on Earth.',
   'sun.azimuth': 'Turns the sun\'s whole path round the compass, so sunrise and sunset fall where you want them.',
   'sun.intensity': 'How strong direct sunlight is.',

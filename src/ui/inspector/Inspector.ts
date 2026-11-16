@@ -12,6 +12,8 @@ import { params, type ParamValue } from '../../../shared/params'
 import { canEditWorld, resetWorld } from '../worldPermissions'
 import { buildTree, describe, exportSection, exportWorld, fraction, limits, parseWorld, pasteSummary, show, type PropertyDef, type SectionNode } from './model'
 import './params'
+import { fillDayLengthRow } from './dayLength'
+import { sunDayLength } from '../../world/sky/skyParams'
 import './inspector.css'
 import './motion.css'
 
@@ -135,7 +137,11 @@ export class Inspector {
     this.vehicleControl = this.vehicleSwitch()
     this.vehicleControl.dataset.search = "vehicle colour color body accent buggy jet hovercraft tank"
     this.build()
-    this.unsubscribe = params.onChange((id, value) => this.rows.get(id)?.sync(value))
+    this.unsubscribe = params.onChange((id, value) => {
+      this.rows.get(id)?.sync(value)
+      // The orbit default is the planet's: a new planet changes what the day length shows.
+      if (id === 'terrain.look') this.rows.get(sunDayLength.def.id)?.sync(params.get(sunDayLength.def.id)!.value)
+    })
     this.element.addEventListener('click', event => this.click(event))
     this.element.querySelector<HTMLInputElement>('.wi-search')!.addEventListener('input', event => this.search((event.target as HTMLInputElement).value))
     // Typing here must not drive the vehicle.
@@ -210,7 +216,7 @@ export class Inspector {
     const open = new Set([...this.element.querySelectorAll<HTMLElement>('.wi-card.is-open')].map(card => card.dataset.section))
     const owned = new Set([...this.extras.values()].flatMap(extra => extra.owns?.() ?? []))
     const shown = this.options.sections
-    this.tree = buildTree(all.map(p => p.def as PropertyDef).filter(def => !owned.has(def.id))).filter(section => !shown || shown.includes(section.id))
+    this.tree = buildTree(all.map(p => p.def as PropertyDef).filter(def => !owned.has(def.id) && !def.hidden)).filter(section => !shown || shown.includes(section.id))
     this.rows.clear(); this.editing = null; this.settle()
     const cards = this.element.querySelector('.wi-cards')!; cards.replaceChildren()
     for (const section of this.tree) {
@@ -338,7 +344,11 @@ export class Inspector {
     const output = document.createElement('output')
     const param = params.get(def.id)!, choices = choicesOf(def)
     let sync: (value: ParamValue) => void
-    if (choices) {
+    if (def.id === sunDayLength.def.id) {
+      // Seconds stored, minutes shown, a log slider and the orbit default: its own control.
+      def = { ...def, label: 'Day length', limitsText: '20 s to 60 min on the slider, or stopped · default: the orbit' }
+      const day = fillDayLengthRow(row, def.id); sync = () => day()
+    } else if (choices) {
       label.textContent = choices.name
       const seg = document.createElement('div'); seg.className = 'wi-seg'; seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', choices.name)
       for (const option of choices.options) { const button = document.createElement('button'); button.type = 'button'; button.dataset.value = String(option.value); button.textContent = option.label; button.addEventListener('click', () => params.set(def.id, option.value, 'local')); seg.append(button) }

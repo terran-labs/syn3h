@@ -18,9 +18,10 @@ import { AlienSkyMesh } from './sky/AlienSkyMesh'
 import { SKY_PRESET_NAMES, applySkyPreset } from './sky/presets'
 import {
   NIGHT_LEVEL, TWILIGHT_LEVEL, autoExposure, luminance, twilightAmount, twilightTint, betaM, betaR, horizonColors, moonAmount, nightAmount, nightTint, sanitizeRGB, sunDirection as sunDirectionAt,
-  sunE, sunlightColor, wrapHour, advanceHour, type RGB, type Vec3,
+  sunE, sunlightColor, type RGB, type Vec3,
 } from './sky/skyMath'
 import * as P from './sky/skyParams'
+import { bindDayClock, currentHour, followHour } from './sky/dayCycle'
 import { applyBounce, lightSkyReflection, shadowSoftness, shadowStrength } from './lightRig'
 import { heightFog, weatherFogNode } from './weather/fog'
 import { advanceCloudDrift } from './weather/clouds'
@@ -50,7 +51,7 @@ export interface Environment extends System {
   setVolumetricCloudsActive(active: boolean): void
   /** Linear sky colour at the horizon, averaged around the compass. Matches the fog. */
   readonly horizonColor: THREE.Color
-  /** Current hour, 0 to 24. Advances on its own when the day length is non zero. */
+  /** The hour on screen, 0 to 24: the room clock's hour (dayCycle.ts), eased across steps. */
   readonly hour: number
 }
 
@@ -160,7 +161,8 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   ;(scene as unknown as { fogNode: unknown }).fogNode = weatherFogNode(haze.color, haze.factor)
 
   // State ---------------------------------------------------------------------------------
-  let hour = wrapHour(P.sunTimeOfDay.value)
+  const unbindDay = bindDayClock()
+  let hour = currentHour()
   const sun: Vec3 = [0, 1, 0]
   const sunDirection = new THREE.Vector3()
   const lightDirection = new THREE.Vector3()
@@ -196,8 +198,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
 
   const unlisten = params.onChange((id, value) => {
     if (/^(sky|sun|weather)\./.test(id) || id === 'world.atmosphere') reflections.invalidate()
-    if (id === P.sunTimeOfDay.def.id) hour = wrapHour(value as number)
-    else if (id === P.shadowQuality.def.id) buildLight(value as number)
+    if (id === P.shadowQuality.def.id) buildLight(value as number)
     else if (id === P.skyPresetPicker.def.id) {
       const name = SKY_PRESET_NAMES[(value as number) - 1]
       if (name) {
@@ -211,7 +212,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   const update = (dt: number) => {
     // Clouds drift downwind (src/world/weather/clouds.ts).
     advanceCloudDrift(sky.cloudOffset.value, P.cloudSpeed.value, dt, _terrain)
-    hour = advanceHour(hour, dt, P.sunDayLength.value)
+    hour = followHour(hour, currentHour(), dt)
     sunDirectionAt(hour, P.sunTilt.value, P.sunAzimuth.value, sun)
     sunDirection.set(sun[0], sun[1], sun[2])
     const sp = P.currentSkyParams()
@@ -323,6 +324,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
     update,
     dispose() {
       unlisten()
+      unbindDay()
       reflections.dispose()
       scene.remove(sky, light, light.target, hemi)
       csm?.dispose()

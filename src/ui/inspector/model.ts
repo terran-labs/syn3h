@@ -14,6 +14,10 @@ import { DESCRIPTIONS } from './descriptions'
 export interface PropertyDef {
   id: string; label: string; group: string; scope: 'world' | 'client'
   default: number | boolean; min?: number; max?: number; step?: number; deferred?: boolean
+  /** Synced and saved, but no panel shows it (shared/params.ts). */
+  hidden?: boolean
+  /** The range in words, for a control whose stored numbers are not what it shows. */
+  limitsText?: string
   /** Optional, written by the lane that owns the property. */
   description?: string
 }
@@ -57,9 +61,10 @@ export function describe(def: PropertyDef): string { return def.description ?? D
 /** The guardrails in plain words: range, default, and who it affects. */
 export function limits(def: PropertyDef): string {
   const parts: string[] = []
-  if (typeof def.default === 'number' && def.min !== undefined && def.max !== undefined) parts.push(`${show(Math.min(def.min, def.max), def)} to ${show(Math.max(def.min, def.max), def)}`)
+  if (def.limitsText) parts.push(def.limitsText)
+  else if (typeof def.default === 'number' && def.min !== undefined && def.max !== undefined) parts.push(`${show(Math.min(def.min, def.max), def)} to ${show(Math.max(def.min, def.max), def)}`)
   else if (typeof def.default === 'boolean') parts.push('on or off')
-  parts.push(`default ${show(def.default, def)}`)
+  if (!def.limitsText) parts.push(`default ${show(def.default, def)}`)
   parts.push(def.scope === 'world' ? 'shared with everyone in the room' : 'yours only')
   if (def.deferred) parts.push('applies when you let go')
   return parts.join(' · ')
