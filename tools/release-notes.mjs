@@ -30,7 +30,7 @@ export function frozenUrl(version) {
 const MANIFEST = 'manifest.json'
 
 /** Sections in the order a notes file has them. Play only in production notes. */
-const SECTIONS = ['The story so far', 'Features', 'Fixes', 'Play', 'Performance', 'Known issues']
+const SECTIONS = ['The story so far', 'Features', 'Fixes', 'Handling', 'Play', 'Performance', 'Known issues']
 const REQUIRED = ['The story so far', 'Features']
 
 export function assetUrl(tag, name, repo = GITHUB_REPO) {
@@ -148,7 +148,9 @@ export function renderNotes(text, row, manifest = { images: [], gif: null }) {
   if (banned) problems.push(`wording rule: ${[...new Set(banned.map((w) => w.toLowerCase()))].join(', ')}`)
   if (problems.length) throw new Error(`Notes for ${tag} are not ready:\n  ${problems.join('\n  ')}`)
   const shots = screenshotSection(tag, manifest)
-  return `(AI Generated)\n\n${notes}\n${shots ? `\n${shots}\n` : ''}`
+  // No "(AI Generated)" line on published releases: the owner's exception for release notes
+  // (ops/DECISIONS.md). An old line in a source file is stripped above.
+  return `${notes}\n${shots ? `\n${shots}\n` : ''}`
 }
 
 /** Every release-download URL the body links for this tag, by file name. */

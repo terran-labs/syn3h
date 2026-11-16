@@ -109,9 +109,9 @@ publishing a run of versions in order leaves the one you choose on top. A real r
 
 ## Notes files
 
-`release-notes/releases/v<version>.md`, in Freed's shape adapted to a game. Current external-post instructions require an "(AI Generated)" first line.
-`render` adds it exactly once, accepting either attributed source or historical heading-first
-source. Other prefaces remain invalid; the heading, deck and section checks are unchanged.
+`release-notes/releases/v<version>.md`, in Freed's shape adapted to a game. Published release notes carry no "(AI Generated)" line
+(the owner's exception for release notes, `ops/DECISIONS.md`); `render` strips one left in an
+older source file. Other prefaces remain invalid; the heading, deck and section checks are unchanged.
 
 ```markdown
 ## Syn3h v26.11.1412
@@ -123,6 +123,7 @@ Public release at 7:08pm Pacific on 14 November 2026, live at https://www.syn3h.
 ### The story so far   required, always first
 ### Features           required
 ### Fixes              optional
+### Handling           optional: the handling report's top table (npx tsx tools/handling-report.ts)
 ### Play               production only: https://www.syn3h.com/ and the controls that matter
 ### Known issues       optional: as they were true of that build when it was made
 ```
