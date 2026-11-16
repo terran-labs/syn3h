@@ -504,7 +504,13 @@ export class GearSelector {
     // Anything that no longer applies lets go before it disappears.
     for (const gone of keep.values()) { this.release(gone); gone.button.remove() }
     this.actionButtons = next
-    this.actionsElement.replaceChildren(...next.map(b => b.button))
+    // State-only label changes must not detach a focused or captured hold button.
+    // Real removals were cleaned up above; insert only nodes not already in place.
+    for (let i = 0; i < next.length; i++) {
+      const button = next[i].button
+      const current = this.actionsElement.children[i] ?? null
+      if (current !== button) this.actionsElement.insertBefore(button, current)
+    }
     this.actionsElement.hidden = next.length === 0
   }
 
