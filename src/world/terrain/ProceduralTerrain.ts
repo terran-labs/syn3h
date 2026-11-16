@@ -13,7 +13,8 @@ import type { SpawnPoint, Terrain, TerrainRenderQuality, TerrainRoadPath, Terrai
 import { createTerrainCollider } from './collider'
 import { lavaSurfaceAt, liquidFlowAt } from './lava'
 import { seaWaves, setWaterClock } from '../water/seaWaves'
-import { waterRiverMaxSpeed } from '../water/params'
+import { configureLiquidWaves, liquidWaveOffset, liquidWaveSpeed, type LiquidBody } from '../water/liquidWaves'
+import { waterRiverMaxSpeed, waterSeaFrozen } from '../water/params'
 import { type TerrainData, generateTerrain } from './generate'
 import { type TerrainMaterial, createTerrainMaterial } from './material'
 import { LOD_FAR, LOD_NEAR, type TerrainMeshes, type TriangleStats, createTerrainMeshes } from './mesh'
@@ -170,6 +171,7 @@ export class ProceduralTerrain implements Terrain {
     const t = performance.now()
     const data = generateTerrain(this.seed, currentTerrainSettings())
     seaWaves.configure(data.size, this.seed)
+    configureLiquidWaves(data.size)
     // The far row and column are the image of the first: make them identical so the
     // height field, mesh and collider are exactly periodic.
     this.lastSeamCorrection = sealSeam(data)
@@ -342,12 +344,45 @@ export class ProceduralTerrain implements Terrain {
    * as the sea material draws them.
    */
   liquidHeightAt(x: number, z: number): number {
+    const body = this.liquidBodyAt(x, z)
+    if (!body) return this.restSurface
+    if (body.frozen) return -Infinity
+    const rest = this.restSurface
+    return rest + liquidWaveOffset(body, x, z, rest - this.restGround)
+  }
+
+  /** Vertical speed of the liquid surface at (x, z), m/s: the waves' rise and fall. */
+  liquidVerticalSpeedAt(x: number, z: number): number {
+    const body = this.liquidBodyAt(x, z)
+    if (!body || body.frozen) return 0
+    return liquidWaveSpeed(body, x, z, this.restSurface - this.restGround)
+  }
+
+  private restSurface = 0
+  private restGround = 0
+  private readonly bodies = {
+    sea: { kind: 'sea', liquid: 'water', frozen: false } as LiquidBody,
+    inland: { kind: 'inland', liquid: 'water', frozen: false } as LiquidBody,
+  }
+  /**
+   * The liquid body at (x, z), or null where the ground is dry. Leaves the rest surface and the
+   * ground height there in `restSurface` and `restGround` for the caller. The returned object
+   * is reused.
+   */
+  liquidBodyAt(x: number, z: number): LiquidBody | null {
     const sea = worldLavaAltitude.value
     x = wrapCoord(x, this.data.size)
     z = wrapCoord(z, this.data.size)
     const surface = lavaSurfaceAt(this.data.lava, x, z, sea)
-    if (surface !== sea || !seaWaves.enabled || (worldSeaKind.value as number) !== 1) return surface
-    return surface + seaWaves.offsetAt(x, z, this.sampler.heightAt(x, z), sea)
+    const ground = this.sampler.heightAt(x, z)
+    this.restSurface = surface
+    this.restGround = ground
+    if (surface <= ground) return null
+    const inland = surface > sea
+    const b = inland ? this.bodies.inland : this.bodies.sea
+    b.liquid = (inland ? this.data.settings.kind === KIND_VOLCANIC : worldSeaKind.value === 0) ? 'lava' : 'water'
+    b.frozen = !inland && waterSeaFrozen.value
+    return b
   }
 
   /** Velocity of the water or lava at (x, z), m/s: rivers flow, the sea, lake and pools do not. */
@@ -360,14 +395,9 @@ export class ProceduralTerrain implements Terrain {
    * that flows from the volcano are lava on this world.
    */
   liquidKindAt(x: number, z: number): 'lava' | 'water' | null {
-    const sea = worldLavaAltitude.value
-    x = wrapCoord(x, this.data.size)
-    z = wrapCoord(z, this.data.size)
-    const surface = lavaSurfaceAt(this.data.lava, x, z, sea)
-    if (surface <= this.sampler.heightAt(x, z)) return null
     // Above the sea level it is the lake, a river or a pool; otherwise it is the sea.
-    const lava = surface > sea ? this.data.settings.kind === KIND_VOLCANIC : worldSeaKind.value === 0
-    return lava ? 'lava' : 'water'
+    const body = this.liquidBodyAt(x, z)
+    return body && !body.frozen ? body.liquid : null
   }
 
   spawnPoint(index: number): SpawnPoint {

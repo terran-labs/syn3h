@@ -1,9 +1,8 @@
 /** Shared water forces. Native controllers and Rapier seabed contacts retain ownership of drive. */
 import * as THREE from 'three/webgpu'
-import { defineParam, worldLavaAltitude } from '../../shared/params'
+import { defineParam } from '../../shared/params'
 import type { RAPIER } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
-import { seaWaves } from '../world/water/seaWaves'
 
 export const waterSinking = defineParam<boolean>({ id:'water.sinking', label:'Sinking physics', group:'Water', scope:'world', default:true })
 export const waterLinearDrag=defineParam({id:'water.linearDrag',label:'Linear drag (1/s)',group:'Water',scope:'world',default:.35,min:0,max:3,step:.05})
@@ -45,11 +44,8 @@ export function applyWaterForces(body:RAPIER.RigidBody,world:RAPIER.World,terrai
   const fraction=radius?THREE.MathUtils.clamp((depth+radius)/(2*ZORB_SUPPORT_DEPTH),0,1):THREE.MathUtils.clamp(depth+.5,0,1)
   if(fraction<=0)continue
   flow.x=0;flow.z=0;terrain.liquidFlowAt?.(point.x,point.z,flow)
-  const ground=terrain.heightAt(point.x,point.z)
-  const level=worldLavaAltitude.value
-  // Inland water has its own height and current, not the global ocean's vertical motion.
-  const seaSurface=level+seaWaves.offsetAt(point.x,point.z,ground,level)
-  const surfaceSpeed=Math.abs(surface-seaSurface)<.01?seaWaves.verticalSpeedAt(point.x,point.z,ground,level):0
+  // The surface's own rise and fall: every liquid body has waves (liquidWaves.ts).
+  const surfaceSpeed=terrain.liquidVerticalSpeedAt?.(point.x,point.z)??0
   // Sample the actual surface, including shoaling and geometric waves only.
   const hx=terrain.liquidHeightAt?.(point.x+.25,point.z)??surface
   const hz=terrain.liquidHeightAt?.(point.x,point.z+.25)??surface
