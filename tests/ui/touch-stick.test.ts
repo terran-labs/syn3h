@@ -1,6 +1,6 @@
-/** The floating thumb stick's maths: deflection, dead zone, base follow and drag threshold. */
+/** The floating thumb stick's maths: deflection, dead zone, fixed base and drag threshold. */
 import { describe, expect, it } from 'vitest'
-import { DRAG_THRESHOLD, STICK_DEAD_ZONE, followBase, isDrag, stickRadius, stickResponse, stickVector } from '../../src/ui/TouchControls'
+import { DRAG_THRESHOLD, STICK_DEAD_ZONE, isDrag, stickRadius, stickResponse, stickVector } from '../../src/ui/TouchControls'
 
 describe('touch stick maths', () => {
   it('keeps the permanent stick radius: 0.34 of the base width', () => {
@@ -35,25 +35,17 @@ describe('touch stick maths', () => {
     expect(stickResponse(1)).toBe(1)
   })
 
-  it('leaves the base alone inside the radius', () => {
-    const origin = { x: 50, y: 50 }
-    expect(followBase(origin, 80, 50, 40)).toBe(origin)
-    expect(origin).toEqual({ x: 50, y: 50 })
-    followBase(origin, 90, 50, 40) // exactly on the rim
-    expect(origin).toEqual({ x: 50, y: 50 })
-    followBase(origin, 50, 50, 40) // on the centre: no direction, no movement
-    expect(origin).toEqual({ x: 50, y: 50 })
-  })
-
-  it('drags the base so the finger sits on the rim when it pulls past the radius', () => {
-    const origin = { x: 0, y: 0 }
-    followBase(origin, 100, 0, 40)
-    expect(origin.x).toBeCloseTo(60); expect(origin.y).toBeCloseTo(0)
-    followBase(origin, 60, -90, 40)
-    expect(Math.hypot(60 - origin.x, -90 - origin.y)).toBeCloseTo(40)
-    // After following, the deflection is full in the direction of the pull.
-    const out = stickVector(origin, 60, -90, 40, { x: 0, y: 0 })
-    expect(out.y).toBeCloseTo(-1); expect(out.x).toBeCloseTo(0)
+  it('keeps the anchor fixed past the rim and returns through the same centre', () => {
+    const origin = Object.freeze({ x: 50, y: 80 }), out = { x: 0, y: 0 }
+    for (const distance of [40, 120, 1000]) {
+      stickVector(origin, 50 + distance, 80, 40, out)
+      expect(out).toEqual({ x: 1, y: 0 })
+      expect(origin).toEqual({ x: 50, y: 80 })
+    }
+    stickVector(origin, 50, 80, 40, out)
+    expect(out).toEqual({ x: 0, y: 0 })
+    stickVector(origin, 10, 80, 40, out)
+    expect(out).toEqual({ x: -1, y: 0 })
   })
 
   it('needs about 8 px of travel before a touch is a drag', () => {

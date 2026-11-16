@@ -25,18 +25,12 @@ export const stickResponse = (value: number): number => Math.abs(value) < STICK_
  * The deflection, from -1 to 1 on each axis with screen y down, written into `out`.
  * A finger past the radius gives a unit vector; a zero radius gives no deflection.
  */
-export function stickVector(origin: StickPoint, fingerX: number, fingerY: number, radius: number, out: StickPoint): StickPoint {
+export function stickVector(origin: Readonly<StickPoint>, fingerX: number, fingerY: number, radius: number, out: StickPoint): StickPoint {
   if (!(radius > 0)) { out.x = 0; out.y = 0; return out }
   const x = (fingerX - origin.x) / radius, y = (fingerY - origin.y) / radius
   const length = Math.max(1, Math.hypot(x, y))
   out.x = x / length; out.y = y / length
   return out
-}
-/** Drags the base after a finger that has pulled past the radius, so the thumb never runs out of travel. */
-export function followBase(origin: StickPoint, fingerX: number, fingerY: number, radius: number): StickPoint {
-  const dx = fingerX - origin.x, dy = fingerY - origin.y, distance = Math.hypot(dx, dy)
-  if (distance > radius && distance > 0) { const pull = (distance - radius) / distance; origin.x += dx * pull; origin.y += dy * pull }
-  return origin
 }
 /** True once a touch has moved far enough from where it went down to be a drag. */
 export const isDrag = (fromX: number, fromY: number, x: number, y: number): boolean => Math.hypot(x - fromX, y - fromY) >= DRAG_THRESHOLD
@@ -73,6 +67,9 @@ export class TouchControls {
       const throttle = action === 'throttleUp' || action === 'throttleDown'
       const release = () => { pointers.clear(); if (throttle) { this.thrust.delete(action); this.syncThrust() } else if (action === 'letOut') this.key('keyup'); else if (action !== 'special' && action !== 'zorb' && action !== 'letGo') input.external[action] = false; button.classList.remove('held') }
       this.resetters.push(release)
+    // Rotation changes viewport coordinates and the CSS radius. End this gesture rather
+    // than moving its anchor; only a fresh touch may establish a new centre.
+    addEventListener('resize', release, { signal })
       button.addEventListener('pointerdown', (event) => {
         if (!this.active || input.suspended) return
         event.preventDefault(); button.setPointerCapture(event.pointerId); pointers.add(event.pointerId)
@@ -106,7 +103,7 @@ export class TouchControls {
    *   reaches whatever is under it exactly as before.
    * - A candidate that moves 8 px becomes the stick: its base appears centred where the touch
    *   went down, the pointer is captured, and from then on the knob follows the finger. Past
-   *   the radius the base is dragged along behind the finger. Lifting fades it out in 150 ms.
+   *   the radius the knob and output saturate; the base stays at touch-down. Lifting fades it out in 150 ms.
    * - Only one stick at a time: while one is active or pending, further touches in the region
    *   are ignored by the stick (they still reach whatever is under them).
    * - The network layer excludes touch pointers from mouse tagging; the right thumb owns
@@ -128,19 +125,21 @@ export class TouchControls {
       pending = null; pointer = null; input.external.x = 0; input.external.y = 0; base.classList.remove('is-active')
     }
     this.resetters.push(release)
+    // Rotation changes viewport coordinates and the CSS radius. End this gesture rather
+    // than moving its anchor; only a fresh touch may establish a new centre.
+    addEventListener('resize', release, { signal })
     const drive = (x: number, y: number) => {
-      followBase(origin, x, y, radius)
       stickVector(origin, x, y, radius, vector)
       input.external.x = stickResponse(vector.x)
       input.external.y = stickResponse(-vector.y)
-      place(); knob.style.transform = `translate3d(${vector.x * radius}px,${vector.y * radius}px,0)`
+      knob.style.transform = `translate3d(${vector.x * radius}px,${vector.y * radius}px,0)`
     }
     const start = (event: PointerEvent) => {
       pending = null; pointer = event.pointerId
       origin.x = down.x; origin.y = down.y
       half = base.offsetWidth / 2; radius = stickRadius(base.offsetWidth)
       try { base.setPointerCapture(pointer) } catch { /* The window listeners below still follow it. */ }
-      base.classList.add('is-active')
+      place(); base.classList.add('is-active')
       if (!this.driven) { this.driven = true; writeDriven(); this.syncHint() }
     }
     const candidate = (event: PointerEvent): boolean => {
