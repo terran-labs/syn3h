@@ -62,7 +62,7 @@ export class PerformancePanel {
     this.diagnostics = this.element.querySelector('details')!
     this.recommendation.className = 'performance-recommendation'; this.recommendation.hidden = true
     this.recommendation.setAttribute('role', 'status')
-    this.recommendation.innerHTML = '<p></p><button type="button" data-performance="ignore">Ignore</button><button type="button" data-performance="lower">Lower level</button><small class="performance-unlock" hidden>Esc for options</small>'
+    this.recommendation.innerHTML = '<p></p><button type="button" data-performance="ignore">Ignore</button><button type="button" data-performance="bots" hidden>Fewer bots</button><button type="button" data-performance="lower">Lower level</button><small class="performance-unlock" hidden>Esc for options</small>'
     parent.append(this.recommendation)
     this.select.addEventListener('change', () => this.quality?.setLevel(Number(this.select.value)), { signal })
     this.element.querySelector('.wi-auto input')!.addEventListener('change', event => this.quality?.setAuto((event.target as HTMLInputElement).checked), { signal })
@@ -73,6 +73,7 @@ export class PerformancePanel {
     this.diagnostics.addEventListener('toggle', () => { if (this.snapshot && this.diagnostics.open !== this.snapshot.visible) this.source?.setDiagnosticsVisible(this.diagnostics.open) }, { signal })
     this.recommendation.querySelector('[data-performance=ignore]')!.addEventListener('click', () => this.source?.ignoreRecommendation(), { signal })
     this.recommendation.querySelector('[data-performance=lower]')!.addEventListener('click', () => this.source?.lowerRecommendedTier(), { signal })
+    this.recommendation.querySelector('[data-performance=bots]')!.addEventListener('click', () => this.source?.fewerRecommendedBots?.(), { signal })
     this.element.querySelector('[data-performance=reload]')!.addEventListener('click', () => location.reload(), { signal })
     if (quality) this.configureQuality(quality)
     inspector?.addCard(PerformancePanel.CARD, 'Performance', this.element, () => this.state ? `${this.state.name} · Auto ${this.state.auto ? 'on' : 'off'}${this.snapshot?.recommendation ? ' · Running slow' : ''}` : '',
@@ -189,7 +190,12 @@ export class PerformancePanel {
     }
     this.recommendation.toggleAttribute('data-docked', !!footer)
     // The notice remains visible while driving. Escape exposes its choices without firing.
-    for (const button of this.recommendation.querySelectorAll<HTMLButtonElement>('button')) button.hidden = this.captured
+    const offer = this.snapshot?.recommendation
+    for (const button of this.recommendation.querySelectorAll<HTMLButtonElement>('button')) {
+      const kind = button.dataset.performance
+      // Fewer bots only when bots are on offer; a lower level only when there is one.
+      button.hidden = this.captured || (kind === 'bots' && !(offer?.fewerBots && offer.bots)) || (kind === 'lower' && !!offer && offer.targetLevel === offer.level)
+    }
     this.recommendation.querySelector<HTMLElement>('.performance-unlock')!.hidden = !this.captured
   }
 
@@ -202,8 +208,14 @@ export class PerformancePanel {
     this.showRecommendation()
     const offer = snapshot.recommendation
     if (offer) {
-      this.recommendation.querySelector('p')!.textContent = `Running slow at ${this.levelName(offer.level)} (${number(offer.observedFps, 0)} fps). Switch to ${this.levelName(offer.targetLevel)}?`
-      this.recommendation.querySelector('[data-performance=lower]')!.textContent = `Switch to ${this.levelName(offer.targetLevel)}`
+      // Bots are offered first when they measurably cost frames; a lower level keeps them as they are.
+      const bots = offer.fewerBots ? offer.bots ?? 0 : 0, lower = offer.targetLevel !== offer.level
+      const company = bots === 1 ? '1 bot' : `${bots} bots`
+      this.recommendation.querySelector('p')!.textContent = bots && lower
+        ? `Running slow at ${this.levelName(offer.level)} with ${company} (${number(offer.observedFps, 0)} fps). Try fewer bots, or ${this.levelName(offer.targetLevel)} with the current bots?`
+        : bots ? `Running slow with ${company} (${number(offer.observedFps, 0)} fps). Try fewer bots?`
+        : `Running slow at ${this.levelName(offer.level)} (${number(offer.observedFps, 0)} fps). Switch to ${this.levelName(offer.targetLevel)}?`
+      this.recommendation.querySelector<HTMLButtonElement>('[data-performance=lower]')!.textContent = bots && lower ? `${this.levelName(offer.targetLevel)}, same bots` : `Switch to ${this.levelName(offer.targetLevel)}`
       this.recommendation.querySelector('[data-performance=ignore]')!.textContent = `Keep ${this.levelName(offer.level)}`
     }
     this.renderStatus()
@@ -219,6 +231,8 @@ export class PerformancePanel {
       ['FPS / median frame', latest && latest.frameMs > 0 ? `${number(1000 / latest.frameMs, 0)} / ${number(latest.p50Ms)} ms` : 'Unavailable'],
       ['Frame / p90 / p95', latest ? `${number(latest.frameMs)} / ${number(latest.p90Ms)} / ${number(latest.p95Ms)} ms` : 'Unavailable'],
       ['Physics', latest ? `${number(latest.physicsMs, 2)} ms` : 'Unavailable'],
+      // What this device carries against what the host asked for; a guest's bots are the host's.
+      ['Bots carried / asked for', snapshot.bots ? `${snapshot.bots.carried} / ${snapshot.bots.requested}` : 'Simulated by the host'],
       ['Draws / triangles', latest ? `${number(latest.drawCalls, 0)} / ${number(latest.triangles, 0)}` : 'Unavailable'],
       ['Stalls / frames', latest ? `${latest.stalls} / ${latest.frames}` : 'Unavailable'],
       ['Backend', environment.backend || 'Unavailable'], ['Graphics hardware', environment.adapter || 'Unavailable'],

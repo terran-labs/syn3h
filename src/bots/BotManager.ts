@@ -60,6 +60,8 @@ export class BotManager implements System {
     if (value) { this.races.setHooks(null); this.clearBots() }
   }
   get vehicles(): readonly Vehicle[] { return this.bots }
+  /** What the host asked for, within the quality level's budget: never exceeded. */
+  get requested(): number { return Math.max(0, Math.min(qualityBudget().bots, Math.floor(botCount.value))) }
   /** The player's own vehicle driving itself after a spell of no input. See Daydream.ts. */
   readonly daydream: Daydream
   readonly races: BotRaces
@@ -257,7 +259,7 @@ export class BotManager implements System {
     if (this.remote) return
     // The host's count is an upper bound; the level's budget and what this device was measured
     // to carry come under it. One arrival or departure at a time, an interval apart.
-    const wanted = Math.max(0, Math.min(qualityBudget().bots, Math.floor(botCount.value)))
+    const wanted = this.requested
     if (!this.paced) {
       while (this.bots.length > wanted) this.removeLast()
       while (this.bots.length < wanted) { const built = this.build(this.bots.length); if (!built) break; this.enter(built.bot, built.place, this.bots.length) }

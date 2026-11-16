@@ -68,7 +68,9 @@ export class BotPacer {
   }
 
   /** The number of bots to aim for now: what is wanted, within what the device carries. */
-  goal(state: Pick<PacingState, 'wanted'>): number { return Math.max(0, Math.min(state.wanted, this.allowed)) }
+  goal(state: Pick<PacingState, 'wanted'>): number { return Math.max(0, Math.min(state.wanted, this.allowed, this.ceiling)) }
+  /** At most this many for the rest of the session: set when the player accepts fewer bots. */
+  private ceiling = Infinity
 
   /**
    * One frame. Returns whether to add a bot or remove one now. Never more than one change per
@@ -129,16 +131,18 @@ export class BotPacer {
    * change (there was a bot to lose). Bots are offered before the picture is made coarser
    * only when they measurably cost frame time; see `costly`.
    */
-  shed(have: number): boolean {
+  shed(have: number, byPlayer = false): boolean {
     if (have <= 0) return false
     this.allowed = have - 1; this.measuring = null
+    // The player's own choice of fewer bots holds for the session: headroom does not undo it.
+    if (byPlayer) this.ceiling = Math.min(this.ceiling, this.allowed)
     if (this.level !== null) this.comfort.set(this.level, this.allowed)
     return true
   }
 
   /** The governor sees headroom: allow one more, up to what was wanted. True when that changes anything. */
   climb(have: number, wanted: number): boolean {
-    if (have >= wanted || this.allowed > have) return false
+    if (have >= Math.min(wanted, this.ceiling) || this.allowed > have) return false
     this.allowed = have + 1
     return true
   }
