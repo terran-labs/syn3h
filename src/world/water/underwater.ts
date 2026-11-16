@@ -3,10 +3,14 @@ import { fog, float, mix, output, positionView, renderGroup, uniform } from 'thr
 import { defineParam } from '../../../shared/params'
 import type { Game } from '../../core/Game'
 import type { Terrain } from '../Terrain'
+import { CameraWater } from './cameraWater'
 import { underwaterLook, underwaterRamp } from './waterEffectsMath'
 export const waterUnderwater=defineParam<boolean>({id:'water.underwater',label:'Underwater camera',group:'Water',scope:'client',default:true})
 // Post effects run after scene fog. Share its eased amount by camera so they can fade
 // atmospheric overlays without changing their graph or affecting reflection captures.
+const cameraCoverage=new WeakMap<T.Camera,CameraWater>()
+/** Actual near-plane wet fraction, independent of fog easing and its toggle. */
+export function cameraWaterCoverage(camera:T.Camera):number{return cameraCoverage.get(camera)?.coverage??0}
 const cameraAmounts=new WeakMap<T.Camera,number>()
 export function underwaterAmountForCamera(camera:T.Camera):number{return cameraAmounts.get(camera)??0}
 /** Narrow seam on AlienSkyMesh: see src/world/sky/AlienSkyMesh.ts. */
@@ -14,6 +18,7 @@ interface SkySeam {underwaterCamera:T.Camera|null;underwaterAmount:number;underw
 interface LightState {light:T.Light;before:number;applied:number}
 /** Installed after Environment, before the first frame. Crossings change uniforms only. */
 export class Underwater {
+  private readonly cameraWater=new CameraWater()
   private tint=uniform(new T.Color())
   private extinction=uniform(.085)
   private blend=uniform(0)
@@ -61,6 +66,8 @@ export class Underwater {
    */
   update(dt=1/60,wash=0){
     this.restore()
+    this.cameraWater.update(this.game.camera,this.terrain)
+    cameraCoverage.set(this.game.camera,this.cameraWater)
     const p=this.game.camera.position
     const surface=waterUnderwater.value&&this.terrain.liquidKindAt?.(p.x,p.z)==='water'
       ?this.terrain.liquidHeightAt?.(p.x,p.z)??-Infinity:-Infinity
@@ -89,5 +96,5 @@ export class Underwater {
     }
     this.active=true
   }
-  dispose(){this.restore();cameraAmounts.delete(this.game.camera);if(this.sky){this.sky.underwaterAmount=0;this.sky.underwaterCamera=null}if(this.game.scene.fogNode===this.fogNode)this.game.scene.fogNode=this.savedFog}
+  dispose(){this.restore();cameraCoverage.delete(this.game.camera);cameraAmounts.delete(this.game.camera);if(this.sky){this.sky.underwaterAmount=0;this.sky.underwaterCamera=null}if(this.game.scene.fogNode===this.fogNode)this.game.scene.fogNode=this.savedFog}
 }
