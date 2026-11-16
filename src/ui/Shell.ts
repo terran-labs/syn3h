@@ -161,14 +161,16 @@ export class Shell implements System {
       </div>
       <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby">${LOBBY_LINKS}</nav></div>
     </section>
+    <dialog class="in-play-about" aria-labelledby="in-play-about-title"><header><h2 id="in-play-about-title" tabindex="-1">About Syn3h</h2><button type="button" class="panel-back about-back" aria-label="Back to world"><span aria-hidden="true">←</span><span>Back<span class="about-back-long"> to world</span></span></button></header><div class="in-play-about-body">${creditsHtml}</div></dialog>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open the panels" aria-pressed="false"><span aria-hidden="true">≡</span><span class="nav-label"> Panels</span></button></nav>
     <div class="exit-confirm" role="alertdialog" aria-modal="true" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-text" hidden><div class="exit-confirm-card"><strong id="exit-confirm-title">Leave this world?</strong><p id="exit-confirm-text">You will return to the galaxy.</p><div class="exit-confirm-actions"><button type="button" class="exit-stay">Stay</button><button type="button" class="exit-leave">Leave world</button></div></div></div>
+    <button type="button" class="pause-about" aria-haspopup="dialog" hidden>About &amp; how to play</button>
     <button type="button" class="pause-veil" hidden><strong>Paused</strong><span class="pause-how">Click to resume</span><small hidden>The world carries on without you.</small></button>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
-    // Rewrite only this credits disclosure, never invite or networking links.
-    for (const anchor of this.element.querySelectorAll<HTMLAnchorElement>('[data-panel="about"] a[href^="/brand/licenses/"]')) {
+    // Rewrite only the two guide disclosures, never invite or networking links.
+    for (const anchor of this.element.querySelectorAll<HTMLAnchorElement>('[data-panel="about"] a[href^="/brand/licenses/"], .in-play-about a[href^="/brand/licenses/"]')) {
       anchor.setAttribute('href', frozenResourceURL(anchor.getAttribute('href')!))
     }
     document.body.append(this.element); document.body.classList.add('has-game-shell')
@@ -217,7 +219,7 @@ export class Shell implements System {
     this.inspector.open = false
     const railTop = this.inspector.element.querySelector('.wi-top')!
     const players = document.createElement('details'); players.className = 'rail-players'
-    players.innerHTML = '<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><label class="rail-diagnostics"><input type="checkbox"> Connection diagnostics</label></div>'
+    players.innerHTML = '<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><button type="button" class="rail-about" aria-haspopup="dialog">About &amp; how to play</button><label class="rail-diagnostics"><input type="checkbox"> Connection diagnostics</label></div>'
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
     this.inspector.setSessionCard(players)
     // Performance follows World; its controls remain part of the searchable card stack.
@@ -241,6 +243,13 @@ export class Shell implements System {
     exitConfirm.querySelector('.exit-stay')!.addEventListener('click', () => this.answerExit(false), { signal })
     exitConfirm.querySelector('.exit-leave')!.addEventListener('click', () => this.answerExit(true), { signal })
     players.querySelector('.rail-invite')!.addEventListener('click', () => this.openJoin(), { signal })
+    players.querySelector('.rail-about')!.addEventListener('click', () => this.openAbout(), { signal })
+    this.element.querySelector('.pause-about')!.addEventListener('click', () => this.openAbout(), { signal })
+    const guide = this.element.querySelector<HTMLDialogElement>('.in-play-about')!
+    guide.querySelector('.about-back')!.addEventListener('click', () => this.closeAbout(), { signal })
+    // The dialog's own Escape (cancel) and any other close route through closeAbout.
+    guide.addEventListener('cancel', event => { event.preventDefault(); this.closeAbout() }, { signal })
+    guide.addEventListener('close', () => this.closeAbout(), { signal })
     players.querySelector('input')!.addEventListener('change', event => params.set(diagnostics.def.id, (event.target as HTMLInputElement).checked), { signal })
     const music = document.createElement('div'); music.className = 'rail-music'
     music.innerHTML = `<span>Sound</span><button type="button" class="rail-mute">Mute</button>`
@@ -362,10 +371,49 @@ export class Shell implements System {
   }
   openJoin(): void {
     this.stopAttract()
-    if (this.inviteOpen) return
+    if (this.inviteOpen || this.aboutOpen) return
     this.inviteFromGame = this.started && !this.menuVisible
     if (this.inviteFromGame) { this.releaseCursor(); this.game.input.suspended = true; this.game.input.mouseFire = false; this.touch.enabled = false }
     this.inviteOpen = true; this.overlay.inert = true; this.invite.show(); this.updateInvite()
+  }
+  private aboutOpen = false
+  private aboutOpener?: HTMLElement
+  private cancelActions?: () => void
+  /** Main binds this before play: it drops charged or held gear without firing it. */
+  setActionCancellation(cancel: () => void): void { this.cancelActions = cancel }
+  /**
+   * The lobby's About guide, over the running world. The room, the URL and the pause state
+   * stay as they are. Gear in hand is cancelled first, so the input going quiet is not read
+   * as a release (a Big Red send or a Yoink fling); then input is suspended, which also drops
+   * held keys, so a key still down when the guide closes does nothing until pressed again.
+   */
+  openAbout(): void {
+    if (!this.playing || this.aboutOpen || this.inviteOpen || this.exitAsking || this.dropping) return
+    this.cancelActions?.()
+    this.aboutOpener = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
+    this.aboutOpen = true
+    this.releaseCursor()
+    this.game.input.suspended = true; this.game.input.poll(); this.touch.enabled = false
+    const guide = this.element.querySelector<HTMLDialogElement>('.in-play-about')!
+    guide.showModal()
+    guide.scrollTop = 0
+    guide.querySelector<HTMLElement>('h2')!.focus({ preventScroll: true })
+    this.syncPanels()
+  }
+  closeAbout(): void {
+    if (!this.aboutOpen) return
+    this.aboutOpen = false
+    const guide = this.element.querySelector<HTMLDialogElement>('.in-play-about')!
+    if (guide.open) guide.close()
+    this.game.input.suspended = this.userPaused || this.menuVisible || this.inviteOpen || this.exitAsking
+    this.touch.enabled = !this.game.input.suspended
+    this.syncPanels()
+    // Back to where the player opened it. The cursor is not captured on this click or key:
+    // the next click on the world resumes driving, as after any panel.
+    const opener = this.aboutOpener
+    this.aboutOpener = undefined
+    const focus = opener?.isConnected && !opener.closest('[hidden], [inert]') ? opener : this.element.querySelector<HTMLElement>(this.userPaused ? '.pause-veil' : '.rail-about')
+    focus?.focus({ preventScroll: true })
   }
   closeJoin(): void {
     if (!this.inviteOpen) return
@@ -384,7 +432,7 @@ export class Shell implements System {
   get daydreamBlocked(): boolean {
     const focused = document.activeElement
     const editing = focused instanceof HTMLElement && (focused.matches('input, textarea, select') || focused.isContentEditable)
-    return !this.playing || this.panelsWanted || this.userPaused || this.inviteOpen || this.exitAsking || editing
+    return !this.playing || this.panelsWanted || this.userPaused || this.inviteOpen || this.exitAsking || this.aboutOpen || editing
   }
   get activePanel(): string { return this.panels.active }
   get presentation(): boolean { return this.element.classList.contains('is-presentation') }
@@ -541,6 +589,7 @@ export class Shell implements System {
   private dropping = false
   openMenu(panel = 'index'): void {
     if (!this.started) return
+    this.closeAbout()
     this.lobbyAddress?.showLobby()
     if (this.exitAsking) { this.exitAsking = false; this.element.querySelector<HTMLElement>('.exit-confirm')!.hidden = true }
     this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; if (this.galaxy) this.galaxy.enabled = true
@@ -676,7 +725,7 @@ export class Shell implements System {
   private exitAsking = false
   /** Show "Leave this world?". Stay has the focus, so Enter, Escape and a click outside all stay. */
   private askExit(): void {
-    if (!this.started || this.menuVisible || this.exitAsking || this.userPaused) return
+    if (!this.started || this.menuVisible || this.exitAsking || this.userPaused || this.aboutOpen) return
     this.exitAsking = true
     const dialog = this.element.querySelector<HTMLElement>('.exit-confirm')!
     dialog.hidden = false
@@ -748,12 +797,12 @@ export class Shell implements System {
     if (control.paused) this.applyPause(true, control.reason)
   }
   private requestPause(): void {
-    if (!this.started || this.menuVisible || this.inviteOpen) return
+    if (!this.started || this.menuVisible || this.inviteOpen || this.aboutOpen) return
     this.releaseCursor()
     if (this.pauseControl) this.pauseControl.pause('user'); else this.applyPause(true, 'user')
   }
   private requestResume(): void {
-    if (!this.userPaused) return
+    if (!this.userPaused || this.aboutOpen) return
     if (this.pauseControl) this.pauseControl.resume('user'); else this.applyPause(false, null)
     // The click, tap or key that resumes is a gesture: go straight back to driving.
     if (this.capturesCursor) void this.captureCursor(); else { this.touchPanels = false; this.syncPanels() }
@@ -765,16 +814,24 @@ export class Shell implements System {
     this.userPaused = user
     const veil = this.element.querySelector<HTMLButtonElement>('.pause-veil')!
     veil.hidden = !user; this.element.classList.toggle('is-paused', user)
-    this.game.input.suspended = user || this.menuVisible || this.inviteOpen || this.exitAsking
+    this.element.querySelector<HTMLButtonElement>('.pause-about')!.hidden = !user
+    this.game.input.suspended = user || this.menuVisible || this.inviteOpen || this.exitAsking || this.aboutOpen
     if (user) {
       this.game.input.mouseFire = false
       veil.querySelector('.pause-how')!.textContent = this.touch.available ? 'Tap to resume' : 'Click to resume'
       veil.querySelector('small')!.hidden = this.playerCount < 2
-      veil.focus({ preventScroll: true })
+      if (!this.aboutOpen) veil.focus({ preventScroll: true })
     }
     this.syncPanels()
   }
   private keydown(event: KeyboardEvent): void {
+    if (this.aboutOpen) {
+      // The guide owns the keyboard: Tab, links and disclosures work natively inside it, and
+      // no shortcut or driving key reaches the game. Escape closes it and does nothing else.
+      event.stopImmediatePropagation()
+      if (event.code === 'Escape') { event.preventDefault(); this.closeAbout() }
+      return
+    }
     const editing = event.target instanceof HTMLElement && (event.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT|BUTTON|SUMMARY)$/.test(event.target.tagName))
     if (!editing && !event.repeat && event.code === 'KeyP') { event.preventDefault(); event.stopImmediatePropagation(); this.setPresentation(!this.presentation); return }
     if (!editing && !event.repeat && event.code === 'KeyJ') { event.preventDefault(); event.stopImmediatePropagation(); this.inviteOpen ? this.closeJoin() : this.openJoin(); return }
@@ -1137,7 +1194,7 @@ export class Shell implements System {
   private cursorRequest = 0
   private cursorPending = false
   private async captureCursor(entering = false): Promise<void> {
-    if (this.cursorPending) return
+    if (this.cursorPending || this.aboutOpen) return
     this.cursorPending = true
     const requestId = ++this.cursorRequest
     // While entering a world the menu is still up and the descent is running, and play may not
