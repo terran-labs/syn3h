@@ -14,19 +14,32 @@ import { buildTree, describe, exportSection, exportWorld, fraction, limits, pars
 import './params'
 import './inspector.css'
 import './motion.css'
+import './me-card.css'
+
+/** A die showing five, drawn as one path: the Randomize and roll-a-name buttons. */
+const DICE_GLYPH = '<svg class="wi-dice" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><rect x="1.5" y="1.5" width="13" height="13" rx="3" fill="none" stroke="currentColor" stroke-width="1.4"/><path fill="currentColor" d="M5 4a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm6 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2ZM8 7a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm-3 3a1 1 0 1 1 0 2 1 1 0 0 1 0-2Zm6 0a1 1 0 1 1 0 2 1 1 0 0 1 0-2Z"/></svg>'
 
 export interface InspectorOptions {
   /** One line for a closed card, for example "Alpine · Harimos". Empty hides it. */
   summary(sectionId: string): string
-  /** The vehicles on offer and which is in use, for the switcher in the Me card. */
-  vehicles(): { options: readonly { id: string; label: string }[]; current: string }
+  /**
+   * The vehicles on offer and which is in use, for the picker in the Me card. `pending` is a
+   * vehicle being switched to; `note` says why a choice is not available right now.
+   */
+  vehicles(): { options: readonly { id: string; label: string; glyph?: string }[]; current: string; pending?: string; note?: string }
   onVehicle(id: string): void
-  /** Current session identity; renaming remains owned by the session. */
+  /** The player's name, shown in the Me card. */
   playerName?(): string
-  /** The player's vehicle colours as #rrggbb. With onColor, two swatches sit beside the vehicle selector. */
+  /** With this the name can be edited in place; it receives the trimmed new name. */
+  onRename?(name: string): void
+  /** A freshly generated name, for the dice beside the name. */
+  rollName?(): string
+  /** The player's vehicle colours as #rrggbb, as showing now (they ease when changed). */
   colors?(): { body: string; accent: string }
   /** Called on every movement in the colour picker, so the vehicle can repaint as it is dragged. */
   onColor?(key: 'body' | 'accent', value: string): void
+  /** Pick a new pleasing pair of colours, for the Randomize button. */
+  onRandomizeColors?(): void
   /** Capture a local bookmark. The caller owns storage and success or failure feedback. */
   onSaveWorld?(): void
   /**
@@ -133,7 +146,11 @@ export class Inspector {
     window.addEventListener('resize', () => this.hideTooltip(), { signal })
     document.addEventListener('pointerdown', event => { if (!(event.target as Element).closest('.wi-row, .wi-tooltip')) this.hideTooltip() }, { signal })
     this.vehicleControl = this.vehicleSwitch()
-    this.vehicleControl.dataset.search = "vehicle colour color body accent buggy jet hovercraft"
+    this.vehicleControl.dataset.search = `vehicle colour color body accent randomize ${this.options.vehicles().options.map(o => o.label.toLowerCase()).join(' ')}`
+    this.nameControl = this.nameEditor()
+    // Escape in the name field cancels the edit. This runs before the shell's own Escape,
+    // which only blurs a text field (and the blur would otherwise save).
+    window.addEventListener('keydown', event => { if (event.code === 'Escape' && event.target === this.nameInput) this.nameInput.value = this.options.playerName?.() ?? '' }, { capture: true, signal: this.abort.signal })
     this.build()
     this.unsubscribe = params.onChange((id, value) => this.rows.get(id)?.sync(value))
     this.element.addEventListener('click', event => this.click(event))
@@ -195,12 +212,9 @@ export class Inspector {
       const text = extra ? extra.summary() : this.options.summary(id) || `${this.tree.find(s => s.id === id)?.count ?? 0} properties`
       if (sum.textContent !== text) sum.textContent = text
     }
-    const vehicles = this.options.vehicles()
-    // Only the Me card carries the vehicle selector.
-    const select = this.element.querySelector<HTMLSelectElement>('.wi-vehicle-select')
-    if (select && document.activeElement !== select) select.value = vehicles.current
-    const name = this.element.querySelector('.wi-person-name output')
-    if (name && name.textContent !== this.options.playerName?.()) name.textContent = this.options.playerName?.() ?? ''
+    this.syncVehicles()
+    const name = this.options.playerName?.() ?? ''
+    if (this.nameInput && document.activeElement !== this.nameInput && this.nameInput.value !== name) this.nameInput.value = name
     const colors = this.options.colors?.()
     if (colors) for (const dot of this.element.querySelectorAll<HTMLElement>('[data-colour]')) dot.style.backgroundColor = colors[dot.dataset.colour as 'body' | 'accent']
     if (colors) for (const input of this.tintInputs) { const value = colors[input.dataset.tint as 'body' | 'accent']; if (input.value !== value && document.activeElement !== input) input.value = value }
@@ -219,10 +233,7 @@ export class Inspector {
       head.innerHTML = '<h3></h3><span class="wi-sum"></span><span class="wi-chev" aria-hidden="true"></span>'; head.querySelector('h3')!.textContent = section.title
       const body = document.createElement('div'); body.className = 'wi-body'; body.hidden = true
       if (section.id === 'you') {
-        body.append(this.vehicleControl)
-        const identity = document.createElement('p'); identity.className = 'wi-person-name'; identity.dataset.search = 'player name identity'
-        const caption = document.createElement('span'); caption.textContent = 'Player name'
-        const name = document.createElement('output'); identity.append(caption, name); body.append(identity)
+        body.append(this.vehicleControl, this.nameControl)
         const dots = document.createElement('span'); dots.className = 'wi-colour-dots'; dots.setAttribute('aria-label', 'Vehicle colours')
         dots.innerHTML = '<i data-colour="body"></i><i data-colour="accent"></i>'; head.querySelector('.wi-sum')!.after(dots)
       }
@@ -285,25 +296,100 @@ export class Inspector {
     const card = this.element.querySelector<HTMLElement>(`.wi-card[data-section="${id}"]`)
     if (card && !card.classList.contains('is-open')) this.reflow(() => this.toggle(card, true))
   }
+  /**
+   * The Me card's vehicle picker: a segmented control, one segment per vehicle with a drawn
+   * glyph and its name, the chosen one filled. A radiogroup: arrow keys move and choose, Home
+   * and End jump. Below it the two colours, labelled, and Randomize.
+   */
   private vehicleSwitch(): HTMLElement {
-    const label = document.createElement('label'); label.textContent = 'Vehicle'
-    const select = document.createElement('select'); select.className = 'wi-vehicle-select'; select.setAttribute('aria-label', 'Vehicle')
-    for (const option of this.options.vehicles().options) { const item = document.createElement('option'); item.value = option.id; item.textContent = option.label; select.append(item) }
-    select.addEventListener('change', () => this.options.onVehicle(select.value), { signal: this.abort.signal })
-    label.append(select)
-    if (!this.options.colors || !this.options.onColor) return label
-    // Vehicle colours live beside the vehicle choice. Each swatch opens the platform's own
-    // colour picker; the vehicle repaints while it is dragged, with no reload.
     const wrap = document.createElement('div'); wrap.className = 'wi-vehicle'
-    const tint = document.createElement('span'); tint.className = 'wi-tint'; tint.setAttribute('role', 'group'); tint.setAttribute('aria-label', 'Vehicle colours')
-    for (const [key, name] of [['body', 'Body colour'], ['accent', 'Accent colour']] as const) {
-      const swatch = document.createElement('label'); swatch.className = 'wi-swatch'; swatch.title = name
-      const input = document.createElement('input'); input.type = 'color'; input.dataset.tint = key; input.setAttribute('aria-label', name)
-      input.addEventListener('input', () => this.options.onColor!(key, input.value), { signal: this.abort.signal })
-      swatch.append(input); tint.append(swatch); this.tintInputs.push(input)
+    const group = document.createElement('div'); group.className = 'wi-seg'; group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-label', 'Vehicle')
+    for (const option of this.options.vehicles().options) {
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'wi-seg-option'; button.setAttribute('role', 'radio')
+      button.dataset.segVehicle = option.id; button.setAttribute('aria-checked', 'false'); button.tabIndex = -1
+      button.innerHTML = `${option.glyph ? `<svg viewBox="0 0 24 14" aria-hidden="true" focusable="false"><path d="${option.glyph}"/></svg>` : ''}<span></span>`
+      button.querySelector('span')!.textContent = option.label
+      group.append(button)
     }
-    wrap.append(label, tint); return wrap
+    const choose = (button: HTMLElement | null) => { if (button?.dataset.segVehicle && !button.matches('[aria-disabled=true]')) this.options.onVehicle(button.dataset.segVehicle) }
+    group.addEventListener('click', event => choose((event.target as Element).closest<HTMLElement>('.wi-seg-option')), { signal: this.abort.signal })
+    group.addEventListener('keydown', event => {
+      const buttons = [...group.querySelectorAll<HTMLElement>('.wi-seg-option')], at = buttons.indexOf(document.activeElement as HTMLElement)
+      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key]
+      const to = step ? (at + step + buttons.length) % buttons.length : event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : -1
+      if (to < 0 || at < 0) return
+      // The keys belong to the picker here, not to driving.
+      event.preventDefault(); event.stopPropagation()
+      buttons[to].focus(); choose(buttons[to])
+    }, { signal: this.abort.signal })
+    const note = document.createElement('p'); note.className = 'wi-seg-note'; note.setAttribute('aria-live', 'polite')
+    wrap.append(group, note)
+    if (!this.options.colors || !this.options.onColor) return wrap
+    // Each swatch opens the platform's own colour picker; the vehicle repaints while it is dragged.
+    const tint = document.createElement('div'); tint.className = 'wi-tint'; tint.setAttribute('role', 'group'); tint.setAttribute('aria-label', 'Vehicle colours')
+    for (const [key, name] of [['body', 'Body'], ['accent', 'Accent']] as const) {
+      const swatch = document.createElement('label'); swatch.className = 'wi-swatch'; swatch.title = `${name} colour`
+      const input = document.createElement('input'); input.type = 'color'; input.dataset.tint = key; input.setAttribute('aria-label', `${name} colour`)
+      input.addEventListener('input', () => this.options.onColor!(key, input.value), { signal: this.abort.signal })
+      const caption = document.createElement('span'); caption.textContent = name
+      swatch.append(input, caption); tint.append(swatch); this.tintInputs.push(input)
+    }
+    if (this.options.onRandomizeColors) {
+      const dice = document.createElement('button'); dice.type = 'button'; dice.className = 'wi-randomize'
+      dice.innerHTML = `${DICE_GLYPH}<span>Randomize</span>`; dice.title = 'Pick a new pair of colours'
+      dice.addEventListener('click', () => this.options.onRandomizeColors!(), { signal: this.abort.signal })
+      tint.append(dice)
+    }
+    wrap.append(tint); return wrap
   }
+  /** Keep the picker's checked, pending and unavailable states in step with the game. */
+  private syncVehicles(): void {
+    const vehicles = this.options.vehicles()
+    for (const button of this.vehicleControl.querySelectorAll<HTMLElement>('.wi-seg-option')) {
+      const id = button.dataset.segVehicle!, checked = id === vehicles.current, pending = id === vehicles.pending
+      if (button.getAttribute('aria-checked') !== String(checked)) button.setAttribute('aria-checked', String(checked))
+      // Roving focus: the checked segment is the one Tab reaches.
+      const tab = checked ? 0 : -1
+      if (button.tabIndex !== tab) button.tabIndex = tab
+      button.classList.toggle('is-pending', pending)
+      if (pending) button.setAttribute('aria-busy', 'true'); else button.removeAttribute('aria-busy')
+      const blocked = Boolean(vehicles.note) && !checked
+      if (button.matches('[aria-disabled=true]') !== blocked) { if (blocked) button.setAttribute('aria-disabled', 'true'); else button.removeAttribute('aria-disabled') }
+    }
+    const note = this.vehicleControl.querySelector('.wi-seg-note')!, text = vehicles.pending ? 'Switching…' : vehicles.note ?? ''
+    if (note.textContent !== text) note.textContent = text
+  }
+  /**
+   * The player's name, edited in place: tap or click to edit, Enter or leaving the field
+   * saves, Escape cancels. The dice beside it rolls a new generated name.
+   */
+  private nameEditor(): HTMLElement {
+    const row = document.createElement('div'); row.className = 'wi-person-name'; row.dataset.search = 'player name identity rename'
+    const label = document.createElement('label'); label.className = 'wi-name-label'; label.textContent = 'Player name'
+    const input = document.createElement('input'); input.className = 'wi-name-input'; input.type = 'text'; input.maxLength = 24; input.spellcheck = false
+    input.setAttribute('autocomplete', 'nickname'); input.enterKeyHint = 'done'; input.id = 'wi-player-name'; label.htmlFor = input.id
+    input.value = this.options.playerName?.() ?? ''
+    this.nameInput = input
+    if (!this.options.onRename) input.readOnly = true
+    const save = () => {
+      const next = input.value.trim(), current = this.options.playerName?.() ?? ''
+      if (next && next !== current) this.options.onRename?.(next)
+      input.value = this.options.playerName?.() ?? next
+    }
+    input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); input.blur() } }, { signal: this.abort.signal })
+    input.addEventListener('blur', save, { signal: this.abort.signal })
+    input.addEventListener('focus', () => input.select(), { signal: this.abort.signal })
+    row.append(label, input)
+    if (this.options.rollName && this.options.onRename) {
+      const dice = document.createElement('button'); dice.type = 'button'; dice.className = 'wi-name-roll'; dice.innerHTML = DICE_GLYPH
+      dice.setAttribute('aria-label', 'Roll a new name'); dice.title = 'Roll a new name'
+      dice.addEventListener('click', () => { const name = this.options.rollName!(); this.options.onRename!(name); input.value = this.options.playerName?.() ?? name }, { signal: this.abort.signal })
+      row.append(dice)
+    }
+    return row
+  }
+  private nameControl!: HTMLElement
+  private nameInput!: HTMLInputElement
   private vehicleControl!: HTMLElement
   private readonly tintInputs: HTMLInputElement[] = []
   /** Opens the existing registered GI slider, rather than creating a second control. */

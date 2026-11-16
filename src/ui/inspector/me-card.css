@@ -1,0 +1,67 @@
+/*
+ * The Me card: vehicle picker, colours and name. The picker is a segmented choice among
+ * options (one filled, the rest outlined), deliberately unlike the on/off switches elsewhere
+ * in the inspector. Class names: .wi-seg (the group), .wi-seg-option (a segment).
+ */
+.syn3h-shell .world-inspector .wi-vehicle { display: block; padding: 8px 2px 4px; }
+.syn3h-shell .world-inspector .wi-seg {
+  display: flex; width: 100%; padding: 3px; gap: 3px; box-sizing: border-box;
+  border: 1px solid var(--s3-line, rgb(173 224 247 / .28)); border-radius: 10px; background: rgb(4 14 24 / .45);
+}
+.syn3h-shell .world-inspector .wi-seg-option {
+  flex: 1 1 0; min-width: 0; min-height: 44px; margin: 0; padding: 4px 6px; box-sizing: border-box;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  font: inherit; font-size: 13px; letter-spacing: .02em; color: var(--s3-dim, #a5c1d1);
+  background: transparent; border: 1px solid transparent; border-radius: 7px; cursor: pointer;
+  transition: background-color .22s ease, color .22s ease, border-color .22s ease, box-shadow .22s ease;
+}
+.syn3h-shell .world-inspector .wi-seg-option span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.syn3h-shell .world-inspector .wi-seg-option svg { flex: 0 0 auto; width: 24px; height: 14px; fill: currentColor; opacity: .75; }
+.syn3h-shell .world-inspector .wi-seg-option:hover { color: var(--s3-ink, #e3f2fc); border-color: var(--s3-line-quiet, rgb(173 224 247 / .15)); }
+.syn3h-shell .world-inspector .wi-seg-option[aria-checked=true] {
+  color: #06131d; background: linear-gradient(180deg, var(--s3-accent-2, #b1eaff), var(--s3-accent, #83d9f5));
+  border-color: var(--s3-accent-2, #b1eaff); box-shadow: 0 0 14px rgb(131 217 245 / .45), inset 0 1px 0 rgb(255 255 255 / .5);
+}
+.syn3h-shell .world-inspector .wi-seg-option[aria-checked=true] svg { opacity: 1; }
+.syn3h-shell .world-inspector .wi-seg-option:focus-visible { outline: 1px solid var(--s3-accent-2, #b1eaff); outline-offset: 2px; }
+/* Being switched to: the segment breathes until the new vehicle is in. */
+.syn3h-shell .world-inspector .wi-seg-option.is-pending { border-color: var(--s3-accent, #83d9f5); animation: wi-seg-pending 1s ease-in-out infinite; }
+@keyframes wi-seg-pending { 50% { box-shadow: 0 0 12px rgb(131 217 245 / .5); } }
+.syn3h-shell .world-inspector .wi-seg-option[aria-disabled=true] { opacity: .45; cursor: not-allowed; }
+.syn3h-shell .world-inspector .wi-seg-note { margin: 4px 2px 0; min-height: 0; font-size: 12px; color: var(--s3-soft, #829eaf); }
+.syn3h-shell .world-inspector .wi-seg-note:empty { display: none; }
+
+/* Colours: their own line, two labelled swatches and Randomize. */
+.syn3h-shell .world-inspector .wi-tint { display: flex; align-items: center; gap: 8px; margin-top: 8px; flex-wrap: nowrap; }
+.syn3h-shell .world-inspector label.wi-swatch {
+  display: flex; align-items: center; gap: 8px; width: auto; height: 44px; margin: 0; padding: 0 10px 0 6px;
+  border: 1px solid var(--s3-line-quiet, rgb(173 224 247 / .15)); border-radius: 22px; cursor: pointer;
+  font-size: 13px; color: var(--s3-dim, #a5c1d1);
+}
+.syn3h-shell .world-inspector label.wi-swatch:hover { border-color: var(--s3-line, rgb(173 224 247 / .28)); color: var(--s3-ink, #e3f2fc); }
+.syn3h-shell.exploration-ui .world-inspector label.wi-swatch input[type=color] { width: 30px; height: 30px; }
+.syn3h-shell .world-inspector .wi-randomize, .syn3h-shell .world-inspector .wi-name-roll {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px; margin: 0 0 0 auto; padding: 0 12px;
+  font: inherit; font-size: 13px; color: var(--s3-ink, #e3f2fc); background: rgb(131 217 245 / .08);
+  border: 1px solid var(--s3-line, rgb(173 224 247 / .28)); border-radius: 22px; cursor: pointer;
+}
+.syn3h-shell .world-inspector .wi-randomize:hover, .syn3h-shell .world-inspector .wi-name-roll:hover { border-color: var(--s3-accent, #83d9f5); background: rgb(131 217 245 / .16); }
+.syn3h-shell .world-inspector .wi-randomize:active .wi-dice, .syn3h-shell .world-inspector .wi-name-roll:active .wi-dice { transform: rotate(90deg); }
+.syn3h-shell .world-inspector .wi-dice { width: 16px; height: 16px; transition: transform .25s ease; }
+.syn3h-shell .world-inspector .wi-name-roll { width: 44px; padding: 0; margin: 0; flex: 0 0 auto; }
+
+/* The name: reads as text until touched, then as a field. */
+.syn3h-shell .world-inspector .wi-person-name { display: flex; align-items: center; gap: 8px; min-height: 44px; margin: 8px 0; }
+.syn3h-shell .world-inspector .wi-name-label { flex: 0 0 auto; font-size: 13px; color: var(--s3-soft, #829eaf); }
+.syn3h-shell .world-inspector .wi-name-input {
+  flex: 1 1 auto; min-width: 0; height: 40px; margin: 0; padding: 0 10px; box-sizing: border-box; text-align: right;
+  font: inherit; font-size: 16px; color: var(--s3-ink, #e3f2fc); background: transparent;
+  border: 1px solid transparent; border-radius: 6px; cursor: text; text-overflow: ellipsis;
+}
+.syn3h-shell .world-inspector .wi-name-input:hover { border-color: var(--s3-line-quiet, rgb(173 224 247 / .15)); }
+.syn3h-shell .world-inspector .wi-name-input:focus { outline: none; text-align: left; border-color: var(--s3-accent, #83d9f5); background: rgb(4 14 24 / .55); }
+
+@media (prefers-reduced-motion: reduce) {
+  .syn3h-shell .world-inspector .wi-seg-option, .syn3h-shell .world-inspector .wi-dice { transition: none; }
+  .syn3h-shell .world-inspector .wi-seg-option.is-pending { animation: none; }
+}

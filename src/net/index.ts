@@ -624,19 +624,21 @@ export class NetClient implements System {
   }
 
   /** Remote colours ease to a newly announced tint (src/vehicles/tints.ts), by player id. */
-  private readonly remoteTints = new Map<number, TintTransition>()
+  private remoteTints?: Map<number, TintTransition>
   private tintRemote(id: number, vehicle: VehicleExtras, colors: readonly [string, string]): void {
     const target = { body: colors[0], accent: colors[1] }
-    let tint = this.remoteTints.get(id)
+    const tints = this.remoteTints ??= new Map()
+    let tint = tints.get(id)
     if (!tint) {
       const shown = (vehicle as { colors?: TintPair }).colors
       // Nothing to ease from: paint at once.
       if (!shown) { vehicle.setColors?.(target.body, target.accent); return }
-      tint = new TintTransition(shown); this.remoteTints.set(id, tint)
+      tint = new TintTransition(shown); tints.set(id, tint)
     }
     tint.set(target)
   }
   private updateRemoteTints(dt: number): void {
+    if (!this.remoteTints) return
     for (const [id, tint] of this.remoteTints) {
       const r = this.remotes.get(id)
       if (!r) { this.remoteTints.delete(id); continue }

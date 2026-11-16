@@ -285,8 +285,6 @@ html .syn3h-shell.exploration-ui[data-ui-frost="off"] :is(.lobby-panels, .in-pla
 .syn3h-shell .wi-card[data-section="you"] .wi-head { grid-template-columns: auto minmax(0, 1fr) auto auto; }
 .syn3h-shell .wi-colour-dots { display: inline-flex; gap: 5px; align-items: center; }
 .syn3h-shell .wi-colour-dots i { width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgb(225 248 255 / .65); }
-.syn3h-shell .wi-person-name { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; margin: 8px 0; }
-.syn3h-shell .wi-person-name output { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .syn3h-shell .world-inspector [data-search][hidden] { display: none; }
 /* The galaxy reaches every edge. The footer keeps its spacing, without masking stars. */
