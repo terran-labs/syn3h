@@ -23,8 +23,153 @@ because someone is in a lobby. Frozen-build validation, public checks and immedi
 rollback remain required. Occupancy is no longer a release gate.
 
 The owner answered the wind question: generated wind only. UX owns removing the recorded
-wind layer. This supersedes the recording-retention rule for wind only; the music
+wind layer. This supersedes the recording-retention rule for wind only; original music
 and laser recordings remain.
+
+## Sunday 15 November, 11:33am Pacific: full version numbers, and a frozen build for judges
+
+**Decided** by the owner. Builds are named by their full version (v26.11.1503), not by an
+integer release number. Judges must be able to load the build frozen before noon by a
+version parameter on www.syn3h.com, so he can keep building and shipping after noon while
+the project is judged fairly against others finished at noon. The functionality ships
+before noon.
+
+**What it changes.** v26.11.1503 (live since 11:20am) is the build frozen before noon. The
+Orchestrator adds version-addressed serving to the site, with a direct frozen link as the
+fallback, and does not ship a protocol change that would force a frozen build to reload.
+Later releases must keep earlier frozen versions loadable.
+
+## Sunday 15 November, 11:24am Pacific: licensed under PolyForm Noncommercial 1.0.0
+
+**Decided** by the owner: "Update our Git repo with the PolyForm Noncommercial." He wants
+people free to extend the game but not to make money from it without a licence from him.
+The public repository had no licence at all.
+
+**What it changes.** `LICENSE.md` holds the official, unmodified text; `NOTICE.md` carries
+the required notice and how to ask for a commercial licence; the README and package
+metadata name it. Syn3h is source-available, not open source in the strict sense.
+Contributions from others will need a short agreement so he can license the whole
+commercially. The copyright holder is written as Terran Labs unless he says otherwise.
+
+## Sunday 15 November, 10:45am Pacific: three places to look, one dev preview with everything
+
+**Decided** by the owner: "Eliminate all the outstanding extraneous previews. We should only
+have the live site, the live dev preview, and the vehicle lab. Merge all latest work into
+the live dev preview ASAP." He is told through Open questions when it is ready. Finishing
+the interface is his highest priority for the remaining hour.
+
+**What it changes.** One dev preview serves the integration branch and receives every
+lane's work as it passes typecheck and unit tests. The UX, Post Effects, water and other
+lane previews are stopped through the broker; lanes verify on local servers. The release
+check stays separate and still runs every browser check. The second build freezes when the
+interface work arrives green or at 11:10am, whichever is first, and sheds from the bottom
+of his priority list. Release 6 went live at 10:19am.
+
+## Sunday 15 November, 9:32am to 9:45am Pacific: physics engine loading, and a lobby of planets only
+
+**Decided** by the owner.
+
+- The physics engine loads alongside the lobby and ships as a separate compiled file, in
+  today's demo release if it can be done safely.
+- No fallback if it fails to load: the player is told the game could not load and to reload.
+- The lobby offers no vehicles, only planets to click. Vehicle choice lives in play.
+
+**What it changes.** Performance builds one loading path for the engine and a reload
+message for failure. The tank is not added to the lobby; the in-play selector lists all
+four vehicles. A lobby that is interactive before the engine arrives needs a startup
+restructure and follows the demo. Release 6 was cut early, at about 9:40am, to take the
+recorded audio off the live site sooner.
+
+## Sunday 15 November, 9:05am to 9:40am Pacific: pause, panels and touch stick
+
+**Decided** by the owner, in four messages.
+
+- The game does not run in a background tab: audio fades out and pauses, and nothing
+  consumes CPU.
+- Escape with the cursor already free pauses, with a floating "Paused. Click to resume"
+  message and all audio fading to zero over about 500 ms.
+- Panels being open or closed is a function of cursor locking alone; there is no separate
+  panel state. Locked means driving with panels closed; free means panels open.
+- The touch joystick floats: it appears where the first drag begins, with no permanent
+  stick in the lower left.
+
+**What it changes.** One pause controller serves both the hidden tab and Escape. UX removes
+the stored panel state and defines the single equivalent state for touch. What other
+players see when a guest or the host is paused is still to be decided by the Orchestrator.
+
+## Sunday 15 November, 9:15am Pacific: one approved design per vehicle in the noon release
+
+**Decided** by the owner: "In the version we're shipping at noon today, there should only be
+one approved hovercraft, buggy, tank, and jet. You shouldn't be saving old versions that are
+loaded into the game."
+
+**What it changes.** The noon release offers four vehicles with one design each. Alternate,
+study and superseded designs are not loaded, bundled or reachable by sliders, links, saved
+settings or bots; the vehicle lab stays out of the production build. The hovercraft and tank
+ship in their current model-based form, since he has not approved a generated body for
+either. Design-selecting parameters on the hovercraft and tank branches stay out of the
+candidate.
+
+## Sunday 15 November, 9:02am Pacific: new vehicle designs are announced as questions
+
+**Decided** by the owner, in the Hovercraft lead's thread: "Send me a global question
+message whenever new vehicle designs are available, including for the hovercraft, tank, any
+other vehicles. Apply this as a rule in the vehicles thread."
+
+**What it changes.** When a design round is verified live in the shared vehicle lab, its
+lead asks him through Open questions, with the designs as options and the lab link. The
+Vehicles lane records the rule and passes it to every vehicle lead. A lead copies the
+Foreman when it asks.
+
+## Sunday 15 November, 9:05am Pacific: gear names and looks approved
+
+**Decided** by the owner. Player-facing names: Plasma Tag (was tag beam), Plasma Thunder
+(was Big Red), Chaser (was Pesters), Grapple (was Bungee), Yoink. He approved the Weapons
+lane's first recommendation for each item's look and synthesized sound. Internal
+identifiers and wire messages stay as they are. At 9:22am he added: the Syn3h Buggy is
+called simply the Buggy, now that the classic buggy is gone.
+
+## Sunday 15 November, 9:00am Pacific: the rule is what the running game loads
+
+**Decided** by the owner: "Binary assets in the codebase are okay. Binary assets that get
+loaded into the running game are unacceptable."
+
+**What it changes.** The release check is defined by the requests a scripted play session
+makes, not by what the repository holds. Install icons and the share card stay as checked
+in, because the game never loads them; no build-time generation is needed. Fonts are
+loaded at run time; he then chose to keep Barlow, trimmed to the weights used, as a
+standing exception. The vehicle models kept for noon are the one dated exception. The physics
+engine's compiled code is classed as code, not an asset, and is reported to him with its
+size so he can object. `AGENTS.md` is updated.
+
+## Sunday 15 November, 8:55am Pacific: classic buggy removed; live models stay for noon
+
+**Decided** by the owner, answering the Foreman's question on the 1.7 MB of vehicle models.
+
+**What it changes.** The classic buggy leaves the game now, with its model files; old room
+links and saved sessions that name it fall back to the Syn3h buggy. Unused model files and
+the two dead textures are deleted. Models the game still loads (Syn3h buggy, tank and
+treads, hovercraft) stay for the noon release on an explicit approved list and are replaced
+by generated vehicles after the demo. Questions on the install icons, the share card and the
+Barlow font are still open with him.
+
+## Sunday 15 November, 8:20am Pacific: no recorded audio or baked textures ship
+
+**Decided** by the owner: "There shouldn't be any pre-generated textures, audio files, or
+any other large binary data." He asked why the release 5 lobby plays the recorded music
+and not the synthesised score.
+
+**Why it happened.** The audio code defaults to the Space Station recording; the generated
+score was an opt-in choice in the music selector. That followed the earlier rule that his
+recorded originals stay, which this decision withdraws.
+
+**What it changes.** The generated score becomes the default and only music, lobby
+included. The four recorded tracks, the three recorded cues, the unused wind recording and
+the two vehicle textures leave the build; cues are synthesised. A release check will fail
+on any shipped audio file or non-required image. Install icons and the share card stay
+because platforms require bitmaps. Vehicle meshes (about 1.9 MB) are kept for the noon demo
+and put to the owner as a separate question. `AGENTS.md` is updated to match. Not live:
+release 5 still plays the recording until a successor passes its checks.
 
 ## Sunday 15 November, overnight: coordinated validation queue
 
