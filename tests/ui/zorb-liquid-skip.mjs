@@ -150,7 +150,14 @@ async function activate(kind) {
   if(transition.before.locked)await page.keyboard.press('Escape')
   try {
     await page.waitForFunction(nativeSelectionState,'panels',{timeout:remaining(5000)})
-  } catch(error) { transition.failureState=await page.evaluate(nativeSelectionState);await save();throw error }
+  } catch(error) {
+    transition.failure=String(error.stack??error);report.failure=transition.failure
+    try { transition.failureState=await page.evaluate(nativeSelectionState) }
+    catch(secondary) { report.cleanupErrors.push(`UI failure-state observation: ${secondary.stack??secondary}`) }
+    try { await save() }
+    catch(secondary) { report.cleanupErrors.push(`UI failure evidence persistence: ${secondary.stack??secondary}`) }
+    throw error
+  }
   const card=page.locator('[data-section="you"] .wi-head')
   const select=page.locator('[data-section="you"] .wi-vehicle-select')
   const expanded=await card.getAttribute('aria-expanded')
@@ -158,14 +165,28 @@ async function activate(kind) {
   if(expanded==='false'){await card.scrollIntoViewIfNeeded();await card.click({timeout:remaining(5000)})}
   try {
     await page.waitForFunction(nativeSelectionState,'select',{timeout:remaining(5000)})
-  } catch(error) { transition.failureState=await page.evaluate(nativeSelectionState);await save();throw error }
+  } catch(error) {
+    transition.failure=String(error.stack??error);report.failure=transition.failure
+    try { transition.failureState=await page.evaluate(nativeSelectionState) }
+    catch(secondary) { report.cleanupErrors.push(`UI failure-state observation: ${secondary.stack??secondary}`) }
+    try { await save() }
+    catch(secondary) { report.cleanupErrors.push(`UI failure evidence persistence: ${secondary.stack??secondary}`) }
+    throw error
+  }
   await select.scrollIntoViewIfNeeded()
   const selection={url:page.url(),kind,optionId:choice.optionId,available:await select.evaluate(el=>Array.from(el.options,option=>({value:option.value,label:option.label})))}
   report.vehicleSelections.push(selection);await save()
   assert.ok(selection.available.some(option=>option.value===choice.optionId),`Missing public vehicle option ${choice.optionId}`)
   transition.beforeSelection=await page.evaluate(nativeSelectionState);await save()
   try { await select.selectOption(choice.optionId,{timeout:remaining(5000)}) }
-  catch(error) { transition.failureState=await page.evaluate(nativeSelectionState);await save();throw error }
+  catch(error) {
+    transition.failure=String(error.stack??error);report.failure=transition.failure
+    try { transition.failureState=await page.evaluate(nativeSelectionState) }
+    catch(secondary) { report.cleanupErrors.push(`UI failure-state observation: ${secondary.stack??secondary}`) }
+    try { await save() }
+    catch(secondary) { report.cleanupErrors.push(`UI failure evidence persistence: ${secondary.stack??secondary}`) }
+    throw error
+  }
   selection.selectedValue=await select.inputValue();await save()
   assert.equal(selection.selectedValue,choice.optionId,'native vehicle selection')
   // The public Buggy option and cached runtime Buggy may use different explicit aliases.
