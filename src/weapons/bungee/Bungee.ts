@@ -282,6 +282,16 @@ export class Bungee implements System {
     this.hooks.send?.({ s: 'off' })
   }
 
+  /** Stop pending control intent when selecting other gear, preserving the live cord.
+   * Raw V and gamepad LB payout remain unchanged: holding them can resume payout when
+   * Grapple is selected again. This does not retire physical input owners. */
+  clearControlIntent(): void {
+    this.fireWas = false
+    this.lastPress = -Infinity
+    this.wheel = 0
+    this.reel = 0
+  }
+
   /** Drop the cord and clear the input edge when a controller is interrupted. */
   cancel(): void {
     this.letGo()
