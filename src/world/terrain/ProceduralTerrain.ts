@@ -96,6 +96,7 @@ export class ProceduralTerrain implements Terrain {
     this.meshes = createTerrainMeshes(this.data, this.look.material)
     game.scene.add(this.meshes.group)
     this.collider = createTerrainCollider(game.world, this.data)
+    this.syncIce()
     // Level of detail follows the camera once per frame, after the camera has moved.
     this.lodSystem = game.add({
       // Before each physics step, and before the vehicles' own steps: carry things across
@@ -235,6 +236,8 @@ export class ProceduralTerrain implements Terrain {
   /** The frozen sea's slab, when the sea is frozen; see seaIce.ts. */
   private ice: RAPIER.Collider | null = null
   private iceKey = ''
+  /** The ice sheet's top, or -Infinity when the sea is open. */
+  private iceTop = -Infinity
   /** Keep the ice slab with the heightfield's window and the sea level, or remove it. */
   private syncIce(): void {
     const frozen = seaFrozen() && this.data.settings.dry <= 0 && (worldSeaKind.value as number) === 1
@@ -242,6 +245,7 @@ export class ProceduralTerrain implements Terrain {
     if (key === this.iceKey) return
     if (this.ice) { this.game.world.removeCollider(this.ice, true); this.ice = null }
     if (frozen) this.ice = createSeaIceCollider(this.game.world, this.data, this.colliderX, this.colliderZ, worldLavaAltitude.value)
+    this.iceTop = frozen ? worldLavaAltitude.value : -Infinity
     this.iceKey = key
   }
 
@@ -337,8 +341,9 @@ export class ProceduralTerrain implements Terrain {
     return out
   }
 
+  /** The ground: on a frozen sea, the ice is the ground (the HUD, bots and everything that stands on it). */
   heightAt(x: number, z: number): number {
-    return this.sampler.heightAt(x, z)
+    return Math.max(this.sampler.heightAt(x, z), this.iceTop)
   }
 
   renderHeightAt(x: number, z: number): number {
@@ -348,6 +353,7 @@ export class ProceduralTerrain implements Terrain {
   get renderCellSize(): number { return this.data.cell }
 
   normalAt(x: number, z: number, out: THREE.Vector3): THREE.Vector3 {
+    if (this.iceTop > -Infinity && this.sampler.heightAt(x, z) < this.iceTop) return out.set(0, 1, 0)
     return this.sampler.normalAt(x, z, out)
   }
 

@@ -119,10 +119,10 @@ export const PALETTES: readonly Palette[] = [
 ]
 
 /**
- * A frozen sea's ice (the Ice Moon's): floes in two whites and the blue of the cracks between
- * them. Shared by the ice sheet's material in the world and the lobby's painted maps.
+ * A frozen sea's ice (the Ice Moon's): floes in two whites, polished wind-scoured blue ice,
+ * and the blue of the cracks between floes. A little under white, so the sun does not burn it out. Shared by the ice sheet's material in the world and the lobby's painted maps.
  */
-export const SEA_ICE = { floe: 0xe4eef4, old: 0xc6d8e4, crack: 0x3f6f92 } as const
+export const SEA_ICE = { floe: 0xd6e2ea, old: 0xb8c9d6, scour: 0x8eaec4, crack: 0x3a6688 } as const
 
 export function paletteFor(look: number): Palette {
   return PALETTES[look] ?? PALETTES[0]

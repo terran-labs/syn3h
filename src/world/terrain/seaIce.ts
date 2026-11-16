@@ -9,7 +9,7 @@
  * Lakes and rivers inland stay liquid; only the sea freezes.
  */
 import * as THREE from 'three/webgpu'
-import { abs, color, float, mix, mx_noise_float, positionWorld, smoothstep, vec3 } from 'three/tsl'
+import { abs, cameraPosition, color, float, length, mix, mx_noise_float, positionWorld, smoothstep, vec3 } from 'three/tsl'
 import { params } from '../../../shared/params'
 import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../../core/physics'
 import { COLLIDER_MARGIN } from './collider'
@@ -43,20 +43,33 @@ export function createSeaIceCollider(world: RAPIER.World, data: TerrainData, cen
 
 
 /**
- * The ice sheet's look: floes in two whites, pressure cracks between them in blue, faint
- * frost grain. Flat and opaque. Drawn on the sea's own meshes, so it follows the window, the
- * apron to the horizon and the planet's curve exactly as the sea does.
+ * The ice sheet's look, from the driver's seat to the horizon. All generated from world
+ * position, no textures:
+ *  - floes a few hundred metres across in two whites, the older ice greyer;
+ *  - wind-scoured patches of polished blue ice, smoother, so the sun glints off them;
+ *  - pressure ridges: bright, rough bands where floes met, tens of metres apart;
+ *  - cracks at three scales, the finest a few metres apart, blue, fading with distance
+ *    before they could shimmer.
+ * Flat and opaque. Drawn on the sea's own meshes, so it follows the window, the apron to the
+ * horizon and the planet's curve exactly as the sea does.
  */
 export function createSeaIceMaterial(): THREE.MeshStandardNodeMaterial {
-  const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.32, metalness: 0 })
+  const material = new THREE.MeshStandardNodeMaterial({ roughness: 0.4, metalness: 0 })
   const p = positionWorld.xz
-  const floes = mx_noise_float(vec3(p.x.mul(0.012), float(0.5), p.y.mul(0.012))).mul(0.5).add(0.5)
-  // Cracks: the zero contour of a second noise, thin, wandering, sharper up close.
-  const crackField = abs(mx_noise_float(vec3(p.x.mul(0.006), float(3.7), p.y.mul(0.006))).add(mx_noise_float(vec3(p.x.mul(0.03), float(9.1), p.y.mul(0.03))).mul(0.25)))
-  const crack = smoothstep(0.035, 0.0, crackField)
-  const grain = mx_noise_float(vec3(p.x.mul(0.6), float(1.3), p.y.mul(0.6))).mul(0.04)
-  const ice = mix(color(SEA_ICE.old), color(SEA_ICE.floe), smoothstep(0.35, 0.65, floes)).add(vec3(grain))
-  material.colorNode = mix(ice, color(SEA_ICE.crack), crack.mul(0.85))
-  material.roughnessNode = mix(float(0.28), float(0.6), crack)
+  const at = (scale: number, salt: number) => mx_noise_float(vec3(p.x.mul(scale), float(salt), p.y.mul(scale)))
+  // How far away: fine detail fades out by 160 m, before it is smaller than a pixel.
+  const near = smoothstep(float(160), float(40), length(positionWorld.sub(cameraPosition)))
+  const floes = at(0.006, 0.5).mul(0.5).add(0.5)
+  const scour = smoothstep(0.15, 0.4, at(0.018, 5.2).add(at(0.07, 6.1).mul(0.3)))
+  const ridge = smoothstep(0.06, 0.0, abs(at(0.011, 2.4).add(at(0.05, 4.4).mul(0.2)))).mul(0.8)
+  const crack = (scale: number, salt: number, width: number) => smoothstep(width, 0.0, abs(at(scale, salt).add(at(scale * 5, salt + 1).mul(0.18))))
+  const cracks = crack(0.009, 3.7, 0.03).max(crack(0.045, 8.3, 0.025).mul(0.8)).max(crack(0.16, 11.9, 0.03).mul(near).mul(0.7))
+  const grain = at(0.9, 1.3).mul(0.035).mul(near)
+  let ice = mix(color(SEA_ICE.old), color(SEA_ICE.floe), smoothstep(0.3, 0.7, floes))
+  ice = mix(ice, color(SEA_ICE.scour), scour.mul(0.75))
+  ice = mix(ice, color(SEA_ICE.floe).mul(1.06), ridge)
+  material.colorNode = mix(ice.add(vec3(grain)), color(SEA_ICE.crack), cracks.mul(0.8))
+  // Polished blue ice is smooth and catches the sun; ridges and cracks are rough.
+  material.roughnessNode = mix(float(0.42), float(0.12), scour).add(ridge.mul(0.35)).add(cracks.mul(0.3))
   return material
 }
