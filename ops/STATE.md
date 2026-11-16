@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-16 04:25 PST. The owner withdrew the afternoon cutoff.
+Last verified: 2026-11-16 11:00 PST. The owner withdrew the afternoon cutoff.
 
 ## Authority and release order
 
@@ -12,24 +12,14 @@ and eight vehicle/browser cases with rollback. Verify notes and GIF before Lates
 
 ## Production
 
-Accepted release: v26.11.1602 (release-26), source 899c4217, at https://www.syn3h.com/.
-Grapple terrain clearance is live. Native launch, ground attachment and reeling passed;
-valid-contact endpoint measurements retain the strict 2 cm limit. Obscured endpoint
-captures leave visual quality open. Buried contacts use a visual clearance fallback;
-physical spring forces still act directly between anchors.
+Accepted release: v26.11.1603 (release-27), source ad7fb2f9, at https://www.syn3h.com/,
+published 16 November 2026. One-line command bar (world name, Search, Pause), the Jet
+THRUST readout, fleeing Tag bots fixed, and a green suite (1,805 pass, one skip, no
+known failures). release.sh passed public build, HTTPS, WSS, net smoke and frozen-version
+checks; the command bar was confirmed on www.syn3h.com. Showcase GIF captured from the
+frozen build (seven of eight scenes; wings-glide skipped). Performance not measured.
 
-Both public addresses pass exact-build, multiplayer and all frozen-file checks; all
-eight Chrome/WebKit vehicle cases pass. Normal and latency checks used the same frozen
-payload, 20261116-040032-899c4217. Typecheck and build pass. Full comparison: 1,806 pass,
-one skip and three unchanged baseline failures in competitive fleeing, wind steering
-and dashboard links. All 45 added tests pass. Cleanup verified 2,562 recorded identities
-absent with no inspection errors; this covers observed processes, not universal containment.
-
-Release notes, peeled tag and downloaded GIF bytes were verified before promotion to
-Latest; the Latest endpoint and GIF download also match. The GIF is explicitly historical
-footage from v26.11.1508 and does not depict this Grapple correction. The frozen noon
-judging build and itch submission remain unchanged. No physical-device or desert-dune
-acceptance is claimed; procedural update averages are not full-frame performance.
+Next batch, v26.11.1604: nameplates (cost re-measured first), touch aiming, in-play About.
 
 ## Current queue
 
