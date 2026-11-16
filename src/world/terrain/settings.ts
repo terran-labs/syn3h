@@ -41,8 +41,14 @@ export const terrainSpireHeight = defineParam({
 export const terrainLandShare = defineParam({
   ...P, id: 'terrain.landShare', label: 'Land share (0 all sea, 1 all land)', default: 0.5, min: 0.3, max: 0.85, step: 0.01,
 })
+/**
+ * The world's tile, stored as a power of two: 1024 × 2^value metres (shared/protocol.ts
+ * tileSize), so the three old sizes 0, 1 and 2 are still exactly 1024, 2048 and 4096 m and
+ * saved rooms and links keep their size. Shown and set in metres, in 256 m steps.
+ */
 export const terrainPlanetSize = defineParam({
-  ...P, id: 'terrain.planetSize', label: 'Planet size: 0 small, 1 medium, 2 large', default: 1, min: 0, max: 2, step: 1,
+  ...P, id: 'terrain.planetSize', label: 'Planet size (m)', default: 1, min: 0, max: 2, step: 0.0001,
+  display: { offset: 0, scale: 1024, power: 2, step: 256 },
 })
 /**
  * Fords: on water worlds, rivers carry on across the roads as shallow fords and run down to
@@ -161,7 +167,7 @@ export interface TerrainSettings {
   craters: number
   /** 0..1 share of the tile that is land. */
   landShare: number
-  /** 0 small (1 km tile), 1 medium (2 km), 2 large (4 km). */
+  /** The tile as a power of two: 1024 × 2^planetSize metres (0, 1, 2 are 1, 2, 4 km). */
   planetSize: number
   /** 0..1 share of the land in forest. */
   treeCover: number

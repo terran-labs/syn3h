@@ -30,8 +30,10 @@ export interface ParamDef<T extends ParamValue = ParamValue> {
   /**
    * Numbers only: how the settings UI shows and takes the value, without changing what is
    * stored or sent. Shown = (value - offset) * scale; a negative scale reverses the slider.
+   * With `power`, shown = scale * power^(value - offset) instead (planet size in metres from
+   * a stored power of two), and `step` gives the slider's step in shown units.
    */
-  display?: { offset: number; scale: number }
+  display?: { offset: number; scale: number; power?: number; step?: number }
 }
 
 export interface Param<T extends ParamValue> {

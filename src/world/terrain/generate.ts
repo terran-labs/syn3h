@@ -27,8 +27,9 @@ import { type LavaFeatures, type Vent, lavaPass, ventsPass } from './lava'
 import { forestPass } from './forest'
 import { type Road, roadsPass } from './roads'
 import { KIND_ALPINE, KIND_DESERT, KIND_VOLCANIC, type TerrainSettings } from './settings'
+import { tileSize } from '../../../shared/protocol'
 
-/** Tile sides in metres for planet size 0 (small), 1 (medium) and 2 (large). */
+/** Tile sides in metres for the old planet sizes 0 (small), 1 (medium) and 2 (large); see tileSize. */
 export const PLANET_SIZES = [1024, 2048, 4096] as const
 export const DEFAULT_WORLD_SIZE = 2048
 /** Samples per side. 513 gives 4 m cells; see the report in tests/world for timings. */
@@ -809,9 +810,9 @@ function now(): number {
 }
 
 export function generateTerrain(seed: number, settings: TerrainSettings, options: GenerateOptions = {}): TerrainData {
-  // The planet size setting picks the tile: 1, 2 or 4 km, always at 4 m cells.
-  const tier = settings.planetSize <= 0 ? 0 : settings.planetSize >= 2 ? 2 : 1
-  const size = options.size ?? PLANET_SIZES[tier]
+  // The planet size setting picks the tile, 1024 to 4096 m in 256 m steps (shared/protocol.ts
+  // tileSize, which the room server uses too), always at 4 m cells.
+  const size = options.size ?? tileSize(settings.planetSize)
   const resolution = options.resolution ?? Math.round(size / 4) + 1
   const timings: Record<string, number> = {}
   let t = now()

@@ -17,17 +17,21 @@ export interface PropertyDef {
   default: number | boolean; min?: number; max?: number; step?: number; deferred?: boolean
   /** Optional, written by the lane that owns the property. */
   description?: string
-  /** Shown = (value - offset) * scale; see ParamDef.display. Stored and sent values never change. */
-  display?: { offset: number; scale: number }
+  /** Shown = (value - offset) * scale, or scale * power^(value - offset); see ParamDef.display. Stored and sent values never change. */
+  display?: { offset: number; scale: number; power?: number; step?: number }
 }
 /** A stored value as the settings UI shows it. */
 export function shownValue(def: Pick<PropertyDef, 'display'>, value: number): number {
-  return def.display ? (value - def.display.offset) * def.display.scale : value
+  const d = def.display
+  if (!d) return value
+  return d.power ? d.scale * d.power ** (value - d.offset) : (value - d.offset) * d.scale
 }
 /** The value to store for one typed or slid in display units. */
 export function storedValue(def: Pick<PropertyDef, 'display'>, shown: number): number {
   // Rounded off at the tenth place so -0.3 shown is -0.7 stored, not -0.7000000000000001.
-  return def.display ? Number((shown / def.display.scale + def.display.offset).toFixed(10)) : shown
+  const d = def.display
+  if (!d) return shown
+  return Number((d.power ? Math.log(shown / d.scale) / Math.log(d.power) + d.offset : shown / d.scale + d.offset).toFixed(10))
 }
 /**
  * The definition as the settings UI sees it: limits and default in display units, low to
@@ -37,7 +41,7 @@ export function shownDef<T extends PropertyDef>(def: T): T {
   if (!def.display || typeof def.default !== 'number') return def
   const ends = [def.min, def.max].map(v => v === undefined ? undefined : shownValue(def, v))
   const lo = ends.every(v => v !== undefined) ? Math.min(ends[0]!, ends[1]!) : ends[0], hi = ends.every(v => v !== undefined) ? Math.max(ends[0]!, ends[1]!) : ends[1]
-  const step = def.step === undefined ? undefined : Math.abs(def.step * def.display.scale)
+  const step = def.display.step ?? (def.step === undefined ? undefined : Math.abs(def.step * def.display.scale))
   return { ...def, default: shownValue(def, def.default), min: lo, max: hi, step, display: undefined }
 }
 export interface SectionSpec { id: string; title: string; blurb: string; groups: readonly string[]; scope: 'world' | 'client' }
