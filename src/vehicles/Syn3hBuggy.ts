@@ -12,7 +12,7 @@
  * Unity semantics (forces, drag, ForceMode, euler angles, handedness) live in unityBody.ts.
  */
 import * as THREE from 'three/webgpu'
-import { worldLavaAltitude } from '../../shared/params'
+import { seaLevel } from '../world/seaLevel'
 import type { Game } from '../core/Game'
 import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
@@ -360,7 +360,7 @@ export class Syn3hBuggy extends Vehicle {
 
   /** Surface height of the lava or water at a point (Unity layer 4 raycasts). */
   private liquidAt(x: number, z: number): number {
-    return this.terrain.liquidHeightAt?.(x, z) ?? worldLavaAltitude.value
+    return this.terrain.liquidHeightAt?.(x, z) ?? seaLevel()
   }
 
   // ---- input: Vhicl.FixedUpdate smoothing and VhiclMe mapping ----------------------------
@@ -970,7 +970,7 @@ export class Syn3hBuggy extends Vehicle {
       // Lava thermals, VB 459-466: lift within 10 m above lava or sea.
       const liquid = this.liquidAt(ub.pos.x, ub.pos.z)
       const d = ub.pos.y - liquid
-      if (ub.pos.y < worldLavaAltitude.value + 10 && d >= 0 && d <= 10) {
+      if (ub.pos.y < seaLevel() + 10 && d >= 0 && d <= 10) {
         ub.addForce(this.v2.set(0, (10 - d) * 40, 0))
       }
       ub.angularDrag = 5

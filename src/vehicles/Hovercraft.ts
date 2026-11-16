@@ -2,7 +2,8 @@ import * as THREE from 'three/webgpu'
 import type { Game } from '../core/Game'
 import type { Terrain } from '../world/Terrain'
 import { RAPIER, unityTorque } from '../core/physics'
-import { defineParam, worldLavaAltitude } from '../../shared/params'
+import { defineParam } from '../../shared/params'
+import { seaLevel } from '../world/seaLevel'
 import { Vehicle } from './Vehicle'
 import { UnityBody } from './unityBody'
 import { GameHover } from './hover/GameHover'
@@ -109,7 +110,7 @@ export class Hovercraft extends Vehicle {
     let distance = hit?.timeOfImpact ?? Infinity
     let normal = hit ? new THREE.Vector3().copy(hit.normal) : new THREE.Vector3(0,1,0)
     // Hovercraft.js 34-38 treats the nearest liquid plane as supporting terrain.
-    const liquidDistance = Math.max(0,position.y-(this.terrain.liquidHeightAt?.(position.x,position.z)??worldLavaAltitude.value))
+    const liquidDistance = Math.max(0,position.y-(this.terrain.liquidHeightAt?.(position.x,position.z)??seaLevel()))
     if (liquidDistance < 30 && liquidDistance < distance) {distance = liquidDistance; normal.set(0,1,0)}
     if (distance <= 30) {
       // Hovercraft.js 40-43: duck toward five metres under an overhang.
