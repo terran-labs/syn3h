@@ -1,0 +1,405 @@
+// SOURCE ONLY, UNRUN. Capability gate; no projectile or About-modal acceptance.
+// Requires a separately reviewed dedicated supervisor and an explicit runtime slot.
+import { chromium } from 'playwright-core'
+import assert from 'node:assert/strict'
+import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { createHash, randomUUID } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
+
+const root = fileURLToPath(new URL('../../', import.meta.url))
+const origin = process.env.SYN3H_URL, expected = process.env.UX_SOURCE_SHA, out = process.env.UX_EVIDENCE_DIR
+assert.ok(origin && expected && out && process.env.UX_LAUNCH_MANIFEST)
+const deadline = Date.now() + 480000
+const budget = cap => { const ms = Math.min(cap, deadline - Date.now()); assert.ok(ms > 0, '480s absolute deadline'); return ms }
+async function bounded(promise, cap = 10000) {
+  let timer
+  try { return await Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('bounded operation expired')), budget(cap)) })]) }
+  finally { clearTimeout(timer) }
+}
+const hash = bytes => createHash('sha256').update(bytes).digest('hex')
+const world = 'alpine.1518~bots.count=0,bungee.length=300'
+const room = `ux-about-capability-${randomUUID()}`
+// Restore normal background behavior by REMOVING these installed Playwright defaults.
+// Do not add lifecycle, visibility, focus or throttling override arguments.
+const removedDefaults = ['--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding']
+const modulePaths = ['src/main.ts', 'src/core/Game.ts', 'src/core/Input.ts', 'src/core/ChaseCamera.ts',
+  'src/ui/Shell.ts', 'src/weapons/Gear.ts', 'src/weapons/bungee/Bungee.ts', 'src/weapons/aim.ts', 'src/net/index.ts']
+const inventory = ['index.html', ...modulePaths, 'src/ui/shell.css', 'src/world/planets.ts',
+  'src/weapons/bungee/params.ts', 'vite.config.ts', 'server/dev.ts', 'package.json', 'package-lock.json',
+  'tests/ui/in-play-about-two-peer.mjs', 'tests/ui/in-play-about-two-peer-plan.md']
+const report = { source: expected, status: 'in_progress', scope: 'two-process native-control capability only',
+  arrangement: { channel: 'chrome', headless: true, processes: 2, contextsPerProcess: 1, pagesPerContext: 1, removedDefaults },
+  room, world, peers: [], actions: [], errors: [], captureComplete: false,
+  limits: ['Local browser clocks are independent; action IDs correlate ordered observations, not simultaneous snapshots.',
+    'RAF reads ordinary game.tick advancement; it does not observe every fixed step or an event-turn first step.',
+    'Remote cord inventory is read-only TypeScript-private observation. No product fields are written.',
+    'No projectile is fired and About is not opened. No modal cancellation or survival verdict.',
+    'Headless native input does not establish physical-device, OS visibility or delayed pointer-lock behavior.'] }
+const peers = [], pending = [], sources = new Map()
+let primary, sequence = 0, identity
+await bounded(mkdir(out, { recursive: true }))
+async function persist() { await bounded(writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)), 3000) }
+function errorText(error) { return error?.stack || String(error) }
+async function attempt(label, fn) {
+  try { return await fn() } catch (error) { report.errors.push(`${label}: ${errorText(error)}`); return undefined }
+}
+async function drain() {
+  for (let cursor = 0; cursor < pending.length;) {
+    const end = pending.length
+    await bounded(Promise.allSettled(pending.slice(cursor, end)))
+    cursor = end
+  }
+}
+function cleanSource() {
+  assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', timeout: budget(5000) }).trim(), expected)
+  assert.equal(execFileSync('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: root, encoding: 'utf8', timeout: budget(5000) }).trim(), '')
+}
+async function sourceProof(stage) {
+  cleanSource()
+  const rows = []; report[stage] = rows
+  for (const path of inventory) {
+    const local = await bounded(readFile(new URL(`../../${path}`, import.meta.url)))
+    sources.set(path, local.toString())
+    const row = { path, localSha256: hash(local) }; rows.push(row)
+    // HTML needs explicit import semantics. Browser navigation proof is separate.
+    const url = new URL(`/${path}?raw${path === 'index.html' ? '&import' : ''}`, origin)
+    try {
+      const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(budget(10000)) })
+      Object.assign(row, { url: url.href, status: response.status,
+        headers: Object.fromEntries(['content-type', 'content-length', 'etag'].map(k => [k, response.headers.get(k)])) })
+      const text = await bounded(response.text())
+      Object.assign(row, { bytes: Buffer.byteLength(text), sha256: hash(text), prefix: text.slice(0, 4096) })
+      await persist()
+      assert.equal(response.status, 200, path)
+      const literal = text.match(/^export default ("(?:[^"\\]|\\.)*")/m)
+      assert.ok(literal, `raw export ${path}`); assert.equal(JSON.parse(literal[1]), local.toString(), path)
+    } catch (error) {
+      row.error = errorText(error)
+      await attempt('partial raw-source receipt', persist)
+      throw error
+    }
+  }
+  return rows.map(({ path, localSha256 }) => ({ path, localSha256 }))
+}
+
+// Installed before navigation on BOTH pages. All mutations below belong to the
+// fixture's own observer. Product state and native lifecycle remain untouched.
+function installObservation() {
+  const events = [], faults = [], expectedCords = new Map()
+  let activeIdentity = null
+  let actionId = 'before-entry', armed = false, stopped = false, dropped = 0, raf = 0
+  let frames = 0, advances = 0, lastTick = null
+  const cord = c => c && ({ owner: c.owner, flying: !!c.hook, to: c.to,
+    at: c.at ? [c.at.x, c.at.y, c.at.z] : null, normal: [c.normal.x, c.normal.y, c.normal.z] })
+  const read = () => {
+    const s = window.syn3h, n = window.syn3hNet, g = s?.game
+    return { time: performance.now(), actionId, hidden: document.hidden, hasFocus: document.hasFocus(),
+      visibility: document.visibilityState, lock: document.pointerLockElement === g?.canvas ? 'canvas' : document.pointerLockElement ? 'other' : 'none',
+      tick: g?.tick ?? null, gameTime: g?.time ?? null, playing: s?.shell?.playing ?? false,
+      paused: s?.pause?.paused ?? null, reason: s?.pause?.reason ?? null, suspended: g?.input?.suspended ?? null,
+      room: s?.shell?.room ?? null, connected: n?.connected ?? false, id: n?.id ?? null, host: n?.game?.host ?? null,
+      roster: n ? [...n.players.keys()].sort((a, b) => a - b) : [],
+      botCount: s?.params?.get('bots.count')?.value ?? null, seed: s?.params?.get('world.seed')?.value ?? null,
+      reach: s?.params?.get('bungee.length')?.value ?? null, gear: n?.gear?.current ?? null,
+      fire: g?.input?.state?.fire ?? null, shots: n?.stats?.shotsFired ?? null,
+      launched: n?.bungee?.stats.launched ?? null,
+      // Read-only private map: canonical owner/anchor identity, not aggregate count.
+      cords: n ? [...n.bungee.cords.values()].map(cord).sort((a, b) => a.owner - b.owner) : [],
+      activeElement: document.activeElement?.tagName ?? null }
+  }
+  const fault = reason => { if (!faults.some(f => f.reason === reason)) faults.push({ reason, ...read() }) }
+  function check(s) {
+    if (!armed) return
+    if (s.hidden || !s.hasFocus || s.paused || s.suspended || !s.playing || !s.connected) fault('required active peer lost')
+    if (activeIdentity && (s.id !== activeIdentity.id || s.room !== activeIdentity.room ||
+      JSON.stringify(s.roster) !== JSON.stringify(activeIdentity.roster))) fault('session identity changed')
+    for (const [owner, wanted] of expectedCords) {
+      const actual = s.cords.find(c => c.owner === owner)
+      if (JSON.stringify(actual) !== JSON.stringify(wanted)) fault(`retained cord changed: ${owner}`)
+    }
+  }
+  function observe(event) {
+    // Only true window blur/focus, not descendant control focus changes.
+    if ((event.type === 'blur' || event.type === 'focus') && event.target !== window) return
+    const s = read()
+    if (events.length >= 512) dropped++
+    else events.push({ type: event.type, trusted: event.isTrusted, ...s })
+    if (armed && ['blur', 'pagehide', 'pointerlockerror'].includes(event.type)) fault(event.type)
+    check(s)
+    queueMicrotask(() => check(read()))
+  }
+  const bindings = [[window, 'blur'], [window, 'focus'], [window, 'pagehide'],
+    [document, 'visibilitychange'], [document, 'pointerlockchange'], [document, 'pointerlockerror']]
+  for (const [target, name] of bindings) target.addEventListener(name, observe, { capture: true, passive: true })
+  function frame() {
+    if (stopped) return
+    frames++; const s = read()
+    if (lastTick !== null && s.tick > lastTick) advances++
+    lastTick = s.tick; check(s); raf = requestAnimationFrame(frame)
+  }
+  raf = requestAnimationFrame(frame)
+  window.__twoPeerCapability = {
+    mark(id) { actionId = id; return read() },
+    arm() { activeIdentity = read(); armed = true; check(activeIdentity) },
+    retain(c) { expectedCords.set(c.owner, structuredClone(c)); check(read()) },
+    snapshot() { const state = read(); check(state); return { state, events: events.slice(), faults: faults.slice(), dropped, frames, advances, stopped } },
+    close() { armed = false; stopped = true; cancelAnimationFrame(raf); for (const [target, name] of bindings) target.removeEventListener(name, observe, true) },
+  }
+}
+const actionId = () => report.actions.at(-1)?.id ?? 'entry'
+const evaluate = (peer, fn, arg) => bounded(peer.page.evaluate(fn, arg))
+const ready = (peer, fn, arg) => bounded(peer.page.waitForFunction(fn, arg, { timeout: budget(15000) }), 15000)
+async function sample(peer, actionId) {
+  const observation = await evaluate(peer, id => { window.__twoPeerCapability.mark(id); return window.__twoPeerCapability.snapshot() }, actionId)
+  peer.record.latest = observation
+  return { peer: peer.name, ...observation }
+}
+function assertActive(observation) {
+  const s = observation.state
+  assert.equal(observation.dropped, 0, `${observation.peer}: event drops`)
+  assert.deepEqual(observation.faults, [], `${observation.peer}: sticky lifecycle/cord fault`)
+  assert.equal(s.hidden, false); assert.equal(s.hasFocus, true)
+  assert.equal(s.paused, false); assert.equal(s.suspended, false)
+  assert.equal(s.playing, true); assert.equal(s.connected, true)
+  assert.equal(s.room, room)
+  assert.equal(s.botCount, 0); assert.equal(s.seed, 1518); assert.equal(s.reach, 300)
+  if (identity) { assert.equal(s.id, identity[observation.peer]); assert.deepEqual(s.roster, Object.values(identity).sort((a, b) => a - b)) }
+  assert.equal(s.shots, 0, 'capability fixture never fires a projectile')
+}
+async function checkpoint(label, action = async () => {}) {
+  const row = { id: `${++sequence}:${label}`, status: 'in_progress', before: [], after: [] }
+  report.actions.push(row); await persist()
+  try {
+    for (const peer of peers) { const s = await sample(peer, row.id); row.before.push(s); await persist(); assertActive(s) }
+    await action(row)
+    for (const peer of peers) {
+      const afterAction = await sample(peer, row.id)
+      ;(row.afterAction ??= []).push(afterAction); await persist(); assertActive(afterAction)
+      await ready(peer, tick => syn3h.game.tick > tick, afterAction.state.tick)
+      const s = await sample(peer, row.id); row.after.push(s); await persist(); assertActive(s)
+      assert.ok(s.state.tick > afterAction.state.tick, `${peer.name} ordinary ticks advance`)
+    }
+    await drain(); assert.deepEqual(report.errors, [])
+    row.status = 'passed'; await persist()
+  } catch (error) {
+    row.status = 'failed'; row.error = errorText(error)
+    for (const peer of peers) await attempt(`failure snapshot ${peer.name}`, async () => { row[`${peer.name}Failure`] = await sample(peer, row.id) })
+    await attempt('partial action receipt', persist)
+    throw error
+  }
+}
+function watchResponses(peer) {
+  const { page, record } = peer
+  page.on('pageerror', error => report.errors.push(`${peer.name} pageerror: ${error}`))
+  page.on('websocket', ws => { record.sockets.push(ws.url());
+    if (new URL(ws.url()).pathname === '/ws') ws.on('close', () => { if (!record.closing) report.errors.push(`${peer.name}: room socket closed during capability run`) })
+    ws.on('framereceived', ({ payload }) => {
+    try { if (['update', 'full-reload', 'prune'].includes(JSON.parse(String(payload)).type)) report.errors.push(`${peer.name}: HMR changed source`) } catch {}
+  }) })
+  page.on('response', response => {
+    const path = new URL(response.url()).pathname.slice(1), document = response.request().resourceType() === 'document'
+    if (!document && !modulePaths.includes(path)) return
+    const row = { url: response.url(), status: response.status(), path, document }; record.responses.push(row)
+    pending.push((async () => {
+      const bytes = await bounded(response.body())
+      Object.assign(row, { bytes: bytes.length, sha256: hash(bytes), prefix: bytes.toString().slice(0, 4096) })
+      await persist()
+      assert.equal(new URL(response.url()).origin, new URL(origin).origin)
+      assert.equal(response.status(), 200); assert.equal(response.fromServiceWorker(), false)
+      assert.equal(response.request().redirectedFrom(), null)
+      if (document) {
+        assert.equal(response.request().isNavigationRequest(), true); assert.equal(response.frame(), page.mainFrame())
+        assert.equal(response.url(), peer.url); assert.ok(bytes.toString().includes('/src/main.ts'))
+      } else {
+        assert.equal(response.request().resourceType(), 'script')
+        const map = bytes.toString().match(/sourceMappingURL=data:application\/json(?:;charset=[^;,]+)?;base64,([^\s]+)/)
+        assert.ok(map, path)
+        assert.ok(JSON.parse(Buffer.from(map[1], 'base64')).sourcesContent.includes(sources.get(path)), `executed source map ${path}`)
+        row.sourceSha256 = hash(sources.get(path))
+      }
+      row.verified = true
+    })().catch(error => { row.error = errorText(error); report.errors.push(`${peer.name}: ${row.error}`) }))
+  })
+}
+async function lock(peer) {
+  await bounded(peer.page.bringToFront())
+  assert.equal((await sample(peer, actionId())).state.lock, 'none', 'capture begins unlocked')
+  // Shell's ordinary first-capture canvas click consumes this gesture before fire.
+  await bounded(peer.page.locator('#game').click({ position: { x: 640, y: 450 }, timeout: budget(10000) }))
+  await ready(peer, () => document.pointerLockElement === syn3h.game.canvas)
+}
+async function unlock(peer) {
+  assert.equal((await sample(peer, actionId())).state.lock, 'canvas')
+  await bounded(peer.page.keyboard.press('Escape'))
+  await ready(peer, () => document.pointerLockElement === null && !syn3h.pause.paused && syn3h.shell.inspector.open &&
+    !document.querySelector('.world-inspector').hidden && !document.querySelector('.world-inspector').inert)
+}
+async function retainGround(ownerPeer) {
+  await ready(ownerPeer, () => syn3hNet.bungee.attached && syn3hNet.bungee.mine?.at && syn3hNet.bungee.mine.to === null)
+  const ownerState = (await sample(ownerPeer, actionId())).state
+  const wanted = ownerState.cords.find(c => c.owner === ownerState.id)
+  assert.ok(wanted && !wanted.flying && wanted.at && wanted.to === null)
+  for (const peer of peers) {
+    await ready(peer, owner => { const c = syn3hNet.bungee.cords.get(owner); return c && !c.hook && c.at && c.to === null }, wanted.owner)
+    const actual = (await sample(peer, actionId())).state.cords.find(c => c.owner === wanted.owner)
+    // Bungee.send rounds wire coordinates/normals to centimetres; local storage
+    // keeps full precision. Compare exactly to that protocol representation, then
+    // retain each peer's own observed identity without a free numerical tolerance.
+    const wire = { ...wanted, at: wanted.at.map(v => Math.round(v * 100) / 100),
+      normal: wanted.normal.map(v => Math.round(v * 100) / 100) }
+    assert.deepEqual(actual, peer === ownerPeer ? wanted : wire, 'canonical owner/anchor at source wire precision')
+    await evaluate(peer, c => window.__twoPeerCapability.retain(c), actual)
+  }
+  return wanted
+}
+async function attach(peer) {
+  await checkpoint(`${peer.name}:one-ground-attachment`, async row => {
+    await lock(peer)
+    await bounded(peer.page.keyboard.press('Digit4'))
+    await ready(peer, () => syn3hNet.gear.current === 'bungee')
+    await bounded(peer.page.mouse.move(640, 770, { steps: 12 }))
+    row.aim = await evaluate(peer, async () => {
+      const { aimFrom } = await import('/src/weapons/aim.ts')
+      const { BUNGEE_MUZZLE_UP, BUNGEE_MUZZLE_AHEAD } = await import('/src/weapons/bungee/Bungee.ts')
+      const g = syn3h.game, aim = aimFrom(g, syn3h.player.body, 300, BUNGEE_MUZZLE_UP, BUNGEE_MUZZLE_AHEAD, .12, true)
+      return { time: performance.now(), point: aim.point?.toArray() ?? null, handle: aim.handle,
+        distance: aim.point?.distanceTo(aim.o) ?? null, origin: aim.o.toArray(), direction: aim.d.toArray(),
+        reach: syn3h.params.get('bungee.length').value, fire: g.input.state.fire,
+        stats: { ...syn3hNet.bungee.stats }, lock: document.pointerLockElement === g.canvas }
+    })
+    await persist()
+    assert.equal(row.aim.lock, true); assert.equal(row.aim.reach, 300); assert.equal(row.aim.fire, false)
+    assert.ok(row.aim.point && row.aim.handle === null && row.aim.distance > 5 && row.aim.distance <= 300, 'one declared native aim must hit ground')
+    assert.equal(row.aim.stats.launched, 0, 'no earlier launch or retry')
+    await bounded(peer.page.keyboard.down('KeyL'))
+    // No second attempt if aim/attachment fails. Cleanup closes the owned browser.
+    row.cord = await retainGround(peer)
+    await bounded(peer.page.keyboard.up('KeyL'))
+    assert.equal((await sample(peer, row.id)).state.launched, 1)
+    await unlock(peer)
+  })
+}
+
+try {
+  const launch = JSON.parse(await bounded(readFile(process.env.UX_LAUNCH_MANIFEST, 'utf8')))
+  assert.equal(launch.head, expected); assert.equal(launch.origin, origin)
+  assert.equal(launch.env.SYN3H_NO_ROOM_SERVER, '1'); assert.ok(launch.roomPort !== 8787 && launch.roomPid && launch.vitePid)
+  assert.equal(launch.capabilityArrangement, 'two-independent-chrome-processes')
+  report.launch = { launcherSha256: launch.launcherSha256, roomPid: launch.roomPid, vitePid: launch.vitePid }
+  const before = await sourceProof('sourceBefore'); await persist()
+  // Each launchServer owns a separate browser child and temporary profile. Its local
+  // automation WebSocket is transport only, not another game page or room server.
+  for (const name of ['A', 'B']) {
+    const peer = { name, record: { name, responses: [], sockets: [] } }; peers.push(peer); report.peers.push(peer.record)
+    peer.server = await chromium.launchServer({ channel: 'chrome', headless: true, host: '127.0.0.1',
+      ignoreDefaultArgs: removedDefaults, timeout: budget(30000) })
+    const child = peer.server.process()
+    const automation = new URL(peer.server.wsEndpoint())
+    assert.equal(automation.hostname, '127.0.0.1')
+    peer.record.browserProcess = { pid: child.pid, spawnargs: child.spawnargs,
+      automationHost: automation.hostname, automationPort: Number(automation.port) }
+    assert.ok(child.pid > 0); assert.ok(!child.spawnargs.some(a => removedDefaults.includes(a)))
+    await persist() // Exposes both direct browser PID handles for supervisor correlation.
+    peer.browser = await chromium.connect(peer.server.wsEndpoint(), { timeout: budget(15000) })
+    peer.context = await bounded(peer.browser.newContext({ viewport: { width: 1280, height: 900 }, hasTouch: false, serviceWorkers: 'block' }))
+    await bounded(peer.context.addInitScript(installObservation))
+    peer.page = await bounded(peer.context.newPage()); peer.page.setDefaultTimeout(10000)
+    const url = new URL(origin); url.searchParams.set('room', room); url.searchParams.set('world', world); peer.url = url.href
+    assert.equal(peer.browser.contexts().length, 1)
+    assert.equal(peer.context.pages().length, 1)
+    watchResponses(peer)
+  }
+  assert.notEqual(peers[0].record.browserProcess.pid, peers[1].record.browserProcess.pid)
+  // Observers exist on both contexts before either game entry.
+  for (const peer of peers) {
+    await peer.page.goto(peer.url, { timeout: budget(60000) })
+    await ready(peer, () => window.syn3h?.shell?.galaxy?.live)
+    await bounded(peer.page.locator('.galaxy-label.is-current').click())
+    await ready(peer, () => window.syn3hNet?.connected && syn3h.shell.playing && !syn3h.shell.dropping)
+    if ((await sample(peer, 'entry')).state.lock === 'canvas') await unlock(peer)
+  }
+  for (const peer of peers) await ready(peer, () => syn3hNet.players.size === 2)
+  identity = Object.fromEntries(await Promise.all(peers.map(async p => [p.name, (await sample(p, 'identity')).state.id])))
+  assert.ok(identity.A > 0 && identity.B > 0 && identity.A !== identity.B)
+  report.identity = identity
+  await drain(); assert.deepEqual(report.errors, [])
+  for (const peer of peers) {
+    const roomSockets = peer.record.sockets.filter(url => new URL(url).pathname === '/ws')
+    assert.equal(roomSockets.length, 1, 'one real room connection per peer, no reconnect')
+    assert.equal(new URL(roomSockets[0]).searchParams.get('room'), room)
+    assert.equal(new URL(roomSockets[0]).host, new URL(origin).host)
+    assert.ok(peer.record.responses.some(r => r.document && r.verified), 'actual navigation document proof')
+    for (const path of modulePaths) assert.ok(peer.record.responses.some(r => r.path === path && r.verified), `actual executed module ${path}`)
+    peer.record.runtime = await evaluate(peer, () => ({ game: syn3h.game.constructor.name, shell: syn3h.shell.constructor.name,
+      input: syn3h.game.input.constructor.name, bungee: syn3hNet.bungee.constructor.name, gear: syn3hNet.gear.constructor.name }))
+    assert.deepEqual(peer.record.runtime, { game: 'Game', shell: 'Shell', input: 'Input', bungee: 'Bungee', gear: 'GearRack' })
+    await evaluate(peer, () => window.__twoPeerCapability.arm())
+  }
+  await checkpoint('both-active-before-control')
+  for (const peer of [peers[0], peers[1], peers[0]]) await checkpoint(`${peer.name}:dry-native-control`, async () => {
+    await lock(peer); await unlock(peer)
+    for (const p of peers) assert.equal((await sample(p, actionId())).state.launched, 0)
+  })
+  await attach(peers[0]); await attach(peers[1])
+  await checkpoint('B:future-fire-control-position-without-fire', async row => {
+    const peer = peers[1]
+    await lock(peer); await bounded(peer.page.keyboard.press('Digit1'))
+    await ready(peer, () => syn3hNet.gear.current === 'beam')
+    await bounded(peer.page.mouse.move(640, 450, { steps: 12 }))
+    row.BReady = await sample(peer, row.id); assert.equal(row.BReady.state.lock, 'canvas')
+    assert.equal(row.BReady.state.fire, false)
+    // A future shot would occur here. This fixture sends no down/shot.
+    await unlock(peer)
+  })
+  await checkpoint('A:future-About-control-position-without-open', async row => {
+    const peer = peers[0]; await bounded(peer.page.bringToFront())
+    assert.equal((await sample(peer, row.id)).state.lock, 'none')
+    const session = peer.page.locator('.rail-players')
+    if (!await bounded(session.evaluate(el => el.open))) await bounded(session.locator('summary').click())
+    const entry = peer.page.locator('.rail-about'); await bounded(entry.hover())
+    row.target = await bounded(entry.evaluate(el => ({ enabled: !el.disabled, rect: el.getBoundingClientRect().toJSON(),
+      hit: el.contains(document.elementFromPoint(el.getBoundingClientRect().x + el.getBoundingClientRect().width / 2,
+        el.getBoundingClientRect().y + el.getBoundingClientRect().height / 2)) })))
+    assert.equal(row.target.enabled, true); assert.equal(row.target.hit, true)
+    assert.ok(row.target.rect.width >= 44 && row.target.rect.height >= 44)
+    assert.equal(await evaluate(peer, () => document.querySelector('.in-play-about').open), false)
+  })
+  await checkpoint('final-retained-identities')
+  report.sourceAfter = await sourceProof('rawSourceAfter')
+  assert.deepEqual(report.sourceAfter, before)
+  report.status = 'checks_passed_pending_closure'
+} catch (error) { primary = error; report.status = 'failed'; report.primaryError = errorText(error) }
+finally {
+  for (const peer of peers) {
+    if (peer.page) await attempt(`${peer.name} final observer`, async () => {
+      peer.record.finalObservation = await sample(peer, 'final-boundary')
+      assert.equal(peer.record.finalObservation.dropped, 0)
+      if (!primary) assertActive({ peer: peer.name, ...peer.record.finalObservation })
+      await evaluate(peer, () => window.__twoPeerCapability.close())
+    })
+  }
+  await attempt('before-close partial receipt', persist)
+  // Stop browser producers, then drain the dynamically growing response queue.
+  // Failure of any close is nonpass; the external identity supervisor remains required.
+  for (const peer of [...peers].reverse()) {
+    peer.record.closing = true
+    if (peer.context) await attempt(`${peer.name} context close`, () => bounded(peer.context.close(), 10000))
+    if (peer.browser) await attempt(`${peer.name} browser close`, () => bounded(peer.browser.close(), 10000))
+    if (peer.server) await attempt(`${peer.name} browser process close`, async () => {
+      await bounded(peer.server.close(), 10000)
+      const child = peer.server.process()
+      peer.record.browserExit = { pid: child.pid, exitCode: child.exitCode, signalCode: child.signalCode }
+      assert.ok(child.exitCode !== null || child.signalCode !== null, 'owned browser process exit observed')
+    })
+  }
+  await attempt('final response drain', drain)
+  await attempt('final clean checkout', async () => cleanSource())
+  report.captureComplete = !primary && report.errors.length === 0
+  if (report.captureComplete) report.status = 'capability_passed'
+  else report.status = 'failed'
+  await attempt('final receipt', persist)
+}
+if (primary) throw primary
+assert.deepEqual(report.errors, [])
+assert.equal(report.captureComplete, true)
