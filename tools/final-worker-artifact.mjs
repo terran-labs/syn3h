@@ -30,8 +30,10 @@ function inventory(root, relative, rows) {
   const path = join(root, relative), stat = lstatSync(path)
   if (stat.isSymbolicLink()) throw new Error(`Artifact symlink: ${relative}`)
   if (stat.isDirectory()) {
+    if (/\.map$/i.test(relative.split('/').at(-1))) throw new Error('Unsupported map-suffixed asset directory')
     for (const name of readdirSync(path).sort()) inventory(root, `${relative}/${name}`, rows)
   } else if (stat.isFile()) {
+    if (/\.map$/i.test(relative) && !relative.endsWith('.map')) throw new Error('Unsupported mixed-case map suffix')
     const bytes = readFileSync(path)
     rows.push({ path: relative, bytes: bytes.length, sha256: digest(bytes) })
   } else throw new Error(`Unsupported artifact node: ${relative}`)
@@ -49,8 +51,8 @@ export function clientInventory(root) {
     excluded: rows.filter(r => r.path.endsWith('.map')) }
 }
 export async function assertSelfContainedWorker(bytes) {
-  // es-module-lexer is already supplied by the existing Vite toolchain. Its version
-  // and bytes must be included in preparer provenance before operational use.
+  // es-module-lexer is pinned explicitly. Its installed bytes must also be included
+  // in preparer provenance before operational use.
   const { init, parse } = await import('es-module-lexer')
   await init
   const [imports] = parse(bytes.toString('utf8'))
