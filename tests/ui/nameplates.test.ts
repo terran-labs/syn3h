@@ -35,6 +35,57 @@ describe('vehicle label priority and protection', () => {
     expect(result[0].spot).toBe(2)
   })
 })
+describe('distinct prior-spot terrain checks', () => {
+  // Fixed fixture plate corners identify callback slots independently of attempt ordering.
+  const corners = [[235, 250], [235, 230], [158, 250], [312, 250]]
+  const slotOf = (box: Rect) => corners.findIndex(([left, top]) => box.left === left && box.top === top)
+
+  it.each([
+    [0, [0, 1, 2, 3]], [1, [1, 0, 2, 3]],
+    [2, [2, 0, 1, 3]], [3, [3, 0, 1, 2]],
+  ] as const)('checks previous slot %i once, then the remaining slots in order', (previous, expected) => {
+    const calls: number[] = []
+    const placed = placeNameplates([{ ...candidate('a'), previous }], [], [], 600, 600, box => {
+      calls.push(slotOf(box)); return false
+    })
+    expect(placed).toEqual([])
+    expect(calls).toEqual(expected)
+    expect(calls).toHaveLength(4)
+    expect(new Set(calls).size).toBe(4)
+  })
+
+  it.each([undefined, -1, 4, 99, .5, 2.5, NaN, Infinity, -Infinity])('falls back safely for previous=%s', previous => {
+    const calls: number[] = []
+    expect(placeNameplates([{ ...candidate('a'), previous }], [], [], 600, 600, box => {
+      calls.push(slotOf(box)); return false
+    })).toEqual([])
+    expect(calls).toEqual([0, 1, 2, 3])
+  })
+
+  it('stops at the first successful fallback and retains that placement next frame', () => {
+    const calls: number[] = []
+    const first = placeNameplates([{ ...candidate('a'), previous: 2 }], [], [], 600, 600, box => {
+      const slot = slotOf(box); calls.push(slot); return slot === 1
+    })
+    expect(calls).toEqual([2, 0, 1])
+    expect(first).toHaveLength(1)
+    expect(first[0].spot).toBe(1)
+    calls.length = 0
+    const next = placeNameplates([{ ...candidate('a'), previous: first[0].spot }], [], [], 600, 600, box => {
+      calls.push(slotOf(box)); return true
+    })
+    expect(calls).toEqual([1])
+    expect(next).toEqual(first)
+  })
+
+  it('keeps all human attempts ahead of nearer bot attempts', () => {
+    const calls: string[] = []
+    placeNameplates([{ ...candidate('bot', true), depth: 10, previous: 3 }, { ...candidate('person'), previous: 2 }], [], [], 600, 600, (box, _depth, c) => {
+      calls.push(`${c.id}:${slotOf(box)}`); return false
+    })
+    expect(calls).toEqual(['person:2', 'person:0', 'person:1', 'person:3', 'bot:3', 'bot:0', 'bot:1', 'bot:2'])
+  })
+})
 describe('size and distance', () => {
   it('keeps bots at two thirds human scale and fainter at all shared distances', () => {
     for (const d of [0, 20, 50, 100, 150]) {

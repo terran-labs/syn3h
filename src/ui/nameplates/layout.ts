@@ -27,7 +27,10 @@ export function placeNameplates(candidates: readonly Candidate[], discs: readonl
     // Anchors behind HUD never send leaders across it. Leaders stay inside the reserved box.
     const spots = [[0, -12], [0, -32], [-c.width / 2 - 12, -12], [c.width / 2 + 12, -12]]
     const tries = [0, 1, 2, 3]
-    if (c.previous !== undefined && c.previous >= 0 && c.previous < 4) tries.unshift(c.previous)
+    if (c.previous !== undefined && Number.isInteger(c.previous) && c.previous >= 0 && c.previous < spots.length) {
+      tries.splice(c.previous, 1)
+      tries.unshift(c.previous)
+    }
     for (const spot of tries) {
       const [dx, dy] = spots[spot], x = c.x + dx, y = c.y + dy - c.height
       const plate = { left: x - c.width / 2, top: y, right: x + c.width / 2, bottom: y + c.height }
