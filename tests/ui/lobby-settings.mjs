@@ -6,6 +6,7 @@
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
+import { openInTurn } from './lib/card-stack.mjs'
 
 const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5173/'
 const out = 'tests/ui/artifacts/lobby-settings'
@@ -70,7 +71,9 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     // Every volume reads as a percentage, like the card's summary.
     for (const id of ['audio.music', 'audio.master', 'audio.effects']) assert.match(await sound.locator(`.wi-row[data-id="${id}"] .wi-num`).textContent(), /^\d+%$/, `${mode}: ${id} as a percentage`)
     assert.equal(await sound.locator('.wi-row[data-id="audio.music"] .wi-num').textContent(), `${Math.round(target * 100)}%`)
-    // Show the two volumes at the top of the card, with Advanced open beneath them.
+    // Show the two volumes at the top of the card, with Advanced open beneath them. Wait for
+    // the cards to land first: a card mid-motion is pinned at its old height and cannot scroll.
+    await page.waitForFunction(() => !document.querySelector('.world-inspector.lobby-settings').getAnimations({ subtree: true }).some((a) => a.playState === 'running' && a.effect?.target?.classList?.contains('wi-card')))
     await sound.locator('.wi-row[data-id="audio.music"]').evaluate((row) => row.scrollIntoView({ block: 'start' }))
     await page.waitForTimeout(400)
     // At least six rows show at once, whole, in the sheet (the owner's measure at 844 by 390).
@@ -130,6 +133,18 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     await panel.locator('.wi-card[data-section=controls]').evaluate((c) => c.scrollIntoView({ block: 'start' }))
     await page.waitForTimeout(400)
     await page.screenshot({ path: `${out}/${mode}-controls.png` })
+
+    // Opening the cards in turn, with Sound's Advanced fold open so it is tall: the card open
+    // longest closes when the next does not fit, and no open card is squeezed. Desktop is also
+    // checked at a short laptop height.
+    await panel.locator('.lobby-advanced').evaluate((fold) => { fold.open = true })
+    for (const height of mode === 'desktop' ? [900, 700] : [null]) {
+      if (height) await page.setViewportSize({ width: 1440, height })
+      const tag = height ? `${mode}-${height}` : mode
+      const history = await openInTurn(page, panel, ['sound', 'performance', 'controls', 'sound'], { tap: touch, prefix: `${out}/${tag}-stack`, label: tag })
+      console.log(`${tag}: open after each step ${JSON.stringify(history)}`)
+    }
+    if (mode === 'desktop') await page.setViewportSize({ width: 1440, height: 900 })
 
     // Escape closes and focus returns to the gear (the close control does the same on phones).
     if (touch) await tap(panel.locator('.lobby-settings-close'))
