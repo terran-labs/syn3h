@@ -10,9 +10,13 @@
 import { chromium, webkit, devices } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 const out = 'tests/ui/artifacts/about-updates'
 await mkdir(out, { recursive: true })
 const RUNNING = '26.11.1601', LIVE = '26.11.1602'
+/** The feed lists the real production history, newest first: its top entry grows with every release. */
+const NEWEST = readFileSync('release-notes/history.tsv', 'utf8').split('\n').map((l) => l.split('\t'))
+  .filter(([v, , , , channel]) => /^v\d/.test(v ?? '') && channel?.trim() === 'production').at(-1)[0].slice(1)
 /** What the banner covers: the wordmark, hint and lobby buttons, any planet label or planet. */
 const overlaps = page => page.evaluate(() => {
   const banner = document.querySelector('.update-banner').getBoundingClientRect()
@@ -65,11 +69,11 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     await about.locator('.update-release').first().waitFor({ state: 'visible', timeout: 15000 })
     assert.equal(await about.getByRole('tab', { name: 'Updates' }).getAttribute('aria-selected'), 'true')
     const first = about.locator('.update-release').first()
-    assert.equal(await first.getAttribute('data-version'), LIVE)
+    assert.equal(await first.getAttribute('data-version'), NEWEST)
     assert.ok(await first.evaluate(d => d.open), 'the newest release starts open')
     assert.equal(await first.locator('.update-badge.is-new').innerText(), 'NEW')
     assert.ok(await first.locator('.update-notes li').count() >= 2, 'the player digest shows as bullets')
-    assert.equal(await first.locator('.update-full').getAttribute('href'), `https://github.com/terran-labs/syn3h/releases/tag/v${LIVE}`)
+    assert.equal(await first.locator('.update-full').getAttribute('href'), `https://github.com/terran-labs/syn3h/releases/tag/v${NEWEST}`)
     assert.equal(await first.locator('.update-notes script, .update-notes [onerror]').count(), 0)
     const links = await first.locator('.update-notes a').evaluateAll(as => as.map(a => [a.target, a.rel, a.protocol]))
     for (const [target, rel, protocol] of links) { assert.equal(target, '_blank'); assert.match(rel, /noopener/); assert.match(protocol, /^https?:$/) }
