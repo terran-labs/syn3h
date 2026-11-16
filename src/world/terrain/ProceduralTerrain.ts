@@ -11,6 +11,7 @@ import { applyCurve, curveParam, updateCurve } from '../curve'
 import { AlienSkyMesh } from '../sky/AlienSkyMesh'
 import type { SpawnPoint, Terrain, TerrainRenderQuality, TerrainRoadPath, TerrainSummit, TerrainVent } from '../Terrain'
 import { createTerrainCollider } from './collider'
+import { createSeaIceCollider, seaFrozen } from './seaIce'
 import { lavaSurfaceAt, liquidFlowAt } from './lava'
 import { seaWaves, setWaterClock } from '../water/seaWaves'
 import { waterRiverMaxSpeed } from '../water/params'
@@ -99,7 +100,7 @@ export class ProceduralTerrain implements Terrain {
     this.lodSystem = game.add({
       // Before each physics step, and before the vehicles' own steps: carry things across
       // the seam and keep the ground under them.
-      fixedUpdate: () => this.keepSeam(),
+      fixedUpdate: () => { this.keepSeam(); this.syncIce() },
       // Until something calls afterCamera() itself, do the camera-dependent work here.
       update: () => { if (!this.cameraLed) this.followCamera() },
     })
@@ -231,6 +232,19 @@ export class ProceduralTerrain implements Terrain {
     if (Math.abs(px - this.colliderX) > 96 || Math.abs(pz - this.colliderZ) > 96) this.moveCollider(px, pz)
   }
 
+  /** The frozen sea's slab, when the sea is frozen; see seaIce.ts. */
+  private ice: RAPIER.Collider | null = null
+  private iceKey = ''
+  /** Keep the ice slab with the heightfield's window and the sea level, or remove it. */
+  private syncIce(): void {
+    const frozen = seaFrozen() && this.data.settings.dry <= 0 && (worldSeaKind.value as number) === 1
+    const key = frozen ? `${this.colliderX},${this.colliderZ},${worldLavaAltitude.value}` : ''
+    if (key === this.iceKey) return
+    if (this.ice) { this.game.world.removeCollider(this.ice, true); this.ice = null }
+    if (frozen) this.ice = createSeaIceCollider(this.game.world, this.data, this.colliderX, this.colliderZ, worldLavaAltitude.value)
+    this.iceKey = key
+  }
+
   private moveCollider(x: number, z: number): void {
     const cell = this.data.cell
     this.colliderX = Math.round(x / cell) * cell
@@ -299,6 +313,7 @@ export class ProceduralTerrain implements Terrain {
     this.colliderX = 0
     this.colliderZ = 0
     this.collider = createTerrainCollider(this.game.world, this.data)
+    this.iceKey = 'rebuilt'; this.syncIce()
     this.volcanics.rebuild()
     this.trees.rebuild()
     this.cover.rebuild()
@@ -449,5 +464,6 @@ export class ProceduralTerrain implements Terrain {
     this.meshes.dispose()
     this.look.material.dispose()
     this.game.world.removeCollider(this.collider, false)
+    if (this.ice) { this.game.world.removeCollider(this.ice, false); this.ice = null }
   }
 }

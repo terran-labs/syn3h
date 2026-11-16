@@ -23,6 +23,7 @@ import { buildRibbonGeometry } from '../../fx/LavaFlow'
 import { createLavaMaterial } from '../../fx/material'
 import type { TerrainData } from './generate'
 import { CHUNK_CELLS } from './mesh'
+import { createSeaIceMaterial, seaFrozen } from './seaIce'
 import type { HeightSampler } from './sampler'
 import { KIND_VOLCANIC, worldSeaKind } from './settings'
 import { type RiverDrop, riverSpeed } from './lava'
@@ -200,6 +201,7 @@ export class Volcanics implements System {
   /** Sea grid chunks and the apron round them, all sharing the sea material. */
   private sea: { mesh: THREE.Mesh; cx: number; cz: number }[] = []
   private apron: THREE.Mesh | null = null
+  private readonly seaIce = createSeaIceMaterial()
   /** Lake, pools and rivers, with their canonical centres and whether their uvs are world metres. */
   private readonly meshes: { mesh: THREE.Mesh; x: number; z: number; worldUv: boolean }[] = []
   private readonly emitters: Emitters
@@ -377,6 +379,8 @@ export class Volcanics implements System {
   /** The sea's material for the current sliders. */
   private seaMaterial(): THREE.Material {
     if (this.seaIsLava) return this.lavaSea.material
+    // A frozen sea is a sheet of ice on the same meshes (seaIce.ts).
+    if (seaFrozen()) return this.seaIce
     return waterWaves.value ? this.newSea.material : this.waterSea.material
   }
 
@@ -442,5 +446,6 @@ export class Volcanics implements System {
     this.emitters.dispose()
     this.scene.remove(this.group)
     for (const l of [this.lavaSea, this.waterSea, this.lavaStill, this.lavaRiver, this.waterStill, this.newSea, this.newStill, this.newRiver]) l.material.dispose()
+    this.seaIce.dispose()
   }
 }

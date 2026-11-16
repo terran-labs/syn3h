@@ -73,10 +73,11 @@ export const PALETTES: readonly Palette[] = [
     sparkle: 0.5, accent: 0, accentShore: 0,
     track: 0.8,
   },
-  // 4 Ice moon: blue-white ice plains, pale blue cliffs, wet and glinting.
+  // 4 Ice moon: white and pale cyan ice, glinting; blue only in shadowed cliffs and cracks
+  // (the owner, 16 November 2026: it read as a blue world).
   {
-    groundDark: 0x8fb4d0, groundLight: 0xd6e8f4, rockDark: 0x5f86a8, rockLight: 0xa9cbe0,
-    darkRockA: 0x3d5f80, darkRockB: 0x6f96b8, shore: 0xbfe0ee,
+    groundDark: 0xc4d6e2, groundLight: 0xeef4f8, rockDark: 0x7e9cb4, rockLight: 0xc4d8e6,
+    darkRockA: 0x56748e, darkRockB: 0x92acc0, shore: 0xdde9f0,
     roadDark: 0x4a6a86, roadLight: 0x5f809c, roadLine: 0xe8f6ff,
     snow: 0xf4f8ff, gloss: 0.18, seam: 0, seaDeep: 0x061a33, seaShallow: 0x1f5f8a,
     sparkle: 0.7, accent: 0x3fd0e0, accentShore: 0,
@@ -116,6 +117,12 @@ export const PALETTES: readonly Palette[] = [
     track: 0.9,
   },
 ]
+
+/**
+ * A frozen sea's ice (the Ice Moon's): floes in two whites and the blue of the cracks between
+ * them. Shared by the ice sheet's material in the world and the lobby's painted maps.
+ */
+export const SEA_ICE = { floe: 0xe4eef4, old: 0xc6d8e4, crack: 0x3f6f92 } as const
 
 export function paletteFor(look: number): Palette {
   return PALETTES[look] ?? PALETTES[0]

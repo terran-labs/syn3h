@@ -17,6 +17,8 @@ import { SKY_PRESETS } from './sky/presets'
 import './sky/skyParams'
 import './terrain/settings'
 import { planetWeather } from './weather/planetWeather'
+// Registers the water's sliders, among them world.seaFrozen once the liquids work defines it.
+import './water/params'
 
 /**
  * A world as a body in the lobby's solar system. Both are read by the galaxy to lay the
@@ -121,7 +123,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
   },
   {
     id: 'ice', label: 'Ice moon', centre: 'A frozen horn with a tarn at its summit',
-    blurb: 'Blue-white ice plains and pale cliffs over a dark, cold sea, under a violet dusk.',
+    blurb: 'White ice plains and pale cliffs round a frozen sea you can drive on, under a violet dusk.',
     swatch: [0xd6e8f4, 0x1f5f8a], body: { size: 0.5, heat: 0.05 },
     values: {
       ...planetWeather('ice'),
@@ -132,6 +134,10 @@ export const PLANETS: readonly PlanetRecipe[] = [
       'terrain.mesaHeight': 240, 'terrain.cragDensity': 0.4, 'terrain.spireHeight': 90,
       'terrain.duneHeight': 2, 'terrain.roughness': 0.45, 'terrain.treeCover': 0,
       'terrain.groundCover': 0,
+      // The sea is frozen: a sheet of ice to drive on (the owner, 16 November 2026). The flag
+      // is the liquids' own (world.seaFrozen, src/world/water/params.ts); until that work is
+      // merged it is not registered and the sea stays open water.
+      ...(params.get('world.seaFrozen') ? { 'world.seaFrozen': true } : {}),
     },
   },
   {
