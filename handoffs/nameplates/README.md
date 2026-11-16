@@ -568,3 +568,114 @@ poll, ray, draw, allocator replay or physics mutation. Observation-only modes re
 existing settling behavior. No changes to coordinates, camera, visibility/priority/negative
 assertions or cost windows are included. Independent source review must accept the proposed
 spatial criterion and separate count before any execution. No launcher or runtime was run.
+
+## Positive coverage design after independent review of run 010
+
+Design only. No fixture implementation or runtime is authorized by this section. The saved
+scene math does not justify new actor placements. The current fixture remains unchanged;
+its empty phone/follower/mode results are not positive feature acceptance.
+
+### Explicit expected sets and existing-boundary receipts
+
+At each existing phone day/night and camera-mode capture boundary, a future positive check
+must require Visitor and Companion plus full BOT labels for IDs65280 and65283. At the
+follower boundary, require Observer and Companion plus those two replica bot IDs. Resolve
+human IDs from the actual roster, require distinct IDs and exclude the local ID. Require the
+expected set before testing uniqueness, size, opacity or exclusion compliance. An empty or
+partial set fails, even when no duplicates or overlaps exist. Keep the original two-human,
+two-full-bot desktop positive, contested negative, restoration, settings and cost assertions.
+Do not convert far or intentionally hidden cases into these near positives.
+
+Extend the existing synchronous geometry snapshot, after its existing imports finish, with:
+
+- Local ID, host ID, isHost, actual requested camera mode, whether cinematic pose is active,
+  presentation, viewport, actual game-camera identity, near/far, world/inverse/projection
+  matrices and current bend. Copy values, not mutable camera references. State whether the
+  nameplate camera identity equals the active game camera; missing identity fails closed.
+- All seven actor identities and existing body/rendered poses, hull kinds/radii, object
+  visibility and current center depth. Preserve current candidate/disc stamps and the raw
+  local disc separately. A candidate stamp alone does not prove its disc participated.
+- Predicate-derived disc eligibility, clearly distinguished from observed participation:
+  local center depth must exceed local radius (`VehicleNameplates.ts:129`); a remote center
+  must exceed camera.near, be visible and not over the horizon (`:144`). Use the snapshot's
+  center, bend and camera matrix to derive center depth, without projecting a new envelope,
+  drawing, allocating or querying terrain. Existing overHorizon evidence is already copied.
+  If draw-time inputs cannot be matched to this snapshot, mark participation unknown. Do not
+  silently treat a stale stored disc as eligible, or remove it from a positive precondition.
+- Current HUD boxes, existing terrain-query decisions and budget, and exact shown DOM boxes
+  including leader reservations. Preserve raw data before completeness assertions. No new
+  page evaluation, polling loop, ray, height query or product visibility replay is proposed.
+
+A receipt with unknown participation can identify a measurement gap, but cannot certify a
+positive legal placement. Product currently provides no stamped local-disc participation
+field. If matching immutable draw inputs is insufficient, request narrowly scoped diagnostic
+instrumentation separately; do not pretend a fixture-derived predicate is a draw receipt.
+
+Keep the strict0.25 m arrival criterion, original persistent counter, six separate post-arrival
+comparisons, repeated-stamp behavior, existing15s/100ms/180 bounds and all stage coordinates.
+Per-observer readiness must use that observer's actual camera, never the host camera as a
+substitute. No tolerance or timeout change is proposed. Do not run the current empty setup
+again with stronger assertions and call that new evidence.
+
+### Finite measurement proposal for separate review
+
+Exactly TWO predeclared measurement cases, one phone and one ordinary-camera follower.
+These are setup observations, acceptanceEligible=false, not an acceptance retry. There is
+no coordinate sweep, early-success selection, alternate candidate, reteleport rescue or
+follow-on acceptance job. The cases retain the existing Volcanic seed1 default near actor
+x/z offsets and ordinary ground initialization, all three clients and four bots including the
+radius6 actor. No measured desktop absoluteY is reused, and no Snow coordinates are used.
+
+1. Phone observer:390x844, day12, curve0.71, mode0 chase, cinematic override cleared,
+   camera.distance25, presentation off. This replaces the inherited desktop cinematic view.
+2. Visitor follower:640x480, same Volcanic default near world/actors, day12, curve0.71,
+   mode0 chase, cinematic override cleared, camera.distance25, presentation off. Confirm
+   isHost=false and remote bot replicas before recording. Do not inherit the final Snow case.
+
+The single distance25 choice is the existing registry's maximum supported orbit distance
+(`ChaseCamera.ts:13`), not a fitted coordinate or a claimed visible solution. Saved010 local
+foreground discs were about496 px for the observer and497 px for the follower at the short
+chase arm; observing the supported outer arm tests whether usable space exists without
+shrinking or removing that occluder. Both cases change the view, not actor coordinates or
+occlusion rules. No assertion that25 guarantees ground clearance, actual25 m camera distance,
+legal slots or positive labels is made. The real camera may shorten its arm against terrain.
+
+Predeclare at most180 existing readiness samples per case and one final existing capture
+boundary per case, at most362 snapshots total, all retained including repeated stamps and
+failed waits. There are zero additional terrain samples, envelope projections, allocator
+calls or visibility rays. Copy only existing stage ground/height receipts and existing draw
+results. Imports finish before each synchronous copy; samples must not cross awaits. A future
+implementation must demonstrate that these samples attach to the existing readiness predicate
+and do not add polling or reset the persistent counter. The existing total/work/fixture budget
+remains590/510/480; no new allocation or extension is implied.
+
+Offline review would inspect both complete histories, actual camera arm/ground response,
+all eligible/unknown discs, real HUD and leader-inclusive margins for the predeclared expected
+sets. No live winner is selected. Missing ground receipts, uncertain participation, failed
+settling or no legal space are explicit nonpassing outcomes. The missing facts are actual
+camera clearance and stable projected space at the supported outer arm with these actors;
+saved010 cannot provide them. Positive acceptance still requires a separately reviewed fixed
+scene and actual rendered expected labels, not merely offline boxes.
+
+### Separate envelope design if legal space remains blocked
+
+This is a conditional product-design proposal, not permission to change the module. The
+current26-point cube-to-circle envelope can cover much more screen area than the vehicle,
+especially when one sample crosses the near plane. If eligible local-envelope blockage
+persists, inspect a conservative projected hull with explicit near-plane clipping rather
+than a viewport-diagonal fallback circle. Keep foreground vehicle occlusion, the local
+vehicle, curvature, wrap image and all HUD rules. Do not reduce radii by an empirical factor,
+remove discs or relax the3 px padding just to pass a scene.
+
+Smallest separate design fence would be `anchors.ts`, `curvature.ts`, and focused geometry
+regressions; any need to change the disc-shaped layout interface must be returned for scope
+review before implementation. Required proposed regressions cover a partially near-plane
+crossing hull, camera inside/behind hull, curved0/0.71/1.8 views, local versus remote hulls,
+Jet/Zorb extents, actual projected-hull containment, and an unobscured label outside the hull
+while a behind-hull label remains rejected. A clipped sphere/cube is still not a mesh silhouette;
+choose the conservative representation from measured geometry before claiming a defect fixed.
+
+Source/coverage basis: `/tmp/nameplates-010-integration-and-coverage.md` and its saved-data
+arithmetic JSON. Root integration remains plan-only. The next review should decide whether
+the two-case measurement contract is sufficient or whether draw-participation instrumentation
+is needed first. No new placements, product changes, tests or runtime were performed here.
