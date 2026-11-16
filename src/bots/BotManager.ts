@@ -39,6 +39,8 @@ export class BotManager implements System {
     if (value) { this.races.setHooks(null); this.clearBots() }
   }
   get vehicles(): readonly Vehicle[] { return this.bots }
+  /** The brains, index for index with `vehicles` (chatter and rescues read and steer them). */
+  get brainList(): readonly BotBrain[] { return this.brains }
   /** The player's own vehicle driving itself after a spell of no input. See Daydream.ts. */
   readonly daydream: Daydream
   readonly races: BotRaces

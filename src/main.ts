@@ -12,6 +12,7 @@ import { ChaseCamera } from './core/ChaseCamera'
 import { Game } from './core/Game'
 import { botColors, startNetworking } from './net'
 import { ChatPanel } from './ui/chat/ChatPanel'
+import { HostBanter } from './bots/banter/HostBanter'
 import { BOT_ID_BASE } from '../shared/protocol'
 import { ParamPanel } from './ui/ParamPanel'
 import { LobbyAddress } from './ui/LobbyAddress'
@@ -236,8 +237,10 @@ async function main(): Promise<void> {
         color: p.bot ? botColors(p.id - BOT_ID_BASE)[0] : p.colors[0],
       })),
     })
+    // Bot banter (src/bots/banter): the host's bots talk, and answer people's requests.
+    const banter = game.add(new HostBanter(game, terrain, connection, bots, environment))
     // For automated checks (tools/chat-check.mjs). Join can run before window.syn3h exists.
-    Object.assign(window, { syn3hChat: { net: connection, panel: chat } })
+    Object.assign(window, { syn3hChat: { net: connection, panel: chat, banter } })
     // Remote players and bots are audible, positioned in space.
     audio.setVehicles(() => connection.audibleVehicles())
     game.add(new ResumeSession({ game, terrain, get player() { return slot.current }, room: shell.room || query.get('room') || 'lobby', saved, network: connection, entrySearch: lobbyAddress.playURL().search }))
