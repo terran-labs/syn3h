@@ -40,8 +40,8 @@ describe('camera water coverage',()=>{
  })
  it.each([[-2,2],[2,-2]])('invalidates replaced cameras from height %i to %i',(aY,bY)=>{
   const a=new PerspectiveCamera(),b=new PerspectiveCamera();a.position.y=aY;b.position.y=bY
-  const game={scene:new Scene(),camera:a} as Game
-  const effect=new Underwater(game,terrain)
+  const game={scene:new Scene(),camera:a}
+  const effect=new Underwater(game as Game,terrain)
   try{
    effect.update(.25);expect(cameraWaterCoverage(a)).toBe(aY<0?1:0)
    game.camera=b;effect.update(.25)
