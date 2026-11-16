@@ -107,11 +107,11 @@ export const PALETTES: readonly Palette[] = [
     sparkle: 0.3, accent: 0, accentShore: 0,
     track: 0.3,
   },
-  // 8 Methane swamp: olive and ochre mud round a teal sea.
+  // 8 Mire: a warm wetland. Olive and ochre mud, reed and moss tones, round murky green-brown water.
   {
     groundDark: 0x4a5422, groundLight: 0x8c8a3a, rockDark: 0x5a4a22, rockLight: 0x9a8440,
     darkRockA: 0x3a3a1e, darkRockB: 0x5e5a2e, shore: 0x6c6a3a,
-    roadDark: 0x3e3a22, roadLight: 0x524c2c, roadLine: 0xc8c890, ...PLAIN, seaDeep: 0x0a3a34, seaShallow: 0x2fa890,
+    roadDark: 0x3e3a22, roadLight: 0x524c2c, roadLine: 0xc8c890, ...PLAIN, seaDeep: 0x1c2412, seaShallow: 0x5a5a2c,
     sparkle: 0, accent: 0xb05a2a, accentShore: 1,
     track: 0.9,
   },
