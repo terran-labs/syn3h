@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-15 15:45 PST. The owner withdrew the afternoon cutoff.
+Last verified: 2026-11-15 16:07 PST. The owner withdrew the afternoon cutoff.
 
 ## Authority and release order
 
@@ -17,11 +17,12 @@ GIF before marking a release Latest; publish notes with the frozen playable link
 
 ## Production
 
-Accepted release: v26.11.1512 (release-16), source 84932bd9, at https://www.syn3h.com/.
-Lobby buttons open their target panels directly, with corrected footer spacing. Typecheck
-and 407 UI/core tests passed. Both public addresses passed exact, multiplayer and frozen
-checks. The Chrome and WebKit vehicle matrix passed all eight cases without errors.
-The idle volcano tour remains deleted.
+Accepted release: v26.11.1513 (release-17), source 59630818, at https://www.syn3h.com/.
+Switch hold/drop, Jet settling, local input/tag guards, remote cosmetic arrival clouds,
+gear effects and cues, and switch/Zorb sounds are live. Typecheck and 1,401 tests pass;
+one test is skipped and the exact known competitive-flee failure is unchanged. The same
+frozen build passed local normal and added-latency multiplayer checks, then exact,
+multiplayer and frozen-file checks on both public addresses and all eight vehicle cases.
 
 v26.11.1510 was live and superseded without its own vehicle matrix by explicit owner
 waiver; the trailing 1511 matrix covers its sidebar and wingtip changes. Do not infer
@@ -29,12 +30,12 @@ acceptance from a tag alone. The showcase still predates the Tank paint and side
 
 ## Current queue
 
-1. v26.11.1513: restore materialization hold/drop, Jet settling, local input/tag guards,
-   gear visuals and cues, remote cosmetic arrival, and switch/Zorb audio if its game check
-   passes. Vehicles and Weapons recheck the assembly. Run local network smoke on the
-   frozen candidate before deployment, then the full public gate with automatic rollback.
-2. Ship later owner-visible handoffs on demand: Jet throttle and motion, duckling formation,
-   controls/FPS, room-full fallback, satellites, liquid physics and Post single-pass work.
+1. Review the tested High default, quality governor and visible performance recommendation
+   for the next on-demand release, preserving the current lobby and restored effects.
+2. Review Jet half-throttle and Daydream ownership marker now that settling is accepted.
+   The measured camera-order correction remains separate from unproved cadence claims.
+3. Ship later owner-visible handoffs when green: duckling formation, controls/FPS,
+   room-full fallback, satellites, liquid physics and Post single-pass work.
 
 The withdrawn 1507 build and the accepted 1506 control each passed two quiet local network
 runs in 218 seconds. No failing half was isolated. The Foreman authorized restoration

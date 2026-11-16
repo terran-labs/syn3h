@@ -7,11 +7,6 @@
       "detail": "The direct lobby panels are live. The governor and clearer slow-rendering prompt are being validated separately."
     },
     {
-      "state": "active",
-      "title": "Restoring switch and gear effects",
-      "detail": "Both control and withdrawn builds passed twice on a quiet machine. The restored assembly now needs its full gate and public acceptance."
-    },
-    {
       "state": "next",
       "title": "Vehicle and world follow-ups",
       "detail": "Jet throttle and motion, bot formation, satellites, liquid physics and post effects remain separate tested handoffs."
