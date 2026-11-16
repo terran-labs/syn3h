@@ -3,6 +3,7 @@ import type { Game } from '../core/Game'
 import type { Terrain } from '../world/Terrain'
 import { RAPIER } from '../core/physics'
 import { defineParam } from '../../shared/params'
+import { defaultPreset, definePresets } from '../../shared/presets'
 import { Vehicle } from './Vehicle'
 import { VehicleModel } from './skins/VehicleModel'
 import { createTreadMap } from './effects/maps'
@@ -31,6 +32,8 @@ export function previewTankBody(design: TankBody | null = sherpa):void{
   for(const rebuild of wearers)rebuild()
 }
 export const tankCG=defineParam({id:'tank.cg',label:'Centre of gravity',group:'Tank',scope:'world',default:-.2,min:-1.4,max:1,step:.01})
+/** The tank is hidden from the game for now (16 November 2026): only its Default preset. */
+export const TANK_PRESETS = definePresets('Tank', [defaultPreset(['tank.power', 'tank.speed', 'tank.grip', 'tank.climb', 'tank.cg'])])
 
 // TankTrack.prefab: the Detailed mesh sits at (0.5,-0.75,-1.05) with X scale 0.82, so a pod is 1.0 wide
 // and 2.1 long, centred on the track body. The tread mesh's own proportions make it 1.37 tall.
