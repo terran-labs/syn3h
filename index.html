@@ -35,6 +35,12 @@
          and, where the viewport permits it, pinching, which the script below also stops), no
          text inflation, no rubber-band scrolling of the page itself. */
       html { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; overscroll-behavior: none; }
+      /* Never select, part 1. This is a game, not a document: a long press or a drag must
+         never select text, open the copy and look-up callout, show the magnifier, flash a tap
+         highlight or drag an image. Fields the player types in are the only exception. */
+      html, body, body * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+      img, svg, a, canvas { -webkit-user-drag: none; user-drag: none; }
+      input, textarea, [contenteditable], [contenteditable] * { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
       /* Never zoom, part 2: Safari on iPhone and iPad zooms the page when a field with type
          smaller than 16px is focused. On touch screens every field is at least that. */
       @media (pointer: coarse) { input, select, textarea { font-size: max(16px, 1em) !important; } }
@@ -207,6 +213,24 @@
       html[data-boot="done"] .boot-status, html[data-boot="done"] .boot-still { transition: opacity 0.4s ease; opacity: 0; animation: none; }
     </style>
     <script>
+      // Never select, part 2. Some engines start a selection or a drag in spite of the
+      // styles above (a double tap on a label, a press that began over text inside a canvas
+      // overlay). Stop both at the source, and drop any selection that still appears, unless
+      // the player is working in a field.
+      (function() {
+        var editable = function(node) {
+          var el = node && node.nodeType === 1 ? node : node && node.parentElement;
+          return !!(el && el.closest && el.closest('input, textarea, [contenteditable]'));
+        };
+        document.addEventListener('selectstart', function(event) { if (!editable(event.target)) event.preventDefault(); }, { passive: false });
+        document.addEventListener('dragstart', function(event) { if (!editable(event.target)) event.preventDefault(); }, { passive: false });
+        document.addEventListener('selectionchange', function() {
+          var selection = window.getSelection && window.getSelection();
+          if (!selection || selection.isCollapsed) return;
+          if (editable(selection.anchorNode) || editable(document.activeElement)) return;
+          selection.removeAllRanges();
+        });
+      })();
       // Never zoom, part 3. Safari ignores user-scalable=no for pinches, so stop them where
       // they start: its own gesture events, any two-finger move, and a double tap. If the
       // page is ever found zoomed all the same (a field was focused, the device was turned),
