@@ -216,6 +216,7 @@ export abstract class Vehicle implements System {
     // Ignore all new input while held, including rescue and mechanism toggles. The current
     // wing and zorb state stays intact; only the materialization system moves the body.
     if (this.object.userData.materializing === true) {
+      this.zorb.resetLiquidContact()
       this.input.x = this.input.y = this.input.z = this.input.w = 0
       this.input.fire = false
       this.body.resetForces(false)
@@ -469,6 +470,7 @@ export abstract class Vehicle implements System {
 
   /** Teleport, clearing motion and interpolation history. */
   teleport(position: THREE.Vector3, heading = 0): void {
+    this.zorb.resetLiquidContact()
     this.liquidState.wingLiftSurface=-Infinity
     this.liquidState.wingLiftSpeed=0
     this.liquidState.wingLiftAvailable=false

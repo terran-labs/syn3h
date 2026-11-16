@@ -344,6 +344,19 @@ export class ProceduralTerrain implements Terrain {
     return surface + seaWaves.offsetAt(x, z, this.sampler.heightAt(x, z), sea)
   }
 
+  /** Same liquid selection as height; no frame-to-frame clock differencing. */
+  liquidVerticalSpeedAt(x: number, z: number): number {
+    if (!Number.isFinite(x) || !Number.isFinite(z)) return NaN
+    const sea = worldLavaAltitude.value
+    x = wrapCoord(x, this.data.size)
+    z = wrapCoord(z, this.data.size)
+    const surface = lavaSurfaceAt(this.data.lava, x, z, sea)
+    if (!Number.isFinite(surface)) return NaN
+    if (surface !== sea || !seaWaves.enabled || (worldSeaKind.value as number) !== 1) return 0
+    const speed = seaWaves.verticalSpeedAt(x, z, this.sampler.heightAt(x, z), sea)
+    return Number.isFinite(speed) ? speed : NaN
+  }
+
   /** Velocity of the water or lava at (x, z), m/s: rivers flow, the sea, lake and pools do not. */
   liquidFlowAt(x: number, z: number, out: { x: number; z: number }): { x: number; z: number } {
     return liquidFlowAt(this.data.lava, wrapCoord(x, this.data.size), wrapCoord(z, this.data.size), waterRiverMaxSpeed.value, out)

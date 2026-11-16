@@ -295,6 +295,7 @@ function liquidSkipFixture(liquid: 'water' | 'lava', kind: VehicleKind = 'buggy'
   const h = harness(9.81, false)
   h.terrain.liquidHeightAt = () => 10
   h.terrain.liquidKindAt = () => liquid
+  h.terrain.liquidVerticalSpeedAt = () => 0
   const v = createVehicle(h.game, h.terrain, kind, new THREE.Vector3(0, 20, 0))
   v.isLocal = false // Simulated bots participate; kinematic remote copies do not.
   v.zorb.sync(true, 1)
@@ -304,9 +305,9 @@ function liquidSkipFixture(liquid: 'water' | 'lava', kind: VehicleKind = 'buggy'
     const centre = v.zorb.centre(new THREE.Vector3()), body = v.body.translation()
     v.body.setTranslation({ x: body.x + x - centre.x, y: body.y + 10 + v.zorb.radius + gap - centre.y, z: body.z }, true)
   }
-  const force = () => {
+  const force = (dt = .02) => {
     v.body.resetForces(true); v.body.resetTorques(true)
-    v.zorb.float(h.terrain, v.liquidState, .02)
+    v.zorb.float(h.terrain, v.liquidState, dt)
   }
   return { h, v, place, force, done() { v.dispose(); h.world.free() } }
 }
@@ -344,6 +345,7 @@ describe('passive Zorb liquid skips', () => {
     let t = 0
     // Sloped travelling surface with a known normal and vertical velocity.
     f.h.terrain.liquidHeightAt = x => 10 + .1 * x + t
+    f.h.terrain.liquidVerticalSpeedAt = () => 1
     const normal = new THREE.Vector3(-.1, 1, 0).normalize()
     const tangent = new THREE.Vector3(1, .1, 0).normalize()
     const incoming = tangent.clone().multiplyScalar(30).addScaledVector(normal, -3).add(new THREE.Vector3(0, 1, 0))
@@ -395,7 +397,7 @@ describe('passive Zorb liquid skips', () => {
       for (let i = 0; i < 10; i++) { f.v.body.setLinvel(incoming, true); f.force() }
       expect(f.v.zorb.skips).toBe(1)
       f.place(.15); f.force()
-      f.h.terrain.liquidKindAt = x => x > .1 ? null : 'water'
+      f.h.terrain.liquidKindAt = x => Math.abs(x) > .1 ? null : 'water'
       f.place(-.02); f.force(); expect(f.v.zorb.skips).toBe(1)
     } finally { f.done() }
   })
@@ -405,6 +407,7 @@ describe('passive Zorb liquid skips', () => {
 it('classifies relative to flowing water and samples the wave height, not a fixed sea level', () => {
   const f = liquidSkipFixture('water')
   let phase = 0
+  f.h.terrain.liquidVerticalSpeedAt = x => .1 * Math.cos(x * .2 + phase)
   f.h.terrain.liquidHeightAt = (x, z) => 10 + Math.sin(x * .2 + phase) + Math.cos(z * .2) * .2
   f.h.terrain.liquidFlowAt = (_x, _z, out) => { out.x = 25; out.z = 0; return out }
   try {
@@ -424,15 +427,111 @@ it('classifies relative to flowing water and samples the wave height, not a fixe
 it('zero bounce leaves continuous flotation and cooldown prevents an immediate second skip', () => {
   const f = liquidSkipFixture('lava')
   try {
-    const enter = () => {
-      f.place(.15); f.v.body.setLinvel({ x: 30, y: -3, z: 0 }, true); f.force()
-      f.place(-.02); f.force()
+    const enter = (dt = .02) => {
+      f.place(.15); f.v.body.setLinvel({ x: 30, y: -3, z: 0 }, true); f.force(dt)
+      f.place(-.02); f.force(dt)
     }
     params.set('zorb.bounce', 0); enter(); expect(f.v.zorb.skips).toBe(0)
     params.set('zorb.bounce', .5); enter(); expect(f.v.zorb.skips).toBe(1)
-    enter(); expect(f.v.zorb.skips).toBe(1)
+    enter(.001); expect(f.v.zorb.skips).toBe(1)
     f.v.body.setEnabled(false); f.force()
     f.v.body.setEnabled(true); f.place(-.02); f.force()
     expect(f.v.zorb.skips).toBe(1)
+  } finally { f.done() }
+})
+
+
+for (const liquid of ['water', 'lava'] as const) {
+  it(`full vehicle update skips ordinary dry-to-${liquid} shore entry`, () => {
+    const f = liquidSkipFixture(liquid, 'hovercraft')
+    f.h.terrain.liquidKindAt = x => x < 0 ? null : liquid
+    f.h.terrain.liquidHeightAt = x => x < 0 ? -Infinity : 10
+    try {
+      f.v.input.zorb = true
+      f.place(-.02, -.2)
+      f.v.body.setLinvel({ x: 30, y: -2, z: 0 }, true)
+      f.v.body.setAngvel({ x: 0, y: 2, z: 0 }, true)
+      f.h.step(f.v, 2)
+      expect(f.v.zorb.skips).toBe(1)
+      expect(f.v.body.linvel().x).toBeCloseTo(30, 3)
+      expect(f.v.body.angvel().y).toBeCloseTo(2, 3)
+      expect(f.v.body.linvel().y).toBeGreaterThan(0)
+    } finally { f.done() }
+  })
+
+  it(`default full vehicle update retains motion across repeated ${liquid} skips`, () => {
+    const f = liquidSkipFixture(liquid, 'hovercraft')
+    try {
+      expect(params.get('zorb.bounce')!.value).toBe(.5)
+      expect(params.get('zorb.skipSpeed')!.value).toBe(10)
+      expect(params.get('zorb.skipAngle')!.value).toBe(20)
+      f.v.input.zorb = true; f.place(.2)
+      f.v.body.setLinvel({ x: 30, y: -8, z: 0 }, true)
+      f.v.body.setAngvel({ x: 0, y: 2, z: 0 }, true)
+      const speeds: number[] = [], spins: number[] = []
+      let previous = 0
+      for (let i = 0; i < 250 && speeds.length < 3; i++) {
+        f.h.step(f.v)
+        if (f.v.zorb.skips > previous) {
+          previous = f.v.zorb.skips
+          speeds.push(Math.hypot(f.v.body.linvel().x, f.v.body.linvel().z))
+          spins.push(f.v.body.angvel().y)
+        }
+      }
+      expect(speeds.length).toBe(3)
+      for (const speed of speeds) expect(speed).toBeCloseTo(30, 3)
+      for (const spin of spins) expect(spin).toBeCloseTo(2, 3)
+      // Include an outward contact step, when an accidental float call would add drag.
+      f.h.step(f.v)
+      expect(f.v.body.linvel().x).toBeCloseTo(30, 3)
+      expect(f.v.zorb.hops).toBe(0)
+    } finally { f.done() }
+  })
+}
+
+it('teleport and materialization explicitly clear even small-position contact history', () => {
+  for (const reset of ['teleport', 'materialize'] as const) {
+    const f = liquidSkipFixture('water', 'hovercraft')
+    try {
+      f.v.input.zorb = true; f.place(.15)
+      f.v.body.setLinvel({ x: 30, y: -3, z: 0 }, true); f.force()
+      f.place(-.02)
+      if (reset === 'teleport') f.v.teleport(vec(f.v.body.translation()))
+      else {
+        f.v.object.userData.materializing = true; f.v.fixedUpdate(.02)
+        f.v.object.userData.materializing = false
+      }
+      f.v.body.setLinvel({ x: 30, y: -3, z: 0 }, true)
+      f.h.step(f.v)
+      expect(f.v.zorb.skips).toBe(0)
+    } finally { f.done() }
+  }
+})
+
+it('unknown or nonfinite surface velocity cannot qualify a skip', () => {
+  for (const query of [undefined, () => NaN, () => Infinity]) {
+    const f = liquidSkipFixture('water')
+    try {
+      f.h.terrain.liquidVerticalSpeedAt = query
+      f.place(.15); f.v.body.setLinvel({ x: 30, y: -3, z: 0 }, true); f.force()
+      f.place(-.02); f.force()
+      expect(f.v.zorb.skips).toBe(0)
+    } finally { f.done() }
+  }
+})
+
+it('fixed steps at an unchanged wave clock use the supplied phase speed without dt division', () => {
+  const f = liquidSkipFixture('water')
+  f.h.terrain.liquidHeightAt = () => 11
+  f.h.terrain.liquidVerticalSpeedAt = () => 1
+  const place = (gap: number) => f.place(gap + 1)
+  try {
+    place(.15); f.v.body.setLinvel({ x: 30, y: -3, z: 0 }, true)
+    for (let i = 0; i < 4; i++) f.force()
+    place(-.02); f.force()
+    expect(f.v.zorb.skips).toBe(1)
+    // Relative incoming -4, outgoing +2, plus surface speed1.
+    expect(f.v.body.linvel().y).toBeCloseTo(3, 4)
+    f.force(); expect(f.v.body.linvel().y).toBeCloseTo(3, 4)
   } finally { f.done() }
 })

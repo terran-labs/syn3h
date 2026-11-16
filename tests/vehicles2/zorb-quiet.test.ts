@@ -211,6 +211,7 @@ it('a pending manual liquid hop wins over passive shallow-entry contact', () => 
   const { h, v, done } = zorbed('buggy')
   h.terrain.liquidKindAt = () => 'water'
   h.terrain.liquidHeightAt = () => 10
+  h.terrain.liquidVerticalSpeedAt = () => 0
   const place = (gap: number) => {
     const c = v.zorb.centre(new THREE.Vector3()), p = v.body.translation()
     v.body.setTranslation({ x: p.x, y: p.y + 10 + v.zorb.radius + gap - c.y, z: p.z }, true)

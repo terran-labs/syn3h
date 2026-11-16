@@ -83,6 +83,10 @@ export interface Terrain {
    * none. Vehicles use it for buoyancy.
    */
   liquidHeightAt?(x: number, z: number): number
+  /** Surface phase vertical speed in m/s. Static liquid returns 0; unknown/invalid returns
+   * NaN. Optional: consumers must not infer a stationary surface when absent. Wave amplitude
+   * and clock-switch envelopes are not differentiated by the existing sea primitive. */
+  liquidVerticalSpeedAt?(x: number, z: number): number
   /** Horizontal water velocity in metres per second; writes into out. */
   liquidFlowAt?(x: number, z: number, out: { x: number; z: number }): { x: number; z: number }
   /**

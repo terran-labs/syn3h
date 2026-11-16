@@ -62,8 +62,8 @@ export const zorbBounce = defineParam({ id: 'zorb.bounce', label: 'Bounciness', 
 // Engineering starting values; contact feel still requires recorded driving acceptance.
 export const zorbSkipSpeed = defineParam({ id: 'zorb.skipSpeed', label: 'Skip minimum speed (m/s)', group: 'Zorb', scope: 'world', default: 10, min: 1, max: 50, step: 1 })
 export const zorbSkipAngle = defineParam({ id: 'zorb.skipAngle', label: 'Skip maximum entry angle', group: 'Zorb', scope: 'world', default: 20, min: 0, max: 45, step: 1 })
-const SKIP_SEPARATION = 0.1
-const SKIP_COOLDOWN = 0.15
+const SKIP_SEPARATION = 0.01
+const SKIP_COOLDOWN = 0.02
 const SKIP_SAMPLE = 0.25
 // Not in the original. Space inside the ball: a hop and a pulse of the shield (see `hold`).
 /** Height a hop lifts the ball under normal gravity. A velocity change, so every vehicle mass hops the same. */
@@ -131,7 +131,7 @@ interface ZorbTerrain {
 }
 
 /** Liquid functions the ball floats on. */
-type ZorbLiquidTerrain = Pick<Terrain, 'liquidHeightAt' | 'liquidKindAt' | 'liquidFlowAt'>
+type ZorbLiquidTerrain = Pick<Terrain, 'liquidHeightAt' | 'liquidKindAt' | 'liquidFlowAt' | 'liquidVerticalSpeedAt'>
 
 /**
  * The physical ball: one zero-density sphere collider on the vehicle's own rigid body, so mass,
@@ -173,7 +173,7 @@ export class ZorbBall {
   private hopPending = false
   /** Observational only: passive skips never synthesize hop input or pulses. */
   skips = 0
-  private skipSample: { x: number; y: number; z: number; surface: number; radius: number; gap: number; speed: number; kind: string; terrain: ZorbLiquidTerrain } | null = null
+  private skipSample: { x: number; y: number; z: number; surface: number; radius: number; gap: number; speed: number; kind: string | null; terrain: ZorbLiquidTerrain } | null = null
   private skipArmed = false
   private skipCoasting = false
   private skipCooldown = 0
@@ -181,7 +181,8 @@ export class ZorbBall {
   private readonly skipRelative = new THREE.Vector3()
   private readonly skipFlow = { x: 0, z: 0 }
 
-  private resetSkip(): void {
+  /** Clear contact history before teleport or a held/materializing step. */
+  resetLiquidContact(): void {
     this.skipSample = null
     this.skipArmed = this.skipCoasting = false
     this.skipCooldown = 0
@@ -206,7 +207,7 @@ export class ZorbBall {
   sync(on: boolean, dt: number): void {
     this.on = on
     if (!on) {
-      this.resetSkip()
+      this.resetLiquidContact()
       if (!this.collider) return
       this.shrinkSpeed = Math.min(ZORB_SHRINK_SPEED, this.shrinkSpeed + SHRINK_RAMP * dt)
       this.radius -= this.shrinkSpeed * dt
@@ -366,13 +367,22 @@ export class ZorbBall {
     state.wingLaunchSpeed = 0
     state.fastWingContact = false
     state.wasImmersed = false
-    if (!this.collider) { this.onLiquid = false; this.resetSkip(); return }
+    if (!this.collider) { this.onLiquid = false; this.resetLiquidContact(); return }
     const p = this.centre(tmpC)
     const surface = terrain.liquidHeightAt?.(p.x, p.z) ?? -Infinity
     this.onLiquid = surface - (p.y - Math.max(MIN_RADIUS, this.radius)) > -HOP_LIQUID_REACH
-    if (this.body.isKinematic() || !this.body.isEnabled()) { this.resetSkip(); return }
+    if (this.body.isKinematic() || !this.body.isEnabled()) { this.resetLiquidContact(); return }
     const kind = Number.isFinite(surface) ? liquidKind(terrain as Terrain, p.x, p.z) : null
-    if (!kind) { this.resetSkip(); return }
+    if (!kind) {
+      // Retain an ordinary dry approach, but never manufacture history after a reset.
+      if (this.on && !hopped && Number.isFinite(dt) && dt > 0 && dt <= .1 && this.radius >= this.target * .95) {
+        const v = this.body.linvel()
+        this.skipSample = { x: p.x, y: p.y, z: p.z, surface, radius: this.radius, gap: Infinity, speed: Math.hypot(v.x, v.y, v.z), kind: null, terrain }
+        this.skipArmed = true; this.skipCoasting = false
+        this.skipCooldown = Math.max(0, this.skipCooldown - dt)
+      } else this.resetLiquidContact()
+      return
+    }
     // A successful skip owns this liquid contact, including its outward escape. Running
     // either continuous liquid pass here would immediately erase the retained speed.
     if (this.skipLiquid(terrain, kind, p, surface, dt, hopped)) return
@@ -395,7 +405,7 @@ export class ZorbBall {
   /** A centre impulse changes only surface-normal velocity, never tangent speed or spin. */
   private skipLiquid(terrain: ZorbLiquidTerrain, kind: string, p: THREE.Vector3, surface: number, dt: number, hopped: boolean): boolean {
     if (!this.on || hopped || !Number.isFinite(dt) || dt <= 0 || dt > 0.1 || this.radius < this.target * 0.95) {
-      this.resetSkip(); return false
+      this.resetLiquidContact(); return false
     }
     const sample = (x: number, z: number) => {
       if (terrain.liquidKindAt && terrain.liquidKindAt(x, z) !== kind) return NaN
@@ -403,15 +413,19 @@ export class ZorbBall {
     }
     const left = sample(p.x - SKIP_SAMPLE, p.z), right = sample(p.x + SKIP_SAMPLE, p.z)
     const back = sample(p.x, p.z - SKIP_SAMPLE), front = sample(p.x, p.z + SKIP_SAMPLE)
-    if (![surface, left, right, back, front, p.x, p.y, p.z].every(Number.isFinite)) {
-      this.resetSkip(); return false
+    if (![surface, p.x, p.y, p.z].every(Number.isFinite) ||
+        (!Number.isFinite(left) && !Number.isFinite(right)) || (!Number.isFinite(back) && !Number.isFinite(front))) {
+      this.resetLiquidContact(); return false
     }
-    const dx = (right - left) / (2 * SKIP_SAMPLE), dz = (front - back) / (2 * SKIP_SAMPLE)
+    // At an ordinary shore, use the wet side rather than inventing a dry-side height.
+    const derivative = (lo: number, hi: number) => Number.isFinite(lo) && Number.isFinite(hi)
+      ? (hi - lo) / (2 * SKIP_SAMPLE) : Number.isFinite(hi) ? (hi - surface) / SKIP_SAMPLE : (surface - lo) / SKIP_SAMPLE
+    const dx = derivative(left, right), dz = derivative(back, front)
     const n = this.skipNormal.set(-dx, 1, -dz).normalize()
     const gap = (p.y - surface) * n.y - this.radius
     const v = this.body.linvel(), speed = Math.hypot(v.x, v.y, v.z)
     const previous = this.skipSample
-    const continuous = previous && previous.terrain === terrain && previous.kind === kind &&
+    const continuous = previous && previous.terrain === terrain && (previous.kind === null || previous.kind === kind) &&
       Math.abs(this.radius - previous.radius) < 0.01 &&
       Math.hypot(p.x - previous.x, p.y - previous.y, p.z - previous.z) <= 0.25 + Math.max(speed, previous.speed) * dt * 1.5
     this.skipSample = { x: p.x, y: p.y, z: p.z, surface, radius: this.radius, gap, speed, kind, terrain }
@@ -420,13 +434,13 @@ export class ZorbBall {
       this.skipCoasting = false; this.skipCooldown = 0
       return false
     }
-    // Re-query the OLD location at the current surface time. This removes horizontal
-    // travel from wave heave. It follows the terrain query clock, not shader-only ripples.
-    const oldSurfaceNow = sample(previous.x, previous.z)
+    // Optional custom-terrain contract: absent/invalid velocity means no passive skip.
+    // Production delegates to the existing phase-speed primitive, never delta-height/dt.
+    const heave = terrain.liquidVerticalSpeedAt?.(p.x, p.z) ?? NaN
     this.skipFlow.x = this.skipFlow.z = 0
     terrain.liquidFlowAt?.(p.x, p.z, this.skipFlow)
-    const vertical = (oldSurfaceNow - previous.surface) / dt + dx * this.skipFlow.x + dz * this.skipFlow.z
-    if (![vertical, this.skipFlow.x, this.skipFlow.z].every(Number.isFinite)) { this.resetSkip(); return false }
+    const vertical = heave + dx * this.skipFlow.x + dz * this.skipFlow.z
+    if (![vertical, this.skipFlow.x, this.skipFlow.z].every(Number.isFinite)) { this.resetLiquidContact(); return false }
     const relative = this.skipRelative.set(v.x - this.skipFlow.x, v.y - vertical, v.z - this.skipFlow.z)
     const normalSpeed = relative.dot(n)
     const tangentSpeed = Math.sqrt(Math.max(0, relative.lengthSq() - normalSpeed * normalSpeed))
@@ -436,7 +450,7 @@ export class ZorbBall {
       if (normalSpeed >= 0 && gap >= -ZORB_FLOAT_DEPTH) return true
       this.skipCoasting = false
     }
-    const crossing = previous.gap > 0 && gap <= 0
+    const crossing = (previous.kind === null || previous.gap > 0) && gap <= 0
     if (!crossing) return false
     const armed = this.skipArmed
     this.skipArmed = false
@@ -495,7 +509,7 @@ export class ZorbBall {
 
   /** Remove the collider; safe to call repeatedly. */
   remove(): void {
-    this.resetSkip()
+    this.resetLiquidContact()
     if (this.collider) {
       // The body may already be gone when its vehicle is disposed.
       if (this.world.getCollider(this.collider.handle)) this.world.removeCollider(this.collider, true)
