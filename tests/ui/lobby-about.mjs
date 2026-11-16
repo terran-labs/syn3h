@@ -17,7 +17,8 @@ for(const mode of ['desktop','phone','short-phone']){
   // Detach only the test's logo renderer while the galaxy keeps drawing. This exercises
   // the existing SVG bridge without changing styling or racing onLogo each frame.
   await page.evaluate(() => { const g=syn3h.shell.galaxy; window.__savedLogo=g.logo; g.logo=null; g.wake=2; document.querySelector('.syn3h-shell').classList.remove('has-animated-logo') })
-  await page.waitForTimeout(800)
+  try { await page.waitForFunction(()=>document.querySelector('.shell-logo').getAnimations().every(a=>a.playState!=='running'),null,{timeout:10000}) }
+  catch(error){ console.log('SVG entrance timeout',await page.locator('.shell-logo').evaluate(el=>el.getAnimations().map(a=>({state:a.playState,time:a.currentTime,timing:a.effect.getComputedTiming()}))));throw error }
   assert.equal(await page.locator('.shell-logo').evaluate(el=>getComputedStyle(el).opacity),'1')
   assert.equal(await page.evaluate(()=>syn3h.shell.galaxy.logo),null)
   await page.screenshot({path:`${out}/${mode}-static.png`})
