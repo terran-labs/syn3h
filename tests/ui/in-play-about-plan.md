@@ -157,3 +157,14 @@ Existing Escape/pause/cancellation assertions remain unchanged.
 All extra operations consume the existing480s fixture and590s supervisor limits.
 About004 took about50s, but budget fit and added viewport behavior are UNRUN. No
 extra timeout allowance, retry, two-peer, visibility or cursor-race scope is added.
+
+
+### Native keyboard focus evidence
+
+The layout slice starts from the actual pause veil focus established by native
+Pause. It records that precondition, then uses at most8 native Shift+Tab presses
+toward the preceding About button, persisting each focus result. The button must
+be activeElement and match :focus-visible before the original outline/bounds
+measurements and screenshots. No programmatic focus, forced style or class is
+used as a substitute. All pause, Back/focus and Resume assertions remain; CSS,
+Shell, observers and budgets are unchanged. This correction is source-only.

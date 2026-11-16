@@ -73,7 +73,24 @@ async function pauseLayoutChecks(page, record, touch) {
     await page.locator('.rail-pause').click()
     const button = page.locator('.pause-about'), dialog = page.locator('.in-play-about')
     await button.waitFor({ state: 'visible' })
-    await button.focus()
+    row.keyboardFocus = []
+    const focusState = () => bounded(page.evaluate(() => ({
+      veil: document.activeElement === document.querySelector('.pause-veil'),
+      about: document.activeElement === document.querySelector('.pause-about'),
+      focusVisible: document.querySelector('.pause-about').matches(':focus-visible'),
+      active: document.activeElement?.tagName + '.' + document.activeElement?.className,
+    })))
+    let keyboardFocus = await focusState()
+    row.keyboardFocus.push(keyboardFocus); await persist()
+    assert.equal(keyboardFocus.veil, true, 'native Pause leaves focus on the pause veil')
+    // About precedes the veil in DOM order. Use real backward Tab navigation,
+    // bounded even if other focusable UI intervenes; never manufacture focus style.
+    for (let tabs = 0; tabs < 8 && !keyboardFocus.about; tabs++) {
+      await page.keyboard.press('Shift+Tab')
+      keyboardFocus = await focusState(); row.keyboardFocus.push(keyboardFocus); await persist()
+    }
+    assert.equal(keyboardFocus.about, true, 'About reachable by bounded native Tab navigation')
+    assert.equal(keyboardFocus.focusVisible, true, 'native keyboard focus is visibly indicated')
     // Wait only for the finite veil entrance, not an arbitrary screenshot delay.
     await ready(page, () => document.querySelector('.pause-veil').getAnimations().every(a => a.playState === 'finished'))
     row.layout = await page.evaluate(() => {
@@ -83,7 +100,7 @@ async function pauseLayoutChecks(page, record, touch) {
         Math.max(0, Math.min(rect.bottom, other.bottom) - Math.max(rect.top, other.top))
       return { button: rect.toJSON(), footer: foot.getBoundingClientRect().toJSON(),
         outline: { width: style.outlineWidth, offset: style.outlineOffset, style: style.outlineStyle },
-        focused: document.activeElement === button,
+        focused: document.activeElement === button, focusVisible: button.matches(':focus-visible'),
         footerSurfaces: [foot, ...foot.querySelectorAll('input, button')].map(el => ({
           tag: el.tagName, visibility: getComputedStyle(el).visibility,
           display: getComputedStyle(el).display, overlap: intersect(el.getBoundingClientRect()) })) }
@@ -95,7 +112,7 @@ async function pauseLayoutChecks(page, record, touch) {
     assert.ok(box.height >= 44 && box.width >= 44)
     const outline = Math.max(0, parseFloat(row.layout.outline.width) + parseFloat(row.layout.outline.offset))
     assert.ok(box.left >= outline && box.top >= outline && box.right + outline <= viewport.width && box.bottom + outline <= viewport.height)
-    assert.ok(row.layout.focused); assert.notEqual(row.layout.outline.style, 'none')
+    assert.ok(row.layout.focused); assert.ok(row.layout.focusVisible); assert.notEqual(row.layout.outline.style, 'none')
     for (const surface of row.layout.footerSurfaces) {
       if (viewport.width <= 700) assert.equal(surface.visibility, 'hidden')
       if (surface.visibility === 'visible' && surface.display !== 'none') assert.equal(surface.overlap, 0, 'pause About overlaps visible Inspector footer')
