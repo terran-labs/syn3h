@@ -19,10 +19,6 @@ The release record and `ops/STATE.md` identify the exact source and validation e
   centres (MAN, NRT; loc US), so public WebSockets drop with 1006 several times an hour. The
   smoke now rides through such drops (bounded step retries, rejoin checks), but a second
   vantage point, such as a hosted runner, would remove the doubt. Workers observability is off.
-- A shared setting the host changes while its connection is down is lost: the client
-  drops messages while its socket is closed (src/net/Connection.ts send), and on reconnect
-  the room's values replace the local world. Found 16 November 2026; fix planned for
-  v26.11.1605 as its own branch with a test.
 - The public net smoke's "lava sticks B" step failed once on v26.11.1603 (16 November,
   about 11:30 PST, workers.dev, run 3 of 5) with no reconnect on any page: B was stuck
   and visible on A, but the room never counted B out of the hill (outB 0). The other
