@@ -1,3 +1,4 @@
+import { BuggyHeadlights } from './buggyHeadlights'
 import { WingTipAnchors } from './wingTips'
 import * as THREE from 'three/webgpu'
 import { mergeStatic, mergedSurfaces } from './mergeStatic'
@@ -85,10 +86,12 @@ export function distantBuggyBody(body: THREE.Color, accent: THREE.Color, far: bo
   add(hull(BODY_SECTIONS.map(([z, width, bottom, top]) => [z, Math.min(.18, width * .35), top - .02, top + .006])), stripe)
   // At distance the energy canopy is a solid accent silhouette, sharing the body's draw.
   add(hull([[-.83, .16, .67, .75], [-.4, .48, .67, 1.03], [.5, .49, .7, 1.05], [.9, .22, .7, .78]]), stripe)
+  const headlightMeshes = new Set<THREE.Mesh>()
   if (!far) {
     const chrome = setRole(new THREE.MeshStandardMaterial({ color: 0xc4ccd6 }), 'chrome')
+    chrome.name = 'Buggy mid headlights'
     for (const side of [-1, 1]) {
-      add(new THREE.BoxGeometry(.22, .18, .1).translate(side * .62, .35, -1.7), chrome)
+      headlightMeshes.add(add(new THREE.BoxGeometry(.22, .18, .1).translate(side * .62, .35, -1.7), chrome))
       add(new THREE.BoxGeometry(.34, .045, .035).translate(side * .48, .53, 1.88),
         setRole(new THREE.MeshStandardMaterial({ color: 0x660000, emissive: 0x990000 }), 'lamp'))
     }
@@ -115,6 +118,7 @@ export function distantBuggyBody(body: THREE.Color, accent: THREE.Color, far: bo
   }
   wing.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3)); wing.computeVertexNormals()
   add(wing, wingMaterial)
+  if (!far) root.userData.headlights = new BuggyHeadlights(root, root, mesh => headlightMeshes.has(mesh))
   mergeStatic(root, true)
   const mesh = root.children[0] as THREE.Mesh
   const surfaces = mergedSurfaces.get(mesh.material as THREE.Material)!

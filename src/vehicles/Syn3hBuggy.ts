@@ -317,6 +317,18 @@ export class Syn3hBuggy extends Vehicle {
       return
     }
     this.skin = skin
+    const headlightNormal = new THREE.Matrix3()
+    this.object.userData.headlights = {
+      count: 2,
+      sample: (index: number, position: THREE.Vector3, direction: THREE.Vector3, color: THREE.Color): boolean => {
+        if (this.skin !== skin || !skin.getHeadlight?.(index, position, direction, color)) return false
+        skin.object.updateMatrix()
+        position.applyMatrix4(skin.object.matrix)
+        direction.applyNormalMatrix(headlightNormal.getNormalMatrix(skin.object.matrix))
+        return true
+      },
+      needsGlow: () => this.skin === skin && (skin.needsHeadlightGlow?.() ?? false),
+    }
     this.object.add(skin.object)
     skin.setColors(this.colors.body, this.colors.accent)
     skin.ready.then(
@@ -1153,6 +1165,7 @@ export class Syn3hBuggy extends Vehicle {
   }
 
   override dispose(): void {
+    delete this.object.userData.headlights
     this.skin?.dispose()
     super.dispose()
   }

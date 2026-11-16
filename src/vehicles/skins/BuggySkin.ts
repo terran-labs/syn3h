@@ -12,6 +12,10 @@ export interface BuggySkin {
   setWings(openAmount: number, steer: number, pitch: number): void
   /** Actual visible wing tip in skin-local coordinates; false before load or when folded. */
   getWingTip?(side: -1 | 1, out: THREE.Vector3): boolean
+  /** Static lamp face in skin-local space; index 0 is left and 1 is right. */
+  getHeadlight?(index: number, position: THREE.Vector3, direction: THREE.Vector3, color: THREE.Color): boolean
+  /** Far silhouette has no lamp faces and needs the shared glow at canonical near anchors. */
+  needsHeadlightGlow?(): boolean
   setColors(body: THREE.ColorRepresentation, accent: THREE.ColorRepresentation): void
   /**
    * Hub motor load for wheel `index`, 0 idle to 1 flat out (see motorDrive.ts); `regen` while

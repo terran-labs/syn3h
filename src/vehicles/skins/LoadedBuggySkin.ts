@@ -1,3 +1,4 @@
+import { BuggyHeadlights } from './buggyHeadlights'
 import { WingTipAnchors } from './wingTips'
 import { smoothBuggyWheel, distantBuggyBody, distantBuggyArm } from './buggyGeometry'
 import {hotExposureNode} from './hotExposure'
@@ -138,6 +139,9 @@ export class LoadedBuggySkin implements BuggySkin {
   readonly ready: Promise<void>
   /** The lamps are emissive faces of the body mesh (see load). */
   readonly ownLamps = true
+  private nearHeadlights?: BuggyHeadlights
+  private midHeadlights?: BuggyHeadlights
+  private headlightDetail: 0 | 1 | 2 = 0
   private disposed = false
   private detachDetail=()=>{}
   private detachShowroom=()=>{}
@@ -263,8 +267,10 @@ export class LoadedBuggySkin implements BuggySkin {
     if (headlights) {
       const lights = extract(headlights, transform)
       lights.traverse(o => { if (o instanceof THREE.Mesh) { for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.dispose(); o.material = setRole(new THREE.MeshStandardMaterial({color: 0xfff4bc, emissive: 0xffe899, emissiveIntensity: 2}), 'lamp') } })
+      lights.traverse(o => { if (isMesh(o)) for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.name = 'Buggy headlights' })
       staticBody.add(lights)
     }
+    this.nearHeadlights = new BuggyHeadlights(staticBody, this.object, (_mesh, material) => /headlight/i.test(material.name))
     mergeStatic(staticBody, true)
     mergeStatic(canopy, true)
     // The force field stays in view from the seat: Syn3hBuggy sets userData.cockpit on the
@@ -285,6 +291,7 @@ export class LoadedBuggySkin implements BuggySkin {
     const farBody = distantBuggyBody(this.bodyColor, this.accentColor, true)
     this.object.add(midBody, farBody)
     this.distantBodies.push(midBody, farBody)
+    this.midHeadlights = midBody.userData.headlights as BuggyHeadlights
     const tyre = smoothBuggyWheel(12).children[0] as THREE.Mesh
     this.midTyres = new THREE.InstancedMesh(tyre.geometry, tyre.material, 4)
     this.midTyres.name = 'Mid tyres'; this.midTyres.frustumCulled = false
@@ -372,6 +379,7 @@ export class LoadedBuggySkin implements BuggySkin {
     let lastDetail: 0 | 1 | 2 = 0
     this.detachDetail=registerVehicleDetail(this.object,(distance,remote,level)=>{
       lastDetail = detailLevel(distance, remote, lastDetail)
+      this.headlightDetail = lastDetail
       const near = lastDetail === 0, mid = lastDetail === 1
       staticBody.visible = canopy.visible = wingGroup.visible = near
       this.tyreBatch!.visible = near
@@ -389,6 +397,14 @@ export class LoadedBuggySkin implements BuggySkin {
     this.detachShowroom = applyShowroom(this.object, root => { addNightReadability(root); addLavaGlow(root) })
     this.object.visible = true
   }
+
+  getHeadlight(index: number, position: THREE.Vector3, direction: THREE.Vector3, color: THREE.Color): boolean {
+    if (this.disposed || !this.object.visible) return false
+    const anchors = this.headlightDetail === 1 ? this.midHeadlights : this.nearHeadlights
+    return anchors?.sample(index, position, direction, color) ?? false
+  }
+
+  needsHeadlightGlow(): boolean { return this.headlightDetail === 2 }
 
   setWheel(index: number, localPosition: THREE.Vector3, steerAngle: number, spinAngle: number): void {
     const wheel = this.wheels[index]
