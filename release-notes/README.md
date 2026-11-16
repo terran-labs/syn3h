@@ -164,6 +164,33 @@ and the caption on a line beneath. A version with no images and no GIF (v26.11.1
 plan, with nothing to see) gets no Screenshots section, and publishes without `--assets` or
 with an empty manifest. `manifest.json` itself is not uploaded.
 
+## Player digests
+
+Players read the published notes through Updates in About, and those notes are written for
+the record: test counts, measurements, process. So each production release also has a short
+digest written for players, in `release-notes/player/v<version>.md`:
+
+```markdown
+Grapple cords drape over hills instead of cutting through
+
+- The Grapple cord follows the ground over ridges and crests instead of passing through them.
+- The cord's ends stay where it hooked on.
+```
+
+- The first line is a one-line summary under 70 characters. It also appears in the update
+  banner.
+- Then two to five `- ` bullets of what a player will notice, and nothing else. No test
+  counts, no process, no internal names (Daydream, Inspector, the lanes).
+- Never invent a feature. If a release changed nothing a player would notice, the summary
+  is "Behind-the-scenes fixes." with two bullets naming the areas made more reliable.
+- The published notes stay as they are; the digest sits beside them.
+
+`tools/release-feed.mjs` builds `/releases.json` from the digests for the game, and each entry
+links its full notes on GitHub. A release without a digest shows its notes' summary line
+only, never the notes. A build with `SYN3H_RELEASE_VERSION` set (as `tools/release.sh` does)
+fails unless that version has a digest in this shape, so write and commit the notes and the
+digest before tagging and building a release.
+
 ## Replacing the first two GitHub releases
 
 The first two GitHub releases were published as v26.11.1400 (release-1) and v26.11.1401
@@ -182,6 +209,8 @@ Then publish v26.11.1400 to v26.11.1413 in order, with `--latest` on v26.11.1413
 
 ## Typical release
 
+0. Write and commit the player digest for the version about to ship (see Player digests);
+   the release build stops without it.
 1. `tools/release.sh <n> "note"` ships the release (with the hook below, it also adds the
    history row, tags the version and drafts the notes).
 2. Rewrite the draft as shipped behaviour and write its story, then commit both files.
