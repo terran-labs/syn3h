@@ -38,13 +38,33 @@ for(const engine of ['webkit','chromium']) {
   await page.keyboard.press('Meta+A')
   assert.equal(await field.inputValue(),'Editable room')
   assert.equal(await field.evaluate(e=>e.selectionEnd-e.selectionStart),13,'native field selection retained')
+  await page.keyboard.press('ArrowRight')
+  assert.equal(await field.evaluate(e=>e.selectionEnd-e.selectionStart),0)
   await field.blur()
   const checks=[]
   const clear=async()=>page.evaluate(()=>getSelection().removeAllRanges())
   const empty=async(label,gesture)=>{
    await page.waitForTimeout(150)
-   const s=await page.evaluate(()=>({text:getSelection().toString(),collapsed:getSelection().isCollapsed,active:document.activeElement?.tagName}))
-   assert.equal(s.text,'',`${name} ${label} ${gesture} text`);assert.equal(s.collapsed,true,`${name} ${label} ${gesture} range`)
+   const s=await page.evaluate((selector)=>{
+    const selection=getSelection(),active=document.activeElement
+    const node=n=>n?{type:n.nodeType,name:n.nodeName,parent:n.parentElement?.tagName,id:n.id??'',text:n.nodeType===3?n.textContent:null}:null
+    const editable=active?.matches('input:not([type=range]):not([type=checkbox]),textarea')&&typeof active.selectionStart==='number'
+    const input=editable?{id:active.id,value:active.value,start:active.selectionStart,end:active.selectionEnd}:null
+    const ranges=Array.from({length:selection.rangeCount},(_,i)=>{const r=selection.getRangeAt(i);return{start:node(r.startContainer),end:node(r.endContainer),collapsed:r.collapsed,rects:[...r.getClientRects()].map(x=>({x:x.x,y:x.y,width:x.width,height:x.height}))}})
+    const evidence={text:selection.toString(),collapsed:selection.isCollapsed,active:node(active),anchor:node(selection.anchorNode),focus:node(selection.focusNode),input,ranges,targetText:document.querySelector(selector)?.textContent,instrumentation:window.selectionEvidence}
+    // WebKit exposes native input selection through window.getSelection(). Prove
+    // ownership causally: collapsing only the input selection must remove it.
+    // A separate page range is never cleared here and therefore still fails.
+    let fieldOwned=false
+    if(input&&input.end>input.start&&evidence.text===input.value.slice(input.start,input.end)) {
+     active.setSelectionRange(input.end,input.end)
+     fieldOwned=getSelection().toString()===''&&getSelection().isCollapsed
+    }
+    return {...evidence,fieldOwned}
+   },label)
+   console.log(JSON.stringify({engine,name,label,gesture,selection:s}))
+   assert.ok(s.fieldOwned||(s.text===''&&s.collapsed),`${name} ${label} ${gesture}: forbidden page selection`)
+
    checks.push({label,gesture,...s})
   }
   for(const selector of ['label[for="shell-room"]','[data-panel="explore"] h2']) {
