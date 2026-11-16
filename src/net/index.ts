@@ -154,6 +154,9 @@ export interface MapMarker {
   z: number
   heading: number
   color: string
+  accent?: string
+  kind?: 'person' | 'bot' | 'zone'
+  it?: boolean
   self?: boolean
 }
 
@@ -806,20 +809,26 @@ export class NetClient implements System {
 
   private mapMarkers(): MapMarker[] {
     const list: MapMarker[] = []
-    for (const [id, r] of this.remotes) {
-      const p = r.vehicle.object.position
-      const q = r.vehicle.object.quaternion
+    const it = this.game.mode === MODE_TAG ? this.game.it : 0
+    // Colour is identity: each vehicle's own paint, as '#rrggbb' (Vehicle.setColors normalizes it).
+    const add = (id: number, vehicle: Vehicle): void => {
+      const p = vehicle.object.position
+      const q = vehicle.object.quaternion
       // Heading from the forward (-Z) axis: atan2(-fx, -fz).
       const fx = -2 * (q.x * q.z + q.w * q.y)
       const fz = -(1 - 2 * (q.x * q.x + q.y * q.y))
-      const color = isBotId(id) ? botColors(id - BOT_ID_BASE)[0] : r.info.colors[0]
-      list.push({ x: p.x, z: p.z, heading: Math.atan2(-fx, -fz), color })
+      list.push({ x: p.x, z: p.z, heading: Math.atan2(-fx, -fz), color: vehicle.colors.body, accent: vehicle.colors.accent, kind: isBotId(id) ? 'bot' : 'person', it: Boolean(it) && id === it })
+    }
+    for (const [id, r] of this.remotes) add(id, r.vehicle)
+    // The bots this client simulates (the host's, or everyone's offline) are not remotes.
+    if (this.bots && !this.bots.remote) {
+      for (const [id, bot] of liveBots(this.bots.vehicles, this.ctx.game.world)) if (!this.remotes.has(id)) add(id, bot)
     }
     const zone = this.mode === MODE_KOTH ? this.zone : null
     if (zone) {
       const k = this.game.koth
       const color = k.contested ? '#bf26ff' : k.holder === this.id ? '#1aff40' : k.holder ? '#ff1f0d' : '#ffb814'
-      list.push({ x: zone.x, z: zone.z, heading: 0, color })
+      list.push({ x: zone.x, z: zone.z, heading: 0, color, kind: 'zone' })
     }
     return list
   }
