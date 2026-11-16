@@ -1,5 +1,5 @@
 import * as T from 'three/webgpu'
-import { fog, float, mix, output, positionView, renderGroup, screenUV, smoothstep, uniform } from 'three/tsl'
+import { fog, float, mix, output, positionView, renderGroup, screenUV, select, smoothstep, uniform } from 'three/tsl'
 import { defineParam } from '../../../shared/params'
 import type { Game } from '../../core/Game'
 import type { Terrain } from '../Terrain'
@@ -43,7 +43,10 @@ export class Underwater {
     // Screen UV starts at the top left. Mask only the wet part of the near plane;
     // a two-centimetre transition avoids a hard raster edge without fogging dry pixels.
     const d=this.waterline
-    const depth=mix(mix(d.x,d.y,screenUV.x),mix(d.z,d.w,screenUV.x),screenUV.y)
+    // Use the same top-left to bottom-right diagonal as CameraWater.coverage.
+    const upper=d.x.add(d.y.sub(d.x).mul(screenUV.x)).add(d.w.sub(d.y).mul(screenUV.y))
+    const lower=d.x.add(d.w.sub(d.z).mul(screenUV.x)).add(d.z.sub(d.x).mul(screenUV.y))
+    const depth=select(screenUV.x.greaterThanEqual(screenUV.y),upper,lower)
     const wetMask=smoothstep(0,.02,depth)
     this.fogNode=mix((this.savedFog??output) as T.Node<'vec4'>,water,this.blend.mul(wetMask))
     game.scene.fogNode=this.fogNode
@@ -90,12 +93,14 @@ export class Underwater {
     cameraAmounts.set(this.game.camera,this.blend.value*coverage)
     const look=underwaterLook(Math.max(0,Number.isFinite(depth)?depth:0))
     this.tint.value.setRGB(look.red,look.green,look.blue);this.extinction.value=look.extinction
+    // Global changes begin continuously only after the last dry corner is submerged.
+    const globalBlend=this.blend.value*underwaterRamp(Math.min(d.x,d.y,d.z,d.w))
     const sky=this.findSky()
-    if(sky){sky.underwaterCamera=this.game.camera;sky.underwaterAmount=coverage===1?this.blend.value:0;const c=this.tint.value;sky.underwaterTint.value.set(c.r,c.g,c.b)}
+    if(sky){sky.underwaterCamera=this.game.camera;sky.underwaterAmount=globalBlend;const c=this.tint.value;sky.underwaterTint.value.set(c.r,c.g,c.b)}
     // Global lighting cannot be masked by screen region. Keep air lighting until fully wet.
-    if(this.blend.value===0||coverage<1)return
+    if(globalBlend===0)return
     const scene=this.game.scene
-    const transmission=1+(look.transmission-1)*this.blend.value
+    const transmission=1+(look.transmission-1)*globalBlend
     this.savedEnvironment=scene.environmentIntensity
     this.appliedEnvironment=this.savedEnvironment*transmission;scene.environmentIntensity=this.appliedEnvironment
     for(const object of scene.children){

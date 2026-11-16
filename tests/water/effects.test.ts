@@ -98,3 +98,16 @@ describe('underwater look arrives with the lens',()=>{
    effect.dispose();expect(sky.underwaterAmount).toBe(0);expect(sky.underwaterCamera).toBe(null)}finally{effect.dispose();waterUnderwater.value=false}
  })
 })
+
+
+it('does not pop global lighting when the last camera corner enters water',()=>{
+ const scene=new Scene(),camera=new PerspectiveCamera(90,1,.1,100),sun=new DirectionalLight(0xffffff,2)
+ scene.add(sun)
+ const effect=new Underwater({scene,camera} as Game,{liquidKindAt:()=> 'water',liquidHeightAt:()=>0} as unknown as Terrain)
+ const previous=waterUnderwater.value;waterUnderwater.value=true
+ try{
+  camera.position.y=-.099;effect.update(.25);expect(sun.intensity).toBe(2)
+  camera.position.y=-.101;effect.update(.25);expect(sun.intensity).toBeGreaterThan(1.999)
+  camera.position.y=-1;effect.update(.25);expect(sun.intensity).toBeLessThan(1.99)
+ }finally{effect.dispose();waterUnderwater.value=previous}
+})
