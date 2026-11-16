@@ -2,7 +2,7 @@ import { AdditiveBlending, Color, InstancedBufferAttribute, InstancedBufferGeome
 import { attribute, float, fract, mix, sin, smoothstep, uniform, uv, vec2, vec3 } from 'three/tsl'
 import type { System } from '../core/Game'
 import { qualityBudget } from '../core/quality'
-import { particleBudget, windX, windZ } from './params'
+import { PARTICLE_SHARES, particleBudget, windX, windZ } from './params'
 import { windDrift } from '../world/weather'
 export type VentKind = 'flame' | 'embers' | 'smoke'
 export interface VentOptions { kind: VentKind; radius: number; height: number; intensity: number }
@@ -32,7 +32,7 @@ export class Emitters implements System {
   clear() { this.vents.length = 0; this.release(); this.dirty = false }
   private rebuild() {
     this.release()
-    this.budget = Math.max(0, Math.floor(Math.min(particleBudget.value, qualityBudget().particles)))
+    this.budget = Math.max(0, Math.floor(Math.min(particleBudget.value, qualityBudget().particles) * PARTICLE_SHARES.vents))
     // Equal allocation avoids starving late vents when the budget is reduced on phones.
     const perVent = Math.min(48, Math.floor(this.budget / Math.max(1, this.vents.length)))
     for (const kind of ['flame', 'embers', 'smoke'] as const) {
@@ -67,7 +67,8 @@ export class Emitters implements System {
       const disc = float(1).sub(smoothstep(0.1, 0.5, uv().sub(0.5).length()))
       const fade = smoothstep(0, 0.1, age).mul(float(1).sub(smoothstep(0.45, 1, age)))
       material.opacityNode = disc.mul(disc).mul(fade).mul(config.z).mul(kind === 'smoke' ? 0.26 : 0.75)
-      material.colorNode = kind === 'smoke' ? uniform(new Color(0x45414a)) : mix(vec3(4, 1.5, 0.12), vec3(1.5, 0.035, 0.001), age)
+      // Smoke is lit from below by the fire it rises from: warm at the base, cooling to grey.
+      material.colorNode = kind === 'smoke' ? mix(vec3(0.9, 0.32, 0.08), uniform(new Color(0x45414a)), smoothstep(0, 0.45, age)) : mix(vec3(4, 1.5, 0.12), vec3(1.5, 0.035, 0.001), age)
       const mesh = new Mesh(geometry, material)
       // The vertex shader moves particles outside the base quad's CPU bounds.
       mesh.frustumCulled = false; mesh.renderOrder = kind === 'smoke' ? 2 : 1
@@ -87,7 +88,7 @@ export class Emitters implements System {
     const at = near ?? this.listener
     windDrift(at.x, at.y, at.z, this.drift)
     this.clock.value += dt; this.wind.value.set(this.drift.x + windX.value, this.drift.z + windZ.value)
-    if (this.dirty || Math.floor(Math.min(particleBudget.value, qualityBudget().particles)) !== this.budget) this.rebuild()
+    if (this.dirty || Math.floor(Math.min(particleBudget.value, qualityBudget().particles) * PARTICLE_SHARES.vents) !== this.budget) this.rebuild()
   }
   dispose() { this.clear() }
 }

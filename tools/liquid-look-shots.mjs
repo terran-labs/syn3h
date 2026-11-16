@@ -74,13 +74,15 @@ const SCENARIOS = {
   'lava-shore-night': { planet: 'volcanic', vehicle: 'buggy', hour: 0, kind: 'lava', min: 0.2, max: 1.2, mode: 'shore', shots: [['lava-shore-night', 2500]] },
   'lava-churn': { planet: 'volcanic', vehicle: 'buggy', hour: 18.5, kind: 'lava', min: 1, max: 3, mode: 'drive', shots: [['lava-churn-0', 1200], ['lava-churn-1', 500], ['lava-churn-2', 500]] },
   'lava-under': { planet: 'volcanic', vehicle: 'buggy', hour: 12, kind: 'lava', min: 6, max: 40, mode: 'under', look: 'level', shots: [['lava-under', 3000]] },
+  'lava-cockpit': { planet: 'volcanic', vehicle: 'buggy', hour: 20, kind: 'lava', min: 6, max: 40, mode: 'cockpit', shots: [['lava-cockpit-0', 600], ['lava-cockpit-1', 1500]] },
   'water-entry': { planet: 'archipelago', vehicle: 'buggy', hour: 16, kind: 'water', min: 6, max: 40, mode: 'dive', shots: [['entry-0', 250], ['entry-1', 200], ['entry-2', 200], ['entry-3', 250], ['entry-4', 300], ['entry-5', 400]] },
   'water-wake': { planet: 'archipelago', vehicle: 'buggy', hour: 15, kind: 'water', min: 1, max: 4, mode: 'drive', shots: [['wake-0', 1500], ['wake-1', 600]] },
   'waterline': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 8, max: 30, mode: 'cross', shots: [['waterline-0', 900], ['waterline-1', 200], ['waterline-2', 200], ['waterline-3', 200], ['waterline-4', 300]] },
 }
 
 const chosen = list ? list.split(',') : Object.keys(SCENARIOS)
-const browser = await chromium.launch({ channel: 'chrome', headless: false, args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist', '--disable-gpu-vsync', '--disable-frame-rate-limit'] })
+const browser = await chromium.launch({ channel: 'chrome', headless: false, // Uncapped frames tear screenshots: only for timing runs (--uncapped).
+  args: ['--enable-unsafe-webgpu', '--use-angle=metal', '--ignore-gpu-blocklist', ...(flags.includes('--uncapped') ? ['--disable-gpu-vsync', '--disable-frame-rate-limit'] : [])] })
 const results = {}
 try {
   for (const name of chosen) {
@@ -122,6 +124,10 @@ try {
         const d = 14
         const x = spot.x + Math.cos(land) * d, z = spot.z + Math.sin(land) * d
         s.player.teleport({ x, y: s.terrain.heightAt(x, z) + 2, z }, land + Math.PI)
+      } else if (sc.mode === 'cockpit') {
+        // First person, the vehicle pushed down under the lava.
+        s.params.set('camera.mode', 1)
+        s.player.teleport({ x: spot.x, y: spot.surface - 1.8, z: spot.z }, land)
       } else if (sc.mode === 'under' || sc.mode === 'cross') {
         s.player.teleport({ x: spot.x, y: spot.ground + 1.2, z: spot.z }, land)
       }

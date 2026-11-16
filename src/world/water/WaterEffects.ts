@@ -11,6 +11,7 @@ import { Ripples, rippleField, waterRipples } from './ripples'
 import { Spray, waterSpray } from './spray'
 import { Underwater, cameraMedium, waterUnderwater } from './underwater'
 import { Motes } from './motes'
+import { setLavaSunk } from '../../fx/material'
 import { Waterline } from './waterline'
 import { UnderwaterBubbles } from './bubbles'
 import { lensWash, newLensState, stepLens } from './underwaterCamera'
@@ -21,6 +22,8 @@ import { submergedFraction, verticalHalfExtent } from './waterEffectsMath'
 export class WaterEffects implements System {
   readonly ripples:Ripples
   readonly spray:Spray
+  /** Molten spray and glowing wakes for vehicles in lava. */
+  readonly lavaSpray:Spray
   readonly underwater:Underwater
   readonly bubbles:UnderwaterBubbles
   readonly motes:Motes
@@ -31,7 +34,7 @@ export class WaterEffects implements System {
   private point=new Vector3()
   private velocity=new Vector3()
   constructor(private game:Game,private terrain:Terrain,private slot:PlayerSlot,private bots:{readonly vehicles:readonly Vehicle[]}){
-    this.ripples=rippleField;this.ripples.attach(game.renderer);this.spray=new Spray(game.scene,this.ripples,terrain);this.underwater=new Underwater(game,terrain);this.bubbles=new UnderwaterBubbles(game.scene,terrain,game.camera)
+    this.ripples=rippleField;this.ripples.attach(game.renderer);this.spray=new Spray(game.scene,this.ripples,terrain);this.lavaSpray=new Spray(game.scene,this.ripples,terrain,'lava');this.underwater=new Underwater(game,terrain);this.bubbles=new UnderwaterBubbles(game.scene,terrain,game.camera)
     this.motes=new Motes(game.scene);this.waterline=new Waterline(game.scene)
     // A world seam moves the player a whole tile and the world is redrawn round it: spray left
     // behind moves the same way. (The ripple field wraps at the tile, so it needs nothing.)
@@ -39,21 +42,22 @@ export class WaterEffects implements System {
     // The player changed vehicle: follow the seam shifts of the new one.
     this.unfollow=slot.onChange((next,previous)=>{this.listen(previous,false);this.listen(next,true)})
   }
-  private onTileShift=({dx,dz}:{dx:number;dz:number})=>this.spray.shift(dx,dz)
+  private onTileShift=({dx,dz}:{dx:number;dz:number})=>{this.spray.shift(dx,dz);this.lavaSpray.shift(dx,dz)}
   /** `?water=1` preview switch: applied once play has begun, after any room state lands. */
   private queryApplied=false
   update(dt:number){
     if(!this.queryApplied&&this.game.time>2){this.queryApplied=true;applyWaterQuery()}
     const {game,terrain}=this,size=terrain.wrapSize??terrain.size
     if(size!==this.size){this.size=size;this.ripples.configure(size)}
-    this.spray.update(dt)
+    this.spray.update(dt);this.lavaSpray.update(dt)
     if(waterSpray.value||waterRipples.value){
       const vehicles=new Set<Vehicle>([this.player,...(net?net.audibleVehicles():this.bots.vehicles)])
       for(const v of vehicles){
         if(!game.world.getRigidBody(v.body.handle))continue
         const p=v.body.translation(),camera=game.camera.position
         const x=nearestImage(p.x,camera.x,size),z=nearestImage(p.z,camera.z,size)
-        if(Math.hypot(x-camera.x,z-camera.z)>150||terrain.liquidKindAt?.(x,z)!=='water')continue
+        const kind=terrain.liquidKindAt?.(x,z)
+        if(Math.hypot(x-camera.x,z-camera.z)>150||!kind)continue
         const surface=terrain.liquidHeightAt?.(x,z)??-Infinity
         if(!Number.isFinite(surface))continue
         // Use oriented chassis cuboids, excluding wheels and the optional zorb ball.
@@ -72,8 +76,8 @@ export class WaterEffects implements System {
         let id=this.ids.get(v);if(!id){id=`water-${++this.serial}`;this.ids.set(v,id)}
         const velocity=v.body.linvel();this.point.set(x,surface,z);this.velocity.set(velocity.x,velocity.y,velocity.z)
         // Send dry intervals too, so re-entry splashes detect the transition.
-        this.spray.vehicle(id,this.point,this.velocity,fraction,dt)
-        if(!waterSpray.value&&fraction>0&&Math.hypot(velocity.x,velocity.z)>1)this.ripples.disturb(x,z,1.5,Math.min(.15,Math.hypot(velocity.x,velocity.z)*.004)*Math.min(.1,Math.max(0,dt))*60)
+        ;(kind==='lava'?this.lavaSpray:this.spray).vehicle(id,this.point,this.velocity,fraction,dt)
+        if(kind==='water'&&!waterSpray.value&&fraction>0&&Math.hypot(velocity.x,velocity.z)>1)this.ripples.disturb(x,z,1.5,Math.min(.15,Math.hypot(velocity.x,velocity.z)*.004)*Math.min(.1,Math.max(0,dt))*60)
       }
     }
     this.ripples.update(dt,game.camera.position.x,game.camera.position.z)
@@ -85,6 +89,7 @@ export class WaterEffects implements System {
       const medium=cameraMedium();this.motes.update(medium.kind,medium.amount,this.underwater.tintColour)
     }
     this.trailBubbles(dt)
+    this.sinkInLava()
     this.bubbles.update(dt,waterUnderwater.value)
   }
   /** Water-owned lens rule, applied after the chase camera has placed the lens. */
@@ -96,6 +101,17 @@ export class WaterEffects implements System {
     const surface=waterUnderwater.value&&Math.round(camMode.value)!==4&&terrain.liquidKindAt?.(p.x,p.z)==='water'
       ?terrain.liquidHeightAt?.(p.x,p.z)??-Infinity:-Infinity
     p.y=stepLens(this.lens,p.y,surface,dt)
+  }
+  /**
+   * The player's vehicle sinking into lava: the lava's top layer thins round it so it glows
+   * through (fx/material.ts setLavaSunk). Only once it is properly in, not wading.
+   */
+  private sinkInLava(){
+    const {terrain}=this,body=this.player.body
+    if(!this.game.world.getRigidBody(body.handle)){setLavaSunk(null);return}
+    const p=body.translation()
+    const surface=terrain.liquidKindAt?.(p.x,p.z)==='lava'?terrain.liquidHeightAt?.(p.x,p.z)??-Infinity:-Infinity
+    setLavaSunk(surface-p.y>.15?{x:p.x,y:surface,z:p.z}:null)
   }
   /** A moving submerged player vehicle trails bubbles. */
   private trailBubbles(dt:number){
@@ -113,5 +129,5 @@ export class WaterEffects implements System {
     const object=vehicle.object as THREE.Object3D<VehicleObjectEvents>
     if(on)object.addEventListener('tileshift',this.onTileShift);else object.removeEventListener('tileshift',this.onTileShift)
   }
-  dispose(){this.unfollow();this.listen(this.player,false);this.motes.dispose();this.waterline.dispose();this.underwater.dispose();this.bubbles.dispose();this.spray.dispose();this.ripples.dispose()}
+  dispose(){this.unfollow();this.listen(this.player,false);this.motes.dispose();this.waterline.dispose();this.underwater.dispose();this.bubbles.dispose();this.spray.dispose();this.lavaSpray.dispose();setLavaSunk(null);this.ripples.dispose()}
 }

@@ -19,6 +19,8 @@ import { nearestImage } from '../../../shared/wrap'
 import { overHorizon } from '../curve'
 import type { System } from '../../core/Game'
 import { Emitters } from '../../fx/Emitters'
+import { LavaAmbient } from '../../fx/LavaAmbient'
+import { windDrift } from '../weather'
 import { buildRibbonGeometry } from '../../fx/LavaFlow'
 import { createLavaMaterial } from '../../fx/material'
 import type { TerrainData } from './generate'
@@ -30,6 +32,7 @@ import { waterRiverMaxSpeed, waterWaves } from '../water/params'
 import { SEA_GRID } from '../water/seaWaves'
 import { CLIPMAP_LAYOUTS, Clipmap, clipmapReach } from '../water/clipmap'
 import { qualityLevel } from '../../core/quality'
+import { configureLavaWaves, lavaWaveSource } from '../water/lavaWaves'
 import { buildBedTexture, buildRiverSurface, buildStillSurface, createWaterSurface, configureWaterBlending, waterOpacityNode, type WaterBed } from '../water/surface'
 import { WaterfallMist, fallsFromRivers } from '../water/mist'
 import { createFallMaterial, riverPieces } from '../water/falls'
@@ -203,6 +206,9 @@ export class Volcanics implements System {
   /** Lake, pools and rivers, with their canonical centres and whether their uvs are world metres. */
   private readonly meshes: { mesh: THREE.Mesh; x: number; z: number; worldUv: boolean }[] = []
   private readonly emitters: Emitters
+  /** Flames, embers, shore sparks and wisps over a lava sea. */
+  readonly ambient: LavaAmbient
+  private readonly wind = { x: 0, y: 0, z: 0 }
   /** Where each vent is drawn now; empty forces a placement. */
   private placedVents: { x: number; z: number }[] = []
 
@@ -219,6 +225,7 @@ export class Volcanics implements System {
     this.group.name = 'volcanics'
     scene.add(this.group)
     this.emitters = new Emitters(scene)
+    this.ambient = new LavaAmbient(scene)
     this.rebuild()
   }
 
@@ -246,7 +253,9 @@ export class Volcanics implements System {
     this.bed?.texture.dispose()
     this.bed = buildBedTexture(data, worldLavaAltitude.value)
     for (const w of [this.newSea, this.newStill, this.newRiver]) { w.setColours(palette.seaShallow, palette.seaDeep); w.setBed(this.bed) }
-    for (const l of [this.lavaSea, this.lavaStill, this.lavaRiver]) l.setBed(this.bed)
+    configureLavaWaves(data.size)
+    this.ambient.setBed(this.bed)
+    for (const l of [this.lavaSea, this.lavaStill, this.lavaRiver]) { l.setBed(this.bed); l.setWaveSource(lavaWaveSource) }
     const seaMaterial = this.seaMaterial()
     // A dry world (the Moon) drains its sea below every valley: draw none of it.
     const useClip = !data.settings.dry && (this.seaIsLava || this.builtNew)
@@ -285,6 +294,7 @@ export class Volcanics implements System {
     const add = (geometry: THREE.BufferGeometry, material: THREE.Material, worldUv: boolean, spacing = stillSpacing) => {
       const mesh = new THREE.Mesh(geometry, material)
       mesh.userData.spacing = spacing
+      if (hot) mesh.renderOrder = this.lavaStill.renderOrder
       geometry.computeBoundingSphere()
       const c = geometry.boundingSphere!.center
       this.meshes.push({ mesh, x: c.x, z: c.z, worldUv })
@@ -417,7 +427,10 @@ export class Volcanics implements System {
       s.mesh.position.y = level
       if (s.mesh.material !== want) s.mesh.material = want
     }
-    if (this.clip) this.clip.material = want
+    if (this.clip) {
+      this.clip.material = want
+      this.clip.renderOrder = this.seaIsLava ? this.lavaSea.renderOrder : 0
+    }
     if (this.apron) {
       this.apron.position.y = level
       if (this.apron.material !== want) this.apron.material = want
@@ -439,6 +452,10 @@ export class Volcanics implements System {
     this.lavaRiver.update(dt, 0, dim)
     if (this.camera) { this.emitters.listener.x = this.camera.position.x; this.emitters.listener.y = this.camera.position.y; this.emitters.listener.z = this.camera.position.z }
     this.emitters.update(dt)
+    this.ambient.on = this.seaIsLava && !this.sampler.data.settings.dry
+    const cam = this.camera?.position
+    if (cam) windDrift(cam.x, cam.y, cam.z, this.wind)
+    this.ambient.update(dt, level, dim, this.wind)
   }
 
   private clear(): void {
@@ -468,6 +485,7 @@ export class Volcanics implements System {
     this.fallMaterial.dispose()
     this.bed?.texture.dispose()
     this.emitters.dispose()
+    this.ambient.dispose()
     this.scene.remove(this.group)
     for (const l of [this.lavaSea, this.waterSea, this.lavaStill, this.lavaRiver, this.waterStill, this.newSea, this.newStill, this.newRiver]) l.material.dispose()
   }
