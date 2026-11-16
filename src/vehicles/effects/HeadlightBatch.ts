@@ -98,7 +98,10 @@ export class HeadlightBatch {
         const d = t * range, r = .06 + d * .15
         this.points[k].copy(origin).addScaledVector(aim, d).addScaledVector(right, Math.cos(a) * r).addScaledVector(up, Math.sin(a) * r)
       }
-      this.quad(color, opacity, 0, row / SEGMENTS, 1, 1 / SEGMENTS, 0)
+      // Vanish at the grazing silhouette instead of outlining a solid octagonal shell.
+      const angle=(face+.5)*Math.PI*2/SIDES
+      const facing=Math.abs(view.dot(right)*Math.cos(angle)+view.dot(up)*Math.sin(angle))
+      this.quad(color, opacity*Math.pow(facing,.65), 0, row / SEGMENTS, 1, 1 / SEGMENTS, 0)
     }
     const altitude = origin.y - terrain.heightAt(origin.x, origin.z)
     const airborne = poolVisibility(altitude, 0)
