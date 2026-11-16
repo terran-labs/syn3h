@@ -13,6 +13,10 @@ underwater camera handling and reflection failure restoration. Its shared builde
 instantiate temporaries per graph and retain stable live uniforms. Post does not alter
 fallback coverage to hide clouds, PMREM capture state, or the shared material proxy.
 
+The reviewed Weather plan is `/Users/vtn/dev/Syn3h-wt/weather-sunrise-phase1/tools/weather-sunrise-phase1-handoff.md`.
+Its readonly Node<'vec3'> callback and Node<'vec3'>/Node<'float'> return contract are
+accepted by Post as a source-plan direction, subject to Orchestrator confirmation and parity.
+
 ## Source and exposure accounting
 
 `shaftSource(viewDirectionWS)` builds a TSL graph. It is not a per-frame JavaScript sampler.
@@ -49,7 +53,8 @@ backends and reject nonfinite results before interpreting captures.
 ## High and Ultra
 
 High uses Weather's exact fallback opacity expression, including direction gates,
-cloudLayerVisible, cloud coordinates, drift, time, coverage, density and horizon fade.
+cloud coordinates, drift, time, coverage, density and horizon fade. The callback does not
+depend on cloudLayerVisible: render visibility policy stays separate from weather opacity.
 `T = clamp(1 - alpha, 0, 1)` is an opacity-derived proxy. It is not an exact decomposition
 of the visible sky: that shader's background coefficient includes RGB extinction, and
 cloud color itself includes scattering. Label this limitation in acceptance evidence.
