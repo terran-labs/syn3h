@@ -13,6 +13,7 @@
  *    glow, because Preetham's sky goes black two degrees after sunset.
  *  - The ratio betaTheta / beta is guarded so zeroing every channel cannot produce NaN.
  */
+import type Node from 'three/src/nodes/core/Node.js'
 import { BackSide, BoxGeometry, Mesh, NodeMaterial, Vector2, Vector3, type Camera } from 'three/webgpu'
 import {
   Fn, If, acos, add, cameraPosition, clamp, cos, dot, exp, float, floor, fract, length, max, min, mix,
@@ -21,6 +22,16 @@ import {
 import { BETA_EPSILON, MIE_ZENITH_LENGTH, RAYLEIGH_ZENITH_LENGTH, SKY_FLOOR, SKY_SCALE } from './skyMath'
 
 type N = any // TSL node; the published types are too strict for shader code written like this
+
+/** Solar source in authored linear scene RGB, before exposure and cloud attenuation. */
+export interface ShaftSourceNodes {
+  readonly scattering: Node<'vec3'>
+  /** High cloud opacity proxy, not an exact factorization of the sky's RGB blend. */
+  readonly transmission: Node<'float'>
+}
+
+/** Builds a graph from a normalized camera-to-scene world ray (+Y up). */
+export type ShaftSourceBuilder = (viewDirectionWS: Node<'vec3'>) => ShaftSourceNodes
 
 export class AlienSkyMesh extends Mesh {
   /** Unit vector toward the sun. */
@@ -58,15 +69,134 @@ export class AlienSkyMesh extends Mesh {
   private readonly underwaterMix = uniform(0).setGroup(renderGroup).onRenderUpdate(frame =>
     frame.camera === this.underwaterCamera ? this.underwaterAmount : 0)
 
-  constructor() {
-    const material = new NodeMaterial()
-    super(new BoxGeometry(1, 1, 1), material)
+  /**
+   * Stable graph builder. Each output owns its Fn locals; only live uniforms are shared.
+   * The input is already normalized in the same world basis as sunDirection. No exposure,
+   * disc, background, twilight, night, stars, moon or underwater tint enters scattering.
+   * Post replaces transmission with its volume opacity at Ultra and can omit this output
+   * entirely there, so fallback cloud noise is not connected to the Ultra graph.
+   */
+  readonly shaftSource: ShaftSourceBuilder = (viewDirectionWS) => ({
+    scattering: Fn(() => {
+      const { Lin } = this.atmosphericTerms(viewDirectionWS)
+      return max(Lin.mul(SKY_SCALE), vec3(0.0))
+    })() as Node<'vec3'>,
+    transmission: Fn(() => {
+      const direction = viewDirectionWS as N
+      const transmission = float(1).toVar()
+      // Visibility belongs to the camera/PMREM policy, not the cloud opacity field.
+      If(direction.y.greaterThan(0.0).and(this.cloudCoverage.greaterThan(0.0)), () => {
+        const { cloudNoise, threshold, horizonFade } = this.cloudField(direction)
+        const depth = this.cloudDepth(cloudNoise, threshold)
+        const alpha = this.cloudAlpha(depth, horizonFade)
+        transmission.assign(clamp(sub(1.0, alpha), 0.0, 1.0))
+      })
+      return transmission
+    })() as Node<'float'>,
+  })
 
+  /** Called inside each consuming Fn, so mutable temporaries never cross graph scopes. */
+  private atmosphericTerms(direction: N): { Lin: N; L0: N; Fex: N; cosTheta: N; c: N } {
     const sunDir = this.sunDirection as N
     const vBetaR = this.betaR as N
     const vBetaM = this.betaM as N
     const vSunE = this.sunE as N
     const g = this.mieDirectionalG as N
+    const pi = float(Math.PI)
+    const THREE_OVER_SIXTEENPI = float(0.05968310365946075)
+    const ONE_OVER_FOURPI = float(0.07957747154594767)
+
+    // Optical length; the cutoff at 90 degrees avoids the formula's singularity.
+    const zenithAngle = acos(max(0.0, direction.y)) as N
+    const inverse = float(1.0).div(cos(zenithAngle).add(float(0.15).mul(pow(float(93.885).sub(zenithAngle.mul(180.0).div(pi)), -1.253))))
+    const sR = float(RAYLEIGH_ZENITH_LENGTH).mul(inverse)
+    const sM = float(MIE_ZENITH_LENGTH).mul(inverse)
+    const Fex = exp(mul(vBetaR, sR).add(mul(vBetaM, sM)).negate()) as N
+
+    const cosTheta = dot(direction, sunDir) as N
+    const c = cosTheta.mul(0.5).add(0.5)
+    const rPhase = THREE_OVER_SIXTEENPI.mul(float(1.0).add(pow(c, 2.0)))
+    const betaRTheta = vBetaR.mul(rPhase)
+    const g2 = pow(g, 2.0)
+    const inv = float(1.0).div(pow(max(1e-6, float(1.0).sub(float(2.0).mul(g).mul(cosTheta)).add(g2)), 1.5))
+    const mPhase = ONE_OVER_FOURPI.mul(float(1.0).sub(g2)).mul(inv)
+    const betaMTheta = vBetaM.mul(mPhase)
+
+    const ratio = add(betaRTheta, betaMTheta).div(max(add(vBetaR, vBetaM), vec3(BETA_EPSILON))) as N
+    const Lin = pow(vSunE.mul(ratio).mul(sub(1.0, Fex)), vec3(1.5)).toVar() as N
+    Lin.mulAssign(mix(vec3(1.0), pow(vSunE.mul(ratio).mul(Fex), vec3(0.5)), clamp(pow(sub(1.0, sunDir.y), 5.0), 0.0, 1.0)))
+
+    const L0 = vec3(0.1).mul(Fex)
+
+    return { Lin, L0, Fex, cosTheta, c }
+  }
+
+  /** Caller guards positive view height and coverage before evaluating projected UVs. */
+  private cloudField(direction: N): { cloudNoise: N; threshold: N; cloudMask: N; horizonFade: N } {
+    // Gradient noise with a sinless hash, as in SkyMesh. Plain functions inline the code.
+    const gradient = (i: N): N => {
+      const p = fract(i.xyx.mul(vec3(0.1031, 0.103, 0.0973))).toVar() as N
+      p.addAssign(dot(p, p.yzx.add(33.33)))
+      return fract(p.xx.add(p.yz).mul(p.zy)).mul(2.0).sub(1.0)
+    }
+    const noise = (p: N): N => {
+      const i = floor(p) as N
+      const f = fract(p) as N
+      const u = f.mul(f).mul(f).mul(f.mul(f.mul(6.0).sub(15.0)).add(10.0)) as N
+      const a = dot(gradient(i), f)
+      const b = dot(gradient(i.add(vec2(1.0, 0.0))), f.sub(vec2(1.0, 0.0)))
+      const cc = dot(gradient(i.add(vec2(0.0, 1.0))), f.sub(vec2(0.0, 1.0)))
+      const d = dot(gradient(i.add(vec2(1.0, 1.0))), f.sub(vec2(1.0, 1.0)))
+      return mix(mix(a, b, u.x), mix(cc, d, u.x), u.y).mul(1.6)
+    }
+    // Per octave drift makes clouds billow instead of scrolling as a rigid stamp.
+    const fbm = (position: N, drift: N): N => {
+      const p = vec2(position).toVar() as N
+      const result = float(0.0).toVar() as N
+      let amplitude = 1.0
+      for (let o = 0; o < 4; o++) {
+        result.addAssign(noise(p).mul(amplitude))
+        amplitude *= 0.5
+        p.assign(p.mul(2.0).add(drift))
+      }
+      return result
+    }
+
+    const coverage = this.cloudCoverage as N
+    const elevationU = this.cloudElevation as N
+    const elevation = mix(1.0, 0.1, elevationU)
+    const cloudUV = direction.xz.div(direction.y.mul(elevation)).toVar() as N
+    cloudUV.mulAssign(this.cloudScale)
+    cloudUV.addAssign(this.cloudOffset)
+
+    const evolve = time.mul(this.cloudSpeed).mul(300.0)
+    const cloudNoise = fbm(cloudUV.mul(1000.0), evolve).mul(0.7).add(0.5).clamp(0.0, 1.0).toVar() as N
+
+    const region = noise(cloudUV.mul(300.0)).mul(0.37).add(0.5)
+    const cov = clamp(coverage.add(region.sub(0.5).mul(0.6)), 0.0, 1.0)
+    const threshold = sub(1.0, cov).toVar() as N
+    const cloudMask = smoothstep(threshold, threshold.add(0.3), cloudNoise).toVar() as N
+
+    const horizonFade = smoothstep(0.0, add(0.03, mul(0.06, elevationU)), direction.y)
+    cloudMask.mulAssign(horizonFade)
+
+    return { cloudNoise, threshold, cloudMask, horizonFade }
+  }
+
+  private cloudDepth(cloudNoise: N, threshold: N): N {
+    return max(0.0, cloudNoise.sub(threshold)).toVar()
+  }
+
+  private cloudAlpha(depth: N, horizonFade: N): N {
+    return sub(1.0, exp(depth.mul(this.cloudDensity).mul(-12.0))).mul(horizonFade).toVar()
+  }
+
+  constructor() {
+    const material = new NodeMaterial()
+    super(new BoxGeometry(1, 1, 1), material)
+
+    const sunDir = this.sunDirection as N
+    const vSunE = this.sunE as N
 
     const vertexNode = Fn(() => {
       const position = modelViewProjection as N
@@ -75,34 +205,9 @@ export class AlienSkyMesh extends Mesh {
     })()
 
     const colorNode = Fn(() => {
-      const pi = float(Math.PI)
       const sunAngularDiameterCos = float(0.9999566769464484)
-      const THREE_OVER_SIXTEENPI = float(0.05968310365946075)
-      const ONE_OVER_FOURPI = float(0.07957747154594767)
-
       const direction = normalize((positionWorld as N).sub(cameraPosition)) as N
-
-      // Optical length; the cutoff at 90 degrees avoids the formula's singularity.
-      const zenithAngle = acos(max(0.0, direction.y)) as N
-      const inverse = float(1.0).div(cos(zenithAngle).add(float(0.15).mul(pow(float(93.885).sub(zenithAngle.mul(180.0).div(pi)), -1.253))))
-      const sR = float(RAYLEIGH_ZENITH_LENGTH).mul(inverse)
-      const sM = float(MIE_ZENITH_LENGTH).mul(inverse)
-      const Fex = exp(mul(vBetaR, sR).add(mul(vBetaM, sM)).negate()) as N
-
-      const cosTheta = dot(direction, sunDir) as N
-      const c = cosTheta.mul(0.5).add(0.5)
-      const rPhase = THREE_OVER_SIXTEENPI.mul(float(1.0).add(pow(c, 2.0)))
-      const betaRTheta = vBetaR.mul(rPhase)
-      const g2 = pow(g, 2.0)
-      const inv = float(1.0).div(pow(max(1e-6, float(1.0).sub(float(2.0).mul(g).mul(cosTheta)).add(g2)), 1.5))
-      const mPhase = ONE_OVER_FOURPI.mul(float(1.0).sub(g2)).mul(inv)
-      const betaMTheta = vBetaM.mul(mPhase)
-
-      const ratio = add(betaRTheta, betaMTheta).div(max(add(vBetaR, vBetaM), vec3(BETA_EPSILON))) as N
-      const Lin = pow(vSunE.mul(ratio).mul(sub(1.0, Fex)), vec3(1.5)).toVar() as N
-      Lin.mulAssign(mix(vec3(1.0), pow(vSunE.mul(ratio).mul(Fex), vec3(0.5)), clamp(pow(sub(1.0, sunDir.y), 5.0), 0.0, 1.0)))
-
-      const L0 = vec3(0.1).mul(Fex)
+      const { Lin, L0, Fex, cosTheta, c } = this.atmosphericTerms(direction)
 
       const sundisc = clamp(cosTheta.sub(sunAngularDiameterCos).mul(50000.0), 0.0, 1.0).mul(this.showSunDisc)
       const sundiscColor = min(vSunE.mul(Fex), 80.0).mul(760.0).mul(sundisc)
@@ -138,60 +243,16 @@ export class AlienSkyMesh extends Mesh {
         texColor.addAssign(vec3(0.75, 0.8, 0.9).mul(moon).mul(stars).mul(0.5).mul(Fex))
       })
 
-      // Gradient noise with a sinless hash, as in SkyMesh. Plain functions inline the code.
-      const gradient = (i: N): N => {
-        const p = fract(i.xyx.mul(vec3(0.1031, 0.103, 0.0973))).toVar() as N
-        p.addAssign(dot(p, p.yzx.add(33.33)))
-        return fract(p.xx.add(p.yz).mul(p.zy)).mul(2.0).sub(1.0)
-      }
-      const noise = (p: N): N => {
-        const i = floor(p) as N
-        const f = fract(p) as N
-        const u = f.mul(f).mul(f).mul(f.mul(f.mul(6.0).sub(15.0)).add(10.0)) as N
-        const a = dot(gradient(i), f)
-        const b = dot(gradient(i.add(vec2(1.0, 0.0))), f.sub(vec2(1.0, 0.0)))
-        const cc = dot(gradient(i.add(vec2(0.0, 1.0))), f.sub(vec2(0.0, 1.0)))
-        const d = dot(gradient(i.add(vec2(1.0, 1.0))), f.sub(vec2(1.0, 1.0)))
-        return mix(mix(a, b, u.x), mix(cc, d, u.x), u.y).mul(1.6)
-      }
-      // Per octave drift makes clouds billow instead of scrolling as a rigid stamp.
-      const fbm = (position: N, drift: N): N => {
-        const p = vec2(position).toVar() as N
-        const result = float(0.0).toVar() as N
-        let amplitude = 1.0
-        for (let o = 0; o < 4; o++) {
-          result.addAssign(noise(p).mul(amplitude))
-          amplitude *= 0.5
-          p.assign(p.mul(2.0).add(drift))
-        }
-        return result
-      }
-
       const coverage = this.cloudCoverage as N
-      const elevationU = this.cloudElevation as N
       If(direction.y.greaterThan(0.0).and(coverage.greaterThan(0.0)).and(this.cloudVisibility.greaterThan(0)), () => {
-        const elevation = mix(1.0, 0.1, elevationU)
-        const cloudUV = direction.xz.div(direction.y.mul(elevation)).toVar() as N
-        cloudUV.mulAssign(this.cloudScale)
-        cloudUV.addAssign(this.cloudOffset)
-
-        const evolve = time.mul(this.cloudSpeed).mul(300.0)
-        const cloudNoise = fbm(cloudUV.mul(1000.0), evolve).mul(0.7).add(0.5).clamp(0.0, 1.0).toVar() as N
-
-        const region = noise(cloudUV.mul(300.0)).mul(0.37).add(0.5)
-        const cov = clamp(coverage.add(region.sub(0.5).mul(0.6)), 0.0, 1.0)
-        const threshold = sub(1.0, cov).toVar() as N
-        const cloudMask = smoothstep(threshold, threshold.add(0.3), cloudNoise).toVar() as N
-
-        const horizonFade = smoothstep(0.0, add(0.03, mul(0.06, elevationU)), direction.y)
-        cloudMask.mulAssign(horizonFade)
+        const { cloudNoise, threshold, cloudMask, horizonFade } = this.cloudField(direction)
 
         // Clouds are lit by the same scattering, so they turn the sky's colours at dusk.
         const dayFactor = smoothstep(-0.08, 0.3, sunDir.y)
         const sunColor = vSunE.mul(Fex).mul(0.22).mul(0.04).toVar() as N
         const skyAmbient = Lin.mul(0.04).add(vec3(...SKY_FLOOR)).add(night)
 
-        const depth = max(0.0, cloudNoise.sub(threshold)).toVar() as N
+        const depth = this.cloudDepth(cloudNoise, threshold)
         const beer = exp(depth.mul(-4.0)).toVar() as N
         const powder = sub(1.0, beer.mul(beer))
         const shade = mix(0.45, 1.0, beer.mul(powder).mul(2.6).clamp(0.0, 1.0))
@@ -202,7 +263,7 @@ export class AlienSkyMesh extends Mesh {
         cloudColor.addAssign(sunColor.mul(silver).mul(edge).mul(0.6))
         cloudColor.mulAssign(max(dayFactor, 0.03))
 
-        const alpha = sub(1.0, exp(depth.mul(this.cloudDensity).mul(-12.0))).mul(horizonFade).toVar() as N
+        const alpha = this.cloudAlpha(depth, horizonFade)
         texColor.subAssign(L0.mul(0.04).add(sundiscColor).mul(alpha))
         const cloudAerial = mix(texColor, cloudColor, Fex)
         texColor.assign(mix(texColor, cloudAerial, alpha))

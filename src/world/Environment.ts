@@ -14,7 +14,7 @@ import { params } from '../../shared/params'
 import type { Game, System } from '../core/Game'
 import type { Terrain } from './Terrain'
 import { SkyEnvironmentMap } from './sky/SkyEnvironmentMap'
-import { AlienSkyMesh } from './sky/AlienSkyMesh'
+import { AlienSkyMesh, type ShaftSourceBuilder } from './sky/AlienSkyMesh'
 import { SKY_PRESET_NAMES, applySkyPreset } from './sky/presets'
 import {
   NIGHT_LEVEL, TWILIGHT_LEVEL, autoExposure, luminance, twilightAmount, twilightTint, betaM, betaR, horizonColors, moonAmount, nightAmount, nightTint, sanitizeRGB, sunDirection as sunDirectionAt,
@@ -39,6 +39,8 @@ export interface CloudInputs {
 }
 
 export interface Environment extends System {
+  /** Raw linear solar scattering and High cloud opacity proxy; stable graph builder. */
+  readonly shaftSource: ShaftSourceBuilder
   /** Unit vector pointing from the ground toward the sun. Other systems may read it. */
   readonly sunDirection: THREE.Vector3
   /** Linear colour times intensity of the direct light (sun by day, moon by night). */
@@ -313,6 +315,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   }
 
   return {
+    shaftSource: sky.shaftSource,
     sunDirection,
     sunColor,
     lightDirection,
