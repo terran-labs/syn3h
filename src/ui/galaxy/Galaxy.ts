@@ -470,6 +470,9 @@ void main() {
       // The painted map: colour, and in alpha how dry the ground is (0 sea, lake or river).
       vec4 m = mapAt(found, vec2(atan(g.x, g.z) / 6.2831853 + 0.5, 0.5 - asin(clamp(g.y, -1.0, 1.0)) / 3.1415927));
       surface = m.rgb; wet = 1.0 - m.a;
+      // Close up, ground finer than the map: seeded grain that fades out before it can alias.
+      float footprint = length(fwidth(g));
+      if (footprint < 0.006) surface *= 1.0 + (fbm(g * 220.0 + uKind[found].w) - 0.5) * 0.22 * (1.0 - smoothstep(0.002, 0.006, footprint)) * (1.0 - wet);
     } else {
       // Until the map is painted: the biome's own palette as a soft ball, its land share true.
       float h = fbm(g * 2.1 + uKind[found].w), detail = fbm(g * 7.0);
