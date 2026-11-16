@@ -21,13 +21,13 @@ export const BOT_CHAT_REFILL_S = 3
 // shared sliders are locked: a guest turning chat off for everyone is not a guest's call.
 
 /** Chat between people in this room. */
-export const chatOn = defineParam({ id: 'chat.on', label: 'Room chat', group: 'Chat', scope: 'world', default: true })
+export const chatOn = defineParam({ id: 'chat.on', label: 'Room chat (host only)', group: 'Game', scope: 'world', default: true })
 /** Bots talk in the chat (src/bots/banter). */
-export const botChatter = defineParam({ id: 'bots.chatter', label: 'Bot chatter', group: 'Bots', scope: 'world', default: true })
+export const botChatter = defineParam({ id: 'bots.chatter', label: 'Bot chatter (host only)', group: 'Bots', scope: 'world', default: true })
 /** How often bots talk: 0 quiet, 1 normal, 2 chatty. */
-export const botChatterLevel = defineParam({ id: 'bots.chatterLevel', label: 'Bot chatter: 0 quiet, 1 normal, 2 chatty', group: 'Bots', scope: 'world', default: 1, min: 0, max: 2, step: 1 })
+export const botChatterLevel = defineParam({ id: 'bots.chatterLevel', label: 'Bot chatter: 0 quiet, 1 normal, 2 chatty (host only)', group: 'Bots', scope: 'world', default: 1, min: 0, max: 2, step: 1 })
 /** Bots go and free a stuck bot with the grapple (src/bots/rescue). Works with chatter off. */
-export const botRescue = defineParam({ id: 'bots.rescue', label: 'Bots rescue each other', group: 'Bots', scope: 'world', default: true })
+export const botRescue = defineParam({ id: 'bots.rescue', label: 'Bots rescue each other (host only)', group: 'Bots', scope: 'world', default: true })
 
 /** Parameters only the host may change. */
 export const HOST_ONLY_PARAMS: ReadonlySet<string> = new Set([chatOn.def.id, botChatter.def.id, botChatterLevel.def.id, botRescue.def.id])
