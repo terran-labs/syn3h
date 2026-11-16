@@ -504,7 +504,9 @@
 .galaxy-ui { position: absolute; inset: 0; pointer-events: none; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding: 0 16px max(18px, env(safe-area-inset-bottom)); }
 .galaxy-ui > * { pointer-events: auto; }
 .galaxy-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-.syn3h-shell button.galaxy-label { position: absolute; left: 0; top: 0; translate: -200px -200px; transform: translateX(-50%); pointer-events: auto; min-height: 44px; min-width: 44px; display: grid; align-content: center; cursor: pointer; }
+.syn3h-shell button.galaxy-label { position: absolute; left: 0; top: 0; translate: -200px -200px; transform: translateX(-50%); pointer-events: auto; min-height: 0; min-width: 44px; display: grid; align-content: center; cursor: pointer; }
+/* The plate is drawn compact; the tap target reaches past it, invisibly, to at least 44 px. */
+.syn3h-shell button.galaxy-label::after { content: ''; position: absolute; inset: -9px -4px; }
 /* The look is the shared label plate (src/ui/label-plate.css), as on the vehicle labels. */
 .syn3h-shell .galaxy-label.is-locked { opacity: .45; }
 /* No room for this label beside its world: it fades until focused. Its world still answers a tap. */

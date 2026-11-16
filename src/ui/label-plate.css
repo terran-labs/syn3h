@@ -19,7 +19,7 @@
   color: var(--s3-ink, #f3fbff); text-align: left; text-transform: none; letter-spacing: 0;
   text-shadow: var(--halo-under, 0 0 1px rgb(0 8 14 / .9), 0 1px 2px rgb(0 8 14 / .55));
   -webkit-backdrop-filter: none; backdrop-filter: none;
-  transition: border-color .18s, box-shadow .18s;
+  transition: border-color .18s, box-shadow .18s, background-color .18s, scale .18s;
 }
 /* The accent bar. */
 .s3-plate:not(#s3-plate)::before {
@@ -33,13 +33,20 @@
 .s3-plate:not(#s3-plate) > small.s3-plate-quiet { color: var(--s3-soft, #cfe3ec); }
 .s3-plate:not(#s3-plate) > small:empty { display: none; }
 .s3-plate.is-bot:not(#s3-plate) { --plate-tone: var(--s3-warn, #ffb08a); border-color: color-mix(in srgb, var(--s3-warn, #ffb08a) 32%, transparent); box-shadow: none; }
-/* Pointed at, focused or selected: a brighter rim and bar. */
+/* Selected (the world in play): a brighter rim and bar. Pointed at or focused, unmistakably:
+   the same, plus a cyan glow, a lighter fill and a slight lift. */
 .s3-plate:not(#s3-plate):is(:hover, :focus-visible, .is-selected) {
   border-color: color-mix(in srgb, var(--s3-accent-2, #c6f1ff) 85%, transparent);
   box-shadow: var(--halo-glow, 0 0 6px rgb(143 227 255 / .14)), 0 0 10px color-mix(in srgb, var(--plate-tone) 22%, transparent);
 }
 .s3-plate:not(#s3-plate):is(:hover, :focus-visible, .is-selected)::before { filter: brightness(1.25); box-shadow: 0 0 7px color-mix(in srgb, var(--plate-tone) 70%, transparent); }
+.s3-plate:not(#s3-plate):is(:hover, :focus-visible) {
+  border-color: var(--s3-accent-2, #c6f1ff); scale: 1.04;
+  background: color-mix(in srgb, color-mix(in srgb, var(--halo-fill, rgb(3 11 19 / .34)), rgb(3 11 19) 35%), var(--plate-tone) 12%);
+  box-shadow: var(--halo-glow, 0 0 6px rgb(143 227 255 / .14)), 0 0 16px color-mix(in srgb, var(--plate-tone) 45%, transparent);
+}
 .s3-plate:not(#s3-plate):focus-visible { outline: 1px solid var(--s3-accent-2, #c6f1ff); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .s3-plate:not(#s3-plate):is(:hover, :focus-visible) { scale: none; } }
 
 /* The leader: a 1 px line from the plate to what it names, in the plate's tone. */
 .s3-leader { position: absolute; left: 0; top: 0; height: 1px; transform-origin: 0 50%; pointer-events: none; background: var(--plate-tone, var(--s3-accent, #8fe3ff)); opacity: .65; }

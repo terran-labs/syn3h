@@ -35,6 +35,18 @@ describe('galaxy labels', () => {
     const [spot] = placeLabels(places, sizes(['a']), bounds, { previous: new Map([['a', 2]]) })
     expect(spot.spot).toBe(2)
   })
+  // Bug it catches: on a phone, a label clamped to the screen edge covered its own world, or
+  // sat far from it with no leader.
+  it('keeps every label beside its own world: off every disc, leader at most 40 px', () => {
+    const places: LabelPlace[] = [{ id: 'a', x: 20, y: 300, radius: 18, visible: true }, { id: 'b', x: 200, y: 670, radius: 12, visible: true }, { id: 'c', x: 300, y: 300, radius: 14, visible: true }]
+    const sun: LabelPlace = { id: 'sun', x: 300, y: 340, radius: 20, visible: true }
+    for (const spot of placeLabels(places, sizes(['a', 'b', 'c']), bounds, { avoid: [sun] }).filter(s => !s.crowded)) {
+      const p = places.find(q => q.id === spot.id)!, box = { left: spot.x - size.width / 2, top: spot.y, right: spot.x + size.width / 2, bottom: spot.y + size.height }
+      for (const disc of [...places, sun]) expect(over(spot, disc)).toBe(false)
+      const nx = Math.min(box.right, Math.max(box.left, p.x)), ny = Math.min(box.bottom, Math.max(box.top, p.y))
+      expect(Math.hypot(nx - p.x, ny - p.y) - p.radius).toBeLessThanOrEqual(40)
+    }
+  })
   it('skips worlds that are not visible', () => {
     expect(placeLabels([{ id: 'a', x: 0, y: 0, radius: 1, visible: false }], sizes(['a']), bounds)).toEqual([])
   })
@@ -69,12 +81,12 @@ describe('galaxy labels', () => {
     const ring = Array.from({ length: 8 }, (_, i): LabelPlace => ({ id: `r${i}`, x: 200 + Math.cos(i * Math.PI / 4) * 40, y: 300 + Math.sin(i * Math.PI / 4) * 40, radius: 26, visible: true, depth: 30 }))
     const named = placeLabels([play, ...ring], sizes(['play', ...ring.map(r => r.id)]), bounds, { first: 'play' })
     expect(named.find(s => s.id === 'play')!.crowded).toBe(false)
-    // The same ring nearer the eye than the world in play: faded rather than drawn over it.
+    // The same ring nearer the eye than the world in play: named further out if there is room,
+    // never drawn over it.
     const nearRing = ring.map(r => ({ ...r, depth: 2 }))
     const faded = placeLabels([play, ...nearRing], sizes(['play', ...ring.map(r => r.id)]), bounds, { first: 'play' })
     const spot = faded.find(s => s.id === 'play')!
     if (!spot.crowded) for (const disc of nearRing) expect(over(spot, disc)).toBe(false)
-    expect(spot.crowded).toBe(true)
   })
   it('lets the world in play fall back to any spot clear of nearer worlds', () => {
     const play: LabelPlace = { id: 'play', x: 200, y: 300, radius: 10, visible: true, depth: 20 }

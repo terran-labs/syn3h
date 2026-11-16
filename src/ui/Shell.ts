@@ -1055,14 +1055,12 @@ export class Shell implements System {
           this.element.style.setProperty('--lobby-footer-space', `${innerHeight - this.linksTop}px`)
         }
         const shown = chosen ? places.filter(place => place.id === chosen) : places
-        const spots = placeLabels(shown, this.labelSizes, { width: innerWidth, height: innerHeight, bottom: this.linksTop, top: this.brandBottom + 4 }, { first: chosen ?? currentPlanet().id, previous: this.labelSpots })
+        const spots = placeLabels(shown, this.labelSizes, { width: innerWidth, height: innerHeight, bottom: this.linksTop, top: this.brandBottom + 4 }, { first: chosen ?? currentPlanet().id, previous: this.labelSpots, avoid: this.galaxy ? [this.galaxy.sunScreen] : [] })
         if (chosen) for (const place of places) if (place.id !== chosen) chips.get(place.id)!.classList.add('is-crowded')
         for (const place of places) chips.get(place.id)!.hidden = !place.visible
         for (const spot of spots) {
           const chip = chips.get(spot.id)!; this.labelSpots.set(spot.id, spot.spot)
           chip.classList.toggle('is-crowded', spot.crowded)
-          // Blocked: nowhere clear of the worlds in front, so out of sight even when focused (labels.ts).
-          if (spot.blocked) { chip.hidden = true; continue }
           const place = places.find(p => p.id === spot.id), size = this.labelSizes.get(spot.id)
           if (place && size) this.placeChip(chip, spot.x, spot.y, size, place)
         }
@@ -1087,9 +1085,8 @@ export class Shell implements System {
     const left = x - size.width / 2, nx = Math.min(left + size.width, Math.max(left, planet.x)), ny = Math.min(y + size.height, Math.max(y, planet.y))
     const dx = nx - planet.x, dy = ny - planet.y, reach = Math.hypot(dx, dy), length = reach - planet.radius
     const leader = chip.firstElementChild as HTMLElement
-    // A label in its usual spot sits 6 to 8 px off the limb. No leader when the plate touches
-    // the planet, nor one across the scene when the label had to be pushed further away.
-    if (!(length > 1.5 && length <= 24)) { if (!leader.hidden) leader.hidden = true; last.length = -1; return }
+    // The layout keeps leaders to 40 px (labels.ts); none when the plate touches the planet.
+    if (!(length > 1.5 && length <= 44)) { if (!leader.hidden) leader.hidden = true; last.length = -1; return }
     const sx = nx - left, sy = ny - y, angle = Math.atan2(-dy, -dx)
     if (leader.hidden) leader.hidden = false
     if (Math.abs(sx - last.sx) <= .5 && Math.abs(sy - last.sy) <= .5 && Math.abs(length - last.length) <= .5 && Math.abs(angle - last.angle) <= .01) return

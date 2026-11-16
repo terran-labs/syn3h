@@ -913,7 +913,10 @@ export class Galaxy {
     const time = this.clock; this.holding = still
     // The view keeps a little of the last drag's swing, and drifts very slowly when left alone.
     this.swing(elapsed, !this.drag && this.chosen < 0 && !still, wallElapsed)
-    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : [0.5, 0.5, 1]
+    // A tall or short phone screen frames the system a little smaller, so the nearest orbits
+    // stay above the hint and the lobby buttons. Desktop windows are unchanged.
+    const tall = this.host.clientHeight > this.host.clientWidth * 1.3 || this.host.clientHeight < 500
+    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : [0.5, 0.5, tall ? 0.85 : 1]
     const framingMoves = this.framing.some((v, i) => Math.abs(v - frameGoal[i]) > 0.001)
     this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], perFrame(0.18, elapsed)) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
@@ -960,11 +963,16 @@ export class Galaxy {
       const d = sub(place.position, view.eye), z = dot(d, view.forward)
       return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0, depth: z }
     })
+    // The sun's bright core, which labels keep clear of.
+    const toSun = sub([0, 0, 0], view.eye), sunZ = Math.max(dot(toSun, view.forward), 0.001)
+    this.sunScreen = { x: width * this.framing[0] + (dot(toSun, view.right) / (sunZ * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(toSun, view.up) / (sunZ * view.tan)) * short / 2, radius: Math.max(6, short * 0.02) }
     this.options.onLayout?.(this.screen, this.chosen >= 0 ? worlds[this.chosen].id : undefined)
     // Arrival: a second and a half after choosing, whatever the frame rate.
     if (this.chosen >= 0 && !this.arrived && (this.arriving += this.step) > 1.5) { this.arrived = true; this.options.onArrive(worlds[this.chosen].id) }
   }
   private screen: { id: string; x: number; y: number; radius: number; visible: boolean; depth: number }[] = []
+  /** Where the sun's core is on screen, as of the last frame drawn. */
+  sunScreen = { x: -1e4, y: -1e4, radius: 0 }
   /** Fly to a world, as a tap on it does. */
   choose(id: string): void { this.handled = performance.now();
     this.wake = 2; const index = this.options.worlds.findIndex(world => world.id === id)
