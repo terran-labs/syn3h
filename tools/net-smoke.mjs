@@ -26,9 +26,18 @@
  * Exits non zero on any failure or page error.
  */
 import { randomBytes } from 'node:crypto'
-import { writeFileSync } from 'node:fs'
+import { writeFileSync, mkdirSync } from 'node:fs'
+import { isAbsolute, join } from 'node:path'
 import { chromium } from 'playwright-core'
+import { createShotEvidence, createShotDecision } from './shot-evidence.mjs'
 
+// Opt-in only. Reserve a caller-owned fresh directory before opening a browser.
+const evidenceDir = process.env.SYN3H_SHOT_EVIDENCE_DIR
+const evidenceEnabled = evidenceDir !== undefined
+if (evidenceEnabled) {
+  if (!evidenceDir || !isAbsolute(evidenceDir)) throw new Error('SYN3H_SHOT_EVIDENCE_DIR must be an absolute fresh directory')
+  mkdirSync(evidenceDir) // Non-recursive and exclusive: existing output is never reused.
+}
 const base = process.argv[2] ?? 'http://localhost:5183/'
 // Full timestamp plus random suffix avoids revisiting a persisted fixture room.
 const room = `smoke${Date.now()}-${randomBytes(6).toString('hex')}`
@@ -102,19 +111,63 @@ async function captureFailure() {
 }
 
 /** Record calls to the networking audio hooks (main.ts may not pass real audio yet). */
-const spyAudio = (page) => page.evaluate(() => {
+const spyAudio = (page) => page.evaluate((factorySource) => {
   const calls = []
   window.__audioCalls = calls
   window.syn3hNet.ctx.audio = {
     play: (sound) => calls.push(sound),
     impact: (strength) => calls.push(`impact:${strength.toFixed(1)}`),
   }
-})
-const audioCalls = (page) => page.evaluate(() => window.__audioCalls)
+  // Test-owned factory is identical to the one imported by the fake-clock tests.
+  if (!factorySource) return
+  const evidence = window.__shotEvidence = (0,eval)(`(${factorySource})`)()
+  const n=window.syn3hNet
+  n.conn.onText=evidence.wrapText(n.conn.onText)
+  n.conn.send=evidence.wrapSend(n.conn.send,()=>n.id)
+  n.ctx.audio.play=evidence.wrapAudio(n.ctx.audio.play)
+}, evidenceEnabled ? createShotEvidence.toString() : null)
+const audioCalls = (page) => evidenceEnabled
+  ? page.evaluate(() => ({ calls: [...window.__audioCalls], evidence: window.__shotEvidence.snapshot('human') }))
+  : page.evaluate(() => window.__audioCalls)
 
 const results = []
+const shotEvidencePath = evidenceEnabled ? join(evidenceDir, 'shot-evidence.json') : null
+const evidenceWriteFailures = []
+const evidenceCaptureFailures = []
+let evidenceCaptureState = 'pending'
+let finalCollectors = []
+function evidenceComplete() {
+  return evidenceCaptureState === 'complete' && evidenceWriteFailures.length === 0 && evidenceCaptureFailures.length === 0
+}
+function saveShotEvidence(stage,collectors=finalCollectors) {
+  try {
+    writeFileSync(shotEvidencePath,JSON.stringify({room,base,stage,evidenceWriteFailures,evidenceCaptureFailures,evidenceCaptureState,evidenceComplete:evidenceComplete(),collectors,
+      frozenSamples:results.filter(r=>r.name.startsWith('matched ')).slice(0,2),
+      failedVerdicts:results.filter(r=>!r.ok).map(r=>({name:r.name,ok:r.ok})).slice(0,64)},null,2))
+  } catch(e) {
+    const failure={stage,error:String(e)}; evidenceWriteFailures.push(failure)
+    console.error('SHOT EVIDENCE WRITE FAILURE',JSON.stringify(failure))
+  }
+}
+async function captureShotCollectors() {
+  return Promise.all(clients.filter(c=>c.name==='Alice' || c.name==='Bob').slice(0,2).map(async ({name,page})=>{
+    let timer
+    try {
+      return {name,...await Promise.race([
+        page.evaluate(()=>({phases:['human','bot'].map(label=>{
+          const s=window.__shotEvidence?.snapshot(label)
+          if(!s)return null
+          return {...s,emitted:s.emitted.slice(0,6),events:s.events.slice(0,128),truncated:s.events.length>128}
+        })})),
+        new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('Collector capture exceeded 1500ms')),1500)})
+      ])}
+    } catch(e) {return {name,error:String(e),partial:true}}
+    finally {clearTimeout(timer)}
+  }))
+}
 function check(name, ok, detail) {
   results.push({ name, ok: Boolean(ok), detail })
+  if(evidenceEnabled && !ok) saveShotEvidence('failed-verdict')
   console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${JSON.stringify(detail)}`)
 }
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -257,10 +310,11 @@ try {
     window.syn3h.player.teleport(p, 0)
   })
   await wait(3300)
-  const scoreBefore = await a.evaluate((id) => window.syn3hNet.game.scores[id] ?? 0, idB)
+  const scoreBefore = await a.evaluate((id) => { window.__shotEvidence?.begin('human',id,window.syn3hNet.id); return window.syn3hNet.game.scores[id] ?? 0 }, idB)
   for (let i = 0; i < 6; i++) {
     await b.evaluate((id) => {
       const n = window.syn3hNet
+      window.__shotEvidence?.begin('human',n.id,id)
       const target = n.remotes.get(id).vehicle.body.translation()
       n.fire(undefined, target)
     }, idA)
@@ -270,15 +324,21 @@ try {
   }
   await wait(600)
   const hitsA = await a.evaluate(() => window.syn3hNet.stats.hitsTaken)
-  const scoreAfter = await a.evaluate((id) => window.syn3hNet.game.scores[id] ?? 0, idB)
+  const scoreSample = evidenceEnabled ? await a.evaluate((id) => ({value:window.syn3hNet.game.scores[id] ?? 0, at:performance.now(), evidence:window.__shotEvidence.snapshot('human')}), idB) : null
+  const scoreAfter = evidenceEnabled ? scoreSample.value : await a.evaluate((id) => window.syn3hNet.game.scores[id] ?? 0, idB)
   check('victim detects the laser hit', hitsA > 0, { hitsA })
   const itNow = await a.evaluate(() => window.syn3hNet.game.it)
   check('"it" scores for a laser tag', scoreAfter === scoreBefore + 1, { scoreBefore, scoreAfter, it: itNow })
 
   // 6. Sounds.
-  const [soundsA, soundsB] = [await audioCalls(a), await audioCalls(b)]
+  const [soundSampleA, soundSampleB] = [await audioCalls(a), await audioCalls(b)]
+  const [soundsA,soundsB]=evidenceEnabled ? [soundSampleA.calls,soundSampleB.calls] : [soundSampleA,soundSampleB]
   check('sounds: A heard B materialize and the ram', soundsA.includes('materialize') && soundsA.some((c) => c.startsWith('impact:')), { soundsA })
   check('sounds: B heard its shot and the hit', soundsB.includes('laserShot') && soundsB.includes('laserHit'), { soundsB })
+  if (evidenceEnabled) {
+    const humanOriginals = results.filter(r => ['victim detects the laser hit','"it" scores for a laser tag','sounds: B heard its shot and the hit'].includes(r.name)).map(r=>r.ok)
+    check('matched human shot evidence at original samples', createShotDecision().seal({originals:humanOriginals,local:scoreSample.evidence,remote:soundSampleB.evidence,score:scoreAfter,scoreBefore,requireScore:true}).ok, {scoreSample,soundSampleB})
+  }
 
   // 7. Identity and name tags.
   await a.evaluate(() => window.syn3hNet.setProfile({ kind: 'buggy-syn3h', colors: { body: '#FF2200', accent: '#00ffcc' } }))
@@ -339,10 +399,11 @@ try {
     // Audio hears the other player and the bot on both sides (replica on B, own bot on A).
     const audible = await both(() => window.syn3hNet.audibleVehicles().length)
     check('audio gets the other player and the bot', audible[0] === 2 && audible[1] === 2, { audible })
-    const judgedBefore = await a.evaluate(() => window.syn3hNet.stats.hitsJudged)
+    const judgedBefore = await a.evaluate(({shooter,victim}) => { window.__shotEvidence?.begin('bot',shooter,victim); return window.syn3hNet.stats.hitsJudged }, {shooter:idB,victim:BOT})
     for (let i = 0; i < 6; i++) {
       await b.evaluate((id) => {
         const n = window.syn3hNet
+        window.__shotEvidence?.begin('bot',n.id,id)
         const target = n.remotes.get(id).vehicle.body.translation()
         n.fire(undefined, target)
       }, BOT)
@@ -351,10 +412,13 @@ try {
       await wait(400)
     }
     await wait(500)
-    const judged = await a.evaluate(() => window.syn3hNet.stats.hitsJudged)
-    const hitSeen = await b.evaluate(() => window.__audioCalls.filter((c) => c === 'laserHit').length)
+    const judgedSample = evidenceEnabled ? await a.evaluate(() => ({value:window.syn3hNet.stats.hitsJudged,at:performance.now(),evidence:window.__shotEvidence.snapshot('bot')})) : null
+    const judged = evidenceEnabled ? judgedSample.value : await a.evaluate(() => window.syn3hNet.stats.hitsJudged)
+    const botSoundSample = evidenceEnabled ? await b.evaluate(() => ({value:window.__audioCalls.filter((c) => c === 'laserHit').length,at:performance.now(),evidence:window.__shotEvidence.snapshot('bot')})) : null
+    const hitSeen = evidenceEnabled ? botSoundSample.value : await b.evaluate(() => window.__audioCalls.filter((c) => c === 'laserHit').length)
     const diag = { a: await a.evaluate(() => ({ lasers: window.syn3hNet.lasers.count, host: window.syn3hNet.isHost })), bFired: await b.evaluate(() => window.syn3hNet.stats.shotsFired) }
     check('host judges a laser hit on its bot', judged > judgedBefore && hitSeen >= 2, { judgedBefore, judged, hitSoundsOnB: hitSeen, ...diag })
+    if (evidenceEnabled) check('matched bot shot evidence at original samples',createShotDecision().seal({originals:[results.at(-1).ok],local:judgedSample.evidence,remote:botSoundSample.evidence}).ok,{judgedSample,botSoundSample})
   }
   await a.evaluate(() => window.syn3h.params.set('bots.count', 0))
 
@@ -453,11 +517,37 @@ try {
 } catch (e) {
   check('no exception', false, { message: String(e?.message ?? e), stack: e?.stack })
 } finally {
-  if (errors.length || results.some(r => !r.ok)) await captureFailure().catch(e => console.error('Diagnostic capture failed', String(e)))
-  await browser.close()
+  try {
+    if (evidenceEnabled) {
+      saveShotEvidence('finally-start')
+      try {
+        finalCollectors = await captureShotCollectors()
+        for(const name of ['Alice','Bob']) {
+          const matches=finalCollectors.filter(c=>c.name===name)
+          const c=matches[0]
+          if(matches.length!==1 || c.error || c.partial || !Array.isArray(c.phases)) {
+            evidenceCaptureFailures.push({name,error:c?.error??'Missing or invalid collector snapshot'}); continue
+          }
+          for(const label of ['human','bot']) {
+            const phases=c.phases.filter(s=>s?.label===label)
+            if(phases.length!==1 || phases[0].truncated || phases[0].overflow)
+              evidenceCaptureFailures.push({name,label,error:'Missing, truncated or overflowed phase snapshot'})
+          }
+        }
+        evidenceCaptureState = evidenceCaptureFailures.length ? 'failed' : 'complete'
+      } catch(e) {
+        evidenceCaptureState='failed'; evidenceCaptureFailures.push({error:String(e)})
+      }
+      saveShotEvidence('finally-collectors')
+    }
+    if (errors.length || results.some(r => !r.ok)) await captureFailure().catch(e => console.error('Diagnostic capture failed', String(e)))
+  } finally { await browser.close() }
 }
 
 check('no page errors', errors.length === 0, errors)
 const failed = results.filter((r) => !r.ok)
-console.log(failed.length ? `NET SMOKE FAILED (${failed.length})` : `NET SMOKE OK, screenshot ${shot}`)
-process.exit(failed.length ? 1 : 0)
+const evidenceFailed = evidenceEnabled && !evidenceComplete()
+// release.sh checks the marker, not Node's exit code. Never print OK for incomplete evidence.
+console.log(failed.length ? `NET SMOKE FAILED (${failed.length})` : evidenceFailed ? 'NET SMOKE FAILED (incomplete shot evidence)' : `NET SMOKE OK, screenshot ${shot}`)
+if (evidenceEnabled) console.log('SHOT EVIDENCE ACCEPTANCE',JSON.stringify({evidenceComplete:evidenceComplete(),evidenceCaptureState,evidenceCaptureFailures,evidenceWriteFailures}))
+process.exit(failed.length || evidenceFailed ? 1 : 0)
