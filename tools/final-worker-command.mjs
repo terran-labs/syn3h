@@ -33,7 +33,8 @@ export function planFinalWorkerCommand(request, trusted) {
   const executable = `${tool}/runtime/bin/node`
   const cli = `${tool}/node_modules/wrangler/wrangler-dist/cli.js`
   const envFile = `${runner}/empty.env`
-  const args = [cli, mode === 'local' ? 'dev' : 'deploy', '--config', `${artifact}/wrangler.json`, '--no-bundle', '--env-file', envFile]
+  const project = `${runner}/project`
+  const args = [cli, mode === 'local' ? 'dev' : 'deploy', '--config', `${project}/wrangler.json`, '--no-bundle', '--env-file', envFile]
   const env = {
     HOME: `${runner}/home`, XDG_CONFIG_HOME: `${runner}/config`, XDG_CACHE_HOME: `${runner}/cache`,
     TMPDIR: `${runner}/tmp`, PATH: `${tool}/runtime/bin`, CI: 'true', WRANGLER_SEND_METRICS: 'false',
@@ -42,7 +43,7 @@ export function planFinalWorkerCommand(request, trusted) {
   const requiredSecrets = []
   if (mode === 'local') {
     if (!Number.isInteger(request.port) || request.port < 1024 || request.port > 65535) throw new Error('Invalid allocated port')
-    args.push('--local','--ip','127.0.0.1','--port',String(request.port))
+    args.push('--local','--ip','127.0.0.1','--port',String(request.port),'--persist-to',`${runner}/state`)
   } else if (mode === 'dry') args.push('--dry-run','--outdir',`${runner}/dry-output`)
   else {
     if (!Number.isSafeInteger(request.release) || request.release < 1 || typeof request.immediate !== 'boolean' ||
@@ -53,11 +54,13 @@ export function planFinalWorkerCommand(request, trusted) {
     requiredSecrets.push('CLOUDFLARE_API_TOKEN')
   }
   return {
-    executable, args, cwd: artifact, env, requiredSecrets,
+    executable, args, cwd: project, sourceArtifactRoot: artifact, env, requiredSecrets,
     artifactSha256: trusted.artifactSha256, toolSha256: trusted.toolSha256,
     emptyEnvFile: envFile, qualified: false, launchAllowed: false,
     blockers: ['Verify artifact and complete tool manifests, links and native dependencies',
-      'Verify fresh owned runner directories and empty regular env file',
+      'Verify fresh nonsymlink runner directories and empty regular env file',
+      'Verify complete independent copy inventory including provenance, excluded files, directories and modes',
+      'Recheck original and copy inventories; permit only reviewed scratch additions',
       'Complete mode-specific allocation and acceptance gates'],
   }
 }

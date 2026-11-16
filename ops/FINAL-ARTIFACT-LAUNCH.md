@@ -122,3 +122,11 @@ copied content. This is a proposed equivalence argument, not runtime proof. A se
 allocated no-bundle dry/local check must verify actual upload selection, module bytes and
 filesystem side effects before this layout can be accepted. No executor or copy operation
 is authorized by this source-plan update; pure planner changes follow source review.
+
+Complete-copy verification must additionally bind provenance, excluded maps and empty
+directories, with path/type/mode checks where relevant. The runtime artifact digest omits
+some of these and cannot prove complete-copy equality. Verify source/copy file inode
+independence and nonsymlink runner ancestors. Postinventory rejects removals or changes
+to every original entry and additions outside the exact reviewed scratch subtree. Never
+follow scratch symlinks or permit scratch to reach dist. These are preparer/executor
+requirements; the pure planner performs no filesystem qualification.

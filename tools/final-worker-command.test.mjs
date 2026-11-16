@@ -29,3 +29,16 @@ test('upload adds only reviewed metadata and credential requirement', () => {
   assert.throws(() => plan({mode:'upload',release:23,message:'x\ny',immediate:true},trusted))
   assert.throws(() => plan({mode:'upload',release:23,message:'x',immediate:'true'},trusted))
 })
+
+test('every mode uses runner project and local persistence stays outside the copy', () => {
+  for (const request of [{mode:'dry'}, {mode:'local',port:5331}, {mode:'upload',release:23,message:'Reviewed',immediate:false}]) {
+    const p=plan(request,trusted)
+    assert.equal(p.cwd,'/owned/run/project')
+    assert.equal(p.sourceArtifactRoot,trusted.artifactRoot)
+    assert.equal(p.args[p.args.indexOf('--config')+1],'/owned/run/project/wrangler.json')
+    assert.ok(!p.args.some(arg => arg.startsWith(trusted.artifactRoot)))
+    if(request.mode==='local') assert.equal(p.args[p.args.indexOf('--persist-to')+1],'/owned/run/state')
+    else assert.ok(!p.args.includes('--persist-to'))
+    assert.equal(p.launchAllowed,false)
+  }
+})
