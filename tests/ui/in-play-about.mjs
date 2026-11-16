@@ -22,10 +22,21 @@ const bounded = async (promise, cap = 10000) => {
   finally { clearTimeout(timer) }
 }
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
-const report = { source: expected, cases: [], errors: [], limits: ['No physical touch or gamepad-neutral proof', 'No Yoink/native-chord replacement for prerequisite input gate', 'No image assets added', 'Late pointer-lock promise race and real OS visibility require later native validation', 'Synthetic PauseState lifecycle transitions are not native OS visibility'] }
+const report = { source: expected, cases: [], errors: [], limits: ['No physical touch or gamepad-neutral proof', 'Held drive/touch at modal entry and close remain untested', 'Live Yoink modal cancellation remains untested', 'Own Grapple cancellation versus remote gear and launched-projectile survival remains untested', 'Prerequisite four-slice input coverage does not establish these modal-specific behaviors', 'No image assets added', 'Late pointer-lock promise race and real OS visibility require later native validation', 'Synthetic PauseState lifecycle transitions are not native OS visibility'] }
 let browser, primary
-const pages = [], pending = []
+const pages = [], pending = [], records = new Map()
 await mkdir(out, { recursive: true })
+async function persist() {
+  try { await bounded(writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)), 3000) }
+  catch (error) { report.errors.push(`Evidence write: ${error}`); throw error }
+}
+async function drain(jobs) {
+  for (let cursor = 0; cursor < jobs.length;) {
+    const end = jobs.length
+    await bounded(Promise.allSettled(jobs.slice(cursor, end)))
+    cursor = end
+  }
+}
 async function provenance() {
   assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', timeout: budget(5000) }).trim(), expected)
   assert.equal(execFileSync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8', timeout: budget(5000) }).trim(), '')
@@ -48,7 +59,8 @@ const state = page => page.evaluate(() => ({ url: location.href, id: syn3hNet.id
   sent: syn3hNet.bigRed.stats.sent, fizzled: syn3hNet.bigRed.stats.fizzled }))
 const ready = (page, fn, arg) => page.waitForFunction(fn, arg, { timeout: budget(15000) })
 try {
-  report.provenance = await provenance()
+  report.rawSourceProvenance = await provenance()
+  await persist()
   browser = await chromium.launch({ channel: 'chrome', headless: true, timeout: budget(30000) })
   for (const touch of [false, true]) {
     const context = await bounded(browser.newContext({ hasTouch: touch, viewport: touch ? { width: 390, height: 640 } : { width: 1280, height: 900 }, serviceWorkers: 'block' }))
@@ -57,7 +69,11 @@ try {
       for (const name of names) { const original = object[name].bind(object); object[name] = (...args) => bounded(original(...args), 15000) }
     }
     page.setDefaultTimeout(10000)
-    const sockets = [], images = [], documents = [], modules = []
+    const sockets = [], images = [], documents = [], modules = [], casePending = []
+    const record = { touchContext: touch, status: 'in_progress', stage: 'navigation', sockets, images, documents, modules, responseAttempts: [] }
+    report.cases.push(record); records.set(page, record)
+    const checkpoint = async (stage, values = {}) => { Object.assign(record, values, { stage }); await persist() }
+    await checkpoint('navigation')
     page.on('websocket', ws => { sockets.push(ws.url()); ws.on('framereceived', ({ payload }) => {
       try { if (['update', 'full-reload', 'prune'].includes(JSON.parse(String(payload)).type)) report.errors.push('HMR changed source') } catch {}
     }) })
@@ -66,15 +82,25 @@ try {
     page.on('response', response => {
       const path = new URL(response.url()).pathname
       if (response.request().resourceType() !== 'document' && path !== '/src/ui/Shell.ts') return
-      pending.push((async () => {
+      const attempt = { url: response.url(), status: response.status(), type: response.request().resourceType() }
+      record.responseAttempts.push(attempt)
+      const job = (async () => {
+        assert.equal(new URL(response.url()).origin, new URL(origin).origin)
         assert.equal(response.status(), 200); assert.equal(response.fromServiceWorker(), false)
+        assert.equal(response.request().redirectedFrom(), null)
         const bytes = await bounded(response.body())
+        Object.assign(attempt, { bytes: bytes.length, sha256: hash(bytes) })
         if (path === '/src/ui/Shell.ts') {
+          assert.equal(response.request().resourceType(), 'script')
           const map = bytes.toString().match(/sourceMappingURL=data:application\/json(?:;charset=[^;,]+)?;base64,([^\s]+)/)
           assert.ok(map); assert.ok(JSON.parse(Buffer.from(map[1], 'base64')).sourcesContent.includes(await readFile(new URL('../../src/ui/Shell.ts', import.meta.url), 'utf8')))
-          modules.push(hash(bytes))
-        } else documents.push({ url: response.url(), sha256: hash(bytes) })
-      })().catch(error => report.errors.push(String(error))))
+          modules.push({ url: response.url(), sha256: hash(bytes), sourceSha256: hash(await readFile(new URL('../../src/ui/Shell.ts', import.meta.url))) })
+        } else {
+          assert.ok(response.request().isNavigationRequest()); assert.equal(response.frame(), page.mainFrame())
+          documents.push({ url: response.url(), sha256: hash(bytes), navigation: true })
+        }
+      })().catch(error => { attempt.error = String(error); record.evidenceError = String(error); report.errors.push(String(error)) })
+      casePending.push(job); pending.push(job)
     })
     const url = new URL(origin); url.searchParams.set('room', `ux-guide-${touch}-${Date.now()}`)
     url.searchParams.set('world', 'alpine.1518~bots.count=0')
@@ -82,6 +108,17 @@ try {
     await ready(page, () => window.syn3h?.shell?.galaxy?.live)
     await page.locator('.galaxy-label.is-current').focus(); await page.keyboard.press('Enter')
     await ready(page, () => window.syn3hNet?.connected && syn3h.shell.playing && !syn3h.shell.dropping)
+    await drain(casePending)
+    // Raw refetches are separate. These are the actual page navigation and script
+    // responses, tied to the live Shell instance exercised by this case.
+    assert.ok(documents.length > 0 && documents.some(item => item.url === url.href), 'case navigation document evidence')
+    assert.ok(modules.length > 0, 'case Shell script/source-map evidence')
+    const executedShell = await page.evaluate(() => ({ name: syn3h.shell.constructor.name,
+      ownsDialog: syn3h.shell.element.contains(document.querySelector('.in-play-about')),
+      open: typeof syn3h.shell.openAbout, close: typeof syn3h.shell.closeAbout }))
+    assert.deepEqual(executedShell, { name: 'Shell', ownsDialog: true, open: 'function', close: 'function' })
+    assert.deepEqual(report.errors, [])
+    await checkpoint('entered-world', { executedShell })
     if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
     if (touch) await page.locator('.inspector-toggle').click()
     const session = page.locator('.rail-players')
@@ -95,6 +132,7 @@ try {
     await entry.focus(); await page.keyboard.down('KeyL')
     await ready(page, () => syn3hNet.bigRed.ready)
     const before = await state(page), socketCount = sockets.length
+    await checkpoint('charged-before-entry', { before, socketCount })
     // Transparent call/return observer: each original is invoked once with this/args.
     await page.evaluate(() => {
       const restorers = [], order = []
@@ -120,14 +158,17 @@ try {
     })
     await entry.click(); await dialog.waitFor({ state: 'visible' })
     const trace = await page.evaluate(() => ({ order: guideTrace.order, immediate: guideTrace.immediate }))
+    await checkpoint('entry-event', { trace })
     assert.deepEqual(trace.order.slice(0, 2).map(x => x.key), ['cancelActions', 'cancelFireUntilNeutral'])
     assert.ok(trace.order.slice(0, 2).every(x => !x.suspended))
     assert.equal(trace.immediate.fire, false); assert.equal(trace.immediate.sent, before.sent)
     await ready(page, tick => syn3h.game.tick > tick, before.tick)
     await ready(page, () => !!guideTrace.firstStep)
     const firstStep = await page.evaluate(() => guideTrace.firstStep)
+    await checkpoint('first-step', { firstStep })
     assert.deepEqual(firstStep, { sent: before.sent, fizzled: before.fizzled, fire: false })
     const opened = await state(page)
+    await checkpoint('opened', { opened })
     assert.equal(opened.sent, before.sent); assert.equal(opened.fizzled, before.fizzled)
     assert.equal(opened.url, before.url); assert.equal(opened.id, before.id); assert.equal(opened.host, before.host)
     assert.ok(opened.connected && opened.playing && !opened.menu && !opened.paused && opened.suspended && !opened.locked)
@@ -165,14 +206,26 @@ try {
     assert.ok(await page.evaluate(() => document.querySelector('.in-play-about').contains(document.activeElement)))
     await dialog.locator('.about-back').click()
     const returned = await state(page); assert.ok(!returned.paused && !returned.suspended && !returned.locked)
-    // Prior user pause is preserved. Synthetic activation avoids the pause veil;
-    // native entry itself was exercised above. No forced/private pause state.
+    // Native pause and native About entry through the actual pause UI.
+    await checkpoint('before-paused-entry', { returned })
     await page.locator('.rail-pause').click()
-    await page.evaluate(() => document.querySelector('.rail-about').click())
+    const pauseEntry = page.locator('.pause-about')
+    await pauseEntry.waitFor({ state: 'visible' })
+    const beforePaused = await state(page)
+    assert.ok(beforePaused.paused); assert.equal(beforePaused.reason, 'user')
+    await pauseEntry.click()
     await dialog.waitFor({ state: 'visible' })
     const paused = await state(page)
+    assert.ok(paused.paused && paused.suspended); assert.equal(paused.reason, 'user')
+    assert.equal(paused.tick, beforePaused.tick)
+    await checkpoint('paused-guide', { beforePaused, paused })
     await page.keyboard.press('Escape')
-    assert.equal((await state(page)).reason, 'user'); assert.equal((await state(page)).tick, paused.tick)
+    const afterPaused = await state(page)
+    assert.ok(afterPaused.paused && afterPaused.suspended && !afterPaused.locked)
+    assert.equal(afterPaused.reason, 'user'); assert.equal(afterPaused.tick, paused.tick)
+    assert.equal(afterPaused.url, beforePaused.url); assert.equal(afterPaused.id, beforePaused.id)
+    assert.ok(await pauseEntry.evaluate(el => el === document.activeElement))
+    await checkpoint('paused-close', { afterPaused })
     // Close while hidden, then resume the same reason: no stranded suspension.
     await page.evaluate(() => syn3h.pause.resume('user'))
     await entry.click()
@@ -190,23 +243,38 @@ try {
     })
     await dialog.locator('.about-back').click()
     assert.equal(await page.evaluate(() => document.activeElement === document.querySelector('.rail-about')), true)
-    await page.evaluate(() => { guideRestoreEntry(); guideTrace.restore() })
+    await page.evaluate(() => guideRestoreEntry())
     const finalState = await state(page)
     assert.equal(finalState.id, before.id); assert.equal(finalState.url, before.url)
     assert.ok(finalState.connected); assert.equal(sockets.length, socketCount)
     assert.deepEqual(images, [])
-    report.cases.push({ finalState, touchContext: touch, before, opened, returned, paused, trace, socketCount, documents, modules })
+    record.trace = await page.evaluate(() => ({ order: guideTrace.order, immediate: guideTrace.immediate, firstStep: guideTrace.firstStep }))
+    await page.evaluate(() => guideTrace.restore())
+    await checkpoint('before-context-close', { finalState })
     await bounded(context.close())
+    await drain(casePending)
+    assert.ok(documents.length > 0 && modules.length > 0, 'nonempty case execution provenance')
+    assert.deepEqual(report.errors, [])
+    await checkpoint('complete', { status: 'passed' })
   }
-  report.finalProvenance = await provenance(); assert.deepEqual(report.finalProvenance, report.provenance)
-} catch (error) { primary = error; report.failure = String(error.stack ?? error) }
+  report.finalProvenance = await provenance(); assert.deepEqual(report.finalProvenance, report.rawSourceProvenance)
+} catch (error) {
+  primary = error; report.failure = String(error.stack ?? error)
+  for (const record of report.cases) if (record.status !== 'passed') { record.status = 'failed'; record.failure = report.failure }
+  try { await persist() } catch {} // Original failure remains primary; write failure is sticky.
+}
 finally {
   for (const page of pages) if (!page.isClosed()) {
+    try {
+      records.get(page).trace = await page.evaluate(() => window.guideTrace ? ({ order: guideTrace.order,
+        immediate: guideTrace.immediate, firstStep: guideTrace.firstStep }) : null)
+      await persist()
+    } catch (error) { report.errors.push(`Partial trace: ${error}`) }
     try { await page.evaluate(() => window.guideTrace?.restore()) } catch (error) { report.errors.push(String(error)) }
   }
   try { if (browser) await bounded(browser.close(), 15000) } catch (error) { report.errors.push(String(error)) }
   // Browser closed: no new response callbacks should start; drain all queued work.
-  try { for (let cursor = 0; cursor < pending.length;) { const end = pending.length; await bounded(Promise.allSettled(pending.slice(cursor, end))); cursor = end } }
+  try { await drain(pending) }
   catch (error) { report.errors.push(String(error)) }
   try { await bounded(writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)), 3000) }
   catch (error) { report.errors.push(String(error)); console.error(JSON.stringify(report)) }

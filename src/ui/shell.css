@@ -584,3 +584,8 @@
   .syn3h-shell .in-play-about > header { padding: 12px; flex-wrap: wrap; }
   .syn3h-shell .in-play-about-body { padding: 16px; }
 }
+
+/* Separate from the full-screen Resume button, above its veil and below dialogs. */
+.syn3h-shell .pause-about { position: fixed; z-index: 61; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); transform: translateX(-50%); min-height: 44px; max-width: calc(100vw - 32px); padding: 12px 24px; margin: 0; color: var(--s3-accent, #8fe3ff); background: #060c16; border: 1px solid var(--s3-line, #33516a); border-radius: 8px; pointer-events: auto; }
+.syn3h-shell .pause-about[hidden] { display: none; }
+.syn3h-shell .pause-about:focus-visible { outline: 2px solid var(--s3-accent, #8fe3ff); outline-offset: 3px; }
