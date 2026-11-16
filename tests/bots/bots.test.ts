@@ -133,12 +133,13 @@ describe('bot population', () => {
   it('keeps Rapier usable when graphics and count drop together or in adjacent frames', () => {
     const { game, systems, step } = harness(), player = stationaryTarget(game)
     const manager = game.add(new BotManager(game, terrain, player))
+    const previousQuality = params.get('gfx.quality')!.value
     try {
       for (const separateFrames of [false, true]) {
-        params.set('gfx.level', 2); params.set('bots.count', 8); manager.update()
+        params.set('gfx.quality', 4); params.set('bots.count', 8); manager.update()
         expect(manager.vehicles).toHaveLength(8)
         for (let i = 0; i < 20; i++) step()
-        params.set('gfx.level', 1)
+        params.set('gfx.quality', 2)
         if (separateFrames) { manager.update(); expect(manager.vehicles).toHaveLength(4); step() }
         params.set('bots.count', 0)
         // Use the real mutable update list, as Game.frame does.
@@ -150,7 +151,7 @@ describe('bot population', () => {
         expect(player.body.isValid()).toBe(true)
         expect(effects.attached.every(entry => entry.disposed)).toBe(true)
       }
-    } finally { manager.dispose(); params.set('gfx.level', 2) }
+    } finally { manager.dispose(); params.set('gfx.quality', previousQuality) }
   })
 
   it('follows the player into a vehicle swapped in place: targets, spawn centre and daydream', () => {
