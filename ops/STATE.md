@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-15 18:40 PST. The owner withdrew the afternoon cutoff.
+Last verified: 2026-11-15 19:08 PST. The owner withdrew the afternoon cutoff.
 
 ## Authority and release order
 
@@ -12,19 +12,18 @@ and eight vehicle/browser cases with rollback. Verify notes and GIF before Lates
 
 ## Production
 
-Accepted release: v26.11.1517 (release-21), source 464480c4, at https://www.syn3h.com/.
-The touch stick stays anchored until release; rotating the screen clears held controls.
-Me contains identity, vehicle and colours; World includes sky and weather. All sidebar
-surfaces share frost, with opaque Minimal fallback and reduced-motion support.
-Typecheck, 534 UI/network tests and build pass. Full suite: 1,730 pass, one skip, three
-failures identical on accepted 1516: competitive flee, wind steering and dashboard links.
-Both addresses pass exact-build, multiplayer and frozen checks; all eight vehicle cases
-pass without page errors. Unsupported-blur behavior is source-reviewed only; physical
-mobile feedback and paired baseline world captures remain unavailable.
+Accepted release: v26.11.1518 (release-22), source 214c3c96, at https://www.syn3h.com/.
+The lobby has full-edge stars, a warm corona, responsive About and eight larger arrow Back controls.
+Desktop, phone and short-phone checks pass, including perspective corner probes and keyboard focus.
+Typecheck and build pass. Full suite: 1,730 pass, one skip, three unchanged baseline failures:
+competitive flee, wind steering and dashboard links. Both addresses pass exact-build,
+multiplayer and frozen checks; all eight vehicle/browser cases pass without page errors.
+Static logo glow is softer; logo lab/export did not receive separate browser captures.
+The short-phone Invite focus scroll clips a fraction of a pixel from the Back border.
 
 ## Current queue
 
-1. Complete the original About geometry and phone checks in its next allocated slot.
+1. Original About is accepted; expanded story and deliberate-open images remain separate.
 2. Validate Weather sky extraction and shafts-off scene/PMREM parity before Post adoption.
 3. Compose expanded About Input, Gear and retained UI gesture handling, then test as one unit.
 4. Verify and integrate admin Future Ideas and vehicle-studio research; editorial and captures follow.
