@@ -61,7 +61,8 @@ export interface LogoLook {
   sway: number
 }
 export const DEFAULT_LOGO_LOOK: LogoLook = {
-  seed: 1, glow: [0.34, 0.42, 1.0], glowEdge: [0.52, 0.28, 0.98], glowWidth: 0.26, face: [0.008, 0.016, 0.039],
+  // Galaxy sunShafts: mix([1,.86,.66], WARM [1,.77,.5], .3).
+  seed: 1, glow: [1, 0.833, 0.612], glowEdge: [1, 0.77, 0.5], glowWidth: 0.26, face: [0.008, 0.016, 0.039],
   particles: 160, plasmaSize: 0.3, flowSpeed: 1, glowStrength: 1, space: false, opacity: 1, markFade: 1.5, glowGap: 0, glowFade: 3, sway: 0,
 }
 /** A box in pixels, measured from the top left of the viewport. */
@@ -137,7 +138,7 @@ void main() {
   float falloff = exp(-1.8 * d) * (1.0 - d * d * (3.0 - 2.0 * d));
   float a = clamp(uStrength * falloff * mix(0.3, 1.0, b), 0.0, 1.0) * uOpacity;
   // An electric blue at the letters, never white, turning violet outward.
-  vec3 c = mix(mix(uGlow, vec3(0.7, 0.9, 1.0), 0.25), uGlowEdge, smoothstep(0.0, 0.6, d));
+  vec3 c = mix(mix(uGlow, vec3(143.0, 227.0, 255.0) / 255.0, 0.25), uGlowEdge, smoothstep(0.0, 0.6, d));
   color = vec4(c * a, a);
 }`
 

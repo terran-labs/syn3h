@@ -1,6 +1,13 @@
-/** Licence names are checked against installed packages and the shipped fonts' name tables. */
-export const creditsHtml = `<p>Syn3h is a browser-native world for driving, flying and playing together, from the creator of Mars Explorer.</p>
-<p>Choose a vehicle, enter a room and invite a friend. WASD or arrows move, Shift brakes, and H shows your vehicle's controls. On phones, use the thumb controls.</p>
+/** Story sources: README introduction/how to play; original attribution below; AGENTS.md generation principle. */
+export const creditsHtml = `<div class="about-intro"><p class="about-title">A world to drive, fly and make your own.</p>
+<p>Syn3h brings off-road sci-fi vehicles and shared procedural worlds to the browser. Choose a planet, land on it and bring a friend.</p></div>
+<div class="about-columns"><div><h3>From Mars Explorer to Syn3h</h3>
+<p>Syn3h comes from Aubrey Falconer, creator of Mars Explorer. This browser edition carries forward the original games’ vehicles and exploration, with worlds you can change while you play.</p>
+<p>Drive a buggy with force field wings, fly a jet, skim the ground in a hovercraft or take a tank across the island. Explore together or compete in Tag and King of the Hill.</p></div>
+<div><h3>Generated as you play</h3>
+<p>Terrain, skies and the galaxy are generated in the browser. The adaptive score and synthesised vehicle voices respond as you move through the world.</p>
+<p>Change gravity, sky and physics with the room’s controls. Share a room link to meet in the same world, with nothing to install.</p></div></div>
+<nav class="about-links" aria-label="About links"><a href="https://aubreyfalconer.com" target="_blank" rel="noopener">Aubrey Falconer ↗</a><a href="https://github.com/terran-labs/syn3h" target="_blank" rel="noopener">Explore the source ↗</a></nav>
 <details class="shell-credits"><summary>Credits & licences</summary>
 <p>Original Syn3h and Mars Explorer game, logos and vehicle assets: Aubrey Falconer. Original assets are used with the owner's permission.</p>
 <ul><li>Three.js authors: rendering and model loaders, <a href="/brand/licenses/three.txt" target="_blank" rel="noopener">MIT</a>.</li>
