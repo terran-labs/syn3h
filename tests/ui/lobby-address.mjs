@@ -182,6 +182,7 @@ async function runCase(browser, mode, entry, missing = false) {
     const contentType = response.headers()['content-type'] ?? ''
     const executable = ['document', 'script', 'stylesheet'].includes(type) || /\.(?:m?js|css)$/i.test(url.pathname) || /(?:javascript|ecmascript|text\/css)/i.test(contentType)
     const inventoried = Object.hasOwn(expectedBodies, url.pathname)
+    const cacheEligible = inventoried && (type === 'document' || /\.(?:m?js|css)$/i.test(url.pathname))
     if (url.origin !== origin) {
       assert.ok(!executable, 'unexpected external executable/style response'); return
     }
@@ -199,7 +200,7 @@ async function runCase(browser, mode, entry, missing = false) {
     assert.equal(response.fromServiceWorker(), false)
     const isMissing = missing && url.pathname === `/v/${m.version}${m.missing.path}`
     if (response.status() === 304) {
-      assert.ok(inventoried && /\.(?:m?js|css)$/i.test(url.pathname), '304 restricted to inventoried JS/CSS')
+      assert.ok(cacheEligible, '304 restricted to inventoried documents/JS/CSS')
       assert.equal(request.method(), 'GET')
       const prior = verified200.get(url.href)
       assert.ok(prior && prior.sequence < sequence, '304 requires earlier same-context verified GET 200')
@@ -222,7 +223,7 @@ async function runCase(browser, mode, entry, missing = false) {
     if (executable || inventoried) {
       assert.equal(sha256, expectedBodies[url.pathname], 'actual browser artifact bytes: ' + url.pathname)
       seen.add(url.pathname)
-      if (request.method() === 'GET' && /\.(?:m?js|css)$/i.test(url.pathname)) {
+      if (request.method() === 'GET' && cacheEligible) {
         verified200.set(url.href, { sequence, sha256, etag: record.validators.etag,
           vary, varyValues: record.validators.varyingRequestValueSha256 })
       }

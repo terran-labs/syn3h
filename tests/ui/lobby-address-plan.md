@@ -209,7 +209,7 @@ but request validators were not recorded, so its 304 responses cannot be accepte
 retroactively. Installed Playwright rejects body reads for all 3xx responses.
 
 The prepared correction drains initial responses before reload. Only manifest-listed
-JS/CSS may reuse an earlier same-context, exact-URL GET 200 representation whose body
+documents and JS/CSS may reuse an earlier same-context, exact-URL GET 200 representation whose body
 matched its expected hash. Before verdicts, bounded header reads record response ETag,
 request If-None-Match, normalized Vary names and digests of named request values.
 Raw varying values, cookies, authorization and token headers are not retained.
@@ -220,3 +220,17 @@ The record names reuseSha and prior200Sequence, never a 304 body hash. There is 
 304 body read, refetch, cache suppression or Last-Modified-only fallback. All other
 status/path/hash checks, including the isolated missing Buggy 404, remain unchanged.
 This source correction has syntax/whitespace checks only, not browser acceptance.
+
+
+Gate 05 remains failed: four fixture cases passed, but WebKit's frozen-path document
+reload returned 304 outside the then-authorized JS/CSS-only scope. The source extension
+uses the identical verified-predecessor rules for manifest-inventoried documents,
+including the full query-bearing URL. No other resource type gains a 304 exception.
+
+The saved snapshots also expose a separate coverage gap. Both Chrome normal cases
+saved wasHost=true and world.seed=42; both WebKit normal cases saved wasHost=false
+and an empty world object. The fixture asserted seed/entrySeed/kind, not host status
+or the changed-world entry. Thus the passing WebKit root case did not prove host
+world capture. Guest seed restoration is supported separately by prepareResume and
+cannot stand in for host-world replay. A host-isolation/precondition correction is
+proposed for review, not implemented in this document-cache change.
