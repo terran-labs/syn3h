@@ -5,9 +5,9 @@ import { TouchFireHolds } from '../../src/ui/TouchControls'
 
 function events() {
   const target = new EventTarget()
-  const pointer = (type: string, id: number) => {
+  const pointer = (type: string, id: number, button = 0, pointerType = 'touch') => {
     const event = new Event(type)
-    Object.defineProperty(event, 'pointerId', { value: id })
+    Object.defineProperties(event, { pointerId: { value: id }, button: { value: button }, pointerType: { value: pointerType } })
     target.dispatchEvent(event)
   }
   const key = (type: string, code: string) => {
@@ -126,5 +126,27 @@ describe('direct touch fire ownership with real Input', () => {
     e.pointer('pointerup', 7); holds.pointer(7)
     expect(input.state.fire).toBe(true)
     e.pointer('pointerup', 7)
+  })
+})
+
+
+describe('primary pointer release ownership', () => {
+  it.each(['mouse', 'pen', 'touch'])('keeps %s held through secondary releases and ends on primary up', pointerType => {
+    const e = events(), input = new Input(e.target), a = action('hold')
+    const gear = new RetainedActionHolds(e.target), touch = new TouchFireHolds(input, e.target, () => {})
+    gear.pointer(a, 1); touch.pointer(2)
+    for (const button of [1, 2]) {
+      e.pointer('pointerup', 1, button, pointerType); e.pointer('pointerup', 2, button, pointerType)
+      expect(a.stop).not.toHaveBeenCalled(); expect(input.state.fire).toBe(true)
+    }
+    e.pointer('pointerup', 1, 0, pointerType); e.pointer('pointerup', 2, 0, pointerType)
+    expect(a.stop).toHaveBeenCalledExactlyOnceWith('end'); expect(input.state.fire).toBe(false)
+  })
+  it('accepts pointercancel regardless of its button sentinel', () => {
+    const e = events(), input = new Input(e.target), a = action('hold')
+    const gear = new RetainedActionHolds(e.target), touch = new TouchFireHolds(input, e.target, () => {})
+    gear.pointer(a, 1); touch.pointer(2)
+    e.pointer('pointercancel', 1, -1, 'pen'); e.pointer('pointercancel', 2, -1, 'touch')
+    expect(a.stop).toHaveBeenCalledExactlyOnceWith('end'); expect(input.state.fire).toBe(false)
   })
 })

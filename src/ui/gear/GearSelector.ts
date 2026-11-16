@@ -190,6 +190,8 @@ export class RetainedActionHolds {
     this.changed()
   }
   private readonly pointerEnd = (event: PointerEvent): void => {
+    // Mouse/pen chords share pointerId. Only primary up or cancellation ends this hold.
+    if (event.type === 'pointerup' && event.button !== 0) return
     const record = this.pointers.get(event.pointerId)
     if (!record) return
     this.pointers.delete(event.pointerId); record.pointers.delete(event.pointerId)
@@ -510,6 +512,7 @@ export class GearSelector {
     const signal = this.abort.signal
     if (action.hold) {
       button.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0) return
         event.preventDefault()
         const captured = this.holds.active(entry.held) ? entry.held! : entry.action
         if (this.holds.pointer(captured, event.pointerId)) entry.held = captured
