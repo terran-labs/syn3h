@@ -31,12 +31,12 @@ assert.ok(Number.isInteger(launch.roomPort) && launch.roomPort !== 8787, 'dedica
 assert.ok(launch.roomPid > 0 && launch.roomStart && launch.vitePid > 0 && launch.viteStart, 'supervisor-owned PID/start provenance required')
 const report = { source: expected, launch, cases: [], classification: {
   chrome: 'installed channel chrome', tag: 'synthetic touch PointerEvents through actual TAG handlers',
-  nativeTag: 'native Chrome mouse on the actual TAG button', keyboard: 'native Playwright keyboard',
+  nativeTag: 'native Chrome mouse on the actual TAG button', keyboard: 'native Playwright KeyL in hasTouch=true context; canvas Escape in hasTouch=false desktop',
   canvasMouse: 'native Playwright mouse with actual pointer lock', gamepad: 'not in first four slices',
   touchHardware: 'not verified', expandedAbout: 'not implemented or covered',
 }, errors: [] }
 await mkdir(out, { recursive: true })
-const files = ['src/main.ts', 'src/core/Input.ts', 'src/core/Game.ts', 'src/ui/Shell.ts',
+const files = ['index.html', 'src/main.ts', 'src/core/Input.ts', 'src/core/Game.ts', 'src/ui/Shell.ts',
   'src/ui/TouchControls.ts', 'src/ui/gear/GearSelector.ts', 'src/net/index.ts',
   'src/net/Connection.ts', 'src/weapons/Gear.ts', 'src/weapons/BigRed.ts',
   'src/weapons/yoink/Yoink.ts', 'src/weapons/yoink/params.ts', 'src/weapons/bigRedParams.ts',
@@ -70,7 +70,84 @@ async function provenance() {
   return manifest
 }
 let browser
-const contexts = []
+const contexts = [], browserEvidence = []
+const recipe = { world: 'alpine', seed: 1518, quality: 2, auto: false, hour: 12, dayLength: 0 }
+report.recipe = recipe
+async function observeBrowser(page, context, name) {
+  const evidence = { name, responses: [], failures: [], pending: [] }
+  browserEvidence.push(evidence)
+  const cdp = await bounded(context.newCDPSession(page), 5000, 'CDP provenance')
+  await bounded(cdp.send('Network.enable'), 5000, 'network observation')
+  await bounded(cdp.send('Network.setCacheDisabled', { cacheDisabled: true }), 5000, 'disable browser cache')
+  cdp.on('Network.responseReceived', ({ response }) => {
+    if (response.url.startsWith(origin) && (response.fromDiskCache || response.fromServiceWorker || response.fromPrefetchCache))
+      evidence.failures.push(`Cached runtime response: ${response.url}`)
+  })
+  cdp.on('Network.requestServedFromCache', ({ requestId }) => evidence.failures.push(`Cached request: ${requestId}`))
+  page.on('websocket', ws => ws.on('framereceived', ({ payload }) => {
+    try { if (['update', 'full-reload', 'prune'].includes(JSON.parse(String(payload)).type)) evidence.failures.push('HMR changed runtime') } catch { /* room binary/non-JSON frame */ }
+  }))
+  page.on('response', response => {
+    const url = new URL(response.url()), path = url.pathname.slice(1)
+    if (url.origin !== new URL(origin).origin || !(response.request().resourceType() === 'document' || path.startsWith('src/') || path.startsWith('shared/') || path === 'tests/ui/about-input-observers.mjs')) return
+    const work = (async () => {
+      assert.equal(response.status(), 200, `browser response ${url}`)
+      assert.equal(response.fromServiceWorker(), false)
+      assert.equal(url.searchParams.has('t'), false, 'HMR timestamp module')
+      const bytes = await bounded(response.body(), 10000, 'actual browser response body')
+      const entry = { url: url.href, path, sha256: hash(bytes), resource: response.request().resourceType() }
+      // Compare bytes actually delivered to Chrome with the isolated served module,
+      // then tie TS input back to checkout. A Node refetch alone is not evidence.
+      const expectedResponse = await fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(remaining(10000)) })
+      assert.equal(expectedResponse.status, 200)
+      assert.equal(hash(Buffer.from(await bounded(expectedResponse.arrayBuffer(), 10000, 'comparison body'))), entry.sha256)
+      if (path === 'tests/ui/about-input-observers.mjs') {
+        const local = await readFile(new URL(path, new URL('../../', import.meta.url)), 'utf8')
+        assert.ok(bytes.toString().startsWith(local.trimEnd()), 'actual observer differs from checkout')
+        entry.sourceSha256 = hash(local)
+      }
+      if (files.includes(path) && path.endsWith('.ts')) {
+        const local = await readFile(new URL(path, new URL('../../', import.meta.url)), 'utf8')
+        const encoded = bytes.toString().match(/sourceMappingURL=data:application\/json(?:;charset=[^;,]+)?;base64,([^\s]+)/)
+        assert.ok(encoded, `${path} actual browser source map`)
+        assert.ok(JSON.parse(Buffer.from(encoded[1], 'base64')).sourcesContent?.includes(local), `${path} browser input differs`)
+        entry.sourceSha256 = hash(local)
+      }
+      evidence.responses.push(entry)
+    })().catch(error => evidence.failures.push(String(error.stack ?? error)))
+    evidence.pending.push(work)
+  })
+}
+async function verifyBrowserEvidence() {
+  for (const evidence of browserEvidence) {
+    await bounded(Promise.all(evidence.pending), 15000, 'browser provenance completion')
+    assert.deepEqual(evidence.failures, [], evidence.name)
+    assert.ok(evidence.responses.some(r => r.resource === 'document'), 'actual document response missing')
+    for (const path of files.filter(p => p.startsWith('src/') || p === 'shared/params.ts' || p === 'tests/ui/about-input-observers.mjs'))
+      assert.ok(evidence.responses.some(r => r.path === path), `actual browser module missing: ${path}`)
+  }
+  report.browserResponses = browserEvidence.map(({ pending, ...evidence }) => evidence)
+}
+function assertTransactions(transactions) {
+  for (const transaction of transactions) {
+    assert.ok(transaction.returned, 'cancellation invocation must return')
+    const calls = transaction.calls
+    assert.deepEqual(calls.map(call => call.method), ['BigRed.cancel', 'Yoink.cancel', 'Input.inhibit'])
+    for (const call of calls) {
+      assert.equal(call.transaction, transaction.id); assert.ok(call.after)
+      assert.equal(call.before.suspended, transaction.before.suspended, 'must cancel before changing suspension')
+      assert.equal(call.after.suspended, transaction.before.suspended)
+    }
+    assert.equal(calls[2].before.charge, -1); assert.equal(calls[2].before.holding, null)
+    assert.equal(transaction.returned.fire, false)
+    assert.equal(transaction.returned.suspended, transaction.before.suspended)
+  }
+}
+function phases(record) { return [record.immediate, record.stepEntry, record.firstStep] }
+function canceledRed(before, record) {
+  for (const phase of phases(record)) { assert.equal(phase.charge, -1); assert.equal(phase.fire, false); noRed(before, phase) }
+}
+
 async function ready(page, fn, arg, timeout = 10000) {
   await page.waitForFunction(fn, arg, { timeout: remaining(timeout) })
 }
@@ -78,11 +155,22 @@ async function state(page) { return page.evaluate(() => aboutInputObserver.snaps
 async function record(page, label, expectStep = true) {
   await ready(page, ({ label, expectStep }) => {
     const r = aboutInputObserver.records.find(r => r.label === label)
-    return r?.immediate && (!expectStep || r.firstStep)
+    return r?.immediate && (!expectStep || (r.stepEntry && r.firstStep))
   }, { label, expectStep })
   const r = await page.evaluate(label => aboutInputObserver.records.find(r => r.label === label), label)
   report.cases.push(r)
   assert.equal(r.preconditionFailure, null)
+  assertTransactions(r.transactions)
+  assert.equal(r.immediate.tick, r.eventReturn.tick, 'event microtask precedes simulation')
+  if (r.detail.method === 'requestPause') {
+    assert.ok(r.transactions.length > 0, 'pause must invoke full cancellation in this event')
+    assert.ok(r.transactions.some(t => !t.before.suspended && !t.returned.suspended), 'cancel returns before pause suspends input')
+    assert.equal(r.immediate.suspended, true)
+  }
+  if (expectStep) {
+    assert.ok(r.stepEntry && r.firstStep)
+    assert.equal(r.stepEntry.tick, r.firstStep.tick, 'same first fixed step entry/exit')
+  } else assert.equal(r.immediate.tick, r.eventReturn.tick, 'pause cannot advance simulation')
   return r
 }
 function noRed(before, after) {
@@ -124,7 +212,7 @@ async function tagEnd(page, id, type, label, target = null) {
   }, { id, type, label, target })
 }
 async function newGame(touch, name) {
-  const context = await bounded(browser.newContext({ viewport: { width: 1280, height: 900 }, hasTouch: touch }), 10000, 'new context')
+  const context = await bounded(browser.newContext({ viewport: { width: 1280, height: 900 }, hasTouch: touch, serviceWorkers: 'block' }), 10000, 'new context')
   contexts.push(context)
   const page = await bounded(context.newPage(), 10000, 'new page')
   // Playwright evaluate and low-level input APIs have no per-call timeout option.
@@ -136,14 +224,17 @@ async function newGame(touch, name) {
       object[name] = (...args) => { remaining(15000); return bounded(original(...args), 15000, name) }
     }
   }
+  await observeBrowser(page, context, name)
   page.setDefaultTimeout(10000); page.setDefaultNavigationTimeout(30000)
   page.on('pageerror', error => report.errors.push({ name, message: error.message }))
   const sockets = []
   page.on('websocket', ws => sockets.push(ws.url()))
   const url = new URL(origin)
+  url.searchParams.set('world', `${recipe.world}.${recipe.seed}~sun.timeOfDay=${recipe.hour},sun.dayLength=${recipe.dayLength}`)
   url.searchParams.set('room', `ux-input-${name}-${Date.now()}`)
   await page.goto(url.href, { timeout: remaining(30000) })
   await ready(page, () => !!window.syn3h?.shell?.galaxy?.live, null, 60000)
+  assert.equal(await page.locator('.galaxy-label.is-current').getAttribute('data-world'), recipe.world)
   await page.locator('.galaxy-label.is-current').focus(); await page.keyboard.press('Enter')
   await ready(page, () => window.syn3hNet?.connected && syn3h.shell.playing && !syn3h.shell.dropping, null, 60000)
   const websocketBase = launch.env.VITE_SERVER_URL ?? origin.replace(/^http/, 'ws')
@@ -151,17 +242,21 @@ async function newGame(touch, name) {
   assert.ok(sockets.includes(expectedSocket), 'actual connection must match allocated room origin and room')
   assert.ok(sockets.every(socket => socket === expectedSocket || new URL(socket).pathname === '/'), 'unexpected websocket destination')
   assert.ok(await page.evaluate(() => syn3hNet.isHost), 'isolated fixture must own room')
-  const settings = await page.evaluate(() => {
+  const settings = await page.evaluate(async recipe => {
+    const { currentPlanet } = await import('/src/world/planets.ts')
+    if (currentPlanet().id !== recipe.world) throw new Error('World recipe changed during entry')
     const changes = { 'daydream.seconds': 0, 'bots.tagBeams': false, 'bots.canDrive': false,
-      'bots.count': 1, 'bots.fleet': 0 }
+      'bots.count': 1, 'bots.fleet': 0, 'world.seed': recipe.seed, 'gfx.auto': recipe.auto,
+      'gfx.quality': recipe.quality, 'sun.timeOfDay': recipe.hour, 'sun.dayLength': recipe.dayLength }
     const before = {}
     for (const [id, value] of Object.entries(changes)) {
       before[id] = syn3h.params.get(id).value
       syn3h.params.set(id, value)
     }
     return { before, applied: changes, holdTime: syn3h.params.get('yoink.holdTime').value,
-      charge: syn3h.params.get('bigRed.charge').value }
-  })
+      charge: syn3h.params.get('bigRed.charge').value, actual: Object.fromEntries(Object.keys(changes).map(id => [id, syn3h.params.get(id).value])) }
+  }, recipe)
+  assert.deepEqual(settings.actual, settings.applied)
   report[name] = { url: url.href, sockets, settings }
   await page.evaluate(async () => {
     const { installAboutInputObservers } = await import('/tests/ui/about-input-observers.mjs')
@@ -206,9 +301,9 @@ try {
     const before = await tagEnd(touch, id, type, label)
     assert.equal(before.ready, true)
     const r = await record(touch, label)
-    if (type === 'pointerup') oneRed(before, r.firstStep)
+    if (type === 'pointerup') { noRed(before, r.immediate); noRed(before, r.stepEntry); oneRed(before, r.firstStep) }
     else {
-      assert.equal(r.immediate.charge, -1); noRed(before, r.immediate); noRed(before, r.firstStep)
+      canceledRed(before, r)
     }
   }
   // Native mouse on the real TAG button, in the same touch-capable app layout.
@@ -220,7 +315,7 @@ try {
   const nativeBefore = await touch.evaluate(() => aboutInputObserver.arm('tag-thunder-native-up', 'pointerup'))
   await touch.mouse.up()
   const nativeRelease = await record(touch, 'tag-thunder-native-up')
-  assert.equal(nativeRelease.detail.trusted, true); oneRed(nativeBefore, nativeRelease.firstStep)
+  assert.equal(nativeRelease.detail.trusted, true); noRed(nativeBefore, nativeRelease.immediate); noRed(nativeBefore, nativeRelease.stepEntry); oneRed(nativeBefore, nativeRelease.firstStep)
 
   // Slice 2: actual acquisition, not a seeded carry. No target movement while held.
   for (const [id, type] of [[201, 'pointerup'], [202, 'pointercancel'], [203, 'fling']]) {
@@ -244,9 +339,21 @@ try {
     assert.equal(r.firstStep.holding, null)
     assert.equal(r.firstStep.yoink.flings - before.yoink.flings, type === 'pointercancel' ? 0 : 1)
     assert.equal(r.firstStep.yoink.drops - before.yoink.drops, type === 'pointercancel' ? 1 : 0)
-    if (type === 'pointercancel') {
-      assert.equal(r.immediate.holding, null)
-      assert.equal(r.immediate.yoink.flings, before.yoink.flings)
+    for (const phase of [r.immediate, r.stepEntry]) {
+      if (type === 'pointerup') {
+        assert.equal(phase.holding, target)
+        assert.deepEqual(phase.yoinkSends, before.yoinkSends)
+      } else {
+        assert.equal(phase.holding, null)
+        assert.deepEqual(phase.yoinkSends.slice(before.yoinkSends.length).map(({ kind, target }) => ({ kind, target })),
+          [{ kind: type === 'pointercancel' ? 'drop' : 'fling', target }])
+      }
+    }
+    const sent = r.firstStep.yoinkSends.slice(before.yoinkSends.length)
+    assert.deepEqual(sent.map(({ kind, target }) => ({ kind, target })), [{ kind: type === 'pointercancel' ? 'drop' : 'fling', target }])
+    if (type === 'pointercancel') for (const phase of phases(r)) {
+      assert.equal(phase.holding, null); assert.equal(phase.yoink.flings, before.yoink.flings)
+      assert.deepEqual(phase.yoinkSends.slice(before.yoinkSends.length).map(({ kind, target }) => ({ kind, target })), [{ kind: 'drop', target }])
     }
     if (type === 'fling') {
       const later = await tagEnd(touch, id, 'pointerup', 'yoink-old-tag-up')
@@ -265,8 +372,12 @@ try {
   await touch.evaluate(() => aboutInputObserver.arm('key-resume-held', 'requestResume'))
   await touch.keyboard.press('Escape')
   const resumed = await record(touch, 'key-resume-held')
-  assert.equal(resumed.firstStep.fire, false); assert.equal(resumed.firstStep.charge, -1)
-  noRed(keyBefore, resumed.firstStep)
+  canceledRed(keyBefore, resumed)
+  const linkedKeyPause = await record(touch, 'key-pause')
+  assert.equal(linkedKeyPause.resumedBy, resumed.label); assert.equal(resumed.resumes, linkedKeyPause.label)
+  assert.equal(linkedKeyPause.beforeResume.tick, linkedKeyPause.immediate.tick)
+  assert.deepEqual(linkedKeyPause.firstStep, resumed.firstStep)
+  canceledRed(keyBefore, linkedKeyPause)
   await touch.keyboard.up('KeyL'); await touch.keyboard.down('KeyL'); await charged()
   const freshKey = await touch.evaluate(() => aboutInputObserver.arm('key-fresh-up', 'keyup'))
   await touch.keyboard.up('KeyL')
@@ -282,8 +393,7 @@ try {
     if (final === 'intentional-key') {
       const before = await tagEnd(touch, id, 'pointercancel', 'overlap-cancel-tag')
       const r = await record(touch, 'overlap-cancel-tag')
-      assert.equal(r.immediate.fire, true); assert.equal(r.firstStep.ready, true)
-      noRed(before, r.firstStep)
+      for (const phase of phases(r)) { assert.equal(phase.fire, true); assert.equal(phase.ready, true); noRed(before, phase) }
       await touch.evaluate(() => aboutInputObserver.arm('overlap-final-key', 'keyup'))
       await touch.keyboard.up('KeyL')
       oneRed(before, (await record(touch, 'overlap-final-key')).firstStep)
@@ -291,10 +401,10 @@ try {
       await touch.evaluate(() => aboutInputObserver.arm('overlap-partial-key', 'keyup'))
       await touch.keyboard.up('KeyL')
       const partial = await record(touch, 'overlap-partial-key')
-      assert.equal(partial.firstStep.fire, true); assert.equal(partial.firstStep.ready, true)
+      for (const phase of phases(partial)) { assert.equal(phase.fire, true); assert.equal(phase.ready, true); noRed(partial.before, phase) }
       const before = await tagEnd(touch, id, 'pointercancel', 'overlap-final-cancel')
       const r = await record(touch, 'overlap-final-cancel')
-      assert.equal(r.immediate.charge, -1); noRed(before, r.firstStep)
+      canceledRed(before, r)
     }
   }
   // Slice 3b: native canvas mouse. Escape releases lock, then pauses, with no mouseup.
@@ -311,7 +421,7 @@ try {
   assert.ok(canvasBefore.rawPrimary.length > 0)
   await desktop.keyboard.press('Escape')
   const unlocked = await record(desktop, 'canvas-unlock-held')
-  noRed(canvasBefore, unlocked.firstStep)
+  canceledRed(canvasBefore, unlocked)
   assert.deepEqual(unlocked.immediate.rawPrimary, canvasBefore.rawPrimary)
   await desktop.evaluate(() => aboutInputObserver.arm('canvas-pause-held', 'requestPause'))
   await desktop.keyboard.press('Escape')
@@ -321,7 +431,12 @@ try {
   await desktop.evaluate(() => aboutInputObserver.arm('canvas-resume-held', 'requestResume'))
   await desktop.keyboard.press('Escape')
   const canvasResume = await record(desktop, 'canvas-resume-held')
-  assert.equal(canvasResume.firstStep.fire, false); noRed(canvasBefore, canvasResume.firstStep)
+  canceledRed(canvasBefore, canvasResume)
+  const linkedCanvasPause = await record(desktop, 'canvas-pause-held')
+  assert.equal(linkedCanvasPause.resumedBy, canvasResume.label); assert.equal(canvasResume.resumes, linkedCanvasPause.label)
+  assert.equal(linkedCanvasPause.beforeResume.tick, linkedCanvasPause.immediate.tick)
+  assert.deepEqual(linkedCanvasPause.firstStep, canvasResume.firstStep)
+  canceledRed(canvasBefore, linkedCanvasPause)
   assert.deepEqual(canvasResume.immediate.rawPrimary, canvasBefore.rawPrimary)
   await desktop.mouse.up()
   await ready(desktop, () => document.pointerLockElement === syn3h.game.canvas)
@@ -330,23 +445,26 @@ try {
   await desktop.mouse.up()
   oneRed(freshMouse, (await record(desktop, 'canvas-fresh-up')).firstStep)
   for (const page of [touch, desktop]) {
+    const actualRecipe = await page.evaluate(async () => {
+      const { currentPlanet } = await import('/src/world/planets.ts')
+      return { world: currentPlanet().id, seed: syn3h.params.get('world.seed').value,
+        quality: syn3h.params.get('gfx.quality').value, auto: syn3h.params.get('gfx.auto').value,
+        hour: syn3h.params.get('sun.timeOfDay').value, dayLength: syn3h.params.get('sun.dayLength').value }
+    })
+    assert.deepEqual(actualRecipe, recipe)
     const trace = await page.evaluate(() => ({ order: aboutInputObserver.order, events: aboutInputObserver.events }))
     report.traces ??= []; report.traces.push(trace)
-    // Every full rack cancellation observed must cancel local charge/carry before inhibitor.
-    for (let i = 0; i < trace.order.length; i++) if (trace.order[i].method === 'cancelActions' && trace.order[i].phase === 'before') {
-      const tail = trace.order.slice(i + 1)
-      const inhibit = tail.findIndex(e => e.method === 'cancelFireUntilNeutral' && e.phase === 'before')
-      const local = tail.filter((e, index) => index < inhibit && e.method === 'cancel' && e.phase === 'before')
-      assert.ok(inhibit >= 0 && local.length >= 2, 'Gear cancellation must precede Input inhibition')
-    }
+    assertTransactions(await page.evaluate(() => aboutInputObserver.transactions))
   }
   assert.deepEqual(report.errors, [])
+  await verifyBrowserEvidence()
   report.finalProvenance = await provenance()
   assert.deepEqual(report.finalProvenance, report.provenance)
 } catch (error) {
   report.failure = String(error.stack ?? error)
   throw error
 } finally {
+  report.browserResponses = browserEvidence.map(({ pending, ...evidence }) => evidence)
   report.cleanupErrors = []
   for (const context of contexts) {
     for (const page of context.pages()) {

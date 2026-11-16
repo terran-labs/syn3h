@@ -64,3 +64,35 @@ exercise actual event handlers but cannot prove physical-device capture behavior
 Synthetic pointer capture failures are handled by existing product code, not a
 fixture patch. Pointer-lock denial fails the desktop case rather than substituting
 fake lock state. No arbitrary reorder or full modal safety claim is permitted.
+
+## Source correction awaiting review and execution
+
+Each full cancellation has a unique transaction ID. BigRed cancellation, Yoink
+cancellation and Input inhibition must occur in that exact invocation and order,
+finish before its return, and leave suspension unchanged until the modal acts.
+Pause records require a cancellation transaction; they cannot borrow later calls.
+Every case records the event-turn microtask, first normal fixed-step entry and
+exit. Negative fire checks and partial-holder eligibility cover all three points.
+A pending paused record cannot be replaced: only its explicit resume can join it,
+with unchanged paused tick and both records linked to the same resumed step.
+
+Yoink evidence includes actual local NetClient.send kind/target, not bot sends or
+release-method calls. Acquisition time clears on null/drop/fling and resets on
+grab/reacquisition. Positive release and Fling must send one fling for the actual
+target; cancellation must send a drop and no fling.
+
+The deterministic recipe is Alpine, seed 1518, Medium quality (2), automatic
+quality off, noon (12), day length 0. The world link establishes the recipe before
+entry; normal registry settings are recorded and asserted after entry and at the
+end. Bot staging stays outside the held interval. Native KeyL tests run in the
+touch-capable Chrome context; native canvas mouse and Escape use a separate
+non-touch desktop context. Neither is physical touch or gamepad evidence.
+
+Browser response listeners record actual document and runtime module body hashes,
+including the observer. Critical modules must be present. Actual response bytes
+must match fresh isolated-server responses; TS source maps and observer text bind
+them to checkout. CDP disables cache and rejects cache/service-worker responses;
+HMR updates/reloads/prunes and timestamp modules fail. Clean checkout and raw
+config/source checks remain separate. The browser provenance mechanism is source
+prepared only, including its Vite format assumptions. A dedicated launcher still
+needs independent review and allocation. No runtime, preflight or server has run.

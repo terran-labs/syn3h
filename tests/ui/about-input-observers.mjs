@@ -3,12 +3,12 @@ export function installAboutInputObservers() {
   const { game, shell, params } = window.syn3h
   const net = window.syn3hNet
   if (!net?.gear || !net.bigRed || !net.yoink) throw new Error('Actual networked gear required')
-  const restorers = [], records = [], order = [], events = [], redCalls = []
-  let armed = null, active = null, acquiredAt = null, previousHolding = null
+  const restorers = [], records = [], order = [], events = [], redCalls = [], yoinkSends = [], transactions = [], pending = []
+  let armed = null, acquiredAt = null, previousHolding = null, transaction = null, sequence = 0
   const snapshot = () => ({ tick: game.tick, time: game.time, fire: game.input.state.fire,
     suspended: game.input.suspended, paused: game.isPaused, gear: net.gear.current,
     charge: net.bigRed.charge, ready: net.bigRed.ready, red: { ...net.bigRed.stats },
-    redCalls: redCalls.length, holding: net.yoink.holding, yoink: { ...net.yoink.stats },
+    redCalls: redCalls.length, yoinkSends: yoinkSends.map(entry => ({ ...entry })), holding: net.yoink.holding, yoink: { ...net.yoink.stats },
     acquiredAt, holdTime: params.get('yoink.holdTime').value,
     rawPrimary: [...game.input.rawMouse], canvasOwners: [...game.input.canvasFirePointers],
     focus: document.activeElement?.className ?? '', locked: document.pointerLockElement === game.canvas })
@@ -23,11 +23,21 @@ export function installAboutInputObservers() {
   const capture = (kind, detail) => {
     if (!armed || armed.kind !== kind) return
     const spec = armed; armed = null
-    const record = { label: spec.label, detail, before: spec.before, preEvent: spec.preEvent ?? spec.before, preconditionFailure: spec.preconditionFailure ?? null, immediate: null, firstStep: null, orderStart: order.length }
+    const record = { label: spec.label, detail, before: spec.before, preEvent: spec.preEvent ?? spec.before, preconditionFailure: spec.preconditionFailure ?? null, eventReturn: snapshot(), immediate: null, firstStep: null, stepEntry: null, resumedBy: null, orderStart: spec.orderStart }
+    record.orderEnd = order.length
     records.push(record)
     // Attached AFTER actual target handlers for TAG, after global key handlers for keyup,
     // or queued after the real Shell modal method returns. Never a later evaluate snapshot.
-    queueMicrotask(() => { record.immediate = snapshot(); active = record })
+    queueMicrotask(() => {
+      record.immediate = snapshot()
+      record.transactions = transactions.filter(t => t.start >= spec.orderStart && t.start < record.orderEnd).map(t => ({ ...t, calls: [...t.calls] }))
+      if (spec.pausedRecord) {
+        spec.pausedRecord.resumedBy = record.label
+        spec.pausedRecord.beforeResume = spec.before
+        record.resumes = spec.pausedRecord.label
+      }
+      pending.push(record)
+    })
   }
   const listen = (target, type, fn) => {
     target.addEventListener(type, fn)
@@ -60,11 +70,29 @@ export function installAboutInputObservers() {
   listen(window, 'keyup', event => { if (event.code === 'KeyL') capture('keyup', describe(event)) })
   // Observe canvas endings after Input capture has recomputed/retired the native owner.
   listen(game.canvas, 'pointerup', event => capture('canvasup', describe(event)))
-  for (const [object, method] of [[net.gear, 'cancelActions'], [game.input, 'cancelFireUntilNeutral'],
-    [net.bigRed, 'cancel'], [net.yoink, 'cancel']]) wrap(object, method, function (original, args) {
-    order.push({ method, phase: 'before', state: snapshot() })
+  wrap(net.gear, 'cancelActions', function (original, args) {
+    const parent = transaction
+    const current = { id: ++sequence, start: order.length, before: snapshot(), calls: [], returned: null }
+    transactions.push(current); transaction = current
+    order.push({ transaction: current.id, method: 'GearRack.cancelActions', phase: 'before', state: current.before })
     try { return original.apply(this, args) }
-    finally { order.push({ method, phase: 'after', state: snapshot() }) }
+    finally {
+      current.returned = snapshot()
+      order.push({ transaction: current.id, method: 'GearRack.cancelActions', phase: 'after', state: current.returned })
+      transaction = parent
+    }
+  })
+  for (const [object, method, label] of [[game.input, 'cancelFireUntilNeutral', 'Input.inhibit'],
+    [net.bigRed, 'cancel', 'BigRed.cancel'], [net.yoink, 'cancel', 'Yoink.cancel']]) wrap(object, method, function (original, args) {
+    const owner = transaction
+    const entry = { transaction: owner?.id ?? null, method: label, before: snapshot(), after: null }
+    owner?.calls.push(entry)
+    order.push({ transaction: entry.transaction, method: label, phase: 'before', state: entry.before })
+    try { return original.apply(this, args) }
+    finally {
+      entry.after = snapshot()
+      order.push({ transaction: entry.transaction, method: label, phase: 'after', state: entry.after })
+    }
   })
   for (const name of ['requestPause', 'requestResume', 'releaseCursor']) wrap(shell, name, function (original, args) {
     try { return original.apply(this, args) }
@@ -74,9 +102,19 @@ export function installAboutInputObservers() {
     if (args[2] === 'red') redCalls.push({ tick: game.tick, time: game.time })
     return original.apply(this, args)
   })
+  wrap(net, 'send', function (original, args) {
+    if (args[0]?.type === 'yoink' && args[0].bot === undefined) {
+      const { s: kind, to: target } = args[0].y
+      yoinkSends.push({ kind, target: target ?? null, tick: game.tick, time: game.time })
+      if (kind === 'grab') { acquiredAt = game.time; previousHolding = target }
+      else if (kind === 'drop' || kind === 'fling') { acquiredAt = null; previousHolding = null }
+    }
+    return original.apply(this, args)
+  })
   wrap(net.yoink, 'fixedUpdate', function (original, args) {
     const result = original.apply(this, args)
-    if (net.yoink.holding !== null && net.yoink.holding !== previousHolding) acquiredAt = game.time
+    if (net.yoink.holding === null) acquiredAt = null
+    else if (net.yoink.holding !== previousHolding) acquiredAt = game.time
     previousHolding = net.yoink.holding
     return result
   })
@@ -85,25 +123,28 @@ export function installAboutInputObservers() {
   const last = [...game.systems].reverse().find(system => typeof system.postPhysics === 'function')
   if (!first || !last) throw new Error('Normal ordered simulation hooks unavailable')
   wrap(first, 'fixedUpdate', function (original, args) {
-    if (active && !active.firstStep) active.stepEntry = snapshot()
+    for (const record of pending) if (!record.stepEntry) record.stepEntry = snapshot()
     return original.apply(this, args)
   })
   wrap(last, 'postPhysics', function (original, args) {
     const result = original.apply(this, args)
-    if (active && !active.firstStep) { active.firstStep = snapshot(); active = null }
+    for (const record of pending.splice(0)) record.firstStep = snapshot()
     return result
   })
   const api = {
-    snapshot, records, order, events, redCalls,
+    snapshot, records, order, events, redCalls, yoinkSends, transactions,
     arm(label, kind, expectedTarget = null) {
       if (armed) throw new Error('Previous event observation still armed')
       const before = snapshot()
+      const pausedRecord = pending.length === 1 && pending[0].immediate?.paused && kind === 'requestResume' ? pending[0] : null
+      if (pending.length && !pausedRecord) throw new Error('Previous event has not reached its first normal step')
+      if (pausedRecord && before.tick !== pausedRecord.immediate.tick) throw new Error('Simulation advanced while paused')
       if (expectedTarget !== null) {
         if (before.holding !== expectedTarget || before.acquiredAt === null) throw new Error('Target not held immediately before event')
         if (before.holdTime > 0 && before.time - before.acquiredAt >= before.holdTime - .5)
           throw new Error('Yoink hold too close to automatic timeout')
       }
-      armed = { label, kind, before, expectedTarget }
+      armed = { label, kind, before, expectedTarget, pausedRecord, orderStart: order.length }
       return before
     },
     restore() {
