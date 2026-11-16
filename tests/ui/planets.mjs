@@ -59,9 +59,8 @@ try {
   assert.ok(groups.includes('Terrain') && groups.includes('Sky'), `groups shown: ${groups}`)
   assert.ok(!groups.includes('Bots') && !groups.includes('Game'), `groups shown: ${groups}`)
   await page.screenshot({ path: `${out}/custom.png` })
-  // Settings then Advanced shows everything again.
-  await page.evaluate(() => syn3h.shell.showPanel('settings')); await settle('settings')
-  await page.locator('[data-panel=settings] [data-goto=advanced]').click(); await settle('advanced')
+  // Advanced opened on its own (no longer from a Settings panel) shows everything again.
+  await page.evaluate(() => { syn3h.shell.showPanel('index'); syn3h.shell.showPanel('advanced') }); await settle('advanced')
   assert.ok((await page.evaluate(() => [...document.querySelectorAll('.advanced-host .tp-fldv')].filter(f => f.offsetParent !== null && !f.classList.contains('tp-v-hidden')).map(f => f.querySelector('.tp-fldv_t')?.textContent))).includes('Bots'))
   // A locked world: a guest cannot change kind. The other labels dim, and a tap is refused.
   await page.evaluate(() => { window.syn3hNet = { isHost: false, locked: true, canEditWorld: false, setLocked() {} }; syn3h.shell.showPanel('index') }); await settle('index')
