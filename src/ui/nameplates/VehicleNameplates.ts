@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu'
 import { params } from '../../../shared/params'
 import type { Vehicle } from '../../vehicles/Vehicle'
-import { appearance, placeNameplates, slotAt, type Candidate, type Disc, type Rect, type Slot } from './layout'
+import { appearance, insideDisc, placeNameplates, slotAt, type Candidate, type Disc, type Rect, type Slot } from './layout'
 import type { Point } from './occlusion'
 import { copyCurveState, overHorizon } from '../../world/curve'
 import { bendPoint, CurvedProjection, curvedTerrainOccluded } from './curvature'
@@ -17,12 +17,30 @@ const ANCHOR_GAP = .2
 /** Milliseconds between full label allocations (occlusion, terrain, text, slots). Between them,
  *  shown labels only follow their vehicles. */
 const ALLOCATE_MS = 100
+/** Slack in metres round the player's own car when it hides labels behind it. */
+const LOCAL_MARGIN = .05
 /** A vehicle drawn smaller than this many pixels across is too small to label. */
 const MIN_PIXELS = 6
 /** Plate size limits in pixels. Past the widest, the name is cut with an ellipsis. */
-const PLATE_MIN = 72, PLATE_MAX = 220, PLATE_HEIGHT = 42
+const PLATE_MIN = 72, PLATE_MAX = 220
+/** Plate heights for a person and a bot. Must match label-plate.css. */
+const PERSON_HEIGHT = 42, BOT_HEIGHT = 38
 /** Must match label-plate.css: name and tag fonts, letter spacing in em, and padding plus border. */
-const NAME_FONT = '500 13px Barlow', NAME_SPACING = .08, TAG_FONT = '500 10px Barlow', TAG_SPACING = .16, PLATE_INSET = 30 // padding, border and 4 px for kerning
+const PERSON_NAME = '600 14px Barlow', BOT_NAME = '500 12px Barlow', NAME_SPACING = .08, PERSON_TAG = '500 10px Barlow', BOT_TAG = '500 9px Barlow', TAG_SPACING = .16
+const PLATE_INSET = 30 // padding, border and 4 px for kerning
+
+/**
+ * A vehicle's tint as a label accent: its own hue, lifted to at least 58% lightness so a dark
+ * paint still reads on the dark plate. Invalid input falls back to the theme accent.
+ */
+export function liftTint(hex: string): string {
+  if (!/^#[0-9a-f]{6}$/i.test(hex)) return 'var(--s3-accent, #8fe3ff)'
+  const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min
+  const sat = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1))
+  const hue = d === 0 ? 0 : max === r ? 60 * (((g - b) / d) % 6) : max === g ? 60 * ((b - r) / d + 2) : 60 * ((r - g) / d + 4)
+  return `hsl(${Math.round((hue + 360) % 360)} ${Math.round(sat * 100)}% ${Math.round(Math.max(l, .58) * 100)}%)`
+}
 
 let measure: CanvasRenderingContext2D | null | undefined
 const widths = new Map<string, number>()
@@ -64,7 +82,7 @@ interface Plate {
   bentCenter: THREE.Vector3; sightStamp: number; sightBlocked: boolean
   vehicle?: Vehicle; stamp: number; scanUntil: number; shown: boolean; materializing: boolean; lastX: number; lastY: number
   /** Last written values, so unchanged frames write nothing. */
-  scale: number; width: number; height: number; tx: number; ty: number; lx: number; ly: number; ex: number; ey: number; opacity: number
+  color: string; scale: number; width: number; height: number; tx: number; ty: number; lx: number; ly: number; ex: number; ey: number; opacity: number
 }
 /** One pooled overlay, updated by the caller once after vehicle interpolation and camera update. */
 export class VehicleNameplates {
@@ -80,7 +98,7 @@ export class VehicleNameplates {
   private readonly bend = new THREE.Vector3()
   private readonly screenCenter = new THREE.Vector3()
   private readonly projection = new CurvedProjection()
-  private readonly localDisc: Disc = { id: '@local', x: 0, y: 0, radius: 0, depth: 0 }
+  private readonly localDisc: Disc = { id: '@local', x: 0, y: 0, radius: 0, depth: 0, plateOnly: true }
   private readonly body: Envelope = { radius: 0, rise: 0, reach: 0, top: 0 }
   private readonly anchor = new THREE.Vector3()
   private readonly projected = new THREE.Vector3()
@@ -128,7 +146,7 @@ export class VehicleNameplates {
       const el = document.createElement('div'), name = document.createElement('strong'), note = document.createElement('small'), leader = document.createElement('div')
       el.className = 'vehicle-nameplate s3-plate'; leader.className = 'vehicle-nameplate-leader s3-leader'
       el.append(name, note); this.root.append(leader, el)
-      p = { el, name, note, leader, bentCenter: new THREE.Vector3(), sightStamp: 0, sightBlocked: false, candidate: { id, bot: false, x: 0, y: 0, depth: 0, width: 0, height: 0, opacity: 0, tick: false }, disc: { id, x: 0, y: 0, radius: 0, depth: 0 }, stamp: 0, scanUntil: 0, shown: false, materializing: false, lastX: NaN, lastY: NaN, scale: 1, width: 0, height: 0, tx: NaN, ty: NaN, lx: NaN, ly: NaN, ex: NaN, ey: NaN, opacity: -1 }
+      p = { el, name, note, leader, bentCenter: new THREE.Vector3(), sightStamp: 0, sightBlocked: false, candidate: { id, bot: false, x: 0, y: 0, depth: 0, width: 0, height: 0, opacity: 0, tick: false }, disc: { id, x: 0, y: 0, radius: 0, depth: 0 }, stamp: 0, scanUntil: 0, shown: false, materializing: false, lastX: NaN, lastY: NaN, color: '', scale: 1, width: 0, height: 0, tx: NaN, ty: NaN, lx: NaN, ly: NaN, ex: NaN, ey: NaN, opacity: -1 }
     }
     p.candidate.id = p.disc.id = id; p.candidate.previous = undefined; p.shown = false; p.materializing = false; p.lastX = p.lastY = NaN
     p.el.dataset.vehicle = id
@@ -166,7 +184,10 @@ export class VehicleNameplates {
     const local = this.options.localVehicle()
     // Bodies are boxes fitted to each kind's meshes. A cube as tall as the car is long covered
     // most of a phone screen above the player's roof and rejected every label behind it.
-    const body = renderedEnvelope(local, this.center, this.rotation, this.anchor, this.body)
+    // The player's own car hides a label only where the other vehicle is behind its body: no
+    // slack margin. From the chase camera the usual 0.3 m margin is a band of empty sky over the
+    // roof, and a car 14 m ahead whose roof shows above yours lost its label to it.
+    const body = renderedEnvelope(local, this.center, this.rotation, this.anchor, this.body, LOCAL_MARGIN)
     this.projection.envelope(this.center, body.radius, this.bend, this.camera, w, h, this.localDisc, body.rise, body.reach)
     discs.push(this.localDisc)
     for (const t of list) {
@@ -199,6 +220,10 @@ export class VehicleNameplates {
       bendPoint(this.center, this.bend, p.bentCenter)
       this.projection.project(this.anchor, this.bend, this.camera, w, h, this.projected)
       if (this.projected.z < this.camera.near || this.projected.z > this.camera.far) { this.hide(p); continue }
+      // Behind the player's own car only if even the point just above its roof (the anchor) is
+      // inside that car's outline: a car ahead level with your roof is named, one wholly hidden
+      // by your car is not.
+      if (this.localDisc.depth < this.projected.z && insideDisc(this.projected.x, this.projected.y, this.localDisc)) { this.hide(p); continue }
       const x = this.projected.x, y = this.projected.y
       // Light screen filtering removes subpixel shimmer. Large camera/wrap moves snap rather
       // than dragging a stale label across the HUD; collision tests use the filtered anchor.
@@ -211,13 +236,15 @@ export class VehicleNameplates {
       const note = [t.bot ? 'Bot' : 'Player', t.note, far].filter(Boolean).join(' · ')
       // Sized to the name (or a longer tag) up to PLATE_MAX, where the name is cut short.
       const plateWidth = Math.round(Math.min(PLATE_MAX, Math.max(PLATE_MIN, PLATE_INSET + Math.max(
-        textWidth(name, NAME_FONT, NAME_SPACING, 13), textWidth(note, TAG_FONT, TAG_SPACING, 10)))))
-      Object.assign(p.candidate, { held: p.shown, bot: t.bot, x: p.lastX, y: p.lastY, depth: this.projected.z, width: style.tick ? 8 : plateWidth * style.scale, height: style.tick ? 5 : PLATE_HEIGHT * style.scale, opacity: style.opacity, tick: style.tick })
+        textWidth(name, t.bot ? BOT_NAME : PERSON_NAME, NAME_SPACING, t.bot ? 12 : 14), textWidth(note, t.bot ? BOT_TAG : PERSON_TAG, TAG_SPACING, t.bot ? 9 : 10)))))
+      const plateHeight = t.bot ? BOT_HEIGHT : PERSON_HEIGHT
+      Object.assign(p.candidate, { held: p.shown, bot: t.bot, x: p.lastX, y: p.lastY, depth: this.projected.z, width: style.tick ? 8 : plateWidth * style.scale, height: style.tick ? 5 : plateHeight * style.scale, opacity: style.opacity, tick: style.tick })
       candidates.push(p.candidate)
       if (p.name.textContent !== name) p.name.textContent = name
       if (p.note.textContent !== note) p.note.textContent = note
-      p.el.classList.toggle('is-bot', t.bot); p.leader.classList.toggle('is-bot', t.bot); p.el.classList.toggle('is-tick', style.tick)
-      const cssWidth = style.tick ? 8 : plateWidth, cssHeight = style.tick ? 5 : PLATE_HEIGHT
+      p.el.classList.toggle('is-bot', t.bot); p.el.classList.toggle('is-person', !t.bot); p.el.classList.toggle('is-tick', style.tick)
+      if (t.color !== p.color) { p.color = t.color; const tint = liftTint(t.color); p.el.style.setProperty('--plate-tint', tint); p.leader.style.setProperty('--plate-tint', tint) }
+      const cssWidth = style.tick ? 8 : plateWidth, cssHeight = style.tick ? 5 : plateHeight
       if (cssWidth !== p.width) { p.width = cssWidth; p.el.style.width = `${cssWidth}px` }
       if (cssHeight !== p.height) { p.height = cssHeight; p.el.style.height = `${cssHeight}px` }
       p.scale = style.tick ? 1 : style.scale
@@ -236,6 +263,7 @@ export class VehicleNameplates {
     for (const at of placements) {
       const p = this.plates.get(at.id)!
       placed.add(at.id); p.candidate.previous = at.spot
+      p.el.classList.toggle('is-over-hud', at.overSoft)
       this.write(p, at, at.opacity)
     }
     this.stats.visible = placements.length

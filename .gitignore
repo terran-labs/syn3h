@@ -5,3 +5,5 @@ dist
 *.local
 paseo.local.json
 labs/live-status.json
+.env
+.env.*

@@ -28,6 +28,7 @@
 import { randomBytes } from 'node:crypto'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
+import { MAX_STEP_RETRIES, isBrowserCrash, retryDecision, uncleanSince } from './lib/smoke-retry.mjs'
 import { chromium } from 'playwright-core'
 import { createShotEvidence, createShotDecision } from './shot-evidence.mjs'
 
@@ -45,6 +46,8 @@ if (room.length > 32 || !/^[a-z0-9_-]+$/.test(room)) throw new Error('Invalid sm
 console.log('NET SMOKE RUN', JSON.stringify({ base, room }))
 const diagnosticPath = `/tmp/syn3h-net-smoke-${room}.json`
 const clients = []
+/** Pages whose browser process crashed: the machine failed, not the game (see isBrowserCrash). */
+const crashedPages = []
 const shot = '/tmp/syn3h-net-smoke.png'
 
 const browser = await chromium.launch({
@@ -59,11 +62,26 @@ async function open(name, extra = '') {
   const ctx = await browser.newContext({ viewport: { width: 960, height: 540 } })
   const page = await ctx.newPage()
   clients.push({ name, page })
+  page.on('crash', () => crashedPages.push(name))
   page.on('pageerror', (e) => errors.push(`${name} pageerror: ${e.message}`))
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`${name} console: ${m.text()} at ${m.location().url}`) })
   page.on('response', (r) => { if (r.status() >= 400) console.log(`HTTP ${r.status()} ${r.url()}`) })
   page.on('requestfailed', (r) => console.log(`REQUEST FAILED ${r.url()} ${r.failure()?.errorText}`))
-  await page.goto(`${base}?room=${room}&name=${name}&autoplay=1${extra}`, { waitUntil: 'load' })
+  // A transport error, or a 5xx or 429 for the page itself, is retried twice (after 1 s, then
+  // 3 s) and logged with its URL; any other answer is tested as it is.
+  const address = `${base}?room=${room}&name=${name}&autoplay=1${extra}`
+  for (const [attempt, delay] of [1000, 3000, null].entries()) {
+    let problem = null
+    try {
+      const response = await page.goto(address, { waitUntil: 'load' })
+      const status = response?.status() ?? 0
+      if (status >= 500 || status === 429) problem = `HTTP ${status}`
+    } catch (error) { problem = `transport error: ${String(error.message).split('\n')[0]}` }
+    if (!problem) break
+    if (delay === null) throw new Error(`${address} failed after three attempts: ${problem}`)
+    console.log(`RETRY ${attempt + 1} of 2 for ${address} after ${problem}`)
+    await new Promise((done) => setTimeout(done, delay))
+  }
   // ?autoplay=1 joins the room but leaves the start screen's input suspension on, so press
   // Play as a person would (it is idempotent with autoplay's join).
   await page.waitForFunction(() => window.syn3h?.shell, null, { timeout: 30000 })
@@ -93,6 +111,7 @@ async function captureFailure() {
             network: { connected: n?.connected ?? null, welcomed: n?.welcomed ?? null,
               state: n?.conn?.state ?? null, socketState: n?.conn?.ws?.readyState ?? null,
               bufferedBytes: n?.conn?.ws?.bufferedAmount ?? null, retryAt: n?.conn?.retryAt ?? null,
+              reconnects: n?.conn?.reconnects ?? null, closes: n?.conn?.closes ?? null,
               clockSynced: n?.clock?.synced ?? null, rtt: n?.clock?.rtt ?? null, stats: n?.stats ?? null,
               remotes: n?.remotes ? [...n.remotes.entries()].map(([id, r]) => ({ id, responding: r.responding, paused: r.paused, mode: r.sample?.mode, newest: r.buffer?.newest?.t })) : [] },
             startup: window.syn3hStartup ?? null,
@@ -165,12 +184,67 @@ async function captureShotCollectors() {
     finally {clearTimeout(timer)}
   }))
 }
+/** The running step's results, committed once the step settles (see step()). */
+let current = null
 function check(name, ok, detail) {
-  results.push({ name, ok: Boolean(ok), detail })
-  if(evidenceEnabled && !ok) saveShotEvidence('failed-verdict')
-  console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${JSON.stringify(detail)}`)
+  const r = { name, ok: Boolean(ok), detail }
+  if (current) current.push(r)
+  else commit(r)
+}
+function commit(r) {
+  results.push(r)
+  if(evidenceEnabled && !r.ok) saveShotEvidence('failed-verdict')
+  console.log(`${r.ok ? 'PASS' : 'FAIL'} ${r.name} ${JSON.stringify(r.detail)}`)
 }
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// ---- Steps, and telling the network from the game -------------------------------------------
+// The public address can drop a socket (1006) on a bad route. A step that fails may run once more
+// only if a page's socket closed uncleanly while it ran; the rejoin rules are then checked as
+// coverage of their own. No drop in the window, or a second failure, fails as before.
+/** Page name to player id, as first welcomed: a dropped page must come back as the same player. */
+const ids = new Map()
+const closesOf = (page) => page.evaluate(() => ({ now: performance.now(), closes: window.syn3hNet?.conn?.closes ?? null })).catch(() => ({ now: 0, closes: null }))
+const tally = { steps: 0, passed: 0, retries: 0, drops: [], legacy: false }
+async function step(name, fn, { retryable = true } = {}) {
+  tally.steps++
+  for (let retried = false; ; retried = true) {
+    const marks = await Promise.all(clients.map((c) => closesOf(c.page)))
+    const supported = marks.every((m) => Array.isArray(m.closes))
+    if (!supported) tally.legacy = true
+    const hostBefore = await clients[0].page.evaluate(() => window.syn3hNet?.game?.host ?? null).catch(() => null)
+    current = []
+    let error = null
+    try { await fn({ retried }) } catch (e) { error = e }
+    const attempt = current
+    current = null
+    const after = await Promise.all(clients.map((c) => closesOf(c.page)))
+    const drops = after.flatMap((m, i) => uncleanSince(m.closes, marks[i]?.now ?? 0).map((d) => ({ page: clients[i].name, ...d })))
+    const failed = Boolean(error) || attempt.some((r) => !r.ok)
+    if (drops.length) {
+      tally.drops.push(...drops.map((d) => `${d.page} ${d.code}`))
+      await rejoined(hostBefore)
+    }
+    const decision = retryDecision({ failed, drops, retried, retriesUsed: tally.retries, supported, retryable })
+    if (decision === 'retry') {
+      tally.retries++
+      console.log(`RETRY ${name}: ${drops.map((d) => `${d.page} closed ${d.code}`).join(', ')} while it ran; failed: ${attempt.filter((r) => !r.ok).map((r) => r.name).join(', ') || String(error?.message ?? error)}`)
+      continue
+    }
+    for (const r of attempt) commit(r)
+    if (decision === 'unstable') commit({ name: 'network too unstable to verify', ok: false, detail: { step: name, retries: tally.retries, max: MAX_STEP_RETRIES, drops } })
+    if (!failed) tally.passed++
+    if (error) throw error
+    return
+  }
+}
+/** After a drop: every page back as the same player, the host unchanged, nobody listed twice. */
+async function rejoined(hostBefore) {
+  await Promise.all(clients.map((c) => c.page.waitForFunction(() => window.syn3hNet?.connected && window.syn3hNet.welcomed, null, { timeout: 30000 }).catch(() => {})))
+  const views = await Promise.all(clients.map((c) => c.page.evaluate(() => ({ id: window.syn3hNet.id, host: window.syn3hNet.game.host, humans: [...window.syn3hNet.players.values()].filter((p) => !p.bot).map((p) => p.id) })).catch((e) => ({ error: String(e) }))))
+  const ok = views.every((v, i) => !v.error && v.id === ids.get(clients[i].name) && v.host === hostBefore && v.humans.length === clients.length && new Set(v.humans).size === v.humans.length)
+  commit({ name: 'after a dropped connection: same player ids, same host, nobody listed twice', ok, detail: { hostBefore, ids: Object.fromEntries(ids), views } })
+}
 
 try {
   const a = await open('Alice')
@@ -182,6 +256,7 @@ try {
   const both = (fn, arg) => Promise.all([a.evaluate(fn, arg), b.evaluate(fn, arg)])
   await Promise.all([a, b].map((p) => p.waitForFunction(() => window.syn3hNet?.connected && [...window.syn3hNet.players.values()].filter(p => !p.bot).length === 2, null, { timeout: 30000 })))
   const [idA, idB] = await both(() => window.syn3hNet.id)
+  ids.set('Alice', idA); ids.set('Bob', idB)
   const humanViews = await both(() => [...window.syn3hNet.players.values()].filter(p => !p.bot))
   check('both connected and see each other', idA && idB && idA !== idB && humanViews.every(ps => ps.length === 2 && ps.some(p => p.id === idA && p.name === 'Alice') && ps.some(p => p.id === idB && p.name === 'Bob')), { idA, idB, humanViews })
   await Promise.all([a, b].map(p => p.waitForFunction(() => [...window.syn3hNet.players.values()].some(p => p.bot), null, { timeout: 10000 })))
@@ -209,6 +284,7 @@ try {
   const d2 = (p, q) => Math.hypot(p[0] - q[0], p[2] - q[2])
 
   // 2. Drive A forward and watch it on B.
+  await step('drive', async () => {
   // Both pages share one headless Chrome, and a page that is still loading starves the other
   // of frames: wait until B's game is running before asking A to drive, and drive until A
   // has covered ground (up to 10 s), not for a fixed time that a busy machine can eat.
@@ -234,9 +310,11 @@ try {
   for (let i = 0; i < 50 && !(d2(before, after) > 3 && d2(after, truth) < 2); i++) { await wait(200); after = await remoteOfA() }
   check('A moves on B', d2(before, after) > 3, { before, after, moved: +d2(before, after).toFixed(2) })
   check('B tracks A within 2 m once settled', d2(after, truth) < 2, { remote: after, real: truth, error: +d2(after, truth).toFixed(2) })
+  })
 
   // Releases cut before the shared room clock existed have neither `seaTime` nor `onRoomClock`
   // on the network client: skip these two checks there instead of failing the release.
+  await step('room clock', async () => {
   const hasRoomClock = await a.evaluate(() => typeof window.syn3hNet?.onRoomClock === 'function' && window.syn3hNet.seaTime !== undefined)
   if (!hasRoomClock) console.log('SKIP shared room clock checks: this build predates them')
   else {
@@ -260,7 +338,10 @@ try {
       { aHandedMinusRoom: seaA.handed === null ? null : +(seaA.handed - seaA.room).toFixed(3), bHandedMinusRoom: seaB.handed === null ? null : +(seaB.handed - seaB.room).toFixed(3) })
   }
 
+  })
+
   // 3. Shared slider, clamped by the server.
+  await step('shared sliders', async () => {
   await a.evaluate(() => window.syn3h.params.set('laser.speed', 250))
   await a.evaluate(() => window.syn3h.params.set('world.gravity', 500))
   // Wait for the values to arrive, up to 5 s: a fixed half second was sometimes too short on
@@ -271,38 +352,51 @@ try {
   check('shared slider reaches B', speedB === 250, { speedB })
   check('server clamps a shared slider for everyone', gravB === 18.81 && gravA === 18.81, { gravA, gravB })
   await a.evaluate(() => window.syn3h.params.set('world.gravity', 9.81))
+  })
 
+  // 4 to 6 run as one step: the laser tag needs the "it" the ram passed, and the sounds both.
+  // Every counter is read against the step's own start, so a second run proves the same thing.
+  await step('tag', async ({ retried }) => {
+  // The first run is the fixture: A is "it" and rams B, then B (now it) tags A. A second run
+  // (after a dropped connection) starts from whoever the first run left as "it": that player
+  // rams and the other tags back, the same rules with the roles taken from the room.
   // Reset scores after removing default bots, then verify Alice still holds it before the ram fixture.
   await a.evaluate(() => window.syn3h.params.set('game.mode', 1))
   await b.waitForFunction(() => window.syn3hNet.game.mode === 1)
   await a.evaluate(() => window.syn3h.params.set('game.mode', 0))
-  await Promise.all([a, b].map(p => p.waitForFunction(id => window.syn3hNet.game.mode === 0 && window.syn3hNet.game.it === id, idA)))
-  // 4. Ram. A starts as "it". Park B just ahead of A, then drive A into it.
-  const itBefore = await a.evaluate(() => window.syn3hNet.game.it)
-  await a.evaluate(() => {
+  if (!retried) await Promise.all([a, b].map(p => p.waitForFunction(id => window.syn3hNet.game.mode === 0 && window.syn3hNet.game.it === id, idA)))
+  else await Promise.all([a, b].map(p => p.waitForFunction(ids => window.syn3hNet.game.mode === 0 && ids.includes(window.syn3hNet.game.it), [idA, idB])))
+  const itStart = await a.evaluate(() => window.syn3hNet.game.it)
+  const [H, V, idH, idV] = itStart === idB ? [b, a, idB, idA] : [a, b, idA, idB]
+  const ramsBase = await both(() => window.syn3hNet.stats.rams)
+  const hitsBase = await H.evaluate(() => window.syn3hNet.stats.hitsTaken)
+  const callsBase = await Promise.all([H, V].map((p) => p.evaluate(() => window.__audioCalls.length)))
+  // 4. Ram. The hunter (A on the first run) starts as "it". Park the other just ahead, then drive into it.
+  const itBefore = itStart
+  await H.evaluate(() => {
     const s = window.syn3h.terrain.spawnPoint(0)
     window.syn3h.player.teleport(s.position, 0)
   })
-  await b.evaluate(() => {
+  await V.evaluate(() => {
     const s = window.syn3h.terrain.spawnPoint(0)
     s.position.z -= 7
     s.position.y = window.syn3h.terrain.heightAt(s.position.x, s.position.z) + 1.5
     window.syn3h.player.teleport(s.position, 0)
   })
   await wait(1500) // let both settle and the join cooldown expire
-  await a.bringToFront()
-  await a.keyboard.down('KeyW')
-  await a.waitForFunction(() => window.syn3hNet.stats.rams > 0, null, { timeout: 8000 }).catch(() => {})
-  await a.keyboard.up('KeyW')
+  await H.bringToFront()
+  await H.keyboard.down('KeyW')
+  await H.waitForFunction((base) => window.syn3hNet.stats.rams > base, ramsBase[H === a ? 0 : 1], { timeout: 8000 }).catch(() => {})
+  await H.keyboard.up('KeyW')
   await wait(800)
   const [ramsA, ramsB] = await both(() => window.syn3hNet.stats.rams)
   const [itA, itB] = await both(() => window.syn3hNet.game.it)
-  check('ram detected', ramsA + ramsB > 0, { ramsA, ramsB })
-  check('ramming passes "it" from A to B', itBefore === idA && itA === idB && itB === idB, { itBefore, itA, itB })
+  check('ram detected', ramsA - ramsBase[0] + ramsB - ramsBase[1] > 0, { ramsA, ramsB, ramsBase })
+  check('ramming passes "it" from A to B', (retried || itBefore === idA) && itA === idV && itB === idV, { itBefore, itA, itB, hunter: idH })
 
   // 5. Laser tag. Separate the two so no further contact passes "it" back, wait out the tag
-  // cooldown, then B (it) shoots at where it sees A.
-  await b.evaluate(() => {
+  // cooldown, then the new "it" shoots at where it sees the hunter.
+  await V.evaluate(() => {
     const a = window.syn3h.terrain.spawnPoint(0)
     const p = a.position.clone()
     p.z += 20
@@ -310,37 +404,41 @@ try {
     window.syn3h.player.teleport(p, 0)
   })
   await wait(3300)
-  const scoreBefore = await a.evaluate((id) => { window.__shotEvidence?.begin('human',id,window.syn3hNet.id); return window.syn3hNet.game.scores[id] ?? 0 }, idB)
+  const scoreBefore = await H.evaluate((id) => { window.__shotEvidence?.begin('human',id,window.syn3hNet.id); return window.syn3hNet.game.scores[id] ?? 0 }, idV)
   for (let i = 0; i < 6; i++) {
-    await b.evaluate((id) => {
+    await V.evaluate((id) => {
       const n = window.syn3hNet
       window.__shotEvidence?.begin('human',n.id,id)
       const target = n.remotes.get(id).vehicle.body.translation()
       n.fire(undefined, target)
-    }, idA)
-    const hit = await a.waitForFunction(() => window.syn3hNet.stats.hitsTaken > 0, null, { timeout: 1500 }).then(() => true, () => false)
+    }, idH)
+    const hit = await H.waitForFunction((base) => window.syn3hNet.stats.hitsTaken > base, hitsBase, { timeout: 1500 }).then(() => true, () => false)
     if (hit) break
     await wait(400)
   }
   await wait(600)
-  const hitsA = await a.evaluate(() => window.syn3hNet.stats.hitsTaken)
-  const scoreSample = evidenceEnabled ? await a.evaluate((id) => ({value:window.syn3hNet.game.scores[id] ?? 0, at:performance.now(), evidence:window.__shotEvidence.snapshot('human')}), idB) : null
-  const scoreAfter = evidenceEnabled ? scoreSample.value : await a.evaluate((id) => window.syn3hNet.game.scores[id] ?? 0, idB)
-  check('victim detects the laser hit', hitsA > 0, { hitsA })
-  const itNow = await a.evaluate(() => window.syn3hNet.game.it)
+  const hitsA = await H.evaluate(() => window.syn3hNet.stats.hitsTaken)
+  const scoreSample = evidenceEnabled ? await H.evaluate((id) => ({value:window.syn3hNet.game.scores[id] ?? 0, at:performance.now(), evidence:window.__shotEvidence.snapshot('human')}), idV) : null
+  const scoreAfter = evidenceEnabled ? scoreSample.value : await H.evaluate((id) => window.syn3hNet.game.scores[id] ?? 0, idV)
+  check('victim detects the laser hit', hitsA > hitsBase, { hitsA, hitsBase })
+  const itNow = await H.evaluate(() => window.syn3hNet.game.it)
   check('"it" scores for a laser tag', scoreAfter === scoreBefore + 1, { scoreBefore, scoreAfter, it: itNow })
 
-  // 6. Sounds.
-  const [soundSampleA, soundSampleB] = [await audioCalls(a), await audioCalls(b)]
-  const [soundsA,soundsB]=evidenceEnabled ? [soundSampleA.calls,soundSampleB.calls] : [soundSampleA,soundSampleB]
-  check('sounds: A heard B materialize and the ram', soundsA.includes('materialize') && soundsA.some((c) => c.startsWith('impact:')), { soundsA })
-  check('sounds: B heard its shot and the hit', soundsB.includes('laserShot') && soundsB.includes('laserHit'), { soundsB })
+  // 6. Sounds. A heard B arrive at the start; the ram and the shot are heard in this run.
+  const [soundSampleH, soundSampleV, soundSampleA] = [await audioCalls(H), await audioCalls(V), await audioCalls(a)]
+  const calls = (x) => evidenceEnabled ? x.calls : x
+  const [soundsA, soundsB] = [calls(soundSampleH), calls(soundSampleV)]
+  check('sounds: A heard B materialize and the ram', calls(soundSampleA).includes('materialize') && soundsA.slice(callsBase[0]).some((c) => c.startsWith('impact:')), { soundsA })
+  check('sounds: B heard its shot and the hit', soundsB.slice(callsBase[1]).includes('laserShot') && soundsB.slice(callsBase[1]).includes('laserHit'), { soundsB })
   if (evidenceEnabled) {
-    const humanOriginals = results.filter(r => ['victim detects the laser hit','"it" scores for a laser tag','sounds: B heard its shot and the hit'].includes(r.name)).map(r=>r.ok)
+    const soundSampleB = soundSampleV
+    const humanOriginals = (current ?? results).filter(r => ['victim detects the laser hit','"it" scores for a laser tag','sounds: B heard its shot and the hit'].includes(r.name)).map(r=>r.ok)
     check('matched human shot evidence at original samples', createShotDecision().seal({originals:humanOriginals,local:scoreSample.evidence,remote:soundSampleB.evidence,score:scoreAfter,scoreBefore,requireScore:true}).ok, {scoreSample,soundSampleB})
   }
+  })
 
   // 7. Identity and name tags.
+  await step('identity', async () => {
   await a.evaluate(() => window.syn3hNet.setProfile({ kind: 'buggy-syn3h', colors: { body: '#FF2200', accent: '#00ffcc' } }))
   // Wait for the colour: the kind is already the default, so waiting on it alone returned at
   // once and read the old colours whenever the link had real latency.
@@ -359,8 +457,11 @@ try {
   const tag = await b.evaluate(() => [...document.querySelectorAll('.syn3h-nametags div')].map((d) => ({ text: d.textContent, display: d.style.display, opacity: d.style.opacity })))
   check('B shows a name tag for A', tag.some((t) => t.text.startsWith('Alice') && t.display === 'block' && Number(t.opacity) > 0.5), tag)
   await b.screenshot({ path: shot })
+  })
 
   // 8. Hidden tab heartbeat.
+  await step('hidden tab', async () => {
+  const beatsBase = await b.evaluate(() => window.syn3hNet.stats.heartbeats)
   await b.evaluate(() => {
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
     document.dispatchEvent(new Event('visibilitychange'))
@@ -369,7 +470,7 @@ try {
   const hiddenView = await a.evaluate((id) => { const r = window.syn3hNet.remotes.get(id); return { paused: r.paused, responding: r.responding } }, idB)
   const beats = await b.evaluate(() => window.syn3hNet.stats.heartbeats)
   const hudPaused = await a.evaluate(() => document.getElementById('hud').textContent)
-  check('hidden tab shows as paused, not lost', hiddenView.paused && hiddenView.responding && beats >= 2 && hudPaused.includes('(paused)'), { ...hiddenView, beats })
+  check('hidden tab shows as paused, not lost', hiddenView.paused && hiddenView.responding && beats - beatsBase >= 2 && hudPaused.includes('(paused)'), { ...hiddenView, beats, beatsBase })
   await b.evaluate(() => {
     Object.defineProperty(document, 'hidden', { configurable: true, get: () => false })
     document.dispatchEvent(new Event('visibilitychange'))
@@ -378,7 +479,13 @@ try {
   const back = await a.evaluate((id) => window.syn3hNet.remotes.get(id).paused, idB)
   check('returning tab resumes', back === false, { paused: back })
 
+  })
+
   // 9. Exercise the actual manager in both Vite and production, without module imports.
+  await step('bots', async () => {
+  // A second run starts with no bot, as the first does.
+  await a.evaluate(() => window.syn3h.params.set('bots.count', 0))
+  await a.waitForFunction(() => window.syn3h.bots.vehicles.length === 0, null, { timeout: 8000 }).catch(() => {})
   await a.evaluate(() => {
     const s = window.syn3h
     s.params.set('bots.canDrive', false); s.params.set('bots.canFire', false)
@@ -418,11 +525,14 @@ try {
     const hitSeen = evidenceEnabled ? botSoundSample.value : await b.evaluate(() => window.__audioCalls.filter((c) => c === 'laserHit').length)
     const diag = { a: await a.evaluate(() => ({ lasers: window.syn3hNet.lasers.count, host: window.syn3hNet.isHost })), bFired: await b.evaluate(() => window.syn3hNet.stats.shotsFired) }
     check('host judges a laser hit on its bot', judged > judgedBefore && hitSeen >= 2, { judgedBefore, judged, hitSoundsOnB: hitSeen, ...diag })
-    if (evidenceEnabled) check('matched bot shot evidence at original samples',createShotDecision().seal({originals:[results.at(-1).ok],local:judgedSample.evidence,remote:botSoundSample.evidence}).ok,{judgedSample,botSoundSample})
+    if (evidenceEnabled) check('matched bot shot evidence at original samples',createShotDecision().seal({originals:[(current ?? results).at(-1).ok],local:judgedSample.evidence,remote:botSoundSample.evidence}).ok,{judgedSample,botSoundSample})
   }
   await a.evaluate(() => window.syn3h.params.set('bots.count', 0))
+  })
 
-  // 10. World seed, and a late joiner who arrives with a different one.
+  // 10. World seed, and a late joiner who arrives with a different one. Opening a page cannot
+  // be repeated, so this step never runs twice.
+  await step('seed and a late joiner', async () => {
   await a.evaluate(() => window.syn3h.params.set('world.seed', 4242))
   await wait(2500)
   const onGround = (page) => page.evaluate(() => {
@@ -433,12 +543,22 @@ try {
   check('seed reaches B and B stays on the new ground', seedB.seed === 4242 && seedB.y > seedB.ground - 1 && seedB.y < seedB.ground + 6, seedB)
   const c = await open('Carol', '&seed=777')
   await c.waitForFunction(() => window.syn3hNet?.connected, null, { timeout: 30000 })
+  ids.set('Carol', await c.evaluate(() => window.syn3hNet.id))
   await wait(2500)
   const seedC = await onGround(c)
   check('late joiner gets the room seed and lands on that ground', seedC.seed === 4242 && seedC.y > seedC.ground - 1 && seedC.y < seedC.ground + 6, seedC)
 
+  }, { retryable: false })
+
   // 11. King of the Hill. Spy on the shell's match display and inject a seeded bot namer, as
   // main.ts would pass them.
+  await step('king of the hill', async () => {
+  // A second run starts a fresh round: King of the Hill is entered from another mode.
+  if (await a.evaluate(() => window.syn3hNet.game.mode === 1)) {
+    await a.evaluate(() => window.syn3h.params.set('game.mode', 0))
+    await b.waitForFunction(() => window.syn3hNet.game.mode === 0, null, { timeout: 8000 }).catch(() => {})
+  }
+  const stuckBase = await b.evaluate(() => window.syn3hNet.stats.stuck)
   await b.evaluate(() => {
     window.__match = []
     window.syn3hNet.ctx.setMatchState = (m) => window.__match.push(m)
@@ -500,7 +620,7 @@ try {
       const outB = await a.evaluate((id) => window.syn3hNet.game.koth.out[id] ?? 0, idB)
       const stuck = await b.evaluate(() => ({ count: window.syn3hNet.stats.stuck, visible: window.syn3h.player.object.visible, hud: document.getElementById('hud').textContent.match(/stuck in the lava[^\n]*/)?.[0] ?? null }))
       const visibleOnA = await a.evaluate((id) => window.syn3hNet.remotes.get(id)?.vehicle.object.visible === true, idB)
-      check('lava sticks B: it sits out of the hill count but stays in the world', stuck.count === 1 && stuck.visible && stuck.hud && outB > 0 && visibleOnA, { stuck, outB, visibleOnA })
+      check('lava sticks B: it sits out of the hill count but stays in the world', stuck.count === stuckBase + 1 && stuck.visible && stuck.hud && outB > 0 && visibleOnA, { stuck, outB, visibleOnA })
       await wait(3500)
       const back = await b.evaluate(() => {
         const p = window.syn3h.player.body.translation()
@@ -511,6 +631,7 @@ try {
       console.log('SKIP lava: no lava under the zone centre on this terrain')
     }
   }
+  })
 
   const hud = await b.evaluate(() => document.getElementById('hud').textContent)
   console.log('B HUD:\n' + hud)
@@ -548,6 +669,13 @@ check('no page errors', errors.length === 0, errors)
 const failed = results.filter((r) => !r.ok)
 const evidenceFailed = evidenceEnabled && !evidenceComplete()
 // release.sh checks the marker, not Node's exit code. Never print OK for incomplete evidence.
+console.log(`NET SMOKE SUMMARY steps passed ${tally.passed}/${tally.steps}; drops ridden through ${tally.drops.length}${tally.drops.length ? ` (${tally.drops.join(', ')})` : ''}; step retries ${tally.retries}/${MAX_STEP_RETRIES}${tally.legacy ? '; this build records no socket closes, so a dropped connection cannot be told from a game failure and no step was retried' : ''}`)
+const crashed = crashedPages.length > 0 || failed.some((r) => isBrowserCrash(JSON.stringify(r.detail)))
+// A crash is reported as what it is, never as a gameplay failure; tools/smoke-run.sh may restart once.
+if (crashed) {
+  console.log(`NET SMOKE BROWSER CRASHED (${crashedPages.join(', ') || 'a page'}): the browser running the check crashed; this is not a game or network failure`)
+  process.exit(3)
+}
 console.log(failed.length ? `NET SMOKE FAILED (${failed.length})` : evidenceFailed ? 'NET SMOKE FAILED (incomplete shot evidence)' : `NET SMOKE OK, screenshot ${shot}`)
 if (evidenceEnabled) console.log('SHOT EVIDENCE ACCEPTANCE',JSON.stringify({evidenceComplete:evidenceComplete(),evidenceCaptureState,evidenceCaptureFailures,evidenceWriteFailures}))
 process.exit(failed.length || evidenceFailed ? 1 : 0)

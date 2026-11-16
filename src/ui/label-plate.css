@@ -5,13 +5,18 @@
 
    Halo language (src/ui/theme-halo.css): one hairline, the shared smoked fill made darker so a
    name reads over a bright sky, the sun or a nebula, Barlow in spaced capitals, the HUD's
-   under-shadow on type, and a 3 px accent bar whose tone says what is named: people and
-   places cyan (--s3-accent), bots the warm --s3-warn. All colours are theme tokens.
+   under-shadow on type, and a 3 px accent bar.
+
+   Colour means identity. --plate-tint, set per plate, colours the bar and the leader: a
+   vehicle's own paint (lifted when too dark to read, see liftTint in VehicleNameplates.ts).
+   Without one the bar is the theme cyan, as on the planet labels. Who is named is told by form
+   and words, never hue: .is-person is larger and brighter with a strong rim, .is-bot smaller
+   and quieter, and the tag says Player or Bot.
 
    `:not(#s3-plate)` lifts these rules above the shell's generic button rules (a planet label
    is a button) without !important; no element has that id. */
 .s3-plate:not(#s3-plate) {
-  --plate-tone: var(--s3-accent, #8fe3ff);
+  --plate-tint: var(--s3-accent, #8fe3ff);
   box-sizing: border-box; margin: 0; padding: 5px 10px 5px 14px;
   border: 1px solid var(--s3-line, rgb(205 240 255 / .5)); border-radius: 10px;
   background: color-mix(in srgb, var(--halo-fill, rgb(3 11 19 / .34)), rgb(3 11 19) 35%); background-image: none;
@@ -21,33 +26,42 @@
   -webkit-backdrop-filter: none; backdrop-filter: none;
   transition: border-color .18s, box-shadow .18s, background-color .18s, scale .18s;
 }
-/* The accent bar. */
+/* The accent bar, in the plate's tint. */
 .s3-plate:not(#s3-plate)::before {
   content: ''; display: block; position: absolute; left: 5px; top: 6px; bottom: 6px; width: 3px; border-radius: 2px;
-  background: var(--plate-tone); box-shadow: 0 0 4px color-mix(in srgb, var(--plate-tone) 45%, transparent);
+  background: var(--plate-tint); box-shadow: 0 0 4px color-mix(in srgb, var(--plate-tint) 45%, transparent);
   transition: box-shadow .18s, filter .18s;
 }
-/* The name, then smaller lines: a tag in the plate's tone, or quieter detail. */
+/* The name, then smaller lines: a tag in the plate's tint, or quieter detail. */
 .s3-plate:not(#s3-plate) > strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 13px/16px 'Barlow', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: inherit; }
-.s3-plate:not(#s3-plate) > small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 10px/13px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--plate-tone); }
+.s3-plate:not(#s3-plate) > small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 10px/13px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--plate-tint); }
 .s3-plate:not(#s3-plate) > small.s3-plate-quiet { color: var(--s3-soft, #cfe3ec); }
 .s3-plate:not(#s3-plate) > small:empty { display: none; }
-.s3-plate.is-bot:not(#s3-plate) { --plate-tone: var(--s3-warn, #ffb08a); border-color: color-mix(in srgb, var(--s3-warn, #ffb08a) 32%, transparent); box-shadow: none; }
+
+/* A person: larger, brighter, a strong rim and a faint glow in their tint. */
+.s3-plate.is-person:not(#s3-plate) { border-color: var(--s3-ink, #f3fbff); box-shadow: var(--halo-glow, 0 0 6px rgb(143 227 255 / .14)), 0 0 8px color-mix(in srgb, var(--plate-tint) 30%, transparent); }
+.s3-plate.is-person:not(#s3-plate) > strong { font: 600 14px/17px 'Barlow', sans-serif; letter-spacing: .08em; }
+.s3-plate.is-person:not(#s3-plate) > small { color: var(--s3-ink, #f3fbff); }
+/* A bot: smaller and quieter, a faint rim. */
+.s3-plate.is-bot:not(#s3-plate) { padding: 4px 9px 4px 13px; border-color: var(--s3-line-quiet, rgb(205 240 255 / .2)); box-shadow: none; background: color-mix(in srgb, var(--halo-fill, rgb(3 11 19 / .34)), rgb(3 11 19) 15%); color: var(--s3-dim, #d8eaf3); }
+.s3-plate.is-bot:not(#s3-plate)::before { top: 5px; bottom: 5px; width: 2px; box-shadow: none; }
+.s3-plate.is-bot:not(#s3-plate) > strong { font: 500 12px/15px 'Barlow', sans-serif; letter-spacing: .08em; }
+.s3-plate.is-bot:not(#s3-plate) > small { font-size: 9px; line-height: 12px; color: var(--s3-soft, #cfe3ec); }
+
 /* Selected (the world in play): a brighter rim and bar. Pointed at or focused, unmistakably:
-   the same, plus a cyan glow, a lighter fill and a slight lift. */
+   the same, plus a glow, a lighter fill and a slight lift. */
 .s3-plate:not(#s3-plate):is(:hover, :focus-visible, .is-selected) {
   border-color: color-mix(in srgb, var(--s3-accent-2, #c6f1ff) 85%, transparent);
-  box-shadow: var(--halo-glow, 0 0 6px rgb(143 227 255 / .14)), 0 0 10px color-mix(in srgb, var(--plate-tone) 22%, transparent);
+  box-shadow: var(--halo-glow, 0 0 6px rgb(143 227 255 / .14)), 0 0 10px color-mix(in srgb, var(--plate-tint) 22%, transparent);
 }
-.s3-plate:not(#s3-plate):is(:hover, :focus-visible, .is-selected)::before { filter: brightness(1.25); box-shadow: 0 0 7px color-mix(in srgb, var(--plate-tone) 70%, transparent); }
+.s3-plate:not(#s3-plate):is(:hover, :focus-visible, .is-selected)::before { filter: brightness(1.25); box-shadow: 0 0 7px color-mix(in srgb, var(--plate-tint) 70%, transparent); }
 .s3-plate:not(#s3-plate):is(:hover, :focus-visible) {
   border-color: var(--s3-accent-2, #c6f1ff); scale: 1.04;
-  background: color-mix(in srgb, color-mix(in srgb, var(--halo-fill, rgb(3 11 19 / .34)), rgb(3 11 19) 35%), var(--plate-tone) 12%);
-  box-shadow: var(--halo-glow, 0 0 6px rgb(143 227 255 / .14)), 0 0 16px color-mix(in srgb, var(--plate-tone) 45%, transparent);
+  background: color-mix(in srgb, color-mix(in srgb, var(--halo-fill, rgb(3 11 19 / .34)), rgb(3 11 19) 35%), var(--plate-tint) 12%);
+  box-shadow: var(--halo-glow, 0 0 6px rgb(143 227 255 / .14)), 0 0 16px color-mix(in srgb, var(--plate-tint) 45%, transparent);
 }
 .s3-plate:not(#s3-plate):focus-visible { outline: 1px solid var(--s3-accent-2, #c6f1ff); outline-offset: 3px; }
 @media (prefers-reduced-motion: reduce) { .s3-plate:not(#s3-plate):is(:hover, :focus-visible) { scale: none; } }
 
-/* The leader: a 1 px line from the plate to what it names, in the plate's tone. */
-.s3-leader { position: absolute; left: 0; top: 0; height: 1px; transform-origin: 0 50%; pointer-events: none; background: var(--plate-tone, var(--s3-accent, #8fe3ff)); opacity: .65; }
-.s3-leader.is-bot { --plate-tone: var(--s3-warn, #ffb08a); }
+/* The leader: a 1 px line from the plate to what it names, in the same tint. */
+.s3-leader { --plate-tint: var(--s3-accent, #8fe3ff); position: absolute; left: 0; top: 0; height: 1px; transform-origin: 0 50%; pointer-events: none; background: var(--plate-tint); opacity: .65; }

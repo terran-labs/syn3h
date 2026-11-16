@@ -1,4 +1,4 @@
-import { loadingMessages } from './data/loadingMessages'
+import { loadingMessages, pickLoadingLine } from './data/loadingMessages'
 
 const phaseLabels: Record<string, string> = { device: 'Checking your device', physics: 'Preparing motion', renderer: 'Preparing the view', world: 'Building the world', ready: 'Ready to explore' }
 export interface LoadingDetail { phase?: string; progress?: number; elapsedMs?: number }
@@ -8,6 +8,10 @@ interface BootMeter { set(value: number): void; value(): number; stop(): void }
 const meter = (): BootMeter | undefined => (window as unknown as { __boot?: BootMeter }).__boot
 /** However slow the device, the veil never stays longer than this. */
 const LIMIT_MS = 45000
+/** A fun line stays up for three to four seconds unless the phase changes first. */
+const ROTATE_MS = 3000, ROTATE_JITTER_MS = 1000
+/** Matches the .boot-status opacity transition in index.html. */
+const FADE_MS = 250
 
 /**
  * The loading veil's logic. The veil itself, its mark and the easing of its progress are in
@@ -17,29 +21,38 @@ const LIMIT_MS = 45000
  * raises the mark's target as the game reports its phases, and when the world is ready it
  * lets the light finish its lap and lifts the veil.
  *
- * The veil carries Syn3h's name, a word of status and, after eight seconds, a line saying
- * it is still working (all in index.html, so they show before this module arrives). This
- * module changes the word as the phases pass.
+ * The veil's status line (.boot-status) shows a dry joke about what is loading. index.html
+ * picks the first one before any module arrives; this module rotates them, from a pool for
+ * each phase and then the general list, at each phase change and every three to four
+ * seconds. That line is aria-hidden: screen readers hear the plain phase ("Building the
+ * world") once per phase from this module's own polite live region, .syn3h-loading.
  */
 export class LoadingScreen {
+  /** The visually hidden live region: the plain phase, once per phase. */
   readonly element = document.createElement('section')
-  private messages: string[] = [...loadingMessages]
-  private index = 0
+  private messages: readonly string[] = loadingMessages
+  /** A host's own list replaces the phase pools as well as the general list. */
+  private custom = false
+  private phase: string | undefined
+  private label = ''
+  private readonly shown = new Set<string>()
   private done = false
-  private readonly timer: ReturnType<typeof setInterval>
+  private rotation: ReturnType<typeof setTimeout> | undefined
+  private fade: ReturnType<typeof setTimeout> | undefined
   private readonly limit: ReturnType<typeof setTimeout>
   private readonly abort = new AbortController()
   constructor() {
     this.element.className = 'syn3h-loading'
-    // The veil's own status line is the one screen readers hear; this copy is for the checks.
-    this.element.setAttribute('aria-hidden', 'true')
-    this.element.innerHTML = '<p class="loading-phase">Starting Syn3h</p><progress aria-label="Loading progress"></progress><p class="loading-message"></p>'
+    this.element.setAttribute('role', 'status')
+    this.element.setAttribute('aria-live', 'polite')
+    this.element.innerHTML = '<p class="loading-phase"></p>'
     document.body.append(this.element)
-    this.setMessages(this.messages)
-    // The bundle has arrived and is running.
-    meter()?.set(0.45); this.say('Starting Syn3h')
+    // The bundle has arrived and is running. index.html's own rotation hands over here.
+    meter()?.set(0.45); this.announce('Loading Syn3h')
+    const inline = window as unknown as { __bootLines?: number }; clearInterval(inline.__bootLines); inline.__bootLines = 0
+    const first = this.status()?.textContent; if (first) this.shown.add(first)
+    this.schedule()
     window.addEventListener('syn3h:loading', event => this.update((event as CustomEvent<LoadingDetail>).detail), { signal: this.abort.signal })
-    this.timer = setInterval(() => { this.index++; this.element.querySelector('.loading-message')!.textContent = this.messages[this.index % this.messages.length] }, 5000)
     this.limit = setTimeout(() => this.finish(), LIMIT_MS)
     // A startup failure must be seen, never hidden behind the veil: lift at once on a script
     // error, a rejected promise, or the moment the page's failure message is shown.
@@ -52,25 +65,49 @@ export class LoadingScreen {
       this.abort.signal.addEventListener('abort', () => watch.disconnect())
     }
   }
+  /** Replaces the lines with a host's own. They are shown as text, never as markup. */
   setMessages(messages: readonly string[]): void {
-    this.messages = messages.filter(value => typeof value === 'string' && value.trim()).slice(0, 100)
-    if (!this.messages.length) this.messages = [...loadingMessages]
-    this.index = 0; this.element.querySelector('.loading-message')!.textContent = this.messages[0]
+    const usable = messages.filter(value => typeof value === 'string' && value.trim()).slice(0, 100)
+    this.custom = usable.length > 0
+    this.messages = this.custom ? usable : loadingMessages
+    this.shown.clear(); this.rotate()
   }
   update(detail?: LoadingDetail): void {
     if (!detail || typeof detail !== 'object') return
-    if (typeof detail.phase === 'string') this.say(phaseLabels[detail.phase] ?? detail.phase)
-    const progress = this.element.querySelector('progress')!
-    if (typeof detail.progress === 'number' && Number.isFinite(detail.progress)) {
-      progress.max = 1; progress.value = Math.min(1, Math.max(0, detail.progress))
-      // The game's own progress takes the light from where the bundle left it to nearly round.
-      meter()?.set(0.45 + 0.47 * progress.value)
-    } else progress.removeAttribute('value')
+    if (typeof detail.phase === 'string' && detail.phase !== this.phase) {
+      this.phase = detail.phase
+      this.announce(phaseLabels[detail.phase] ?? detail.phase)
+      this.rotate()
+    }
+    // The game's own progress takes the light from where the bundle left it to nearly round.
+    if (typeof detail.progress === 'number' && Number.isFinite(detail.progress)) meter()?.set(0.45 + 0.47 * Math.min(1, Math.max(0, detail.progress)))
   }
-  /** The word of status on the veil. */
-  private say(text: string): void {
+  private status(): HTMLElement | null { return document.querySelector<HTMLElement>('.boot-status') }
+  /** The plain phase, for screen readers. Only a change is written, so each is heard once. */
+  private announce(text: string): void {
+    if (text === this.label) return
+    this.label = text
     this.element.querySelector('.loading-phase')!.textContent = text
-    const status = document.querySelector('.boot-status'); if (status) status.textContent = text
+  }
+  /** Shows the next fun line now, then schedules the one after. */
+  private rotate(): void {
+    const status = this.status()
+    if (this.done || !status) return
+    const previous = this.fade === undefined ? status.textContent ?? undefined : status.dataset.next
+    const line = pickLoadingLine({ phase: this.custom ? undefined : this.phase, general: this.messages, previous, shown: this.shown })
+    this.shown.add(line)
+    clearTimeout(this.fade); this.fade = undefined
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) { status.textContent = line; delete status.dataset.fade }
+    else {
+      // Fade out, change the words, fade back in. The line keeps its reserved height throughout.
+      status.dataset.fade = ''; status.dataset.next = line
+      this.fade = setTimeout(() => { this.fade = undefined; status.textContent = line; delete status.dataset.fade; delete status.dataset.next }, FADE_MS)
+    }
+    this.schedule()
+  }
+  private schedule(): void {
+    clearTimeout(this.rotation)
+    this.rotation = setTimeout(() => this.rotate(), ROTATE_MS + Math.random() * ROTATE_JITTER_MS)
   }
   /** Everything is here. Let the light finish its lap, then lift. */
   finish(): void {
@@ -88,7 +125,7 @@ export class LoadingScreen {
   /** Lift the veil. Safe to call more than once. */
   private lift(): void {
     this.done = true
-    clearInterval(this.timer); clearTimeout(this.limit); meter()?.stop()
+    clearTimeout(this.rotation); clearTimeout(this.limit); meter()?.stop()
     const root = document.documentElement
     // A busy phone draws few frames while it loads, so the eased light may not have got
     // round in time. Complete the lap as the mark opens out: it never lifts unfinished.

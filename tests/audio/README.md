@@ -60,9 +60,8 @@ unrequired bitmaps; `tests/ops/shipped-assets.test.ts` covers it.
 `tests/audio/score-game.mjs <origin>` checks these defaults, restored choices, switching,
 mute and lighter mode in the real browser. Run all checks through `tools/heavy.sh`.
 
-From this worktree, run `npx tsc --noEmit`, `npx vitest run`, and start Vite with `npx vite --port 5187 --strictPort`. In another terminal run `node tests/audio/browser.mjs`. Stop Vite afterwards.
+From this worktree, run `npx tsc --noEmit`, `npx vitest run`, and start Vite with `npx vite --port 5187 --strictPort`. Run the browser checks below against it, then stop Vite.
 
-The browser smoke dynamically imports the initializer into the existing running scene, so it does not need a composition-root edit. It verifies name persistence, invite copying, suspended input, keyboard driving, gamepad and touch input composition, mouse fire, real multi-touch drive/fire, cancellation and blur cleanup, wings, brakes, audio unlock and decode, streamed track changes and old-deck shutdown, mute, and teardown. It also renders the real engine graph offline and checks for silence and clipping.
 
 Generated screenshots, a JSON report and a six-second engine WAV are in `tests/audio/artifacts/` and excluded from commits. Desktop and phone screenshots are visually reviewed. The audio render measures headroom; it does not establish subjective listening quality. Physical-phone Safari playback and listening on speakers remain unverified.
 

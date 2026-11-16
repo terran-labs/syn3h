@@ -205,14 +205,22 @@ export class ChaseCamera implements System {
     listen(window, 'syn3h:daydream', ((event: CustomEvent<{ active: boolean }>) => { if (event.detail?.active) this.director.start(); else this.director.stop() }) as EventListener)
     listen(window, 'pointermove', ((event: PointerEvent) => {
       if ((!this.dragging && document.pointerLockElement !== game.canvas) || this.game.input.suspended) return
-      const sensitivity = camSensitivity.value * (this.scopeHeld ? 0.75 / 4 : 1) * Math.PI / 180 * 0.1
-      this.yaw -= event.movementX * sensitivity; this.pitch = clamp(this.pitch - event.movementY * sensitivity, -Math.PI * 0.49, Math.PI * 0.49)
-      this.lastManual = this.elapsed
+      this.look(event.movementX, event.movementY)
     }) as EventListener)
+    // Touch aiming (src/ui/TouchControls.ts): finger travel in CSS px, treated as mouse travel.
+    listen(window, 'syn3h:look', ((event: CustomEvent<{ dx: number; dy: number }>) => this.look(event.detail.dx, event.detail.dy)) as EventListener)
     listen(game.canvas, 'wheel', ((event: WheelEvent) => {
       event.preventDefault()
       this.zoom(event.deltaY, event.deltaMode)
     }) as EventListener, { passive: false })
+  }
+
+  /** Turn the view by pointer travel in CSS px, at the mouse sensitivity; chase resumes after camera.autoDelay. */
+  look(dx: number, dy: number): void {
+    if (this.game.input.suspended || !Number.isFinite(dx) || !Number.isFinite(dy)) return
+    const sensitivity = camSensitivity.value * (this.scopeHeld ? 0.75 / 4 : 1) * Math.PI / 180 * 0.1
+    this.yaw -= dx * sensitivity; this.pitch = clamp(this.pitch - dy * sensitivity, -Math.PI * 0.49, Math.PI * 0.49)
+    this.lastManual = this.elapsed
   }
 
   /** Proportional wheel input, preserving scope and roam units and parameter ranges. */

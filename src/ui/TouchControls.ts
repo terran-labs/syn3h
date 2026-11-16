@@ -1,6 +1,8 @@
 import type { VehicleKind } from '../vehicles'
 import type { Input } from '../core/Input'
+import { params } from '../../shared/params'
 import './touch-stick.css'
+import { persistHandedness, touchLeftHanded, touchRole } from './TouchPreferences'
 
 /*
  * The floating thumb stick: pure maths, exported for tests/ui/touch-stick.test.ts.
@@ -14,8 +16,8 @@ export const STICK_RADIUS_SCALE = 0.34
 export const STICK_DEAD_ZONE = 0.08
 /** How far a touch moves, in CSS px, before it is a drag rather than a tap. */
 export const DRAG_THRESHOLD = 8
-/** Drags that start left of this fraction of the screen width drive. */
-export const STICK_REGION = 0.55
+/** Drags that start within this fraction of the screen width, from the driving hand's edge, drive. */
+export { STICK_REGION } from './TouchPreferences'
 
 export interface StickPoint { x: number; y: number }
 export const stickRadius = (baseWidth: number): number => baseWidth * STICK_RADIUS_SCALE
@@ -50,6 +52,9 @@ export class TouchControls {
   /** Whether this device has driven with the stick, so the first-run hint can stay away. */
   private driven = readDriven()
   private hint?: HTMLElement
+  private kind: VehicleKind = 'buggy'
+  /** Camera look in CSS px of finger travel, from the aiming hand. ChaseCamera listens for syn3h:look. */
+  onLook = (dx: number, dy: number): void => { window.dispatchEvent(new CustomEvent('syn3h:look', { detail: { dx, dy } })) }
 
   constructor(private readonly input: Input, parent: HTMLElement = document.body) {
     this.element.className = 'touch-controls'
@@ -60,7 +65,12 @@ export class TouchControls {
     parent.append(this.element)
     const signal = this.abort.signal
     this.hint = this.element.querySelector<HTMLElement>('.touch-stick-hint')!
+    signal.addEventListener('abort', persistHandedness())
+    const unwatch = params.onChange((id) => { if (id === touchLeftHanded.def.id) { this.reset(); this.syncHandedness() } })
+    signal.addEventListener('abort', unwatch)
+    this.syncHandedness()
     this.stick(signal)
+    this.aim(signal)
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('button')) {
       const action = button.dataset.action as 'brakes' | 'special' | 'fire' | 'throttleUp' | 'throttleDown' | 'zorb' | 'letOut' | 'letGo'
       const pointers = new Set<number>()
@@ -95,7 +105,8 @@ export class TouchControls {
   /**
    * The floating stick. The rule, as built:
    *
-   * - A touch becomes a stick candidate when it goes down in the left 55% of the screen on the
+   * - A touch becomes a stick candidate when it goes down in the driving hand's 55% of the
+   *   screen (the left for a right-handed player, the right for a left-handed one) on the
    *   game view itself (the game canvas or the bare page), not on a button, the gear selector,
    *   any panel or HUD element (those are other elements, so they are never the target), and
    *   not inside the minimap's rectangle (the minimap lets touches through to the canvas, so
@@ -106,11 +117,9 @@ export class TouchControls {
    *   the radius the knob and output saturate; the base stays at touch-down. Lifting fades it out in 150 ms.
    * - Only one stick at a time: while one is active or pending, further touches in the region
    *   are ignored by the stick (they still reach whatever is under them).
-   * - The network layer excludes touch pointers from mouse tagging; the right thumb owns
-   *   the action buttons while the left drives.
-   * - There is no touch drag-to-look today (ChaseCamera only orbits with the middle button,
-   *   Alt-drag or pointer lock), so there is nothing on the right to coexist with. A second
-   *   finger anywhere is independent: the right thumb keeps the buttons while the left drives.
+   * - The network layer excludes touch pointers from mouse tagging; the other thumb owns
+   *   the action buttons and aiming (see `aim`) while this one drives. Each finger is
+   *   independent, so steering, aiming and holding a button all work at once.
    */
   private stick(signal: AbortSignal): void {
     const input = this.input
@@ -139,15 +148,7 @@ export class TouchControls {
       place(); base.classList.add('is-active')
       if (!this.driven) { this.driven = true; writeDriven(); this.syncHint() }
     }
-    const candidate = (event: PointerEvent): boolean => {
-      if (event.pointerType !== 'touch' || event.clientX >= innerWidth * STICK_REGION) return false
-      const target = event.target
-      const surface = target === document.body || target === document.documentElement || (target instanceof HTMLCanvasElement && !target.closest('.syn3h-shell, .touch-controls'))
-      if (!surface) return false
-      const map = document.querySelector('.shell-minimap')
-      if (map) { const r = map.getBoundingClientRect(); if (r.width && event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom) return false }
-      return true
-    }
+    const candidate = (event: PointerEvent): boolean => this.role(event) === 'drive'
     addEventListener('pointerdown', (event) => {
       if (!this.active || input.suspended || !candidate(event)) return
       if (pending !== null || pointer !== null) return
@@ -163,17 +164,76 @@ export class TouchControls {
     base.addEventListener('lostpointercapture', end, { signal })
   }
 
+  /** What a touch that just went down should do: see `touchRole`. */
+  private role(event: PointerEvent): 'drive' | 'aim' | null {
+    if (event.pointerType !== 'touch') return null
+    const target = event.target
+    const inside = (el: Element | null) => {
+      if (!el) return false
+      const r = el.getBoundingClientRect()
+      return r.width > 0 && event.clientX >= r.left && event.clientX <= r.right && event.clientY >= r.top && event.clientY <= r.bottom
+    }
+    return touchRole({
+      x: event.clientX, width: innerWidth, leftHanded: touchLeftHanded.value,
+      onGameView: target === document.body || target === document.documentElement || (target instanceof HTMLCanvasElement && !target.closest('.syn3h-shell, .touch-controls')),
+      // The minimap lets touches through to the canvas, and the gaps between action buttons are
+      // canvas too, so both are tested by position.
+      onMinimap: inside(document.querySelector('.shell-minimap')),
+      onActions: inside(this.element.querySelector('.touch-actions')),
+    })
+  }
+
+  /**
+   * Drag to aim, on the free game view opposite the stick. Like the stick, a touch is only a
+   * candidate until it moves 8 px, so a tap still reaches whatever is under it. Then it owns
+   * its pointer until it lifts and turns the camera (and the gear, which aims along it) by the
+   * finger's travel, at the mouse look sensitivity (camera.sensitivity). One aiming finger at a time.
+   */
+  private aim(signal: AbortSignal): void {
+    let pending: number | null = null, pointer: number | null = null, x = 0, y = 0
+    const release = () => { pending = null; pointer = null }
+    this.resetters.push(release)
+    addEventListener('pointerdown', (event) => {
+      if (!this.active || this.input.suspended || pending !== null || pointer !== null) return
+      if (this.role(event) !== 'aim') return
+      pending = event.pointerId; x = event.clientX; y = event.clientY
+    }, { capture: true, signal })
+    addEventListener('pointermove', (event) => {
+      const id = event.pointerId
+      if (id === pending) {
+        if (!isDrag(x, y, event.clientX, event.clientY)) return
+        pending = null; pointer = id
+        try { (event.target as Element).setPointerCapture?.(id) } catch { /* The window listeners still follow it. */ }
+      }
+      if (id !== pointer) return
+      event.preventDefault()
+      if (this.input.suspended) { release(); return }
+      this.onLook(event.clientX - x, event.clientY - y)
+      x = event.clientX; y = event.clientY
+    }, { capture: true, signal })
+    for (const name of ['pointerup', 'pointercancel'] as const) {
+      addEventListener(name, (event) => { if (event.pointerId === pending || event.pointerId === pointer) release() }, { capture: true, signal })
+    }
+  }
+
+  /** Mirror the stick, hint and buttons for the driving hand. */
+  private syncHandedness(): void {
+    const left = touchLeftHanded.value
+    this.element.dataset.hand = left ? 'left' : 'right'
+    document.documentElement.dataset.touchHand = left ? 'left' : 'right'
+    const label = this.element.querySelector('.touch-stick-label')
+    if (label) label.textContent = `Drag on the ${left ? 'right' : 'left'} to ${this.kind === 'jet' ? 'fly' : 'drive'}`
+  }
+
   /** The first-run hint shows in play until this device has driven once. */
   private syncHint(): void { if (this.hint) this.hint.hidden = this.driven || !this.active }
   private readonly thrust = new Set<string>()
   private syncThrust(): void { this.input.external.z = Number(this.thrust.has('throttleUp')) - Number(this.thrust.has('throttleDown')) }
   setVehicleKind(kind: VehicleKind): void {
-    this.reset()
+    this.reset(); this.kind = kind; this.syncHandedness()
     for (const button of this.element.querySelectorAll<HTMLElement>('[data-action^="throttle"]')) button.hidden = kind !== 'jet'
     const special = this.element.querySelector<HTMLButtonElement>('[data-action="special"]')
     if (special) { special.textContent = kind === 'jet' ? 'MODE' : 'WINGS'; special.hidden = kind === 'hovercraft' }
-    const label = this.element.querySelector('.touch-stick-label')
-    if (label) label.textContent = kind === 'jet' ? 'Drag on the left to fly' : 'Drag on the left to drive'
   }
   set enabled(value: boolean) {
     this.active = value; this.element.hidden = !value || !this.available

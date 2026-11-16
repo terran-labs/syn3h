@@ -1,8 +1,11 @@
-/* Vehicle labels. Their look is the shared label plate (src/ui/label-plate.css): people cyan,
-   bots warm. This file only places them, and adds the distant-bot tick and the reveal.
+/* Vehicle labels. Their look is the shared label plate (src/ui/label-plate.css): each bar and
+   leader in the vehicle's own tint, people and bots told apart by form (.is-person, .is-bot).
+   This file only places them, and adds the distant-bot tick, the reveal, and the near-opaque
+   plate for a label that must sit over a passive readout.
    z-index 4 keeps every label beneath the HUD (12 and up), touch controls, panels and toasts. */
 .vehicle-nameplates { position: fixed; inset: 0; z-index: 4; overflow: hidden; pointer-events: none; }
 .vehicle-nameplate { position: absolute; left: 0; top: 0; transform-origin: top left; contain: layout style; }
+.vehicle-nameplate.is-over-hud:not(#s3-plate) { background: rgb(3 11 19 / .92); }
 .vehicle-nameplate.is-tick:not(#s3-plate) { padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; }
 .vehicle-nameplate.is-tick:not(#s3-plate)::before { inset: 0; width: 6px; height: 3px; }
 .vehicle-nameplate.is-tick:not(#s3-plate) > :is(strong, small) { display: none; }

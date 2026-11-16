@@ -1,0 +1,81 @@
+/* The lobby's settings gear, the version beside it, and the settings panel (LobbySettings.ts).
+   The panel is the in-game sidebar's own element (.world-inspector), so its cards and rows take
+   every sidebar style; these rules only place it in the lobby and add its header and footer.
+   The gear is vector line work with a glow: no image. Selectors carry .exploration-ui to
+   outrank the lobby's general button and heading rules. */
+
+.lobby-gear-dock {
+  position: fixed; z-index: 30; right: max(18px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom));
+  display: flex; flex-direction: row-reverse; align-items: center; gap: 4px; pointer-events: auto;
+}
+.syn3h-shell.exploration-ui .lobby-gear-dock .lobby-gear {
+  width: 44px; height: 44px; min-height: 44px; min-width: 44px; padding: 0; display: grid; place-items: center; border-radius: 50%;
+  border: 1px solid rgb(143 227 255 / .32); background: radial-gradient(closest-side, rgb(143 227 255 / .1), rgb(2 9 15 / .2));
+  box-shadow: 0 0 14px rgb(100 200 250 / .14), inset 0 0 10px rgb(143 227 255 / .08); color: #9fe6ff; cursor: pointer;
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+.lobby-gear svg { width: 28px; height: 28px; overflow: visible; }
+.lobby-gear path {
+  fill: none; stroke: currentColor; stroke-width: 1.1; stroke-linejoin: round;
+  filter: drop-shadow(0 0 2px rgb(120 220 255 / .9)) drop-shadow(0 0 6px rgb(60 170 255 / .5));
+  transform-origin: 12px 12px; animation: lobby-gear-turn 40s linear infinite, lobby-gear-shimmer 5s ease-in-out infinite;
+}
+.syn3h-shell.exploration-ui .lobby-gear-dock .lobby-gear:hover, .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-gear:focus-visible, .syn3h-shell.exploration-ui .lobby-gear-dock.is-open .lobby-gear {
+  border-color: rgb(198 241 255 / .8); box-shadow: 0 0 18px rgb(120 210 255 / .3), inset 0 0 12px rgb(143 227 255 / .16);
+}
+@keyframes lobby-gear-turn { to { transform: rotate(360deg); } }
+@keyframes lobby-gear-shimmer { 0%, 100% { opacity: .78; } 50% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .lobby-gear path { animation: none; } }
+
+/* Small and quiet; a hook for the Updates view (data-lobby-version). */
+.syn3h-shell.exploration-ui .lobby-gear-dock .lobby-version {
+  min-height: 24px; min-width: 0; padding: 4px 6px; border: 0; border-radius: 4px; background: none; box-shadow: none;
+  font: 500 11px/1 'Barlow', sans-serif; letter-spacing: .12em; text-transform: none; color: rgb(200 232 250 / .62);
+  text-shadow: 0 1px 3px rgb(0 8 14 / .8); cursor: pointer;
+}
+.syn3h-shell.exploration-ui .lobby-gear-dock .lobby-version:hover, .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-version:focus-visible { color: rgb(220 242 255 / .9); background: none; }
+
+/* The panel: the sidebar's right-edge column, shown in the lobby above the galaxy's labels, on a
+   darker ground than in play so labels behind it do not read through. It stops above the gear. */
+.syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings {
+  display: flex; z-index: 60; bottom: auto; height: auto; max-height: calc(100dvh - 32px - 60px);
+  padding: 8px; border-radius: 16px; background: rgb(3 10 18 / .82); box-shadow: 0 0 30px rgb(0 0 0 / .45);
+}
+.syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-cards { overflow-y: auto; min-height: 0; flex: 1 1 auto; overscroll-behavior: contain; }
+/* Unlike the in-game rail, whose cards share its height, here every card takes its natural
+   height and the whole stack scrolls: an open card shows all its rows, on short screens too. */
+.syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-card, .syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-card.is-open { flex: 0 0 auto; min-height: 0; }
+.syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-body { flex: none; overflow: visible; }
+/* A long label wraps to a second line rather than ending in an ellipsis. */
+.syn3h-shell.exploration-ui .world-inspector.lobby-settings .wi-label { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.2; }
+.syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 4px 2px 14px; flex: 0 0 auto; }
+.syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head h2 { margin: 0; padding: 0; font: 600 14px/1 'Barlow Condensed', sans-serif; letter-spacing: .22em; text-transform: uppercase; color: var(--s3-ink); }
+.syn3h-shell.exploration-ui .lobby-settings .lobby-settings-close { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; min-width: 44px; padding: 0 12px; font: 500 13px 'Barlow', sans-serif; letter-spacing: .08em; }
+.lobby-settings-close span[aria-hidden] { font-size: 18px; line-height: 1; }
+.lobby-settings-foot { flex: 0 0 auto; padding: 2px 8px 0; text-align: right; }
+.syn3h-shell.exploration-ui .lobby-settings-foot .build-line { font: 400 11px 'Barlow', sans-serif; letter-spacing: .1em; color: rgb(200 232 250 / .55); }
+.syn3h-shell.exploration-ui .world-inspector.lobby-settings .presentation-toggle { width: 100%; margin-top: 6px; }
+.world-inspector.lobby-settings .host-controls { border: 0; margin: 0; padding: 0; display: grid; gap: 6px; }
+.world-inspector.lobby-settings .host-controls legend { display: none; }
+
+/* Phones: a sheet over most of the screen with its own close control; the gear steps aside. */
+@media (max-width: 700px), (max-height: 500px) and (pointer: coarse) {
+  .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings {
+    left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); width: auto;
+    top: max(10px, env(safe-area-inset-top)); bottom: max(10px, env(safe-area-inset-bottom)); height: auto; max-height: none;
+  }
+  .lobby-gear-dock.is-open { visibility: hidden; }
+  /* Portrait: the version sits above the gear, which sits right of the lobby's buttons; both
+     sit a little lower than the buttons' baseline to stay clear of the hint above them. */
+  .lobby-gear-dock { flex-direction: column-reverse; align-items: flex-end; gap: 0; right: max(10px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); }
+  /* Narrow enough to sit right of the About button; the title carries the full version. */
+  .syn3h-shell.exploration-ui .lobby-gear-dock .lobby-version { min-height: 0; padding: 1px 2px; font-size: 10px; letter-spacing: .04em; max-width: 76px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+@media (max-height: 500px) and (pointer: coarse) and (orientation: landscape) {
+  .syn3h-shell.exploration-ui:not(.is-playing) .world-inspector.lobby-settings { left: auto; width: min(560px, calc(100vw - 20px)); top: 6px; bottom: 6px; padding: 6px; gap: 4px; }
+  .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-head { padding-block: 0; }
+  .syn3h-shell.exploration-ui .lobby-settings .lobby-settings-close { min-height: 40px; min-width: 44px; }
+  /* The version line joins the header row, beside Close, to give the rows its height. */
+  .syn3h-shell.exploration-ui .world-inspector.lobby-settings .lobby-settings-foot { position: absolute; top: 20px; right: 130px; padding: 0; }
+  .lobby-gear-dock { flex-direction: row-reverse; align-items: center; right: max(12px, env(safe-area-inset-right)); bottom: max(10px, env(safe-area-inset-bottom)); }
+}

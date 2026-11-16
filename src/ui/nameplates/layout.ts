@@ -2,7 +2,24 @@
 export interface Rect { left: number; top: number; right: number; bottom: number }
 /** Union of at most48 clipped face polygons, at most9 vertices each. Reused per vehicle. */
 export interface ScreenProxy { points: Float64Array; sizes: Uint8Array; count: number; blocked: boolean }
-export interface Disc { id: string; x: number; y: number; radius: number; depth: number; proxy?: ScreenProxy }
+/** plateOnly: only a plate must stay off this hull; a leader may cross it (the player's own car). */
+export interface Disc { id: string; x: number; y: number; radius: number; depth: number; proxy?: ScreenProxy; plateOnly?: boolean }
+/** Is the point strictly inside the hull (no proximity margin)? A blocked hull covers everything. */
+export function insideDisc(x: number, y: number, disc: Disc): boolean {
+  const proxy = disc.proxy
+  if (!proxy) return Math.hypot(x - disc.x, y - disc.y) < disc.radius
+  if (proxy.blocked) return true
+  for (let p = 0; p < proxy.count; p++) {
+    const n = proxy.sizes[p], start = p * 18, a = proxy.points
+    let sign = 0, inside = n >= 3
+    for (let i = 0; i < n && inside; i++) {
+      const j = (i + 1) % n, cross = (a[start + j * 2] - a[start + i * 2]) * (y - a[start + i * 2 + 1]) - (a[start + j * 2 + 1] - a[start + i * 2 + 1]) * (x - a[start + i * 2])
+      if (cross !== 0) { if (sign && Math.sign(cross) !== sign) inside = false; sign = Math.sign(cross) }
+    }
+    if (inside) return true
+  }
+  return false
+}
 export function createScreenProxy(): ScreenProxy {
   return { points: new Float64Array(48 * 9 * 2), sizes: new Uint8Array(48), count: 0, blocked: false }
 }
@@ -47,7 +64,7 @@ export interface Candidate {
   /** Shown last frame, in slot `previous`. */
   held?: boolean
 }
-export interface Placement extends Rect { id: string; x: number; y: number; leadX: number; leadY: number; spot: number; opacity: number; tick: boolean }
+export interface Placement extends Rect { id: string; x: number; y: number; leadX: number; leadY: number; spot: number; overSoft: boolean; opacity: number; tick: boolean }
 export const overlaps = (a: Rect, b: Rect) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
 export function touchesDisc(box: Rect, disc: Disc): boolean {
   if (disc.proxy) return touchesProxy(box, disc.proxy)
@@ -113,9 +130,9 @@ export function placeNameplates(candidates: readonly Candidate[], discs: readonl
         const covers = (b: Rect) => overlaps(pad, b) || overlaps(leader, b)
         if (exclusions.some(b => !b.soft && covers(b))) continue
         if (avoidSoft && exclusions.some(b => b.soft && covers(b))) { softOnly.push(spot); continue }
-        if (discs.some(d => d.id !== c.id && d.depth < c.depth && (touchesDisc(pad, d) || touchesDisc(leader, d)))) continue
+        if (discs.some(d => d.id !== c.id && d.depth < c.depth && (touchesDisc(pad, d) || !d.plateOnly && touchesDisc(leader, d)))) continue
         if (!terrainClear(plate, c.depth, c)) continue
-        placed = { ...bounds, id: c.id, x, y, leadX, leadY, spot, opacity: c.opacity, tick: c.tick }; break
+        placed = { ...bounds, id: c.id, x, y, leadX, leadY, spot, overSoft: !avoidSoft, opacity: c.opacity, tick: c.tick }; break
       }
       if (placed || !softOnly.length) break
       tries = softOnly

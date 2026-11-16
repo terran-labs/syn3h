@@ -1,5 +1,7 @@
 // Vehicle labels in a real browser: a bot in view gets a label on desktop and on a phone in
-// both orientations, and a second person joining the room gets a person label beside a bot's.
+// both orientations; a second person joining the room gets a person label beside a bot's; and a
+// player 14 m straight ahead of you is named (as tools/net-smoke.mjs step 7 places them).
+// Every picture waits for the reveal to finish, and no name is left clipped at rest.
 //   SYN3H_URL=http://127.0.0.1:5173/ tools/heavy.sh node tests/ui/nameplates.mjs
 // Screenshots go to tests/ui/artifacts/nameplates/.
 import { chromium, webkit, devices } from 'playwright-core'
@@ -16,10 +18,10 @@ const views = {
   landscape: devices['iPhone 14 landscape'],
 }
 
-async function open(browser, view, room) {
+async function open(browser, view, room, name) {
   const page = await browser.newPage(views[view])
   const errors = []; page.on('pageerror', e => errors.push(e.message))
-  await page.goto(`${url}?autoplay=1&room=${room}`)
+  await page.goto(`${url}?autoplay=1&room=${room}${name ? `&name=${name}` : ''}`)
   await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 180000 })
   await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
   return { page, errors }
@@ -50,6 +52,14 @@ function labels(page) {
     return { shown, w, h }
   })
 }
+/** Wait out the reveal, then check no shown plate is still clipped by it. */
+async function atRest(view, page) {
+  await page.waitForFunction(() => !document.querySelector('.vehicle-nameplate.is-scanning:not([hidden])'), null, { timeout: 5000 })
+  await page.waitForTimeout(300)
+  const clipped = await page.evaluate(() => [...document.querySelectorAll('.vehicle-nameplate:not([hidden])')]
+    .filter(el => getComputedStyle(el).clipPath !== 'none').map(el => el.textContent))
+  assert.deepEqual(clipped, [], `${view}: a name is clipped at rest`)
+}
 async function waitForLabel(view, page, want, place) {
   for (let i = 0; i < 20; i++) {
     if (i % 3 === 0) await place()
@@ -75,6 +85,7 @@ for (const view of ['desktop', 'portrait', 'landscape']) {
   try {
     const { page, errors } = await open(browser, view, `nameplates-${view}-${Date.now()}`)
     const shown = await waitForLabel(view, page, s => s.some(l => l.bot), () => placeAhead(page, 'bot', 16, 8))
+    await atRest(view, page)
     await page.screenshot({ path: `${out}/${view}.png` })
     assert.deepEqual(errors, [])
     console.log(`${view}: ${shown.map(l => l.name).join(', ')} PASS`)
@@ -86,6 +97,8 @@ for (const view of ['desktop', 'portrait', 'landscape']) {
   const browser = await chromium.launch({ channel: 'chrome', headless: true }), room = `nameplates-people-${Date.now()}`
   try {
     const host = await open(browser, 'desktop', room), visitor = await open(browser, 'desktop', room)
+    // A different paint, so the picture shows each label in its own vehicle's tint.
+    await visitor.page.evaluate(() => window.syn3hNet.setProfile({ kind: 'buggy-syn3h', colors: { body: '#ff3a1a', accent: '#ffd23a' } }))
     const toHost = async () => {
       const pose = await host.page.evaluate(() => {
         const cam = window.syn3h.game.camera, p = window.syn3h.player.body.translation(), f = cam.getWorldDirection(cam.position.clone())
@@ -98,8 +111,38 @@ for (const view of ['desktop', 'portrait', 'landscape']) {
       await placeAhead(host.page, 'bot', 16, 8)
     }
     const shown = await waitForLabel('people', host.page, s => s.some(l => l.bot) && s.some(l => !l.bot), toHost)
+    await atRest('people', host.page)
     await host.page.screenshot({ path: `${out}/people.png` })
     assert.deepEqual([...host.errors, ...visitor.errors], [])
     console.log(`people: ${shown.map(l => `${l.name}${l.bot ? ' (bot)' : ''}`).join(', ')} PASS`)
+  } finally { await browser.close() }
+}
+
+// A player straight ahead: B 14 m behind A, both facing the same way (tools/net-smoke.mjs step
+// 7). Bug it catches: the own-car rule hid the label of a car whose roof showed over yours.
+{
+  const browser = await chromium.launch({ channel: 'chrome', headless: true }), room = `nameplates-ahead-${Date.now()}`
+  try {
+    const a = await open(browser, 'desktop', room, 'Alice'), b = await open(browser, 'desktop', room, 'Bob')
+    await b.page.waitForFunction(() => [...window.syn3hNet.players.values()].some(p => p.name === 'Alice'), null, { timeout: 20000 })
+    let tag
+    for (let i = 0; i < 3 && !tag?.shown; i++) {
+      await a.page.evaluate(() => { const s = window.syn3h.terrain.spawnPoint(0); window.syn3h.player.teleport(s.position, 0) })
+      await b.page.evaluate(() => {
+        const s = window.syn3h.terrain.spawnPoint(0)
+        s.position.z += 14; s.position.y = window.syn3h.terrain.heightAt(s.position.x, s.position.z) + 1.5
+        window.syn3h.player.teleport(s.position, 0)
+      })
+      await b.page.waitForTimeout(1500)
+      tag = await b.page.evaluate(() => {
+        const el = [...document.querySelectorAll('.vehicle-nameplate')].find(d => d.textContent.startsWith('Alice'))
+        return el && { shown: el.style.display === 'block' && !el.hidden && Number(el.style.opacity) > .5, text: el.textContent }
+      })
+    }
+    assert.ok(tag?.shown, `ahead: B shows no label for A 14 m in front (${JSON.stringify(tag)})`)
+    await atRest('ahead', b.page)
+    await b.page.screenshot({ path: `${out}/ahead.png` })
+    assert.deepEqual([...a.errors, ...b.errors], [])
+    console.log('ahead: Alice named on Bob\'s screen PASS')
   } finally { await browser.close() }
 }

@@ -4,8 +4,9 @@ import type { Exclusion } from './layout'
 // and on a phone that box spans the screen's middle. Avoid only what is drawn: the drum and
 // each detail line while it is showing (empty lines carry [hidden] and are skipped below).
 const SELECTORS = '.world-inspector,.shell-minimap,.gear-selector .gs-drum,.gear-selector .gs-detail > *,.gear-actions,.zorb-toggle,.touch-actions,.touch-stick,.match-hud,.match-announcement,.race-hud,.performance-recommendation,.inspector-toggle,.spawn-help,.focus-hud .fh-read'
-/** Passive readouts: a label may cover these when no other slot is free. Everything else is hard. */
-const SOFT = '.focus-hud .fh-read'
+/** Passive readouts (speed, height): a label may cover these when no other slot is free.
+ *  Everything else is hard, including the world name and heading line (.fh-top), a title. */
+const SOFT = '.focus-hud .fh-read:not(.fh-top)'
 /** How often the HUD is re-measured even when nothing announced a change (style-only edits). */
 const BACKSTOP_MS = 250
 

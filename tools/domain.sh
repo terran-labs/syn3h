@@ -14,6 +14,8 @@
 # restored: MX, TXT and every other name are never touched.
 set -eu
 cd "$(dirname "$0")/.."
+. tools/cloudflare-token.sh
+. tools/smoke-run.sh
 REPO="$(pwd)"
 ZONE_NAME=syn3h.com
 STORE="$(cd .. && pwd)/Syn3h-stable"
@@ -21,7 +23,7 @@ API=https://api.cloudflare.com/client/v4
 WRANGLER="$REPO/node_modules/wrangler/bin/wrangler.js"
 
 die() { printf '\nDOMAIN FAILED: %s\n' "$*" >&2; exit 1; }
-[ -n "${CLOUDFLARE_API_TOKEN:-}" ] || die "set CLOUDFLARE_API_TOKEN"
+[ -n "${CLOUDFLARE_API_TOKEN:-}" ] || die "no Cloudflare token: put it in $SYN3H_CLOUDFLARE_TOKEN_FILE or set CLOUDFLARE_API_TOKEN"
 command -v jq >/dev/null || die "jq is required"
 
 # cf METHOD PATH [JSON]: call the API, fail on success=false, print the JSON.
@@ -116,8 +118,7 @@ check)
   ' "$H" "$REPO"
   SHOT_PARENT="$(mktemp -d "/tmp/syn3h-shot-domain-$H.XXXXXX")" || die "could not reserve domain evidence directory"
   echo "Shot evidence: $SHOT_PARENT/evidence (https://$H/)"
-  SYN3H_SHOT_EVIDENCE_DIR="$SHOT_PARENT/evidence" node tools/net-smoke.mjs "https://$H/" 2>&1 | grep -E "^(FAIL|NET SMOKE)" | tee /tmp/syn3h-domain-check.log
-  grep -q "^NET SMOKE OK" /tmp/syn3h-domain-check.log || die "net-smoke failed on $H"
+  run_smoke "https://$H/" /tmp/syn3h-domain-check.log "$SHOT_PARENT/evidence" || die "net-smoke failed on $H"
   ;;
 
 rollback)

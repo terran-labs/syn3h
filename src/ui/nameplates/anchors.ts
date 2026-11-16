@@ -30,13 +30,13 @@ export function renderedPosition(object: Pick<Object3D, 'getWorldPosition'>, out
  * its middle, `out` its half-sizes (with margin) and the top of the body (without). With the
  * ball out, the ball is the body.
  */
-export function renderedEnvelope(vehicle: Pick<Vehicle, 'object' | 'kind' | 'zorb'>, center: Vector3, rotation: Quaternion, offset: Vector3, out: Envelope): Envelope {
+export function renderedEnvelope(vehicle: Pick<Vehicle, 'object' | 'kind' | 'zorb'>, center: Vector3, rotation: Quaternion, offset: Vector3, out: Envelope, margin = MARGIN): Envelope {
   renderedPosition(vehicle.object, center)
   vehicle.object.getWorldQuaternion(rotation)
   if (vehicle.zorb.active) {
     offset.copy(vehicle.zorb.offset).applyQuaternion(rotation)
     center.add(offset)
-    out.radius = out.rise = out.reach = vehicle.zorb.radius + MARGIN; out.top = center.y + vehicle.zorb.radius
+    out.radius = out.rise = out.reach = vehicle.zorb.radius + margin; out.top = center.y + vehicle.zorb.radius
     return out
   }
   const b = BODY[vehicle.kind] ?? BODY.buggy
@@ -47,9 +47,9 @@ export function renderedEnvelope(vehicle: Pick<Vehicle, 'object' | 'kind' | 'zor
     x1 = Math.max(x1, offset.x); y1 = Math.max(y1, offset.y); z1 = Math.max(z1, offset.z)
   }
   center.x += (x0 + x1) / 2; center.y += (y0 + y1) / 2; center.z += (z0 + z1) / 2
-  out.radius = (x1 - x0) / 2 + MARGIN
-  out.reach = (z1 - z0) / 2 + MARGIN
-  out.rise = (y1 - y0) / 2 + MARGIN
+  out.radius = (x1 - x0) / 2 + margin
+  out.reach = (z1 - z0) / 2 + margin
+  out.rise = (y1 - y0) / 2 + margin
   out.top = center.y + (y1 - y0) / 2
   return out
 }

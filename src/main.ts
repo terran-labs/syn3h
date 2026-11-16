@@ -206,6 +206,13 @@ async function main(): Promise<void> {
       setMatchState: (m) => shell.setMatchState(m),
       names: (seed, kind) => generateName(seed, kind),
     })
+    // Opening the in-play guide drops gear in hand without firing it: a Big Red charge is
+    // discarded, a Yoink carry is set down (no fling), a reel stops and the tag control lets
+    // go. The Grapple cord stays attached; the world keeps running.
+    shell.setActionCancellation(() => {
+      connection.bigRed.cancel(); connection.yoink.cancel(); connection.bungee.setReel(0)
+      game.input.external.fire = false; game.input.mouseFire = false
+    })
     connection.configureRaces({
       isDriving: () => shell.playing,
       setRace: (snapshot, roomNow, role) => shell.setRace(snapshot, roomNow, role),

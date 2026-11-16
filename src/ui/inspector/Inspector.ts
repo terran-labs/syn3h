@@ -29,6 +29,13 @@ export interface InspectorOptions {
   onColor?(key: 'body' | 'accent', value: string): void
   /** Capture a local bookmark. The caller owns storage and success or failure feedback. */
   onSaveWorld?(): void
+  /**
+   * Registry sections to show as cards, by id; all when absent. The lobby's settings panel
+   * passes [] and shows only cards it adds with addCard.
+   */
+  sections?: readonly string[]
+  /** Settings to show and edit as a percentage (a 0 to 1 value shown as 0% to 100%). */
+  percent?(def: PropertyDef): boolean
 }
 /** "Mode (0 tag, 1 hill)" or "Glass: 0 Clear, 1 Frosted" gives a name and named choices. */
 export function choicesOf(def: PropertyDef): { name: string; options: { value: number; label: string }[] } | null {
@@ -108,7 +115,7 @@ export class Inspector {
 
   constructor(parent: HTMLElement, private readonly options: InspectorOptions) {
     this.element.className = 'world-inspector'; this.element.setAttribute('aria-label', 'World inspector')
-    this.element.innerHTML = `<div class="wi-top wi-glass"><input class="wi-search" type="search" placeholder="Find a setting" aria-label="Find a setting" autocomplete="off" spellcheck="false">
+    this.element.innerHTML = `<div class="wi-top wi-glass"><input class="wi-search" type="search" placeholder="Search" aria-label="Find a setting" autocomplete="off" spellcheck="false">
       <div class="wi-actions"><button type="button" data-wi="copy-world">Copy world</button><button type="button" data-wi="paste-world">Paste world</button><button type="button" data-wi="reset">Reset</button></div></div>
       <div class="wi-cards"></div>
       <div class="wi-detail wi-glass" hidden></div>
@@ -189,8 +196,9 @@ export class Inspector {
       if (sum.textContent !== text) sum.textContent = text
     }
     const vehicles = this.options.vehicles()
-    const select = this.element.querySelector<HTMLSelectElement>('.wi-vehicle-select')!
-    if (document.activeElement !== select) select.value = vehicles.current
+    // Only the Me card carries the vehicle selector.
+    const select = this.element.querySelector<HTMLSelectElement>('.wi-vehicle-select')
+    if (select && document.activeElement !== select) select.value = vehicles.current
     const name = this.element.querySelector('.wi-person-name output')
     if (name && name.textContent !== this.options.playerName?.()) name.textContent = this.options.playerName?.() ?? ''
     const colors = this.options.colors?.()
@@ -201,7 +209,8 @@ export class Inspector {
     const all = params.all(); this.known = all.length
     const open = new Set([...this.element.querySelectorAll<HTMLElement>('.wi-card.is-open')].map(card => card.dataset.section))
     const owned = new Set([...this.extras.values()].flatMap(extra => extra.owns?.() ?? []))
-    this.tree = buildTree(all.map(p => p.def as PropertyDef).filter(def => !owned.has(def.id)))
+    const shown = this.options.sections
+    this.tree = buildTree(all.map(p => p.def as PropertyDef).filter(def => !owned.has(def.id))).filter(section => !shown || shown.includes(section.id))
     this.rows.clear(); this.editing = null; this.settle()
     const cards = this.element.querySelector('.wi-cards')!; cards.replaceChildren()
     for (const section of this.tree) {
@@ -352,13 +361,16 @@ export class Inspector {
       // The number beside the slider is a button: press it and it becomes a field to type into.
       const number = document.createElement('button'); number.type = 'button'; number.className = 'wi-num'
       const display = (text: string) => { number.textContent = text; number.setAttribute('aria-label', `${def.label}: ${text}, edit`) }
+      const percent = this.options.percent?.(def) ?? false
+      const shown = (value: ParamValue) => percent ? `${Math.round(Number(value) * 100)}%` : show(value, def)
       number.addEventListener('click', () => this.edit(def, number))
       number.addEventListener('keydown', event => { if (event.key === 'F2') { event.preventDefault(); this.edit(def, number) } })
       // A property marked deferred (the terrain rebuilds) applies when the slider is let go.
       input.addEventListener(def.deferred ? 'change' : 'input', () => params.set(def.id, Number(input.value), 'local'))
-      if (def.deferred) input.addEventListener('input', () => display(show(Number(input.value), def)))
+      if (def.deferred) input.addEventListener('input', () => display(shown(Number(input.value))))
       row.append(label, input, number)
-      sync = value => { if (document.activeElement !== input) input.value = String(value); display(show(value, def)) }
+      sync = value => { if (document.activeElement !== input) input.value = String(value); display(shown(value)) }
+      if (percent) number.dataset.percent = ''
     }
     sync(param.value)
     row.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') this.detail(def) })
@@ -377,14 +389,17 @@ export class Inspector {
     const field = document.createElement('input'); field.type = 'text'; field.inputMode = 'decimal'; field.enterKeyHint = 'done'
     field.className = 'wi-num-edit'; field.autocomplete = 'off'; field.spellcheck = false
     field.setAttribute('aria-label', def.label); field.setAttribute('aria-describedby', 'setting-tooltip')
-    const before = number.textContent ?? ''
+    const percent = number.dataset.percent !== undefined
+    const before = (number.textContent ?? '').replace(/%$/, '')
     field.value = before
     let done = false, flash: ReturnType<typeof setTimeout> | undefined
     const mark = (element: HTMLElement) => { element.classList.remove('is-invalid'); void element.offsetWidth; element.classList.add('is-invalid'); clearTimeout(flash); flash = setTimeout(() => element.classList.remove('is-invalid'), 700) }
     const finish = (commit: boolean, refocus: boolean) => {
       if (done) return
       if (commit) {
-        const value = parseEdit(field.value, def)
+        // A percentage field holds the number without its sign; parseEdit reads "60%" as 0.6.
+        const typed = percent && !/%\s*$/.test(field.value) ? `${field.value.trim()}%` : field.value
+        const value = parseEdit(typed, def)
         // Nothing readable: put the old number back. Pressing Enter keeps the field open to try again.
         if (value === null && refocus) { field.value = before; field.select(); mark(field); return }
         if (value === null) mark(number)

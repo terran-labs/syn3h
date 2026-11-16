@@ -12,7 +12,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { loadingMessages } from '../../src/ui/data/loadingMessages'
+import { loadingMessages, phaseMessages, stillWorkingMessages } from '../../src/ui/data/loadingMessages'
 import { generateName } from '../../src/ui/data/names'
 
 /** Whole words, so "screenshot" and "without" pass. */
@@ -78,7 +78,8 @@ describe('player-visible wording', () => {
     }
   })
   it('loading messages are clean', () => {
-    expect(loadingMessages.map(text => ({ text, word: banned(text) })).filter(hit => hit.word)).toEqual([])
+    const all = [...loadingMessages, ...Object.values(phaseMessages).flat(), ...stillWorkingMessages]
+    expect(all.map(text => ({ text, word: banned(text) })).filter(hit => hit.word)).toEqual([])
   })
   it('generated names are clean across many seeds', () => {
     const hits: string[] = []
