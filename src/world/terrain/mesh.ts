@@ -44,6 +44,8 @@ export interface TerrainMeshes {
   group: THREE.Group
   /** Rewrite heights, normals and masks in place after regeneration (same resolution). */
   update(data: TerrainData): void
+  /** The same as `update`, one chunk per step, for a rebuild spread across frames. */
+  updateSteps(data: TerrainData): Generator<void>
   /** Pick each chunk's level of detail for a camera position. */
   updateLod(camera: THREE.Vector3): void
   /** Height of the currently drawn triangle, in the unbent periodic tile. */
@@ -255,6 +257,9 @@ export function createTerrainMeshes(data: TerrainData, material: THREE.Material)
         : h11 + (h01 - h11) * (1 - fx) + (h10 - h11) * (1 - fz)
     },
     update(next) {
+      for (const _ of this.updateSteps(next)) { /* One chunk per step. */ }
+    },
+    *updateSteps(next) {
       for (const ch of chunks) {
         fillChunk(ch.base, next, ch.x0, ch.z0, ch.cells)
         ch.box.copy(ch.base.boundingBox!).translate(new THREE.Vector3(ch.ox, 0, ch.oz))
@@ -262,6 +267,7 @@ export function createTerrainMeshes(data: TerrainData, material: THREE.Material)
           m.geometry.boundingBox = ch.base.boundingBox
           m.geometry.boundingSphere = ch.base.boundingSphere
         }
+        yield
       }
     },
     updateLod(camera) {
