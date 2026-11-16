@@ -15,6 +15,14 @@ with gravity, or park together and watch the light change.
 Explore is the default. You can take your time. Finding a route, attempting an absurd
 jump and enjoying someone's company are all good reasons to be here.
 
+## A small world beneath your wings
+
+Climb in a jet and watch the landscape curve away beneath you. The mountain that filled
+your windscreen becomes part of a small world, with water and distant ridges below.
+Syn3h's tiny-world engine makes that change of perspective part of exploring. Try the
+ascent on another planet, then return to the ground and choose somewhere you saw from
+above.
+
 ## Your first expedition
 
 Choose a planet in the galaxy. On a computer, click into the world to look around, use
@@ -102,6 +110,8 @@ Preserve the existing complete licence disclosure below these links.
 - Dramatic sunrise rays are unfinished. Do not caption an image as proof of the fix
   until the accepted source produces the reviewed capture.
 - Curated image URLs are pending. Do not use placeholders that make network requests.
+  Prioritize one or two high-atmosphere jet views with readable planetary curvature.
+  Pair with the tiny-world section. Rays are optional until their fix is accepted.
   Hydrate real image sources only after deliberate About opening, including in-game
   entry; check the complete request timeline, not merely loading attributes.
 - Use a few images between sections, not a gallery wall. Pair each with descriptive
