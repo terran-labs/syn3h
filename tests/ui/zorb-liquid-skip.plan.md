@@ -56,3 +56,12 @@ Each world separately requires its actual main-frame navigation response, with m
 Every case now carries an explicit behavioral summary, also refreshed for partial cases: tangent/world speed ranges, XYZ spin and magnitude, sampled gap/normal velocity ranges, contact-by-contact before/after speed and spin, spacing, observed/final stuck state, and a final twenty-sample settling window with its actual simulation duration. This window describes evidence; its length is not an acceptance threshold. Adjacent contact samples include controller and world evolution and are not presented as an isolated float impulse measurement.
 
 `captureComplete` means only that the required observations and capture checks completed. `productAccepted` remains false and disposition remains `review-required`, even when three contacts or finite/no-skip checks pass. A reviewer must assess speed loss, spin, stable support, non-stuck motion, chatter and visual/audio evidence. No numeric speed-loss or settling tolerance has been added. Missing cases and original assertion failures still stop the run and retain incomplete evidence.
+
+
+## Dropdown identifier correction after the first attempt
+
+The first actual-app attempt stopped before any of the sixteen cases: the fixture requested `buggy`, which is not a public dropdown option. Its original report, launcher and closure evidence remain preserved. This correction is source-only and does not authorize a retry or change that zero-of-sixteen result.
+
+Keep the four case families unchanged. Native selection maps Buggy to `buggy-syn3h`, Jet to `jet`, Hovercraft to `hovercraft`, and Tank to `tank`. Before each selection, save the actual option value/label inventory and requested ID. After native selection, save and assert the selected value. Separately wait for materialization to finish and verify the runtime kind: Buggy permits exactly `buggy` or `buggy-syn3h`; the other three require their exact kind. No unknown-kind fallback or private vehicle swap is used. Save the observed runtime kind and verification result before the existing canvas-focus and Zorb-activation steps.
+
+The refreshed external proposal is `/tmp/zorb-app-launcher/run-review-02.py`, with versioned source pins and an exact adaptation diff. The original `run.py`, original receipts and failed execution directory stay unchanged. A fresh evidence directory and explicit allocation are required before executing the revised launcher. All sixteen cases, budgets, contact assertions and review-required outcome remain unchanged.

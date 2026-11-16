@@ -18,7 +18,7 @@ async function bounded(p, cap, label) { let timer; try { return await Promise.ra
 const hash = b => createHash('sha256').update(b).digest('hex')
 const git = (...args) => execFileSync('git',args,{cwd:root,encoding:'utf8',timeout:5000}).trim()
 const required = ['src/main.ts','src/core/Game.ts','src/core/Input.ts','src/vehicles/Vehicle.ts','src/vehicles/zorb.ts','src/world/terrain/ProceduralTerrain.ts','src/audio/index.ts','shared/params.ts']
-const report = {source:expected,launch,cases:[],responses:[],parsedScripts:[],errors:[],warnings:[],cleanupErrors:[],captureComplete:false,productAccepted:false,disposition:'review-required',navigation:{},canvasActions:[],
+const report = {source:expected,launch,cases:[],responses:[],parsedScripts:[],errors:[],warnings:[],cleanupErrors:[],captureComplete:false,productAccepted:false,disposition:'review-required',navigation:{},canvasActions:[],vehicleSelections:[],
   scope:'Chrome only; controlled initial placements plus native controls in the real app. No private float or physics ticks. Not a production/FPS benchmark.',
   limitations:['Visual review required after screenshots/video','Audio invocation logs are not a listening check','No physical-device or network-peer validation']}
 const pending = [], locals = new Map(), contexts = []
@@ -118,12 +118,30 @@ async function driveFocus() {
   report.canvasActions.push({point,nativeClick:true,pointerLockVerified:true})
 }
 async function activate(kind) {
+  const choices = {
+    buggy: { optionId: 'buggy-syn3h', runtimeKinds: ['buggy', 'buggy-syn3h'] },
+    jet: { optionId: 'jet', runtimeKinds: ['jet'] },
+    hovercraft: { optionId: 'hovercraft', runtimeKinds: ['hovercraft'] },
+    tank: { optionId: 'tank', runtimeKinds: ['tank'] },
+  }
+  assert.ok(Object.hasOwn(choices,kind),`Unsupported vehicle case ${kind}`)
+  const choice=choices[kind]
   if(await page.evaluate(()=>!!document.pointerLockElement))await page.keyboard.press('Escape')
   const card=page.locator('[data-section="you"] .wi-head')
   const select=page.locator('[data-section="you"] .wi-vehicle-select')
   if(!await select.isVisible()){await card.scrollIntoViewIfNeeded();await card.click({timeout:remaining(5000)})}
-  await select.scrollIntoViewIfNeeded();await select.selectOption(kind,{timeout:remaining(5000)})
-  await page.waitForFunction(k=>syn3h.player.kind===k&&!syn3h.player.object.userData.materializing,kind,{timeout:remaining(15000)})
+  await select.scrollIntoViewIfNeeded()
+  const selection={url:page.url(),kind,optionId:choice.optionId,available:await select.evaluate(el=>Array.from(el.options,option=>({value:option.value,label:option.label})))}
+  report.vehicleSelections.push(selection);await save()
+  assert.ok(selection.available.some(option=>option.value===choice.optionId),`Missing public vehicle option ${choice.optionId}`)
+  await select.selectOption(choice.optionId,{timeout:remaining(5000)})
+  selection.selectedValue=await select.inputValue();await save()
+  assert.equal(selection.selectedValue,choice.optionId,'native vehicle selection')
+  // The public Buggy option and cached runtime Buggy may use different explicit aliases.
+  await page.waitForFunction(kinds=>kinds.includes(syn3h.player.kind)&&!syn3h.player.object.userData.materializing,choice.runtimeKinds,{timeout:remaining(15000)})
+  selection.runtimeKind=await page.evaluate(()=>syn3h.player.kind)
+  assert.ok(choice.runtimeKinds.includes(selection.runtimeKind),'runtime vehicle kind')
+  selection.runtimeVerified=true;await save()
   await driveFocus()
   if(!await page.evaluate(()=>syn3h.game.input.state.zorb))await page.keyboard.press('x')
   await page.waitForFunction(()=>syn3h.player.zorb.active&&syn3h.player.zorb.radius>=.95*.5*(syn3h.params.get('zorb.size').value*15+(syn3h.player.camOffset??3)),null,{timeout:remaining(12000)})
