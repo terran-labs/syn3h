@@ -85,10 +85,13 @@ Console warnings and errors are retained; console errors and page errors make th
 nonpassing. Each long-task/long-frame observer records support, successful installation or
 its installation error. Unsupported observers do not become invented zero-event evidence.
 
-Browser operations share a 270-second work deadline measured from the Node script start.
+Wrapped work operations share a 270-second deadline measured from the Node script start.
+This does not cover every browser or filesystem call. The `Promise.race` timeout stops
+awaiting an operation; it does not cancel the underlying call, which may continue afterward.
 On error or timeout, preserve the original failure before attempting a partial raw trace and
 any active CPU profile. Evidence salvage, browser close and response draining share the
-remaining budget ending at 295 seconds; the outer supervisor remains authoritative.
+remaining budget ending at 295 seconds. The outer supervisor controls the execution stop
+at 300 seconds and the absolute cleanup bound at 315 seconds from runner start.
 These attempts can fail on an unresponsive browser, which must remain explicit in the report.
 Close the browser event producer, then drain response-body handlers dynamically and recompute
 provenance and browser errors before the final report. Missing bodies, an incomplete drain,
