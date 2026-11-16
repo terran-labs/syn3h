@@ -450,9 +450,7 @@ export class NetClient implements System {
 
     // The original fired with the mouse; nothing else uses a canvas click yet.
     const canvas = game.renderer.domElement
-    canvas.addEventListener('pointerdown', (e) => { if (pressHoldsFire(e)) game.input.mouseFire = true })
-    window.addEventListener('pointerup', () => { game.input.mouseFire = false })
-    window.addEventListener('blur', () => { game.input.mouseFire = false })
+    canvas.addEventListener('pointerdown', (e) => { if (pressHoldsFire(e)) game.input.beginCanvasFire(e.pointerId) })
   }
 
   start(): void {
