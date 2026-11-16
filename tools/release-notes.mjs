@@ -30,8 +30,13 @@ export function frozenUrl(version) {
 const MANIFEST = 'manifest.json'
 
 /** Sections in the order a notes file has them. Play only in production notes. */
-const SECTIONS = ['The story so far', 'Features', 'Fixes', 'Play', 'Known issues']
+const SECTIONS = ['The story so far', 'Features', 'Fixes', 'Play', 'Performance', 'Known issues']
 const REQUIRED = ['The story so far', 'Features']
+
+/** Historical notes keep their original contract. */
+export function requiresPerformance(row) {
+  return row.channel === 'production' && compareVersions(parseVersion(row.version), parseVersion('v26.11.1518')) > 0
+}
 
 export function assetUrl(tag, name, repo = GITHUB_REPO) {
   return `https://github.com/${repo}/releases/download/${tag}/${name}`
@@ -113,6 +118,7 @@ export function draftNotes(row, from, to, commits) {
     '- TODO',
     '',
     ...(production ? ['### Play', '', `Open ${PLAY_URL} in a browser, choose a vehicle and press Play.`, '', `This exact version stays playable at ${frozenUrl(row.version)}, whatever ships after it.`, '', '- TODO: the controls that matter for this release', ''] : []),
+    ...(requiresPerformance(row) ? ['### Performance', '', 'TODO: insert the canonical qualified performance report and chart', ''] : []),
     '### Known issues',
     '',
     '- TODO: from ops/KNOWN-ISSUES.md as it stood when this was built',
@@ -142,6 +148,7 @@ export function renderNotes(text, row, manifest = { images: [], gif: null }) {
   if (found[0] !== 'The story so far') problems.push('"### The story so far" must be the first section')
   if (row.channel === 'production' && !found.includes('Play')) problems.push('production notes need "### Play"')
   if (row.channel !== 'production' && found.includes('Play')) problems.push('"### Play" belongs only in production notes')
+  if (requiresPerformance(row) && !found.includes('Performance')) problems.push('production notes after v26.11.1518 need \"### Performance\"')
   if (/\bTODO\b/.test(notes)) problems.push('the notes still contain TODO')
   if (/[–—]/.test(notes)) problems.push('the notes contain an en or em dash')
   const banned = notes.match(/\b(lasers?|fire[sd]?|firing|shoot\w*|shot|weapons?|hit|hits|kill\w*|destroy\w*|death|dies?|died)\b/gi)
