@@ -241,11 +241,14 @@ async function ready(page, fn, arg, timeout = 10000) {
 async function state(page) { return page.evaluate(() => aboutInputObserver.snapshot()) }
 async function record(page, label, expectStep = true) {
   await ready(page, ({ label, expectStep }) => {
+    aboutInputObserver.diagnostics()
     const r = aboutInputObserver.records.find(r => r.label === label)
+    if (r?.lifecycleFailure) return true
     return r?.immediate && (!expectStep || (r.stepEntry && r.firstStep))
   }, { label, expectStep })
   const r = await page.evaluate(label => aboutInputObserver.records.find(r => r.label === label), label)
   report.cases.push(r)
+  assert.equal(r.lifecycleFailure ?? null, null, 'observer lifecycle must preserve first normal step')
   assert.equal(r.preconditionFailure, null)
   assertTransactions(r.transactions)
   assert.equal(r.immediate.tick, r.eventReturn.tick, 'event microtask precedes simulation')
@@ -345,9 +348,35 @@ async function newGame(touch, name) {
   }, recipe)
   assert.deepEqual(settings.actual, settings.applied)
   report[name] = { url: url.href, sockets, settings }
-  await page.evaluate(async () => {
+  // Parameter assignment precedes BotManager's ordinary update reconciliation.
+  // Observe actual public roster identities across a later frame and physics tick.
+  await ready(page, () => {
+    const { game, bots } = syn3h
+    const vehicles = [...bots.vehicles]
+    const rows = [...syn3hNet.players.values()].filter(p => p.bot)
+    const valid = syn3hNet.isHost && vehicles.length === 1 && rows.length === 1 &&
+      syn3hNet.vehicleOf(rows[0].id) === vehicles[0] && game.systems.includes(vehicles[0])
+    const previous = window.aboutInputSettledRoster
+    if (!valid) { delete window.aboutInputSettledRoster; return false }
+    if (previous?.vehicle === vehicles[0] && previous.botId === rows[0].id &&
+        game.frames > previous.frame && game.tick > previous.tick) return true
+    window.aboutInputSettledRoster = { vehicle: vehicles[0], botId: rows[0].id, frame: game.frames, tick: game.tick }
+    return false
+  })
+  report[name].settledRoster = await page.evaluate(async () => {
     const { installAboutInputObservers } = await import('/tests/ui/about-input-observers.mjs')
+    // The module import yields; recheck the retained identities before installing.
+    const settled = window.aboutInputSettledRoster
+    const { game, bots } = syn3h
+    const rows = [...syn3hNet.players.values()].filter(p => p.bot)
+    if (!settled || !syn3hNet.isHost || bots.vehicles.length !== 1 || bots.vehicles[0] !== settled.vehicle ||
+        rows.length !== 1 || rows[0].id !== settled.botId || syn3hNet.vehicleOf(settled.botId) !== settled.vehicle ||
+        !game.systems.includes(settled.vehicle)) throw new Error('Settled roster changed before observer installation')
+    const receipt = { botId: settled.botId, firstFrame: settled.frame, firstTick: settled.tick,
+      installedFrame: game.frames, installedTick: game.tick, vehicleIndex: game.systems.indexOf(settled.vehicle) }
     installAboutInputObservers()
+    delete window.aboutInputSettledRoster
+    return receipt
   })
   return page
 }
@@ -564,9 +593,15 @@ try {
         await bounded(page.evaluate(() => {
           if (!window.aboutInputObserver) return null
           const evidence = { records: aboutInputObserver.records, order: aboutInputObserver.order }
-          aboutInputObserver.restore()
+          try { evidence.diagnostics = aboutInputObserver.diagnostics() }
+          catch (error) { evidence.diagnosticFailure = String(error) }
+          finally { try { aboutInputObserver.restore() } catch (error) { evidence.restoreFailure = String(error) } }
           return evidence
-        }).then(evidence => { if (evidence) { report.partialTraces ??= []; report.partialTraces.push(evidence) } }), 3000, 'observer restore')
+        }).then(evidence => { if (evidence) { report.partialTraces ??= []; report.partialTraces.push(evidence)
+          if (evidence.restoreFailure) report.cleanupErrors.push(evidence.restoreFailure)
+          if (evidence.diagnosticFailure) report.cleanupErrors.push(evidence.diagnosticFailure)
+          if (evidence.diagnostics?.lifecycleFailures.length) report.cleanupErrors.push('Observer lifecycle failure in final evidence')
+        } }), 3000, 'observer restore')
       } catch (error) { report.cleanupErrors.push(String(error)) }
     }
   }
