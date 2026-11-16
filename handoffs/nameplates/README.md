@@ -679,3 +679,54 @@ Source/coverage basis: `/tmp/nameplates-010-integration-and-coverage.md` and its
 arithmetic JSON. Root integration remains plan-only. The next review should decide whether
 the two-case measurement contract is sufficient or whether draw-participation instrumentation
 is needed first. No new placements, product changes, tests or runtime were performed here.
+
+### Implementation intake: ordinary-camera readiness contract gap
+
+Source inspection on d2b67 confirms that instance-local draw/envelope wrappers are feasible:
+`afterCameraFrame` calls `this.draw(this.entries)` dynamically, so an own-property wrapper
+can intercept that exact instance. `VehicleNameplates.draw` calls `projection.envelope`
+immediately before each local/remote `discs.push`; normal synchronous draw return can
+certify those recorded outputs reached that draw's disc list. A thrown draw cannot certify
+participation. The local branch is skipped when center depth does not exceed local radius;
+a hidden-layer early return also needs an explicit skipped reason, not a cached local disc.
+
+A safe implementation must capture original own descriptors (including absence), forward
+with Reflect.apply exactly once and preserve the original return or thrown value. Recorder
+errors are sticky secondary failures; they cannot replace a product exception or trigger a
+second call. Keep at most seven copied envelope results in the active draw, publish only
+bounded latest state, and mark a completed draw separately from its partial envelope list.
+Restore only while the installed own descriptor still matches the wrapper. A foreign
+replacement is an explicit cleanup failure and must remain untouched. Disposal also needs
+an instance-local forwarding wrapper, with exact descriptor restoration before forwarding
+original disposal once. No product prototype changes are needed. These are source findings,
+not executed wrapper tests or completed instrumentation.
+
+The blocking ambiguity is the existing observation wait, not access to these methods:
+
+- `tests/ui/nameplates.mjs:617` hard-codes remote names Visitor and Companion. On the Visitor
+  follower, Visitor is local and is deliberately absent from tags, so that predicate cannot
+  pass even when the correct Observer/Companion roster is complete.
+- `:642-644` requires `s.camera.cinematic` and compares camera position/FOV to that pose.
+  Both approved cases explicitly clear cinematic mode. Keeping this conjunct makes success
+  impossible; re-enabling cinematic mode would defeat ordinary-camera measurement.
+- `stage():764` installs the cinematic pose on the host and later waits on the host. Clearing
+  it after the wait would sample a different camera from the one that established readiness.
+  Polling the follower separately would add a wait instead of attaching to the existing one.
+
+Smallest proposed resolution for independent source authorization: make only the new
+observation branch's existing wait accept an explicit observer page, expected remote names,
+and a declared ordinary-camera readiness variant. It would retain and record the original
+cinematic `originalResult` as false, without requiring it for this observation-only outcome.
+Require mode0, cinematic absent, distance setting25, finite actual camera matrices, unchanged
+controls, exact actor arrival and the original stable six-comparison arithmetic plus six
+post-arrival comparisons. Preserve persistent counters, repeated-stamp resets,15s/100ms/180,
+all coordinates and one wait per case. No new camera convergence tolerance is proposed;
+record actual pivot, desired (after lift), final camera, arm and lift without claiming they
+are a pre-terrain desired position or synchronized with another client.
+
+The acceptance branch must remain byte-for-byte unchanged in its readiness semantics.
+Observation success would mean bounded collection/readiness only, never positive label or
+feature acceptance. Failure still retains all partial samples and the first original error.
+This limited observer/readiness distinction needs resolution before implementing the whole
+package; installing wrappers alone would leave a knowingly impossible measurement branch.
+No fixture code, launcher pins, product code or prior evidence was changed during this intake.
