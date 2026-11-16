@@ -96,9 +96,19 @@ try{
       await a.waitForTimeout(80);await a.screenshot({path:`${output}/history-${level}-${i}.png`})
     }
   }
+  const leaveBefore=await a.evaluate(()=>window.__headlightPipelines)
+  await b.close()
+  await a.waitForFunction(id=>!window.syn3hNet.remotes.has(id),id,{timeout:60000})
+  report.departurePipelines=await a.evaluate(before=>window.__headlightPipelines-before,leaveBefore)
+  const arrivalBefore=await a.evaluate(()=>window.__headlightPipelines)
+  const returning=await open('Headlight returning'),returnId=await returning.evaluate(()=>window.syn3hNet.id)
+  await a.waitForFunction(id=>window.syn3hNet.remotes.has(id),returnId,{timeout:60000})
+  await a.waitForTimeout(2500)
+  report.arrivalPipelines=await a.evaluate(before=>window.__headlightPipelines-before,arrivalBefore)
   assert.deepEqual(report.errors,[])
   for(const change of report.changes)assert.equal(change.lights,2)
-  // Pipeline counts are reported, not hidden by a permissive threshold. Review any nonzero delta.
+  for(const change of report.changes)assert.equal(change.pipelines,0,`pipeline churn on ${change.kind}`)
+  assert.equal(report.departurePipelines,0);assert.equal(report.arrivalPipelines,0)
 } catch(error){report.failure=String(error);process.exitCode=1}
 finally{
   await browser?.close();report.browserClosed=true
