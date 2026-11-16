@@ -37,7 +37,7 @@ Open the **Game** panel to choose how the room plays.
 | Mode | What to do |
 |---|---|
 | Explore | Roam, fly and experiment together. Nobody is it; there is no hill or score. The gear remains available as toys. |
-| Tag | Chase the player who is it, or pass the chase along with a tag. Use the terrain, your vehicle and the room's chosen tag settings. |
+| Tag | Shoot the player who is it to take the role. While you are it, shooting someone earns a point and you keep the role; a ram passes it along. |
 | King of the Hill | Reach the marked zone and hold it alone to score. When more than one vehicle occupies it, scoring stops until someone gains control. |
 
 ## How to play
@@ -51,9 +51,9 @@ phone. There is nothing to install and no account.
    the keys and look around with the mouse. On a touch screen, steer with your left thumb
    and use the buttons on the right.
 3. **Open the panels.** Press Esc to free the mouse and the side panel slides in: game
-   mode, players, vehicles, world, sky, performance and your own settings. Click back into
+   mode, players, world, performance and your own settings. Click back into
    the world and it slides away.
-4. **Change vehicle.** Open Vehicles in the side panel and choose a buggy, jet, hovercraft
+4. **Change vehicle.** Open Me in the side panel and choose a buggy, jet, hovercraft
    or tank. It swaps where you stand.
 5. **Bring a friend.** Share the address in your address bar. Everyone in the same room
    drives in the same world.
@@ -180,7 +180,7 @@ reductions, a notice offers the next lower level. Choose **Keep** to dismiss it 
 session. With the cursor captured, press Escape to reach the choices. The Performance
 card shows Auto, pinning and current automatic reductions.
 
-**How do I change the world?** Open World or Sky in the side panel. Gravity, time of day,
+**How do I change the world?** Open World in the side panel, including Sky & Weather. Gravity, time of day,
 weather, water and a few hundred other settings are live sliders, and in a shared room
 everyone feels the change.
 
