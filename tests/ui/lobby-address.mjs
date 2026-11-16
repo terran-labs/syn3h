@@ -38,6 +38,8 @@ async function persist(stage) {
     throw error
   }
 }
+// decodeWorld applies these world-scoped values before Game/player/bot construction.
+const entryWorld = 'volcanic.1~bots.count=0'
 const models = ['/models/tank.glb', '/models/tanktread.glb', '/models/buggy.glb', '/models/buggy-boxarm.glb']
 const licences = ['three.txt', 'qr.txt', 'rapier.txt', 'tweakpane.txt', 'lato.txt', 'roboto-apache.txt', 'roboto-notice.txt', 'barlow.txt', 'marked.txt', 'ws.txt'].map(n => '/brand/licenses/' + n)
 const sources = ['src/main.ts', 'src/core/frozenResources.ts', 'src/core/resume.ts', 'src/ui/LobbyAddress.ts', 'src/ui/Shell.ts',
@@ -174,14 +176,20 @@ async function runCase(browser, mode, entry, missing = false) {
     const url = new URL(entry.url)
     const room = missing ? 'url-missing' : entry.room
     assert.ok(room && /^[a-z0-9_-]{1,32}$/.test(room))
-    for (const [key, value] of Object.entries({ v: m.version, room, seed: '1', vehicle: 'jet', 'gfx.quality': '0' })) url.searchParams.set(key, value)
+    for (const [key, value] of Object.entries({ v: m.version, room, world: entryWorld, seed: '1', vehicle: 'jet', 'gfx.quality': '0' })) url.searchParams.set(key, value)
     url.hash = 'retained-entry'
     await persist('before initial document navigation')
     await page.goto(url.href)
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 60000 })
     await page.locator('.galaxy-links').waitFor({ state: 'visible' })
     clean(page, url.pathname)
-    assert.equal(result.requests.some(r => r.url.includes('/models/')), false, 'Jet starts without model preloads')
+    result.startup = await page.evaluate(() => ({
+      kind: syn3h.player.kind, seed: syn3h.params.get('world.seed').value,
+      requestedBots: syn3h.params.get('bots.count').value, bots: syn3h.bots.vehicles.length,
+      recipe: syn3h.planets.currentPlanet().id,
+    }))
+    assert.deepEqual(result.startup, { kind: 'jet', seed: 1, requestedBots: 0, bots: 0, recipe: 'volcanic' }, 'shared-world setup applied before startup')
+    assert.equal(result.requests.some(r => r.url.includes('/models/')), false, 'Jet with zero bots starts without model preloads')
     const timeOrigin = await page.evaluate(() => performance.timeOrigin)
     await enter(page); playingURL(page, room)
     assert.ok(result.sockets.some(value => value === entry.roomSocket + '?room=' + room), 'dedicated room connection')
@@ -201,7 +209,11 @@ async function runCase(browser, mode, entry, missing = false) {
       await leave(page); clean(page, url.pathname)
       await enter(page); playingURL(page, room)
       assert.equal(await page.evaluate(() => performance.timeOrigin), timeOrigin, 'already-joined reentry does not reload')
-      await swap(page, 'tank'); await swap(page, 'buggy-syn3h')
+      assert.equal(await page.evaluate(() => syn3h.bots.vehicles.length), 0, 'no bot model loads before swaps')
+      assert.equal(result.requests.some(r => models.some(path => new URL(r.url).pathname.endsWith(path))), false, 'all four models remain unrequested before actual swaps')
+      await swap(page, 'tank')
+      assert.equal(result.requests.some(r => models.slice(2).some(path => new URL(r.url).pathname.endsWith(path))), false, 'Buggy models remain unrequested before Buggy swap')
+      await swap(page, 'buggy-syn3h')
       const until = Date.now() + 30000
       while (!models.every(path => result.responses.some(r => new URL(r.url).pathname === `/v/${m.version}${path}`))) {
         assert.ok(Date.now() < until, 'all four late models'); await page.waitForTimeout(50)

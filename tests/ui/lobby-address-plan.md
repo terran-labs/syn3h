@@ -69,9 +69,28 @@ worker responses reported as other/fetch rather than script. An absent condition
 request is not execution coverage. Each entry has its own map because frozen pathname
 rewriting may change asset paths.
 `sourceFiles` covers the exact ten product/config files listed in the fixture.
-The script adds version, room, seed 1, Jet, Minimal and a retained fragment to each
-entry URL. No world preset is injected; the current planet is entered so it cannot
-replace the explicit seed. Normal networking must confirm the dedicated room URL.
+The script adds version, room, `world=volcanic.1~bots.count=0`, explicit seed 1,
+Jet, Minimal and a retained fragment to each entry URL. This is the supported
+`encodeWorld`/`decodeWorld` format, not a standalone bot query parameter. Main decodes
+it before Game construction. The fixture asserts the actual Jet, Volcanic recipe,
+seed 1, requested bot count zero and empty bot fleet before checking model requests.
+It enters the current planet, preserving that recipe. Normal networking must confirm
+the dedicated room URL. Bot behavior is configured through the ordinary shared-world
+setting; no private state, request interception or product behavior is changed.
+
+The world query does not replace the explicit entry-seed check: `prepareResume` runs
+after world decoding and reapplies the saved host world and seed 42 when the unchanged
+entry seed is 1. The saved world retains zero bots. Invitations still encode the
+current world through the production encoder and retain room/version; they need not
+equal the original seed-1 recipe after the host edits the seed.
+
+Gate 02 observed frozen Buggy requests before its generic no-model assertion. Source
+shows main constructs BotManager before Shell (`src/main.ts:85`); its update spawns
+Buggy bots (`src/bots/BotManager.ts:111,145`), with default count four and Minimal
+budget two. Buggy construction loads both observed files
+(`src/vehicles/skins/LoadedBuggySkin.ts:213`). Materialize prewarm compiles its cloud
+shader, not vehicle assets. This explains a valid source path consistent with the
+requests, not a captured request initiator stack. The failed evidence is preserved.
 
 ## Smallest executable allocation
 
@@ -107,7 +126,9 @@ activates the planet in both contexts; this does not claim physical touch covera
 - Initial lobby, confirmed Leave world and already-joined reentry preserve pathname,
   remove all lobby query/hash, restore intentional play room/seed/version, and do
   not reload on reentry. A room named `lobby` remains a real play room.
-- Jet starts without mesh requests. Normal vehicle controls then cause all four
+- Jet in the asserted zero-bot shared world starts without mesh requests. All four
+  remain unrequested immediately before the Tank swap, and Buggy's pair remains
+  unrequested before the Buggy swap. Normal vehicle controls then cause all four
   uncached late mesh requests after lobby cleanup. Each response must match frozen
   paths and expected hashes. Only an optional independently distinct resource can
   additionally demonstrate frozen/latest byte discrimination.
