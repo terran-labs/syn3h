@@ -47,7 +47,7 @@ export class BotGear {
       lagOf: hooks.lagOf, wrapSize: hooks.wrapSize, control: () => this.control,
     }
     this.bungee = new Bungee(game, {
-      ...common, idOfBody: hooks.idOfBody, now: hooks.now,
+      ...common, idOfBody: hooks.idOfBody, now: hooks.now, surface: hooks.surface,
       reportInterval: 0.5,
       inHand: () => this.selected === 'bungee', send: cord => hooks.sendCord(id, cord), cue: hooks.cue,
     })

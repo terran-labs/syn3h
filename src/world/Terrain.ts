@@ -74,6 +74,10 @@ export interface Terrain {
    * wrapping terrain any x and z are accepted and the result repeats every `wrapSize`.
    */
   heightAt(x: number, z: number): number
+  /** Visible mesh height before the common planet bend; respects the current render LOD. */
+  renderHeightAt?(x: number, z: number): number
+  /** Base grid spacing for exact visual segment/triangle intersection samples. */
+  readonly renderCellSize?: number
   /** Unit ground normal at a world position. */
   normalAt(x: number, z: number, out: THREE.Vector3): THREE.Vector3
   /** A safe place to spawn player `index`. Deterministic for a given seed. */

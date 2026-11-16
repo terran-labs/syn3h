@@ -330,6 +330,7 @@ export class NetClient implements System {
     // Gear (Weapons lane). The Bungee pulls only vehicles this client simulates.
     this.gear = new GearRack(game)
     this.bungee = new Bungee(game, {
+      surface: this.grappleSurface,
       self: () => this.id,
       vehicleOf: (id) => this.vehicleOf(id),
       idOfBody: (h) => this.vehicleIdOfBody(h),
@@ -894,6 +895,7 @@ export class NetClient implements System {
 
   private makeBotGear(id: number, vehicle: Vehicle): BotGear {
     return new BotGear(this.ctx.game, id, vehicle, {
+      surface: this.grappleSurface,
       vehicleOf: id => this.vehicleOf(id), vehicleIds: () => this.vehicleIds(),
       idOfBody: h => this.vehicleIdOfBody(h), owns: id => this.ownsVehicle(id),
       lagOf: id => this.remotes.get(id)?.delay ?? 0, wrapSize: () => this.wrapSize,
@@ -1178,6 +1180,16 @@ export class NetClient implements System {
     if (!(size > 0)) return shot
     const me = this.ctx.player.body.translation()
     return { ...shot, o: [nearestImage(shot.o[0], me.x, size), shot.o[1], nearestImage(shot.o[2], me.z, size)] }
+  }
+
+  /** Drape cosmetics over the actual land LOD and liquid skin, without changing physics. */
+  private readonly grappleSurface = {
+    heightAt: (x: number, z: number): number => Math.max(
+      this.ctx.terrain.renderHeightAt?.(x, z) ?? this.ctx.terrain.heightAt(x, z),
+      this.ctx.terrain.liquidHeightAt?.(x, z) ?? -Infinity,
+    ),
+    cellSize: (): number => this.ctx.terrain.renderCellSize ?? 1,
+    origin: (): number => -this.ctx.terrain.size / 2,
   }
 
   /** The terrain's height, as remote vehicles use it to stay out of the hills. */

@@ -30,6 +30,7 @@ import type { Game } from '../../core/Game'
 import { graphicsLevel, levelNumber } from '../../core/quality'
 import { hotExposureNode } from '../../vehicles/skins/hotExposure'
 import { warmGear } from '../warm'
+import { CORD_CLEARANCE, drapeCord, type CordSurface } from './drape'
 import { MAX_BOTS } from '../../../shared/protocol'
 
 // TSL nodes are dynamically typed; the effect sprites use the same alias.
@@ -143,6 +144,7 @@ export class TetherLook {
   private readonly tan = new THREE.Vector3()
   private readonly view = new THREE.Vector3()
   private readonly side = new THREE.Vector3()
+  private readonly edges = [Array.from({ length: POINTS }, () => new THREE.Vector3()), Array.from({ length: POINTS }, () => new THREE.Vector3())]
   private readonly t1 = new THREE.Vector3()
   private readonly t2 = new THREE.Vector3()
   private readonly proxies: THREE.BufferGeometry[]
@@ -273,7 +275,7 @@ export class TetherLook {
    * Write one cord's ribbon through `points` (this.segments + 1 of them, owner's end first).
    * `tension` is 0 to 1, `phase` is the bead offset in metres, `rgb` its linear colour.
    */
-  writeCord(slot: number, points: readonly THREE.Vector3[], tension: number, phase: number, rgb: readonly number[]): void {
+  writeCord(slot: number, points: readonly THREE.Vector3[], tension: number, phase: number, rgb: readonly number[], surface?: CordSurface): void {
     if (slot < 0) return
     const n = this.segments
     let total = 0
@@ -290,13 +292,35 @@ export class TetherLook {
       const len = this.side.length()
       if (len > 1e-8) this.side.multiplyScalar(w / 2 / len)
       else this.side.set(w / 2, 0, 0)
+      // Preserve full width when airborne and clear. At surface contact (including
+      // a wide ribbon whose edge would hit the ground), taper this endpoint to its
+      // unchanged centre BEFORE edge draping. The adjoining triangles provide the
+      // width ramp without new vertices. A buried centre skips this taper; the
+      // edge drape still applies its visual fallback, not exact attachment.
+      if (surface && (i === 0 || i === n) && p.y >= surface.heightAt(p.x, p.z)) {
+        const leftGap = p.y - this.side.y - surface.heightAt(p.x - this.side.x, p.z - this.side.z)
+        const rightGap = p.y + this.side.y - surface.heightAt(p.x + this.side.x, p.z + this.side.z)
+        if (Math.min(leftGap, rightGap) <= CORD_CLEARANCE) this.side.set(0, 0, 0)
+      }
       for (let k = 0; k < 2; k++) {
         const v = base + i * 2 + k, sign = k ? 1 : -1
+        this.edges[k][i].set(p.x + this.side.x * sign, p.y + this.side.y * sign, p.z + this.side.z * sign)
         this.pos[v * 3] = p.x + this.side.x * sign
         this.pos[v * 3 + 1] = p.y + this.side.y * sign
         this.pos[v * 3 + 2] = p.z + this.side.z * sign
         this.along[v * 4] = s; this.along[v * 4 + 1] = total - s; this.along[v * 4 + 2] = sign; this.along[v * 4 + 3] = tension
         this.color[v * 4] = rgb[0]; this.color[v * 4 + 1] = rgb[1]; this.color[v * 4 + 2] = rgb[2]; this.color[v * 4 + 3] = phase
+      }
+    }
+    if (surface) {
+      for (let k = 0; k < 2; k++) {
+        // False means visual-clearance fallback, not untouched geometry. Keep
+        // writing it: physical anchors stay fixed and attachment is not certified.
+        drapeCord(this.edges[k], n + 1, surface)
+        for (let i = 0; i <= n; i++) {
+          const p = this.edges[k][i], v = (base + i * 2 + k) * 3
+          this.pos[v] = p.x; this.pos[v + 1] = p.y; this.pos[v + 2] = p.z
+        }
       }
     }
   }
