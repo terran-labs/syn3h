@@ -88,6 +88,7 @@ commercial use requires permission from Terran Labs.
 ## Links and credits
 
 - Aubrey Falconer: https://aubreyfalconer.com/
+- Terran Labs: https://terranlabs.com/
 - Source and development: https://github.com/terran-labs/syn3h
 - Release history: https://github.com/terran-labs/syn3h/releases
 
@@ -104,7 +105,7 @@ Preserve the existing complete licence disclosure below these links.
 - Historical context comes from the owner's original Syn3h backstory, previously read
   at www.syn3h.com/backstory.html. Freed and Terran Labs writing informs the emphasis on
   chosen attention and agency; no quotations, statistics or future promises are reused.
-- The requested third domain remains unconfirmed. Do not invent a replacement.
+- The owner confirmed https://terranlabs.com/; HTTPS returned 200 on 15 November 2026.
 - Buggy-to-jet towing is requested showcase material. Add its practical recipe only
   after a real multiplayer capture proves the current controls and behavior.
 - Dramatic sunrise rays are unfinished. Do not caption an image as proof of the fix

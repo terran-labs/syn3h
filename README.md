@@ -212,7 +212,8 @@ settings change the conditions. The world is something you can investigate and a
 with other people. The vision is a place for unhurried exploration, playful engineering
 and the occasional thoroughly unreasonable vehicle experiment.
 
-Read more about [Aubrey Falconer](https://aubreyfalconer.com/), explore the
+Read more about [Aubrey Falconer](https://aubreyfalconer.com/) and
+[Terran Labs](https://terranlabs.com/), explore the
 [source repository](https://github.com/terran-labs/syn3h), or follow the
 [release notes](https://github.com/terran-labs/syn3h/releases).
 
