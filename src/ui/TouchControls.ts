@@ -82,7 +82,11 @@ export class TouchFireHolds {
     this.suppressed = () => {}
     // Global end listeners persist only until the retained physical owners end.
   }
-  private readonly pointerEnd = (event: PointerEvent): void => this.end(`pointer:${event.pointerId}`)
+  private readonly pointerEnd = (event: PointerEvent): void => {
+    // Touch contact and pen tip use primary button 0; barrel/right/middle up is not neutral.
+    if (event.type === 'pointerup' && event.button !== 0) return
+    this.end(`pointer:${event.pointerId}`)
+  }
   private readonly keyEnd = (event: KeyboardEvent): void => this.end(`key:${event.code}`)
   private end(id: string): void {
     const owner = this.owners.get(id)
@@ -133,7 +137,7 @@ export class TouchControls {
         this.fireHolds = fire
         this.resetters.push(() => fire.cleanup())
         button.addEventListener('pointerdown', (event) => {
-          if (!this.active || input.suspended) return
+          if (!this.active || input.suspended || event.button !== 0) return
           event.preventDefault()
           fire.pointer(event.pointerId)
           try { button.setPointerCapture(event.pointerId) } catch { /* Global ends still retire the gesture. */ }
