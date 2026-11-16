@@ -43,7 +43,7 @@ rest of your gear. Give each experiment enough space to become a good story.
 **Explore.** Roam and experiment together, with no score, hill or player marked as it.
 Gear remains available as toys.
 
-**Tag.** Shoot the player who is it to take the role. While you are it, shooting someone
+**Tag.** Tag the player who is it to take the role. While you are it, tagging someone
 earns a point and you keep the role; a ram passes it along. Use the landscape and your
 vehicle's abilities to find an escape route.
 
@@ -54,7 +54,7 @@ Choose the mode in the Game panel. You can return to Explore when the room wants
 
 ## The story
 
-Aubrey Falconer's Mars Explorer brought flying cars, volcanoes and laser tag together.
+Aubrey Falconer's Mars Explorer brought flying cars, volcanoes and vehicle tag together.
 People stayed to explore and create together, and a community grew around those shared
 worlds. Syn3h carries that invitation forward: arrive somewhere unfamiliar, learn what
 your machine can do, and make your own reasons to stay.

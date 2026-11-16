@@ -42,7 +42,7 @@ Open the **Game** panel to choose how the room plays.
 | Mode | What to do |
 |---|---|
 | Explore | Roam, fly and experiment together. Nobody is it; there is no hill or score. The gear remains available as toys. |
-| Tag | Shoot the player who is it to take the role. While you are it, shooting someone earns a point and you keep the role; a ram passes it along. |
+| Tag | Tag the player who is it to take the role. While you are it, tagging someone earns a point and you keep the role; a ram passes it along. |
 | King of the Hill | Reach the marked zone and hold it alone to score. When more than one vehicle occupies it, scoring stops until someone gains control. |
 
 ## How to play
