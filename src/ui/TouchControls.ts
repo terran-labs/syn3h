@@ -1,5 +1,5 @@
 import type { VehicleKind } from '../vehicles'
-import type { Input } from '../core/Input'
+import { primaryPointerEnded, type Input } from '../core/Input'
 import './touch-stick.css'
 
 /*
@@ -55,6 +55,7 @@ export class TouchFireHolds {
     this.owners.set(id, owner)
     if (!this.listening) {
       this.listening = true
+      this.target.addEventListener('pointermove', this.pointerEnd, true)
       this.target.addEventListener('pointerup', this.pointerEnd, true)
       this.target.addEventListener('pointercancel', this.pointerEnd, true)
       this.target.addEventListener('keyup', this.keyEnd, true)
@@ -83,8 +84,7 @@ export class TouchFireHolds {
     // Global end listeners persist only until the retained physical owners end.
   }
   private readonly pointerEnd = (event: PointerEvent): void => {
-    // Touch contact and pen tip use primary button 0; barrel/right/middle up is not neutral.
-    if (event.type === 'pointerup' && event.button !== 0) return
+    if (!primaryPointerEnded(event)) return
     this.end(`pointer:${event.pointerId}`)
   }
   private readonly keyEnd = (event: KeyboardEvent): void => this.end(`key:${event.code}`)
@@ -94,6 +94,7 @@ export class TouchFireHolds {
     this.owners.delete(id)
     this.input.endExternalFire(owner.token)
     if (!this.owners.size && this.listening) {
+      this.target.removeEventListener('pointermove', this.pointerEnd, true)
       this.target.removeEventListener('pointerup', this.pointerEnd, true)
       this.target.removeEventListener('pointercancel', this.pointerEnd, true)
       this.target.removeEventListener('keyup', this.keyEnd, true)

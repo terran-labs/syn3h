@@ -29,6 +29,15 @@ export function emptyInput(): InputState {
 
 export type ExternalFireOwner = object | symbol
 
+/** End observation only. Never use this to start a gesture from ordinary movement.
+ * Cleanup, lost capture and blur provide no physical button-state sample. */
+export function primaryPointerEnded(event: Pick<PointerEvent, 'type' | 'pointerType' | 'buttons'>): boolean {
+  if (event.type === 'pointercancel') return true
+  if (event.pointerType === 'touch') return event.type === 'pointerup'
+  return (event.pointerType === 'mouse' || event.pointerType === 'pen') &&
+    (event.type === 'pointermove' || event.type === 'pointerup') && (event.buttons & 1) === 0
+}
+
 export class Input {
   readonly state: InputState = emptyInput()
   /** Additive UI controls. Special and zorb remain toggles on state; see `toggleZorb`. */
@@ -71,11 +80,16 @@ export class Input {
       if (this.suspended) this.blockedMouse.add(e.pointerId)
     }, true)
     const mouseEnd = (e: PointerEvent) => {
-      if (e.pointerType === 'touch' || (e.type === 'pointerup' && e.button !== 0)) return
+      if (!this.rawMouse.has(e.pointerId) || e.pointerType === 'touch' || !primaryPointerEnded(e)) return
       this.rawMouse.delete(e.pointerId)
       this.blockedMouse.delete(e.pointerId)
       this.unknownMouseBlocked = false
+      // Net's last-button pointerup can arrive later in a chord. Do not let its stale
+      // boolean keep primary fire alive after this observed primary-neutral transition.
+      this.mouseFire = false
+      this.refreshFire()
     }
+    target.addEventListener('pointermove', mouseEnd, true)
     target.addEventListener('pointerup', mouseEnd, true)
     target.addEventListener('pointercancel', mouseEnd, true)
     target.addEventListener('keydown', (e) => {
