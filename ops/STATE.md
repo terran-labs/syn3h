@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-16 02:14 PST. The owner withdrew the afternoon cutoff.
+Last verified: 2026-11-16 04:25 PST. The owner withdrew the afternoon cutoff.
 
 ## Authority and release order
 
@@ -12,21 +12,24 @@ and eight vehicle/browser cases with rollback. Verify notes and GIF before Lates
 
 ## Production
 
-Accepted release: v26.11.1601 (release-25), source cfee70ea, at https://www.syn3h.com/.
-Proportional camera zoom and adjustable zoom speed are live. The accepted Chrome check
-preserves Grapple reeling without changing camera distance. Both public addresses pass
-exact-build, multiplayer and frozen-file checks; all eight vehicle/browser cases pass.
-Normal and latency dry checks passed against the same frozen payload.
+Accepted release: v26.11.1602 (release-26), source 899c4217, at https://www.syn3h.com/.
+Grapple terrain clearance is live. Native launch, ground attachment and reeling passed;
+valid-contact endpoint measurements retain the strict 2 cm limit. Obscured endpoint
+captures leave visual quality open. Buried contacts use a visual clearance fallback;
+physical spring forces still act directly between anchors.
 
-Typecheck and build pass. Full comparison: 1,761 pass, one skip, three unchanged baseline
-failures in competitive fleeing, wind steering and dashboard links. Cleanup verified all
-2,468 recorded process identities absent, with no inspection errors. This is observed
-process evidence, not universal containment.
+Both public addresses pass exact-build, multiplayer and all frozen-file checks; all
+eight Chrome/WebKit vehicle cases pass. Normal and latency checks used the same frozen
+payload, 20261116-040032-899c4217. Typecheck and build pass. Full comparison: 1,806 pass,
+one skip and three unchanged baseline failures in competitive fleeing, wind steering
+and dashboard links. All 45 added tests pass. Cleanup verified 2,562 recorded identities
+absent with no inspection errors; this covers observed processes, not universal containment.
 
 Release notes, peeled tag and downloaded GIF bytes were verified before promotion to
 Latest; the Latest endpoint and GIF download also match. The GIF is explicitly historical
-footage from v26.11.1508; new captures remain pending. The frozen noon judging build and
-itch submission remain unchanged.
+footage from v26.11.1508 and does not depict this Grapple correction. The frozen noon
+judging build and itch submission remain unchanged. No physical-device or desert-dune
+acceptance is claimed; procedural update averages are not full-frame performance.
 
 ## Current queue
 
@@ -39,7 +42,7 @@ itch submission remain unchanged.
 About input drafts require cancellation before blur/modal cleanup, real neutral before
 rearm and stale-callback isolation. Gear switching must preserve attached Grapple cords.
 Input composition typechecks with 107 focused passes and one preserved baseline failure.
-Four allocated input slices and two About contexts passed. Broader modal and physical-device checks remain open. Sunrise experiments remain held; no ray capture is valid
+Four allocated input slices, expanded About modal checks and four layout sizes passed. Two-peer native focus capability remains unproved because the initial harness enables focus emulation. Broader modal and physical-device checks remain open. Sunrise experiments remain held; no ray capture is valid
 yet. The unresolved third domain stays omitted. Research pricing and scale are unconfirmed.
 
 The owner-authorized crash comparison and solo formation recording already ran. Formation
@@ -66,7 +69,7 @@ After release records are written, rerun dashboard statistics with SYN3H_SESSION
 provided by the host environment; commit aggregate dashboard/stats.json only, never the
 state-directory path. Existing release heartbeat and completion notifications remain active.
 
-The thread checklist and latest handoffs supersede the historical lane locations below.
+Performance, Post, Weather and Water are closed and must not be restarted. The thread checklist and latest handoffs supersede the historical lane locations below.
 
 | Lane | Agent id | Worktree and branch | Dev port | Doing now |
 |---|---|---|---|---|
