@@ -235,6 +235,8 @@ export abstract class Vehicle implements System {
     this.zorb.sync(this.input.zorb && zorbSpeed.value > 0, dt)
     const entryVelocity=this.body.linvel()
     this.liquidState.entrySpeed=Math.hypot(entryVelocity.x,entryVelocity.z)
+    // The buggy's liquid hull softens what the controller did this step, measured from here.
+    {const w=this.body.angvel();this.liquidState.preV.set(entryVelocity.x,entryVelocity.y,entryVelocity.z);this.liquidState.preW.set(w.x,w.y,w.z)}
     // Forward means launch thrust while the escape field owns motion. Feeding it
     // into the flight pitch filter would leave a nose-down command at handover.
     const escapeThrottle=this.input.y

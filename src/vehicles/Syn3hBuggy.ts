@@ -21,7 +21,7 @@ import {
   buggyGripFade, buggyIdleHold, buggyNextGen, buggyPower, buggyRebound, buggyRegen, buggyRideHeight, buggyRearSteerFast, buggyShocks, buggySideGrip, buggySideHold, buggySlide, buggySpeed, buggyStability, buggySteerFollow, buggySteerLimit,
   buggyTraction,
 } from './buggyParams'
-import { applyLava, floatPoints, lavaViscosity } from './lava'
+import { applyLava, floatPoints, lavaThickness } from './lava'
 import type { BuggySkin } from './skins/BuggySkin'
 import { type MotorDriveInput, motorDrive, smoothEffort } from './skins/motorDrive'
 import { DEG, UnityBody, lerp, signedAngle, unityEulerAngles } from './unityBody'
@@ -540,20 +540,20 @@ export class Syn3hBuggy extends Vehicle {
       this.motorSpeed += (smoothed.y * this.motorAccel) / MOTOR_MASS * dt
       this.motorSpeed += (-this.motorSpeed * (this.brakes ? 50 : MOTOR_DRAG)) / this.motorTorque * dt
     }
-    // Sticky lava (see applyVehicleLiquid in lava.ts) takes over the body while it is immersed
-    // and moves it at the lava crawl power, so no wheel force reaches it. The wheels churn in
-    // the same goo: drag the motor toward the body's speed so it cannot spin up unloaded and
-    // lurch when the tyres bite again at the shore.
+    // Lava (liquidHull.ts) paddles the buggy along with its wheels, but they churn in thick goo:
+    // drag the motor toward the body's speed so it cannot spin up unloaded and lurch when the
+    // tyres bite again at the shore.
     // Water does the same more gently, so the wheels are not at full speed when they touch
     // the beach. inLiquid is last step's value here.
     if (this.lavaDepth > 0 || this.inLiquid) {
       const vf = ub.inverseTransformDirectionUnity(ub.velocity, this.v1).z
-      const drag = this.lavaDepth > 0 ? lavaViscosity.value : WATER_MOTOR_DRAG
+      const drag = this.lavaDepth > 0 ? 2 * lavaThickness.value : WATER_MOTOR_DRAG
       this.motorSpeed = vf + (this.motorSpeed - vf) * Math.exp(-drag * dt)
     }
     // Next-gen updates the motor from all four wheels at once (Jacobi). Updating it wheel by
     // wheel, as VB 323 does, favours the left wheels and pulls the buggy right.
     this.motorStep = this.motorSpeed
+    this.liquidState.wheelSpeed = this.motorSpeed
 
     // Wheels, VB 288-332.
     const wasAirborne = this.wheelsGrounded === 0

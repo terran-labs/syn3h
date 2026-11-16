@@ -5,6 +5,7 @@ import { defineParam } from '../../shared/params'
 import type { RAPIER } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
 import { type UnityBody, signedAngle, unityEulerAngles } from './unityBody'
+import { applyHull, createHullState, type HullProfile, type HullState } from './liquidHull'
 
 export const buggyLavaFloat = defineParam({
   id: 'buggy.lavaFloat', label: 'Float on water', group: 'Buggy', scope: 'world',
@@ -121,6 +122,21 @@ export const liquidWingLift=defineParam({id:'liquid.wingLift',label:'Wing escape
 export const lavaViscosity=defineParam({id:'lava.viscosity',label:'Viscosity',group:'Lava',scope:'world',default:6,min:0,max:20,step:.1})
 export const lavaSinkDepth=defineParam({id:'lava.sinkDepth',label:'Sink depth (m)',group:'Lava',scope:'world',default:.45,min:.1,max:2,step:.05})
 export const lavaCrawlPower=defineParam({id:'lava.crawlPower',label:'Crawl power (m/s²)',group:'Lava',scope:'world',default:3,min:0,max:15,step:.1})
+// The buggy's lava: a dense, thick liquid it rides half in, paddles through and struggles across.
+const L={group:'Lava',scope:'world' as const}
+export const lavaThickness=defineParam({...L,id:'lava.thickness',label:'Buggy: thickness (drag)',default:1,min:0,max:4,step:.05})
+export const lavaBuoyancy=defineParam({...L,id:'lava.buoyancy',label:'Buggy: buoyancy / weight',default:2,min:.5,max:5,step:.05})
+export const lavaPaddle=defineParam({...L,id:'lava.paddle',label:'Buggy: paddle thrust (m/s²)',default:9,min:0,max:30,step:.5})
+export const lavaPorpoise=defineParam({...L,id:'lava.porpoise',label:'Buggy: porpoise (0 to 1)',default:.6,min:0,max:1,step:.05})
+export const lavaGrip=defineParam({...L,id:'lava.grip',label:'Buggy: wheel grip on the bed (0 to 1)',default:.3,min:0,max:1,step:.05})
+export const lavaWaddle=defineParam({...L,id:'lava.waddle',label:'Buggy: waddle (0 to 1)',default:.5,min:0,max:1,step:.05})
+export const GAIT={lava:.9}
+const lavaHull:HullProfile={buoyancy:2,thickness:1,linear:2,quadratic:.3,heave:6,paddle:9,paddleSpeed:7,porpoise:.6,waddle:.5,gait:GAIT.lava,planing:6,skim:.6}
+function lavaProfile():HullProfile{
+ lavaHull.buoyancy=lavaBuoyancy.value;lavaHull.thickness=lavaThickness.value;lavaHull.paddle=lavaPaddle.value
+ lavaHull.porpoise=lavaPorpoise.value;lavaHull.waddle=lavaWaddle.value;lavaHull.gait=GAIT.lava
+ return lavaHull
+}
 export const lavaCoolingTime=defineParam({id:'lava.coolingTime',label:'Cooling time (s)',group:'Lava',scope:'world',default:20,min:1,max:120,step:1})
 const liquidTerrains=new WeakMap<RAPIER.RigidBody,Terrain>()
 const liquidStates=new WeakMap<RAPIER.RigidBody,LiquidState>()
@@ -146,10 +162,31 @@ export interface LiquidState {
  /** Wet surface plane in the vehicle frame; follows the paint when the car turns. */
  heatNormal:THREE.Vector3
  heatHeight:number
+ /** Corner lag and gait phase of the buggy's liquid hull. */
+ hull:HullState
+ /** Wheel surface speed along the nose, m/s, set by a wheeled controller each step. */
+ wheelSpeed:number
+ /** Velocity and spin before this step's controller ran. */
+ preV:THREE.Vector3
+ preW:THREE.Vector3
+ /** Mean wetness of the hull last step, 0..1. */
+ hullWet:number
 }
-export function createLiquidState():LiquidState {return {entrySpeed:0,wasImmersed:false,wingWasOpen:false,fastWingContact:false,wingLaunchSpeed:0,wingLiftSpeed:0,wingLiftAvailable:false,wingLiftSurface:-Infinity,lavaDepth:0,stuck:false,heat:0,heatNormal:new THREE.Vector3(0,1,0),heatHeight:-100}}
+export function createLiquidState():LiquidState {return {entrySpeed:0,wasImmersed:false,wingWasOpen:false,fastWingContact:false,wingLaunchSpeed:0,wingLiftSpeed:0,wingLiftAvailable:false,wingLiftSurface:-Infinity,lavaDepth:0,stuck:false,heat:0,heatNormal:new THREE.Vector3(0,1,0),heatHeight:-100,hull:createHullState(),wheelSpeed:0,preV:new THREE.Vector3(),preW:new THREE.Vector3(),hullWet:0}}
 const liquidQ=new THREE.Quaternion(),inverseQ=new THREE.Quaternion(),forward=new THREE.Vector3(),angular=new THREE.Vector3(),upAxis=new THREE.Vector3(),wetNormal=new THREE.Vector3(),globalUp=new THREE.Vector3(0,1,0)
 
+/**
+ * Scale what the vehicle's own controller did this step (forces it added and velocity it set) by
+ * `grip`: tyres and suspension on a bed under a heavy liquid bite less and carry less.
+ */
+function softenController(body:RAPIER.RigidBody,state:LiquidState,grip:number):void {
+ if(grip>=1)return
+ const F=body.userForce(),T=body.userTorque(),v=body.linvel(),w=body.angvel(),a=state.preV,b=state.preW
+ body.resetForces(true);body.resetTorques(true)
+ body.addForce({x:F.x*grip,y:F.y*grip,z:F.z*grip},true);body.addTorque({x:T.x*grip,y:T.y*grip,z:T.z*grip},true)
+ body.setLinvel({x:a.x+(v.x-a.x)*grip,y:a.y+(v.y-a.y)*grip,z:a.z+(v.z-a.z)*grip},true)
+ body.setAngvel({x:b.x+(w.x-b.x)*grip,y:b.y+(w.y-b.y)*grip,z:b.z+(w.z-b.z)*grip},true)
+}
 /** Runs after each vehicle controller, so wheel, wing and jet forces cannot skim through lava. */
 export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terrain:Terrain,input:{x:number;y:number;z:number},kind:string,state:LiquidState,dt:number,wingsOpen=false):void {
  const p=body.translation(),surface=terrain.liquidHeightAt?.(p.x,p.z)??-Infinity
@@ -171,7 +208,9 @@ export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terr
  // Hold it until wings close; an altitude cutoff stranded stalled buggies on steep banks.
  const escape=wingsOpen&&Number.isFinite(state.wingLiftSurface)
  if(!escape){state.wingLiftSurface=-Infinity;state.wingLiftSpeed=0;state.wingLaunchSpeed=0}
- if(!immersion&&!escape&&!(type==='water'&&waterSinking.value))return
+ // The buggy's hull columns reach a metre above its centre, so it feels the melt before its centre is in.
+ const hullNear=buggy&&type==='lava'&&Number.isFinite(surface)&&p.y<surface+1.2
+ if(!immersion&&!escape&&!hullNear&&!(type==='water'&&waterSinking.value))return
  if(type==='water'){state.heat=0;state.heatHeight=-100}
  if(type==='water'&&waterSinking.value&&!escape){
   // An already flying field skips without hull drag, just as in the legacy water path.
@@ -198,6 +237,13 @@ export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terr
  // closing the wings restores its sticky grab immediately.
  if(!escape&&buggy&&wingsOpen&&state.fastWingContact)return
  if(body.isKinematic())return
+ if(lava&&buggy&&!escape){
+  // Forces only: the wheels keep driving on the bed, softened as the melt carries the weight,
+  // and paddle in it.
+  softenController(body,state,1-(1-lavaGrip.value)*Math.min(1,state.hullWet*2))
+  state.hullWet=applyHull(body,world,terrain,'lava',lavaProfile(),state.hull,{throttle:input.y,wheelSpeed:state.wheelSpeed},dt)
+  return
+ }
  if(escape){
   // A buoyant force field replaces sticky drag while deployed. The acceleration is
   // mass independent; the speed cap prevents old paddle/thermal forces adding a launch.
