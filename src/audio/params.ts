@@ -8,6 +8,8 @@ export const musicVolume = mix('music', 'Music volume', 0.22)
 export const effectsVolume = mix('effects', 'Effects volume', 0.7)
 export const engineVolume = mix('engine', 'Engine volume', 0.24)
 export const dirtVolume = mix('dirt', 'Ground rumble', 0.22)
+/** The tyres scrubbing in a real slide. Its own slider since 16 November 2026; it was under Engine volume as a pitched squeal. */
+export const slipVolume = mix('slip', 'Tyre slip volume', 0.3)
 export const windVolume = mix('wind', 'Wind volume', 0.4)
 export const muted = defineParam({ id: 'audio.muted', label: 'Mute audio', group: 'Audio', scope: 'client', default: false })
 export const crossfade = defineParam({ id: 'audio.crossfade', label: 'Music fade in (s)', group: 'Audio', scope: 'client', default: 2, min: 0.1, max: 8, step: 0.1 })

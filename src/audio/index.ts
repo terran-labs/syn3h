@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu'
 import type { System } from '../core/Game'
 import { params, worldSeed } from '../../shared/params'
-import { Engine, unit, type MotionAudio } from './Engine'
+import { Engine, SLIP_ALLOW, unit, type MotionAudio } from './Engine'
 import { synthCue, type Cue, type CueOptions } from './Cues'
 import { CrashWatcher, impactStrength, synthImpact, type ImpactKind } from './Impacts'
 import { synthMaterialize, synthZorbPulse, type MaterializeVoice } from './VehicleCues'
@@ -83,6 +83,7 @@ export class GameAudio implements System {
   private meterData?: Float32Array<ArrayBuffer>
   private readonly forward = new THREE.Vector3()
   private readonly up = new THREE.Vector3()
+  private readonly right = new THREE.Vector3()
   private readonly position = new THREE.Vector3()
   private readonly rotation = new THREE.Quaternion()
   private disposed = false
@@ -394,7 +395,13 @@ export class GameAudio implements System {
   get diagnostics(){return {state:this.state,score:this.score?{playing:this.score.playing,mode:this.score.mode,tempo:Math.round(this.score.tempo),stalls:this.score.stalls,mood:{...this.score.mood},nodes:this.score.synth.nodeCount}:null,remoteVoices:this.remote.size,engineNodes:(this.engine?.nodeCount??0)+(this.weatherWind?.nodeCount??0)+[...this.remote.values()].reduce((n,v)=>n+v.engine.nodeCount,0),oneShots:this.voices.size+this.cueStops.size,trackedVehicles:this.events.size}}
   private readVehicle(v:Vehicle):MotionAudio {
     const velocity=v.body.linvel(),p=v.object.position,ground=this.terrain?.heightAt(p.x,p.z)??p.y
-    return {zorbed:v.zorbed,kind:v.kind,speed:Math.hypot(velocity.x,velocity.y,velocity.z),throttle:v.kind==='jet'?v.input.z:v.input.y,airborne:v.wheelsGrounded===0,wings:v.wingsOpen,slip:Math.max(0,...(v.getWheelEffects?.()??[]).filter(w=>w.grounded).map(w=>w.slip)),altitude:Math.max(0,p.y),clearance:Math.max(0,p.y-ground)}
+    const wheels=(v.getWheelEffects?.()??[]).filter(w=>w.grounded),slip=Math.max(0,...wheels.map(w=>w.slip))
+    // A slide is the body moving sideways with at least two wheels down (Engine.ts, slipVoice).
+    this.right.set(1,0,0).applyQuaternion(v.object.quaternion)
+    const slide=wheels.length>=2?Math.abs(velocity.x*this.right.x+velocity.y*this.right.y+velocity.z*this.right.z):0
+    // The ground colours the tyre scrub; it is looked up only while the body slides.
+    const surface=slide>SLIP_ALLOW?this.terrain?.surfaceAt?.(p.x,p.z):undefined
+    return {zorbed:v.zorbed,kind:v.kind,speed:Math.hypot(velocity.x,velocity.y,velocity.z),throttle:v.kind==='jet'?v.input.z:v.input.y,airborne:v.wheelsGrounded===0,wings:v.wingsOpen,slip,slide,surface,altitude:Math.max(0,p.y),clearance:Math.max(0,p.y-ground)}
   }
   private vehicleEvents(v:Vehicle):void {
     const p=v.object.position,liquid=this.terrain?.liquidHeightAt?.(p.x,p.z)??-Infinity
