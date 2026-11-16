@@ -42,7 +42,6 @@
   -webkit-backdrop-filter: none; backdrop-filter: none;
   color: var(--s3-ink); text-shadow: var(--halo-under);
 }
-html[data-gfx] .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--halo-fill); }
 /* Nothing from the old glass may add light: no rim layer, no top highlight, no lifted body. */
 .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass::after, .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector::before, .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector::after { display: none; }
 .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass { --body: transparent; filter: none; }
