@@ -65,6 +65,15 @@ export interface Exclusion extends Rect { soft?: boolean }
 export const LEADER_MAX = 60
 /** A label shown last frame keeps its slot until a blocker is this many pixels inside it. */
 export const HOLD_SLACK = 4
+/** Where a plate sits in slot `spot` (0 above, 1 higher above, 2 left, 3 right), and where its leader leaves it. */
+export interface Slot { x: number; y: number; leadX: number; leadY: number }
+export function slotAt(c: Candidate, spot: number, out: Slot): Slot {
+  const dx = spot === 2 ? -c.width / 2 - 12 : spot === 3 ? c.width / 2 + 12 : 0, dy = spot === 1 ? -32 : -12
+  out.x = c.x + dx; out.y = c.y + dy - c.height
+  // The leader leaves the point of the plate's lower edge nearest the anchor.
+  out.leadX = Math.max(out.x - c.width / 2 + 6, Math.min(out.x + c.width / 2 - 6, c.x)); out.leadY = out.y + c.height
+  return out
+}
 const inset = (r: Rect, by: number): Rect => ({ left: r.left + by, top: r.top + by, right: r.right - by, bottom: r.bottom - by })
 /**
  * People are allocated first regardless of depth; bots yield every contested spot. Slots, in
@@ -72,16 +81,16 @@ const inset = (r: Rect, by: number): Rect => ({ left: r.left + by, top: r.top + 
  * then higher above. The slot held last frame is tried first. A label never covers a hard HUD
  * area; it covers a soft one only when every slot clear of soft areas is taken.
  */
+const scratch: Slot = { x: 0, y: 0, leadX: 0, leadY: 0 }
 export function placeNameplates(candidates: readonly Candidate[], discs: readonly Disc[], exclusions: readonly Exclusion[], width: number, height: number,
   terrainClear: (box: Rect, depth: number, candidate: Candidate) => boolean = () => true): Placement[] {
   const result: Placement[] = []
   const order = [...candidates].sort((a, b) => Number(a.bot) - Number(b.bot) || a.depth - b.depth || a.id.localeCompare(b.id))
   for (const c of order) {
     if (c.opacity <= 0 || c.depth <= 0 || !Number.isFinite(c.x + c.y + c.depth)) continue
-    // Slots: 0 above, 1 higher above, 2 left, 3 right. Tried in order of leader length.
-    const spots = [[0, -12], [0, -32], [-c.width / 2 - 12, -12], [c.width / 2 + 12, -12]]
+    // Slots, tried in order of leader length: above, left, right, higher above.
     let tries = [0, 2, 3, 1]
-    if (c.previous !== undefined && Number.isInteger(c.previous) && c.previous >= 0 && c.previous < spots.length) {
+    if (c.previous !== undefined && Number.isInteger(c.previous) && c.previous >= 0 && c.previous < 4) {
       tries.splice(tries.indexOf(c.previous), 1)
       tries.unshift(c.previous)
     }
@@ -90,10 +99,8 @@ export function placeNameplates(candidates: readonly Candidate[], discs: readonl
       // The second pass retries only slots that a soft area alone ruled out.
       const softOnly: number[] = []
       for (const spot of tries) {
-        const [dx, dy] = spots[spot], x = c.x + dx, y = c.y + dy - c.height
+        const { x, y, leadX, leadY } = slotAt(c, spot, scratch)
         const plate = { left: x - c.width / 2, top: y, right: x + c.width / 2, bottom: y + c.height }
-        // The leader leaves the point of the plate's lower edge nearest the anchor.
-        const leadX = Math.max(plate.left + 6, Math.min(plate.right - 6, c.x)), leadY = plate.bottom
         if (Math.hypot(c.x - leadX, c.y - leadY) > LEADER_MAX) continue
         const bounds = { left: Math.min(plate.left, c.x) - 3, top: plate.top - 3, right: Math.max(plate.right, c.x) + 3, bottom: c.y + 3 }
         if (bounds.left < 8 || bounds.right > width - 8 || bounds.top < 8 || bounds.bottom > height - 8) continue

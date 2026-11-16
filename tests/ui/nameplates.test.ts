@@ -508,11 +508,11 @@ describe('HUD exclusions', () => {
     vi.stubGlobal('MutationObserver', class { observe() {} disconnect() {} })
     vi.stubGlobal('getComputedStyle', () => ({ display: 'block', visibility: 'visible', opacity: '1' }))
     try {
-      const doc = { body: {}, querySelectorAll: () => [] }
+      const doc = { body: {}, defaultView: undefined, querySelectorAll: () => [] }
       const hud = new HudExclusions({ ownerDocument: doc, querySelectorAll: query } as unknown as HTMLElement)
       expect(hud.read(390, 844).map(b => [b.left, b.right])).toEqual([[6, 190], [170, 352]])
       all[2].hidden = true // the detail pane empties: only the drum remains
-      expect(hud.read(390, 844).map(b => [b.left, b.right])).toEqual([[6, 190]])
+      expect(hud.measure(390, 844).map(b => [b.left, b.right])).toEqual([[6, 190]])
       hud.dispose()
     } finally { vi.unstubAllGlobals() }
   })

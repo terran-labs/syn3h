@@ -23,17 +23,18 @@ export function unbendPoint(point: Point, bend: Vector3, out: Point): boolean {
   return Number.isFinite(out.x + out.y + out.z)
 }
 
-// Module-static topology:26 boundary grid points, six2x2 faces, two triangles per cell.
+// Module-static topology: a box's 8 corners and its 6 faces as 12 triangles. Its convex hull is
+// exactly these; the curve bends a vehicle-sized box by far less than a pixel.
 const GRID: readonly [number, number, number][] = (() => {
   const points: [number, number, number][] = []
-  for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) for (let z = -1; z <= 1; z++) if (x || y || z) points.push([x, y, z])
+  for (let x = -1; x <= 1; x += 2) for (let y = -1; y <= 1; y += 2) for (let z = -1; z <= 1; z += 2) points.push([x, y, z])
   return points
 })()
 const FACES: readonly number[] = (() => {
   const triangles: number[] = []
-  for (let axis = 0; axis < 3; axis++) for (const side of [-1, 1]) for (let u = -1; u < 1; u++) for (let v = -1; v < 1; v++) {
+  for (let axis = 0; axis < 3; axis++) for (const side of [-1, 1]) {
     const index = (a: number, b: number) => GRID.findIndex(p => p[axis] === side && p[(axis + 1) % 3] === a && p[(axis + 2) % 3] === b)
-    const a = index(u, v), b = index(u + 1, v), c = index(u + 1, v + 1), d = index(u, v + 1)
+    const a = index(-1, -1), b = index(1, -1), c = index(1, 1), d = index(-1, 1)
     triangles.push(a, b, c, a, c, d)
   }
   return triangles
@@ -51,7 +52,7 @@ export class CurvedProjection {
     out.x = (this.projected.x + 1) * width / 2; out.y = (1 - this.projected.y) * height / 2; out.z = -this.view.z
     return out
   }
-  private readonly clipPoints = Array.from({ length: 26 }, () => new Vector4())
+  private readonly clipPoints = Array.from({ length: 8 }, () => new Vector4())
   // A triangle clipped by six halfspaces has at most9 vertices. One spare avoids writes past a cap.
   private readonly clipA = Array.from({ length: 10 }, () => new Vector4())
   private readonly clipB = Array.from({ length: 10 }, () => new Vector4())

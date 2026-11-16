@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu'
 import { params } from '../../../shared/params'
 import type { Vehicle } from '../../vehicles/Vehicle'
-import { appearance, placeNameplates, type Candidate, type Disc, type Rect } from './layout'
+import { appearance, placeNameplates, slotAt, type Candidate, type Disc, type Rect, type Slot } from './layout'
 import type { Point } from './occlusion'
 import { copyCurveState, overHorizon } from '../../world/curve'
 import { bendPoint, CurvedProjection, curvedTerrainOccluded } from './curvature'
@@ -13,6 +13,9 @@ import './nameplates.css'
 
 /** Metres between the top of a vehicle's body and the end of its leader. */
 const ANCHOR_GAP = .2
+/** Milliseconds between full label allocations (occlusion, terrain, text, slots). Between them,
+ *  shown labels only follow their vehicles. */
+const ALLOCATE_MS = 100
 /** A vehicle drawn smaller than this many pixels across is too small to label. */
 const MIN_PIXELS = 6
 /** Plate size limits in pixels. Past the widest, the name is cut with an ellipsis. */
@@ -59,6 +62,8 @@ interface Plate {
   candidate: Candidate; disc: Disc
   bentCenter: THREE.Vector3; sightStamp: number; sightBlocked: boolean
   vehicle?: Vehicle; stamp: number; scanUntil: number; shown: boolean; materializing: boolean; lastX: number; lastY: number
+  /** Last written values, so unchanged frames write nothing. */
+  scale: number; width: number; height: number; tx: number; ty: number; lx: number; ly: number; ex: number; ey: number; opacity: number
 }
 /** One pooled overlay, updated by the caller once after vehicle interpolation and camera update. */
 export class VehicleNameplates {
@@ -94,6 +99,11 @@ export class VehicleNameplates {
   }
   private stamp = 0
   private last = 0
+  private nextAllocation = 0
+  private readonly slot: Slot = { x: 0, y: 0, leadX: 0, leadY: 0 }
+  private readonly candidates: Candidate[] = []
+  private readonly discs: Disc[] = []
+  private readonly placed = new Set<string>()
 
   constructor(private readonly currentCamera: () => THREE.PerspectiveCamera, private readonly options: NameplateOptions) {
     this.root.className = 'vehicle-nameplates syn3h-nametags'
@@ -117,7 +127,7 @@ export class VehicleNameplates {
       const el = document.createElement('div'), name = document.createElement('strong'), note = document.createElement('small'), leader = document.createElement('div')
       el.className = 'vehicle-nameplate'; leader.className = 'vehicle-nameplate-leader'
       el.append(name, note); this.root.append(leader, el)
-      p = { el, name, note, leader, bentCenter: new THREE.Vector3(), sightStamp: 0, sightBlocked: false, candidate: { id, bot: false, x: 0, y: 0, depth: 0, width: 0, height: 0, opacity: 0, tick: false }, disc: { id, x: 0, y: 0, radius: 0, depth: 0 }, stamp: 0, scanUntil: 0, shown: false, materializing: false, lastX: NaN, lastY: NaN }
+      p = { el, name, note, leader, bentCenter: new THREE.Vector3(), sightStamp: 0, sightBlocked: false, candidate: { id, bot: false, x: 0, y: 0, depth: 0, width: 0, height: 0, opacity: 0, tick: false }, disc: { id, x: 0, y: 0, radius: 0, depth: 0 }, stamp: 0, scanUntil: 0, shown: false, materializing: false, lastX: NaN, lastY: NaN, scale: 1, width: 0, height: 0, tx: NaN, ty: NaN, lx: NaN, ly: NaN, ex: NaN, ey: NaN, opacity: -1 }
     }
     p.candidate.id = p.disc.id = id; p.candidate.previous = undefined; p.shown = false; p.materializing = false; p.lastX = p.lastY = NaN
     p.el.dataset.vehicle = id
@@ -141,19 +151,22 @@ export class VehicleNameplates {
     this.root.hidden = !visible
     if (!visible) { for (const p of this.plates.values()) { p.shown = false; p.lastX = p.lastY = NaN }; return }
     const w = innerWidth, h = innerHeight, presentation = this.options.presentation(), size = this.options.wrapSize()
-    // All HUD layout reads happen before any nameplate writes. Plate dimensions are fixed.
-    const exclusions = this.hud.read(w, h)
     this.camera.updateMatrixWorld()
     this.camera.getWorldPosition(this.eye)
     copyCurveState(this.bend) // Snapshot the same state uploaded to applyCurve this render.
-    const candidates: Candidate[] = [], discs: Disc[] = []
+    const focal = h / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2))
+    if (now < this.nextAllocation) { this.follow(list, dt, w, h, focal, presentation, mode); this.stats.drawMs = performance.now() - drawStarted; return }
+    this.nextAllocation = now + ALLOCATE_MS
+    // HUD rectangles are a cached read (HudExclusions); no layout is forced here.
+    const exclusions = this.hud.read(w, h)
+    const candidates = this.candidates, discs = this.discs
+    candidates.length = discs.length = 0
     // The local vehicle gets no nameplate, but its hull still occludes labels behind it.
     const local = this.options.localVehicle()
     // Bodies are boxes fitted to each kind's meshes. A cube as tall as the car is long covered
     // most of a phone screen above the player's roof and rejected every label behind it.
     const body = renderedEnvelope(local, this.center, this.rotation, this.anchor, this.body)
     this.projection.envelope(this.center, body.radius, this.bend, this.camera, w, h, this.localDisc, body.rise, body.reach)
-    const focal = h / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2))
     discs.push(this.localDisc)
     for (const t of list) {
       const p = this.plates.get(t.id) ?? this.acquire(t.id)
@@ -203,8 +216,10 @@ export class VehicleNameplates {
       if (p.name.textContent !== name) p.name.textContent = name
       if (p.note.textContent !== note) p.note.textContent = note
       p.el.classList.toggle('is-bot', t.bot); p.leader.classList.toggle('is-bot', t.bot); p.el.classList.toggle('is-tick', style.tick)
-      p.el.style.width = `${style.tick ? 8 : plateWidth}px`; p.el.style.height = `${style.tick ? 5 : PLATE_HEIGHT}px`
-      p.el.dataset.scale = String(style.tick ? 1 : style.scale)
+      const cssWidth = style.tick ? 8 : plateWidth, cssHeight = style.tick ? 5 : PLATE_HEIGHT
+      if (cssWidth !== p.width) { p.width = cssWidth; p.el.style.width = `${cssWidth}px` }
+      if (cssHeight !== p.height) { p.height = cssHeight; p.el.style.height = `${cssHeight}px` }
+      p.scale = style.tick ? 1 : style.scale
     }
     const placements = placeNameplates(candidates, discs, exclusions, w, h, (box, depth, candidate) => {
       const p = this.plates.get(candidate.id)!
@@ -215,19 +230,12 @@ export class VehicleNameplates {
       }
       return !p.sightBlocked && this.clearBox(box, depth, size, w, h)
     })
-    const placed = new Set<string>()
+    const placed = this.placed
+    placed.clear()
     for (const at of placements) {
-      const p = this.plates.get(at.id)!, c = p.candidate
-      placed.add(at.id); c.previous = at.spot
-      p.el.hidden = p.leader.hidden = false
-      p.el.style.display = p.leader.style.display = 'block'
-      p.el.style.opacity = String(at.opacity)
-      p.el.style.transform = `translate(${at.x - c.width / 2}px,${at.y}px) scale(${p.el.dataset.scale})`
-      const startX = at.leadX, startY = at.leadY, dx = c.x - startX, dy = c.y - startY
-      p.leader.style.width = `${Math.hypot(dx, dy)}px`
-      p.leader.style.opacity = String(at.opacity * .65)
-      p.leader.style.transform = `translate(${startX}px,${startY}px) rotate(${Math.atan2(dy, dx)}rad)`
-      p.shown = true
+      const p = this.plates.get(at.id)!
+      placed.add(at.id); p.candidate.previous = at.spot
+      this.write(p, at, at.opacity)
     }
     this.stats.visible = placements.length
     for (const [id, p] of this.plates) {
@@ -236,7 +244,59 @@ export class VehicleNameplates {
     }
     this.stats.drawMs = performance.now() - drawStarted
   }
-  private hide(p: Plate): void { p.el.hidden = p.leader.hidden = true; p.el.style.display = p.leader.style.display = 'none'; p.shown = false }
+  /**
+   * Between allocations: each shown label follows its vehicle in the slot it was given, and is
+   * hidden at once if the vehicle leaves the screen or view. Occlusion waits for the next allocation.
+   */
+  private follow(list: readonly NameplateInfo[], dt: number, w: number, h: number, focal: number, presentation: boolean, mode: number): void {
+    const body = this.body
+    let visible = 0
+    for (const t of list) {
+      const p = this.plates.get(t.id)
+      if (!p || !p.shown) continue
+      if (p.vehicle !== t.vehicle) { this.hide(p); continue }
+      const object = t.vehicle.object, c = p.candidate
+      renderedEnvelope(t.vehicle, this.center, this.rotation, this.anchor, body)
+      this.projection.project(this.center, this.bend, this.camera, w, h, this.screenCenter)
+      const depth = this.screenCenter.z, distance = this.center.distanceTo(this.eye), sx = this.screenCenter.x, sy = this.screenCenter.y
+      const style = appearance(distance, t.bot, presentation)
+      if (!Number.isFinite(distance + depth) || depth <= this.camera.near || !(sx >= 0 && sx <= w && sy >= 0 && sy <= h) ||
+        2 * Math.max(body.radius, body.reach) * focal < MIN_PIXELS * depth || !object.visible || !style.visible || mode === 1 && t.bot ||
+        overHorizon(this.center.x, this.center.z, Math.max(body.radius, body.reach), this.center.y + body.rise)) { this.hide(p); continue }
+      this.anchor.set(this.center.x, body.top + ANCHOR_GAP, this.center.z)
+      this.projection.project(this.anchor, this.bend, this.camera, w, h, this.projected)
+      if (this.projected.z < this.camera.near || this.projected.z > this.camera.far) { this.hide(p); continue }
+      const x = this.projected.x, y = this.projected.y
+      const snap = Math.hypot(x - p.lastX, y - p.lastY) > 60, blend = 1 - Math.exp(-dt * 28)
+      p.lastX = snap ? x : p.lastX + (x - p.lastX) * blend
+      p.lastY = snap ? y : p.lastY + (y - p.lastY) * blend
+      c.x = p.lastX; c.y = p.lastY; c.depth = this.projected.z
+      this.write(p, slotAt(c, c.previous ?? 0, this.slot), c.opacity)
+      visible++
+    }
+    this.stats.visible = visible
+  }
+  /** Show a plate in a slot. Writes only what changed by more than half a pixel. */
+  private write(p: Plate, at: Slot, opacity: number): void {
+    const c = p.candidate
+    if (!p.shown) { p.el.hidden = p.leader.hidden = false; p.el.style.display = p.leader.style.display = 'block'; p.shown = true; p.tx = p.lx = NaN }
+    if (Math.abs(opacity - p.opacity) > .01) { p.opacity = opacity; p.el.style.opacity = String(opacity); p.leader.style.opacity = String(opacity * .65) }
+    const tx = at.x - c.width / 2, ty = at.y
+    if (!(Math.abs(tx - p.tx) <= .5 && Math.abs(ty - p.ty) <= .5)) {
+      p.tx = tx; p.ty = ty
+      p.el.style.transform = `translate(${tx}px,${ty}px) scale(${p.scale})`
+    }
+    if (!(Math.abs(at.leadX - p.lx) <= .5 && Math.abs(at.leadY - p.ly) <= .5 && Math.abs(c.x - p.ex) <= .5 && Math.abs(c.y - p.ey) <= .5)) {
+      p.lx = at.leadX; p.ly = at.leadY; p.ex = c.x; p.ey = c.y
+      const dx = c.x - at.leadX, dy = c.y - at.leadY
+      p.leader.style.width = `${Math.hypot(dx, dy)}px`
+      p.leader.style.transform = `translate(${at.leadX}px,${at.leadY}px) rotate(${Math.atan2(dy, dx)}rad)`
+    }
+  }
+  private hide(p: Plate): void {
+    if (!p.shown && p.el.hidden) return
+    p.el.hidden = p.leader.hidden = true; p.el.style.display = p.leader.style.display = 'none'; p.shown = false
+  }
   /** Sample plate screen rays against curved terrain. This is not a per-pixel depth mask. */
   private clearBox(box: Rect, depth: number, size: number, w: number, h: number): boolean {
     for (const x of [box.left, (box.left + box.right) / 2, box.right]) for (const y of [box.top, box.bottom]) {
