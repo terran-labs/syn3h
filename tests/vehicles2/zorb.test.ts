@@ -193,6 +193,43 @@ describe('zorb ball physics', () => {
     }
   })
 
+  it('closes cleanly: once switched off it only shrinks and fades, with no flare, until switched on again', () => {
+    // The owner saw the closing shield flash and swell: setting the car down, or landing,
+    // counted as an impact and flared it. Close at rest, rolling, mid-bounce and falling hard.
+    const cases: [string, (v: Vehicle) => void][] = [
+      ['rest', () => {}],
+      ['rolling', (v) => { v.body.setLinvel({ x: 9, y: 0, z: 0 }, true) }],
+      ['mid-bounce', (v) => { v.body.setLinvel({ x: 0, y: 8, z: 0 }, true) }],
+      ['falling', (v) => { v.body.setTranslation({ x: 0, y: 30, z: 0 }, true); v.body.setLinvel({ x: 0, y: -15, z: 0 }, true) }],
+    ]
+    for (const [name, setup] of cases) {
+      const { h, v, done } = spawn('buggy')
+      const step = () => { h.step(v); v.update(0.02, 1) }
+      v.input.zorb = true; for (let i = 0; i < 300; i++) step()
+      setup(v); step()
+      v.input.zorb = false
+      const shield = () => (v as unknown as { zorbShield: { alpha: number; mesh: THREE.Mesh } | null }).zorbShield
+      let radius = v.zorb.radius, scale = shield()!.mesh.scale.x, alpha = shield()!.alpha
+      const impacts = v.zorb.impacts
+      for (let i = 0; i < 250; i++) {
+        step()
+        expect(v.zorb.radius, name).toBeLessThanOrEqual(radius + 1e-9); radius = v.zorb.radius
+        const s = shield()
+        if (s) {
+          expect(s.mesh.scale.x, name).toBeLessThanOrEqual(scale + 1e-9); scale = s.mesh.scale.x
+          expect(s.alpha, name).toBeLessThanOrEqual(alpha + 1e-9); alpha = s.alpha
+        }
+      }
+      expect(v.zorb.impacts, name).toBe(impacts)
+      expect(shield(), `${name}: the shield is gone`).toBeNull()
+      // Switched on again, impacts flare as before.
+      v.input.zorb = true; for (let i = 0; i < 300; i++) step()
+      v.teleport(new THREE.Vector3(0, 25, 0)); for (let i = 0; i < 150; i++) step()
+      expect(v.zorb.impacts, name).toBeGreaterThan(impacts)
+      done()
+    }
+  })
+
   it('every vehicle kind can zorb, roll and un-zorb without non-finite state', () => {
     for (const kind of KINDS) {
       const { h, v, done } = spawn(kind)
