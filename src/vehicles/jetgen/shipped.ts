@@ -34,12 +34,15 @@ const INTAKES = [45, 135, 225, 315].map(a => [a, -.35, 1.25, .2, .13])
 
 const BOOM_X = 1.5
 /**
- * Where thrust leaves the shipped jet, in its own frame, for code that must not build the model
- * to find out (the thrust plume). Every entry is taken from the rows above or checked against
+ * Lamp and thrust anchors in the shipped jet frame, available without building the model.
+ * Every entry is taken from the rows above or checked against
  * the built model by
  * tests/vehicles2/game-jet.test.ts, so a change of design cannot leave a plume hanging in space.
  */
 export const MK2_FITTINGS = {
+  /** Fitted nose lens face, 2 mm ahead of its backing at the pod's first row. */
+  headlight: { x: 0, y: POD[0][4], z: POD[0][0] - .002, width: .06, height: .024,
+    direction: [0, 0, -1], color: [1, .9965517, .875] },
   /** Rear nozzle exits: the pod's and the two booms'. */
   nozzles: [
     { x: 0, y: POD[POD.length - 1][4], z: POD[POD.length - 1][0], r: POD[POD.length - 1][1] },

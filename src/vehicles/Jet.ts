@@ -95,6 +95,14 @@ export class Jet extends Vehicle {
     this.object.userData.cockpit = true
     // The Mk2 owns its fitted tail lights; the shared lamp positions float beside its cockpit.
     this.object.userData.ownLamps = true
+    // Structural HeadlightSource contract: outputs are vehicle-local and caller-owned.
+    this.object.userData.headlights = {
+      count: 1,
+      sample: (index:number, position:THREE.Vector3, direction:THREE.Vector3, color:THREE.Color):boolean =>
+        this.object.visible && this.model.object.visible && !this.zorbed && !this.object.userData.materializing &&
+        this.model.tailLights.sampleHeadlight(index, position, direction, color),
+      needsGlow: () => false,
+    }
     this.model.attach()
     this.applyColors()
   }
@@ -242,6 +250,7 @@ export class Jet extends Vehicle {
   }
   override teleport(position:THREE.Vector3,heading=0):void {super.teleport(position,heading);this.smoothed.set(0,0,0,0)}
   override dispose():void {
+    delete this.object.userData.headlights
     this.model.dispose()
     super.dispose()
   }

@@ -25,14 +25,14 @@ describe('approved Mk2 game model', () => {
       jet.update(gear, .3, -.2, .8)
       for (const level of [0, 1, 2] as const) {
         jet.setLevel(level)
-        // Base model budget, then plume (<=400 triangles) and fitted tail lights (28), one draw each.
+        // Base model budget, then plume (<=400 triangles) and fitted nose and tail lights (42), one draw each.
         jet.plume.mesh.visible = false; jet.tailLights.mesh.visible = false
         const cost = visibleCost(jet.object)
         jet.plume.mesh.visible = true; jet.tailLights.mesh.visible = true
         expect(cost.triangles).toBeLessThanOrEqual([12000, 2500, 500][level])
         expect(cost.draws).toBeLessThanOrEqual([9, 3, 1][level])
         expect(visibleCost(jet.object).draws - cost.draws).toBe(2)
-        expect(visibleCost(jet.object).triangles - cost.triangles).toBeLessThanOrEqual(428)
+        expect(visibleCost(jet.object).triangles - cost.triangles).toBeLessThanOrEqual(442)
       }
     }
     for (const y of jet.near.footHeights()) expect(y).toBeCloseTo(GROUND_Y, 2)
@@ -250,7 +250,7 @@ describe('Mk2 thrust plume', () => {
 describe('Mk2 fitted tail lights',()=>{
  it('backs both red lenses with housings touching the outer nozzle lips',()=>{
   const jet=new GameJet(),g=jet.tailLights.mesh.geometry,p=g.attributes.position,mask=g.attributes.tailLens
-  expect(g.index!.count/3).toBe(28)
+  expect(g.index!.count/3).toBe(42)
   for(const n of MK2_FITTINGS.nozzles.filter(n=>n.x!==0)){
    const housing=new THREE.Box3(),lens=new THREE.Box3()
    for(let i=0;i<p.count;i++){
@@ -271,4 +271,35 @@ describe('Mk2 fitted tail lights',()=>{
   for(const level of [0,1,2] as const){jet.setLevel(level);expect(jet.tailLights.mesh.visible).toBe(true)}
   jet.dispose()
  })
+})
+
+
+it('fits the forward beam origin on a backed nose lens at every detail level',()=>{
+ const jet=new GameJet(), head=MK2_FITTINGS.headlight
+ const g=jet.tailLights.mesh.geometry,p=g.attributes.position,mask=g.attributes.tailLens
+ const lens=new THREE.Box3(),backing=new THREE.Box3()
+ for(let i=0;i<p.count;i++){
+  if(p.getZ(i)>-3.4)continue
+  const v=new THREE.Vector3().fromBufferAttribute(p,i)
+  ;(mask.getX(i)===2?lens:backing).expandByPoint(v)
+ }
+ expect(backing.min.z).toBeCloseTo(-3.5,5)
+ expect(backing.max.z).toBeGreaterThan(-3.5)
+ expect(backing.min.y).toBeCloseTo(-.04,5);expect(backing.max.y).toBeCloseTo(0,5)
+ expect(backing.min.z-lens.min.z).toBeCloseTo(.002,5)
+ expect(lens.min.x).toBeGreaterThan(backing.min.x);expect(lens.max.x).toBeLessThan(backing.max.x)
+ expect(lens.min.y).toBeGreaterThan(backing.min.y);expect(lens.max.y).toBeLessThan(backing.max.y)
+ const position=new THREE.Vector3(),direction=new THREE.Vector3(),color=new THREE.Color()
+ for(const level of [0,1,2] as const){
+  jet.setLevel(level)
+  expect(jet.tailLights.sampleHeadlight(0,position,direction,color)).toBe(true)
+  expect(position.toArray()).toEqual([head.x,head.y,head.z])
+  expect(lens.distanceToPoint(position)).toBeLessThan(1e-6)
+  expect(direction.toArray()).toEqual([0,0,-1]);expect(color.toArray()).toEqual([...head.color])
+ }
+ expect(jet.tailLights.sampleHeadlight(1,position,direction,color)).toBe(false)
+ jet.tailLights.mesh.visible=false
+ expect(jet.tailLights.sampleHeadlight(0,position,direction,color)).toBe(false)
+ jet.tailLights.mesh.visible=true;jet.dispose()
+ expect(jet.tailLights.sampleHeadlight(0,position,direction,color)).toBe(false)
 })
