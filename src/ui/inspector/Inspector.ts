@@ -29,6 +29,11 @@ export interface InspectorOptions {
   onColor?(key: 'body' | 'accent', value: string): void
   /** Capture a local bookmark. The caller owns storage and success or failure feedback. */
   onSaveWorld?(): void
+  /**
+   * Registry sections to show as cards, by id; all when absent. The lobby's settings panel
+   * passes [] and shows only cards it adds with addCard.
+   */
+  sections?: readonly string[]
 }
 /** "Mode (0 tag, 1 hill)" or "Glass: 0 Clear, 1 Frosted" gives a name and named choices. */
 export function choicesOf(def: PropertyDef): { name: string; options: { value: number; label: string }[] } | null {
@@ -189,8 +194,9 @@ export class Inspector {
       if (sum.textContent !== text) sum.textContent = text
     }
     const vehicles = this.options.vehicles()
-    const select = this.element.querySelector<HTMLSelectElement>('.wi-vehicle-select')!
-    if (document.activeElement !== select) select.value = vehicles.current
+    // Only the Me card carries the vehicle selector.
+    const select = this.element.querySelector<HTMLSelectElement>('.wi-vehicle-select')
+    if (select && document.activeElement !== select) select.value = vehicles.current
     const name = this.element.querySelector('.wi-person-name output')
     if (name && name.textContent !== this.options.playerName?.()) name.textContent = this.options.playerName?.() ?? ''
     const colors = this.options.colors?.()
@@ -201,7 +207,8 @@ export class Inspector {
     const all = params.all(); this.known = all.length
     const open = new Set([...this.element.querySelectorAll<HTMLElement>('.wi-card.is-open')].map(card => card.dataset.section))
     const owned = new Set([...this.extras.values()].flatMap(extra => extra.owns?.() ?? []))
-    this.tree = buildTree(all.map(p => p.def as PropertyDef).filter(def => !owned.has(def.id)))
+    const shown = this.options.sections
+    this.tree = buildTree(all.map(p => p.def as PropertyDef).filter(def => !owned.has(def.id))).filter(section => !shown || shown.includes(section.id))
     this.rows.clear(); this.editing = null; this.settle()
     const cards = this.element.querySelector('.wi-cards')!; cards.replaceChildren()
     for (const section of this.tree) {
