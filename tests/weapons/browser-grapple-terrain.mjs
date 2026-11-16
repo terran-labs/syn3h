@@ -117,7 +117,18 @@ await held('KeyL', async () => {
 })
 report.native = { scope: 'trusted automated desktop input, normal loop and camera; not physical touch', before: nativeBefore, attached, extended,
   after: await evaluate(() => ({ rest: window.syn3hNet.bungee.mine?.rest, stats: { ...window.syn3hNet.bungee.stats }, tick: window.syn3h.game.tick })) }
+report.native.contact = await evaluate(() => {
+  const s = window.syn3h, b = window.syn3hNet.bungee, c = b.mine, t = s.terrain
+  if (!c?.at) throw new Error('native terrain anchor missing')
+  const V = s.player.object.position.constructor, n = b.look.segments
+  const pos = b.look.cord.geometry.getAttribute('position'), base = c.slot * 50
+  const midpoint = i => new V().fromBufferAttribute(pos, base + i * 2).lerp(new V().fromBufferAttribute(pos, base + i * 2 + 1), 0.5)
+  const vehicle = b.hitch(s.player.object, new V()), anchor = b.nearestTo(c.at, vehicle)
+  const sample = p => ({ point: p.toArray(), collision: t.heightAt(p.x, p.z), rendered: t.renderHeightAt(p.x, p.z), liquid: t.liquidHeightAt?.(p.x, p.z) ?? null })
+  return { vehicle: sample(vehicle), anchor: sample(anchor), vehicleGap: midpoint(0).distanceTo(vehicle), anchorGap: midpoint(n).distanceTo(anchor), scope: 'observed native contact; no relocation or fallback reclassification' }
+})
 await checkpoint('native launch attach reel complete')
+for (const key of ['vehicleGap', 'anchorGap']) if (report.native.contact[key] > 0.02) failures.push(`native: ${key} ${report.native.contact[key]} exceeds 0.02 m`)
 await bounded(page.keyboard.press('KeyG'), 5000, 'native keyboard press')
 await ready(() => !window.syn3hNet.bungee.mine)
 await evaluate(() => document.exitPointerLock())
@@ -147,29 +158,70 @@ await evaluate(() => {
   if (!ridge.a || !dune.a || !shore.a || !seam.a) throw new Error('Could not locate all requested terrain fixtures')
   window.__groundFixtures = { ...fixtures, volcano: ridge, outerCrest: { ...dune, classification: 'outer low crest on volcanic recipe; NOT a verified desert dune' }, shoreline: shore, wrap: seam }
 })
-const capture = async (name, fixture, level, fixed = true) => {
+const capture = async (name, fixture, level, fixed = true, contactMode = 'valid-rendered-contact') => {
+  assert.ok(['valid-rendered-contact', 'buried-contact-fallback'].includes(contactMode))
+  await checkpoint('diagnostic intent before generation', { diagnosticIntent: { name, fixture, level, fixed, contactMode } })
   const warm = await settle(level)
-  const result = await evaluate(async ({ fixture, level, fixed }) => {
+  const prepared = await evaluate(async ({ fixture, level, fixed, contactMode }) => {
     const s = window.syn3h, b = window.syn3hNet.bungee, t = s.terrain, f = window.__groundFixtures[fixture]
     s.game.pause() // diagnostic only; the effective quality and warm gate ran on normal frames
     const V = s.player.object.position.constructor
-    const surface = window.__groundSurface
-    const a = new V(f.a[0], Math.max(t.heightAt(...f.a), t.liquidHeightAt?.(...f.a) ?? -Infinity) + 2, f.a[1])
-    const end = new V(f.b[0], Math.max(t.heightAt(...f.b), t.liquidHeightAt?.(...f.b) ?? -Infinity), f.b[1])
-    s.player.teleport(a, 0); s.player.object.position.copy(a); s.player.body.setGravityScale(0, true)
-    s.player.body.setLinvel({ x: 0, y: 0, z: 0 }, true); s.player.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
-    b.reset()
-    const c = b.makeCord(window.syn3hNet.id)
-    c.at = b.canonical3(end); c.rest = f.slack ? a.distanceTo(end) + 40 : Math.max(4, a.distanceTo(end) * 0.7)
-    c.twang = 0; c.since = s.game.time - 5; c.pull = f.slack ? 0 : 10000; c.mass = 1
-    const midpoint = a.clone().lerp(end, 0.5), span = a.distanceTo(end)
+    if (!t.renderHeightAt) throw new Error('rendered terrain sampler required')
+    const heights = (x, z) => {
+      const collision = t.heightAt(x, z), rendered = t.renderHeightAt(x, z)
+      const liquid = t.liquidHeightAt?.(x, z) ?? -Infinity
+      return { collision, rendered, liquid: Number.isFinite(liquid) ? liquid : null, surface: Math.max(rendered, liquid) }
+    }
+    // Camera and LOD are fixed before constructing either diagnostic contact.
+    // These provisional collision points choose framing only, never attachment height.
+    const frameA = new V(f.a[0], t.heightAt(...f.a) + 2, f.a[1])
+    const frameB = new V(f.b[0], t.heightAt(...f.b), f.b[1])
+    const midpoint = frameA.clone().lerp(frameB, 0.5), span = frameA.distanceTo(frameB)
     midpoint.y = Math.max(midpoint.y, t.heightAt(midpoint.x, midpoint.z))
     s.game.camera.position.copy(midpoint).add(new V(0, Math.max(10, span * 0.4), Math.max(20, span * 0.9)))
     s.game.camera.lookAt(midpoint); s.game.camera.updateMatrixWorld()
-    t.afterCamera?.()
+    t.afterCamera()
+    const lodBefore = t.meshes.stats(s.game.camera)
+    const a = new V(f.a[0], heights(...f.a).surface + 2, f.a[1])
+    const end = new V(f.b[0], heights(...f.b).surface - (contactMode === 'buried-contact-fallback' ? 0.5 : 0), f.b[1])
+    s.player.teleport(a, 0); s.player.object.position.copy(a); s.player.body.setGravityScale(0, true)
+    s.player.body.setLinvel({ x: 0, y: 0, z: 0 }, true); s.player.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
+    // Ensure the synthetic hitch is clear at its actual offset, not at the body centre.
+    const setupHitch = b.hitch(s.player.object, new V())
+    const lift = Math.max(0, heights(setupHitch.x, setupHitch.z).surface + 2 - setupHitch.y)
+    a.y += lift; s.player.teleport(a, 0); s.player.object.position.copy(a)
+    const contactHitch = b.hitch(s.player.object, new V())
+    const contactSetup = { mode: contactMode, generationStarted: false, lod: lodBefore,
+      camera: { position: s.game.camera.position.toArray(), quaternion: s.game.camera.quaternion.toArray() },
+      vehicle: { point: contactHitch.toArray(), ...heights(contactHitch.x, contactHitch.z) },
+      anchor: { point: end.toArray(), ...heights(end.x, end.z) } }
+    contactSetup.vehicle.gap = contactHitch.y - contactSetup.vehicle.surface
+    contactSetup.anchor.gap = end.y - contactSetup.anchor.surface
+    if (contactSetup.vehicle.gap < 0 || (contactMode === 'valid-rendered-contact'
+      ? Math.abs(contactSetup.anchor.gap) > 1e-8 : contactSetup.anchor.gap > -0.49))
+      throw new Error('declared diagnostic contact precondition failed')
+    window.__preparedContact = { a, end, midpoint, span, lodBefore, contactSetup, f }
+    return contactSetup
+  }, { fixture, level, fixed, contactMode })
+  await checkpoint('diagnostic contacts before cord generation', { contactSetup: prepared })
+  const result = await evaluate(async ({ fixture, level, fixed, contactMode }) => {
+    const s = window.syn3h, b = window.syn3hNet.bungee, t = s.terrain
+    const V = s.player.object.position.constructor, surface = window.__groundSurface
+    const { a, end, midpoint, span, lodBefore, contactSetup, f } = window.__preparedContact
+    if (contactSetup.mode !== contactMode || JSON.stringify(t.meshes.stats(s.game.camera)) !== JSON.stringify(lodBefore))
+      throw new Error('prepared contact mode or LOD changed before generation')
+    if (Math.abs(surface.heightAt(end.x, end.z) - contactSetup.anchor.surface) > 1e-8)
+      throw new Error('contact surface changed before generation')
+    b.reset()
+    const c = b.makeCord(window.syn3hNet.id)
+    c.at = b.canonical3(end); c.rest = f.slack ? a.distanceTo(end) + 40 : Math.max(4, a.distanceTo(end) * 0.7)
+    const unchangedAnchor = c.at.toArray()
+    c.twang = 0; c.since = s.game.time - 5; c.pull = f.slack ? 0 : 10000; c.mass = 1
     b.hooks.surface = fixed ? surface : undefined
     b.update(0)
     await s.game.renderer.renderAsync(s.game.scene, s.game.camera)
+    if (JSON.stringify(c.at.toArray()) !== JSON.stringify(unchangedAnchor)) throw new Error('diagnostic anchor mutated')
+    if (JSON.stringify(t.meshes.stats(s.game.camera)) !== JSON.stringify(lodBefore)) throw new Error('LOD changed after contact setup')
     const pos = b.look.cord.geometry.getAttribute('position'), n = b.look.segments, base = c.slot * 50
     const vertex = i => new V().fromBufferAttribute(pos, base + i)
     let minimum = Infinity, queries = 0
@@ -244,13 +296,13 @@ const capture = async (name, fixture, level, fixed = true) => {
     const projected = [first, last, midpoint].map(project)
     const projectedSpan = Array.from({ length: (n + 1) * 2 }, (_, i) => project(vertex(i)))
     const projectedTargets = [hitch, end].map(project)
-    return { fixture, level, fixed, diagnostic: true, hookDisabledComparison: !fixed,
+    return { fixture, level, fixed, contactMode, contactSetup, exactAttachmentAcceptance: fixed && contactMode === 'valid-rendered-contact', diagnostic: true, hookDisabledComparison: !fixed,
       minimum, renderedMinimum, renderedSamples, missingTerrainRays,
       renderedScope: 'actual bent land triangles and ribbon triangles, finite barycentric samples; analytic shared liquid surface',
       bend: bend.toArray(), lod: t.meshes.stats(s.game.camera),
       attachment, cost, projected, projectedSpan, projectedTargets, span, segments: n, scenario: f }
 
-  }, { fixture, level, fixed })
+  }, { fixture, level, fixed, contactMode })
   result.warm = warm
   report.matrix.push({ name, ...result })
   await checkpoint(`diagnostic measured: ${name}`)
@@ -271,9 +323,8 @@ const capture = async (name, fixture, level, fixed = true) => {
     assert.ok(Number.isFinite(result.renderedMinimum), 'rendered clearance must be measured')
     if (result.minimum < -0.02) failures.push(`${name}: unbent penetration ${result.minimum}`)
     if (result.renderedMinimum < -0.02) failures.push(`${name}: rendered penetration ${result.renderedMinimum}`)
-    // Known product issue: first-pass draping raises the anchor by 0.16 m.
-    // Keep this strict; do not widen the tolerance to make the gate green.
-    for (const key of ['vehicleGap', 'anchorGap']) if (result.attachment[key] > 0.02) failures.push(`${name}: ${key} ${result.attachment[key]} exceeds 0.02 m`)
+    // Intent was fixed before generation. Never reclassify a failed valid contact.
+    if (contactMode === 'valid-rendered-contact') for (const key of ['vehicleGap', 'anchorGap']) if (result.attachment[key] > 0.02) failures.push(`${name}: ${key} ${result.attachment[key]} exceeds 0.02 m`)
   }
   await checkpoint(`diagnostic captured: ${name}`)
   console.log(JSON.stringify(result))
@@ -287,7 +338,8 @@ for (const fixture of ['flat', 'volcano']) {
 }
 for (let level = 0; level < 6; level++) for (const fixture of ['volcano', 'outerCrest', 'shoreline', 'wrap'])
   await capture(`q${level}-${fixture}`, fixture, level, true)
+for (const fixture of ['flat', 'volcano'])
+  await capture(`${fixture}-buried-contact-fallback`, fixture, 3, true, 'buried-contact-fallback')
 assert.deepEqual(errors, [])
 assert.deepEqual(failures, [], 'clearance and endpoint assertions must pass')
 console.log('GRAPPLE TERRAIN BROWSER PASS')
-
