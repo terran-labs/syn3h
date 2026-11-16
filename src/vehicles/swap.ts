@@ -11,6 +11,11 @@ import { PlayerVehicleWarm } from './PlayerVehicleWarm'
 /** Metres the new vehicle starts above the old one's origin, and at least above the surface. */
 export const SWAP_LIFT = 0.5
 
+/** Seconds the warm-up waits for a cached vehicle's real body before skipping it. */
+const WARM_WAIT = 30
+/** Vehicles that load a body (the buggy) say whether it has arrived; the rest are generated. */
+const bodyReady = (vehicle: Vehicle) => (vehicle as { bodyReady?: boolean }).bodyReady !== false
+
 const position = new THREE.Vector3()
 const forward = new THREE.Vector3()
 const rotation = new THREE.Quaternion()
@@ -46,11 +51,25 @@ export function createVehicleSwapper(
   const warmStats = { pending: true, current: null as string | null }
   game.scene.userData.playerVehicleCache = warmStats
   let idleSeconds = 0
+  /**
+   * A cached vehicle whose real body is still loading. Warming it now would compile only the
+   * stand in, and the warm-up's saved visibility, put back after the body arrived, used to
+   * leave that stand in showing. Wait for the body, up to WARM_WAIT seconds.
+   */
+  let waiting: Vehicle | null = null
+  let waited = 0
   const warmUpdate = (dt: number) => {
     if (disposed || !game.renderer?.backend) return
     idleSeconds += Math.min(dt, .1)
     if (idleSeconds < 3) return
     if (warmer.current) { warmer.update(); warmStats.current = warmer.current?.kind ?? null; return }
+    if (waiting) {
+      waited += Math.min(dt, .1)
+      if (!bodyReady(waiting) && waited < WARM_WAIT) return
+      if (bodyReady(waiting)) { warmer.begin(waiting); warmStats.current = waiting.kind }
+      waiting = null
+      return
+    }
     const kind = queue.shift()
     if (!kind) { warmStats.pending = false; return }
     const key = canonicalVehicleKind(kind)
@@ -59,8 +78,11 @@ export function createVehicleSwapper(
     v.isLocal = true
     v.setColors(slot.current.colors.body, slot.current.colors.accent)
     cache.set(key, v)
-    warmer.begin(v)
-    warmStats.current = kind
+    if (bodyReady(v)) { warmer.begin(v); warmStats.current = kind; return }
+    // Out of the world while it waits, as the warm-up would leave it.
+    v.setParked(true)
+    waiting = v
+    waited = 0
   }
   const swapper: VehicleSwapper = {
     swap(kind) {
@@ -83,6 +105,7 @@ export function createVehicleSwapper(
       const next = cache.get(key) ?? createVehicle(game, terrain, kind, position, heading)
       cache.set(key, next)
       if (warmer.current === next) warmer.finish()
+      if (waiting === next) waiting = null
       next.teleport(position, heading)
       next.setParked(false)
       next.isLocal = previous.isLocal
