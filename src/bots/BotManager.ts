@@ -32,6 +32,7 @@ export class BotManager implements System {
   private readonly retentionMatrix = new Matrix4()
   private readonly retentionSphere = new Sphere(new Vector3(), 5)
   private readonly retentionBend = new Vector3()
+  private readonly offscreenSince = new Map<Vehicle, number>()
   private nextBotId = 0
   private targets: readonly Vehicle[]
   private disposed = false
@@ -96,11 +97,14 @@ export class BotManager implements System {
     this.match = match
     for (const brain of this.brains) brain.match = match
   }
-  private removeLast() {
-    const bot = this.bots.pop()!
+  private removeAt(index: number) {
+    const [bot] = this.bots.splice(index, 1)
+    const [brain] = this.brains.splice(index, 1)
+    this.offscreenSince.delete(bot)
     this.effects.get(bot)?.(); this.effects.delete(bot)
-    this.game.remove(this.brains.pop()!); this.game.remove(bot)
+    this.game.remove(brain); this.game.remove(bot)
   }
+  private removeLast() { this.removeAt(this.bots.length - 1) }
   private clearBots() { while (this.bots.length) this.removeLast() }
   private spawn(index: number) {
     const center = this.player.body.translation()
@@ -141,21 +145,20 @@ export class BotManager implements System {
     }
     return false
   }
-  /** Quality may postpone a new bot, but must not make an existing companion blink out. */
-  private retainForQuality(index: number): boolean {
-    const bot = this.bots[index], p = bot.body.translation(), player = this.player.body.translation()
-    const lineReach = LINE_START + LINE_SPACING * (this.bots.length + 1)
-    if (followYou.value > 0 && aggression.value <= RAM_AGGRESSION
-      && this.brains[index].duck.following === this.player
-      && Math.hypot(p.x - player.x, p.z - player.z) <= lineReach) return true
-    const camera = this.game.camera
-    if (!camera || overHorizon(p.x, p.z, 5, p.y + 3)) return false
+  /** Visible companions survive a budget drop; hidden ones get three wall-clock seconds. */
+  private retainForQuality(index: number, now: number): boolean {
+    const bot = this.bots[index], p = bot.body.translation(), camera = this.game.camera
+    if (!camera) return false
     camera.updateMatrixWorld()
     this.retentionMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
     this.retentionFrustum.setFromProjectionMatrix(this.retentionMatrix, camera.coordinateSystem)
     curveOffset(p.x, p.y, p.z, this.retentionBend)
     this.retentionSphere.center.set(p.x, p.y, p.z).add(this.retentionBend)
-    return this.retentionFrustum.intersectsSphere(this.retentionSphere)
+    const visible = !overHorizon(p.x, p.z, 5, p.y + 3) && this.retentionFrustum.intersectsSphere(this.retentionSphere)
+    if (visible) { this.offscreenSince.delete(bot); return true }
+    const since = this.offscreenSince.get(bot) ?? now
+    this.offscreenSince.set(bot, since)
+    return now - since < 3000
   }
   /** Reconcile outside the physics iterator so removing bots cannot skip another body's step. */
   update(dt = 0) {
@@ -166,10 +169,13 @@ export class BotManager implements System {
     // Explicit population changes and remote/dispose cleanup still take effect immediately.
     while (this.bots.length > requested) this.removeLast()
     const count = Math.min(qualityBudget().bots, requested)
-    while (this.bots.length > count) {
-      if (this.retainForQuality(this.bots.length - 1)) break
-      this.removeLast()
-    }
+    if (this.bots.length > count) {
+      const now = performance.now()
+      // Scan past protected bots: one visible tail must not retain the entire population.
+      for (let i = this.bots.length - 1; i >= 0 && this.bots.length > count; i--) {
+        if (!this.retainForQuality(i, now)) this.removeAt(i)
+      }
+    } else this.offscreenSince.clear()
     while (this.bots.length < count) if (!this.spawn(this.bots.length)) break
     // On a round world most of the map is behind the planet. A bot there still drives (its
     // physics is the host's to run) but there is nothing of it to draw.

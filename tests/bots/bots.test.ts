@@ -130,32 +130,62 @@ describe('bot population', () => {
     manager.dispose()
   })
 
-  it('retains nearby followers through a quality drop but honors an explicit count reduction', () => {
+  it('retains visible followers above budget but honors explicit count changes', () => {
     const { game } = harness(), player = stationaryTarget(game)
-    const manager = new BotManager(game, terrain, player)
-    try {
-      params.set('gfx.level', 2); params.set('bots.count', 4); manager.update()
-      const ids = manager.vehicles.map(v => v.id)
-      params.set('gfx.level', 0); manager.update()
-      expect(manager.vehicles.map(v => v.id)).toEqual(ids)
-      params.set('bots.count', 2); manager.update()
-      expect(manager.vehicles).toHaveLength(2)
-    } finally { manager.dispose(); params.set('gfx.level', 2) }
-  })
-  it('defers removal of visible distant bots until they leave the camera', () => {
-    const { game } = harness(), player = stationaryTarget(game)
-    params.set('bots.followYou', 0)
     Object.defineProperty(game, 'camera', { value: new PerspectiveCamera(60, 1, 0.1, 1000) })
     game.camera.position.set(0, 8, 0); game.camera.lookAt(0, 2, -80)
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0)
     const manager = new BotManager(game, terrain, player)
     try {
       params.set('gfx.level', 2); params.set('bots.count', 4); manager.update()
       manager.vehicles.forEach((v, i) => v.teleport(new Vector3(i * 3, 2, -80)))
+      const ids = manager.vehicles.map(v => v.id)
       params.set('gfx.level', 0); manager.update()
-      expect(manager.vehicles).toHaveLength(4)
-      game.camera.lookAt(0, 8, 80); manager.update()
+      clock.mockReturnValue(10000); manager.update()
+      expect(manager.vehicles.map(v => v.id)).toEqual(ids)
+      params.set('bots.count', 2); manager.update()
       expect(manager.vehicles).toHaveLength(2)
-    } finally { manager.dispose(); params.set('gfx.level', 2) }
+      params.set('bots.count', 0); manager.update()
+      expect(manager.vehicles).toHaveLength(0)
+    } finally { manager.dispose(); clock.mockRestore(); params.set('gfx.level', 2) }
+  })
+  it('sheds hidden bots after three seconds even before a protected last bot', () => {
+    const { game } = harness(), player = stationaryTarget(game)
+    Object.defineProperty(game, 'camera', { value: new PerspectiveCamera(60, 1, 0.1, 1000) })
+    game.camera.position.set(0, 8, 0); game.camera.lookAt(0, 2, -80)
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0)
+    const manager = new BotManager(game, terrain, player)
+    try {
+      params.set('gfx.level', 2); params.set('bots.count', 4); manager.update()
+      const original = [...manager.vehicles]
+      original.forEach((v, i) => v.teleport(new Vector3(i * 3, 2, i === 0 || i === 3 ? -80 : 20)))
+      params.set('gfx.level', 0); manager.update()
+      clock.mockReturnValue(2999); manager.update()
+      expect(manager.vehicles).toHaveLength(4)
+      clock.mockReturnValue(3001); manager.update()
+      expect(manager.vehicles).toEqual([original[0], original[3]])
+      expect(original[1].body.isValid()).toBe(false)
+      expect(original[2].body.isValid()).toBe(false)
+      expect(original[3].body.isValid()).toBe(true)
+    } finally { manager.dispose(); clock.mockRestore(); params.set('gfx.level', 2) }
+  })
+  it('restarts the hidden grace when a bot returns to view', () => {
+    const { game } = harness(), player = stationaryTarget(game)
+    Object.defineProperty(game, 'camera', { value: new PerspectiveCamera(60, 1, 0.1, 1000) })
+    game.camera.position.set(0, 8, 0); game.camera.lookAt(0, 2, -80)
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0)
+    const manager = new BotManager(game, terrain, player)
+    try {
+      params.set('gfx.level', 2); params.set('bots.count', 4); manager.update()
+      manager.vehicles.forEach((v, i) => v.teleport(new Vector3(i * 3, 2, -80)))
+      params.set('gfx.level', 0); game.camera.lookAt(0, 8, 80); manager.update()
+      clock.mockReturnValue(2000); game.camera.lookAt(0, 2, -80); manager.update()
+      clock.mockReturnValue(2500); game.camera.lookAt(0, 8, 80); manager.update()
+      clock.mockReturnValue(5000); manager.update()
+      expect(manager.vehicles).toHaveLength(4)
+      clock.mockReturnValue(5501); manager.update()
+      expect(manager.vehicles).toHaveLength(2)
+    } finally { manager.dispose(); clock.mockRestore(); params.set('gfx.level', 2) }
   })
   it('keeps Rapier usable when graphics and count drop together or in adjacent frames', () => {
     params.set('bots.followYou', 0)
