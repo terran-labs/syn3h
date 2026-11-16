@@ -26,6 +26,18 @@ in the first bundle and costs no download.
 The harmony changes mode at the next chord boundary, at most two bars away, and lands the
 change with a sub drop.
 
+## The slow build
+
+Since 16 November 2026 the score opens bare (pads, drone and a picked chord) and builds over
+`audio.buildTime` seconds of play (300 by default): the sequencer at about half a minute,
+bass and drums after a minute and a half, the build section at 0.35 of the way, the theme at
+0.55 when the lead is present enough, the climb and release at 0.8. Before, the score opened
+on a release and the full mix arrived within five seconds. The lobby stays in the bare
+opening and never climbs. The theremin lead follows the world's hour (`sun.timeOfDay`): a
+quarter of its level by day, its full level at night, eased across dusk and dawn, and silent
+in the lobby. Its controls are under Sound, Advanced: Music build time, Theremin level,
+Theremin by day, Theremin in the lobby. `tests/audio/score-build.mjs` measures the build.
+
 ## The arc
 
 A steady texture never raises a hair, so sections of eight bars follow a six-part cycle:
@@ -41,7 +53,7 @@ A steady texture never raises a hair, so sections of eight bars follow a six-par
 
 Every second chord arrives with its third suspended and resolves a bar later.
 
-Play can jump the arc. `Score.cue('surge')` starts the last two bars of a climb, so a release
+Play can jump the arc, once the build has reached the climb. `Score.cue('surge')` starts the last two bars of a climb, so a release
 lands a few seconds later. Taking off does this by itself (after 1.2 s of real flight), a
 capture does it through `accent`, and a win brings the release at once. Surges are at least
 40 seconds apart: a release that comes too often stops meaning anything.

@@ -1,4 +1,25 @@
 /**
+ * Map of the score (16 November 2026):
+ *  - Layers. Held: pads, drone, men's choir, wind in the void. Notes: a picked chord, the
+ *    sequencer, bass, low drums, strings, bell, telemetry beeps, and the theremin lead (the
+ *    `lead` in Composer.ts, the `leadBus` in ScoreSynth.ts). Late in the arc: brass, organ,
+ *    high choir, halo, shimmer, riser and the endless rise.
+ *  - What brings them in. Intensity (speed, throttle, combat heat) brings the sequencer at
+ *    0.1, bass and drums from 0.28, a full chase at 0.8. The arc (theme, still, build, climb,
+ *    release, afterglow, eight bars each, about 28 s at lobby tempo) brings the strings, the
+ *    lead and the release's brass, organ and choir. Lift brings the choir; lava and combat
+ *    darken the mode; the match brings triumph.
+ *  - The build (arc.ts). Growth rises from 0 over `audio.buildTime` (300 s) of play. It caps
+ *    intensity, so layers arrive over minutes, and opens the arc: build at 0.35, the theme at
+ *    0.55 (and only when the lead is present enough), climb and release at 0.8. Until then the
+ *    arc stays in its still section. Before: the score opened on a release and pressing Play
+ *    surged into another, so the full mix arrived within 5 s.
+ *  - The lead. Its presence follows the world's hour: a quarter by day, full at night, eased
+ *    across dusk and dawn; at most half its former level, further back in the hall, with
+ *    rests between phrases. By day it waits for the climb.
+ *  - The lobby. Growth 0, intensity 0.06: pads, drone and a picked chord, no lead, no climb.
+ *    Before: intensity 0.2 and the whole arc, with the lead sounding over half the time.
+ *
  * The conductor of the adaptive score. It turns raw game state into a smoothed mood, asks
  * the composer for the next sixteenths and schedules them on the synthesiser a fraction of
  * a second ahead of the audio clock.
@@ -14,6 +35,8 @@
 import { defineParam, params } from '../../../shared/params'
 import { Composer, levels, seeded, unit, type Mood, type Role } from './Composer'
 import { ScoreSynth } from './ScoreSynth'
+import { OPENS, intensityCeiling, leadPresence, roleOpen } from './arc'
+import { leadDaylight, leadLobby, leadVolume, scoreBuildTime } from '../params'
 
 const tune = (id: string, label: string, value: number, min: number, max: number, step = 0.01) => defineParam({ id: `audio.score.${id}`, label, group: 'Adaptive score', scope: 'client', default: value, min, max, step })
 /** How strongly play drives the score. 0 keeps it ambient, 2 makes a slow roll feel like a chase. */
@@ -73,8 +96,13 @@ export interface MatchMood { holding: boolean; contested: boolean; /** 0..1 shar
  * within a beat.
  */
 const LOOKAHEAD = 0.35
-/** The lobby's intensity: enough for the arpeggio to move over the pads, below bass and drums. */
-const LOBBY_INTENSITY = 0.2
+/**
+ * The lobby's intensity: below the sequencer, so the lobby is pads, drone and a picked chord.
+ * It was 0.2 (sequencer moving) until 16 November 2026, when the owner asked for a calmer lobby.
+ */
+const LOBBY_INTENSITY = 0.06
+/** Seconds for the lead's presence to follow the hour and the lobby: dusk eases it in, it never switches. */
+const PRESENCE_TAU = 8
 /** Seconds between surges the game may trigger. A release that comes too often stops meaning anything. */
 const SURGE_COOLDOWN = 40
 /** Move `value` toward `target` with a time constant in seconds. */
@@ -110,10 +138,15 @@ export class Score {
   private nextWeather = 0
   private readonly chance = seeded(8675309)
   private lastCue = -Infinity
+  /** 0..1, how far the piece has built since play began (arc.ts). 0 in the lobby. */
+  growth = 0
+  /** 0..1, how far forward the theremin lead may come now, smoothed. */
+  presence = 0
+  private lobby = true
 
   constructor(private readonly context: BaseAudioContext, private readonly output: AudioNode, seed: number) {
     this.seed = seed
-    this.composer = new Composer(seed)
+    this.composer = this.compose(seed)
     this.synth = new ScoreSynth(context, output, scoreLite.value, scoreLite.value || scoreNetworkHall.value)
     // Where the browser can tell us how hard the audio thread is working, watch it. Two bad
     // readings in a row and the score steps down to its lighter instruments, for good.
@@ -127,6 +160,11 @@ export class Score {
         capacity.start({ updateInterval: 2 })
       } catch { /* Not measurable here; the quality system can still set the tier. */ }
     }
+  }
+  private compose(seed: number): Composer {
+    const composer = new Composer(seed)
+    composer.allow = role => roleOpen(role, this.growth, this.presence, this.lobby)
+    return composer
   }
   /** The audio thread's last reported load (share of real time spent rendering) and underrun ratio, where the browser reports them. */
   load: { average: number; underruns: number } | null = null
@@ -145,11 +183,11 @@ export class Score {
     if (active === this.active) return
     this.active = active
     this.synth.setLevel(active ? 1 : 0, seconds)
-    // The first thing anyone hears is the theme at full height, not a quiet preamble.
-    if (active && !this.opened) { this.opened = true; this.composer.cue('release') }
+    // The piece opens bare: pads and drone, and the rest arrives over minutes (arc.ts).
+    if (active && !this.opened) { this.opened = true; this.composer.cue('still') }
   }
   /** A new seed means new themes and usually a new key. Takes effect on the next sixteenth. */
-  setSeed(seed: number): void { if (seed !== this.seed) { this.seed = seed; this.composer = new Composer(seed) } }
+  setSeed(seed: number): void { if (seed !== this.seed) { this.seed = seed; this.composer = this.compose(seed) } }
   /** Report a shot or a hit. `amount` is roughly 0.1 for a distant shot and 0.5 for being hit. */
   combat(amount: number): void {
     this.mood.heat = unit(this.mood.heat + Math.max(0, amount))
@@ -166,7 +204,7 @@ export class Score {
     if (!this.active) return
     const now = this.context.currentTime, role = this.composer.role
     if (strength >= 1) this.cue('release')
-    else if (now - this.lastCue > SURGE_COOLDOWN && role !== 'climb' && role !== 'release') this.cue('surge')
+    else if (this.growth >= OPENS.climb && now - this.lastCue > SURGE_COOLDOWN && role !== 'climb' && role !== 'release') this.cue('surge')
     else this.synth.impact(undefined, strength)
   }
 
@@ -220,18 +258,24 @@ export class Score {
     m.lift = follow(m.lift, input.playing ? lift : 0.25, 2.5, dt)
     m.depth = follow(m.depth, input.playing ? depth : 0, 0.25, dt)
     m.triumph = follow(m.triumph, input.playing ? unit((this.match.holding ? 0.6 : 0) + this.match.progress * 0.5) : 0, 3, dt)
-    m.intensity = follow(m.intensity, input.playing ? unit((0.12 + 0.5 * m.energy + 0.8 * m.heat + 0.25 * this.tension) * scale) : LOBBY_INTENSITY, 1, dt)
+    // The build: growth rises over the build time in play and is 0 in the lobby. It caps the
+    // intensity, so bass and drums come with minutes of play, and opens the arc's sections.
+    this.growth = input.playing && this.active ? Math.min(1, this.growth + dt / Math.max(1, scoreBuildTime.value)) : 0
+    this.lobby = !input.playing
+    const hour = Number(params.get('sun.timeOfDay')?.value ?? 12)
+    this.presence = follow(this.presence, leadPresence(input.playing, hour, leadVolume.value, leadDaylight.value, leadLobby.value), PRESENCE_TAU, dt)
+    m.intensity = follow(m.intensity, input.playing ? Math.min(intensityCeiling(this.growth), unit((0.12 + 0.5 * m.energy + 0.8 * m.heat + 0.25 * this.tension) * scale)) : LOBBY_INTENSITY, 1, dt)
     m.darkness = follow(m.darkness, input.playing ? unit(0.34 + 0.6 * m.heat + 0.55 * unit(input.lava) + 0.2 * depth - 0.3 * m.lift - 0.25 * m.triumph) : 0.1, 2, dt)
 
     // Leaving the ground: after a moment of real flight the music surges toward a release.
     const flying = input.playing && input.airborne && input.clearance > 12
     const was = this.airTime
     this.airTime = flying ? this.airTime + dt : 0
-    if (this.active && was < 1.2 && this.airTime >= 1.2 && now - this.lastCue > SURGE_COOLDOWN && this.composer.role !== 'climb' && this.composer.role !== 'release') this.cue('surge')
+    if (this.active && this.growth >= OPENS.climb && was < 1.2 && this.airTime >= 1.2 && now - this.lastCue > SURGE_COOLDOWN && this.composer.role !== 'climb' && this.composer.role !== 'release') this.cue('surge')
 
-    // Pressing Play is an arrival: the music swells and lands as the player appears.
-    // (Unless something has just asked for a particular section.)
-    if (this.active && input.playing && !this.wasPlaying && this.composer.role !== 'release' && now - this.lastCue > 1) this.cue('surge')
+    // Pressing Play no longer surges: the piece starts its slow build from the bare opening.
+    // Back in the lobby, whatever section was playing gives way to the still opening.
+    if (this.active && !input.playing && this.wasPlaying && this.composer.role !== 'still') this.cue('still')
     this.wasPlaying = input.playing
 
     // Convoy harmony: the three nearest vehicles carry parts, fading out between 30 and 300 m.
@@ -250,7 +294,7 @@ export class Score {
     this.bpm = follow(this.bpm, level.bpm * scoreTempo.value, 4, dt)
     // The release arrives at once and fades over the section that follows it.
     this.release = follow(this.release, this.composer.role === 'release' && this.active ? 1 : 0, this.composer.role === 'release' ? 0.4 : 5, dt)
-    this.synth.setLevels(level, m.depth, scoreReverb.value, { tension: this.composer.tension, release: this.release })
+    this.synth.setLevels(level, m.depth, scoreReverb.value, { tension: this.composer.tension, release: this.release, lead: this.presence })
     if (!this.active) return
     // After a stall (a hidden tab, a long frame) start again from now; never play catch-up.
     if (this.nextTime < now - 0.05) { this.nextTime = now + 0.06; this.stalls++ }

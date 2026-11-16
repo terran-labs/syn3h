@@ -22,10 +22,11 @@ export interface Position { x: number; y: number; z: number }
 const cueFor: Record<Sound, Cue> = { laserShot: 'beam', laserHit: 'tagged', materialize: 'materialize' }
 /**
  * In the lobby the score is the only thing sounding, and it plays its quiet opening state:
- * measured at about -28 dBFS, too faint on a laptop or a phone. It is lifted 6 dB there and
- * eases back over a couple of seconds when play begins and engines, wind and drums join.
+ * measured at about -28 dBFS, too faint on a laptop or a phone. It is lifted there and eases
+ * back over a couple of seconds when play begins and engines, wind and drums join. 8 dB since
+ * 16 November 2026 (6 before), making up the 2.5 dB the sparser lobby score lost.
  */
-const LOBBY_LIFT = 2
+const LOBBY_LIFT = 2.5
 /** Match the terrain classifier, including snow and roads within a world. */
 const IMPACT_SURFACE: Record<SurfaceKind, ImpactKind> = {
   dust: 'dust', sand: 'sand', grass: 'soil', mud: 'mud', snow: 'snow', ice: 'ice',
