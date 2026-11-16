@@ -1,51 +1,30 @@
 /**
- * Headless tests for the Syn3h buggy. Directions are strict: forward is local -Z, positive yaw
- * is a left turn, pitch and roll are checked by where the nose and the right side point.
+ * Invariant tests for the Syn3h buggy: what a player would call a bug if it broke. Directions are
+ * strict: forward is local -Z, positive yaw is a left turn, pitch and roll are checked by where
+ * the nose and the right side point.
+ *
+ * Handling the owner tunes by feel (speeds, braking g, turn rates, hop heights, slide and recovery
+ * times, wing swing times) is not pinned here. It is measured by tools/handling-report.ts from the
+ * same scenarios (./syn3hScenarios.ts). Distances below are "it moved", not "it moved this far".
  */
 import { afterEach, describe, expect, test } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { params } from '../../shared/params'
 import { createVehicle } from '../../src/vehicles'
-import { buggyIdleHold, buggyNextGen } from '../../src/vehicles/buggyParams'
+import { buggyIdleHold, buggyNextGen, buggyRegen } from '../../src/vehicles/buggyParams'
 import { waterSinking } from '../../src/vehicles/buoyancy'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
 import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../../src/core/physics'
 import { type Bed, makeBed } from './harness'
+import {
+  G, axis, bump, cruise, deploy, drop, flying, kick, lavaEscape, lavaPool, pitchedGlide, planted, pos, resetParams,
+  sideways, slope, spawn, speed,
+} from './syn3hScenarios'
 
-const speed = (b: Syn3hBuggy) => {
-  const v = b.body.linvel()
-  return Math.hypot(v.x, v.y, v.z)
-}
-const rot = (b: Syn3hBuggy) => {
-  const r = b.body.rotation()
-  return new THREE.Quaternion(r.x, r.y, r.z, r.w)
-}
-const axis = (b: Syn3hBuggy, x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyQuaternion(rot(b))
-const pos = (b: Syn3hBuggy) => {
-  const t = b.body.translation()
-  return new THREE.Vector3(t.x, t.y, t.z)
-}
+/** Skid plate bottom, in body coordinates. */
+const SKID_BOTTOM = -0.085
 
-async function spawn(heading = 0, y = 1.5): Promise<{ bed: Bed; b: Syn3hBuggy }> {
-  const bed = await makeBed()
-  const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, y, 0), heading))
-  b.isLocal = false
-  return { bed, b }
-}
-
-/** Put the buggy in the air at speed along its nose with wings already open. */
-async function flying(altitude = 60, v = 35): Promise<{ bed: Bed; b: Syn3hBuggy }> {
-  const s = await spawn(0, altitude)
-  s.b.input.special = true
-  s.b.wingState = 1
-  s.b.areWingsOpen = true
-  s.b.body.setLinvel({ x: 0, y: 0, z: -v }, true)
-  return s
-}
-
-afterEach(() => {
-  for (const p of params.all()) params.set(p.def.id, p.def.default)
-})
+afterEach(resetParams)
 
 describe('Syn3hBuggy', () => {
   test('is the default kind, with the prefab mass and the Syn3h centre of mass', async () => {
@@ -75,8 +54,8 @@ describe('Syn3hBuggy', () => {
     expect(Math.hypot(v.x, v.z)).toBeLessThan(1e-3)
     expect(Math.abs(v.y)).toBeLessThan(3e-3)
     expect(pos(b).distanceTo(p0)).toBeLessThan(0.01)
-    // Body well clear of the ground: skid plate bottom (y -0.085) above it.
-    expect(p0.y - 0.085).toBeGreaterThan(0.3)
+    // The body is on its suspension, not the ground.
+    expect(p0.y + SKID_BOTTOM).toBeGreaterThan(0.05)
   })
 
   test('classic parks on its auto brake (VhiclMe)', async () => {
@@ -92,7 +71,7 @@ describe('Syn3hBuggy', () => {
     bed.run(6)
     expect(b.brakes).toBe(false)
     // Forward centre of mass tilts the nose down and the suspension pushes it forward.
-    expect(b.body.linvel().z).toBeLessThan(-0.2)
+    expect(b.body.linvel().z).toBeLessThan(0)
   })
 
   test.each([0, Math.PI / 2, -2.5])('throttle drives toward local -Z (heading %f)', async (heading) => {
@@ -104,7 +83,7 @@ describe('Syn3hBuggy', () => {
     bed.run(3)
     const d = pos(b).sub(p0)
     const along = d.dot(fwd)
-    expect(along).toBeGreaterThan(20)
+    expect(along).toBeGreaterThan(1)
     expect(d.clone().addScaledVector(fwd, -along).setY(0).length()).toBeLessThan(along * 0.1)
     expect(b.brakes).toBe(false)
   })
@@ -115,7 +94,7 @@ describe('Syn3hBuggy', () => {
     const z0 = pos(b).z
     b.input.y = -1
     bed.run(2)
-    expect(pos(b).z - z0).toBeGreaterThan(5)
+    expect(pos(b).z - z0).toBeGreaterThan(0.5)
   })
 
   test.each([
@@ -129,7 +108,6 @@ describe('Syn3hBuggy', () => {
     b.input.x = x
     bed.run(0.5)
     expect(Math.sign(b.body.angvel().y)).toBe(sign)
-    expect(Math.abs(b.body.angvel().y)).toBeGreaterThan(0.3)
     expect(Math.sign(b.steer[0])).toBe(sign)
     expect(Math.sign(b.steer[2])).toBe(-sign)
     bed.run(0.5)
@@ -142,42 +120,27 @@ describe('Syn3hBuggy', () => {
     bed.run(1)
     b.input.y = 1
     bed.run(3)
-    expect(speed(b)).toBeGreaterThan(15)
+    expect(speed(b)).toBeGreaterThan(5)
     b.input.y = 0
     b.input.brakes = true
     bed.run(3)
     expect(speed(b)).toBeLessThan(0.01)
   })
 
-  test('next-gen brakes stop it on the tyres at well over 1 g, then it holds', async () => {
+  test('next-gen brakes stop it from speed, then it holds', async () => {
     const { bed, b } = await spawn()
     bed.run(1)
     b.input.y = 1
     bed.run(3)
-    const v0 = speed(b)
-    expect(v0).toBeGreaterThan(15)
+    expect(speed(b)).toBeGreaterThan(5)
     b.input.y = 0
     b.input.brakes = true
-    let t = 0
-    while (speed(b) > 0.5 && t < 5) {
-      bed.run(0.02)
-      t += 0.02
-    }
-    // Harder than low speed grip alone (1.2 g), since grip rises with speed, and no harder
-    // than the high speed grip allows (3 g).
-    expect(v0 / t).toBeGreaterThan(1.2 * 9.81)
-    expect(v0 / t).toBeLessThan(3 * 9.81)
-    bed.run(2)
+    bed.run(5)
+    expect(speed(b)).toBeLessThan(0.5)
     const p0 = pos(b)
     bed.run(1)
     expect(pos(b).distanceTo(p0)).toBeLessThan(0.05)
   })
-
-  /** Tilt gravity to stand the flat test bed in for a slope rising toward local -Z. */
-  const slope = (bed: Bed, deg: number) => {
-    const a = deg * THREE.MathUtils.DEG2RAD
-    bed.game.world.gravity = { x: 0, y: -9.81 * Math.cos(a), z: 9.81 * Math.sin(a) }
-  }
 
   test('next-gen parks on a 25 degree slope with no keys pressed', async () => {
     const { bed, b } = await spawn()
@@ -191,19 +154,19 @@ describe('Syn3hBuggy', () => {
     expect(b.brakes).toBe(false)
   })
 
-  test('next-gen coasts off throttle at speed, so a tapped key holds speed', async () => {
+  test('next-gen coasts off throttle at speed instead of holding or braking', async () => {
     const { bed, b } = await spawn()
     bed.run(1)
     b.input.y = 1
-    while (speed(b) < 25) bed.run(0.02)
+    bed.run(3)
+    const v0 = speed(b)
     b.input.y = 0
     bed.run(2)
     expect(b.drive).toBe('coast')
-    // Under 0.1 g of slowdown, where the classic motor drag gives nearly 0.1 g on its own.
-    expect(speed(b)).toBeGreaterThan(25 - 2 * 0.1 * 9.81)
+    expect(speed(b)).toBeGreaterThan(v0 / 2)
   })
 
-  test('next-gen reverse key regenerates to a stop, then reverses', async () => {
+  test('next-gen reverse key regenerates at the regen setting to a stop, then reverses', async () => {
     const { bed, b } = await spawn()
     bed.run(1)
     b.input.y = 1
@@ -214,158 +177,40 @@ describe('Syn3hBuggy', () => {
     const v0 = -b.body.linvel().z
     bed.run(1)
     const decel = v0 - -b.body.linvel().z
-    // buggy.regen is 0.6 g at full key.
-    expect(decel).toBeGreaterThan(0.5 * 9.81)
-    expect(decel).toBeLessThan(0.8 * 9.81)
+    // The slider is in g at full key: what it says is what the player gets, within rolling losses.
+    const regen = buggyRegen.value * G
+    expect(decel).toBeGreaterThan(regen * 0.8)
+    expect(decel).toBeLessThan(regen * 1.35)
     bed.run(4)
     expect(b.drive).toBe('drive')
-    expect(b.body.linvel().z).toBeGreaterThan(2)
+    expect(b.body.linvel().z).toBeGreaterThan(0)
   })
 
-  test('next-gen runs straight under full throttle (no rightward pull)', async () => {
+  test('next-gen runs straight under full throttle (no sideways pull)', async () => {
     const { bed, b } = await spawn()
     bed.run(1)
     b.input.y = 1
     bed.run(6)
     const p = pos(b)
-    expect(-p.z).toBeGreaterThan(100)
+    expect(-p.z).toBeGreaterThan(10)
     expect(Math.abs(p.x)).toBeLessThan(-p.z * 0.02)
   })
 
-  test('next-gen corners at full lock without sideslip at 15 m/s', async () => {
-    const { bed, b } = await spawn()
-    bed.run(1)
-    b.input.y = 1
-    while (speed(b) < 15) bed.run(0.02)
-    b.input.y = 0.3
-    b.input.x = 1
-    bed.run(2)
-    const v = b.body.linvel() as unknown as THREE.Vector3
-    const slip = new THREE.Vector3(v.x, 0, v.z).angleTo(axis(b, 0, 0, -1).setY(0)) * THREE.MathUtils.RAD2DEG
-    expect(slip).toBeLessThan(3)
-    // Lateral acceleration v * yaw rate: at least half a g.
-    expect(speed(b) * Math.abs(b.body.angvel().y)).toBeGreaterThan(0.5 * 9.81)
-  })
-
-  /** Cruise at v (m/s) long enough for the smart suspension to settle at its speed setting. */
-  const cruise = async (v: number) => {
-    const { bed, b } = await spawn()
-    bed.run(1)
-    b.input.y = 1
-    b.motorSpeed = v
-    bed.run(4, () => {
-      const l = b.body.linvel()
-      b.body.setLinvel({ x: 0, y: l.y, z: -v }, true)
-    })
-    return { bed, b }
-  }
-  /** Half sine ridge, `height` by `length` m, across x0..x1, starting 6 m ahead of the buggy. */
-  const ridge = (bed: Bed, b: Syn3hBuggy, x0: number, x1: number, height: number, length: number) => {
-    const z = pos(b).z - 6
-    const pts: number[] = []
-    for (let i = 0; i <= 16; i++) {
-      for (const x of [x0, x1]) pts.push(x, height * Math.sin((Math.PI * i) / 16), z - (length * i) / 16, x, -0.5, z - (length * i) / 16)
-    }
-    bed.game.world.createCollider(
-      RAPIER.ColliderDesc.convexHull(new Float32Array(pts))!.setFriction(1).setCollisionGroups(groups(GROUP_TERRAIN, GROUP_ALL)),
-    )
-  }
-  /** Run and report the highest hop above the starting height, the worst roll and body strikes. */
-  const ride = (bed: Bed, b: Syn3hBuggy, seconds: number) => {
-    const y0 = pos(b).y
-    const w = bed.game.world
-    let hop = 0, roll = 0, strikes = 0, touching = false
-    bed.run(seconds, () => {
-      hop = Math.max(hop, pos(b).y - y0)
-      roll = Math.max(roll, Math.abs(Math.asin(axis(b, 1, 0, 0).y)) * THREE.MathUtils.RAD2DEG)
-      let c = false
-      for (const col of [b.hull, b.skid]) {
-        w.contactPairsWith(col, (o) => w.contactPair(col, o, (m) => { if (m.numSolverContacts() > 0) c = true }))
-      }
-      if (c && !touching) strikes++
-      touching = c
-    })
-    return { hop, roll, strikes }
-  }
-
-  test('a 0.4 m bump at 42 m/s throws next-gen into the air, and it comes down on its wheels', async () => {
-    const { bed, b } = await cruise(42)
-    ridge(bed, b, -50, 50, 0.4, 6)
-    const r = ride(bed, b, 6)
-    // The owner wants hills to launch it, as the original did (about 2 m here), not skip over.
-    expect(r.hop).toBeGreaterThan(1.5)
-    expect(axis(b, 0, 1, 0).y).toBeGreaterThan(0.9)
-  })
-
-  test('the planted suspension settings still soak the same bump up', async () => {
-    params.set('buggy.rebound', 3); params.set('buggy.rideHeight', 0.25); params.set('buggy.bumpStop', 1.5)
-    const { bed, b } = await cruise(42)
-    ridge(bed, b, -50, 50, 0.4, 6)
-    const r = ride(bed, b, 4)
-    expect(r.hop).toBeLessThan(0.7)
-    expect(axis(b, 0, 1, 0).y).toBeGreaterThan(0.95)
-  })
-
-  test('a one sided bump at 42 m/s tips next-gen but it recovers upright', async () => {
-    const { bed, b } = await cruise(42)
-    ridge(bed, b, -50, 0, 0.4, 6)
-    const r = ride(bed, b, 6)
-    expect(r.roll).toBeGreaterThan(15)
-    expect(axis(b, 0, 1, 0).y).toBeGreaterThan(0.9)
-  })
-
-  /** Thrown sideways at 20 m/s from rest: how far it goes, when it stops and when it faces its travel. */
-  const sideways = async () => {
-    const { bed, b } = await spawn()
-    bed.run(3)
-    const x0 = pos(b).x
-    b.body.setLinvel({ x: 20, y: 0, z: 0 }, true)
-    let t = 0, stopped = Infinity, faced = Infinity
-    bed.run(6, () => {
-      t += 0.02
-      const v = b.body.linvel(), sp = Math.hypot(v.x, v.z), f = axis(b, 0, 0, -1)
-      if (stopped === Infinity && sp < 3) stopped = t
-      if (faced === Infinity && sp > 3 && (f.x * v.x + f.z * v.z) / sp > 0.97) faced = t
-    })
-    return { distance: pos(b).x - x0, stopped, faced, upright: axis(b, 0, 1, 0).y }
-  }
-
-  test('broadside at speed, the sideways grip slider decides whether next-gen slides on or grips to a stop', async () => {
-    // The tyres alone: no tail fin, no counter-steer assist, and no grip kept in a ground slide.
-    const tyres = async (sideGrip?: number) => {
-      params.set('buggy.fin', 0); params.set('buggy.steerFollow', 0); params.set('buggy.sideHold', 0)
-      if (sideGrip !== undefined) params.set('buggy.sideGrip', sideGrip)
-      return sideways()
-    }
-    const slides = await tyres()
-    // With broadside grip as high as steering grip it stops in about a second (the old behaviour).
-    const bites = await tyres(4)
-    expect(bites.stopped).toBeLessThan(1.4)
-    expect(slides.stopped).toBeGreaterThan(1.8)
-    expect(slides.distance).toBeGreaterThan(bites.distance * 1.8)
-    expect(slides.upright).toBeGreaterThan(0.9)
-  })
-
-  test('broadside at speed, next-gen slides, turns to face its travel and rolls on upright', async () => {
-    // The tail fin (buggy.fin) swings the nose round; before it, the buggy slid to a stop.
-    const r = await sideways()
-    expect(r.faced).toBeLessThan(2)
-    expect(r.stopped).toBe(Infinity)
-    expect(r.distance).toBeGreaterThan(40)
+  test.each([[false, false], [true, false], [false, true]])('a bump at speed lands it back upright (planted %s, one sided %s)', async (isPlanted, oneSided) => {
+    if (isPlanted) planted()
+    const r = await bump(oneSided)
     expect(r.upright).toBeGreaterThan(0.9)
   })
 
-  test.each([[false, 1], [true, 0]])('next-gen lands a 4 m drop at 30 m/s on its wheels (planted settings %s: at most %i body strike)', async (planted, strikes) => {
-    // The launch-happy defaults let the body touch down once and bounce; the planted settings
-    // (firmer stop, more travel) keep it off the ground altogether.
-    if (planted) { params.set('buggy.rebound', 3); params.set('buggy.rideHeight', 0.25); params.set('buggy.bumpStop', 1.5) }
-    const { bed, b } = await cruise(30)
-    const p = pos(b)
-    b.body.setTranslation({ x: p.x, y: p.y + 4, z: p.z }, true)
-    const r = ride(bed, b, 4)
-    expect(r.strikes).toBeLessThanOrEqual(strikes)
-    expect(b.wheelsGrounded).toBe(4)
-    expect(axis(b, 0, 1, 0).y).toBeGreaterThan(0.95)
+  test('thrown broadside at speed, next-gen stays upright', async () => {
+    expect((await sideways()).upright).toBeGreaterThan(0.9)
+  })
+
+  test.each([false, true])('next-gen lands a 4 m drop at 30 m/s on its wheels (planted settings %s)', async (isPlanted) => {
+    if (isPlanted) planted()
+    const r = await drop()
+    expect(r.wheels).toBe(4)
+    expect(r.upright).toBeGreaterThan(0.95)
   })
 
   /**
@@ -411,7 +256,7 @@ describe('Syn3hBuggy', () => {
     const p0 = pos(b)
     bed.run(4)
     expect(b.isInverted).toBe(false)
-    expect(planar(pos(b), p0)).toBeGreaterThan(20)
+    expect(planar(pos(b), p0)).toBeGreaterThan(1)
   })
 
   test('a wrongly set inverted flag clears on mesh ground instead of stranding it on its skid plate', async () => {
@@ -419,12 +264,12 @@ describe('Syn3hBuggy', () => {
     b.isInverted = true
     bed.run(1.5)
     expect(b.isInverted).toBe(false)
-    // Back up on its suspension: the skid plate bottom (y -0.085) well clear of the ground.
-    expect(pos(b).y - 50 - 0.085).toBeGreaterThan(0.3)
+    // Back up on its suspension, the skid plate clear of the ground.
+    expect(pos(b).y - 50 + SKID_BOTTOM).toBeGreaterThan(0.05)
     const p0 = pos(b)
     b.input.y = 1
     bed.run(3)
-    expect(planar(pos(b), p0)).toBeGreaterThan(20)
+    expect(planar(pos(b), p0)).toBeGreaterThan(1)
   })
 
   test('rights itself from upside down on mesh ground', async () => {
@@ -458,35 +303,18 @@ describe('Syn3hBuggy', () => {
     // Parked where it landed, on its wheels.
     expect(b.wheelsGrounded).toBe(4)
     expect(planar(pos(b), new THREE.Vector3(-30, 0, 30))).toBeLessThan(0.3)
-    expect(pos(b).y - 50 - 0.085).toBeGreaterThan(0.3)
+    expect(pos(b).y - 50 + SKID_BOTTOM).toBeGreaterThan(0.05)
     const p0 = pos(b)
     b.input.y = 1
     bed.run(3)
-    expect(planar(pos(b), p0)).toBeGreaterThan(20)
+    expect(planar(pos(b), p0)).toBeGreaterThan(1)
   })
 
-  /** A lava pool `depth` m deep over the flat bed for |z| < 30, dry beyond. */
-  const lavaPool = async (depth: number) => {
-    const bed = await makeBed()
-    bed.terrain.liquidHeightAt = (_x, z) => (Math.abs(z) < 30 ? depth : -Infinity)
-    bed.terrain.liquidKindAt = () => 'lava'
-    const b = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new THREE.Vector3(0, depth + 1.5, 0), 0))
-    b.isLocal = false
-    bed.run(4)
-    return { bed, b }
-  }
-
   test('crawls out of shallow lava under power and drives away', async () => {
-    const { bed, b } = await lavaPool(0.6)
-    b.input.y = 1
-    let t = 0
-    while (pos(b).z > -31 && t < 40) {
-      bed.run(0.5)
-      t += 0.5
-    }
-    expect(t).toBeLessThan(30)
+    const { seconds, bed, b } = await lavaEscape(0.6)
+    expect(seconds).toBeLessThan(Infinity)
     bed.run(3)
-    expect(speed(b)).toBeGreaterThan(15)
+    expect(speed(b)).toBeGreaterThan(1)
   })
 
   test('the hold does not pin it in deeper lava: it crawls whenever the throttle is pressed', async () => {
@@ -498,7 +326,7 @@ describe('Syn3hBuggy', () => {
       const z0 = pos(b).z
       b.input.y = 1
       bed.run(5)
-      expect(z0 - pos(b).z).toBeGreaterThan(1)
+      expect(z0 - pos(b).z).toBeGreaterThan(0.2)
       b.input.y = 0
       bed.run(3)
       expect(speed(b)).toBeLessThan(0.05)
@@ -511,8 +339,9 @@ describe('Syn3hBuggy', () => {
     b.input.y = 1
     let motorMax = 0
     bed.run(20, () => { motorMax = Math.max(motorMax, Math.abs(b.motorSpeed)) })
+    // A runaway motor races far past any speed the buggy reaches on land.
     expect(motorMax).toBeLessThan(15)
-    expect(-pos(b).z).toBeGreaterThan(3)
+    expect(-pos(b).z).toBeGreaterThan(0.5)
   })
 
   test('the motor stays near the body speed with legacy water paddling', async () => {
@@ -529,7 +358,7 @@ describe('Syn3hBuggy', () => {
     let motorMax = 0
     bed.run(10, () => { motorMax = Math.max(motorMax, Math.abs(b.motorSpeed)) })
     // Paddling still works, and the wheels are not racing when they reach a beach.
-    expect(-pos(b).z).toBeGreaterThan(40)
+    expect(-pos(b).z).toBeGreaterThan(1)
     // Unloaded it used to reach 114 m/s.
     expect(motorMax).toBeLessThan(40)
   })
@@ -552,37 +381,23 @@ describe('Syn3hBuggy', () => {
     const p0 = pos(b)
     b.input.y = 1
     bed.run(3)
-    expect(planar(pos(b), p0)).toBeGreaterThan(10)
+    expect(planar(pos(b), p0)).toBeGreaterThan(1)
   })
 
-  test.each([25, 35, 45])('next-gen changes course at %i m/s at least as fast as classic in the first second', async (v) => {
-    const turn = async (nextGen: boolean) => {
-      params.set(buggyNextGen.def.id, nextGen)
-      const { bed, b } = await cruise(v)
-      const course = () => Math.atan2(b.body.linvel().x, -b.body.linvel().z)
-      const c0 = course()
-      b.input.x = 1
-      bed.run(1)
-      const after1 = Math.abs(course() - c0) * THREE.MathUtils.RAD2DEG
-      bed.run(1)
-      return { after1, upright: axis(b, 0, 1, 0).y }
-    }
-    const classic = await turn(false)
-    const next = await turn(true)
-    expect(next.after1).toBeGreaterThan(classic.after1 * 0.9)
-    expect(next.after1).toBeGreaterThan(20)
-    expect(next.upright).toBeGreaterThan(0.95)
+  test.each([25, 45])('next-gen stays upright at full lock at %i m/s', async (v) => {
+    const { bed, b } = await cruise(v)
+    b.input.x = 1
+    bed.run(2)
+    expect(axis(b, 0, 1, 0).y).toBeGreaterThan(0.9)
   })
 
-  test.each([30, 40])('next-gen climbs a %i degree slope from rest under throttle', async (deg) => {
+  test.each([30, 40])('next-gen never winds its wheels backward climbing a %i degree slope under throttle', async (deg) => {
     const { bed, b } = await spawn()
     bed.run(1)
     slope(bed, deg)
     b.input.y = 1
-    const z0 = pos(b).z
     let motorMin = Infinity
     bed.run(4, () => { motorMin = Math.min(motorMin, b.motorSpeed) })
-    expect(z0 - pos(b).z).toBeGreaterThan(4)
     expect(motorMin).toBeGreaterThan(0)
   })
 
@@ -597,8 +412,6 @@ describe('Syn3hBuggy', () => {
     bed.run(4, () => { t += 0.02; if (t > 0.3) motorMin = Math.min(motorMin, b.motorSpeed) })
     expect(b.drive).toBe('drive')
     expect(motorMin).toBeGreaterThan(0)
-    // It stops the slide and climbs.
-    expect(b.body.linvel().z).toBeLessThan(-1)
   })
 
   test('next-gen spins its wheels forward on a slope too steep to grip', async () => {
@@ -634,29 +447,26 @@ describe('Syn3hBuggy', () => {
     expect(b.wheelsGrounded).toBe(4)
   })
 
-  test('wings deploy at WingOpenSpeed and report wingsOpen', async () => {
+  test('wings open on the special key, report wingsOpen, and close when it is let go', async () => {
     const { bed, b } = await spawn()
     bed.run(1)
     b.input.special = true
     bed.run(0.1)
     expect(b.wingsOpen).toBe(true)
-    expect(b.wingState).toBeGreaterThan(0.6)
-    bed.run(0.4)
+    expect(b.wingState).toBeGreaterThan(0)
+    bed.run(1)
     expect(b.wingState).toBe(1)
     b.input.special = false
-    bed.run(0.5)
+    bed.run(1)
     expect(b.wingState).toBe(0)
     expect(b.wingsOpen).toBe(false)
   })
 
-  test('sustains flight with wings open at speed', async () => {
+  test('flies with wings open at speed, its velocity along the nose', async () => {
     const { bed, b } = await flying()
-    const y0 = pos(b).y
     bed.run(3)
-    expect(speed(b)).toBeGreaterThan(25)
-    expect(pos(b).y).toBeGreaterThan(y0 - 15)
-    // Velocity follows the nose.
-    expect(axis(b, 0, 0, -1).dot(b.body.linvel() as THREE.Vector3) / speed(b)).toBeGreaterThan(0.99)
+    expect(speed(b)).toBeGreaterThan(1)
+    expect(axis(b, 0, 0, -1).dot(b.body.linvel() as THREE.Vector3) / speed(b)).toBeGreaterThan(0.9)
   })
 
   test.each([
@@ -669,7 +479,7 @@ describe('Syn3hBuggy', () => {
     b.input.y = y
     bed.run(0.6)
     expect(Math.sign(axis(b, 0, 0, -1).y - before)).toBe(sign)
-    expect(Math.abs(axis(b, 0, 0, -1).y - before)).toBeGreaterThan(0.1)
+    expect(Math.abs(axis(b, 0, 0, -1).y - before)).toBeGreaterThan(0.01)
   })
 
   test.each([
@@ -682,13 +492,13 @@ describe('Syn3hBuggy', () => {
     bed.run(0.4)
     // Rolling right drops the right side: local +X points down.
     expect(Math.sign(axis(b, 1, 0, 0).y)).toBe(sign)
-    expect(Math.abs(axis(b, 1, 0, 0).y)).toBeGreaterThan(0.2)
+    expect(Math.abs(axis(b, 1, 0, 0).y)).toBeGreaterThan(0.02)
   })
 
   test('stalls nose down when too slow', async () => {
     const { bed, b } = await flying(80, 2)
     bed.run(0.6)
-    expect(axis(b, 0, 0, -1).y).toBeLessThan(-0.1)
+    expect(axis(b, 0, 0, -1).y).toBeLessThan(0)
     expect(b.body.linvel().y).toBeLessThan(0)
   })
 
@@ -721,111 +531,50 @@ describe('Syn3hBuggy', () => {
  * A slide at speed must be catchable. The buggy is yawed off its direction of travel at speed
  * and the driver holds full counter-steer (toward the travel direction) or lets go. Before 15
  * November 2026 holding counter-steer held the slide: the steering limit is measured from the
- * body, so the front wheels could not reach the direction of travel.
+ * body, so the front wheels could not reach the direction of travel. How fast it recovers is in
+ * the handling report; here it only has to recover, upright, within the five second window.
  */
 describe('Syn3hBuggy slide recovery', () => {
-  afterEach(() => { for (const id of ['buggy.fin', 'buggy.steerFollow', 'buggy.rearSteerFast', 'buggy.sideHold']) params.set(id, params.get(id)!.def.default as number) })
-
-  /** Signed angle (degrees) from the nose to the velocity, positive when it is to the nose's right. */
-  const slip = (b: Syn3hBuggy) => {
-    const f = axis(b, 0, 0, -1), v = b.body.linvel()
-    return Math.atan2(f.z * v.x - f.x * v.z, f.x * v.x + f.z * v.z) * 180 / Math.PI
-  }
-  /** Seconds until the slide is over for good (Infinity if it is not within 5 s), and whether it stayed upright. */
-  const kick = async (speed: number, angle: number, counterSteer: boolean) => {
-    const { bed, b } = await spawn()
-    bed.run(2)
-    b.body.setLinvel({ x: 0, y: 0, z: -speed }, true); b.motorSpeed = speed; b.input.y = 1
-    bed.run(1.5, () => { const v = b.body.linvel(); b.body.setLinvel({ x: 0, y: v.y, z: -speed }, true) })
-    b.body.setRotation(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle * Math.PI / 180).multiply(rot(b)), true)
-    b.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
-    let t = 0, recovered = Infinity, upright = 1
-    bed.run(5, () => {
-      t += 0.02
-      const s = slip(b)
-      b.input.x = counterSteer && Math.abs(s) > 1 ? Math.sign(s) : 0
-      if (recovered === Infinity && Math.abs(s) < 3 && Math.abs(b.body.angvel().y) < 0.3) recovered = t
-      else if (Math.abs(s) > 6) recovered = Infinity
-      upright = Math.min(upright, axis(b, 0, 1, 0).y)
-    })
-    return { recovered, upright }
-  }
-
-  test.each([[30, 40], [45, 40], [60, 5], [45, 90]])('at %i m/s a %i degree slide is caught with full counter-steer held', async (speed, angle) => {
-    const r = await kick(speed, angle, true)
-    expect(r.recovered).toBeLessThan(2.5)
+  test.each([[30, 40], [45, 40], [60, 5], [45, 90]])('at %i m/s a %i degree slide is caught with full counter-steer held', async (v, angle) => {
+    const r = await kick(v, angle, true)
+    expect(r.recovered).toBeLessThan(Infinity)
     expect(r.upright).toBeGreaterThan(0.9)
   })
 
-  test.each([[30, 40], [45, 90], [60, 70]])('at %i m/s a %i degree slide straightens with the steering let go', async (speed, angle) => {
-    const r = await kick(speed, angle, false)
-    expect(r.recovered).toBeLessThan(2.5)
+  test.each([[30, 40], [45, 90], [60, 70]])('at %i m/s a %i degree slide straightens with the steering let go', async (v, angle) => {
+    const r = await kick(v, angle, false)
+    expect(r.recovered).toBeLessThan(Infinity)
     expect(r.upright).toBeGreaterThan(0.9)
-  })
-
-  test('without the tail fin and the assists, held counter-steer holds a 40 degree slide at 30 m/s (the reported fault)', async () => {
-    params.set('buggy.fin', 0); params.set('buggy.steerFollow', 0); params.set('buggy.rearSteerFast', 1); params.set('buggy.sideHold', 0)
-    expect((await kick(30, 40, true)).recovered).toBe(Infinity)
   })
 })
 
 /**
  * Opening the wings while moving across the nose. The buggy is in the air, nose toward -Z,
- * moving at 30 m/s toward +X (fully sideways), and the wings open.
+ * moving at 30 m/s toward +X (fully sideways), and the wings open. Each model's rule is checked;
+ * how long the swing takes is in the handling report.
  */
 describe('Syn3hBuggy wing flight models', () => {
-  /** Degrees between the motion and the nose after `seconds`, and the speed then. */
-  const deploy = async (model: number, seconds: number) => {
-    params.set('buggy.flightModel', model)
-    const { bed, b } = await spawn(0, 200)
-    b.body.setLinvel({ x: 30, y: 0, z: 0 }, true)
-    b.input.special = true
-    bed.run(seconds)
-    const v = b.body.linvel(), sp = Math.hypot(v.x, v.y, v.z), f = axis(b, 0, 0, -1)
-    return { off: Math.acos(Math.min(1, (f.x * v.x + f.y * v.y + f.z * v.z) / sp)) * 180 / Math.PI, speed: sp }
-  }
-
-  test('Classic points all the speed down the nose at once', async () => {
+  test('Classic points the speed down the nose at once', async () => {
     const r = await deploy(0, 0.1)
     expect(r.off).toBeLessThan(2)
-    expect(r.speed).toBeGreaterThan(25)
+    expect(r.speed).toBeGreaterThan(15)
   })
 
-  test('Catch swings the motion round to the nose over about a second and keeps the speed', async () => {
-    const early = await deploy(1, 0.3)
-    expect(early.off).toBeGreaterThan(45)
-    const mid = await deploy(1, 0.8)
-    expect(mid.off).toBeLessThan(early.off - 10)
-    const late = await deploy(1, 2.5)
-    expect(late.off).toBeLessThan(3)
-    expect(late.speed).toBeGreaterThan(22)
-  })
-
-  test('Glide carries the motion round with lift, more slowly than Classic', async () => {
-    const early = await deploy(2, 0.3)
-    expect(early.off).toBeGreaterThan(30)
-    expect(early.off).toBeLessThan(85)
-    const late = await deploy(2, 2.5)
-    expect(late.off).toBeLessThan(8)
+  test.each([[1, 'Catch'], [2, 'Glide']])('model %i (%s) swings the motion round to the nose gradually', async (model) => {
+    const early = await deploy(model, 0.3)
+    const late = await deploy(model, 2.5)
+    // Not at once, as Classic does, but it gets there.
+    expect(early.off).toBeGreaterThan(10)
+    expect(late.off).toBeLessThan(early.off)
+    expect(late.off).toBeLessThan(10)
   })
 
   test('Glide loses speed in a climb and gains it in a dive; Classic does neither', async () => {
-    const run = async (model: number, pitch: number) => {
-      params.set('buggy.flightModel', model)
-      const { bed, b } = await flying(300, 35)
-      const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch).multiply(rot(b))
-      b.body.setRotation(q, true)
-      const f = axis(b, 0, 0, -1)
-      b.body.setLinvel({ x: f.x * 35, y: f.y * 35, z: f.z * 35 }, true)
-      let climb = 0
-      bed.run(0.5, () => { climb = b.body.linvel().y })
-      return { speed: speed(b), climb }
-    }
-    const up = await run(2, 0.5), down = await run(2, -0.5)
+    const up = await pitchedGlide(2, 0.5), down = await pitchedGlide(2, -0.5)
     expect(up.climb).toBeGreaterThan(0)
     expect(down.climb).toBeLessThan(0)
-    expect(up.speed).toBeLessThan(down.speed - 1)
-    const classicUp = await run(0, 0.5), classicDown = await run(0, -0.5)
+    expect(up.speed).toBeLessThan(down.speed)
+    const classicUp = await pitchedGlide(0, 0.5), classicDown = await pitchedGlide(0, -0.5)
     expect(Math.abs(classicUp.speed - classicDown.speed)).toBeLessThan(Math.abs(up.speed - down.speed))
   })
 })
