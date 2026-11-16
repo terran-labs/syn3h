@@ -183,7 +183,7 @@ try {
           historyCount: snapshot.history.length, lastPoint: snapshot.history.at(-1) ?? null,
           recommendation: snapshot.recommendation })
         const context = () => ({ tick: syn3h.game.tick, frames: syn3h.game.frames, now: performance.now(),
-          paused: syn3h.game.paused, loading: q.isLoading, hidden: document.hidden, visibility: document.visibilityState,
+          paused: syn3h.game.isPaused, loading: q.isLoading, hidden: document.hidden, visibility: document.visibilityState,
           playing: syn3h.shell.playing, shellClasses: document.querySelector('.syn3h-shell')?.className ?? null,
           ignore: sessionStorage.getItem('syn3h.performance.ignore'), performance: scalar(q.getPerformanceSnapshot()) })
         trace.installation = observe('installation snapshot', context)

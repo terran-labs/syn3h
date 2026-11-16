@@ -68,3 +68,5 @@ Success records a final snapshot and persists it before restoration. Failure ind
 The50ms stimulus,600-substitution cap, single original15-second recommendation predicate, native controls, overall240-second budget and final drain limits are unchanged. Policy still requires stable level:rung:auto:targetFps and sufficient eligible slow windows;200 eligible50ms samples are sufficient only under the stated stable-key, strict slow-threshold and nonignored conditions. No eligibility override, extra wait, forced recommendation or product repair is added. Instrumentation timing cannot prove the historical runtime003 cause.
 
 Source preparation only. Syntax and whitespace checks may run; browser validation requires separate source review and allocation. Launcher pins have not been updated.
+
+The pause snapshot uses Game.isPaused, the public getter. subscribePerformance is public subscription observation, but it also calls syncLegacyHud when subscribing and unsubscribing. It is not guaranteed to have zero UI side effects; the fixture makes no such claim.
