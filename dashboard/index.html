@@ -156,7 +156,7 @@
     </section>
 
     <section class="card">
-      <h2>Documentation</h2>
+      <h2>Ideas and documentation</h2>
       <div class="tabs" id="tabs"></div>
       <div class="doc" id="doc"></div>
     </section>
@@ -242,7 +242,8 @@ async function refresh() {
     if (!$('tabs').children.length) {
       $('tabs').innerHTML = (s.docs ?? []).map((d) => `<button data-id="${esc(d.id)}">${esc(d.title)}</button>`).join('')
       $('tabs').onclick = (e) => { if (e.target.dataset.id) loadDoc(e.target.dataset.id) }
-      if (s.docs?.length) loadDoc(s.docs[0].id)
+      const requested = new URLSearchParams(location.search).get('doc')
+      if (s.docs?.length) loadDoc(s.docs.find(d => d.id === requested)?.id ?? s.docs[0].id)
     }
   } catch (e) { $('updated').textContent = 'offline, retrying' }
 }
