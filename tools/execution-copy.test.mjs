@@ -92,3 +92,22 @@ test('original source and state root are still checked after preparation',async 
   fs.rmdirSync(s.state); fs.symlinkSync(s.source,s.state)
   assert.throws(()=>verifyExecutionCopy(s))
 })
+
+test('mode changes on copied files and original directories invalidate verification',async t=>{
+  for(const original of [false,true]) {
+    const f=fixture(t),r=await prepareExecutionCopy(await inputs(f))
+    const target=original?path.join(r.source,'dist/empty'):path.join(r.project,'dist/app.js')
+    const mode=fs.statSync(target).mode&0o777
+    fs.chmodSync(target,mode^0o100)
+    assert.throws(()=>verifyExecutionCopy(r))
+  }
+})
+test('state links below its root and forged spread receipts are rejected',async t=>{
+  for(const kind of ['symlink','hardlink']) {
+    const f=fixture(t),r=await prepareExecutionCopy(await inputs(f))
+    assert.throws(()=>verifyExecutionCopy({...r}))
+    if(kind==='symlink') fs.symlinkSync(r.project,path.join(r.state,'link'))
+    else fs.linkSync(path.join(r.project,'dist/app.js'),path.join(r.state,'alias'))
+    assert.throws(()=>verifyExecutionCopy(r))
+  }
+})
