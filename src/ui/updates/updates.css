@@ -36,33 +36,31 @@
 .syn3h-shell.exploration-ui .update-table :is(th, td) { padding: 6px 10px; border-bottom: 1px solid var(--s3-line); text-align: left; vertical-align: top; }
 .syn3h-shell.exploration-ui .update-table th { color: var(--s3-ink); font-weight: 500; }
 
-/* The lobby banner: the build banner's glass pill, set in the galaxy footer's flow above the
- * hint and the lobby links (Shell places it there), so it covers neither and goes with the
- * galaxy when a panel opens or play starts. One slim row on a desktop. */
-.syn3h-shell.exploration-ui .galaxy-ui > .build-banner.update-banner { position: static; left: auto; bottom: auto; transform: none; display: flex; align-items: center; gap: 6px 14px; flex-wrap: nowrap; width: max-content; max-width: min(760px, calc(100vw - 24px)); min-height: 0; margin: 0 0 10px; padding: 4px 4px 4px 20px; white-space: normal; cursor: default; text-align: left; }
+/* The lobby banner: one slim line in the build banner's glass, just under the wordmark. Shell
+ * sets its top from the wordmark and the galaxy keeps that band clear of worlds and labels
+ * (Shell.updateBand). It lives in the galaxy layer, so it goes with the galaxy. */
+.syn3h-shell.exploration-ui .galaxy-ui > .build-banner.update-banner { position: absolute; top: 120px; left: 50%; bottom: auto; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; flex-wrap: nowrap; box-sizing: border-box; width: max-content; max-width: min(760px, calc(100vw - 24px)); min-height: 0; margin: 0; padding: 0 0 0 20px; white-space: nowrap; cursor: default; text-align: left; }
 .syn3h-shell.exploration-ui .build-banner.update-banner[hidden], .syn3h-shell.exploration-ui.is-playing .build-banner.update-banner,
 .syn3h-shell.exploration-ui:has(.lobby-panels:not([hidden])) .build-banner.update-banner { display: none; }
-.syn3h-shell.exploration-ui .update-banner-text { display: flex; align-items: baseline; gap: 4px 12px; min-width: 0; flex: 1 1 auto; }
+.syn3h-shell.exploration-ui .update-banner-text { display: flex; align-items: baseline; gap: 12px; min-width: 0; flex: 1 1 auto; }
 .syn3h-shell.exploration-ui .update-banner-text strong { flex: 0 0 auto; font-weight: 500; letter-spacing: .04em; }
-.syn3h-shell.exploration-ui .update-banner-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgb(220 236 248 / .8); font-size: 13px; line-height: 1.35; }
+.syn3h-shell.exploration-ui .update-banner-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: rgb(220 236 248 / .8); font-size: 13px; }
 .syn3h-shell.exploration-ui .update-banner-summary:empty { display: none; }
-.syn3h-shell.exploration-ui .update-banner-actions { display: flex; gap: 6px; flex: 0 0 auto; }
-.syn3h-shell.exploration-ui .update-banner-actions button { min-height: 44px; min-width: 44px; margin: 0; padding: 6px 16px; border: 1px solid rgb(205 240 255 / .4); border-radius: 999px; background: rgb(143 227 255 / .08); color: #f3fbff; font: 500 13.5px/1.2 'Barlow', sans-serif; letter-spacing: .03em; white-space: nowrap; cursor: pointer; }
-.syn3h-shell.exploration-ui .update-banner-actions .update-reload { background: rgb(143 227 255 / .2); border-color: rgb(205 240 255 / .7); }
-.syn3h-shell.exploration-ui .update-banner-actions .update-dismiss { padding: 0; font-size: 20px; }
-.syn3h-shell.exploration-ui .update-banner-actions button:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 2px; }
-@media (max-width: 760px) {
-  .syn3h-shell.exploration-ui .galaxy-ui > .build-banner.update-banner { flex-wrap: wrap; border-radius: 18px; padding: 8px 8px 8px 16px; }
-  .syn3h-shell.exploration-ui .update-banner-text { display: grid; gap: 2px; }
-  .syn3h-shell.exploration-ui .update-banner-summary { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-  .syn3h-shell.exploration-ui .update-banner-actions { width: 100%; }
-  .syn3h-shell.exploration-ui .update-banner-actions :is(.update-reload, .update-whatsnew) { flex: 1; }
-}
-/* In landscape on a phone there is little height: one row, no summary. */
-@media (max-height: 550px) {
-  .syn3h-shell.exploration-ui .galaxy-ui > .build-banner.update-banner { flex-wrap: nowrap; }
+.syn3h-shell.exploration-ui .update-banner-actions { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; }
+.syn3h-shell.exploration-ui .update-banner-actions button { min-height: 44px; min-width: 44px; margin: 0; padding: 0 14px; border: 0; border-radius: 999px; background: none; box-shadow: none; color: #f3fbff; font: 500 13.5px/1.2 'Barlow', sans-serif; letter-spacing: .03em; white-space: nowrap; cursor: pointer; }
+.syn3h-shell.exploration-ui .update-banner-actions .update-reload { background: rgb(143 227 255 / .16); }
+.syn3h-shell.exploration-ui .update-banner-actions .update-whatsnew { color: var(--s3-accent-2); text-decoration: underline; text-underline-offset: 4px; }
+.syn3h-shell.exploration-ui .update-banner-actions .update-dismiss { padding: 0; font-size: 18px; color: rgb(220 236 248 / .75); }
+.syn3h-shell.exploration-ui .update-banner-actions button:hover { background: rgb(143 227 255 / .12); }
+.syn3h-shell.exploration-ui .update-banner-actions button:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: -2px; }
+/* Narrow or short screens: version, Reload, What's new and close, no summary, one row. */
+@media (max-width: 900px), (max-height: 550px) {
   .syn3h-shell.exploration-ui .update-banner-summary { display: none; }
-  .syn3h-shell.exploration-ui .update-banner-actions { width: auto; }
+}
+@media (max-width: 600px) {
+  .syn3h-shell.exploration-ui .galaxy-ui > .build-banner.update-banner { padding-left: 16px; gap: 4px; }
+  .syn3h-shell.exploration-ui .update-banner-label:has(+ .update-banner-version:not(:empty)) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .syn3h-shell.exploration-ui .update-banner-actions button { padding: 0 10px; }
 }
 /* The dev server's own rebuild pill is replaced by the banner in the lobby. */
 body.has-game-shell:has(.syn3h-shell:not(.is-playing)) #syn3h-build-notice { display: none; }
@@ -74,10 +72,14 @@ body.has-game-shell:has(.syn3h-shell:not(.is-playing)) #syn3h-build-notice { dis
 .syn3h-shell.exploration-ui .rail-update { display: block; width: 100%; min-height: 44px; margin: 6px 0 0; padding: 6px 12px; border: 1px solid var(--s3-line); border-radius: 999px; background: rgb(143 227 255 / .08); color: var(--s3-accent-2); font: 500 12.5px/1.2 'Barlow', sans-serif; letter-spacing: .04em; cursor: pointer; }
 .syn3h-shell.exploration-ui .rail-update[hidden] { display: none; }
 
-/* A phone in landscape leaves the lobby panel little height: spend less of it on the heading
- * and the tabs, so the list itself shows. */
+/* A phone in landscape: the lobby About is a full-height sheet, as the in-play guide is,
+ * rather than a strip between the wordmark and the buttons. */
 @media (max-height: 550px) {
-  html body .syn3h-shell.exploration-ui .lobby-panels > [data-panel="about"] { padding-top: 14px; }
+  html body .syn3h-shell.exploration-ui .lobby-panels:has(> [data-panel="about"]:not([hidden])) { position: fixed; inset: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); z-index: 40; width: auto; max-width: none; height: auto; max-height: none; margin: 0; transform: none; overflow: auto; overscroll-behavior: contain; }
+  html body .syn3h-shell.exploration-ui:is([data-glass], *) .lobby-panels:has(> [data-panel="about"]:not([hidden])) { background: rgb(3 7 12); }
+  /* The sheet covers the lobby: its links, build line and wordmark step aside meanwhile. */
+  html body .syn3h-shell.exploration-ui:has(.lobby-panels > [data-panel="about"]:not([hidden])) :is(.lobby-brand, .lobby-links, .build-line, .galaxy-ui) { visibility: hidden; }
+  html body .syn3h-shell.exploration-ui .lobby-panels > [data-panel="about"] { max-height: none; padding-top: 14px; }
   html body .syn3h-shell.exploration-ui .lobby-panels > [data-panel="about"] h2 { margin-bottom: 6px; }
   html body .syn3h-shell.exploration-ui .about-tabs { margin-bottom: 10px; }
 }

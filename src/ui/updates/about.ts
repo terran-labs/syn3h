@@ -5,7 +5,7 @@
  */
 import { creditsHtml } from '../data/credits'
 import { loadFeed, pinnedVersion, runningVersion, type Release } from './feed'
-import { renderMarkdown } from './markdown'
+import { renderMarkdown, safeHref } from './markdown'
 import { isNewer } from './version'
 import './updates.css'
 
@@ -101,9 +101,19 @@ export async function fillUpdates(host: HTMLElement): Promise<void> {
     summary.append(head)
     if (release.summary) summary.append(text('span', release.summary, 'update-summary'))
     details.append(summary)
-    // Notes are built on first open; the newest release starts open.
+    // What players will notice (the digest), then the published notes on GitHub. Built on
+    // first open; the newest release starts open.
     const body = document.createElement('div'); body.className = 'update-notes'
-    const fill = () => { if (!body.childElementCount) body.append(renderMarkdown(release.notes)) }
+    const fill = () => {
+      if (body.childElementCount) return
+      if (release.digest) body.append(renderMarkdown(release.digest))
+      const href = safeHref(release.url ?? '')
+      if (href) {
+        const link = document.createElement('a'); link.className = 'update-full'; link.href = href; link.target = '_blank'; link.rel = 'noopener noreferrer'
+        link.textContent = 'Full release notes'; link.setAttribute('aria-label', `Full release notes for v${release.version}, on GitHub`)
+        body.append(link)
+      }
+    }
     details.addEventListener('toggle', () => { if (details.open) fill() })
     details.append(body)
     if (index === 0) { details.open = true; fill() }

@@ -249,10 +249,10 @@ export class Shell implements System {
     for (const about of this.element.querySelectorAll<HTMLElement>('[data-panel="about"], .in-play-about')) wireAbout(about, signal)
     // A newer live version: a banner in the lobby, a chip in the sidebar in play. What's new
     // opens About at Updates wherever the player is.
-    this.updateNotice = new UpdateNotice(() => this.showUpdates(), signal)
-    // In the galaxy's footer flow, above the hint and the lobby links, so it covers neither
-    // and leaves with the galaxy when a panel opens or play starts.
-    this.element.querySelector('.galaxy-hint')!.before(this.updateNotice.banner)
+    this.updateNotice = new UpdateNotice(() => this.showUpdates(), signal, () => { this.updateBand() })
+    // With the galaxy, so it goes when a panel opens, play starts or the descent begins. It
+    // sits just under the wordmark, and the galaxy leaves it that band (updateBand).
+    this.element.querySelector('.galaxy-ui')!.prepend(this.updateNotice.banner)
     command.append(this.updateNotice.chip)
     this.element.querySelector('.pause-about')!.addEventListener('click', () => this.openAbout(), { signal })
     const guide = this.element.querySelector<HTMLDialogElement>('.in-play-about')!
@@ -398,6 +398,21 @@ export class Shell implements System {
    * held keys, so a key still down when the guide closes does nothing until pressed again.
    */
   readonly updateNotice: UpdateNotice
+  private bandTop = ''
+  /**
+   * Place the update banner just under the wordmark and return the height the galaxy keeps
+   * clear for it, so no world or label sits under it. Measured against the wordmark rather
+   * than the lobby buttons, so a moved wordmark or button row carries it along. 0 when the
+   * banner is not on screen.
+   */
+  private updateBand(): number {
+    const banner = this.updateNotice?.banner
+    if (!banner || banner.hidden || !this.menuVisible && this.started || banner.offsetParent === null) return 0
+    const logo = this.element.querySelector('.shell-logo')!.getBoundingClientRect(), host = banner.offsetParent.getBoundingClientRect()
+    const top = `${Math.round(logo.bottom - host.top + 10)}px`
+    if (top !== this.bandTop) { this.bandTop = top; banner.style.top = top }
+    return banner.offsetHeight + 20
+  }
   /** About at Updates: the in-play guide while playing, else the lobby About panel. */
   showUpdates(): void {
     if (this.playing) { this.openAbout('updates'); return }
@@ -1101,6 +1116,7 @@ export class Shell implements System {
         }
       },
       onLogo: drawn => this.element.classList.toggle('has-animated-logo', drawn),
+      topInset: () => this.updateBand(),
       still: () => levelNumber(graphicsLevel.value) === 0,
       onTap: chosen => this.tapWorld(chosen),
       onFocus: id => chips.get(id)?.focus({ preventScroll: true }),

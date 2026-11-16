@@ -14,7 +14,8 @@ import { bareVersion, isNewer, latestVersion } from './version'
 
 declare const __SYN3H_BUILD__: string | undefined
 
-export interface Release { version: string; date: string; summary: string; notes: string }
+/** One release: its player digest ("- " bullets, '' when it has none) and its full notes on GitHub. */
+export interface Release { version: string; date: string; summary: string; digest: string; url: string }
 
 export const FEED_URL = '/releases.json'
 export const VERSIONS_URL = '/v/versions.json'
@@ -39,7 +40,7 @@ export function loadFeed(): Promise<Release[]> {
   feed ??= rootFetch(FEED_URL)
     .then(response => { if (!response.ok) throw new Error(`HTTP ${response.status}`); return response.json() })
     .then((body: { releases?: unknown }) => (Array.isArray(body.releases) ? body.releases : []).filter((r): r is Release =>
-      typeof r === 'object' && r !== null && bareVersion((r as Release).version) !== null && typeof (r as Release).notes === 'string'))
+      typeof r === 'object' && r !== null && bareVersion((r as Release).version) !== null && typeof (r as Release).summary === 'string'))
   feed.catch(() => { feed = undefined })
   return feed
 }

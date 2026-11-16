@@ -13,12 +13,21 @@ import { mkdir } from 'node:fs/promises'
 const out = 'tests/ui/artifacts/about-updates'
 await mkdir(out, { recursive: true })
 const RUNNING = '26.11.1601', LIVE = '26.11.1602'
-/** The banner must cover none of the lobby's own controls or its wordmark. */
+/** What the banner covers: the wordmark, hint and lobby buttons, any planet label or planet. */
 const overlaps = page => page.evaluate(() => {
   const banner = document.querySelector('.update-banner').getBoundingClientRect()
   const hit = r => r.width && r.height && r.left < banner.right && banner.left < r.right && r.top < banner.bottom && banner.top < r.bottom
-  return [...document.querySelectorAll('.shell-logo, .galaxy-hint, .galaxy-links button, #syn3h-build-notice')]
-    .filter(el => getComputedStyle(el).display !== 'none' && hit(el.getBoundingClientRect())).map(el => el.className.baseVal ?? el.className ?? el.id)
+  const shown = el => getComputedStyle(el).display !== 'none' && getComputedStyle(el).visibility !== 'hidden'
+  const found = [...document.querySelectorAll('.shell-logo, .galaxy-hint, .lobby-links button, .galaxy-labels > *, #syn3h-build-notice')]
+    .filter(el => shown(el) && hit(el.getBoundingClientRect())).map(el => el.textContent.trim() || el.className.baseVal || el.className)
+  // Planets: the galaxy's own screen circles, in the overlay's coordinates.
+  const host = document.querySelector('.galaxy-ui').getBoundingClientRect()
+  for (const p of syn3h.shell.galaxy?.screen ?? []) {
+    if (!p.visible) continue
+    const x = host.left + p.x, y = host.top + p.y, nx = Math.max(banner.left, Math.min(x, banner.right)), ny = Math.max(banner.top, Math.min(y, banner.bottom))
+    if (Math.hypot(x - nx, y - ny) < p.radius) found.push(`planet ${p.id}`)
+  }
+  return found
 })
 const live = route => route.fulfill({ contentType: 'application/json', body: JSON.stringify({ versions: ['26.11.1600', RUNNING, LIVE] }) })
 
@@ -38,8 +47,10 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     // The lobby banner: the newer version, its summary, Reload and What's new.
     const banner = page.locator('.update-banner')
     await banner.waitFor({ state: 'visible', timeout: 20000 })
-    assert.match(await banner.locator('strong').innerText(), new RegExp(`Update available: v${LIVE.replaceAll('.', '\\.')}`))
-    await page.waitForFunction(() => document.querySelector('.update-banner-summary')?.textContent)
+    assert.equal(await banner.locator('strong').textContent(), `Update available · v${LIVE}`)
+    if (mode === 'desktop') await page.waitForFunction(() => document.querySelector('.update-banner-summary')?.textContent)
+    assert.ok((await banner.boundingBox()).height <= 50, `${mode}: the banner is one slim row`)
+    await page.waitForTimeout(1500) // the galaxy eases down to leave the banner its band
     assert.equal(await banner.getByRole('button', { name: 'Reload' }).count(), 1)
     assert.equal(await banner.getByRole('button', { name: 'What’s new' }).count(), 1)
     for (const button of await banner.locator('button').all()) assert.ok((await button.boundingBox()).height >= 44, 'banner buttons are full tap targets')
@@ -57,18 +68,23 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     assert.equal(await first.getAttribute('data-version'), LIVE)
     assert.ok(await first.evaluate(d => d.open), 'the newest release starts open')
     assert.equal(await first.locator('.update-badge.is-new').innerText(), 'NEW')
-    assert.ok(await first.locator('.update-notes h4').count() > 0, 'its notes are rendered with headings')
+    assert.ok(await first.locator('.update-notes li').count() >= 2, 'the player digest shows as bullets')
+    assert.equal(await first.locator('.update-full').getAttribute('href'), `https://github.com/terran-labs/syn3h/releases/tag/v${LIVE}`)
     assert.equal(await first.locator('.update-notes script, .update-notes [onerror]').count(), 0)
     const links = await first.locator('.update-notes a').evaluateAll(as => as.map(a => [a.target, a.rel, a.protocol]))
     for (const [target, rel, protocol] of links) { assert.equal(target, '_blank'); assert.match(rel, /noopener/); assert.match(protocol, /^https?:$/) }
     const mine = about.locator(`.update-release[data-version="${RUNNING}"]`)
     assert.match(await mine.locator('.update-badge').innerText(), /playing this/i)
     await page.waitForFunction(() => document.querySelector('.lobby-panels').dataset.busy === 'false' && !document.querySelector('.lobby-panels').getAnimations({ subtree: true }).some(a => a.playState === 'running'))
+    if (mode === 'landscape') {
+      const sheet = await page.locator('.lobby-panels').boundingBox()
+      assert.ok(sheet.height >= page.viewportSize().height - 40, `landscape: About is a full-height sheet (${sheet.height}px)`)
+    }
     await page.screenshot({ path: `${out}/${mode}-updates.png` })
     if (!touch) {
       await first.locator('summary').click() // close the newest
       await mine.locator('summary').click()
-      await mine.locator('.update-notes p').first().waitFor()
+      await mine.locator('.update-notes li').first().waitFor()
       await mine.scrollIntoViewIfNeeded()
       await page.screenshot({ path: `${out}/desktop-release-expanded.png` })
     }
@@ -131,6 +147,7 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     await dev.locator('.update-banner').waitFor({ state: 'visible' })
     assert.equal(await dev.locator('.update-banner strong').innerText(), 'New build available')
     assert.ok(await dev.locator('#syn3h-build-notice').isHidden(), 'the old pill does not show in the lobby')
+    await dev.waitForTimeout(1500) // the galaxy eases down to leave the banner its band
     assert.deepEqual(await overlaps(dev), [])
     console.log('dev rebuild ok')
   } finally { await browser.close() }
