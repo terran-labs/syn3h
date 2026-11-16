@@ -223,6 +223,7 @@ function validateInternal(input, expected) {
 
 /** Malformed submissions produce a nonpassing result rather than crashing a release gate. */
 export function validateEvidence(input, expected) {
+  if (input?.schemaVersion === 2) return { valid: false, issues: [{ code: 'unsupported-observations', path: '$', message: 'V2 structural checks cannot qualify measurements; semantic observation validation is not implemented' }] }
   try { return validateInternal(input, expected) }
   catch (error) { return { valid: false, issues: [{ code: 'schema', path: '$', message: error.message }] } }
 }
