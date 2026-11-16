@@ -33,7 +33,7 @@ export interface Basin {
   waves?: 'sea' | 'inland'
 }
 
-export interface Sample { yaw: number; t: number; x: number; y: number; z: number; speed: number; pitch: number; roll: number; depth: number; up: number }
+export interface Sample { vy: number; yaw: number; t: number; x: number; y: number; z: number; speed: number; pitch: number; roll: number; depth: number; up: number }
 export interface Run { clock: { t: number }; h: ReturnType<typeof harness>; v: Vehicle; basin: Basin; trace: Sample[]; ground: (z: number) => number }
 
 const tmpQ = new THREE.Quaternion(), tmpV = new THREE.Vector3()
@@ -43,18 +43,18 @@ export function groundOf(b: Basin): (z: number) => number {
   return (z) => Math.min(bank, Math.max(-b.depth, Math.max(z, -b.length - z) * t))
 }
 
-/** A basin bed: a trimesh strip along z and the matching terrain callbacks. */
+/** A basin bed: a heightfield strip along z and the matching terrain callbacks. */
 export function basinBed(b: Basin) {
   const h = harness(9.81, false)
   const g = groundOf(b)
-  const z0 = -b.length - 120, z1 = 120, step = 0.25, rows = Math.round((z1 - z0) / step) + 1
-  const verts = new Float32Array(rows * 2 * 3), idx = new Uint32Array((rows - 1) * 6)
-  for (let i = 0; i < rows; i++) {
-    const z = z0 + i * step, y = g(z)
-    verts.set([-80, y, z, 80, y, z], i * 6)
-    if (i < rows - 1) idx.set([2 * i, 2 * i + 2, 2 * i + 1, 2 * i + 1, 2 * i + 2, 2 * i + 3], i * 6)
-  }
-  h.world.createCollider(RAPIER.ColliderDesc.trimesh(verts, idx).setFriction(1).setCollisionGroups(groups(GROUP_TERRAIN, GROUP_ALL)))
+  // A heightfield, as the game's terrain is: rows along z every 0.25 m, four cells across x.
+  const z0 = -b.length - 120, z1 = 120, rows = Math.round((z1 - z0) / 0.25), cols = 4
+  const heights = new Float32Array((rows + 1) * (cols + 1))
+  for (let i = 0; i <= rows; i++) for (let j = 0; j <= cols; j++) heights[i + j * (rows + 1)] = g(z0 + ((z1 - z0) * i) / rows)
+  h.world.createCollider(
+    RAPIER.ColliderDesc.heightfield(rows, cols, heights, { x: 160, y: 1, z: z1 - z0 })
+      .setTranslation(0, 0, (z0 + z1) / 2).setFriction(1).setCollisionGroups(groups(GROUP_TERRAIN, GROUP_ALL)),
+  )
   h.world.step()
   const wet = (z: number) => g(z) < 0
   const clock = { t: 0 }
@@ -100,7 +100,7 @@ export function pitchRoll(v: Vehicle) {
 function sample(run: Run, t: number): Sample {
   const p = run.v.body.translation(), l = run.v.body.linvel(), a = pitchRoll(run.v)
   const s = run.h.terrain.liquidHeightAt!(p.x, p.z)
-  return { yaw: a.yaw, t, x: p.x, y: p.y, z: p.z, speed: Math.hypot(l.x, l.z), pitch: a.pitch, roll: a.roll, up: a.up, depth: Number.isFinite(s) ? s - p.y : 0 }
+  return { vy: l.y, yaw: a.yaw, t, x: p.x, y: p.y, z: p.z, speed: Math.hypot(l.x, l.z), pitch: a.pitch, roll: a.roll, up: a.up, depth: Number.isFinite(s) ? s - p.y : 0 }
 }
 
 /** Step `seconds`, recording every step, stopping early when `until` returns true. */
@@ -192,4 +192,45 @@ export function table(run: Run, every = 0.5): string {
     rows.push(`${s.t.toFixed(1).padStart(5)} ${s.z.toFixed(1).padStart(6)} ${s.y.toFixed(2).padStart(6)} ${s.depth.toFixed(2).padStart(6)} ${s.speed.toFixed(1).padStart(6)} ${s.pitch.toFixed(1).padStart(6)} ${s.roll.toFixed(1).padStart(6)} ${s.yaw.toFixed(0).padStart(6)}`)
   }
   return rows.join('\n')
+}
+
+export interface Ascent { surfaced: number | null; peakPitchRate: number; peakRollRate: number; breach: number; settledY: number; settled: boolean; minUp: number; finalUp: number; drift: number }
+
+/**
+ * Wings opened at the bottom of a `depth` m pool of `liquid`, starting at the given attitude
+ * (degrees of pitch and roll) and velocity along the nose. Seconds to reach the surface, peak
+ * pitch and roll rates on the way up, the highest the body's centre rises above the surface,
+ * and whether it ends floating upright and still at the surface.
+ */
+export function wingAscent(liquid: Liquid, depth = 3, pitch = 0, roll = 0, speed = 0, seconds = 20, wings = true): Ascent & { run: Run } {
+  const { h, g, clock } = basinBed({ liquid, length: 400, depth, slope: 15 })
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch * THREE.MathUtils.DEG2RAD, 0, roll * THREE.MathUtils.DEG2RAD, 'YXZ'))
+  // Start clear of the bed whatever the attitude: a pitched or rolled hull reaches further down.
+  const reach = 1.8 * Math.max(Math.abs(Math.sin(pitch * THREE.MathUtils.DEG2RAD)), Math.abs(Math.sin(roll * THREE.MathUtils.DEG2RAD)))
+  const v = makeVehicle('buggy', h, new THREE.Vector3(0, -depth + 1.1 + reach, -200)) as Syn3hBuggy
+  v.body.setRotation(q, true)
+  const f = new THREE.Vector3(0, 0, -1).applyQuaternion(q).multiplyScalar(speed)
+  v.body.setLinvel({ x: f.x, y: f.y, z: f.z }, true)
+  if (wings) { v.input.special = true; v.wingState = 1; v.areWingsOpen = true }
+  const run: Run = { clock, h, v, basin: { liquid, length: 400, depth, slope: 15 }, trace: [], ground: g }
+  let surfaced: number | null = null, pr = 0, rr = 0, breach = -Infinity, minUp = 1
+  const tmp = new THREE.Quaternion()
+  advance(run, seconds, (s) => {
+    const r = v.body.rotation(), w = v.body.angvel()
+    tmp.set(r.x, r.y, r.z, r.w).invert()
+    const lw = new THREE.Vector3(w.x, w.y, w.z).applyQuaternion(tmp)
+    if (surfaced === null) { pr = Math.max(pr, Math.abs(lw.x)); rr = Math.max(rr, Math.abs(lw.z)) }
+    if (surfaced === null && s.y > -0.4) surfaced = s.t
+    if (surfaced !== null) breach = Math.max(breach, s.y)
+    minUp = Math.min(minUp, s.up)
+    return false
+  })
+  const tail = run.trace.filter((s) => s.t > run.clock.t - 3)
+  const ys = tail.map((s) => s.y)
+  const last = run.trace[run.trace.length - 1]
+  const settled = Math.max(...ys) - Math.min(...ys) < 0.3 && Math.abs(last.y) < 0.8 && last.up > 0.7
+  return {
+    run, surfaced, peakPitchRate: pr * THREE.MathUtils.RAD2DEG, peakRollRate: rr * THREE.MathUtils.RAD2DEG, breach,
+    settledY: last.y, settled, minUp, finalUp: last.up, drift: Math.hypot(last.x, last.z + 200),
+  }
 }

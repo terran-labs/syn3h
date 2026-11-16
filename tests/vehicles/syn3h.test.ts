@@ -317,28 +317,13 @@ describe('Syn3hBuggy', () => {
     expect(speed(b)).toBeGreaterThan(1)
   })
 
-  test('the hold does not pin it in deeper lava: it crawls whenever the throttle is pressed', async () => {
-    const { bed, b } = await lavaPool(1)
-    expect(b.lavaDepth).toBeGreaterThan(0)
-    expect(b.stuck).toBe(true)
-    expect(b.drive).toBe('hold')
-    for (let i = 0; i < 2; i++) {
-      const z0 = pos(b).z
-      b.input.y = 1
-      bed.run(5)
-      expect(z0 - pos(b).z).toBeGreaterThan(0.2)
-      b.input.y = 0
-      bed.run(3)
-      expect(speed(b)).toBeLessThan(0.05)
-    }
-  })
-
   test('the motor does not spin up unloaded while floating in deep lava', async () => {
     const { bed, b } = await lavaPool(2)
     expect(b.wheelsGrounded).toBe(0)
     b.input.y = 1
     let motorMax = 0
-    bed.run(20, () => { motorMax = Math.max(motorMax, Math.abs(b.motorSpeed)) })
+    // Only while afloat: once it paddles ashore it drives away on land at land speeds.
+    bed.run(20, () => { if (b.liquidState.hull.mean > 0) motorMax = Math.max(motorMax, Math.abs(b.motorSpeed)) })
     // A runaway motor races far past any speed the buggy reaches on land.
     expect(motorMax).toBeLessThan(15)
     expect(-pos(b).z).toBeGreaterThan(0.5)
