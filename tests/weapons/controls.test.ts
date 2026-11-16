@@ -2,6 +2,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import * as THREE from 'three/webgpu'
 import { params } from '../../shared/params'
 import type { Game } from '../../src/core/Game'
+import { Input } from '../../src/core/Input'
 import { RAPIER, createWorld, initPhysics } from '../../src/core/physics'
 import { BigRed } from '../../src/weapons/BigRed'
 import { GEAR_DESCRIPTIONS, GEAR_LABELS, GearRack, type GearControls, type GearId } from '../../src/weapons/Gear'
@@ -21,7 +22,7 @@ afterEach(() => {
 const noTarget = { addEventListener() {} } as unknown as Window
 
 /** The player at the origin facing -z, and another vehicle (id 3) ten metres ahead. */
-function setup() {
+function setup(realInput = false) {
   const world = createWorld(0)
   const make = (z: number) => {
     const body = world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(0, 5, z))
@@ -36,7 +37,7 @@ function setup() {
   // Contract double for the separately owned Input API. These tests exercise Gear;
   // native source sampling and UI identity retention require composition coverage.
   const owners = new Map<object | symbol, boolean>()
-  const input = {
+  const contractInput = {
     suspended: false, state: { fire: false }, external: {} as { fire?: boolean },
     beginExternalFire(owner: object | symbol) {
       if (!owners.has(owner)) owners.set(owner, this.suspended)
@@ -48,6 +49,8 @@ function setup() {
       owners.set(owner, true); refresh()
     },
   }
+  if (realInput) vi.stubGlobal('navigator', { getGamepads: () => [] })
+  const input = realInput ? new Input(noTarget) : contractInput
   const refresh = () => {
     input.external.fire = [...owners.values()].some(blocked => !blocked)
     input.state.fire = !input.suspended && input.external.fire
@@ -218,7 +221,9 @@ describe('gear controls', () => {
       expect(held.state).toBe('holding')
       expect(held.status).toBe('Holding Bot 3')
       expect(held.level).toBe(1)
-      expect(ids(held)).toEqual(['fling'])
+      expect(ids(held)).toEqual(['grab', 'fling'])
+      expect(held.actions[0].hold).toBe(true)
+      expect(held.actions[1].hold).toBe(false)
       idle.actions[0].stop!()
       s.input.state.fire = Boolean(s.input.external.fire)
       s.step()
@@ -245,8 +250,14 @@ describe('gear controls', () => {
       expect(ready.state).toBe('ready')
       expect(ready.level).toBe(1)
       expect(ready.actions.map(a => a.hold)).toEqual([true])
-      ready.actions[0].stop!()
+      expect(ids(ready)).toEqual(['charge'])
+      ready.actions[0].stop!() // This presentation closure did not acquire the gesture.
+      expect(s.input.external.fire).toBe(true)
+      idle.actions[0].stop!() // End the exact action captured on press.
       expect(s.input.external.fire).toBe(false)
+      expect(s.input.state.fire).toBe(false)
+      s.step()
+      expect(s.bigRed.stats).toEqual({ sent: 1, fizzled: 0 })
     } finally { s.close() }
   })
 
@@ -305,7 +316,7 @@ describe('modal gear cancellation', () => {
       const grab = s.rack.controls().actions[0]
       grab.start(); s.input.state.fire = true; s.step()
       expect(s.yoink.holding).toBe(3)
-      const fling = s.rack.controls().actions[0]
+      const fling = s.rack.controls().actions.find(a => a.id === 'fling')!
       s.rack.cancelActions(() => {})
       grab.stop!(); fling.start(); s.step()
       expect(s.yoink.holding).toBeNull()
@@ -321,20 +332,32 @@ describe('modal gear cancellation', () => {
     try {
       s.bind(); s.rack.select('bungee')
       const launch = s.rack.controls().actions[0]
-      launch.start()
-      expect(s.bungee.mine).toBeDefined()
       s.bungee.applyRemote(3, { s: 'on', at: [0, 0, -14], n: [0, 1, 0], r: 6 })
+      const remoteOnlyCount = s.bungee.count
+      const cords = (s.bungee as unknown as { cords: Map<number, { at: THREE.Vector3 | null }> }).cords
+      const remote = cords.get(3)!
+      const anchor = remote.at!.clone()
+      expect(remoteOnlyCount).toBe(2) // Remote cord plus ground anchor.
+      launch.start()
+      expect(s.bungee.mine?.hook).toBeTruthy()
+      expect(s.bungee.count).toBe(remoteOnlyCount + 2) // Local cord plus flying hook.
       s.bungee.setReel(-1)
-      const count = s.bungee.count
       const reset = vi.spyOn(s.bungee, 'reset')
       s.rack.cancelActions(() => {})
       launch.start()
       expect(s.bungee.mine).toBeUndefined()
       expect(s.bungee.reel).toBe(0)
-      expect(s.bungee.count).toBe(count - 1)
+      expect(s.bungee.count).toBe(remoteOnlyCount)
+      expect(cords.get(3)).toBe(remote)
+      expect(remote.at!.equals(anchor)).toBe(true)
       expect(reset).not.toHaveBeenCalled()
       s.rack.cancelActions(() => {})
-      expect(s.bungee.count).toBe(count - 1)
+      expect(s.bungee.count).toBe(remoteOnlyCount)
+      expect(cords.get(3)).toBe(remote)
+      expect(remote.at!.equals(anchor)).toBe(true)
+      s.bungee.applyRemote(3, { s: 'off' })
+      expect(cords.has(3)).toBe(false)
+      expect(s.bungee.count).toBe(0)
     } finally { s.close() }
   })
 
@@ -623,4 +646,66 @@ describe('modal gear cancellation', () => {
     } finally { s.close() }
   })
 
+})
+
+
+// These are real Input and gear systems, exercised through their action API.
+// They do not mount GearSelector, prove DOM safety, or model primary TAG event wiring.
+describe('stable primary hold presentation with real Input', () => {
+  it.each(['end', 'cleanup'] as const)('Thunder retains charge through presentation refresh until %s', reason => {
+    const s = setup(true)
+    try {
+      s.bind(); s.rack.select('red')
+      const captured = s.rack.controls().actions[0]
+      captured.start(); s.step()
+      expect(ids(s.rack.controls())).toEqual(['charge'])
+      s.step(500)
+      const ready = s.rack.controls()
+      expect(ids(ready)).toEqual(['charge'])
+      expect(s.bigRed.ready).toBe(true)
+      ready.actions[0].stop!('end') // Never acquired ownership.
+      expect(s.input.state.fire).toBe(true)
+      captured.stop!(reason)
+      if (reason === 'cleanup') captured.stop!('end')
+      s.step()
+      expect(s.input.state.fire).toBe(false)
+      expect(s.bigRed.stats).toEqual({ sent: reason === 'end' ? 1 : 0, fizzled: 0 })
+    } finally { s.close() }
+  })
+
+  it.each(['end', 'cleanup'] as const)('Yoink retains carry through presentation refresh until %s', reason => {
+    const s = setup(true)
+    try {
+      s.bind(); s.rack.select('yoink')
+      const captured = s.rack.controls().actions[0]
+      captured.start(); s.step()
+      const held = s.rack.controls()
+      expect(ids(held)).toEqual(['grab', 'fling'])
+      expect(held.actions.map(a => a.hold)).toEqual([true, false])
+      expect(s.yoink.holding).toBe(3)
+      held.actions[0].stop!('end') // The displayed closure is not the captured owner.
+      expect(s.input.state.fire).toBe(true)
+      expect(s.yoink.holding).toBe(3)
+      captured.stop!(reason)
+      if (reason === 'cleanup') captured.stop!('end')
+      s.step()
+      expect(s.yoink.holding).toBeNull()
+      expect(s.yoink.stats.flings).toBe(reason === 'end' ? 1 : 0)
+      expect(s.yoink.stats.drops).toBe(reason === 'cleanup' ? 1 : 0)
+    } finally { s.close() }
+  })
+
+  it('keeps explicit Fling separate from the retained grab gesture', () => {
+    const s = setup(true)
+    try {
+      s.bind(); s.rack.select('yoink')
+      const captured = s.rack.controls().actions[0]
+      captured.start(); s.step()
+      s.rack.controls().actions.find(a => a.id === 'fling')!.start()
+      expect(s.yoink.holding).toBeNull()
+      expect(s.yoink.stats.flings).toBe(1)
+      captured.stop!('end'); s.step()
+      expect(s.yoink.stats.flings).toBe(1)
+    } finally { s.close() }
+  })
 })

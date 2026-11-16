@@ -405,7 +405,8 @@ export class GearRack implements System {
         break
       case 'yoink:holding':
         // Explicit fling suppresses our grab owners without pretending their gestures ended.
-        list = [act({ id: 'fling', label: 'Fling', keys: ['Let go of click'], hold: false, start: () => {
+        list = [act({ id: 'grab', label: 'Hold', keys: ['Hold click', 'Hold L'], hold: true, start: noop, stop: noop }, true),
+          act({ id: 'fling', label: 'Fling', keys: ['Let go of click'], hold: false, start: () => {
           for (const [owner, kind] of this.fireOwners) if (kind === 'yoink') input.suppressExternalFire(owner)
           sys.yoink.release()
         } })]
@@ -415,7 +416,7 @@ export class GearRack implements System {
         list = [act({ id: 'charge', label: 'Charge', keys: ['Hold click', 'Hold L'], hold: true, start: noop, stop: noop }, true)]
         break
       case 'red:ready':
-        list = [act({ id: 'fire', label: 'Let go to send', keys: ['Let go of click'], hold: true, start: noop, stop: noop }, true)]
+        list = [act({ id: 'charge', label: 'Let go to send', keys: ['Let go of click'], hold: true, start: noop, stop: noop }, true)]
         break
       default:
         list = []
