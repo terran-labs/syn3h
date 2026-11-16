@@ -261,6 +261,9 @@
 @media (prefers-reduced-motion: reduce) { .lobby-panels { animation: none; } }
 
 .syn3h-shell:not(.is-playing) .shell-toast { display: none; }
+/* In play, below the focus HUD's heading line (34 px down, about 30 px tall), not over it.
+   Touch, match and race layouts place their toasts themselves. */
+.syn3h-shell.is-playing:not(.has-touch, .has-match, .has-landmark-race) .shell-toast { top: max(72px, env(safe-area-inset-top)); }
 .shell-message { max-height: 40px; overflow: hidden; text-align: center; }
 @media (max-width: 700px) { .syn3h-shell.is-playing .shell-toast { top: 190px; width: calc(100% - 40px); max-width: none; } }
 

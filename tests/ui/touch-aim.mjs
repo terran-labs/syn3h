@@ -139,22 +139,28 @@ try {
     await context.close()
     console.log(`${name}: ok`)
   }
-  // Desktop placement is unchanged; a toast there must still clear the speed and height readouts.
+  // Desktop: a toast sits below the heading line, clear of it, the sidebar and the readouts.
   const desktop = await chromium.launch({ channel: 'chrome', headless: true })
   try {
     const page = await desktop.newPage({ viewport: { width: 1440, height: 900 } })
     await page.goto(`${base}?autoplay=1&room=touch-aim-desktop-${Date.now()}`)
     await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 120000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
+    // Toasts are hidden while the sidebar is open (exploration.css); clicking into the game closes it.
+    if (await page.locator('.world-inspector').isVisible()) { await page.mouse.click(720, 650); await page.locator('.world-inspector').waitFor({ state: 'hidden' }) }
     await page.evaluate(() => window.syn3h.shell.toast('Joined room touch-aim-…794854727 as Bartholomew'))
-    await page.waitForTimeout(150)
+    await page.waitForTimeout(400)
     const toast = await page.locator('.shell-toast').boundingBox()
+    assert.ok(Number(await page.locator('.shell-toast').evaluate((e) => getComputedStyle(e).opacity)) > 0.5, 'desktop: toast visible')
     for (const selector of ['.fh-left', '.fh-right']) {
       const other = await page.locator(selector).first().boundingBox()
       assert.ok(!other || !overlaps(toast, other), `desktop: toast clears ${selector}`)
     }
     const heading = await page.locator('.fh-top').first().boundingBox()
-    console.log(`desktop: ok; toast ${JSON.stringify(toast)}, heading ${JSON.stringify(heading)}, overlaps heading: ${heading ? overlaps(toast, heading) : 'no heading'}`)
+    assert.ok(heading && !overlaps(toast, heading), `desktop: toast clears the heading line ${JSON.stringify([toast, heading])}`)
+    const rail = page.locator('.world-inspector')
+    if (await rail.isVisible()) assert.ok(!overlaps(toast, await rail.boundingBox()), 'desktop: toast clears the sidebar')
+    console.log('desktop: ok')
     await page.screenshot({ path: `${out}/desktop-toast.png` })
   } finally { await desktop.close() }
 } finally {
