@@ -27,7 +27,7 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
   assert.match(await bar.locator('.wi-search-strip').innerText(), /day length/)
   const row = rail.locator('[data-id="sun.dayLength"]'), slider = row.locator('input[type=range]')
   await slider.scrollIntoViewIfNeeded(); await slider.focus(); await page.keyboard.press('Home')
-  assert.equal(await page.evaluate(() => syn3h.game.params?.get?.('sun.dayLength')?.value ?? document.querySelector('[data-id="sun.dayLength"] .wi-num').textContent), 'Off')
+  assert.equal(await row.locator('.wi-num').innerText(), 'Off')
   await page.keyboard.press('ArrowRight'); assert.equal(await row.locator('.wi-num').innerText(), '10 s')
   await row.locator('.wi-num').click(); const exact = row.locator('.wi-num-edit'); await exact.fill('351'); await exact.press('Enter')
   assert.equal(await row.locator('.wi-num').innerText(), '5 min 51 s')
