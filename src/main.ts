@@ -149,12 +149,15 @@ async function main(): Promise<void> {
     const previous = slot.current
     try {
       const next = swapper.swap(kind)
-      // The new one holds its heading only: the hold zeroes its speed, then it drops and drives.
+      // The new one arrives where the old one was, moving as it moved (swapPlacement in
+      // vehicles/swap.ts). The arrival holds it there in its cloud, then lets it go with that
+      // same velocity: a switch at speed carries on, one in mid-air falls from where it was.
       if (next !== previous) {
         // Restore the parked body's dynamic type before it is reused. Selecting the same
         // kind leaves its existing hold alone.
         materialize.cancel(previous)
-        void materialize.begin(next)
+        const linvel = next.body.linvel(), angvel = next.body.angvel()
+        void materialize.begin(next, { carry: { linvel: { ...linvel }, angvel: { ...angvel } } })
       }
       return next
     } catch (error) {
