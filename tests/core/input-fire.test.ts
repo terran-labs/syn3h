@@ -98,6 +98,19 @@ describe('fire cancellation ownership', () => {
     pointer('pointerdown'); input.mouseFire = true
     expect(input.poll().fire).toBe(true)
   })
+  it('leaves sampled fire intact on blur until the composition cancels gear first', () => {
+    const { input, key, target } = harness()
+    key('keydown', 'KeyL'); input.poll()
+    target.dispatchEvent(new Event('blur'))
+    expect(input.state.fire).toBe(true)
+    // The composition calls the gear cancellation primitive before this inhibitor.
+    input.cancelFireUntilNeutral()
+    expect(input.state.fire).toBe(false)
+    key('keydown', 'KeyL')
+    expect(input.poll().fire).toBe(false)
+    key('keyup', 'KeyL'); key('keydown', 'KeyL')
+    expect(input.poll().fire).toBe(true)
+  })
   it('samples gamepad neutral during suspension without accepting disconnect as neutral', () => {
     const { input } = harness()
     pads = [pad(0, true)]; input.cancelFireUntilNeutral()
