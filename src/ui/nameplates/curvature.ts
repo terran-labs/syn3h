@@ -66,19 +66,19 @@ export class CurvedProjection {
       default: return p.w - p.z
     }
   }
-  /** `rise` is the box's vertical half-height in metres; it defaults to `radius` (a cube). */
-  envelope(center: Point, radius: number, bend: Vector3, camera: PerspectiveCamera, width: number, height: number, out: Disc, rise = radius): void {
+  /** A world-axis box: `radius` is its x half-size, `rise` its y and `reach` its z; both default to `radius` (a cube). */
+  envelope(center: Point, radius: number, bend: Vector3, camera: PerspectiveCamera, width: number, height: number, out: Disc, rise = radius, reach = radius): void {
     const proxy = out.proxy ??= createScreenProxy()
     proxy.count = 0; proxy.blocked = false
     const screen = this.project(center, bend, camera, width, height, this.sample)
     out.x = Number.isFinite(screen.x) ? screen.x : 0; out.y = Number.isFinite(screen.y) ? screen.y : 0
     out.depth = 0; out.radius = 2 // Diagnostic only; placement consumes proxy polygons.
-    if (!Number.isFinite(center.x + center.y + center.z + radius + rise + bend.x + bend.y + bend.z + width + height) || radius < 0 || rise < 0 || width <= 0 || height <= 0 ||
+    if (!Number.isFinite(center.x + center.y + center.z + radius + rise + reach + bend.x + bend.y + bend.z + width + height) || radius < 0 || rise < 0 || reach < 0 || width <= 0 || height <= 0 ||
       camera.coordinateSystem !== WebGLCoordinateSystem && camera.coordinateSystem !== WebGPUCoordinateSystem) { this.block(out); return }
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minDepth = Infinity, maxDepth = -Infinity
     for (let i = 0; i < GRID.length; i++) {
       const g = GRID[i]
-      this.sample.set(center.x + g[0] * radius, center.y + g[1] * rise, center.z + g[2] * radius)
+      this.sample.set(center.x + g[0] * radius, center.y + g[1] * rise, center.z + g[2] * reach)
       bendPoint(this.sample, bend, this.point)
       this.view.copy(this.point).applyMatrix4(camera.matrixWorldInverse)
       const depth = -this.view.z

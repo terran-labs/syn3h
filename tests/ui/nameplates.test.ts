@@ -141,22 +141,18 @@ describe('terrain budget fails hidden', () => {
   })
 })
 describe('size and distance', () => {
-  it('keeps bots at two thirds human scale and fainter at all shared distances', () => {
-    for (const d of [0, 20, 50, 100, 150]) {
+  // Invariants only; the distances and sizes themselves are tuned by eye.
+  it('never draws a bot more prominently than a person, and drops bots first', () => {
+    for (let d = 0; d <= 1000; d += 5) {
       const person = appearance(d, false, false), bot = appearance(d, true, false)
-      expect(bot.scale / person.scale).toBeCloseTo(.66)
-      expect(bot.opacity).toBeLessThan(person.opacity)
+      expect(bot.opacity).toBeLessThanOrEqual(person.opacity)
+      expect(bot.scale).toBeLessThanOrEqual(person.scale)
+      if (bot.visible) expect(person.visible).toBe(true)
     }
+    expect(appearance(-1, false, false).visible).toBe(false)
   })
-  it('shrinks distant bots to ticks and removes them well before people', () => {
-    expect(appearance(120, true, false).tick).toBe(true)
-    expect(appearance(180, true, false).visible).toBe(false)
-    expect(appearance(600, false, false).visible).toBe(true)
-    expect(appearance(650, false, false).visible).toBe(false)
-  })
-  it('clamps near/far text scale and enlarges presentation by one quarter', () => {
-    expect(appearance(1, false, false).scale).toBe(appearance(500, false, false).scale)
-    expect(appearance(30, false, true).scale).toBe(1.25)
+  it('never shrinks labels in presentation', () => {
+    expect(appearance(30, false, true).scale).toBeGreaterThanOrEqual(appearance(30, false, false).scale)
   })
 })
 describe('wrapped terrain rays', () => {
@@ -262,9 +258,21 @@ describe('ball and materialize anchors', () => {
     object.userData.materializing = true
     const fixture = { object, kind: 'buggy-syn3h', zorb: { active: true, radius: 8, offset: new Vector3(0, 2, 0) } } as unknown as Parameters<typeof renderedEnvelope>[0]
     const center = new Vector3()
-    expect(renderedEnvelope(fixture, center, new Quaternion(), new Vector3())).toBe(8)
+    const body = renderedEnvelope(fixture, center, new Quaternion(), new Vector3(), { radius: 0, rise: 0, reach: 0, top: 0 })
     expect(center.x).toBeCloseTo(8); expect(center.y).toBeCloseTo(50); expect(center.z).toBe(20)
-    expect(center.y + 8 + .65).toBeGreaterThan(object.position.y + 8)
+    expect(body.radius).toBeGreaterThanOrEqual(8); expect(body.top).toBeCloseTo(58) // the ball's top
+  })
+  // Bug it catches: leaders ended in the air metres above the car, pointing at nothing.
+  it('puts the top of a body at its roof, wherever the vehicle points', async () => {
+    const { Object3D, Quaternion, Vector3 } = await import('three/webgpu')
+    const { renderedEnvelope } = await import('../../src/ui/nameplates/anchors')
+    for (const kind of ['buggy', 'hovercraft', 'tank', 'jet'] as const) {
+      const object = new Object3D(); object.position.set(5, 20, -3); object.rotation.y = 1.1; object.updateMatrixWorld()
+      const fixture = { object, kind, zorb: { active: false } } as unknown as Parameters<typeof renderedEnvelope>[0]
+      const body = renderedEnvelope(fixture, new Vector3(), new Quaternion(), new Vector3(), { radius: 0, rise: 0, reach: 0, top: 0 })
+      expect(body.top - 20).toBeGreaterThan(.5); expect(body.top - 20).toBeLessThan(3) // roof, not a sphere's crown
+      expect(body.rise).toBeLessThan(Math.max(body.radius, body.reach))
+    }
   })
 })
 

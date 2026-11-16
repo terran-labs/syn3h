@@ -7,12 +7,33 @@ import { copyCurveState, overHorizon } from '../../world/curve'
 import { bendPoint, CurvedProjection, curvedTerrainOccluded } from './curvature'
 import { nameplateMode, restoreNameplatePreference } from './preferences'
 import { HudExclusions } from './HudExclusions'
-
-/** Half-height in metres of the player's own grounded vehicle when it hides labels behind it. */
-const LOCAL_RISE = 1.6
-import { renderedEnvelope } from './anchors'
+import { renderedEnvelope, type Envelope } from './anchors'
 import { afterCameraFrame } from './renderHook'
 import './nameplates.css'
+
+/** Metres between the top of a vehicle's body and the end of its leader. */
+const ANCHOR_GAP = .2
+/** A vehicle drawn smaller than this many pixels across is too small to label. */
+const MIN_PIXELS = 6
+/** Plate size limits in pixels. Past the widest, the name is cut with an ellipsis. */
+const PLATE_MIN = 72, PLATE_MAX = 200, PLATE_HEIGHT = 42
+/** Must match nameplates.css: name and tag fonts, letter spacing in em, and padding plus border. */
+const NAME_FONT = '500 13px Barlow', NAME_SPACING = .08, TAG_FONT = '500 10px Barlow', TAG_SPACING = .16, PLATE_INSET = 26
+
+let measure: CanvasRenderingContext2D | null | undefined
+const widths = new Map<string, number>()
+/** Text width without a layout read: plates are written after every read in a frame. */
+function textWidth(text: string, font: string, spacing: number, px: number): number {
+  const key = font + text, known = widths.get(key)
+  if (known !== undefined) return known
+  measure ??= document.createElement('canvas').getContext?.('2d') ?? null
+  if (!measure) return text.length * px * (.62 + spacing)
+  measure.font = `${font}, sans-serif`
+  const width = measure.measureText(text.toUpperCase()).width + text.length * px * spacing
+  // Until Barlow has loaded the fallback face is measured; do not keep that.
+  if (document.fonts?.check(font)) { if (widths.size > 512) widths.clear(); widths.set(key, width) }
+  return width
+}
 
 export interface NameplateInfo {
   id: string
@@ -54,6 +75,7 @@ export class VehicleNameplates {
   private readonly screenCenter = new THREE.Vector3()
   private readonly projection = new CurvedProjection()
   private readonly localDisc: Disc = { id: '@local', x: 0, y: 0, radius: 0, depth: 0 }
+  private readonly body: Envelope = { radius: 0, rise: 0, reach: 0, top: 0 }
   private readonly anchor = new THREE.Vector3()
   private readonly projected = new THREE.Vector3()
   private readonly view = new THREE.Vector3()
@@ -127,27 +149,25 @@ export class VehicleNameplates {
     const candidates: Candidate[] = [], discs: Disc[] = []
     // The local vehicle gets no nameplate, but its hull still occludes labels behind it.
     const local = this.options.localVehicle()
-    const localRadius = renderedEnvelope(local, this.center, this.rotation, this.anchor)
-    // A grounded vehicle is long and low. Seen from the chase camera, a full-height box around
-    // it covers the screen above the roof, which on a phone is most of the view, and rejects
-    // every label behind the player. Keep its reach but only LOCAL_RISE of height. A jet banks
-    // and the zorb is a true ball, so both keep the full box.
-    const flat = local.kind !== 'jet' && !local.zorb.active
-    this.projection.envelope(this.center, localRadius, this.bend, this.camera, w, h, this.localDisc, flat ? Math.min(localRadius, LOCAL_RISE) : localRadius)
+    // Bodies are boxes fitted to each kind's meshes. A cube as tall as the car is long covered
+    // most of a phone screen above the player's roof and rejected every label behind it.
+    const body = renderedEnvelope(local, this.center, this.rotation, this.anchor, this.body)
+    this.projection.envelope(this.center, body.radius, this.bend, this.camera, w, h, this.localDisc, body.rise, body.reach)
+    const focal = h / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2))
     discs.push(this.localDisc)
     for (const t of list) {
       const p = this.plates.get(t.id) ?? this.acquire(t.id)
       p.stamp = this.stamp
       if (p.vehicle !== t.vehicle) { p.vehicle = t.vehicle; p.shown = false; p.lastX = p.lastY = NaN }
       const object = t.vehicle.object
-      const radius = renderedEnvelope(t.vehicle, this.center, this.rotation, this.anchor)
+      renderedEnvelope(t.vehicle, this.center, this.rotation, this.anchor, body)
       // Network/vehicle interpolation already chose the rendered tile relative to the player.
       // Rewrapping relative to a free camera would detach the label by a whole world.
       this.projection.project(this.center, this.bend, this.camera, w, h, this.screenCenter)
       const depth = this.screenCenter.z, distance = this.center.distanceTo(this.eye)
-      const horizonHidden = overHorizon(this.center.x, this.center.z, radius, this.center.y + radius)
+      const horizonHidden = overHorizon(this.center.x, this.center.z, Math.max(body.radius, body.reach), this.center.y + body.rise)
       if (object.visible && !horizonHidden) {
-        this.projection.envelope(this.center, radius, this.bend, this.camera, w, h, p.disc)
+        this.projection.envelope(this.center, body.radius, this.bend, this.camera, w, h, p.disc, body.rise, body.reach)
         discs.push(p.disc)
       }
       const style = appearance(distance, t.bot, presentation)
@@ -155,8 +175,12 @@ export class VehicleNameplates {
       if (materializing && !p.materializing || !p.shown) p.scanUntil = now + 220
       p.el.classList.toggle('is-scanning', now < p.scanUntil)
       p.materializing = materializing
-      if (!Number.isFinite(distance + depth) || depth <= this.camera.near || horizonHidden || !object.visible || !style.visible || mode === 1 && t.bot) { this.hide(p); continue }
-      this.anchor.copy(this.center); this.anchor.y += radius + .65
+      // Never label what cannot be seen: off screen, too small, hidden or filtered out.
+      const sx = this.screenCenter.x, sy = this.screenCenter.y
+      const offScreen = !(sx >= 0 && sx <= w && sy >= 0 && sy <= h), tiny = 2 * Math.max(body.radius, body.reach) * focal < MIN_PIXELS * depth
+      if (!Number.isFinite(distance + depth) || depth <= this.camera.near || offScreen || tiny || horizonHidden || !object.visible || !style.visible || mode === 1 && t.bot) { this.hide(p); continue }
+      // The leader ends just above the roof, so it touches the vehicle it names.
+      this.anchor.set(this.center.x, body.top + ANCHOR_GAP, this.center.z)
       // Curved visual sight maps to a path in flat physics space, not one straight flat ray.
       bendPoint(this.center, this.bend, p.bentCenter)
       this.projection.project(this.anchor, this.bend, this.camera, w, h, this.projected)
@@ -168,17 +192,18 @@ export class VehicleNameplates {
       const blend = 1 - Math.exp(-dt * 28)
       p.lastX = snap ? x : p.lastX + (x - p.lastX) * blend
       p.lastY = snap ? y : p.lastY + (y - p.lastY) * blend
-      const baseWidth = Math.min(184, Math.max(116, w * .32)), baseHeight = 40
-      Object.assign(p.candidate, { bot: t.bot, x: p.lastX, y: p.lastY, depth: this.projected.z, width: style.tick ? 8 : baseWidth * style.scale, height: style.tick ? 5 : baseHeight * style.scale, opacity: style.opacity, tick: style.tick })
-      candidates.push(p.candidate)
       // Text is untrusted replicated data: use textContent and a bounded display length.
       const name = t.name.slice(0, 48), far = !t.bot && distance > 140 ? `${Math.round(distance / 10) * 10} m` : ''
-      const note = [t.bot ? 'BOT' : '', t.note, far].filter(Boolean).join(' · ')
+      const note = [t.bot ? 'Bot' : 'Player', t.note, far].filter(Boolean).join(' · ')
+      // Sized to the name (or a longer tag) up to PLATE_MAX, where the name is cut short.
+      const plateWidth = Math.round(Math.min(PLATE_MAX, Math.max(PLATE_MIN, PLATE_INSET + Math.max(
+        textWidth(name, NAME_FONT, NAME_SPACING, 13), textWidth(note, TAG_FONT, TAG_SPACING, 10)))))
+      Object.assign(p.candidate, { bot: t.bot, x: p.lastX, y: p.lastY, depth: this.projected.z, width: style.tick ? 8 : plateWidth * style.scale, height: style.tick ? 5 : PLATE_HEIGHT * style.scale, opacity: style.opacity, tick: style.tick })
+      candidates.push(p.candidate)
       if (p.name.textContent !== name) p.name.textContent = name
       if (p.note.textContent !== note) p.note.textContent = note
-      p.el.classList.toggle('is-bot', t.bot); p.el.classList.toggle('is-tick', style.tick)
-      p.el.style.setProperty('--vehicle-color', /^#[0-9a-f]{6}$/i.test(t.color) ? t.color : '#8fe3ff')
-      p.el.style.width = `${style.tick ? 8 : baseWidth}px`; p.el.style.height = `${style.tick ? 5 : baseHeight}px`
+      p.el.classList.toggle('is-bot', t.bot); p.leader.classList.toggle('is-bot', t.bot); p.el.classList.toggle('is-tick', style.tick)
+      p.el.style.width = `${style.tick ? 8 : plateWidth}px`; p.el.style.height = `${style.tick ? 5 : PLATE_HEIGHT}px`
       p.el.dataset.scale = String(style.tick ? 1 : style.scale)
     }
     const placements = placeNameplates(candidates, discs, exclusions, w, h, (box, depth, candidate) => {

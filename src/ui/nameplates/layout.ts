@@ -1,4 +1,4 @@
-/** Pure screen-space rules. Rectangles include the leader line as well as the plate. */
+/** Pure screen-space rules. Placed rectangles span the plate and its leader. */
 export interface Rect { left: number; top: number; right: number; bottom: number }
 /** Union of at most48 clipped face polygons, at most9 vertices each. Reused per vehicle. */
 export interface ScreenProxy { points: Float64Array; sizes: Uint8Array; count: number; blocked: boolean }
@@ -55,7 +55,7 @@ export function touchesDisc(box: Rect, disc: Disc): boolean {
 export function appearance(distance: number, bot: boolean, presentation: boolean) {
   const far = bot ? 180 : 650, full = bot ? 45 : 140
   const fade = Math.max(0, Math.min(1, (far - distance) / (far - full)))
-  return { opacity: fade * (bot ? .58 : .96), scale: (presentation ? 1.25 : 1) * (bot ? .66 : 1), tick: bot && distance > 100, visible: distance >= 0 && distance < far }
+  return { opacity: fade * (bot ? .9 : .96), scale: presentation ? 1.25 : 1, tick: bot && distance > 100, visible: distance >= 0 && distance < far }
 }
 /** People are allocated first regardless of depth; bots yield every contested spot. */
 export function placeNameplates(candidates: readonly Candidate[], discs: readonly Disc[], exclusions: readonly Rect[], width: number, height: number,
@@ -76,8 +76,13 @@ export function placeNameplates(candidates: readonly Candidate[], discs: readonl
       const plate = { left: x - c.width / 2, top: y, right: x + c.width / 2, bottom: y + c.height }
       const bounds = { left: Math.min(plate.left, c.x) - 3, top: plate.top - 3, right: Math.max(plate.right, c.x) + 3, bottom: c.y + 3 }
       if (bounds.left < 8 || bounds.right > width - 8 || bounds.top < 8 || bounds.bottom > height - 8) continue
-      if (exclusions.some(b => overlaps(bounds, b)) || result.some(b => overlaps(bounds, b))) continue
-      if (discs.some(d => d.id !== c.id && d.depth < c.depth && touchesDisc(bounds, d))) continue
+      if (result.some(b => overlaps(bounds, b))) continue
+      // HUD and nearer vehicles are tested against what is drawn: the plate, and the leader's
+      // own strip from the plate down to the anchor, not the empty corner beside the leader.
+      const pad = { left: plate.left - 3, top: plate.top - 3, right: plate.right + 3, bottom: plate.bottom + 3 }
+      const leader = { left: Math.min(x, c.x) - 3, top: plate.bottom, right: Math.max(x, c.x) + 3, bottom: c.y + 3 }
+      if (exclusions.some(b => overlaps(pad, b) || overlaps(leader, b))) continue
+      if (discs.some(d => d.id !== c.id && d.depth < c.depth && (touchesDisc(pad, d) || touchesDisc(leader, d)))) continue
       if (!terrainClear(plate, c.depth, c)) continue
       result.push({ ...bounds, id: c.id, x, y, spot, opacity: c.opacity, tick: c.tick }); break
     }
