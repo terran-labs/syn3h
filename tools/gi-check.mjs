@@ -20,7 +20,7 @@ try {
   const {PostChain}=await import('/src/fx/post/PostChain.ts')
   const s=window.syn3h,g=s.game;g.renderer.setAnimationLoop(null)
   g.postChain.release();s.params.set('gfx.level',2);s.params.set('post.on',true)
-  for(const id of ['post.bloom','post.shafts','post.flare','post.ao','post.contact','post.motionBlur','post.heat','post.plunge','post.look','post.vignette','post.grain'])s.params.set(id,0)
+  for(const id of ['post.bloom','post.shafts','post.flare','post.ao','post.contact','post.motionBlur','post.heat','post.look','post.vignette','post.grain'])s.params.set(id,0)
   const scene=new T.Scene();scene.background=new T.Color(.01,.01,.01)
   const camera=new T.PerspectiveCamera(50,960/640,.1,50);camera.position.set(5,4,7);camera.lookAt(0,.5,0);camera.updateMatrixWorld()
   const floor=new T.Mesh(new T.PlaneGeometry(12,12),new T.MeshStandardNodeMaterial({color:0xaaaaaa,roughness:1}))

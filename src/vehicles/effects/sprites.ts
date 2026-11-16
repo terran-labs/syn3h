@@ -11,7 +11,7 @@
  * Colours are written in linear space, measured from the original images after the sRGB decode
  * the old loader applied, so the tints that callers pass keep their meaning.
  */
-import {float,fract,fwidth,mix,mx_fractal_noise_float,mx_noise_float,positionWorld,renderGroup,smoothstep,uniform,vec2,vec3} from 'three/tsl'
+import {float,fract,fwidth,mix,mx_fractal_noise_float,mx_noise_float,positionView,positionWorld,renderGroup,smoothstep,uniform,vec2,vec3} from 'three/tsl'
 import type * as T from 'three/webgpu'
 import {vehicleNightAmount} from '../skins/nightReadability'
 
@@ -26,8 +26,8 @@ export interface SpriteLook { rgb: N; alpha: N }
  */
 export type Sprite = (p: N, seed: N, age: N, octaves: number) => SpriteLook
 /**
- * Alpha over a ribbon quad: `u` 0 to 1 across the mark, `v` 0 to 1 along the quad, `tread` the
- * per-quad surface response (0 a scuff, 1 a deep print).
+ * Pattern over a ribbon quad, multiplied into its alpha: `u` 0 to 1 across the mark, `v` 0 to 1
+ * along the quad, `tread` the per-quad surface response (0 a scuff, 1 a deep print).
  */
 export type MarkAlpha = (u: N, v: N, tread: N) => N
 
@@ -72,32 +72,69 @@ export const glowSprite: Sprite = (p, seed, age, octaves) => {
 }
 
 /**
- * Tyre mark alpha across a ribbon quad. `u` runs across the mark, `v` along it (0 to 1 over
- * each quad) and `tread` says what the ground does with a tyre (see treads.ts): 1 is a deep
- * print in soft ground, with strong ribs and chevron lug blocks; 0 is a scuff on hard ground,
- * with no pattern, soft edges and a broken, patchy body. One shader draws every surface, so
- * the marks stay a single draw call.
+ * Tyre mark pattern across a ribbon quad. `u` runs across the mark, `v` along it (0 to 1 over
+ * each quad) and `tread` says what the ground does with a tyre (see treads.ts): 1 a print in
+ * soft ground, with faint ribs and chevron lug blocks; 0 a smooth scuff. One shader draws
+ * every surface, so the marks stay a single draw call.
  *
- * The old skidmark.png had alpha 1 everywhere, so marks drew as flat bands with hard edges. The
- * ribs and lugs fade out once they get finer than a few pixels, so distant marks do not shimmer.
+ * The owner (16 November 2026): marks were far too strong. The pattern is now a light
+ * modulation of an already faint mark, and it fades out with distance as well as once it gets
+ * finer than a few pixels, so far marks are a soft smear with no shimmer or moire. The soft
+ * edges and ends are `markEnvelope`, applied by the ribbon.
  */
 export const tyreMarkAlpha: MarkAlpha = (u, v, tread) => {
-  // A print has a firm edge; a scuff feathers out over a third of its width.
-  const edge = mix(float(.34), float(.16), tread)
-  const shoulders = smoothstep(0, edge, u).mul(float(1).sub(smoothstep(float(1).sub(edge), 1, u)))
+  // The pattern gives way to a plain smear from 8 to 30 m away.
+  const near = float(1).sub(smoothstep(8, 30, positionView.length()))
+  const depth = tread.mul(near)
   const ribs = 6, wave = fract(u.mul(ribs)).sub(.5).abs().mul(2)
   const ribFade = float(1).sub(smoothstep(.12, .35, fwidth(u).mul(ribs)))
-  const ribDepth = mix(float(.06), float(.42), tread)
-  const rib = mix(float(1), float(1).sub(ribDepth).add(smoothstep(.15, .6, wave).mul(ribDepth)), ribFade)
+  const ribDepth = depth.mul(.16).mul(ribFade)
+  const rib = float(1).sub(ribDepth).add(smoothstep(.15, .6, wave).mul(ribDepth))
   // Lug blocks: three chevrons to a quad, pointing along the mark. A whole number, so the
   // pattern runs on from one quad into the next.
   const lugs = 3, chevron = fract(v.mul(lugs).add(u.sub(.5).abs().mul(1.4)))
   const lugFade = float(1).sub(smoothstep(.12, .35, fwidth(v).mul(lugs)))
-  const lug = mix(float(1), smoothstep(0, .14, chevron).mul(float(1).sub(smoothstep(.62, .78, chevron))).mul(.55).add(.45), tread.mul(lugFade))
-  // World-anchored patchiness: slight on a print, heavy on a scuff, which comes and goes.
-  const amount = mix(float(.5), float(.12), tread)
+  const lugDepth = depth.mul(.25).mul(lugFade)
+  const lug = float(1).sub(lugDepth).add(smoothstep(0, .14, chevron).mul(float(1).sub(smoothstep(.62, .78, chevron))).mul(lugDepth))
+  // World-anchored patchiness: slight on a print, more on a scuff, which comes and goes.
+  const amount = mix(float(.4), float(.12), tread)
   const patch = mx_noise_float(vec3(positionWorld.xz.mul(1.4), 0)).mul(amount).add(float(1).sub(amount.mul(.5))).clamp(0, 1.1)
-  return shoulders.mul(rib).mul(lug).mul(patch)
+  return rib.mul(lug).mul(patch)
+}
+
+/** The arithmetic `markEnvelope` and `markOpacity` need, for numbers (tests) or shader nodes. */
+export interface EnvelopeOps<X> {
+  smoothstep(a: number, b: number | X, x: X): X
+  mul(a: X, b: X): X
+  oneMinus(x: X): X
+  min(a: X, b: number): X
+}
+export const numberOps: EnvelopeOps<number> = {
+  smoothstep: (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t) },
+  mul: (a, b) => a * b, oneMinus: (x) => 1 - x, min: (a, b) => Math.min(a, b),
+}
+export const nodeOps: EnvelopeOps<N> = {
+  smoothstep: (a, b, x) => smoothstep(a, b, x), mul: (a, b) => a.mul(b), oneMinus: (x) => float(1).sub(x), min: (a, b) => a.min(b),
+}
+
+/** The most any one mark can cover the ground, whatever the strength setting. */
+export const MAX_MARK_ALPHA = .5
+
+/**
+ * The soft outline of a tyre mark, 0 to 1. `u` 0 to 1 across the mark; `start` and `end` are
+ * metres from where the mark began and to where it ended. Zero at both edges and both ends:
+ * `soft` is the share of each side that fades, `fade` the metres each end takes. `age` 0 to 1
+ * over the mark's life fades it away gradually, oldest first, to nothing at 1.
+ */
+export function markEnvelope<X>(o: EnvelopeOps<X>, u: X, start: X, end: X, age: X, soft: number | X, fade: number): X {
+  const across = o.mul(o.smoothstep(0, soft, u), o.smoothstep(0, soft, o.oneMinus(u)))
+  const along = o.mul(o.smoothstep(0, fade, start), o.smoothstep(0, fade, end))
+  return o.mul(o.mul(across, along), o.oneMinus(o.smoothstep(.1, 1, age)))
+}
+
+/** A mark's alpha before its envelope: its own alpha times the strength setting, bounded. */
+export function markOpacity<X>(o: EnvelopeOps<X>, alpha: X, strength: X): X {
+  return o.min(o.mul(alpha, strength), MAX_MARK_ALPHA)
 }
 
 /** Per particle seed from its birth time and buffer slot, two values in 0 to 1. */

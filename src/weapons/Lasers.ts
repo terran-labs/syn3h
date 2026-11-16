@@ -8,8 +8,15 @@
  * Hits on vehicles are decided only by the victim's own client, where that vehicle's
  * position is exact (Rocket.js 82-85). Everywhere else lasers pass through remote vehicles
  * until the server announces the hit.
+ *
+ * What is drawn is not where the shot is simulated. The shot flies from the muzzle point
+ * `aim` gives, along the aimed line, and that alone decides hits. The drawn beam keeps its
+ * tail on the firing vehicle's drawn centre until the head is a full beam length out, so it
+ * visibly leaves from inside the vehicle on every frame, at any speed, and for remote players
+ * whose replicas are drawn a little in the past. A soft glow at that centre marks the shot.
  */
 import * as THREE from 'three/webgpu'
+import { float, normalView, positionViewDirection } from 'three/tsl'
 import type { ShotInfo } from '../../shared/protocol'
 import type { Game, System } from '../core/Game'
 import { FIXED_DT, GROUP_ALL, GROUP_LIQUID, GROUP_PROJECTILE, RAPIER, groups } from '../core/physics'
@@ -35,6 +42,12 @@ export interface LaserHooks {
   onHit(shooter: number, shot: number, victim: number, at: THREE.Vector3, dir: THREE.Vector3, red: boolean): void
   /** A shot ended at `at`, on anything; once per shot on every client. For the impact push. */
   onImpact?(at: THREE.Vector3, red: boolean): void
+  /**
+   * Writes the centre of a player's (or bot's) vehicle as it is drawn this frame, at blend
+   * `alpha` between the last two physics steps, and returns true; false if it is not here.
+   * The drawn beam leaves from this point. Without it, beams are drawn as they fly.
+   */
+  centreOf?(playerId: number, alpha: number, out: THREE.Vector3): boolean
 }
 
 interface Projectile {
@@ -48,6 +61,18 @@ interface Projectile {
   mesh: THREE.Group
   /** Big Red: fat, slow, no drop, no bounce, catches vehicles within its width. */
   red: boolean
+  /** The drawn tail is still held at the shooter's centre. Cleared for good once it lets go. */
+  tied: boolean
+  /** Seconds since first drawn; -1 before. */
+  shown: number
+  /** Drawn length at the end of the hold, for a late shot whose head is already far out. */
+  reach: number
+}
+
+interface Glow {
+  shooter: number
+  age: number
+  mesh: THREE.Mesh
 }
 
 /** The longest a late shot is replayed; older ones are mostly gone anyway. */
@@ -71,6 +96,30 @@ const RED_TINT_RGB = [0.8, 0.05, 0.03] as const
 /** Big Red's look: this much fatter, and a little longer. */
 const RED_SCALE = [3, 3, 1.6] as const
 /** Offsets around the centre line Big Red checks for vehicles, as fractions of its radius. */
+/**
+ * Local z of the beam's front and its full length, metres, before the mesh's own scale: the
+ * core is centred on the shot and the halo trails behind it.
+ */
+const FRONT = LENGTH / 2
+const SPAN = TRAIL
+/**
+ * A shot learnt of late (another player's, replayed) can already be far out on its first
+ * frame. Its drawn tail starts at the shooter and catches up at this speed, metres a second,
+ * instead of the beam appearing detached in mid air.
+ */
+const RETRACT = 400
+/** Seconds such a late shot's tail stays on the shooter first, as a fresh shot's does. */
+const HOLD = 0.04
+/**
+ * The firing glow: radius in metres, how long it lasts, and how far above the vehicle's
+ * centre it sits, so it wells up through the body instead of pooling on the ground.
+ */
+const GLOW_RADIUS = 1.25
+const GLOW_SECONDS = 0.16
+const RED_GLOW_RADIUS = 2
+const RED_GLOW_SECONDS = 0.28
+const GLOW_LIFT = 0.35
+
 const RED_RING = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]] as const
 
 export class Lasers implements System {
@@ -98,6 +147,18 @@ export class Lasers implements System {
   private readonly redTintMat = new THREE.MeshBasicMaterial({
     name: 'gear red tint', color: new THREE.Color(...RED_TINT_RGB), transparent: true, opacity: 0.35, depthWrite: false,
   })
+  /**
+   * The firing glow: a sphere bright at its middle and fading to nothing at its rim, so it
+   * reads as light swelling out of the vehicle rather than a ball. Depth tested, so it shows
+   * around the body and never through hills. Sized, not faded: the material is shared.
+   */
+  private readonly glowGeo = new THREE.SphereGeometry(1, 20, 14)
+  private readonly glowMat = Lasers.glowMaterial('gear beam glow', HALO_RGB)
+  private readonly redGlowMat = Lasers.glowMaterial('gear red glow', RED_HALO_RGB)
+  private readonly glows: Glow[] = []
+  private readonly centre = new THREE.Vector3()
+  private readonly front = new THREE.Vector3()
+  private readonly axis = new THREE.Vector3()
   private readonly effects: ReturnType<typeof createWeaponEffects> | null
   private readonly pulses: ImpactPulses
   /** Shots that already showed their impact here, so a later server confirmation does not repeat it. */
@@ -125,6 +186,7 @@ export class Lasers implements System {
     this.unwarm = warmGear(game, [
       [this.coreGeo, this.coreMat], [this.haloGeo, this.tintMat], [this.haloGeo, this.haloMat],
       [this.coreGeo, this.redCoreMat], [this.haloGeo, this.redTintMat], [this.haloGeo, this.redHaloMat],
+      [this.glowGeo, this.glowMat], [this.glowGeo, this.redGlowMat],
     ], () => {
       game.camera.getWorldPosition(below).y -= SPARK_WARM_DEPTH
       this.effects?.muzzle(below, ahead, false)
@@ -134,6 +196,15 @@ export class Lasers implements System {
 
   get count(): number {
     return this.shots.length
+  }
+
+  private static glowMaterial(name: string, rgb: readonly [number, number, number]): THREE.MeshBasicNodeMaterial {
+    const m = new THREE.MeshBasicNodeMaterial({
+      name, color: new THREE.Color(...rgb), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+    })
+    // Facing the camera at the middle, edge on at the rim: a soft disc in every direction.
+    m.opacityNode = normalView.dot(positionViewDirection).max(0).pow(float(3.5)).mul(0.75)
+    return m
   }
 
   /** Muzzle, direction and inherited speed for a shot from a vehicle body, as in VehicleMe.js 64. */
@@ -165,13 +236,21 @@ export class Lasers implements System {
       life: laserLifetime(laserSpeed.value),
       mesh: new THREE.Group(),
       red,
+      tied: true,
+      shown: -1,
+      reach: 0,
     }
     const tint = new THREE.Mesh(this.haloGeo, red ? this.redTintMat : this.tintMat)
     tint.renderOrder = -1
     p.mesh.add(new THREE.Mesh(this.coreGeo, red ? this.redCoreMat : this.coreMat), tint, new THREE.Mesh(this.haloGeo, red ? this.redHaloMat : this.haloMat))
     if (red) p.mesh.scale.set(...RED_SCALE)
     else p.mesh.scale.set(0.5, 0.5, 1)
-    if (age < FRESH) this.effects?.muzzle(p.pos.clone(), new THREE.Vector3(...shot.d).normalize(), red)
+    if (age < FRESH) {
+      // The vehicle's own light swells as it fires. Without a vehicle to centre it on, the
+      // old sparks at the muzzle stand in.
+      if (this.hooks.centreOf) this.addGlow(shooter, red)
+      else this.effects?.muzzle(p.pos.clone(), new THREE.Vector3(...shot.d).normalize(), red)
+    }
     p.mesh.position.copy(p.pos)
     p.mesh.visible = false
     this.game.scene.add(p.mesh)
@@ -196,6 +275,7 @@ export class Lasers implements System {
   /** Remove every shot in flight: for a world change or leaving it. Impact effects fade on their own. */
   reset(): void {
     while (this.shots.length) this.kill(this.shots.length - 1)
+    while (this.glows.length) this.dropGlow(this.glows.length - 1)
     this.pulses.reset()
   }
 
@@ -219,15 +299,106 @@ export class Lasers implements System {
     this.redCoreMat.color.setRGB(RED_CORE_RGB[0] * dim, RED_CORE_RGB[1] * dim, RED_CORE_RGB[2] * dim)
     this.redHaloMat.color.setRGB(RED_HALO_RGB[0] * dim, RED_HALO_RGB[1] * dim, RED_HALO_RGB[2] * dim)
     this.redTintMat.color.setRGB(RED_TINT_RGB[0] * dim, RED_TINT_RGB[1] * dim, RED_TINT_RGB[2] * dim)
-    for (const p of this.shots) {
-      p.mesh.visible = true
-      p.mesh.position.lerpVectors(p.prev, p.pos, alpha)
-      if (p.vel.lengthSq() > 1e-6) p.mesh.lookAt(this.look.copy(p.mesh.position).add(p.vel))
+    this.glowMat.color.setRGB(HALO_RGB[0] * dim, HALO_RGB[1] * dim, HALO_RGB[2] * dim)
+    this.redGlowMat.color.setRGB(RED_HALO_RGB[0] * dim, RED_HALO_RGB[1] * dim, RED_HALO_RGB[2] * dim)
+    for (const p of this.shots) this.place(p, dt, alpha)
+    for (let i = this.glows.length - 1; i >= 0; i--) {
+      const g = this.glows[i]
+      g.age += dt
+      const red = g.mesh.material === this.redGlowMat
+      const t = g.age / (red ? RED_GLOW_SECONDS : GLOW_SECONDS)
+      if (t >= 1 || !this.hooks.centreOf?.(g.shooter, alpha, this.centre)) {
+        this.dropGlow(i)
+        continue
+      }
+      // Swells fast, then sinks back into the vehicle.
+      const r = (red ? RED_GLOW_RADIUS : GLOW_RADIUS) * Math.sin(Math.PI * Math.sqrt(t))
+      g.mesh.position.copy(this.centre).y += GLOW_LIFT
+      g.mesh.scale.setScalar(Math.max(1e-3, r))
+      g.mesh.visible = true
     }
+  }
+
+  /**
+   * Where a shot is drawn this frame. Free flying, the front of the beam is the interpolated
+   * shot plus half the core, and the beam is one span long behind it, along its velocity.
+   * Tied, the tail sits on the shooter's drawn centre and the beam runs from there to the
+   * same front, so it grows out of the vehicle. It lets go once a full span is out.
+   */
+  private place(p: Projectile, dt: number, alpha: number): void {
+    const mesh = p.mesh
+    mesh.visible = true
+    p.shown = p.shown < 0 ? 0 : p.shown + dt
+    const sz = p.red ? RED_SCALE[2] : 1
+    const span = SPAN * sz
+    const at = this.tmp.lerpVectors(p.prev, p.pos, alpha)
+    const dir = this.axis.copy(p.vel)
+    if (dir.lengthSq() < 1e-12) dir.set(0, 0, 1)
+    dir.normalize()
+    const front = this.front.copy(at).addScaledVector(dir, FRONT * sz)
+    let len = span
+    if (p.tied) {
+      if (this.hooks.centreOf?.(p.shooter, alpha, this.centre)) {
+        const v = this.look.subVectors(front, this.centre)
+        const out = v.length()
+        // Through the hold the tail stays on the centre however far out the front is.
+        if (p.shown <= HOLD) p.reach = Math.max(p.reach, out)
+        const allowed = Math.max(span, p.reach - RETRACT * Math.max(0, p.shown - HOLD))
+        // A front still level with or behind the centre (a replica drawn ahead of where the
+        // shot was fired) would draw the beam backwards: hold it hidden until it is out.
+        if (out < 1e-3 || v.dot(dir) <= 0) {
+          mesh.visible = false
+          return
+        }
+        if (out <= allowed) {
+          len = out
+          dir.copy(v).divideScalar(out)
+        } else {
+          len = allowed
+          if (allowed <= span) p.tied = false
+        }
+      } else {
+        p.tied = false
+      }
+    }
+    // Scale the beam along its length; the front stays put.
+    const k = len / SPAN
+    mesh.scale.z = k
+    mesh.position.copy(front).addScaledVector(dir, -FRONT * k)
+    mesh.lookAt(this.look.copy(mesh.position).add(dir))
+  }
+
+  /** Where the drawn beam starts and ends this frame, for checks. Null while it is hidden. */
+  drawnSpan(shooter: number, shot: number): { tail: THREE.Vector3; head: THREE.Vector3 } | null {
+    const p = this.shots.find((s) => s.shooter === shooter && s.id === shot)
+    if (!p || !p.mesh.visible) return null
+    p.mesh.updateMatrixWorld()
+    return {
+      tail: new THREE.Vector3(0, 0, FRONT - SPAN).applyMatrix4(p.mesh.matrixWorld),
+      head: new THREE.Vector3(0, 0, FRONT).applyMatrix4(p.mesh.matrixWorld),
+    }
+  }
+
+  private addGlow(shooter: number, red: boolean): void {
+    // One glow per vehicle: a new shot restarts it rather than stacking light.
+    const i = this.glows.findIndex((g) => g.shooter === shooter)
+    if (i >= 0) this.dropGlow(i)
+    const mesh = new THREE.Mesh(this.glowGeo, red ? this.redGlowMat : this.glowMat)
+    mesh.visible = false
+    mesh.renderOrder = 1
+    this.game.scene.add(mesh)
+    this.glows.push({ shooter, age: 0, mesh })
+  }
+
+  private dropGlow(i: number): void {
+    this.game.scene.remove(this.glows[i].mesh)
+    this.glows.splice(i, 1)
   }
 
   dispose(): void {
     while (this.shots.length) this.kill(this.shots.length - 1)
+    while (this.glows.length) this.dropGlow(this.glows.length - 1)
+    this.glowGeo.dispose(); this.glowMat.dispose(); this.redGlowMat.dispose()
     this.effects?.dispose()
     this.pulses.dispose()
     this.unwarm()

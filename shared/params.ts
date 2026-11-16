@@ -29,6 +29,11 @@ export interface ParamDef<T extends ParamValue = ParamValue> {
   deferred?: boolean
   /** Synced and saved like any other, but no settings panel shows it: bookkeeping, not a knob. */
   hidden?: boolean
+  /**
+   * Numbers only: how the settings UI shows and takes the value, without changing what is
+   * stored or sent. Shown = (value - offset) * scale; a negative scale reverses the slider.
+   */
+  display?: { offset: number; scale: number }
 }
 
 export interface Param<T extends ParamValue> {

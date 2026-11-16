@@ -8,14 +8,13 @@ import {applyShowroom,setRole} from './showroom'
 import { forceField, type ForceField } from './forceField'
 import { graphicsLevel, levelNumber } from '../../core/quality'
 import * as THREE from 'three/webgpu'
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { ModelLoadCancelled, loadModel } from './modelLoader'
 import { abs, attribute, clamp, dot, float, instancedBufferAttribute, length, min, normalView, positionGeometry, positionViewDirection, sin, smoothstep, time, uniform, vec2 } from 'three/tsl'
 import {mergeStatic,registerVehicleDetail,detailLevel} from './mergeStatic'
 import type { BuggySkin } from './BuggySkin'
 import { MotorSparks } from './motorSparks'
 import type Node from 'three/src/nodes/core/Node.js'
 
-const loader = new GLTFLoader()
 const up = new THREE.Vector3(0, 1, 0)
 /** Axle mounts: Unity `axelPos`/`AxelPos` mirrored per wheel, z flipped to our -Z forward. */
 const axleMounts = (x: number, y: number, z: number) =>
@@ -210,7 +209,16 @@ export class LoadedBuggySkin implements BuggySkin {
     // Wheel stators and flight wings from the original model; the body, canopy, interior,
     // fittings, suspension arm and shock from the Box arm body (tools/buggy-bodies, variant
     // c2-box), which is the owner's original body reshaped and is already in the game frame.
-    const loaded = await Promise.all([loader.loadAsync(frozenResourceURL('/models/buggy.glb')), loader.loadAsync(frozenResourceURL(BOX_ARM_BODY))])
+    // Retried until both arrive (see modelLoader.ts): a failed request must not leave this
+    // buggy drawn as its primitive box for the rest of the session.
+    const cancelled = () => this.disposed
+    let loaded
+    try {
+      loaded = await Promise.all([loadModel(frozenResourceURL('/models/buggy.glb'), {cancelled}), loadModel(frozenResourceURL(BOX_ARM_BODY), {cancelled})])
+    } catch (error) {
+      if (error instanceof ModelLoadCancelled) return
+      throw error
+    }
     if (this.disposed) { loaded.forEach(g => release(g.scene)); return }
     const scene = loaded[0].scene, next = loaded[1].scene
     // The original model puts its headlight meshes on +Z; our nose points toward -Z.

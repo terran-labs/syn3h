@@ -75,12 +75,6 @@ export interface SunSource {
 
 /** three's tone mapping constants for post.toneMap 0, 1, 2. */
 const TONE_MAPS = [THREE.ACESFilmicToneMapping, THREE.AgXToneMapping, THREE.NeutralToneMapping]
-/** The watched vehicle, for the plunge when it goes under a liquid surface. */
-export interface PlungeSource { readonly liquidState: { readonly wasImmersed: boolean; readonly lavaDepth: number } }
-
-/** Plunge tints: lava's hot amber and water's deep teal, in linear colour. */
-const LAVA_TINT = new THREE.Vector3(1.0, 0.42, 0.12)
-const WATER_TINT = new THREE.Vector3(0.12, 0.42, 0.5)
 
 interface Built {
   key: string
@@ -125,10 +119,8 @@ export class PostChain {
     vignette: uniform(0.3),
     grain: uniform(0.35),
     seed: uniform(0),
-    plunge: uniform(0),
     heat: uniform(0.6),
     time: uniform(0),
-    plungeTint: uniform(new THREE.Vector3(1, 1, 1)),
     // Camera, for rebuilding positions from depth (three's camera nodes describe the post
     // quad's camera inside the pipeline, so the scene camera is passed in by hand).
     projInv: uniform(new THREE.Matrix4()),
@@ -146,14 +138,12 @@ export class PostChain {
   private readonly prevOrientation = new THREE.Quaternion()
   private hasPrev = false
   /** 0 to 1, jumps to 1 when the watched vehicle goes under and decays over about 0.7 s. */
-  private plunge = 0
-  private wasUnder = false
   private lastAt = 0
   private readonly grade: Grade = { gain: [1, 1, 1], lift: [0, 0, 0], contrast: 0, saturation: 1 }
   private readonly tmp = new THREE.Vector3()
   private readonly forward = new THREE.Vector3()
 
-  constructor(private readonly host: PostChainHost, private readonly sun: SunSource, private readonly focus?: () => PlungeSource | null | undefined) {}
+  constructor(private readonly host: PostChainHost, private readonly sun: SunSource) {}
 
   render(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, _frameMs?: number): void {
     const budget = this.host.quality.postBudget
@@ -183,9 +173,9 @@ export class PostChain {
     const toneMap = TONE_MAPS[Math.round(P.postToneMap.value)] ?? renderer.toneMapping
     const debug = Math.round(P.postDebug.value)
     const temporalOn = effects && P.postTemporal.value && debug === 0
-    // Motion blur, heat shimmer and the splash share one composite, built only if one is wanted.
+    // Motion blur and heat shimmer share one composite, built only if one is wanted.
     const motionOn = effects && P.postMotionBlur.value > 0
-    const composeOn = effects && (motionOn || P.postHeat.value > 0 || P.postPlunge.value > 0)
+    const composeOn = effects && (motionOn || P.postHeat.value > 0)
     const historyKey = temporalOn ? ['world.curve', 'world.seed', 'terrain.kind', 'terrain.planetSize', 'camera.mode'].map(id => params.get(id)?.value).join('|') : ''
     const key = `${debug}|${tier}|${motionOn}|${composeOn}|${glowOn}|${shaftsOn}|${flareOn}|${aoOn}|${giOn}|${cloudsOn}|${temporalOn}|${historyKey}|${light?.uuid ?? ''}|${toneMap}|${renderer.outputColorSpace}`
     if (this.built?.key !== key) this.build(renderer, scene, camera, key, tier, glowOn, shaftsOn, flareOn, aoOn, light, toneMap, debug, giOn, cloudsOn, temporalOn, motionOn, composeOn)
@@ -218,7 +208,6 @@ export class PostChain {
     // sun's height; at a low sun the long cascaded shadows carry the scene anyway.
     const sunUp = smooth01(0.25, 0.45, this.sun.sunDirection.y)
     if (b.sssNode) b.sssNode.shadowIntensity.value = P.postContact.value * fade * sunUp
-    u.plunge.value = effects ? this.updatePlunge() : 0
     u.heat.value = P.postHeat.value * fade
     u.time.value = (performance.now() / 1000) % 1000
     // The shaft passes cost nothing while the sun is out of view: their stale contents are
@@ -282,27 +271,6 @@ export class PostChain {
     this.hasPrev = true
   }
 
-  /**
-   * The plunge: a brief soft blur and a wash of the liquid's colour when the vehicle breaks a
-   * liquid surface, so the moment registers. It does not linger: driving through lava or
-   * wading is not a reason to blur the screen.
-   */
-  private updatePlunge(): number {
-    const state = this.focus?.()?.liquidState
-    const under = !!state?.wasImmersed
-    const now = performance.now()
-    if (under && !this.wasUnder) {
-      this.plunge = 1
-      ;(this.u.plungeTint.value as THREE.Vector3).copy(state!.lavaDepth > 0 ? LAVA_TINT : WATER_TINT)
-    }
-    this.wasUnder = under
-    const dt = Math.min(0.1, Math.max(0, (now - this.plungeAt) / 1000))
-    this.plungeAt = now
-    this.plunge = Math.max(0, this.plunge - dt / 0.7)
-    const t = this.plunge
-    return t * t * P.postPlunge.value
-  }
-  private plungeAt = 0
 
   /** Sun position on screen (top-left origin, as the post quad's uv) and its visibility. */
   private updateSun(camera: THREE.Camera, renderer: THREE.WebGPURenderer): number {
@@ -426,7 +394,9 @@ export class PostChain {
     }
 
     // The scene colour as the eye sees it this frame: heat shimmer bends where it reads from,
-    // camera motion blur smears it, and the plunge softens and tints it.
+    // camera motion blur smears it. A vehicle touching or going into a liquid never blurs or
+    // tints the frame: only the camera itself crossing a surface changes the picture, and that
+    // is the scene fog's job (src/world/water/underwater.ts), not a screen effect.
     const base = Fn(() => {
       const p = uv().toVar()
       // Heat shimmer: air above glowing lava bends. Look a little below this pixel on screen
@@ -441,18 +411,6 @@ export class PostChain {
         p.addAssign(wob.mul(hot).mul(u.heat).mul(0.0011))
       })
       const c = (motionOn ? motionBlurred(color, depth, p, { projInv: u.projInv, camWorld: u.camWorld, prevView: u.prevView, prevProj: u.prevProj, amount: u.motionAmount, nearFade: u.motionNear, maxBlur: u.motionMax }) : color.sample(p).rgb).toVar()
-      If(u.plunge.greaterThan(0.001), () => {
-        // A soft 8-tap ring and the liquid's colour, both fading with the pulse.
-        const r = u.plunge.mul(0.012)
-        const acc = c.toVar()
-        for (let i = 0; i < 8; i++) {
-          const a = (i / 8) * Math.PI * 2
-          acc.addAssign(color.sample(p.add(vec2(Math.cos(a), Math.sin(a)).mul(r).mul(vec2(1, u.aspect)))).rgb)
-        }
-        const soft = acc.div(9)
-        const lum = dot(soft, vec3(0.2126, 0.7152, 0.0722))
-        c.assign(mix(soft, u.plungeTint.mul(lum).mul(1.6), u.plunge.mul(0.45)))
-      })
       return c
     })
     let hdr: N = composeOn ? base() : color.rgb
@@ -580,6 +538,6 @@ function findSun(scene: THREE.Scene): THREE.DirectionalLight | null {
 }
 
 /** Build the chain for this game. Register it with `game.setPostChain`. */
-export function createPostChain(host: PostChainHost, sun: SunSource, focus?: () => PlungeSource | null | undefined): PostChain {
-  return new PostChain(host, sun, focus)
+export function createPostChain(host: PostChainHost, sun: SunSource): PostChain {
+  return new PostChain(host, sun)
 }

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import * as T from 'three/webgpu'
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { setModelTransport } from '../../src/vehicles/skins/modelLoader'
 import { expect, it, vi } from 'vitest'
 import { RAPIER } from '../../src/core/physics'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
@@ -8,6 +8,12 @@ import { LoadedBuggySkin } from '../../src/vehicles/skins/LoadedBuggySkin'
 import { mergedSurfaces } from '../../src/vehicles/skins/mergeStatic'
 import { WingTipAnchors } from '../../src/vehicles/skins/wingTips'
 import { makeBed } from '../vehicles/harness'
+
+/** Serve the model downloads from the repository's public folder. */
+function modelsFromDisk() {
+  setModelTransport({ fetch: async url => new Response(Uint8Array.from(await readFile(`public${url}`)), { status: 200 }) })
+  return { mockRestore: () => setModelTransport() }
+}
 
 /** Independently inspect the rendered field, excluding hull vertices in merged distant draws. */
 function renderedWingVertices(skin: LoadedBuggySkin, vehicle: Syn3hBuggy): T.Vector3[] {
@@ -30,10 +36,7 @@ function renderedWingVertices(skin: LoadedBuggySkin, vehicle: Syn3hBuggy): T.Vec
 }
 
 it.each(['local', 'remote', 'bot'] as const)('%s buggy effects stay on drawn tips through deployment, flex and detail changes', async role => {
-  const loader = vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockImplementation(async url => {
-    const bytes = await readFile(`public${url}`)
-    return new GLTFLoader().parseAsync(Uint8Array.from(bytes).buffer, '')
-  })
+  const loader = modelsFromDisk()
   const bed = await makeBed(), skin = new LoadedBuggySkin()
   const buggy = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new T.Vector3(13, 30, -17), .7, 'buggy', () => skin))
   buggy.isLocal = role === 'local'
@@ -84,10 +87,7 @@ it('writes ribbon endpoints at the real tips and resets history across unavailab
   const { params } = await import('../../shared/params')
   const previousLevel = graphicsLevel.value
   params.set(graphicsLevel.def.id, 2)
-  const loader = vi.spyOn(GLTFLoader.prototype, 'loadAsync').mockImplementation(async url => {
-    const bytes = await readFile(`public${url}`)
-    return new GLTFLoader().parseAsync(Uint8Array.from(bytes).buffer, '')
-  })
+  const loader = modelsFromDisk()
   const bed = await makeBed(), skin = new LoadedBuggySkin()
   const buggy = bed.add(new Syn3hBuggy(bed.game, bed.terrain, new T.Vector3(0, 30, 0), .7, 'buggy', () => skin))
   type EffectSystem = { update(dt: number): void; dispose(): void }
