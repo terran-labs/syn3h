@@ -23,7 +23,12 @@ benchmark. A fresh browser context starts without site storage or browser HTTP c
 driver, OS and CDN caches are not cleared.
 
 The cases are a different recipe from the initial lobby, a switch to another recipe,
-then a return to the first recipe in the same page. They use actual galaxy click handlers.
+then a return to the first recipe in the same page. They dispatch synthetic clicks through
+the galaxy handlers. This does not verify trusted pointer input, hit testing or actionability.
+After profiler setup, a matching document capture listener timestamps click-handler entry
+and records the event target and `isTrusted`. Final planet identity must match the requested
+target. Entry duration ends when the completion poll is observed, so it includes polling
+latency and is not an exact input-to-presentation measurement.
 Each case includes five seconds after landing. Normal recipe selection chooses a new
 seed; record it rather than claiming these are identical seeded paired measurements.
 Preserve default quality and automatic quality changes. Capture the actual backend.
@@ -75,6 +80,19 @@ partial outputs. Report total transition time separately from the maximum raw Ga
 CPU phase costs, connection wait and first-use pipeline events. Do not turn intentional
 transition animation time into a claimed freeze duration. Screenshot completion does not
 prove input responsiveness.
+
+Console warnings and errors are retained; console errors and page errors make the capture
+nonpassing. Each long-task/long-frame observer records support, successful installation or
+its installation error. Unsupported observers do not become invented zero-event evidence.
+
+Browser operations share a 270-second work deadline measured from the Node script start.
+On error or timeout, preserve the original failure before attempting a partial raw trace and
+any active CPU profile. Evidence salvage, browser close and response draining share the
+remaining budget ending at 295 seconds; the outer supervisor remains authoritative.
+These attempts can fail on an unresponsive browser, which must remain explicit in the report.
+Close the browser event producer, then drain response-body handlers dynamically and recompute
+provenance and browser errors before the final report. Missing bodies, an incomplete drain,
+failed evidence writes or a browser-close error cannot produce a passing capture.
 
 The supervisor accounts for observed descendant PID/start identities and direct Popen
 handles. It checks each identity immediately before signalling that individual process;
