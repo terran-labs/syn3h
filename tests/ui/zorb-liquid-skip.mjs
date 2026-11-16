@@ -17,7 +17,7 @@ const remaining = cap => { const n = Math.min(cap, (cleanup ? deadline : workEnd
 async function bounded(p, cap, label) { let timer; try { return await Promise.race([p, new Promise((_,reject) => { timer=setTimeout(()=>reject(new Error(`${label}: deadline`)),remaining(cap)) })]) } finally { clearTimeout(timer) } }
 const hash = b => createHash('sha256').update(b).digest('hex')
 const git = (...args) => execFileSync('git',args,{cwd:root,encoding:'utf8',timeout:5000}).trim()
-const required = ['src/main.ts','src/core/Game.ts','src/core/Input.ts','src/vehicles/Vehicle.ts','src/vehicles/zorb.ts','src/world/terrain/ProceduralTerrain.ts','src/audio/index.ts','shared/params.ts']
+const required = ['src/main.ts','src/core/Game.ts','src/core/Input.ts','src/vehicles/Vehicle.ts','src/vehicles/zorb.ts','src/vehicles/Jet.ts','src/vehicles/Hovercraft.ts','src/vehicles/Tank.ts','src/vehicles/Syn3hBuggy.ts','src/world/terrain/ProceduralTerrain.ts','src/audio/index.ts','shared/params.ts']
 const report = {source:expected,launch,cases:[],responses:[],parsedScripts:[],errors:[],warnings:[],cleanupErrors:[],captureComplete:false,productAccepted:false,disposition:'review-required',navigation:{},canvasActions:[],vehicleSelections:[],
   scope:'Chrome only; controlled initial placements plus native controls in the real app. No private float or physics ticks. Not a production/FPS benchmark.',
   limitations:['Visual review required after screenshots/video','Audio invocation logs are not a listening check','No physical-device or network-peer validation']}
@@ -99,7 +99,7 @@ function behaviorSummary(rows) {
 async function persistPage() {
   if(page&&!page.isClosed()) {
     const evidence=await bounded(page.evaluate(()=>window.zorbProbe?.export()),5000,'partial observation')
-    if(evidence) { if(evidence.overflow)report.errors.push('Observation capacity exceeded'); report.activeEvidence=evidence; for(const record of report.cases) { const rows=evidence.rows.filter(r=>r.case===record.name);if(rows.length&&!record.endpointFrozen)record.behavior=behaviorSummary(rows) } await bounded(writeFile(`${out}/active-evidence.json`,JSON.stringify(evidence)),5000,'partial evidence') }
+    if(evidence) { if(evidence.overflow)report.errors.push('Observation capacity exceeded'); if(evidence.phaseOverflow||evidence.errorDrops||evidence.observationErrors?.length)report.errors.push('Controller/float evidence incomplete'); report.activeEvidence=evidence; for(const record of report.cases) { const rows=evidence.rows.filter(r=>r.case===record.name);if(rows.length&&!record.endpointFrozen)record.behavior=behaviorSummary(rows) } await bounded(writeFile(`${out}/active-evidence.json`,JSON.stringify(evidence)),5000,'partial evidence'); await bounded(writeFile(`${out}/phases-${evidence.liquid}.json`,JSON.stringify({phases:evidence.phases,overflow:evidence.phaseOverflow,errors:evidence.observationErrors,errorDrops:evidence.errorDrops,boundVehicle:evidence.boundVehicle})),5000,'phase evidence') }
   }
   await save()
 }
@@ -201,7 +201,67 @@ async function activate(kind) {
 async function installProbe(liquid) {
   await page.evaluate(liquid=>{
     const s=syn3h,t=s.terrain,rows=[],audio=[],restore=[];let current=null,previous=null,anchor=null,overflow=false
+    const phases=[],observationErrors=[];let phaseOverflow=false,errorDrops=0,binding=null,callId=0
     const copy=v=>({x:v.x,y:v.y,z:v.z})
+    // Diagnostic reads of exact source-pinned methods/fields, never substitute physics calls.
+    const describe=e=>{try{return String(e?.stack??e)}catch{return '[unreadable thrown value]'}}
+    const error=(where,e)=>{try{if(observationErrors.length<100)observationErrors.push({where,case:current,tick:s.game.tick,error:describe(e)});else errorDrops++}catch{errorDrops++}}
+    const safely=(where,fn)=>{try{return fn()}catch(e){error(where,e)}}
+    const value=v=>typeof v==='number'&&!Number.isFinite(v)?String(v):v
+    const vector=v=>({x:value(v.x),y:value(v.y),z:value(v.z)})
+    const snapshot=(v,phase,id,outcome)=>safely(phase,()=>{
+      if(!current)return
+      if(phases.length>=60000){phaseOverflow=true;return}
+      const b=v.body,z=v.zorb,h=z.skipSample
+      phases.push({case:current,phase,callId:id,tick:s.game.tick,time:s.game.time,now:performance.now(),
+        vehicle:{uuid:v.object.uuid,kind:v.kind,bodyHandle:b.handle,selected:s.player===v},
+        active:z.active,on:z.on,materializing:v.object.userData.materializing===true,input:{...v.input},
+        held:Object.fromEntries(['KeyE','KeyQ','KeyR','KeyF','Space','KeyW','KeyA','KeyS','KeyD'].map(k=>[k,typeof s.game.input.held==='function'?s.game.input.held(k):null])),
+        radius:value(z.radius),target:value(z.target),velocity:vector(b.linvel()),omega:vector(b.angvel()),
+        force:vector(b.userForce()),torque:vector(b.userTorque()),
+        decision:{onLiquid:z.onLiquid,hopPending:z.hopPending,armed:z.skipArmed,coasting:z.skipCoasting,cooldown:value(z.skipCooldown),skips:z.skips,hops:z.hops,
+          previous:h?{x:value(h.x),y:value(h.y),z:value(h.z),radius:value(h.radius),gap:value(h.gap),speed:value(h.speed),kind:h.kind}:null},
+        outcome})
+    })
+    const restoreBinding=()=>{
+      const old=binding;if(!old)return
+      binding=null
+      for(const entry of old.entries.slice().reverse())safely(`restore ${entry.key}`,()=>{
+        if(entry.object[entry.key]!==entry.wrapper){error('wrapper ownership',entry.key);return}
+        if(entry.descriptor)Object.defineProperty(entry.object,entry.key,entry.descriptor)
+        else delete entry.object[entry.key]
+      })
+    }
+    const verifyBinding=()=>safely('binding check',()=>{
+      if(!binding)return
+      if(s.player!==binding.vehicle)error('vehicle changed during case','No retarget permitted')
+      for(const e of binding.entries)if(e.object[e.key]!==e.wrapper)error('wrapper replaced',e.key)
+    })
+    const bind=()=>{
+      if(binding)throw new Error('Previous case observer still bound')
+      const v=s.player;binding={vehicle:v,entries:[]}
+      const wrap=(object,key,label)=>{
+        const original=object[key],descriptor=Object.getOwnPropertyDescriptor(object,key)
+        if(typeof original!=='function')throw new Error(`Missing observed method ${key}`)
+        const wrapper=function(...args){
+          const id=++callId
+          if(label==='fixed')verifyBinding()
+          if(label==='dispose')safely('dispose observation',()=>{error('disposed during case',v.object.uuid);restoreBinding()})
+          snapshot(v,`${label}:before`,id,{argumentCount:args.length,dt:typeof args[0]==='number'?value(args[0]):typeof args[2]==='number'?value(args[2]):null})
+          let returned=false,result
+          try {result=Reflect.apply(original,this,args);returned=true;return result}
+          catch(e){snapshot(v,`${label}:throw`,id,{thrown:describe(e)});throw e}
+          finally {if(returned)snapshot(v,`${label}:after`,id,{returnType:typeof result,returnValue:result===undefined?'undefined':result===null?null:['boolean','number','string'].includes(typeof result)?value(result):'[opaque]'})}
+        }
+        Object.defineProperty(object,key,{configurable:true,writable:true,enumerable:descriptor?.enumerable??false,value:wrapper})
+        binding.entries.push({object,key,descriptor,wrapper})
+      }
+      try {
+        // fixed supplies restored-input boundaries; these two wrap the actual nested calls.
+        wrap(v,'applyForces','controller');wrap(v.zorb,'float','float');wrap(v,'fixedUpdate','fixed');wrap(v,'dispose','dispose')
+        verifyBinding()
+      }catch(e){restoreBinding();throw e}
+    }
     const context=(x,z)=>{
       const h=t.liquidHeightAt(x,z),d=.25
       const neighbors=[[x-d,z],[x+d,z],[x,z-d],[x,z+d]].map(([a,b])=>({x:a,z:b,kind:t.liquidKindAt(a,b),height:t.liquidHeightAt(a,b)}))
@@ -226,10 +286,10 @@ async function installProbe(liquid) {
       if(rows.length>=24000){overflow=true;return}
       rows.push(row);previous=row
     }
-    const observer={fixedUpdate(){sample('preWorld-afterControllers')},postPhysics(){sample('postPhysics')}}
+    const observer={fixedUpdate(){verifyBinding();sample('preWorld-afterControllers')},postPhysics(){verifyBinding();sample('postPhysics')}}
     s.game.add(observer)
     window.zorbProbe={
-      begin(name){current=name;previous=null},end(){current=null;previous=null},
+      begin(name){current=name;previous=null;bind()},end(){restoreBinding();current=null;previous=null},
       site(){
         // Search actual generated terrain; never replace its sampler or liquid methods.
         const size=t.data.size,limit=Math.min(size*.45,850)
@@ -264,8 +324,8 @@ async function installProbe(liquid) {
         v.body.setAngvel({x:0,y:mode==='drive'?0:2,z:0},true)
         return {mode,site,actualContext:q,settingsDiagnostic:true,placementDiagnostic:true,skipBefore:v.zorb.skips,hopBefore:v.zorb.hops}
       },
-      export(){return {liquid,rows,audio,overflow,clock:'Unmodified app/network clock',surfaceQuery:'actual ProceduralTerrain'}} ,
-      dispose(){s.game.remove(observer,false);for(const f of restore)f();current=null}
+      export(){return {liquid,rows,audio,overflow,phases,phaseOverflow,observationErrors,errorDrops,boundVehicle:binding?.vehicle.object.uuid??null,clock:'Unmodified app/network clock',surfaceQuery:'actual ProceduralTerrain'}} ,
+      dispose(){restoreBinding();s.game.remove(observer,false);for(const f of restore)safely('restore audio',f);current=null}
     }
   },liquid)
 }
@@ -340,11 +400,12 @@ try {
       await observeCase(liquid,kind,'repeat',site)
       if(kind==='buggy')for(const mode of ['slow','steep','hop','drive'])await observeCase(liquid,kind,mode,mode==='drive'?await page.evaluate(()=>zorbProbe.shore()):site)
     }
-    await persistPage();await page.evaluate(()=>zorbProbe.dispose());await context.close();page=undefined
+    await page.evaluate(()=>zorbProbe.dispose());await persistPage();await context.close();page=undefined
   }
 }catch(e){report.failure=String(e.stack??e);try{await persistPage()}catch(partial){report.cleanupErrors.push(`partial: ${partial}`)}}
 finally {
   cleanup=true
+  if(page&&!page.isClosed())try{await bounded(page.evaluate(()=>window.zorbProbe?.dispose()),5000,'probe restoration');await persistPage()}catch(e){report.cleanupErrors.push(`probe restoration: ${e.stack??e}`)}
   for(const c of contexts)try{await bounded(c.close(),5000,'context close')}catch(e){report.cleanupErrors.push(String(e))}
   if(browser)try{await bounded(browser.close(),10000,'browser close')}catch(e){report.cleanupErrors.push(String(e))}
   try {

@@ -76,3 +76,33 @@ Each case now ends its observation probe once, synchronously with collecting its
 Historical attempt002 artifacts remain untouched: its per-case repeat file ended at tick1546 with tangent speed.688363m/s, whereas its later refreshed report summary ended at.534331m/s. These endpoints must not be conflated. Three skips are not proof of sustained skipping; the short settling tail is not proof of stable flotation. This source correction neither upgrades those five cases nor supplies the eleven missing cases.
 
 The new pinned launcher proposal is /tmp/zorb-app-launcher/run-review-03.py. Prior launchers, source receipts and both execution directories remain unchanged. No retry is authorized by this plan.
+
+## Controller and float observation proposal after app003
+
+Source preparation only, based on exact clean `1ed3f8bed0be0167037f5b7d1dd4f8e53837fb7b`. App003 and its original two-of-three Jet skip failure remain preserved. This addition does not implement passive controllers, normalize physics or change the owner contract. No runtime allocation is implied.
+
+Each existing case start binds to the selected vehicle instance. Instance wrappers observe the actual `applyForces` and `zorb.float` calls made by normal application stepping. A fixedUpdate wrapper records the outer raw/restored input boundary; a dispose wrapper restores the installed properties before forwarding disposal and records disposal during a case as incomplete evidence. Every wrapper invokes its captured original once with Reflect.apply, the caller's receiver and original arguments, and returns its original result or rethrows the same thrown value. Observation failures are collected without replacing application results. No original call is synthesized and no method is invoked to obtain an extra physics sample.
+
+Records include case, phase, invocation ID, tick/time, selected vehicle UUID/kind/body handle, active/on/materializing, input, E/Q/R/F/Space/W/A/S/D held state, radius/target, full linear/angular vectors, accumulated user force/torque and available skip state. Rapier's installed dist/dynamics/rigid_body.d.ts declares userForce and userTorque; missing runtime access produces an observation error rather than guessed force values. Nonfinite vector/state numbers are encoded explicitly. Held-key API absence is represented as null. Controller/float argument identities are forwarded unchanged, not serialized into evidence.
+
+Private observations are deliberately tied to the exact product sources: skipSample, skipArmed, skipCoasting, skipCooldown, hopPending and onLiquid. The private history excludes its terrain object to avoid serializing application graphs. `float` returns undefined; its return is recorded, not treated as a boolean skip decision. No wrapper is inserted into skipLiquid and no internal branch result is invented. Counter/state changes describe observations, not a complete branch trace. Force/torque snapshots omit rigid-body integration and contact impulses, so they cannot allocate the entire slowdown to a particular cause.
+
+Wrappers are removed at case end, on selected-vehicle disposal, and during final cleanup after failure. Exact prior own-property descriptors are restored, or the diagnostic own property is deleted to reveal the original prototype method. A replacement by another writer is reported and left untouched rather than overwritten. Membership checks run at fixed and existing observer boundaries. An unexpected selected vehicle change is fatal to evidence completeness and never silently retargets the observer. Partial installation restores the methods already installed.
+
+Each liquid has at most 60,000 phase records and 100 retained observation errors, with explicit overflow/error-drop counts. Existing periodic persistence saves phases-water.json or phases-lava.json alongside the existing active evidence, avoiding loss of the water observations when lava begins. Observation errors or overflow make capture incomplete. Cleanup persistence is inside the existing outer cleanup guard, so its failure does not skip browser/context closure. Restoration failures remain failures. Closing a lost page destroys its wrappers, but does not provide a successful restoration receipt.
+
+The original sixteen cases, growing-radius start, three-skip requirement, contact/hop/finite-motion checks, speed/spin and no-stuck review criteria, twelve/six/five-second dwell, fixed-step progression and 480-second fixture bound are unchanged. No new pre-verdict evaluate is inserted. Periodic evidence writes and extra observations may perturb scheduling and add serialization cost; this is a diagnostic fixture, not uninstrumented performance evidence. A fully grown diagnostic pass cannot substitute for app003's growth failure.
+
+The required served-source receipts now include all four controllers in addition to existing base/ball sources. A later launcher proposal must pin the reviewed fixture and plan plus its new exact commit, retaining the existing product-source pins, configuration, ports, deadlines and cleanup. Do not repin or run the old launcher against this dirty source draft. The exact review diff is `git diff 1ed3f8bed0be0167037f5b7d1dd4f8e53837fb7b -- tests/ui/zorb-liquid-skip.mjs tests/ui/zorb-liquid-skip.plan.md` in this worktree.
+
+Prepared fixture SHA256: `0801aed7ff7a2879fe9dcbf6be94f788bc5e9f2add0cc44d777bb0c48a1d1e59`.
+Product sources remain unchanged:
+
+- Vehicle: `36f0e898ae92c59ced276050a06ad13818c8567ac52a8fc45a682897c8861dad`
+- Jet: `7bac9ae2594d0dda9b02c6f31cd0b9935a80b0fc3763943e79a2dea7a33839aa`
+- Tank: `2d46a5733456fe83e0bcd44b1aadd09e0241be727570af500dc6bdee81371b32`
+- Hovercraft: `aae714bd9bd1e3f9096f8300be0b63f120dbcdc9f6157c7762c4856f990a8abf`
+- Buggy: `0aa0eb3e6ffa38c4e99559f563aa5d17b48d39c85e33a3cb819ddcd5b258215a`
+- Zorb: `447bb919de0ed2e47c086036d2b67ce214eef36197fa4c531f69d65ae9c69630`
+
+Only Node syntax checking and git whitespace checking ran. No mock, test, typecheck, browser, server, network request, physics replay or launcher execution ran. Independent source review precedes any new allocation.
