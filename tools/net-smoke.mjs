@@ -28,7 +28,7 @@
 import { randomBytes } from 'node:crypto'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
-import { MAX_STEP_RETRIES, retryDecision, uncleanSince } from './lib/smoke-retry.mjs'
+import { MAX_STEP_RETRIES, isBrowserCrash, retryDecision, uncleanSince } from './lib/smoke-retry.mjs'
 import { chromium } from 'playwright-core'
 import { createShotEvidence, createShotDecision } from './shot-evidence.mjs'
 
@@ -46,6 +46,8 @@ if (room.length > 32 || !/^[a-z0-9_-]+$/.test(room)) throw new Error('Invalid sm
 console.log('NET SMOKE RUN', JSON.stringify({ base, room }))
 const diagnosticPath = `/tmp/syn3h-net-smoke-${room}.json`
 const clients = []
+/** Pages whose browser process crashed: the machine failed, not the game (see isBrowserCrash). */
+const crashedPages = []
 const shot = '/tmp/syn3h-net-smoke.png'
 
 const browser = await chromium.launch({
@@ -60,6 +62,7 @@ async function open(name, extra = '') {
   const ctx = await browser.newContext({ viewport: { width: 960, height: 540 } })
   const page = await ctx.newPage()
   clients.push({ name, page })
+  page.on('crash', () => crashedPages.push(name))
   page.on('pageerror', (e) => errors.push(`${name} pageerror: ${e.message}`))
   page.on('console', (m) => { if (m.type() === 'error') errors.push(`${name} console: ${m.text()} at ${m.location().url}`) })
   page.on('response', (r) => { if (r.status() >= 400) console.log(`HTTP ${r.status()} ${r.url()}`) })
@@ -667,6 +670,12 @@ const failed = results.filter((r) => !r.ok)
 const evidenceFailed = evidenceEnabled && !evidenceComplete()
 // release.sh checks the marker, not Node's exit code. Never print OK for incomplete evidence.
 console.log(`NET SMOKE SUMMARY steps passed ${tally.passed}/${tally.steps}; drops ridden through ${tally.drops.length}${tally.drops.length ? ` (${tally.drops.join(', ')})` : ''}; step retries ${tally.retries}/${MAX_STEP_RETRIES}${tally.legacy ? '; this build records no socket closes, so a dropped connection cannot be told from a game failure and no step was retried' : ''}`)
+const crashed = crashedPages.length > 0 || failed.some((r) => isBrowserCrash(JSON.stringify(r.detail)))
+// A crash is reported as what it is, never as a gameplay failure; tools/smoke-run.sh may restart once.
+if (crashed) {
+  console.log(`NET SMOKE BROWSER CRASHED (${crashedPages.join(', ') || 'a page'}): the browser running the check crashed; this is not a game or network failure`)
+  process.exit(3)
+}
 console.log(failed.length ? `NET SMOKE FAILED (${failed.length})` : evidenceFailed ? 'NET SMOKE FAILED (incomplete shot evidence)' : `NET SMOKE OK, screenshot ${shot}`)
 if (evidenceEnabled) console.log('SHOT EVIDENCE ACCEPTANCE',JSON.stringify({evidenceComplete:evidenceComplete(),evidenceCaptureState,evidenceCaptureFailures,evidenceWriteFailures}))
 process.exit(failed.length || evidenceFailed ? 1 : 0)

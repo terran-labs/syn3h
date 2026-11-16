@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { MAX_STEP_RETRIES, retryDecision, uncleanSince } from './smoke-retry.mjs'
+import { MAX_STEP_RETRIES, isBrowserCrash, retryDecision, uncleanSince } from './smoke-retry.mjs'
 
 const drop = { code: 1006, reason: '', clean: false, wasOpen: true, at: 5000 }
 
@@ -30,4 +30,13 @@ test('a build without close diagnostics, or a step that cannot rerun, never retr
   assert.equal(retryDecision({ failed: true, drops: [drop], retried: false, retriesUsed: 0, supported: false }), 'fail')
   assert.equal(retryDecision({ failed: true, drops: [drop], retried: false, retriesUsed: 0, retryable: false }), 'fail')
   assert.equal(retryDecision({ failed: false, drops: [drop], retried: false, retriesUsed: 0 }), 'pass')
+})
+
+test('a crashed page is a browser crash; game, network and timeout failures are not', () => {
+  assert.equal(isBrowserCrash('page.waitForFunction: Target crashed '), true)
+  assert.equal(isBrowserCrash('Error: Page crashed'), true)
+  assert.equal(isBrowserCrash('page.waitForFunction: Timeout 30000ms exceeded.'), false)
+  assert.equal(isBrowserCrash('{"ramsA":0,"ramsB":0}'), false)
+  assert.equal(isBrowserCrash('closed 1006'), false)
+  assert.equal(isBrowserCrash(undefined), false)
 })
