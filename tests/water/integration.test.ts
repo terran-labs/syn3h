@@ -8,7 +8,7 @@ import { ZORB_FLOAT_DEPTH } from '../../src/vehicles/zorb'
 import { ProceduralTerrain } from '../../src/world/terrain/ProceduralTerrain'
 import { seaWaves } from '../../src/world/water/seaWaves'
 import { worldSeaKind } from '../../src/world/terrain/settings'
-import { worldLavaAltitude } from '../../shared/params'
+import { params, worldLavaAltitude } from '../../shared/params'
 import { wrapCoord } from '../../shared/wrap'
 import { harness } from '../vehicles2/harness'
 
@@ -111,23 +111,23 @@ it('vertical phase speed follows the exact wrapped liquid-height selection', () 
   const offset = vi.spyOn(seaWaves, 'offsetAt').mockReturnValue(.25)
   const speed = vi.spyOn(seaWaves, 'verticalSpeedAt').mockReturnValue(1.5)
   try {
-    worldLavaAltitude.value = 10; worldSeaKind.value = 1
+    params.set(worldLavaAltitude.def.id, 10); params.set(worldSeaKind.def.id, 1)
     expect(terrain.liquidHeightAt(130, 0)).toBe(10.25)
     expect(terrain.liquidVerticalSpeedAt(130, 0)).toBe(1.5)
     expect(offset).toHaveBeenLastCalledWith(wrapCoord(130, 100), 0, -10, 10)
     expect(speed).toHaveBeenLastCalledWith(wrapCoord(130, 100), 0, -10, 10)
     expect(terrain.liquidHeightAt(0, 0)).toBe(20)
     expect(terrain.liquidVerticalSpeedAt(0, 0)).toBe(0) // Raised inland pool.
-    worldSeaKind.value = 0
+    params.set(worldSeaKind.def.id, 0)
     expect(terrain.liquidHeightAt(30, 0)).toBe(10)
     expect(terrain.liquidVerticalSpeedAt(30, 0)).toBe(0) // Lava sea.
-    worldSeaKind.value = 1; enabled.mockReturnValue(false)
+    params.set(worldSeaKind.def.id, 1); enabled.mockReturnValue(false)
     expect(terrain.liquidHeightAt(30, 0)).toBe(10)
     expect(terrain.liquidVerticalSpeedAt(30, 0)).toBe(0)
     enabled.mockReturnValue(true); speed.mockReturnValue(NaN)
     expect(terrain.liquidVerticalSpeedAt(30, 0)).toBeNaN()
     expect(terrain.liquidVerticalSpeedAt(Infinity, 0)).toBeNaN()
   } finally {
-    vi.restoreAllMocks(); worldLavaAltitude.value = oldSea; worldSeaKind.value = oldKind
+    vi.restoreAllMocks(); params.set(worldLavaAltitude.def.id, oldSea); params.set(worldSeaKind.def.id, oldKind)
   }
 })
