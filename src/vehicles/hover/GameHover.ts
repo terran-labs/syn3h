@@ -41,6 +41,15 @@ export class GameHover {
     this.level = level
     this.levels.forEach((h, i) => { h.object.visible = i === level })
   }
+  /** Sample the active body's generated lamp band; the silhouette retains canonical anchors. */
+  sampleHeadlight(index: number, position: THREE.Vector3, direction: THREE.Vector3, color: THREE.Color): boolean {
+    if (!this.object.visible) return false
+    const body = this.levels[this.level === 2 ? 0 : this.level]
+    const point = body.beams[index]
+    if (!point) return false
+    position.set(...point); direction.set(0, 0, -1); color.set(0xe8f4ff)
+    return true
+  }
   get detail(): 0 | 1 | 2 { return this.level }
 
   /** Steering in -1..1, throttle in 0..1. Only the visible level is touched. */

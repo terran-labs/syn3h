@@ -82,6 +82,12 @@ export class Hovercraft extends Vehicle {
     // add their white lamp spheres: those sit at points for a generic nose and hung in the air
     // ahead of this one (the owner, 15 Nov 2026: "two balls floating in front of it").
     this.object.userData.ownLamps=true
+    this.object.userData.headlights={
+      count:2,
+      sample:(index:number,position:THREE.Vector3,direction:THREE.Vector3,color:THREE.Color)=>
+        this.object.visible&&this.study.sampleHeadlight(index,position,direction,color),
+      needsGlow:()=>this.study.detail===2,
+    }
     // The collision hull and the clearance guard cover the body's whole outline.
     const b=study.bounds
     this.envelope={x:b.min.x,w:b.max.x-b.min.x,y0:Math.max(0,b.min.y),y1:b.max.y,z:b.min.z,l:b.max.z-b.min.z}
@@ -272,7 +278,7 @@ export class Hovercraft extends Vehicle {
     super.teleport(position,heading); this.lastDistance = 0; this.targetHeight = 0
   }
   override dispose(): void {
-    this.study.dispose()
+    delete this.object.userData.headlights;this.study.dispose()
     super.dispose()
   }
 }

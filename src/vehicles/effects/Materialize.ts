@@ -191,6 +191,8 @@ export class Materialize implements System {
       this.holds.push(hold)
     }
     hold.elapsed=0;hold.seconds=seconds
+    // Cosmetic arrival on remote replicas suppresses beams without claiming physics authority.
+    vehicle.object.userData.materializeVisual=true
     const t=body.translation(),at=options.at??t
     const surface=Math.max(this.terrain.heightAt(at.x,at.z),this.terrain.liquidHeightAt?.(at.x,at.z)??-Infinity)
     hold.point.set(at.x,surface+restHeight(vehicle)+hover,at.z)
@@ -323,6 +325,7 @@ export class Materialize implements System {
     if(!released)this.cue('materializeCancel',hold)
     const i=this.holds.indexOf(hold)
     if(i>=0)this.holds.splice(i,1)
+    delete hold.vehicle.object.userData.materializeVisual
     if(hold.holds)delete hold.vehicle.object.userData.materializing
     const done=hold.done;hold.done=[]
     for(const resolve of done)resolve()

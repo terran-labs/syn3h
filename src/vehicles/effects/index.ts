@@ -1,7 +1,7 @@
 import {hotExposureDim} from '../skins/hotExposure'
 import * as T from 'three/webgpu'
 import type {Game,System} from '../../core/Game'
-import {qualityBudget,graphicsLevel} from '../../core/quality'
+import {qualityBudget,graphicsLevel,qualityLevel} from '../../core/quality'
 import type {Terrain} from '../../world/Terrain'
 import type {TileShiftEvent,Vehicle,VehicleObjectEvents} from '../Vehicle'
 import {ParticleBatch} from './ParticleBatch'
@@ -10,6 +10,10 @@ import {dustSprite,glowSprite,plasmaSprite,tyreMarkAlpha} from './sprites'
 import {DEFAULT_TREAD,TREADS} from './treads'
 import type {SurfaceKind} from '../../world/terrain/surface'
 import {windDrift} from '../../world/weather'
+import {hazeNow} from '../../world/weather/fog'
+import {vehicleNightAmount} from '../skins/nightReadability'
+import {HeadlightBatch} from './HeadlightBatch'
+import type {HeadlightSource} from './HeadlightSource'
 
 const greenPlasma=plasmaSprite(false),redPlasma=plasmaSprite(true)
 /** Shares of the wind velocity given to a new dust particle and to exhaust and energy trails. */
@@ -41,6 +45,8 @@ class EffectWorld implements System {
   sparks!:ParticleBatch
   redSparks!:ParticleBatch
   readonly lamps=new T.InstancedMesh(new T.SphereGeometry(.09,8,6),new T.MeshBasicMaterial({color:0xffffff}),512)
+  readonly headlights=new HeadlightBatch()
+  private readonly haze={density:0,height:0,sea:0}
   clock=0
   readonly stats={vehicles:0,particles:0,marks:0,emitted:0,updateMs:0,peakUpdateMs:0,batches:7}
   constructor(readonly game:Game){
@@ -48,7 +54,16 @@ class EffectWorld implements System {
     this.marks=new RibbonBatch(1024,tyreMarkAlpha);this.trails=new RibbonBatch(256,undefined,true)
     this.lamps.frustumCulled=false;this.lamps.count=0
     this.lamps.onBeforeRender=()=>{this.lamps.material.color.setScalar(hotExposureDim(game.renderer.toneMappingExposure));let index=0;for(const e of this.vehicles.values())index=e.writeLamps(this.lamps,index);hideUnusedLamps(this.lamps,index);this.lamps.instanceMatrix.needsUpdate=true;if(this.lamps.instanceColor)this.lamps.instanceColor.needsUpdate=true}
-    game.scene.add(this.lamps,this.marks.mesh,this.trails.mesh);this.rebudget();game.scene.userData.vehicleEffects=this.stats
+    this.headlights.mesh.onBeforeRender=()=>{
+      const start=performance.now(),night=vehicleNightAmount(game.scene)
+      hazeNow(this.haze)
+      const strength=qualityLevel.value>0?night*(1+Math.min(1.5,this.haze.density*180)):0
+      this.headlights.begin()
+      if(strength>0)for(const e of this.vehicles.values())e.writeHeadlights(strength)
+      this.headlights.end();this.headlights.stats.updateMs=performance.now()-start
+    }
+    game.scene.userData.remoteHeadlights=this.headlights.stats
+    game.scene.add(this.headlights.mesh,this.lamps,this.marks.mesh,this.trails.mesh);this.rebudget();game.scene.userData.vehicleEffects=this.stats
   }
   retain(){this.references++}
   release(){if(--this.references===0){worlds.delete(this.game);this.game.remove(this)}}
@@ -89,7 +104,7 @@ class EffectWorld implements System {
     this.stats.emitted=this.dust.emitted+this.energy.emitted+this.sparks.emitted+this.redSparks.emitted
     this.stats.updateMs=performance.now()-start;this.stats.peakUpdateMs=Math.max(this.stats.peakUpdateMs,this.stats.updateMs)
   }
-  dispose(){this.lamps.removeFromParent();this.lamps.geometry.dispose();this.lamps.material.dispose();for(const e of this.vehicles.values())e.dispose();this.vehicles.clear();for(const b of [this.dust,this.energy,this.sparks,this.redSparks,this.marks,this.trails])b.dispose();delete this.game.scene.userData.vehicleEffects}
+  dispose(){this.headlights.dispose();delete this.game.scene.userData.remoteHeadlights;this.lamps.removeFromParent();this.lamps.geometry.dispose();this.lamps.material.dispose();for(const e of this.vehicles.values())e.dispose();this.vehicles.clear();for(const b of [this.dust,this.energy,this.sparks,this.redSparks,this.marks,this.trails])b.dispose();delete this.game.scene.userData.vehicleEffects}
 }
 function worldFor(game:Game){let w=worlds.get(game);if(!w){w=new EffectWorld(game);worlds.set(game,w);game.add(w)}return w}
 
@@ -99,6 +114,10 @@ class VehicleEffects {
   private readonly tailMaterial=new T.MeshBasicMaterial({color:new T.Color(2,0,0)})
   private readonly lampPoints:T.Object3D[]=[]
   private readonly lampMatrix=new T.Matrix4()
+  private readonly headPosition=new T.Vector3()
+  private readonly headDirection=new T.Vector3()
+  private readonly headColor=new T.Color()
+  private readonly headNormal=new T.Matrix3()
   private readonly spots:T.SpotLight[]=[]
   private readonly ownsSpots:boolean
   // Last tyre mark and wing tip positions, kept in place; the flags say which are live.
@@ -121,7 +140,7 @@ class VehicleEffects {
   private readonly unlisten?:()=>void
   private readonly onTileShift:(e:TileShiftEvent)=>void
   private readonly buggy:boolean
-  constructor(private readonly world:EffectWorld,private readonly terrain:Terrain,private readonly vehicle:EffectsVehicle,local:boolean,sharedSpots?:T.SpotLight[]){
+  constructor(private readonly world:EffectWorld,private readonly terrain:Terrain,private readonly vehicle:EffectsVehicle,private readonly local:boolean,sharedSpots?:T.SpotLight[]){
     this.ownsSpots=!sharedSpots
     this.buggy=vehicle.kind.startsWith('buggy')
     this.root.name='Vehicle effects';vehicle.object.add(this.root);this.lastPosition.copy(vehicle.object.position)
@@ -164,7 +183,33 @@ class VehicleEffects {
   private get events(){return this.vehicle.object as T.Object3D<VehicleObjectEvents>}
   writeLamps(batch:T.InstancedMesh,index:number):number {
     this.root.updateWorldMatrix(true,true)
+    const source=this.vehicle.object.userData.headlights as HeadlightSource|undefined
+    if(source?.needsGlow?.()&&this.headlightsVisible()){
+      for(let i=0;i<source.count&&index<512;i++){
+        if(!source.sample(i,this.headPosition,this.headDirection,this.headColor))continue
+        this.headPosition.applyMatrix4(this.vehicle.object.matrixWorld)
+        this.lampMatrix.makeScale(.8,.8,.8).setPosition(this.headPosition)
+        batch.setMatrixAt(index,this.lampMatrix);batch.setColorAt(index,this.headColor);index++
+      }
+      return index
+    }
     return writeVehicleLamps(batch,index,this.vehicle.object,this.lampPoints,this.headMaterial.color,this.tailMaterial.color,this.lampMatrix)
+  }
+  private headlightsVisible():boolean {
+    const v=this.vehicle
+    return v.object.visible&&!v.zorbed&&!v.object.userData.materializing&&!v.object.userData.materializeVisual&&!v.object.userData.yoinkHeld
+  }
+  writeHeadlights(strength:number):void {
+    if(this.local||!this.headlightsVisible())return
+    const v=this.vehicle,source=v.object.userData.headlights as HeadlightSource|undefined
+    if(!source||v.object.position.distanceToSquared(this.world.game.camera.position)>200*200)return
+    v.object.updateWorldMatrix(true,false);this.headNormal.getNormalMatrix(v.object.matrixWorld)
+    for(let i=0;i<source.count;i++){
+      if(!source.sample(i,this.headPosition,this.headDirection,this.headColor))continue
+      this.headPosition.applyMatrix4(v.object.matrixWorld)
+      this.headDirection.applyMatrix3(this.headNormal).normalize()
+      this.world.headlights.add(this.headPosition,this.headDirection,this.headColor,strength,this.world.game.camera.position,this.terrain)
+    }
   }
   captureLanding(){if(this.vehicle.landedThisStep)this.pendingLanding=Math.max(this.pendingLanding,this.vehicle.landingImpact)}
   private reset(){this.pendingLanding=0;this.hasMark.fill(false);this.hasTip.fill(false);this.wasGrounded=false}
@@ -298,9 +343,9 @@ export function hideUnusedLamps(batch:T.InstancedMesh,index:number):void {
 export function attachVehicleEffects(game:Game,terrain:Terrain,vehicle:Vehicle,options:{local:boolean;spots?:T.SpotLight[]}):()=>void{
   const world=worldFor(game)
   if(world.vehicles.has(vehicle))throw new Error('Vehicle effects already attached')
-  const effects=new VehicleEffects(world,terrain,vehicle,options.local,options.spots);world.vehicles.set(vehicle,effects);world.lamps.count=Math.min(512,world.vehicles.size*4);world.retain()
+  const effects=new VehicleEffects(world,terrain,vehicle,options.local,options.spots);world.vehicles.set(vehicle,effects);world.lamps.count=Math.min(512,world.vehicles.size*6);world.retain()
   let disposed=false
-  return()=>{if(disposed)return;disposed=true;effects.dispose();world.vehicles.delete(vehicle);world.lamps.count=Math.min(512,world.vehicles.size*4);world.release()}
+  return()=>{if(disposed)return;disposed=true;effects.dispose();world.vehicles.delete(vehicle);world.lamps.count=Math.min(512,world.vehicles.size*6);world.release()}
 }
 
 /** Visual hooks only. Networking retains projectile authority and audio ownership. */
