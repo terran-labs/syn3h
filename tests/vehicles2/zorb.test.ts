@@ -317,26 +317,38 @@ describe('passive Zorb liquid skips', () => {
     it(`${liquid}, sinking=${sinking}: keeps tangent speed and spin over repeated contacts`, () => {
       waterSinking.value = sinking; params.set('zorb.bounce', .8)
       const f = liquidSkipFixture(liquid)
+      let control: ReturnType<typeof liquidSkipFixture> | undefined
       try {
-        f.place(.2); f.v.body.setLinvel({ x: 30, y: -4, z: 0 }, true)
-        // Spin about the local keel axis avoids moving the ball centre vertically.
-        f.v.body.setAngvel({ x: 0, y: 2, z: 0 }, true)
+        control = liquidSkipFixture(liquid)
+        for (const fixture of [f, control]) {
+          fixture.place(.2); fixture.v.body.setLinvel({ x: 30, y: -4, z: 0 }, true)
+          fixture.v.body.setAngvel({ x: 0, y: 2, z: 0 }, true)
+        }
+        // With water.sinking=false, the free body reproduced the same changing world-Y
+        // spin in all 92 paired samples. The contract is no angular change from float, then the same full
+        // xyz evolution as an independent free body, not a constant world-Y component.
+        // Identical deterministic setup permits exact equality, with no new tolerance.
+        // The control omits float only; its vertical trajectory is allowed to differ.
         const contacts: number[] = []
         let count = 0
         for (let i = 0; i < 250 && contacts.length < 4; i++) {
-          f.force(); f.h.world.step()
+          const beforeFloat = vec(f.v.body.angvel())
+          f.force()
+          expect(vec(f.v.body.angvel())).toEqual(beforeFloat)
+          control.v.body.resetForces(true); control.v.body.resetTorques(true)
+          f.h.world.step(); control.h.world.step()
+          expect(vec(f.v.body.angvel())).toEqual(vec(control.v.body.angvel()))
           if (f.v.zorb.skips !== count) {
             count = f.v.zorb.skips
             contacts.push(Math.hypot(f.v.body.linvel().x, f.v.body.linvel().z))
           }
           expect(Math.hypot(f.v.body.linvel().x, f.v.body.linvel().z)).toBeCloseTo(30, 3)
-          expect(f.v.body.angvel().y).toBeCloseTo(2, 4)
         }
         expect(contacts.length).toBe(4)
         for (const speed of contacts) expect(speed).toBeCloseTo(30, 3)
         expect(f.v.zorb.hops).toBe(0); expect(f.v.zorb.pulse).toBe(0)
         expect(f.v.liquidState.heat).toBe(0); expect(f.v.liquidState.stuck).toBe(false)
-      } finally { f.done() }
+      } finally { try { f.done() } finally { control?.done() } }
     })
   }
 
