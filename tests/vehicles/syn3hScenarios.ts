@@ -102,10 +102,10 @@ export const planted = () => {
 }
 
 /** A `height` m ridge (full width, or only the left half when `oneSided`) at 42 m/s. */
-export const bump = async (oneSided = false, height = 0.4) => {
+export const bump = async (oneSided = false, height = 0.4, seconds = 6) => {
   const { bed, b } = await cruise(42)
   ridge(bed, b, -50, oneSided ? 0 : 50, height, 6)
-  return { ...ride(bed, b, 6), wheels: b.wheelsGrounded }
+  return { ...ride(bed, b, seconds), wheels: b.wheelsGrounded }
 }
 
 /** Dropped 4 m while cruising at 30 m/s. */

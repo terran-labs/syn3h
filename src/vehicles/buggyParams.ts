@@ -26,10 +26,16 @@ export const buggySlip = defineParam({
   id: 'buggy.slip', label: 'Slip', group: 'Buggy', scope: 'world',
   default: 50, min: 20, max: 80, step: 1,
 })
-/** Labelled "Stability" in the original. The slider runs high to low (Settings.js 944). */
+/**
+ * Labelled "Stability" in the original: how low the centre of gravity sits. The stored value
+ * is the original's (-0.1 high to -0.7 low, default -0.4, unchanged on the wire and in saved
+ * rooms). The settings show it as -0.3 to +0.3 with 0 at the default and higher meaning more
+ * stable, by the owner's request of 16 November 2026. "(weight)" keeps it apart from the
+ * separate Stability assist.
+ */
 export const buggyCG = defineParam({
-  id: 'buggy.cg', label: 'Stability (CG)', group: 'Buggy', scope: 'world',
-  default: -0.4, min: -0.1, max: -0.7, step: 0.01,
+  id: 'buggy.cg', label: 'Stability (weight)', group: 'Buggy', scope: 'world',
+  default: -0.4, min: -0.1, max: -0.7, step: 0.01, display: { offset: -0.4, scale: -1 },
 })
 /** Only the unused "new physics" path reads this (Buggy.js 337). Kept for parity. */
 export const buggyAWD = defineParam({
@@ -66,7 +72,7 @@ export const buggyFlightModel = defineParam<number>({
 /** "Stall blending": keep some sideslip in flight instead of snapping velocity to the nose. */
 export const buggyFlightSlip = defineParam({
   id: 'buggy.flightSlip', label: 'Stall blending', group: 'Buggy', scope: 'world',
-  default: false,
+  default: true,
 })
 /** "Powered loops": the nose speed boost also applies at full stick. */
 export const buggyFlightLooPower = defineParam({
@@ -179,7 +185,7 @@ export const buggySideGrip = defineParam({
  */
 export const buggySteerFollow = defineParam({
   id: 'buggy.steerFollow', label: 'Counter-steer assist', group: 'Buggy', scope: 'world',
-  default: 1, min: 0, max: 1, step: 0.05,
+  default: 0.1, min: 0, max: 1, step: 0.01,
 })
 /**
  * Next-gen rear steering at speed, as a fraction of the Syn3h rear angle. Syn3h steers the
@@ -189,7 +195,7 @@ export const buggySteerFollow = defineParam({
  */
 export const buggyRearSteerFast = defineParam({
   id: 'buggy.rearSteerFast', label: 'Rear steering at speed', group: 'Buggy', scope: 'world',
-  default: 0, min: -1, max: 1, step: 0.05,
+  default: 0.2, min: -1, max: 1, step: 0.05,
 })
 /**
  * Next-gen: the least grip a broadside tyre keeps, as a fraction of its grip at that speed,
@@ -217,7 +223,7 @@ export const buggyDownforce = defineParam({
  */
 export const buggyFin = defineParam({
   id: 'buggy.fin', label: 'Tail fin', group: 'Buggy', scope: 'world',
-  default: 1, min: 0, max: 3, step: 0.05,
+  default: 0.2, min: 0, max: 3, step: 0.05,
 })
 /**
  * Next-gen stability assist: damps the buggy's turning (per second) at speed while the

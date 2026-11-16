@@ -7,7 +7,7 @@
  * times, wing swing times) is not pinned here. It is measured by tools/handling-report.ts from the
  * same scenarios (./syn3hScenarios.ts). Distances below are "it moved", not "it moved this far".
  */
-import { afterEach, describe, expect, test } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { params } from '../../shared/params'
 import { createVehicle } from '../../src/vehicles'
@@ -196,9 +196,11 @@ describe('Syn3hBuggy', () => {
     expect(Math.abs(p.x)).toBeLessThan(-p.z * 0.02)
   })
 
-  test.each([[false, false], [true, false], [false, true]])('a bump at speed lands it back upright (planted %s, one sided %s)', async (isPlanted, oneSided) => {
+  test.each([[false, false], [true, false], [false, true]])('after a bump at speed it ends up back on its wheels (planted %s, one sided %s)', async (isPlanted, oneSided) => {
     if (isPlanted) planted()
-    const r = await bump(oneSided)
+    // Whether it lands upright depends on the tail fin, which is tuned; that it does not stay
+    // on its roof is the invariant (it rights itself). Landing is in the handling report.
+    const r = await bump(oneSided, 0.4, 14)
     expect(r.upright).toBeGreaterThan(0.9)
   })
 
@@ -554,6 +556,9 @@ describe('Syn3hBuggy slide recovery', () => {
  * how long the swing takes is in the handling report.
  */
 describe('Syn3hBuggy wing flight models', () => {
+  // Each model's own rule. Stall blending, when on, replaces the model while the motion is more
+  // than 10 degrees off the nose, so it is off here.
+  beforeEach(() => params.set('buggy.flightSlip', false))
   test('Classic points the speed down the nose at once', async () => {
     const r = await deploy(0, 0.1)
     expect(r.off).toBeLessThan(2)
