@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Input } from '../../src/core/Input'
+import { Input, primaryPointerEnded } from '../../src/core/Input'
 
 // A fresh event target keeps each Input's native listeners isolated.
 function harness() {
@@ -10,10 +10,10 @@ function harness() {
     Object.defineProperties(e, { code: { value: code }, repeat: { value: false } })
     target.dispatchEvent(e)
   }
-  const pointer = (type: string, pointerId = 1) => {
+  const pointer = (type: string, pointerId = 1, buttons = type === 'pointerdown' ? 1 : 0, button = 0, pointerType = 'mouse') => {
     const e = new Event(type)
     Object.defineProperties(e, {
-      pointerId: { value: pointerId }, button: { value: 0 }, pointerType: { value: 'mouse' },
+      pointerId: { value: pointerId }, button: { value: button }, buttons: { value: buttons }, pointerType: { value: pointerType },
     })
     target.dispatchEvent(e)
   }
@@ -141,6 +141,52 @@ describe('fire cancellation ownership', () => {
     input.suppressExternalFire(owner)
     expect(input.state.fire).toBe(true)
     key('keyup', 'KeyL'); input.poll()
+    expect(input.state.fire).toBe(false)
+  })
+})
+
+
+describe('physical primary-neutral observations', () => {
+  it.each(['mouse', 'pen'])('clears %s native latch on primary-first release before secondary-last up', pointerType => {
+    const { input, pointer } = harness()
+    pointer('pointerdown', 1, 1, 0, pointerType); input.mouseFire = true; input.poll()
+    pointer('pointermove', 1, 3, 2, pointerType)
+    expect(input.state.fire).toBe(true)
+    pointer('pointermove', 1, 2, 0, pointerType)
+    expect(input.mouseFire).toBe(false); expect(input.state.fire).toBe(false)
+    pointer('pointerup', 1, 0, 2, pointerType)
+    expect(input.poll().fire).toBe(false)
+  })
+  it('retains a canceled primary through chord movement until observed bit-zero', () => {
+    const { input, pointer } = harness(), other = {}
+    pointer('pointerdown'); input.mouseFire = true; input.cancelFireUntilNeutral()
+    input.beginExternalFire(other)
+    pointer('pointermove', 1, 3, 2); pointer('pointermove', 1, 1, 2)
+    input.endExternalFire(other)
+    expect(input.state.fire).toBe(false)
+    pointer('pointermove', 1, 0, 0)
+    pointer('pointerdown'); input.mouseFire = true
+    expect(input.poll().fire).toBe(true)
+  })
+  it('does not clear eligible external, keyboard or gamepad fire with native neutral', () => {
+    const { input, pointer, key } = harness(), owner = {}
+    pointer('pointerdown'); input.mouseFire = true
+    input.beginExternalFire(owner); key('keydown', 'KeyL'); pads = [pad(0, true)]
+    pointer('pointermove', 1, 2, 0)
+    expect(input.state.fire).toBe(true)
+    input.endExternalFire(owner); key('keyup', 'KeyL')
+    expect(input.poll().fire).toBe(true)
+    pads = [pad(0, false)]
+    expect(input.poll().fire).toBe(false)
+  })
+  it('ignores untracked movement, touch movement and cleanup-shaped events', () => {
+    const { input, pointer } = harness()
+    pointer('pointerdown'); input.mouseFire = true; input.poll()
+    pointer('pointermove', 9, 0); pointer('pointermove', 1, 0, 0, 'touch')
+    expect(input.state.fire).toBe(true)
+    for (const type of ['blur', 'lostpointercapture', 'pointerleave'])
+      expect(primaryPointerEnded({ type, pointerType: 'mouse', buttons: 0 })).toBe(false)
+    pointer('pointercancel', 1, 0, -1)
     expect(input.state.fire).toBe(false)
   })
 })

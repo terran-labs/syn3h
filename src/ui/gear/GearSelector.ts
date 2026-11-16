@@ -15,6 +15,7 @@
  * README.md beside this file.
  */
 import './gear.css'
+import { primaryPointerEnded } from '../../core/Input'
 
 export interface GearAction {
   readonly id: string
@@ -182,6 +183,7 @@ export class RetainedActionHolds {
   private start(record: HoldRecord): void {
     if (!this.listening) {
       this.listening = true
+      this.target.addEventListener('pointermove', this.pointerEnd, true)
       this.target.addEventListener('pointerup', this.pointerEnd, true)
       this.target.addEventListener('pointercancel', this.pointerEnd, true)
       this.target.addEventListener('keyup', this.keyEnd, true)
@@ -190,8 +192,7 @@ export class RetainedActionHolds {
     this.changed()
   }
   private readonly pointerEnd = (event: PointerEvent): void => {
-    // Mouse/pen chords share pointerId. Only primary up or cancellation ends this hold.
-    if (event.type === 'pointerup' && event.button !== 0) return
+    if (!primaryPointerEnded(event)) return
     const record = this.pointers.get(event.pointerId)
     if (!record) return
     this.pointers.delete(event.pointerId); record.pointers.delete(event.pointerId)
@@ -209,6 +210,7 @@ export class RetainedActionHolds {
       record.action.stop?.('end')
     }
     if (!this.records.size && this.listening) {
+      this.target.removeEventListener('pointermove', this.pointerEnd, true)
       this.target.removeEventListener('pointerup', this.pointerEnd, true)
       this.target.removeEventListener('pointercancel', this.pointerEnd, true)
       this.target.removeEventListener('keyup', this.keyEnd, true)
