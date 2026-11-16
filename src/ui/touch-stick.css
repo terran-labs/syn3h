@@ -61,3 +61,21 @@ body:has(.syn3h-shell.is-playing .spawn-help:not([hidden])) .touch-controls .tou
   .touch-controls .touch-stick-ghost { width: 72px; height: 72px; }
 }
 @media (prefers-reduced-motion: reduce) { .touch-controls .touch-stick-ghost > span { animation: none; transform: translate(10px, -12px); } }
+
+/* Left-handed play (touch.leftHanded): the stick side, the action buttons, the first-run hint
+   and the minimap that sits above the stick all swap sides. Buttons keep their own text
+   direction; TAG stays on the outer edge, under the thumb. */
+.touch-controls[data-hand="left"] .touch-actions { right: auto; left: max(24px, env(safe-area-inset-left)); direction: rtl; }
+.touch-controls[data-hand="left"] .touch-actions button { direction: ltr; }
+.touch-controls[data-hand="left"] .touch-stick-hint { left: auto; right: max(24px, env(safe-area-inset-right)); align-items: flex-end; }
+.touch-controls[data-hand="left"] .touch-stick-ghost > span { animation-name: touch-stick-ghost-left; }
+@keyframes touch-stick-ghost-left { 0%, 15%, 100% { transform: none; } 45%, 65% { transform: translate(-14px, -16px); } }
+/* Clear of the Panels tab, which stays on the right edge (about 36 px wide). */
+html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minimap { left: auto; right: calc(max(16px, env(safe-area-inset-right)) + 44px); }
+@media (max-width: 700px) {
+  .touch-controls[data-hand="left"] .touch-actions { left: 12px; }
+}
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .touch-controls[data-hand="left"] .touch-actions { left: max(18px, env(safe-area-inset-left)); }
+  .touch-controls[data-hand="left"] .touch-stick-hint { right: max(18px, env(safe-area-inset-right)); }
+}
