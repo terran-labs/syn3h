@@ -13,7 +13,9 @@ const expected = process.env.UX_SOURCE_SHA
 const out = process.env.UX_EVIDENCE_DIR
 assert.ok(origin && expected && out && process.env.UX_LAUNCH_MANIFEST, 'Explicit allocated origin, source, evidence and launcher manifest required')
 const deadline = Date.now() + 480_000
-const remaining = cap => { const ms = Math.min(cap, deadline - Date.now()); assert.ok(ms > 0, 'fixture absolute deadline'); return ms }
+const workDeadline = deadline - 30_000
+let cleaningUp = false
+const remaining = cap => { const ms = Math.min(cap, (cleaningUp ? deadline : workDeadline) - Date.now()); assert.ok(ms > 0, 'fixture absolute deadline'); return ms }
 const bounded = async (promise, cap, label) => {
   let timer
   try { return await Promise.race([promise, new Promise((_, reject) => {
@@ -69,12 +71,24 @@ async function provenance() {
   }
   return manifest
 }
-let browser
+let browser, primaryError
+let browserDisconnected = false
 const contexts = [], browserEvidence = []
 const recipe = { world: 'alpine', seed: 1518, quality: 2, auto: false, hour: 12, dayLength: 0 }
 report.recipe = recipe
 async function observeBrowser(page, context, name) {
-  const evidence = { name, responses: [], failures: [], pending: [] }
+  const evidence = { name, responses: [], failures: [], pending: [], openRequests: new Set(), closed: false }
+  const relevant = request => {
+    const url = new URL(request.url()), path = url.pathname.slice(1)
+    return url.origin === new URL(origin).origin && (request.resourceType() === 'document' || path.startsWith('src/') || path.startsWith('shared/') || path === 'tests/ui/about-input-observers.mjs')
+  }
+  page.on('close', () => { evidence.closed = true })
+  page.on('request', request => { if (relevant(request)) evidence.openRequests.add(request) })
+  page.on('requestfinished', request => evidence.openRequests.delete(request))
+  page.on('requestfailed', request => {
+    if (relevant(request)) evidence.failures.push(`Runtime request failed: ${request.url()}: ${request.failure()?.errorText}`)
+    evidence.openRequests.delete(request)
+  })
   browserEvidence.push(evidence)
   const cdp = await bounded(context.newCDPSession(page), 5000, 'CDP provenance')
   await bounded(cdp.send('Network.enable'), 5000, 'network observation')
@@ -118,15 +132,51 @@ async function observeBrowser(page, context, name) {
     evidence.pending.push(work)
   })
 }
-async function verifyBrowserEvidence() {
+function responseReceipt() {
+  return browserEvidence.map(({ pending, openRequests, ...evidence }) => ({ ...evidence,
+    responseJobs: pending.length, openRequests: [...openRequests].map(request => request.url()) }))
+}
+async function drainResponses(boundary) {
+  // Re-read the live queues after each await. A single Promise.all snapshot can
+  // miss responses appended while earlier body reads or final provenance run.
+  const cursors = new Map()
+  const drainDeadline = Math.min(deadline, Date.now() + 10000)
+  let stable = 0
+  while (stable < 2) {
+    remaining(1)
+    assert.ok(Date.now() < drainDeadline, `${boundary}: stable capture deadline`)
+    let added = false
+    for (const evidence of browserEvidence) {
+      const cursor = cursors.get(evidence) ?? 0
+      const end = evidence.pending.length
+      if (end > cursor) {
+        added = true
+        await bounded(Promise.allSettled(evidence.pending.slice(cursor, end)), Math.max(1, drainDeadline - Date.now()), `${boundary}: response drain`)
+        cursors.set(evidence, end)
+      }
+    }
+    await bounded(new Promise(resolve => setTimeout(resolve, 25)), 1000, `${boundary}: event delivery`)
+    const settled = browserEvidence.every(e => e.pending.length === (cursors.get(e) ?? 0) && e.openRequests.size === 0)
+    stable = settled && !added ? stable + 1 : 0
+  }
+  report.responseBoundaries ??= []
+  report.responseBoundaries.push({ boundary, browserDisconnected,
+    pages: browserEvidence.map(e => ({ name: e.name, closed: e.closed, jobs: e.pending.length, openRequests: e.openRequests.size })) })
+}
+async function verifyBrowserEvidence(boundary, closed = false) {
+  await drainResponses(boundary)
+  if (closed) {
+    assert.ok(!browser || browserDisconnected, 'browser disconnect must establish final capture boundary')
+    assert.ok(browserEvidence.every(e => e.closed), 'all observed pages must be closed')
+  }
+  assert.deepEqual(report.errors, [], 'page errors through capture boundary')
   for (const evidence of browserEvidence) {
-    await bounded(Promise.all(evidence.pending), 15000, 'browser provenance completion')
     assert.deepEqual(evidence.failures, [], evidence.name)
     assert.ok(evidence.responses.some(r => r.resource === 'document'), 'actual document response missing')
     for (const path of files.filter(p => p.startsWith('src/') || p === 'shared/params.ts' || p === 'tests/ui/about-input-observers.mjs'))
       assert.ok(evidence.responses.some(r => r.path === path), `actual browser module missing: ${path}`)
   }
-  report.browserResponses = browserEvidence.map(({ pending, ...evidence }) => evidence)
+  report.browserResponses = responseReceipt()
 }
 function assertTransactions(transactions) {
   for (const transaction of transactions) {
@@ -290,6 +340,7 @@ async function stageTarget(page) {
 try {
   report.provenance = await provenance()
   browser = await chromium.launch({ channel: 'chrome', headless: true, timeout: remaining(30000) })
+  browser.on('disconnected', () => { browserDisconnected = true })
   const touch = await newGame(true, 'tag')
   const charged = () => ready(touch, () => syn3hNet.bigRed.ready && syn3h.game.input.state.fire)
   // Slice 1: positive and negative real TAG controls through actual state refresh.
@@ -457,18 +508,22 @@ try {
     assertTransactions(await page.evaluate(() => aboutInputObserver.transactions))
   }
   assert.deepEqual(report.errors, [])
-  await verifyBrowserEvidence()
+  await verifyBrowserEvidence('before final provenance')
   report.finalProvenance = await provenance()
   assert.deepEqual(report.finalProvenance, report.provenance)
+  await verifyBrowserEvidence('after final provenance')
 } catch (error) {
+  primaryError = error
   report.failure = String(error.stack ?? error)
-  throw error
 } finally {
-  report.browserResponses = browserEvidence.map(({ pending, ...evidence }) => evidence)
+  cleaningUp = true
   report.cleanupErrors = []
   for (const context of contexts) {
-    for (const page of context.pages()) {
+    let pages
+    try { pages = context.pages() } catch (error) { report.cleanupErrors.push(String(error)); continue }
+    for (const page of pages) {
       try {
+        remaining(1)
         await bounded(page.evaluate(() => {
           if (!window.aboutInputObserver) return null
           const evidence = { records: aboutInputObserver.records, order: aboutInputObserver.order }
@@ -478,8 +533,27 @@ try {
       } catch (error) { report.cleanupErrors.push(String(error)) }
     }
   }
-  try { if (browser) await bounded(browser.close(), 15000, 'browser close') }
+  // Restore observers first, drain their final response activity, then close the
+  // browser. Keep response/HMR/page-error listeners installed through disconnect.
+  try { await verifyBrowserEvidence('after observer teardown') }
+  catch (error) { report.cleanupErrors.push(String(error.stack ?? error)) }
+  try { if (browser) { remaining(1); await bounded(browser.close(), 15000, 'browser close') } }
   catch (error) { report.cleanupErrors.push(String(error)) }
-  await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+  try { await verifyBrowserEvidence('closed browser capture boundary', true) }
+  catch (error) { report.cleanupErrors.push(String(error.stack ?? error)) }
+  report.browserResponses = responseReceipt()
+  report.captureComplete = (!browser || browserDisconnected) && browserEvidence.every(e => e.closed && !e.openRequests.size)
+    && report.cleanupErrors.length === 0
+  try {
+    remaining(1)
+    await bounded(writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)), 3000, 'final receipt')
+  } catch (error) {
+    report.cleanupErrors.push(`Receipt: ${String(error)}`)
+    report.captureComplete = false
+    console.error('PARTIAL_ABOUT_INPUT_RECEIPT', JSON.stringify(report))
+  }
+  // Cleanup never replaces the original assertion/timeout. Both survive in the
+  // receipt; if there was no original failure, cleanup alone still fails the run.
+  if (primaryError) throw primaryError
   if (report.cleanupErrors.length) throw new Error(`Incomplete fixture cleanup: ${report.cleanupErrors.join('; ')}`)
 }

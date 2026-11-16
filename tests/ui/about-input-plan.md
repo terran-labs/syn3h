@@ -44,7 +44,7 @@ Future invocation, only after coordinator allocation:
     node tests/ui/about-input.mjs
 
 The external approved supervisor must use absolute trunk heavy.sh and enforce a
-bounded total run including shutdown. The fixture has a 480-second work deadline,
+bounded total run including shutdown. The fixture has a 480-second total deadline (450 seconds work, 30 reserved for cleanup),
 bounded fetch/navigation/wait/launch/close operations and no retry. A dedicated
 room server is needed; the fixture launches none. Vite must have
 SYN3H_NO_ROOM_SERVER=1 and explicit SYN3H_ROOM_PORT matching the dedicated port,
@@ -96,3 +96,71 @@ HMR updates/reloads/prunes and timestamp modules fail. Clean checkout and raw
 config/source checks remain separate. The browser provenance mechanism is source
 prepared only, including its Vite format assumptions. A dedicated launcher still
 needs independent review and allocation. No runtime, preflight or server has run.
+
+## Final evidence closure
+
+Response jobs are drained from live queues, not one Promise.all snapshot. The
+fixture tracks relevant requests until finished or failed, requires two stable
+queue checks, and repeats validation after final provenance and observer teardown.
+Response, HMR and page-error listeners remain installed until browser disconnect.
+The final capture boundary requires every observed page closed, no relevant
+requests outstanding, and all dynamically added response jobs settled. A drain
+has a ten-second bound within the absolute deadline. Timeout is incomplete
+capture, never success. All response and page failures are checked again there.
+
+Cleanup retains the original assertion or timeout as the thrown failure. Separate
+cleanup errors and a partial receipt explain any later failure; receipt-write
+failure emits a partial JSON receipt to stderr. Browser close and receipt writing
+share the absolute deadline. The supervisor remains responsible for terminating
+observed owned processes if fixture cleanup cannot complete.
+
+## Proposed dedicated launcher ownership plan, not implemented
+
+Reuse the reviewed secondary-DOM supervisor's deadline, strict process snapshots,
+PID/start identity checks, direct child handles, sticky inspection failures and
+partial closure receipts. Preserve its original and corrected evidence. Prepare
+any adaptation separately for review before executing it; this plan grants no slot.
+
+1. Run one supervisor through absolute /Users/vtn/dev/Syn3h/tools/heavy.sh. Proposed
+   total budget: 590 seconds, child work stopped by 510 seconds, remainder reserved
+   for closure. Every subprocess, readiness fetch, connection probe, sleep and reap
+   uses the remaining absolute budget. First unexpected failure stops work; no
+   retries, port substitution, installation, build or additional test suite.
+2. Use a clean isolated checkout containing the reviewed fixture at its exact full
+   commit. Record HEAD, clean status, wrapper/fixture hashes and dependency identity.
+   Do not serve an integration tree with unrelated edits. Evidence stays outside
+   the checkout. Check Node and installed executables without installing anything.
+3. Propose Vite port 5331 and dedicated room port 54671, subject to coordinator
+   allocation. Neither may be 8787. Before launch, require no listener and refused
+   IPv4/IPv6 connections for both allocated ports; TIME_WAIT is separate evidence,
+   not a listener. An occupied or indeterminate port fails without killing it.
+   Inspect existing 8787 ownership read-only, without connecting or signaling.
+4. Launch the explicit room child from that checkout using its installed tsx and
+   server/dev.ts with PORT=54671. Launch Vite with strict port 5331. Enforce
+   SYN3H_NO_ROOM_SERVER=1 for every child and SYN3H_ROOM_PORT=54671 for Vite;
+   clear inherited VITE_SERVER_URL so the client uses the reviewed same-origin
+   proxy. Record effective environment, executable paths, PID/start identities and
+   logs in the launcher manifest. Room readiness uses its actual /status response;
+   Vite readiness verifies its own listener identity and served source.
+5. Monitor both direct child exit states, logs and observed descendants. The old
+   wrapper forbids every server/dev.ts descendant; adapt that rule only to allow
+   the explicit room child's recorded identity/descendant lineage. Any plugin-
+   spawned second server, unexpected port, child failure or malformed inspection
+   fails. Never infer ownership from a process name alone. Supervise the fixture's
+   installed Chrome child and its descendants without starting another browser.
+6. Launch only about-input.mjs with the exact manifest and a new evidence directory.
+   The fixture verifies actual browser bytes and room WebSocket identity. It does
+   not substitute for the supervisor's independent listener/PID/start checks.
+7. On every exit, preserve the first failure and persist a partial receipt before
+   cleanup. Refresh PID/start identity immediately before each signal. Clean only
+   observed owned identities or verified direct handles; never guess descendants
+   or signal an unrelated process. Failed scans stay unknown and cannot certify
+   closure. Reap direct children, then require both allocated ports to have no
+   listener and refused IPv4/IPv6 connections, and all observed identities gone.
+   Record 8787 read-only again to demonstrate no interference. Include signal
+   receipts, remaining identities, port evidence, original failure, cleanup errors
+   and elapsed budget. Only exit zero plus complete fixture and supervisor receipts
+   permits review of these four Chrome slices, not full modal acceptance.
+
+Observed descendants remain the explicit ownership limit. No general process
+manager, new worker, runtime product change or launcher implementation is included.
