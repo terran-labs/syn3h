@@ -5,7 +5,8 @@ import type { Terrain } from '../Terrain'
 
 export interface Bubble { x:number; y:number; z:number; radius:number; age:number; life:number; speed:number; phase:number; drift:number }
 type Water = Pick<Terrain, 'heightAt'|'liquidHeightAt'|'liquidKindAt'>
-const capacities=[16,32,64]
+// A trail of bubbles off a moving vehicle needs a few dozen live at once to read as a stream.
+const capacities=[24,80,160]
 export const bubbleCapacity = (tier:number) => capacities[Math.max(0,Math.min(2,Math.round(tier)))]
 /** The batch is sized once for the largest tier; a tier change only changes how many are live. */
 export const bubbleBatchCapacity = capacities[2]
