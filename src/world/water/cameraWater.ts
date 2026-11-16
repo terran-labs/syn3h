@@ -13,7 +13,10 @@ export function wetTriangle(a:number,b:number,c:number):number {
   return 1-c/(c-a)*c/(c-b)
 }
 
-/** Main-camera near-plane samples. No vehicle, contact state or effect toggle is consulted. */
+/** Main-camera near-plane samples. No vehicle, contact state or effect toggle is consulted.
+ * Two planar triangles approximate the local waves between four corners; this is not an
+ * exact integral of the curved wave surface across the near plane.
+ */
 export class CameraWater {
   /** Signed local wave depths at top-left, top-right, bottom-left, bottom-right. */
   readonly depths=new T.Vector4(-1,-1,-1,-1)

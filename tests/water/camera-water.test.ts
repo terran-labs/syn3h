@@ -38,6 +38,17 @@ describe('camera water coverage',()=>{
   }finally{effect.dispose()}
   expect(cameraWaterCoverage(camera)).toBe(0)
  })
+ it.each([[-2,2],[2,-2]])('invalidates replaced cameras from height %i to %i',(aY,bY)=>{
+  const a=new PerspectiveCamera(),b=new PerspectiveCamera();a.position.y=aY;b.position.y=bY
+  const game={scene:new Scene(),camera:a} as Game
+  const effect=new Underwater(game,terrain)
+  try{
+   effect.update(.25);expect(cameraWaterCoverage(a)).toBe(aY<0?1:0)
+   game.camera=b;effect.update(.25)
+   expect(cameraWaterCoverage(a)).toBe(0);expect(cameraWaterCoverage(b)).toBe(bY<0?1:0)
+  }finally{effect.dispose()}
+  expect(cameraWaterCoverage(a)).toBe(0);expect(cameraWaterCoverage(b)).toBe(0)
+ })
  it('treats absent water and lava as dry',()=>{
   const camera=new PerspectiveCamera(),water=new CameraWater();camera.position.y=-2
   water.update(camera,{...terrain,liquidKindAt:()=> 'lava'} as Terrain);expect(water.coverage).toBe(0)
