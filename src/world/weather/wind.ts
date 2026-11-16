@@ -60,9 +60,17 @@ export const FULL_STRENGTH = 30
  * clock with `setWeatherClock(() => clock.now())`.
  */
 let clock: () => number = () => Date.now() / 1000
+let clockRate: () => number = () => 1
 
-export function setWeatherClock(now: () => number): void {
+/** Declared clock seconds per model second; omitted rate preserves nominal rate one. */
+export function setWeatherClock(now: () => number, rate: () => number = () => 1): void {
   clock = now
+  clockRate = rate
+}
+
+/** Side-effect-free rate metadata, never estimated from query cadence or clock jumps. */
+export function weatherClockRate(): number {
+  return clockRate()
 }
 
 export function weatherTime(): number {

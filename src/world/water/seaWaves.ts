@@ -5,7 +5,7 @@
  */
 import { worldGravity } from '../../../shared/params'
 import { WAVE_COUNT, buildWaves, shoalFactor, wavePhases, waveOffset, waveSlope, waveVerticalSpeed, type WaveComponent, type WaveSet } from '../../../shared/water/waves'
-import { prevailingWindHeading, prevailingWindStrength, weatherTime } from '../weather'
+import { prevailingWindHeading, prevailingWindStrength, weatherTime, weatherClockRate } from '../weather'
 import { waterWaveHeight, waterWaveLength, waterWaves, waterWaveTurn } from './params'
 
 /**
@@ -41,8 +41,9 @@ const CALM_SWELL = 0.35
  * right in single player. Networking replaces it with the server clock so every client's sea
  * shows the same crest at the same moment (`setWaterClock`).
  */
-let clock: () => number = () => 0
-let previous: (() => number) | null = null
+interface WaterClock { now: () => number; rate: () => number }
+let clock: WaterClock = { now: () => 0, rate: () => 0 }
+let previous: WaterClock | null = null
 let switchedAt = -Infinity
 /** Seconds to calm the sea before a clock change and to raise it after: half each. */
 export const CLOCK_SWITCH_SECONDS = 1.2
@@ -53,20 +54,37 @@ const wall = () => (typeof performance === 'undefined' ? Date.now() : performanc
  * been running, so switching outright would jump every crest at once and jolt anything afloat.
  * Instead the swell calms to nothing on the old clock, the clock changes while the sea is
  * flat, and the swell rises again on the new one (`waveScale`).
+ * Rate is declared clock seconds per model second, not inferred from query history.
+ * Omitted rate explicitly preserves nominal rate one for existing shared-clock callers.
+ * Callbacks must be side-effect-free; a frozen clock should declare rate zero.
  */
-export function setWaterClock(fn: () => number): void {
+export function setWaterClock(fn: () => number, rate: () => number = () => 1): void {
   previous = clock
-  clock = fn
+  clock = { now: fn, rate }
   switchedAt = wall()
 }
+function clockAt(at: number): WaterClock {
+  return previous && at - switchedAt < CLOCK_SWITCH_SECONDS / 2 ? previous : clock
+}
 export function waterTime(): number {
-  const since = wall() - switchedAt
-  return previous && since < CLOCK_SWITCH_SECONDS / 2 ? previous() : clock()
+  return clockAt(wall()).now()
 }
 /** 1 normally; eases to 0 and back to 1 across a clock change. Smoothstep each way. */
-export function waveScale(): number {
-  const x = Math.min(1, Math.abs(wall() - switchedAt - CLOCK_SWITCH_SECONDS / 2) / (CLOCK_SWITCH_SECONDS / 2))
+function scaleAt(at: number): number {
+  const x = Math.min(1, Math.abs(at - switchedAt - CLOCK_SWITCH_SECONDS / 2) / (CLOCK_SWITCH_SECONDS / 2))
   return x * x * (3 - 2 * x)
+}
+
+export function waveScale(): number {
+  return scaleAt(wall())
+}
+/** Derivative per wall second, including zero at all three envelope endpoints. */
+function scaleSpeedAt(at: number): number {
+  const half = CLOCK_SWITCH_SECONDS / 2
+  const signed = (at - switchedAt - half) / half
+  const x = Math.abs(signed)
+  if (x >= 1) return 0
+  return 6 * x * (1 - x) * Math.sign(signed) / half
 }
 
 class SeaWaves {
@@ -75,6 +93,8 @@ class SeaWaves {
   private readonly merged: WaveSet = { components: [], amplitude: 0, dominantLength: 60 }
   private mergedAt = Number.NaN
   private phases: number[] = []
+  /** Component amplitude derivatives per weather second, using the same cached fan mix. */
+  private amplitudeRates: number[] = []
   private phaseTime = Number.NaN
   private tileSize = 2048
   private seed = 0
@@ -117,6 +137,10 @@ class SeaWaves {
    * into the amplitudes, as one list of SEA_COMPONENTS components.
    */
   get waves(): WaveSet {
+    return this.wavesAt(weatherTime())
+  }
+
+  private wavesAt(tw: number): WaveSet {
     const key = `${this.tileSize}|${this.seed}|${waterWaveHeight.value}|${waterWaveLength.value}|${waterWaveTurn.value}|${worldGravity.value}`
     if (key !== this.key) {
       this.key = key
@@ -124,12 +148,13 @@ class SeaWaves {
       this.mergedAt = Number.NaN
       this.phaseTime = Number.NaN
     }
-    const tw = weatherTime()
     if (tw === this.mergedAt) return this.merged
     this.mergedAt = tw
     const k = Math.floor(tw / FAN_SECONDS)
     const f = tw / FAN_SECONDS - k
     const s = f * f * (3 - 2 * f)
+    const ds = 6 * f * (1 - f) / FAN_SECONDS
+    // Mean wind strength depends on fixed parameters, not weather time: its rate is zero.
     const wind = CALM_SWELL + (1 - CALM_SWELL) * prevailingWindStrength()
     const a = this.fan(k)
     const b = this.fan(k + 1)
@@ -141,6 +166,7 @@ class SeaWaves {
       const c = (out[i] ??= { ...from })
       Object.assign(c, from)
       c.amplitude = from.amplitude * weight
+      this.amplitudeRates[i] = from.amplitude * (i < WAVE_COUNT ? -ds : ds) * wind
       if (!c.lightOnly) total += c.amplitude
     }
     this.merged.amplitude = total
@@ -152,8 +178,13 @@ class SeaWaves {
 
   /** Phases at the shared time now. Recomputed once per distinct time. */
   phasesNow(): readonly number[] {
-    const set = this.waves
-    const t = waterTime()
+    const at = wall()
+    const tw = weatherTime()
+    const t = clockAt(at).now()
+    return this.phasesAt(this.wavesAt(tw), t)
+  }
+
+  private phasesAt(set: WaveSet, t: number): readonly number[] {
     if (t !== this.phaseTime) {
       wavePhases(set, t, this.phases)
       this.phaseTime = t
@@ -167,16 +198,43 @@ class SeaWaves {
    */
   offsetAt(x: number, z: number, ground: number, level: number): number {
     if (!waterWaves.value) return 0
-    const set = this.waves
+    const at = wall()
+    const tw = weatherTime()
+    const t = clockAt(at).now()
+    const set = this.wavesAt(tw)
     if (set.amplitude <= 0) return 0
-    return waveScale() * shoalFactor(level - ground, set.dominantLength) * waveOffset(set, this.phasesNow(), x, z)
+    return scaleAt(at) * shoalFactor(level - ground, set.dominantLength) * waveOffset(set, this.phasesAt(set, t), x, z)
   }
 
-  /** Vertical speed of the surface at (x, z), m/s, shoaled like the height. */
+  /**
+   * Surface speed in metres per model second, for fixed position, depth and parameters.
+   * Each declared clock rate is clock seconds per model second; wall rate is one.
+   * Local simulation uses its continuous model rate, not the staircase/catch-up wall
+   * derivative of game.time. Paused phase can coexist with moving weather/envelope.
+   * Clock offset jumps and parameter edits have no finite instantaneous derivative here.
+   */
   verticalSpeedAt(x: number, z: number, ground: number, level: number): number {
     if (!waterWaves.value) return 0
-    const set = this.waves
-    return waveScale() * shoalFactor(level - ground, set.dominantLength) * waveVerticalSpeed(set, this.phasesNow(), x, z)
+    // One snapshot per query, not atomicity across separate height/normal/speed calls.
+    const at = wall()
+    const tw = weatherTime()
+    const selected = clockAt(at)
+    const t = selected.now()
+    const phaseRate = selected.rate()
+    const fanRate = weatherClockRate()
+    const set = this.wavesAt(tw)
+    const phases = this.phasesAt(set, t)
+    let fanSpeed = 0
+    for (let i = 0; i < set.components.length; i++) {
+      const c = set.components[i]
+      if (c.lightOnly) continue
+      fanSpeed += this.amplitudeRates[i] * Math.sin(c.kx * x + c.kz * z + phases[i])
+    }
+    const height = waveOffset(set, phases, x, z)
+    const phaseSpeed = waveVerticalSpeed(set, phases, x, z)
+    return shoalFactor(level - ground, set.dominantLength) * (
+      scaleSpeedAt(at) * height + scaleAt(at) * (phaseSpeed * phaseRate + fanSpeed * fanRate)
+    )
   }
 
   /** Surface slope in deep water (dh/dx, dh/dz), every component. */
@@ -186,8 +244,12 @@ class SeaWaves {
       out.z = 0
       return out
     }
-    waveSlope(this.waves, this.phasesNow(), x, z, out)
-    const k = waveScale()
+    const at = wall()
+    const tw = weatherTime()
+    const t = clockAt(at).now()
+    const set = this.wavesAt(tw)
+    waveSlope(set, this.phasesAt(set, t), x, z, out)
+    const k = scaleAt(at)
     out.x *= k
     out.z *= k
     return out

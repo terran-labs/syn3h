@@ -86,7 +86,7 @@ export class ProceduralTerrain implements Terrain {
 
   constructor(private readonly game: Game, private seed: number) {
     // Single player: waves follow simulated time. Networking may swap in the server clock.
-    setWaterClock(() => game.time)
+    setWaterClock(() => game.time, () => game.isPaused ? 0 : 1)
     this.data = this.generate()
     this.sampler = new HeightSampler(this.data)
     this.look = createTerrainMaterial()
