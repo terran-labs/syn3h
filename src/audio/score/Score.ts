@@ -35,7 +35,7 @@
 import { defineParam, params } from '../../../shared/params'
 import { Composer, levels, seeded, unit, type Mood, type Role } from './Composer'
 import { ScoreSynth } from './ScoreSynth'
-import { OPENS, intensityCeiling, leadPresence, roleOpen } from './arc'
+import { OPENS, intensityCeiling, leadPresence, roleOpen, worldHour } from './arc'
 import { leadDaylight, leadLobby, leadVolume, scoreBuildTime } from '../params'
 
 const tune = (id: string, label: string, value: number, min: number, max: number, step = 0.01) => defineParam({ id: `audio.score.${id}`, label, group: 'Adaptive score', scope: 'client', default: value, min, max, step })
@@ -262,7 +262,7 @@ export class Score {
     // intensity, so bass and drums come with minutes of play, and opens the arc's sections.
     this.growth = input.playing && this.active ? Math.min(1, this.growth + dt / Math.max(1, scoreBuildTime.value)) : 0
     this.lobby = !input.playing
-    const hour = Number(params.get('sun.timeOfDay')?.value ?? 12)
+    const hour = worldHour()
     this.presence = follow(this.presence, leadPresence(input.playing, hour, leadVolume.value, leadDaylight.value, leadLobby.value), PRESENCE_TAU, dt)
     m.intensity = follow(m.intensity, input.playing ? Math.min(intensityCeiling(this.growth), unit((0.12 + 0.5 * m.energy + 0.8 * m.heat + 0.25 * this.tension) * scale)) : LOBBY_INTENSITY, 1, dt)
     m.darkness = follow(m.darkness, input.playing ? unit(0.34 + 0.6 * m.heat + 0.55 * unit(input.lava) + 0.2 * depth - 0.3 * m.lift - 0.25 * m.triumph) : 0.1, 2, dt)

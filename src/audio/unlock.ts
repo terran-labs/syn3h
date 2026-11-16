@@ -16,6 +16,18 @@
  */
 const GESTURES = ['pointerdown', 'pointerup', 'mousedown', 'touchend', 'keydown', 'click'] as const
 
+/** Fired on the window once sound has started, so a quiet "waiting" hint can go away. */
+export const SOUND_STARTED = 'syn3h:sound-started'
+let started = false
+/** True until the game's sound has started: the browser is waiting for a first tap or key press. */
+export const soundWaiting = () => !started
+/** Called by GameAudio once its mix is running. */
+export function markSoundStarted(): void {
+  if (started) return
+  started = true
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(SOUND_STARTED))
+}
+
 let shared: AudioContext | undefined
 let gestured = false
 let claimed = false

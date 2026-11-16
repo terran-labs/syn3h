@@ -12,7 +12,7 @@ import { Score, scoreSeed, type MatchMood } from './score/Score'
 import { applySubmerge } from './score/ScoreSynth'
 import { WeatherWind } from './weatherWind'
 import { senseConvoy, senseRelief, type ConvoyVoice } from './scoreSenses'
-import { audioContext, hadGesture, onGesture } from './unlock'
+import { audioContext, hadGesture, markSoundStarted, onGesture } from './unlock'
 import { cuesVolume, worldVolume, remoteVolume, crossfade, effectsVolume, masterVolume, musicVolume, muted } from './params'
 
 export type Sound = 'laserShot' | 'laserHit' | 'materialize'
@@ -204,6 +204,7 @@ export class GameAudio implements System {
     if (!this.paused) master.linearRampToValueAtTime(muted.value ? 0 : masterVolume.value, now + ARRIVAL_FADE)
     // Nothing to download, so the lobby has music from the first gesture.
     this.score!.setActive(true, Math.max(crossfade.value, ARRIVAL_SCORE_FADE))
+    markSoundStarted()
   }
   /** The mix, in three steps with the page given a turn between them so no frame is held up. */
   private async buildGraph(context: AudioContext): Promise<void> {
