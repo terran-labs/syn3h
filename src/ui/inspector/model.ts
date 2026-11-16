@@ -9,6 +9,7 @@
  * table in descriptions.ts, and always end with the limits, which are worked out here.
  */
 import { DESCRIPTIONS } from './descriptions'
+import { isVehicleAvailable } from '../../vehicles/available'
 
 /** The part of a parameter definition the inspector reads. Matches shared/params.ts. */
 export interface PropertyDef {
@@ -33,6 +34,8 @@ export function buildTree(defs: readonly PropertyDef[]): SectionNode[] {
   const sections = SECTIONS.map(spec => ({ ...spec, tree: [] as GroupNode[], count: 0 }))
   const home = (def: PropertyDef) => sections.find(s => s.groups.includes(def.group)) ?? sections.find(s => s.scope === def.scope && (s.id === 'world' || s.id === 'you'))!
   for (const def of defs) {
+    // A hidden vehicle's handling is hidden with it (src/vehicles/available.ts).
+    if (def.group === 'Tank' && !isVehicleAvailable('tank')) continue
     const section = home(def)
     let group = section.tree.find(g => g.name === def.group)
     if (!group) { group = { name: def.group, properties: [] }; section.tree.push(group) }

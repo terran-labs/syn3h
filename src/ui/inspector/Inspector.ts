@@ -133,7 +133,7 @@ export class Inspector {
     window.addEventListener('resize', () => this.hideTooltip(), { signal })
     document.addEventListener('pointerdown', event => { if (!(event.target as Element).closest('.wi-row, .wi-tooltip')) this.hideTooltip() }, { signal })
     this.vehicleControl = this.vehicleSwitch()
-    this.vehicleControl.dataset.search = "vehicle colour color body accent buggy jet hovercraft tank"
+    this.vehicleControl.dataset.search = "vehicle colour color body accent buggy jet hovercraft"
     this.build()
     this.unsubscribe = params.onChange((id, value) => this.rows.get(id)?.sync(value))
     this.element.addEventListener('click', event => this.click(event))

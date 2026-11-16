@@ -52,6 +52,7 @@ import { bootLoading } from './LoadingScreen'
 import { renderHelp, touchHelp } from './VehicleHelp'
 import { PlayHints, type Hint } from './PlayHints'
 import type { VehicleKind } from '../vehicles'
+import { isVehicleAvailable } from '../vehicles/available'
 import './shell.css'
 import './exploration.css'
 import './theme-halo.css'
@@ -206,7 +207,7 @@ export class Shell implements System {
     // The world inspector and the display for when the cursor is captured (inspector/).
     this.inspector = new Inspector(this.element, {
       summary: id => this.inspectorSummary(id),
-      // Vehicles are chosen in play only (the lobby offers planets). Four, one design each.
+      // Vehicles are chosen in play only (the lobby offers planets). One design each.
       vehicles: () => ({ options: PLAY_VEHICLES, current: this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind }),
       onVehicle: id => this.switchVehicle(id as VehicleKind),
       playerName: () => this.playerName,
@@ -536,7 +537,7 @@ export class Shell implements System {
     // cannot follow yet). On null, or if it throws, fall through to the reload below, which
     // always works. main.ts re-points hints, audio and the readouts through setPlayer.
     // Every buggy name is the buggy (the rule of canonicalVehicleKind in src/vehicles).
-    const family = (name: string) => name === 'jet' || name === 'hovercraft' || name === 'tank' ? name : 'buggy'
+    const family = (name: string) => name === 'jet' || name === 'hovercraft' || (name === 'tank' && isVehicleAvailable(name)) ? name : 'buggy'
     if (this.vehicleSwap) {
       try {
         const next = this.vehicleSwap(kind)

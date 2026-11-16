@@ -1,4 +1,5 @@
 import type { VehicleKind } from '../vehicles'
+import { isVehicleAvailable } from '../vehicles/available'
 
 export interface VehicleChoice {
   vehicleKind: VehicleKind
@@ -12,11 +13,12 @@ export interface VehicleChoice {
  */
 export const PLAY_VEHICLES: readonly { id: VehicleKind; label: string }[] = [
   { id: 'buggy-syn3h', label: 'Buggy' }, { id: 'jet', label: 'Jet' }, { id: 'hovercraft', label: 'Hovercraft' }, { id: 'tank', label: 'Tank' },
-]
+].filter(vehicle => isVehicleAvailable(vehicle.id)) as readonly { id: VehicleKind; label: string }[]
 const defaults: VehicleChoice = { vehicleKind: 'buggy-syn3h', bodyColor: '#1768b4', accentColor: '#49e6ff' }
 export function sanitizeVehicleChoice(value: Partial<VehicleChoice> | null): VehicleChoice {
   const color = (value: unknown, fallback: string) => typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value : fallback
-  // Four vehicles, one design each. Older saved values for the retired buggies land in the Buggy.
+  // One design each. Older saved values for the retired buggies, and a saved choice of a
+  // vehicle now hidden (the tank), land in the Buggy.
   const kind = PLAY_VEHICLES.some(vehicle => vehicle.id === value?.vehicleKind) ? value!.vehicleKind! : 'buggy-syn3h'
   return { vehicleKind: kind, bodyColor: color(value?.bodyColor, defaults.bodyColor), accentColor: color(value?.accentColor, defaults.accentColor) }
 }
