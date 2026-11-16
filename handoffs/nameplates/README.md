@@ -391,3 +391,35 @@ The correction clones the public `s.game.camera` and its position vector for det
 reference math; Three's camera and vector clone methods copy their mutable values.
 The absolute curvature-module import remains. Sampling, reference matrices, limits and
 acceptance exclusions are unchanged. Syntax checks do not establish runtime success.
+
+
+## One fixed right-flank pose observation
+
+`--observe-fixed-pose` is separate from the preserved survey, four-position observation
+and acceptance modes. It declares bot65280 offset(32,0), initialY15.622831573066174 before
+execution. Initial staging uses that pose directly once; it does not first place the bot
+at the old coordinate or reteleport it after a failure. Other actors, yaw and cinematic
+target use the unchanged stage rules. Ground and four one-metre neighbor heights, slope,
+initial body height and immediate before/after pose are recorded for bot zero.
+
+The existing 15-second ordinary settling criterion, 100ms polling and 180-row history
+bound remain. At each existing poll, an installed synchronous snapshot closure records
+body/rendered positions, orientations, radii, camera/projection/bend, seven discs, human
+DOM/leader reservations and all four bot candidates. Imports complete before installation;
+there are no asynchronous operations inside a snapshot. Settling and snapshot stamps
+must agree. Existing renderer visibility/sight/query-budget decisions are copied, with no
+extra terrain rays, draw or allocator invocation. The existing passive terrain observer
+only records rays already issued by the product.
+
+Per-poll arithmetic records all four candidate-slot margins to HUD, existing shown
+leader reservations, nearer discs including the conservative unstamped local disc, and
+viewport. It never chooses a slot or asserts placement success. Human reservations carry
+current-slot and DOM agreement validity; hidden/missing reservations remain explicit.
+Observed geometry and margins are saved as history even when settling times out. A timeout
+or incomplete evidence stays a failed run; no alternate coordinate, rescue or retry follows.
+
+The observation has no cost window and sets acceptanceEligible=false. Survey offset
+hypotheses are not settled-pose bounds. The retained radius-six bot's roughly9.69px reference
+clearance remains the weak constraint and requires moving-frame review. Both humans plus
+at least two full BOT labels, priority/restoration, negative HUD, far and cost checks remain
+unchanged future acceptance requirements. Preparing this mode grants no execution slot.

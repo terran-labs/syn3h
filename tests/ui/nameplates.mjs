@@ -9,7 +9,9 @@ import { fileURLToPath } from 'node:url'
 
 const observationOnly = process.argv.includes('--observe-staging')
 const surveyOnly = process.argv.includes('--survey-terrain')
-assert.ok(process.argv.slice(2).every(arg => ['--observe-staging', '--survey-terrain'].includes(arg)) && !(observationOnly && surveyOnly), 'unsupported fixture mode')
+const poseOnly = process.argv.includes('--observe-fixed-pose')
+const fixedPose = Object.freeze({ x: 32, z: 0, initialY: 15.622831573066174 })
+assert.ok(process.argv.slice(2).every(arg => ['--observe-staging', '--survey-terrain', '--observe-fixed-pose'].includes(arg)) && [observationOnly, surveyOnly, poseOnly].filter(Boolean).length <= 1, 'unsupported fixture mode')
 // Fixed before execution: one left-side region, no adaptive selection or early winner.
 const observationPositions = Object.freeze([[-22, -42], [-22, -34], [-14, -42], [-14, -34]].map(([x, z]) => Object.freeze({ x, z })))
 
@@ -41,7 +43,7 @@ assert.equal(launch.env.SYN3H_NO_ROOM_SERVER, '1')
 assert.equal(String(launch.env.SYN3H_ROOM_PORT), String(launch.roomPort), 'Vite proxy room port must be explicit')
 assert.ok(Number.isInteger(launch.roomPort) && launch.roomPort !== 8787, 'dedicated room port required')
 assert.ok(launch.roomPid > 0 && launch.roomStart && launch.vitePid > 0 && launch.viteStart, 'supervisor-owned PID/start provenance required')
-const report = { mode: surveyOnly ? 'terrain-survey-only' : observationOnly ? 'staging-observation-only' : 'acceptance', acceptanceEligible: !observationOnly && !surveyOnly, source: expected, launch, captures: [], errors: [], scope: 'Three fresh contexts: observer host, two remote people, four bots; Chrome only. No maximum-roster or hardware claim.' }
+const report = { mode: poseOnly ? 'fixed-pose-observation-only' : surveyOnly ? 'terrain-survey-only' : observationOnly ? 'staging-observation-only' : 'acceptance', acceptanceEligible: !observationOnly && !surveyOnly && !poseOnly, source: expected, launch, captures: [], errors: [], scope: 'Three fresh contexts: observer host, two remote people, four bots; Chrome only. No maximum-roster or hardware claim.' }
 const captures = report.captures, errors = report.errors
 await mkdir(out, { recursive: false })
 const files = ['index.html', 'src/main.ts', 'src/net/index.ts', 'src/net/Connection.ts', 'src/ui/Shell.ts', 'src/world/curve.ts', 'shared/params.ts', 'vite.config.ts', 'server/dev.ts', 'tools/manual-reload.mjs', 'tools/rapier-wasm.mjs', 'tests/ui/nameplates.mjs', 'src/ui/nameplates/HudExclusions.ts', 'src/ui/nameplates/VehicleNameplates.ts', 'src/ui/nameplates/anchors.ts', 'src/ui/nameplates/curvature.ts', 'src/ui/nameplates/layout.ts', 'src/ui/nameplates/occlusion.ts', 'src/ui/nameplates/preferences.ts', 'src/ui/nameplates/renderHook.ts', 'src/ui/nameplates/terrain.ts']
@@ -408,12 +410,13 @@ async function open(name, viewport) {
   return page
 }
 // Snapshot existing draw decisions; do not replay queries or alter the query budget.
-async function geometryEvidence(page, captureLabel = null) {
-  return page.evaluate(async captureLabel => {
+async function geometryEvidence(page, captureLabel = null, installPose = false) {
+  return page.evaluate(async ({ captureLabel, installPose }) => {
     const { copyCurveState, overHorizon } = await import('/src/world/curve.ts')
     const { renderedEnvelope } = await import('/src/ui/nameplates/anchors.ts')
     const { bendPoint, CurvedProjection } = await import('/src/ui/nameplates/curvature.ts')
     const { HudExclusions } = await import('/src/ui/nameplates/HudExclusions.ts')
+    const read = captureLabel => {
     // All imports finish before this synchronous snapshot. Do not replay draw or rays.
     const s = window.syn3h, net = window.syn3hNet, tags = net.tags, camera = s.game.camera
     const stamp = tags.stamp
@@ -448,9 +451,51 @@ async function geometryEvidence(page, captureLabel = null) {
     if (controls['gfx.auto'] !== false || controls['gfx.quality'] !== 4 || quality.auto || quality.level !== 4 || controls['daydream.seconds'] !== 0 || controls['sun.dayLength'] !== 0 || s.bots.daydream.active) throw new Error('Fixture control drift')
     const state = { label: captureLabel, stamp, labels, exclusions, controls, quality, nameplateCost: { ...window.syn3hNet.tags.stats }, curve: window.syn3h.params.get('world.curve').value, local: String(window.syn3hNet.id), presentation: shell.presentation, cameraMode: window.syn3h.params.get('camera.mode').value }
     state.diagnostic = diagnostic
+    if (captureLabel === 'fixed-pose-history') {
+      const localCenter = v(), localAnchor = v(), rotation = s.player.object.quaternion.clone()
+      const localRadius = renderedEnvelope(s.player, localCenter, rotation, localAnchor)
+      state.localPose = { body: { ...s.player.body.translation() }, orientation: { ...s.player.body.rotation() },
+        velocity: { ...s.player.body.linvel() }, center: localCenter.toArray(), radius: localRadius,
+        renderedOrientation: s.player.object.getWorldQuaternion(rotation).toArray() }
+      const slotBounds = c => [[0, -12], [0, -32], [-c.width / 2 - 12, -12], [c.width / 2 + 12, -12]].map(([dx, dy], spot) => {
+        const x = c.x + dx, y = c.y + dy - c.height
+        return { spot, left: Math.min(x - c.width / 2, c.x) - 3, top: y - 3,
+          right: Math.max(x + c.width / 2, c.x) + 3, bottom: c.y + 3 }
+      })
+      const gap = (a, b) => Math.max(b.left - a.right, a.left - b.right, b.top - a.bottom, a.top - b.bottom)
+      const discGap = (b, d) => Math.hypot(Math.max(b.left, Math.min(b.right, d.x)) - d.x,
+        Math.max(b.top, Math.min(b.bottom, d.y)) - d.y) - d.radius - 3
+      // Existing shown slots only; never select or allocate a replacement slot.
+      const placed = diagnostic.entries.filter(e => e.plate?.shown).map(e => {
+        const c = e.plate.candidate, dom = labels.find(l => l.id === e.id)
+        const current = e.plate.stamp === stamp && !e.plate.hidden && dom && Number.isInteger(c.previous) && c.previous >= 0 && c.previous <= 3
+        const bounds = current ? slotBounds(c)[c.previous] : null
+        const [dx, dy] = current ? [[0, -12], [0, -32], [-c.width / 2 - 12, -12], [c.width / 2 + 12, -12]][c.previous] : [0, 0]
+        const expected = { left: c.x + dx - c.width / 2, right: c.x + dx + c.width / 2, top: c.y + dy - c.height, bottom: c.y + dy }
+        const valid = current && ['left', 'right', 'top', 'bottom'].every(k => Number.isFinite(dom[k]) && Math.abs(dom[k] - expected[k]) < .1) &&
+          Math.abs(dom.width - c.width) < .1 && Math.abs(dom.height - c.height) < .1
+        return { id: e.id, bot: e.bot, valid: Boolean(valid), dom, bounds }
+      })
+      const discs = [...diagnostic.entries.map(e => e.plate?.disc), diagnostic.localDisc]
+      state.poseGeometry = { placed, humanReservations: diagnostic.entries.filter(e => !e.bot).map(e =>
+          placed.find(p => p.id === e.id) ?? { id: e.id, valid: false, reason: 'not shown' }),
+        localDiscFreshness: 'unstamped conservative copy; no participation claim',
+        margins: diagnostic.entries.map(e => {
+          const c = e.plate?.candidate
+          if (!c) return { id: e.id, valid: false, reason: 'candidate missing' }
+          return { id: e.id, stamp: e.plate.stamp, slots: slotBounds(c).map(bounds => ({ bounds,
+            viewport: Math.min(bounds.left - 8, innerWidth - 8 - bounds.right, bounds.top - 8, innerHeight - 8 - bounds.bottom),
+            hud: exclusions.map(b => gap(bounds, b)),
+            placed: placed.filter(p => p.id !== e.id).map(p => ({ id: p.id, gap: p.bounds ? gap(bounds, p.bounds) : null, valid: p.valid })),
+            nearer: discs.filter(d => d && d.id !== e.id && d.depth < c.depth).map(d => ({ id: d.id, gap: discGap(bounds, d) })) })) }
+        }) }
+    }
     if (!Number.isFinite(stamp) || stamp !== diagnostic.stamp || stamp !== tags.stamp) throw new Error('Capture draw stamp changed during snapshot')
     return state
-  }, captureLabel)
+    }
+    if (installPose) { window.nameplatePoseSnapshot = () => read('fixed-pose-history'); return null }
+    return read(captureLabel)
+  }, { captureLabel, installPose })
 }
 async function installTerrainEvidence(page) {
   await page.evaluate(() => {
@@ -575,6 +620,12 @@ try {
             body: { ...bot.body.translation() }, rotation: { ...bot.body.rotation() }, velocity: { ...bot.body.linvel() },
             rendered: bot.object.position.toArray(), fov: camera.fov, roster, nearRange })
         }
+        if (window.nameplatePoseHistory) {
+          if (window.nameplatePoseHistory.length >= 180) throw new Error('fixed pose history bound exceeded')
+          const snapshot = window.nameplatePoseSnapshot()
+          if (snapshot.stamp !== current.stamp) throw new Error('settling and geometry stamps differ')
+          window.nameplatePoseHistory.push({ time: performance.now(), ...current, roster, nearRange, snapshot })
+        }
         const pose = s.camera.cinematic
         return roster && nearRange && pose && camera.position.distanceTo(pose.position) < .5 && Math.abs(camera.fov - pose.fov) < .5 && current.count >= 6
       }, far, { timeout: remaining(15000), polling: 100 })
@@ -582,12 +633,28 @@ try {
   async function stage(far = false, curve = .71, hudOverlap = false) {
     await installTerrainEvidence(a)
     await a.evaluate(curve => window.syn3h.params.set('world.curve', curve), curve)
-    await a.evaluate(({ p, fixedNear }) => {
+    const initialPose = await a.evaluate(({ p, fixedNear, fixedPose }) => {
       const s = window.syn3h, v = s.player.object.position.clone().set(p.x, s.terrain.heightAt(p.x, p.z + 18) + 2, p.z + 18)
       s.player.teleport(v, 0)
-      s.bots.vehicles.forEach((bot, i) => { const x = p.x + (fixedNear && i === 0 ? -22 : (i - 1.5) * 12), z = p.z + (fixedNear && i === 0 ? -42 : -8 - i * 6); bot.teleport(v.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) })
+      let initial = null
+      s.bots.vehicles.forEach((bot, i) => {
+        const x = p.x + (fixedPose && i === 0 ? fixedPose.x : fixedNear && i === 0 ? -22 : (i - 1.5) * 12)
+        const z = p.z + (fixedPose && i === 0 ? fixedPose.z : fixedNear && i === 0 ? -42 : -8 - i * 6)
+        const ground = s.terrain.heightAt(x, z), y = fixedPose && i === 0 ? fixedPose.initialY : ground + 2
+        if (fixedPose && i === 0) {
+          const samples = [[-1, 0], [1, 0], [0, -1], [0, 1]].map(([dx, dz]) => s.terrain.heightAt(x + dx, z + dz))
+          if (![x, z, ground, y, ...samples].every(Number.isFinite)) throw new Error('nonfinite fixed pose initialization')
+          initial = { x, z, ground, initialY: y, neighborHeights: samples,
+            slope: { x: (samples[1] - samples[0]) / 2, z: (samples[3] - samples[2]) / 2 },
+            before: { body: { ...bot.body.translation() }, rendered: bot.object.position.toArray() } }
+        }
+        bot.teleport(v.clone().set(x, y, z), 0)
+        if (fixedPose && i === 0) initial.after = { body: { ...bot.body.translation() }, rendered: bot.object.position.toArray() }
+      })
       s.camera.setCinematicPose(v.clone().set(p.x, s.terrain.heightAt(p.x, p.z + 45) + 20, p.z + 45), v.clone().set(p.x, p.y + 4, p.z - 12), 60)
-    }, { p: center, fixedNear: !far && !hudOverlap })
+      return initial
+    }, { p: center, fixedNear: !far && !hudOverlap, fixedPose: poseOnly ? fixedPose : null })
+    if (poseOnly) { report.pose.initial = initialPose; await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)) }
     await b.evaluate(({p, far, hudOverlap}) => { const s = window.syn3h, z = p.z - (far ? 260 : 4), x = p.x - (far || hudOverlap ? 24 : 8); s.player.teleport(s.player.object.position.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) }, { p: center, far, hudOverlap })
     await c.evaluate(({p, far, hudOverlap}) => { const s = window.syn3h, z = p.z - (far ? 190 : hudOverlap ? 12 : 4), x = p.x + (far || hudOverlap ? 24 : 8); s.player.teleport(s.player.object.position.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) }, { p: center, far, hudOverlap })
     // Record diagnostics even when settling fails. Never move the camera to skip occlusion.
@@ -595,6 +662,17 @@ try {
     try {
       await waitSettled(a, far)
     } catch (error) { stagingError = error }
+    if (poseOnly) {
+      report.pose.settled = !stagingError
+      report.pose.settleError = stagingError ? String(stagingError) : null
+      try {
+        report.pose.history = await a.evaluate(() => { const history = window.nameplatePoseHistory; delete window.nameplatePoseHistory; return history })
+        await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+      } catch (error) {
+        report.pose.evidenceError = String(error)
+        if (!stagingError) stagingError = error
+      }
+    }
     try {
       report.stages ??= []
       report.stages.push({ far, curve, observer: await geometryEvidence(a), actors: await Promise.all([b, c].map(page => page.evaluate(() => ({ id: window.syn3hNet.id, seed: window.syn3h.params.get('world.seed')?.value, terrainKind: window.syn3h.params.get('terrain.kind')?.value, position: window.syn3h.player.object.position.toArray() })))) })
@@ -613,7 +691,35 @@ try {
       candidates: observationPositions, settleTimeoutMs: 15000, pollingMs: 100, historyLimit: 180, records: [], complete: false }
     await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
   }
-  if (surveyOnly) {
+  if (poseOnly) {
+    report.pose = { fixedPose, acceptanceEligible: false, settled: false, complete: false, history: [],
+      settleTimeoutMs: 15000, pollingMs: 100, historyLimit: 180,
+      note: 'one fixed initialization; no hypothesis bounds, slot selection or acceptance' }
+    await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+    await geometryEvidence(a, null, true)
+    await a.evaluate(() => { window.nameplateSettle = undefined; window.nameplatePoseHistory = [] })
+    await stage()
+    report.pose.final = await geometryEvidence(a, 'fixed-pose-history')
+    await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+    const snapshots = [...report.pose.history.map(h => h.snapshot), report.pose.final]
+    assert.ok(report.pose.history.length > 0 && report.pose.history.length <= 180, 'bounded pose history required')
+    for (const snapshot of snapshots) {
+      const d = snapshot.diagnostic
+      assert.equal(snapshot.stamp, d.stamp)
+      assert.equal(d.seed, surveyReference.seed); assert.equal(d.terrainKind, surveyReference.terrainKind); assert.equal(snapshot.curve, .71)
+      assert.equal(d.entries.filter(e => !e.bot).length, 2); assert.equal(d.entries.filter(e => e.bot).length, 4)
+      const discs = [...d.entries.map(e => e.plate?.disc), d.localDisc]
+      assert.ok(discs.every(disc => disc && ['x', 'y', 'radius', 'depth'].every(k => Number.isFinite(disc[k]))), 'all seven finite discs recorded')
+      assert.ok(d.entries.every(e => e.plate && e.plate.stamp === d.stamp && ['x', 'y', 'depth', 'width', 'height', 'opacity'].every(k => Number.isFinite(e.plate.candidate[k]))), 'current finite candidates required')
+      assert.ok([...d.camera.eye, ...d.camera.quaternion, ...d.camera.matrix, ...d.camera.projection, ...d.bend,
+        ...snapshot.localPose.center, snapshot.localPose.radius, ...snapshot.localPose.renderedOrientation,
+        ...Object.values(snapshot.localPose.body), ...Object.values(snapshot.localPose.orientation), ...Object.values(snapshot.localPose.velocity),
+        ...d.entries.flatMap(e => [...e.center, ...e.anchor, ...e.renderedRotation, e.radius, ...Object.values(e.bodyPosition), ...Object.values(e.bodyRotation), ...Object.values(e.bodyVelocity)])].every(Number.isFinite))
+    }
+    report.pose.complete = true
+    report.pose.verdict = 'fixed pose evidence collected; no placement or visibility acceptance'
+    await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+  } else if (surveyOnly) {
     report.survey = { purpose: 'terrain/projection data only; no pose selection or label acceptance', reference: surveyReference,
       samples: surveySamples, heightQueryLimit: 270, envelopeLimit: 324, projectionLimit: 9072, records: [], complete: false,
       hypotheses: { centerAboveGround: [.5, 1, 2], radii: [3.5, 6], note: 'hypothetical envelopes, not measured support or settled poses' } }
