@@ -40,3 +40,17 @@ Proposed caller diff for separate approval, if release opt-in is wanted:
 ```
 
 Each proposed directory must be fresh and external; a caller retry needs a new output identity. Do not export one fixed directory across multiple smoke invocations. These caller changes are proposals only.
+
+## Prepared mocked integration gate
+
+The adjacent integration test runs the actual smoke imports, option validation, evidence collection, finalization, marker and exit code in bounded subprocesses with mocked browser and filesystem dependencies. It replaces only the long gameplay scenario body with fixture results. It does not validate gameplay or real browser integration.
+
+Fourteen prepared cases cover default behavior, complete opt-in evidence, capture errors, missing clients and phases, truncation, overflow, write failure, collection timeout, browser-close rejection, an original gameplay failure, and invalid output paths. Failure cases require a nonzero result and no success marker. The helper and smoke source remain unchanged. These cases have not run.
+
+Proposed combined pure gate, only after allocation through the reviewed bounded supervisor:
+
+```sh
+node --test tools/shot-evidence.test.mjs tools/shot-evidence-integration.test.mjs
+```
+
+This combines the 24 previously accepted helper cases with 14 new integration cases. Each fixture subprocess has a five-second timeout; the collection-timeout case retains the actual smoke collection bound. No real browser, network or server is used.
