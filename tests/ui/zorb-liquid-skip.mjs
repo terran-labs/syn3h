@@ -81,6 +81,8 @@ function behaviorSummary(rows) {
   const magnitude=v=>Math.hypot(v.x,v.y,v.z)
   const tail=rows.slice(-20),contacts=rows.filter(r=>r.contact)
   return {disposition:'review-required',productAccepted:false,sampleCount:rows.length,
+    phases:[...new Set(rows.map(r=>r.phase))],radius:range(rows.map(r=>r.radius)),
+    endpoint:{tick:rows.at(-1).tick,time:rows.at(-1).time,phase:rows.at(-1).phase},
     tangentSpeed:range(rows.map(r=>r.tangentSpeed)),worldSpeed:range(rows.map(r=>magnitude(r.velocity))),
     spin:{magnitude:range(rows.map(r=>magnitude(r.omega))),x:range(rows.map(r=>r.omega.x)),y:range(rows.map(r=>r.omega.y)),z:range(rows.map(r=>r.omega.z))},
     gap:range(rows.map(r=>r.gap)),normalSpeed:range(rows.map(r=>r.normalSpeed)),
@@ -97,7 +99,7 @@ function behaviorSummary(rows) {
 async function persistPage() {
   if(page&&!page.isClosed()) {
     const evidence=await bounded(page.evaluate(()=>window.zorbProbe?.export()),5000,'partial observation')
-    if(evidence) { if(evidence.overflow)report.errors.push('Observation capacity exceeded'); report.activeEvidence=evidence; for(const record of report.cases) { const rows=evidence.rows.filter(r=>r.case===record.name);if(rows.length)record.behavior=behaviorSummary(rows) } await bounded(writeFile(`${out}/active-evidence.json`,JSON.stringify(evidence)),5000,'partial evidence') }
+    if(evidence) { if(evidence.overflow)report.errors.push('Observation capacity exceeded'); report.activeEvidence=evidence; for(const record of report.cases) { const rows=evidence.rows.filter(r=>r.case===record.name);if(rows.length&&!record.endpointFrozen)record.behavior=behaviorSummary(rows) } await bounded(writeFile(`${out}/active-evidence.json`,JSON.stringify(evidence)),5000,'partial evidence') }
   }
   await save()
 }
@@ -117,6 +119,22 @@ async function driveFocus() {
   await page.waitForFunction(()=>document.pointerLockElement===syn3h.game.canvas,null,{timeout:remaining(5000)})
   report.canvasActions.push({point,nativeClick:true,pointerLockVerified:true})
 }
+// Read-only DOM/public-state checks; never force a panel or dismiss a dialog.
+function nativeSelectionState(stage) {
+  const visible=el=>!!el&&!el.closest('[hidden]')&&el.getClientRects().length>0&&getComputedStyle(el).visibility!=='hidden'
+  const inspector=document.querySelector('.world-inspector'),head=document.querySelector('[data-section="you"] .wi-head'),select=document.querySelector('[data-section="you"] .wi-vehicle-select')
+  const state={locked:!!document.pointerLockElement,paused:syn3h.game.isPaused,
+    modal:[...document.querySelectorAll('[aria-modal="true"],.pause-veil')].some(visible),
+    playing:syn3h.shell.playing,suspended:syn3h.game.input.suspended,
+    inspectorVisible:visible(inspector),inspectorInert:!!inspector?.closest('[inert]'),
+    expanded:head?.getAttribute('aria-expanded'),selectVisible:visible(select),
+    selectInert:!!select?.closest('[inert]'),selectDisabled:select?.disabled,
+    activeElement:document.activeElement?.tagName}
+  if(!stage)return state
+  if(state.paused||state.modal||!state.playing||state.suspended)throw new Error('Unexpected pause/modal/menu during native selection: '+JSON.stringify(state))
+  const panels=!state.locked&&state.inspectorVisible&&!state.inspectorInert
+  return stage==='panels'?panels:panels&&state.expanded==='true'&&state.selectVisible&&!state.selectInert&&!state.selectDisabled
+}
 async function activate(kind) {
   const choices = {
     buggy: { optionId: 'buggy-syn3h', runtimeKinds: ['buggy', 'buggy-syn3h'] },
@@ -126,15 +144,28 @@ async function activate(kind) {
   }
   assert.ok(Object.hasOwn(choices,kind),`Unsupported vehicle case ${kind}`)
   const choice=choices[kind]
-  if(await page.evaluate(()=>!!document.pointerLockElement))await page.keyboard.press('Escape')
+  const transition={kind,before:await page.evaluate(nativeSelectionState)}
+  report.selectionTransitions??=[];report.selectionTransitions.push(transition);await save()
+  assert.ok(!transition.before.paused&&!transition.before.modal&&transition.before.playing&&!transition.before.suspended,'unexpected pause/modal/menu before vehicle selection')
+  if(transition.before.locked)await page.keyboard.press('Escape')
+  try {
+    await page.waitForFunction(nativeSelectionState,'panels',{timeout:remaining(5000)})
+  } catch(error) { transition.failureState=await page.evaluate(nativeSelectionState);await save();throw error }
   const card=page.locator('[data-section="you"] .wi-head')
   const select=page.locator('[data-section="you"] .wi-vehicle-select')
-  if(!await select.isVisible()){await card.scrollIntoViewIfNeeded();await card.click({timeout:remaining(5000)})}
+  const expanded=await card.getAttribute('aria-expanded')
+  assert.ok(expanded==='true'||expanded==='false','Me card expansion state required')
+  if(expanded==='false'){await card.scrollIntoViewIfNeeded();await card.click({timeout:remaining(5000)})}
+  try {
+    await page.waitForFunction(nativeSelectionState,'select',{timeout:remaining(5000)})
+  } catch(error) { transition.failureState=await page.evaluate(nativeSelectionState);await save();throw error }
   await select.scrollIntoViewIfNeeded()
   const selection={url:page.url(),kind,optionId:choice.optionId,available:await select.evaluate(el=>Array.from(el.options,option=>({value:option.value,label:option.label})))}
   report.vehicleSelections.push(selection);await save()
   assert.ok(selection.available.some(option=>option.value===choice.optionId),`Missing public vehicle option ${choice.optionId}`)
-  await select.selectOption(choice.optionId,{timeout:remaining(5000)})
+  transition.beforeSelection=await page.evaluate(nativeSelectionState);await save()
+  try { await select.selectOption(choice.optionId,{timeout:remaining(5000)}) }
+  catch(error) { transition.failureState=await page.evaluate(nativeSelectionState);await save();throw error }
   selection.selectedValue=await select.inputValue();await save()
   assert.equal(selection.selectedValue,choice.optionId,'native vehicle selection')
   // The public Buggy option and cached runtime Buggy may use different explicit aliases.
@@ -228,7 +259,8 @@ async function observeCase(liquid,kind,mode,site) {
     const end=Date.now()+(mode==='repeat'?12000:mode==='drive'?6000:5000)
     while(Date.now()<end){await page.waitForTimeout(Math.min(500,remaining(500)));await persistPage()}
   }finally{if(mode==='drive')await page.keyboard.up('w')}
-  const data=await page.evaluate(name=>zorbProbe.export().rows.filter(r=>r.case===name),name)
+  const data=await page.evaluate(name=>{zorbProbe.end();return zorbProbe.export().rows.filter(r=>r.case===name)},name)
+  record.endpointFrozen=true;record.behavior=behaviorSummary(data)
   await writeFile(`${out}/${name}.json`,JSON.stringify(data,null,2))
   record.finalFraming=await page.evaluate(()=>{
     const p=syn3h.player.object.position.clone().project(syn3h.game.camera)
@@ -253,7 +285,7 @@ async function observeCase(liquid,kind,mode,site) {
     assert.ok(data.some(r=>r.surface.kind===null)&&data.some(r=>r.surface.kind===liquid),'normal driving must cross actual shoreline')
   }
   assert.ok(data.every(r=>Object.values(r.velocity).concat(Object.values(r.omega)).every(Number.isFinite)),'finite motion')
-  record.status='assertions-passed-review-pending';await page.evaluate(()=>zorbProbe.end());await save()
+  record.status='assertions-passed-review-pending';await save()
 }
 try {
   report.before=await pins();await save()
