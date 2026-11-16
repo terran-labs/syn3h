@@ -73,4 +73,26 @@ describe('camera splash pulse', () => {
     params.set('post.plunge', 1)
     expect(sample()).toBe(0)
   })
+
+  it('consumes contact and dry exits through the quality-off render bypass', () => {
+    chain = new PostChain({ quality: { postTier: 'off' } }, { sunDirection: new THREE.Vector3(0, 1, 0) }, focus)
+    const draw = vi.fn()
+    const renderer = { render: draw } as unknown as THREE.WebGPURenderer
+    const scene = new THREE.Scene()
+    water.coverage.set(camera, 1)
+    chain.render(renderer, scene, camera)
+    for (let i = 0; i < 8; i++) { now += 100; chain.render(renderer, scene, camera) }
+    // An entry consumed while disabled must not become a delayed pulse when enabled.
+    expect(sample()).toBe(0)
+    water.coverage.set(camera, 0)
+    chain.render(renderer, scene, camera)
+    water.coverage.set(camera, 1)
+    expect(sample()).toBe(1)
+    water.coverage.set(camera, 0)
+    chain.render(renderer, scene, camera)
+    expect(sample()).toBe(0)
+    expect(draw).toHaveBeenCalledTimes(11)
+    expect(chain.builds).toBe(0)
+    expect(focus).not.toHaveBeenCalled()
+  })
 })
