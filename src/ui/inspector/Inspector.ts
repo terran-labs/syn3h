@@ -9,6 +9,7 @@ import { modeChoices } from '../modeAvailability'
  * anywhere and it appears. The data side is model.ts, which has no DOM and is tested alone.
  */
 import { params, type ParamValue } from '../../../shared/params'
+import { applyPreset, matchPreset, presetsFor } from '../../../shared/presets'
 import { canEditWorld, resetWorld } from '../worldPermissions'
 import { buildTree, describe, shownDef, shownValue, storedValue, exportSection, exportWorld, fraction, limits, parseWorld, pasteSummary, show, type PropertyDef, type SectionNode } from './model'
 import './params'
@@ -135,7 +136,7 @@ export class Inspector {
     this.vehicleControl = this.vehicleSwitch()
     this.vehicleControl.dataset.search = "vehicle colour color body accent buggy jet hovercraft tank"
     this.build()
-    this.unsubscribe = params.onChange((id, value) => this.rows.get(id)?.sync(value))
+    this.unsubscribe = params.onChange((id, value) => { this.rows.get(id)?.sync(value); for (const sync of this.presetSyncs) sync() })
     this.element.addEventListener('click', event => this.click(event))
     this.element.querySelector<HTMLInputElement>('.wi-search')!.addEventListener('input', event => this.search((event.target as HTMLInputElement).value))
     // Typing here must not drive the vehicle.
@@ -189,7 +190,7 @@ export class Inspector {
   update(): void {
     if (params.all().length !== this.known) this.build()
     const editable = canEditWorld()
-    if (editable !== this.editable) { this.editable = editable; for (const { row, def } of this.rows.values()) if (def.scope === 'world') for (const control of row.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) control.disabled = !editable; this.element.classList.toggle('is-locked', !editable) }
+    if (editable !== this.editable) { this.editable = editable; for (const { row, def } of this.rows.values()) if (def.scope === 'world') for (const control of row.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) control.disabled = !editable; for (const select of this.element.querySelectorAll<HTMLSelectElement>('.wi-preset select')) select.disabled = !editable; this.element.classList.toggle('is-locked', !editable) }
     for (const card of this.element.querySelectorAll<HTMLElement>('.wi-card')) {
       const id = card.dataset.section!, extra = this.extras.get(id), sum = card.querySelector('.wi-sum')!
       const text = extra ? extra.summary() : this.options.summary(id) || `${this.tree.find(s => s.id === id)?.count ?? 0} properties`
@@ -211,7 +212,7 @@ export class Inspector {
     const owned = new Set([...this.extras.values()].flatMap(extra => extra.owns?.() ?? []))
     const shown = this.options.sections
     this.tree = buildTree(all.map(p => p.def as PropertyDef).filter(def => !owned.has(def.id))).filter(section => !shown || shown.includes(section.id))
-    this.rows.clear(); this.editing = null; this.settle()
+    this.rows.clear(); this.presetSyncs.length = 0; this.editing = null; this.settle()
     const cards = this.element.querySelector('.wi-cards')!; cards.replaceChildren()
     for (const section of this.tree) {
       const card = document.createElement('section'); card.className = 'wi-card wi-glass'; card.dataset.section = section.id
@@ -232,7 +233,9 @@ export class Inspector {
         const fold = document.createElement('details'); fold.className = 'wi-group'; fold.dataset.group = group.name; fold.open = index === 0 && !['Tag', 'Tag beams', 'Zorb', 'Sun', 'Sky', 'Weather'].includes(group.name)
         const summary = document.createElement('summary'); summary.innerHTML = '<span></span><small></small>'
         summary.querySelector('span')!.textContent = group.name; summary.querySelector('small')!.textContent = String(group.properties.length)
-        fold.append(summary); for (const def of group.properties) fold.append(this.row(def)); body.append(fold)
+        fold.append(summary)
+        const handling = this.presetRow(group.name); if (handling) fold.append(handling)
+        for (const def of group.properties) fold.append(this.row(def)); body.append(fold)
       })
       const foot = document.createElement('div'); foot.className = 'wi-actions wi-foot'
       foot.innerHTML = '<button type="button" data-wi="copy-section">Copy JSON</button><button type="button" data-wi="paste-section">Paste</button>'
@@ -328,6 +331,36 @@ export class Inspector {
     const input = row.querySelector<HTMLInputElement>('input')!
     input.disabled = !eligible; input.setAttribute('aria-describedby', 'gi-status')
     const number = row.querySelector<HTMLButtonElement>('.wi-num'); if (number) number.disabled = !eligible
+  }
+  /** Keep each Handling dropdown showing the preset the current values match. */
+  private readonly presetSyncs: (() => void)[] = []
+  /**
+   * The Handling dropdown at the top of a vehicle's settings group (shared/presets.ts): choosing
+   * a preset sets its settings as the sliders would; the current preset is found by comparing
+   * values, and any other mix shows as Custom. Room settings, so the world lock applies.
+   */
+  private presetRow(group: string): HTMLElement | null {
+    const presets = presetsFor(group)
+    if (!presets.length) return null
+    const row = document.createElement('div'); row.className = 'wi-preset'; row.dataset.group = group
+    const label = document.createElement('label'); label.className = 'wi-preset-pick'
+    const caption = document.createElement('span'); caption.className = 'wi-label'; caption.textContent = 'Handling'
+    const select = document.createElement('select'); select.setAttribute('aria-label', `${group} handling preset`)
+    for (const [i, preset] of presets.entries()) { const option = document.createElement('option'); option.value = String(i); option.textContent = preset.name; select.append(option) }
+    const custom = document.createElement('option'); custom.value = 'custom'; custom.textContent = 'Custom'; custom.disabled = true; select.append(custom)
+    label.append(caption, select)
+    const about = document.createElement('p'); about.className = 'wi-blurb wi-preset-about'
+    row.append(label, about)
+    select.addEventListener('change', () => { const preset = presets[Number(select.value)]; if (preset && canEditWorld()) applyPreset(preset); sync() }, { signal: this.abort.signal })
+    const sync = () => {
+      const match = matchPreset(presets, id => params.get(id)?.value)
+      const value = match ? String(presets.indexOf(match)) : 'custom'
+      if (select.value !== value) select.value = value
+      const text = match?.description ?? 'Your own mix: the settings below differ from every preset.'
+      if (about.textContent !== text) about.textContent = text
+    }
+    sync(); this.presetSyncs.push(sync)
+    return row
   }
   /** One property row: slider, toggle, choice or number, kept in sync with the registry. */
   row(def: PropertyDef): HTMLElement {
