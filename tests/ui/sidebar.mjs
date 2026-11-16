@@ -19,7 +19,7 @@ for (const mode of ['desktop', 'ipad', 'phone', 'landscape']) {
     await page.waitForFunction(() => !document.querySelector('.world-inspector').getAnimations().some(a => a.playState === 'running'))
     assert.equal(await page.locator('.wi-top, .rail-close, .rail-world, .wi-quick, .gear-select').count(), 0)
     const order = () => page.locator('.wi-cards > [data-section]').evaluateAll(es => es.map(e => e.dataset.section))
-    const expected = ['game', 'players', 'vehicles', 'world', 'sky', 'performance', 'you']
+    const expected = ['you', 'game', 'players', 'vehicles', 'world', 'performance']
     assert.deepEqual(await order(), expected)
     await page.evaluate(() => syn3h.shell.inspector.rebuild())
     assert.deepEqual(await order(), expected, 'session card survives registry rebuild')
@@ -29,16 +29,22 @@ for (const mode of ['desktop', 'ipad', 'phone', 'landscape']) {
     assert.ok((await pause.boundingBox()).height >= 44, 'Pause stays a full touch target')
     await page.screenshot({ path: `${out}/${mode}-cards.png` })
     for (const section of expected) {
-      await search.fill(section === 'sky' ? 'Sky' : section === 'players' ? 'Players' : section === 'you' ? 'You' : section)
+      await search.fill(section === 'sky' ? 'Sky' : section === 'players' ? 'Players' : section === 'you' ? 'Me' : section)
       assert.ok(await page.locator(`.wi-cards > [data-section=${section}]`).isVisible(), `${section} is searchable`)
     }
+    for (const term of ['vehicle', 'colour']) {
+      await search.fill(term)
+      assert.ok(await page.locator('[data-section=you] .wi-vehicle-select').isVisible(), `${term} finds Me vehicle controls`)
+    }
+    assert.equal(await page.locator('[data-section=vehicles] .wi-vehicle-select').count(), 0)
+    assert.equal(await page.locator('[data-section=you] .wi-colour-dots i').count(), 2)
     await search.fill(''); await search.blur()
     if (!touch) {
       await page.keyboard.press('Control+f')
       assert.ok(await search.evaluate(el => el === document.activeElement), 'search shortcut reaches bottom search')
       await search.blur()
     }
-    await page.locator('[data-section=vehicles] .wi-head').click()
+    await page.locator('[data-section=you] .wi-head').click()
     const vehicle = page.locator('.wi-vehicle-select')
     await vehicle.scrollIntoViewIfNeeded()
     assert.ok(await vehicle.isVisible())

@@ -18,9 +18,11 @@ import './motion.css'
 export interface InspectorOptions {
   /** One line for a closed card, for example "Alpine · Harimos". Empty hides it. */
   summary(sectionId: string): string
-  /** The vehicles on offer and which is in use, for the switcher in the Vehicles card. */
+  /** The vehicles on offer and which is in use, for the switcher in the Me card. */
   vehicles(): { options: readonly { id: string; label: string }[]; current: string }
   onVehicle(id: string): void
+  /** Current session identity; renaming remains owned by the session. */
+  playerName?(): string
   /** The player's vehicle colours as #rrggbb. With onColor, two swatches sit beside the vehicle selector. */
   colors?(): { body: string; accent: string }
   /** Called on every movement in the colour picker, so the vehicle can repaint as it is dragged. */
@@ -124,6 +126,7 @@ export class Inspector {
     window.addEventListener('resize', () => this.hideTooltip(), { signal })
     document.addEventListener('pointerdown', event => { if (!(event.target as Element).closest('.wi-row, .wi-tooltip')) this.hideTooltip() }, { signal })
     this.vehicleControl = this.vehicleSwitch()
+    this.vehicleControl.dataset.search = "vehicle colour color body accent buggy jet hovercraft tank"
     this.build()
     this.unsubscribe = params.onChange((id, value) => this.rows.get(id)?.sync(value))
     this.element.addEventListener('click', event => this.click(event))
@@ -188,7 +191,10 @@ export class Inspector {
     const vehicles = this.options.vehicles()
     const select = this.element.querySelector<HTMLSelectElement>('.wi-vehicle-select')!
     if (document.activeElement !== select) select.value = vehicles.current
+    const name = this.element.querySelector('.wi-person-name output')
+    if (name && name.textContent !== this.options.playerName?.()) name.textContent = this.options.playerName?.() ?? ''
     const colors = this.options.colors?.()
+    if (colors) for (const dot of this.element.querySelectorAll<HTMLElement>('[data-colour]')) dot.style.backgroundColor = colors[dot.dataset.colour as 'body' | 'accent']
     if (colors) for (const input of this.tintInputs) { const value = colors[input.dataset.tint as 'body' | 'accent']; if (input.value !== value && document.activeElement !== input) input.value = value }
   }
   private build(): void {
@@ -203,11 +209,18 @@ export class Inspector {
       const head = document.createElement('button'); head.type = 'button'; head.className = 'wi-head'; head.dataset.wi = 'toggle'; head.setAttribute('aria-expanded', 'false')
       head.innerHTML = '<h3></h3><span class="wi-sum"></span><span class="wi-chev" aria-hidden="true"></span>'; head.querySelector('h3')!.textContent = section.title
       const body = document.createElement('div'); body.className = 'wi-body'; body.hidden = true
-      if (section.id === 'vehicles') body.append(this.vehicleControl)
+      if (section.id === 'you') {
+        body.append(this.vehicleControl)
+        const identity = document.createElement('p'); identity.className = 'wi-person-name'; identity.dataset.search = 'player name identity'
+        const caption = document.createElement('span'); caption.textContent = 'Player name'
+        const name = document.createElement('output'); identity.append(caption, name); body.append(identity)
+        const dots = document.createElement('span'); dots.className = 'wi-colour-dots'; dots.setAttribute('aria-label', 'Vehicle colours')
+        dots.innerHTML = '<i data-colour="body"></i><i data-colour="accent"></i>'; head.querySelector('.wi-sum')!.after(dots)
+      }
       const blurb = document.createElement('p'); blurb.className = 'wi-blurb'; blurb.textContent = section.blurb; body.append(blurb)
 
       section.tree.forEach((group, index) => {
-        const fold = document.createElement('details'); fold.className = 'wi-group'; fold.open = index === 0
+        const fold = document.createElement('details'); fold.className = 'wi-group'; fold.dataset.group = group.name; fold.open = index === 0 && !['Tag', 'Tag beams', 'Zorb', 'Sun', 'Sky', 'Weather'].includes(group.name)
         const summary = document.createElement('summary'); summary.innerHTML = '<span></span><small></small>'
         summary.querySelector('span')!.textContent = group.name; summary.querySelector('small')!.textContent = String(group.properties.length)
         fold.append(summary); for (const def of group.properties) fold.append(this.row(def)); body.append(fold)
@@ -467,6 +480,11 @@ export class Inspector {
     for (const card of this.element.querySelectorAll<HTMLElement>('.wi-card')) {
       const headingHit = words.length > 0 && words.every(word => (card.querySelector('h3')?.textContent ?? '').toLowerCase().includes(word))
       let cardHits = headingHit ? 1 : 0
+      for (const control of card.querySelectorAll<HTMLElement>('[data-search]')) {
+        const hit = headingHit || words.every(word => `${control.dataset.search} ${control.textContent}`.toLowerCase().includes(word))
+        control.hidden = words.length > 0 && !hit
+        if (hit) cardHits++
+      }
       for (const fold of card.querySelectorAll<HTMLDetailsElement>('.wi-group')) {
         let hits = 0
         for (const row of fold.querySelectorAll<HTMLElement>('.wi-row')) {

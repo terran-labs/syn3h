@@ -32,7 +32,7 @@ import { RESUME_KEY } from '../core/resume'
 import { qualityLevel } from './quality/ladder'
 import { Vector3 } from 'three/webgpu'
 import { PLANETS } from '../world/planets'
-import { graphicsLevel, levelNumber } from '../core/quality'
+import { graphicsLevel, levelNumber, qualityBudget } from '../core/quality'
 import { camDistance, camFov, camHeight, camOffset } from '../core/ChaseCamera'
 import { arrivalPath } from '../core/arrival'
 import { applyPlanet, currentPlanet, encodeWorld, planetName } from '../world/planets'
@@ -191,6 +191,7 @@ export class Shell implements System {
       // Vehicles are chosen in play only (the lobby offers planets). Four, one design each.
       vehicles: () => ({ options: PLAY_VEHICLES, current: this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind }),
       onVehicle: id => this.switchVehicle(id as VehicleKind),
+      playerName: () => this.playerName,
       colors: () => this.tintView,
       onColor: (key, value) => this.setTint(key, value),
       onSaveWorld: () => this.saveWorld(),
@@ -205,7 +206,7 @@ export class Shell implements System {
     players.innerHTML = '<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><label class="rail-diagnostics"><input type="checkbox"> Connection diagnostics</label></div>'
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
     this.inspector.setSessionCard(players)
-    // Performance follows Sky; its controls remain part of the searchable card stack.
+    // Performance follows World; its controls remain part of the searchable card stack.
     this.performancePanel = new PerformancePanel(this.element, () => this.showPanels(), this.game.quality, this.inspector)
     const foot = document.createElement('div'); foot.className = 'rail-foot wi-glass'
     foot.innerHTML = '<div class="rail-tools"><button type="button" class="rail-pause">Pause</button></div>'
@@ -405,11 +406,14 @@ export class Shell implements System {
   /** The player's speed (m/s) and height above the ground (m), for the focus display. */
   setTelemetry(speed: number, altitude: number): void { this.telemetry.speed = speed; this.telemetry.altitude = altitude }
   private inspectorSummary(id: string): string {
-    if (id === 'world') return `${currentPlanet().label} · ${planetName(worldSeed.value)}`
-    if (id === 'sky') { const hour = Number(params.get('sun.timeOfDay')?.value ?? 0); return `${String(Math.floor(hour) % 24).padStart(2, '0')}:${String(Math.floor((hour % 1) * 60)).padStart(2, '0')}` }
+    if (id === 'world') {
+      const hour = Number(params.get('sun.timeOfDay')?.value ?? 0)
+      const time = `${String(Math.floor(hour) % 24).padStart(2, '0')}:${String(Math.floor((hour % 1) * 60)).padStart(2, '0')}`
+      return `${currentPlanet().label} · ${planetName(worldSeed.value)} · ${time}`
+    }
     if (id === 'game') { const bots = Number(params.get('bots.count')?.value ?? 0); const playing = Number(params.get('game.mode')?.value ?? 2); return `${modeName(playing)}${bots ? ` · ${bots} ${bots === 1 ? 'bot' : 'bots'}` : ''}` }
-    if (id === 'vehicles') { const current = this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind; return PLAY_VEHICLES.find(vehicle => vehicle.id === current)?.label ?? '' }
-    return id === 'you' ? 'yours only' : ''
+    if (id === 'you') { const current = this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind; return `${this.playerName} · ${PLAY_VEHICLES.find(vehicle => vehicle.id === current)?.label ?? ''}` }
+    return id === 'vehicles' ? 'Handling and tuning' : ''
   }
   /**
    * Change vehicle in play. The game builds its vehicle once at start, so this saves the
@@ -1262,6 +1266,8 @@ export class Shell implements System {
     // The stylesheet drops frost at the lowest graphics level.
     // Frost goes at the lowest graphics level, and when the quality ladder is shedding post effects.
     const gfx = qualityLevel() >= 2 ? '0' : String(levelNumber(graphicsLevel.value))
+    const frost = qualityBudget().uiFrost && qualityLevel() < 2 ? 'on' : 'off'
+    if (this.element.dataset.uiFrost !== frost) this.element.dataset.uiFrost = frost
     if (document.documentElement.dataset.gfx !== gfx) document.documentElement.dataset.gfx = gfx
     if (!this.menuVisible) return
     const mute = this.element.querySelector<HTMLButtonElement>('.shell-mute')!
