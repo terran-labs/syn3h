@@ -566,3 +566,21 @@
 
 /* The SVG retains its box and accessible name while Galaxy draws the same mark. */
 .has-animated-logo .shell-logo { opacity: 0; animation: none; }
+
+/* The in-play guide uses the shared editorial content without the lobby stage. */
+.syn3h-shell .in-play-about { box-sizing: border-box; width: min(900px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 0; color: var(--s3-text, #e8eef5); background: rgb(6 12 22 / .96); border: 1px solid var(--s3-line, #33516a); border-radius: 8px; overflow: auto; overscroll-behavior: contain; touch-action: pan-y; }
+.syn3h-shell .in-play-about::backdrop { background: rgb(0 5 12 / .65); }
+.syn3h-shell .in-play-about > header { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 24px; background: #060c16; border-bottom: 1px solid var(--s3-line, #33516a); }
+.syn3h-shell .in-play-about h2 { margin: 0; color: var(--s3-accent, #8fe3ff); }
+.syn3h-shell .in-play-about .panel-back { margin: 0; flex-shrink: 0; }
+.syn3h-shell .in-play-about-body { padding: 24px 32px; text-align: left; }
+.syn3h-shell .in-play-about p { font-size: 16px; line-height: 1.6; color: var(--s3-dim, #c2cdd8); }
+.syn3h-shell .in-play-about .shell-credits { margin: 16px 0 24px; text-align: left; }
+.syn3h-shell .in-play-about .shell-credits summary { min-height: 44px; align-content: center; cursor: pointer; }
+.syn3h-shell .in-play-about .shell-credits li { margin: 8px 0; line-height: 1.5; }
+.syn3h-shell .in-play-about :focus-visible { outline: 2px solid var(--s3-accent, #8fe3ff); outline-offset: 3px; }
+@media (max-width: 700px) {
+  .syn3h-shell .in-play-about { width: calc(100vw - 16px); max-height: calc(100dvh - 16px); }
+  .syn3h-shell .in-play-about > header { padding: 12px; flex-wrap: wrap; }
+  .syn3h-shell .in-play-about-body { padding: 16px; }
+}
