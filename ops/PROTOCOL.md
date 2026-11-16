@@ -137,6 +137,7 @@ Set by the owner at 7:10pm on Saturday. The dashboard opens with one block of li
 everything he can look at: the live game, production once it exists, each lab page (terrain,
 planets, score, effects, bots, skins) and each lane's own preview. A handoff that adds or
 moves a viewable page names its path in the handoff note, and the Orchestrator adds the
-link in the same merge. A check lists the HTML entry pages on trunk and fails if one is
-missing from the dashboard's link block, so the list cannot drift. Dead links come off, or
+link in the same merge. Since 16 November 2026 this is the Orchestrator's job at each
+merge and not an automated test: a missing link is not a bug a player can hit, so it does
+not block a release. Dead links come off, or
 are marked down, at each sweep.
