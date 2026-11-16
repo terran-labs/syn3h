@@ -45,6 +45,48 @@ const WAKE_LIFE = 2.8
 /** Half the beam of a typical hull, metres: where the wash starts and the arms leave from. */
 const HULL = .95
 
+/**
+ * The size of an entry splash for an impact speed (m/s): all of it bounded, none of it ever
+ * smaller for a harder hit. Real splashes: a crown thrown up and out round the hole, then the
+ * cavity closing and firing a column (the Worthington jet) up the middle, which rises and falls
+ * under gravity; a fast oblique entry also throws sheets forward along the direction of travel.
+ */
+export interface SplashShape {
+  /** Droplets in the crown, before the pool's throttle. */
+  crown: number
+  /** Crown droplets' outward and upward speeds, m/s. */
+  crownOut: number
+  crownUp: number
+  /** Droplets in the column and its height, metres. */
+  column: number
+  columnHeight: number
+  /** Share of a forward sheet (0..1) and its droplets per unit of that share. */
+  sheet: number
+  /** Mist puffs. */
+  mist: number
+  /** Foam ring radius, metres, and lifetime, seconds. */
+  ringSize: number
+  ringLife: number
+}
+/** The hardest impact a splash grows for; beyond it the splash stays the same size. */
+export const SPLASH_MAX_IMPACT = 40
+const ramp = (impact: number, from: number, to: number) => Math.max(0, Math.min(1, (impact - from) / (to - from)))
+export function splashShape(impact: number): SplashShape {
+  const i = Math.max(0, Math.min(SPLASH_MAX_IMPACT, Number.isFinite(impact) ? impact : 0))
+  return {
+    crown: Math.round(16 + i * 9),
+    crownOut: 1 + Math.min(7, i * .28),
+    crownUp: 1 + Math.min(11, i * .55),
+    // A slow entry is a slosh: no column until about 6 m/s.
+    column: Math.round(ramp(i, 6, 30) * 120),
+    columnHeight: ramp(i, 6, 40) * 9,
+    sheet: ramp(i, 8, 35),
+    mist: Math.round(ramp(i, 5, 30) * 30),
+    ringSize: 1.6 + Math.min(6, i * .22),
+    ringLife: 1.6 + Math.min(2.4, i * .09),
+  }
+}
+
 interface VehicleState {
   slot: number; seen: number; submerged: number
   x: number; z: number; dirX: number; dirZ: number
@@ -199,7 +241,8 @@ export class SpraySim {
     if (speed > .3) { s.dirX = vx / speed; s.dirZ = vz / speed }
     const fx = s.dirX, fz = s.dirZ, sx = -fz, sz = fx
     // From dry or nearly dry only, so a hull bobbing back down after a landing does not splash again.
-    const entering = s.submerged < .1 && sub - s.submerged > .15 && vy < -1.5
+    // A fast hull touching down flat (a jet skimming, a Zorb skipping) splashes too: a skip.
+    const entering = s.submerged < .1 && sub - s.submerged > .1 && (vy < -1.5 || (speed > 9 && sub - s.submerged > .15))
     s.seen = this.time; s.speed = speed
     s.touching = sub > 0
     if (sub > 0 && dt > 0) {
@@ -234,7 +277,7 @@ export class SpraySim {
       }
       this.lay(s, x, y, z, speed, teleported, scale)
     } else for (let a = 0; a < ARMS; a++) this.armHeadActive[s.slot * ARMS + a] = 0
-    if (entering) this.splash(x, y, z, -vy, scale)
+    if (entering) this.splash(x, y, z, vx, Math.min(vy, 0), vz, scale)
     s.submerged = sub; s.x = x; s.z = z
     this.version++
     return entering
@@ -250,16 +293,52 @@ export class SpraySim {
     d[o + DFLOOR] = this.surface(x, z, floor); d[o + DKIND] = kind
   }
 
-  private splash(x: number, y: number, z: number, impact: number, scale: number) {
-    const n = Math.min(Math.floor(this.cap.droplets * .5), Math.round((20 + impact * 14) * scale * this.throttle))
-    for (let i = 0; i < n; i++) {
-      const a = i / n * Math.PI * 2 + this.random() * .3, r = 1 + this.random() * .5, out = (1 + this.random() * 1.2) * Math.min(6, impact * .3)
-      this.drop(x + Math.cos(a) * r, y + .05, z + Math.sin(a) * r, Math.cos(a) * out, (.6 + this.random() * .6) * Math.min(9, impact * .7), Math.sin(a) * out, .015 + this.random() * .025, y, 0, scale)
+  /** Impact speed for an entry: all of the vertical speed and part of the horizontal. */
+  static impact(vx: number, vy: number, vz: number): number { return Math.hypot(vy, .45 * Math.hypot(vx, vz)) }
+
+  private splash(x: number, y: number, z: number, vx: number, vy: number, vz: number, scale: number) {
+    const impact = SpraySim.impact(vx, vy, vz)
+    const k = splashShape(impact)
+    // Whatever the impact, a splash takes at most half the pool, shared out by the throttle.
+    const budget = Math.floor(this.cap.droplets * .5)
+    const want = Math.max(1, k.crown + k.column + k.sheet * 80 + k.mist)
+    const share = Math.min(this.throttle * scale, budget / want)
+    // Crown: up and out round the hole.
+    const crown = Math.round(k.crown * share)
+    for (let i = 0; i < crown; i++) {
+      const a = i / crown * Math.PI * 2 + this.random() * .3, r = 1 + this.random() * .5, out = (.6 + this.random() * .8) * k.crownOut
+      this.drop(x + Math.cos(a) * r, y + .05, z + Math.sin(a) * r, Math.cos(a) * out, (.6 + this.random() * .6) * k.crownUp, Math.sin(a) * out, .015 + this.random() * .03, y, 0, scale)
+    }
+    // Column: big drops fired straight up from the middle; speed for its height, so it rises
+    // and falls back with a believable second or so of hang.
+    const column = Math.round(k.column * share), jet = Math.sqrt(2 * GRAVITY * k.columnHeight)
+    for (let i = 0; i < column; i++) {
+      const a = this.random() * Math.PI * 2, r = this.random() * .35, lift = jet * (.55 + this.random() * .45)
+      this.drop(x + Math.cos(a) * r, y + .1, z + Math.sin(a) * r, Math.cos(a) * .5, lift, Math.sin(a) * .5, .025 + this.random() * .04, y, 0, scale)
+    }
+    // Sheets thrown forward in a fan along the direction of travel.
+    const h = Math.hypot(vx, vz)
+    if (h > 1 && k.sheet > 0) {
+      const fx = vx / h, fz = vz / h, sheet = Math.round(k.sheet * 80 * share)
+      for (let i = 0; i < sheet; i++) {
+        const spread = (this.random() - .5) * 1.2, c = Math.cos(spread), sn = Math.sin(spread)
+        const dx = fx * c - fz * sn, dz = fz * c + fx * sn, out = h * (.35 + this.random() * .35)
+        this.drop(x + dx * 1.2, y + .05, z + dz * 1.2, dx * out, (.3 + this.random() * .5) * k.crownUp, dz * out, .012 + this.random() * .02, y, 0, scale)
+      }
+    }
+    // Mist that hangs for a moment round the impact.
+    const mist = Math.round(k.mist * share)
+    for (let i = 0; i < mist; i++) {
+      const a = this.random() * Math.PI * 2, r = 1 + this.random() * k.ringSize * .5
+      this.drop(x + Math.cos(a) * r, y + .4 + this.random() * k.columnHeight * .3, z + Math.sin(a) * r, Math.cos(a) * 1.2 + vx * .1, .4 + this.random() * .8, Math.sin(a) * 1.2 + vz * .1, .7 + this.random() * .6, y, 1, scale)
     }
     const i = this.ringCount < this.cap.rings ? this.ringCount++ : 0, o = i * R, r = this.rings
-    r[o + RX] = x; r[o + RY] = y + WAKE_LIFT; r[o + RZ] = z; r[o + RAGE] = 0; r[o + RLIFE] = 1.6 + Math.min(1.4, impact * .08)
-    r[o + RSIZE] = (1.6 + Math.min(4, impact * .3)) * scale; r[o + RSTRENGTH] = Math.min(1, .4 + impact * .06)
+    r[o + RX] = x; r[o + RY] = y + WAKE_LIFT; r[o + RZ] = z; r[o + RAGE] = 0; r[o + RLIFE] = k.ringLife
+    r[o + RSIZE] = k.ringSize * scale; r[o + RSTRENGTH] = Math.min(1, .4 + impact * .06)
+    this.lastSplash = impact
   }
+  /** Impact speed of the most recent entry splash, m/s: for the ripple field and evidence. */
+  lastSplash = 0
 
   /** Extend the three arms of a vehicle's wake. Points are laid by distance, so a stationary hull adds none. */
   private lay(s: VehicleState, x: number, y: number, z: number, speed: number, teleported: boolean, scale: number) {

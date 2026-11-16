@@ -212,7 +212,8 @@ export class Spray {
     if (this.liquid === 'lava') return entering
     const sub = Math.max(0, Math.min(1, submergedFraction)), speed = Math.hypot(velocity.x, velocity.z)
     if (sub > 0 && speed > 1) this.ripples.disturb(position.x, position.z, 1.5, Math.min(.15, speed * .004) * Math.min(.1, Math.max(0, dt)) * 60)
-    if (entering) this.ripples.disturb(position.x, position.z, 2, Math.min(.5, Math.abs(velocity.y) * .05 + .1))
+    // Rings of ripples spreading from the hole, wider and stronger for a harder hit.
+    if (entering) { const impact = this.sim!.lastSplash; this.ripples.disturb(position.x, position.z, 2 + Math.min(4, impact * .12), Math.min(.6, impact * .04 + .1)) }
     return entering
   }
   /** The world moved by a whole tile under the player: move what spray has left behind with it. */
