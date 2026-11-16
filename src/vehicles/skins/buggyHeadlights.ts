@@ -50,9 +50,14 @@ export class BuggyHeadlights {
           if (!sum.area) return
           sum.position.multiplyScalar(1 / sum.area)
           if (this.faces[side] && this.faces[side]!.position.z <= sum.position.z) return
+          const lamp = material as T.MeshStandardMaterial
+          const emission = lamp.emissive?.clone().multiplyScalar(lamp.emissiveIntensity ?? 1)
+          // The beam follows emitted light, not the lens's reflective base tint.
+          const color = emission && Math.max(emission.r, emission.g, emission.b) > 0
+            ? emission : lamp.color?.clone() ?? new T.Color(0xffffff)
           this.faces[side] = {
             position: sum.position, direction: sum.direction.normalize(),
-            color: (material as T.MeshStandardMaterial).color?.clone() ?? new T.Color(0xffffff),
+            color,
           }
         })
       }
