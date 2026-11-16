@@ -27,6 +27,8 @@ describe('resume validation', () => {
     const storage = {getItem:()=>JSON.stringify(s)}
     expect(prepareResume(new URLSearchParams('seed=1'),storage)).toBeNull()
     expect(prepareResume(new URLSearchParams('vehicle=jet'),storage)).toBeNull()
+    expect(prepareResume(new URLSearchParams(),{getItem:()=>JSON.stringify({...s,room:'party'})})).toBeNull()
+    expect(prepareResume(new URLSearchParams('room=party'),{getItem:()=>JSON.stringify({...s,room:'party'})})?.room).toBe('party')
     expect(prepareResume(new URLSearchParams(),storage)?.seed).toBe(42)
     expect(worldSeed.value).toBe(42)
     expect(prepareResume(new URLSearchParams('seed=1'), {getItem:()=>JSON.stringify({...s,entrySeed:1})})?.seed).toBe(42)

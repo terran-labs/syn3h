@@ -13,6 +13,7 @@ import { Game } from './core/Game'
 import { startNetworking } from './net'
 import { ParamPanel } from './ui/ParamPanel'
 import { LobbyAddress } from './ui/LobbyAddress'
+import { roomFromQuery } from './core/roomAddress'
 import { generateName } from './ui/data/names'
 import { initGameShell } from './ui/Shell'
 import { readVehicleChoice, saveVehicleChoice } from './ui/VehicleChoice'
@@ -43,12 +44,6 @@ async function main(): Promise<void> {
   else if (query.has('seed')) params.set(worldSeed.def.id, query.get('seed'), 'preset')
 
   const saved = prepareResume(query)
-  if (saved && !query.has('room')) {
-    query.set('room', saved.room)
-    const url = new URL(location.href)
-    url.searchParams.set('room', saved.room)
-    history.replaceState(history.state, '', url)
-  }
   // Keep the original entry/resume URL until all startup consumers have read it.
   const lobbyAddress = new LobbyAddress(location, history)
   const game = new Game(canvas)
@@ -165,13 +160,14 @@ async function main(): Promise<void> {
   }
   const join = () => {
     // Also restore after returning from an already joined galaxy menu.
-    lobbyAddress.showPlay(shell.room || query.get('room') || 'lobby')
+    lobbyAddress.showPlay(shell.room || roomFromQuery(query))
     if (joined) return
     const player = slot.current
     // The lobby may have changed the vehicle after this one spawned. Rebuilding every system
     // that holds the player is riskier than a reload this close to the demo, so reload.
     if (!query.has('vehicle') && shell.vehicleKind !== player.kind && !(shell.vehicleKind === 'buggy-syn3h' && player.kind === 'buggy')) {
-      const url = new URL(location.href)
+      // The entry intent, not the cleaned bar: it may hold the world the player was invited to.
+      const url = lobbyAddress.playURL()
       url.searchParams.set('autoplay', '1')
       // An explicit lobby vehicle change starts a new session.
       try { sessionStorage.removeItem(RESUME_KEY) } catch {}
@@ -195,7 +191,7 @@ async function main(): Promise<void> {
       kind: player.kind,
       colors: { body: shell.bodyColor, accent: shell.accentColor },
       name: shell.playerName,
-      room: shell.room || query.get('room') || 'lobby',
+      room: shell.room || roomFromQuery(query),
       setStatus: (lines) => { netStatus = lines; shell.setStatus(lines) },
       setMapEntities: (e) => shell.setMapEntities(e),
       setMatchState: (m) => shell.setMatchState(m),
@@ -225,7 +221,7 @@ async function main(): Promise<void> {
     connection.setPaused(pause.paused)
     // Remote players and bots are audible, positioned in space.
     audio.setVehicles(() => connection.audibleVehicles())
-    game.add(new ResumeSession({ game, terrain, get player() { return slot.current }, room: shell.room || query.get('room') || 'lobby', saved, network: connection, entrySearch: lobbyAddress.playURL().search }))
+    game.add(new ResumeSession({ game, terrain, get player() { return slot.current }, room: shell.room || roomFromQuery(query), saved, network: connection, entrySearch: lobbyAddress.playURL().search }))
   }
   shell.onPlay = join
   // The in-play vehicle selector calls this; the shell takes it if it has the hook.
