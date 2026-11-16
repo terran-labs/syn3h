@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { appearance, overlaps, placeNameplates, type Candidate, type Rect } from '../../src/ui/nameplates/layout'
 import { wrappedOccluded } from '../../src/ui/nameplates/occlusion'
 import { nameplateMode, PREFERENCE_KEY, restoreNameplatePreference, validMode } from '../../src/ui/nameplates/preferences'
 import { params } from '../../shared/params'
+import type { NameplateOptions } from '../../src/ui/nameplates/VehicleNameplates'
 
 const candidate = (id: string, bot = false, x = 300, y = 300): Candidate => ({ id, bot, x, y, depth: 100, width: 130, height: 38, opacity: 1, tick: false })
 describe('vehicle label priority and protection', () => {
@@ -84,6 +85,59 @@ describe('distinct prior-spot terrain checks', () => {
       calls.push(`${c.id}:${slotOf(box)}`); return false
     })
     expect(calls).toEqual(['person:2', 'person:0', 'person:1', 'person:3', 'bot:3', 'bot:0', 'bot:1', 'bot:2'])
+  })
+})
+describe('terrain budget fails hidden', () => {
+  // Exercise the actual instance query guard without a browser or a product test seam.
+  async function withBudget(run: (query: () => boolean, calls: () => number) => void) {
+    const { Scene, PerspectiveCamera } = await import('three/webgpu')
+    const { VehicleNameplates } = await import('../../src/ui/nameplates/VehicleNameplates')
+    const root = { className: '', hidden: false, setAttribute() {}, remove() {} }
+    vi.stubGlobal('document', { createElement: () => root })
+    vi.stubGlobal('MutationObserver', class { observe() {} disconnect() {} })
+    let calls = 0
+    let labels: InstanceType<typeof VehicleNameplates> | undefined
+    try {
+      labels = new VehicleNameplates(() => new PerspectiveCamera(), {
+        shell: { appendChild() {}, ownerDocument: { body: {} } }, scene: new Scene(),
+        visible: () => true, presentation: () => false, wrapSize: () => 0,
+        terrainHit: () => { calls++; return false },
+      } as unknown as NameplateOptions)
+      const internal = labels as unknown as { terrainBudget: number; hitTerrain(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }): boolean }
+      internal.terrainBudget = 512 // draw() supplies this unchanged frame allowance.
+      run(() => internal.hitTerrain({ x: 0, y: 10, z: 0 }, { x: 1, y: 10, z: 0 }), () => calls)
+      expect(labels.stats.terrainQueries).toBe(calls)
+    } finally { labels?.dispose(); vi.unstubAllGlobals() }
+  }
+  it('allows exactly 512 physics queries and treats all later queries as blocked', async () => {
+    await withBudget((query, calls) => {
+      for (let i = 0; i < 512; i++) expect(query()).toBe(false)
+      for (let i = 0; i < 8; i++) expect(query()).toBe(true)
+      expect(calls()).toBe(512)
+    })
+  })
+  it('hides every placement whose clearance cannot finish before exhaustion', async () => {
+    await withBudget((query, calls) => {
+      for (let i = 0; i < 511; i++) query()
+      const placed = placeNameplates([candidate('unresolved')], [], [], 600, 600, () => !query() && !query())
+      expect(placed).toEqual([])
+      expect(calls()).toBe(512)
+    })
+  })
+  it('spends the remaining budget on a human before a nearer bot', async () => {
+    await withBudget((query, calls) => {
+      for (let i = 0; i < 510; i++) query()
+      const attempts: string[] = []
+      const placed = placeNameplates([
+        { ...candidate('bot', true, 450), depth: 10 }, candidate('person', false, 150),
+      ], [], [], 600, 600, (_box, _depth, c) => {
+        attempts.push(c.id); return !query() && !query()
+      })
+      expect(placed.map(p => p.id)).toEqual(['person'])
+      expect(attempts[0]).toBe('person')
+      expect(attempts.slice(1)).toContain('bot')
+      expect(calls()).toBe(512)
+    })
   })
 })
 describe('size and distance', () => {

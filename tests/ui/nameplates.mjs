@@ -1,4 +1,4 @@
-/** Source-prepared acceptance. Run only in an allocated browser slot, after integration.patch. */
+/** Source-prepared acceptance. Requires reviewed current integration; the stored main patch is stale. */
 import { chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -13,7 +13,14 @@ async function open(name, viewport) {
   page.on('pageerror', e => errors.push(`${name}: ${e.message}`))
   await page.goto(`${base}?room=${room}&name=${name}&autoplay=1`)
   await page.waitForFunction(() => window.syn3h?.shell && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
-  await page.evaluate(() => { window.syn3h.shell.play(); document.activeElement?.blur?.(); window.__quality = setInterval(() => { window.syn3h.params.set('gfx.level', 2); window.syn3h.shell.stopAttract() }, 250) })
+  await page.evaluate(() => {
+    const s = window.syn3h
+    s.shell.play(); document.activeElement?.blur?.()
+    for (const [id, value] of Object.entries({ 'gfx.auto': false, 'gfx.quality': 4, 'daydream.seconds': 0, 'sun.dayLength': 0 })) {
+      if (!s.params.get(id)) throw new Error(`Missing fixture control: ${id}`)
+      s.params.set(id, value)
+    }
+  })
   await page.waitForFunction(() => window.syn3hNet?.connected, null, { timeout: 30000 })
   return page
 }
@@ -27,7 +34,9 @@ async function capture(page, label) {
       const b = el.getBoundingClientRect(), style = getComputedStyle(el)
       return { id: el.dataset.vehicle, bot: el.classList.contains('is-bot'), tick: el.classList.contains('is-tick'), text: el.textContent, width: b.width, height: b.height, opacity: Number(style.opacity), left: b.left, right: b.right, top: b.top, bottom: b.bottom }
     })
-    return { labels, exclusions, nameplateCost: { ...window.syn3hNet.tags.stats }, curve: window.syn3h.params.get('world.curve').value, local: String(window.syn3hNet.id), presentation: shell.presentation, cameraMode: window.syn3h.params.get('camera.mode').value }
+    const s = window.syn3h, controls = s.params.snapshot('all'), quality = s.game.quality.getQualityState()
+    if (controls['gfx.auto'] !== false || controls['gfx.quality'] !== 4 || quality.auto || quality.level !== 4 || controls['daydream.seconds'] !== 0 || controls['sun.dayLength'] !== 0 || s.bots.daydream.active) throw new Error('Fixture control drift')
+    return { labels, exclusions, controls, quality, nameplateCost: { ...window.syn3hNet.tags.stats }, curve: window.syn3h.params.get('world.curve').value, local: String(window.syn3hNet.id), presentation: shell.presentation, cameraMode: window.syn3h.params.get('camera.mode').value }
   })
   const overlap = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
   assert.ok(state.labels.every(l => l.id !== state.local), 'never label the local player')
@@ -40,6 +49,41 @@ async function capture(page, label) {
   await page.screenshot({ path: `${out}/${label}.png` })
   await writeFile(`${out}/measurements.json`, JSON.stringify(captures, null, 2))
   return state
+}
+// Existing draw stamp identifies completed label draws, not duplicate rAF observations.
+// Test-only access avoids adding a runtime diagnostics API. Reading DOM here has a cost;
+// report label drawMs only, never claim this is total frame/GPU cost.
+async function costDistribution(page, label) {
+  const evidence = await page.evaluate(() => new Promise(resolve => {
+    const samples = [], s = window.syn3h, tags = window.syn3hNet.tags
+    let lastStamp = tags.stamp, raf, finished = false
+    const finish = () => { if (finished) return; finished = true; cancelAnimationFrame(raf); clearTimeout(timeout); resolve({ samples, timedOut: samples.length < 120 }) }
+    const timeout = setTimeout(finish, 10000)
+    const read = () => {
+      if (tags.stamp !== lastStamp) {
+        lastStamp = tags.stamp
+        const entries = tags.entries.map(e => ({ id: e.id, bot: e.bot }))
+        const visible = [...document.querySelectorAll('.vehicle-nameplate')].filter(el => !el.hidden && getComputedStyle(el).display !== 'none' && !el.closest('[hidden]')).map(el => el.dataset.vehicle)
+        samples.push({ stamp: lastStamp, tick: s.game.tick, ...tags.stats, entries, visible,
+          missing: entries.filter(e => !visible.includes(e.id)), mode: s.params.get('hud.nameplates').value })
+      }
+      if (samples.length >= 120) finish(); else raf = requestAnimationFrame(read)
+    }
+    raf = requestAnimationFrame(read)
+  }))
+  const summary = key => {
+    const values = evidence.samples.map(s => s[key]).sort((a, b) => a - b)
+    const at = fraction => values.length ? values[Math.min(values.length - 1, Math.floor((values.length - 1) * fraction))] : null
+    return { count: values.length, min: at(0), p50: at(.5), p95: at(.95), max: at(1) }
+  }
+  const row = { label, evidenceKind: 'observed completed label draws', ...evidence,
+    terrainQueries: summary('terrainQueries'), drawMs: summary('drawMs'),
+    cappedSamples: evidence.samples.filter(s => s.terrainQueries === 512).length }
+  captures.push(row)
+  await writeFile(`${out}/measurements.json`, JSON.stringify(captures, null, 2))
+  assert.ok(evidence.samples.length, `${label}: no completed label draws observed`)
+  assert.ok(evidence.samples.every(s => s.terrainQueries <= 512), `${label}: terrain query cap exceeded`)
+  assert.equal(evidence.timedOut, false, `${label}: incomplete cost sample window`)
 }
 try {
   const a = await open('Observer', { width: 1440, height: 900 })
@@ -56,7 +100,7 @@ try {
     const hud = new HudExclusions(root), found = hud.read(innerWidth, innerHeight).some(r => r.left === 11 && r.top === 13 && r.right === 60 && r.bottom === 66)
     hud.dispose(); root.remove(); touch.remove(); return found
   }), true, 'sibling touch controls are protected')
-  await a.evaluate(() => { const s = window.syn3h; s.params.set('bots.canDrive', false); s.params.set('bots.canFire', false); s.params.set('bots.count', 4) })
+  await a.evaluate(() => { const s = window.syn3h; s.params.set('bots.canDrive', false); s.params.set('bots.tagBeams', false); s.params.set('bots.count', 4) })
   await a.waitForFunction(() => window.syn3h.bots.vehicles.length >= 4, null, { timeout: 15000 })
   let center = await a.evaluate(() => { const s = window.syn3h, p = s.terrain.spawnPoint(0).position; return { x: p.x, y: p.y, z: p.z } })
   async function stage(far = false, curve = .71) {
@@ -80,10 +124,12 @@ try {
   assert.ok(bot.height / person.height >= .60 && bot.height / person.height <= .70, 'bot label height is smaller too')
   assert.ok(bot.opacity < person.opacity, 'bot labels are fainter than human labels')
   assert.ok(near.labels.filter(l => l.bot && l.text.includes('BOT')).length >= 2, 'host-owned bots have smaller labels')
+  await costDistribution(a, 'near-all-cost')
   await a.evaluate(() => window.syn3h.params.set('hud.nameplates', 1))
   assert.ok((await capture(a, 'people-only')).labels.every(l => !l.bot))
   await a.evaluate(() => window.syn3h.params.set('hud.nameplates', 2))
   assert.equal((await capture(a, 'off')).labels.length, 0)
+  await costDistribution(a, 'near-off-cost')
   await a.evaluate(() => window.syn3h.params.set('hud.nameplates', 0))
   await b.evaluate(() => window.syn3h.game.input.toggleZorb())
   await b.waitForFunction(() => window.syn3h.player.zorb.radius > 4, null, { timeout: 15000 })
@@ -100,6 +146,7 @@ try {
     await stage(true, curve); await capture(a, `desktop-curve-${curve}-far`)
   }
   await stage(true, .71); await capture(a, 'desktop-far-day')
+  await costDistribution(a, 'far-all-cost')
   await a.evaluate(() => window.syn3h.params.set('sun.timeOfDay', 0)); await capture(a, 'desktop-far-night')
   await stage(); await a.evaluate(() => window.syn3h.shell.setPresentation(true)); await capture(a, 'desktop-presentation-night')
   await a.evaluate(() => { window.syn3h.shell.setPresentation(false); window.syn3h.params.set('sun.timeOfDay', 12) })
