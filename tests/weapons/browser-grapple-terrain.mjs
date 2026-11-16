@@ -5,6 +5,7 @@ const run = globalThis.__grappleRun
 assert.ok(run, 'use the reviewed fixture under the external dedicated supervisor')
 const { page, report, out, origin, expected, remaining, bounded, checkpoint, verifyBrowserEvidence, roomStatus } = run
 const errors = report.errors, failures = report.failures, sockets = []
+const intendedReach = 300
 page.on('websocket', socket => { if (new URL(socket.url()).pathname === '/ws') sockets.push(socket.url()) })
 const evaluate = (fn, arg) => bounded(page.evaluate(fn, arg), 30000, 'scenario evaluation')
 const ready = (fn, arg, options = {}) => page.waitForFunction(fn, arg, { ...options, timeout: remaining(options.timeout ?? 10000) })
@@ -42,14 +43,35 @@ await evaluate(async () => {
     throw new Error('runtime objects do not match verified module classes')
   const { warmStats } = await import('/src/weapons/warm.ts')
   window.__terrainWarm = () => warmStats(window.syn3h.game)
-  const { params: p } = window.syn3h
-  for (const [id, value] of Object.entries({ 'gfx.auto': false, 'bots.canDrive': false,
-    'bots.tagBeams': false, 'bots.count': 0, 'bungee.allowed': true, 'bungee.timeout': 0, 'bungee.length': 500 })) {
-    if (!p.get(id)) throw new Error(`unknown parameter: ${id}`)
-    p.set(id, value)
-    if (p.get(id).value !== value) throw new Error(`parameter not applied: ${id}`)
-  }
 })
+report.parameterSetup = []
+for (const [id, requested] of Object.entries({ 'gfx.auto': false, 'bots.canDrive': false,
+  'bots.tagBeams': false, 'bots.count': 0, 'bungee.allowed': true, 'bungee.timeout': 0, 'bungee.length': intendedReach })) {
+  const receipt = await evaluate(async ({ id, requested }) => {
+    const { sanitize } = await import('/shared/params.ts')
+    const p = window.syn3h.params, parameter = p.get(id)
+    const result = { id, requested, before: parameter?.value ?? null, expected: null,
+      effective: parameter?.value ?? null, changed: null, error: null,
+      domain: parameter ? { default: parameter.def.default, min: parameter.def.min ?? null, max: parameter.def.max ?? null } : null }
+    try {
+      if (!parameter) throw new Error(`unknown parameter: ${id}`)
+      if (typeof requested === 'number' && !Number.isFinite(requested)) throw new Error(`non-finite request: ${id}`)
+      if (id === 'bungee.length' && (![parameter.def.min, parameter.def.max].every(Number.isFinite) ||
+        typeof parameter.def.default !== 'number')) throw new Error('invalid reach domain')
+      result.expected = sanitize(parameter.def, requested)
+      if (result.expected !== requested) throw new Error(`unsupported parameter request: ${id}`)
+      result.changed = p.set(id, requested)
+      result.effective = p.get(id)?.value ?? null
+      if (result.effective !== requested) throw new Error(`parameter not applied: ${id}`)
+      // false is valid for an already-correct value; effective equality remains mandatory.
+    } catch (error) { result.error = String(error.stack ?? error); result.effective = p.get(id)?.value ?? null }
+    return result
+  }, { id, requested })
+  report.parameterSetup.push(receipt)
+  await checkpoint(`parameter setup: ${id}`)
+  assert.equal(receipt.error, null, `parameter setup failed: ${id}`)
+  assert.equal(receipt.effective, requested, `effective parameter: ${id}`)
+}
 await verifyBrowserEvidence('entered real app before native gameplay')
 await checkpoint('joined exact room and verified actual app modules')
 const settle = async level => {
@@ -89,12 +111,14 @@ await bounded(page.mouse.click(canvasPoint.x, canvasPoint.y), 5000, 'native expo
 await ready(() => document.pointerLockElement === window.syn3h.game.canvas)
 await bounded(page.keyboard.press('Digit4'), 5000, 'native keyboard press')
 await bounded(page.mouse.move(canvasPoint.x, Math.min(780, canvasPoint.y + 320), { steps: 12 }), 5000, 'native aim movement')
-await ready(async () => {
+await ready(async intendedReach => {
   const { aimFrom } = await import('/src/weapons/aim.ts')
   const { BUNGEE_MUZZLE_UP, BUNGEE_MUZZLE_AHEAD } = await import('/src/weapons/bungee/Bungee.ts')
-  const s = window.syn3h, aim = aimFrom(s.game, s.player.body, 500, BUNGEE_MUZZLE_UP, BUNGEE_MUZZLE_AHEAD, 0.12)
+  const s = window.syn3h, effectiveReach = s.params.get('bungee.length')?.value
+  if (!Number.isFinite(effectiveReach) || effectiveReach !== intendedReach) throw new Error('native aim reach differs from declared setup')
+  const aim = aimFrom(s.game, s.player.body, effectiveReach, BUNGEE_MUZZLE_UP, BUNGEE_MUZZLE_AHEAD, 0.12)
   return window.syn3hNet.gear.current === 'bungee' && aim.point && aim.handle === null && aim.o.distanceTo(aim.point) > 5
-}, null, { timeout: remaining(30000) })
+}, intendedReach, { timeout: remaining(30000) })
 await checkpoint('native aim ready')
 const nativeBefore = await evaluate(() => ({ tick: window.syn3h.game.tick, stats: { ...window.syn3hNet.bungee.stats } }))
 await held('KeyL', async () => {

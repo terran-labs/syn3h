@@ -93,6 +93,7 @@ async function provenance() {
   return manifest
 }
 let browser, primaryError
+let scenarioCompleted = false
 let browserDisconnected = false
 const contexts = [], browserEvidence = []
 async function observeBrowser(page, context, name) {
@@ -249,7 +250,10 @@ try {
   assert.deepEqual(await roomStatus(), { rooms: 0, players: 0 })
   Object.assign(globalThis, { __grappleRun: { page, report, out, origin, remaining, bounded, checkpoint,
     verifyBrowserEvidence, roomStatus, runtimeModules, expected } })
+  report.scenarioOutcome = 'running'
   await import('./browser-grapple-terrain.mjs')
+  scenarioCompleted = true
+  report.scenarioOutcome = 'passed'
   await verifyBrowserEvidence('before final provenance')
   report.finalProvenance = await provenance()
   assert.deepEqual(report.finalProvenance, report.provenance)
@@ -259,6 +263,8 @@ try {
   report.failure ??= String(error.stack ?? error)
 } finally {
   cleaningUp = true; clearTimeout(watchdog)
+  report.scenarioOutcome = primaryError ? 'failed' : scenarioCompleted ? 'passed' : 'not-reached'
+  report.acceptancePassed = false
   // Persist the primary failure before attempting closure, then keep response and
   // HMR listeners alive until all producers close and the dynamic queues drain.
   try { if (out) await checkpoint('work ended, closure pending') }
@@ -273,9 +279,13 @@ try {
   report.browserResponses = responseReceipt()
   report.captureComplete = !!browser && browserDisconnected && browserEvidence.length > 0 &&
     browserEvidence.every(e => e.closed && !e.openRequests.size) && report.cleanupErrors.length === 0
+  report.captureClosureComplete = report.captureComplete
+  report.acceptancePassed = scenarioCompleted && !primaryError && !report.failure &&
+    report.failures.length === 0 && report.errors.length === 0 && report.captureClosureComplete
   try { await bounded(writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)), 3000, 'final receipt') }
   catch (error) {
     report.cleanupErrors.push(`Receipt: ${String(error)}`); report.captureComplete = false
+    report.captureClosureComplete = false; report.acceptancePassed = false
     console.error('PARTIAL_GRAPPLE_RECEIPT', JSON.stringify(report))
   }
   if (primaryError) throw primaryError
