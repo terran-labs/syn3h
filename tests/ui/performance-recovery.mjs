@@ -406,7 +406,8 @@ try {
         assert.equal(row.lossEvent?.trusted, true); assert.equal(row.lossEvent.lost, true)
         assert.match(await bounded(() => page.locator('#syn3h-device-lost').innerText()), /WebGL context was lost/)
         await drain()
-        const expectedLoss = `THREE.WebGPURenderer: WebGL Device Lost:\n\nMessage: ${row.lossEvent.statusMessage || 'Unknown reason'}` + (row.lossEvent.reason ? `\nReason: ${row.lossEvent.reason}` : '')
+        // Pinned Three build: three.webgpu.js:23861 includes THREE.; three.core.js:2037 prefixes it again.
+        const expectedLoss = `THREE.THREE.WebGPURenderer: WebGL Device Lost:\n\nMessage: ${row.lossEvent.statusMessage || 'Unknown reason'}` + (row.lossEvent.reason ? `\nReason: ${row.lossEvent.reason}` : '')
         assert.equal(lossWindow.errors.length, 1)
         assert.equal(lossWindow.errors[0].text, expectedLoss)
         row.expectedLossErrors = lossWindow.errors
