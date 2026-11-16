@@ -26,6 +26,8 @@ export class Waterline {
   private readonly height = uniform(10)
   /** World-up seen in screen space: how the line tilts with camera roll and pitch. (x, y) of up in view. */
   private readonly up = uniform(new T.Vector2(0, 1))
+  /** 0..1: how far into a crossing the lens is (the lens rule's wash); the line shows only then. */
+  private readonly crossing = uniform(0)
   /** Seconds since the lens last came up out of a liquid. */
   private readonly sinceUp = uniform(99)
   private readonly tint = uniform(new T.Color(0.1, 0.4, 0.45))
@@ -35,7 +37,7 @@ export class Waterline {
   private readonly forward = new T.Vector3()
 
   constructor(private readonly scene: T.Scene) {
-    for (const u of [this.height, this.up, this.sinceUp, this.tint, this.lava]) (u as unknown as { setGroup(g: unknown): { onRenderUpdate(f: () => unknown): void } }).setGroup(renderGroup).onRenderUpdate(() => u.value)
+    for (const u of [this.height, this.up, this.sinceUp, this.tint, this.lava, this.crossing]) (u as unknown as { setGroup(g: unknown): { onRenderUpdate(f: () => unknown): void } }).setGroup(renderGroup).onRenderUpdate(() => u.value)
     const material = new T.MeshBasicNodeMaterial({ transparent: true, depthTest: false, depthWrite: false })
     material.fog = false
     const s = uv().mul(2).sub(1)
@@ -48,7 +50,7 @@ export class Waterline {
     const meniscus = smoothstep(0.018, 0, abs(along.sub(level)))
     // Below the line: the liquid's colour, a little lighter at the line where light comes through.
     const under = mix(this.tint.mul(1.4), this.tint.mul(0.85), smoothstep(0, 0.6, level.sub(along)))
-    const near = smoothstep(SPAN * 0.75, SPAN * 0.25, abs(this.height))
+    const near = smoothstep(SPAN * 0.75, SPAN * 0.25, abs(this.height)).mul(this.crossing)
     const lineColour = mix(vec3(1.8, 2, 2), vec3(4, 1.6, 0.3), this.lava)
     const lineAlpha = meniscus.mul(0.85).mul(near)
     const bodyAlpha = below.mul(near).mul(0.55)
@@ -83,13 +85,15 @@ export class Waterline {
    * Per frame, after the lens is placed. `surface` is the liquid height at the lens or
    * -Infinity; `kind` which liquid; `tint` its colour as seen from inside.
    */
-  update(camera: T.PerspectiveCamera, surface: number, kind: 'water' | 'lava' | null, tint: T.Color, dt: number): void {
+  update(camera: T.PerspectiveCamera, surface: number, kind: 'water' | 'lava' | null, tint: T.Color, dt: number, crossing = 1): void {
+    // Settled near the surface, the scene itself shows the surface; the sheet is for the move.
+    this.crossing.value = Math.min(1, crossing * 1.6)
     const height = Number.isFinite(surface) ? camera.position.y - surface : 10
     const under = height < 0
     if (this.wasUnder && !under) this.surfaced = 0
     this.wasUnder = under
     this.surfaced = Math.min(99, this.surfaced + Math.max(0, Math.min(0.1, dt)))
-    const active = Math.abs(height) < SPAN || this.surfaced < DRIP_SECONDS
+    const active = (Math.abs(height) < SPAN && crossing > 0.01) || this.surfaced < DRIP_SECONDS
     this.mesh.visible = active
     if (!active) return
     if (kind) {
