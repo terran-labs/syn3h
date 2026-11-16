@@ -12,6 +12,7 @@ const out = 'tests/ui/artifacts/touch-aim'
 await mkdir(out, { recursive: true })
 const browser = await webkit.launch()
 const centre = (r) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 })
+const overlaps = (a, b) => a.x < b.x + b.width - 1 && a.x + a.width > b.x + 1 && a.y < b.y + b.height - 1 && a.y + a.height > b.y + 1
 
 try {
   for (const [name, device] of [['portrait', 'iPhone 14'], ['landscape', 'iPhone 14 landscape']]) {
@@ -44,22 +45,46 @@ try {
     for (const hand of ['right', 'left']) {
       await page.evaluate((left) => window.syn3h.params.set('touch.leftHanded', left), hand === 'left')
       assert.equal(await page.locator('.touch-controls').getAttribute('data-hand'), hand)
-      const actions = await page.locator('.touch-actions').boundingBox(), map = await page.locator('.shell-minimap').boundingBox()
-      // Buttons sit on the aiming side, the minimap on the driving side.
-      const buttonsRight = actions.x + actions.width / 2 > width / 2
-      assert.equal(buttonsRight, hand === 'right', `${hand}: buttons on the ${hand === 'right' ? 'right' : 'left'}`)
-      assert.equal(map.x + map.width / 2 < width / 2, hand === 'right', `${hand}: minimap above the stick`)
-      const tab = await page.locator('.inspector-toggle').boundingBox()
-      assert.ok(map.x + map.width <= tab.x || map.y + map.height <= tab.y || map.y >= tab.y + tab.height, `${hand}: minimap clears the Panels tab ${JSON.stringify([map, tab])}`)
+      await page.waitForTimeout(100)
+      const box = (selector) => page.locator(selector).first().boundingBox()
+      // What is drawn: the union of an element's visible text, not its (sometimes full width) box.
+      const ink = (selector) => page.evaluate((selector) => {
+        const root = document.querySelector(selector); if (!root) return null
+        const rects = [...root.querySelectorAll('*'), root].filter((e) => !e.children.length && e.textContent.trim() && e.checkVisibility?.({ visibilityProperty: true, opacityProperty: true })).map((e) => e.getBoundingClientRect()).filter((r) => r.width && r.height)
+        if (!rects.length) return null
+        const x = Math.min(...rects.map((r) => r.left)), y = Math.min(...rects.map((r) => r.top))
+        return { x, y, width: Math.max(...rects.map((r) => r.right)) - x, height: Math.max(...rects.map((r) => r.bottom)) - y }
+      }, selector)
+      const actions = await box('.touch-actions'), map = await box('.shell-minimap')
+      assert.equal(actions.x + actions.width / 2 > width / 2, hand === 'right', `${hand}: buttons on the ${hand} side`)
+      // The minimap is docked: clear of the centre third, the player's vehicle, the buttons and the HUD.
+      const vehicle = await page.evaluate(() => {
+        const { camera } = window.syn3h.game, v = camera.position.clone().copy(window.syn3h.player.object.position).project(camera)
+        return { x: (v.x + 1) / 2 * innerWidth - 70, y: (1 - v.y) / 2 * innerHeight - 50, width: 140, height: 100 }
+      })
+      const clear = (other, what) => assert.ok(other && !overlaps(map, other), `${name} ${hand}: minimap clears ${what} ${JSON.stringify([map, other])}`)
+      clear({ x: width / 3, y: height / 3, width: width / 3, height: height / 3 }, 'the centre third')
+      clear(vehicle, 'the vehicle')
+      clear(actions, 'the buttons')
+      for (const [selector, what] of [['.gear-selector', 'the gear selector'], ['.inspector-toggle', 'the Panels tab'], ['.fh-top', 'the heading line'], ['.fh-left', 'the speed readout'], ['.fh-right', 'the height readout']]) {
+        const other = await ink(selector)
+        assert.ok(other, `${name} ${hand}: ${what} is on screen`)
+        clear(other, what)
+      }
+      assert.ok(map.width >= 88 && map.width <= 104, `${hand}: minimap stays readable (${map.width} px)`)
 
-      // Points on the game view: the stick finger low on the driving side, the aim finger above the buttons.
+      // Points on the game view: the stick finger low on the driving side, where a thumb rests; the aim finger above the buttons.
       const driveX = hand === 'right' ? width * 0.25 : width * 0.75, aimX = hand === 'right' ? width * 0.8 : width * 0.2
-      const driveY = Math.min(height - 40, map.y + map.height + 60), aimY = Math.max(40, actions.y - 60)
+      const driveY = height - 110, aimY = Math.max(40, actions.y - 60)
       for (const [x, y] of [[driveX, driveY], [aimX, aimY]]) assert.equal(await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.id, [x, y]), 'game', `${hand}: ${x},${y} is game view`)
 
       // Steer and aim at once: finger 1 drives forward and right, finger 2 drags 120 px toward the middle.
       const before = await state()
       await touch('pointerdown', 1, driveX, driveY); await touch('pointermove', 1, driveX + 30, driveY - 40)
+      // The stick stays clear of the minimap and of the speed and height readouts.
+      const base = await box('.touch-stick')
+      clear(base, 'the stick')
+      for (const selector of ['.fh-left', '.fh-right']) { const other = await ink(selector); assert.ok(other, selector); assert.ok(!overlaps(base, other), `${name} ${hand}: stick clears ${selector} ${JSON.stringify([base, other])}`) }
       await touch('pointerdown', 2, aimX, aimY)
       const dir = hand === 'right' ? -1 : 1
       for (let i = 1; i <= 6; i++) await touch('pointermove', 2, aimX + dir * i * 20, aimY)
