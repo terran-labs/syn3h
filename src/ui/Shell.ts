@@ -107,7 +107,7 @@ export class Shell implements System {
   private readonly raceHud: RaceHud
   onRaceLeave?: () => void
   onRaceCancel?: () => void
-  private telemetry = { speed: 0, altitude: 0 }
+  private telemetry: { speed: number; altitude: number; thrust?: number } = { speed: 0, altitude: 0 }
   /** The 3D galaxy: the lobby. Absent only where WebGL 2 is, and then the game cannot draw either. */
   private galaxy?: Galaxy
   /** Arrived by an invite link that names a world: that world is the one to enter. */
@@ -403,7 +403,7 @@ export class Shell implements System {
   setMapEntities(entities: readonly MapEntity[]): void { this.minimap?.setEntities(entities) }
   setMapSelf(entity: MapEntity): void { this.self = entity; this.minimap?.setSelf(entity) }
   /** The player's speed (m/s) and height above the ground (m), for the focus display. */
-  setTelemetry(speed: number, altitude: number): void { this.telemetry.speed = speed; this.telemetry.altitude = altitude }
+  setTelemetry(speed: number, altitude: number, thrust?: number): void { this.telemetry.speed = speed; this.telemetry.altitude = altitude; this.telemetry.thrust = thrust }
   private inspectorSummary(id: string): string {
     if (id === 'world') return `${currentPlanet().label} · ${planetName(worldSeed.value)}`
     if (id === 'sky') { const hour = Number(params.get('sun.timeOfDay')?.value ?? 0); return `${String(Math.floor(hour) % 24).padStart(2, '0')}:${String(Math.floor((hour % 1) * 60)).padStart(2, '0')}` }
@@ -1256,7 +1256,7 @@ export class Shell implements System {
       const focus = this.element.classList.contains('is-focus')
       if (!focus && this.inspector.open) this.inspector.update()
       const world = `${currentPlanet().label} · ${planetName(worldSeed.value)}`
-      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, heading: this.self?.heading ?? 0, world, hour: Number(params.get('sun.timeOfDay')?.value ?? 0) })
+      this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, thrust: this.telemetry.thrust, heading: this.self?.heading ?? 0, world, hour: Number(params.get('sun.timeOfDay')?.value ?? 0) })
       const glass = String(Math.round(glassStyle.value)); if (this.element.dataset.glass !== glass) this.element.dataset.glass = glass
     }
     // The stylesheet drops frost at the lowest graphics level.
@@ -1331,10 +1331,11 @@ export function initGameShell(game: Game, player: Vehicle, terrain: Terrain): { 
     const heading = Math.atan2(2 * (q.x * q.z + q.w * q.y), 1 - 2 * (q.x * q.x + q.y * q.y))
     shell.setMapSelf({ x: p.x, z: p.z, heading, color: activePlayer.colors.body, self: true })
     // Shown as metres above ground: measured from the contact surfaces, 0 when resting.
-    shell.setTelemetry(speed, height.read(activePlayer, p.y, terrain.heightAt(p.x, p.z)))
+    shell.setTelemetry(speed, height.read(activePlayer, p.y, terrain.heightAt(p.x, p.z)), activePlayer.kind === 'jet' && !activePlayer.zorbed ? activePlayer.input.z : undefined)
     audio.motion = { speed, throttle: activePlayer.kind === 'jet' ? activePlayer.input.z : activePlayer.input.y, airborne: p.y - terrain.heightAt(p.x, p.z) > 2 }
-    const input = activePlayer.input
-    const hint = hints.update(dt, { kind: activePlayer.kind, touch: shell.touch.available, altitude: p.y - terrain.heightAt(p.x, p.z), speed, steer: input.x, pitch: input.y, throttle: input.z, hoverMode: !input.special, canLiftOut: activePlayer.canLiftOut })
+    // Learning follows deliberate controls, never neutral throttle or pilot output.
+    const input = game.input.state
+    const hint = hints.update(dt, { kind: activePlayer.kind, touch: shell.touch.available, altitude: p.y - terrain.heightAt(p.x, p.z), speed, steer: input.x, pitch: input.y, throttle: Math.max(-1, Math.min(1, input.z + (game.input.held('KeyE') ? 1 : 0) - (game.input.held('KeyQ') ? 1 : 0))), hoverMode: !input.special, canLiftOut: activePlayer.canLiftOut })
     if (hint) shell.showHint(hint)
   } })
   game.add(audio)

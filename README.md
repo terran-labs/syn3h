@@ -74,6 +74,8 @@ Press **H** in the game at any time for the controls of the vehicle you are in.
 | A and D | Bank |
 | Space | Switch between hover and flight |
 
+The Jet focus display shows resolved **THRUST** as a signed percentage. It includes automatic flight thrust; negative values indicate downward or reverse thrust. Learning hints respond to deliberate controls, not automatic thrust.
+
 **Hovercraft**
 
 | Key | What it does |
