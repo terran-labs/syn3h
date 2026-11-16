@@ -41,4 +41,5 @@ export const DESCRIPTIONS: Record<string, string> = {
   'hud.focusStyle': 'The look of the minimal display you see while the mouse is captured: Arc, Horizon or Telemetry.',
   'hud.reticle': 'The mark at the centre of the view while the mouse is captured: dot, ring or bracket.',
   'hud.glass': 'How heavy the frosted glass of these cards is.',
+  'hud.mode': 'Full shows the panels. Driving shows only what you see with the mouse captured. Hidden shows nothing but the world, for pictures. I cycles them; Esc returns to Full.',
 }
