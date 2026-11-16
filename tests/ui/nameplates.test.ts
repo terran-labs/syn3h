@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { appearance, overlaps, placeNameplates, type Candidate, type Rect } from '../../src/ui/nameplates/layout'
+import { appearance, overlaps, placeNameplates, touchesDisc, createScreenProxy, type Disc, type Candidate, type Rect } from '../../src/ui/nameplates/layout'
 import { wrappedOccluded } from '../../src/ui/nameplates/occlusion'
 import { nameplateMode, PREFERENCE_KEY, restoreNameplatePreference, validMode } from '../../src/ui/nameplates/preferences'
 import { params } from '../../shared/params'
@@ -343,5 +343,104 @@ describe('curved render projection and visibility', () => {
     expect(endpoints.at(-1)!.x).toBeCloseTo(-998)
     expect(endpoints.at(-1)!.y).toBeCloseTo(20)
     expect(endpoints.at(-1)!.z).toBeCloseTo(20)
+  })
+})
+
+
+describe('clipped triangulated vehicle proxy', () => {
+  const box = (left: number, top: number, right: number, bottom: number): Rect => ({ left, top, right, bottom })
+  const disc = (): Disc => ({ id: 'hull', x: 0, y: 0, radius: 0, depth: 0 })
+
+  it('keeps the visible portion of an offscreen-center hull without covering the opposite side', async () => {
+    const { PerspectiveCamera, Vector3 } = await import('three/webgpu')
+    const { CurvedProjection } = await import('../../src/ui/nameplates/curvature')
+    const camera = new PerspectiveCamera(90, 1, 1, 100); camera.updateMatrixWorld()
+    const out = disc(); new CurvedProjection().envelope(new Vector3(6, 0, -5), 2, new Vector3(), camera, 100, 100, out)
+    expect(out.x).toBeCloseTo(110) // center outside, left face still visible
+    expect(out.proxy?.blocked).toBe(false)
+    expect(touchesDisc(box(86, 45, 94, 55), out)).toBe(true)
+    expect(touchesDisc(box(50, 45, 60, 55), out)).toBe(false) // old circumcircle covered this clear region
+  })
+
+  it('clips near-plane crossings, keeps all-behind hulls empty, and blocks an enclosed camera', async () => {
+    const { PerspectiveCamera, Vector3 } = await import('three/webgpu')
+    const { CurvedProjection } = await import('../../src/ui/nameplates/curvature')
+    const camera = new PerspectiveCamera(90, 1, 1, 100); camera.updateMatrixWorld()
+    const projection = new CurvedProjection(), out = disc(), bend = new Vector3()
+    projection.envelope(new Vector3(2, 0, -1), 1, bend, camera, 100, 100, out)
+    expect(out.proxy?.blocked).toBe(false)
+    expect(touchesDisc(box(85, 48, 90, 52), out)).toBe(true)
+    expect(touchesDisc(box(10, 48, 20, 52), out)).toBe(false)
+    projection.envelope(new Vector3(0, 0, 3), 1, bend, camera, 100, 100, out)
+    expect(out.proxy?.count).toBe(0); expect(out.proxy?.blocked).toBe(false)
+    expect(touchesDisc(box(0, 0, 100, 100), out)).toBe(false)
+    projection.envelope(new Vector3(), 2, bend, camera, 100, 100, out)
+    expect(out.proxy?.blocked).toBe(true)
+    expect(touchesDisc(box(8, 8, 12, 12), out)).toBe(true)
+    projection.envelope(new Vector3(NaN, 0, -5), 1, bend, camera, 100, 100, out)
+    expect(out.proxy?.blocked).toBe(true)
+  })
+
+  it('uses the actual jittered projection without modifying the camera or substituting a stable projection', async () => {
+    const { PerspectiveCamera, Vector3 } = await import('three/webgpu')
+    const { CurvedProjection } = await import('../../src/ui/nameplates/curvature')
+    const camera = new PerspectiveCamera(90, 1, 1, 100)
+    camera.setViewOffset(100, 100, 10, 0, 100, 100); camera.updateMatrixWorld()
+    const before = camera.projectionMatrix.elements.slice(), out = disc()
+    new CurvedProjection().envelope(new Vector3(0, 0, -10), 1, new Vector3(), camera, 100, 100, out)
+    expect(out.x).toBeCloseTo(40)
+    expect(touchesDisc(box(35, 48, 40, 52), out)).toBe(true)
+    expect(touchesDisc(box(56, 48, 60, 52), out)).toBe(false)
+    expect(camera.projectionMatrix.elements).toEqual(before)
+  })
+
+  it.each([0, .71, 1.8])('covers a known front face at curve %s and retains rendered-tile translation', async curve => {
+    const { PerspectiveCamera, Vector3 } = await import('three/webgpu')
+    const { CurvedProjection } = await import('../../src/ui/nameplates/curvature')
+    const { curveRadius } = await import('../../src/world/curve')
+    const R = curveRadius(2048, curve), k = Number.isFinite(R) ? 1 / R : 0
+    const camera = new PerspectiveCamera(90, 1, 1, 100); camera.updateMatrixWorld()
+    const projection = new CurvedProjection(), out = disc()
+    projection.envelope(new Vector3(0, 0, -20), 2, new Vector3(0, 0, k), camera, 200, 200, out)
+    // Analytic front-face center: cube boundary vertex (0,0,-18), spherical curve about origin.
+    const depth = k ? R * Math.sin(18 / R) : 18, y = k ? R * Math.cos(18 / R) - R : 0
+    const sy = 100 - y / depth * 100
+    expect(out.proxy?.blocked).toBe(false)
+    expect(touchesDisc(box(99, sy - 1, 101, sy + 1), out)).toBe(true)
+    expect(touchesDisc(box(8, 8, 12, 12), out)).toBe(false)
+    camera.position.x = 2048; camera.updateMatrixWorld()
+    projection.envelope(new Vector3(2048, 0, -20), 2, new Vector3(2048, 0, k), camera, 200, 200, out)
+    expect(touchesDisc(box(99, sy - 1, 101, sy + 1), out)).toBe(true)
+    expect(touchesDisc(box(8, 8, 12, 12), out)).toBe(false)
+  })
+
+  it('honors WebGPU and reversed-depth frustum ranges as well as WebGL', async () => {
+    const { PerspectiveCamera, Vector3, WebGPUCoordinateSystem, WebGLCoordinateSystem } = await import('three/webgpu')
+    const { CurvedProjection } = await import('../../src/ui/nameplates/curvature')
+    for (const coordinateSystem of [WebGLCoordinateSystem, WebGPUCoordinateSystem]) for (const reversedDepth of [false, true]) {
+      const camera = new PerspectiveCamera(90, 1, 1, 100)
+      camera.coordinateSystem = coordinateSystem
+      Object.defineProperty(camera, 'reversedDepth', { value: reversedDepth }) // Camera exposes a getter; renderer normally owns its backing state.
+      camera.updateProjectionMatrix(); camera.updateMatrixWorld()
+      const out = disc(), projection = new CurvedProjection()
+      projection.envelope(new Vector3(0, 0, -10), 1, new Vector3(), camera, 100, 100, out)
+      expect(touchesDisc(box(48, 48, 52, 52), out)).toBe(true)
+      projection.envelope(new Vector3(0, 0, -200), 1, new Vector3(), camera, 100, 100, out)
+      expect(out.proxy?.count).toBe(0)
+    }
+  })
+
+  it('tests leader bounds and preserves2px+3px margin, self exclusion, depth and people priority', () => {
+    const proxy = createScreenProxy(); proxy.count = 1; proxy.sizes[0] = 4
+    proxy.points.set([78, 95, 82, 95, 82, 101, 78, 101])
+    const hull: Disc = { id: 'front', x: 0, y: 0, radius: 0, depth: 10, proxy }
+    expect(touchesDisc(box(70, 80, 75, 90), hull)).toBe(false) // corner distance sqrt(34)>5
+    expect(touchesDisc(box(70, 80, 76, 91), hull)).toBe(true) // corner distance sqrt(20)<5
+    const human = { ...candidate('human', false, 80, 100), width: 130 }, bot = { ...human, id: 'bot', bot: true }
+    // Every plate is above95; its leader ends at100 and must still be excluded.
+    expect(placeNameplates([human], [hull], [], 160, 160)).toEqual([])
+    expect(placeNameplates([human], [{ ...hull, id: 'human' }], [], 160, 160)).toHaveLength(1)
+    expect(placeNameplates([human], [{ ...hull, depth: 200 }], [], 160, 160)).toHaveLength(1)
+    expect(placeNameplates([bot, human], [{ ...hull, depth: 200 }], [], 160, 160).map(p => p.id)).toEqual(['human'])
   })
 })

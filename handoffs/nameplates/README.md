@@ -27,8 +27,8 @@ already choose their tile relative to the player. Centers, raised anchors and oc
 snapshot of the current render bend. Physics coordinates stay separate. Visual sight lines are
 inverse-mapped into curved paths through flat physics space, subdivided into chords, then split
 at tile boundaries for the existing terrain-only query. The existing horizon test culls worlds
-behind the planet before these queries. Vehicle occlusion uses conservative screen
-circles, including the local hull. Zorb labels account for the rotated ball offset and radius.
+behind the planet before these queries. The current source candidate uses clipped triangulated screen proxies, including the local
+hull, rather than treating a near-plane circumcircle as occupied screen area. Zorb labels account for the rotated ball offset and radius.
 
 A pooled DOM layer inherits Halo ink, hairlines and Barlow. Fixed plate dimensions avoid name
 measurements; long text is ellipsized. Human text scale stays readable with distance; bots use
@@ -56,7 +56,7 @@ reserve screen rectangles; humans allocate first, then nearer labels, with previ
 - Keep the existing network smoke's name-tag visibility assertion compatible. The new layer
   retains the syn3h-nametags class; don't loosen gameplay timing assertions to validate labels.
 
-The first draft uses conservative hull radii (6 m Jet, 3.5 m other vehicles, enlarged by Zorb).
+The inherited heuristic hull radii remain6 m Jet and3.5 m other vehicles, enlarged by the ball radius. These are not certified rendered-mesh bounds.
 Review captures for excess label height and over-culling. Curved visibility subdivides when inverse-path midpoint error exceeds 0.10 m or the visual
 segment exceeds 32 m. It hides unresolved rays after 128 segments. A shared 512-query budget
 per frame is allocated to people first, then bots; unresolved labels stay hidden rather than
@@ -839,3 +839,54 @@ Arithmetic source references and SHA-256 identities, relative to node_modules/th
 
 Syntax and whitespace checks only. Arithmetic equivalence and observation behavior remain
 unexecuted and require independent source review before launcher preparation.
+
+
+## Uncommitted clipped-proxy source candidate
+
+Prepared on63478598 for independent review before commit or execution. Only curvature.ts,
+layout.ts, VehicleNameplates.ts, the existing focused unit file and this README change.
+The acceptance browser fixture and historical views02 receipts remain untouched.
+
+The same26 cube-boundary points now define six subdivided faces, eight triangles per face,
+48 total. Each vertex receives the current CPU curve mapping and actual draw-camera matrices.
+Each triangle is clipped in homogeneous coordinates against all six applicable clip planes
+(ordinary WebGL -w..w depth; reversed WebGL and WebGPU 0..w depth), then divided into screen coordinates. The resulting
+union is bounded to48 convex polygons with at most9 vertices each. View-offset/TAA projection
+is consumed as supplied; the camera is never changed or replaced with a stable projection.
+There is no triangle back-face culling and no wholesale rejection based on center position.
+
+Placement checks the entire plate-and-leader reserved rectangle against that union. Polygon
+intersection or Euclidean separation less than5px rejects: the inherited2px proxy expansion
+plus3px layout margin. Nearest sampled depth, self exclusion and people-first allocation stay.
+Legacy manually supplied discs in focused tests retain their old circle semantics; production
+envelopes always carry a proxy, including an empty proxy when wholly clipped away.
+
+A camera within the sampled proxy's view-space AABB is treated as unresolved and blocks all
+eligible farther labels. That deliberately includes some false positives. Nonfinite geometry,
+unsupported coordinate systems, clipped-buffer overflow or unresolved homogeneous division
+also block. Near-plane intersection alone no longer becomes a viewport-diagonal circle.
+Local and visible non-horizon remote envelopes reach clipping even when the center is behind
+the near plane; candidate label-anchor checks remain unchanged. All-behind triangles are empty.
+
+Topology is module-static. Projection owns26 clip vertices and two10-vertex clipping buffers;
+each reused vehicle output owns48 counts and864 coordinate scalars, allocated at first use.
+No per-frame mesh traversal, raw-mesh export, interval engine or new physics query is added.
+Collision work is bounded by48 polygons of9 vertices per candidate slot, including polygon
+edge axes and closest-edge distances. Cost is unmeasured and remains a validation requirement.
+Diagnostic x/y/radius fields remain available, but radius no longer controls production
+exclusion. Existing browser geometry helpers that only reason about discs are historical
+observations, not proof of the new shape's slot decisions; this change does not update them.
+
+This is a declared triangulated proxy, not exact rendered occupancy, a conservative bound
+on all nonlinear curved geometry, or a universal CPU/GPU containment certificate. The old
+3.5/6m radius assumptions and ball-only Zorb radius remain limitations, including shield swell
+and fade. No vehicle APIs or policy for transparent meshes is introduced. Clipping cannot
+make an offscreen target anchor fit its label, so grounded positive phone/follower scenes
+remain a separate dependency. Two humans plus two full BOT, restored/negative/priority/far
+and cost assertions remain required; views02 collected evidence is not positive acceptance.
+
+Prepared focused regressions use analytic flat-perspective locations, known boundary vertices
+under curve0/.71/1.8, translated rendered tiles, real view-offset projection, near crossing,
+all-behind and camera-inside cases, backend clip ranges, leader/corner margin geometry, self/
+nearer depth and human priority. They are unrun. No tests, typecheck, imports, browser, server,
+probes or runtime execution was performed for this source candidate.

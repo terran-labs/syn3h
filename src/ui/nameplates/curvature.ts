@@ -1,9 +1,9 @@
-import { Vector3, type PerspectiveCamera } from 'three/webgpu'
+import { Vector3, Vector4, WebGLCoordinateSystem, WebGPUCoordinateSystem, type PerspectiveCamera } from 'three/webgpu'
 import { curveOffsetAt } from '../../world/curve'
 import { wrappedOccluded, type Point } from './occlusion'
-import type { Disc } from './layout'
+import { createScreenProxy, type Disc } from './layout'
 
-/** The exact CPU counterpart of applyCurve, using the snapshot the render uses. */
+/** CPU curve mapping using the snapshot the render uses; not a GPU raster certificate. */
 export function bendPoint(point: Point, bend: Vector3, out: Vector3): Vector3 {
   const x = point.x, y = point.y, z = point.z
   curveOffsetAt(bend, x, y, z, out)
@@ -23,7 +23,22 @@ export function unbendPoint(point: Point, bend: Vector3, out: Point): boolean {
   return Number.isFinite(out.x + out.y + out.z)
 }
 
-/** Pooled scratch for curved center, anchor and conservative hull-disc projection. */
+// Module-static topology:26 boundary grid points, six2x2 faces, two triangles per cell.
+const GRID: readonly [number, number, number][] = (() => {
+  const points: [number, number, number][] = []
+  for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) for (let z = -1; z <= 1; z++) if (x || y || z) points.push([x, y, z])
+  return points
+})()
+const FACES: readonly number[] = (() => {
+  const triangles: number[] = []
+  for (let axis = 0; axis < 3; axis++) for (const side of [-1, 1]) for (let u = -1; u < 1; u++) for (let v = -1; v < 1; v++) {
+    const index = (a: number, b: number) => GRID.findIndex(p => p[axis] === side && p[(axis + 1) % 3] === a && p[(axis + 2) % 3] === b)
+    const a = index(u, v), b = index(u + 1, v), c = index(u + 1, v + 1), d = index(u, v + 1)
+    triangles.push(a, b, c, a, c, d)
+  }
+  return triangles
+})()
+/** A declared triangulated cube proxy, not exact rendered hull occupancy or universal curve containment. */
 export class CurvedProjection {
   private readonly point = new Vector3()
   private readonly sample = new Vector3()
@@ -36,19 +51,77 @@ export class CurvedProjection {
     out.x = (this.projected.x + 1) * width / 2; out.y = (1 - this.projected.y) * height / 2; out.z = -this.view.z
     return out
   }
-  envelope(center: Point, radius: number, bend: Vector3, camera: PerspectiveCamera, width: number, height: number, out: Disc): void {
-    const screen = this.project(center, bend, camera, width, height, this.sample)
-    out.x = screen.x; out.y = screen.y; out.depth = screen.z; out.radius = 0
-    // Corners and face centres enclose the rough hull. Bending changes both its apparent
-    // height and scale; radius*focal/flatDepth is wrong at distance on a curved planet.
-    for (let x = -1; x <= 1; x++) for (let y = -1; y <= 1; y++) for (let z = -1; z <= 1; z++) {
-      if (!x && !y && !z) continue
-      this.sample.set(center.x + x * radius, center.y + y * radius, center.z + z * radius)
-      this.project(this.sample, bend, camera, width, height, this.sample)
-      out.depth = Math.min(out.depth, this.sample.z)
-      out.radius = Math.max(out.radius, this.sample.z <= camera.near ? Math.hypot(width, height) : Math.hypot(this.sample.x - out.x, this.sample.y - out.y))
+  private readonly clipPoints = Array.from({ length: 26 }, () => new Vector4())
+  // A triangle clipped by six halfspaces has at most9 vertices. One spare avoids writes past a cap.
+  private readonly clipA = Array.from({ length: 10 }, () => new Vector4())
+  private readonly clipB = Array.from({ length: 10 }, () => new Vector4())
+  private block(out: Disc): void { out.proxy!.count = 0; out.proxy!.blocked = true; out.depth = 0 }
+  private plane(p: Vector4, plane: number, negativeOneToOne: boolean): number {
+    switch (plane) {
+      case 0: return p.w + p.x
+      case 1: return p.w - p.x
+      case 2: return p.w + p.y
+      case 3: return p.w - p.y
+      case 4: return negativeOneToOne ? p.w + p.z : p.z
+      default: return p.w - p.z
     }
-    out.radius += 2
+  }
+  envelope(center: Point, radius: number, bend: Vector3, camera: PerspectiveCamera, width: number, height: number, out: Disc): void {
+    const proxy = out.proxy ??= createScreenProxy()
+    proxy.count = 0; proxy.blocked = false
+    const screen = this.project(center, bend, camera, width, height, this.sample)
+    out.x = Number.isFinite(screen.x) ? screen.x : 0; out.y = Number.isFinite(screen.y) ? screen.y : 0
+    out.depth = 0; out.radius = 2 // Diagnostic only; placement consumes proxy polygons.
+    if (!Number.isFinite(center.x + center.y + center.z + radius + bend.x + bend.y + bend.z + width + height) || radius < 0 || width <= 0 || height <= 0 ||
+      camera.coordinateSystem !== WebGLCoordinateSystem && camera.coordinateSystem !== WebGPUCoordinateSystem) { this.block(out); return }
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minDepth = Infinity, maxDepth = -Infinity
+    for (let i = 0; i < GRID.length; i++) {
+      const g = GRID[i]
+      this.sample.set(center.x + g[0] * radius, center.y + g[1] * radius, center.z + g[2] * radius)
+      bendPoint(this.sample, bend, this.point)
+      this.view.copy(this.point).applyMatrix4(camera.matrixWorldInverse)
+      const depth = -this.view.z
+      minX = Math.min(minX, this.view.x); maxX = Math.max(maxX, this.view.x)
+      minY = Math.min(minY, this.view.y); maxY = Math.max(maxY, this.view.y)
+      minDepth = Math.min(minDepth, depth); maxDepth = Math.max(maxDepth, depth)
+      const clip = this.clipPoints[i].set(this.view.x, this.view.y, this.view.z, 1).applyMatrix4(camera.projectionMatrix)
+      if (!Number.isFinite(clip.x) || !Number.isFinite(clip.y) || !Number.isFinite(clip.z) || !Number.isFinite(clip.w) || !Number.isFinite(depth)) { this.block(out); return }
+    }
+    out.depth = minDepth
+    if (maxDepth <= 0) return
+    // A camera within the proxy's view-space AABB is ambiguous: keep conservative blocking.
+    // This includes genuine enclosed cameras without requiring fragile boundary parity tests.
+    if (minX <= 0 && maxX >= 0 && minY <= 0 && maxY >= 0 && minDepth <= 0 && maxDepth >= 0) { this.block(out); return }
+    const negativeOneToOne = camera.coordinateSystem === WebGLCoordinateSystem && !camera.reversedDepth
+    for (let t = 0; t < FACES.length; t += 3) {
+      let input = this.clipA, output = this.clipB, n = 3
+      for (let k = 0; k < 3; k++) input[k].copy(this.clipPoints[FACES[t + k]])
+      for (let plane = 0; plane < 6 && n; plane++) {
+        let count = 0
+        for (let i = 0; i < n; i++) {
+          const a = input[i], b = input[(i + 1) % n], da = this.plane(a, plane, negativeOneToOne), db = this.plane(b, plane, negativeOneToOne)
+          if (da >= 0) { if (count >= 9) { this.block(out); return }; output[count++].copy(a) }
+          if (da > 0 && db < 0 || da < 0 && db > 0) {
+            const alpha = da / (da - db)
+            if (!Number.isFinite(alpha) || count >= 9) { this.block(out); return }
+            output[count++].copy(a).lerp(b, alpha)
+          }
+        }
+        n = count; const swap = input; input = output; output = swap
+      }
+      if (!n) continue
+      if (proxy.count >= 48) { this.block(out); return }
+      const start = proxy.count * 18
+      for (let i = 0; i < n; i++) {
+        const p = input[i]
+        if (!(p.w > 0)) { this.block(out); return }
+        const x = (p.x / p.w + 1) * width / 2, y = (1 - p.y / p.w) * height / 2
+        if (!Number.isFinite(x + y)) { this.block(out); return }
+        proxy.points[start + i * 2] = x; proxy.points[start + i * 2 + 1] = y
+        out.radius = Math.max(out.radius, Math.hypot(x - out.x, y - out.y) + 2)
+      }
+      proxy.sizes[proxy.count++] = n
+    }
   }
 }
 

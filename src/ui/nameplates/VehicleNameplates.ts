@@ -125,11 +125,8 @@ export class VehicleNameplates {
     // The local vehicle gets no nameplate, but its hull still occludes labels behind it.
     const local = this.options.localVehicle()
     const localRadius = renderedEnvelope(local, this.center, this.rotation, this.anchor)
-    this.projection.project(this.center, this.bend, this.camera, w, h, this.screenCenter)
-    if (this.screenCenter.z > localRadius) {
-      this.projection.envelope(this.center, localRadius, this.bend, this.camera, w, h, this.localDisc)
-      discs.push(this.localDisc)
-    }
+    this.projection.envelope(this.center, localRadius, this.bend, this.camera, w, h, this.localDisc)
+    discs.push(this.localDisc)
     for (const t of list) {
       const p = this.plates.get(t.id) ?? this.acquire(t.id)
       p.stamp = this.stamp
@@ -141,7 +138,7 @@ export class VehicleNameplates {
       this.projection.project(this.center, this.bend, this.camera, w, h, this.screenCenter)
       const depth = this.screenCenter.z, distance = this.center.distanceTo(this.eye)
       const horizonHidden = overHorizon(this.center.x, this.center.z, radius, this.center.y + radius)
-      if (depth > this.camera.near && object.visible && !horizonHidden) {
+      if (object.visible && !horizonHidden) {
         this.projection.envelope(this.center, radius, this.bend, this.camera, w, h, p.disc)
         discs.push(p.disc)
       }
