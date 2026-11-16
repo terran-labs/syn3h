@@ -27,7 +27,7 @@ describe('sea following the prevailing wind', () => {
 
 // Fresh module graphs isolate the clock callbacks, fan cache and parameter registry.
 // These cases must not share fake performance or clocks with concurrent tests.
-describe.sequential('sea heave is the fixed-position surface height derivative', () => {
+describe('sea heave is the fixed-position surface height derivative', { concurrent: false }, () => {
   it.each(['phase only', 'clock transition', 'weather crossfade'] as const)('%s', async (mode) => {
     vi.resetModules()
     vi.useFakeTimers({ toFake: ['performance'] })
