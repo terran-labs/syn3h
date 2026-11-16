@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { Quaternion, Scene, Vector3 } from 'three/webgpu'
+import { PerspectiveCamera, Quaternion, Scene, Vector3 } from 'three/webgpu'
 import type { Game, System } from '../../src/core/Game'
 import { emptyInput } from '../../src/core/Input'
 import { createWorld, initPhysics, RAPIER } from '../../src/core/physics'
@@ -130,7 +130,35 @@ describe('bot population', () => {
     manager.dispose()
   })
 
+  it('retains nearby followers through a quality drop but honors an explicit count reduction', () => {
+    const { game } = harness(), player = stationaryTarget(game)
+    const manager = new BotManager(game, terrain, player)
+    try {
+      params.set('gfx.level', 2); params.set('bots.count', 4); manager.update()
+      const ids = manager.vehicles.map(v => v.id)
+      params.set('gfx.level', 0); manager.update()
+      expect(manager.vehicles.map(v => v.id)).toEqual(ids)
+      params.set('bots.count', 2); manager.update()
+      expect(manager.vehicles).toHaveLength(2)
+    } finally { manager.dispose(); params.set('gfx.level', 2) }
+  })
+  it('defers removal of visible distant bots until they leave the camera', () => {
+    const { game } = harness(), player = stationaryTarget(game)
+    params.set('bots.followYou', 0)
+    Object.defineProperty(game, 'camera', { value: new PerspectiveCamera(60, 1, 0.1, 1000) })
+    game.camera.position.set(0, 8, 0); game.camera.lookAt(0, 2, -80)
+    const manager = new BotManager(game, terrain, player)
+    try {
+      params.set('gfx.level', 2); params.set('bots.count', 4); manager.update()
+      manager.vehicles.forEach((v, i) => v.teleport(new Vector3(i * 3, 2, -80)))
+      params.set('gfx.level', 0); manager.update()
+      expect(manager.vehicles).toHaveLength(4)
+      game.camera.lookAt(0, 8, 80); manager.update()
+      expect(manager.vehicles).toHaveLength(2)
+    } finally { manager.dispose(); params.set('gfx.level', 2) }
+  })
   it('keeps Rapier usable when graphics and count drop together or in adjacent frames', () => {
+    params.set('bots.followYou', 0)
     const { game, systems, step } = harness(), player = stationaryTarget(game)
     const manager = game.add(new BotManager(game, terrain, player))
     const previousQuality = params.get('gfx.quality')!.value

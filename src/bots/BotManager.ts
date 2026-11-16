@@ -1,7 +1,7 @@
 import { worldSeed } from '../../shared/params'
 import { generateName } from '../ui/data/names'
 import { attachVehicleEffects } from '../vehicles/effects'
-import { Vector3 } from 'three/webgpu'
+import { Frustum, Matrix4, Sphere, Vector3 } from 'three/webgpu'
 import type { Game, System } from '../core/Game'
 import { qualityBudget } from '../core/quality'
 import { createVehicle } from '../vehicles'
@@ -9,7 +9,7 @@ import type { Vehicle } from '../vehicles/Vehicle'
 import { BotBrain, isSafeGround, type BotMatch, type BotTerrain } from './BotBrain'
 import { botCount, fleet, spawnRadius } from './params'
 import { Daydream } from './Daydream'
-import { curveFactor, overHorizon } from '../world/curve'
+import { curveFactor, curveOffset, overHorizon } from '../world/curve'
 import { Mind } from './mind/Mind'
 import { createPilot } from './pilot'
 import { createNavigator, pointsOfInterest, type PointOfInterest } from './nav'
@@ -28,6 +28,10 @@ export class BotManager implements System {
     this.gearHooks = hooks
     for (const brain of this.brains) brain.setGear(this.remote ? null : hooks)
   }
+  private readonly retentionFrustum = new Frustum()
+  private readonly retentionMatrix = new Matrix4()
+  private readonly retentionSphere = new Sphere(new Vector3(), 5)
+  private readonly retentionBend = new Vector3()
   private nextBotId = 0
   private targets: readonly Vehicle[]
   private disposed = false
@@ -137,13 +141,35 @@ export class BotManager implements System {
     }
     return false
   }
+  /** Quality may postpone a new bot, but must not make an existing companion blink out. */
+  private retainForQuality(index: number): boolean {
+    const bot = this.bots[index], p = bot.body.translation(), player = this.player.body.translation()
+    const lineReach = LINE_START + LINE_SPACING * (this.bots.length + 1)
+    if (followYou.value > 0 && aggression.value <= RAM_AGGRESSION
+      && this.brains[index].duck.following === this.player
+      && Math.hypot(p.x - player.x, p.z - player.z) <= lineReach) return true
+    const camera = this.game.camera
+    if (!camera || overHorizon(p.x, p.z, 5, p.y + 3)) return false
+    camera.updateMatrixWorld()
+    this.retentionMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+    this.retentionFrustum.setFromProjectionMatrix(this.retentionMatrix, camera.coordinateSystem)
+    curveOffset(p.x, p.y, p.z, this.retentionBend)
+    this.retentionSphere.center.set(p.x, p.y, p.z).add(this.retentionBend)
+    return this.retentionFrustum.intersectsSphere(this.retentionSphere)
+  }
   /** Reconcile outside the physics iterator so removing bots cannot skip another body's step. */
   update(dt = 0) {
     if (this.disposed) return
     this.daydream.update(dt)
     if (this.remote) return
-    const count = Math.max(0, Math.min(qualityBudget().bots, Math.floor(botCount.value)))
-    while (this.bots.length > count) this.removeLast()
+    const requested = Math.max(0, Math.floor(botCount.value))
+    // Explicit population changes and remote/dispose cleanup still take effect immediately.
+    while (this.bots.length > requested) this.removeLast()
+    const count = Math.min(qualityBudget().bots, requested)
+    while (this.bots.length > count) {
+      if (this.retainForQuality(this.bots.length - 1)) break
+      this.removeLast()
+    }
     while (this.bots.length < count) if (!this.spawn(this.bots.length)) break
     // On a round world most of the map is behind the planet. A bot there still drives (its
     // physics is the host's to run) but there is nothing of it to draw.
