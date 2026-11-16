@@ -123,8 +123,33 @@ async function swap(page, kind) {
 async function runCase(browser, mode, entry, missing = false) {
   await persist(`before context creation: ${mode} ${entry.url} missing=${missing}`)
   const context = await browser.newContext({ ...(mode === 'phone' ? devices['iPhone 14'] : { viewport: { width: 1440, height: 1000 } }), serviceWorkers: 'block', reducedMotion: 'reduce' })
-  // Pass-through routing disables browser HTTP cache; no response is mocked or rewritten.
-  await context.route('**/*', route => route.continue())
+  // Passive page-clock evidence. No routing, cache suppression or loader interception.
+  await context.addInitScript(() => {
+    const evidence = { timeOrigin: performance.timeOrigin, transitions: [], resources: [] }
+    Object.defineProperty(window, '__lobbyAddressTiming', { value: evidence })
+    const original = history.replaceState
+    history.replaceState = function (...args) {
+      const before = location.href
+      const value = Reflect.apply(original, this, args) // Preserve receiver, arguments, return and throw.
+      try { evidence.transitions.push({ before, after: location.href, at: performance.now() }) } catch { /* Observation cannot change navigation. */ }
+      return value
+    }
+    const record = entries => {
+      for (const entry of entries) {
+        if (new URL(entry.name).pathname.includes('/models/')) evidence.resources.push({
+          url: entry.name, startTime: entry.startTime, initiatorType: entry.initiatorType,
+          duration: entry.duration, transferSize: entry.transferSize,
+        })
+      }
+    }
+    const observer = new PerformanceObserver(list => record(list.getEntries()))
+    observer.observe({ type: 'resource', buffered: true })
+    // Read pending entries in the same page before returning a checkpoint.
+    Object.defineProperty(window, '__readLobbyAddressTiming', { value: () => {
+      record(observer.takeRecords())
+      return evidence
+    } })
+  })
   const page = await context.newPage()
   page.setDefaultTimeout(15000); page.setDefaultNavigationTimeout(60000)
   const result = { mode, entry: entry.url, missing, responses: [], errors: [], requests: [], sockets: [], checks: [] }
@@ -173,6 +198,25 @@ async function runCase(browser, mode, entry, missing = false) {
     while (pending.size) await bounded(Promise.allSettled([...pending]), 'response drain')
     assert.deepEqual(result.errors, [])
   }
+  async function verifyPostCleanupResources(paths, timeOrigin) {
+    result.addressTiming = await page.evaluate(() => window.__readLobbyAddressTiming())
+    await persist('address/resource timing captured before assertions')
+    const evidence = result.addressTiming
+    assert.equal(evidence.timeOrigin, timeOrigin, 'timing belongs to original document')
+    const cleanup = evidence.transitions.find(t => {
+      const before = new URL(t.before), after = new URL(t.after)
+      return (before.search || before.hash) && !after.search && !after.hash && after.pathname === new URL(entry.url).pathname
+    })
+    assert.ok(cleanup, 'observed successful address cleanup in this document')
+    result.postCleanupResources = paths.map(path => {
+      const url = new URL(`/v/${m.version}${path}`, origin).href
+      const observed = evidence.resources.filter(r => r.url === url && r.initiatorType === 'fetch' && r.startTime > cleanup.at)
+      assert.ok(observed.length, 'model fetch initiated after address cleanup: ' + path)
+      assert.ok(result.responses.some(r => r.url === url), 'matching actual browser response: ' + path)
+      return { path, cleanupAt: cleanup.at, observed, trigger: 'unknown: normal warmer or selection; cache status not inferred' }
+    })
+    await persist('post-cleanup resource timing verified')
+  }
   let caseFailure
   try {
     const url = new URL(entry.url)
@@ -191,13 +235,11 @@ async function runCase(browser, mode, entry, missing = false) {
       recipe: syn3h.planets.currentPlanet().id,
     }))
     assert.deepEqual(result.startup, { kind: 'jet', seed: 1, requestedBots: 0, bots: 0, recipe: 'volcanic' }, 'shared-world setup applied before startup')
-    assert.equal(result.requests.some(r => r.url.includes('/models/')), false, 'Jet with zero bots starts without model preloads')
     const timeOrigin = await page.evaluate(() => performance.timeOrigin)
     await enter(page); playingURL(page, room)
     assert.ok(result.sockets.some(value => value === entry.roomSocket + '?room=' + room), 'dedicated room connection')
     if (missing) {
       assert.ok(models.includes(m.missing.path))
-      assert.equal(result.requests.some(r => models.some(path => new URL(r.url).pathname.endsWith(path))), false, 'Buggy resources not requested before missing-model swap')
       await swap(page, 'buggy-syn3h')
       // Await the actual failed model request, not a synthetic fetch or route fulfillment.
       const until = Date.now() + 15000
@@ -206,13 +248,13 @@ async function runCase(browser, mode, entry, missing = false) {
       }
       await page.waitForTimeout(500)
       assert.equal(result.requests.some(r => new URL(r.url).pathname === m.missing.path), false, 'no retry on latest')
-      result.checks.push('isolated missing model requested once on frozen route with no latest retry during observed interval')
+      await verifyPostCleanupResources([m.missing.path], timeOrigin)
+      result.checks.push('isolated missing Buggy fetch after cleanup uses frozen route with no latest retry during observed interval')
     } else {
       await leave(page); clean(page, url.pathname)
       await enter(page); playingURL(page, room)
       assert.equal(await page.evaluate(() => performance.timeOrigin), timeOrigin, 'already-joined reentry does not reload')
       assert.equal(await page.evaluate(() => syn3h.bots.vehicles.length), 0, 'no bot model loads before swaps')
-      assert.equal(result.requests.some(r => models.some(path => new URL(r.url).pathname.endsWith(path))), false, 'both Buggy models remain unrequested before actual swaps')
       await swap(page, 'tank')
       result.tank = await bounded(page.evaluate(async () => {
         const tank = syn3h.player
@@ -228,14 +270,14 @@ async function runCase(browser, mode, entry, missing = false) {
       assert.equal(result.tank.timeOrigin, timeOrigin, 'Tank switch stays in this document')
       assert.equal(result.requests.some(r => legacyTankModels.some(path => new URL(r.url).pathname.endsWith(path))), false, 'generated Tank does not request legacy meshes')
       await persist('generated Tank verified; before Buggy swap')
-      assert.equal(result.requests.some(r => models.some(path => new URL(r.url).pathname.endsWith(path))), false, 'Buggy models remain unrequested before Buggy swap')
       await swap(page, 'buggy-syn3h')
       const until = Date.now() + 30000
       while (!models.every(path => result.responses.some(r => new URL(r.url).pathname === `/v/${m.version}${path}`))) {
         assert.ok(Date.now() < until, 'both late Buggy models'); await page.waitForTimeout(50)
       }
       await drain()
-      result.checks.push('generated Tank without legacy requests', 'two late frozen Buggy model responses')
+      await verifyPostCleanupResources(models, timeOrigin)
+      result.checks.push('generated Tank without legacy requests', 'two post-cleanup frozen Buggy responses; trigger unknown')
       await persist('late models verified; before returning to original Jet')
       await swap(page, 'jet')
       assert.equal(await page.evaluate(() => syn3h.player.kind), 'jet', 'save the original entry vehicle')

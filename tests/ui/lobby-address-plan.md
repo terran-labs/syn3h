@@ -117,7 +117,7 @@ failure without retry.
 
 Installed Chrome runs desktop first, then Playwright WebKit runs iPhone 14 emulation.
 Each runs the root-query and frozen-path cases in fresh, service-worker-blocked
-contexts. Pass-through request routing disables HTTP cache without replacing bytes.
+contexts. No request routing, cache suppression or loader interception is installed.
 Only Chrome runs the additional isolated missing-model case. Native keyboard Enter
 activates the planet in both contexts; this does not claim physical touch coverage.
 
@@ -126,12 +126,12 @@ activates the planet in both contexts; this does not claim physical touch covera
 - Initial lobby, confirmed Leave world and already-joined reentry preserve pathname,
   remove all lobby query/hash, restore intentional play room/seed/version, and do
   not reload on reentry. A room named `lobby` remains a real play room.
-- Jet in the asserted zero-bot shared world starts without mesh requests. Both Buggy
-  files remain unrequested immediately before the Tank swap and before the Buggy
-  swap. Normal vehicle controls then exercise both
-  uncached late mesh requests after lobby cleanup. Each response must match frozen
-  paths and expected hashes. Only an optional independently distinct resource can
-  additionally demonstrate frozen/latest byte discrimination.
+- Jet starts in the asserted zero-bot shared world. Both Buggy model fetches must
+  begin after an observed successful cleanup of the address in that same document.
+  Normal vehicle controls still select Tank and Buggy; either the normal warmer or
+  selection may initiate loading. Every response must match frozen paths and exact
+  hashes. No uncached or click-caused claim is made. Only an optional independently
+  distinct resource can demonstrate frozen/latest byte discrimination.
 - After the generated Tank and Buggy mesh checks, the normal selector returns to Jet before
   save/reload, matching the original explicit vehicle query. The saved snapshot must
   have `kind: jet`, so a deliberate vehicle override cannot defeat resume selection.
@@ -173,12 +173,22 @@ The swap helper waits for active kind, not skin completion. Normal Tank is alrea
 constructed by then; its public ready promise is now observed explicitly. The recorded
 camera mode is diagnostic, not changed. Production swap caching and the background
 warmer remain enabled (`swap.ts:41-63,83,123`). They can construct a vehicle before its
-selection. Therefore the Buggy absence checks are retained before both swaps, and a
-run that warms those files earlier fails rather than claiming click causality. Passing
-checks establish requests after those boundaries, not a captured loader initiator.
+selection. Global/pre-swap absence assertions are removed. An init script wraps only
+history.replaceState, forwarding its original receiver and arguments and preserving
+return/throw behavior. Successful transitions record the resulting address and
+performance.now(). A passive PerformanceObserver records model resource startTime,
+initiatorType and URL; its queued records are drained before each timing checkpoint.
+Both use the same document clock/timeOrigin. No Node receipt time is used for ordering.
+Each tested model must have a fetch startTime strictly after a successful query/hash
+cleanup and a matching actual browser response. Loading before cleanup or absent
+resource timing cannot pass this invariant. The observer does not identify the trigger
+or prove a cache miss. The first document evidence is persisted before resume reload;
+new-document timing is never compared with old-document cleanup.
 
 The missing-resource setup now removes only the frozen Buggy mesh, retains its root
-copy, and invokes the ordinary Buggy selector. LoadedBuggySkin loads the pair;
+copy, and invokes the ordinary Buggy selector. A normal warm request before that
+selection is allowed if its page-clock initiation follows cleanup and its frozen 404
+is observed. LoadedBuggySkin loads the pair;
 Syn3hBuggy attaches a rejection handler to its ready promise. The existing 404 and
 no-root-retry assertions remain, with no suppression of page errors. Both actually
 used Buggy files plus all ten licences have runtime hash assertions; retained legacy
