@@ -46,10 +46,10 @@ Supply a JSON manifest using this schema (placeholders are not executable eviden
     "/models/tank.glb": { "frozen": "sha256" }
   },
   "entries": [
-    { "url": "https://isolated-origin/", "room": "url-check", "roomSocket": "wss://isolated-room/ws", "responses": { "/": "document sha256", "/assets/index-HASH.js": "bundle sha256" } },
-    { "url": "https://isolated-origin/v/26.11.1520/", "room": "lobby", "roomSocket": "wss://isolated-room/ws", "responses": { "/v/26.11.1520/": "document sha256", "/assets/index-HASH.js": "bundle sha256" } }
+    { "url": "https://isolated-origin/", "room": "url-check", "roomSocket": "wss://isolated-room/ws", "requiredResponses": ["/", "/assets/index-HASH.js", "/assets/index-HASH.css"], "responses": { "/": "document sha256", "/assets/index-HASH.js": "bundle sha256", "/assets/index-HASH.css": "stylesheet sha256", "/assets/conditional-HASH.js": "conditional JS sha256" } },
+    { "url": "https://isolated-origin/v/26.11.1520/", "room": "lobby", "roomSocket": "wss://isolated-room/ws", "requiredResponses": ["/v/26.11.1520/", "/assets/index-HASH.js", "/assets/index-HASH.css"], "responses": { "/v/26.11.1520/": "document sha256", "/assets/index-HASH.js": "bundle sha256", "/assets/index-HASH.css": "stylesheet sha256", "/assets/conditional-HASH.js": "conditional JS sha256" } }
   ],
-  "missing": { "isolated": true, "url": "https://isolated-missing-origin/", "path": "/models/tank.glb", "roomSocket": "wss://isolated-room/ws", "responses": { "/": "document sha256", "/assets/index-HASH.js": "bundle sha256" } }
+  "missing": { "isolated": true, "url": "https://isolated-missing-origin/", "path": "/models/tank.glb", "roomSocket": "wss://isolated-room/ws", "requiredResponses": ["/", "/assets/index-HASH.js", "/assets/index-HASH.css"], "responses": { "/": "document sha256", "/assets/index-HASH.js": "bundle sha256", "/assets/index-HASH.css": "stylesheet sha256", "/assets/conditional-HASH.js": "conditional JS sha256" } }
 }
 ```
 
@@ -59,8 +59,15 @@ in the fixture. Optional `distinctResource` is an object with `path` (one of tho
 cases also fetch that root path with an unversioned Referer and verify the latest
 hash independently. Without it, results prove requested frozen paths and exact
 expected bytes, not discrimination between otherwise identical bytes. `responses`
-must include every document/script/stylesheet expected in that case, including lazy chunks; extra entries fail if never observed. Each
-entry has its own map because frozen pathname rewriting may change asset paths.
+is the full allowed hash inventory, including conditional worklets, workers and lazy
+chunks. `requiredResponses` contains the document and actual external script and
+stylesheet references parsed from the built HTML, resolved against that entry URL.
+Only that required set must be observed. Every observed conditional executable/style
+response is still hashed and checked against the allowed inventory; unexpected paths
+fail. Context-level events and path/MIME classification cover observed worklet or
+worker responses reported as other/fetch rather than script. An absent conditional
+request is not execution coverage. Each entry has its own map because frozen pathname
+rewriting may change asset paths.
 `sourceFiles` covers the exact ten product/config files listed in the fixture.
 The script adds version, room, seed 1, Jet, Minimal and a retained fragment to each
 entry URL. No world preset is injected; the current planet is entered so it cannot

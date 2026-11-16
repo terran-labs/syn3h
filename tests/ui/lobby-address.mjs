@@ -129,23 +129,32 @@ async function runCase(browser, mode, entry, missing = false) {
   const jobs = promise => { pending.add(promise); promise.catch(e => result.errors.push(String(e))).finally(() => pending.delete(promise)) }
   const origin = new URL(entry.url).origin
   const expectedBodies = entry.responses
+  const requiredBodies = entry.requiredResponses
+  assert.ok(Array.isArray(requiredBodies) && requiredBodies.length > 0, 'explicit HTML-derived required response list')
+  assert.ok(requiredBodies.includes(new URL(entry.url).pathname), 'document must be required')
+  for (const path of requiredBodies) assert.match(expectedBodies[path] ?? '', /^[a-f0-9]{64}$/, 'required hash missing: ' + path)
   const seen = new Set()
   page.on('pageerror', e => result.errors.push(e.message))
   page.on('websocket', ws => { result.sockets.push(ws.url()); if (new URL(ws.url()).pathname.includes('vite')) result.errors.push('HMR websocket') })
-  page.on('request', request => result.requests.push({ url: request.url(), type: request.resourceType() }))
-  page.on('response', response => jobs((async () => {
+  context.on('request', request => result.requests.push({ url: request.url(), type: request.resourceType() }))
+  context.on('response', response => jobs((async () => {
     const request = response.request(), url = new URL(response.url()), type = request.resourceType()
+    // Worklets/workers can be reported as 'other' or 'fetch', not 'script'.
+    // Observe the entire isolated context and classify by path/MIME as well as type.
+    const contentType = response.headers()['content-type'] ?? ''
+    const executable = ['document', 'script', 'stylesheet'].includes(type) || /\.(?:m?js|css)$/i.test(url.pathname) || /(?:javascript|ecmascript|text\/css)/i.test(contentType)
+    const inventoried = Object.hasOwn(expectedBodies, url.pathname)
     if (url.origin !== origin) {
-      assert.ok(!['document', 'script', 'stylesheet'].includes(type), 'unexpected external executable/style response'); return
+      assert.ok(!executable, 'unexpected external executable/style response'); return
     }
-    if (!['document', 'script', 'stylesheet'].includes(type) && !url.pathname.includes('/models/') && !url.pathname.includes('/brand/licenses/')) return
+    if (!executable && !inventoried && !url.pathname.includes('/models/') && !url.pathname.includes('/brand/licenses/')) return
     assert.equal(request.redirectedFrom(), null, 'no response redirects')
     assert.equal(response.fromServiceWorker(), false)
     const isMissing = missing && url.pathname === `/v/${m.version}${m.missing.path}`
     assert.equal(response.status(), isMissing ? 404 : 200, url.href)
     const sha256 = hash(await bounded(response.body(), 'response body'))
     result.responses.push({ url: url.href, type, status: response.status(), sha256 })
-    if (['document', 'script', 'stylesheet'].includes(type)) {
+    if (executable || inventoried) {
       assert.equal(sha256, expectedBodies[url.pathname], 'actual browser artifact bytes: ' + url.pathname)
       seen.add(url.pathname)
     } else if (!isMissing) {
@@ -254,13 +263,15 @@ async function runCase(browser, mode, entry, missing = false) {
       result.checks.push('initial/return/reentry addresses', 'ten licence hrefs and response bytes', 'invite retains room/version/world', 'periodic and synthetic lifecycle save retains entry seed', 'original entry reload resumes saved world seed')
     }
     await drain()
-    for (const path of Object.keys(expectedBodies)) assert.ok(seen.has(path), 'required browser response absent: ' + path)
+    for (const path of requiredBodies) assert.ok(seen.has(path), 'required browser response absent: ' + path)
+    result.requiredResponses = requiredBodies
+    result.observedConditionalResponses = [...seen].filter(path => !requiredBodies.includes(path))
     assert.equal(result.requests.some(r => /\/@vite\/|\?t=/.test(r.url)), false, 'no Vite/HMR artifact')
   } catch (error) { caseFailure = error; result.errors.push(String(error)) } finally {
     try { await persist('before case cleanup') } catch (error) { caseFailure ??= error }
     // Close the page to establish a final response boundary, then drain dynamically.
     for (const [label, operation] of [
-      ['page close', () => page.close()], ['final response drain', drain], ['context close', () => context.close()],
+      ['page close', () => page.close()], ['final response drain', drain], ['context close', () => context.close()], ['post-context response drain', drain],
     ]) {
       try { await bounded(operation(), label, 5000) } catch (error) { result.errors.push(String(error)); caseFailure ??= error }
     }
