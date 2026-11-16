@@ -3,7 +3,8 @@ import { generateName } from '../ui/data/names'
 import { attachVehicleEffects } from '../vehicles/effects'
 import { Vector3 } from 'three/webgpu'
 import type { Game, System } from '../core/Game'
-import { qualityBudget } from '../core/quality'
+import { graphicsLevel, qualityBudget } from '../core/quality'
+import { compileVehicleAhead } from '../core/compileAhead'
 import { createVehicle } from '../vehicles'
 import type { Vehicle } from '../vehicles/Vehicle'
 import { BotBrain, isSafeGround, type BotMatch, type BotTerrain } from './BotBrain'
@@ -237,8 +238,8 @@ export class BotManager implements System {
     // Off stage while its shaders compile: no body in the world, nothing drawn.
     bot.setParked(true)
     try {
-      bot.update(0, 1)
-      await this.game.compileAhead?.(bot.object)
+      // Both looks it may wear (close-up and distant), so driving off costs no frame either.
+      await compileVehicleAhead(bot, graphicsLevel.value)
     } catch (error) { console.warn('Bot shaders not compiled ahead', error) }
     if (this.disposed || this.remote || world !== this.world) { bot.dispose(); return false }
     bot.setParked(false)

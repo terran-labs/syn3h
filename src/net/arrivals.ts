@@ -12,11 +12,13 @@
  * while waiting is simply dropped. Presentation only: nothing here touches the protocol.
  */
 import type { Object3D } from 'three/webgpu'
-import { compileAhead } from '../core/compileAhead'
+import { canCompileAhead, compileVehicleAhead } from '../core/compileAhead'
+import { graphicsLevel } from '../core/quality'
 import { arrivalInterval } from '../bots/pacing'
 
 export interface ParkableVehicle {
   readonly object: Object3D
+  readonly isLocal?: boolean
   setParked(parked: boolean): void
   update?(dt: number, alpha: number): void
 }
@@ -31,7 +33,8 @@ export class RemoteArrivals {
     /** Shown: the arrival cloud's look, for a vehicle placed by the network. */
     private readonly reveal: (vehicle: ParkableVehicle) => void = () => {},
     private readonly interval: () => number = () => arrivalInterval.value,
-    private readonly compile: (object: Object3D) => Promise<void> | null = compileAhead,
+    /** Compile a vehicle in every look it may wear first; null where nothing can compile ahead. */
+    private readonly compile: (vehicle: ParkableVehicle) => Promise<void> | null = vehicle => canCompileAhead() ? compileVehicleAhead(vehicle, graphicsLevel.value) : null,
   ) {}
 
   /** Remotes still waiting to be shown. */
@@ -40,7 +43,7 @@ export class RemoteArrivals {
 
   /** A new remote: park its vehicle and compile it; it is shown by `update` when its turn comes. */
   admit(id: number, vehicle: ParkableVehicle, person: boolean): void {
-    const ahead = (() => { try { vehicle.update?.(0, 1); return this.compile(vehicle.object) } catch { return null } })()
+    const ahead = (() => { try { return this.compile(vehicle) } catch { return null } })()
     // No running game to compile in (tests, a lost renderer): show it at once, as before.
     if (!ahead) return
     vehicle.setParked(true)

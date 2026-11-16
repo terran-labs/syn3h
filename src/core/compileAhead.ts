@@ -9,3 +9,25 @@ import type * as THREE from 'three/webgpu'
 let compiler: ((object: THREE.Object3D) => Promise<void>) | null = null
 export function setCompiler(next: ((object: THREE.Object3D) => Promise<void>) | null): void { compiler = next }
 export function compileAhead(object: THREE.Object3D): Promise<void> | null { return compiler ? compiler(object) : null }
+/** True in a running game, where compileAhead does something. */
+export function canCompileAhead(): boolean { return compiler !== null }
+
+/**
+ * Compile a vehicle that is about to appear, in every look it may wear in its first moments:
+ * the close-up skin and the plain distant one (a remote vehicle switches at 25 to 30 m, see
+ * vehicles/skins/showroom.ts), then its own. A bot appearing 20 m away and driving off would
+ * otherwise compile the other look in the frame it crossed. Resolves at once with no game.
+ *
+ * The looks are chosen through the vehicle's own detail hooks. They are private to Vehicle; a
+ * public "prepare your looks" on Vehicle would be the cleaner seam (vehicle lane's call).
+ */
+export async function compileVehicleAhead(vehicle: { object: THREE.Object3D; isLocal?: boolean; update?(dt: number, alpha: number): void }, level: number): Promise<void> {
+  if (!compiler) return
+  const details = (vehicle as unknown as { visualDetails?: Set<(distance: number, remote: boolean, level: number) => void> }).visualDetails
+  if (details?.size) for (const distance of [0, 1e4]) {
+    for (const detail of details) detail(distance, !vehicle.isLocal, level)
+    await compileAhead(vehicle.object)
+  }
+  vehicle.update?.(0, 1)
+  await compileAhead(vehicle.object)
+}
