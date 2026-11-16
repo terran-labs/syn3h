@@ -216,7 +216,7 @@ async function main(): Promise<void> {
     connection.setPaused(pause.paused)
     // Remote players and bots are audible, positioned in space.
     audio.setVehicles(() => connection.audibleVehicles())
-    game.add(new ResumeSession({ game, terrain, get player() { return slot.current }, room: shell.room || query.get('room') || 'lobby', saved, network: connection }))
+    game.add(new ResumeSession({ game, terrain, get player() { return slot.current }, room: shell.room || query.get('room') || 'lobby', saved, network: connection, entrySearch: lobbyAddress.playURL().search }))
   }
   shell.onPlay = join
   // The in-play vehicle selector calls this; the shell takes it if it has the hook.
