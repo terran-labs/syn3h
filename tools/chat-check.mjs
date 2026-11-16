@@ -49,8 +49,9 @@ try {
   }
 
   // 1 and 2: open with Y, hold W while typing, send.
-  await A.page.mouse.click(640, 400)
-  await A.page.keyboard.press('Escape').catch(() => {})
+  // Focus the page without pausing it: a canvas click plus Escape pauses when pointer lock
+  // does not engage, and a paused game rightly ignores Y.
+  await A.page.evaluate(() => { document.activeElement?.blur?.(); document.body.focus() })
   await A.page.keyboard.press('KeyY')
   const focused = await A.page.evaluate(() => document.activeElement?.classList.contains('chat-field'))
   check(focused, 'Y opens chat and focuses the field')
@@ -70,7 +71,8 @@ try {
   await B.page.waitForTimeout(1500)
   await shot(B.page, 'desktop-collapsed-unread')
   const badge = await B.page.textContent('.chat-unread')
-  check(badge === '1', `B's pill counts one unread line (got ${badge})`)
+  const person = await B.page.evaluate(() => document.querySelector('.chat-unread')?.classList.contains('from-person'))
+  check(Number(badge.replace('+', '')) >= 1 && person, `B's pill counts unread lines (${badge}) and marks that a person wrote`)
   const stripHtml = await B.page.evaluate(() => document.querySelector('.chat-strip')?.innerHTML ?? '')
   check(!/<b>bold/.test(stripHtml) && stripHtml.includes('&lt;b&gt;bold'), 'markup arrives as text, not elements')
   check(!(await B.page.$('.chat-panel a')), 'links are not made clickable')
@@ -115,12 +117,23 @@ try {
   await A.ctx.close(); await B.ctx.close()
 
   // Phones, as a third and fourth player: collapsed with a strip, then open.
-  for (const [name, viewport] of [['phone-portrait', { width: 390, height: 844 }], ['phone-landscape', { width: 844, height: 390 }]]) {
+  for (const [name, viewport, hand] of [['phone-portrait', { width: 390, height: 844 }], ['phone-landscape', { width: 844, height: 390 }], ['phone-landscape-lefthand', { width: 844, height: 390 }, true]]) {
     const P = await open(name.includes('portrait') ? 'Pip' : 'Lan', { viewport, isMobile: true, hasTouch: true, deviceScaleFactor: 2 })
-    // A line from this page so the strip and the count have something to show.
-    await P.page.evaluate(() => window.syn3hChat?.net?.chat.note('Chat check: a note from this screen.'))
-    await P.page.waitForTimeout(withBots ? 25000 : 500)
+    if (hand) await P.page.evaluate(() => window.syn3h.params.set('touch.leftHanded', true))
+    if (withBots) {
+      // Wait for the bots to say something, so the strip and the unread count show.
+      await P.page.waitForFunction(() => document.querySelectorAll('.chat-strip .chat-line').length > 0, null, { timeout: 90000 }).catch(() => {})
+      await P.page.waitForTimeout(1500)
+    } else {
+      await P.page.evaluate(() => window.syn3hChat?.net?.chat.note('Chat check: a note from this screen.'))
+    }
     await shot(P.page, `${name}-collapsed`)
+    const overlaps = await P.page.evaluate(() => {
+      const box = document.querySelector('.chat-toggle').getBoundingClientRect()
+      const hit = (r) => r.width > 0 && !(r.right <= box.left || r.left >= box.right || r.bottom <= box.top || r.top >= box.bottom)
+      return [...document.querySelectorAll('.touch-actions button, .touch-stick, .hud-navigation, .shell-minimap, .gear-selector .gs-item.is-active')].filter((e) => hit(e.getBoundingClientRect())).map((e) => e.className)
+    })
+    check(overlaps.length === 0, `${name}: the chat button overlaps nothing (${overlaps.join(', ')})`)
     await P.page.tap('.chat-toggle')
     await P.page.waitForTimeout(500)
     await shot(P.page, `${name}-open`)
