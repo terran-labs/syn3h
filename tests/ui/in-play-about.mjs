@@ -22,7 +22,7 @@ const bounded = async (promise, cap = 10000) => {
   finally { clearTimeout(timer) }
 }
 const hash = bytes => createHash('sha256').update(bytes).digest('hex')
-const report = { source: expected, cases: [], errors: [], captureComplete: false, limits: ['No physical touch or gamepad-neutral proof', 'Held drive/touch at modal entry and close remain untested', 'Live Yoink modal cancellation remains untested', 'Own Grapple cancellation versus remote gear and launched-projectile survival remains untested', 'Prerequisite four-slice input coverage does not establish these modal-specific behaviors', 'No image assets added', 'Late pointer-lock promise race and real OS visibility require later native validation', 'Synthetic PauseState lifecycle transitions are not native OS visibility'] }
+const report = { source: expected, extensionStatus: 'source-prepared-unrun', cases: [], errors: [], captureComplete: false, limits: ['No physical touch or gamepad-neutral proof', 'Held drive/touch at modal entry and close remain untested', 'Live Yoink modal cancellation remains untested', 'Own Grapple cancellation versus remote gear and launched-projectile survival remains untested', 'Prerequisite four-slice input coverage does not establish these modal-specific behaviors', 'No image assets added', 'Late pointer-lock promise race and real OS visibility require later native validation', 'Synthetic PauseState lifecycle transitions are not native OS visibility'] }
 let browser, primary
 const pages = [], pending = [], records = new Map()
 await mkdir(out, { recursive: true })
@@ -58,6 +58,174 @@ const state = page => page.evaluate(() => ({ url: location.href, id: syn3hNet.id
   suspended: syn3h.game.input.suspended, locked: !!document.pointerLockElement,
   sent: syn3hNet.bigRed.stats.sent, fizzled: syn3hNet.bigRed.stats.fizzled }))
 const ready = (page, fn, arg) => page.waitForFunction(fn, arg, { timeout: budget(15000) })
+// Extensions are deliberately limited to the touch-emulated context. Native KeyW
+// does not request pointer lock there, so the normal session entry stays reachable.
+async function modalExtensions(page, record, entry, dialog) {
+  record.extensions = { classification: { drive: 'native keyboard in touch-emulated Chrome',
+    touch: 'synthetic touch PointerEvents through actual stick/TAG handlers',
+    yoink: 'actual host bot staged once before acquisition; native KeyL and About clicks' }, results: [] }
+  const keep = async item => { record.extensions.results.push(item); await persist() }
+  const axes = () => page.evaluate(() => ({ tick: syn3h.game.tick, suspended: syn3h.game.input.suspended,
+    axes: ['x', 'y', 'z', 'w'].map(key => syn3h.game.input.state[key]),
+    external: ['x', 'y', 'z'].map(key => syn3h.game.input.external[key]), fire: syn3h.game.input.state.fire }))
+  const neutral = value => { assert.deepEqual(value.axes, [0, 0, 0, 0]); assert.equal(value.fire, false) }
+  await entry.focus(); await page.keyboard.down('KeyW')
+  await ready(page, () => syn3h.game.input.state.y !== 0)
+  const driveBefore = await axes(); await keep({ phase: 'drive-held-before-open', state: driveBefore })
+  await entry.click(); await dialog.waitFor({ state: 'visible' })
+  const driveOpen = await axes(); neutral(driveOpen); assert.ok(driveOpen.suspended)
+  await dialog.locator('.about-back').click()
+  await ready(page, tick => syn3h.game.tick > tick, driveOpen.tick)
+  const driveClosed = await axes(); neutral(driveClosed)
+  await page.keyboard.up('KeyW'); await entry.focus(); await page.keyboard.down('KeyW')
+  await ready(page, () => syn3h.game.input.state.y !== 0)
+  const freshDrive = await axes(); await page.keyboard.up('KeyW')
+  await ready(page, () => syn3h.game.input.state.y === 0)
+  await keep({ phase: 'native-drive', driveBefore, driveOpen, driveClosed, freshDrive,
+    limit: 'No physical key repeat or vehicle-motion assertion; inertia is not canceled input' })
+
+  // Locate an actual exposed left-side canvas point, excluding the minimap. No
+  // synthetic pointer target bypasses the real candidate-region test.
+  const point = await page.evaluate(() => {
+    const map = document.querySelector('.shell-minimap')?.getBoundingClientRect()
+    for (const y of [innerHeight * .55, innerHeight * .4, innerHeight * .7]) for (const x of [8, innerWidth * .15]) {
+      if (document.elementFromPoint(x, y) === syn3h.game.canvas &&
+          !(map && x >= map.left && x <= map.right && y >= map.top && y <= map.bottom)) return { x, y }
+    }
+    throw Error('No exposed stick region; no synthetic overlay bypass')
+  })
+  const touchEvent = (type, id, target, x, y) => page.evaluate(({ type, id, target, x, y }) => {
+    const element = target === 'tag' ? document.querySelector('.touch-fire') : syn3h.game.canvas
+    element.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch',
+      pointerId: id, button: 0, buttons: type === 'pointerup' || type === 'pointercancel' ? 0 : 1, clientX: x, clientY: y }))
+  }, { type, id, target, x, y })
+  await touchEvent('pointerdown', 701, 'canvas', point.x, point.y)
+  await touchEvent('pointermove', 701, 'canvas', point.x, point.y - 50)
+  await ready(page, () => syn3h.game.input.external.y !== 0 && syn3h.game.input.state.y !== 0)
+  const stickBefore = await axes(); await entry.click(); await dialog.waitFor({ state: 'visible' })
+  const stickOpen = await axes(); neutral(stickOpen); assert.deepEqual(stickOpen.external, [0, 0, 0])
+  await dialog.locator('.about-back').click()
+  // Old held pointer movement must not restart a reset stick.
+  await touchEvent('pointermove', 701, 'canvas', point.x, point.y - 60)
+  await ready(page, tick => syn3h.game.tick > tick, stickOpen.tick)
+  const stickClosed = await axes(); neutral(stickClosed)
+  await touchEvent('pointerup', 701, 'canvas', point.x, point.y - 60)
+  await touchEvent('pointerdown', 702, 'canvas', point.x, point.y)
+  await touchEvent('pointermove', 702, 'canvas', point.x, point.y - 50)
+  await ready(page, () => syn3h.game.input.state.y !== 0)
+  const freshStick = await axes(); await touchEvent('pointerup', 702, 'canvas', point.x, point.y - 50)
+  await ready(page, () => syn3h.game.input.state.y === 0)
+  await keep({ phase: 'synthetic-stick', point, stickBefore, stickOpen, stickClosed, freshStick })
+
+  await page.locator('.touch-fire').waitFor({ state: 'visible' })
+  await touchEvent('pointerdown', 703, 'tag', 0, 0)
+  await ready(page, () => syn3hNet.bigRed.ready && syn3h.game.input.state.fire)
+  const tagBefore = await page.evaluate(() => ({ ...syn3hNet.bigRed.stats }))
+  await entry.click(); await dialog.waitFor({ state: 'visible' })
+  assert.equal((await axes()).fire, false)
+  await dialog.locator('.about-back').click()
+  const tagTick = (await axes()).tick
+  await ready(page, tick => syn3h.game.tick > tick, tagTick)
+  assert.equal((await axes()).fire, false)
+  assert.deepEqual(await page.evaluate(() => ({ ...syn3hNet.bigRed.stats })), tagBefore)
+  await touchEvent('pointerup', 703, 'tag', 0, 0)
+  const cooldown = await page.evaluate(() => syn3h.game.time + syn3h.params.get('bigRed.cooldown').value + .1)
+  await ready(page, time => syn3h.game.time >= time, cooldown)
+  await touchEvent('pointerdown', 704, 'tag', 0, 0); await ready(page, () => syn3hNet.bigRed.ready)
+  await touchEvent('pointerup', 704, 'tag', 0, 0)
+  await ready(page, sent => syn3hNet.bigRed.stats.sent === sent + 1, tagBefore.sent)
+  await keep({ phase: 'synthetic-held-TAG', before: tagBefore, afterFresh: await page.evaluate(() => ({ ...syn3hNet.bigRed.stats })) })
+
+  // Normal public parameter setup, disclosed as staged. Original zero-bot cases
+  // and their observer are finished before changing the roster.
+  record.extensions.botRecipe = await page.evaluate(() => {
+    const values = { 'bots.canDrive': false, 'bots.tagBeams': false, 'bots.fleet': 0, 'bots.count': 1 }
+    const before = Object.fromEntries(Object.keys(values).map(id => [id, syn3h.params.get(id).value]))
+    for (const [id, value] of Object.entries(values)) syn3h.params.set(id, value, 'local')
+    return { before, applied: values }
+  }); await persist()
+  await ready(page, () => {
+    const rows = [...syn3hNet.players.values()].filter(p => p.bot)
+    if (!syn3hNet.isHost || syn3h.bots.vehicles.length !== 1 || rows.length !== 1) return false
+    const vehicle = syn3hNet.vehicleOf(rows[0].id), systems = syn3h.game.systems, prior = window.guideCarryRoster
+    if (!vehicle || !systems.includes(vehicle)) return false
+    if (!prior || prior.vehicle !== vehicle || prior.id !== rows[0].id || prior.systems.length !== systems.length || prior.systems.some((s, i) => s !== systems[i])) {
+      window.guideCarryRoster = { vehicle, id: rows[0].id, systems: [...systems], frame: syn3h.game.frames }; return false
+    }
+    return syn3h.game.frames >= prior.frame + 2
+  })
+  await page.evaluate(async () => {
+    const { installAboutInputObservers } = await import('/tests/ui/about-input-observers.mjs')
+    const prior = window.guideCarryRoster, systems = syn3h.game.systems
+    if (!prior || prior.systems.length !== systems.length || prior.systems.some((s, i) => s !== systems[i]) ||
+        syn3hNet.vehicleOf(prior.id) !== prior.vehicle) throw Error('Carry roster changed before observer installation')
+    installAboutInputObservers()
+  })
+  const digit = await page.evaluate(() => syn3hNet.gear.list().indexOf('yoink') + 1)
+  assert.ok(digit > 0); await entry.focus(); await page.keyboard.press(`Digit${digit}`)
+  await ready(page, () => syn3hNet.gear.current === 'yoink' && !syn3h.game.input.state.fire)
+  const acquire = async () => {
+    const cooldown = await page.evaluate(() => syn3h.game.time + syn3h.params.get('yoink.cooldown').value + .1)
+    await ready(page, time => syn3h.game.time >= time, cooldown)
+    const staged = await page.evaluate(async () => {
+      if (syn3hNet.yoink.holding !== null) throw Error('Cannot stage a carried target')
+      const { aimFrom } = await import('/src/weapons/aim.ts')
+      const target = window.guideCarryRoster, vehicle = syn3hNet.vehicleOf(target.id)
+      if (vehicle !== target.vehicle) throw Error('Target changed')
+      const aim = aimFrom(syn3h.game, syn3h.player.body, syn3h.params.get('yoink.range').value, .4, 2.4, 0, true)
+      const position = aim.o.clone().addScaledVector(aim.d, 8)
+      vehicle.body.setTranslation(position, true); vehicle.body.setLinvel({ x: 0, y: 0, z: 0 }, true); vehicle.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
+      return { id: target.id, tick: syn3h.game.tick, position: position.toArray() }
+    })
+    await ready(page, staged => {
+      const vehicle = syn3hNet.vehicleOf(staged.id), p = vehicle?.body.translation()
+      return syn3h.game.tick >= staged.tick + 3 && p && vehicle.object.position.distanceTo(p) < 2
+    }, staged)
+    await entry.focus(); await page.keyboard.down('KeyL')
+    await ready(page, id => syn3hNet.yoink.holding === id, staged.id)
+    await keep({ phase: 'actual-acquisition', staged, acquired: await page.evaluate(() => aboutInputObserver.snapshot()) })
+    return staged.id
+  }
+  const target = await acquire()
+  await page.evaluate(target => aboutInputObserver.arm('guide-yoink-open', 'releaseCursor', target), target)
+  // Check again in the actual native click turn, before Shell cancels the carry.
+  await page.evaluate(target => {
+    document.querySelector('.rail-about').addEventListener('click', () => {
+      const state = aboutInputObserver.snapshot()
+      window.guideCarryBeforeClick = state
+      if (state.holding !== target || state.acquiredAt === null || (state.holdTime > 0 && state.time - state.acquiredAt >= state.holdTime - .5))
+        throw Error('Carry expired before actual About entry')
+    }, { capture: true, once: true })
+  }, target)
+  await entry.click(); await dialog.waitFor({ state: 'visible' })
+  await ready(page, () => aboutInputObserver.records.some(r => r.label === 'guide-yoink-open' && (r.firstStep || r.lifecycleFailure)))
+  const canceled = await page.evaluate(() => ({ preClick: window.guideCarryBeforeClick,
+    event: aboutInputObserver.records.find(r => r.label === 'guide-yoink-open') }))
+  await keep({ phase: 'live-yoink-modal-cancel', ...canceled })
+  assert.equal(canceled.event.lifecycleFailure ?? null, null)
+  assert.equal(canceled.preClick.holding, target)
+  for (const phase of [canceled.event.immediate, canceled.event.stepEntry, canceled.event.firstStep]) {
+    assert.equal(phase.holding, null); assert.equal(phase.yoink.flings, canceled.preClick.yoink.flings)
+    assert.equal(phase.yoink.drops, canceled.preClick.yoink.drops + 1)
+    assert.deepEqual(phase.yoinkSends.slice(canceled.preClick.yoinkSends.length).map(({ kind, target }) => ({ kind, target })), [{ kind: 'drop', target }])
+  }
+  await dialog.locator('.about-back').click(); assert.equal((await axes()).fire, false)
+  await page.keyboard.up('KeyL')
+  const freshTarget = await acquire()
+  const freshBefore = await page.evaluate(target => aboutInputObserver.arm('guide-yoink-fresh-release', 'keyup', target), freshTarget)
+  await page.keyboard.up('KeyL')
+  await ready(page, () => aboutInputObserver.records.some(r => r.label === 'guide-yoink-fresh-release' && (r.firstStep || r.lifecycleFailure)))
+  const fresh = await page.evaluate(() => aboutInputObserver.records.find(r => r.label === 'guide-yoink-fresh-release'))
+  assert.equal(fresh.lifecycleFailure ?? null, null); assert.equal(fresh.firstStep.holding, null)
+  assert.equal(fresh.firstStep.yoink.flings, freshBefore.yoink.flings + 1)
+  assert.deepEqual(fresh.firstStep.yoinkSends.slice(freshBefore.yoinkSends.length).map(({ kind, target }) => ({ kind, target })), [{ kind: 'fling', target: freshTarget }])
+  await keep({ phase: 'live-yoink-fresh-positive', fresh })
+  record.extensions.diagnostics = await page.evaluate(() => aboutInputObserver.diagnostics())
+  assert.deepEqual(record.extensions.diagnostics.lifecycleFailures, [])
+  for (const key of ['droppedEvents', 'droppedLifecycle', 'droppedFailures']) assert.equal(record.extensions.diagnostics[key], 0)
+  await page.evaluate(() => { aboutInputObserver.restore(); delete window.guideCarryRoster })
+  await persist()
+}
 try {
   report.rawSourceProvenance = await provenance()
   await persist()
@@ -221,6 +389,7 @@ try {
     }
     await dialog.locator('.shell-credits summary').click()
     await dialog.locator('.shell-credits li').last().scrollIntoViewIfNeeded()
+    await bounded(page.screenshot({ path: `${out}/${touch ? 'touch' : 'desktop'}-guide-credits.png` }), 15000)
     await page.keyboard.press('Escape')
     assert.ok(await entry.evaluate(el => el === document.activeElement))
     assert.equal((await state(page)).locked, false)
@@ -243,6 +412,7 @@ try {
     await page.locator('.rail-pause').click()
     const pauseEntry = page.locator('.pause-about')
     await pauseEntry.waitFor({ state: 'visible' })
+    await bounded(page.screenshot({ path: `${out}/${touch ? 'touch' : 'desktop'}-paused-entry.png` }), 15000)
     const beforePaused = await state(page)
     assert.ok(beforePaused.paused); assert.equal(beforePaused.reason, 'user')
     await pauseEntry.click()
@@ -258,6 +428,7 @@ try {
     assert.equal(afterPaused.url, beforePaused.url); assert.equal(afterPaused.id, beforePaused.id)
     assert.ok(await pauseEntry.evaluate(el => el === document.activeElement))
     await checkpoint('paused-close', { afterPaused })
+    await bounded(page.screenshot({ path: `${out}/${touch ? 'touch' : 'desktop'}-paused-focus.png` }), 15000)
     // Close while hidden, then resume the same reason: no stranded suspension.
     await page.evaluate(() => syn3h.pause.resume('user'))
     await entry.click()
@@ -283,7 +454,10 @@ try {
     record.trace = await page.evaluate(() => ({ record: guideTrace.record, diagnostics: guideTrace.diagnostics() }))
     assert.deepEqual(record.trace.diagnostics.lifecycleFailures, [])
     for (const key of ['droppedEvents', 'droppedLifecycle', 'droppedFailures']) assert.equal(record.trace.diagnostics[key], 0)
-    await page.evaluate(() => guideTrace.restore())
+    await page.evaluate(() => { guideTrace.restore(); delete window.guideTrace })
+    // Preserve original case evidence before running separately labelled extensions.
+    await checkpoint('original-assertions-complete', { finalState })
+    if (touch) await modalExtensions(page, record, entry, dialog)
     await checkpoint('before-context-close', { finalState })
     await bounded(context.close())
     await drain(casePending)
@@ -300,10 +474,10 @@ try {
 finally {
   for (const page of pages) if (!page.isClosed()) {
     try {
-      records.get(page).trace = await page.evaluate(() => window.guideTrace ? ({ record: guideTrace.record, diagnostics: guideTrace.diagnostics() }) : null)
+      records.get(page).failureTrace = await page.evaluate(() => window.guideTrace ? ({ record: guideTrace.record, diagnostics: guideTrace.diagnostics() }) : window.aboutInputObserver ? ({ records: aboutInputObserver.records, diagnostics: aboutInputObserver.diagnostics() }) : null)
       await persist()
     } catch (error) { report.errors.push(`Partial trace: ${error}`) }
-    try { await page.evaluate(() => window.guideTrace?.restore()) } catch (error) { report.errors.push(String(error)) }
+    try { await page.evaluate(() => { if (window.guideTrace) guideTrace.restore(); else window.aboutInputObserver?.restore() }) } catch (error) { report.errors.push(String(error)) }
   }
   try { if (browser) await bounded(browser.close(), 15000) } catch (error) { report.errors.push(String(error)) }
   // Browser closed: no new response callbacks should start; drain all queued work.
