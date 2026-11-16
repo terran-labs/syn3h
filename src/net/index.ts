@@ -230,6 +230,12 @@ export class NetClient implements System {
   private wasDriving = false
   private welcomed = false
   private everWelcomed = false
+  /**
+   * World settings changed here while the connection was down, newest value each: the socket
+   * drops what is sent while it is closed, and the welcome then replaces our world with the
+   * room's. A host gets them back on the next welcome (resendUnsent).
+   */
+  private readonly unsentWorld = new Map<string, ParamValue>()
   private sendTimer = 0
   private pingTimer = 0
   private pingsSent = 0
@@ -1414,6 +1420,7 @@ export class NetClient implements System {
           this.ctx.audio?.play('materialize', s.position)
         }
         this.everWelcomed = true
+        this.resendUnsent()
         this.event(joinedText(msg.room, this.players.get(msg.id)?.name))
         break
       }
@@ -1524,9 +1531,12 @@ export class NetClient implements System {
   }
 
   private onParamChange(id: string, value: ParamValue, source: string): void {
-    if (source === 'remote' || !this.connected) return
+    if (source === 'remote') return
     const p = params.get(id)
     if (!p || p.def.scope !== 'world') return
+    // Before the first welcome the hello carries our world; after it, a change made while the
+    // connection is down would be dropped, so it waits for the next welcome.
+    if (!this.connected) { if (this.everWelcomed) this.unsentWorld.set(id, value); return }
     // Presets are local actions too, so they sync like slider moves.
     this.send({ type: 'param', id, value })
   }
@@ -1541,6 +1551,18 @@ export class NetClient implements System {
     this.pingsSent = 0
     for (const id of [...this.remotes.keys()]) this.removeRemote(id)
     if (retrying) this.event('Disconnected, reconnecting')
+  }
+
+  /**
+   * After a welcome: the world settings changed while we were away are set again, and so sent,
+   * if we are the host. Anyone else's changes were never the room's to take and are dropped.
+   */
+  private resendUnsent(): void {
+    if (!this.unsentWorld.size) return
+    const pending = [...this.unsentWorld]
+    this.unsentWorld.clear()
+    if (this.game.host !== this.id) return
+    for (const [id, value] of pending) params.set(id, value)
   }
 
   /** Our place continued on another connection: stop here, as for a full room, and say so. */
