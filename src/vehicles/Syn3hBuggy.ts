@@ -149,6 +149,8 @@ const REGEN_TORQUE_MARGIN = 1.25
 const CONTACT_TOUCH = 0.01
 /** How fast (1/s) water drags the wheels toward the body's speed while floating. */
 const WATER_MOTOR_DRAG = 6
+/** The same for thick lava, at lava.thickness 1. */
+const LAVA_MOTOR_DRAG = 6
 /** Fastest a kinematic copy is carried (m/s); see carriedVelocity(). */
 const CARRIED_MAX = 200
 /**
@@ -545,9 +547,10 @@ export class Syn3hBuggy extends Vehicle {
     // tyres bite again at the shore.
     // Water does the same more gently, so the wheels are not at full speed when they touch
     // the beach. inLiquid is last step's value here.
-    if (this.lavaDepth > 0 || this.inLiquid) {
+    const hull = this.liquidState.hull
+    if (this.lavaDepth > 0 || this.inLiquid || hull.mean > 0) {
       const vf = ub.inverseTransformDirectionUnity(ub.velocity, this.v1).z
-      const drag = this.lavaDepth > 0 ? 2 * lavaThickness.value : WATER_MOTOR_DRAG
+      const drag = this.lavaDepth > 0 || (hull.mean > 0 && hull.liquid === 'lava') ? LAVA_MOTOR_DRAG * Math.max(0.5, lavaThickness.value) : WATER_MOTOR_DRAG
       this.motorSpeed = vf + (this.motorSpeed - vf) * Math.exp(-drag * dt)
     }
     // Next-gen updates the motor from all four wheels at once (Jacobi). Updating it wheel by
