@@ -303,18 +303,18 @@ export class Inspector {
    */
   private vehicleSwitch(): HTMLElement {
     const wrap = document.createElement('div'); wrap.className = 'wi-vehicle'
-    const group = document.createElement('div'); group.className = 'wi-seg'; group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-label', 'Vehicle')
+    const group = document.createElement('div'); group.className = 'wi-vehicle-picker'; group.setAttribute('role', 'radiogroup'); group.setAttribute('aria-label', 'Vehicle')
     for (const option of this.options.vehicles().options) {
-      const button = document.createElement('button'); button.type = 'button'; button.className = 'wi-seg-option'; button.setAttribute('role', 'radio')
+      const button = document.createElement('button'); button.type = 'button'; button.className = 'wi-vehicle-option'; button.setAttribute('role', 'radio')
       button.dataset.segVehicle = option.id; button.setAttribute('aria-checked', 'false'); button.tabIndex = -1
       button.innerHTML = `${option.glyph ? `<svg viewBox="0 0 24 14" aria-hidden="true" focusable="false"><path d="${option.glyph}"/></svg>` : ''}<span></span>`
       button.querySelector('span')!.textContent = option.label
       group.append(button)
     }
     const choose = (button: HTMLElement | null) => { if (button?.dataset.segVehicle && !button.matches('[aria-disabled=true]')) this.options.onVehicle(button.dataset.segVehicle) }
-    group.addEventListener('click', event => choose((event.target as Element).closest<HTMLElement>('.wi-seg-option')), { signal: this.abort.signal })
+    group.addEventListener('click', event => choose((event.target as Element).closest<HTMLElement>('.wi-vehicle-option')), { signal: this.abort.signal })
     group.addEventListener('keydown', event => {
-      const buttons = [...group.querySelectorAll<HTMLElement>('.wi-seg-option')], at = buttons.indexOf(document.activeElement as HTMLElement)
+      const buttons = [...group.querySelectorAll<HTMLElement>('.wi-vehicle-option')], at = buttons.indexOf(document.activeElement as HTMLElement)
       const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key]
       const to = step ? (at + step + buttons.length) % buttons.length : event.key === 'Home' ? 0 : event.key === 'End' ? buttons.length - 1 : -1
       if (to < 0 || at < 0) return
@@ -322,7 +322,7 @@ export class Inspector {
       event.preventDefault(); event.stopPropagation()
       buttons[to].focus(); choose(buttons[to])
     }, { signal: this.abort.signal })
-    const note = document.createElement('p'); note.className = 'wi-seg-note'; note.setAttribute('aria-live', 'polite')
+    const note = document.createElement('p'); note.className = 'wi-vehicle-note'; note.setAttribute('aria-live', 'polite')
     wrap.append(group, note)
     if (!this.options.colors || !this.options.onColor) return wrap
     // Each swatch opens the platform's own colour picker; the vehicle repaints while it is dragged.
@@ -345,7 +345,7 @@ export class Inspector {
   /** Keep the picker's checked, pending and unavailable states in step with the game. */
   private syncVehicles(): void {
     const vehicles = this.options.vehicles()
-    for (const button of this.vehicleControl.querySelectorAll<HTMLElement>('.wi-seg-option')) {
+    for (const button of this.vehicleControl.querySelectorAll<HTMLElement>('.wi-vehicle-option')) {
       const id = button.dataset.segVehicle!, checked = id === vehicles.current, pending = id === vehicles.pending
       if (button.getAttribute('aria-checked') !== String(checked)) button.setAttribute('aria-checked', String(checked))
       // Roving focus: the checked segment is the one Tab reaches.
@@ -356,7 +356,7 @@ export class Inspector {
       const blocked = Boolean(vehicles.note) && !checked
       if (button.matches('[aria-disabled=true]') !== blocked) { if (blocked) button.setAttribute('aria-disabled', 'true'); else button.removeAttribute('aria-disabled') }
     }
-    const note = this.vehicleControl.querySelector('.wi-seg-note')!, text = vehicles.pending ? 'Switching…' : vehicles.note ?? ''
+    const note = this.vehicleControl.querySelector('.wi-vehicle-note')!, text = vehicles.pending ? 'Switching…' : vehicles.note ?? ''
     if (note.textContent !== text) note.textContent = text
   }
   /**
