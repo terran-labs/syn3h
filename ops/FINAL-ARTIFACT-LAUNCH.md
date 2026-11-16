@@ -70,3 +70,28 @@ Confirm the exact sanitized environment needed by installed Wrangler without hid
 credential/config discovery. Then implement the pure command planner and runner in
 coordinator-owned release tooling, followed by independently allocated dry-run parity.
 No production deployment, baseline measurement or installation is authorized by this plan.
+
+## Reviewed snapshot preparation boundary
+
+The first package snapshot will copy the entire resolved node_modules directory as a
+conservative superset. Copying the checkout's node_modules symlink is not a snapshot.
+Preserve relative package topology, native binaries and data files; manifest each path,
+node type, mode, file bytes and symlink target. Reject special files and links that
+resolve outside the snapshot. Include the final artifact inspector and its parser.
+Verify the snapshot after copying and before use; no npm, npx, install or build may run
+during measurement or upload. Package lookup must not fall back to ancestor directories.
+This chooses simple preparation over a custom dependency resolver, not minimal disk use.
+
+Node preparation remains a separate blocker. The installed Homebrew executable links
+external libnode and other Homebrew libraries, so copying or hashing that executable
+alone cannot establish a self-contained runtime. A proposed self-contained distribution
+must first receive version, origin and native-link review. Alternatively, retaining the
+current runtime requires a reviewed resolved native-library inventory, OS build binding
+and rechecks, explicitly described as external dependencies. Neither option is selected
+or installed by this document. Pure command construction can proceed while operational
+launch remains blocked on that reviewed identity.
+
+The command planner must reject hostile inherited argv/environment, escaping links,
+changed tool identities and unreviewed output/port/tag fields in synthetic tests. Those
+tests cannot substitute for actual no-bundle output parity, local consumption or deployed
+module/configuration verification.
