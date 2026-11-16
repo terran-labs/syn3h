@@ -1,0 +1,34 @@
+# Two-peer About source feasibility
+
+Source-only preparation on c8926387ae5da8199b7825708d42deddaa4e25a2. No executable fixture is supplied yet. The native two-peer setup needs a reviewed focus/lifecycle contract before it can claim that both attachments and a live projectile coexist immediately before A opens About. No tests, browser, server, network or capture ran.
+
+## Concrete setup blocker
+
+main.ts:105-120 registers capture-phase window blur, pagehide and hidden visibility cancellation. Gear.ts:177-181 full cancellation calls Bungee.cancel. Moving native control between peers can therefore destroy a previously established local cord if that movement produces window blur or hidden visibility. This is an intended safety path, not a product defect to disable.
+
+The existing single-peer native recipe requires canvas pointer lock, native camera movement, Digit4 and KeyL. It does not prove that both real peers remain active and retain their attachments while input moves from A to B and back. Neither separate contexts nor separate browser processes is source proof of the required browser focus behavior. Actual lifecycle dispatch depends on the allocated browser arrangement. This memo does not claim every arrangement fails or that a blur occurred historically.
+
+Before completing the fixture, choose and review an arrangement whose native input can address both peers without invoking cancellation on the idle peer. A separately authorized capability check would record native blur/pagehide/visibilitychange, actual document.hidden/hasFocus/pointerLockElement, each peer's tick progression and local cord identity during the exact A-to-B-to-A input sequence. Any cord loss, pause or setup failure fails immediately. Do not suppress events, change document state, remove listeners, freeze simulation, rebuild a lost cord or rescue the sequence. An arrangement that cannot meet these prerequisites must remain blocked.
+
+The prerequisite is not a request to loosen the real-shot survival assertion. No runtime allocation is requested by this source handoff.
+
+## Supported source paths and remaining recipe work
+
+- Bungee.ts:253-271 normal launch uses aimFrom and adds vehicle velocity to hook velocity. aim.ts:37-44 and61-89 use the camera only while the canvas owns pointer lock; unlocked input aims along the vehicle body. ChaseCamera.ts:200-204 changes camera yaw/pitch from native movement while captured or dragging. No direct launch(direction), camera writes, cord insertion or forced attachment may substitute.
+- The reviewed Grapple reach package demonstrates a single-peer candidate: supported bungee.length300, native pointer lock, Digit4, downward mouse movement, read-only aimFrom checking a fixed ground hit within effective reach, then KeyL. Its runtime base and broader fixture setup are separate from this accepted About source. Reuse only a reviewed normal-control recipe, not its private staging or old direct-launch examples. Recheck effective parameters and an actual ground hit for each peer; do not assume a pixel delta always reaches terrain.
+- main.ts:226 uses cancelSelectionActions on gear changes. Its selection path preserves the cord, so B may select Plasma Tag after attachment through native controls. Full modal/lifecycle cancellation remains different.
+- net/index.ts:647-650 fires normal Tag from sampled fire and beamAimDirection. net/index.ts:679-694 assigns the Lasers.aim identity, locally spawns and sends the shot. A native KeyL hold/release must produce the shot; invoking fire or spawn is excluded.
+- Lasers.ts:76-77 stores the TS-private shots inventory. Read-only observation of shooter/id/pos/vel/age/life/red is explicitly disclosed. Bungee.ts:170 stores cords by owner; read-only remote map observation can establish B's replicated cord. Public mine/attached alone cannot identify a remote cord. No writes, constructors or object replacement.
+- params.ts:9-18 defaults Tag speed180 and gravity0. laserLifetime at38-41 gives8.68 seconds at180. Lasers.ts:155-165 adds positive vehicle boost, and239 onward expires or collides shots in ordinary fixed steps. Lifetime alone does not guarantee a safe trajectory. Upward camera aim and read-only ray/path observations must establish actual muzzle direction, terrain/body clearance, current velocity and remaining lifetime on both peers. A clear initial ray alone is not proof against later moving-body collision. Collision or expiry before the required snapshots fails the setup, without respawn or retry.
+
+Once focus feasibility is established, derive a one-attempt upward B shot from native mouse aim, verify its actual velocity/position and identity on both peers, then click A's reachable native session About control. The path must leave enough measured lifetime for the actual click and first ordinary step, not an assumed8.68-second window. No speed/lifetime override is proposed. Target terrain/heading/pixel values remain unestablished for this two-peer arrangement; inventing them would only create another ungrounded fixture.
+
+## Required eventual evidence, unchanged scope
+
+Two real peers in a unique room, supported shared-world bots0 before Game creation, stable distinct IDs, matching two-member rosters and source/world identity. No host or role writes. Both normal-control ground cords must be attached and replicated before B's shot. Record the same identified live(shooter,id) projectile on both peers immediately before the native A About click. A capture-phase click precondition and queued post-handler scalar snapshot must bind A's observations to that real event; a later evaluation cannot stand in for event-turn evidence. Record B's own ordinary-step snapshots and temporal ordering explicitly; cross-page evaluations are not simultaneous.
+
+After the first ordinary fixed step, require A's local cord gone, B's owned and A-replicated B cord unchanged in ownership/attachment identity, the identified projectile still live on both peers, normal age/position advancement, and stable sessions. No aggregate-count substitute. Close A's About normally, then require a fresh normal-control A attachment as the positive control. Missing/expired/collided shot or failed attachment stays failure; no retries or rescue.
+
+Reuse existing exact served/document/module provenance, bounded evidence drains, passive/restored observation and the reviewed dedicated supervisor. Planned fixture remains480s within590s total, with no budget increase. New executable ownership, once feasible, is only tests/ui/in-play-about-two-peer.mjs plus this plan. Existing accepted About009 source, fixture and receipts remain unchanged; no launcher edits were made.
+
+Delayed native pointer-lock completion, actual OS visibility and physical-device coverage remain separate gaps. This source blocker does not reopen the accepted About009 layout/modal scope and does not claim new runtime acceptance.
