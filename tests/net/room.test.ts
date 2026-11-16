@@ -1205,3 +1205,79 @@ describe('Room does not believe absurd speeds', () => {
     expect(b.peer.all('fire')).toHaveLength(2)
   })
 })
+
+describe('Room rejoin when the new hello beats the old close (game.rejoin)', () => {
+  const SECRET_A = 'a'.repeat(32)
+  const SECRET_B = 'b'.repeat(32)
+  const here = () => state([0, 0, 0])
+  /** Two players, A the host and "it" with a score in Tag; both have been talking. */
+  function setup() {
+    const a = join('A', { 'game.mode': 1 }, { resume: SECRET_A })
+    const b = join('B', {}, { resume: SECRET_B })
+    for (let t = 0; t < 4; t++) { clock += 250; room.receive(a.peer, here()); room.receive(b.peer, here()) }
+    return { a, b }
+  }
+
+  it('takes over a quiet place: same id, host and "it", one entry, the old socket closed', () => {
+    const { a, b } = setup()
+    const before = b.peer.last('game')?.game ?? a.peer.last('welcome')!.game
+    // A's connection dies without a close reaching the room; B keeps talking.
+    for (let t = 0; t < 3; t++) { clock += 1000; room.receive(b.peer, here()) }
+    const back = join('A', {}, { resume: SECRET_A })
+    const welcome = back.peer.last('welcome')!
+    expect(back.id).toBe(a.id)
+    expect(welcome.game.host).toBe(a.id)
+    expect(welcome.game.it).toBe(before.it)
+    expect(welcome.players.map((p) => p.id)).toEqual([a.id, b.id])
+    expect(room.playerCount).toBe(2)
+    expect(room.heldCount).toBe(0)
+    expect(a.peer.closed).toBe(true)
+    expect(b.peer.all('leave')).toEqual([])
+    // It is the full player: its states reach B under its own id.
+    room.receive(back.peer, state([1, 2, 3]))
+    expect(decodeState(b.peer.bin.at(-1)!)!.id).toBe(a.id)
+  })
+
+  it('ignores the old close when it arrives after the takeover: no ghost, no leave, no new host', () => {
+    const { a, b } = setup()
+    for (let t = 0; t < 3; t++) { clock += 1000; room.receive(b.peer, here()) }
+    const back = join('A', {}, { resume: SECRET_A })
+    room.disconnect(a.peer)
+    for (let t = 0; t < 40; t++) { clock += 1000; room.receive(back.peer, here()); room.receive(b.peer, here()) }
+    expect(room.playerCount).toBe(2)
+    expect(room.heldCount).toBe(0)
+    expect(b.peer.all('leave')).toEqual([])
+    expect(b.peer.last('game')?.game.host ?? back.peer.last('welcome')!.game.host).toBe(a.id)
+    // Its settings still count as the host's.
+    send(back.peer, { type: 'lock', locked: true })
+    expect(b.peer.last('game')!.game.locked).toBe(true)
+  })
+
+  it('keeps a live duplicate tab a stranger, and the original keeps the host role', () => {
+    const { a, b } = setup()
+    // A is still talking when a copy of its tab says hello with the same secret.
+    clock += 200
+    room.receive(a.peer, here())
+    const copy = join('Copy', {}, { resume: SECRET_A })
+    expect(copy.id).not.toBe(a.id)
+    expect(a.peer.closed).toBe(false)
+    expect(copy.peer.last('welcome')!.game.host).toBe(a.id)
+    expect(room.playerCount).toBe(3)
+    room.disconnect(copy.peer)
+    expect(b.peer.last('leave')).toEqual({ type: 'leave', id: copy.id })
+  })
+
+  it('leaves the ordinary order alone: close, held place, then the hello takes it back', () => {
+    const { a, b } = setup()
+    room.disconnect(a.peer)
+    expect(room.heldCount).toBe(1)
+    clock += 2000
+    room.receive(b.peer, here())
+    const back = join('A', {}, { resume: SECRET_A })
+    expect(back.id).toBe(a.id)
+    expect(back.peer.last('welcome')!.game.host).toBe(a.id)
+    expect(room.heldCount).toBe(0)
+    expect(room.playerCount).toBe(2)
+    expect(b.peer.all('leave')).toEqual([])
+  })
+})

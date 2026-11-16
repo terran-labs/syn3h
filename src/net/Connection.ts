@@ -7,6 +7,11 @@ export class Connection {
   state: ConnectionState = 'closed'
   /** Seconds until the next attempt while closed, for the HUD. */
   retryAt = 0
+  /** Opens after the first, so diagnostics can tell a dropped and recovered connection. */
+  reconnects = 0
+  /** The last few closes, newest last: what ended each socket, for diagnostics. */
+  readonly closes: { code: number; reason: string; clean: boolean; wasOpen: boolean; at: number }[] = []
+  private opened = false
   onOpen: () => void = () => {}
   onText: (text: string) => void = () => {}
   onBinary: (data: ArrayBuffer) => void = () => {}
@@ -53,6 +58,8 @@ export class Connection {
       if (this.ws !== ws || this.stopped) return
       this.state = 'open'
       this.backoff = 500
+      if (this.opened) this.reconnects++
+      this.opened = true
       this.onOpen()
     }
     ws.onmessage = (e) => {
@@ -60,10 +67,12 @@ export class Connection {
       if (typeof e.data === 'string') this.onText(e.data)
       else if (e.data instanceof ArrayBuffer) this.onBinary(e.data)
     }
-    ws.onclose = () => {
+    ws.onclose = (e) => {
       if (this.ws !== ws) return
       this.ws = null
       const wasOpen = this.state === 'open'
+      this.closes.push({ code: e.code, reason: e.reason, clean: e.wasClean, wasOpen, at: Math.round(performance.now()) })
+      if (this.closes.length > 10) this.closes.shift()
       this.state = 'closed'
       if (wasOpen) this.onClose()
       this.scheduleRetry()

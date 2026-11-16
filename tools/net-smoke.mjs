@@ -107,6 +107,7 @@ async function captureFailure() {
             network: { connected: n?.connected ?? null, welcomed: n?.welcomed ?? null,
               state: n?.conn?.state ?? null, socketState: n?.conn?.ws?.readyState ?? null,
               bufferedBytes: n?.conn?.ws?.bufferedAmount ?? null, retryAt: n?.conn?.retryAt ?? null,
+              reconnects: n?.conn?.reconnects ?? null, closes: n?.conn?.closes ?? null,
               clockSynced: n?.clock?.synced ?? null, rtt: n?.clock?.rtt ?? null, stats: n?.stats ?? null,
               remotes: n?.remotes ? [...n.remotes.entries()].map(([id, r]) => ({ id, responding: r.responding, paused: r.paused, mode: r.sample?.mode, newest: r.buffer?.newest?.t })) : [] },
             startup: window.syn3hStartup ?? null,
