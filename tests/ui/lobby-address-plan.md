@@ -63,8 +63,8 @@ is the full allowed hash inventory, including conditional worklets, workers and 
 chunks. `requiredResponses` contains the document and actual external script and
 stylesheet references parsed from the built HTML, resolved against that entry URL.
 Only that required set must be observed. Every observed conditional executable/style
-response is still hashed and checked against the allowed inventory; unexpected paths
-fail. Context-level events and path/MIME classification cover observed worklet or
+response is checked against the allowed hash inventory, either by its 200 body or
+the strict 304 predecessor rules below; unexpected paths fail. Context-level events and path/MIME classification cover observed worklet or
 worker responses reported as other/fetch rather than script. An absent conditional
 request is not execution coverage. Each entry has its own map because frozen pathname
 rewriting may change asset paths.
@@ -80,7 +80,8 @@ setting; no private state, request interception or product behavior is changed.
 
 The world query does not replace the explicit entry-seed check: `prepareResume` runs
 after world decoding and reapplies the saved host world and seed 42 when the unchanged
-entry seed is 1. The saved world retains zero bots. Invitations still encode the
+entry seed is 1. The observed saved world contains only the changed seed 42; decoding the original
+entry world reapplies zero bots before resume restores that saved seed. Invitations still encode the
 current world through the production encoder and retain room/version; they need not
 equal the original seed-1 recipe after the host edits the seed.
 
@@ -200,3 +201,22 @@ multiplayer invitation and About licence markup match the selectors, and ResumeS
 saves entrySearch independently of the cleared address. Those interactions still need
 runtime validation. Gate 03 recorded startup state only, not Tank design or cache state;
 its absent Tank requests alone were not proof of a network or selector failure.
+
+## Conditional reload response evidence
+
+Gate 04 remains failed partial evidence. Its earlier JS/CSS 200 bodies were hashed,
+but request validators were not recorded, so its 304 responses cannot be accepted
+retroactively. Installed Playwright rejects body reads for all 3xx responses.
+
+The prepared correction drains initial responses before reload. Only manifest-listed
+JS/CSS may reuse an earlier same-context, exact-URL GET 200 representation whose body
+matched its expected hash. Before verdicts, bounded header reads record response ETag,
+request If-None-Match, normalized Vary names and digests of named request values.
+Raw varying values, cookies, authorization and token headers are not retained.
+A 304 requires equal strong ETags, a single exact matching If-None-Match, unchanged
+Vary without a wildcard, and equal named request-value digests. Missing or weak
+validators, redirects, service workers, external/unknown paths or mismatches fail.
+The record names reuseSha and prior200Sequence, never a 304 body hash. There is no
+304 body read, refetch, cache suppression or Last-Modified-only fallback. All other
+status/path/hash checks, including the isolated missing Buggy 404, remain unchanged.
+This source correction has syntax/whitespace checks only, not browser acceptance.

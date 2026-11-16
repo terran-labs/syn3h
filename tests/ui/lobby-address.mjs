@@ -163,10 +163,19 @@ async function runCase(browser, mode, entry, missing = false) {
   assert.ok(requiredBodies.includes(new URL(entry.url).pathname), 'document must be required')
   for (const path of requiredBodies) assert.match(expectedBodies[path] ?? '', /^[a-f0-9]{64}$/, 'required hash missing: ' + path)
   const seen = new Set()
+  // Per-context verified representations only. A 304 has no body hash of its own.
+  const verified200 = new Map()
+  let responseSequence = 0
+  const strongETag = value => typeof value === 'string' && /^"[\x21\x23-\x7e\x80-\xff]*"$/.test(value)
+  const varyNames = value => value ? value.split(',').map(v => v.trim().toLowerCase()).sort() : []
+  // Persist digests, never raw varying values (which may contain credentials).
+  const varyValues = (names, headers) => Object.fromEntries(names.map(name =>
+    [name, Object.hasOwn(headers, name) ? hash(headers[name]) : null]))
   page.on('pageerror', e => result.errors.push(e.message))
   page.on('websocket', ws => { result.sockets.push(ws.url()); if (new URL(ws.url()).pathname.includes('vite')) result.errors.push('HMR websocket') })
   context.on('request', request => result.requests.push({ url: request.url(), type: request.resourceType() }))
   context.on('response', response => jobs((async () => {
+    const sequence = ++responseSequence
     const request = response.request(), url = new URL(response.url()), type = request.resourceType()
     // Worklets/workers can be reported as 'other' or 'fetch', not 'script'.
     // Observe the entire isolated context and classify by path/MIME as well as type.
@@ -177,15 +186,46 @@ async function runCase(browser, mode, entry, missing = false) {
       assert.ok(!executable, 'unexpected external executable/style response'); return
     }
     if (!executable && !inventoried && !url.pathname.includes('/models/') && !url.pathname.includes('/brand/licenses/')) return
+    // Capture evidence before any status/validator verdict, within the fixture deadline.
+    const [requestHeaders, responseHeaders] = await bounded(Promise.all([
+      request.allHeaders(), response.allHeaders(),
+    ]), 'response validators')
+    const vary = varyNames(responseHeaders.vary)
+    const record = { sequence, url: url.href, type, status: response.status(), method: request.method(),
+      validators: { etag: responseHeaders.etag ?? null, ifNoneMatch: requestHeaders['if-none-match'] ?? null,
+        vary, varyingRequestValueSha256: varyValues(vary, requestHeaders) } }
+    result.responses.push(record)
     assert.equal(request.redirectedFrom(), null, 'no response redirects')
     assert.equal(response.fromServiceWorker(), false)
     const isMissing = missing && url.pathname === `/v/${m.version}${m.missing.path}`
+    if (response.status() === 304) {
+      assert.ok(inventoried && /\.(?:m?js|css)$/i.test(url.pathname), '304 restricted to inventoried JS/CSS')
+      assert.equal(request.method(), 'GET')
+      const prior = verified200.get(url.href)
+      assert.ok(prior && prior.sequence < sequence, '304 requires earlier same-context verified GET 200')
+      assert.equal(prior.sha256, expectedBodies[url.pathname])
+      assert.ok(strongETag(prior.etag) && strongETag(record.validators.etag), 'strong ETags required')
+      assert.equal(record.validators.etag, prior.etag, '304 response ETag matches verified representation')
+      assert.equal(record.validators.ifNoneMatch, prior.etag, 'single exact If-None-Match required')
+      assert.ok(vary.every(name => /^[!#$%&'\*+.^_`|~0-9a-z-]+$/.test(name) && name !== '*'), 'valid non-wildcard Vary names required')
+      assert.equal(new Set(vary).size, vary.length, 'duplicate Vary names are ambiguous')
+      assert.deepEqual(vary, prior.vary, 'unchanged Vary')
+      assert.deepEqual(record.validators.varyingRequestValueSha256, prior.varyValues, 'matching Vary request values')
+      record.reuseSha = prior.sha256
+      record.prior200Sequence = prior.sequence
+      seen.add(url.pathname)
+      return // Never read/refetch a 304 body or call its payload hashed.
+    }
     assert.equal(response.status(), isMissing ? 404 : 200, url.href)
     const sha256 = hash(await bounded(response.body(), 'response body'))
-    result.responses.push({ url: url.href, type, status: response.status(), sha256 })
+    record.sha256 = sha256
     if (executable || inventoried) {
       assert.equal(sha256, expectedBodies[url.pathname], 'actual browser artifact bytes: ' + url.pathname)
       seen.add(url.pathname)
+      if (request.method() === 'GET' && /\.(?:m?js|css)$/i.test(url.pathname)) {
+        verified200.set(url.href, { sequence, sha256, etag: record.validators.etag,
+          vary, varyValues: record.validators.varyingRequestValueSha256 })
+      }
     } else if (!isMissing) {
       const prefix = `/v/${m.version}`
       assert.ok(url.pathname.startsWith(prefix + '/'), 'unversioned or wrong-version resource: ' + url.pathname)
@@ -325,6 +365,7 @@ async function runCase(browser, mode, entry, missing = false) {
       assert.ok(links.includes('https://terranlabs.com/'))
       await persist('before About capture')
       await page.screenshot({ path: `${out}/${mode}-${entry.room}-about.png` })
+      await drain() // Finish initial verified representations before conditional reload responses.
       await persist('before original-entry reload')
       await page.goto(url.href)
       await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 60000 })
