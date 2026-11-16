@@ -7,9 +7,9 @@ plain remote tags, adds host-owned bots, and gives people priority over smaller,
 It registers a narrowly persisted Interface choice: All, People, Off. Me discovers that choice
 through the existing registry. No network messages or replicated fields change.
 
-**Do not execute the stored integration patch against the current candidate.** Its main.ts
-context predates LobbyAddress and is stale. It is a historical seam proposal, not an executable
-current integration recipe. The patch changes Net's
+**The integration seams are already composed in this isolated branch. Do not apply the stored
+patch again.** The patch is now a zero-context review artifact of the three minimal seams,
+refreshed from the authorized base; the original stale patch remains in prior history. It changes Net's
 existing roster adapter, passes view state from main, and proposes one Shell visibility getter.
 It does not edit Game, vehicle interpolation, camera ordering or TouchControls. Omitting the
 new optional view callbacks intentionally hides labels; normal main composition is required.
@@ -133,3 +133,40 @@ The separate browser allocation runs `node tests/ui/nameplates.mjs` with `SYN3H_
 at that worktree's own dev/room servers, followed by the existing network smoke. Record exact
 integrated source and logs. No syntax, tests, build, server, browser or capture has run for
 these corrections; they require independent review before any gate.
+
+## Isolated composition for independent review
+
+Authorized base: `e945da1c53fe77e8a51896b243e7541b6a2ce10a`. Worktree:
+`/tmp/syn3h-nameplates-compose`, branch `integration/lobby-nameplates-1600`.
+The original nameplate worktree and candidate/root were not edited. Carried source maps:
+
+| Original feature | Carried commit |
+| --- | --- |
+| d00691f9 | 1e6e4a39 |
+| a4186631 | d9e7560a |
+| 23add2b2 | 832f88ce |
+| 372d9bdf | 5268f05e |
+
+The only edits to existing product files are the five-line nameplates callback in current
+main, the two-line Shell visibility getter, and the reviewed Net imports/context/constructor/roster
+adapter. No old joinedUrl code was restored. `initializeFrozenResources` still runs before game
+and vehicle creation; LobbyAddress initialization/play restoration, ResumeSession entrySearch,
+credits/licences and Back markup remain as on the base. No input, zoom or protocol changes.
+
+Protected blob identities, verified identical to the authorized base:
+
+- `src/core/frozenResources.ts`: `03a39d1dd3e579b686f63460799dcfdcfc2a35e9`
+- `src/ui/LobbyAddress.ts`: `005d244ef41efda3ec7b44dc8897842fa185667a`
+- `src/core/resume.ts`: `c3cc488a6cd72c1c684fe70cf894e5e61172db0e`
+- `src/ui/data/credits.ts`: `827f35380bc9a45348b52df397caf02597167b62`
+- `shared/protocol.ts`: `636bc7e537170033e5962cde8f67a7c6c45b2f78`
+- `shared/params.ts`: `cec4cc1a57dcaf6dc00e1c8f2f2dbf2f73f7fb5e`
+- `src/core/Input.ts`: `189b16736817b248427377f9d2c1c6efacfae02c`
+- `src/core/ChaseCamera.ts`: `63787d1b6e88b6cd838ef4fd205be69ca917bb0b`
+- `src/ui/TouchControls.ts`: `c87e737488e0a0b99cd17147b39c670e90325b9a`
+
+Only browser-fixture JavaScript syntax and whitespace checks are permitted at this stage.
+Typecheck, focused nameplate units, touched UI/net/core checks, full host/follower browser
+coverage, curvature/wrap/occlusion captures, 512-query fail-hidden behavior and measured
+near/far crowded-human cost remain unverified. The tests deliberately retain their existing
+limits and evidence caveats. Independent source review and explicit allocation precede any gate.
