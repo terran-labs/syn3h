@@ -109,13 +109,13 @@ export const params = {
 
 /** Positive number, metres per second squared, pulling down. Original range 0.81 to 18.81. */
 export const worldGravity = defineParam({
-  id: 'world.gravity', label: 'Gravity', group: 'World', scope: 'world',
+  id: 'world.gravity', label: 'Gravity (m/s²)', group: 'World', scope: 'world',
   default: 9.81, min: 0.81, max: 18.81, step: 0.01,
 })
 
 /** Altitude of the lava or sea surface in metres. */
 export const worldLavaAltitude = defineParam({
-  id: 'world.lavaAltitude', label: 'Sea level', group: 'World', scope: 'world',
+  id: 'world.lavaAltitude', label: 'Sea level (m)', group: 'World', scope: 'world',
   default: 0, min: -80, max: 60, step: 0.5,
 })
 

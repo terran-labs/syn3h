@@ -17,13 +17,13 @@ export const terrainCalderaSize = defineParam({
   ...P, id: 'terrain.calderaSize', label: 'Caldera size', default: 62, min: 30, max: 120, step: 1,
 })
 export const terrainDuneHeight = defineParam({
-  ...P, id: 'terrain.duneHeight', label: 'Dune height', default: 4, min: 0, max: 20, step: 0.5,
+  ...P, id: 'terrain.duneHeight', label: 'Dune height (m)', default: 4, min: 0, max: 20, step: 0.5,
 })
 export const terrainRoughness = defineParam({
   ...P, id: 'terrain.roughness', label: 'Roughness', default: 0.5, min: 0, max: 1, step: 0.01,
 })
 export const terrainMesaHeight = defineParam({
-  ...P, id: 'terrain.mesaHeight', label: 'Mountain height', default: 120, min: 0, max: 360, step: 2,
+  ...P, id: 'terrain.mesaHeight', label: 'Mountain height (m)', default: 120, min: 0, max: 360, step: 2,
 })
 export const terrainIslandRadius = defineParam({
   ...P, id: 'terrain.islandRadius', label: 'Island size (radius)', default: 800, min: 480, max: 824, step: 4,
@@ -35,7 +35,7 @@ export const terrainCragDensity = defineParam({
   ...P, id: 'terrain.cragDensity', label: 'Mountain cover', default: 0.34, min: 0, max: 0.7, step: 0.01,
 })
 export const terrainSpireHeight = defineParam({
-  ...P, id: 'terrain.spireHeight', label: 'Spire height', default: 190, min: 0, max: 300, step: 5,
+  ...P, id: 'terrain.spireHeight', label: 'Spire height (m)', default: 190, min: 0, max: 300, step: 5,
 })
 
 export const terrainLandShare = defineParam({
