@@ -23,9 +23,15 @@ resolution as well. The coordinator independently confirmed these blockers.
 Preferred prerequisite: coordinator freezes the actual Worker bundle, effective asset
 manifest/filtering and toolchain identity, then deploys without rebundling. Record
 Wrangler/workerd/Node versions and executable hashes and all effective configuration.
-Whether an original accepted Worker bundle is retained for 1518 remains unverified.
-Reconstructing one now is not automatically proof of the deployed Worker bytes.
-The coordinator must resolve that provenance gap explicitly before acceptance.
+The coordinator has recovered 1518 Worker bytes from the read-only Cloudflare content
+endpoint. The inspected provenance receipt records identical deployment observations
+before and after download, with the same Worker version at 100 percent. It reports
+95,224 downloaded bytes matching the archived release-22 dry-run bundle exactly:
+SHA-256 `ba9afb539726c2f42fd6513f21ada32736f6220706173605409dfb38f37c8ba0`.
+The receipt and underlying evidence await independent review. Reconstruction is no
+longer needed for this proposed baseline. This lane inspected the receipt, not the
+Cloudflare responses or byte comparison independently. Client assets, upload policy,
+bindings/configuration and the no-rebundle serving/deployment path remain unresolved.
 
 The adapter will consume the reviewed identity function and exact frozen roots, hash
 before and after collection, and refuse mutation. It will not build, promote, carry
@@ -218,7 +224,8 @@ closure evidence, not merely the parent process exiting.
 
 Current blockers are concrete:
 
-- Coordinator must resolve complete executable artifact identity and 1518 Worker provenance.
+- Independent review must accept the recovered Worker provenance; coordinator must still
+  resolve configuration, client assets/upload policy and the no-rebundle adapter.
 - Collector source and observation-evidence schema need review and implementation approval.
 - Runtime preflight must prove the frozen hooks, scene/clock controls, first/end timing,
   cache/transfer semantics and actual usable-play predicates.
