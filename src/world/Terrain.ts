@@ -87,6 +87,11 @@ export interface Terrain {
    * none. Vehicles use it for buoyancy.
    */
   liquidHeightAt?(x: number, z: number): number
+  /**
+   * The same surface without the moving waves: where the water stands at rest. For route
+   * planning, which caches it per cell, and cheaper than liquidHeightAt.
+   */
+  liquidLevelAt?(x: number, z: number): number
   /** Horizontal water velocity in metres per second; writes into out. */
   liquidFlowAt?(x: number, z: number, out: { x: number; z: number }): { x: number; z: number }
   /**
@@ -103,9 +108,19 @@ export interface Terrain {
   surfaceAt?(x: number, z: number): SurfaceKind
   /**
    * Called after the terrain regenerated in place (seed or a terrain parameter changed),
-   * once the new mesh and collider exist. Use it to re-seat vehicles. Returns unsubscribe.
+   * once the new heights and collider exist. Use it to re-seat vehicles. Returns unsubscribe.
+   * During a staged rebuild the drawn meshes, sea and plants follow over the next frames.
    */
   onRegenerate?(listener: () => void): () => void
+  /**
+   * While true, a change of world rebuilds in slices across frames (heights from a worker)
+   * instead of in one frame. Only for while the world is covered; see `whenReady`.
+   */
+  staged?: boolean
+  /** False while a staged rebuild is still in progress. */
+  readonly ready?: boolean
+  /** Resolves when the current staged rebuild (if any) has finished. */
+  whenReady?(): Promise<void>
   /**
    * Road centrelines of the current world, identical on every client. The arrays are
    * replaced on regeneration, so read them again in an `onRegenerate` listener.

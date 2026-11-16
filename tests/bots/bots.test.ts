@@ -109,9 +109,10 @@ describe('bot pursuit', () => {
     const bot = new PlaceholderVehicle(game, terrain, new Vector3(0, 0.5, 0))
     const brain = new BotBrain(game, wet, bot, target); brain.fixedUpdate(0.02)
     expect(bot.input.y).toBeLessThan(0)
-    params.set('bots.count', 5)
+    // Ground vehicles only: a hovercraft or jet may arrive over water, where it belongs.
+    params.set('bots.count', 5); params.set('bots.fleet', 0)
     const manager = new BotManager(game, { ...terrain, liquidHeightAt: () => 10 }, target)
-    manager.update(); expect(manager.vehicles).toHaveLength(0)
+    try { manager.update(); expect(manager.vehicles).toHaveLength(0) } finally { params.set('bots.fleet', params.get('bots.fleet')!.def.default) }
   })
 })
 describe('bot population', () => {

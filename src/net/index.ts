@@ -71,6 +71,7 @@ import { ShoveQueue, cleanShove, shoveFor } from './shove'
 import { nearestImage, wrapCoord, wrapDistance } from '../../shared/wrap'
 import { setWaterClock, waterTime } from '../world/water/seaWaves'
 import { RaceBridge, type RaceBots, type RacePresentation } from './races'
+import { RemoteArrivals } from './arrivals'
 
 /** The slice of GameAudio (src/audio) networking uses. */
 export interface NetAudio {
@@ -211,6 +212,8 @@ export class NetClient implements System {
   readonly pesters: Pesters
   /** Remote players and remote bots, by id. */
   readonly remotes = new Map<number, RemotePlayer>()
+  /** New remotes are compiled before they show, people first and bots one at a time (arrivals.ts). */
+  readonly arrivals = new RemoteArrivals(vehicle => this.ctx.onRemoteVehicleChanged?.(vehicle as Vehicle))
   readonly players = new Map<number, PlayerInfo>()
   readonly events: NetEvent[] = []
   id = 0
@@ -728,6 +731,7 @@ export class NetClient implements System {
   }
 
   update(dt: number): void {
+    this.arrivals?.update()
     this.raceBridge.update()
     // Exit world opens the lobby over a still running game: let go of everything on the way out.
     const driving = this.raceBridge.driving
@@ -1259,8 +1263,10 @@ export class NetClient implements System {
     r.groundAt = this.groundAt
     r.disposeEffects = this.attachEffects(vehicle)
     this.remotes.set(info.id, r)
+    this.arrivals?.admit(info.id, vehicle, !isBotId(info.id))
     this.uiDirty = true
-    this.ctx.audio?.play('materialize', { x: s.p[0], y: s.p[1], z: s.p[2] })
+    // A paced arrival is heard when it is shown, with its cloud.
+    if (!this.arrivals?.isWaiting(info.id)) this.ctx.audio?.play('materialize', { x: s.p[0], y: s.p[1], z: s.p[2] })
     return r
   }
 
@@ -1268,6 +1274,7 @@ export class NetClient implements System {
     const r = this.remotes.get(id)
     if (!r) return
     this.remotes.delete(id)
+    this.arrivals?.drop(id)
     this.uiDirty = true
     this.bungee.forget(id)
     this.yoink.forget(id)

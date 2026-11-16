@@ -14,6 +14,7 @@ import { installRenderDiagnostics, recordStartupPhase, showRendererLost, startup
 import { drawFrame, gpuDeadlineMs, startRenderer, viewState, type PostChain } from './renderOptions'
 import { worldGravity, params } from '../../shared/params'
 import { Input } from './Input'
+import { setCompiler } from './compileAhead'
 import { QualityController, reportLoading, type FrameMetrics } from './quality'
 import { PipelineCounter } from './performanceHistory'
 import { FIXED_DT, RAPIER, createWorld, initPhysics } from './physics'
@@ -72,6 +73,7 @@ export class Game {
   }
 
   async init(): Promise<void> {
+    setCompiler(object => this.compileAhead(object))
     // Physics starts first and is awaited only where the physics world is created, below: its
     // WebAssembly downloads and compiles while the adapter probe and the renderer start.
     const physics = timeStartup('physics init (Rapier WASM), beside the probe and renderer', () => initPhysics())
@@ -241,7 +243,7 @@ export class Game {
     // to keep it warm for the descent, instead of every frame under a full-screen shader.
     // The first frames always draw: loading ends, and shaders compile, on a real frame.
     const view = this.view()
-    const draw = view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500
+    const draw = !this.holdDraws && (view !== 'covered' || this.startupFrames < 3 || this.quality.isLoading || now - this.lastDraw >= 500)
     if (draw) { drawFrame(this.renderer, this.scene, this.camera, this.postChain, frameMs); this.lastDraw = now }
     if (this.startupFrames < 3) this.recordStartupFrame(updateStart, renderStart)
     const metrics = this.performance
@@ -257,6 +259,64 @@ export class Game {
     // Frames in the lobby say how the lobby runs, not how the game will: only play is judged.
     this.quality.frame(metrics, view === 'playing')
   }
+
+  /**
+   * While true the world is not drawn at all. The shell sets it while the galaxy covers the
+   * world and the world is being prepared: a frame drawn then would compile, on the spot,
+   * whatever shader it met first, which is the stall precompile() exists to avoid.
+   */
+  holdDraws = false
+
+  /**
+   * Build the shaders and pipelines for everything in the scene ahead of time, a slice per
+   * frame (three's compileAsync yields every 8 ms), through the same passes and render targets
+   * the frames use, so the next frame finds them built. Culling is ignored for the moment the
+   * scene is gathered, so what the camera cannot see yet (the far side, the view on the way
+   * down, the ground behind the vehicle) is ready too. Resolves when every pipeline is built.
+   */
+  async precompile(): Promise<void> {
+    const start = performance.now()
+    await this.compileAhead(this.scene)
+    try { performance.measure('syn3h:precompile', { start, end: performance.now() }) } catch { /* Older engines. */ }
+  }
+
+  /**
+   * Compile `object` (and everything under it) for the frames to come without drawing it: the
+   * same pipelines a frame would build on first sight, built a slice per frame instead of all
+   * in one. Use it for anything about to appear (a vehicle, a warm-up proxy). `object` need
+   * not be in the scene; it is lit as the scene would light it. Visibility counts at the moment
+   * of the call; culling does not.
+   */
+  async compileAhead(object: THREE.Object3D): Promise<void> {
+    const renderer = this.renderer as unknown as CompilingRenderer
+    const passes = (this.postChain?.scenePasses?.() ?? []) as unknown as ScenePass[]
+    const targets: (ScenePass | null)[] = passes.length ? passes : [null]
+    for (const pass of targets) {
+      // three gathers the objects and takes its render state synchronously at the start of
+      // compileAsync; both are put back before anything else can draw.
+      const culled: THREE.Object3D[] = []
+      object.traverse(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o) } })
+      const target = renderer.getRenderTarget(), outputs = renderer.getMRT(), context = renderer.contextNode
+      let run: Promise<void>
+      try {
+        if (pass) {
+          // As PassNode.compileAsync configures its target, so the pipelines match its frames.
+          pass.renderTarget.samples = pass.options.samples === undefined ? renderer.samples : pass.options.samples
+          renderer.getDrawingBufferSize(this.bufferSize)
+          pass.setSize(this.bufferSize.width, this.bufferSize.height)
+          renderer.setRenderTarget(pass.renderTarget)
+          renderer.setMRT(pass._mrt)
+          if (pass.contextNode !== null) renderer.contextNode = pass._getContextNode(renderer)
+        }
+        run = renderer.compileAsync(object, this.camera, this.scene)
+      } finally {
+        renderer.setRenderTarget(target); renderer.setMRT(outputs); renderer.contextNode = context
+        for (const o of culled) o.frustumCulled = true
+      }
+      await run
+    }
+  }
+  private readonly bufferSize = new THREE.Vector2()
 
   private postChain: PostChain<THREE.WebGPURenderer, THREE.Scene, THREE.PerspectiveCamera> | null = null
   /**
@@ -294,6 +354,26 @@ export class Game {
     const device = (this.renderer.backend as unknown as { device?: GPUDevice }).device
     device?.queue.onSubmittedWorkDone().then(() => recordStartupPhase('frame 1 render end to GPU work done', drawn), () => {})
   }
+}
+
+/** The parts of three's renderer and scene pass that compileAhead uses (some are internal). */
+interface CompilingRenderer {
+  samples: number
+  contextNode: unknown
+  getRenderTarget(): unknown
+  setRenderTarget(target: unknown): void
+  getMRT(): unknown
+  setMRT(outputs: unknown): void
+  getDrawingBufferSize(out: THREE.Vector2): THREE.Vector2
+  compileAsync(object: THREE.Object3D, camera: THREE.Camera, scene: THREE.Scene): Promise<void>
+}
+interface ScenePass {
+  renderTarget: { samples: number }
+  options: { samples?: number }
+  contextNode: unknown
+  _mrt: unknown
+  setSize(width: number, height: number): void
+  _getContextNode(renderer: unknown): unknown
 }
 
 /** A readable name for a system in the startup table. Minified builds may shorten it. */

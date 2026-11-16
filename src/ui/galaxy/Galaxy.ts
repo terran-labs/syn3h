@@ -814,9 +814,37 @@ export class Galaxy {
     this.flight = { start: performance.now(), duration: quick ? 1700 : 2400, from: [...this.target], reach: this.reach, yaw: this.yaw, pitch: this.pitch, last: this.reach, at: performance.now() }
     return new Promise(resolve => { const wait = () => { if (!this.active || !this.flight || this.flightDone) resolve(); else setTimeout(wait, 30) }; wait() })
   }
-  /** The drop in progress: where it started and when. */
-  private flight?: { start: number; duration: number; from: Vec; reach: number; yaw: number; pitch: number; last: number; at: number }
+  /**
+   * Leaving a world: the descent run backwards. The view starts in the world's air with the
+   * dive's light full, as the descent ended, and holds there until `launch` (the shell fades
+   * the galaxy in over the game first). Then it climbs out of the air, back across the system
+   * to the whole view at the resting tilt, and lets go there. `done` resolves when it has.
+   */
+  ascend(id: string, quick = false): { launch(): void; done: Promise<void> } {
+    const index = this.options.worlds.findIndex(world => world.id === id)
+    if (!this.gl || index < 0 || index >= MAX) { this.home(); return { launch() {}, done: Promise.resolve() } }
+    const yaw = this.yaw
+    this.choose(id); this.arrived = true; this.diving = true; this.wake = 2
+    const place = this.places(this.clock)[index]
+    // Start where the descent ends: on the world, in its air.
+    this.target = [...place.position]; this.reach = place.radius * 1.03; this.dive = 1
+    this.flightDone = false
+    const flight = this.flight = { start: Infinity, duration: quick ? 1700 : 2400, from: [0, 0, 0] as Vec, reach: this.distance, yaw, pitch: REST.pitch, last: this.reach, at: performance.now(), reverse: true }
+    const done = new Promise<void>(resolve => {
+      const wait = () => {
+        if (this.flight !== flight) resolve()
+        else if (!this.active || this.flightDone) { this.home(); resolve() }
+        else setTimeout(wait, 30)
+      }
+      wait()
+    })
+    return { launch: () => { if (this.flight === flight && flight.start === Infinity) { flight.start = flight.at = performance.now(); this.wake = 2 } }, done }
+  }
+  /** The drop in progress: where it started and when. `reverse` runs it backwards (ascend). */
+  private flight?: { start: number; duration: number; from: Vec; reach: number; yaw: number; pitch: number; last: number; at: number; reverse?: boolean }
   private flightDone = false
+  /** A frame of a held flight is on the canvas. */
+  private shownHeld = false
   /** How hard the frame is smeared toward the centre this frame (0 for none). */
   private blur = 0
 
@@ -952,26 +980,37 @@ export class Galaxy {
     } catch { this.worker = null; this.painting = false }
   }
   /** Upload what has been painted: small maps into their layers, the chosen world's close map. */
-  private upload(gl: WebGL2RenderingContext): void {
+  /**
+   * Hand painted maps to the GPU: the chosen world's close map first, then at most one small
+   * map per frame, so a context that has just been made (leaving a world) does not upload
+   * every map in one frame. True when anything was uploaded.
+   */
+  private upload(gl: WebGL2RenderingContext): boolean {
     const worlds = this.options.worlds
+    let changed = false
+    const world = this.chosen >= 0 ? worlds[this.chosen] : undefined
+    const key = world && !world.forming ? this.mapKey(world, CLOSE) : undefined, map = key ? this.maps.get(key) : undefined
+    if (map && key !== this.closeKey) {
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.close)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, map.width, map.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(map.data.buffer, map.data.byteOffset, map.data.byteLength))
+      this.closeKey = key; changed = true
+      // Keep the CPU copies of close maps few: the newest two.
+      const closes = [...this.maps.keys()].filter(k => k.endsWith(`:${CLOSE[0]}`) && k !== key)
+      if (!this.savedTarget) for (const old of closes.slice(0, Math.max(0, closes.length - 1))) this.maps.delete(old)
+    }
+    this.closeIndex = map && key === this.closeKey ? this.chosen : -1
+    if (changed) return true
     for (const [i, world] of worlds.slice(0, MAX).entries()) {
       const key = this.mapKey(world, SMALL), map = this.maps.get(key)
       if (!map || this.layers[i] === key || map.width !== SMALL[0] || map.height !== SMALL[1]) continue
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.array)
       gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, i, SMALL[0], SMALL[1], 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(map.data.buffer, map.data.byteOffset, map.data.byteLength))
       this.layers[i] = key
+      // Another may be waiting: keep frames coming until all are up.
+      this.wake = Math.max(this.wake, 2)
+      return true
     }
-    const world = this.chosen >= 0 ? worlds[this.chosen] : undefined
-    const key = world && !world.forming ? this.mapKey(world, CLOSE) : undefined, map = key ? this.maps.get(key) : undefined
-    if (map && key !== this.closeKey) {
-      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.close)
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, map.width, map.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(map.data.buffer, map.data.byteOffset, map.data.byteLength))
-      this.closeKey = key
-      // Keep the CPU copies of close maps few: the newest two.
-      const closes = [...this.maps.keys()].filter(k => k.endsWith(`:${CLOSE[0]}`) && k !== key)
-      if (!this.savedTarget) for (const old of closes.slice(0, Math.max(0, closes.length - 1))) this.maps.delete(old)
-    }
-    this.closeIndex = map && key === this.closeKey ? this.chosen : -1
+    return false
   }
   private resize(): void {
     if (!this.gl) return
@@ -999,7 +1038,7 @@ export class Galaxy {
       // The drop, by the clock: across to the world in the first three quarters, round to its
       // lit side on the way, and in toward its air the whole time, faster at the end. The
       // dive's light rises over the last third.
-      const f = this.flight, now = performance.now(), t = Math.min(1, (now - f.start) / f.duration)
+      const f = this.flight, now = performance.now(), raw = Math.max(0, Math.min(1, (now - f.start) / f.duration)), t = f.reverse ? 1 - raw : raw
       const travel = smootherstep(t / 0.75), close = t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2
       this.target = [mix(f.from[0], goal[0], travel), mix(f.from[1], goal[1], travel), mix(f.from[2], goal[2], travel)]
       this.reach = Math.exp(mix(Math.log(f.reach), Math.log(wantDistance), close))
@@ -1009,7 +1048,7 @@ export class Galaxy {
       const seconds = Math.max(0.001, (now - f.at) / 1000)
       this.blur = mix(this.blur, Math.min(0.16, Math.abs(Math.log(f.last / this.reach)) / seconds * 0.05), 0.5)
       f.last = this.reach; f.at = now
-      if (t >= 1) this.flightDone = true
+      if (raw >= 1) this.flightDone = true
     }
     // Close enough that a held-still view can stop drawing; it snaps the last step so the
     // frame left on screen is where the camera was going.
@@ -1099,6 +1138,11 @@ export class Galaxy {
     // Held still, draw only while something is moving; the last frame stays on the canvas.
     const moving = glowMoving || this.opening !== null || this.returning !== null || (this.leaving !== null && performance.now() - this.leaving < LEAVING_SECONDS * 1000 + 100) || mark.moving || this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
     if (still && !moving && this.wake <= 0) { this.idle++; return }
+    // A flight held before launch (leaving a world, waiting behind the game) shows one still
+    // frame of the world's air: draw it, and the maps as they arrive, and nothing more.
+    const held = this.flight?.start === Infinity
+    if (held && this.wake <= 0 && this.shownHeld) { if (this.upload(gl)) this.wake = 1; this.idle++; return }
+    this.shownHeld = held
     this.wake = Math.max(0, this.wake - 1)
     // The wordmark's field is baked (first, and if drawn much larger) before the frame starts.
     if (mark.placement) this.logo!.distanceField!.ensure(mark.pixelsPerUnit, null)

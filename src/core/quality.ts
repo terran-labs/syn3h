@@ -2,7 +2,7 @@
 import { type AdapterProbe, gpuDeadlineMs, graphicsOverride, probeAdapter } from './renderOptions'
 import { defineParam, params, type ParamValue } from '../../shared/params'
 import { PerformanceHistory, RECOMMENDATION_IGNORE_KEY } from './performanceHistory'
-import type { PerformanceEnvironment, PerformanceSnapshot } from './performance'
+import type { PerformanceBots, PerformanceEnvironment, PerformanceSnapshot } from './performance'
 import type { WebGPURenderer } from 'three/webgpu'
 /**
  * Six quality levels, one list for every device. A level is a complete preset: it sets every
@@ -270,6 +270,27 @@ export const RUNG_TIMING: Record<RungKind | 'level', { shedMs: number; climbMs: 
   level: { shedMs: 4000, climbMs: 60000 },
 }
 
+/**
+ * The bots this device simulates, as the governor sees them (src/bots/pacing.ts behind it).
+ * One of its steps: after the post effects fade and before the picture gets coarser, it may
+ * send one bot away, and with headroom it lets one come back. The host's count is an upper
+ * bound the bots never exceed; the player's chosen level is never changed by this.
+ */
+export interface BotRelief {
+  /** Bots simulated here now. */
+  carried(): number
+  /** What the host asked for, within the level's budget. */
+  requested(): number
+  /** True when the bots carried measurably cost frame time at this target. */
+  costly(targetMs: number): boolean
+  /** Carry one fewer. True when that changed anything. `byPlayer`: the player asked, so it is not undone on its own. */
+  shed(byPlayer?: boolean): boolean
+  /** Allow one more, up to what was requested. True when that changed anything. */
+  climb(): boolean
+}
+/** Bots react like a rung: two seconds of slow frames to send one away, ten clean to let one back. */
+export const BOT_TIMING = { shedMs: 2000, climbMs: 10000 }
+
 export const GOVERNOR = {
   /** Valid visible frame time before any decision, like the previous monitor. */
   warmupMs: 5000,
@@ -404,6 +425,10 @@ export class QualityGovernor {
   get settings(): RungSettings { return this.ladder[this.rung] }
   get key() { return `${this.level}:${this.rung}` }
   /** Frame interval the current level aims for. */
+  /** The bots, when the game has any to offer (see BotRelief). */
+  bots: BotRelief | null = null
+  /** Bots sent away or let back by the governor, for diagnostics. */
+  botChanges = 0
   get targetMs() { return Math.max(1000 / LEVELS[this.level].targetFps, this.displayMs ?? 0) }
   /** Frame intervals that only inform the display rate, such as idle frames during loading. */
   noteInterval(frameMs: number) {
@@ -518,6 +543,16 @@ export class QualityGovernor {
     this.slowMs = slow ? this.slowMs + w.durationMs : 0
     this.cleanMs = clean ? this.cleanMs + w.durationMs : 0
     if (!clean) this.pendingLevel = null
+    // Bots come after the post effects and before the resolution: only when they measurably
+    // cost frame time, so a device bound by its graphics loses resolution, not company.
+    const botStep = this.bots !== null && this.ladder[this.rung + 1]?.kind !== 'post'
+    if (slow && botStep && this.slowMs >= BOT_TIMING.shedMs && this.bots!.carried() > 0 && this.bots!.costly(target) && this.bots!.shed()) {
+      this.slowMs = 0; this.settle = GOVERNOR.settleMs; this.botChanges++; return null
+    }
+    // Climbing reverses it: the resolution comes back first, then the bots, then the effects.
+    if (clean && this.bots !== null && this.ladder[this.rung]?.kind !== 'resolution' && this.cleanMs >= BOT_TIMING.climbMs && this.bots.carried() < this.bots.requested() && this.bots.climb()) {
+      this.cleanMs = 0; this.settle = GOVERNOR.settleMs; this.botChanges++; return null
+    }
     if (slow) {
       const timing = this.shedTiming()
       if (!timing || this.slowMs < timing.shedMs) return null
@@ -662,7 +697,7 @@ export class QualityController implements QualitySource {
     return Object.freeze({ visible: this.diagnosticsVisible,
       quality: Object.freeze({...g.settings,level:g.level,rung:g.rung,rungs:g.ladder.length,auto:g.auto,targetFps:Math.round(1000/g.targetMs)}),
       levelPinned:g.levelPinned,history:this.history.history,recommendation:this.history.recommendation,
-      pipelines:this.history.pipelines,longFrames:this.history.longFrames,
+      pipelines:this.history.pipelines,longFrames:this.history.longFrames,bots:this.botsNow(),
       environment:Object.freeze(this.environment?.() ?? {backend:'initializing',adapter:null,memoryGB:null,maxTextureSize:null,fallbackReason:null,deviceLost:null}) })
   }
   subscribePerformance(listener: (snapshot: PerformanceSnapshot) => void): () => void {
@@ -826,6 +861,19 @@ export class QualityController implements QualitySource {
     this.apply('start')
   }
   /** Optional hook for terrain builders; no regeneration or physics changes are implied. */
+  /** The game's bots, as a governor step and in the Performance card. See BotRelief. */
+  attachBots(bots: BotRelief | null) { this.governor.bots = bots; this.publishPerformance() }
+  private botChangesSeen = 0
+  private botsNow(): PerformanceBots | null {
+    const b = this.governor.bots
+    return b ? { carried: b.carried(), requested: b.requested(), costly: b.costly(this.governor.targetMs) } : null
+  }
+  /** The player accepted fewer bots: one leaves now. Their level is untouched. */
+  fewerRecommendedBots(): boolean {
+    const b = this.governor.bots
+    if (!b || this.disposed || !b.shed(true)) return false
+    this.history.resetEvidence(); this.publishPerformance(); return true
+  }
   attachTerrain(terrain: QualityTerrain) { this.terrain = terrain; this.terrainWritten = false; this.onTerrain?.(); this.apply('start') }
   /** Startup timing hook: main calls attachTerrain right after building the terrain. */
   onTerrain: (() => void) | null = null
@@ -916,7 +964,9 @@ export class QualityController implements QualitySource {
     }
     const g=this.governor
     const eligible=!wasLoading&&!this.loading&&judge&&!document.hidden
-    if(this.history.sample(metrics,eligible,{...g.settings,level:g.level,rung:g.rung,rungs:g.ladder.length,auto:g.auto,targetFps:Math.round(1000/g.targetMs)})||counted)this.publishPerformance()
+    const botChanges=g.botChanges
+    if(this.history.sample(metrics,eligible,{...g.settings,level:g.level,rung:g.rung,rungs:g.ladder.length,auto:g.auto,targetFps:Math.round(1000/g.targetMs)},this.botsNow())||counted||botChanges!==this.botChangesSeen)this.publishPerformance()
+    this.botChangesSeen=botChanges
     // Ease toward the rung's budget: full while effects are not faded (or none are active).
     const wanted = this.governor.settings.kind === 'base' || this.governor.settings.post > 0 || !this.postOn() ? 1 : 0
     const step = Math.min(1, Math.max(0, metrics.frameMs) / 500)

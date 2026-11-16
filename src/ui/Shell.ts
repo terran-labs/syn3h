@@ -672,11 +672,38 @@ export class Shell implements System {
       // The main world listener has already moved the vehicle. Update in that same
       // turn, before the renderer can expose a frame over the previous spawn.
       stopFollowingWorld = this.ground?.onRegenerate?.(lift)
+      // The world is prepared behind the dive, not under its light: from the tap it is rebuilt
+      // in slices (heights from a worker), the room is joined, and every shader it needs is
+      // compiled a slice per frame, with nothing of it drawn meanwhile. Each piece stays a few
+      // milliseconds, so the dive itself never misses a frame. If preparation outlasts the
+      // dive, the dive holds in the air until it is done.
+      const ground = this.ground
+      if (ground) ground.staged = true
+      this.game.holdDraws = true
       let dived = false
       void this.galaxy!.descend(galaxyId, seen > 0).then(() => { dived = true })
-      await until(() => dived, 4000, true)
       underLight?.(); lift()
-      await until(() => Boolean((window as { syn3hNet?: { connected?: boolean } }).syn3hNet?.connected), 5000, true)
+      const prepareStart = performance.now()
+      let prepared = false
+      const preparation = (async () => {
+        const net = () => (window as { syn3hNet?: { connected?: boolean } }).syn3hNet
+        // The room's welcome can replace the world (its own seed and planet): wait for it.
+        const joinBy = performance.now() + 5000
+        while (net() && !net()!.connected && performance.now() < joinBy) await frame()
+        // A world the welcome set starts its rebuild on a microtask: let it begin.
+        await frame()
+        while (ground && ground.ready === false) await ground.whenReady?.()
+        await this.game.precompile()
+      })().catch(error => console.warn('World preparation failed; entering anyway.', error)).finally(() => { prepared = true })
+      await until(() => dived, 4000, true)
+      // Never cut the preparation short, not even for a tap: what it has not built would be
+      // built in the first frames instead, which is the freeze this exists to prevent.
+      const holdUntil = performance.now() + 15000
+      while (!prepared && performance.now() < holdUntil) { lift(); await frame() }
+      void preparation
+      try { performance.measure('syn3h:descent preparation', { start: prepareStart, end: performance.now() }) } catch { /* Older engines. */ }
+      if (ground) ground.staged = false
+      this.game.holdDraws = false
       lift(); stopFollowingWorld?.(); stopFollowingWorld = undefined
       // Through the air: the lobby fades off the top of the game, which arrives blurred and clears.
       const length = skip ? 0 : seen > 0 ? 1700 : 2400
@@ -699,11 +726,82 @@ export class Shell implements System {
       // Whatever happened on the way (a world that failed to build, say), never leave the
       // lobby inert, blurred or half faded: put everything back and let the player in.
       stopFollowingWorld?.(); skipping.abort()
+      if (this.ground) this.ground.staged = false
+      this.game.holdDraws = false
       if (!landed) camera?.clearCinematicPose()
       this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity'); root.classList.remove('is-descending')
       if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter') }
       this.dropping = false; this.enteringByGesture = false
       if (this.started) { this.closeMenu(); this.showHelp(false) } else { this.releaseCursor(); this.overlay.inert = false; this.galaxy?.home() }
+    }
+  }
+  /**
+   * Leaving a world: the drop played backwards, as one motion. The camera rises from its place
+   * behind the vehicle along the descent's own path, slowly at first, then fast into the air
+   * 520 m up, while the view blurs and brightens; the galaxy fades in over it at the world's
+   * air, with the dive's light full; then it climbs out of the air, back across the system,
+   * and settles on the whole view, where the lobby appears. The world and the room carry on
+   * behind, as they always have: nothing is torn down, so nothing has to be sliced.
+   */
+  private async ascent(): Promise<void> {
+    const galaxy = this.galaxy
+    if (!this.started || this.menuVisible) return
+    if (!galaxy || this.dropping || matchMedia('(prefers-reduced-motion: reduce)').matches) { this.openMenu(); return }
+    const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    const game = document.getElementById('game'), root = this.element, camera = this.cinematic
+    this.dropping = true
+    let quick = false
+    try { quick = (Number(localStorage.getItem('syn3h.descents')) || 0) > 1 } catch { /* Storage is optional. */ }
+    const length = quick ? 1700 : 2400
+    try {
+      // Controls let go at once, as when the menu opens; the HUD fades with the lobby's rules.
+      this.closeAbout(); this.lobbyAddress?.showLobby()
+      this.releaseCursor()
+      this.game.input.suspended = true; this.game.input.mouseFire = false; this.game.input.poll(); this.touch.enabled = false
+      this.audio.enabled = false; this.audio.setLobbyVisible(true)
+      this.menuVisible = true
+      root.classList.add('is-descending'); root.classList.remove('is-playing')
+      // The galaxy wakes behind the game, transparent, in the world's air: its first frames
+      // are drawn before anyone can see them.
+      this.overlay.style.transition = 'none'; this.overlay.style.opacity = '0'
+      this.overlay.hidden = false; this.overlay.inert = true
+      galaxy.backdrop = 1
+      galaxy.enabled = true
+      const flight = galaxy.ascend(currentPlanet().id, quick)
+      // Up through the air: the descent's path from its end back to its top.
+      const path = this.descentPose()
+      if (game) { game.style.transition = `filter ${(length * 0.7 / 1000).toFixed(2)}s cubic-bezier(.7,0,.9,.4) ${(length * 0.3 / 1000).toFixed(2)}s`; game.style.filter = 'blur(12px) brightness(1.3)' }
+      let faded = false
+      const started = performance.now()
+      await new Promise<void>((resolve, reject) => {
+        const step = () => {
+          try {
+            const raw = Math.min(1, (performance.now() - started) / length)
+            path(1 - raw)
+            // The galaxy comes in over the last stretch of the climb, as the lobby left on the way down.
+            if (!faded && raw >= 1 - 600 / length) { faded = true; this.overlay.style.transition = 'opacity .6s ease-in'; this.overlay.style.opacity = '1' }
+            if (raw < 1) requestAnimationFrame(step); else resolve()
+          } catch (error) { reject(error) }
+        }
+        step()
+      })
+      // Covered now: the game goes back to its few frames a second behind the galaxy.
+      await frame()
+      flight.launch()
+      root.classList.remove('is-descending')
+      camera?.clearCinematicPose()
+      if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter') }
+      await flight.done
+    } catch (error) {
+      console.warn('World ascent failed', error)
+    } finally {
+      this.overlay.style.removeProperty('transition'); this.overlay.style.removeProperty('opacity')
+      root.classList.remove('is-descending')
+      if (game) { game.style.removeProperty('transition'); game.style.removeProperty('filter') }
+      this.dropping = false
+      // The lobby as Leave world has always left it, from the view the flight settled on.
+      this.menuVisible = false
+      this.openMenu()
     }
   }
   /** The first and last points of the descent's camera path, for waiting on the camera. */
@@ -779,7 +877,7 @@ export class Shell implements System {
     this.exitAsking = false
     this.element.querySelector<HTMLElement>('.exit-confirm')!.hidden = true
     this.game.input.suspended = this.userPaused || this.menuVisible || this.inviteOpen
-    if (leave) this.openMenu()
+    if (leave) void this.ascent()
     else this.element.querySelector<HTMLButtonElement>('.exit-world')?.focus({ preventScroll: true })
   }
   /**
