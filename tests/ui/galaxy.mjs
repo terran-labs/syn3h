@@ -44,7 +44,7 @@ try {
     assert.ok(swung.labels.some(l => { const before = first.labels.find(b => b.id === l.id); return before && Math.hypot(l.x - before.x, l.y - before.y) > 25 }), `${view.name}: the view swung`)
     await page.screenshot({ path: `${out}/${view.name}-swung.png` })
     // Behind a panel the galaxy dims and stops drawing; back at the index it is bright again.
-    await page.evaluate(() => window.syn3h.shell.showPanel('settings')); await settle(page, 'settings')
+    await page.evaluate(() => window.syn3h.shell.showPanel('about')); await settle(page, 'about')
     await page.waitForFunction(() => window.syn3h.shell.galaxy.dim === 0.35, null, { timeout: 15000 })
     // A map arriving, or the camera still easing home, draws a frame; then it rests.
     let rests = false

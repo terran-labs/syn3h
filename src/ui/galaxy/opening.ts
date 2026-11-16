@@ -10,16 +10,16 @@
  */
 import { defineParam } from '../../../shared/params'
 
-/** 0: today's veil and fade. 1 to 3: the continuous opening (OPENING_NAMES). Set by ?intro=. */
-export const introMode = defineParam({ id: 'lobby.intro', label: 'Lobby opening: 0 off, 1 pull back, 2 push in, 3 pull back with the name on the veil', group: 'Graphics', scope: 'client', default: 0, min: 0, max: 3, step: 1 })
+/** The lobby's opening: 2, push in, for everyone. 0 (the old veil and fade) and 1 (pull back) are previews, by ?intro=. */
+export const introMode = defineParam({ id: 'lobby.intro', label: 'Lobby opening: 2 push in (the lobby); 0 off, 1 pull back', group: 'Graphics', scope: 'client', default: 2, min: 0, max: 2, step: 1 })
 
 export const OPENING_SECONDS = 2.95
 /** The point holds this long after loading ends, full size, before it flares: the moment registers. */
 const BEAT = 0.25
 
-export type OpeningMode = 1 | 2 | 3
-/** 1: pull back from the sun; 2: push in through the rays; 3: as 1, the veil keeps its wordmark. */
-export const OPENING_NAMES = ['Off', 'Pull back', 'Push in', 'Pull back, name on veil'] as const
+export type OpeningMode = 1 | 2
+/** 1: pull back from the sun; 2: push in through the rays. */
+export const OPENING_NAMES = ['Off', 'Pull back', 'Push in'] as const
 
 export interface OpeningState {
   /** The sun: 0 a point, 1 itself; a little over 1 while it flares. */
@@ -76,6 +76,17 @@ export function openingState(time: number, mode: OpeningMode, lanes: number): Op
     chrome: ease(span(t, 2.2, 2.7)),
     done: time >= OPENING_SECONDS,
   }
+}
+
+/** Seconds the name takes to go when a world is chosen: well inside the flight to it. */
+export const LEAVING_SECONDS = 0.5
+/**
+ * Leaving for a world: the reveal run backwards. The front of light runs back across the
+ * letters toward the sun, and they go dark behind it. `t` is seconds since the world was chosen.
+ */
+export function leavingMark(t: number): { markFront: number; mark: number } {
+  const x = span(t, 0, LEAVING_SECONDS)
+  return { markFront: 0.15 + 1.6 * (1 - ease(x)), mark: 1 - span(t, LEAVING_SECONDS * 0.85, LEAVING_SECONDS) }
 }
 
 /** Everything in place: the settled lobby. */

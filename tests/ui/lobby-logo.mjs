@@ -8,7 +8,9 @@ for (const engine of [chromium, webkit]) {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
     const errors = []
     page.on('pageerror', e => errors.push(e.message))
-    await page.goto(process.env.SYN3H_URL ?? 'http://127.0.0.1:5193/')
+    // The flat animated logo is the fallback now (the lobby's name stands in the scene,
+    // src/ui/brand/wordmarkScene.ts): ask for it, and for no opening, to check it still works.
+    await page.goto(`${process.env.SYN3H_URL ?? 'http://127.0.0.1:5193/'}?wordmark=0&intro=0`)
     await page.waitForFunction(() => window.syn3h?.shell?.galaxy?.logo?.ok && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
     await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
     assert.equal(await page.evaluate(() => { const g = window.syn3h.shell.galaxy; return g.logo.gl === g.gl && document.querySelectorAll('.galaxy-canvas').length === 1 }), true, 'logo shares the galaxy context')
@@ -17,7 +19,7 @@ for (const engine of [chromium, webkit]) {
     assert.ok(await page.evaluate(() => window.syn3h.shell.galaxy.logo.introTime) > before, 'ordinary lobby animates')
     assert.equal(await page.locator('.shell-logo').evaluate(el => getComputedStyle(el).opacity), '0', 'SVG does not draw over the animation')
     await page.screenshot({ path: `tests/ui/artifacts/logo/${engine.name()}.png` })
-    await page.evaluate(() => window.syn3h.shell.showPanel('settings'))
+    await page.evaluate(() => window.syn3h.shell.showPanel('about'))
     // Behind a panel the galaxy dims and then holds the logo still (its sway, inert now, is
     // how the galaxy says so). Wait for that, not for a clock.
     await page.waitForFunction(() => window.syn3h.shell.galaxy.logo.introTime > 1 && window.syn3h.shell.galaxy.logo.look.sway === 0, null, { timeout: 10000 })

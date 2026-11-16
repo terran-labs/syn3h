@@ -30,20 +30,26 @@ import { FIELD_GLSL } from './wordmarkField'
 import { wordmarkContours } from './wordmarkMesh'
 
 export const wordmarkPlacement = defineParam({
-  id: 'lobby.wordmark', label: 'Lobby wordmark: 0 flat, 1 behind the sun, 2 in front, 3 lit by the rays, 4 rays far, 5 on the plane, 6 standing, 7 along an orbit, 8 round the rim', group: 'Graphics', scope: 'client',
-  default: 0, min: 0, max: 8, step: 1,
+  id: 'lobby.wordmark', label: 'Lobby wordmark: 7 along an orbit (the lobby); 0 flat, 1 behind the sun, 2 in front, 3 lit by the rays, 4 rays far, 6 standing', group: 'Graphics', scope: 'client',
+  default: 7, min: 0, max: 7, step: 1,
 })
 /** The in-space letters drawn at the screen's full resolution by their own pass (WordmarkCrisp). */
 export const wordmarkCrispPass = defineParam({ id: 'lobby.wordmarkCrisp', label: 'Lobby wordmark in space at full resolution', group: 'Graphics', scope: 'client', default: true })
-/** Placements' names, for the preview chooser. */
-export const PLACEMENT_NAMES = ['Flat', 'Behind', 'Front', 'Rays', 'Rays, far', 'On the plane', 'Standing', 'Along an orbit', 'Round the rim'] as const
+/**
+ * Placements' names, for the preview chooser, by value. 5 (lying on the plane) and 8 (inscribed
+ * round the rim) were tried and removed: at the lobby's tilt, text lying in the plane is too
+ * foreshortened to read. 5 now means 7.
+ */
+export const PLACEMENTS: readonly (readonly [number, string])[] = [[7, 'Along an orbit'], [0, 'Flat'], [1, 'Behind'], [2, 'Front'], [3, 'Rays'], [4, 'Rays, far'], [6, 'Standing']]
+/** A value the lobby can draw: anything else is the default, Along an orbit. */
+export const placementOf = (value: number) => PLACEMENTS.some(([v]) => v === Math.round(value)) ? Math.round(value) : 7
 /**
  * The surface a placement draws on. 0: a flat panel (centre, right, up). 1: part of an upright
- * cylinder round the sun (letters along an orbit). 2: part of a ring in the orbital plane.
- * For 1 and 2: radius, the bearing of the letters' middle, world units per wordmark unit,
- * the middle's height (1) or radius offset (2), and which way along the arc reads left to right.
+ * cylinder round the sun (letters along an orbit): its radius, the bearing of the letters'
+ * middle, world units per wordmark unit, the middle's height, and which way along the arc
+ * reads left to right.
  */
-export interface Shape { kind: 0 | 1 | 2; radius: number; bearing: number; size: number; offset: number; flip: number }
+export interface Shape { kind: 0 | 1; radius: number; bearing: number; size: number; offset: number; flip: number }
 
 export type Vec3 = [number, number, number]
 export interface View { eye: Vec3; forward: Vec3; right: Vec3; up: Vec3; tan: number }
@@ -94,38 +100,44 @@ function placeInSystem(mode: number, view: View, system: number): Placement {
   const up: Vec3 = [0, 1, 0], bearing = Math.atan2(far[2], far[0])
   // Along increasing bearing, which way is the camera's right: the arc must read left to right.
   const flip = dot([-Math.sin(bearing), 0, Math.cos(bearing)], view.right) >= 0 ? 1 : -1
-  const panel = (centre: Vec3, size: number, v: Vec3): Placement => ({ centre, right: scale(sideways, size), up: scale(v, size), sunDistance: Math.hypot(...centre), shape: FLAT })
+  // Which side of the plane the name stands on: the camera's. Seen from below, it floats down
+  // below the planets. It glides through the plane over a band of the camera's elevation, so
+  // there is no pop, and hovering near edge-on moves it only a little, never flips it.
+  const level = planeSide(view)
+  const panel = (centre: Vec3, size: number): Placement => ({ centre, right: scale(sideways, size), up: scale(up, size), sunDistance: Math.hypot(...centre), shape: FLAT })
   if (mode === 4) {
-    // Rays, far: a distant structure well behind the sun, its foot a little over the plane.
+    // Rays, far: a distant structure well behind the sun, its foot a little off the plane.
     const size = system * 0.62
-    return panel(add(scale(far, system * 2.6), up, size * 0.68), size, up)
-  }
-  if (mode === 5) {
-    // On the plane: lying in the ecliptic beyond the outer orbit, its top away from the camera.
-    const size = system * 0.6
-    return panel(scale(far, system * 1.25 + size * 0.5), size, far)
+    return panel(add(scale(far, system * 2.6), up, size * 0.68 * level), size)
   }
   if (mode === 6) {
     // Standing: upright at the far edge of the system, its foot on the plane.
     const size = system * 0.72
-    return panel(add(scale(far, system * 2.6), up, size * 0.5), size, up)
+    return panel(add(scale(far, system * 2.6), up, size * 0.5 * level), size)
   }
-  const size = system * (mode === 7 ? 0.72 : 0.45)
-  const shape: Shape = mode === 7
-    // Along an orbit: upright on a circle beyond the outer orbit, following its curve.
-    ? { kind: 1, radius: system * 2.6, bearing, size, offset: size * 0.52, flip }
-    // Round the rim: inscribed flat on a ring just beyond the outer orbit.
-    : { kind: 2, radius: system * 1.25 + size * 0.5, bearing, size, offset: 0, flip }
-  const centre = shape.kind === 1 ? add(scale(far, shape.radius), up, shape.offset) : scale(far, shape.radius)
-  return { centre, right: scale(sideways, size), up: scale(shape.kind === 1 ? up : far, size), sunDistance: Math.hypot(...centre), shape }
+  // Along an orbit: upright on a circle beyond the outer orbit, following its curve.
+  const size = system * 0.72
+  // Below the plane it hangs a little lower than it stands above, clear of the labels, which
+  // sit under their worlds there. Both are zero at edge-on, so the glide is continuous.
+  const shape: Shape = { kind: 1, radius: system * 2.6, bearing, size, offset: size * (level >= 0 ? 0.52 : 0.8) * level, flip }
+  return { centre: add(scale(far, shape.radius), up, shape.offset), right: scale(sideways, size), up: scale(up, size), sunDistance: Math.hypot(...add(scale(far, shape.radius), up, shape.offset)), shape }
+}
+
+/** The band of the camera's elevation, in radians either side of edge-on, the name glides through the plane over. */
+export const PLANE_BAND = 0.12
+/** +1 with the camera above the plane, -1 below, eased through edge-on. */
+export function planeSide(view: View): number {
+  const elevation = Math.asin(Math.max(-1, Math.min(1, view.eye[1] / (Math.hypot(...view.eye) || 1))))
+  const x = Math.max(0, Math.min(1, (elevation + PLANE_BAND) / (2 * PLANE_BAND)))
+  return x * x * (3 - 2 * x) * 2 - 1
 }
 
 /** The point in space of a wordmark point (wordmark units) on a placement's surface. */
 export function surfacePoint(p: Placement, x: number, y: number): Vec3 {
   const s = p.shape
   if (s.kind === 0) return add(add(p.centre, p.right, x), p.up, y)
-  const bearing = s.bearing + x * s.size / s.radius * s.flip, radius = s.kind === 2 ? s.radius + y * s.size : s.radius
-  return [Math.cos(bearing) * radius, s.kind === 1 ? s.offset + y * s.size : 0, Math.sin(bearing) * radius]
+  const bearing = s.bearing + x * s.size / s.radius * s.flip
+  return [Math.cos(bearing) * s.radius, s.offset + y * s.size, Math.sin(bearing) * s.radius]
 }
 
 /** The camera's pose, as the galaxy keeps it. */
@@ -185,18 +197,13 @@ vec3 markHit(vec3 eye, vec3 dir) {
 vec3 markSurface(vec3 eye, vec3 dir) {
   if (uMarkShape.x < 0.5) return markHit(eye, dir);
   float radius = uMarkShape.y, size = uMarkShape.w;
-  vec3 p; float t;
-  if (uMarkShape.x < 1.5) {
-    // The far wall of an upright cylinder round the sun: the larger root.
-    float a = dot(dir.xz, dir.xz), b = dot(eye.xz, dir.xz), c = dot(eye.xz, eye.xz) - radius * radius, disc = b * b - a * c;
-    if (disc < 0.0 || a < 1e-9) return vec3(0.0, 0.0, -1.0);
-    t = (-b + sqrt(disc)) / a; p = eye + dir * t;
-  } else {
-    t = abs(dir.y) > 1e-6 ? -eye.y / dir.y : -1.0; p = eye + dir * t;
-  }
+  // The far wall of an upright cylinder round the sun: the larger root.
+  float a = dot(dir.xz, dir.xz), b = dot(eye.xz, dir.xz), c = dot(eye.xz, eye.xz) - radius * radius, disc = b * b - a * c;
+  if (disc < 0.0 || a < 1e-9) return vec3(0.0, 0.0, -1.0);
+  float t = (-b + sqrt(disc)) / a; vec3 p = eye + dir * t;
   float turn = atan(p.z, p.x) - uMarkShape.z; turn = mod(turn + 3.14159265, 6.2831853) - 3.14159265;
   float along = turn * radius / size * uMarkShape2.y;
-  float across = uMarkShape.x < 1.5 ? (p.y - uMarkShape2.x) / size : (length(p.xz) - radius) / size;
+  float across = (p.y - uMarkShape2.x) / size;
   return vec3(along, across, t);
 }
 float markShadow(vec2 from, vec2 to) {

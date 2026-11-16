@@ -12,10 +12,10 @@
 import { PresenceFeed, type Populations } from './presence'
 import { FIELD_UNIT, LogoRenderer, type PixelRect } from '../brand/logoRenderer'
 import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
-import { placeWordmark, poseView, surfacePoint, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkCrispPass, wordmarkPlacement } from '../brand/wordmarkScene'
+import { placementOf, placeWordmark, poseView, surfacePoint, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkCrispPass, wordmarkPlacement } from '../brand/wordmarkScene'
 import { ASPECT } from '../brand/wordmarkMesh'
 import { WordmarkOverlay } from '../brand/wordmarkOverlay'
-import { introMode, openingState, SETTLED, type OpeningMode, type OpeningState } from './opening'
+import { introMode, LEAVING_SECONDS, leavingMark, openingState, SETTLED, type OpeningMode, type OpeningState } from './opening'
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
 let openingPlayed = false
 import { WordmarkCrisp } from '../brand/wordmarkCrisp'
@@ -484,11 +484,10 @@ void main() {
       float line = 1.0 - wordmarkCoverage(d + max(0.012, 1.5 * markW), markW), lineStrength = 0.85;
       if (uMarkMode != 2) {
         // Behind the sun: its face is lit by it, warmest nearest, and worlds between throw shadows.
-        vec3 n = uMarkShape.x < 0.5 ? normalize(cross(uMarkRight, uMarkUp)) : uMarkShape.x < 1.5 ? normalize(vec3(at.x, 0.0, at.z)) : vec3(0.0, 1.0, 0.0);
+        vec3 n = uMarkShape.x < 0.5 ? normalize(cross(uMarkRight, uMarkUp)) : normalize(vec3(at.x, 0.0, at.z));
         n *= -sign(dot(n, ray));
         float far = length(at); vec3 l = -at / far;
-        // On the plane the sun grazes the letters: they take the light as the shafts do instead.
-        float lit = max(uMarkShape.x > 1.5 || uMarkMode == 5 ? 0.35 : 0.0, dot(n, l)) * uMarkSun * uMarkSun / (far * far), shadow = 1.0;
+        float lit = max(0.0, dot(n, l)) * uMarkSun * uMarkSun / (far * far), shadow = 1.0;
         for (int i = 0; i < ${MAX}; i++) {
           if (i >= uCount) break;
           vec3 oc = uWorld[i].xyz - at; float along = dot(oc, l);
@@ -796,7 +795,7 @@ export class Galaxy {
     if (value) { this.logoSeen = false; this.handled = performance.now(); this.acquire() } else this.release()
   }
   /** Back out to the whole system, for example after returning from a world's panel. */
-  home(): void { this.handled = performance.now(); this.wake = 2; this.chosen = -1; this.arriving = 0; this.arrived = false; this.diving = false; this.dive = 0; this.flight = undefined; this.flightDone = false; this.blur = 0 }
+  home(): void { this.handled = performance.now(); this.wake = 2; this.chosen = -1; this.leaving = null; this.arriving = 0; this.arrived = false; this.diving = false; this.dive = 0; this.flight = undefined; this.flightDone = false; this.blur = 0 }
   /** The descent: fall toward a world until its air fills the view. Resolves when it has. `quick` for a player who has seen it. */
   descend(id: string, quick = false): Promise<void> {
     if (!this.gl) return Promise.resolve()
@@ -890,7 +889,7 @@ export class Galaxy {
     this.paintMaps(); this.resize(); this.loop(0)
   }
   private release(): void {
-    this.markStart = null; this.markRig.pose = null
+    this.markStart = null; this.markRig.pose = null; this.leaving = null
     // A finished or abandoned drop does not outlive the context: the next showing starts clean.
     this.home()
     this.logo?.dispose(); this.logo = null; this.options.onLogo?.(false)
@@ -1060,13 +1059,14 @@ export class Galaxy {
     this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], perFrame(0.18, elapsed)) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
     // The continuous opening (opening.ts): held at the point of light while loading, then by the clock.
-    const reveal = this.stepOpening(places)
+    let reveal = this.stepOpening(places)
+    if (this.leaving !== null) reveal = { ...reveal, ...leavingMark((performance.now() - this.leaving) / 1000) }
     if (reveal.reach !== 1) view.eye = [this.target[0] + (view.eye[0] - this.target[0]) * reveal.reach, this.target[1] + (view.eye[1] - this.target[1]) * reveal.reach, this.target[2] + (view.eye[2] - this.target[2]) * reveal.reach]
     const arrival = places.map((_, i) => reveal.arrive[this.lanes(places)[i]] ?? 1)
     const mark = this.stepMark(elapsed, still)
     this.markView = view; this.markPlaced = mark.placement
     // Held still, draw only while something is moving; the last frame stays on the canvas.
-    const moving = this.opening !== null || mark.moving || this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
+    const moving = this.opening !== null || (this.leaving !== null && performance.now() - this.leaving < LEAVING_SECONDS * 1000 + 100) || mark.moving || this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
     if (still && !moving && this.wake <= 0) { this.idle++; return }
     this.wake = Math.max(0, this.wake - 1)
     // The wordmark's field is baked (first, and if drawn much larger) before the frame starts.
@@ -1144,6 +1144,8 @@ export class Galaxy {
   }
   private screen: { id: string; x: number; y: number; radius: number; visible: boolean; depth: number }[] = []
   private readonly markRig = new WordmarkRig()
+  /** performance.now() when a world was chosen, while the name un-reveals; null in the lobby. */
+  private leaving: number | null = null
   /** The continuous opening, while it plays: started when loading ends (null until then). */
   private opening: { start: number | null; mode: OpeningMode } | null = null
   /** For screenshots only: holds the opening at this many seconds in. */
@@ -1200,7 +1202,7 @@ export class Galaxy {
    * (the rig catching up, or the fade in), which keeps frames coming.
    */
   private stepMark(elapsed: number, still: boolean): { mode: number; placement: ReturnType<typeof placeWordmark> | null; pixelsPerUnit: number; opacity: number; moving: boolean } {
-    const mode = Math.round(wordmarkPlacement.value), layout = this.options.logo?.()
+    const mode = placementOf(wordmarkPlacement.value), layout = this.options.logo?.()
     const none = { mode: 0, placement: null, pixelsPerUnit: 0, opacity: 0, moving: false }
     if (mode !== this.markMode) { this.markMode = mode; this.markStart = null; this.markRig.pose = null; this.wake = 2 }
     // In space needs exact distances and a bake this device can afford; otherwise the flat
@@ -1251,6 +1253,8 @@ export class Galaxy {
     // Without a context there is no flight to wait for: arrive at once.
     if (!this.gl) { this.options.onArrive(id); return }
     this.chosen = index; this.arriving = 0; this.arrived = false; this.settleTilt()
+    // The name goes the way it came, from this instant: see leavingMark.
+    this.leaving ??= performance.now(); this.opening = null; this.chrome(null)
     // Settle on the lit side, a quarter turn off the sun, on whichever side the view is now.
     const at = this.places(this.clock)[index].position, sun = Math.atan2(-at[0], -at[2])
     const settle = approach(sun, this.spin(index, this.clock), this.yaw); this.facing = settle.facing; this.facingSide = settle.side

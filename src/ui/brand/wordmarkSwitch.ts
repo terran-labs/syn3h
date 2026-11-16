@@ -4,7 +4,7 @@
  * address a small menu in the lobby's top left corner flips between them without a reload. Without the flag nothing here runs and the chip does not exist.
  */
 import { params } from '../../../shared/params'
-import { PLACEMENT_NAMES, wordmarkPlacement } from './wordmarkScene'
+import { placementOf, PLACEMENTS, wordmarkPlacement } from './wordmarkScene'
 import { introMode, OPENING_NAMES } from '../galaxy/opening'
 
 let enabled = false
@@ -13,7 +13,7 @@ let enabled = false
 export function applyWordmarkQuery(search: string): boolean {
   const query = new URLSearchParams(search), raw = query.get('wordmark'), intro = query.get('intro')
   const clamp = (value: string, most: number) => Math.round(Math.min(most, Math.max(0, Number(value) || 0)))
-  if (raw !== null) params.set(wordmarkPlacement.def.id, clamp(raw, PLACEMENT_NAMES.length - 1), 'preset')
+  if (raw !== null) params.set(wordmarkPlacement.def.id, placementOf(clamp(raw, 7)), 'preset')
   // ?intro= is the continuous opening (src/ui/galaxy/opening.ts); the veil reads it too.
   if (intro !== null) params.set(introMode.def.id, clamp(intro, OPENING_NAMES.length - 1), 'preset')
   enabled = raw !== null || intro !== null
@@ -35,8 +35,8 @@ export function mountWordmarkSwitch(host: HTMLElement, replayOpening?: (mode: nu
   const menu = document.createElement('select')
   menu.setAttribute('aria-label', 'Wordmark placement (preview)')
   menu.style.cssText = 'font:500 10px/1 Barlow,system-ui,sans-serif;-webkit-text-size-adjust:none;color:#02040a;background:rgb(255 238 215 / .92);border:0;border-radius:999px;padding:3px 6px'
-  for (const [value, name] of PLACEMENT_NAMES.entries()) menu.add(new Option(name, String(value)))
-  menu.value = String(Math.round(wordmarkPlacement.value))
+  for (const [value, name] of PLACEMENTS) menu.add(new Option(name, String(value)))
+  menu.value = String(placementOf(wordmarkPlacement.value))
   menu.addEventListener('change', () => {
     const value = Number(menu.value)
     params.set(wordmarkPlacement.def.id, value, 'preset')
