@@ -78,7 +78,6 @@ export class Input {
     }
     target.addEventListener('pointerup', mouseEnd, true)
     target.addEventListener('pointercancel', mouseEnd, true)
-    target.addEventListener('blur', () => this.cancelFireUntilNeutral(), true)
     target.addEventListener('keydown', (e) => {
       if (this.suspended || e.repeat) return
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
@@ -90,6 +89,9 @@ export class Input {
       if (e.code === 'KeyX') this.toggleZorb()
     })
     target.addEventListener('keyup', (e) => this.keys.delete(e.code))
+    // Raw fire identities survive blur. The composition owner must cancel Gear first,
+    // then call cancelFireUntilNeutral from its capture-phase blur handler. Dropping
+    // sampled fire here before Gear cancellation could release a charge or carry.
     target.addEventListener('blur', () => this.keys.clear())
   }
 
