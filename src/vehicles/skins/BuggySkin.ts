@@ -8,6 +8,11 @@ export interface BuggySkin {
   /** True when the model's own faces are the lamps, so the effects lane skips its lamp blobs. */
   readonly ownLamps?: boolean
   setWheel(index: number, localPosition: THREE.Vector3, steerAngle: number, spinAngle: number): void
+  /**
+   * Tyre size (buggy.tyreSize): every wheel's radius and width as multiples of the standard
+   * wheel's, applied from the next setWheel. Optional: skins without it keep standard wheels.
+   */
+  setTyreScale?(radius: number, width: number): void
   /** Caller advances openAmount by dt * 2 for the original half-second transition. */
   setWings(openAmount: number, steer: number, pitch: number): void
   /** Actual visible wing tip in skin-local coordinates; false before load or when folded. */
