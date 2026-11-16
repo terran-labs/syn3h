@@ -63,7 +63,7 @@ The following records the original afternoon queue, not current blockers. Releas
 Cloudflare setup and the first buggy handling review have since completed. Other old
 items require current evidence before being carried forward.
 
-### Original Now
+## Now
 
 1. **Ship production release 1 to Cloudflare.** Blocked on the owner's Cloudflare access.
    Check: the public address serves a tagged build with its build id, a phone on mobile
@@ -77,7 +77,7 @@ items require current evidence before being carried forward.
 5. **Give idle builders work.** Codex 1 and Codex 3 were idle at 4:30pm. Check: no builder
    is idle for more than ten minutes while this list has unstarted items.
 
-### Original Next
+## Next
 
 6. **First impression at load is dark.** The default build opens at night with the controls
    card over the vehicle. Check: on a projector in a lit room the vehicle, road and volcano
@@ -103,7 +103,9 @@ items require current evidence before being carried forward.
   hours. Check: a tyre never sinks below the drawn ground in a capture at 1 m detail, and
   two players on the same slope read the same ride height.
 
-## Historical owner questions, reassess before asking
+## Waiting on the owner
+
+Historical owner questions: reassess before asking.
 
 - Drive the Syn3h buggy by hand and say what is wrong.
 - Listen to the five vehicle voices on real speakers.

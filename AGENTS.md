@@ -22,21 +22,15 @@ In practice:
   textures, sprites, image files and recordings.
 - Expose what you generate through the parameter registry (`shared/params.ts`) or plain
   options with a seed, so it can be tuned and shared.
-- The running game loads no binary assets: no recorded audio, images, textures or models
-  fetched or decoded at run time, and no fonts beyond the approved one. The owner's rule of 15 November 2026: "Binary
-  assets in the codebase are okay. Binary assets that get loaded into the running game are
-  unacceptable." It withdraws the earlier exception for his recorded originals: music, cues
-  and wind are synthesised, and the generated score is the only music.
-- Binaries the game itself never loads may live in the repository: install icons and the
-  link-preview card (fetched by the browser, the phone and crawlers), source art, captures.
-- If a generated version cannot yet match an asset, say so to the owner and get his
-  decision; do not quietly keep the asset. Anything he accepts goes on the release check's
-  approved list. Today that is the Barlow interface font, trimmed to the weights used
-  (a standing exception), and the vehicle models still loaded for the noon release, to be
-  replaced by generated vehicles after the demo.
-- Do not be constrained by how the 2010 and 2017 Unity builds were made. Use current web
-  platform features (WebGPU, WebGL 2, modern CSS, Web Audio) to cut load time and raise
-  the visual effect. The originals are art direction, not a specification.
+- A generated thing must earn its place. Measure visual and audio quality as well as cost.
+  Preserve supplied originals as source material; retaining a file does not authorize a
+  runtime request. The later owner direction prohibits ordinary-play binary asset loading,
+  subject to accepted exceptions such as the permitted vehicle meshes. Curated About images
+  may load only after deliberate About entry, with zero image requests before that action.
+  Lazy loading alone does not satisfy this exception.
+- Use current web platform features (WebGPU, WebGL 2, modern CSS, Web Audio) to cut
+  load time and improve visual quality. Choose implementation techniques for this
+  browser experience and measure their results.
 - Measure before claiming a win: bytes shipped, time to first frame, frame cost.
 
 Worked examples: the terrain and its roads, the sky and its scattering, vehicle engine
@@ -62,8 +56,8 @@ that fails because someone improved the game is a cost, and we stop paying it.
    number a bug. Where a threshold is needed, derive it from the parameter registry
    (`shared/params.ts`) so retuning moves the expectation with it.
 3. **Handling is reported.** Measured handling per vehicle goes into the handling report
-   (`tools/handling-report.mjs`, being added) and the release notes, where a surprising change is
-   visible without stopping a release.
+   (`npx tsx tools/handling-report.ts`) and the release notes, where a surprising change
+   is visible without stopping a release.
 4. **Validation scales with risk.**
    - Interface, copy, styling: typecheck, the affected tests, one look in a browser at
      phone and desktop size.

@@ -23,7 +23,7 @@ because someone is in a lobby. Frozen-build validation, public checks and immedi
 rollback remain required. Occupancy is no longer a release gate.
 
 The owner answered the wind question: generated wind only. UX owns removing the recorded
-wind layer. This supersedes the recording-retention rule for wind only; original music
+wind layer. This supersedes the recording-retention rule for wind only; the music
 and laser recordings remain.
 
 ## Sunday 15 November, 11:33am Pacific: full version numbers, and a frozen build for judges

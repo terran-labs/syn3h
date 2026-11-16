@@ -1,3 +1,5 @@
+Superseded on 15 November 2026: the owner made performance evidence non-blocking. Releases may ship with an honest 'not measured' Performance section.
+
 # Performance evidence for every production release
 
 Owner requirement, 15 November 2026: establish successive-release benchmarks, track
