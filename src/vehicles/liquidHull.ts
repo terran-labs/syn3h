@@ -49,6 +49,8 @@ export interface HullProfile {
   planing: number
   /** Horizontal drag multiplier while planing (skimming wets less hull). */
   skim: number
+  /** Dynamic lift on the whole hull at planing speed, over weight: how it rides up and skips. */
+  planeLift: number
 }
 
 export interface HullState {
@@ -107,7 +109,8 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
   // the hull walks in a slow circle of roll and pitch, as a swimmer does.
   const sway = Math.sin(s.phase), surge = Math.cos(s.phase)
   // Paddles push by the wheels' slip through the liquid, never past their grip speed.
-  const slip = THREE.MathUtils.clamp((Math.max(Math.abs(input.wheelSpeed), effort * p.paddleSpeed) * Math.sign(throttle) - forward) / Math.max(1, p.paddleSpeed), -1, 1)
+  // Thrust fades to nothing as the hull reaches the paddles' own speed through the liquid.
+  const slip = THREE.MathUtils.clamp(throttle - forward / Math.max(1, p.paddleSpeed), -1, 1)
   // Bow dynamic lift: planing in water, the nose riding up on thick lava.
   const plane = THREE.MathUtils.clamp((forward / p.planing) ** 2, 0, 1) * Math.sign(forward)
   let total = 0
@@ -139,6 +142,8 @@ export function applyHull(body: RAPIER.RigidBody, world: RAPIER.World, terrain: 
     f.y = p.buoyancy * g * share * s.wet[i] - (v.y - (Number.isFinite(rise) ? rise : 0)) * heave * share
     // Bow dynamic lift on the front columns only, carried by their lagged wetness.
     if (front && forward > 0) f.y += p.porpoise * HULL_TUNING.bowLift * g * share * plane * Math.min(1, s.wet[i] * 2)
+    // Planing: the whole hull rides up on its speed, wetting less and so lifting less: a skip.
+    if (forward > 0) f.y += p.planeLift * g * share * plane * Math.min(1, sub * 3)
     // Paddle: rear and front wheels alike, alternating left and right bite.
     if (effort > 0) {
       const bite = 1 + p.waddle * sway * sx

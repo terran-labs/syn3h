@@ -14,6 +14,7 @@ import { Jet } from '../../src/vehicles/Jet'
 import { Hovercraft } from '../../src/vehicles/Hovercraft'
 import type { Vehicle } from '../../src/vehicles/Vehicle'
 import { harness } from '../vehicles2/harness'
+import { fieldOffset, fieldSpeed, liquidWavesAt, type LiquidBody, type LiquidWaveField } from '../../src/world/water/liquidWaves'
 
 export type Liquid = 'lava' | 'water'
 export type Kind = 'buggy' | 'jet' | 'hovercraft'
@@ -28,12 +29,12 @@ export interface Basin {
   slope: number
   /** Dry land height above the surface, metres. */
   bank?: number
-  /** Optional surface height override (waves), metres above 0, as a function of x, z. */
-  surface?: (x: number, z: number) => number
+  /** Real waves from the game's wave field for this kind of body, on the scenario's clock. */
+  waves?: 'sea' | 'inland'
 }
 
 export interface Sample { yaw: number; t: number; x: number; y: number; z: number; speed: number; pitch: number; roll: number; depth: number; up: number }
-export interface Run { h: ReturnType<typeof harness>; v: Vehicle; basin: Basin; trace: Sample[]; ground: (z: number) => number }
+export interface Run { clock: { t: number }; h: ReturnType<typeof harness>; v: Vehicle; basin: Basin; trace: Sample[]; ground: (z: number) => number }
 
 const tmpQ = new THREE.Quaternion(), tmpV = new THREE.Vector3()
 
@@ -56,10 +57,26 @@ export function basinBed(b: Basin) {
   h.world.createCollider(RAPIER.ColliderDesc.trimesh(verts, idx).setFriction(1).setCollisionGroups(groups(GROUP_TERRAIN, GROUP_ALL)))
   h.world.step()
   const wet = (z: number) => g(z) < 0
+  const clock = { t: 0 }
+  const body: LiquidBody = { kind: b.waves ?? 'sea', liquid: b.liquid, frozen: false }
+  let field: LiquidWaveField | null = null, fieldT = Number.NaN
+  const waves = () => {
+    if (!b.waves) return null
+    if (fieldT !== clock.t) { field = liquidWavesAt(body, clock.t, field ?? undefined); fieldT = clock.t }
+    return field
+  }
   h.terrain.heightAt = (_x, z) => g(z)
-  h.terrain.liquidHeightAt = (x, z) => (wet(z) ? (b.surface?.(x, z) ?? 0) : -Infinity)
+  h.terrain.liquidHeightAt = (x, z) => {
+    if (!wet(z)) return -Infinity
+    const f = waves()
+    return f ? fieldOffset(f, x, z, -g(z)) : 0
+  }
+  h.terrain.liquidVerticalSpeedAt = (x, z) => {
+    const f = wet(z) ? waves() : null
+    return f ? fieldSpeed(f, x, z, -g(z)) : 0
+  }
   h.terrain.liquidKindAt = (_x, z) => (wet(z) ? b.liquid : null)
-  return { h, g }
+  return { h, g, clock }
 }
 
 export function makeVehicle(kind: Kind, h: ReturnType<typeof harness>, p: THREE.Vector3, heading = 0): Vehicle {
@@ -88,11 +105,11 @@ function sample(run: Run, t: number): Sample {
 
 /** Step `seconds`, recording every step, stopping early when `until` returns true. */
 export function advance(run: Run, seconds: number, until?: (s: Sample) => boolean): void {
-  const t0 = run.trace.length ? run.trace[run.trace.length - 1].t : 0
   const n = Math.round(seconds / FIXED_DT)
   for (let i = 1; i <= n; i++) {
     run.h.step(run.v)
-    const s = sample(run, t0 + i * FIXED_DT)
+    run.clock.t += FIXED_DT
+    const s = sample(run, run.clock.t)
     run.trace.push(s)
     if (until?.(s)) return
   }
@@ -111,11 +128,12 @@ export const dispose = (run: Run) => { run.v.dispose(); run.h.world.free() }
  * The vehicle starts 30 m back on the bank already moving, with its motor at speed.
  */
 export function entry(kind: Kind, basin: Basin, speed: number, seconds = 40): Run {
-  const { h, g } = basinBed(basin)
+  const { h, g, clock } = basinBed(basin)
   const bank = basin.bank ?? 1
   const v = makeVehicle(kind, h, new THREE.Vector3(0, bank + 1, 30))
-  const run: Run = { h, v, basin, trace: [], ground: g }
-  h.step(v, 30)
+  const run: Run = { clock, h, v, basin, trace: [], ground: g }
+  advance(run, 0.5)
+  run.trace.length = 0
   v.body.setLinvel({ x: 0, y: 0, z: -speed }, true)
   if (v instanceof Syn3hBuggy) v.motorSpeed = speed
   throttle(v, kind)
@@ -125,12 +143,21 @@ export function entry(kind: Kind, basin: Basin, speed: number, seconds = 40): Ru
 
 /** At rest in the middle of a flat bottomed pool `depth` m deep, then full throttle to shore. */
 export function fromRest(kind: Kind, basin: Basin, seconds = 40, settle = 3): Run {
-  const { h, g } = basinBed(basin)
+  const { h, g, clock } = basinBed(basin)
   const v = makeVehicle(kind, h, new THREE.Vector3(0, -basin.depth + 1.2, -basin.length / 2))
-  const run: Run = { h, v, basin, trace: [], ground: g }
-  h.step(v, Math.round(settle / FIXED_DT))
+  const run: Run = { clock, h, v, basin, trace: [], ground: g }
+  advance(run, settle)
+  run.trace.length = 0
   throttle(v, kind)
   advance(run, seconds, (s) => s.z < -basin.length - 4)
+  return run
+}
+
+/** At rest afloat in deep water (or lava) with waves for `seconds`, after settling. */
+export function afloat(kind: Kind, liquid: Liquid, waves: 'sea' | 'inland' | undefined, seconds = 20): Run {
+  const run = fromRest(kind, { liquid, length: 400, depth: 6, slope: 15, waves }, 0, 4)
+  run.v.input.y = 0
+  advance(run, seconds)
   return run
 }
 

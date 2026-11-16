@@ -14,7 +14,7 @@ function tuning(kind:string, buoyancy:number, planing:number) {
  }
 }
 // Sealed craft displace more than their weight; dense tracked armour has no reserve lift.
-export const waterProfiles = { buggy:tuning('buggy',.85,8), tank:tuning('tank',0,100), hovercraft:tuning('hovercraft',1.1,16), jet:tuning('jet',.65,24), zorb:tuning('zorb',2,100) }
+export const waterProfiles = { buggy:tuning('buggy',1.6,10), tank:tuning('tank',0,100), hovercraft:tuning('hovercraft',1.1,16), jet:tuning('jet',.65,24), zorb:tuning('zorb',2,100) }
 const point=new THREE.Vector3(),q=new THREE.Quaternion(),flow={x:0,z:0},slope={x:0,z:0}
 /** Match the four hull columns used by the force pass, including pitched contact. */
 export function hasWaterContact(body:RAPIER.RigidBody,terrain:Terrain):boolean {

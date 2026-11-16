@@ -1,6 +1,6 @@
 /** Indestructible vehicles: viscous lava, cooling paint and legacy water buoyancy. */
 import * as THREE from 'three/webgpu'
-import { applyWaterForces, waterSinking, hasWaterContact } from './buoyancy'
+import { applyWaterForces, waterSinking, hasWaterContact, waterProfiles } from './buoyancy'
 import { defineParam } from '../../shared/params'
 import type { RAPIER } from '../core/physics'
 import type { Terrain } from '../world/Terrain'
@@ -131,11 +131,27 @@ export const lavaPorpoise=defineParam({...L,id:'lava.porpoise',label:'Buggy: por
 export const lavaGrip=defineParam({...L,id:'lava.grip',label:'Buggy: wheel grip on the bed (0 to 1)',default:.3,min:0,max:1,step:.05})
 export const lavaWaddle=defineParam({...L,id:'lava.waddle',label:'Buggy: waddle (0 to 1)',default:.5,min:0,max:1,step:.05})
 export const GAIT={lava:.9}
-const lavaHull:HullProfile={buoyancy:2,thickness:1,linear:2,quadratic:.3,heave:6,paddle:9,paddleSpeed:7,porpoise:.6,waddle:.5,gait:GAIT.lava,planing:6,skim:.6}
+const lavaHull:HullProfile={buoyancy:2,thickness:1,linear:2,quadratic:.3,heave:6,paddle:9,paddleSpeed:7,porpoise:.6,waddle:.5,gait:GAIT.lava,planing:6,skim:.6,planeLift:0}
 function lavaProfile():HullProfile{
  lavaHull.buoyancy=lavaBuoyancy.value;lavaHull.thickness=lavaThickness.value;lavaHull.paddle=lavaPaddle.value
  lavaHull.porpoise=lavaPorpoise.value;lavaHull.waddle=lavaWaddle.value;lavaHull.gait=GAIT.lava
  return lavaHull
+}
+// The buggy's water: light and quick. It floats half in, paddles and steers, and at speed it
+// planes and skips across the top.
+const W={group:'Water',scope:'world' as const}
+export const waterThickness=defineParam({...W,id:'water.thickness',label:'Buggy: thickness (drag)',default:1,min:0,max:4,step:.05})
+export const waterPaddle=defineParam({...W,id:'water.paddle',label:'Buggy: paddle thrust (m/s²)',default:6,min:0,max:30,step:.5})
+export const waterPorpoise=defineParam({...W,id:'water.porpoise',label:'Buggy: porpoise (0 to 1)',default:.3,min:0,max:1,step:.05})
+export const waterWaddle=defineParam({...W,id:'water.waddle',label:'Buggy: waddle (0 to 1)',default:.2,min:0,max:1,step:.05})
+export const waterSkim=defineParam({...W,id:'water.skim',label:'Buggy: planing lift / weight',default:.9,min:0,max:2,step:.05})
+export const waterGrip=defineParam({...W,id:'water.grip',label:'Buggy: wheel grip on the bed (0 to 1)',default:.6,min:0,max:1,step:.05})
+const waterHull:HullProfile={buoyancy:1.6,thickness:1,linear:.5,quadratic:.04,heave:3,paddle:6,paddleSpeed:8,porpoise:.3,waddle:.2,gait:1.6,planing:10,skim:.3,planeLift:.9}
+function waterProfile():HullProfile{
+ const w=waterProfiles.buggy
+ waterHull.buoyancy=w.buoyancy.value;waterHull.planing=w.planing.value;waterHull.thickness=waterThickness.value;waterHull.paddle=waterPaddle.value
+ waterHull.porpoise=waterPorpoise.value;waterHull.waddle=waterWaddle.value;waterHull.planeLift=waterSkim.value
+ return waterHull
 }
 export const lavaCoolingTime=defineParam({id:'lava.coolingTime',label:'Cooling time (s)',group:'Lava',scope:'world',default:20,min:1,max:120,step:1})
 const liquidTerrains=new WeakMap<RAPIER.RigidBody,Terrain>()
@@ -209,7 +225,7 @@ export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terr
  const escape=wingsOpen&&Number.isFinite(state.wingLiftSurface)
  if(!escape){state.wingLiftSurface=-Infinity;state.wingLiftSpeed=0;state.wingLaunchSpeed=0}
  // The buggy's hull columns reach a metre above its centre, so it feels the melt before its centre is in.
- const hullNear=buggy&&type==='lava'&&Number.isFinite(surface)&&p.y<surface+1.2
+ const hullNear=buggy&&type!==null&&Number.isFinite(surface)&&p.y<surface+1.2
  if(!immersion&&!escape&&!hullNear&&!(type==='water'&&waterSinking.value))return
  if(type==='water'){state.heat=0;state.heatHeight=-100}
  if(type==='water'&&waterSinking.value&&!escape){
@@ -218,6 +234,9 @@ export function applyVehicleLiquid(body:RAPIER.RigidBody,world:RAPIER.World,terr
   if(buggy&&wingsOpen&&state.fastWingContact&&liquidWingLift.value>0){
    const velocity=body.linvel(),depth=Math.max(0,surface-p.y)
    body.addForce({x:0,y:body.mass()*(-world.gravity.y+Math.max(0,-velocity.y)*8+depth*20),z:0},true)
+  }else if(buggy){
+   softenController(body,state,1-(1-waterGrip.value)*Math.min(1,state.hullWet*2))
+   state.hullWet=applyHull(body,world,terrain,'water',waterProfile(),state.hull,{throttle:input.y,wheelSpeed:state.wheelSpeed},dt)
   }else applyWaterForces(body,world,terrain,kind,dt)
   return
  }

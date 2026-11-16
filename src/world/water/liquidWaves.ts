@@ -115,28 +115,55 @@ function newField(): LiquidWaveField { return { components: [], shoalDepth: 3.6,
  * distinct time; the returned object is reused, so copy what you keep.
  */
 export function liquidWaves(body: LiquidBody): LiquidWaveField {
-  const which = body.frozen ? null : body.liquid === 'lava' ? 'lava' : body.kind === 'sea' ? 'sea' : 'inland'
-  if (!which || !seaWaves.enabled) return EMPTY
-  const t = waterTime()
-  if (at[which] === t) return fields[which]
+  const which = fieldOf(body)
+  if (!which) return EMPTY
+  const t = waterTime(), k = waveScale()
+  if (at[which] === t && scaled[which] === k) return fields[which]
+  liquidWavesAt(body, t, fields[which])
   at[which] = t
-  const out = fields[which]
+  scaled[which] = k
+  for (const c of fields[which].components) c.amplitude *= k
+  return fields[which]
+}
+const scaled = { sea: Number.NaN, lava: Number.NaN, inland: Number.NaN }
+const fieldOf = (body: LiquidBody) => (body.frozen || !seaWaves.enabled ? null : body.liquid === 'lava' ? 'lava' : body.kind === 'sea' ? 'sea' : 'inland')
+
+/**
+ * The waves on a body at shared time `t`: the same for every client given the same clock and
+ * settings. Writes into `out` (a fresh field if omitted) and returns it.
+ */
+export function liquidWavesAt(body: LiquidBody, t: number, out: LiquidWaveField = newField()): LiquidWaveField {
+  const which = fieldOf(body)
+  if (!which) { out.components.length = 0; return out }
   if (which === 'sea') {
-    const set = seaWaves.waves, phases = seaWaves.phasesNow(), k = waveScale()
+    const set = seaWaves.waves
     for (let i = 0; i < set.components.length; i++) {
       const s = set.components[i], c = (out.components[i] ??= { kx: 0, kz: 0, amplitude: 0, omega: 0, phase: 0 })
-      c.kx = s.kx; c.kz = s.kz; c.amplitude = s.amplitude * k; c.omega = s.omega; c.phase = phases[i]
+      const p = (s.phase0 - s.omega * t) % TAU
+      c.kx = s.kx; c.kz = s.kz; c.amplitude = s.amplitude; c.omega = s.omega; c.phase = p < 0 ? p + TAU : p
     }
     out.components.length = set.components.length
     out.shoalDepth = Math.max(0.5, set.dominantLength * 0.1)
     out.shoalFloor = 0.35
     out.shoalLip = 0.3
-  } else {
-    bodyField(which === 'lava' ? LAVA : INLAND, out, t)
-    const k = waveScale()
-    for (const c of out.components) c.amplitude *= k
-  }
+  } else bodyField(which === 'lava' ? LAVA : INLAND, out, t)
   return out
+}
+/** Height of a field above rest at (x, z) where the water is `depth` deep at rest. */
+export function fieldOffset(f: LiquidWaveField, x: number, z: number, depth: number): number {
+  const s = liquidShoal(f, depth)
+  if (s <= 0) return 0
+  let h = 0
+  for (const c of f.components) if (isActiveWaveComponent(c)) h += c.amplitude * Math.sin(c.kx * x + c.kz * z + c.phase)
+  return s * h
+}
+/** Vertical speed of a field's surface at (x, z), m/s. */
+export function fieldSpeed(f: LiquidWaveField, x: number, z: number, depth: number): number {
+  const s = liquidShoal(f, depth)
+  if (s <= 0) return 0
+  let v = 0
+  for (const c of f.components) if (isActiveWaveComponent(c)) v -= c.amplitude * c.omega * Math.cos(c.kx * x + c.kz * z + c.phase)
+  return s * v
 }
 const EMPTY: LiquidWaveField = { components: [], shoalDepth: 1, shoalFloor: 0, shoalLip: 0.3 }
 
@@ -151,20 +178,10 @@ export function liquidShoal(f: LiquidWaveField, depth: number): number {
 
 /** Wave height above the body's rest height at (x, z) where the water is `depth` deep at rest. */
 export function liquidWaveOffset(body: LiquidBody, x: number, z: number, depth: number): number {
-  const f = liquidWaves(body)
-  const s = liquidShoal(f, depth)
-  if (s <= 0) return 0
-  let h = 0
-  for (const c of f.components) if (isActiveWaveComponent(c)) h += c.amplitude * Math.sin(c.kx * x + c.kz * z + c.phase)
-  return s * h
+  return fieldOffset(liquidWaves(body), x, z, depth)
 }
 
 /** Vertical speed of the surface (m/s) at (x, z), shoaled like the height. */
 export function liquidWaveSpeed(body: LiquidBody, x: number, z: number, depth: number): number {
-  const f = liquidWaves(body)
-  const s = liquidShoal(f, depth)
-  if (s <= 0) return 0
-  let v = 0
-  for (const c of f.components) if (isActiveWaveComponent(c)) v -= c.amplitude * c.omega * Math.cos(c.kx * x + c.kz * z + c.phase)
-  return s * v
+  return fieldSpeed(liquidWaves(body), x, z, depth)
 }
