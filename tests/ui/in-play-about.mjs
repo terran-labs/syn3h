@@ -69,10 +69,38 @@ async function modalExtensions(page, record, entry, dialog) {
     axes: ['x', 'y', 'z', 'w'].map(key => syn3h.game.input.state[key]),
     external: ['x', 'y', 'z'].map(key => syn3h.game.input.external[key]), fire: syn3h.game.input.state.fire }))
   const neutral = value => { assert.deepEqual(value.axes, [0, 0, 0, 0]); assert.equal(value.fire, false) }
+  const openWhileHeld = async kind => {
+    await page.evaluate(kind => {
+      window.guideHeldClick = null
+      document.querySelector('.rail-about').addEventListener('click', event => {
+        const state = { kind, trusted: event.isTrusted, tick: syn3h.game.tick,
+          y: syn3h.game.input.state.y, externalY: syn3h.game.input.external.y,
+          ready: syn3hNet.bigRed.ready, fire: syn3h.game.input.state.fire,
+          suspended: syn3h.game.input.suspended }
+        const held = kind === 'W' ? state.y !== 0 : kind === 'stick'
+          ? state.externalY !== 0 && state.y !== 0 : state.ready && state.fire
+        window.guideHeldClick = { ...state, valid: held && state.trusted && !state.suspended }
+        if (!window.guideHeldClick.valid) throw Error(`${kind} hold absent in actual About click turn`)
+      }, { capture: true, once: true, passive: true })
+    }, kind)
+    let clickFailure
+    try { await entry.click() } catch (error) { clickFailure = error }
+    // Persist the actual-turn scalar snapshot even when the native click failed.
+    // This read cannot substitute a later held state for the recorded precondition.
+    try {
+      const snapshot = await page.evaluate(() => window.guideHeldClick)
+      await keep({ phase: 'actual-about-click-precondition', kind, snapshot })
+      assert.ok(snapshot, `${kind} About click snapshot missing`)
+      assert.equal(snapshot.kind, kind); assert.equal(snapshot.valid, true, `${kind} hold ended before About click`)
+    } catch (error) { if (!clickFailure) clickFailure = error }
+    if (clickFailure) throw clickFailure
+    await dialog.waitFor({ state: 'visible' })
+  }
+
   await entry.focus(); await page.keyboard.down('KeyW')
   await ready(page, () => syn3h.game.input.state.y !== 0)
   const driveBefore = await axes(); await keep({ phase: 'drive-held-before-open', state: driveBefore })
-  await entry.click(); await dialog.waitFor({ state: 'visible' })
+  await openWhileHeld('W')
   const driveOpen = await axes(); neutral(driveOpen); assert.ok(driveOpen.suspended)
   await dialog.locator('.about-back').click()
   await ready(page, tick => syn3h.game.tick > tick, driveOpen.tick)
@@ -102,7 +130,7 @@ async function modalExtensions(page, record, entry, dialog) {
   await touchEvent('pointerdown', 701, 'canvas', point.x, point.y)
   await touchEvent('pointermove', 701, 'canvas', point.x, point.y - 50)
   await ready(page, () => syn3h.game.input.external.y !== 0 && syn3h.game.input.state.y !== 0)
-  const stickBefore = await axes(); await entry.click(); await dialog.waitFor({ state: 'visible' })
+  const stickBefore = await axes(); await openWhileHeld('stick')
   const stickOpen = await axes(); neutral(stickOpen); assert.deepEqual(stickOpen.external, [0, 0, 0])
   await dialog.locator('.about-back').click()
   // Old held pointer movement must not restart a reset stick.
@@ -121,7 +149,7 @@ async function modalExtensions(page, record, entry, dialog) {
   await touchEvent('pointerdown', 703, 'tag', 0, 0)
   await ready(page, () => syn3hNet.bigRed.ready && syn3h.game.input.state.fire)
   const tagBefore = await page.evaluate(() => ({ ...syn3hNet.bigRed.stats }))
-  await entry.click(); await dialog.waitFor({ state: 'visible' })
+  await openWhileHeld('TAG')
   assert.equal((await axes()).fire, false)
   await dialog.locator('.about-back').click()
   const tagTick = (await axes()).tick

@@ -18,6 +18,13 @@ visible pause-screen About entry, and focus restored to that button after closin
 are real page captures when executed, not generated mockups. No screenshot has been taken
 yet, and visual review is a separate acceptance step. Screenshot writes remain bounded.
 
+For W, stick and TAG, a passive once-only capture-phase listener on the actual About
+button records scalar state in the native click turn before Shell's bubble handler.
+It requires sampled W drive, both external and sampled stick drive, or ready plus fire
+for TAG, respectively. Missing/invalid snapshots fail. The fixture persists each snapshot
+before checking any post-open result, even if the click fails. There is no repair,
+rearm, replacement hold, preventDefault or propagation change in the guard.
+
 The touch-context extension prepares:
 
 1. Native KeyW held through the actual About button opening and Back closing. Assert
