@@ -60,6 +60,12 @@ export interface GalaxyOptions {
   /** Logo box in CSS pixels relative to this host, plus the existing graphics tier. */
   logo?(): { box: PixelRect; level: number } | undefined
   onLogo?(drawn: boolean): void
+  /**
+   * CSS pixels to keep clear at the top of the galaxy, asked each frame (the lobby's update
+   * banner sits there). The worlds shift down and shrink to leave that band, keeping their
+   * bottom edge where it was; 0 restores the usual framing. At most 30% of the height.
+   */
+  topInset?(): number
   onPresence?(values: Populations): void
   presenceVisible?(): boolean
 }
@@ -1048,7 +1054,8 @@ export class Galaxy {
     const time = this.clock; this.holding = still
     // The view keeps a little of the last drag's swing, and drifts very slowly when left alone.
     this.swing(elapsed, !this.drag && this.chosen < 0 && !still, wallElapsed)
-    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : [0.5, 0.5, 1]
+    const inset = Math.min(0.3, Math.max(0, this.options.topInset?.() ?? 0) / Math.max(1, this.host.clientHeight))
+    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : [0.5, 0.5 - inset / 2, 1 - inset]
     const framingMoves = this.framing.some((v, i) => Math.abs(v - frameGoal[i]) > 0.001)
     this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], perFrame(0.18, elapsed)) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds

@@ -92,11 +92,10 @@ SYN3H_NO_ROOM_SERVER=1 npx vitest run
 SYN3H_NO_ROOM_SERVER=1 VITE_SERVER_URL=ws://127.0.0.1:8797 npx vite --port 5187 --strictPort
 ```
 
-Start an isolated room server with `PORT=8797 npx tsx server/dev.ts`, then run
-`node tests/ui/browser.mjs`. The skip flag prevents the Vite plugin from trying
-to start a second room server on the shared host. The browser uses an isolated room
-per run against that isolated development room server. Stop both processes
-when done. `node tests/audio/browser.mjs` forwards to this current shell smoke test.
+Start an isolated room server with `PORT=8797 npx tsx server/dev.ts` before running a
+browser check against it. The skip flag prevents the Vite plugin from trying to start a
+second room server on the shared host. Stop both processes when done. (The old shell smoke,
+`browser.mjs`, was removed on 16 November 2026: it drove lobby panels that no longer exist.)
 
 The smoke captures every panel at desktop and 390 by 844 phone sizes, both vehicle
 skins, host and guest lock states, the HUD and the in-game menu. It exercises saved
@@ -306,7 +305,6 @@ the world's name and story, its seed and the bots.
 - When the host has locked the world, or a guest came by an invite naming one, the other
   labels dim and arriving at another world is refused, with a notice.
 
-`SYN3H_URL=<dev server> tools/heavy.sh node tests/ui/planets.mjs` checks all of that.
 
 ## Phones: a guest's first run, and the lowest graphics level
 
@@ -460,7 +458,7 @@ keyboard); frame cost unmeasured on real devices; the game measures its own fram
 while the lobby is on screen, so a slow lobby can lower `gfx.level` before play starts.
 `tools/heavy.sh node tests/ui/galaxy.mjs` checks the galaxy, the custom world and the
 descent on desktop and phone, the still mode, the row of names and the missing-WebGL 2
-notice; `planets.mjs` checks choosing worlds through it; `galaxy-crowd.mjs` rehearses ten
+notice; `galaxy-crowd.mjs` rehearses ten
 worlds (`?worlds=10`, development builds only) at desktop, phone portrait and landscape and
 in WebKit at iPad size. All take `SYN3H_URL`. Its GPU timings on this Mac (median ms per
 frame, four worlds then ten): desktop 2.7 and 3.0, portrait 1.9 and 2.6, landscape 1.9 and

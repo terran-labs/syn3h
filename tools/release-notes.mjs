@@ -187,11 +187,13 @@ function recordedReleases() {
   return existsSync(path) ? releasesFromTsv(readFileSync(path, 'utf8')) : null
 }
 
-/** Every version known: history.tsv, local v tags and notes files, oldest first. */
+/**
+ * Every version used: history.tsv and local v tags, oldest first. Notes files do not count:
+ * a release's notes are written before it is tagged, and must not take its number.
+ */
 function knownVersions() {
   const tags = execFileSync('git', ['tag', '--list', 'v*'], { cwd: REPO, encoding: 'utf8' }).split('\n')
-  const notes = existsSync(NOTES_DIR) ? readdirSync(NOTES_DIR).map((f) => f.replace(/\.md$/, '')) : []
-  const all = new Set([...history().map((r) => r.version), ...tags, ...notes].filter(isVersion).map((v) => parseVersion(v).tag))
+  const all = new Set([...history().map((r) => r.version), ...tags].filter(isVersion).map((v) => parseVersion(v).tag))
   return [...all].sort(compareVersions)
 }
 

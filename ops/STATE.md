@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-16 11:00 PST. The owner withdrew the afternoon cutoff.
+Last verified: 2026-11-16 12:40 PST. The owner withdrew the afternoon cutoff.
 
 ## Authority and release order
 
@@ -12,14 +12,19 @@ and eight vehicle/browser cases with rollback. Verify notes and GIF before Lates
 
 ## Production
 
-Accepted release: v26.11.1603 (release-27), source ad7fb2f9, at https://www.syn3h.com/,
-published 16 November 2026. One-line command bar (world name, Search, Pause), the Jet
-THRUST readout, fleeing Tag bots fixed, and a green suite (1,805 pass, one skip, no
-known failures). release.sh passed public build, HTTPS, WSS, net smoke and frozen-version
-checks; the command bar was confirmed on www.syn3h.com. Showcase GIF captured from the
-frozen build (seven of eight scenes; wings-glide skipped). Performance not measured.
+Accepted release: v26.11.1605 (release-28), source 17a973a2, at https://www.syn3h.com/,
+live 16 November 2026 at 12:23 PST. Touch aiming and a left-handed setting, the About
+guide in play, the phone minimap docked top right, one-line messages, and the rejoin fix
+(a reconnect that beats the old close keeps its place; a replaced tab stops). Public
+build, frozen versions and net smoke passed on both addresses (9/9 steps, no drops), and
+three further production smokes passed 9/9 with no drops. Performance not measured.
 
-Next batch, v26.11.1604: nameplates (cost re-measured first), touch aiming, in-play About.
+v26.11.1604 was withdrawn: its three deploys failed the public smoke on dropped
+connections (this machine's route to Cloudflare) and were rolled back. The smoke now
+rides through drops with bounded step retries and checks the rejoin rules after each.
+
+Next batch, v26.11.1606: about-updates, loading-fun, lobby-settings, the version button,
+player digests, the lost-setting resend and the per-page-load reconnect marker.
 
 ## Current queue
 

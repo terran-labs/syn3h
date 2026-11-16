@@ -30,6 +30,7 @@ import {
   encodeState,
   isBotId,
   parseJson,
+  CLOSE_REPLACED,
 } from '../../shared/protocol'
 import type { Game, System } from '../core/Game'
 import { createVehicle, type VehicleKind } from '../vehicles'
@@ -229,6 +230,12 @@ export class NetClient implements System {
   private wasDriving = false
   private welcomed = false
   private everWelcomed = false
+  /**
+   * World settings changed here while the connection was down, newest value each: the socket
+   * drops what is sent while it is closed, and the welcome then replaces our world with the
+   * room's. A host gets them back on the next welcome (resendUnsent).
+   */
+  private readonly unsentWorld = new Map<string, ParamValue>()
   private sendTimer = 0
   private pingTimer = 0
   private pingsSent = 0
@@ -434,7 +441,7 @@ export class NetClient implements System {
     this.conn.onOpen = () => {
       this.send({
         type: 'hello', v: PROTOCOL_VERSION, modes: 2, name: playerName(), params: params.snapshot('world'),
-        kind: this.kind, colors: this.colors, resume: rejoinSecret(this.ctx.room),
+        kind: this.kind, colors: this.colors, resume: rejoinSecret(this.ctx.room), page: PAGE_LOAD,
       })
     }
     this.conn.onText = (text) => {
@@ -442,7 +449,10 @@ export class NetClient implements System {
       if (msg) this.onMessage(msg)
     }
     this.conn.onBinary = (data) => this.onState(data)
-    this.conn.onClose = () => this.onDisconnect()
+    // 4003: the room gave this player's place to a newer connection with the same secret (a
+    // duplicate tab, or this tab's own reconnect after it went quiet). Resuming would take the
+    // place back, and two tabs that each go quiet at times would trade it forever: stop instead.
+    this.conn.onClose = (code) => { if (code === CLOSE_REPLACED) this.onReplaced(); else this.onDisconnect() }
 
     params.onChange((id, value, source) => this.onParamChange(id, value, source))
     // Registered after main.ts's listener, so this runs last and wins: our own slot, not 0.
@@ -1410,6 +1420,7 @@ export class NetClient implements System {
           this.ctx.audio?.play('materialize', s.position)
         }
         this.everWelcomed = true
+        this.resendUnsent()
         this.event(joinedText(msg.room, this.players.get(msg.id)?.name))
         break
       }
@@ -1520,9 +1531,12 @@ export class NetClient implements System {
   }
 
   private onParamChange(id: string, value: ParamValue, source: string): void {
-    if (source === 'remote' || !this.connected) return
+    if (source === 'remote') return
     const p = params.get(id)
     if (!p || p.def.scope !== 'world') return
+    // Before the first welcome the hello carries our world; after it, a change made while the
+    // connection is down would be dropped, so it waits for the next welcome.
+    if (!this.connected) { if (this.everWelcomed) this.unsentWorld.set(id, value); return }
     // Presets are local actions too, so they sync like slider moves.
     this.send({ type: 'param', id, value })
   }
@@ -1537,6 +1551,30 @@ export class NetClient implements System {
     this.pingsSent = 0
     for (const id of [...this.remotes.keys()]) this.removeRemote(id)
     if (retrying) this.event('Disconnected, reconnecting')
+  }
+
+  /**
+   * After a welcome: the world settings changed while we were away are set again, and so sent,
+   * if we are the host. Anyone else's changes were never the room's to take and are dropped.
+   */
+  private resendUnsent(): void {
+    if (!this.unsentWorld.size) return
+    const pending = [...this.unsentWorld]
+    this.unsentWorld.clear()
+    if (this.game.host !== this.id) return
+    for (const [id, value] of pending) params.set(id, value)
+  }
+
+  /** Our place continued on another connection: stop here, as for a full room, and say so. */
+  private onReplaced(): void {
+    this.conn.close()
+    this.onDisconnect(false)
+    this.players.clear()
+    this.localAfterFull = true
+    this.joinStatus = 'This game continued in another tab.'
+    this.updateBotRole()
+    this.uiDirty = true
+    this.ctx.onJoinStatus?.(this.joinStatus)
   }
 
   /** A full room is a refusal, not a transient transport failure. */
@@ -1725,6 +1763,9 @@ let preferredName = ''
  * after a dropout carries on as the same player. Kept for the tab's lifetime (so a reload
  * rejoins too) and never shown or sent to other players. Each tab has its own.
  */
+/** Random for this page load, sent with the secret: this page's own reconnect is told apart from a duplicated tab. */
+const PAGE_LOAD = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('')
+
 function rejoinSecret(room: string): string | undefined {
   const key = `syn3h.rejoin.${room}`
   try {
