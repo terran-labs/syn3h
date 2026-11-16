@@ -2,6 +2,9 @@
  * No navigation occurs. A query-based frozen version is restored in play; reloading
  * the cleaned root lobby intentionally requests latest. Frozen pathnames stay intact.
  */
+/** Preview switches that survive the lobby's clean address: the wordmark placement and the opening. */
+const PREVIEW_FLAGS = ['wordmark', 'intro'] as const
+
 export class LobbyAddress {
   private retained: URL
   private lobby = false
@@ -17,10 +20,11 @@ export class LobbyAddress {
     if (!this.lobby) this.retained = new URL(this.location.href)
     this.lobby = true
     const clean = new URL(this.retained.href)
-    // The wordmark preview flag (src/ui/brand/wordmarkSwitch.ts) stays while it is present.
-    const wordmark = new URL(this.location.href).searchParams.get('wordmark') ?? clean.searchParams.get('wordmark')
+    // The preview flags (src/ui/brand/wordmarkSwitch.ts) stay while they are present.
+    const now = new URL(this.location.href).searchParams
+    const kept = PREVIEW_FLAGS.map(flag => [flag, now.get(flag) ?? clean.searchParams.get(flag)] as const)
     clean.search = ''; clean.hash = ''
-    if (wordmark !== null) clean.searchParams.set('wordmark', wordmark)
+    for (const [flag, value] of kept) if (value !== null) clean.searchParams.set(flag, value)
     this.replace(clean)
   }
 

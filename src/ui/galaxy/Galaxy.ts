@@ -15,6 +15,9 @@ import { logoBudget, STILL_SECONDS } from '../brand/LogoMark'
 import { placeWordmark, poseView, surfacePoint, WordmarkRig, WORDMARK_SCENE_GLSL, wordmarkCrispPass, wordmarkPlacement } from '../brand/wordmarkScene'
 import { ASPECT } from '../brand/wordmarkMesh'
 import { WordmarkOverlay } from '../brand/wordmarkOverlay'
+import { introMode, openingState, SETTLED, type OpeningMode, type OpeningState } from './opening'
+/** The opening plays once per page load: returning from a world goes straight to the lobby. */
+let openingPlayed = false
 import { WordmarkCrisp } from '../brand/wordmarkCrisp'
 import { mountWordmarkSwitch, wordmarkSwitchEnabled, type WordmarkSwitch } from '../brand/wordmarkSwitch'
 import type { ParamValue } from '../../../shared/params'
@@ -253,6 +256,8 @@ uniform float uAmbience;            // 1 keeps twinkle and drifting cloud, 0 she
 uniform float uDive;                // 0 in orbit, 1 through the atmosphere of the chosen world
 uniform float uDim;                 // 1 as the lobby itself; lower behind an open panel
 uniform float uMarkCrisp;           // 1 when the wordmark's letters are drawn by its own full-resolution pass
+uniform vec4 uReveal;               // the opening (opening.ts): sun, shafts' front, stars, orbit lines
+uniform float uRevealMark;          // the opening: how far the wordmark's reveal has swept from the sun
 uniform vec3 uEye, uRight, uUp, uForward; uniform float uTan;
 uniform int uCount; uniform int uOnly;
 uniform float uPopulation[${MAX}];
@@ -306,6 +311,10 @@ void main() {
   // Where this ray meets the orbital plane, for the faint trace of each orbit. One line a
   // pixel wide however far off; it fades toward the horizon, where a pixel spans many orbits.
   float planeT = -uEye.y / (abs(ray.y) > 1e-4 ? ray.y : 1e-4), planeR = length((uEye + ray * planeT).xz), planeW = fwidth(planeR), trace = 0.0;
+  // The opening draws the orbit lines round from the far side, both ways at once.
+  vec3 planeAt = uEye + ray * planeT;
+  float around = abs(mod(atan(planeAt.z, planeAt.x) - atan(-uEye.z, -uEye.x) + 3.14159265, 6.2831853) - 3.14159265) / 3.14159265;
+  float orbitDraw = 1.0 - smoothstep(uReveal.w * 1.06 - 0.06, uReveal.w * 1.06, around);
   float nearest = 1e9; int found = -1; vec3 normal = vec3(0.0); float halo = 0.0; vec3 haloTint = vec3(0.0); float haloNear = 1e9; vec3 haloFront = vec3(0.0);
   for (int i = 0; i < ${MAX}; i++) {
     if (i >= uCount) break;
@@ -330,16 +339,20 @@ void main() {
   vec2 toSun = q * 0.5 - sunP.xy * 0.5;
   float sunDistance = sunP.z > 0.0 ? length(toSun) : 9.0;
   vec2 sunDirection = toSun / max(length(toSun), 0.00001);
-  vec3 sunLight = vec3(1.0, 0.98, 0.94) * exp(-sunDistance * 42.0) * 2.4;
-  sunLight += mix(WARM, vec3(1.0, 0.8, 0.55), 0.5) * exp(-sunDistance * 11.0) * 0.8;
+  // The opening (opening.ts): the sun grows from a point, flaring a little past itself.
+  float sunGrown = clamp(uReveal.x, 0.0, 1.0), sunSize = mix(0.11, 1.0, sunGrown), sunFlare = max(1.0, uReveal.x);
+  vec3 sunLight = vec3(1.0, 0.98, 0.94) * exp(-sunDistance * 42.0 / sunSize) * 2.4 * sunFlare;
+  sunLight += mix(WARM, vec3(1.0, 0.8, 0.55), 0.5) * exp(-sunDistance * 11.0 / sunSize) * 0.8 * sunGrown * sunFlare;
   // The wide haze and the shafts are kept apart from the sun itself: a world beyond the sun
   // still has the sun in front of it, but must not have the whole glow painted over it.
-  vec3 sunHaze = mix(WARM, ACCENT_B, 0.35) * exp(-sunDistance * 2.8) * 0.22;
+  vec3 sunHaze = mix(WARM, ACCENT_B, 0.35) * exp(-sunDistance * 2.8) * 0.22 * sunGrown;
   float shafts =
     pow(noise(vec3(sunDirection * 2.4, uTime * 0.09)), 2.0) * 0.9 +
     pow(noise(vec3(sunDirection * 6.5 + 3.0, uTime * 0.15)), 3.0) * 0.8 +
     pow(noise(vec3(sunDirection * 17.0 + 9.0, uTime * 0.24)), 4.0) * 0.6;
-  float reach = exp(-sunDistance * 1.7) * smoothstep(0.015, 0.14, sunDistance);
+  float reach = exp(-sunDistance * 1.7) * smoothstep(0.015, 0.14, sunDistance) * sunFlare;
+  // The shafts burst outward from the sun as the opening's front passes.
+  reach *= 1.0 - smoothstep(uReveal.y - 0.35, uReveal.y, sunDistance);
   // Each world stands in the light: behind it, as seen from the sun, the shafts are cut.
   // Every edge of the cut is a ramp, never a switch: it starts across the world's limb along
   // the ray, its sides soften with distance, and it fades out as the world slides over the
@@ -347,6 +360,7 @@ void main() {
   float shade = 1.0;
   for (int i = 0; i < ${MAX}; i++) {
     if (i >= uCount || uShed.x >= 1.0) break;
+    if (uWorld[i].w < 0.01) continue;                       // not yet arrived (the opening)
     vec3 w = toScreen(uWorld[i].xyz);
     if (w.z <= 0.0) continue;
     vec2 centre = w.xy * 0.5 - sunP.xy * 0.5;                // from the sun, on screen
@@ -378,12 +392,12 @@ void main() {
   float ghostB = 1.0 - smoothstep(0.012, 0.022, length(view + sunView * 0.25));
   float ghostC = (1.0 - smoothstep(0.07, 0.09, length(view + sunView * 0.8))) * smoothstep(0.045, 0.07, length(view + sunView * 0.8));
   flare += vec3(0.4, 0.7, 1.0) * ghostA * 0.07 + vec3(1.0, 0.6, 0.3) * ghostB * 0.12 + vec3(0.6, 1.0, 0.8) * ghostC * 0.035;
-  flare *= (1.0 - uShed.x) * step(0.0, sunP.z);
+  flare *= (1.0 - uShed.x) * step(0.0, sunP.z) * sunGrown;
 
   vec3 orbitLines = vec3(0.0);
 #ifdef MARK_ONLY
   // The wordmark's own pass (WordmarkCrisp) needs only what crosses the letters.
-  if (found < 0 && planeT > 0.01 && uOnly < 0) orbitLines = vec3(0.45, 0.62, 0.9) * min(trace, 1.0) * clamp(1.0 - planeW * 2.5, 0.0, 1.0) * 0.1 * (1.0 - uShed.y) * (1.0 - uDive);
+  if (found < 0 && planeT > 0.01 && uOnly < 0) orbitLines = vec3(0.45, 0.62, 0.9) * min(trace, 1.0) * orbitDraw * clamp(1.0 - planeW * 2.5, 0.0, 1.0) * 0.1 * (1.0 - uShed.y) * (1.0 - uDive);
 #else
   if (found >= 0) {
     vec3 at = uEye + ray * nearest, centre = uWorld[found].xyz;
@@ -434,8 +448,8 @@ void main() {
     float before = smoothstep(-2.0 * uWorld[found].w, 2.0 * uWorld[found].w, sunP.z - toScreen(uWorld[found].xyz).z);
     sunLight *= mix(1.0, 0.06, before); sunHaze *= mix(0.35, 0.06, before); sunShafts *= mix(0.12, 0.0, before);
   } else {
-    c += sky * smoothstep(0.08, 0.5, sunDistance) + haloTint;
-    if (planeT > 0.01 && uOnly < 0) { orbitLines = vec3(0.45, 0.62, 0.9) * min(trace, 1.0) * clamp(1.0 - planeW * 2.5, 0.0, 1.0) * 0.1 * (1.0 - uShed.y) * (1.0 - uDive); c += orbitLines; }
+    c += sky * smoothstep(0.08, 0.5, sunDistance) * uReveal.z + haloTint;
+    if (planeT > 0.01 && uOnly < 0) { orbitLines = vec3(0.45, 0.62, 0.9) * min(trace, 1.0) * orbitDraw * clamp(1.0 - planeW * 2.5, 0.0, 1.0) * 0.1 * (1.0 - uShed.y) * (1.0 - uDive); c += orbitLines; }
   }
 #endif
   vec3 markColour = vec3(0.0); float markCover = 0.0;
@@ -443,7 +457,8 @@ void main() {
   if (uMarkMode > 0 && markAt.z > 0.0) {
     // Where one pixel spans a good part of a letter (toward the horizon of a surface lying in
     // the plane, or across the seam of a curved one) there is nothing legible to draw.
-    float resolved = 1.0 - smoothstep(0.03, 0.12, markW);
+    // The opening reveals the letters as a front sweeping out from the sun.
+    float resolved = (1.0 - smoothstep(0.03, 0.12, markW)) * (1.0 - smoothstep(uRevealMark - 0.3, uRevealMark, sunDistance));
     float d = wordmarkDistance(markAt.xy), cover = markAt.z < nearest ? wordmarkCoverage(d, markW) * uMarkOpacity * resolved : 0.0;
     vec3 at = uEye + ray * markAt.z;
     // A quiet cousin of the flat logo's plasma: a warm halo on the plane round the letters,
@@ -561,7 +576,7 @@ void main() {
   color = vec4(c / 12.0, 1.0);
 }`
 /** Every uniform the galaxy's fragment shader reads, looked up once per context. */
-const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uField', 'uFieldBounds', 'uFieldDecode'] as const
+const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uField', 'uFieldBounds', 'uFieldDecode'] as const
 const smootherstep = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * t * (t * (t * 6 - 15) + 10) }
 const rgb = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
 type Vec = [number, number, number]
@@ -828,11 +843,16 @@ export class Galaxy {
       // The in-space letters' full-resolution pass, made only when a placement in space is chosen.
       this.markCrisp = null
       // ?wordmark= in the address: the owner's chip for flipping between placements.
-      if (wordmarkSwitchEnabled()) this.markSwitch = mountWordmarkSwitch(this.host)
+      if (wordmarkSwitchEnabled()) this.markSwitch = mountWordmarkSwitch(this.host, mode => this.replayOpening(mode))
       if (!this.logo.ok) { this.logo.dispose(); this.logo = null }
       else if (this.logoSeen || this.reduced.matches || this.options.still?.()) this.logo.skipIntro()
     }
     const signal = this.abort.signal, options = { signal }
+    // The opening: the first showing after the page loads, unless motion is reduced. Any tap,
+    // click, wheel or key goes straight to the settled lobby.
+    const intro = Math.round(introMode.value)
+    if (intro > 0 && !openingPlayed && !this.reduced.matches) { this.opening = { start: null, mode: intro as OpeningMode }; openingPlayed = true }
+    for (const type of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(type, () => { if (this.opening) { this.opening = null; this.wake = 2 } }, { capture: true, passive: true, signal })
     canvas.addEventListener('webglcontextlost', event => {
       if (this.canvas !== canvas || this.gl !== gl) return
       event.preventDefault(); cancelAnimationFrame(this.frame); this.options.onLogo?.(false); this.markOverlay?.hide()
@@ -929,7 +949,7 @@ export class Galaxy {
     if (this.target2) { const gl = this.gl; gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.target2); gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, this.canvas.width, this.canvas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null) }
   }
   /** Where the worlds are now: see orbitLayout. */
-  private places(time: number): { position: Vec; radius: number }[] {
+  private places(time: number): { position: Vec; radius: number; orbit: number }[] {
     return orbitLayout(this.options.worlds.map(bodyOf), time)
   }
   /** The farthest the view may pull back: far enough to see the whole system with room round it. */
@@ -1003,7 +1023,7 @@ export class Galaxy {
     if (!this.active || document.hidden) return
     this.frame = requestAnimationFrame(this.loop)
     qualityFrame(now)
-    const busy = !!this.flight || this.drag !== null || this.pointers.size > 0 || !this.swingResting || (this.chosen >= 0 && !this.arrived)
+    const busy = this.opening !== null || !!this.flight || this.drag !== null || this.pointers.size > 0 || !this.swingResting || (this.chosen >= 0 && !this.arrived)
     if (!frameDue(now - this.last, busy)) return
     const elapsed = Math.min(0.1, Math.max(0, (now - this.last) / 1000))
     this.last = now; this.step = elapsed
@@ -1025,10 +1045,14 @@ export class Galaxy {
     const framingMoves = this.framing.some((v, i) => Math.abs(v - frameGoal[i]) > 0.001)
     this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], perFrame(0.18, elapsed)) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
+    // The continuous opening (opening.ts): held at the point of light while loading, then by the clock.
+    const reveal = this.stepOpening(places)
+    if (reveal.reach !== 1) view.eye = [this.target[0] + (view.eye[0] - this.target[0]) * reveal.reach, this.target[1] + (view.eye[1] - this.target[1]) * reveal.reach, this.target[2] + (view.eye[2] - this.target[2]) * reveal.reach]
+    const arrival = places.map((_, i) => reveal.arrive[this.lanes(places)[i]] ?? 1)
     const mark = this.stepMark(elapsed, still)
     this.markView = view; this.markPlaced = mark.placement
     // Held still, draw only while something is moving; the last frame stays on the canvas.
-    const moving = mark.moving || this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
+    const moving = this.opening !== null || mark.moving || this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
     if (still && !moving && this.wake <= 0) { this.idle++; return }
     this.wake = Math.max(0, this.wake - 1)
     // The wordmark's field is baked (first, and if drawn much larger) before the frame starts.
@@ -1041,7 +1065,7 @@ export class Galaxy {
       if (mark.placement) {
         const p = mark.placement
         gl.uniform3f(u.uMarkCentre, ...p.centre); gl.uniform3f(u.uMarkRight, ...p.right); gl.uniform3f(u.uMarkUp, ...p.up)
-        gl.uniform1f(u.uMarkOpacity, mark.opacity * (1 - this.dive)); gl.uniform1f(u.uMarkSun, p.sunDistance)
+        gl.uniform1f(u.uMarkOpacity, mark.opacity * reveal.mark * (1 - this.dive)); gl.uniform1f(u.uMarkSun, p.sunDistance)
         gl.uniform4f(u.uMarkShape, p.shape.kind, p.shape.radius, p.shape.bearing, p.shape.size); gl.uniform2f(u.uMarkShape2, p.shape.offset, p.shape.flip)
         bindField()
       }
@@ -1052,7 +1076,9 @@ export class Galaxy {
       gl.uniform1i(u.uOnly, this.editing ? this.chosen : -1)
       gl.uniform1fv(u.uPopulation, worlds.slice(0, MAX).map(w => w.id === 'custom' || w.mapVariant?.startsWith('saved:') ? -1 : this.population.get(w.recipe ?? w.id)?.players ?? -1))
       gl.uniform1i(u.uCount, Math.min(MAX, worlds.length))
-      gl.uniform4fv(u.uWorld, places.flatMap(p => [...p.position, p.radius]))
+      gl.uniform4fv(u.uWorld, places.flatMap((p, i) => [...p.position, Math.max(1e-3, p.radius * arrival[i])]))
+      const settled = reveal === SETTLED
+      gl.uniform4f(u.uReveal, reveal.sun, settled ? 99 : reveal.front, reveal.stars, reveal.orbits); gl.uniform1f(u.uRevealMark, settled ? 99 : reveal.markFront)
       gl.uniform3fv(u.uLand, worlds.slice(0, MAX).flatMap(w => rgb(w.land))); gl.uniform3fv(u.uSea, worlds.slice(0, MAX).flatMap(w => rgb(w.sea)))
       gl.uniform4fv(u.uKind, worlds.slice(0, MAX).flatMap((w, i) => [w.forming ? 2 : w.glow ? 1 : 0, this.layers[i] === this.mapKey(w, SMALL) || i === this.closeIndex ? 1 : 0, this.spin(i, time), (w.seed % 97) + i * 3.1]))
     }
@@ -1081,7 +1107,7 @@ export class Galaxy {
       if (held) logo.skipIntro()
       // Behind the loading veil the logo waits at nothing: its fade starts as the veil lifts.
       else if (document.documentElement.dataset.boot === 'loading') logo.replayIntro()
-      logo.setLook({ particles: Math.round(budget.particles * (1 - qualityShed(1) * 0.65)), sway: held ? 0 : 0.07, opacity: 1 - this.dive })
+      logo.setLook({ particles: Math.round(budget.particles * (1 - qualityShed(1) * 0.65)), sway: held ? 0 : 0.07, opacity: (1 - this.dive) * reveal.mark })
       const sx = this.canvas.width / this.host.clientWidth, sy = this.canvas.height / this.host.clientHeight, box = layout.box
       logo.draw(held ? STILL_SECONDS : time, { x: box.x * sx, y: box.y * sy, width: box.width * sx, height: box.height * sy })
       this.markOverlay?.update(box, logo.markOpacity)
@@ -1092,7 +1118,7 @@ export class Galaxy {
     const width = this.host.clientWidth, height = this.host.clientHeight, short = Math.min(width, height) * this.framing[2]
     this.screen = places.map((place, i) => {
       const d = sub(place.position, view.eye), z = dot(d, view.forward)
-      return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0, depth: z }
+      return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0 && arrival[i] >= 0.6, depth: z }
     })
     this.options.onLayout?.(this.screen, this.chosen >= 0 ? worlds[this.chosen].id : undefined)
     // Arrival: a second and a half after choosing, whatever the frame rate.
@@ -1100,6 +1126,30 @@ export class Galaxy {
   }
   private screen: { id: string; x: number; y: number; radius: number; visible: boolean; depth: number }[] = []
   private readonly markRig = new WordmarkRig()
+  /** The continuous opening, while it plays: started when loading ends (null until then). */
+  private opening: { start: number | null; mode: OpeningMode } | null = null
+  /** For screenshots only: holds the opening at this many seconds in. */
+  openingAt: number | null = null
+  /** Plays the opening again now, as the preview menu does. */
+  replayOpening(mode: number): void { if (mode > 0 && !this.reduced.matches) { this.opening = { start: performance.now(), mode: mode as OpeningMode }; this.wake = 2 } }
+  private stepOpening(places: readonly { orbit: number }[]): OpeningState {
+    const o = this.opening
+    if (!o) return SETTLED
+    if (o.start === null && document.documentElement.dataset.boot !== 'loading') o.start = performance.now()
+    const at = this.openingAt ?? (o.start === null ? -1 : (performance.now() - o.start) / 1000)
+    const state = openingState(at, o.mode, places.length)
+    if (state.done) { this.opening = null; return SETTLED }
+    return state
+  }
+  private laneCache: number[] = []
+  /** Each world's lane, innermost first: the order the opening brings them in. */
+  private lanes(places: readonly { orbit: number }[]): number[] {
+    if (this.laneCache.length !== places.length) {
+      const order = places.map((p, i) => i).sort((a, b) => places[a].orbit - places[b].orbit)
+      this.laneCache = []; order.forEach((index, lane) => { this.laneCache[index] = lane })
+    }
+    return this.laneCache
+  }
   /** The flat wordmark, drawn by the browser over the canvas (see WordmarkOverlay). */
   private markOverlay: WordmarkOverlay | null = null
   private markCrisp: WordmarkCrisp | null = null
