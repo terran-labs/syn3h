@@ -32,6 +32,12 @@ const rendererManifest = JSON.parse(await readFile(process.env.UX_RENDERER_MANIF
 assert.ok(Array.isArray(rendererManifest.chunks) && rendererManifest.chunks.length > 0)
 assert.ok(rendererManifest.chunks.every(c => typeof c.path === 'string' && c.path.startsWith('/') && /^[0-9a-f]{64}$/.test(c.sha256)))
 assert.equal(new Set(rendererManifest.chunks.map(c => c.path)).size, rendererManifest.chunks.length)
+assert.equal(rendererManifest.chunks.length, 3)
+assert.ok(Array.isArray(rendererManifest.allowedChunks) && rendererManifest.allowedChunks.length >= 3)
+assert.ok(rendererManifest.allowedChunks.every(c => c.path.startsWith(rendererManifest.cachePrefix) && /^[0-9a-f]{64}$/.test(c.sha256)))
+assert.equal(new Set(rendererManifest.allowedChunks.map(c => c.path)).size, rendererManifest.allowedChunks.length)
+for (const c of rendererManifest.chunks) assert.ok(rendererManifest.allowedChunks.some(a => a.path === c.path && a.sha256 === c.sha256))
+assert.match(rendererManifest.browserHash, /^[0-9a-f]{8}$/)
 report.rendererManifestSha256 = hash(await readFile(process.env.UX_RENDERER_MANIFEST))
 report.sourceHashes = Object.fromEntries(sources.map(p => [p, hash(local[p])]))
 let browser, primary
@@ -99,14 +105,18 @@ try {
         assert.ok([200, 304].includes(response.status()))
         const bytes = await bounded(response.body()) // Status alone is never evidence.
         if (request.resourceType() === 'document') {
+          assert.equal(url.pathname, '/', 'reviewed root document route')
           assert.equal(request.isNavigationRequest(), true)
           assert.equal(request.url(), owner.requestURL)
           assert.equal(owner.document, null, 'one navigation response per epoch')
           assert.equal(hash(bytes), process.env.UX_DOCUMENT_SHA256)
           owner.document = { url: response.url(), sha256: hash(bytes), status: response.status() }
         }
-        const chunk = rendererManifest.chunks.find(c => c.path === url.pathname)
+        const chunk = rendererManifest.allowedChunks.find(c => c.path === url.pathname)
+        if (url.pathname.startsWith(rendererManifest.cachePrefix)) assert.ok(chunk, 'unexpected optimized chunk')
+        if (url.pathname.includes('/node_modules/three/')) assert.fail('unprepared direct renderer request')
         if (chunk) {
+          assert.ok(url.search === '' || url.search === `?v=${rendererManifest.browserHash}`, 'prepared optimizer version only')
           assert.equal(hash(bytes), chunk.sha256)
           owner.rendererModules[chunk.path] = hash(bytes)
         }
