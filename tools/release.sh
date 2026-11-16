@@ -150,8 +150,10 @@ tail -1 "$LOG-frozen.log"
 echo "Smoke testing $URL ..."
 SHOT_PARENT="$(mktemp -d /tmp/syn3h-shot-release-normal.XXXXXX)" || fail "could not reserve smoke evidence directory"
 echo "Shot evidence: $SHOT_PARENT/evidence ($URL)"
-SYN3H_SHOT_EVIDENCE_DIR="$SHOT_PARENT/evidence" node tools/net-smoke.mjs "$URL" 2>&1 | tee "$LOG-smoke.log" | grep -E "^(FAIL|NET SMOKE)" || true
+SYN3H_SHOT_EVIDENCE_DIR="$SHOT_PARENT/evidence" node tools/net-smoke.mjs "$URL" 2>&1 | tee "$LOG-smoke.log" | grep -E "^(FAIL|RETRY|NET SMOKE)" || true
 grep -q "^NET SMOKE OK" "$LOG-smoke.log" || fail "net-smoke failed against $URL (see $LOG-smoke.log)"
+# Steps passed, connection drops ridden through and step retries, for the release ledger.
+SMOKE_SUMMARY="$(grep '^NET SMOKE SUMMARY ' "$LOG-smoke.log" | tail -1 | sed 's/^NET SMOKE SUMMARY //')"
 
 if [ -n "$DRY" ]; then
   npx tsx server/latency-proxy.ts --listen "$PROXY_PORT" --target "http://127.0.0.1:$PORT" --rtt 150 --jitter 30 >"$LOG-proxy.log" 2>&1 &
@@ -200,7 +202,7 @@ git tag -a "release-$N" -m "release-$N: $NOTE ($URL, version $VERSION)"
 echo
 echo "RELEASE OK: release-$N is live at $URL"
 echo "For ops/RELEASES.md:"
-echo "- release-$N, $WHEN: $URL from $MILESTONE ($COMMIT), Worker version $VERSION, frozen copy $ID. $NOTE"
+echo "- release-$N, $WHEN: $URL from $MILESTONE ($COMMIT), Worker version $VERSION, frozen copy $ID. $NOTE. Public smoke: ${SMOKE_SUMMARY:-no summary}."
 
 # These artifacts describe an already verified release. A capture or draft failure must
 # never turn a successful deploy into a failed release or trigger rollback.

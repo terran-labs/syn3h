@@ -15,6 +15,10 @@ The release record and `ops/STATE.md` identify the exact source and validation e
   prevent persisted fixture reuse, but reuse was not proven as that failure's cause.
 - Clouds do not cast terrain shadows. Procedural water, grass and particles skip temporal
   history. Tank and hovercraft study selection remains open.
+- Release verification runs from one machine whose route to Cloudflare flaps between data
+  centres (MAN, NRT; loc US), so public WebSockets drop with 1006 several times an hour. The
+  smoke now rides through such drops (bounded step retries, rejoin checks), but a second
+  vantage point, such as a hosted runner, would remove the doubt. Workers observability is off.
 - A shared setting the host changes while its connection is down is lost: the client
   drops messages while its socket is closed (src/net/Connection.ts send), and on reconnect
   the room's values replace the local world. Found 16 November 2026; fix planned for

@@ -45,5 +45,6 @@ if SYN3H_SHOT_EVIDENCE_DIR="$SHOT_PARENT/evidence" node tools/net-smoke.mjs "$UR
 else
   cat "$LOG"
   echo "Rollback deployed, but verification failed. Full log: $LOG" >&2
+  echo "A rolled-back build from before 16 November 2026 records no socket closes, so the smoke cannot tell a dropped connection from a game failure there and retries no step (see its NET SMOKE SUMMARY line)." >&2
   exit 1
 fi
