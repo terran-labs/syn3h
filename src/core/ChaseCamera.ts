@@ -229,6 +229,21 @@ export class ChaseCamera implements System {
     this.lastManual = this.elapsed
   }
 
+  /** Touch aiming is immediate so a release before the next frame uses the displayed ray. */
+  lookTouch(dx: number, dy: number): void {
+    if (this.game.input.suspended || !Number.isFinite(dx) || !Number.isFinite(dy)) return
+    if (this.cinematic || this.blend || (Math.round(camMode.value) === 3 && !this.scopeHeld)) return
+    const camera = this.game.camera
+    // Begin at what the player sees, not at a mouse-look spring target still in flight.
+    this.euler.setFromQuaternion(camera.quaternion, 'YXZ')
+    this.pitch = this.euler.x; this.yaw = this.euler.y
+    const roll = this.euler.z
+    this.look(dx, dy)
+    this.rotation.setFromEuler(this.euler.set(this.pitch, this.yaw, roll))
+    camera.quaternion.copy(this.rotation)
+    camera.updateMatrixWorld()
+  }
+
   /** Chooses shots while the vehicle drives itself. Started and stopped by Daydream's event. */
   readonly director = new CameraDirector()
   /** True while the current cinematic pose is the director's, not the attract mode's. */

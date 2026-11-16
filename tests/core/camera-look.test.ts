@@ -107,3 +107,34 @@ describe('proportional camera zoom', () => {
     chase.dispose()
   })
 })
+
+
+describe('touch look before fixed-step firing', () => {
+  it('applies the final release delta to the camera ray without advancing time or position', () => {
+    const { chase, state } = harness()
+    const camera = (chase as unknown as { game: Game }).game.camera
+    const position = camera.position.clone(), elapsed = state.elapsed
+    chase.lookTouch(80, 0)
+    const first = camera.quaternion.clone()
+    chase.lookTouch(20, 0)
+    expect(camera.quaternion.equals(first)).toBe(false)
+    expect(camera.rotation.y).toBeCloseTo(-100 * 4 * Math.PI / 180 * 0.1)
+    expect(camera.position.equals(position)).toBe(true)
+    expect(state.elapsed).toBe(elapsed)
+    const released = camera.quaternion.clone()
+    chase.update(0.02)
+    expect(camera.quaternion.angleTo(released)).toBeLessThan(1e-6)
+    chase.dispose()
+  })
+  it('leaves native look smoothing and suspended touch unchanged', () => {
+    const { chase, input } = harness()
+    const camera = (chase as unknown as { game: Game }).game.camera
+    const before = camera.quaternion.clone()
+    chase.look(100, 0)
+    expect(camera.quaternion.equals(before)).toBe(true)
+    input.suspended = true
+    chase.lookTouch(100, 0)
+    expect(camera.quaternion.equals(before)).toBe(true)
+    chase.dispose()
+  })
+})
