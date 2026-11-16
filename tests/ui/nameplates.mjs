@@ -634,8 +634,13 @@ try {
     await installTerrainEvidence(a)
     await a.evaluate(curve => window.syn3h.params.set('world.curve', curve), curve)
     const initialPose = await a.evaluate(({ p, fixedNear, fixedPose }) => {
-      const s = window.syn3h, v = s.player.object.position.clone().set(p.x, s.terrain.heightAt(p.x, p.z + 18) + 2, p.z + 18)
+      const s = window.syn3h, net = window.syn3hNet, localGround = s.terrain.heightAt(p.x, p.z + 18)
+      const v = s.player.object.position.clone().set(p.x, localGround + 2, p.z + 18)
+      const pose = vehicle => ({ body: { ...vehicle.body.translation() }, rotation: { ...vehicle.body.rotation() }, rendered: vehicle.object.position.toArray() })
+      const actors = [], localBefore = fixedPose ? pose(s.player) : null
       s.player.teleport(v, 0)
+      if (fixedPose) actors.push({ role: 'Observer', id: String(net.id), name: net.players.get(net.id)?.name,
+        x: p.x, z: p.z + 18, ground: localGround, requestedTeleportY: v.y, before: localBefore, after: pose(s.player) })
       let initial = null
       s.bots.vehicles.forEach((bot, i) => {
         const x = p.x + (fixedPose && i === 0 ? fixedPose.x : fixedNear && i === 0 ? -22 : (i - 1.5) * 12)
@@ -648,15 +653,51 @@ try {
             slope: { x: (samples[1] - samples[0]) / 2, z: (samples[3] - samples[2]) / 2 },
             before: { body: { ...bot.body.translation() }, rendered: bot.object.position.toArray() } }
         }
+        const before = fixedPose ? pose(bot) : null
         bot.teleport(v.clone().set(x, y, z), 0)
+        if (fixedPose) actors.push({ role: `bot${i}`, index: i, id: net.tags.entries.find(entry => entry.vehicle === bot)?.id ?? null,
+          x, z, ground, requestedTeleportY: y, before, after: pose(bot) })
         if (fixedPose && i === 0) initial.after = { body: { ...bot.body.translation() }, rendered: bot.object.position.toArray() }
       })
       s.camera.setCinematicPose(v.clone().set(p.x, s.terrain.heightAt(p.x, p.z + 45) + 20, p.z + 45), v.clone().set(p.x, p.y + 4, p.z - 12), 60)
-      return initial
+      return fixedPose ? { ...initial, actors } : initial
     }, { p: center, fixedNear: !far && !hudOverlap, fixedPose: poseOnly ? fixedPose : null })
     if (poseOnly) { report.pose.initial = initialPose; await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)) }
-    await b.evaluate(({p, far, hudOverlap}) => { const s = window.syn3h, z = p.z - (far ? 260 : 4), x = p.x - (far || hudOverlap ? 24 : 8); s.player.teleport(s.player.object.position.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) }, { p: center, far, hudOverlap })
-    await c.evaluate(({p, far, hudOverlap}) => { const s = window.syn3h, z = p.z - (far ? 190 : hudOverlap ? 12 : 4), x = p.x + (far || hudOverlap ? 24 : 8); s.player.teleport(s.player.object.position.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) }, { p: center, far, hudOverlap })
+    const visitorInitial = await b.evaluate(({p, far, hudOverlap, record}) => {
+      const s = window.syn3h, net = window.syn3hNet, z = p.z - (far ? 260 : 4), x = p.x - (far || hudOverlap ? 24 : 8)
+      const ground = s.terrain.heightAt(x, z), requestedTeleportY = ground + 2
+      const pose = () => ({ body: { ...s.player.body.translation() }, rotation: { ...s.player.body.rotation() }, rendered: s.player.object.position.toArray() })
+      const before = record ? pose() : null
+      s.player.teleport(s.player.object.position.clone().set(x, requestedTeleportY, z), 0)
+      return record ? { role: 'Visitor', id: String(net.id), name: net.players.get(net.id)?.name, x, z, ground, requestedTeleportY, before, after: pose() } : null
+    }, { p: center, far, hudOverlap, record: poseOnly })
+    if (poseOnly) { report.pose.initial.actors.push(visitorInitial); await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)) }
+    const companionInitial = await c.evaluate(({p, far, hudOverlap, record}) => {
+      const s = window.syn3h, net = window.syn3hNet, z = p.z - (far ? 190 : hudOverlap ? 12 : 4), x = p.x + (far || hudOverlap ? 24 : 8)
+      const ground = s.terrain.heightAt(x, z), requestedTeleportY = ground + 2
+      const pose = () => ({ body: { ...s.player.body.translation() }, rotation: { ...s.player.body.rotation() }, rendered: s.player.object.position.toArray() })
+      const before = record ? pose() : null
+      s.player.teleport(s.player.object.position.clone().set(x, requestedTeleportY, z), 0)
+      return record ? { role: 'Companion', id: String(net.id), name: net.players.get(net.id)?.name, x, z, ground, requestedTeleportY, before, after: pose() } : null
+    }, { p: center, far, hudOverlap, record: poseOnly })
+    if (poseOnly) {
+      report.pose.initial.actors.push(companionInitial)
+      // Save raw initialization before rejecting missing, duplicate or nonfinite evidence.
+      await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+      const actors = report.pose.initial.actors
+      assert.equal(actors.length, 7)
+      assert.equal(new Set(actors.map(actor => actor.id)).size, 7, 'unique initial actor identities')
+      assert.deepEqual(actors.map(actor => actor.role).sort(), ['Observer', 'Visitor', 'Companion', 'bot0', 'bot1', 'bot2', 'bot3'].sort())
+      for (const actor of actors) {
+        assert.ok(typeof actor.id === 'string' && /^[1-9][0-9]*$/.test(actor.id), 'actual actor identity required')
+        if (actor.index !== undefined) assert.equal(actor.id, String(65280 + actor.index), 'bot array index matches network tag identity')
+        else { assert.ok(Number(actor.id) < 65280); assert.equal(actor.name, actor.role) }
+        assert.ok([actor.x, actor.z, actor.ground, actor.requestedTeleportY,
+          ...Object.values(actor.before.body), ...Object.values(actor.before.rotation), ...actor.before.rendered,
+          ...Object.values(actor.after.body), ...Object.values(actor.after.rotation), ...actor.after.rendered].every(Number.isFinite), 'finite initial actor receipt')
+      }
+      assert.equal(actors.find(actor => actor.index === 0).id, '65280', 'fixed pose belongs to bot65280')
+    }
     // Record diagnostics even when settling fails. Never move the camera to skip occlusion.
     let stagingError
     try {

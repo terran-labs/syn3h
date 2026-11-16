@@ -423,3 +423,10 @@ hypotheses are not settled-pose bounds. The retained radius-six bot's roughly9.6
 clearance remains the weak constraint and requires moving-frame review. Both humans plus
 at least two full BOT labels, priority/restoration, negative HUD, far and cost checks remain
 unchanged future acceptance requirements. Preparing this mode grants no execution slot.
+
+The initial pose receipt now also retains the existing ground result, requested teleport
+height and immediate before/after body position, orientation and rendered position for
+all seven actors. Each includes its actual local network or host tag identity. Host bot
+index zero must map to65280, and all four indices must match their network IDs. Raw host
+and human receipts are persisted before finite, unique-identity and expected-role checks.
+No additional height queries, coordinates or settling changes accompany this correction.
