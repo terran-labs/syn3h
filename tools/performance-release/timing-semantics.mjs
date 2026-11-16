@@ -21,6 +21,12 @@ function bounded(source) {
     digest(source.evidenceSha256) && text(source.evidenceDescription)
 }
 function q(value, source) { return finite(value) && bounded(source) ? { lo: value + source.errorLoMs, hi: value + source.errorHiMs } : null }
+function interior(first, last, source) {
+  const a = q(first, source), b = q(last, source)
+  const coverage = a && b ? { lo: a.hi, hi: b.lo } : null
+  return interval(coverage) ? coverage : null
+}
+function contains(outer, inner) { return interval(outer) && interval(inner) && outer.lo <= inner.lo && inner.hi <= outer.hi }
 function capture(work) {
   const issues = [], check = (yes, code, message) => { if (!yes) issues.push({ code, message }); return !!yes }
   try { return output(issues, work(check)) } catch (e) { check(false, 'shape', String(e.message)); return output(issues, null) }
@@ -92,16 +98,18 @@ export function validateClockMappings(clockArtifact, { runtimeArtifact, runtimeP
       check(!!pageEpoch, 'epoch-unavailable', 'Page epoch mapping needs consistent original anchors and supported timeOrigin bounds')
       pages[key(p)] = { pageId: p.pageId, navigationId: p.navigationId, offset, epoch: pageEpoch,
         // Only observations inside these measured anchor windows are covered.
-        pageCoverage: { lo: p.anchors[0].pageAfterMs, hi: p.anchors.at(-1).pageBeforeMs } }
+        pageCoverage: interior(p.anchors[0].pageAfterMs, p.anchors.at(-1).pageBeforeMs, s.pageMonotonic) }
     }
-    const hostCoverage = epochAnchors.length >= 2 ? { lo: epochAnchors[0].hostAfterMs, hi: epochAnchors.at(-1).hostBeforeMs } : null
-    if (epoch && (!interval(hostCoverage) || hostCoverage.lo > records.runOriginHostMs || hostCoverage.hi < records.runEndHostMs)) {
+    const hostCoverage = epochAnchors.length >= 2 ? interior(epochAnchors[0].hostAfterMs, epochAnchors.at(-1).hostBeforeMs, s.hostMonotonic) : null
+    const runCoverage = interior(records.runOriginHostMs, records.runEndHostMs, s.hostMonotonic)
+    const runOuter = bounded(s.hostMonotonic) ? { lo: q(records.runOriginHostMs, s.hostMonotonic).lo, hi: q(records.runEndHostMs, s.hostMonotonic).hi } : null
+    if (epoch && !contains(hostCoverage, runOuter)) {
       check(false, 'epoch-unavailable', 'Host epoch anchors must bracket the run')
       epoch = null
       for (const page of Object.values(pages)) page.epoch = null
     }
     return { hostClockId: records.hostClockId, runId: clockArtifact.payload.runId,
-      runOriginHostMs: records.runOriginHostMs, runEndHostMs: records.runEndHostMs,
+      runOriginHostMs: records.runOriginHostMs, runEndHostMs: records.runEndHostMs, runCoverage,
       hostEpoch: epoch, hostEpochCoverage: hostCoverage, sources: s, pages,
       profileId: runtime.clockProfileId, runtimePolicySha256: expectedRuntimePolicySha256 }
   })
@@ -113,12 +121,18 @@ function pageFor(records, clocks, check) {
 }
 function mapTime(value, page, clocks, sourceName = 'pageMonotonic') {
   const observation = q(value, clocks.sources[sourceName])
-  if (!observation || !page.offset || value < page.pageCoverage.lo || value > page.pageCoverage.hi) return null
+  if (!observation || !page.offset || !contains(page.pageCoverage, observation)) return null
   return add(observation, page.offset)
 }
 function epochTime(host, clocks) { return host && clocks.hostEpoch && interval(clocks.hostEpochCoverage) && host.lo >= clocks.hostEpochCoverage.lo && host.hi <= clocks.hostEpochCoverage.hi ? add(host, clocks.hostEpoch) : null }
-function eventsClear(events, lo, hi) {
-  return Array.isArray(events) && events.every(e => finite(e.atMs) && text(e.kind) && (e.atMs < lo || e.atMs > hi))
+function eventsClear(events, start, end, page, clocks, startSource = 'pageMonotonic') {
+  const lo = q(start, clocks.sources[startSource]), hi = q(end, clocks.sources.pageMonotonic)
+  if (!lo || !hi || !Array.isArray(events)) return false
+  return events.every(e => {
+    const observed = q(e.atMs, clocks.sources.pageMonotonic)
+    return text(e.kind) && observed && mapTime(e.atMs, page, clocks) &&
+      (observed.hi < lo.lo || observed.lo > hi.hi)
+  })
 }
 
 /** Arithmetic consistency is separately reported from physical timing availability. */
@@ -151,7 +165,7 @@ export function deriveFramePhases(records, clocks, fixtureDurations) {
       const priorEnd = bySequence.get(end.sequence - 1)
       if (!check(end.gameLastMs - start.gameLastMs >= phase.requestedDurationMs && priorEnd.gameLastMs - start.gameLastMs < phase.requestedDurationMs,
         'first-crossing', 'Include the first complete interval crossing requested duration')) return null
-      if (!check([start, ...selected].every(f => !f.hidden && !f.paused) && eventsClear(records.events, start.gameLastMs, end.callbackExitMs),
+      if (!check([start, ...selected].every(f => !f.hidden && !f.paused) && eventsClear(records.events, start.gameLastMs, end.callbackExitMs, page, clocks),
         'frame-events', 'Hidden, paused, reset or error observations invalidate the phase')) return null
       for (const f of selected) { if (!check(!used.has(f.sequence), 'phase-overlap', 'An included interval may belong to only one phase')) return null; used.add(f.sequence) }
       let physicalAvailable = true
@@ -159,7 +173,8 @@ export function deriveFramePhases(records, clocks, fixtureDurations) {
       const callbackEnd = mapTime(end.callbackExitMs, page, clocks)
       for (let i = 1; i < bounds.length; i++) if (!bounds[i] || !bounds[i - 1] || sub(bounds[i], bounds[i - 1]).lo <= 0) physicalAvailable = false
       if (!callbackEnd || bounds.some(b => !b)) physicalAvailable = false
-      if (bounds[0] && callbackEnd && !check(bounds[0].lo >= clocks.runOriginHostMs && callbackEnd.hi <= clocks.runEndHostMs, 'phase-outside-run', 'Full phase interval must fit the recorded host run boundaries')) physicalAvailable = false
+      const eventBounds = [start, ...selected].flatMap(f => [mapTime(f.gameLastMs, page, clocks), mapTime(f.callbackEntryMs, page, clocks), mapTime(f.callbackExitMs, page, clocks)])
+      if (!check(eventBounds.every(b => contains(clocks.runCoverage, b)), 'phase-outside-run', 'Every full callback/event interval must fit interior run and anchor coverage')) physicalAvailable = false
       check(physicalAvailable, 'duration-unavailable', 'Consistent subtraction alone cannot establish positive physical intervals under coarse/unsupported clocks')
       phases.push({ kind: phase.kind, arithmeticValid: true, physicalAvailable,
         boundarySequence: start.sequence, finalSequence: end.sequence,
@@ -174,9 +189,11 @@ export function deriveFramePhases(records, clocks, fixtureDurations) {
   })
 }
 
-export function derivePacingControls(records, clocks, requestedDuration = 3000) {
+export function derivePacingControls(records, clocks, trustedPacing) {
   return capture(check => {
     canonicalJson(records)
+    const requestedDuration = trustedPacing?.requestedDurationMs, expectedInterval = trustedPacing?.expectedIntervalMs
+    if (!check(finite(expectedInterval) && expectedInterval > 0 && records.expectedIntervalMs === expectedInterval, 'pacing-target', 'Independent reviewed pacing target must match the recorded target')) return null
     if (!check(records.schemaVersion === 1 && finite(requestedDuration) && requestedDuration >= 3000, 'pacing', 'Approved control duration must retain the existing minimum')) return null
     const derived = {}
     for (const name of ['before', 'after']) {
@@ -188,22 +205,24 @@ export function derivePacingControls(records, clocks, requestedDuration = 3000) 
       for (let i = 0; i < c.callbacks.length; i++) {
         const f = c.callbacks[i], prev = c.callbacks[i - 1]
         if (!check(Number.isInteger(f.sequence) && finite(f.rafTimestampMs) && finite(f.observedNowMs) && f.observedNowMs + ROUND >= f.rafTimestampMs && f.hidden === false &&
-          (!prev || (f.sequence === prev.sequence + 1 && f.rafTimestampMs > prev.rafTimestampMs)), 'pacing-sequence', 'Contiguous visible original animation callbacks required')) return null
+          (!prev || (f.sequence === prev.sequence + 1 && f.rafTimestampMs > prev.rafTimestampMs && f.observedNowMs >= prev.observedNowMs)), 'pacing-sequence', 'Contiguous visible original animation callbacks required')) return null
         if (prev) gaps.push(f.rafTimestampMs - prev.rafTimestampMs)
       }
       const durationMs = last.rafTimestampMs - first.rafTimestampMs
       if (!check(durationMs >= requestedDuration && c.callbacks.at(-2).rafTimestampMs - first.rafTimestampMs < requestedDuration &&
-        eventsClear(c.events, first.rafTimestampMs, last.observedNowMs), 'pacing-coverage', 'Control must end at first crossing with no visibility/error event')) return null
-      const start = mapTime(first.rafTimestampMs, page, clocks, 'raf'), end = mapTime(last.rafTimestampMs, page, clocks, 'raf')
-      let physicalAvailable = !!start && !!end
+        eventsClear(c.events, first.rafTimestampMs, last.observedNowMs, page, clocks, 'raf'), 'pacing-coverage', 'Control must end at first crossing with no visibility/error event')) return null
+      const start = mapTime(first.rafTimestampMs, page, clocks, 'raf'), sampleEnd = mapTime(last.rafTimestampMs, page, clocks, 'raf')
+      const end = mapTime(last.observedNowMs, page, clocks)
+      let physicalAvailable = !!start && !!sampleEnd && !!end
+      for (const f of c.callbacks) if (!mapTime(f.rafTimestampMs, page, clocks, 'raf') || !mapTime(f.observedNowMs, page, clocks)) physicalAvailable = false
       for (let i = 1; i < c.callbacks.length; i++) {
         const a = mapTime(c.callbacks[i - 1].rafTimestampMs, page, clocks, 'raf'), b = mapTime(c.callbacks[i].rafTimestampMs, page, clocks, 'raf')
         if (!a || !b || sub(b, a).lo <= 0) physicalAvailable = false
       }
-      const judged = judgePacing(gaps, records.expectedIntervalMs, durationMs)
+      const judged = judgePacing(gaps, expectedInterval, durationMs)
       check(judged.valid, 'pacing-rate', 'Derived control intervals fail the existing blank pacing judge')
       check(physicalAvailable, 'duration-unavailable', 'Control physical intervals are not established under the reviewed clock bounds')
-      derived[name] = { gaps, durationMs, judged, physicalAvailable, hostStart: start, hostEnd: end,
+      derived[name] = { gaps, durationMs, judged, physicalAvailable, hostStart: start, hostSampleEnd: sampleEnd, hostEnd: end,
         utcStart: page.epoch ? epochTime(start, clocks) : null, utcEnd: page.epoch ? epochTime(end, clocks) : null }
     }
     return { runId: clocks.runId, hostClockId: clocks.hostClockId, ...derived }
@@ -211,10 +230,11 @@ export function derivePacingControls(records, clocks, requestedDuration = 3000) 
 }
 
 /** Envelopes include uncertainty, not scalar/midpoint ordering. No qualification is granted. */
-export function validateSerialIntervals(runs, freezeUtc) {
+export function validateSerialIntervals(runs, freezeUtc, requiredInventory) {
   return capture(check => {
     const ids = new Set(), domains = new Set(), envelopes = [], groups = new Map()
     if (!check(Array.isArray(runs) && runs.length > 0, 'serial', 'Derived run intervals required')) return null
+    if (!check(obj(requiredInventory) && Array.isArray(requiredInventory.runIds) && requiredInventory.runIds.length > 0 && requiredInventory.runIds.every(text) && new Set(requiredInventory.runIds).size === requiredInventory.runIds.length && Array.isArray(requiredInventory.scenes) && requiredInventory.scenes.length > 0 && requiredInventory.scenes.every(text) && new Set(requiredInventory.scenes).size === requiredInventory.scenes.length, 'required-inventory', 'Independent complete run and scene inventory is required')) return null
     let serialAvailable = true, freezeAvailable = true
     for (const r of runs) {
       if (!check(text(r.runId) && !ids.has(r.runId) && text(r.hostClockId) && ['calibration', 'comparison'].includes(r.collection) &&
@@ -224,12 +244,18 @@ export function validateSerialIntervals(runs, freezeUtc) {
       const ordered = [r.before, r.run, r.after].every(w => w.start.hi <= w.end.lo) && r.before.end.hi <= r.run.start.lo && r.run.end.hi <= r.after.start.lo
       if (!check(ordered, 'serial-overlap', 'Full endpoint intervals must prove before/run/after order')) serialAvailable = false
       envelopes.push({ ...r, start: r.before.start, end: r.after.end })
+      if (interval(r.utcStart) && interval(r.utcEnd) && !check(r.utcStart.hi <= r.utcEnd.lo, 'utc-order', 'UTC endpoint intervals must be ordered even when freeze is unavailable')) { serialAvailable = false; freezeAvailable = false }
       if (!interval(freezeUtc) || !interval(r.utcStart) || !interval(r.utcEnd)) {
         check(false, 'freeze-unavailable', 'UTC freeze ordering requires qualified epoch mappings'); freezeAvailable = false
+        if ((r.utcStart !== null && !interval(r.utcStart)) || (r.utcEnd !== null && !interval(r.utcEnd)) || (freezeUtc !== null && !interval(freezeUtc))) serialAvailable = false
+      } else if (!check(r.utcStart.hi <= r.utcEnd.lo, 'utc-order', 'UTC start/end intervals must prove chronological order')) { freezeAvailable = false; serialAvailable = false
       } else if (!check(r.collection === 'calibration' ? r.utcEnd.hi <= freezeUtc.lo : r.utcStart.lo > freezeUtc.hi, 'freeze-order', 'Calibration must finish before freeze and comparison start afterwards')) freezeAvailable = false
       const groupKey = JSON.stringify([r.collection, r.scene]), list = groups.get(groupKey) ?? []
       list.push(r); groups.set(groupKey, list)
     }
+    if (!check(canonicalJson([...ids].sort()) === canonicalJson([...requiredInventory.runIds].sort()), 'required-inventory', 'Observed runs must exactly match independently required run inventory')) serialAvailable = false
+    for (const collection of ['calibration', 'comparison']) for (const scene of requiredInventory.scenes) if (!check(groups.has(JSON.stringify([collection, scene])), 'missing-collection', 'Both calibration and comparison require every approved scene')) serialAvailable = false
+    for (const r of runs) if (!check(requiredInventory.scenes.includes(r.scene), 'required-inventory', 'Unexpected scene outside approved inventory')) serialAvailable = false
     if (!check(domains.size === 1, 'clock-domain', 'Serial proof cannot compare unrelated host monotonic domains')) return null
     // Check both collections together where they share one monotonic domain; no scene overlap is allowed.
     envelopes.sort((a, b) => a.start.lo - b.start.lo)

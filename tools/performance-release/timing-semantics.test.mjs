@@ -41,17 +41,19 @@ function frameFixture(gaps = [20, 20, 20]) {
 }
 function phases(records, m = maps()) { return deriveFramePhases(records, m, { steady: records.phases[0].requestedDurationMs }) }
 function has(r, code) { assert.ok(r.issues.some(i => i.code === code), JSON.stringify(r)) }
+const pacingPolicy = { expectedIntervalMs: 20, requestedDurationMs: 3000 }
+function inventory(runs) { return { runIds: runs.map(r => r.runId), scenes: ['drive'] } }
 function control(start, sequence = 0) {
   return { pageId: 'page', navigationId: 'nav', boundarySequence: sequence, finalSequence: sequence + 150,
     callbacks: Array.from({ length: 151 }, (_, i) => ({ sequence: sequence + i, rafTimestampMs: start + i * 20, observedNowMs: start + i * 20 + 1, hidden: false })), events: [] }
 }
 function serialFixture() {
-  return Array.from({ length: 6 }, (_, i) => {
-    const start = i * 10000, point = v => ({ lo: v, hi: v }), pair = Math.floor(i / 2), position = i % 2
-    return { runId: `run${i}`, hostClockId: 'host', collection: 'comparison', scene: 'drive', pair, position, side: position === pair % 2 ? 'baseline' : 'candidate',
+  return ['calibration', 'comparison'].flatMap(collection => Array.from({ length: 6 }, (_, i) => {
+    const start = i * 10000 + (collection === 'calibration' ? -70000 : 0), point = v => ({ lo: v, hi: v }), pair = Math.floor(i / 2), position = i % 2
+    return { runId: `${collection}${i}`, hostClockId: 'host', collection, scene: 'drive', pair, position, side: position === pair % 2 ? 'baseline' : 'candidate',
       before: { start: point(start), end: point(start + 3000) }, run: { start: point(start + 3001), end: point(start + 6000) }, after: { start: point(start + 6001), end: point(start + 9001) },
       utcStart: point(epoch + start), utcEnd: point(epoch + start + 9001) }
-  })
+  }))
 }
 
 test('clock profile binds same-run runtime reference and trusted policy, not a submitted standalone bound', () => {
@@ -116,27 +118,90 @@ test('hidden and paused flags, event-only resets, duplicate phase IDs and droppe
 })
 test('blank controls derive original contiguous gaps and enforce inclusive first crossing', () => {
   const records = { schemaVersion: 1, expectedIntervalMs: 20, before: control(1000), after: control(10000) }
-  const r = derivePacingControls(records, maps())
+  const r = derivePacingControls(records, maps(), pacingPolicy)
   assert.equal(r.issues.length, 0); assert.equal(r.derived.before.gaps.length, 150); assert.equal(r.derived.before.durationMs, 3000)
   records.before.callbacks.splice(3, 1)
-  assert.equal(derivePacingControls(records, maps()).derived, null)
+  assert.equal(derivePacingControls(records, maps(), pacingPolicy).derived, null)
   const hidden = { schemaVersion:1, expectedIntervalMs:20, before:control(1000),after:control(10000) }; hidden.before.callbacks[2].hidden=true
-  assert.equal(derivePacingControls(hidden,maps()).derived,null)
+  assert.equal(derivePacingControls(hidden,maps(),pacingPolicy).derived,null)
 })
 test('global serial envelopes use full bounds rather than passing midpoint order', () => {
   const runs = serialFixture(), freeze = { lo: epoch - 1000, hi: epoch - 1000 }
-  assert.equal(validateSerialIntervals(runs, freeze).derived.serialAvailable, true)
-  runs[1].before.start.lo = 9000; runs[1].before.start.hi = 11000
-  const r = validateSerialIntervals(runs, freeze); has(r,'serial-overlap'); assert.equal(r.derived.serialAvailable,false)
+  assert.equal(validateSerialIntervals(runs, freeze, inventory(runs)).derived.serialAvailable, true)
+  runs[1].before.start.lo = runs[0].after.end.hi - 1; runs[1].before.start.hi = runs[0].after.end.hi + 2000
+  const r = validateSerialIntervals(runs, freeze, inventory(runs)); has(r,'serial-overlap'); assert.equal(r.derived.serialAvailable,false)
 })
 test('UTC freeze remains unavailable even with valid monotonic serial ordering', () => {
   const runs = serialFixture(); runs[0].utcStart=null; runs[0].utcEnd=null
-  const r=validateSerialIntervals(runs,null)
+  const r=validateSerialIntervals(runs,null,inventory(runs))
   assert.equal(r.derived.serialAvailable,true); assert.equal(r.derived.freezeAvailable,false); assert.equal(r.promotion,'blocked')
 })
 test('all five helpers retain partial blocked status and do not supply startup or transfer values', () => {
   const f=clockFixture(), c=validateClockMappings(f.clockArtifact,f.context), p=phases(frameFixture(),c.derived)
-  const results=[c,p,deriveFrameMetrics(p.derived.phases),derivePacingControls({schemaVersion:1,expectedIntervalMs:20,before:control(1000),after:control(10000)},c.derived),validateSerialIntervals(serialFixture(),null)]
+  const results=[c,p,deriveFrameMetrics(p.derived.phases),derivePacingControls({schemaVersion:1,expectedIntervalMs:20,before:control(1000),after:control(10000)},c.derived,pacingPolicy),validateSerialIntervals(serialFixture(),null,inventory(serialFixture()))]
   for(const r of results){assert.equal(r.qualified,false);assert.equal(r.promotion,'blocked')}
   assert.ok(results[2].derived.unsupported.includes('startup'));assert.ok(results[2].derived.unsupported.includes('transfer'))
+})
+test('pacing target is independently trusted and slow controls cannot redefine it', () => {
+  const records = { schemaVersion: 1, expectedIntervalMs: 100, before: control(1000), after: control(10000) }
+  has(derivePacingControls(records, maps(), pacingPolicy), 'pacing-target')
+  records.expectedIntervalMs = 20
+  for (const c of [records.before, records.after]) {
+    c.callbacks = c.callbacks.slice(0, 31).map((f,i)=>({...f,rafTimestampMs:c.callbacks[0].rafTimestampMs+i*100,observedNowMs:c.callbacks[0].rafTimestampMs+i*100+1}))
+    c.finalSequence = c.boundarySequence + 30
+  }
+  has(derivePacingControls(records, maps(), pacingPolicy), 'pacing-rate')
+  has(derivePacingControls(records, maps()), 'pacing-target')
+})
+test('outward anchor interiors reject events that only fit by point estimates', () => {
+  const f = clockFixture(), p = f.context.runtimePolicy.executablesAndConfiguration.clockProfiles.exact
+  p.sources.pageMonotonic = bound(-2,2); reseal(f)
+  // Point 100 lies after point anchor99, but the full intervals do not prove containment.
+  Object.assign(f.clockArtifact.payload.records.pages[0].anchors[0], { hostSendMs:99,hostReceiveMs:99,pageBeforeMs:99,pageAfterMs:99,dateNowMs:epoch+99 })
+  const m = maps(f), r = frameFixture()
+  const result = phases(r,m)
+  assert.equal(result.derived.phases[0].physicalAvailable,false)
+  has(result,'phase-outside-run')
+  const g=clockFixture();g.context.runtimePolicy.executablesAndConfiguration.clockProfiles.exact.sources.hostMonotonic=bound(-2,2);reseal(g)
+  // Host run start is zero, so anchors at zero cannot prove they bracket its outward interval.
+  has(validateClockMappings(g.clockArtifact,g.context),'epoch-unavailable')
+})
+test('hidden event uncertainty overlapping a phase boundary invalidates that phase', () => {
+  const f=clockFixture();f.context.runtimePolicy.executablesAndConfiguration.clockProfiles.exact.sources.pageMonotonic=bound(-2,2);reseal(f)
+  const r=frameFixture();r.events=[{atMs:99,kind:'hidden',detail:'point precedes start, enclosure overlaps'}]
+  has(phases(r,maps(f)),'frame-events')
+})
+test('all callback endpoints must fit interior run coverage', () => {
+  const f=clockFixture();f.clockArtifact.payload.records.runEndHostMs=161
+  const m=maps(f), r=frameFixture()
+  const result=phases(r,m)
+  // Last game.last=160 fits, but its observed completion=162 does not.
+  assert.equal(result.derived.phases[0].physicalAvailable,false);has(result,'phase-outside-run')
+})
+test('pacing retains final observed completion and rejects unordered observedNow', () => {
+  const records={schemaVersion:1,expectedIntervalMs:20,before:control(1000),after:control(10000)}
+  records.before.callbacks.at(-1).observedNowMs=4500
+  const result=derivePacingControls(records,maps(),pacingPolicy)
+  assert.equal(result.derived.before.hostSampleEnd.hi,4000)
+  assert.equal(result.derived.before.hostEnd.hi,4500)
+  const runs=serialFixture(), r=runs.find(x=>x.collection==='comparison')
+  r.before={start:result.derived.before.hostStart,end:result.derived.before.hostEnd}
+  has(validateSerialIntervals(runs,{lo:epoch-1000,hi:epoch-1000},inventory(runs)),'serial-overlap')
+  records.before.callbacks[1].observedNowMs=5000
+  has(derivePacingControls(records,maps(),pacingPolicy),'pacing-sequence')
+})
+test('both required serial collections and the full reviewed inventory are mandatory', () => {
+  const all=serialFixture(), only=all.filter(r=>r.collection==='comparison')
+  has(validateSerialIntervals(only,{lo:epoch-1000,hi:epoch-1000},inventory(all)),'missing-collection')
+  has(validateSerialIntervals(all,null),'required-inventory')
+  const missing=all.slice(1)
+  has(validateSerialIntervals(missing,null,inventory(all)),'required-inventory')
+})
+test('malformed and reversed UTC endpoints never establish serial/freeze success', () => {
+  for(const change of [r=>{r.utcStart={lo:5,hi:4}},r=>{r.utcStart={lo:epoch+100,hi:epoch+100};r.utcEnd={lo:epoch,hi:epoch}}]){
+    const runs=serialFixture();change(runs[0])
+    const result=validateSerialIntervals(runs,{lo:epoch-1000,hi:epoch-1000},inventory(runs))
+    assert.equal(result.derived.serialAvailable,false);assert.equal(result.derived.freezeAvailable,false)
+    assert.equal(validateSerialIntervals(runs,null,inventory(runs)).derived.serialAvailable,false)
+  }
 })
