@@ -199,6 +199,14 @@ export class GearRack implements System {
     }
   }
 
+  /** After an external owner is suppressed, discard release-sensitive actions only
+   * when Input's synchronously recomputed aggregate has no eligible holder. */
+  cancelFireActionsIfIdle(): void {
+    if (this.game.input.state.fire) return
+    this.systems?.bigRed.cancel()
+    this.systems?.yoink.cancel()
+  }
+
   /**
    * What the gear in hand can do now. Returns the same object until something a hint would
    * show changes, and allocates nothing when it has not.
@@ -319,9 +327,11 @@ export class GearRack implements System {
             // Cancel before the next step interprets the final false as release.
             // An outgoing gear must also cancel: inHand becomes false independently
             // of a fresh holder belonging to the newly selected gear.
-            if (current && fire && (gear !== this.current || (hadFire && !input.state.fire))) {
-              if (gear === 'red') sys.bigRed.cancel()
-              if (gear === 'yoink') sys.yoink.cancel()
+            if (current && fire) {
+              if (gear !== this.current) {
+                if (gear === 'red') sys.bigRed.cancel()
+                if (gear === 'yoink') sys.yoink.cancel()
+              } else if (hadFire) this.cancelFireActionsIfIdle()
             }
             if (current) a.stop!('cleanup')
             return

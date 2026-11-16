@@ -517,4 +517,25 @@ describe('modal gear cancellation', () => {
     } finally { s.close() }
   })
 
+
+  it('touch suppression helper preserves overlap and cancels only charge/carry at zero holders', () => {
+    const s = setup()
+    try {
+      s.bind()
+      const red = vi.spyOn(s.bigRed, 'cancel')
+      const yoink = vi.spyOn(s.yoink, 'cancel')
+      const bungee = vi.spyOn(s.bungee, 'cancel')
+      const reel = vi.spyOn(s.bungee, 'setReel')
+      const first = Symbol('first touch'), second = Symbol('second touch')
+      s.input.beginExternalFire(first); s.input.beginExternalFire(second)
+      s.input.suppressExternalFire(first); s.rack.cancelFireActionsIfIdle()
+      expect(red).not.toHaveBeenCalled(); expect(yoink).not.toHaveBeenCalled()
+      s.input.suppressExternalFire(second); s.rack.cancelFireActionsIfIdle()
+      expect(red).toHaveBeenCalledOnce(); expect(yoink).toHaveBeenCalledOnce()
+      expect(bungee).not.toHaveBeenCalled(); expect(reel).not.toHaveBeenCalled()
+      s.input.beginExternalFire(first)
+      expect(s.input.state.fire).toBe(false) // The helper did not retire blocked owners.
+    } finally { s.close() }
+  })
+
 })
