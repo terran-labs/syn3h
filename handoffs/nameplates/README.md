@@ -1,6 +1,6 @@
 # Vehicle nameplate proposal
 
-Source only. No tests or browser checks have run, and this is not an integration handoff.
+Product composition passed typecheck and all 40 focused unit tests on `ff8fed28`. Browser preparation below remains unrun and is not release acceptance.
 
 The owner prioritized vehicle labels over the parked satellite work. The new module replaces
 plain remote tags, adds host-owned bots, and gives people priority over smaller, fainter bots.
@@ -170,3 +170,38 @@ Typecheck, focused nameplate units, touched UI/net/core checks, full host/follow
 coverage, curvature/wrap/occlusion captures, 512-query fail-hidden behavior and measured
 near/far crowded-human cost remain unverified. The tests deliberately retain their existing
 limits and evidence caveats. Independent source review and explicit allocation precede any gate.
+
+
+## Allocated browser proposal, source only
+
+The standalone fallback port and fixed output directory are removed. The fixture now requires
+an exact source SHA, explicit origin, fresh external evidence directory and owned-server launch
+manifest. The external proposal is `/tmp/nameplates-current-launcher/run.py`, adapted from
+`/tmp/ux-about-input-current-launcher/run-02.py`. Its diff and source/dependency pins sit beside
+it. Do not execute until independent review and a runtime allocation. Use the absolute heavy
+helper, explicit installed Node executable and proposed fresh evidence path
+`/tmp/nameplates-current-browser-001`. No install or alternate config is permitted.
+
+The supervisor retains the reviewed environment whitelist, dotenv rejection, explicit Vite
+and room ownership, ports 5331/54671, read-only 8787 observation, PID/start-time cleanup and
+590-second total limit. The fixture has 450 seconds for work and 30 for cleanup inside its
+480-second allowance. Three fresh contexts open sequentially in one Chrome browser. All
+existing host, two-human, bot-size, visibility, curvature, camera, phone, snow and cost assertions
+remain. A timeout or missing case fails the gate; this is not permission to omit slow cases.
+Host and follower roles are asserted, with follower label IDs checked for duplicates. This
+still does not prove follower bot visibility in every camera or maximum-roster performance.
+
+Actual browser document and source responses are captured, compared with isolated served
+bytes, and TypeScript source maps tied to checkout content. Raw index uses `?raw&import`.
+Each context records its same-origin room socket; the supervisor independently proves that
+proxy target belongs to its explicit room process. Cache/service-worker and HMR activity,
+page errors, console errors, failed relevant requests and renderer crashes fail the receipt.
+Response jobs and partial receipts are bounded, with a final stable response drain through
+browser disconnect. No GPU-clean or whole-frame-cost claim follows from these checks.
+
+The existing 120-draw distributions and 512-query assertions are unchanged. Their label CPU
+measurements exclude total rendering/GPU cost; off-mode bookkeeping is not a baseline proof.
+Real wrap-seam, larger human rosters, controlled cap starvation, modal coverage and hardware
+remain open. No syntax, test, typecheck, server, port probe, browser or network operation ran
+for this preparation. Earlier sections describing tests as unrun are historical source-stage
+notes; only the focused pure gate has since passed. Broader suites require separate allocation.
