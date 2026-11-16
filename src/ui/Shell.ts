@@ -28,6 +28,7 @@ import { placeLabels } from './galaxy/labels'
 import { LobbySettings } from './LobbySettings'
 import { Inspector } from './inspector/Inspector'
 import { FocusHud } from './inspector/FocusHud'
+import { bindSwitch, switchWord } from './inspector/switch'
 import { RaceHud, type RaceRole } from './RaceHud'
 import type { RaceState } from '../../shared/protocol'
 import { glassStyle, diagnostics } from './inspector/params'
@@ -76,8 +77,10 @@ const back = '<button type="button" class="panel-back link-button" data-goto="in
 declare const __SYN3H_BUILD__: string | undefined
 const build = typeof __SYN3H_BUILD__ === 'string' && __SYN3H_BUILD__ ? __SYN3H_BUILD__ : undefined
 /** Controls the shell wires, shown in the lobby settings panel (LobbySettings). */
-const presentationHtml = '<button type="button" class="presentation-toggle" aria-pressed="false">Presentation mode · P</button>'
-const hostHtml = '<fieldset class="host-controls"><legend>Host</legend><label class="host-lock" hidden><input type="checkbox" id="host-lock"> Lock shared sliders</label><p class="host-note"></p><button class="world-reset" type="button">Reset world to defaults</button></fieldset>'
+// On/off settings are the standard switch (inspector/switch.ts); bindSwitch gives them role and state.
+const switchHtml = (className: string, text: string, inputAttributes = '') => `<label class="s3-switch-field ${className}"><span class="s3-switch-text">${text}</span><input type="checkbox"${inputAttributes}><span class="s3-switch-word" aria-hidden="true">off</span></label>`
+const presentationHtml = switchHtml('presentation-toggle', 'Presentation mode · P')
+const hostHtml = `<fieldset class="host-controls"><legend>Host</legend>${switchHtml('host-lock', 'Lock shared sliders', ' id="host-lock"')}<p class="host-note"></p><button class="world-reset" type="button">Reset world to defaults</button></fieldset>`
 const heading = (text: string) => `<h2 tabindex="-1">${text}</h2>`
 
 /** A camera that can be posed from outside, used by the descent from the galaxy. */
@@ -137,7 +140,9 @@ export class Shell implements System {
   private toastTimer?: ReturnType<typeof setTimeout>
   readonly touch: TouchControls
   private readonly lobbySettings: LobbySettings
-  private readonly presentationToggle: HTMLButtonElement
+  /** The presentation-mode switch field; its input is the switch. */
+  private readonly presentationToggle: HTMLLabelElement
+  private readonly switches = new Map<string, (on: boolean) => void>()
   private readonly hostControls: HTMLFieldSetElement
 
   constructor(private readonly game: Game, readonly audio: GameAudio) {
@@ -195,7 +200,8 @@ export class Shell implements System {
     this.gearSelector = new GearSelector(this.element, () => this.gearSource(), { touch: this.touch.available, onSelect: () => this.audio.cue('click') })
     // Zorb mode sits under the drum, with its key and its state, so it can be found.
     this.zorbToggle.type = 'button'; this.zorbToggle.className = 'zorb-toggle'; this.zorbToggle.setAttribute('aria-pressed', 'false')
-    this.zorbToggle.innerHTML = '<kbd>X</kbd><span>Zorb</span><b>Off</b>'
+    // The small track mirrors the standard switch, so Zorb's state reads the same way at a glance.
+    this.zorbToggle.innerHTML = '<kbd>X</kbd><span>Zorb</span><i class="zorb-switch" aria-hidden="true"></i><b>Off</b>'
     this.zorbToggle.title = 'Zorb mode: ride inside a ball. Press X to switch.'
     this.zorbToggle.addEventListener('click', () => { game.input.toggleZorb(); this.audio.cue('click'); this.zorbToggle.blur() }, { signal: this.abort.signal })
     this.element.append(this.zorbToggle)
@@ -221,7 +227,7 @@ export class Shell implements System {
     this.inspector.open = false
     const railTop = this.inspector.element.querySelector('.wi-top')!
     const players = document.createElement('details'); players.className = 'rail-players'
-    players.innerHTML = '<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><button type="button" class="rail-about" aria-haspopup="dialog">About &amp; how to play</button><label class="rail-diagnostics"><input type="checkbox"> Connection diagnostics</label></div>'
+    players.innerHTML = `<summary>Players & session <span>↗</span></summary><div class="rail-player-body"><button type="button" class="rail-invite">Invite players</button><button type="button" class="rail-about" aria-haspopup="dialog">About &amp; how to play</button>${switchHtml('rail-diagnostics', 'Connection diagnostics')}</div>`
     players.querySelector('.rail-player-body')!.prepend(this.element.querySelector('.hud-scoreboard')!)
     this.inspector.setSessionCard(players)
     // Performance follows World; its controls remain part of the searchable card stack.
@@ -273,11 +279,15 @@ export class Shell implements System {
     // The dialog's own Escape (cancel) and any other close route through closeAbout.
     guide.addEventListener('cancel', event => { event.preventDefault(); this.closeAbout() }, { signal })
     guide.addEventListener('close', () => this.closeAbout(), { signal })
-    players.querySelector('input')!.addEventListener('change', event => params.set(diagnostics.def.id, (event.target as HTMLInputElement).checked), { signal })
+    this.switches.set('diagnostics', this.bindField(players.querySelector('.rail-diagnostics')!, signal))
+    players.querySelector('.rail-diagnostics input')!.addEventListener('change', event => params.set(diagnostics.def.id, (event.target as HTMLInputElement).checked), { signal })
+    // Mute is a state, not an action: a switch that says whether sound is muted, not a button
+    // whose label names the opposite of the current state.
     const music = document.createElement('div'); music.className = 'rail-music'
-    music.innerHTML = `<span>Sound</span><button type="button" class="rail-mute">Mute</button>`
+    music.innerHTML = switchHtml('rail-mute', 'Mute audio')
     players.querySelector('.rail-player-body')!.append(music)
-    music.querySelector('button')!.addEventListener('click', () => this.audio.setMuted(!this.audio.isMuted), { signal })
+    this.switches.set('mute', this.bindField(music.querySelector('.rail-mute')!, signal))
+    music.querySelector('input')!.addEventListener('change', event => this.audio.setMuted((event.target as HTMLInputElement).checked), { signal })
     this.focusHud = new FocusHud(this.element)
     this.raceHud = new RaceHud(this.element, { leave: () => this.onRaceLeave?.(), cancel: () => this.onRaceCancel?.() })
     // Touch has no cursor to capture, so one control switches between driving and the panels.
@@ -314,7 +324,9 @@ export class Shell implements System {
     for (const button of this.element.querySelectorAll('[data-join]')) button.addEventListener('click', () => this.openJoin(), { signal })
     this.element.querySelector('form')!.addEventListener('submit', event => { event.preventDefault(); this.play(true) }, { signal })
     for (const button of this.element.querySelectorAll('.shell-invite')) button.addEventListener('click', () => { void this.copyInvite() }, { signal })
-    this.presentationToggle.addEventListener('click', () => this.setPresentation(!this.presentation), { signal })
+    const presentationInput = this.presentationToggle.querySelector('input')!
+    this.switches.set('presentation', this.bindField(this.presentationToggle, signal))
+    presentationInput.addEventListener('change', () => this.setPresentation(presentationInput.checked), { signal })
     for (const slider of this.element.querySelectorAll<HTMLInputElement>('[data-param]')) if (document.activeElement !== slider) slider.value = String(params.get(slider.dataset.param!)?.value ?? 0)
     this.element.querySelector('#world-seed')!.setAttribute('value', String(worldSeed.value))
     this.element.querySelector('#world-seed')!.addEventListener('input', event => { (event.target as HTMLInputElement).dataset.dirty = 'true' }, { signal })
@@ -342,6 +354,7 @@ export class Shell implements System {
       disarm(); this.toast(resetWorld() ? 'World reset to defaults.' : 'Sliders locked by host.')
     }, { signal })
     signal.addEventListener('abort', () => clearTimeout(resetArmed))
+    this.switches.set('host-lock', this.bindField(this.hostControls.querySelector('.host-lock')!, signal))
     this.hostControls.querySelector('#host-lock')!.addEventListener('change', event => { const net = hostControls(); if (net?.isHost) net.setLocked((event.target as HTMLInputElement).checked) }, { signal })
     const activity = (event: Event) => {
       this.lastActivity = performance.now()
@@ -479,7 +492,15 @@ export class Shell implements System {
   }
   get activePanel(): string { return this.panels.active }
   get presentation(): boolean { return this.element.classList.contains('is-presentation') }
-  setPresentation(enabled: boolean): void { this.element.classList.toggle('is-presentation', enabled); this.presentationToggle.setAttribute('aria-pressed', String(enabled)) }
+  setPresentation(enabled: boolean): void { this.element.classList.toggle('is-presentation', enabled); this.switches.get('presentation')?.(enabled) }
+  /** Make a switchHtml field live: the switch role and state, and the on/off word beside it. */
+  private bindField(field: HTMLElement, signal: AbortSignal): (on: boolean) => void {
+    const input = field.querySelector('input')!, word = field.querySelector('.s3-switch-word')!
+    const set = bindSwitch(input, { signal })
+    const show = () => { word.textContent = switchWord(input.checked); field.classList.toggle('is-checked', input.checked) }
+    input.addEventListener('change', show, { signal })
+    return on => { if (input.checked === on && word.textContent === switchWord(on)) return; set(on); show() }
+  }
   setPlayerCount(count: number): void { this.playerCount = Math.max(0, Math.floor(count)); this.updateInvite() }
   private lastMatch: MatchState | null = null
   setRace(snapshot: Readonly<RaceState> | null, roomNow: () => number, role: Readonly<RaceRole>): void {
@@ -1369,9 +1390,9 @@ export class Shell implements System {
     this.performancePanel.setContext(this.started && !this.menuVisible && !this.game.input.suspended, this.element.classList.contains('is-focus'))
     this.raceHud.update(this.started && !this.menuVisible && !this.game.input.suspended, this.element.classList.contains('is-focus'), this.self, this.ground?.size)
     this.element.classList.toggle('show-diagnostics', diagnostics.value)
-    this.element.querySelector<HTMLInputElement>('.rail-diagnostics input')!.checked = diagnostics.value
+    this.switches.get('diagnostics')!(diagnostics.value)
     // Per-frame: touch the DOM only when the label changes.
-    if (this.audio.isMuted !== this.muteShown) { this.muteShown = this.audio.isMuted; this.element.querySelector('.rail-mute')!.textContent = this.muteShown ? 'Unmute' : 'Mute' }
+    if (this.audio.isMuted !== this.muteShown) { this.muteShown = this.audio.isMuted; this.switches.get('mute')!(this.muteShown) }
     this.updateGear()
     this.gearSelector.update(this.element.classList.contains('is-focus'))
     const zorb = this.game.input.state.zorb
@@ -1417,7 +1438,7 @@ export class Shell implements System {
     for (const note of this.element.querySelectorAll<HTMLElement>('.world-lock-note')) note.hidden = editable
     this.paramPanel?.setWorldEditable(editable)
     this.hostControls.querySelector<HTMLButtonElement>('.world-reset')!.disabled = !editable
-    const lock = this.hostControls.querySelector<HTMLInputElement>('#host-lock')!; lock.checked = net?.locked ?? false
+    this.switches.get('host-lock')!(net?.locked ?? false)
     this.hostControls.querySelector<HTMLElement>('.host-lock')!.hidden = !net?.isHost
     this.hostControls.querySelector('.host-note')!.textContent = !net ? 'Join a room to manage shared settings.' : !editable ? 'Sliders locked by host.' : net.isHost ? 'You are the host.' : 'Shared sliders are open.'
     const mode = params.get('game.mode'), modeSelect = this.element.querySelector<HTMLSelectElement>('#game-mode')!

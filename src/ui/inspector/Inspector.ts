@@ -14,6 +14,7 @@ import { buildTree, describe, exportSection, exportWorld, fraction, limits, pars
 import './params'
 import './inspector.css'
 import './motion.css'
+import { bindSwitch } from './switch'
 
 export interface InspectorOptions {
   /** One line for a closed card, for example "Alpine · Harimos". Empty hides it. */
@@ -189,7 +190,7 @@ export class Inspector {
   update(): void {
     if (params.all().length !== this.known) this.build()
     const editable = canEditWorld()
-    if (editable !== this.editable) { this.editable = editable; for (const { row, def } of this.rows.values()) if (def.scope === 'world') for (const control of row.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) control.disabled = !editable; this.element.classList.toggle('is-locked', !editable) }
+    if (editable !== this.editable) { this.editable = editable; for (const { row, def } of this.rows.values()) if (def.scope === 'world') for (const control of row.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button')) control.disabled = !editable; this.markLocks(); this.element.classList.toggle('is-locked', !editable) }
     for (const card of this.element.querySelectorAll<HTMLElement>('.wi-card')) {
       const id = card.dataset.section!, extra = this.extras.get(id), sum = card.querySelector('.wi-sum')!
       const text = extra ? extra.summary() : this.options.summary(id) || `${this.tree.find(s => s.id === id)?.count ?? 0} properties`
@@ -329,6 +330,14 @@ export class Inspector {
     input.disabled = !eligible; input.setAttribute('aria-describedby', 'gi-status')
     const number = row.querySelector<HTMLButtonElement>('.wi-num'); if (number) number.disabled = !eligible
   }
+  /** A shared switch a guest cannot change shows a lock and "host" beside its true state. */
+  private markLocks(): void {
+    for (const { row, def } of this.rows.values()) {
+      const lock = row.querySelector<HTMLElement>('.wi-lock'); if (!lock) continue
+      const locked = def.scope === 'world' && !this.editable
+      lock.hidden = !locked; row.classList.toggle('is-locked-row', locked)
+    }
+  }
   /** One property row: slider, toggle, choice or number, kept in sync with the registry. */
   row(def: PropertyDef): HTMLElement {
     if (def.id === 'post.gi') def = { ...def, label: 'Global illumination (GI)' }
@@ -343,15 +352,22 @@ export class Inspector {
       const seg = document.createElement('div'); seg.className = 'wi-seg'; seg.setAttribute('role', 'group'); seg.setAttribute('aria-label', choices.name)
       for (const option of choices.options) { const button = document.createElement('button'); button.type = 'button'; button.dataset.value = String(option.value); button.textContent = option.label; button.addEventListener('click', () => params.set(def.id, option.value, 'local')); seg.append(button) }
       row.classList.add('is-choice'); row.append(label, seg)
-      sync = value => { for (const button of seg.querySelectorAll<HTMLElement>('button')) button.classList.toggle('is-on', Number(button.dataset.value) === Math.round(Number(value))) }
+      sync = value => { for (const button of seg.querySelectorAll<HTMLElement>('button')) { const on = Number(button.dataset.value) === Math.round(Number(value)); button.classList.toggle('is-on', on); button.setAttribute('aria-pressed', String(on)) } }
     } else if (typeof def.default === 'boolean') {
       label.textContent = def.label
-      const box = document.createElement('input'); box.type = 'checkbox'; box.setAttribute('aria-label', def.label)
+      // The standard switch (switch.ts): role switch, aria-checked, Space and Enter toggle.
+      const box = document.createElement('input'); box.setAttribute('aria-label', def.label)
+      const set = bindSwitch(box, { signal: this.abort.signal })
       box.addEventListener('change', () => params.set(def.id, box.checked, 'local'))
-      // The box stays small; the label around it is the 44 px target a thumb can hit.
+      // The track stays small; the label around it is the 44 px target a thumb can hit, and
+      // the row's own label text toggles it too.
       const hit = document.createElement('label'); hit.className = 'wi-hit'; hit.append(box)
-      row.append(label, hit, output)
-      sync = value => { box.checked = Boolean(value); output.textContent = show(Boolean(value)) }
+      label.addEventListener('click', () => { if (!box.disabled) box.click() })
+      // Shown only while a guest is held by the host's lock, so a locked switch never reads as off.
+      const lock = document.createElement('span'); lock.className = 'wi-lock'; lock.textContent = 'host'; lock.hidden = true
+      const word = document.createElement('span'); output.append(word, lock)
+      row.classList.add('is-switch'); row.append(label, hit, output)
+      sync = value => { set(Boolean(value)); word.textContent = show(Boolean(value)); row.classList.toggle('is-checked', Boolean(value)) }
     } else {
       label.textContent = def.label
       const ranged = def.min !== undefined && def.max !== undefined

@@ -80,6 +80,18 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     })
     assert.ok(whole >= 6, `${mode}: ${whole} whole rows in view`)
     await page.screenshot({ path: `${out}/${mode}-sound.png` })
+    // Mute is the standard switch: role and aria-checked agree with the setting, Space and
+    // Enter toggle it, and its label text toggles it too.
+    const mute = sound.getByRole('switch', { name: 'Mute audio' })
+    const muted = () => page.evaluate(() => window.syn3h.params.get('audio.muted').value)
+    const wasMuted = await muted()
+    assert.equal(await mute.getAttribute('aria-checked'), String(wasMuted), `${mode}: mute aria-checked`)
+    await mute.focus(); await page.keyboard.press('Space')
+    assert.equal(await muted(), !wasMuted, `${mode}: Space toggles`); assert.equal(await mute.getAttribute('aria-checked'), String(!wasMuted))
+    await page.keyboard.press('Enter')
+    assert.equal(await muted(), wasMuted, `${mode}: Enter toggles`); assert.equal(await mute.getAttribute('aria-checked'), String(wasMuted))
+    if (!touch) { await sound.locator('.wi-row[data-id="audio.muted"] .wi-label').click(); assert.equal(await muted(), !wasMuted, `${mode}: the label toggles`); await page.evaluate((v) => window.syn3h.params.set('audio.muted', v), wasMuted) }
+    assert.ok((await sound.locator('.wi-row[data-id="audio.muted"] .wi-hit').boundingBox()).height >= 44 - .5, `${mode}: the switch is a 44 px target`)
     await page.evaluate((value) => window.syn3h.params.set('audio.music', value), before)
 
     // Graphics: the in-game quality stepper steps down and back up.
@@ -98,10 +110,26 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     const cut = await graphics.locator('.wi-label').evaluateAll((labels) => labels.filter((l) => l.scrollWidth > l.clientWidth + 1).map((l) => l.textContent))
     assert.deepEqual(cut, [], `${mode}: labels cut off`)
     await page.screenshot({ path: `${out}/${mode}-graphics.png` })
+    // Auto quality is a switch of its own, apart from the stepper, saying on or off beside it.
+    const auto = graphics.getByRole('switch', { name: 'Auto quality' })
+    const autoOn = () => page.evaluate(() => window.syn3h.game.quality.getQualityState().auto)
+    const autoBefore = await autoOn()
+    assert.equal(await auto.getAttribute('aria-checked'), String(autoBefore), `${mode}: Auto aria-checked`)
+    assert.equal((await graphics.locator('.wi-auto .s3-switch-word').textContent()).trim(), autoBefore ? 'on' : 'off')
+    await tap(graphics.locator('.wi-auto .s3-switch-text'))
+    assert.equal(await autoOn(), !autoBefore, `${mode}: the Auto quality label toggles it`)
+    await page.waitForTimeout(250)
+    await page.screenshot({ path: `${out}/${mode}-graphics-auto-${autoBefore ? 'off' : 'on'}.png` })
+    await tap(graphics.locator('.wi-auto .s3-switch-text'))
+    assert.equal(await autoOn(), autoBefore)
 
     // Controls holds the personal control settings.
     await tap(panel.locator('.wi-card[data-section=controls] .wi-head'))
     for (const id of ['touch.leftHanded', 'camera.sensitivity', 'daydream.seconds']) await panel.locator(`.wi-row[data-id="${id}"]`).waitFor({ state: 'visible' })
+    assert.equal(await panel.getByRole('switch', { name: 'Presentation mode · P' }).count(), 1, `${mode}: presentation mode is a switch`)
+    await panel.locator('.wi-card[data-section=controls]').evaluate((c) => c.scrollIntoView({ block: 'start' }))
+    await page.waitForTimeout(400)
+    await page.screenshot({ path: `${out}/${mode}-controls.png` })
 
     // Escape closes and focus returns to the gear (the close control does the same on phones).
     if (touch) await tap(panel.locator('.lobby-settings-close'))
