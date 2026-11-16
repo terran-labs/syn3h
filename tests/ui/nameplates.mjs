@@ -7,6 +7,11 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
+const observationOnly = process.argv.includes('--observe-staging')
+assert.ok(process.argv.slice(2).every(arg => arg === '--observe-staging'), 'unsupported fixture argument')
+// Fixed before execution: one left-side region, no adaptive selection or early winner.
+const observationPositions = Object.freeze([[-22, -42], [-22, -34], [-14, -42], [-14, -34]].map(([x, z]) => Object.freeze({ x, z })))
+
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const origin = process.env.SYN3H_URL
 const expected = process.env.NP_SOURCE_SHA
@@ -31,7 +36,7 @@ assert.equal(launch.env.SYN3H_NO_ROOM_SERVER, '1')
 assert.equal(String(launch.env.SYN3H_ROOM_PORT), String(launch.roomPort), 'Vite proxy room port must be explicit')
 assert.ok(Number.isInteger(launch.roomPort) && launch.roomPort !== 8787, 'dedicated room port required')
 assert.ok(launch.roomPid > 0 && launch.roomStart && launch.vitePid > 0 && launch.viteStart, 'supervisor-owned PID/start provenance required')
-const report = { source: expected, launch, captures: [], errors: [], scope: 'Three fresh contexts: observer host, two remote people, four bots; Chrome only. No maximum-roster or hardware claim.' }
+const report = { mode: observationOnly ? 'staging-observation-only' : 'acceptance', acceptanceEligible: !observationOnly, source: expected, launch, captures: [], errors: [], scope: 'Three fresh contexts: observer host, two remote people, four bots; Chrome only. No maximum-roster or hardware claim.' }
 const captures = report.captures, errors = report.errors
 await mkdir(out, { recursive: false })
 const files = ['index.html', 'src/main.ts', 'src/net/index.ts', 'src/net/Connection.ts', 'src/ui/Shell.ts', 'src/world/curve.ts', 'shared/params.ts', 'vite.config.ts', 'server/dev.ts', 'tools/manual-reload.mjs', 'tools/rapier-wasm.mjs', 'tests/ui/nameplates.mjs', 'src/ui/nameplates/HudExclusions.ts', 'src/ui/nameplates/VehicleNameplates.ts', 'src/ui/nameplates/anchors.ts', 'src/ui/nameplates/curvature.ts', 'src/ui/nameplates/layout.ts', 'src/ui/nameplates/occlusion.ts', 'src/ui/nameplates/preferences.ts', 'src/ui/nameplates/renderHook.ts', 'src/ui/nameplates/terrain.ts']
@@ -422,6 +427,8 @@ async function geometryEvidence(page, captureLabel = null) {
         bendPoint(anchor, bend, bent); projection.project(anchor, bend, camera, innerWidth, innerHeight, screen)
         const plate = tags.plates.get(t.id)
         return { id: t.id, name: t.name, bot: t.bot, center: center.toArray(), anchor: anchor.toArray(), bentAnchor: bent.toArray(), projectedAnchor: screen.toArray(),
+          bodyPosition: { ...t.vehicle.body.translation() }, bodyRotation: { ...t.vehicle.body.rotation() },
+          bodyVelocity: { ...t.vehicle.body.linvel() }, renderedRotation: t.vehicle.object.getWorldQuaternion(rotation).toArray(),
           distance: center.distanceTo(eye), radius, visible: t.vehicle.object.visible, horizon: overHorizon(center.x, center.z, radius, center.y + radius),
           plate: plate ? { stamp: plate.stamp, candidate: { ...plate.candidate }, disc: { ...plate.disc }, sightStamp: plate.sightStamp, sightBlocked: plate.sightBlocked, shown: plate.shown, hidden: plate.el.hidden } : null }
       }), terrain: window.nameplateTerrainEvidence ? { ...window.nameplateTerrainEvidence, rays: [...window.nameplateTerrainEvidence.rays] } : null }
@@ -542,6 +549,31 @@ try {
   await a.waitForFunction(() => window.syn3h.bots.vehicles.length >= 4, null, { timeout: 15000 })
   await installTerrainEvidence(a)
   let center = await a.evaluate(() => { const s = window.syn3h, p = s.terrain.spawnPoint(0).position; return { x: p.x, y: p.y, z: p.z } })
+  async function waitSettled(page, far) {
+      await page.waitForFunction(far => {
+        const s = window.syn3h, net = window.syn3hNet, camera = s.game.camera, tags = net.tags
+        const eye = camera.position.toArray(), actors = tags.entries.map(t => [t.id, ...t.vehicle.object.position.toArray()])
+        const previous = window.nameplateSettle
+        const current = { eye, actors, stamp: tags.stamp, count: 0 }
+        const stable = previous && previous.stamp !== current.stamp && actors.length === previous.actors.length &&
+          Math.hypot(...eye.map((n, i) => n - previous.eye[i])) < .25 &&
+          actors.every((row, i) => row[0] === previous.actors[i][0] && Math.hypot(...row.slice(1).map((n, j) => n - previous.actors[i][j + 1])) < .25)
+        current.count = stable ? previous.count + 1 : 0; window.nameplateSettle = current
+        const people = tags.entries.filter(t => !t.bot)
+        const roster = ['Visitor', 'Companion'].every(name => people.some(t => t.name === name))
+        const nearRange = far || (people.every(t => t.vehicle.object.position.distanceTo(camera.position) < 140) &&
+          tags.entries.filter(t => t.bot).length >= 4 && tags.entries.filter(t => t.bot).every(t => t.vehicle.object.position.distanceTo(camera.position) < 95))
+        if (window.nameplateObservationHistory) {
+          const bot = s.bots.vehicles[0]
+          if (window.nameplateObservationHistory.length >= 180) throw new Error('observation history bound exceeded')
+          window.nameplateObservationHistory.push({ time: performance.now(), tick: s.game.tick, ...current,
+            body: { ...bot.body.translation() }, rotation: { ...bot.body.rotation() }, velocity: { ...bot.body.linvel() },
+            rendered: bot.object.position.toArray(), fov: camera.fov, roster, nearRange })
+        }
+        const pose = s.camera.cinematic
+        return roster && nearRange && pose && camera.position.distanceTo(pose.position) < .5 && Math.abs(camera.fov - pose.fov) < .5 && current.count >= 6
+      }, far, { timeout: remaining(15000), polling: 100 })
+  }
   async function stage(far = false, curve = .71, hudOverlap = false) {
     await installTerrainEvidence(a)
     await a.evaluate(curve => window.syn3h.params.set('world.curve', curve), curve)
@@ -556,22 +588,7 @@ try {
     // Record diagnostics even when settling fails. Never move the camera to skip occlusion.
     let stagingError
     try {
-      await a.waitForFunction(far => {
-        const s = window.syn3h, net = window.syn3hNet, camera = s.game.camera, tags = net.tags
-        const eye = camera.position.toArray(), actors = tags.entries.map(t => [t.id, ...t.vehicle.object.position.toArray()])
-        const previous = window.nameplateSettle
-        const current = { eye, actors, stamp: tags.stamp, count: 0 }
-        const stable = previous && previous.stamp !== current.stamp && actors.length === previous.actors.length &&
-          Math.hypot(...eye.map((n, i) => n - previous.eye[i])) < .25 &&
-          actors.every((row, i) => row[0] === previous.actors[i][0] && Math.hypot(...row.slice(1).map((n, j) => n - previous.actors[i][j + 1])) < .25)
-        current.count = stable ? previous.count + 1 : 0; window.nameplateSettle = current
-        const people = tags.entries.filter(t => !t.bot)
-        const roster = ['Visitor', 'Companion'].every(name => people.some(t => t.name === name))
-        const nearRange = far || (people.every(t => t.vehicle.object.position.distanceTo(camera.position) < 140) &&
-          tags.entries.filter(t => t.bot).length >= 4 && tags.entries.filter(t => t.bot).every(t => t.vehicle.object.position.distanceTo(camera.position) < 95))
-        const pose = s.camera.cinematic
-        return roster && nearRange && pose && camera.position.distanceTo(pose.position) < .5 && Math.abs(camera.fov - pose.fov) < .5 && current.count >= 6
-      }, far, { timeout: remaining(15000), polling: 100 })
+      await waitSettled(a, far)
     } catch (error) { stagingError = error }
     try {
       report.stages ??= []
@@ -586,7 +603,66 @@ try {
     const stage = report.stages.at(-1)
     assert.ok(stage.actors.every(actor => actor.seed === stage.observer.seed && actor.terrainKind === stage.observer.terrainKind), 'clients share staged world')
   }
+  if (observationOnly) {
+    report.observations = { purpose: 'setup measurements only; not nameplate acceptance', region: 'center-relative x[-22,-14], z[-42,-34]',
+      candidates: observationPositions, settleTimeoutMs: 15000, pollingMs: 100, historyLimit: 180, records: [], complete: false }
+    await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+  }
   await stage()
+  if (observationOnly) {
+    // Ordinary setup is complete. Across these observations only bot zero is teleported.
+    await a.evaluate(() => window.restoreNameplateTerrainEvidence?.())
+    for (const candidate of observationPositions) {
+      const row = { candidate, settled: false, history: [], snapshot: null }
+      report.observations.records.push(row)
+      await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+      row.initial = await a.evaluate(({ center, candidate }) => {
+        const s = window.syn3h, bot = s.bots.vehicles[0], x = center.x + candidate.x, z = center.z + candidate.z
+        const samples = [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]].map(([dx, dz]) => ({ x: x + dx, z: z + dz, height: s.terrain.heightAt(x + dx, z + dz) }))
+        if (!samples.every(v => Number.isFinite(v.height))) throw new Error('nonfinite observation terrain height')
+        const terrainHeight = samples[0].height, teleportY = terrainHeight + 2
+        const slope = { x: (samples[2].height - samples[1].height) / 2, z: (samples[4].height - samples[3].height) / 2 }
+        if (!Number.isFinite(slope.x + slope.z + teleportY)) throw new Error('nonfinite observation slope or teleport height')
+        const before = { body: { ...bot.body.translation() }, rendered: bot.object.position.toArray() }
+        bot.teleport(bot.object.position.clone().set(x, teleportY, z), 0)
+        window.nameplateSettle = undefined; window.nameplateObservationHistory = []
+        return { x, z, terrainHeight, teleportY, samples, slope, before, time: performance.now(),
+          seed: s.params.get('world.seed').value, curve: s.params.get('world.curve').value,
+          bodyAfterTeleport: { ...bot.body.translation() }, renderedAfterTeleport: bot.object.position.toArray() }
+      }, { center, candidate })
+      await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+      try { await waitSettled(a, false); row.settled = true }
+      catch (error) { row.settleError = String(error); if (error.name !== 'TimeoutError') row.fatalError = String(error) }
+      // Same bounded criterion and all fixed candidates, even when ordinary settling times out.
+      row.history = await a.evaluate(() => { const rows = window.nameplateObservationHistory; delete window.nameplateObservationHistory; return rows })
+      row.snapshot = await geometryEvidence(a, 'observation-only')
+      // Preserve the raw synchronized receipt before any completeness assertion.
+      await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+      const d = row.snapshot.diagnostic, reference = report.stages[0].observer
+      assert.equal(d.seed, reference.seed, 'observation seed unchanged')
+      assert.equal(d.terrainKind, reference.terrainKind, 'observation world unchanged')
+      assert.equal(row.snapshot.curve, .71, 'observation curvature unchanged')
+      assert.equal(row.snapshot.stamp, d.stamp, 'observation snapshot stamp agrees')
+      const values = [...d.camera.eye, ...d.camera.quaternion, ...d.camera.matrix, ...d.camera.projection, ...d.bend,
+        ...d.entries.flatMap(e => [...e.center, ...e.anchor, ...e.renderedRotation, e.radius,
+          ...Object.values(e.bodyPosition), ...Object.values(e.bodyRotation), ...Object.values(e.bodyVelocity)])]
+      assert.ok(values.every(Number.isFinite), 'finite synchronized pose and projection required')
+      row.humanReservations = row.snapshot.diagnostic.entries.filter(e => !e.bot).map(e => {
+        const c = e.plate?.candidate, dom = row.snapshot.labels.find(l => l.id === e.id)
+        const valid = dom && e.plate?.shown && !e.plate.hidden && Number.isInteger(c?.previous) && c.previous >= 0 && c.previous <= 3
+        if (!valid) return { id: e.id, valid: false, reason: 'no shown current slot', dom }
+        const [dx, dy] = [[0, -12], [0, -32], [-c.width / 2 - 12, -12], [c.width / 2 + 12, -12]][c.previous]
+        const x = c.x + dx, y = c.y + dy - c.height
+        return { id: e.id, valid: e.plate.stamp === row.snapshot.stamp, spot: c.previous, dom,
+          bounds: { left: Math.min(x - c.width / 2, c.x) - 3, top: y - 3, right: Math.max(x + c.width / 2, c.x) + 3, bottom: c.y + 3 } }
+      })
+      await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+      if (row.fatalError) throw new Error(row.fatalError)
+    }
+    report.observations.complete = report.observations.records.length === observationPositions.length
+    report.observations.verdict = 'observations collected; no candidate selected; no acceptance claim'
+    await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+  } else {
   const near = await capture(a, 'desktop-near-day')
   const positiveSlots = hudSlots(near)
   report.placementPreconditions = [{ label: 'near-positive', entries: positiveSlots }]
@@ -668,6 +744,7 @@ try {
   const follower = await capture(b, 'follower')
   assert.equal(new Set(follower.labels.map(l => l.id)).size, follower.labels.length, 'no duplicate follower labels')
 
+  } // Acceptance scenarios are never executed or claimed by observation-only mode.
     assert.deepEqual(errors, [])
     await verifyBrowserEvidence('before final provenance')
     report.finalProvenance = await provenance()

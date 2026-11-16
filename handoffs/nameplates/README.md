@@ -323,3 +323,32 @@ or no legal pair fails. No allocator, draw, visibility or terrain query is repla
 opportunity does not certify terrain visibility: the strict rendered-label assertion remains.
 All prior failures, human priority, negative/restored HUD and cost checks remain intact.
 Syntax and whitespace checks only; independent review and runtime allocation are still required.
+
+
+## Observation-only staging proposal
+
+The explicit `--observe-staging` mode is excluded from acceptance. It predeclares exactly
+four positions, in this order, relative to the existing center: (-22,-42), (-22,-34),
+(-14,-42), (-14,-34). This is one left-side region; the first position repeats the measured
+failed setup as a reference, not a rescue. There is no early winner, adaptive coordinate or
+label forcing. After ordinary setup only bot zero is teleported; camera, seed, curve, HUD,
+humans and other bots retain their setup.
+
+Each candidate records terrain height at the center and four one-metre axis offsets, finite
+central slopes, exact teleport Y, immediate body/rendered position, then ordinary physics
+settling. The existing predicate is shared: six consecutive changed draw stamps with camera
+and actor deltas below 0.25 m, requested camera within 0.5 m/FOV within 0.5 degrees, roster
+present and existing near ranges. Each candidate has the same 15-second limit and 100 ms
+polling, with at most 180 history records. Failed settling is retained and does not select an
+alternative; all predetermined candidates are measured unless a fatal evidence error or the
+unchanged overall deadline stops collection.
+
+Final synchronous snapshots include body position/orientation/velocity, rendered center and
+world orientation, envelope radius and anchor, camera/projection/bend, HUD and label bounds,
+human leader reservations, entry discs and the conservatively copied local disc. Terrain
+height queries are outside cost windows; observation mode never enters a cost window or
+replays label allocation/visibility rays. It takes no screenshots. Complete collection only
+means observation records were saved, not settled success, legal placement or nameplate
+acceptance. Offline selection and drift/margin analysis follow separately allocated evidence.
+Future acceptance keeps same-frame legal-pair, actual two-full-BOT, negative/restored/far and
+cost assertions unchanged. Historical evidence remains untouched; no runtime is cleared.
