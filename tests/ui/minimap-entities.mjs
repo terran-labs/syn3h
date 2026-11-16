@@ -1,7 +1,7 @@
 // People and bots on the minimap, and dots for vehicles beyond its rim. Two pages in one room:
 // a desktop host (who runs the bots) and a phone guest (the real second person). Each scene
 // places the bots and the other person relative to the viewer, then captures the viewer's map.
-//   SYN3H_URL=http://127.0.0.1:5213/ node tests/ui/minimap-entities.mjs
+//   SYN3H_URL=http://127.0.0.1:5213/ [SYN3H_WORLD=ice] (a planet kind) node tests/ui/minimap-entities.mjs
 // Screenshots go to tests/ui/artifacts/minimap-entities. Look at them: this checks layout and
 // legibility, which pixels asserted here cannot.
 import { chromium } from 'playwright-core'
@@ -9,7 +9,8 @@ import assert from 'node:assert/strict'
 import { mkdir } from 'node:fs/promises'
 
 const base = process.env.SYN3H_URL ?? 'http://127.0.0.1:5213/'
-const out = 'tests/ui/artifacts/minimap-entities'
+const world = process.env.SYN3H_WORLD ?? ''
+const out = 'tests/ui/artifacts/minimap-entities' + (world ? `/${world}` : '')
 await mkdir(out, { recursive: true })
 const room = `minimap-entities-${Date.now()}`
 const RIM = 0.77, BOTS = 8 // the most a headless page's quality budget (Ultra) runs
@@ -20,7 +21,7 @@ async function open(options, label) {
   const context = await browser.newContext(options)
   const page = await context.newPage()
   page.on('pageerror', (error) => errors.push(`${label}: ${error.message}`))
-  await page.goto(`${base}?autoplay=1&room=${room}`)
+  await page.goto(`${base}?autoplay=1&room=${room}${world ? `&planet=${world}` : ''}`)
   await page.waitForFunction(() => window.syn3h?.game.tick > 30 && window.syn3hNet?.connected, null, { timeout: 120000 })
   await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 120000 })
   if (await page.locator('.world-inspector').isVisible() && await page.locator('.inspector-toggle').isVisible()) await page.locator('.inspector-toggle').click()
