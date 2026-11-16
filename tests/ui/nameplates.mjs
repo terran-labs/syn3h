@@ -8,9 +8,14 @@ import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 
 const observationOnly = process.argv.includes('--observe-staging')
-assert.ok(process.argv.slice(2).every(arg => arg === '--observe-staging'), 'unsupported fixture argument')
+const surveyOnly = process.argv.includes('--survey-terrain')
+assert.ok(process.argv.slice(2).every(arg => ['--observe-staging', '--survey-terrain'].includes(arg)) && !(observationOnly && surveyOnly), 'unsupported fixture mode')
 // Fixed before execution: one left-side region, no adaptive selection or early winner.
 const observationPositions = Object.freeze([[-22, -42], [-22, -34], [-14, -42], [-14, -34]].map(([x, z]) => Object.freeze({ x, z })))
+
+// Exact fixed grid, ordered z then x, independent of queried heights or visibility.
+const surveySamples = Object.freeze([-40, -32, -24, -16, -8, 0].flatMap(z => [-32, -24, -16, -8, 0, 8, 16, 24, 32].map(x => Object.freeze({ x, z }))))
+const surveyReference = {"seed":1,"terrainKind":0,"curve":0.71,"center":{"x":13.229718186648464,"z":-564.5650121613116},"camera":{"eye":[13.230027456509344,32.92388950050769,-519.6425462541262],"quaternion":[-0.12533730388111655,2.6983623441422033e-06,3.4089368492666596e-07,0.9921141871016739],"fov":60.02859087332993,"matrix":[0.9999999999852053,-1.0587911840678754e-22,-5.439620517886433e-06,0,-1.3528218444364532e-06,0.9685811205113929,-0.2486978347052191,0,5.2687137363712045e-06,0.24869783470889856,0.968581120497063,0,13.230027456509344,32.92388950050769,-519.6425462541262,1],"projection":[1.0819082680633991,0,0,0,0,1.7310532289014386,0,0,0,0,-1.0000250006250155,-1,0,0,-0.5000125003125078,0],"cinematic":{"position":{"x":13.229718186648464,"y":32.948007234552264,"z":-519.5650121613116},"target":{"x":13.229718186648464,"y":20,"z":-576.5650121613116},"look":{"x":13.229718186648464,"y":20,"z":-576.5650121613116},"fov":60}},"bend":[13.230027456509344,-519.6425462541262,0.0012289474942801918],"viewport":{"width":1440,"height":900},"receipt":"nameplates-current-browser-007 snapshot727"}
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const origin = process.env.SYN3H_URL
@@ -36,7 +41,7 @@ assert.equal(launch.env.SYN3H_NO_ROOM_SERVER, '1')
 assert.equal(String(launch.env.SYN3H_ROOM_PORT), String(launch.roomPort), 'Vite proxy room port must be explicit')
 assert.ok(Number.isInteger(launch.roomPort) && launch.roomPort !== 8787, 'dedicated room port required')
 assert.ok(launch.roomPid > 0 && launch.roomStart && launch.vitePid > 0 && launch.viteStart, 'supervisor-owned PID/start provenance required')
-const report = { mode: observationOnly ? 'staging-observation-only' : 'acceptance', acceptanceEligible: !observationOnly, source: expected, launch, captures: [], errors: [], scope: 'Three fresh contexts: observer host, two remote people, four bots; Chrome only. No maximum-roster or hardware claim.' }
+const report = { mode: surveyOnly ? 'terrain-survey-only' : observationOnly ? 'staging-observation-only' : 'acceptance', acceptanceEligible: !observationOnly && !surveyOnly, source: expected, launch, captures: [], errors: [], scope: 'Three fresh contexts: observer host, two remote people, four bots; Chrome only. No maximum-roster or hardware claim.' }
 const captures = report.captures, errors = report.errors
 await mkdir(out, { recursive: false })
 const files = ['index.html', 'src/main.ts', 'src/net/index.ts', 'src/net/Connection.ts', 'src/ui/Shell.ts', 'src/world/curve.ts', 'shared/params.ts', 'vite.config.ts', 'server/dev.ts', 'tools/manual-reload.mjs', 'tools/rapier-wasm.mjs', 'tests/ui/nameplates.mjs', 'src/ui/nameplates/HudExclusions.ts', 'src/ui/nameplates/VehicleNameplates.ts', 'src/ui/nameplates/anchors.ts', 'src/ui/nameplates/curvature.ts', 'src/ui/nameplates/layout.ts', 'src/ui/nameplates/occlusion.ts', 'src/ui/nameplates/preferences.ts', 'src/ui/nameplates/renderHook.ts', 'src/ui/nameplates/terrain.ts']
@@ -608,6 +613,51 @@ try {
       candidates: observationPositions, settleTimeoutMs: 15000, pollingMs: 100, historyLimit: 180, records: [], complete: false }
     await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
   }
+  if (surveyOnly) {
+    report.survey = { purpose: 'terrain/projection data only; no pose selection or label acceptance', reference: surveyReference,
+      samples: surveySamples, heightQueryLimit: 270, envelopeLimit: 324, projectionLimit: 9072, records: [], complete: false,
+      hypotheses: { centerAboveGround: [.5, 1, 2], radii: [3.5, 6], note: 'hypothetical envelopes, not measured support or settled poses' } }
+    await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+    // No stage(), teleports, live-camera mutation or acceptance/cost windows in this mode.
+    await a.evaluate(() => window.restoreNameplateTerrainEvidence?.())
+    for (const sample of surveySamples) {
+      const record = await bounded(a.evaluate(async ({ sample, ref }) => {
+        const { PerspectiveCamera, Vector3 } = await import('three/webgpu')
+        const { CurvedProjection } = await import('/src/ui/nameplates/curvature.ts')
+        const s = window.syn3h
+        if (s.params.get('world.seed').value !== ref.seed || s.params.get('terrain.kind').value !== ref.terrainKind || s.params.get('world.curve').value !== ref.curve) throw new Error('survey world differs from recorded reference')
+        const x = ref.center.x + sample.x, z = ref.center.z + sample.z
+        const heights = [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]].map(([dx, dz]) => ({ x: x + dx, z: z + dz, height: s.terrain.heightAt(x + dx, z + dz) }))
+        if (!heights.every(p => Number.isFinite(p.height))) throw new Error('nonfinite survey height')
+        const camera = new PerspectiveCamera()
+        camera.matrixWorld.fromArray(ref.camera.matrix)
+        camera.matrixWorldInverse.copy(camera.matrixWorld).invert()
+        camera.projectionMatrix.fromArray(ref.camera.projection)
+        camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert()
+        camera.near = .25
+        const bend = new Vector3(...ref.bend), eye = new Vector3(...ref.camera.eye), projection = new CurvedProjection(), envelopeSamples = []
+        for (const offset of [.5, 1, 2]) for (const radius of [3.5, 6]) {
+          const center = new Vector3(x, heights[0].height + offset, z), anchor = center.clone(); anchor.y += radius + .65
+          const screen = new Vector3(), disc = { id: 'hypothetical', x: 0, y: 0, radius: 0, depth: 0 }
+          projection.project(anchor, bend, camera, ref.viewport.width, ref.viewport.height, screen)
+          projection.envelope(center, radius, bend, camera, ref.viewport.width, ref.viewport.height, disc)
+          const distance = center.distanceTo(eye)
+          if (![...screen.toArray(), ...center.toArray(), disc.x, disc.y, disc.radius, disc.depth, distance].every(Number.isFinite)) throw new Error('nonfinite survey projection')
+          envelopeSamples.push({ offset, radius, center: center.toArray(), anchor: anchor.toArray(), screen: screen.toArray(), disc, distance,
+            fullBotDistance: distance <= 100, withinExistingNearLimit: distance < 95 })
+        }
+        return { sample, x, z, heights, slope: { x: (heights[2].height - heights[1].height) / 2, z: (heights[4].height - heights[3].height) / 2 },
+          envelopes: envelopeSamples, heightQueries: 5, envelopeCount: 6, projectionCount: 168,
+          liveTick: s.game.tick, note: 'reference-camera projection; not live-frame placement or visibility proof' }
+      }, { sample, ref: surveyReference }), 3000, 'fixed terrain survey sample')
+      report.survey.records.push(record)
+      await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+    }
+    assert.equal(report.survey.records.length, 54, 'all fixed samples returned')
+    report.survey.complete = true
+    report.survey.verdict = 'survey collected; no candidate selected; no physics support or label acceptance claim'
+    await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+  } else {
   await stage()
   if (observationOnly) {
     // Ordinary setup is complete. Across these observations only bot zero is teleported.
@@ -745,6 +795,7 @@ try {
   assert.equal(new Set(follower.labels.map(l => l.id)).size, follower.labels.length, 'no duplicate follower labels')
 
   } // Acceptance scenarios are never executed or claimed by observation-only mode.
+  } // Terrain survey does not enter staging or acceptance.
     assert.deepEqual(errors, [])
     await verifyBrowserEvidence('before final provenance')
     report.finalProvenance = await provenance()

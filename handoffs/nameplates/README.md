@@ -352,3 +352,35 @@ means observation records were saved, not settled success, legal placement or na
 acceptance. Offline selection and drift/margin analysis follow separately allocated evidence.
 Future acceptance keeps same-frame legal-pair, actual two-full-BOT, negative/restored/far and
 cost assertions unchanged. Historical evidence remains untouched; no runtime is cleared.
+
+
+## Finite terrain survey proposal
+
+`--survey-terrain` is a separate nonacceptance mode. It retains this product base rather
+than rebasing to live 1602. Its reference is the exact recorded camera, projection, bend and
+1440x900 viewport from run 007 snapshot 727, Volcanic seed 1 and curve 0.71. The live camera
+is not moved. After ordinary native entry, the survey never calls stage or teleports actors.
+
+The exact Cartesian sample list is X offsets [-32,-24,-16,-8,0,8,16,24,32] crossed with Z
+offsets [-40,-32,-24,-16,-8,0], ordered Z then X, relative to recorded center
+(13.229718186648464,-564.5650121613116). Cardinality is 54. This finite foreground region
+contains the measured failed region and existing human/bot ground neighborhood, extending
+across both sides of the existing camera. Maximum horizontal distance from the recorded eye
+is approximately 91 m, leaving vertical-distance checks to measured heights. It does not
+assert that every sample is inside full-label range or projects into a desired screen band.
+
+Each point returns its terrain height and four one-metre axis-neighbor heights, central slope,
+and curvature-aware anchor/envelope projections for explicit hypothetical body-center offsets
+0.5, 1 and 2 metres above ground and radii 3.5 and 6. These hypotheses are not measured
+support or settled poses. All six combinations are returned, including out-of-range or poorly
+placed samples; full-bot and existing near-distance flags are data, not filters or winners.
+
+Fixed ceilings: 270 terrain-height calls, 324 envelopes, 9,072 point projections (one anchor
+and 27 envelope points per combination). Each of 54 evaluations has a three-second bound
+inside the unchanged total fixture/supervisor budget. No adaptive subdivision, early success,
+visibility rays, allocator execution, physics teleports, cost window or runtime selection.
+Partial results persist after every sample; fatal evidence errors stop collection honestly.
+Offline review may map measured ground and hypothetical envelopes to upper/flank design bands.
+Any later fixed coordinated pose observation requires separate review and allocation. The
+acceptance scenarios, both humans, four bots, >=2 full BOT requirement, priority/negative/far
+cases, cost and every occluder remain unchanged and unclaimed by survey completion.
