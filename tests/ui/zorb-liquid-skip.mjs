@@ -6,6 +6,11 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('../../', import.meta.url))
+const fixtureArgs=process.argv.slice(2)
+assert.ok(fixtureArgs.length===0||(fixtureArgs.length===1&&fixtureArgs[0]==='--diagnostic=lava-buggy-repeat'),'Only the explicit single-case diagnostic or the default matrix is supported')
+const lavaDiagnostic=fixtureArgs.length===1
+const worlds=lavaDiagnostic?[['lava','volcanic']]:[['water','archipelago'],['lava','volcanic']]
+const labels=worlds.map(([liquid])=>liquid)
 const origin = process.env.SYN3H_URL, expected = process.env.UX_SOURCE_SHA, out = process.env.UX_EVIDENCE_DIR
 assert.ok(origin && expected && out && process.env.UX_LAUNCH_MANIFEST, 'Allocated manifest required')
 const launch = JSON.parse(await readFile(process.env.UX_LAUNCH_MANIFEST, 'utf8'))
@@ -21,6 +26,8 @@ const required = ['src/main.ts','src/core/Game.ts','src/core/Input.ts','src/vehi
 const report = {source:expected,launch,cases:[],responses:[],parsedScripts:[],errors:[],warnings:[],cleanupErrors:[],captureComplete:false,productAccepted:false,disposition:'review-required',navigation:{},canvasActions:[],vehicleSelections:[],
   scope:'Chrome only; controlled initial placements plus native controls in the real app. No private float or physics ticks. Not a production/FPS benchmark.',
   limitations:['Visual review required after screenshots/video','Audio invocation logs are not a listening check','No physical-device or network-peer validation']}
+if(lavaDiagnostic)Object.assign(report,{mode:'lava-buggy-repeat-diagnostic',acceptanceEligible:false,diagnosticCollectionComplete:false,
+  declaredCases:['lava-buggy-repeat'],checkpointCase:'lava-buggy-repeat',scope:'One lava Buggy repeat and its bounded second-skip checkpoint only; not the acceptance matrix.'})
 const pending = [], locals = new Map(), contexts = []
 await mkdir(out,{recursive:true})
 const save = () => bounded(writeFile(`${out}/report.json`,JSON.stringify(report,null,2)),5000,'save report')
@@ -199,7 +206,7 @@ async function activate(kind) {
   await page.waitForFunction(()=>syn3h.player.zorb.active&&syn3h.player.zorb.radius>=.95*.5*(syn3h.params.get('zorb.size').value*15+(syn3h.player.camOffset??3)),null,{timeout:remaining(12000)})
 }
 async function installProbe(liquid) {
-  await page.evaluate(liquid=>{
+  await page.evaluate(({liquid,lavaDiagnostic})=>{
     const s=syn3h,t=s.terrain,rows=[],audio=[],restore=[];let current=null,previous=null,anchor=null,overflow=false
     const phases=[],observationErrors=[];let phaseOverflow=false,errorDrops=0,binding=null,callId=0
     const copy=v=>({x:v.x,y:v.y,z:v.z})
@@ -225,7 +232,7 @@ async function installProbe(liquid) {
     })
     // One bounded window in the original growing Buggy case. Keep only the current
     // candidate step until the second counted skip, then at most twelve ordinary steps.
-    const checkpoint={case:'water-buggy-repeat',maxSteps:12,status:'not-started',steps:[],errors:[]}
+    const checkpoint={case:lavaDiagnostic?'lava-buggy-repeat':'water-buggy-repeat',maxSteps:12,status:'not-started',steps:[],errors:[]}
     let checkpointStep=null,skipInvocation=null,skipBaseline=0
     const failCheckpoint=message=>{checkpoint.status='failed';if(checkpoint.errors.length<20)checkpoint.errors.push(message);else error('checkpoint overflow',message)}
     const dot=(a,b)=>a.x*b.x+a.y*b.y+a.z*b.z
@@ -424,9 +431,11 @@ async function installProbe(liquid) {
       site(){
         // Search actual generated terrain; never replace its sampler or liquid methods.
         const size=t.data.size,limit=Math.min(size*.45,850)
+        if(lavaDiagnostic&&limit!==850)throw new Error('Recorded lava site requires the original terrain extent')
         for(let z=-limit;z<=limit;z+=40)for(let x=-limit;x<=limit;x+=40){
           const q=context(x,z)
           if(q.kind===liquid&&q.height-q.ground>16&&q.normal.y>.98&&q.neighbors.every(a=>a.kind===liquid)&&[0,40,80,120,160].every(dx=>t.liquidKindAt(x+dx,z)===liquid&&t.liquidHeightAt(x+dx,z)-t.heightAt(x+dx,z)>16))return {x,z,context:q}
+          if(lavaDiagnostic)throw new Error('Recorded lava site (-850,-850) no longer satisfies the original corridor checks; no alternate search')
         }
         throw new Error(`No sufficiently deep ${liquid} corridor found`)
       },
@@ -458,10 +467,11 @@ async function installProbe(liquid) {
       export(){return {liquid,rows,audio,overflow,phases,phaseOverflow,observationErrors,errorDrops,checkpoint,boundVehicle:binding?.vehicle.object.uuid??null,clock:'Unmodified app/network clock',surfaceQuery:'actual ProceduralTerrain'}} ,
       dispose(){endCheckpoint();restoreBinding();s.game.remove(observer,false);for(const f of restore)safely('restore audio',f);current=null}
     }
-  },liquid)
+  },{liquid,lavaDiagnostic})
 }
 async function observeCase(liquid,kind,mode,site) {
   const name=`${liquid}-${kind}-${mode}`, record={name,status:'incomplete',classification:'controlled placement, real app stepping',disposition:'review-required',productAccepted:false}
+  if(lavaDiagnostic)record.acceptanceEligible=false
   report.cases.push(record);await save()
   record.start=await page.evaluate(({site,mode,name})=>{zorbProbe.begin(name);return zorbProbe.place(site,mode)},{site,mode,name})
   await page.screenshot({path:`${out}/${name}-start.png`,timeout:remaining(5000)})
@@ -503,7 +513,7 @@ try {
   report.before=await pins();await save()
   browser=await bounded(chromium.launch({channel:'chrome',headless:true,args:['--enable-unsafe-webgpu','--use-angle=metal','--ignore-gpu-blocklist']}),20000,'Chrome launch')
   browser.on('disconnected',()=>{disconnected=true})
-  for(const [liquid,planet] of [['water','archipelago'],['lava','volcanic']]) {
+  for(const [liquid,planet] of worlds) {
     const context=await browser.newContext({viewport:{width:1280,height:800},serviceWorkers:'block',recordVideo:{dir:out}});contexts.push(context)
     await context.route('**/*',route=>{
       const url=new URL(route.request().url())
@@ -525,11 +535,12 @@ try {
       s.params.set('daydream.seconds',0);s.game.quality.setLevel(3);s.game.quality.setAuto(false)
       return {prior,diagnosticOverrides:{daydreamSeconds:0,quality:3,auto:false},params:s.params.snapshot('world'),room:syn3hNet.isHost}
     })
+    if(lavaDiagnostic)assert.equal(report[liquid+'Settings'].params['world.seed'],1,'Recorded Volcanic seed required; no replacement seed')
     await installProbe(liquid)
-    for(const kind of ['buggy','jet','hovercraft','tank']) {
+    for(const kind of (lavaDiagnostic?['buggy']:['buggy','jet','hovercraft','tank'])) {
       await activate(kind);const site=await page.evaluate(()=>zorbProbe.site())
       await observeCase(liquid,kind,'repeat',site)
-      if(kind==='buggy')for(const mode of ['slow','steep','hop','drive'])await observeCase(liquid,kind,mode,mode==='drive'?await page.evaluate(()=>zorbProbe.shore()):site)
+      if(!lavaDiagnostic&&kind==='buggy')for(const mode of ['slow','steep','hop','drive'])await observeCase(liquid,kind,mode,mode==='drive'?await page.evaluate(()=>zorbProbe.shore()):site)
     }
     await page.evaluate(()=>zorbProbe.dispose());await persistPage();await context.close();page=undefined
   }
@@ -543,18 +554,28 @@ finally {
     // Producer is closed. Drain dynamically because body handlers can append errors.
     let cursor=0;while(cursor<pending.length){const batch=pending.slice(cursor);cursor=pending.length;await bounded(Promise.all(batch),10000,'body drain')}
     assert.ok(!browser||disconnected,'browser disconnect required')
-    for(const label of ['water','lava']) {
+    for(const label of labels) {
       const navigation=report.navigation[label]
       assert.ok(navigation,`${label} navigation receipt required`)
       assert.ok(report.responses.some(r=>r.label===label&&r.url===navigation.responseURL&&r.resourceType==='document'&&r.navigationRequest&&r.mainFrame&&r.documentVerified&&r.bytes>0&&!r.error),`${label} verified main-frame document required independently of modules`)
     }
-    for(const label of ['water','lava'])for(const path of required){
+    for(const label of labels)for(const path of required){
       assert.ok(report.responses.some(r=>r.label===label&&r.path===path&&r.sourceSha256&&!r.error),`actual source missing ${label}/${path}`)
       assert.ok(report.parsedScripts.some(r=>r.label===label&&new URL(r.url).pathname===`/${path}`),`parsed module missing ${label}/${path}`)
     }
     assert.deepEqual(report.errors,[]);report.after=await pins();assert.deepEqual(report.after,report.before)
-    assert.equal(report.cases.length,16,'all planned cases required; interrupted cases are not a full matrix')
-    assert.ok(report.cases.filter(c=>c.name.startsWith('water-')).some(c=>c.anchorHeightRange?.[1]>c.anchorHeightRange?.[0]),'actual water wave evolution required')
+    if(lavaDiagnostic){
+      assert.deepEqual(report.cases.map(c=>c.name),['lava-buggy-repeat'],'exactly the declared diagnostic case required')
+      const e=report.activeEvidence,c=e?.checkpoint
+      assert.ok(report.cases[0].endpointFrozen,'original observation endpoint required')
+      assert.ok(e?.liquid==='lava'&&e.rows?.length>0&&e.phases?.length>0,'declared case observations required')
+      assert.ok(!e.overflow&&!e.phaseOverflow&&!e.errorDrops&&!e.observationErrors?.length&&e.boundVehicle===null,'complete restored observer required')
+      assert.ok(c?.case==='lava-buggy-repeat'&&c.status==='complete'&&c.steps.length>0&&c.steps.length<=12&&!c.errors.length,'complete bounded lava checkpoint required')
+      report.diagnosticCollectionComplete=!report.cleanupErrors.length&&!report.errors.length
+    }else{
+      assert.equal(report.cases.length,16,'all planned cases required; interrupted cases are not a full matrix')
+      assert.ok(report.cases.filter(c=>c.name.startsWith('water-')).some(c=>c.anchorHeightRange?.[1]>c.anchorHeightRange?.[0]),'actual water wave evolution required')
+    }
     report.captureComplete=!report.failure&&!report.cleanupErrors.length&&!report.errors.length
     report.disposition='review-required';report.productAccepted=false // Capture completeness is not owner-behavior acceptance.
   }catch(e){report.cleanupErrors.push(String(e.stack??e))}
