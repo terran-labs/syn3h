@@ -19,8 +19,11 @@ not permission for this lane to build another launcher:
 - A dedicated room origin reachable by the artifact's configured networking. The
   second entry uses the actual room name `lobby`; use a private server so this does
   not join the public lobby. The first uses another unique room name.
-- Valid distinguishable frozen and latest model/licence bytes. Model files must be
-  valid permitted meshes. No application response is mocked by Playwright.
+- Exact expected frozen hashes for all four models and ten licences, with explicit
+  `/v/<version>/` URLs. Frozen and latest bytes may be identical. Optionally supply
+  one independently prepared distinct resource and its latest hash to demonstrate
+  byte discrimination. Existing permitted resources suffice; no new mesh asset
+  project is required. No application response is mocked by Playwright.
 - A separate isolated missing-model origin with the same artifact and one frozen
   Tank mesh absent (404), while the latest counterpart exists. All other resources
   work normally. Never remove files from a deployed version.
@@ -40,7 +43,7 @@ Supply a JSON manifest using this schema (placeholders are not executable eviden
   "artifactReceipt": "independently supplied build receipt identity",
   "sourceFiles": { "src/main.ts": "sha256; include every source named in fixture" },
   "resources": {
-    "/models/tank.glb": { "frozen": "sha256", "latest": "different sha256" }
+    "/models/tank.glb": { "frozen": "sha256" }
   },
   "entries": [
     { "url": "https://isolated-origin/", "room": "url-check", "roomSocket": "wss://isolated-room/ws", "responses": { "/": "document sha256", "/assets/index-HASH.js": "bundle sha256" } },
@@ -51,8 +54,12 @@ Supply a JSON manifest using this schema (placeholders are not executable eviden
 ```
 
 `resources` must include all four model paths and all ten licence paths enumerated
-in the fixture. `responses` must include every document/script/stylesheet expected
-in that case, including lazy chunks; extra entries fail if never observed. Each
+in the fixture. Optional `distinctResource` is an object with `path` (one of those
+14 paths) and `latestSha256`, different from its frozen hash. If supplied, the normal
+cases also fetch that root path with an unversioned Referer and verify the latest
+hash independently. Without it, results prove requested frozen paths and exact
+expected bytes, not discrimination between otherwise identical bytes. `responses`
+must include every document/script/stylesheet expected in that case, including lazy chunks; extra entries fail if never observed. Each
 entry has its own map because frozen pathname rewriting may change asset paths.
 `sourceFiles` covers the exact ten product/config files listed in the fixture.
 The script adds version, room, seed 1, Jet, Minimal and a retained fragment to each
@@ -75,7 +82,12 @@ installation, build or server startup is performed. An existing reviewed externa
 supervisor must cap the fixture at 480 seconds, reserve bounded cleanup, and report
 PID/start identities and room/browser/server ownership closure. Do not infer process
 closure from the script finishing. Its `Promise.race` deadlines reject hung operations
-but cannot kill a hung browser process. Stop on first failure without retry.
+but cannot kill a hung browser process. Checkpoints are written before risky
+transitions, before cleanup, and after each case, using a temporary file and rename.
+Write or cleanup failures remain nonpassing and do not replace an earlier failure.
+An external kill can still interrupt the newest write; only already persisted
+checkpoints can be promised, not complete evidence after every kill. Stop on first
+failure without retry.
 
 Installed Chrome runs desktop first, then Playwright WebKit runs iPhone 14 emulation.
 Each runs the root-query and frozen-path cases in fresh, service-worker-blocked
@@ -90,8 +102,12 @@ activates the planet in both contexts; this does not claim physical touch covera
   not reload on reentry. A room named `lobby` remains a real play room.
 - Jet starts without mesh requests. Normal vehicle controls then cause all four
   uncached late mesh requests after lobby cleanup. Each response must match frozen
-  bytes, never latest bytes.
-- The normal seed editor changes the host world to 42. Periodic save and an explicitly
+  paths and expected hashes. Only an optional independently distinct resource can
+  additionally demonstrate frozen/latest byte discrimination.
+- After the Tank/Buggy mesh checks, the normal selector returns to Jet before
+  save/reload, matching the original explicit vehicle query. The saved snapshot must
+  have `kind: jet`, so a deliberate vehicle override cannot defeat resume selection.
+  The normal seed editor changes the host world to 42. Periodic save and an explicitly
   synthetic `pagehide` retain entry seed 1. Reloading the original entry resumes seed
   42. This checks saved seed selection, not the separately guarded physical position
   restore. The fixture does not directly call save or mutate resume storage.
