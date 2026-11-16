@@ -1,47 +1,43 @@
 # Orchestrator state
 
-Last verified: 2026-11-15 17:53 PST. The owner withdrew the afternoon cutoff.
+Last verified: 2026-11-15 18:40 PST. The owner withdrew the afternoon cutoff.
 
 ## Authority and release order
 
 Only the Orchestrator integrates and deploys. Green UX ships on demand; otherwise skip
-empty trains. Between releases, lanes use the shared three-slot heavy-job limiter, with
-one job per lane and at most two test workers. Keep the machine quiet from deployment
-through public acceptance. Never restart held jobs without clearance.
-
-Preserve every accepted frozen build and compatibility with the judging and embedded
-clients. Require no new failures against the accepted baseline, exact-build and network
-checks on both public addresses, frozen-file verification, and eight vehicle/browser cases.
-Any failed public check rolls back to the previous accepted release. Attach the showcase
-GIF before marking a release Latest; publish notes with the frozen playable link.
+empty trains. Keep deployment quiet through full public acceptance. Never restart held
+jobs without clearance. Preserve accepted frozen builds and judging/itch compatibility.
+Require no new failures, exact-build, network and frozen-file checks on both addresses,
+and eight vehicle/browser cases with rollback. Verify notes and GIF before Latest.
 
 ## Production
 
-Accepted release: v26.11.1516 (release-20), source 8034263e, at https://www.syn3h.com/.
-Page text selection is suppressed while editable fields retain selection and entry.
-A client refused by a full room stops retrying and continues with local bots.
-Typecheck, 534 focused tests, build, 24 visible-text gestures, controls and zoom pass.
-Both public addresses pass exact-build, multiplayer and frozen-file checks; all eight
-Chrome/WebKit vehicle cases pass without page errors. The retry used the same frozen
-artifact and passed without the authorized sound exception. Earlier public bot-tag sound
-failures remain unexplained. Physical iPad long-press behaviour still needs device feedback.
-The prior camera-order change retains its evidence waiver and does not establish a full judder fix.
-
-v26.11.1510 was live and superseded without its own vehicle matrix by explicit owner
-waiver; the trailing 1511 matrix covers its sidebar and wingtip changes. Do not infer
-acceptance from a tag alone. The showcase still predates the Tank paint and sidebar.
+Accepted release: v26.11.1517 (release-21), source 464480c4, at https://www.syn3h.com/.
+The touch stick stays anchored until release; rotating the screen clears held controls.
+Me contains identity, vehicle and colours; World includes sky and weather. All sidebar
+surfaces share frost, with opaque Minimal fallback and reduced-motion support.
+Typecheck, 534 UI/network tests and build pass. Full suite: 1,730 pass, one skip, three
+failures identical on accepted 1516: competitive flee, wind steering and dashboard links.
+Both addresses pass exact-build, multiplayer and frozen checks; all eight vehicle cases
+pass without page errors. Unsupported-blur behavior is source-reviewed only; physical
+mobile feedback and paired baseline world captures remain unavailable.
 
 ## Current queue
 
-1. Post has the first solo graphics slot for sunrise reproduction and procedural ray fixes.
-2. Validate the expanded fixed-stick and sidebar handoff, keeping touch aiming separate.
-3. Review standalone visible-bot retention when green.
-4. Validate camera look/zoom and coordinated touch aiming before composed acceptance.
-5. Formation remains withheld after the repeat recording; later world/Post handoffs stay separate.
+1. Complete the original About geometry and phone checks in its next allocated slot.
+2. Validate Weather sky extraction and shafts-off scene/PMREM parity before Post adoption.
+3. Compose expanded About Input, Gear and retained UI gesture handling, then test as one unit.
+4. Verify and integrate admin Future Ideas and vehicle-studio research; editorial and captures follow.
+5. Bot retention, camera/touch aiming, nameplates and showcase captures remain separate intakes.
 
-The withdrawn 1507 build and the accepted 1506 control each passed two quiet local network
-runs in 218 seconds. No failing half was isolated. The Foreman authorized restoration
-behind a fresh full gate; the old failure is not proved to be solely machine load.
+About input drafts require cancellation before blur/modal cleanup, real neutral before
+rearm and stale-callback isolation. Gear switching must preserve attached Grapple cords.
+No draft is runtime accepted. Sunrise experiments remain rejected; no ray capture is valid
+yet. The unresolved third domain stays omitted. Research pricing and scale are unconfirmed.
+
+The owner-authorized crash comparison and solo formation recording already ran. Formation
+remains withheld after failed moving-slot acceptance. The withdrawn build comparison did
+not isolate its prior failure; restored changes were gated and accepted in later releases.
 
 ## Shipped behavior and remaining limits
 
