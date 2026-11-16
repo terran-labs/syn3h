@@ -30,6 +30,7 @@ import {
   encodeState,
   isBotId,
   parseJson,
+  CLOSE_REPLACED,
 } from '../../shared/protocol'
 import type { Game, System } from '../core/Game'
 import { createVehicle, type VehicleKind } from '../vehicles'
@@ -442,7 +443,10 @@ export class NetClient implements System {
       if (msg) this.onMessage(msg)
     }
     this.conn.onBinary = (data) => this.onState(data)
-    this.conn.onClose = () => this.onDisconnect()
+    // 4003: the room gave this player's place to a newer connection with the same secret (a
+    // duplicate tab, or this tab's own reconnect after it went quiet). Resuming would take the
+    // place back, and two tabs that each go quiet at times would trade it forever: stop instead.
+    this.conn.onClose = (code) => { if (code === CLOSE_REPLACED) this.onReplaced(); else this.onDisconnect() }
 
     params.onChange((id, value, source) => this.onParamChange(id, value, source))
     // Registered after main.ts's listener, so this runs last and wins: our own slot, not 0.
@@ -1537,6 +1541,18 @@ export class NetClient implements System {
     this.pingsSent = 0
     for (const id of [...this.remotes.keys()]) this.removeRemote(id)
     if (retrying) this.event('Disconnected, reconnecting')
+  }
+
+  /** Our place continued on another connection: stop here, as for a full room, and say so. */
+  private onReplaced(): void {
+    this.conn.close()
+    this.onDisconnect(false)
+    this.players.clear()
+    this.localAfterFull = true
+    this.joinStatus = 'This game continued in another tab.'
+    this.updateBotRole()
+    this.uiDirty = true
+    this.ctx.onJoinStatus?.(this.joinStatus)
   }
 
   /** A full room is a refusal, not a transient transport failure. */

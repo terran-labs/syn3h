@@ -13,6 +13,8 @@
 import { wrapDistance } from './wrap'
 
 export const PROTOCOL_VERSION = 2
+/** Close code: this player's place was taken over by a newer connection with its secret. */
+export const CLOSE_REPLACED = 4003
 
 /** Binary message kinds (first byte). */
 export const BIN_STATE = 1

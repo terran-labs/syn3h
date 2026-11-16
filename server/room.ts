@@ -45,6 +45,7 @@ import {
   stampStateId,
   WRAP_SIZES,
   MAX_BOTS, type WireVehicleKind,
+  CLOSE_REPLACED,
 } from '../shared/protocol'
 // Imported for their side effect of defining world parameters, so the server knows their
 // ranges. Modules that define parameters next to Three.js code cannot be imported here; their
@@ -486,6 +487,21 @@ export class Room {
     return undefined
   }
 
+  /**
+   * A connected place with this secret that has said nothing for longer than RESPONDING_MS:
+   * its connection is dead but its close has not reached us yet. A live place (a duplicated
+   * tab, which shares the secret) is not returned, so two tabs never take turns at one place.
+   */
+  private quietFor(token: string | null): [Peer, Player] | undefined {
+    if (!token) return undefined
+    const now = this.now()
+    for (const entry of this.players) {
+      const p = entry[1]
+      if (p.token === token && !p.heldUntil && !p.info.bot && now - p.lastHeardAt > RESPONDING_MS) return entry
+    }
+    return undefined
+  }
+
   /** The rejoin secret of a connected player, so a transport can store it with the socket. */
   token(peer: Peer): string | null {
     return this.players.get(peer)?.token ?? null
@@ -627,13 +643,18 @@ export class Room {
       peer.close(4000, 'protocol')
       return
     }
-    // A dropped player coming back for its held place: the same player carries on.
+    // A dropped player coming back for its held place: the same player carries on. So does
+    // one whose hello beats the server's notice of its old connection closing (common on the
+    // public address): that place is still "connected" but has gone quiet, and is taken over.
     const token = isToken(msg.resume) ? msg.resume : null
-    const held = this.rejoinOn() ? this.heldFor(token) : undefined
+    const held = this.rejoinOn() ? this.heldFor(token) ?? this.quietFor(token) : undefined
     if (held) {
       const [key, player] = held
       this.pending.delete(peer)
       this.rekey(key, peer, player)
+      // The replaced connection, if it was still open, is closed. Its close arrives with a
+      // peer that no longer has a place, so it does nothing: no hold, no leave, no new host.
+      if (!player.heldUntil) key.close(CLOSE_REPLACED, 'replaced')
       player.heldUntil = 0
       player.lastHeardAt = this.now()
       player.joinedAt = this.now()

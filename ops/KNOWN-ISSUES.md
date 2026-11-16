@@ -15,6 +15,14 @@ The release record and `ops/STATE.md` identify the exact source and validation e
   prevent persisted fixture reuse, but reuse was not proven as that failure's cause.
 - Clouds do not cast terrain shadows. Procedural water, grass and particles skip temporal
   history. Tank and hovercraft study selection remains open.
+- A shared setting the host changes while its connection is down is lost: the client
+  drops messages while its socket is closed (src/net/Connection.ts send), and on reconnect
+  the room's values replace the local world. Found 16 November 2026; fix planned for
+  v26.11.1605 as its own branch with a test.
+- The public net smoke's "lava sticks B" step failed once on v26.11.1603 (16 November,
+  about 11:30 PST, workers.dev, run 3 of 5) with no reconnect on any page: B was stuck
+  and visible on A, but the room never counted B out of the hill (outB 0). The other
+  four runs passed that step. Not yet investigated.
 - Smooth near-camera terrain remains deferred. Current vehicle feel and sound still need
   the owner's review; earlier buggy driving feedback was already addressed.
 
