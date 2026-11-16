@@ -445,4 +445,97 @@ describe('modal gear cancellation', () => {
     } finally { s.close() }
   })
 
+
+  it('old same-direction reel cleanup and end cannot stop a replacement reel', () => {
+    const s = setup()
+    try {
+      s.bind(); s.rack.select('bungee')
+      s.bungee.launch(AT_OTHER)
+      for (let i = 0; i < 100 && s.bungee.mine?.hook; i++) s.step()
+      expect(s.rack.controls().state).toBe('vehicle')
+      const old = s.rack.controls().actions.find(a => a.id === 'reelIn')!
+      old.start()
+      // Model ordinary attachment-state replacement without a modal generation change.
+      s.bungee.mine!.to = null
+      const fresh = s.rack.controls().actions.find(a => a.id === 'reelIn')!
+      expect(fresh).not.toBe(old)
+      fresh.start()
+      old.stop!('cleanup'); old.stop!('end')
+      expect(s.bungee.reel).toBe(-1)
+      fresh.stop!('end')
+      expect(s.bungee.reel).toBe(0)
+    } finally { s.close() }
+  })
+
+  it('rebinding invalidates old starts but permits old ends to retire only their token', () => {
+    const s = setup()
+    try {
+      s.bind(); s.rack.select('beam')
+      const old = s.rack.controls().actions[0]
+      old.start(); s.bind()
+      const fresh = s.rack.controls().actions[0]
+      fresh.start(); old.stop!('cleanup'); old.stop!('end')
+      expect(s.input.state.fire).toBe(true)
+      fresh.stop!('end'); old.start()
+      expect(s.input.state.fire).toBe(false)
+    } finally { s.close() }
+  })
+
+  it('already suppressed old cleanup cannot cancel a pending intentional release', () => {
+    const s = setup()
+    try {
+      s.bind(); s.rack.select('red')
+      const old = s.rack.controls().actions[0]
+      old.start(); s.step(501)
+      const fresh = s.rack.controls().actions[0]
+      expect(fresh).not.toBe(old)
+      fresh.start()
+      // Retire old gameplay while the newer hold still owns the charge.
+      // Its duplicate cleanup must not cancel the newer intentional release.
+      old.stop!('cleanup')
+      fresh.stop!('end')
+      const cancel = vi.spyOn(s.bigRed, 'cancel')
+      old.stop!('cleanup')
+      expect(cancel).not.toHaveBeenCalled()
+      s.step()
+      expect(s.bigRed.stats.sent).toBe(1)
+    } finally { s.close() }
+  })
+
+
+  it('cleanup after a gear switch cancels the old charge without firing it', () => {
+    const s = setup()
+    try {
+      s.bind(); s.rack.select('red')
+      const old = s.rack.controls().actions[0]
+      old.start(); s.step(501)
+      s.rack.select('beam'); s.rack.controls().actions[0].start()
+      old.stop!('cleanup'); s.step()
+      expect(s.input.state.fire).toBe(true)
+      expect(s.bigRed.charge).toBe(-1)
+      expect(s.bigRed.stats.sent).toBe(0)
+    } finally { s.close() }
+  })
+
+
+  it('touch suppression helper preserves overlap and cancels only charge/carry at zero holders', () => {
+    const s = setup()
+    try {
+      s.bind()
+      const red = vi.spyOn(s.bigRed, 'cancel')
+      const yoink = vi.spyOn(s.yoink, 'cancel')
+      const bungee = vi.spyOn(s.bungee, 'cancel')
+      const reel = vi.spyOn(s.bungee, 'setReel')
+      const first = Symbol('first touch'), second = Symbol('second touch')
+      s.input.beginExternalFire(first); s.input.beginExternalFire(second)
+      s.input.suppressExternalFire(first); s.rack.cancelFireActionsIfIdle()
+      expect(red).not.toHaveBeenCalled(); expect(yoink).not.toHaveBeenCalled()
+      s.input.suppressExternalFire(second); s.rack.cancelFireActionsIfIdle()
+      expect(red).toHaveBeenCalledOnce(); expect(yoink).toHaveBeenCalledOnce()
+      expect(bungee).not.toHaveBeenCalled(); expect(reel).not.toHaveBeenCalled()
+      s.input.beginExternalFire(first)
+      expect(s.input.state.fire).toBe(false) // The helper did not retire blocked owners.
+    } finally { s.close() }
+  })
+
 })
