@@ -14,6 +14,8 @@
  */
 import { params } from '../shared/params'
 import type { HandlingPreset } from '../shared/presets'
+// Registers world.atmosphere, which the jet and the buggy's wings read.
+import '../src/world/terrain/settings'
 import { FIXED_DT, initPhysics } from '../src/core/physics'
 import { BUGGY_PRESETS } from '../src/vehicles/buggyParams'
 import { JET_PRESETS } from '../src/vehicles/Jet'
@@ -39,6 +41,7 @@ const settle = (trace: number[], dt: number) => {
 /** The preset being measured; its values are applied over the defaults before every scenario. */
 let preset: HandlingPreset | undefined
 /** Run a scenario with every parameter at its default plus the preset, after `setup` changes some. */
+const atWorld = <T>(scenario: () => T | Promise<T>, setup?: () => void) => at(scenario, setup)
 async function at<T>(scenario: () => T | Promise<T>, setup?: () => void): Promise<T> {
   buggy.resetParams()
   for (const [id, value] of Object.entries(preset?.values ?? {})) params.set(id, value)
@@ -208,7 +211,12 @@ async function buggyTyreSizes(): Promise<Record<string, Figure[]>> {
 
 // ---- Jet -------------------------------------------------------------------------------
 
-async function jetReport(): Promise<VehicleReport> {
+/** The Moon's sky and pull: no air, 1.62 m/s². */
+const moon = () => { params.set('world.atmosphere', 0); params.set('world.gravity', 1.62) }
+
+/** `world` sets the planet (air, gravity) before each scenario; left out, an Earthlike world. */
+async function jetReport(world?: () => void): Promise<VehicleReport> {
+  const at = <T>(scenario: () => T | Promise<T>, setup?: () => void) => atWorld(scenario, () => { world?.(); setup?.() })
   const top = settle(await at(() => jet.flightSpeedTrace()), FIXED_DT)
   const vector = Number(preset?.values['jet.vectorResponse'] ?? params.get('jet.vectorResponse')!.def.default)
   const hover = await at(jet.hoverClimb)
@@ -238,8 +246,12 @@ const vehicles: Record<string, { run: () => Promise<VehicleReport>; presets: rea
     how: 'Top speed: full throttle on the flat. Braking: from 25 m/s. Turn radius: full lock at 15 m/s.',
   },
   jet: {
-    run: jetReport, presets: JET_PRESETS,
+    run: () => jetReport(), presets: JET_PRESETS,
     how: 'Top speed: full flight thrust, level. Braking: brakes from 60 m/s in level flight to 1 m/s (60 s cap). Turn radius: full pitch-up at 60 m/s.',
+  },
+  'jet on the Moon': {
+    run: () => jetReport(moon), presets: JET_PRESETS,
+    how: 'As the jet, with no air (world.atmosphere 0) and the Moon\'s 1.62 m/s² gravity: no lift or drag, so it flies on thrust alone.',
   },
 }
 
