@@ -10,7 +10,7 @@ Use one coordinator-owned launcher for local serving, dry-run validation and pro
 upload. It accepts an inspected final directory and independently reviewed tool identity;
 it does not accept arbitrary Wrangler arguments or an inherited environment object.
 The application directory remains immutable and contains only the reviewed final format.
-Run from that directory with its absolute wrangler.json path explicitly selected.
+The execution-layout proposal below supersedes running directly from that directory.
 
 The installed Wrangler deploy command supports --no-bundle. Its bin wrapper forwards
 process.execArgv to a child; invoke the reviewed CLI entry directly with the reviewed Node
@@ -95,3 +95,30 @@ The command planner must reject hostile inherited argv/environment, escaping lin
 changed tool identities and unreviewed output/port/tag fields in synthetic tests. Those
 tests cannot substitute for actual no-bundle output parity, local consumption or deployed
 module/configuration verification.
+
+## Execution mirror proposal after scratch-path review
+
+Installed Wrangler derives .wrangler/tmp from the configuration project root and defaults
+local persistence to .wrangler/state. HOME, TMPDIR and changing cwd alone do not protect
+the frozen artifact. The current pure planner is therefore not ready for an executor.
+
+Proposed layout: create a fresh runner/project directory containing ordinary copied files
+for the complete inspected artifact, preserving relative paths and configuration bytes.
+No hard links or links back to the accepted snapshot. Independently inspect this copy and
+require the same artifact digest before execution. Use runner/project as cwd and select
+its absolute wrangler.json; select runner/state explicitly with local --persist-to.
+Wrangler scratch remains under runner/project/.wrangler. Every operation, including dry
+run and upload, uses this layout to avoid relying on undocumented scratch-free behavior.
+
+The immutable source artifact is checked before and after. The execution copy's original
+files must also remain byte-identical; only the exact reviewed scratch subtree may be
+added. Do not broaden the artifact inspector to ignore arbitrary new files. Inspect the
+original selected files and a separate complete post-run inventory, rejecting other
+additions, symlinks or modifications. Scratch is not part of the uploaded asset root.
+The preparer must reject pre-existing runner/project, runner/state and scratch paths.
+
+Configuration bytes stay unchanged, so worker and asset paths resolve to equivalent
+copied content. This is a proposed equivalence argument, not runtime proof. A separately
+allocated no-bundle dry/local check must verify actual upload selection, module bytes and
+filesystem side effects before this layout can be accepted. No executor or copy operation
+is authorized by this source-plan update; pure planner changes follow source review.
