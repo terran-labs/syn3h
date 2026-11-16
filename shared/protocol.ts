@@ -341,8 +341,10 @@ export type ClientMessage =
    * `resume` is a random secret this tab keeps for this room. In a room with `game.rejoin`
    * on, a player who drops and says hello again with the same secret within the grace time
    * carries on as the same player. It is never sent to other players.
+   * `page` is random per page load: a hello with the same secret and the same page is that page
+   * reconnecting, and takes its place back at once; a duplicated tab has the secret, not the page.
    */
-  | { type: 'hello'; v: number; modes?: 2; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string]; resume?: string }
+  | { type: 'hello'; v: number; modes?: 2; name: string; params: Record<string, ParamWireValue>; kind?: string; colors?: [string, string]; resume?: string; page?: string }
   /** Change vehicle kind or colours after joining. */
   | { type: 'profile'; kind?: string; colors?: [string, string] }
   | { type: 'ping'; t: number }

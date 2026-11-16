@@ -441,7 +441,7 @@ export class NetClient implements System {
     this.conn.onOpen = () => {
       this.send({
         type: 'hello', v: PROTOCOL_VERSION, modes: 2, name: playerName(), params: params.snapshot('world'),
-        kind: this.kind, colors: this.colors, resume: rejoinSecret(this.ctx.room),
+        kind: this.kind, colors: this.colors, resume: rejoinSecret(this.ctx.room), page: PAGE_LOAD,
       })
     }
     this.conn.onText = (text) => {
@@ -1763,6 +1763,9 @@ let preferredName = ''
  * after a dropout carries on as the same player. Kept for the tab's lifetime (so a reload
  * rejoins too) and never shown or sent to other players. Each tab has its own.
  */
+/** Random for this page load, sent with the secret: this page's own reconnect is told apart from a duplicated tab. */
+const PAGE_LOAD = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, '0')).join('')
+
 function rejoinSecret(room: string): string | undefined {
   const key = `syn3h.rejoin.${room}`
   try {

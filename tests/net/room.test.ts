@@ -1281,3 +1281,39 @@ describe('Room rejoin when the new hello beats the old close (game.rejoin)', () 
     expect(b.peer.all('leave')).toEqual([])
   })
 })
+
+describe('Room rejoin from the same page load (hello page marker)', () => {
+  const SECRET = 'a'.repeat(32)
+  const PAGE_1 = 'p'.repeat(32)
+  const PAGE_2 = 'q'.repeat(32)
+  const here = () => state([0, 0, 0])
+
+  it('takes the place back at once when the same page reconnects, though its old socket spoke just now', () => {
+    const a = join('A', {}, { resume: SECRET, page: PAGE_1 })
+    const b = join('B')
+    clock += 200
+    room.receive(a.peer, here())
+    // 200 ms later the same page says hello again: its socket died a moment ago.
+    clock += 300
+    const back = join('A', {}, { resume: SECRET, page: PAGE_1 })
+    expect(back.id).toBe(a.id)
+    expect(back.peer.last('welcome')!.game.host).toBe(a.id)
+    expect(a.peer.closed).toBe(true)
+    expect(room.playerCount).toBe(2)
+    expect(b.peer.all('leave')).toEqual([])
+    // The late close of the replaced socket changes nothing.
+    room.disconnect(a.peer)
+    expect(room.playerCount).toBe(2)
+    expect(room.heldCount).toBe(0)
+  })
+
+  it('keeps another page with the same secret a stranger while the first is live', () => {
+    const a = join('A', {}, { resume: SECRET, page: PAGE_1 })
+    clock += 200
+    room.receive(a.peer, here())
+    const copy = join('Copy', {}, { resume: SECRET, page: PAGE_2 })
+    expect(copy.id).not.toBe(a.id)
+    expect(a.peer.closed).toBe(false)
+    expect(copy.peer.last('welcome')!.game.host).toBe(a.id)
+  })
+})
