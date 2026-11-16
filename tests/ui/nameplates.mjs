@@ -599,20 +599,33 @@ try {
   await a.waitForFunction(() => window.syn3h.bots.vehicles.length >= 4, null, { timeout: 15000 })
   await installTerrainEvidence(a)
   let center = await a.evaluate(() => { const s = window.syn3h, p = s.terrain.spawnPoint(0).position; return { x: p.x, y: p.y, z: p.z } })
-  async function waitSettled(page, far) {
-      await page.waitForFunction(far => {
+  let settlingSequence = 0
+  async function waitSettled(page, far, stageID) {
+    const record = !observationOnly && !surveyOnly && !poseOnly
+    const receipt = { stageID, far, primaryError: null, records: null, complete: false }
+    let primary
+    try {
+      await page.waitForFunction(({ far, stageID, record }) => {
+        // New receipt per wait, but never reset the persistent settling counter.
+        const history = record ? (window.nameplateAcceptanceSettle?.stageID === stageID
+          ? window.nameplateAcceptanceSettle
+          : (window.nameplateAcceptanceSettle = { stageID, records: [], overflow: false })) : null
+        if (history && history.records.length >= 180) { history.overflow = true; throw new Error('acceptance settling receipt bound exceeded') }
+        const evaluated = {}
+        // Only reached operands are recorded; &&, || and every keep their short circuit.
+        const seen = (key, value) => { if (record) evaluated[key] = value; return value }
         const s = window.syn3h, net = window.syn3hNet, camera = s.game.camera, tags = net.tags
         const eye = camera.position.toArray(), actors = tags.entries.map(t => [t.id, ...t.vehicle.object.position.toArray()])
         const previous = window.nameplateSettle
         const current = { eye, actors, stamp: tags.stamp, count: 0 }
-        const stable = previous && previous.stamp !== current.stamp && actors.length === previous.actors.length &&
-          Math.hypot(...eye.map((n, i) => n - previous.eye[i])) < .25 &&
-          actors.every((row, i) => row[0] === previous.actors[i][0] && Math.hypot(...row.slice(1).map((n, j) => n - previous.actors[i][j + 1])) < .25)
+        const stable = previous && seen('stampChanged', previous.stamp !== current.stamp) && seen('actorCountEqual', actors.length === previous.actors.length) &&
+          seen('cameraStable', Math.hypot(...eye.map((n, i) => n - previous.eye[i])) < .25) &&
+          actors.every((row, i) => seen(`actor${i}Identity`, row[0] === previous.actors[i][0]) && seen(`actor${i}Stable`, Math.hypot(...row.slice(1).map((n, j) => n - previous.actors[i][j + 1])) < .25))
         current.count = stable ? previous.count + 1 : 0; window.nameplateSettle = current
         const people = tags.entries.filter(t => !t.bot)
-        const roster = ['Visitor', 'Companion'].every(name => people.some(t => t.name === name))
-        const nearRange = far || (people.every(t => t.vehicle.object.position.distanceTo(camera.position) < 140) &&
-          tags.entries.filter(t => t.bot).length >= 4 && tags.entries.filter(t => t.bot).every(t => t.vehicle.object.position.distanceTo(camera.position) < 95))
+        const roster = ['Visitor', 'Companion'].every(name => seen(`roster${name}`, people.some(t => t.name === name)))
+        const nearRange = far || (people.every(t => seen(`humanRange${t.id}`, t.vehicle.object.position.distanceTo(camera.position) < 140)) &&
+          seen('fourBots', tags.entries.filter(t => t.bot).length >= 4) && tags.entries.filter(t => t.bot).every(t => seen(`botRange${t.id}`, t.vehicle.object.position.distanceTo(camera.position) < 95)))
         if (window.nameplateObservationHistory) {
           const bot = s.bots.vehicles[0]
           if (window.nameplateObservationHistory.length >= 180) throw new Error('observation history bound exceeded')
@@ -627,8 +640,56 @@ try {
           window.nameplatePoseHistory.push({ time: performance.now(), ...current, roster, nearRange, snapshot })
         }
         const pose = s.camera.cinematic
-        return roster && nearRange && pose && camera.position.distanceTo(pose.position) < .5 && Math.abs(camera.fov - pose.fov) < .5 && current.count >= 6
-      }, far, { timeout: remaining(15000), polling: 100 })
+        const result = seen('roster', roster) && seen('nearRange', nearRange) && seen('posePresent', pose ? true : pose) &&
+          seen('cameraAtTarget', camera.position.distanceTo(pose.position) < .5) && seen('fovAtTarget', Math.abs(camera.fov - pose.fov) < .5) && seen('sixCount', current.count >= 6)
+        if (history) {
+          const row = { stageID, wall: performance.now(), tick: s.game.tick, time: s.game.time,
+            frames: s.game.frames, paused: s.game.isPaused,
+            previous: previous ? { stamp: previous.stamp, eye: [...previous.eye], actors: previous.actors.map(v => [...v]), count: previous.count } : null,
+            current: { ...current, eye: [...eye], actors: actors.map(v => [...v]) },
+            counterIn: previous ? previous.count : null, counterOut: current.count,
+            stable: stable === undefined ? null : stable, evaluated, result: !!result,
+            // Read-only arithmetic, not additional predicate evaluations or queries.
+            cameraDelta: previous ? Math.hypot(...eye.map((n, i) => n - previous.eye[i])) : null,
+            actorDeltas: actors.map((v, i) => previous?.actors[i]?.[0] === v[0]
+              ? Math.hypot(...v.slice(1).map((n, j) => n - previous.actors[i][j + 1])) : null),
+            pose: pose ? { position: pose.position.toArray(), fov: pose.fov } : null,
+            cameraTargetDistance: pose ? camera.position.distanceTo(pose.position) : null,
+            fovError: pose ? Math.abs(camera.fov - pose.fov) : null,
+            lifecycle: [] }
+          history.records.push(row) // Preserve the predicate receipt if lifecycle copying fails.
+          for (const t of tags.entries) {
+            const remote = net.remotes.get(Number(t.id)), vehicle = t.vehicle
+            row.lifecycle.push({ id: t.id, kind: vehicle.kind ?? null,
+              materializing: vehicle.object.userData.materializing === undefined ? null : vehicle.object.userData.materializing,
+              bodyType: typeof vehicle.body.bodyType === 'function' ? vehicle.body.bodyType() : null,
+              responding: remote ? remote.responding : null, paused: remote ? remote.paused : null,
+              remoteAvailable: !!remote, distance: vehicle.object.position.distanceTo(camera.position) })
+          }
+        }
+        return result
+      }, { far, stageID, record }, { timeout: remaining(15000), polling: 100 })
+    } catch (error) { primary = error; receipt.primaryError = String(error) }
+    if (record) {
+      report.settlingReceipts ??= []; report.settlingReceipts.push(receipt)
+      try {
+        const raw = await page.evaluate(() => window.nameplateAcceptanceSettle ?? null)
+        receipt.raw = raw
+        await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+        assert.equal(raw?.stageID, stageID, 'settling receipt belongs to this wait')
+        assert.ok(Array.isArray(raw.records) && raw.records.length > 0 && raw.records.length <= 180 && !raw.overflow, 'complete bounded settling receipt required')
+        for (const row of raw.records) {
+          assert.equal(row.stageID, stageID)
+          assert.ok([row.wall, row.tick, row.time, row.current.stamp, row.counterOut, ...row.current.eye,
+            ...row.current.actors.flatMap(v => v.slice(1))].every(Number.isFinite), 'finite settling receipt required')
+          assert.equal(row.lifecycle.length, row.current.actors.length, 'complete lifecycle copy required')
+        }
+        receipt.records = raw.records.length; receipt.complete = true
+      } catch (error) { receipt.evidenceError = String(error); if (!primary) primary = error }
+      try { await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)) }
+      catch (error) { receipt.persistError = String(error); if (!primary) primary = error }
+    }
+    if (primary) throw primary
   }
   async function stage(far = false, curve = .71, hudOverlap = false, scene = 'default') {
     assert.ok(['default', 'volcanic-positive-near'].includes(scene), 'known staging scene required')
@@ -716,7 +777,7 @@ try {
     // Record diagnostics even when settling fails. Never move the camera to skip occlusion.
     let stagingError
     try {
-      await waitSettled(a, far)
+      await waitSettled(a, far, `stage-${++settlingSequence}:${scene}:far=${far}:curve=${curve}:hud=${hudOverlap}`)
     } catch (error) { stagingError = error }
     if (poseOnly) {
       report.pose.settled = !stagingError

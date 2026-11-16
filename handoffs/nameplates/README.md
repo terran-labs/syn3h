@@ -477,3 +477,38 @@ The proposed invocation requires separate review and runtime allocation: absolut
 Budgets remain 590 seconds total, work cutoff 510, and full 480-second fixture admission
 (450 work plus 30 cleanup). Ports 5331 and 54671 remain owned; 8787 remains read-only.
 No execution, probes, installation, browser, tests or typecheck accompanied preparation.
+
+## Acceptance settling receipts
+
+Source preparation only after the preserved acceptance008 timeout. Each existing acceptance
+stage wait has a fixed sequence/scene identifier and one receipt, capped at 180 poll rows.
+The existing 100 ms polling, remaining 15-second timeout, six-count criterion, actor order,
+short-circuit evaluation and persistent `window.nameplateSettle` counter remain. The recorder
+never resets that counter. Repeated stamps are retained. Missing previous state, pose or
+unavailable lifecycle data is explicit null, not an invented zero measurement. Keys absent
+from `evaluated` identify operands skipped by short circuit; raw stable/result state is also
+saved. The recorder adds no polls, terrain queries, rays, imports, awaits or draws inside the
+predicate. Observation-only branches keep their existing history and do not use this receipt.
+
+Each synchronous row copies current/previous stamps, ordered rendered actors, eye positions,
+in/out counters, reached predicate operands, result, wall timestamp, physics tick/time,
+frame count and public pause state. Separate diagnostic arithmetic records camera and actor
+deltas and cinematic distance/FOV error without re-evaluating allocation or visibility.
+Read-only lifecycle fields use existing Vehicle.kind, object.userData.materializing,
+Rapier body.bodyType(), and RemotePlayer.responding/paused. A missing materializing property
+is null; it is not certified false. No remote replica is represented by remoteAvailable=false
+and null remote fields. No owning-client polling or simultaneous owner/replica claim is added.
+
+The row enters the raw buffer before lifecycle copying. After each wait, raw partial data
+is persisted before identity, cardinality, finite-value and lifecycle completeness checks.
+A cap overflow fails, preserving the capped data. Retrieval, validation or persistence errors
+are secondary when the original wait already failed; they cannot replace its timeout.
+Receipt completion means collection completeness, not that settling or acceptance passed.
+All receipt work occurs at staging waits outside cost windows. The future run keeps the
+original visibility, human priority, two-full-BOT, negative/restored, far and cost requirements.
+
+Versioned proposal `run-09.py` and `source-pins-09.json` under the existing external launcher
+directory only repin the source HEAD and fixture bytes from run08. Proposed fresh output is
+`/tmp/nameplates-current-browser-009`. Supervisor ownership, startup diagnostics, cleanup,
+ports and 590/510/480 budgets remain unchanged. Syntax/AST and whitespace checks only are
+permitted during this preparation; independent review and runtime allocation remain required.
