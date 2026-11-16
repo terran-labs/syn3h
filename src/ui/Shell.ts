@@ -69,6 +69,8 @@ const DRIVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDow
  * nothing else. Join by QR lives inside Multiplayer ("Show on screen"), and shaping a world
  * returns with OFFER_CUSTOM_PLANET.
  */
+/** Must match the short landscape block in shell.css. */
+const SHORT_LANDSCAPE = '(orientation: landscape) and (max-height: 480px)'
 const LOBBY_LINKS = `${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''}<button data-goto="multiplayer">Multiplayer</button><button data-goto="settings">Settings</button><button data-goto="about">About</button>`
 const back = '<button type="button" class="panel-back link-button" data-goto="index"><span aria-hidden="true">←</span><span>Back</span></button>'
 /** `__SYN3H_BUILD__` is an optional build-time constant (a date or tag) from the bundler. */
@@ -1043,6 +1045,7 @@ export class Shell implements System {
         if (id !== currentPlanet().id) applyPlanet(id)
         if (this.started) this.closeMenu(); else this.play()
       },
+      frame: () => this.galaxyFrame,
       onLayout: (places, chosen) => {
         this.savedMoons?.layout(places, { width: innerWidth, top: this.brandBottom ?? 220, bottom: this.linksTop ?? innerHeight - 128 }, !!chosen || this.dropping || this.panels.active !== 'index')
         // Each label near its world, on the screen, clear of the links and of each other.
@@ -1050,12 +1053,25 @@ export class Shell implements System {
         // Clear of the wordmark too. While flying to a world, only its label stays.
         if (!this.brandBottom) {
           this.brandBottom = this.element.querySelector('.lobby-brand')?.getBoundingClientRect().bottom ?? 0
-          const hint = this.element.querySelector('.galaxy-hint')?.getBoundingClientRect().top ?? 0
-          this.linksTop = hint > innerHeight / 2 ? hint - 24 : innerHeight - 152
+          const hint = this.element.querySelector('.galaxy-hint')?.getBoundingClientRect() ?? { top: 0, left: innerWidth, width: 0 }
+          if (matchMedia(SHORT_LANDSCAPE).matches) {
+            // The buttons and hint are a column on the right (shell.css): the galaxy and its
+            // labels get everything left of it and below the corner wordmark.
+            const links = this.element.querySelector('.galaxy-links')?.getBoundingClientRect().left ?? innerWidth
+            this.labelRight = Math.min(links, hint.width ? hint.left : links) - 8
+            this.linksTop = innerHeight - 8
+            const top = this.brandBottom + 4, left = 8
+            // The system is wider than tall, so it can grow past the free height a little;
+            // the spread gives the inner worlds' labels room.
+            this.galaxyFrame = [(left + this.labelRight) / 2 / innerWidth, 1 - (top + this.linksTop) / 2 / innerHeight, 1.3 * (this.linksTop - top) / innerHeight]
+          } else {
+            this.labelRight = innerWidth; this.galaxyFrame = undefined
+            this.linksTop = hint.top > innerHeight / 2 ? hint.top - 24 : innerHeight - 152
+          }
           this.element.style.setProperty('--lobby-footer-space', `${innerHeight - this.linksTop}px`)
         }
         const shown = chosen ? places.filter(place => place.id === chosen) : places
-        const spots = placeLabels(shown, this.labelSizes, { width: innerWidth, height: innerHeight, bottom: this.linksTop, top: this.brandBottom + 4 }, { first: chosen ?? currentPlanet().id, previous: this.labelSpots, avoid: this.galaxy ? [this.galaxy.sunScreen] : [] })
+        const spots = placeLabels(shown, this.labelSizes, { width: this.labelRight, height: innerHeight, bottom: this.linksTop, top: this.brandBottom + 4 }, { first: chosen ?? currentPlanet().id, previous: this.labelSpots, avoid: this.galaxy ? [this.galaxy.sunScreen] : [] })
         if (chosen) for (const place of places) if (place.id !== chosen) chips.get(place.id)!.classList.add('is-crowded')
         for (const place of places) chips.get(place.id)!.hidden = !place.visible
         for (const spot of spots) {
@@ -1099,6 +1115,9 @@ export class Shell implements System {
   private readonly galaxyChips = new Map<string, HTMLButtonElement>()
   private readonly labelSizes = new Map<string, { width: number; height: number }>()
   private readonly labelSpots = new Map<string, number>()
+  /** Short landscape: the right edge left to the galaxy, and its framing (see SHORT_LANDSCAPE). */
+  private labelRight = innerWidth
+  private galaxyFrame?: readonly [number, number, number]
   /** Where the wordmark ends, measured once per window size. */
   private brandBottom?: number
   private linksTop = 0

@@ -47,6 +47,9 @@ export interface GalaxyOptions {
    * level, so weak devices keep the galaxy at almost no cost. Reduced motion does the same.
    */
   still?(): boolean
+  /** Where to centre the system and how large, as [x from left, y from bottom, scale], in
+   *  fractions of the host. Asked each frame; undefined keeps the default framing. */
+  frame?(): readonly [number, number, number] | undefined
   /** Focus the label selected with a controller, so its normal activation stays accessible. */
   onFocus?(id: string): void
   /** Logo box in CSS pixels relative to this host, plus the existing graphics tier. */
@@ -916,7 +919,7 @@ export class Galaxy {
     // A tall or short phone screen frames the system a little smaller, so the nearest orbits
     // stay above the hint and the lobby buttons. Desktop windows are unchanged.
     const tall = this.host.clientHeight > this.host.clientWidth * 1.3 || this.host.clientHeight < 500
-    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : [0.5, 0.5, tall ? 0.85 : 1]
+    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : (this.options.frame?.() as Vec | undefined) ?? [0.5, 0.5, tall ? 0.85 : 1]
     const framingMoves = this.framing.some((v, i) => Math.abs(v - frameGoal[i]) > 0.001)
     this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], perFrame(0.18, elapsed)) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds

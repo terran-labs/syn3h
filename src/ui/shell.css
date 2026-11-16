@@ -564,3 +564,32 @@
 
 /* The SVG retains its box and accessible name while Galaxy draws the same mark. */
 .has-animated-logo .shell-logo { opacity: 0; animation: none; }
+
+/* Short landscape phones (roughly 844x390 and smaller): the galaxy gets the height. The
+   wordmark shrinks into the top-left corner, the three buttons stack on the right edge with
+   the hint small above them, and the galaxy is framed into what is left (Shell measures it).
+   Desktop, tablet and portrait are untouched. */
+@media (orientation: landscape) and (max-height: 480px) {
+  .syn3h-shell.exploration-ui.galaxy-open .lobby-brand {
+    position: fixed; z-index: 2; left: max(12px, env(safe-area-inset-left)); top: max(8px, env(safe-area-inset-top));
+    width: auto; height: auto; flex: none; justify-content: flex-start;
+  }
+  .syn3h-shell.exploration-ui.galaxy-open .shell-logo { width: 84px; max-height: none; }
+  .syn3h-shell.exploration-ui.galaxy-open .galaxy-ui {
+    justify-content: center; align-items: flex-end;
+    padding: 0 max(12px, env(safe-area-inset-right)) 0 0;
+  }
+  .syn3h-shell.exploration-ui.galaxy-open .galaxy-hint {
+    max-width: 128px; margin: 0 0 8px; font-size: 11px; line-height: 1.35; text-align: right;
+  }
+  .syn3h-shell.exploration-ui.galaxy-open .galaxy-links {
+    display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 4px 6px; border-radius: 22px;
+  }
+  .syn3h-shell.exploration-ui.galaxy-open .galaxy-links button { min-height: 44px; padding: 0 14px; font-size: 12px; }
+  /* A tighter plate so nine labels fit in the short band; the tap target stays 44 px. */
+  .syn3h-shell.exploration-ui.galaxy-open button.galaxy-label:not(#s3-plate) { padding: 4px 8px 4px 12px; }
+  .syn3h-shell.exploration-ui.galaxy-open button.galaxy-label:not(#s3-plate) > strong { font-size: 12px; line-height: 14px; letter-spacing: .06em; }
+  .syn3h-shell.exploration-ui.galaxy-open button.galaxy-label:not(#s3-plate) > small { font-size: 9px; line-height: 11px; }
+  .syn3h-shell.exploration-ui.galaxy-open button.galaxy-label:not(#s3-plate)::before { left: 4px; top: 5px; bottom: 5px; }
+  .syn3h-shell button.galaxy-label::after { inset: -11px -4px; }
+}

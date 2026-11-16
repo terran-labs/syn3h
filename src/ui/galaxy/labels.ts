@@ -20,6 +20,8 @@ export interface LabelPlace { id: string; x: number; y: number; radius: number; 
  */
 export interface LabelSpot { id: string; x: number; y: number; spot: number; crowded: boolean; blocked?: boolean }
 type Box = { left: number; top: number; right: number; bottom: number }
+/** The plate itself, without the spacing pad: the sun's core is kept off the plate, not off its pad. */
+const unpad = (b: Box): Box => ({ left: b.left + 4, top: b.top + 4, right: b.right - 4, bottom: b.bottom - 4 })
 const overlapping = (a: Box, b: Box) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
 /** How much of disc a is covered by disc b, 0 to 1. */
 function covered(a: LabelPlace, b: LabelPlace): number {
@@ -78,7 +80,8 @@ function placeOnce(
   const onScreen = (place: LabelPlace) => place.x >= 0 && place.x <= bounds.width && place.y >= 0 && place.y <= bounds.height
   const order = [...discs].sort((a, b) => (b.id === options.first ? 1 : 0) - (a.id === options.first ? 1 : 0) || (promoted.has(b.id) ? 1 : 0) - (promoted.has(a.id) ? 1 : 0) || depth(a) - depth(b))
   const result: LabelSpot[] = []
-  const placedLabels: { id: string; box: Box; spot: LabelSpot; retry(arriving: Box): boolean }[] = []
+  type Placed = { id: string; box: Box; spot: LabelSpot; retry(arriving: readonly Box[], depth: number): boolean }
+  const placedLabels: Placed[] = []
   for (const place of order) {
     const size = sizes.get(place.id) ?? { width: 90, height: 24 }, w = size.width, h = size.height
     const gap = place.radius + 6, slant = gap * 0.72 + 2
@@ -111,7 +114,7 @@ function placeOnce(
       if (taken.some(t => t !== ignore && overlapping(box, t)) || (extra && overlapping(box, extra))) return null
       // Clear of every world's disc, its own included, nearer or farther, and of the sun.
       for (const disc of discs) if (touches(box, disc)) return null
-      for (const disc of avoid) if (touches(box, disc)) return null
+      for (const disc of avoid) if (touches(unpad(box), disc)) return null
       return box
     }
     const before = options.previous?.get(place.id)
@@ -125,17 +128,21 @@ function placeOnce(
     if (onScreen(place) && !hidden) for (const i of tries) { box = fits(i); if (box) { chosen = i; break } }
     // The world in play is named even over other labels, under it by preference, but never
     // over a world: first clear of every world and the sun, failing that of nearer worlds.
-    const clearOfAll = (b: Box) => !discs.some(disc => touches(b, disc)) && !avoid.some(disc => touches(b, disc))
+    const clearOfAll = (b: Box) => !discs.some(disc => touches(b, disc)) && !avoid.some(disc => touches(unpad(b), disc))
     if (!box && place.id === options.first && !hidden) for (const i of tries) if (leader(i) <= LEADER_MAX && clearOfAll(boxAt(i))) { chosen = i; box = boxAt(i); break }
     if (!box && place.id === options.first && !hidden) for (const i of tries) if (behindNothing(boxAt(i))) { chosen = i; box = boxAt(i); break }
     const settle = (i: number, b: Box) => {
       taken.push(b); const [x, y] = spots[i], spot: LabelSpot = { id: place.id, x, y, spot: i, crowded: false }
       result.push(spot)
-      const entry = { id: place.id, box: b, spot, retry: (arriving: Box) => {
+      // Move this label to another legal spot clear of `arriving`. With depth left, that spot
+      // may be blocked by one other label, if that one can move in turn.
+      const entry: Placed = { id: place.id, box: b, spot, retry: (arriving, depth) => {
         for (const j of tries) {
           if (j === entry.spot.spot) continue
-          const moved = fits(j, entry.box, arriving)
-          if (!moved) continue
+          const moved = boxAt(j)
+          if (leader(j) > LEADER_MAX || !clearOfAll(moved) || arriving.some(a => overlapping(moved, a))) continue
+          const blockers = placedLabels.filter(other => other !== entry && overlapping(moved, other.box))
+          if (blockers.length > 1 || blockers.length === 1 && (depth <= 0 || blockers[0].id === options.first || !blockers[0].retry([...arriving, moved], depth - 1))) continue
           taken[taken.indexOf(entry.box)] = moved; entry.box = moved
           const [mx, my] = spots[j]; Object.assign(entry.spot, { x: mx, y: my, spot: j })
           return true
@@ -151,9 +158,9 @@ function placeOnce(
       let moved = false
       for (const i of tries) {
         const b = boxAt(i)
-        if (leader(i) > LEADER_MAX || discs.some(disc => touches(b, disc)) || avoid.some(disc => touches(b, disc))) continue
+        if (leader(i) > LEADER_MAX || discs.some(disc => touches(b, disc)) || avoid.some(disc => touches(unpad(b), disc))) continue
         const blockers = placedLabels.filter(other => overlapping(b, other.box))
-        if (blockers.length !== 1 || blockers[0].id === options.first || !blockers[0].retry(b)) continue
+        if (blockers.length !== 1 || blockers[0].id === options.first || !blockers[0].retry([b], 1)) continue
         settle(i, b); moved = true; break
       }
       if (moved) continue
