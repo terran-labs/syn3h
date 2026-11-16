@@ -110,7 +110,7 @@ export class Inspector {
 
   constructor(parent: HTMLElement, private readonly options: InspectorOptions) {
     this.element.className = 'world-inspector'; this.element.setAttribute('aria-label', 'World inspector')
-    this.element.innerHTML = `<div class="wi-top wi-glass"><input class="wi-search" type="search" placeholder="Find a setting" aria-label="Find a setting" autocomplete="off" spellcheck="false">
+    this.element.innerHTML = `<div class="wi-top wi-glass"><div class="wi-search-field"><span class="wi-search-icon" aria-hidden="true">⌕</span><input class="wi-search" type="search" placeholder="Find a setting" aria-label="Find a setting" autocomplete="off" spellcheck="false"><button type="button" class="wi-search-clear" aria-label="Clear search" hidden>×</button><output class="wi-search-count" aria-live="polite" hidden></output></div><p class="wi-search-strip" hidden></p>
       <div class="wi-actions"><button type="button" data-wi="copy-world">Copy world</button><button type="button" data-wi="paste-world">Paste world</button><button type="button" data-wi="reset">Reset</button></div></div>
       <div class="wi-cards"></div>
       <div class="wi-detail wi-glass" hidden></div>
@@ -133,11 +133,20 @@ export class Inspector {
     this.unsubscribe = params.onChange((id, value) => this.rows.get(id)?.sync(value))
     this.element.addEventListener('click', event => this.click(event))
     this.element.querySelector<HTMLInputElement>('.wi-search')!.addEventListener('input', event => this.search((event.target as HTMLInputElement).value))
+    this.element.querySelector('.wi-search-clear')!.addEventListener('click', () => this.clearSearch(), { signal })
     // Typing here must not drive the vehicle.
     this.element.addEventListener('keydown', event => { if ((event.target as Element).matches('input[type=search], textarea, input[type=number], .wi-num-edit')) event.stopPropagation() })
     // Enter and Escape finish a number edit. This listens on the window in the capture phase,
     // registered before the shell's own, so Escape cancels the edit instead of closing the rail.
     window.addEventListener('keydown', event => {
+      const search = this.element.querySelector<HTMLInputElement>('.wi-search')!
+      if (this.open && event.key === 'Escape' && search.value.trim()) {
+        event.preventDefault(); event.stopImmediatePropagation(); this.clearSearch(); return
+      }
+      const unfocused = document.activeElement === document.body || document.activeElement instanceof HTMLCanvasElement
+      if (this.open && unfocused && !this.element.closest('.is-paused') && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey && !event.isComposing) {
+        event.preventDefault(); event.stopImmediatePropagation(); search.focus(); search.value += event.key; this.search(search.value); return
+      }
       const edit = this.editing
       if (!edit || event.target !== edit.field || event.isComposing) return
       if (event.key === 'Enter') { event.preventDefault(); edit.finish(true, true) }
@@ -478,29 +487,48 @@ export class Inspector {
     this.moving.delete(card); card.classList.remove('is-moving')
     card.querySelector<HTMLElement>('.wi-body')!.hidden = !card.classList.contains('is-open')
   }
+  private clearSearch(): void {
+    const input = this.element.querySelector<HTMLInputElement>('.wi-search')!
+    input.value = ''; this.search(''); input.focus({ preventScroll: true })
+  }
+  private highlight(element: HTMLElement, words: readonly string[]): void {
+    const text = element.textContent ?? '', lower = text.toLowerCase()
+    const marks = new Set<number>()
+    for (const word of words) for (let at = lower.indexOf(word); at !== -1; at = lower.indexOf(word, at + word.length)) for (let i = at; i < at + word.length; i++) marks.add(i)
+    const fragment = document.createDocumentFragment()
+    for (let start = 0; start < text.length;) {
+      const marked = marks.has(start); let end = start + 1
+      while (end < text.length && marks.has(end) === marked) end++
+      const node = marked ? document.createElement('mark') : document.createTextNode('')
+      node.textContent = text.slice(start, end); fragment.append(node); start = end
+    }
+    element.replaceChildren(fragment)
+  }
   private search(query: string): void {
     const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
     // A search opens whatever holds a match. Remember how things were, and put them back after.
     const cards = [...this.element.querySelectorAll<HTMLElement>('.wi-card')], folds = [...this.element.querySelectorAll<HTMLDetailsElement>('.wi-group')]
     if (words.length && !this.beforeSearch) this.beforeSearch = { cards: cards.map(card => card.classList.contains('is-open')), folds: folds.map(fold => fold.open) }
     this.element.classList.toggle('is-searching', words.length > 0)
+    let matchCount = 0
     for (const card of this.element.querySelectorAll<HTMLElement>('.wi-card')) {
       const headingHit = words.length > 0 && words.every(word => (card.querySelector('h3')?.textContent ?? '').toLowerCase().includes(word))
       let cardHits = headingHit ? 1 : 0
       for (const control of card.querySelectorAll<HTMLElement>('[data-search]')) {
         const hit = headingHit || words.every(word => `${control.dataset.search} ${control.textContent}`.toLowerCase().includes(word))
         control.hidden = words.length > 0 && !hit
-        if (hit) cardHits++
+        if (hit) { cardHits++; matchCount++ }
       }
       for (const fold of card.querySelectorAll<HTMLDetailsElement>('.wi-group')) {
         let hits = 0
         for (const row of fold.querySelectorAll<HTMLElement>('.wi-row')) {
           const def = this.rows.get(row.dataset.id!)!.def, hay = `${def.label} ${def.group} ${def.id} ${describe(def)}`.toLowerCase()
-          const hit = headingHit || words.every(word => hay.includes(word)); row.hidden = words.length > 0 && !hit; if (hit) hits++
+          const hit = headingHit || words.every(word => hay.includes(word)); row.hidden = words.length > 0 && !hit; if (hit) { hits++; matchCount++ }
         }
         fold.hidden = words.length > 0 && hits === 0; if (words.length) fold.open = hits > 0
         cardHits += hits
       }
+      for (const label of card.querySelectorAll<HTMLElement>('.wi-label, h3, .wi-group > summary > span')) this.highlight(label, words)
       card.hidden = words.length > 0 && cardHits === 0
       if (words.length) this.toggle(card, cardHits > 0)
     }
@@ -509,7 +537,11 @@ export class Inspector {
       const before = this.beforeSearch; this.beforeSearch = undefined
       cards.forEach((card, i) => this.toggle(card, before.cards[i] ?? false)); folds.forEach((fold, i) => { fold.open = before.folds[i] ?? false })
     }
-    this.say(words.length ? `${[...this.rows.values()].filter(r => !r.row.hidden).length} found` : '')
+    const active = words.length > 0, count = this.element.querySelector<HTMLOutputElement>('.wi-search-count')!, strip = this.element.querySelector<HTMLElement>('.wi-search-strip')!
+    count.hidden = !active; count.textContent = matchCount ? `${matchCount} ${matchCount === 1 ? 'setting' : 'settings'}` : 'No matches'
+    this.element.querySelector<HTMLButtonElement>('.wi-search-clear')!.hidden = !active
+    strip.hidden = !active; strip.textContent = active ? `Showing results for “${query.trim()}”` : ''
+    this.say('')
   }
   /** Feedback stays visible while the inspector suppresses transient game toasts. */
   setStatus(message: string): void { this.element.querySelector('.wi-status')!.textContent = message }

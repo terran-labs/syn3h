@@ -182,7 +182,7 @@ export class PerformancePanel {
 
   private showRecommendation(): void {
     this.recommendation.hidden = !this.snapshot?.recommendation || !this.playing
-    const footer = this.panelsOpen ? this.inspector?.element.querySelector('.rail-foot') : null
+    const footer = this.panelsOpen ? this.inspector?.element.querySelector('.rail-command') : null
     const host = footer ?? this.parent
     if (this.recommendation.parentElement !== host) {
       if (footer) footer.prepend(this.recommendation); else this.parent.append(this.recommendation)

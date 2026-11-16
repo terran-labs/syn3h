@@ -23,9 +23,9 @@ for (const mode of ['desktop', 'ipad', 'phone', 'landscape']) {
     assert.deepEqual(await order(), expected)
     await page.evaluate(() => syn3h.shell.inspector.rebuild())
     assert.deepEqual(await order(), expected, 'session card survives registry rebuild')
-    const footer = page.locator('.rail-foot'), pause = footer.locator('.rail-pause'), search = footer.locator('.wi-search')
+    const footer = page.locator('.rail-command'), pause = footer.locator('.rail-pause'), search = footer.locator('.wi-search')
     const bounds = await footer.boundingBox()
-    assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= page.viewportSize().height, 'footer stays in viewport')
+    assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= page.viewportSize().height, 'command bar stays in viewport')
     assert.ok((await pause.boundingBox()).height >= 44, 'Pause stays a full touch target')
     await page.screenshot({ path: `${out}/${mode}-cards.png` })
     for (const section of expected) {
@@ -41,7 +41,7 @@ for (const mode of ['desktop', 'ipad', 'phone', 'landscape']) {
     await search.fill(''); await search.blur()
     if (!touch) {
       await page.keyboard.press('Control+f')
-      assert.ok(await search.evaluate(el => el === document.activeElement), 'search shortcut reaches bottom search')
+      assert.ok(await search.evaluate(el => el === document.activeElement), 'search shortcut reaches pinned search')
       await search.blur()
     }
     await page.locator('[data-section=you] .wi-head').click()

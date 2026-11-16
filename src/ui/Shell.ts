@@ -208,14 +208,20 @@ export class Shell implements System {
     this.inspector.setSessionCard(players)
     // Performance follows World; its controls remain part of the searchable card stack.
     this.performancePanel = new PerformancePanel(this.element, () => this.showPanels(), this.game.quality, this.inspector)
-    const foot = document.createElement('div'); foot.className = 'rail-foot wi-glass'
+    const foot = document.createElement('div'); foot.className = 'rail-command wi-glass'
     foot.innerHTML = '<div class="rail-tools"><button type="button" class="rail-pause">Pause</button></div>'
-    foot.querySelector('.rail-tools')!.prepend(railTop.querySelector('.wi-search')!)
+    foot.prepend(railTop.querySelector('.wi-search-field')!, railTop.querySelector('.wi-search-strip')!)
     const actions = railTop.querySelector('.wi-actions')!
     actions.insertAdjacentHTML('beforeend', '<button type="button" class="exit-world">Leave world</button>')
+    actions.prepend(foot.querySelector('.rail-pause')!)
+    foot.querySelector('.rail-tools')!.remove()
+    for (const [key, glyph] of [['copy-world', '⧉'], ['paste-world', '▣'], ['reset', '↺']] as const) {
+      const button = actions.querySelector<HTMLElement>(`[data-wi="${key}"]`)!
+      const icon = document.createElement('span'); icon.setAttribute('aria-hidden', 'true'); icon.textContent = glyph; button.prepend(icon)
+    }
     foot.append(actions)
     railTop.remove()
-    this.inspector.element.querySelector('.wi-cards')!.after(foot)
+    this.inspector.element.querySelector('.wi-cards')!.before(foot)
     // Exit world asks first (the owner, 15 November 2026): one stray click on the panels must
     // not throw the player back to the galaxy. Code that calls openMenu() itself is not asked.
     foot.querySelector('.exit-world')!.addEventListener('click', () => this.askExit(), { signal })
@@ -234,7 +240,7 @@ export class Shell implements System {
     // Touch has no cursor to capture, so one control switches between driving and the panels.
     const toggle = this.element.querySelector<HTMLButtonElement>('.inspector-toggle')!
     toggle.addEventListener('click', () => { this.touchPanels = !this.touchPanels; this.syncPanels() }, { signal })
-    foot.querySelector('.rail-pause')!.addEventListener('click', () => this.requestPause(), { signal })
+    foot.querySelector('.rail-pause')!.addEventListener('click', () => this.userPaused ? this.requestResume() : this.requestPause(), { signal })
     this.element.querySelector('.pause-veil')!.addEventListener('click', () => this.requestResume(), { signal })
     // Follow the lock itself, not what was asked for: the browser can drop it on its own
     // (Escape, a switch of window, a system dialog) and can refuse a request.
@@ -744,6 +750,7 @@ export class Shell implements System {
     const user = paused && reason === 'user'
     if (user === this.userPaused) return
     this.userPaused = user
+    this.element.querySelector('.rail-pause')!.textContent = user ? 'Resume' : 'Pause'
     const veil = this.element.querySelector<HTMLButtonElement>('.pause-veil')!
     veil.hidden = !user; this.element.classList.toggle('is-paused', user)
     this.game.input.suspended = user || this.menuVisible || this.inviteOpen || this.exitAsking

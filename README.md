@@ -27,6 +27,9 @@ phone. There is nothing to install and no account.
 3. **Open the panels.** Press Esc to free the mouse and the side panel slides in: Me, Game,
    Players & Session, Vehicles, World (including sky and weather), and Performance. Click back into
    the world and it slides away.
+The pinned command bar above Me keeps search and Pause within reach. Search highlights
+matching settings and shows a count; Escape or the clear button restores the cards.
+
 4. **Change vehicle.** Open Me in the side panel and choose a buggy, jet, hovercraft
    or tank. It swaps where you stand.
 5. **Bring a friend.** Share the address in your address bar. Everyone in the same room

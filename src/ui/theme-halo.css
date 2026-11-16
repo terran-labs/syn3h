@@ -294,3 +294,25 @@ html .syn3h-shell.exploration-ui[data-ui-frost="off"] .lobby-panels {
 .param-log-control { display: grid; gap: 4px; width: 100%; padding: 4px 8px; box-sizing: border-box; }
 .param-log-control input { width: 100%; min-height: 44px; }
 .param-log-control small { white-space: normal; }
+
+/* The command bar is a fixed flex sibling of the scrolling cards, never a world header. */
+.syn3h-shell.exploration-ui .world-inspector .rail-command { flex: 0 0 auto; display: grid; gap: 8px; padding: 10px; border-radius: 16px; }
+.syn3h-shell .wi-search-field { position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr) 44px; align-items: center; min-height: 48px; border: 1px solid rgb(175 223 245 / .35); border-radius: 10px; background: rgb(0 8 16 / .55); }
+.syn3h-shell.exploration-ui .world-inspector .wi-search-field .wi-search { min-width: 0; width: 100%; min-height: 46px; padding: 8px 4px; background: transparent; border: 0; font-size: 16px; outline: none; }
+.syn3h-shell .wi-search-icon { font-size: 24px; text-align: center; color: #b8eaff; }
+.syn3h-shell .wi-search-field:focus-within, .syn3h-shell .is-searching .wi-search-field { border-color: #a5e9ff; background: rgb(26 82 108 / .5); box-shadow: 0 0 12px rgb(123 223 255 / .15); }
+.syn3h-shell.exploration-ui .world-inspector .wi-search-clear { min-width: 44px; min-height: 44px; padding: 0; border: 0; font-size: 24px; }
+.syn3h-shell .wi-search-count { grid-column: 2 / -1; padding: 0 8px 8px 4px; color: #c7efff; font-size: 12px; }
+.syn3h-shell .wi-search-strip { margin: 0; padding: 2px 4px 6px; border-bottom: 1px solid rgb(142 220 250 / .3); color: #c7efff; font-size: 12px; overflow-wrap: anywhere; }
+.syn3h-shell .wi-search-strip[hidden], .syn3h-shell .wi-search-count[hidden], .syn3h-shell .wi-search-clear[hidden] { display: none; }
+.syn3h-shell .world-inspector mark { color: #fff; background: rgb(54 151 185 / .55); border-radius: 2px; }
+.syn3h-shell.exploration-ui .world-inspector .rail-command .wi-actions { display: grid; grid-template-columns: 1.1fr repeat(3, 1fr) 1.1fr; gap: 4px; }
+.syn3h-shell.exploration-ui .world-inspector .rail-command .wi-actions button { min-width: 0; min-height: 44px; margin: 0; padding: 4px; border-radius: 8px; font-size: 11px; letter-spacing: 0; }
+.syn3h-shell .rail-command .wi-actions button > span { display: block; font-size: 15px; }
+.syn3h-shell.exploration-ui .world-inspector .rail-command .rail-pause { color: #e8fbff; border-color: #92dff7; background: rgb(72 170 210 / .2); }
+.syn3h-shell.exploration-ui .world-inspector .rail-command .exit-world { color: #ffbcb6; border-color: rgb(255 150 140 / .5); background: rgb(120 35 35 / .2); }
+@media (max-width: 600px), (max-height: 500px) {
+  .syn3h-shell.exploration-ui .world-inspector .rail-command .wi-actions { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .syn3h-shell.exploration-ui .world-inspector .rail-command .rail-pause { grid-column: 1 / -1; }
+}
+.syn3h-shell .wi-search::-webkit-search-cancel-button { display: none; }
