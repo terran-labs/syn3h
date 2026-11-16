@@ -5,6 +5,11 @@ features. Current fixes, the About guide and showcase keep priority. Portal work
 authorized at low priority; the other toys are research until selected for implementation.
 Terrain editing is a separate future project.
 
+The [vehicle studio and community research](VEHICLE-STUDIO-RESEARCH.md) adds expandable
+entries for generated bodies and mechanics, a shape editor, model-assisted recipes,
+personal universes, friends and tentative subscriptions. It records the owner's long-term
+community ambition separately from untested implementation and revenue hypotheses.
+
 Use the expandable entries below in the admin Future Ideas section. At each release
 planning pass, revisit entries whose prerequisites changed. Recommend one bounded next
 experiment when capacity allows; do not silently start the entire backlog.
