@@ -21,6 +21,7 @@ export interface Policy {
     absolute: number; relative: number; noiseMultiplier: number;
   }>>;
 }
+export interface PacingControl { startedAt: string; endedAt: string; durationMs: number; gaps: number[] }
 export interface Frame { at: number; frameMs: number; targetBudgetMs: number; hidden: boolean }
 export interface Phase {
   kind: 'warmup' | 'steady' | 'transition';
@@ -31,8 +32,8 @@ export interface Run {
   id: string; scene: Scene; pair: number; position: 0 | 1; side: Side;
   startedAt: string; endedAt: string;
   observedBuild: Build; conditions: Conditions;
-  pacingBefore: { durationMs: number; gaps: number[] };
-  pacingAfter: { durationMs: number; gaps: number[] };
+  pacingBefore: PacingControl;
+  pacingAfter: PacingControl;
   phases: Phase[];
   startup: {
     coldMs: number | null; warmMs: number | null;

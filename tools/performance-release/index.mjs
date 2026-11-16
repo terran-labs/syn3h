@@ -4,6 +4,10 @@ import { summarizeFrames, judgePacing } from '../performance-check.mjs'
 const scenes = ['lobby', 'drive', 'mixedbots', 'water', 'twohumans']
 const frameMetrics = ['medianMs', 'p95Ms', 'p99Ms', 'stalls', 'maxStallMs']
 const startupMetrics = ['coldStartupMs', 'warmStartupMs', 'transferBytes']
+// Each interval and endpoint may be rounded independently to 0.001 ms.
+const SAMPLE_ROUNDING_MS = .002
+// UTC endpoints round to milliseconds; allow their combined error plus sample rounding.
+const WALL_ROUNDING_MS = 1.002
 const hex = /^[a-f0-9]{64}$/
 const object = v => v !== null && typeof v === 'object' && !Array.isArray(v)
 const finite = v => typeof v === 'number' && Number.isFinite(v)
@@ -145,8 +149,18 @@ function validateInternal(input, expected) {
       require(Array.isArray(r.errors) && r.errors.length === 0 && r.overflow === false && r.qualityStable === true, 'qualification', path, 'Errors, overflow or quality drift invalidate the run')
       for (const name of ['pacingBefore', 'pacingAfter']) {
         const control = r[name]
-        const shape = object(control) && finite(control.durationMs) && control.durationMs >= 3000 && Array.isArray(control.gaps) && control.gaps.every(positive)
-        require(shape && judgePacing(control.gaps, 1000 / c.refreshHz, control.durationMs).valid, 'pacing', `${path}.${name}`, 'Blank-page control is missing or unqualified')
+        const shape = object(control) && finite(control.durationMs) && control.durationMs >= 3000 && Array.isArray(control.gaps) && control.gaps.length > 0 && control.gaps.every(positive) && time(control.startedAt) && time(control.endedAt)
+        let qualified = false
+        if (shape) {
+          const start = Date.parse(control.startedAt), end = Date.parse(control.endedAt)
+          const sum = control.gaps.reduce((a, b) => a + b, 0)
+          const covers = Math.abs(sum - control.durationMs) <= SAMPLE_ROUNDING_MS * (control.gaps.length + 1) &&
+            Math.abs(end - start - control.durationMs) <= WALL_ROUNDING_MS
+          const surrounds = name === 'pacingBefore' ? end <= Date.parse(r.startedAt) : start >= Date.parse(r.endedAt)
+          const policyOrder = calibration ? end <= Date.parse(input.policy.frozenAt) : start > Date.parse(input.policy.frozenAt)
+          qualified = covers && surrounds && policyOrder && judgePacing(control.gaps, 1000 / c.refreshHz, control.durationMs).valid
+        }
+        require(qualified, 'pacing', `${path}.${name}`, 'Blank-page control must cover its real window and surround the run in order')
       }
       require(object(r.startup) && positive(r.startup.coldMs) && positive(r.startup.warmMs) && r.startup.method === input.fixture.scenes[r.scene]?.startupMethod && r.startup.coldCacheVerified === true && r.startup.usablePlayVerified === true,
         'startup', path, 'Separate verified cold/warm usable-play timings required')
@@ -164,15 +178,26 @@ function validateInternal(input, expected) {
         let last = p.startedAtMs, sum = 0, max = 0, valid = true
         for (const frame of p.frames) {
           const good = object(frame) && positive(frame.frameMs) && finite(frame.at) && frame.at > last && frame.at <= p.endedAtMs &&
+            Math.abs(frame.at - last - frame.frameMs) <= SAMPLE_ROUNDING_MS &&
             frame.hidden === false && positive(frame.targetBudgetMs) && Math.abs(frame.targetBudgetMs - 1000 / c.refreshHz) < .000001
           if (!good) valid = false
           if (good) { sum += frame.frameMs; max = Math.max(max, frame.frameMs); last = frame.at }
         }
         require(valid, 'frames', path, 'Invalid, hidden, nonmonotonic or wrong-target frames')
-        if (valid) require(p.endedAtMs - p.startedAtMs - p.expectedDurationMs <= max && Math.abs(sum - (p.endedAtMs - p.startedAtMs)) <= max &&
-          p.frames[0].at - p.startedAtMs <= max && p.endedAtMs - last <= max,
+        if (valid) require(p.endedAtMs - p.startedAtMs - p.expectedDurationMs <= p.frames.at(-1).frameMs + SAMPLE_ROUNDING_MS &&
+          Math.abs(sum - (p.endedAtMs - p.startedAtMs)) <= SAMPLE_ROUNDING_MS * (p.frames.length + 1) && p.endedAtMs - last <= SAMPLE_ROUNDING_MS,
         'truncated', path, 'Raw samples do not cover the complete phase')
       }
+    }
+    // Full control/run envelopes are exclusive across every scene on this serial runner.
+    const windows = runs.filter(r => object(r)).map(r => ({
+      id: r.id, start: Date.parse(r.pacingBefore?.startedAt), end: Date.parse(r.pacingAfter?.endedAt),
+    })).sort((a, b) => a.start - b.start)
+    let previousWindowEnd = -Infinity
+    for (const window of windows) {
+      require(finite(window.start) && finite(window.end) && window.end > window.start && window.start >= previousWindowEnd,
+        'overlap', `${root}.${window.id}`, 'Scene runs and their pacing controls must not overlap any other serial work')
+      previousWindowEnd = Math.max(previousWindowEnd, window.end)
     }
     for (const scene of required) {
       const group = runs.filter(r => r?.scene === scene)
@@ -291,7 +316,7 @@ export function renderPerformance(report, { version, assetBaseUrl }) {
   const base = new URL(assetBaseUrl)
   if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) throw new Error('Immutable HTTPS asset directory required')
   const url = name => `${base.href.replace(/\/$/, '')}/${name}`
-  const lines = ['## Performance', '', `${md(version)} against ${md(report.builds.baseline.version)}: **${report.status}**. Performance promotion: **${report.promotion}**.`, '']
+  const lines = ['### Performance', '', `${md(version)} against ${md(report.builds.baseline.version)}: **${report.status}**. Performance promotion: **${report.promotion}**.`, '']
   if (report.qualified) {
     lines.push(`![Paired median and p99 frame times by scene in milliseconds; lower is better. Exact values appear below.](${url(report.assets.chart)})`, '',
       '| Scene / phase | Metric | Baseline | Candidate | Paired delta | Change | Tolerance | Guard | Result |',
