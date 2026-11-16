@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-11-16T03:08:36.948Z",
+  "generatedAt": "2026-11-16T08:22:19.266Z",
   "commits": {
-    "total": 1568,
-    "last48h": 1568,
+    "total": 1579,
+    "last48h": 1579,
     "merges": 468
   },
   "pullRequests": {
@@ -12,21 +12,21 @@
     "note": "Lanes merge branches directly; few changes went through pull requests."
   },
   "releases": {
-    "production": 20,
-    "today": 18,
+    "production": 21,
+    "today": 1,
     "withdrawn": 1,
-    "newest": "v26.11.1518",
-    "newestAt": "2026-11-15 19:08 PST"
+    "newest": "v26.11.1600",
+    "newestAt": "2026-11-16 00:22 PST"
   },
   "code": {
-    "sourceFiles": 319,
-    "lines": 59605,
-    "testFiles": 223,
+    "sourceFiles": 321,
+    "lines": 59728,
+    "testFiles": 227,
     "params": 301
   },
   "tokens": {
     "stale": false,
-    "countedAt": "2026-11-16T03:08:36.948Z",
+    "countedAt": "2026-11-16T08:22:19.266Z",
     "claude": {
       "input": 29030,
       "output": 14181429,
@@ -37,18 +37,18 @@
       "messages": 12582
     },
     "codex": {
-      "input": 27010805,
-      "output": 4301714,
-      "cacheRead": 1915705216,
+      "input": 34011251,
+      "output": 5341741,
+      "cacheRead": 2467283072,
       "cacheWrite": 0,
-      "reasoning": 980668,
-      "total": 1947017735,
+      "reasoning": 1104185,
+      "total": 2506636064,
       "sessions": 41
     },
-    "total": 5911178109,
+    "total": 6470796438,
     "firstSessionAt": "2026-11-14T21:41:39.778Z",
-    "hours": 29.4,
-    "perHour": 200724479
+    "hours": 34.7,
+    "perHour": 186598548
   },
   "price": {
     "low": 1579,

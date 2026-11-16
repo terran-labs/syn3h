@@ -180,6 +180,14 @@ test('render checks the shape for the channel', () => {
   assert.throws(() => renderNotes(swapped, MILESTONE), /must be the first section/)
 })
 
+test('performance disclosure is retained before known issues without relaxing other checks', () => {
+  const disclosure = '### Performance\n\nComparable release benchmarks are not yet available.\n\n'
+  const notes = notesFor(PRODUCTION).replace('### Known issues', disclosure + '### Known issues')
+  assert.ok(renderNotes(notes, PRODUCTION).includes(disclosure))
+  assert.throws(() => renderNotes(notesFor(PRODUCTION, { extra: disclosure }), PRODUCTION), /sections must run in the order/)
+  assert.throws(() => renderNotes(notes.replace('benchmarks', 'lasers'), PRODUCTION), /wording rule/)
+})
+
 test('screenshots come from the manifest, the GIF first', () => {
   const manifest = parseManifest(JSON.stringify({ images: [{ file: '01-lobby.png', caption: 'The lobby' }, { file: '02-hill.png', caption: 'King of the Hill' }], gif: 'syn3h-showcase.gif' }))
   const body = renderNotes(notesFor(MILESTONE), MILESTONE, manifest)

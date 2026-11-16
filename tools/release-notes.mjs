@@ -30,7 +30,7 @@ export function frozenUrl(version) {
 const MANIFEST = 'manifest.json'
 
 /** Sections in the order a notes file has them. Play only in production notes. */
-const SECTIONS = ['The story so far', 'Features', 'Fixes', 'Play', 'Known issues']
+const SECTIONS = ['The story so far', 'Features', 'Fixes', 'Play', 'Performance', 'Known issues']
 const REQUIRED = ['The story so far', 'Features']
 
 export function assetUrl(tag, name, repo = GITHUB_REPO) {
