@@ -1,57 +1,75 @@
-/**
- * Nothing on the page can be selected. On a touch device a long press that selects a label,
- * opens the copy callout or drags an image takes the player out of the game, so selection is
- * switched off everywhere except in fields the player types in.
- *
- *   tools/heavy.sh node tests/ui/no-select.mjs
- *
- * WebKit at iPad and iPhone sizes. Needs the lane dev server on 5187. What it cannot do is
- * long-press a real screen: that needs a device.
+/** Visible text cannot be selected; editable fields retain native selection.
+ * WebKit mouse gestures and Chromium browser touch protocol are automated checks,
+ * not a physical iPad long-press acceptance. Runtime source stays unchanged.
  */
-import { devices, webkit } from 'playwright-core'
+import { devices, webkit, chromium } from 'playwright-core'
 import assert from 'node:assert/strict'
-const browser = await webkit.launch()
-const errors = []
-try {
-  for (const name of ['iPad Pro 11 landscape', 'iPhone 14']) {
-    const context = await browser.newContext({ ...devices[name] }), page = await context.newPage()
-    page.on('pageerror', e => errors.push(`${name}: ${e.message}`))
-    await page.goto(`http://127.0.0.1:5187/?room=no-select-${Date.now()}`, { waitUntil: 'load' })
-    await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false', null, { timeout: 120000 })
-    const result = await page.evaluate(() => {
-      const select = (el) => { const s = getComputedStyle(el); return s.webkitUserSelect || s.userSelect }
-      // Every element that shows text, outside fields, must refuse selection.
-      const selectable = []
-      for (const el of document.body.querySelectorAll('*')) {
-        if (el.closest('input, textarea, [contenteditable]')) continue
-        if (!el.childNodes.length || ![...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) continue
-        if (select(el) !== 'none') selectable.push(`${el.tagName.toLowerCase()}.${el.className}`.slice(0, 60))
-      }
-      const fire = (target, type) => { const event = new Event(type, { bubbles: true, cancelable: true }); target.dispatchEvent(event); return event.defaultPrevented }
-      const label = [...document.body.querySelectorAll('button, p, span, div')].find(el => el.textContent.trim() && !el.closest('input, textarea'))
-      const field = document.createElement('input'); field.value = 'room name'; document.body.append(field)
-      // A selection made by script over page text is dropped; one inside a field is kept.
-      const range = document.createRange(); range.selectNodeContents(label); const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range)
-      return new Promise(resolve => setTimeout(() => {
-        const dropped = getSelection().isCollapsed
-        field.focus(); field.select()
-        const kept = field.selectionEnd - field.selectionStart
-        const out = { selectable: selectable.slice(0, 8), count: selectable.length, callout: getComputedStyle(label).webkitTouchCallout ?? 'unsupported',
-          body: select(document.body), selectstart: fire(label, 'selectstart'), dragstart: fire(label, 'dragstart'), fieldSelectstart: fire(field, 'selectstart'),
-          fieldSelect: select(field), dropped, kept }
-        field.remove(); resolve(out)
-      }, 120))
-    })
-    assert.equal(result.count, 0, `${name}: selectable text remains: ${result.selectable.join(', ')}`)
-    assert.equal(result.body, 'none', `${name}: body`)
-    assert.equal(result.selectstart, true, `${name}: selectstart on a label is refused`)
-    assert.equal(result.dragstart, true, `${name}: dragstart on a label is refused`)
-    assert.equal(result.fieldSelectstart, false, `${name}: a field may start a selection`)
-    assert.notEqual(result.fieldSelect, 'none', `${name}: a field stays selectable`)
-    assert.equal(result.dropped, true, `${name}: a selection over page text is dropped`)
-    assert.ok(result.kept > 0, `${name}: a selection inside a field is kept`)
-    await context.close()
+import { mkdir } from 'node:fs/promises'
+await mkdir('tests/ui/artifacts/no-select',{recursive:true})
+for(const engine of ['webkit','chromium']) {
+ const browser=await (engine==='webkit'?webkit.launch():chromium.launch({channel:'chrome',headless:true}))
+ try {
+ for(const name of ['iPad Pro 11 landscape','iPhone 14']) {
+  const context=await browser.newContext({...devices[name],defaultBrowserType:undefined}),page=await context.newPage(),errors=[]
+  page.on('pageerror',e=>errors.push(e.message))
+  await page.addInitScript(()=>{
+   window.selectionEvidence={events:[],removals:0}
+   const original=Selection.prototype.removeAllRanges
+   Selection.prototype.removeAllRanges=function(){window.selectionEvidence.removals++;return original.call(this)}
+   document.addEventListener('selectionchange',()=>{
+    const s=getSelection(),node=n=>n?{name:n.nodeName,parent:n.parentElement?.tagName,id:n.id??'',cls:typeof n.className==='string'?n.className:''}:null
+    window.selectionEvidence.events.push({active:node(document.activeElement),anchor:node(s.anchorNode),focus:node(s.focusNode),text:s.toString(),collapsed:s.isCollapsed})
+   },true)
+  })
+  await page.goto(`${process.env.SYN3H_URL??'http://127.0.0.1:5198/'}?room=no-select-${Date.now()}`)
+  await page.locator('.boot-veil').waitFor({state:'hidden',timeout:120000})
+  await page.evaluate(()=>syn3h.shell.showPanel('explore'))
+  await page.waitForFunction(()=>document.querySelector('.lobby-panels').dataset.activePanel==='explore'&&document.querySelector('.lobby-panels').dataset.busy==='false')
+  const css=await page.evaluate(()=>{
+   const select=el=>getComputedStyle(el).webkitUserSelect||getComputedStyle(el).userSelect
+   const bad=[...document.querySelectorAll('*')].filter(el=>!el.closest('input,textarea,[contenteditable]')&&[...el.childNodes].some(n=>n.nodeType===3&&n.textContent.trim())&&select(el)!=='none').map(el=>el.tagName+'.'+el.className)
+   const field=document.querySelector('#shell-room'),label=document.querySelector('label[for="shell-room"]')
+   const fire=(el,type)=>{const e=new Event(type,{bubbles:true,cancelable:true});el.dispatchEvent(e);return e.defaultPrevented}
+   return {bad,body:select(document.body),field:select(field),selectstart:fire(label,'selectstart'),dragstart:fire(label,'dragstart'),fieldSelectstart:fire(field,'selectstart')}
+  })
+  assert.deepEqual(css.bad,[]);assert.equal(css.body,'none');assert.notEqual(css.field,'none');assert.equal(css.selectstart,true);assert.equal(css.dragstart,true);assert.equal(css.fieldSelectstart,false)
+  const field=page.locator('#shell-room')
+  await field.tap();await page.keyboard.press('Meta+A');await page.keyboard.type('Editable room')
+  await page.keyboard.press('Meta+A')
+  assert.equal(await field.inputValue(),'Editable room')
+  assert.equal(await field.evaluate(e=>e.selectionEnd-e.selectionStart),13,'native field selection retained')
+  await field.blur()
+  const checks=[]
+  const clear=async()=>page.evaluate(()=>getSelection().removeAllRanges())
+  const empty=async(label,gesture)=>{
+   await page.waitForTimeout(150)
+   const s=await page.evaluate(()=>({text:getSelection().toString(),collapsed:getSelection().isCollapsed,active:document.activeElement?.tagName}))
+   assert.equal(s.text,'',`${name} ${label} ${gesture} text`);assert.equal(s.collapsed,true,`${name} ${label} ${gesture} range`)
+   checks.push({label,gesture,...s})
   }
-  assert.deepEqual(errors, [])
-  console.log(JSON.stringify({ ok: true }))
-} finally { await browser.close() }
+  for(const selector of ['label[for="shell-room"]','[data-panel="explore"] h2']) {
+   const target=page.locator(selector);await target.scrollIntoViewIfNeeded();assert.ok(await target.isVisible())
+   const r=await target.boundingBox();assert.ok(r.width>0&&r.height>0&&r.y>=0&&r.y+r.height<=page.viewportSize().height)
+   await clear();await target.dblclick();await empty(selector,'native mouse double-click')
+   await clear();await page.mouse.move(r.x+2,r.y+r.height/2);await page.mouse.down();await page.mouse.move(r.x+r.width-2,r.y+r.height/2,{steps:12});await page.mouse.up();await empty(selector,'native mouse drag')
+   await clear()
+   if(engine==='chromium') {
+    const cdp=await context.newCDPSession(page)
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:r.x+r.width/2,y:r.y+r.height/2}]})
+    await page.waitForTimeout(700)
+    await cdp.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await cdp.detach()
+    await empty(selector,'browser touch protocol hold 700ms')
+   } else {
+    await target.dispatchEvent('pointerdown',{pointerId:501,pointerType:'touch',clientX:r.x+r.width/2,clientY:r.y+r.height/2,bubbles:true})
+    await page.waitForTimeout(700)
+    await target.dispatchEvent('pointerup',{pointerId:501,pointerType:'touch',clientX:r.x+r.width/2,clientY:r.y+r.height/2,bubbles:true})
+    await empty(selector,'synthetic WebKit hold 700ms, not physical long press')
+   }
+  }
+  await page.screenshot({path:`tests/ui/artifacts/no-select/${engine}-${name.replaceAll(' ','-')}.png`})
+  console.log(JSON.stringify({engine,name,css,checks,instrumentation:await page.evaluate(()=>selectionEvidence),errors}))
+  assert.deepEqual(errors,[]);await context.close()
+ }
+ }finally{await browser.close()}
+}
+console.log('NO SELECT PASS')

@@ -16,7 +16,7 @@ try {
   for (const name of ['iPad Pro 11 landscape', 'iPhone 14']) {
     const context = await browser.newContext({ ...devices[name] }), page = await context.newPage()
     page.on('pageerror', e => errors.push(`${name}: ${e.message}`))
-    await page.goto(`http://127.0.0.1:5187/?room=no-zoom-${Date.now()}`, { waitUntil: 'load' })
+    await page.goto(`${process.env.SYN3H_URL ?? 'http://127.0.0.1:5198/'}?room=no-zoom-${Date.now()}`, { waitUntil: 'load' })
     await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.querySelector('.lobby-panels')?.dataset.busy === 'false', null, { timeout: 120000 })
     const viewport = await page.evaluate(() => document.querySelector('meta[name=viewport]').content)
     for (const part of ['maximum-scale=1', 'minimum-scale=1', 'user-scalable=no']) assert.ok(viewport.includes(part), `${name}: viewport has ${part}`)
@@ -28,12 +28,17 @@ try {
     })
     assert.deepEqual(refused, { gesturestart: true, gesturechange: true, twoFingerMove: true, oneFingerMove: false, doubleTap: true }, name)
     // No field anywhere is under 16px, the size below which Safari zooms in on focus.
-    for (const panel of ['explore', 'worlds', 'music', 'advanced', 'vehicle']) {
+    const testedPanels = []
+    for (const panel of ['explore', 'worlds', 'music', 'advanced', 'multiplayer', 'about']) {
+      assert.equal(await page.locator(`[data-panel="${panel}"]`).count(),1)
+      testedPanels.push(panel)
       await page.evaluate(id => window.syn3h.shell.showPanel(id), panel)
       await page.waitForFunction(id => { const p = document.querySelector('.lobby-panels'); return p.dataset.activePanel === id && p.dataset.busy === 'false' }, panel)
       const small = await page.evaluate(() => [...document.querySelectorAll('input, select, textarea')].filter(el => el.offsetParent !== null && !['range', 'checkbox', 'radio', 'color'].includes(el.type) && parseFloat(getComputedStyle(el).fontSize) < 16).map(el => `${el.className || el.id || el.tagName} ${getComputedStyle(el).fontSize}`))
       assert.deepEqual(small, [], `${name}: fields under 16px in ${panel}`)
     }
+    assert.equal(testedPanels.length,6)
+    console.log(JSON.stringify({name,testedPanels,count:testedPanels.length}))
     // Settings: the Daydream slider is there, fits the screen, and using it does not scale the page.
     await page.evaluate(() => window.syn3h.shell.showPanel('settings'))
     await page.waitForFunction(() => { const p = document.querySelector('.lobby-panels'); return p.dataset.activePanel === 'settings' && p.dataset.busy === 'false' })
@@ -46,7 +51,7 @@ try {
     await page.screenshot({ path: `tests/ui/artifacts/settings-${name.replace(/\W+/g, '-')}.png` })
     // Typing a name does not leave the page scaled.
     await page.evaluate(() => window.syn3h.shell.showPanel('explore'))
-    await page.locator('#shell-name').tap(); await page.keyboard.type('Zoomless')
+    await page.locator('#shell-room').tap(); await page.keyboard.type('Zoomless')
     assert.ok(await page.evaluate(() => (window.visualViewport?.scale ?? 1) <= 1.01), `${name}: the page is not scaled after typing`)
     await context.close()
   }
