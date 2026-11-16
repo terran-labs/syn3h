@@ -57,6 +57,17 @@ describe('planet recipes', () => {
     applyPlanet('volcanic', 1)
   }, 60000)
 
+  it('the Desert is a dry world: at least four fifths land on every seed, with somewhere to drive to', () => {
+    const desert = PLANETS.find(p => p.id === 'desert')!
+    applyPlanet('desert', 1)
+    for (const seed of [1, 7, 4242, 90210]) {
+      const data = generateTerrain(seed, currentTerrainSettings(), { resolution: 129 })
+      const land = data.heights.filter(h => h > 0).length / data.heights.length
+      expect(land, `seed ${seed}`).toBeGreaterThanOrEqual(0.8)
+      expect(data.roads.length, `seed ${seed}: roads`).toBeGreaterThan(0)
+    }
+    expect(desert.values['terrain.landShare']).toBeGreaterThanOrEqual(0.8)
+  })
   it('a world left at its defaults is the volcanic recipe and encodes as just its id and seed', () => {
     // Registered defaults must agree with the volcanic recipe, or every invite link for a
     // fresh world would carry needless overrides.

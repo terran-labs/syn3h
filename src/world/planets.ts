@@ -75,12 +75,15 @@ export const PLANETS: readonly PlanetRecipe[] = [
   },
   {
     id: 'desert', label: 'Desert', centre: 'A great mesa with an oasis on top',
-    blurb: 'Gold dunes and sandstone buttes round a towering mesa, in a warm shallow sea.',
+    blurb: 'Gold dunes and sandstone buttes round a towering mesa, with one last warm, shallow sea.',
     swatch: [0xe6b866, 0x2fb7b0], body: { size: 1.0, heat: 0.75 },
     values: {
       ...planetWeather('desert'),
       ...SKY_PRESETS['Earthlike'], 'sky.turbidity': 5, 'weather.cloudCoverage': 0.12, 'weather.fogDensity': 0.00022,
       'terrain.kind': 1, 'terrain.look': 1, 'world.seaKind': 1, 'world.lavaAltitude': 0,
+      // A dry world (the owner, 16 November 2026): land almost everywhere, the sea shrunk to
+      // a remnant between the dunes. Its rivers, oasis and pools stay.
+      'terrain.landShare': 0.85,
       'terrain.islandRadius': 800, 'terrain.coastWobble': 0.26,
       'terrain.volcanoHeight': 230, 'terrain.volcanoRadius': 420, 'terrain.calderaSize': 70, 'terrain.treeCover': 0,
       'terrain.mesaHeight': 95, 'terrain.cragDensity': 0.22, 'terrain.spireHeight': 120,
