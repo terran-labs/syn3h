@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-15 16:53 PST. The owner withdrew the afternoon cutoff.
+Last verified: 2026-11-15 17:53 PST. The owner withdrew the afternoon cutoff.
 
 ## Authority and release order
 
@@ -17,13 +17,15 @@ GIF before marking a release Latest; publish notes with the frozen playable link
 
 ## Production
 
-Accepted release: v26.11.1515 (release-19), source 50c9eb77, at https://www.syn3h.com/.
-Human airborne Jet flight defaults to half throttle with Daydream ownership preserved.
-Ground, braking, pause, materialization, settling and Zorb suppress neutral thrust.
-The combined gate passes 1,036 tests with one skip and the exact known competitive-flee
-failure. Local normal/latency tests, both public addresses and all eight vehicle cases pass.
-The earlier quality controls, camera update order and tail lights remain live. The camera
-change retains its disclosed evidence waiver and does not establish a full judder fix.
+Accepted release: v26.11.1516 (release-20), source 8034263e, at https://www.syn3h.com/.
+Page text selection is suppressed while editable fields retain selection and entry.
+A client refused by a full room stops retrying and continues with local bots.
+Typecheck, 534 focused tests, build, 24 visible-text gestures, controls and zoom pass.
+Both public addresses pass exact-build, multiplayer and frozen-file checks; all eight
+Chrome/WebKit vehicle cases pass without page errors. The retry used the same frozen
+artifact and passed without the authorized sound exception. Earlier public bot-tag sound
+failures remain unexplained. Physical iPad long-press behaviour still needs device feedback.
+The prior camera-order change retains its evidence waiver and does not establish a full judder fix.
 
 v26.11.1510 was live and superseded without its own vehicle matrix by explicit owner
 waiver; the trailing 1511 matrix covers its sidebar and wingtip changes. Do not infer
@@ -31,10 +33,11 @@ acceptance from a tag alone. The showcase still predates the Tank paint and side
 
 ## Current queue
 
-1. Validate the expanded fixed-stick and sidebar handoff, keeping touch aiming separate.
-2. Review standalone room-full fallback and visible-bot retention when green.
-3. Validate camera look/zoom and coordinated touch aiming before composed acceptance.
-4. Formation remains withheld after the repeat recording; later world/Post handoffs stay separate.
+1. Post has the first solo graphics slot for sunrise reproduction and procedural ray fixes.
+2. Validate the expanded fixed-stick and sidebar handoff, keeping touch aiming separate.
+3. Review standalone visible-bot retention when green.
+4. Validate camera look/zoom and coordinated touch aiming before composed acceptance.
+5. Formation remains withheld after the repeat recording; later world/Post handoffs stay separate.
 
 The withdrawn 1507 build and the accepted 1506 control each passed two quiet local network
 runs in 218 seconds. No failing half was isolated. The Foreman authorized restoration
