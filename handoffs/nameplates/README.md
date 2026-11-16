@@ -307,3 +307,19 @@ complete snapshot; visibility, at least two full BOT labels and cost assertions 
 Run 005's one full bot is not acceptance. No staging repair is included. Prior failed evidence
 is preserved; this correction receives syntax and whitespace checks only, pending review
 and a separately allocated browser run.
+
+
+## Fixed two-bot staging prerequisite
+
+Ordinary near scenes move only bot zero to offsets (-22, -42). Camera, humans and other
+bots stay fixed; negative HUD and far scenes retain their previous coordinates. No adaptive
+position search or rescue is allowed. The synchronous snapshot copies the existing local
+vehicle disc, disclosed as conservative evidence with unknown freshness and participation.
+Before the unchanged two-full-BOT assertion, a fixture-only geometry prerequisite validates
+finite current entries, shown human slots and DOM bounds, exact reserved leader bounds, HUD,
+nearer discs and a mutually clear pair of bot slots. Target placements do not block their own
+replacement pair; other placed bots and all nearer discs remain exclusions. Missing geometry
+or no legal pair fails. No allocator, draw, visibility or terrain query is replayed. Screen-space
+opportunity does not certify terrain visibility: the strict rendered-label assertion remains.
+All prior failures, human priority, negative/restored HUD and cost checks remain intact.
+Syntax and whitespace checks only; independent review and runtime allocation are still required.

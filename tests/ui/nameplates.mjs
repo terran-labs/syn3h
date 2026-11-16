@@ -282,6 +282,64 @@ function hudSlots(state, expectedHidden = false) {
     return { id: entry.id, name: entry.name, expectedHidden, slots }
   })
 }
+// Screen-space opportunity only. Read the captured decisions; never rerun allocation or rays.
+function twoBotSlots(state) {
+  const d = state.diagnostic, ids = ['65280', '65283']
+  const finite = (object, keys) => assert.ok(object && keys.every(k => Number.isFinite(object[k])), 'complete finite geometry required')
+  finite(d, ['stamp']); finite(d.viewport, ['width', 'height'])
+  assert.equal(state.stamp, d.stamp, 'same snapshot required')
+  const overlap = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
+  const slots = c => [[0, -12], [0, -32], [-c.width / 2 - 12, -12], [c.width / 2 + 12, -12]].map(([dx, dy], spot) => {
+    const x = c.x + dx, y = c.y + dy - c.height
+    return { spot, plate: { left: x - c.width / 2, top: y, right: x + c.width / 2, bottom: y + c.height },
+      bounds: { left: Math.min(x - c.width / 2, c.x) - 3, top: y - 3, right: Math.max(x + c.width / 2, c.x) + 3, bottom: c.y + 3 } }
+  })
+  for (const box of state.exclusions) finite(box, ['left', 'top', 'right', 'bottom'])
+  assert.ok(Array.isArray(d.entries) && d.entries.length >= 6, 'complete staged roster required')
+  for (const e of d.entries) {
+    assert.equal(e.plate?.stamp, d.stamp, 'current entry required')
+    finite(e.plate.candidate, ['x', 'y', 'depth', 'width', 'height', 'opacity'])
+    finite(e.plate.disc, ['x', 'y', 'radius', 'depth'])
+    assert.ok(e.plate.disc.radius > 0, 'valid vehicle disc required')
+  }
+  // Product does not stamp localDisc. Include its copied value conservatively, not as
+  // proof that it was refreshed or participated in this draw. Missing geometry fails.
+  finite(d.localDisc, ['x', 'y', 'radius', 'depth'])
+  assert.equal(d.localDisc.id, '@local')
+  assert.ok(d.localDisc.radius > 0, 'local disc must contain an observed envelope')
+  const placed = d.entries.filter(e => e.plate.shown).map(e => {
+    const c = e.plate.candidate, dom = state.labels.find(l => l.id === e.id)
+    assert.ok(!e.plate.hidden && dom, 'shown plate requires captured DOM')
+    assert.ok(Number.isInteger(c.previous) && c.previous >= 0 && c.previous <= 3, 'placed slot must be an integer from zero to three')
+    const slot = slots(c)[c.previous]
+    finite(dom, ['left', 'top', 'right', 'bottom', 'width', 'height'])
+    for (const key of ['left', 'top', 'right', 'bottom']) assert.ok(Math.abs(dom[key] - slot.plate[key]) < .1, 'DOM matches reserved plate position')
+    assert.ok(Math.abs(dom.width - c.width) < .1 && Math.abs(dom.height - c.height) < .1, 'DOM matches candidate size')
+    return { id: e.id, bot: e.bot, bounds: slot.bounds }
+  })
+  const humans = d.entries.filter(e => !e.bot)
+  assert.equal(humans.length, 2, 'two humans required')
+  assert.ok(humans.every(e => e.plate.shown && placed.some(p => p.id === e.id)), 'humans retain priority and shown bounds')
+  const discs = [...d.entries.map(e => e.plate.disc), d.localDisc]
+  const rows = ids.map(id => {
+    const e = d.entries.find(e => e.id === id), c = e?.plate.candidate
+    assert.ok(e?.bot && e.visible && !e.horizon && c && !c.tick && c.opacity > 0 && c.depth > 0, 'full bot candidate required')
+    assert.ok(Number.isFinite(e.distance) && e.distance >= 0 && e.distance <= 100, 'bot remains in full-label range')
+    return { id, slots: slots(c).map(slot => {
+      const b = slot.bounds
+      const hud = state.exclusions.filter(h => overlap(b, h))
+      // Both target placements are replaced by the proposed pair; other placed bots stay.
+      const occupied = placed.filter(p => !ids.includes(p.id) && overlap(b, p.bounds)).map(p => p.id)
+      const nearer = discs.filter(v => v.id !== id && v.depth < c.depth && Math.hypot(
+        Math.max(b.left, Math.min(b.right, v.x)) - v.x,
+        Math.max(b.top, Math.min(b.bottom, v.y)) - v.y) < v.radius + 3).map(v => v.id)
+      const viewport = b.left >= 8 && b.top >= 8 && b.right <= d.viewport.width - 8 && b.bottom <= d.viewport.height - 8
+      return { ...slot, hud, occupied, nearer, viewport, clear: viewport && !hud.length && !occupied.length && !nearer.length }
+    }) }
+  })
+  const pairs = rows[0].slots.flatMap(a => rows[1].slots.filter(b => a.clear && b.clear && !overlap(a.bounds, b.bounds)).map(b => [a.spot, b.spot]))
+  return { stamp: d.stamp, localDisc: d.localDisc, localDiscParticipation: 'unknown; copied envelope included conservatively', placed, rows, pairs }
+}
 async function open(name, viewport) {
   remaining(1)
   const context = await bounded(browser.newContext({ viewport, serviceWorkers: 'block' }), 10000, 'context')
@@ -354,6 +412,7 @@ async function geometryEvidence(page, captureLabel = null) {
     const diagnostic = { viewport: { width: innerWidth, height: innerHeight }, tick: s.game.tick, stamp: tags.stamp, terrainBudget: tags.terrainBudget, stats: { ...tags.stats },
       seed: s.params.get('world.seed')?.value, terrainKind: s.params.get('terrain.kind')?.value,
       camera: { eye: eye.toArray(), quaternion: camera.quaternion.toArray(), fov: camera.fov, matrix: camera.matrixWorld.toArray(), projection: camera.projectionMatrix.toArray(), cinematic: s.camera.cinematic },
+      localDisc: tags.localDisc ? { ...tags.localDisc } : null,
       bend: bend.toArray(), roster: [...net.players].map(([id, info]) => ({ id, name: info.name, bot: id >= 0xff00 })),
       remotes: [...net.remotes].map(([id, r]) => ({ id, position: r.vehicle.object.position.toArray(), visible: r.vehicle.object.visible, responding: r.responding })),
       entries: tags.entries.map(t => {
@@ -486,12 +545,12 @@ try {
   async function stage(far = false, curve = .71, hudOverlap = false) {
     await installTerrainEvidence(a)
     await a.evaluate(curve => window.syn3h.params.set('world.curve', curve), curve)
-    await a.evaluate(p => {
+    await a.evaluate(({ p, fixedNear }) => {
       const s = window.syn3h, v = s.player.object.position.clone().set(p.x, s.terrain.heightAt(p.x, p.z + 18) + 2, p.z + 18)
       s.player.teleport(v, 0)
-      s.bots.vehicles.forEach((bot, i) => { const x = p.x + (i - 1.5) * 12, z = p.z - 8 - i * 6; bot.teleport(v.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) })
+      s.bots.vehicles.forEach((bot, i) => { const x = p.x + (fixedNear && i === 0 ? -22 : (i - 1.5) * 12), z = p.z + (fixedNear && i === 0 ? -42 : -8 - i * 6); bot.teleport(v.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) })
       s.camera.setCinematicPose(v.clone().set(p.x, s.terrain.heightAt(p.x, p.z + 45) + 20, p.z + 45), v.clone().set(p.x, p.y + 4, p.z - 12), 60)
-    }, center)
+    }, { p: center, fixedNear: !far && !hudOverlap })
     await b.evaluate(({p, far, hudOverlap}) => { const s = window.syn3h, z = p.z - (far ? 260 : 4), x = p.x - (far || hudOverlap ? 24 : 8); s.player.teleport(s.player.object.position.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) }, { p: center, far, hudOverlap })
     await c.evaluate(({p, far, hudOverlap}) => { const s = window.syn3h, z = p.z - (far ? 190 : hudOverlap ? 12 : 4), x = p.x + (far || hudOverlap ? 24 : 8); s.player.teleport(s.player.object.position.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) }, { p: center, far, hudOverlap })
     // Record diagnostics even when settling fails. Never move the camera to skip occlusion.
@@ -540,6 +599,9 @@ try {
   assert.ok(bot.width / person.width >= .60 && bot.width / person.width <= .70, 'bot labels are 60 to 70 percent of human size')
   assert.ok(bot.height / person.height >= .60 && bot.height / person.height <= .70, 'bot label height is smaller too')
   assert.ok(bot.opacity < person.opacity, 'bot labels are fainter than human labels')
+  report.twoBotPrecondition = twoBotSlots(near)
+  await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+  assert.ok(report.twoBotPrecondition.pairs.length > 0, 'two full bots have mutually clear saved-geometry slots')
   assert.ok(near.labels.filter(l => l.bot && l.text.includes('BOT')).length >= 2, 'host-owned bots have smaller labels')
   await costDistribution(a, 'near-all-cost')
   // Retain the original overlap geometry as an explicit negative case, without hiding HUD.
