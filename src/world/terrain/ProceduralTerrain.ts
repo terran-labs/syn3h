@@ -22,6 +22,7 @@ import { rimRoadRadius } from './roads'
 import { HeightSampler, sealSeam } from './sampler'
 import { KIND_VOLCANIC, TERRAIN_PARAM_IDS, currentTerrainSettings, terrainRoadStyle, worldSeaKind } from './settings'
 import { paletteFor } from './palettes'
+import { bakeMapColours, MAP_GRID } from './mapColours'
 import { type SurfaceKind, classifySurface, sampleGrid } from './surface'
 import { spawnPointAt } from './spawn'
 import { GroundCover } from './groundcover'
@@ -371,6 +372,24 @@ export class ProceduralTerrain implements Terrain {
     return surface + seaWaves.offsetAt(x, z, this.sampler.heightAt(x, z), sea)
   }
 
+  /**
+   * The world from straight above, for maps: see Terrain.mapColourAt. Returns 0xRRGGBB.
+   *
+   * Cost: the first call after the world or its sea changes bakes a 256 x 256 grid (65,536
+   * height, slope and liquid reads, about 15 to 40 ms on a desktop); every call after that
+   * is one array read, so a 160 x 160 minimap redraw costs well under a millisecond. The
+   * bake is keyed on the terrain's version, sea level, sea kind and frozen flag, so a new
+   * seed or a frozen sea is picked up on the next call.
+   */
+  mapColourAt(x: number, z: number): number {
+    const sea = worldLavaAltitude.value, kind = worldSeaKind.value as number, key = `${this.version}:${sea}:${kind}:${this.iceTop}`
+    if (key !== this.mapKey) { this.mapGrid = bakeMapColours(this.data, this.sampler, { sea, lava: kind === 0, frozen: this.iceTop > -Infinity, snow: this.snowHeight() }); this.mapKey = key }
+    const n = MAP_GRID, size = this.data.size
+    const ix = Math.min(n - 1, Math.floor((wrapCoord(x, size) / size + 0.5) * n)), iz = Math.min(n - 1, Math.floor((wrapCoord(z, size) / size + 0.5) * n))
+    return this.mapGrid![iz * n + ix]
+  }
+  private mapGrid: Uint32Array | null = null
+  private mapKey = ''
   /** Velocity of the water or lava at (x, z), m/s: rivers flow, the sea, lake and pools do not. */
   liquidFlowAt(x: number, z: number, out: { x: number; z: number }): { x: number; z: number } {
     return liquidFlowAt(this.data.lava, wrapCoord(x, this.data.size), wrapCoord(z, this.data.size), waterRiverMaxSpeed.value, out)
