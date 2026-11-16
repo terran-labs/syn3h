@@ -3,6 +3,35 @@ import assert from 'node:assert/strict'
 import { mkdir, writeFile } from 'node:fs/promises'
 const out='tests/ui/artifacts/lobby-about'; await mkdir(out,{recursive:true})
 const report=[]
+// Persist before asserting so a failing path keeps its exact layout/projection evidence.
+async function measureBack(locator, mode, id) {
+ const diagnostic = await locator.evaluate((el, id) => {
+  const rect = el.getBoundingClientRect(), style = getComputedStyle(el)
+  const ancestors = []
+  for (let node = el; node; node = node.parentElement) {
+   const s = getComputedStyle(node)
+   ancestors.push({ tag: node.tagName, id: node.id, classes: node.className,
+    transform: s.transform, transformOrigin: s.transformOrigin, perspective: s.perspective,
+    perspectiveOrigin: s.perspectiveOrigin, translate: s.translate, scale: s.scale,
+    rotate: s.rotate, zoom: s.zoom, overflow: s.overflow,
+    animations: node.getAnimations().map(a => ({ state: a.playState, time: a.currentTime,
+     duration: a.effect?.getComputedTiming().duration })) })
+  }
+  return { id, sourcePanel: el.closest('[data-panel]')?.getAttribute('data-panel') ?? null,
+   text: el.textContent, focused: document.activeElement === el,
+   computed: { width: style.width, height: style.height, minWidth: style.minWidth,
+    minHeight: style.minHeight, maxWidth: style.maxWidth, boxSizing: style.boxSizing,
+    padding: style.padding, border: style.borderWidth, display: style.display,
+    transform: style.transform, transformOrigin: style.transformOrigin },
+   layout: { offsetWidth: el.offsetWidth, offsetHeight: el.offsetHeight,
+    clientWidth: el.clientWidth, clientHeight: el.clientHeight },
+   projected: rect.toJSON(), viewport: { width: innerWidth, height: innerHeight },
+   ancestors }
+ }, id)
+ console.log(JSON.stringify({ backDiagnostic: { mode, ...diagnostic } }))
+ await writeFile(`${out}/${mode}-back-${id}.json`, JSON.stringify(diagnostic, null, 2))
+ return diagnostic.projected
+}
 for(const mode of ['desktop','phone','short-phone']){
  const browser=await(mode==='desktop'?chromium.launch({channel:'chrome',headless:true}):webkit.launch())
  try{
@@ -50,7 +79,7 @@ for(const mode of ['desktop','phone','short-phone']){
    await page.evaluate(id=>syn3h.shell.showPanel(id),id)
    await page.waitForFunction(()=>document.querySelector('.lobby-panels').dataset.busy==='false')
    const back=page.locator(`[data-panel=${id}] .panel-back`);await back.scrollIntoViewIfNeeded();await back.focus()
-   const r=await back.boundingBox();assert.ok(r.height>=44);if(mode==='desktop')assert.ok(r.width>=160)
+   const r=await measureBack(back,mode,id);assert.ok(r.height>=44,`${id}: projected height >=44`);if(mode==='desktop')assert.ok(r.width>=160,`${id}: projected width >=160`)
    assert.equal(await back.locator('[aria-hidden=true]').innerText(),'←')
    await page.keyboard.press('Enter'); await page.locator('.lobby-panels').waitFor({state:'hidden'})
    assert.equal(await nav.locator('button').first().evaluate(el=>el===document.activeElement),true)
@@ -59,7 +88,7 @@ for(const mode of ['desktop','phone','short-phone']){
   await nav.locator('[data-goto=multiplayer]').click();await page.locator('[data-panel=multiplayer] [data-join]').click()
   const invite=page.locator('.join-view'), back=invite.locator('.join-close');await invite.waitFor({state:'visible'})
   assert.equal(await back.evaluate(el=>el===document.activeElement),true)
-  const r=await back.boundingBox();assert.ok(r.height>=44);if(mode==='desktop')assert.ok(r.width>=160)
+  const r=await measureBack(back,mode,'invite');assert.ok(r.height>=44,'invite: projected height >=44');if(mode==='desktop')assert.ok(r.width>=160,'invite: projected width >=160')
   await page.screenshot({path:`${out}/${mode}-invite.png`});await page.keyboard.press('Enter');await invite.waitFor({state:'hidden'})
   backPaths.push({id:'invite',width:r.width,height:r.height})
   await page.keyboard.press('Escape');await page.locator('.lobby-panels').waitFor({state:'hidden'})
