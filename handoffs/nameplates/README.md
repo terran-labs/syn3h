@@ -430,3 +430,50 @@ all seven actors. Each includes its actual local network or host tag identity. H
 index zero must map to65280, and all four indices must match their network IDs. Raw host
 and human receipts are persisted before finite, unique-identity and expected-role checks.
 No additional height queries, coordinates or settling changes accompany this correction.
+
+## Measured positive-near acceptance scene
+
+Source preparation only. Fixed-pose002 offline review supports the exact Volcanic seed-1
+scene with bot65280 offset (32,0), initial Y 15.622831573066174. Its short observed window
+had a minimum moving clearance of 9.272615 px; that is preparation evidence, not a stability
+or cost pass. Product code, observation branches and historical receipts remain unchanged.
+
+`stage` now accepts an explicit fourth argument, defaulting to `default`. Only the initial
+acceptance positive-near call and its restoration select `volcanic-positive-near`. It requires
+Volcanic seed 1, the recorded center, desktop 1440 by 900, curve 0.71, and neither far nor
+HUD-overlap mode. Bot zero's existing ground query must be finite and equal the measured
+initial height minus two; its tag identity must be 65280. The pose is applied once during
+initial staging with ordinary settling. Other six actors and cinematic camera are unchanged.
+No slope queries, adaptive placement, retries or visibility forcing were added.
+
+Callsite mapping:
+
+| Call | Scene and behavior |
+| --- | --- |
+| Initial full acceptance | Explicit measured positive-near |
+| Positive restoration after negative HUD | Explicit measured positive-near |
+| Four-position observation initial stage | Default, unchanged |
+| Fixed-pose observation | Default plus existing observation-only pose, unchanged |
+| Survey | No stage call, unchanged |
+| Deliberate contested/negative HUD | Default, unchanged |
+| Desktop curve near/far and far cost | Default, unchanged |
+| Presentation and phone near/far/night | Default, unchanged |
+| Snow | Default with terrain-relative height, unchanged |
+| Settings, Zorb and materialization | No new stage call; follow restored positive scene as before |
+
+The same-frame finite/current geometry and legal-pair precondition remains separate from
+actual rendered visibility. Initial and restored positive scenes require at least two full
+BOT labels, with ticks explicitly excluded. Human visibility, bot size/opacity, contested
+priority, negative HUD, far, settings, curvature and cost windows retain their checks.
+The 512-query fail-hidden bound is unchanged. Missing geometry or a changed scene fails.
+
+Proposed external acceptance supervisor: `/tmp/nameplates-current-launcher/run-08.py`,
+with versioned `source-pins-08.json` and fresh output `/tmp/nameplates-current-browser-008`.
+It derives from reviewed pose02 startup diagnostics and ownership/cleanup handling, removing
+only the observation argument/verdict requirements in favor of full acceptance mode.
+The proposed invocation requires separate review and runtime allocation: absolute
+`/Users/vtn/dev/Syn3h/tools/heavy.sh`, Python 3, the versioned supervisor, exact pinned
+`/opt/homebrew/Cellar/node/26.9.0/bin/node`, and that fresh evidence directory.
+Budgets remain 590 seconds total, work cutoff 510, and full 480-second fixture admission
+(450 work plus 30 cleanup). Ports 5331 and 54671 remain owned; 8787 remains read-only.
+No execution, probes, installation, browser, tests or typecheck accompanied preparation.

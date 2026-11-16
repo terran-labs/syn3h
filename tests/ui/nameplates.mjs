@@ -630,22 +630,37 @@ try {
         return roster && nearRange && pose && camera.position.distanceTo(pose.position) < .5 && Math.abs(camera.fov - pose.fov) < .5 && current.count >= 6
       }, far, { timeout: remaining(15000), polling: 100 })
   }
-  async function stage(far = false, curve = .71, hudOverlap = false) {
+  async function stage(far = false, curve = .71, hudOverlap = false, scene = 'default') {
+    assert.ok(['default', 'volcanic-positive-near'].includes(scene), 'known staging scene required')
+    const measuredPositive = scene === 'volcanic-positive-near'
+    if (measuredPositive) {
+      assert.ok(!far && !hudOverlap && curve === .71 && !observationOnly && !surveyOnly && !poseOnly, 'measured scene is acceptance positive-near only')
+      assert.equal(center.x, surveyReference.center.x); assert.equal(center.z, surveyReference.center.z)
+      assert.deepEqual(a.viewportSize(), { width: 1440, height: 900 }, 'measured scene uses the recorded desktop viewport')
+      const world = await a.evaluate(() => ({ seed: window.syn3h.params.get('world.seed').value, kind: window.syn3h.params.get('terrain.kind').value }))
+      assert.equal(world.seed, 1); assert.equal(world.kind, 0, 'absolute height belongs only to Volcanic seed 1')
+    }
     await installTerrainEvidence(a)
     await a.evaluate(curve => window.syn3h.params.set('world.curve', curve), curve)
-    const initialPose = await a.evaluate(({ p, fixedNear, fixedPose }) => {
+    const initialPose = await a.evaluate(({ p, fixedNear, fixedPose, positivePose }) => {
       const s = window.syn3h, net = window.syn3hNet, localGround = s.terrain.heightAt(p.x, p.z + 18)
       const v = s.player.object.position.clone().set(p.x, localGround + 2, p.z + 18)
       const pose = vehicle => ({ body: { ...vehicle.body.translation() }, rotation: { ...vehicle.body.rotation() }, rendered: vehicle.object.position.toArray() })
+      const botPose = fixedPose ?? positivePose
       const actors = [], localBefore = fixedPose ? pose(s.player) : null
       s.player.teleport(v, 0)
       if (fixedPose) actors.push({ role: 'Observer', id: String(net.id), name: net.players.get(net.id)?.name,
         x: p.x, z: p.z + 18, ground: localGround, requestedTeleportY: v.y, before: localBefore, after: pose(s.player) })
       let initial = null
       s.bots.vehicles.forEach((bot, i) => {
-        const x = p.x + (fixedPose && i === 0 ? fixedPose.x : fixedNear && i === 0 ? -22 : (i - 1.5) * 12)
-        const z = p.z + (fixedPose && i === 0 ? fixedPose.z : fixedNear && i === 0 ? -42 : -8 - i * 6)
-        const ground = s.terrain.heightAt(x, z), y = fixedPose && i === 0 ? fixedPose.initialY : ground + 2
+        const x = p.x + (botPose && i === 0 ? botPose.x : fixedNear && i === 0 ? -22 : (i - 1.5) * 12)
+        const z = p.z + (botPose && i === 0 ? botPose.z : fixedNear && i === 0 ? -42 : -8 - i * 6)
+        const ground = s.terrain.heightAt(x, z), y = botPose && i === 0 ? botPose.initialY : ground + 2
+        if (positivePose && i === 0) {
+          if (![x, z, ground, y].every(Number.isFinite)) throw new Error('nonfinite positive scene initialization')
+          if (String(net.tags.entries.find(entry => entry.vehicle === bot)?.id) !== '65280') throw new Error('positive scene bot identity differs')
+          if (ground + 2 !== positivePose.initialY) throw new Error('positive scene ground differs from measured pose')
+        }
         if (fixedPose && i === 0) {
           const samples = [[-1, 0], [1, 0], [0, -1], [0, 1]].map(([dx, dz]) => s.terrain.heightAt(x + dx, z + dz))
           if (![x, z, ground, y, ...samples].every(Number.isFinite)) throw new Error('nonfinite fixed pose initialization')
@@ -661,7 +676,7 @@ try {
       })
       s.camera.setCinematicPose(v.clone().set(p.x, s.terrain.heightAt(p.x, p.z + 45) + 20, p.z + 45), v.clone().set(p.x, p.y + 4, p.z - 12), 60)
       return fixedPose ? { ...initial, actors } : initial
-    }, { p: center, fixedNear: !far && !hudOverlap, fixedPose: poseOnly ? fixedPose : null })
+    }, { p: center, fixedNear: !far && !hudOverlap, fixedPose: poseOnly ? fixedPose : null, positivePose: measuredPositive ? fixedPose : null })
     if (poseOnly) { report.pose.initial = initialPose; await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)) }
     const visitorInitial = await b.evaluate(({p, far, hudOverlap, record}) => {
       const s = window.syn3h, net = window.syn3hNet, z = p.z - (far ? 260 : 4), x = p.x - (far || hudOverlap ? 24 : 8)
@@ -716,7 +731,7 @@ try {
     }
     try {
       report.stages ??= []
-      report.stages.push({ far, curve, observer: await geometryEvidence(a), actors: await Promise.all([b, c].map(page => page.evaluate(() => ({ id: window.syn3hNet.id, seed: window.syn3h.params.get('world.seed')?.value, terrainKind: window.syn3h.params.get('terrain.kind')?.value, position: window.syn3h.player.object.position.toArray() })))) })
+      report.stages.push({ far, curve, scene, observer: await geometryEvidence(a), actors: await Promise.all([b, c].map(page => page.evaluate(() => ({ id: window.syn3hNet.id, seed: window.syn3h.params.get('world.seed')?.value, terrainKind: window.syn3h.params.get('terrain.kind')?.value, position: window.syn3h.player.object.position.toArray() })))) })
       await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
     }
     catch (error) {
@@ -806,7 +821,7 @@ try {
     report.survey.verdict = 'survey collected; no candidate selected; no physics support or label acceptance claim'
     await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
   } else {
-  await stage()
+  await stage(false, .71, false, observationOnly ? 'default' : 'volcanic-positive-near')
   if (observationOnly) {
     // Ordinary setup is complete. Across these observations only bot zero is teleported.
     await a.evaluate(() => window.restoreNameplateTerrainEvidence?.())
@@ -876,7 +891,7 @@ try {
   report.twoBotPrecondition = twoBotSlots(near)
   await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
   assert.ok(report.twoBotPrecondition.pairs.length > 0, 'two full bots have mutually clear saved-geometry slots')
-  assert.ok(near.labels.filter(l => l.bot && l.text.includes('BOT')).length >= 2, 'host-owned bots have smaller labels')
+  assert.ok(near.labels.filter(l => l.bot && !l.tick && l.text.includes('BOT')).length >= 2, 'host-owned bots have smaller labels')
   await costDistribution(a, 'near-all-cost')
   // Retain the original overlap geometry as an explicit negative case, without hiding HUD.
   await stage(false, .71, true)
@@ -887,9 +902,13 @@ try {
   assert.equal(hiddenSlots.length, 2)
   assert.ok(hiddenSlots.every(e => e.slots.every(s => s.hits.length > 0)), 'all human slots intersect visible HUD in negative stage')
   assert.ok(hiddenSlots.every(e => !hidden.labels.some(l => l.id === e.id)), 'HUD-overlapped humans must remain hidden')
-  await stage()
+  await stage(false, .71, false, 'volcanic-positive-near')
   const restored = await capture(a, 'near-positive-restored')
   for (const name of ['Visitor', 'Companion']) assert.ok(restored.labels.some(l => !l.bot && l.text.includes(name)), 'positive human visibility restored')
+  report.restoredTwoBotPrecondition = twoBotSlots(restored)
+  await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+  assert.ok(report.restoredTwoBotPrecondition.pairs.length > 0, 'restored full bots have mutually clear saved-geometry slots')
+  assert.ok(restored.labels.filter(l => l.bot && !l.tick && l.text.includes('BOT')).length >= 2, 'two full bot labels restored')
   await a.evaluate(() => window.syn3h.params.set('hud.nameplates', 1))
   assert.ok((await capture(a, 'people-only')).labels.every(l => !l.bot))
   await a.evaluate(() => window.syn3h.params.set('hud.nameplates', 2))
