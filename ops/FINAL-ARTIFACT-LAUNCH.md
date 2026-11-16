@@ -130,3 +130,26 @@ independence and nonsymlink runner ancestors. Postinventory rejects removals or 
 to every original entry and additions outside the exact reviewed scratch subtree. Never
 follow scratch symlinks or permit scratch to reach dist. These are preparer/executor
 requirements; the pure planner performs no filesystem qualification.
+
+## Prepared execution-copy helper, not yet executed
+
+The proposed helper binds an independently reviewed full inventory digest and artifact
+digest, uses no-follow regular-file reads with identity checks around each read, creates
+exclusive destination files, then restores supported permission modes. Directory modes
+are finalized deepest-first. All symlinks, special files, privilege bits and regular-file
+hardlinks are unsupported. Device and inode identities are recorded separately from
+portable equality. Failed staging remains in place and grants no launch permission.
+
+The postcheck requires the retained, deeply frozen in-process preparer receipt. A caller
+cannot substitute a deserialized or edited inventory. An eventual durable receipt loader
+would need a separate trusted binding design. The checker compares every original source
+and copied entry, inventories scratch and state without following links, and permits only
+new entries in the exact root .wrangler subtree. Root and ancestor checks reject symlinks.
+
+This is endpoint verification, not containment against concurrent hostile filesystem
+changes. Path inspection cannot eliminate ancestor replacement races without a stronger
+filesystem boundary. Actual upload/module verification remains mandatory. The helper
+contains no process launcher, copy cleanup or promotion path. Prepared tests cover mode
+preservation, complete inventories, source changes during asynchronous inspection,
+existing/linked paths, hardlinks, scratch and state policy. They do not establish behavior
+under every mid-read race or kernel stall. All tests await a separate allocation.
