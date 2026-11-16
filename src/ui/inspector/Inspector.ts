@@ -141,7 +141,7 @@ export class Inspector {
     window.addEventListener('keydown', event => {
       const search = this.element.querySelector<HTMLInputElement>('.wi-search')!
       if (this.open && event.key === 'Escape' && search.value.trim()) {
-        event.preventDefault(); event.stopImmediatePropagation(); this.clearSearch(); return
+        event.preventDefault(); event.stopImmediatePropagation(); this.editing?.finish(false, false); this.clearSearch(); return
       }
       const unfocused = document.activeElement === document.body || document.activeElement instanceof HTMLCanvasElement
       if (this.open && unfocused && !this.element.closest('.is-paused') && event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey && !event.isComposing) {
@@ -393,8 +393,8 @@ export class Inspector {
     const field = document.createElement('input'); field.type = 'text'; field.inputMode = 'decimal'; field.enterKeyHint = 'done'
     field.className = 'wi-num-edit'; field.autocomplete = 'off'; field.spellcheck = false
     field.setAttribute('aria-label', def.label); field.setAttribute('aria-describedby', 'setting-tooltip')
-    const before = number.textContent ?? ''
-    field.value = def.scale === 'log' ? String(params.get(def.id)?.value ?? def.default) : before
+    const before = def.scale === 'log' ? String(params.get(def.id)?.value ?? def.default) : number.textContent ?? ''
+    field.value = before
     let done = false, flash: ReturnType<typeof setTimeout> | undefined
     const mark = (element: HTMLElement) => { element.classList.remove('is-invalid'); void element.offsetWidth; element.classList.add('is-invalid'); clearTimeout(flash); flash = setTimeout(() => element.classList.remove('is-invalid'), 700) }
     const finish = (commit: boolean, refocus: boolean) => {
