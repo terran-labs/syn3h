@@ -2,6 +2,7 @@
  * Composition root. Builds the world from the four seams and starts the loop.
  * Keep this file small: features belong behind the seams, not here.
  */
+import { initializeFrozenResources } from './core/frozenResources'
 import { prepareResume, ResumeSession, RESUME_KEY } from './core/resume'
 import { PageLifecycle } from './core/lifecycle'
 import { PauseState, type PauseControl } from './core/pause'
@@ -11,6 +12,7 @@ import { ChaseCamera } from './core/ChaseCamera'
 import { Game } from './core/Game'
 import { startNetworking } from './net'
 import { ParamPanel } from './ui/ParamPanel'
+import { LobbyAddress } from './ui/LobbyAddress'
 import { generateName } from './ui/data/names'
 import { initGameShell } from './ui/Shell'
 import { readVehicleChoice, saveVehicleChoice } from './ui/VehicleChoice'
@@ -29,6 +31,7 @@ import { WaterEffects } from './world/water/WaterEffects'
 import { WeatherSystem, applyWeatherQuery, setWeatherClock } from './world/weather'
 
 async function main(): Promise<void> {
+  initializeFrozenResources(location.href)
   const canvas = document.getElementById('game') as HTMLCanvasElement
   const hud = document.getElementById('hud') as HTMLDivElement
   const query = new URLSearchParams(location.search)
@@ -44,8 +47,10 @@ async function main(): Promise<void> {
     query.set('room', saved.room)
     const url = new URL(location.href)
     url.searchParams.set('room', saved.room)
-    history.replaceState(null, '', url)
+    history.replaceState(history.state, '', url)
   }
+  // Keep the original entry/resume URL until all startup consumers have read it.
+  const lobbyAddress = new LobbyAddress(location, history)
   const game = new Game(canvas)
   await game.init()
 
@@ -159,6 +164,8 @@ async function main(): Promise<void> {
     }
   }
   const join = () => {
+    // Also restore after returning from an already joined galaxy menu.
+    lobbyAddress.showPlay(shell.room || query.get('room') || 'lobby')
     if (joined) return
     const player = slot.current
     // The lobby may have changed the vehicle after this one spawned. Rebuilding every system
@@ -181,10 +188,6 @@ async function main(): Promise<void> {
     joined = true
     player.name = shell.playerName
     player.setColors?.(shell.bodyColor, shell.accentColor)
-    const joinedRoom = shell.room || query.get('room') || 'lobby'
-    const joinedUrl = new URL(location.href)
-    joinedUrl.searchParams.set('room', joinedRoom)
-    history.replaceState(null, '', joinedUrl)
     const connection = startNetworking({
       game, terrain, player, audio, bots,
       // The sender owns the hold; snapshots carry its motion. This is cosmetic only.
@@ -215,7 +218,7 @@ async function main(): Promise<void> {
     connection.setPaused(pause.paused)
     // Remote players and bots are audible, positioned in space.
     audio.setVehicles(() => connection.audibleVehicles())
-    game.add(new ResumeSession({ game, terrain, get player() { return slot.current }, room: shell.room || query.get('room') || 'lobby', saved, network: connection }))
+    game.add(new ResumeSession({ game, terrain, get player() { return slot.current }, room: shell.room || query.get('room') || 'lobby', saved, network: connection, entrySearch: lobbyAddress.playURL().search }))
   }
   shell.onPlay = join
   // The in-play vehicle selector calls this; the shell takes it if it has the hook.
@@ -239,6 +242,10 @@ async function main(): Promise<void> {
   // The game does not run in a background tab: one controller, obeyed by the loop here. Audio
   // and the lobby follow the same controller from their own modules.
   Object.assign(window, { syn3h: { planets, game, terrain, get player() { return slot.current }, slot, swapVehicle, params, panel, shell, audio, bots, camera, lifecycle, pause } })
+  // Shell has captured invite/room state; quality, weather, resume and all other
+  // startup URL readers have finished. Clean only the visible lobby, not a room
+  // whose name happens to be "lobby". Autoplay is already in its intentional URL.
+  shell.setLobbyAddress(lobbyAddress)
   game.start()
 }
 

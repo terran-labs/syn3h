@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { parseResume, safeResumePosition, prepareResume, ResumeSession, RESUME_MAX_AGE, type ResumeSnapshot } from '../../src/core/resume'
+import { LobbyAddress } from '../../src/ui/LobbyAddress'
 import { defineParam, params, worldSeed } from '../../shared/params'
 const saved = (): ResumeSnapshot => ({ version: 1, savedAt: Date.now(), room: 'lobby', seed: 1, wasHost: true, world: {}, kind: 'buggy', colors: {body:'#123456',accent:'#abcdef'}, p:[10,12,20], q:[0,0,0,1], v:[1,2,3], w:[0,0,0], wingsOpen:true,special:true,cameraMode:2,timeOfDay:10 })
 afterEach(() => { vi.unstubAllGlobals(); params.set('world.seed', 1) })
@@ -45,4 +46,36 @@ describe('resume validation', () => {
     session.update(2); expect(teleport).toHaveBeenCalledTimes(1); expect(writes).toHaveLength(1)
     session.dispose()
   })
+  it('keeps the entry seed when periodic and lifecycle saves run in the clean lobby', () => {
+    const windowEvents = new EventTarget(), documentEvents = new EventTarget()
+    vi.stubGlobal('window', windowEvents); vi.stubGlobal('document', documentEvents)
+    const location = { href: 'https://syn3h.com/?room=lobby&seed=1', get search() { return new URL(this.href).search } }
+    vi.stubGlobal('location', location)
+    const address = new LobbyAddress(location, { state: null, replaceState(_state, _title, url) { location.href = String(url) } })
+    const s = saved(), writes: string[] = []
+    const session = new ResumeSession({
+      game: { input: { state: { special: true } } },
+      player: { kind: 'buggy', colors: s.colors, wingsOpen: true, getState: () => s },
+      terrain: {}, room: 'lobby', saved: null, entrySearch: address.playURL().search,
+      storage: { setItem: (_key: string, value: string) => writes.push(value) },
+    } as any)
+    try {
+      session.update(.1)
+      params.set('world.seed', 42) // Host edits the world after entry with seed=1.
+      address.showLobby()
+      expect(location.search).toBe('')
+      session.update(2)
+      windowEvents.dispatchEvent(new Event('pagehide'))
+      documentEvents.dispatchEvent(new Event('visibilitychange'))
+      expect(writes).toHaveLength(3)
+      for (const raw of writes) {
+        expect(parseResume(raw)?.entrySeed).toBe(1)
+        expect(parseResume(raw)?.seed).toBe(42)
+        // The original explicit link still resumes this edited world, not a reset.
+        expect(prepareResume(new URLSearchParams('room=lobby&seed=1'), { getItem: () => raw })?.seed).toBe(42)
+      }
+      expect(location.href).toBe('https://syn3h.com/')
+    } finally { session.dispose() }
+  })
+
 })

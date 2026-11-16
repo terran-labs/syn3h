@@ -1,3 +1,4 @@
+import { frozenResourceURL } from '../../core/frozenResources'
 import { WingTipAnchors } from './wingTips'
 import { smoothBuggyWheel, distantBuggyBody, distantBuggyArm } from './buggyGeometry'
 import {hotExposureNode} from './hotExposure'
@@ -209,7 +210,7 @@ export class LoadedBuggySkin implements BuggySkin {
     // Wheel stators and flight wings from the original model; the body, canopy, interior,
     // fittings, suspension arm and shock from the Box arm body (tools/buggy-bodies, variant
     // c2-box), which is the owner's original body reshaped and is already in the game frame.
-    const loaded = await Promise.all([loader.loadAsync('/models/buggy.glb'), loader.loadAsync(BOX_ARM_BODY)])
+    const loaded = await Promise.all([loader.loadAsync(frozenResourceURL('/models/buggy.glb')), loader.loadAsync(frozenResourceURL(BOX_ARM_BODY))])
     if (this.disposed) { loaded.forEach(g => release(g.scene)); return }
     const scene = loaded[0].scene, next = loaded[1].scene
     // The original model puts its headlight meshes on +Z; our nose points toward -Z.

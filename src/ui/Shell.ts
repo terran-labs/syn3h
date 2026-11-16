@@ -1,3 +1,5 @@
+import { frozenResourceURL } from '../core/frozenResources'
+import type { LobbyAddress } from './LobbyAddress'
 import { modeChoices, modeName } from './modeAvailability'
 import { GEAR_LABELS, type GearRack, type GearId } from '../weapons/Gear'
 import { GearSelector, type GearSource } from './gear/GearSelector'
@@ -114,6 +116,13 @@ export class Shell implements System {
   private readonly invited = (() => { const query = new URLSearchParams(location.search); return query.has('room') && query.has('world') })()
   private started = false
   private menuVisible = true
+  private lobbyAddress?: LobbyAddress
+  /** Installed after main's startup URL readers, including this constructor. */
+  setLobbyAddress(address: LobbyAddress): void {
+    this.lobbyAddress = address
+    if (this.menuVisible) address.showLobby(); else address.showPlay(this.room)
+    this.updateInvite()
+  }
   private readonly previousSuspended: boolean
   private helpTimer?: ReturnType<typeof setTimeout>
   /** Listeners that dismiss the short controls card on the player's first input. */
@@ -157,6 +166,10 @@ export class Shell implements System {
     <button type="button" class="pause-veil" hidden><strong>Paused</strong><span class="pause-how">Click to resume</span><small hidden>The world carries on without you.</small></button>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
+    // Rewrite only this credits disclosure, never invite or networking links.
+    for (const anchor of this.element.querySelectorAll<HTMLAnchorElement>('[data-panel="about"] a[href^="/brand/licenses/"]')) {
+      anchor.setAttribute('href', frozenResourceURL(anchor.getAttribute('href')!))
+    }
     document.body.append(this.element); document.body.classList.add('has-game-shell')
     this.invite = new InviteView(this.element, () => this.closeJoin(), () => { void this.copyInvite() })
     this.matchHud = new MatchHud(this.element, () => audio.cue('tick'))
@@ -335,7 +348,7 @@ export class Shell implements System {
     this.updateInvite()
   }
   private updateInvite(): void {
-    const url = inviteUrl(location.origin, this.room, encodeWorld())
+    const url = this.lobbyAddress?.inviteURL(this.room, encodeWorld()) ?? inviteUrl(location.origin, this.room, encodeWorld())
     if (url !== this.lastInviteUrl) {
       this.lastInviteUrl = url
       for (const host of this.overlay.querySelectorAll('.invite-qr')) renderQr(host, url)
@@ -442,7 +455,7 @@ export class Shell implements System {
     // which would otherwise override later lobby choices.
     const forget = () => { try { sessionStorage.removeItem(RESUME_KEY) } catch { /* Storage is optional. */ } }
     window.addEventListener('pagehide', forget); document.addEventListener('visibilitychange', forget)
-    const url = new URL(location.href); url.searchParams.delete('vehicle'); url.searchParams.set('autoplay', '1')
+    const url = this.lobbyAddress?.playURL() ?? new URL(location.href); url.searchParams.delete('vehicle'); url.searchParams.set('autoplay', '1')
     location.replace(url)
   }
   private vehicleSwap?: (kind: VehicleKind) => Vehicle | null
@@ -524,6 +537,7 @@ export class Shell implements System {
   private dropping = false
   openMenu(panel = 'index'): void {
     if (!this.started) return
+    this.lobbyAddress?.showLobby()
     if (this.exitAsking) { this.exitAsking = false; this.element.querySelector<HTMLElement>('.exit-confirm')!.hidden = true }
     this.menuVisible = true; this.overlay.hidden = false; this.overlay.inert = false; if (this.galaxy) this.galaxy.enabled = true
     this.releaseCursor()
@@ -628,6 +642,7 @@ export class Shell implements System {
   private self?: MapEntity
   closeMenu(): void {
     if (!this.started) return
+    this.lobbyAddress?.showPlay(this.room)
     this.menuVisible = false; this.overlay.hidden = true; this.overlay.inert = true; if (this.galaxy) this.galaxy.enabled = false
     this.game.input.suspended = false; this.touch.enabled = true; this.audio.enabled = true; this.audio.setLobbyVisible(false); this.paramPanel?.hide()
     this.element.classList.add('is-playing')
@@ -817,7 +832,7 @@ export class Shell implements System {
     this.toastTimer = setTimeout(() => { element.hidden = true; this.element.querySelector('.shell-message')!.textContent = '' }, 4500)
   }
   private async copyInvite(): Promise<void> {
-    const url = new URL(inviteUrl(location.origin, this.room, encodeWorld()))
+    const url = new URL(this.lobbyAddress?.inviteURL(this.room, encodeWorld()) ?? inviteUrl(location.origin, this.room, encodeWorld()))
     try { await navigator.clipboard.writeText(url.href); this.toast('Invite link copied.'); this.invite.element.querySelector('.join-copy')!.textContent = 'Copied' }
     catch { this.element.querySelector('.shell-message')!.textContent = `Invite link: ${url.href}` }
   }

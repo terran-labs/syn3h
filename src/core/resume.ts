@@ -74,6 +74,8 @@ interface ResumeOptions {
   /** Omit for offline play. A connected client has received and applied welcome. */
   network?: ResumeNetwork
   storage?: Pick<Storage, 'setItem'>
+  /** Original play entry query, retained even while the lobby hides the address. */
+  entrySearch?: string
   toast?: (message: string) => void
 }
 
@@ -128,9 +130,10 @@ export class ResumeSession implements System {
   save(): void {
     if (!this.settled) return
     const o = this.options, state = o.player.getState()
+    const entry = new URLSearchParams(o.entrySearch ?? (typeof location !== 'undefined' ? new URL(location.href).search : ''))
     const saved: ResumeSnapshot = {
       version: 1, savedAt: Date.now(), room: this.room, seed: worldSeed.value,
-      entrySeed: typeof location !== 'undefined' && new URL(location.href).searchParams.has('seed') ? Number(new URL(location.href).searchParams.get('seed')) : null,
+      entrySeed: entry.has('seed') ? Number(entry.get('seed')) : null,
       wasHost: !o.network || o.network.isHost, world: { ...this.world },
       kind: o.player.kind, colors: { ...o.player.colors }, p: state.p, q: state.q, v: state.v, w: state.w,
       wingsOpen: o.player.wingsOpen, special: o.game.input.state.special,

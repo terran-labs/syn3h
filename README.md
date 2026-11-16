@@ -1,10 +1,15 @@
 # Syn3h
 
-Off-road sci-fi vehicles on procedural volcanic islands, with multiplayer, running native in
-the browser.
+Drive to the rim of a volcano. Unfold your buggy's force-field wings and leave the road
+behind. Bring a friend, pick a distant ridge, and see what happens on the way there.
 
-Drive a buggy with force field wings, a jet or a hovercraft up a volcano, tag your friends
-with a beam or a nudge, and change the world's gravity, sky and physics while you play.
+Syn3h is a shared sci-fi playground for driving, flying and exploring strange worlds in
+your browser. Buggies, jets, hovercraft and tanks share the landscape. You can play Tag,
+hold a hill, experiment with gravity, or park together and watch the light change.
+
+The pleasure is in being there: finding a route, trying an absurd jump, making room for
+someone else's curiosity. Competition is available when you want it. Explore is the
+default, with no score to chase.
 
 **Play it now at [www.syn3h.com](https://www.syn3h.com/).**
 
@@ -13,6 +18,32 @@ with a beam or a nudge, and change the world's gravity, sky and physics while yo
 The animation shows v26.11.1508 and predates recent vehicle and interface updates. Notes
 and screenshots for each release are on the
 [releases page](https://github.com/terran-labs/syn3h/releases).
+
+## Find your own expedition
+
+Syn3h's tiny worlds make altitude part of the adventure. A mountain fills the windscreen
+on the ground; climb above it in a jet and the landscape curves away beneath you. Take
+time to look back at the place you were driving a few minutes ago. Try the same ascent
+on another planet and see how its terrain, water and atmosphere change the view.
+
+Start with a small intention. Follow a shoreline until you find somewhere worth stopping.
+Take different vehicles to the same summit and compare the journey. Open the buggy's
+wings at a crest, then try the flight again with less gravity. Roll inside a Zorb and let
+the slope choose your route for a while.
+
+The gear is part of the playground. A grapple gives you something to pull against;
+Yoink lets you grab and fling a vehicle. With friends, leave room for experiments to go
+wrong. A spectacular tumble can be a perfectly good destination.
+
+### Choose a mode
+
+Open the **Game** panel to choose how the room plays.
+
+| Mode | What to do |
+|---|---|
+| Explore | Roam, fly and experiment together. Nobody is it; there is no hill or score. The gear remains available as toys. |
+| Tag | Shoot the player who is it to take the role. While you are it, shooting someone earns a point and you keep the role; a ram passes it along. |
+| King of the Hill | Reach the marked zone and hold it alone to score. When more than one vehicle occupies it, scoring stops until someone gains control. |
 
 ## How to play
 
@@ -154,7 +185,7 @@ reductions, a notice offers the next lower level. Choose **Keep** to dismiss it 
 session. With the cursor captured, press Escape to reach the choices. The Performance
 card shows Auto, pinning and current automatic reductions.
 
-**How do I change the world?** Open World in the side panel. Gravity, time of day,
+**How do I change the world?** Open World in the side panel, including Sky & Weather. Gravity, time of day,
 weather, water and a few hundred other settings are live sliders, and in a shared room
 everyone feels the change.
 
@@ -169,6 +200,22 @@ playable link.
 
 **Can I use the code?** Yes, for anything noncommercial. See [Licence](#licence).
 
+## Where Syn3h comes from
+
+Aubrey Falconer's earlier Mars Explorer brought flying cars, volcanoes and laser tag
+together. People stayed to explore and create together, and a community grew around
+those shared worlds. Syn3h carries that invitation into a browser: arrive somewhere
+unfamiliar, learn what your machine can do, and make your own reasons to stay.
+
+This build gives that idea a procedural foundation. A seed shapes the terrain; live
+settings change the conditions. The world is something you can investigate and adjust
+with other people. The vision is a place for unhurried exploration, playful engineering
+and the occasional thoroughly unreasonable vehicle experiment.
+
+Read more about [Aubrey Falconer](https://aubreyfalconer.com/), explore the
+[source repository](https://github.com/terran-labs/syn3h), or follow the
+[release notes](https://github.com/terran-labs/syn3h/releases).
+
 ## Run it
 
 ```sh
@@ -179,7 +226,10 @@ npm run dev
 Open the address it prints. The room server starts alongside it, so a second tab is a
 second player.
 
-## How it is made
+## Under the surface
+
+The following sections describe the machinery. The screenshots are versioned captures;
+their release URLs identify the builds they show, which can differ from current play.
 
 <img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1512/readme-lobby.jpg" alt="The galaxy lobby: nine labelled planets on their orbits around a sun" width="420"> <img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1512/readme-alpine.jpg" alt="The buggy on a green meadow under grey granite peaks on the Alpine world" width="420">
 
@@ -195,6 +245,11 @@ hovercraft and the tank are generated too.
 **A world without an edge.** The map is a tile that repeats exactly. Drive off one side and
 you arrive on the other. Cameras, bots, the minimap, the network and even the motion
 vectors of the antialiasing account for wrapping to keep the crossing continuous.
+
+**The tiny-world engine.** Rendering bends the landscape around the viewer and hides
+terrain beyond the curved horizon. The simulation keeps its wrapping coordinates;
+planet roundness controls the displayed curvature. This combination gives a small world
+a horizon you can climb above, while retaining a compact terrain and physics model.
 
 <img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1512/readme-night.jpg" alt="The buggy on the Ice Moon at night, its headlights lighting the ice under a violet sky" width="420"> <img src="https://github.com/terran-labs/syn3h/releases/download/v26.11.1508/lava-night.png" alt="A buggy at the shore of a glowing lava sea at night, a volcano on the horizon" width="420">
 
@@ -242,14 +297,15 @@ you do. Leave the keys alone and the same three layers drive your own vehicle on
 Durable Object. WebSocket hibernation lets the room stop running code while idle and retain
 its connections. A phone joins by a QR code the game draws itself.
 
-**Every version stays playable.** Each release is frozen and kept:
+**Return to an accepted build.** Accepted releases are frozen and kept; withdrawn builds
+may be unavailable:
 [www.syn3h.com/?v=26.11.1503](https://www.syn3h.com/?v=26.11.1503) will serve that build
 exactly, however many follow it.
 
 **Built in a weekend.** One person directed a team of AI agents, each with its own lane,
 tests and browser checks, releasing to production through the night and the day after.
 
-Three.js, Rapier, TypeScript and Vite. No game engine.
+The main tools are Three.js for rendering, Rapier for physics, TypeScript and Vite.
 
 ## Licence
 
