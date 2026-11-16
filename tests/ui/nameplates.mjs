@@ -622,23 +622,24 @@ try {
     await a.evaluate(() => window.restoreNameplateTerrainEvidence?.())
     for (const sample of surveySamples) {
       const record = await bounded(a.evaluate(async ({ sample, ref }) => {
-        const { PerspectiveCamera, Vector3 } = await import('three/webgpu')
         const { CurvedProjection } = await import('/src/ui/nameplates/curvature.ts')
         const s = window.syn3h
         if (s.params.get('world.seed').value !== ref.seed || s.params.get('terrain.kind').value !== ref.terrainKind || s.params.get('world.curve').value !== ref.curve) throw new Error('survey world differs from recorded reference')
         const x = ref.center.x + sample.x, z = ref.center.z + sample.z
         const heights = [[0, 0], [-1, 0], [1, 0], [0, -1], [0, 1]].map(([dx, dz]) => ({ x: x + dx, z: z + dz, height: s.terrain.heightAt(x + dx, z + dz) }))
         if (!heights.every(p => Number.isFinite(p.height))) throw new Error('nonfinite survey height')
-        const camera = new PerspectiveCamera()
+        // Clone public objects so reference math never mutates the rendered camera.
+        const camera = s.game.camera.clone()
+        const vector = s.game.camera.position.clone()
         camera.matrixWorld.fromArray(ref.camera.matrix)
         camera.matrixWorldInverse.copy(camera.matrixWorld).invert()
         camera.projectionMatrix.fromArray(ref.camera.projection)
         camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert()
         camera.near = .25
-        const bend = new Vector3(...ref.bend), eye = new Vector3(...ref.camera.eye), projection = new CurvedProjection(), envelopeSamples = []
+        const bend = vector.clone().fromArray(ref.bend), eye = vector.clone().fromArray(ref.camera.eye), projection = new CurvedProjection(), envelopeSamples = []
         for (const offset of [.5, 1, 2]) for (const radius of [3.5, 6]) {
-          const center = new Vector3(x, heights[0].height + offset, z), anchor = center.clone(); anchor.y += radius + .65
-          const screen = new Vector3(), disc = { id: 'hypothetical', x: 0, y: 0, radius: 0, depth: 0 }
+          const center = vector.clone().set(x, heights[0].height + offset, z), anchor = center.clone(); anchor.y += radius + .65
+          const screen = vector.clone().set(0, 0, 0), disc = { id: 'hypothetical', x: 0, y: 0, radius: 0, depth: 0 }
           projection.project(anchor, bend, camera, ref.viewport.width, ref.viewport.height, screen)
           projection.envelope(center, radius, bend, camera, ref.viewport.width, ref.viewport.height, disc)
           const distance = center.distanceTo(eye)

@@ -384,3 +384,10 @@ Offline review may map measured ground and hypothetical envelopes to upper/flank
 Any later fixed coordinated pose observation requires separate review and allocation. The
 acceptance scenarios, both humans, four bots, >=2 full BOT requirement, priority/negative/far
 cases, cost and every occluder remain unchanged and unclaimed by survey completion.
+
+Survey001 stopped before its first sample because a bare `three/webgpu` import in
+`page.evaluate` was not browser-resolvable. Its zero-sample failure remains preserved.
+The correction clones the public `s.game.camera` and its position vector for detached
+reference math; Three's camera and vector clone methods copy their mutable values.
+The absolute curvature-module import remains. Sampling, reference matrices, limits and
+acceptance exclusions are unchanged. Syntax checks do not establish runtime success.
