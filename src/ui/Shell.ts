@@ -104,6 +104,7 @@ export class Shell implements System {
   /** Slider groups the advanced panel is limited to, when it was opened from the custom planet. */
   private advancedGroups?: readonly string[]
   private worldDirty = true
+  private worldShown = ''
   private readonly inspector: Inspector
   private readonly focusHud: FocusHud
   private readonly raceHud: RaceHud
@@ -222,13 +223,16 @@ export class Shell implements System {
     // Performance follows World; its controls remain part of the searchable card stack.
     this.performancePanel = new PerformancePanel(this.element, () => this.showPanels(), this.game.quality, this.inspector)
     const foot = document.createElement('div'); foot.className = 'rail-foot wi-glass'
-    foot.innerHTML = '<div class="rail-tools"><button type="button" class="rail-pause">Pause</button></div>'
-    foot.querySelector('.rail-tools')!.prepend(railTop.querySelector('.wi-search')!)
+    // Header and footer stay outside the scrolling card stack.
+    const command = document.createElement('div'); command.className = 'rail-command wi-glass'
+    command.innerHTML = '<div class="rail-tools"><strong class="rail-world"></strong><button type="button" class="rail-pause">Pause</button></div>'
+    command.querySelector('.rail-world')!.after(railTop.querySelector('.wi-search')!)
     const actions = railTop.querySelector('.wi-actions')!
     actions.insertAdjacentHTML('beforeend', '<button type="button" class="exit-world">Leave world</button>')
     foot.append(actions)
     railTop.remove()
-    this.inspector.element.querySelector('.wi-cards')!.after(foot)
+    const cards = this.inspector.element.querySelector('.wi-cards')!
+    cards.before(command); cards.after(foot)
     // Exit world asks first (the owner, 15 November 2026): one stray click on the panels must
     // not throw the player back to the galaxy. Code that calls openMenu() itself is not asked.
     foot.querySelector('.exit-world')!.addEventListener('click', () => this.askExit(), { signal })
@@ -247,7 +251,7 @@ export class Shell implements System {
     // Touch has no cursor to capture, so one control switches between driving and the panels.
     const toggle = this.element.querySelector<HTMLButtonElement>('.inspector-toggle')!
     toggle.addEventListener('click', () => { this.touchPanels = !this.touchPanels; this.syncPanels() }, { signal })
-    foot.querySelector('.rail-pause')!.addEventListener('click', () => this.requestPause(), { signal })
+    command.querySelector('.rail-pause')!.addEventListener('click', () => this.requestPause(), { signal })
     this.element.querySelector('.pause-veil')!.addEventListener('click', () => this.requestResume(), { signal })
     // Follow the lock itself, not what was asked for: the browser can drop it on its own
     // (Escape, a switch of window, a system dialog) and can refuse a request.
@@ -1275,6 +1279,11 @@ export class Shell implements System {
       const focus = this.element.classList.contains('is-focus')
       if (!focus && this.inspector.open) this.inspector.update()
       const world = `${currentPlanet().label} · ${planetName(worldSeed.value)}`
+      if (world !== this.worldShown) {
+        this.worldShown = world
+        const label = this.element.querySelector<HTMLElement>('.rail-world')!
+        label.textContent = world; label.title = world
+      }
       this.focusHud.update(true, { speed: this.telemetry.speed, altitude: this.telemetry.altitude, heading: this.self?.heading ?? 0, world, hour: Number(params.get('sun.timeOfDay')?.value ?? 0) })
       const glass = String(Math.round(glassStyle.value)); if (this.element.dataset.glass !== glass) this.element.dataset.glass = glass
     }
