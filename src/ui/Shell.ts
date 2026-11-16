@@ -236,6 +236,8 @@ export class Shell implements System {
       hostSummary: () => this.hostControls.querySelector('.host-note')!.textContent ?? '', inRoom: () => { const net = hostControls(); return !!net && (net.isHost || canEditWorld()) }, cue: () => this.audio.cue('click'),
     })
     this.element.querySelector('.galaxy-ui')!.append(this.lobbySettings.dock)
+    // The version beside the lobby's settings gear opens What's new.
+    this.lobbySettings.version.addEventListener('click', () => { this.audio.cue('click'); this.showUpdates() }, { signal })
     const foot = document.createElement('div'); foot.className = 'rail-foot wi-glass'
     // Header and footer stay outside the scrolling card stack.
     const command = document.createElement('div'); command.className = 'rail-command wi-glass'

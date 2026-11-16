@@ -40,7 +40,7 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     const hint = others.find((o) => o.what.startsWith('Drag'))
     if (hint && versionBox.x < hint.x + hint.width) assert.ok(versionBox.y - (hint.y + hint.height) >= 16, `${mode}: version 16 px clear of the hint ${JSON.stringify([versionBox, hint])}`)
     await page.screenshot({ path: `${out}/${mode}-lobby.png` })
-    // Inert until the Updates view hooks it, but focusable and titled with the full version.
+    // Focusable and titled with the full version; it opens Updates (checked at the end).
     assert.match(await version.getAttribute('title'), /^Version \S/)
     await version.focus(); assert.ok(await version.evaluate((el) => el === document.activeElement), `${mode}: version focusable`)
 
@@ -117,6 +117,11 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
       await page.waitForFunction(() => !document.querySelector('.world-inspector.lobby-settings'))
       assert.equal(await page.evaluate(() => document.querySelector('.shell-overlay .lobby-panels')?.hidden ?? true), true, 'desktop: outside click did not open a planet')
     }
+    // The version beside the gear opens What's new: About at Updates.
+    await tap(page.locator('[data-lobby-version]'))
+    const updatesTab = page.locator('[data-panel="about"]').getByRole('tab', { name: 'Updates' })
+    await updatesTab.waitFor({ state: 'visible', timeout: 10000 })
+    assert.equal(await updatesTab.getAttribute('aria-selected'), 'true', `${mode}: the version opens Updates`)
     // Closed, the in-game rail is again the only .world-inspector.
     assert.equal(await page.locator('.world-inspector').count(), 1)
     assert.deepEqual(errors, [], `${mode}: no page errors`)
