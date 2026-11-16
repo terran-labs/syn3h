@@ -305,6 +305,12 @@ export class NetClient implements System {
     this.lasers = new Lasers(game, {
       onImpact: (at, red) => this.blast.at(red ? 'thunder' : 'tag', at),
       bodyOf: (id) => this.vehicleOf(id)?.body,
+      centreOf: (id, alpha, out) => {
+        const v = this.vehicleOf(id)
+        if (!v) return false
+        v.drawnCentre(alpha, out)
+        return true
+      },
       judgedId: (h) => this.judgedId(h),
       isVehicleBody: (h) => [...this.remotes.values()].some((r) => r.vehicle.body.handle === h),
       onHit: (shooter, shot, victim, at, dir, red) => {
