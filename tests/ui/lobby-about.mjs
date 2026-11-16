@@ -14,16 +14,24 @@ for(const mode of ['desktop','phone','short-phone']){
   const canvas=await page.locator('.galaxy-canvas').evaluate(el=>{const r=el.getBoundingClientRect(),s=getComputedStyle(el);return{x:r.x,y:r.y,w:r.width,h:r.height,mask:s.maskImage||s.webkitMaskImage,vw:innerWidth,vh:innerHeight}})
   assert.equal(canvas.mask,'none');assert.ok(canvas.x<=0&&canvas.y<=0&&canvas.w>=canvas.vw&&canvas.h>=canvas.vh)
   await page.screenshot({path:`${out}/${mode}-animated.png`})
-  // Inspect the existing SVG bridge without changing its styling or hiding the galaxy.
-  await page.evaluate(()=>document.querySelector('.syn3h-shell').classList.remove('has-animated-logo'))
+  // Detach only the test's logo renderer while the galaxy keeps drawing. This exercises
+  // the existing SVG bridge without changing styling or racing onLogo each frame.
+  await page.evaluate(() => { const g=syn3h.shell.galaxy; window.__savedLogo=g.logo; g.logo=null; g.wake=2; document.querySelector('.syn3h-shell').classList.remove('has-animated-logo') })
+  await page.waitForTimeout(800)
+  assert.equal(await page.locator('.shell-logo').evaluate(el=>getComputedStyle(el).opacity),'1')
+  assert.equal(await page.evaluate(()=>syn3h.shell.galaxy.logo),null)
   await page.screenshot({path:`${out}/${mode}-static.png`})
-  await page.evaluate(()=>document.querySelector('.syn3h-shell').classList.add('has-animated-logo'))
+  await page.evaluate(()=>{ const g=syn3h.shell.galaxy;g.logo=window.__savedLogo;g.wake=2 })
+  await page.waitForFunction(()=>document.querySelector('.syn3h-shell').classList.contains('has-animated-logo'))
   const nav=page.locator('.galaxy-links')
   await nav.locator('[data-goto=about]').click()
   await page.waitForFunction(()=>document.querySelector('.lobby-panels').dataset.busy==='false')
   const about=page.locator('[data-panel=about]')
-  const width=(await page.locator('.lobby-panels').boundingBox()).width
-  if(mode==='desktop')assert.equal(width,900)
+  const geometry=await page.locator('.lobby-panels').evaluate(el=>{const r=el.getBoundingClientRect();return {layoutWidth:getComputedStyle(el).width,rect:{x:r.x,y:r.y,width:r.width,right:r.right,bottom:r.bottom},stageTransform:getComputedStyle(el.closest('.lobby-stage')).transform,viewportWidth:innerWidth,scrollWidth:document.documentElement.scrollWidth}})
+  console.log(JSON.stringify({mode,geometry}))
+  if(mode==='desktop')assert.equal(geometry.layoutWidth,'900px')
+  assert.ok(geometry.rect.x>=0 && geometry.rect.right<=geometry.viewportWidth,'projected panel fits viewport')
+  assert.ok(geometry.scrollWidth<=geometry.viewportWidth,'no horizontal document overflow')
   assert.equal(await about.locator('a[href="https://aubreyfalconer.com"]').count(),1)
   assert.equal(await about.locator('a[href="https://github.com/terran-labs/syn3h"]').count(),1)
   assert.equal(await about.locator('a[href*="tarranlabmoods"]').count(),0)
@@ -54,7 +62,7 @@ for(const mode of ['desktop','phone','short-phone']){
   await page.screenshot({path:`${out}/${mode}-invite.png`});await page.keyboard.press('Enter');await invite.waitFor({state:'hidden'})
   backPaths.push({id:'invite',width:r.width,height:r.height})
   await page.keyboard.press('Escape');await page.locator('.lobby-panels').waitFor({state:'hidden'})
-  assert.deepEqual(errors,[]);report.push({mode,canvas,width,cols,backPaths,errors});console.log(JSON.stringify(report.at(-1)))
+  assert.deepEqual(errors,[]);report.push({mode,canvas,geometry,cols,backPaths,errors});console.log(JSON.stringify(report.at(-1)))
  }finally{await browser.close()}
 }
 await writeFile(`${out}/report.json`,JSON.stringify(report,null,2))
