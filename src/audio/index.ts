@@ -12,6 +12,7 @@ import { Score, scoreSeed, type MatchMood } from './score/Score'
 import { applySubmerge } from './score/ScoreSynth'
 import { WeatherWind } from './weatherWind'
 import { senseConvoy, senseRelief, type ConvoyVoice } from './scoreSenses'
+import { audioContext, hadGesture, onGesture } from './unlock'
 import { cuesVolume, worldVolume, remoteVolume, crossfade, effectsVolume, masterVolume, musicVolume, muted } from './params'
 
 export type Sound = 'laserShot' | 'laserHit' | 'materialize'
@@ -27,6 +28,12 @@ const cueFor: Record<Sound, Cue> = { laserShot: 'beam', laserHit: 'tagged', mate
  * 16 November 2026 (6 before), making up the 2.5 dB the sparser lobby score lost.
  */
 const LOBBY_LIFT = 2.5
+/**
+ * Seconds for the whole mix to rise from silence the first time sound starts, and the least
+ * the score takes to fade in then. Arriving sound eases in; it never bursts.
+ */
+const ARRIVAL_FADE = 3
+const ARRIVAL_SCORE_FADE = 6
 /** Match the terrain classifier, including snow and roads within a world. */
 const IMPACT_SURFACE: Record<SurfaceKind, ImpactKind> = {
   dust: 'dust', sand: 'sand', grass: 'soil', mud: 'mud', snow: 'snow', ice: 'ice',
@@ -79,7 +86,7 @@ export class GameAudio implements System {
   private readonly position = new THREE.Vector3()
   private readonly rotation = new THREE.Quaternion()
   private disposed = false
-  private readonly gestures = new AbortController()
+  private readonly stopGestures: () => void
   private readonly unsubscribe: () => void
   enabled = false
   /** Failed assets are reported without preventing the game from starting. */
@@ -89,9 +96,10 @@ export class GameAudio implements System {
   constructor(private readonly camera: THREE.Camera) {
     // The recorded tracks are gone, and with them the choice between them.
     try { localStorage.removeItem(RETIRED_TRACK_KEY) } catch { /* Audio does not require storage. */ }
-    const unlock = () => { void this.unlock().catch((error) => this.errors.push(String(error))) }
-    window.addEventListener('pointerdown', unlock, { signal: this.gestures.signal })
-    window.addEventListener('keydown', unlock, { signal: this.gestures.signal })
+    // Every gesture anywhere on the page (unlock.ts listens from the loading view on, in the
+    // capture phase) resumes the context there and then, as Safari requires. A touch going down
+    // is refused and the touch lifting is accepted, so each gesture must try again, not only the first.
+    this.stopGestures = onGesture(this.onGesture)
     this.unsubscribe = params.onChange((id) => {
       if (id.startsWith('audio.')) this.syncMix()
       if (id === worldSeed.def.id || id === scoreSeed.def.id) this.score?.setSeed(scoreSeed.value || worldSeed.value)
@@ -100,10 +108,26 @@ export class GameAudio implements System {
     // their last chord. Fade the score out until the tab is back.
     document.addEventListener('visibilitychange', this.onVisibility)
     // Build the mix while the page is still loading, so the first tap has nothing to wait for.
+    // If the visitor already tapped during the loading view, or the browser lets this site play
+    // without one, start now instead of waiting for another gesture.
     this.idle = whenIdle(() => this.prepare())
+    if (hadGesture()) void this.unlock().catch(error => this.errors.push(String(error)))
   }
   private readonly idle: number
-  private readonly onVisibility = () => this.score?.synth.setLevel(document.hidden ? 0 : 1, 0.6)
+  private readonly onGesture = () => {
+    if (this.disposed || this.paused) return
+    const context = this.context ?? this.pending ?? audioContext()
+    if (context && context.state !== 'running') void context.resume().catch(() => {})
+    if (!this.context) void this.unlock().catch(error => this.errors.push(String(error)))
+  }
+  private readonly onVisibility = () => {
+    this.score?.synth.setLevel(document.hidden ? 0 : 1, 0.6)
+    // Back from the background with the clock stopped by the browser (an iOS interruption, a
+    // phone call): start it again if the game is not paused. A browser may still want a tap.
+    if (!document.hidden && !this.paused && this.context && this.context.state !== 'running') void this.context.resume().catch(() => {})
+  }
+  /** True until sound has started: the browser is waiting for a first tap or key press. */
+  get waitingForGesture(): boolean { return !this.context && !this.disposed }
   get state(): AudioContextState | 'locked' { return this.context?.state ?? 'locked' }
   /**
    * Level of the final output over the last 2048 samples, in dBFS (RMS). -Infinity while
@@ -130,7 +154,7 @@ export class GameAudio implements System {
    */
   unlock(): Promise<void> {
     if (this.disposed) return Promise.resolve()
-    if (this.context) return this.context.resume()
+    if (this.context) return this.paused ? Promise.resolve() : this.context.resume()
     return this.unlocking ??= this.start().finally(() => { if (!this.context) this.unlocking = undefined })
   }
   private unlocking?: Promise<void>
@@ -145,31 +169,40 @@ export class GameAudio implements System {
   /** Build the suspended context and graph before any gesture. Safe to call more than once. */
   prepare(): void {
     if (this.disposed || this.context || this.pending || this.unlocking) return
-    try { this.pending = new AudioContext() } catch { return }
+    const context = audioContext()
+    if (!context) return
+    this.pending = context
     this.unlockCost.ahead = true
-    this.graph = this.buildGraph(this.pending)
+    this.graph = this.buildGraph(context)
+    // Some browsers let a site play without a gesture (one the visitor uses often, an installed
+    // app), and a context made after a gesture starts running. Do not assume it is blocked.
+    // The state can turn to running a moment after creation, so watch it as well as reading it.
+    const allowed = () => { if (context.state === 'running' && !this.context && !this.disposed) void this.unlock().catch(error => this.errors.push(String(error))) }
+    context.addEventListener('statechange', allowed)
+    allowed()
   }
   private async start(): Promise<void> {
     const mark = performance.now()
-    const made = !this.pending
-    const context = this.pending ??= new AudioContext()
-    const resumed = context.resume()
+    const context = this.pending ??= audioContext()
+    if (!context) return
+    void context.resume().catch(() => {})
     this.unlockCost.gesture = performance.now() - mark
     await (this.graph ??= this.buildGraph(context))
-    // A context made ahead of the gesture can be refused by a browser that wants it created
-    // inside one. Resume settles either way; give a refusal a moment, then start afresh.
-    await Promise.race([resumed.catch(() => {}), new Promise<void>(resolve => setTimeout(resolve, 1500))])
+    // Wait for the clock to run. If this was not a gesture the browser accepts (a touch going
+    // down, or no gesture yet), the next one resumes the context and this carries on.
+    if (context.state !== 'running') await new Promise<void>(resolve => {
+      const check = () => { if (context.state === 'running' || this.disposed) { context.removeEventListener('statechange', check); resolve() } }
+      context.addEventListener('statechange', check)
+    })
     if (this.disposed) return
-    if (context.state !== 'running') {
-      if (made) return // Nothing better to try; the next gesture resumes this one again.
-      this.dropGraph(); void context.close(); this.pending = undefined; this.graph = undefined
-      return
-    }
     this.context = context; this.pending = undefined
     this.syncMix()
-    // Nothing to download, so the lobby has music from the first click or key press.
-    this.score!.setActive(true, crossfade.value)
-    this.gestures.abort()
+    // Arriving sound fades in from silence: the whole mix over a few seconds, the score slower.
+    const now = context.currentTime, master = this.master!.gain
+    master.cancelScheduledValues(now); master.setValueAtTime(0, now)
+    if (!this.paused) master.linearRampToValueAtTime(muted.value ? 0 : masterVolume.value, now + ARRIVAL_FADE)
+    // Nothing to download, so the lobby has music from the first gesture.
+    this.score!.setActive(true, Math.max(crossfade.value, ARRIVAL_SCORE_FADE))
   }
   /** The mix, in three steps with the page given a turn between them so no frame is held up. */
   private async buildGraph(context: AudioContext): Promise<void> {
@@ -423,7 +456,7 @@ export class GameAudio implements System {
     } else { l.setPosition(p.x,p.y,p.z); l.setOrientation(f.x,f.y,f.z,u.x,u.y,u.z) }
   }
   dispose(): void {
-    this.disposed = true; this.gestures.abort(); this.unsubscribe(); document.removeEventListener('visibilitychange', this.onVisibility)
+    this.disposed = true; this.stopGestures(); this.unsubscribe(); document.removeEventListener('visibilitychange', this.onVisibility)
     cancelIdle(this.idle); clearTimeout(this.pauseTimer)
     this.dropGraph()
     this.local=undefined;this.terrain=undefined;this.vehicleSource=()=>[]
