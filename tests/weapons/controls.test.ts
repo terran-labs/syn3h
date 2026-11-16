@@ -509,7 +509,9 @@ describe('modal gear cancellation', () => {
       s.bind(); s.rack.select('red')
       const old = s.rack.controls().actions[0]
       old.start(); s.step(501)
-      s.rack.select('beam'); old.stop!('cleanup'); s.step()
+      s.rack.select('beam'); s.rack.controls().actions[0].start()
+      old.stop!('cleanup'); s.step()
+      expect(s.input.state.fire).toBe(true)
       expect(s.bigRed.charge).toBe(-1)
       expect(s.bigRed.stats.sent).toBe(0)
     } finally { s.close() }
