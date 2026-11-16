@@ -136,3 +136,24 @@ copied and persisted. No new product wrapper or observer change is introduced. T
 prior section's no-cooldown-wait statement describes diagnostic003; this explicitly
 authorized pre-gesture setup supersedes that restriction for the new source only.
 No product early-edge behavior, phone layout, tests or runtime allocation changed.
+
+
+## Paused phone footer correction
+
+Proposed product scope is only shell.css: within max-width700px, paused .rail-foot
+is visibility:hidden with geometry retained; pause-about width is capped at320px
+and viewport minus32px. Existing native button,44px minimum, focus and safe-area
+placement remain. Shell, input and observers are unchanged.
+
+After all accepted assertions, each context runs bounded layout checks. Desktop
+1280x900 and touch390x640,320x568,844x390 use native Pause, About, Back and Resume.
+The fixture persists actual button/footer rectangles and descendant visibility,
+requires44px hit size and focus-outline viewport bounds, verifies no overlap with
+visible footer controls, and saves paused/focus captures. Hidden mobile footer must
+retain geometry and return visibly with search/actions after resume. Landscape844
+is outside the CSS breakpoint: real overlap fails rather than expanding the rule.
+Existing Escape/pause/cancellation assertions remain unchanged.
+
+All extra operations consume the existing480s fixture and590s supervisor limits.
+About004 took about50s, but budget fit and added viewport behavior are UNRUN. No
+extra timeout allowance, retry, two-peer, visibility or cursor-race scope is added.

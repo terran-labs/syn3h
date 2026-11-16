@@ -58,6 +58,72 @@ const state = page => page.evaluate(() => ({ url: location.href, id: syn3hNet.id
   suspended: syn3h.game.input.suspended, locked: !!document.pointerLockElement,
   sent: syn3hNet.bigRed.stats.sent, fizzled: syn3hNet.bigRed.stats.fizzled }))
 const ready = (page, fn, arg) => page.waitForFunction(fn, arg, { timeout: budget(15000) })
+// Layout-only additions reuse each real app context after the accepted checks.
+async function pauseLayoutChecks(page, record, touch) {
+  record.pauseLayouts = []
+  const sizes = touch ? [{ width: 390, height: 640 }, { width: 320, height: 568 }, { width: 844, height: 390 }]
+    : [{ width: 1280, height: 900 }]
+  for (const viewport of sizes) {
+    const row = { viewport, status: 'in_progress' }; record.pauseLayouts.push(row); await persist()
+    await bounded(page.setViewportSize(viewport))
+    if (!await page.locator('.rail-pause').isVisible()) await page.locator('.inspector-toggle').click()
+    const initial = await state(page); row.initial = initial
+    assert.equal(initial.paused, false)
+    row.footerBefore = await page.locator('.rail-foot').evaluate(el => el.getBoundingClientRect().toJSON())
+    await page.locator('.rail-pause').click()
+    const button = page.locator('.pause-about'), dialog = page.locator('.in-play-about')
+    await button.waitFor({ state: 'visible' })
+    await button.focus()
+    // Wait only for the finite veil entrance, not an arbitrary screenshot delay.
+    await ready(page, () => document.querySelector('.pause-veil').getAnimations().every(a => a.playState === 'finished'))
+    row.layout = await page.evaluate(() => {
+      const button = document.querySelector('.pause-about'), foot = document.querySelector('.rail-foot')
+      const rect = button.getBoundingClientRect(), style = getComputedStyle(button)
+      const intersect = other => Math.max(0, Math.min(rect.right, other.right) - Math.max(rect.left, other.left)) *
+        Math.max(0, Math.min(rect.bottom, other.bottom) - Math.max(rect.top, other.top))
+      return { button: rect.toJSON(), footer: foot.getBoundingClientRect().toJSON(),
+        outline: { width: style.outlineWidth, offset: style.outlineOffset, style: style.outlineStyle },
+        focused: document.activeElement === button,
+        footerSurfaces: [foot, ...foot.querySelectorAll('input, button')].map(el => ({
+          tag: el.tagName, visibility: getComputedStyle(el).visibility,
+          display: getComputedStyle(el).display, overlap: intersect(el.getBoundingClientRect()) })) }
+    })
+    row.before = await state(page); await persist()
+    const label = `${touch ? 'touch' : 'desktop'}-${viewport.width}x${viewport.height}`
+    await bounded(page.screenshot({ path: `${out}/${label}-pause-layout.png` }), 15000)
+    const box = row.layout.button
+    assert.ok(box.height >= 44 && box.width >= 44)
+    const outline = Math.max(0, parseFloat(row.layout.outline.width) + parseFloat(row.layout.outline.offset))
+    assert.ok(box.left >= outline && box.top >= outline && box.right + outline <= viewport.width && box.bottom + outline <= viewport.height)
+    assert.ok(row.layout.focused); assert.notEqual(row.layout.outline.style, 'none')
+    for (const surface of row.layout.footerSurfaces) {
+      if (viewport.width <= 700) assert.equal(surface.visibility, 'hidden')
+      if (surface.visibility === 'visible' && surface.display !== 'none') assert.equal(surface.overlap, 0, 'pause About overlaps visible Inspector footer')
+    }
+    assert.deepEqual(row.layout.footer, row.footerBefore, 'paused footer retains geometry')
+    assert.equal(row.before.paused, true); assert.equal(row.before.reason, 'user')
+    await button.click(); await dialog.waitFor({ state: 'visible' })
+    await dialog.locator('.about-back').click()
+    row.back = await state(page)
+    assert.ok(row.back.paused && row.back.suspended && !row.back.locked)
+    assert.equal(row.back.reason, 'user'); assert.equal(row.back.tick, row.before.tick)
+    assert.equal(row.back.url, initial.url); assert.equal(row.back.id, initial.id); assert.ok(row.back.connected)
+    assert.ok(await button.evaluate(el => document.activeElement === el))
+    await bounded(page.screenshot({ path: `${out}/${label}-pause-back-focus.png` }), 15000)
+    // Actual Resume control. Desktop resume may capture; native Escape frees it.
+    await page.locator('.pause-veil').click({ position: { x: 8, y: 8 } })
+    await ready(page, () => !syn3h.pause.paused)
+    if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
+    if (!await page.locator('.rail-pause').isVisible()) await page.locator('.inspector-toggle').click()
+    row.resumed = await state(page)
+    assert.equal(row.resumed.paused, false); assert.equal(row.resumed.reason, null)
+    assert.equal(row.resumed.url, initial.url); assert.equal(row.resumed.id, initial.id); assert.ok(row.resumed.connected)
+    assert.equal(await page.locator('.rail-foot').evaluate(el => getComputedStyle(el).visibility), 'visible')
+    await page.locator('.wi-search').waitFor({ state: 'visible' })
+    for (const name of ['copy-world', 'paste-world', 'reset']) await page.locator(`[data-wi="${name}"]`).waitFor({ state: 'visible' })
+    row.status = 'passed'; await persist()
+  }
+}
 // Extensions are deliberately limited to the touch-emulated context. Native KeyW
 // does not request pointer lock there, so the normal session entry stays reachable.
 async function modalExtensions(page, record, entry, dialog) {
@@ -593,6 +659,7 @@ try {
     // Preserve original case evidence before running separately labelled extensions.
     await checkpoint('original-assertions-complete', { finalState })
     if (touch) await modalExtensions(page, record, entry, dialog)
+    await pauseLayoutChecks(page, record, touch)
     await checkpoint('before-context-close', { finalState })
     await bounded(context.close())
     await drain(casePending)
