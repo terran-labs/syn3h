@@ -37,6 +37,9 @@ function install() {
     if (last) rec.frames.push({ at: last, ms: now - last })
     last = now
     if (!rec.drivable && rec.clicked && window.syn3h.shell.playing) rec.drivable = now
+    // Post-processing rebuilds (new passes, targets and pipelines) are worth naming.
+    const chain = window.syn3h.game.postChain
+    if (chain && chain.builds !== rec.postBuilds) { if (rec.postBuilds !== undefined) (rec.postChanges ??= []).push({ at: now, tier: chain.tier }); rec.postBuilds = chain.builds }
     requestAnimationFrame(tick)
   }
   requestAnimationFrame(tick)
@@ -135,8 +138,9 @@ async function run(index) {
   const clicked = await page.evaluate(id => { const r = window.__timeline; r.clicked = performance.now(); document.querySelector(`.galaxy-label[data-world="${id}"]`).click(); return r.clicked }, target)
   await page.waitForFunction(() => window.__timeline.drivable > 0, null, { timeout: 60000, polling: 50 })
   await page.waitForTimeout(AFTER_DRIVE_MS)
-  // Leaving: what the confirmed "Leave world" button does.
-  const left = await page.evaluate(() => { const r = window.__timeline; r.left = performance.now(); window.syn3h.shell.openMenu('index'); return r.left })
+  // Leaving: "Leave world", confirmed.
+  const left = await page.evaluate(() => { const r = window.__timeline, shell = window.syn3h.shell; r.left = performance.now(); shell.askExit(); shell.answerExit(true); return r.left })
+  const settled = await page.waitForFunction(() => !window.syn3h.shell.dropping && !window.syn3h.shell.playing, null, { timeout: 30000, polling: 50 }).then(() => page.evaluate(() => performance.now())).catch(() => NaN)
   await page.waitForTimeout(AFTER_EXIT_MS)
   const rec = await page.evaluate(() => {
     const r = window.__timeline
@@ -165,10 +169,12 @@ async function run(index) {
   console.log('| Span | Frames | Median ms | Worst ms | >33 | >50 | >100 | Main thread busy: worst / >33 / >50 | |\n|---|---:|---:|---:|---:|---:|---:|---|---|')
   console.log(fmt('click to drivable', transition, `${(rec.drivable - clicked).toFixed(0)} ms to drivable`))
   console.log(fmt('click to drivable + 10 s', entry))
-  console.log(fmt(`leave + ${AFTER_EXIT_MS / 1000} s`, exit))
+  console.log(fmt(`leave + ${AFTER_EXIT_MS / 1000} s`, exit, `${(settled - left).toFixed(0)} ms to lobby`))
   const sum = (a, b) => rec.builds.filter(x => x.at >= a && x.at < b).reduce((t, x) => t + x.ms, 0)
+  for (const c of rec.postChanges ?? []) console.log(`post chain rebuilt at ${c.at < left ? `click+${(c.at - clicked).toFixed(0)}` : `leave+${(c.at - left).toFixed(0)}`} (drivable${c.at >= rec.drivable ? '+' : ''}${(c.at - rec.drivable).toFixed(0)}), tier ${c.tier}`)
+  if (flag('builds')) for (const b of rec.builds.filter(x => x.at >= clicked && x.at < left)) console.log(`  build at click+${(b.at - clicked).toFixed(0)} ${b.ms.toFixed(1)} ms: ${b.what}`)
   console.log(`shader builds: entry ${sum(clicked, rec.drivable + AFTER_DRIVE_MS).toFixed(0)} ms in ${rec.builds.filter(x => x.at >= clicked && x.at < left).length} materials; exit ${sum(left, left + AFTER_EXIT_MS).toFixed(0)} ms`)
-  const long = [...entry.set.map(f => ({ ...f, span: 'entry' })), ...exit.set.map(f => ({ ...f, span: 'exit' }))].map(f => ({ ...f, busy: busyOf(f) })).filter(f => index2 ? f.busy > 25 : f.ms > 50).sort((a, b) => index2 ? b.busy - a.busy : b.ms - a.ms)
+  const long = [...entry.set.map(f => ({ ...f, span: 'entry' })), ...exit.set.map(f => ({ ...f, span: 'exit' }))].map(f => ({ ...f, busy: busyOf(f) })).filter(f => f.ms > 50 || (index2 && f.busy > 25)).sort((a, b) => index2 ? b.busy - a.busy : b.ms - a.ms)
   for (const f of long) {
     const from = f.at, to = f.at + f.ms
     const rel = f.span === 'entry' ? `click+${(from - clicked).toFixed(0)}` : `leave+${(from - left).toFixed(0)}`
