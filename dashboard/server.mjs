@@ -20,6 +20,7 @@ const portArg = process.argv.indexOf('--port')
 const port = Number(portArg > 0 ? process.argv[portArg + 1] : process.env.PASEO_PORT ?? 4400)
 
 const DOCS = [
+  ['FUTURE-IDEAS', 'ops/FUTURE-IDEAS.md', 'Future Ideas'],
   ['PROPOSAL', 'docs/PROPOSAL.md', 'Proposal'],
   ['ROADMAP', 'docs/ROADMAP.md', 'Roadmap'],
   ['reference-games', 'docs/research/reference-games.md', 'Reference games'],
