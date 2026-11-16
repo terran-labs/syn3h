@@ -3,17 +3,61 @@
 // Controlled secondary actions isolate DOM ownership; this is NOT real gear safety proof.
 import { chromium, webkit } from 'playwright-core'
 import assert from 'node:assert/strict'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile, readFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { fileURLToPath } from 'node:url'
 
+const root = fileURLToPath(new URL('../../', import.meta.url))
+const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim()
+const hash = value => createHash('sha256').update(value).digest('hex')
 const base = process.env.SYN3H_URL
 assert.ok(base, 'SYN3H_URL must identify the exact served candidate')
 const out = process.env.UX_EVIDENCE_DIR ?? 'tests/ui/artifacts/gear-action-refresh'
 await mkdir(out, { recursive: true })
 const report = { source: process.env.UX_SOURCE_SHA ?? 'UNSPECIFIED', cases: [] }
 assert.notEqual(report.source, 'UNSPECIFIED', 'record exact served source in UX_SOURCE_SHA')
+// Exact local HEAD plus both raw bytes and transformed module source maps bind this
+// evidence to the served code, rather than trusting a caller-supplied commit label.
+async function provenance() {
+  const head = git('rev-parse', 'HEAD')
+  assert.equal(report.source, head, 'UX_SOURCE_SHA must equal this fixture checkout HEAD')
+  const status = git('status', '--porcelain', '--untracked-files=all')
+  assert.equal(status, '', 'candidate checkout must be clean, including untracked files')
+  const files = []
+  for (const path of ['src/ui/gear/GearSelector.ts', 'src/core/Input.ts', 'src/ui/gear/gear.css']) {
+    const local = await readFile(new URL(path, new URL('../../', import.meta.url)), 'utf8')
+    const response = await fetch(new URL(`/${path}?raw`, base), { cache: 'no-store' })
+    assert.equal(response.status, 200, `${path} raw request`)
+    const rawModule = await response.text()
+    const literal = rawModule.match(/^export default ("(?:[^"\\]|\\.)*")\s*;?/m)
+    assert.ok(literal, `${path} must be a Vite raw string export`)
+    assert.equal(JSON.parse(literal[1]), local, `${path} served raw bytes differ from checkout`)
+    let transformedHash
+    if (path.endsWith('.ts')) {
+      const transformed = await fetch(new URL(`/${path}`, base), { cache: 'no-store' })
+      assert.equal(transformed.status, 200)
+      const module = await transformed.text()
+      const inlineMap = module.match(/sourceMappingURL=data:application\/json(?:;charset=[^;,]+)?;base64,([^\s]+)/)
+      assert.ok(inlineMap, `${path} requires an inline source map to verify executed module input`)
+      const map = JSON.parse(Buffer.from(inlineMap[1], 'base64').toString('utf8'))
+      assert.ok(map.sourcesContent?.includes(local), `${path} transformed source differs from checkout`)
+      transformedHash = hash(module)
+    }
+    files.push({ path, sha256: hash(local), transformedHash })
+  }
+  return { head, clean: true, files,
+    fixtureSha256: hash(await readFile(fileURLToPath(import.meta.url))) }
+}
 try {
+  report.provenance = await provenance()
+  // Same policy as gear-selector.mjs: installed Google Chrome via its named channel;
+  // WebKit is the Playwright-managed executable, not the user's Safari application.
+  report.executables = { chrome: { channel: 'chrome', installation: 'system Google Chrome' },
+    webkit: { executable: webkit.executablePath() } }
   for (const [engine, browserType] of [['chromium', chromium], ['webkit', webkit]]) {
-    const browser = await browserType.launch({ headless: true })
+    const browser = await browserType.launch(engine === 'chromium'
+      ? { channel: 'chrome', headless: true } : { headless: true })
     try {
       for (const mode of ['Space', 'Enter', 'mouse']) {
         const page = await browser.newPage({ viewport: { width: 900, height: 700 } })
@@ -30,10 +74,13 @@ try {
           style.textContent = '.gear-actions{display:flex!important;position:fixed!important;left:50px!important;top:50px!important;transform:none!important;gap:8px}.gs-action{width:180px!important;height:48px!important}'
           document.head.append(style)
           const calls = [], events = [], mutations = []
-          let version = 0, controls, node, pointerId
-          const action = (id, label, hold) => ({ id, label, hold, keys: [],
-            start: () => calls.push(`${version}:${id}:start`),
-            stop: reason => calls.push(`${id}:${reason}`) })
+          let version = 0, instanceSequence = 0, controls, node, pointerId
+          const action = (id, label, hold) => {
+            const instance = ++instanceSequence
+            return { id, label, hold, keys: [],
+              start: () => calls.push({ instance, id, phase: 'start' }),
+              stop: reason => calls.push({ instance, id, phase: reason }) }
+          }
           const make = (label, extra, present = true) => ({ gear: 'fixture', name: 'Fixture',
             description: '', state: String(version++), actions: [action('primary', 'Primary omitted', true),
               ...(present ? [action('secondary', label, true)] : []),
@@ -84,22 +131,25 @@ try {
         if (mode === 'mouse') await page.mouse.up()
         else await page.keyboard.up(mode)
         let state = await page.evaluate(() => fixture.snapshot())
-        assert.deepEqual(state.calls.slice(1), ['secondary:end'])
+        assert.deepEqual(state.calls.slice(1), [{ instance: before.calls[0].instance, id: 'secondary', phase: 'end' }])
         // A genuine removal suppresses immediately, but the retained physical end still
         // reaches the original action after its DOM button has disappeared.
         await held.focus()
         if (mode === 'mouse') await page.mouse.down()
         else await page.keyboard.down(mode)
+        const secondStart = await page.evaluate(() => fixture.snapshot().calls.at(-1))
+        assert.equal(secondStart.phase, 'start')
+        assert.notEqual(secondStart.instance, before.calls[0].instance)
         await page.evaluate(() => fixture.refresh('Removed', false, false))
         state = await page.evaluate(() => fixture.snapshot())
         assert.equal(state.connected, false)
-        assert.equal(state.calls.at(-1), 'secondary:cleanup')
+        assert.deepEqual(state.calls.at(-1), { ...secondStart, phase: 'cleanup' })
         const count = state.calls.length
         if (mode === 'mouse') await page.mouse.up()
         else await page.keyboard.up(mode)
         state = await page.evaluate(() => fixture.snapshot())
         assert.equal(state.calls.length, count + 1)
-        assert.equal(state.calls.at(-1), 'secondary:end')
+        assert.deepEqual(state.calls.at(-1), { ...secondStart, phase: 'end' })
         assert.deepEqual(errors, [])
         report.cases.push({ engine, mode, before, final: state, errors })
         await page.evaluate(() => fixture.dispose())
@@ -107,6 +157,8 @@ try {
       }
     } finally { await browser.close() }
   }
+  report.finalProvenance = await provenance()
+  assert.deepEqual(report.finalProvenance, report.provenance, 'source changed during browser checks')
 } catch (error) {
   report.failure = String(error.stack ?? error)
   throw error
