@@ -122,13 +122,35 @@ report.native.contact = await evaluate(() => {
   if (!c?.at) throw new Error('native terrain anchor missing')
   const V = s.player.object.position.constructor, n = b.look.segments
   const pos = b.look.cord.geometry.getAttribute('position'), base = c.slot * 50
+  if (!Number.isInteger(c.slot) || c.slot < 0 || b.look.cordUsed[c.slot] !== true ||
+    !Number.isInteger(n) || ![12, 24].includes(n) || !pos || pos.itemSize !== 3 ||
+    !Number.isInteger(pos.count) || base + n * 2 + 1 >= pos.count)
+    throw new Error('invalid native cord slot/segment position geometry')
+  const finite = (values, label) => { if (!values.every(Number.isFinite)) throw new Error(`non-finite native ${label}`) }
+  for (let i = base; i <= base + n * 2 + 1; i++) finite([pos.getX(i), pos.getY(i), pos.getZ(i)], 'ribbon coordinates')
+  finite(c.at.toArray(), 'stored anchor')
   const midpoint = i => new V().fromBufferAttribute(pos, base + i * 2).lerp(new V().fromBufferAttribute(pos, base + i * 2 + 1), 0.5)
   const vehicle = b.hitch(s.player.object, new V()), anchor = b.nearestTo(c.at, vehicle)
-  const sample = p => ({ point: p.toArray(), collision: t.heightAt(p.x, p.z), rendered: t.renderHeightAt(p.x, p.z), liquid: t.liquidHeightAt?.(p.x, p.z) ?? null })
-  return { vehicle: sample(vehicle), anchor: sample(anchor), vehicleGap: midpoint(0).distanceTo(vehicle), anchorGap: midpoint(n).distanceTo(anchor), scope: 'observed native contact; no relocation or fallback reclassification' }
+  const sample = p => {
+    finite(p.toArray(), 'endpoint coordinates')
+    const collision = t.heightAt(p.x, p.z), rendered = t.renderHeightAt(p.x, p.z)
+    const rawLiquid = t.liquidHeightAt?.(p.x, p.z)
+    // Terrain's documented -Infinity sentinel means no liquid, not a measurement.
+    const liquid = rawLiquid == null || rawLiquid === -Infinity ? null : rawLiquid
+    if (liquid !== null) finite([liquid], 'liquid height')
+    const surface = Math.max(rendered, liquid ?? -Infinity)
+    finite([collision, rendered, surface], 'surface heights')
+    return { point: p.toArray(), collision, rendered, liquid, surface }
+  }
+  const vehicleGap = midpoint(0).distanceTo(vehicle), anchorGap = midpoint(n).distanceTo(anchor)
+  finite([vehicleGap, anchorGap], 'attachment gaps')
+  return { vehicle: sample(vehicle), anchor: sample(anchor), vehicleGap, anchorGap, scope: 'observed native contact; no relocation or fallback reclassification' }
 })
 await checkpoint('native launch attach reel complete')
-for (const key of ['vehicleGap', 'anchorGap']) if (report.native.contact[key] > 0.02) failures.push(`native: ${key} ${report.native.contact[key]} exceeds 0.02 m`)
+for (const key of ['vehicleGap', 'anchorGap']) {
+  assert.ok(Number.isFinite(report.native.contact[key]), `native: finite ${key} required`)
+  if (report.native.contact[key] > 0.02) failures.push(`native: ${key} ${report.native.contact[key]} exceeds 0.02 m`)
+}
 await bounded(page.keyboard.press('KeyG'), 5000, 'native keyboard press')
 await ready(() => !window.syn3hNet.bungee.mine)
 await evaluate(() => document.exitPointerLock())
@@ -167,10 +189,16 @@ const capture = async (name, fixture, level, fixed = true, contactMode = 'valid-
     s.game.pause() // diagnostic only; the effective quality and warm gate ran on normal frames
     const V = s.player.object.position.constructor
     if (!t.renderHeightAt) throw new Error('rendered terrain sampler required')
+    const finite = (values, label) => { if (!values.every(Number.isFinite)) throw new Error(`non-finite setup ${label}`) }
     const heights = (x, z) => {
+      finite([x, z], 'sample coordinates')
       const collision = t.heightAt(x, z), rendered = t.renderHeightAt(x, z)
-      const liquid = t.liquidHeightAt?.(x, z) ?? -Infinity
-      return { collision, rendered, liquid: Number.isFinite(liquid) ? liquid : null, surface: Math.max(rendered, liquid) }
+      const rawLiquid = t.liquidHeightAt?.(x, z)
+      const liquid = rawLiquid == null || rawLiquid === -Infinity ? null : rawLiquid
+      if (liquid !== null) finite([liquid], 'liquid height')
+      const surface = Math.max(rendered, liquid ?? -Infinity)
+      finite([collision, rendered, surface], 'surface heights')
+      return { collision, rendered, liquid, surface }
     }
     // Camera and LOD are fixed before constructing either diagnostic contact.
     // These provisional collision points choose framing only, never attachment height.
@@ -178,6 +206,7 @@ const capture = async (name, fixture, level, fixed = true, contactMode = 'valid-
     const frameB = new V(f.b[0], t.heightAt(...f.b), f.b[1])
     const midpoint = frameA.clone().lerp(frameB, 0.5), span = frameA.distanceTo(frameB)
     midpoint.y = Math.max(midpoint.y, t.heightAt(midpoint.x, midpoint.z))
+    finite([...frameA.toArray(), ...frameB.toArray(), ...midpoint.toArray(), span], 'framing coordinates')
     s.game.camera.position.copy(midpoint).add(new V(0, Math.max(10, span * 0.4), Math.max(20, span * 0.9)))
     s.game.camera.lookAt(midpoint); s.game.camera.updateMatrixWorld()
     t.afterCamera()
@@ -188,6 +217,7 @@ const capture = async (name, fixture, level, fixed = true, contactMode = 'valid-
     s.player.body.setLinvel({ x: 0, y: 0, z: 0 }, true); s.player.body.setAngvel({ x: 0, y: 0, z: 0 }, true)
     // Ensure the synthetic hitch is clear at its actual offset, not at the body centre.
     const setupHitch = b.hitch(s.player.object, new V())
+    finite(setupHitch.toArray(), 'hitch coordinates')
     const lift = Math.max(0, heights(setupHitch.x, setupHitch.z).surface + 2 - setupHitch.y)
     a.y += lift; s.player.teleport(a, 0); s.player.object.position.copy(a)
     const contactHitch = b.hitch(s.player.object, new V())
@@ -197,6 +227,8 @@ const capture = async (name, fixture, level, fixed = true, contactMode = 'valid-
       anchor: { point: end.toArray(), ...heights(end.x, end.z) } }
     contactSetup.vehicle.gap = contactHitch.y - contactSetup.vehicle.surface
     contactSetup.anchor.gap = end.y - contactSetup.anchor.surface
+    finite([...contactSetup.vehicle.point, ...contactSetup.anchor.point, contactSetup.vehicle.gap, contactSetup.anchor.gap,
+      ...contactSetup.camera.position, ...contactSetup.camera.quaternion], 'contact coordinates/gaps/camera')
     if (contactSetup.vehicle.gap < 0 || (contactMode === 'valid-rendered-contact'
       ? Math.abs(contactSetup.anchor.gap) > 1e-8 : contactSetup.anchor.gap > -0.49))
       throw new Error('declared diagnostic contact precondition failed')
@@ -210,7 +242,10 @@ const capture = async (name, fixture, level, fixed = true, contactMode = 'valid-
     const { a, end, midpoint, span, lodBefore, contactSetup, f } = window.__preparedContact
     if (contactSetup.mode !== contactMode || JSON.stringify(t.meshes.stats(s.game.camera)) !== JSON.stringify(lodBefore))
       throw new Error('prepared contact mode or LOD changed before generation')
-    if (Math.abs(surface.heightAt(end.x, end.z) - contactSetup.anchor.surface) > 1e-8)
+    const selectedHeight = surface.heightAt(end.x, end.z)
+    if (![...a.toArray(), ...end.toArray(), selectedHeight, contactSetup.anchor.surface, contactSetup.vehicle.gap, contactSetup.anchor.gap].every(Number.isFinite))
+      throw new Error('non-finite prepared contact before generation')
+    if (Math.abs(selectedHeight - contactSetup.anchor.surface) > 1e-8)
       throw new Error('contact surface changed before generation')
     b.reset()
     const c = b.makeCord(window.syn3hNet.id)
@@ -232,7 +267,11 @@ const capture = async (name, fixture, level, fixed = true, contactMode = 'valid-
     }
     const first = vertex(0).lerp(vertex(1), 0.5), last = vertex(n * 2).lerp(vertex(n * 2 + 1), 0.5)
     const hitch = b.hitch(s.player.object, new V())
+    if (![...first.toArray(), ...last.toArray(), ...hitch.toArray(), ...end.toArray()].every(Number.isFinite))
+      throw new Error('non-finite diagnostic endpoint coordinates')
     const attachment = { vehicleGap: first.distanceTo(hitch), anchorGap: last.distanceTo(end), first: first.toArray(), last: last.toArray(), anchor: end.toArray() }
+    if (![attachment.vehicleGap, attachment.anchorGap, minimum].every(Number.isFinite))
+      throw new Error('non-finite diagnostic gaps or unbent clearance')
     let cost
     if (fixed) {
       b.hooks.surface = { ...surface, heightAt(x, z) { queries++; return surface.heightAt(x, z) } }
@@ -320,7 +359,7 @@ const capture = async (name, fixture, level, fixed = true, contactMode = 'valid-
     }
   }
   if (fixed) {
-    assert.ok(Number.isFinite(result.renderedMinimum), 'rendered clearance must be measured')
+    assert.ok([result.minimum, result.renderedMinimum, result.attachment.vehicleGap, result.attachment.anchorGap].every(Number.isFinite), 'finite clearances and attachment gaps required')
     if (result.minimum < -0.02) failures.push(`${name}: unbent penetration ${result.minimum}`)
     if (result.renderedMinimum < -0.02) failures.push(`${name}: rendered penetration ${result.renderedMinimum}`)
     // Intent was fixed before generation. Never reclassify a failed valid contact.
