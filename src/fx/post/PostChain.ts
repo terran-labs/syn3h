@@ -26,7 +26,7 @@
  */
 import * as THREE from 'three/webgpu'
 import {
-  Fn, If, Loop, abs, screenSize, sin, clamp, dot, exp, float, interleavedGradientNoise, length, max, min, mix, pass,
+  Fn, If, Loop, getViewPosition, abs, screenSize, sin, clamp, dot, exp, float, interleavedGradientNoise, length, max, min, mix, pass,
   builtinAOContext, builtinGIContext, builtinShadowContext, context, mrt, nodeObject, normalView, output, screenUV, renderOutput, renderGroup, rtt, screenCoordinate, smoothstep, step,  uniform, uv, vec2, vec3, vec4,
 } from 'three/tsl'
 import { bloom } from 'three/addons/tsl/display/BloomNode.js'
@@ -196,8 +196,8 @@ export class PostChain {
     u.bloom.value = P.postBloom.value * fade
     u.bloomThreshold.value = P.postBloomThreshold.value
     u.bloomRadius.value = P.postBloomRadius.value
-    u.shafts.value = P.postShafts.value * fade
-    u.shaftLength.value = P.postShaftLength.value
+    u.shafts.value = P.postShafts.value * fade * (0.15 + 0.85 * lowSunAmount(this.sun.sunDirection.y)) * (1 - underwaterAmountForCamera(camera))
+    u.shaftLength.value = P.postShaftLength.value * (0.65 + 0.35 * lowSunAmount(this.sun.sunDirection.y))
     u.shaftReach.value = P.postShaftReach.value
     // Ghosts and streak belong to a low sun; overhead they read as smudges on the ground.
     u.flare.value = P.postFlare.value * fade * (0.25 + 0.75 * lowSunAmount(this.sun.sunDirection.y))
@@ -468,6 +468,8 @@ export class PostChain {
       hdr = hdr.add(glow.rgb.div(u.exposure))
     }
 
+    let shaftScatter: N = null
+    let shaftOpacity: N = null
     if (shaftsOn) {
       // Mask: open sky near the sun, in its exposed colour; alpha is "open sky" alone.
       const mask = Fn(() => {
@@ -475,10 +477,12 @@ export class PostChain {
         const sky = smoothstep(0.99995, 1.0, depth.sample(p).r)
         // On-screen brightness, capped a little past white: the shafts carry the sun's
         // colour and shape, not its full intensity.
-        const c = min(color.sample(p).rgb.mul(u.exposure), vec3(SHAFT_CLAMP))
+        const source = color.sample(p).rgb.mul(u.exposure)
+        // Scale all channels together: clipping each channel turns warm scattering white.
+        const c = source.div(max(1, max(source.r, max(source.g, source.b)).div(SHAFT_CLAMP)))
         const d = length(p.sub(u.sunUv).mul(vec2(u.aspect, 1)))
         const near = exp(d.mul(d).div(u.shaftReach.mul(u.shaftReach)).negate().mul(3))
-        return vec4(c.mul(sky).mul(near), sky)
+        return vec4(c.mul(sky).mul(near), near)
       })
       const maskTex: N = rtt(mask(), null, null, { resolutionScale: 0.25 })
       disposables.push(maskTex)
@@ -487,18 +491,22 @@ export class PostChain {
       const rays = Fn(() => {
         const p = uv().toVar()
         const step = u.sunUv.sub(p).mul(u.shaftLength).div(taps)
-        p.addAssign(step.mul(interleavedGradientNoise(screenCoordinate)))
+        p.addAssign(step.mul(0.5))
         const sum = vec3(0).toVar()
         const w = float(1).toVar()
         const total = float(0).toVar()
         Loop(taps, () => {
-          sum.addAssign(maskTex.sample(p).rgb.mul(w))
-          total.addAssign(w)
+          const sample = maskTex.sample(p)
+          sum.addAssign(sample.rgb.mul(w))
+          // Normalize by the source footprint, including blocked samples. Dividing by
+          // every dark tap erased narrow horizon gaps; normalizing only lit taps would
+          // erase the occluders themselves. Alpha retains the unoccluded footprint.
+          total.addAssign(sample.a.mul(w))
           w.mulAssign(0.96)
           p.addAssign(step)
         })
         // The average light along the path to the sun, weighted to the near end.
-        return vec4(sum.div(total), 1)
+        return vec4(sum.div(total.max(0.02)), 1)
       })
       const raysTex: N = rtt(rays(), null, null, { resolutionScale: 0.25 })
       disposables.push(raysTex)
@@ -506,7 +514,17 @@ export class PostChain {
       // Strongest near the sun, fading across the screen, as light scattered forward does.
       const fromSun = length(uv().sub(u.sunUv).mul(vec2(u.aspect, 1)))
       const fall = exp(fromSun.mul(-1.8))
-      hdr = hdr.add(raysTex.sample(uv()).rgb.mul(u.shafts).mul(u.sunVis).mul(fall).mul(0.3).div(u.exposure))
+      // Do not spread screen-space light onto the player or nearby geometry.
+      const distance = getViewPosition(uv(), depth.r, u.projInv).length()
+      const atmosphere = smoothstep(20, 100, distance)
+      const scattered = raysTex.sample(uv()).rgb
+      const strength = u.shafts.mul(u.sunVis).mul(fall).mul(atmosphere)
+      // Composite the bounded atmospheric contribution after tone mapping. HDR haze
+      // can already be above display white; adding another HDR light cannot reveal its
+      // blocked paths. The source still comes from the scene's own scattering colour.
+      shaftScatter = scattered.div(SHAFT_CLAMP)
+      shaftOpacity = float(1).sub(exp(strength.mul(-0.6)))
+
 
       if (flareOn) {
         const flare = Fn(() => {
@@ -538,7 +556,9 @@ export class PostChain {
     const mapped: N = renderOutput(vec4(hdr, 1), toneMap, renderer.outputColorSpace)
     const graded = Fn(() => {
       const p = uv()
-      const c = clamp(mapped.rgb, 0, 1).mul(u.gain).toVar()
+      const display = clamp(mapped.rgb, 0, 1)
+      const atmosphere = shaftScatter ? mix(display, shaftScatter, shaftOpacity) : display
+      const c = atmosphere.mul(u.gain).toVar()
       const inv = float(1).sub(c)
       c.addAssign(u.lift.mul(inv).mul(inv))
       const s = c.mul(c).mul(float(3).sub(c.mul(2)))
