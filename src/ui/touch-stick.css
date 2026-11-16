@@ -95,3 +95,21 @@ html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minima
 @media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
   .syn3h-shell.has-touch .focus-hud :is(.fh-left, .fh-right) { top: 30%; }
 }
+
+/* Phones: toasts in one line where they cover nothing the player reads or touches. Portrait:
+   just under the speed and height readouts (centred at 30%), above the vehicle; under the
+   heading there is no width between the gear selector and the minimap. Landscape: just under
+   the heading line, between the readouts. Match and race layouts keep their own placement. */
+@media (max-width: 700px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  html[data-touch-hand] .syn3h-shell.has-touch.is-playing:not(.has-match, .has-landmark-race) .shell-toast {
+    top: calc(30% + 30px); bottom: auto; left: 50%; right: auto; transform: translateX(-50%);
+    width: auto; max-width: calc(100% - 24px); box-sizing: border-box; padding: 4px 12px; font-size: 13px; line-height: 1.3;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center;
+  }
+}
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  html[data-touch-hand] .syn3h-shell.has-touch.is-playing:not(.has-match, .has-landmark-race) .shell-toast {
+    /* The heading line (.fh-top) starts 34 px down and is about 32 px tall. */
+    top: 72px; max-width: 290px;
+  }
+}
