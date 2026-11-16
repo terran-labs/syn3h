@@ -28,6 +28,7 @@ import { forestPass } from './forest'
 import { type Road, roadsPass } from './roads'
 import { KIND_ALPINE, KIND_DESERT, KIND_VOLCANIC, type TerrainSettings } from './settings'
 import { tileSize } from '../../../shared/protocol'
+import { type Isle, type Peak, isleMask, peaksHeight, peaksVolcanic, placeIsles, placePeaks } from './landforms'
 
 /** Tile sides in metres for the old planet sizes 0 (small), 1 (medium) and 2 (large); see tileSize. */
 export const PLANET_SIZES = [1024, 2048, 4096] as const
@@ -219,6 +220,9 @@ export interface TerrainLayout {
   mesas: Mesa[]
   /** Mean radius of the coastline. */
   islandRadius: number
+  /** Extra islands in the sea, and extra mountains on land (landforms.ts). */
+  isles: Isle[]
+  peaks: Peak[]
   /** Continent noise above this is land. Lower means more land. */
   continentLevel: number
   /** Radius of the ring the spawn pads sit on. */
@@ -348,11 +352,41 @@ export function computeLayout(seed: number, s: TerrainSettings, size: number): T
     approach: subSeed(seed, 13), continent: subSeed(seed, 14),
   }
   const fields = computeFields(size, seeds)
-  return {
-    half, volcano, cones: [], mesas: [], islandRadius, spawnRadius: ringR, summitHeight, spawns,
-    continentLevel: continentLevel(fields, islandRadius, s),
+  // Landforms come from their own random streams, so the rest of the layout above is the
+  // same with or without them.
+  const isles = placeIsles(seed, Math.round(s.isles), size, islandRadius * (1 + s.coastWobble))
+  const L: TerrainLayout = {
+    half, volcano, cones: [], mesas: [], islandRadius, isles, peaks: [], spawnRadius: ringR, summitHeight, spawns,
+    continentLevel: continentLevel(fields, islandRadius, s, isles, size),
     windX, windZ, fields, seeds,
   }
+  L.peaks = placePeaks(seed, Math.round(s.landforms), size, s.look, s.mesaHeight, {
+    // Clear of the central mountain, its ring road, and the massif-free band round it.
+    centre: R * (1 + volcano.gentleStretch) * FOOT_RING + 60,
+    pads: spawns,
+    maskAt: (x, z) => islandMask(L, s, x, z),
+  })
+  return L
+}
+
+/**
+ * The island mask at (x, z): 1 at the waterline, lower inland, above 1 out to sea, for
+ * the home island, the isles and the continents together. Sets `maskWobble`.
+ */
+let maskWobble = 0
+function islandMask(L: TerrainLayout, s: TerrainSettings, x: number, z: number): number {
+  const F = L.fields
+  locate(F, x, z)
+  const r = Math.sqrt(x * x + z * z)
+  const wobble = field(F.coast)
+  maskWobble = wobble
+  let rr = r / L.islandRadius - s.coastWobble * wobble
+  const isle = isleMask(L.isles, x, z, F.half * 2, wobble, s.coastWobble)
+  if (isle < rr) rr = isle
+  const cont = 1 - (field(F.continent) + 0.12 * wobble - L.continentLevel) * 4
+  // Continents keep clear of the volcano and its ring road.
+  const strait = cont + smoothstep(L.islandRadius * 0.75, L.islandRadius * 0.45, r) * 2
+  return strait < rr ? strait : rr
 }
 
 /**
@@ -361,7 +395,7 @@ export function computeLayout(seed: number, s: TerrainSettings, size: number): T
  * becomes land (the main island always is), and the level is set where the asked share of
  * them clear it. So the land share slider reads true on every seed and planet size.
  */
-function continentLevel(F: LowFields, islandRadius: number, s: TerrainSettings): number {
+function continentLevel(F: LowFields, islandRadius: number, s: TerrainSettings, isles: readonly Isle[], size: number): number {
   const n = F.n - 1 // the last row and column repeat the first
   const rank = new Float32Array(n * n)
   let island = 0
@@ -374,7 +408,7 @@ function continentLevel(F: LowFields, islandRadius: number, s: TerrainSettings):
       const wobble = F.coast[i]
       // The same expressions as shapeHeight: the island's own coast, and the strait that
       // keeps continents off the volcano.
-      if (r / islandRadius - s.coastWobble * wobble < 1) { rank[iz * n + ix] = Infinity; island++; continue }
+      if (r / islandRadius - s.coastWobble * wobble < 1 || isleMask(isles, x, z, size, wobble, s.coastWobble) < 1) { rank[iz * n + ix] = Infinity; island++; continue }
       const strait = smoothstep(islandRadius * 0.75, islandRadius * 0.45, r) * 2
       rank[iz * n + ix] = F.continent[i] + 0.12 * wobble - strait / 4
     }
@@ -566,18 +600,14 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
   const uz = z * inv
 
   // --- Island mask: a radial form, wobbled into capes and bays ---------------------------
+  // The main island is a radial form, wobbled into capes and bays, and so is each isle.
+  // Beyond them, continents rise wherever a broad periodic noise clears a threshold set by
+  // the land share, so land and sea both cross the edges of the tile seamlessly. `rr` is 1
+  // at the waterline and falls inland, whichever landmass this is. islandMask leaves the
+  // low fields located at (x, z) for the reads below.
   const F = L.fields
-  locate(F, x, z)
-  // The main island is a radial form, wobbled into capes and bays. Beyond it, continents
-  // rise wherever a broad periodic noise clears a threshold set by the land share, so land
-  // and sea both cross the edges of the tile seamlessly. `rr` is 1 at the waterline and
-  // falls inland, whichever landmass this is.
-  const wobble = field(F.coast)
-  let rr = r / L.islandRadius - s.coastWobble * wobble
-  const cont = 1 - (field(F.continent) + 0.12 * wobble - L.continentLevel) * 4
-  // Continents keep clear of the volcano and its ring road.
-  const strait = cont + smoothstep(L.islandRadius * 0.75, L.islandRadius * 0.45, r) * 2
-  if (strait < rr) rr = strait
+  const rr = islandMask(L, s, x, z)
+  const wobble = maskWobble
   const land = smoothstep(1.0, 0.7, rr) // 1 inland, 0 at the waterline
   let h = -SEA_DEPTH * smoothstep(1.0, 1.4, rr) + SPAWN_LEVEL * land
   if (rr > 1.16) {
@@ -686,6 +716,15 @@ export function shapeHeight(L: TerrainLayout, s: TerrainSettings, x: number, z: 
         const cv = smoothstep(0.1, 0.5, sp) * 0.35
         if (cv > volcanic) volcanic = cv
       }
+    }
+  }
+
+  // --- Peaks: the extra mountains (landforms.ts), fading out where their foot meets the sea --
+  if (L.peaks.length > 0) {
+    const ph = peaksHeight(L.peaks, x, z, L.half * 2, s.roughness, s.look === 0 || s.look === 5)
+    if (ph !== 0) {
+      h += ph * smoothstep(1.1, 0.9, rr)
+      if (peaksVolcanic > volcanic) volcanic = peaksVolcanic
     }
   }
 
