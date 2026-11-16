@@ -98,7 +98,7 @@ async function sourceProof(stage) {
     try {
       const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(budget(10000)) })
       Object.assign(row, { url: url.href, status: response.status,
-        headers: Object.fromEntries(['content-type', 'content-length', 'etag'].map(k => [k, response.headers.get(k)])) })
+        headerHashes: Object.fromEntries(['content-type', 'content-length', 'etag'].map(k => [k, response.headers.has(k) ? hash(response.headers.get(k)) : null])) })
       const text = await bounded(response.text())
       Object.assign(row, { bytes: Buffer.byteLength(text), sha256: hash(text) })
       await persist()
@@ -223,7 +223,10 @@ async function checkpoint(label, action = async () => {}) {
 function watchResponses(peer) {
   const { page, record } = peer
   page.on('pageerror', observe('page_error', error => addError('page_error', error)))
-  page.on('websocket', observe('response', ws => { record.sockets.push(ws.url());
+  page.on('websocket', observe('response', ws => {
+    const socketURL = new URL(ws.url())
+    record.sockets.push({ urlSha256: hash(ws.url()), roomSocket: socketURL.pathname === '/ws',
+      hostMatches: socketURL.host === new URL(origin).host, roomMatches: socketURL.searchParams.get('room') === room });
     if (new URL(ws.url()).pathname === '/ws') ws.on('close', () => { if (!record.closing) addError('socket_closed') })
     ws.on('framereceived', ({ payload }) => {
     try { if (['update', 'full-reload', 'prune'].includes(JSON.parse(String(payload)).type)) addError('hmr') } catch {}
@@ -231,7 +234,7 @@ function watchResponses(peer) {
   page.on('response', observe('response', response => {
     const path = new URL(response.url()).pathname.slice(1), document = response.request().resourceType() === 'document'
     if (!document && !modulePaths.includes(path)) return
-    const row = { url: response.url(), status: response.status(), path, document }; record.responses.push(row)
+    const row = { urlSha256: hash(response.url()), status: response.status(), path: document ? 'navigation_document' : path, document }; record.responses.push(row)
     pending.push((async () => {
       const bytes = await bounded(response.body())
       Object.assign(row, { bytes: bytes.length, sha256: hash(bytes) })
@@ -369,10 +372,10 @@ try {
   report.identity = identity
   await drain(); assert.deepEqual(report.errors, [])
   for (const peer of peers) {
-    const roomSockets = peer.record.sockets.filter(url => new URL(url).pathname === '/ws')
+    const roomSockets = peer.record.sockets.filter(socket => socket.roomSocket)
     assert.equal(roomSockets.length, 1, 'one real room connection per peer, no reconnect')
-    assert.equal(new URL(roomSockets[0]).searchParams.get('room'), room)
-    assert.equal(new URL(roomSockets[0]).host, new URL(origin).host)
+    assert.equal(roomSockets[0].roomMatches, true)
+    assert.equal(roomSockets[0].hostMatches, true)
     assert.ok(peer.record.responses.some(r => r.document && r.verified), 'actual navigation document proof')
     for (const path of modulePaths) assert.ok(peer.record.responses.some(r => r.path === path && r.verified), `actual executed module ${path}`)
     peer.record.runtime = await evaluate(peer, () => ({ game: syn3h.game.constructor.name, shell: syn3h.shell.constructor.name,
