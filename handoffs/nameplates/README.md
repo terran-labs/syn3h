@@ -781,3 +781,16 @@ Source prepared only: Node syntax and whitespace checks are permitted; no module
 tests, browser, server, network or launcher execution was performed. The existing run10
 launcher is not repinned and must not execute this HEAD. A separately reviewed observation
 launcher would need the explicit mode argument and unchanged ownership/budget contract.
+
+
+Final observation validation now checks the persisted envelope list is bounded by seven,
+each envelope stamp matches the completed draw, viewport dimensions and camera/output
+identities agree, and center/radius/bend/disc/camera numbers are finite. Final camera near/far
+are finite too. These checks run after raw persistence, add no samples or product calls,
+and leave an original staging error primary if final validation fails.
+
+HUD rectangles are read at poll/final-sample time. They are not an exact copy of the prior
+allocator's exclusion list: matching the draw stamp or camera alone does not prove HUD
+layout remained unchanged. Treat them as contemporaneous sample context unless separate
+matching evidence establishes allocator-time equality. Do not certify exact prior HUD
+exclusion compliance from those rectangles alone.

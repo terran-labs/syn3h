@@ -980,9 +980,19 @@ try {
         assert.ok(final.camera.active && final.camera.uuid === final.latest.camera.uuid && final.mode === 0 && !final.cinematic && final.distance === 25 && !final.presentation)
         assert.deepEqual(final.viewport, { width: view.width, height: view.height }); assert.equal(final.isHost, view.host)
         assert.ok([...final.camera.eye, ...final.camera.quaternion, ...final.camera.matrix, ...final.camera.inverse, ...final.camera.projection,
-          final.camera.fov, ...final.pivot, ...final.desiredAfterLift, ...final.final, final.arm, final.lift,
+          final.camera.fov, final.camera.near, final.camera.far, ...final.pivot, ...final.desiredAfterLift, ...final.final, final.arm, final.lift,
           ...final.actors.flatMap(t => [...Object.values(t.body), ...t.rendered, ...t.quaternion])].every(Number.isFinite))
         assert.ok(final.camera.matrix.every((v, i) => v === final.latest.camera.matrix[i]) && final.camera.projection.every((v, i) => v === final.latest.camera.projection[i]))
+        assert.ok(Array.isArray(final.latest.envelopes) && final.latest.envelopes.length <= 7, 'bounded final envelopes required')
+        assert.deepEqual(final.latest.viewport, [view.width, view.height])
+        for (const e of final.latest.envelopes) {
+          assert.equal(e.stamp, final.latest.stamp, 'envelope belongs to completed draw')
+          assert.equal(e.width, view.width); assert.equal(e.height, view.height)
+          assert.ok(e.outputIdentityMatched && e.camera.active && e.camera.uuid === final.camera.uuid, 'envelope camera and output identity required')
+          assert.ok([...e.center, e.radius, ...e.bend, e.disc.x, e.disc.y, e.disc.radius, e.disc.depth,
+            ...e.camera.eye, ...e.camera.quaternion, ...e.camera.matrix, ...e.camera.inverse, ...e.camera.projection,
+            e.camera.fov, e.camera.near, e.camera.far].every(Number.isFinite), 'finite final envelope receipt required')
+        }
         assert.deepEqual(final.controls, { 'gfx.auto': false, 'gfx.quality': 4, 'daydream.seconds': 0, 'sun.dayLength': 0,
           'sun.timeOfDay': 12, 'world.seed': 1, 'terrain.kind': 0, 'world.curve': .71 })
         assert.ok(!final.quality.auto && final.quality.level === 4 && !final.daydream)
