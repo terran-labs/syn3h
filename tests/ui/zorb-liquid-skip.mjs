@@ -99,7 +99,7 @@ function behaviorSummary(rows) {
 async function persistPage() {
   if(page&&!page.isClosed()) {
     const evidence=await bounded(page.evaluate(()=>window.zorbProbe?.export()),5000,'partial observation')
-    if(evidence) { if(evidence.overflow)report.errors.push('Observation capacity exceeded'); if(evidence.phaseOverflow||evidence.errorDrops||evidence.observationErrors?.length)report.errors.push('Controller/float evidence incomplete'); report.activeEvidence=evidence; for(const record of report.cases) { const rows=evidence.rows.filter(r=>r.case===record.name);if(rows.length&&!record.endpointFrozen)record.behavior=behaviorSummary(rows) } await bounded(writeFile(`${out}/active-evidence.json`,JSON.stringify(evidence)),5000,'partial evidence'); await bounded(writeFile(`${out}/phases-${evidence.liquid}.json`,JSON.stringify({phases:evidence.phases,overflow:evidence.phaseOverflow,errors:evidence.observationErrors,errorDrops:evidence.errorDrops,boundVehicle:evidence.boundVehicle})),5000,'phase evidence') }
+    if(evidence) { if(evidence.overflow)report.errors.push('Observation capacity exceeded'); if(evidence.phaseOverflow||evidence.errorDrops||evidence.observationErrors?.length||evidence.checkpoint?.status==='failed'||evidence.checkpoint?.errors?.length)report.errors.push('Controller/float evidence incomplete'); report.activeEvidence=evidence; for(const record of report.cases) { const rows=evidence.rows.filter(r=>r.case===record.name);if(rows.length&&!record.endpointFrozen)record.behavior=behaviorSummary(rows) } await bounded(writeFile(`${out}/active-evidence.json`,JSON.stringify(evidence)),5000,'partial evidence'); await bounded(writeFile(`${out}/phases-${evidence.liquid}.json`,JSON.stringify({phases:evidence.phases,overflow:evidence.phaseOverflow,errors:evidence.observationErrors,errorDrops:evidence.errorDrops,boundVehicle:evidence.boundVehicle,checkpoint:evidence.checkpoint})),5000,'phase evidence') }
   }
   await save()
 }
@@ -223,6 +223,115 @@ async function installProbe(liquid) {
           previous:h?{x:value(h.x),y:value(h.y),z:value(h.z),radius:value(h.radius),gap:value(h.gap),speed:value(h.speed),kind:h.kind}:null},
         outcome})
     })
+    // One bounded window in the original growing Buggy case. Keep only the current
+    // candidate step until the second counted skip, then at most twelve ordinary steps.
+    const checkpoint={case:'water-buggy-repeat',maxSteps:12,status:'not-started',steps:[],errors:[]}
+    let checkpointStep=null,skipInvocation=null,skipBaseline=0
+    const failCheckpoint=message=>{checkpoint.status='failed';if(checkpoint.errors.length<20)checkpoint.errors.push(message);else error('checkpoint overflow',message)}
+    const dot=(a,b)=>a.x*b.x+a.y*b.y+a.z*b.z
+    const sub=(a,b)=>({x:a.x-b.x,y:a.y-b.y,z:a.z-b.z})
+    const scale=(a,k)=>({x:a.x*k,y:a.y*k,z:a.z*k})
+    const bodyState=v=>{
+      const b=v.body,z=v.zorb,c=copy(z.centre(v.object.position.clone())),com=copy(b.worldCom())
+      const velocity=copy(b.linvel()),omega=copy(b.angvel()),r=sub(c,com)
+      return {position:copy(b.translation()),rotation:{...b.rotation()},com,centre:c,velocity,omega,
+        centreVelocity:{x:velocity.x+omega.y*r.z-omega.z*r.y,y:velocity.y+omega.z*r.x-omega.x*r.z,z:velocity.z+omega.x*r.y-omega.y*r.x},
+        radius:z.radius,target:z.target,mass:b.mass(),force:copy(b.userForce()),torque:copy(b.userTorque()),
+        active:z.active,on:z.on,materializing:v.object.userData.materializing===true,input:{...v.input},
+        held:Object.fromEntries(['KeyE','KeyQ','KeyR','KeyF','Space','KeyW','KeyA','KeyS','KeyD'].map(k=>[k,s.game.input.held(k)])),
+        skips:z.skips,armed:z.skipArmed,coasting:z.skipCoasting}
+    }
+    const checkpointState=(v,phase,id)=>{
+      if(!checkpointStep)return
+      if(checkpointStep.states.length>=24){failCheckpoint('Step state capacity exceeded');return}
+      const state=bodyState(v)
+      const finite=o=>Object.values(o).every(a=>typeof a==='number'?Number.isFinite(a):a&&typeof a==='object'?finite(a):true)
+      if(!finite(state))failCheckpoint('Nonfinite checkpoint state')
+      checkpointStep.states.push({phase,callId:id,tick:s.game.tick,vehicle:v.object.uuid,bodyHandle:v.body.handle,...state})
+    }
+    const checkpointBefore=(v,label,id,args)=>{
+      if(current!==checkpoint.case||['complete','failed'].includes(checkpoint.status))return null
+      if(label==='fixed'){
+        if(checkpointStep)failCheckpoint('Next fixed step arrived before postPhysics')
+        if(checkpoint.status==='failed')return null
+        checkpointStep={tick:s.game.tick,vehicle:v.object.uuid,bodyHandle:v.body.handle,dt:args[0],states:[],skipCalls:[]}
+      }
+      if(!checkpointStep)return null
+      if(label==='skip'){
+        if(skipInvocation){failCheckpoint('Nested skip invocation');return null}
+        if(checkpointStep.skipCalls.length){failCheckpoint('Multiple skip calls in one ordinary step');return null}
+        const [,kind,p,surface,dt,hopped]=args
+        skipInvocation={callId:id,tick:s.game.tick,kind,centre:copy(p),surface,dt,hopped,queries:[],before:bodyState(v)}
+        checkpointStep.skipCalls.push(skipInvocation)
+        return skipInvocation
+      }
+      checkpointState(v,`${label}:before`,id)
+      return null
+    }
+    const finishSkip=(v,call,result,thrown)=>{
+      if(!call)return
+      try {
+        call.after=bodyState(v);call.result=result;call.thrown=thrown
+        if(thrown)throw new Error(`Original skip call threw: ${thrown}`)
+        const {centre:p,surface,queries:q}=call
+        const one=(key,x,z)=>{const found=q.filter(a=>a.key===key&&a.x===x&&a.z===z&&!a.thrown);if(found.length!==1)throw new Error(`Expected one fresh ${key} at ${x},${z}`);return found[0]}
+        const height=(x,z)=>one('liquidKindAt',x,z).result===call.kind?one('liquidHeightAt',x,z).result:NaN
+        const left=height(p.x-.25,p.z),right=height(p.x+.25,p.z),back=height(p.x,p.z-.25),front=height(p.x,p.z+.25)
+        const derivative=(lo,hi)=>Number.isFinite(lo)&&Number.isFinite(hi)?(hi-lo)/.5:Number.isFinite(hi)?(hi-surface)/.25:(surface-lo)/.25
+        const dx=derivative(left,right),dz=derivative(back,front),length=Math.hypot(dx,1,dz)
+        const derivedNormal={x:-dx/length,y:1/length,z:-dz/length}
+        // Early returns have no heave/flow call. They are explicitly incomplete inputs,
+        // never an invitation to read the private scratch vectors from an older call.
+        const heave=one('liquidVerticalSpeedAt',p.x,p.z).result,flow=one('liquidFlowAt',p.x,p.z).out
+        // These calls occur only after skipNormal.set(...).normalize() in the pinned
+        // method. Reading it here is fresh for this invocation, not a prior branch.
+        const n=copy(v.zorb.skipNormal)
+        const vertical=heave+dx*flow.x+dz*flow.z
+        if(![surface,dx,dz,n.x,n.y,n.z,heave,flow.x,flow.z,vertical].every(Number.isFinite))throw new Error('Nonfinite same-call inputs')
+        const surfaceVelocity={x:flow.x,y:vertical,z:flow.z}
+        call.inputs={valid:true,normal:n,derivedNormal,dx,dz,heave,flow,vertical,source:'same invocation arguments and forwarded query outputs'}
+        call.comNormalSpeed=dot(sub(call.before.velocity,surfaceVelocity),n)
+        call.centreNormalSpeed=dot(sub(call.before.centreVelocity,surfaceVelocity),n)
+        call.afterComNormalSpeed=dot(sub(call.after.velocity,surfaceVelocity),n)
+        const syncBefore=checkpointStep.states.find(a=>a.phase==='sync:before'),syncAfter=checkpointStep.states.find(a=>a.phase==='sync:after')
+        call.radiusRate=syncBefore&&syncAfter&&call.dt>0?(syncAfter.radius-syncBefore.radius)/call.dt:null
+        call.boundaryNormalSpeedWithoutNormalRotation=call.radiusRate===null?null:call.centreNormalSpeed-call.radiusRate
+        call.gap=(p.y-surface)*n.y-call.before.radius
+        const a=call.before,b=call.after,dv=sub(b.velocity,a.velocity),dw=sub(b.omega,a.omega)
+        const impulse=scale(dv,a.mass),normalImpulse=dot(impulse,n),tangentImpulse=sub(impulse,scale(n,normalImpulse))
+        const valid=b.skips===a.skips+1&&a.mass===b.mass&&Number.isFinite(a.mass)&&a.mass>0&&dw.x===0&&dw.y===0&&dw.z===0
+        call.impulseWork={valid,impulse,normalImpulse,tangentImpulse,angularDelta:dw,
+          normalWork:valid?normalImpulse*(dot(a.velocity,n)+dot(b.velocity,n))/2:null,
+          tangentWork:valid?dot(tangentImpulse,scale({x:a.velocity.x+b.velocity.x,y:a.velocity.y+b.velocity.y,z:a.velocity.z+b.velocity.z},.5)):null,
+          translationEnergyDelta:valid ? .5*a.mass*(dot(b.velocity,b.velocity)-dot(a.velocity,a.velocity)):null}
+        if(!checkpoint.anchor&&b.skips-skipBaseline===2&&b.skips===a.skips+1){checkpoint.anchor={tick:call.tick,callId:call.callId};if(checkpoint.status!=='failed'&&!checkpoint.errors.length)checkpoint.status='collecting'}
+        if(checkpoint.anchor&&call.tick!==checkpoint.anchor.tick&&(b.armed||call.comNormalSpeed<0))checkpointStep.terminal=b.armed?'rearmed':'returned-inward'
+      }catch(e){call.inputs={valid:false,reason:describe(e)};if(checkpoint.anchor)failCheckpoint(`Missing exact skip inputs: ${describe(e)}`)}
+      finally{skipInvocation=null}
+    }
+    const checkpointAfter=(v,label,id,token,result,thrown)=>{
+      if(label==='skip'){finishSkip(v,token,result,thrown);return}
+      if(current===checkpoint.case&&checkpointStep)checkpointState(v,`${label}:${thrown?'throw':'after'}`,id)
+    }
+    const checkpointWorld=(phase)=>safely(`checkpoint ${phase}`,()=>{
+      if(!checkpointStep)return
+      checkpointState(s.player,phase,null)
+      if(phase!=='postPhysics')return
+      if(checkpoint.anchor){
+        const required=['fixed:before','sync:before','sync:after','controller:before','controller:after','float:before','float:after','fixed:after','preWorld-afterControllers','postPhysics']
+        for(const name of required)if(checkpointStep.states.filter(a=>a.phase===name).length!==1)failCheckpoint(`Missing or duplicated ${name}`)
+        if(checkpointStep.states.some(a=>a.tick!==checkpointStep.tick||a.vehicle!==checkpointStep.vehicle||a.bodyHandle!==checkpointStep.bodyHandle))failCheckpoint('Step identity or tick mismatch')
+        if(checkpointStep.skipCalls.length!==1||checkpointStep.skipCalls[0].inputs?.valid!==true)failCheckpoint('Missing complete same-call skip inputs')
+        if(checkpoint.steps.length>=12)failCheckpoint('Twelve-step bound exceeded')
+        else checkpoint.steps.push(checkpointStep)
+        if(checkpoint.status!=='failed'&&!checkpoint.errors.length){
+          if(checkpointStep.terminal)checkpoint.status='complete'
+          else if(checkpoint.steps.length===12)failCheckpoint('No inward return or rearm within twelve ordinary steps')
+        }
+      }
+      checkpointStep=null
+    })
+    const endCheckpoint=()=>{if(current===checkpoint.case&&checkpoint.status!=='complete')failCheckpoint('Case ended without complete bounded rebound evidence')}
     const restoreBinding=()=>{
       const old=binding;if(!old)return
       binding=null
@@ -247,11 +356,12 @@ async function installProbe(liquid) {
           const id=++callId
           if(label==='fixed')verifyBinding()
           if(label==='dispose')safely('dispose observation',()=>{error('disposed during case',v.object.uuid);restoreBinding()})
-          snapshot(v,`${label}:before`,id,{argumentCount:args.length,dt:typeof args[0]==='number'?value(args[0]):typeof args[2]==='number'?value(args[2]):null})
-          let returned=false,result
+          if(label!=='sync'&&label!=='skip')snapshot(v,`${label}:before`,id,{argumentCount:args.length,dt:typeof args[0]==='number'?value(args[0]):typeof args[2]==='number'?value(args[2]):null})
+          const token=safely('checkpoint before',()=>checkpointBefore(v,label,id,args))
+          let returned=false,result,thrown
           try {result=Reflect.apply(original,this,args);returned=true;return result}
-          catch(e){snapshot(v,`${label}:throw`,id,{thrown:describe(e)});throw e}
-          finally {if(returned)snapshot(v,`${label}:after`,id,{returnType:typeof result,returnValue:result===undefined?'undefined':result===null?null:['boolean','number','string'].includes(typeof result)?value(result):'[opaque]'})}
+          catch(e){thrown=describe(e);if(label!=='sync'&&label!=='skip')snapshot(v,`${label}:throw`,id,{thrown});throw e}
+          finally {safely('checkpoint after',()=>checkpointAfter(v,label,id,token,result,thrown));if(returned&&label!=='sync'&&label!=='skip')snapshot(v,`${label}:after`,id,{returnType:typeof result,returnValue:result===undefined?'undefined':result===null?null:['boolean','number','string'].includes(typeof result)?value(result):'[opaque]'})}
         }
         Object.defineProperty(object,key,{configurable:true,writable:true,enumerable:descriptor?.enumerable??false,value:wrapper})
         binding.entries.push({object,key,descriptor,wrapper})
@@ -259,6 +369,27 @@ async function installProbe(liquid) {
       try {
         // fixed supplies restored-input boundaries; these two wrap the actual nested calls.
         wrap(v,'applyForces','controller');wrap(v.zorb,'float','float');wrap(v,'fixedUpdate','fixed');wrap(v,'dispose','dispose')
+        if(current===checkpoint.case){
+          skipBaseline=v.zorb.skips;if(checkpoint.status!=='failed'&&!checkpoint.errors.length)checkpoint.status='waiting-for-second-skip'
+          wrap(v.zorb,'sync','sync');wrap(v.zorb,'skipLiquid','skip')
+          for(const key of ['liquidKindAt','liquidHeightAt','liquidVerticalSpeedAt','liquidFlowAt']){
+            const original=t[key],descriptor=Object.getOwnPropertyDescriptor(t,key)
+            if(typeof original!=='function')throw new Error(`Missing exact query ${key}`)
+            const wrapper=function(...args){
+              const call=skipInvocation
+              let result,thrown
+              try{result=Reflect.apply(original,this,args);return result}
+              catch(e){thrown=describe(e);throw e}
+              finally{if(call)safely(`query ${key}`,()=>{
+                if(call.queries.length>=12){failCheckpoint('Query capacity exceeded');return}
+                call.queries.push({key,callId:call.callId,tick:s.game.tick,x:args[0],z:args[1],result:key==='liquidFlowAt'?'[original object]':result,
+                  out:key==='liquidFlowAt'?{x:args[2].x,z:args[2].z}:null,thrown})
+              })}
+            }
+            Object.defineProperty(t,key,{configurable:true,writable:true,enumerable:descriptor?.enumerable??false,value:wrapper})
+            binding.entries.push({object:t,key,descriptor,wrapper})
+          }
+        }
         verifyBinding()
       }catch(e){restoreBinding();throw e}
     }
@@ -286,10 +417,10 @@ async function installProbe(liquid) {
       if(rows.length>=24000){overflow=true;return}
       rows.push(row);previous=row
     }
-    const observer={fixedUpdate(){verifyBinding();sample('preWorld-afterControllers')},postPhysics(){verifyBinding();sample('postPhysics')}}
+    const observer={fixedUpdate(){verifyBinding();checkpointWorld('preWorld-afterControllers');sample('preWorld-afterControllers')},postPhysics(){verifyBinding();checkpointWorld('postPhysics');sample('postPhysics')}}
     s.game.add(observer)
     window.zorbProbe={
-      begin(name){current=name;previous=null;bind()},end(){restoreBinding();current=null;previous=null},
+      begin(name){current=name;previous=null;bind()},end(){endCheckpoint();restoreBinding();current=null;previous=null},
       site(){
         // Search actual generated terrain; never replace its sampler or liquid methods.
         const size=t.data.size,limit=Math.min(size*.45,850)
@@ -324,8 +455,8 @@ async function installProbe(liquid) {
         v.body.setAngvel({x:0,y:mode==='drive'?0:2,z:0},true)
         return {mode,site,actualContext:q,settingsDiagnostic:true,placementDiagnostic:true,skipBefore:v.zorb.skips,hopBefore:v.zorb.hops}
       },
-      export(){return {liquid,rows,audio,overflow,phases,phaseOverflow,observationErrors,errorDrops,boundVehicle:binding?.vehicle.object.uuid??null,clock:'Unmodified app/network clock',surfaceQuery:'actual ProceduralTerrain'}} ,
-      dispose(){restoreBinding();s.game.remove(observer,false);for(const f of restore)safely('restore audio',f);current=null}
+      export(){return {liquid,rows,audio,overflow,phases,phaseOverflow,observationErrors,errorDrops,checkpoint,boundVehicle:binding?.vehicle.object.uuid??null,clock:'Unmodified app/network clock',surfaceQuery:'actual ProceduralTerrain'}} ,
+      dispose(){endCheckpoint();restoreBinding();s.game.remove(observer,false);for(const f of restore)safely('restore audio',f);current=null}
     }
   },liquid)
 }
@@ -424,7 +555,7 @@ finally {
     assert.deepEqual(report.errors,[]);report.after=await pins();assert.deepEqual(report.after,report.before)
     assert.equal(report.cases.length,16,'all planned cases required; interrupted cases are not a full matrix')
     assert.ok(report.cases.filter(c=>c.name.startsWith('water-')).some(c=>c.anchorHeightRange?.[1]>c.anchorHeightRange?.[0]),'actual water wave evolution required')
-    report.captureComplete=!report.failure&&!report.cleanupErrors.length
+    report.captureComplete=!report.failure&&!report.cleanupErrors.length&&!report.errors.length
     report.disposition='review-required';report.productAccepted=false // Capture completeness is not owner-behavior acceptance.
   }catch(e){report.cleanupErrors.push(String(e.stack??e))}
   await save()

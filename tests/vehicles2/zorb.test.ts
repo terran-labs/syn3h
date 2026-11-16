@@ -400,6 +400,21 @@ describe('passive Zorb liquid skips', () => {
     } finally { f.done() }
   })
 
+  it('rearms only after true clearance followed by a fresh inward recross', () => {
+    const f = liquidSkipFixture('water')
+    try {
+      const incoming = { x: 30, y: -3, z: 0 }
+      f.place(.15); f.v.body.setLinvel(incoming, true); f.force()
+      f.place(-.02); f.force(); expect(f.v.zorb.skips).toBe(1)
+      // A tiny outward excursion is not clearance, even if it crosses zero again.
+      f.place(.001); f.v.body.setLinvel({ x: 30, y: .5, z: 0 }, true); f.force()
+      f.place(-.002); f.v.body.setLinvel(incoming, true); f.force()
+      expect(f.v.zorb.skips).toBe(1)
+      f.place(.02); f.force(); expect(f.v.zorb.skips).toBe(1)
+      f.place(-.002); f.force(); expect(f.v.zorb.skips).toBe(2)
+    } finally { f.done() }
+  })
+
   it('requires separation and cooldown, and rejects shoreline-normal discontinuities', () => {
     const f = liquidSkipFixture('water')
     try {
