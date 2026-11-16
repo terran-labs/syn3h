@@ -38,7 +38,11 @@ try {
         if (type === 'pointerdown') targets.set(id, document.elementFromPoint(x, y))
         const target = targets.get(id) ?? document.body
         if (type === 'pointerup' || type === 'pointercancel') targets.delete(id)
-        target.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', isPrimary: id === 1, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' || type === 'pointercancel' ? 0 : 1, bubbles: true, cancelable: true, composed: true }))
+        // WebKit automation cannot register a native multi-touch drag. Keep normal capture
+        // for real taps; synthetic IDs need this narrow shim to exercise button handlers.
+        const capture = target.setPointerCapture
+        target.setPointerCapture = function(id) { try { capture.call(this, id) } catch (error) { if (error.name !== 'NotFoundError') throw error } }
+        try { target.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', isPrimary: id === 1, clientX: x, clientY: y, button: type === 'pointermove' ? -1 : 0, buttons: type === 'pointerup' || type === 'pointercancel' ? 0 : 1, bubbles: true, cancelable: true, composed: true })) } finally { target.setPointerCapture = capture }
       }
       window.__stick = () => {
         const el = document.querySelector('.touch-stick'), r = el.getBoundingClientRect(), s = window.syn3h.game.input.poll()

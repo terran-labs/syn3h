@@ -67,9 +67,6 @@ export class TouchControls {
       const throttle = action === 'throttleUp' || action === 'throttleDown'
       const release = () => { pointers.clear(); if (throttle) { this.thrust.delete(action); this.syncThrust() } else if (action === 'letOut') this.key('keyup'); else if (action !== 'special' && action !== 'zorb' && action !== 'letGo') input.external[action] = false; button.classList.remove('held') }
       this.resetters.push(release)
-    // Rotation changes viewport coordinates and the CSS radius. End this gesture rather
-    // than moving its anchor; only a fresh touch may establish a new centre.
-    addEventListener('resize', release, { signal })
       button.addEventListener('pointerdown', (event) => {
         if (!this.active || input.suspended) return
         event.preventDefault(); button.setPointerCapture(event.pointerId); pointers.add(event.pointerId)
@@ -87,6 +84,9 @@ export class TouchControls {
         button.addEventListener(name, (event) => { pointers.delete(event.pointerId); if (!pointers.size) release() }, { signal })
       }
     }
+    // Rotation invalidates the old viewport coordinates. Release all held controls;
+    // only a fresh touch may establish a new stick centre.
+    window.addEventListener('resize', () => this.reset(), { signal })
     window.addEventListener('blur', () => this.reset(), { signal })
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.reset() }, { signal })
     this.element.addEventListener('contextmenu', (event) => event.preventDefault(), { signal })
@@ -125,9 +125,6 @@ export class TouchControls {
       pending = null; pointer = null; input.external.x = 0; input.external.y = 0; base.classList.remove('is-active')
     }
     this.resetters.push(release)
-    // Rotation changes viewport coordinates and the CSS radius. End this gesture rather
-    // than moving its anchor; only a fresh touch may establish a new centre.
-    addEventListener('resize', release, { signal })
     const drive = (x: number, y: number) => {
       stickVector(origin, x, y, radius, vector)
       input.external.x = stickResponse(vector.x)
