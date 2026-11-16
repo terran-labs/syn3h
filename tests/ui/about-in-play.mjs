@@ -37,6 +37,12 @@ for (const mode of ['desktop', 'phone', 'landscape']) {
     assert.equal(await page.evaluate(() => syn3h.game.input.state.fire), false, 'held fire is cancelled on open')
     assert.ok(await page.evaluate(() => document.activeElement?.closest('.in-play-about') !== null), 'focus moves into the guide')
     await page.screenshot({ path: `${out}/${mode}.png` })
+    if (touch) {
+      // One header row on a phone: title and Back side by side, Back a full tap target.
+      const header = await guide.locator('header').boundingBox(), title = await guide.locator('h2').boundingBox(), back = await guide.locator('.about-back').boundingBox()
+      assert.ok(header.height <= 56, `${mode}: header is ${header.height}px tall`)
+      assert.ok(back.height >= 44 && title.x + title.width < back.x, `${mode}: title left, Back right, one row`)
+    }
     if (!touch) {
       // Keyboard only: Tab stays inside the guide and reaches Back.
       for (let i = 0; i < 3; i++) await page.keyboard.press('Tab')

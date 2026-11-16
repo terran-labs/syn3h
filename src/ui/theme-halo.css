@@ -322,12 +322,17 @@ html .syn3h-shell.exploration-ui:is([data-glass], *) .in-play-about { background
 .syn3h-shell .pause-about { position: fixed; z-index: 61; left: 50%; bottom: max(24px, env(safe-area-inset-bottom)); transform: translateX(-50%); min-height: 44px; max-width: calc(100vw - 32px); padding: 10px 24px; border: 1px solid var(--s3-line); border-radius: 999px; color: var(--s3-accent-2); background: rgb(3 6 10 / .9); }
 .syn3h-shell .pause-about[hidden] { display: none; }
 .syn3h-shell .pause-about:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 4px; }
+/* Phones, portrait and landscape: one header row of 56px, title left and a compact Back. */
+@media (max-width: 600px), (max-height: 550px) {
+  .syn3h-shell.exploration-ui .in-play-about > header { flex-wrap: nowrap; box-sizing: border-box; height: 56px; padding: 6px 8px 6px 18px; }
+  .syn3h-shell.exploration-ui .in-play-about button.panel-back { width: auto; min-width: 0; min-height: 44px; padding: 0 16px; gap: 10px; }
+  .syn3h-shell.exploration-ui .in-play-about .about-back-long { display: none; }
+  .syn3h-shell.exploration-ui .in-play-about-body { padding: 16px 18px 20px; }
+}
 .syn3h-shell.exploration-ui button.panel-back:focus-visible,
 .syn3h-shell.exploration-ui .about-links a:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 4px; }
 @media (max-width: 600px) {
   .syn3h-shell.exploration-ui .lobby-panels > [data-panel="about"] { padding: 20px 18px; }
-  .syn3h-shell.exploration-ui .in-play-about > header { padding: 12px 18px; }
-  .syn3h-shell.exploration-ui .in-play-about button.panel-back { width: auto; min-width: 0; }
   .syn3h-shell.exploration-ui .in-play-about-body { padding: 16px 18px 20px; }
   .syn3h-shell.exploration-ui .about-columns { grid-template-columns: 1fr; gap: 16px; }
   .syn3h-shell.exploration-ui button.panel-back { width: 100%; min-width: 0; }
