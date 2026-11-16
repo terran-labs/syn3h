@@ -109,7 +109,6 @@ const PRESET_TABLE: Readonly<Record<string, PresetRow>> = {
   'post.shafts': [0, 0, D, D, D, D],
   'post.bloom': [0, 0, 0, D, D, D],
   'post.heat': [0, 0, 0, D, D, D],
-  'post.plunge': [0, 0, 0, D, D, D],
   'post.temporal': [false, false, false, false, true, true],
   'post.ao': off4,
   'post.contact': off4,

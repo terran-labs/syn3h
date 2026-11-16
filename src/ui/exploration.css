@@ -81,8 +81,12 @@
 /* The owner wants the map at least 80% opaque in the centre. Opacity, this feathering mask
    and the focus fade below multiply, so the product is what counts: .94 here, .94 x .92 = .86
    with the cursor captured. tests/ui/minimap-opacity.mjs measures it from pixels. */
-.syn3h-shell.exploration-ui .shell-minimap canvas { width: 100%; height: 100%; opacity: .94; -webkit-mask-image: radial-gradient(ellipse closest-side,#000 52%,rgb(0 0 0 / .8) 70%,transparent 100%); mask-image: radial-gradient(ellipse closest-side,#000 52%,rgb(0 0 0 / .8) 70%,transparent 100%); }
-.syn3h-shell.exploration-ui .shell-minimap::after { content: ''; position: absolute; inset: 24px; border: 1px solid rgb(175 225 250 / .2); border-radius: 50%; box-shadow: 0 0 14px rgb(100 200 250 / .06); }
+/* The terrain ends at the rim ring; the band outside it holds the dots for vehicles beyond
+   the map, unmasked (.shell-minimap-marks). The ring's inset is a share of the size, so the band is
+   the same proportion at every size: Minimap.ts RIM = 1 - 2 * 11.5%. */
+.syn3h-shell.exploration-ui .shell-minimap canvas { width: 100%; height: 100%; opacity: .94; -webkit-mask-image: radial-gradient(ellipse closest-side,#000 52%,rgb(0 0 0 / .8) 68%,transparent 78%); mask-image: radial-gradient(ellipse closest-side,#000 52%,rgb(0 0 0 / .8) 68%,transparent 78%); }
+.syn3h-shell.exploration-ui .shell-minimap canvas.shell-minimap-marks { opacity: 1; -webkit-mask-image: none; mask-image: none; }
+.syn3h-shell.exploration-ui .shell-minimap::after { content: ''; position: absolute; inset: 11.5%; border: 1px solid rgb(175 225 250 / .2); border-radius: 50%; box-shadow: 0 0 14px rgb(100 200 250 / .06); }
 .syn3h-shell.exploration-ui .shell-minimap span { top: 13px; left: 50%; right: auto; color: #b1eaff; font: 10px 'Barlow',sans-serif; letter-spacing: .15em; text-shadow: 0 0 8px #6bc5f1; }
 .syn3h-shell.exploration-ui.is-playing .focus-hud { opacity: .7; }
 .syn3h-shell.exploration-ui.is-focus .focus-hud { opacity: 1; }
@@ -98,9 +102,6 @@
 @media (prefers-reduced-motion: reduce) { .syn3h-shell.exploration-ui *, .touch-controls * { transition-duration: 0s !important; } }
 .syn3h-shell.exploration-ui .wi-top #syn3h-build-notice { position: static !important; inset: auto !important; width: 100% !important; padding: 4px 6px !important; min-height: 24px; font: 11px/1.3 'Barlow',sans-serif !important; border: 1px solid var(--s3-line-quiet) !important; border-radius: 2px !important; background: rgb(20 70 90 / .2) !important; box-shadow: none !important; }
 
-.syn3h-shell.exploration-ui .galaxy-label { background: rgb(5 20 32 / .35); border: 0; border-bottom: 1px solid rgb(175 225 250 / .32); border-radius: 0; box-shadow: none; padding: 8px 12px; }
-.syn3h-shell.exploration-ui .galaxy-label strong { font: 400 13px/1.4 'Barlow',sans-serif; letter-spacing: .12em; }
-.syn3h-shell.exploration-ui .galaxy-label small { font-size: 10px; letter-spacing: .08em; }
 .syn3h-shell.exploration-ui .world-inspector .wi-top .wi-search { font: 400 12px/1.2 'Barlow',sans-serif; height: 28px; min-height: 28px; padding: 3px 0; background: none; border: 0; border-bottom: 1px solid var(--s3-line); border-radius: 0; }
 .syn3h-shell.exploration-ui .world-inspector input[type=range] { appearance: none; -webkit-appearance: none; height: 24px; background: transparent; }
 .syn3h-shell.exploration-ui .world-inspector input[type=range]::-webkit-slider-runnable-track { height: 1px; background: rgb(175 225 250 / .45); }

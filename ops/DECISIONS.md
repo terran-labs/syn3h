@@ -2,6 +2,23 @@
 
 One entry per owner decision: date, what was decided, why, and what it changes.
 
+## Monday 16 November: code under PolyForm, creative work under CC BY-NC-SA 4.0
+
+**Decided** by the owner. The code keeps the PolyForm Noncommercial License 1.0.0. The
+creative work is added under Creative Commons Attribution-NonCommercial-ShareAlike 4.0
+International, attributed as "Syn3h by Terran Labs, https://www.syn3h.com".
+
+**Why.** Creative Commons recommends against its licences for software, and they grant no
+patent licence, so PolyForm stays the right fit for the code. CC BY-NC-SA fits the
+writing, meshes, images and videos, and its share-alike term keeps remixes of them open.
+
+**What it changes.** `LICENSE-CC-BY-NC-SA.md` holds the official, unmodified legal code.
+`NOTICE.md` says which parts fall under which licence, that a file which is both is code
+while its shared output is creative work, that third-party components keep their own
+licences, and that neither licence covers the Syn3h name or logo. The README and the About
+screen name both licences. `LICENSE.md` and the package's SPDX identifier are unchanged.
+Outside contributions now need an agreement that covers both licences; none exists yet.
+
 ## Sunday 15 November, overnight: normal-entry features and continued coordination
 
 The owner directed all developed features to default on without special URLs. This

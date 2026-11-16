@@ -1,5 +1,6 @@
 import { frozenResourceURL } from '../core/frozenResources'
 import type { LobbyAddress } from './LobbyAddress'
+import { DEFAULT_ROOM, isDefaultRoom, roomFromQuery, roomLabel } from '../core/roomAddress'
 import { modeChoices, modeName } from './modeAvailability'
 import { GEAR_LABELS, type GearRack, type GearId } from '../weapons/Gear'
 import { GearSelector, type GearSource } from './gear/GearSelector'
@@ -53,6 +54,7 @@ import { bootLoading } from './LoadingScreen'
 import { renderHelp, touchHelp } from './VehicleHelp'
 import { PlayHints, type Hint } from './PlayHints'
 import type { VehicleKind } from '../vehicles'
+import './label-plate.css'
 import './shell.css'
 import './exploration.css'
 import './theme-halo.css'
@@ -71,6 +73,18 @@ const DRIVE_KEYS = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDow
  * else; Settings is the gear in the lower right corner (LobbySettings, 16 November 2026). Join by QR lives inside Multiplayer ("Show on screen"), and shaping a world
  * returns with OFFER_CUSTOM_PLANET.
  */
+/**
+ * The two lines of a planet label: the planet's name, then its biome in lower case ("Velmora"
+ * over "alpine"). The name is the world's own setting (world.nameSeed, see worldName.ts), and
+ * the biome is its recipe's label, so a renamed biome changes here with it.
+ */
+export function planetLabelText(world: { id?: string; recipe?: string; label: string; seed: number; nameSeed?: number; forming?: boolean }): { name: string; biome: string } {
+  if (world.forming) return { name: world.label, biome: 'shape your own' }
+  const recipe = planetById(world.recipe ?? world.id?.split('~')[0])
+  return { name: worldName(world.nameSeed ?? 0, world.seed), biome: recipe ? biomeLine(recipe) : world.label.toLowerCase() }
+}
+/** Must match the short landscape block in shell.css. */
+const SHORT_LANDSCAPE = '(orientation: landscape) and (max-height: 480px)'
 const LOBBY_LINKS = `${OFFER_CUSTOM_PLANET ? '<button data-goto="worlds">Worlds</button>' : ''}<button data-goto="multiplayer">Multiplayer</button><button data-goto="about">About</button>`
 const back = '<button type="button" class="panel-back link-button" data-goto="index"><span aria-hidden="true">←</span><span>Back</span></button>'
 /** `__SYN3H_BUILD__` is an optional build-time constant (a date or tag) from the bundler. */
@@ -120,7 +134,7 @@ export class Shell implements System {
   /** The 3D galaxy: the lobby. Absent only where WebGL 2 is, and then the game cannot draw either. */
   private galaxy?: Galaxy
   /** Arrived by an invite link that names a world: that world is the one to enter. */
-  private readonly invited = (() => { const query = new URLSearchParams(location.search); return query.has('room') && query.has('world') })()
+  private readonly invited = new URLSearchParams(location.search).has('world')
   private started = false
   private menuVisible = true
   private lobbyAddress?: LobbyAddress
@@ -151,7 +165,7 @@ export class Shell implements System {
       <div class="lobby-panels" hidden>
         <section data-panel="explore">${heading('Prepare to Explore')}
           <form class="shell-form"><label for="shell-name">Player name</label><input id="shell-name" name="playerName" maxlength="24" autocomplete="nickname" placeholder="Explorer">
-          <label for="shell-room">Room</label><div class="input-action"><input id="shell-room" name="room" maxlength="64" autocomplete="off"><button class="shell-invite" type="button">Copy invite</button></div>
+          <label for="shell-room">Room</label><div class="input-action"><input id="shell-room" name="room" maxlength="64" autocomplete="off" placeholder="Public room"><button class="shell-invite" type="button">Copy invite</button></div>
           <div class="shell-controls"><span><b>WASD / arrows</b> Drive</span><span><b>Space</b> Wings</span><span><b>Shift</b> Brake</span><span><b>L / click</b> Plasma Tag</span></div><p class="shell-touch-hint">Left thumb to drive. Right thumb for wings, brake and tag.</p>
           <button class="shell-play is-primary" type="submit">Enter World ›</button></form>${back}
         </section>
@@ -304,7 +318,9 @@ export class Shell implements System {
       if (!seed) { seed = String(crypto.getRandomValues(new Uint32Array(1))[0]); try { localStorage.setItem('syn3h.nameSeed', seed) } catch { /* Storage is optional. */ } }
       this.nameInput.value = generateName(seed, 'player')
     }
-    this.roomInput.value = new URL(location.href).searchParams.get('room')?.trim().slice(0, 64) || 'lobby'
+    // The public room is an empty field (placeholder "Public room"), never its internal name.
+    const entryRoom = roomFromQuery(new URL(location.href).searchParams)
+    this.roomInput.value = isDefaultRoom(entryRoom) ? '' : entryRoom
     this.roomInput.addEventListener('input', () => this.updateRoomLabels(), { signal }); this.updateRoomLabels()
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-goto]')) button.addEventListener('click', () => this.showPanel(button.dataset.goto!), { signal })
     this.overlay.addEventListener('click', event => {
@@ -380,7 +396,7 @@ export class Shell implements System {
     void this.panels.show('index', true); this.update()
   }
   private updateRoomLabels(): void {
-    this.element.querySelector('.multiplayer-room')!.textContent = `Room: ${this.room}`
+    this.element.querySelector('.multiplayer-room')!.textContent = `Room: ${roomLabel(this.room)}`
     this.updateInvite()
   }
   private updateInvite(): void {
@@ -471,8 +487,10 @@ export class Shell implements System {
   get bodyColor(): string { return this.choice.bodyColor }
   get accentColor(): string { return this.choice.accentColor }
   get playerName(): string { return this.nameInput.value.trim().slice(0, 24) || 'Explorer' }
-  get room(): string { return this.roomInput.value.trim().slice(0, 64) || 'lobby' }
+  get room(): string { return this.roomInput.value.trim().slice(0, 64) || DEFAULT_ROOM }
   get playing(): boolean { return this.started && !this.menuVisible }
+  /** Keep world labels beside the inspector, but never over a modal or paused game. */
+  get vehicleLabelsVisible(): boolean { return this.playing && !this.userPaused && !this.inviteOpen && !this.exitAsking }
   get menuOpen(): boolean { return this.menuVisible }
   /** Idle driving must not take control while the player uses panels or enters text. */
   get daydreamBlocked(): boolean {
@@ -1105,12 +1123,12 @@ export class Shell implements System {
     const chips = this.galaxyChips
     this.galaxyWorlds = worlds
     for (const world of worlds) {
-      const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
-      // The world's name first, its biome under it in small letters ("Velmora" over "alpine").
-      chip.innerHTML = '<strong></strong><small></small>'
-      const recipe = planetById(world.recipe ?? world.id)
-      chip.querySelector('strong')!.textContent = world.forming ? world.label : worldName(world.nameSeed ?? 0, world.seed)
-      chip.querySelector('small')!.textContent = world.forming ? 'Shape your own' : recipe ? biomeLine(recipe) + (world.id.includes('~') ? ` ${world.label.split(' ').at(-1)}` : '') : ''
+      const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label s3-plate'; chip.dataset.world = world.id
+      // The shared label plate (label-plate.css): the world's name, its biome in small lower
+      // case, then how many are online, and a leader to the planet's limb.
+      chip.innerHTML = '<span class="s3-leader" aria-hidden="true" hidden></span><strong></strong><small class="s3-plate-quiet galaxy-biome"></small>'
+      const text = planetLabelText(world)
+      chip.querySelector('strong')!.textContent = text.name; chip.querySelector('small')!.textContent = text.biome
       if (world.id !== 'custom') { const count = document.createElement('small'); count.className = 'galaxy-population'; count.textContent = ''; chip.append(count) }
       chip.addEventListener('click', () => { if (!this.tapWorld(world.id)) this.galaxy?.choose(world.id) })
       labels.append(chip); chips.set(world.id, chip)
@@ -1130,7 +1148,8 @@ export class Shell implements System {
           const count = chip.querySelector('.galaxy-population')!
           if (count.textContent !== text) { count.textContent = text; this.labelSizes.delete(world.id) }
           chip.title = `${populationLabel(value)}. Counts span separate rooms; choosing this planet uses your current room.`
-          chip.setAttribute('aria-label', `${world.label}: ${chip.title}`)
+          const plate = planetLabelText(world)
+          chip.setAttribute('aria-label', `${plate.name}, ${plate.biome}: ${chip.title}`)
         }
       },
       onLogo: drawn => this.element.classList.toggle('has-animated-logo', drawn),
@@ -1151,6 +1170,7 @@ export class Shell implements System {
         if (id !== currentPlanet().id) this.applyGalaxyWorld(chosen)
         if (this.started) this.closeMenu(); else this.play()
       },
+      frame: () => this.galaxyFrame,
       onLayout: (places, chosen) => {
         this.savedMoons?.layout(places, { width: innerWidth, top: this.brandBottom ?? 220, bottom: this.linksTop ?? innerHeight - 128 }, !!chosen || this.dropping || this.panels.active !== 'index')
         // Each label near its world, on the screen, clear of the links and of each other.
@@ -1158,31 +1178,79 @@ export class Shell implements System {
         // Clear of the wordmark too. While flying to a world, only its label stays.
         if (!this.brandBottom) {
           this.brandBottom = this.element.querySelector('.lobby-brand')?.getBoundingClientRect().bottom ?? 0
-          const hint = this.element.querySelector('.galaxy-hint')?.getBoundingClientRect().top ?? 0
-          this.linksTop = hint > innerHeight / 2 ? hint - 24 : innerHeight - 152
+          const hint = this.element.querySelector('.galaxy-hint')?.getBoundingClientRect() ?? { top: 0, left: innerWidth, width: 0 }
+          if (matchMedia(SHORT_LANDSCAPE).matches) {
+            // The buttons and hint are a column on the right (shell.css): the galaxy and its
+            // labels get everything left of it and below the corner wordmark.
+            const links = this.element.querySelector('.galaxy-links')?.getBoundingClientRect().left ?? innerWidth
+            this.labelRight = Math.min(links, hint.width ? hint.left : links) - 8
+            this.linksTop = innerHeight - 8
+            const top = this.brandBottom + 4, left = 8
+            // The system is wider than tall, so it can grow past the free height a little;
+            // the spread gives the inner worlds' labels room.
+            this.galaxyFrame = [(left + this.labelRight) / 2 / innerWidth, 1 - (top + this.linksTop) / 2 / innerHeight, 1.5 * (this.linksTop - top) / innerHeight]
+          } else {
+            this.labelRight = innerWidth; this.galaxyFrame = undefined
+            this.linksTop = hint.top > innerHeight / 2 ? hint.top - 24 : innerHeight - 152
+          }
           this.element.style.setProperty('--lobby-footer-space', `${innerHeight - this.linksTop}px`)
         }
         const shown = chosen ? places.filter(place => place.id === chosen) : places
-        const spots = placeLabels(shown, this.labelSizes, { width: innerWidth, height: innerHeight, bottom: this.linksTop, top: this.brandBottom + 4 }, { first: chosen ?? currentPlanet().id, previous: this.labelSpots })
+        const spots = placeLabels(shown, this.labelSizes, { width: this.labelRight, height: innerHeight, bottom: this.linksTop, top: this.brandBottom + 4 }, { first: chosen ?? currentPlanet().id, previous: this.labelSpots, avoid: this.galaxy ? [this.galaxy.sunScreen] : [] })
+        // Fallback ladder: if two-line plates leave a world unnamed, drop to names only (until the
+        // window size changes); worlds still unnamed fade, show while focused, and take a tap.
+        if (!chosen && !this.namesOnly && spots.some(spot => spot.crowded)) {
+          this.namesOnly = true; labels.classList.add('galaxy-names-only'); this.labelSizes.clear()
+        }
         if (chosen) for (const place of places) if (place.id !== chosen) chips.get(place.id)!.classList.add('is-crowded')
         for (const place of places) chips.get(place.id)!.hidden = !place.visible
         for (const spot of spots) {
           const chip = chips.get(spot.id)!; this.labelSpots.set(spot.id, spot.spot)
-          chip.style.translate = `${spot.x.toFixed(1)}px ${spot.y.toFixed(1)}px`; chip.classList.toggle('is-crowded', spot.crowded)
+          chip.classList.toggle('is-crowded', spot.crowded)
+          const place = places.find(p => p.id === spot.id), size = this.labelSizes.get(spot.id)
+          if (place && size) this.placeChip(chip, spot.x, spot.y, size, place)
         }
       },
     })
-    addEventListener('resize', () => { this.brandBottom = undefined }, { signal: this.abort.signal })
+    addEventListener('resize', () => { this.brandBottom = undefined; this.namesOnly = false; labels.classList.remove('galaxy-names-only'); this.labelSizes.clear() }, { signal: this.abort.signal })
     this.element.classList.add('is-galaxy'); this.galaxy.enabled = true
     // WebGL 2 exists but the galaxy would not start (a shader the driver refuses): the world
     // names stay, as a row of buttons, so a visitor can still choose one and play.
     this.element.classList.toggle('galaxy-flat', !this.galaxy.live)
     this.galaxyFor(this.panels.active || 'index')
   }
+  /**
+   * Move a planet label and its leader. Called every frame, so it writes only what moved by
+   * more than half a pixel and reads nothing from the page. x is the label's centre, y its top.
+   */
+  private placeChip(chip: HTMLButtonElement, x: number, y: number, size: { width: number; height: number }, planet: { x: number; y: number; radius: number }): void {
+    const last = this.chipDrawn.get(chip) ?? { x: NaN, y: NaN, sx: NaN, sy: NaN, length: -1, angle: 0 }
+    this.chipDrawn.set(chip, last)
+    if (!(Math.abs(x - last.x) <= .5 && Math.abs(y - last.y) <= .5)) { last.x = x; last.y = y; chip.style.translate = `${x.toFixed(1)}px ${y.toFixed(1)}px` }
+    // The leader runs from the point of the plate nearest the planet to the planet's limb.
+    const left = x - size.width / 2, nx = Math.min(left + size.width, Math.max(left, planet.x)), ny = Math.min(y + size.height, Math.max(y, planet.y))
+    const dx = nx - planet.x, dy = ny - planet.y, reach = Math.hypot(dx, dy), length = reach - planet.radius
+    const leader = chip.firstElementChild as HTMLElement
+    // The layout keeps leaders to 40 px (labels.ts); none when the plate touches the planet.
+    if (!(length > 1.5 && length <= 44)) { if (!leader.hidden) leader.hidden = true; last.length = -1; return }
+    const sx = nx - left, sy = ny - y, angle = Math.atan2(-dy, -dx)
+    if (leader.hidden) leader.hidden = false
+    if (Math.abs(sx - last.sx) <= .5 && Math.abs(sy - last.sy) <= .5 && Math.abs(length - last.length) <= .5 && Math.abs(angle - last.angle) <= .01) return
+    last.sx = sx; last.sy = sy; last.length = length; last.angle = angle
+    leader.style.width = `${length.toFixed(1)}px`
+    leader.style.transform = `translate(${sx.toFixed(1)}px,${sy.toFixed(1)}px) rotate(${angle.toFixed(3)}rad)`
+  }
+  private readonly chipDrawn = new WeakMap<HTMLButtonElement, { x: number; y: number; sx: number; sy: number; length: number; angle: number }>()
+  /** The labels have fallen back to names only (no biome line) for this window size. */
+  private namesOnly = false
+  /** The galaxy's worlds by id, for their label text. */
   /** The galaxy's world labels, by world id, with their measured sizes and last spots. */
   private readonly galaxyChips = new Map<string, HTMLButtonElement>()
   private readonly labelSizes = new Map<string, { width: number; height: number }>()
   private readonly labelSpots = new Map<string, number>()
+  /** Short landscape: the right edge left to the galaxy, and its framing (see SHORT_LANDSCAPE). */
+  private labelRight = innerWidth
+  private galaxyFrame?: readonly [number, number, number]
   /** Where the wordmark ends, measured once per window size. */
   private brandBottom?: number
   private linksTop = 0
@@ -1202,13 +1270,13 @@ export class Shell implements System {
     for (const [id, chip] of this.galaxyChips) {
       // The world in play is whatever the room says it is: its sphere and label follow.
       const world = this.galaxyWorlds.find(w => w.id === id)
-      if (world && id === current) {
+      if (world && id === current && !world.forming) {
         world.nameSeed = worldNameSeed.value
         if (world.seed !== worldSeed.value) this.galaxy?.setSeed(id, worldSeed.value)
       }
-      const strong = chip.querySelector('strong')!, text = world && !world.forming ? worldName(world.nameSeed ?? 0, world.seed) : strong.textContent
-      if (strong.textContent !== text) { strong.textContent = text; this.labelSizes.delete(id) }
-      chip.classList.toggle('is-current', id === current)
+      const name = chip.querySelector('strong')!, text = world ? planetLabelText(world).name : name.textContent
+      if (name.textContent !== text) { name.textContent = text; this.labelSizes.delete(id) }
+      chip.classList.toggle('is-current', id === current); chip.classList.toggle('is-selected', id === current)
       chip.classList.toggle('is-locked', !open && id !== current)
     }
   }

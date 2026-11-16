@@ -17,7 +17,8 @@ export interface ResumeSnapshot {
   p: number[]; q: number[]; v: number[]; w: number[]
   wingsOpen: boolean; special: boolean; cameraMode: number; timeOfDay: number
 }
-export const canonicalRoom = (room: string) => room.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32) || 'lobby'
+import { canonicalRoom, roomFromQuery } from './roomAddress'
+export { canonicalRoom }
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
 const vector = (v: unknown, count: number, max: number): v is number[] => Array.isArray(v) && v.length === count && v.every(n => finite(n) && Math.abs(n) <= max)
 const color = (s: unknown) => typeof s === 'string' && /^#[a-f0-9]{6}$/i.test(s)
@@ -41,10 +42,13 @@ export function parseResume(raw: string | null, room?: string, seed?: number, no
   } catch { return null }
 }
 
-/** An explicit room, seed or different vehicle in the URL wins over the saved session. */
+/**
+ * An explicit room, seed or different vehicle in the URL wins over the saved session. No ?room=
+ * is the public room, explicitly: a clean link never resumes a private room saved in this tab.
+ */
 export function prepareResume(query: URLSearchParams, storage: Pick<Storage, 'getItem'> = sessionStorage): ResumeSnapshot | null {
   let saved: ResumeSnapshot | null
-  try { saved = parseResume(storage.getItem(RESUME_KEY), query.get('room') ?? undefined) } catch { return null }
+  try { saved = parseResume(storage.getItem(RESUME_KEY), roomFromQuery(query)) } catch { return null }
   if (!saved) return null
   // The unchanged URL can still contain the seed from before a host edited it.
   if (query.has('seed') && Number(query.get('seed')) !== saved.seed && Number(query.get('seed')) !== saved.entrySeed) return null

@@ -50,6 +50,9 @@ export interface GalaxyOptions {
    * level, so weak devices keep the galaxy at almost no cost. Reduced motion does the same.
    */
   still?(): boolean
+  /** Where to centre the system and how large, as [x from left, y from bottom, scale], in
+   *  fractions of the host. Asked each frame; undefined keeps the default framing. */
+  frame?(): readonly [number, number, number] | undefined
   /** Focus the label selected with a controller, so its normal activation stays accessible. */
   onFocus?(id: string): void
   /** Logo box in CSS pixels relative to this host, plus the existing graphics tier. */
@@ -1037,7 +1040,8 @@ export class Galaxy {
     // The view keeps a little of the last drag's swing, and drifts very slowly when left alone.
     this.swing(elapsed, !this.drag && this.chosen < 0 && !still, wallElapsed)
     const inset = Math.min(0.3, Math.max(0, this.options.topInset?.() ?? 0) / Math.max(1, this.host.clientHeight))
-    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : [0.5, 0.5 - inset / 2, 1 - inset]
+    // The short landscape layout (Shell, SHORT_LANDSCAPE) supplies its own frame.
+    const frameGoal: Vec = this.editing ? (this.host.clientWidth <= 700 ? [0.5, 0.75, 0.55] : [0.28, 0.45, 0.8]) : (this.options.frame?.() as Vec | undefined) ?? [0.5, 0.5 - inset / 2, 1 - inset]
     const framingMoves = this.framing.some((v, i) => Math.abs(v - frameGoal[i]) > 0.001)
     this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], perFrame(0.18, elapsed)) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
@@ -1088,11 +1092,16 @@ export class Galaxy {
       const d = sub(place.position, view.eye), z = dot(d, view.forward)
       return { id: worlds[i].id, x: width * this.framing[0] + (dot(d, view.right) / (Math.max(z, 0.001) * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(d, view.up) / (Math.max(z, 0.001) * view.tan)) * short / 2, radius: (place.radius / (Math.max(z, 0.001) * view.tan)) * short / 2, visible: z > 0, depth: z }
     })
+    // The sun's bright core, which labels keep clear of.
+    const toSun = sub([0, 0, 0], view.eye), sunZ = Math.max(dot(toSun, view.forward), 0.001)
+    this.sunScreen = { x: width * this.framing[0] + (dot(toSun, view.right) / (sunZ * view.tan)) * short / 2, y: height * (1 - this.framing[1]) - (dot(toSun, view.up) / (sunZ * view.tan)) * short / 2, radius: Math.max(6, short * 0.02) }
     this.options.onLayout?.(this.screen, this.chosen >= 0 ? worlds[this.chosen].id : undefined)
     // Arrival: a second and a half after choosing, whatever the frame rate.
     if (this.chosen >= 0 && !this.arrived && (this.arriving += this.step) > 1.5) { this.arrived = true; this.options.onArrive(worlds[this.chosen].id) }
   }
   private screen: { id: string; x: number; y: number; radius: number; visible: boolean; depth: number }[] = []
+  /** Where the sun's core is on screen, as of the last frame drawn. */
+  sunScreen = { x: -1e4, y: -1e4, radius: 0 }
   /** Fly to a world, as a tap on it does. */
   choose(id: string): void { this.handled = performance.now();
     this.wake = 2; const index = this.options.worlds.findIndex(world => world.id === id)

@@ -21,7 +21,7 @@ try {
     g.renderer.setAnimationLoop(null); g.postChain.release()
     const moduleUrl = performance.getEntriesByType('resource').find(r => r.name.includes('/three_webgpu.js'))?.name
     const T = await import(moduleUrl)
-    for (const id of ['post.gi','post.clouds','post.bloom','post.shafts','post.flare','post.ao','post.contact','post.motionBlur','post.heat','post.plunge','post.look','post.vignette','post.grain']) p.set(id, 0)
+    for (const id of ['post.gi','post.clouds','post.bloom','post.shafts','post.flare','post.ao','post.contact','post.motionBlur','post.heat','post.look','post.vignette','post.grain']) p.set(id, 0)
     p.set('world.curve', 0); p.set('gfx.level', 2); p.set('post.temporal', true); p.set('post.on', true)
     g.quality.frame = () => {}
     Object.defineProperty(g.quality, 'postBudget', { configurable: true, get: () => window.temporalFixture?.budget ?? 1 })

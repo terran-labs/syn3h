@@ -4,7 +4,7 @@ import {addNightReadability} from './nightReadability'
 import * as THREE from 'three/webgpu'
 import {mergeStatic,registerVehicleDetail,staticLods} from './mergeStatic'
 import {applyShowroom} from './showroom'
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { ModelLoadCancelled, loadModel } from './modelLoader'
 
 /** Owns an optional model and its fallback without coupling rendering to the fixed step. */
 export class VehicleModel {
@@ -13,7 +13,7 @@ export class VehicleModel {
   private detachDetail=()=>{}
   private detachShowroom=()=>{}
   constructor(private readonly root: THREE.Group, url: string, configure: (scene: THREE.Group) => void = () => {}) {
-    this.ready = typeof window === 'undefined' ? Promise.resolve() : new GLTFLoader().loadAsync(frozenResourceURL(url)).then(gltf => {
+    this.ready = typeof window === 'undefined' ? Promise.resolve() : loadModel(frozenResourceURL(url), {cancelled: () => this.disposed}).then(gltf => {
       if(this.disposed) {this.release(gltf.scene);return}
       configure(gltf.scene)
       this.release(root)
@@ -26,7 +26,7 @@ export class VehicleModel {
       this.detachShowroom=applyShowroom(gltf.scene,scene=>{addNightReadability(scene);addLavaGlow(scene)})
       const shadows:THREE.Mesh[]=[];gltf.scene.traverse(o=>{if(o instanceof THREE.Mesh&&o.castShadow)shadows.push(o)})
       this.detachDetail=registerVehicleDetail(root,(distance,remote,level)=>{const low=remote&&distance>(level===2?60:30);lods.forEach(p=>{p.high.visible=!low;p.low.visible=low});const cast=!remote||distance<(level===2?20:0);shadows.forEach(m=>{m.castShadow=cast})})
-    }).catch(error=>{console.warn(`Vehicle model unavailable: ${url}`,error)})
+    }).catch(error=>{if(!(error instanceof ModelLoadCancelled))console.warn(`Vehicle model unavailable: ${url}`,error)})
   }
   private release(root:THREE.Object3D) {
     const geometries=new Set<THREE.BufferGeometry>(), materials=new Set<THREE.Material>()

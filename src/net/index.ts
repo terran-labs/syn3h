@@ -8,6 +8,7 @@
  */
 import * as THREE from 'three/webgpu'
 import { joinedText } from '../ui/toastText'
+import { roomLabel } from '../core/roomAddress'
 import { type ParamValue, params, worldSeed } from '../../shared/params'
 import {
   BOT_ID_BASE,
@@ -59,7 +60,8 @@ import { LocalRescue, StuckTimer, inStickyLiquid } from '../modes/Koth'
 import { attachVehicleEffects } from '../vehicles/effects'
 import { ServerClock } from './Clock'
 import { Connection, serverUrl } from './Connection'
-import { NameTags, type TagInfo } from './NameTags'
+import { VehicleNameplates as NameTags, type NameplateInfo as TagInfo } from '../ui/nameplates/VehicleNameplates'
+import { terrainOcclusion } from '../ui/nameplates/terrain'
 import { applyRoomWorld, netExtrapolate, netInterpDelay, netMaxDelay, netProxyBlend, netProxyRadius, netSendRate } from './params'
 import { RemotePlayer } from './RemotePlayer'
 import { pressHoldsFire } from './pointerFire'
@@ -103,13 +105,15 @@ export interface PlayerColors {
 }
 
 export interface NetContext {
+  /** Client-only view state, supplied by main; no roster protocol changes. */
+  nameplates?: { shell: HTMLElement; visible(): boolean; presentation(): boolean }
   game: Game
   terrain: Terrain
   /** The local player's vehicle. */
   player: Vehicle
   /** Player name from the start screen. Falls back to ?name= or a generated one. */
   name?: string
-  /** Room name from the URL (?room=name), or 'lobby'. */
+  /** Room name from the URL (?room=name). No parameter is the public room, internally 'lobby'. */
   room: string
   /** Visible notice when a full room falls back to local play. */
   onJoinStatus?(message: string): void
@@ -154,6 +158,9 @@ export interface MapMarker {
   z: number
   heading: number
   color: string
+  accent?: string
+  kind?: 'person' | 'bot' | 'zone'
+  it?: boolean
   self?: boolean
 }
 
@@ -305,6 +312,12 @@ export class NetClient implements System {
     this.lasers = new Lasers(game, {
       onImpact: (at, red) => this.blast.at(red ? 'thunder' : 'tag', at),
       bodyOf: (id) => this.vehicleOf(id)?.body,
+      centreOf: (id, alpha, out) => {
+        const v = this.vehicleOf(id)
+        if (!v) return false
+        v.drawnCentre(alpha, out)
+        return true
+      },
       judgedId: (h) => this.judgedId(h),
       isVehicleBody: (h) => [...this.remotes.values()].some((r) => r.vehicle.body.handle === h),
       onHit: (shooter, shot, victim, at, dir, red) => {
@@ -405,7 +418,10 @@ export class NetClient implements System {
     this.bots?.setGear?.(this.botDecisionHooks)
     this.marker = new TagMarker(game)
     this.marker.local = player
-    this.tags = new NameTags(game.camera)
+    this.tags = new NameTags(() => game.camera, {
+      ...(ctx.nameplates ?? { shell: document.body, visible: () => false, presentation: () => false }),
+      scene: game.scene, wrapSize: () => this.wrapSize, terrainHit: terrainOcclusion(game.world), localVehicle: () => this.ctx.player,
+    })
     this.hill = new HillMarker(game, ctx.terrain)
     this.seat = new LocalSeat(player, {
       makeBounds: (vehicle) => {
@@ -788,38 +804,49 @@ export class NetClient implements System {
   private refreshTags(it: number, holder: number, stuck: Record<number, unknown>): void {
     const list = this.tagList
     let n = 0
-    for (const [id, r] of this.remotes) {
-      const tag = list[n] ?? (list[n] = { vehicle: r.vehicle, name: '', note: '', it: false })
+    const add = (id: number, vehicle: Vehicle, state = '') => {
+      if (id === this.id) return
+      const tag = list[n] ?? (list[n] = { id: '', vehicle, name: '', note: '', bot: false, color: '' })
       n++
-      tag.vehicle = r.vehicle
-      tag.name = this.displayName(id)
-      tag.it = id === it || id === holder
-      let note = id === it ? 'IT' : ''
-      if (id === holder) note += note ? ' KING' : 'KING'
-      if (stuck[id]) note += note ? ' stuck' : 'stuck'
-      const state = r.paused ? 'paused' : !r.responding ? 'not responding' : ''
-      if (state) note += note ? ` ${state}` : state
-      tag.note = note
+      tag.id = String(id); tag.vehicle = vehicle; tag.name = this.displayName(id); tag.bot = isBotId(id)
+      tag.color = vehicle.colors.body
+      const notes: string[] = []
+      if (id === it) notes.push('IT')
+      if (id === holder) notes.push('HILL')
+      if (id === this.game.host) notes.push('HOST')
+      if (stuck[id]) notes.push('STUCK')
+      if (state) notes.push(state)
+      tag.note = notes.join(' · ')
+    }
+    for (const [id, r] of this.remotes) add(id, r.vehicle, r.paused ? 'PAUSED' : !r.responding ? 'NOT RESPONDING' : '')
+    if (this.bots && !this.bots.remote) for (const [id, vehicle] of liveBots(this.bots.vehicles, this.ctx.game.world)) {
+      if (!this.remotes.has(id)) add(id, vehicle)
     }
     list.length = n
   }
 
   private mapMarkers(): MapMarker[] {
     const list: MapMarker[] = []
-    for (const [id, r] of this.remotes) {
-      const p = r.vehicle.object.position
-      const q = r.vehicle.object.quaternion
+    const it = this.game.mode === MODE_TAG ? this.game.it : 0
+    // Colour is identity: each vehicle's own paint, as '#rrggbb' (Vehicle.setColors normalizes it).
+    const add = (id: number, vehicle: Vehicle): void => {
+      const p = vehicle.object.position
+      const q = vehicle.object.quaternion
       // Heading from the forward (-Z) axis: atan2(-fx, -fz).
       const fx = -2 * (q.x * q.z + q.w * q.y)
       const fz = -(1 - 2 * (q.x * q.x + q.y * q.y))
-      const color = isBotId(id) ? botColors(id - BOT_ID_BASE)[0] : r.info.colors[0]
-      list.push({ x: p.x, z: p.z, heading: Math.atan2(-fx, -fz), color })
+      list.push({ x: p.x, z: p.z, heading: Math.atan2(-fx, -fz), color: vehicle.colors.body, accent: vehicle.colors.accent, kind: isBotId(id) ? 'bot' : 'person', it: Boolean(it) && id === it })
+    }
+    for (const [id, r] of this.remotes) add(id, r.vehicle)
+    // The bots this client simulates (the host's, or everyone's offline) are not remotes.
+    if (this.bots && !this.bots.remote) {
+      for (const [id, bot] of liveBots(this.bots.vehicles, this.ctx.game.world)) if (!this.remotes.has(id)) add(id, bot)
     }
     const zone = this.mode === MODE_KOTH ? this.zone : null
     if (zone) {
       const k = this.game.koth
       const color = k.contested ? '#bf26ff' : k.holder === this.id ? '#1aff40' : k.holder ? '#ff1f0d' : '#ffb814'
-      list.push({ x: zone.x, z: zone.z, heading: 0, color })
+      list.push({ x: zone.x, z: zone.z, heading: 0, color, kind: 'zone' })
     }
     return list
   }
@@ -1696,12 +1723,12 @@ export class NetClient implements System {
     if (this.joinStatus) lines.push(this.joinStatus)
     if (!this.connected) {
       const wait = Math.max(0, Math.ceil((this.conn.retryAt - performance.now()) / 1000))
-      if (!this.localAfterFull) lines.push(this.conn.state === 'connecting' ? `net: connecting to room ${this.ctx.room}` : `net: offline, retry in ${wait}s (room ${this.ctx.room})`)
+      if (!this.localAfterFull) lines.push(this.conn.state === 'connecting' ? `net: connecting to ${roomLabel(this.ctx.room)}` : `net: offline, retry in ${wait}s (${roomLabel(this.ctx.room)})`)
     } else {
       // A parked (hidden tab) player is held still, so its delay is not one anybody sees.
       const delays = [...this.remotes.values()].filter((r) => !r.paused).map((r) => r.delay)
       const delay = delays.length ? `${Math.round(Math.max(...delays) * 1000)} ms` : 'none'
-      lines.push(`net: room ${this.ctx.room}   ping ${Math.round(this.clock.rtt * 1000)} ms   delay ${delay}`)
+      lines.push(`net: ${roomLabel(this.ctx.room)}   ping ${Math.round(this.clock.rtt * 1000)} ms   delay ${delay}`)
       const host = this.game.host === this.id ? 'you' : this.nameOf(this.game.host)
       lines.push(`host: ${host}   shared sliders ${this.game.locked ? 'LOCKED (host only)' : 'open to all'}`)
       lines.push(...this.modeLines())

@@ -133,7 +133,7 @@ else
   # An HTTP 200 can still be an older edge deployment. Wait for this exact entry bundle
   # before gameplay acceptance, retaining every mismatch for rollout diagnostics.
   tries=0
-  until node tools/check-public-build.mjs "$URL" "$DEST" >>"$LOG-assets.log" 2>&1; do
+  until node tools/check-public-build.mjs "$URL" "$DEST" --feed >>"$LOG-assets.log" 2>&1; do
     tries=$((tries + 1))
     [ "$tries" -lt 30 ] || { cat "$LOG-assets.log"; fail "public entry bundle did not match frozen build"; }
     sleep 2
@@ -173,7 +173,7 @@ fi
 # A workers.dev pass does not establish that the owner-facing domain serves the same assets.
 PRIMARY_URL="https://www.syn3h.com/"
 tries=0
-until node tools/check-public-build.mjs "$PRIMARY_URL" "$DEST" >>"$LOG-primary-assets.log" 2>&1; do
+until node tools/check-public-build.mjs "$PRIMARY_URL" "$DEST" --feed >>"$LOG-primary-assets.log" 2>&1; do
   tries=$((tries + 1))
   [ "$tries" -lt 30 ] || { cat "$LOG-primary-assets.log"; fail "primary entry bundle did not match frozen build"; }
   sleep 2

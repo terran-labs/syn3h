@@ -22,6 +22,7 @@ import { createFrozenResourceResolver } from '../core/frozenResources'
 import { Inspector } from './inspector/Inspector'
 import type { PropertyDef } from './inspector/model'
 import { PerformancePanel } from './PerformancePanel'
+import { SOUND_STARTED, soundWaiting } from '../audio/unlock'
 import './lobby-settings.css'
 
 /** Sound settings shown before the Advanced fold, in this order. */
@@ -134,7 +135,7 @@ export class LobbySettings {
 
     // Sound: the two volumes and mute up front, every other audio setting in Advanced.
     const sound = document.createElement('div')
-    this.inspector.addCard('sound', 'Sound', sound, () => `Music ${percent('audio.music')} · Master ${percent('audio.master')}${params.get('audio.muted')?.value ? ' · Muted' : ''}`, {
+    this.inspector.addCard('sound', 'Sound', sound, () => `Music ${percent('audio.music')} · Master ${percent('audio.master')}${params.get('audio.muted')?.value ? ' · Muted' : ''}${soundWaiting() ? ' · Tap to start sound' : ''}`, {
       fill: () => {
         const { main, advanced } = soundRows(params.all().map(p => p.def as PropertyDef))
         const fold = document.createElement('details'); fold.className = 'wi-group lobby-advanced'; fold.open = this.advancedOpen.value
@@ -146,6 +147,8 @@ export class LobbySettings {
         sound.replaceChildren(...main.map(def => this.inspector.row(def)), fold, note)
       },
     })
+    // The browser holds sound until a first gesture; the summary says so quietly until it starts.
+    window.addEventListener(SOUND_STARTED, () => this.inspector.update(), { signal })
     // Graphics: the in-game Performance card on the same quality controller.
     this.performance = new PerformancePanel(this.host, () => {}, options.quality, this.inspector)
     const graphics = panel.querySelector<HTMLElement>(`.wi-card[data-section="${PerformancePanel.CARD}"]`)

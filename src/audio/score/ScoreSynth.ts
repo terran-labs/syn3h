@@ -62,7 +62,7 @@ export function applySubmerge(filter: BiquadFilterNode, depth: number, time: num
 export const LAYERS = ['pad', 'drone', 'choir', 'organ', 'sequencer', 'pluck', 'strings', 'bass', 'drums', 'theremin', 'brass', 'bells', 'shimmer', 'air', 'tags', 'weather'] as const
 export type Layer = (typeof LAYERS)[number]
 /** Where the composition is in its arc, as the synthesiser needs it. Both 0..1. */
-export interface Arc { tension: number; release: number }
+export interface Arc { tension: number; release: number; /** 0..1, how far forward the theremin may come (arc.ts). Left out, as before. */ lead?: number }
 
 export class ScoreSynth {
   /** Per-layer level trims, 0 to mute. The lab uses these to solo and mute layers. */
@@ -324,9 +324,11 @@ export class ScoreSynth {
     const crashFilter = filter('highpass', 3500); this.crashVca = gain(0, sum, gain(0.8, reverb)); noise.connect(crashFilter).connect(this.crashVca)
 
     // Theremin: one gliding voice with vibrato and a slow attack. It sings; it never plinks.
-    this.leadBus = gain(0, sum, gain(0.4, delayIn), gain(0.9, reverb))
+    // It stands at a distance: less than half its direct sound, more of it in the hall, and a
+    // narrower, slower vibrato (8 cents at 4.8 Hz, from 16 at 5.6) so it wails less.
+    this.leadBus = gain(0, gain(0.45, sum), gain(0.4, delayIn), gain(1.3, reverb))
     this.leadVca = gain(0, this.leadBus)
-    const waver = gain(16); osc('sine', 5.6).connect(waver)
+    const waver = gain(8); osc('sine', 4.8).connect(waver)
     for (const [type, level] of [['sine', 0.5], ['triangle', 0.2]] as const) { const o = osc(type, 440); waver.connect(o.detune); o.connect(gain(level, this.leadVca)); this.leadOscs.push(o) }
     // Telemetry beep: a plain sine a long way off.
     this.beep = osc('sine', 1000); this.beepVca = gain(0, gain(0.25, pan(0.4, sum)), gain(0.5, delayIn), reverb); this.beep.connect(this.beepVca)
@@ -480,7 +482,9 @@ export class ScoreSynth {
     to(this.bassTrim.gain, 1.5 - level.drive * 0.75)
     // The climb's drum roll and the release's heartbeat sound however calm the play is.
     to(this.drumBus.gain, Math.max(level.drums, arc.tension > 0.5 ? 0.6 : 0, arc.release * 0.7) * 0.8 * trim.drums)
-    to(this.leadBus.gain, Math.max(level.lead, arc.release) * 0.2 * trim.theremin, 1)
+    // The lead's bus. `arc.lead` (time of day, the lobby) scales it; when it may sing at all it
+    // keeps a floor, so a night theme over a moving mix is distant rather than lost.
+    to(this.leadBus.gain, Math.max(level.lead * 0.6, arc.lead === undefined ? 0 : 0.6, arc.release) * 0.2 * trim.theremin * unit(arc.lead ?? 1), 1)
     to(this.airBus.gain, level.air * 0.1 * trim.air * (1 - 0.8 * unit(this.wind)), 2)
     to(this.pluckBus.gain, 0.5 * trim.pluck)
     to(this.brassBus.gain, 0.45 * trim.brass * carried(1))
@@ -529,8 +533,9 @@ export class ScoreSynth {
     }
     if (step.lead) {
       const hz = midiHz(step.lead.midi), hold = duration * step.lead.steps
-      for (const o of this.leadOscs) o.frequency.setTargetAtTime(hz, t, 0.06)
-      this.leadVca.gain.setTargetAtTime(step.lead.velocity, t, 0.09)
+      // A short glide (less swoop between notes) and a softer onset.
+      for (const o of this.leadOscs) o.frequency.setTargetAtTime(hz, t, 0.035)
+      this.leadVca.gain.setTargetAtTime(step.lead.velocity, t, 0.16)
       this.leadVca.gain.setTargetAtTime(0, t + hold * 0.9, 0.3)
     }
     if (step.pluck) this.pluck?.port.postMessage({ t, hz: midiHz(step.pluck.midi), velocity: step.pluck.velocity, sustain: 1.5 + duration * step.pluck.steps })
