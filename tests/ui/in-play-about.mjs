@@ -146,8 +146,89 @@ async function modalExtensions(page, record, entry, dialog) {
   await keep({ phase: 'synthetic-stick', point, stickBefore, stickOpen, stickClosed, freshStick })
 
   await page.locator('.touch-fire').waitFor({ state: 'visible' })
-  await touchEvent('pointerdown', 703, 'tag', 0, 0)
-  await ready(page, () => syn3hNet.bigRed.ready && syn3h.game.input.state.fire)
+  // Read-only evidence for the original 703 gesture. No extra down, repair or
+  // cooldown wait: a failed precondition or original readiness timeout stays failed.
+  let tagFailure
+  try {
+    const before703 = await bounded(page.evaluate(() => {
+      const button = document.querySelector('.touch-fire'), touch = syn3h.shell.touch
+      const input = syn3h.game.input, red = syn3hNet.bigRed
+      const events = [], errors = [], listeners = []; let dropped = 0, closed = false
+      const identity = node => node === window ? 'window' : node === document ? 'document'
+        : node instanceof Element ? `${node.tagName.toLowerCase()}${node.id ? `#${node.id}` : ''}.${node.className}` : null
+      const snapshot = () => ({ at: performance.now(), tick: syn3h.game.tick, time: syn3h.game.time,
+        // TS-private field is read only to distinguish actual enabled state from
+        // visibility; no new product API or private owner/cooldown mutation.
+        active: touch.active, available: touch.available, hidden: touch.element.hidden,
+        suspended: input.suspended, gear: syn3hNet.gear.current,
+        fire: input.state.fire, externalFire: input.external.fire,
+        charge: red.charge, ready: red.ready, sent: red.stats.sent, fizzled: red.stats.fizzled,
+        allowed: syn3h.params.get('bigRed.allowed').value,
+        chargeSeconds: syn3h.params.get('bigRed.charge').value,
+        cooldownSeconds: syn3h.params.get('bigRed.cooldown').value,
+        connected: button.isConnected, heldClass: button.classList.contains('held'),
+        captured703: button.hasPointerCapture(703), focus: identity(document.activeElement),
+        visibility: document.visibilityState, documentFocused: document.hasFocus(),
+        rect: button.getBoundingClientRect().toJSON(),
+        ownerEligibility: 'Not publicly exposed; held class is not proof',
+        cooldownDeadline: 'Not publicly exposed; duration is not remaining cooldown' })
+      const save = (phase, event) => {
+        if (closed) return
+        if (events.length >= 128) { dropped++; return }
+        try { events.push({ phase, event, state: snapshot() }) }
+        catch (error) { if (errors.length < 8) errors.push(String(error)); else dropped++ }
+      }
+      const onEvent = event => {
+        if (event.type.startsWith('pointer') || event.type === 'lostpointercapture' || event.type === 'gotpointercapture') {
+          if (event.pointerId !== 703 && event.target !== button) return
+        }
+        const scalar = { type: event.type, trusted: event.isTrusted, target: identity(event.target),
+          pointerId: event.pointerId, pointerType: event.pointerType, button: event.button,
+          buttons: event.buttons, eventTime: event.timeStamp }
+        save('capture', scalar)
+        queueMicrotask(() => save('post-handler-microtask', scalar))
+      }
+      window.guideTag703 = { snapshot, save, events, errors, get dropped() { return dropped },
+        stop() { closed = true; for (const [target, name] of listeners) target.removeEventListener(name, onEvent, true) } }
+      for (const name of ['pointerdown', 'pointerup', 'pointercancel', 'pointerleave', 'gotpointercapture', 'lostpointercapture', 'blur', 'focus']) {
+        window.addEventListener(name, onEvent, { capture: true, passive: true }); listeners.push([window, name])
+      }
+      document.addEventListener('visibilitychange', onEvent, { capture: true, passive: true })
+      listeners.push([document, 'visibilitychange'])
+      save('before-dispatch', null)
+      return snapshot()
+    }))
+    await keep({ phase: 'TAG703-precondition', state: before703 })
+    assert.equal(before703.active, true); assert.equal(before703.suspended, false)
+    assert.equal(before703.gear, 'red')
+    await touchEvent('pointerdown', 703, 'tag', 0, 0)
+    const after703 = await bounded(page.evaluate(() => {
+      guideTag703.save('after-dispatch', null)
+      return { events: guideTag703.events, errors: guideTag703.errors, dropped: guideTag703.dropped }
+    }))
+    await keep({ phase: 'TAG703-after-dispatch', evidence: after703 })
+    await ready(page, () => syn3hNet.bigRed.ready && syn3h.game.input.state.fire)
+  } catch (error) {
+    tagFailure = error
+  } finally {
+    try {
+      const evidence = await bounded(page.evaluate(failed => {
+        const trace = window.guideTag703
+        if (!trace) return { missing: true }
+        try {
+          trace.save(failed ? 'failure-or-timeout' : 'ready', null)
+          return { events: trace.events, errors: trace.errors, dropped: trace.dropped }
+        } finally { trace.stop(); delete window.guideTag703 }
+      }, Boolean(tagFailure)))
+      await keep({ phase: 'TAG703-evidence', evidence })
+      assert.equal(evidence.missing, undefined, 'TAG703 evidence missing')
+      assert.deepEqual(evidence.errors, []); assert.equal(evidence.dropped, 0)
+    } catch (error) {
+      report.errors.push(`TAG703 evidence: ${error}`)
+      if (!tagFailure) tagFailure = error
+    }
+  }
+  if (tagFailure) throw tagFailure
   const tagBefore = await page.evaluate(() => ({ ...syn3hNet.bigRed.stats }))
   await openWhileHeld('TAG')
   assert.equal((await axes()).fire, false)

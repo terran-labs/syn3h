@@ -87,3 +87,30 @@ assumed to provide those transitions. Physical-device visibility remains open.
 No observer or product fix is proposed without a concrete failing result and separate
 permission. These gaps are not discharged by the previously passing four input slices,
 by the original two About contexts, or by these prepared extensions.
+
+
+## About002 evidence follow-up
+
+Gate002 remains failed at the original 15-second TAG ready-plus-fire wait. W and
+synthetic stick passed their partial checks; TAG modal and Yoink were unreached.
+This source correction preserves that gesture, predicate, timeout and overall budget.
+Before pointer703, it persists actual touch active, unsuspended and selected-red
+preconditions without repair. The existing TypeScript-private active flag is inspected
+read-only to avoid equating visibility with enabled state. No private owners or
+cooldown deadline are inspected or changed; public held-class, sampled/external fire,
+charge, counters and configured durations are labelled with their evidence limits.
+
+A passive recorder retains at most128 event/state rows and8 diagnostic errors, with
+explicit overflow count. Capture and queued microtask records cover pointer703, TAG
+pointer events, focus/blur and visibility. Pre-dispatch and post-dispatch evidence is
+persisted before the unchanged readiness wait. Finally records readiness or failure
+state, removes listeners and persists the trace. The original failure remains primary
+if evidence reads, writes or cleanup fail; those failures also keep the gate nonpass.
+No extra down, rearm, focus repair, cooldown wait, product change or observer change.
+Synthetic pointer capture is observed, not presumed to succeed. No runtime has run
+for this correction.
+
+The six About002 screenshots were inspected separately. Credits are readable with a
+persistent Back control. The phone paused About button overlaps Inspector search,
+actions and Pause, despite remaining in the viewport with visible focus. A separate
+layout proposal is required; this evidence-only fence does not change Shell or CSS.
