@@ -28,7 +28,7 @@
 import { randomBytes } from 'node:crypto'
 import { writeFileSync, mkdirSync } from 'node:fs'
 import { isAbsolute, join } from 'node:path'
-import { MAX_STEP_RETRIES, isBrowserCrash, retryDecision, uncleanSince } from './lib/smoke-retry.mjs'
+import { MAX_STEP_RETRIES, isBrowserCrash, isTransportConsoleError, retryDecision, uncleanSince } from './lib/smoke-retry.mjs'
 import { chromium } from 'playwright-core'
 import { createShotEvidence, createShotDecision } from './shot-evidence.mjs'
 
@@ -48,6 +48,8 @@ const diagnosticPath = `/tmp/syn3h-net-smoke-${room}.json`
 const clients = []
 /** Pages whose browser process crashed: the machine failed, not the game (see isBrowserCrash). */
 const crashedPages = []
+/** Console errors that are failed WebSocket connections to the room: counted beside the drops. */
+const transportErrors = []
 const shot = '/tmp/syn3h-net-smoke.png'
 
 const browser = await chromium.launch({
@@ -64,7 +66,13 @@ async function open(name, extra = '') {
   clients.push({ name, page })
   page.on('crash', () => crashedPages.push(name))
   page.on('pageerror', (e) => errors.push(`${name} pageerror: ${e.message}`))
-  page.on('console', (m) => { if (m.type() === 'error') errors.push(`${name} console: ${m.text()} at ${m.location().url}`) })
+  page.on('console', (m) => {
+    if (m.type() !== 'error') return
+    const line = `${name} console: ${m.text()} at ${m.location().url}`
+    // The browser's own report of a failed handshake to the room is the network, not the page.
+    if (isTransportConsoleError(m.text(), base)) transportErrors.push(line)
+    else errors.push(line)
+  })
   page.on('response', (r) => { if (r.status() >= 400) console.log(`HTTP ${r.status()} ${r.url()}`) })
   page.on('requestfailed', (r) => console.log(`REQUEST FAILED ${r.url()} ${r.failure()?.errorText}`))
   // A transport error, or a 5xx or 429 for the page itself, is retried twice (after 1 s, then
@@ -669,7 +677,7 @@ check('no page errors', errors.length === 0, errors)
 const failed = results.filter((r) => !r.ok)
 const evidenceFailed = evidenceEnabled && !evidenceComplete()
 // release.sh checks the marker, not Node's exit code. Never print OK for incomplete evidence.
-console.log(`NET SMOKE SUMMARY steps passed ${tally.passed}/${tally.steps}; drops ridden through ${tally.drops.length}${tally.drops.length ? ` (${tally.drops.join(', ')})` : ''}; step retries ${tally.retries}/${MAX_STEP_RETRIES}${tally.legacy ? '; this build records no socket closes, so a dropped connection cannot be told from a game failure and no step was retried' : ''}`)
+console.log(`NET SMOKE SUMMARY steps passed ${tally.passed}/${tally.steps}; drops ridden through ${tally.drops.length}${tally.drops.length ? ` (${tally.drops.join(', ')})` : ''}; connection errors ${transportErrors.length}${transportErrors.length ? ` (${transportErrors.map((t) => t.slice(0, 160)).join(' | ')})` : ''}; step retries ${tally.retries}/${MAX_STEP_RETRIES}${tally.legacy ? '; this build records no socket closes, so a dropped connection cannot be told from a game failure and no step was retried' : ''}`)
 const crashed = crashedPages.length > 0 || failed.some((r) => isBrowserCrash(JSON.stringify(r.detail)))
 // A crash is reported as what it is, never as a gameplay failure; tools/smoke-run.sh may restart once.
 if (crashed) {

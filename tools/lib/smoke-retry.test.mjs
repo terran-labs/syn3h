@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { MAX_STEP_RETRIES, isBrowserCrash, retryDecision, uncleanSince } from './smoke-retry.mjs'
+import { MAX_STEP_RETRIES, isBrowserCrash, isTransportConsoleError, retryDecision, uncleanSince } from './smoke-retry.mjs'
 
 const drop = { code: 1006, reason: '', clean: false, wasOpen: true, at: 5000 }
 
@@ -39,4 +39,13 @@ test('a crashed page is a browser crash; game, network and timeout failures are 
   assert.equal(isBrowserCrash('{"ramsA":0,"ramsB":0}'), false)
   assert.equal(isBrowserCrash('closed 1006'), false)
   assert.equal(isBrowserCrash(undefined), false)
+})
+
+test('a failed WebSocket handshake to the room address is transport; other console errors are not', () => {
+  const base = 'https://syn3h.af-4e7.workers.dev/'
+  const seen = "WebSocket connection to 'wss://syn3h.af-4e7.workers.dev/ws?room=smoke1794863958373-6177e21732ce' failed: Error during WebSocket handshake: net::ERR_CONNECTION_RESET at https://syn3h.af-4e7.workers.dev/assets/index-7XVEda6E.js"
+  assert.equal(isTransportConsoleError(seen, base), true)
+  assert.equal(isTransportConsoleError(seen.replace('syn3h.af-4e7.workers.dev/ws', 'elsewhere.example/ws'), base), false)
+  assert.equal(isTransportConsoleError('TypeError: Cannot read properties of undefined (reading \'vehicle\') at https://syn3h.af-4e7.workers.dev/assets/index-7XVEda6E.js', base), false)
+  assert.equal(isTransportConsoleError("Failed to load resource: the server responded with a status of 404 () at https://syn3h.af-4e7.workers.dev/assets/index-Bur40FVQ.css", base), false)
 })
