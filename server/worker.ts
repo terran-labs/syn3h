@@ -54,6 +54,8 @@ interface Attachment {
   info?: PlayerInfo
   /** The player's rejoin secret (game.rejoin), so it survives hibernation with the socket. */
   token?: string | null
+  // The hello's page marker is not kept here: after a hibernation wake, a same-page reconnect
+  // within 1.5 s of the place's last message falls back to the quiet rule (Room.quietFor).
 }
 
 export default {
