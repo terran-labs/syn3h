@@ -180,6 +180,19 @@ export class GearRack implements System {
     sys?.yoink.cancel()
     sys?.bungee.cancel()
     sys?.bungee.setReel(0)
+    this.cancelPendingInput(inhibitFireUntilNeutral)
+  }
+
+  /** Synchronous selection listener: cancel outgoing actions without severing the cord.
+   * Main must call this before any fixed step observes the changed selection. */
+  cancelSelectionActions(inhibitFireUntilNeutral: () => void): void {
+    this.systems?.bigRed.cancel()
+    this.systems?.yoink.cancel()
+    this.systems?.bungee.clearControlIntent()
+    this.cancelPendingInput(inhibitFireUntilNeutral)
+  }
+
+  private cancelPendingInput(inhibitFireUntilNeutral: () => void): void {
     this.reelOwner = null
     this.actionGeneration++
     this.actions = {}

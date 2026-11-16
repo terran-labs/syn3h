@@ -538,4 +538,89 @@ describe('modal gear cancellation', () => {
     } finally { s.close() }
   })
 
+
+  it('a synchronous selection listener cancels charge before the next fixed step', () => {
+    const s = setup()
+    try {
+      s.bind(); s.rack.select('red')
+      const old = s.rack.controls().actions[0]
+      old.start(); s.step(501)
+      const inhibit = vi.fn()
+      const unsubscribe = s.rack.onChange(() => s.rack.cancelSelectionActions(inhibit))
+      s.rack.select('beam')
+      expect(inhibit).toHaveBeenCalledOnce()
+      expect(s.bigRed.charge).toBe(-1)
+      expect(s.input.state.fire).toBe(false)
+      old.start(); old.stop!('end'); s.step()
+      expect(s.bigRed.stats.sent).toBe(0)
+      s.rack.select('beam')
+      expect(inhibit).toHaveBeenCalledOnce()
+      unsubscribe()
+    } finally { s.close() }
+  })
+
+  it('selection gently drops a carry and clears a pending pulse without UI refresh', () => {
+    const s = setup()
+    try {
+      s.bind(); s.rack.select('yoink')
+      s.rack.controls().actions[0].start(); s.step()
+      expect(s.yoink.holding).toBe(3)
+      const unsubscribe = s.rack.onChange(() => s.rack.cancelSelectionActions(() => {}))
+      s.rack.select('pester')
+      expect(s.yoink.holding).toBeNull()
+      expect(s.yoink.stats.flings).toBe(0)
+      s.rack.controls().actions[0].start()
+      s.rack.select('beam'); s.step()
+      expect(s.input.external.fire).toBe(false)
+      expect(s.yoink.stats.flings).toBe(0)
+      unsubscribe()
+    } finally { s.close() }
+  })
+
+  it('selection preserves flying and attached cords while stopping reel intent', () => {
+    const s = setup()
+    try {
+      s.bind(); s.rack.select('bungee')
+      s.bungee.launch(AT_OTHER)
+      const cord = s.bungee.mine!
+      expect(cord.hook).toBeTruthy()
+      const cancel = vi.spyOn(s.bungee, 'cancel')
+      const reset = vi.spyOn(s.bungee, 'reset')
+      const unsubscribe = s.rack.onChange(() => s.rack.cancelSelectionActions(() => {}))
+      s.rack.select('beam')
+      expect(s.bungee.mine).toBe(cord)
+      for (let i = 0; i < 100 && s.bungee.mine?.hook; i++) s.step()
+      expect(s.bungee.attached).toBe(true)
+      s.rack.select('bungee'); s.bungee.setReel(-1)
+      s.rack.select('beam')
+      expect(s.bungee.mine).toBe(cord)
+      expect(s.bungee.reel).toBe(0)
+      expect(cancel).not.toHaveBeenCalled(); expect(reset).not.toHaveBeenCalled()
+      unsubscribe()
+    } finally { s.close() }
+  })
+
+  it('clears queued wheel and double-tap history without changing a live cord or cooldown', () => {
+    const s = setup()
+    try {
+      s.bind(); s.rack.select('bungee'); s.bungee.launch(AT_OTHER)
+      for (let i = 0; i < 100 && s.bungee.mine?.hook; i++) s.step()
+      expect(s.bungee.attached).toBe(true)
+      const cord = s.bungee.mine!, rest = cord.rest
+      // Seed pending event state directly; the production method may change only these
+      // four fields, and the next real control step must preserve the cord.
+      const pending = s.bungee as unknown as { fireWas: boolean; lastPress: number; wheel: number; readyAt: number }
+      pending.fireWas = true; pending.lastPress = s.game.time; pending.wheel = 1
+      const readyAt = pending.readyAt
+      s.bungee.setReel(-1); s.bungee.clearControlIntent()
+      expect(s.bungee.mine).toBe(cord)
+      expect(s.bungee.reel).toBe(0)
+      expect(pending.readyAt).toBe(readyAt)
+      s.input.state.fire = true
+      s.bungee.fixedUpdate(0)
+      expect(s.bungee.mine).toBe(cord) // Fresh press must not count as the old double tap.
+      expect(cord.rest).toBe(rest) // No wheel payout survives the selection boundary.
+    } finally { s.close() }
+  })
+
 })
