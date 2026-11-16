@@ -146,8 +146,32 @@ async function modalExtensions(page, record, entry, dialog) {
   await keep({ phase: 'synthetic-stick', point, stickBefore, stickOpen, stickClosed, freshStick })
 
   await page.locator('.touch-fire').waitFor({ state: 'visible' })
-  // Read-only evidence for the original 703 gesture. No extra down, repair or
-  // cooldown wait: a failed precondition or original readiness timeout stays failed.
+  // Establish eligibility while neutral BEFORE the single original 703 down.
+  // This is setup, never a repair/repress of an already failed held gesture.
+  const tagSetupState = () => bounded(page.evaluate(() => ({
+    tick: syn3h.game.tick, time: syn3h.game.time, fire: syn3h.game.input.state.fire,
+    externalFire: syn3h.game.input.external.fire, suspended: syn3h.game.input.suspended,
+    gear: syn3hNet.gear.current, allowed: syn3h.params.get('bigRed.allowed').value,
+    cooldown: syn3h.params.get('bigRed.cooldown').value, charge: syn3hNet.bigRed.charge,
+    ready: syn3hNet.bigRed.ready, sent: syn3hNet.bigRed.stats.sent, fizzled: syn3hNet.bigRed.stats.fizzled,
+  })))
+  const assertTagNeutral = value => {
+    assert.equal(value.fire, false); assert.equal(value.externalFire, false)
+    assert.equal(value.suspended, false); assert.equal(value.gear, 'red'); assert.equal(value.allowed, true)
+  }
+  const tagSetupStart = await tagSetupState()
+  const tagSetupDeadline = tagSetupStart.time + tagSetupStart.cooldown + .1
+  await keep({ phase: 'TAG703-eligibility-start', state: tagSetupStart, deadline: tagSetupDeadline })
+  assertTagNeutral(tagSetupStart)
+  assert.ok(Number.isFinite(tagSetupDeadline) && tagSetupDeadline > tagSetupStart.time)
+  await ready(page, time => syn3h.game.time >= time, tagSetupDeadline)
+  const tagSetupReached = await tagSetupState()
+  await keep({ phase: 'TAG703-eligibility-reached', state: tagSetupReached, deadline: tagSetupDeadline })
+  assertTagNeutral(tagSetupReached)
+  assert.ok(tagSetupReached.time >= tagSetupDeadline)
+  assert.equal(tagSetupReached.cooldown, tagSetupStart.cooldown)
+  assert.equal(tagSetupReached.sent, tagSetupStart.sent); assert.equal(tagSetupReached.fizzled, tagSetupStart.fizzled)
+  // Read-only evidence for the original gesture; its readiness timeout is unchanged.
   let tagFailure
   try {
     const before703 = await bounded(page.evaluate(() => {
@@ -563,6 +587,8 @@ try {
     record.trace = await page.evaluate(() => ({ record: guideTrace.record, diagnostics: guideTrace.diagnostics() }))
     assert.deepEqual(record.trace.diagnostics.lifecycleFailures, [])
     for (const key of ['droppedEvents', 'droppedLifecycle', 'droppedFailures']) assert.equal(record.trace.diagnostics[key], 0)
+    record.preExtensionRedCalls = await bounded(page.evaluate(() => aboutInputObserver.redCalls.map(({ tick, time }) => ({ tick, time }))))
+    await persist()
     await page.evaluate(() => { guideTrace.restore(); delete window.guideTrace })
     // Preserve original case evidence before running separately labelled extensions.
     await checkpoint('original-assertions-complete', { finalState })

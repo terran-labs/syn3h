@@ -114,3 +114,25 @@ The six About002 screenshots were inspected separately. Credits are readable wit
 persistent Back control. The phone paused About button overlaps Inspector search,
 actions and Pause, despite remaining in the viewport with visible focus. A separate
 layout proposal is required; this evidence-only fence does not change Shell or CSS.
+
+
+## Eligible neutral setup after About003
+
+About003 remains failed. Its recorded fire was true after703 and at timeout while
+charge stayed negative. The early-cooldown explanation follows source and timing
+bounds, not a recorded private deadline or proof of About002's historical cause.
+
+The next prepared fixture establishes eligibility before the single original703 down.
+It persists neutral sampled/external fire, selected red, allowed, unsuspended state,
+charge/readiness, counters and game time. It waits for start game time plus configured
+cooldown plus0.1, using the existing setup convention and unchanged overall budget,
+then persists and checks the reached state, neutral input and unchanged counters and
+configuration. A failed precondition stops without repair. No gesture has begun during
+this setup, and no failed hold is released/repressed. The subsequent original15s
+ready-and-fire predicate and actual-click guard remain unchanged.
+
+Before restoring the original observer, its existing redCalls tick/time entries are
+copied and persisted. No new product wrapper or observer change is introduced. The
+prior section's no-cooldown-wait statement describes diagnostic003; this explicitly
+authorized pre-gesture setup supersedes that restriction for the new source only.
+No product early-edge behavior, phone layout, tests or runtime allocation changed.
