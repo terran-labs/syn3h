@@ -278,3 +278,17 @@ Wait for connected play with descent finished. Record and assert world, seed and
 before/after, plus the actual allocated-room WebSocket. No private entry call, force click,
 HUD change or alternate panel navigation is added. Worker-map semantics remain under review;
 all prior failure receipts and source versions are preserved. This correction is unrun.
+
+
+## Lobby-address assertion correction
+
+LobbyAddress intentionally clears visible search/hash in showLobby while retaining the entry
+URL. Shell reads its room before that cleanup. Main's join calls showPlay before networking,
+and Net's name resolver gives the restored query name priority over Shell's preferred name.
+The fixture now records the intended navigation URL/name from its own inputs, asserts the
+clean visible lobby URL and Shell's retained room, then uses the same native current-label
+entry. After descent it verifies world/seed, restored URL room/name, local roster name and
+the allocated-room WebSocket. It neither compares Shell's name to the query nor injects
+storage, mutates private state or adds navigation. Worker proof and HUD assertions are unchanged.
+Run 004's first-client worker proof and zero-label failure remain preserved. This correction
+receives syntax and whitespace checks only; browser validation requires a separate allocation.

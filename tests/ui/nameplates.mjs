@@ -292,7 +292,11 @@ async function open(name, viewport) {
   page.on('console', message => { if (message.type() === 'error' && errors.length < 1000) errors.push(`${name}: console: ${message.text()}`) })
   page.on('crash', () => errors.push(`${name}: renderer crash`))
   page.on('pageerror', e => errors.push(`${name}: ${e.message}`))
-  await page.goto(`${origin}?room=${room}&name=${name}`)
+  const navigationURL = new URL(origin)
+  navigationURL.searchParams.set('room', room); navigationURL.searchParams.set('name', name)
+  report.intendedNavigation ??= []; report.intendedNavigation.push({ name, room, url: navigationURL.href })
+  await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+  await page.goto(navigationURL.href)
   await page.waitForFunction(() => window.syn3h?.shell && document.documentElement.dataset.boot === 'done', null, { timeout: remaining(90000) })
   await page.evaluate(() => {
     const s = window.syn3h
@@ -307,9 +311,13 @@ async function open(name, viewport) {
   const beforeEntry = await page.evaluate(async () => {
     const { currentPlanet } = await import('/src/world/planets.ts')
     return { world: currentPlanet().id, seed: window.syn3h.params.get('world.seed').value,
-      room: new URL(location.href).searchParams.get('room'), name: new URL(location.href).searchParams.get('name') }
+      room: window.syn3h.shell.room, visibleURL: location.href }
   })
-  assert.equal(beforeEntry.room, room); assert.equal(beforeEntry.name, name)
+  report.lobbyEntry ??= []; report.lobbyEntry.push({ intended: { url: navigationURL.href, room, name }, actual: beforeEntry })
+  await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+  const cleanLobbyURL = new URL(navigationURL.href); cleanLobbyURL.search = ''; cleanLobbyURL.hash = ''
+  assert.equal(beforeEntry.visibleURL, cleanLobbyURL.href, 'lobby presents a clean visible URL')
+  assert.equal(beforeEntry.room, room, 'Shell retains the allocated room')
   const currentLabel = page.locator('.galaxy-label.is-current')
   await currentLabel.waitFor({ state: 'visible', timeout: remaining(15000) })
   assert.equal(await currentLabel.getAttribute('data-world'), beforeEntry.world)
@@ -318,11 +326,14 @@ async function open(name, viewport) {
   const afterEntry = await page.evaluate(async () => {
     const { currentPlanet } = await import('/src/world/planets.ts')
     return { world: currentPlanet().id, seed: window.syn3h.params.get('world.seed').value,
-      name: window.syn3hNet.players.get(window.syn3hNet.id)?.name }
+      name: window.syn3hNet.players.get(window.syn3hNet.id)?.name, visibleURL: location.href }
   })
   report.nativeEntry ??= []; report.nativeEntry.push({ name, before: beforeEntry, after: afterEntry, method: 'visible current galaxy label, focus and native Enter' })
   await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
   assert.equal(afterEntry.world, beforeEntry.world); assert.equal(afterEntry.seed, beforeEntry.seed)
+  const restoredURL = new URL(afterEntry.visibleURL)
+  assert.equal(restoredURL.searchParams.get('room'), room, 'play restores allocated room query')
+  assert.equal(restoredURL.searchParams.get('name'), name, 'play restores intended name query')
   assert.equal(afterEntry.name, name)
   assert.ok(browserEvidence.find(e => e.name === name).sockets.some(value => { const u = new URL(value); return u.pathname === '/ws' && u.host === new URL(origin).host && u.searchParams.get('room') === room }), 'native entry preserves allocated room')
   await page.waitForFunction(() => window.syn3hNet.players.size >= 1, null, { timeout: remaining(15000) })
