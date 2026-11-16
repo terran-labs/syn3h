@@ -1,6 +1,6 @@
 # Orchestrator state
 
-Last verified: 2026-11-15 16:07 PST. The owner withdrew the afternoon cutoff.
+Last verified: 2026-11-15 16:33 PST. The owner withdrew the afternoon cutoff.
 
 ## Authority and release order
 
@@ -17,12 +17,14 @@ GIF before marking a release Latest; publish notes with the frozen playable link
 
 ## Production
 
-Accepted release: v26.11.1513 (release-17), source 59630818, at https://www.syn3h.com/.
-Switch hold/drop, Jet settling, local input/tag guards, remote cosmetic arrival clouds,
-gear effects and cues, and switch/Zorb sounds are live. Typecheck and 1,401 tests pass;
-one test is skipped and the exact known competitive-flee failure is unchanged. The same
-frozen build passed local normal and added-latency multiplayer checks, then exact,
-multiplayer and frozen-file checks on both public addresses and all eight vehicle cases.
+Accepted release: v26.11.1514 (release-18), source a905a649, at https://www.syn3h.com/.
+High quality default, sustained-load relief, named quality recommendations, switched
+camera update order and Jet tail lights are live. The combined gate has no new failure
+after an explicit-quality test setup correction; the known competitive-flee failure remains.
+Local normal and latency checks, exact-build, multiplayer and frozen-file checks on both
+addresses, and all eight Chrome/WebKit vehicle cases pass. Camera acceptance used earlier
+zero-lag traces under the Foreman's waiver; the last comparison failed before browser
+launch, and no claim of fixing all judder or achieving 60 fps is supported.
 
 v26.11.1510 was live and superseded without its own vehicle matrix by explicit owner
 waiver; the trailing 1511 matrix covers its sidebar and wingtip changes. Do not infer
@@ -30,12 +32,10 @@ acceptance from a tag alone. The showcase still predates the Tank paint and side
 
 ## Current queue
 
-1. Review the tested High default, quality governor and visible performance recommendation
-   for the next on-demand release, preserving the current lobby and restored effects.
-2. Review Jet half-throttle and Daydream ownership marker now that settling is accepted.
-   The measured camera-order correction remains separate from unproved cadence claims.
-3. Ship later owner-visible handoffs when green: duckling formation, controls/FPS,
-   room-full fallback, satellites, liquid physics and Post single-pass work.
+1. Ship Jet half-throttle with its tested Daydream ownership marker and README changes.
+2. Review the standalone room-full fallback, whose unit-only gate passed.
+3. Validate the withheld duckling formation and count-retention fixes before another browser.
+4. Ship later green controls/FPS, satellites, liquid physics and Post work on demand.
 
 The withdrawn 1507 build and the accepted 1506 control each passed two quiet local network
 runs in 218 seconds. No failing half was isolated. The Foreman authorized restoration

@@ -2,11 +2,6 @@
   "tagline": "Syn3h, native in the browser: its vehicles, its physics, its lobby and its look.",
   "inProgress": [
     {
-      "state": "active",
-      "title": "Performance controls",
-      "detail": "The direct lobby panels are live. The governor and clearer slow-rendering prompt are being validated separately."
-    },
-    {
       "state": "next",
       "title": "Vehicle and world follow-ups",
       "detail": "Jet throttle and motion, bot formation, satellites, liquid physics and post effects remain separate tested handoffs."

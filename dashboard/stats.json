@@ -1,58 +1,58 @@
 {
-  "generatedAt": "2026-11-16T00:05:19.043Z",
+  "generatedAt": "2026-11-16T00:33:48.716Z",
   "commits": {
-    "total": 1492,
-    "last48h": 1492,
-    "merges": 455
+    "total": 1542,
+    "last48h": 1542,
+    "merges": 468
   },
   "pullRequests": {
     "count": 0,
     "merged": 0,
-    "mergedDirectly": 455,
+    "mergedDirectly": 468,
     "note": "Lanes merge branches directly; few changes went through pull requests."
   },
   "releases": {
-    "production": 15,
-    "today": 13,
+    "production": 16,
+    "today": 14,
     "withdrawn": 1,
-    "newest": "v26.11.1513",
-    "newestAt": "2026-11-15 16:05 PST"
+    "newest": "v26.11.1514",
+    "newestAt": "2026-11-15 16:31 PST"
   },
   "code": {
-    "sourceFiles": 318,
-    "lines": 59448,
-    "testFiles": 219,
+    "sourceFiles": 319,
+    "lines": 59520,
+    "testFiles": 221,
     "params": 301
   },
   "tokens": {
     "stale": false,
-    "countedAt": "2026-11-16T00:05:19.043Z",
+    "countedAt": "2026-11-16T00:33:48.716Z",
     "claude": {
-      "input": 28596,
-      "output": 14094994,
-      "cacheRead": 3804606676,
-      "cacheWrite": 39552169,
-      "total": 3858282435,
+      "input": 28656,
+      "output": 14103974,
+      "cacheRead": 3818041718,
+      "cacheWrite": 39567505,
+      "total": 3871741853,
       "sessions": 99,
-      "messages": 12452
+      "messages": 12470
     },
     "codex": {
-      "input": 21865791,
-      "output": 3586101,
-      "cacheRead": 1588954112,
+      "input": 22370102,
+      "output": 3643000,
+      "cacheRead": 1626504960,
       "cacheWrite": 0,
-      "reasoning": 874673,
-      "total": 1614406004,
+      "reasoning": 884416,
+      "total": 1652518062,
       "sessions": 39
     },
-    "total": 5472688439,
+    "total": 5524259915,
     "firstSessionAt": "2026-11-14T21:41:39.778Z",
-    "hours": 26.4,
-    "perHour": 207344041
+    "hours": 26.9,
+    "perHour": 205598615
   },
   "price": {
-    "low": 1553,
-    "high": 1750,
+    "low": 1556,
+    "high": 1753,
     "currency": "USD",
     "models": [
       {
@@ -63,9 +63,9 @@
       },
       {
         "model": "Claude Fable 5.2",
-        "tokens": 3040826858,
-        "low": 1225,
-        "high": 1382
+        "tokens": 3054286276,
+        "low": 1228,
+        "high": 1386
       }
     ],
     "unpricedTokens": 0,
