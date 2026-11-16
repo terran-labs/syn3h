@@ -205,3 +205,36 @@ Real wrap-seam, larger human rosters, controlled cap starvation, modal coverage 
 remain open. No syntax, test, typecheck, server, port probe, browser or network operation ran
 for this preparation. Earlier sections describing tests as unrun are historical source-stage
 notes; only the focused pure gate has since passed. Broader suites require separate allocation.
+
+
+## Browser 001 source correction
+
+Failed run 001 remains unchanged. The first near view had four bot ticks and no human labels;
+its 224 terrain queries do not establish budget exhaustion. Final request drains also failed
+on each page's module-worker request. These are separate unresolved causes.
+
+The fixture now saves actual roster/tag entries, rendered remote positions, camera matrices,
+cinematic target, bend state, projected and bent anchors, candidate/disc/sight state, HUD boxes,
+terrain-budget counters and bounded actual terrain query outcomes before assertions. Terrain
+observation calls the original function once and restores it on teardown and before cost
+windows. It does not rerun visibility rays, change the budget or override rejection. Cached
+plate fields carry draw/sight stamps; stale fields must not be interpreted as current decisions.
+No exact allocator rejection reason is claimed for skipped HUD/disc/viewport candidates.
+
+Near-stage positions are closer. A bounded settling predicate requires both named humans,
+matching world seed/kind across clients, stable actor/camera positions, convergence to the
+requested cinematic pose/FOV, all four bot centers under 95 m and near humans under 140 m.
+The original full-label, human visibility, opacity, overlap and cost assertions remain.
+Terrain camera clamping can still make this stage fail; no assertion is relaxed to accept it.
+The closer stage is source-prepared, not proof that terrain/HUD admits all labels. Stage
+failure persists diagnostics without replacing its original error. All time remains inside
+the original fixture and supervisor budgets; added checks may consume that budget.
+
+Page and context events now record bounded shared Request identities, response/terminal
+outcomes, worker create/close, page-CDP request/loading and target discovery events. Target
+discovery does not pause workers or replace Playwright auto-attachment. Page-CDP observations
+do not prove child-session network delivery. No worker request is excluded or blindly cleared,
+and no new terminal reconciliation is implemented: missing completion/body remains a failure.
+Lifecycle overflow fails explicitly. Actual worker body/source-map and terminal coverage still
+need runtime evidence before any reconciliation can be justified. All browser coverage and
+this correction's syntax remain unrun pending review and allocation.

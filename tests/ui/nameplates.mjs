@@ -115,8 +115,36 @@ async function observeBrowser(page, context, name) {
     if (relevant(request)) evidence.failures.push(`Runtime request failed: ${request.url()}: ${request.failure()?.errorText}`)
     evidence.openRequests.delete(request)
   })
+  evidence.lifecycle = []; evidence.droppedLifecycle = 0
+  const requestIds = new WeakMap(); let nextRequest = 0
+  const requestId = request => { if (!requestIds.has(request)) requestIds.set(request, ++nextRequest); return requestIds.get(request) }
+  const recordLifecycle = record => {
+    if (evidence.lifecycle.length < 4000) evidence.lifecycle.push({ time: Date.now(), ...record })
+    else { evidence.droppedLifecycle++; if (evidence.droppedLifecycle === 1) evidence.failures.push('lifecycle evidence bound exceeded') }
+  }
+  for (const [owner, emitter] of [['page', page], ['context', context]]) {
+    for (const event of ['request', 'response', 'requestfinished', 'requestfailed']) emitter.on(event, value => {
+      const request = event === 'response' ? value.request() : value
+      if (!relevant(request)) return
+      recordLifecycle({ owner, event, id: requestId(request), url: request.url(), resource: request.resourceType(),
+        status: event === 'response' ? value.status() : null, failure: event === 'requestfailed' ? request.failure() : null })
+      // Context events are evidence only. Do not remove a page request without
+      // an observed matching terminal event and captured body proof.
+    })
+  }
+  page.on('worker', worker => {
+    recordLifecycle({ owner: 'worker', event: 'created', url: worker.url() })
+    worker.on('close', () => recordLifecycle({ owner: 'worker', event: 'closed', url: worker.url() }))
+  })
   browserEvidence.push(evidence)
   const cdp = await bounded(context.newCDPSession(page), 5000, 'CDP provenance')
+  for (const event of ['Network.requestWillBeSent', 'Network.responseReceived', 'Network.loadingFinished', 'Network.loadingFailed', 'Target.attachedToTarget', 'Target.detachedFromTarget']) cdp.on(event, data => {
+    recordLifecycle({ owner: 'page-CDP', event, requestId: data.requestId, sessionId: data.sessionId, target: data.targetInfo, url: data.request?.url ?? data.response?.url, type: data.type, errorText: data.errorText })
+  })
+  // Observe target discovery without changing auto-attach or pausing worker execution.
+  cdp.on('Target.targetCreated', data => recordLifecycle({ owner: 'page-CDP', event: 'Target.targetCreated', target: data.targetInfo }))
+  cdp.on('Target.targetDestroyed', data => recordLifecycle({ owner: 'page-CDP', event: 'Target.targetDestroyed', targetId: data.targetId }))
+  await bounded(cdp.send('Target.setDiscoverTargets', { discover: true }), 5000, 'target discovery')
   await bounded(cdp.send('Network.enable'), 5000, 'network observation')
   await bounded(cdp.send('Network.setCacheDisabled', { cacheDisabled: true }), 5000, 'disable browser cache')
   cdp.on('Network.responseReceived', ({ response }) => {
@@ -232,6 +260,52 @@ async function open(name, viewport) {
   await page.waitForFunction(() => window.syn3hNet.players.size >= 1, null, { timeout: remaining(15000) })
   return page
 }
+// Snapshot existing draw decisions; do not replay queries or alter the query budget.
+async function geometryEvidence(page) {
+  return page.evaluate(async () => {
+    const { copyCurveState, overHorizon } = await import('/src/world/curve.ts')
+    const { renderedEnvelope } = await import('/src/ui/nameplates/anchors.ts')
+    const { bendPoint, CurvedProjection } = await import('/src/ui/nameplates/curvature.ts')
+    const s = window.syn3h, net = window.syn3hNet, tags = net.tags, camera = s.game.camera
+    const v = () => s.player.object.position.clone(), bend = v(), eye = v(), projection = new CurvedProjection()
+    copyCurveState(bend); camera.getWorldPosition(eye)
+    return { tick: s.game.tick, stamp: tags.stamp, terrainBudget: tags.terrainBudget, stats: { ...tags.stats },
+      seed: s.params.get('world.seed')?.value, terrainKind: s.params.get('terrain.kind')?.value,
+      camera: { eye: eye.toArray(), quaternion: camera.quaternion.toArray(), fov: camera.fov, matrix: camera.matrixWorld.toArray(), projection: camera.projectionMatrix.toArray(), cinematic: s.camera.cinematic },
+      bend: bend.toArray(), roster: [...net.players].map(([id, info]) => ({ id, name: info.name, bot: id >= 0xff00 })),
+      remotes: [...net.remotes].map(([id, r]) => ({ id, position: r.vehicle.object.position.toArray(), visible: r.vehicle.object.visible, responding: r.responding })),
+      entries: tags.entries.map(t => {
+        const center = v(), anchor = v(), bent = v(), screen = v(), rotation = s.player.object.quaternion.clone()
+        const radius = renderedEnvelope(t.vehicle, center, rotation, anchor)
+        anchor.copy(center); anchor.y += radius + .65
+        bendPoint(anchor, bend, bent); projection.project(anchor, bend, camera, innerWidth, innerHeight, screen)
+        const plate = tags.plates.get(t.id)
+        return { id: t.id, name: t.name, bot: t.bot, center: center.toArray(), anchor: anchor.toArray(), bentAnchor: bent.toArray(), projectedAnchor: screen.toArray(),
+          distance: center.distanceTo(eye), radius, visible: t.vehicle.object.visible, horizon: overHorizon(center.x, center.z, radius, center.y + radius),
+          plate: plate ? { stamp: plate.stamp, candidate: { ...plate.candidate }, disc: { ...plate.disc }, sightStamp: plate.sightStamp, sightBlocked: plate.sightBlocked, shown: plate.shown, hidden: plate.el.hidden } : null }
+      }), terrain: window.nameplateTerrainEvidence ? { ...window.nameplateTerrainEvidence, rays: [...window.nameplateTerrainEvidence.rays] } : null }
+  })
+}
+async function installTerrainEvidence(page) {
+  await page.evaluate(() => {
+    window.restoreNameplateTerrainEvidence?.()
+    const tags = window.syn3hNet.tags, options = tags.options, original = options.terrainHit
+    const evidence = window.nameplateTerrainEvidence = { stamp: -1, rays: [], dropped: 0 }
+    const wrapped = (from, to) => {
+      if (evidence.stamp !== tags.stamp) { evidence.stamp = tags.stamp; evidence.rays = []; evidence.dropped = 0 }
+      const result = original(from, to)
+      if (evidence.rays.length < 512) evidence.rays.push({ from: { ...from }, to: { ...to }, blocked: result })
+      else evidence.dropped++
+      return result
+    }
+    options.terrainHit = wrapped
+    window.restoreNameplateTerrainEvidence = () => {
+      if (options.terrainHit !== wrapped) throw new Error('terrain observer replaced externally')
+      options.terrainHit = original
+      delete window.restoreNameplateTerrainEvidence
+    }
+  })
+}
 async function capture(page, label) {
   remaining(1)
   await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
@@ -248,6 +322,10 @@ async function capture(page, label) {
     if (controls['gfx.auto'] !== false || controls['gfx.quality'] !== 4 || quality.auto || quality.level !== 4 || controls['daydream.seconds'] !== 0 || controls['sun.dayLength'] !== 0 || s.bots.daydream.active) throw new Error('Fixture control drift')
     return { labels, exclusions, controls, quality, nameplateCost: { ...window.syn3hNet.tags.stats }, curve: window.syn3h.params.get('world.curve').value, local: String(window.syn3hNet.id), presentation: shell.presentation, cameraMode: window.syn3h.params.get('camera.mode').value }
   })
+  const diagnostic = await geometryEvidence(page)
+  captures.push({ label, ...state, diagnostic })
+  await writeFile(`${out}/measurements.json`, JSON.stringify(captures, null, 2))
+  await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
   const overlap = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
   assert.ok(state.labels.every(l => l.id !== state.local), 'never label the local player')
   for (let i = 0; i < state.labels.length; i++) {
@@ -255,7 +333,6 @@ async function capture(page, label) {
     assert.ok(state.labels.slice(i + 1).every(b => !overlap(a, b)), `${label}: labels overlap`)
     assert.ok(state.exclusions.every(b => !overlap(a, b)), `${label}: label covers HUD`)
   }
-  captures.push({ label, ...state })
   await page.screenshot({ path: `${out}/${label}.png` })
   await writeFile(`${out}/measurements.json`, JSON.stringify(captures, null, 2))
   return state
@@ -264,6 +341,7 @@ async function capture(page, label) {
 // Test-only access avoids adding a runtime diagnostics API. Reading DOM here has a cost;
 // report label drawMs only, never claim this is total frame/GPU cost.
 async function costDistribution(page, label) {
+  await page.evaluate(() => window.restoreNameplateTerrainEvidence?.())
   const evidence = await page.evaluate(() => new Promise(resolve => {
     const samples = [], s = window.syn3h, tags = window.syn3hNet.tags
     let lastStamp = tags.stamp, raf, finished = false
@@ -318,18 +396,51 @@ try {
   }), true, 'sibling touch controls are protected')
   await a.evaluate(() => { const s = window.syn3h; s.params.set('bots.canDrive', false); s.params.set('bots.tagBeams', false); s.params.set('bots.count', 4) })
   await a.waitForFunction(() => window.syn3h.bots.vehicles.length >= 4, null, { timeout: 15000 })
+  await installTerrainEvidence(a)
   let center = await a.evaluate(() => { const s = window.syn3h, p = s.terrain.spawnPoint(0).position; return { x: p.x, y: p.y, z: p.z } })
   async function stage(far = false, curve = .71) {
+    await installTerrainEvidence(a)
     await a.evaluate(curve => window.syn3h.params.set('world.curve', curve), curve)
     await a.evaluate(p => {
       const s = window.syn3h, v = s.player.object.position.clone().set(p.x, s.terrain.heightAt(p.x, p.z + 18) + 2, p.z + 18)
       s.player.teleport(v, 0)
-      s.bots.vehicles.forEach((bot, i) => { const x = p.x + (i - 1.5) * 24, z = p.z - 18 - i * 10; bot.teleport(v.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) })
-      s.camera.setCinematicPose(v.clone().set(p.x, p.y + 35, p.z + 70), v.clone().set(p.x, p.y + 4, p.z - 35), 60)
+      s.bots.vehicles.forEach((bot, i) => { const x = p.x + (i - 1.5) * 12, z = p.z - 8 - i * 6; bot.teleport(v.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) })
+      s.camera.setCinematicPose(v.clone().set(p.x, s.terrain.heightAt(p.x, p.z + 45) + 20, p.z + 45), v.clone().set(p.x, p.y + 4, p.z - 12), 60)
     }, center)
-    await b.evaluate(({p, far}) => { const s = window.syn3h, z = p.z - (far ? 260 : 15), x = p.x - 45; s.player.teleport(s.player.object.position.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) }, { p: center, far })
-    await c.evaluate(({p, far}) => { const s = window.syn3h, z = p.z - (far ? 190 : 30), x = p.x + 45; s.player.teleport(s.player.object.position.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) }, { p: center, far })
-    await a.waitForTimeout(1500)
+    await b.evaluate(({p, far}) => { const s = window.syn3h, z = p.z - (far ? 260 : 4), x = p.x - 24; s.player.teleport(s.player.object.position.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) }, { p: center, far })
+    await c.evaluate(({p, far}) => { const s = window.syn3h, z = p.z - (far ? 190 : 12), x = p.x + 24; s.player.teleport(s.player.object.position.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) }, { p: center, far })
+    // Record diagnostics even when settling fails. Never move the camera to skip occlusion.
+    let stagingError
+    try {
+      await a.waitForFunction(far => {
+        const s = window.syn3h, net = window.syn3hNet, camera = s.game.camera, tags = net.tags
+        const eye = camera.position.toArray(), actors = tags.entries.map(t => [t.id, ...t.vehicle.object.position.toArray()])
+        const previous = window.nameplateSettle
+        const current = { eye, actors, stamp: tags.stamp, count: 0 }
+        const stable = previous && previous.stamp !== current.stamp && actors.length === previous.actors.length &&
+          Math.hypot(...eye.map((n, i) => n - previous.eye[i])) < .25 &&
+          actors.every((row, i) => row[0] === previous.actors[i][0] && Math.hypot(...row.slice(1).map((n, j) => n - previous.actors[i][j + 1])) < .25)
+        current.count = stable ? previous.count + 1 : 0; window.nameplateSettle = current
+        const people = tags.entries.filter(t => !t.bot)
+        const roster = ['Visitor', 'Companion'].every(name => people.some(t => t.name === name))
+        const nearRange = far || (people.every(t => t.vehicle.object.position.distanceTo(camera.position) < 140) &&
+          tags.entries.filter(t => t.bot).length >= 4 && tags.entries.filter(t => t.bot).every(t => t.vehicle.object.position.distanceTo(camera.position) < 95))
+        const pose = s.camera.cinematic
+        return roster && nearRange && pose && camera.position.distanceTo(pose.position) < .5 && Math.abs(camera.fov - pose.fov) < .5 && current.count >= 6
+      }, far, { timeout: remaining(15000), polling: 100 })
+    } catch (error) { stagingError = error }
+    try {
+      report.stages ??= []
+      report.stages.push({ far, curve, observer: await geometryEvidence(a), actors: await Promise.all([b, c].map(page => page.evaluate(() => ({ id: window.syn3hNet.id, seed: window.syn3h.params.get('world.seed')?.value, terrainKind: window.syn3h.params.get('terrain.kind')?.value, position: window.syn3h.player.object.position.toArray() })))) })
+      await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+    }
+    catch (error) {
+      report.stageEvidenceErrors ??= []; report.stageEvidenceErrors.push(String(error))
+      if (!stagingError) stagingError = error
+    }
+    if (stagingError) throw stagingError
+    const stage = report.stages.at(-1)
+    assert.ok(stage.actors.every(actor => actor.seed === stage.observer.seed && actor.terrainKind === stage.observer.terrainKind), 'clients share staged world')
   }
   await stage()
   const near = await capture(a, 'desktop-near-day')
@@ -406,6 +517,10 @@ try {
   report.cleanupErrors = []
   try { await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)) }
   catch (error) { report.cleanupErrors.push(`Partial receipt: ${error}`) }
+  for (const context of contexts) for (const page of context.pages()) {
+    try { await bounded(page.evaluate(() => window.restoreNameplateTerrainEvidence?.()), 3000, 'restore terrain observer') }
+    catch (error) { report.cleanupErrors.push(String(error)) }
+  }
   try { await verifyBrowserEvidence('before browser close') }
   catch (error) { report.cleanupErrors.push(String(error.stack ?? error)) }
   try { if (browser) await bounded(browser.close(), 15000, 'browser close') }
