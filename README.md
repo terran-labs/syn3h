@@ -119,7 +119,7 @@ Press **C** to step through the five camera modes, in this order:
 
 ### On a phone or tablet
 
-Steer with your left thumb: the stick appears where you touch. The buttons on the right
+Steer with your left thumb: the stick appears where you touch and its base stays there until you lift. Dragging past its edge gives full steering or throttle without moving the base. Rotating the screen releases the stick; touch again to drive. The buttons on the right
 depend on the vehicle: WINGS on the buggy, THR + and THR - and MODE on the jet, and BRAKE,
 TAG and ZORB on all of them. Tap a gear in the selector to switch, and use the Panels
 button to open and close the side panel.
