@@ -281,7 +281,7 @@
 .has-touch .spawn-help { left: 50%; right: auto; bottom: calc(max(30px,env(safe-area-inset-bottom)) + 160px); transform: translateX(-50%); max-width: calc(100% - 24px); padding: 5px 12px; white-space: nowrap; }
 .syn3h-shell:not(.is-playing) .spawn-help { display: none; }
 
-/* The loading veil is in index.html. This is its status text, for screen readers only. */
+/* The loading veil is in index.html. LoadingScreen's polite live region: the plain loading phase, for screen readers only. */
 .syn3h-loading { position: fixed; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .syn3h-loading[hidden] { display: none; }
 #fatal { z-index: 100; }
