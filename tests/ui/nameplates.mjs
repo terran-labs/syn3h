@@ -10,8 +10,9 @@ import { fileURLToPath } from 'node:url'
 const observationOnly = process.argv.includes('--observe-staging')
 const surveyOnly = process.argv.includes('--survey-terrain')
 const poseOnly = process.argv.includes('--observe-fixed-pose')
+const viewsOnly = process.argv.includes('--observe-views')
 const fixedPose = Object.freeze({ x: 32, z: 0, initialY: 15.622831573066174 })
-assert.ok(process.argv.slice(2).every(arg => ['--observe-staging', '--survey-terrain', '--observe-fixed-pose'].includes(arg)) && [observationOnly, surveyOnly, poseOnly].filter(Boolean).length <= 1, 'unsupported fixture mode')
+assert.ok(process.argv.slice(2).every(arg => ['--observe-staging', '--survey-terrain', '--observe-fixed-pose', '--observe-views'].includes(arg)) && [observationOnly, surveyOnly, poseOnly, viewsOnly].filter(Boolean).length <= 1, 'unsupported fixture mode')
 // Fixed before execution: one left-side region, no adaptive selection or early winner.
 const observationPositions = Object.freeze([[-22, -42], [-22, -34], [-14, -42], [-14, -34]].map(([x, z]) => Object.freeze({ x, z })))
 
@@ -43,7 +44,7 @@ assert.equal(launch.env.SYN3H_NO_ROOM_SERVER, '1')
 assert.equal(String(launch.env.SYN3H_ROOM_PORT), String(launch.roomPort), 'Vite proxy room port must be explicit')
 assert.ok(Number.isInteger(launch.roomPort) && launch.roomPort !== 8787, 'dedicated room port required')
 assert.ok(launch.roomPid > 0 && launch.roomStart && launch.vitePid > 0 && launch.viteStart, 'supervisor-owned PID/start provenance required')
-const report = { mode: poseOnly ? 'fixed-pose-observation-only' : surveyOnly ? 'terrain-survey-only' : observationOnly ? 'staging-observation-only' : 'acceptance', acceptanceEligible: !observationOnly && !surveyOnly && !poseOnly, source: expected, launch, captures: [], errors: [], scope: 'Three fresh contexts: observer host, two remote people, four bots; Chrome only. No maximum-roster or hardware claim.' }
+const report = { mode: viewsOnly ? 'view-observation-only' : poseOnly ? 'fixed-pose-observation-only' : surveyOnly ? 'terrain-survey-only' : observationOnly ? 'staging-observation-only' : 'acceptance', acceptanceEligible: !observationOnly && !surveyOnly && !poseOnly && !viewsOnly, source: expected, launch, captures: [], errors: [], scope: 'Three fresh contexts: observer host, two remote people, four bots; Chrome only. No maximum-roster or hardware claim.' }
 const captures = report.captures, errors = report.errors
 await mkdir(out, { recursive: false })
 const files = ['index.html', 'src/main.ts', 'src/net/index.ts', 'src/net/Connection.ts', 'src/ui/Shell.ts', 'src/world/curve.ts', 'shared/params.ts', 'vite.config.ts', 'server/dev.ts', 'tools/manual-reload.mjs', 'tools/rapier-wasm.mjs', 'tests/ui/nameplates.mjs', 'src/ui/nameplates/HudExclusions.ts', 'src/ui/nameplates/VehicleNameplates.ts', 'src/ui/nameplates/anchors.ts', 'src/ui/nameplates/curvature.ts', 'src/ui/nameplates/layout.ts', 'src/ui/nameplates/occlusion.ts', 'src/ui/nameplates/preferences.ts', 'src/ui/nameplates/renderHook.ts', 'src/ui/nameplates/terrain.ts']
@@ -410,6 +411,104 @@ async function open(name, viewport) {
   return page
 }
 // Snapshot existing draw decisions; do not replay queries or alter the query budget.
+// Observation-only instance wrappers. Never invoke a product draw/projection ourselves.
+async function installViewObserver(page) {
+  await page.evaluate(() => {
+    const s = window.syn3h, tags = window.syn3hNet.tags, projection = tags.projection
+    if (window.nameplateViewObserver) throw new Error('view observer already installed')
+    const state = { latest: null, errors: [], droppedErrors: 0, overflow: false, restored: false }
+    let active = null
+    const installed = []
+    const fault = error => { if (state.errors.length < 8) state.errors.push(String(error)); else state.droppedErrors++ }
+    const copyCamera = camera => ({ uuid: camera.uuid, active: camera === s.game.camera,
+      eye: camera.position.toArray(), quaternion: camera.quaternion.toArray(), fov: camera.fov,
+      near: camera.near, far: camera.far, matrix: camera.matrixWorld.toArray(),
+      inverse: camera.matrixWorldInverse.toArray(), projection: camera.projectionMatrix.toArray() })
+    const install = (object, key, factory) => {
+      const own = Object.getOwnPropertyDescriptor(object, key), original = object[key]
+      if (typeof original !== 'function' || own && (!own.configurable || !('value' in own))) throw new Error(`unsupported descriptor ${key}`)
+      const wrapper = factory(original)
+      const descriptor = own ? { ...own, value: wrapper } : { value: wrapper, configurable: true, writable: true, enumerable: false }
+      Object.defineProperty(object, key, descriptor); installed.push({ object, key, own, descriptor })
+    }
+    const restore = () => {
+      if (state.restored) return
+      state.restored = true
+      for (const item of [...installed].reverse()) {
+        try {
+          const now = Object.getOwnPropertyDescriptor(item.object, item.key)
+          if (!now || now.value !== item.descriptor.value || now.configurable !== item.descriptor.configurable || now.writable !== item.descriptor.writable || now.enumerable !== item.descriptor.enumerable) {
+            fault(`foreign descriptor replacement: ${item.key}`); continue
+          }
+          if (item.own) Object.defineProperty(item.object, item.key, item.own)
+          else delete item.object[item.key]
+        } catch (error) { fault(error) }
+      }
+    }
+    window.nameplateViewObserver = { state, restore, sample() {
+      const camera = s.game.camera, net = window.syn3hNet
+      const latest = state.latest ? structuredClone(state.latest) : null
+      const labels = [...tags.root.querySelectorAll('.vehicle-nameplate')].filter(el => !el.hidden && getComputedStyle(el).display !== 'none' && !el.closest('[hidden]')).map(el => {
+        const b = el.getBoundingClientRect()
+        return { id: el.dataset.vehicle, bot: el.classList.contains('is-bot'), tick: el.classList.contains('is-tick'), text: el.textContent,
+          left: b.left, top: b.top, right: b.right, bottom: b.bottom }
+      })
+      return { stamp: tags.stamp, wall: performance.now(), tick: s.game.tick, camera: copyCamera(camera),
+        observer: String(net.id), host: net.game.host, isHost: net.isHost, viewport: { width: innerWidth, height: innerHeight },
+        mode: s.params.get('camera.mode').value, distance: s.params.get('camera.distance').value,
+        cinematic: !!s.camera.cinematic, presentation: s.shell.presentation,
+        controls: Object.fromEntries(['gfx.auto', 'gfx.quality', 'daydream.seconds', 'sun.dayLength', 'sun.timeOfDay', 'world.seed', 'terrain.kind', 'world.curve'].map(id => [id, s.params.get(id)?.value])),
+        quality: s.game.quality.getQualityState(), daydream: s.bots.daydream.active,
+        pivot: s.camera.pivot.toArray(), desiredAfterLift: s.camera.desired.toArray(), final: camera.position.toArray(), arm: s.camera.arm, lift: s.camera.lift,
+        latest, errors: [...state.errors], droppedErrors: state.droppedErrors, overflow: state.overflow,
+        exclusions: tags.hud.read(innerWidth, innerHeight).map(b => ({ ...b })), labels,
+        actors: [{ id: String(net.id), vehicle: s.player }, ...tags.entries].map(t => ({ id: t.id, kind: t.vehicle.kind,
+          body: { ...t.vehicle.body.translation() }, rendered: t.vehicle.object.position.toArray(),
+          quaternion: t.vehicle.object.quaternion.toArray(), visible: t.vehicle.object.visible })),
+        candidates: tags.entries.map(t => { const p = tags.plates.get(t.id); return { id: t.id, bot: t.bot, name: t.name,
+          plate: p ? { stamp: p.stamp, candidate: { ...p.candidate }, shown: p.shown, sightStamp: p.sightStamp, sightBlocked: p.sightBlocked } : null } }),
+        budget: tags.terrainBudget, stats: { ...tags.stats } }
+    } }
+    try {
+      install(projection, 'envelope', original => function(...args) {
+        let result
+        try { result = Reflect.apply(original, this, args) }
+        catch (error) { if (active) active.envelopeThrew = true; throw error }
+        try {
+          if (!active || this !== projection) throw new Error('envelope outside owned draw')
+          if (active.envelopes.length >= 7) { state.overflow = true; throw new Error('envelope cap exceeded') }
+          const [center, radius, bend, camera, width, height, output] = args
+          const id = output === tags.localDisc ? '@local' : [...tags.plates].find(([, p]) => p.disc === output)?.[0]
+          if (id === undefined) throw new Error('unknown envelope output identity')
+          if (active.envelopes.some(e => e.id === id)) throw new Error('duplicate envelope identity')
+          active.envelopes.push({ id, outputIdentityMatched: true, stamp: tags.stamp,
+            center: center.toArray(), radius, bend: bend.toArray(), camera: copyCamera(camera), width, height, disc: { ...output } })
+        } catch (error) { fault(error) }
+        return result
+      })
+      install(tags, 'draw', original => function(...args) {
+        const parent = active, row = { stamp: null, completed: false, threw: false, envelopeThrew: false, local: 'unknown', envelopes: [] }
+        if (parent) fault('reentrant draw')
+        active = row
+        try {
+          const result = Reflect.apply(original, this, args)
+          try {
+            row.stamp = tags.stamp; row.completed = this === tags && !row.envelopeThrew
+            row.local = row.envelopes.some(e => e.id === '@local') ? 'participated' : 'skipped'
+            row.camera = copyCamera(s.game.camera); row.bend = tags.bend.toArray()
+            row.mode = s.params.get('camera.mode').value; row.distance = s.params.get('camera.distance').value
+            row.cinematic = !!s.camera.cinematic; row.viewport = [innerWidth, innerHeight]
+            if (row.envelopes.some(e => e.stamp !== row.stamp)) { row.completed = false; fault('draw stamp mismatch') }
+          } catch (error) { row.completed = false; fault(error) }
+          return result
+        } catch (error) { row.threw = true; throw error }
+        finally { state.latest = row; active = parent }
+      })
+      install(tags, 'dispose', original => function(...args) { restore(); return Reflect.apply(original, this, args) })
+    } catch (error) { fault(error); restore(); throw error }
+  })
+}
+
 async function geometryEvidence(page, captureLabel = null, installPose = false) {
   return page.evaluate(async ({ captureLabel, installPose }) => {
     const { copyCurveState, overHorizon } = await import('/src/world/curve.ts')
@@ -600,12 +699,12 @@ try {
   await installTerrainEvidence(a)
   let center = await a.evaluate(() => { const s = window.syn3h, p = s.terrain.spawnPoint(0).position; return { x: p.x, y: p.y, z: p.z } })
   let settlingSequence = 0
-  async function waitSettled(page, far, stageID, intended = null) {
+  async function waitSettled(page, far, stageID, intended = null, view = null) {
     const record = !observationOnly && !surveyOnly && !poseOnly
     const receipt = { stageID, far, intended, primaryError: null, records: null, complete: false }
     let primary
     try {
-      await page.waitForFunction(({ far, stageID, record, intended }) => {
+      await page.waitForFunction(({ far, stageID, record, intended, view }) => {
         // New receipt per wait, but never reset the persistent settling counter.
         const history = record ? (window.nameplateAcceptanceSettle?.stageID === stageID
           ? window.nameplateAcceptanceSettle
@@ -623,7 +722,7 @@ try {
           actors.every((row, i) => seen(`actor${i}Identity`, row[0] === previous.actors[i][0]) && seen(`actor${i}Stable`, Math.hypot(...row.slice(1).map((n, j) => n - previous.actors[i][j + 1])) < .25))
         current.count = stable ? previous.count + 1 : 0; window.nameplateSettle = current
         const people = tags.entries.filter(t => !t.bot)
-        const roster = ['Visitor', 'Companion'].every(name => seen(`roster${name}`, people.some(t => t.name === name)))
+        const roster = (view ? view.names : ['Visitor', 'Companion']).every(name => seen(`roster${name}`, people.some(t => t.name === name)))
         const nearRange = far || (people.every(t => seen(`humanRange${t.id}`, t.vehicle.object.position.distanceTo(camera.position) < 140)) &&
           seen('fourBots', tags.entries.filter(t => t.bot).length >= 4) && tags.entries.filter(t => t.bot).every(t => seen(`botRange${t.id}`, t.vehicle.object.position.distanceTo(camera.position) < 95)))
         if (window.nameplateObservationHistory) {
@@ -681,6 +780,30 @@ try {
             fovError: pose ? Math.abs(camera.fov - pose.fov) : null,
             lifecycle: [] }
           history.records.push(row) // Preserve raw geometry before validation or lifecycle copying fails.
+          if (view) {
+            row.observation = window.nameplateViewObserver.sample()
+            const o = row.observation, cameraValues = [...o.camera.eye, ...o.camera.quaternion, o.camera.fov, o.camera.near, o.camera.far,
+              ...o.camera.matrix, ...o.camera.inverse, ...o.camera.projection, ...o.pivot, ...o.desiredAfterLift, ...o.final, o.arm, o.lift]
+            const expectedControls = { 'gfx.auto': false, 'gfx.quality': 4, 'daydream.seconds': 0, 'sun.dayLength': 0,
+              'sun.timeOfDay': 12, 'world.seed': 1, 'terrain.kind': 0, 'world.curve': .71 }
+            const controlsOK = Object.entries(expectedControls).every(([key, value]) => o.controls[key] === value) && !o.quality.auto && o.quality.level === 4 && !o.daydream
+            const ready = cameraValues.every(Number.isFinite) && o.camera.active && o.mode === 0 && !o.cinematic && o.distance === 25 && !o.presentation &&
+              o.viewport.width === view.width && o.viewport.height === view.height && o.isHost === view.host && controlsOK
+            const matched = o.latest?.completed && !o.latest.threw && o.latest.stamp === current.stamp && o.latest.camera.uuid === o.camera.uuid &&
+              o.latest.camera.matrix.every((v, i) => v === o.camera.matrix[i]) && o.latest.camera.projection.every((v, i) => v === o.camera.projection[i]) &&
+              o.latest.mode === 0 && o.latest.distance === 25 && !o.latest.cinematic && o.latest.viewport[0] === view.width && o.latest.viewport[1] === view.height
+            const previousMatched = history.viewMatched === true
+            history.viewComparisons = matched && previousMatched && arrived && history.viewArrived === true && stable ? (history.viewComparisons ?? 0) + 1 : 0
+            history.viewMatched = !!matched; history.viewArrived = arrived
+            row.viewComparisons = history.viewComparisons
+            row.ordinaryResult = !!(ready && roster && nearRange && current.count >= 6 && history.postArrivalCount >= 6 && history.viewComparisons >= 6 && matched)
+            row.result = row.ordinaryResult; result = row.ordinaryResult
+            row.observationChecks = { ready, controlsOK, matched: !!matched }
+            if (o.errors.length || o.droppedErrors || o.overflow) throw new Error('passive observer sticky failure')
+            if (!ready) throw new Error('ordinary camera observation controls or finite geometry differ')
+            if (o.actors.length !== 7 || new Set(o.actors.map(t => t.id)).size !== 7 || o.actors.some(t => ![...Object.values(t.body), ...t.rendered, ...t.quaternion].every(Number.isFinite))) throw new Error('incomplete seven actor observation')
+            if (o.latest && o.latest.envelopes.some(e => ![...e.center, e.radius, ...e.bend, e.disc.x, e.disc.y, e.disc.radius, e.disc.depth, ...e.camera.eye, ...e.camera.quaternion, ...e.camera.matrix, ...e.camera.inverse, ...e.camera.projection, e.camera.fov].every(Number.isFinite))) throw new Error('nonfinite envelope receipt')
+          }
           if (!targets.every(t => t.geometryValid)) throw new Error('arrival target requires finite x/z and complete finite rendered XYZ')
           for (const t of tags.entries) {
             const remote = net.remotes.get(Number(t.id)), vehicle = t.vehicle
@@ -692,7 +815,7 @@ try {
           }
         }
         return result
-      }, { far, stageID, record, intended }, { timeout: remaining(15000), polling: 100 })
+      }, { far, stageID, record, intended, view }, { timeout: remaining(15000), polling: 100 })
     } catch (error) { primary = error; receipt.primaryError = String(error) }
     if (record) {
       report.settlingReceipts ??= []; report.settlingReceipts.push(receipt)
@@ -715,7 +838,7 @@ try {
     }
     if (primary) throw primary
   }
-  async function stage(far = false, curve = .71, hudOverlap = false, scene = 'default') {
+  async function stage(far = false, curve = .71, hudOverlap = false, scene = 'default', view = null) {
     assert.ok(['default', 'volcanic-positive-near'].includes(scene), 'known staging scene required')
     const measuredPositive = scene === 'volcanic-positive-near'
     const acceptance = !observationOnly && !surveyOnly && !poseOnly
@@ -827,7 +950,11 @@ try {
     // Record diagnostics even when settling fails. Never move the camera to skip occlusion.
     let stagingError
     try {
-      await waitSettled(a, far, stageID, intended)
+      if (view) {
+        await view.page.setViewportSize({ width: view.width, height: view.height })
+        await view.page.evaluate(() => { const s = window.syn3h; s.params.set('camera.mode', 0); s.params.set('camera.distance', 25); s.params.set('sun.timeOfDay', 12); s.shell.setPresentation(false); s.camera.clearCinematicPose() })
+      }
+      await waitSettled(view?.page ?? a, far, stageID, intended, view ? { names: view.names, width: view.width, height: view.height, host: view.host } : null)
     } catch (error) { stagingError = error }
     if (poseOnly) {
       report.pose.settled = !stagingError
@@ -839,6 +966,34 @@ try {
         report.pose.evidenceError = String(error)
         if (!stagingError) stagingError = error
       }
+    }
+    if (view) {
+      const receipt = { case: view.id, acceptanceEligible: false, settled: !stagingError, primaryError: stagingError ? String(stagingError) : null,
+        expectedPeople: view.names, expectedFullBots: ['65280', '65283'], final: null }
+      report.viewObservations.push(receipt)
+      try {
+        receipt.final = await view.page.evaluate(() => window.nameplateViewObserver.sample())
+        await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+        const final = receipt.final
+        assert.ok(final.latest?.completed && !final.latest.threw && final.latest.stamp === final.stamp && !final.errors.length && !final.droppedErrors && !final.overflow, 'complete final passive draw required')
+        assert.ok(final.actors.length === 7 && new Set(final.actors.map(t => t.id)).size === 7)
+        assert.ok(final.camera.active && final.camera.uuid === final.latest.camera.uuid && final.mode === 0 && !final.cinematic && final.distance === 25 && !final.presentation)
+        assert.deepEqual(final.viewport, { width: view.width, height: view.height }); assert.equal(final.isHost, view.host)
+        assert.ok([...final.camera.eye, ...final.camera.quaternion, ...final.camera.matrix, ...final.camera.inverse, ...final.camera.projection,
+          final.camera.fov, ...final.pivot, ...final.desiredAfterLift, ...final.final, final.arm, final.lift,
+          ...final.actors.flatMap(t => [...Object.values(t.body), ...t.rendered, ...t.quaternion])].every(Number.isFinite))
+        assert.ok(final.camera.matrix.every((v, i) => v === final.latest.camera.matrix[i]) && final.camera.projection.every((v, i) => v === final.latest.camera.projection[i]))
+        assert.deepEqual(final.controls, { 'gfx.auto': false, 'gfx.quality': 4, 'daydream.seconds': 0, 'sun.dayLength': 0,
+          'sun.timeOfDay': 12, 'world.seed': 1, 'terrain.kind': 0, 'world.curve': .71 })
+        assert.ok(!final.quality.auto && final.quality.level === 4 && !final.daydream)
+        assert.ok(boundary.actors.every(t => Number.isFinite(t.ground)), 'all seven original ground values required')
+        receipt.visibleExpectedPeople = view.names.filter(name => final.labels.some(l => !l.bot && l.text.includes(name)))
+        receipt.visibleExpectedFullBots = receipt.expectedFullBots.filter(id => final.labels.some(l => l.id === id && l.bot && !l.tick))
+      } catch (error) { receipt.evidenceError = String(error); if (!stagingError) stagingError = error }
+      try { await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)) }
+      catch (error) { receipt.persistError = String(error); if (!stagingError) stagingError = error }
+      if (stagingError) throw stagingError
+      return
     }
     try {
       report.stages ??= []
@@ -853,6 +1008,17 @@ try {
     const stage = report.stages.at(-1)
     assert.ok(stage.actors.every(actor => actor.seed === stage.observer.seed && actor.terrainKind === stage.observer.terrainKind), 'clients share staged world')
   }
+  if (viewsOnly) {
+    report.viewObservations = []
+    const cases = [
+      { id: 'phone-observer', page: a, width: 390, height: 844, names: ['Visitor', 'Companion'], host: true },
+      { id: 'ordinary-follower', page: b, width: 640, height: 480, names: ['Observer', 'Companion'], host: false },
+    ]
+    for (const view of cases) {
+      await installViewObserver(view.page)
+      await stage(false, .71, false, 'default', view)
+    }
+  } else {
   if (observationOnly) {
     report.observations = { purpose: 'setup measurements only; not nameplate acceptance', region: 'center-relative x[-22,-14], z[-42,-34]',
       candidates: observationPositions, settleTimeoutMs: 15000, pollingMs: 100, historyLimit: 180, records: [], complete: false }
@@ -1074,6 +1240,7 @@ try {
 
   } // Acceptance scenarios are never executed or claimed by observation-only mode.
   } // Terrain survey does not enter staging or acceptance.
+  } // Passive view observations do not execute acceptance scenarios.
     assert.deepEqual(errors, [])
     await verifyBrowserEvidence('before final provenance')
     report.finalProvenance = await provenance()
@@ -1088,6 +1255,14 @@ try {
   try { await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2)) }
   catch (error) { report.cleanupErrors.push(`Partial receipt: ${error}`) }
   for (const context of contexts) for (const page of context.pages()) {
+    if (viewsOnly) try {
+      const receipt = await bounded(page.evaluate(() => { const o = window.nameplateViewObserver; if (!o) return null; o.restore(); return o.state }), 3000, 'restore passive observer')
+      if (receipt) {
+        report.viewObserverCleanup ??= []; report.viewObserverCleanup.push(receipt)
+        await writeFile(`${out}/report.json`, JSON.stringify(report, null, 2))
+        if (receipt.errors.length || receipt.droppedErrors || receipt.overflow || !receipt.restored) throw new Error('passive observer cleanup incomplete')
+      }
+    } catch (error) { report.cleanupErrors.push(String(error)) }
     try { await bounded(page.evaluate(() => window.restoreNameplateTerrainEvidence?.()), 3000, 'restore terrain observer') }
     catch (error) { report.cleanupErrors.push(String(error)) }
   }

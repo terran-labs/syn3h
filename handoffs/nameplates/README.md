@@ -730,3 +730,54 @@ feature acceptance. Failure still retains all partial samples and the first orig
 This limited observer/readiness distinction needs resolution before implementing the whole
 package; installing wrappers alone would leave a knowingly impossible measurement branch.
 No fixture code, launcher pins, product code or prior evidence was changed during this intake.
+
+### Implemented source proposal: passive two-view observation
+
+`--observe-views` is a mutually exclusive observation-only fixture mode. It declares phone
+Observer390x844 and Visitor follower640x480, both Volcanic seed1/curve0.71/day12/chase0,
+requested distance25, presentation off and cinematic cleared. Each case stages all seven
+actors with existing default-near coordinates and ground queries before configuring its
+observer. It then uses exactly one existing15s/100ms wait on that page. No host wait precedes
+the follower wait. The acceptance branch keeps its cinematic readiness, coordinates and
+positive/negative/restoration/cost assertions unchanged.
+
+The observation wait copies the original counter operands and original cinematic result
+(false), then records ordinaryResult separately. It requires finite camera/actor data,
+explicit observer roster, declared controls and all-seven arrival. Persistent original
+count and the separate six post-arrival comparisons retain their existing arithmetic.
+An additional observation-only streak requires six consecutive comparisons whose preceding
+and current polls both have arrived actors and a matching completed draw. It does not reset
+the original counters. Repeated stamps remain failures of the existing stable comparison.
+There is no quaternion/FOV convergence threshold: those values and matrices are receipts
+for offline drift analysis only. Pivot, desiredAfterLift, final position, arm and lift are
+copied; desiredAfterLift is not misrepresented as the unconstrained camera target.
+
+The actual instance's draw, projection.envelope and disposal methods are passively wrapped.
+Each original is forwarded once with the same receiver and arguments, preserving its result
+or thrown value. A successful envelope output is associated by object identity with localDisc
+or one current plate.disc. The source places discs.push immediately after these calls.
+Only normal completion of that same draw marks participation complete; throws retain partial
+outputs without certifying geometry. Every new draw starts with local status unknown, then
+sets participated or skipped on completion. No stale local envelope is used as evidence.
+At most seven unique envelopes are copied per draw, with center/radius/output, stamp, bend,
+viewport and contemporaneous camera. Only latest draw state is retained between polls.
+
+Sticky recorder errors (up to eight messages plus dropped-error count), duplicate output,
+overflow, foreign descriptor replacement and incomplete final draw prevent collection success.
+Descriptors are restored exactly, including deleting instance overrides originally absent.
+Restoration refuses to overwrite a foreign replacement. Disposal forwards once after restore;
+fixture cleanup also restores before closing contexts. Original wait errors remain primary
+if final receipt collection fails. Raw polling rows and final data are persisted before checks.
+
+Each case retains at most180 poll samples plus one final sample, maximum362 total. No extra
+projection, envelope computation, draw, allocator call, terrain ray or height query is added.
+HUD/DOM and existing actor state are copied synchronously at these boundaries. Observation
+mode returns before the old stage geometryEvidence path, avoiding its projection computations.
+No cost window runs and recorded draw stats are not a performance claim under instrumentation.
+Expected people and full-bot sets are recorded with observed membership; observation success
+is not a positive visibility assertion or acceptance. Missing labels remain missing evidence.
+
+Source prepared only: Node syntax and whitespace checks are permitted; no module imports,
+tests, browser, server, network or launcher execution was performed. The existing run10
+launcher is not repinned and must not execute this HEAD. A separately reviewed observation
+launcher would need the explicit mode argument and unchanged ownership/budget contract.
