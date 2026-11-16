@@ -92,10 +92,15 @@ describe('galaxy layout', () => {
     expect(orbitLayout(recipeBodies, 123.4)).toEqual(orbitLayout(recipeBodies, 123.4))
     expect(orbitLayout(recipeBodies, 0)[0].position).not.toEqual(orbitLayout(recipeBodies, 10)[0].position)
   })
-  it('opens closer on portrait phones while leaving tablets and landscape fitted', () => {
+  it('opens closer on portrait phones and short landscape screens, leaving tablets and desktops fitted', () => {
     const full = fitDistance(recipeBodies)
     expect(openingDistance(recipeBodies, 390, 844)).toBeCloseTo(full * 0.8)
-    for (const [width, height] of [[844, 390], [1024, 1366], [1440, 900]]) {
+    // A phone on its side: closer, so the worlds spread across its width, never past the fit.
+    for (const [width, height] of [[844, 390], [932, 430]]) {
+      const d = openingDistance(recipeBodies, width, height)
+      expect(d).toBeLessThan(full); expect(d).toBeGreaterThan(full * 0.5)
+    }
+    for (const [width, height] of [[1024, 1366], [1440, 900], [1366, 1024]]) {
       expect(openingDistance(recipeBodies, width, height)).toBe(full)
     }
   })

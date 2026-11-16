@@ -201,10 +201,14 @@ export function orbitLayout(bodies: readonly OrbitBody[], time: number): OrbitPl
 export function fitDistance(bodies: readonly OrbitBody[]): number {
   return Math.max(...orbitLayout(bodies, 0).map(place => place.reach), INNER) * 1.08 / VIEW_TAN
 }
-/** Portrait phones start closer so the planets read; a pinch can reveal the outer orbits. */
+/** Portrait phones start closer so the planets read, and short landscape screens closer still to fill their width; a pinch can reveal the outer orbits. */
 export function openingDistance(bodies: readonly OrbitBody[], width: number, height: number): number {
   const portraitPhone = width > 0 && width <= 600 && height > width * 1.2
-  return fitDistance(bodies) * (portraitPhone ? 0.8 : 1)
+  // A short landscape screen (a phone on its side): the fit is to its height, which leaves half
+  // its width empty and the worlds in a heap in the middle. Come in, by the aspect, so the
+  // system spans most of the width; at the resting tilt it still fits the height.
+  const shortLandscape = width > height && height > 0 && height <= 450
+  return fitDistance(bodies) * (portraitPhone ? 0.8 : shortLandscape ? Math.max(0.68, Math.min(1, height / width * 1.45)) : 1)
 }
 /** The body a galaxy world is laid out as: its recipe's, or an ordinary planet's. */
 export function bodyOf(world: GalaxyWorld): OrbitBody {
@@ -922,7 +926,11 @@ export class Galaxy {
     if (value) { this.logoSeen = false; this.handled = performance.now(); this.acquire() } else this.release()
   }
   /** Back out to the whole system, for example after returning from a world's panel. */
-  home(): void { this.handled = performance.now(); this.wake = 2; this.chosen = -1; this.leaving = null; this.arriving = 0; this.arrived = false; this.diving = false; this.dive = 0; this.flight = undefined; this.flightDone = false; this.blur = 0 }
+  home(): void { this.handled = performance.now(); this.wake = 2; this.chosen = -1
+    // Back in the lobby with the name gone (a choice cancelled, or the reverse flight out of a
+    // world landing, perf/smooth-entry's ascend): it kindles again, once, from here.
+    if (this.leaving !== null && !this.reduced?.matches) this.returning = performance.now()
+    this.leaving = null; this.arriving = 0; this.arrived = false; this.diving = false; this.dive = 0; this.flight = undefined; this.flightDone = false; this.blur = 0 }
   /** The descent: fall toward a world until its air fills the view. Resolves when it has. `quick` for a player who has seen it. */
   descend(id: string, quick = false): Promise<void> {
     if (!this.gl) return Promise.resolve()
@@ -1216,7 +1224,8 @@ export class Galaxy {
     const glowChanging = this.glow.step(lobby ? glowTarget({ hovered: this.pointed ?? this.hoverId, focused: this.focusId, chosen: this.chosen >= 0 ? worlds[this.chosen]?.id : null }) : null, elapsed)
     const glowMoving = glowChanging || (this.glow.strength > 0 && !this.reduced.matches && hoverGlowSpeed.value > 0 && !this.glow.chosen)
     let reveal = this.stepOpening(places)
-    if (this.leaving !== null) reveal = { ...reveal, ...leavingMark((performance.now() - this.leaving) / 1000) }
+    // Reduced motion: the name goes at once rather than being swept away.
+    if (this.leaving !== null) reveal = { ...reveal, ...leavingMark(this.reduced.matches ? 1e3 : (performance.now() - this.leaving) / 1000) }
     else if (this.returning !== null) {
       const t = (performance.now() - this.returning) / 1000
       if (t > RETURN_SECONDS) this.returning = null; else reveal = { ...reveal, ...returningMark(t) }
@@ -1436,7 +1445,7 @@ export class Galaxy {
     if (!this.gl) { this.options.onArrive(id); return }
     this.chosen = index; this.arriving = 0; this.arrived = false; this.settleTilt()
     // The name goes the way it came, from this instant: see leavingMark.
-    this.leaving ??= performance.now(); this.opening = null; this.chrome(null)
+    this.leaving ??= performance.now(); this.returning = null; this.opening = null; this.chrome(null)
     // Settle on the lit side, a quarter turn off the sun, on whichever side the view is now.
     const at = this.places(this.clock)[index].position, sun = Math.atan2(-at[0], -at[2])
     const settle = approach(sun, this.spin(index, this.clock), this.yaw); this.facing = settle.facing; this.facingSide = settle.side
