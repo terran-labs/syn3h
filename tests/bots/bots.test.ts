@@ -187,6 +187,29 @@ describe('bot population', () => {
       expect(manager.vehicles).toHaveLength(2)
     } finally { manager.dispose(); clock.mockRestore(); params.set('gfx.level', 2) }
   })
+  it('starts a fresh hidden grace after reaching one budget before another drop', () => {
+    const { game } = harness(), player = stationaryTarget(game)
+    Object.defineProperty(game, 'camera', { value: new PerspectiveCamera(60, 1, 0.1, 1000) })
+    game.camera.position.set(0, 8, 0); game.camera.lookAt(0, 2, -80)
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0)
+    const manager = new BotManager(game, terrain, player)
+    try {
+      params.set('gfx.level', 2); params.set('bots.count', 6); manager.update()
+      manager.vehicles.forEach((v, i) => v.teleport(new Vector3(i * 3, 2, 20)))
+      params.set('gfx.level', 1); manager.update()
+      // Only the last two are scanned before their removal reaches the four-bot budget.
+      manager.vehicles.slice(0, 4).forEach((v, i) => v.teleport(new Vector3(i * 3, 2, -80)))
+      clock.mockReturnValue(3001); manager.update()
+      expect(manager.vehicles).toHaveLength(4)
+      manager.vehicles.forEach((v, i) => v.teleport(new Vector3(i * 3, 2, 20)))
+      params.set('gfx.level', 0); clock.mockReturnValue(3002); manager.update()
+      expect(manager.vehicles).toHaveLength(4)
+      clock.mockReturnValue(6001); manager.update()
+      expect(manager.vehicles).toHaveLength(4)
+      clock.mockReturnValue(6003); manager.update()
+      expect(manager.vehicles).toHaveLength(2)
+    } finally { manager.dispose(); clock.mockRestore(); params.set('gfx.level', 2) }
+  })
   it('keeps Rapier usable when graphics and count drop together or in adjacent frames', () => {
     params.set('bots.followYou', 0)
     const { game, systems, step } = harness(), player = stationaryTarget(game)

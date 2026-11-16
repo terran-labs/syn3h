@@ -175,7 +175,9 @@ export class BotManager implements System {
       for (let i = this.bots.length - 1; i >= 0 && this.bots.length > count; i--) {
         if (!this.retainForQuality(i, now)) this.removeAt(i)
       }
-    } else this.offscreenSince.clear()
+    }
+    // A completed reduction must not carry unvisited timers into the next budget drop.
+    if (this.bots.length <= count) this.offscreenSince.clear()
     while (this.bots.length < count) if (!this.spawn(this.bots.length)) break
     // On a round world most of the map is behind the planet. A bot there still drives (its
     // physics is the host's to run) but there is nothing of it to draw.
