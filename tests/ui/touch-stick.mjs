@@ -26,6 +26,8 @@ try {
     await page.goto(`${base}?autoplay=1&room=touch-stick-${name}-${Date.now()}`)
     await page.waitForFunction(() => window.syn3h?.game.tick > 30, null, { timeout: 90000 })
     await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: 90000 })
+    if (await page.locator('.world-inspector').isVisible()) await page.locator('.inspector-toggle').tap()
+    await page.locator('.world-inspector').waitFor({ state: 'hidden' })
     await page.locator('.touch-controls').waitFor({ state: 'visible' })
     const { width, height } = page.viewportSize()
 
@@ -93,11 +95,25 @@ try {
     await touch('pointerup', 2, ox + 60, oy - 40)
     assert.equal((await stick()).active, true, 'second finger lifting leaves the stick')
 
-    // Past the radius the base follows the finger.
+    // Past the radius the knob saturates while the base stays at touch-down.
     await touch('pointermove', 1, ox + radius * 3, oy)
     state = await stick()
     near(state.x, 1, 0.001, 'full right'); near(state.y, 0, 0.001, 'still level')
-    near(state.cx, ox + radius * 2, 1.5, 'base followed the finger')
+    near(state.cx, ox, 1, 'base stays anchored beyond radius'); near(state.cy, oy, 1, 'base y stays anchored')
+    await page.screenshot({ path: `${out}/${name}-past-edge.png` })
+    await touch('pointermove', 1, width * .9, oy)
+    state = await stick(); near(state.cx, ox, 1, 'crossing the left region keeps the anchor'); near(state.x, 1, .001, 'full output outside left region')
+    await touch('pointermove', 1, ox, oy)
+    state = await stick(); near(state.x, 0, .001, 'return to original centre'); near(state.y, 0, .001, 'centre dead zone')
+    const brake = await page.locator('[data-action=brakes]').boundingBox()
+    await touch('pointermove', 1, brake.x + brake.width / 2, brake.y + brake.height / 2)
+    state = await stick(); near(state.cx, ox, 1, 'crossing a button keeps the base'); assert.equal(await page.evaluate(() => syn3h.game.input.external.brakes ?? false), false, 'sliding onto brake does not press it')
+
+    await touch('pointerdown', 11, brake.x + brake.width / 2, brake.y + brake.height / 2)
+    assert.equal(await page.evaluate(() => syn3h.game.input.external.brakes), true, 'second finger can hold brake while steering')
+    near((await stick()).cx, ox, 1, 'button finger cannot move anchor')
+    await touch('pointerup', 11, brake.x + brake.width / 2, brake.y + brake.height / 2)
+    assert.equal((await stick()).active, true, 'button release leaves driving finger active')
 
     // Release: input zero at once, the stick fades out.
     await touch('pointerup', 1, ox + radius * 3, oy)
@@ -148,6 +164,16 @@ try {
     await touch('pointerdown', 9, width * 0.7, oy); await touch('pointermove', 9, width * 0.7 - 40, oy)
     assert.equal((await stick()).active, false, 'no stick from the right side'); await touch('pointerup', 9, width * 0.7 - 40, oy)
     await page.evaluate(() => { window.syn3h.game.input.mouseFire = false })
+
+    // Rotation ends the old gesture instead of relocating its base or leaving input held.
+    await midDrag(10)
+    await page.setViewportSize({ width: height, height: width })
+    await page.waitForTimeout(100)
+    state = await stick(); assert.equal(state.active, false); assert.equal(state.ex, 0); assert.equal(state.ey, 0)
+    await touch('pointermove', 10, ox + 30, oy)
+    assert.equal((await stick()).active, false, 'old finger cannot restart after rotation')
+    await touch('pointerup', 10, ox + 30, oy)
+    await page.setViewportSize({ width, height }); await page.waitForTimeout(100)
 
     // Once driven, never again on this device.
     await page.reload()
