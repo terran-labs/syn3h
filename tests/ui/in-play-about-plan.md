@@ -168,3 +168,27 @@ be activeElement and match :focus-visible before the original outline/bounds
 measurements and screenshots. No programmatic focus, forced style or class is
 used as a substitute. All pause, Back/focus and Resume assertions remain; CSS,
 Shell, observers and budgets are unchanged. This correction is source-only.
+
+
+### Semantic Inspector readiness after Gate006
+
+Gate006 remains failed overall. Desktop and390px layout assertions passed;320px
+failed before native Pause and844px was unreached. Its saved state does not prove
+that the closing animation caused the failure. Accepted004 evidence is unchanged.
+
+The layout rows now record boundary, pre-action, settled and failure samples of the
+Inspector public open getter, Panels aria-pressed, hidden/inert, pointer-events,
+finite animation states, pause state and Pause bounds. The getter is read only;
+no private state is written. Open/aria/inert must agree before navigation. Only
+aria-pressed=false permits one native Panels click per readiness boundary. A
+closing panel's visible descendants are no longer treated as proof it is open.
+Before the original Pause click and after Resume, the existing bounded readiness
+wait requires open/aria true, hidden/inert false and finished finite entrance
+animations. All native Pause/Tab/About/Back/Resume and four-viewport assertions
+remain. There is no forced click, retry of a failed gesture, programmatic pause,
+extra navigation beyond reopening closed Panels, or timeout/budget increase.
+
+Failure diagnostics are persisted without replacing the original action/assertion
+error if collection or writing fails. Source and syntax review only: this correction
+has not run. CSS, Shell, Input and observer bytes remain unchanged. Budget fit and
+320px/landscape behavior require a separately allocated gate.

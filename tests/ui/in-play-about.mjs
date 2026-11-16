@@ -58,6 +58,49 @@ const state = page => page.evaluate(() => ({ url: location.href, id: syn3hNet.id
   suspended: syn3h.game.input.suspended, locked: !!document.pointerLockElement,
   sent: syn3hNet.bigRed.stats.sent, fizzled: syn3hNet.bigRed.stats.fizzled }))
 const ready = (page, fn, arg) => page.waitForFunction(fn, arg, { timeout: budget(15000) })
+// Read the Inspector's public open getter; never write panel state from the fixture.
+const inspectorReadiness = () => {
+  const panel = document.querySelector('.world-inspector')
+  const toggle = document.querySelector('.inspector-toggle')
+  const pause = document.querySelector('.rail-pause')
+  return { time: performance.now(), viewport: { width: innerWidth, height: innerHeight },
+    open: syn3h.shell.inspector.open, aria: toggle?.getAttribute('aria-pressed'),
+    hidden: panel?.hidden, inert: panel?.inert,
+    pointerEvents: panel && getComputedStyle(panel).pointerEvents,
+    animations: panel?.getAnimations().map(a => ({ state: a.playState,
+      finite: Number.isFinite(a.effect?.getComputedTiming().endTime) })),
+    paused: syn3h.pause.paused, reason: syn3h.pause.reason,
+    shellClasses: syn3h.shell.element.className,
+    pause: pause && { rect: pause.getBoundingClientRect().toJSON(),
+      visibility: getComputedStyle(pause).visibility, display: getComputedStyle(pause).display } }
+}
+async function keepInspectorState(page, row, stage) {
+  const sample = { stage, ...await bounded(page.evaluate(inspectorReadiness)) }
+  row.readiness ??= []; row.readiness.push(sample)
+  await persist()
+  return sample
+}
+async function ensureInspectorReady(page, row, stage) {
+  const before = await keepInspectorState(page, row, `${stage}:before`)
+  assert.ok(before.aria === 'true' || before.aria === 'false', 'Panels has explicit open state')
+  assert.equal(before.open, before.aria === 'true', 'Inspector open agrees with Panels')
+  assert.equal(before.inert, !before.open, 'Inspector inert agrees with open state')
+  if (before.open) assert.equal(before.hidden, false)
+  // A closing panel may still be drawn. Only semantic closed state permits one click.
+  if (before.aria === 'false') await page.locator('.inspector-toggle').click()
+  await ready(page, () => {
+    const panel = document.querySelector('.world-inspector')
+    return syn3h.shell.inspector.open === true &&
+      document.querySelector('.inspector-toggle')?.getAttribute('aria-pressed') === 'true' &&
+      panel && !panel.hidden && !panel.inert && getComputedStyle(panel).pointerEvents !== 'none' &&
+      panel.getAnimations().every(a => !Number.isFinite(a.effect?.getComputedTiming().endTime) || a.playState === 'finished')
+  })
+  const after = await keepInspectorState(page, row, `${stage}:ready`)
+  assert.equal(after.open, true); assert.equal(after.aria, 'true')
+  assert.equal(after.hidden, false); assert.equal(after.inert, false)
+  assert.notEqual(after.pointerEvents, 'none')
+  assert.ok(after.animations.every(a => !a.finite || a.state === 'finished'))
+}
 // Layout-only additions reuse each real app context after the accepted checks.
 async function pauseLayoutChecks(page, record, touch) {
   record.pauseLayouts = []
@@ -65,80 +108,93 @@ async function pauseLayoutChecks(page, record, touch) {
     : [{ width: 1280, height: 900 }]
   for (const viewport of sizes) {
     const row = { viewport, status: 'in_progress' }; record.pauseLayouts.push(row); await persist()
-    await bounded(page.setViewportSize(viewport))
-    if (!await page.locator('.rail-pause').isVisible()) await page.locator('.inspector-toggle').click()
-    const initial = await state(page); row.initial = initial
-    assert.equal(initial.paused, false)
-    row.footerBefore = await page.locator('.rail-foot').evaluate(el => el.getBoundingClientRect().toJSON())
-    await page.locator('.rail-pause').click()
-    const button = page.locator('.pause-about'), dialog = page.locator('.in-play-about')
-    await button.waitFor({ state: 'visible' })
-    row.keyboardFocus = []
-    const focusState = () => bounded(page.evaluate(() => ({
-      veil: document.activeElement === document.querySelector('.pause-veil'),
-      about: document.activeElement === document.querySelector('.pause-about'),
-      focusVisible: document.querySelector('.pause-about').matches(':focus-visible'),
-      active: document.activeElement?.tagName + '.' + document.activeElement?.className,
-    })))
-    let keyboardFocus = await focusState()
-    row.keyboardFocus.push(keyboardFocus); await persist()
-    assert.equal(keyboardFocus.veil, true, 'native Pause leaves focus on the pause veil')
-    // About precedes the veil in DOM order. Use real backward Tab navigation,
-    // bounded even if other focusable UI intervenes; never manufacture focus style.
-    for (let tabs = 0; tabs < 8 && !keyboardFocus.about; tabs++) {
-      await page.keyboard.press('Shift+Tab')
-      keyboardFocus = await focusState(); row.keyboardFocus.push(keyboardFocus); await persist()
+    try {
+      await keepInspectorState(page, row, 'row-boundary')
+      await bounded(page.setViewportSize(viewport))
+      await ensureInspectorReady(page, row, 'before-pause')
+      const initial = await state(page); row.initial = initial
+      assert.equal(initial.paused, false)
+      row.footerBefore = await page.locator('.rail-foot').evaluate(el => el.getBoundingClientRect().toJSON())
+      await keepInspectorState(page, row, 'pause-action')
+      await page.locator('.rail-pause').click()
+      const button = page.locator('.pause-about'), dialog = page.locator('.in-play-about')
+      await button.waitFor({ state: 'visible' })
+      row.keyboardFocus = []
+      const focusState = () => bounded(page.evaluate(() => ({
+        veil: document.activeElement === document.querySelector('.pause-veil'),
+        about: document.activeElement === document.querySelector('.pause-about'),
+        focusVisible: document.querySelector('.pause-about').matches(':focus-visible'),
+        active: document.activeElement?.tagName + '.' + document.activeElement?.className,
+      })))
+      let keyboardFocus = await focusState()
+      row.keyboardFocus.push(keyboardFocus); await persist()
+      assert.equal(keyboardFocus.veil, true, 'native Pause leaves focus on the pause veil')
+      // About precedes the veil in DOM order. Use real backward Tab navigation,
+      // bounded even if other focusable UI intervenes; never manufacture focus style.
+      for (let tabs = 0; tabs < 8 && !keyboardFocus.about; tabs++) {
+        await page.keyboard.press('Shift+Tab')
+        keyboardFocus = await focusState(); row.keyboardFocus.push(keyboardFocus); await persist()
+      }
+      assert.equal(keyboardFocus.about, true, 'About reachable by bounded native Tab navigation')
+      assert.equal(keyboardFocus.focusVisible, true, 'native keyboard focus is visibly indicated')
+      // Wait only for the finite veil entrance, not an arbitrary screenshot delay.
+      await ready(page, () => document.querySelector('.pause-veil').getAnimations().every(a => a.playState === 'finished'))
+      row.layout = await page.evaluate(() => {
+        const button = document.querySelector('.pause-about'), foot = document.querySelector('.rail-foot')
+        const rect = button.getBoundingClientRect(), style = getComputedStyle(button)
+        const intersect = other => Math.max(0, Math.min(rect.right, other.right) - Math.max(rect.left, other.left)) *
+          Math.max(0, Math.min(rect.bottom, other.bottom) - Math.max(rect.top, other.top))
+        return { button: rect.toJSON(), footer: foot.getBoundingClientRect().toJSON(),
+          outline: { width: style.outlineWidth, offset: style.outlineOffset, style: style.outlineStyle },
+          focused: document.activeElement === button, focusVisible: button.matches(':focus-visible'),
+          footerSurfaces: [foot, ...foot.querySelectorAll('input, button')].map(el => ({
+            tag: el.tagName, visibility: getComputedStyle(el).visibility,
+            display: getComputedStyle(el).display, overlap: intersect(el.getBoundingClientRect()) })) }
+      })
+      row.before = await state(page); await persist()
+      const label = `${touch ? 'touch' : 'desktop'}-${viewport.width}x${viewport.height}`
+      await bounded(page.screenshot({ path: `${out}/${label}-pause-layout.png` }), 15000)
+      const box = row.layout.button
+      assert.ok(box.height >= 44 && box.width >= 44)
+      const outline = Math.max(0, parseFloat(row.layout.outline.width) + parseFloat(row.layout.outline.offset))
+      assert.ok(box.left >= outline && box.top >= outline && box.right + outline <= viewport.width && box.bottom + outline <= viewport.height)
+      assert.ok(row.layout.focused); assert.ok(row.layout.focusVisible); assert.notEqual(row.layout.outline.style, 'none')
+      for (const surface of row.layout.footerSurfaces) {
+        if (viewport.width <= 700) assert.equal(surface.visibility, 'hidden')
+        if (surface.visibility === 'visible' && surface.display !== 'none') assert.equal(surface.overlap, 0, 'pause About overlaps visible Inspector footer')
+      }
+      assert.deepEqual(row.layout.footer, row.footerBefore, 'paused footer retains geometry')
+      assert.equal(row.before.paused, true); assert.equal(row.before.reason, 'user')
+      await button.click(); await dialog.waitFor({ state: 'visible' })
+      await dialog.locator('.about-back').click()
+      row.back = await state(page)
+      assert.ok(row.back.paused && row.back.suspended && !row.back.locked)
+      assert.equal(row.back.reason, 'user'); assert.equal(row.back.tick, row.before.tick)
+      assert.equal(row.back.url, initial.url); assert.equal(row.back.id, initial.id); assert.ok(row.back.connected)
+      assert.ok(await button.evaluate(el => document.activeElement === el))
+      await bounded(page.screenshot({ path: `${out}/${label}-pause-back-focus.png` }), 15000)
+      // Actual Resume control. Desktop resume may capture; native Escape frees it.
+      await page.locator('.pause-veil').click({ position: { x: 8, y: 8 } })
+      await ready(page, () => !syn3h.pause.paused)
+      if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
+      await ensureInspectorReady(page, row, 'after-resume')
+      row.resumed = await state(page)
+      assert.equal(row.resumed.paused, false); assert.equal(row.resumed.reason, null)
+      assert.equal(row.resumed.url, initial.url); assert.equal(row.resumed.id, initial.id); assert.ok(row.resumed.connected)
+      assert.equal(await page.locator('.rail-foot').evaluate(el => getComputedStyle(el).visibility), 'visible')
+      await page.locator('.wi-search').waitFor({ state: 'visible' })
+      for (const name of ['copy-world', 'paste-world', 'reset']) await page.locator(`[data-wi="${name}"]`).waitFor({ state: 'visible' })
+      row.status = 'passed'; await persist()
+    } catch (error) {
+      row.status = 'failed'; row.failure = String(error)
+      try { await keepInspectorState(page, row, 'failure') }
+      catch (diagnosticError) {
+        row.diagnosticError = String(diagnosticError)
+        report.errors.push(`Layout failure evidence: ${diagnosticError}`)
+        try { await persist() } catch { /* Keep the original action/assertion error primary. */ }
+      }
+      throw error
     }
-    assert.equal(keyboardFocus.about, true, 'About reachable by bounded native Tab navigation')
-    assert.equal(keyboardFocus.focusVisible, true, 'native keyboard focus is visibly indicated')
-    // Wait only for the finite veil entrance, not an arbitrary screenshot delay.
-    await ready(page, () => document.querySelector('.pause-veil').getAnimations().every(a => a.playState === 'finished'))
-    row.layout = await page.evaluate(() => {
-      const button = document.querySelector('.pause-about'), foot = document.querySelector('.rail-foot')
-      const rect = button.getBoundingClientRect(), style = getComputedStyle(button)
-      const intersect = other => Math.max(0, Math.min(rect.right, other.right) - Math.max(rect.left, other.left)) *
-        Math.max(0, Math.min(rect.bottom, other.bottom) - Math.max(rect.top, other.top))
-      return { button: rect.toJSON(), footer: foot.getBoundingClientRect().toJSON(),
-        outline: { width: style.outlineWidth, offset: style.outlineOffset, style: style.outlineStyle },
-        focused: document.activeElement === button, focusVisible: button.matches(':focus-visible'),
-        footerSurfaces: [foot, ...foot.querySelectorAll('input, button')].map(el => ({
-          tag: el.tagName, visibility: getComputedStyle(el).visibility,
-          display: getComputedStyle(el).display, overlap: intersect(el.getBoundingClientRect()) })) }
-    })
-    row.before = await state(page); await persist()
-    const label = `${touch ? 'touch' : 'desktop'}-${viewport.width}x${viewport.height}`
-    await bounded(page.screenshot({ path: `${out}/${label}-pause-layout.png` }), 15000)
-    const box = row.layout.button
-    assert.ok(box.height >= 44 && box.width >= 44)
-    const outline = Math.max(0, parseFloat(row.layout.outline.width) + parseFloat(row.layout.outline.offset))
-    assert.ok(box.left >= outline && box.top >= outline && box.right + outline <= viewport.width && box.bottom + outline <= viewport.height)
-    assert.ok(row.layout.focused); assert.ok(row.layout.focusVisible); assert.notEqual(row.layout.outline.style, 'none')
-    for (const surface of row.layout.footerSurfaces) {
-      if (viewport.width <= 700) assert.equal(surface.visibility, 'hidden')
-      if (surface.visibility === 'visible' && surface.display !== 'none') assert.equal(surface.overlap, 0, 'pause About overlaps visible Inspector footer')
-    }
-    assert.deepEqual(row.layout.footer, row.footerBefore, 'paused footer retains geometry')
-    assert.equal(row.before.paused, true); assert.equal(row.before.reason, 'user')
-    await button.click(); await dialog.waitFor({ state: 'visible' })
-    await dialog.locator('.about-back').click()
-    row.back = await state(page)
-    assert.ok(row.back.paused && row.back.suspended && !row.back.locked)
-    assert.equal(row.back.reason, 'user'); assert.equal(row.back.tick, row.before.tick)
-    assert.equal(row.back.url, initial.url); assert.equal(row.back.id, initial.id); assert.ok(row.back.connected)
-    assert.ok(await button.evaluate(el => document.activeElement === el))
-    await bounded(page.screenshot({ path: `${out}/${label}-pause-back-focus.png` }), 15000)
-    // Actual Resume control. Desktop resume may capture; native Escape frees it.
-    await page.locator('.pause-veil').click({ position: { x: 8, y: 8 } })
-    await ready(page, () => !syn3h.pause.paused)
-    if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
-    if (!await page.locator('.rail-pause').isVisible()) await page.locator('.inspector-toggle').click()
-    row.resumed = await state(page)
-    assert.equal(row.resumed.paused, false); assert.equal(row.resumed.reason, null)
-    assert.equal(row.resumed.url, initial.url); assert.equal(row.resumed.id, initial.id); assert.ok(row.resumed.connected)
-    assert.equal(await page.locator('.rail-foot').evaluate(el => getComputedStyle(el).visibility), 'visible')
-    await page.locator('.wi-search').waitFor({ state: 'visible' })
-    for (const name of ['copy-world', 'paste-world', 'reset']) await page.locator(`[data-wi="${name}"]`).waitFor({ state: 'visible' })
-    row.status = 'passed'; await persist()
   }
 }
 // Extensions are deliberately limited to the touch-emulated context. Native KeyW
