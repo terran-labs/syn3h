@@ -164,7 +164,7 @@ try {
       await page.screenshot({ path })
       shots.push(path)
     }
-    const timing = await page.evaluate(() => window.frameStats(2000))
+    const timing = await page.evaluate(ms => window.frameStats(ms), Number(flags.find(f => f.startsWith('--ms='))?.split('=')[1] ?? 2000))
     const state = await page.evaluate(() => {
       const s = window.syn3h, c = s.game.camera.position, p = s.player.body.translation()
       return { camera: c.toArray().map(v => +v.toFixed(2)), vehicle: [p.x, p.y, p.z].map(v => +v.toFixed(2)), liquidAtCamera: +(s.terrain.liquidHeightAt?.(c.x, c.z) ?? NaN).toFixed(2), lavaDepth: s.player.lavaDepth, info: s.game.renderer.info?.render }

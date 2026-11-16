@@ -105,10 +105,8 @@ const levelData = (object: THREE.Object3D | undefined | null): LevelData | undef
 export function clipmapNodes() {
   const cell = uniform(1).onObjectUpdate(({ object }) => levelData(object)?.cell ?? 1)
   const half = uniform(32).onObjectUpdate(({ object }) => levelData(object)?.half ?? 32)
-  const centre = uniform(new THREE.Vector2()).onObjectUpdate(({ object }) => {
-    const p = object?.position
-    return new THREE.Vector2(p?.x ?? 0, p?.z ?? 0)
-  })
+  const at = new THREE.Vector2()
+  const centre = uniform(at).onObjectUpdate(({ object }) => at.set(object?.position.x ?? 0, object?.position.z ?? 0))
   const g = positionGeometry.xz
   const edge = g.x.abs().max(g.y.abs()).div(half)
   const morph = smoothstep(0.75, 0.97, edge)
