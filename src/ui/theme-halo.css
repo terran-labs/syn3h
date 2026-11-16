@@ -263,17 +263,17 @@ body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(198
 }
 
 /* Readable cards over bright terrain. Inner controls stay unblurred; only card surfaces frost. */
-html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass,
+html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector :is(.wi-glass, .rail-players),
 html .syn3h-shell.exploration-ui:is([data-glass], *) .lobby-panels {
   background: rgb(3 11 19 / .65); background-image: none;
   -webkit-backdrop-filter: blur(28px) saturate(.65); backdrop-filter: blur(28px) saturate(.65);
 }
-html .syn3h-shell.exploration-ui[data-ui-frost="off"] .world-inspector .wi-glass,
+html .syn3h-shell.exploration-ui[data-ui-frost="off"] .world-inspector :is(.wi-glass, .rail-players),
 html .syn3h-shell.exploration-ui[data-ui-frost="off"] .lobby-panels {
   background: rgb(3 11 19 / .94); -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector .wi-glass,
+  html .syn3h-shell.exploration-ui:is([data-glass], *) .world-inspector :is(.wi-glass, .rail-players),
   html .syn3h-shell.exploration-ui:is([data-glass], *) .lobby-panels { background: rgb(3 11 19 / .94); }
 }
 .syn3h-shell.exploration-ui .world-inspector .wi-row[data-id="game.mode"] { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }

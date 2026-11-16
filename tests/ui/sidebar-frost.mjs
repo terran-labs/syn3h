@@ -17,6 +17,12 @@ for (const mode of ['desktop', 'phone']) {
   else if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
   await rail.waitFor({ state: 'visible' })
   await page.evaluate(async () => { (await import('/src/ui/quality/ladder.ts')).setQualityChoice('full'); syn3h.game.quality.setAuto(false); syn3h.game.quality.setLevel(3) })
+  const surfaces = '.wi-cards > [data-section], .rail-foot'
+  const readSurfaces = () => rail.locator(surfaces).evaluateAll(es => es.map(el => { const s = getComputedStyle(el); return { card: el.dataset.section || 'bottom', background: s.backgroundColor, blur: s.backdropFilter || s.webkitBackdropFilter } }))
+  const checkSurfaces = (rows, off = false) => {
+   assert.deepEqual(rows.map(r => r.card), ['you', 'game', 'players', 'vehicles', 'world', 'performance', 'bottom'])
+   for (const r of rows) { if (off) assert.equal(r.blur, 'none', r.card); else assert.match(r.blur, /blur\(28px\)/, r.card); assert.match(r.background, off ? /0\.94\)/ : /0\.65\)/, r.card) }
+  }
   const results = []
   for (const [planet, hour] of [['ice', 12], ['volcanic', 0], ['desert', 12]]) {
    await page.evaluate(async ({ planet, hour }) => {
@@ -35,6 +41,7 @@ for (const mode of ['desktop', 'phone']) {
     assert.ok(bounds.every(b => Math.abs(b.y - bounds[0].y) < 1 && Math.abs(b.width - bounds[0].width) < 1 && b.height >= 44), 'mode segments share one equal row')
     assert.match(frost.blur, /blur\(28px\)/)
     assert.match(frost.background, /0\.65\)/)
+    const cards = await readSurfaces(); console.log(JSON.stringify({ mode, planet, cards })); checkSurfaces(cards)
     assert.equal(await rail.locator('[data-section=sky]').count(), 0)
     for (const group of ['Tag', 'Tag beams', 'Zorb']) {
      const fold = game.locator(`[data-group="${group}"]`)
@@ -42,7 +49,7 @@ for (const mode of ['desktop', 'phone']) {
     }
     await page.evaluate(() => syn3h.shell.inspector.revealCard('you'))
     const me = rail.locator('[data-section=you]'); await me.locator('.wi-head').scrollIntoViewIfNeeded()
-    assert.equal(await me.locator('h3').innerText(), 'Me')
+    assert.equal(await me.locator('h3').textContent(), 'Me')
     assert.equal(await me.locator('.wi-swatch').count(), 2)
     for (const swatch of await me.locator('.wi-swatch').all()) { const r = await swatch.boundingBox(); assert.ok(r.width >= 44 && r.height >= 44) }
     await page.screenshot({ path: `${out}/${mode}-${planet}-me.png` })
@@ -59,6 +66,7 @@ for (const mode of ['desktop', 'phone']) {
    await page.waitForFunction(() => document.querySelector('.syn3h-shell').dataset.uiFrost === 'off')
    const minimal = await rail.locator('[data-section=you]').evaluate(el => { const s = getComputedStyle(el); return { background: s.backgroundColor, blur: s.backdropFilter || s.webkitBackdropFilter } })
    assert.equal(minimal.blur, 'none'); assert.match(minimal.background, /0\.94\)/)
+   const cards = await readSurfaces(); console.log(JSON.stringify({ mode, minimalCards: cards })); checkSurfaces(cards, true)
    await page.screenshot({ path: `${out}/${mode}-minimal.png` })
    results.push({ minimal })
   }
