@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { Quaternion, Scene, Vector3 } from 'three/webgpu'
 import type { Game, System } from '../../src/core/Game'
-import { emptyInput, type InputState } from '../../src/core/Input'
+import { Input, emptyInput, type InputState } from '../../src/core/Input'
 import { createWorld, initPhysics, RAPIER } from '../../src/core/physics'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
 import type { Terrain } from '../../src/world/Terrain'
@@ -393,5 +393,107 @@ describe('bots that know the game', () => {
     for (let i = 0; i < 2500; i++) step()
     expect(manager.vehicles.filter(bot => far(bot, zone.x, zone.z) < zone.radius).length, manager.vehicles.map(bot => far(bot, zone.x, zone.z).toFixed(0)).join(' ')).toBeGreaterThanOrEqual(2)
     manager.setMatch(null); manager.dispose()
+  })
+})
+
+
+describe('Daydream with token-owned fire', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  function activeDaydream() {
+    vi.stubGlobal('navigator', { getGamepads: () => [] })
+    const { game } = harness(), terrain = flat(800)
+    const input = new Input(new EventTarget() as Window)
+    Object.defineProperty(game, 'input', { value: input })
+    const player = new Syn3hBuggy(game, terrain, new Vector3(0, 1, 0))
+    const daydream = new Daydream(game, terrain, player)
+    daydream.update(15)
+    expect(daydream.active).toBe(true)
+    const step = vi.spyOn(daydream.mind!, 'step').mockImplementation((_dt, auto) => {
+      Object.assign(auto, emptyInput(), { y: 0.4, fire: true })
+      return { stuckFor: 0, airborne: false, flipped: false }
+    })
+    return { input, daydream, player, step }
+  }
+  it.each(['state', 'external', 'both'] as const)('yields before the pilot for eligible %s fire without a DOM event', source => {
+    const { input, daydream, player, step } = activeDaydream()
+    const owner = {}
+    try {
+      if (source !== 'state') input.beginExternalFire(owner)
+      input.state.fire = source !== 'external'
+      daydream.fixedUpdate(DT)
+      expect(step).not.toHaveBeenCalled()
+      expect(daydream.active).toBe(false)
+      expect(daydream.idleFor).toBe(0)
+      expect(player.object.userData.autopilot).toBeUndefined()
+      if (source !== 'external') expect(input.state.fire).toBe(true)
+      if (source !== 'state') {
+        expect(input.external.fire).toBe(true)
+        input.poll()
+        expect(input.state.fire).toBe(true)
+      }
+      daydream.fixedUpdate(DT)
+      expect(step).not.toHaveBeenCalled()
+    } finally { input.endExternalFire(owner); daydream.dispose() }
+  })
+  it('yields on an update-only frame and preserves overlapping owners until real ends', () => {
+    const { input, daydream, step } = activeDaydream()
+    const a = {}, b = {}
+    try {
+      input.beginExternalFire(a); input.beginExternalFire(b)
+      daydream.update(DT)
+      expect(daydream.active).toBe(false)
+      expect(step).not.toHaveBeenCalled()
+      input.endExternalFire(a); input.poll()
+      expect(input.state.fire).toBe(true)
+      input.endExternalFire(b); input.poll()
+      expect(input.state.fire).toBe(false)
+    } finally { input.endExternalFire(a); input.endExternalFire(b); daydream.dispose() }
+  })
+  it('does not rearm a suppressed holder or forward pilot fire', () => {
+    const { input, daydream, step } = activeDaydream()
+    const owner = {}
+    try {
+      input.beginExternalFire(owner); input.cancelFireUntilNeutral()
+      input.beginExternalFire(owner); input.poll()
+      daydream.fixedUpdate(DT)
+      expect(daydream.active).toBe(true)
+      expect(step).toHaveBeenCalledOnce()
+      expect(input.state.y).toBe(0.4)
+      expect(input.state.fire).toBe(false)
+      expect(input.external.fire).toBe(false)
+      input.endExternalFire(owner); input.beginExternalFire(owner)
+      daydream.fixedUpdate(DT)
+      expect(daydream.active).toBe(false)
+      expect(input.state.fire).toBe(true)
+      expect(step).toHaveBeenCalledOnce()
+    } finally { input.endExternalFire(owner); daydream.dispose() }
+  })
+  it('preserves a one-step pulse for later fixed consumers until its post-physics end', () => {
+    const { input, daydream, step } = activeDaydream()
+    const pulse = {}
+    try {
+      input.beginExternalFire(pulse); input.poll()
+      daydream.fixedUpdate(DT)
+      // Model the consumer order; this does not instantiate or validate Gear itself.
+      const observedByLaterConsumer = input.state.fire
+      expect(observedByLaterConsumer).toBe(true)
+      expect(step).not.toHaveBeenCalled()
+      input.endExternalFire(pulse)
+      expect(input.state.fire).toBe(false)
+      daydream.fixedUpdate(DT)
+      expect(input.state.fire).toBe(false)
+    } finally { input.endExternalFire(pulse); daydream.dispose() }
+  })
+  it('preserves eligible legacy fire while compatibility remains enabled', () => {
+    const { input, daydream, step } = activeDaydream()
+    try {
+      input.external.fire = true
+      daydream.fixedUpdate(DT)
+      expect(daydream.active).toBe(false)
+      expect(step).not.toHaveBeenCalled()
+      expect(input.external.fire).toBe(true)
+      input.poll()
+      expect(input.state.fire).toBe(true)
+    } finally { input.external.fire = false; daydream.dispose() }
   })
 })
