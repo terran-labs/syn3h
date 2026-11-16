@@ -252,3 +252,8 @@ Syn3h is source-available under the [PolyForm Noncommercial License 1.0.0](LICEN
 you are welcome to play with it, change it, extend it and share what you make, for any
 noncommercial purpose. Commercial use needs a licence from Terran Labs; see
 [NOTICE.md](NOTICE.md). Third-party components keep their own licences.
+
+Day length uses a logarithmic slider: Off stops the clock; the remaining track runs
+from 10 seconds to 60 minutes with tidy stops. Use the arrow keys to move between
+stops, or click the displayed duration to type an exact number of seconds. The room
+still shares the same seconds value, including values entered in older builds.

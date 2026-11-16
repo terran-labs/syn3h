@@ -8,10 +8,11 @@
  * scope. Descriptions come from the definition when a lane has written one, then from the
  * table in descriptions.ts, and always end with the limits, which are worked out here.
  */
+import { valueToPosition, scaleCaption, type ScaleDef } from '../../../shared/paramScale'
 import { DESCRIPTIONS } from './descriptions'
 
 /** The part of a parameter definition the inspector reads. Matches shared/params.ts. */
-export interface PropertyDef {
+export interface PropertyDef extends ScaleDef {
   id: string; label: string; group: string; scope: 'world' | 'client'
   default: number | boolean; min?: number; max?: number; step?: number; deferred?: boolean
   /** Optional, written by the lane that owns the property. */
@@ -57,7 +58,7 @@ export function describe(def: PropertyDef): string { return def.description ?? D
 /** The guardrails in plain words: range, default, and who it affects. */
 export function limits(def: PropertyDef): string {
   const parts: string[] = []
-  if (typeof def.default === 'number' && def.min !== undefined && def.max !== undefined) parts.push(`${show(Math.min(def.min, def.max), def)} to ${show(Math.max(def.min, def.max), def)}`)
+  if (typeof def.default === 'number' && def.min !== undefined && def.max !== undefined) parts.push(def.scale === 'log' ? scaleCaption(def) : `${show(Math.min(def.min, def.max), def)} to ${show(Math.max(def.min, def.max), def)}`)
   else if (typeof def.default === 'boolean') parts.push('on or off')
   parts.push(`default ${show(def.default, def)}`)
   parts.push(def.scope === 'world' ? 'shared with everyone in the room' : 'yours only')
@@ -67,8 +68,7 @@ export function limits(def: PropertyDef): string {
 /** Where a value sits between its limits, 0 to 1, for the guard bar. Null without limits. */
 export function fraction(def: PropertyDef, value: number | boolean): number | null {
   if (typeof value !== 'number' || def.min === undefined || def.max === undefined || def.max === def.min) return null
-  const lo = Math.min(def.min, def.max), hi = Math.max(def.min, def.max)
-  return Math.min(1, Math.max(0, (value - lo) / (hi - lo)))
+  return valueToPosition(def, value)
 }
 
 // ---------------------------------------------------------------------------------------

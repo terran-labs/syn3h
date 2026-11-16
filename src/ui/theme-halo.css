@@ -290,3 +290,7 @@ html .syn3h-shell.exploration-ui[data-ui-frost="off"] .lobby-panels {
 .syn3h-shell .wi-person-name output { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .syn3h-shell .world-inspector [data-search][hidden] { display: none; }
+
+.param-log-control { display: grid; gap: 4px; width: 100%; padding: 4px 8px; box-sizing: border-box; }
+.param-log-control input { width: 100%; min-height: 44px; }
+.param-log-control small { white-space: normal; }

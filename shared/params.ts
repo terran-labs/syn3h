@@ -25,6 +25,14 @@ export interface ParamDef<T extends ParamValue = ParamValue> {
   min?: number
   max?: number
   step?: number
+  /** Control mapping only; values on the wire and in storage are unchanged. */
+  scale?: 'log'
+  /** Smallest positive slider stop when a logarithmic control includes zero. */
+  logMin?: number
+  /** Optional tidy slider/keyboard stops, expressed in the stored units. */
+  stops?: readonly number[]
+  unit?: 'seconds'
+  zeroLabel?: string
   /** Apply when the slider is released, not while dragging (e.g. terrain regeneration). */
   deferred?: boolean
 }

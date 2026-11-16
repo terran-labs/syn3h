@@ -1,3 +1,5 @@
+import { formatScaledValue } from '../../../shared/paramScale'
+import { logSlider } from '../logSlider'
 import { modeChoices } from '../modeAvailability'
 /**
  * The world inspector: every property of the world and of your own settings, in play, as a
@@ -355,10 +357,15 @@ export class Inspector {
       number.addEventListener('click', () => this.edit(def, number))
       number.addEventListener('keydown', event => { if (event.key === 'F2') { event.preventDefault(); this.edit(def, number) } })
       // A property marked deferred (the terrain rebuilds) applies when the slider is let go.
-      input.addEventListener(def.deferred ? 'change' : 'input', () => params.set(def.id, Number(input.value), 'local'))
-      if (def.deferred) input.addEventListener('input', () => display(show(Number(input.value), def)))
+      if (def.scale === 'log' && ranged) {
+        const update = logSlider(input, def, () => Number(param.value), value => { if (def.scope !== 'world' || canEditWorld()) params.set(def.id, value, 'local') }, def.deferred)
+        sync = value => { update(Number(value)); display(formatScaledValue(def, Number(value))) }
+      } else {
+        input.addEventListener(def.deferred ? 'change' : 'input', () => params.set(def.id, Number(input.value), 'local'))
+        if (def.deferred) input.addEventListener('input', () => display(show(Number(input.value), def)))
+        sync = value => { if (document.activeElement !== input) input.value = String(value); display(show(value, def)) }
+      }
       row.append(label, input, number)
-      sync = value => { if (document.activeElement !== input) input.value = String(value); display(show(value, def)) }
     }
     sync(param.value)
     row.addEventListener('pointerenter', event => { if (event.pointerType !== 'touch') this.detail(def) })
@@ -378,7 +385,7 @@ export class Inspector {
     field.className = 'wi-num-edit'; field.autocomplete = 'off'; field.spellcheck = false
     field.setAttribute('aria-label', def.label); field.setAttribute('aria-describedby', 'setting-tooltip')
     const before = number.textContent ?? ''
-    field.value = before
+    field.value = def.scale === 'log' ? String(params.get(def.id)?.value ?? def.default) : before
     let done = false, flash: ReturnType<typeof setTimeout> | undefined
     const mark = (element: HTMLElement) => { element.classList.remove('is-invalid'); void element.offsetWidth; element.classList.add('is-invalid'); clearTimeout(flash); flash = setTimeout(() => element.classList.remove('is-invalid'), 700) }
     const finish = (commit: boolean, refocus: boolean) => {

@@ -32,7 +32,7 @@ export const skyStars = defineParam({ id: 'sky.stars', label: 'Stars', group: 'S
 // Sun ----------------------------------------------------------------------------------
 export const sunTimeOfDay = defineParam({ id: 'sun.timeOfDay', label: 'Time of day (h)', group: 'Sun', scope: w, default: 16.5, min: 0, max: 24, step: 0.01 })
 /** Real seconds per full day. 0 pauses the clock. */
-export const sunDayLength = defineParam({ id: 'sun.dayLength', label: 'Day length (s)', group: 'Sun', scope: w, default: 0, min: 0, max: 3600, step: 1 })
+export const sunDayLength = defineParam({ id: 'sun.dayLength', label: 'Day length (s)', group: 'Sun', scope: w, default: 0, min: 0, max: 3600, step: 1, scale: 'log', logMin: 10, unit: 'seconds', zeroLabel: 'Off', stops: [10, 15, 20, 30, 45, 60, 90, 120, 180, 300, 600, 900, 1200, 1800, 2700, 3600] })
 /** Latitude style tilt: the noon sun stands at 90 minus this many degrees. */
 export const sunTilt = defineParam({ id: 'sun.tilt', label: 'Tilt (latitude)', group: 'Sun', scope: w, default: 30, min: 0, max: 80, step: 0.5 })
 export const sunAzimuth = defineParam({ id: 'sun.azimuth', label: 'Azimuth', group: 'Sun', scope: w, default: 335, min: 0, max: 360, step: 1 })
