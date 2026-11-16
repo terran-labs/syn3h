@@ -24,3 +24,22 @@ https://developers.cloudflare.com/workers/wrangler/bundling/
 The installed Wrangler source uses noBundleWorker to read the entry and collect additional modules instead of invoking bundleWorker. Additional-module discovery and configuration overrides still require explicit validation.
 
 Accepted 1518 requires separate provenance recovery. A newly rebuilt Worker cannot silently stand in for the original deployed Worker. Preserve the accepted directory unchanged; inspect archived output and deployment metadata before selecting a baseline representation. Until that is resolved, no real calibration or production promotion is cleared by this tooling.
+
+## Recovered baseline and final bundle contract
+
+The original 1518 Worker has now been recovered from Cloudflare, with unchanged deployment observations bracketing the download. Independent review confirms its exact bytes match the archived dry-run Worker. The recorded version also matches the frozen compatibility date, migration tag, ASSETS and ROOMS bindings, RoomDO class and worker-first routing list. Preserve these receipts separately from the accepted snapshot.
+
+The proposed final reference directory contains only:
+
+- dist: the exact client tree, including its upload policy file. Only the explicit `*.map` exclusion is supported initially; any other policy needs review.
+- worker: the final executable Worker module and any explicitly enumerated companion modules. The current accepted Worker is one self-contained JavaScript module. Source maps are diagnostic companions, not executable inputs.
+- wrangler.json: explicit deployment configuration pointing to that Worker and client tree, with no_bundle enabled, no custom build step and no automatic configuration discovery. Bindings, compatibility and routing must match the reviewed source configuration.
+- provenance.json: original build identity, Worker origin and byte digests, original configuration digest, preparer identity and deploy-tool identity. This is evidence, not authority to approve itself.
+
+The artifact digest binds every runtime file, configuration byte and upload-policy byte, using relative paths and content hashes. Reject symlinks, unexpected modules, imports outside the enumerated module set, unknown configuration fields, generated deployment redirects and unexpected environment/CLI overrides. Store deploy-tool hashes separately from game-byte identity so comparing different uploader installations cannot masquerade as a game performance difference.
+
+Preparation happens once before measurement. Existing accepted snapshots stay untouched. Candidate preparation bundles the Worker once; baseline preparation uses the recovered production module without compilation. Local serving and production deployment consume the same explicit final configuration with bundling disabled. A dry-run parity check must prove that this path preserves the Worker module bytes before it is used for calibration. The deployment gate must recheck the artifact and selected tool identity immediately before upload and verify the returned production content afterward.
+
+Client provenance already has accepted exact-entry and frozen-file receipts on both public addresses. The final reference still needs an enumerated client manifest checked against those receipts and upload rules. Neither matching Worker bytes nor historical metadata alone completes that manifest.
+
+This contract is proposed for review. No final directory, collector run or new deployment has been created from it yet.
