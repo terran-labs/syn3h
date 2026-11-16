@@ -34,7 +34,7 @@ function install() {
   const rec = window.__timeline = { frames: [], loaf: [], drivable: 0, settled: 0 }
   let last = 0
   const tick = now => {
-    if (last) rec.frames.push({ at: last, ms: now - last })
+    if (last) { const g = window.syn3h.game, m = g.performance, c = g.renderer.domElement; rec.frames.push({ at: last, ms: now - last, draws: m.drawCalls, tris: m.triangles, size: `${c.width}x${c.height}`, pr: g.renderer.getPixelRatio?.(), fresh: m.pipelinesFresh, live: m.pipelinesLive }) }
     last = now
     if (!rec.drivable && rec.clicked && window.syn3h.shell.playing) rec.drivable = now
     // Post-processing rebuilds (new passes, targets and pipelines) are worth naming.
@@ -129,6 +129,7 @@ async function run(index) {
   const target = opt('planet', info.worlds.find(w => w !== info.current && w !== 'custom' && !w.includes('~')))
   if (cpu > 1) await cdp.send('Emulation.setCPUThrottlingRate', { rate: cpu })
   await page.evaluate(install)
+  if (process.env.INJECT_CSS) await page.addStyleTag({ content: process.env.INJECT_CSS })
   let offset = 0
   if (profile) {
     await cdp.send('Profiler.enable'); await cdp.send('Profiler.setSamplingInterval', { interval: 250 }); await cdp.send('Profiler.start')
@@ -146,6 +147,7 @@ async function run(index) {
     const r = window.__timeline
     r.measures = performance.getEntriesByType('measure').filter(m => m.name.startsWith('syn3h:') && m.startTime >= r.clicked - 10).map(m => ({ name: m.name, start: m.startTime, duration: m.duration }))
     r.stats = { bots: window.syn3h.bots.vehicles.length, backend: window.syn3h.game.backend }
+    r.pacing = (window.syn3h.bots.pacer?.log ?? []).filter(l => l.at >= r.clicked)
     return r
   })
   let index2 = null
@@ -172,8 +174,10 @@ async function run(index) {
   console.log(fmt(`leave + ${AFTER_EXIT_MS / 1000} s`, exit, `${(settled - left).toFixed(0)} ms to lobby`))
   const sum = (a, b) => rec.builds.filter(x => x.at >= a && x.at < b).reduce((t, x) => t + x.ms, 0)
   for (const c of rec.postChanges ?? []) console.log(`post chain rebuilt at ${c.at < left ? `click+${(c.at - clicked).toFixed(0)}` : `leave+${(c.at - left).toFixed(0)}`} (drivable${c.at >= rec.drivable ? '+' : ''}${(c.at - rec.drivable).toFixed(0)}), tier ${c.tier}`)
+  if (flag('landing')) for (const f of rec.frames.filter(f => f.at > rec.drivable - 150 && f.at < rec.drivable + 250)) console.log(`  drivable${f.at >= rec.drivable ? '+' : ''}${(f.at - rec.drivable).toFixed(0)} ${f.ms.toFixed(0)} ms draws ${f.draws} tris ${f.tris} ${f.size} pr ${f.pr} pipelines ${f.live}/${f.fresh}`)
   if (flag('builds')) for (const b of rec.builds.filter(x => x.at >= clicked && x.at < left)) console.log(`  build at click+${(b.at - clicked).toFixed(0)} ${b.ms.toFixed(1)} ms: ${b.what}`)
   console.log(`shader builds: entry ${sum(clicked, rec.drivable + AFTER_DRIVE_MS).toFixed(0)} ms in ${rec.builds.filter(x => x.at >= clicked && x.at < left).length} materials; exit ${sum(left, left + AFTER_EXIT_MS).toFixed(0)} ms`)
+  for (const l of rec.pacing ?? []) console.log(`  bot ${l.action} at drivable+${(l.at - rec.drivable).toFixed(0)} with ${l.have}${l.p90 ? `: p90 ${l.p90.toFixed(1)} ms, mean ${l.meanMs.toFixed(1)} ms, target ${l.targetMs.toFixed(1)} ms` : ''}`)
   const long = [...entry.set.map(f => ({ ...f, span: 'entry' })), ...exit.set.map(f => ({ ...f, span: 'exit' }))].map(f => ({ ...f, busy: busyOf(f) })).filter(f => f.ms > 50 || (index2 && f.busy > 25)).sort((a, b) => index2 ? b.busy - a.busy : b.ms - a.ms)
   for (const f of long) {
     const from = f.at, to = f.at + f.ms
