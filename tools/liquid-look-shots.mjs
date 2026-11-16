@@ -77,7 +77,7 @@ const SCENARIOS = {
   'lava-cockpit': { planet: 'volcanic', vehicle: 'buggy', hour: 20, kind: 'lava', min: 6, max: 40, mode: 'cockpit', shots: [['lava-cockpit-0', 600], ['lava-cockpit-1', 1500]] },
   'water-entry': { planet: 'archipelago', vehicle: 'buggy', hour: 16, kind: 'water', min: 6, max: 40, mode: 'dive', shots: [['entry-0', 250], ['entry-1', 200], ['entry-2', 200], ['entry-3', 250], ['entry-4', 300], ['entry-5', 400]] },
   'water-wake': { planet: 'archipelago', vehicle: 'buggy', hour: 15, kind: 'water', min: 1, max: 4, mode: 'drive', shots: [['wake-0', 1500], ['wake-1', 600]] },
-  'waterline': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 8, max: 30, mode: 'cross', shots: [['waterline-0', 900], ['waterline-1', 200], ['waterline-2', 200], ['waterline-3', 200], ['waterline-4', 300]] },
+  'waterline': { planet: 'archipelago', vehicle: 'buggy', hour: 12, kind: 'water', min: 8, max: 30, mode: 'cross', shots: [['waterline-0', 2500], ['waterline-1', 250], ['waterline-2', 150], ['waterline-3', 150], ['waterline-4', 150], ['waterline-5', 250]] },
 }
 
 const chosen = list ? list.split(',') : Object.keys(SCENARIOS)
@@ -149,7 +149,7 @@ try {
       await page.evaluate(({ sc, spot }) => {
         const s = window.syn3h, p = s.player.body.translation()
         const V = s.game.camera.position.constructor
-        const y = sc.mode === 'cross' ? spot.surface + 1.5 : Math.min(spot.surface - 2, p.y + 1.5)
+        const y = sc.mode === 'cross' ? spot.surface + 1.2 : Math.min(spot.surface - 2, p.y + 1.5)
         const pos = new V(p.x - Math.cos(spot.land) * 6, y, p.z - Math.sin(spot.land) * 6)
         const tgt = sc.look === 'up' ? new V(p.x + Math.cos(spot.land) * 3, spot.surface + 8, p.z + Math.sin(spot.land) * 3)
           : sc.look === 'bed' ? new V(p.x + Math.cos(spot.land) * 10, spot.ground, p.z + Math.sin(spot.land) * 10)
@@ -161,9 +161,10 @@ try {
     const shots = []
     for (const [shot, delay] of sc.shots) {
       await wait(page, delay)
-      if (sc.mode === 'cross' && shot !== sc.shots[0][0]) {
-        // Step the lens down through the surface.
-        await page.evaluate(() => { const c = window.crossPose; c.pos.y -= 0.6; c.tgt.y -= 0.6; window.syn3h.camera.setCinematicPose(c.pos, c.tgt) })
+      if (sc.mode === 'cross' && shot === sc.shots[1][0]) {
+        // One move of the wanted lens from above the surface to well below it; the lens rule
+        // carries the camera through the surface over about a second.
+        await page.evaluate(() => { const c = window.crossPose; c.pos.y -= 3; c.tgt.y -= 3; window.syn3h.camera.setCinematicPose(c.pos, c.tgt) })
       }
       await page.evaluate(() => window.hideUi())
       const path = `${out}/${shot}${phone ? '-phone' : ''}.png`

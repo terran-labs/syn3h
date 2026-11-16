@@ -14,7 +14,7 @@ import * as T from 'three/webgpu'
 import { abs, float, floor, fract, max, mix, renderGroup, sin, smoothstep, time, uniform, uv, vec2, vec3, vec4 } from 'three/tsl'
 
 /** How tall the lens is treated as, metres: sets how long the waterline takes to sweep across. */
-const SPAN = 0.9
+const SPAN = 1.6
 /** Seconds the drops take to run off after surfacing. */
 export const DRIP_SECONDS = 1.6
 
