@@ -192,3 +192,29 @@ Failure diagnostics are persisted without replacing the original action/assertio
 error if collection or writing fails. Source and syntax review only: this correction
 has not run. CSS, Shell, Input and observer bytes remain unchanged. Budget fit and
 320px/landscape behavior require a separately allocated gate.
+
+
+### Device-specific native transition after Gate007
+
+Gate007 remains failed after desktop Resume; touch was unreached. Desktop navigation
+is permanently hidden by exploration.css and its toggle handler only changes touch
+state. The saved endpoints do not establish the historical pointer-lock timeline.
+
+The fixture now keeps navigation device-specific. Desktop Resume must establish
+actual canvas pointer lock within the existing bounded readiness wait before one
+native Escape. Missing/refused capture fails; no blind Escape or Panels fallback.
+It then waits for actual unlocked/unpaused state and settled Inspector openness.
+Touch never issues Escape here and retains at most one native Panels click only
+when semantic open/aria state is closed. Row entry does not repair desktop state.
+All existing four-viewport, native focus, modal, layout and restoration assertions
+and time limits remain unchanged.
+
+A passive per-row native pointerlockchange/error observer records browser time,
+actual lock, pause and panel state. At most128 events are retained; any drop is
+fatal. Boundary/pre-action/return/failure snapshots include actual lock and persist
+the trace. Finally removes both listeners and deletes the fixture-only handle,
+persists final events and rejects dropped evidence or cleanup failure without
+replacing an earlier primary error. No product methods/promises are wrapped or
+private state written. These source changes are unrun and do not prove delayed-lock
+modal safety, physical touch or real OS visibility. Accepted004 and failed006/007
+receipts remain unchanged; budget fit requires a separately allocated gate.

@@ -69,6 +69,7 @@ const inspectorReadiness = () => {
     pointerEvents: panel && getComputedStyle(panel).pointerEvents,
     animations: panel?.getAnimations().map(a => ({ state: a.playState,
       finite: Number.isFinite(a.effect?.getComputedTiming().endTime) })),
+    lock: document.pointerLockElement === syn3h.game.canvas ? 'canvas' : document.pointerLockElement ? 'other' : 'none',
     paused: syn3h.pause.paused, reason: syn3h.pause.reason,
     shellClasses: syn3h.shell.element.className,
     pause: pause && { rect: pause.getBoundingClientRect().toJSON(),
@@ -77,25 +78,32 @@ const inspectorReadiness = () => {
 async function keepInspectorState(page, row, stage) {
   const sample = { stage, ...await bounded(page.evaluate(inspectorReadiness)) }
   row.readiness ??= []; row.readiness.push(sample)
+  row.lockTrace = await bounded(page.evaluate(() => window.__aboutLayoutLockTrace?.snapshot()))
   await persist()
+  assert.ok(row.lockTrace, 'native lock observer installed')
+  assert.equal(row.lockTrace.dropped, 0, 'no dropped native lock events')
   return sample
 }
-async function ensureInspectorReady(page, row, stage) {
+async function ensureInspectorReady(page, row, stage, touch) {
   const before = await keepInspectorState(page, row, `${stage}:before`)
   assert.ok(before.aria === 'true' || before.aria === 'false', 'Panels has explicit open state')
   assert.equal(before.open, before.aria === 'true', 'Inspector open agrees with Panels')
   assert.equal(before.inert, !before.open, 'Inspector inert agrees with open state')
   if (before.open) assert.equal(before.hidden, false)
-  // A closing panel may still be drawn. Only semantic closed state permits one click.
-  if (before.aria === 'false') await page.locator('.inspector-toggle').click()
+  assert.equal(before.lock, 'none', 'panel readiness starts with the native cursor free')
+  assert.equal(before.paused, false)
+  // Desktop panels follow pointer lock; the Panels button exists only for touch.
+  if (touch && before.aria === 'false') await page.locator('.inspector-toggle').click()
   await ready(page, () => {
     const panel = document.querySelector('.world-inspector')
-    return syn3h.shell.inspector.open === true &&
+    return document.pointerLockElement === null && !syn3h.pause.paused &&
+      !syn3h.shell.element.classList.contains('is-focus') && syn3h.shell.inspector.open === true &&
       document.querySelector('.inspector-toggle')?.getAttribute('aria-pressed') === 'true' &&
       panel && !panel.hidden && !panel.inert && getComputedStyle(panel).pointerEvents !== 'none' &&
       panel.getAnimations().every(a => !Number.isFinite(a.effect?.getComputedTiming().endTime) || a.playState === 'finished')
   })
   const after = await keepInspectorState(page, row, `${stage}:ready`)
+  assert.equal(after.lock, 'none'); assert.equal(after.paused, false)
   assert.equal(after.open, true); assert.equal(after.aria, 'true')
   assert.equal(after.hidden, false); assert.equal(after.inert, false)
   assert.notEqual(after.pointerEvents, 'none')
@@ -108,10 +116,35 @@ async function pauseLayoutChecks(page, record, touch) {
     : [{ width: 1280, height: 900 }]
   for (const viewport of sizes) {
     const row = { viewport, status: 'in_progress' }; record.pauseLayouts.push(row); await persist()
+    let rowError
     try {
+      await bounded(page.evaluate(() => {
+        if (Object.hasOwn(window, '__aboutLayoutLockTrace')) throw new Error('lock observer already installed')
+        const events = []; let dropped = 0
+        const observe = event => {
+          if (events.length >= 128) { dropped++; return }
+          const panel = document.querySelector('.world-inspector')
+          events.push({ type: event.type, trusted: event.isTrusted, time: performance.now(),
+            lock: document.pointerLockElement === syn3h.game.canvas ? 'canvas' : document.pointerLockElement ? 'other' : 'none',
+            paused: syn3h.pause.paused, reason: syn3h.pause.reason,
+            open: syn3h.shell.inspector.open,
+            aria: document.querySelector('.inspector-toggle').getAttribute('aria-pressed'),
+            hidden: panel.hidden, inert: panel.inert,
+            focus: syn3h.shell.element.classList.contains('is-focus') })
+        }
+        document.addEventListener('pointerlockchange', observe, { passive: true })
+        document.addEventListener('pointerlockerror', observe, { passive: true })
+        window.__aboutLayoutLockTrace = {
+          snapshot: () => ({ events: events.slice(), dropped }),
+          close: () => {
+            document.removeEventListener('pointerlockchange', observe)
+            document.removeEventListener('pointerlockerror', observe)
+          },
+        }
+      }))
       await keepInspectorState(page, row, 'row-boundary')
       await bounded(page.setViewportSize(viewport))
-      await ensureInspectorReady(page, row, 'before-pause')
+      await ensureInspectorReady(page, row, 'before-pause', touch)
       const initial = await state(page); row.initial = initial
       assert.equal(initial.paused, false)
       row.footerBefore = await page.locator('.rail-foot').evaluate(el => el.getBoundingClientRect().toJSON())
@@ -173,11 +206,22 @@ async function pauseLayoutChecks(page, record, touch) {
       assert.equal(row.back.url, initial.url); assert.equal(row.back.id, initial.id); assert.ok(row.back.connected)
       assert.ok(await button.evaluate(el => document.activeElement === el))
       await bounded(page.screenshot({ path: `${out}/${label}-pause-back-focus.png` }), 15000)
-      // Actual Resume control. Desktop resume may capture; native Escape frees it.
+      // Observe the real native transition before choosing the device-specific path.
+      await keepInspectorState(page, row, 'resume-action')
       await page.locator('.pause-veil').click({ position: { x: 8, y: 8 } })
+      await keepInspectorState(page, row, 'resume-return')
       await ready(page, () => !syn3h.pause.paused)
-      if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
-      await ensureInspectorReady(page, row, 'after-resume')
+      if (!touch) {
+        // Unpaused alone does not mean the asynchronous browser lock has settled.
+        await ready(page, () => document.pointerLockElement === syn3h.game.canvas && !syn3h.pause.paused)
+        const captured = await keepInspectorState(page, row, 'escape-action')
+        assert.equal(captured.lock, 'canvas'); assert.equal(captured.paused, false)
+        // One Escape only for an observed canvas lock. Refusal/missing lock fails above.
+        await page.keyboard.press('Escape')
+        await keepInspectorState(page, row, 'escape-return')
+        await ready(page, () => document.pointerLockElement === null && !syn3h.pause.paused)
+      }
+      await ensureInspectorReady(page, row, 'after-resume', touch)
       row.resumed = await state(page)
       assert.equal(row.resumed.paused, false); assert.equal(row.resumed.reason, null)
       assert.equal(row.resumed.url, initial.url); assert.equal(row.resumed.id, initial.id); assert.ok(row.resumed.connected)
@@ -186,6 +230,7 @@ async function pauseLayoutChecks(page, record, touch) {
       for (const name of ['copy-world', 'paste-world', 'reset']) await page.locator(`[data-wi="${name}"]`).waitFor({ state: 'visible' })
       row.status = 'passed'; await persist()
     } catch (error) {
+      rowError = error
       row.status = 'failed'; row.failure = String(error)
       try { await keepInspectorState(page, row, 'failure') }
       catch (diagnosticError) {
@@ -194,6 +239,24 @@ async function pauseLayoutChecks(page, record, touch) {
         try { await persist() } catch { /* Keep the original action/assertion error primary. */ }
       }
       throw error
+    } finally {
+      try {
+        const closed = await bounded(page.evaluate(() => {
+          const trace = window.__aboutLayoutLockTrace
+          if (!trace) return { installed: false }
+          try { return { installed: true, ...trace.snapshot() } }
+          finally { trace.close(); delete window.__aboutLayoutLockTrace }
+        }))
+        row.lockTrace = closed; row.lockObserverClosed = true
+        await persist()
+        assert.equal(closed.installed, true, 'lock observer lifecycle recorded')
+        assert.equal(closed.dropped, 0, 'no dropped native lock events')
+      } catch (error) {
+        row.status = 'failed'; row.lockCleanupError = String(error)
+        report.errors.push(`Layout lock evidence/cleanup: ${error}`)
+        try { await persist() } catch { /* Original error remains primary. */ }
+        if (!rowError) throw error
+      }
     }
   }
 }
