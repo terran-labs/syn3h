@@ -11,13 +11,14 @@ import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { params } from '../../shared/params'
 import { createVehicle } from '../../src/vehicles'
-import { buggyIdleHold, buggyNextGen, buggyRegen } from '../../src/vehicles/buggyParams'
+import { BUGGY_PRESETS, buggyIdleHold, buggyNextGen, buggyRegen } from '../../src/vehicles/buggyParams'
+import { applyPreset } from '../../shared/presets'
 import { waterSinking } from '../../src/vehicles/buoyancy'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
 import { GROUP_ALL, GROUP_TERRAIN, RAPIER, groups } from '../../src/core/physics'
 import { type Bed, makeBed } from './harness'
 import {
-  G, axis, bump, cruise, deploy, drop, flying, kick, lavaEscape, lavaPool, pitchedGlide, planted, pos, resetParams,
+  G, airStraighten, axis, bump, cruise, deploy, drop, flying, kick, lavaEscape, lavaPool, pitchedGlide, planted, pos, resetParams,
   sideways, slope, spawn, speed,
 } from './syn3hScenarios'
 
@@ -537,16 +538,33 @@ describe('Syn3hBuggy', () => {
  * the handling report; here it only has to recover, upright, within the five second window.
  */
 describe('Syn3hBuggy slide recovery', () => {
-  test.each([[30, 40], [45, 40], [60, 5], [45, 90]])('at %i m/s a %i degree slide is caught with full counter-steer held', async (v, angle) => {
-    const r = await kick(v, angle, true)
-    expect(r.recovered).toBeLessThan(Infinity)
-    expect(r.upright).toBeGreaterThan(0.9)
+  // Catching a slide by counter-steering is what Planted and Assisted promise; the default
+  // (Balanced) puts turn-in first and is caught by letting go, as Classic was.
+  const use = (name: string) => applyPreset(BUGGY_PRESETS.find(p => p.name === name)!)
+  test.each([['Planted'], ['Assisted']])('%s: a 40 degree slide at 30 and 45 m/s is caught with full counter-steer held', async (name) => {
+    for (const v of [30, 45]) {
+      resetParams(); use(name)
+      const r = await kick(v, 40, true)
+      expect(r.recovered, `${v} m/s`).toBeLessThan(Infinity)
+      expect(r.upright).toBeGreaterThan(0.9)
+    }
   })
 
   test.each([[30, 40], [45, 90], [60, 70]])('at %i m/s a %i degree slide straightens with the steering let go', async (v, angle) => {
     const r = await kick(v, angle, false)
     expect(r.recovered).toBeLessThan(Infinity)
     expect(r.upright).toBeGreaterThan(0.9)
+  })
+})
+
+describe('Syn3hBuggy tail fin in the air', () => {
+  test('with "Tail fin in the air" off, a strong fin does not turn a buggy that has no wheel down', async () => {
+    params.set('buggy.fin', 3); params.set('buggy.finAir', false)
+    expect(Math.abs(await airStraighten())).toBeLessThan(0.5)
+  })
+  test('with it on, the fin turns the buggy toward its travel', async () => {
+    params.set('buggy.fin', 3); params.set('buggy.finAir', true)
+    expect(await airStraighten()).toBeGreaterThan(2)
   })
 })
 
