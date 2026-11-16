@@ -1,3 +1,4 @@
+import { frozenResourceURL } from '../core/frozenResources'
 import type { LobbyAddress } from './LobbyAddress'
 import { modeChoices, modeName } from './modeAvailability'
 import { GEAR_LABELS, type GearRack, type GearId } from '../weapons/Gear'
@@ -165,6 +166,10 @@ export class Shell implements System {
     <button type="button" class="pause-veil" hidden><strong>Paused</strong><span class="pause-how">Click to resume</span><small hidden>The world carries on without you.</small></button>
     <aside class="spawn-help" role="status" hidden><strong>Controls</strong><div></div><small></small></aside>
     <div class="shell-toast" role="status" aria-live="polite" hidden></div>`
+    // Rewrite only this credits disclosure, never invite or networking links.
+    for (const anchor of this.element.querySelectorAll<HTMLAnchorElement>('[data-panel="about"] a[href^="/brand/licenses/"]')) {
+      anchor.setAttribute('href', frozenResourceURL(anchor.getAttribute('href')!))
+    }
     document.body.append(this.element); document.body.classList.add('has-game-shell')
     this.invite = new InviteView(this.element, () => this.closeJoin(), () => { void this.copyInvite() })
     this.matchHud = new MatchHud(this.element, () => audio.cue('tick'))

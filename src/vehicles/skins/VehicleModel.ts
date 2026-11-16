@@ -1,3 +1,4 @@
+import { frozenResourceURL } from '../../core/frozenResources'
 import {addLavaGlow} from './lavaGlow'
 import {addNightReadability} from './nightReadability'
 import * as THREE from 'three/webgpu'
@@ -12,7 +13,7 @@ export class VehicleModel {
   private detachDetail=()=>{}
   private detachShowroom=()=>{}
   constructor(private readonly root: THREE.Group, url: string, configure: (scene: THREE.Group) => void = () => {}) {
-    this.ready = typeof window === 'undefined' ? Promise.resolve() : new GLTFLoader().loadAsync(url).then(gltf => {
+    this.ready = typeof window === 'undefined' ? Promise.resolve() : new GLTFLoader().loadAsync(frozenResourceURL(url)).then(gltf => {
       if(this.disposed) {this.release(gltf.scene);return}
       configure(gltf.scene)
       this.release(root)

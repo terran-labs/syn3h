@@ -2,6 +2,7 @@
  * Composition root. Builds the world from the four seams and starts the loop.
  * Keep this file small: features belong behind the seams, not here.
  */
+import { initializeFrozenResources } from './core/frozenResources'
 import { prepareResume, ResumeSession, RESUME_KEY } from './core/resume'
 import { PageLifecycle } from './core/lifecycle'
 import { PauseState, type PauseControl } from './core/pause'
@@ -30,6 +31,7 @@ import { WaterEffects } from './world/water/WaterEffects'
 import { WeatherSystem, applyWeatherQuery, setWeatherClock } from './world/weather'
 
 async function main(): Promise<void> {
+  initializeFrozenResources(location.href)
   const canvas = document.getElementById('game') as HTMLCanvasElement
   const hud = document.getElementById('hud') as HTMLDivElement
   const query = new URLSearchParams(location.search)
