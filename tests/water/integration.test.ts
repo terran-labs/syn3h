@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import * as THREE from 'three/webgpu'
 import { initPhysics } from '../../src/core/physics'
 import { Syn3hBuggy } from '../../src/vehicles/Syn3hBuggy'
@@ -130,4 +130,72 @@ it('vertical phase speed follows the exact wrapped liquid-height selection', () 
   } finally {
     vi.restoreAllMocks(); params.set(worldLavaAltitude.def.id, oldSea); params.set(worldSeaKind.def.id, oldKind)
   }
+})
+
+
+// Isolated graphs keep these clocks and registries out of the existing controller cases.
+describe('real sea speed through terrain selection', { concurrent: false }, () => {
+  it.each(['envelope', 'fan'] as const)('%s smooth interior', async mode => {
+    vi.resetModules()
+    vi.useFakeTimers({ toFake: ['performance'] })
+    let restore = () => {}
+    try {
+      let wallMs = 0, delta = 0
+      const spy = vi.spyOn(performance, 'now').mockImplementation(() => wallMs)
+      restore = () => spy.mockRestore()
+      const { params: registry } = await import('../../shared/params')
+      const water = await import('../../src/world/water/seaWaves')
+      const weather = await import('../../src/world/weather')
+      const { ProceduralTerrain: TerrainClass } = await import('../../src/world/terrain/ProceduralTerrain')
+      for (const [id, value] of Object.entries({
+        'world.gravity': 9.81, 'world.seed': 11, 'world.lavaAltitude': 0,
+        'world.seaKind': 1, 'world.atmosphere': 1,
+        'water.waves': true, 'water.waveHeight': 1.4, 'water.waveLength': 60,
+        'water.waveTurn': 0, 'weather.storminess': .5, 'weather.windSpeed': 16,
+        'weather.gustiness': .5, 'weather.windDirection': 0,
+      })) {
+        expect(registry.get(id), id).toBeDefined()
+        registry.set(id, value, 'local')
+        expect(registry.get(id)?.value).toBe(value)
+      }
+      water.seaWaves.configure(2048, 11)
+      const phase = () => 143 + delta
+      water.setWaterClock(phase, () => 1)
+      weather.setWeatherClock(() => water.FAN_SECONDS * 7.5 + (mode === 'fan' ? delta : 0), () => mode === 'fan' ? 1 : 0)
+      wallMs = 5000
+      if (mode === 'envelope') water.setWaterClock(phase, () => 1)
+      const centreMs = 5000 + (mode === 'envelope' ? water.CLOCK_SWITCH_SECONDS * 1000 / 4 : 0)
+      const terrain = Object.assign(Object.create(TerrainClass.prototype), {
+        data: { size: 2048, lava: { lake: null, pools: [{ x: 0, z: 0, radius: 2, surface: 20, floor: -50 }], rivers: [] } },
+        sampler: { heightAt: () => -50 },
+      }) as InstanceType<typeof TerrainClass>
+      const at = (dt: number) => { delta = dt; wallMs = centreMs + dt * 1000 }
+      const x = 2048 + 123, z = -456
+      const height = (dt: number) => { at(dt); return terrain.liquidHeightAt(x, z) }
+      const h = 1e-4, half = h / 2
+      const values = [height(-h), height(h), height(-half), height(half)]
+      const coarse = (values[1] - values[0]) / (2 * h), fine = (values[3] - values[2]) / (2 * half)
+      at(0)
+      const speed = terrain.liquidVerticalSpeedAt(x, z)
+      for (const value of [...values, coarse, fine, speed]) expect(Number.isFinite(value)).toBe(true)
+      const convergence = Math.abs(fine - coarse)
+      expect(convergence).toBeLessThanOrEqual(1e-6)
+      const roundoff = 128 * Number.EPSILON * Math.max(1, ...values.map(Math.abs)) / half
+      expect(Math.abs(speed - fine)).toBeLessThanOrEqual(4 * convergence / 3 + roundoff)
+      expect(terrain.liquidHeightAt(x, z)).toBe(terrain.liquidHeightAt(123, z))
+      expect(terrain.liquidVerticalSpeedAt(x, z)).toBe(terrain.liquidVerticalSpeedAt(123, z))
+      expect(terrain.liquidHeightAt(0, 0)).toBe(20)
+      expect(terrain.liquidVerticalSpeedAt(0, 0)).toBe(0)
+      registry.set('world.seaKind', 0)
+      expect(terrain.liquidHeightAt(x, z)).toBe(0)
+      expect(terrain.liquidVerticalSpeedAt(x, z)).toBe(0)
+      registry.set('world.seaKind', 1); registry.set('water.waves', false)
+      expect(terrain.liquidHeightAt(x, z)).toBe(0)
+      expect(terrain.liquidVerticalSpeedAt(x, z)).toBe(0)
+    } finally {
+      // The fresh graph owns every changed parameter and callback; discard it rather
+      // than install guessed prior callbacks into another test's graph.
+      try { restore() } finally { vi.useRealTimers(); vi.resetModules() }
+    }
+  })
 })
