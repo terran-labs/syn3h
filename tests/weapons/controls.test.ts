@@ -33,7 +33,7 @@ function setup() {
   const me = make(0), other = make(-10)
   vi.stubGlobal('window', { performance })
   vi.stubGlobal('document', { pointerLockElement: null })
-  const input = { state: { fire: false }, external: {} as { fire?: boolean } }
+  const input = { suspended: false, state: { fire: false }, external: {} as { fire?: boolean } }
   const game = { world, scene: new THREE.Scene(), camera: new THREE.PerspectiveCamera(), canvas: {}, time: 0, input } as unknown as Game
   const rack = new GearRack(game, noTarget)
   const vehicleOf = (id: number) => (id === 1 ? me : id === 3 ? other : undefined)
@@ -243,6 +243,117 @@ describe('gear controls', () => {
       s.input.state.fire = true // the next poll
       s.step()
       expect(s.input.external.fire).toBe(false)
+    } finally { s.close() }
+  })
+})
+
+
+describe('modal gear cancellation', () => {
+  it('discards a full Thunder charge without release, fizzle or cooldown reset', () => {
+    const s = setup()
+    try {
+      s.bind(); s.rack.select('red')
+      s.rack.controls().actions[0].start()
+      s.input.state.fire = true; s.step(501)
+      expect(s.bigRed.ready).toBe(true)
+      const reset = vi.spyOn(s.bigRed, 'reset')
+      const release = vi.spyOn(s.bigRed, 'letGo')
+      const inhibitor = vi.fn(() => {
+        expect(s.bigRed.charge).toBe(-1)
+        expect(s.input.external.fire).toBe(true)
+        expect(s.input.state.fire).toBe(true)
+      })
+      s.rack.cancelActions(inhibitor)
+      s.step()
+      expect(inhibitor).toHaveBeenCalledOnce()
+      expect(reset).not.toHaveBeenCalled()
+      expect(release).not.toHaveBeenCalled()
+      expect(s.bigRed.stats).toEqual({ sent: 0, fizzled: 0 })
+      // A deliberate fizzle creates a cooldown. Cancellation must not erase it.
+      s.input.state.fire = true; s.step()
+      expect(s.bigRed.charge).toBeGreaterThanOrEqual(0)
+      s.input.state.fire = false; s.step()
+      s.rack.cancelActions(() => {})
+      s.input.state.fire = true; s.step()
+      expect(s.bigRed.charge).toBe(-1)
+    } finally { s.close() }
+  })
+
+  it('drops a carried vehicle gently instead of flinging on cleanup', () => {
+    const s = setup()
+    try {
+      s.bind(); s.rack.select('yoink')
+      const grab = s.rack.controls().actions[0]
+      grab.start(); s.input.state.fire = true; s.step()
+      expect(s.yoink.holding).toBe(3)
+      const fling = s.rack.controls().actions[0]
+      s.rack.cancelActions(() => {})
+      grab.stop!(); fling.start(); s.step()
+      expect(s.yoink.holding).toBeNull()
+      expect(s.yoink.stats.flings).toBe(0)
+      expect(s.yoink.stats.drops).toBe(1)
+      s.rack.cancelActions(() => {})
+      expect(s.yoink.stats.drops).toBe(1)
+    } finally { s.close() }
+  })
+
+  it('cancels only the local hook and reel, leaving remote cords intact', () => {
+    const s = setup()
+    try {
+      s.bind(); s.rack.select('bungee')
+      const launch = s.rack.controls().actions[0]
+      launch.start()
+      expect(s.bungee.mine).toBeDefined()
+      s.bungee.applyRemote(3, { s: 'on', at: [0, 0, -14], n: [0, 1, 0], r: 6 })
+      s.bungee.setReel(-1)
+      const count = s.bungee.count
+      const reset = vi.spyOn(s.bungee, 'reset')
+      s.rack.cancelActions(() => {})
+      launch.start()
+      expect(s.bungee.mine).toBeUndefined()
+      expect(s.bungee.reel).toBe(0)
+      expect(s.bungee.count).toBe(count - 1)
+      expect(reset).not.toHaveBeenCalled()
+      s.rack.cancelActions(() => {})
+      expect(s.bungee.count).toBe(count - 1)
+    } finally { s.close() }
+  })
+
+  it('clears a pending pulse without letting stale starts or stops affect fresh controls', () => {
+    const s = setup()
+    try {
+      s.bind(); s.rack.select('beam')
+      const staleHold = s.rack.controls().actions[0]
+      s.rack.select('pester')
+      const stalePulse = s.rack.controls().actions[0]
+      stalePulse.start()
+      s.rack.cancelActions(() => {})
+      stalePulse.start(); staleHold.start()
+      expect(s.input.external.fire).toBe(false)
+      s.rack.select('beam')
+      const fresh = s.rack.controls().actions[0]
+      s.input.suspended = true; fresh.start()
+      expect(s.input.external.fire).toBe(false)
+      s.input.suspended = false; fresh.start()
+      s.input.state.fire = true
+      staleHold.stop!(); s.rack.fixedUpdate()
+      expect(s.input.external.fire).toBe(true)
+      fresh.stop!()
+      expect(s.input.external.fire).toBe(false)
+    } finally { s.close() }
+  })
+
+  it('cancels before binding and clears outputs if the required inhibitor fails', () => {
+    const s = setup()
+    try {
+      s.input.external.fire = true; s.input.state.fire = true
+      expect(() => s.rack.cancelActions(() => { throw new Error('inhibitor failed') })).toThrow('inhibitor failed')
+      expect(s.input.external.fire).toBe(false)
+      expect(s.input.state.fire).toBe(false)
+      s.rack.cancelActions(() => {})
+      s.bind(); s.rack.select('beam')
+      s.rack.controls().actions[0].start()
+      expect(s.input.external.fire).toBe(true)
     } finally { s.close() }
   })
 })

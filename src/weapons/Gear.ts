@@ -104,6 +104,8 @@ export class GearRack implements System {
   private actions: Partial<Record<string, readonly GearAction[]>> = {}
   /** A one press action raised the tag control; drop it once a step has seen it. */
   private pulse = false
+  /** Invalidates callbacks retained by UI controls across cancellation. */
+  private actionGeneration = 0
 
   constructor(private readonly game: Game, target: Window = window) {
     this.last = this.current
@@ -153,6 +155,36 @@ export class GearRack implements System {
     this.systems = systems
     this.actions = {}
     this.shown = null
+  }
+
+  /**
+   * Cancel local pending actions before a modal suspends input or tears down gestures.
+   * The required Input callback must capture held owners and inhibit each until real
+   * neutral followed by a fresh press. Synthetic cleanup/suspension is not neutral.
+   * This rack cannot enforce native input rearming on its own.
+   *
+   * Already launched shots and remote/bot gear remain live. Existing cancel methods
+   * retain normal cooldown semantics; no reset or intentional release is performed.
+   * If the inhibitor throws, outputs are cleared but the caller must not resume play
+   * assuming that native rearming is guarded.
+   */
+  cancelActions(inhibitFireUntilNeutral: () => void): void {
+    const sys = this.systems
+    sys?.bigRed.cancel()
+    sys?.yoink.cancel()
+    sys?.bungee.cancel()
+    sys?.bungee.setReel(0)
+    this.actionGeneration++
+    this.actions = {}
+    this.shown = null
+    this.pulse = false
+    try {
+      // Capture raw ownership before clearing the public fire outputs.
+      inhibitFireUntilNeutral()
+    } finally {
+      this.game.input.external.fire = false
+      this.game.input.state.fire = false
+    }
   }
 
   /**
@@ -237,7 +269,18 @@ export class GearRack implements System {
     const press = () => { this.pulse = false; input.external.fire = true }
     const unpress = () => { this.pulse = false; input.external.fire = false }
     const tap = () => { input.external.fire = true; this.pulse = true }
-    const act = (a: GearAction) => Object.freeze(a)
+    const generation = this.actionGeneration
+    const act = (a: GearAction): GearAction => Object.freeze({
+      ...a,
+      start: () => {
+        if (generation !== this.actionGeneration || input.suspended) return
+        a.start()
+      },
+      ...(a.stop ? { stop: () => {
+        if (generation !== this.actionGeneration) return
+        a.stop!()
+      } } : {}),
+    })
     const release = act({ id: 'release', label: 'Let go', keys: ['G', 'Double tap'], hold: false, start: () => sys.bungee.letGo('released') })
     const reel = (d: -1 | 1) => () => { if (sys.bungee.reel === d) sys.bungee.setReel(0) }
     let list: GearAction[]
