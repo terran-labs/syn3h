@@ -27,6 +27,7 @@
 # made while nobody is playing.
 set -eu
 cd "$(dirname "$0")/.."
+. tools/cloudflare-token.sh
 # A release builds, runs wrangler and two Chromes: hold one machine-wide heavy slot throughout.
 if [ -z "${SYN3H_RELEASE_SLOT:-}" ] && [ -x tools/heavy.sh ]; then
   SYN3H_RELEASE_SLOT=1 exec tools/heavy.sh env SYN3H_RELEASE_SLOT=1 "$(pwd)/tools/release.sh" "$@"
@@ -59,7 +60,7 @@ WRANGLER="$REPO/node_modules/wrangler/bin/wrangler.js"
 [ -f "$WRANGLER" ] || fail "wrangler is not installed in node_modules"
 if [ -z "$DRY" ]; then
   if node "$WRANGLER" whoami 2>&1 | grep -qi "not authenticated"; then
-    fail "wrangler is not authenticated (npx wrangler login, or set CLOUDFLARE_API_TOKEN)"
+    fail "wrangler is not authenticated (put the token in $SYN3H_CLOUDFLARE_TOKEN_FILE, set CLOUDFLARE_API_TOKEN, or npx wrangler login)"
   fi
 fi
 

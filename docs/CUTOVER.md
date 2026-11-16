@@ -10,6 +10,12 @@ Rollback exists for both. Nothing here runs `wrangler login`; the operator suppl
 
 ## Access
 
+The token lives in `~/.config/syn3h/cloudflare-token`: outside the repository, mode 600, one
+line, no expiry, scoped as the table below shows. `tools/release.sh`, `tools/rollback.sh` and
+`tools/domain.sh` load it from there (through `tools/cloudflare-token.sh`) when
+`CLOUDFLARE_API_TOKEN` is unset. It is never committed, printed or copied, and it is the
+owner's to reissue: replace the file's one line and nothing else changes.
+
 `npx wrangler login` on this machine is enough for step 1. Step 2 calls the Cloudflare API
 directly and needs `CLOUDFLARE_API_TOKEN`. One token can serve both. Create it in the
 dashboard (My Profile > API Tokens > Create Token), starting from the **Edit Cloudflare

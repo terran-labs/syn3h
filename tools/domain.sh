@@ -14,6 +14,7 @@
 # restored: MX, TXT and every other name are never touched.
 set -eu
 cd "$(dirname "$0")/.."
+. tools/cloudflare-token.sh
 REPO="$(pwd)"
 ZONE_NAME=syn3h.com
 STORE="$(cd .. && pwd)/Syn3h-stable"
@@ -21,7 +22,7 @@ API=https://api.cloudflare.com/client/v4
 WRANGLER="$REPO/node_modules/wrangler/bin/wrangler.js"
 
 die() { printf '\nDOMAIN FAILED: %s\n' "$*" >&2; exit 1; }
-[ -n "${CLOUDFLARE_API_TOKEN:-}" ] || die "set CLOUDFLARE_API_TOKEN"
+[ -n "${CLOUDFLARE_API_TOKEN:-}" ] || die "no Cloudflare token: put it in $SYN3H_CLOUDFLARE_TOKEN_FILE or set CLOUDFLARE_API_TOKEN"
 command -v jq >/dev/null || die "jq is required"
 
 # cf METHOD PATH [JSON]: call the API, fail on success=false, print the JSON.

@@ -9,6 +9,7 @@
 # listed in ../Syn3h-stable/releases.tsv (written by tools/release.sh).
 set -eu
 cd "$(dirname "$0")/.."
+. tools/cloudflare-token.sh
 LIST=../Syn3h-stable/releases.tsv
 [ -f "$LIST" ] || { echo "rollback.sh: no releases recorded in $LIST" >&2; exit 1; }
 if [ -n "${1:-}" ]; then
