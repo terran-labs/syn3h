@@ -305,7 +305,7 @@ html .syn3h-shell.exploration-ui[data-ui-frost="off"] .lobby-panels {
 .syn3h-shell.exploration-ui [data-panel="about"] .shell-credits { margin: 16px 0 24px; text-align: left; }
 .syn3h-shell.exploration-ui [data-panel="about"] .shell-credits summary { min-height: 44px; align-content: center; color: var(--s3-accent-2); cursor: pointer; }
 .syn3h-shell.exploration-ui [data-panel="about"] .shell-credits li { margin: 8px 0; line-height: 1.5; }
-.syn3h-shell.exploration-ui button.panel-back { display: inline-flex; justify-content: center; align-items: center; gap: 16px; box-sizing: border-box; min-width: 160px; min-height: 48px; max-width: 100%; padding: 10px 24px; border: 1px solid var(--s3-line); border-radius: 999px; color: var(--s3-accent-2); background: rgb(143 227 255 / .06); }
+.syn3h-shell.exploration-ui button.panel-back { display: inline-flex; justify-content: center; align-items: center; gap: 16px; box-sizing: border-box; min-width: 164px; min-height: 48px; max-width: 100%; padding: 10px 24px; border: 1px solid var(--s3-line); border-radius: 999px; color: var(--s3-accent-2); background: rgb(143 227 255 / .06); }
 .syn3h-shell.exploration-ui button.panel-back::before { content: none; }
 .syn3h-shell.exploration-ui button.panel-back:focus-visible,
 .syn3h-shell.exploration-ui .about-links a:focus-visible { outline: 2px solid var(--s3-accent); outline-offset: 4px; }
