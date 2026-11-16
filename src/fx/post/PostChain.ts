@@ -37,7 +37,7 @@ import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { traa } from 'three/addons/tsl/display/TRAANode.js'
 import { CurvedVelocity } from './CurvedVelocity'
 import { cloudVolume, compositeClouds } from './clouds'
-import { underwaterAmountForCamera } from '../../world/water/underwater'
+import { cameraWaterCoverage, underwaterAmountForCamera } from '../../world/water/underwater'
 import type { CloudInputs } from '../../world/Environment'
 import { motionBlurred } from './motion'
 import { params } from '../../../shared/params'
@@ -75,11 +75,10 @@ export interface SunSource {
 
 /** three's tone mapping constants for post.toneMap 0, 1, 2. */
 const TONE_MAPS = [THREE.ACESFilmicToneMapping, THREE.AgXToneMapping, THREE.NeutralToneMapping]
-/** The watched vehicle, for the plunge when it goes under a liquid surface. */
+/** Legacy constructor contract. Splash blur no longer reads vehicle immersion. */
 export interface PlungeSource { readonly liquidState: { readonly wasImmersed: boolean; readonly lavaDepth: number } }
 
-/** Plunge tints: lava's hot amber and water's deep teal, in linear colour. */
-const LAVA_TINT = new THREE.Vector3(1.0, 0.42, 0.12)
+/** Camera splash tint, in linear colour. */
 const WATER_TINT = new THREE.Vector3(0.12, 0.42, 0.5)
 
 interface Built {
@@ -145,17 +144,21 @@ export class PostChain {
   private readonly prevPos = new THREE.Vector3()
   private readonly prevOrientation = new THREE.Quaternion()
   private hasPrev = false
-  /** 0 to 1, jumps to 1 when the watched vehicle goes under and decays over about 0.7 s. */
+  /** Brief camera-entry pulse, cleared as soon as the near plane is dry. */
   private plunge = 0
   private wasUnder = false
+  private plungeCamera: THREE.Camera | null = null
   private lastAt = 0
   private readonly grade: Grade = { gain: [1, 1, 1], lift: [0, 0, 0], contrast: 0, saturation: 1 }
   private readonly tmp = new THREE.Vector3()
   private readonly forward = new THREE.Vector3()
 
-  constructor(private readonly host: PostChainHost, private readonly sun: SunSource, private readonly focus?: () => PlungeSource | null | undefined) {}
+  // Keep the third argument for callers compiled against the former vehicle-based trigger.
+  constructor(private readonly host: PostChainHost, private readonly sun: SunSource, _focus?: () => PlungeSource | null | undefined) {}
 
   render(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, _frameMs?: number): void {
+    // Track dry exits even when the quality tier disables composition.
+    const plunge = this.updatePlunge(camera)
     const budget = this.host.quality.postBudget
     const shed = 1 - Math.min(1, Math.max(0, budget ?? 1))
     const tier = postTier({ on: P.postOn.value, tier: this.host.quality.postTier ?? 'full', shed })
@@ -218,7 +221,7 @@ export class PostChain {
     // sun's height; at a low sun the long cascaded shadows carry the scene anyway.
     const sunUp = smooth01(0.25, 0.45, this.sun.sunDirection.y)
     if (b.sssNode) b.sssNode.shadowIntensity.value = P.postContact.value * fade * sunUp
-    u.plunge.value = effects ? this.updatePlunge() : 0
+    u.plunge.value = effects ? plunge : 0
     u.heat.value = P.postHeat.value * fade
     u.time.value = (performance.now() / 1000) % 1000
     // The shaft passes cost nothing while the sun is out of view: their stale contents are
@@ -283,24 +286,31 @@ export class PostChain {
   }
 
   /**
-   * The plunge: a brief soft blur and a wash of the liquid's colour when the vehicle breaks a
-   * liquid surface, so the moment registers. It does not linger: driving through lava or
-   * wading is not a reason to blur the screen.
+   * Only actual camera near-plane contact can trigger a splash. Fog easing and the
+   * watched vehicle's liquid state do not describe whether the lens is wet.
    */
-  private updatePlunge(): number {
-    const state = this.focus?.()?.liquidState
-    const under = !!state?.wasImmersed
+  private updatePlunge(camera: THREE.Camera): number {
+    const coverage = Math.min(1, Math.max(0, cameraWaterCoverage(camera)))
+    const under = coverage > 0
     const now = performance.now()
+    if (camera !== this.plungeCamera) {
+      this.plungeCamera = camera
+      this.plunge = 0
+      this.wasUnder = false
+      this.plungeAt = now
+    }
     if (under && !this.wasUnder) {
       this.plunge = 1
-      ;(this.u.plungeTint.value as THREE.Vector3).copy(state!.lavaDepth > 0 ? LAVA_TINT : WATER_TINT)
+      this.plungeAt = now
+      ;(this.u.plungeTint.value as THREE.Vector3).copy(WATER_TINT)
     }
+    if (!under) this.plunge = 0
     this.wasUnder = under
     const dt = Math.min(0.1, Math.max(0, (now - this.plungeAt) / 1000))
     this.plungeAt = now
     this.plunge = Math.max(0, this.plunge - dt / 0.7)
     const t = this.plunge
-    return t * t * P.postPlunge.value
+    return coverage * t * t * P.postPlunge.value
   }
   private plungeAt = 0
 
