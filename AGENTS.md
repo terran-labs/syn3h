@@ -25,9 +25,9 @@ In practice:
 - A generated thing must earn its place: if a small asset genuinely looks or sounds better
   and the generated version cannot match it, say so and keep the asset. Recorded originals
   the owner supplied (music, the laser and wind clips) stay.
-- Do not be constrained by how the 2010 and 2017 Unity builds were made. Use current web
-  platform features (WebGPU, WebGL 2, modern CSS, Web Audio) to cut load time and raise
-  the visual effect. The originals are art direction, not a specification.
+- Use current web platform features (WebGPU, WebGL 2, modern CSS, Web Audio) to cut
+  load time and improve visual quality. Choose implementation techniques for this
+  browser experience and measure their results.
 - Measure before claiming a win: bytes shipped, time to first frame, frame cost.
 
 Worked examples: the terrain and its roads, the sky and its scattering, vehicle engine
