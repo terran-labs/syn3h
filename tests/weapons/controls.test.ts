@@ -445,4 +445,61 @@ describe('modal gear cancellation', () => {
     } finally { s.close() }
   })
 
+
+  it('old same-direction reel cleanup and end cannot stop a replacement reel', () => {
+    const s = setup()
+    try {
+      s.bind(); s.rack.select('bungee')
+      s.bungee.launch(AT_OTHER)
+      for (let i = 0; i < 100 && s.bungee.mine?.hook; i++) s.step()
+      expect(s.rack.controls().state).toBe('vehicle')
+      const old = s.rack.controls().actions.find(a => a.id === 'reelIn')!
+      old.start()
+      // Model ordinary attachment-state replacement without a modal generation change.
+      s.bungee.mine!.to = null
+      const fresh = s.rack.controls().actions.find(a => a.id === 'reelIn')!
+      expect(fresh).not.toBe(old)
+      fresh.start()
+      old.stop!('cleanup'); old.stop!('end')
+      expect(s.bungee.reel).toBe(-1)
+      fresh.stop!('end')
+      expect(s.bungee.reel).toBe(0)
+    } finally { s.close() }
+  })
+
+  it('rebinding invalidates old starts but permits old ends to retire only their token', () => {
+    const s = setup()
+    try {
+      s.bind(); s.rack.select('beam')
+      const old = s.rack.controls().actions[0]
+      old.start(); s.bind()
+      const fresh = s.rack.controls().actions[0]
+      fresh.start(); old.stop!('cleanup'); old.stop!('end')
+      expect(s.input.state.fire).toBe(true)
+      fresh.stop!('end'); old.start()
+      expect(s.input.state.fire).toBe(false)
+    } finally { s.close() }
+  })
+
+  it('already suppressed old cleanup cannot cancel a pending intentional release', () => {
+    const s = setup()
+    try {
+      s.bind(); s.rack.select('red')
+      const old = s.rack.controls().actions[0]
+      old.start(); s.step(501)
+      const fresh = s.rack.controls().actions[0]
+      expect(fresh).not.toBe(old)
+      fresh.start()
+      // Retire old gameplay while the newer hold still owns the charge.
+      // Its duplicate cleanup must not cancel the newer intentional release.
+      old.stop!('cleanup')
+      fresh.stop!('end')
+      const cancel = vi.spyOn(s.bigRed, 'cancel')
+      old.stop!('cleanup')
+      expect(cancel).not.toHaveBeenCalled()
+      s.step()
+      expect(s.bigRed.stats.sent).toBe(1)
+    } finally { s.close() }
+  })
+
 })

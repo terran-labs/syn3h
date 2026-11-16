@@ -109,6 +109,7 @@ export class GearRack implements System {
   private readonly fireOwners = new Map<symbol, GearId>()
   /** Invalidates callbacks retained by UI controls across cancellation. */
   private actionGeneration = 0
+  private reelOwner: symbol | null = null
 
   constructor(private readonly game: Game, target: Window = window) {
     this.last = this.current
@@ -155,6 +156,8 @@ export class GearRack implements System {
 
   /** Hand the rack the live gear. Networking calls this once, after making them. */
   bind(systems: GearSystems): void {
+    this.actionGeneration++
+    this.reelOwner = null
     this.systems = systems
     this.actions = {}
     this.shown = null
@@ -177,6 +180,7 @@ export class GearRack implements System {
     sys?.yoink.cancel()
     sys?.bungee.cancel()
     sys?.bungee.setReel(0)
+    this.reelOwner = null
     this.actionGeneration++
     this.actions = {}
     this.shown = null
@@ -292,7 +296,7 @@ export class GearRack implements System {
       return Object.freeze({
         ...a,
         start: () => {
-          if (generation !== this.actionGeneration || input.suspended || active) return
+          if (generation !== this.actionGeneration || gear !== this.current || input.suspended || active) return
           if (a.hold) active = true
           if (fire) {
             owner = Symbol('gear hold')
@@ -307,10 +311,13 @@ export class GearRack implements System {
           if (reason === 'cleanup') {
             if (retired) return
             retired = true
+            // Refresh the aggregate without rearming an already blocked owner.
+            if (owner) input.beginExternalFire(owner)
+            const hadFire = input.state.fire
             if (owner) input.suppressExternalFire(owner)
             // Input updates state synchronously but never dispatches gameplay.
             // Cancel before the next step interprets the final false as release.
-            if (current && fire && !input.state.fire) {
+            if (current && gear === this.current && fire && hadFire && !input.state.fire) {
               if (gear === 'red') sys.bigRed.cancel()
               if (gear === 'yoink') sys.yoink.cancel()
             }
@@ -329,7 +336,22 @@ export class GearRack implements System {
       })
     }
     const release = act({ id: 'release', label: 'Let go', keys: ['G', 'Double tap'], hold: false, start: () => sys.bungee.letGo('released') })
-    const reel = (d: -1 | 1) => () => { if (sys.bungee.reel === d) sys.bungee.setReel(0) }
+    const reelAction = (direction: -1 | 1, id: string, label: string, keys: readonly string[]) => {
+      let owner: symbol | null = null
+      return act({ id, label, keys, hold: true,
+        start: () => {
+          owner = Symbol('gear reel')
+          this.reelOwner = owner
+          sys.bungee.setReel(direction)
+        },
+        stop: () => {
+          if (owner !== null && this.reelOwner === owner) {
+            this.reelOwner = null
+            sys.bungee.setReel(0)
+          }
+        },
+      })
+    }
     let list: GearAction[]
     switch (`${gear}:${state}`) {
       case 'beam:idle':
@@ -348,8 +370,8 @@ export class GearRack implements System {
       case 'bungee:ground':
       case 'bungee:vehicle':
         list = [
-          act({ id: 'reelIn', label: 'Reel in', keys: ['Hold click', 'Wheel up'], hold: true, start: () => sys.bungee.setReel(-1), stop: reel(-1) }),
-          act({ id: 'payOut', label: 'Let out', keys: ['V', 'Wheel down'], hold: true, start: () => sys.bungee.setReel(1), stop: reel(1) }),
+          reelAction(-1, 'reelIn', 'Reel in', ['Hold click', 'Wheel up']),
+          reelAction(1, 'payOut', 'Let out', ['V', 'Wheel down']),
           release,
         ]
         break
