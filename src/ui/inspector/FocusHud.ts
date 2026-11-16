@@ -15,6 +15,8 @@ import { focusStyle, reticleStyle } from './params'
 export interface Telemetry {
   /** Metres per second. */
   speed: number
+  /** Resolved Jet thrust, -1 to 1; absent for other vehicles. */
+  thrust?: number
   /** Metres above the ground under the vehicle. */
   altitude: number
   /** Radians; 0 faces -Z (north on the minimap). */
@@ -24,6 +26,7 @@ export interface Telemetry {
   /** The hour on this world, 0 to 24. */
   hour: number
 }
+export const thrustPercent = (value: number) => `${Math.round(Math.max(-1, Math.min(1, Number.isFinite(value) ? value : 0)) * 100)}%`
 const POINTS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
 /** Compass bearing in degrees, 0 north, clockwise, from the game's heading. */
 export const bearing = (heading: number) => ((-(heading * 180) / Math.PI) % 360 + 360) % 360
@@ -37,6 +40,9 @@ export class FocusHud {
   readonly element = document.createElement('div')
   private readonly started = performance.now()
   private readonly text = new Map<string, HTMLElement[]>()
+  /** The THRUST lines, cached so the per-frame update neither queries nor allocates. */
+  private thrustRows: HTMLElement[] = []
+  private thrustShown = false
   constructor(parent: HTMLElement) {
     this.element.className = 'focus-hud'; this.element.setAttribute('aria-hidden', 'true')
     const ticks = Array.from({ length: 49 }, (_, i) => `<path class="${i % 3 ? 'fh-faint' : 'fh-line'}" d="M${(i - 24) * 30} ${i % 3 ? -6 : -11}V0"/>`).join('')
@@ -48,14 +54,15 @@ export class FocusHud {
       <g data-style="1" transform="translate(0 -372)"><path class="fh-faint" d="M-420 0H420"/><g data-tape>${ticks}</g><path class="fh-accent" d="M0 6V18"/></g>
     </svg>
     <div class="fh-read fh-left" data-style="0"><b data-t="speed"></b><small>MPH</small></div>
-    <div class="fh-read fh-right" data-style="0"><b data-t="altitude"></b><small>M ABOVE GROUND</small></div>
+    <div class="fh-read fh-right" data-style="0"><b data-t="altitude"></b><small>M ABOVE GROUND</small><small data-thrust hidden>THRUST <span data-t="thrust"></span></small></div>
     <div class="fh-read fh-top" data-style="0"><small data-t="world"></small><span data-t="heading"></span></div>
-    <div class="fh-read fh-top" data-style="1" style="top:104px"><b data-t="heading"></b><small><span data-t="speed"></span> MPH · <span data-t="altitude"></span> M · <span data-t="clock"></span></small></div>
+    <div class="fh-read fh-top" data-style="1" style="top:104px"><b data-t="heading"></b><small><span data-t="speed"></span> MPH · <span data-t="altitude"></span> M · <span data-t="clock"></span></small><small data-thrust hidden>THRUST <span data-t="thrust"></span></small></div>
     <div class="fh-read fh-corner fh-tl" data-style="2"><small>SYN3H // SURVEY</small><span data-t="world"></span></div>
     <div class="fh-read fh-corner fh-tr" data-style="2"><small>LOCAL TIME</small><span data-t="clock"></span><small>ELAPSED <span data-t="elapsed"></span></small></div>
     <div class="fh-read fh-corner fh-bl" data-style="2"><small>VELOCITY</small><b data-t="speed3"></b><small>MPH</small></div>
-    <div class="fh-read fh-corner fh-br" data-style="2"><small>HEADING</small><b data-t="heading"></b><small>ALT <span data-t="altitude4"></span> M</small></div>`
+    <div class="fh-read fh-corner fh-br" data-style="2"><small>HEADING</small><b data-t="heading"></b><small>ALT <span data-t="altitude4"></span> M</small><small data-thrust hidden>THRUST <span data-t="thrust"></span></small></div>`
     for (const node of this.element.querySelectorAll<HTMLElement>('[data-t]')) { const key = node.dataset.t!; this.text.set(key, [...(this.text.get(key) ?? []), node]) }
+    this.thrustRows = [...this.element.querySelectorAll<HTMLElement>('[data-thrust]')]
     parent.append(this.element)
   }
   private set(key: string, value: string): void { for (const node of this.text.get(key) ?? []) if (node.textContent !== value) node.textContent = value }
@@ -65,6 +72,10 @@ export class FocusHud {
     if (this.element.dataset.showStyle !== style) this.element.dataset.showStyle = style
     if (this.element.dataset.showReticle !== reticle) this.element.dataset.showReticle = reticle
     if (!visible) return
+    // Only the Jet reports thrust; every other vehicle leaves it undefined and the line hides.
+    const thrust = t.thrust !== undefined
+    if (thrust !== this.thrustShown) { this.thrustShown = thrust; for (const node of this.thrustRows) node.hidden = !thrust }
+    if (thrust) this.set('thrust', thrustPercent(t.thrust!))
     const mph = Math.abs(t.speed) * 2.23694, degrees = bearing(t.heading), seconds = (performance.now() - this.started) / 1000
     this.set('speed', String(Math.round(mph))); this.set('speed3', pad(mph, 3)); this.set('altitude', String(Math.max(0, Math.round(t.altitude)))); this.set('altitude4', pad(t.altitude, 4))
     this.set('heading', `${pad(degrees, 3)}° ${compassPoint(degrees)}`); this.set('world', t.world); this.set('clock', clock(t.hour))
