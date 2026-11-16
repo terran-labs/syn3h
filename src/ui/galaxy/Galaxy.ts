@@ -719,6 +719,8 @@ export class Galaxy {
   /** The drop in progress: where it started and when. `reverse` runs it backwards (ascend). */
   private flight?: { start: number; duration: number; from: Vec; reach: number; yaw: number; pitch: number; last: number; at: number; reverse?: boolean }
   private flightDone = false
+  /** A frame of a held flight is on the canvas. */
+  private shownHeld = false
   /** How hard the frame is smeared toward the centre this frame (0 for none). */
   private blur = 0
 
@@ -823,26 +825,37 @@ export class Galaxy {
     } catch { this.worker = null; this.painting = false }
   }
   /** Upload what has been painted: small maps into their layers, the chosen world's close map. */
-  private upload(gl: WebGL2RenderingContext): void {
+  /**
+   * Hand painted maps to the GPU: the chosen world's close map first, then at most one small
+   * map per frame, so a context that has just been made (leaving a world) does not upload
+   * every map in one frame. True when anything was uploaded.
+   */
+  private upload(gl: WebGL2RenderingContext): boolean {
     const worlds = this.options.worlds
+    let changed = false
+    const world = this.chosen >= 0 ? worlds[this.chosen] : undefined
+    const key = world && !world.forming ? this.mapKey(world, CLOSE) : undefined, map = key ? this.maps.get(key) : undefined
+    if (map && key !== this.closeKey) {
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.close)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, map.width, map.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(map.data.buffer, map.data.byteOffset, map.data.byteLength))
+      this.closeKey = key; changed = true
+      // Keep the CPU copies of close maps few: the newest two.
+      const closes = [...this.maps.keys()].filter(k => k.endsWith(`:${CLOSE[0]}`) && k !== key)
+      if (!this.savedTarget) for (const old of closes.slice(0, Math.max(0, closes.length - 1))) this.maps.delete(old)
+    }
+    this.closeIndex = map && key === this.closeKey ? this.chosen : -1
+    if (changed) return true
     for (const [i, world] of worlds.slice(0, MAX).entries()) {
       const key = this.mapKey(world, SMALL), map = this.maps.get(key)
       if (!map || this.layers[i] === key || map.width !== SMALL[0] || map.height !== SMALL[1]) continue
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.array)
       gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, i, SMALL[0], SMALL[1], 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(map.data.buffer, map.data.byteOffset, map.data.byteLength))
       this.layers[i] = key
+      // Another may be waiting: keep frames coming until all are up.
+      this.wake = Math.max(this.wake, 2)
+      return true
     }
-    const world = this.chosen >= 0 ? worlds[this.chosen] : undefined
-    const key = world && !world.forming ? this.mapKey(world, CLOSE) : undefined, map = key ? this.maps.get(key) : undefined
-    if (map && key !== this.closeKey) {
-      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.close)
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, map.width, map.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(map.data.buffer, map.data.byteOffset, map.data.byteLength))
-      this.closeKey = key
-      // Keep the CPU copies of close maps few: the newest two.
-      const closes = [...this.maps.keys()].filter(k => k.endsWith(`:${CLOSE[0]}`) && k !== key)
-      if (!this.savedTarget) for (const old of closes.slice(0, Math.max(0, closes.length - 1))) this.maps.delete(old)
-    }
-    this.closeIndex = map && key === this.closeKey ? this.chosen : -1
+    return false
   }
   private resize(): void {
     if (!this.gl) return
@@ -953,6 +966,11 @@ export class Galaxy {
     // Held still, draw only while something is moving; the last frame stays on the canvas.
     const moving = this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
     if (still && !moving && this.wake <= 0) { this.idle++; return }
+    // A flight held before launch (leaving a world, waiting behind the game) shows one still
+    // frame of the world's air: draw it, and the maps as they arrive, and nothing more.
+    const held = this.flight?.start === Infinity
+    if (held && this.wake <= 0 && this.shownHeld) { if (this.upload(gl)) this.wake = 1; this.idle++; return }
+    this.shownHeld = held
     this.wake = Math.max(0, this.wake - 1)
     gl.useProgram(this.program); this.upload(gl); gl.uniform1i(u.uCloseIndex, this.closeIndex)
     gl.viewport(0, 0, this.canvas.width, this.canvas.height)

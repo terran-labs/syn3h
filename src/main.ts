@@ -108,6 +108,10 @@ async function main(): Promise<void> {
   // A vehicle arriving by a switch hangs in a small glowing cloud for a second, then drops.
   const materialize = game.add(new Materialize(game, terrain, { onCue: (cue, position, _hold, vehicle) => audio.materialize(cue, position, vehicle) }))
   void materialize.prewarm()
+  // Bots arrive one at a time once the player can drive (never while entering a world or in
+  // the menus), each in the arrival cloud near the player, and leave in it.
+  bots.setArrivalGate(() => shell.playing)
+  bots.setArrivalEffect(materialize)
   const offZorbPulse = onZorbPulse((_ball, centre) => audio.zorbPulse(centre))
   game.add({ dispose: offZorbPulse })
   shell.configurePerformance({
