@@ -194,6 +194,7 @@ body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(198
 
 
 @media (prefers-reduced-motion: reduce) {
+  .syn3h-shell.exploration-ui .world-inspector,
   .syn3h-shell.exploration-ui .world-inspector *, body #syn3h-build-notice { transition: none; }
 }
 
