@@ -50,6 +50,7 @@ import { bootLoading } from './LoadingScreen'
 import { renderHelp, touchHelp } from './VehicleHelp'
 import { PlayHints, type Hint } from './PlayHints'
 import type { VehicleKind } from '../vehicles'
+import './label-plate.css'
 import './shell.css'
 import './exploration.css'
 import './theme-halo.css'
@@ -998,8 +999,10 @@ export class Shell implements System {
     if (OFFER_CUSTOM_PLANET) worlds.push({ id: 'custom', label: 'Custom', land: 0x31507a, sea: 0x0a1630, glow: false, seed: 7, forming: true })
     const chips = this.galaxyChips
     for (const world of worlds) {
-      const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
-      chip.innerHTML = '<strong></strong><small></small>'; chip.querySelector('strong')!.textContent = world.label
+      const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label s3-plate'; chip.dataset.world = world.id
+      // The shared label plate (label-plate.css): name, the world's generated name in quiet ink,
+      // then how many are online in the plate's cyan, and a leader to the planet's limb.
+      chip.innerHTML = '<span class="s3-leader" aria-hidden="true" hidden></span><strong></strong><small class="s3-plate-quiet"></small>'; chip.querySelector('strong')!.textContent = world.label
       chip.querySelector('small')!.textContent = world.forming ? 'Shape your own' : world.id === current ? planetName(world.seed) : ''
       if (world.id !== 'custom') { const count = document.createElement('small'); count.className = 'galaxy-population'; count.textContent = ''; chip.append(count) }
       chip.addEventListener('click', () => { if (!this.tapWorld(world.id)) this.galaxy?.choose(world.id) })
@@ -1057,7 +1060,11 @@ export class Shell implements System {
         for (const place of places) chips.get(place.id)!.hidden = !place.visible
         for (const spot of spots) {
           const chip = chips.get(spot.id)!; this.labelSpots.set(spot.id, spot.spot)
-          chip.style.translate = `${spot.x.toFixed(1)}px ${spot.y.toFixed(1)}px`; chip.classList.toggle('is-crowded', spot.crowded)
+          chip.classList.toggle('is-crowded', spot.crowded)
+          // Blocked: nowhere clear of the worlds in front, so out of sight even when focused (labels.ts).
+          if (spot.blocked) { chip.hidden = true; continue }
+          const place = places.find(p => p.id === spot.id), size = this.labelSizes.get(spot.id)
+          if (place && size) this.placeChip(chip, spot.x, spot.y, size, place)
         }
       },
     })
@@ -1068,6 +1075,29 @@ export class Shell implements System {
     this.element.classList.toggle('galaxy-flat', !this.galaxy.live)
     this.galaxyFor(this.panels.active || 'index')
   }
+  /**
+   * Move a planet label and its leader. Called every frame, so it writes only what moved by
+   * more than half a pixel and reads nothing from the page. x is the label's centre, y its top.
+   */
+  private placeChip(chip: HTMLButtonElement, x: number, y: number, size: { width: number; height: number }, planet: { x: number; y: number; radius: number }): void {
+    const last = this.chipDrawn.get(chip) ?? { x: NaN, y: NaN, sx: NaN, sy: NaN, length: -1, angle: 0 }
+    this.chipDrawn.set(chip, last)
+    if (!(Math.abs(x - last.x) <= .5 && Math.abs(y - last.y) <= .5)) { last.x = x; last.y = y; chip.style.translate = `${x.toFixed(1)}px ${y.toFixed(1)}px` }
+    // The leader runs from the point of the plate nearest the planet to the planet's limb.
+    const left = x - size.width / 2, nx = Math.min(left + size.width, Math.max(left, planet.x)), ny = Math.min(y + size.height, Math.max(y, planet.y))
+    const dx = nx - planet.x, dy = ny - planet.y, reach = Math.hypot(dx, dy), length = reach - planet.radius
+    const leader = chip.firstElementChild as HTMLElement
+    // A label in its usual spot sits 6 to 8 px off the limb. No leader when the plate touches
+    // the planet, nor one across the scene when the label had to be pushed further away.
+    if (!(length > 1.5 && length <= 24)) { if (!leader.hidden) leader.hidden = true; last.length = -1; return }
+    const sx = nx - left, sy = ny - y, angle = Math.atan2(-dy, -dx)
+    if (leader.hidden) leader.hidden = false
+    if (Math.abs(sx - last.sx) <= .5 && Math.abs(sy - last.sy) <= .5 && Math.abs(length - last.length) <= .5 && Math.abs(angle - last.angle) <= .01) return
+    last.sx = sx; last.sy = sy; last.length = length; last.angle = angle
+    leader.style.width = `${length.toFixed(1)}px`
+    leader.style.transform = `translate(${sx.toFixed(1)}px,${sy.toFixed(1)}px) rotate(${angle.toFixed(3)}rad)`
+  }
+  private readonly chipDrawn = new WeakMap<HTMLButtonElement, { x: number; y: number; sx: number; sy: number; length: number; angle: number }>()
   /** The galaxy's world labels, by world id, with their measured sizes and last spots. */
   private readonly galaxyChips = new Map<string, HTMLButtonElement>()
   private readonly labelSizes = new Map<string, { width: number; height: number }>()
@@ -1081,7 +1111,7 @@ export class Shell implements System {
     for (const [id, chip] of this.galaxyChips) {
       const small = chip.querySelector('small')!, text = id === 'custom' ? small.textContent : id === current ? planetName(worldSeed.value) : ''
       if (small.textContent !== text) { small.textContent = text; this.labelSizes.delete(id) }
-      chip.classList.toggle('is-current', id === current)
+      chip.classList.toggle('is-current', id === current); chip.classList.toggle('is-selected', id === current)
       chip.classList.toggle('is-locked', !open && id !== current)
     }
   }

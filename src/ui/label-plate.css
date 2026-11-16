@@ -1,0 +1,46 @@
+/* The label plate: one look for every label that names a thing in the scene, so they cannot
+   drift apart. Used by the vehicle labels (src/ui/nameplates) and the lobby's planet labels
+   (src/ui/Shell.ts, .galaxy-label). Only the look lives here; where a plate goes and when it
+   shows belong to each user.
+
+   Halo language (src/ui/theme-halo.css): one hairline, the shared smoked fill made darker so a
+   name reads over a bright sky, the sun or a nebula, Barlow in spaced capitals, the HUD's
+   under-shadow on type, and a 3 px accent bar whose tone says what is named: people and
+   places cyan (--s3-accent), bots the warm --s3-warn. All colours are theme tokens.
+
+   `:not(#s3-plate)` lifts these rules above the shell's generic button rules (a planet label
+   is a button) without !important; no element has that id. */
+.s3-plate:not(#s3-plate) {
+  --plate-tone: var(--s3-accent, #8fe3ff);
+  box-sizing: border-box; margin: 0; padding: 5px 10px 5px 14px;
+  border: 1px solid var(--s3-line, rgb(205 240 255 / .5)); border-radius: 10px;
+  background: color-mix(in srgb, var(--halo-fill, rgb(3 11 19 / .34)), rgb(3 11 19) 35%); background-image: none;
+  box-shadow: var(--halo-glow, 0 0 6px rgb(143 227 255 / .14));
+  color: var(--s3-ink, #f3fbff); text-align: left; text-transform: none; letter-spacing: 0;
+  text-shadow: var(--halo-under, 0 0 1px rgb(0 8 14 / .9), 0 1px 2px rgb(0 8 14 / .55));
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+  transition: border-color .18s, box-shadow .18s;
+}
+/* The accent bar. */
+.s3-plate:not(#s3-plate)::before {
+  content: ''; display: block; position: absolute; left: 5px; top: 6px; bottom: 6px; width: 3px; border-radius: 2px;
+  background: var(--plate-tone); box-shadow: 0 0 4px color-mix(in srgb, var(--plate-tone) 45%, transparent);
+  transition: box-shadow .18s, filter .18s;
+}
+/* The name, then smaller lines: a tag in the plate's tone, or quieter detail. */
+.s3-plate:not(#s3-plate) > strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 13px/16px 'Barlow', sans-serif; letter-spacing: .08em; text-transform: uppercase; color: inherit; }
+.s3-plate:not(#s3-plate) > small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 10px/13px 'Barlow', sans-serif; letter-spacing: .16em; text-transform: uppercase; color: var(--plate-tone); }
+.s3-plate:not(#s3-plate) > small.s3-plate-quiet { color: var(--s3-soft, #cfe3ec); }
+.s3-plate:not(#s3-plate) > small:empty { display: none; }
+.s3-plate.is-bot:not(#s3-plate) { --plate-tone: var(--s3-warn, #ffb08a); border-color: color-mix(in srgb, var(--s3-warn, #ffb08a) 32%, transparent); box-shadow: none; }
+/* Pointed at, focused or selected: a brighter rim and bar. */
+.s3-plate:not(#s3-plate):is(:hover, :focus-visible, .is-selected) {
+  border-color: color-mix(in srgb, var(--s3-accent-2, #c6f1ff) 85%, transparent);
+  box-shadow: var(--halo-glow, 0 0 6px rgb(143 227 255 / .14)), 0 0 10px color-mix(in srgb, var(--plate-tone) 22%, transparent);
+}
+.s3-plate:not(#s3-plate):is(:hover, :focus-visible, .is-selected)::before { filter: brightness(1.25); box-shadow: 0 0 7px color-mix(in srgb, var(--plate-tone) 70%, transparent); }
+.s3-plate:not(#s3-plate):focus-visible { outline: 1px solid var(--s3-accent-2, #c6f1ff); outline-offset: 3px; }
+
+/* The leader: a 1 px line from the plate to what it names, in the plate's tone. */
+.s3-leader { position: absolute; left: 0; top: 0; height: 1px; transform-origin: 0 50%; pointer-events: none; background: var(--plate-tone, var(--s3-accent, #8fe3ff)); opacity: .65; }
+.s3-leader.is-bot { --plate-tone: var(--s3-warn, #ffb08a); }

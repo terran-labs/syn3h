@@ -9,6 +9,7 @@ import { nameplateMode, restoreNameplatePreference } from './preferences'
 import { HudExclusions } from './HudExclusions'
 import { renderedEnvelope, type Envelope } from './anchors'
 import { afterCameraFrame } from './renderHook'
+import '../label-plate.css'
 import './nameplates.css'
 
 /** Metres between the top of a vehicle's body and the end of its leader. */
@@ -20,7 +21,7 @@ const ALLOCATE_MS = 100
 const MIN_PIXELS = 6
 /** Plate size limits in pixels. Past the widest, the name is cut with an ellipsis. */
 const PLATE_MIN = 72, PLATE_MAX = 220, PLATE_HEIGHT = 42
-/** Must match nameplates.css: name and tag fonts, letter spacing in em, and padding plus border. */
+/** Must match label-plate.css: name and tag fonts, letter spacing in em, and padding plus border. */
 const NAME_FONT = '500 13px Barlow', NAME_SPACING = .08, TAG_FONT = '500 10px Barlow', TAG_SPACING = .16, PLATE_INSET = 30 // padding, border and 4 px for kerning
 
 let measure: CanvasRenderingContext2D | null | undefined
@@ -125,7 +126,7 @@ export class VehicleNameplates {
     let p = this.free.pop()
     if (!p) {
       const el = document.createElement('div'), name = document.createElement('strong'), note = document.createElement('small'), leader = document.createElement('div')
-      el.className = 'vehicle-nameplate'; leader.className = 'vehicle-nameplate-leader'
+      el.className = 'vehicle-nameplate s3-plate'; leader.className = 'vehicle-nameplate-leader s3-leader'
       el.append(name, note); this.root.append(leader, el)
       p = { el, name, note, leader, bentCenter: new THREE.Vector3(), sightStamp: 0, sightBlocked: false, candidate: { id, bot: false, x: 0, y: 0, depth: 0, width: 0, height: 0, opacity: 0, tick: false }, disc: { id, x: 0, y: 0, radius: 0, depth: 0 }, stamp: 0, scanUntil: 0, shown: false, materializing: false, lastX: NaN, lastY: NaN, scale: 1, width: 0, height: 0, tx: NaN, ty: NaN, lx: NaN, ly: NaN, ex: NaN, ey: NaN, opacity: -1 }
     }

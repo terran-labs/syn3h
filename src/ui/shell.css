@@ -504,12 +504,9 @@
 .galaxy-ui { position: absolute; inset: 0; pointer-events: none; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding: 0 16px max(18px, env(safe-area-inset-bottom)); }
 .galaxy-ui > * { pointer-events: auto; }
 .galaxy-labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-.syn3h-shell .galaxy-label { position: absolute; left: 0; top: 0; translate: -200px -200px; transform: translateX(-50%); pointer-events: auto; background: none; border: 0; box-shadow: none; padding: 4px 10px; min-height: 0; display: grid; justify-items: center; color: var(--s3-ink); text-shadow: 0 1px 6px #000; cursor: pointer; }
-.galaxy-label strong { font: 600 20px/1.1 'Barlow Condensed', 'Arial Narrow', sans-serif; letter-spacing: 0.04em; text-transform: uppercase; }
-.galaxy-label small { font-size: 13px; color: var(--s3-accent-2); }
-.galaxy-label small:empty { display: none; }
+.syn3h-shell button.galaxy-label { position: absolute; left: 0; top: 0; translate: -200px -200px; transform: translateX(-50%); pointer-events: auto; min-height: 44px; min-width: 44px; display: grid; align-content: center; cursor: pointer; }
+/* The look is the shared label plate (src/ui/label-plate.css), as on the vehicle labels. */
 .syn3h-shell .galaxy-label.is-locked { opacity: .45; }
-@media (max-width: 700px), (max-height: 550px) { .syn3h-shell .galaxy-label { padding: 2px 6px; } .galaxy-label strong { font-size: 16px; } .galaxy-label small { font-size: 12px; } }
 /* No room for this label beside its world: it fades until focused. Its world still answers a tap. */
 .syn3h-shell .galaxy-label.is-crowded:not(:focus) { opacity: 0; pointer-events: none; }
 .syn3h-shell .galaxy-hint { margin: 0 0 6px; font-size: 15px; color: var(--s3-dim); text-shadow: 0 1px 6px #000; text-align: center; }
@@ -533,7 +530,6 @@
 .syn3h-shell .shell-hud .gear-chip[hidden] { display: none; }
 .syn3h-shell.has-touch .shell-hud .gear-chip { min-height: 40px; padding: 6px 16px; }
 
-.syn3h-shell .galaxy-label:focus { outline: 2px solid var(--s3-accent-2); border-radius: 6px; }
 
 /* Custom keeps its generated planet in view while the player shapes it. */
 .is-shaping-world .lobby-brand { flex-basis: 100px; }

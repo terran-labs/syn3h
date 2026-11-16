@@ -98,9 +98,6 @@
 @media (prefers-reduced-motion: reduce) { .syn3h-shell.exploration-ui *, .touch-controls * { transition-duration: 0s !important; } }
 .syn3h-shell.exploration-ui .wi-top #syn3h-build-notice { position: static !important; inset: auto !important; width: 100% !important; padding: 4px 6px !important; min-height: 24px; font: 11px/1.3 'Barlow',sans-serif !important; border: 1px solid var(--s3-line-quiet) !important; border-radius: 2px !important; background: rgb(20 70 90 / .2) !important; box-shadow: none !important; }
 
-.syn3h-shell.exploration-ui .galaxy-label { background: rgb(5 20 32 / .35); border: 0; border-bottom: 1px solid rgb(175 225 250 / .32); border-radius: 0; box-shadow: none; padding: 8px 12px; }
-.syn3h-shell.exploration-ui .galaxy-label strong { font: 400 13px/1.4 'Barlow',sans-serif; letter-spacing: .12em; }
-.syn3h-shell.exploration-ui .galaxy-label small { font-size: 10px; letter-spacing: .08em; }
 .syn3h-shell.exploration-ui .world-inspector .wi-top .wi-search { font: 400 12px/1.2 'Barlow',sans-serif; height: 28px; min-height: 28px; padding: 3px 0; background: none; border: 0; border-bottom: 1px solid var(--s3-line); border-radius: 0; }
 .syn3h-shell.exploration-ui .world-inspector input[type=range] { appearance: none; -webkit-appearance: none; height: 24px; background: transparent; }
 .syn3h-shell.exploration-ui .world-inspector input[type=range]::-webkit-slider-runnable-track { height: 1px; background: rgb(175 225 250 / .45); }
