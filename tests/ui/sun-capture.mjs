@@ -2,6 +2,9 @@
 // SYN3H_URL=http://127.0.0.1:PORT/ OUT=dir PLANETS=ice,volcanic HOURS=6,18 node tests/ui/sun-capture.mjs
 import { chromium } from 'playwright-core'
 import { mkdir } from 'node:fs/promises'
+import sharp from 'sharp'
+// Foreground level: mean sRGB of the lower middle of the frame, 0 to 1.
+const foreground = async file => { const { width, height } = await sharp(file).metadata(); const s = await sharp(file).extract({ left: Math.round(width * 0.2), top: Math.round(height * 0.58), width: Math.round(width * 0.6), height: Math.round(height * 0.4) }).stats(); return +(s.channels.slice(0, 3).reduce((a, c) => a + c.mean, 0) / 3 / 255).toFixed(3) }
 const out = process.env.OUT ?? 'tests/ui/artifacts/sun'
 const planets = (process.env.PLANETS ?? 'ice,volcanic,archipelago,desert').split(',')
 const hours = (process.env.HOURS ?? '5.5,6,6.5,12,17.5,18,18.5,0').split(',').map(Number)
@@ -34,10 +37,10 @@ try {
         s.params.set('sun.azimuth', best)
         return { azimuth: best, quality: s.params.get('gfx.quality').value }
       }, { hour, dir })
-      await page.waitForTimeout(2500)
+      await page.waitForTimeout(Number(process.env.WAIT ?? 2500))
       const name = `${planet}-${String(hour).replace('.', '_').padStart(2, '0')}h-${dir}.png`
       await page.screenshot({ path: `${out}/${name}` })
-      console.log(name, JSON.stringify(info))
+      console.log(name, JSON.stringify({ ...info, foreground: await foreground(`${out}/${name}`) }))
     }
   }
   console.log('errors', JSON.stringify(errors))

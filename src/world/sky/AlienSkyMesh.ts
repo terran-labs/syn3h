@@ -124,7 +124,7 @@ export class AlienSkyMesh extends Mesh {
       const sat = hi.sub(lo).div(max(hi, 1e-9))
       // skyMath.coolness: only cold hues (green or blue over red) take the saturation lean.
       const cool = smoothstep(0.0, 0.25, max(base.y, base.z).sub(base.x).div(max(hi, 1e-9)))
-      const lean = min(grade.mul(1.5), 1.0).mul(max(float(GLOW_DESAT).mul(smoothstep(GLOW_KNEE, 6 * GLOW_KNEE, lum)), smoothstep(0.35, 0.85, sat).mul(SAT_LEAN).mul(cool)))
+      const lean = min(grade.mul(1.5), 1.0).mul(max(float(GLOW_DESAT).mul(smoothstep(GLOW_KNEE, 6 * GLOW_KNEE, lum)), smoothstep(0.15, 0.6, sat).mul(SAT_LEAN).mul(cool)))
       const graded = mix(base.div(lum), this.glowTint as N, lean).mul(gradedLum)
       const texColor = graded.add(sundiscColor).add(night).toVar() as N
 

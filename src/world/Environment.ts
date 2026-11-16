@@ -18,7 +18,7 @@ import { AlienSkyMesh } from './sky/AlienSkyMesh'
 import { SKY_PRESET_NAMES, applySkyPreset } from './sky/presets'
 import {
   NIGHT_LEVEL, TWILIGHT_LEVEL, autoExposure, luminance, twilightAmount, twilightTint, betaM, betaR, horizonColors, moonAmount, nightAmount, nightTint, sanitizeRGB, sunDirection as sunDirectionAt,
-  sunE, sunlightColor, lowSunGrade, glowTint, type RGB, type Vec3,
+  sunE, sunlightColor, lowSunGrade, glowTint, smoothstep, type RGB, type Vec3,
 } from './sky/skyMath'
 import * as P from './sky/skyParams'
 import { bindDayClock, currentHour, followHour } from './sky/dayCycle'
@@ -66,7 +66,16 @@ const MOON_TINT: RGB = [0.55, 0.65, 1.0]
 /** Fog colours are clamped so the Mie glow around a low sun does not flood the terrain. */
 const FOG_MAX = 8
 /** The sunward fog's cap with the sun on the horizon, and the glow's share of eye adaptation. */
-const FOG_LOW_SUN_MAX = 2.5, SUNWARD_ADAPT = 0.1
+const SUNWARD_ADAPT = 0.1
+/**
+ * Low sun fill. A sun a few degrees up lights the ground with almost nothing, and the sky
+ * overhead is dark, so sunrise and sunset left the foreground near black. Sunlight keeps at
+ * least LOW_SUN_LIGHT of luminance (its colour unchanged) until it sets, and the sky light
+ * takes LOW_SUN_FILL of the horizon's glow. Both fade out with the low-sun grade.
+ */
+const LOW_SUN_LIGHT = 0.22, LOW_SUN_FILL = 0.45
+/** How tightly the sunward fog glow hugs the sun's bearing: broad by day, as narrow as the sky's glow at a low sun. */
+const FOG_LOBE_DAY = 4, FOG_LOBE_LOW_SUN = 48
 /** Scale a colour down so its brightest channel is at most `max`, keeping its hue. */
 function capRGB(c: RGB, max: number): RGB {
   const m = Math.max(c[0], c[1], c[2])
@@ -140,7 +149,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   // same pattern CSMShadowNode uses for its live values.
   const fogState = {
     toward: new THREE.Vector3(), away: new THREE.Vector3(), side: new THREE.Vector3(),
-    sunXZ: new THREE.Vector2(1, 0), density: P.fogDensity.value,
+    sunXZ: new THREE.Vector2(1, 0), density: P.fogDensity.value, lobe: FOG_LOBE_DAY,
   }
   const live = <T,>(initial: T, read: () => T) => (uniform(initial as never) as N).setGroup(renderGroup).onRenderUpdate(read)
   const fogToward = live(new THREE.Vector3(), () => fogState.toward)
@@ -148,6 +157,7 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   const fogSide = live(new THREE.Vector3(), () => fogState.side)
   const fogSunXZ = live(new THREE.Vector2(1, 0), () => fogState.sunXZ)
   const fogDensityU = live(fogState.density, () => fogState.density)
+  const fogLobe = live(FOG_LOBE_DAY, () => fogState.lobe)
   const view = normalize((positionWorld as N).sub(cameraPosition)) as N
   // How far the view ray points toward the sun's bearing. The horizontal part of the unit
   // view ray is used as it is, not normalised: a ray looking down at the ground near the
@@ -155,8 +165,9 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
   // gave every pixel the full glow of its compass bearing, which from above drew a bright
   // wedge on the ground with its point under the camera. Level views are unchanged.
   const cosA = vec2(view.x, view.z).dot(fogSunXZ) as N
-  // The glow toward the sun is narrow, the darkening away from it broad.
-  const towardW = pow(max(cosA, 0.0), 4.0)
+  // The glow toward the sun is narrow, the darkening away from it broad. At a low sun the
+  // glow narrows to the sky's own, so the far sea and land under it match the sky above.
+  const towardW = pow(max(cosA, 0.0), fogLobe as N)
   const awayW = max(cosA.negate(), 0.0)
   const side = fogSide as N
   const fogColor = side.add((fogToward as N).sub(side).mul(towardW)).add((fogAway as N).sub(side).mul(awayW))
@@ -249,6 +260,9 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
     lightDirection.copy(sunDirection).multiplyScalar(moon > 0 ? -1 : 1)
     if (moon <= 0) {
       sanitizeRGB(sunlightColor(sun, sp, rgb), 1)
+      // Low sun fill: lift a near-horizon sun's light to a floor, same colour, until it sets.
+      const floor = LOW_SUN_LIGHT * lowSunGrade(sun[1]) * smoothstep(-0.04, 0.03, sun[1]), lum = luminance(rgb)
+      if (lum > 1e-6 && lum < floor) { const s = Math.min(floor / lum, 1 / Math.max(rgb[0], rgb[1], rgb[2], 1e-6)); for (let i = 0; i < 3; i++) rgb[i] *= s }
       const k = P.sunIntensity.value
       sunColor.setRGB(rgb[0] * k, rgb[1] * k, rgb[2] * k, THREE.LinearSRGBColorSpace)
       light.position.copy(sunDirection).multiplyScalar(500)
@@ -267,8 +281,10 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
     const moonAmb = moon * P.sunMoonIntensity.value * 0.04
     const z = sanitizeRGB(hc.zenith, 50)
     const m = sanitizeRGB(hc.mean, 50)
+    // Low sun fill: the sky light takes some of the horizon's glow (see LOW_SUN_FILL).
+    const fill = lowSunGrade(sun[1]) * LOW_SUN_FILL * amb
     hemi.color.setRGB(
-      z[0] * amb + MOON_TINT[0] * moonAmb, z[1] * amb + MOON_TINT[1] * moonAmb, z[2] * amb + MOON_TINT[2] * moonAmb,
+      z[0] * amb + m[0] * fill + MOON_TINT[0] * moonAmb, z[1] * amb + m[1] * fill + MOON_TINT[1] * moonAmb, z[2] * amb + m[2] * fill + MOON_TINT[2] * moonAmb,
       THREE.LinearSRGBColorSpace,
     )
     skyGround.setRGB(m[0] * amb * 0.5, m[1] * amb * 0.5, m[2] * amb * 0.5, THREE.LinearSRGBColorSpace)
@@ -294,8 +310,8 @@ export function createEnvironment(game: Game, _terrain: Terrain): Environment {
 
     // Scaled, not clamped per channel: a clamp kept one bright channel at the cap and let the
     // others through, so the fog took a different hue from the sky above it.
-    // Haze toward a low sun stays under the glow it sits in, so far land is not whiter than sky.
-    const t = capRGB(sanitizeRGB(hc.toward, 1e3), FOG_MAX + (FOG_LOW_SUN_MAX - FOG_MAX) * low)
+    const t = capRGB(sanitizeRGB(hc.toward, 1e3), FOG_MAX)
+    fogState.lobe = FOG_LOBE_DAY + (FOG_LOBE_LOW_SUN - FOG_LOBE_DAY) * low
     const a = capRGB(sanitizeRGB(hc.away, 1e3), FOG_MAX)
     const s = capRGB(sanitizeRGB(hc.side, 1e3), FOG_MAX)
     fogState.toward.set(t[0], t[1], t[2])

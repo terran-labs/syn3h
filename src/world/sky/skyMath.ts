@@ -226,7 +226,7 @@ export function gradeGlow(c: RGB, w: number, tint: RGB = GLOW_WARM): RGB {
   const graded = GLOW_KNEE * Math.min(1, L / GLOW_KNEE) * Math.pow(above, 1 - w * (1 - GLOW_POWER))
   const hi = Math.max(c[0], c[1], c[2]), lo = Math.min(c[0], c[1], c[2])
   const sat = hi > 0 ? (hi - lo) / hi : 0
-  const lean = Math.min(1, 1.5 * w) * Math.max(GLOW_DESAT * smoothstep(GLOW_KNEE, 6 * GLOW_KNEE, L), SAT_LEAN * smoothstep(0.35, 0.85, sat) * coolness(c))
+  const lean = Math.min(1, 1.5 * w) * Math.max(GLOW_DESAT * smoothstep(GLOW_KNEE, 6 * GLOW_KNEE, L), SAT_LEAN * smoothstep(0.15, 0.6, sat) * coolness(c))
   for (let i = 0; i < 3; i++) c[i] = ((c[i] / L) * (1 - lean) + tint[i] * lean) * graded
   return c
 }
