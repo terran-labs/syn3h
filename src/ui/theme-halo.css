@@ -234,8 +234,8 @@ body #syn3h-build-notice:hover, body .build-banner:hover { border-color: rgb(198
 .syn3h-shell.exploration-ui .world-inspector .rail-players { flex: 0 0 auto; max-height: none; min-height: 44px; }
 .syn3h-shell.exploration-ui .world-inspector .rail-players > summary { min-height: 44px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; }
 .syn3h-shell.exploration-ui .world-inspector .rail-foot { display: flex; flex-direction: column; align-items: stretch; flex: 0 0 auto; gap: 5px; padding: 6px 8px; }
-.syn3h-shell.exploration-ui .world-inspector .rail-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
-.syn3h-shell.exploration-ui .world-inspector .rail-command > .wi-search { width: 100%; min-width: 0; height: 44px; min-height: 44px; box-sizing: border-box; font-size: 16px; }
+.syn3h-shell.exploration-ui .world-inspector .rail-tools { display: grid; grid-template-columns: minmax(0, .65fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.syn3h-shell.exploration-ui .world-inspector .rail-command input.wi-search[type=search] { width: 100%; min-width: 0; height: 44px; min-height: 44px; box-sizing: border-box; font-size: 16px; border: 1px solid var(--s3-line); border-radius: 8px; background: rgb(0 8 16 / .35); padding: 6px 8px; }
 .syn3h-shell.exploration-ui .world-inspector .rail-tools .rail-pause { min-height: 44px; padding: 6px 12px; }
 .syn3h-shell.exploration-ui .world-inspector .rail-foot .wi-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
 .syn3h-shell.exploration-ui .world-inspector .rail-foot .wi-actions button { min-height: 44px; min-width: 0; padding: 4px; margin: 0; font-size: 11px; white-space: normal; letter-spacing: 0; text-transform: none; }
@@ -323,3 +323,5 @@ html .syn3h-shell.exploration-ui[data-ui-frost="off"] .lobby-panels {
 /* The world name can shrink without displacing Pause on narrow phone screens. */
 .syn3h-shell.exploration-ui .world-inspector .rail-command { flex: 0 0 auto; display: grid; gap: 5px; padding: 6px 8px; }
 .syn3h-shell.exploration-ui .world-inspector .rail-world { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+
+.syn3h-shell.exploration-ui .world-inspector .rail-command input.wi-search[type=search]:focus { border-color: var(--s3-accent-2); outline: 1px solid var(--s3-accent-2); outline-offset: 1px; }

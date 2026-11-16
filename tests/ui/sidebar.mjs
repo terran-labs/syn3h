@@ -34,6 +34,14 @@ for (const mode of ['desktop', 'ipad', 'phone', 'landscape']) {
     const bounds = await footer.boundingBox()
     assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= page.viewportSize().height, 'footer stays in viewport')
     assert.ok((await pause.boundingBox()).height >= 44, 'Pause stays a full touch target')
+    const nameBox = await header.locator('.rail-world').boundingBox()
+    const searchBox = await search.boundingBox(), pauseBox = await pause.boundingBox()
+    assert.ok(searchBox.height >= 44, 'search stays a full touch target')
+    assert.ok(nameBox.x + nameBox.width <= searchBox.x && searchBox.x + searchBox.width <= pauseBox.x, 'world, search and Pause run left to right')
+    const middle = box => box.y + box.height / 2
+    assert.ok(Math.abs(middle(nameBox) - middle(searchBox)) < 1 && Math.abs(middle(searchBox) - middle(pauseBox)) < 1, 'all header controls share one row')
+    assert.ok(pauseBox.x + pauseBox.width <= headerBounds.x + headerBounds.width, 'Pause fits within the header')
+    assert.ok(await search.evaluate(el => { const css = getComputedStyle(el); return parseFloat(css.borderTopWidth) > 0 && css.borderTopStyle === 'solid' }), 'search has a visible field outline')
     await page.screenshot({ path: `${out}/${mode}-cards.png` })
     for (const section of expected) {
       await search.fill(section === 'sky' ? 'Sky' : section === 'players' ? 'Players' : section === 'you' ? 'Me' : section)

@@ -226,7 +226,7 @@ export class Shell implements System {
     // Header and footer stay outside the scrolling card stack.
     const command = document.createElement('div'); command.className = 'rail-command wi-glass'
     command.innerHTML = '<div class="rail-tools"><strong class="rail-world"></strong><button type="button" class="rail-pause">Pause</button></div>'
-    command.append(railTop.querySelector('.wi-search')!)
+    command.querySelector('.rail-world')!.after(railTop.querySelector('.wi-search')!)
     const actions = railTop.querySelector('.wi-actions')!
     actions.insertAdjacentHTML('beforeend', '<button type="button" class="exit-world">Leave world</button>')
     foot.append(actions)
