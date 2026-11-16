@@ -26,8 +26,9 @@ try {
   })
   console.log(JSON.stringify(result, null, 1))
 } finally { await browser.close() }
-// The lobby frame with each wordmark placement: the galaxy's whole pass (the ray tracer with
-// the wordmark in it, or with the flat logo drawn after), timed to the GPU's finish.
+// The lobby frame with each wordmark placement, and with the in-space letters' own
+// full-resolution pass (lobby.wordmarkCrisp) on and off: the galaxy's whole frame, both
+// canvases waited for to the GPU's finish. Median of 40 forced frames.
 {
   const browser = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu'] })
   try {
@@ -36,20 +37,18 @@ try {
       await page.goto(`${base}?room=wm-cost-${Date.now()}`)
       await page.waitForFunction(() => window.syn3h?.game?.tick > 25 && document.documentElement.dataset.boot === 'done', null, { timeout: 120000 })
       const row = {}
-      for (const mode of [0, 1, 2, 3]) {
-        row[mode] = await page.evaluate(async mode => {
-          syn3h.params.set('gfx.level', 2); syn3h.params.set('lobby.wordmark', mode)
+      for (const [mode, crisp] of [[0, false], [3, false], [3, true], [4, true], [7, false], [7, true]]) {
+        row[`${mode}${crisp ? '+crisp' : ''}`] = await page.evaluate(async ([mode, crisp]) => {
+          syn3h.params.set('gfx.level', 2); syn3h.params.set('lobby.wordmark', mode); syn3h.params.set('lobby.wordmarkCrisp', crisp)
           await new Promise(r => setTimeout(r, 2500))
           const g = syn3h.shell.galaxy, gl = g.gl, pixel = new Uint8Array(4), times = []
-          for (let i = 0; i < 40; i++) {
-            g.wake = 2; g.last = 0; gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel)
-            const t = performance.now(); g.loop(performance.now()); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel); times.push(performance.now() - t)
-          }
+          const sync = () => { gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel); const c = g.markCrisp?.gl; if (c) c.readPixels(0, 0, 1, 1, c.RGBA, c.UNSIGNED_BYTE, pixel) }
+          for (let i = 0; i < 40; i++) { g.wake = 2; g.last = 0; sync(); const t = performance.now(); g.loop(performance.now()); sync(); times.push(performance.now() - t) }
           times.sort((a, b) => a - b)
           return +times[20].toFixed(2)
-        }, mode)
+        }, [mode, crisp])
       }
-      console.log(`galaxy frame ms (median) ${view.width}x${view.height}@${view.deviceScaleFactor}, by lobby.wordmark:`, JSON.stringify(row))
+      console.log(`galaxy frame ms (median) ${view.width}x${view.height}@${view.deviceScaleFactor}, by placement:`, JSON.stringify(row))
       await page.close()
     }
   } finally { await browser.close() }

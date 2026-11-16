@@ -52,14 +52,25 @@ try {
         await p.waitForTimeout(200); await zoom(p, clip, `${out}/before-${view.name}-dpr${dpr}-zoom8x.png`); await still.close()
       }
     }
+  } else if (kind === 'crisp') {
+    // The in-space letters with their full-resolution pass on and off, 8x.
+    for (const placement of list.split(',').map(Number)) for (const [view, dpr] of [[desktop, 2], [phone, 3]]) {
+      const { context, page } = await open(view, dpr, placement)
+      for (const on of [false, true]) {
+        await page.evaluate(on => { syn3h.params.set('lobby.wordmarkCrisp', on); const g = syn3h.shell.galaxy; g.clock = 216; g.wake = 2 }, on); await page.waitForTimeout(400)
+        const box = await page.evaluate(() => syn3h.shell.galaxy.wordmarkScreenBox())
+        await zoom(page, { x: box.x + box.width * 0.62, y: box.y + box.height * 0.05, width: box.width * 0.2, height: box.height * 0.9 }, `${out}/${prefix}-${view.name}-dpr${dpr}-p${placement}-${on ? 'crisp' : 'galaxy'}-zoom8x.png`)
+      }
+      await context.close()
+    }
   } else {
     for (const placement of list.split(',').map(Number)) for (const [view, dpr] of [[desktop, 1], [phone, 3]]) {
       const { context, page } = await open(view, dpr, placement), tag = `${prefix}-${view.name}-p${placement}`
       // The shafts drift with the galaxy's clock: find the moments the name is lit most and least.
       const scan = await page.evaluate(() => {
-        const g = syn3h.shell.galaxy, gl = g.gl, r = document.querySelector('.shell-logo').getBoundingClientRect(), host = g.host.getBoundingClientRect()
+        const g = syn3h.shell.galaxy, gl = g.gl, host = g.host.getBoundingClientRect(), r = g.wordmarkScreenBox() ?? (() => { const b = document.querySelector('.shell-logo').getBoundingClientRect(); return { x: b.x - host.x, y: b.y - host.y, width: b.width, height: b.height } })()
         const sx = g.canvas.width / g.host.clientWidth, sy = g.canvas.height / g.host.clientHeight
-        const x = Math.round((r.x - host.x) * sx), w = Math.round(r.width * sx), h = Math.round(r.height * sy), y = Math.round(g.canvas.height - (r.y - host.y) * sy - h)
+        const x = Math.max(0, Math.round(r.x * sx)), w = Math.max(1, Math.min(g.canvas.width - x, Math.round(r.width * sx))), h = Math.max(1, Math.round(r.height * sy)), y = Math.max(0, Math.round(g.canvas.height - r.y * sy - h))
         const pixels = new Uint8Array(w * h * 4), rows = []
         for (let t = 0; t < 240; t += 4) {
           g.clock = t; g.wake = 2; g.last = 0; g.loop(performance.now())
