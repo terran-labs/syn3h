@@ -34,7 +34,7 @@ export interface ClipmapLayout { cells: number; base: number; levels: number }
  */
 export const CLIPMAP_LAYOUTS: readonly ClipmapLayout[] = [
   { cells: 32, base: 2, levels: 9 },
-  { cells: 48, base: 1, levels: 9 },
+  { cells: 48, base: 1, levels: 10 },
   { cells: 64, base: 1, levels: 9 },
   { cells: 64, base: 0.5, levels: 10 },
   { cells: 64, base: 0.5, levels: 10 },
@@ -153,6 +153,10 @@ export class Clipmap {
       this.meshes.push(mesh)
       this.group.add(mesh)
     }
+  }
+
+  set renderOrder(order: number) {
+    for (const mesh of this.meshes) mesh.renderOrder = order
   }
 
   set material(m: THREE.Material) {

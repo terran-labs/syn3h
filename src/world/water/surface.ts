@@ -48,21 +48,54 @@ export interface WaterSurface {
   /** The sky reflection capture. Mirrored at full strength, not at the scene's subdued fill. */
   setEnvironment(texture: THREE.Texture | null): void
   /**
-   * Waves for a lake, pool or river surface: the shared field's components for that body. The
-   * sea always follows `seaWaves` and ignores this.
+   * The waves this surface shows: the shared field for its body (liquidWaves(body) once the
+   * liquid-feel field lands). The sea starts on `seaWaveSource`; lakes, pools and rivers flat.
    */
   setWaveSource(source: WaveSource | null): void
 }
 
 /**
- * One body's waves now, for the shader: up to SEA_COMPONENTS sines with their current phase
- * (radians, reduced) and amplitude (metres, every scaling folded in). `geometric` components
- * lift floating things and move vertices; the rest only tilt the light.
+ * One body's waves now, in the shape of the liquid-feel field (liquidWaves.ts LiquidWaveField):
+ * sines with their current phase (radians) and amplitude (metres, every scaling folded in), and
+ * the shoaling numbers. `active` false marks a component the physics does not lift on: it only
+ * tilts the light. Called once a frame; the result may be reused by the caller.
  */
-export interface WaveSource {
-  components(): readonly { kx: number; kz: number; phase: number; amplitude: number; geometric: boolean }[]
-  /** Depth over which the waves grow from nothing at the shore to full, metres. */
-  shoalDepth(): number
+export interface WaveField {
+  components: readonly { kx: number; kz: number; amplitude: number; phase: number; active?: boolean }[]
+  /** Depth (m) at which the waves are whole. */
+  shoalDepth: number
+  /** Share left in very shallow water (0 when absent). */
+  shoalFloor?: number
+  /** Depth (m) over which they fade to nothing at the waterline (none when absent). */
+  shoalLip?: number
+}
+export type WaveSource = () => WaveField | null
+
+/** Share of the waves at water `depth`, as liquidShoal in the physics: CPU twin of the shader's. */
+export function shoal(depth: number, f: Pick<WaveField, 'shoalDepth' | 'shoalFloor' | 'shoalLip'>): number {
+  if (!(depth > 0)) return 0
+  const s = (a: number, b: number, x: number) => { const u = Math.min(1, Math.max(0, (x - a) / (b - a))); return u * u * (3 - 2 * u) }
+  const lip = Math.max(1e-3, f.shoalLip ?? 1e-3), floor = f.shoalFloor ?? 0
+  return s(0, lip, depth) * (floor + (1 - floor) * s(0, Math.max(1e-3, f.shoalDepth), depth))
+}
+
+/**
+ * The sea as a WaveField from `seaWaves`, for until the liquid-feel field lands: the components
+ * the physics lifts on today (lightOnly ones only shade), no floor, no lip.
+ */
+const seaField: WaveField & { components: { kx: number; kz: number; amplitude: number; phase: number; active: boolean }[] } = { components: [], shoalDepth: 6 }
+export const seaWaveSource: WaveSource = () => {
+  const set = seaWaves.waves
+  const ph = seaWaves.phasesNow()
+  const on = seaWaves.enabled ? waveScale() : 0
+  for (let i = 0; i < set.components.length; i++) {
+    const c = set.components[i]
+    const o = (seaField.components[i] ??= { kx: 0, kz: 0, amplitude: 0, phase: 0, active: true })
+    o.kx = c.kx; o.kz = c.kz; o.amplitude = c.amplitude * on; o.phase = ph[i] ?? 0; o.active = !c.lightOnly
+  }
+  seaField.components.length = set.components.length
+  seaField.shoalDepth = Math.max(0.5, set.dominantLength * 0.1)
+  return seaField
 }
 
 /**
@@ -129,7 +162,11 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   const shadeAmp = Array.from({ length: WAVE_COUNT }, () => uniform(0))
   /** Depth over which waves grow from nothing to full: a tenth of the dominant wavelength. */
   const shoalDepth = uniform(6)
-  let source: WaveSource | null = null
+  const shoalFloor = uniform(0)
+  const shoalLip = uniform(1e-3)
+  /** The shader's twin of `shoal()`. */
+  const shoalNode = (d: THREE.Node<'float'>) => smoothstep(0, shoalLip, d).mul(shoalFloor.add(float(1).sub(shoalFloor).mul(smoothstep(0, shoalDepth, d))))
+  let source: WaveSource | null = mode === 'sea' ? seaWaveSource : null
   /** Total geometric amplitude, for normalising crest height. */
   const ampTotal = uniform(0)
 
@@ -148,7 +185,7 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   const surfaceY = mode === 'sea' ? level : positionGeometry.y
   const bedUv = vec2(p.x, p.z).mul(bedFrame.x).add(bedFrame.y.add(0.5))
   const depth = surfaceY.sub(bedMap.sample(bedUv).r.add(bedFrame.z))
-  const shoal = smoothstep(0, shoalDepth, depth)
+  const shoalHere = shoalNode(depth)
 
   /**
    * Visual-only detail near the camera: the chop below as real ripples, at most 0.15 m in all
@@ -186,7 +223,7 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
       const fade = smoothstep(grid.fadeCell.mul(3), grid.fadeCell.mul(5), length)
       h = h.add(u.w.mul(fade).mul(sin(u.x.mul(w.x).add(u.y.mul(w.y)).add(u.z))))
     }
-    material.positionNode = vec3(grid.local.x, h.mul(smoothstep(0, shoalDepth, level.sub(bedHere))).add(detailHeight(w, grid.fadeCell)), grid.local.y)
+    material.positionNode = vec3(grid.local.x, h.mul(shoalNode(level.sub(bedHere))).add(detailHeight(w, grid.fadeCell)), grid.local.y)
   } else {
     // Lakes, pools and rivers: their own meshes, at their own surface heights, displaced by
     // whatever wave source they are given (`setWaveSource`; flat until one is). The mesh
@@ -199,7 +236,7 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
       const length = float(Math.PI * 2).div(vec2(u.x, u.y).length().max(1e-4))
       h = h.add(u.w.mul(smoothstep(spacing.mul(3), spacing.mul(5), length)).mul(sin(u.x.mul(w.x).add(u.y.mul(w.y)).add(u.z))))
     }
-    const lift = h.mul(smoothstep(0, shoalDepth, positionGeometry.y.sub(bedHere))).add(detailHeight(w, spacing).mul(mode === 'still' ? 0.7 : 0.4))
+    const lift = h.mul(shoalNode(positionGeometry.y.sub(bedHere))).add(detailHeight(w, spacing).mul(mode === 'still' ? 0.7 : 0.4))
     material.positionNode = positionLocal.add(vec3(0, lift, 0))
   }
 
@@ -221,8 +258,8 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
       sz = sz.add(c.mul(u.y))
       crest = crest.add(sin(arg).mul(u.w))
     }
-    sx = sx.mul(shoal)
-    sz = sz.mul(shoal)
+    sx = sx.mul(shoalHere)
+    sz = sz.mul(shoalHere)
   }
 
   // Detail: small wind ripples near the camera, and on a river they run downstream.
@@ -280,7 +317,7 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
   material.normalNode = normalize(cameraViewMatrix.transformDirection(worldNormal))
 
   // Colour from above: shallows to deep by depth, lifted a little on the crests.
-  const crestN = crest.div(max(ampTotal, 0.001)).mul(shoal)
+  const crestN = crest.div(max(ampTotal, 0.001)).mul(shoalHere)
   // What the water itself sends back: the shallow tint where little of it lies along the
   // sight line, the deep colour once the line has crossed about a clarity's worth.
   const body = mix(shallowColour, deepColour, smoothstep(0.3, 16, waterPath(depth)))
@@ -370,34 +407,20 @@ export function createWaterSurface(mode: WaterMode): WaterSurface {
     update(l: number) {
       level.value = l
       chop.value = waterChop.value * (0.55 + 0.9 * prevailingWindStrength())
-      if (mode !== 'sea') {
-        // Bodies other than the sea: whatever source they were given, or flat.
-        let total = 0
-        const comps = source?.components() ?? []
-        for (let i = 0; i < WAVE_COUNT; i++) {
-          const c = comps[i]
-          const geo = c && c.geometric ? c.amplitude : 0
-          wave[i].value.set(c ? c.kx : 0, c ? c.kz : 0, c ? c.phase : 0, geo)
-          shadeAmp[i].value = c ? c.amplitude : 0
-          total += geo
-        }
-        ampTotal.value = total
-        shoalDepth.value = Math.max(0.3, source?.shoalDepth() ?? 1)
-        return
-      }
-      const set = seaWaves.waves
-      const ph = seaWaves.phasesNow()
+      // Whatever field this body was given (the sea's by default), or flat.
+      const field = source?.() ?? null
       let total = 0
       for (let i = 0; i < WAVE_COUNT; i++) {
-        const c = set.components[i]
-        const on = seaWaves.enabled && c ? waveScale() : 0
-        const geo = c && !c.lightOnly ? c.amplitude * on : 0
-        wave[i].value.set(c ? c.kx : 0, c ? c.kz : 0, ph[i] ?? 0, geo)
-        shadeAmp[i].value = c ? c.amplitude * on : 0
+        const c = field?.components[i]
+        const geo = c && c.active !== false ? c.amplitude : 0
+        wave[i].value.set(c ? c.kx : 0, c ? c.kz : 0, c ? c.phase : 0, geo)
+        shadeAmp[i].value = c ? c.amplitude : 0
         total += geo
       }
       ampTotal.value = total
-      shoalDepth.value = Math.max(0.5, set.dominantLength * 0.1)
+      shoalDepth.value = Math.max(1e-3, field?.shoalDepth ?? 1)
+      shoalFloor.value = field?.shoalFloor ?? 0
+      shoalLip.value = Math.max(1e-3, field?.shoalLip ?? 1e-3)
     },
   }
 }
