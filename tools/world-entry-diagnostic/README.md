@@ -76,11 +76,23 @@ CPU phase costs, connection wait and first-use pipeline events. Do not turn inte
 transition animation time into a claimed freeze duration. Screenshot completion does not
 prove input responsiveness.
 
-The supervisor tracks descendant PID/start identities, applies a process-group deadline,
-terminates remaining owned descendants and writes `closure.json`. Zombies remain survivors
-until actually absent. A missing receipt or survivors means closure is unverified and the
-slot must not be reported released. The process scan itself can time out; that is an error,
-not proof of cleanup. No service restart, shared preview change or production telemetry.
+The supervisor accounts for observed descendant PID/start identities and direct Popen
+handles. It checks each identity immediately before signalling that individual process;
+it does not signal process groups or infer ownership from process names. Execution ends
+at 300 seconds, with cleanup inspections and waits bounded by the earlier of fifteen
+seconds after cleanup starts or 315 seconds from runner start.
+
+An incomplete `closure.json` is written before cleanup inspection. Inspection failures
+remain recorded even if later inspections succeed. Each cleanup action is independently
+guarded so a failed scan does not skip the remaining best-effort actions or receipt.
+Zombies remain survivors until actually absent. Missing evidence, inspection errors or
+remaining owned identities prevent closure certification and release of the slot.
+
+Closure covers only observed descendants and direct handles, not a child that escaped
+between observations. The harness starts no application server and reserves no listening
+port. It performs no endpoint-absence probe, so the receipt is not evidence that all
+browser-created or host endpoints are absent. No service restart, shared preview change
+or production telemetry is performed.
 
 Review checkpoints: frozen-resource proof; all three cases and their actual conditions;
 CPU versus GPU uncertainty; instrumentation overhead; exact owned-process absence.
