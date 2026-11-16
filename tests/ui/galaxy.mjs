@@ -27,6 +27,9 @@ try {
     // Headless Chrome draws slowly, and the game would step its graphics level down to the
     // lowest, which retires the galaxy. Hold the level so this checks the galaxy itself.
     await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
+    // The opening (src/ui/galaxy/opening.ts) runs about nine seconds; a key skips straight to the
+    // settled lobby, as for a player, and the checks below are of that lobby.
+    await page.keyboard.press('Shift')
     await page.waitForTimeout(4000)
     const state = () => page.evaluate(() => { const g = window.syn3h.shell.galaxy; return { open: document.querySelector('.syn3h-shell').classList.contains('galaxy-open'), live: g.live, frames: g.frames, labels: [...document.querySelectorAll('.galaxy-label:not([hidden])')].map(l => { const r = l.getBoundingClientRect(); return { id: l.dataset.world, x: r.left + r.width / 2, y: r.top } }) } })
     const first = await state()

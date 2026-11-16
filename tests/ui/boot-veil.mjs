@@ -45,8 +45,9 @@ try {
     await page.screenshot({ path: `${out}/${view.name}-lifting.png` })
     await page.waitForTimeout(1300)
     assert.equal(await page.evaluate(() => getComputedStyle(document.querySelector('.boot-veil')).visibility), 'hidden')
-    // The lobby underneath takes the taps.
-    await page.waitForFunction(() => document.querySelector('.lobby-panels')?.dataset.busy === 'false', null, { timeout: 60000 })
+    // The lobby underneath takes the taps, once the opening (src/ui/galaxy/opening.ts) has
+    // brought its controls in.
+    await page.waitForFunction(() => document.querySelector('.lobby-panels')?.dataset.busy === 'false' && !document.documentElement.dataset.opening, null, { timeout: 60000 })
     assert.equal(await page.evaluate(() => { const b = document.querySelector('.galaxy-links button').getBoundingClientRect(); return document.elementFromPoint(b.left + 12, b.top + 12)?.closest('.galaxy-links') !== null }), true)
     await page.screenshot({ path: `${out}/${view.name}-lobby.png` })
     await context.close()

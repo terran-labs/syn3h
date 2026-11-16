@@ -24,14 +24,20 @@ try {
     page.on('pageerror', e => messages.push(`${view.name}: ${e.message}`))
     await page.goto(`${base}?room=rel-${Date.now()}`); await ready(page)
     await page.evaluate(() => { window.__pin = setInterval(() => window.syn3h.params.set('gfx.level', 2), 400) })
-    await page.waitForTimeout(3500)
+    await page.keyboard.press('Shift'); await page.waitForTimeout(2000)
     // The opening, replayed and held at moments across it.
-    for (const t of [0.1, 0.5, 1.0, 1.6, 2.1, 2.5, 2.95]) {
-      await page.evaluate(t => { const g = syn3h.shell.galaxy; g.replayOpening(syn3h.params.get('lobby.intro').value); g.openingAt = t; g.wake = 2 }, t)
-      await page.waitForTimeout(350); await shot(page, `${view.name}-open-t${t.toFixed(2)}`)
+    // Each frame carries its time, stamped in a corner for the strip.
+    for (const t of [0.3, 1.2, 1.9, 2.4, 3.3, 4.2, 5.2, 6.2, 7.0, 7.6, 8.1, 8.8]) {
+      await page.evaluate(t => {
+        const g = syn3h.shell.galaxy; g.replayOpening(syn3h.params.get('lobby.intro').value); g.openingAt = t; g.wake = 2
+        let stamp = document.getElementById('strip-time'); if (!stamp) { stamp = document.createElement('div'); stamp.id = 'strip-time'; stamp.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:99999;font:600 15px/1 ui-monospace,monospace;color:#fff;background:rgb(0 0 0 / .6);padding:5px 8px;border-radius:6px'; document.body.append(stamp) }
+        stamp.textContent = `t = ${t.toFixed(1)} s`
+      }, t)
+      await page.waitForTimeout(350); await shot(page, `${view.name}-open-t${t.toFixed(1)}`)
     }
+    await page.evaluate(() => document.getElementById('strip-time')?.remove())
     await page.evaluate(() => { const g = syn3h.shell.galaxy; g.openingAt = null; g.replayOpening(0) })
-    await page.waitForTimeout(3500)
+    await page.waitForTimeout(9500)
     const box = await page.evaluate(() => syn3h.shell.galaxy.wordmarkScreenBox())
     console.log(view.name, 'settled name box', JSON.stringify(box), 'viewport', JSON.stringify(view.viewport))
     await shot(page, `${view.name}-settled`)

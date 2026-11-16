@@ -16,7 +16,7 @@ import { placementOf, placeWordmark, poseView, surfacePoint, WordmarkRig, WORDMA
 import { ASPECT } from '../brand/wordmarkMesh'
 import { WordmarkOverlay } from '../brand/wordmarkOverlay'
 import { GLOW_GLSL, glowColour, GlowState, glowTarget, hoverGlowIntensity, hoverGlowSpeed } from './hoverGlow'
-import { introMode, LEAVING_SECONDS, leavingMark, openingState, SETTLED, type OpeningMode, type OpeningState } from './opening'
+import { introMode, LEAVING_SECONDS, leavingMark, openingPace, openingState, RETURN_SECONDS, returningMark, SETTLED, type OpeningMode, type OpeningState } from './opening'
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
 let openingPlayed = false
 import { WordmarkCrisp } from '../brand/wordmarkCrisp'
@@ -262,7 +262,8 @@ uniform float uAmbience;            // 1 keeps twinkle and drifting cloud, 0 she
 uniform float uDive;                // 0 in orbit, 1 through the atmosphere of the chosen world
 uniform float uDim;                 // 1 as the lobby itself; lower behind an open panel
 uniform float uMarkCrisp;           // 1 when the wordmark's letters are drawn by its own full-resolution pass
-uniform vec4 uReveal;               // the opening (opening.ts): sun, shafts' front, stars, orbit lines
+uniform vec4 uReveal;               // the opening (opening.ts): sun, shafts' front, stars, the point's swell
+uniform float uOrbit[${MAX}];       // the opening: how much of each world's orbit line is drawn
 uniform float uRevealMark;          // the opening: how far the wordmark's reveal has swept from the sun
 uniform float uSunPoint;            // the opening: the sun's size as the point of light it starts as
 uniform float uArrive[${MAX}];      // the opening: each world's arrival, 0 to 1
@@ -324,13 +325,13 @@ void main() {
   // The opening draws the orbit lines round from the far side, both ways at once.
   vec3 planeAt = uEye + ray * planeT;
   float around = abs(mod(atan(planeAt.z, planeAt.x) - atan(-uEye.z, -uEye.x) + 3.14159265, 6.2831853) - 3.14159265) / 3.14159265;
-  float orbitDraw = 1.0 - smoothstep(uReveal.w * 1.06 - 0.06, uReveal.w * 1.06, around);
+  // (Each world's orbit line is drawn round from the far side, ahead of its world: uOrbit.)
   float nearest = 1e9; int found = -1; vec3 normal = vec3(0.0); float halo = 0.0; vec3 haloTint = vec3(0.0); float haloNear = 1e9; vec3 haloFront = vec3(0.0);
   for (int i = 0; i < ${MAX}; i++) {
     if (i >= uCount) break;
     if (uOnly >= 0 && i != uOnly) continue;
     vec3 oc = uEye - uWorld[i].xyz; float r = uWorld[i].w;
-    trace += 1.0 - smoothstep(0.0, planeW * 1.5 + 1e-5, abs(planeR - length(uWorld[i].xz)));
+    trace += (1.0 - smoothstep(0.0, planeW * 1.5 + 1e-5, abs(planeR - length(uWorld[i].xz)))) * (1.0 - smoothstep(uOrbit[i] * 1.06 - 0.06, uOrbit[i] * 1.06, around));
     float b = dot(oc, ray), cc = dot(oc, oc) - r * r, disc = b * b - cc;
     if (disc > 0.0) { float t = -b - sqrt(disc); if (t > 0.0 && t < nearest) { nearest = t; found = i; normal = normalize(oc + ray * t); } }
     else if (b < 0.0) {
@@ -351,7 +352,8 @@ void main() {
   vec2 sunDirection = toSun / max(length(toSun), 0.00001);
   // The opening (opening.ts): the sun grows from a point, flaring a little past itself.
   // As a point it matches the loading veil's point of light (index.html), in pixels.
-  float sunGrown = clamp(uReveal.x, 0.0, 1.0), sunSize = mix(uSunPoint, 1.0, sunGrown), sunFlare = max(1.0, uReveal.x);
+  // Before ignition it gathers: swelling to twice its size and brightening (uReveal.w).
+  float sunGrown = clamp(uReveal.x, 0.0, 1.0), sunSize = mix(uSunPoint * (1.0 + 1.1 * uReveal.w), 1.0, sunGrown), sunFlare = max(1.0, uReveal.x) * (1.0 + 0.7 * uReveal.w * (1.0 - sunGrown));
   vec3 sunLight = vec3(1.0, 0.98, 0.94) * exp(-sunDistance * 42.0 / sunSize) * 2.4 * sunFlare;
   sunLight += mix(WARM, vec3(1.0, 0.8, 0.55), 0.5) * exp(-sunDistance * 11.0 / sunSize) * 0.8 * sunGrown * sunFlare;
   // The wide haze and the shafts are kept apart from the sun itself: a world beyond the sun
@@ -409,7 +411,7 @@ void main() {
   vec3 orbitLines = vec3(0.0);
 #ifdef MARK_ONLY
   // The wordmark's own pass (WordmarkCrisp) needs only what crosses the letters.
-  if (found < 0 && planeT > 0.01 && uOnly < 0) orbitLines = vec3(0.45, 0.62, 0.9) * min(trace, 1.0) * orbitDraw * clamp(1.0 - planeW * 2.5, 0.0, 1.0) * 0.1 * (1.0 - uShed.y) * (1.0 - uDive);
+  if (found < 0 && planeT > 0.01 && uOnly < 0) orbitLines = vec3(0.45, 0.62, 0.9) * min(trace, 1.0) * clamp(1.0 - planeW * 2.5, 0.0, 1.0) * 0.1 * (1.0 - uShed.y) * (1.0 - uDive);
 #else
   if (found >= 0) {
     vec3 at = uEye + ray * nearest, centre = uWorld[found].xyz;
@@ -461,7 +463,7 @@ void main() {
     sunLight *= mix(1.0, 0.06, before); sunHaze *= mix(0.35, 0.06, before); sunShafts *= mix(0.12, 0.0, before);
   } else {
     c += sky * smoothstep(0.08, 0.5, sunDistance) * uReveal.z + haloTint;
-    if (planeT > 0.01 && uOnly < 0) { orbitLines = vec3(0.45, 0.62, 0.9) * min(trace, 1.0) * orbitDraw * clamp(1.0 - planeW * 2.5, 0.0, 1.0) * 0.1 * (1.0 - uShed.y) * (1.0 - uDive); c += orbitLines; }
+    if (planeT > 0.01 && uOnly < 0) { orbitLines = vec3(0.45, 0.62, 0.9) * min(trace, 1.0) * clamp(1.0 - planeW * 2.5, 0.0, 1.0) * 0.1 * (1.0 - uShed.y) * (1.0 - uDive); c += orbitLines; }
   }
 #endif
   vec3 markColour = vec3(0.0); float markCover = 0.0;
@@ -479,7 +481,7 @@ void main() {
       float flow = 0.6 + 0.4 * noise(vec3(markAt.xy * vec2(2.2, 3.1), uTime * 0.12));
       float halo = exp(-d / 0.06) * (1.0 - smoothstep(0.16, 0.29, d)) * flow * uMarkOpacity * resolved;
       c += mix(mix(vec3(1.0, 0.86, 0.66), WARM, 0.3), vec3(0.56, 0.89, 1.0), 0.15) * halo * (uMarkMode == 2 ? 0.5 : 0.38);
-      if (uRevealMark < 50.0) c += vec3(1.0, 0.86, 0.66) * halo * 1.6 * exp(-pow((sunDistance - (uRevealMark - 0.1)) / 0.08, 2.0));
+      if (uRevealMark < 50.0) { float k = uRevealMark - 0.1 - sunDistance; c += vec3(1.0, 0.86, 0.66) * halo * 1.6 * (k > 0.0 ? exp(-k / 0.25) : exp(-pow(k / 0.07, 2.0))); }
     }
     if (cover > 0.0) {
       vec3 mark = vec3(0.008, 0.016, 0.039), rimColour = mix(vec3(1.0, 0.86, 0.66), WARM, 0.3);
@@ -511,7 +513,8 @@ void main() {
       }
       mark = mix(mark, vec3(1.0, 0.93, 0.84), line * lineStrength);
       // The opening: the shafts' front lights the letters as it sweeps across them.
-      if (uRevealMark < 50.0) mark += rimColour * 2.2 * exp(-pow((sunDistance - (uRevealMark - 0.1)) / 0.06, 2.0));
+      // Each letter kindles as the front reaches it, then settles back to its resting glow.
+      if (uRevealMark < 50.0) { float k = uRevealMark - 0.1 - sunDistance; mark += rimColour * 2.4 * (k > 0.0 ? exp(-k / 0.2) : exp(-pow(k / 0.05, 2.0))); }
       // Orbit lines nearer than the letters still cross them.
       if (planeT > 0.0 && planeT < markAt.z - 0.05) mark += orbitLines;
       markColour = mark; markCover = cover;
@@ -593,7 +596,7 @@ void main() {
   color = vec4(c / 12.0, 1.0);
 }`
 /** Every uniform the galaxy's fragment shader reads, looked up once per context. */
-const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uField', 'uFieldBounds', 'uFieldDecode'] as const
+const UNIFORMS = ['uShed', 'uAmbience', 'uDive', 'uDim', 'uFrame', 'uSize', 'uTime', 'uScale', 'uEye', 'uRight', 'uUp', 'uForward', 'uTan', 'uOnly', 'uPopulation', 'uCount', 'uWorld', 'uLand', 'uSea', 'uKind', 'uMaps', 'uClose', 'uCloseIndex', 'uMarkMode', 'uMarkCentre', 'uMarkRight', 'uMarkUp', 'uMarkOpacity', 'uMarkSun', 'uMarkShape', 'uMarkShape2', 'uMarkCrisp', 'uReveal', 'uRevealMark', 'uSunPoint', 'uArrive', 'uGlowIndex', 'uGlow', 'uGlowColour', 'uGlowTime', 'uOrbit', 'uField', 'uFieldBounds', 'uFieldDecode'] as const
 const smootherstep = (t: number) => { t = Math.min(1, Math.max(0, t)); return t * t * t * (t * (t * 6 - 15) + 10) }
 const rgb = (hex: number): [number, number, number] => [((hex >> 16) & 255) / 255, ((hex >> 8) & 255) / 255, (hex & 255) / 255]
 type Vec = [number, number, number]
@@ -866,7 +869,10 @@ export class Galaxy {
     // The opening: the first showing after the page loads, unless motion is reduced. Any tap,
     // click, wheel or key goes straight to the settled lobby.
     const intro = Math.round(introMode.value)
-    if (intro > 0 && !openingPlayed && !this.reduced.matches) { this.opening = { start: null, mode: intro as OpeningMode }; openingPlayed = true }
+    // The first load of a browser session plays it in full, later loads a short version
+    // (openingPace). Coming back from a world: only the name, kindled again (returningMark).
+    if (intro > 0 && !openingPlayed && !this.reduced.matches) { this.opening = { start: null, mode: intro as OpeningMode, pace: openingPace() }; openingPlayed = true }
+    else if (openingPlayed && !this.reduced.matches) this.returning = performance.now()
     for (const type of ['pointerdown', 'keydown', 'wheel'] as const) window.addEventListener(type, () => { if (this.opening) { this.opening = null; this.chrome(null); this.wake = 2 } }, { capture: true, passive: true, signal })
     canvas.addEventListener('webglcontextlost', event => {
       if (this.canvas !== canvas || this.gl !== gl) return
@@ -1074,18 +1080,24 @@ export class Galaxy {
     this.framing = this.framing.map((v, i) => framingMoves ? mix(v, frameGoal[i], perFrame(0.18, elapsed)) : frameGoal[i]) as Vec
     const places = this.places(time), view = this.camera(places), worlds = this.options.worlds
     // The continuous opening (opening.ts): held at the point of light while loading, then by the clock.
+    // The lowest graphics level holds the lobby still, as reduced motion does: no opening there.
+    if (still && this.opening && this.openingAt === null) { this.opening = null; this.chrome(null) }
     // The planet glow: none while the opening plays or behind a panel; the chosen world keeps its own.
     const lobby = this.opening === null && this.backdrop >= 1 && hoverGlowIntensity.value > 0
     const glowChanging = this.glow.step(lobby ? glowTarget({ pressed: this.pressId, hovered: this.hoverId, focused: this.focusId, chosen: this.chosen >= 0 ? worlds[this.chosen]?.id : null }) : null, elapsed)
     const glowMoving = glowChanging || (this.glow.strength > 0 && !this.reduced.matches && hoverGlowSpeed.value > 0 && !this.glow.chosen)
     let reveal = this.stepOpening(places)
     if (this.leaving !== null) reveal = { ...reveal, ...leavingMark((performance.now() - this.leaving) / 1000) }
+    else if (this.returning !== null) {
+      const t = (performance.now() - this.returning) / 1000
+      if (t > RETURN_SECONDS) this.returning = null; else reveal = { ...reveal, ...returningMark(t) }
+    }
     if (reveal.reach !== 1) view.eye = [this.target[0] + (view.eye[0] - this.target[0]) * reveal.reach, this.target[1] + (view.eye[1] - this.target[1]) * reveal.reach, this.target[2] + (view.eye[2] - this.target[2]) * reveal.reach]
     const arrival = places.map((_, i) => reveal.arrive[this.lanes(places)[i]] ?? 1)
     const mark = this.stepMark(elapsed, still)
     this.markView = view; this.markPlaced = mark.placement
     // Held still, draw only while something is moving; the last frame stays on the canvas.
-    const moving = glowMoving || this.opening !== null || (this.leaving !== null && performance.now() - this.leaving < LEAVING_SECONDS * 1000 + 100) || mark.moving || this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
+    const moving = glowMoving || this.opening !== null || this.returning !== null || (this.leaving !== null && performance.now() - this.leaving < LEAVING_SECONDS * 1000 + 100) || mark.moving || this.resting || framingMoves || !this.facingSettled || this.dim !== this.backdrop || this.drag !== null || this.pointers.size > 0 || !this.swingResting || this.diving || this.dive > 0 || (this.chosen >= 0 && !this.arrived) || !this.settled
     if (still && !moving && this.wake <= 0) { this.idle++; return }
     this.wake = Math.max(0, this.wake - 1)
     // The wordmark's field is baked (first, and if drawn much larger) before the frame starts.
@@ -1111,7 +1123,8 @@ export class Galaxy {
       gl.uniform1i(u.uCount, Math.min(MAX, worlds.length))
       gl.uniform4fv(u.uWorld, places.flatMap((p, i) => [...p.position, Math.max(1e-3, p.radius * arrival[i])]))
       const settled = reveal === SETTLED
-      gl.uniform4f(u.uReveal, reveal.sun, settled ? 99 : reveal.front, reveal.stars, reveal.orbits); gl.uniform1f(u.uRevealMark, settled ? 99 : reveal.markFront)
+      gl.uniform4f(u.uReveal, reveal.sun, settled ? 99 : reveal.front, reveal.stars, reveal.sun > 0 ? 0 : reveal.swell); gl.uniform1f(u.uRevealMark, settled ? 99 : reveal.markFront)
+      gl.uniform1fv(u.uOrbit, places.length ? places.map((_, i) => reveal.orbits[this.lanes(places)[i]] ?? 1) : [1])
       gl.uniform1fv(u.uArrive, arrival.length ? arrival : [1])
       const glowAt = this.glow.id ? worlds.findIndex(w => w.id === this.glow.id) : -1, glowWorld = worlds[glowAt]
       gl.uniform1i(u.uGlowIndex, glowAt < MAX ? glowAt : -1); gl.uniform1f(u.uGlowTime, (performance.now() / 1000) % 1000)
@@ -1176,12 +1189,14 @@ export class Galaxy {
   private wantGlow(kind: 'hoverId' | 'focusId' | 'pressId', id: string | null): void { if (this[kind] !== id) { this[kind] = id; this.wake = 2 } }
   /** performance.now() when a world was chosen, while the name un-reveals; null in the lobby. */
   private leaving: number | null = null
+  /** performance.now() when the lobby came back from a world, while the name kindles again. */
+  private returning: number | null = null
   /** The continuous opening, while it plays: started when loading ends (null until then). */
-  private opening: { start: number | null; mode: OpeningMode } | null = null
+  private opening: { start: number | null; mode: OpeningMode; pace: number } | null = null
   /** For screenshots only: holds the opening at this many seconds in. */
   openingAt: number | null = null
   /** Plays the opening again now (for screenshots and checks). */
-  replayOpening(mode: number): void { if (mode > 0 && !this.reduced.matches) { this.opening = { start: performance.now(), mode: mode as OpeningMode }; this.wake = 2 } }
+  replayOpening(mode: number, pace = 1): void { if (mode > 0 && !this.reduced.matches) { this.opening = { start: performance.now(), mode: mode as OpeningMode, pace }; this.wake = 2 } }
   /**
    * Holds the lobby's own controls (the hint, the links, the preview menu) while the opening
    * plays and fades them in as it settles: index.html's html[data-opening] rules. A skip
@@ -1199,7 +1214,7 @@ export class Galaxy {
     if (!o) return SETTLED
     if (o.start === null && document.documentElement.dataset.boot !== 'loading') o.start = performance.now()
     const at = this.openingAt ?? (o.start === null ? -1 : (performance.now() - o.start) / 1000)
-    const state = openingState(at, o.mode, places.length)
+    const state = openingState(at, o.mode, places.length, o.pace)
     if (state.done) {
       this.opening = null
       // Let the controls' fade in finish, then drop the attribute.
