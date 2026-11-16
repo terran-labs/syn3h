@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('../../', import.meta.url))
 const origin = process.env.SYN3H_URL, expected = process.env.UX_SOURCE_SHA, out = process.env.UX_EVIDENCE_DIR
-assert.ok(origin && expected && out && process.env.UX_DOCUMENT_SHA256 && process.env.UX_RENDERER_MODULE_PATH && process.env.UX_RENDERER_MODULE_SHA256)
+assert.ok(origin && expected && out && process.env.UX_DOCUMENT_SHA256 && process.env.UX_RENDERER_MANIFEST)
 const deadline = Date.now() + 240000
 const budget = cap => { const left = Math.min(cap, deadline - Date.now()); assert.ok(left > 0, 'fixture deadline'); return left }
 async function bounded(promise, cap = 15000) {
@@ -28,54 +28,115 @@ function clean() {
 }
 clean()
 const local = Object.fromEntries(await Promise.all(sources.map(async p => [p, await readFile(new URL(`../../${p}`, import.meta.url), 'utf8')])))
+const rendererManifest = JSON.parse(await readFile(process.env.UX_RENDERER_MANIFEST, 'utf8'))
+assert.ok(Array.isArray(rendererManifest.chunks) && rendererManifest.chunks.length > 0)
+assert.ok(rendererManifest.chunks.every(c => typeof c.path === 'string' && c.path.startsWith('/') && /^[0-9a-f]{64}$/.test(c.sha256)))
+assert.equal(new Set(rendererManifest.chunks.map(c => c.path)).size, rendererManifest.chunks.length)
+report.rendererManifestSha256 = hash(await readFile(process.env.UX_RENDERER_MANIFEST))
 report.sourceHashes = Object.fromEntries(sources.map(p => [p, hash(local[p])]))
 let browser, primary
 async function attempt(label, fn) { try { await fn() } catch (e) { report.errors.push({ label, error: String(e) }) } }
 try {
   browser = await bounded(chromium.launch({ channel: 'chrome', headless: true }), 30000)
   for (const choice of ['keep', 'switch-and-recover']) {
-    const row = { choice, rendererModules: [], executed: {}, documents: [], console: [], expectedLossErrors: [], lost: false }
+    const row = { choice, epochs: [], expectedLossErrors: [] }
     report.cases.push(row)
     const context = await bounded(browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' }))
     const page = await bounded(context.newPage())
     page.setDefaultTimeout(15000)
     const pending = [], responseErrors = []
+    let epoch = null, allowedNavigations = 1, lossWindow = null
+    const requestEpoch = new WeakMap()
     page.on('pageerror', e => responseErrors.push(`pageerror: ${String(e)}`))
+    page.on('request', request => {
+      try {
+        if (request.frame() !== page.mainFrame()) return
+        if (request.isNavigationRequest() && request.resourceType() === 'document') {
+          assert.ok(row.epochs.length < allowedNavigations, 'unexpected main-frame navigation')
+          epoch = { sequence: row.epochs.length + 1, requestURL: request.url(), committed: false, identity: null, document: null, executed: {}, rendererModules: {} }
+          row.epochs.push(epoch)
+        }
+        if (request.resourceType() === 'script') assert.ok(epoch?.committed, 'script requested outside committed document epoch')
+        requestEpoch.set(request, epoch)
+      } catch (e) { responseErrors.push(String(e)) }
+    })
+    page.on('framenavigated', frame => {
+      if (frame !== page.mainFrame()) return
+      if (!epoch || frame.url() !== epoch.requestURL) responseErrors.push('main-frame commit differs from navigation request')
+      else epoch.committed = true
+    })
+    await page.exposeBinding('__recoveryDocumentReady', ({ frame }, identity) => {
+      if (frame !== page.mainFrame() || !epoch || epoch.identity) { responseErrors.push('unexpected document identity'); return }
+      epoch.identity = identity
+    })
+    await page.addInitScript(() => {
+      const identity = { token: crypto.randomUUID(), timeOrigin: performance.timeOrigin }
+      window.__recoveryDocument = identity
+      void window.__recoveryDocumentReady(identity)
+    })
+    page.on('websocket', socket => socket.on('framereceived', event => {
+      try {
+        const message = JSON.parse(String(event.payload))
+        if (['update', 'full-reload', 'prune'].includes(message.type)) responseErrors.push('HMR invalidates source proof')
+      } catch { /* Ordinary non-JSON gameplay frames are not HMR. */ }
+    }))
     page.on('console', message => {
       if (message.type() !== 'error') return
-      const text = message.text()
-      if (row.lost && text.startsWith('THREE.WebGPURenderer: WebGL Device Lost:')) row.expectedLossErrors.push(text)
-      else responseErrors.push(`console: ${text}`)
+      const item = { text: message.text(), epoch: epoch?.sequence ?? null }
+      if (lossWindow && item.epoch === lossWindow.epoch) lossWindow.errors.push(item)
+      else responseErrors.push(`console: ${item.text}`)
     })
     page.on('response', response => {
+      const request = response.request(), owner = requestEpoch.get(request)
       const task = (async () => {
-        const request = response.request(), url = new URL(response.url())
+        const url = new URL(response.url())
         if (request.resourceType() !== 'document' && request.resourceType() !== 'script') return
+        assert.equal(request.frame(), page.mainFrame(), 'main-frame response only')
+        assert.ok(owner, 'request bound to a navigation epoch')
         assert.equal(url.origin, new URL(origin).origin, 'same-origin executed code')
         assert.equal(response.fromServiceWorker(), false)
         assert.equal(request.redirectedFrom(), null)
         assert.ok([200, 304].includes(response.status()))
-        const bytes = await bounded(response.body()) // 304 alone never passes; exact body proof still required.
+        const bytes = await bounded(response.body()) // Status alone is never evidence.
         if (request.resourceType() === 'document') {
+          assert.equal(request.isNavigationRequest(), true)
+          assert.equal(request.url(), owner.requestURL)
+          assert.equal(owner.document, null, 'one navigation response per epoch')
           assert.equal(hash(bytes), process.env.UX_DOCUMENT_SHA256)
-          row.documents.push({ url: response.url(), sha256: hash(bytes), status: response.status() })
+          owner.document = { url: response.url(), sha256: hash(bytes), status: response.status() }
         }
-        if (url.pathname === process.env.UX_RENDERER_MODULE_PATH) {
-          assert.equal(hash(bytes), process.env.UX_RENDERER_MODULE_SHA256)
-          row.rendererModules.push({ path: url.pathname, sha256: hash(bytes) })
+        const chunk = rendererManifest.chunks.find(c => c.path === url.pathname)
+        if (chunk) {
+          assert.equal(hash(bytes), chunk.sha256)
+          owner.rendererModules[chunk.path] = hash(bytes)
         }
         const path = url.pathname.slice(1)
         if (sources.includes(path)) {
           const match = bytes.toString().match(/sourceMappingURL=data:application\/json;base64,([^\s]+)/)
           assert.ok(match, `executed source map ${path}`)
           const map = JSON.parse(Buffer.from(match[1], 'base64').toString())
-          assert.ok(map.sourcesContent?.includes(local[path]), `executed source bytes ${path}`)
-          row.executed[path] = hash(bytes)
+          assert.ok(Array.isArray(map.sources) && Array.isArray(map.sourcesContent))
+          const matches = map.sources.map((name, index) => ({ name, index })).filter(({ name }) => {
+            const resolved = new URL(name, new URL(map.sourceRoot || '.', response.url())).href
+            return resolved === new URL(`/${path}`, origin).href || resolved === new URL(`file://${root}${path}`).href || name === `${root}${path}`
+          })
+          assert.equal(matches.length, 1, `unique source identity ${path}`)
+          assert.equal(map.sourcesContent[matches[0].index], local[path], `matching identity and content ${path}`)
+          owner.executed[path] = { sha256: hash(bytes), sourceIdentity: matches[0].name }
         }
       })().catch(e => responseErrors.push(String(e)))
       pending.push(task)
     })
     async function drain() { for (let i = 0; i < pending.length;) { const end = pending.length; await bounded(Promise.all(pending.slice(i, end))); i = end } }
+    async function verifyEpoch(expectedSequence) {
+      await drain()
+      assert.equal(epoch.sequence, expectedSequence)
+      assert.ok(epoch.committed && epoch.identity && epoch.document)
+      assert.deepEqual(await page.evaluate(() => window.__recoveryDocument), epoch.identity)
+      for (const path of sources) assert.ok(epoch.executed[path], `epoch ${expectedSequence} source ${path}`)
+      for (const chunk of rendererManifest.chunks) assert.equal(epoch.rendererModules[chunk.path], chunk.sha256)
+      assert.deepEqual(responseErrors, [])
+    }
     const wait = (fn, arg, ms = 15000) => page.waitForFunction(fn, arg, { timeout: budget(ms) })
     const state = () => page.evaluate(() => syn3h.game.quality.getQualityState())
     try {
@@ -85,6 +146,7 @@ try {
       await wait(() => window.syn3h?.shell.playing && syn3h.game.tick > 30 && !syn3h.game.quality.isLoading, null, 60000)
       await page.locator('.boot-veil').waitFor({ state: 'hidden', timeout: budget(30000) })
       assert.equal(await page.evaluate(() => syn3h.game.backend), 'webgl')
+      await verifyEpoch(1)
       if (await page.evaluate(() => !!document.pointerLockElement)) await page.keyboard.press('Escape')
       const card = page.locator('.wi-card[data-section=performance]')
       await card.locator('.wi-head').click()
@@ -136,7 +198,7 @@ try {
       assert.ok(row.samples.eligibleCalls >= 200); assert.equal(row.samples.exhausted, false)
       if (choice === 'switch-and-recover') {
         await drain(); assert.deepEqual(responseErrors, [])
-        row.lost = true
+        lossWindow = { epoch: epoch.sequence, errors: [] }
         row.loss = await page.evaluate(() => {
           const g = syn3h.game, gl = g.canvas.getContext('webgl2')
           if (!gl || gl.isContextLost()) throw new Error('live WebGL2 context required')
@@ -145,7 +207,7 @@ try {
           const identity = { timeOrigin: performance.timeOrigin, rendererClass: g.renderer.constructor.name, tick: g.tick, backend: g.backend }
           window.__rendererBeforeLoss = g.renderer
           window.__contextLossEvent = null
-          g.canvas.addEventListener('webglcontextlost', e => { window.__contextLossEvent = { trusted: e.isTrusted, lost: gl.isContextLost(), time: performance.now() } }, { once: true })
+          g.canvas.addEventListener('webglcontextlost', e => { window.__contextLossEvent = { trusted: e.isTrusted, lost: gl.isContextLost(), time: performance.now(), statusMessage: e.statusMessage || '', reason: null } }, { once: true, capture: true })
           ext.loseContext()
           return identity
         })
@@ -153,7 +215,14 @@ try {
         row.lossEvent = await page.evaluate(() => window.__contextLossEvent)
         assert.equal(row.lossEvent?.trusted, true); assert.equal(row.lossEvent.lost, true)
         assert.match(await page.locator('#syn3h-device-lost').innerText(), /WebGL context was lost/)
+        await drain()
+        const expectedLoss = `THREE.WebGPURenderer: WebGL Device Lost:\n\nMessage: ${row.lossEvent.statusMessage || 'Unknown reason'}` + (row.lossEvent.reason ? `\nReason: ${row.lossEvent.reason}` : '')
+        assert.equal(lossWindow.errors.length, 1)
+        assert.equal(lossWindow.errors[0].text, expectedLoss)
+        row.expectedLossErrors = lossWindow.errors
+        lossWindow = null // Close expectation before native Reload; recovery errors cannot qualify.
         await persist()
+        allowedNavigations = 2
         await Promise.all([page.waitForEvent('load', { timeout: budget(30000) }), page.locator('#syn3h-device-lost').getByRole('button', { name: 'Reload', exact: true }).click()])
         await wait(() => window.syn3h?.shell.playing && syn3h.game.tick > 30 && syn3h.game.performance.drawCalls > 0, null, 60000)
         row.reloaded = await page.evaluate(() => ({ timeOrigin: performance.timeOrigin, rendererClass: syn3h.game.renderer.constructor.name, tick: syn3h.game.tick, backend: syn3h.game.backend, live: !syn3h.game.canvas.getContext('webgl2').isContextLost(), staleReferenceAbsent: !('__rendererBeforeLoss' in window) }))
@@ -164,9 +233,12 @@ try {
         assert.equal(row.expectedLossErrors.length, 1)
       }
       await drain(); assert.deepEqual(responseErrors, [])
-      assert.ok(row.rendererModules.length >= (choice === 'keep' ? 1 : 2), 'actual pinned renderer module per document')
-      assert.ok(row.documents.length >= (choice === 'keep' ? 1 : 2))
-      for (const path of sources) assert.ok(row.executed[path], `executed ${path}`)
+      await verifyEpoch(choice === 'keep' ? 1 : 2)
+      assert.equal(row.epochs.length, choice === 'keep' ? 1 : 2)
+      if (row.epochs.length === 2) {
+        assert.notEqual(row.epochs[0].identity.token, row.epochs[1].identity.token)
+        assert.notEqual(row.epochs[0].identity.timeOrigin, row.epochs[1].identity.timeOrigin)
+      }
       row.status = 'passed'; await persist()
     } catch (e) { row.status = 'failed'; row.error = String(e); throw e }
     finally {
@@ -184,6 +256,9 @@ try {
 finally {
   if (browser) await attempt('browser close', () => bounded(browser.close(), 5000))
   await attempt('source after', async () => clean())
+  for (const row of report.cases) {
+    if (row.responseErrors?.length) report.errors.push({ label: 'post-browser late response/page errors', errors: row.responseErrors })
+  }
   if (report.errors.length) report.status = 'failed'
   await attempt('final receipt', persist)
 }
