@@ -43,7 +43,8 @@ import { Scoreboard, parseScoreRow } from './Scoreboard'
 import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
 import type { ParamPanel } from './ParamPanel'
 import { MatchHud, type MatchState } from './MatchHud'
-import { creditsHtml } from './data/credits'
+import { aboutHtml, showAboutTab, wireAbout, type AboutTab } from './updates/about'
+import { UpdateNotice } from './updates/UpdateNotice'
 import { generateName } from './data/names'
 import { Minimap, type MapEntity } from './Minimap'
 import { bootLoading } from './LoadingScreen'
@@ -155,13 +156,13 @@ export class Shell implements System {
         <section data-panel="music">${heading('Music & Sound')}<label for="music-volume">Music volume <output id="music-volume-value"></output></label><input id="music-volume" type="range" min="0" max="1" step="0.01">${[masterVolume,effectsVolume,engineVolume,dirtVolume,windVolume,worldVolume,remoteVolume,cuesVolume].map(p=>`<label>${p.def.label}<input data-audio-param="${p.def.id}" type="range" min="0" max="1" step="0.01" value="${p.value}"></label>`).join('')}<button class="shell-mute" aria-pressed="false">Mute all audio</button><p class="panel-note">The music is generated as you play and follows what you do. It starts with your first click or key press.</p>${back}</section>
         <section data-panel="multiplayer">${heading('Multiplayer')}<label class="mode-control" hidden>Game mode<select id="game-mode">${modeChoices.map(mode => `<option value="${mode.value}">${mode.label}</option>`).join('')}</select></label><p class="multiplayer-room"></p><div class="invite-qr"></div><p class="invite-link"></p><button class="shell-invite">Copy invite link</button><button data-join>Show on screen · J</button><div class="shell-scoreboard" aria-label="Player scores"></div>${back}</section>
         <section data-panel="advanced">${heading('Advanced Settings')}<p class="world-lock-note" hidden>Sliders locked by host.</p><div class="advanced-host"></div>${back}</section>
-        <section data-panel="about">${heading('About Syn3h')}${creditsHtml}${back}</section>
+        <section data-panel="about">${heading('About Syn3h')}${aboutHtml()}${back}</section>
       </div>
       <footer class="lobby-footer"><span class="shell-message" role="status" aria-live="polite"></span><span class="build-line">${buildLine}</span></footer>
       </div>
       <div class="galaxy-ui" hidden><div class="galaxy-labels"></div><p class="galaxy-hint">Drag to look around. Tap a world to go there.</p><nav class="lobby-links galaxy-links" aria-label="Lobby">${LOBBY_LINKS}</nav></div>
     </section>
-    <dialog class="in-play-about" aria-labelledby="in-play-about-title"><header><h2 id="in-play-about-title" tabindex="-1">About Syn3h</h2><button type="button" class="panel-back about-back" aria-label="Back to world"><span aria-hidden="true">←</span><span>Back<span class="about-back-long"> to world</span></span></button></header><div class="in-play-about-body">${creditsHtml}</div></dialog>
+    <dialog class="in-play-about" aria-labelledby="in-play-about-title"><header><h2 id="in-play-about-title" tabindex="-1">About Syn3h</h2><button type="button" class="panel-back about-back" aria-label="Back to world"><span aria-hidden="true">←</span><span>Back<span class="about-back-long"> to world</span></span></button></header><div class="in-play-about-body">${aboutHtml()}</div></dialog>
     <aside class="shell-hud" hidden><div class="shell-speed"><strong>0</strong><span>MPH</span></div><div class="hud-scoreboard"></div></aside>
     <nav class="hud-navigation" aria-label="Game menu" hidden><button class="shell-menu-button inspector-toggle" type="button" aria-label="Open the panels" aria-pressed="false"><span aria-hidden="true">≡</span><span class="nav-label"> Panels</span></button></nav>
     <div class="exit-confirm" role="alertdialog" aria-modal="true" aria-labelledby="exit-confirm-title" aria-describedby="exit-confirm-text" hidden><div class="exit-confirm-card"><strong id="exit-confirm-title">Leave this world?</strong><p id="exit-confirm-text">You will return to the galaxy.</p><div class="exit-confirm-actions"><button type="button" class="exit-stay">Stay</button><button type="button" class="exit-leave">Leave world</button></div></div></div>
@@ -244,6 +245,15 @@ export class Shell implements System {
     exitConfirm.querySelector('.exit-leave')!.addEventListener('click', () => this.answerExit(true), { signal })
     players.querySelector('.rail-invite')!.addEventListener('click', () => this.openJoin(), { signal })
     players.querySelector('.rail-about')!.addEventListener('click', () => this.openAbout(), { signal })
+    // About and Updates, the same content in the lobby panel and the in-play guide.
+    for (const about of this.element.querySelectorAll<HTMLElement>('[data-panel="about"], .in-play-about')) wireAbout(about, signal)
+    // A newer live version: a banner in the lobby, a chip in the sidebar in play. What's new
+    // opens About at Updates wherever the player is.
+    this.updateNotice = new UpdateNotice(() => this.showUpdates(), signal)
+    // In the galaxy's footer flow, above the hint and the lobby links, so it covers neither
+    // and leaves with the galaxy when a panel opens or play starts.
+    this.element.querySelector('.galaxy-hint')!.before(this.updateNotice.banner)
+    command.append(this.updateNotice.chip)
     this.element.querySelector('.pause-about')!.addEventListener('click', () => this.openAbout(), { signal })
     const guide = this.element.querySelector<HTMLDialogElement>('.in-play-about')!
     guide.querySelector('.about-back')!.addEventListener('click', () => this.closeAbout(), { signal })
@@ -285,7 +295,7 @@ export class Shell implements System {
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-goto]')) button.addEventListener('click', () => this.showPanel(button.dataset.goto!), { signal })
     this.overlay.addEventListener('click', event => {
       const target = event.target as Element
-      if (this.panels.active !== 'index' && !target.closest('.lobby-panels, .galaxy-links') && !this.inviteOpen) this.showPanel('index')
+      if (this.panels.active !== 'index' && !target.closest('.lobby-panels, .galaxy-links, .update-banner') && !this.inviteOpen) this.showPanel('index')
     }, { signal })
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-open]')) button.addEventListener('click', () => this.openMenu(button.dataset.open!), { signal })
     for (const button of this.element.querySelectorAll('[data-join]')) button.addEventListener('click', () => this.openJoin(), { signal })
@@ -387,7 +397,14 @@ export class Shell implements System {
    * as a release (a Big Red send or a Yoink fling); then input is suspended, which also drops
    * held keys, so a key still down when the guide closes does nothing until pressed again.
    */
-  openAbout(): void {
+  readonly updateNotice: UpdateNotice
+  /** About at Updates: the in-play guide while playing, else the lobby About panel. */
+  showUpdates(): void {
+    if (this.playing) { this.openAbout('updates'); return }
+    this.showPanel('about')
+    showAboutTab(this.element.querySelector<HTMLElement>('[data-panel="about"]')!, 'updates')
+  }
+  openAbout(tab?: AboutTab): void {
     if (!this.playing || this.aboutOpen || this.inviteOpen || this.exitAsking || this.dropping) return
     this.cancelActions?.()
     this.aboutOpener = document.activeElement instanceof HTMLElement ? document.activeElement : undefined
@@ -395,6 +412,7 @@ export class Shell implements System {
     this.releaseCursor()
     this.game.input.suspended = true; this.game.input.poll(); this.touch.enabled = false
     const guide = this.element.querySelector<HTMLDialogElement>('.in-play-about')!
+    if (tab) showAboutTab(guide, tab)
     guide.showModal()
     guide.scrollTop = 0
     guide.querySelector<HTMLElement>('h2')!.focus({ preventScroll: true })
