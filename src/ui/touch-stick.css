@@ -79,3 +79,19 @@ html[data-touch-hand="left"] .syn3h-shell.exploration-ui.has-touch .shell-minima
   .touch-controls[data-hand="left"] .touch-actions { left: max(18px, env(safe-area-inset-left)); }
   .touch-controls[data-hand="left"] .touch-stick-hint { right: max(18px, env(safe-area-inset-right)); }
 }
+
+/* Phones: the minimap docks in the top right corner, in either hand. Lower down it sat over
+   the player's own vehicle; top left holds the gear selector, which does not mirror; the
+   heading line is centred and the Panels tab and readouts sit lower. The html[data-touch-hand]
+   prefix outranks the left-handed rule above, which still applies on tablets. */
+@media (max-width: 700px), (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  html[data-touch-hand] .syn3h-shell.exploration-ui.has-touch .shell-minimap {
+    top: max(12px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); bottom: auto; left: auto;
+    width: 96px; height: 96px;
+  }
+}
+/* Landscape phones: the speed and height readouts rise out of the stick's reach. Centred,
+   they sat where a thumb lands to drive. */
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .syn3h-shell.has-touch .focus-hud :is(.fh-left, .fh-right) { top: 30%; }
+}
