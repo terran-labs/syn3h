@@ -16,6 +16,7 @@ import { existsSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFile
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { loadApprovedPerformance, verifyPerformanceFiles, verifyPublishedPerformance } from './release-performance.mjs'
 import { compareVersions, isVersion, kindLine, matchReleases, nextVersion, parseHistory, parseVersion, releasesFromTsv } from './lib/release-version.mjs'
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -159,6 +160,13 @@ export function renderNotes(text, row, manifest = { images: [], gif: null }) {
 }
 
 /** Every release-download URL the body links for this tag, by file name. */
+/** Replace only the dedicated section, preserving all other release prose. */
+export function withPerformanceSection(notes, markdown) {
+  const normalized = notes.replace(/\r\n/g, '\n')
+  if ((normalized.match(/^### Performance$/gm) ?? []).length !== 1) throw new Error('Expected exactly one Performance section')
+  return normalized.replace(/^### Performance\n[\s\S]*?(?=^#{1,3} |$(?![\s\S]))/m, () => markdown.trimEnd() + '\n\n')
+}
+
 export function referencedAssets(body, tag, repo = GITHUB_REPO) {
   const prefix = `https://github.com/${repo}/releases/download/${tag}/`
   const names = new Set()
@@ -226,13 +234,26 @@ async function publish(tag, { assetsDir, dryRun, yes, latest }) {
   const dir = assetsDir ? resolve(assetsDir) : null
   if (dir && (!existsSync(dir) || !statSync(dir).isDirectory())) throw new Error(`no assets directory at ${dir}`)
   const manifest = readManifest(dir)
-  const body = renderNotes(readFileSync(notesPath(tag), 'utf8'), row, manifest)
-  const assets = [...(manifest.gif ? [manifest.gif] : []), ...manifest.images.map((i) => i.file)]
+  let notes = readFileSync(notesPath(tag), 'utf8'), performance = null
+  if (requiresPerformance(row)) {
+    const rows = history(), index = rows.findIndex(r => r.version === tag)
+    const baseline = rows.slice(0, index).filter(r => r.channel === 'production').at(-1)
+    if (!baseline || !dir) throw new Error('Performance publication requires the accepted baseline and an asset directory')
+    performance = loadApprovedPerformance({ version: tag, candidateCommit: commitOf(row.commit),
+      baselineCommit: commitOf(baseline.commit), baselineVersion: baseline.version,
+      assetBaseUrl: `https://github.com/${GITHUB_REPO}/releases/download/${tag}` })
+    notes = withPerformanceSection(notes, performance.markdown)
+  }
+  const body = renderNotes(notes, row, manifest)
+  const assets = [...(manifest.gif ? [manifest.gif] : []), ...manifest.images.map((i) => i.file), ...(performance ? performance.files.keys() : [])]
+  if (new Set(assets).size !== assets.length) throw new Error('Performance assets conflict with showcase assets')
 
   const problems = []
   for (const name of assets) {
     const path = join(dir, name)
-    if (!existsSync(path)) problems.push(`${MANIFEST} lists ${name}, which is not in ${dir}`)
+    if (performance?.files.has(name)) {
+      if (existsSync(path) && !readFileSync(path).equals(performance.files.get(name))) problems.push(`existing performance bytes differ: ${name}`)
+    } else if (!existsSync(path)) problems.push(`${MANIFEST} lists ${name}, which is not in ${dir}`)
     else if (statSync(path).size === 0) problems.push(`${name} is empty`)
   }
   for (const name of referencedAssets(body, tag)) if (!assets.includes(name)) problems.push(`the body links ${name}, which is not uploaded`)
@@ -275,7 +296,7 @@ async function publish(tag, { assetsDir, dryRun, yes, latest }) {
   print(`Marked Latest: ${latest ? 'only after all asset URLs pass verification' : 'no'}`)
   print(`Notes: ${notesPath(tag)}`)
   print(assets.length ? `Assets (${assets.length}) from ${dir}:` : 'Assets: none, so no Screenshots section')
-  for (const name of assets) print(`  ${name}  ${existsSync(join(dir, name)) ? statSync(join(dir, name)).size : 'missing'} bytes`)
+  for (const name of assets) print(`  ${name}  ${performance?.files.get(name)?.length ?? (existsSync(join(dir, name)) ? statSync(join(dir, name)).size : 'missing')} bytes`)
   if (problems.length) {
     print('Problems:')
     for (const p of problems) print(`  ${p}`)
@@ -300,6 +321,10 @@ async function publish(tag, { assetsDir, dryRun, yes, latest }) {
   let exists = false
   try { run('gh', ['release', 'view', tag, '--repo', GITHUB_REPO, '--json', 'tagName']); exists = true } catch { /* not there: good */ }
   if (exists) throw new Error(`a GitHub release for ${tag} already exists`)
+  if (performance) {
+    for (const [name, bytes] of performance.files) writeFileSync(join(dir, name), bytes)
+    verifyPerformanceFiles(dir, performance)
+  }
   writeFileSync(notesFile, body)
   for (const step of steps) {
     print(`$ ${step.map(shellQuote).join(' ')}`)
@@ -313,6 +338,7 @@ async function publish(tag, { assetsDir, dryRun, yes, latest }) {
     if (status !== 200) failed++
   }
   if (failed) throw new Error(`${failed} asset URL(s) did not answer 200`)
+  if (performance) await verifyPublishedPerformance(`https://github.com/${GITHUB_REPO}/releases/download/${tag}`, performance)
   if (latest) execFileSync('gh', ['release', 'edit', tag, '--repo', GITHUB_REPO, '--latest'], { cwd: REPO, stdio: 'inherit' })
   print(`PUBLISHED: https://github.com/${GITHUB_REPO}/releases/tag/${tag}`)
   return 0

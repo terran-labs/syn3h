@@ -71,13 +71,28 @@ export SYN3H_RELEASE_VERSION="$CALVER"
 PREV="$(awk -F '\t' '$5 == "production" { previous = $2 } END { print previous }' release-notes/history.tsv)"
 
 # --- Freeze ---------------------------------------------------------------------------------
-echo "Freezing $MILESTONE ($COMMIT)..."
-ID="$(tools/promote-stable.sh "release-$N: $NOTE" | tail -1)"
-DEST="$(cd ../Syn3h-stable/"$ID" && pwd)"
-printf '*.map\n' > "$DEST/dist/.assetsignore"
-# Every deploy carries each earlier release, and this one, under dist/v/ so that
-# https://www.syn3h.com/?v=<version> keeps serving it. A deploy without them breaks those links.
-node tools/frozen-versions.mjs carry "$DEST" "$CALVER" || fail "could not carry the frozen versions into the build"
+if [ -z "$DRY" ]; then
+  [ -n "${SYN3H_PREPARED_FROZEN:-}" ] || fail "normal promotion requires the measured prepared artifact"
+fi
+if [ -n "${SYN3H_PREPARED_FROZEN:-}" ]; then
+  [ -z "$DRY" ] || fail "prepared snapshot is for deployment only"
+  DEST="$(cd "$SYN3H_PREPARED_FROZEN" && pwd)"
+  ID="$(basename "$DEST")"
+else
+  echo "Freezing $MILESTONE ($COMMIT)..."
+  ID="$(tools/promote-stable.sh "release-$N: $NOTE" | tail -1)"
+  DEST="$(cd ../Syn3h-stable/"$ID" && pwd)"
+  printf '*.map\n' > "$DEST/dist/.assetsignore"
+  node tools/frozen-versions.mjs carry "$DEST" "$CALVER" || fail "could not carry frozen versions"
+fi
+# Dry runs prepare the exact artifact that the benchmark must measure. Normal
+# promotion cannot rebuild it after measurement or silently skip the evidence gate.
+if [ -z "$DRY" ]; then
+  [ -n "${SYN3H_PREPARED_FROZEN:-}" ] || fail "normal promotion requires the measured prepared artifact"
+  BASELINE_VERSION="$(awk -F '\t' '$5 == "production" { v=$1 } END { print v }' release-notes/history.tsv)"
+  BASELINE_COMMIT="$(git rev-parse "$PREV^{commit}")" || fail "accepted baseline is missing"
+  node tools/release-performance.mjs "$CALVER" "$DEST" "$(git rev-parse HEAD)" "$BASELINE_VERSION" "$BASELINE_COMMIT" || fail "performance evidence did not pass"
+fi
 echo "Frozen copy: $DEST"
 echo "Assets: $(find "$DEST/dist" -type f ! -name '*.map' ! -name .assetsignore | wc -l | tr -d ' ') files, $(du -sh "$DEST/dist" | cut -f1) with maps"
 

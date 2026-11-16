@@ -2,6 +2,7 @@
 import { createHash } from 'node:crypto'
 import { lstatSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { canonicalJson, compareEvidence, renderChart, renderPerformance, sha256 } from './performance-release/index.mjs'
 
 export const digestBytes = bytes => createHash('sha256').update(bytes).digest('hex')
@@ -70,4 +71,30 @@ export async function verifyPublishedPerformance(baseUrl, bundle, fetcher = fetc
     const actual = Buffer.from(await response.arrayBuffer())
     if (!actual.equals(expected)) throw new Error(`Published evidence bytes differ: ${name}`)
   }
+}
+
+/** Approval is a separately reviewed coordinator artifact, never read from submitted evidence.
+ * Build identities are additionally recomputed from the actual deployment directories. */
+export function loadApprovedPerformance({ version, candidateCommit, baselineCommit, baselineVersion,
+  candidateRoot = process.env.SYN3H_PERFORMANCE_CANDIDATE,
+  baselineRoot = process.env.SYN3H_PERFORMANCE_BASELINE,
+  approvalPath = process.env.SYN3H_PERFORMANCE_APPROVAL,
+  evidencePath = process.env.SYN3H_PERFORMANCE_EVIDENCE,
+  assetBaseUrl }) {
+  if (![candidateRoot, baselineRoot, approvalPath, evidencePath].every(Boolean)) throw new Error('Performance requires both frozen builds, reviewed approval and original evidence')
+  const expected = JSON.parse(readFileSync(approvalPath, 'utf8'))
+  const candidate = frozenIdentity(candidateRoot), baseline = frozenIdentity(baselineRoot)
+  if (candidate.version !== version || candidate.commit !== candidateCommit ||
+    baseline.version !== baselineVersion || baseline.commit !== baselineCommit) throw new Error('Performance frozen builds differ from release history or candidate')
+  if (canonicalJson(expected.candidate) !== canonicalJson(candidate) || canonicalJson(expected.baseline) !== canonicalJson(baseline)) throw new Error('Approved artifact identity differs from frozen bytes')
+  return performanceBundle(JSON.parse(readFileSync(evidencePath, 'utf8')), expected, version, assetBaseUrl)
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const [version, candidateRoot, candidateCommit, baselineVersion, baselineCommit] = process.argv.slice(2)
+  try {
+    const bundle = loadApprovedPerformance({ version, candidateRoot, candidateCommit, baselineVersion, baselineCommit,
+      assetBaseUrl: `https://github.com/terran-labs/syn3h/releases/download/${version}` })
+    console.log(`PERFORMANCE GATE OK: ${bundle.report.status}, evidence ${bundle.report.evidenceSha256}`)
+  } catch (error) { console.error(`PERFORMANCE GATE FAILED: ${error.message}`); process.exitCode = 1 }
 }
