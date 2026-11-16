@@ -223,10 +223,10 @@
       html[data-intro] .boot-still { position: fixed; left: 0; right: 0; top: calc(50% + 34px + 3.3em); }
       html[data-intro][data-boot="done"] .boot-veil { transition: opacity 0.3s ease, visibility 0s linear 0.3s; }
       /* While the opening plays, the lobby's own controls (hint, links, settings gear and
-         version, update banner, preview menu) wait; they fade in as it settles.
+         version, update banner) wait; they fade in as it settles.
          The galaxy sets data-opening (src/ui/galaxy/Galaxy.ts); a skip clears it at once. */
-      html[data-opening="playing"] :is(.galaxy-hint, .galaxy-links, .wordmark-switch, .lobby-gear-dock, .update-banner) { opacity: 0; visibility: hidden; }
-      html[data-opening="settling"] :is(.galaxy-hint, .galaxy-links, .wordmark-switch, .lobby-gear-dock, .update-banner) { transition: opacity 0.5s ease; }
+      html[data-opening="playing"] :is(.galaxy-hint, .galaxy-links, .lobby-gear-dock, .update-banner) { opacity: 0; visibility: hidden; }
+      html[data-opening="settling"] :is(.galaxy-hint, .galaxy-links, .lobby-gear-dock, .update-banner) { transition: opacity 0.5s ease; }
     </style>
     <script>
       // Never select, part 2. Some engines start a selection or a drag in spite of the

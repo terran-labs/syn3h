@@ -29,7 +29,7 @@ import * as planets from './world/planets'
 import { applyPlanet, decodeWorld } from './world/planets'
 import { WaterEffects } from './world/water/WaterEffects'
 import { WeatherSystem, applyWeatherQuery, setWeatherClock } from './world/weather'
-import { applyWordmarkQuery } from './ui/brand/wordmarkSwitch'
+import { applyWordmarkQuery } from './ui/brand/wordmarkFlags'
 
 async function main(): Promise<void> {
   initializeFrozenResources(location.href)
@@ -97,7 +97,7 @@ async function main(): Promise<void> {
   // copies, whose owners apply it themselves. `?weather=0.5` sets the storminess for a look.
   game.add(new WeatherSystem(() => terrain, () => [slot.current, ...bots.vehicles]))
   applyWeatherQuery(location.search)
-  // ?wordmark=0..3 previews the lobby wordmark's placements, with a chip to flip them.
+  // ?wordmark= and ?intro=: silent developer overrides for the lobby's name and opening.
   applyWordmarkQuery(location.search)
   // The round planet is drawn relative to the camera: place it after the camera has moved.
   game.add({ update: () => (terrain as { afterCamera?: () => void }).afterCamera?.() })

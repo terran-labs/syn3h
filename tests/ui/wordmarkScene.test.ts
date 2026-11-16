@@ -26,13 +26,14 @@ describe('wordmark in space', () => {
   })
 })
 
-describe('wordmark preview switch', () => {
-  it('sets the placement from ?wordmark=, clamped, and does nothing without the flag', async () => {
-    const { applyWordmarkQuery, wordmarkSwitchEnabled } = await import('../../src/ui/brand/wordmarkSwitch')
+describe('wordmark developer overrides', () => {
+  it('sets the placement and opening from ?wordmark= and ?intro=, clamped, and nothing without them', async () => {
+    const { applyWordmarkQuery } = await import('../../src/ui/brand/wordmarkFlags')
     const { wordmarkPlacement } = await import('../../src/ui/brand/wordmarkScene')
-    expect(applyWordmarkQuery('?room=a')).toBe(false); expect(wordmarkSwitchEnabled()).toBe(false); expect(wordmarkPlacement.value).toBe(7)
-    expect(applyWordmarkQuery('?wordmark=99')).toBe(true); expect(wordmarkPlacement.value).toBe(7); expect(wordmarkSwitchEnabled()).toBe(true)
-    applyWordmarkQuery('?wordmark=-2'); expect(wordmarkPlacement.value).toBe(0)
+    const { introMode } = await import('../../src/ui/galaxy/opening')
+    expect(applyWordmarkQuery('?room=a')).toBe(false); expect(wordmarkPlacement.value).toBe(7); expect(introMode.value).toBe(2)
+    expect(applyWordmarkQuery('?wordmark=99')).toBe(true); expect(wordmarkPlacement.value).toBe(7)
+    applyWordmarkQuery('?wordmark=-2&intro=0'); expect(wordmarkPlacement.value).toBe(0); expect(introMode.value).toBe(0)
     // The placements that were removed fall back to the lobby's own.
     applyWordmarkQuery('?wordmark=5'); expect(wordmarkPlacement.value).toBe(7)
   })

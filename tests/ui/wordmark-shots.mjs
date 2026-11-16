@@ -90,7 +90,7 @@ try {
         await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + 220, y + 40, { steps: 10 })
         await page.screenshot({ path: `${out}/${tag}-drag.png` }); await page.mouse.up()
       }
-      console.log(tag, JSON.stringify(await page.evaluate(() => { const s = syn3h.shell.galaxy.wordmarkStats(); return { mode: s.mode, density: s.fieldDensity, bakeMs: +s.fieldBakeMs.toFixed(1), address: location.search, chip: !!document.querySelector('.wordmark-switch') } })))
+      console.log(tag, JSON.stringify(await page.evaluate(() => { const s = syn3h.shell.galaxy.wordmarkStats(); return { mode: s.mode, density: s.fieldDensity, bakeMs: +s.fieldBakeMs.toFixed(1) } })))
       await context.close()
     }
   }

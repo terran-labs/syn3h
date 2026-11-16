@@ -20,7 +20,6 @@ import { introMode, LEAVING_SECONDS, leavingMark, openingState, SETTLED, type Op
 /** The opening plays once per page load: returning from a world goes straight to the lobby. */
 let openingPlayed = false
 import { WordmarkCrisp } from '../brand/wordmarkCrisp'
-import { mountWordmarkSwitch, wordmarkSwitchEnabled, type WordmarkSwitch } from '../brand/wordmarkSwitch'
 import type { ParamValue } from '../../../shared/params'
 import { ORDINARY_BODY, planetById, type PlanetBody } from '../../world/planets'
 import { qualityFrame, qualityScale, qualityShed } from '../quality/ladder'
@@ -860,8 +859,6 @@ export class Galaxy {
       this.markOverlay = new WordmarkOverlay(); canvas.after(this.markOverlay.element)
       // The in-space letters' full-resolution pass, made only when a placement in space is chosen.
       this.markCrisp = null
-      // ?wordmark= in the address: the owner's chip for flipping between placements.
-      if (wordmarkSwitchEnabled()) this.markSwitch = mountWordmarkSwitch(this.host, mode => this.replayOpening(mode))
       if (!this.logo.ok) { this.logo.dispose(); this.logo = null }
       else if (this.logoSeen || this.reduced.matches || this.options.still?.()) this.logo.skipIntro()
     }
@@ -914,7 +911,6 @@ export class Galaxy {
     this.logo?.dispose(); this.logo = null; this.options.onLogo?.(false)
     this.markOverlay?.remove(); this.markOverlay = null
     this.markCrisp?.dispose(); this.markCrisp = null
-    this.markSwitch?.element.remove(); this.markSwitch = null
     cancelAnimationFrame(this.frame); this.worker?.terminate(); this.worker = null; this.queue.length = 0; this.painting = false
     this.array = this.close = null; this.fbo = null; this.target2 = null; this.program = null; this.blurProgram = null
     this.gl?.getExtension('WEBGL_lose_context')?.loseContext(); this.gl = null; this.canvas.remove(); this.pointers.clear(); this.drag = null
@@ -1145,7 +1141,6 @@ export class Galaxy {
       this.markCrisp.draw(box, this.host.clientWidth, this.host.clientHeight, Math.min(3, devicePixelRatio || 1), mark.pixelsPerUnit, (g, l, w, h, bind) => setFrame(g, l, w, h, bind, 0))
     }
     const logo = this.logo, layout = this.options.logo?.()
-    if (layout) this.markSwitch?.avoid(layout.box)
     if (mark.placement) { this.options.onLogo?.(true); if (layout) this.markOverlay?.update(layout.box, 0) }
     else if (logo && layout) {
       const budget = logoBudget(layout.level), held = this.reduced.matches || budget.still || this.backdrop < 1
@@ -1185,7 +1180,7 @@ export class Galaxy {
   private opening: { start: number | null; mode: OpeningMode } | null = null
   /** For screenshots only: holds the opening at this many seconds in. */
   openingAt: number | null = null
-  /** Plays the opening again now, as the preview menu does. */
+  /** Plays the opening again now (for screenshots and checks). */
   replayOpening(mode: number): void { if (mode > 0 && !this.reduced.matches) { this.opening = { start: performance.now(), mode: mode as OpeningMode }; this.wake = 2 } }
   /**
    * Holds the lobby's own controls (the hint, the links, the preview menu) while the opening
@@ -1227,7 +1222,6 @@ export class Galaxy {
   /** The flat wordmark, drawn by the browser over the canvas (see WordmarkOverlay). */
   private markOverlay: WordmarkOverlay | null = null
   private markCrisp: WordmarkCrisp | null = null
-  private markSwitch: WordmarkSwitch | null = null
   /** performance.now() when the in-space wordmark was first drawn this showing, for its fade in. */
   private markStart: number | null = null
   private markMode = 0
