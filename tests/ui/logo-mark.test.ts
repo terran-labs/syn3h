@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { buildGlowBand, buildWordmarkMesh, evenOddArea, FLOATS_PER_VERTEX, GLOW_FLOATS_PER_VERTEX, insidePolygon, sampleOutline, triangleArea, triangulateFace, wordmarkContours, type Contour, type Point } from '../../src/ui/brand/wordmarkMesh'
+import { buildGlowBand, evenOddArea, GLOW_FLOATS_PER_VERTEX, insidePolygon, sampleOutline, wordmarkContours, type Contour, type Point } from '../../src/ui/brand/wordmarkMesh'
+import { signedDistance, wordmarkSegments } from '../../src/ui/brand/wordmarkField'
 import { LogoMark, logoBox, logoBudget, logoSvg } from '../../src/ui/brand/LogoMark'
 import { INTRO_SECONDS, LogoRenderer } from '../../src/ui/brand/logoRenderer'
 import { WORDMARK_HEIGHT, WORDMARK_WIDTH } from '../../src/ui/brand/wordmarkPath'
@@ -18,47 +19,18 @@ describe('wordmark geometry', () => {
     const hole = contours.find(c => c.depth === 1)!, island = contours.find(c => c.depth === 2)!
     expect(contours[island.parent]).toBe(hole)
   })
-  it('triangulates to the even-odd area of the path (catches lost or filled holes)', () => {
-    const face = triangulateFace(contours), area = evenOddArea(contours)
-    expect(area).toBeGreaterThan(2.5)
-    expect(Math.abs(triangleArea(face.positions, face.indices) - area) / area).toBeLessThan(1e-4)
-    // Filling the hole by mistake, or dropping the island, would both move the area by more than this.
-    const ring = contours.find(c => c.depth === 1)!
-    expect(Math.abs(ring.area) / area).toBeGreaterThan(0.01)
-  })
-  it('puts every face triangle inside the filled region', () => {
-    const face = triangulateFace(contours)
-    for (let i = 0; i < face.indices.length; i += 3) {
-      const [a, b, c] = [0, 1, 2].map(k => face.indices[i + k] * 2)
-      const centroid: Point = [(face.positions[a] + face.positions[b] + face.positions[c]) / 3, (face.positions[a + 1] + face.positions[b + 1] + face.positions[c + 1]) / 3]
-      expect(filled(centroid, contours)).toBe(true)
+  it('measures a signed distance field that is negative exactly where the path is filled', () => {
+    // Catches a field that fills the ring's hole, drops the island inside it, or flips sign.
+    expect(evenOddArea(contours)).toBeGreaterThan(2.5)
+    const segments = wordmarkSegments(contours), random = (() => { let a = 7; return () => (a = (a * 16807) % 2147483647) / 2147483647 })()
+    let disagree = 0
+    for (let i = 0; i < 4000; i++) {
+      const p: Point = [(random() - 0.5) * 4.4, (random() - 0.5) * 1.2], d = signedDistance(segments, p[0], p[1])
+      if (Math.abs(d) > 1e-4 && (d < 0) !== filled(p, contours)) disagree++
     }
-  })
-  it('builds the flat mesh: the exact face and an edge line inside it', () => {
-    const mesh = buildWordmarkMesh()
-    expect(mesh.triangles).toBe(982)
-    expect(mesh.vertices.length).toBe((mesh.faceVertices + mesh.edgeVertices) * FLOATS_PER_VERTEX)
-    // The face is the exact outline triangulation, with no inset; the edge's inner ring,
-    // pushed in by an edge width, lies inside the letters.
-    const faceArea = triangleArea(mesh.vertices, Array.from({ length: mesh.faceVertices }, (_, k) => k), FLOATS_PER_VERTEX)
-    expect(Math.abs(faceArea - evenOddArea(contours)) / evenOddArea(contours)).toBeLessThan(1e-4)
-    for (let k = 0; k < mesh.faceVertices; k++) expect([mesh.vertices[k * FLOATS_PER_VERTEX + 2], mesh.vertices[k * FLOATS_PER_VERTEX + 3], mesh.vertices[k * FLOATS_PER_VERTEX + 4]]).toEqual([0, 0, 0])
-    const edgeStart = mesh.faceVertices * FLOATS_PER_VERTEX, width = 0.006
-    let inner = 0, outside = 0
-    for (let k = 0; k < mesh.edgeVertices; k++) {
-      const at = edgeStart + k * FLOATS_PER_VERTEX
-      expect(mesh.vertices[at + 4]).toBe(1)
-      if (mesh.vertices[at + 2] === 0 && mesh.vertices[at + 3] === 0) continue
-      inner++
-      if (!filled([mesh.vertices[at] + mesh.vertices[at + 2] * width, mesh.vertices[at + 1] + mesh.vertices[at + 3] * width], contours)) outside++
-    }
-    // Bar a few at the sharpest traced corners.
-    expect(outside / inner).toBeLessThan(0.02)
-    // Fits the 962 by 226 box: one unit tall, centred.
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
-    for (let i = 0; i < mesh.vertices.length; i += FLOATS_PER_VERTEX) { minX = Math.min(minX, mesh.vertices[i]); maxX = Math.max(maxX, mesh.vertices[i]); minY = Math.min(minY, mesh.vertices[i + 1]); maxY = Math.max(maxY, mesh.vertices[i + 1]) }
-    expect(maxX - minX).toBeCloseTo(WORDMARK_WIDTH / WORDMARK_HEIGHT, 1)
-    expect(maxY - minY).toBeCloseTo(1, 2)
+    expect(disagree).toBe(0)
+    // Every outline point lies on the zero contour.
+    for (const c of contours) for (const q of c.points) expect(Math.abs(signedDistance(segments, q[0], q[1]))).toBeLessThan(1e-6)
   })
   it('grows the glow band outward from the outline, with whole contours of arc length', () => {
     const band = buildGlowBand(contours), v = band.vertices, n = v.length / GLOW_FLOATS_PER_VERTEX
@@ -119,7 +91,7 @@ describe('layout and budgets', () => {
 /** A WebGL 2 stand-in that keeps the little state the logo reads and records calls. */
 function fakeGl(options: { link?: boolean } = {}) {
   const calls: string[] = [], loseContext = vi.fn()
-  const state: Record<string, unknown> = { CURRENT_PROGRAM: 'host-program', VERTEX_ARRAY_BINDING: 'host-vao', ARRAY_BUFFER_BINDING: 'host-buffer', VIEWPORT: new Int32Array([0, 0, 640, 480]), SCISSOR_BOX: new Int32Array([1, 2, 3, 4]), COLOR_WRITEMASK: [true, true, true, true] }
+  const state: Record<string, unknown> = { CURRENT_PROGRAM: 'host-program', VERTEX_ARRAY_BINDING: 'host-vao', ARRAY_BUFFER_BINDING: 'host-buffer', FRAMEBUFFER_BINDING: 'host-framebuffer', VIEWPORT: new Int32Array([0, 0, 640, 480]), SCISSOR_BOX: new Int32Array([1, 2, 3, 4]), COLOR_WRITEMASK: [true, true, true, true] }
   const enabled = new Set<string>(['SCISSOR_TEST'])
   let objects = 0
   const gl: Record<string | symbol, unknown> = {
@@ -130,7 +102,7 @@ function fakeGl(options: { link?: boolean } = {}) {
     getProgramParameter: () => { calls.push('query getProgramParameter'); return options.link ?? true }, getProgramInfoLog: () => 'fake',
     getAttribLocation: () => { calls.push('query getAttribLocation'); return 0 }, isContextLost: () => false,
     useProgram: (p: unknown) => { state.CURRENT_PROGRAM = p; calls.push('useProgram') },
-    bindVertexArray: (v: unknown) => { state.VERTEX_ARRAY_BINDING = v }, bindBuffer: (_: unknown, b: unknown) => { state.ARRAY_BUFFER_BINDING = b },
+    bindVertexArray: (v: unknown) => { state.VERTEX_ARRAY_BINDING = v }, bindFramebuffer: (_: unknown, f: unknown) => { state.FRAMEBUFFER_BINDING = f }, bindBuffer: (_: unknown, b: unknown) => { state.ARRAY_BUFFER_BINDING = b },
     viewport: (...v: number[]) => { state.VIEWPORT = new Int32Array(v) }, scissor: (...v: number[]) => { state.SCISSOR_BOX = new Int32Array(v) },
     drawArrays: (mode: string, first: number, count: number) => calls.push(`draw ${mode} ${count}`),
     // Locations are the fake's own { args: [program, name] }, so a value can be read back by name.
@@ -160,14 +132,14 @@ describe('LogoMark lifecycle', () => {
     expect(mark.generated).toBe(true)
     fake.calls.length = 0
     mark.renderStill()
-    // No sky behind the lobby logo: plasma, then the flat wordmark.
+    // No sky behind the lobby logo: plasma, then the flat wordmark (the field was baked at the first frame).
     const band = `draw TRIANGLES ${buildGlowBand().vertices.length / GLOW_FLOATS_PER_VERTEX}`
-    expect(fake.calls.filter(c => c.startsWith('draw'))).toEqual([band, 'draw POINTS 500', 'draw TRIANGLES 2946'])
+    expect(fake.calls.filter(c => c.startsWith('draw'))).toEqual([band, 'draw POINTS 500', 'draw TRIANGLES 6'])
     mark.setOptions({ space: true }); fake.calls.length = 0; mark.renderStill()
-    expect(fake.calls.filter(c => c.startsWith('draw'))).toEqual(['draw TRIANGLES 3', band, 'draw POINTS 500', 'draw TRIANGLES 2946'])
+    expect(fake.calls.filter(c => c.startsWith('draw'))).toEqual(['draw TRIANGLES 3', band, 'draw POINTS 500', 'draw TRIANGLES 6'])
     mark.dispose()
     expect(fake.loseContext).toHaveBeenCalledTimes(1)
-    expect(fake.calls.filter(c => c === 'deleteProgram')).toHaveLength(4)
+    expect(fake.calls.filter(c => c === 'deleteProgram')).toHaveLength(5)
     expect(mark.generated).toBe(false)
     // A canvas it was given stays in the page; one it made would be removed.
     expect(canvas.remove).not.toHaveBeenCalled()
@@ -189,7 +161,10 @@ describe('LogoMark lifecycle', () => {
     const fake = fakeGl(), renderer = new LogoRenderer(fake.gl, { particles: 200 })
     expect(fake.state.CURRENT_PROGRAM).toBe('host-program')
     renderer.draw(5, { x: 100, y: 100, width: 426, height: 100 })
-    expect(fake.calls.filter(c => c.startsWith('draw'))).toHaveLength(3)
+    // The distance field's bake, then glow, particles and mark; the bake draws into its own
+    // target and gives the host's back.
+    expect(fake.calls.filter(c => c.startsWith('draw'))).toHaveLength(4)
+    expect(fake.state.FRAMEBUFFER_BINDING).toBe('host-framebuffer')
     expect(fake.state.CURRENT_PROGRAM).toBe('host-program')
     expect(fake.state.VERTEX_ARRAY_BINDING).toBe('host-vao')
     expect(fake.state.ARRAY_BUFFER_BINDING).toBe('host-buffer')
@@ -221,7 +196,8 @@ function drawOpacities(calls: string[]): number[] {
   const out: number[] = []
   for (const call of calls) {
     if (call.startsWith('uniform uOpacity ')) opacity = Number(call.split(' ')[2])
-    else if (call.startsWith('draw')) out.push(opacity)
+    // A draw before any opacity is set is the distance field's bake, not part of the logo.
+    else if (call.startsWith('draw') && !Number.isNaN(opacity)) out.push(opacity)
   }
   return out
 }

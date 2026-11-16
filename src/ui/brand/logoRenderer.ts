@@ -1,7 +1,7 @@
 /**
  * The animated Syn3h logo, drawn with raw WebGL 2 into any context it is handed: its own
  * canvas (LogoMark) or someone else's, inside their frame (the lobby galaxy). Three draw
- * calls (four over space), no textures, no depth buffer:
+ * calls (four over space), no image textures, no depth buffer:
  *
  *   1. only with `space`: a quad of deep space with small seeded stars, for icons and cards;
  *   2. the plasma's body, a field: a band grown outward from the outline, brightest at the
@@ -10,7 +10,9 @@
  *   3. over it, a few large, faint points on a lane just outside the letters, carried by
  *      one slow curl flow: gentle large-scale variation in the body. Every position is
  *      computed in the vertex shader, so the CPU does nothing per frame but set uniforms;
- *   4. the wordmark itself, flat: a face of one colour with a pale line inside its edge.
+ *   4. the wordmark itself, flat: a face of one colour with a pale line inside its edge,
+ *      one quad shaded from a signed distance field of the path (wordmarkField.ts), so
+ *      its edges are antialiased at every size without multisampling.
  *
  * It fades in in two stages, both eased at both ends: first the dark silhouette with its edge
  * (`markFade`), then, after `glowGap`, the blue glow more slowly still (`glowFade`). Nothing
@@ -22,7 +24,8 @@
  * other and cross-faded. The plasma spills outside the box, so leave room around it: about
  * a third of the box height on every side (glowWidth, plus the particles).
  */
-import { buildGlowBand, buildWordmarkMesh, FLOATS_PER_VERTEX, GLOW_FLOATS_PER_VERTEX, sampleOutline } from './wordmarkMesh'
+import { ASPECT, buildGlowBand, GLOW_FLOATS_PER_VERTEX, sampleOutline } from './wordmarkMesh'
+import { FIELD_GLSL, WordmarkField } from './wordmarkField'
 
 export type Rgb = [number, number, number]
 export interface LogoLook {
@@ -192,21 +195,32 @@ void main() {
 
 const MARK_VERTEX = `#version 300 es
 precision highp float;
-in vec2 aPosition; in vec2 aInset; in float aPart;
 ${PROJECT}
-uniform float uEdge;
-out float vPart;
-void main() { gl_Position = project(aPosition + aInset * uEdge); vPart = aPart; }`
+uniform vec2 uHalf;
+out vec2 vModel;
+void main() {
+  // One quad over the box and a margin of a few pixels: two triangles from the vertex index.
+  int k = gl_VertexID % 6; vec2 c = vec2(k == 1 || k == 2 || k == 4 ? 1.0 : -1.0, k == 2 || k == 4 || k == 5 ? 1.0 : -1.0);
+  vModel = c * uHalf; gl_Position = project(vModel);
+}`
 const MARK_FRAGMENT = `#version 300 es
 precision highp float;
-in float vPart;
-uniform vec3 uGlow; uniform vec3 uFace; uniform float uOpacity;
+in vec2 vModel;
+${FIELD_GLSL}
+uniform vec3 uGlow; uniform vec3 uFace; uniform float uOpacity; uniform float uEdge;
 out vec4 color;
 void main() {
-  // One flat colour for the face; the edge a pale line of the glow colour.
-  vec4 c = vPart < 0.5 ? vec4(uFace, 1.0) : vec4(mix(uGlow, vec3(1.0), 0.6), 1.0);
-  color = c * uOpacity;
+  float d = wordmarkDistance(vModel), w = wordmarkFootprint(vModel);
+  float cover = wordmarkCoverage(d, w);
+  if (cover <= 0.0) discard;
+  // One flat colour for the face; the edge a pale line of the glow colour, uEdge wide just
+  // inside the outline, its inner side antialiased the same way as the outline.
+  float line = 1.0 - wordmarkCoverage(d + uEdge, w);
+  vec3 c = mix(uFace, mix(uGlow, vec3(1.0), 0.6), line);
+  color = vec4(c, 1.0) * cover * uOpacity;
 }`
+/** The texture unit the field is bound on: well clear of the lobby galaxy's own (0 to 2). */
+const FIELD_UNIT = 7
 
 function compile(gl: WebGL2RenderingContext, vertex: string, fragment: string): WebGLProgram | null {
   const program = gl.createProgram()
@@ -235,12 +249,13 @@ function compile(gl: WebGL2RenderingContext, vertex: string, fragment: string): 
  */
 interface SavedState {
   program: WebGLProgram | null; vao: WebGLVertexArrayObject | null; arrayBuffer: WebGLBuffer | null
+  framebuffer: WebGLFramebuffer | null; activeTexture: number
   colorMask: boolean[]
   enabled: [number, boolean][]
   blend: [number, number, number, number, number, number]
 }
 
-export interface DrawStats { drawCalls: number; particles: number; triangles: number }
+export interface DrawStats { drawCalls: number; particles: number; triangles: number; fieldDensity: number; fieldBakeMs: number }
 
 /**
  * The logo's GL resources in one context. It never creates or loses a context: the owner
@@ -264,12 +279,12 @@ export class LogoRenderer {
   private plasmaVao: WebGLVertexArrayObject | null = null
   private markVao: WebGLVertexArrayObject | null = null
   private plasmaBuffer: WebGLBuffer | null = null
-  private markBuffer: WebGLBuffer | null = null
   private fieldBuffer: WebGLBuffer | null = null
   private fieldVertices = 0
   private builtParticles = 0
   private builtSeed = Number.NaN
-  private markVertices = 0
+  /** The wordmark's distance field, baked on the first draw and again when drawn much larger. */
+  distanceField: WordmarkField | null = null
   private readonly uniforms = new Map<WebGLProgram, Map<string, WebGLUniformLocation | null>>()
   /** Read once, here, and never again: see SavedState. */
   private readonly host: SavedState
@@ -282,14 +297,14 @@ export class LogoRenderer {
   constructor(private readonly gl: WebGL2RenderingContext, look: Partial<LogoLook> = {}) {
     this.look = { ...DEFAULT_LOGO_LOOK, ...look }
     this.host = this.save()
-    const mesh = buildWordmarkMesh(), band = buildGlowBand()
-    this.triangles = mesh.triangles + band.triangles
+    const band = buildGlowBand()
+    this.triangles = 2 + band.triangles
     let ok = false
-    try { ok = this.build(mesh.vertices, band.vertices) } catch (error) { console.warn('Syn3h logo could not start; the SVG wordmark stays.', error) }
+    try { ok = this.build(band.vertices) } catch (error) { console.warn('Syn3h logo could not start; the SVG wordmark stays.', error) }
     this.ok = ok
   }
 
-  private build(vertices: Float32Array, band: Float32Array): boolean {
+  private build(band: Float32Array): boolean {
     const gl = this.gl
     try {
       this.space = compile(gl, SPACE_VERTEX, SPACE_FRAGMENT)
@@ -297,7 +312,9 @@ export class LogoRenderer {
       this.plasma = compile(gl, PLASMA_VERTEX, PLASMA_FRAGMENT)
       this.mark = compile(gl, MARK_VERTEX, MARK_FRAGMENT)
       if (!this.space || !this.field || !this.plasma || !this.mark) return false
-      this.spaceVao = gl.createVertexArray()
+      this.distanceField = new WordmarkField(gl, (vertex, fragment) => compile(gl, vertex, fragment), FIELD_UNIT)
+      if (!this.distanceField.ok) return false
+      this.spaceVao = gl.createVertexArray(); this.markVao = gl.createVertexArray()
       const upload = (program: WebGLProgram, data: Float32Array, floats: number, layout: readonly (readonly [string, number, number])[]) => {
         const vao = gl.createVertexArray(), buffer = gl.createBuffer()
         gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER, buffer)
@@ -308,8 +325,6 @@ export class LogoRenderer {
         }
         return [vao, buffer] as const
       }
-      ;[this.markVao, this.markBuffer] = upload(this.mark, vertices, FLOATS_PER_VERTEX, [['aPosition', 2, 0], ['aInset', 2, 8], ['aPart', 1, 16]])
-      this.markVertices = vertices.length / FLOATS_PER_VERTEX
       ;[this.fieldVao, this.fieldBuffer] = upload(this.field, band, GLOW_FLOATS_PER_VERTEX, [['aPosition', 2, 0], ['aOffset', 2, 8], ['aAlong', 2, 16]])
       this.fieldVertices = band.length / GLOW_FLOATS_PER_VERTEX
       this.particleAttributes = ([['aOutline', 0], ['aSeed', 16]] as const).map(([name, offset]): [number, number] => [gl.getAttribLocation(this.plasma!, name), offset]).filter(([at]) => at >= 0)
@@ -341,7 +356,7 @@ export class LogoRenderer {
   introTime = 0
 
   get stats(): DrawStats {
-    return { drawCalls: (this.look.space ? 1 : 0) + 3, particles: Math.min(this.look.particles, this.builtParticles), triangles: this.triangles }
+    return { drawCalls: (this.look.space ? 1 : 0) + 3, particles: Math.min(this.look.particles, this.builtParticles), triangles: this.triangles, fieldDensity: this.distanceField?.density ?? 0, fieldBakeMs: this.distanceField?.lastBakeMs ?? 0 }
   }
 
   private location(program: WebGLProgram, name: string): WebGLUniformLocation | null {
@@ -355,6 +370,7 @@ export class LogoRenderer {
     const gl = this.gl
     return {
       program: gl.getParameter(gl.CURRENT_PROGRAM), vao: gl.getParameter(gl.VERTEX_ARRAY_BINDING), arrayBuffer: gl.getParameter(gl.ARRAY_BUFFER_BINDING),
+      framebuffer: gl.getParameter(gl.FRAMEBUFFER_BINDING), activeTexture: gl.getParameter(gl.ACTIVE_TEXTURE),
       colorMask: gl.getParameter(gl.COLOR_WRITEMASK),
       enabled: [gl.BLEND, gl.DEPTH_TEST, gl.CULL_FACE, gl.SCISSOR_TEST, gl.STENCIL_TEST, gl.RASTERIZER_DISCARD, gl.SAMPLE_ALPHA_TO_COVERAGE].map(cap => [cap, gl.isEnabled(cap)] as [number, boolean]),
       blend: [gl.getParameter(gl.BLEND_SRC_RGB), gl.getParameter(gl.BLEND_DST_RGB), gl.getParameter(gl.BLEND_SRC_ALPHA), gl.getParameter(gl.BLEND_DST_ALPHA), gl.getParameter(gl.BLEND_EQUATION_RGB), gl.getParameter(gl.BLEND_EQUATION_ALPHA)],
@@ -363,6 +379,7 @@ export class LogoRenderer {
   private restore(): void {
     const gl = this.gl, s = this.host
     gl.useProgram(s.program); gl.bindVertexArray(s.vao); gl.bindBuffer(gl.ARRAY_BUFFER, s.arrayBuffer)
+    if (typeof s.activeTexture === 'number') gl.activeTexture(s.activeTexture)
     gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight)
     if (s.colorMask) gl.colorMask(s.colorMask[0], s.colorMask[1], s.colorMask[2], s.colorMask[3])
     for (const [cap, on] of s.enabled) { if (on) gl.enable(cap); else gl.disable(cap) }
@@ -390,6 +407,10 @@ export class LogoRenderer {
     const intro = this.introTime = Math.max(0, seconds - this.introStart)
     try {
       this.fillParticles()
+      // The field, baked (once, or again when drawn much larger) before anything is drawn.
+      // The bake binds its own target, then the framebuffer the host had when this renderer
+      // was made: the lobby and LogoMark both draw to the screen.
+      if (this.distanceField!.ensure(box.height, this.host.framebuffer)) gl.viewport(view.x, view.y, view.width, view.height)
       const centre: [number, number] = [box.x + box.width / 2, box.y + box.height / 2], height = box.height
       // The silhouette fades in first, then the glow, more slowly; each eased at both ends.
       const glowStart = look.markFade + look.glowGap
@@ -449,13 +470,18 @@ export class LogoRenderer {
       gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_COLOR, gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
       gl.bindVertexArray(this.plasmaVao); gl.drawArrays(gl.POINTS, 0, count)
 
-      // 4. The wordmark: face, then the edge line over it (see buildWordmarkMesh).
+      // 4. The wordmark: face and edge line in one quad, from the distance field.
       common(this.mark!, markOpacity)
-      gl.uniform3f(this.location(this.mark!, 'uFace'), ...look.face)
+      const mark = (name: string) => this.location(this.mark!, name)
+      gl.uniform3f(mark('uFace'), ...look.face)
       // About 2.7 path units wide, but never thinner than one and a half pixels.
-      gl.uniform1f(this.location(this.mark!, 'uEdge'), Math.max(0.012, 1.5 / height))
+      gl.uniform1f(mark('uEdge'), Math.max(0.012, 1.5 / height))
+      // The box, and three pixels round it for the antialiased edge.
+      const margin = 3 / height
+      gl.uniform2f(mark('uHalf'), ASPECT / 2 + margin, 0.5 + margin)
+      this.distanceField!.bind(mark)
       gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
-      gl.bindVertexArray(this.markVao); gl.drawArrays(gl.TRIANGLES, 0, this.markVertices)
+      gl.bindVertexArray(this.markVao); gl.drawArrays(gl.TRIANGLES, 0, 6)
     } finally { this.restore() }
   }
 
@@ -464,8 +490,9 @@ export class LogoRenderer {
     const gl = this.gl
     for (const program of [this.space, this.field, this.plasma, this.mark]) if (program) gl.deleteProgram(program)
     for (const vao of [this.spaceVao, this.fieldVao, this.plasmaVao, this.markVao]) if (vao) gl.deleteVertexArray(vao)
-    for (const buffer of [this.fieldBuffer, this.plasmaBuffer, this.markBuffer]) if (buffer) gl.deleteBuffer(buffer)
-    this.space = this.field = this.plasma = this.mark = null; this.spaceVao = this.fieldVao = this.plasmaVao = this.markVao = null; this.fieldBuffer = this.plasmaBuffer = this.markBuffer = null
+    for (const buffer of [this.fieldBuffer, this.plasmaBuffer]) if (buffer) gl.deleteBuffer(buffer)
+    this.distanceField?.dispose(); this.distanceField = null
+    this.space = this.field = this.plasma = this.mark = null; this.spaceVao = this.fieldVao = this.plasmaVao = this.markVao = null; this.fieldBuffer = this.plasmaBuffer = null
     this.uniforms.clear()
   }
 }
