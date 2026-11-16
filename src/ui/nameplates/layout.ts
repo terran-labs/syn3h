@@ -19,7 +19,7 @@ export function appearance(distance: number, bot: boolean, presentation: boolean
 }
 /** People are allocated first regardless of depth; bots yield every contested spot. */
 export function placeNameplates(candidates: readonly Candidate[], discs: readonly Disc[], exclusions: readonly Rect[], width: number, height: number,
-  terrainClear: (box: Rect, depth: number) => boolean = () => true): Placement[] {
+  terrainClear: (box: Rect, depth: number, candidate: Candidate) => boolean = () => true): Placement[] {
   const result: Placement[] = []
   const order = [...candidates].sort((a, b) => Number(a.bot) - Number(b.bot) || a.depth - b.depth || a.id.localeCompare(b.id))
   for (const c of order) {
@@ -35,7 +35,7 @@ export function placeNameplates(candidates: readonly Candidate[], discs: readonl
       if (bounds.left < 8 || bounds.right > width - 8 || bounds.top < 8 || bounds.bottom > height - 8) continue
       if (exclusions.some(b => overlaps(bounds, b)) || result.some(b => overlaps(bounds, b))) continue
       if (discs.some(d => d.id !== c.id && d.depth < c.depth && touchesDisc(bounds, d))) continue
-      if (!terrainClear(plate, c.depth)) continue
+      if (!terrainClear(plate, c.depth, c)) continue
       result.push({ ...bounds, id: c.id, x, y, spot, opacity: c.opacity, tick: c.tick }); break
     }
   }

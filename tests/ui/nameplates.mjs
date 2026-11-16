@@ -25,9 +25,9 @@ async function capture(page, label) {
     hud.dispose()
     const labels = [...document.querySelectorAll('.vehicle-nameplate')].filter(el => !el.hidden && getComputedStyle(el).display !== 'none' && !el.closest('[hidden]')).map(el => {
       const b = el.getBoundingClientRect(), style = getComputedStyle(el)
-      return { id: el.dataset.vehicle, bot: el.classList.contains('is-bot'), tick: el.classList.contains('is-tick'), text: el.textContent, opacity: Number(style.opacity), left: b.left, right: b.right, top: b.top, bottom: b.bottom }
+      return { id: el.dataset.vehicle, bot: el.classList.contains('is-bot'), tick: el.classList.contains('is-tick'), text: el.textContent, width: b.width, height: b.height, opacity: Number(style.opacity), left: b.left, right: b.right, top: b.top, bottom: b.bottom }
     })
-    return { labels, exclusions, local: String(window.syn3hNet.id), presentation: shell.presentation, cameraMode: window.syn3h.params.get('camera.mode').value }
+    return { labels, exclusions, nameplateCost: { ...window.syn3hNet.tags.stats }, curve: window.syn3h.params.get('world.curve').value, local: String(window.syn3hNet.id), presentation: shell.presentation, cameraMode: window.syn3h.params.get('camera.mode').value }
   })
   const overlap = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top
   assert.ok(state.labels.every(l => l.id !== state.local), 'never label the local player')
@@ -44,7 +44,8 @@ async function capture(page, label) {
 try {
   const a = await open('Observer', { width: 1440, height: 900 })
   const b = await open('Visitor', { width: 640, height: 480 })
-  await a.waitForFunction(() => window.syn3hNet.remotes.size >= 1)
+  const c = await open('Companion', { width: 640, height: 480 })
+  await a.waitForFunction(() => window.syn3hNet.remotes.size >= 2)
   assert.equal(await a.locator('.vehicle-nameplates').count(), 1, 'new module must be integrated')
   // DOM regression: touch controls are siblings of Shell, not descendants.
   assert.equal(await a.evaluate(async () => {
@@ -58,19 +59,26 @@ try {
   await a.evaluate(() => { const s = window.syn3h; s.params.set('bots.canDrive', false); s.params.set('bots.canFire', false); s.params.set('bots.count', 4) })
   await a.waitForFunction(() => window.syn3h.bots.vehicles.length >= 4, null, { timeout: 15000 })
   let center = await a.evaluate(() => { const s = window.syn3h, p = s.terrain.spawnPoint(0).position; return { x: p.x, y: p.y, z: p.z } })
-  async function stage(far = false) {
+  async function stage(far = false, curve = .71) {
+    await a.evaluate(curve => window.syn3h.params.set('world.curve', curve), curve)
     await a.evaluate(p => {
       const s = window.syn3h, v = s.player.object.position.clone().set(p.x, s.terrain.heightAt(p.x, p.z + 18) + 2, p.z + 18)
       s.player.teleport(v, 0)
-      s.bots.vehicles.forEach((bot, i) => { const x = p.x + (i - 1.5) * 16, z = p.z - 18 - i * 10; bot.teleport(v.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) })
+      s.bots.vehicles.forEach((bot, i) => { const x = p.x + (i - 1.5) * 24, z = p.z - 18 - i * 10; bot.teleport(v.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) })
       s.camera.setCinematicPose(v.clone().set(p.x, p.y + 35, p.z + 70), v.clone().set(p.x, p.y + 4, p.z - 35), 60)
     }, center)
-    await b.evaluate(({p, far}) => { const s = window.syn3h, z = p.z - (far ? 260 : 15), x = p.x - 15; s.player.teleport(s.player.object.position.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) }, { p: center, far })
+    await b.evaluate(({p, far}) => { const s = window.syn3h, z = p.z - (far ? 260 : 15), x = p.x - 45; s.player.teleport(s.player.object.position.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) }, { p: center, far })
+    await c.evaluate(({p, far}) => { const s = window.syn3h, z = p.z - (far ? 190 : 30), x = p.x + 45; s.player.teleport(s.player.object.position.clone().set(x, s.terrain.heightAt(x, z) + 2, z), 0) }, { p: center, far })
     await a.waitForTimeout(1500)
   }
   await stage()
   const near = await capture(a, 'desktop-near-day')
-  assert.ok(near.labels.some(l => !l.bot && l.text.includes('Visitor')), 'replicated human name is visible')
+  for (const name of ['Visitor', 'Companion']) assert.ok(near.labels.some(l => !l.bot && l.text.includes(name)), `${name}: both remote human names are visible`)
+  const person = near.labels.find(l => !l.bot), bot = near.labels.find(l => l.bot && !l.tick)
+  assert.ok(person && bot, 'human and full bot labels must be present for comparison')
+  assert.ok(bot.width / person.width >= .60 && bot.width / person.width <= .70, 'bot labels are 60 to 70 percent of human size')
+  assert.ok(bot.height / person.height >= .60 && bot.height / person.height <= .70, 'bot label height is smaller too')
+  assert.ok(bot.opacity < person.opacity, 'bot labels are fainter than human labels')
   assert.ok(near.labels.filter(l => l.bot && l.text.includes('BOT')).length >= 2, 'host-owned bots have smaller labels')
   await a.evaluate(() => window.syn3h.params.set('hud.nameplates', 1))
   assert.ok((await capture(a, 'people-only')).labels.every(l => !l.bot))
@@ -87,11 +95,19 @@ try {
   await a.waitForFunction(() => [...window.syn3hNet.remotes.values()].some(r => r.vehicle.kind === 'jet'), null, { timeout: 15000 })
   await capture(a, 'remote-materialize')
   await b.waitForFunction(() => window.syn3h.player.object.userData.materializing !== true, null, { timeout: 20000 })
-  await stage(true); await capture(a, 'desktop-far-day')
+  for (const curve of [0, .71, 1.8]) {
+    await stage(false, curve); await capture(a, `desktop-curve-${curve}-near`)
+    await stage(true, curve); await capture(a, `desktop-curve-${curve}-far`)
+  }
+  await stage(true, .71); await capture(a, 'desktop-far-day')
   await a.evaluate(() => window.syn3h.params.set('sun.timeOfDay', 0)); await capture(a, 'desktop-far-night')
   await stage(); await a.evaluate(() => window.syn3h.shell.setPresentation(true)); await capture(a, 'desktop-presentation-night')
   await a.evaluate(() => { window.syn3h.shell.setPresentation(false); window.syn3h.params.set('sun.timeOfDay', 12) })
   await a.setViewportSize({ width: 390, height: 844 }); await capture(a, 'phone-near-day')
+  for (const curve of [.71, 1.8]) {
+    await stage(true, curve); await capture(a, `phone-curve-${curve}-far`)
+  }
+  await stage(false, .71)
   await a.evaluate(() => window.syn3h.params.set('sun.timeOfDay', 0)); await capture(a, 'phone-near-night')
   await a.setViewportSize({ width: 1440, height: 900 })
   await a.evaluate(() => { window.syn3h.camera.clearCinematicPose(); window.syn3h.params.set('sun.timeOfDay', 12) })

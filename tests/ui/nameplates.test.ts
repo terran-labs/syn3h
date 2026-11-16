@@ -162,3 +162,81 @@ describe('ball and materialize anchors', () => {
     expect(center.y + 8 + .65).toBeGreaterThan(object.position.y + 8)
   })
 })
+
+describe('curved render projection and visibility', () => {
+  it('matches the render bend for center, raised anchor and disc at curve 0, .71 and 1.8', async () => {
+    const { Vector3, PerspectiveCamera } = await import('three/webgpu')
+    const { curveRadius, curveOffsetAt } = await import('../../src/world/curve')
+    const { bendPoint, CurvedProjection, unbendPoint } = await import('../../src/ui/nameplates/curvature')
+    const projection = new CurvedProjection(), camera = new PerspectiveCamera(60, 1.6, .1, 3000)
+    camera.position.set(23, 65, -19); camera.lookAt(23, 20, 300); camera.updateMatrixWorld()
+    for (const curve of [0, .71, 1.8]) {
+      const R = curveRadius(2048, curve), bend = new Vector3(23, -19, Number.isFinite(R) ? 1 / R : 0)
+      for (const point of [new Vector3(28, 4, 6), new Vector3(90, 22, 410), new Vector3(90, 29, 410)]) {
+        const offset = new Vector3(); curveOffsetAt(bend, point.x, point.y, point.z, offset)
+        const expected = point.clone().add(offset), bent = bendPoint(point, bend, new Vector3())
+        expect(bent.distanceTo(expected)).toBeLessThan(1e-9)
+        const inverse = new Vector3(); expect(unbendPoint(bent, bend, inverse)).toBe(true)
+        expect(inverse.distanceTo(point)).toBeLessThan(1e-8)
+        const expectedScreen = expected.clone().project(camera), screen = new Vector3()
+        projection.project(point, bend, camera, 1280, 800, screen)
+        expect(screen.x).toBeCloseTo((expectedScreen.x + 1) * 640, 8)
+        expect(screen.y).toBeCloseTo((1 - expectedScreen.y) * 400, 8)
+        const disc = { id: 'remote', x: 0, y: 0, radius: 0, depth: 0 }
+        projection.envelope(point, 6, bend, camera, 1280, 800, disc)
+        expect(disc.x).toBeCloseTo(screen.x); expect(disc.y).toBeCloseTo(screen.y)
+        expect(disc.radius).toBeGreaterThan(0)
+        if (curve && point.z > 400) expect(bent.y).toBeLessThan(point.y - 50)
+      }
+    }
+  })
+  it('keeps curved projection invariant when the already-rendered tile and bend anchor shift together', async () => {
+    const { Vector3, PerspectiveCamera } = await import('three/webgpu')
+    const { curveRadius } = await import('../../src/world/curve')
+    const { CurvedProjection } = await import('../../src/ui/nameplates/curvature')
+    const projection = new CurvedProjection()
+    for (const curve of [0, .71, 1.8]) {
+      const R = curveRadius(2048, curve), bend = new Vector3(1020, 0, Number.isFinite(R) ? 1 / R : 0)
+      const camera = new PerspectiveCamera(60, 1, .1, 3000)
+      camera.position.set(1020, 45, 0); camera.lookAt(1030, 3, 90); camera.updateMatrixWorld()
+      const point = new Vector3(1030, 4, 90), before = new Vector3(), after = new Vector3()
+      projection.project(point, bend, camera, 800, 800, before)
+      point.x -= 2048; bend.x -= 2048; camera.position.x -= 2048; camera.updateMatrixWorld()
+      projection.project(point, bend, camera, 800, 800, after)
+      expect(after.distanceTo(before)).toBeLessThan(1e-8)
+    }
+  })
+  it('traces visual sight through inverse curvature, detecting the horizon that a flat chord misses', async () => {
+    const { Vector3 } = await import('three/webgpu')
+    const { curveRadius } = await import('../../src/world/curve')
+    const { bendPoint, curvedTerrainOccluded } = await import('../../src/ui/nameplates/curvature')
+    const hitsGround = (a: { y: number }, b: { y: number }) => Math.min(a.y, b.y) <= 0
+    const eye = new Vector3(0, 3, 0), far = new Vector3(0, 3, 600)
+    expect(hitsGround(eye, far)).toBe(false) // The old flat sight line missed this horizon.
+    for (const curve of [.71, 1.8]) {
+      const bend = new Vector3(0, 0, 1 / curveRadius(2048, curve))
+      const visualFar = bendPoint(far, bend, new Vector3())
+      expect(curvedTerrainOccluded(eye, visualFar, bend, 2048, hitsGround)).toBe(true)
+      const nearby = bendPoint(new Vector3(0, 3, 20), bend, new Vector3())
+      expect(curvedTerrainOccluded(eye, nearby, bend, 2048, hitsGround)).toBe(false)
+    }
+    expect(curvedTerrainOccluded(eye, far, new Vector3(), 2048, hitsGround)).toBe(false)
+  })
+  it('preserves flat physics endpoints, wrap segments and a bounded query count', async () => {
+    const { Vector3 } = await import('three/webgpu')
+    const { curveRadius } = await import('../../src/world/curve')
+    const { bendPoint, curvedTerrainOccluded } = await import('../../src/ui/nameplates/curvature')
+    const eye = new Vector3(1018, 50, 0), target = new Vector3(1050, 20, 20)
+    const bend = new Vector3(eye.x, eye.z, 1 / curveRadius(2048, .71))
+    const endpoints: { x: number; y: number; z: number }[] = []
+    expect(curvedTerrainOccluded(eye, bendPoint(target, bend, new Vector3()), bend, 2048, (a, b) => {
+      expect(Math.abs(a.x)).toBeLessThanOrEqual(1024 + 1e-6)
+      expect(Math.abs(b.x)).toBeLessThanOrEqual(1024 + 1e-6)
+      endpoints.push({ ...b }); return false
+    })).toBe(false)
+    expect(endpoints.length).toBeLessThanOrEqual(130)
+    expect(endpoints.at(-1)!.x).toBeCloseTo(-998)
+    expect(endpoints.at(-1)!.y).toBeCloseTo(20)
+    expect(endpoints.at(-1)!.z).toBeCloseTo(20)
+  })
+})

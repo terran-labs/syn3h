@@ -7,6 +7,6 @@ export function terrainOcclusion(world: RAPIER.World): (from: Point, to: Point) 
     const dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z, length = Math.hypot(dx, dy, dz)
     if (length < .1) return false
     Object.assign(ray.origin, from); Object.assign(ray.dir, { x: dx / length, y: dy / length, z: dz / length })
-    return world.castRay(ray, Math.max(0, length - .15), true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, groups(GROUP_PROJECTILE, GROUP_TERRAIN)) !== null
+    return world.castRay(ray, length, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, groups(GROUP_PROJECTILE, GROUP_TERRAIN)) !== null
   }
 }
