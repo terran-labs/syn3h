@@ -207,7 +207,13 @@
       .boot-arc { stroke-width: 3; }
       .boot-orbit { stroke: color-mix(in srgb, var(--theme-text-primary) 22%, transparent); }
       .boot-status, .boot-still { margin: 0; color: var(--theme-text-primary); font: 500 17px/1.4 Barlow, "Avenir Next", "Segoe UI", system-ui, sans-serif; }
-      .boot-status { grid-row: 4; margin-top: 20px; letter-spacing: 0.02em; }
+      /* The status line is a dry joke about what is loading, rotated by LoadingScreen. Two
+         lines of height are reserved so a long one never moves the rest of the veil, and the
+         cross-fade is on opacity only. Screen readers hear the plain phase from LoadingScreen's
+         own live region instead, so this line is aria-hidden. */
+      .boot-status { grid-row: 4; margin-top: 20px; letter-spacing: 0.02em; min-height: 2.8em; max-width: 26em; text-wrap: balance; transition: opacity 0.25s ease; }
+      .boot-status[data-fade] { opacity: 0; }
+      @media (prefers-reduced-motion: reduce) { .boot-status { transition: none; } }
       /* Hidden for eight seconds, then it fades in by itself: no script needed. */
       .boot-still { grid-row: 5; margin-top: 8px; font-size: 14px; font-weight: 400; color: color-mix(in srgb, var(--theme-text-primary) 62%, transparent); opacity: 0; animation: boot-mark-in 0.6s ease 8s forwards; }
       html[data-boot="done"] .boot-status, html[data-boot="done"] .boot-still { transition: opacity 0.4s ease; opacity: 0; animation: none; }
@@ -304,8 +310,26 @@
           <circle cx="60" cy="26" r="2.8" />
         </g>
       </svg>
-      <p class="boot-status" role="status" aria-live="polite">Loading the engine</p>
+      <p class="boot-status" aria-hidden="true">Checking which way is down.</p>
       <p class="boot-still">Still working. The first visit takes the longest.</p>
+      <script>
+        // Fun lines from the first paint, a new one every 3.5 s (never the same twice running)
+        // until LoadingScreen takes over and clears window.__bootLines. The markup above is the
+        // no-script fallback. These lines are also in src/ui/data/loadingMessages.ts.
+        (function(s, w, a, b, i, pick) {
+          if (!s || !w) return;
+          a = ["Checking which way is down.", "Counting wheels. Recounting wheels.", "Asking gravity to hold this for a moment.", "Tightening the imaginary bolts.", "Packing a spare atmosphere.", "Confirming that the sky is attached.", "Giving the moon some personal space.", "Moving the mountain slightly to the left."];
+          b = ["Still working. The first visit takes the longest.", "Still going. First visits pack the whole planet.", "Still here. The next visit starts much quicker."];
+          pick = function() { i = (i + 1 + Math.floor(Math.random() * (a.length - 1))) % a.length; return a[i]; };
+          i = Math.floor(Math.random() * a.length); s.textContent = a[i];
+          w.textContent = b[Math.floor(Math.random() * b.length)];
+          window.__bootLines = setInterval(function() {
+            if (matchMedia("(prefers-reduced-motion: reduce)").matches) { s.textContent = pick(); return; }
+            s.dataset.fade = "";
+            setTimeout(function() { if (window.__bootLines) s.textContent = pick(); delete s.dataset.fade; }, 250);
+          }, 3500);
+        })(document.querySelector(".boot-status"), document.querySelector(".boot-still"));
+      </script>
     </div>
     <canvas id="game"></canvas>
     <div id="hud"></div>

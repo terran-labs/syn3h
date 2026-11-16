@@ -1,10 +1,20 @@
-/** New browser-edition writing. The original GameSparks message list was not recovered. */
+/**
+ * The lines on the loading veil. New browser-edition writing; the original GameSparks list
+ * was not recovered. The voice: dry, short, a little absurd, about space, terrain, vehicles,
+ * physics and software. One sentence or two very short ones, under about 60 characters.
+ * Never weapons, harm or combat (this is an exploration game), never a quote or a brand,
+ * and never anything that could be mistaken for an error. Failures get plain words.
+ *
+ * The first line comes from a short copy of the best of the general list inline in
+ * index.html, so it shows before any script module has loaded.
+ */
+
+/** The general list: shown when a phase has used up its own lines, or has none. */
 export const loadingMessages = [
   'Checking which way is down.',
   'Tightening the imaginary bolts.',
   'Waiting for the dust to compile.',
   'Giving the moon some personal space.',
-  'Calibrating the emergency shrug.',
   'Counting wheels. Recounting wheels.',
   'Teaching the ground to stay put.',
   'Filing a noise complaint against the vacuum.',
@@ -41,3 +51,74 @@ export const loadingMessages = [
   'All systems nominal. Nominal is a broad term.',
   'Putting the fun back where we found it.',
 ] as const
+
+/** Lines written for what each loading phase is actually doing. */
+export const phaseMessages: Readonly<Record<string, readonly string[]>> = {
+  device: [
+    'Asking your device how it feels today.',
+    'Counting your pixels. There are a lot.',
+    'Checking the graphics chip for enthusiasm.',
+    'Measuring the screen for a horizon.',
+    'Finding out how many cores want to help.',
+    'Introducing your browser to a planet.',
+    'Reading the small print on the graphics chip.',
+    'Checking that this screen is right side up.',
+  ],
+  physics: [
+    'Reminding every object that it has mass.',
+    'Teaching the wheels which way is forward.',
+    'Loading friction. Then a little more friction.',
+    'Tuning the suspension to a polite bounce.',
+    'Explaining momentum to the boulders.',
+    'Setting gravity to roughly one gravity.',
+    'Greasing the axles of the simulation.',
+    'Agreeing on how bouncy a rock should be.',
+  ],
+  renderer: [
+    'Compiling shaders. They like to take their time.',
+    'Mixing the sky a sensible shade of blue.',
+    'Scattering sunlight the long way round.',
+    'Lowering the sun to a more flattering angle.',
+    'Showing the shadows where to stand.',
+    'Sharpening the distant mountains.',
+    'Rounding off the edges of the atmosphere.',
+    'Warming up the colours before they go on.',
+  ],
+  world: [
+    'Raising mountains to a comfortable height.',
+    'Laying roads where the hills allow.',
+    'Rolling boulders into scenic positions.',
+    'Growing a whole planet from one number.',
+    'Filling the valleys with fresh scenery.',
+    'Checking the ground goes all the way round.',
+    'Letting the lava cool to a sticky glow.',
+    'Putting the craters where they will be enjoyed.',
+  ],
+  ready: [
+    'Sky attached. Ground attached. Off you go.',
+    'Parking every vehicle nose out.',
+    'One last check that the ground is still there.',
+    'Holding the atmosphere open for you.',
+    'Unrolling the horizon.',
+    'Handing you the keys to a small planet.',
+  ],
+}
+
+/** The "still working" line, shown after eight seconds. Honest: first visits are slowest. Copied inline in index.html. */
+export const stillWorkingMessages = [
+  'Still working. The first visit takes the longest.',
+  'Still going. First visits pack the whole planet.',
+  'Still here. The next visit starts much quicker.',
+] as const
+
+/**
+ * Chooses the next line. Never the line already showing (when there is any other choice).
+ * Phase lines come first, until each has been shown once this visit; then the general list.
+ */
+export function pickLoadingLine(options: { phase?: string; general: readonly string[]; previous?: string; shown?: ReadonlySet<string>; random?: () => number; phasePools?: Readonly<Record<string, readonly string[]>> }): string {
+  const { phase, general, previous, shown, random = Math.random, phasePools = phaseMessages } = options
+  const own = (phase && Object.hasOwn(phasePools, phase) ? phasePools[phase] : []).filter(line => !shown?.has(line) && line !== previous)
+  const pool = own.length ? own : general.filter(line => line !== previous)
+  if (!pool.length) return general[0] ?? previous ?? ''
+  return pool[Math.min(pool.length - 1, Math.floor(random() * pool.length))]
+}
