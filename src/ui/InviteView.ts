@@ -1,9 +1,9 @@
 import { wordmarkSvg } from './brand/logo'
 import { qrSvg } from './QrCode'
-/** A link into a room. With `world`, the link also carries the world, so an empty room rebuilds it. */
-export function inviteUrl(origin:string, room:string, world?:string):string {
-  const url=new URL('/',origin);url.searchParams.set('room',room);if(world)url.searchParams.set('world',world);return url.href
-}
+import { isDefaultRoom } from '../core/roomAddress'
+import { inviteAddress } from './LobbyAddress'
+/** A link into a room (none named for the public room). With `world`, an empty room rebuilds that world. */
+export function inviteUrl(origin:string, room:string, world?:string):string { return inviteAddress(new URL('/',origin),room,world) }
 export class InviteView {
   readonly element=document.createElement('section')
   private url=''
@@ -17,8 +17,13 @@ export class InviteView {
   update(url:string,room:string,count:number):void {
     if(url!==this.url){this.url=url;renderQr(this.element.querySelector('.invite-qr')!,url);this.element.querySelector('.invite-link')!.textContent=url}
     // Called often; write the DOM only when the text changes.
-    if(room!==this.room){this.room=room;this.element.querySelector('.join-room')!.textContent=room}
-    if(count!==this.count){this.count=count;this.element.querySelector('.join-count')!.textContent=`${count} ${count===1?'player':'players'} in this room`}
+    // The public room is described in words; its internal name is never shown.
+    if(room!==this.room){
+      this.room=room;this.count=-1;const open=isDefaultRoom(room),title=open?'Join this world':'Join this room'
+      this.element.querySelector('h1')!.textContent=title;this.element.setAttribute('aria-label',title)
+      this.element.querySelector('.join-room')!.textContent=open?'Public room':room
+    }
+    if(count!==this.count){this.count=count;this.element.querySelector('.join-count')!.textContent=`${count} ${count===1?'player':'players'} ${isDefaultRoom(room)?'here':'in this room'}`}
   }
   show():void {this.element.hidden=false;this.element.querySelector<HTMLButtonElement>('.join-close')!.focus()}
   hide():void {this.element.hidden=true}

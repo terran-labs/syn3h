@@ -1,7 +1,7 @@
 /** Short notice text, sized for a one-line toast on a phone. */
 
-/** The public room every player lands in without ?room=. */
-export const DEFAULT_ROOM = 'lobby'
+import { isDefaultRoom } from '../core/roomAddress'
+export { DEFAULT_ROOM } from '../core/roomAddress'
 
 /** Shorten `text` to at most `max` characters by cutting from the middle, keeping both ends. */
 export function middleTruncate(text: string, max = 20): string {
@@ -13,5 +13,5 @@ export function middleTruncate(text: string, max = 20): string {
 /** "Joined as Name" in the public room, else "Joined room <room> as Name" with a long room name shortened. */
 export function joinedText(room: string, name: string | undefined): string {
   const who = name ?? 'a player'
-  return room === DEFAULT_ROOM ? `Joined as ${who}` : `Joined room ${middleTruncate(room)} as ${who}`
+  return isDefaultRoom(room) ? `Joined as ${who}` : `Joined room ${middleTruncate(room)} as ${who}`
 }

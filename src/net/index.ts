@@ -8,6 +8,7 @@
  */
 import * as THREE from 'three/webgpu'
 import { joinedText } from '../ui/toastText'
+import { roomLabel } from '../core/roomAddress'
 import { type ParamValue, params, worldSeed } from '../../shared/params'
 import {
   BOT_ID_BASE,
@@ -109,7 +110,7 @@ export interface NetContext {
   player: Vehicle
   /** Player name from the start screen. Falls back to ?name= or a generated one. */
   name?: string
-  /** Room name from the URL (?room=name), or 'lobby'. */
+  /** Room name from the URL (?room=name). No parameter is the public room, internally 'lobby'. */
   room: string
   /** Visible notice when a full room falls back to local play. */
   onJoinStatus?(message: string): void
@@ -1702,12 +1703,12 @@ export class NetClient implements System {
     if (this.joinStatus) lines.push(this.joinStatus)
     if (!this.connected) {
       const wait = Math.max(0, Math.ceil((this.conn.retryAt - performance.now()) / 1000))
-      if (!this.localAfterFull) lines.push(this.conn.state === 'connecting' ? `net: connecting to room ${this.ctx.room}` : `net: offline, retry in ${wait}s (room ${this.ctx.room})`)
+      if (!this.localAfterFull) lines.push(this.conn.state === 'connecting' ? `net: connecting to ${roomLabel(this.ctx.room)}` : `net: offline, retry in ${wait}s (${roomLabel(this.ctx.room)})`)
     } else {
       // A parked (hidden tab) player is held still, so its delay is not one anybody sees.
       const delays = [...this.remotes.values()].filter((r) => !r.paused).map((r) => r.delay)
       const delay = delays.length ? `${Math.round(Math.max(...delays) * 1000)} ms` : 'none'
-      lines.push(`net: room ${this.ctx.room}   ping ${Math.round(this.clock.rtt * 1000)} ms   delay ${delay}`)
+      lines.push(`net: ${roomLabel(this.ctx.room)}   ping ${Math.round(this.clock.rtt * 1000)} ms   delay ${delay}`)
       const host = this.game.host === this.id ? 'you' : this.nameOf(this.game.host)
       lines.push(`host: ${host}   shared sliders ${this.game.locked ? 'LOCKED (host only)' : 'open to all'}`)
       lines.push(...this.modeLines())
