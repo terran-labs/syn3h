@@ -50,8 +50,10 @@ export function prepareResume(query: URLSearchParams, storage: Pick<Storage, 'ge
   let saved: ResumeSnapshot | null
   try { saved = parseResume(storage.getItem(RESUME_KEY), roomFromQuery(query)) } catch { return null }
   if (!saved) return null
-  // The unchanged URL can still contain the seed from before a host edited it.
-  if (query.has('seed') && Number(query.get('seed')) !== saved.seed && Number(query.get('seed')) !== saved.entrySeed) return null
+  // The unchanged URL can still contain the seed from before a host edited it. A link to a
+  // different seed (?seed= or ?world=recipe.seed) is a new destination and wins.
+  const link = linkSeed(query)
+  if (link !== null && link !== saved.seed && link !== saved.entrySeed) return null
   const kind = query.get('vehicle')
   if (kind && normalizeKind(kind) !== normalizeKind(saved.kind)) return null
   // Before terrain creation and hello. Existing rooms still override these in welcome.
@@ -62,6 +64,12 @@ export function prepareResume(query: URLSearchParams, storage: Pick<Storage, 'ge
   if (saved.wasHost) params.set('sun.timeOfDay', saved.timeOfDay, 'preset')
   params.set('camera.mode', saved.cameraMode)
   return saved
+}
+/** The seed an address names, by ?seed= or inside ?world=recipe.seed, or null if none. */
+export function linkSeed(query: URLSearchParams): number | null {
+  if (query.has('seed')) return Number(query.get('seed'))
+  const world = /^[a-z]+\.(\d+)/.exec(query.get('world')?.trim() ?? '')
+  return world ? Number(world[1]) : null
 }
 /** 'buggy-syn3h' is an alias, and the retired 'buggy-classic' now resumes as the Syn3h buggy. */
 const normalizeKind = (kind: string) => kind === 'buggy-syn3h' || kind === 'buggy-classic' ? 'buggy' : kind
@@ -137,7 +145,7 @@ export class ResumeSession implements System {
     const entry = new URLSearchParams(o.entrySearch ?? (typeof location !== 'undefined' ? new URL(location.href).search : ''))
     const saved: ResumeSnapshot = {
       version: 1, savedAt: Date.now(), room: this.room, seed: worldSeed.value,
-      entrySeed: entry.has('seed') ? Number(entry.get('seed')) : null,
+      entrySeed: linkSeed(entry),
       wasHost: !o.network || o.network.isHost, world: { ...this.world },
       kind: o.player.kind, colors: { ...o.player.colors }, p: state.p, q: state.q, v: state.v, w: state.w,
       wingsOpen: o.player.wingsOpen, special: o.game.input.state.special,
