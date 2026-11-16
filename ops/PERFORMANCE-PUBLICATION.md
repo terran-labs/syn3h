@@ -47,3 +47,5 @@ This contract is proposed for review. No final directory, collector run or new d
 ## Current implementation boundary
 
 The restricted asset inventory rejects map-suffixed directories and mixed-case map suffixes rather than approximating additional ignore semantics. Accepted path cases pass comparison against the installed Wrangler matcher. The Worker parser is an explicit pinned development dependency. Final artifact identity is now used by the release evidence CLI and publication loader; both await inspection before comparing reviewed identities. This does not complete the uploader, validate real performance observations or authorize deployment.
+
+Operational promotion additionally requires trusted observation schema 2 and rejects v1 evidence. Historical v1 rendering remains available outside promotion. Semantic v2 qualification is unfinished, so no current observation bundle can clear this gate.

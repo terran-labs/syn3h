@@ -72,7 +72,14 @@ export async function loadApprovedPerformance({ version, candidateCommit, baseli
   if (candidate.version !== version || candidate.commit !== candidateCommit ||
     baseline.version !== baselineVersion || baseline.commit !== baselineCommit) throw new Error('Performance frozen builds differ from release history or candidate')
   if (canonicalJson(expected.candidate) !== canonicalJson(candidate) || canonicalJson(expected.baseline) !== canonicalJson(baseline)) throw new Error('Approved artifact identity differs from frozen bytes')
-  return performanceBundle(JSON.parse(readFileSync(evidencePath, 'utf8')), expected, version, assetBaseUrl)
+  const evidence = JSON.parse(readFileSync(evidencePath, 'utf8'))
+  // Historical v1 rendering remains supported by performanceBundle. It must never
+  // serve as a downgrade path around required operational observation semantics.
+  if (expected.requiredObservationSchema !== 2 || evidence.schemaVersion !== 2)
+    throw new Error('Promotion requires trusted observation schema 2; historical v1 cannot qualify')
+  // The comparator deliberately rejects v2 until semantic observation validation
+  // is implemented and reviewed. Structural integrity alone is not acceptance.
+  return performanceBundle(evidence, expected, version, assetBaseUrl)
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -82,7 +82,13 @@ test('approval gate binds both frozen directories, history and reviewed evidence
       baselineVersion: expected.baseline.version, baselineCommit: expected.baseline.commit,
       baselineRoot: join(root, 'baseline'), candidateRoot: join(root, 'candidate'), approvalPath, evidencePath,
       assetBaseUrl: 'https://example.test/frozen' }
-    assert.equal((await loadApprovedPerformance(args)).report.promotion, 'eligible')
+    await assert.rejects(loadApprovedPerformance(args), /trusted observation schema 2/)
+    expected.requiredObservationSchema = 2
+    writeFileSync(approvalPath, JSON.stringify(expected))
+    await assert.rejects(loadApprovedPerformance(args), /historical v1 cannot qualify/)
+    writeFileSync(evidencePath, JSON.stringify({ ...input, schemaVersion: 2 }))
+    await assert.rejects(loadApprovedPerformance(args), /Performance blocks promotion/)
+    writeFileSync(evidencePath, JSON.stringify(input))
     await assert.rejects(loadApprovedPerformance({ ...args, approvalPath: '' }), /requires both/)
     await assert.rejects(loadApprovedPerformance({ ...args, candidateCommit: 'c'.repeat(40) }), /release history/)
     writeFileSync(join(root, 'candidate/worker/worker.js'), 'export default { changed: true }')
