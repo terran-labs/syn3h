@@ -5,23 +5,32 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { frozenIdentity, performanceBundle, verifyPerformanceFiles, verifyPublishedPerformance, loadApprovedPerformance } from './release-performance.mjs'
 import { sha256, hashRun } from './performance-release/index.mjs'
+import { FINAL_CONFIG } from './final-worker-artifact.mjs'
 import { syntheticEvidence } from './performance-release/fixtures.mjs'
 
 function directory() { return mkdtempSync(join(tmpdir(), 'release-performance-')) }
-test('frozen identity binds deployed inputs and ignores maps, with no symlink traversal', () => {
+function finalDirectory(root, version, commit) {
+  for (const part of ['dist', 'worker']) mkdirSync(join(root, part), { recursive: true })
+  writeFileSync(join(root, 'wrangler.json'), JSON.stringify(FINAL_CONFIG))
+  writeFileSync(join(root, 'provenance.json'), '{}')
+  writeFileSync(join(root, 'worker/worker.js'), 'export default {}')
+  writeFileSync(join(root, 'dist/.assetsignore'), '*.map\n')
+  writeFileSync(join(root, 'dist/build.json'), JSON.stringify({version, commit}))
+}
+test('final identity binds Worker bytes and rejects the old source snapshot format', async () => {
   const root = directory()
   try {
-    for (const name of ['dist', 'server', 'shared']) mkdirSync(join(root, name))
-    writeFileSync(join(root, 'dist/build.json'), JSON.stringify({ version: 'v26.11.1519', commit: 'a'.repeat(40) }))
-    writeFileSync(join(root, 'wrangler.toml'), 'name="fixture"')
-    writeFileSync(join(root, 'dist/index.html'), '<html>fixture</html>')
-    const before = frozenIdentity(root)
+    finalDirectory(root, 'v26.11.1519', 'a'.repeat(40))
+    const before = await frozenIdentity(root)
     writeFileSync(join(root, 'dist/source.map'), 'diagnostic')
-    assert.deepEqual(frozenIdentity(root), before)
-    writeFileSync(join(root, 'shared/protocol.ts'), 'changed deployed input')
-    assert.notEqual(frozenIdentity(root).artifactSha256, before.artifactSha256)
-    symlinkSync(join(root, 'wrangler.toml'), join(root, 'server/link'))
-    assert.throws(() => frozenIdentity(root), /symlink/)
+    assert.deepEqual(await frozenIdentity(root), before)
+    writeFileSync(join(root, 'worker/worker.js'), 'export default { changed: true }')
+    assert.notEqual((await frozenIdentity(root)).artifactSha256, before.artifactSha256)
+    mkdirSync(join(root, 'src'))
+    await assert.rejects(frozenIdentity(root), /Unexpected final artifact root entries/)
+    rmSync(join(root, 'src'), { recursive: true })
+    symlinkSync(join(root, 'wrangler.json'), join(root, 'dist/link'))
+    await assert.rejects(frozenIdentity(root), /symlink/)
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 test('publication bundle recomputes evidence and refuses altered artifacts', async () => {
@@ -43,16 +52,14 @@ test('publication bundle recomputes evidence and refuses altered artifacts', asy
   } finally { rmSync(root, { recursive: true, force: true }) }
 })
 
-test('approval gate binds both frozen directories, history and reviewed evidence', () => {
+test('approval gate binds both frozen directories, history and reviewed evidence', async () => {
   const root = directory()
   try {
     const { input, expected } = syntheticEvidence()
     for (const [side, version, digit] of [['baseline', 'v26.11.1518', 'a'], ['candidate', 'v26.11.1519', 'b']]) {
       const dir = join(root, side)
-      for (const part of ['dist', 'server', 'shared']) mkdirSync(join(dir, part), { recursive: true })
-      writeFileSync(join(dir, 'wrangler.toml'), 'name="synthetic"')
-      writeFileSync(join(dir, 'dist/build.json'), JSON.stringify({ version, commit: digit.repeat(40) }))
-      expected[side] = frozenIdentity(dir)
+      finalDirectory(dir, version, digit.repeat(40))
+      expected[side] = await frozenIdentity(dir)
       input.builds[side] = expected[side]
     }
     input.calibration.build = expected.baseline
@@ -75,10 +82,10 @@ test('approval gate binds both frozen directories, history and reviewed evidence
       baselineVersion: expected.baseline.version, baselineCommit: expected.baseline.commit,
       baselineRoot: join(root, 'baseline'), candidateRoot: join(root, 'candidate'), approvalPath, evidencePath,
       assetBaseUrl: 'https://example.test/frozen' }
-    assert.equal(loadApprovedPerformance(args).report.promotion, 'eligible')
-    assert.throws(() => loadApprovedPerformance({ ...args, approvalPath: '' }), /requires both/)
-    assert.throws(() => loadApprovedPerformance({ ...args, candidateCommit: 'c'.repeat(40) }), /release history/)
-    writeFileSync(join(root, 'candidate/shared/changed.ts'), 'after measurement')
-    assert.throws(() => loadApprovedPerformance(args), /frozen bytes/)
+    assert.equal((await loadApprovedPerformance(args)).report.promotion, 'eligible')
+    await assert.rejects(loadApprovedPerformance({ ...args, approvalPath: '' }), /requires both/)
+    await assert.rejects(loadApprovedPerformance({ ...args, candidateCommit: 'c'.repeat(40) }), /release history/)
+    writeFileSync(join(root, 'candidate/worker/worker.js'), 'export default { changed: true }')
+    await assert.rejects(loadApprovedPerformance(args), /frozen bytes/)
   } finally { rmSync(root, { recursive: true, force: true }) }
 })

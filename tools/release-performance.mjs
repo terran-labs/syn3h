@@ -1,31 +1,16 @@
 // Coordinator-owned boundary between measured evidence and release publication.
 import { createHash } from 'node:crypto'
-import { lstatSync, readdirSync, readFileSync } from 'node:fs'
+import { lstatSync, readFileSync } from 'node:fs'
+import { inspectFinalArtifact } from './final-worker-artifact.mjs'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { canonicalJson, compareEvidence, renderChart, renderPerformance, sha256 } from './performance-release/index.mjs'
 
 export const digestBytes = bytes => createHash('sha256').update(bytes).digest('hex')
 
-/** Fingerprint deployed inputs, not node_modules, source maps or mutable checkout state. */
-export function frozenIdentity(root) {
-  const files = []
-  function visit(relative) {
-    const path = join(root, relative), stat = lstatSync(path)
-    if (stat.isSymbolicLink()) throw new Error(`Frozen input is a symlink: ${relative}`)
-    if (stat.isDirectory()) {
-      for (const name of readdirSync(path).sort()) visit(`${relative}/${name}`)
-    } else if (stat.isFile()) {
-      if (relative.startsWith('dist/') && (relative.endsWith('.map') || relative === 'dist/.assetsignore')) return
-      const bytes = readFileSync(path)
-      files.push({ path: relative, sha256: digestBytes(bytes), size: bytes.length })
-    } else throw new Error(`Unsupported frozen input: ${relative}`)
-  }
-  for (const name of ['dist', 'server', 'shared', 'wrangler.toml']) visit(name)
-  files.sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0)
-  const build = JSON.parse(readFileSync(join(root, 'dist/build.json'), 'utf8'))
-  if (!/^v\d{2}\.\d+\.\d+$/.test(build.version) || !/^[a-f0-9]{40}$/.test(build.commit)) throw new Error('Frozen build identity is incomplete')
-  return { version: build.version, commit: build.commit, artifactSha256: sha256(files) }
+/** Only the final no-bundle directory can identify measured/deployed bytes. */
+export async function frozenIdentity(root) {
+  return (await inspectFinalArtifact(root)).identity
 }
 
 /** Expectations must come from reviewed coordinator policy and inspected frozen builds. */
@@ -75,7 +60,7 @@ export async function verifyPublishedPerformance(baseUrl, bundle, fetcher = fetc
 
 /** Approval is a separately reviewed coordinator artifact, never read from submitted evidence.
  * Build identities are additionally recomputed from the actual deployment directories. */
-export function loadApprovedPerformance({ version, candidateCommit, baselineCommit, baselineVersion,
+export async function loadApprovedPerformance({ version, candidateCommit, baselineCommit, baselineVersion,
   candidateRoot = process.env.SYN3H_PERFORMANCE_CANDIDATE,
   baselineRoot = process.env.SYN3H_PERFORMANCE_BASELINE,
   approvalPath = process.env.SYN3H_PERFORMANCE_APPROVAL,
@@ -83,7 +68,7 @@ export function loadApprovedPerformance({ version, candidateCommit, baselineComm
   assetBaseUrl }) {
   if (![candidateRoot, baselineRoot, approvalPath, evidencePath].every(Boolean)) throw new Error('Performance requires both frozen builds, reviewed approval and original evidence')
   const expected = JSON.parse(readFileSync(approvalPath, 'utf8'))
-  const candidate = frozenIdentity(candidateRoot), baseline = frozenIdentity(baselineRoot)
+  const candidate = await frozenIdentity(candidateRoot), baseline = await frozenIdentity(baselineRoot)
   if (candidate.version !== version || candidate.commit !== candidateCommit ||
     baseline.version !== baselineVersion || baseline.commit !== baselineCommit) throw new Error('Performance frozen builds differ from release history or candidate')
   if (canonicalJson(expected.candidate) !== canonicalJson(candidate) || canonicalJson(expected.baseline) !== canonicalJson(baseline)) throw new Error('Approved artifact identity differs from frozen bytes')
@@ -93,7 +78,7 @@ export function loadApprovedPerformance({ version, candidateCommit, baselineComm
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [version, candidateRoot, candidateCommit, baselineVersion, baselineCommit] = process.argv.slice(2)
   try {
-    const bundle = loadApprovedPerformance({ version, candidateRoot, candidateCommit, baselineVersion, baselineCommit,
+    const bundle = await loadApprovedPerformance({ version, candidateRoot, candidateCommit, baselineVersion, baselineCommit,
       assetBaseUrl: `https://github.com/terran-labs/syn3h/releases/download/${version}` })
     console.log(`PERFORMANCE GATE OK: ${bundle.report.status}, evidence ${bundle.report.evidenceSha256}`)
   } catch (error) { console.error(`PERFORMANCE GATE FAILED: ${error.message}`); process.exitCode = 1 }

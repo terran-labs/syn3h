@@ -239,7 +239,7 @@ async function publish(tag, { assetsDir, dryRun, yes, latest }) {
     const rows = history(), index = rows.findIndex(r => r.version === tag)
     const baseline = rows.slice(0, index).filter(r => r.channel === 'production').at(-1)
     if (!baseline || !dir) throw new Error('Performance publication requires the accepted baseline and an asset directory')
-    performance = loadApprovedPerformance({ version: tag, candidateCommit: commitOf(row.commit),
+    performance = await loadApprovedPerformance({ version: tag, candidateCommit: commitOf(row.commit),
       baselineCommit: commitOf(baseline.commit), baselineVersion: baseline.version,
       assetBaseUrl: `https://github.com/${GITHUB_REPO}/releases/download/${tag}` })
     notes = withPerformanceSection(notes, performance.markdown)
