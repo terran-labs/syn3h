@@ -8,12 +8,12 @@ import { PerformancePanel } from './PerformancePanel'
 import type { PauseControl } from './pauseControl'
 import { HeightAboveGround } from './heightAboveGround'
 import type { PerformanceSource } from '../core/performance'
-import { SavedWorldStore, SAVED_WORLDS_KEY, savedWorldPlan, worldIdentity, type SavedWorld } from './galaxy/savedWorlds'
+import { SavedWorldStore, SAVED_WORLDS_KEY, savedName, savedWorldPlan, worldIdentity, type SavedWorld } from './galaxy/savedWorlds'
 import { SavedMoons } from './galaxy/SavedMoons'
 import type { Game, System } from '../core/Game'
 import type { Vehicle } from '../vehicles/Vehicle'
 import type { Terrain } from '../world/Terrain'
-import { params, worldSeed } from '../../shared/params'
+import { params, worldNameSeed, worldSeed } from '../../shared/params'
 import { GameAudio } from '../audio'
 // Registers the audio settings the lobby's Sound card shows.
 import '../audio/params'
@@ -38,7 +38,8 @@ import { PLANETS } from '../world/planets'
 import { graphicsLevel, levelNumber, qualityBudget } from '../core/quality'
 import { camDistance, camFov, camHeight, camOffset } from '../core/ChaseCamera'
 import { arrivalPath } from '../core/arrival'
-import { applyPlanet, currentPlanet, encodeWorld, planetName } from '../world/planets'
+import { applyPlanet, biomeLine, currentPlanet, currentWorldName, encodeWorld, planetById, randomSeed } from '../world/planets'
+import { nameSeedKeptAcross, randomNameSeed, worldName } from '../world/worldName'
 import { InviteView, inviteUrl, renderQr } from './InviteView'
 import { Scoreboard, parseScoreRow } from './Scoreboard'
 import { canEditWorld, hostControls, resetWorld } from './worldPermissions'
@@ -323,6 +324,8 @@ export class Shell implements System {
       const input = this.element.querySelector<HTMLInputElement>('#world-seed')!
       const seed = Number(input.value)
       if (!Number.isInteger(seed) || seed < 1 || seed > 999999) { this.toast('Choose a seed from 1 to 999999.'); return }
+      // A new seed reshapes the world; its name stays (see world.nameSeed).
+      params.set(worldNameSeed.def.id, nameSeedKeptAcross(worldNameSeed.value, worldSeed.value))
       params.set(worldSeed.def.id, seed); delete input.dataset.dirty
     }, { signal })
     for (const button of this.element.querySelectorAll<HTMLButtonElement>('[data-sky]')) button.addEventListener('click', () => { if (canEditWorld()) applySkyPreset(button.dataset.sky as SkyPresetName) }, { signal })
@@ -517,7 +520,7 @@ export class Shell implements System {
     if (id === 'world') {
       const hour = Number(params.get('sun.timeOfDay')?.value ?? 0)
       const time = `${String(Math.floor(hour) % 24).padStart(2, '0')}:${String(Math.floor((hour % 1) * 60)).padStart(2, '0')}`
-      return `${currentPlanet().label} · ${planetName(worldSeed.value)} · ${time}`
+      return `${currentWorldName()} · ${currentPlanet().label} · ${time}`
     }
     if (id === 'game') { const bots = Number(params.get('bots.count')?.value ?? 0); const playing = Number(params.get('game.mode')?.value ?? 2); return `${modeName(playing)}${bots ? ` · ${bots} ${bots === 1 ? 'bot' : 'bots'}` : ''}` }
     if (id === 'you') { const current = this.activeVehicleKind === 'buggy' ? 'buggy-syn3h' : this.activeVehicleKind; return `${this.playerName} · ${PLAY_VEHICLES.find(vehicle => vehicle.id === current)?.label ?? ''}` }
@@ -616,14 +619,14 @@ export class Shell implements System {
     this.stopAttract()
     // No galaxy to fly through (or no motion wanted): straight in.
     if (!this.galaxy?.live || matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      if (id !== current) applyPlanet(id)
+      if (id !== current) this.applyGalaxyWorld(galaxyId)
       if (this.started) this.closeMenu(); else this.play()
       return true
     }
     if (!this.started) { this.requestEntryCursor(); this.unlockAudio() }
     void this.descent(galaxyId, () => {
       // Under the light, where a hitch cannot be seen: the world is built and the room joined.
-      if (id !== currentPlanet().id) applyPlanet(id)
+      if (id !== currentPlanet().id) this.applyGalaxyWorld(galaxyId)
       if (!this.started) { this.begin(); this.onPlay?.() }
     })
     return true
@@ -1021,10 +1024,10 @@ export class Shell implements System {
       for (const entry of library.entries) {
         const row = document.createElement('div'); row.className = 'input-action'
         const enter = document.createElement('button'); enter.type = 'button'; enter.dataset.savedWorld = entry.id
-        enter.textContent = `${planetName(entry.seed)} · ${entry.recipeId}`
+        enter.textContent = `${savedName(entry)} · ${planetById(entry.recipeId)?.label ?? entry.recipeId}`
         enter.addEventListener('click', () => { void this.enterSavedWorld(entry) })
         const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'Delete'
-        remove.setAttribute('aria-label', `Delete saved ${planetName(entry.seed)}`)
+        remove.setAttribute('aria-label', `Delete saved ${savedName(entry)}`)
         remove.addEventListener('click', () => {
           try { this.savedWorlds.remove(entry.id); this.refreshSavedWorlds(); this.say('Saved world deleted from this device.') }
           catch { this.say('The saved world could not be deleted. Storage is unavailable.') }
@@ -1095,15 +1098,19 @@ export class Shell implements System {
     // ?worlds=N repeats the recipes to rehearse a crowded system before new ones land.
     const rehearse = import.meta.env.DEV ? Number(new URLSearchParams(location.search).get('worlds')) || 0 : 0
     const recipes = Array.from({ length: Math.max(PLANETS.length, rehearse - 1) }, (_, i) => ({ recipe: PLANETS[i % PLANETS.length], copy: Math.floor(i / PLANETS.length) })).slice(0, GALAXY_MAX - 1)
-    const worlds: GalaxyWorld[] = recipes.map(({ recipe, copy }, i) => ({ id: copy ? `${recipe.id}~${copy}` : recipe.id, recipe: recipe.id, label: copy ? `${recipe.label} ${copy + 1}` : recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current && !copy ? worldSeed.value : i + 1 }))
+    const worlds: GalaxyWorld[] = recipes.map(({ recipe, copy }, i) => ({ id: copy ? `${recipe.id}~${copy}` : recipe.id, recipe: recipe.id, label: copy ? `${recipe.label} ${copy + 1}` : recipe.label, land: recipe.swatch[0], sea: recipe.swatch[1], glow: recipe.values['world.seaKind'] === 0, seed: recipe.id === current && !copy ? worldSeed.value : randomSeed(), nameSeed: recipe.id === current && !copy ? worldNameSeed.value : randomNameSeed() }))
     // The custom planet is a world still forming: tap it to shape it with the sliders.
     // Hidden for now (see OFFER_CUSTOM_PLANET): the lobby offers planets only.
     if (OFFER_CUSTOM_PLANET) worlds.push({ id: 'custom', label: 'Custom', land: 0x31507a, sea: 0x0a1630, glow: false, seed: 7, forming: true })
     const chips = this.galaxyChips
+    this.galaxyWorlds = worlds
     for (const world of worlds) {
       const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'galaxy-label'; chip.dataset.world = world.id
-      chip.innerHTML = '<strong></strong><small></small>'; chip.querySelector('strong')!.textContent = world.label
-      chip.querySelector('small')!.textContent = world.forming ? 'Shape your own' : world.id === current ? planetName(world.seed) : ''
+      // The world's name first, its biome under it in small letters ("Velmora" over "alpine").
+      chip.innerHTML = '<strong></strong><small></small>'
+      const recipe = planetById(world.recipe ?? world.id)
+      chip.querySelector('strong')!.textContent = world.forming ? world.label : worldName(world.nameSeed ?? 0, world.seed)
+      chip.querySelector('small')!.textContent = world.forming ? 'Shape your own' : recipe ? biomeLine(recipe) + (world.id.includes('~') ? ` ${world.label.split(' ').at(-1)}` : '') : ''
       if (world.id !== 'custom') { const count = document.createElement('small'); count.className = 'galaxy-population'; count.textContent = ''; chip.append(count) }
       chip.addEventListener('click', () => { if (!this.tapWorld(world.id)) this.galaxy?.choose(world.id) })
       labels.append(chip); chips.set(world.id, chip)
@@ -1141,7 +1148,7 @@ export class Shell implements System {
         if (!canEditWorld() && id !== currentPlanet().id) { this.say('The host has locked this world.'); this.galaxy?.home(); return }
         // Arriving at a world never opens a form (the owner, 15 November 2026): it goes
         // straight in. Taps are already drops (tapWorld); this covers the paths that are not.
-        if (id !== currentPlanet().id) applyPlanet(id)
+        if (id !== currentPlanet().id) this.applyGalaxyWorld(chosen)
         if (this.started) this.closeMenu(); else this.play()
       },
       onLayout: (places, chosen) => {
@@ -1179,12 +1186,28 @@ export class Shell implements System {
   /** Where the wordmark ends, measured once per window size. */
   private brandBottom?: number
   private linksTop = 0
-  /** Labels follow the world in play: its generated name, and which worlds can be chosen now. */
+  /** The worlds the galaxy shows, each with the seed and name picking it leads to. */
+  private galaxyWorlds: GalaxyWorld[] = []
+  /**
+   * Make a galaxy world the world: its recipe, and the seed and name its sphere and label
+   * showed, so what the player saw is where they land.
+   */
+  private applyGalaxyWorld(galaxyId: string): void {
+    const world = this.galaxyWorlds.find(w => w.id === galaxyId)
+    applyPlanet(galaxyId.split('~')[0], world?.seed, world?.nameSeed !== undefined ? { nameSeed: world.nameSeed } : {})
+  }
+  /** Labels follow the world in play: its name and seed, and which worlds can be chosen now. */
   private refreshGalaxyLabels(open: boolean): void {
     const current = currentPlanet().id
     for (const [id, chip] of this.galaxyChips) {
-      const small = chip.querySelector('small')!, text = id === 'custom' ? small.textContent : id === current ? planetName(worldSeed.value) : ''
-      if (small.textContent !== text) { small.textContent = text; this.labelSizes.delete(id) }
+      // The world in play is whatever the room says it is: its sphere and label follow.
+      const world = this.galaxyWorlds.find(w => w.id === id)
+      if (world && id === current) {
+        world.nameSeed = worldNameSeed.value
+        if (world.seed !== worldSeed.value) this.galaxy?.setSeed(id, worldSeed.value)
+      }
+      const strong = chip.querySelector('strong')!, text = world && !world.forming ? worldName(world.nameSeed ?? 0, world.seed) : strong.textContent
+      if (strong.textContent !== text) { strong.textContent = text; this.labelSizes.delete(id) }
       chip.classList.toggle('is-current', id === current)
       chip.classList.toggle('is-locked', !open && id !== current)
     }
@@ -1380,7 +1403,7 @@ export class Shell implements System {
     if (this.started && !this.menuVisible) {
       const focus = this.element.classList.contains('is-focus')
       if (!focus && this.inspector.open) this.inspector.update()
-      const world = `${currentPlanet().label} · ${planetName(worldSeed.value)}`
+      const world = `${currentWorldName()} · ${currentPlanet().label}`
       if (world !== this.worldShown) {
         this.worldShown = world
         const label = this.element.querySelector<HTMLElement>('.rail-world')!
@@ -1409,7 +1432,7 @@ export class Shell implements System {
     const invitedOnly = this.invited && !this.started
     if (this.worldDirty) {
       this.worldDirty = false
-      this.element.querySelector('.planet-current')!.textContent = `${planet.label} world ${planetName(worldSeed.value)}. ${planet.centre}.${invitedOnly ? ' You were invited to this world.' : ''}`
+      this.element.querySelector('.planet-current')!.textContent = `${currentWorldName()}, a ${planet.label.toLowerCase()} world. ${planet.centre}.${invitedOnly ? ' You were invited to this world.' : ''}`
       this.updateInvite()
     }
     this.refreshGalaxyLabels(editable && !invitedOnly)

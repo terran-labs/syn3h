@@ -10,7 +10,8 @@
  * No renderer imports: the lobby, the server and tests can all use this file.
  */
 import { recipeIdForLook } from '../../shared/recipes'
-import { params, type ParamSource, type ParamValue, worldSeed } from '../../shared/params'
+import { params, type ParamSource, type ParamValue, worldNameSeed, worldSeed } from '../../shared/params'
+import { randomNameSeed, seedName, worldName } from './worldName'
 import { SKY_PRESETS } from './sky/presets'
 // Imported for their side effect: they register the sliders the recipes set.
 import './sky/skyParams'
@@ -22,13 +23,17 @@ import { planetWeather } from './weather/planetWeather'
  * system out, so a new recipe takes its place by what it is, not by its name.
  *  - size: its radius relative to an ordinary planet (1). A moon is well under half.
  *  - heat: 0 for a frozen world to 1 for a molten one. Orbits are ordered by it, hottest
- *    nearest the sun, so the icy worlds are the farthest out.
+ *    nearest the sun, so the icy worlds are the farthest out. It follows what the world is:
+ *    molten and glassy worlds inside, then the hot dry ones, the living wet worlds in the
+ *    temperate band, snow and ice beyond.
+ *  - parent: a moon's planet, by recipe id. A moon circles its planet, not the sun, and
+ *    shares its planet's distance from the sun; its own heat is then not used for its place.
  */
-export interface PlanetBody { size: number; heat: number }
+export interface PlanetBody { size: number; heat: number; parent?: string }
 export const ORDINARY_BODY: PlanetBody = { size: 1, heat: 0.5 }
 export interface PlanetRecipe {
   id: string
-  /** Shown in the lobby. */
+  /** The biome's name, shown to players: on a world's label under its own name, in lower case. */
   label: string
   /** One line for the lobby card. */
   blurb: string
@@ -45,6 +50,12 @@ export interface PlanetRecipe {
 /** Island size presets: a coast radius in metres, inside the 2 km square. */
 export const ISLAND_SIZES = { small: 520, medium: 680, large: 824 } as const
 export type IslandSize = keyof typeof ISLAND_SIZES
+
+/**
+ * The warm wetland's name (recipe id 'swamp', look 8), chosen by the owner on 16 November
+ * 2026; it was "Methane swamp". Players see only this; ids and stored values are unchanged.
+ */
+export const MIRE_LABEL = 'Mire'
 
 const MARS: Record<string, ParamValue> = {
   ...SKY_PRESETS['Mars day'],
@@ -152,7 +163,7 @@ export const PLANETS: readonly PlanetRecipe[] = [
   {
     id: 'moon', label: 'Moon', centre: 'A giant impact crater with a central peak',
     blurb: 'Grey dust and craters under a black sky, in one sixth of the gravity. Jump.',
-    swatch: [0xa6a6a8, 0x3a3a3e], body: { size: 0.42, heat: 0.32 },
+    swatch: [0xa6a6a8, 0x3a3a3e], body: { size: 0.42, heat: 0.32, parent: 'alpine' },
     values: {
       ...planetWeather('moon'),
       'sky.rayleighR': 5.8, 'sky.rayleighG': 13.5, 'sky.rayleighB': 30, 'sky.rayleigh': 0,
@@ -173,12 +184,13 @@ export const PLANETS: readonly PlanetRecipe[] = [
     },
   },
   {
-    id: 'swamp', label: 'Methane swamp', centre: 'A low plateau of gas vents in the mist',
-    blurb: 'Olive mud flats and low mesas drowned in green haze, round a teal sea.',
-    swatch: [0x8c8a3a, 0x2fa890], body: { size: 1.25, heat: 0.2 },
+    id: 'swamp', label: MIRE_LABEL, centre: 'A low reed plateau in the mist',
+    blurb: 'Olive mud flats, reed beds and low mesas in warm green haze, round murky water.',
+    // Warm and wet: the inner edge of the temperate band, between the dry worlds and the sea.
+    swatch: [0x8c8a3a, 0x4a5228], body: { size: 1.25, heat: 0.58 },
     values: {
       ...planetWeather('swamp'),
-      ...SKY_PRESETS['Methane green'], 'weather.cloudCoverage': 0.7, 'weather.fogDensity': 0.0011,
+      ...SKY_PRESETS['Mire green'], 'weather.cloudCoverage': 0.7, 'weather.fogDensity': 0.0011,
       'terrain.kind': 1, 'terrain.look': 8, 'world.seaKind': 1, 'world.lavaAltitude': 0,
       'terrain.landShare': 0.6,
       'terrain.islandRadius': 800, 'terrain.coastWobble': 0.35,
@@ -210,8 +222,12 @@ export function randomSeed(): number {
  * registry, so sliders, the terrain and the network all see it. Returns the seed used.
  */
 export function applyPlanet(
-  id: string, seed: number = randomSeed(), options: { size?: IslandSize; source?: ParamSource } = {},
+  id: string, seed?: number, options: { size?: IslandSize; source?: ParamSource; nameSeed?: number } = {},
 ): number {
+  // A newly rolled world gets a name of its own. A given seed (a link, a saved session)
+  // keeps the name that seed has always given, unless the caller names it.
+  const nameSeed = options.nameSeed ?? (seed === undefined ? randomNameSeed() : 0)
+  seed ??= randomSeed()
   const recipe = planetById(id) ?? PLANETS[0]
   const source = options.source ?? 'local'
   // One snapshot: defaults for everything a recipe could have moved, then this recipe.
@@ -223,6 +239,7 @@ export function applyPlanet(
   params.applySnapshot({ ...values, ...recipe.values }, source)
   if (options.size) params.set('terrain.islandRadius', ISLAND_SIZES[options.size], source)
   params.set(worldSeed.def.id, seed, source)
+  params.set(worldNameSeed.def.id, nameSeed, source)
   return seed
 }
 
@@ -236,25 +253,17 @@ export function currentPlanet(): PlanetRecipe {
 // Names
 // ---------------------------------------------------------------------------------------
 
-const STARTS = ['Tho', 'Xy', 'Lu', 'Am', 'Ymi', 'Va', 'Mira', 'Ke', 'Ory', 'Sa', 'Zeph', 'Ika', 'No', 'Bry', 'Eli', 'Quo', 'Ash', 'Ve', 'Dra', 'Ula', 'Ha', 'Pyr', 'Cae', 'Io']
-const MIDDLES = ['', '', 'la', 'ri', 'no', 've', 'da', 'mi', 'ko', 'the', 'ra', 'li']
-const ENDS = ['lus', 'lia', 'cidar', 'mir', 'r', 'lerius', 'dor', 'x', 'th', 'ron', 'ra', 'nis', 'gard', 'phon', 'rix', 'ne', 'tis', 'von', 'mos', 'lune']
+/** The name a terrain seed gave before names had their own setting. Prefer `currentWorldName`. */
+export const planetName = seedName
 
-function mix32(n: number): number {
-  let h = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b)
-  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35)
-  return (h ^ (h >>> 16)) >>> 0
+/** The current world's name, from its name setting (see `world.nameSeed`). */
+export function currentWorldName(): string {
+  return worldName(worldNameSeed.value, worldSeed.value)
 }
 
-/** A pronounceable planet name for a seed, the same on every client: "Xylia", "Tholus IV". */
-export function planetName(seed: number): string {
-  const a = mix32(seed | 0)
-  const b = mix32(a)
-  const c = mix32(b)
-  let name = STARTS[a % STARTS.length] + MIDDLES[b % MIDDLES.length] + ENDS[c % ENDS.length]
-  name = name[0].toUpperCase() + name.slice(1).toLowerCase()
-  const numeral = ['', '', '', ' II', ' III', ' IV', ' V', ' VII', ' IX'][(c >>> 8) % 9]
-  return name + numeral
+/** A biome's name as the second line under a world's name: "alpine", "mire". */
+export function biomeLine(recipe: PlanetRecipe): string {
+  return recipe.label.toLowerCase()
 }
 
 // ---------------------------------------------------------------------------------------
